@@ -6,25 +6,25 @@
 	},
 	"projects": [
 		{
-			"id": "cascade",
-			"name": "Cascade",
-			"repo": "zbigniewsobiecki/cascade",
-			"baseBranch": "main",
+			"id": "niu",
+			"name": "niu",
+			"repo": "zbigniewsobiecki/niu",
+			"baseBranch": "dev",
 			"branchPrefix": "feature/",
 			"trello": {
-				"boardId": "YOUR_BOARD_ID",
+				"boardId": "0lglFfUm",
 				"lists": {
-					"briefing": "YOUR_BRIEFING_LIST_ID",
-					"planning": "YOUR_PLANNING_LIST_ID",
-					"todo": "YOUR_TODO_LIST_ID",
-					"inProgress": "YOUR_IN_PROGRESS_LIST_ID",
-					"inReview": "YOUR_IN_REVIEW_LIST_ID"
+					"briefing": "694fc5e57256ac0717c3dfea",
+					"planning": "694ec39e91e3487c1351a491",
+					"todo": "694ec3a365a4c75df2493504",
+					"inProgress": "694ec3a5d0dae4cb06d25517",
+					"inReview": "694ec3a8f0359b62fa76ecb9"
 				},
 				"labels": {
-					"readyToProcess": "YOUR_READY_LABEL_ID",
-					"processing": "YOUR_PROCESSING_LABEL_ID",
-					"processed": "YOUR_PROCESSED_LABEL_ID",
-					"error": "YOUR_ERROR_LABEL_ID"
+					"readyToProcess": "694ec394370da080b52eb6be",
+					"processing": "694ec394370da080b52eb6c2",
+					"processed": "694ec394370da080b52eb6bd",
+					"error": "694ec394370da080b52eb6c0"
 				}
 			}
 		}
