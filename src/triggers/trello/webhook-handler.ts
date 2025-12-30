@@ -8,6 +8,9 @@ import type {
 	TriggerContext,
 } from '../../types/index.js';
 import {
+	dequeueWebhook,
+	enqueueWebhook,
+	getQueueLength,
 	isCurrentlyProcessing,
 	logger,
 	scheduleShutdownAfterJob,
@@ -79,6 +82,54 @@ async function handleAgentFailure(
 	}
 }
 
+async function executeAgent(
+	result: TriggerResult,
+	project: ProjectConfig,
+	config: CascadeConfig,
+): Promise<void> {
+	const { cardId } = result;
+
+	if (cardId) {
+		await safeAddLabel(cardId, project.trello.labels.processing);
+		await safeRemoveLabel(cardId, project.trello.labels.readyToProcess);
+	}
+
+	const agentResult = await runAgent(result.agentType, {
+		...result.agentInput,
+		project,
+		config,
+	});
+
+	if (cardId) {
+		await safeRemoveLabel(cardId, project.trello.labels.processing);
+
+		if (agentResult.success) {
+			await handleAgentSuccess(cardId, project, result, agentResult);
+		} else {
+			await handleAgentFailure(cardId, project, agentResult);
+		}
+	}
+
+	logger.info('Agent completed', {
+		agentType: result.agentType,
+		success: agentResult.success,
+	});
+}
+
+function processNextQueuedWebhook(config: CascadeConfig, registry: TriggerRegistry): void {
+	const next = dequeueWebhook();
+	if (next) {
+		logger.info('Processing queued webhook', { queueLength: getQueueLength() });
+		setImmediate(() => {
+			processTrelloWebhook(next.payload, config, registry).catch((err) => {
+				logger.error('Failed to process queued webhook', { error: String(err) });
+			});
+		});
+	} else if (process.env.FLY_APP_NAME) {
+		scheduleShutdownAfterJob(config.defaults.postJobGracePeriodMs);
+	}
+}
+
 export async function processTrelloWebhook(
 	payload: unknown,
 	config: CascadeConfig,
@@ -94,7 +145,12 @@ export async function processTrelloWebhook(
 	}
 
 	if (isCurrentlyProcessing()) {
-		logger.warn('Already processing a request, rejecting webhook');
+		const queued = enqueueWebhook(payload);
+		if (queued) {
+			logger.info('Currently processing, webhook queued', { queueLength: getQueueLength() });
+		} else {
+			logger.warn('Queue full, webhook rejected', { queueLength: getQueueLength() });
+		}
 		return;
 	}
 
@@ -127,33 +183,7 @@ export async function processTrelloWebhook(
 	}
 
 	try {
-		const { cardId } = result;
-
-		if (cardId) {
-			await safeAddLabel(cardId, project.trello.labels.processing);
-			await safeRemoveLabel(cardId, project.trello.labels.readyToProcess);
-		}
-
-		const agentResult = await runAgent(result.agentType, {
-			...result.agentInput,
-			project,
-			config,
-		});
-
-		if (cardId) {
-			await safeRemoveLabel(cardId, project.trello.labels.processing);
-
-			if (agentResult.success) {
-				await handleAgentSuccess(cardId, project, result, agentResult);
-			} else {
-				await handleAgentFailure(cardId, project, agentResult);
-			}
-		}
-
-		logger.info('Agent completed', {
-			agentType: result.agentType,
-			success: agentResult.success,
-		});
+		await executeAgent(result, project, config);
 	} catch (err) {
 		logger.error('Failed to process webhook', { error: String(err) });
 
@@ -163,10 +193,6 @@ export async function processTrelloWebhook(
 		}
 	} finally {
 		setProcessing(false);
-
-		// On Fly.io, exit shortly after job completion
-		if (process.env.FLY_APP_NAME) {
-			scheduleShutdownAfterJob(config.defaults.postJobGracePeriodMs);
-		}
+		processNextQueuedWebhook(config, registry);
 	}
 }

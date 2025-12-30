@@ -10,3 +10,10 @@ export {
 	scheduleShutdownAfterJob,
 } from './lifecycle.js';
 export { createTempDir, cloneRepo, cleanupTempDir, runCommand } from './repo.js';
+export {
+	enqueueWebhook,
+	dequeueWebhook,
+	getQueueLength,
+	clearQueue,
+	getMaxQueueSize,
+} from './webhookQueue.js';
