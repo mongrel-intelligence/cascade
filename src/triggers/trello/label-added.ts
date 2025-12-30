@@ -1,3 +1,5 @@
+import { trelloClient } from '../../trello/client.js';
+import { logger } from '../../utils/logging.js';
 import type {
 	TrelloWebhookPayload,
 	TriggerContext,
@@ -25,11 +27,16 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 	async handle(ctx: TriggerContext): Promise<TriggerResult> {
 		const payload = ctx.payload as TrelloWebhookPayload;
 		const cardId = payload.action.data.card?.id;
-		const currentListId = payload.action.data.list?.id;
 
 		if (!cardId) {
 			throw new Error('No card ID in payload');
 		}
+
+		// Fetch card to get current list ID (webhook payload doesn't include it for addLabelToCard)
+		const card = await trelloClient.getCard(cardId);
+		const currentListId = card.idList;
+
+		logger.info('Determining agent type from list', { cardId, currentListId });
 
 		// Determine agent type based on current list
 		const lists = ctx.project.trello.lists;
@@ -43,8 +50,11 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 			agentType = 'implementation';
 		} else {
 			// Default to briefing if list not recognized
+			logger.warn('Card in unrecognized list, defaulting to briefing', { currentListId, lists });
 			agentType = 'briefing';
 		}
+
+		logger.info('Agent type determined', { agentType, cardId, listId: currentListId });
 
 		return {
 			agentType,
