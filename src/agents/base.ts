@@ -67,6 +67,38 @@ async function generateDirectoryListing(cwd: string, depth: number): Promise<str
 }
 
 // ============================================================================
+// Context Files (CLAUDE.md, AGENTS.md)
+// ============================================================================
+
+async function readContextFiles(cwd: string): Promise<string> {
+	const files = ['CLAUDE.md', 'AGENTS.md'];
+	const sections: string[] = [];
+
+	for (const file of files) {
+		try {
+			const result = await execCommand('cat', [file], cwd);
+			if (result.stdout.trim()) {
+				sections.push(`<${file}>
+${result.stdout.trim()}
+</${file}>`);
+			}
+		} catch {
+			// File doesn't exist, skip
+		}
+	}
+
+	if (sections.length === 0) {
+		return '';
+	}
+
+	return `The following context files were pre-loaded from the repository to give you important project guidelines:
+
+${sections.join('\n\n')}
+
+`;
+}
+
+// ============================================================================
 // Agent Execution
 // ============================================================================
 
@@ -94,9 +126,12 @@ export async function executeAgent(
 		const model = project.model || config.defaults.model;
 		const maxIterations = config.defaults.maxIterations;
 
+		// Read context files (CLAUDE.md, AGENTS.md) if available
+		const contextFilesSection = await readContextFiles(repoDir);
+
 		// Generate directory listing for codebase context
 		const directoryListing = await generateDirectoryListing(repoDir, 3);
-		const contextSection = directoryListing
+		const directorySection = directoryListing
 			? `Here is the codebase directory structure (pre-populated for context):
 
 <codebase_structure>
@@ -120,7 +155,7 @@ ${directoryListing}
 `;
 		}
 
-		const prompt = `${contextSection}${agentContext}Analyze and process the Trello card with ID: ${cardId}. Start by reading the card using ReadTrelloCard to get the current state, including any comments with instructions.`;
+		const prompt = `${contextFilesSection}${directorySection}${agentContext}Analyze and process the Trello card with ID: ${cardId}. Start by reading the card using ReadTrelloCard to get the current state, including any comments with instructions.`;
 
 		// Change to repo directory (llmist gadgets use process.cwd() for path validation)
 		const originalCwd = process.cwd();
