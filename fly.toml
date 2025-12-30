@@ -1,4 +1,4 @@
-app = "cascade"
+app = "cascade-webhooks"
 primary_region = "fra"
 
 [build]
