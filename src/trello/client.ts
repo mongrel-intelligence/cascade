@@ -40,6 +40,31 @@ export interface TrelloComment {
 	};
 }
 
+export interface TrelloAction {
+	id: string;
+	type: string;
+	date: string;
+	data: {
+		card?: { id: string; name: string; shortLink?: string };
+		list?: { id: string; name: string };
+		board?: { id: string; name: string };
+		text?: string;
+	};
+}
+
+export interface TrelloCheckItem {
+	id: string;
+	name: string;
+	state: 'complete' | 'incomplete';
+}
+
+export interface TrelloChecklist {
+	id: string;
+	name: string;
+	idCard: string;
+	checkItems: TrelloCheckItem[];
+}
+
 export const trelloClient = {
 	async getCard(cardId: string): Promise<TrelloCard> {
 		logger.debug('Fetching Trello card', { cardId });
@@ -130,6 +155,160 @@ export const trelloClient = {
 			url,
 			name,
 		});
+	},
+
+	async getMyActions(limit = 20): Promise<TrelloAction[]> {
+		logger.debug('Fetching my recent actions', { limit });
+		// Use raw fetch since trello.js types don't expose 'limit' parameter
+		const apiKey = process.env.TRELLO_API_KEY;
+		const token = process.env.TRELLO_TOKEN;
+		const response = await fetch(
+			`https://api.trello.com/1/members/me/actions?key=${apiKey}&token=${token}&limit=${limit}`,
+		);
+		if (!response.ok) {
+			throw new Error(`Failed to fetch actions: ${response.status}`);
+		}
+		const actions = (await response.json()) as Array<{
+			id?: string;
+			type?: string;
+			date?: string;
+			data?: {
+				card?: { id?: string; name?: string; shortLink?: string };
+				list?: { id?: string; name?: string };
+				board?: { id?: string; name?: string };
+				text?: string;
+			};
+		}>;
+		return actions.map((a) => ({
+			id: a.id || '',
+			type: a.type || '',
+			date: a.date || '',
+			data: {
+				card: a.data?.card
+					? {
+							id: a.data.card.id || '',
+							name: a.data.card.name || '',
+							shortLink: a.data.card.shortLink,
+						}
+					: undefined,
+				list: a.data?.list
+					? {
+							id: a.data.list.id || '',
+							name: a.data.list.name || '',
+						}
+					: undefined,
+				board: a.data?.board
+					? {
+							id: a.data.board.id || '',
+							name: a.data.board.name || '',
+						}
+					: undefined,
+				text: a.data?.text,
+			},
+		}));
+	},
+
+	async getListCards(listId: string): Promise<TrelloCard[]> {
+		logger.debug('Fetching cards from list', { listId });
+		const cards = await getClient().lists.getListCards({ id: listId });
+		return cards.map((card) => {
+			const labels = card.labels as
+				| Array<{ id?: string; name?: string; color?: string }>
+				| undefined;
+			return {
+				id: card.id,
+				name: card.name || '',
+				desc: card.desc || '',
+				url: card.url || '',
+				shortUrl: card.shortUrl || '',
+				idList: card.idList || '',
+				labels: (labels || []).map((l) => ({
+					id: l.id || '',
+					name: l.name || '',
+					color: l.color || '',
+				})),
+			};
+		});
+	},
+
+	async createCard(
+		listId: string,
+		data: { name: string; desc?: string; idLabels?: string[] },
+	): Promise<TrelloCard> {
+		logger.debug('Creating card', { listId, name: data.name });
+		const card = await getClient().cards.createCard({
+			idList: listId,
+			name: data.name,
+			desc: data.desc,
+			idLabels: data.idLabels,
+			pos: 'bottom',
+		});
+		const labels = card.labels as Array<{ id?: string; name?: string; color?: string }> | undefined;
+		return {
+			id: card.id,
+			name: card.name || '',
+			desc: card.desc || '',
+			url: card.url || '',
+			shortUrl: card.shortUrl || '',
+			idList: card.idList || '',
+			labels: (labels || []).map((l) => ({
+				id: l.id || '',
+				name: l.name || '',
+				color: l.color || '',
+			})),
+		};
+	},
+
+	async createChecklist(cardId: string, name: string): Promise<TrelloChecklist> {
+		logger.debug('Creating checklist', { cardId, name });
+		const checklist = (await getClient().cards.createCardChecklist({
+			id: cardId,
+			name,
+		})) as { id?: string; name?: string; idCard?: string };
+		return {
+			id: checklist.id || '',
+			name: checklist.name || '',
+			idCard: checklist.idCard || '',
+			checkItems: [],
+		};
+	},
+
+	async addChecklistItem(
+		checklistId: string,
+		name: string,
+		checked = false,
+	): Promise<TrelloCheckItem> {
+		logger.debug('Adding checklist item', { checklistId, name, checked });
+		const item = (await getClient().checklists.createChecklistCheckItems({
+			id: checklistId,
+			name,
+			checked,
+		})) as { id?: string; name?: string; state?: string };
+		return {
+			id: item.id || '',
+			name: item.name || '',
+			state: item.state === 'complete' ? 'complete' : 'incomplete',
+		};
+	},
+
+	async getCardChecklists(cardId: string): Promise<TrelloChecklist[]> {
+		logger.debug('Fetching card checklists', { cardId });
+		const checklists = (await getClient().cards.getCardChecklists({ id: cardId })) as Array<{
+			id?: string;
+			name?: string;
+			idCard?: string;
+			checkItems?: Array<{ id?: string; name?: string; state?: string }>;
+		}>;
+		return checklists.map((cl) => ({
+			id: cl.id || '',
+			name: cl.name || '',
+			idCard: cl.idCard || '',
+			checkItems: (cl.checkItems || []).map((item) => ({
+				id: item.id || '',
+				name: item.name || '',
+				state: item.state === 'complete' ? 'complete' : ('incomplete' as const),
+			})),
+		}));
 	},
 };
 

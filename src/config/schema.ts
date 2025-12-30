@@ -37,6 +37,12 @@ export const CascadeConfigSchema = z.object({
 				.int()
 				.positive()
 				.default(30 * 60 * 1000),
+			watchdogTimeoutMs: z
+				.number()
+				.int()
+				.positive()
+				.default(30 * 60 * 1000), // 30 min max job duration
+			postJobGracePeriodMs: z.number().int().nonnegative().default(5000), // 5 sec grace before exit
 		})
 		.default({}),
 	projects: z.array(ProjectConfigSchema).min(1),

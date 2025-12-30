@@ -1,7 +1,15 @@
 import { listDirectory, readFile, runCommand } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
-import { PostTrelloComment, ReadTrelloCard, UpdateTrelloCard } from '../gadgets/trello/index.js';
+import {
+	AddChecklistToCard,
+	CreateTrelloCard,
+	GetMyRecentActivity,
+	ListTrelloCards,
+	PostTrelloComment,
+	ReadTrelloCard,
+	UpdateTrelloCard,
+} from '../gadgets/trello/index.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import {
@@ -98,7 +106,21 @@ ${directoryListing}
 `
 			: '';
 
-		const prompt = `${contextSection}Analyze and process the Trello card with ID: ${cardId}. Start by reading the card using ReadTrelloCard to get the current state, including any comments with instructions.`;
+		// Build agent-specific context
+		let agentContext = '';
+		if (agentType === 'briefing') {
+			const storiesListId = project.trello?.lists?.stories;
+			const processedLabelId = project.trello?.labels?.processed;
+			agentContext = `
+## Context Variables
+
+- STORIES_LIST_ID: ${storiesListId || 'NOT_CONFIGURED'}
+- PROCESSED_LABEL_ID: ${processedLabelId || 'NOT_CONFIGURED'}
+
+`;
+		}
+
+		const prompt = `${contextSection}${agentContext}Analyze and process the Trello card with ID: ${cardId}. Start by reading the card using ReadTrelloCard to get the current state, including any comments with instructions.`;
 
 		// Change to repo directory (llmist gadgets use process.cwd() for path validation)
 		const originalCwd = process.cwd();
@@ -126,6 +148,10 @@ ${directoryListing}
 					new ReadTrelloCard(),
 					new PostTrelloComment(),
 					new UpdateTrelloCard(),
+					new CreateTrelloCard(),
+					new ListTrelloCards(),
+					new GetMyRecentActivity(),
+					new AddChecklistToCard(),
 				);
 
 			// Run the agent

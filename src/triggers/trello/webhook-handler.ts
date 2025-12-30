@@ -7,7 +7,13 @@ import type {
 	ProjectConfig,
 	TriggerContext,
 } from '../../types/index.js';
-import { isCurrentlyProcessing, logger, setProcessing } from '../../utils/index.js';
+import {
+	isCurrentlyProcessing,
+	logger,
+	scheduleShutdownAfterJob,
+	setProcessing,
+	startWatchdog,
+} from '../../utils/index.js';
 import type { TriggerRegistry } from '../registry.js';
 import type { TriggerResult } from '../types.js';
 import { isTrelloWebhookPayload } from '../types.js';
@@ -78,8 +84,12 @@ export async function processTrelloWebhook(
 	config: CascadeConfig,
 	registry: TriggerRegistry,
 ): Promise<void> {
+	logger.info('Processing Trello webhook');
+
 	if (!isTrelloWebhookPayload(payload)) {
-		logger.warn('Invalid Trello webhook payload');
+		logger.warn('Invalid Trello webhook payload', {
+			payload: JSON.stringify(payload).slice(0, 200),
+		});
 		return;
 	}
 
@@ -89,10 +99,13 @@ export async function processTrelloWebhook(
 	}
 
 	const boardId = payload.model.id;
+	const actionType = payload.action?.type;
+	logger.info('Webhook details', { boardId, actionType });
+
 	const project = findProjectByBoardId(config, boardId);
 
 	if (!project) {
-		logger.debug('No project configured for board', { boardId });
+		logger.warn('No project configured for board', { boardId });
 		return;
 	}
 
@@ -100,11 +113,18 @@ export async function processTrelloWebhook(
 	const result = await registry.dispatch(ctx);
 
 	if (!result) {
-		logger.debug('No trigger matched for webhook');
+		logger.info('No trigger matched for webhook', { actionType });
 		return;
 	}
 
+	logger.info('Trigger matched', { agentType: result.agentType, cardId: result.cardId });
+
 	setProcessing(true);
+
+	// Start watchdog - force kill if job takes too long (Fly.io only)
+	if (process.env.FLY_APP_NAME) {
+		startWatchdog(config.defaults.watchdogTimeoutMs);
+	}
 
 	try {
 		const { cardId } = result;
@@ -142,6 +162,11 @@ export async function processTrelloWebhook(
 			await safeAddComment(result.cardId, `❌ Error: ${String(err)}`);
 		}
 	} finally {
-		setProcessing(false, config.defaults.selfDestructTimeoutMs);
+		setProcessing(false);
+
+		// On Fly.io, exit shortly after job completion
+		if (process.env.FLY_APP_NAME) {
+			scheduleShutdownAfterJob(config.defaults.postJobGracePeriodMs);
+		}
 	}
 }

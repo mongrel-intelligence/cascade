@@ -25,6 +25,8 @@ async function main(): Promise<void> {
 				model: 'gemini:gemini-2.5-flash',
 				maxIterations: 50,
 				selfDestructTimeoutMs: 30 * 60 * 1000,
+				watchdogTimeoutMs: 30 * 60 * 1000,
+				postJobGracePeriodMs: 5000,
 			},
 			projects: [],
 		};

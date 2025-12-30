@@ -1,5 +1,13 @@
 // Trello gadgets
-export { ReadTrelloCard, PostTrelloComment, UpdateTrelloCard } from './trello/index.js';
+export {
+	ReadTrelloCard,
+	PostTrelloComment,
+	UpdateTrelloCard,
+	CreateTrelloCard,
+	ListTrelloCards,
+	GetMyRecentActivity,
+	AddChecklistToCard,
+} from './trello/index.js';
 
 // Git gadgets (keeping old exports for now, will convert later)
 export {

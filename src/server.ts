@@ -39,7 +39,10 @@ export function createServer(deps: ServerDependencies): Hono {
 			// Process asynchronously - respond immediately
 			setImmediate(() => {
 				deps.onTrelloWebhook(payload).catch((err) => {
-					logger.error('Error processing Trello webhook', { error: String(err) });
+					logger.error('Error processing Trello webhook', {
+						error: String(err),
+						stack: err instanceof Error ? err.stack : undefined,
+					});
 				});
 			});
 

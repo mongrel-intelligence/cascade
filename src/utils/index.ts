@@ -5,5 +5,8 @@ export {
 	setProcessing,
 	isCurrentlyProcessing,
 	cancelSelfDestruct,
+	startWatchdog,
+	clearWatchdog,
+	scheduleShutdownAfterJob,
 } from './lifecycle.js';
 export { createTempDir, cloneRepo, cleanupTempDir, runCommand } from './repo.js';

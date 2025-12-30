@@ -37,8 +37,8 @@ describe('system prompts content', () => {
 	it('briefing prompt includes key instructions', () => {
 		expect(BRIEFING_SYSTEM_PROMPT).toContain('ReadTrelloCard');
 		expect(BRIEFING_SYSTEM_PROMPT).toContain('UpdateTrelloCard');
-		expect(BRIEFING_SYSTEM_PROMPT).toContain('PostTrelloComment');
-		expect(BRIEFING_SYSTEM_PROMPT).toContain('First Draft Over Questions');
+		expect(BRIEFING_SYSTEM_PROMPT).toContain('CreateTrelloCard');
+		expect(BRIEFING_SYSTEM_PROMPT).toContain('INVEST');
 	});
 
 	it('planning prompt includes key instructions', () => {

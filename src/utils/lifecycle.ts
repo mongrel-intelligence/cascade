@@ -1,6 +1,7 @@
 import { logger } from './logging.js';
 
 let selfDestructTimer: ReturnType<typeof setTimeout> | null = null;
+let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
 let isProcessing = false;
 let shutdownRequested = false;
 
@@ -49,4 +50,39 @@ export function cancelSelfDestruct(): void {
 		selfDestructTimer = null;
 	}
 	shutdownRequested = false;
+}
+
+// Watchdog timer - force kills if job exceeds maximum duration
+export function startWatchdog(timeoutMs: number): void {
+	clearWatchdog();
+
+	logger.info('Watchdog started', { timeoutMs });
+
+	watchdogTimer = setTimeout(() => {
+		logger.error('Watchdog timeout! Job exceeded maximum duration, force exiting');
+		process.exit(1);
+	}, timeoutMs);
+}
+
+export function clearWatchdog(): void {
+	if (watchdogTimer) {
+		clearTimeout(watchdogTimer);
+		watchdogTimer = null;
+	}
+}
+
+// Schedule shutdown shortly after job completion
+export function scheduleShutdownAfterJob(gracePeriodMs = 5000): void {
+	clearWatchdog();
+
+	if (selfDestructTimer) {
+		clearTimeout(selfDestructTimer);
+	}
+
+	logger.info('Job complete, scheduling shutdown', { gracePeriodMs });
+
+	selfDestructTimer = setTimeout(() => {
+		logger.info('Grace period complete, shutting down');
+		process.exit(0);
+	}, gracePeriodMs);
 }
