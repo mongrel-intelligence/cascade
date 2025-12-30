@@ -12,7 +12,7 @@
 			"baseBranch": "dev",
 			"branchPrefix": "feature/",
 			"trello": {
-				"boardId": "0lglFfUm",
+				"boardId": "694ec393370da080b52eb64c",
 				"lists": {
 					"briefing": "694fc5e57256ac0717c3dfea",
 					"planning": "694ec39e91e3487c1351a491",
