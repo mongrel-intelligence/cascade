@@ -65,6 +65,12 @@ export interface TrelloChecklist {
 	checkItems: TrelloCheckItem[];
 }
 
+export interface CustomFieldItem {
+	id: string;
+	idCustomField: string;
+	value?: { number?: string; text?: string; checked?: string };
+}
+
 export const trelloClient = {
 	async getCard(cardId: string): Promise<TrelloCard> {
 		logger.debug('Fetching Trello card', { cardId });
@@ -154,6 +160,21 @@ export const trelloClient = {
 			id: cardId,
 			url,
 			name,
+		});
+	},
+
+	async addAttachmentFile(
+		cardId: string,
+		fileBuffer: Buffer,
+		name: string,
+		mimeType = 'application/gzip',
+	): Promise<void> {
+		logger.debug('Adding file attachment', { cardId, name, size: fileBuffer.length });
+		await getClient().cards.createCardAttachment({
+			id: cardId,
+			file: fileBuffer,
+			name,
+			mimeType,
 		});
 	},
 
@@ -309,6 +330,49 @@ export const trelloClient = {
 				state: item.state === 'complete' ? 'complete' : ('incomplete' as const),
 			})),
 		}));
+	},
+
+	async getCardCustomFieldItems(cardId: string): Promise<CustomFieldItem[]> {
+		logger.debug('Fetching card custom field items', { cardId });
+		const apiKey = process.env.TRELLO_API_KEY;
+		const token = process.env.TRELLO_TOKEN;
+		const response = await fetch(
+			`https://api.trello.com/1/cards/${cardId}/customFieldItems?key=${apiKey}&token=${token}`,
+		);
+		if (!response.ok) {
+			throw new Error(`Failed to get custom fields: ${response.status}`);
+		}
+		const items = (await response.json()) as Array<{
+			id?: string;
+			idCustomField?: string;
+			value?: { number?: string; text?: string; checked?: string };
+		}>;
+		return items.map((item) => ({
+			id: item.id || '',
+			idCustomField: item.idCustomField || '',
+			value: item.value,
+		}));
+	},
+
+	async updateCardCustomFieldNumber(
+		cardId: string,
+		customFieldId: string,
+		value: number,
+	): Promise<void> {
+		logger.debug('Updating card custom field', { cardId, customFieldId, value });
+		const apiKey = process.env.TRELLO_API_KEY;
+		const token = process.env.TRELLO_TOKEN;
+		const response = await fetch(
+			`https://api.trello.com/1/cards/${cardId}/customField/${customFieldId}/item?key=${apiKey}&token=${token}`,
+			{
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ value: { number: value.toString() } }),
+			},
+		);
+		if (!response.ok) {
+			throw new Error(`Failed to update custom field: ${response.status}`);
+		}
 	},
 };
 

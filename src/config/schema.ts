@@ -20,6 +20,11 @@ export const ProjectConfigSchema = z.object({
 		boardId: z.string().min(1),
 		lists: z.record(z.string()),
 		labels: z.record(z.string()),
+		customFields: z
+			.object({
+				cost: z.string().optional(),
+			})
+			.optional(),
 	}),
 
 	triggers: z.array(TriggerConfigSchema).optional(),

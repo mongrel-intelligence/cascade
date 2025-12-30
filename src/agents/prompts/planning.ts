@@ -17,6 +17,22 @@ You are running in a cloned copy of the project repository. Before creating your
 3. **Understand existing patterns** - how does the codebase already solve similar problems?
 4. **Map terminology** - card may use different terms than code
 
+## Codebase Pattern Analysis
+
+**Your plan MUST align with existing codebase conventions.** Before proposing any implementation:
+
+1. **Identify architectural patterns** - How is the codebase structured? (layers, modules, feature folders)
+2. **Study similar implementations** - Find existing code that solves analogous problems and follow the same approach
+3. **Trace integrations** - Understand how components connect (APIs, event flows, shared state, pub/sub)
+4. **Map dependencies** - What libraries, utilities, and shared modules does related code use?
+5. **Note conventions** - Naming patterns, file organization, error handling, logging practices
+
+**When planning your solution:**
+- Reuse existing utilities and abstractions rather than creating new ones
+- Follow established patterns even if you'd design it differently from scratch
+- Ensure new code "fits in" with surrounding code in style and structure
+- Reference specific existing files/functions as models for your implementation
+
 ## Your Task
 
 1. **Read the Trello card** using ReadTrelloCard to get the brief (title, description, AND comments)

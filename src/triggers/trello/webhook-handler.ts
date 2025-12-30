@@ -100,6 +100,37 @@ async function executeAgent(
 		config,
 	});
 
+	// Upload zipped log file to card (if available)
+	if (cardId && agentResult.logBuffer) {
+		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+		const logName = `${result.agentType}-${timestamp}.log.gz`;
+		try {
+			await trelloClient.addAttachmentFile(cardId, agentResult.logBuffer, logName);
+			logger.info('Uploaded agent log to card', { cardId, logName });
+		} catch (err) {
+			logger.warn('Failed to upload agent log', { error: String(err) });
+		}
+	}
+
+	// Update cost custom field (accumulate with existing)
+	const costFieldId = project.trello.customFields?.cost;
+	if (cardId && costFieldId && agentResult.cost !== undefined && agentResult.cost > 0) {
+		try {
+			const items = await trelloClient.getCardCustomFieldItems(cardId);
+			const currentItem = items.find((i) => i.idCustomField === costFieldId);
+			const currentCost = Number.parseFloat(currentItem?.value?.number ?? '0');
+			const newTotal = currentCost + agentResult.cost;
+			await trelloClient.updateCardCustomFieldNumber(cardId, costFieldId, newTotal);
+			logger.info('Updated card cost', {
+				cardId,
+				sessionCost: agentResult.cost,
+				totalCost: newTotal,
+			});
+		} catch (err) {
+			logger.warn('Failed to update cost field', { error: String(err) });
+		}
+	}
+
 	if (cardId) {
 		await safeRemoveLabel(cardId, project.trello.labels.processing);
 

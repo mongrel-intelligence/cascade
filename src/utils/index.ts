@@ -17,3 +17,4 @@ export {
 	clearQueue,
 	getMaxQueueSize,
 } from './webhookQueue.js';
+export { createFileLogger, cleanupLogFile, type FileLogger } from './fileLogger.js';

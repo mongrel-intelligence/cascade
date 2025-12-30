@@ -11,6 +11,7 @@ import {
 	UpdateTrelloCard,
 } from '../gadgets/trello/index.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
+import { type FileLogger, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
 import { logger } from '../utils/logging.js';
 import {
 	cleanupTempDir,
@@ -108,13 +109,37 @@ export async function executeAgent(
 	}
 
 	let repoDir: string | null = null;
+	let fileLogger: FileLogger | null = null;
+
+	// Create file logger for this agent run
+	fileLogger = createFileLogger(`cascade-${agentType}-${cardId}`);
+
+	// Helper to log to both console and file
+	const log = {
+		debug: (msg: string, ctx?: Record<string, unknown>) => {
+			logger.debug(msg, ctx);
+			fileLogger?.write('DEBUG', msg, ctx);
+		},
+		info: (msg: string, ctx?: Record<string, unknown>) => {
+			logger.info(msg, ctx);
+			fileLogger?.write('INFO', msg, ctx);
+		},
+		warn: (msg: string, ctx?: Record<string, unknown>) => {
+			logger.warn(msg, ctx);
+			fileLogger?.write('WARN', msg, ctx);
+		},
+		error: (msg: string, ctx?: Record<string, unknown>) => {
+			logger.error(msg, ctx);
+			fileLogger?.write('ERROR', msg, ctx);
+		},
+	};
 
 	try {
 		// Clone repo to temp directory
 		repoDir = createTempDir(project.id);
 		cloneRepo(project, repoDir);
 
-		logger.info('Running agent', { agentType, cardId, repoDir });
+		log.info('Running agent', { agentType, cardId, repoDir });
 
 		// Get system prompt and model
 		const systemPrompt = project.prompts?.[agentType] || getSystemPrompt(agentType);
@@ -156,7 +181,7 @@ ${directoryListing}
 		const originalCwd = process.cwd();
 		process.chdir(repoDir);
 
-		logger.info('Starting llmist agent', { model, maxIterations, promptLength: prompt.length });
+		log.info('Starting llmist agent', { model, maxIterations, promptLength: prompt.length });
 
 		try {
 			// Create llmist client and logger
@@ -205,21 +230,30 @@ ${directoryListing}
 
 			for await (const event of agent.run()) {
 				if (event.type === 'text') {
-					logger.debug('[Text]', { content: event.content.slice(0, 100) });
+					log.debug('[Text]', { content: event.content.slice(0, 100) });
 					outputLines.push(event.content);
 				} else if (event.type === 'gadget_call') {
 					iterationCount++;
-					logger.debug('[Gadget call]', { iteration: iterationCount });
+					log.debug('[Gadget call]', { iteration: iterationCount });
 				} else if (event.type === 'stream_complete') {
-					logger.info('Stream complete', { iteration: iterationCount });
+					log.info('Stream complete', { iteration: iterationCount });
 				}
 			}
 
-			logger.info('Agent completed', { cardId, iterations: iterationCount });
+			// Get cost from llmist execution tree
+			const sessionCost = agent.getTree()?.getTotalCost() ?? 0;
+
+			log.info('Agent completed', { cardId, iterations: iterationCount, cost: sessionCost });
+
+			// Get zipped log buffer before returning
+			fileLogger.close();
+			const logBuffer = fileLogger.getZippedBuffer();
 
 			return {
 				success: true,
 				output: outputLines.join('\n'),
+				logBuffer,
+				cost: sessionCost,
 			};
 		} finally {
 			// Restore original working directory
@@ -227,10 +261,23 @@ ${directoryListing}
 		}
 	} catch (err) {
 		logger.error('Agent execution failed', { agentType, error: String(err) });
+
+		// Get zipped log buffer before returning (if logger exists)
+		let logBuffer: Buffer | undefined;
+		if (fileLogger) {
+			try {
+				fileLogger.close();
+				logBuffer = fileLogger.getZippedBuffer();
+			} catch {
+				// Ignore log buffer errors
+			}
+		}
+
 		return {
 			success: false,
 			output: '',
 			error: String(err),
+			logBuffer,
 		};
 	} finally {
 		// Cleanup temp directory
@@ -240,6 +287,10 @@ ${directoryListing}
 			} catch (err) {
 				logger.warn('Failed to cleanup temp directory', { repoDir, error: String(err) });
 			}
+		}
+		// Cleanup log file (buffer already extracted)
+		if (fileLogger) {
+			cleanupLogFile(fileLogger.logPath);
 		}
 	}
 }

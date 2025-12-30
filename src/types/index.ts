@@ -16,6 +16,8 @@ export interface AgentResult {
 	output: string;
 	prUrl?: string;
 	error?: string;
+	logBuffer?: Buffer;
+	cost?: number;
 }
 
 export type TriggerSource = 'trello' | 'github' | 'manual';
