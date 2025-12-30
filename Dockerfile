@@ -1,4 +1,17 @@
-FROM node:22-slim AS base
+FROM node:22-slim AS builder
+WORKDIR /app
+
+# Install dependencies (including dev for build)
+COPY package*.json ./
+RUN npm ci --ignore-scripts
+
+# Build
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build
+
+# Production image
+FROM node:22-slim AS production
 WORKDIR /app
 
 # Install system dependencies
@@ -17,7 +30,7 @@ RUN apt-get update && apt-get install -y \
 # Install ast-grep
 RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "amd64" ]; then AST_ARCH="x86_64"; else AST_ARCH="aarch64"; fi && \
-    curl -L "https://github.com/ast-grep/ast-grep/releases/latest/download/ast-grep-${AST_ARCH}-unknown-linux-gnu.zip" -o /tmp/ast-grep.zip && \
+    curl -L "https://github.com/ast-grep/ast-grep/releases/download/0.40.3/app-${AST_ARCH}-unknown-linux-gnu.zip" -o /tmp/ast-grep.zip && \
     unzip /tmp/ast-grep.zip -d /usr/local/bin && \
     rm /tmp/ast-grep.zip && \
     chmod +x /usr/local/bin/sg
@@ -32,14 +45,12 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies
+# Install production dependencies only
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --ignore-scripts
 
-# Build
-COPY tsconfig.json ./
-COPY src ./src
-RUN npm run build
+# Copy built code from builder
+COPY --from=builder /app/dist ./dist
 
 # Copy config
 COPY config ./config
