@@ -1,0 +1,50 @@
+{
+	"name": "cascade",
+	"version": "1.0.0",
+	"description": "Trello-to-Code Automation Platform - Reacts to Trello card movements and collaborates like a dev team",
+	"type": "module",
+	"main": "dist/index.js",
+	"scripts": {
+		"dev": "tsx watch src/index.ts",
+		"build": "tsc",
+		"start": "node dist/index.js",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"test:coverage": "vitest run --coverage",
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"typecheck": "tsc --noEmit",
+		"prepare": "lefthook install"
+	},
+	"keywords": [
+		"trello",
+		"automation",
+		"ai",
+		"llm",
+		"agents"
+	],
+	"author": "Zbigniew Sobiecki",
+	"license": "MIT",
+	"dependencies": {
+		"@hono/node-server": "^1.13.7",
+		"@llmist/cli": "^12.0.0",
+		"dhalsim": "latest",
+		"hono": "^4.6.14",
+		"llmist": "^12.0.2",
+		"trello.js": "^1.2.8",
+		"zangief": "latest",
+		"zod": "^3.24.1"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^1.9.4",
+		"@types/node": "^22.10.2",
+		"@vitest/coverage-v8": "^2.1.8",
+		"lefthook": "^1.10.10",
+		"tsx": "^4.19.2",
+		"typescript": "^5.7.2",
+		"vitest": "^2.1.8"
+	},
+	"engines": {
+		"node": ">=22.0.0"
+	}
+}

@@ -1,0 +1,32 @@
+{
+	"defaults": {
+		"model": "gemini:gemini-2.5-flash",
+		"maxIterations": 50,
+		"selfDestructTimeoutMs": 1800000
+	},
+	"projects": [
+		{
+			"id": "cascade",
+			"name": "Cascade",
+			"repo": "zbigniewsobiecki/cascade",
+			"baseBranch": "main",
+			"branchPrefix": "feature/",
+			"trello": {
+				"boardId": "YOUR_BOARD_ID",
+				"lists": {
+					"briefing": "YOUR_BRIEFING_LIST_ID",
+					"planning": "YOUR_PLANNING_LIST_ID",
+					"todo": "YOUR_TODO_LIST_ID",
+					"inProgress": "YOUR_IN_PROGRESS_LIST_ID",
+					"inReview": "YOUR_IN_REVIEW_LIST_ID"
+				},
+				"labels": {
+					"readyToProcess": "YOUR_READY_LABEL_ID",
+					"processing": "YOUR_PROCESSING_LABEL_ID",
+					"processed": "YOUR_PROCESSED_LABEL_ID",
+					"error": "YOUR_ERROR_LABEL_ID"
+				}
+			}
+		}
+	]
+}
