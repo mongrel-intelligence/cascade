@@ -25,8 +25,8 @@ export function createServer(deps: ServerDependencies): Hono {
 		});
 	});
 
-	// Trello webhook - HEAD for verification
-	app.on(['HEAD'], '/trello/webhook', (c) => {
+	// Trello webhook - GET/HEAD for verification (Trello sends HEAD to verify)
+	app.get('/trello/webhook', (c) => {
 		return c.text('OK', 200);
 	});
 
@@ -50,8 +50,8 @@ export function createServer(deps: ServerDependencies): Hono {
 		}
 	});
 
-	// Future: GitHub webhook
-	app.on(['HEAD'], '/github/webhook', (c) => {
+	// Future: GitHub webhook - GET/HEAD for verification
+	app.get('/github/webhook', (c) => {
 		return c.text('OK', 200);
 	});
 
