@@ -1,4 +1,4 @@
-import { listDirectory, readFile, runCommand } from '@llmist/cli/gadgets';
+import { listDirectory, readFile, runCommand, writeFile } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
 import {
@@ -173,6 +173,7 @@ ${directoryListing}
 					// Filesystem gadgets from @llmist/cli (sandboxed to process.cwd())
 					listDirectory,
 					readFile,
+					writeFile,
 					runCommand,
 					// Trello gadgets
 					new ReadTrelloCard(),
