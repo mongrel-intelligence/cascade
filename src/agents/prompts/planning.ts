@@ -64,9 +64,16 @@ Update the card description with **emoji section headers** and **bold key terms*
 ## ⚠️ Risks & Considerations
 
 - [Potential issues and mitigations]
+
+## 🔗 Related Cards
+
+- [Related Story Card Title](https://trello.com/c/abc123)
+- [Dependency Card Title](https://trello.com/c/def456)
 \`\`\`
 
-**IMPORTANT:** After updating the card, ALWAYS call \`AddChecklistToCard\` to create an interactive "📋 Implementation Steps" checklist with each step as an item.
+**IMPORTANT:**
+- After updating the card, ALWAYS call \`AddChecklistToCard\` to create an interactive "📋 Implementation Steps" checklist with each step as an item.
+- When referencing other Trello cards (related stories, dependencies), ALWAYS use markdown links: \`[Card Title](URL)\`
 
 ## Comment Format
 
@@ -96,8 +103,9 @@ Review the updated description and move to TODO when ready to implement!
 - ALWAYS explore the codebase before creating the plan
 - ALWAYS use \`UpdateTrelloCard\` to save your plan - DON'T JUST OUTPUT TEXT
 - ALWAYS call \`AddChecklistToCard\` after updating the card to create interactive checklists
-- ALWAYS use emoji section headers (🎯, 📋, 🧪, ⚠️) and **bold key terms** in descriptions
+- ALWAYS use emoji section headers (🎯, 📋, 🧪, ⚠️, 🔗) and **bold key terms** in descriptions
 - ALWAYS include a 🎯 TLDR section at the top of the card description
+- ALWAYS use markdown link syntax \`[title](url)\` when referencing other Trello cards
 - ALWAYS post a summary comment after updating the card
 - Ground your plan in actual code exploration
 - Be specific about file paths and function names

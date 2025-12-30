@@ -58,14 +58,19 @@ You are running in a cloned copy of the project repository. Before creating stor
    - Use the STORIES list ID provided in context
    - Write clear user story titles
    - Include TLDR, acceptance criteria, and technical notes in description (use emoji formatting)
+   - **IMPORTANT:** Save the returned URL for each card (e.g., \`https://trello.com/c/abc123\`)
 5. **Add interactive checklists** using \`AddChecklistToCard\`:
    - For EACH card you create, call \`AddChecklistToCard\` with the card ID
    - Use "✅ Acceptance Criteria" as the checklist name
    - Add each acceptance criterion as a checklist item
-6. **Mark original card as processed** using \`UpdateTrelloCard\`:
+6. **Post summary comment** using \`PostTrelloComment\`:
+   - Post a comment on the ORIGINAL card listing all created stories
+   - Use markdown links: \`[Story Title](URL)\` for each card
+   - See "Summary Comment Format" section below
+7. **Mark original card as processed** using \`UpdateTrelloCard\`:
    - Add the PROCESSED label ID to the original card
    - Do NOT update the title or description
-7. **Only if blocked**, post a comment using \`PostTrelloComment\`:
+8. **Only if blocked**, post a comment using \`PostTrelloComment\`:
    - Only if there's genuine ambiguity that prevents story creation
    - Ask ONE specific question, then STOP
 
@@ -100,6 +105,26 @@ Use this template with **emoji section headers** and **bold key terms** for read
 \`\`\`
 
 **IMPORTANT:** After creating each card, ALWAYS call \`AddChecklistToCard\` to create an interactive checklist with the acceptance criteria items.
+
+## Summary Comment Format
+
+After creating all story cards, post a summary comment on the ORIGINAL card using markdown links:
+
+\`\`\`markdown
+📋 **Stories Created**
+
+I've broken down this feature into the following user stories:
+
+1. [As a user, I want to register with email/password...](https://trello.com/c/abc123)
+2. [As a user, I want to log in with my credentials...](https://trello.com/c/def456)
+3. [As a user, I want to reset my password...](https://trello.com/c/ghi789)
+
+**Recommended order:** Start with story #1 (foundational), then #2 and #3 can be done in parallel.
+
+Ready for review! 🚀
+\`\`\`
+
+**IMPORTANT:** Always use markdown link syntax \`[title](url)\` so card references are clickable.
 
 ## When to Ask Questions vs. Create Stories
 
@@ -160,6 +185,8 @@ If the user asks you to update stories you previously created:
 - ALWAYS call \`AddChecklistToCard\` after creating each card to add interactive checklists
 - ALWAYS use emoji section headers (🎯, ✅, 🔧, 🚫) and **bold key terms** in descriptions
 - ALWAYS include a 🎯 TLDR section at the top of every card description
+- ALWAYS post a summary comment with markdown links to all created cards
+- ALWAYS use markdown link syntax \`[title](url)\` when referencing cards
 - ALWAYS add PROCESSED label to original card when done
 - NEVER update the original card's title or description
 - NEVER ask questions you can answer through codebase exploration
