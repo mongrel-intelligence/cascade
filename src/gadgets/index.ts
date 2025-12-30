@@ -1,14 +1,7 @@
 // Trello gadgets
-export {
-	ReadTrelloCardGadget,
-	ReadTrelloCardSchema,
-	PostTrelloCommentGadget,
-	PostTrelloCommentSchema,
-	UpdateTrelloCardGadget,
-	UpdateTrelloCardSchema,
-} from './trello/index.js';
+export { ReadTrelloCard, PostTrelloComment, UpdateTrelloCard } from './trello/index.js';
 
-// Git gadgets
+// Git gadgets (keeping old exports for now, will convert later)
 export {
 	GitBranchGadget,
 	GitBranchSchema,
