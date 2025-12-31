@@ -50,6 +50,11 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
+# Pre-fetch camoufox browser binaries to speed up npm install for repos that use it
+RUN npm install -g camoufox-js \
+    && npx camoufox-js fetch \
+    && npm uninstall -g camoufox-js
+
 # Install production dependencies only
 COPY package*.json ./
 RUN npm ci --omit=dev --ignore-scripts
