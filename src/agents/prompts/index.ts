@@ -1,18 +1,54 @@
-import { BRIEFING_SYSTEM_PROMPT } from './briefing.js';
-import { IMPLEMENTATION_SYSTEM_PROMPT } from './implementation.js';
-import { PLANNING_SYSTEM_PROMPT } from './planning.js';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Eta } from 'eta';
 
-export { BRIEFING_SYSTEM_PROMPT, PLANNING_SYSTEM_PROMPT, IMPLEMENTATION_SYSTEM_PROMPT };
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const templatesDir = join(__dirname, 'templates');
 
-export function getSystemPrompt(agentType: string): string {
-	switch (agentType) {
-		case 'briefing':
-			return BRIEFING_SYSTEM_PROMPT;
-		case 'planning':
-			return PLANNING_SYSTEM_PROMPT;
-		case 'implementation':
-			return IMPLEMENTATION_SYSTEM_PROMPT;
-		default:
-			throw new Error(`Unknown agent type: ${agentType}`);
-	}
+// Initialize Eta with the templates directory
+const eta = new Eta({ views: templatesDir, autoEscape: false });
+
+// Template context interface
+export interface PromptContext {
+	// Common
+	cardId?: string;
+	projectId?: string;
+
+	// Briefing-specific
+	storiesListId?: string;
+	processedLabelId?: string;
+
+	// Future extensibility
+	[key: string]: unknown;
 }
+
+// Cache for loaded templates
+const templateCache = new Map<string, string>();
+
+function loadTemplate(agentType: string): string {
+	const cached = templateCache.get(agentType);
+	if (cached) {
+		return cached;
+	}
+
+	const templatePath = join(templatesDir, `${agentType}.eta`);
+	const template = readFileSync(templatePath, 'utf-8');
+	templateCache.set(agentType, template);
+	return template;
+}
+
+export function getSystemPrompt(agentType: string, context: PromptContext = {}): string {
+	const validTypes = ['briefing', 'planning', 'implementation'];
+	if (!validTypes.includes(agentType)) {
+		throw new Error(`Unknown agent type: ${agentType}`);
+	}
+
+	const template = loadTemplate(agentType);
+	return eta.renderString(template, context);
+}
+
+// Export individual prompts for backwards compatibility (rendered without context)
+export const BRIEFING_SYSTEM_PROMPT = loadTemplate('briefing');
+export const PLANNING_SYSTEM_PROMPT = loadTemplate('planning');
+export const IMPLEMENTATION_SYSTEM_PROMPT = loadTemplate('implementation');

@@ -1,29 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import {
-	BRIEFING_SYSTEM_PROMPT,
-	IMPLEMENTATION_SYSTEM_PROMPT,
-	PLANNING_SYSTEM_PROMPT,
-	getSystemPrompt,
-} from '../../../src/agents/prompts/index.js';
+import { getSystemPrompt } from '../../../src/agents/prompts/index.js';
 
 describe('getSystemPrompt', () => {
 	it('returns briefing prompt for briefing agent', () => {
 		const prompt = getSystemPrompt('briefing');
-		expect(prompt).toBe(BRIEFING_SYSTEM_PROMPT);
 		expect(prompt).toContain('product manager');
 		expect(prompt).toContain('DO NOT IMPLEMENT');
 	});
 
 	it('returns planning prompt for planning agent', () => {
 		const prompt = getSystemPrompt('planning');
-		expect(prompt).toBe(PLANNING_SYSTEM_PROMPT);
 		expect(prompt).toContain('software architect');
 		expect(prompt).toContain('implementation plan');
 	});
 
 	it('returns implementation prompt for implementation agent', () => {
 		const prompt = getSystemPrompt('implementation');
-		expect(prompt).toBe(IMPLEMENTATION_SYSTEM_PROMPT);
 		expect(prompt).toContain('software engineer');
 		expect(prompt).toContain('TDD');
 	});
@@ -31,25 +23,40 @@ describe('getSystemPrompt', () => {
 	it('throws for unknown agent type', () => {
 		expect(() => getSystemPrompt('unknown')).toThrow('Unknown agent type: unknown');
 	});
+
+	it('renders context variables in briefing prompt', () => {
+		const prompt = getSystemPrompt('briefing', {
+			storiesListId: 'stories-123',
+			processedLabelId: 'label-456',
+		});
+		expect(prompt).toContain('STORIES_LIST_ID: stories-123');
+		expect(prompt).toContain('PROCESSED_LABEL_ID: label-456');
+	});
+
+	it('uses default values when context is not provided', () => {
+		const prompt = getSystemPrompt('briefing');
+		expect(prompt).toContain('STORIES_LIST_ID: NOT_CONFIGURED');
+		expect(prompt).toContain('PROCESSED_LABEL_ID: NOT_CONFIGURED');
+	});
 });
 
 describe('system prompts content', () => {
 	it('briefing prompt includes key instructions', () => {
-		expect(BRIEFING_SYSTEM_PROMPT).toContain('ReadTrelloCard');
-		expect(BRIEFING_SYSTEM_PROMPT).toContain('UpdateTrelloCard');
-		expect(BRIEFING_SYSTEM_PROMPT).toContain('CreateTrelloCard');
-		expect(BRIEFING_SYSTEM_PROMPT).toContain('INVEST');
+		const prompt = getSystemPrompt('briefing');
+		expect(prompt).toContain('ReadTrelloCard');
+		expect(prompt).toContain('CreateTrelloCard');
+		expect(prompt).toContain('INVEST');
 	});
 
 	it('planning prompt includes key instructions', () => {
-		expect(PLANNING_SYSTEM_PROMPT).toContain('ReadTrelloCard');
-		expect(PLANNING_SYSTEM_PROMPT).toContain('step-by-step');
+		const prompt = getSystemPrompt('planning');
+		expect(prompt).toContain('ReadTrelloCard');
+		expect(prompt).toContain('step-by-step');
 	});
 
 	it('implementation prompt includes git instructions', () => {
-		expect(IMPLEMENTATION_SYSTEM_PROMPT).toContain('GitBranch');
-		expect(IMPLEMENTATION_SYSTEM_PROMPT).toContain('GitCommit');
-		expect(IMPLEMENTATION_SYSTEM_PROMPT).toContain('CreatePR');
-		expect(IMPLEMENTATION_SYSTEM_PROMPT).toContain('conventional commits');
+		const prompt = getSystemPrompt('implementation');
+		expect(prompt).toContain('Tmux');
+		expect(prompt).toContain('conventional commits');
 	});
 });

@@ -24,7 +24,7 @@ import {
 	createTempDir,
 	runCommand as execCommand,
 } from '../utils/repo.js';
-import { getSystemPrompt } from './prompts/index.js';
+import { type PromptContext, getSystemPrompt } from './prompts/index.js';
 
 export interface AgentContext {
 	project: ProjectConfig;
@@ -158,8 +158,16 @@ export async function executeAgent(
 
 		log.info('Running agent', { agentType, cardId, repoDir });
 
+		// Build prompt context for template rendering
+		const promptContext: PromptContext = {
+			cardId,
+			projectId: project.id,
+			storiesListId: project.trello?.lists?.stories,
+			processedLabelId: project.trello?.labels?.processed,
+		};
+
 		// Get system prompt and model
-		const systemPrompt = project.prompts?.[agentType] || getSystemPrompt(agentType);
+		const systemPrompt = project.prompts?.[agentType] || getSystemPrompt(agentType, promptContext);
 		const model = project.agentModels?.[agentType] || project.model || config.defaults.model;
 		const maxIterations = config.defaults.maxIterations;
 
@@ -182,21 +190,7 @@ ${directoryListing}
 `
 			: '';
 
-		// Build agent-specific context
-		let agentContext = '';
-		if (agentType === 'briefing') {
-			const storiesListId = project.trello?.lists?.stories;
-			const processedLabelId = project.trello?.labels?.processed;
-			agentContext = `
-## Context Variables
-
-- STORIES_LIST_ID: ${storiesListId || 'NOT_CONFIGURED'}
-- PROCESSED_LABEL_ID: ${processedLabelId || 'NOT_CONFIGURED'}
-
-`;
-		}
-
-		const prompt = `${directorySection}${agentContext}Analyze and process the Trello card with ID: ${cardId}. The card data (title, description, checklists, attachments, comments) has been pre-loaded above. Review it and proceed with your task.`;
+		const prompt = `${directorySection}Analyze and process the Trello card with ID: ${cardId}. The card data (title, description, checklists, attachments, comments) has been pre-loaded above. Review it and proceed with your task.`;
 
 		// Change to repo directory (llmist gadgets use process.cwd() for path validation)
 		const originalCwd = process.cwd();
