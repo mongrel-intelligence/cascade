@@ -30,6 +30,7 @@ export const ProjectConfigSchema = z.object({
 	triggers: z.array(TriggerConfigSchema).optional(),
 	prompts: z.record(z.string()).optional(),
 	model: z.string().optional(),
+	agentModels: z.record(z.string()).optional(),
 });
 
 export const CascadeConfigSchema = z.object({

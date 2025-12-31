@@ -158,7 +158,7 @@ export async function executeAgent(
 
 		// Get system prompt and model
 		const systemPrompt = project.prompts?.[agentType] || getSystemPrompt(agentType);
-		const model = project.model || config.defaults.model;
+		const model = project.agentModels?.[agentType] || project.model || config.defaults.model;
 		const maxIterations = config.defaults.maxIterations;
 
 		// Read context files (CLAUDE.md, AGENTS.md) for synthetic gadget calls

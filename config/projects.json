@@ -30,6 +30,9 @@
 				"customFields": {
 					"cost": "695443ed683031e20d140ba4"
 				}
+			},
+			"agentModels": {
+				"implementation": "gemini:gemini-2.5-pro"
 			}
 		}
 	]
