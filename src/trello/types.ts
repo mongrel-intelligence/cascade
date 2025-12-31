@@ -1,1 +1,1 @@
-export type { TrelloCard, TrelloComment } from './client.js';
+export type { TrelloCard, TrelloComment, TrelloAttachment } from './client.js';

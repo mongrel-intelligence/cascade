@@ -72,6 +72,7 @@ Lefthook runs pre-commit (lint, typecheck) and pre-push (test) hooks automatical
 - `src/gadgets/` - Custom gadgets (Trello, Git)
 - `src/trello/` - Trello API client
 - `src/utils/` - Utilities (logging, repo cloning, lifecycle)
+- `tools/` - Developer scripts (session debugging)
 
 ## Environment Variables
 
@@ -96,3 +97,15 @@ Optional:
 1. Create agent in `src/agents/`
 2. Define system prompt in `src/agents/prompts/`
 3. Register in agent registry
+
+## Debugging Production Sessions
+
+Download session logs and card data from a Trello card for debugging:
+
+```bash
+npm run tool:download-session https://trello.com/c/abc123/card-name
+# or just the card ID
+npm run tool:download-session abc123
+```
+
+This downloads all `.gz` log attachments (ungzipped), plus card description, checklists, and comments into a temp directory.

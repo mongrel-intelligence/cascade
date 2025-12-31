@@ -14,7 +14,8 @@
 		"lint": "biome check .",
 		"lint:fix": "biome check --write .",
 		"typecheck": "tsc --noEmit",
-		"prepare": "lefthook install"
+		"prepare": "lefthook install",
+		"tool:download-session": "node --env-file=.env --import tsx tools/download-session.ts"
 	},
 	"keywords": [
 		"trello",

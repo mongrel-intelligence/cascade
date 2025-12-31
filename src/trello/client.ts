@@ -71,6 +71,15 @@ export interface CustomFieldItem {
 	value?: { number?: string; text?: string; checked?: string };
 }
 
+export interface TrelloAttachment {
+	id: string;
+	name: string;
+	url: string;
+	mimeType: string;
+	bytes: number;
+	date: string;
+}
+
 export const trelloClient = {
 	async getCard(cardId: string): Promise<TrelloCard> {
 		logger.debug('Fetching Trello card', { cardId });
@@ -351,6 +360,34 @@ export const trelloClient = {
 			id: item.id || '',
 			idCustomField: item.idCustomField || '',
 			value: item.value,
+		}));
+	},
+
+	async getCardAttachments(cardId: string): Promise<TrelloAttachment[]> {
+		logger.debug('Fetching card attachments', { cardId });
+		const apiKey = process.env.TRELLO_API_KEY;
+		const token = process.env.TRELLO_TOKEN;
+		const response = await fetch(
+			`https://api.trello.com/1/cards/${cardId}/attachments?key=${apiKey}&token=${token}`,
+		);
+		if (!response.ok) {
+			throw new Error(`Failed to get attachments: ${response.status}`);
+		}
+		const attachments = (await response.json()) as Array<{
+			id?: string;
+			name?: string;
+			url?: string;
+			mimeType?: string;
+			bytes?: number;
+			date?: string;
+		}>;
+		return attachments.map((a) => ({
+			id: a.id || '',
+			name: a.name || '',
+			url: a.url || '',
+			mimeType: a.mimeType || '',
+			bytes: a.bytes || 0,
+			date: a.date || '',
 		}));
 	},
 
