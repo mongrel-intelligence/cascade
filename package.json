@@ -42,11 +42,11 @@
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.4",
 		"@types/node": "^22.10.2",
-		"@vitest/coverage-v8": "^2.1.8",
+		"@vitest/coverage-v8": "^4.0.16",
 		"lefthook": "^1.10.10",
 		"tsx": "^4.19.2",
 		"typescript": "^5.7.2",
-		"vitest": "^2.1.8"
+		"vitest": "^4.0.16"
 	},
 	"engines": {
 		"node": ">=22.0.0"
