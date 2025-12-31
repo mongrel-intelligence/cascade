@@ -15,7 +15,7 @@ FROM node:22-slim AS production
 WORKDIR /app
 
 # Install system dependencies
-# Added: lsof, procps (for pkill), psutils
+# Added: lsof, procps (for pkill), psutils, tmux (for shell command execution)
 RUN apt-get update && apt-get install -y \
     git \
     curl \
@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y \
     lsof \
     procps \
     psutils \
+    tmux \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s $(which fdfind) /usr/local/bin/fd
 

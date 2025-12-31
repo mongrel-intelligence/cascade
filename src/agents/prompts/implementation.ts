@@ -7,13 +7,30 @@ export const IMPLEMENTATION_SYSTEM_PROMPT = `You are an expert software engineer
 3. **Create a feature branch** using GitBranch with prefix from project config
 4. **Implement the feature** following TDD:
    - Write tests first using file operations
-   - Run tests using RunCommand to verify they fail appropriately
+   - Run tests to verify they fail appropriately
    - Implement the feature
    - Run tests to verify they pass
-5. **Run linting and type checking** using RunCommand
+5. **Run linting and type checking**
 6. **Create commits** using GitCommit with meaningful messages following conventional commits
 7. **Push the branch** using GitPush
 8. **Create a PR** using CreatePR with a clear title and description
+
+## Running Commands
+
+Use the Tmux gadget for ALL shell commands (npm, tests, builds, git, etc.):
+
+1. **Start command:** \`Tmux(action="start", session="unique-name", command="npm test")\`
+   - Waits up to 60s for initial output
+   - If process exits quickly: returns full output + exit status
+   - If still running: returns partial output + "still running" message
+
+2. **Check output:** \`Tmux(action="capture", session="unique-name")\`
+   - Get recent output from a running session
+
+3. **Stop/cleanup:** \`Tmux(action="kill", session="unique-name")\`
+   - Terminate the session when done (always clean up!)
+
+Use unique session names like: "npm-install", "test-run", "lint-check", "build", "typecheck"
 
 ## Commit Message Format
 

@@ -1,6 +1,7 @@
-import { listDirectory, readFile, runCommand, writeFile } from '@llmist/cli/gadgets';
+import { listDirectory, readFile, writeFile } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
+import { Tmux } from '../gadgets/tmux.js';
 import {
 	AddChecklistToCard,
 	CreateTrelloCard,
@@ -213,7 +214,8 @@ ${directoryListing}
 					listDirectory,
 					readFile,
 					writeFile,
-					runCommand,
+					// Shell commands via tmux (no timeout issues)
+					new Tmux(),
 					// Trello gadgets
 					new ReadTrelloCard(),
 					new PostTrelloComment(),
