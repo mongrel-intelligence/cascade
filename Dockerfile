@@ -10,17 +10,13 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-# Production image
-FROM node:22-slim AS production
+# Production image - uses niu-browser-base which has Playwright and Camoufox pre-installed
+FROM zbigniew1/niu-browser-base:latest AS production
 WORKDIR /app
 
-# Install system dependencies
-# Added: lsof, procps (for pkill), psutils, tmux (for shell command execution)
+# Install additional tools not in niu-browser-base
+# (niu-browser-base already has: git, curl, ca-certificates, gnupg, postgresql-client)
 RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    ca-certificates \
-    gnupg \
     fd-find \
     ripgrep \
     ed \
@@ -50,14 +46,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Pre-fetch camoufox browser binaries to speed up npm install for repos that use it
-RUN npm install -g camoufox-js \
-    && npx camoufox-js fetch \
-    && npm uninstall -g camoufox-js
-
-# Pre-install Playwright Chromium for E2E tests
-# Uses --with-deps to install system dependencies (libs, fonts, etc.)
-RUN npx playwright install --with-deps chromium
+# Browsers (Playwright Chromium, Camoufox) are pre-installed in niu-browser-base
 
 # Install production dependencies only
 COPY package*.json ./
