@@ -180,6 +180,8 @@ class TmuxGadget extends Gadget({
 				const shellCommand = params.cwd ? `cd ${params.cwd} && ${params.command}` : params.command;
 
 				// Create new detached session with wider terminal for better output
+				// Use remain-on-exit so the pane stays around after the command exits,
+				// giving us time to capture output before the tmux server shuts down
 				const result = await runTmux([
 					'new-session',
 					'-d', // detached
@@ -189,43 +191,52 @@ class TmuxGadget extends Gadget({
 					'200', // wider terminal
 					'-y',
 					'50',
-					shellCommand,
+					'bash',
+					'-c',
+					// Set remain-on-exit FIRST so it applies when command exits
+					`tmux set-option -t ${params.session} remain-on-exit on 2>/dev/null; ${shellCommand}`,
 				]);
 
 				if (result.exitCode !== 0) {
 					return `session=${params.session} status=error\n\n${result.output || 'Failed to create session'}`;
 				}
 
-				// Wait and poll for output
+				// Wait and poll for output - capture BEFORE checking if session ended
+				// to avoid race condition where server shuts down
 				const waitMs = params.wait ?? DEFAULT_WAIT_MS;
 				let elapsed = 0;
 				let sessionEnded = false;
+				let lastOutput = '';
 
 				while (elapsed < waitMs) {
 					await sleep(POLL_INTERVAL_MS);
 					elapsed += POLL_INTERVAL_MS;
 
-					// Check if session still exists (process exited?)
-					const check = await runTmux(['has-session', '-t', params.session]);
-					if (check.exitCode !== 0) {
+					// Capture output first (while session/server is still guaranteed running)
+					const capture = await runTmux(['capture-pane', '-t', params.session, '-p', '-S', '-200']);
+					if (capture.exitCode === 0) {
+						lastOutput = capture.output;
+					}
+
+					// Check if pane has died (remain-on-exit keeps pane but marks it dead)
+					const check = await runTmux([
+						'display-message',
+						'-t',
+						params.session,
+						'-p',
+						'#{pane_dead}',
+					]);
+					if (check.exitCode !== 0 || check.output.trim() === '1') {
 						sessionEnded = true;
 						break;
 					}
 				}
 
-				// Capture output from scrollback buffer
-				const captureResult = await runTmux([
-					'capture-pane',
-					'-t',
-					params.session,
-					'-p', // print to stdout
-					'-S',
-					'-200', // last 200 lines
-				]);
-
-				const output = captureResult.output.replace(/^\s*\n/, '').replace(/\n\s*$/, '');
+				const output = lastOutput.replace(/^\s*\n/, '').replace(/\n\s*$/, '');
 
 				if (sessionEnded) {
+					// Clean up the dead session
+					await runTmux(['kill-session', '-t', params.session]);
 					return `session=${params.session} status=exited\n\n${output || '(no output)'}`;
 				}
 				return `session=${params.session} status=running\n\n${output || '(no output yet)'}\n\n(Process still running in session '${params.session}'. Use capture to check progress, kill when done.)`;

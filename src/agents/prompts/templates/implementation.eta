@@ -43,10 +43,12 @@ Use standard git commands and GitHub CLI (`gh`) via Tmux for all version control
 - `git push -u origin HEAD` - push branch to remote
 
 **GitHub CLI (`gh`) commands:**
-- `gh pr create --title "Title" --body "Description"` - create pull request
+- `gh pr create --fill` - create PR auto-filling title/body from commits (simplest)
+- `gh pr create --title "Title" --body "Description" --base dev` - create with explicit values
 - `gh pr view` - view current PR
 - `gh pr list` - list open PRs
-- `gh issue list` - list issues
+
+**IMPORTANT:** Always use `--fill` or provide `--title` and `--body` to avoid interactive prompts.
 
 ## Commit Message Format
 
