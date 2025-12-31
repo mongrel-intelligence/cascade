@@ -194,9 +194,9 @@ export async function executeAgent(
 	setWatchdogCleanup(async () => {
 		if (fileLogger) {
 			fileLogger.close();
-			const logBuffer = fileLogger.getZippedBuffer();
+			const logBuffer = await fileLogger.getZippedBuffer();
 			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-			const logName = `${agentType}-timeout-${timestamp}.log.gz`;
+			const logName = `${agentType}-timeout-${timestamp}.zip`;
 			await trelloClient.addAttachmentFile(cardId, logBuffer, logName);
 			logger.info('Uploaded timeout log to card', { cardId, logName });
 		}
@@ -280,6 +280,9 @@ ${directoryListing}
 		log.info('Starting llmist agent', { model, maxIterations, promptLength: prompt.length });
 
 		try {
+			// Configure llmist to write to separate log file for better debugging
+			process.env.LLMIST_LOG_FILE = fileLogger.llmistLogPath;
+
 			// Create llmist client and logger
 			const client = new LLMist();
 			const llmistLogger = createLogger({ minLevel: getLogLevel() });
@@ -358,7 +361,18 @@ ${directoryListing}
 					outputLines.push(event.content);
 				} else if (event.type === 'gadget_call') {
 					iterationCount++;
-					log.debug('[Gadget call]', { iteration: iterationCount });
+					log.info('[Gadget]', {
+						iteration: iterationCount,
+						name: event.call.gadgetName,
+						invocationId: event.call.invocationId,
+					});
+				} else if (event.type === 'gadget_result') {
+					const level = event.result.error ? 'error' : 'info';
+					log[level]('[Gadget result]', {
+						name: event.result.gadgetName,
+						ms: event.result.executionTimeMs,
+						error: event.result.error,
+					});
 				} else if (event.type === 'stream_complete') {
 					log.info('Stream complete', { iteration: iterationCount });
 				}
@@ -371,7 +385,7 @@ ${directoryListing}
 
 			// Get zipped log buffer before returning
 			fileLogger.close();
-			const logBuffer = fileLogger.getZippedBuffer();
+			const logBuffer = await fileLogger.getZippedBuffer();
 
 			return {
 				success: true,
@@ -391,7 +405,7 @@ ${directoryListing}
 		if (fileLogger) {
 			try {
 				fileLogger.close();
-				logBuffer = fileLogger.getZippedBuffer();
+				logBuffer = await fileLogger.getZippedBuffer();
 			} catch {
 				// Ignore log buffer errors
 			}
@@ -415,9 +429,10 @@ ${directoryListing}
 				logger.warn('Failed to cleanup temp directory', { repoDir, error: String(err) });
 			}
 		}
-		// Cleanup log file (buffer already extracted)
+		// Cleanup log files (buffer already extracted)
 		if (fileLogger) {
 			cleanupLogFile(fileLogger.logPath);
+			cleanupLogFile(fileLogger.llmistLogPath);
 		}
 	}
 }

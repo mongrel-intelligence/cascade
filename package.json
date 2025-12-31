@@ -29,6 +29,8 @@
 	"dependencies": {
 		"@hono/node-server": "^1.13.7",
 		"@llmist/cli": "^12.0.0",
+		"@types/archiver": "^7.0.0",
+		"archiver": "^7.0.1",
 		"dhalsim": "latest",
 		"eta": "^4.5.0",
 		"hono": "^4.6.14",
