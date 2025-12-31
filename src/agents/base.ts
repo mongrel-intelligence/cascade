@@ -1,9 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { listDirectory, readFile, writeFile } from '@llmist/cli/gadgets';
+import { listDirectory, writeFile } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
+import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
 import { Tmux } from '../gadgets/tmux.js';
 import {
@@ -294,9 +295,9 @@ ${directoryListing}
 				.withMaxIterations(maxIterations)
 				.withLogger(llmistLogger)
 				.withGadgets(
-					// Filesystem gadgets from @llmist/cli (sandboxed to process.cwd())
+					// Filesystem gadgets
 					listDirectory,
-					readFile,
+					new ReadFile(),
 					writeFile,
 					// Shell commands via tmux (no timeout issues)
 					new Tmux(),

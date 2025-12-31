@@ -31,7 +31,7 @@
 		"@llmist/cli": "^12.0.0",
 		"@types/archiver": "^7.0.0",
 		"archiver": "^7.0.1",
-		"dhalsim": "latest",
+		"dhalsim": "2.1.0",
 		"eta": "^4.5.0",
 		"hono": "^4.6.14",
 		"llmist": "^12.0.2",
