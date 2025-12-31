@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { listDirectory, readFile, writeFile } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
@@ -100,6 +103,74 @@ async function readContextFiles(cwd: string): Promise<ContextFile[]> {
 }
 
 // ============================================================================
+// Dependency Installation
+// ============================================================================
+
+interface DependencyInstallResult {
+	packageManager: string;
+	success: boolean;
+	output: string;
+	error?: string;
+}
+
+async function installDependencies(cwd: string): Promise<DependencyInstallResult | null> {
+	// Check if package.json exists
+	const packageJsonPath = join(cwd, 'package.json');
+	if (!existsSync(packageJsonPath)) {
+		return null; // No package.json, skip
+	}
+
+	// Detect package manager from lockfiles (priority order)
+	const lockfiles = [
+		{ file: 'bun.lockb', pm: 'bun' },
+		{ file: 'pnpm-lock.yaml', pm: 'pnpm' },
+		{ file: 'yarn.lock', pm: 'yarn' },
+		{ file: 'package-lock.json', pm: 'npm' },
+	];
+
+	let packageManager = 'npm'; // default
+
+	for (const { file, pm } of lockfiles) {
+		if (existsSync(join(cwd, file))) {
+			packageManager = pm;
+			break;
+		}
+	}
+
+	// Check packageManager field in package.json as fallback
+	if (packageManager === 'npm') {
+		try {
+			const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+			if (pkg.packageManager) {
+				const match = pkg.packageManager.match(/^(npm|yarn|pnpm|bun)@/);
+				if (match) {
+					packageManager = match[1];
+				}
+			}
+		} catch {
+			// Ignore parse errors
+		}
+	}
+
+	// Run install command
+	try {
+		const result = await execCommand(packageManager, ['install'], cwd);
+		return {
+			packageManager,
+			success: true,
+			output: result.stdout + result.stderr,
+		};
+	} catch (err) {
+		return {
+			packageManager,
+			success: false,
+			output: '',
+			error: String(err),
+		};
+	}
+}
+
+// ============================================================================
 // Agent Execution
 // ============================================================================
 
@@ -155,6 +226,16 @@ export async function executeAgent(
 		// Clone repo to temp directory
 		repoDir = createTempDir(project.id);
 		cloneRepo(project, repoDir);
+
+		// Install dependencies if package.json exists
+		log.info('Checking for dependencies to install', { repoDir });
+		const installResult = await installDependencies(repoDir);
+		if (installResult) {
+			log.info('Dependencies installed', {
+				packageManager: installResult.packageManager,
+				success: installResult.success,
+			});
+		}
 
 		log.info('Running agent', { agentType, cardId, repoDir });
 
@@ -243,6 +324,24 @@ ${directoryListing}
 					{ filePath: file.path },
 					file.content,
 					`gc_init_${i + 1}`,
+				);
+			}
+
+			// Inject dependency install result as synthetic Tmux call
+			if (installResult) {
+				const installOutput = installResult.success
+					? `✓ Dependencies installed with ${installResult.packageManager}\n\n${installResult.output}`
+					: `✗ Dependency install failed (${installResult.packageManager})\n\nError: ${installResult.error}`;
+
+				builder = builder.withSyntheticGadgetCall(
+					'Tmux',
+					{
+						action: 'start',
+						session: 'deps-install',
+						command: `${installResult.packageManager} install`,
+					},
+					installOutput,
+					'gc_deps',
 				);
 			}
 
