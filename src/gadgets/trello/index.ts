@@ -1,4 +1,4 @@
-export { ReadTrelloCard } from './ReadTrelloCard.js';
+export { ReadTrelloCard, formatCardData } from './ReadTrelloCard.js';
 export { PostTrelloComment } from './PostTrelloComment.js';
 export { UpdateTrelloCard } from './UpdateTrelloCard.js';
 export { CreateTrelloCard } from './CreateTrelloCard.js';

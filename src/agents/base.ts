@@ -1,6 +1,7 @@
 import { listDirectory, readFile, writeFile } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
+import { Sleep } from '../gadgets/Sleep.js';
 import { Tmux } from '../gadgets/tmux.js';
 import {
 	AddChecklistToCard,
@@ -10,6 +11,7 @@ import {
 	PostTrelloComment,
 	ReadTrelloCard,
 	UpdateTrelloCard,
+	formatCardData,
 } from '../gadgets/trello/index.js';
 import { trelloClient } from '../trello/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
@@ -164,6 +166,10 @@ export async function executeAgent(
 		// Read context files (CLAUDE.md, AGENTS.md) for synthetic gadget calls
 		const contextFiles = await readContextFiles(repoDir);
 
+		// Pre-fetch card data for synthetic gadget call
+		log.info('Fetching card data for context', { cardId });
+		const cardData = await formatCardData(cardId, true);
+
 		// Generate directory listing for codebase context
 		const directoryListing = await generateDirectoryListing(repoDir, 3);
 		const directorySection = directoryListing
@@ -190,7 +196,7 @@ ${directoryListing}
 `;
 		}
 
-		const prompt = `${directorySection}${agentContext}Analyze and process the Trello card with ID: ${cardId}. Start by reading the card using ReadTrelloCard to get the current state, including any comments with instructions.`;
+		const prompt = `${directorySection}${agentContext}Analyze and process the Trello card with ID: ${cardId}. The card data (title, description, checklists, attachments, comments) has been pre-loaded above. Review it and proceed with your task.`;
 
 		// Change to repo directory (llmist gadgets use process.cwd() for path validation)
 		const originalCwd = process.cwd();
@@ -216,6 +222,7 @@ ${directoryListing}
 					writeFile,
 					// Shell commands via tmux (no timeout issues)
 					new Tmux(),
+					new Sleep(),
 					// Trello gadgets
 					new ReadTrelloCard(),
 					new PostTrelloComment(),
@@ -225,6 +232,14 @@ ${directoryListing}
 					new GetMyRecentActivity(),
 					new AddChecklistToCard(),
 				);
+
+			// Inject card data as synthetic ReadTrelloCard call
+			builder = builder.withSyntheticGadgetCall(
+				'ReadTrelloCard',
+				{ cardId, includeComments: true },
+				cardData,
+				'gc_card',
+			);
 
 			// Inject context files as synthetic ReadFile gadget calls
 			for (let i = 0; i < contextFiles.length; i++) {
