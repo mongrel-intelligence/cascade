@@ -119,7 +119,7 @@ async function executeAgent(
 			const items = await trelloClient.getCardCustomFieldItems(cardId);
 			const currentItem = items.find((i) => i.idCustomField === costFieldId);
 			const currentCost = Number.parseFloat(currentItem?.value?.number ?? '0');
-			const newTotal = currentCost + agentResult.cost;
+			const newTotal = Math.round((currentCost + agentResult.cost) * 10000) / 10000;
 			await trelloClient.updateCardCustomFieldNumber(cardId, costFieldId, newTotal);
 			logger.info('Updated card cost', {
 				cardId,
