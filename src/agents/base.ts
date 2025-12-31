@@ -55,8 +55,8 @@ const LOG_LEVELS: Record<string, number> = {
 };
 
 function getLogLevel(): number {
-	const level = process.env.LOG_LEVEL?.toLowerCase() || 'debug';
-	return LOG_LEVELS[level] ?? 1; // default to debug
+	const level = process.env.LLMIST_LOG_LEVEL?.toLowerCase() || 'info';
+	return LOG_LEVELS[level] ?? 2; // default to info
 }
 
 // ============================================================================

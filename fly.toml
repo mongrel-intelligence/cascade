@@ -7,6 +7,7 @@ primary_region = "fra"
 [env]
   PORT = "3000"
   LOG_LEVEL = "info"
+  LLMIST_LOG_LEVEL = "debug"
   CONFIG_PATH = "./config/projects.json"
 
 [http_service]
