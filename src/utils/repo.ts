@@ -39,11 +39,12 @@ export async function runCommand(
 	command: string,
 	args: string[],
 	cwd: string,
+	env?: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
 	return new Promise((resolve) => {
 		const child = spawn(command, args, {
 			cwd,
-			env: process.env,
+			env: { ...process.env, ...env },
 			stdio: ['pipe', 'pipe', 'pipe'],
 		});
 

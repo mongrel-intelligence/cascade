@@ -153,9 +153,10 @@ async function installDependencies(cwd: string): Promise<DependencyInstallResult
 		}
 	}
 
-	// Run install command
+	// Run install command with CI=true to skip unnecessary postinstall downloads
+	// (e.g., camoufox browser download when it's already in the Docker image)
 	try {
-		const result = await execCommand(packageManager, ['install'], cwd);
+		const result = await execCommand(packageManager, ['install'], cwd, { CI: 'true' });
 		return {
 			packageManager,
 			success: true,
