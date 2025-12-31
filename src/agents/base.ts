@@ -10,8 +10,10 @@ import {
 	ReadTrelloCard,
 	UpdateTrelloCard,
 } from '../gadgets/trello/index.js';
+import { trelloClient } from '../trello/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { type FileLogger, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
+import { clearWatchdogCleanup, setWatchdogCleanup } from '../utils/lifecycle.js';
 import { logger } from '../utils/logging.js';
 import {
 	cleanupTempDir,
@@ -113,6 +115,18 @@ export async function executeAgent(
 
 	// Create file logger for this agent run
 	fileLogger = createFileLogger(`cascade-${agentType}-${cardId}`);
+
+	// Register cleanup callback for watchdog timeout (upload logs before force exit)
+	setWatchdogCleanup(async () => {
+		if (fileLogger) {
+			fileLogger.close();
+			const logBuffer = fileLogger.getZippedBuffer();
+			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+			const logName = `${agentType}-timeout-${timestamp}.log.gz`;
+			await trelloClient.addAttachmentFile(cardId, logBuffer, logName);
+			logger.info('Uploaded timeout log to card', { cardId, logName });
+		}
+	});
 
 	// Helper to log to both console and file
 	const log = {
@@ -280,6 +294,9 @@ ${directoryListing}
 			logBuffer,
 		};
 	} finally {
+		// Clear watchdog cleanup callback (no longer needed)
+		clearWatchdogCleanup();
+
 		// Cleanup temp directory
 		if (repoDir) {
 			try {

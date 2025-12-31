@@ -7,6 +7,8 @@ export {
 	cancelSelfDestruct,
 	startWatchdog,
 	clearWatchdog,
+	setWatchdogCleanup,
+	clearWatchdogCleanup,
 	scheduleShutdownAfterJob,
 } from './lifecycle.js';
 export { createTempDir, cloneRepo, cleanupTempDir, runCommand } from './repo.js';
