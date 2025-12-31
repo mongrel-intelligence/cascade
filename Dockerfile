@@ -62,6 +62,9 @@ RUN npm ci --omit=dev --ignore-scripts
 # Copy built code from builder
 COPY --from=builder /app/dist ./dist
 
+# Copy Eta template files (not handled by TypeScript compiler)
+COPY src/agents/prompts/templates ./dist/agents/prompts/templates
+
 # Copy config
 COPY config ./config
 
