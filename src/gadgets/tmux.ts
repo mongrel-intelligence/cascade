@@ -9,8 +9,9 @@
 import { spawn } from 'node:child_process';
 import { Gadget, z } from 'llmist';
 
-const DEFAULT_TIMEOUT_MS = 120000; // 2 min for the gadget itself
-const DEFAULT_WAIT_MS = 60000; // 60s to wait for initial output
+const DEFAULT_TIMEOUT_MS = 300000; // 5 min for the gadget itself
+const DEFAULT_WAIT_MS = 120000; // 120s to wait for initial output
+const MAX_WAIT_MS = 120000; // Never wait longer than 120s - return with "running" status
 const POLL_INTERVAL_MS = 500;
 
 /**
@@ -62,9 +63,10 @@ class TmuxGadget extends Gadget({
 **Use this for ALL shell commands** (npm, tests, builds, git, etc.)
 
 **ACTIONS:**
-- \`start\`: Run a command in a new session. Waits up to 60s for initial output.
+- \`start\`: Run a command in a new session. Waits up to 120s for initial output.
   - If command exits quickly: returns full output + exit status
-  - If still running: returns partial output + "still running" message
+  - If still running after 120s: returns partial output + "still running" message
+  - **Process keeps running in background** - use capture to check progress
 - \`capture\`: Get recent output from a running session
 - \`send\`: Send keys/commands to a session (use "C-c" for Ctrl+C)
 - \`list\`: List all active sessions
@@ -91,7 +93,7 @@ class TmuxGadget extends Gadget({
 			wait: z
 				.number()
 				.default(DEFAULT_WAIT_MS)
-				.describe('Max time to wait for initial output in ms (default: 60000)'),
+				.describe('Max time to wait for initial output in ms (default: 120000, max: 120000)'),
 		}),
 
 		// Send keys/commands to an existing session
@@ -134,16 +136,16 @@ class TmuxGadget extends Gadget({
 	]),
 	examples: [
 		{
-			params: { action: 'start', session: 'test-run', command: 'npm test', wait: 60000 },
+			params: { action: 'start', session: 'test-run', command: 'npm test', wait: 120000 },
 			output:
 				'session=test-run status=exited\n\n> project@1.0.0 test\n> vitest run\n\n✓ 15 tests passed',
-			comment: 'Run tests - command completed within wait period',
+			comment: 'Run tests - command completed within 120s wait period',
 		},
 		{
-			params: { action: 'start', session: 'npm-install', command: 'npm install', wait: 60000 },
+			params: { action: 'start', session: 'e2e-tests', command: 'npm run test:e2e', wait: 120000 },
 			output:
-				"session=npm-install status=running\n\nadded 50 packages\n\n(Process still running in session 'npm-install'. Use capture to check progress, kill when done.)",
-			comment: 'npm install still running after initial wait',
+				"session=e2e-tests status=running\n\nStarting backend...\n✓ Backend healthy\n\n(Process still running in session 'e2e-tests'. Use capture to check progress, kill when done.)",
+			comment: 'Long-running E2E tests still running after 120s - use capture to monitor',
 		},
 		{
 			params: { action: 'capture', session: 'npm-install', lines: 50 },
@@ -203,7 +205,9 @@ class TmuxGadget extends Gadget({
 
 				// Wait and poll for output - capture BEFORE checking if session ended
 				// to avoid race condition where server shuts down
-				const waitMs = params.wait ?? DEFAULT_WAIT_MS;
+				// Cap wait time to MAX_WAIT_MS to ensure we return before gadget timeout
+				const requestedWait = params.wait ?? DEFAULT_WAIT_MS;
+				const waitMs = Math.min(requestedWait, MAX_WAIT_MS);
 				let elapsed = 0;
 				let sessionEnded = false;
 				let lastOutput = '';
