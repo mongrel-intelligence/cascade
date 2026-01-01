@@ -1,6 +1,7 @@
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import { executeAgent } from './base.js';
+import { executeReviewAgent } from './review.js';
 
 type AgentExecutor = (
 	input: AgentInput & { project: ProjectConfig; config: CascadeConfig },
@@ -35,3 +36,6 @@ export function getRegisteredAgents(): string[] {
 registerAgent('briefing', executeAgent.bind(null, 'briefing'));
 registerAgent('planning', executeAgent.bind(null, 'planning'));
 registerAgent('implementation', executeAgent.bind(null, 'implementation'));
+registerAgent('review', (input) =>
+	executeReviewAgent(input as Parameters<typeof executeReviewAgent>[0]),
+);

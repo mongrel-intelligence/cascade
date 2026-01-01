@@ -30,6 +30,13 @@ export function findProjectById(config: CascadeConfig, id: string): ProjectConfi
 	return config.projects.find((p) => p.id === id);
 }
 
+export function findProjectByRepo(
+	config: CascadeConfig,
+	repoFullName: string,
+): ProjectConfig | undefined {
+	return config.projects.find((p) => p.repo === repoFullName);
+}
+
 export function getProjectGitHubToken(project: ProjectConfig): string {
 	const tokenEnvVar = project.githubTokenEnv || 'GITHUB_TOKEN';
 	const token = process.env[tokenEnvVar];

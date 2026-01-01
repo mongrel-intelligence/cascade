@@ -39,5 +39,5 @@ export interface TriggerHandler {
 	name: string;
 	description: string;
 	matches: (ctx: TriggerContext) => boolean;
-	handle: (ctx: TriggerContext) => Promise<TriggerResult>;
+	handle: (ctx: TriggerContext) => Promise<TriggerResult | null>;
 }

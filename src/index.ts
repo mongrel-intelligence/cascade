@@ -1,7 +1,11 @@
 import { serve } from '@hono/node-server';
 import { loadEnvConfigSafe, loadProjectsConfig } from './config/index.js';
 import { createServer } from './server.js';
-import { createTriggerRegistry, registerBuiltInTriggers } from './triggers/index.js';
+import {
+	createTriggerRegistry,
+	processGitHubWebhook,
+	registerBuiltInTriggers,
+} from './triggers/index.js';
 import { processTrelloWebhook } from './triggers/trello/webhook-handler.js';
 import type { CascadeConfig } from './types/index.js';
 import { logger, setLogLevel, startSelfDestructTimer } from './utils/index.js';
@@ -41,6 +45,9 @@ async function main(): Promise<void> {
 		config,
 		onTrelloWebhook: async (payload) => {
 			await processTrelloWebhook(payload, config, triggerRegistry);
+		},
+		onGitHubWebhook: async (payload, eventType) => {
+			await processGitHubWebhook(payload, eventType, config, triggerRegistry);
 		},
 	});
 

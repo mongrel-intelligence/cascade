@@ -1,3 +1,6 @@
+import { CheckSuiteFailureTrigger } from './github/check-suite-failure.js';
+import { PRReadyToMergeTrigger } from './github/pr-ready-to-merge.js';
+import { PRReviewCommentTrigger } from './github/pr-review-comment.js';
 import type { TriggerRegistry } from './registry.js';
 import {
 	CardMovedToBriefingTrigger,
@@ -15,13 +18,23 @@ export type {
 } from './types.js';
 export { isTrelloWebhookPayload } from './types.js';
 export { processTrelloWebhook } from './trello/webhook-handler.js';
+export { processGitHubWebhook } from './github/webhook-handler.js';
 
 export function registerBuiltInTriggers(registry: TriggerRegistry): void {
-	// Card moved triggers
+	// Trello: Card moved triggers
 	registry.register(new CardMovedToBriefingTrigger());
 	registry.register(new CardMovedToPlanningTrigger());
 	registry.register(new CardMovedToTodoTrigger());
 
-	// Label triggers
+	// Trello: Label triggers
 	registry.register(new ReadyToProcessLabelTrigger());
+
+	// GitHub: PR review comment trigger
+	registry.register(new PRReviewCommentTrigger());
+
+	// GitHub: Check suite failure trigger (runs review agent to fix)
+	registry.register(new CheckSuiteFailureTrigger());
+
+	// GitHub: PR ready to merge trigger (auto-moves card to DONE)
+	registry.register(new PRReadyToMergeTrigger());
 }

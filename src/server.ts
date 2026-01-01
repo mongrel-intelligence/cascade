@@ -7,6 +7,7 @@ import { canAcceptWebhook, isCurrentlyProcessing, logger } from './utils/index.j
 export interface ServerDependencies {
 	config: CascadeConfig;
 	onTrelloWebhook: (payload: unknown) => Promise<void>;
+	onGitHubWebhook: (payload: unknown, eventType: string) => Promise<void>;
 }
 
 export function createServer(deps: ServerDependencies): Hono {
@@ -65,13 +66,28 @@ export function createServer(deps: ServerDependencies): Hono {
 	});
 
 	app.post('/github/webhook', async (c) => {
-		try {
-			await c.req.json(); // Validate JSON body
-			const event = c.req.header('X-GitHub-Event');
-			logger.debug('Received GitHub webhook', { event });
+		// Check capacity synchronously - return 503 if at capacity so Fly.io routes to another machine
+		if (isCurrentlyProcessing() && !canAcceptWebhook()) {
+			logger.warn('Machine at capacity, returning 503');
+			return c.text('Service Unavailable', 503);
+		}
 
-			// TODO: Implement GitHub webhook handling
-			return c.json({ status: 'received', event });
+		try {
+			const payload = await c.req.json();
+			const eventType = c.req.header('X-GitHub-Event') || 'unknown';
+			logger.debug('Received GitHub webhook', { event: eventType });
+
+			// Process asynchronously - respond immediately
+			setImmediate(() => {
+				deps.onGitHubWebhook(payload, eventType).catch((err) => {
+					logger.error('Error processing GitHub webhook', {
+						error: String(err),
+						stack: err instanceof Error ? err.stack : undefined,
+					});
+				});
+			});
+
+			return c.text('OK', 200);
 		} catch (err) {
 			logger.error('Failed to parse GitHub webhook', { error: String(err) });
 			return c.text('Bad Request', 400);
