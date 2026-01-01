@@ -1,5 +1,6 @@
 import { Gadget, z } from 'llmist';
 import { githubClient } from '../../github/client.js';
+import { formatGadgetError } from '../utils.js';
 
 export class GetPRComments extends Gadget({
 	name: 'GetPRComments',
@@ -51,7 +52,7 @@ export class GetPRComments extends Gadget({
 
 			return `Found ${comments.length} review comment(s):\n\n${formatted.join('\n')}`;
 		} catch (error) {
-			return `Error fetching PR comments: ${error instanceof Error ? error.message : String(error)}`;
+			return formatGadgetError('fetching PR comments', error);
 		}
 	}
 }

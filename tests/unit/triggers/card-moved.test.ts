@@ -7,7 +7,7 @@ import {
 import type { TriggerContext } from '../../../src/triggers/types.js';
 
 describe('CardMovedToBriefingTrigger', () => {
-	const trigger = new CardMovedToBriefingTrigger();
+	const trigger = CardMovedToBriefingTrigger;
 
 	const mockProject = {
 		id: 'test',
@@ -112,7 +112,7 @@ describe('CardMovedToBriefingTrigger', () => {
 });
 
 describe('CardMovedToTodoTrigger', () => {
-	const trigger = new CardMovedToTodoTrigger();
+	const trigger = CardMovedToTodoTrigger;
 
 	const mockProject = {
 		id: 'test',

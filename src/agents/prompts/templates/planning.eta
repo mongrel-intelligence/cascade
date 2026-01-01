@@ -13,7 +13,7 @@ CRITICAL:
 You are running in a cloned copy of the project repository. Before creating your plan:
 
 1. **Read the card** to identify scope signals (file names, components, features, domain terms)
-2. **Explore deeply** - use `ListDirectory`, `ReadFile`, and `RunCommand` extensively
+2. **Explore deeply** - use `ListDirectory`, `ReadFile`, and `Tmux` extensively
 3. **Understand existing patterns** - how does the codebase already solve similar problems?
 4. **Map terminology** - card may use different terms than code
 
@@ -118,7 +118,7 @@ Review the updated description and move to TODO when ready to implement!
 - `UpdateTrelloCard` - Update card title/description
 - `AddChecklistToCard` - Add an interactive checklist to a card (use for implementation steps)
 - `PostTrelloComment` - Post a comment on a card
-- `ListDirectory`, `ReadFile`, `RunCommand` - Explore the codebase
+- `ListDirectory`, `ReadFile`, `Tmux` - Explore the codebase (use Tmux for shell commands like ripgrep, fd)
 
 ## Rules
 

@@ -1,5 +1,6 @@
 import { Gadget, z } from 'llmist';
 import { githubClient } from '../../github/client.js';
+import { formatGadgetError } from '../utils.js';
 
 export class ReplyToReviewComment extends Gadget({
 	name: 'ReplyToReviewComment',
@@ -37,7 +38,7 @@ export class ReplyToReviewComment extends Gadget({
 			);
 			return `Reply posted successfully: ${reply.htmlUrl}`;
 		} catch (error) {
-			return `Error replying to comment: ${error instanceof Error ? error.message : String(error)}`;
+			return formatGadgetError('replying to comment', error);
 		}
 	}
 }

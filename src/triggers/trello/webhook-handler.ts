@@ -17,44 +17,43 @@ import {
 	setProcessing,
 	startWatchdog,
 } from '../../utils/index.js';
+import { safeOperation, silentOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
 import type { TriggerResult } from '../types.js';
 import { isTrelloWebhookPayload } from '../types.js';
 
+// ============================================================================
+// Safe Card Operations
+// ============================================================================
+
 async function safeAddLabel(cardId: string, labelId: string | undefined): Promise<void> {
 	if (!labelId) return;
-	try {
-		await trelloClient.addLabelToCard(cardId, labelId);
-	} catch (err) {
-		logger.warn('Failed to add label', { error: String(err), labelId });
-	}
+	await safeOperation(() => trelloClient.addLabelToCard(cardId, labelId), {
+		action: 'add label',
+		labelId,
+	});
 }
 
 async function safeRemoveLabel(cardId: string, labelId: string | undefined): Promise<void> {
 	if (!labelId) return;
-	try {
-		await trelloClient.removeLabelFromCard(cardId, labelId);
-	} catch {
-		// Ignore - label might not be present
-	}
+	await silentOperation(() => trelloClient.removeLabelFromCard(cardId, labelId));
 }
 
 async function safeAddComment(cardId: string, text: string): Promise<void> {
-	try {
-		await trelloClient.addComment(cardId, text);
-	} catch (err) {
-		logger.warn('Failed to add comment', { error: String(err) });
-	}
+	await safeOperation(() => trelloClient.addComment(cardId, text), { action: 'add comment' });
 }
 
 async function safeMoveCard(cardId: string, listId: string | undefined): Promise<void> {
 	if (!listId) return;
-	try {
-		await trelloClient.moveCardToList(cardId, listId);
-	} catch (err) {
-		logger.warn('Failed to move card', { error: String(err), listId });
-	}
+	await safeOperation(() => trelloClient.moveCardToList(cardId, listId), {
+		action: 'move card',
+		listId,
+	});
 }
+
+// ============================================================================
+// Agent Result Handlers
+// ============================================================================
 
 async function handleAgentSuccess(
 	cardId: string,
@@ -82,6 +81,10 @@ async function handleAgentFailure(
 	}
 }
 
+// ============================================================================
+// Agent Execution
+// ============================================================================
+
 async function executeAgent(
 	result: TriggerResult,
 	project: ProjectConfig,
@@ -102,33 +105,35 @@ async function executeAgent(
 
 	// Upload zipped log file to card (if available)
 	if (cardId && agentResult.logBuffer) {
+		const logBuffer = agentResult.logBuffer;
 		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 		const logName = `${result.agentType}-${timestamp}.zip`;
-		try {
-			await trelloClient.addAttachmentFile(cardId, agentResult.logBuffer, logName);
-			logger.info('Uploaded agent log to card', { cardId, logName });
-		} catch (err) {
-			logger.warn('Failed to upload agent log', { error: String(err) });
-		}
+		await safeOperation(() => trelloClient.addAttachmentFile(cardId, logBuffer, logName), {
+			action: 'upload agent log',
+			cardId,
+			logName,
+		});
 	}
 
 	// Update cost custom field (accumulate with existing)
 	const costFieldId = project.trello.customFields?.cost;
 	if (cardId && costFieldId && agentResult.cost !== undefined && agentResult.cost > 0) {
-		try {
-			const items = await trelloClient.getCardCustomFieldItems(cardId);
-			const currentItem = items.find((i) => i.idCustomField === costFieldId);
-			const currentCost = Number.parseFloat(currentItem?.value?.number ?? '0');
-			const newTotal = Math.round((currentCost + agentResult.cost) * 10000) / 10000;
-			await trelloClient.updateCardCustomFieldNumber(cardId, costFieldId, newTotal);
-			logger.info('Updated card cost', {
-				cardId,
-				sessionCost: agentResult.cost,
-				totalCost: newTotal,
-			});
-		} catch (err) {
-			logger.warn('Failed to update cost field', { error: String(err) });
-		}
+		const sessionCost = agentResult.cost;
+		await safeOperation(
+			async () => {
+				const items = await trelloClient.getCardCustomFieldItems(cardId);
+				const currentItem = items.find((i) => i.idCustomField === costFieldId);
+				const currentCost = Number.parseFloat(currentItem?.value?.number ?? '0');
+				const newTotal = Math.round((currentCost + sessionCost) * 10000) / 10000;
+				await trelloClient.updateCardCustomFieldNumber(cardId, costFieldId, newTotal);
+				logger.info('Updated card cost', {
+					cardId,
+					sessionCost,
+					totalCost: newTotal,
+				});
+			},
+			{ action: 'update cost field' },
+		);
 	}
 
 	if (cardId) {
@@ -146,6 +151,10 @@ async function executeAgent(
 		success: agentResult.success,
 	});
 }
+
+// ============================================================================
+// Webhook Processing
+// ============================================================================
 
 function processNextQueuedWebhook(config: CascadeConfig, registry: TriggerRegistry): void {
 	const next = dequeueWebhook();

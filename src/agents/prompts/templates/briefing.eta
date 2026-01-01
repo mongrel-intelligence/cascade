@@ -67,7 +67,7 @@ For technical/infrastructure work, adapt the format:
 You are running in a cloned copy of the project repository. Before creating stories:
 
 1. **Read the card** to identify scope signals (file names, components, features, domain terms)
-2. **Explore deeply** - use `ListDirectory`, `ReadFile`, and `RunCommand` extensively
+2. **Explore deeply** - use `ListDirectory`, `ReadFile`, and `Tmux` extensively
 3. **Understand existing patterns** - how does the codebase already solve similar problems?
 4. **Map terminology** - card may use different terms than the code
 
@@ -76,7 +76,7 @@ You are running in a cloned copy of the project repository. Before creating stor
 1. **Read the Trello card** using `ReadTrelloCard` (title, description, AND comments)
 2. **Deep codebase exploration** (MANDATORY):
    - Use `ListDirectory` on "." and key directories
-   - Search with `RunCommand` (ripgrep, fd) for related code and patterns
+   - Search with `Tmux` (ripgrep, fd) for related code and patterns
    - Read key files to understand architecture
 3. **Break down into INVEST stories**:
    - Identify logical units of work
@@ -186,7 +186,7 @@ Each story is independent, valuable, and testable.
 - `GetMyRecentActivity` - Get your recent Trello activity (cards created, updated, comments)
 - `UpdateTrelloCard` - Update card title/description, or add labels
 - `PostTrelloComment` - Post a comment on a card
-- `ListDirectory`, `ReadFile`, `RunCommand` - Explore the codebase
+- `ListDirectory`, `ReadFile`, `Tmux` - Explore the codebase (use Tmux for shell commands like ripgrep, fd)
 
 ## Updating Previously Created Stories
 

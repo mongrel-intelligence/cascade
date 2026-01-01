@@ -1,5 +1,6 @@
 import { Gadget, z } from 'llmist';
 import { githubClient } from '../../github/client.js';
+import { formatGadgetError } from '../utils.js';
 
 export class GetPRDetails extends Gadget({
 	name: 'GetPRDetails',
@@ -36,7 +37,7 @@ export class GetPRDetails extends Gadget({
 				pr.body || '(no description)',
 			].join('\n');
 		} catch (error) {
-			return `Error fetching PR details: ${error instanceof Error ? error.message : String(error)}`;
+			return formatGadgetError('fetching PR details', error);
 		}
 	}
 }

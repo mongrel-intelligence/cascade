@@ -1,5 +1,6 @@
 import { Gadget, z } from 'llmist';
 import { trelloClient } from '../../trello/client.js';
+import { formatGadgetError } from '../utils.js';
 
 export class GetMyRecentActivity extends Gadget({
 	name: 'GetMyRecentActivity',
@@ -45,7 +46,7 @@ export class GetMyRecentActivity extends Gadget({
 
 			return result;
 		} catch (error) {
-			return `Error getting recent activity: ${error instanceof Error ? error.message : String(error)}`;
+			return formatGadgetError('getting recent activity', error);
 		}
 	}
 

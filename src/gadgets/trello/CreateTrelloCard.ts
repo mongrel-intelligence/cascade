@@ -1,5 +1,6 @@
 import { Gadget, z } from 'llmist';
 import { trelloClient } from '../../trello/client.js';
+import { formatGadgetError } from '../utils.js';
 
 export class CreateTrelloCard extends Gadget({
 	name: 'CreateTrelloCard',
@@ -51,7 +52,7 @@ export class CreateTrelloCard extends Gadget({
 
 			return `Card created successfully: "${card.name}" - ${card.shortUrl}`;
 		} catch (error) {
-			return `Error creating card: ${error instanceof Error ? error.message : String(error)}`;
+			return formatGadgetError('creating card', error);
 		}
 	}
 }

@@ -1,6 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { listDirectory, writeFile } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
@@ -19,16 +16,20 @@ import {
 } from '../gadgets/trello/index.js';
 import { trelloClient } from '../trello/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
-import { type FileLogger, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
+import { cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
 import { clearWatchdogCleanup, setWatchdogCleanup } from '../utils/lifecycle.js';
 import { logger } from '../utils/logging.js';
-import {
-	cleanupTempDir,
-	cloneRepo,
-	createTempDir,
-	runCommand as execCommand,
-} from '../utils/repo.js';
+import { cleanupTempDir, cloneRepo, createTempDir } from '../utils/repo.js';
 import { type PromptContext, getSystemPrompt } from './prompts/index.js';
+import {
+	type DependencyInstallResult,
+	generateDirectoryListing,
+	getLogLevel,
+	installDependencies,
+	readContextFiles,
+	warmTypeScriptCache,
+} from './utils/index.js';
+import { createAgentLogger } from './utils/logging.js';
 
 export interface AgentContext {
 	project: ProjectConfig;
@@ -40,178 +41,6 @@ export interface AgentContext {
 export interface AgentRunner {
 	name: string;
 	run: (ctx: AgentContext) => Promise<AgentResult>;
-}
-
-// ============================================================================
-// Log Level Configuration
-// ============================================================================
-
-const LOG_LEVELS: Record<string, number> = {
-	trace: 0,
-	debug: 1,
-	info: 2,
-	warn: 3,
-	error: 4,
-};
-
-function getLogLevel(): number {
-	const level = process.env.LLMIST_LOG_LEVEL?.toLowerCase() || 'info';
-	return LOG_LEVELS[level] ?? 2; // default to info
-}
-
-// ============================================================================
-// Directory Listing Utility
-// ============================================================================
-
-async function generateDirectoryListing(cwd: string, depth: number): Promise<string> {
-	try {
-		const result = await execCommand(
-			'find',
-			['.', '-maxdepth', String(depth), '-type', 'f', '-o', '-type', 'd'],
-			cwd,
-		);
-		return result.stdout;
-	} catch {
-		return '';
-	}
-}
-
-// ============================================================================
-// Context Files (CLAUDE.md, AGENTS.md)
-// ============================================================================
-
-interface ContextFile {
-	path: string;
-	content: string;
-}
-
-async function readContextFiles(cwd: string): Promise<ContextFile[]> {
-	const files = ['CLAUDE.md', 'AGENTS.md'];
-	const results: ContextFile[] = [];
-
-	for (const file of files) {
-		try {
-			const result = await execCommand('cat', [file], cwd);
-			if (result.stdout.trim()) {
-				results.push({ path: file, content: result.stdout.trim() });
-			}
-		} catch {
-			// File doesn't exist, skip
-		}
-	}
-
-	return results;
-}
-
-// ============================================================================
-// Dependency Installation
-// ============================================================================
-
-interface DependencyInstallResult {
-	packageManager: string;
-	success: boolean;
-	output: string;
-	error?: string;
-}
-
-async function installDependencies(cwd: string): Promise<DependencyInstallResult | null> {
-	// Check if package.json exists
-	const packageJsonPath = join(cwd, 'package.json');
-	if (!existsSync(packageJsonPath)) {
-		return null; // No package.json, skip
-	}
-
-	// Detect package manager from lockfiles (priority order)
-	const lockfiles = [
-		{ file: 'bun.lockb', pm: 'bun' },
-		{ file: 'pnpm-lock.yaml', pm: 'pnpm' },
-		{ file: 'yarn.lock', pm: 'yarn' },
-		{ file: 'package-lock.json', pm: 'npm' },
-	];
-
-	let packageManager = 'npm'; // default
-
-	for (const { file, pm } of lockfiles) {
-		if (existsSync(join(cwd, file))) {
-			packageManager = pm;
-			break;
-		}
-	}
-
-	// Check packageManager field in package.json as fallback
-	if (packageManager === 'npm') {
-		try {
-			const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
-			if (pkg.packageManager) {
-				const match = pkg.packageManager.match(/^(npm|yarn|pnpm|bun)@/);
-				if (match) {
-					packageManager = match[1];
-				}
-			}
-		} catch {
-			// Ignore parse errors
-		}
-	}
-
-	// Run install command with CI=true to skip unnecessary postinstall downloads
-	// (e.g., camoufox browser download when it's already in the Docker image)
-	// PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD skips camoufox-js browser download
-	try {
-		const result = await execCommand(packageManager, ['install'], cwd, {
-			CI: 'true',
-			PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
-		});
-		return {
-			packageManager,
-			success: true,
-			output: result.stdout + result.stderr,
-		};
-	} catch (err) {
-		return {
-			packageManager,
-			success: false,
-			output: '',
-			error: String(err),
-		};
-	}
-}
-
-// ============================================================================
-// TypeScript Cache Warming
-// ============================================================================
-
-interface TypeScriptWarmResult {
-	success: boolean;
-	durationMs: number;
-	error?: string;
-}
-
-async function warmTypeScriptCache(cwd: string): Promise<TypeScriptWarmResult | null> {
-	// Check if tsconfig.json exists
-	const tsconfigPath = join(cwd, 'tsconfig.json');
-	if (!existsSync(tsconfigPath)) {
-		return null; // No TypeScript config, skip
-	}
-
-	const startTime = Date.now();
-
-	try {
-		// Run tsc --noEmit to warm the cache without generating output files
-		// We don't care if there are type errors - the agent will handle those
-		await execCommand('npx', ['tsc', '--noEmit'], cwd);
-		return {
-			success: true,
-			durationMs: Date.now() - startTime,
-		};
-	} catch (err) {
-		// TypeScript errors are expected - the agent may need to fix them
-		// We still warmed the cache, so consider this a success
-		return {
-			success: true,
-			durationMs: Date.now() - startTime,
-			error: String(err),
-		};
-	}
 }
 
 // ============================================================================
@@ -229,42 +58,20 @@ export async function executeAgent(
 	}
 
 	let repoDir: string | null = null;
-	let fileLogger: FileLogger | null = null;
 
 	// Create file logger for this agent run
-	fileLogger = createFileLogger(`cascade-${agentType}-${cardId}`);
+	const fileLogger = createFileLogger(`cascade-${agentType}-${cardId}`);
+	const log = createAgentLogger(fileLogger);
 
 	// Register cleanup callback for watchdog timeout (upload logs before force exit)
 	setWatchdogCleanup(async () => {
-		if (fileLogger) {
-			fileLogger.close();
-			const logBuffer = await fileLogger.getZippedBuffer();
-			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-			const logName = `${agentType}-timeout-${timestamp}.zip`;
-			await trelloClient.addAttachmentFile(cardId, logBuffer, logName);
-			logger.info('Uploaded timeout log to card', { cardId, logName });
-		}
+		fileLogger.close();
+		const logBuffer = await fileLogger.getZippedBuffer();
+		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+		const logName = `${agentType}-timeout-${timestamp}.zip`;
+		await trelloClient.addAttachmentFile(cardId, logBuffer, logName);
+		logger.info('Uploaded timeout log to card', { cardId, logName });
 	});
-
-	// Helper to log to both console and file
-	const log = {
-		debug: (msg: string, ctx?: Record<string, unknown>) => {
-			logger.debug(msg, ctx);
-			fileLogger?.write('DEBUG', msg, ctx);
-		},
-		info: (msg: string, ctx?: Record<string, unknown>) => {
-			logger.info(msg, ctx);
-			fileLogger?.write('INFO', msg, ctx);
-		},
-		warn: (msg: string, ctx?: Record<string, unknown>) => {
-			logger.warn(msg, ctx);
-			fileLogger?.write('WARN', msg, ctx);
-		},
-		error: (msg: string, ctx?: Record<string, unknown>) => {
-			logger.error(msg, ctx);
-			fileLogger?.write('ERROR', msg, ctx);
-		},
-	};
 
 	try {
 		// Clone repo to temp directory
@@ -303,7 +110,11 @@ export async function executeAgent(
 
 		// Get system prompt and model
 		const systemPrompt = project.prompts?.[agentType] || getSystemPrompt(agentType, promptContext);
-		const model = project.agentModels?.[agentType] || project.model || config.defaults.model;
+		const model =
+			project.agentModels?.[agentType] ||
+			project.model ||
+			config.defaults.agentModels?.[agentType] ||
+			config.defaults.model;
 		const maxIterations = config.defaults.maxIterations;
 
 		// Read context files (CLAUDE.md, AGENTS.md) for synthetic gadget calls
@@ -344,6 +155,7 @@ ${directoryListing}
 			// Build the agent
 			let builder = new AgentBuilder(client)
 				.withModel(model)
+				.withTemperature(0)
 				.withSystem(systemPrompt)
 				.withMaxIterations(maxIterations)
 				.withLogger(llmistLogger)
@@ -386,20 +198,7 @@ ${directoryListing}
 
 			// Inject dependency install result as synthetic Tmux call
 			if (installResult) {
-				const installOutput = installResult.success
-					? `✓ Dependencies installed with ${installResult.packageManager}\n\n${installResult.output}`
-					: `✗ Dependency install failed (${installResult.packageManager})\n\nError: ${installResult.error}`;
-
-				builder = builder.withSyntheticGadgetCall(
-					'Tmux',
-					{
-						action: 'start',
-						session: 'deps-install',
-						command: `${installResult.packageManager} install`,
-					},
-					installOutput,
-					'gc_deps',
-				);
+				builder = injectDependencyResult(builder, installResult);
 			}
 
 			// Run the agent
@@ -456,13 +255,11 @@ ${directoryListing}
 
 		// Get zipped log buffer before returning (if logger exists)
 		let logBuffer: Buffer | undefined;
-		if (fileLogger) {
-			try {
-				fileLogger.close();
-				logBuffer = await fileLogger.getZippedBuffer();
-			} catch {
-				// Ignore log buffer errors
-			}
+		try {
+			fileLogger.close();
+			logBuffer = await fileLogger.getZippedBuffer();
+		} catch {
+			// Ignore log buffer errors
 		}
 
 		return {
@@ -484,9 +281,31 @@ ${directoryListing}
 			}
 		}
 		// Cleanup log files (buffer already extracted)
-		if (fileLogger) {
-			cleanupLogFile(fileLogger.logPath);
-			cleanupLogFile(fileLogger.llmistLogPath);
-		}
+		cleanupLogFile(fileLogger.logPath);
+		cleanupLogFile(fileLogger.llmistLogPath);
 	}
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function injectDependencyResult(
+	builder: ReturnType<typeof AgentBuilder.prototype.withGadgets>,
+	installResult: DependencyInstallResult,
+): ReturnType<typeof AgentBuilder.prototype.withGadgets> {
+	const installOutput = installResult.success
+		? `✓ Dependencies installed with ${installResult.packageManager}\n\n${installResult.output}`
+		: `✗ Dependency install failed (${installResult.packageManager})\n\nError: ${installResult.error}`;
+
+	return builder.withSyntheticGadgetCall(
+		'Tmux',
+		{
+			action: 'start',
+			session: 'deps-install',
+			command: `${installResult.packageManager} install`,
+		},
+		installOutput,
+		'gc_deps',
+	);
 }

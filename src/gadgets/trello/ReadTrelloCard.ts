@@ -1,5 +1,6 @@
 import { Gadget, z } from 'llmist';
 import { trelloClient } from '../../trello/client.js';
+import { formatGadgetError } from '../utils.js';
 
 export class ReadTrelloCard extends Gadget({
 	name: 'ReadTrelloCard',
@@ -88,6 +89,6 @@ export async function formatCardData(cardId: string, includeComments = true): Pr
 
 		return result;
 	} catch (error) {
-		return `Error reading card: ${error instanceof Error ? error.message : String(error)}`;
+		return formatGadgetError('reading card', error);
 	}
 }

@@ -27,6 +27,9 @@ async function main(): Promise<void> {
 		config = {
 			defaults: {
 				model: 'gemini:gemini-2.5-flash',
+				agentModels: {
+					implementation: 'gemini:gemini-2.5-pro',
+				},
 				maxIterations: 50,
 				selfDestructTimeoutMs: 30 * 60 * 1000,
 				watchdogTimeoutMs: 30 * 60 * 1000,

@@ -21,10 +21,10 @@ export { processTrelloWebhook } from './trello/webhook-handler.js';
 export { processGitHubWebhook } from './github/webhook-handler.js';
 
 export function registerBuiltInTriggers(registry: TriggerRegistry): void {
-	// Trello: Card moved triggers
-	registry.register(new CardMovedToBriefingTrigger());
-	registry.register(new CardMovedToPlanningTrigger());
-	registry.register(new CardMovedToTodoTrigger());
+	// Trello: Card moved triggers (factory-created objects)
+	registry.register(CardMovedToBriefingTrigger);
+	registry.register(CardMovedToPlanningTrigger);
+	registry.register(CardMovedToTodoTrigger);
 
 	// Trello: Label triggers
 	registry.register(new ReadyToProcessLabelTrigger());

@@ -1,5 +1,6 @@
 import { Gadget, z } from 'llmist';
 import { trelloClient } from '../../trello/client.js';
+import { formatGadgetError } from '../utils.js';
 
 export class UpdateTrelloCard extends Gadget({
 	name: 'UpdateTrelloCard',
@@ -69,7 +70,7 @@ export class UpdateTrelloCard extends Gadget({
 
 			return `Card updated: ${updated.join(', ')}`;
 		} catch (error) {
-			return `Error updating card: ${error instanceof Error ? error.message : String(error)}`;
+			return formatGadgetError('updating card', error);
 		}
 	}
 }

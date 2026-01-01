@@ -1,5 +1,6 @@
 import { Gadget, z } from 'llmist';
 import { trelloClient } from '../../trello/client.js';
+import { formatGadgetError } from '../utils.js';
 
 export class PostTrelloComment extends Gadget({
 	name: 'PostTrelloComment',
@@ -26,7 +27,7 @@ export class PostTrelloComment extends Gadget({
 			await trelloClient.addComment(params.cardId, params.comment);
 			return 'Comment posted successfully';
 		} catch (error) {
-			return `Error posting comment: ${error instanceof Error ? error.message : String(error)}`;
+			return formatGadgetError('posting comment', error);
 		}
 	}
 }

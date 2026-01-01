@@ -1,5 +1,6 @@
 import { Gadget, z } from 'llmist';
 import { trelloClient } from '../../trello/client.js';
+import { formatGadgetError } from '../utils.js';
 
 export class AddChecklistToCard extends Gadget({
 	name: 'AddChecklistToCard',
@@ -54,7 +55,7 @@ export class AddChecklistToCard extends Gadget({
 
 			return `Checklist "${params.checklistName}" created with ${params.items.length} items on card ${params.cardId}`;
 		} catch (error) {
-			return `Error adding checklist: ${error instanceof Error ? error.message : String(error)}`;
+			return formatGadgetError('adding checklist', error);
 		}
 	}
 }

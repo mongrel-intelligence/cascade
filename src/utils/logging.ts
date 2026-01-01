@@ -1,13 +1,14 @@
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error';
 
-const LOG_LEVELS: Record<LogLevel, number> = {
-	debug: 0,
-	info: 1,
-	warn: 2,
-	error: 3,
+export const LOG_LEVELS: Record<LogLevel, number> = {
+	trace: 0,
+	debug: 1,
+	info: 2,
+	warn: 3,
+	error: 4,
 };
 
-let currentLogLevel: LogLevel = 'info';
+let currentLogLevel: LogLevel = 'debug';
 
 export function setLogLevel(level: string): void {
 	if (level in LOG_LEVELS) {
@@ -34,6 +35,12 @@ function formatMessage(
 }
 
 export const logger = {
+	trace(message: string, context?: Record<string, unknown>): void {
+		if (shouldLog('trace')) {
+			console.log(formatMessage('trace', message, context));
+		}
+	},
+
 	debug(message: string, context?: Record<string, unknown>): void {
 		if (shouldLog('debug')) {
 			console.log(formatMessage('debug', message, context));

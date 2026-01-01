@@ -1,6 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { listDirectory, writeFile } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
@@ -10,7 +7,7 @@ import { GetPRComments, GetPRDetails, ReplyToReviewComment } from '../gadgets/gi
 import { Tmux } from '../gadgets/tmux.js';
 import { githubClient } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
-import { type FileLogger, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
+import { cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
 import { clearWatchdogCleanup, setWatchdogCleanup } from '../utils/lifecycle.js';
 import { logger } from '../utils/logging.js';
 import {
@@ -20,6 +17,14 @@ import {
 	runCommand as execCommand,
 } from '../utils/repo.js';
 import { getSystemPrompt } from './prompts/index.js';
+import {
+	type DependencyInstallResult,
+	generateDirectoryListing,
+	getLogLevel,
+	installDependencies,
+	readContextFiles,
+} from './utils/index.js';
+import { createAgentLogger } from './utils/logging.js';
 
 interface ReviewAgentInput extends AgentInput {
 	prNumber: number;
@@ -31,134 +36,6 @@ interface ReviewAgentInput extends AgentInput {
 	triggerCommentUrl: string;
 	project: ProjectConfig;
 	config: CascadeConfig;
-}
-
-// ============================================================================
-// Log Level Configuration
-// ============================================================================
-
-const LOG_LEVELS: Record<string, number> = {
-	trace: 0,
-	debug: 1,
-	info: 2,
-	warn: 3,
-	error: 4,
-};
-
-function getLogLevel(): number {
-	const level = process.env.LLMIST_LOG_LEVEL?.toLowerCase() || 'info';
-	return LOG_LEVELS[level] ?? 2;
-}
-
-// ============================================================================
-// Directory Listing Utility
-// ============================================================================
-
-async function generateDirectoryListing(cwd: string, depth: number): Promise<string> {
-	try {
-		const result = await execCommand(
-			'find',
-			['.', '-maxdepth', String(depth), '-type', 'f', '-o', '-type', 'd'],
-			cwd,
-		);
-		return result.stdout;
-	} catch {
-		return '';
-	}
-}
-
-// ============================================================================
-// Context Files (CLAUDE.md, AGENTS.md)
-// ============================================================================
-
-interface ContextFile {
-	path: string;
-	content: string;
-}
-
-async function readContextFiles(cwd: string): Promise<ContextFile[]> {
-	const files = ['CLAUDE.md', 'AGENTS.md'];
-	const results: ContextFile[] = [];
-
-	for (const file of files) {
-		try {
-			const result = await execCommand('cat', [file], cwd);
-			if (result.stdout.trim()) {
-				results.push({ path: file, content: result.stdout.trim() });
-			}
-		} catch {
-			// File doesn't exist, skip
-		}
-	}
-
-	return results;
-}
-
-// ============================================================================
-// Dependency Installation
-// ============================================================================
-
-interface DependencyInstallResult {
-	packageManager: string;
-	success: boolean;
-	output: string;
-	error?: string;
-}
-
-async function installDependencies(cwd: string): Promise<DependencyInstallResult | null> {
-	const packageJsonPath = join(cwd, 'package.json');
-	if (!existsSync(packageJsonPath)) {
-		return null;
-	}
-
-	const lockfiles = [
-		{ file: 'bun.lockb', pm: 'bun' },
-		{ file: 'pnpm-lock.yaml', pm: 'pnpm' },
-		{ file: 'yarn.lock', pm: 'yarn' },
-		{ file: 'package-lock.json', pm: 'npm' },
-	];
-
-	let packageManager = 'npm';
-
-	for (const { file, pm } of lockfiles) {
-		if (existsSync(join(cwd, file))) {
-			packageManager = pm;
-			break;
-		}
-	}
-
-	if (packageManager === 'npm') {
-		try {
-			const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
-			if (pkg.packageManager) {
-				const match = pkg.packageManager.match(/^(npm|yarn|pnpm|bun)@/);
-				if (match) {
-					packageManager = match[1];
-				}
-			}
-		} catch {
-			// Ignore parse errors
-		}
-	}
-
-	try {
-		const result = await execCommand(packageManager, ['install'], cwd, {
-			CI: 'true',
-			PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
-		});
-		return {
-			packageManager,
-			success: true,
-			output: result.stdout + result.stderr,
-		};
-	} catch (err) {
-		return {
-			packageManager,
-			success: false,
-			output: '',
-			error: String(err),
-		};
-	}
 }
 
 // ============================================================================
@@ -175,42 +52,23 @@ export async function executeReviewAgent(input: ReviewAgentInput): Promise<Agent
 	}
 
 	let repoDir: string | null = null;
-	let fileLogger: FileLogger | null = null;
 
-	fileLogger = createFileLogger(`cascade-review-${prNumber}`);
+	// Create file logger for this agent run
+	const fileLogger = createFileLogger(`cascade-review-${prNumber}`);
+	const log = createAgentLogger(fileLogger);
 
+	// Register cleanup callback for watchdog timeout
 	setWatchdogCleanup(async () => {
-		if (fileLogger) {
-			fileLogger.close();
-			// For review agent, we post a comment to the PR instead of attaching logs to Trello
-			await githubClient.createPRComment(
-				owner,
-				repo,
-				prNumber,
-				'⚠️ Review agent timed out while addressing feedback.',
-			);
-			logger.info('Posted timeout notice to PR', { prNumber });
-		}
+		fileLogger.close();
+		// For review agent, we post a comment to the PR instead of attaching logs to Trello
+		await githubClient.createPRComment(
+			owner,
+			repo,
+			prNumber,
+			'⚠️ Review agent timed out while addressing feedback.',
+		);
+		logger.info('Posted timeout notice to PR', { prNumber });
 	});
-
-	const log = {
-		debug: (msg: string, ctx?: Record<string, unknown>) => {
-			logger.debug(msg, ctx);
-			fileLogger?.write('DEBUG', msg, ctx);
-		},
-		info: (msg: string, ctx?: Record<string, unknown>) => {
-			logger.info(msg, ctx);
-			fileLogger?.write('INFO', msg, ctx);
-		},
-		warn: (msg: string, ctx?: Record<string, unknown>) => {
-			logger.warn(msg, ctx);
-			fileLogger?.write('WARN', msg, ctx);
-		},
-		error: (msg: string, ctx?: Record<string, unknown>) => {
-			logger.error(msg, ctx);
-			fileLogger?.write('ERROR', msg, ctx);
-		},
-	};
 
 	try {
 		// Clone repo to temp directory
@@ -235,7 +93,11 @@ export async function executeReviewAgent(input: ReviewAgentInput): Promise<Agent
 
 		// Get system prompt
 		const systemPrompt = project.prompts?.review || getSystemPrompt('review', {});
-		const model = project.agentModels?.review || project.model || config.defaults.model;
+		const model =
+			project.agentModels?.review ||
+			project.model ||
+			config.defaults.agentModels?.review ||
+			config.defaults.model;
 		const maxIterations = config.defaults.maxIterations;
 
 		// Read context files
@@ -315,6 +177,7 @@ Use these values when calling GitHub gadgets (GetPRComments, ReplyToReviewCommen
 
 			let builder = new AgentBuilder(client)
 				.withModel(model)
+				.withTemperature(0)
 				.withSystem(systemPrompt)
 				.withMaxIterations(maxIterations)
 				.withLogger(llmistLogger)
@@ -361,20 +224,7 @@ Use these values when calling GitHub gadgets (GetPRComments, ReplyToReviewCommen
 
 			// Inject dependency install result
 			if (installResult) {
-				const installOutput = installResult.success
-					? `✓ Dependencies installed with ${installResult.packageManager}\n\n${installResult.output}`
-					: `✗ Dependency install failed (${installResult.packageManager})\n\nError: ${installResult.error}`;
-
-				builder = builder.withSyntheticGadgetCall(
-					'Tmux',
-					{
-						action: 'start',
-						session: 'deps-install',
-						command: `${installResult.packageManager} install`,
-					},
-					installOutput,
-					'gc_deps',
-				);
+				builder = injectDependencyResult(builder, installResult);
 			}
 
 			// Run the agent
@@ -429,13 +279,11 @@ Use these values when calling GitHub gadgets (GetPRComments, ReplyToReviewCommen
 		logger.error('Review agent execution failed', { prNumber, error: String(err) });
 
 		let logBuffer: Buffer | undefined;
-		if (fileLogger) {
-			try {
-				fileLogger.close();
-				logBuffer = await fileLogger.getZippedBuffer();
-			} catch {
-				// Ignore log buffer errors
-			}
+		try {
+			fileLogger.close();
+			logBuffer = await fileLogger.getZippedBuffer();
+		} catch {
+			// Ignore log buffer errors
 		}
 
 		return {
@@ -454,9 +302,31 @@ Use these values when calling GitHub gadgets (GetPRComments, ReplyToReviewCommen
 				logger.warn('Failed to cleanup temp directory', { repoDir, error: String(err) });
 			}
 		}
-		if (fileLogger) {
-			cleanupLogFile(fileLogger.logPath);
-			cleanupLogFile(fileLogger.llmistLogPath);
-		}
+		cleanupLogFile(fileLogger.logPath);
+		cleanupLogFile(fileLogger.llmistLogPath);
 	}
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function injectDependencyResult(
+	builder: ReturnType<typeof AgentBuilder.prototype.withGadgets>,
+	installResult: DependencyInstallResult,
+): ReturnType<typeof AgentBuilder.prototype.withGadgets> {
+	const installOutput = installResult.success
+		? `✓ Dependencies installed with ${installResult.packageManager}\n\n${installResult.output}`
+		: `✗ Dependency install failed (${installResult.packageManager})\n\nError: ${installResult.error}`;
+
+	return builder.withSyntheticGadgetCall(
+		'Tmux',
+		{
+			action: 'start',
+			session: 'deps-install',
+			command: `${installResult.packageManager} install`,
+		},
+		installOutput,
+		'gc_deps',
+	);
 }
