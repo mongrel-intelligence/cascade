@@ -27,6 +27,7 @@ import {
 	getLogLevel,
 	installDependencies,
 	readContextFiles,
+	startPostgres,
 	warmTypeScriptCache,
 } from './utils/index.js';
 import { createAgentLogger } from './utils/logging.js';
@@ -56,6 +57,9 @@ async function setupRepository(
 	project: ProjectConfig,
 	log: ReturnType<typeof createAgentLogger>,
 ): Promise<RepoSetupResult> {
+	// Start PostgreSQL if available (for local database testing)
+	await startPostgres();
+
 	// Clone repo to temp directory
 	const repoDir = createTempDir(project.id);
 	cloneRepo(project, repoDir);

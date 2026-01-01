@@ -1,7 +1,27 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { logger } from '../../utils/logging.js';
 import { runCommand as execCommand } from '../../utils/repo.js';
+
+// ============================================================================
+// PostgreSQL Startup
+// ============================================================================
+
+let postgresStarted = false;
+
+export async function startPostgres(): Promise<void> {
+	if (postgresStarted) return;
+
+	// Start PostgreSQL as postgres user
+	await execCommand(
+		'su',
+		['postgres', '-c', 'pg_ctl start -D /var/lib/postgresql/data -l /tmp/postgres.log'],
+		'/',
+	);
+	postgresStarted = true;
+	logger.info('PostgreSQL started');
+}
 
 // ============================================================================
 // Log Level Configuration

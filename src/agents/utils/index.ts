@@ -1,6 +1,7 @@
 export {
 	LOG_LEVELS,
 	getLogLevel,
+	startPostgres,
 	generateDirectoryListing,
 	type ContextFile,
 	readContextFiles,
