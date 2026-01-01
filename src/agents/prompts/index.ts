@@ -13,6 +13,7 @@ const eta = new Eta({ views: templatesDir, autoEscape: false });
 export interface PromptContext {
 	// Common
 	cardId?: string;
+	cardUrl?: string;
 	projectId?: string;
 
 	// Briefing-specific

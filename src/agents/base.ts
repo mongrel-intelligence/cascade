@@ -11,6 +11,7 @@ import {
 	ListTrelloCards,
 	PostTrelloComment,
 	ReadTrelloCard,
+	UpdateChecklistItem,
 	UpdateTrelloCard,
 	formatCardData,
 } from '../gadgets/trello/index.js';
@@ -110,8 +111,10 @@ async function buildAgentContext(
 	log: ReturnType<typeof createAgentLogger>,
 ): Promise<AgentContextData> {
 	// Build prompt context for template rendering
+	const cardUrl = `https://trello.com/c/${cardId}`;
 	const promptContext: PromptContext = {
 		cardId,
+		cardUrl,
 		projectId: project.id,
 		storiesListId: project.trello?.lists?.stories,
 		processedLabelId: project.trello?.labels?.processed,
@@ -205,6 +208,7 @@ function createAgentBuilderWithGadgets(
 			new ListTrelloCards(),
 			new GetMyRecentActivity(),
 			new AddChecklistToCard(),
+			new UpdateChecklistItem(),
 		);
 }
 
@@ -370,6 +374,13 @@ export async function executeAgent(
 
 			log.info('Agent completed', { cardId, iterations: result.iterationCount, cost: result.cost });
 
+			// Extract PR URL from output (gh pr create outputs the URL)
+			const prUrlMatch = result.output.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/);
+			const prUrl = prUrlMatch ? prUrlMatch[0] : undefined;
+			if (prUrl) {
+				log.info('PR URL extracted', { prUrl });
+			}
+
 			// Get zipped log buffer before returning
 			fileLogger.close();
 			const logBuffer = await fileLogger.getZippedBuffer();
@@ -377,6 +388,7 @@ export async function executeAgent(
 			return {
 				success: true,
 				output: result.output,
+				prUrl,
 				logBuffer,
 				cost: result.cost,
 			};

@@ -341,6 +341,19 @@ export const trelloClient = {
 		}));
 	},
 
+	async updateChecklistItem(
+		cardId: string,
+		checkItemId: string,
+		state: 'complete' | 'incomplete',
+	): Promise<void> {
+		logger.debug('Updating checklist item', { cardId, checkItemId, state });
+		await getClient().cards.updateCardCheckItem({
+			id: cardId,
+			idCheckItem: checkItemId,
+			state,
+		});
+	},
+
 	async getCardCustomFieldItems(cardId: string): Promise<CustomFieldItem[]> {
 		logger.debug('Fetching card custom field items', { cardId });
 		const apiKey = process.env.TRELLO_API_KEY;

@@ -96,6 +96,11 @@ async function executeAgent(
 	if (cardId) {
 		await safeAddLabel(cardId, project.trello.labels.processing);
 		await safeRemoveLabel(cardId, project.trello.labels.readyToProcess);
+
+		// Move to IN PROGRESS when implementation starts
+		if (result.agentType === 'implementation') {
+			await safeMoveCard(cardId, project.trello.lists.inProgress);
+		}
 	}
 
 	const agentResult = await runAgent(result.agentType, {
