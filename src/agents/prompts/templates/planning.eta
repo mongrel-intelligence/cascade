@@ -137,3 +137,12 @@ Review the updated description and move to TODO when ready to implement!
 - Be specific about file paths and function names
 - Break down into small, testable increments
 - Include testing as part of each step
+
+## Path Verification
+
+**CRITICAL: Only include file paths you have VERIFIED exist.**
+
+- Before referencing any file path in your plan, verify it exists using `ListDirectory` or `ReadFile`
+- For test files: FIRST list the test directory to discover existing test file patterns and naming conventions
+- NEVER fabricate or guess file paths - if a path doesn't exist, find where similar files actually live
+- If truly unsure about test location, omit the specific path and say "add tests following existing patterns in the test directory"
