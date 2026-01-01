@@ -90,7 +90,7 @@ class TmuxGadget extends Gadget({
 				.string()
 				.optional()
 				.describe('Working directory for the command (default: current directory)'),
-			wait: z
+			wait: z.coerce
 				.number()
 				.default(DEFAULT_WAIT_MS)
 				.describe('Max time to wait for initial output in ms (default: 120000, max: 120000)'),
@@ -101,14 +101,17 @@ class TmuxGadget extends Gadget({
 			action: z.literal('send'),
 			session: sessionNameSchema.describe('Target session name'),
 			keys: z.string().describe("Keys or command to send (e.g., 'npm test' or 'C-c' for Ctrl+C)"),
-			enter: z.boolean().default(true).describe('Press Enter after sending keys (default: true)'),
+			enter: z.coerce
+				.boolean()
+				.default(true)
+				.describe('Press Enter after sending keys (default: true)'),
 		}),
 
 		// Capture output from a session
 		z.object({
 			action: z.literal('capture'),
 			session: sessionNameSchema.describe('Session to capture output from'),
-			lines: z
+			lines: z.coerce
 				.number()
 				.int()
 				.min(1)
@@ -171,175 +174,192 @@ class TmuxGadget extends Gadget({
 }) {
 	override async execute(params: this['params']): Promise<string> {
 		switch (params.action) {
-			case 'start': {
-				// Check if session already exists
-				const checkResult = await runTmux(['has-session', '-t', params.session]);
-				if (checkResult.exitCode === 0) {
-					return `session=${params.session} status=error\n\nSession '${params.session}' already exists. Use action="kill" first or choose a different name.`;
-				}
-
-				// Build the command with optional cwd
-				const shellCommand = params.cwd ? `cd ${params.cwd} && ${params.command}` : params.command;
-
-				// Create new detached session with wider terminal for better output
-				// Use remain-on-exit so the pane stays around after the command exits,
-				// giving us time to capture output before the tmux server shuts down
-				const result = await runTmux([
-					'new-session',
-					'-d', // detached
-					'-s',
-					params.session,
-					'-x',
-					'200', // wider terminal
-					'-y',
-					'50',
-					'bash',
-					'-c',
-					// Set remain-on-exit FIRST so it applies when command exits
-					`tmux set-option -t ${params.session} remain-on-exit on 2>/dev/null; ${shellCommand}`,
-				]);
-
-				if (result.exitCode !== 0) {
-					return `session=${params.session} status=error\n\n${result.output || 'Failed to create session'}`;
-				}
-
-				// Wait and poll for output - capture BEFORE checking if session ended
-				// to avoid race condition where server shuts down
-				// Cap wait time to MAX_WAIT_MS to ensure we return before gadget timeout
-				const requestedWait = params.wait ?? DEFAULT_WAIT_MS;
-				const waitMs = Math.min(requestedWait, MAX_WAIT_MS);
-				let elapsed = 0;
-				let sessionEnded = false;
-				let lastOutput = '';
-
-				while (elapsed < waitMs) {
-					await sleep(POLL_INTERVAL_MS);
-					elapsed += POLL_INTERVAL_MS;
-
-					// Capture output first (while session/server is still guaranteed running)
-					const capture = await runTmux(['capture-pane', '-t', params.session, '-p', '-S', '-200']);
-					if (capture.exitCode === 0) {
-						lastOutput = capture.output;
-					}
-
-					// Check if pane has died (remain-on-exit keeps pane but marks it dead)
-					const check = await runTmux([
-						'display-message',
-						'-t',
-						params.session,
-						'-p',
-						'#{pane_dead}',
-					]);
-					if (check.exitCode !== 0 || check.output.trim() === '1') {
-						sessionEnded = true;
-						break;
-					}
-				}
-
-				const output = lastOutput.replace(/^\s*\n/, '').replace(/\n\s*$/, '');
-
-				if (sessionEnded) {
-					// Clean up the dead session
-					await runTmux(['kill-session', '-t', params.session]);
-					return `session=${params.session} status=exited\n\n${output || '(no output)'}`;
-				}
-				return `session=${params.session} status=running\n\n${output || '(no output yet)'}\n\n(Process still running in session '${params.session}'. Use capture to check progress, kill when done.)`;
-			}
-
-			case 'send': {
-				// Verify session exists
-				const checkResult = await runTmux(['has-session', '-t', params.session]);
-				if (checkResult.exitCode !== 0) {
-					return `session=${params.session} status=error\n\nSession '${params.session}' does not exist`;
-				}
-
-				// Send keys
-				const sendArgs = ['send-keys', '-t', params.session, params.keys];
-				if (params.enter) {
-					sendArgs.push('Enter');
-				}
-
-				const result = await runTmux(sendArgs);
-				if (result.exitCode !== 0) {
-					return `session=${params.session} status=error\n\n${result.output || 'Failed to send keys'}`;
-				}
-
-				const enterNote = params.enter ? ' [Enter]' : '';
-				return `session=${params.session} status=sent\n\nSent keys to session '${params.session}': ${params.keys}${enterNote}`;
-			}
-
-			case 'capture': {
-				// Verify session exists
-				const checkResult = await runTmux(['has-session', '-t', params.session]);
-				if (checkResult.exitCode !== 0) {
-					return `session=${params.session} status=error\n\nSession '${params.session}' does not exist`;
-				}
-
-				// Capture pane output
-				const result = await runTmux([
-					'capture-pane',
-					'-t',
-					params.session,
-					'-p', // print to stdout
-					'-S',
-					`-${params.lines}`, // start from N lines back
-				]);
-
-				if (result.exitCode !== 0) {
-					return `session=${params.session} status=error\n\n${result.output || 'Failed to capture output'}`;
-				}
-
-				// Trim empty lines from start/end but preserve internal structure
-				const captured = result.output.replace(/^\s*\n/, '').replace(/\n\s*$/, '');
-				return `session=${params.session} lines=${params.lines}\n\n${captured || '(no output yet)'}`;
-			}
-
-			case 'list': {
-				const result = await runTmux([
-					'list-sessions',
-					'-F',
-					'#{session_name}: #{pane_current_command} (#{?session_attached,attached,running})',
-				]);
-
-				if (result.exitCode !== 0) {
-					// No sessions is not an error
-					if (
-						result.output.includes('no server running') ||
-						result.output.includes('no sessions')
-					) {
-						return 'sessions=0\n\nNo active tmux sessions';
-					}
-					return `status=error\n\n${result.output}`;
-				}
-
-				const sessions = result.output.split('\n').filter(Boolean);
-				return `sessions=${sessions.length}\n\n${sessions.join('\n') || 'No active sessions'}`;
-			}
-
-			case 'kill': {
-				// Verify session exists first
-				const checkResult = await runTmux(['has-session', '-t', params.session]);
-				if (checkResult.exitCode !== 0) {
-					return `session=${params.session} status=error\n\nSession '${params.session}' does not exist`;
-				}
-
-				const result = await runTmux(['kill-session', '-t', params.session]);
-				if (result.exitCode !== 0) {
-					return `session=${params.session} status=error\n\n${result.output || 'Failed to kill session'}`;
-				}
-
-				return `session=${params.session} status=killed\n\nSession '${params.session}' terminated`;
-			}
-
-			case 'exists': {
-				const result = await runTmux(['has-session', '-t', params.session]);
-				const exists = result.exitCode === 0;
-				return `session=${params.session} exists=${exists}\n\nSession '${params.session}' ${exists ? 'exists and is running' : 'does not exist'}`;
-			}
-
+			case 'start':
+				return this.handleStart(params);
+			case 'send':
+				return this.handleSend(params);
+			case 'capture':
+				return this.handleCapture(params);
+			case 'list':
+				return this.handleList();
+			case 'kill':
+				return this.handleKill(params);
+			case 'exists':
+				return this.handleExists(params);
 			default:
 				return 'status=error\n\nUnknown action';
 		}
+	}
+
+	private async handleStart(params: {
+		session: string;
+		command: string;
+		cwd?: string;
+		wait?: number;
+	}): Promise<string> {
+		// Check if session already exists
+		const checkResult = await runTmux(['has-session', '-t', params.session]);
+		if (checkResult.exitCode === 0) {
+			return `session=${params.session} status=error\n\nSession '${params.session}' already exists. Use action="kill" first or choose a different name.`;
+		}
+
+		// Build the command with optional cwd
+		const shellCommand = params.cwd ? `cd ${params.cwd} && ${params.command}` : params.command;
+
+		// Create new detached session with wider terminal for better output
+		// Use remain-on-exit so the pane stays around after the command exits,
+		// giving us time to capture output before the tmux server shuts down
+		const result = await runTmux([
+			'new-session',
+			'-d', // detached
+			'-s',
+			params.session,
+			'-x',
+			'200', // wider terminal
+			'-y',
+			'50',
+			'bash',
+			'-c',
+			// Set remain-on-exit FIRST so it applies when command exits
+			`tmux set-option -t ${params.session} remain-on-exit on 2>/dev/null; ${shellCommand}`,
+		]);
+
+		if (result.exitCode !== 0) {
+			return `session=${params.session} status=error\n\n${result.output || 'Failed to create session'}`;
+		}
+
+		return this.waitForOutput(params.session, params.wait);
+	}
+
+	private async waitForOutput(session: string, requestedWait?: number): Promise<string> {
+		// Wait and poll for output - capture BEFORE checking if session ended
+		// to avoid race condition where server shuts down
+		// Cap wait time to MAX_WAIT_MS to ensure we return before gadget timeout
+		const waitMs = Math.min(requestedWait ?? DEFAULT_WAIT_MS, MAX_WAIT_MS);
+		let elapsed = 0;
+		let sessionEnded = false;
+		let lastOutput = '';
+
+		while (elapsed < waitMs) {
+			await sleep(POLL_INTERVAL_MS);
+			elapsed += POLL_INTERVAL_MS;
+
+			// Capture output first (while session/server is still guaranteed running)
+			const capture = await runTmux(['capture-pane', '-t', session, '-p', '-S', '-200']);
+			if (capture.exitCode === 0) {
+				lastOutput = capture.output;
+			}
+
+			// Check if pane has died (remain-on-exit keeps pane but marks it dead)
+			const check = await runTmux(['display-message', '-t', session, '-p', '#{pane_dead}']);
+			if (check.exitCode !== 0 || check.output.trim() === '1') {
+				sessionEnded = true;
+				break;
+			}
+		}
+
+		const output = lastOutput.replace(/^\s*\n/, '').replace(/\n\s*$/, '');
+
+		if (sessionEnded) {
+			// Clean up the dead session
+			await runTmux(['kill-session', '-t', session]);
+			return `session=${session} status=exited\n\n${output || '(no output)'}`;
+		}
+		return `session=${session} status=running\n\n${output || '(no output yet)'}\n\n(Process still running in session '${session}'. Use capture to check progress, kill when done.)`;
+	}
+
+	private async handleSend(params: {
+		session: string;
+		keys: string;
+		enter?: boolean;
+	}): Promise<string> {
+		// Verify session exists
+		const checkResult = await runTmux(['has-session', '-t', params.session]);
+		if (checkResult.exitCode !== 0) {
+			return `session=${params.session} status=error\n\nSession '${params.session}' does not exist`;
+		}
+
+		// Send keys
+		const sendArgs = ['send-keys', '-t', params.session, params.keys];
+		if (params.enter) {
+			sendArgs.push('Enter');
+		}
+
+		const result = await runTmux(sendArgs);
+		if (result.exitCode !== 0) {
+			return `session=${params.session} status=error\n\n${result.output || 'Failed to send keys'}`;
+		}
+
+		const enterNote = params.enter ? ' [Enter]' : '';
+		return `session=${params.session} status=sent\n\nSent keys to session '${params.session}': ${params.keys}${enterNote}`;
+	}
+
+	private async handleCapture(params: { session: string; lines?: number }): Promise<string> {
+		const lines = params.lines ?? 100;
+
+		// Verify session exists
+		const checkResult = await runTmux(['has-session', '-t', params.session]);
+		if (checkResult.exitCode !== 0) {
+			return `session=${params.session} status=error\n\nSession '${params.session}' does not exist`;
+		}
+
+		// Capture pane output
+		const result = await runTmux([
+			'capture-pane',
+			'-t',
+			params.session,
+			'-p', // print to stdout
+			'-S',
+			`-${lines}`, // start from N lines back
+		]);
+
+		if (result.exitCode !== 0) {
+			return `session=${params.session} status=error\n\n${result.output || 'Failed to capture output'}`;
+		}
+
+		// Trim empty lines from start/end but preserve internal structure
+		const captured = result.output.replace(/^\s*\n/, '').replace(/\n\s*$/, '');
+		return `session=${params.session} lines=${lines}\n\n${captured || '(no output yet)'}`;
+	}
+
+	private async handleList(): Promise<string> {
+		const result = await runTmux([
+			'list-sessions',
+			'-F',
+			'#{session_name}: #{pane_current_command} (#{?session_attached,attached,running})',
+		]);
+
+		if (result.exitCode !== 0) {
+			// No sessions is not an error
+			if (result.output.includes('no server running') || result.output.includes('no sessions')) {
+				return 'sessions=0\n\nNo active tmux sessions';
+			}
+			return `status=error\n\n${result.output}`;
+		}
+
+		const sessions = result.output.split('\n').filter(Boolean);
+		return `sessions=${sessions.length}\n\n${sessions.join('\n') || 'No active sessions'}`;
+	}
+
+	private async handleKill(params: { session: string }): Promise<string> {
+		// Verify session exists first
+		const checkResult = await runTmux(['has-session', '-t', params.session]);
+		if (checkResult.exitCode !== 0) {
+			return `session=${params.session} status=error\n\nSession '${params.session}' does not exist`;
+		}
+
+		const result = await runTmux(['kill-session', '-t', params.session]);
+		if (result.exitCode !== 0) {
+			return `session=${params.session} status=error\n\n${result.output || 'Failed to kill session'}`;
+		}
+
+		return `session=${params.session} status=killed\n\nSession '${params.session}' terminated`;
+	}
+
+	private async handleExists(params: { session: string }): Promise<string> {
+		const result = await runTmux(['has-session', '-t', params.session]);
+		const exists = result.exitCode === 0;
+		return `session=${params.session} exists=${exists}\n\nSession '${params.session}' ${exists ? 'exists and is running' : 'does not exist'}`;
 	}
 }
 

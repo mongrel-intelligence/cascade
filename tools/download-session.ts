@@ -94,6 +94,50 @@ async function downloadAndExtractZip(url: string, destDir: string): Promise<stri
 	return extractedFiles;
 }
 
+type Attachment = Awaited<ReturnType<typeof trelloClient.getCardAttachments>>[0];
+
+async function downloadGzAttachments(attachments: Attachment[], sessionDir: string): Promise<void> {
+	const gzAttachments = attachments.filter((a) => a.name.endsWith('.gz'));
+	if (gzAttachments.length === 0) return;
+
+	console.log(`Downloading ${gzAttachments.length} .gz attachments...`);
+
+	for (const attachment of gzAttachments) {
+		const destName = attachment.name.replace(/\.gz$/, '');
+		const destPath = join(sessionDir, destName);
+		console.log(`  ${attachment.name} -> ${destName}`);
+
+		try {
+			await downloadAndUnzip(attachment.url, destPath);
+		} catch (err) {
+			console.error(`  Failed to download ${attachment.name}:`, err);
+		}
+	}
+}
+
+async function downloadZipAttachments(
+	attachments: Attachment[],
+	sessionDir: string,
+): Promise<void> {
+	const zipAttachments = attachments.filter((a) => a.name.endsWith('.zip'));
+	if (zipAttachments.length === 0) return;
+
+	console.log(`Downloading ${zipAttachments.length} .zip attachments...`);
+
+	for (const attachment of zipAttachments) {
+		console.log(`  ${attachment.name}:`);
+
+		try {
+			const files = await downloadAndExtractZip(attachment.url, sessionDir);
+			for (const file of files) {
+				console.log(`    -> ${file}`);
+			}
+		} catch (err) {
+			console.error(`  Failed to download ${attachment.name}:`, err);
+		}
+	}
+}
+
 async function main() {
 	const input = process.argv[2];
 
@@ -145,42 +189,9 @@ async function main() {
 
 	await writeFile(join(sessionDir, 'card-data.json'), JSON.stringify(cardData, null, 2));
 
-	// Download .gz attachments
-	const gzAttachments = attachments.filter((a) => a.name.endsWith('.gz'));
-	if (gzAttachments.length > 0) {
-		console.log(`Downloading ${gzAttachments.length} .gz attachments...`);
-
-		for (const attachment of gzAttachments) {
-			const destName = attachment.name.replace(/\.gz$/, '');
-			const destPath = join(sessionDir, destName);
-			console.log(`  ${attachment.name} -> ${destName}`);
-
-			try {
-				await downloadAndUnzip(attachment.url, destPath);
-			} catch (err) {
-				console.error(`  Failed to download ${attachment.name}:`, err);
-			}
-		}
-	}
-
-	// Download .zip attachments
-	const zipAttachments = attachments.filter((a) => a.name.endsWith('.zip'));
-	if (zipAttachments.length > 0) {
-		console.log(`Downloading ${zipAttachments.length} .zip attachments...`);
-
-		for (const attachment of zipAttachments) {
-			console.log(`  ${attachment.name}:`);
-
-			try {
-				const files = await downloadAndExtractZip(attachment.url, sessionDir);
-				for (const file of files) {
-					console.log(`    -> ${file}`);
-				}
-			} catch (err) {
-				console.error(`  Failed to download ${attachment.name}:`, err);
-			}
-		}
-	}
+	// Download attachments
+	await downloadGzAttachments(attachments, sessionDir);
+	await downloadZipAttachments(attachments, sessionDir);
 
 	console.log(`\nSession data saved to:\n${sessionDir}`);
 }

@@ -44,6 +44,231 @@ export interface AgentRunner {
 }
 
 // ============================================================================
+// Repository Setup
+// ============================================================================
+
+interface RepoSetupResult {
+	repoDir: string;
+	installResult: DependencyInstallResult | null;
+}
+
+async function setupRepository(
+	project: ProjectConfig,
+	log: ReturnType<typeof createAgentLogger>,
+): Promise<RepoSetupResult> {
+	// Clone repo to temp directory
+	const repoDir = createTempDir(project.id);
+	cloneRepo(project, repoDir);
+
+	// Install dependencies if package.json exists
+	log.info('Checking for dependencies to install', { repoDir });
+	const installResult = await installDependencies(repoDir);
+	if (installResult) {
+		log.info('Dependencies installed', {
+			packageManager: installResult.packageManager,
+			success: installResult.success,
+		});
+	}
+
+	// Warm TypeScript cache to avoid slow first-run compilation during agent execution
+	log.info('Warming TypeScript cache', { repoDir });
+	const tscResult = await warmTypeScriptCache(repoDir);
+	if (tscResult) {
+		log.info('TypeScript cache warmed', {
+			durationMs: tscResult.durationMs,
+			hadErrors: !!tscResult.error,
+		});
+	}
+
+	return { repoDir, installResult };
+}
+
+// ============================================================================
+// Agent Context Building
+// ============================================================================
+
+interface AgentContextData {
+	systemPrompt: string;
+	model: string;
+	maxIterations: number;
+	contextFiles: Awaited<ReturnType<typeof readContextFiles>>;
+	cardData: string;
+	prompt: string;
+}
+
+async function buildAgentContext(
+	agentType: string,
+	cardId: string,
+	repoDir: string,
+	project: ProjectConfig,
+	config: CascadeConfig,
+	log: ReturnType<typeof createAgentLogger>,
+): Promise<AgentContextData> {
+	// Build prompt context for template rendering
+	const promptContext: PromptContext = {
+		cardId,
+		projectId: project.id,
+		storiesListId: project.trello?.lists?.stories,
+		processedLabelId: project.trello?.labels?.processed,
+	};
+
+	// Get system prompt and model
+	const systemPrompt = project.prompts?.[agentType] || getSystemPrompt(agentType, promptContext);
+	const model =
+		project.agentModels?.[agentType] ||
+		project.model ||
+		config.defaults.agentModels?.[agentType] ||
+		config.defaults.model;
+	const maxIterations = config.defaults.maxIterations;
+
+	// Read context files (CLAUDE.md, AGENTS.md) for synthetic gadget calls
+	const contextFiles = await readContextFiles(repoDir);
+
+	// Pre-fetch card data for synthetic gadget call
+	log.info('Fetching card data for context', { cardId });
+	const cardData = await formatCardData(cardId, true);
+
+	// Generate directory listing for codebase context
+	const directoryListing = await generateDirectoryListing(repoDir, 3);
+	const prompt = buildPrompt(directoryListing, cardId);
+
+	return { systemPrompt, model, maxIterations, contextFiles, cardData, prompt };
+}
+
+function buildPrompt(directoryListing: string | null, cardId: string): string {
+	const directorySection = directoryListing
+		? `Here is the codebase directory structure (pre-populated for context):
+
+<codebase_structure>
+${directoryListing}
+</codebase_structure>
+
+`
+		: '';
+
+	return `${directorySection}Analyze and process the Trello card with ID: ${cardId}. The card data (title, description, checklists, attachments, comments) has been pre-loaded above. Review it and proceed with your task.`;
+}
+
+// ============================================================================
+// Agent Builder Creation
+// ============================================================================
+
+type BuilderType = ReturnType<typeof AgentBuilder.prototype.withGadgets>;
+
+function createAgentBuilderWithGadgets(
+	client: LLMist,
+	ctx: AgentContextData,
+	llmistLogger: ReturnType<typeof createLogger>,
+): BuilderType {
+	return new AgentBuilder(client)
+		.withModel(ctx.model)
+		.withTemperature(0)
+		.withSystem(ctx.systemPrompt)
+		.withMaxIterations(ctx.maxIterations)
+		.withLogger(llmistLogger)
+		.withGadgets(
+			// Filesystem gadgets
+			listDirectory,
+			new ReadFile(),
+			writeFile,
+			// Shell commands via tmux (no timeout issues)
+			new Tmux(),
+			new Sleep(),
+			// Trello gadgets
+			new ReadTrelloCard(),
+			new PostTrelloComment(),
+			new UpdateTrelloCard(),
+			new CreateTrelloCard(),
+			new ListTrelloCards(),
+			new GetMyRecentActivity(),
+			new AddChecklistToCard(),
+		);
+}
+
+function injectSyntheticCalls(
+	initialBuilder: BuilderType,
+	cardId: string,
+	cardData: string,
+	contextFiles: AgentContextData['contextFiles'],
+	installResult: DependencyInstallResult | null,
+): BuilderType {
+	// Inject card data as synthetic ReadTrelloCard call
+	let builder = initialBuilder.withSyntheticGadgetCall(
+		'ReadTrelloCard',
+		{ cardId, includeComments: true },
+		cardData,
+		'gc_card',
+	);
+
+	// Inject context files as synthetic ReadFile gadget calls
+	for (let i = 0; i < contextFiles.length; i++) {
+		const file = contextFiles[i];
+		builder = builder.withSyntheticGadgetCall(
+			'ReadFile',
+			{ filePath: file.path },
+			file.content,
+			`gc_init_${i + 1}`,
+		);
+	}
+
+	// Inject dependency install result as synthetic Tmux call
+	if (installResult) {
+		builder = injectDependencyResult(builder, installResult);
+	}
+
+	return builder;
+}
+
+// ============================================================================
+// Agent Execution Loop
+// ============================================================================
+
+interface AgentRunResult {
+	output: string;
+	iterationCount: number;
+	cost: number;
+}
+
+async function runAgentLoop(
+	agent: ReturnType<BuilderType['ask']>,
+	log: ReturnType<typeof createAgentLogger>,
+): Promise<AgentRunResult> {
+	const outputLines: string[] = [];
+	let iterationCount = 0;
+
+	for await (const event of agent.run()) {
+		if (event.type === 'text') {
+			log.debug('[Text]', { content: event.content.slice(0, 100) });
+			outputLines.push(event.content);
+		} else if (event.type === 'gadget_call') {
+			iterationCount++;
+			log.info('[Gadget]', {
+				iteration: iterationCount,
+				name: event.call.gadgetName,
+				invocationId: event.call.invocationId,
+			});
+		} else if (event.type === 'gadget_result') {
+			const level = event.result.error ? 'error' : 'info';
+			log[level]('[Gadget result]', {
+				name: event.result.gadgetName,
+				ms: event.result.executionTimeMs,
+				error: event.result.error,
+			});
+		} else if (event.type === 'stream_complete') {
+			log.info('Stream complete', { iteration: iterationCount });
+		}
+	}
+
+	const cost = agent.getTree()?.getTotalCost() ?? 0;
+
+	return {
+		output: outputLines.join('\n'),
+		iterationCount,
+		cost,
+	};
+}
+
+// ============================================================================
 // Agent Execution
 // ============================================================================
 
@@ -74,75 +299,24 @@ export async function executeAgent(
 	});
 
 	try {
-		// Clone repo to temp directory
-		repoDir = createTempDir(project.id);
-		cloneRepo(project, repoDir);
-
-		// Install dependencies if package.json exists
-		log.info('Checking for dependencies to install', { repoDir });
-		const installResult = await installDependencies(repoDir);
-		if (installResult) {
-			log.info('Dependencies installed', {
-				packageManager: installResult.packageManager,
-				success: installResult.success,
-			});
-		}
-
-		// Warm TypeScript cache to avoid slow first-run compilation during agent execution
-		log.info('Warming TypeScript cache', { repoDir });
-		const tscResult = await warmTypeScriptCache(repoDir);
-		if (tscResult) {
-			log.info('TypeScript cache warmed', {
-				durationMs: tscResult.durationMs,
-				hadErrors: !!tscResult.error,
-			});
-		}
+		// Setup repository
+		const setup = await setupRepository(project, log);
+		repoDir = setup.repoDir;
 
 		log.info('Running agent', { agentType, cardId, repoDir });
 
-		// Build prompt context for template rendering
-		const promptContext: PromptContext = {
-			cardId,
-			projectId: project.id,
-			storiesListId: project.trello?.lists?.stories,
-			processedLabelId: project.trello?.labels?.processed,
-		};
-
-		// Get system prompt and model
-		const systemPrompt = project.prompts?.[agentType] || getSystemPrompt(agentType, promptContext);
-		const model =
-			project.agentModels?.[agentType] ||
-			project.model ||
-			config.defaults.agentModels?.[agentType] ||
-			config.defaults.model;
-		const maxIterations = config.defaults.maxIterations;
-
-		// Read context files (CLAUDE.md, AGENTS.md) for synthetic gadget calls
-		const contextFiles = await readContextFiles(repoDir);
-
-		// Pre-fetch card data for synthetic gadget call
-		log.info('Fetching card data for context', { cardId });
-		const cardData = await formatCardData(cardId, true);
-
-		// Generate directory listing for codebase context
-		const directoryListing = await generateDirectoryListing(repoDir, 3);
-		const directorySection = directoryListing
-			? `Here is the codebase directory structure (pre-populated for context):
-
-<codebase_structure>
-${directoryListing}
-</codebase_structure>
-
-`
-			: '';
-
-		const prompt = `${directorySection}Analyze and process the Trello card with ID: ${cardId}. The card data (title, description, checklists, attachments, comments) has been pre-loaded above. Review it and proceed with your task.`;
+		// Build agent context
+		const ctx = await buildAgentContext(agentType, cardId, repoDir, project, config, log);
 
 		// Change to repo directory (llmist gadgets use process.cwd() for path validation)
 		const originalCwd = process.cwd();
 		process.chdir(repoDir);
 
-		log.info('Starting llmist agent', { model, maxIterations, promptLength: prompt.length });
+		log.info('Starting llmist agent', {
+			model: ctx.model,
+			maxIterations: ctx.maxIterations,
+			promptLength: ctx.prompt.length,
+		});
 
 		try {
 			// Configure llmist to write to separate log file for better debugging
@@ -152,89 +326,21 @@ ${directoryListing}
 			const client = new LLMist();
 			const llmistLogger = createLogger({ minLevel: getLogLevel() });
 
-			// Build the agent
-			let builder = new AgentBuilder(client)
-				.withModel(model)
-				.withTemperature(0)
-				.withSystem(systemPrompt)
-				.withMaxIterations(maxIterations)
-				.withLogger(llmistLogger)
-				.withGadgets(
-					// Filesystem gadgets
-					listDirectory,
-					new ReadFile(),
-					writeFile,
-					// Shell commands via tmux (no timeout issues)
-					new Tmux(),
-					new Sleep(),
-					// Trello gadgets
-					new ReadTrelloCard(),
-					new PostTrelloComment(),
-					new UpdateTrelloCard(),
-					new CreateTrelloCard(),
-					new ListTrelloCards(),
-					new GetMyRecentActivity(),
-					new AddChecklistToCard(),
-				);
-
-			// Inject card data as synthetic ReadTrelloCard call
-			builder = builder.withSyntheticGadgetCall(
-				'ReadTrelloCard',
-				{ cardId, includeComments: true },
-				cardData,
-				'gc_card',
+			// Build the agent with gadgets and synthetic calls
+			let builder = createAgentBuilderWithGadgets(client, ctx, llmistLogger);
+			builder = injectSyntheticCalls(
+				builder,
+				cardId,
+				ctx.cardData,
+				ctx.contextFiles,
+				setup.installResult,
 			);
 
-			// Inject context files as synthetic ReadFile gadget calls
-			for (let i = 0; i < contextFiles.length; i++) {
-				const file = contextFiles[i];
-				builder = builder.withSyntheticGadgetCall(
-					'ReadFile',
-					{ filePath: file.path },
-					file.content,
-					`gc_init_${i + 1}`,
-				);
-			}
-
-			// Inject dependency install result as synthetic Tmux call
-			if (installResult) {
-				builder = injectDependencyResult(builder, installResult);
-			}
-
 			// Run the agent
-			const agent = builder.ask(prompt);
+			const agent = builder.ask(ctx.prompt);
+			const result = await runAgentLoop(agent, log);
 
-			// Collect output
-			const outputLines: string[] = [];
-			let iterationCount = 0;
-
-			for await (const event of agent.run()) {
-				if (event.type === 'text') {
-					log.debug('[Text]', { content: event.content.slice(0, 100) });
-					outputLines.push(event.content);
-				} else if (event.type === 'gadget_call') {
-					iterationCount++;
-					log.info('[Gadget]', {
-						iteration: iterationCount,
-						name: event.call.gadgetName,
-						invocationId: event.call.invocationId,
-					});
-				} else if (event.type === 'gadget_result') {
-					const level = event.result.error ? 'error' : 'info';
-					log[level]('[Gadget result]', {
-						name: event.result.gadgetName,
-						ms: event.result.executionTimeMs,
-						error: event.result.error,
-					});
-				} else if (event.type === 'stream_complete') {
-					log.info('Stream complete', { iteration: iterationCount });
-				}
-			}
-
-			// Get cost from llmist execution tree
-			const sessionCost = agent.getTree()?.getTotalCost() ?? 0;
-
-			log.info('Agent completed', { cardId, iterations: iterationCount, cost: sessionCost });
+			log.info('Agent completed', { cardId, iterations: result.iterationCount, cost: result.cost });
 
 			// Get zipped log buffer before returning
 			fileLogger.close();
@@ -242,9 +348,9 @@ ${directoryListing}
 
 			return {
 				success: true,
-				output: outputLines.join('\n'),
+				output: result.output,
 				logBuffer,
-				cost: sessionCost,
+				cost: result.cost,
 			};
 		} finally {
 			// Restore original working directory
