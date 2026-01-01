@@ -173,6 +173,44 @@ async function installDependencies(cwd: string): Promise<DependencyInstallResult
 }
 
 // ============================================================================
+// TypeScript Cache Warming
+// ============================================================================
+
+interface TypeScriptWarmResult {
+	success: boolean;
+	durationMs: number;
+	error?: string;
+}
+
+async function warmTypeScriptCache(cwd: string): Promise<TypeScriptWarmResult | null> {
+	// Check if tsconfig.json exists
+	const tsconfigPath = join(cwd, 'tsconfig.json');
+	if (!existsSync(tsconfigPath)) {
+		return null; // No TypeScript config, skip
+	}
+
+	const startTime = Date.now();
+
+	try {
+		// Run tsc --noEmit to warm the cache without generating output files
+		// We don't care if there are type errors - the agent will handle those
+		await execCommand('npx', ['tsc', '--noEmit'], cwd);
+		return {
+			success: true,
+			durationMs: Date.now() - startTime,
+		};
+	} catch (err) {
+		// TypeScript errors are expected - the agent may need to fix them
+		// We still warmed the cache, so consider this a success
+		return {
+			success: true,
+			durationMs: Date.now() - startTime,
+			error: String(err),
+		};
+	}
+}
+
+// ============================================================================
 // Agent Execution
 // ============================================================================
 
@@ -236,6 +274,16 @@ export async function executeAgent(
 			log.info('Dependencies installed', {
 				packageManager: installResult.packageManager,
 				success: installResult.success,
+			});
+		}
+
+		// Warm TypeScript cache to avoid slow first-run compilation during agent execution
+		log.info('Warming TypeScript cache', { repoDir });
+		const tscResult = await warmTypeScriptCache(repoDir);
+		if (tscResult) {
+			log.info('TypeScript cache warmed', {
+				durationMs: tscResult.durationMs,
+				hadErrors: !!tscResult.error,
 			});
 		}
 
