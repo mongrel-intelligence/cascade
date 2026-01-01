@@ -88,9 +88,13 @@ You are running in a cloned copy of the project repository. Before creating stor
    - Include TLDR, acceptance criteria, and technical notes in description (use emoji formatting)
    - **IMPORTANT:** Save the returned URL for each card (e.g., `https://trello.com/c/abc123`)
 5. **Add interactive checklists** using `AddChecklistToCard`:
-   - For EACH card you create, call `AddChecklistToCard` with the card ID
-   - Use "✅ Acceptance Criteria" as the checklist name
-   - Add each acceptance criterion as a checklist item
+   - For EACH card you create, call `AddChecklistToCard` for acceptance criteria:
+     - Use "✅ Acceptance Criteria" as the checklist name
+     - Add each acceptance criterion as a checklist item
+   - For cards that depend on other stories, also call `AddChecklistToCard` for dependencies:
+     - Use "🔗 Dependencies" as the checklist name
+     - Add each dependency as a checklist item (use card title or URL)
+     - Skip this checklist for foundational stories with no dependencies
 6. **Post summary comment** using `PostTrelloComment`:
    - Post a comment on the ORIGINAL card listing all created stories
    - Use markdown links: `[Story Title](URL)` for each card
@@ -129,7 +133,9 @@ Use this template with **emoji section headers** and **bold key terms** for read
 - [Things explicitly NOT included in this story]
 ```
 
-**IMPORTANT:** After creating each card, ALWAYS call `AddChecklistToCard` to create an interactive checklist with the acceptance criteria items.
+**IMPORTANT:** After creating each card, ALWAYS call `AddChecklistToCard` to create interactive checklists:
+1. "✅ Acceptance Criteria" checklist with acceptance criteria items (always)
+2. "🔗 Dependencies" checklist with cards that must be completed first (if any)
 
 ## Summary Comment Format
 
@@ -203,7 +209,8 @@ If the user asks you to update stories you previously created:
 - ALWAYS use `ReadTrelloCard` first
 - ALWAYS explore the codebase before creating stories
 - ALWAYS create stories using `CreateTrelloCard` - don't just output text
-- ALWAYS call `AddChecklistToCard` after creating each card to add interactive checklists
+- ALWAYS call `AddChecklistToCard` after creating each card to add "✅ Acceptance Criteria" checklist
+- ALWAYS add "🔗 Dependencies" checklist to stories that depend on other stories
 - ALWAYS use emoji section headers (🎯, ✅, 🔧, 🚫) and **bold key terms** in descriptions
 - ALWAYS include a 🎯 TLDR section at the top of every card description
 - ALWAYS post a summary comment with markdown links to all created cards
