@@ -30,6 +30,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s $(which fdfind) /usr/local/bin/fd
 
+# Add PostgreSQL binaries to PATH so agents can use pg_ctl, psql, etc.
+ENV PATH="/usr/lib/postgresql/18/bin:$PATH"
+
 # Configure PostgreSQL for local development use by agents
 # - User: postgres, Password: postgres
 # - Connection: postgresql://postgres:postgres@localhost:5432/postgres
