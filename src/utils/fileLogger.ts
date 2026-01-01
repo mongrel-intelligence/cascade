@@ -4,9 +4,12 @@ import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import archiver from 'archiver';
 
+import { type LLMCallLogger, createLLMCallLogger } from './llmLogging.js';
+
 export interface FileLogger {
 	logPath: string;
 	llmistLogPath: string;
+	llmCallLogger: LLMCallLogger;
 	write: (level: string, message: string, context?: Record<string, unknown>) => void;
 	close: () => void;
 	getZippedBuffer: () => Promise<Buffer>;
@@ -17,12 +20,16 @@ export function createFileLogger(prefix: string): FileLogger {
 	const logPath = path.join(os.tmpdir(), `${prefix}-cascade-${timestamp}.log`);
 	const llmistLogPath = path.join(os.tmpdir(), `${prefix}-llmist-${timestamp}.log`);
 
+	// Create LLM call logger for raw request/response logging
+	const llmCallLogger = createLLMCallLogger(os.tmpdir(), prefix);
+
 	// Use sync file descriptor to avoid race condition with getZippedBuffer
 	let fd: number | null = fs.openSync(logPath, 'a');
 
 	return {
 		logPath,
 		llmistLogPath,
+		llmCallLogger,
 		write(level: string, message: string, context?: Record<string, unknown>) {
 			if (fd === null) return;
 			const ts = new Date().toISOString();
@@ -61,6 +68,15 @@ export function createFileLogger(prefix: string): FileLogger {
 					archive.file(llmistLogPath, { name: 'llmist.log' });
 				}
 
+				// Add LLM call request/response files
+				const llmLogFiles = llmCallLogger.getLogFiles();
+				for (const filePath of llmLogFiles) {
+					if (fs.existsSync(filePath)) {
+						const fileName = path.basename(filePath);
+						archive.file(filePath, { name: `llm-calls/${fileName}` });
+					}
+				}
+
 				archive.finalize();
 			});
 		},
@@ -70,6 +86,14 @@ export function createFileLogger(prefix: string): FileLogger {
 export function cleanupLogFile(logPath: string): void {
 	try {
 		fs.unlinkSync(logPath);
+	} catch {
+		// Ignore cleanup errors
+	}
+}
+
+export function cleanupLogDirectory(dirPath: string): void {
+	try {
+		fs.rmSync(dirPath, { recursive: true, force: true });
 	} catch {
 		// Ignore cleanup errors
 	}

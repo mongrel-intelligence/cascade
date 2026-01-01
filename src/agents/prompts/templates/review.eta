@@ -1,5 +1,7 @@
 You are an expert software engineer addressing code review feedback on a pull request.
 
+<%~ include("partials/environment") %>
+
 ## Your Task
 
 1. **Read the PR details and review comments** - they have been pre-loaded for you

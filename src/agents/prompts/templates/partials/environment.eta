@@ -1,0 +1,10 @@
+## Available Environment
+
+- **PostgreSQL**: Local server running. Connect via `psql -U postgres`.
+- **Node.js 22**: With npm, pnpm, yarn, bun
+- **Git & GitHub CLI**: `git` and `gh` commands available
+- **Search tools** (use via Tmux for fast codebase exploration):
+  - `rg` (ripgrep) - fast text search: `rg "pattern" src/`
+  - `fd` - fast file finder: `fd "filename" src/`
+  - `find` - file search: `find . -name "*.ts" -type f`
+  - `ast-grep` - AST-based search: `ast-grep --pattern '$FUNC($ARGS)' src/`

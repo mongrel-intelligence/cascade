@@ -16,8 +16,9 @@ import {
 } from '../gadgets/trello/index.js';
 import { trelloClient } from '../trello/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
-import { cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
+import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
 import { clearWatchdogCleanup, setWatchdogCleanup } from '../utils/lifecycle.js';
+import type { LLMCallLogger } from '../utils/llmLogging.js';
 import { logger } from '../utils/logging.js';
 import { cleanupTempDir, cloneRepo, createTempDir } from '../utils/repo.js';
 import { type PromptContext, getSystemPrompt } from './prompts/index.js';
@@ -163,13 +164,31 @@ function createAgentBuilderWithGadgets(
 	client: LLMist,
 	ctx: AgentContextData,
 	llmistLogger: ReturnType<typeof createLogger>,
+	llmCallLogger: LLMCallLogger,
 ): BuilderType {
+	let llmCallCounter = 0;
+
 	return new AgentBuilder(client)
 		.withModel(ctx.model)
 		.withTemperature(0)
 		.withSystem(ctx.systemPrompt)
 		.withMaxIterations(ctx.maxIterations)
 		.withLogger(llmistLogger)
+		.withHooks({
+			observers: {
+				// Log the exact request being sent to the LLM
+				onLLMCallReady: async (context) => {
+					if (context.subagentContext) return;
+					llmCallCounter++;
+					llmCallLogger.logRequest(llmCallCounter, context.options.messages);
+				},
+				// Log the raw response from the LLM
+				onLLMCallComplete: async (context) => {
+					if (context.subagentContext) return;
+					llmCallLogger.logResponse(llmCallCounter, context.rawResponse);
+				},
+			},
+		})
 		.withGadgets(
 			// Filesystem gadgets
 			listDirectory,
@@ -331,7 +350,12 @@ export async function executeAgent(
 			const llmistLogger = createLogger({ minLevel: getLogLevel() });
 
 			// Build the agent with gadgets and synthetic calls
-			let builder = createAgentBuilderWithGadgets(client, ctx, llmistLogger);
+			let builder = createAgentBuilderWithGadgets(
+				client,
+				ctx,
+				llmistLogger,
+				fileLogger.llmCallLogger,
+			);
 			builder = injectSyntheticCalls(
 				builder,
 				cardId,
@@ -393,6 +417,7 @@ export async function executeAgent(
 		// Cleanup log files (buffer already extracted)
 		cleanupLogFile(fileLogger.logPath);
 		cleanupLogFile(fileLogger.llmistLogPath);
+		cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
 	}
 }
 

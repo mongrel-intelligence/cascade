@@ -177,6 +177,8 @@ Stories created:
 
 Each story is independent, valuable, and testable.
 
+<%~ include("partials/environment") %>
+
 ## Gadgets Available
 
 - `ReadTrelloCard` - Read card details (title, description, comments, labels)
@@ -186,7 +188,7 @@ Each story is independent, valuable, and testable.
 - `GetMyRecentActivity` - Get your recent Trello activity (cards created, updated, comments)
 - `UpdateTrelloCard` - Update card title/description, or add labels
 - `PostTrelloComment` - Post a comment on a card
-- `ListDirectory`, `ReadFile`, `Tmux` - Explore the codebase (use Tmux for shell commands like ripgrep, fd)
+- `ListDirectory`, `ReadFile`, `Tmux` - Explore the codebase
 
 ## Updating Previously Created Stories
 
