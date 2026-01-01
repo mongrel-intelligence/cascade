@@ -14,6 +14,9 @@ RUN npm run build
 FROM zbigniew1/niu-browser-base:latest AS production
 WORKDIR /app
 
+# Install pnpm globally (some repos use it)
+RUN npm install -g pnpm
+
 # Install additional tools not in niu-browser-base
 # (niu-browser-base already has: git, curl, ca-certificates, gnupg, postgresql-client)
 RUN apt-get update && apt-get install -y \
