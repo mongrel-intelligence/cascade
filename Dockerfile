@@ -25,8 +25,14 @@ RUN apt-get update && apt-get install -y \
     procps \
     psutils \
     tmux \
+    postgresql \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s $(which fdfind) /usr/local/bin/fd
+
+# Configure PostgreSQL for local development use by agents
+RUN mkdir -p /run/postgresql && chown -R postgres:postgres /run/postgresql \
+    && mkdir -p /var/lib/postgresql/data && chown -R postgres:postgres /var/lib/postgresql \
+    && su postgres -c "/usr/lib/postgresql/*/bin/initdb -D /var/lib/postgresql/data"
 
 # Install ast-grep
 RUN ARCH=$(dpkg --print-architecture) && \

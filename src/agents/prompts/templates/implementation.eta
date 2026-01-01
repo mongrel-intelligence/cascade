@@ -39,6 +39,12 @@ From the files you read, note:
 - Follow the same file structure
 - Use the same helpers and utilities
 
+## Available Environment
+
+- **PostgreSQL**: Local server available. Start with `su postgres -c "pg_ctl start -D /var/lib/postgresql/data"`. Connect via `psql -U postgres`.
+- **Node.js 22**: With npm
+- **Git & GitHub CLI**: `git` and `gh` commands available
+
 ## Running Commands
 
 Use the Tmux gadget for ALL shell commands (npm, tests, builds, git, etc.):
