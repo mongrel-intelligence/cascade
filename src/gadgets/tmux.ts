@@ -116,8 +116,8 @@ class TmuxGadget extends Gadget({
 				.int()
 				.min(1)
 				.max(1000)
-				.default(100)
-				.describe('Number of lines to capture (default: 100, max: 1000)'),
+				.default(25)
+				.describe('Number of lines to capture (default: 25, max: 1000)'),
 		}),
 
 		// List all sessions
@@ -151,8 +151,8 @@ class TmuxGadget extends Gadget({
 			comment: 'Long-running E2E tests still running after 120s - use capture to monitor',
 		},
 		{
-			params: { action: 'capture', session: 'npm-install', lines: 50 },
-			output: 'session=npm-install lines=50\n\nadded 874 packages in 45s',
+			params: { action: 'capture', session: 'npm-install', lines: 25 },
+			output: 'session=npm-install lines=25\n\nadded 874 packages in 45s',
 			comment: 'Check output from running session',
 		},
 		{
@@ -295,7 +295,7 @@ class TmuxGadget extends Gadget({
 	}
 
 	private async handleCapture(params: { session: string; lines?: number }): Promise<string> {
-		const lines = params.lines ?? 100;
+		const lines = params.lines ?? 25;
 
 		// Verify session exists
 		const checkResult = await runTmux(['has-session', '-t', params.session]);

@@ -1,10 +1,9 @@
 export { logger, setLogLevel, getLogLevel } from './logging.js';
 export {
-	startSelfDestructTimer,
-	resetSelfDestructTimer,
+	startFreshMachineTimer,
+	cancelFreshMachineTimer,
 	setProcessing,
 	isCurrentlyProcessing,
-	cancelSelfDestruct,
 	startWatchdog,
 	clearWatchdog,
 	setWatchdogCleanup,

@@ -54,15 +54,6 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 
 # Browsers (Playwright Chromium, Camoufox) are pre-installed in niu-browser-base
 
-# Pre-cache better-sqlite3 prebuilts for Node 22
-# This populates ~/.npm/_prebuilds so agent npm installs use cached binaries
-RUN mkdir -p /tmp/prebuild-cache \
-    && cd /tmp/prebuild-cache \
-    && npm init -y \
-    && npm install better-sqlite3@12.5.0 \
-    && cd / \
-    && rm -rf /tmp/prebuild-cache
-
 # Install production dependencies only
 COPY package*.json ./
 RUN npm ci --omit=dev --ignore-scripts

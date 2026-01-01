@@ -8,6 +8,7 @@ import type {
 	TriggerContext,
 } from '../../types/index.js';
 import {
+	cancelFreshMachineTimer,
 	dequeueWebhook,
 	enqueueWebhook,
 	getQueueLength,
@@ -95,6 +96,11 @@ async function executeAgent(
 	if (cardId) {
 		await safeAddLabel(cardId, project.trello.labels.processing);
 		await safeRemoveLabel(cardId, project.trello.labels.readyToProcess);
+
+		// Move to IN PROGRESS when implementation starts
+		if (result.agentType === 'implementation') {
+			await safeMoveCard(cardId, project.trello.lists.inProgress);
+		}
 	}
 
 	const agentResult = await runAgent(result.agentType, {
@@ -215,6 +221,7 @@ export async function processTrelloWebhook(
 
 	logger.info('Trigger matched', { agentType: result.agentType, cardId: result.cardId });
 
+	cancelFreshMachineTimer();
 	setProcessing(true);
 
 	// Start watchdog - force kill if job takes too long (Fly.io only)

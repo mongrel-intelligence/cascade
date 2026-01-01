@@ -12,3 +12,8 @@ pre-push:
   commands:
     test:
       run: npm test
+
+commit-msg:
+  commands:
+    commitlint:
+      run: npx commitlint --edit {1}

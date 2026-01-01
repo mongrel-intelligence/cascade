@@ -5,3 +5,4 @@ export { CreateTrelloCard } from './CreateTrelloCard.js';
 export { ListTrelloCards } from './ListTrelloCards.js';
 export { GetMyRecentActivity } from './GetMyRecentActivity.js';
 export { AddChecklistToCard } from './AddChecklistToCard.js';
+export { UpdateChecklistItem } from './UpdateChecklistItem.js';

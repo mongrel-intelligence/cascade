@@ -1,56 +1,39 @@
 import { logger } from './logging.js';
 
-let selfDestructTimer: ReturnType<typeof setTimeout> | null = null;
+let freshMachineTimer: ReturnType<typeof setTimeout> | null = null;
+let shutdownTimer: ReturnType<typeof setTimeout> | null = null;
 let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
 let isProcessing = false;
-let shutdownRequested = false;
 let watchdogCleanup: (() => Promise<void>) | null = null;
 
-export function startSelfDestructTimer(timeoutMs: number): void {
-	resetSelfDestructTimer(timeoutMs);
-}
-
-export function resetSelfDestructTimer(timeoutMs: number): void {
-	if (selfDestructTimer) {
-		clearTimeout(selfDestructTimer);
+// Fresh machine timer - exits if no work received after boot
+export function startFreshMachineTimer(timeoutMs: number): void {
+	if (freshMachineTimer) {
+		clearTimeout(freshMachineTimer);
 	}
 
-	logger.debug('Self-destruct timer reset', { timeoutMs });
+	logger.info('Fresh machine timer started', { timeoutMs });
 
-	selfDestructTimer = setTimeout(() => {
-		if (isProcessing) {
-			logger.info('Self-destruct timer expired during processing, will shutdown after completion');
-			shutdownRequested = true;
-		} else {
-			logger.info('Self-destruct timer expired, shutting down');
-			process.exit(0);
-		}
+	freshMachineTimer = setTimeout(() => {
+		logger.info('No work received, shutting down fresh machine');
+		process.exit(0);
 	}, timeoutMs);
 }
 
-export function setProcessing(processing: boolean, timeoutMs?: number): void {
+export function cancelFreshMachineTimer(): void {
+	if (freshMachineTimer) {
+		clearTimeout(freshMachineTimer);
+		freshMachineTimer = null;
+		logger.debug('Fresh machine timer cancelled (work received)');
+	}
+}
+
+export function setProcessing(processing: boolean): void {
 	isProcessing = processing;
-
-	if (!processing && shutdownRequested) {
-		logger.info('Processing complete and shutdown requested, shutting down');
-		process.exit(0);
-	}
-
-	if (!processing && timeoutMs) {
-		resetSelfDestructTimer(timeoutMs);
-	}
 }
 
 export function isCurrentlyProcessing(): boolean {
 	return isProcessing;
-}
-
-export function cancelSelfDestruct(): void {
-	if (selfDestructTimer) {
-		clearTimeout(selfDestructTimer);
-		selfDestructTimer = null;
-	}
-	shutdownRequested = false;
 }
 
 // Watchdog cleanup callback - called before force exit
@@ -100,13 +83,13 @@ export function clearWatchdog(): void {
 export function scheduleShutdownAfterJob(gracePeriodMs = 5000): void {
 	clearWatchdog();
 
-	if (selfDestructTimer) {
-		clearTimeout(selfDestructTimer);
+	if (shutdownTimer) {
+		clearTimeout(shutdownTimer);
 	}
 
 	logger.info('Job complete, scheduling shutdown', { gracePeriodMs });
 
-	selfDestructTimer = setTimeout(() => {
+	shutdownTimer = setTimeout(() => {
 		logger.info('Grace period complete, shutting down');
 		process.exit(0);
 	}, gracePeriodMs);

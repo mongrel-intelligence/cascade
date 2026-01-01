@@ -39,11 +39,11 @@ export const CascadeConfigSchema = z.object({
 			model: z.string().default('gemini:gemini-2.5-flash'),
 			agentModels: z.record(z.string()).default({}),
 			maxIterations: z.number().int().positive().default(50),
-			selfDestructTimeoutMs: z
+			freshMachineTimeoutMs: z
 				.number()
 				.int()
 				.positive()
-				.default(30 * 60 * 1000),
+				.default(5 * 60 * 1000), // 5 min - exit if no work received after boot
 			watchdogTimeoutMs: z
 				.number()
 				.int()
