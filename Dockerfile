@@ -31,9 +31,23 @@ RUN apt-get update && apt-get install -y \
     && ln -s $(which fdfind) /usr/local/bin/fd
 
 # Configure PostgreSQL for local development use by agents
+# - User: postgres, Password: postgres
+# - Connection: postgresql://postgres:postgres@localhost:5432/postgres
 RUN mkdir -p /run/postgresql && chown -R postgres:postgres /run/postgresql \
     && mkdir -p /var/lib/postgresql/data && chown -R postgres:postgres /var/lib/postgresql \
-    && su postgres -c "/usr/lib/postgresql/*/bin/initdb -D /var/lib/postgresql/data"
+    && su postgres -c "/usr/lib/postgresql/*/bin/initdb -D /var/lib/postgresql/data" \
+    && { \
+        echo "# PostgreSQL Client Authentication Configuration"; \
+        echo "# TYPE  DATABASE  USER  ADDRESS  METHOD"; \
+        echo "local   all       all            trust"; \
+        echo "host    all       all   127.0.0.1/32  md5"; \
+        echo "host    all       all   ::1/128       md5"; \
+        echo "host    all       all   0.0.0.0/0     md5"; \
+    } > /var/lib/postgresql/data/pg_hba.conf \
+    && chown postgres:postgres /var/lib/postgresql/data/pg_hba.conf \
+    && su postgres -c "/usr/lib/postgresql/*/bin/pg_ctl start -D /var/lib/postgresql/data -l /tmp/postgres.log -w" \
+    && su postgres -c "psql -c \"ALTER USER postgres WITH PASSWORD 'postgres';\"" \
+    && su postgres -c "/usr/lib/postgresql/*/bin/pg_ctl stop -D /var/lib/postgresql/data"
 
 # Install ast-grep
 RUN ARCH=$(dpkg --print-architecture) && \
