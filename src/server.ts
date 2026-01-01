@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
 import type { CascadeConfig } from './types/index.js';
-import { logger } from './utils/logging.js';
+import { canAcceptWebhook, isCurrentlyProcessing, logger } from './utils/index.js';
 
 export interface ServerDependencies {
 	config: CascadeConfig;
@@ -32,6 +32,12 @@ export function createServer(deps: ServerDependencies): Hono {
 
 	// Trello webhook - POST for events
 	app.post('/trello/webhook', async (c) => {
+		// Check capacity synchronously - return 503 if at capacity so Fly.io routes to another machine
+		if (isCurrentlyProcessing() && !canAcceptWebhook()) {
+			logger.warn('Machine at capacity, returning 503');
+			return c.text('Service Unavailable', 503);
+		}
+
 		try {
 			const payload = await c.req.json();
 			logger.debug('Received Trello webhook', { action: payload?.action?.type });

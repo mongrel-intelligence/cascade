@@ -53,3 +53,7 @@ export function clearQueue(): void {
 export function getMaxQueueSize(): number {
 	return MAX_QUEUE_SIZE;
 }
+
+export function canAcceptWebhook(): boolean {
+	return queue.length < MAX_QUEUE_SIZE;
+}
