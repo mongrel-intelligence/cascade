@@ -19,5 +19,5 @@ primary_region = "fra"
 
 [[vm]]
   memory = "4gb"
-  cpu_kind = "shared"
+  cpu_kind = "performance"
   cpus = 2
