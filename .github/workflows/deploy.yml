@@ -9,6 +9,7 @@ jobs:
   deploy-webhooks:
     name: Deploy Webhooks
     runs-on: ubuntu-latest
+    environment: CI
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
@@ -19,6 +20,7 @@ jobs:
   deploy-router:
     name: Deploy Router
     runs-on: ubuntu-latest
+    environment: CI
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
