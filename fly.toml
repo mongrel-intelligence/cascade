@@ -6,14 +6,14 @@ primary_region = "fra"
 
 [env]
   PORT = "3000"
-  LOG_LEVEL = "info"
+  LOG_LEVEL = "debug"
   LLMIST_LOG_LEVEL = "debug"
   CONFIG_PATH = "./config/projects.json"
 
 [http_service]
   internal_port = 3000
   force_https = true
-  auto_stop_machines = false
+  auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 0
 

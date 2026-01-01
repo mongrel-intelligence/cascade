@@ -103,7 +103,7 @@ async function executeAgent(
 	// Upload zipped log file to card (if available)
 	if (cardId && agentResult.logBuffer) {
 		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-		const logName = `${result.agentType}-${timestamp}.log.gz`;
+		const logName = `${result.agentType}-${timestamp}.zip`;
 		try {
 			await trelloClient.addAttachmentFile(cardId, agentResult.logBuffer, logName);
 			logger.info('Uploaded agent log to card', { cardId, logName });

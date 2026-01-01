@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGunzip } from 'node:zlib';
+import AdmZip from 'adm-zip';
 import { trelloClient } from '../src/trello/client.js';
 
 function extractCardId(input: string): string {
@@ -26,7 +27,41 @@ function extractCardId(input: string): string {
 	return input;
 }
 
+async function downloadFile(url: string): Promise<Buffer> {
+	const response = await fetch(url, {
+		headers: {
+			Authorization: `OAuth oauth_consumer_key="${process.env.TRELLO_API_KEY}", oauth_token="${process.env.TRELLO_TOKEN}"`,
+		},
+	});
+	if (!response.ok) {
+		throw new Error(`Failed to download ${url}: ${response.status}`);
+	}
+	return Buffer.from(await response.arrayBuffer());
+}
+
 async function downloadAndUnzip(url: string, destPath: string): Promise<void> {
+	const buffer = await downloadFile(url);
+
+	// Check if it's actually a ZIP file (magic bytes: PK\x03\x04)
+	if (buffer[0] === 0x50 && buffer[1] === 0x4b) {
+		// It's a ZIP file, extract it
+		const zip = new AdmZip(buffer);
+		const entries = zip.getEntries();
+		// Extract first file to destPath
+		if (entries.length > 0) {
+			await writeFile(destPath, entries[0].getData());
+		}
+		return;
+	}
+
+	// Try gzip decompression
+	const gunzip = createGunzip();
+	const output = createWriteStream(destPath);
+	const nodeStream = Readable.from(buffer);
+	await pipeline(nodeStream, gunzip, output);
+}
+
+async function downloadAndExtractZip(url: string, destDir: string): Promise<string[]> {
 	// Trello attachments require OAuth header for auth
 	const response = await fetch(url, {
 		headers: {
@@ -37,12 +72,26 @@ async function downloadAndUnzip(url: string, destPath: string): Promise<void> {
 		throw new Error(`Failed to download ${url}: ${response.status}`);
 	}
 
-	const gunzip = createGunzip();
-	const output = createWriteStream(destPath);
+	// Download to buffer
+	const buffer = Buffer.from(await response.arrayBuffer());
 
-	// Convert web ReadableStream to Node Readable
-	const nodeStream = Readable.fromWeb(response.body as import('stream/web').ReadableStream);
-	await pipeline(nodeStream, gunzip, output);
+	// Extract ZIP
+	const zip = new AdmZip(buffer);
+	const entries = zip.getEntries();
+	const extractedFiles: string[] = [];
+
+	for (const entry of entries) {
+		if (!entry.isDirectory) {
+			const destPath = join(destDir, entry.entryName);
+			await mkdir(join(destDir, entry.entryName.split('/').slice(0, -1).join('/')), {
+				recursive: true,
+			});
+			await writeFile(destPath, entry.getData());
+			extractedFiles.push(entry.entryName);
+		}
+	}
+
+	return extractedFiles;
 }
 
 async function main() {
@@ -98,17 +147,38 @@ async function main() {
 
 	// Download .gz attachments
 	const gzAttachments = attachments.filter((a) => a.name.endsWith('.gz'));
-	console.log(`Downloading ${gzAttachments.length} .gz attachments...`);
+	if (gzAttachments.length > 0) {
+		console.log(`Downloading ${gzAttachments.length} .gz attachments...`);
 
-	for (const attachment of gzAttachments) {
-		const destName = attachment.name.replace(/\.gz$/, '');
-		const destPath = join(sessionDir, destName);
-		console.log(`  ${attachment.name} -> ${destName}`);
+		for (const attachment of gzAttachments) {
+			const destName = attachment.name.replace(/\.gz$/, '');
+			const destPath = join(sessionDir, destName);
+			console.log(`  ${attachment.name} -> ${destName}`);
 
-		try {
-			await downloadAndUnzip(attachment.url, destPath);
-		} catch (err) {
-			console.error(`  Failed to download ${attachment.name}:`, err);
+			try {
+				await downloadAndUnzip(attachment.url, destPath);
+			} catch (err) {
+				console.error(`  Failed to download ${attachment.name}:`, err);
+			}
+		}
+	}
+
+	// Download .zip attachments
+	const zipAttachments = attachments.filter((a) => a.name.endsWith('.zip'));
+	if (zipAttachments.length > 0) {
+		console.log(`Downloading ${zipAttachments.length} .zip attachments...`);
+
+		for (const attachment of zipAttachments) {
+			console.log(`  ${attachment.name}:`);
+
+			try {
+				const files = await downloadAndExtractZip(attachment.url, sessionDir);
+				for (const file of files) {
+					console.log(`    -> ${file}`);
+				}
+			} catch (err) {
+				console.error(`  Failed to download ${attachment.name}:`, err);
+			}
 		}
 	}
 
