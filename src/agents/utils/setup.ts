@@ -15,12 +15,13 @@ export async function startPostgres(): Promise<void> {
 
 	const PG_DATA = '/var/lib/postgresql/data';
 	const PG_LOG = '/tmp/postgres.log';
+	const PG_CTL = '/usr/lib/postgresql/18/bin/pg_ctl';
 
 	try {
 		// Check if PostgreSQL is already running
 		const statusResult = await execCommand(
 			'su',
-			['postgres', '-c', `pg_ctl status -D ${PG_DATA}`],
+			['postgres', '-c', `${PG_CTL} status -D ${PG_DATA}`],
 			'/',
 		);
 
@@ -47,7 +48,7 @@ export async function startPostgres(): Promise<void> {
 	try {
 		const startResult = await execCommand(
 			'su',
-			['postgres', '-c', `pg_ctl start -D ${PG_DATA} -l ${PG_LOG} -w`],
+			['postgres', '-c', `${PG_CTL} start -D ${PG_DATA} -l ${PG_LOG} -w`],
 			'/',
 		);
 		logger.debug('pg_ctl start output', { stdout: startResult.stdout, stderr: startResult.stderr });
@@ -67,7 +68,7 @@ export async function startPostgres(): Promise<void> {
 	try {
 		const verifyResult = await execCommand(
 			'su',
-			['postgres', '-c', `pg_ctl status -D ${PG_DATA}`],
+			['postgres', '-c', `${PG_CTL} status -D ${PG_DATA}`],
 			'/',
 		);
 		logger.debug('pg_ctl status output', {
