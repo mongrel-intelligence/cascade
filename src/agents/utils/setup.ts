@@ -35,9 +35,30 @@ export async function startPostgres(): Promise<void> {
 
 	// Start PostgreSQL as postgres user
 	logger.info('Starting PostgreSQL...');
+
+	// Ensure runtime directories exist (may not persist across container restarts)
 	try {
-		await execCommand('su', ['postgres', '-c', `pg_ctl start -D ${PG_DATA} -l ${PG_LOG} -w`], '/');
+		await execCommand('mkdir', ['-p', '/run/postgresql'], '/');
+		await execCommand('chown', ['postgres:postgres', '/run/postgresql'], '/');
 	} catch (err) {
+		logger.warn('Failed to create /run/postgresql directory', { error: String(err) });
+	}
+
+	try {
+		const startResult = await execCommand(
+			'su',
+			['postgres', '-c', `pg_ctl start -D ${PG_DATA} -l ${PG_LOG} -w`],
+			'/',
+		);
+		logger.debug('pg_ctl start output', { stdout: startResult.stdout, stderr: startResult.stderr });
+	} catch (err) {
+		// Try to read the log file for more details
+		try {
+			const logResult = await execCommand('cat', [PG_LOG], '/');
+			logger.error('PostgreSQL log contents', { log: logResult.stdout });
+		} catch {
+			// Ignore if log file doesn't exist
+		}
 		logger.error('Failed to start PostgreSQL', { error: String(err) });
 		throw new Error(`PostgreSQL failed to start. Check ${PG_LOG} for details. Error: ${err}`);
 	}
@@ -49,9 +70,20 @@ export async function startPostgres(): Promise<void> {
 			['postgres', '-c', `pg_ctl status -D ${PG_DATA}`],
 			'/',
 		);
+		logger.debug('pg_ctl status output', {
+			stdout: verifyResult.stdout,
+			stderr: verifyResult.stderr,
+		});
 
 		if (!verifyResult.stdout.includes('server is running')) {
-			throw new Error('PostgreSQL started but status check failed');
+			// Try to read the log file for more details
+			try {
+				const logResult = await execCommand('cat', [PG_LOG], '/');
+				logger.error('PostgreSQL log contents', { log: logResult.stdout });
+			} catch {
+				// Ignore if log file doesn't exist
+			}
+			throw new Error(`PostgreSQL status check failed. Output: ${verifyResult.stdout}`);
 		}
 	} catch (err) {
 		logger.error('PostgreSQL status check failed after start', { error: String(err) });
