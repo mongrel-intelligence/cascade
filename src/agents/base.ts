@@ -155,8 +155,12 @@ async function installDependencies(cwd: string): Promise<DependencyInstallResult
 
 	// Run install command with CI=true to skip unnecessary postinstall downloads
 	// (e.g., camoufox browser download when it's already in the Docker image)
+	// PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD skips camoufox-js browser download
 	try {
-		const result = await execCommand(packageManager, ['install'], cwd, { CI: 'true' });
+		const result = await execCommand(packageManager, ['install'], cwd, {
+			CI: 'true',
+			PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
+		});
 		return {
 			packageManager,
 			success: true,
