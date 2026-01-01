@@ -8,6 +8,7 @@ import type {
 	TriggerContext,
 } from '../../types/index.js';
 import {
+	cancelFreshMachineTimer,
 	dequeueWebhook,
 	enqueueWebhook,
 	getQueueLength,
@@ -215,6 +216,7 @@ export async function processTrelloWebhook(
 
 	logger.info('Trigger matched', { agentType: result.agentType, cardId: result.cardId });
 
+	cancelFreshMachineTimer();
 	setProcessing(true);
 
 	// Start watchdog - force kill if job takes too long (Fly.io only)

@@ -3,6 +3,7 @@ import { findProjectByRepo } from '../../config/projects.js';
 import { trelloClient } from '../../trello/client.js';
 import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
 import {
+	cancelFreshMachineTimer,
 	dequeueWebhook,
 	enqueueWebhook,
 	getQueueLength,
@@ -137,6 +138,7 @@ export async function processGitHubWebhook(
 	// Only run agent if agentType is specified
 	// Some triggers (like PRReadyToMergeTrigger) perform actions directly without needing an agent
 	if (result.agentType) {
+		cancelFreshMachineTimer();
 		setProcessing(true);
 
 		if (process.env.FLY_APP_NAME) {

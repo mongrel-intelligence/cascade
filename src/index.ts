@@ -8,7 +8,7 @@ import {
 } from './triggers/index.js';
 import { processTrelloWebhook } from './triggers/trello/webhook-handler.js';
 import type { CascadeConfig } from './types/index.js';
-import { logger, setLogLevel, startSelfDestructTimer } from './utils/index.js';
+import { logger, setLogLevel, startFreshMachineTimer } from './utils/index.js';
 
 async function main(): Promise<void> {
 	// Load environment config
@@ -29,7 +29,7 @@ async function main(): Promise<void> {
 				model: 'gemini:gemini-2.5-flash',
 				agentModels: {},
 				maxIterations: 50,
-				selfDestructTimeoutMs: 30 * 60 * 1000,
+				freshMachineTimeoutMs: 5 * 60 * 1000,
 				watchdogTimeoutMs: 30 * 60 * 1000,
 				postJobGracePeriodMs: 5000,
 			},
@@ -52,9 +52,10 @@ async function main(): Promise<void> {
 		},
 	});
 
-	// Start self-destruct timer (for Fly.io cost management)
+	// Start fresh machine timer (for Fly.io cost management)
+	// Exits if no work received within timeout
 	if (process.env.FLY_APP_NAME) {
-		startSelfDestructTimer(config.defaults.selfDestructTimeoutMs);
+		startFreshMachineTimer(config.defaults.freshMachineTimeoutMs);
 	}
 
 	// Start server
