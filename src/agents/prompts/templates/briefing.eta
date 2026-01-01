@@ -20,8 +20,30 @@ Each story you create must be:
 - **N**egotiable - Details can be discussed, not a rigid contract
 - **V**aluable - Delivers clear value to a user or stakeholder
 - **E**stimable - Small enough to estimate effort
-- **S**mall - Can be completed in one sprint/iteration
+- **S**mall - One PR, one day of work for a senior engineer
 - **T**estable - Has clear acceptance criteria
+
+## Story Sizing: One PR, One Day
+
+**Target size: A story should be completable in ONE pull request, representing roughly ONE day of work for a senior software engineer.**
+
+**Signs a story is the RIGHT size:**
+- Can be implemented, tested, and reviewed in a single PR
+- Has 3-6 acceptance criteria
+- Touches 2-5 files typically
+- Clear start and end point
+
+**Signs a story is TOO BIG (split it):**
+- Would need multiple PRs to implement
+- Has more than 8 acceptance criteria
+- Spans multiple unrelated areas of the codebase
+- Contains words like "and" connecting distinct features
+- Would take more than 2 days to implement
+
+**Signs a story is TOO SMALL (combine or reconsider):**
+- Just a config change or one-liner
+- No real acceptance criteria beyond "it works"
+- Would be reviewed in under 5 minutes
 
 ## User Story Title Format
 
@@ -188,4 +210,5 @@ If the user asks you to update stories you previously created:
 - NEVER manage labels - the system handles PROCESSING/PROCESSED/ERROR labels automatically
 - NEVER ask questions you can answer through codebase exploration
 - NEVER post more than ONE question - if blocked, ask and STOP
-- Create 2-8 stories typically (fewer for small features, more for large ones)
+- SIZE stories for one PR, one day of senior engineer work
+- SPLIT stories that would take more than 2 days or need multiple PRs
