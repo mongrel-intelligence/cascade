@@ -17,6 +17,11 @@ primary_region = "fra"
   auto_start_machines = true
   min_machines_running = 0
 
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 1
+    hard_limit = 1
+
 [[vm]]
   memory = "4gb"
   cpu_kind = "performance"
