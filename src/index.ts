@@ -29,6 +29,7 @@ async function main(): Promise<void> {
 				model: 'gemini:gemini-2.5-flash',
 				agentModels: {},
 				maxIterations: 50,
+				agentIterations: {},
 				freshMachineTimeoutMs: 5 * 60 * 1000,
 				watchdogTimeoutMs: 30 * 60 * 1000,
 				postJobGracePeriodMs: 5000,

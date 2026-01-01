@@ -2,6 +2,9 @@
 	"defaults": {
 		"model": "gemini:gemini-2.5-flash",
 		"maxIterations": 50,
+		"agentIterations": {
+			"implementation": 65
+		},
 		"selfDestructTimeoutMs": 1800000
 	},
 	"projects": [

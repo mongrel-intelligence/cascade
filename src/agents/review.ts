@@ -150,7 +150,7 @@ async function buildReviewContext(
 		project.model ||
 		config.defaults.agentModels?.review ||
 		config.defaults.model;
-	const maxIterations = config.defaults.maxIterations;
+	const maxIterations = config.defaults.agentIterations?.review || config.defaults.maxIterations;
 
 	// Read context files
 	const contextFiles = await readContextFiles(repoDir);

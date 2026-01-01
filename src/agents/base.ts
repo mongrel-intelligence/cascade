@@ -127,7 +127,8 @@ async function buildAgentContext(
 		project.model ||
 		config.defaults.agentModels?.[agentType] ||
 		config.defaults.model;
-	const maxIterations = config.defaults.maxIterations;
+	const maxIterations =
+		config.defaults.agentIterations?.[agentType] || config.defaults.maxIterations;
 
 	// Read context files (CLAUDE.md, AGENTS.md) for synthetic gadget calls
 	const contextFiles = await readContextFiles(repoDir);
