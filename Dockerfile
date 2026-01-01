@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y \
     psutils \
     tmux \
     postgresql \
+    sudo \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s $(which fdfind) /usr/local/bin/fd
 
