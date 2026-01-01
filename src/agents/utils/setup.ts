@@ -13,14 +13,53 @@ let postgresStarted = false;
 export async function startPostgres(): Promise<void> {
 	if (postgresStarted) return;
 
+	const PG_DATA = '/var/lib/postgresql/data';
+	const PG_LOG = '/tmp/postgres.log';
+
+	try {
+		// Check if PostgreSQL is already running
+		const statusResult = await execCommand(
+			'su',
+			['postgres', '-c', `pg_ctl status -D ${PG_DATA}`],
+			'/',
+		);
+
+		if (statusResult.stdout.includes('server is running')) {
+			logger.info('PostgreSQL already running');
+			postgresStarted = true;
+			return;
+		}
+	} catch {
+		// Not running, continue to start it
+	}
+
 	// Start PostgreSQL as postgres user
-	await execCommand(
-		'su',
-		['postgres', '-c', 'pg_ctl start -D /var/lib/postgresql/data -l /tmp/postgres.log'],
-		'/',
-	);
+	logger.info('Starting PostgreSQL...');
+	try {
+		await execCommand('su', ['postgres', '-c', `pg_ctl start -D ${PG_DATA} -l ${PG_LOG} -w`], '/');
+	} catch (err) {
+		logger.error('Failed to start PostgreSQL', { error: String(err) });
+		throw new Error(`PostgreSQL failed to start. Check ${PG_LOG} for details. Error: ${err}`);
+	}
+
+	// Verify it's actually running
+	try {
+		const verifyResult = await execCommand(
+			'su',
+			['postgres', '-c', `pg_ctl status -D ${PG_DATA}`],
+			'/',
+		);
+
+		if (!verifyResult.stdout.includes('server is running')) {
+			throw new Error('PostgreSQL started but status check failed');
+		}
+	} catch (err) {
+		logger.error('PostgreSQL status check failed after start', { error: String(err) });
+		throw new Error(`PostgreSQL failed to start properly: ${err}`);
+	}
+
 	postgresStarted = true;
-	logger.info('PostgreSQL started');
+	logger.info('PostgreSQL started successfully');
 }
 
 // ============================================================================
