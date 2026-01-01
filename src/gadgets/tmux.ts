@@ -1,7 +1,7 @@
 /**
- * Tmux gadget - execute shell commands in tmux sessions.
+ * Tmux gadget - execute commands in tmux sessions.
  *
- * All shell commands should be run through this gadget. It provides:
+ * All commands should be run through this gadget. It provides:
  * - No timeout issues (commands run in background tmux sessions)
  * - Initial output capture (waits up to 60s by default)
  * - Easy monitoring of long-running processes
@@ -58,9 +58,15 @@ function sleep(ms: number): Promise<void> {
 
 class TmuxGadget extends Gadget({
 	name: 'Tmux',
-	description: `Execute shell commands in tmux sessions.
+	description: `Execute commands in tmux sessions.
 
-**Use this for ALL shell commands** (npm, tests, builds, git, etc.)
+**Use this for ALL commands** (npm, tests, builds, git, gh, etc.)
+
+**COMMAND FORMAT:** Pass command as argv array, NOT a shell string.
+- Correct: command=["gh", "pr", "create", "--body", "## Summary\\n\\nDetails here"]
+- Correct: command=["npm", "test"]
+- Wrong: command="npm test" (this is a string, not an array)
+Commands are executed directly (no shell interpretation), so special characters in arguments are safe.
 
 **ACTIONS:**
 - \`start\`: Run a command in a new session. Waits up to 120s for initial output.
@@ -74,7 +80,7 @@ class TmuxGadget extends Gadget({
 - \`exists\`: Check if a session is running
 
 **TYPICAL WORKFLOW:**
-1. Start: Tmux(action="start", session="test-run", command="npm test")
+1. Start: Tmux(action="start", session="test-run", command=["npm", "test"])
 2. If still running, check progress: Tmux(action="capture", session="test-run")
 3. When done: Tmux(action="kill", session="test-run")
 
@@ -85,7 +91,11 @@ class TmuxGadget extends Gadget({
 		z.object({
 			action: z.literal('start'),
 			session: sessionNameSchema.describe("Unique session name (e.g., 'test-run', 'npm-install')"),
-			command: z.string().describe("Command to run (e.g., 'npm test', 'npm install')"),
+			command: z
+				.array(z.string())
+				.describe(
+					"Command as argv array (e.g., ['npm', 'test'], ['gh', 'pr', 'create', '--body', 'markdown...'])",
+				),
 			cwd: z
 				.string()
 				.optional()
@@ -139,13 +149,18 @@ class TmuxGadget extends Gadget({
 	]),
 	examples: [
 		{
-			params: { action: 'start', session: 'test-run', command: 'npm test', wait: 120000 },
+			params: { action: 'start', session: 'test-run', command: ['npm', 'test'], wait: 120000 },
 			output:
 				'session=test-run status=exited\n\n> project@1.0.0 test\n> vitest run\n\n✓ 15 tests passed',
 			comment: 'Run tests - command completed within 120s wait period',
 		},
 		{
-			params: { action: 'start', session: 'e2e-tests', command: 'npm run test:e2e', wait: 120000 },
+			params: {
+				action: 'start',
+				session: 'e2e-tests',
+				command: ['npm', 'run', 'test:e2e'],
+				wait: 120000,
+			},
 			output:
 				"session=e2e-tests status=running\n\nStarting backend...\n✓ Backend healthy\n\n(Process still running in session 'e2e-tests'. Use capture to check progress, kill when done.)",
 			comment: 'Long-running E2E tests still running after 120s - use capture to monitor',
@@ -193,7 +208,7 @@ class TmuxGadget extends Gadget({
 
 	private async handleStart(params: {
 		session: string;
-		command: string;
+		command: string[];
 		cwd?: string;
 		wait?: number;
 	}): Promise<string> {
@@ -202,9 +217,6 @@ class TmuxGadget extends Gadget({
 		if (checkResult.exitCode === 0) {
 			return `session=${params.session} status=error\n\nSession '${params.session}' already exists. Use action="kill" first or choose a different name.`;
 		}
-
-		// Build the command with optional cwd
-		const shellCommand = params.cwd ? `cd ${params.cwd} && ${params.command}` : params.command;
 
 		// Create new detached session with wider terminal for better output
 		// Use remain-on-exit so the pane stays around after the command exits,
@@ -218,15 +230,17 @@ class TmuxGadget extends Gadget({
 			'200', // wider terminal
 			'-y',
 			'50',
-			'bash',
-			'-c',
-			// Set remain-on-exit FIRST so it applies when command exits
-			`tmux set-option -t ${params.session} remain-on-exit on 2>/dev/null; ${shellCommand}`,
+			...(params.cwd ? ['-c', params.cwd] : []),
+			// Pass command as argv array - no shell interpretation of special characters
+			...params.command,
 		]);
 
 		if (result.exitCode !== 0) {
 			return `session=${params.session} status=error\n\n${result.output || 'Failed to create session'}`;
 		}
+
+		// Set remain-on-exit after session is created
+		await runTmux(['set-option', '-t', params.session, 'remain-on-exit', 'on']);
 
 		return this.waitForOutput(params.session, params.wait);
 	}
