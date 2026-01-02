@@ -15,7 +15,7 @@ FROM zbigniew1/niu-browser-base:latest AS production
 WORKDIR /app
 
 # Install pnpm globally (some repos use it)
-RUN npm install -g pnpm
+RUN npm install -g pnpm --force
 
 # Install additional tools not in niu-browser-base
 # (niu-browser-base already has: git, curl, ca-certificates, gnupg, postgresql-client)
