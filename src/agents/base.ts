@@ -21,7 +21,7 @@ import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../utils/
 import { clearWatchdogCleanup, setWatchdogCleanup } from '../utils/lifecycle.js';
 import type { LLMCallLogger } from '../utils/llmLogging.js';
 import { logger } from '../utils/logging.js';
-import { cleanupTempDir, cloneRepo, createTempDir } from '../utils/repo.js';
+import { cleanupTempDir, cloneRepo, createTempDir, runCommand } from '../utils/repo.js';
 import { type PromptContext, getSystemPrompt } from './prompts/index.js';
 import {
 	type DependencyInstallResult,
@@ -58,6 +58,7 @@ interface RepoSetupResult {
 async function setupRepository(
 	project: ProjectConfig,
 	log: ReturnType<typeof createAgentLogger>,
+	prBranch?: string,
 ): Promise<RepoSetupResult> {
 	// Start PostgreSQL if available (for local database testing)
 	await startPostgres();
@@ -65,6 +66,12 @@ async function setupRepository(
 	// Clone repo to temp directory
 	const repoDir = createTempDir(project.id);
 	cloneRepo(project, repoDir);
+
+	// Checkout PR branch if provided (for check-failure flow)
+	if (prBranch) {
+		log.info('Checking out PR branch', { prBranch });
+		await runCommand('git', ['checkout', prBranch], repoDir);
+	}
 
 	// Install dependencies if package.json exists
 	log.info('Checking for dependencies to install', { repoDir });
@@ -104,20 +111,28 @@ interface AgentContextData {
 
 async function buildAgentContext(
 	agentType: string,
-	cardId: string,
+	cardId: string | undefined,
 	repoDir: string,
 	project: ProjectConfig,
 	config: CascadeConfig,
 	log: ReturnType<typeof createAgentLogger>,
+	triggerType?: string,
+	prContext?: { prNumber: number; prBranch: string; repoFullName: string; headSha: string },
 ): Promise<AgentContextData> {
 	// Build prompt context for template rendering
-	const cardUrl = `https://trello.com/c/${cardId}`;
 	const promptContext: PromptContext = {
 		cardId,
-		cardUrl,
+		cardUrl: cardId ? `https://trello.com/c/${cardId}` : undefined,
 		projectId: project.id,
 		storiesListId: project.trello?.lists?.stories,
 		processedLabelId: project.trello?.labels?.processed,
+		...(prContext && {
+			prNumber: prContext.prNumber,
+			prBranch: prContext.prBranch,
+			repoFullName: prContext.repoFullName,
+			headSha: prContext.headSha,
+			triggerType,
+		}),
 	};
 
 	// Get system prompt and model
@@ -133,13 +148,20 @@ async function buildAgentContext(
 	// Read context files (CLAUDE.md, AGENTS.md) for synthetic gadget calls
 	const contextFiles = await readContextFiles(repoDir);
 
-	// Pre-fetch card data for synthetic gadget call
-	log.info('Fetching card data for context', { cardId });
-	const cardData = await formatCardData(cardId, true);
+	// Pre-fetch card data for synthetic gadget call (only if cardId exists)
+	let cardData = '';
+	if (cardId) {
+		log.info('Fetching card data for context', { cardId });
+		cardData = await formatCardData(cardId, true);
+	}
 
 	// Generate directory listing for codebase context
 	const directoryListing = await generateDirectoryListing(repoDir, 3);
-	const prompt = buildPrompt(directoryListing, cardId);
+
+	// Build different prompt based on flow
+	const prompt = prContext
+		? buildCheckFailurePrompt(directoryListing, prContext)
+		: buildPrompt(directoryListing, cardId ?? '');
 
 	return { systemPrompt, model, maxIterations, contextFiles, cardData, prompt };
 }
@@ -156,6 +178,59 @@ ${directoryListing}
 		: '';
 
 	return `${directorySection}Analyze and process the Trello card with ID: ${cardId}. The card data (title, description, checklists, attachments, comments) has been pre-loaded above. Review it and proceed with your task.`;
+}
+
+function buildCheckFailurePrompt(
+	directoryListing: string | null,
+	prContext: { prNumber: number; prBranch: string; repoFullName: string; headSha: string },
+): string {
+	const [owner, repo] = prContext.repoFullName.split('/');
+	const directorySection = directoryListing
+		? `Here is the codebase directory structure:
+
+<codebase_structure>
+${directoryListing}
+</codebase_structure>
+
+`
+		: '';
+
+	return `${directorySection}You are on branch \`${prContext.prBranch}\` for PR #${prContext.prNumber}.
+
+Your task is to fix the failing checks and push your changes.
+
+## Instructions
+
+1. **Investigate failures**: Use Tmux to run:
+   \`gh run list --branch ${prContext.prBranch} --limit 5 --json databaseId,conclusion,status,workflowName\`
+
+2. **Get failure details**: Find failed run ID and run:
+   \`gh run view <run-id> --log-failed\`
+
+3. **Analyze error types**:
+   - Lint errors: Run \`npm run lint\` or \`pnpm run lint\`
+   - Type errors: Run \`npm run typecheck\`
+   - Test failures: Run \`npm test\`
+   - Build errors: Run \`npm run build\`
+
+4. **Fix issues**: Make targeted fixes following existing codebase patterns
+
+5. **Verify locally**: Run the same checks that failed in CI before pushing
+
+6. **Commit and push**:
+   \`\`\`bash
+   git add .
+   git commit -m "fix: address failing checks"
+   git push
+   \`\`\`
+
+The push will re-trigger checks automatically.
+
+## GitHub Context
+Owner: ${owner}
+Repo: ${repo}
+PR: #${prContext.prNumber}
+Branch: ${prContext.prBranch}`;
 }
 
 // ============================================================================
@@ -215,18 +290,22 @@ function createAgentBuilderWithGadgets(
 
 function injectSyntheticCalls(
 	initialBuilder: BuilderType,
-	cardId: string,
+	cardId: string | undefined,
 	cardData: string,
 	contextFiles: AgentContextData['contextFiles'],
 	installResult: DependencyInstallResult | null,
 ): BuilderType {
-	// Inject card data as synthetic ReadTrelloCard call
-	let builder = initialBuilder.withSyntheticGadgetCall(
-		'ReadTrelloCard',
-		{ cardId, includeComments: true },
-		cardData,
-		'gc_card',
-	);
+	let builder = initialBuilder;
+
+	// Inject card data as synthetic ReadTrelloCard call (only if cardId exists)
+	if (cardId && cardData) {
+		builder = builder.withSyntheticGadgetCall(
+			'ReadTrelloCard',
+			{ cardId, includeComments: true },
+			cardData,
+			'gc_card',
+		);
+	}
 
 	// Inject context files as synthetic ReadFile gadget calls
 	for (let i = 0; i < contextFiles.length; i++) {
@@ -304,37 +383,68 @@ export async function executeAgent(
 	agentType: string,
 	input: AgentInput & { project: ProjectConfig; config: CascadeConfig },
 ): Promise<AgentResult> {
-	const { project, config, cardId } = input;
+	const { project, config, cardId, triggerType } = input;
 
-	if (!cardId) {
-		return { success: false, output: '', error: 'No card ID provided' };
+	// Extract PR context if this is check-failure flow
+	const prContext =
+		triggerType === 'check-failure'
+			? {
+					prNumber: input.prNumber as number,
+					prBranch: input.prBranch as string,
+					repoFullName: input.repoFullName as string,
+					headSha: input.headSha as string,
+				}
+			: undefined;
+
+	// cardId is optional for check-failure flow but required for feature implementation
+	if (!cardId && !prContext) {
+		return { success: false, output: '', error: 'No card ID or PR context provided' };
 	}
 
 	let repoDir: string | null = null;
 
-	// Create file logger for this agent run
-	const fileLogger = createFileLogger(`cascade-${agentType}-${cardId}`);
+	// Create file logger - use PR number for check-failure, cardId for features
+	const identifier = prContext ? `${agentType}-pr${prContext.prNumber}` : `${agentType}-${cardId}`;
+	const fileLogger = createFileLogger(`cascade-${identifier}`);
 	const log = createAgentLogger(fileLogger);
 
 	// Register cleanup callback for watchdog timeout (upload logs before force exit)
 	setWatchdogCleanup(async () => {
 		fileLogger.close();
-		const logBuffer = await fileLogger.getZippedBuffer();
-		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-		const logName = `${agentType}-timeout-${timestamp}.zip`;
-		await trelloClient.addAttachmentFile(cardId, logBuffer, logName);
-		logger.info('Uploaded timeout log to card', { cardId, logName });
+		// Only upload to Trello if we have a cardId
+		if (cardId) {
+			const logBuffer = await fileLogger.getZippedBuffer();
+			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+			const logName = `${agentType}-timeout-${timestamp}.zip`;
+			await trelloClient.addAttachmentFile(cardId, logBuffer, logName);
+			logger.info('Uploaded timeout log to card', { cardId, logName });
+		}
 	});
 
 	try {
-		// Setup repository
-		const setup = await setupRepository(project, log);
+		// Setup repository (checkout PR branch if provided)
+		const setup = await setupRepository(project, log, prContext?.prBranch);
 		repoDir = setup.repoDir;
 
-		log.info('Running agent', { agentType, cardId, repoDir });
+		log.info('Running agent', {
+			agentType,
+			cardId,
+			prNumber: prContext?.prNumber,
+			prBranch: prContext?.prBranch,
+			repoDir,
+		});
 
-		// Build agent context
-		const ctx = await buildAgentContext(agentType, cardId, repoDir, project, config, log);
+		// Build agent context (with PR context if check-failure flow)
+		const ctx = await buildAgentContext(
+			agentType,
+			cardId,
+			repoDir,
+			project,
+			config,
+			log,
+			triggerType,
+			prContext,
+		);
 
 		// Change to repo directory (llmist gadgets use process.cwd() for path validation)
 		const originalCwd = process.cwd();

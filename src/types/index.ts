@@ -8,6 +8,13 @@ export interface AgentInput {
 	cardId?: string;
 	prNumber?: number;
 	repoDir?: string;
+
+	// PR context fields for check-failure flow
+	prBranch?: string;
+	repoFullName?: string;
+	headSha?: string;
+	triggerType?: 'check-failure' | 'feature-implementation';
+
 	[key: string]: unknown;
 }
 

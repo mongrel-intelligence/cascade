@@ -50,7 +50,8 @@ Before implementing ANYTHING, search for existing examples:
 
 **Search strategies:**
 - List the directory first: `ListDirectory(packages/e2e/tests/)`
-- Search for similar functionality: `SearchDirectory("mobile", "packages/e2e/")`
+- Find files by name: `Tmux: find packages/e2e -name "*mobile*" -type f`
+- Search file contents: `Tmux: rg -l "mobile" packages/e2e`
 - Read multiple examples before writing anything
 
 ### Step 2: Study the Patterns Deeply

@@ -20,6 +20,13 @@ export interface PromptContext {
 	storiesListId?: string;
 	processedLabelId?: string;
 
+	// Check-failure specific
+	prNumber?: number;
+	prBranch?: string;
+	repoFullName?: string;
+	headSha?: string;
+	triggerType?: string;
+
 	// Future extensibility
 	[key: string]: unknown;
 }

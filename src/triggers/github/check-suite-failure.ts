@@ -4,6 +4,15 @@ import { logger } from '../../utils/logging.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
 import { extractTrelloCardId, hasTrelloCardUrl } from './utils.js';
 
+// Track fix attempts per PR to prevent infinite loops
+const fixAttempts = new Map<number, number>();
+const MAX_ATTEMPTS = 3;
+
+// Export for cleanup by PRReadyToMergeTrigger
+export function resetFixAttempts(prNumber: number): void {
+	fixAttempts.delete(prNumber);
+}
+
 export class CheckSuiteFailureTrigger implements TriggerHandler {
 	name = 'check-suite-failure';
 	description = 'Triggers review agent when check suite fails on a PR with Trello card';
@@ -31,6 +40,7 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		// Get the first associated PR (usually there's only one)
 		const prRef = payload.check_suite.pull_requests[0];
 		const prNumber = prRef.number;
+		const headSha = payload.check_suite.head_sha;
 
 		// Fetch PR to check for Trello card URL
 		const prDetails = await githubClient.getPR(owner, repo, prNumber);
@@ -44,19 +54,81 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 
 		const cardId = extractTrelloCardId(prDetails.body);
 
-		logger.info('Check suite failure on PR with Trello card', {
+		// Get ALL check runs for this commit to verify they're all complete
+		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
+
+		// Verify ALL checks have completed (not still running)
+		const allComplete = checkStatus.checkRuns.every((cr) => cr.status === 'completed');
+		if (!allComplete) {
+			logger.info('Not all checks complete yet, waiting', {
+				prNumber,
+				totalChecks: checkStatus.totalCount,
+				incompleteChecks: checkStatus.checkRuns
+					.filter((cr) => cr.status !== 'completed')
+					.map((cr) => cr.name),
+			});
+			return null;
+		}
+
+		// Verify at least one check failed
+		const anyFailed = checkStatus.checkRuns.some(
+			(cr) =>
+				cr.conclusion === 'failure' ||
+				cr.conclusion === 'timed_out' ||
+				cr.conclusion === 'action_required',
+		);
+
+		if (!anyFailed) {
+			logger.info('All checks passed, no action needed', {
+				prNumber,
+				totalChecks: checkStatus.totalCount,
+			});
+			return null;
+		}
+
+		// Check attempt limit to prevent infinite loops
+		const attempts = fixAttempts.get(prNumber) || 0;
+		if (attempts >= MAX_ATTEMPTS) {
+			logger.warn('Max auto-fix attempts reached for PR', {
+				prNumber,
+				attempts,
+			});
+			await githubClient.createPRComment(
+				owner,
+				repo,
+				prNumber,
+				'⚠️ Unable to automatically fix failing checks after 3 attempts. Manual intervention required.',
+			);
+			return null;
+		}
+
+		// Increment attempt counter
+		fixAttempts.set(prNumber, attempts + 1);
+
+		logger.info('Check suite failure on PR with Trello card - all checks complete', {
 			prNumber,
 			cardId,
-			conclusion: payload.check_suite.conclusion,
+			attempt: attempts + 1,
+			totalChecks: checkStatus.totalCount,
+			failedChecks: checkStatus.checkRuns
+				.filter(
+					(cr) =>
+						cr.conclusion === 'failure' ||
+						cr.conclusion === 'timed_out' ||
+						cr.conclusion === 'action_required',
+				)
+				.map((cr) => cr.name),
 		});
 
 		return {
-			agentType: 'review',
+			agentType: 'implementation',
 			agentInput: {
 				prNumber,
 				prBranch: prRef.head.ref,
 				repoFullName: payload.repository.full_name,
+				headSha,
 				triggerType: 'check-failure',
+				cardId: cardId || undefined,
 			},
 			prNumber,
 			cardId: cardId || undefined,
