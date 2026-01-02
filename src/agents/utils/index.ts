@@ -2,6 +2,7 @@ export {
 	LOG_LEVELS,
 	getLogLevel,
 	startPostgres,
+	startRedis,
 	generateDirectoryListing,
 	type ContextFile,
 	readContextFiles,
