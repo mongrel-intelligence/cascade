@@ -63,6 +63,18 @@ async function executeGitHubAgent(
 		);
 	}
 
+	// Move to in-review if implementation and PR was created
+	if (cardId && result.agentType === 'implementation' && agentResult.prUrl) {
+		await safeOperation(() => trelloClient.moveCardToList(cardId, project.trello.lists.inReview), {
+			action: 'move card to in-review',
+			cardId,
+		});
+		await safeOperation(() => trelloClient.addComment(cardId, `PR created: ${agentResult.prUrl}`), {
+			action: 'add PR comment',
+			cardId,
+		});
+	}
+
 	logger.info('GitHub agent completed', {
 		agentType: result.agentType,
 		prNumber: result.prNumber,
