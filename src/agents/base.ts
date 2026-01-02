@@ -434,15 +434,19 @@ export async function executeAgent(
 				}
 			: undefined;
 
-	// cardId is optional for check-failure flow but required for feature implementation
-	if (!cardId && !prContext) {
+	// cardId is optional for check-failure and debug flows
+	const isDebugAgent = input.logDir && typeof input.logDir === 'string';
+	if (!cardId && !prContext && !isDebugAgent) {
 		return { success: false, output: '', error: 'No card ID or PR context provided' };
 	}
 
 	let repoDir: string | null = null;
 
-	// Create file logger - use PR number for check-failure, cardId for features
-	const identifier = prContext ? `${agentType}-pr${prContext.prNumber}` : `${agentType}-${cardId}`;
+	// Create file logger - use PR number for check-failure, originalCardId for debug, cardId for features
+	const debugCardId = isDebugAgent ? (input.originalCardId as string) : undefined;
+	const identifier = prContext
+		? `${agentType}-pr${prContext.prNumber}`
+		: `${agentType}-${cardId || debugCardId}`;
 	const fileLogger = createFileLogger(`cascade-${identifier}`);
 	const log = createAgentLogger(fileLogger);
 
