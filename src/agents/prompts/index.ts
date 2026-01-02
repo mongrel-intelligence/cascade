@@ -27,6 +27,14 @@ export interface PromptContext {
 	headSha?: string;
 	triggerType?: string;
 
+	// Debug-specific
+	logDir?: string;
+	originalCardId?: string;
+	originalCardName?: string;
+	originalCardUrl?: string;
+	detectedAgentType?: string;
+	debugListId?: string;
+
 	// Future extensibility
 	[key: string]: unknown;
 }
@@ -47,7 +55,7 @@ function loadTemplate(agentType: string): string {
 }
 
 export function getSystemPrompt(agentType: string, context: PromptContext = {}): string {
-	const validTypes = ['briefing', 'planning', 'implementation'];
+	const validTypes = ['briefing', 'planning', 'implementation', 'debug'];
 	if (!validTypes.includes(agentType)) {
 		throw new Error(`Unknown agent type: ${agentType}`);
 	}
@@ -60,3 +68,4 @@ export function getSystemPrompt(agentType: string, context: PromptContext = {}):
 export const BRIEFING_SYSTEM_PROMPT = loadTemplate('briefing');
 export const PLANNING_SYSTEM_PROMPT = loadTemplate('planning');
 export const IMPLEMENTATION_SYSTEM_PROMPT = loadTemplate('implementation');
+export const DEBUG_SYSTEM_PROMPT = loadTemplate('debug');

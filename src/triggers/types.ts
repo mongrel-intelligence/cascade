@@ -41,6 +41,13 @@ export interface TrelloWebhookPayload {
 				name: string;
 				shortLink: string;
 			};
+			attachment?: {
+				id: string;
+				name: string;
+				url: string;
+				mimeType: string;
+				bytes?: number;
+			};
 			old?: Record<string, unknown>;
 		};
 		memberCreator?: {
