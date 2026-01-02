@@ -16,6 +16,14 @@ interface Config {
 	projects: ProjectConfig[];
 }
 
+/**
+ * Check if filename matches agent log pattern: {agent-type}-{timestamp}.zip
+ * Examples: implementation-2026-01-02T16-30-24-339Z.zip, briefing-timeout-2026-01-02T12-34-56-789Z.zip
+ */
+function isAgentLogFilename(filename: string): boolean {
+	return /^[a-z]+(?:-timeout)?-[\d-TZ]+\.zip$/i.test(filename);
+}
+
 // Load config at startup
 const configPath = process.env.CONFIG_PATH || './config/projects.json';
 let config: Config;
@@ -71,6 +79,19 @@ function shouldForwardTrelloToWorker(payload: unknown): boolean {
 		if (labelId === project.trello.labels.readyToProcess) {
 			console.log('[Router] Ready-to-process label added');
 			return true;
+		}
+	}
+
+	// Agent log attachment uploaded? (triggers debug agent)
+	if (actionType === 'addAttachmentToCard' && data?.attachment) {
+		const attachment = data.attachment as Record<string, unknown>;
+		const name = attachment.name as string | undefined;
+		if (name && isAgentLogFilename(name)) {
+			// Only forward if debug list is configured
+			if (project.trello.lists.debug) {
+				console.log(`[Router] Agent log attachment uploaded: ${name}`);
+				return true;
+			}
 		}
 	}
 
