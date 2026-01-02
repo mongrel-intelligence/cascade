@@ -17,7 +17,7 @@
     - `redis-cli KEYS "*"` - List all keys (use sparingly)
     - `redis-cli FLUSHALL` - Clear all data (use with caution)
     - `redis-cli INFO` - Get server statistics
-  - **Start**: `su redis -c 'redis-server /etc/redis/redis.conf --daemonize yes'`
+  - **Start**: `su -s /bin/sh redis -c 'redis-server /etc/redis/redis.conf --daemonize yes'`
   - **Stop**: `redis-cli SHUTDOWN`
   - **Monitor**: `redis-cli MONITOR` - Watch all commands in real-time
   - **Data persistence**: AOF enabled (data survives restarts)

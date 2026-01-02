@@ -137,10 +137,10 @@ export async function startRedis(): Promise<void> {
 
 	try {
 		// Start Redis in background using redis-server
-		// We use su to run as redis user, and redirect stderr to capture startup errors
+		// We use su -s /bin/sh to run as redis user (redis user has /usr/sbin/nologin shell by default)
 		const startResult = await execCommand(
 			'su',
-			['redis', '-c', `redis-server ${REDIS_CONF} --daemonize yes 2>&1`],
+			['-s', '/bin/sh', 'redis', '-c', `redis-server ${REDIS_CONF} --daemonize yes 2>&1`],
 			'/',
 		);
 		logger.debug('redis-server start output', {
