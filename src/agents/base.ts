@@ -167,9 +167,9 @@ async function buildAgentContext(
 	// Read context files (CLAUDE.md, AGENTS.md) for synthetic gadget calls
 	const contextFiles = await readContextFiles(repoDir);
 
-	// Pre-fetch card data for synthetic gadget call (only if cardId exists)
+	// Pre-fetch card data for synthetic gadget call (only if cardId exists and not debug flow)
 	let cardData = '';
-	if (cardId) {
+	if (cardId && !debugContext) {
 		log.info('Fetching card data for context', { cardId });
 		cardData = await formatCardData(cardId, true);
 	}
@@ -178,9 +178,14 @@ async function buildAgentContext(
 	const directoryListing = await generateDirectoryListing(repoDir, 3);
 
 	// Build different prompt based on flow
-	const prompt = prContext
-		? buildCheckFailurePrompt(directoryListing, prContext)
-		: buildPrompt(directoryListing, cardId ?? '');
+	let prompt: string;
+	if (prContext) {
+		prompt = buildCheckFailurePrompt(directoryListing, prContext);
+	} else if (debugContext) {
+		prompt = buildDebugPrompt(debugContext);
+	} else {
+		prompt = buildPrompt(directoryListing, cardId ?? '');
+	}
 
 	return { systemPrompt, model, maxIterations, contextFiles, cardData, prompt };
 }
@@ -250,6 +255,20 @@ Owner: ${owner}
 Repo: ${repo}
 PR: #${prContext.prNumber}
 Branch: ${prContext.prBranch}`;
+}
+
+function buildDebugPrompt(debugContext: {
+	logDir: string;
+	originalCardName: string;
+	originalCardUrl: string;
+	detectedAgentType: string;
+}): string {
+	return `Analyze the ${debugContext.detectedAgentType} agent session logs in directory: ${debugContext.logDir}
+
+Original card: "${debugContext.originalCardName}"
+Link: ${debugContext.originalCardUrl}
+
+Start by listing the contents of the log directory, then read and analyze the logs to identify issues.`;
 }
 
 // ============================================================================
