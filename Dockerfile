@@ -55,6 +55,41 @@ RUN mkdir -p /run/postgresql && chown -R postgres:postgres /run/postgresql \
     && su postgres -c "psql -c \"ALTER USER postgres WITH PASSWORD 'postgres';\"" \
     && su postgres -c "/usr/lib/postgresql/*/bin/pg_ctl stop -D /var/lib/postgresql/data"
 
+# Install and configure Redis for local development use by agents
+RUN apt-get update && apt-get install -y \
+    redis-server \
+    redis-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# Configure Redis
+# - Port: 6379 (standard)
+# - Bind: localhost only for security
+# - Persistence: AOF enabled
+# - Memory: 256MB limit with LRU eviction
+RUN mkdir -p /var/lib/redis /var/log/redis /var/run/redis && \
+    chown -R redis:redis /var/lib/redis /var/log/redis /var/run/redis && \
+    { \
+        echo "# Redis Configuration for CASCADE Agents"; \
+        echo "bind 127.0.0.1"; \
+        echo "port 6379"; \
+        echo "daemonize no"; \
+        echo "supervised systemd"; \
+        echo "pidfile /var/run/redis/redis-server.pid"; \
+        echo "loglevel notice"; \
+        echo "logfile /var/log/redis/redis-server.log"; \
+        echo "dir /var/lib/redis"; \
+        echo "# Persistence"; \
+        echo "appendonly yes"; \
+        echo "appendfilename \"appendonly.aof\""; \
+        echo "appendfsync everysec"; \
+        echo "# Memory Management"; \
+        echo "maxmemory 256mb"; \
+        echo "maxmemory-policy allkeys-lru"; \
+        echo "# Disable protected mode for local dev"; \
+        echo "protected-mode no"; \
+    } > /etc/redis/redis.conf && \
+    chown redis:redis /etc/redis/redis.conf
+
 # Install ast-grep
 RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "amd64" ]; then AST_ARCH="x86_64"; else AST_ARCH="aarch64"; fi && \

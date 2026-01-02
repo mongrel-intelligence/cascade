@@ -7,6 +7,21 @@
   - **Stop**: `su postgres -c 'pg_ctl stop -D /var/lib/postgresql/data'`
   - **Status**: `su postgres -c 'pg_ctl status -D /var/lib/postgresql/data'`
   - **Create database**: `psql -U postgres -h localhost -c 'CREATE DATABASE mydb;'`
+- **Redis**: In-memory data store running on port 6379
+  - **Connection**: `redis://localhost:6379` (no password)
+  - **Connect via CLI**: `redis-cli`
+  - **Common commands**:
+    - `redis-cli ping` - Check if Redis is running
+    - `redis-cli SET key value` - Set a key
+    - `redis-cli GET key` - Get a key's value
+    - `redis-cli KEYS "*"` - List all keys (use sparingly)
+    - `redis-cli FLUSHALL` - Clear all data (use with caution)
+    - `redis-cli INFO` - Get server statistics
+  - **Start**: `su redis -c 'redis-server /etc/redis/redis.conf --daemonize yes'`
+  - **Stop**: `redis-cli SHUTDOWN`
+  - **Monitor**: `redis-cli MONITOR` - Watch all commands in real-time
+  - **Data persistence**: AOF enabled (data survives restarts)
+  - **Memory limit**: 256MB with LRU eviction
 - **Node.js 22**: With npm, pnpm, yarn, bun
 - **Git & GitHub CLI**: `git` and `gh` commands available
 - **Search tools** (use via Tmux for fast codebase exploration):
