@@ -74,13 +74,15 @@ async function executeGitHubAgent(
 function processNextQueuedGitHubWebhook(config: CascadeConfig, registry: TriggerRegistry): void {
 	const next = dequeueWebhook();
 	if (next) {
-		logger.info('Processing queued GitHub webhook', { queueLength: getQueueLength() });
+		const eventType = next.eventType || 'pull_request_review_comment'; // Fallback for backward compatibility
+		logger.info('Processing queued GitHub webhook', {
+			queueLength: getQueueLength(),
+			eventType,
+		});
 		setImmediate(() => {
-			processGitHubWebhook(next.payload, 'pull_request_review_comment', config, registry).catch(
-				(err) => {
-					logger.error('Failed to process queued GitHub webhook', { error: String(err) });
-				},
-			);
+			processGitHubWebhook(next.payload, eventType, config, registry).catch((err) => {
+				logger.error('Failed to process queued GitHub webhook', { error: String(err) });
+			});
 		});
 	} else if (process.env.FLY_APP_NAME) {
 		scheduleShutdownAfterJob(config.defaults.postJobGracePeriodMs);
@@ -106,9 +108,12 @@ export async function processGitHubWebhook(
 	}
 
 	if (isCurrentlyProcessing()) {
-		const queued = enqueueWebhook(payload);
+		const queued = enqueueWebhook(payload, eventType);
 		if (queued) {
-			logger.info('Currently processing, GitHub webhook queued', { queueLength: getQueueLength() });
+			logger.info('Currently processing, GitHub webhook queued', {
+				queueLength: getQueueLength(),
+				eventType,
+			});
 		} else {
 			logger.warn('Queue full, GitHub webhook rejected', { queueLength: getQueueLength() });
 		}

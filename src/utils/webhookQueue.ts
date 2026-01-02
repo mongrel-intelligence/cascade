@@ -4,12 +4,13 @@ const MAX_QUEUE_SIZE = 10;
 
 interface QueuedWebhook {
 	payload: unknown;
+	eventType?: string; // Optional for backward compatibility (Trello doesn't need it)
 	receivedAt: Date;
 }
 
 const queue: QueuedWebhook[] = [];
 
-export function enqueueWebhook(payload: unknown): boolean {
+export function enqueueWebhook(payload: unknown, eventType?: string): boolean {
 	if (queue.length >= MAX_QUEUE_SIZE) {
 		logger.warn('Webhook queue full, rejecting', {
 			queueLength: queue.length,
@@ -20,6 +21,7 @@ export function enqueueWebhook(payload: unknown): boolean {
 
 	queue.push({
 		payload,
+		eventType,
 		receivedAt: new Date(),
 	});
 
