@@ -94,6 +94,14 @@ export class AttachmentAddedTrigger implements TriggerHandler {
 			return false;
 		}
 
+		// Don't trigger debug agent for debug agent's own logs (prevent infinite loop)
+		if (parsed.agentType === 'debug') {
+			logger.debug('Skipping debug agent log to prevent infinite loop', {
+				filename: attachment.name,
+			});
+			return false;
+		}
+
 		// Check if DEBUG list is configured
 		const debugListId = ctx.project.trello.lists.debug;
 		if (!debugListId) {
