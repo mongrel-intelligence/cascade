@@ -15,6 +15,13 @@ export interface AgentInput {
 	headSha?: string;
 	triggerType?: 'check-failure' | 'feature-implementation';
 
+	// Debug agent fields
+	logDir?: string;
+	originalCardId?: string;
+	originalCardName?: string;
+	originalCardUrl?: string;
+	detectedAgentType?: string;
+
 	[key: string]: unknown;
 }
 

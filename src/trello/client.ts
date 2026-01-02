@@ -238,6 +238,28 @@ export const trelloClient = {
 		}));
 	},
 
+	async getMe(): Promise<{ id: string; fullName: string; username: string }> {
+		logger.debug('Fetching authenticated member info');
+		const apiKey = process.env.TRELLO_API_KEY;
+		const token = process.env.TRELLO_TOKEN;
+		const response = await fetch(
+			`https://api.trello.com/1/members/me?key=${apiKey}&token=${token}`,
+		);
+		if (!response.ok) {
+			throw new Error(`Failed to fetch member: ${response.status}`);
+		}
+		const member = (await response.json()) as {
+			id?: string;
+			fullName?: string;
+			username?: string;
+		};
+		return {
+			id: member.id || '',
+			fullName: member.fullName || '',
+			username: member.username || '',
+		};
+	},
+
 	async getListCards(listId: string): Promise<TrelloCard[]> {
 		logger.debug('Fetching cards from list', { listId });
 		const cards = await getClient().lists.getListCards({ id: listId });

@@ -239,6 +239,19 @@ export async function processTrelloWebhook(
 			await safeAddComment(result.cardId, `❌ Error: ${String(err)}`);
 		}
 	} finally {
+		// Cleanup temp directory if created by attachment trigger
+		if (result?.agentInput?.logDir && typeof result.agentInput.logDir === 'string') {
+			const logDir = result.agentInput.logDir as string;
+			if (logDir.startsWith('/tmp/debug-')) {
+				logger.info('Cleaning up debug temp directory', { logDir });
+				const { cleanupTempDir } = await import('../../utils/repo.js');
+				await safeOperation(async () => await cleanupTempDir(logDir), {
+					action: 'cleanup temp directory',
+					logDir,
+				});
+			}
+		}
+
 		setProcessing(false);
 		processNextQueuedWebhook(config, registry);
 	}

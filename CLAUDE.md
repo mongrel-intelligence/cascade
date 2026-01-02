@@ -19,8 +19,8 @@ The extensible trigger system routes events to agents:
 Trello/GitHub Webhook → TriggerRegistry → Agent → Code Changes → PR
 ```
 
-- `src/triggers/` - Event handlers (Trello card moves, labels, GitHub PRs)
-- `src/agents/` - AI agents (briefing, planning, implementation, review)
+- `src/triggers/` - Event handlers (Trello card moves, labels, GitHub PRs, attachments)
+- `src/agents/` - AI agents (briefing, planning, implementation, review, debug)
 - `src/gadgets/` - Tools agents can use (Trello API, Git operations, file system)
 
 ### Multi-Project Support
@@ -100,6 +100,8 @@ Optional:
 
 ## Debugging Production Sessions
 
+### Manual Session Download
+
 Download session logs and card data from a Trello card for debugging:
 
 ```bash
@@ -109,3 +111,39 @@ npm run tool:download-session abc123
 ```
 
 This downloads all `.gz` log attachments (ungzipped), plus card description, checklists, and comments into a temp directory.
+
+### Automatic Debug Analysis
+
+CASCADE includes a debug agent that automatically analyzes agent session logs:
+
+1. **Automatic Trigger**: When an agent uploads a session log (`.zip` file) to a Trello card, the debug agent automatically triggers
+2. **Log Analysis**: The debug agent downloads, extracts, and analyzes the session logs to identify:
+   - Errors and exceptions
+   - Failed gadget calls
+   - Iteration loops and inefficiencies
+   - Excessive LLM calls
+   - Scope creep or confusion patterns
+3. **Debug Card Creation**: Creates a new card in the DEBUG list with:
+   - Title: `{agent-type} - {original card name}`
+   - Executive summary of what went wrong
+   - Key issues found
+   - Timeline of events
+   - Actionable recommendations
+   - Link back to the original card
+
+**Setup**: Add a `debug` list to your Trello board and configure it in `config/projects.json`:
+
+```json
+{
+  "trello": {
+    "lists": {
+      "briefing": "...",
+      "planning": "...",
+      "todo": "...",
+      "debug": "YOUR_DEBUG_LIST_ID"
+    }
+  }
+}
+```
+
+The debug agent only analyzes logs uploaded by the authenticated CASCADE user and matching the pattern `{agent-type}-{timestamp}.zip`.

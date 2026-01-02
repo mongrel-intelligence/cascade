@@ -118,6 +118,13 @@ async function buildAgentContext(
 	log: ReturnType<typeof createAgentLogger>,
 	triggerType?: string,
 	prContext?: { prNumber: number; prBranch: string; repoFullName: string; headSha: string },
+	debugContext?: {
+		logDir: string;
+		originalCardId: string;
+		originalCardName: string;
+		originalCardUrl: string;
+		detectedAgentType: string;
+	},
 ): Promise<AgentContextData> {
 	// Build prompt context for template rendering
 	const promptContext: PromptContext = {
@@ -132,6 +139,14 @@ async function buildAgentContext(
 			repoFullName: prContext.repoFullName,
 			headSha: prContext.headSha,
 			triggerType,
+		}),
+		...(debugContext && {
+			logDir: debugContext.logDir,
+			originalCardId: debugContext.originalCardId,
+			originalCardName: debugContext.originalCardName,
+			originalCardUrl: debugContext.originalCardUrl,
+			detectedAgentType: debugContext.detectedAgentType,
+			debugListId: project.trello?.lists?.debug,
 		}),
 	};
 
@@ -422,9 +437,19 @@ export async function executeAgent(
 	});
 
 	try {
-		// Setup repository (checkout PR branch if provided)
-		const setup = await setupRepository(project, log, prContext?.prBranch);
-		repoDir = setup.repoDir;
+		let installResult: DependencyInstallResult | null = null;
+
+		// Check if this is debug agent with pre-extracted logs
+		if (input.logDir && typeof input.logDir === 'string') {
+			// Debug agent: use log directory instead of repo
+			repoDir = input.logDir;
+			log.info('Using log directory (no repo setup)', { logDir: input.logDir, agentType });
+		} else {
+			// Normal agents: setup repository (checkout PR branch if provided)
+			const setup = await setupRepository(project, log, prContext?.prBranch);
+			repoDir = setup.repoDir;
+			installResult = setup.installResult;
+		}
 
 		log.info('Running agent', {
 			agentType,
@@ -434,7 +459,19 @@ export async function executeAgent(
 			repoDir,
 		});
 
-		// Build agent context (with PR context if check-failure flow)
+		// Extract debug context if this is debug agent
+		const debugContext =
+			agentType === 'debug' && input.logDir
+				? {
+						logDir: input.logDir,
+						originalCardId: input.originalCardId as string,
+						originalCardName: input.originalCardName as string,
+						originalCardUrl: input.originalCardUrl as string,
+						detectedAgentType: input.detectedAgentType as string,
+					}
+				: undefined;
+
+		// Build agent context (with PR context if check-failure flow, or debug context if debug agent)
 		const ctx = await buildAgentContext(
 			agentType,
 			cardId,
@@ -444,6 +481,7 @@ export async function executeAgent(
 			log,
 			triggerType,
 			prContext,
+			debugContext,
 		);
 
 		// Change to repo directory (llmist gadgets use process.cwd() for path validation)
@@ -476,7 +514,7 @@ export async function executeAgent(
 				cardId,
 				ctx.cardData,
 				ctx.contextFiles,
-				setup.installResult,
+				installResult,
 			);
 
 			// Run the agent

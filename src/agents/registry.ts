@@ -36,6 +36,7 @@ export function getRegisteredAgents(): string[] {
 registerAgent('briefing', executeAgent.bind(null, 'briefing'));
 registerAgent('planning', executeAgent.bind(null, 'planning'));
 registerAgent('implementation', executeAgent.bind(null, 'implementation'));
+registerAgent('debug', executeAgent.bind(null, 'debug'));
 registerAgent('review', (input) =>
 	executeReviewAgent(input as Parameters<typeof executeReviewAgent>[0]),
 );
