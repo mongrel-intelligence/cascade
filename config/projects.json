@@ -5,7 +5,8 @@
 		"agentIterations": {
 			"implementation": 65
 		},
-		"selfDestructTimeoutMs": 1800000
+		"selfDestructTimeoutMs": 1800000,
+		"postJobGracePeriodMs": 45000
 	},
 	"projects": [
 		{
