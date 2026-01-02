@@ -44,6 +44,7 @@
 		"@biomejs/biome": "^1.9.4",
 		"@commitlint/cli": "^20.1.0",
 		"@commitlint/config-conventional": "^20.0.0",
+		"@types/adm-zip": "^0.5.7",
 		"@types/node": "^22.10.2",
 		"@vitest/coverage-v8": "^2.1.8",
 		"lefthook": "^1.10.10",

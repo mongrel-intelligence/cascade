@@ -2,6 +2,7 @@ import { CheckSuiteFailureTrigger } from './github/check-suite-failure.js';
 import { PRReadyToMergeTrigger } from './github/pr-ready-to-merge.js';
 import { PRReviewCommentTrigger } from './github/pr-review-comment.js';
 import type { TriggerRegistry } from './registry.js';
+import { AttachmentAddedTrigger } from './trello/attachment-added.js';
 import {
 	CardMovedToBriefingTrigger,
 	CardMovedToPlanningTrigger,
@@ -28,6 +29,9 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 
 	// Trello: Label triggers
 	registry.register(new ReadyToProcessLabelTrigger());
+
+	// Trello: Attachment triggers
+	registry.register(new AttachmentAddedTrigger());
 
 	// GitHub: PR review comment trigger
 	registry.register(new PRReviewCommentTrigger());
