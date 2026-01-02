@@ -1,6 +1,7 @@
 import { CheckSuiteFailureTrigger } from './github/check-suite-failure.js';
 import { PRReadyToMergeTrigger } from './github/pr-ready-to-merge.js';
 import { PRReviewCommentTrigger } from './github/pr-review-comment.js';
+import { PRReviewSubmittedTrigger } from './github/pr-review-submitted.js';
 import type { TriggerRegistry } from './registry.js';
 import { AttachmentAddedTrigger } from './trello/attachment-added.js';
 import {
@@ -35,6 +36,9 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 
 	// GitHub: PR review comment trigger
 	registry.register(new PRReviewCommentTrigger());
+
+	// GitHub: PR review submission trigger (when someone submits a review)
+	registry.register(new PRReviewSubmittedTrigger());
 
 	// GitHub: Check suite failure trigger (runs review agent to fix)
 	registry.register(new CheckSuiteFailureTrigger());

@@ -6,9 +6,10 @@ Multi-project Trello-to-code automation platform. CASCADE reacts to Trello card 
 
 - **Multi-project support** - Single deployment handles multiple repos/Trello boards
 - **Extensible trigger system** - Easy to add new triggers (card moved, label added, PR ready, etc.)
-- **AI-powered agents** - Briefing, planning, and implementation agents using llmist
+- **AI-powered agents** - Briefing, planning, implementation, review, and debug agents using llmist
 - **Git workflow** - Automatic branch creation, commits, and PR creation
 - **Trello integration** - Full card management (labels, comments, attachments)
+- **GitHub integration** - PR review webhooks, automatic card movement, CI check monitoring
 
 ## Getting Started
 
@@ -270,6 +271,30 @@ curl -X POST "https://api.trello.com/1/webhooks" \
   -d "description=Cascade webhook"
 ```
 
+### GitHub Webhook Setup
+
+Set up GitHub webhooks for your repository to enable PR review triggers:
+
+1. Go to your repository settings: `https://github.com/owner/repo/settings/hooks`
+2. Click "Add webhook"
+3. Configure:
+   - **Payload URL**: `https://cascade.fly.dev/github/webhook`
+   - **Content type**: `application/json`
+   - **Secret**: (optional, not currently validated)
+   - **Events**: Select individual events:
+     - Pull request review comments
+     - Pull request reviews
+     - Check suites
+4. Click "Add webhook"
+
+**Supported GitHub Triggers**:
+- **PR Review Comments**: Triggers review agent when someone comments on a PR review
+- **PR Review Submissions**: Triggers review agent when someone submits a PR review (approve/request changes)
+- **Check Suite Failures**: Triggers review agent to fix failed CI checks
+- **PR Ready to Merge**: Auto-moves card to DONE when all checks pass and PR is approved
+
+**Note**: GitHub webhooks only trigger for PRs that have a Trello card URL in their description.
+
 ## API Endpoints
 
 | Endpoint | Method | Description |
@@ -278,6 +303,8 @@ curl -X POST "https://api.trello.com/1/webhooks" \
 | `/health` | HEAD | Health check (no body) |
 | `/trello/webhooks` | POST | Trello webhook receiver |
 | `/trello/webhooks` | HEAD | Trello webhook verification |
+| `/github/webhook` | POST | GitHub webhook receiver |
+| `/github/webhook` | GET | GitHub webhook verification |
 
 ## License
 
