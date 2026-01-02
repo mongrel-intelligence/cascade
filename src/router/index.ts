@@ -86,8 +86,8 @@ function shouldForwardTrelloToWorker(payload: unknown): boolean {
 	if (actionType === 'addAttachmentToCard' && data?.attachment) {
 		const attachment = data.attachment as Record<string, unknown>;
 		const name = attachment.name as string | undefined;
-		if (name && isAgentLogFilename(name)) {
-			// Only forward if debug list is configured
+		if (name && isAgentLogFilename(name) && !name.startsWith('debug-')) {
+			// Only forward if debug list is configured (exclude debug agent logs to prevent loop)
 			if (project.trello.lists.debug) {
 				console.log(`[Router] Agent log attachment uploaded: ${name}`);
 				return true;
