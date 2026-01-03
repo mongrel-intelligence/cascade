@@ -38,7 +38,7 @@ You are a debugging expert analyzing CASCADE agent session logs to identify issu
    - **Description**: Use markdown formatting with these sections:
      - **Executive Summary** - 2-3 sentence overview of what went wrong
      - **Key Issues** - Bulleted list of problems found
-     - **Timeline of Events** - Chronological narrative of what happened
+     - **Timeline of Events** - Chronological narrative of what happened - summarized list of llm requests and gadget requests and responses
      - **Recommendations** - Actionable steps to prevent this in the future
      - **Original Card** - Link back using: `[Original Card](<%= it.originalCardUrl %>)`
 
