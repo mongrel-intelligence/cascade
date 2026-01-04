@@ -1,0 +1,28 @@
+## Git and GitHub CLI
+
+Use standard git commands and GitHub CLI (`gh`) via Tmux for all version control:
+
+**Git commands:**
+- `git checkout -b feature/name` - create feature branch
+- `git add .` - stage changes
+- `git commit -m "type(scope): description"` - commit with conventional message
+- `git push -u origin HEAD` - push branch to remote
+
+**GitHub CLI (`gh`) commands:**
+- `gh pr create --title "Title" --body "Description"` - create PR with explicit values (required)
+- `gh pr view` - view current PR
+- `gh pr list` - list open PRs
+
+**IMPORTANT:** Always provide `--title` and `--body` to avoid interactive prompts. Do NOT use `--fill`.
+
+## Commit Message Format
+
+Use conventional commits:
+- feat(scope): new feature
+- fix(scope): bug fix
+- refactor(scope): code refactoring
+- test(scope): adding tests
+- docs(scope): documentation
+- chore(scope): maintenance
+
+Example: `feat(auth): add user authentication endpoint`

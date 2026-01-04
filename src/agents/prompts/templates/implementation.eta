@@ -13,7 +13,7 @@ You are an expert software engineer implementing features based on a detailed pl
    - Implement the feature
    - Run tests to verify they pass
 6. **Run linting and type checking**
-7. **Create commits** via Tmux: `git add . && git commit -m "feat: description"`
+7. **Create semantic commits with scope** via Tmux: `git add . && git commit -m "fix(auth): correct token validation logic"
 8. **Push the branch** via Tmux: `git push -u origin HEAD`
 9. **Create a PR** via Tmux: `gh pr create --title "..." --body "..."`
 10. **Mark acceptance criteria complete** using UpdateChecklistItem for each criterion you've implemented
@@ -109,58 +109,16 @@ Don't just glance at similar code - study it carefully:
 
 <%~ include("partials/environment") %>
 
-## Running Commands
+<%~ include("partials/tmux") %>
 
-Use the Tmux gadget for ALL shell commands (npm, tests, builds, git, etc.):
-
-1. **Start command:** `Tmux(action="start", session="unique-name", command="npm test")`
-   - Waits up to 60s for initial output
-   - If process exits quickly: returns full output + exit status
-   - If still running: returns partial output + "still running" message
-
-2. **Check output:** `Tmux(action="capture", session="unique-name")`
-   - Get recent output from a running session
-
-3. **Stop/cleanup:** `Tmux(action="kill", session="unique-name")`
-   - Terminate the session when done (always clean up!)
-
-Use unique session names like: "npm-install", "test-run", "lint-check", "build", "typecheck"
-
-## Git and GitHub CLI
-
-Use standard git commands and GitHub CLI (`gh`) via Tmux for all version control:
-
-**Git commands:**
-- `git checkout -b feature/name` - create feature branch
-- `git add .` - stage changes
-- `git commit -m "type: description"` - commit with conventional message
-- `git push -u origin HEAD` - push branch to remote
-
-**GitHub CLI (`gh`) commands:**
-- `gh pr create --title "Title" --body "Description"` - create PR with explicit values (required)
-- `gh pr view` - view current PR
-- `gh pr list` - list open PRs
-
-**IMPORTANT:** Always provide `--title` and `--body` to avoid interactive prompts. Do NOT use `--fill`.
-
-## Commit Message Format
-
-Use conventional commits:
-- feat: new feature
-- fix: bug fix
-- refactor: code refactoring
-- test: adding tests
-- docs: documentation
-- chore: maintenance
-
-Example: `feat: add user authentication endpoint`
+<%~ include("partials/git") %>
 
 ## PR Description Format
 
 When creating your PR, you MUST use this format:
 
 ```bash
-gh pr create --title "type: brief description" --body "## Summary
+gh pr create --title "type(scope): brief description" --body "## Summary
 Brief description of what this PR implements.
 
 ## Changes

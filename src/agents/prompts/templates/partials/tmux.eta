@@ -1,0 +1,16 @@
+## Running Commands
+
+Use the Tmux gadget for ALL shell commands (npm, tests, builds, git, etc.):
+
+1. **Start command:** `Tmux(action="start", session="unique-name", command="npm test")`
+   - Waits up to 60s for initial output
+   - If process exits quickly: returns full output + exit status
+   - If still running: returns partial output + "still running" message
+
+2. **Check output:** `Tmux(action="capture", session="unique-name")`
+   - Get recent output from a running session
+
+3. **Stop/cleanup:** `Tmux(action="kill", session="unique-name")`
+   - Terminate the session when done (always clean up!)
+
+Use unique session names like: "npm-install", "test-run", "lint-check", "build", "typecheck"
