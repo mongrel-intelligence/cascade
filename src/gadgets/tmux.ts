@@ -218,9 +218,9 @@ Commands are executed directly (no shell interpretation), so special characters 
 			return `session=${params.session} status=error\n\nSession '${params.session}' already exists. Use action="kill" first or choose a different name.`;
 		}
 
-		// Create new detached session with wider terminal for better output
-		// Use remain-on-exit so the pane stays around after the command exits,
-		// giving us time to capture output before the tmux server shuts down
+		// Create new detached session WITHOUT a command first (just a shell)
+		// This allows us to set remain-on-exit BEFORE running the command,
+		// avoiding the race condition where fast commands exit before the option is set
 		const result = await runTmux([
 			'new-session',
 			'-d', // detached
@@ -231,17 +231,27 @@ Commands are executed directly (no shell interpretation), so special characters 
 			'-y',
 			'50',
 			...(params.cwd ? ['-c', params.cwd] : []),
-			// Pass command as argv array - no shell interpretation of special characters
-			...params.command,
 		]);
 
 		if (result.exitCode !== 0) {
 			return `session=${params.session} status=error\n\n${result.output || 'Failed to create session'}`;
 		}
 
-		// Set remain-on-exit as a pane option (-p flag) after session is created
-		// This keeps the pane alive after command exits so we can capture its output
+		// Set remain-on-exit BEFORE running the command
+		// This ensures the pane stays alive even if the command exits immediately
 		await runTmux(['set-option', '-p', '-t', params.session, 'remain-on-exit', 'on']);
+
+		// Now send the command to execute
+		// Build command string with proper shell escaping for tmux send-keys
+		const cmdStr = params.command
+			.map((arg) => {
+				// If arg has no special chars, use as-is
+				if (!/[\s"'\\$`!]/.test(arg)) return arg;
+				// Otherwise, wrap in single quotes and escape any single quotes
+				return `'${arg.replace(/'/g, "'\\''")}'`;
+			})
+			.join(' ');
+		await runTmux(['send-keys', '-t', params.session, cmdStr, 'Enter']);
 
 		return this.waitForOutput(params.session, params.wait);
 	}
