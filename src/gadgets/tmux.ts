@@ -151,7 +151,7 @@ Commands are executed directly (no shell interpretation), so special characters 
 		{
 			params: { action: 'start', session: 'test-run', command: ['npm', 'test'], wait: 120000 },
 			output:
-				'session=test-run status=exited\n\n> project@1.0.0 test\n> vitest run\n\n✓ 15 tests passed',
+				'session=test-run status=exited exit_code=0\n\n> project@1.0.0 test\n> vitest run\n\n✓ 15 tests passed',
 			comment: 'Run tests - command completed within 120s wait period',
 		},
 		{
@@ -253,6 +253,7 @@ Commands are executed directly (no shell interpretation), so special characters 
 		let elapsed = 0;
 		let sessionEnded = false;
 		let lastOutput = '';
+		let exitCode: number | null = null;
 
 		while (elapsed < waitMs) {
 			await sleep(POLL_INTERVAL_MS);
@@ -265,8 +266,23 @@ Commands are executed directly (no shell interpretation), so special characters 
 			}
 
 			// Check if pane has died (remain-on-exit keeps pane but marks it dead)
-			const check = await runTmux(['display-message', '-t', session, '-p', '#{pane_dead}']);
-			if (check.exitCode !== 0 || check.output.trim() === '1') {
+			// Also get the exit status of the command that was running
+			const check = await runTmux([
+				'display-message',
+				'-t',
+				session,
+				'-p',
+				'#{pane_dead}\t#{pane_exit_status}',
+			]);
+			if (check.exitCode === 0) {
+				const [dead, code] = check.output.trim().split('\t');
+				if (dead === '1') {
+					sessionEnded = true;
+					exitCode = Number.parseInt(code, 10) || 0;
+					break;
+				}
+			} else {
+				// tmux command failed - session likely gone
 				sessionEnded = true;
 				break;
 			}
@@ -277,7 +293,7 @@ Commands are executed directly (no shell interpretation), so special characters 
 		if (sessionEnded) {
 			// Clean up the dead session
 			await runTmux(['kill-session', '-t', session]);
-			return `session=${session} status=exited\n\n${output || '(no output)'}`;
+			return `session=${session} status=exited exit_code=${exitCode ?? 'unknown'}\n\n${output || '(no output)'}`;
 		}
 		return `session=${session} status=running\n\n${output || '(no output yet)'}\n\n(Process still running in session '${session}'. Use capture to check progress, kill when done.)`;
 	}

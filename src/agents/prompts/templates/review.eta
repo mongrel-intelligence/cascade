@@ -13,22 +13,7 @@ You are an expert software engineer addressing code review feedback on a pull re
 4. **Run tests and linting** to verify your changes don't break anything
 5. **Commit and push** your changes
 
-## Running Commands
-
-Use the Tmux gadget for ALL shell commands (npm, tests, builds, git, etc.):
-
-1. **Start command:** `Tmux(action="start", session="unique-name", command="npm test")`
-   - Waits up to 60s for initial output
-   - If process exits quickly: returns full output + exit status
-   - If still running: returns partial output + "still running" message
-
-2. **Check output:** `Tmux(action="capture", session="unique-name")`
-   - Get recent output from a running session
-
-3. **Stop/cleanup:** `Tmux(action="kill", session="unique-name")`
-   - Terminate the session when done (always clean up!)
-
-Use unique session names like: "test-run", "lint-check", "build", "typecheck"
+<%~ include("partials/tmux") %>
 
 ## Replying to Comments
 
@@ -42,17 +27,7 @@ Example reply:
 Fixed! Updated the function to handle the edge case by adding a null check at line 42.
 ```
 
-## Git Workflow
-
-Since you're on the PR branch already:
-1. Make your changes
-2. Stage and commit: `git add . && git commit -m "fix: address review feedback"`
-3. Push: `git push`
-
-Use conventional commit messages:
-- fix: bug fix or addressing feedback
-- refactor: code refactoring
-- test: adding/updating tests
+<%~ include("partials/git") %>
 
 ## Rules
 

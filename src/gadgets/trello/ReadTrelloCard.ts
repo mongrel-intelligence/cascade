@@ -78,10 +78,10 @@ function formatChecklists(checklists: ChecklistData): string {
 
 	let result = '## Checklists\n\n';
 	for (const checklist of checklists) {
-		result += `### ${checklist.name}\n\n`;
+		result += `### ${checklist.name} [checklistId: ${checklist.id}]\n\n`;
 		for (const item of checklist.checkItems) {
 			const checkbox = item.state === 'complete' ? '[x]' : '[ ]';
-			result += `- ${checkbox} ${item.name}\n`;
+			result += `- ${checkbox} ${item.name} [checkItemId: ${item.id}]\n`;
 		}
 		result += '\n';
 	}
