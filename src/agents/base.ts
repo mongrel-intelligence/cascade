@@ -368,6 +368,15 @@ function injectSyntheticCalls(
 // Agent Execution Loop
 // ============================================================================
 
+/**
+ * Truncate content to first 200 + last 200 chars if it exceeds 400 chars.
+ */
+function truncateContent(content: string, maxLen = 400): string {
+	if (content.length <= maxLen) return content;
+	const halfLen = maxLen / 2;
+	return `${content.slice(0, halfLen)}...[${content.length - maxLen} truncated]...${content.slice(-halfLen)}`;
+}
+
 interface AgentRunResult {
 	output: string;
 	iterationCount: number;
@@ -387,18 +396,43 @@ async function runAgentLoop(
 			outputLines.push(event.content);
 		} else if (event.type === 'gadget_call') {
 			iterationCount++;
-			log.info('[Gadget]', {
+			const { gadgetName, invocationId, parameters } = event.call;
+
+			// Build log context with gadget-specific details
+			const logContext: Record<string, unknown> = {
 				iteration: iterationCount,
-				name: event.call.gadgetName,
-				invocationId: event.call.invocationId,
-			});
+				name: gadgetName,
+				invocationId,
+			};
+
+			if (gadgetName === 'Tmux' && parameters) {
+				logContext.params = parameters;
+			} else if (gadgetName === 'ReadFile' && parameters?.filePath) {
+				logContext.path = parameters.filePath;
+			} else if (gadgetName === 'WriteFile' && parameters) {
+				logContext.path = parameters.filePath;
+				if (parameters.content) {
+					logContext.content = truncateContent(String(parameters.content));
+				}
+			}
+
+			log.info('[Gadget]', logContext);
 		} else if (event.type === 'gadget_result') {
-			const level = event.result.error ? 'error' : 'info';
-			log[level]('[Gadget result]', {
-				name: event.result.gadgetName,
-				ms: event.result.executionTimeMs,
-				error: event.result.error,
-			});
+			const { gadgetName, executionTimeMs, error, result } = event.result;
+			const level = error ? 'error' : 'info';
+
+			const logContext: Record<string, unknown> = {
+				name: gadgetName,
+				ms: executionTimeMs,
+				error,
+			};
+
+			// Add truncated output for Tmux and ReadFile
+			if ((gadgetName === 'Tmux' || gadgetName === 'ReadFile') && result) {
+				logContext.output = truncateContent(result);
+			}
+
+			log[level]('[Gadget result]', logContext);
 		} else if (event.type === 'stream_complete') {
 			log.info('Stream complete', { iteration: iterationCount });
 		}
