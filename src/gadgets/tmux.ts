@@ -239,8 +239,9 @@ Commands are executed directly (no shell interpretation), so special characters 
 			return `session=${params.session} status=error\n\n${result.output || 'Failed to create session'}`;
 		}
 
-		// Set remain-on-exit after session is created
-		await runTmux(['set-option', '-t', params.session, 'remain-on-exit', 'on']);
+		// Set remain-on-exit as a pane option (-p flag) after session is created
+		// This keeps the pane alive after command exits so we can capture its output
+		await runTmux(['set-option', '-p', '-t', params.session, 'remain-on-exit', 'on']);
 
 		return this.waitForOutput(params.session, params.wait);
 	}
