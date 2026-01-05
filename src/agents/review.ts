@@ -1,6 +1,7 @@
 import { listDirectory, writeFile } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
+import { EditFile } from '../gadgets/EditFile.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
 import { GetPRComments, GetPRDetails, ReplyToReviewComment } from '../gadgets/github/index.js';
@@ -252,6 +253,7 @@ function createReviewAgentBuilder(
 			// Filesystem gadgets
 			listDirectory,
 			new ReadFile(),
+			new EditFile(),
 			writeFile,
 			// Shell commands via tmux
 			new Tmux(),
