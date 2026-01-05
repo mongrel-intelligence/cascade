@@ -67,6 +67,10 @@ function sleep(ms: number): Promise<void> {
 async function ensureKeepalive(): Promise<void> {
 	if (keepaliveInitialized) return;
 
+	// Set remain-on-exit FIRST (globally) so any new sessions inherit it
+	// This must happen before creating sessions, not after
+	await runTmux(['set-option', '-g', 'remain-on-exit', 'on']);
+
 	const check = await runTmux(['has-session', '-t', KEEPALIVE_SESSION]);
 	if (check.exitCode !== 0) {
 		// Use tail -f /dev/null as cross-platform "sleep forever"
@@ -84,9 +88,6 @@ async function ensureKeepalive(): Promise<void> {
 			'-f',
 			'/dev/null',
 		]);
-		// Set remain-on-exit so dead panes stay queryable
-		// (also set in Dockerfile ~/.tmux.conf for redundancy)
-		await runTmux(['set-option', '-g', 'remain-on-exit', 'on']);
 	}
 	keepaliveInitialized = true;
 }
