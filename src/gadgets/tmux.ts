@@ -15,6 +15,8 @@ const POLL_INTERVAL_MS = 100; // Faster polling since we have streamed output
 const MAX_OUTPUT_BUFFER = 10 * 1024 * 1024; // 10MB max output per pane
 
 const CONTROL_SESSION = '_cascade_control';
+const EXIT_MARKER_PREFIX = '___CASCADE_EXIT_';
+const EXIT_MARKER_SUFFIX = '___';
 
 /**
  * Session name validation - alphanumeric, underscore, dash only.
@@ -249,15 +251,31 @@ class TmuxControlClient {
 	}
 
 	/**
-	 * Create a new window with a command
+	 * Create a new window with a command.
+	 * Wraps command in a shell that emits an exit marker for reliable exit detection.
 	 */
 	async createWindow(windowName: string, command: string[], cwd?: string): Promise<string> {
-		// Build command string (safe because we're not using shell interpretation)
-		const cmdStr = command.map((arg) => `"${arg.replace(/"/g, '\\"')}"`).join(' ');
+		// Build the inner command string with proper escaping for sh -c '...'
+		// Order matters: escape backslashes, then double quotes, then newlines, then single quotes
+		const innerCmd = command
+			.map((arg) => {
+				const escaped = arg
+					.replace(/\\/g, '\\\\') // Escape backslashes
+					.replace(/"/g, '\\"') // Escape double quotes
+					.replace(/\n/g, '\\n') // Escape newlines
+					.replace(/\r/g, '\\r') // Escape carriage returns
+					.replace(/\t/g, '\\t'); // Escape tabs
+				return `"${escaped}"`;
+			})
+			.join(' ');
+
+		// Wrap in sh -c to emit exit marker after command completes
+		// This ensures we can detect exit even if pane_dead doesn't work
+		const wrappedCmd = `sh -c '${innerCmd.replace(/'/g, "'\\''")}; echo "${EXIT_MARKER_PREFIX}$?${EXIT_MARKER_SUFFIX}"'`;
 
 		const cwdArg = cwd ? `-c "${cwd}" ` : '';
 		const result = await this.sendCommand(
-			`new-window -t ${CONTROL_SESSION} -n ${windowName} ${cwdArg}-PF "#{pane_id}" ${cmdStr}`,
+			`new-window -t ${CONTROL_SESSION} -n ${windowName} ${cwdArg}-PF "#{pane_id}" ${wrappedCmd}`,
 		);
 
 		const paneId = result.trim();
@@ -270,22 +288,42 @@ class TmuxControlClient {
 	}
 
 	/**
+	 * Check if command has exited by looking for exit marker in output.
+	 * This is the most reliable method as it doesn't depend on tmux's pane_dead.
+	 */
+	checkExitMarker(windowName: string): { exited: boolean; exitCode: number } {
+		const paneId = this.windowToPaneId.get(windowName);
+		if (!paneId) return { exited: false, exitCode: 0 };
+
+		const buffer = this.paneOutputs.get(paneId);
+		if (!buffer) return { exited: false, exitCode: 0 };
+
+		// Search for exit marker in output
+		const output = buffer.join('');
+		const markerMatch = output.match(
+			new RegExp(`${EXIT_MARKER_PREFIX}(\\d+)${EXIT_MARKER_SUFFIX}`),
+		);
+		if (markerMatch) {
+			return { exited: true, exitCode: Number.parseInt(markerMatch[1], 10) };
+		}
+
+		return { exited: false, exitCode: 0 };
+	}
+
+	/**
 	 * Check if a pane is dead (command exited)
-	 * Uses capture-pane to detect "Pane is dead" marker as primary method,
-	 * with list-panes pane_dead as fallback.
+	 * First checks exit marker (most reliable), then capture-pane, then pane_dead variable.
 	 */
 	async isPaneDead(paneId: string): Promise<{ dead: boolean; exitCode: number }> {
-		// Primary method: capture-pane and look for "Pane is dead" marker
-		// This works even when pane_dead variable reports incorrectly
+		// Method 1: Check for "Pane is dead" text in capture-pane
+		// This appears when remain-on-exit is on
 		const captured = await this.sendCommand(`capture-pane -t ${paneId} -p -S -10`);
-
-		// tmux adds "Pane is dead (status N)" when remain-on-exit is on
 		const deadMatch = captured.match(/Pane is dead \(status (\d+)\)/);
 		if (deadMatch) {
 			return { dead: true, exitCode: Number.parseInt(deadMatch[1], 10) };
 		}
 
-		// Fallback: check pane_dead variable
+		// Method 2: Check pane_dead variable
 		const result = await this.sendCommand(
 			`list-panes -t ${paneId} -F "#{pane_dead}\t#{pane_dead_status}"`,
 		);
@@ -582,11 +620,31 @@ Commands are executed directly (no shell interpretation), so special characters 
 			await sleep(POLL_INTERVAL_MS);
 			elapsed += POLL_INTERVAL_MS;
 
-			// Check if command exited
-			const { dead, exitCode } = await client.isPaneDead(paneId);
+			// Primary method: Check for exit marker in streamed output
+			// This is the most reliable as it doesn't depend on tmux's pane_dead
+			const markerResult = client.checkExitMarker(session);
+			if (markerResult.exited) {
+				let output = client.getOutput(session);
+				if (!output.trim()) {
+					output = await client.capturePaneOutput(session);
+				}
 
+				// Clean up output - remove exit marker and formatting
+				output = output
+					.replace(new RegExp(`${EXIT_MARKER_PREFIX}\\d+${EXIT_MARKER_SUFFIX}\\s*`), '')
+					.replace(/\nPane is dead \([^)]+\)\s*$/, '')
+					.replace(/\n{3,}/g, '\n\n')
+					.trim();
+
+				// Kill the window
+				await client.killWindow(session);
+
+				return `session=${session} status=exited exit_code=${markerResult.exitCode}\n\n${output || '(no output)'}`;
+			}
+
+			// Fallback: Check if pane is dead via tmux
+			const { dead, exitCode } = await client.isPaneDead(paneId);
 			if (dead) {
-				// Get streamed output, fall back to capture-pane
 				let output = client.getOutput(session);
 				if (!output.trim()) {
 					output = await client.capturePaneOutput(session);
@@ -594,11 +652,11 @@ Commands are executed directly (no shell interpretation), so special characters 
 
 				// Clean up output
 				output = output
+					.replace(new RegExp(`${EXIT_MARKER_PREFIX}\\d+${EXIT_MARKER_SUFFIX}\\s*`), '')
 					.replace(/\nPane is dead \([^)]+\)\s*$/, '')
 					.replace(/\n{3,}/g, '\n\n')
 					.trim();
 
-				// Kill the dead window
 				await client.killWindow(session);
 
 				return `session=${session} status=exited exit_code=${exitCode}\n\n${output || '(no output)'}`;
@@ -611,7 +669,10 @@ Commands are executed directly (no shell interpretation), so special characters 
 			output = await client.capturePaneOutput(session);
 		}
 
-		output = output.replace(/\n{3,}/g, '\n\n').trim();
+		output = output
+			.replace(new RegExp(`${EXIT_MARKER_PREFIX}\\d+${EXIT_MARKER_SUFFIX}\\s*`), '')
+			.replace(/\n{3,}/g, '\n\n')
+			.trim();
 
 		return `session=${session} status=running\n\n${output || '(no output yet)'}\n\n(Process still running in session '${session}'. Use capture to check progress, kill when done.)`;
 	}
