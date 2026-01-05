@@ -1,4 +1,4 @@
-import { listDirectory } from '@llmist/cli/gadgets';
+import { listDirectory, writeFile } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
 import { EditFile } from '../gadgets/EditFile.js';
@@ -312,7 +312,7 @@ function createAgentBuilderWithGadgets(
 			listDirectory,
 			new ReadFile(),
 			new EditFile(),
-			// writeFile disabled - testing EditFile as primary edit gadget
+			writeFile,
 			// Shell commands via tmux (no timeout issues)
 			new Tmux(),
 			new Sleep(),
