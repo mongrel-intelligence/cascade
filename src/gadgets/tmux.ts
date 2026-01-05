@@ -241,7 +241,7 @@ Commands are executed directly (no shell interpretation), so special characters 
 		// This ensures the pane stays alive even if the command exits immediately
 		await runTmux(['set-option', '-p', '-t', params.session, 'remain-on-exit', 'on']);
 
-		// Now send the command to execute
+		// Now send the command to execute, followed by exit to terminate the shell
 		// Build command string with proper shell escaping for tmux send-keys
 		const cmdStr = params.command
 			.map((arg) => {
@@ -251,7 +251,8 @@ Commands are executed directly (no shell interpretation), so special characters 
 				return `'${arg.replace(/'/g, "'\\''")}'`;
 			})
 			.join(' ');
-		await runTmux(['send-keys', '-t', params.session, cmdStr, 'Enter']);
+		// Append "; exit $?" to make shell exit with command's exit code after it completes
+		await runTmux(['send-keys', '-t', params.session, `${cmdStr}; exit $?`, 'Enter']);
 
 		return this.waitForOutput(params.session, params.wait);
 	}
