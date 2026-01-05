@@ -1,26 +1,23 @@
 /**
  * Tmux gadget - execute commands in tmux sessions.
  *
- * All commands should be run through this gadget. It provides:
- * - No timeout issues (commands run in background tmux sessions)
- * - Initial output capture (waits up to 60s by default)
- * - Easy monitoring of long-running processes
+ * Uses tmux control mode for reliable output streaming and exit detection.
+ * All commands run as windows within a single control session.
  */
-import { spawn } from 'node:child_process';
+import { type ChildProcess, execSync, spawn } from 'node:child_process';
+import * as readline from 'node:readline';
 import { Gadget, z } from 'llmist';
 
 const DEFAULT_TIMEOUT_MS = 300000; // 5 min for the gadget itself
 const DEFAULT_WAIT_MS = 120000; // 120s to wait for initial output
-const MAX_WAIT_MS = 120000; // Never wait longer than 120s - return with "running" status
-const POLL_INTERVAL_MS = 500;
+const MAX_WAIT_MS = 120000; // Never wait longer than 120s
+const POLL_INTERVAL_MS = 100; // Faster polling since we have streamed output
+const MAX_OUTPUT_BUFFER = 10 * 1024 * 1024; // 10MB max output per pane
 
-// Keepalive session prevents tmux server shutdown when command panes exit
-const KEEPALIVE_SESSION = '_cascade_keepalive';
-let keepaliveInitialized = false;
+const CONTROL_SESSION = '_cascade_control';
 
 /**
  * Session name validation - alphanumeric, underscore, dash only.
- * Prevents shell injection and tmux command issues.
  */
 const sessionNameSchema = z
 	.string()
@@ -29,28 +26,28 @@ const sessionNameSchema = z
 	.regex(/^[a-zA-Z0-9_-]+$/, 'Session name must be alphanumeric with underscores or dashes only');
 
 /**
- * Helper to run tmux commands and capture output.
+ * Unescape tmux control mode output (octal escapes like \012 -> \n)
  */
-async function runTmux(args: string[]): Promise<{ exitCode: number; output: string }> {
-	return new Promise((resolve) => {
-		const proc = spawn('tmux', args);
-		const chunks: Buffer[] = [];
-		const errChunks: Buffer[] = [];
+function unescapeOutput(s: string): string {
+	return s.replace(/\\(\d{3})/g, (_, oct) => String.fromCharCode(Number.parseInt(oct, 8)));
+}
 
-		proc.stdout.on('data', (chunk) => chunks.push(chunk));
-		proc.stderr.on('data', (chunk) => errChunks.push(chunk));
+// ANSI escape code patterns (using hex to avoid lint errors about control chars)
+const ESC = '\u001b';
+const BEL = '\u0007';
+const ANSI_PATTERN = new RegExp(`${ESC}\\[[0-9;]*[a-zA-Z]`, 'g');
+const OSC_PATTERN = new RegExp(`${ESC}\\][^${BEL}]*${BEL}`, 'g');
+const DCS_PATTERN = new RegExp(`${ESC}[PX^_][^${ESC}]*${ESC}\\\\`, 'g');
 
-		proc.on('close', (code) => {
-			const stdout = Buffer.concat(chunks).toString();
-			const stderr = Buffer.concat(errChunks).toString();
-			const output = [stdout, stderr].filter(Boolean).join('\n').trim();
-			resolve({ exitCode: code ?? 1, output });
-		});
-
-		proc.on('error', () => {
-			resolve({ exitCode: 1, output: 'Failed to spawn tmux' });
-		});
-	});
+/**
+ * Strip ANSI escape codes from output
+ */
+function stripAnsi(s: string): string {
+	return s
+		.replace(ANSI_PATTERN, '')
+		.replace(OSC_PATTERN, '')
+		.replace(DCS_PATTERN, '')
+		.replace(/\r/g, '');
 }
 
 /**
@@ -61,31 +58,315 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Ensure keepalive session exists to prevent tmux server shutdown.
- * Uses lazy initialization pattern (like Dhalsim's browser manager).
+ * TmuxControlClient - manages a persistent control mode connection to tmux.
+ * Uses event-driven protocol for real-time output and reliable exit detection.
  */
-async function ensureKeepalive(): Promise<void> {
-	if (keepaliveInitialized) return;
+class TmuxControlClient {
+	private proc: ChildProcess | null = null;
+	private rl: readline.Interface | null = null;
+	private connected = false;
 
-	const check = await runTmux(['has-session', '-t', KEEPALIVE_SESSION]);
-	if (check.exitCode !== 0) {
-		// Use tail -f /dev/null as cross-platform "sleep forever"
-		// (sleep infinity doesn't work on macOS)
-		await runTmux([
-			'new-session',
-			'-d',
-			'-s',
-			KEEPALIVE_SESSION,
-			'-x',
-			'1',
-			'-y',
-			'1',
-			'tail',
-			'-f',
-			'/dev/null',
-		]);
+	// Command tracking - one at a time
+	private pendingCommand: { resolve: (v: string) => void; reject: (e: Error) => void } | null =
+		null;
+	private currentBlock: { lines: string[] } | null = null;
+
+	// Pane output buffers (keyed by pane ID like "%1")
+	private paneOutputs = new Map<string, string[]>();
+
+	// Window name to pane ID mapping
+	private windowToPaneId = new Map<string, string>();
+
+	// Message output (from display-message)
+	private lastMessage = '';
+
+	/**
+	 * Connect to tmux in control mode.
+	 * Creates a control session if needed, then attaches with -C flag.
+	 */
+	async connect(): Promise<void> {
+		if (this.connected) return;
+
+		// Kill any existing control session to start fresh
+		try {
+			execSync(`tmux kill-session -t ${CONTROL_SESSION} 2>/dev/null`);
+		} catch {
+			// Ignore - session may not exist
+		}
+
+		// Create the control session
+		try {
+			execSync(`tmux new-session -d -s ${CONTROL_SESSION} -x 200 -y 50`);
+		} catch (err) {
+			throw new Error(`Failed to create control session: ${err}`);
+		}
+
+		// Set remain-on-exit globally so we can query exit status
+		try {
+			execSync('tmux set-option -g remain-on-exit on');
+		} catch {
+			// Ignore - best effort
+		}
+
+		// Attach in control mode
+		this.proc = spawn('tmux', ['-C', 'attach-session', '-t', CONTROL_SESSION], {
+			stdio: ['pipe', 'pipe', 'pipe'],
+		});
+
+		if (!this.proc.stdout) {
+			throw new Error('Failed to get stdout from tmux process');
+		}
+		this.rl = readline.createInterface({ input: this.proc.stdout });
+
+		// Set up line parsing
+		this.rl.on('line', (line) => this.parseLine(line));
+
+		this.proc.on('close', () => {
+			this.connected = false;
+			this.proc = null;
+			this.rl = null;
+		});
+
+		this.proc.on('error', (err) => {
+			console.error('Tmux control mode error:', err);
+			this.connected = false;
+		});
+
+		// Wait for initial connection
+		await sleep(300);
+		this.connected = true;
 	}
-	keepaliveInitialized = true;
+
+	/**
+	 * Parse a line from tmux control mode protocol
+	 */
+	private parseLine(line: string): void {
+		if (line.startsWith('%begin ')) {
+			this.currentBlock = { lines: [] };
+		} else if (line.startsWith('%end ') || line.startsWith('%error ')) {
+			if (this.currentBlock && this.pendingCommand) {
+				this.pendingCommand.resolve(this.currentBlock.lines.join('\n'));
+				this.pendingCommand = null;
+			}
+			this.currentBlock = null;
+		} else if (line.startsWith('%output ')) {
+			// Parse: %output %paneId escaped_content
+			const match = line.match(/^%output (%\d+) (.*)$/);
+			if (match) {
+				const [, paneId, escaped] = match;
+				const unescaped = unescapeOutput(escaped);
+				if (!this.paneOutputs.has(paneId)) {
+					this.paneOutputs.set(paneId, []);
+				}
+				const buffer = this.paneOutputs.get(paneId);
+				if (buffer) {
+					buffer.push(unescaped);
+					// Truncate if too large
+					const totalSize = buffer.reduce((sum, s) => sum + s.length, 0);
+					if (totalSize > MAX_OUTPUT_BUFFER) {
+						buffer.shift(); // Remove oldest
+					}
+				}
+			}
+		} else if (line.startsWith('%message ')) {
+			// display-message output
+			this.lastMessage = line.slice(9); // Remove "%message "
+		} else if (this.currentBlock) {
+			this.currentBlock.lines.push(line);
+		}
+		// Ignore other events (%session-changed, %window-add, etc.)
+	}
+
+	/**
+	 * Send a command to tmux and wait for response
+	 */
+	async sendCommand(cmd: string): Promise<string> {
+		// Reconnect if needed
+		if (!this.connected || !this.proc || this.proc.exitCode !== null) {
+			this.connected = false;
+			this.proc = null;
+			this.windowToPaneId.clear();
+			this.paneOutputs.clear();
+			await this.connect();
+		}
+
+		return new Promise((resolve, reject) => {
+			if (this.pendingCommand) {
+				reject(new Error('Already have a pending command'));
+				return;
+			}
+
+			if (!this.proc?.stdin) {
+				reject(new Error('Not connected to tmux'));
+				return;
+			}
+
+			this.lastMessage = '';
+			this.pendingCommand = { resolve, reject };
+			this.proc.stdin.write(`${cmd}\n`);
+
+			// Timeout after 30s
+			setTimeout(() => {
+				if (this.pendingCommand) {
+					this.pendingCommand.reject(new Error('Command timed out'));
+					this.pendingCommand = null;
+				}
+			}, 30000);
+		});
+	}
+
+	/**
+	 * Get the last message from display-message
+	 */
+	getLastMessage(): string {
+		return this.lastMessage;
+	}
+
+	/**
+	 * Create a new window with a command
+	 */
+	async createWindow(windowName: string, command: string[], cwd?: string): Promise<string> {
+		// Build command string (safe because we're not using shell interpretation)
+		const cmdStr = command.map((arg) => `"${arg.replace(/"/g, '\\"')}"`).join(' ');
+
+		const cwdArg = cwd ? `-c "${cwd}" ` : '';
+		const result = await this.sendCommand(
+			`new-window -t ${CONTROL_SESSION} -n ${windowName} ${cwdArg}-PF "#{pane_id}" ${cmdStr}`,
+		);
+
+		const paneId = result.trim();
+		if (paneId.startsWith('%')) {
+			this.windowToPaneId.set(windowName, paneId);
+			this.paneOutputs.set(paneId, []);
+		}
+
+		return paneId;
+	}
+
+	/**
+	 * Check if a pane is dead (command exited)
+	 */
+	async isPaneDead(paneId: string): Promise<{ dead: boolean; exitCode: number }> {
+		// Use list-panes instead of display-message for more reliable detection
+		const result = await this.sendCommand(
+			`list-panes -t ${paneId} -F "#{pane_dead}\t#{pane_dead_status}"`,
+		);
+		const [dead, status] = result.trim().split('\t');
+
+		return {
+			dead: dead === '1',
+			exitCode: status ? Number.parseInt(status, 10) : 0,
+		};
+	}
+
+	/**
+	 * Get buffered output for a window
+	 */
+	getOutput(windowName: string): string {
+		const paneId = this.windowToPaneId.get(windowName);
+		if (!paneId) return '';
+
+		const buffer = this.paneOutputs.get(paneId);
+		if (!buffer) return '';
+
+		// Join and strip ANSI escape codes
+		return stripAnsi(buffer.join(''));
+	}
+
+	/**
+	 * Capture pane output via tmux command (backup method)
+	 */
+	async capturePaneOutput(windowName: string, lines = 200): Promise<string> {
+		const paneId = this.windowToPaneId.get(windowName);
+		const target = paneId || `${CONTROL_SESSION}:${windowName}`;
+
+		const result = await this.sendCommand(`capture-pane -t ${target} -p -S -${lines}`);
+		return result;
+	}
+
+	/**
+	 * Kill a window
+	 */
+	async killWindow(windowName: string): Promise<void> {
+		const paneId = this.windowToPaneId.get(windowName);
+		if (paneId) {
+			this.paneOutputs.delete(paneId);
+			this.windowToPaneId.delete(windowName);
+		}
+		await this.sendCommand(`kill-window -t ${CONTROL_SESSION}:${windowName}`);
+	}
+
+	/**
+	 * Check if a window exists
+	 */
+	async windowExists(windowName: string): Promise<boolean> {
+		// Check in-memory map first
+		if (this.windowToPaneId.has(windowName)) {
+			return true;
+		}
+		// Query tmux for window list
+		try {
+			const result = await this.sendCommand(
+				`list-windows -t ${CONTROL_SESSION} -F "#{window_name}"`,
+			);
+			const windows = result.split('\n').map((w) => w.trim());
+			return windows.includes(windowName);
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * Send keys to a window
+	 */
+	async sendKeys(windowName: string, keys: string, enter: boolean): Promise<void> {
+		const enterArg = enter ? ' Enter' : '';
+		await this.sendCommand(
+			`send-keys -t ${CONTROL_SESSION}:${windowName} "${keys.replace(/"/g, '\\"')}"${enterArg}`,
+		);
+	}
+
+	/**
+	 * List all windows
+	 */
+	async listWindows(): Promise<string[]> {
+		const result = await this.sendCommand(
+			`list-windows -t ${CONTROL_SESSION} -F "#{window_name}: #{pane_current_command} (#{?pane_dead,exited,running})"`,
+		);
+		return result.split('\n').filter((line) => line.trim() && !line.includes('(exited)'));
+	}
+
+	/**
+	 * Check if connected
+	 */
+	isConnected(): boolean {
+		return this.connected;
+	}
+
+	/**
+	 * Disconnect from control mode
+	 */
+	disconnect(): void {
+		if (this.proc) {
+			this.proc.stdin?.write('\n'); // Empty line to detach
+			this.proc.kill();
+			this.proc = null;
+		}
+		this.connected = false;
+	}
+}
+
+// Singleton control client
+let controlClient: TmuxControlClient | null = null;
+
+async function getControlClient(): Promise<TmuxControlClient> {
+	if (!controlClient) {
+		controlClient = new TmuxControlClient();
+	}
+	if (!controlClient.isConnected()) {
+		await controlClient.connect();
+	}
+	return controlClient;
 }
 
 class TmuxGadget extends Gadget({
@@ -119,7 +400,6 @@ Commands are executed directly (no shell interpretation), so special characters 
 **SESSION NAMING:** Use descriptive names like "npm-install", "test-run", "lint-check", "build"`,
 	timeoutMs: DEFAULT_TIMEOUT_MS,
 	schema: z.discriminatedUnion('action', [
-		// Start a new session with a command
 		z.object({
 			action: z.literal('start'),
 			session: sessionNameSchema.describe("Unique session name (e.g., 'test-run', 'npm-install')"),
@@ -137,8 +417,6 @@ Commands are executed directly (no shell interpretation), so special characters 
 				.default(DEFAULT_WAIT_MS)
 				.describe('Max time to wait for initial output in ms (default: 120000, max: 120000)'),
 		}),
-
-		// Send keys/commands to an existing session
 		z.object({
 			action: z.literal('send'),
 			session: sessionNameSchema.describe('Target session name'),
@@ -148,8 +426,6 @@ Commands are executed directly (no shell interpretation), so special characters 
 				.default(true)
 				.describe('Press Enter after sending keys (default: true)'),
 		}),
-
-		// Capture output from a session
 		z.object({
 			action: z.literal('capture'),
 			session: sessionNameSchema.describe('Session to capture output from'),
@@ -161,19 +437,13 @@ Commands are executed directly (no shell interpretation), so special characters 
 				.default(25)
 				.describe('Number of lines to capture (default: 25, max: 1000)'),
 		}),
-
-		// List all sessions
 		z.object({
 			action: z.literal('list'),
 		}),
-
-		// Kill a session
 		z.object({
 			action: z.literal('kill'),
 			session: sessionNameSchema.describe('Session to terminate'),
 		}),
-
-		// Check if session exists
 		z.object({
 			action: z.literal('exists'),
 			session: sessionNameSchema.describe('Session name to check'),
@@ -244,99 +514,67 @@ Commands are executed directly (no shell interpretation), so special characters 
 		cwd?: string;
 		wait?: number;
 	}): Promise<string> {
-		// Ensure keepalive session exists (prevents server shutdown when panes exit)
-		await ensureKeepalive();
+		const client = await getControlClient();
 
-		// Set remain-on-exit so panes stay queryable after command exits
-		// Must be set before EVERY session creation (not just once in ensureKeepalive)
-		await runTmux(['set-option', '-g', 'remain-on-exit', 'on']);
-
-		// Check if session already exists
-		const checkResult = await runTmux(['has-session', '-t', params.session]);
-		if (checkResult.exitCode === 0) {
+		// Check if window already exists
+		if (await client.windowExists(params.session)) {
 			return `session=${params.session} status=error\n\nSession '${params.session}' already exists. Use action="kill" first or choose a different name.`;
 		}
 
-		// Create session with the command directly (no interactive shell)
-		// Note: remain-on-exit is set in ~/.tmux.conf
-		const result = await runTmux([
-			'new-session',
-			'-d', // detached
-			'-s',
-			params.session,
-			'-x',
-			'200', // wider terminal
-			'-y',
-			'50',
-			...(params.cwd ? ['-c', params.cwd] : []),
-			...params.command,
-		]);
-
-		if (result.exitCode !== 0) {
-			return `session=${params.session} status=error\n\n${result.output || 'Failed to create session'}`;
+		// Create window with command
+		const paneId = await client.createWindow(params.session, params.command, params.cwd);
+		if (!paneId.startsWith('%')) {
+			return `session=${params.session} status=error\n\nFailed to create session: ${paneId}`;
 		}
 
-		return this.waitForOutput(params.session, params.wait);
+		// Wait for output/exit
+		return this.waitForOutput(client, params.session, paneId, params.wait);
 	}
 
-	private async waitForOutput(session: string, requestedWait?: number): Promise<string> {
-		// Wait and poll for output - capture BEFORE checking if session ended
-		// to avoid race condition where server shuts down
-		// Cap wait time to MAX_WAIT_MS to ensure we return before gadget timeout
+	private async waitForOutput(
+		client: TmuxControlClient,
+		session: string,
+		paneId: string,
+		requestedWait?: number,
+	): Promise<string> {
 		const waitMs = Math.min(requestedWait ?? DEFAULT_WAIT_MS, MAX_WAIT_MS);
 		let elapsed = 0;
-		let sessionEnded = false;
-		let lastOutput = '';
-		let exitCode: number | null = null;
 
 		while (elapsed < waitMs) {
 			await sleep(POLL_INTERVAL_MS);
 			elapsed += POLL_INTERVAL_MS;
 
-			// Capture output first (while session/server is still guaranteed running)
-			const capture = await runTmux(['capture-pane', '-t', session, '-p', '-S', '-200']);
-			if (capture.exitCode === 0) {
-				lastOutput = capture.output;
-			}
+			// Check if command exited
+			const { dead, exitCode } = await client.isPaneDead(paneId);
 
-			// Check if pane has died (remain-on-exit keeps pane but marks it dead)
-			// Also get the exit status of the command that was running
-			// Note: pane_dead_status (not pane_exit_status) has the exit code
-			const check = await runTmux([
-				'display-message',
-				'-t',
-				session,
-				'-p',
-				'#{pane_dead}\t#{pane_dead_status}',
-			]);
-			if (check.exitCode === 0) {
-				const [dead, code] = check.output.trim().split('\t');
-				if (dead === '1') {
-					sessionEnded = true;
-					exitCode = Number.parseInt(code, 10) || 0;
-					break;
+			if (dead) {
+				// Get streamed output, fall back to capture-pane
+				let output = client.getOutput(session);
+				if (!output.trim()) {
+					output = await client.capturePaneOutput(session);
 				}
-			} else {
-				// tmux command failed - session likely gone
-				sessionEnded = true;
-				break;
+
+				// Clean up output
+				output = output
+					.replace(/\nPane is dead \([^)]+\)\s*$/, '')
+					.replace(/\n{3,}/g, '\n\n')
+					.trim();
+
+				// Kill the dead window
+				await client.killWindow(session);
+
+				return `session=${session} status=exited exit_code=${exitCode}\n\n${output || '(no output)'}`;
 			}
 		}
 
-		// Clean up output:
-		// 1. Remove "Pane is dead" message added by tmux remain-on-exit
-		// 2. Collapse multiple blank lines
-		// 3. Trim leading/trailing whitespace
-		const output = lastOutput
-			.replace(/\nPane is dead \([^)]+\)\s*$/, '')
-			.replace(/\n{3,}/g, '\n\n')
-			.trim();
-
-		if (sessionEnded) {
-			// Clean up the dead session
-			await runTmux(['kill-session', '-t', session]);
-			return `session=${session} status=exited exit_code=${exitCode ?? 'unknown'}\n\n${output || '(no output)'}`;
+		// Still running - get partial output
+		let output = client.getOutput(session);
+		if (!output.trim()) {
+			output = await client.capturePaneOutput(session);
 		}
+
+		output = output.replace(/\n{3,}/g, '\n\n').trim();
+
 		return `session=${session} status=running\n\n${output || '(no output yet)'}\n\n(Process still running in session '${session}'. Use capture to check progress, kill when done.)`;
 	}
 
@@ -345,98 +583,68 @@ Commands are executed directly (no shell interpretation), so special characters 
 		keys: string;
 		enter?: boolean;
 	}): Promise<string> {
-		// Verify session exists
-		const checkResult = await runTmux(['has-session', '-t', params.session]);
-		if (checkResult.exitCode !== 0) {
+		const client = await getControlClient();
+
+		if (!(await client.windowExists(params.session))) {
 			return `session=${params.session} status=error\n\nSession '${params.session}' does not exist`;
 		}
 
-		// Send keys
-		const sendArgs = ['send-keys', '-t', params.session, params.keys];
-		if (params.enter) {
-			sendArgs.push('Enter');
-		}
-
-		const result = await runTmux(sendArgs);
-		if (result.exitCode !== 0) {
-			return `session=${params.session} status=error\n\n${result.output || 'Failed to send keys'}`;
-		}
+		await client.sendKeys(params.session, params.keys, params.enter ?? true);
 
 		const enterNote = params.enter ? ' [Enter]' : '';
 		return `session=${params.session} status=sent\n\nSent keys to session '${params.session}': ${params.keys}${enterNote}`;
 	}
 
 	private async handleCapture(params: { session: string; lines?: number }): Promise<string> {
+		const client = await getControlClient();
 		const lines = params.lines ?? 25;
 
-		// Verify session exists
-		const checkResult = await runTmux(['has-session', '-t', params.session]);
-		if (checkResult.exitCode !== 0) {
+		if (!(await client.windowExists(params.session))) {
 			return `session=${params.session} status=error\n\nSession '${params.session}' does not exist`;
 		}
 
-		// Capture pane output
-		const result = await runTmux([
-			'capture-pane',
-			'-t',
-			params.session,
-			'-p', // print to stdout
-			'-S',
-			`-${lines}`, // start from N lines back
-		]);
-
-		if (result.exitCode !== 0) {
-			return `session=${params.session} status=error\n\n${result.output || 'Failed to capture output'}`;
+		// Try streamed output first, then capture-pane
+		let output = client.getOutput(params.session);
+		if (!output.trim()) {
+			output = await client.capturePaneOutput(params.session, lines);
 		}
 
-		// Trim empty lines from start/end but preserve internal structure
-		const captured = result.output.replace(/^\s*\n/, '').replace(/\n\s*$/, '');
+		// Take last N lines
+		const outputLines = output.split('\n');
+		const captured = outputLines.slice(-lines).join('\n').trim();
+
 		return `session=${params.session} lines=${lines}\n\n${captured || '(no output yet)'}`;
 	}
 
 	private async handleList(): Promise<string> {
-		const result = await runTmux([
-			'list-sessions',
-			'-F',
-			'#{session_name}: #{pane_current_command} (#{?session_attached,attached,running})',
-		]);
+		const client = await getControlClient();
 
-		if (result.exitCode !== 0) {
-			// No sessions is not an error
-			if (result.output.includes('no server running') || result.output.includes('no sessions')) {
-				return 'sessions=0\n\nNo active tmux sessions';
-			}
-			return `status=error\n\n${result.output}`;
+		try {
+			const windows = await client.listWindows();
+			// Filter out the initial shell window
+			const filtered = windows.filter((w) => !w.startsWith('0:'));
+			return `sessions=${filtered.length}\n\n${filtered.join('\n') || 'No active sessions'}`;
+		} catch {
+			return 'sessions=0\n\nNo active tmux sessions';
 		}
-
-		// Filter out internal keepalive session
-		const sessions = result.output
-			.split('\n')
-			.filter((s) => s && !s.startsWith(`${KEEPALIVE_SESSION}:`));
-		return `sessions=${sessions.length}\n\n${sessions.join('\n') || 'No active sessions'}`;
 	}
 
 	private async handleKill(params: { session: string }): Promise<string> {
-		// Verify session exists first
-		const checkResult = await runTmux(['has-session', '-t', params.session]);
-		if (checkResult.exitCode !== 0) {
+		const client = await getControlClient();
+
+		if (!(await client.windowExists(params.session))) {
 			return `session=${params.session} status=error\n\nSession '${params.session}' does not exist`;
 		}
 
-		const result = await runTmux(['kill-session', '-t', params.session]);
-		if (result.exitCode !== 0) {
-			return `session=${params.session} status=error\n\n${result.output || 'Failed to kill session'}`;
-		}
-
+		await client.killWindow(params.session);
 		return `session=${params.session} status=killed\n\nSession '${params.session}' terminated`;
 	}
 
 	private async handleExists(params: { session: string }): Promise<string> {
-		const result = await runTmux(['has-session', '-t', params.session]);
-		const exists = result.exitCode === 0;
+		const client = await getControlClient();
+		const exists = await client.windowExists(params.session);
 		return `session=${params.session} exists=${exists}\n\nSession '${params.session}' ${exists ? 'exists and is running' : 'does not exist'}`;
 	}
 }
 
-// Export the class for use in agent builder
 export { TmuxGadget as Tmux };
