@@ -207,23 +207,6 @@ export function getLogLevel(): number {
 }
 
 // ============================================================================
-// Directory Listing Utility
-// ============================================================================
-
-export async function generateDirectoryListing(cwd: string, depth: number): Promise<string> {
-	try {
-		const result = await execCommand(
-			'find',
-			['.', '-maxdepth', String(depth), '-type', 'f', '-o', '-type', 'd'],
-			cwd,
-		);
-		return result.stdout;
-	} catch {
-		return '';
-	}
-}
-
-// ============================================================================
 // Context Files (CLAUDE.md, AGENTS.md)
 // ============================================================================
 

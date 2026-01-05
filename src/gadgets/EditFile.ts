@@ -79,7 +79,7 @@ Allowed paths:
 				replace: 'const DEBUG = true;',
 			},
 			output:
-				'path=src/config.ts status=success strategy=exact lines=5-5\n\nReplaced content successfully.',
+				'path=src/config.ts status=success strategy=exact lines=5-5\n\nReplaced content successfully.\n\nUPDATED FILE CONTENT:\n```\n// config.ts\nconst DEBUG = true;\nexport default { DEBUG };\n```',
 			comment: 'Simple single-line edit',
 		},
 		{
@@ -93,7 +93,7 @@ Allowed paths:
 }`,
 			},
 			output:
-				'path=src/utils.ts status=success strategy=exact lines=10-12\n\nReplaced content successfully.',
+				'path=src/utils.ts status=success strategy=exact lines=10-12\n\nReplaced content successfully.\n\nUPDATED FILE CONTENT:\n```\n// utils.ts\nfunction newHelper() {\n  return 2;\n}\n```',
 			comment: 'Multi-line replacement',
 		},
 		{
@@ -103,7 +103,7 @@ Allowed paths:
 				replace: '',
 			},
 			output:
-				'path=src/app.ts status=success strategy=exact lines=3-3\n\nReplaced content successfully.',
+				'path=src/app.ts status=success strategy=exact lines=3-3\n\nReplaced content successfully.\n\nUPDATED FILE CONTENT:\n```\n// app.ts\nimport { usedImport } from "./lib";\n```',
 			comment: 'Delete content by replacing with empty string',
 		},
 	],
@@ -158,7 +158,7 @@ Allowed paths:
 			return `path=${filePath} status=error\n\nError writing file: ${message}`;
 		}
 
-		return `path=${filePath} status=success strategy=${match.strategy} lines=${match.startLine}-${match.endLine}\n\nReplaced content successfully.`;
+		return `path=${filePath} status=success strategy=${match.strategy} lines=${match.startLine}-${match.endLine}\n\nReplaced content successfully.\n\nUPDATED FILE CONTENT:\n\`\`\`\n${newContent}\n\`\`\``;
 	}
 
 	private formatFailure(

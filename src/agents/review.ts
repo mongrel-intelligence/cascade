@@ -1,9 +1,10 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { listDirectory, writeFile } from '@llmist/cli/gadgets';
+import { writeFile } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
 import { EditFile } from '../gadgets/EditFile.js';
+import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
 import { GetPRComments, GetPRDetails, ReplyToReviewComment } from '../gadgets/github/index.js';
@@ -23,7 +24,6 @@ import {
 import { getSystemPrompt } from './prompts/index.js';
 import {
 	type DependencyInstallResult,
-	generateDirectoryListing,
 	getLogLevel,
 	installDependencies,
 	readContextFiles,
@@ -179,8 +179,7 @@ async function buildReviewContext(
 	const commentsFormatted = formatPRComments(prComments);
 
 	// Build prompt
-	const directoryListing = await generateDirectoryListing(repoDir, 3);
-	const prompt = buildReviewPrompt(directoryListing, prBranch, prNumber, owner, repo);
+	const prompt = buildReviewPrompt(prBranch, prNumber, owner, repo);
 
 	return {
 		systemPrompt,
@@ -194,23 +193,12 @@ async function buildReviewContext(
 }
 
 function buildReviewPrompt(
-	directoryListing: string | null,
 	prBranch: string,
 	prNumber: number,
 	owner: string,
 	repo: string,
 ): string {
-	const directorySection = directoryListing
-		? `Here is the codebase directory structure:
-
-<codebase_structure>
-${directoryListing}
-</codebase_structure>
-
-`
-		: '';
-
-	return `${directorySection}You are on the branch \`${prBranch}\` for PR #${prNumber}.
+	return `You are on the branch \`${prBranch}\` for PR #${prNumber}.
 
 Address the review comments and push your changes.
 
@@ -260,7 +248,7 @@ function createReviewAgentBuilder(
 		})
 		.withGadgets(
 			// Filesystem gadgets
-			listDirectory,
+			new ListDirectory(),
 			new ReadFile(),
 			new EditFile(),
 			writeFile,
@@ -282,8 +270,22 @@ function injectReviewSyntheticCalls(
 	ctx: ReviewContextData,
 	installResult: DependencyInstallResult | null,
 ): BuilderType {
+	let builder = initialBuilder;
+
+	// Inject directory listing as synthetic ListDirectory call (first for codebase orientation)
+	// Call the actual gadget to generate output (respects .gitignore by default)
+	const listDirGadget = new ListDirectory();
+	const listDirParams = { directoryPath: '.', maxDepth: 3, includeGitIgnored: false };
+	const listDirResult = listDirGadget.execute(listDirParams);
+	builder = builder.withSyntheticGadgetCall(
+		'ListDirectory',
+		listDirParams,
+		listDirResult,
+		'gc_dir',
+	);
+
 	// Inject PR details
-	let builder = initialBuilder.withSyntheticGadgetCall(
+	builder = builder.withSyntheticGadgetCall(
 		'GetPRDetails',
 		{ owner, repo, prNumber },
 		ctx.prDetailsFormatted,

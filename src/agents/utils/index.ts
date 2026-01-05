@@ -3,7 +3,6 @@ export {
 	getLogLevel,
 	startPostgres,
 	startRedis,
-	generateDirectoryListing,
 	type ContextFile,
 	readContextFiles,
 	type DependencyInstallResult,

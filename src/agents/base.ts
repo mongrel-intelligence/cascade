@@ -1,9 +1,10 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { listDirectory, writeFile } from '@llmist/cli/gadgets';
+import { writeFile } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
 import { EditFile } from '../gadgets/EditFile.js';
+import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
 import { Tmux } from '../gadgets/tmux.js';
@@ -28,7 +29,6 @@ import { cleanupTempDir, cloneRepo, createTempDir, runCommand } from '../utils/r
 import { type PromptContext, getSystemPrompt } from './prompts/index.js';
 import {
 	type DependencyInstallResult,
-	generateDirectoryListing,
 	getLogLevel,
 	installDependencies,
 	readContextFiles,
@@ -184,52 +184,32 @@ async function buildAgentContext(
 		cardData = await formatCardData(cardId, true);
 	}
 
-	// Generate directory listing for codebase context
-	const directoryListing = await generateDirectoryListing(repoDir, 3);
-
 	// Build different prompt based on flow
 	let prompt: string;
 	if (prContext) {
-		prompt = buildCheckFailurePrompt(directoryListing, prContext);
+		prompt = buildCheckFailurePrompt(prContext);
 	} else if (debugContext) {
 		prompt = buildDebugPrompt(debugContext);
 	} else {
-		prompt = buildPrompt(directoryListing, cardId ?? '');
+		prompt = buildPrompt(cardId ?? '');
 	}
 
 	return { systemPrompt, model, maxIterations, contextFiles, cardData, prompt };
 }
 
-function buildPrompt(directoryListing: string | null, cardId: string): string {
-	const directorySection = directoryListing
-		? `Here is the codebase directory structure (pre-populated for context):
-
-<codebase_structure>
-${directoryListing}
-</codebase_structure>
-
-`
-		: '';
-
-	return `${directorySection}Analyze and process the Trello card with ID: ${cardId}. The card data (title, description, checklists, attachments, comments) has been pre-loaded above. Review it and proceed with your task.`;
+function buildPrompt(cardId: string): string {
+	return `Analyze and process the Trello card with ID: ${cardId}. The card data (title, description, checklists, attachments, comments) has been pre-loaded above. Review it and proceed with your task.`;
 }
 
-function buildCheckFailurePrompt(
-	directoryListing: string | null,
-	prContext: { prNumber: number; prBranch: string; repoFullName: string; headSha: string },
-): string {
+function buildCheckFailurePrompt(prContext: {
+	prNumber: number;
+	prBranch: string;
+	repoFullName: string;
+	headSha: string;
+}): string {
 	const [owner, repo] = prContext.repoFullName.split('/');
-	const directorySection = directoryListing
-		? `Here is the codebase directory structure:
 
-<codebase_structure>
-${directoryListing}
-</codebase_structure>
-
-`
-		: '';
-
-	return `${directorySection}You are on branch \`${prContext.prBranch}\` for PR #${prContext.prNumber}.
+	return `You are on branch \`${prContext.prBranch}\` for PR #${prContext.prNumber}.
 
 Your task is to fix the failing checks and push your changes.
 
@@ -318,7 +298,7 @@ function createAgentBuilderWithGadgets(
 		})
 		.withGadgets(
 			// Filesystem gadgets
-			listDirectory,
+			new ListDirectory(),
 			new ReadFile(),
 			new EditFile(),
 			writeFile,
@@ -345,6 +325,18 @@ function injectSyntheticCalls(
 	installResult: DependencyInstallResult | null,
 ): BuilderType {
 	let builder = initialBuilder;
+
+	// Inject directory listing as synthetic ListDirectory call (first for codebase orientation)
+	// Call the actual gadget to generate output (respects .gitignore by default)
+	const listDirGadget = new ListDirectory();
+	const listDirParams = { directoryPath: '.', maxDepth: 3, includeGitIgnored: false };
+	const listDirResult = listDirGadget.execute(listDirParams);
+	builder = builder.withSyntheticGadgetCall(
+		'ListDirectory',
+		listDirParams,
+		listDirResult,
+		'gc_dir',
+	);
 
 	// Inject card data as synthetic ReadTrelloCard call (only if cardId exists)
 	if (cardId && cardData) {
