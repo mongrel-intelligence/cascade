@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { listDirectory, writeFile } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
@@ -25,8 +27,6 @@ import {
 	getLogLevel,
 	installDependencies,
 	readContextFiles,
-	startPostgres,
-	startRedis,
 } from './utils/index.js';
 import { createAgentLogger } from './utils/logging.js';
 
@@ -56,12 +56,6 @@ async function setupRepository(
 	prBranch: string,
 	log: ReturnType<typeof createAgentLogger>,
 ): Promise<RepoSetupResult> {
-	// Start PostgreSQL if available (for local database testing)
-	await startPostgres();
-
-	// Start Redis if available (for caching, queues, session storage)
-	await startRedis();
-
 	// Clone repo to temp directory
 	const repoDir = createTempDir(project.id);
 	cloneRepo(project, repoDir);
@@ -78,6 +72,21 @@ async function setupRepository(
 			packageManager: installResult.packageManager,
 			success: installResult.success,
 		});
+	}
+
+	// Run project-specific setup script if it exists
+	const setupScriptPath = join(repoDir, '.cascade', 'setup.sh');
+	if (existsSync(setupScriptPath)) {
+		log.info('Running project setup script', { path: '.cascade/setup.sh' });
+		const setupResult = await execCommand('bash', [setupScriptPath], repoDir);
+		log.info('Setup script completed', {
+			exitCode: setupResult.exitCode,
+			stdout: setupResult.stdout.slice(-500),
+			stderr: setupResult.stderr.slice(-500),
+		});
+		if (setupResult.exitCode !== 0) {
+			log.warn('Setup script exited with non-zero code', { exitCode: setupResult.exitCode });
+		}
 	}
 
 	return { repoDir, installResult };
