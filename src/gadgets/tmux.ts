@@ -14,6 +14,10 @@ const DEFAULT_WAIT_MS = 120000; // 120s to wait for initial output
 const MAX_WAIT_MS = 120000; // Never wait longer than 120s - return with "running" status
 const POLL_INTERVAL_MS = 500;
 
+// Keepalive session prevents tmux server shutdown when command panes exit
+const KEEPALIVE_SESSION = '_cascade_keepalive';
+let keepaliveInitialized = false;
+
 /**
  * Session name validation - alphanumeric, underscore, dash only.
  * Prevents shell injection and tmux command issues.
@@ -54,6 +58,37 @@ async function runTmux(args: string[]): Promise<{ exitCode: number; output: stri
  */
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Ensure keepalive session exists to prevent tmux server shutdown.
+ * Uses lazy initialization pattern (like Dhalsim's browser manager).
+ */
+async function ensureKeepalive(): Promise<void> {
+	if (keepaliveInitialized) return;
+
+	const check = await runTmux(['has-session', '-t', KEEPALIVE_SESSION]);
+	if (check.exitCode !== 0) {
+		// Use tail -f /dev/null as cross-platform "sleep forever"
+		// (sleep infinity doesn't work on macOS)
+		await runTmux([
+			'new-session',
+			'-d',
+			'-s',
+			KEEPALIVE_SESSION,
+			'-x',
+			'1',
+			'-y',
+			'1',
+			'tail',
+			'-f',
+			'/dev/null',
+		]);
+		// Set remain-on-exit so dead panes stay queryable
+		// (also set in Dockerfile ~/.tmux.conf for redundancy)
+		await runTmux(['set-option', '-g', 'remain-on-exit', 'on']);
+	}
+	keepaliveInitialized = true;
 }
 
 class TmuxGadget extends Gadget({
@@ -212,17 +247,17 @@ Commands are executed directly (no shell interpretation), so special characters 
 		cwd?: string;
 		wait?: number;
 	}): Promise<string> {
+		// Ensure keepalive session exists (prevents server shutdown when panes exit)
+		await ensureKeepalive();
+
 		// Check if session already exists
 		const checkResult = await runTmux(['has-session', '-t', params.session]);
 		if (checkResult.exitCode === 0) {
 			return `session=${params.session} status=error\n\nSession '${params.session}' already exists. Use action="kill" first or choose a different name.`;
 		}
 
-		// Set remain-on-exit globally BEFORE creating the session
-		// This ensures the pane stays alive even if the command exits immediately
-		await runTmux(['set-option', '-g', 'remain-on-exit', 'on']);
-
 		// Create session with the command directly (no interactive shell)
+		// Note: remain-on-exit is set in ~/.tmux.conf
 		const result = await runTmux([
 			'new-session',
 			'-d', // detached
@@ -265,12 +300,13 @@ Commands are executed directly (no shell interpretation), so special characters 
 
 			// Check if pane has died (remain-on-exit keeps pane but marks it dead)
 			// Also get the exit status of the command that was running
+			// Note: pane_dead_status (not pane_exit_status) has the exit code
 			const check = await runTmux([
 				'display-message',
 				'-t',
 				session,
 				'-p',
-				'#{pane_dead}\t#{pane_exit_status}',
+				'#{pane_dead}\t#{pane_dead_status}',
 			]);
 			if (check.exitCode === 0) {
 				const [dead, code] = check.output.trim().split('\t');
@@ -286,7 +322,14 @@ Commands are executed directly (no shell interpretation), so special characters 
 			}
 		}
 
-		const output = lastOutput.replace(/^\s*\n/, '').replace(/\n\s*$/, '');
+		// Clean up output:
+		// 1. Remove "Pane is dead" message added by tmux remain-on-exit
+		// 2. Collapse multiple blank lines
+		// 3. Trim leading/trailing whitespace
+		const output = lastOutput
+			.replace(/\nPane is dead \([^)]+\)\s*$/, '')
+			.replace(/\n{3,}/g, '\n\n')
+			.trim();
 
 		if (sessionEnded) {
 			// Clean up the dead session
@@ -365,7 +408,10 @@ Commands are executed directly (no shell interpretation), so special characters 
 			return `status=error\n\n${result.output}`;
 		}
 
-		const sessions = result.output.split('\n').filter(Boolean);
+		// Filter out internal keepalive session
+		const sessions = result.output
+			.split('\n')
+			.filter((s) => s && !s.startsWith(`${KEEPALIVE_SESSION}:`));
 		return `sessions=${sessions.length}\n\n${sessions.join('\n') || 'No active sessions'}`;
 	}
 

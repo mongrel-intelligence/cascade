@@ -33,6 +33,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s $(which fdfind) /usr/local/bin/fd
 
+# Configure tmux to keep panes alive after command exits
+# This allows capturing output and exit code from fast-exiting commands
+RUN echo "set-option -g remain-on-exit on" > /root/.tmux.conf
+
 # Add PostgreSQL binaries to PATH so agents can use pg_ctl, psql, etc.
 ENV PATH="/usr/lib/postgresql/18/bin:$PATH"
 
