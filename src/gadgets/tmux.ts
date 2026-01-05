@@ -171,10 +171,24 @@ class TmuxControlClient {
 		} else if (line.startsWith('%message ')) {
 			// display-message output
 			this.lastMessage = line.slice(9); // Remove "%message "
+		} else if (
+			line.startsWith('%session') ||
+			line.startsWith('%window') ||
+			line.startsWith('%pane') ||
+			line.startsWith('%client') ||
+			line.startsWith('%exit') ||
+			line.startsWith('%unlinked') ||
+			line.startsWith('%subscription') ||
+			line.startsWith('%layout') ||
+			line.startsWith('%paste')
+		) {
+			// Ignore tmux notification events - these must NOT be added to currentBlock
+			// Note: Pane IDs like "%0" or "%1" are valid command output and must pass through
+			return;
 		} else if (this.currentBlock) {
+			// Add line to command response block (includes pane IDs like "%0", "%1")
 			this.currentBlock.lines.push(line);
 		}
-		// Ignore other events (%session-changed, %window-add, etc.)
 	}
 
 	/**
@@ -202,16 +216,28 @@ class TmuxControlClient {
 			}
 
 			this.lastMessage = '';
-			this.pendingCommand = { resolve, reject };
-			this.proc.stdin.write(`${cmd}\n`);
 
-			// Timeout after 30s
-			setTimeout(() => {
+			// Set up timeout - MUST be cleared when command completes
+			const timeoutId = setTimeout(() => {
 				if (this.pendingCommand) {
-					this.pendingCommand.reject(new Error('Command timed out'));
 					this.pendingCommand = null;
+					reject(new Error('Command timed out'));
 				}
 			}, 30000);
+
+			// Wrap resolve/reject to clear timeout
+			this.pendingCommand = {
+				resolve: (result: string) => {
+					clearTimeout(timeoutId);
+					resolve(result);
+				},
+				reject: (err: Error) => {
+					clearTimeout(timeoutId);
+					reject(err);
+				},
+			};
+
+			this.proc.stdin.write(`${cmd}\n`);
 		});
 	}
 
@@ -245,9 +271,21 @@ class TmuxControlClient {
 
 	/**
 	 * Check if a pane is dead (command exited)
+	 * Uses capture-pane to detect "Pane is dead" marker as primary method,
+	 * with list-panes pane_dead as fallback.
 	 */
 	async isPaneDead(paneId: string): Promise<{ dead: boolean; exitCode: number }> {
-		// Use list-panes instead of display-message for more reliable detection
+		// Primary method: capture-pane and look for "Pane is dead" marker
+		// This works even when pane_dead variable reports incorrectly
+		const captured = await this.sendCommand(`capture-pane -t ${paneId} -p -S -10`);
+
+		// tmux adds "Pane is dead (status N)" when remain-on-exit is on
+		const deadMatch = captured.match(/Pane is dead \(status (\d+)\)/);
+		if (deadMatch) {
+			return { dead: true, exitCode: Number.parseInt(deadMatch[1], 10) };
+		}
+
+		// Fallback: check pane_dead variable
 		const result = await this.sendCommand(
 			`list-panes -t ${paneId} -F "#{pane_dead}\t#{pane_dead_status}"`,
 		);
