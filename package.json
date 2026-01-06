@@ -28,7 +28,7 @@
 	"license": "MIT",
 	"dependencies": {
 		"@hono/node-server": "^1.13.7",
-		"@llmist/cli": "^12.0.0",
+		"@llmist/cli": "^12.4.0",
 		"@octokit/rest": "^22.0.1",
 		"@types/archiver": "^7.0.0",
 		"archiver": "^7.0.1",

@@ -255,27 +255,21 @@ class TmuxControlClient {
 	 * Wraps command in a shell that emits an exit marker for reliable exit detection.
 	 */
 	async createWindow(windowName: string, command: string[], cwd?: string): Promise<string> {
-		// Build the inner command string with proper escaping for sh -c '...'
-		// Order matters: escape backslashes, then double quotes, then newlines, then single quotes
-		const innerCmd = command
+		// Use base64 encoding to pass arguments verbatim through tmux
+		// Each arg is encoded, then decoded at runtime via command substitution
+		// This preserves newlines, backticks, $, quotes - everything passes through unchanged
+		const args = command
 			.map((arg) => {
-				const escaped = arg
-					.replace(/\\/g, '\\\\') // Escape backslashes
-					.replace(/"/g, '\\"') // Escape double quotes
-					.replace(/\n/g, '\\n') // Escape newlines
-					.replace(/\r/g, '\\r') // Escape carriage returns
-					.replace(/\t/g, '\\t'); // Escape tabs
-				return `"${escaped}"`;
+				const base64 = Buffer.from(arg).toString('base64');
+				return `"$(echo '${base64}' | base64 -d)"`;
 			})
 			.join(' ');
 
-		// Wrap in sh -c to emit exit marker after command completes
-		// This ensures we can detect exit even if pane_dead doesn't work
-		const wrappedCmd = `sh -c '${innerCmd.replace(/'/g, "'\\''")}; echo "${EXIT_MARKER_PREFIX}$?${EXIT_MARKER_SUFFIX}"'`;
+		const shellCmd = `bash -c '${args}; echo "${EXIT_MARKER_PREFIX}$?${EXIT_MARKER_SUFFIX}"'`;
 
-		const cwdArg = cwd ? `-c "${cwd}" ` : '';
+		const cwdArg = cwd ? `-c "${cwd.replace(/"/g, '\\"')}" ` : '';
 		const result = await this.sendCommand(
-			`new-window -t ${CONTROL_SESSION} -n ${windowName} ${cwdArg}-PF "#{pane_id}" ${wrappedCmd}`,
+			`new-window -t ${CONTROL_SESSION} -n ${windowName} ${cwdArg}-PF "#{pane_id}" ${shellCmd}`,
 		);
 
 		const paneId = result.trim();
