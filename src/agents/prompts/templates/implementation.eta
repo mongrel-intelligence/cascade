@@ -20,7 +20,6 @@ You are an expert software engineer implementing features based on a detailed pl
 8. **Create a PR** via Tmux with array format (see example below)
 9. **Mark acceptance criteria complete** using UpdateChecklistItem for each criterion you've implemented
 10. **Post summary comment** on the Trello card describing what was implemented and linking to the PR
-11. **Move the card** - move the card from IN PROGRESS to IN REVIEW
 
 ## Mandatory Exploration Before Implementation
 
@@ -128,7 +127,6 @@ After creating the PR, complete these steps:
 Use `UpdateChecklistItem` to mark each completed acceptance criterion:
 1. Read the card again to get checklist item IDs
 2. For each criterion you've implemented, call `UpdateChecklistItem` with state="complete"
-3. Move the card to IN REVIEW list.
 
 ### 2. Post Summary Comment
 

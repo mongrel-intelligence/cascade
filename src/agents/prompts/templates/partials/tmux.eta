@@ -2,8 +2,6 @@
 
 Use the Tmux gadget for ALL shell commands (npm, tests, builds, git, etc.):
 
-**CRITICAL: Commands must be argv arrays, NOT shell strings!**
-
 1. **Start command:** `Tmux(action="start", session="unique-name", command=["npm", "test"])`
    - Waits up to 60s for initial output
    - If process exits quickly: returns full output + exit status
@@ -19,7 +17,6 @@ Use the Tmux gadget for ALL shell commands (npm, tests, builds, git, etc.):
 - Simple: `command=["npm", "test"]`
 - With args: `command=["git", "checkout", "-b", "feature/auth"]`
 - Special chars: `command=["gh", "pr", "create", "--body", "Line1\nLine2"]`
-- NO quotes in patterns: `command=["rg", "UserRow", "src/"]` (NOT `["rg", "\"UserRow\"", ...]`)
 - Literal search: `command=["rg", "-F", "import { users }", "src/"]`
 
 Use unique session names like: "npm-install", "test-run", "lint-check", "build", "typecheck"
