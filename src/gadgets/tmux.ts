@@ -446,10 +446,15 @@ class TmuxGadget extends Gadget({
 **Use this for ALL commands** (npm, tests, builds, git, gh, etc.)
 
 **COMMAND FORMAT:** Pass command as argv array, NOT a shell string.
-- Correct: command=["gh", "pr", "create", "--body", "## Summary\\n\\nDetails here"]
-- Correct: command=["npm", "test"]
-- Wrong: command="npm test" (this is a string, not an array)
+- ✅ Correct: command=["npm", "test"]
+- ✅ Correct: command=["rg", "UserRow", "src/"]
+- ✅ Correct: command=["rg", "-F", "import { users }", "src/"]
+- ✅ Correct: command=["gh", "pr", "create", "--body", "## Summary\\n\\nDetails here"]
+- ❌ Wrong: command="npm test" (string, not array!)
+- ❌ Wrong: command=["rg", "\\"UserRow\\"", "src/"] (don't add quotes!)
+
 Commands are executed directly (no shell interpretation), so special characters in arguments are safe.
+**CRITICAL:** Do NOT add quote characters around search patterns or other arguments - each array element is already a separate argument!
 
 **ACTIONS:**
 - \`start\`: Run a command in a new session. Waits up to 120s for initial output.

@@ -25,7 +25,9 @@
 - **Node.js 22**: With npm, pnpm, yarn, bun
 - **Git & GitHub CLI**: `git` and `gh` commands available
 - **Search tools** (use via Tmux for fast codebase exploration):
-  - `rg` (ripgrep) - fast text search: `rg "pattern" src/`
-  - `fd` - fast file finder: `fd "filename" src/`
-  - `find` - file search: `find . -name "*.ts" -type f`
-  - `ast-grep` - AST-based search: `ast-grep --pattern '$FUNC($ARGS)' src/`
+  - `rg` (ripgrep) - fast text search
+    - Tmux: `command=["rg", "pattern", "src/"]` (NO quotes around pattern!)
+    - Fixed string: `command=["rg", "-F", "literal(text)", "src/"]`
+  - `fd` - fast file finder: `command=["fd", "filename", "src/"]`
+  - `find` - file search: `command=["find", ".", "-name", "*.ts", "-type", "f"]`
+  - `ast-grep` - AST-based search: `command=["ast-grep", "--pattern", "$FUNC($ARGS)", "src/"]`

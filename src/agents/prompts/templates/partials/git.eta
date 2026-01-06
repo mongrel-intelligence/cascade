@@ -1,19 +1,24 @@
 ## Git and GitHub CLI
 
-Use standard git commands and GitHub CLI (`gh`) via Tmux for all version control:
+Use standard git commands and GitHub CLI (`gh`) via Tmux for all version control.
 
-**Git commands:**
-- `git checkout -b feature/name` - create feature branch
-- `git add .` - stage changes
-- `git commit -m "type(scope): description"` - commit with conventional message
-- `git push -u origin HEAD` - push branch to remote
+**CRITICAL: Pass commands as argv arrays to Tmux, NOT shell strings!**
 
-**GitHub CLI (`gh`) commands:**
-- `gh pr create --title "Title" --body "Description"` - create PR with explicit values (required)
-- `gh pr view` - view current PR
-- `gh pr list` - list open PRs
+**Git command examples:**
+- Branch: `command=["git", "checkout", "-b", "feature/name"]`
+- Stage: `command=["git", "add", "."]`
+- Commit: `command=["git", "commit", "-m", "fix(auth): correct validation"]`
+- Push: `command=["git", "push", "-u", "origin", "HEAD"]`
 
-**IMPORTANT:** Always provide `--title` and `--body` to avoid interactive prompts. Do NOT use `--fill`.
+**GitHub CLI (`gh`) examples:**
+- Create PR: `command=["gh", "pr", "create", "--title", "Fix auth bug", "--body", "Details..."]`
+- View PR: `command=["gh", "pr", "view"]`
+- List PRs: `command=["gh", "pr", "list"]`
+
+**IMPORTANT:**
+- Always provide `--title` and `--body` to avoid interactive prompts. Do NOT use `--fill`
+- Each array element is a separate argument - NO quotes needed in array elements
+- Multiline bodies work fine: `"## Summary\n\nDetails here"`
 
 ## Commit Message Format
 
