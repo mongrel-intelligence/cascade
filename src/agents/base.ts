@@ -35,6 +35,14 @@ import {
 	warmTypeScriptCache,
 } from './utils/index.js';
 import { createAgentLogger } from './utils/logging.js';
+import {
+	type TrackingContext,
+	createTrackingContext,
+	incrementGadgetCall,
+	incrementLLMIteration,
+	isSyntheticCall,
+	recordSyntheticInvocationId,
+} from './utils/tracking.js';
 
 export interface AgentContext {
 	project: ProjectConfig;
@@ -272,9 +280,8 @@ function createAgentBuilderWithGadgets(
 	ctx: AgentContextData,
 	llmistLogger: ReturnType<typeof createLogger>,
 	llmCallLogger: LLMCallLogger,
+	trackingContext: TrackingContext,
 ): BuilderType {
-	let llmCallCounter = 0;
-
 	return new AgentBuilder(client)
 		.withModel(ctx.model)
 		.withTemperature(0)
@@ -286,13 +293,15 @@ function createAgentBuilderWithGadgets(
 				// Log the exact request being sent to the LLM
 				onLLMCallReady: async (context) => {
 					if (context.subagentContext) return;
-					llmCallCounter++;
-					llmCallLogger.logRequest(llmCallCounter, context.options.messages);
+					incrementLLMIteration(trackingContext);
+					const callNumber = trackingContext.metrics.llmIterations;
+					llmCallLogger.logRequest(callNumber, context.options.messages);
 				},
 				// Log the raw response from the LLM
 				onLLMCallComplete: async (context) => {
 					if (context.subagentContext) return;
-					llmCallLogger.logResponse(llmCallCounter, context.rawResponse);
+					const callNumber = trackingContext.metrics.llmIterations;
+					llmCallLogger.logResponse(callNumber, context.rawResponse);
 				},
 			},
 		})
@@ -323,6 +332,7 @@ function injectSyntheticCalls(
 	cardData: string,
 	contextFiles: AgentContextData['contextFiles'],
 	installResult: DependencyInstallResult | null,
+	trackingContext: TrackingContext,
 ): BuilderType {
 	let builder = initialBuilder;
 
@@ -331,6 +341,7 @@ function injectSyntheticCalls(
 	const listDirGadget = new ListDirectory();
 	const listDirParams = { directoryPath: '.', maxDepth: 3, includeGitIgnored: false };
 	const listDirResult = listDirGadget.execute(listDirParams);
+	recordSyntheticInvocationId(trackingContext, 'gc_dir');
 	builder = builder.withSyntheticGadgetCall(
 		'ListDirectory',
 		listDirParams,
@@ -340,6 +351,7 @@ function injectSyntheticCalls(
 
 	// Inject card data as synthetic ReadTrelloCard call (only if cardId exists)
 	if (cardId && cardData) {
+		recordSyntheticInvocationId(trackingContext, 'gc_card');
 		builder = builder.withSyntheticGadgetCall(
 			'ReadTrelloCard',
 			{ cardId, includeComments: true },
@@ -351,17 +363,19 @@ function injectSyntheticCalls(
 	// Inject context files as synthetic ReadFile gadget calls
 	for (let i = 0; i < contextFiles.length; i++) {
 		const file = contextFiles[i];
+		const invocationId = `gc_init_${i + 1}`;
+		recordSyntheticInvocationId(trackingContext, invocationId);
 		builder = builder.withSyntheticGadgetCall(
 			'ReadFile',
 			{ filePath: file.path },
 			file.content,
-			`gc_init_${i + 1}`,
+			invocationId,
 		);
 	}
 
 	// Inject dependency install result as synthetic Tmux call
 	if (installResult) {
-		builder = injectDependencyResult(builder, installResult);
+		builder = injectDependencyResult(builder, installResult, trackingContext);
 	}
 
 	return builder;
@@ -382,32 +396,47 @@ function truncateContent(content: string, maxLen = 400): string {
 
 interface AgentRunResult {
 	output: string;
-	iterationCount: number;
+	iterations: number; // LLM request cycles
+	gadgetCalls: number; // Non-synthetic gadget calls
 	cost: number;
 }
 
 async function runAgentLoop(
 	agent: ReturnType<BuilderType['ask']>,
 	log: ReturnType<typeof createAgentLogger>,
+	trackingContext: TrackingContext,
 ): Promise<AgentRunResult> {
 	const outputLines: string[] = [];
-	let iterationCount = 0;
 
 	for await (const event of agent.run()) {
 		if (event.type === 'text') {
 			log.debug('[Text]', { content: event.content.slice(0, 100) });
 			outputLines.push(event.content);
 		} else if (event.type === 'gadget_call') {
-			iterationCount++;
 			const { gadgetName, invocationId, parameters } = event.call;
 
-			// Build log context with gadget-specific details
+			// Check if this is a synthetic call
+			const isSynthetic = isSyntheticCall(invocationId, trackingContext);
+
+			// Only count real gadget calls
+			if (!isSynthetic) {
+				incrementGadgetCall(trackingContext);
+			}
+
+			// Build log context with both metrics
 			const logContext: Record<string, unknown> = {
-				iteration: iterationCount,
+				iteration: trackingContext.metrics.llmIterations,
+				gadget: trackingContext.metrics.gadgetCalls,
 				name: gadgetName,
 				invocationId,
 			};
 
+			// Add isSynthetic flag for debugging
+			if (isSynthetic) {
+				logContext.isSynthetic = true;
+			}
+
+			// Add gadget-specific details
 			if (gadgetName === 'Tmux' && parameters) {
 				logContext.params = parameters;
 			} else if (gadgetName === 'ReadFile' && parameters?.filePath) {
@@ -437,7 +466,10 @@ async function runAgentLoop(
 
 			log[level]('[Gadget result]', logContext);
 		} else if (event.type === 'stream_complete') {
-			log.info('Stream complete', { iteration: iterationCount });
+			log.info('Stream complete', {
+				iterations: trackingContext.metrics.llmIterations,
+				gadgetCalls: trackingContext.metrics.gadgetCalls,
+			});
 		}
 	}
 
@@ -445,7 +477,8 @@ async function runAgentLoop(
 
 	return {
 		output: outputLines.join('\n'),
-		iterationCount,
+		iterations: trackingContext.metrics.llmIterations,
+		gadgetCalls: trackingContext.metrics.gadgetCalls,
 		cost,
 	};
 }
@@ -566,12 +599,16 @@ export async function executeAgent(
 			const client = new LLMist();
 			const llmistLogger = createLogger({ minLevel: getLogLevel() });
 
+			// Create tracking context for iterations and gadget calls
+			const trackingContext = createTrackingContext();
+
 			// Build the agent with gadgets and synthetic calls
 			let builder = createAgentBuilderWithGadgets(
 				client,
 				ctx,
 				llmistLogger,
 				fileLogger.llmCallLogger,
+				trackingContext,
 			);
 			builder = injectSyntheticCalls(
 				builder,
@@ -579,13 +616,19 @@ export async function executeAgent(
 				ctx.cardData,
 				ctx.contextFiles,
 				installResult,
+				trackingContext,
 			);
 
 			// Run the agent
 			const agent = builder.ask(ctx.prompt);
-			const result = await runAgentLoop(agent, log);
+			const result = await runAgentLoop(agent, log, trackingContext);
 
-			log.info('Agent completed', { cardId, iterations: result.iterationCount, cost: result.cost });
+			log.info('Agent completed', {
+				cardId,
+				iterations: result.iterations,
+				gadgetCalls: result.gadgetCalls,
+				cost: result.cost,
+			});
 
 			// Extract PR URL from output (gh pr create outputs the URL)
 			const prUrlMatch = result.output.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/);
@@ -653,11 +696,13 @@ export async function executeAgent(
 function injectDependencyResult(
 	builder: ReturnType<typeof AgentBuilder.prototype.withGadgets>,
 	installResult: DependencyInstallResult,
+	trackingContext: TrackingContext,
 ): ReturnType<typeof AgentBuilder.prototype.withGadgets> {
 	const installOutput = installResult.success
 		? `✓ Dependencies installed with ${installResult.packageManager}\n\n${installResult.output}`
 		: `✗ Dependency install failed (${installResult.packageManager})\n\nError: ${installResult.error}`;
 
+	recordSyntheticInvocationId(trackingContext, 'gc_deps');
 	return builder.withSyntheticGadgetCall(
 		'Tmux',
 		{
