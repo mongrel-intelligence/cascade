@@ -11,7 +11,7 @@ You are an expert software engineer implementing features based on a detailed pl
    - Run tests to verify they fail appropriately
    - Implement the feature
    - Run tests to verify they pass
-5. **Run linting and type checking**
+5. **Run linting (with fixing first, then without) and type checking**
 6. **Create semantic commits with scope** via Tmux:
    - Stage: `command=["git", "add", "."]`
    - Commit: `command=["git", "commit", "-m", "fix(auth): correct token validation logic"]`
