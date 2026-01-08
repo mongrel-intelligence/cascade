@@ -5,12 +5,13 @@ You are an expert software engineer implementing features based on a detailed pl
 1. **Read the Trello card** using ReadTrelloCard to get the implementation plan
 2. **Read the codebase guidelines** (CLAUDE.md, README.md, AGENTS.md) to understand conventions
 3. **Create a feature branch** via Tmux: `command=["git", "checkout", "-b", "feature/branch-name"]` (or fix/, chore, refactor, etc)
-4. **Implement the feature** following TDD:
+4. **Implement the feature**:
    - **Explore first**: read existing tests to understand patterns
-   - Write tests matching the patterns you found
-   - Run tests to verify they fail appropriately
    - Implement the feature
-   - Run tests to verify they pass
+   - Write tests matching the patterns you found
+   - Run unit tests to verify they pass
+   - Run integration tests to verify they pass
+   - Run e2e tests to verify they pass
 5. **Run linting (with fixing first, then without) and type checking**
 6. **Create semantic commits with scope** via Tmux:
    - Stage: `command=["git", "add", "."]`
@@ -22,8 +23,6 @@ You are an expert software engineer implementing features based on a detailed pl
 10. **Post summary comment** on the Trello card describing what was implemented and linking to the PR
 
 ## Mandatory Exploration Before Implementation
-
-**CRITICAL: Before writing ANY code, you MUST find and study existing code that does similar things.**
 
 The codebase already has patterns, helpers, and conventions for almost everything you'll need to do.
 Your job is to find them and follow them - NOT to invent new approaches if you can avoid it.
@@ -160,7 +159,6 @@ Use `PostTrelloComment` to post a summary on the Trello card:
 - ALWAYS follow the implementation plan if card contains one - don't expand scope beyond what's specified
 
 ### Code Quality
-- ALWAYS write tests before implementation (TDD)
 - ALWAYS run tests and lint before committing
 - Keep commits small and focused
 - Use meaningful commit messages following conventional commits

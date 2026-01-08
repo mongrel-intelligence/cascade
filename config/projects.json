@@ -1,6 +1,6 @@
 {
 	"defaults": {
-		"model": "gemini:gemini-2.5-flash",
+		"model": "huggingface:deepseek-ai/DeepSeek-V3.2",
 		"maxIterations": 50,
 		"agentIterations": {
 			"implementation": 65
