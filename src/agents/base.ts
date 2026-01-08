@@ -3,6 +3,10 @@ import { join } from 'node:path';
 import { writeFile } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
+import { getCompactionConfig } from '../config/compactionConfig.js';
+import { getIterationTrailingMessage } from '../config/hintConfig.js';
+import { getRateLimitForModel } from '../config/rateLimits.js';
+import { getRetryConfig } from '../config/retryConfig.js';
 import { EditFile } from '../gadgets/EditFile.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
@@ -281,6 +285,7 @@ function createAgentBuilderWithGadgets(
 	llmistLogger: ReturnType<typeof createLogger>,
 	llmCallLogger: LLMCallLogger,
 	trackingContext: TrackingContext,
+	agentType: string,
 ): BuilderType {
 	return new AgentBuilder(client)
 		.withModel(ctx.model)
@@ -288,6 +293,10 @@ function createAgentBuilderWithGadgets(
 		.withSystem(ctx.systemPrompt)
 		.withMaxIterations(ctx.maxIterations)
 		.withLogger(llmistLogger)
+		.withRateLimits(getRateLimitForModel(ctx.model))
+		.withRetry(getRetryConfig(llmistLogger))
+		.withCompaction(getCompactionConfig(agentType))
+		.withTrailingMessage(getIterationTrailingMessage())
 		.withHooks({
 			observers: {
 				// Log the exact request being sent to the LLM
@@ -609,6 +618,7 @@ export async function executeAgent(
 				llmistLogger,
 				fileLogger.llmCallLogger,
 				trackingContext,
+				agentType,
 			);
 			builder = injectSyntheticCalls(
 				builder,

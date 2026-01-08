@@ -98,6 +98,38 @@ Optional:
 2. Define system prompt in `src/agents/prompts/`
 3. Register in agent registry
 
+## Agent Resilience Features
+
+CASCADE integrates llmist's resilience features to ensure reliable operation during long-running sessions:
+
+### Rate Limiting (Proactive)
+- Model-specific rate limits with safety margins (80-90%)
+- Tracks requests per minute (RPM), tokens per minute (TPM), and daily token usage
+- Prevents 429 errors by throttling requests before hitting API limits
+- Configured in `src/config/rateLimits.ts`
+
+### Retry Strategy (Reactive)
+- Handles transient failures (rate limits, 5xx errors, timeouts, connection issues)
+- 5 retry attempts with exponential backoff (1s → 60s max)
+- Respects `Retry-After` headers from providers
+- Jitter randomization prevents thundering herd problems
+- Configured in `src/config/retryConfig.ts`
+
+### Context Compaction
+- Prevents context window overflow on long-running sessions
+- **Implementation agent**: Triggers at 70% context usage, reduces to 40%, preserves 8 recent turns
+- **Other agents**: Triggers at 80% context usage, reduces to 50%, preserves 5 recent turns
+- Hybrid strategy: intelligently mixes summarization and sliding-window
+- Configured in `src/config/compactionConfig.ts`
+
+### Iteration Hints
+- Ephemeral trailing messages showing iteration progress
+- Urgency warnings at >80%: "⚠️ ITERATION BUDGET: 17/20 - Only 3 remaining!"
+- Helps LLM prioritize and wrap up before hitting iteration limits
+- Configured in `src/config/hintConfig.ts`
+
+**Monitoring**: Check `llmist-*.log` for rate limiting and compaction events. Main agent logs show retry attempts.
+
 ## Debugging Production Sessions
 
 ### Manual Session Download
