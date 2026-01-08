@@ -3,8 +3,9 @@
 		"model": "huggingface:deepseek-ai/DeepSeek-V3.2",
 		"maxIterations": 50,
 		"agentIterations": {
-			"implementation": 65
+			"implementation": 100
 		},
+		"watchdogTimeoutMs": 2700000,
 		"selfDestructTimeoutMs": 1800000,
 		"postJobGracePeriodMs": 45000
 	},

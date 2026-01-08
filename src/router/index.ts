@@ -37,8 +37,6 @@ try {
 
 const TRELLO_WORKER_URL =
 	process.env.TRELLO_WORKER_URL || 'https://cascade-webhooks.fly.dev/trello/webhook';
-const GITHUB_WORKER_URL =
-	process.env.GITHUB_WORKER_URL || 'https://cascade-webhooks.fly.dev/github/webhook';
 
 function shouldForwardTrelloToWorker(payload: unknown): boolean {
 	if (!payload || typeof payload !== 'object') return false;
@@ -96,36 +94,6 @@ function shouldForwardTrelloToWorker(payload: unknown): boolean {
 	}
 
 	return false;
-}
-
-function shouldForwardGitHubToWorker(payload: unknown, eventType: string): boolean {
-	if (!payload || typeof payload !== 'object') return false;
-
-	// Allowed event types and their required actions
-	const allowedEvents: Record<string, string[]> = {
-		pull_request_review_comment: ['created'],
-		check_suite: ['completed'],
-		pull_request_review: ['submitted'],
-	};
-
-	if (!allowedEvents[eventType]) return false;
-
-	const p = payload as Record<string, unknown>;
-	const action = p.action as string | undefined;
-	const repository = p.repository as Record<string, unknown> | undefined;
-
-	// Check action matches allowed actions for this event type
-	if (!action || !allowedEvents[eventType].includes(action)) return false;
-
-	// Check if repo matches a configured project
-	const repoFullName = repository?.full_name as string | undefined;
-	if (!repoFullName) return false;
-
-	const project = config.projects.find((proj) => proj.repo === repoFullName);
-	if (!project) return false;
-
-	console.log(`[Router] GitHub ${eventType} (${action}) on ${repoFullName}`);
-	return true;
 }
 
 const app = new Hono();
@@ -186,23 +154,21 @@ app.post('/github/webhook', async (c) => {
 		return c.text('Bad Request', 400);
 	}
 
-	if (shouldForwardGitHubToWorker(payload, eventType)) {
-		console.log(`[Router] Forwarding GitHub to worker: ${eventType}`);
+	// Log full GitHub webhook request
+	console.log('[Router] GitHub webhook received:', {
+		eventType,
+		headers: {
+			'X-GitHub-Event': eventType,
+			'X-GitHub-Delivery': c.req.header('X-GitHub-Delivery'),
+			'X-Hub-Signature': c.req.header('X-Hub-Signature'),
+			'X-Hub-Signature-256': c.req.header('X-Hub-Signature-256'),
+			'User-Agent': c.req.header('User-Agent'),
+		},
+		payload: JSON.stringify(payload, null, 2),
+	});
 
-		// Forward to worker (fire-and-forget, don't wait)
-		fetch(GITHUB_WORKER_URL, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				'X-GitHub-Event': eventType,
-			},
-			body: JSON.stringify(payload),
-		}).catch((err) => {
-			console.error('[Router] Failed to forward GitHub to worker:', err);
-		});
-	} else {
-		console.log(`[Router] Ignoring GitHub: ${eventType}`);
-	}
+	// Do nothing else with GitHub webhooks for now
+	console.log('[Router] GitHub webhook logged, no further processing');
 
 	return c.text('OK', 200);
 });
