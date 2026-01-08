@@ -17,7 +17,7 @@ describe('getSystemPrompt', () => {
 	it('returns implementation prompt for implementation agent', () => {
 		const prompt = getSystemPrompt('implementation');
 		expect(prompt).toContain('software engineer');
-		expect(prompt).toContain('TDD');
+		expect(prompt).toContain('tests');
 	});
 
 	it('throws for unknown agent type', () => {
