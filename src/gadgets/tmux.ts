@@ -165,13 +165,6 @@ class TmuxControlClient {
 			throw new Error(`Failed to create control session: ${err}`);
 		}
 
-		// Set remain-on-exit globally so we can query exit status
-		try {
-			execSync('tmux set-option -g remain-on-exit on');
-		} catch {
-			// Ignore - best effort
-		}
-
 		// Attach in control mode
 		this.proc = spawn('tmux', ['-C', 'attach-session', '-t', CONTROL_SESSION], {
 			stdio: ['pipe', 'pipe', 'pipe'],
@@ -386,6 +379,9 @@ class TmuxControlClient {
 		if (paneId.startsWith('%')) {
 			this.windowToPaneId.set(windowName, paneId);
 			this.paneOutputs.set(paneId, []);
+
+			// Set remain-on-exit for this pane so output can be captured after command exits
+			await this.sendCommand(`set-option -p -t ${paneId} remain-on-exit on`);
 		}
 
 		return paneId;
