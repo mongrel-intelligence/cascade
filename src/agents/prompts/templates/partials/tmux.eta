@@ -2,7 +2,7 @@
 
 Use the Tmux gadget for ALL shell commands (npm, tests, builds, git, etc.):
 
-1. **Start command:** `Tmux(action="start", session="unique-name", command=["npm", "test"])`
+1. **Start command:** `Tmux(action="start", session="unique-name", command="npm test")`
    - Waits up to 120s for initial output
    - If process exits quickly: returns full output + exit status
    - If still running: returns partial output + "still running" message
@@ -13,16 +13,10 @@ Use the Tmux gadget for ALL shell commands (npm, tests, builds, git, etc.):
 3. **Stop/cleanup:** `Tmux(action="kill", session="unique-name")`
    - Terminate the session when done (always clean up!)
 
-**Command Format Examples:**
-- Simple: `command=["npm", "test"]`
-- With args: `command=["git", "checkout", "-b", "feature/auth"]`
-- Special chars: `command=["gh", "pr", "create", "--body", "Line1\nLine2"]`
-- Literal search: `command=["rg", "-F", "import { users }", "src/"]`
-- find with -exec: `command=["find", ".", "-name", "*.ts", "-exec", "wc", "-l", "{}", ";"]`
-
-**Why no shell escaping?** Each array element is passed directly to the command. Shell metacharacters like `*`, `;`, `$` are preserved literally:
-- NO quotes needed: `["rg", "foo bar"]` not `["rg", "\"foo bar\""]`
-- NO backslash escapes: `["-exec", "cmd", "{}", ";"]` not `[..., "\\;"]`
-- Regex works directly: `["rg", "\\.ts$"]` not `["rg", "\\\\.ts$"]`
+**Command Format:** Pass command as a shell string. Pipes, &&, ||, redirects, and globs all work:
+- Simple: `command="npm test"`
+- Chained: `command="npm run lint && npm test"`
+- With pipes: `command="npm test 2>&1 | head -50"`
+- With globs: `command="find . -name '*.ts' | xargs wc -l"`
 
 Use unique session names like: "npm-install", "test-run", "lint-check", "build", "typecheck"

@@ -30,5 +30,8 @@ npm-debug.log*
 /tmp/
 *.tmp
 
+# Local agent workspace (repos, logs)
+workspace/
+
 # Test artifacts
 test-results/

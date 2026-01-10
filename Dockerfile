@@ -127,6 +127,9 @@ COPY src/agents/prompts/templates ./dist/agents/prompts/templates
 # Copy config
 COPY config ./config
 
+# Create workspace directory for repos and logs
+RUN mkdir -p /workspace
+
 ENV PORT=3000
 EXPOSE 3000
 CMD ["node", "dist/index.js"]

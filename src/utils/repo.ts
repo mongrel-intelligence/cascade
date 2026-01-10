@@ -4,8 +4,17 @@ import { getProjectGitHubToken } from '../config/projects.js';
 import type { ProjectConfig } from '../types/index.js';
 import { logger } from './logging.js';
 
+/**
+ * Get the base directory for temporary files (repos, logs).
+ * Uses CASCADE_WORKSPACE_DIR env var if set, otherwise /workspace.
+ */
+export function getWorkspaceDir(): string {
+	return process.env.CASCADE_WORKSPACE_DIR || '/workspace';
+}
+
 export function createTempDir(projectId: string): string {
-	const tempDir = `/tmp/cascade-${projectId}-${Date.now()}`;
+	const baseDir = getWorkspaceDir();
+	const tempDir = `${baseDir}/cascade-${projectId}-${Date.now()}`;
 	mkdirSync(tempDir, { recursive: true });
 	return tempDir;
 }
@@ -29,7 +38,8 @@ export function cloneRepo(project: ProjectConfig, targetDir: string): void {
 }
 
 export function cleanupTempDir(dir: string): void {
-	if (existsSync(dir) && dir.startsWith('/tmp/cascade-')) {
+	const workspaceDir = getWorkspaceDir();
+	if (existsSync(dir) && dir.startsWith(`${workspaceDir}/cascade-`)) {
 		logger.debug('Cleaning up temp directory', { dir });
 		rmSync(dir, { recursive: true, force: true });
 	}

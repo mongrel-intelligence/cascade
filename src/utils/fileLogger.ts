@@ -1,10 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import archiver from 'archiver';
 
 import { type LLMCallLogger, createLLMCallLogger } from './llmLogging.js';
+import { getWorkspaceDir } from './repo.js';
 
 export interface FileLogger {
 	logPath: string;
@@ -17,11 +17,12 @@ export interface FileLogger {
 
 export function createFileLogger(prefix: string): FileLogger {
 	const timestamp = Date.now();
-	const logPath = path.join(os.tmpdir(), `${prefix}-cascade-${timestamp}.log`);
-	const llmistLogPath = path.join(os.tmpdir(), `${prefix}-llmist-${timestamp}.log`);
+	const workspaceDir = getWorkspaceDir();
+	const logPath = path.join(workspaceDir, `${prefix}-cascade-${timestamp}.log`);
+	const llmistLogPath = path.join(workspaceDir, `${prefix}-llmist-${timestamp}.log`);
 
 	// Create LLM call logger for raw request/response logging
-	const llmCallLogger = createLLMCallLogger(os.tmpdir(), prefix);
+	const llmCallLogger = createLLMCallLogger(workspaceDir, prefix);
 
 	// Use sync file descriptor to avoid race condition with getZippedBuffer
 	let fd: number | null = fs.openSync(logPath, 'a');

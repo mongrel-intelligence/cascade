@@ -10,7 +10,7 @@ export {
 	clearWatchdogCleanup,
 	scheduleShutdownAfterJob,
 } from './lifecycle.js';
-export { createTempDir, cloneRepo, cleanupTempDir, runCommand } from './repo.js';
+export { createTempDir, cloneRepo, cleanupTempDir, runCommand, getWorkspaceDir } from './repo.js';
 export {
 	enqueueWebhook,
 	dequeueWebhook,

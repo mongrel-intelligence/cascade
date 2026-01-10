@@ -254,18 +254,11 @@ class TmuxControlClient {
 	 * Create a new window with a command.
 	 * Wraps command in a shell that emits an exit marker for reliable exit detection.
 	 */
-	async createWindow(windowName: string, command: string[], cwd?: string): Promise<string> {
-		// Use base64 encoding to pass arguments verbatim through tmux
-		// Each arg is encoded, then decoded at runtime via command substitution
-		// This preserves newlines, backticks, $, quotes - everything passes through unchanged
-		const args = command
-			.map((arg) => {
-				const base64 = Buffer.from(arg).toString('base64');
-				return `"$(echo '${base64}' | base64 -d)"`;
-			})
-			.join(' ');
-
-		const shellCmd = `bash -c '${args}; echo "${EXIT_MARKER_PREFIX}$?${EXIT_MARKER_SUFFIX}"'`;
+	async createWindow(windowName: string, command: string, cwd?: string): Promise<string> {
+		// Base64 encode the entire command to pass through tmux safely
+		// Use single quotes for bash -c and eval to properly handle quotes in decoded command
+		const base64 = Buffer.from(command).toString('base64');
+		const shellCmd = `bash -c 'eval "$(echo ${base64} | base64 -d)"; echo "${EXIT_MARKER_PREFIX}$?${EXIT_MARKER_SUFFIX}"'`;
 
 		const cwdArg = cwd ? `-c "${cwd.replace(/"/g, '\\"')}" ` : '';
 		const result = await this.sendCommand(
@@ -445,25 +438,13 @@ class TmuxGadget extends Gadget({
 
 **Use this for ALL commands** (npm, tests, builds, git, gh, etc.)
 
-**COMMAND FORMAT:** Pass command as argv array, NOT a shell string.
-- ✅ Correct: command=["npm", "test"]
-- ✅ Correct: command=["rg", "UserRow", "src/"]
-- ✅ Correct: command=["rg", "-F", "import { users }", "src/"]
-- ✅ Correct: command=["gh", "pr", "create", "--body", "## Summary\\n\\nDetails here"]
-- ❌ Wrong: command="npm test" (string, not array!)
-- ❌ Wrong: command=["rg", "\\"UserRow\\"", "src/"] (don't add quotes!)
+**COMMAND FORMAT:** Pass command as a shell string.
+- command="npm test"
+- command="npm run build && npm test"
+- command="rg 'pattern' src/ | head -20"
+- command="find . -name '*.ts' -exec wc -l {} \\;"
 
-Commands are executed directly (no shell interpretation), so special characters in arguments are safe.
-**CRITICAL:** Do NOT add quote characters around search patterns or other arguments - each array element is already a separate argument!
-
-**COMMON MISTAKES:**
-- command=["find", ".", "-name", "\\"*.css\\""] -> Quotes become literal, searches for files named "*.css" (with quotes)
-- command=["find", ".", "-exec", "rm", "{}", "\\\\;"] -> Backslash is literal, breaks -exec
-- command=["rg", "\\\\.css$", "src/"] -> Double-escapes the dot, searches for literal backslash
-CORRECT:
-- command=["find", ".", "-name", "*.css"]
-- command=["find", ".", "-exec", "rm", "{}", ";"]
-- command=["rg", "\\.css$", "src/"] or command=["rg", ".css$", "src/"]
+Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all work.
 
 **ACTIONS:**
 - \`start\`: Run a command in a new session. Waits up to 120s for initial output.
@@ -477,7 +458,7 @@ CORRECT:
 - \`exists\`: Check if a session is running
 
 **TYPICAL WORKFLOW:**
-1. Start: Tmux(action="start", session="test-run", command=["npm", "test"])
+1. Start: Tmux(action="start", session="test-run", command="npm test")
 2. If still running, check progress: Tmux(action="capture", session="test-run")
 3. When done: Tmux(action="kill", session="test-run")
 
@@ -488,10 +469,9 @@ CORRECT:
 			action: z.literal('start'),
 			session: sessionNameSchema.describe("Unique session name (e.g., 'test-run', 'npm-install')"),
 			command: z
-				.array(z.string())
-				.describe(
-					"Command as argv array (e.g., ['npm', 'test'], ['gh', 'pr', 'create', '--body', 'markdown...'])",
-				),
+				.string()
+				.min(1)
+				.describe("Shell command to execute (e.g., 'npm test', 'npm run build && npm test')"),
 			cwd: z
 				.string()
 				.optional()
@@ -535,7 +515,7 @@ CORRECT:
 	]),
 	examples: [
 		{
-			params: { action: 'start', session: 'test-run', command: ['npm', 'test'], wait: 120000 },
+			params: { action: 'start', session: 'test-run', command: 'npm test', wait: 120000 },
 			output:
 				'session=test-run status=exited exit_code=0\n\n> project@1.0.0 test\n> vitest run\n\n✓ 15 tests passed',
 			comment: 'Run tests - command completed within 120s wait period',
@@ -543,24 +523,23 @@ CORRECT:
 		{
 			params: {
 				action: 'start',
+				session: 'pipeline',
+				command: 'npm run lint && npm test',
+				wait: 120000,
+			},
+			output: 'session=pipeline status=exited exit_code=0\n\n✓ Lint passed\n✓ 15 tests passed',
+			comment: 'Chain commands with &&',
+		},
+		{
+			params: {
+				action: 'start',
 				session: 'e2e-tests',
-				command: ['npm', 'run', 'test:e2e'],
+				command: 'npm run test:e2e',
 				wait: 120000,
 			},
 			output:
 				"session=e2e-tests status=running\n\nStarting backend...\n✓ Backend healthy\n\n(Process still running in session 'e2e-tests'. Use capture to check progress, kill when done.)",
 			comment: 'Long-running E2E tests still running after 120s - use capture to monitor',
-		},
-		{
-			params: {
-				action: 'start',
-				session: 'find-exec',
-				command: ['find', '.', '-name', '*.ts', '-exec', 'wc', '-l', '{}', ';'],
-				wait: 120000,
-			},
-			output:
-				'session=find-exec status=exited exit_code=0\n\n42 ./src/index.ts\n156 ./src/utils.ts',
-			comment: 'find with -exec: use ";" not "\\;" - no shell escaping needed',
 		},
 		{
 			params: { action: 'capture', session: 'npm-install', lines: 25 },
@@ -605,7 +584,7 @@ CORRECT:
 
 	private async handleStart(params: {
 		session: string;
-		command: string[];
+		command: string;
 		cwd?: string;
 		wait?: number;
 	}): Promise<string> {
