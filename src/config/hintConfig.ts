@@ -4,10 +4,8 @@ import type { TrailingMessage } from 'llmist';
  * Get trailing message function for iteration tracking.
  *
  * Injects iteration budget awareness into each LLM call:
- * - Shows current iteration and remaining budget
- * - Adds urgency warnings when >80% through iterations
- * - Moderate reminders when >50% through iterations
- * - Minimal info when <50% through iterations
+ * - Always shows current iteration, remaining count, and percentage
+ * - Adds urgency indicator when running low on iterations
  *
  * Trailing messages are ephemeral - they appear in each request but don't
  * persist to conversation history, keeping context clean.
@@ -17,16 +15,16 @@ import type { TrailingMessage } from 'llmist';
 export function getIterationTrailingMessage(): TrailingMessage {
 	return (ctx) => {
 		const remaining = ctx.maxIterations - ctx.iteration;
-		const percent = (ctx.iteration / ctx.maxIterations) * 100;
+		const percent = Math.round((ctx.iteration / ctx.maxIterations) * 100);
 
-		if (percent > 80) {
-			return `⚠️ ITERATION BUDGET: ${ctx.iteration}/${ctx.maxIterations} - Only ${remaining} remaining! Wrap up now.`;
+		if (percent >= 80) {
+			return `🚨 Iteration ${ctx.iteration}/${ctx.maxIterations} (${percent}% used, ${remaining} remaining)`;
 		}
 
-		if (percent > 50) {
-			return `Iteration ${ctx.iteration}/${ctx.maxIterations} (${remaining} remaining)`;
+		if (percent >= 50) {
+			return `⚠️ Iteration ${ctx.iteration}/${ctx.maxIterations} (${percent}% used, ${remaining} remaining)`;
 		}
 
-		return `Iteration ${ctx.iteration}/${ctx.maxIterations}`;
+		return `Iteration ${ctx.iteration}/${ctx.maxIterations} (${percent}% used, ${remaining} remaining)`;
 	};
 }

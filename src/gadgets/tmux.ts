@@ -83,11 +83,37 @@ class TmuxControlClient {
 	private lastMessage = '';
 
 	/**
-	 * Connect to tmux in control mode.
+	 * Connect to tmux in control mode with retry support.
 	 * Creates a control session if needed, then attaches with -C flag.
 	 */
 	async connect(): Promise<void> {
-		if (this.connected) return;
+		// Already connected and process is running
+		if (this.connected && this.proc && this.proc.exitCode === null) return;
+
+		// Retry up to 2 times for transient failures
+		let lastError: Error | null = null;
+		for (let attempt = 0; attempt < 2; attempt++) {
+			try {
+				await this.connectOnce();
+				return;
+			} catch (err) {
+				lastError = err instanceof Error ? err : new Error(String(err));
+				if (attempt < 1) {
+					await sleep(500); // Wait before retry
+				}
+			}
+		}
+		throw lastError ?? new Error('Failed to connect to tmux after retries');
+	}
+
+	/**
+	 * Single connection attempt to tmux control mode.
+	 */
+	private async connectOnce(): Promise<void> {
+		// Reset state
+		this.connected = false;
+		this.proc = null;
+		this.rl = null;
 
 		// Kill any existing control session to start fresh
 		try {
@@ -136,6 +162,15 @@ class TmuxControlClient {
 
 		// Wait for initial connection
 		await sleep(300);
+
+		// Verify the process is still running and stdin is available
+		if (!this.proc || this.proc.exitCode !== null || !this.proc.stdin) {
+			this.connected = false;
+			throw new Error(
+				'Failed to connect to tmux: process exited immediately. Check if tmux is installed and working.',
+			);
+		}
+
 		this.connected = true;
 	}
 
@@ -213,7 +248,11 @@ class TmuxControlClient {
 			}
 
 			if (!this.proc?.stdin) {
-				reject(new Error('Not connected to tmux'));
+				reject(
+					new Error(
+						'Not connected to tmux - process stdin unavailable. Check if tmux is installed and working.',
+					),
+				);
 				return;
 			}
 

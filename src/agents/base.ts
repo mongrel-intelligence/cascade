@@ -12,6 +12,7 @@ import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
 import { Tmux } from '../gadgets/tmux.js';
+import { TodoDelete, TodoUpsert } from '../gadgets/todo/index.js';
 import {
 	AddChecklistToCard,
 	CreateTrelloCard,
@@ -323,6 +324,9 @@ function createAgentBuilderWithGadgets(
 			// Shell commands via tmux (no timeout issues)
 			new Tmux(),
 			new Sleep(),
+			// Task tracking gadgets
+			new TodoUpsert(),
+			new TodoDelete(),
 			// Trello gadgets
 			new ReadTrelloCard(),
 			new PostTrelloComment(),
