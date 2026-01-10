@@ -456,6 +456,15 @@ class TmuxGadget extends Gadget({
 Commands are executed directly (no shell interpretation), so special characters in arguments are safe.
 **CRITICAL:** Do NOT add quote characters around search patterns or other arguments - each array element is already a separate argument!
 
+**COMMON MISTAKES:**
+- command=["find", ".", "-name", "\\"*.css\\""] -> Quotes become literal, searches for files named "*.css" (with quotes)
+- command=["find", ".", "-exec", "rm", "{}", "\\\\;"] -> Backslash is literal, breaks -exec
+- command=["rg", "\\\\.css$", "src/"] -> Double-escapes the dot, searches for literal backslash
+CORRECT:
+- command=["find", ".", "-name", "*.css"]
+- command=["find", ".", "-exec", "rm", "{}", ";"]
+- command=["rg", "\\.css$", "src/"] or command=["rg", ".css$", "src/"]
+
 **ACTIONS:**
 - \`start\`: Run a command in a new session. Waits up to 120s for initial output.
   - If command exits quickly: returns full output + exit status
@@ -541,6 +550,17 @@ Commands are executed directly (no shell interpretation), so special characters 
 			output:
 				"session=e2e-tests status=running\n\nStarting backend...\n✓ Backend healthy\n\n(Process still running in session 'e2e-tests'. Use capture to check progress, kill when done.)",
 			comment: 'Long-running E2E tests still running after 120s - use capture to monitor',
+		},
+		{
+			params: {
+				action: 'start',
+				session: 'find-exec',
+				command: ['find', '.', '-name', '*.ts', '-exec', 'wc', '-l', '{}', ';'],
+				wait: 120000,
+			},
+			output:
+				'session=find-exec status=exited exit_code=0\n\n42 ./src/index.ts\n156 ./src/utils.ts',
+			comment: 'find with -exec: use ";" not "\\;" - no shell escaping needed',
 		},
 		{
 			params: { action: 'capture', session: 'npm-install', lines: 25 },
