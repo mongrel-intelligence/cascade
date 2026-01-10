@@ -19,13 +19,17 @@ const EXIT_MARKER_PREFIX = '___CASCADE_EXIT_';
 const EXIT_MARKER_SUFFIX = '___';
 
 /**
- * Session name validation - alphanumeric, underscore, dash only.
+ * Session name schema - accepts any string, sanitized at runtime.
+ * Invalid characters (like /) are automatically replaced with dashes.
  */
-const sessionNameSchema = z
-	.string()
-	.min(1)
-	.max(64)
-	.regex(/^[a-zA-Z0-9_-]+$/, 'Session name must be alphanumeric with underscores or dashes only');
+const sessionNameSchema = z.string().min(1).max(64);
+
+/**
+ * Sanitize session name by replacing invalid characters with dashes.
+ */
+function sanitizeSessionName(name: string): string {
+	return name.replace(/[^a-zA-Z0-9_-]/g, '-');
+}
 
 /**
  * Unescape tmux control mode output (octal escapes like \012 -> \n)
@@ -68,7 +72,18 @@ class TmuxControlClient {
 	private rl: readline.Interface | null = null;
 	private connected = false;
 
-	// Command tracking - one at a time
+	// Connection lock - prevents race conditions when multiple parallel calls try to connect
+	private connectPromise: Promise<void> | null = null;
+
+	// Command queue - allows parallel gadget calls to queue and wait
+	private commandQueue: Array<{
+		cmd: string;
+		resolve: (v: string) => void;
+		reject: (e: Error) => void;
+	}> = [];
+	private processingQueue = false;
+
+	// Current command being processed
 	private pendingCommand: { resolve: (v: string) => void; reject: (e: Error) => void } | null =
 		null;
 	private currentBlock: { lines: string[] } | null = null;
@@ -85,12 +100,33 @@ class TmuxControlClient {
 	/**
 	 * Connect to tmux in control mode with retry support.
 	 * Creates a control session if needed, then attaches with -C flag.
+	 * Uses a connection lock to prevent race conditions from parallel calls.
 	 */
 	async connect(): Promise<void> {
 		// Already connected and process is running
 		if (this.connected && this.proc && this.proc.exitCode === null) return;
 
-		// Retry up to 2 times for transient failures
+		// If another connection attempt is in progress, wait for it
+		if (this.connectPromise) {
+			await this.connectPromise;
+			// After waiting, check if we're now connected
+			if (this.connected && this.proc && this.proc.exitCode === null) return;
+		}
+
+		// Start a new connection attempt with retry logic
+		this.connectPromise = this.connectWithRetry();
+
+		try {
+			await this.connectPromise;
+		} finally {
+			this.connectPromise = null;
+		}
+	}
+
+	/**
+	 * Internal connection logic with retry support.
+	 */
+	private async connectWithRetry(): Promise<void> {
 		let lastError: Error | null = null;
 		for (let attempt = 0; attempt < 2; attempt++) {
 			try {
@@ -229,7 +265,8 @@ class TmuxControlClient {
 	}
 
 	/**
-	 * Send a command to tmux and wait for response
+	 * Send a command to tmux and wait for response.
+	 * Commands are queued and executed sequentially to handle parallel gadget calls.
 	 */
 	async sendCommand(cmd: string): Promise<string> {
 		// Reconnect if needed
@@ -241,8 +278,49 @@ class TmuxControlClient {
 			await this.connect();
 		}
 
+		// Queue the command and process
+		return new Promise((resolve, reject) => {
+			this.commandQueue.push({ cmd, resolve, reject });
+			this.processQueue();
+		});
+	}
+
+	/**
+	 * Process queued commands sequentially.
+	 * Only one command can be processed at a time due to tmux control mode protocol.
+	 */
+	private processQueue(): void {
+		if (this.processingQueue || this.commandQueue.length === 0) return;
+		this.processingQueue = true;
+
+		const processNext = () => {
+			if (this.commandQueue.length === 0) {
+				this.processingQueue = false;
+				return;
+			}
+
+			const item = this.commandQueue.shift();
+			if (!item) return;
+			const { cmd, resolve, reject } = item;
+			this.executeCommandInternal(cmd)
+				.then(resolve)
+				.catch(reject)
+				.finally(() => {
+					// Process next command after a small delay to let tmux settle
+					setTimeout(processNext, 10);
+				});
+		};
+
+		processNext();
+	}
+
+	/**
+	 * Internal command execution - actually sends to tmux and waits for response
+	 */
+	private executeCommandInternal(cmd: string): Promise<string> {
 		return new Promise((resolve, reject) => {
 			if (this.pendingCommand) {
+				// This shouldn't happen with queue, but just in case
 				reject(new Error('Already have a pending command'));
 				return;
 			}
@@ -481,9 +559,12 @@ class TmuxGadget extends Gadget({
 - command="npm test"
 - command="npm run build && npm test"
 - command="rg 'pattern' src/ | head -20"
-- command="find . -name '*.ts' -exec wc -l {} \\;"
 
 Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all work.
+
+**QUOTING:** When using gh, git, or commands with special characters:
+- Use single quotes around values with parentheses: --title 'feat(scope): message'
+- Example: command="gh pr create --title 'feat(auth): add login' --body 'Description'"
 
 **ACTIONS:**
 - \`start\`: Run a command in a new session. Waits up to 120s for initial output.
@@ -600,9 +681,27 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 			output: 'sessions=2\n\ntest-run: npm (running)\nnpm-install: npm (running)',
 			comment: 'List all active tmux sessions',
 		},
+		{
+			params: {
+				action: 'start',
+				session: 'create-pr',
+				command:
+					"gh pr create --title 'feat(auth): add OAuth login' --body 'Implements OAuth flow'",
+				wait: 30000,
+			},
+			output:
+				'session=create-pr status=exited exit_code=0\n\nCreating pull request for feature/oauth...\nhttps://github.com/org/repo/pull/123',
+			comment:
+				'Create PR - note single quotes around title with parentheses to prevent shell errors',
+		},
 	],
 }) {
 	override async execute(params: this['params']): Promise<string> {
+		// Sanitize session name if present (replaces / and other invalid chars with -)
+		if ('session' in params && typeof params.session === 'string') {
+			(params as { session: string }).session = sanitizeSessionName(params.session);
+		}
+
 		switch (params.action) {
 			case 'start':
 				return this.handleStart(params);

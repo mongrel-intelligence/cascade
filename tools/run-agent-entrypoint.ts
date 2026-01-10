@@ -43,13 +43,6 @@ function startServices(): void {
 		console.warn('PostgreSQL may already be running or failed to start:', err);
 	}
 
-	console.log('Starting Redis...');
-	try {
-		execSync('redis-server /etc/redis/redis.conf --daemonize yes', { stdio: 'inherit' });
-	} catch (err) {
-		console.warn('Redis may already be running or failed to start:', err);
-	}
-
 	console.log('Services started.\n');
 }
 
