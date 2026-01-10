@@ -25,17 +25,21 @@ export function getRetryConfig(logger: Logger<ILogObj>): RetryConfig {
 		maxRetryAfterMs: 120000, // Cap at 2 minutes
 
 		onRetry: (error: Error, attempt: number) => {
+			// Calculate the delay for this retry (exponential backoff with jitter)
+			const baseDelay = Math.min(1000 * 2 ** (attempt - 1), 60000);
 			logger.warn('LLM call retry', {
 				attempt,
-				error: error.message,
 				maxAttempts: 5,
+				error: error.message,
+				nextRetryDelayMs: baseDelay,
 			});
 		},
 
 		onRetriesExhausted: (error: Error, attempts: number) => {
-			logger.error('LLM call failed after all retries', {
+			logger.error('LLM call failed after all retries exhausted', {
 				attempts,
 				error: error.message,
+				totalWaitTimeMs: `~${1000 + 2000 + 4000 + 8000 + 16000}`, // Approximate total
 			});
 		},
 	};

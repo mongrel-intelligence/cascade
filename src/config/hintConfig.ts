@@ -17,14 +17,16 @@ export function getIterationTrailingMessage(): TrailingMessage {
 		const remaining = ctx.maxIterations - ctx.iteration;
 		const percent = Math.round((ctx.iteration / ctx.maxIterations) * 100);
 
+		const batchReminder = 'Output ALL gadget calls you are ready to make in this turn.';
+
 		if (percent >= 80) {
-			return `🚨 Iteration ${ctx.iteration}/${ctx.maxIterations} (${percent}% used, ${remaining} remaining)`;
+			return `🚨 Iteration ${ctx.iteration}/${ctx.maxIterations} (${percent}% used, ${remaining} remaining) - ${batchReminder}`;
 		}
 
 		if (percent >= 50) {
-			return `⚠️ Iteration ${ctx.iteration}/${ctx.maxIterations} (${percent}% used, ${remaining} remaining)`;
+			return `⚠️ Iteration ${ctx.iteration}/${ctx.maxIterations} (${percent}% used, ${remaining} remaining) - ${batchReminder}`;
 		}
 
-		return `Iteration ${ctx.iteration}/${ctx.maxIterations} (${percent}% used, ${remaining} remaining)`;
+		return `Iteration ${ctx.iteration}/${ctx.maxIterations} (${percent}% used, ${remaining} remaining) - ${batchReminder}`;
 	};
 }

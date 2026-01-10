@@ -18,6 +18,7 @@ import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../t
 import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
 import { clearWatchdogCleanup, setWatchdogCleanup } from '../utils/lifecycle.js';
 import type { LLMCallLogger } from '../utils/llmLogging.js';
+import { calculateCost, logLLMCallStart, logLLMMetrics } from '../utils/llmMetrics.js';
 import { logger } from '../utils/logging.js';
 import {
 	cleanupTempDir,
@@ -236,6 +237,9 @@ function createReviewAgentBuilder(
 	llmCallLogger: LLMCallLogger,
 	trackingContext: TrackingContext,
 ): BuilderType {
+	// Track LLM call timing per iteration
+	const llmCallStartTimes = new Map<number, number>();
+
 	return new AgentBuilder(client)
 		.withModel(ctx.model)
 		.withTemperature(0)
@@ -251,6 +255,14 @@ function createReviewAgentBuilder(
 				// Log the exact request being sent to the LLM
 				onLLMCallReady: async (context) => {
 					if (context.subagentContext) return;
+
+					// Track timing
+					llmCallStartTimes.set(context.iteration, Date.now());
+
+					// Log with estimated input tokens
+					logLLMCallStart(logger, context.iteration, context.options.messages);
+
+					// Existing file logging
 					incrementLLMIteration(trackingContext);
 					const callNumber = trackingContext.metrics.llmIterations;
 					llmCallLogger.logRequest(callNumber, context.options.messages);
@@ -258,6 +270,27 @@ function createReviewAgentBuilder(
 				// Log the raw response from the LLM
 				onLLMCallComplete: async (context) => {
 					if (context.subagentContext) return;
+
+					// Calculate duration
+					const startTime = llmCallStartTimes.get(context.iteration) ?? Date.now();
+					const durationMs = Date.now() - startTime;
+					llmCallStartTimes.delete(context.iteration);
+
+					// Log metrics
+					if (context.usage) {
+						const cost = calculateCost(ctx.model, context.usage);
+						logLLMMetrics(logger, {
+							model: ctx.model,
+							iteration: context.iteration,
+							inputTokens: context.usage.inputTokens,
+							outputTokens: context.usage.outputTokens,
+							cachedTokens: context.usage.cachedInputTokens ?? 0,
+							durationMs,
+							cost,
+						});
+					}
+
+					// Existing file logging
 					const callNumber = trackingContext.metrics.llmIterations;
 					llmCallLogger.logResponse(callNumber, context.rawResponse);
 				},

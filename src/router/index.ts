@@ -146,17 +146,43 @@ app.get('/github/webhook', (c) => {
 // GitHub webhook handler
 app.post('/github/webhook', async (c) => {
 	const eventType = c.req.header('X-GitHub-Event') || 'unknown';
+	const contentType = c.req.header('Content-Type') || '';
 
 	let payload: unknown;
+	let rawBody: string | undefined;
+
 	try {
-		payload = await c.req.json();
-	} catch {
+		// GitHub can send webhooks as JSON or form-urlencoded
+		if (contentType.includes('application/x-www-form-urlencoded')) {
+			// Form-urlencoded: payload is in the 'payload' field
+			const formData = await c.req.parseBody();
+			const payloadStr = formData.payload;
+			if (typeof payloadStr === 'string') {
+				rawBody = payloadStr;
+				payload = JSON.parse(payloadStr);
+			} else {
+				throw new Error('Missing payload field in form data');
+			}
+		} else {
+			// Assume JSON
+			rawBody = await c.req.text();
+			payload = JSON.parse(rawBody);
+		}
+	} catch (err) {
+		// Log the raw request for debugging
+		console.log('[Router] GitHub webhook parse error:', {
+			error: String(err),
+			contentType,
+			eventType,
+			rawBodyPreview: rawBody?.slice(0, 500) || '(not captured)',
+		});
 		return c.text('Bad Request', 400);
 	}
 
 	// Log full GitHub webhook request
 	console.log('[Router] GitHub webhook received:', {
 		eventType,
+		contentType,
 		headers: {
 			'X-GitHub-Event': eventType,
 			'X-GitHub-Delivery': c.req.header('X-GitHub-Delivery'),

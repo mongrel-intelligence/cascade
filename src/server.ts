@@ -72,10 +72,34 @@ export function createServer(deps: ServerDependencies): Hono {
 			return c.text('Service Unavailable', 503);
 		}
 
+		const eventType = c.req.header('X-GitHub-Event') || 'unknown';
+		const contentType = c.req.header('Content-Type') || '';
+
+		let payload: unknown;
+
 		try {
-			const payload = await c.req.json();
-			const eventType = c.req.header('X-GitHub-Event') || 'unknown';
-			logger.debug('Received GitHub webhook', { event: eventType });
+			// GitHub can send webhooks as JSON or form-urlencoded
+			if (contentType.includes('application/x-www-form-urlencoded')) {
+				// Form-urlencoded: payload is in the 'payload' field
+				const formData = await c.req.parseBody();
+				const payloadStr = formData.payload;
+				if (typeof payloadStr === 'string') {
+					payload = JSON.parse(payloadStr);
+				} else {
+					throw new Error('Missing payload field in form data');
+				}
+			} else {
+				// Assume JSON
+				payload = await c.req.json();
+			}
+
+			logger.info('Received GitHub webhook', {
+				event: eventType,
+				contentType,
+				action: (payload as Record<string, unknown>)?.action,
+				repository: ((payload as Record<string, unknown>)?.repository as Record<string, unknown>)
+					?.full_name,
+			});
 
 			// Process asynchronously - respond immediately
 			setImmediate(() => {
@@ -89,7 +113,11 @@ export function createServer(deps: ServerDependencies): Hono {
 
 			return c.text('OK', 200);
 		} catch (err) {
-			logger.error('Failed to parse GitHub webhook', { error: String(err) });
+			logger.error('Failed to parse GitHub webhook', {
+				error: String(err),
+				contentType,
+				eventType,
+			});
 			return c.text('Bad Request', 400);
 		}
 	});
