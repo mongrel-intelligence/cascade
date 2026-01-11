@@ -128,7 +128,7 @@ CASCADE integrates llmist's resilience features to ensure reliable operation dur
 - Helps LLM prioritize and wrap up before hitting iteration limits
 - Configured in `src/config/hintConfig.ts`
 
-**Monitoring**: Check `llmist-*.log` for rate limiting and compaction events. Main agent logs show retry attempts.
+**Monitoring**: Check `llmist-*.log` for rate limiting events. Compaction events are logged to main agent logs with details (tokens saved, reduction percentage, messages removed).
 
 ## Debugging Production Sessions
 

@@ -1,36 +1,55 @@
-import type { CompactionConfig } from 'llmist';
+import type { CompactionConfig, CompactionEvent } from 'llmist';
+import { logger } from '../utils/logging.js';
 
 /**
- * Aggressive compaction for implementation agent (long sessions).
+ * Base compaction settings for implementation agent (long sessions).
  *
  * Implementation agents often run for many iterations, so we use:
  * - Lower trigger threshold (70%) to compact earlier
  * - Lower target (40%) for more aggressive reduction
  * - More recent turns preserved (8) to maintain context
  */
-export const IMPLEMENTATION_COMPACTION: CompactionConfig = {
+const IMPLEMENTATION_COMPACTION_BASE = {
 	enabled: true,
-	strategy: 'hybrid', // Intelligent mix of summarization and sliding-window
-	triggerThresholdPercent: 70, // Compact at 70% context usage
-	targetPercent: 40, // Reduce to 40% after compaction
-	preserveRecentTurns: 8, // Keep last 8 turns verbatim
+	strategy: 'hybrid' as const,
+	triggerThresholdPercent: 70,
+	targetPercent: 40,
+	preserveRecentTurns: 8,
 };
 
 /**
- * Standard compaction for other agents (briefing, planning, debug, respond-to-review, review).
+ * Base compaction settings for other agents (briefing, planning, debug, respond-to-review, review).
  *
  * These agents typically have shorter sessions, so we use:
  * - Standard trigger threshold (80%)
  * - Standard target (50%)
  * - Fewer recent turns (5) since sessions are shorter
  */
-export const DEFAULT_COMPACTION: CompactionConfig = {
+const DEFAULT_COMPACTION_BASE = {
 	enabled: true,
-	strategy: 'hybrid',
+	strategy: 'hybrid' as const,
 	triggerThresholdPercent: 80,
 	targetPercent: 50,
 	preserveRecentTurns: 5,
 };
+
+/**
+ * Log compaction event.
+ */
+function logCompaction(event: CompactionEvent): void {
+	const tokensSaved = event.tokensBefore - event.tokensAfter;
+	const reductionPercent = Math.round((tokensSaved / event.tokensBefore) * 100);
+	const messagesRemoved = event.messagesBefore - event.messagesAfter;
+	logger.info('Context compaction performed', {
+		strategy: event.strategy,
+		iteration: event.iteration,
+		tokensBefore: event.tokensBefore,
+		tokensAfter: event.tokensAfter,
+		tokensSaved,
+		reductionPercent,
+		messagesRemoved,
+	});
+}
 
 /**
  * Get compaction configuration for a given agent type.
@@ -39,5 +58,10 @@ export const DEFAULT_COMPACTION: CompactionConfig = {
  * @returns Compaction configuration
  */
 export function getCompactionConfig(agentType: string): CompactionConfig {
-	return agentType === 'implementation' ? IMPLEMENTATION_COMPACTION : DEFAULT_COMPACTION;
+	const baseConfig =
+		agentType === 'implementation' ? IMPLEMENTATION_COMPACTION_BASE : DEFAULT_COMPACTION_BASE;
+	return {
+		...baseConfig,
+		onCompaction: logCompaction,
+	};
 }

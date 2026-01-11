@@ -29,7 +29,7 @@
 	"license": "MIT",
 	"dependencies": {
 		"@hono/node-server": "^1.13.7",
-		"@llmist/cli": "^15.1.2",
+		"@llmist/cli": "^15.2.1",
 		"@octokit/rest": "^22.0.1",
 		"@types/archiver": "^7.0.0",
 		"archiver": "^7.0.1",
@@ -37,7 +37,7 @@
 		"dhalsim": "^2.2.0",
 		"eta": "^4.5.0",
 		"hono": "^4.6.14",
-		"llmist": "^15.1.2",
+		"llmist": "^15.2.1",
 		"trello.js": "^1.2.8",
 		"zangief": "latest",
 		"zod": "^3.24.1"
