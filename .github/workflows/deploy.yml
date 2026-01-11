@@ -59,8 +59,16 @@ jobs:
     runs-on: self-hosted
     needs: build
     steps:
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
       - name: Pull and restart cascade-router
         run: |
-          cd /home/zbigniew/infra/compose
+          cd /opt/services
           docker compose pull cascade-router
           docker compose up -d cascade-router
+
+      - name: Pull worker image
+        run: |
+          docker pull ghcr.io/zbigniewsobiecki/cascade-worker:latest
