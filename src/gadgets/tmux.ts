@@ -598,6 +598,8 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 - Use single quotes around values with parentheses: --title 'feat(scope): message'
 - Example: command="gh pr create --title 'feat(auth): add login' --body 'Description'"
 
+**WORKING DIRECTORY:** Use \`cwd\` parameter for subdirectories instead of \`cd dir &&\` prefix.
+
 **ACTIONS:**
 - \`start\`: Run a command in a new session. Waits up to 120s for initial output.
   - If command exits quickly: returns full output + exit status
@@ -627,7 +629,9 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 			cwd: z
 				.string()
 				.optional()
-				.describe('Working directory for the command (default: current directory)'),
+				.describe(
+					'Working directory for the command (default: repo root). Use this instead of cd prefix.',
+				),
 			wait: z.coerce
 				.number()
 				.default(DEFAULT_WAIT_MS)
@@ -681,6 +685,17 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 			},
 			output: 'session=pipeline status=exited exit_code=0\n\n✓ Lint passed\n✓ 15 tests passed',
 			comment: 'Chain commands with &&',
+		},
+		{
+			params: {
+				action: 'start',
+				session: 'frontend-test',
+				command: 'pnpm test',
+				cwd: 'packages/frontend',
+				wait: 120000,
+			},
+			output: 'session=frontend-test status=exited exit_code=0\n\n✓ 42 tests passed',
+			comment: 'Run in subdirectory using cwd instead of cd prefix',
 		},
 		{
 			params: {

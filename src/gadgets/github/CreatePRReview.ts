@@ -68,7 +68,14 @@ export class CreatePRReview extends Gadget({
 			);
 			return `Review submitted successfully (${params.event}): ${review.htmlUrl}`;
 		} catch (error) {
-			return formatGadgetError('submitting review', error);
+			const baseError = formatGadgetError('submitting review', error);
+
+			if (params.comments?.length) {
+				const paths = params.comments.map((c) => `  - ${c.path}:${c.line ?? 'general'}`).join('\n');
+				return `${baseError}\n\nComment paths attempted:\n${paths}`;
+			}
+
+			return baseError;
 		}
 	}
 }

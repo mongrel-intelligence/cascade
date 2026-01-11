@@ -277,7 +277,7 @@ function createRespondToReviewAgentBuilder(
 		.withRateLimits(getRateLimitForModel(ctx.model))
 		.withRetry(getRetryConfig(llmistLogger))
 		.withCompaction(getCompactionConfig('respond-to-review'))
-		.withTrailingMessage(getIterationTrailingMessage())
+		.withTrailingMessage(getIterationTrailingMessage('respond-to-review'))
 		.withHooks({
 			observers: {
 				// Log the exact request being sent to the LLM
@@ -546,16 +546,21 @@ export async function executeRespondToReviewAgent(
 	} finally {
 		clearWatchdogCleanup();
 
-		if (repoDir) {
+		// Skip cleanup in local mode to preserve logs for debugging
+		const isLocalMode = process.env.CASCADE_LOCAL_MODE === 'true';
+
+		if (repoDir && !isLocalMode) {
 			try {
 				cleanupTempDir(repoDir);
 			} catch (err) {
 				logger.warn('Failed to cleanup temp directory', { repoDir, error: String(err) });
 			}
 		}
-		cleanupLogFile(fileLogger.logPath);
-		cleanupLogFile(fileLogger.llmistLogPath);
-		cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
+		if (!isLocalMode) {
+			cleanupLogFile(fileLogger.logPath);
+			cleanupLogFile(fileLogger.llmistLogPath);
+			cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
+		}
 	}
 }
 
