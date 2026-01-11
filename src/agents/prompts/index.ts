@@ -55,7 +55,14 @@ function loadTemplate(agentType: string): string {
 }
 
 export function getSystemPrompt(agentType: string, context: PromptContext = {}): string {
-	const validTypes = ['briefing', 'planning', 'implementation', 'debug'];
+	const validTypes = [
+		'briefing',
+		'planning',
+		'implementation',
+		'debug',
+		'respond-to-review',
+		'review',
+	];
 	if (!validTypes.includes(agentType)) {
 		throw new Error(`Unknown agent type: ${agentType}`);
 	}
@@ -69,3 +76,5 @@ export const BRIEFING_SYSTEM_PROMPT = loadTemplate('briefing');
 export const PLANNING_SYSTEM_PROMPT = loadTemplate('planning');
 export const IMPLEMENTATION_SYSTEM_PROMPT = loadTemplate('implementation');
 export const DEBUG_SYSTEM_PROMPT = loadTemplate('debug');
+export const RESPOND_TO_REVIEW_SYSTEM_PROMPT = loadTemplate('respond-to-review');
+export const REVIEW_SYSTEM_PROMPT = loadTemplate('review');

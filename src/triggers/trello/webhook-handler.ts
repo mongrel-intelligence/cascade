@@ -20,7 +20,7 @@ import {
 } from '../../utils/index.js';
 import { safeOperation, silentOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
-import type { TriggerResult } from '../types.js';
+import type { TrelloWebhookPayload, TriggerResult } from '../types.js';
 import { isTrelloWebhookPayload } from '../types.js';
 
 // ============================================================================
@@ -176,6 +176,31 @@ function processNextQueuedWebhook(config: CascadeConfig, registry: TriggerRegist
 	}
 }
 
+function tryQueueWebhook(payload: TrelloWebhookPayload): boolean {
+	if (!isCurrentlyProcessing()) return false;
+
+	const queued = enqueueWebhook(payload);
+	if (queued) {
+		logger.info('Currently processing, webhook queued', { queueLength: getQueueLength() });
+	} else {
+		logger.warn('Queue full, webhook rejected', { queueLength: getQueueLength() });
+	}
+	return true;
+}
+
+async function cleanupDebugDirectory(logDir: string | undefined): Promise<void> {
+	if (!logDir || typeof logDir !== 'string' || !logDir.startsWith('/tmp/debug-')) {
+		return;
+	}
+
+	logger.info('Cleaning up debug temp directory', { logDir });
+	const { cleanupTempDir } = await import('../../utils/repo.js');
+	await safeOperation(async () => await cleanupTempDir(logDir), {
+		action: 'cleanup temp directory',
+		logDir,
+	});
+}
+
 export async function processTrelloWebhook(
 	payload: unknown,
 	config: CascadeConfig,
@@ -190,13 +215,7 @@ export async function processTrelloWebhook(
 		return;
 	}
 
-	if (isCurrentlyProcessing()) {
-		const queued = enqueueWebhook(payload);
-		if (queued) {
-			logger.info('Currently processing, webhook queued', { queueLength: getQueueLength() });
-		} else {
-			logger.warn('Queue full, webhook rejected', { queueLength: getQueueLength() });
-		}
+	if (tryQueueWebhook(payload)) {
 		return;
 	}
 
@@ -205,7 +224,6 @@ export async function processTrelloWebhook(
 	logger.info('Webhook details', { boardId, actionType });
 
 	const project = findProjectByBoardId(config, boardId);
-
 	if (!project) {
 		logger.warn('No project configured for board', { boardId });
 		return;
@@ -213,18 +231,15 @@ export async function processTrelloWebhook(
 
 	const ctx: TriggerContext = { project, source: 'trello', payload };
 	const result = await registry.dispatch(ctx);
-
 	if (!result) {
 		logger.info('No trigger matched for webhook', { actionType });
 		return;
 	}
 
 	logger.info('Trigger matched', { agentType: result.agentType, cardId: result.cardId });
-
 	cancelFreshMachineTimer();
 	setProcessing(true);
 
-	// Start watchdog - force kill if job takes too long (Fly.io only)
 	if (process.env.FLY_APP_NAME) {
 		startWatchdog(config.defaults.watchdogTimeoutMs);
 	}
@@ -233,25 +248,12 @@ export async function processTrelloWebhook(
 		await executeAgent(result, project, config);
 	} catch (err) {
 		logger.error('Failed to process webhook', { error: String(err) });
-
 		if (result.cardId) {
 			await safeAddLabel(result.cardId, project.trello.labels.error);
 			await safeAddComment(result.cardId, `❌ Error: ${String(err)}`);
 		}
 	} finally {
-		// Cleanup temp directory if created by attachment trigger
-		if (result?.agentInput?.logDir && typeof result.agentInput.logDir === 'string') {
-			const logDir = result.agentInput.logDir as string;
-			if (logDir.startsWith('/tmp/debug-')) {
-				logger.info('Cleaning up debug temp directory', { logDir });
-				const { cleanupTempDir } = await import('../../utils/repo.js');
-				await safeOperation(async () => await cleanupTempDir(logDir), {
-					action: 'cleanup temp directory',
-					logDir,
-				});
-			}
-		}
-
+		await cleanupDebugDirectory(result?.agentInput?.logDir as string | undefined);
 		setProcessing(false);
 		processNextQueuedWebhook(config, registry);
 	}

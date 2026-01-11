@@ -44,7 +44,7 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 		});
 
 		return {
-			agentType: 'review',
+			agentType: 'respond-to-review',
 			agentInput: {
 				prNumber,
 				prBranch: reviewPayload.pull_request.head.ref,

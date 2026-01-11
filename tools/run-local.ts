@@ -1,76 +1,71 @@
 #!/usr/bin/env tsx
 /**
- * Run a CASCADE agent locally in Docker against a Trello card.
+ * Run a CASCADE agent locally in Docker against a Trello card or GitHub PR.
  *
  * Usage:
- *   npm run tool:run-local briefing https://trello.com/c/abc123/card-name
- *   npm run tool:run-local implementation abc123
- *   npm run tool:run-local planning abc123 --rebuild
+ *   npm run tool:run-local -- briefing https://trello.com/c/abc123/card-name
+ *   npm run tool:run-local -- implementation abc123
+ *   npm run tool:run-local -- respond-to-review https://github.com/owner/repo/pull/123
+ *   npm run tool:run-local -- planning abc123 --rebuild
+ *   npm run tool:run-local -- implementation abc123 -i
  */
 
 import { execSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { program } from 'commander';
 
-const VALID_AGENTS = ['briefing', 'planning', 'implementation', 'debug', 'review'];
+const VALID_AGENTS = [
+	'briefing',
+	'planning',
+	'implementation',
+	'debug',
+	'respond-to-review',
+	'review',
+] as const;
 const IMAGE_NAME = 'cascade:local';
 
-function extractCardId(input: string): string {
-	// Match Trello URL: https://trello.com/c/abc123/... or https://trello.com/c/abc123
-	const urlMatch = input.match(/trello\.com\/c\/([a-zA-Z0-9]+)/);
-	if (urlMatch) {
-		return urlMatch[1];
+// Input types for different sources
+interface TrelloInput {
+	type: 'trello';
+	cardId: string;
+}
+
+interface GitHubPRInput {
+	type: 'github-pr';
+	owner: string;
+	repo: string;
+	prNumber: number;
+}
+
+type ParsedInput = TrelloInput | GitHubPRInput;
+
+function parseInput(input: string): ParsedInput {
+	// Check for GitHub PR URL: https://github.com/owner/repo/pull/123
+	const githubMatch = input.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+	if (githubMatch) {
+		return {
+			type: 'github-pr',
+			owner: githubMatch[1],
+			repo: githubMatch[2],
+			prNumber: Number.parseInt(githubMatch[3], 10),
+		};
 	}
-	// Assume it's already a card ID
-	return input;
-}
 
-interface CliOptions {
-	agentType: string;
-	cardInput: string;
-	rebuild: boolean;
-}
+	// Check for Trello URL: https://trello.com/c/abc123/...
+	const trelloMatch = input.match(/trello\.com\/c\/([a-zA-Z0-9]+)/);
+	if (trelloMatch) {
+		return {
+			type: 'trello',
+			cardId: trelloMatch[1],
+		};
+	}
 
-function parseArgs(): CliOptions {
-	const args = process.argv.slice(2);
-
-	const options: CliOptions = {
-		agentType: '',
-		cardInput: '',
-		rebuild: false,
+	// Assume it's a Trello card ID
+	return {
+		type: 'trello',
+		cardId: input,
 	};
-
-	for (const arg of args) {
-		if (arg === '--rebuild') {
-			options.rebuild = true;
-		} else if (!arg.startsWith('--')) {
-			if (!options.agentType) {
-				options.agentType = arg;
-			} else if (!options.cardInput) {
-				options.cardInput = arg;
-			}
-		}
-	}
-
-	if (!options.agentType || !options.cardInput) {
-		console.error('Usage: npm run tool:run-local <agent-type> <trello-card-url-or-id> [--rebuild]');
-		console.error('');
-		console.error('Agent types:', VALID_AGENTS.join(', '));
-		console.error('');
-		console.error('Examples:');
-		console.error('  npm run tool:run-local briefing https://trello.com/c/abc123/card-name');
-		console.error('  npm run tool:run-local implementation abc123');
-		console.error('  npm run tool:run-local planning abc123 --rebuild');
-		process.exit(1);
-	}
-
-	if (!VALID_AGENTS.includes(options.agentType)) {
-		console.error(`Invalid agent type: ${options.agentType}`);
-		console.error('Valid agents:', VALID_AGENTS.join(', '));
-		process.exit(1);
-	}
-
-	return options;
 }
 
 function dockerImageExists(): boolean {
@@ -102,7 +97,11 @@ function ensureDockerImage(rebuild: boolean): void {
 	}
 }
 
-function runAgentInDocker(agentType: string, cardId: string): Promise<number> {
+function runAgentInDocker(
+	agentType: string,
+	input: ParsedInput,
+	interactive: boolean,
+): Promise<number> {
 	const cwd = process.cwd();
 	const envFile = resolve(cwd, '.env');
 	const workspaceDir = resolve(cwd, 'workspace');
@@ -118,6 +117,20 @@ function runAgentInDocker(agentType: string, cardId: string): Promise<number> {
 	}
 
 	console.log(`Workspace: ${workspaceDir}`);
+
+	// Build entrypoint arguments based on input type
+	let entrypointArgs: string[];
+	let displayName: string;
+
+	if (input.type === 'github-pr') {
+		// Pass PR details as separate arguments with --pr flag
+		entrypointArgs = [agentType, '--pr', input.owner, input.repo, String(input.prNumber)];
+		displayName = `${input.owner}/${input.repo}#${input.prNumber}`;
+	} else {
+		// Pass Trello card ID
+		entrypointArgs = [agentType, input.cardId];
+		displayName = `card ${input.cardId}`;
+	}
 
 	const dockerArgs = [
 		'run',
@@ -143,6 +156,8 @@ function runAgentInDocker(agentType: string, cardId: string): Promise<number> {
 		// Set local mode env var (to skip log uploads)
 		'-e',
 		'CASCADE_LOCAL_MODE=true',
+		// Pass interactive mode flag
+		...(interactive ? ['-e', 'CASCADE_INTERACTIVE=true'] : []),
 		// Pass tokens from host environment (may override .env)
 		...(process.env.GITHUB_TOKEN ? ['-e', `GITHUB_TOKEN=${process.env.GITHUB_TOKEN}`] : []),
 		...(process.env.HF_TOKEN ? ['-e', `HF_TOKEN=${process.env.HF_TOKEN}`] : []),
@@ -155,40 +170,61 @@ function runAgentInDocker(agentType: string, cardId: string): Promise<number> {
 		IMAGE_NAME,
 		// Command: run the entrypoint script with tsx
 		'npx',
+		'-y',
 		'tsx',
 		'/app/tools/run-agent-entrypoint.ts',
-		agentType,
-		cardId,
+		...entrypointArgs,
 	];
 
-	console.log(`\nStarting ${agentType} agent for card ${cardId}...\n`);
+	console.log(`\nStarting ${agentType} agent for ${displayName}...\n`);
 
 	const docker = spawn('docker', dockerArgs, {
 		stdio: 'inherit',
 		cwd,
 	});
 
-	return new Promise((resolve) => {
+	return new Promise((resolvePromise) => {
 		docker.on('close', (code) => {
-			resolve(code ?? 1);
+			resolvePromise(code ?? 1);
 		});
 	});
 }
 
-async function main() {
-	const options = parseArgs();
-	const cardId = extractCardId(options.cardInput);
+// Configure CLI with commander
+program
+	.name('run-local')
+	.description('Run a CASCADE agent locally in Docker')
+	.argument('<agent>', `Agent type: ${VALID_AGENTS.join(', ')}`)
+	.argument('<input>', 'Trello card URL/ID or GitHub PR URL')
+	.option('-r, --rebuild', 'Rebuild Docker image before running', false)
+	.option('-i, --interactive', 'Show all gadget calls with full params, wait for Enter', false)
+	.action(
+		async (agent: string, input: string, options: { rebuild: boolean; interactive: boolean }) => {
+			// Validate agent type
+			if (!VALID_AGENTS.includes(agent as (typeof VALID_AGENTS)[number])) {
+				console.error(`Invalid agent type: ${agent}`);
+				console.error(`Valid agents: ${VALID_AGENTS.join(', ')}`);
+				process.exit(1);
+			}
 
-	console.log(`Agent: ${options.agentType}`);
-	console.log(`Card ID: ${cardId}`);
+			const parsedInput = parseInput(input);
 
-	ensureDockerImage(options.rebuild);
+			console.log(`Agent: ${agent}`);
+			if (parsedInput.type === 'github-pr') {
+				console.log(`PR: ${parsedInput.owner}/${parsedInput.repo}#${parsedInput.prNumber}`);
+			} else {
+				console.log(`Card ID: ${parsedInput.cardId}`);
+			}
 
-	const exitCode = await runAgentInDocker(options.agentType, cardId);
-	process.exit(exitCode);
-}
+			ensureDockerImage(options.rebuild);
 
-main().catch((err) => {
-	console.error('Error:', err);
-	process.exit(1);
-});
+			if (options.interactive) {
+				console.log('Interactive mode: ON');
+			}
+
+			const exitCode = await runAgentInDocker(agent, parsedInput, options.interactive);
+			process.exit(exitCode);
+		},
+	);
+
+program.parse();

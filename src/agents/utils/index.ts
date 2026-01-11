@@ -11,3 +11,5 @@ export {
 } from './setup.js';
 
 export { type AgentLogger, createAgentLogger } from './logging.js';
+
+export { type AgentRunResult, runAgentLoop, truncateContent } from './agentLoop.js';

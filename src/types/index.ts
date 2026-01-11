@@ -22,6 +22,9 @@ export interface AgentInput {
 	originalCardUrl?: string;
 	detectedAgentType?: string;
 
+	// Interactive mode (local development)
+	interactive?: boolean;
+
 	[key: string]: unknown;
 }
 

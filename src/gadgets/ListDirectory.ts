@@ -5,7 +5,7 @@
  * Use includeGitIgnored=true to include all files.
  */
 import { execSync } from 'node:child_process';
-import { readdirSync, realpathSync, statSync } from 'node:fs';
+import { type Stats, readdirSync, realpathSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 
 import { Gadget, z } from 'llmist';
@@ -122,6 +122,43 @@ function getGitFiles(basePath: string, maxDepth: number): Set<string> {
 	return files;
 }
 
+function shouldIncludeInGitFilter(relativePath: string, gitFiles: Set<string>): boolean {
+	const asDir = `${relativePath}/`;
+	if (gitFiles.has(relativePath) || gitFiles.has(asDir)) {
+		return true;
+	}
+	// Check if any git file is under this directory
+	for (const gitFile of gitFiles) {
+		if (gitFile.startsWith(asDir)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function processDirectoryEntry(
+	fullPath: string,
+	relativePath: string,
+	stats: Stats,
+	entries: FileEntry[],
+	basePath: string,
+	maxDepth: number,
+	currentDepth: number,
+	gitFiles: Set<string> | null,
+): void {
+	entries.push({
+		relativePath,
+		type: 'directory',
+		size: 0,
+		modified: stats.mtime,
+	});
+
+	if (currentDepth < maxDepth) {
+		const subEntries = listFilesRecursive(fullPath, basePath, maxDepth, currentDepth + 1, gitFiles);
+		entries.push(...subEntries);
+	}
+}
+
 function listFilesRecursive(
 	dirPath: string,
 	basePath: string,
@@ -139,50 +176,29 @@ function listFilesRecursive(
 		const items = readdirSync(dirPath);
 
 		for (const item of items) {
-			// Skip hidden files and common non-essential directories
 			if (item.startsWith('.')) continue;
 
 			const fullPath = join(dirPath, item);
 			const relativePath = relative(basePath, fullPath);
 
-			// If we have gitFiles set, filter by it
-			if (gitFiles !== null) {
-				const isDir = `${relativePath}/`;
-				if (!gitFiles.has(relativePath) && !gitFiles.has(isDir)) {
-					// Check if any git file is under this directory
-					let hasChildren = false;
-					for (const gitFile of gitFiles) {
-						if (gitFile.startsWith(`${relativePath}/`)) {
-							hasChildren = true;
-							break;
-						}
-					}
-					if (!hasChildren) continue;
-				}
+			if (gitFiles !== null && !shouldIncludeInGitFilter(relativePath, gitFiles)) {
+				continue;
 			}
 
 			try {
 				const stats = statSync(fullPath);
 
 				if (stats.isDirectory()) {
-					entries.push({
+					processDirectoryEntry(
+						fullPath,
 						relativePath,
-						type: 'directory',
-						size: 0,
-						modified: stats.mtime,
-					});
-
-					// Recurse into subdirectory
-					if (currentDepth < maxDepth) {
-						const subEntries = listFilesRecursive(
-							fullPath,
-							basePath,
-							maxDepth,
-							currentDepth + 1,
-							gitFiles,
-						);
-						entries.push(...subEntries);
-					}
+						stats,
+						entries,
+						basePath,
+						maxDepth,
+						currentDepth,
+						gitFiles,
+					);
 				} else if (stats.isFile()) {
 					entries.push({
 						relativePath,

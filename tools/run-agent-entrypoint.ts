@@ -8,9 +8,66 @@
 
 import { execSync } from 'node:child_process';
 import { runAgent } from '../src/agents/registry.js';
-import { loadProjectsConfig } from '../src/config/projects.js';
+import { findProjectByRepo, loadProjectsConfig } from '../src/config/projects.js';
+import { githubClient } from '../src/github/client.js';
+import type { AgentInput, CascadeConfig, ProjectConfig } from '../src/types/index.js';
 
 const CONFIG_PATH = '/app/config/projects.json';
+
+// Input types
+interface TrelloInput {
+	type: 'trello';
+	cardId: string;
+}
+
+interface GitHubPRInput {
+	type: 'github-pr';
+	owner: string;
+	repo: string;
+	prNumber: number;
+}
+
+type ParsedInput = TrelloInput | GitHubPRInput;
+
+function parseEntrypointArgs(): { agentType: string; input: ParsedInput } {
+	const args = process.argv.slice(2);
+	const agentType = args[0];
+
+	if (!agentType) {
+		console.error('Usage: run-agent-entrypoint.ts <agent-type> <card-id>');
+		console.error('       run-agent-entrypoint.ts <agent-type> --pr <owner> <repo> <pr-number>');
+		process.exit(1);
+	}
+
+	// Check for --pr flag
+	if (args[1] === '--pr') {
+		const owner = args[2];
+		const repo = args[3];
+		const prNumber = Number.parseInt(args[4], 10);
+
+		if (!owner || !repo || Number.isNaN(prNumber)) {
+			console.error('Usage: run-agent-entrypoint.ts <agent-type> --pr <owner> <repo> <pr-number>');
+			process.exit(1);
+		}
+
+		return {
+			agentType,
+			input: { type: 'github-pr', owner, repo, prNumber },
+		};
+	}
+
+	// Legacy: card ID as second argument
+	const cardId = args[1];
+	if (!cardId) {
+		console.error('Usage: run-agent-entrypoint.ts <agent-type> <card-id>');
+		process.exit(1);
+	}
+
+	return {
+		agentType,
+		input: { type: 'trello', cardId },
+	};
+}
 
 async function getCardBoardId(cardId: string): Promise<string> {
 	const apiKey = process.env.TRELLO_API_KEY;
@@ -32,6 +89,46 @@ async function getCardBoardId(cardId: string): Promise<string> {
 	return card.idBoard;
 }
 
+async function prepareGitHubPRInput(
+	prInput: GitHubPRInput,
+	config: CascadeConfig,
+): Promise<{ project: ProjectConfig; agentInput: AgentInput }> {
+	const { owner, repo, prNumber } = prInput;
+	const repoFullName = `${owner}/${repo}`;
+
+	// Find project by repository name
+	const project = findProjectByRepo(config, repoFullName);
+	if (!project) {
+		console.error(`No project configured for repo ${repoFullName}`);
+		console.error('Available projects:');
+		for (const p of config.projects) {
+			console.error(`  - ${p.id}: ${p.repo}`);
+		}
+		process.exit(1);
+	}
+
+	// Fetch PR details to get branch name
+	console.log(`Fetching PR #${prNumber} details from ${repoFullName}...`);
+	const prDetails = await githubClient.getPR(owner, repo, prNumber);
+	console.log(`PR branch: ${prDetails.headRef}`);
+
+	// Build ReviewAgentInput
+	const agentInput: AgentInput = {
+		prNumber,
+		prBranch: prDetails.headRef,
+		repoFullName,
+		// Synthetic trigger data for local testing
+		triggerCommentId: 0,
+		triggerCommentBody: `Local testing of PR #${prNumber}: ${prDetails.title}`,
+		triggerCommentPath: '',
+		triggerCommentUrl: prDetails.htmlUrl,
+		project,
+		config,
+	};
+
+	return { project, agentInput };
+}
+
 function startServices(): void {
 	console.log('Starting PostgreSQL...');
 	try {
@@ -47,18 +144,17 @@ function startServices(): void {
 }
 
 async function main() {
-	const [agentType, cardId] = process.argv.slice(2);
-
-	if (!agentType || !cardId) {
-		console.error('Usage: run-agent-entrypoint.ts <agent-type> <card-id>');
-		process.exit(1);
-	}
+	const { agentType, input } = parseEntrypointArgs();
 
 	console.log('='.repeat(60));
 	console.log('CASCADE Local Agent Runner');
 	console.log('='.repeat(60));
 	console.log(`Agent Type: ${agentType}`);
-	console.log(`Card ID: ${cardId}`);
+	if (input.type === 'github-pr') {
+		console.log(`PR: ${input.owner}/${input.repo}#${input.prNumber}`);
+	} else {
+		console.log(`Card ID: ${input.cardId}`);
+	}
 	console.log('');
 
 	// Start services
@@ -69,19 +165,42 @@ async function main() {
 	const config = loadProjectsConfig(CONFIG_PATH);
 	console.log(`Found ${config.projects.length} project(s)`);
 
-	// Get board ID from card to find the right project
-	console.log('Fetching card to determine project...');
-	const boardId = await getCardBoardId(cardId);
-	console.log(`Card belongs to board: ${boardId}`);
+	let project: ProjectConfig;
+	let agentInput: AgentInput;
 
-	const project = config.projects.find((p) => p.trello.boardId === boardId);
-	if (!project) {
-		console.error(`No project configured for board ${boardId}`);
-		console.error('Available projects:');
-		for (const p of config.projects) {
-			console.error(`  - ${p.id}: board ${p.trello.boardId}`);
+	if (input.type === 'github-pr') {
+		// GitHub PR flow
+		const prepared = await prepareGitHubPRInput(input, config);
+		project = prepared.project;
+		agentInput = prepared.agentInput;
+	} else {
+		// Trello card flow
+		console.log('Fetching card to determine project...');
+		const boardId = await getCardBoardId(input.cardId);
+		console.log(`Card belongs to board: ${boardId}`);
+
+		const foundProject = config.projects.find((p) => p.trello.boardId === boardId);
+		if (!foundProject) {
+			console.error(`No project configured for board ${boardId}`);
+			console.error('Available projects:');
+			for (const p of config.projects) {
+				console.error(`  - ${p.id}: board ${p.trello.boardId}`);
+			}
+			process.exit(1);
 		}
-		process.exit(1);
+		project = foundProject;
+		agentInput = {
+			project,
+			config,
+			cardId: input.cardId,
+		};
+	}
+
+	// Check for interactive mode from environment
+	const isInteractive = process.env.CASCADE_INTERACTIVE === 'true';
+	if (isInteractive) {
+		agentInput.interactive = true;
+		console.log('Interactive mode: enabled');
 	}
 
 	console.log(`Using project: ${project.id} (${project.name})`);
@@ -93,11 +212,7 @@ async function main() {
 
 	// Run the agent
 	const startTime = Date.now();
-	const result = await runAgent(agentType, {
-		project,
-		config,
-		cardId,
-	});
+	const result = await runAgent(agentType, agentInput);
 	const durationMs = Date.now() - startTime;
 
 	console.log('');

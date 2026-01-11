@@ -117,6 +117,34 @@ Use `PostTrelloComment` to post a summary on the Trello card:
 ### Git & Process
 - NEVER push directly to main/master - create PRs
 
+### Test Writing Protocol
+
+BEFORE writing any test file:
+1. Search for existing test utilities/factories/helpers in the codebase
+2. Read 2-3 existing tests in the same directory for patterns
+3. Use existing factory functions and test helpers instead of inline mocks
+4. Follow the project's established patterns for ID types, mocking, and assertions
+
+### Completion Protocol (CRITICAL)
+
+NEVER mark acceptance criteria or checklist items complete until ALL of:
+1. Type checking passes (zero errors)
+2. Tests pass (zero failures)
+3. Lint passes (zero errors)
+
+The verification step is MANDATORY. Do not skip it. Do not mark complete "optimistically."
+Run verification BEFORE marking any acceptance criteria complete.
+
+### Error Handling Strategy
+
+When you encounter multiple errors (type errors, test failures, lint errors):
+1. Read and analyze ALL errors before making any fixes
+2. Fix ALL errors in a SINGLE response with multiple EditFile calls
+3. Run verification ONCE after all fixes
+4. Repeat only if new errors appear
+
+NEVER fix errors one-by-one. This wastes iterations. Batch all fixes together.
+
 ### Data Flow Planning
 Before adding new fields or data requirements, trace the data availability upfront.
 Ask: 'Does the current scope (function/class) have access to this new data?'

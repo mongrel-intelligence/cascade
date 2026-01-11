@@ -33,6 +33,7 @@ import { calculateCost, logLLMCallStart, logLLMMetrics } from '../utils/llmMetri
 import { logger } from '../utils/logging.js';
 import { cleanupTempDir, cloneRepo, createTempDir, runCommand } from '../utils/repo.js';
 import { type PromptContext, getSystemPrompt } from './prompts/index.js';
+import { runAgentLoop } from './utils/agentLoop.js';
 import {
 	type DependencyInstallResult,
 	getLogLevel,
@@ -44,9 +45,7 @@ import { createAgentLogger } from './utils/logging.js';
 import {
 	type TrackingContext,
 	createTrackingContext,
-	incrementGadgetCall,
 	incrementLLMIteration,
-	isSyntheticCall,
 	recordSyntheticInvocationId,
 } from './utils/tracking.js';
 
@@ -428,152 +427,87 @@ function injectSyntheticCalls(
 }
 
 // ============================================================================
-// Agent Execution Loop
+// Agent Execution
 // ============================================================================
 
-/**
- * Truncate content to first 200 + last 200 chars if it exceeds 400 chars.
- */
-function truncateContent(content: string, maxLen = 400): string {
-	if (content.length <= maxLen) return content;
-	const halfLen = maxLen / 2;
-	return `${content.slice(0, halfLen)}...[${content.length - maxLen} truncated]...${content.slice(-halfLen)}`;
+interface PRContext {
+	prNumber: number;
+	prBranch: string;
+	repoFullName: string;
+	headSha: string;
 }
 
-interface AgentRunResult {
-	output: string;
-	iterations: number; // LLM request cycles
-	gadgetCalls: number; // Non-synthetic gadget calls
-	cost: number;
-}
-
-async function runAgentLoop(
-	agent: ReturnType<BuilderType['ask']>,
-	log: ReturnType<typeof createAgentLogger>,
-	trackingContext: TrackingContext,
-): Promise<AgentRunResult> {
-	const outputLines: string[] = [];
-
-	for await (const event of agent.run()) {
-		if (event.type === 'text') {
-			log.debug('[Text]', { content: event.content.slice(0, 100) });
-			outputLines.push(event.content);
-		} else if (event.type === 'gadget_call') {
-			const { gadgetName, invocationId, parameters } = event.call;
-
-			// Check if this is a synthetic call
-			const isSynthetic = isSyntheticCall(invocationId, trackingContext);
-
-			// Only count real gadget calls
-			if (!isSynthetic) {
-				incrementGadgetCall(trackingContext);
-			}
-
-			// Build log context with both metrics
-			const logContext: Record<string, unknown> = {
-				iteration: trackingContext.metrics.llmIterations,
-				gadget: trackingContext.metrics.gadgetCalls,
-				name: gadgetName,
-				invocationId,
-			};
-
-			// Add isSynthetic flag for debugging
-			if (isSynthetic) {
-				logContext.isSynthetic = true;
-			}
-
-			// Add gadget-specific details
-			if (gadgetName === 'Tmux' && parameters) {
-				logContext.params = parameters;
-			} else if (gadgetName === 'ReadFile' && parameters?.filePath) {
-				logContext.path = parameters.filePath;
-			} else if (gadgetName === 'WriteFile' && parameters) {
-				logContext.path = parameters.filePath;
-				if (parameters.content) {
-					logContext.content = truncateContent(String(parameters.content));
-				}
-			} else if (gadgetName === 'TodoUpsert' && parameters) {
-				if (parameters.id) logContext.id = parameters.id;
-				if (parameters.status) logContext.status = parameters.status;
-				if (parameters.content) logContext.todo = truncateContent(String(parameters.content), 80);
-			}
-
-			log.info('[Gadget]', logContext);
-		} else if (event.type === 'gadget_result') {
-			const { gadgetName, executionTimeMs, error, result } = event.result;
-			const level = error ? 'error' : 'info';
-
-			const logContext: Record<string, unknown> = {
-				name: gadgetName,
-				ms: executionTimeMs,
-				error,
-			};
-
-			// Add truncated output for Tmux and ReadFile
-			if ((gadgetName === 'Tmux' || gadgetName === 'ReadFile') && result) {
-				logContext.output = truncateContent(result);
-			}
-
-			log[level]('[Gadget result]', logContext);
-		} else if (event.type === 'stream_complete') {
-			log.info('Stream complete', {
-				iterations: trackingContext.metrics.llmIterations,
-				gadgetCalls: trackingContext.metrics.gadgetCalls,
-			});
-		}
-	}
-
-	const cost = agent.getTree()?.getTotalCost() ?? 0;
-
+function extractPRContext(input: AgentInput): PRContext | undefined {
+	if (input.triggerType !== 'check-failure') return undefined;
 	return {
-		output: outputLines.join('\n'),
-		iterations: trackingContext.metrics.llmIterations,
-		gadgetCalls: trackingContext.metrics.gadgetCalls,
-		cost,
+		prNumber: input.prNumber as number,
+		prBranch: input.prBranch as string,
+		repoFullName: input.repoFullName as string,
+		headSha: input.headSha as string,
 	};
 }
 
-// ============================================================================
-// Agent Execution
-// ============================================================================
+function extractDebugContext(agentType: string, input: AgentInput) {
+	if (agentType !== 'debug' || !input.logDir) return undefined;
+	return {
+		logDir: input.logDir,
+		originalCardId: input.originalCardId as string,
+		originalCardName: input.originalCardName as string,
+		originalCardUrl: input.originalCardUrl as string,
+		detectedAgentType: input.detectedAgentType as string,
+	};
+}
+
+function getLoggerIdentifier(
+	agentType: string,
+	cardId: string | undefined,
+	prContext: PRContext | undefined,
+	debugCardId: string | undefined,
+): string {
+	if (prContext) return `${agentType}-pr${prContext.prNumber}`;
+	return `${agentType}-${cardId || debugCardId}`;
+}
+
+async function setupWorkingDirectory(
+	input: AgentInput,
+	project: ProjectConfig,
+	log: ReturnType<typeof createAgentLogger>,
+	prBranch?: string,
+): Promise<{ repoDir: string; installResult: DependencyInstallResult | null }> {
+	if (input.logDir && typeof input.logDir === 'string') {
+		log.info('Using log directory (no repo setup)', { logDir: input.logDir });
+		return { repoDir: input.logDir, installResult: null };
+	}
+
+	const setup = await setupRepository(project, log, prBranch);
+	return { repoDir: setup.repoDir, installResult: setup.installResult };
+}
+
+function extractPRUrl(output: string): string | undefined {
+	const match = output.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/);
+	return match ? match[0] : undefined;
+}
 
 export async function executeAgent(
 	agentType: string,
 	input: AgentInput & { project: ProjectConfig; config: CascadeConfig },
 ): Promise<AgentResult> {
-	const { project, config, cardId, triggerType } = input;
-
-	// Extract PR context if this is check-failure flow
-	const prContext =
-		triggerType === 'check-failure'
-			? {
-					prNumber: input.prNumber as number,
-					prBranch: input.prBranch as string,
-					repoFullName: input.repoFullName as string,
-					headSha: input.headSha as string,
-				}
-			: undefined;
-
-	// cardId is optional for check-failure and debug flows
+	const { project, config, cardId, interactive } = input;
+	const prContext = extractPRContext(input);
 	const isDebugAgent = input.logDir && typeof input.logDir === 'string';
+
 	if (!cardId && !prContext && !isDebugAgent) {
 		return { success: false, output: '', error: 'No card ID or PR context provided' };
 	}
 
 	let repoDir: string | null = null;
-
-	// Create file logger - use PR number for check-failure, originalCardId for debug, cardId for features
 	const debugCardId = isDebugAgent ? (input.originalCardId as string) : undefined;
-	const identifier = prContext
-		? `${agentType}-pr${prContext.prNumber}`
-		: `${agentType}-${cardId || debugCardId}`;
+	const identifier = getLoggerIdentifier(agentType, cardId, prContext, debugCardId);
 	const fileLogger = createFileLogger(`cascade-${identifier}`);
 	const log = createAgentLogger(fileLogger);
 
-	// Register cleanup callback for watchdog timeout (upload logs before force exit)
 	setWatchdogCleanup(async () => {
 		fileLogger.close();
-		// Only upload to Trello if we have a cardId
 		if (cardId) {
 			const logBuffer = await fileLogger.getZippedBuffer();
 			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -584,19 +518,13 @@ export async function executeAgent(
 	});
 
 	try {
-		let installResult: DependencyInstallResult | null = null;
-
-		// Check if this is debug agent with pre-extracted logs
-		if (input.logDir && typeof input.logDir === 'string') {
-			// Debug agent: use log directory instead of repo
-			repoDir = input.logDir;
-			log.info('Using log directory (no repo setup)', { logDir: input.logDir, agentType });
-		} else {
-			// Normal agents: setup repository (checkout PR branch if provided)
-			const setup = await setupRepository(project, log, prContext?.prBranch);
-			repoDir = setup.repoDir;
-			installResult = setup.installResult;
-		}
+		const { repoDir: workDir, installResult } = await setupWorkingDirectory(
+			input,
+			project,
+			log,
+			prContext?.prBranch,
+		);
+		repoDir = workDir;
 
 		log.info('Running agent', {
 			agentType,
@@ -606,19 +534,7 @@ export async function executeAgent(
 			repoDir,
 		});
 
-		// Extract debug context if this is debug agent
-		const debugContext =
-			agentType === 'debug' && input.logDir
-				? {
-						logDir: input.logDir,
-						originalCardId: input.originalCardId as string,
-						originalCardName: input.originalCardName as string,
-						originalCardUrl: input.originalCardUrl as string,
-						detectedAgentType: input.detectedAgentType as string,
-					}
-				: undefined;
-
-		// Build agent context (with PR context if check-failure flow, or debug context if debug agent)
+		const debugContext = extractDebugContext(agentType, input);
 		const ctx = await buildAgentContext(
 			agentType,
 			cardId,
@@ -626,12 +542,11 @@ export async function executeAgent(
 			project,
 			config,
 			log,
-			triggerType,
+			input.triggerType,
 			prContext,
 			debugContext,
 		);
 
-		// Change to repo directory (llmist gadgets use process.cwd() for path validation)
 		const originalCwd = process.cwd();
 		process.chdir(repoDir);
 
@@ -642,17 +557,11 @@ export async function executeAgent(
 		});
 
 		try {
-			// Configure llmist to write to separate log file for better debugging
 			process.env.LLMIST_LOG_FILE = fileLogger.llmistLogPath;
-
-			// Create llmist client and logger
 			const client = new LLMist();
 			const llmistLogger = createLogger({ minLevel: getLogLevel() });
-
-			// Create tracking context for iterations and gadget calls
 			const trackingContext = createTrackingContext();
 
-			// Build the agent with gadgets and synthetic calls
 			let builder = createAgentBuilderWithGadgets(
 				client,
 				ctx,
@@ -670,9 +579,8 @@ export async function executeAgent(
 				trackingContext,
 			);
 
-			// Run the agent
 			const agent = builder.ask(ctx.prompt);
-			const result = await runAgentLoop(agent, log, trackingContext);
+			const result = await runAgentLoop(agent, log, trackingContext, interactive === true);
 
 			log.info('Agent completed', {
 				cardId,
@@ -681,26 +589,14 @@ export async function executeAgent(
 				cost: result.cost,
 			});
 
-			// Extract PR URL from output (gh pr create outputs the URL)
-			const prUrlMatch = result.output.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/);
-			const prUrl = prUrlMatch ? prUrlMatch[0] : undefined;
-			if (prUrl) {
-				log.info('PR URL extracted', { prUrl });
-			}
+			const prUrl = extractPRUrl(result.output);
+			if (prUrl) log.info('PR URL extracted', { prUrl });
 
-			// Get zipped log buffer before returning
 			fileLogger.close();
 			const logBuffer = await fileLogger.getZippedBuffer();
 
-			return {
-				success: true,
-				output: result.output,
-				prUrl,
-				logBuffer,
-				cost: result.cost,
-			};
+			return { success: true, output: result.output, prUrl, logBuffer, cost: result.cost };
 		} finally {
-			// Restore original working directory
 			process.chdir(originalCwd);
 		}
 	} catch (err) {

@@ -40,7 +40,7 @@ export class PRReviewCommentTrigger implements TriggerHandler {
 		const cardId = extractTrelloCardId(prDetails.body);
 
 		return {
-			agentType: 'review',
+			agentType: 'respond-to-review',
 			agentInput: {
 				prNumber,
 				prBranch: prPayload.pull_request.head.ref,

@@ -63,6 +63,34 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ============================================================================
+// Session Completion Notices
+// ============================================================================
+
+/**
+ * Completed session notice - stored for injection into agent conversation.
+ */
+interface CompletedSessionNotice {
+	exitCode: number;
+	tailOutput: string; // Last 100 lines
+}
+
+/**
+ * Pending notices for sessions that completed.
+ * Consumed by agent loop to inject as user messages.
+ */
+const pendingNotices = new Map<string, CompletedSessionNotice>();
+
+/**
+ * Get and clear pending session completion notices.
+ * Called by agent loop to inject into conversation via injectUserMessage().
+ */
+export function consumePendingSessionNotices(): Map<string, CompletedSessionNotice> {
+	const notices = new Map(pendingNotices);
+	pendingNotices.clear();
+	return notices;
+}
+
 /**
  * TmuxControlClient - manages a persistent control mode connection to tmux.
  * Uses event-driven protocol for real-time output and reliable exit detection.
@@ -203,6 +231,45 @@ class TmuxControlClient {
 		this.connected = true;
 	}
 
+	private static readonly IGNORED_NOTIFICATION_PREFIXES = [
+		'%session',
+		'%window',
+		'%pane',
+		'%client',
+		'%exit',
+		'%unlinked',
+		'%subscription',
+		'%layout',
+		'%paste',
+	];
+
+	private isIgnoredNotification(line: string): boolean {
+		return TmuxControlClient.IGNORED_NOTIFICATION_PREFIXES.some((prefix) =>
+			line.startsWith(prefix),
+		);
+	}
+
+	private handleOutputLine(line: string): void {
+		const match = line.match(/^%output (%\d+) (.*)$/);
+		if (!match) return;
+
+		const [, paneId, escaped] = match;
+		const unescaped = unescapeOutput(escaped);
+
+		if (!this.paneOutputs.has(paneId)) {
+			this.paneOutputs.set(paneId, []);
+		}
+
+		const buffer = this.paneOutputs.get(paneId);
+		if (buffer) {
+			buffer.push(unescaped);
+			const totalSize = buffer.reduce((sum, s) => sum + s.length, 0);
+			if (totalSize > MAX_OUTPUT_BUFFER) {
+				buffer.shift();
+			}
+		}
+	}
+
 	/**
 	 * Parse a line from tmux control mode protocol
 	 */
@@ -216,43 +283,12 @@ class TmuxControlClient {
 			}
 			this.currentBlock = null;
 		} else if (line.startsWith('%output ')) {
-			// Parse: %output %paneId escaped_content
-			const match = line.match(/^%output (%\d+) (.*)$/);
-			if (match) {
-				const [, paneId, escaped] = match;
-				const unescaped = unescapeOutput(escaped);
-				if (!this.paneOutputs.has(paneId)) {
-					this.paneOutputs.set(paneId, []);
-				}
-				const buffer = this.paneOutputs.get(paneId);
-				if (buffer) {
-					buffer.push(unescaped);
-					// Truncate if too large
-					const totalSize = buffer.reduce((sum, s) => sum + s.length, 0);
-					if (totalSize > MAX_OUTPUT_BUFFER) {
-						buffer.shift(); // Remove oldest
-					}
-				}
-			}
+			this.handleOutputLine(line);
 		} else if (line.startsWith('%message ')) {
-			// display-message output
-			this.lastMessage = line.slice(9); // Remove "%message "
-		} else if (
-			line.startsWith('%session') ||
-			line.startsWith('%window') ||
-			line.startsWith('%pane') ||
-			line.startsWith('%client') ||
-			line.startsWith('%exit') ||
-			line.startsWith('%unlinked') ||
-			line.startsWith('%subscription') ||
-			line.startsWith('%layout') ||
-			line.startsWith('%paste')
-		) {
-			// Ignore tmux notification events - these must NOT be added to currentBlock
-			// Note: Pane IDs like "%0" or "%1" are valid command output and must pass through
+			this.lastMessage = line.slice(9);
+		} else if (this.isIgnoredNotification(line)) {
 			return;
 		} else if (this.currentBlock) {
-			// Add line to command response block (includes pane IDs like "%0", "%1")
 			this.currentBlock.lines.push(line);
 		}
 	}
@@ -739,6 +775,27 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 		return this.waitForOutput(client, params.session, paneId, params.wait);
 	}
 
+	private cleanupOutput(output: string, removeDeadPane = false): string {
+		let cleaned = output
+			.replace(new RegExp(`${EXIT_MARKER_PREFIX}\\d+${EXIT_MARKER_SUFFIX}\\s*`), '')
+			.replace(/\n{3,}/g, '\n\n')
+			.trim();
+
+		if (removeDeadPane) {
+			cleaned = cleaned.replace(/\nPane is dead \([^)]+\)\s*$/, '');
+		}
+
+		return cleaned;
+	}
+
+	private async getSessionOutput(client: TmuxControlClient, session: string): Promise<string> {
+		let output = client.getOutput(session);
+		if (!output.trim()) {
+			output = await client.capturePaneOutput(session);
+		}
+		return output;
+	}
+
 	private async waitForOutput(
 		client: TmuxControlClient,
 		session: string,
@@ -753,59 +810,42 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 			elapsed += POLL_INTERVAL_MS;
 
 			// Primary method: Check for exit marker in streamed output
-			// This is the most reliable as it doesn't depend on tmux's pane_dead
 			const markerResult = client.checkExitMarker(session);
 			if (markerResult.exited) {
-				let output = client.getOutput(session);
-				if (!output.trim()) {
-					output = await client.capturePaneOutput(session);
-				}
+				const output = this.cleanupOutput(await this.getSessionOutput(client, session), true);
 
-				// Clean up output - remove exit marker and formatting
-				output = output
-					.replace(new RegExp(`${EXIT_MARKER_PREFIX}\\d+${EXIT_MARKER_SUFFIX}\\s*`), '')
-					.replace(/\nPane is dead \([^)]+\)\s*$/, '')
-					.replace(/\n{3,}/g, '\n\n')
-					.trim();
+				// Store notice for injection into agent conversation
+				const lines = output.split('\n');
+				const tailOutput = lines.slice(-100).join('\n');
+				pendingNotices.set(session, {
+					exitCode: markerResult.exitCode,
+					tailOutput,
+				});
 
-				// Kill the window
 				await client.killWindow(session);
-
 				return `session=${session} status=exited exit_code=${markerResult.exitCode}\n\n${output || '(no output)'}`;
 			}
 
 			// Fallback: Check if pane is dead via tmux
 			const { dead, exitCode } = await client.isPaneDead(paneId);
 			if (dead) {
-				let output = client.getOutput(session);
-				if (!output.trim()) {
-					output = await client.capturePaneOutput(session);
-				}
+				const output = this.cleanupOutput(await this.getSessionOutput(client, session), true);
 
-				// Clean up output
-				output = output
-					.replace(new RegExp(`${EXIT_MARKER_PREFIX}\\d+${EXIT_MARKER_SUFFIX}\\s*`), '')
-					.replace(/\nPane is dead \([^)]+\)\s*$/, '')
-					.replace(/\n{3,}/g, '\n\n')
-					.trim();
+				// Store notice for injection into agent conversation
+				const lines = output.split('\n');
+				const tailOutput = lines.slice(-100).join('\n');
+				pendingNotices.set(session, {
+					exitCode,
+					tailOutput,
+				});
 
 				await client.killWindow(session);
-
 				return `session=${session} status=exited exit_code=${exitCode}\n\n${output || '(no output)'}`;
 			}
 		}
 
 		// Still running - get partial output
-		let output = client.getOutput(session);
-		if (!output.trim()) {
-			output = await client.capturePaneOutput(session);
-		}
-
-		output = output
-			.replace(new RegExp(`${EXIT_MARKER_PREFIX}\\d+${EXIT_MARKER_SUFFIX}\\s*`), '')
-			.replace(/\n{3,}/g, '\n\n')
-			.trim();
-
+		const output = this.cleanupOutput(await this.getSessionOutput(client, session));
 		return `session=${session} status=running\n\n${output || '(no output yet)'}\n\n(Process still running in session '${session}'. Use capture to check progress, kill when done.)`;
 	}
 

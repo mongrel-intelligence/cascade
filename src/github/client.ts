@@ -61,6 +61,15 @@ export interface CheckSuiteStatus {
 	allPassing: boolean;
 }
 
+export interface PRDiffFile {
+	filename: string;
+	status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
+	additions: number;
+	deletions: number;
+	changes: number;
+	patch?: string;
+}
+
 export const githubClient = {
 	async getPR(owner: string, repo: string, prNumber: number): Promise<PRDetails> {
 		logger.debug('Fetching PR', { owner, repo, prNumber });
@@ -194,6 +203,51 @@ export const githubClient = {
 			totalCount: data.total_count,
 			checkRuns,
 			allPassing,
+		};
+	},
+
+	async getPRDiff(owner: string, repo: string, prNumber: number): Promise<PRDiffFile[]> {
+		logger.debug('Fetching PR diff', { owner, repo, prNumber });
+		const { data } = await getClient().pulls.listFiles({
+			owner,
+			repo,
+			pull_number: prNumber,
+			per_page: 100,
+		});
+		return data.map((f) => ({
+			filename: f.filename,
+			status: f.status as PRDiffFile['status'],
+			additions: f.additions,
+			deletions: f.deletions,
+			changes: f.changes,
+			patch: f.patch,
+		}));
+	},
+
+	async createPRReview(
+		owner: string,
+		repo: string,
+		prNumber: number,
+		event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT',
+		body: string,
+		comments?: Array<{ path: string; line?: number; body: string }>,
+	): Promise<{ id: number; htmlUrl: string }> {
+		logger.debug('Creating PR review', { owner, repo, prNumber, event });
+		const { data } = await getClient().pulls.createReview({
+			owner,
+			repo,
+			pull_number: prNumber,
+			event,
+			body,
+			comments: comments?.map((c) => ({
+				path: c.path,
+				line: c.line,
+				body: c.body,
+			})),
+		});
+		return {
+			id: data.id,
+			htmlUrl: data.html_url,
 		};
 	},
 };

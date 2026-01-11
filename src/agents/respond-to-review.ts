@@ -1,13 +1,22 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { writeFile } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
 import { getCompactionConfig } from '../config/compactionConfig.js';
 import { getIterationTrailingMessage } from '../config/hintConfig.js';
 import { getRateLimitForModel } from '../config/rateLimits.js';
 import { getRetryConfig } from '../config/retryConfig.js';
+import { EditFile } from '../gadgets/EditFile.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
-import { CreatePRReview, GetPRDetails, GetPRDiff } from '../gadgets/github/index.js';
+import {
+	GetPRComments,
+	GetPRDetails,
+	GetPRDiff,
+	ReplyToReviewComment,
+} from '../gadgets/github/index.js';
 import { Tmux } from '../gadgets/tmux.js';
 import { githubClient } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
@@ -24,7 +33,12 @@ import {
 } from '../utils/repo.js';
 import { getSystemPrompt } from './prompts/index.js';
 import { runAgentLoop } from './utils/agentLoop.js';
-import { getLogLevel, readContextFiles } from './utils/index.js';
+import {
+	type DependencyInstallResult,
+	getLogLevel,
+	installDependencies,
+	readContextFiles,
+} from './utils/index.js';
 import { createAgentLogger } from './utils/logging.js';
 import {
 	type TrackingContext,
@@ -33,12 +47,66 @@ import {
 	recordSyntheticInvocationId,
 } from './utils/tracking.js';
 
-interface ReviewAgentInput extends AgentInput {
+interface RespondToReviewAgentInput extends AgentInput {
 	prNumber: number;
 	prBranch: string;
 	repoFullName: string;
+	triggerCommentId: number;
+	triggerCommentBody: string;
+	triggerCommentPath: string;
+	triggerCommentUrl: string;
 	project: ProjectConfig;
 	config: CascadeConfig;
+}
+
+// ============================================================================
+// Repository Setup
+// ============================================================================
+
+interface RepoSetupResult {
+	repoDir: string;
+	installResult: DependencyInstallResult | null;
+}
+
+async function setupRepository(
+	project: ProjectConfig,
+	prBranch: string,
+	log: ReturnType<typeof createAgentLogger>,
+): Promise<RepoSetupResult> {
+	// Clone repo to temp directory
+	const repoDir = createTempDir(project.id);
+	cloneRepo(project, repoDir);
+
+	// Checkout the PR branch
+	log.info('Checking out PR branch', { prBranch });
+	await execCommand('git', ['checkout', prBranch], repoDir);
+
+	// Install dependencies
+	log.info('Checking for dependencies to install', { repoDir });
+	const installResult = await installDependencies(repoDir);
+	if (installResult) {
+		log.info('Dependencies installed', {
+			packageManager: installResult.packageManager,
+			success: installResult.success,
+		});
+	}
+
+	// Run project-specific setup script if it exists
+	const setupScriptPath = join(repoDir, '.cascade', 'setup.sh');
+	if (existsSync(setupScriptPath)) {
+		log.info('Running project setup script', { path: '.cascade/setup.sh' });
+		const setupResult = await execCommand('bash', [setupScriptPath], repoDir);
+		log.info('Setup script completed', {
+			exitCode: setupResult.exitCode,
+			stdout: setupResult.stdout.slice(-500),
+			stderr: setupResult.stderr.slice(-500),
+		});
+		if (setupResult.exitCode !== 0) {
+			log.warn('Setup script exited with non-zero code', { exitCode: setupResult.exitCode });
+		}
+	}
+
+	return { repoDir, installResult };
 }
 
 // ============================================================================
@@ -46,6 +114,7 @@ interface ReviewAgentInput extends AgentInput {
 // ============================================================================
 
 type PRDetails = Awaited<ReturnType<typeof githubClient.getPR>>;
+type PRComments = Awaited<ReturnType<typeof githubClient.getPRReviewComments>>;
 type PRDiff = Awaited<ReturnType<typeof githubClient.getPRDiff>>;
 
 function formatPRDetails(prDetails: PRDetails): string {
@@ -58,6 +127,28 @@ function formatPRDetails(prDetails: PRDetails): string {
 		'Description:',
 		prDetails.body || '(no description)',
 	].join('\n');
+}
+
+function formatPRComments(prComments: PRComments): string {
+	if (prComments.length === 0) {
+		return 'No review comments found.';
+	}
+
+	return prComments
+		.map((c) =>
+			[
+				`Comment #${c.id} by @${c.user.login}`,
+				`File: ${c.path}${c.line ? `:${c.line}` : ''}`,
+				`URL: ${c.htmlUrl}`,
+				c.inReplyToId ? `In reply to: #${c.inReplyToId}` : null,
+				'',
+				c.body,
+				'---',
+			]
+				.filter(Boolean)
+				.join('\n'),
+		)
+		.join('\n\n');
 }
 
 function formatPRDiff(prDiff: PRDiff): string {
@@ -88,6 +179,7 @@ interface ReviewContextData {
 	maxIterations: number;
 	contextFiles: Awaited<ReturnType<typeof readContextFiles>>;
 	prDetailsFormatted: string;
+	commentsFormatted: string;
 	diffFormatted: string;
 	prompt: string;
 }
@@ -96,13 +188,15 @@ async function buildReviewContext(
 	owner: string,
 	repo: string,
 	prNumber: number,
+	prBranch: string,
 	repoDir: string,
 	project: ProjectConfig,
 	config: CascadeConfig,
 	log: ReturnType<typeof createAgentLogger>,
 ): Promise<ReviewContextData> {
 	// Get system prompt and model
-	const systemPrompt = project.prompts?.review || getSystemPrompt('review', {});
+	const systemPrompt =
+		project.prompts?.['respond-to-review'] || getSystemPrompt('respond-to-review', {});
 	const model =
 		project.agentModels?.review ||
 		project.model ||
@@ -110,20 +204,22 @@ async function buildReviewContext(
 		config.defaults.model;
 	const maxIterations = config.defaults.agentIterations?.review || config.defaults.maxIterations;
 
-	// Read context files from repo
+	// Read context files
 	const contextFiles = await readContextFiles(repoDir);
 
-	// Fetch PR details and diff
-	log.info('Fetching PR details and diff', { owner, repo, prNumber });
+	// Fetch PR details, comments, and diff
+	log.info('Fetching PR details, comments, and diff', { owner, repo, prNumber });
 	const prDetails = await githubClient.getPR(owner, repo, prNumber);
+	const prComments = await githubClient.getPRReviewComments(owner, repo, prNumber);
 	const prDiff = await githubClient.getPRDiff(owner, repo, prNumber);
 
 	// Format PR data
 	const prDetailsFormatted = formatPRDetails(prDetails);
+	const commentsFormatted = formatPRComments(prComments);
 	const diffFormatted = formatPRDiff(prDiff);
 
 	// Build prompt
-	const prompt = buildReviewPrompt(prNumber, owner, repo);
+	const prompt = buildReviewPrompt(prBranch, prNumber, owner, repo);
 
 	return {
 		systemPrompt,
@@ -131,15 +227,21 @@ async function buildReviewContext(
 		maxIterations,
 		contextFiles,
 		prDetailsFormatted,
+		commentsFormatted,
 		diffFormatted,
 		prompt,
 	};
 }
 
-function buildReviewPrompt(prNumber: number, owner: string, repo: string): string {
-	return `Review PR #${prNumber} in ${owner}/${repo}.
+function buildReviewPrompt(
+	prBranch: string,
+	prNumber: number,
+	owner: string,
+	repo: string,
+): string {
+	return `You are on the branch \`${prBranch}\` for PR #${prNumber}.
 
-Examine the code changes carefully and submit your review using CreatePRReview.
+Address the review comments and push your changes.
 
 ## GitHub Context
 
@@ -147,7 +249,7 @@ Owner: ${owner}
 Repo: ${repo}
 PR Number: ${prNumber}
 
-Use these values when calling GitHub gadgets (GetPRDetails, GetPRDiff, CreatePRReview).`;
+Use these values when calling GitHub gadgets (GetPRComments, ReplyToReviewComment).`;
 }
 
 // ============================================================================
@@ -156,7 +258,7 @@ Use these values when calling GitHub gadgets (GetPRDetails, GetPRDiff, CreatePRR
 
 type BuilderType = ReturnType<typeof AgentBuilder.prototype.withGadgets>;
 
-function createReviewAgentBuilder(
+function createRespondToReviewAgentBuilder(
 	client: LLMist,
 	ctx: ReviewContextData,
 	llmistLogger: ReturnType<typeof createLogger>,
@@ -174,27 +276,35 @@ function createReviewAgentBuilder(
 		.withLogger(llmistLogger)
 		.withRateLimits(getRateLimitForModel(ctx.model))
 		.withRetry(getRetryConfig(llmistLogger))
-		.withCompaction(getCompactionConfig('review'))
+		.withCompaction(getCompactionConfig('respond-to-review'))
 		.withTrailingMessage(getIterationTrailingMessage())
 		.withHooks({
 			observers: {
+				// Log the exact request being sent to the LLM
 				onLLMCallReady: async (context) => {
 					if (context.subagentContext) return;
 
+					// Track timing
 					llmCallStartTimes.set(context.iteration, Date.now());
+
+					// Log with estimated input tokens
 					logLLMCallStart(logger, context.iteration, context.options.messages);
 
+					// Existing file logging
 					incrementLLMIteration(trackingContext);
 					const callNumber = trackingContext.metrics.llmIterations;
 					llmCallLogger.logRequest(callNumber, context.options.messages);
 				},
+				// Log the raw response from the LLM
 				onLLMCallComplete: async (context) => {
 					if (context.subagentContext) return;
 
+					// Calculate duration
 					const startTime = llmCallStartTimes.get(context.iteration) ?? Date.now();
 					const durationMs = Date.now() - startTime;
 					llmCallStartTimes.delete(context.iteration);
 
+					// Log metrics
 					if (context.usage) {
 						const cost = calculateCost(ctx.model, context.usage);
 						logLLMMetrics(logger, {
@@ -208,6 +318,7 @@ function createReviewAgentBuilder(
 						});
 					}
 
+					// Existing file logging
 					const callNumber = trackingContext.metrics.llmIterations;
 					llmCallLogger.logResponse(callNumber, context.rawResponse);
 				},
@@ -217,13 +328,16 @@ function createReviewAgentBuilder(
 			// Filesystem gadgets
 			new ListDirectory(),
 			new ReadFile(),
+			new EditFile(),
+			writeFile,
 			// Shell commands via tmux
 			new Tmux(),
 			new Sleep(),
-			// GitHub gadgets (read + create review)
+			// GitHub gadgets
 			new GetPRDetails(),
+			new GetPRComments(),
 			new GetPRDiff(),
-			new CreatePRReview(),
+			new ReplyToReviewComment(),
 		);
 }
 
@@ -233,9 +347,23 @@ function injectReviewSyntheticCalls(
 	repo: string,
 	prNumber: number,
 	ctx: ReviewContextData,
+	installResult: DependencyInstallResult | null,
 	trackingContext: TrackingContext,
 ): BuilderType {
 	let builder = initialBuilder;
+
+	// Inject directory listing as synthetic ListDirectory call (first for codebase orientation)
+	// Call the actual gadget to generate output (respects .gitignore by default)
+	const listDirGadget = new ListDirectory();
+	const listDirParams = { directoryPath: '.', maxDepth: 3, includeGitIgnored: false };
+	const listDirResult = listDirGadget.execute(listDirParams);
+	recordSyntheticInvocationId(trackingContext, 'gc_dir');
+	builder = builder.withSyntheticGadgetCall(
+		'ListDirectory',
+		listDirParams,
+		listDirResult,
+		'gc_dir',
+	);
 
 	// Inject PR details
 	recordSyntheticInvocationId(trackingContext, 'gc_pr_details');
@@ -244,6 +372,15 @@ function injectReviewSyntheticCalls(
 		{ owner, repo, prNumber },
 		ctx.prDetailsFormatted,
 		'gc_pr_details',
+	);
+
+	// Inject PR comments
+	recordSyntheticInvocationId(trackingContext, 'gc_pr_comments');
+	builder = builder.withSyntheticGadgetCall(
+		'GetPRComments',
+		{ owner, repo, prNumber },
+		ctx.commentsFormatted,
+		'gc_pr_comments',
 	);
 
 	// Inject PR diff
@@ -255,7 +392,7 @@ function injectReviewSyntheticCalls(
 		'gc_pr_diff',
 	);
 
-	// Inject context files (CLAUDE.md, README.md, etc.)
+	// Inject context files
 	for (let i = 0; i < ctx.contextFiles.length; i++) {
 		const file = ctx.contextFiles[i];
 		const invocationId = `gc_init_${i + 1}`;
@@ -268,6 +405,11 @@ function injectReviewSyntheticCalls(
 		);
 	}
 
+	// Inject dependency install result
+	if (installResult) {
+		builder = injectDependencyResult(builder, installResult, trackingContext);
+	}
+
 	return builder;
 }
 
@@ -275,7 +417,9 @@ function injectReviewSyntheticCalls(
 // Review Agent Execution
 // ============================================================================
 
-export async function executeReviewAgent(input: ReviewAgentInput): Promise<AgentResult> {
+export async function executeRespondToReviewAgent(
+	input: RespondToReviewAgentInput,
+): Promise<AgentResult> {
 	const { project, config, prNumber, prBranch, repoFullName, interactive } = input;
 
 	// Parse owner/repo from repoFullName
@@ -293,28 +437,34 @@ export async function executeReviewAgent(input: ReviewAgentInput): Promise<Agent
 	// Register cleanup callback for watchdog timeout
 	setWatchdogCleanup(async () => {
 		fileLogger.close();
+		// For review agent, we post a comment to the PR instead of attaching logs to Trello
 		await githubClient.createPRComment(
 			owner,
 			repo,
 			prNumber,
-			'⚠️ Review agent timed out while reviewing the PR.',
+			'⚠️ Review agent timed out while addressing feedback.',
 		);
 		logger.info('Posted timeout notice to PR', { prNumber });
 	});
 
 	try {
-		// Clone the target repository
-		repoDir = createTempDir(project.id);
-		cloneRepo(project, repoDir);
-
-		// Checkout the PR branch
-		log.info('Checking out PR branch', { prBranch });
-		await execCommand('git', ['checkout', prBranch], repoDir);
+		// Setup repository
+		const setup = await setupRepository(project, prBranch, log);
+		repoDir = setup.repoDir;
 
 		log.info('Running review agent', { prNumber, repoFullName, repoDir });
 
 		// Build context
-		const ctx = await buildReviewContext(owner, repo, prNumber, repoDir, project, config, log);
+		const ctx = await buildReviewContext(
+			owner,
+			repo,
+			prNumber,
+			prBranch,
+			repoDir,
+			project,
+			config,
+			log,
+		);
 
 		// Change to repo directory
 		const originalCwd = process.cwd();
@@ -332,18 +482,26 @@ export async function executeReviewAgent(input: ReviewAgentInput): Promise<Agent
 			const client = new LLMist();
 			const llmistLogger = createLogger({ minLevel: getLogLevel() });
 
-			// Create tracking context
+			// Create tracking context for iterations and gadget calls
 			const trackingContext = createTrackingContext();
 
 			// Build agent with gadgets and synthetic calls
-			let builder = createReviewAgentBuilder(
+			let builder = createRespondToReviewAgentBuilder(
 				client,
 				ctx,
 				llmistLogger,
 				fileLogger.llmCallLogger,
 				trackingContext,
 			);
-			builder = injectReviewSyntheticCalls(builder, owner, repo, prNumber, ctx, trackingContext);
+			builder = injectReviewSyntheticCalls(
+				builder,
+				owner,
+				repo,
+				prNumber,
+				ctx,
+				setup.installResult,
+				trackingContext,
+			);
 
 			// Run the agent
 			const agent = builder.ask(ctx.prompt);
@@ -399,4 +557,30 @@ export async function executeReviewAgent(input: ReviewAgentInput): Promise<Agent
 		cleanupLogFile(fileLogger.llmistLogPath);
 		cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
 	}
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function injectDependencyResult(
+	builder: ReturnType<typeof AgentBuilder.prototype.withGadgets>,
+	installResult: DependencyInstallResult,
+	trackingContext: TrackingContext,
+): ReturnType<typeof AgentBuilder.prototype.withGadgets> {
+	const installOutput = installResult.success
+		? `✓ Dependencies installed with ${installResult.packageManager}\n\n${installResult.output}`
+		: `✗ Dependency install failed (${installResult.packageManager})\n\nError: ${installResult.error}`;
+
+	recordSyntheticInvocationId(trackingContext, 'gc_deps');
+	return builder.withSyntheticGadgetCall(
+		'Tmux',
+		{
+			action: 'start',
+			session: 'deps-install',
+			command: `${installResult.packageManager} install`,
+		},
+		installOutput,
+		'gc_deps',
+	);
 }

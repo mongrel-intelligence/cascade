@@ -38,6 +38,63 @@ try {
 const TRELLO_WORKER_URL =
 	process.env.TRELLO_WORKER_URL || 'https://cascade-webhooks.fly.dev/trello/webhook';
 
+function isCardMovedToTriggerList(
+	actionType: string,
+	data: Record<string, unknown> | undefined,
+	project: ProjectConfig,
+): boolean {
+	if (actionType !== 'updateCard' || !data?.listAfter) return false;
+
+	const listAfter = data.listAfter as Record<string, unknown>;
+	const listId = listAfter.id as string;
+	const triggerLists = [
+		project.trello.lists.briefing,
+		project.trello.lists.planning,
+		project.trello.lists.todo,
+	];
+
+	if (triggerLists.includes(listId)) {
+		console.log(`[Router] Card moved to trigger list: ${listId}`);
+		return true;
+	}
+	return false;
+}
+
+function isReadyToProcessLabelAdded(
+	actionType: string,
+	data: Record<string, unknown> | undefined,
+	project: ProjectConfig,
+): boolean {
+	if (actionType !== 'addLabelToCard' || !data?.label) return false;
+
+	const label = data.label as Record<string, unknown>;
+	const labelId = label.id as string;
+
+	if (labelId === project.trello.labels.readyToProcess) {
+		console.log('[Router] Ready-to-process label added');
+		return true;
+	}
+	return false;
+}
+
+function isAgentLogAttachmentUploaded(
+	actionType: string,
+	data: Record<string, unknown> | undefined,
+	project: ProjectConfig,
+): boolean {
+	if (actionType !== 'addAttachmentToCard' || !data?.attachment) return false;
+	if (!project.trello.lists.debug) return false;
+
+	const attachment = data.attachment as Record<string, unknown>;
+	const name = attachment.name as string | undefined;
+
+	if (name && isAgentLogFilename(name) && !name.startsWith('debug-')) {
+		console.log(`[Router] Agent log attachment uploaded: ${name}`);
+		return true;
+	}
+	return false;
+}
+
 function shouldForwardTrelloToWorker(payload: unknown): boolean {
 	if (!payload || typeof payload !== 'object') return false;
 
@@ -51,49 +108,14 @@ function shouldForwardTrelloToWorker(payload: unknown): boolean {
 	const actionType = action.type as string;
 	const data = action.data as Record<string, unknown> | undefined;
 
-	// Find matching project
 	const project = config.projects.find((proj) => proj.trello.boardId === boardId);
 	if (!project) return false;
 
-	// Card moved to trigger list?
-	if (actionType === 'updateCard' && data?.listAfter) {
-		const listAfter = data.listAfter as Record<string, unknown>;
-		const listId = listAfter.id as string;
-		const triggerLists = [
-			project.trello.lists.briefing,
-			project.trello.lists.planning,
-			project.trello.lists.todo,
-		];
-		if (triggerLists.includes(listId)) {
-			console.log(`[Router] Card moved to trigger list: ${listId}`);
-			return true;
-		}
-	}
-
-	// Ready-to-process label added?
-	if (actionType === 'addLabelToCard' && data?.label) {
-		const label = data.label as Record<string, unknown>;
-		const labelId = label.id as string;
-		if (labelId === project.trello.labels.readyToProcess) {
-			console.log('[Router] Ready-to-process label added');
-			return true;
-		}
-	}
-
-	// Agent log attachment uploaded? (triggers debug agent)
-	if (actionType === 'addAttachmentToCard' && data?.attachment) {
-		const attachment = data.attachment as Record<string, unknown>;
-		const name = attachment.name as string | undefined;
-		if (name && isAgentLogFilename(name) && !name.startsWith('debug-')) {
-			// Only forward if debug list is configured (exclude debug agent logs to prevent loop)
-			if (project.trello.lists.debug) {
-				console.log(`[Router] Agent log attachment uploaded: ${name}`);
-				return true;
-			}
-		}
-	}
-
-	return false;
+	return (
+		isCardMovedToTriggerList(actionType, data, project) ||
+		isReadyToProcessLabelAdded(actionType, data, project) ||
+		isAgentLogAttachmentUploaded(actionType, data, project)
+	);
 }
 
 const app = new Hono();

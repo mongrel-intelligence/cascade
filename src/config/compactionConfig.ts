@@ -17,7 +17,7 @@ export const IMPLEMENTATION_COMPACTION: CompactionConfig = {
 };
 
 /**
- * Standard compaction for other agents (briefing, planning, debug, review).
+ * Standard compaction for other agents (briefing, planning, debug, respond-to-review, review).
  *
  * These agents typically have shorter sessions, so we use:
  * - Standard trigger threshold (80%)
