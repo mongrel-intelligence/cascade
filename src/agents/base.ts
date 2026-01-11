@@ -300,7 +300,7 @@ function createAgentBuilderWithGadgets(
 		.withRateLimits(getRateLimitForModel(ctx.model))
 		.withRetry(getRetryConfig(llmistLogger))
 		.withCompaction(getCompactionConfig(agentType))
-		.withTrailingMessage(getIterationTrailingMessage())
+		.withTrailingMessage(getIterationTrailingMessage(agentType))
 		.withHooks({
 			observers: {
 				// Log the exact request being sent to the LLM
@@ -621,8 +621,11 @@ export async function executeAgent(
 		// Clear watchdog cleanup callback (no longer needed)
 		clearWatchdogCleanup();
 
+		// Skip cleanup in local mode to preserve logs for debugging
+		const isLocalMode = process.env.CASCADE_LOCAL_MODE === 'true';
+
 		// Cleanup temp directory
-		if (repoDir) {
+		if (repoDir && !isLocalMode) {
 			try {
 				cleanupTempDir(repoDir);
 			} catch (err) {
@@ -630,9 +633,11 @@ export async function executeAgent(
 			}
 		}
 		// Cleanup log files (buffer already extracted)
-		cleanupLogFile(fileLogger.logPath);
-		cleanupLogFile(fileLogger.llmistLogPath);
-		cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
+		if (!isLocalMode) {
+			cleanupLogFile(fileLogger.logPath);
+			cleanupLogFile(fileLogger.llmistLogPath);
+			cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
+		}
 	}
 }
 

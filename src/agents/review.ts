@@ -1,14 +1,18 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
 import { getCompactionConfig } from '../config/compactionConfig.js';
 import { getIterationTrailingMessage } from '../config/hintConfig.js';
 import { getRateLimitForModel } from '../config/rateLimits.js';
 import { getRetryConfig } from '../config/retryConfig.js';
+import { REVIEW_FILE_CONTENT_TOKEN_LIMIT, estimateTokens } from '../config/reviewConfig.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
 import { CreatePRReview, GetPRDetails, GetPRDiff } from '../gadgets/github/index.js';
 import { Tmux } from '../gadgets/tmux.js';
+import { TodoDelete, TodoUpsert } from '../gadgets/todo/index.js';
 import { githubClient } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
@@ -79,6 +83,43 @@ function formatPRDiff(prDiff: PRDiff): string {
 }
 
 // ============================================================================
+// PR File Contents Reading
+// ============================================================================
+
+interface PRFileContents {
+	included: Array<{ path: string; content: string }>;
+	skipped: string[];
+}
+
+async function readPRFileContents(repoDir: string, prDiff: PRDiff): Promise<PRFileContents> {
+	const included: Array<{ path: string; content: string }> = [];
+	const skipped: string[] = [];
+	let totalTokens = 0;
+
+	for (const file of prDiff) {
+		// Skip deleted/binary files
+		if (file.status === 'removed' || !file.patch) continue;
+
+		const filePath = join(repoDir, file.filename);
+		try {
+			const content = await readFile(filePath, 'utf-8');
+			const tokens = estimateTokens(content);
+
+			if (totalTokens + tokens <= REVIEW_FILE_CONTENT_TOKEN_LIMIT) {
+				included.push({ path: file.filename, content });
+				totalTokens += tokens;
+			} else {
+				skipped.push(file.filename);
+			}
+		} catch {
+			// File might not exist (renamed from), skip
+		}
+	}
+
+	return { included, skipped };
+}
+
+// ============================================================================
 // Context Building
 // ============================================================================
 
@@ -89,6 +130,7 @@ interface ReviewContextData {
 	contextFiles: Awaited<ReturnType<typeof readContextFiles>>;
 	prDetailsFormatted: string;
 	diffFormatted: string;
+	fileContents: PRFileContents;
 	prompt: string;
 }
 
@@ -122,8 +164,16 @@ async function buildReviewContext(
 	const prDetailsFormatted = formatPRDetails(prDetails);
 	const diffFormatted = formatPRDiff(prDiff);
 
-	// Build prompt
-	const prompt = buildReviewPrompt(prNumber, owner, repo);
+	// Read full contents of changed files (up to token limit)
+	log.info('Reading PR file contents', { fileCount: prDiff.length });
+	const fileContents = await readPRFileContents(repoDir, prDiff);
+	log.info('File contents loaded', {
+		included: fileContents.included.length,
+		skipped: fileContents.skipped.length,
+	});
+
+	// Build prompt (include skipped files note if any)
+	const prompt = buildReviewPrompt(prNumber, owner, repo, fileContents.skipped);
 
 	return {
 		systemPrompt,
@@ -132,12 +182,18 @@ async function buildReviewContext(
 		contextFiles,
 		prDetailsFormatted,
 		diffFormatted,
+		fileContents,
 		prompt,
 	};
 }
 
-function buildReviewPrompt(prNumber: number, owner: string, repo: string): string {
-	return `Review PR #${prNumber} in ${owner}/${repo}.
+function buildReviewPrompt(
+	prNumber: number,
+	owner: string,
+	repo: string,
+	skippedFiles: string[],
+): string {
+	let prompt = `Review PR #${prNumber} in ${owner}/${repo}.
 
 Examine the code changes carefully and submit your review using CreatePRReview.
 
@@ -148,6 +204,15 @@ Repo: ${repo}
 PR Number: ${prNumber}
 
 Use these values when calling GitHub gadgets (GetPRDetails, GetPRDiff, CreatePRReview).`;
+
+	if (skippedFiles.length > 0) {
+		prompt += `\n\n## Files Not Pre-loaded
+
+The following files exceeded the token limit and were not pre-loaded. Use ReadFile if you need their full contents:
+${skippedFiles.map((f) => `- ${f}`).join('\n')}`;
+	}
+
+	return prompt;
 }
 
 // ============================================================================
@@ -175,7 +240,7 @@ function createReviewAgentBuilder(
 		.withRateLimits(getRateLimitForModel(ctx.model))
 		.withRetry(getRetryConfig(llmistLogger))
 		.withCompaction(getCompactionConfig('review'))
-		.withTrailingMessage(getIterationTrailingMessage())
+		.withTrailingMessage(getIterationTrailingMessage('review'))
 		.withHooks({
 			observers: {
 				onLLMCallReady: async (context) => {
@@ -220,6 +285,9 @@ function createReviewAgentBuilder(
 			// Shell commands via tmux
 			new Tmux(),
 			new Sleep(),
+			// Task tracking gadgets
+			new TodoUpsert(),
+			new TodoDelete(),
 			// GitHub gadgets (read + create review)
 			new GetPRDetails(),
 			new GetPRDiff(),
@@ -264,6 +332,19 @@ function injectReviewSyntheticCalls(
 			'ReadFile',
 			{ filePath: file.path },
 			file.content,
+			invocationId,
+		);
+	}
+
+	// Inject full contents of PR changed files (up to token limit)
+	for (let i = 0; i < ctx.fileContents.included.length; i++) {
+		const file = ctx.fileContents.included[i];
+		const invocationId = `gc_file_${i + 1}`;
+		recordSyntheticInvocationId(trackingContext, invocationId);
+		builder = builder.withSyntheticGadgetCall(
+			'ReadFile',
+			{ filePath: file.path },
+			`path=${file.path}\n\n${file.content}`,
 			invocationId,
 		);
 	}
@@ -388,15 +469,20 @@ export async function executeReviewAgent(input: ReviewAgentInput): Promise<Agent
 	} finally {
 		clearWatchdogCleanup();
 
-		if (repoDir) {
+		// Skip cleanup in local mode to preserve logs for debugging
+		const isLocalMode = process.env.CASCADE_LOCAL_MODE === 'true';
+
+		if (repoDir && !isLocalMode) {
 			try {
 				cleanupTempDir(repoDir);
 			} catch (err) {
 				logger.warn('Failed to cleanup temp directory', { repoDir, error: String(err) });
 			}
 		}
-		cleanupLogFile(fileLogger.logPath);
-		cleanupLogFile(fileLogger.llmistLogPath);
-		cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
+		if (!isLocalMode) {
+			cleanupLogFile(fileLogger.logPath);
+			cleanupLogFile(fileLogger.llmistLogPath);
+			cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
+		}
 	}
 }
