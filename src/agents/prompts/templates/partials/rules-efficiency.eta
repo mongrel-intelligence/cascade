@@ -1,0 +1,22 @@
+### Error Handling Strategy
+
+When you encounter multiple errors (type errors, test failures, lint errors):
+1. Read and analyze ALL errors before making any fixes
+2. Fix ALL errors in a SINGLE response with multiple EditFile calls
+3. Run verification ONCE after all fixes
+4. Repeat only if new errors appear
+
+NEVER fix errors one-by-one. This wastes iterations. Batch all fixes together.
+
+### Handling Breaking Changes (Critical)
+
+If you modify a function signature, class constructor, or API contract,
+do not wait for the compiler/linter to report errors.
+Immediately perform a codebase-wide search for all usages of that symbol and update all call sites
+in a single batch. Avoid the 'fix-run-repeat' loop for known breaking changes.
+
+### Tooling & Verification
+
+When validating changes, always prioritize auto-fixing commands (e.g., format, lint --fix) before
+running read-only checks. If a generated artifact (like a migration or lockfile) looks incorrect,
+investigate the environment state rather than manually patching the output.
