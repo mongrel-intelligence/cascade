@@ -33,6 +33,7 @@ export interface RouterConfig {
 		trelloApiKey: string;
 		trelloToken: string;
 		githubToken: string;
+		hfToken?: string;
 		geminiApiKey?: string;
 		anthropicApiKey?: string;
 		openaiApiKey?: string;
@@ -64,6 +65,7 @@ export const routerConfig: RouterConfig = {
 		trelloApiKey: process.env.TRELLO_API_KEY || '',
 		trelloToken: process.env.TRELLO_TOKEN || '',
 		githubToken: process.env.GITHUB_TOKEN || '',
+		hfToken: process.env.HF_TOKEN,
 		geminiApiKey: process.env.GEMINI_API_KEY,
 		anthropicApiKey: process.env.ANTHROPIC_API_KEY,
 		openaiApiKey: process.env.OPENAI_API_KEY,
