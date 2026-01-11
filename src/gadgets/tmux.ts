@@ -186,16 +186,19 @@ class TmuxControlClient {
 			// Ignore - session may not exist
 		}
 
-		// Create the control session
+		// Create the control session with explicit CWD to avoid stale directory issues
+		// When CASCADE chdirs to temp directories that are later deleted, the tmux
+		// session would inherit an invalid CWD causing "getcwd: cannot access parent directories" errors
 		try {
-			execSync(`tmux new-session -d -s ${CONTROL_SESSION} -x 200 -y 50`);
+			execSync(`tmux new-session -d -s ${CONTROL_SESSION} -x 200 -y 50 -c /tmp`);
 		} catch (err) {
 			throw new Error(`Failed to create control session: ${err}`);
 		}
 
-		// Attach in control mode
+		// Attach in control mode with explicit CWD
 		this.proc = spawn('tmux', ['-C', 'attach-session', '-t', CONTROL_SESSION], {
 			stdio: ['pipe', 'pipe', 'pipe'],
+			cwd: '/tmp',
 		});
 
 		if (!this.proc.stdout) {
