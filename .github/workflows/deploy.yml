@@ -11,64 +11,29 @@ env:
   WORKER_IMAGE: ghcr.io/zbigniewsobiecki/cascade-worker
 
 jobs:
-  build:
-    name: Build Docker Images
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+  build-and-deploy:
+    name: Build and Deploy
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push router image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.router
-          push: true
-          tags: |
-            ${{ env.ROUTER_IMAGE }}:latest
-            ${{ env.ROUTER_IMAGE }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push worker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.worker
-          push: true
-          tags: |
-            ${{ env.WORKER_IMAGE }}:latest
-            ${{ env.WORKER_IMAGE }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  deploy:
-    name: Deploy to Bauer
-    runs-on: self-hosted
-    needs: build
-    steps:
-      - name: Login to GHCR
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Pull and restart cascade-router
+      - name: Build and push router image
+        run: |
+          docker build -f Dockerfile.router -t ${{ env.ROUTER_IMAGE }}:latest -t ${{ env.ROUTER_IMAGE }}:${{ github.sha }} .
+          docker push ${{ env.ROUTER_IMAGE }}:latest
+          docker push ${{ env.ROUTER_IMAGE }}:${{ github.sha }}
+
+      - name: Build and push worker image
+        run: |
+          docker build -f Dockerfile.worker -t ${{ env.WORKER_IMAGE }}:latest -t ${{ env.WORKER_IMAGE }}:${{ github.sha }} .
+          docker push ${{ env.WORKER_IMAGE }}:latest
+          docker push ${{ env.WORKER_IMAGE }}:${{ github.sha }}
+
+      - name: Restart cascade-router
         run: |
           cd /opt/services
-          docker compose pull cascade-router
           docker compose up -d cascade-router
-
-      - name: Pull worker image
-        run: |
-          docker pull ghcr.io/zbigniewsobiecki/cascade-worker:latest
