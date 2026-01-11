@@ -598,7 +598,8 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 - Use single quotes around values with parentheses: --title 'feat(scope): message'
 - Example: command="gh pr create --title 'feat(auth): add login' --body 'Description'"
 
-**WORKING DIRECTORY:** Use \`cwd\` parameter for subdirectories instead of \`cd dir &&\` prefix.
+**WORKING DIRECTORY:** Set \`cwd\` parameter to run commands in subdirectories.
+- Tmux(action="start", session="test", command="npm test", cwd="packages/core")
 
 **ACTIONS:**
 - \`start\`: Run a command in a new session. Waits up to 120s for initial output.
@@ -626,12 +627,7 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 				.string()
 				.min(1)
 				.describe("Shell command to execute (e.g., 'npm test', 'npm run build && npm test')"),
-			cwd: z
-				.string()
-				.optional()
-				.describe(
-					'Working directory for the command (default: repo root). Use this instead of cd prefix.',
-				),
+			cwd: z.string().optional().describe('Working directory for the command (default: repo root)'),
 			wait: z.coerce
 				.number()
 				.default(DEFAULT_WAIT_MS)
