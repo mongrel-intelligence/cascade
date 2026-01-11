@@ -11,6 +11,7 @@ import { EditFile } from '../gadgets/EditFile.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
+import { CreatePR } from '../gadgets/github/index.js';
 import { Tmux } from '../gadgets/tmux.js';
 import { TodoDelete, TodoUpsert } from '../gadgets/todo/index.js';
 import {
@@ -359,6 +360,8 @@ function createAgentBuilderWithGadgets(
 			// Task tracking gadgets
 			new TodoUpsert(),
 			new TodoDelete(),
+			// GitHub gadgets
+			new CreatePR(),
 			// Trello gadgets
 			new ReadTrelloCard(),
 			new PostTrelloComment(),

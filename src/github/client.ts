@@ -70,6 +70,20 @@ export interface PRDiffFile {
 	patch?: string;
 }
 
+export interface CreatePRParams {
+	title: string;
+	body: string;
+	head: string;
+	base: string;
+	draft?: boolean;
+}
+
+export interface CreatedPR {
+	number: number;
+	htmlUrl: string;
+	title: string;
+}
+
 export const githubClient = {
 	async getPR(owner: string, repo: string, prNumber: number): Promise<PRDetails> {
 		logger.debug('Fetching PR', { owner, repo, prNumber });
@@ -248,6 +262,24 @@ export const githubClient = {
 		return {
 			id: data.id,
 			htmlUrl: data.html_url,
+		};
+	},
+
+	async createPR(owner: string, repo: string, params: CreatePRParams): Promise<CreatedPR> {
+		logger.debug('Creating PR', { owner, repo, head: params.head, base: params.base });
+		const { data } = await getClient().pulls.create({
+			owner,
+			repo,
+			title: params.title,
+			body: params.body,
+			head: params.head,
+			base: params.base,
+			draft: params.draft ?? false,
+		});
+		return {
+			number: data.number,
+			htmlUrl: data.html_url,
+			title: data.title,
 		};
 	},
 };
