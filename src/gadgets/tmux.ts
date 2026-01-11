@@ -409,7 +409,9 @@ class TmuxControlClient {
 		const base64 = Buffer.from(command).toString('base64');
 		const shellCmd = `bash -c 'eval "$(echo ${base64} | base64 -d)"; echo "${EXIT_MARKER_PREFIX}$?${EXIT_MARKER_SUFFIX}"'`;
 
-		const cwdArg = cwd ? `-c "${cwd.replace(/"/g, '\\"')}" ` : '';
+		// Default to process.cwd() when cwd not provided, since control session uses /tmp
+		const effectiveCwd = cwd ?? process.cwd();
+		const cwdArg = `-c "${effectiveCwd.replace(/"/g, '\\"')}" `;
 		const result = await this.sendCommand(
 			`new-window -t ${CONTROL_SESSION} -n ${windowName} ${cwdArg}-PF "#{pane_id}" ${shellCmd}`,
 		);
