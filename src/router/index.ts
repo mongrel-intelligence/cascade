@@ -1,20 +1,13 @@
-import { readFileSync } from 'node:fs';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
-
-// Minimal config types - just what router needs
-interface ProjectConfig {
-	repo: string; // owner/repo format
-	trello: {
-		boardId: string;
-		lists: Record<string, string>;
-		labels: Record<string, string>;
-	};
-}
-
-interface Config {
-	projects: ProjectConfig[];
-}
+import { type ProjectConfig, projectConfig } from './config.js';
+import { type CascadeJob, addJob, getQueueStats } from './queue.js';
+import {
+	getActiveWorkerCount,
+	getActiveWorkers,
+	startWorkerProcessor,
+	stopWorkerProcessor,
+} from './worker-manager.js';
 
 /**
  * Check if filename matches agent log pattern: {agent-type}-{timestamp}.zip
@@ -23,20 +16,6 @@ interface Config {
 function isAgentLogFilename(filename: string): boolean {
 	return /^[a-z]+(?:-timeout)?-[\d-TZ]+\.zip$/i.test(filename);
 }
-
-// Load config at startup
-const configPath = process.env.CONFIG_PATH || './config/projects.json';
-let config: Config;
-try {
-	config = JSON.parse(readFileSync(configPath, 'utf-8'));
-	console.log(`[Router] Loaded config with ${config.projects.length} projects`);
-} catch (err) {
-	console.error('[Router] Failed to load config:', err);
-	process.exit(1);
-}
-
-const TRELLO_WORKER_URL =
-	process.env.TRELLO_WORKER_URL || 'https://cascade-webhooks.fly.dev/trello/webhook';
 
 function isCardMovedToTriggerList(
 	actionType: string,
@@ -95,38 +74,63 @@ function isAgentLogAttachmentUploaded(
 	return false;
 }
 
-function shouldForwardTrelloToWorker(payload: unknown): boolean {
-	if (!payload || typeof payload !== 'object') return false;
+interface TrelloWebhookResult {
+	shouldProcess: boolean;
+	project?: ProjectConfig;
+	actionType?: string;
+	cardId?: string;
+}
+
+function parseTrelloWebhook(payload: unknown): TrelloWebhookResult {
+	if (!payload || typeof payload !== 'object') {
+		return { shouldProcess: false };
+	}
 
 	const p = payload as Record<string, unknown>;
 	const action = p.action as Record<string, unknown> | undefined;
 	const model = p.model as Record<string, unknown> | undefined;
 
-	if (!action || !model) return false;
+	if (!action || !model) {
+		return { shouldProcess: false };
+	}
 
 	const boardId = model.id as string;
 	const actionType = action.type as string;
 	const data = action.data as Record<string, unknown> | undefined;
 
-	const project = config.projects.find((proj) => proj.trello.boardId === boardId);
-	if (!project) return false;
+	const project = projectConfig.projects.find((proj) => proj.trello.boardId === boardId);
+	if (!project) {
+		return { shouldProcess: false };
+	}
 
-	return (
+	// Extract card ID
+	const card = data?.card as Record<string, unknown> | undefined;
+	const cardId = card?.id as string | undefined;
+
+	const shouldProcess =
 		isCardMovedToTriggerList(actionType, data, project) ||
 		isReadyToProcessLabelAdded(actionType, data, project) ||
-		isAgentLogAttachmentUploaded(actionType, data, project)
-	);
+		isAgentLogAttachmentUploaded(actionType, data, project);
+
+	return { shouldProcess, project, actionType, cardId };
 }
 
 const app = new Hono();
 
-// Health check
-app.get('/health', (c) => {
-	return c.json({ status: 'ok', role: 'router' });
+// Health check with queue stats
+app.get('/health', async (c) => {
+	const queueStats = await getQueueStats();
+	return c.json({
+		status: 'ok',
+		role: 'router',
+		queue: queueStats,
+		activeWorkers: getActiveWorkerCount(),
+		workers: getActiveWorkers(),
+	});
 });
 
-// Trello webhook verification
-app.get('/trello/webhook', (c) => {
+// Trello webhook verification (HEAD and GET)
+app.on(['HEAD', 'GET'], '/trello/webhook', (c) => {
 	return c.text('OK', 200);
 });
 
@@ -139,22 +143,30 @@ app.post('/trello/webhook', async (c) => {
 		return c.text('Bad Request', 400);
 	}
 
-	const actionType = ((payload as Record<string, unknown>)?.action as Record<string, unknown>)
-		?.type;
+	const { shouldProcess, project, actionType, cardId } = parseTrelloWebhook(payload);
 
-	if (shouldForwardTrelloToWorker(payload)) {
-		console.log(`[Router] Forwarding Trello to worker: ${actionType}`);
+	if (shouldProcess && project && cardId) {
+		console.log('[Router] Queueing Trello job:', { actionType, cardId, projectId: project.id });
 
-		// Forward to worker (fire-and-forget, don't wait)
-		fetch(TRELLO_WORKER_URL, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(payload),
-		}).catch((err) => {
-			console.error('[Router] Failed to forward to worker:', err);
-		});
+		const job: CascadeJob = {
+			type: 'trello',
+			source: 'trello',
+			payload,
+			projectId: project.id,
+			cardId,
+			actionType: actionType || 'unknown',
+			receivedAt: new Date().toISOString(),
+		};
+
+		try {
+			const jobId = await addJob(job);
+			console.log('[Router] Trello job queued:', { jobId, actionType });
+		} catch (err) {
+			console.error('[Router] Failed to queue Trello job:', err);
+			// Still return 200 to Trello to avoid retries
+		}
 	} else {
-		console.log(`[Router] Ignoring Trello: ${actionType}`);
+		console.log(`[Router] Ignoring Trello: ${actionType || 'unknown'}`);
 	}
 
 	return c.text('OK', 200);
@@ -171,58 +183,77 @@ app.post('/github/webhook', async (c) => {
 	const contentType = c.req.header('Content-Type') || '';
 
 	let payload: unknown;
-	let rawBody: string | undefined;
 
 	try {
 		// GitHub can send webhooks as JSON or form-urlencoded
 		if (contentType.includes('application/x-www-form-urlencoded')) {
-			// Form-urlencoded: payload is in the 'payload' field
 			const formData = await c.req.parseBody();
 			const payloadStr = formData.payload;
 			if (typeof payloadStr === 'string') {
-				rawBody = payloadStr;
 				payload = JSON.parse(payloadStr);
 			} else {
 				throw new Error('Missing payload field in form data');
 			}
 		} else {
-			// Assume JSON
-			rawBody = await c.req.text();
-			payload = JSON.parse(rawBody);
+			payload = await c.req.json();
 		}
 	} catch (err) {
-		// Log the raw request for debugging
 		console.log('[Router] GitHub webhook parse error:', {
 			error: String(err),
 			contentType,
 			eventType,
-			rawBodyPreview: rawBody?.slice(0, 500) || '(not captured)',
 		});
 		return c.text('Bad Request', 400);
 	}
 
-	// Log full GitHub webhook request
-	console.log('[Router] GitHub webhook received:', {
-		eventType,
-		contentType,
-		headers: {
-			'X-GitHub-Event': eventType,
-			'X-GitHub-Delivery': c.req.header('X-GitHub-Delivery'),
-			'X-Hub-Signature': c.req.header('X-Hub-Signature'),
-			'X-Hub-Signature-256': c.req.header('X-Hub-Signature-256'),
-			'User-Agent': c.req.header('User-Agent'),
-		},
-		payload: JSON.stringify(payload, null, 2),
-	});
+	// Extract repo info
+	const p = payload as Record<string, unknown>;
+	const repo = p.repository as Record<string, unknown> | undefined;
+	const repoFullName = (repo?.full_name as string) || 'unknown';
 
-	// Do nothing else with GitHub webhooks for now
-	console.log('[Router] GitHub webhook logged, no further processing');
+	// Determine if we should process this event
+	const processableEvents = ['pull_request', 'pull_request_review', 'pull_request_review_comment'];
+	const shouldProcess = processableEvents.includes(eventType);
+
+	if (shouldProcess) {
+		console.log('[Router] Queueing GitHub job:', { eventType, repoFullName });
+
+		const job: CascadeJob = {
+			type: 'github',
+			source: 'github',
+			payload,
+			eventType,
+			repoFullName,
+			receivedAt: new Date().toISOString(),
+		};
+
+		try {
+			const jobId = await addJob(job);
+			console.log('[Router] GitHub job queued:', { jobId, eventType });
+		} catch (err) {
+			console.error('[Router] Failed to queue GitHub job:', err);
+		}
+	} else {
+		console.log('[Router] Ignoring GitHub event:', eventType);
+	}
 
 	return c.text('OK', 200);
 });
 
-// Start server
-const port = Number(process.env.PORT) || 3000;
-console.log(`[Router] Starting on port ${port}`);
+// Graceful shutdown
+async function shutdown(signal: string): Promise<void> {
+	console.log(`[Router] Received ${signal}, shutting down...`);
+	await stopWorkerProcessor();
+	process.exit(0);
+}
 
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// Start server and worker processor
+const port = Number(process.env.PORT) || 3000;
+
+startWorkerProcessor();
+
+console.log(`[Router] Starting on port ${port}`);
 serve({ fetch: app.fetch, port });
