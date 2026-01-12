@@ -79,7 +79,10 @@ function dockerImageExists(): boolean {
 
 function buildDockerImage(): void {
 	console.log('Building Docker image...');
-	execSync(`docker build -t ${IMAGE_NAME} .`, { stdio: 'inherit', cwd: process.cwd() });
+	execSync(`docker build -f Dockerfile.worker -t ${IMAGE_NAME} .`, {
+		stdio: 'inherit',
+		cwd: process.cwd(),
+	});
 	console.log('Docker image built successfully.');
 }
 
