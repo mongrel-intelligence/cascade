@@ -55,6 +55,12 @@ The PR body supports full GitHub-flavored markdown including:
 }) {
 	override async execute(params: this['params']): Promise<string> {
 		try {
+			// Verify the branch exists before attempting to create PR
+			const branchExists = await githubClient.branchExists(params.owner, params.repo, params.head);
+			if (!branchExists) {
+				return `Error creating pull request: Branch '${params.head}' does not exist on remote. Ensure 'git push -u origin ${params.head}' completed successfully before creating a PR.`;
+			}
+
 			const pr = await githubClient.createPR(params.owner, params.repo, {
 				title: params.title,
 				body: params.body,
