@@ -386,8 +386,9 @@ function injectSyntheticCalls(
 
 	// Inject directory listing as synthetic ListDirectory call (first for codebase orientation)
 	// Call the actual gadget to generate output (respects .gitignore by default)
+	// Use maxDepth=5 to give agents better visibility into nested structures
 	const listDirGadget = new ListDirectory();
-	const listDirParams = { directoryPath: '.', maxDepth: 3, includeGitIgnored: false };
+	const listDirParams = { directoryPath: '.', maxDepth: 5, includeGitIgnored: false };
 	const listDirResult = listDirGadget.execute(listDirParams);
 	recordSyntheticInvocationId(trackingContext, 'gc_dir');
 	builder = builder.withSyntheticGadgetCall(

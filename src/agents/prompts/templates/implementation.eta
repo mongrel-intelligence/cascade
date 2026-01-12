@@ -56,6 +56,17 @@ When implementing something new:
 - Use the same test fixtures and helpers
 - Match the test structure and assertions
 
+### Path Verification
+
+BEFORE reading any file you haven't seen yet:
+1. If you're unsure a path exists, use ListDirectory first to verify the directory structure
+2. NEVER assume file paths based on common patterns - this repo may have a unique structure
+3. When you get ENOENT (file not found), use ListDirectory on parent directories to find where files actually live
+
+Example: Instead of assuming `packages/backend/src/services/userService.ts` exists:
+1. First: ListDirectory on `packages/backend/src/` to see actual subdirectories
+2. Then: Navigate to the correct location based on what actually exists
+
 <%~ include("partials/environment") %>
 
 <%~ include("partials/tmux") %>
