@@ -1,12 +1,5 @@
 ## Available Environment
 
-- **PostgreSQL**: Local server running on port 5432
-  - **Connection string**: `postgresql://postgres:postgres@localhost:5432/postgres`
-  - **Connect via CLI**: `psql -U postgres -h localhost`
-  - **Start**: `su postgres -c 'pg_ctl start -D /var/lib/postgresql/data -l /tmp/postgres.log'`
-  - **Stop**: `su postgres -c 'pg_ctl stop -D /var/lib/postgresql/data'`
-  - **Status**: `su postgres -c 'pg_ctl status -D /var/lib/postgresql/data'`
-  - **Create database**: `psql -U postgres -h localhost -c 'CREATE DATABASE mydb;'`
 - **Redis**: In-memory data store running on port 6379
   - **Connection**: `redis://localhost:6379` (no password)
   - **Connect via CLI**: `redis-cli`
