@@ -6,7 +6,6 @@
  * This script is called by run-local.ts via Docker.
  */
 
-import { execSync } from 'node:child_process';
 import { runAgent } from '../src/agents/registry.js';
 import { findProjectByRepo, loadProjectsConfig } from '../src/config/projects.js';
 import { githubClient } from '../src/github/client.js';
@@ -129,20 +128,6 @@ async function prepareGitHubPRInput(
 	return { project, agentInput };
 }
 
-function startServices(): void {
-	console.log('Starting PostgreSQL...');
-	try {
-		execSync(
-			'su postgres -c "/usr/lib/postgresql/*/bin/pg_ctl start -D /var/lib/postgresql/data -l /tmp/postgres.log -w"',
-			{ stdio: 'inherit' },
-		);
-	} catch (err) {
-		console.warn('PostgreSQL may already be running or failed to start:', err);
-	}
-
-	console.log('Services started.\n');
-}
-
 async function main() {
 	const { agentType, input } = parseEntrypointArgs();
 
@@ -156,9 +141,6 @@ async function main() {
 		console.log(`Card ID: ${input.cardId}`);
 	}
 	console.log('');
-
-	// Start services
-	startServices();
 
 	// Load config
 	console.log('Loading configuration...');
