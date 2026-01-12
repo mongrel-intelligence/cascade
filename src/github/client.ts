@@ -282,6 +282,23 @@ export const githubClient = {
 			title: data.title,
 		};
 	},
+
+	async branchExists(owner: string, repo: string, branch: string): Promise<boolean> {
+		logger.debug('Checking if branch exists', { owner, repo, branch });
+		try {
+			await getClient().repos.getBranch({
+				owner,
+				repo,
+				branch,
+			});
+			return true;
+		} catch (error) {
+			if (error instanceof Error && 'status' in error && error.status === 404) {
+				return false;
+			}
+			throw error;
+		}
+	},
 };
 
 export function resetGitHubClient(): void {
