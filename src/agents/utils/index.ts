@@ -1,7 +1,6 @@
 export {
 	LOG_LEVELS,
 	getLogLevel,
-	startPostgres,
 	type ContextFile,
 	readContextFiles,
 	type DependencyInstallResult,
