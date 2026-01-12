@@ -57,3 +57,15 @@ jobs:
 
       - name: Validate PR commits
         run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+
+  enforce-dev-to-main:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    steps:
+      - name: Check source branch
+        run: |
+          if [ "${{ github.head_ref }}" != "dev" ]; then
+            echo "::error::PRs to main must come from the dev branch, not '${{ github.head_ref }}'"
+            exit 1
+          fi
+          echo "Source branch is dev - OK"
