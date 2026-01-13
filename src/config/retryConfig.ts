@@ -1,5 +1,19 @@
-import type { RetryConfig } from 'llmist';
+import { type RetryConfig, isRetryableError } from 'llmist';
 import type { ILogObj, Logger } from 'tslog';
+
+/**
+ * Check if an error is a transient stream/connection error from undici/fetch.
+ * These errors occur when the remote server closes the connection unexpectedly.
+ */
+function isStreamTerminationError(error: Error): boolean {
+	const message = error.message.toLowerCase();
+	return (
+		message.includes('terminated') ||
+		message.includes('aborted') ||
+		message.includes('socket hang up') ||
+		message.includes('fetch failed')
+	);
+}
 
 /**
  * Get retry configuration with logging callbacks.
@@ -24,13 +38,25 @@ export function getRetryConfig(logger: Logger<ILogObj>): RetryConfig {
 		respectRetryAfter: true, // Honor Retry-After headers
 		maxRetryAfterMs: 120000, // Cap at 2 minutes
 
+		shouldRetry: (error: Error) => {
+			// Use llmist's default classification first
+			if (isRetryableError(error)) {
+				return true;
+			}
+			// Additionally retry undici/fetch stream termination errors
+			// These occur when the remote closes the connection unexpectedly
+			return isStreamTerminationError(error);
+		},
+
 		onRetry: (error: Error, attempt: number) => {
 			// Calculate the delay for this retry (exponential backoff with jitter)
 			const baseDelay = Math.min(1000 * 2 ** (attempt - 1), 60000);
+			const isStreamError = isStreamTerminationError(error);
 			logger.warn('LLM call retry', {
 				attempt,
 				maxAttempts: 5,
 				error: error.message,
+				isStreamError,
 				nextRetryDelayMs: baseDelay,
 			});
 		},

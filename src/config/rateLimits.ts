@@ -32,6 +32,23 @@ export const MODEL_RATE_LIMITS: ModelRateLimits = {
 		tokensPerMinute: 10_000,
 		safetyMargin: 0.85, // More conservative for expensive model
 	},
+
+	// OpenRouter models (generous limits - OpenRouter handles rate limiting)
+	'openrouter:x-ai/grok-code-fast-1': {
+		requestsPerMinute: 100,
+		tokensPerMinute: 500_000,
+		safetyMargin: 0.9,
+	},
+	'openrouter:deepseek/deepseek-chat-v3-0324': {
+		requestsPerMinute: 100,
+		tokensPerMinute: 500_000,
+		safetyMargin: 0.9,
+	},
+	'openrouter:minimax/minimax-m2.1': {
+		requestsPerMinute: 100,
+		tokensPerMinute: 500_000,
+		safetyMargin: 0.9,
+	},
 };
 
 /**

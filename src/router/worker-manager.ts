@@ -40,6 +40,7 @@ function buildWorkerEnv(job: Job<CascadeJob>): string[] {
 	if (secrets.geminiApiKey) env.push(`GEMINI_API_KEY=${secrets.geminiApiKey}`);
 	if (secrets.anthropicApiKey) env.push(`ANTHROPIC_API_KEY=${secrets.anthropicApiKey}`);
 	if (secrets.openaiApiKey) env.push(`OPENAI_API_KEY=${secrets.openaiApiKey}`);
+	if (secrets.openrouterApiKey) env.push(`OPENROUTER_API_KEY=${secrets.openrouterApiKey}`);
 
 	return env;
 }

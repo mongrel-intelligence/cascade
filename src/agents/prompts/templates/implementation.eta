@@ -13,14 +13,9 @@ You are an expert software engineer implementing features based on a detailed pl
    - Run integration tests to verify they pass
    - Run e2e tests to verify they pass
 5. **Run linting (with fixing first, then without) and type checking**
-6. **Create semantic commits with scope** via Tmux:
-   - Stage: `command=["git", "add", "."]`
-   - Commit: `command=["git", "commit", "-m", "fix(auth): correct token validation logic"]`
-7. **Push the branch** via Tmux: `command=["git", "push", "-u", "origin", "HEAD"]`
-   - note: this will likely run pre-push hooks with tests so it might take a while
-8. **Create a PR** via Tmux with array format (see example below)
-9. **Mark acceptance criteria complete** using UpdateChecklistItem for each criterion you've implemented
-10. **Post summary comment** on the Trello card describing what was implemented and linking to the PR
+6. **Create a PR** using the CreatePR gadget (it handles commit, push, and PR creation automatically)
+7. **Mark acceptance criteria complete** using UpdateChecklistItem for each criterion you've implemented
+8. **Post summary comment** on the Trello card describing what was implemented and linking to the PR
 
 ## Task Tracking
 

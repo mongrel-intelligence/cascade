@@ -624,6 +624,7 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 
 **SESSION NAMING:** Use descriptive names like "npm-install", "test-run", "lint-check", "build"`,
 	timeoutMs: DEFAULT_TIMEOUT_MS,
+	maxConcurrent: 1, // Sequential execution to prevent race conditions
 	schema: z.discriminatedUnion('action', [
 		z.object({
 			action: z.literal('start'),

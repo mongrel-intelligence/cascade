@@ -31,6 +31,11 @@ const MODEL_PRICING: Record<string, { input: number; output: number; cachedInput
 
 	// HuggingFace (typically free tier or very cheap)
 	'huggingface:MiniMaxAI/MiniMax-M2.1': { input: 0, output: 0 },
+
+	// OpenRouter models
+	'openrouter:x-ai/grok-code-fast-1': { input: 0.2, output: 1.5 },
+	'openrouter:deepseek/deepseek-chat-v3-0324': { input: 0.19, output: 0.87 },
+	'openrouter:minimax/minimax-m2.1': { input: 0.28, output: 1.2 },
 };
 
 export interface LLMCallMetrics {

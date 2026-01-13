@@ -6,19 +6,18 @@ Use standard git commands and GitHub CLI (`gh`) via Tmux for all version control
 
 **Git command examples:**
 - Branch: `command=["git", "checkout", "-b", "feature/name"]`
-- Stage: `command=["git", "add", "."]`
-- Commit: `command=["git", "commit", "-m", "fix(auth): correct validation"]`
-- Push: `command=["git", "push", "-u", "origin", "HEAD"]`
 
-**GitHub CLI (`gh`) examples:**
-- Create PR: `command=["gh", "pr", "create", "--title", "Fix auth bug", "--body", "Details..."]`
+**Creating Pull Requests:**
+Use the CreatePR gadget to finalize your work. It handles the full workflow automatically:
+1. Stage and commit all changes (uses PR title as commit message by default)
+2. Push the branch to remote
+3. Create the pull request
+
+Set `commit=false` or `push=false` if you've already done those steps manually.
+
+**GitHub CLI (`gh`) for other operations:**
 - View PR: `command=["gh", "pr", "view"]`
 - List PRs: `command=["gh", "pr", "list"]`
-
-**IMPORTANT:**
-- Always provide `--title` and `--body` to avoid interactive prompts. Do NOT use `--fill`
-- Each array element is a separate argument - NO quotes needed in array elements
-- Multiline bodies work fine: `"## Summary\n\nDetails here"`
 
 ## Commit Message Format
 

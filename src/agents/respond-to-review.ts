@@ -22,8 +22,6 @@ import { githubClient } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
 import { clearWatchdogCleanup, setWatchdogCleanup } from '../utils/lifecycle.js';
-import type { LLMCallLogger } from '../utils/llmLogging.js';
-import { calculateCost, logLLMCallStart, logLLMMetrics } from '../utils/llmMetrics.js';
 import { logger } from '../utils/logging.js';
 import {
 	cleanupTempDir,
@@ -33,6 +31,7 @@ import {
 } from '../utils/repo.js';
 import { getSystemPrompt } from './prompts/index.js';
 import { runAgentLoop } from './utils/agentLoop.js';
+import { createObserverHooks } from './utils/hooks.js';
 import {
 	type DependencyInstallResult,
 	getLogLevel,
@@ -43,7 +42,6 @@ import { createAgentLogger } from './utils/logging.js';
 import {
 	type TrackingContext,
 	createTrackingContext,
-	incrementLLMIteration,
 	recordSyntheticInvocationId,
 } from './utils/tracking.js';
 
@@ -262,12 +260,10 @@ function createRespondToReviewAgentBuilder(
 	client: LLMist,
 	ctx: ReviewContextData,
 	llmistLogger: ReturnType<typeof createLogger>,
-	llmCallLogger: LLMCallLogger,
 	trackingContext: TrackingContext,
+	logWriter: (level: string, message: string, context?: Record<string, unknown>) => void,
+	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
 ): BuilderType {
-	// Track LLM call timing per iteration
-	const llmCallStartTimes = new Map<number, number>();
-
 	return new AgentBuilder(client)
 		.withModel(ctx.model)
 		.withTemperature(0)
@@ -279,50 +275,12 @@ function createRespondToReviewAgentBuilder(
 		.withCompaction(getCompactionConfig('respond-to-review'))
 		.withTrailingMessage(getIterationTrailingMessage('respond-to-review'))
 		.withHooks({
-			observers: {
-				// Log the exact request being sent to the LLM
-				onLLMCallReady: async (context) => {
-					if (context.subagentContext) return;
-
-					// Track timing
-					llmCallStartTimes.set(context.iteration, Date.now());
-
-					// Log with estimated input tokens
-					logLLMCallStart(logger, context.iteration, context.options.messages);
-
-					// Existing file logging
-					incrementLLMIteration(trackingContext);
-					const callNumber = trackingContext.metrics.llmIterations;
-					llmCallLogger.logRequest(callNumber, context.options.messages);
-				},
-				// Log the raw response from the LLM
-				onLLMCallComplete: async (context) => {
-					if (context.subagentContext) return;
-
-					// Calculate duration
-					const startTime = llmCallStartTimes.get(context.iteration) ?? Date.now();
-					const durationMs = Date.now() - startTime;
-					llmCallStartTimes.delete(context.iteration);
-
-					// Log metrics
-					if (context.usage) {
-						const cost = calculateCost(ctx.model, context.usage);
-						logLLMMetrics(logger, {
-							model: ctx.model,
-							iteration: context.iteration,
-							inputTokens: context.usage.inputTokens,
-							outputTokens: context.usage.outputTokens,
-							cachedTokens: context.usage.cachedInputTokens ?? 0,
-							durationMs,
-							cost,
-						});
-					}
-
-					// Existing file logging
-					const callNumber = trackingContext.metrics.llmIterations;
-					llmCallLogger.logResponse(callNumber, context.rawResponse);
-				},
-			},
+			observers: createObserverHooks({
+				model: ctx.model,
+				logWriter,
+				trackingContext,
+				llmCallLogger,
+			}),
 		})
 		.withGadgets(
 			// Filesystem gadgets
@@ -490,8 +448,9 @@ export async function executeRespondToReviewAgent(
 				client,
 				ctx,
 				llmistLogger,
-				fileLogger.llmCallLogger,
 				trackingContext,
+				fileLogger.write.bind(fileLogger),
+				fileLogger.llmCallLogger,
 			);
 			builder = injectReviewSyntheticCalls(
 				builder,

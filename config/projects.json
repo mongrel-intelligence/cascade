@@ -1,9 +1,9 @@
 {
 	"defaults": {
-		"model": "huggingface:deepseek-ai/DeepSeek-V3.2",
+		"model": "gemini:gemini-3-flash-preview",
 		"maxIterations": 50,
 		"agentIterations": {
-			"implementation": 100
+			"implementation": 50
 		},
 		"watchdogTimeoutMs": 2700000,
 		"selfDestructTimeoutMs": 1800000,
