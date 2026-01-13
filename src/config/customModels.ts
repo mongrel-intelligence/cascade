@@ -1,0 +1,56 @@
+import type { ModelSpec } from 'llmist';
+
+/**
+ * Custom OpenRouter models registered in CASCADE.
+ * These models are not built into llmist but can be used via OpenRouter.
+ *
+ * To use these models, set OPENROUTER_API_KEY in your environment
+ * and configure the model in projects.json, e.g.:
+ *   "model": "openrouter:x-ai/grok-code-fast-1"
+ */
+export const CUSTOM_MODELS: ModelSpec[] = [
+	{
+		provider: 'openrouter',
+		modelId: 'x-ai/grok-code-fast-1',
+		displayName: 'Grok Code Fast 1',
+		contextWindow: 256_000,
+		maxOutputTokens: 32_768,
+		pricing: { input: 0.2, output: 1.5 },
+		knowledgeCutoff: '2025-08',
+		features: {
+			streaming: true,
+			functionCalling: true,
+			vision: false,
+			reasoning: true,
+		},
+	},
+	{
+		provider: 'openrouter',
+		modelId: 'deepseek/deepseek-chat-v3-0324',
+		displayName: 'DeepSeek V3 0324',
+		contextWindow: 163_840,
+		maxOutputTokens: 16_384,
+		pricing: { input: 0.19, output: 0.87 },
+		knowledgeCutoff: '2025-03',
+		features: {
+			streaming: true,
+			functionCalling: true,
+			vision: false,
+		},
+	},
+	{
+		provider: 'openrouter',
+		modelId: 'minimax/minimax-m2.1',
+		displayName: 'MiniMax M2.1',
+		contextWindow: 196_608,
+		maxOutputTokens: 16_384,
+		pricing: { input: 0.28, output: 1.2 },
+		knowledgeCutoff: '2025-12',
+		features: {
+			streaming: true,
+			functionCalling: true,
+			vision: false,
+			reasoning: true,
+		},
+	},
+];

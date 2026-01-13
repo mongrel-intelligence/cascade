@@ -169,6 +169,9 @@ function runAgentInDocker(
 			: []),
 		...(process.env.OPENAI_API_KEY ? ['-e', `OPENAI_API_KEY=${process.env.OPENAI_API_KEY}`] : []),
 		...(process.env.GEMINI_API_KEY ? ['-e', `GEMINI_API_KEY=${process.env.GEMINI_API_KEY}`] : []),
+		...(process.env.OPENROUTER_API_KEY
+			? ['-e', `OPENROUTER_API_KEY=${process.env.OPENROUTER_API_KEY}`]
+			: []),
 		// Image
 		IMAGE_NAME,
 		// Command: run the entrypoint script with tsx

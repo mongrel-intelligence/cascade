@@ -66,6 +66,7 @@ Allowed paths:
 - Current working directory and subdirectories
 - /tmp directory`,
 	timeoutMs: 30000,
+	maxConcurrent: 1, // Sequential execution to prevent race conditions on file writes
 	schema: z.object({
 		filePath: z.string().describe('Path to the file to edit (relative or absolute)'),
 		search: z.string().describe('The content to search for in the file'),

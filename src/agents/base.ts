@@ -4,6 +4,7 @@ import { writeFile } from '@llmist/cli/gadgets';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
 import { getCompactionConfig } from '../config/compactionConfig.js';
+import { CUSTOM_MODELS } from '../config/customModels.js';
 import { getIterationTrailingMessage } from '../config/hintConfig.js';
 import { getRateLimitForModel } from '../config/rateLimits.js';
 import { getRetryConfig } from '../config/retryConfig.js';
@@ -29,12 +30,11 @@ import { trelloClient } from '../trello/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
 import { clearWatchdogCleanup, setWatchdogCleanup } from '../utils/lifecycle.js';
-import type { LLMCallLogger } from '../utils/llmLogging.js';
-import { calculateCost, logLLMCallStart, logLLMMetrics } from '../utils/llmMetrics.js';
 import { logger } from '../utils/logging.js';
 import { cleanupTempDir, cloneRepo, createTempDir, runCommand } from '../utils/repo.js';
 import { type PromptContext, getSystemPrompt } from './prompts/index.js';
 import { runAgentLoop } from './utils/agentLoop.js';
+import { createObserverHooks } from './utils/hooks.js';
 import {
 	type DependencyInstallResult,
 	getLogLevel,
@@ -46,7 +46,6 @@ import { createAgentLogger } from './utils/logging.js';
 import {
 	type TrackingContext,
 	createTrackingContext,
-	incrementLLMIteration,
 	recordSyntheticInvocationId,
 } from './utils/tracking.js';
 
@@ -285,13 +284,11 @@ function createAgentBuilderWithGadgets(
 	client: LLMist,
 	ctx: AgentContextData,
 	llmistLogger: ReturnType<typeof createLogger>,
-	llmCallLogger: LLMCallLogger,
 	trackingContext: TrackingContext,
 	agentType: string,
+	logWriter: (level: string, message: string, context?: Record<string, unknown>) => void,
+	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
 ): BuilderType {
-	// Track LLM call timing per iteration
-	const llmCallStartTimes = new Map<number, number>();
-
 	return new AgentBuilder(client)
 		.withModel(ctx.model)
 		.withTemperature(0)
@@ -303,50 +300,12 @@ function createAgentBuilderWithGadgets(
 		.withCompaction(getCompactionConfig(agentType))
 		.withTrailingMessage(getIterationTrailingMessage(agentType))
 		.withHooks({
-			observers: {
-				// Log the exact request being sent to the LLM
-				onLLMCallReady: async (context) => {
-					if (context.subagentContext) return;
-
-					// Track timing
-					llmCallStartTimes.set(context.iteration, Date.now());
-
-					// Log with estimated input tokens
-					logLLMCallStart(logger, context.iteration, context.options.messages);
-
-					// Existing file logging
-					incrementLLMIteration(trackingContext);
-					const callNumber = trackingContext.metrics.llmIterations;
-					llmCallLogger.logRequest(callNumber, context.options.messages);
-				},
-				// Log the raw response from the LLM
-				onLLMCallComplete: async (context) => {
-					if (context.subagentContext) return;
-
-					// Calculate duration
-					const startTime = llmCallStartTimes.get(context.iteration) ?? Date.now();
-					const durationMs = Date.now() - startTime;
-					llmCallStartTimes.delete(context.iteration);
-
-					// Log metrics
-					if (context.usage) {
-						const cost = calculateCost(ctx.model, context.usage);
-						logLLMMetrics(logger, {
-							model: ctx.model,
-							iteration: context.iteration,
-							inputTokens: context.usage.inputTokens,
-							outputTokens: context.usage.outputTokens,
-							cachedTokens: context.usage.cachedInputTokens ?? 0,
-							durationMs,
-							cost,
-						});
-					}
-
-					// Existing file logging
-					const callNumber = trackingContext.metrics.llmIterations;
-					llmCallLogger.logResponse(callNumber, context.rawResponse);
-				},
-			},
+			observers: createObserverHooks({
+				model: ctx.model,
+				logWriter,
+				trackingContext,
+				llmCallLogger,
+			}),
 		})
 		.withGadgets(
 			// Filesystem gadgets
@@ -562,7 +521,7 @@ export async function executeAgent(
 
 		try {
 			process.env.LLMIST_LOG_FILE = fileLogger.llmistLogPath;
-			const client = new LLMist();
+			const client = new LLMist({ customModels: CUSTOM_MODELS });
 			const llmistLogger = createLogger({ minLevel: getLogLevel() });
 			const trackingContext = createTrackingContext();
 
@@ -570,9 +529,10 @@ export async function executeAgent(
 				client,
 				ctx,
 				llmistLogger,
-				fileLogger.llmCallLogger,
 				trackingContext,
 				agentType,
+				fileLogger.write.bind(fileLogger),
+				fileLogger.llmCallLogger,
 			);
 			builder = injectSyntheticCalls(
 				builder,

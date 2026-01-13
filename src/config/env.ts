@@ -8,6 +8,7 @@ export interface EnvConfig {
 	geminiApiKey?: string;
 	anthropicApiKey?: string;
 	openaiApiKey?: string;
+	openrouterApiKey?: string;
 }
 
 function getEnvOrThrow(key: string): string {
@@ -33,6 +34,7 @@ export function loadEnvConfig(): EnvConfig {
 		geminiApiKey: process.env.GEMINI_API_KEY,
 		anthropicApiKey: process.env.ANTHROPIC_API_KEY,
 		openaiApiKey: process.env.OPENAI_API_KEY,
+		openrouterApiKey: process.env.OPENROUTER_API_KEY,
 	};
 }
 
@@ -47,5 +49,6 @@ export function loadEnvConfigSafe(): Partial<EnvConfig> {
 		geminiApiKey: process.env.GEMINI_API_KEY,
 		anthropicApiKey: process.env.ANTHROPIC_API_KEY,
 		openaiApiKey: process.env.OPENAI_API_KEY,
+		openrouterApiKey: process.env.OPENROUTER_API_KEY,
 	};
 }
