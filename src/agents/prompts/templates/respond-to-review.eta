@@ -25,7 +25,9 @@ Use TodoUpsert to create a todo list after reading the review comments. This hel
 
 ## Understanding the Codebase
 
-Look for existing patterns before making changes:
+<%~ include("partials/au-exploration") %>
+
+**After AU exploration**, look for existing patterns before making changes:
 - Check 1-2 similar files for conventions and imports
 - Use existing helpers when available
 - Follow the patterns you find

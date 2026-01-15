@@ -1,0 +1,23 @@
+### Codebase Understanding (AU Gadgets)
+
+If AUList and AURead gadgets are available, they provide **pre-built understanding** of the codebase architecture, patterns, and conventions. Use them strategically:
+
+**Exploration hierarchy:**
+1. **AUList** (already injected) - Shows what understanding exists. Review this first to orient yourself.
+2. **AURead** - Read specific understanding documents for deeper context on areas relevant to your task.
+3. **ReadFile** - Read actual source files only after you understand the architecture.
+
+**Why this order matters:**
+- AU documents capture architectural decisions, patterns, and conventions that aren't obvious from reading code
+- Reading code without context leads to misunderstanding patterns and making changes that don't fit
+- AU gives you the "why" behind code structure; ReadFile shows you the "what"
+
+**When to use AURead:**
+- Before modifying a module, read its AU doc to understand its purpose and constraints
+- When you see unfamiliar patterns, check if there's AU documentation explaining them
+- When planning where to put new code, read AU docs for related areas
+
+**When to skip AU and read code directly:**
+- For small, isolated changes where you already understand the context
+- When AU docs don't cover the specific area you're working in
+- When you need exact implementation details (function signatures, types, etc.)
