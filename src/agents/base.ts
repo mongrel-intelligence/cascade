@@ -273,21 +273,23 @@ function createAgentBuilderWithGadgets(
 	// Check if AU features should be enabled (repo has .au file at root)
 	const auEnabled = existsSync(join(repoDir, '.au'));
 
+	// Planning agent is read-only - no file editing capabilities
+	const isReadOnlyAgent = agentType === 'planning';
+
 	// Build gadget list
 	const baseGadgets = [
-		// Filesystem gadgets
+		// Filesystem gadgets (read-only for planning)
 		new ListDirectory(),
 		new ReadFile(),
-		new EditFile(),
-		writeFile,
+		...(isReadOnlyAgent ? [] : [new EditFile(), writeFile]),
 		// Shell commands via tmux (no timeout issues)
 		new Tmux(),
 		new Sleep(),
 		// Task tracking gadgets
 		new TodoUpsert(),
 		new TodoDelete(),
-		// GitHub gadgets
-		new CreatePR(),
+		// GitHub gadgets (no PR creation for planning)
+		...(isReadOnlyAgent ? [] : [new CreatePR()]),
 		// Trello gadgets
 		new ReadTrelloCard(),
 		new PostTrelloComment(),
