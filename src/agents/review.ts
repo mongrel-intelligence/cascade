@@ -12,7 +12,13 @@ import { REVIEW_FILE_CONTENT_TOKEN_LIMIT, estimateTokens } from '../config/revie
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
-import { CreatePRReview, GetPRDetails, GetPRDiff } from '../gadgets/github/index.js';
+import {
+	CreatePRReview,
+	GetPRChecks,
+	GetPRDetails,
+	GetPRDiff,
+	formatCheckStatus,
+} from '../gadgets/github/index.js';
 import { Tmux } from '../gadgets/tmux.js';
 import { TodoDelete, TodoUpsert } from '../gadgets/todo/index.js';
 import { githubClient } from '../github/client.js';
@@ -130,6 +136,7 @@ interface ReviewContextData {
 	contextFiles: Awaited<ReturnType<typeof readContextFiles>>;
 	prDetailsFormatted: string;
 	diffFormatted: string;
+	checkStatusFormatted: string;
 	fileContents: PRFileContents;
 	prompt: string;
 }
@@ -155,14 +162,16 @@ async function buildReviewContext(
 	// Read context files from repo
 	const contextFiles = await readContextFiles(repoDir);
 
-	// Fetch PR details and diff
-	log.info('Fetching PR details and diff', { owner, repo, prNumber });
+	// Fetch PR details, diff, and check status
+	log.info('Fetching PR details, diff, and check status', { owner, repo, prNumber });
 	const prDetails = await githubClient.getPR(owner, repo, prNumber);
 	const prDiff = await githubClient.getPRDiff(owner, repo, prNumber);
+	const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, prDetails.headSha);
 
 	// Format PR data
 	const prDetailsFormatted = formatPRDetails(prDetails);
 	const diffFormatted = formatPRDiff(prDiff);
+	const checkStatusFormatted = formatCheckStatus(prNumber, checkStatus);
 
 	// Read full contents of changed files (up to token limit)
 	log.info('Reading PR file contents', { fileCount: prDiff.length });
@@ -182,6 +191,7 @@ async function buildReviewContext(
 		contextFiles,
 		prDetailsFormatted,
 		diffFormatted,
+		checkStatusFormatted,
 		fileContents,
 		prompt,
 	};
@@ -247,6 +257,7 @@ function createReviewAgentBuilder(
 		// GitHub gadgets (read + create review)
 		new GetPRDetails(),
 		new GetPRDiff(),
+		new GetPRChecks(),
 		new CreatePRReview(),
 	];
 
@@ -300,6 +311,15 @@ async function injectReviewSyntheticCalls(
 		{ owner, repo, prNumber },
 		ctx.diffFormatted,
 		'gc_pr_diff',
+	);
+
+	// Inject PR check status
+	recordSyntheticInvocationId(trackingContext, 'gc_pr_checks');
+	builder = builder.withSyntheticGadgetCall(
+		'GetPRChecks',
+		{ owner, repo, prNumber },
+		ctx.checkStatusFormatted,
+		'gc_pr_checks',
 	);
 
 	// Inject context files (CLAUDE.md, README.md, etc.)

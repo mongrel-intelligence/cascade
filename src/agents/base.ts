@@ -372,11 +372,16 @@ async function injectSyntheticCalls(
 
 	// Inject AU understanding if enabled (gives agent immediate codebase context)
 	if (auEnabled) {
-		const auListResult = (await auList.execute({ path: '.' })) as string;
+		const auListResult = (await auList.execute({ path: '.', maxDepth: 5 })) as string;
 		// Only inject if there's actual content
-		if (auListResult && !auListResult.includes('No existing understanding')) {
+		if (auListResult && !auListResult.includes('No AU entries found')) {
 			recordSyntheticInvocationId(trackingContext, 'gc_au');
-			builder = builder.withSyntheticGadgetCall('AUList', { path: '.' }, auListResult, 'gc_au');
+			builder = builder.withSyntheticGadgetCall(
+				'AUList',
+				{ path: '.', maxDepth: 5 },
+				auListResult,
+				'gc_au',
+			);
 		}
 	}
 

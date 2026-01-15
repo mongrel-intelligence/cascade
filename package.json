@@ -33,6 +33,7 @@
 		"@octokit/rest": "^22.0.1",
 		"@types/archiver": "^7.0.0",
 		"archiver": "^7.0.1",
+		"au": "github:zbigniewsobiecki/au",
 		"bullmq": "^5.66.4",
 		"chalk": "^5.4.1",
 		"dhalsim": "^2.2.0",
@@ -42,8 +43,7 @@
 		"llmist": "^15.5.0",
 		"trello.js": "^1.2.8",
 		"zangief": "latest",
-		"zod": "^3.24.1",
-		"au": "github:zbigniewsobiecki/au"
+		"zod": "^3.24.1"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.4",
