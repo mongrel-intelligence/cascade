@@ -1,5 +1,7 @@
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { auList, auRead } from 'au';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
 import { getCompactionConfig } from '../config/compactionConfig.js';
@@ -226,7 +228,30 @@ function createReviewAgentBuilder(
 	trackingContext: TrackingContext,
 	logWriter: (level: string, message: string, context?: Record<string, unknown>) => void,
 	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
+	repoDir: string,
 ): BuilderType {
+	// Check if AU features should be enabled (repo has .au file at root)
+	const auEnabled = existsSync(join(repoDir, '.au'));
+
+	// Build gadget list
+	const baseGadgets = [
+		// Filesystem gadgets
+		new ListDirectory(),
+		new ReadFile(),
+		// Shell commands via tmux
+		new Tmux(),
+		new Sleep(),
+		// Task tracking gadgets
+		new TodoUpsert(),
+		new TodoDelete(),
+		// GitHub gadgets (read + create review)
+		new GetPRDetails(),
+		new GetPRDiff(),
+		new CreatePRReview(),
+	];
+
+	const allGadgets = auEnabled ? [...baseGadgets, auList, auRead] : baseGadgets;
+
 	return new AgentBuilder(client)
 		.withModel(ctx.model)
 		.withTemperature(0)
@@ -245,31 +270,18 @@ function createReviewAgentBuilder(
 				llmCallLogger,
 			}),
 		})
-		.withGadgets(
-			// Filesystem gadgets
-			new ListDirectory(),
-			new ReadFile(),
-			// Shell commands via tmux
-			new Tmux(),
-			new Sleep(),
-			// Task tracking gadgets
-			new TodoUpsert(),
-			new TodoDelete(),
-			// GitHub gadgets (read + create review)
-			new GetPRDetails(),
-			new GetPRDiff(),
-			new CreatePRReview(),
-		);
+		.withGadgets(...allGadgets);
 }
 
-function injectReviewSyntheticCalls(
+async function injectReviewSyntheticCalls(
 	initialBuilder: BuilderType,
 	owner: string,
 	repo: string,
 	prNumber: number,
 	ctx: ReviewContextData,
 	trackingContext: TrackingContext,
-): BuilderType {
+	auEnabled: boolean,
+): Promise<BuilderType> {
 	let builder = initialBuilder;
 
 	// Inject PR details
@@ -316,6 +328,16 @@ function injectReviewSyntheticCalls(
 		);
 	}
 
+	// Inject AU understanding if enabled (gives agent immediate codebase context)
+	if (auEnabled) {
+		const auListResult = (await auList.execute({ path: '.' })) as string;
+		// Only inject if there's actual content
+		if (auListResult && !auListResult.includes('No existing understanding')) {
+			recordSyntheticInvocationId(trackingContext, 'gc_au');
+			builder = builder.withSyntheticGadgetCall('AUList', { path: '.' }, auListResult, 'gc_au');
+		}
+	}
+
 	return builder;
 }
 
@@ -359,6 +381,21 @@ export async function executeReviewAgent(input: ReviewAgentInput): Promise<Agent
 		log.info('Checking out PR branch', { prBranch });
 		await execCommand('git', ['checkout', prBranch], repoDir);
 
+		// Run project-specific setup script if it exists (handles dependency installation)
+		const setupScriptPath = join(repoDir, '.cascade', 'setup.sh');
+		if (existsSync(setupScriptPath)) {
+			log.info('Running project setup script', { path: '.cascade/setup.sh' });
+			const setupResult = await execCommand('bash', [setupScriptPath], repoDir);
+			log.info('Setup script completed', {
+				exitCode: setupResult.exitCode,
+				stdout: setupResult.stdout.slice(-500),
+				stderr: setupResult.stderr.slice(-500),
+			});
+			if (setupResult.exitCode !== 0) {
+				log.warn('Setup script exited with non-zero code', { exitCode: setupResult.exitCode });
+			}
+		}
+
 		log.info('Running review agent', { prNumber, repoFullName, repoDir });
 
 		// Build context
@@ -383,6 +420,9 @@ export async function executeReviewAgent(input: ReviewAgentInput): Promise<Agent
 			// Create tracking context
 			const trackingContext = createTrackingContext();
 
+			// Check if AU features should be enabled (repo has .au file at root)
+			const auEnabled = existsSync(join(repoDir, '.au'));
+
 			// Build agent with gadgets and synthetic calls
 			let builder = createReviewAgentBuilder(
 				client,
@@ -391,8 +431,17 @@ export async function executeReviewAgent(input: ReviewAgentInput): Promise<Agent
 				trackingContext,
 				fileLogger.write.bind(fileLogger),
 				fileLogger.llmCallLogger,
+				repoDir,
 			);
-			builder = injectReviewSyntheticCalls(builder, owner, repo, prNumber, ctx, trackingContext);
+			builder = await injectReviewSyntheticCalls(
+				builder,
+				owner,
+				repo,
+				prNumber,
+				ctx,
+				trackingContext,
+				auEnabled,
+			);
 
 			// Run the agent
 			const agent = builder.ask(ctx.prompt);

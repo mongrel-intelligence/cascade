@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeFile } from '@llmist/cli/gadgets';
+import { auList, auRead } from 'au';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
 import { getCompactionConfig } from '../config/compactionConfig.js';
@@ -32,12 +33,7 @@ import {
 import { getSystemPrompt } from './prompts/index.js';
 import { runAgentLoop } from './utils/agentLoop.js';
 import { createObserverHooks } from './utils/hooks.js';
-import {
-	type DependencyInstallResult,
-	getLogLevel,
-	installDependencies,
-	readContextFiles,
-} from './utils/index.js';
+import { getLogLevel, readContextFiles } from './utils/index.js';
 import { createAgentLogger } from './utils/logging.js';
 import {
 	type TrackingContext,
@@ -61,16 +57,11 @@ interface RespondToReviewAgentInput extends AgentInput {
 // Repository Setup
 // ============================================================================
 
-interface RepoSetupResult {
-	repoDir: string;
-	installResult: DependencyInstallResult | null;
-}
-
 async function setupRepository(
 	project: ProjectConfig,
 	prBranch: string,
 	log: ReturnType<typeof createAgentLogger>,
-): Promise<RepoSetupResult> {
+): Promise<string> {
 	// Clone repo to temp directory
 	const repoDir = createTempDir(project.id);
 	cloneRepo(project, repoDir);
@@ -79,17 +70,7 @@ async function setupRepository(
 	log.info('Checking out PR branch', { prBranch });
 	await execCommand('git', ['checkout', prBranch], repoDir);
 
-	// Install dependencies
-	log.info('Checking for dependencies to install', { repoDir });
-	const installResult = await installDependencies(repoDir);
-	if (installResult) {
-		log.info('Dependencies installed', {
-			packageManager: installResult.packageManager,
-			success: installResult.success,
-		});
-	}
-
-	// Run project-specific setup script if it exists
+	// Run project-specific setup script if it exists (handles dependency installation)
 	const setupScriptPath = join(repoDir, '.cascade', 'setup.sh');
 	if (existsSync(setupScriptPath)) {
 		log.info('Running project setup script', { path: '.cascade/setup.sh' });
@@ -104,7 +85,7 @@ async function setupRepository(
 		}
 	}
 
-	return { repoDir, installResult };
+	return repoDir;
 }
 
 // ============================================================================
@@ -263,7 +244,30 @@ function createRespondToReviewAgentBuilder(
 	trackingContext: TrackingContext,
 	logWriter: (level: string, message: string, context?: Record<string, unknown>) => void,
 	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
+	repoDir: string,
 ): BuilderType {
+	// Check if AU features should be enabled (repo has .au file at root)
+	const auEnabled = existsSync(join(repoDir, '.au'));
+
+	// Build gadget list
+	const baseGadgets = [
+		// Filesystem gadgets
+		new ListDirectory(),
+		new ReadFile(),
+		new EditFile(),
+		writeFile,
+		// Shell commands via tmux
+		new Tmux(),
+		new Sleep(),
+		// GitHub gadgets
+		new GetPRDetails(),
+		new GetPRComments(),
+		new GetPRDiff(),
+		new ReplyToReviewComment(),
+	];
+
+	const allGadgets = auEnabled ? [...baseGadgets, auList, auRead] : baseGadgets;
+
 	return new AgentBuilder(client)
 		.withModel(ctx.model)
 		.withTemperature(0)
@@ -282,32 +286,18 @@ function createRespondToReviewAgentBuilder(
 				llmCallLogger,
 			}),
 		})
-		.withGadgets(
-			// Filesystem gadgets
-			new ListDirectory(),
-			new ReadFile(),
-			new EditFile(),
-			writeFile,
-			// Shell commands via tmux
-			new Tmux(),
-			new Sleep(),
-			// GitHub gadgets
-			new GetPRDetails(),
-			new GetPRComments(),
-			new GetPRDiff(),
-			new ReplyToReviewComment(),
-		);
+		.withGadgets(...allGadgets);
 }
 
-function injectReviewSyntheticCalls(
+async function injectReviewSyntheticCalls(
 	initialBuilder: BuilderType,
 	owner: string,
 	repo: string,
 	prNumber: number,
 	ctx: ReviewContextData,
-	installResult: DependencyInstallResult | null,
 	trackingContext: TrackingContext,
-): BuilderType {
+	auEnabled: boolean,
+): Promise<BuilderType> {
 	let builder = initialBuilder;
 
 	// Inject directory listing as synthetic ListDirectory call (first for codebase orientation)
@@ -363,9 +353,14 @@ function injectReviewSyntheticCalls(
 		);
 	}
 
-	// Inject dependency install result
-	if (installResult) {
-		builder = injectDependencyResult(builder, installResult, trackingContext);
+	// Inject AU understanding if enabled (gives agent immediate codebase context)
+	if (auEnabled) {
+		const auListResult = (await auList.execute({ path: '.' })) as string;
+		// Only inject if there's actual content
+		if (auListResult && !auListResult.includes('No existing understanding')) {
+			recordSyntheticInvocationId(trackingContext, 'gc_au');
+			builder = builder.withSyntheticGadgetCall('AUList', { path: '.' }, auListResult, 'gc_au');
+		}
 	}
 
 	return builder;
@@ -407,8 +402,7 @@ export async function executeRespondToReviewAgent(
 
 	try {
 		// Setup repository
-		const setup = await setupRepository(project, prBranch, log);
-		repoDir = setup.repoDir;
+		repoDir = await setupRepository(project, prBranch, log);
 
 		log.info('Running review agent', { prNumber, repoFullName, repoDir });
 
@@ -443,6 +437,9 @@ export async function executeRespondToReviewAgent(
 			// Create tracking context for iterations and gadget calls
 			const trackingContext = createTrackingContext();
 
+			// Check if AU features should be enabled (repo has .au file at root)
+			const auEnabled = existsSync(join(repoDir, '.au'));
+
 			// Build agent with gadgets and synthetic calls
 			let builder = createRespondToReviewAgentBuilder(
 				client,
@@ -451,15 +448,16 @@ export async function executeRespondToReviewAgent(
 				trackingContext,
 				fileLogger.write.bind(fileLogger),
 				fileLogger.llmCallLogger,
+				repoDir,
 			);
-			builder = injectReviewSyntheticCalls(
+			builder = await injectReviewSyntheticCalls(
 				builder,
 				owner,
 				repo,
 				prNumber,
 				ctx,
-				setup.installResult,
 				trackingContext,
+				auEnabled,
 			);
 
 			// Run the agent
@@ -521,30 +519,4 @@ export async function executeRespondToReviewAgent(
 			cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
 		}
 	}
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function injectDependencyResult(
-	builder: ReturnType<typeof AgentBuilder.prototype.withGadgets>,
-	installResult: DependencyInstallResult,
-	trackingContext: TrackingContext,
-): ReturnType<typeof AgentBuilder.prototype.withGadgets> {
-	const installOutput = installResult.success
-		? `✓ Dependencies installed with ${installResult.packageManager}\n\n${installResult.output}`
-		: `✗ Dependency install failed (${installResult.packageManager})\n\nError: ${installResult.error}`;
-
-	recordSyntheticInvocationId(trackingContext, 'gc_deps');
-	return builder.withSyntheticGadgetCall(
-		'Tmux',
-		{
-			action: 'start',
-			session: 'deps-install',
-			command: `${installResult.packageManager} install`,
-		},
-		installOutput,
-		'gc_deps',
-	);
 }

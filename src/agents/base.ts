@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeFile } from '@llmist/cli/gadgets';
+import { auList, auRead } from 'au';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
 import { getCompactionConfig } from '../config/compactionConfig.js';
@@ -35,13 +36,7 @@ import { cleanupTempDir, cloneRepo, createTempDir, runCommand } from '../utils/r
 import { type PromptContext, getSystemPrompt } from './prompts/index.js';
 import { runAgentLoop } from './utils/agentLoop.js';
 import { createObserverHooks } from './utils/hooks.js';
-import {
-	type DependencyInstallResult,
-	getLogLevel,
-	installDependencies,
-	readContextFiles,
-	warmTypeScriptCache,
-} from './utils/index.js';
+import { getLogLevel, readContextFiles, warmTypeScriptCache } from './utils/index.js';
 import { createAgentLogger } from './utils/logging.js';
 import {
 	type TrackingContext,
@@ -65,16 +60,11 @@ export interface AgentRunner {
 // Repository Setup
 // ============================================================================
 
-interface RepoSetupResult {
-	repoDir: string;
-	installResult: DependencyInstallResult | null;
-}
-
 async function setupRepository(
 	project: ProjectConfig,
 	log: ReturnType<typeof createAgentLogger>,
 	prBranch?: string,
-): Promise<RepoSetupResult> {
+): Promise<string> {
 	// Clone repo to temp directory
 	const repoDir = createTempDir(project.id);
 	cloneRepo(project, repoDir);
@@ -85,17 +75,7 @@ async function setupRepository(
 		await runCommand('git', ['checkout', prBranch], repoDir);
 	}
 
-	// Install dependencies if package.json exists
-	log.info('Checking for dependencies to install', { repoDir });
-	const installResult = await installDependencies(repoDir);
-	if (installResult) {
-		log.info('Dependencies installed', {
-			packageManager: installResult.packageManager,
-			success: installResult.success,
-		});
-	}
-
-	// Run project-specific setup script if it exists
+	// Run project-specific setup script if it exists (handles dependency installation)
 	const setupScriptPath = join(repoDir, '.cascade', 'setup.sh');
 	if (existsSync(setupScriptPath)) {
 		log.info('Running project setup script', { path: '.cascade/setup.sh' });
@@ -120,7 +100,7 @@ async function setupRepository(
 		});
 	}
 
-	return { repoDir, installResult };
+	return repoDir;
 }
 
 // ============================================================================
@@ -288,7 +268,39 @@ function createAgentBuilderWithGadgets(
 	agentType: string,
 	logWriter: (level: string, message: string, context?: Record<string, unknown>) => void,
 	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
+	repoDir: string,
 ): BuilderType {
+	// Check if AU features should be enabled (repo has .au file at root)
+	const auEnabled = existsSync(join(repoDir, '.au'));
+
+	// Build gadget list
+	const baseGadgets = [
+		// Filesystem gadgets
+		new ListDirectory(),
+		new ReadFile(),
+		new EditFile(),
+		writeFile,
+		// Shell commands via tmux (no timeout issues)
+		new Tmux(),
+		new Sleep(),
+		// Task tracking gadgets
+		new TodoUpsert(),
+		new TodoDelete(),
+		// GitHub gadgets
+		new CreatePR(),
+		// Trello gadgets
+		new ReadTrelloCard(),
+		new PostTrelloComment(),
+		new UpdateTrelloCard(),
+		new CreateTrelloCard(),
+		new ListTrelloCards(),
+		new GetMyRecentActivity(),
+		new AddChecklistToCard(),
+		new UpdateChecklistItem(),
+	];
+
+	const allGadgets = auEnabled ? [...baseGadgets, auList, auRead] : baseGadgets;
+
 	return new AgentBuilder(client)
 		.withModel(ctx.model)
 		.withTemperature(0)
@@ -307,40 +319,17 @@ function createAgentBuilderWithGadgets(
 				llmCallLogger,
 			}),
 		})
-		.withGadgets(
-			// Filesystem gadgets
-			new ListDirectory(),
-			new ReadFile(),
-			new EditFile(),
-			writeFile,
-			// Shell commands via tmux (no timeout issues)
-			new Tmux(),
-			new Sleep(),
-			// Task tracking gadgets
-			new TodoUpsert(),
-			new TodoDelete(),
-			// GitHub gadgets
-			new CreatePR(),
-			// Trello gadgets
-			new ReadTrelloCard(),
-			new PostTrelloComment(),
-			new UpdateTrelloCard(),
-			new CreateTrelloCard(),
-			new ListTrelloCards(),
-			new GetMyRecentActivity(),
-			new AddChecklistToCard(),
-			new UpdateChecklistItem(),
-		);
+		.withGadgets(...allGadgets);
 }
 
-function injectSyntheticCalls(
+async function injectSyntheticCalls(
 	initialBuilder: BuilderType,
 	cardId: string | undefined,
 	cardData: string,
 	contextFiles: AgentContextData['contextFiles'],
-	installResult: DependencyInstallResult | null,
 	trackingContext: TrackingContext,
-): BuilderType {
+	auEnabled: boolean,
+): Promise<BuilderType> {
 	let builder = initialBuilder;
 
 	// Inject directory listing as synthetic ListDirectory call (first for codebase orientation)
@@ -381,9 +370,14 @@ function injectSyntheticCalls(
 		);
 	}
 
-	// Inject dependency install result as synthetic Tmux call
-	if (installResult) {
-		builder = injectDependencyResult(builder, installResult, trackingContext);
+	// Inject AU understanding if enabled (gives agent immediate codebase context)
+	if (auEnabled) {
+		const auListResult = (await auList.execute({ path: '.' })) as string;
+		// Only inject if there's actual content
+		if (auListResult && !auListResult.includes('No existing understanding')) {
+			recordSyntheticInvocationId(trackingContext, 'gc_au');
+			builder = builder.withSyntheticGadgetCall('AUList', { path: '.' }, auListResult, 'gc_au');
+		}
 	}
 
 	return builder;
@@ -436,14 +430,13 @@ async function setupWorkingDirectory(
 	project: ProjectConfig,
 	log: ReturnType<typeof createAgentLogger>,
 	prBranch?: string,
-): Promise<{ repoDir: string; installResult: DependencyInstallResult | null }> {
+): Promise<string> {
 	if (input.logDir && typeof input.logDir === 'string') {
 		log.info('Using log directory (no repo setup)', { logDir: input.logDir });
-		return { repoDir: input.logDir, installResult: null };
+		return input.logDir;
 	}
 
-	const setup = await setupRepository(project, log, prBranch);
-	return { repoDir: setup.repoDir, installResult: setup.installResult };
+	return setupRepository(project, log, prBranch);
 }
 
 function extractPRUrl(output: string): string | undefined {
@@ -481,13 +474,7 @@ export async function executeAgent(
 	});
 
 	try {
-		const { repoDir: workDir, installResult } = await setupWorkingDirectory(
-			input,
-			project,
-			log,
-			prContext?.prBranch,
-		);
-		repoDir = workDir;
+		repoDir = await setupWorkingDirectory(input, project, log, prContext?.prBranch);
 
 		log.info('Running agent', {
 			agentType,
@@ -525,6 +512,9 @@ export async function executeAgent(
 			const llmistLogger = createLogger({ minLevel: getLogLevel() });
 			const trackingContext = createTrackingContext();
 
+			// Check if AU features should be enabled (repo has .au file at root)
+			const auEnabled = existsSync(join(repoDir, '.au'));
+
 			let builder = createAgentBuilderWithGadgets(
 				client,
 				ctx,
@@ -533,14 +523,15 @@ export async function executeAgent(
 				agentType,
 				fileLogger.write.bind(fileLogger),
 				fileLogger.llmCallLogger,
+				repoDir,
 			);
-			builder = injectSyntheticCalls(
+			builder = await injectSyntheticCalls(
 				builder,
 				cardId,
 				ctx.cardData,
 				ctx.contextFiles,
-				installResult,
 				trackingContext,
+				auEnabled,
 			);
 
 			const agent = builder.ask(ctx.prompt);
@@ -603,30 +594,4 @@ export async function executeAgent(
 			cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
 		}
 	}
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function injectDependencyResult(
-	builder: ReturnType<typeof AgentBuilder.prototype.withGadgets>,
-	installResult: DependencyInstallResult,
-	trackingContext: TrackingContext,
-): ReturnType<typeof AgentBuilder.prototype.withGadgets> {
-	const installOutput = installResult.success
-		? `✓ Dependencies installed with ${installResult.packageManager}\n\n${installResult.output}`
-		: `✗ Dependency install failed (${installResult.packageManager})\n\nError: ${installResult.error}`;
-
-	recordSyntheticInvocationId(trackingContext, 'gc_deps');
-	return builder.withSyntheticGadgetCall(
-		'Tmux',
-		{
-			action: 'start',
-			session: 'deps-install',
-			command: `${installResult.packageManager} install`,
-		},
-		installOutput,
-		'gc_deps',
-	);
 }

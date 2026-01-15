@@ -31,7 +31,9 @@ Use TodoUpsert to create a todo list after reading the Trello card. This helps y
 
 ## Understanding the Codebase
 
-Look for existing patterns before implementing:
+<%~ include("partials/au-exploration") %>
+
+**After AU exploration**, look for existing patterns before implementing:
 - Check 1-2 similar files for conventions and imports
 - Use existing helpers when available
 - Follow the patterns you find
