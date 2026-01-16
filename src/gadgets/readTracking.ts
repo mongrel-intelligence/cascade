@@ -38,6 +38,14 @@ export function markDirectoryListed(key: string): void {
 }
 
 /**
+ * Invalidate read tracking for a specific file.
+ * Called after EditFile or WriteFile modifies a file.
+ */
+export function invalidateFileRead(path: string): void {
+	readFiles.delete(path);
+}
+
+/**
  * Clear all read tracking. Called on context compaction.
  */
 export function clearReadTracking(): void {
