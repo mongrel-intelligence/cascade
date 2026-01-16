@@ -357,9 +357,26 @@ async function injectReviewSyntheticCalls(
 	if (auEnabled) {
 		const auListResult = (await auList.execute({ path: '.' })) as string;
 		// Only inject if there's actual content
-		if (auListResult && !auListResult.includes('No existing understanding')) {
-			recordSyntheticInvocationId(trackingContext, 'gc_au');
-			builder = builder.withSyntheticGadgetCall('AUList', { path: '.' }, auListResult, 'gc_au');
+		if (auListResult && !auListResult.includes('No AU entries found')) {
+			recordSyntheticInvocationId(trackingContext, 'gc_au_list');
+			builder = builder.withSyntheticGadgetCall(
+				'AUList',
+				{ path: '.' },
+				auListResult,
+				'gc_au_list',
+			);
+
+			// Also inject root-level understanding for high-level context
+			const auReadResult = (await auRead.execute({ paths: '.' })) as string;
+			if (auReadResult && !auReadResult.includes('No understanding exists yet')) {
+				recordSyntheticInvocationId(trackingContext, 'gc_au_read');
+				builder = builder.withSyntheticGadgetCall(
+					'AURead',
+					{ paths: '.' },
+					auReadResult,
+					'gc_au_read',
+				);
+			}
 		}
 	}
 
