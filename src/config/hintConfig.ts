@@ -7,21 +7,19 @@ import type { TrailingMessage } from 'llmist';
 const AGENT_HINTS: Record<string, string> = {
 	// Agents with file editing capabilities
 	implementation:
-		'CHAIN: EditFile + Tmux (verify after edits). BATCH: Fix ALL errors in ONE response, not one-by-one. NEVER mark acceptance criteria complete without passing verification. When completing a task, immediately start the next one in the SAME response - never respond with only todo/checklist updates.',
+		'Complete the current todo in as few iterations as possible. Batch related edits together. Verify with Tmux after edits. NEVER mark acceptance criteria complete without passing verification.',
 	'respond-to-review':
-		'CHAIN: EditFile + Tmux (verify after edits). BATCH: Address ALL review comments in ONE response.',
+		'Address the current review comment fully before moving to the next. Batch related file edits together.',
 
 	// Read-only agents
 	review:
-		'BATCH: Read ALL relevant files in ONE response using ReadFile. Explore thoroughly before submitting review. When completing a task, immediately start the next one in the SAME response - never respond with only todo/checklist updates.',
-	briefing: 'BATCH: Gather ALL context from card and codebase in ONE response.',
-	planning:
-		'BATCH: Return as many AU gadget calls, ReadFile, ListDirectory, Tmux as you already know you need to continue the planning.',
-	debug: 'BATCH: Read and analyze ALL relevant logs in ONE response.',
+		'Focus on the current aspect of review before moving to the next. Read related files together.',
+	briefing: 'Gather all context needed for the current step before proceeding.',
+	planning: 'Complete the current planning step efficiently before moving to the next.',
+	debug: 'Analyze the current issue fully before moving to the next.',
 
 	// Default fallback
-	default:
-		'BATCH: Complete as much as possible in each response. Output ALL gadget calls in this turn.',
+	default: 'Complete the current task efficiently before moving to the next.',
 };
 
 /**
