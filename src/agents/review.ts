@@ -421,8 +421,10 @@ export async function executeReviewAgent(input: ReviewAgentInput): Promise<Agent
 		// Run project-specific setup script if it exists (handles dependency installation)
 		const setupScriptPath = join(repoDir, '.cascade', 'setup.sh');
 		if (existsSync(setupScriptPath)) {
-			log.info('Running project setup script', { path: '.cascade/setup.sh' });
-			const setupResult = await execCommand('bash', [setupScriptPath], repoDir);
+			log.info('Running project setup script', { path: '.cascade/setup.sh', agentType: 'review' });
+			const setupResult = await execCommand('bash', [setupScriptPath], repoDir, {
+				AGENT_PROFILE_NAME: 'review',
+			});
 			log.info('Setup script completed', {
 				exitCode: setupResult.exitCode,
 				stdout: setupResult.stdout.slice(-500),

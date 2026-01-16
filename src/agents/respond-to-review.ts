@@ -73,8 +73,13 @@ async function setupRepository(
 	// Run project-specific setup script if it exists (handles dependency installation)
 	const setupScriptPath = join(repoDir, '.cascade', 'setup.sh');
 	if (existsSync(setupScriptPath)) {
-		log.info('Running project setup script', { path: '.cascade/setup.sh' });
-		const setupResult = await execCommand('bash', [setupScriptPath], repoDir);
+		log.info('Running project setup script', {
+			path: '.cascade/setup.sh',
+			agentType: 'respond-to-review',
+		});
+		const setupResult = await execCommand('bash', [setupScriptPath], repoDir, {
+			AGENT_PROFILE_NAME: 'respond-to-review',
+		});
 		log.info('Setup script completed', {
 			exitCode: setupResult.exitCode,
 			stdout: setupResult.stdout.slice(-500),
