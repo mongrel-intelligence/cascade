@@ -39,7 +39,7 @@
 		"dhalsim": "^2.2.0",
 		"dockerode": "^4.0.9",
 		"eta": "^4.5.0",
-		"hono": "^4.6.14",
+		"hono": "^4.11.4",
 		"llmist": "^15.9.0",
 		"trello.js": "^1.2.8",
 		"zangief": "latest",
