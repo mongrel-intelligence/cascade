@@ -19,7 +19,7 @@ import { TodoDelete, TodoUpsert } from '../gadgets/todo/index.js';
 import {
 	AddChecklistToCard,
 	CreateTrelloCard,
-	GetMyRecentActivity,
+	// GetMyRecentActivity, // Temporarily disabled
 	ListTrelloCards,
 	PostTrelloComment,
 	ReadTrelloCard,
@@ -296,14 +296,14 @@ function createAgentBuilderWithGadgets(
 		new UpdateTrelloCard(),
 		new CreateTrelloCard(),
 		new ListTrelloCards(),
-		new GetMyRecentActivity(),
+		// new GetMyRecentActivity(), // Temporarily disabled
 		new AddChecklistToCard(),
 		new UpdateChecklistItem(),
 	];
 
 	const allGadgets = auEnabled ? [...baseGadgets, auList, auRead] : baseGadgets;
 
-	return new AgentBuilder(client)
+	const builder = new AgentBuilder(client)
 		.withModel(ctx.model)
 		.withTemperature(0)
 		.withSystem(ctx.systemPrompt)
@@ -322,6 +322,14 @@ function createAgentBuilderWithGadgets(
 			}),
 		})
 		.withGadgets(...allGadgets);
+
+	// Implementation agent uses sequential execution to ensure file operations
+	// are properly ordered (e.g., EditFile then ReadFile on same file)
+	if (agentType === 'implementation') {
+		return builder.withGadgetExecutionMode('sequential');
+	}
+
+	return builder;
 }
 
 async function injectSyntheticCalls(
@@ -377,13 +385,25 @@ async function injectSyntheticCalls(
 		const auListResult = (await auList.execute({ path: '.', maxDepth: 5 })) as string;
 		// Only inject if there's actual content
 		if (auListResult && !auListResult.includes('No AU entries found')) {
-			recordSyntheticInvocationId(trackingContext, 'gc_au');
+			recordSyntheticInvocationId(trackingContext, 'gc_au_list');
 			builder = builder.withSyntheticGadgetCall(
 				'AUList',
 				{ path: '.', maxDepth: 5 },
 				auListResult,
-				'gc_au',
+				'gc_au_list',
 			);
+
+			// Also inject root-level understanding for high-level context
+			const auReadResult = (await auRead.execute({ paths: '.' })) as string;
+			if (auReadResult && !auReadResult.includes('No understanding exists yet')) {
+				recordSyntheticInvocationId(trackingContext, 'gc_au_read');
+				builder = builder.withSyntheticGadgetCall(
+					'AURead',
+					{ paths: '.' },
+					auReadResult,
+					'gc_au_read',
+				);
+			}
 		}
 	}
 

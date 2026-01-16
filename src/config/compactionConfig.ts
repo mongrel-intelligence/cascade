@@ -1,4 +1,5 @@
 import type { CompactionConfig, CompactionEvent } from 'llmist';
+import { clearReadTracking } from '../gadgets/readTracking.js';
 import { logger } from '../utils/logging.js';
 
 /**
@@ -34,9 +35,13 @@ const DEFAULT_COMPACTION_BASE = {
 };
 
 /**
- * Log compaction event.
+ * Handle compaction event: log and clear read tracking.
+ *
+ * After compaction, the context is summarized and previous file/directory
+ * contents are no longer available verbatim. Clear tracking so they can
+ * be re-read if needed.
  */
-function logCompaction(event: CompactionEvent): void {
+function handleCompaction(event: CompactionEvent): void {
 	const tokensSaved = event.tokensBefore - event.tokensAfter;
 	const reductionPercent = Math.round((tokensSaved / event.tokensBefore) * 100);
 	const messagesRemoved = event.messagesBefore - event.messagesAfter;
@@ -49,6 +54,9 @@ function logCompaction(event: CompactionEvent): void {
 		reductionPercent,
 		messagesRemoved,
 	});
+
+	// Clear read tracking since context was summarized
+	clearReadTracking();
 }
 
 /**
@@ -62,6 +70,6 @@ export function getCompactionConfig(agentType: string): CompactionConfig {
 		agentType === 'implementation' ? IMPLEMENTATION_COMPACTION_BASE : DEFAULT_COMPACTION_BASE;
 	return {
 		...baseConfig,
-		onCompaction: logCompaction,
+		onCompaction: handleCompaction,
 	};
 }

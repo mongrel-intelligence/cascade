@@ -191,7 +191,6 @@ Each story is independent, valuable, and testable.
 - `CreateTrelloCard` - Create new cards in the STORIES list
 - `AddChecklistToCard` - Add an interactive checklist to a card (use for acceptance criteria)
 - `ListTrelloCards` - List all cards on a list (use to find cards you created)
-- `GetMyRecentActivity` - Get your recent Trello activity (cards created, updated, comments)
 - `UpdateTrelloCard` - Update card title/description, or add labels
 - `PostTrelloComment` - Post a comment on a card
 - `ListDirectory`, `ReadFile`, `Tmux` - Explore the codebase
