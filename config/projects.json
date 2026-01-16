@@ -1,6 +1,6 @@
 {
 	"defaults": {
-		"model": "gemini:gemini-3-flash-preview",
+		"model": "openrouter:x-ai/grok-code-fast-1",
 		"maxIterations": 50,
 		"agentIterations": {
 			"implementation": 50
