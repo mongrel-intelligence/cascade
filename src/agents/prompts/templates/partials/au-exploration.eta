@@ -20,3 +20,8 @@ If AUList and AURead gadgets are available, they provide **pre-built understandi
 - Then read specific paths relevant to your task
 - Before modifying a module, read its AU doc to understand its purpose and constraints
 - When you see unfamiliar patterns, check if there's AU documentation explaining them
+
+**🚨 RULE: AU Before ReadFile**
+- ALWAYS use `AURead` for a module/directory BEFORE using `ReadFile` on files within it
+- Example: `AURead` for "packages/frontend" BEFORE reading any files in that package
+- This applies to EVERY directory you haven't yet called `AURead` on
