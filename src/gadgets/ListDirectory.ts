@@ -10,6 +10,8 @@ import { join, relative, resolve, sep } from 'node:path';
 
 import { Gadget, z } from 'llmist';
 
+import { hasListedDirectory, markDirectoryListed } from './readTracking.js';
+
 const ALLOWED_PATHS = ['/tmp'];
 
 function validatePath(inputPath: string): string {
@@ -287,6 +289,14 @@ Allowed paths:
 			throw new Error(`Path is not a directory: ${directoryPath}`);
 		}
 
+		// Create a key that includes all parameters to differentiate listings
+		const listingKey = `${validatedPath}:${maxDepth}:${includeGitIgnored}`;
+
+		// Check if already listed in this session (content is in context)
+		if (hasListedDirectory(listingKey)) {
+			return `path=${directoryPath} maxDepth=${maxDepth} includeGitIgnored=${includeGitIgnored}\n\n[Already listed - refer to previous content in context]`;
+		}
+
 		// Determine if we should use git filtering
 		let gitFiles: Set<string> | null = null;
 		if (!includeGitIgnored && isGitRepo(validatedPath)) {
@@ -296,6 +306,7 @@ Allowed paths:
 		const entries = listFilesRecursive(validatedPath, validatedPath, maxDepth, 1, gitFiles);
 		const formatted = formatEntries(entries);
 
+		markDirectoryListed(listingKey);
 		return `path=${directoryPath} maxDepth=${maxDepth} includeGitIgnored=${includeGitIgnored}\n\n${formatted}`;
 	}
 }

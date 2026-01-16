@@ -10,6 +10,8 @@ import { resolve, sep } from 'node:path';
 
 import { Gadget, z } from 'llmist';
 
+import { hasReadFile, markFileRead } from './readTracking.js';
+
 const ALLOWED_PATHS = ['/tmp'];
 
 function validatePath(inputPath: string): string {
@@ -55,7 +57,11 @@ Allowed paths:
 - Current working directory and subdirectories
 - /tmp directory (for test logs, build artifacts, etc.)`,
 	schema: z.object({
-		filePath: z.string().describe('Path to the file to read (relative or absolute)'),
+		filePath: z
+			.string()
+			.describe(
+				'Path to the file to read (relative or absolute). ONLY VALID PATHS ALLOWED. Use ListDirectory to confirm full path.',
+			),
 	}),
 	examples: [
 		{
@@ -73,7 +79,14 @@ Allowed paths:
 	override execute(params: this['params']): string {
 		const { filePath } = params;
 		const validatedPath = validatePath(filePath);
+
+		// Check if already read in this session (content is in context)
+		if (hasReadFile(validatedPath)) {
+			return `path=${filePath}\n\n[Already read - refer to previous content in context]`;
+		}
+
 		const content = readFileSync(validatedPath, 'utf-8');
+		markFileRead(validatedPath);
 		return `path=${filePath}\n\n${content}`;
 	}
 }

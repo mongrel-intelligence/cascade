@@ -15,7 +15,8 @@ const AGENT_HINTS: Record<string, string> = {
 	review:
 		'BATCH: Read ALL relevant files in ONE response using ReadFile. Explore thoroughly before submitting review. When completing a task, immediately start the next one in the SAME response - never respond with only todo/checklist updates.',
 	briefing: 'BATCH: Gather ALL context from card and codebase in ONE response.',
-	planning: 'BATCH: Analyze ALL requirements and explore codebase thoroughly in ONE response.',
+	planning:
+		'BATCH: Return as many AU gadget calls, ReadFile, ListDirectory, Tmux as you already know you need to continue the planning.',
 	debug: 'BATCH: Read and analyze ALL relevant logs in ONE response.',
 
 	// Default fallback

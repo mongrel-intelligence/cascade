@@ -19,7 +19,7 @@ import { TodoDelete, TodoUpsert } from '../gadgets/todo/index.js';
 import {
 	AddChecklistToCard,
 	CreateTrelloCard,
-	GetMyRecentActivity,
+	// GetMyRecentActivity, // Temporarily disabled
 	ListTrelloCards,
 	PostTrelloComment,
 	ReadTrelloCard,
@@ -273,35 +273,37 @@ function createAgentBuilderWithGadgets(
 	// Check if AU features should be enabled (repo has .au file at root)
 	const auEnabled = existsSync(join(repoDir, '.au'));
 
+	// Planning agent is read-only - no file editing capabilities
+	const isReadOnlyAgent = agentType === 'planning';
+
 	// Build gadget list
 	const baseGadgets = [
-		// Filesystem gadgets
+		// Filesystem gadgets (read-only for planning)
 		new ListDirectory(),
 		new ReadFile(),
-		new EditFile(),
-		writeFile,
+		...(isReadOnlyAgent ? [] : [new EditFile(), writeFile]),
 		// Shell commands via tmux (no timeout issues)
 		new Tmux(),
 		new Sleep(),
 		// Task tracking gadgets
 		new TodoUpsert(),
 		new TodoDelete(),
-		// GitHub gadgets
-		new CreatePR(),
+		// GitHub gadgets (no PR creation for planning)
+		...(isReadOnlyAgent ? [] : [new CreatePR()]),
 		// Trello gadgets
 		new ReadTrelloCard(),
 		new PostTrelloComment(),
 		new UpdateTrelloCard(),
 		new CreateTrelloCard(),
 		new ListTrelloCards(),
-		new GetMyRecentActivity(),
+		// new GetMyRecentActivity(), // Temporarily disabled
 		new AddChecklistToCard(),
 		new UpdateChecklistItem(),
 	];
 
 	const allGadgets = auEnabled ? [...baseGadgets, auList, auRead] : baseGadgets;
 
-	return new AgentBuilder(client)
+	const builder = new AgentBuilder(client)
 		.withModel(ctx.model)
 		.withTemperature(0)
 		.withSystem(ctx.systemPrompt)
@@ -320,6 +322,14 @@ function createAgentBuilderWithGadgets(
 			}),
 		})
 		.withGadgets(...allGadgets);
+
+	// Implementation agent uses sequential execution to ensure file operations
+	// are properly ordered (e.g., EditFile then ReadFile on same file)
+	if (agentType === 'implementation') {
+		return builder.withGadgetExecutionMode('sequential');
+	}
+
+	return builder;
 }
 
 async function injectSyntheticCalls(
@@ -372,11 +382,28 @@ async function injectSyntheticCalls(
 
 	// Inject AU understanding if enabled (gives agent immediate codebase context)
 	if (auEnabled) {
-		const auListResult = (await auList.execute({ path: '.' })) as string;
+		const auListResult = (await auList.execute({ path: '.', maxDepth: 5 })) as string;
 		// Only inject if there's actual content
-		if (auListResult && !auListResult.includes('No existing understanding')) {
-			recordSyntheticInvocationId(trackingContext, 'gc_au');
-			builder = builder.withSyntheticGadgetCall('AUList', { path: '.' }, auListResult, 'gc_au');
+		if (auListResult && !auListResult.includes('No AU entries found')) {
+			recordSyntheticInvocationId(trackingContext, 'gc_au_list');
+			builder = builder.withSyntheticGadgetCall(
+				'AUList',
+				{ path: '.', maxDepth: 5 },
+				auListResult,
+				'gc_au_list',
+			);
+
+			// Also inject root-level understanding for high-level context
+			const auReadResult = (await auRead.execute({ paths: '.' })) as string;
+			if (auReadResult && !auReadResult.includes('No understanding exists yet')) {
+				recordSyntheticInvocationId(trackingContext, 'gc_au_read');
+				builder = builder.withSyntheticGadgetCall(
+					'AURead',
+					{ paths: '.' },
+					auReadResult,
+					'gc_au_read',
+				);
+			}
 		}
 	}
 
