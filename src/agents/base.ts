@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { writeFile } from '@llmist/cli/gadgets';
 import { auList, auRead } from 'au';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
+import { WriteFile } from '../gadgets/WriteFile.js';
 
 import { getCompactionConfig } from '../config/compactionConfig.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
@@ -284,7 +284,7 @@ function createAgentBuilderWithGadgets(
 		// Filesystem gadgets (read-only for planning)
 		new ListDirectory(),
 		new ReadFile(),
-		...(isReadOnlyAgent ? [] : [new EditFile(), writeFile]),
+		...(isReadOnlyAgent ? [] : [new EditFile(), new WriteFile()]),
 		// Shell commands via tmux (no timeout issues)
 		new Tmux(),
 		new Sleep(),
