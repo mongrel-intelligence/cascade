@@ -11,6 +11,7 @@ import { resolve, sep } from 'node:path';
 import { Gadget, z } from 'llmist';
 
 import { applyReplacement, findMatch, getMatchFailure } from './editfile/matcher.js';
+import { invalidateFileRead } from './readTracking.js';
 
 const ALLOWED_PATHS = ['/tmp'];
 
@@ -154,6 +155,8 @@ Allowed paths:
 		// Write file
 		try {
 			writeFileSync(validatedPath, newContent, 'utf-8');
+			// Invalidate read tracking so subsequent reads return fresh content
+			invalidateFileRead(validatedPath);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			return `path=${filePath} status=error\n\nError writing file: ${message}`;

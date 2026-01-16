@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { writeFile } from '@llmist/cli/gadgets';
 import { auList, auRead } from 'au';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
+import { WriteFile } from '../gadgets/WriteFile.js';
 
 import { getCompactionConfig } from '../config/compactionConfig.js';
 import { getIterationTrailingMessage } from '../config/hintConfig.js';
@@ -260,7 +260,7 @@ function createRespondToReviewAgentBuilder(
 		new ListDirectory(),
 		new ReadFile(),
 		new EditFile(),
-		writeFile,
+		new WriteFile(),
 		// Shell commands via tmux
 		new Tmux(),
 		new Sleep(),
