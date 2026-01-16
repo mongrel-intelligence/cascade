@@ -63,6 +63,7 @@ export interface AgentRunner {
 async function setupRepository(
 	project: ProjectConfig,
 	log: ReturnType<typeof createAgentLogger>,
+	agentType: string,
 	prBranch?: string,
 ): Promise<string> {
 	// Clone repo to temp directory
@@ -78,8 +79,10 @@ async function setupRepository(
 	// Run project-specific setup script if it exists (handles dependency installation)
 	const setupScriptPath = join(repoDir, '.cascade', 'setup.sh');
 	if (existsSync(setupScriptPath)) {
-		log.info('Running project setup script', { path: '.cascade/setup.sh' });
-		const setupResult = await runCommand('bash', [setupScriptPath], repoDir);
+		log.info('Running project setup script', { path: '.cascade/setup.sh', agentType });
+		const setupResult = await runCommand('bash', [setupScriptPath], repoDir, {
+			AGENT_PROFILE_NAME: agentType,
+		});
 		log.info('Setup script completed', {
 			exitCode: setupResult.exitCode,
 			stdout: setupResult.stdout.slice(-500),
@@ -456,6 +459,7 @@ async function setupWorkingDirectory(
 	input: AgentInput,
 	project: ProjectConfig,
 	log: ReturnType<typeof createAgentLogger>,
+	agentType: string,
 	prBranch?: string,
 ): Promise<string> {
 	if (input.logDir && typeof input.logDir === 'string') {
@@ -463,7 +467,7 @@ async function setupWorkingDirectory(
 		return input.logDir;
 	}
 
-	return setupRepository(project, log, prBranch);
+	return setupRepository(project, log, agentType, prBranch);
 }
 
 function extractPRUrl(output: string): string | undefined {
@@ -501,7 +505,7 @@ export async function executeAgent(
 	});
 
 	try {
-		repoDir = await setupWorkingDirectory(input, project, log, prContext?.prBranch);
+		repoDir = await setupWorkingDirectory(input, project, log, agentType, prContext?.prBranch);
 
 		log.info('Running agent', {
 			agentType,

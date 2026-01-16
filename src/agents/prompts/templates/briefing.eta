@@ -67,9 +67,12 @@ For technical/infrastructure work, adapt the format:
 You are running in a cloned copy of the project repository. Before creating stories:
 
 1. **Read the card** to identify scope signals (file names, components, features, domain terms)
-2. **Explore deeply** - use `ListDirectory`, `ReadFile`, and `Tmux` extensively
-3. **Understand existing patterns** - how does the codebase already solve similar problems?
-4. **Map terminology** - card may use different terms than the code
+2. **Start with AU** - review AUList output and use AURead for architectural context
+3. **Then explore implementation** - use `ListDirectory`, `ReadFile`, and `Tmux` to examine code
+4. **Understand existing patterns** - how does the codebase already solve similar problems?
+5. **Map terminology** - card may use different terms than the code
+
+<%~ include("partials/au-exploration") %>
 
 ## Your Task
 
