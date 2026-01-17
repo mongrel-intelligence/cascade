@@ -5,12 +5,13 @@
  * This approach reduces edit errors by ~9x (per Aider benchmarks).
  */
 
+import { execSync } from 'node:child_process';
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 
 import { Gadget, z } from 'llmist';
 
-import { applyReplacement, findMatch, getMatchFailure } from './editfile/matcher.js';
+import { applyReplacement, findAllMatches, getMatchFailure } from './editfile/matcher.js';
 import { invalidateFileRead } from './readTracking.js';
 
 const ALLOWED_PATHS = ['/tmp'];
@@ -54,18 +55,8 @@ export class EditFile extends Gadget({
 	name: 'EditFile',
 	description: `Edit a file by searching for content and replacing it.
 
-Uses layered matching strategies (in order):
-1. Exact match - byte-for-byte comparison
-2. Whitespace-insensitive - ignores differences in spaces/tabs
-3. Indentation-preserving - matches structure ignoring leading whitespace
-4. Fuzzy match - similarity-based matching (80% threshold)
-
 For multiple edits to the same file, call this gadget multiple times.
-Each call provides immediate feedback, allowing you to adjust subsequent edits.
-
-Allowed paths:
-- Current working directory and subdirectories
-- /tmp directory`,
+Each call provides immediate feedback, allowing you to adjust subsequent edits.`,
 	timeoutMs: 30000,
 	maxConcurrent: 1, // Sequential execution to prevent race conditions on file writes
 	schema: z.object({
@@ -77,36 +68,111 @@ Allowed paths:
 		{
 			params: {
 				filePath: 'src/config.ts',
-				search: 'const DEBUG = false;',
-				replace: 'const DEBUG = true;',
+				search: 'timeout: 1000',
+				replace: 'timeout: 5000',
 			},
-			output:
-				'path=src/config.ts status=success strategy=exact lines=5-5\n\nReplaced content successfully.\n\nUPDATED FILE CONTENT:\n```\n// config.ts\nconst DEBUG = true;\nexport default { DEBUG };\n```',
-			comment: 'Simple single-line edit',
+			output: `path=src/config.ts status=success matches=1 strategy=exact
+
+Replaced 1 occurrence.
+
+=== Edit 1 (lines 5-5) ===
+--- BEFORE ---
+   1 | import { foo } from "bar";
+   2 |
+   3 | const CONFIG = {
+   4 |   debug: false,
+>  5 |   timeout: 1000,
+   6 |   retries: 3,
+   7 | };
+
+--- AFTER ---
+   1 | import { foo } from "bar";
+   2 |
+   3 | const CONFIG = {
+   4 |   debug: false,
+>  5 |   timeout: 5000,
+   6 |   retries: 3,
+   7 | };
+
+=== TypeScript Check ===
+No type errors found.
+
+=== Biome Lint ===
+No lint issues found.`,
+			comment: 'Single edit with before/after context and diagnostics',
 		},
 		{
 			params: {
-				filePath: 'src/utils.ts',
-				search: `function oldHelper() {
-  return 1;
-}`,
-				replace: `function newHelper() {
-  return 2;
-}`,
+				filePath: 'src/constants.ts',
+				search: 'MAX_RETRIES = 3',
+				replace: 'MAX_RETRIES = 5',
 			},
-			output:
-				'path=src/utils.ts status=success strategy=exact lines=10-12\n\nReplaced content successfully.\n\nUPDATED FILE CONTENT:\n```\n// utils.ts\nfunction newHelper() {\n  return 2;\n}\n```',
-			comment: 'Multi-line replacement',
+			output: `path=src/constants.ts status=success matches=2 strategy=exact
+
+Replaced 2 occurrences.
+
+=== Edit 1 (lines 4-4) ===
+--- BEFORE ---
+   1 | // API constants
+   2 | export const API_URL = "https://api.example.com";
+   3 |
+>  4 | export const MAX_RETRIES = 3;
+   5 | export const TIMEOUT = 5000;
+
+--- AFTER ---
+   1 | // API constants
+   2 | export const API_URL = "https://api.example.com";
+   3 |
+>  4 | export const MAX_RETRIES = 5;
+   5 | export const TIMEOUT = 5000;
+
+=== Edit 2 (lines 12-12) ===
+--- BEFORE ---
+   9 | // Client constants
+  10 | export const CLIENT_URL = "https://client.example.com";
+  11 |
+> 12 | export const MAX_RETRIES = 3;
+  13 | export const CLIENT_TIMEOUT = 3000;
+
+--- AFTER ---
+   9 | // Client constants
+  10 | export const CLIENT_URL = "https://client.example.com";
+  11 |
+> 12 | export const MAX_RETRIES = 5;
+  13 | export const CLIENT_TIMEOUT = 3000;
+
+=== TypeScript Check ===
+No type errors found.
+
+=== Biome Lint ===
+No lint issues found.`,
+			comment: 'Multiple matches replaced with before/after for each',
 		},
 		{
 			params: {
-				filePath: 'src/app.ts',
-				search: 'unusedImport',
-				replace: '',
+				filePath: 'src/data.json',
+				search: '"enabled": false',
+				replace: '"enabled": true',
 			},
-			output:
-				'path=src/app.ts status=success strategy=exact lines=3-3\n\nReplaced content successfully.\n\nUPDATED FILE CONTENT:\n```\n// app.ts\nimport { usedImport } from "./lib";\n```',
-			comment: 'Delete content by replacing with empty string',
+			output: `path=src/data.json status=success matches=1 strategy=exact
+
+Replaced 1 occurrence.
+
+=== Edit 1 (lines 3-3) ===
+--- BEFORE ---
+   1 | {
+   2 |   "name": "example",
+>  3 |   "enabled": false,
+   4 |   "count": 0
+   5 | }
+
+--- AFTER ---
+   1 | {
+   2 |   "name": "example",
+>  3 |   "enabled": true,
+   4 |   "count": 0
+   5 | }`,
+			comment: 'Non-TypeScript file (no diagnostics appended)',
 		},
 	],
 }) {
@@ -140,17 +206,38 @@ Allowed paths:
 			return `path=${filePath} status=error\n\nError reading file: ${message}`;
 		}
 
-		// Find match using layered strategies
-		const match = findMatch(content, search);
+		// Find ALL matches using layered strategies
+		const matches = findAllMatches(content, search);
 
-		if (!match) {
+		if (matches.length === 0) {
 			// No match found - provide helpful suggestions
 			const failure = getMatchFailure(content, search);
 			return this.formatFailure(filePath, search, failure, content);
 		}
 
-		// Apply replacement
-		const newContent = applyReplacement(content, match, replace);
+		// Store original content for before/after display
+		const originalLines = content.split('\n');
+
+		// Collect before contexts BEFORE applying any replacements
+		const beforeContexts: Array<{
+			startLine: number;
+			endLine: number;
+			context: string;
+		}> = [];
+		for (const match of matches) {
+			beforeContexts.push({
+				startLine: match.startLine,
+				endLine: match.endLine,
+				context: this.formatContext(originalLines, match.startLine, match.endLine, 5),
+			});
+		}
+
+		// Apply replacements in reverse order (to preserve indices)
+		let newContent = content;
+		const sortedMatches = [...matches].sort((a, b) => b.startIndex - a.startIndex);
+		for (const match of sortedMatches) {
+			newContent = applyReplacement(newContent, match, replace);
+		}
 
 		// Write file
 		try {
@@ -162,7 +249,68 @@ Allowed paths:
 			return `path=${filePath} status=error\n\nError writing file: ${message}`;
 		}
 
-		return `path=${filePath} status=success strategy=${match.strategy} lines=${match.startLine}-${match.endLine}\n\nReplaced content successfully.\n\nUPDATED FILE CONTENT:\n\`\`\`\n${newContent}\n\`\`\``;
+		// Build and return success output
+		return this.buildSuccessOutput(
+			filePath,
+			validatedPath,
+			matches,
+			beforeContexts,
+			replace,
+			newContent,
+		);
+	}
+
+	private buildSuccessOutput(
+		filePath: string,
+		validatedPath: string,
+		matches: Array<{
+			startLine: number;
+			endLine: number;
+			strategy: string;
+		}>,
+		beforeContexts: Array<{
+			startLine: number;
+			endLine: number;
+			context: string;
+		}>,
+		replace: string,
+		newContent: string,
+	): string {
+		const newLines = newContent.split('\n');
+		const output: string[] = [
+			`path=${filePath} status=success matches=${matches.length} strategy=${matches[0].strategy}`,
+			'',
+			`Replaced ${matches.length} occurrence${matches.length > 1 ? 's' : ''}.`,
+		];
+
+		const replacementLineCount = replace.split('\n').length;
+		let cumulativeLineDelta = 0;
+
+		for (let i = 0; i < matches.length; i++) {
+			const match = matches[i];
+			const matchedLineCount = match.endLine - match.startLine + 1;
+			const lineDelta = replacementLineCount - matchedLineCount;
+			const afterStartLine = match.startLine + cumulativeLineDelta;
+			const afterEndLine = afterStartLine + replacementLineCount - 1;
+
+			output.push(
+				'',
+				`=== Edit ${i + 1} (lines ${match.startLine}-${match.endLine}) ===`,
+				'--- BEFORE ---',
+				beforeContexts[i].context,
+				'',
+				'--- AFTER ---',
+				this.formatContext(newLines, afterStartLine, afterEndLine, 5),
+			);
+
+			cumulativeLineDelta += lineDelta;
+		}
+
+		if (filePath.endsWith('.ts') || filePath.endsWith('.tsx')) {
+			output.push('', this.runDiagnostics(validatedPath));
+		}
+
+		return output.join('\n');
 	}
 
 	private formatFailure(
@@ -170,7 +318,11 @@ Allowed paths:
 		search: string,
 		failure: {
 			reason: string;
-			suggestions: Array<{ content: string; lineNumber: number; similarity: number }>;
+			suggestions: Array<{
+				content: string;
+				lineNumber: number;
+				similarity: number;
+			}>;
 			nearbyContext: string;
 		},
 		fileContent: string,
@@ -207,5 +359,76 @@ Allowed paths:
 		lines.push('', 'CURRENT FILE CONTENT:', '```', fileContent, '```');
 
 		return lines.join('\n');
+	}
+
+	private formatContext(
+		lines: string[],
+		startLine: number,
+		endLine: number,
+		contextLines = 5,
+	): string {
+		const rangeStart = Math.max(0, startLine - 1 - contextLines);
+		const rangeEnd = Math.min(lines.length, endLine + contextLines);
+
+		const result: string[] = [];
+		for (let i = rangeStart; i < rangeEnd; i++) {
+			const lineNum = i + 1;
+			const isEdited = lineNum >= startLine && lineNum <= endLine;
+			const marker = isEdited ? '>' : ' ';
+			const paddedNum = String(lineNum).padStart(4);
+			result.push(`${marker}${paddedNum} | ${lines[i]}`);
+		}
+
+		return result.join('\n');
+	}
+
+	private runDiagnostics(filePath: string): string {
+		const sections: string[] = [];
+
+		// TypeScript check
+		try {
+			execSync('npx tsc --noEmit --pretty false', {
+				encoding: 'utf-8',
+				cwd: process.cwd(),
+				timeout: 20000,
+				stdio: 'pipe',
+			});
+			sections.push('=== TypeScript Check ===');
+			sections.push('No type errors found.');
+		} catch (error) {
+			const output =
+				(error as { stdout?: string; stderr?: string }).stdout ||
+				(error as { stdout?: string; stderr?: string }).stderr ||
+				'';
+			const fileErrors = output
+				.split('\n')
+				.filter((line: string) => line.includes(filePath))
+				.join('\n');
+			sections.push('=== TypeScript Check ===');
+			sections.push(fileErrors || 'No type errors found.');
+		}
+
+		// Biome lint check
+		try {
+			execSync(`npx biome check "${filePath}"`, {
+				encoding: 'utf-8',
+				cwd: process.cwd(),
+				timeout: 10000,
+				stdio: 'pipe',
+			});
+			sections.push('');
+			sections.push('=== Biome Lint ===');
+			sections.push('No lint issues found.');
+		} catch (error) {
+			const output =
+				(error as { stdout?: string; stderr?: string }).stdout ||
+				(error as { stdout?: string; stderr?: string }).stderr ||
+				'';
+			sections.push('');
+			sections.push('=== Biome Lint ===');
+			sections.push(output.trim() || 'No lint issues found.');
+		}
+
+		return sections.join('\n');
 	}
 }
