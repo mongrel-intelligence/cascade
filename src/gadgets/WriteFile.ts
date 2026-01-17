@@ -146,16 +146,24 @@ No lint issues found.`,
 			sections.push('=== TypeScript Check ===');
 			sections.push('No type errors found.');
 		} catch (error) {
-			const output =
-				(error as { stdout?: string; stderr?: string }).stdout ||
-				(error as { stdout?: string; stderr?: string }).stderr ||
-				'';
-			const fileErrors = output
-				.split('\n')
-				.filter((line: string) => line.includes(filePath))
-				.join('\n');
+			const execError = error as { stdout?: string; stderr?: string };
+			const output = [execError.stdout, execError.stderr].filter(Boolean).join('\n');
+			// Filter to errors in the written file, but keep full error messages
+			const lines = output.split('\n');
+			const fileErrors: string[] = [];
+			let includeNext = false;
+			for (const line of lines) {
+				if (line.includes(filePath)) {
+					fileErrors.push(line);
+					includeNext = true;
+				} else if (includeNext && (line.startsWith(' ') || line === '')) {
+					fileErrors.push(line);
+				} else {
+					includeNext = false;
+				}
+			}
 			sections.push('=== TypeScript Check ===');
-			sections.push(fileErrors || 'No type errors found.');
+			sections.push(fileErrors.join('\n') || 'No type errors found.');
 		}
 
 		// Biome lint check
@@ -170,10 +178,9 @@ No lint issues found.`,
 			sections.push('=== Biome Lint ===');
 			sections.push('No lint issues found.');
 		} catch (error) {
-			const output =
-				(error as { stdout?: string; stderr?: string }).stdout ||
-				(error as { stdout?: string; stderr?: string }).stderr ||
-				'';
+			const execError = error as { stdout?: string; stderr?: string };
+			// Biome outputs diagnostics to stdout, summary to stderr - capture both
+			const output = [execError.stdout, execError.stderr].filter(Boolean).join('\n');
 			sections.push('');
 			sections.push('=== Biome Lint ===');
 			sections.push(output.trim() || 'No lint issues found.');
