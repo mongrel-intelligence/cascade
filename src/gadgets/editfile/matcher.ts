@@ -56,6 +56,56 @@ export function findMatch(
 }
 
 /**
+ * Find ALL matches for the search string in content.
+ * Returns matches in order of appearance (for sequential replacement).
+ *
+ * @param content The file content to search in
+ * @param search The string to search for
+ * @param options Matching options
+ * @returns Array of MatchResult objects (may be empty if no matches)
+ */
+export function findAllMatches(
+	content: string,
+	search: string,
+	options: MatchOptions = {},
+): MatchResult[] {
+	const matches: MatchResult[] = [];
+	let remaining = content;
+	let offset = 0;
+
+	while (true) {
+		const match = findMatch(remaining, search, options);
+		if (!match) break;
+
+		// Count newlines in the skipped portion to adjust line numbers
+		const skippedContent = content.slice(0, offset);
+		const lineOffset = countNewlines(skippedContent);
+
+		// Adjust indices to account for offset
+		matches.push({
+			...match,
+			startIndex: match.startIndex + offset,
+			endIndex: match.endIndex + offset,
+			startLine: match.startLine + lineOffset,
+			endLine: match.endLine + lineOffset,
+		});
+
+		// Move past this match
+		offset += match.endIndex;
+		remaining = content.slice(offset);
+	}
+
+	return matches;
+}
+
+/**
+ * Count newlines in a string.
+ */
+function countNewlines(s: string): number {
+	return (s.match(/\n/g) || []).length;
+}
+
+/**
  * Apply replacement to content at the matched location.
  */
 export function applyReplacement(content: string, match: MatchResult, replacement: string): string {
