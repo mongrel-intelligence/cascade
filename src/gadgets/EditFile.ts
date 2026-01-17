@@ -200,19 +200,18 @@ Replaced 1 occurrence.
 		} catch (error) {
 			const nodeError = error as NodeJS.ErrnoException;
 			if (nodeError.code === 'ENOENT') {
-				return `path=${filePath} status=error\n\nError: File not found: ${filePath}`;
+				throw new Error(`File not found: ${filePath}`);
 			}
-			const message = error instanceof Error ? error.message : String(error);
-			return `path=${filePath} status=error\n\nError reading file: ${message}`;
+			throw error;
 		}
 
 		// Find ALL matches using layered strategies
 		const matches = findAllMatches(content, search);
 
 		if (matches.length === 0) {
-			// No match found - provide helpful suggestions
+			// No match found - throw with helpful suggestions
 			const failure = getMatchFailure(content, search);
-			return this.formatFailure(filePath, search, failure, content);
+			throw new Error(this.formatFailure(filePath, search, failure, content));
 		}
 
 		// Store original content for before/after display
