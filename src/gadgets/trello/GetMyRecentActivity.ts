@@ -8,7 +8,6 @@ export class GetMyRecentActivity extends Gadget({
 		'Get your recent Trello activity (cards created, updated, comments posted). Use this to find cards you recently worked on or to understand context when the user refers to previous work.',
 	timeoutMs: 30000,
 	schema: z.object({
-		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		limit: z
 			.number()
 			.int()
@@ -20,11 +19,11 @@ export class GetMyRecentActivity extends Gadget({
 	}),
 	examples: [
 		{
-			params: { comment: 'Finding cards I recently worked on', limit: 10 },
+			params: { limit: 10 },
 			comment: 'Get my last 10 actions to find cards I recently created',
 		},
 		{
-			params: { comment: 'Reviewing my recent activity for context', limit: 20 },
+			params: { limit: 20 },
 			comment: 'Get my recent activity with default limit of 20',
 		},
 	],

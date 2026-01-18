@@ -8,14 +8,12 @@ export class PostTrelloComment extends Gadget({
 		'Post a comment to a Trello card. Use this to communicate with the user, ask questions, or provide status updates.',
 	timeoutMs: 30000,
 	schema: z.object({
-		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		cardId: z.string().describe('The Trello card ID'),
 		text: z.string().describe('The comment text to post (supports markdown)'),
 	}),
 	examples: [
 		{
 			params: {
-				comment: 'Posting status update for stakeholders',
 				cardId: 'abc123',
 				text: '📋 **Brief Ready for Review**\n\nI have analyzed the codebase and updated the card description.',
 			},

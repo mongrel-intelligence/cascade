@@ -8,7 +8,6 @@ export class CreateTrelloCard extends Gadget({
 		'Create a new Trello card in a specific list. Use this to create user story cards or break down work into smaller tasks.',
 	timeoutMs: 30000,
 	schema: z.object({
-		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		listId: z.string().describe('The Trello list ID where the card should be created'),
 		title: z
 			.string()
@@ -26,7 +25,6 @@ export class CreateTrelloCard extends Gadget({
 	examples: [
 		{
 			params: {
-				comment: 'Creating user story for password reset feature',
 				listId: 'abc123',
 				title: 'As a user, I want to reset my password so that I can recover my account',
 				description:
@@ -36,7 +34,6 @@ export class CreateTrelloCard extends Gadget({
 		},
 		{
 			params: {
-				comment: 'Breaking down validation work into separate card',
 				listId: 'abc123',
 				title: 'Add email validation to signup form',
 				description:

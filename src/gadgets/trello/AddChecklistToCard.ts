@@ -8,7 +8,6 @@ export class AddChecklistToCard extends Gadget({
 		'Add a checklist with items to a Trello card. Use this to create interactive checklists for acceptance criteria or implementation steps.',
 	timeoutMs: 30000,
 	schema: z.object({
-		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		cardId: z.string().describe('The Trello card ID'),
 		checklistName: z
 			.string()
@@ -20,7 +19,6 @@ export class AddChecklistToCard extends Gadget({
 	examples: [
 		{
 			params: {
-				comment: 'Adding acceptance criteria for tracking completion',
 				cardId: 'abc123',
 				checklistName: '✅ Acceptance Criteria',
 				items: [
@@ -33,7 +31,6 @@ export class AddChecklistToCard extends Gadget({
 		},
 		{
 			params: {
-				comment: 'Breaking down implementation into trackable steps',
 				cardId: 'abc123',
 				checklistName: '📋 Implementation Steps',
 				items: [

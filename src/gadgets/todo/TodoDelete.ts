@@ -11,12 +11,11 @@ export class TodoDelete extends Gadget({
 Use this to remove todos that are no longer relevant.
 Returns the full remaining todo list.`,
 	schema: z.object({
-		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		id: z.string().describe('ID of the todo to delete.'),
 	}),
 	examples: [
 		{
-			params: { comment: 'Removing redundant task', id: '2' },
+			params: { id: '2' },
 			output:
 				'🗑️ Deleted todo #2: "Implement the feature"\n\n📋 Todo List\n   Progress: 1/1 done, 0 in progress, 0 pending\n\n✅ #1 [done]: Read requirements',
 			comment: 'Delete a todo item',

@@ -8,7 +8,6 @@ export class ReadTrelloCard extends Gadget({
 		'Read a Trello card to retrieve its title, description, comments, checklists, and attachments. Use this to understand the current state of the card before making changes.',
 	timeoutMs: 30000,
 	schema: z.object({
-		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		cardId: z.string().describe('The Trello card ID'),
 		includeComments: z
 			.boolean()
@@ -18,19 +17,11 @@ export class ReadTrelloCard extends Gadget({
 	}),
 	examples: [
 		{
-			params: {
-				comment: 'Reading card to understand requirements',
-				cardId: 'abc123',
-				includeComments: true,
-			},
+			params: { cardId: 'abc123', includeComments: true },
 			comment: 'Read the card with its comments to understand context',
 		},
 		{
-			params: {
-				comment: 'Quick check of card title and description',
-				cardId: 'abc123',
-				includeComments: false,
-			},
+			params: { cardId: 'abc123', includeComments: false },
 			comment: 'Read just the card title and description',
 		},
 	],

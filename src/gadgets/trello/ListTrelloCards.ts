@@ -8,12 +8,11 @@ export class ListTrelloCards extends Gadget({
 		'List all cards on a Trello list. Use this to see cards you created or to find cards to update.',
 	timeoutMs: 30000,
 	schema: z.object({
-		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		listId: z.string().describe('The Trello list ID'),
 	}),
 	examples: [
 		{
-			params: { comment: 'Looking for existing cards to update', listId: 'abc123' },
+			params: { listId: 'abc123' },
 			comment: 'List all cards in the STORIES list to find ones to update',
 		},
 	],

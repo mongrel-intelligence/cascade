@@ -8,7 +8,6 @@ export class UpdateTrelloCard extends Gadget({
 		'Update a Trello card title and/or description. Use this to save your analysis, brief, or plan to the card.',
 	timeoutMs: 30000,
 	schema: z.object({
-		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		cardId: z.string().describe('The Trello card ID'),
 		title: z
 			.string()
@@ -29,7 +28,6 @@ export class UpdateTrelloCard extends Gadget({
 	examples: [
 		{
 			params: {
-				comment: 'Saving structured brief to card',
 				cardId: 'abc123',
 				description: '## Context\n\nBackground info...\n\n## Requirements\n\n- Item 1\n- Item 2',
 			},
@@ -37,7 +35,6 @@ export class UpdateTrelloCard extends Gadget({
 		},
 		{
 			params: {
-				comment: 'Updating title to be more action-oriented',
 				cardId: 'abc123',
 				title: 'Add user authentication flow',
 			},

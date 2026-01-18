@@ -8,7 +8,6 @@ export class UpdateChecklistItem extends Gadget({
 		'Update a checklist item state on a Trello card. Use this to mark acceptance criteria as complete or incomplete.',
 	timeoutMs: 15000,
 	schema: z.object({
-		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		cardId: z.string().describe('The Trello card ID'),
 		checkItemId: z.string().describe('The checklist item ID to update'),
 		state: z.enum(['complete', 'incomplete']).describe('The new state for the checklist item'),
@@ -16,7 +15,6 @@ export class UpdateChecklistItem extends Gadget({
 	examples: [
 		{
 			params: {
-				comment: 'Marking criterion as done after implementing feature',
 				cardId: 'abc123',
 				checkItemId: 'item456',
 				state: 'complete',
@@ -25,7 +23,6 @@ export class UpdateChecklistItem extends Gadget({
 		},
 		{
 			params: {
-				comment: 'Reverting status - tests revealed issue',
 				cardId: 'abc123',
 				checkItemId: 'item789',
 				state: 'incomplete',

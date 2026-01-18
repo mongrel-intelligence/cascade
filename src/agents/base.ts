@@ -370,7 +370,7 @@ async function injectSyntheticCalls(
 		recordSyntheticInvocationId(trackingContext, 'gc_card');
 		builder = builder.withSyntheticGadgetCall(
 			'ReadTrelloCard',
-			{ comment: 'Pre-fetching card data for task context', cardId, includeComments: true },
+			{ cardId, includeComments: true },
 			cardData,
 			'gc_card',
 		);
