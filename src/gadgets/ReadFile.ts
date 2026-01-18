@@ -57,6 +57,7 @@ Allowed paths:
 - Current working directory and subdirectories
 - /tmp directory (for test logs, build artifacts, etc.)`,
 	schema: z.object({
+		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		filePath: z
 			.string()
 			.describe(
@@ -65,12 +66,15 @@ Allowed paths:
 	}),
 	examples: [
 		{
-			params: { filePath: 'package.json' },
+			params: {
+				comment: 'Reading config to understand project structure',
+				filePath: 'package.json',
+			},
 			output: 'path=package.json\n\n{\n  "name": "my-project",\n  "version": "1.0.0"\n  ...\n}',
 			comment: 'Read a JSON config file',
 		},
 		{
-			params: { filePath: '/tmp/test.log' },
+			params: { comment: 'Checking test output for failures', filePath: '/tmp/test.log' },
 			output: 'path=/tmp/test.log\n\n[Test output...]',
 			comment: 'Read a test log from /tmp',
 		},

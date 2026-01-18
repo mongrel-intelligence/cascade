@@ -316,6 +316,7 @@ function createAgentBuilderWithGadgets(
 		.withRetry(getRetryConfig(llmistLogger))
 		.withCompaction(getCompactionConfig(agentType))
 		.withTrailingMessage(getIterationTrailingMessage(agentType))
+		.withTextOnlyHandler('acknowledge')
 		.withHooks({
 			observers: createObserverHooks({
 				model: ctx.model,
@@ -349,7 +350,12 @@ async function injectSyntheticCalls(
 	// Call the actual gadget to generate output (respects .gitignore by default)
 	// Use maxDepth=5 to give agents better visibility into nested structures
 	const listDirGadget = new ListDirectory();
-	const listDirParams = { directoryPath: '.', maxDepth: 5, includeGitIgnored: false };
+	const listDirParams = {
+		comment: 'Pre-fetching codebase structure for context',
+		directoryPath: '.',
+		maxDepth: 5,
+		includeGitIgnored: false,
+	};
 	const listDirResult = listDirGadget.execute(listDirParams);
 	recordSyntheticInvocationId(trackingContext, 'gc_dir');
 	builder = builder.withSyntheticGadgetCall(
@@ -364,7 +370,7 @@ async function injectSyntheticCalls(
 		recordSyntheticInvocationId(trackingContext, 'gc_card');
 		builder = builder.withSyntheticGadgetCall(
 			'ReadTrelloCard',
-			{ cardId, includeComments: true },
+			{ comment: 'Pre-fetching card data for task context', cardId, includeComments: true },
 			cardData,
 			'gc_card',
 		);
@@ -377,7 +383,7 @@ async function injectSyntheticCalls(
 		recordSyntheticInvocationId(trackingContext, invocationId);
 		builder = builder.withSyntheticGadgetCall(
 			'ReadFile',
-			{ filePath: file.path },
+			{ comment: `Pre-fetching ${file.path} for project context`, filePath: file.path },
 			file.content,
 			invocationId,
 		);
@@ -385,24 +391,31 @@ async function injectSyntheticCalls(
 
 	// Inject AU understanding if enabled (gives agent immediate codebase context)
 	if (auEnabled) {
-		const auListResult = (await auList.execute({ path: '.', maxDepth: 5 })) as string;
+		const auListResult = (await auList.execute({
+			comment: 'Pre-fetching AU entries for context',
+			path: '.',
+			maxDepth: 5,
+		})) as string;
 		// Only inject if there's actual content
 		if (auListResult && !auListResult.includes('No AU entries found')) {
 			recordSyntheticInvocationId(trackingContext, 'gc_au_list');
 			builder = builder.withSyntheticGadgetCall(
 				'AUList',
-				{ path: '.', maxDepth: 5 },
+				{ comment: 'Pre-fetching AU entries for context', path: '.', maxDepth: 5 },
 				auListResult,
 				'gc_au_list',
 			);
 
 			// Also inject root-level understanding for high-level context
-			const auReadResult = (await auRead.execute({ paths: '.' })) as string;
+			const auReadResult = (await auRead.execute({
+				comment: 'Pre-fetching root-level understanding',
+				paths: '.',
+			})) as string;
 			if (auReadResult && !auReadResult.includes('No understanding exists yet')) {
 				recordSyntheticInvocationId(trackingContext, 'gc_au_read');
 				builder = builder.withSyntheticGadgetCall(
 					'AURead',
-					{ paths: '.' },
+					{ comment: 'Pre-fetching root-level understanding', paths: '.' },
 					auReadResult,
 					'gc_au_read',
 				);

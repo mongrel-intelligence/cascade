@@ -111,6 +111,7 @@ Use this to plan your work at the start of a task and track progress as you go.
 
 Returns the full todo list after the operation.`,
 	schema: z.object({
+		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		id: z.string().optional().describe('ID of existing todo to update. Omit to create a new todo.'),
 		content: z
 			.string()
@@ -130,25 +131,29 @@ Returns the full todo list after the operation.`,
 	}),
 	examples: [
 		{
-			params: { content: 'Read and understand the Trello card requirements' },
+			params: {
+				comment: 'Starting task - tracking requirements analysis',
+				content: 'Read and understand the Trello card requirements',
+			},
 			output:
 				'➕ Created todo #1.\n\n📋 Todo List\n   Progress: 0/1 done, 0 in progress, 1 pending\n\n⬜ #1 [pending]: Read and understand the Trello card requirements',
 			comment: 'Create a new todo item',
 		},
 		{
-			params: { id: '1', status: 'in_progress' },
+			params: { comment: 'Beginning work on requirements', id: '1', status: 'in_progress' },
 			output:
 				'✏️ Updated todo #1.\n\n📋 Todo List\n   Progress: 0/1 done, 1 in progress, 0 pending\n\n🔄 #1 [in_progress]: Read and understand the Trello card requirements',
 			comment: 'Mark a todo as in progress',
 		},
 		{
-			params: { id: '1', status: 'done' },
+			params: { comment: 'Finished reading requirements', id: '1', status: 'done' },
 			output:
 				'✏️ Updated todo #1.\n\n📋 Todo List\n   Progress: 1/1 done, 0 in progress, 0 pending\n\n✅ #1 [done]: Read and understand the Trello card requirements',
 			comment: 'Mark a todo as done',
 		},
 		{
 			params: {
+				comment: 'Planning implementation steps',
 				items: [
 					{ content: 'Create feature branch' },
 					{ content: 'Implement feature' },

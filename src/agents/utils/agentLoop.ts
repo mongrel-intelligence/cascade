@@ -151,6 +151,11 @@ async function handleGadgetCallEvent(
 		logContext.isSynthetic = true;
 	}
 
+	// Include the comment field (unabbreviated) for observability
+	if (parameters?.comment) {
+		logContext.comment = parameters.comment;
+	}
+
 	addGadgetSpecificLogContext(logContext, gadgetName, parameters);
 	log.info('[Gadget]', logContext);
 }

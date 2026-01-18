@@ -8,6 +8,7 @@ export class ReplyToReviewComment extends Gadget({
 		'Reply to a specific review comment on a GitHub pull request. Use this to acknowledge feedback and explain what was fixed.',
 	timeoutMs: 30000,
 	schema: z.object({
+		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		owner: z.string().describe('The repository owner (username or organization)'),
 		repo: z.string().describe('The repository name'),
 		prNumber: z.number().describe('The pull request number'),
@@ -17,6 +18,7 @@ export class ReplyToReviewComment extends Gadget({
 	examples: [
 		{
 			params: {
+				comment: 'Responding to review feedback about edge cases',
 				owner: 'acme',
 				repo: 'myapp',
 				prNumber: 42,

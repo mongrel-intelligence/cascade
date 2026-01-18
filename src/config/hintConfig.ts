@@ -1,4 +1,5 @@
 import type { TrailingMessage } from 'llmist';
+import { formatTodoList, loadTodos } from '../gadgets/todo/storage.js';
 
 /**
  * Agent-specific batch hints.
@@ -33,12 +34,35 @@ function getAgentHint(agentType?: string): string {
 }
 
 /**
+ * Format the iteration status line with appropriate urgency indicator.
+ */
+function formatIterationStatus(
+	iteration: number,
+	maxIterations: number,
+	batchHint: string,
+): string {
+	const remaining = maxIterations - iteration;
+	const percent = Math.round((iteration / maxIterations) * 100);
+
+	if (percent >= 80) {
+		return `🚨 Iteration ${iteration}/${maxIterations} (${percent}% used, ${remaining} remaining) - ${batchHint}`;
+	}
+
+	if (percent >= 50) {
+		return `⚠️ Iteration ${iteration}/${maxIterations} (${percent}% used, ${remaining} remaining) - ${batchHint}`;
+	}
+
+	return `Iteration ${iteration}/${maxIterations} (${percent}% used, ${remaining} remaining) - ${batchHint}`;
+}
+
+/**
  * Get trailing message function for iteration tracking.
  *
  * Injects iteration budget awareness into each LLM call:
  * - Always shows current iteration, remaining count, and percentage
  * - Adds urgency indicator when running low on iterations
  * - Includes agent-specific batch processing hints
+ * - For implementation agent: includes current todo list for visibility
  *
  * Trailing messages are ephemeral - they appear in each request but don't
  * persist to conversation history, keeping context clean.
@@ -50,17 +74,17 @@ export function getIterationTrailingMessage(agentType?: string): TrailingMessage
 	const batchHint = getAgentHint(agentType);
 
 	return (ctx) => {
-		const remaining = ctx.maxIterations - ctx.iteration;
-		const percent = Math.round((ctx.iteration / ctx.maxIterations) * 100);
+		const iterationStatus = formatIterationStatus(ctx.iteration, ctx.maxIterations, batchHint);
 
-		if (percent >= 80) {
-			return `🚨 Iteration ${ctx.iteration}/${ctx.maxIterations} (${percent}% used, ${remaining} remaining) - ${batchHint}`;
+		// For implementation agent, include the current todo list
+		if (agentType === 'implementation') {
+			const todos = loadTodos();
+			if (todos.length > 0) {
+				const todoListFormatted = formatTodoList(todos);
+				return `${iterationStatus}\n\n## Current Progress\n\n${todoListFormatted}`;
+			}
 		}
 
-		if (percent >= 50) {
-			return `⚠️ Iteration ${ctx.iteration}/${ctx.maxIterations} (${percent}% used, ${remaining} remaining) - ${batchHint}`;
-		}
-
-		return `Iteration ${ctx.iteration}/${ctx.maxIterations} (${percent}% used, ${remaining} remaining) - ${batchHint}`;
+		return iterationStatus;
 	};
 }

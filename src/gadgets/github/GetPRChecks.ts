@@ -57,6 +57,7 @@ export class GetPRChecks extends Gadget({
 		'Get the CI check status for a GitHub pull request. Shows all workflow runs and their status/conclusion.',
 	timeoutMs: 30000,
 	schema: z.object({
+		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		owner: z.string().describe('The repository owner (username or organization)'),
 		repo: z.string().describe('The repository name'),
 		prNumber: z.number().describe('The pull request number'),
@@ -64,6 +65,7 @@ export class GetPRChecks extends Gadget({
 	examples: [
 		{
 			params: {
+				comment: 'Checking CI status before merge',
 				owner: 'acme',
 				repo: 'myapp',
 				prNumber: 42,
