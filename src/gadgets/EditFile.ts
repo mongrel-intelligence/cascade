@@ -121,7 +121,7 @@ Replaced 1 occurrence.
    2 |
    3 | const CONFIG = {
    4 |   debug: false,
->  5 |   timeout: 1000,
+<  5 |   timeout: 1000,
    6 |   retries: 3,
    7 | };
 
@@ -158,7 +158,7 @@ Replaced 2 occurrences.
    1 | // API constants
    2 | export const API_URL = "https://api.example.com";
    3 |
->  4 | export const MAX_RETRIES = 3;
+<  4 | export const MAX_RETRIES = 3;
    5 | export const TIMEOUT = 5000;
 
 --- AFTER ---
@@ -173,7 +173,7 @@ Replaced 2 occurrences.
    9 | // Client constants
   10 | export const CLIENT_URL = "https://client.example.com";
   11 |
-> 12 | export const MAX_RETRIES = 3;
+< 12 | export const MAX_RETRIES = 3;
   13 | export const CLIENT_TIMEOUT = 3000;
 
 --- AFTER ---
@@ -206,7 +206,7 @@ Replaced 1 occurrence.
 --- BEFORE ---
    1 | {
    2 |   "name": "example",
->  3 |   "enabled": false,
+<  3 |   "enabled": false,
    4 |   "count": 0
    5 | }
 
@@ -232,7 +232,7 @@ Replaced 1 occurrence.
 Inserted 1 line at line 1.
 
 --- BEFORE (around line 1) ---
->  1 | import { foo } from 'bar';
+<  1 | import { foo } from 'bar';
    2 | import { baz } from 'qux';
    3 |
 
@@ -265,7 +265,7 @@ Inserted 3 lines at line 10.
    7 | }
    8 |
    9 | // Utils below
-> 10 | function process(data: string) {
+< 10 | function process(data: string) {
   11 |   return data.trim();
   12 | }
 
@@ -333,7 +333,7 @@ Removed 1 line (line 3).
 --- BEFORE ---
    1 | import { foo } from 'foo';
    2 | import { bar } from 'bar';
->  3 | import { unused } from 'unused';
+<  3 | import { unused } from 'unused';
    4 | import { baz } from 'baz';
    5 |
 
@@ -366,12 +366,12 @@ Removed 6 lines (lines 5-10).
    2 |
    3 | export function keepThis() {}
    4 |
->  5 | /** @deprecated */
->  6 | function oldFunc(x: number) {
->  7 |   console.log('deprecated');
->  8 |   return x * 2;
->  9 | }
-> 10 |
+<  5 | /** @deprecated */
+<  6 | function oldFunc(x: number) {
+<  7 |   console.log('deprecated');
+<  8 |   return x * 2;
+<  9 | }
+< 10 |
   11 | export function keepThisToo() {}
 
 --- AFTER ---
@@ -401,9 +401,9 @@ Removed 3 lines (lines 2-4).
 
 --- BEFORE ---
    1 | {
->  2 |   "// NOTE": "Remove this later",
->  3 |   "// TODO": "Clean up config",
->  4 |   "// FIXME": "Legacy value",
+<  2 |   "// NOTE": "Remove this later",
+<  3 |   "// TODO": "Clean up config",
+<  4 |   "// FIXME": "Legacy value",
    5 |   "enabled": true,
    6 |   "timeout": 5000
    7 | }
@@ -481,7 +481,7 @@ Removed 3 lines (lines 2-4).
 			beforeContexts.push({
 				startLine: match.startLine,
 				endLine: match.endLine,
-				context: this.formatContext(originalLines, match.startLine, match.endLine, 5),
+				context: this.formatContext(originalLines, match.startLine, match.endLine, 5, '<'),
 			});
 		}
 
@@ -533,7 +533,7 @@ Removed 3 lines (lines 2-4).
 		const effectiveLine = Math.min(line, lines.length + 1);
 
 		// Store before context
-		const beforeContext = this.formatContext(lines, effectiveLine, effectiveLine, 3);
+		const beforeContext = this.formatContext(lines, effectiveLine, effectiveLine, 3, '<');
 
 		// Insert lines
 		const newLines = [
@@ -611,7 +611,7 @@ Removed 3 lines (lines 2-4).
 		const removedCount = effectiveEndLine - startLine + 1;
 
 		// Store before context with highlight on lines to remove
-		const beforeContext = this.formatContext(lines, startLine, effectiveEndLine, 3);
+		const beforeContext = this.formatContext(lines, startLine, effectiveEndLine, 3, '<');
 
 		// Remove lines
 		const newLines = [...lines.slice(0, startLine - 1), ...lines.slice(effectiveEndLine)];
@@ -749,6 +749,7 @@ Removed 3 lines (lines 2-4).
 		startLine: number,
 		endLine: number,
 		contextLines = 5,
+		editMarker = '>',
 	): string {
 		const rangeStart = Math.max(0, startLine - 1 - contextLines);
 		const rangeEnd = Math.min(lines.length, endLine + contextLines);
@@ -757,7 +758,7 @@ Removed 3 lines (lines 2-4).
 		for (let i = rangeStart; i < rangeEnd; i++) {
 			const lineNum = i + 1;
 			const isEdited = lineNum >= startLine && lineNum <= endLine;
-			const marker = isEdited ? '>' : ' ';
+			const marker = isEdited ? editMarker : ' ';
 			const paddedNum = String(lineNum).padStart(4);
 			result.push(`${marker}${paddedNum} | ${lines[i]}`);
 		}

@@ -477,6 +477,36 @@ class TmuxControlClient {
 	}
 
 	/**
+	 * Get session status - checks if command has exited and returns exit code.
+	 * Combines checkExitMarker and isPaneDead for comprehensive detection.
+	 */
+	async getSessionStatus(
+		windowName: string,
+	): Promise<{ status: 'running' | 'exited' | 'not_found'; exitCode?: number }> {
+		// Check if window exists first
+		if (!(await this.windowExists(windowName))) {
+			return { status: 'not_found' };
+		}
+
+		// Method 1: Check for exit marker in streamed output (most reliable)
+		const markerResult = this.checkExitMarker(windowName);
+		if (markerResult.exited) {
+			return { status: 'exited', exitCode: markerResult.exitCode };
+		}
+
+		// Method 2: Check if pane is dead via tmux
+		const paneId = this.windowToPaneId.get(windowName);
+		if (paneId) {
+			const { dead, exitCode } = await this.isPaneDead(paneId);
+			if (dead) {
+				return { status: 'exited', exitCode };
+			}
+		}
+
+		return { status: 'running' };
+	}
+
+	/**
 	 * Get buffered output for a window
 	 */
 	getOutput(windowName: string): string {
@@ -732,8 +762,19 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 				session: 'npm-install',
 				lines: 25,
 			},
-			output: 'session=npm-install lines=25\n\nadded 874 packages in 45s',
-			comment: 'Check output from running session',
+			output: 'session=npm-install status=running lines=25\n\nadded 874 packages in 45s',
+			comment: 'Check output from running session - status=running means command still executing',
+		},
+		{
+			params: {
+				action: 'capture',
+				comment: 'Checking if tests completed',
+				session: 'test-run',
+				lines: 50,
+			},
+			output:
+				'session=test-run status=exited exit_code=0 lines=50\n\n✓ 15 tests passed\n✓ All tests completed',
+			comment: 'Capture shows command finished - status=exited with exit code',
 		},
 		{
 			params: {
@@ -914,21 +955,35 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 		const client = await getControlClient();
 		const lines = params.lines ?? 25;
 
-		if (!(await client.windowExists(params.session))) {
+		// Check session status (existence + exit detection)
+		const sessionStatus = await client.getSessionStatus(params.session);
+
+		if (sessionStatus.status === 'not_found') {
 			return `session=${params.session} status=error\n\nSession '${params.session}' does not exist`;
 		}
 
-		// Try streamed output first, then capture-pane
+		// Get output (try streamed output first, then capture-pane)
 		let output = client.getOutput(params.session);
 		if (!output.trim()) {
 			output = await client.capturePaneOutput(params.session, lines);
 		}
 
-		// Take last N lines
+		// Take last N lines and clean up
 		const outputLines = output.split('\n');
-		const captured = outputLines.slice(-lines).join('\n').trim();
+		let captured = outputLines.slice(-lines).join('\n').trim();
 
-		return `session=${params.session} lines=${lines}\n\n${captured || '(no output yet)'}`;
+		// Clean exit marker from output if present
+		captured = captured
+			.replace(new RegExp(`${EXIT_MARKER_PREFIX}\\d+${EXIT_MARKER_SUFFIX}\\s*`), '')
+			.replace(/\nPane is dead \([^)]+\)\s*$/, '')
+			.trim();
+
+		// Report status with exit code if exited
+		if (sessionStatus.status === 'exited') {
+			return `session=${params.session} status=exited exit_code=${sessionStatus.exitCode} lines=${lines}\n\n${captured || '(no output)'}`;
+		}
+
+		return `session=${params.session} status=running lines=${lines}\n\n${captured || '(no output yet)'}`;
 	}
 
 	private async handleList(): Promise<string> {
