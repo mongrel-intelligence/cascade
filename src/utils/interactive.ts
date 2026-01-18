@@ -9,15 +9,42 @@ function horizontalLine(): string {
 }
 
 /**
- * Display EditFile params with search/replace as separate colored blocks.
+ * Display EditFile params with mode-specific formatting.
  */
 function displayEditFileParams(params: Record<string, unknown>): void {
-	// File path
+	// Comment (rationale for the edit)
+	if (params.comment) {
+		console.log(chalk.dim('Comment: ') + chalk.white(String(params.comment)));
+	}
+
+	// File path and mode
 	if (params.filePath) {
-		console.log(chalk.dim('File: ') + chalk.cyan(String(params.filePath)));
+		const modeStr = params.mode ? chalk.yellow(`[${params.mode}]`) : '';
+		console.log(`${chalk.dim('File: ')}${chalk.cyan(String(params.filePath))} ${modeStr}`);
 		console.log(horizontalLine());
 	}
 
+	// Mode-specific display
+	switch (params.mode) {
+		case 'search_replace':
+			displaySearchReplaceMode(params);
+			break;
+		case 'insert_at_line':
+			displayInsertAtLineMode(params);
+			break;
+		case 'remove_lines':
+			displayRemoveLinesMode(params);
+			break;
+		default:
+			// Fallback for unknown mode - show as search_replace for backwards compat
+			displaySearchReplaceMode(params);
+	}
+}
+
+/**
+ * Display search_replace mode params.
+ */
+function displaySearchReplaceMode(params: Record<string, unknown>): void {
 	// Search block (what's being replaced) - red
 	if (params.search !== undefined) {
 		console.log(chalk.red('━ Search (to replace):'));
@@ -33,6 +60,34 @@ function displayEditFileParams(params: Record<string, unknown>): void {
 		for (const line of String(params.replace).split('\n')) {
 			console.log(chalk.green(line));
 		}
+	}
+}
+
+/**
+ * Display insert_at_line mode params.
+ */
+function displayInsertAtLineMode(params: Record<string, unknown>): void {
+	const lineNum = params.line !== undefined ? String(params.line) : '?';
+	console.log(chalk.green(`+ Insert BEFORE line ${lineNum}:`));
+
+	if (params.content !== undefined) {
+		for (const line of String(params.content).split('\n')) {
+			console.log(chalk.green(line));
+		}
+	}
+}
+
+/**
+ * Display remove_lines mode params.
+ */
+function displayRemoveLinesMode(params: Record<string, unknown>): void {
+	const startLine = params.startLine !== undefined ? String(params.startLine) : '?';
+	const endLine = params.endLine !== undefined ? String(params.endLine) : '?';
+
+	if (startLine === endLine) {
+		console.log(chalk.red(`━ Remove line ${startLine}`));
+	} else {
+		console.log(chalk.red(`━ Remove lines ${startLine}-${endLine}`));
 	}
 }
 
