@@ -9,12 +9,15 @@ import { CUSTOM_MODELS } from '../config/customModels.js';
 import { getIterationTrailingMessage } from '../config/hintConfig.js';
 import { getRateLimitForModel } from '../config/rateLimits.js';
 import { getRetryConfig } from '../config/retryConfig.js';
-import { EditFile } from '../gadgets/EditFile.js';
+import { FileInsertContent } from '../gadgets/FileInsertContent.js';
+import { FileRemoveContent } from '../gadgets/FileRemoveContent.js';
+import { FileSearchAndReplace } from '../gadgets/FileSearchAndReplace.js';
 import { Finish } from '../gadgets/Finish.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
 import { CreatePR } from '../gadgets/github/index.js';
+import { initSessionState } from '../gadgets/sessionState.js';
 import { Tmux } from '../gadgets/tmux.js';
 import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
 import {
@@ -274,6 +277,9 @@ function createAgentBuilderWithGadgets(
 	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
 	repoDir: string,
 ): BuilderType {
+	// Initialize session state for gadgets (e.g., Finish checks PR requirement for implementation)
+	initSessionState(agentType);
+
 	// Check if AU features should be enabled (repo has .au file at root)
 	const auEnabled = existsSync(join(repoDir, '.au'));
 
@@ -285,7 +291,14 @@ function createAgentBuilderWithGadgets(
 		// Filesystem gadgets (read-only for planning)
 		new ListDirectory(),
 		new ReadFile(),
-		...(isReadOnlyAgent ? [] : [new EditFile(), new WriteFile()]),
+		...(isReadOnlyAgent
+			? []
+			: [
+					new FileSearchAndReplace(),
+					new FileInsertContent(),
+					new FileRemoveContent(),
+					new WriteFile(),
+				]),
 		// Shell commands via tmux (no timeout issues)
 		new Tmux(),
 		new Sleep(),
@@ -332,7 +345,7 @@ function createAgentBuilderWithGadgets(
 		.withGadgets(...allGadgets);
 
 	// Implementation agent uses sequential execution to ensure file operations
-	// are properly ordered (e.g., EditFile then ReadFile on same file)
+	// are properly ordered (e.g., FileSearchAndReplace then ReadFile on same file)
 	if (agentType === 'implementation') {
 		return builder.withGadgetExecutionMode('sequential');
 	}

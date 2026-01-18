@@ -127,7 +127,7 @@ Review the updated description and move to TODO when ready to implement!
 - `ReadFile` - Read file contents
 - `Tmux` - Run shell commands (for exploration: grep, find, etc.)
 
-⚠️ **You do NOT have access to:** EditFile, WriteFile, CreatePR - these are reserved for the implementation agent.
+⚠️ **You do NOT have access to:** FileSearchAndReplace, FileInsertContent, FileRemoveContent, WriteFile, CreatePR - these are reserved for the implementation agent.
 
 ## Rules
 

@@ -1,0 +1,8 @@
+/**
+ * Shared utilities for file editing gadgets.
+ */
+
+export * from './types.js';
+export * from './matcher.js';
+export * from './pathValidation.js';
+export * from './diagnostics.js';

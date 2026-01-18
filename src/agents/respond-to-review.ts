@@ -8,7 +8,9 @@ import { getCompactionConfig } from '../config/compactionConfig.js';
 import { getIterationTrailingMessage } from '../config/hintConfig.js';
 import { getRateLimitForModel } from '../config/rateLimits.js';
 import { getRetryConfig } from '../config/retryConfig.js';
-import { EditFile } from '../gadgets/EditFile.js';
+import { FileInsertContent } from '../gadgets/FileInsertContent.js';
+import { FileRemoveContent } from '../gadgets/FileRemoveContent.js';
+import { FileSearchAndReplace } from '../gadgets/FileSearchAndReplace.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
@@ -18,6 +20,7 @@ import {
 	GetPRDiff,
 	ReplyToReviewComment,
 } from '../gadgets/github/index.js';
+import { initSessionState } from '../gadgets/sessionState.js';
 import { Tmux } from '../gadgets/tmux.js';
 import { githubClient } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
@@ -251,6 +254,9 @@ function createRespondToReviewAgentBuilder(
 	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
 	repoDir: string,
 ): BuilderType {
+	// Initialize session state for gadgets
+	initSessionState('respond-to-review');
+
 	// Check if AU features should be enabled (repo has .au file at root)
 	const auEnabled = existsSync(join(repoDir, '.au'));
 
@@ -259,7 +265,9 @@ function createRespondToReviewAgentBuilder(
 		// Filesystem gadgets
 		new ListDirectory(),
 		new ReadFile(),
-		new EditFile(),
+		new FileSearchAndReplace(),
+		new FileInsertContent(),
+		new FileRemoveContent(),
 		new WriteFile(),
 		// Shell commands via tmux
 		new Tmux(),
