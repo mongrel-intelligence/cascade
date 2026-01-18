@@ -465,7 +465,7 @@ Removed 3 lines (lines 2-4).
 		if (matches.length === 0) {
 			// No match found - throw with helpful suggestions
 			const failure = getMatchFailure(content, search);
-			throw new Error(this.formatFailure(filePath, search, failure, content));
+			throw new Error(this.formatFailure(filePath, search, failure));
 		}
 
 		// Store original content for before/after display
@@ -713,12 +713,9 @@ Removed 3 lines (lines 2-4).
 			}>;
 			nearbyContext: string;
 		},
-		fileContent: string,
 	): string {
 		const lines: string[] = [
-			`path=${filePath} status=failed`,
-			'',
-			`Error: ${failure.reason}`,
+			`ERROR: Search content NOT FOUND in file ${filePath}`,
 			'',
 			'SEARCH CONTENT:',
 			'```',
@@ -743,8 +740,6 @@ Removed 3 lines (lines 2-4).
 				lines.push('', 'CONTEXT:', failure.nearbyContext);
 			}
 		}
-
-		lines.push('', 'CURRENT FILE CONTENT:', '```', fileContent, '```');
 
 		return lines.join('\n');
 	}
