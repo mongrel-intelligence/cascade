@@ -92,6 +92,46 @@ No type errors found.
 No lint issues found.`,
 			comment: 'Write a TypeScript file with diagnostics output',
 		},
+		{
+			params: {
+				comment: 'Creating user service class',
+				filePath: 'src/services/userService.ts',
+				content: `import { db } from '../db';
+import type { User } from '../types';
+
+export class UserService {
+  async getUser(id: string): Promise<User | null> {
+    return db.users.findById(id);
+  }
+
+  async createUser(data: Partial<User>): Promise<User> {
+    return db.users.create(data);
+  }
+
+  async updateUser(id: string, data: Partial<User>): Promise<User> {
+    const user = await this.getUser(id);
+    if (!user) {
+      throw new Error(\`User not found: \${id}\`);
+    }
+    return db.users.update(id, data);
+  }
+
+  async deleteUser(id: string): Promise<void> {
+    await db.users.delete(id);
+  }
+}`,
+			},
+			output: `path=src/services/userService.ts
+
+Wrote 542 bytes
+
+=== TypeScript Check ===
+No type errors found.
+
+=== Biome Lint ===
+No lint issues found.`,
+			comment: 'Write a complete TypeScript file with multi-line content',
+		},
 	],
 }) {
 	override execute(params: this['params']): string {

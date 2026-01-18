@@ -1,5 +1,5 @@
 /**
- * Layered matching algorithm for EditFile gadget.
+ * Layered matching algorithm for file editing gadgets.
  *
  * Tries strategies in order: exact → whitespace → indentation → fuzzy
  * This approach reduces edit errors by ~9x (per Aider benchmarks).
@@ -477,4 +477,29 @@ function getContext(content: string, lineNumber: number, contextLines: number): 
 	});
 
 	return contextWithNumbers.join('\n');
+}
+
+/**
+ * Format context lines around an edited range for output display.
+ */
+export function formatContext(
+	lines: string[],
+	startLine: number,
+	endLine: number,
+	contextLines = 5,
+	editMarker = '>',
+): string {
+	const rangeStart = Math.max(0, startLine - 1 - contextLines);
+	const rangeEnd = Math.min(lines.length, endLine + contextLines);
+
+	const result: string[] = [];
+	for (let i = rangeStart; i < rangeEnd; i++) {
+		const lineNum = i + 1;
+		const isEdited = lineNum >= startLine && lineNum <= endLine;
+		const marker = isEdited ? editMarker : ' ';
+		const paddedNum = String(lineNum).padStart(4);
+		result.push(`${marker}${paddedNum} | ${lines[i]}`);
+	}
+
+	return result.join('\n');
 }

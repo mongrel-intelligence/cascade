@@ -1,4 +1,5 @@
 import { Gadget, TaskCompletionSignal, z } from 'llmist';
+import { getSessionState } from './sessionState.js';
 
 export class Finish extends Gadget({
 	name: 'Finish',
@@ -16,6 +17,16 @@ export class Finish extends Gadget({
 	],
 }) {
 	override execute(params: this['params']): never {
+		const state = getSessionState();
+
+		// For implementation agent, require PR creation
+		if (state.agentType === 'implementation' && !state.prCreated) {
+			throw new Error(
+				'Cannot finish implementation session without creating a PR. ' +
+					'You must call CreatePR to submit your changes before calling Finish.',
+			);
+		}
+
 		throw new TaskCompletionSignal(params.comment);
 	}
 }

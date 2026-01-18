@@ -9,36 +9,57 @@ function horizontalLine(): string {
 }
 
 /**
- * Display EditFile params with mode-specific formatting.
+ * Display FileSearchAndReplace params.
  */
-function displayEditFileParams(params: Record<string, unknown>): void {
+function displayFileSearchAndReplaceParams(params: Record<string, unknown>): void {
 	// Comment (rationale for the edit)
 	if (params.comment) {
 		console.log(chalk.dim('Comment: ') + chalk.white(String(params.comment)));
 	}
 
-	// File path and mode
+	// File path
 	if (params.filePath) {
-		const modeStr = params.mode ? chalk.yellow(`[${params.mode}]`) : '';
-		console.log(`${chalk.dim('File: ')}${chalk.cyan(String(params.filePath))} ${modeStr}`);
+		console.log(`${chalk.dim('File: ')}${chalk.cyan(String(params.filePath))}`);
 		console.log(horizontalLine());
 	}
 
-	// Mode-specific display
-	switch (params.mode) {
-		case 'search_replace':
-			displaySearchReplaceMode(params);
-			break;
-		case 'insert_at_line':
-			displayInsertAtLineMode(params);
-			break;
-		case 'remove_lines':
-			displayRemoveLinesMode(params);
-			break;
-		default:
-			// Fallback for unknown mode - show as search_replace for backwards compat
-			displaySearchReplaceMode(params);
+	displaySearchReplaceMode(params);
+}
+
+/**
+ * Display FileInsertContent params.
+ */
+function displayFileInsertContentParams(params: Record<string, unknown>): void {
+	// Comment (rationale for the edit)
+	if (params.comment) {
+		console.log(chalk.dim('Comment: ') + chalk.white(String(params.comment)));
 	}
+
+	// File path
+	if (params.filePath) {
+		console.log(`${chalk.dim('File: ')}${chalk.cyan(String(params.filePath))}`);
+		console.log(horizontalLine());
+	}
+
+	displayInsertAtLineMode(params);
+}
+
+/**
+ * Display FileRemoveContent params.
+ */
+function displayFileRemoveContentParams(params: Record<string, unknown>): void {
+	// Comment (rationale for the edit)
+	if (params.comment) {
+		console.log(chalk.dim('Comment: ') + chalk.white(String(params.comment)));
+	}
+
+	// File path
+	if (params.filePath) {
+		console.log(`${chalk.dim('File: ')}${chalk.cyan(String(params.filePath))}`);
+		console.log(horizontalLine());
+	}
+
+	displayRemoveLinesMode(params);
 }
 
 /**
@@ -119,11 +140,19 @@ export function displayGadgetCall(
 
 	console.log(horizontalLine());
 
-	// Special formatting for EditFile
-	if (name === 'EditFile') {
-		displayEditFileParams(params);
-	} else {
-		displayDefaultParams(params);
+	// Special formatting for file editing gadgets
+	switch (name) {
+		case 'FileSearchAndReplace':
+			displayFileSearchAndReplaceParams(params);
+			break;
+		case 'FileInsertContent':
+			displayFileInsertContentParams(params);
+			break;
+		case 'FileRemoveContent':
+			displayFileRemoveContentParams(params);
+			break;
+		default:
+			displayDefaultParams(params);
 	}
 
 	console.log(horizontalLine());
