@@ -63,25 +63,45 @@ Allowed paths:
 			.describe(
 				'Path to the file to read (relative or absolute). ONLY VALID PATHS ALLOWED. Use ListDirectory to confirm full path.',
 			),
+		showLineNumbers: z
+			.boolean()
+			.optional()
+			.default(false)
+			.describe('If true, prefix each line with its 1-based line number (e.g., "   1 | content")'),
 	}),
 	examples: [
 		{
 			params: {
 				comment: 'Reading config to understand project structure',
 				filePath: 'package.json',
+				showLineNumbers: false,
 			},
 			output: 'path=package.json\n\n{\n  "name": "my-project",\n  "version": "1.0.0"\n  ...\n}',
 			comment: 'Read a JSON config file',
 		},
 		{
-			params: { comment: 'Checking test output for failures', filePath: '/tmp/test.log' },
+			params: {
+				comment: 'Checking test output for failures',
+				filePath: '/tmp/test.log',
+				showLineNumbers: false,
+			},
 			output: 'path=/tmp/test.log\n\n[Test output...]',
 			comment: 'Read a test log from /tmp',
+		},
+		{
+			params: {
+				comment: 'Reading with line numbers for precise editing',
+				filePath: 'src/utils.ts',
+				showLineNumbers: true,
+			},
+			output:
+				'path=src/utils.ts\n\n 1 | export function add(a: number, b: number) {\n 2 |   return a + b;\n 3 | }',
+			comment: 'Read with line numbers for insert_at_line or remove_lines operations',
 		},
 	],
 }) {
 	override execute(params: this['params']): string {
-		const { filePath } = params;
+		const { filePath, showLineNumbers = false } = params;
 		const validatedPath = validatePath(filePath);
 
 		// Check if already read in this session (content is in context)
@@ -89,8 +109,19 @@ Allowed paths:
 			return `path=${filePath}\n\n[Already read - refer to previous content in context]`;
 		}
 
-		const content = readFileSync(validatedPath, 'utf-8');
+		let content = readFileSync(validatedPath, 'utf-8');
 		markFileRead(validatedPath);
+
+		if (showLineNumbers) {
+			content = this.addLineNumbers(content);
+		}
+
 		return `path=${filePath}\n\n${content}`;
+	}
+
+	private addLineNumbers(content: string): string {
+		const lines = content.split('\n');
+		const width = String(lines.length).length;
+		return lines.map((line, i) => `${String(i + 1).padStart(width)} | ${line}`).join('\n');
 	}
 }
