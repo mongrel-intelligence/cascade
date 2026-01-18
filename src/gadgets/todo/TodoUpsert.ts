@@ -130,7 +130,9 @@ Returns the full todo list after the operation.`,
 	}),
 	examples: [
 		{
-			params: { content: 'Read and understand the Trello card requirements' },
+			params: {
+				content: 'Read and understand the Trello card requirements',
+			},
 			output:
 				'➕ Created todo #1.\n\n📋 Todo List\n   Progress: 0/1 done, 0 in progress, 1 pending\n\n⬜ #1 [pending]: Read and understand the Trello card requirements',
 			comment: 'Create a new todo item',

@@ -61,17 +61,26 @@ Allowed paths:
 - Current working directory and subdirectories
 - /tmp directory`,
 	schema: z.object({
+		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		filePath: z.string().describe('Path to the file to write (relative or absolute)'),
 		content: z.string().describe('Content to write to the file'),
 	}),
 	examples: [
 		{
-			params: { filePath: 'output.txt', content: 'Hello, World!' },
+			params: {
+				comment: 'Creating output file for test results',
+				filePath: 'output.txt',
+				content: 'Hello, World!',
+			},
 			output: 'path=output.txt\n\nWrote 13 bytes',
 			comment: 'Write a simple text file (no diagnostics for non-TS files)',
 		},
 		{
-			params: { filePath: 'src/utils/helper.ts', content: 'export function helper() {}' },
+			params: {
+				comment: 'Adding new helper utility function',
+				filePath: 'src/utils/helper.ts',
+				content: 'export function helper() {}',
+			},
 			output: `path=src/utils/helper.ts
 
 Wrote 27 bytes (created directory: src/utils)

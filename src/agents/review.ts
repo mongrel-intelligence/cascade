@@ -299,7 +299,7 @@ async function injectReviewSyntheticCalls(
 	recordSyntheticInvocationId(trackingContext, 'gc_pr_details');
 	builder = builder.withSyntheticGadgetCall(
 		'GetPRDetails',
-		{ owner, repo, prNumber },
+		{ comment: 'Pre-fetching PR details for review context', owner, repo, prNumber },
 		ctx.prDetailsFormatted,
 		'gc_pr_details',
 	);
@@ -308,7 +308,7 @@ async function injectReviewSyntheticCalls(
 	recordSyntheticInvocationId(trackingContext, 'gc_pr_diff');
 	builder = builder.withSyntheticGadgetCall(
 		'GetPRDiff',
-		{ owner, repo, prNumber },
+		{ comment: 'Pre-fetching PR diff for code review', owner, repo, prNumber },
 		ctx.diffFormatted,
 		'gc_pr_diff',
 	);
@@ -317,7 +317,7 @@ async function injectReviewSyntheticCalls(
 	recordSyntheticInvocationId(trackingContext, 'gc_pr_checks');
 	builder = builder.withSyntheticGadgetCall(
 		'GetPRChecks',
-		{ owner, repo, prNumber },
+		{ comment: 'Pre-fetching CI check status for review', owner, repo, prNumber },
 		ctx.checkStatusFormatted,
 		'gc_pr_checks',
 	);
@@ -329,7 +329,7 @@ async function injectReviewSyntheticCalls(
 		recordSyntheticInvocationId(trackingContext, invocationId);
 		builder = builder.withSyntheticGadgetCall(
 			'ReadFile',
-			{ filePath: file.path },
+			{ comment: `Pre-fetching ${file.path} for project context`, filePath: file.path },
 			file.content,
 			invocationId,
 		);
@@ -342,7 +342,7 @@ async function injectReviewSyntheticCalls(
 		recordSyntheticInvocationId(trackingContext, invocationId);
 		builder = builder.withSyntheticGadgetCall(
 			'ReadFile',
-			{ filePath: file.path },
+			{ comment: `Pre-fetching ${file.path} for review`, filePath: file.path },
 			`path=${file.path}\n\n${file.content}`,
 			invocationId,
 		);
@@ -350,24 +350,30 @@ async function injectReviewSyntheticCalls(
 
 	// Inject AU understanding if enabled (gives agent immediate codebase context)
 	if (auEnabled) {
-		const auListResult = (await auList.execute({ path: '.' })) as string;
+		const auListResult = (await auList.execute({
+			comment: 'Pre-fetching AU entries for context',
+			path: '.',
+		})) as string;
 		// Only inject if there's actual content
 		if (auListResult && !auListResult.includes('No AU entries found')) {
 			recordSyntheticInvocationId(trackingContext, 'gc_au_list');
 			builder = builder.withSyntheticGadgetCall(
 				'AUList',
-				{ path: '.' },
+				{ comment: 'Pre-fetching AU entries for context', path: '.' },
 				auListResult,
 				'gc_au_list',
 			);
 
 			// Also inject root-level understanding for high-level context
-			const auReadResult = (await auRead.execute({ paths: '.' })) as string;
+			const auReadResult = (await auRead.execute({
+				comment: 'Pre-fetching root-level understanding',
+				paths: '.',
+			})) as string;
 			if (auReadResult && !auReadResult.includes('No understanding exists yet')) {
 				recordSyntheticInvocationId(trackingContext, 'gc_au_read');
 				builder = builder.withSyntheticGadgetCall(
 					'AURead',
-					{ paths: '.' },
+					{ comment: 'Pre-fetching root-level understanding', paths: '.' },
 					auReadResult,
 					'gc_au_read',
 				);

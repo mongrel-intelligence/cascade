@@ -628,6 +628,7 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 	schema: z.discriminatedUnion('action', [
 		z.object({
 			action: z.literal('start'),
+			comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 			session: sessionNameSchema.describe("Unique session name (e.g., 'test-run', 'npm-install')"),
 			command: z
 				.string()
@@ -641,6 +642,7 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 		}),
 		z.object({
 			action: z.literal('send'),
+			comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 			session: sessionNameSchema.describe('Target session name'),
 			keys: z.string().describe("Keys or command to send (e.g., 'npm test' or 'C-c' for Ctrl+C)"),
 			enter: z.coerce
@@ -650,6 +652,7 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 		}),
 		z.object({
 			action: z.literal('capture'),
+			comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 			session: sessionNameSchema.describe('Session to capture output from'),
 			lines: z.coerce
 				.number()
@@ -661,19 +664,28 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 		}),
 		z.object({
 			action: z.literal('list'),
+			comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		}),
 		z.object({
 			action: z.literal('kill'),
+			comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 			session: sessionNameSchema.describe('Session to terminate'),
 		}),
 		z.object({
 			action: z.literal('exists'),
+			comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 			session: sessionNameSchema.describe('Session name to check'),
 		}),
 	]),
 	examples: [
 		{
-			params: { action: 'start', session: 'test-run', command: 'npm test', wait: 120000 },
+			params: {
+				action: 'start',
+				comment: 'Running unit tests to verify changes',
+				session: 'test-run',
+				command: 'npm test',
+				wait: 120000,
+			},
 			output:
 				'session=test-run status=exited exit_code=0\n\n> project@1.0.0 test\n> vitest run\n\n✓ 15 tests passed',
 			comment: 'Run tests - command completed within 120s wait period',
@@ -681,6 +693,7 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 		{
 			params: {
 				action: 'start',
+				comment: 'Running lint and tests in sequence',
 				session: 'pipeline',
 				command: 'npm run lint && npm test',
 				wait: 120000,
@@ -691,6 +704,7 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 		{
 			params: {
 				action: 'start',
+				comment: 'Testing frontend package separately',
 				session: 'frontend-test',
 				command: 'pnpm test',
 				cwd: 'packages/frontend',
@@ -702,6 +716,7 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 		{
 			params: {
 				action: 'start',
+				comment: 'Starting E2E test suite',
 				session: 'e2e-tests',
 				command: 'npm run test:e2e',
 				wait: 120000,
@@ -711,28 +726,40 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 			comment: 'Long-running E2E tests still running after 120s - use capture to monitor',
 		},
 		{
-			params: { action: 'capture', session: 'npm-install', lines: 25 },
+			params: {
+				action: 'capture',
+				comment: 'Checking install progress',
+				session: 'npm-install',
+				lines: 25,
+			},
 			output: 'session=npm-install lines=25\n\nadded 874 packages in 45s',
 			comment: 'Check output from running session',
 		},
 		{
-			params: { action: 'send', session: 'dev-server', keys: 'C-c', enter: false },
+			params: {
+				action: 'send',
+				comment: 'Stopping dev server',
+				session: 'dev-server',
+				keys: 'C-c',
+				enter: false,
+			},
 			output: "session=dev-server status=sent\n\nSent keys to session 'dev-server': C-c",
 			comment: 'Send Ctrl+C to stop a process',
 		},
 		{
-			params: { action: 'kill', session: 'npm-install' },
+			params: { action: 'kill', comment: 'Cleaning up completed session', session: 'npm-install' },
 			output: "session=npm-install status=killed\n\nSession 'npm-install' terminated",
 			comment: 'Terminate a session',
 		},
 		{
-			params: { action: 'list' },
+			params: { action: 'list', comment: 'Checking for running sessions' },
 			output: 'sessions=2\n\ntest-run: npm (running)\nnpm-install: npm (running)',
 			comment: 'List all active tmux sessions',
 		},
 		{
 			params: {
 				action: 'start',
+				comment: 'Creating PR for OAuth feature',
 				session: 'create-pr',
 				command:
 					"gh pr create --title 'feat(auth): add OAuth login' --body 'Implements OAuth flow'",

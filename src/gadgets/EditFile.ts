@@ -60,6 +60,7 @@ Each call provides immediate feedback, allowing you to adjust subsequent edits.`
 	timeoutMs: 30000,
 	maxConcurrent: 1, // Sequential execution to prevent race conditions on file writes
 	schema: z.object({
+		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		filePath: z.string().describe('Path to the file to edit (relative or absolute)'),
 		search: z.string().describe('The content to search for in the file'),
 		replace: z.string().describe('The content to replace it with (empty string to delete)'),
@@ -67,6 +68,7 @@ Each call provides immediate feedback, allowing you to adjust subsequent edits.`
 	examples: [
 		{
 			params: {
+				comment: 'Increasing timeout from 1s to 5s to fix test flakiness',
 				filePath: 'src/config.ts',
 				search: 'timeout: 1000',
 				replace: 'timeout: 5000',
@@ -103,6 +105,7 @@ No lint issues found.`,
 		},
 		{
 			params: {
+				comment: 'Updating retry constant per requirements',
 				filePath: 'src/constants.ts',
 				search: 'MAX_RETRIES = 3',
 				replace: 'MAX_RETRIES = 5',
@@ -150,6 +153,7 @@ No lint issues found.`,
 		},
 		{
 			params: {
+				comment: 'Enabling feature flag for new functionality',
 				filePath: 'src/data.json',
 				search: '"enabled": false',
 				replace: '"enabled": true',

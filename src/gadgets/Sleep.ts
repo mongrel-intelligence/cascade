@@ -23,36 +23,35 @@ export class Sleep extends Gadget({
 - Don't use for long waits (>30s) - prefer polling with shorter sleeps`,
 	timeoutMs: 65000, // Allow up to 60s sleep + 5s buffer
 	schema: z.object({
+		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		seconds: z.number().min(0.1).max(60).describe('Duration to sleep in seconds (0.1 to 60)'),
-		reason: z.string().optional().describe('Optional reason for the wait (for logging clarity)'),
 	}),
 	examples: [
 		{
-			params: { seconds: 3, reason: 'waiting for dev server to start' },
-			output: 'Slept for 3 seconds (waiting for dev server to start)',
+			params: { comment: 'Waiting for dev server to start', seconds: 3 },
+			output: 'Slept for 3 seconds',
 			comment: 'Wait for a dev server after starting it with tmux',
 		},
 		{
-			params: { seconds: 1 },
+			params: { comment: 'Brief pause between operations', seconds: 1 },
 			output: 'Slept for 1 second',
 			comment: 'Brief pause between operations',
 		},
 		{
-			params: { seconds: 5, reason: 'database initialization' },
-			output: 'Slept for 5 seconds (database initialization)',
+			params: { comment: 'Waiting for database initialization', seconds: 5 },
+			output: 'Slept for 5 seconds',
 			comment: 'Wait for database to be ready',
 		},
 	],
 }) {
 	override async execute(params: this['params']): Promise<string> {
-		const { seconds, reason } = params;
+		const { seconds } = params;
 
 		// Sleep for the specified duration
 		await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 
 		const duration = seconds === 1 ? '1 second' : `${seconds} seconds`;
-		const reasonText = reason ? ` (${reason})` : '';
 
-		return `Slept for ${duration}${reasonText}`;
+		return `Slept for ${duration}`;
 	}
 }

@@ -8,6 +8,7 @@ export class GetPRComments extends Gadget({
 		'Get all review comments on a GitHub pull request. Use this to understand what feedback has been given.',
 	timeoutMs: 30000,
 	schema: z.object({
+		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		owner: z.string().describe('The repository owner (username or organization)'),
 		repo: z.string().describe('The repository name'),
 		prNumber: z.number().describe('The pull request number'),
@@ -15,6 +16,7 @@ export class GetPRComments extends Gadget({
 	examples: [
 		{
 			params: {
+				comment: 'Fetching review comments to understand feedback',
 				owner: 'acme',
 				repo: 'myapp',
 				prNumber: 42,

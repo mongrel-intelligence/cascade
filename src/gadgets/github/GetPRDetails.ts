@@ -8,6 +8,7 @@ export class GetPRDetails extends Gadget({
 		'Get details about a GitHub pull request including title, description, and branch info.',
 	timeoutMs: 30000,
 	schema: z.object({
+		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		owner: z.string().describe('The repository owner (username or organization)'),
 		repo: z.string().describe('The repository name'),
 		prNumber: z.number().describe('The pull request number'),
@@ -15,6 +16,7 @@ export class GetPRDetails extends Gadget({
 	examples: [
 		{
 			params: {
+				comment: 'Fetching PR details to understand changes',
 				owner: 'acme',
 				repo: 'myapp',
 				prNumber: 42,

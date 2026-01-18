@@ -251,6 +251,7 @@ Allowed paths:
 - Current working directory and subdirectories
 - /tmp directory`,
 	schema: z.object({
+		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		directoryPath: z.string().default('.').describe('Path to the directory to list'),
 		maxDepth: z
 			.number()
@@ -266,13 +267,23 @@ Allowed paths:
 	}),
 	examples: [
 		{
-			params: { directoryPath: '.', maxDepth: 1, includeGitIgnored: false },
+			params: {
+				comment: 'Getting overview of project structure',
+				directoryPath: '.',
+				maxDepth: 1,
+				includeGitIgnored: false,
+			},
 			output:
 				'path=. maxDepth=1 includeGitIgnored=false\n\n#T|N|S|A\nD|src|0|2h\nD|tests|0|1d\nF|package.json|2841|3h',
 			comment: 'List current directory (excluding gitignored files)',
 		},
 		{
-			params: { directoryPath: 'src', maxDepth: 2, includeGitIgnored: true },
+			params: {
+				comment: 'Exploring src directory to find component files',
+				directoryPath: 'src',
+				maxDepth: 2,
+				includeGitIgnored: true,
+			},
 			output:
 				'path=src maxDepth=2 includeGitIgnored=true\n\n#T|N|S|A\nD|components|0|1d\nF|index.ts|512|1h',
 			comment: 'List src directory including all files',
