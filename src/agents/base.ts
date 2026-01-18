@@ -10,6 +10,7 @@ import { getIterationTrailingMessage } from '../config/hintConfig.js';
 import { getRateLimitForModel } from '../config/rateLimits.js';
 import { getRetryConfig } from '../config/retryConfig.js';
 import { EditFile } from '../gadgets/EditFile.js';
+import { Finish } from '../gadgets/Finish.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
@@ -303,6 +304,8 @@ function createAgentBuilderWithGadgets(
 		// new GetMyRecentActivity(), // Temporarily disabled
 		new AddChecklistToCard(),
 		new UpdateChecklistItem(),
+		// Session control
+		new Finish(),
 	];
 
 	const allGadgets = auEnabled ? [...baseGadgets, auList, auRead] : baseGadgets;
