@@ -66,42 +66,42 @@ Allowed paths:
 		showLineNumbers: z
 			.boolean()
 			.optional()
-			.default(false)
+			.default(true)
 			.describe('If true, prefix each line with its 1-based line number (e.g., "   1 | content")'),
 	}),
 	examples: [
 		{
 			params: {
-				comment: 'Reading config to understand project structure',
-				filePath: 'package.json',
-				showLineNumbers: false,
-			},
-			output: 'path=package.json\n\n{\n  "name": "my-project",\n  "version": "1.0.0"\n  ...\n}',
-			comment: 'Read a JSON config file',
-		},
-		{
-			params: {
-				comment: 'Checking test output for failures',
-				filePath: '/tmp/test.log',
-				showLineNumbers: false,
-			},
-			output: 'path=/tmp/test.log\n\n[Test output...]',
-			comment: 'Read a test log from /tmp',
-		},
-		{
-			params: {
-				comment: 'Reading with line numbers for precise editing',
+				comment: 'Reading source file to understand implementation',
 				filePath: 'src/utils.ts',
 				showLineNumbers: true,
 			},
 			output:
 				'path=src/utils.ts\n\n 1 | export function add(a: number, b: number) {\n 2 |   return a + b;\n 3 | }',
-			comment: 'Read with line numbers for insert_at_line or remove_lines operations',
+			comment: 'Default behavior includes line numbers for precise editing',
+		},
+		{
+			params: {
+				comment: 'Checking test output for failures',
+				filePath: '/tmp/test.log',
+				showLineNumbers: true,
+			},
+			output: 'path=/tmp/test.log\n\n 1 | PASS src/utils.test.ts\n 2 |   ✓ adds numbers correctly',
+			comment: 'Read a test log from /tmp',
+		},
+		{
+			params: {
+				comment: 'Reading config without line numbers',
+				filePath: 'package.json',
+				showLineNumbers: false,
+			},
+			output: 'path=package.json\n\n{\n  "name": "my-project",\n  "version": "1.0.0"\n  ...\n}',
+			comment: 'Disable line numbers for cleaner JSON/config output',
 		},
 	],
 }) {
 	override execute(params: this['params']): string {
-		const { filePath, showLineNumbers = false } = params;
+		const { filePath, showLineNumbers = true } = params;
 		const validatedPath = validatePath(filePath);
 
 		// Check if already read in this session (content is in context)

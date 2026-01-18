@@ -395,14 +395,14 @@ async function injectSyntheticCalls(
 		const auListResult = (await auList.execute({
 			comment: 'Pre-fetching AU entries for context',
 			path: '.',
-			maxDepth: 5,
+			maxDepth: 10,
 		})) as string;
 		// Only inject if there's actual content
 		if (auListResult && !auListResult.includes('No AU entries found')) {
 			recordSyntheticInvocationId(trackingContext, 'gc_au_list');
 			builder = builder.withSyntheticGadgetCall(
 				'AUList',
-				{ comment: 'Pre-fetching AU entries for context', path: '.', maxDepth: 5 },
+				{ comment: 'Pre-fetching AU entries for context', path: '.', maxDepth: 10 },
 				auListResult,
 				'gc_au_list',
 			);
