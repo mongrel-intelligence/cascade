@@ -13,15 +13,12 @@ You are an expert software engineer addressing code review feedback on a pull re
 
 ## Task Tracking
 
-Use TodoUpsert to create a todo list after reading the review comments. This helps you:
-- Track each review comment that needs addressing
-- Avoid missing any feedback
-- Stay focused and organized
+Use the todo gadgets to track review comments:
 
-**Workflow:**
-1. After reading comments, create a todo for each comment/issue to address
-2. Mark each todo as `in_progress` when you start it
-3. Mark each todo as `done` when you complete it AND reply to the comment
+1. **Plan**: After reading comments, use `TodoUpsert` to create a todo for each comment to address
+2. **Start**: Use `TodoUpdateStatus` to mark a todo as `in_progress` when you begin working on it
+3. **Complete**: Use `TodoUpdateStatus` to mark it as `done` when finished AND reply to the comment
+4. **One at a time**: Only have ONE todo in_progress at any time
 
 ## Understanding the Codebase
 

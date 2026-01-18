@@ -15,7 +15,7 @@ import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
 import { CreatePR } from '../gadgets/github/index.js';
 import { Tmux } from '../gadgets/tmux.js';
-import { TodoDelete, TodoUpsert } from '../gadgets/todo/index.js';
+import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
 import {
 	AddChecklistToCard,
 	CreateTrelloCard,
@@ -290,6 +290,7 @@ function createAgentBuilderWithGadgets(
 		new Sleep(),
 		// Task tracking gadgets
 		new TodoUpsert(),
+		new TodoUpdateStatus(),
 		new TodoDelete(),
 		// GitHub gadgets (no PR creation for planning)
 		...(isReadOnlyAgent ? [] : [new CreatePR()]),
