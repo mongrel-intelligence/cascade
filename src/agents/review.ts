@@ -20,7 +20,7 @@ import {
 	formatCheckStatus,
 } from '../gadgets/github/index.js';
 import { Tmux } from '../gadgets/tmux.js';
-import { TodoDelete, TodoUpsert } from '../gadgets/todo/index.js';
+import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
 import { githubClient } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
@@ -253,6 +253,7 @@ function createReviewAgentBuilder(
 		new Sleep(),
 		// Task tracking gadgets
 		new TodoUpsert(),
+		new TodoUpdateStatus(),
 		new TodoDelete(),
 		// GitHub gadgets (read + create review)
 		new GetPRDetails(),

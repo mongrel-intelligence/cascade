@@ -1,21 +1,13 @@
 /**
- * TodoUpsert gadget - Create or update todo items.
- * Helps agents track their progress through implementation tasks.
+ * TodoUpsert gadget - Create or update todo item content.
+ * Helps agents plan and organize their implementation tasks.
  */
 import { Gadget, z } from 'llmist';
-import {
-	type Todo,
-	type TodoStatus,
-	formatTodoList,
-	getNextId,
-	loadTodos,
-	saveTodos,
-} from './storage.js';
+import { type Todo, formatTodoList, getNextId, loadTodos, saveTodos } from './storage.js';
 
 interface TodoItem {
 	id?: string;
 	content?: string;
-	status?: string;
 }
 
 interface BatchResult {
@@ -31,14 +23,13 @@ function upsertBatchItem(item: TodoItem, todos: Todo[], now: string): 'created' 
 			todos.push({
 				id: item.id,
 				content: item.content,
-				status: (item.status as TodoStatus) ?? 'pending',
+				status: 'pending',
 				createdAt: now,
 				updatedAt: now,
 			});
 			return 'created';
 		}
 		if (item.content !== undefined) todos[index].content = item.content;
-		if (item.status !== undefined) todos[index].status = item.status as TodoStatus;
 		todos[index].updatedAt = now;
 		return 'updated';
 	}
@@ -47,7 +38,7 @@ function upsertBatchItem(item: TodoItem, todos: Todo[], now: string): 'created' 
 	todos.push({
 		id: getNextId(todos),
 		content: item.content,
-		status: (item.status as TodoStatus) ?? 'pending',
+		status: 'pending',
 		createdAt: now,
 		updatedAt: now,
 	});
@@ -76,18 +67,6 @@ function formatBatchResult(result: BatchResult, todos: Todo[]): string {
 	return `${parts.join(', ')}.\n\n${formatTodoList(todos)}`;
 }
 
-function updateExistingTodo(
-	index: number,
-	todos: Todo[],
-	content: string | undefined,
-	status: string | undefined,
-	now: string,
-): void {
-	if (content !== undefined) todos[index].content = content;
-	if (status !== undefined) todos[index].status = status as TodoStatus;
-	todos[index].updatedAt = now;
-}
-
 const todoItemSchema = z.object({
 	id: z.string().optional().describe('ID of existing todo to update. Omit to create a new todo.'),
 	content: z
@@ -95,20 +74,17 @@ const todoItemSchema = z.object({
 		.min(1)
 		.optional()
 		.describe('The todo item description. Required when creating, optional when updating.'),
-	status: z
-		.enum(['pending', 'in_progress', 'done'])
-		.optional()
-		.describe("Todo status: pending, in_progress, or done. Defaults to 'pending' for new items."),
 });
 
 export class TodoUpsert extends Gadget({
 	name: 'TodoUpsert',
-	description: `Create or update one or more todo items.
+	description: `Create or update todo item content.
 
-Use this to plan your work at the start of a task and track progress as you go.
-- For a single item: use id/content/status directly
+Use this to plan your work at the start of a task.
+- For a single item: use id/content directly
 - For multiple items: use the 'items' array to batch create/update
 
+All new todos start with status 'pending'. Use TodoUpdateStatus to change status.
 Returns the full todo list after the operation.`,
 	schema: z.object({
 		id: z.string().optional().describe('ID of existing todo to update. Omit to create a new todo.'),
@@ -117,37 +93,23 @@ Returns the full todo list after the operation.`,
 			.min(1)
 			.optional()
 			.describe('The todo item description. Required when creating, optional when updating.'),
-		status: z
-			.enum(['pending', 'in_progress', 'done'])
-			.optional()
-			.describe("Todo status: pending, in_progress, or done. Defaults to 'pending' for new items."),
 		items: z
 			.array(todoItemSchema)
 			.optional()
 			.describe(
-				'Batch mode: array of todo items to create/update. Each item has id/content/status. Use this to create multiple todos at once.',
+				'Batch mode: array of todo items to create/update. Each item has id/content. Use this to create multiple todos at once.',
 			),
+		comment: z.string().optional().describe('Brief explanation of why this change is needed'),
 	}),
 	examples: [
 		{
 			params: {
 				content: 'Read and understand the Trello card requirements',
+				comment: 'Planning initial task',
 			},
 			output:
 				'➕ Created todo #1.\n\n📋 Todo List\n   Progress: 0/1 done, 0 in progress, 1 pending\n\n⬜ #1 [pending]: Read and understand the Trello card requirements',
 			comment: 'Create a new todo item',
-		},
-		{
-			params: { id: '1', status: 'in_progress' },
-			output:
-				'✏️ Updated todo #1.\n\n📋 Todo List\n   Progress: 0/1 done, 1 in progress, 0 pending\n\n🔄 #1 [in_progress]: Read and understand the Trello card requirements',
-			comment: 'Mark a todo as in progress',
-		},
-		{
-			params: { id: '1', status: 'done' },
-			output:
-				'✏️ Updated todo #1.\n\n📋 Todo List\n   Progress: 1/1 done, 0 in progress, 0 pending\n\n✅ #1 [done]: Read and understand the Trello card requirements',
-			comment: 'Mark a todo as done',
 		},
 		{
 			params: {
@@ -157,6 +119,7 @@ Returns the full todo list after the operation.`,
 					{ content: 'Write tests' },
 					{ content: 'Run lint and typecheck' },
 				],
+				comment: 'Planning implementation steps',
 			},
 			output:
 				'➕ Created 4 todos.\n\n📋 Todo List\n   Progress: 0/4 done, 0 in progress, 4 pending\n\n⬜ #1 [pending]: Create feature branch\n⬜ #2 [pending]: Implement feature\n⬜ #3 [pending]: Write tests\n⬜ #4 [pending]: Run lint and typecheck',
@@ -165,7 +128,17 @@ Returns the full todo list after the operation.`,
 	],
 }) {
 	override execute(params: this['params']): string {
-		const { id, content, status, items } = params;
+		const { id, content, items } = params;
+
+		// Prevent mixing single-item update with batch create (silently fails otherwise)
+		if (items && items.length > 0 && (id !== undefined || content !== undefined)) {
+			throw new Error(
+				"Cannot combine top-level id/content with 'items' array. " +
+					'Use either single-item mode (id/content) OR batch mode (items array), not both. ' +
+					'To update one todo and create others, make two separate calls.',
+			);
+		}
+
 		const todos = loadTodos();
 		const now = new Date().toISOString();
 
@@ -181,12 +154,12 @@ Returns the full todo list after the operation.`,
 			const index = todos.findIndex((t) => t.id === id);
 			if (index === -1) {
 				if (!content) {
-					return `❌ Error: 'content' is required when creating a new todo.`;
+					throw new Error("'content' is required when creating a new todo.");
 				}
 				todos.push({
 					id,
 					content,
-					status: (status as TodoStatus) ?? 'pending',
+					status: 'pending',
 					createdAt: now,
 					updatedAt: now,
 				});
@@ -194,21 +167,22 @@ Returns the full todo list after the operation.`,
 				return `➕ Created todo #${id}.\n\n${formatTodoList(todos)}`;
 			}
 
-			updateExistingTodo(index, todos, content, status, now);
+			if (content !== undefined) todos[index].content = content;
+			todos[index].updatedAt = now;
 			saveTodos(todos);
 			return `✏️ Updated todo #${id}.\n\n${formatTodoList(todos)}`;
 		}
 
 		// Create new todo - content is required
 		if (!content) {
-			return `❌ Error: 'content' is required when creating a new todo.`;
+			throw new Error("'content' is required when creating a new todo.");
 		}
 
 		const newId = getNextId(todos);
 		todos.push({
 			id: newId,
 			content,
-			status: (status as TodoStatus) ?? 'pending',
+			status: 'pending',
 			createdAt: now,
 			updatedAt: now,
 		});

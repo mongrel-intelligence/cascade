@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import type { TrailingMessage } from 'llmist';
 import { formatTodoList, loadTodos } from '../gadgets/todo/storage.js';
 
@@ -31,6 +32,31 @@ function getAgentHint(agentType?: string): string {
 		return AGENT_HINTS[agentType];
 	}
 	return AGENT_HINTS.default;
+}
+
+/**
+ * Run a shell command and return output, or null on error.
+ */
+function runCommand(command: string): string | null {
+	try {
+		return execSync(command, { encoding: 'utf-8', timeout: 5000 }).trim();
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Get git status output (short format for brevity).
+ */
+function getGitStatus(): string | null {
+	return runCommand('git status --short');
+}
+
+/**
+ * Get PR view output if a PR exists for current branch.
+ */
+function getPRView(): string | null {
+	return runCommand('gh pr view 2>/dev/null');
 }
 
 /**
@@ -76,13 +102,33 @@ export function getIterationTrailingMessage(agentType?: string): TrailingMessage
 	return (ctx) => {
 		const iterationStatus = formatIterationStatus(ctx.iteration, ctx.maxIterations, batchHint);
 
-		// For implementation agent, include the current todo list
+		// For implementation agent, include progress info, git status, and PR status
 		if (agentType === 'implementation') {
+			const sections: string[] = [iterationStatus];
+
+			// Add todo list if there are todos
 			const todos = loadTodos();
 			if (todos.length > 0) {
-				const todoListFormatted = formatTodoList(todos);
-				return `${iterationStatus}\n\n## Current Progress\n\n${todoListFormatted}`;
+				sections.push(`## Current Progress\n\n${formatTodoList(todos)}`);
 			}
+
+			// Add git status
+			const gitStatus = getGitStatus();
+			if (gitStatus) {
+				sections.push(`## Git Status\n\n\`\`\`\n${gitStatus}\n\`\`\``);
+			} else {
+				sections.push('## Git Status\n\nNo uncommitted changes.');
+			}
+
+			// Add PR status if a PR exists
+			const prView = getPRView();
+			if (prView) {
+				sections.push(`## PR Status\n\n\`\`\`\n${prView}\n\`\`\``);
+			} else {
+				sections.push('## PR Status\n\nNo PR exists for current branch.');
+			}
+
+			return sections.join('\n\n');
 		}
 
 		return iterationStatus;

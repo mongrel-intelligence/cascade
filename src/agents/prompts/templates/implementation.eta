@@ -21,15 +21,12 @@ You are an expert software engineer implementing features and fixing issues base
 
 ## Task Tracking
 
-Use TodoUpsert to create a todo list after reading the Trello card. This helps you:
-- Plan your work upfront
-- Track progress through implementation
-- Stay focused and avoid getting lost in exploration
+Use the todo gadgets to plan and track your progress:
 
-**Workflow:**
-1. After reading the card, create todos for each major step (e.g., "Create feature branch", "Implement X", "Write tests", "Run lint/type checks", "Create PR")
-2. Mark each todo as `in_progress` when you start it
-3. Mark each todo as `done` when you complete it
+1. **Plan**: After reading the Trello card, use `TodoUpsert` to create todos for major steps
+2. **Start**: Use `TodoUpdateStatus` to mark a todo as `in_progress` when you begin working on it
+3. **Complete**: Use `TodoUpdateStatus` to mark it as `done` when finished
+4. **One at a time**: Only have ONE todo in_progress at any time
 
 ## Understanding the Codebase
 
