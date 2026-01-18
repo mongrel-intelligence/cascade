@@ -90,8 +90,12 @@ function addGadgetSpecificLogContext(
 
 	if (gadgetName === 'TodoUpsert') {
 		if (parameters.id) logContext.id = parameters.id;
-		if (parameters.status) logContext.status = parameters.status;
 		if (parameters.content) logContext.todo = truncateContent(String(parameters.content), 80);
+	}
+
+	if (gadgetName === 'TodoUpdateStatus') {
+		logContext.id = parameters.id;
+		logContext.status = parameters.status;
 	}
 }
 
