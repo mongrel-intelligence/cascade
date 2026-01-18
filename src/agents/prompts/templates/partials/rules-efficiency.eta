@@ -2,97 +2,11 @@
 
 When you encounter multiple errors (type errors, test failures, lint errors):
 1. Read and analyze ALL errors before making any fixes
-2. Fix ALL errors in a SINGLE response with multiple EditFile calls
+2. Fix ALL errors in a SINGLE response with multiple gadget calls (FileSearchAndReplace, FileInsertContent, FileRemoveContent)
 3. Run verification ONCE after all fixes
-4. Repeat only if new errors appear
+4. Repeat only if errors appear again
 
 NEVER fix errors one-by-one. This wastes iterations. Batch all fixes together.
 
-### Debugging Persistent Test Failures (CRITICAL)
-
-If the SAME test fails 2-3 times after your fixes, STOP making more fixes. Instead, investigate:
-
-**When mocks aren't being called (e.g., "Number of calls: 0"):**
-1. The problem is NOT your test setup - the code path isn't executing at all
-2. Add `console.log` statements to the IMPLEMENTATION code to trace execution:
-   - At the function entry point
-   - Before conditional branches
-   - Inside the block that should call the mocked function
-3. Run the test again and read the console output to find where execution stops
-4. Fix the actual implementation issue, not the test
-
-**When assertions fail with wrong values:**
-1. Add `console.log` to print actual values at key points
-2. Check if your changes accidentally broke an existing code path
-3. Verify dependencies are wired correctly (DI, imports, function parameters)
-
-**Loop Detection - recognize when you're stuck:**
-- If you've edited the same file 3+ times for the same error: STOP
-- If you've run `verify-final-vN` where N > 3: STOP
-- Step back and ask: "Why isn't the code reaching this point?"
-- Read the implementation code, not just the test
-
-**Debug-first approach:**
-```
-1. Test fails → Add console.log to implementation
-2. Run test → Read logs to understand flow
-3. Identify root cause → Fix implementation (not test setup)
-4. Remove console.log → Verify fix
-```
-
-Remember: Tests that "should" call mocks but don't are telling you the implementation path is wrong, not the mock setup.
-
-### Handling Breaking Changes (Critical)
-
-If you modify a function signature, class constructor, or API contract,
-do not wait for the compiler/linter to report errors.
-Immediately perform a codebase-wide search for all usages of that symbol and update all call sites
-in a single batch. Avoid the 'fix-run-repeat' loop for known breaking changes.
-
-### Tooling & Verification
-
-When validating changes, always prioritize auto-fixing commands (e.g., format, lint --fix) before
-running read-only checks. If a generated artifact (like a migration or lockfile) looks incorrect,
-investigate the environment state rather than manually patching the output.
-
-### Acting on EditFile/WriteFile Results (CRITICAL)
-
-EditFile and WriteFile return structured output. You MUST read and act on it.
-
-**Status Codes:**
-- `status=success` - Edit worked, but CHECK THE DIAGNOSTICS SECTION
-- `status=failed` - Search content not found, USE THE SUGGESTIONS
-- `status=error` - Operation failed (permissions, path), read error message
-
-**On status=failed (search not found):**
-
-The output includes a SUGGESTIONS section with similar content found in the file:
-```
-SUGGESTIONS (similar content found):
-Line 42 (85% similar):
-```{what actually exists}```
-```
-
-1. READ this section - it shows what the file actually contains
-2. Adjust your search pattern to match the actual content
-3. Common issues: whitespace differences, indentation, content changed by previous edit
-4. NEVER retry the exact same search - that's a loop
-
-**On status=success (check diagnostics):**
-
-Success responses include TypeScript and Biome diagnostics:
-```
-=== TypeScript Check ===
-{any type errors from your edit}
-
-=== Biome Lint ===
-{any lint issues from your edit}
-```
-
 If diagnostics show issues, FIX THEM IMMEDIATELY before making more edits.
 Don't proceed to other files until the current file is clean.
-
-**Recovery Escalation:**
-1. First failure: Use SUGGESTIONS to adjust search pattern
-2. Second failure: Read entire file with ReadFile, understand actual structure
-3. Third failure: Use WriteFile to replace the entire file content

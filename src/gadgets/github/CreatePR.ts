@@ -1,6 +1,7 @@
 import { Gadget, z } from 'llmist';
 import { githubClient } from '../../github/client.js';
 import { runCommand } from '../../utils/repo.js';
+import { recordPRCreation } from '../sessionState.js';
 
 export class CreatePR extends Gadget({
 	name: 'CreatePR',
@@ -150,6 +151,10 @@ If hooks fail or timeout, the full output will be shown.`,
 			draft: params.draft,
 		});
 		const draftLabel = params.draft ? ' (draft)' : '';
+
+		// Record PR creation for session state (Finish gadget uses this to verify implementation completed)
+		recordPRCreation(pr.htmlUrl);
+
 		return `PR #${pr.number} created successfully${draftLabel}: ${pr.htmlUrl}`;
 	}
 }

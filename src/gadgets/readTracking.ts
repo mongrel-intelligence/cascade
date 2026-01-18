@@ -39,7 +39,7 @@ export function markDirectoryListed(key: string): void {
 
 /**
  * Invalidate read tracking for a specific file.
- * Called after EditFile or WriteFile modifies a file.
+ * Called after file editing gadgets or WriteFile modifies a file.
  */
 export function invalidateFileRead(path: string): void {
 	readFiles.delete(path);

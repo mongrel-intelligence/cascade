@@ -37,7 +37,7 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 	registry.register(new AttachmentAddedTrigger());
 
 	// GitHub: PR opened trigger (initial review on new PRs)
-	// DISABLED: Triggers respond-to-review which has EditFile - needs review
+	// DISABLED: Triggers respond-to-review which has file editing gadgets - needs review
 	// registry.register(new PROpenedTrigger());
 
 	// GitHub: PR review comment trigger

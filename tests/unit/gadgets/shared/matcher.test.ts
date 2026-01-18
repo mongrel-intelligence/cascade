@@ -3,7 +3,7 @@ import {
 	applyReplacement,
 	findMatch,
 	getMatchFailure,
-} from '../../../../src/gadgets/editfile/matcher.js';
+} from '../../../../src/gadgets/shared/matcher.js';
 
 describe('Matcher', () => {
 	describe('findMatch', () => {

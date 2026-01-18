@@ -1,5 +1,5 @@
 /**
- * Types for the EditFile gadget's layered matching algorithm.
+ * Types for the file editing gadgets' layered matching algorithm.
  */
 
 /**
