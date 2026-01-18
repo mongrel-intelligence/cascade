@@ -8,6 +8,7 @@ export class CreatePRReview extends Gadget({
 		'Submit a code review on a GitHub pull request. Use this to approve, request changes, or comment on the PR.',
 	timeoutMs: 30000,
 	schema: z.object({
+		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		owner: z.string().describe('The repository owner (username or organization)'),
 		repo: z.string().describe('The repository name'),
 		prNumber: z.number().describe('The pull request number'),
@@ -29,6 +30,7 @@ export class CreatePRReview extends Gadget({
 	examples: [
 		{
 			params: {
+				comment: 'Approving PR after thorough review',
 				owner: 'acme',
 				repo: 'myapp',
 				prNumber: 42,
@@ -39,6 +41,7 @@ export class CreatePRReview extends Gadget({
 		},
 		{
 			params: {
+				comment: 'Requesting changes for identified issues',
 				owner: 'acme',
 				repo: 'myapp',
 				prNumber: 42,

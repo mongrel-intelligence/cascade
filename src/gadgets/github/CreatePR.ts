@@ -24,6 +24,7 @@ NOTE: Pre-commit and pre-push hooks may run tests which can take time.
 If hooks fail or timeout, the full output will be shown.`,
 	timeoutMs: 240000, // 4 minutes - hooks may run test suites
 	schema: z.object({
+		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
 		owner: z.string().describe('The repository owner (username or organization)'),
 		repo: z.string().describe('The repository name'),
 		title: z
@@ -48,6 +49,7 @@ If hooks fail or timeout, the full output will be shown.`,
 	examples: [
 		{
 			params: {
+				comment: 'Creating PR for completed auth feature',
 				owner: 'acme',
 				repo: 'myapp',
 				title: 'feat: add user authentication',
@@ -59,6 +61,7 @@ If hooks fail or timeout, the full output will be shown.`,
 		},
 		{
 			params: {
+				comment: 'Creating draft PR for early feedback',
 				owner: 'acme',
 				repo: 'myapp',
 				title: 'fix: resolve null pointer in checkout',
@@ -72,6 +75,7 @@ If hooks fail or timeout, the full output will be shown.`,
 		},
 		{
 			params: {
+				comment: 'Creating PR - already committed and pushed',
 				owner: 'acme',
 				repo: 'myapp',
 				title: 'chore: update dependencies',
