@@ -10,7 +10,6 @@ import { getRateLimitForModel } from '../config/rateLimits.js';
 import { getRetryConfig } from '../config/retryConfig.js';
 import { FileInsertContent } from '../gadgets/FileInsertContent.js';
 import { FileRemoveContent } from '../gadgets/FileRemoveContent.js';
-import { FileSearchAndReplace } from '../gadgets/FileSearchAndReplace.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
@@ -265,7 +264,6 @@ function createRespondToReviewAgentBuilder(
 		// Filesystem gadgets
 		new ListDirectory(),
 		new ReadFile(),
-		new FileSearchAndReplace(),
 		new FileInsertContent(),
 		new FileRemoveContent(),
 		new WriteFile(),
@@ -414,7 +412,7 @@ async function injectReviewSyntheticCalls(
 export async function executeRespondToReviewAgent(
 	input: RespondToReviewAgentInput,
 ): Promise<AgentResult> {
-	const { project, config, prNumber, prBranch, repoFullName, interactive } = input;
+	const { project, config, prNumber, prBranch, repoFullName, interactive, autoAccept } = input;
 
 	// Parse owner/repo from repoFullName
 	const [owner, repo] = repoFullName.split('/');
@@ -503,7 +501,13 @@ export async function executeRespondToReviewAgent(
 
 			// Run the agent
 			const agent = builder.ask(ctx.prompt);
-			const result = await runAgentLoop(agent, log, trackingContext, interactive === true);
+			const result = await runAgentLoop(
+				agent,
+				log,
+				trackingContext,
+				interactive === true,
+				autoAccept === true,
+			);
 
 			log.info('Review agent completed', {
 				prNumber,

@@ -185,6 +185,20 @@ async function main() {
 		console.log('Interactive mode: enabled');
 	}
 
+	// Check for auto-accept mode (only meaningful with interactive)
+	const autoAccept = process.env.CASCADE_YES === 'true';
+	if (autoAccept) {
+		agentInput.autoAccept = true;
+		console.log('Auto-accept mode: enabled');
+	}
+
+	// Check for model override
+	const modelOverride = process.env.CASCADE_MODEL_OVERRIDE;
+	if (modelOverride) {
+		agentInput.modelOverride = modelOverride;
+		console.log(`Model override: ${modelOverride}`);
+	}
+
 	console.log(`Using project: ${project.id} (${project.name})`);
 	console.log('');
 	console.log('='.repeat(60));
