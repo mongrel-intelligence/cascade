@@ -2,10 +2,8 @@
 
 Use standard git commands and GitHub CLI (`gh`) via Tmux for all version control.
 
-**CRITICAL: Pass commands as argv arrays to Tmux, NOT shell strings!**
-
 **Git command examples:**
-- Branch: `command=["git", "checkout", "-b", "feature/name"]`
+- Branch: `command="git checkout -b feature/name"`
 
 **Creating Pull Requests:**
 Use the CreatePR gadget to finalize your work. It handles the full workflow automatically:
@@ -16,8 +14,8 @@ Use the CreatePR gadget to finalize your work. It handles the full workflow auto
 Set `commit=false` or `push=false` if you've already done those steps manually.
 
 **GitHub CLI (`gh`) for other operations:**
-- View PR: `command=["gh", "pr", "view"]`
-- List PRs: `command=["gh", "pr", "list"]`
+- View PR: `command="gh pr view"`
+- List PRs: `command="gh pr list"`
 
 ## Commit Message Format
 
