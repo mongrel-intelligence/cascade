@@ -72,15 +72,15 @@ Allowed paths:
 				filePath: 'src/utils.ts',
 			},
 			output:
-				'path=src/utils.ts\n\n 1 | export function add(a: number, b: number) {\n 2 |   return a + b;\n 3 | }',
-			comment: 'Line numbers included for precise editing',
+				'path=src/utils.ts\n\nexport function add(a: number, b: number) {\n  return a + b;\n}',
+			comment: 'Returns raw file content',
 		},
 		{
 			params: {
 				comment: 'Checking test output for failures',
 				filePath: '/tmp/test.log',
 			},
-			output: 'path=/tmp/test.log\n\n 1 | PASS src/utils.test.ts\n 2 |   ✓ adds numbers correctly',
+			output: 'path=/tmp/test.log\n\nPASS src/utils.test.ts\n  ✓ adds numbers correctly',
 			comment: 'Read a test log from /tmp',
 		},
 	],
@@ -94,13 +94,9 @@ Allowed paths:
 			return `path=${filePath}\n\n[Already read - refer to previous content in context]`;
 		}
 
-		const fullContent = readFileSync(validatedPath, 'utf-8');
-		const allLines = fullContent.split('\n');
-		const totalLines = allLines.length;
-
+		const content = readFileSync(validatedPath, 'utf-8');
 		markFileRead(validatedPath);
 
-		const content = this.addLineNumbers(allLines, 1, totalLines);
 		const header = `path=${filePath}`;
 
 		// Try to include AU understanding if available
@@ -111,11 +107,6 @@ Allowed paths:
 		}
 
 		return `${header}\n\n${content}`;
-	}
-
-	private addLineNumbers(lines: string[], startLine: number, totalLines: number): string {
-		const width = String(totalLines).length;
-		return lines.map((line, i) => `${String(startLine + i).padStart(width)} | ${line}`).join('\n');
 	}
 
 	private async getAUUnderstanding(filePath: string): Promise<string | null> {

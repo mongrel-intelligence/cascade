@@ -7,13 +7,24 @@
 import { execSync } from 'node:child_process';
 
 /**
+ * Result from running diagnostics.
+ */
+export interface DiagnosticsResult {
+	output: string;
+	hasParseErrors: boolean;
+	hasTypeErrors: boolean;
+}
+
+/**
  * Run TypeScript and Biome diagnostics on a file.
  *
- * @param filePath The file path being checked (for filtering errors)
- * @returns Formatted diagnostics output string
+ * @param filePath The file path being checked
+ * @returns Diagnostics result with output string and parse error flag
  */
-export function runDiagnostics(filePath: string): string {
+export function runDiagnostics(filePath: string): DiagnosticsResult {
 	const sections: string[] = [];
+	let hasParseErrors = false;
+	let hasTypeErrors = false;
 
 	// TypeScript check
 	try {
@@ -28,22 +39,13 @@ export function runDiagnostics(filePath: string): string {
 	} catch (error) {
 		const execError = error as { stdout?: string; stderr?: string };
 		const output = [execError.stdout, execError.stderr].filter(Boolean).join('\n');
-		// Filter to errors in the edited file, but keep full error messages
-		const lines = output.split('\n');
-		const fileErrors: string[] = [];
-		let includeNext = false;
-		for (const line of lines) {
-			if (line.includes(filePath)) {
-				fileErrors.push(line);
-				includeNext = true;
-			} else if (includeNext && (line.startsWith(' ') || line === '')) {
-				fileErrors.push(line);
-			} else {
-				includeNext = false;
-			}
-		}
 		sections.push('=== TypeScript Check ===');
-		sections.push(fileErrors.join('\n') || 'No type errors found.');
+		sections.push(output.trim() || 'No type errors found.');
+
+		// Check if there are TypeScript errors in the edited file specifically
+		if (output.includes(filePath)) {
+			hasTypeErrors = true;
+		}
 	}
 
 	// Biome lint and format (auto-fix)
@@ -56,27 +58,26 @@ export function runDiagnostics(filePath: string): string {
 		});
 		sections.push('');
 		sections.push('=== Biome Lint ===');
-		// Show output if there were fixes, warnings, or errors
 		const trimmed = biomeOutput.trim();
-		if (
-			trimmed &&
-			(trimmed.includes('Fixed') || trimmed.includes('warning') || trimmed.includes('error'))
-		) {
-			sections.push(trimmed);
-		} else {
-			sections.push('No lint issues found.');
-		}
+		sections.push(trimmed || 'No lint issues found.');
 	} catch (error) {
 		const execError = error as { stdout?: string; stderr?: string };
-		// Biome outputs diagnostics to stdout, summary to stderr - capture both
-		const output = [execError.stdout, execError.stderr].filter(Boolean).join('\n');
+		// Biome outputs detailed diagnostics to stderr, summary to stdout
+		// Show stderr (details) first, then stdout (summary)
+		const stderr = execError.stderr?.trim() || '';
+		const stdout = execError.stdout?.trim() || '';
+		const output = [stderr, stdout].filter(Boolean).join('\n\n');
 		sections.push('');
 		sections.push('=== Biome Lint ===');
-		// Even with --write, some issues may not be auto-fixable
-		sections.push(output.trim() || 'No lint issues found.');
+		sections.push(output || 'No lint issues found.');
+
+		// Detect parse errors from Biome output
+		if (stderr.includes(' parse ') || stdout.includes(' parse ')) {
+			hasParseErrors = true;
+		}
 	}
 
-	return sections.join('\n');
+	return { output: sections.join('\n'), hasParseErrors, hasTypeErrors };
 }
 
 /**

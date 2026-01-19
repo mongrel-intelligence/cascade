@@ -8,13 +8,13 @@
  * - Current working directory and subdirectories
  * - /tmp directory (for test outputs, build artifacts, etc.)
  */
-import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
 
 import { Gadget, z } from 'llmist';
 
 import { invalidateFileRead } from './readTracking.js';
+import { runDiagnostics, shouldRunDiagnostics } from './shared/index.js';
 
 const ALLOWED_PATHS = ['/tmp'];
 
@@ -182,78 +182,16 @@ No lint issues found.`,
 		const bytesWritten = Buffer.byteLength(content, 'utf-8');
 		const dirNote = createdDir ? ` (created directory: ${dirname(filePath)})` : '';
 
-		let diagnostics = '';
-		if (filePath.endsWith('.ts') || filePath.endsWith('.tsx')) {
-			diagnostics = `\n\n${this.runDiagnostics(validatedPath)}`;
-		}
-
-		return `path=${filePath}\n\nWrote ${bytesWritten} bytes${dirNote}${diagnostics}`;
-	}
-
-	private runDiagnostics(filePath: string): string {
-		const sections: string[] = [];
-
-		// TypeScript check
-		try {
-			execSync('npx tsc --noEmit --pretty false', {
-				encoding: 'utf-8',
-				cwd: process.cwd(),
-				timeout: 20000,
-				stdio: 'pipe',
-			});
-			sections.push('=== TypeScript Check ===');
-			sections.push('No type errors found.');
-		} catch (error) {
-			const execError = error as { stdout?: string; stderr?: string };
-			const output = [execError.stdout, execError.stderr].filter(Boolean).join('\n');
-			// Filter to errors in the written file, but keep full error messages
-			const lines = output.split('\n');
-			const fileErrors: string[] = [];
-			let includeNext = false;
-			for (const line of lines) {
-				if (line.includes(filePath)) {
-					fileErrors.push(line);
-					includeNext = true;
-				} else if (includeNext && (line.startsWith(' ') || line === '')) {
-					fileErrors.push(line);
-				} else {
-					includeNext = false;
-				}
+		let diagnosticsOutput = '';
+		let status = 'success';
+		if (shouldRunDiagnostics(filePath)) {
+			const diagnostics = runDiagnostics(validatedPath);
+			diagnosticsOutput = `\n\n${diagnostics.output}`;
+			if (diagnostics.hasParseErrors || diagnostics.hasTypeErrors) {
+				status = 'error';
 			}
-			sections.push('=== TypeScript Check ===');
-			sections.push(fileErrors.join('\n') || 'No type errors found.');
 		}
 
-		// Biome lint and format (auto-fix)
-		try {
-			const biomeOutput = execSync(`npx biome check --write "${filePath}"`, {
-				encoding: 'utf-8',
-				cwd: process.cwd(),
-				timeout: 10000,
-				stdio: 'pipe',
-			});
-			sections.push('');
-			sections.push('=== Biome Lint ===');
-			// Show output if there were fixes, warnings, or errors
-			const trimmed = biomeOutput.trim();
-			if (
-				trimmed &&
-				(trimmed.includes('Fixed') || trimmed.includes('warning') || trimmed.includes('error'))
-			) {
-				sections.push(trimmed);
-			} else {
-				sections.push('No lint issues found.');
-			}
-		} catch (error) {
-			const execError = error as { stdout?: string; stderr?: string };
-			// Biome outputs diagnostics to stdout, summary to stderr - capture both
-			const output = [execError.stdout, execError.stderr].filter(Boolean).join('\n');
-			sections.push('');
-			sections.push('=== Biome Lint ===');
-			// Even with --write, some issues may not be auto-fixable
-			sections.push(output.trim() || 'No lint issues found.');
-		}
-
-		return sections.join('\n');
+		return `path=${filePath} status=${status}\n\nWrote ${bytesWritten} bytes${dirNote}${diagnosticsOutput}`;
 	}
 }

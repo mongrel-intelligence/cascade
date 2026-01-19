@@ -5,7 +5,7 @@
 /**
  * Strategy used to find a match.
  */
-export type MatchStrategy = 'exact' | 'whitespace' | 'indentation' | 'fuzzy';
+export type MatchStrategy = 'exact' | 'whitespace' | 'indentation' | 'fuzzy' | 'dmp';
 
 /**
  * Result of attempting to find a match.
