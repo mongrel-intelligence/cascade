@@ -24,6 +24,10 @@ export interface AgentInput {
 
 	// Interactive mode (local development)
 	interactive?: boolean;
+	// Auto-accept prompts in interactive mode
+	autoAccept?: boolean;
+	// Override the model for this agent run
+	modelOverride?: string;
 
 	[key: string]: unknown;
 }

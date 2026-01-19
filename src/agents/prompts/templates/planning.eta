@@ -125,6 +125,8 @@ Review the updated description and move to TODO when ready to implement!
 **Codebase exploration (READ-ONLY):**
 - `ListDirectory` - List directory contents
 - `ReadFile` - Read file contents
+- `RipGrep` - Search for patterns in code (regex, respects gitignore)
+- `AstGrep` - AST-aware code search (use $VAR for captures)
 - `Tmux` - Run shell commands (for exploration: grep, find, etc.)
 
 ⚠️ **You do NOT have access to:** FileSearchAndReplace, FileInsertContent, FileRemoveContent, WriteFile, CreatePR - these are reserved for the implementation agent.

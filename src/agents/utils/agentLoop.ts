@@ -129,6 +129,7 @@ async function handleGadgetCallEvent(
 	log: ReturnType<typeof createAgentLogger>,
 	trackingContext: TrackingContext,
 	interactive: boolean,
+	autoAccept: boolean,
 ): Promise<void> {
 	const { gadgetName, invocationId, parameters } = event;
 	const isSynthetic = isSyntheticCall(invocationId, trackingContext);
@@ -139,7 +140,7 @@ async function handleGadgetCallEvent(
 
 	if (interactive) {
 		displayGadgetCall(gadgetName, parameters ?? {}, isSynthetic);
-		if (!isSynthetic) {
+		if (!isSynthetic && !autoAccept) {
 			await waitForEnter();
 		}
 	}
@@ -204,6 +205,7 @@ async function handleStreamEvent(
 	log: ReturnType<typeof createAgentLogger>,
 	trackingContext: TrackingContext,
 	interactive: boolean,
+	autoAccept: boolean,
 ): Promise<void> {
 	switch (event.type) {
 		case 'text':
@@ -217,7 +219,7 @@ async function handleStreamEvent(
 			break;
 		case 'gadget_call':
 			if (event.call) {
-				await handleGadgetCallEvent(event.call, log, trackingContext, interactive);
+				await handleGadgetCallEvent(event.call, log, trackingContext, interactive, autoAccept);
 			}
 			break;
 		case 'gadget_result':
@@ -244,19 +246,21 @@ async function handleStreamEvent(
  * @param log - Agent logger for structured logging
  * @param trackingContext - Metrics tracking context
  * @param interactive - Whether to display gadget calls and wait for user input
+ * @param autoAccept - Whether to skip waiting for Enter (auto-accept prompts)
  */
 export async function runAgentLoop(
 	agent: RunnableAgent,
 	log: ReturnType<typeof createAgentLogger>,
 	trackingContext: TrackingContext,
 	interactive = false,
+	autoAccept = false,
 ): Promise<AgentRunResult> {
 	const outputLines: string[] = [];
 
 	for await (const event of agent.run()) {
 		// Check for session completions after each event
 		injectSessionCompletionNotices(agent);
-		await handleStreamEvent(event, outputLines, log, trackingContext, interactive);
+		await handleStreamEvent(event, outputLines, log, trackingContext, interactive, autoAccept);
 	}
 
 	// Final check for any completions that occurred during the last event

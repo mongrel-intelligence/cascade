@@ -2,7 +2,7 @@
 
 When you encounter multiple errors (type errors, test failures, lint errors):
 1. Read and analyze ALL errors before making any fixes
-2. Fix ALL errors in a SINGLE response with multiple gadget calls (FileSearchAndReplace, FileInsertContent, FileRemoveContent)
+2. Fix ALL errors in a SINGLE response with multiple gadget calls (FileInsertContent, FileRemoveContent, WriteFile)
 3. Run verification ONCE after all fixes
 4. Repeat only if errors appear again
 
@@ -10,3 +10,27 @@ NEVER fix errors one-by-one. This wastes iterations. Batch all fixes together.
 
 If diagnostics show issues, FIX THEM IMMEDIATELY before making more edits.
 Don't proceed to other files until the current file is clean.
+
+### File Editing Strategy
+
+For multi-line edits or complex replacements, use `FileSedCommand`:
+- Supports multiline patterns with `\n`
+- Uses extended regex syntax
+- Example: `sed='s/import \{\n  foo\n\}/import \{\n  bar\n\}/g'`
+- **Must escape**: `\{` `\}` `\[` `\]` `\(` `\)` `\.` `\*` `\+` `\?`
+
+For simple single-line replacements, `FileInsertContent`/`FileRemoveContent` may be clearer.
+
+**Prefer AstGrep** over sed for code with braces (functions, objects, blocks) - it handles syntax automatically.
+
+### AST-Aware Refactoring
+
+For structural code changes, use `AstGrep` with rewrite:
+- Pattern: `console.log($MSG)` + Rewrite: `logger.info($MSG)`
+- Pattern: `import { $$$X } from 'old'` + Rewrite: `import { $$$X } from 'new'`
+- Uses `$VAR` for single capture, `$$$VAR` for multiple
+
+Prefer AstGrep over sed/regex for:
+- Function call replacements
+- Import refactoring
+- Syntax-aware transformations

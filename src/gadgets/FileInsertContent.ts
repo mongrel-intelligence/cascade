@@ -49,12 +49,6 @@ export class FileInsertContent extends Gadget({
 
 Inserted 1 line at line 1.
 
---- BEFORE (around line 1) ---
-<  1 | import { foo } from 'bar';
-   2 | import { baz } from 'qux';
-   3 |
-
---- AFTER ---
 >  1 | import _ from 'lodash';
    2 | import { foo } from 'bar';
    3 | import { baz } from 'qux';
@@ -81,21 +75,12 @@ No lint issues found.`,
 
 Inserted 3 lines at line 10.
 
---- BEFORE (around line 10) ---
-   7 | }
-   8 |
-   9 | // Utils below
-< 10 | function process(data: string) {
-  11 |   return data.trim();
-  12 | }
-
---- AFTER ---
    7 | }
    8 |
    9 | // Utils below
 > 10 | function validate(x: number): boolean {
-  11 |   return x > 0;
-  12 | }
+> 11 |   return x > 0;
+> 12 | }
   13 | function process(data: string) {
   14 |   return data.trim();
   15 | }
@@ -130,14 +115,6 @@ No lint issues found.`,
 
 Inserted 12 lines at line 5.
 
---- BEFORE (around line 5) ---
-   2 | import type { BaseEntity } from './base';
-   3 | import type { Preferences } from './preferences';
-   4 |
-<  5 | // User types will be defined here
-   6 |
-
---- AFTER ---
    2 | import type { BaseEntity } from './base';
    3 | import type { Preferences } from './preferences';
    4 |
@@ -175,12 +152,6 @@ No lint issues found.`,
 
 Appended 1 line at end of file.
 
---- BEFORE (end of file) ---
-   3 | export * from './utils';
-   4 | export * from './helpers';
-   5 |
-
---- AFTER ---
    3 | export * from './utils';
    4 | export * from './helpers';
    5 |
@@ -226,13 +197,6 @@ No lint issues found.`,
 
 Inserted 22 lines at line 8.
 
---- BEFORE (around line 8) ---
-   5 | type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-   6 |
-   7 | // Logger implementation
-<  8 | export function createLogger(prefix: string) {
-
---- AFTER ---
    5 | type LogLevel = 'debug' | 'info' | 'warn' | 'error';
    6 |
    7 | // Logger implementation
@@ -294,9 +258,6 @@ No lint issues found.`,
 		const insertAtEnd = line > lines.length;
 		const effectiveLine = Math.min(line, lines.length + 1);
 
-		// Store before context
-		const beforeContext = formatContext(lines, effectiveLine, effectiveLine, 3, '<');
-
 		// Insert lines
 		const newLines = [
 			...lines.slice(0, effectiveLine - 1),
@@ -323,12 +284,6 @@ No lint issues found.`,
 
 		output.push(
 			'',
-			insertAtEnd
-				? '--- BEFORE (end of file) ---'
-				: `--- BEFORE (around line ${effectiveLine}) ---`,
-			beforeContext || '(empty file)',
-			'',
-			'--- AFTER ---',
 			formatContext(newLines, effectiveLine, effectiveLine + insertLines.length - 1, 3),
 		);
 

@@ -77,6 +77,15 @@ Allowed paths:
 		},
 		{
 			params: {
+				comment: 'Creating config with trailing newline',
+				filePath: 'config.json',
+				content: '{\n  "enabled": true\n}\n',
+			},
+			output: 'path=config.json\n\nWrote 23 bytes',
+			comment: 'End content with \\n for a trailing newline (required by some linters)',
+		},
+		{
+			params: {
 				comment: 'Adding new helper utility function',
 				filePath: 'src/utils/helper.ts',
 				content: 'export function helper() {}',

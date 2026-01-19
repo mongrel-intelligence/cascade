@@ -8,6 +8,7 @@
  *   npm run tool:run-local -- respond-to-review https://github.com/owner/repo/pull/123
  *   npm run tool:run-local -- planning abc123 --rebuild
  *   npm run tool:run-local -- implementation abc123 -i
+ *   npm run tool:run-local -- implementation abc123 -m gemini-2.0-flash
  */
 
 import { execSync, spawn } from 'node:child_process';
@@ -104,6 +105,8 @@ function runAgentInDocker(
 	agentType: string,
 	input: ParsedInput,
 	interactive: boolean,
+	yes: boolean,
+	model?: string,
 ): Promise<number> {
 	const cwd = process.cwd();
 	const envFile = resolve(cwd, '.env');
@@ -161,6 +164,10 @@ function runAgentInDocker(
 		'CASCADE_LOCAL_MODE=true',
 		// Pass interactive mode flag
 		...(interactive ? ['-e', 'CASCADE_INTERACTIVE=true'] : []),
+		// Pass auto-accept flag (only meaningful with interactive)
+		...(yes ? ['-e', 'CASCADE_YES=true'] : []),
+		// Pass model override
+		...(model ? ['-e', `CASCADE_MODEL_OVERRIDE=${model}`] : []),
 		// Pass tokens from host environment (may override .env)
 		...(process.env.GITHUB_TOKEN ? ['-e', `GITHUB_TOKEN=${process.env.GITHUB_TOKEN}`] : []),
 		...(process.env.HF_TOKEN ? ['-e', `HF_TOKEN=${process.env.HF_TOKEN}`] : []),
@@ -204,8 +211,17 @@ program
 	.argument('<input>', 'Trello card URL/ID or GitHub PR URL')
 	.option('-r, --rebuild', 'Rebuild Docker image before running', false)
 	.option('-i, --interactive', 'Show all gadget calls with full params, wait for Enter', false)
+	.option('-y, --yes', 'Auto-accept all prompts (requires --interactive)', false)
+	.option(
+		'-m, --model <model>',
+		'Override the LLM model (e.g., gemini-2.0-flash, claude-sonnet-4-20250514)',
+	)
 	.action(
-		async (agent: string, input: string, options: { rebuild: boolean; interactive: boolean }) => {
+		async (
+			agent: string,
+			input: string,
+			options: { rebuild: boolean; interactive: boolean; yes: boolean; model?: string },
+		) => {
 			// Validate agent type
 			if (!VALID_AGENTS.includes(agent as (typeof VALID_AGENTS)[number])) {
 				console.error(`Invalid agent type: ${agent}`);
@@ -226,9 +242,21 @@ program
 
 			if (options.interactive) {
 				console.log('Interactive mode: ON');
+				if (options.yes) {
+					console.log('Auto-accept: ON');
+				}
+			}
+			if (options.model) {
+				console.log(`Model override: ${options.model}`);
 			}
 
-			const exitCode = await runAgentInDocker(agent, parsedInput, options.interactive);
+			const exitCode = await runAgentInDocker(
+				agent,
+				parsedInput,
+				options.interactive,
+				options.yes,
+				options.model,
+			);
 			process.exit(exitCode);
 		},
 	);
