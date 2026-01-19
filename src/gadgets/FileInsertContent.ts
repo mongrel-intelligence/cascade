@@ -22,8 +22,11 @@ export class FileInsertContent extends Gadget({
 	description: `Insert content at a specific line number in a file.
 
 - Line numbers are 1-based
-- Content is inserted BEFORE the specified line
-- Use line beyond EOF to append at end`,
+- Content is inserted BEFORE the specified line (pushing that line down)
+- To add after line N, insert before line N+1
+- Use line beyond EOF to append at end
+
+**Example**: To insert between lines 10 and 11, use line=11 (inserts BEFORE line 11).`,
 	timeoutMs: 30000,
 	maxConcurrent: 1, // Sequential execution to prevent race conditions on file writes
 	schema: z.object({
@@ -33,7 +36,9 @@ export class FileInsertContent extends Gadget({
 			.number()
 			.int()
 			.min(1)
-			.describe('Line number to insert BEFORE (1-based). Use line beyond EOF to append.'),
+			.describe(
+				'Line number to insert BEFORE (1-based). Content will appear at this line, pushing existing content down. To add after line N, use N+1.',
+			),
 		content: z.string().describe('Content to insert (can be multiline)'),
 	}),
 	examples: [
