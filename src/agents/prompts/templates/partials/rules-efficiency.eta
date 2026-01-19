@@ -1,33 +1,83 @@
 ### Error Handling Strategy
 
-When you encounter multiple errors (type errors, test failures, lint errors):
-1. Read and analyze ALL errors before making any fixes
-2. Fix ALL errors in a SINGLE response with multiple gadget calls (FileSearchAndReplace, WriteFile)
-3. Run verification ONCE after all fixes
-4. Repeat only if errors appear again
+**Two-phase approach:**
 
-NEVER fix errors one-by-one. This wastes iterations. Batch all fixes together.
+1. **Within a single file**: Fix all diagnostics errors before moving on
+   - If FileSearchAndReplace shows type/lint errors, fix them immediately
+   - Don't leave a file in a broken state
 
-If diagnostics show issues, FIX THEM IMMEDIATELY before making more edits.
-Don't proceed to other files until the current file is clean.
+2. **Across multiple files**: Batch related changes
+   - If the same fix is needed in multiple files, do them in one response
+   - Run verification ONCE after all changes, not after each file
 
-### File Editing Strategy
+### File Editing Tools
 
-Use `FileSearchAndReplace` for all file edits:
-- Searches for exact text and replaces it
-- Handles multi-line content naturally
-- No escaping needed - uses literal string matching
+**Choose the right tool:**
 
-**Prefer AstGrep** for structural code changes (functions, objects, blocks) - it handles syntax automatically.
+| Change Type | Tool | Example |
+|-------------|------|---------|
+| Simple text/config changes | FileSearchAndReplace | Changing a timeout value |
+| Adding/removing lines | FileSearchAndReplace | Adding an import statement |
+| Multi-line block modifications | FileSearchAndReplace | Rewriting a function body |
+| Structural refactoring | AstGrep | Renaming a function across codebase |
+| Pattern-based bulk changes | AstGrep | Replacing `console.log` → `logger.info` |
 
-### AST-Aware Refactoring
+**Decision guide:**
+- If you're changing < 5 specific locations → FileSearchAndReplace
+- If you're doing a pattern-based refactor → AstGrep
+- When in doubt → FileSearchAndReplace (safer, more predictable)
 
-For structural code changes, use `AstGrep` with rewrite:
+**AstGrep syntax:**
 - Pattern: `console.log($MSG)` + Rewrite: `logger.info($MSG)`
 - Pattern: `import { $$$X } from 'old'` + Rewrite: `import { $$$X } from 'new'`
 - Uses `$VAR` for single capture, `$$$VAR` for multiple
 
-Prefer AstGrep over FileSearchAndReplace for:
-- Function call replacements
-- Import refactoring
-- Syntax-aware transformations
+### FileSearchAndReplace Best Practices
+
+**Making search patterns unique:**
+
+When editing a file with similar code blocks, include distinguishing context:
+
+❌ **Bad** - Could match multiple similar functions:
+```
+  public listItems(id: string): Promise<Item[]> {
+    return this.repo.listItems(id);
+  }
+```
+
+✅ **Good** - Includes section header for uniqueness:
+```
+  // ===== Items =====
+
+  public listItems(id: string): Promise<Item[]> {
+    return this.repo.listItems(id);
+  }
+```
+
+✅ **Good** - Includes preceding method for context:
+```
+  public getItem(id: string): Promise<Item | null> {
+    return this.repo.getItem(id);
+  }
+
+  public listItems(id: string): Promise<Item[]> {
+    return this.repo.listItems(id);
+  }
+```
+
+**When you get "Ambiguous match" errors:**
+1. STOP - do not retry the same pattern
+2. Re-read the file to see current state
+3. Add more context to make search unique
+4. Only use replaceAll=true if you genuinely want to replace ALL occurrences
+
+### Error Recovery
+
+**Never retry a failing operation more than twice.**
+
+If an operation fails twice with the same error:
+1. STOP retrying the same approach
+2. Re-read the file to understand current state
+3. Try a different approach (different search pattern, different tool)
+
+Looping on the same error wastes iteration budget and never succeeds.

@@ -60,6 +60,16 @@ function getPRView(): string | null {
 }
 
 /**
+ * Get current timestamp with millisecond precision.
+ * Format: YYYY-MM-DD HH:mm:ss.SSS
+ */
+function getCurrentTimestamp(): string {
+	const now = new Date();
+	const pad = (n: number, len = 2) => n.toString().padStart(len, '0');
+	return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}.${pad(now.getMilliseconds(), 3)}`;
+}
+
+/**
  * Format the iteration status line with appropriate urgency indicator.
  */
 function formatIterationStatus(
@@ -100,11 +110,12 @@ export function getIterationTrailingMessage(agentType?: string): TrailingMessage
 	const batchHint = getAgentHint(agentType);
 
 	return (ctx) => {
+		const timestamp = `**Timestamp:** ${getCurrentTimestamp()}`;
 		const iterationStatus = formatIterationStatus(ctx.iteration, ctx.maxIterations, batchHint);
 
 		// For implementation agent, include progress info, git status, and PR status
 		if (agentType === 'implementation') {
-			const sections: string[] = [iterationStatus];
+			const sections: string[] = [timestamp, iterationStatus];
 
 			// Add todo list if there are todos
 			const todos = loadTodos();
@@ -137,6 +148,6 @@ export function getIterationTrailingMessage(agentType?: string): TrailingMessage
 			return sections.join('\n\n');
 		}
 
-		return iterationStatus;
+		return `${timestamp}\n\n${iterationStatus}`;
 	};
 }
