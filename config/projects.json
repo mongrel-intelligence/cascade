@@ -3,7 +3,7 @@
 		"model": "openrouter:x-ai/grok-code-fast-1",
 		"maxIterations": 50,
 		"agentIterations": {
-			"implementation": 50
+			"implementation": 70
 		},
 		"watchdogTimeoutMs": 2700000,
 		"selfDestructTimeoutMs": 1800000,

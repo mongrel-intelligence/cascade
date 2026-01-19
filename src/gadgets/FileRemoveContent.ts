@@ -173,12 +173,23 @@ Removed 3 lines (lines 2-4).
 		writeFileSync(validatedPath, newContent, 'utf-8');
 		invalidateFileRead(validatedPath);
 
+		// Check diagnostics first to determine status
+		let status = 'success';
+		let diagnosticsOutput = '';
+		if (shouldRunDiagnostics(filePath)) {
+			const diagnostics = runDiagnostics(validatedPath);
+			diagnosticsOutput = diagnostics.output;
+			if (diagnostics.hasParseErrors || diagnostics.hasTypeErrors) {
+				status = 'error';
+			}
+		}
+
 		// Build output
 		const lineDesc =
 			removedCount === 1 ? `line ${startLine}` : `lines ${startLine}-${effectiveEndLine}`;
 
 		const output: string[] = [
-			`path=${filePath} status=success`,
+			`path=${filePath} status=${status}`,
 			'',
 			`Removed ${removedCount} line${removedCount > 1 ? 's' : ''} (${lineDesc}).`,
 			'',
@@ -194,8 +205,8 @@ Removed 3 lines (lines 2-4).
 			) || '(empty file)',
 		];
 
-		if (shouldRunDiagnostics(filePath)) {
-			output.push('', runDiagnostics(validatedPath));
+		if (diagnosticsOutput) {
+			output.push('', diagnosticsOutput);
 		}
 
 		return output.join('\n');

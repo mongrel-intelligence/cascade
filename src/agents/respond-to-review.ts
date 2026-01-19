@@ -8,8 +8,7 @@ import { getCompactionConfig } from '../config/compactionConfig.js';
 import { getIterationTrailingMessage } from '../config/hintConfig.js';
 import { getRateLimitForModel } from '../config/rateLimits.js';
 import { getRetryConfig } from '../config/retryConfig.js';
-import { FileInsertContent } from '../gadgets/FileInsertContent.js';
-import { FileRemoveContent } from '../gadgets/FileRemoveContent.js';
+import { FileSearchAndReplace } from '../gadgets/FileSearchAndReplace.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
@@ -264,8 +263,7 @@ function createRespondToReviewAgentBuilder(
 		// Filesystem gadgets
 		new ListDirectory(),
 		new ReadFile(),
-		new FileInsertContent(),
-		new FileRemoveContent(),
+		new FileSearchAndReplace(),
 		new WriteFile(),
 		// Shell commands via tmux
 		new Tmux(),
