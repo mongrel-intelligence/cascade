@@ -224,9 +224,9 @@ No lint issues found.`,
 			sections.push(fileErrors.join('\n') || 'No type errors found.');
 		}
 
-		// Biome lint check
+		// Biome lint and format (auto-fix)
 		try {
-			execSync(`npx biome check "${filePath}"`, {
+			const biomeOutput = execSync(`npx biome check --write "${filePath}"`, {
 				encoding: 'utf-8',
 				cwd: process.cwd(),
 				timeout: 10000,
@@ -234,13 +234,19 @@ No lint issues found.`,
 			});
 			sections.push('');
 			sections.push('=== Biome Lint ===');
-			sections.push('No lint issues found.');
+			// Check if any fixes were applied
+			if (biomeOutput.includes('Fixed')) {
+				sections.push(biomeOutput.trim());
+			} else {
+				sections.push('No lint issues found.');
+			}
 		} catch (error) {
 			const execError = error as { stdout?: string; stderr?: string };
 			// Biome outputs diagnostics to stdout, summary to stderr - capture both
 			const output = [execError.stdout, execError.stderr].filter(Boolean).join('\n');
 			sections.push('');
 			sections.push('=== Biome Lint ===');
+			// Even with --write, some issues may not be auto-fixable
 			sections.push(output.trim() || 'No lint issues found.');
 		}
 
