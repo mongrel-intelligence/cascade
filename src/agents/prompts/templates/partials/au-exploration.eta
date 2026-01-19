@@ -1,27 +1,19 @@
 ### Codebase Understanding (AU Gadgets)
 
-If AUList and AURead gadgets are available, they provide **pre-built understanding** of the codebase architecture, patterns, and conventions.
+AU gadgets provide pre-built documentation about architecture, patterns, and conventions.
 
-⚠️ **CRITICAL: ALWAYS start exploration with AU before reading implementation files.**
+**How to use:**
+1. AUList is automatically injected - review it for available documentation
+2. Use AURead to read docs for directories relevant to your task
+3. Read implementation files only after understanding the module's purpose
 
-**Exploration hierarchy (FOLLOW THIS ORDER):**
-1. **AUList** → Review the injected output to see what understanding exists
-2. **AURead** → Read understanding docs for areas relevant to your task (start with "." for top-level)
-3. **ONLY THEN** → Use ReadFile, ListDirectory, and Tmux to examine actual implementation
-
-**Why AU first:**
-- AU captures architectural decisions, patterns, and conventions that aren't obvious from code
-- Reading code without context leads to misunderstanding patterns and making changes that don't fit
-- AU gives you the "why" behind code structure; source files show you the "what"
-- Skipping AU wastes iterations re-discovering patterns already documented
+**Why AU matters:**
+- Captures architectural decisions not obvious from code
+- Prevents misunderstanding patterns and making changes that don't fit
+- Saves iterations re-discovering documented patterns
 
 **When to use AURead:**
 - Start with "." (root) to understand the overall project architecture
 - Then read specific paths relevant to your task
 - Before modifying a module, read its AU doc to understand its purpose and constraints
 - When you see unfamiliar patterns, check if there's AU documentation explaining them
-
-**🚨 RULE: AU Before ReadFile**
-- ALWAYS use `AURead` for a module/directory BEFORE using `ReadFile` on files within it
-- Example: `AURead` for "packages/frontend" BEFORE reading any files in that package
-- This applies to EVERY directory you haven't yet called `AURead` on
