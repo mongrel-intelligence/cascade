@@ -237,11 +237,22 @@ No lint issues found.`,
 		writeFileSync(validatedPath, newContent, 'utf-8');
 		invalidateFileRead(validatedPath);
 
-		// Build output
-		const output: string[] = [`path=${filePath} status=success`, ''];
-
 		// The effective line where content now appears (1-based)
 		const effectiveLine = insertIndex + 1;
+
+		// Check diagnostics first to determine status
+		let status = 'success';
+		let diagnosticsOutput = '';
+		if (shouldRunDiagnostics(filePath)) {
+			const diagnostics = runDiagnostics(validatedPath);
+			diagnosticsOutput = diagnostics.output;
+			if (diagnostics.hasParseErrors || diagnostics.hasTypeErrors) {
+				status = 'error';
+			}
+		}
+
+		// Build output
+		const output: string[] = [`path=${filePath} status=${status}`, ''];
 
 		if (insertAtEnd) {
 			output.push(
@@ -258,8 +269,8 @@ No lint issues found.`,
 			formatContext(newLines, effectiveLine, effectiveLine + insertLines.length - 1, 3),
 		);
 
-		if (shouldRunDiagnostics(filePath)) {
-			output.push('', runDiagnostics(validatedPath));
+		if (diagnosticsOutput) {
+			output.push('', diagnosticsOutput);
 		}
 
 		return output.join('\n');

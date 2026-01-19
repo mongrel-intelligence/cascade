@@ -19,6 +19,7 @@ import {
 	shouldRunDiagnostics,
 	validatePath,
 } from './shared/index.js';
+import type { MatchResult } from './shared/types.js';
 
 export class FileSearchAndReplace extends Gadget({
 	name: 'FileSearchAndReplace',
@@ -27,7 +28,8 @@ export class FileSearchAndReplace extends Gadget({
 Uses layered matching: exact → whitespace → indentation → fuzzy
 This reduces edit errors by ~9x.
 
-All occurrences of the search content are replaced.`,
+By default, requires exactly ONE match (use surrounding context to disambiguate).
+Set replaceAll=true to replace ALL matches (for bulk renames or removing duplicates).`,
 	timeoutMs: 30000,
 	maxConcurrent: 1, // Sequential execution to prevent race conditions on file writes
 	schema: z.object({
@@ -35,6 +37,12 @@ All occurrences of the search content are replaced.`,
 		filePath: z.string().describe('Path to the file to edit'),
 		search: z.string().min(1).describe('The content to search for'),
 		replace: z.string().describe('The content to replace with (empty to delete)'),
+		replaceAll: z
+			.boolean()
+			.optional()
+			.describe(
+				'Replace ALL occurrences (default: false). Use for bulk renames or removing duplicates.',
+			),
 	}),
 	examples: [
 		// Example 1: Single-line replacement
@@ -45,11 +53,9 @@ All occurrences of the search content are replaced.`,
 				search: 'timeout: 1000',
 				replace: 'timeout: 5000',
 			},
-			output: `path=src/config.ts status=success matches=1 strategy=exact
+			output: `path=src/config.ts status=success strategy=exact
 
-Replaced 1 occurrence.
-
-=== Edit 1 (lines 5-5) ===
+=== Edit (lines 5-5) ===
 --- BEFORE ---
    1 | import { foo } from "bar";
    2 |
@@ -97,11 +103,9 @@ No lint issues found.`,
   return user;
 }`,
 			},
-			output: `path=src/api/users.ts status=success matches=1 strategy=exact
+			output: `path=src/api/users.ts status=success strategy=exact
 
-Replaced 1 occurrence.
-
-=== Edit 1 (lines 12-15) ===
+=== Edit (lines 12-15) ===
 --- BEFORE ---
    9 | import { db } from '../db';
   10 | import { userCache } from '../cache';
@@ -162,11 +166,9 @@ return result;`,
   throw new PaymentError('Failed to process payment', { cause: error });
 }`,
 			},
-			output: `path=src/services/payment.ts status=success matches=1 strategy=exact
+			output: `path=src/services/payment.ts status=success strategy=exact
 
-Replaced 1 occurrence.
-
-=== Edit 1 (lines 24-29) ===
+=== Edit (lines 24-29) ===
 --- BEFORE ---
   21 | async function processPayment(order: Order, token: string) {
   22 |   validateOrder(order);
@@ -203,56 +205,7 @@ No type errors found.
 No lint issues found.`,
 			comment: 'Wrap existing code with try-catch error handling',
 		},
-		// Example 4: Multiple occurrences
-		{
-			params: {
-				comment: 'Updating retry constant per requirements',
-				filePath: 'src/constants.ts',
-				search: 'MAX_RETRIES = 3',
-				replace: 'MAX_RETRIES = 5',
-			},
-			output: `path=src/constants.ts status=success matches=2 strategy=exact
-
-Replaced 2 occurrences.
-
-=== Edit 1 (lines 4-4) ===
---- BEFORE ---
-   1 | // API constants
-   2 | export const API_URL = "https://api.example.com";
-   3 |
-<  4 | export const MAX_RETRIES = 3;
-   5 | export const TIMEOUT = 5000;
-
---- AFTER ---
-   1 | // API constants
-   2 | export const API_URL = "https://api.example.com";
-   3 |
->  4 | export const MAX_RETRIES = 5;
-   5 | export const TIMEOUT = 5000;
-
-=== Edit 2 (lines 12-12) ===
---- BEFORE ---
-   9 | // Client constants
-  10 | export const CLIENT_URL = "https://client.example.com";
-  11 |
-< 12 | export const MAX_RETRIES = 3;
-  13 | export const CLIENT_TIMEOUT = 3000;
-
---- AFTER ---
-   9 | // Client constants
-  10 | export const CLIENT_URL = "https://client.example.com";
-  11 |
-> 12 | export const MAX_RETRIES = 5;
-  13 | export const CLIENT_TIMEOUT = 3000;
-
-=== TypeScript Check ===
-No type errors found.
-
-=== Biome Lint ===
-No lint issues found.`,
-			comment: 'Multiple matches replaced with before/after for each',
-		},
-		// Example 5: Non-TypeScript file (no diagnostics)
+		// Example 4: Non-TypeScript file (no diagnostics)
 		{
 			params: {
 				comment: 'Enabling feature flag for new functionality',
@@ -260,11 +213,9 @@ No lint issues found.`,
 				search: '"enabled": false',
 				replace: '"enabled": true',
 			},
-			output: `path=src/data.json status=success matches=1 strategy=exact
+			output: `path=src/data.json status=success strategy=exact
 
-Replaced 1 occurrence.
-
-=== Edit 1 (lines 3-3) ===
+=== Edit (lines 3-3) ===
 --- BEFORE ---
    1 | {
    2 |   "name": "example",
@@ -280,10 +231,28 @@ Replaced 1 occurrence.
    5 | }`,
 			comment: 'Non-TypeScript file (no diagnostics appended)',
 		},
+		// Example 5: replaceAll for removing duplicates
+		{
+			params: {
+				comment: 'Removing duplicate method definitions',
+				filePath: 'src/store.ts',
+				search: 'public duplicateMethod() { return 42; }',
+				replace: '',
+				replaceAll: true,
+			},
+			output: `path=src/store.ts status=success matches=3 strategy=exact
+
+Replaced 3 occurrences (replaceAll=true).
+Lines affected: 5-5, 12-12, 19-19
+
+All matches deleted.`,
+			comment:
+				'Use replaceAll=true to replace all matches (for bulk renames or removing duplicates)',
+		},
 	],
 }) {
 	override execute(params: this['params']): string {
-		const { filePath, search, replace } = params;
+		const { filePath, search, replace, replaceAll = false } = params;
 
 		// Validate and resolve path
 		const validatedPath = validatePath(filePath);
@@ -309,86 +278,74 @@ Replaced 1 occurrence.
 			throw new Error(this.formatFailure(filePath, search, failure));
 		}
 
+		if (matches.length > 1 && !replaceAll) {
+			// Multiple matches found - require explicit opt-in or more specific search
+			throw new Error(this.formatMultipleMatchesError(filePath, matches, content));
+		}
+
+		// If replaceAll=true OR single match, proceed with replacement
+		if (replaceAll && matches.length > 1) {
+			return this.executeReplaceAll(filePath, validatedPath, content, matches, replace);
+		}
+
+		// Single match found - proceed with replacement
+		const match = matches[0];
+
 		// Store original content for before/after display
 		const originalLines = content.split('\n');
+		const beforeContext = formatContext(originalLines, match.startLine, match.endLine, 5, '<');
 
-		// Collect before contexts BEFORE applying any replacements
-		const beforeContexts: Array<{
-			startLine: number;
-			endLine: number;
-			context: string;
-		}> = [];
-		for (const match of matches) {
-			beforeContexts.push({
-				startLine: match.startLine,
-				endLine: match.endLine,
-				context: formatContext(originalLines, match.startLine, match.endLine, 5, '<'),
-			});
-		}
-
-		// Apply replacements in reverse order (to preserve indices)
-		let newContent = content;
-		const sortedMatches = [...matches].sort((a, b) => b.startIndex - a.startIndex);
-		for (const match of sortedMatches) {
-			newContent = applyReplacement(newContent, match, replace);
-		}
+		// Apply replacement
+		const newContent = applyReplacement(content, match, replace);
 
 		// Write file
 		writeFileSync(validatedPath, newContent, 'utf-8');
 		invalidateFileRead(validatedPath);
 
 		// Build and return success output
-		return this.buildOutput(filePath, validatedPath, matches, beforeContexts, replace, newContent);
+		return this.buildOutput(filePath, validatedPath, match, beforeContext, replace, newContent);
 	}
 
 	private buildOutput(
 		filePath: string,
 		validatedPath: string,
-		matches: Array<{
+		match: {
 			startLine: number;
 			endLine: number;
 			strategy: string;
-		}>,
-		beforeContexts: Array<{
-			startLine: number;
-			endLine: number;
-			context: string;
-		}>,
+		},
+		beforeContext: string,
 		replace: string,
 		newContent: string,
 	): string {
-		const newLines = newContent.split('\n');
-		const output: string[] = [
-			`path=${filePath} status=success matches=${matches.length} strategy=${matches[0].strategy}`,
-			'',
-			`Replaced ${matches.length} occurrence${matches.length > 1 ? 's' : ''}.`,
-		];
-
-		const replacementLineCount = replace.split('\n').length;
-		let cumulativeLineDelta = 0;
-
-		for (let i = 0; i < matches.length; i++) {
-			const match = matches[i];
-			const matchedLineCount = match.endLine - match.startLine + 1;
-			const lineDelta = replacementLineCount - matchedLineCount;
-			const afterStartLine = match.startLine + cumulativeLineDelta;
-			const afterEndLine = afterStartLine + replacementLineCount - 1;
-
-			output.push(
-				'',
-				`=== Edit ${i + 1} (lines ${match.startLine}-${match.endLine}) ===`,
-				'--- BEFORE ---',
-				beforeContexts[i].context,
-				'',
-				'--- AFTER ---',
-				formatContext(newLines, afterStartLine, afterEndLine, 5),
-			);
-
-			cumulativeLineDelta += lineDelta;
+		// Check diagnostics first to determine status
+		let status = 'success';
+		let diagnosticsOutput = '';
+		if (shouldRunDiagnostics(filePath)) {
+			const diagnostics = runDiagnostics(validatedPath);
+			diagnosticsOutput = diagnostics.output;
+			if (diagnostics.hasParseErrors || diagnostics.hasTypeErrors) {
+				status = 'error';
+			}
 		}
 
-		if (shouldRunDiagnostics(filePath)) {
-			output.push('', runDiagnostics(validatedPath));
+		const newLines = newContent.split('\n');
+		const replacementLineCount = replace.split('\n').length;
+		const afterEndLine = match.startLine + replacementLineCount - 1;
+
+		const output: string[] = [
+			`path=${filePath} status=${status} strategy=${match.strategy}`,
+			'',
+			`=== Edit (lines ${match.startLine}-${match.endLine}) ===`,
+			'--- BEFORE ---',
+			beforeContext,
+			'',
+			'--- AFTER ---',
+			formatContext(newLines, match.startLine, afterEndLine, 5),
+		];
+
+		if (diagnosticsOutput) {
+			output.push('', diagnosticsOutput);
 		}
 
 		return output.join('\n');
@@ -407,33 +364,145 @@ Replaced 1 occurrence.
 			nearbyContext: string;
 		},
 	): string {
+		const searchLineCount = search.split('\n').length;
 		const lines: string[] = [
 			`ERROR: Search content NOT FOUND in file ${filePath}`,
 			'',
-			'SEARCH CONTENT:',
+			'Your search:',
 			'```',
 			search,
 			'```',
 		];
 
 		if (failure.suggestions.length > 0) {
-			lines.push('', 'SUGGESTIONS (similar content found):');
+			lines.push('', 'SIMILAR CONTENT FOUND (did you mean one of these?):');
 			for (const suggestion of failure.suggestions) {
 				const percent = Math.round(suggestion.similarity * 100);
+				const endLine = suggestion.lineNumber + searchLineCount - 1;
+				const lineRange =
+					searchLineCount > 1
+						? `lines ${suggestion.lineNumber}-${endLine}`
+						: `line ${suggestion.lineNumber}`;
 				lines.push(
 					'',
-					`Line ${suggestion.lineNumber} (${percent}% similar):`,
+					`--- ${lineRange} (${percent}% match) ---`,
 					'```',
 					suggestion.content,
 					'```',
 				);
 			}
 
-			if (failure.nearbyContext) {
-				lines.push('', 'CONTEXT:', failure.nearbyContext);
-			}
+			lines.push(
+				'',
+				'TIP: If your search content was modified, re-read the file to get the current content.',
+			);
+		} else {
+			lines.push(
+				'',
+				'No similar content found. The search content may have been deleted or significantly changed.',
+				'',
+				'TIP: Re-read the file to see its current content.',
+			);
 		}
 
 		return lines.join('\n');
+	}
+
+	private formatMultipleMatchesError(
+		filePath: string,
+		matches: Array<{
+			startLine: number;
+			endLine: number;
+		}>,
+		content: string,
+	): string {
+		const lines = content.split('\n');
+		const output: string[] = [
+			`ERROR: Ambiguous search - found ${matches.length} matches in ${filePath}`,
+			'',
+			'Options:',
+			'1. Add more surrounding context to uniquely identify the target location',
+			'2. Use replaceAll=true to replace ALL occurrences',
+			'',
+			'Matches found at:',
+		];
+
+		// Show context for each match (max 5 matches to avoid huge output)
+		const matchesToShow = matches.slice(0, 5);
+		for (let i = 0; i < matchesToShow.length; i++) {
+			const match = matchesToShow[i];
+			output.push(
+				'',
+				`--- Match ${i + 1} at lines ${match.startLine}-${match.endLine} ---`,
+				formatContext(lines, match.startLine, match.endLine, 2, '>'),
+			);
+		}
+
+		if (matches.length > 5) {
+			output.push('', `... and ${matches.length - 5} more matches`);
+		}
+
+		return output.join('\n');
+	}
+
+	private executeReplaceAll(
+		filePath: string,
+		validatedPath: string,
+		content: string,
+		matches: MatchResult[],
+		replace: string,
+	): string {
+		// Apply replacements in reverse order to preserve indices
+		let newContent = content;
+		const sortedMatches = [...matches].sort((a, b) => b.startIndex - a.startIndex);
+
+		for (const match of sortedMatches) {
+			newContent = applyReplacement(newContent, match, replace);
+		}
+
+		// Write file
+		writeFileSync(validatedPath, newContent, 'utf-8');
+		invalidateFileRead(validatedPath);
+
+		// Build output for replaceAll
+		return this.buildReplaceAllOutput(filePath, validatedPath, matches, replace);
+	}
+
+	private buildReplaceAllOutput(
+		filePath: string,
+		validatedPath: string,
+		matches: MatchResult[],
+		replace: string,
+	): string {
+		// Check diagnostics first to determine status
+		let status = 'success';
+		let diagnosticsOutput = '';
+		if (shouldRunDiagnostics(filePath)) {
+			const diagnostics = runDiagnostics(validatedPath);
+			diagnosticsOutput = diagnostics.output;
+			if (diagnostics.hasParseErrors || diagnostics.hasTypeErrors) {
+				status = 'error';
+			}
+		}
+
+		const strategy = matches[0].strategy;
+		const lineRanges = matches.map((m) => `${m.startLine}-${m.endLine}`).join(', ');
+
+		const output: string[] = [
+			`path=${filePath} status=${status} matches=${matches.length} strategy=${strategy}`,
+			'',
+			`Replaced ${matches.length} occurrences (replaceAll=true).`,
+			`Lines affected: ${lineRanges}`,
+		];
+
+		if (replace === '') {
+			output.push('', 'All matches deleted.');
+		}
+
+		if (diagnosticsOutput) {
+			output.push('', diagnosticsOutput);
+		}
+
+		return output.join('\n');
 	}
 }

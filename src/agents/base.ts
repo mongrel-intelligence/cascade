@@ -10,9 +10,7 @@ import { getIterationTrailingMessage } from '../config/hintConfig.js';
 import { getRateLimitForModel } from '../config/rateLimits.js';
 import { getRetryConfig } from '../config/retryConfig.js';
 import { AstGrep } from '../gadgets/AstGrep.js';
-import { FileInsertContent } from '../gadgets/FileInsertContent.js';
-import { FileRemoveContent } from '../gadgets/FileRemoveContent.js';
-import { FileSedCommand } from '../gadgets/FileSedCommand.js';
+import { FileSearchAndReplace } from '../gadgets/FileSearchAndReplace.js';
 import { Finish } from '../gadgets/Finish.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
@@ -297,9 +295,7 @@ function createAgentBuilderWithGadgets(
 		new ReadFile(),
 		new RipGrep(),
 		new AstGrep(),
-		...(isReadOnlyAgent
-			? []
-			: [new FileInsertContent(), new FileRemoveContent(), new FileSedCommand(), new WriteFile()]),
+		...(isReadOnlyAgent ? [] : [new FileSearchAndReplace(), new WriteFile()]),
 		// Shell commands via tmux (no timeout issues)
 		new Tmux(),
 		new Sleep(),

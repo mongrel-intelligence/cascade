@@ -1,9 +1,11 @@
 /**
  * Layered matching algorithm for file editing gadgets.
  *
- * Tries strategies in order: exact → whitespace → indentation → fuzzy
+ * Tries strategies in order: exact → whitespace → indentation → fuzzy → dmp
  * This approach reduces edit errors by ~9x (per Aider benchmarks).
  */
+
+import DiffMatchPatch from 'diff-match-patch';
 
 import type {
 	MatchFailure,
@@ -43,6 +45,7 @@ export function findMatch(
 		{ name: 'whitespace', fn: whitespaceMatch },
 		{ name: 'indentation', fn: indentationMatch },
 		{ name: 'fuzzy', fn: (c, s) => fuzzyMatch(c, s, opts.fuzzyThreshold) },
+		{ name: 'dmp', fn: (c, s) => dmpMatch(c, s, opts.fuzzyThreshold) },
 	];
 
 	for (const { name, fn } of strategies) {
@@ -281,6 +284,64 @@ function fuzzyMatch(content: string, search: string, threshold: number): MatchRe
 		found: true,
 		strategy: 'fuzzy',
 		confidence: bestMatch.similarity,
+		matchedContent,
+		startIndex,
+		endIndex,
+		startLine,
+		endLine,
+	};
+}
+
+// ============================================================================
+// Strategy 5: DMP Match (diff-match-patch)
+// ============================================================================
+
+/**
+ * Use Google's diff-match-patch library for character-level fuzzy matching.
+ * This is more robust than Levenshtein for code that has been refactored.
+ */
+function dmpMatch(content: string, search: string, threshold: number): MatchResult | null {
+	// DMP has a pattern length limit (typically 32 chars for bitap algorithm)
+	// Skip DMP for long search strings
+	if (search.length > 32) return null;
+
+	const dmp = new DiffMatchPatch();
+
+	// DMP threshold is inverted (0.0 = exact, 1.0 = fuzzy)
+	// Convert our threshold (0.8 = 80% similar) to DMP format
+	dmp.Match_Threshold = 1.0 - threshold;
+
+	// Allow matching anywhere in large files
+	dmp.Match_Distance = 100000;
+
+	// Find approximate position of search in content
+	let matchIndex: number;
+	try {
+		matchIndex = dmp.match_main(content, search, 0);
+	} catch {
+		// DMP can throw for patterns that are still too complex
+		return null;
+	}
+
+	if (matchIndex === -1) return null;
+
+	// Extract the matched region and calculate similarity
+	const matchedContent = content.substring(matchIndex, matchIndex + search.length);
+	const similarity =
+		1.0 -
+		levenshteinDistance(matchedContent, search) / Math.max(matchedContent.length, search.length);
+
+	// Only accept if it meets our threshold
+	if (similarity < threshold) return null;
+
+	const startIndex = matchIndex;
+	const endIndex = matchIndex + search.length;
+	const { startLine, endLine } = getLineNumbers(content, startIndex, endIndex);
+
+	return {
+		found: true,
+		strategy: 'dmp',
+		confidence: similarity,
 		matchedContent,
 		startIndex,
 		endIndex,

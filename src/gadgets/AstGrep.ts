@@ -175,12 +175,19 @@ Use for:
 				const diff = this.buildDiff(beforeContent, afterContent);
 
 				// Run diagnostics
-				let diagnostics = '';
+				let status = 'success';
+				let diagnosticsOutput = '';
 				if (shouldRunDiagnostics(path)) {
-					diagnostics = runDiagnostics(validatedPath);
+					const diagnostics = runDiagnostics(validatedPath);
+					diagnosticsOutput = diagnostics.output;
+					if (diagnostics.hasParseErrors || diagnostics.hasTypeErrors) {
+						status = 'error';
+					}
 				}
 
-				resolve(`path=${path} status=success\n\n${diff}${diagnostics ? `\n\n${diagnostics}` : ''}`);
+				resolve(
+					`path=${path} status=${status}\n\n${diff}${diagnosticsOutput ? `\n\n${diagnosticsOutput}` : ''}`,
+				);
 			});
 
 			sg.on('error', (error) => {

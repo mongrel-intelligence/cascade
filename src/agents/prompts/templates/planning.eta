@@ -129,8 +129,6 @@ Review the updated description and move to TODO when ready to implement!
 - `AstGrep` - AST-aware code search (use $VAR for captures)
 - `Tmux` - Run shell commands (for exploration: grep, find, etc.)
 
-⚠️ **You do NOT have access to:** FileSearchAndReplace, FileInsertContent, FileRemoveContent, WriteFile, CreatePR - these are reserved for the implementation agent.
-
 ## Rules
 
 - ALWAYS use `ReadTrelloCard` first
