@@ -56,9 +56,13 @@ export function runDiagnostics(filePath: string): string {
 		});
 		sections.push('');
 		sections.push('=== Biome Lint ===');
-		// Check if any fixes were applied
-		if (biomeOutput.includes('Fixed')) {
-			sections.push(biomeOutput.trim());
+		// Show output if there were fixes, warnings, or errors
+		const trimmed = biomeOutput.trim();
+		if (
+			trimmed &&
+			(trimmed.includes('Fixed') || trimmed.includes('warning') || trimmed.includes('error'))
+		) {
+			sections.push(trimmed);
 		} else {
 			sections.push('No lint issues found.');
 		}
