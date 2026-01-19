@@ -8,6 +8,27 @@ import { type ChildProcess, execSync, spawn } from 'node:child_process';
 import * as readline from 'node:readline';
 import { Gadget, z } from 'llmist';
 
+/**
+ * Error thrown when a command exits with non-zero exit code.
+ * Contains session name, exit code, and output preview for debugging.
+ */
+class CommandFailedError extends Error {
+	constructor(
+		public readonly session: string,
+		public readonly exitCode: number,
+		public readonly output: string,
+	) {
+		const preview = output.length > 1000 ? output.slice(-1000) : output;
+		super(
+			`Command exited with code ${exitCode}\n\n` +
+				`Session: ${session}\n` +
+				`Exit code: ${exitCode}\n\n` +
+				`Output:\n${preview || '(no output)'}`,
+		);
+		this.name = 'CommandFailedError';
+	}
+}
+
 const DEFAULT_TIMEOUT_MS = 300000; // 5 min for the gadget itself
 const DEFAULT_WAIT_MS = 120000; // 120s to wait for initial output
 const MAX_WAIT_MS = 120000; // Never wait longer than 120s
@@ -638,7 +659,8 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 
 **ACTIONS:**
 - \`start\`: Run a command in a new session. Waits up to 120s for initial output.
-  - If command exits quickly: returns full output + exit status
+  - If command exits with code 0: returns full output
+  - **If command exits with non-zero code: THROWS AN ERROR** with output
   - If still running after 120s: returns partial output + "still running" message
   - **Process keeps running in background** - use capture to check progress
 - \`capture\`: Get recent output from a running session
@@ -908,6 +930,11 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 				});
 
 				await client.killWindow(session);
+
+				if (markerResult.exitCode !== 0) {
+					throw new CommandFailedError(session, markerResult.exitCode, output);
+				}
+
 				return `session=${session} status=exited exit_code=${markerResult.exitCode}\n\n${output || '(no output)'}`;
 			}
 
@@ -925,6 +952,11 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 				});
 
 				await client.killWindow(session);
+
+				if (exitCode !== 0) {
+					throw new CommandFailedError(session, exitCode, output);
+				}
+
 				return `session=${session} status=exited exit_code=${exitCode}\n\n${output || '(no output)'}`;
 			}
 		}

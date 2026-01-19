@@ -68,7 +68,7 @@ You are running in a cloned copy of the project repository. Before creating stor
 
 1. **Read the card** to identify scope signals (file names, components, features, domain terms)
 2. **Start with AU** - review AUList output and use AURead for architectural context
-3. **Then explore implementation** - use `ListDirectory`, `ReadFile`, and `Tmux` to examine code
+3. **Then explore implementation** - use `ListDirectory`, `ReadFile`, `RipGrep`, and `Tmux` to examine code
 4. **Understand existing patterns** - how does the codebase already solve similar problems?
 5. **Map terminology** - card may use different terms than the code
 
@@ -79,7 +79,7 @@ You are running in a cloned copy of the project repository. Before creating stor
 1. **Read the Trello card** using `ReadTrelloCard` (title, description, AND comments)
 2. **Deep codebase exploration** (MANDATORY):
    - Use `ListDirectory` on "." and key directories
-   - Search with `Tmux` (ripgrep, fd) for related code and patterns
+   - Search with `RipGrep` or `Tmux` (ripgrep, fd) for related code and patterns
    - Read key files to understand architecture
 3. **Break down into INVEST stories**:
    - Identify logical units of work
@@ -196,7 +196,7 @@ Each story is independent, valuable, and testable.
 - `ListTrelloCards` - List all cards on a list (use to find cards you created)
 - `UpdateTrelloCard` - Update card title/description, or add labels
 - `PostTrelloComment` - Post a comment on a card
-- `ListDirectory`, `ReadFile`, `Tmux` - Explore the codebase
+- `ListDirectory`, `ReadFile`, `RipGrep`, `Tmux` - Explore the codebase
 
 ## Updating Previously Created Stories
 

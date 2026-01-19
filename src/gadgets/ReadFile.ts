@@ -5,9 +5,10 @@
  * - Current working directory and subdirectories
  * - /tmp directory (for test logs, build artifacts, etc.)
  */
-import { readFileSync, realpathSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { join, relative, resolve, sep } from 'node:path';
 
+import { auRead } from 'au';
 import { Gadget, z } from 'llmist';
 
 import { hasReadFile, markFileRead } from './readTracking.js';
@@ -63,45 +64,29 @@ Allowed paths:
 			.describe(
 				'Path to the file to read (relative or absolute). ONLY VALID PATHS ALLOWED. Use ListDirectory to confirm full path.',
 			),
-		showLineNumbers: z
-			.boolean()
-			.optional()
-			.default(true)
-			.describe('If true, prefix each line with its 1-based line number (e.g., "   1 | content")'),
 	}),
 	examples: [
 		{
 			params: {
 				comment: 'Reading source file to understand implementation',
 				filePath: 'src/utils.ts',
-				showLineNumbers: true,
 			},
 			output:
 				'path=src/utils.ts\n\n 1 | export function add(a: number, b: number) {\n 2 |   return a + b;\n 3 | }',
-			comment: 'Default behavior includes line numbers for precise editing',
+			comment: 'Line numbers included for precise editing',
 		},
 		{
 			params: {
 				comment: 'Checking test output for failures',
 				filePath: '/tmp/test.log',
-				showLineNumbers: true,
 			},
 			output: 'path=/tmp/test.log\n\n 1 | PASS src/utils.test.ts\n 2 |   ✓ adds numbers correctly',
 			comment: 'Read a test log from /tmp',
 		},
-		{
-			params: {
-				comment: 'Reading config without line numbers',
-				filePath: 'package.json',
-				showLineNumbers: false,
-			},
-			output: 'path=package.json\n\n{\n  "name": "my-project",\n  "version": "1.0.0"\n  ...\n}',
-			comment: 'Disable line numbers for cleaner JSON/config output',
-		},
 	],
 }) {
-	override execute(params: this['params']): string {
-		const { filePath, showLineNumbers = true } = params;
+	override async execute(params: this['params']): Promise<string> {
+		const { filePath } = params;
 		const validatedPath = validatePath(filePath);
 
 		// Check if already read in this session (content is in context)
@@ -109,19 +94,55 @@ Allowed paths:
 			return `path=${filePath}\n\n[Already read - refer to previous content in context]`;
 		}
 
-		let content = readFileSync(validatedPath, 'utf-8');
+		const fullContent = readFileSync(validatedPath, 'utf-8');
+		const allLines = fullContent.split('\n');
+		const totalLines = allLines.length;
+
 		markFileRead(validatedPath);
 
-		if (showLineNumbers) {
-			content = this.addLineNumbers(content);
+		const content = this.addLineNumbers(allLines, 1, totalLines);
+		const header = `path=${filePath}`;
+
+		// Try to include AU understanding if available
+		const auUnderstanding = await this.getAUUnderstanding(filePath);
+
+		if (auUnderstanding) {
+			return `${header}\n\n## Understanding\n${auUnderstanding}\n\n## Content\n${content}`;
 		}
 
-		return `path=${filePath}\n\n${content}`;
+		return `${header}\n\n${content}`;
 	}
 
-	private addLineNumbers(content: string): string {
-		const lines = content.split('\n');
-		const width = String(lines.length).length;
-		return lines.map((line, i) => `${String(i + 1).padStart(width)} | ${line}`).join('\n');
+	private addLineNumbers(lines: string[], startLine: number, totalLines: number): string {
+		const width = String(totalLines).length;
+		return lines.map((line, i) => `${String(startLine + i).padStart(width)} | ${line}`).join('\n');
+	}
+
+	private async getAUUnderstanding(filePath: string): Promise<string | null> {
+		const cwd = process.cwd();
+
+		// Check if AU is enabled (repo has .au file at root)
+		if (!existsSync(join(cwd, '.au'))) {
+			return null;
+		}
+
+		try {
+			// Use relative path for AU lookup
+			const relativePath = relative(cwd, resolve(cwd, filePath)) || filePath;
+			const result = (await auRead.execute({
+				comment: `Fetching understanding for ${relativePath}`,
+				paths: relativePath,
+			})) as string;
+
+			// Return null if no understanding exists
+			if (!result || result.includes('No understanding exists yet')) {
+				return null;
+			}
+
+			return result;
+		} catch {
+			// AU lookup failed, continue without it
+			return null;
+		}
 	}
 }

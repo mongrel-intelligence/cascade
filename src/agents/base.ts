@@ -9,12 +9,14 @@ import { CUSTOM_MODELS } from '../config/customModels.js';
 import { getIterationTrailingMessage } from '../config/hintConfig.js';
 import { getRateLimitForModel } from '../config/rateLimits.js';
 import { getRetryConfig } from '../config/retryConfig.js';
+import { AstGrep } from '../gadgets/AstGrep.js';
 import { FileInsertContent } from '../gadgets/FileInsertContent.js';
 import { FileRemoveContent } from '../gadgets/FileRemoveContent.js';
-import { FileSearchAndReplace } from '../gadgets/FileSearchAndReplace.js';
+import { FileSedCommand } from '../gadgets/FileSedCommand.js';
 import { Finish } from '../gadgets/Finish.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
+import { RipGrep } from '../gadgets/RipGrep.js';
 import { Sleep } from '../gadgets/Sleep.js';
 import { CreatePR } from '../gadgets/github/index.js';
 import { initSessionState } from '../gadgets/sessionState.js';
@@ -139,6 +141,7 @@ async function buildAgentContext(
 		originalCardUrl: string;
 		detectedAgentType: string;
 	},
+	modelOverride?: string,
 ): Promise<AgentContextData> {
 	// Build prompt context for template rendering
 	const promptContext: PromptContext = {
@@ -167,6 +170,7 @@ async function buildAgentContext(
 	// Get system prompt and model
 	const systemPrompt = project.prompts?.[agentType] || getSystemPrompt(agentType, promptContext);
 	const model =
+		modelOverride ||
 		project.agentModels?.[agentType] ||
 		project.model ||
 		config.defaults.agentModels?.[agentType] ||
@@ -291,14 +295,11 @@ function createAgentBuilderWithGadgets(
 		// Filesystem gadgets (read-only for planning)
 		new ListDirectory(),
 		new ReadFile(),
+		new RipGrep(),
+		new AstGrep(),
 		...(isReadOnlyAgent
 			? []
-			: [
-					new FileSearchAndReplace(),
-					new FileInsertContent(),
-					new FileRemoveContent(),
-					new WriteFile(),
-				]),
+			: [new FileInsertContent(), new FileRemoveContent(), new FileSedCommand(), new WriteFile()]),
 		// Shell commands via tmux (no timeout issues)
 		new Tmux(),
 		new Sleep(),
@@ -509,7 +510,7 @@ export async function executeAgent(
 	agentType: string,
 	input: AgentInput & { project: ProjectConfig; config: CascadeConfig },
 ): Promise<AgentResult> {
-	const { project, config, cardId, interactive } = input;
+	const { project, config, cardId, interactive, autoAccept } = input;
 	const prContext = extractPRContext(input);
 	const isDebugAgent = input.logDir && typeof input.logDir === 'string';
 
@@ -556,6 +557,7 @@ export async function executeAgent(
 			input.triggerType,
 			prContext,
 			debugContext,
+			input.modelOverride,
 		);
 
 		const originalCwd = process.cwd();
@@ -596,7 +598,13 @@ export async function executeAgent(
 			);
 
 			const agent = builder.ask(ctx.prompt);
-			const result = await runAgentLoop(agent, log, trackingContext, interactive === true);
+			const result = await runAgentLoop(
+				agent,
+				log,
+				trackingContext,
+				interactive === true,
+				autoAccept === true,
+			);
 
 			log.info('Agent completed', {
 				cardId,

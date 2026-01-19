@@ -128,6 +128,12 @@ export function getIterationTrailingMessage(agentType?: string): TrailingMessage
 				sections.push('## PR Status\n\nNo PR exists for current branch.');
 			}
 
+			// Reminder about parallel gadget calls
+			sections.push(
+				'## Reminder\n\nCall multiple gadgets in a single response when you know which ones you need. ' +
+					'For example, read multiple related files at once, or make multiple independent edits together.',
+			);
+
 			return sections.join('\n\n');
 		}
 
