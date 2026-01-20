@@ -1,0 +1,11 @@
+### Pattern Discovery
+
+When implementing something new:
+1. Find one similar file (component, API endpoint, test)
+2. Note the imports, structure, and conventions
+3. Apply the same patterns to your implementation
+
+For tests:
+- Find tests for similar features in the same directory
+- Use the same test fixtures and helpers
+- Match the test structure and assertions

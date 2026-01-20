@@ -1,0 +1,8 @@
+### Verification Protocol (CRITICAL)
+
+NEVER push changes until ALL of:
+1. Type checking passes (zero errors)
+2. Tests pass (zero failures)
+3. Lint passes (zero errors)
+
+Run verification BEFORE pushing. Do not push "optimistically."

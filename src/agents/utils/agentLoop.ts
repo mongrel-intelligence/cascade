@@ -12,7 +12,13 @@ import {
 	waitForEnter,
 } from '../../utils/interactive.js';
 import type { createAgentLogger } from './logging.js';
-import { type TrackingContext, incrementGadgetCall, isSyntheticCall } from './tracking.js';
+import {
+	type TrackingContext,
+	consumeLoopWarning,
+	incrementGadgetCall,
+	isSyntheticCall,
+	recordGadgetCallForLoop,
+} from './tracking.js';
 
 // ============================================================================
 // Types
@@ -117,6 +123,24 @@ function injectSessionCompletionNotices(agent: RunnableAgent): void {
 	}
 }
 
+/**
+ * Check for pending loop warnings and inject as user messages.
+ * Called during agent loop to warn the agent about detected loops.
+ */
+function injectLoopWarnings(
+	agent: RunnableAgent,
+	trackingContext: TrackingContext,
+	log: ReturnType<typeof createAgentLogger>,
+): void {
+	const warning = consumeLoopWarning(trackingContext);
+	if (warning) {
+		log.warn('[Loop Warning Injected]', {
+			repeatCount: trackingContext.loopDetection.repeatCount,
+		});
+		agent.injectUserMessage(warning);
+	}
+}
+
 // ============================================================================
 // Event Handlers
 // ============================================================================
@@ -136,6 +160,8 @@ async function handleGadgetCallEvent(
 
 	if (!isSynthetic) {
 		incrementGadgetCall(trackingContext);
+		// Record for loop detection
+		recordGadgetCallForLoop(trackingContext, gadgetName, parameters ?? {});
 	}
 
 	if (interactive) {
@@ -260,11 +286,15 @@ export async function runAgentLoop(
 	for await (const event of agent.run()) {
 		// Check for session completions after each event
 		injectSessionCompletionNotices(agent);
+		// Check for loop warnings (set by hooks at iteration start)
+		injectLoopWarnings(agent, trackingContext, log);
 		await handleStreamEvent(event, outputLines, log, trackingContext, interactive, autoAccept);
 	}
 
 	// Final check for any completions that occurred during the last event
 	injectSessionCompletionNotices(agent);
+	// Final check for any pending loop warnings
+	injectLoopWarnings(agent, trackingContext, log);
 
 	const cost = agent.getTree()?.getTotalCost() ?? 0;
 

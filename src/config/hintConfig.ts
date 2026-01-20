@@ -104,6 +104,9 @@ function formatIterationStatus(
  * - Includes agent-specific batch processing hints
  * - For implementation agent: includes current todo list for visibility
  *
+ * Note: Loop detection warnings are injected as separate user messages
+ * (see agentLoop.ts) rather than in trailing messages for higher visibility.
+ *
  * Trailing messages are ephemeral - they appear in each request but don't
  * persist to conversation history, keeping context clean.
  *

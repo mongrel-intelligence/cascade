@@ -8,18 +8,24 @@ import { getCompactionConfig } from '../config/compactionConfig.js';
 import { getIterationTrailingMessage } from '../config/hintConfig.js';
 import { getRateLimitForModel } from '../config/rateLimits.js';
 import { getRetryConfig } from '../config/retryConfig.js';
+import { AstGrep } from '../gadgets/AstGrep.js';
 import { FileSearchAndReplace } from '../gadgets/FileSearchAndReplace.js';
+import { Finish } from '../gadgets/Finish.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
+import { RipGrep } from '../gadgets/RipGrep.js';
 import { Sleep } from '../gadgets/Sleep.js';
 import {
 	GetPRComments,
 	GetPRDetails,
 	GetPRDiff,
+	PostPRComment,
 	ReplyToReviewComment,
+	UpdatePRComment,
 } from '../gadgets/github/index.js';
-import { initSessionState } from '../gadgets/sessionState.js';
+import { initSessionState, recordInitialComment } from '../gadgets/sessionState.js';
 import { Tmux } from '../gadgets/tmux.js';
+import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
 import { githubClient } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
@@ -100,6 +106,8 @@ async function setupRepository(
 
 type PRDetails = Awaited<ReturnType<typeof githubClient.getPR>>;
 type PRComments = Awaited<ReturnType<typeof githubClient.getPRReviewComments>>;
+type PRReviews = Awaited<ReturnType<typeof githubClient.getPRReviews>>;
+type PRIssueComments = Awaited<ReturnType<typeof githubClient.getPRIssueComments>>;
 type PRDiff = Awaited<ReturnType<typeof githubClient.getPRDiff>>;
 
 function formatPRDetails(prDetails: PRDetails): string {
@@ -136,6 +144,46 @@ function formatPRComments(prComments: PRComments): string {
 		.join('\n\n');
 }
 
+function formatPRReviews(prReviews: PRReviews): string {
+	// Filter to reviews that have body text (the main review comment)
+	const reviewsWithBody = prReviews.filter((r) => r.body && r.body.trim().length > 0);
+
+	if (reviewsWithBody.length === 0) {
+		return 'No review submissions with body text.';
+	}
+
+	return reviewsWithBody
+		.map((r) =>
+			[
+				`Review by @${r.user.login} (${r.state})`,
+				`Submitted: ${r.submittedAt}`,
+				'',
+				r.body,
+				'---',
+			].join('\n'),
+		)
+		.join('\n\n');
+}
+
+function formatPRIssueComments(prIssueComments: PRIssueComments): string {
+	if (prIssueComments.length === 0) {
+		return 'No general PR comments found.';
+	}
+
+	return prIssueComments
+		.map((c) =>
+			[
+				`Comment #${c.id} by @${c.user.login}`,
+				`URL: ${c.htmlUrl}`,
+				`Created: ${c.createdAt}`,
+				'',
+				c.body,
+				'---',
+			].join('\n'),
+		)
+		.join('\n\n');
+}
+
 function formatPRDiff(prDiff: PRDiff): string {
 	if (prDiff.length === 0) {
 		return 'No files changed in this PR.';
@@ -165,6 +213,8 @@ interface ReviewContextData {
 	contextFiles: Awaited<ReturnType<typeof readContextFiles>>;
 	prDetailsFormatted: string;
 	commentsFormatted: string;
+	reviewsFormatted: string;
+	issueCommentsFormatted: string;
 	diffFormatted: string;
 	prompt: string;
 }
@@ -178,11 +228,13 @@ async function buildReviewContext(
 	project: ProjectConfig,
 	config: CascadeConfig,
 	log: ReturnType<typeof createAgentLogger>,
+	modelOverride?: string,
 ): Promise<ReviewContextData> {
 	// Get system prompt and model
 	const systemPrompt =
 		project.prompts?.['respond-to-review'] || getSystemPrompt('respond-to-review', {});
 	const model =
+		modelOverride ||
 		project.agentModels?.review ||
 		project.model ||
 		config.defaults.agentModels?.review ||
@@ -192,15 +244,23 @@ async function buildReviewContext(
 	// Read context files
 	const contextFiles = await readContextFiles(repoDir);
 
-	// Fetch PR details, comments, and diff
-	log.info('Fetching PR details, comments, and diff', { owner, repo, prNumber });
+	// Fetch PR details, comments, reviews, issue comments, and diff
+	log.info('Fetching PR details, comments, reviews, issue comments, and diff', {
+		owner,
+		repo,
+		prNumber,
+	});
 	const prDetails = await githubClient.getPR(owner, repo, prNumber);
 	const prComments = await githubClient.getPRReviewComments(owner, repo, prNumber);
+	const prReviews = await githubClient.getPRReviews(owner, repo, prNumber);
+	const prIssueComments = await githubClient.getPRIssueComments(owner, repo, prNumber);
 	const prDiff = await githubClient.getPRDiff(owner, repo, prNumber);
 
 	// Format PR data
 	const prDetailsFormatted = formatPRDetails(prDetails);
 	const commentsFormatted = formatPRComments(prComments);
+	const reviewsFormatted = formatPRReviews(prReviews);
+	const issueCommentsFormatted = formatPRIssueComments(prIssueComments);
 	const diffFormatted = formatPRDiff(prDiff);
 
 	// Build prompt
@@ -213,6 +273,8 @@ async function buildReviewContext(
 		contextFiles,
 		prDetailsFormatted,
 		commentsFormatted,
+		reviewsFormatted,
+		issueCommentsFormatted,
 		diffFormatted,
 		prompt,
 	};
@@ -265,14 +327,24 @@ function createRespondToReviewAgentBuilder(
 		new ReadFile(),
 		new FileSearchAndReplace(),
 		new WriteFile(),
+		new RipGrep(),
+		new AstGrep(),
 		// Shell commands via tmux
 		new Tmux(),
 		new Sleep(),
+		// Task tracking gadgets
+		new TodoUpsert(),
+		new TodoUpdateStatus(),
+		new TodoDelete(),
 		// GitHub gadgets
 		new GetPRDetails(),
 		new GetPRComments(),
 		new GetPRDiff(),
 		new ReplyToReviewComment(),
+		new PostPRComment(),
+		new UpdatePRComment(),
+		// Session control
+		new Finish(),
 	];
 
 	const allGadgets = auEnabled ? [...baseGadgets, auList, auRead] : baseGadgets;
@@ -287,6 +359,7 @@ function createRespondToReviewAgentBuilder(
 		.withRetry(getRetryConfig(llmistLogger))
 		.withCompaction(getCompactionConfig('respond-to-review'))
 		.withTrailingMessage(getIterationTrailingMessage('respond-to-review'))
+		.withTextOnlyHandler('acknowledge')
 		.withHooks({
 			observers: createObserverHooks({
 				model: ctx.model,
@@ -308,6 +381,29 @@ async function injectReviewSyntheticCalls(
 	auEnabled: boolean,
 ): Promise<BuilderType> {
 	let builder = initialBuilder;
+
+	// Post initial "getting to work" comment on the PR
+	const initialCommentBody = '🤖 Working on addressing the review feedback...';
+	const initialComment = await githubClient.createPRComment(
+		owner,
+		repo,
+		prNumber,
+		initialCommentBody,
+	);
+	recordInitialComment(initialComment.id);
+	recordSyntheticInvocationId(trackingContext, 'gc_initial_comment');
+	builder = builder.withSyntheticGadgetCall(
+		'PostPRComment',
+		{
+			comment: 'Acknowledge review feedback',
+			owner,
+			repo,
+			prNumber,
+			body: initialCommentBody,
+		},
+		`Comment posted (id: ${initialComment.id}): ${initialComment.htmlUrl}`,
+		'gc_initial_comment',
+	);
 
 	// Inject directory listing as synthetic ListDirectory call (first for codebase orientation)
 	// Call the actual gadget to generate output (respects .gitignore by default)
@@ -336,13 +432,41 @@ async function injectReviewSyntheticCalls(
 		'gc_pr_details',
 	);
 
-	// Inject PR comments
+	// Inject PR line-specific comments
 	recordSyntheticInvocationId(trackingContext, 'gc_pr_comments');
 	builder = builder.withSyntheticGadgetCall(
 		'GetPRComments',
-		{ comment: 'Pre-fetching review comments to address', owner, repo, prNumber },
+		{ comment: 'Pre-fetching line-specific review comments to address', owner, repo, prNumber },
 		ctx.commentsFormatted,
 		'gc_pr_comments',
+	);
+
+	// Inject PR reviews (with body text)
+	recordSyntheticInvocationId(trackingContext, 'gc_pr_reviews');
+	builder = builder.withSyntheticGadgetCall(
+		'GetPRReviews',
+		{
+			comment: 'Pre-fetching review submissions (approve/request changes with body text)',
+			owner,
+			repo,
+			prNumber,
+		},
+		ctx.reviewsFormatted,
+		'gc_pr_reviews',
+	);
+
+	// Inject PR issue comments (general conversation)
+	recordSyntheticInvocationId(trackingContext, 'gc_pr_issue_comments');
+	builder = builder.withSyntheticGadgetCall(
+		'GetPRIssueComments',
+		{
+			comment: 'Pre-fetching general PR comments (issue-style conversation)',
+			owner,
+			repo,
+			prNumber,
+		},
+		ctx.issueCommentsFormatted,
+		'gc_pr_issue_comments',
 	);
 
 	// Inject PR diff
@@ -453,6 +577,7 @@ export async function executeRespondToReviewAgent(
 			project,
 			config,
 			log,
+			input.modelOverride,
 		);
 
 		// Change to repo directory
