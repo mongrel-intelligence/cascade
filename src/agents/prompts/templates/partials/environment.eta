@@ -21,3 +21,26 @@ Services (databases, caches) may stop running during long sessions. If tests fai
   - `grep` - useful also with -r and with -E or as `egrep`
   - `find` - file search: `command="find . -name '*.ts' -type f"`
     - With -exec: `command="find . -name '*.ts' -exec wc -l {} \\;"`
+
+### Path Verification (IMPORTANT)
+
+**NEVER guess file or directory paths.** Different codebases have different structures. Before accessing a path:
+
+1. **Use ListDirectory first** to verify a directory exists and see its contents
+2. **Use RipGrep or fd** to find files by name or pattern when you're not sure of the exact location
+3. **Follow the breadcrumbs** - start from known directories (like project root) and navigate incrementally
+
+❌ **Don't do this:**
+```
+ReadFile(filePath="src/tests/unit/api/routers/users.test.ts")  // Guessing path structure
+```
+
+✅ **Do this instead:**
+```
+ListDirectory(directoryPath="src")           // See what's in src/
+ListDirectory(directoryPath="src/tests")     // Navigate incrementally
+# OR use search:
+RipGrep(pattern="describe.*users", glob="*.test.ts")  // Find the file
+```
+
+If a path doesn't exist, don't retry with variations - use ListDirectory to discover the actual structure.

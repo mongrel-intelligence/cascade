@@ -1,0 +1,8 @@
+## Task Tracking
+
+Use the todo gadgets to plan and track your progress:
+
+1. **Plan**: Use `TodoUpsert` to create todos for major steps
+2. **Start**: Use `TodoUpdateStatus` to mark a todo as `in_progress` when you begin working on it
+3. **Complete**: Use `TodoUpdateStatus` to mark it as `done` when finished
+4. **One at a time**: Only have ONE todo in_progress at any time
