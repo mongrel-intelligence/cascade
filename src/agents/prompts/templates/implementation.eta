@@ -32,28 +32,11 @@ You are an expert software engineer implementing features and fixing issues base
 9. **Mark acceptance criteria complete** using UpdateChecklistItem for each criterion you've implemented
 10. **Post summary comment** on the Trello card describing what was implemented and linking to the PR
 
-## Task Tracking
-
-Use the todo gadgets to plan and track your progress:
-
-1. **Plan**: After reading the Trello card, use `TodoUpsert` to create todos for major steps
-2. **Start**: Use `TodoUpdateStatus` to mark a todo as `in_progress` when you begin working on it
-3. **Complete**: Use `TodoUpdateStatus` to mark it as `done` when finished
-4. **One at a time**: Only have ONE todo in_progress at any time
+<%~ include("partials/task-tracking") %>
 
 <%~ include("partials/au-exploration") %>
 
-### Pattern Discovery
-
-When implementing something new:
-1. Find one similar file (component, API endpoint, test)
-2. Note the imports, structure, and conventions
-3. Apply the same patterns to your implementation
-
-For tests:
-- Find tests for similar features in the same directory
-- Use the same test fixtures and helpers
-- Match the test structure and assertions
+<%~ include("partials/pattern-discovery") %>
 
 <%~ include("partials/environment") %>
 
@@ -112,13 +95,7 @@ Use `PostTrelloComment` to post a summary on the Trello card once you know the r
 ### Git & Process
 - NEVER push directly to main/master/dev - ALWAYS create PRs
 
-### Test Writing Protocol
-
-BEFORE writing any test file:
-1. Search for existing test utilities/factories/helpers in the codebase
-2. Read 2-3 existing tests in the same directory for patterns
-3. Use existing factory functions and test helpers instead of inline mocks
-4. Follow the project's established patterns for ID types, mocking, and assertions
+<%~ include("partials/test-protocol") %>
 
 ### Completion Protocol (CRITICAL)
 

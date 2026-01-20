@@ -43,10 +43,21 @@ export interface PRReviewComment {
 export interface PRReview {
 	id: number;
 	state: 'approved' | 'changes_requested' | 'commented' | 'dismissed';
+	body: string | null;
 	user: {
 		login: string;
 	};
 	submittedAt: string;
+}
+
+export interface PRIssueComment {
+	id: number;
+	body: string;
+	user: {
+		login: string;
+	};
+	htmlUrl: string;
+	createdAt: string;
 }
 
 export interface CheckRunStatus {
@@ -164,14 +175,37 @@ export const githubClient = {
 		repo: string,
 		prNumber: number,
 		body: string,
-	): Promise<void> {
+	): Promise<{ id: number; htmlUrl: string }> {
 		logger.debug('Creating PR comment', { owner, repo, prNumber });
-		await getClient().issues.createComment({
+		const { data } = await getClient().issues.createComment({
 			owner,
 			repo,
 			issue_number: prNumber,
 			body,
 		});
+		return {
+			id: data.id,
+			htmlUrl: data.html_url,
+		};
+	},
+
+	async updatePRComment(
+		owner: string,
+		repo: string,
+		commentId: number,
+		body: string,
+	): Promise<{ id: number; htmlUrl: string }> {
+		logger.debug('Updating PR comment', { owner, repo, commentId });
+		const { data } = await getClient().issues.updateComment({
+			owner,
+			repo,
+			comment_id: commentId,
+			body,
+		});
+		return {
+			id: data.id,
+			htmlUrl: data.html_url,
+		};
 	},
 
 	async getPRReviews(owner: string, repo: string, prNumber: number): Promise<PRReview[]> {
@@ -184,10 +218,34 @@ export const githubClient = {
 		return data.map((r) => ({
 			id: r.id,
 			state: r.state.toLowerCase() as PRReview['state'],
+			body: r.body || null,
 			user: {
 				login: r.user?.login || 'unknown',
 			},
 			submittedAt: r.submitted_at || '',
+		}));
+	},
+
+	async getPRIssueComments(
+		owner: string,
+		repo: string,
+		prNumber: number,
+	): Promise<PRIssueComment[]> {
+		logger.debug('Fetching PR issue comments', { owner, repo, prNumber });
+		const { data } = await getClient().issues.listComments({
+			owner,
+			repo,
+			issue_number: prNumber,
+			per_page: 100,
+		});
+		return data.map((c) => ({
+			id: c.id,
+			body: c.body || '',
+			user: {
+				login: c.user?.login || 'unknown',
+			},
+			htmlUrl: c.html_url,
+			createdAt: c.created_at,
 		}));
 	},
 

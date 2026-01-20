@@ -9,6 +9,7 @@ import { getIterationTrailingMessage } from '../config/hintConfig.js';
 import { getRateLimitForModel } from '../config/rateLimits.js';
 import { getRetryConfig } from '../config/retryConfig.js';
 import { REVIEW_FILE_CONTENT_TOKEN_LIMIT, estimateTokens } from '../config/reviewConfig.js';
+import { Finish } from '../gadgets/Finish.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
 import { Sleep } from '../gadgets/Sleep.js';
@@ -149,10 +150,12 @@ async function buildReviewContext(
 	project: ProjectConfig,
 	config: CascadeConfig,
 	log: ReturnType<typeof createAgentLogger>,
+	modelOverride?: string,
 ): Promise<ReviewContextData> {
 	// Get system prompt and model
 	const systemPrompt = project.prompts?.review || getSystemPrompt('review', {});
 	const model =
+		modelOverride ||
 		project.agentModels?.review ||
 		project.model ||
 		config.defaults.agentModels?.review ||
@@ -260,6 +263,8 @@ function createReviewAgentBuilder(
 		new GetPRDiff(),
 		new GetPRChecks(),
 		new CreatePRReview(),
+		// Session control
+		new Finish(),
 	];
 
 	const allGadgets = auEnabled ? [...baseGadgets, auList, auRead] : baseGadgets;
@@ -274,6 +279,7 @@ function createReviewAgentBuilder(
 		.withRetry(getRetryConfig(llmistLogger))
 		.withCompaction(getCompactionConfig('review'))
 		.withTrailingMessage(getIterationTrailingMessage('review'))
+		.withTextOnlyHandler('acknowledge')
 		.withHooks({
 			observers: createObserverHooks({
 				model: ctx.model,
@@ -445,7 +451,16 @@ export async function executeReviewAgent(input: ReviewAgentInput): Promise<Agent
 		log.info('Running review agent', { prNumber, repoFullName, repoDir });
 
 		// Build context
-		const ctx = await buildReviewContext(owner, repo, prNumber, repoDir, project, config, log);
+		const ctx = await buildReviewContext(
+			owner,
+			repo,
+			prNumber,
+			repoDir,
+			project,
+			config,
+			log,
+			input.modelOverride,
+		);
 
 		// Change to repo directory
 		const originalCwd = process.cwd();
