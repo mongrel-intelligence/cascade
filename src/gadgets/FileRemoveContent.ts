@@ -9,12 +9,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { Gadget, z } from 'llmist';
 
 import { invalidateFileRead } from './readTracking.js';
-import {
-	formatContext,
-	runDiagnostics,
-	shouldRunDiagnostics,
-	validatePath,
-} from './shared/index.js';
+import { formatContext, runDiagnosticsWithTracking, validatePath } from './shared/index.js';
 
 export class FileRemoveContent extends Gadget({
 	name: 'FileRemoveContent',
@@ -56,11 +51,7 @@ Removed 1 line (line 3).
    3 | import { baz } from 'baz';
    4 |
 
-=== TypeScript Check ===
-No type errors found.
-
-=== Biome Lint ===
-No lint issues found.`,
+✓ No issues`,
 			comment: 'Remove single line',
 		},
 		// Example 2: Remove block of lines (deprecated function)
@@ -93,11 +84,7 @@ Removed 6 lines (lines 5-10).
    4 |
    5 | export function keepThisToo() {}
 
-=== TypeScript Check ===
-No type errors found.
-
-=== Biome Lint ===
-No lint issues found.`,
+✓ No issues`,
 			comment: 'Remove block of lines',
 		},
 		// Example 3: Remove from non-TS file
@@ -173,16 +160,9 @@ Removed 3 lines (lines 2-4).
 		writeFileSync(validatedPath, newContent, 'utf-8');
 		invalidateFileRead(validatedPath);
 
-		// Check diagnostics first to determine status
-		let status = 'success';
-		let diagnosticsOutput = '';
-		if (shouldRunDiagnostics(filePath)) {
-			const diagnostics = runDiagnostics(validatedPath);
-			diagnosticsOutput = diagnostics.output;
-			if (diagnostics.hasParseErrors || diagnostics.hasTypeErrors) {
-				status = 'error';
-			}
-		}
+		// Check diagnostics and update state tracker
+		const diagnosticResult = runDiagnosticsWithTracking(filePath, validatedPath);
+		const status = diagnosticResult?.hasErrors ? 'error' : 'success';
 
 		// Build output
 		const lineDesc =
@@ -205,8 +185,8 @@ Removed 3 lines (lines 2-4).
 			) || '(empty file)',
 		];
 
-		if (diagnosticsOutput) {
-			output.push('', diagnosticsOutput);
+		if (diagnosticResult) {
+			output.push('', diagnosticResult.statusMessage);
 		}
 
 		return output.join('\n');

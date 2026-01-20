@@ -14,13 +14,10 @@ Services (databases, caches) may stop running during long sessions. If tests fai
   - Faster and provides structured output
   - Example: `RipGrep(pattern="class.*Repository", path="src/", glob="*.ts")`
 
-- **Shell commands**: Use `Tmux` for git, npm, build commands
-  - NOT for code search (use RipGrep gadget instead)
-
-- **Git & GitHub CLI**: `git` and `gh` commands available via Tmux
+- **Refactoring**: Use the gadgets available for editing files or use `AstGrep` gadget
 
 - **File finding** (use via Tmux):
   - `fd` - fast file finder: `command="fd filename src/"`
+  - `grep` - useful also with -r and with -E or as `egrep`
   - `find` - file search: `command="find . -name '*.ts' -type f"`
     - With -exec: `command="find . -name '*.ts' -exec wc -l {} \\;"`
-  - `ast-grep` - AST-based search: `command="ast-grep --pattern '$FUNC($ARGS)' src/"`

@@ -9,12 +9,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { Gadget, z } from 'llmist';
 
 import { invalidateFileRead } from './readTracking.js';
-import {
-	formatContext,
-	runDiagnostics,
-	shouldRunDiagnostics,
-	validatePath,
-} from './shared/index.js';
+import { formatContext, runDiagnosticsWithTracking, validatePath } from './shared/index.js';
 
 export class FileInsertContent extends Gadget({
 	name: 'FileInsertContent',
@@ -54,11 +49,7 @@ Inserted 1 line before line 1.
    3 | import { baz } from 'qux';
    4 |
 
-=== TypeScript Check ===
-No type errors found.
-
-=== Biome Lint ===
-No lint issues found.`,
+✓ No issues`,
 			comment: 'Insert import at beginning of file (before line 1)',
 		},
 		// Example 2: Insert after a specific line
@@ -81,11 +72,7 @@ Inserted 1 line after line 3.
    5 |
    6 | export function main() {
 
-=== TypeScript Check ===
-No type errors found.
-
-=== Biome Lint ===
-No lint issues found.`,
+✓ No issues`,
 			comment: 'Insert after line 3 (new content at line 4)',
 		},
 		// Example 3: Multi-line function insertion after a comment
@@ -113,11 +100,7 @@ Inserted 3 lines after line 9.
   14 |   return data.trim();
   15 | }
 
-=== TypeScript Check ===
-No type errors found.
-
-=== Biome Lint ===
-No lint issues found.`,
+✓ No issues`,
 			comment: 'Insert multiline block after line 9',
 		},
 		// Example 4: Append at end of file
@@ -138,11 +121,7 @@ Appended 1 line at end of file.
    5 |
 >  6 | export * from './newModule';
 
-=== TypeScript Check ===
-No type errors found.
-
-=== Biome Lint ===
-No lint issues found.`,
+✓ No issues`,
 			comment: 'Append at end of file (line beyond EOF)',
 		},
 		// Example 5: Insert interface before a class
@@ -174,11 +153,7 @@ Inserted 5 lines before line 10.
   15 | export class UserService {
   16 |   async getUser(id: string) {
 
-=== TypeScript Check ===
-No type errors found.
-
-=== Biome Lint ===
-No lint issues found.`,
+✓ No issues`,
 			comment: 'Insert interface before the class at line 10',
 		},
 	],
@@ -240,16 +215,9 @@ No lint issues found.`,
 		// The effective line where content now appears (1-based)
 		const effectiveLine = insertIndex + 1;
 
-		// Check diagnostics first to determine status
-		let status = 'success';
-		let diagnosticsOutput = '';
-		if (shouldRunDiagnostics(filePath)) {
-			const diagnostics = runDiagnostics(validatedPath);
-			diagnosticsOutput = diagnostics.output;
-			if (diagnostics.hasParseErrors || diagnostics.hasTypeErrors) {
-				status = 'error';
-			}
-		}
+		// Check diagnostics and update state tracker
+		const diagnosticResult = runDiagnosticsWithTracking(filePath, validatedPath);
+		const status = diagnosticResult?.hasErrors ? 'error' : 'success';
 
 		// Build output
 		const output: string[] = [`path=${filePath} status=${status}`, ''];
@@ -269,8 +237,8 @@ No lint issues found.`,
 			formatContext(newLines, effectiveLine, effectiveLine + insertLines.length - 1, 3),
 		);
 
-		if (diagnosticsOutput) {
-			output.push('', diagnosticsOutput);
+		if (diagnosticResult) {
+			output.push('', diagnosticResult.statusMessage);
 		}
 
 		return output.join('\n');
