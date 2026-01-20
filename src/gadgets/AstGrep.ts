@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { Gadget, z } from 'llmist';
 
 import { invalidateFileRead } from './readTracking.js';
-import { runDiagnostics, shouldRunDiagnostics, validatePath } from './shared/index.js';
+import { runDiagnosticsWithTracking, validatePath } from './shared/index.js';
 
 export class AstGrep extends Gadget({
 	name: 'AstGrep',
@@ -174,16 +174,10 @@ Use for:
 				// Build diff
 				const diff = this.buildDiff(beforeContent, afterContent);
 
-				// Run diagnostics
-				let status = 'success';
-				let diagnosticsOutput = '';
-				if (shouldRunDiagnostics(path)) {
-					const diagnostics = runDiagnostics(validatedPath);
-					diagnosticsOutput = diagnostics.output;
-					if (diagnostics.hasParseErrors || diagnostics.hasTypeErrors) {
-						status = 'error';
-					}
-				}
+				// Run diagnostics and update state tracker
+				const diagnosticResult = runDiagnosticsWithTracking(path, validatedPath);
+				const status = diagnosticResult?.hasErrors ? 'error' : 'success';
+				const diagnosticsOutput = diagnosticResult ? diagnosticResult.statusMessage : '';
 
 				resolve(
 					`path=${path} status=${status}\n\n${diff}${diagnosticsOutput ? `\n\n${diagnosticsOutput}` : ''}`,

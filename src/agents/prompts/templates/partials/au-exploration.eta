@@ -3,7 +3,7 @@
 AU gadgets provide pre-built documentation about architecture, patterns, and conventions.
 
 **How to use:**
-1. AUList is automatically injected - review it for available documentation
+1. Use AUList to see what understanding we have available for various paths
 2. Use AURead to read docs for directories relevant to your task
 3. Read implementation files only after understanding the module's purpose
 

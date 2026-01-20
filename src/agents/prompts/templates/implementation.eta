@@ -79,7 +79,7 @@ Use `UpdateChecklistItem` to mark each completed acceptance criterion:
 
 ### 2. Post Summary Comment
 
-Use `PostTrelloComment` to post a summary on the Trello card:
+Use `PostTrelloComment` to post a summary on the Trello card once you know the real PR url/number from CreatePR output:
 
 ```markdown
 ## ✅ Implementation Complete

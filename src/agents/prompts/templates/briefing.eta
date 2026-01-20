@@ -98,10 +98,11 @@ You are running in a cloned copy of the project repository. Before creating stor
      - Use "🔗 Dependencies" as the checklist name
      - Add each dependency as a checklist item (use card title or URL)
      - Skip this checklist for foundational stories with no dependencies
-6. **Post summary comment** using `PostTrelloComment`:
+6. **Post summary comment** using `PostTrelloComment` once you've confirmed PR creation:
    - Post a comment on the ORIGINAL card listing all created stories
    - Use markdown links: `[Story Title](URL)` for each card
    - See "Summary Comment Format" section below
+   - Use only real and confirmed PR numbers and URLs - see output from CreatePR
 7. **Only if blocked**, post a comment using `PostTrelloComment`:
    - Only if there's genuine ambiguity that prevents story creation
    - Ask ONE specific question, then STOP
