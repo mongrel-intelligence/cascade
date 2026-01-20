@@ -16,7 +16,7 @@ import type {
 
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
 import { calculateCost } from '../../utils/llmMetrics.js';
-import { type TrackingContext, incrementLLMIteration } from './tracking.js';
+import { type TrackingContext, checkForLoopAndAdvance, incrementLLMIteration } from './tracking.js';
 
 /** Function signature for writing to cascade log file */
 export type LogWriter = (level: string, message: string, context?: Record<string, unknown>) => void;
@@ -47,6 +47,17 @@ export function createObserverHooks(config: ObserverHooksConfig) {
 	return {
 		onLLMCallReady: async (context: ObserveLLMCallContext) => {
 			if (context.subagentContext) return;
+
+			// Check for loop pattern (compares previous iteration's calls with current)
+			// This must happen BEFORE incrementing iteration so we compare the right data
+			const loopDetected = checkForLoopAndAdvance(trackingContext);
+			if (loopDetected) {
+				logWriter('WARN', 'Loop detected', {
+					iteration: context.iteration,
+					repeatCount: trackingContext.loopDetection.repeatCount,
+					pattern: trackingContext.loopDetection.repeatedPattern,
+				});
+			}
 
 			// Track timing
 			llmCallStartTimes.set(context.iteration, Date.now());
