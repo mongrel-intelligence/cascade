@@ -1,5 +1,36 @@
+import { execSync } from 'node:child_process';
 import { Gadget, TaskCompletionSignal, z } from 'llmist';
 import { getSessionState } from './sessionState.js';
+
+function hasUncommittedChanges(): boolean {
+	try {
+		const status = execSync('git status --porcelain', { encoding: 'utf-8' });
+		return status.trim().length > 0;
+	} catch {
+		return true; // Assume uncommitted if check fails
+	}
+}
+
+function hasUnpushedCommits(): boolean {
+	try {
+		// Check if local branch is ahead of remote
+		const result = execSync('git rev-list @{upstream}..HEAD --count 2>/dev/null', {
+			encoding: 'utf-8',
+		});
+		return Number.parseInt(result.trim(), 10) > 0;
+	} catch {
+		// If no upstream or error, check if there are any local commits not on remote
+		try {
+			const branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+			const result = execSync(`git rev-list origin/${branch}..HEAD --count 2>/dev/null`, {
+				encoding: 'utf-8',
+			});
+			return Number.parseInt(result.trim(), 10) > 0;
+		} catch {
+			return true; // Assume unpushed if check fails
+		}
+	}
+}
 
 export class Finish extends Gadget({
 	name: 'Finish',
@@ -25,6 +56,22 @@ export class Finish extends Gadget({
 				'Cannot finish implementation session without creating a PR. ' +
 					'You must call CreatePR to submit your changes before calling Finish.',
 			);
+		}
+
+		// For respond-to-review agent, require clean git state and pushed changes
+		if (state.agentType === 'respond-to-review') {
+			if (hasUncommittedChanges()) {
+				throw new Error(
+					'Cannot finish respond-to-review session with uncommitted changes. ' +
+						'You must commit your changes (git add && git commit) before calling Finish.',
+				);
+			}
+			if (hasUnpushedCommits()) {
+				throw new Error(
+					'Cannot finish respond-to-review session without pushing changes. ' +
+						'You must push your commits (git push) before calling Finish.',
+				);
+			}
 		}
 
 		throw new TaskCompletionSignal(params.comment);

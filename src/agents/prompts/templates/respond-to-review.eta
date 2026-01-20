@@ -20,15 +20,30 @@ You are an expert software engineer addressing code review feedback on a pull re
 5. **For each review comment:**
    - Understand what change is being requested
    - Make the necessary code changes
-   - Reply to the comment using ReplyToReviewComment explaining what you fixed
    - Mark the todo as done
+   - **DO NOT reply to comments yet** - wait until after successful push
 
-### Phase 4: Verify & Complete
+### Phase 4: Verify & Push
 
 6. **Run tests and linting** to verify your changes don't break anything
-7. **Commit and push** your changes
-8. **Update the initial comment** with a summary using UpdatePRComment
-9. **Call Finish** to end the session
+7. **Commit and push** your changes:
+   - `git add -A && git commit -m "fix: address review feedback"`
+   - `git push`
+   - **Verify push succeeded** before proceeding
+
+### Phase 5: Comment (ONLY after successful push)
+
+8. **Reply to each comment** using ReplyToReviewComment explaining what you fixed
+9. **Update the initial comment** with a summary using UpdatePRComment
+10. **Call Finish** to end the session
+
+**IMPORTANT**: Do NOT post any replies or updates until AFTER `git push` succeeds. This ensures you only comment on work that is actually pushed to the remote.
+
+**CRITICAL**: The Finish gadget will reject your request if:
+- You have uncommitted changes (run `git status` to check)
+- You haven't pushed your commits to the remote
+
+Always commit and push before calling Finish!
 
 <%~ include("partials/task-tracking") %>
 
@@ -46,7 +61,7 @@ You are an expert software engineer addressing code review feedback on a pull re
 
 ### Posting a Summary
 
-After addressing all review comments, update the initial comment with a summary:
+**ONLY after git push succeeds**, update the initial comment with a summary:
 
 ```markdown
 ## Review Feedback Addressed
@@ -64,7 +79,7 @@ Use `UpdatePRComment` with the comment ID from session state.
 
 ## Replying to Review Comments
 
-After fixing each issue, use `ReplyToReviewComment` to reply:
+**ONLY reply after git push succeeds.** Then use `ReplyToReviewComment` to reply to each comment:
 - Explain what you changed
 - Reference the specific fix if helpful
 - Be concise but informative
