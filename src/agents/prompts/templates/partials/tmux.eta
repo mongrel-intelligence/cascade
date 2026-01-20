@@ -1,8 +1,8 @@
 ## Running Commands
 
-Use the Tmux gadget for ALL shell commands (npm, tests, builds, git, etc.):
+Use the Tmux gadget for ALL shell commands:
 
-1. **Start command:** `Tmux(action="start", session="unique-name", command="npm test")`
+1. **Start command:** `Tmux(action="start", session="unique-name", command="pnpm run test:unit")`
    - Waits up to 120s for initial output
    - If process exits quickly: returns full output + exit status
    - If still running: returns partial output + "still running" message

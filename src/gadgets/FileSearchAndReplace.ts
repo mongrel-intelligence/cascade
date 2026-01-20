@@ -15,8 +15,7 @@ import {
 	findAllMatches,
 	formatContext,
 	getMatchFailure,
-	runDiagnostics,
-	shouldRunDiagnostics,
+	runDiagnosticsWithTracking,
 	validatePath,
 } from './shared/index.js';
 import type { MatchResult } from './shared/types.js';
@@ -74,12 +73,8 @@ Set replaceAll=true to replace ALL matches (for bulk renames or removing duplica
    6 |   retries: 3,
    7 | };
 
-=== TypeScript Check ===
-No type errors found.
-
-=== Biome Lint ===
-No lint issues found.`,
-			comment: 'Single edit with before/after context and diagnostics',
+✓ No issues`,
+			comment: 'Single edit with before/after context and simplified diagnostics',
 		},
 		// Example 2: Multi-line function replacement
 		{
@@ -136,11 +131,7 @@ No lint issues found.`,
   24 |
   25 | function updateUser(id: string, data: Partial<User>): void {
 
-=== TypeScript Check ===
-No type errors found.
-
-=== Biome Lint ===
-No lint issues found.`,
+✓ No issues`,
 			comment: 'Replace entire function with new async implementation',
 		},
 		// Example 3: Adding error handling to existing code
@@ -198,11 +189,7 @@ return result;`,
 > 34 |   }
   35 | }
 
-=== TypeScript Check ===
-No type errors found.
-
-=== Biome Lint ===
-No lint issues found.`,
+✓ No issues`,
 			comment: 'Wrap existing code with try-catch error handling',
 		},
 		// Example 4: Non-TypeScript file (no diagnostics)
@@ -318,16 +305,9 @@ All matches deleted.`,
 		replace: string,
 		newContent: string,
 	): string {
-		// Check diagnostics first to determine status
-		let status = 'success';
-		let diagnosticsOutput = '';
-		if (shouldRunDiagnostics(filePath)) {
-			const diagnostics = runDiagnostics(validatedPath);
-			diagnosticsOutput = diagnostics.output;
-			if (diagnostics.hasParseErrors || diagnostics.hasTypeErrors) {
-				status = 'error';
-			}
-		}
+		// Check diagnostics and update state tracker
+		const diagnosticResult = runDiagnosticsWithTracking(filePath, validatedPath);
+		const status = diagnosticResult?.hasErrors ? 'error' : 'success';
 
 		const newLines = newContent.split('\n');
 		const replacementLineCount = replace.split('\n').length;
@@ -344,8 +324,8 @@ All matches deleted.`,
 			formatContext(newLines, match.startLine, afterEndLine, 5),
 		];
 
-		if (diagnosticsOutput) {
-			output.push('', diagnosticsOutput);
+		if (diagnosticResult) {
+			output.push('', diagnosticResult.statusMessage);
 		}
 
 		return output.join('\n');
@@ -474,16 +454,9 @@ All matches deleted.`,
 		matches: MatchResult[],
 		replace: string,
 	): string {
-		// Check diagnostics first to determine status
-		let status = 'success';
-		let diagnosticsOutput = '';
-		if (shouldRunDiagnostics(filePath)) {
-			const diagnostics = runDiagnostics(validatedPath);
-			diagnosticsOutput = diagnostics.output;
-			if (diagnostics.hasParseErrors || diagnostics.hasTypeErrors) {
-				status = 'error';
-			}
-		}
+		// Check diagnostics and update state tracker
+		const diagnosticResult = runDiagnosticsWithTracking(filePath, validatedPath);
+		const status = diagnosticResult?.hasErrors ? 'error' : 'success';
 
 		const strategy = matches[0].strategy;
 		const lineRanges = matches.map((m) => `${m.startLine}-${m.endLine}`).join(', ');
@@ -499,8 +472,8 @@ All matches deleted.`,
 			output.push('', 'All matches deleted.');
 		}
 
-		if (diagnosticsOutput) {
-			output.push('', diagnosticsOutput);
+		if (diagnosticResult) {
+			output.push('', diagnosticResult.statusMessage);
 		}
 
 		return output.join('\n');

@@ -1,5 +1,9 @@
 import { execSync } from 'node:child_process';
 import type { TrailingMessage } from 'llmist';
+import {
+	formatDiagnosticStatus,
+	hasAnyDiagnosticErrors,
+} from '../gadgets/shared/diagnosticState.js';
 import { formatTodoList, loadTodos } from '../gadgets/todo/storage.js';
 
 /**
@@ -113,9 +117,14 @@ export function getIterationTrailingMessage(agentType?: string): TrailingMessage
 		const timestamp = `**Timestamp:** ${getCurrentTimestamp()}`;
 		const iterationStatus = formatIterationStatus(ctx.iteration, ctx.maxIterations, batchHint);
 
-		// For implementation agent, include progress info, git status, and PR status
+		// For implementation agent, include progress info, git status, PR status, and diagnostics
 		if (agentType === 'implementation') {
 			const sections: string[] = [timestamp, iterationStatus];
+
+			// Add diagnostic status (only if there are errors to show)
+			if (hasAnyDiagnosticErrors()) {
+				sections.push(formatDiagnosticStatus());
+			}
 
 			// Add todo list if there are todos
 			const todos = loadTodos();
@@ -146,6 +155,11 @@ export function getIterationTrailingMessage(agentType?: string): TrailingMessage
 			);
 
 			return sections.join('\n\n');
+		}
+
+		// For respond-to-review agent, include diagnostic status
+		if (agentType === 'respond-to-review' && hasAnyDiagnosticErrors()) {
+			return `${timestamp}\n\n${iterationStatus}\n\n${formatDiagnosticStatus()}`;
 		}
 
 		return `${timestamp}\n\n${iterationStatus}`;

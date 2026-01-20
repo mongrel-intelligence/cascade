@@ -14,7 +14,7 @@ import { dirname, resolve, sep } from 'node:path';
 import { Gadget, z } from 'llmist';
 
 import { invalidateFileRead } from './readTracking.js';
-import { runDiagnostics, shouldRunDiagnostics } from './shared/index.js';
+import { runDiagnosticsWithTracking } from './shared/index.js';
 
 const ALLOWED_PATHS = ['/tmp'];
 
@@ -90,16 +90,12 @@ Allowed paths:
 				filePath: 'src/utils/helper.ts',
 				content: 'export function helper() {}',
 			},
-			output: `path=src/utils/helper.ts
+			output: `path=src/utils/helper.ts status=success
 
 Wrote 27 bytes (created directory: src/utils)
 
-=== TypeScript Check ===
-No type errors found.
-
-=== Biome Lint ===
-No lint issues found.`,
-			comment: 'Write a TypeScript file with diagnostics output',
+✓ No issues`,
+			comment: 'Write a TypeScript file with simplified diagnostics',
 		},
 		{
 			params: {
@@ -130,15 +126,11 @@ export class UserService {
   }
 }`,
 			},
-			output: `path=src/services/userService.ts
+			output: `path=src/services/userService.ts status=success
 
 Wrote 542 bytes
 
-=== TypeScript Check ===
-No type errors found.
-
-=== Biome Lint ===
-No lint issues found.`,
+✓ No issues`,
 			comment: 'Write a complete TypeScript file with multi-line content',
 		},
 	],
@@ -182,15 +174,10 @@ No lint issues found.`,
 		const bytesWritten = Buffer.byteLength(content, 'utf-8');
 		const dirNote = createdDir ? ` (created directory: ${dirname(filePath)})` : '';
 
-		let diagnosticsOutput = '';
-		let status = 'success';
-		if (shouldRunDiagnostics(filePath)) {
-			const diagnostics = runDiagnostics(validatedPath);
-			diagnosticsOutput = `\n\n${diagnostics.output}`;
-			if (diagnostics.hasParseErrors || diagnostics.hasTypeErrors) {
-				status = 'error';
-			}
-		}
+		// Check diagnostics and update state tracker
+		const diagnosticResult = runDiagnosticsWithTracking(filePath, validatedPath);
+		const status = diagnosticResult?.hasErrors ? 'error' : 'success';
+		const diagnosticsOutput = diagnosticResult ? `\n\n${diagnosticResult.statusMessage}` : '';
 
 		return `path=${filePath} status=${status}\n\nWrote ${bytesWritten} bytes${dirNote}${diagnosticsOutput}`;
 	}
