@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { auList, auRead } from 'au';
+import { auList, auRead } from '@zbigniewsobiecki/au';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 
 import { getCompactionConfig } from '../config/compactionConfig.js';

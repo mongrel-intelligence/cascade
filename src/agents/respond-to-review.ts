@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { auList, auRead } from 'au';
+import { auList, auRead } from '@zbigniewsobiecki/au';
 import { AgentBuilder, LLMist, createLogger } from 'llmist';
 import { WriteFile } from '../gadgets/WriteFile.js';
 
