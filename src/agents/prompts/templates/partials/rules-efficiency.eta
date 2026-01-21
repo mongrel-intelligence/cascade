@@ -81,3 +81,18 @@ If an operation fails twice with the same error:
 3. Try a different approach (different search pattern, different tool)
 
 Looping on the same error wastes iteration budget and never succeeds.
+
+### FileSearchAndReplace Failure Recovery (CRITICAL)
+
+**When "Search content NOT FOUND" error occurs:**
+
+The file has changed since you last read it. Your search string is stale.
+
+**Mandatory recovery:**
+1. STOP - do not retry same search string
+2. ReadFile to get CURRENT content
+3. Find actual content where change should go
+4. Construct NEW search string from current file
+5. Retry with new search string
+
+**Never retry FileSearchAndReplace with the same search string after failure.**

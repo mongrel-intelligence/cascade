@@ -9,3 +9,43 @@ For tests:
 - Find tests for similar features in the same directory
 - Use the same test fixtures and helpers
 - Match the test structure and assertions
+
+### Import Verification Protocol (CRITICAL)
+
+**BEFORE writing ANY import statement**, verify the module exists:
+
+1. **For local/relative imports (`./` or `../`)**:
+   - ListDirectory to verify target directory exists
+   - ReadFile to verify target file exists AND exports what you need
+
+2. **For external packages**:
+   - Read the dependency manifest to verify package is installed
+   - If NOT installed: use alternative or implement inline
+
+**Anti-pattern (causes "Cannot find module" errors):**
+```typescript
+// BAD: Assuming paths exist without verification
+import { trpc } from "../lib/trpc"     // Did you verify lib/trpc exists?
+import { Button } from "./ui/Button"   // Did you verify ui/Button exists?
+import { format } from "date-fns"      // Is date-fns in dependencies?
+```
+
+**If a needed module doesn't exist:**
+- Local: Create it yourself OR find existing equivalent in codebase
+- Package: Use installed alternative OR implement inline
+
+### Type and Enum Verification
+
+**BEFORE using any type, enum value, or interface property:**
+
+1. RipGrep to find type definition
+2. ReadFile to see EXACT values/properties
+3. Use ONLY what exists (not what you expect)
+
+**Example:**
+```
+// Need status value. Before writing status: "completed":
+1. RipGrep(pattern="type.*Status|enum.*Status")
+2. ReadFile -> type TaskStatus = "pending" | "in_progress" | "done" | "failed"
+3. "completed" NOT in list -> use "done" instead
+```

@@ -1,7 +1,30 @@
 ### Test Writing Protocol
 
-BEFORE writing or modifying any test:
-1. Search for existing test utilities/factories/helpers in the codebase
-2. Read 2-3 existing tests in the same directory for patterns
-3. Use existing factory functions and test helpers instead of inline mocks
-4. Follow the project's established patterns for ID types, mocking, and assertions
+BEFORE writing any test:
+
+1. **Discover the test framework and configuration:**
+   - Look for test config files (vitest.config, jest.config, etc.)
+   - Check if globals are enabled in config
+   - If globals NOT enabled, you MUST import test functions
+
+2. **Read 2-3 existing tests in same directory:**
+   - Copy the EXACT import pattern from existing tests
+   - Note test utilities and helpers used
+   - Match the file naming convention
+
+3. **Match imports exactly:**
+   - If existing tests import `describe`, `it`, `beforeEach` - you must too
+   - DO NOT assume test globals are available
+   - Copy the import line verbatim from an existing test
+
+4. **Use existing factories/helpers** - Search for `factory`, `fixture`, `mock`, `helper` in test directories
+
+**Anti-pattern:**
+```typescript
+// BAD: Assuming test globals are available without checking
+describe('Test', () => {
+  beforeEach(() => {});  // May fail if globals not configured
+});
+
+// GOOD: Copy exact pattern from existing tests in the same codebase
+```

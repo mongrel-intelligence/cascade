@@ -1,0 +1,27 @@
+### Abort Conditions (MANDATORY STOPS)
+
+**HARD STOPS - Do not proceed, enter recovery:**
+
+1. **CreatePR fails with typecheck/lint errors**
+   - Do NOT retry CreatePR
+   - Fix ALL reported errors first
+   - Run typecheck again, verify 0 errors
+   - Only then retry CreatePR
+
+2. **Same FileSearchAndReplace fails twice**
+   - File has changed
+   - Re-read entire file before next attempt
+
+3. **Typecheck shows > 0 errors**
+   - You are NOT done
+   - Fix every error before CreatePR
+
+4. **Tests fail**
+   - You are NOT done
+   - Debug and fix before proceeding
+
+**NEVER when errors exist:**
+- Retry CreatePR hoping for different results
+- Output "Implementation Complete"
+- Mark todos/checklists complete
+- Call Finish

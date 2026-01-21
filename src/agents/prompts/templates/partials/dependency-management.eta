@@ -1,0 +1,18 @@
+### Dependency Management Protocol
+
+**You CANNOT install new packages.** Work only with what's already in the project's dependency file.
+
+**At implementation start:**
+1. Read the dependency manifest (package.json, Cargo.toml, requirements.txt, etc.)
+2. Note available packages for common needs: dates, HTTP, validation, UI, testing
+
+**When you need package functionality:**
+1. Check if the package is already installed
+2. If not: implement inline OR use an already-installed alternative
+3. NEVER assume popular packages are installed - verify first
+
+**Common native alternatives when packages aren't available:**
+- Dates: `Date.toLocaleString()` or `Intl.DateTimeFormat`
+- HTTP: Native `fetch`
+- UUID: `crypto.randomUUID()`
+- JSON schema: Manual validation logic
