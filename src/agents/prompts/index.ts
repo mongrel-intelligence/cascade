@@ -61,6 +61,7 @@ export function getSystemPrompt(agentType: string, context: PromptContext = {}):
 		'implementation',
 		'debug',
 		'respond-to-review',
+		'respond-to-ci',
 		'review',
 	];
 	if (!validTypes.includes(agentType)) {
@@ -77,4 +78,5 @@ export const PLANNING_SYSTEM_PROMPT = loadTemplate('planning');
 export const IMPLEMENTATION_SYSTEM_PROMPT = loadTemplate('implementation');
 export const DEBUG_SYSTEM_PROMPT = loadTemplate('debug');
 export const RESPOND_TO_REVIEW_SYSTEM_PROMPT = loadTemplate('respond-to-review');
+export const RESPOND_TO_CI_SYSTEM_PROMPT = loadTemplate('respond-to-ci');
 export const REVIEW_SYSTEM_PROMPT = loadTemplate('review');

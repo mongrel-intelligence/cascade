@@ -1,9 +1,10 @@
 {
 	"defaults": {
 		"model": "openrouter:x-ai/grok-code-fast-1",
-		"maxIterations": 50,
+		"maxIterations": 70,
 		"agentIterations": {
-			"implementation": 70
+			"planning": 50,
+			"briefing": 50
 		},
 		"watchdogTimeoutMs": 2700000,
 		"selfDestructTimeoutMs": 1800000,

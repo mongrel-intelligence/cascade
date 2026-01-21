@@ -121,7 +121,7 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		});
 
 		return {
-			agentType: 'implementation',
+			agentType: 'respond-to-ci',
 			agentInput: {
 				prNumber,
 				prBranch: prRef.head.ref,
