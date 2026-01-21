@@ -106,7 +106,7 @@ async function prepareGitHubPRInput(
 		process.exit(1);
 	}
 
-	// Fetch PR details to get branch name
+	// Fetch PR details to get branch name and head SHA
 	console.log(`Fetching PR #${prNumber} details from ${repoFullName}...`);
 	const prDetails = await githubClient.getPR(owner, repo, prNumber);
 	console.log(`PR branch: ${prDetails.headRef}`);
@@ -115,6 +115,7 @@ async function prepareGitHubPRInput(
 	const agentInput: AgentInput = {
 		prNumber,
 		prBranch: prDetails.headRef,
+		headSha: prDetails.headSha,
 		repoFullName,
 		// Synthetic trigger data for local testing
 		triggerCommentId: 0,

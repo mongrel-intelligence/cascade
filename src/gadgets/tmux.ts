@@ -84,6 +84,30 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Validates that git commands don't contain dangerous flags that bypass safety checks.
+ * @throws Error if a dangerous flag is detected
+ */
+function validateGitCommand(command: string): void {
+	// Normalize command for checking (handle multiline, extra spaces)
+	const normalized = command.toLowerCase();
+
+	// Check for git commit/push with --no-verify or -n flag
+	// Match patterns like: git commit --no-verify, git push --no-verify
+	// Also match: git commit -n, git commit -anm (contains -n)
+	// Uses .*? (non-greedy) to match any characters between git commit/push and the flag
+	// The -n pattern matches any flag containing 'n' (e.g., -n, -an, -anm, -nam)
+	const gitNoVerifyPattern =
+		/\bgit\s+(commit|push)\b.*?(\s--no-verify\b|\s-[a-z]*n[a-z]*(?=\s|"|'|$))/;
+
+	if (gitNoVerifyPattern.test(normalized)) {
+		throw new Error(
+			'Git commands with --no-verify or -n flag are not allowed. ' +
+				'Pre-commit and pre-push hooks must run to ensure code quality.',
+		);
+	}
+}
+
 // ============================================================================
 // Session Completion Notices
 // ============================================================================
@@ -865,6 +889,9 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 		cwd?: string;
 		wait?: number;
 	}): Promise<string> {
+		// Validate git commands don't bypass hooks
+		validateGitCommand(params.command);
+
 		const client = await getControlClient();
 
 		// Check if window already exists
@@ -971,6 +998,11 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 		keys: string;
 		enter?: boolean;
 	}): Promise<string> {
+		// Validate git commands don't bypass hooks (only when sending a command with Enter)
+		if (params.enter !== false) {
+			validateGitCommand(params.keys);
+		}
+
 		const client = await getControlClient();
 
 		if (!(await client.windowExists(params.session))) {
@@ -1049,4 +1081,4 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 	}
 }
 
-export { TmuxGadget as Tmux };
+export { TmuxGadget as Tmux, validateGitCommand };

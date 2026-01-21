@@ -22,6 +22,7 @@ const VALID_AGENTS = [
 	'implementation',
 	'debug',
 	'respond-to-review',
+	'respond-to-ci',
 	'review',
 ] as const;
 const IMAGE_NAME = 'cascade:local';
