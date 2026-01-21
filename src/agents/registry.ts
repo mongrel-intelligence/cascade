@@ -1,6 +1,7 @@
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import { executeAgent } from './base.js';
+import { executeRespondToCIAgent } from './respond-to-ci.js';
 import { executeRespondToReviewAgent } from './respond-to-review.js';
 import { executeReviewAgent } from './review.js';
 
@@ -40,6 +41,9 @@ registerAgent('implementation', executeAgent.bind(null, 'implementation'));
 registerAgent('debug', executeAgent.bind(null, 'debug'));
 registerAgent('respond-to-review', (input) =>
 	executeRespondToReviewAgent(input as Parameters<typeof executeRespondToReviewAgent>[0]),
+);
+registerAgent('respond-to-ci', (input) =>
+	executeRespondToCIAgent(input as Parameters<typeof executeRespondToCIAgent>[0]),
 );
 registerAgent('review', (input) =>
 	executeReviewAgent(input as Parameters<typeof executeReviewAgent>[0]),
