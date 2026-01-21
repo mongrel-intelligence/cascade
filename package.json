@@ -33,7 +33,7 @@
 		"@octokit/rest": "^22.0.1",
 		"@types/archiver": "^7.0.0",
 		"archiver": "^7.0.1",
-		"au": "github:zbigniewsobiecki/au",
+		"@zbigniewsobiecki/au": "^1.2.0",
 		"bullmq": "^5.66.4",
 		"chalk": "^5.4.1",
 		"dhalsim": "^2.2.0",
