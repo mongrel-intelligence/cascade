@@ -39,6 +39,26 @@
 					"cost": "695443ed683031e20d140ba4"
 				}
 			}
+		},
+		{
+			"id": "damisa",
+			"name": "damisa",
+			"repo": "zbigniewsobiecki/damisa",
+			"baseBranch": "main",
+			"branchPrefix": "feature/",
+			"trello": {
+				"boardId": "6970fa9aab0e56304a15fbac",
+				"lists": {
+					"briefing": "6970faa01757ddb3286e7bae",
+					"planning": "6970fa9d48b639dad13dc8f7"
+				},
+				"labels": {
+					"readyToProcess": "6970fa9aab0e56304a15fbe1",
+					"processing": "6970fa9aab0e56304a15fbe2",
+					"processed": "6970fa9aab0e56304a15fbe6",
+					"error": "6970fa9aab0e56304a15fbe4"
+				}
+			}
 		}
 	]
 }
