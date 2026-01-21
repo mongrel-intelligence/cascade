@@ -6,11 +6,6 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --ignore-scripts
 
-# Build au package (it has src folder when installed from GitHub)
-RUN if [ -d node_modules/au/src ]; then \
-      cd node_modules/au && npm install --ignore-scripts && npm run build; \
-    fi
-
 # Build
 COPY tsconfig.json ./
 COPY src ./src
@@ -67,9 +62,6 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # Install production dependencies only
 COPY package*.json ./
 RUN npm ci --omit=dev --ignore-scripts
-
-# Copy pre-built au package from builder stage (it needs TypeScript to build)
-COPY --from=builder /app/node_modules/au/dist ./node_modules/au/dist
 
 # Copy built code from builder
 COPY --from=builder /app/dist ./dist

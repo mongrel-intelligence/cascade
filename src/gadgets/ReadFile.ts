@@ -8,7 +8,7 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 
-import { auRead } from 'au';
+import { auRead } from '@zbigniewsobiecki/au';
 import { Gadget, z } from 'llmist';
 
 import { hasReadFile, markFileRead } from './readTracking.js';
