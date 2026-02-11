@@ -193,3 +193,47 @@ export function isGitHubPullRequestPayload(payload: unknown): payload is GitHubP
 		p.repository !== null
 	);
 }
+
+// issue_comment event payload (for PR conversation comments)
+export interface GitHubIssueCommentPayload {
+	action: 'created' | 'edited' | 'deleted';
+	issue: {
+		number: number;
+		title: string;
+		html_url: string;
+		pull_request?: {
+			url: string;
+		};
+	};
+	comment: {
+		id: number;
+		body: string;
+		html_url: string;
+		user: {
+			login: string;
+		};
+	};
+	repository: {
+		full_name: string;
+		html_url: string;
+	};
+	sender: {
+		login: string;
+	};
+}
+
+export function isGitHubIssueCommentPayload(
+	payload: unknown,
+): payload is GitHubIssueCommentPayload {
+	if (typeof payload !== 'object' || payload === null) return false;
+	const p = payload as Record<string, unknown>;
+	return (
+		typeof p.action === 'string' &&
+		typeof p.issue === 'object' &&
+		p.issue !== null &&
+		typeof p.comment === 'object' &&
+		p.comment !== null &&
+		typeof p.repository === 'object' &&
+		p.repository !== null
+	);
+}

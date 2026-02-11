@@ -359,6 +359,11 @@ export const githubClient = {
 	},
 };
 
+export async function getAuthenticatedUser(): Promise<string> {
+	const { data } = await getClient().users.getAuthenticated();
+	return data.login;
+}
+
 export function resetGitHubClient(): void {
 	client = null;
 }

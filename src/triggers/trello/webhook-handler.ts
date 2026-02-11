@@ -64,10 +64,12 @@ async function handleAgentSuccess(
 ): Promise<void> {
 	await safeAddLabel(cardId, project.trello.labels.processed);
 
-	// Move to in-review if implementation and PR was created
-	if (result.agentType === 'implementation' && agentResult.prUrl) {
+	// Move to in-review if implementation completed successfully
+	if (result.agentType === 'implementation') {
 		await safeMoveCard(cardId, project.trello.lists.inReview);
-		await safeAddComment(cardId, `PR created: ${agentResult.prUrl}`);
+		if (agentResult.prUrl) {
+			await safeAddComment(cardId, `PR created: ${agentResult.prUrl}`);
+		}
 	}
 }
 

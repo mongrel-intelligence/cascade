@@ -1,3 +1,4 @@
+import { getAuthenticatedUser } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubPullRequestReviewPayload } from './types.js';
@@ -20,10 +21,34 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 		const reviewPayload = ctx.payload as {
 			pull_request: { number: number; body: string | null; head: { ref: string } };
 			repository: { full_name: string };
-			review: { id: number; body: string | null; html_url: string; state: string };
+			review: {
+				id: number;
+				body: string | null;
+				html_url: string;
+				state: string;
+				user: { login: string };
+			};
 		};
 
 		const prNumber = reviewPayload.pull_request.number;
+		const reviewAuthor = reviewPayload.review.user.login;
+
+		// Skip reviews from ourselves to avoid infinite loops
+		try {
+			const authenticatedUser = await getAuthenticatedUser();
+			if (reviewAuthor === authenticatedUser || reviewAuthor === `${authenticatedUser}[bot]`) {
+				logger.info('Skipping self-authored review', {
+					prNumber,
+					reviewAuthor,
+					authenticatedUser,
+				});
+				return null;
+			}
+		} catch (err) {
+			logger.warn('Failed to get authenticated user, proceeding with caution', {
+				error: String(err),
+			});
+		}
 
 		// Check if PR has Trello card URL in body
 		const prBody = reviewPayload.pull_request.body || '';
