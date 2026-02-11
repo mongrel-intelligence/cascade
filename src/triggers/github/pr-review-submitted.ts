@@ -1,8 +1,7 @@
-import { getAuthenticatedUser } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubPullRequestReviewPayload } from './types.js';
-import { extractTrelloCardId, hasTrelloCardUrl } from './utils.js';
+import { isSelfAuthored, requireTrelloCardId } from './utils.js';
 
 export class PRReviewSubmittedTrigger implements TriggerHandler {
 	name = 'pr-review-submitted';
@@ -39,33 +38,17 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 		const reviewAuthor = reviewPayload.review.user.login;
 
 		// Skip reviews from ourselves to avoid infinite loops
-		try {
-			const authenticatedUser = await getAuthenticatedUser();
-			if (reviewAuthor === authenticatedUser || reviewAuthor === `${authenticatedUser}[bot]`) {
-				logger.info('Skipping self-authored review', {
-					prNumber,
-					reviewAuthor,
-					authenticatedUser,
-				});
-				return null;
-			}
-		} catch (err) {
-			logger.warn('Failed to get authenticated user, proceeding with caution', {
-				error: String(err),
-			});
+		if (await isSelfAuthored(reviewAuthor, { prNumber, authorField: 'reviewAuthor' })) {
+			return null;
 		}
 
 		// Check if PR has Trello card URL in body
 		const prBody = reviewPayload.pull_request.body || '';
-		if (!hasTrelloCardUrl(prBody)) {
-			logger.info('PR does not have Trello card URL, skipping review submission trigger', {
-				prNumber,
-				reviewState: reviewPayload.review.state,
-			});
-			return null;
-		}
-
-		const cardId = extractTrelloCardId(prBody);
+		const cardId = requireTrelloCardId(prBody, {
+			prNumber,
+			triggerName: 'review submission trigger',
+		});
+		if (cardId === null) return null;
 
 		logger.info('PR review submitted, triggering review agent', {
 			prNumber,

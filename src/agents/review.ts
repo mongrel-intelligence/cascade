@@ -1,13 +1,7 @@
-import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { auList, auRead } from '@zbigniewsobiecki/au';
-import { AgentBuilder, LLMist, createLogger } from 'llmist';
+import type { createLogger } from 'llmist';
 
-import { getCompactionConfig } from '../config/compactionConfig.js';
-import { getIterationTrailingMessage } from '../config/hintConfig.js';
-import { getRateLimitForModel } from '../config/rateLimits.js';
-import { getRetryConfig } from '../config/retryConfig.js';
 import { REVIEW_FILE_CONTENT_TOKEN_LIMIT, estimateTokens } from '../config/reviewConfig.js';
 import { Finish } from '../gadgets/Finish.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
@@ -24,25 +18,18 @@ import { Tmux } from '../gadgets/tmux.js';
 import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
 import { githubClient } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
-import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
-import { clearWatchdogCleanup, setWatchdogCleanup } from '../utils/lifecycle.js';
 import { logger } from '../utils/logging.js';
+import { type BuilderType, createConfiguredBuilder } from './shared/builderFactory.js';
+import { executeAgentLifecycle } from './shared/lifecycle.js';
+import { resolveModelConfig } from './shared/modelResolution.js';
+import { type PRDiff, formatPRDetails, formatPRDiff } from './shared/prFormatting.js';
+import { setupRepository } from './shared/repository.js';
 import {
-	cleanupTempDir,
-	cloneRepo,
-	createTempDir,
-	runCommand as execCommand,
-} from '../utils/repo.js';
-import { getSystemPrompt } from './prompts/index.js';
-import { runAgentLoop } from './utils/agentLoop.js';
-import { createObserverHooks } from './utils/hooks.js';
-import { getLogLevel, readContextFiles } from './utils/index.js';
-import { createAgentLogger } from './utils/logging.js';
-import {
-	type TrackingContext,
-	createTrackingContext,
-	recordSyntheticInvocationId,
-} from './utils/tracking.js';
+	injectAUContext,
+	injectContextFiles,
+	injectSyntheticCall,
+} from './shared/syntheticCalls.js';
+import type { TrackingContext } from './utils/tracking.js';
 
 interface ReviewAgentInput extends AgentInput {
 	prNumber: number;
@@ -50,43 +37,6 @@ interface ReviewAgentInput extends AgentInput {
 	repoFullName: string;
 	project: ProjectConfig;
 	config: CascadeConfig;
-}
-
-// ============================================================================
-// PR Data Formatting
-// ============================================================================
-
-type PRDetails = Awaited<ReturnType<typeof githubClient.getPR>>;
-type PRDiff = Awaited<ReturnType<typeof githubClient.getPRDiff>>;
-
-function formatPRDetails(prDetails: PRDetails): string {
-	return [
-		`PR #${prDetails.number}: ${prDetails.title}`,
-		`State: ${prDetails.state}`,
-		`Branch: ${prDetails.headRef} -> ${prDetails.baseRef}`,
-		`URL: ${prDetails.htmlUrl}`,
-		'',
-		'Description:',
-		prDetails.body || '(no description)',
-	].join('\n');
-}
-
-function formatPRDiff(prDiff: PRDiff): string {
-	if (prDiff.length === 0) {
-		return 'No files changed in this PR.';
-	}
-
-	const formatted = prDiff.map((f) => {
-		const lines = [`## ${f.filename}`, `Status: ${f.status} | +${f.additions} -${f.deletions}`];
-		if (f.patch) {
-			lines.push('```diff', f.patch, '```');
-		} else {
-			lines.push('[Binary file or too large to display]');
-		}
-		return lines.join('\n');
-	});
-
-	return `${prDiff.length} file(s) changed:\n\n${formatted.join('\n\n')}`;
 }
 
 // ============================================================================
@@ -134,7 +84,7 @@ interface ReviewContextData {
 	systemPrompt: string;
 	model: string;
 	maxIterations: number;
-	contextFiles: Awaited<ReturnType<typeof readContextFiles>>;
+	contextFiles: Awaited<ReturnType<typeof resolveModelConfig>>['contextFiles'];
 	prDetailsFormatted: string;
 	diffFormatted: string;
 	checkStatusFormatted: string;
@@ -149,21 +99,16 @@ async function buildReviewContext(
 	repoDir: string,
 	project: ProjectConfig,
 	config: CascadeConfig,
-	log: ReturnType<typeof createAgentLogger>,
+	log: { info: (msg: string, ctx?: Record<string, unknown>) => void },
 	modelOverride?: string,
 ): Promise<ReviewContextData> {
-	// Get system prompt and model
-	const systemPrompt = project.prompts?.review || getSystemPrompt('review', {});
-	const model =
-		modelOverride ||
-		project.agentModels?.review ||
-		project.model ||
-		config.defaults.agentModels?.review ||
-		config.defaults.model;
-	const maxIterations = config.defaults.agentIterations?.review || config.defaults.maxIterations;
-
-	// Read context files from repo
-	const contextFiles = await readContextFiles(repoDir);
+	const { systemPrompt, model, maxIterations, contextFiles } = await resolveModelConfig({
+		agentType: 'review',
+		project,
+		config,
+		repoDir,
+		modelOverride,
+	});
 
 	// Fetch PR details, diff, and check status
 	log.info('Fetching PR details, diff, and check status', { owner, repo, prNumber });
@@ -232,10 +177,25 @@ ${skippedFiles.map((f) => `- ${f}`).join('\n')}`;
 // Agent Builder
 // ============================================================================
 
-type BuilderType = ReturnType<typeof AgentBuilder.prototype.withGadgets>;
+function getReviewGadgets() {
+	return [
+		new ListDirectory(),
+		new ReadFile(),
+		new Tmux(),
+		new Sleep(),
+		new TodoUpsert(),
+		new TodoUpdateStatus(),
+		new TodoDelete(),
+		new GetPRDetails(),
+		new GetPRDiff(),
+		new GetPRChecks(),
+		new CreatePRReview(),
+		new Finish(),
+	];
+}
 
 function createReviewAgentBuilder(
-	client: LLMist,
+	client: import('llmist').LLMist,
 	ctx: ReviewContextData,
 	llmistLogger: ReturnType<typeof createLogger>,
 	trackingContext: TrackingContext,
@@ -243,52 +203,20 @@ function createReviewAgentBuilder(
 	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
 	repoDir: string,
 ): BuilderType {
-	// Check if AU features should be enabled (repo has .au file at root)
-	const auEnabled = existsSync(join(repoDir, '.au'));
-
-	// Build gadget list
-	const baseGadgets = [
-		// Filesystem gadgets
-		new ListDirectory(),
-		new ReadFile(),
-		// Shell commands via tmux
-		new Tmux(),
-		new Sleep(),
-		// Task tracking gadgets
-		new TodoUpsert(),
-		new TodoUpdateStatus(),
-		new TodoDelete(),
-		// GitHub gadgets (read + create review)
-		new GetPRDetails(),
-		new GetPRDiff(),
-		new GetPRChecks(),
-		new CreatePRReview(),
-		// Session control
-		new Finish(),
-	];
-
-	const allGadgets = auEnabled ? [...baseGadgets, auList, auRead] : baseGadgets;
-
-	return new AgentBuilder(client)
-		.withModel(ctx.model)
-		.withTemperature(0)
-		.withSystem(ctx.systemPrompt)
-		.withMaxIterations(ctx.maxIterations)
-		.withLogger(llmistLogger)
-		.withRateLimits(getRateLimitForModel(ctx.model))
-		.withRetry(getRetryConfig(llmistLogger))
-		.withCompaction(getCompactionConfig('review'))
-		.withTrailingMessage(getIterationTrailingMessage('review'))
-		.withTextOnlyHandler('acknowledge')
-		.withHooks({
-			observers: createObserverHooks({
-				model: ctx.model,
-				logWriter,
-				trackingContext,
-				llmCallLogger,
-			}),
-		})
-		.withGadgets(...allGadgets);
+	return createConfiguredBuilder({
+		client,
+		agentType: 'review',
+		model: ctx.model,
+		systemPrompt: ctx.systemPrompt,
+		maxIterations: ctx.maxIterations,
+		llmistLogger,
+		trackingContext,
+		logWriter,
+		llmCallLogger,
+		repoDir,
+		gadgets: getReviewGadgets(),
+		skipSessionState: true,
+	});
 }
 
 async function injectReviewSyntheticCalls(
@@ -298,31 +226,30 @@ async function injectReviewSyntheticCalls(
 	prNumber: number,
 	ctx: ReviewContextData,
 	trackingContext: TrackingContext,
-	auEnabled: boolean,
+	repoDir: string,
 ): Promise<BuilderType> {
-	let builder = initialBuilder;
-
-	// Inject PR details
-	recordSyntheticInvocationId(trackingContext, 'gc_pr_details');
-	builder = builder.withSyntheticGadgetCall(
+	// Inject PR details, diff, and check status
+	let builder = injectSyntheticCall(
+		initialBuilder,
+		trackingContext,
 		'GetPRDetails',
 		{ comment: 'Pre-fetching PR details for review context', owner, repo, prNumber },
 		ctx.prDetailsFormatted,
 		'gc_pr_details',
 	);
 
-	// Inject PR diff
-	recordSyntheticInvocationId(trackingContext, 'gc_pr_diff');
-	builder = builder.withSyntheticGadgetCall(
+	builder = injectSyntheticCall(
+		builder,
+		trackingContext,
 		'GetPRDiff',
 		{ comment: 'Pre-fetching PR diff for code review', owner, repo, prNumber },
 		ctx.diffFormatted,
 		'gc_pr_diff',
 	);
 
-	// Inject PR check status
-	recordSyntheticInvocationId(trackingContext, 'gc_pr_checks');
-	builder = builder.withSyntheticGadgetCall(
+	builder = injectSyntheticCall(
+		builder,
+		trackingContext,
 		'GetPRChecks',
 		{ comment: 'Pre-fetching CI check status for review', owner, repo, prNumber },
 		ctx.checkStatusFormatted,
@@ -330,63 +257,22 @@ async function injectReviewSyntheticCalls(
 	);
 
 	// Inject context files (CLAUDE.md, README.md, etc.)
-	for (let i = 0; i < ctx.contextFiles.length; i++) {
-		const file = ctx.contextFiles[i];
-		const invocationId = `gc_init_${i + 1}`;
-		recordSyntheticInvocationId(trackingContext, invocationId);
-		builder = builder.withSyntheticGadgetCall(
-			'ReadFile',
-			{ comment: `Pre-fetching ${file.path} for project context`, filePath: file.path },
-			file.content,
-			invocationId,
-		);
-	}
+	builder = injectContextFiles(builder, trackingContext, ctx.contextFiles);
 
 	// Inject full contents of PR changed files (up to token limit)
 	for (let i = 0; i < ctx.fileContents.included.length; i++) {
 		const file = ctx.fileContents.included[i];
-		const invocationId = `gc_file_${i + 1}`;
-		recordSyntheticInvocationId(trackingContext, invocationId);
-		builder = builder.withSyntheticGadgetCall(
+		builder = injectSyntheticCall(
+			builder,
+			trackingContext,
 			'ReadFile',
 			{ comment: `Pre-fetching ${file.path} for review`, filePath: file.path },
 			`path=${file.path}\n\n${file.content}`,
-			invocationId,
+			`gc_file_${i + 1}`,
 		);
 	}
 
-	// Inject AU understanding if enabled (gives agent immediate codebase context)
-	if (auEnabled) {
-		const auListResult = (await auList.execute({
-			comment: 'Pre-fetching AU entries for context',
-			path: '.',
-		})) as string;
-		// Only inject if there's actual content
-		if (auListResult && !auListResult.includes('No AU entries found')) {
-			recordSyntheticInvocationId(trackingContext, 'gc_au_list');
-			builder = builder.withSyntheticGadgetCall(
-				'AUList',
-				{ comment: 'Pre-fetching AU entries for context', path: '.' },
-				auListResult,
-				'gc_au_list',
-			);
-
-			// Also inject root-level understanding for high-level context
-			const auReadResult = (await auRead.execute({
-				comment: 'Pre-fetching root-level understanding',
-				paths: '.',
-			})) as string;
-			if (auReadResult && !auReadResult.includes('No understanding exists yet')) {
-				recordSyntheticInvocationId(trackingContext, 'gc_au_read');
-				builder = builder.withSyntheticGadgetCall(
-					'AURead',
-					{ comment: 'Pre-fetching root-level understanding', paths: '.' },
-					auReadResult,
-					'gc_au_read',
-				);
-			}
-		}
-	}
+	builder = await injectAUContext(builder, trackingContext, repoDir);
 
 	return builder;
 }
@@ -404,88 +290,26 @@ export async function executeReviewAgent(input: ReviewAgentInput): Promise<Agent
 		return { success: false, output: '', error: `Invalid repo format: ${repoFullName}` };
 	}
 
-	let repoDir: string | null = null;
+	return executeAgentLifecycle<ReviewContextData>({
+		loggerIdentifier: `review-${prNumber}`,
 
-	// Create file logger for this agent run
-	const fileLogger = createFileLogger(`cascade-review-${prNumber}`);
-	const log = createAgentLogger(fileLogger);
+		onWatchdogTimeout: async () => {
+			await githubClient.createPRComment(
+				owner,
+				repo,
+				prNumber,
+				'⚠️ Review agent timed out while reviewing the PR.',
+			);
+			logger.info('Posted timeout notice to PR', { prNumber });
+		},
 
-	// Register cleanup callback for watchdog timeout
-	setWatchdogCleanup(async () => {
-		fileLogger.close();
-		await githubClient.createPRComment(
-			owner,
-			repo,
-			prNumber,
-			'⚠️ Review agent timed out while reviewing the PR.',
-		);
-		logger.info('Posted timeout notice to PR', { prNumber });
-	});
+		setupRepoDir: (log) => setupRepository({ project, log, agentType: 'review', prBranch }),
 
-	try {
-		// Clone the target repository
-		repoDir = createTempDir(project.id);
-		cloneRepo(project, repoDir);
+		buildContext: (repoDir, log) =>
+			buildReviewContext(owner, repo, prNumber, repoDir, project, config, log, input.modelOverride),
 
-		// Checkout the PR branch
-		log.info('Checking out PR branch', { prBranch });
-		await execCommand('git', ['checkout', prBranch], repoDir);
-
-		// Run project-specific setup script if it exists (handles dependency installation)
-		const setupScriptPath = join(repoDir, '.cascade', 'setup.sh');
-		if (existsSync(setupScriptPath)) {
-			log.info('Running project setup script', { path: '.cascade/setup.sh', agentType: 'review' });
-			const setupResult = await execCommand('bash', [setupScriptPath], repoDir, {
-				AGENT_PROFILE_NAME: 'review',
-			});
-			log.info('Setup script completed', {
-				exitCode: setupResult.exitCode,
-				stdout: setupResult.stdout.slice(-500),
-				stderr: setupResult.stderr.slice(-500),
-			});
-			if (setupResult.exitCode !== 0) {
-				log.warn('Setup script exited with non-zero code', { exitCode: setupResult.exitCode });
-			}
-		}
-
-		log.info('Running review agent', { prNumber, repoFullName, repoDir });
-
-		// Build context
-		const ctx = await buildReviewContext(
-			owner,
-			repo,
-			prNumber,
-			repoDir,
-			project,
-			config,
-			log,
-			input.modelOverride,
-		);
-
-		// Change to repo directory
-		const originalCwd = process.cwd();
-		process.chdir(repoDir);
-
-		log.info('Starting llmist agent', {
-			model: ctx.model,
-			maxIterations: ctx.maxIterations,
-			promptLength: ctx.prompt.length,
-		});
-
-		try {
-			process.env.LLMIST_LOG_FILE = fileLogger.llmistLogPath;
-
-			const client = new LLMist();
-			const llmistLogger = createLogger({ minLevel: getLogLevel() });
-
-			// Create tracking context
-			const trackingContext = createTrackingContext();
-
-			// Check if AU features should be enabled (repo has .au file at root)
-			const auEnabled = existsSync(join(repoDir, '.au'));
-
-			// Build agent with gadgets and synthetic calls
-			let builder = createReviewAgentBuilder(
+		createBuilder: ({ client, ctx, llmistLogger, trackingContext, fileLogger, repoDir }) =>
+			createReviewAgentBuilder(
 				client,
 				ctx,
 				llmistLogger,
@@ -493,74 +317,11 @@ export async function executeReviewAgent(input: ReviewAgentInput): Promise<Agent
 				fileLogger.write.bind(fileLogger),
 				fileLogger.llmCallLogger,
 				repoDir,
-			);
-			builder = await injectReviewSyntheticCalls(
-				builder,
-				owner,
-				repo,
-				prNumber,
-				ctx,
-				trackingContext,
-				auEnabled,
-			);
+			),
 
-			// Run the agent
-			const agent = builder.ask(ctx.prompt);
-			const result = await runAgentLoop(agent, log, trackingContext, interactive === true);
+		injectSyntheticCalls: ({ builder, ctx, trackingContext, repoDir }) =>
+			injectReviewSyntheticCalls(builder, owner, repo, prNumber, ctx, trackingContext, repoDir),
 
-			log.info('Review agent completed', {
-				prNumber,
-				iterations: result.iterations,
-				gadgetCalls: result.gadgetCalls,
-				cost: result.cost,
-			});
-
-			fileLogger.close();
-			const logBuffer = await fileLogger.getZippedBuffer();
-
-			return {
-				success: true,
-				output: result.output,
-				logBuffer,
-				cost: result.cost,
-			};
-		} finally {
-			process.chdir(originalCwd);
-		}
-	} catch (err) {
-		logger.error('Review agent execution failed', { prNumber, error: String(err) });
-
-		let logBuffer: Buffer | undefined;
-		try {
-			fileLogger.close();
-			logBuffer = await fileLogger.getZippedBuffer();
-		} catch {
-			// Ignore log buffer errors
-		}
-
-		return {
-			success: false,
-			output: '',
-			error: String(err),
-			logBuffer,
-		};
-	} finally {
-		clearWatchdogCleanup();
-
-		// Skip cleanup in local mode to preserve logs for debugging
-		const isLocalMode = process.env.CASCADE_LOCAL_MODE === 'true';
-
-		if (repoDir && !isLocalMode) {
-			try {
-				cleanupTempDir(repoDir);
-			} catch (err) {
-				logger.warn('Failed to cleanup temp directory', { repoDir, error: String(err) });
-			}
-		}
-		if (!isLocalMode) {
-			cleanupLogFile(fileLogger.logPath);
-			cleanupLogFile(fileLogger.llmistLogPath);
-			cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
-		}
-	}
+		interactive,
+	});
 }
