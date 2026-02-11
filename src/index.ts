@@ -26,7 +26,7 @@ async function main(): Promise<void> {
 		logger.warn('Failed to load projects config, using empty config', { error: String(err) });
 		config = {
 			defaults: {
-				model: 'gemini:gemini-2.5-flash',
+				model: 'openrouter:google/gemini-3-flash-preview',
 				agentModels: {},
 				maxIterations: 50,
 				agentIterations: {},

@@ -79,7 +79,7 @@ describe('validateConfig', () => {
 
 		const result = validateConfig(config);
 		expect(result.projects).toHaveLength(1);
-		expect(result.defaults.model).toBe('gemini:gemini-2.5-flash');
+		expect(result.defaults.model).toBe('openrouter:google/gemini-3-flash-preview');
 		expect(result.defaults.maxIterations).toBe(50);
 	});
 

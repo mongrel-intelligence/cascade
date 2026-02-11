@@ -11,6 +11,21 @@ import type { ModelSpec } from 'llmist';
 export const CUSTOM_MODELS: ModelSpec[] = [
 	{
 		provider: 'openrouter',
+		modelId: 'google/gemini-3-flash-preview',
+		displayName: 'Gemini 3 Flash Preview',
+		contextWindow: 1_048_576,
+		maxOutputTokens: 65_535,
+		pricing: { input: 0.5, output: 3.0 },
+		knowledgeCutoff: '2025-12',
+		features: {
+			streaming: true,
+			functionCalling: true,
+			vision: true,
+			reasoning: true,
+		},
+	},
+	{
+		provider: 'openrouter',
 		modelId: 'x-ai/grok-code-fast-1',
 		displayName: 'Grok Code Fast 1',
 		contextWindow: 256_000,
