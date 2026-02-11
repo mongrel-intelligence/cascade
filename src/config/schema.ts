@@ -36,7 +36,7 @@ export const ProjectConfigSchema = z.object({
 export const CascadeConfigSchema = z.object({
 	defaults: z
 		.object({
-			model: z.string().default('gemini:gemini-2.5-flash'),
+			model: z.string().default('openrouter:google/gemini-3-flash-preview'),
 			agentModels: z.record(z.string()).default({}),
 			maxIterations: z.number().int().positive().default(50),
 			agentIterations: z.record(z.number().int().positive()).default({}),

@@ -34,6 +34,11 @@ export const MODEL_RATE_LIMITS: ModelRateLimits = {
 	},
 
 	// OpenRouter models (generous limits - OpenRouter handles rate limiting)
+	'openrouter:google/gemini-3-flash-preview': {
+		requestsPerMinute: 100,
+		tokensPerMinute: 500_000,
+		safetyMargin: 0.9,
+	},
 	'openrouter:x-ai/grok-code-fast-1': {
 		requestsPerMinute: 100,
 		tokensPerMinute: 500_000,

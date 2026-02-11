@@ -79,7 +79,11 @@ Lefthook runs pre-commit (lint, typecheck) and pre-push (test) hooks automatical
 Required:
 - `TRELLO_API_KEY`, `TRELLO_TOKEN` - Trello API credentials
 - `GITHUB_TOKEN` - For cloning repos and creating PRs
-- `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` - LLM provider
+- `OPENROUTER_API_KEY` - LLM provider (default, uses Gemini 3 Flash Preview)
+
+Alternative LLM providers:
+- `GEMINI_API_KEY` - For direct Gemini API access
+- `ANTHROPIC_API_KEY` - For Anthropic Claude models
 
 Optional:
 - `PORT` - Server port (default: 3000)

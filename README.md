@@ -91,7 +91,7 @@ Edit `config/projects.json` to add your projects:
 ```json
 {
   "defaults": {
-    "model": "gemini:gemini-2.5-flash",
+    "model": "openrouter:google/gemini-3-flash-preview",
     "maxIterations": 50,
     "selfDestructTimeoutMs": 1800000
   },
