@@ -32,9 +32,9 @@ import { type FileLogger, executeAgentLifecycle } from './shared/lifecycle.js';
 import { resolveModelConfig } from './shared/modelResolution.js';
 import { setupRepository as setupRepo } from './shared/repository.js';
 import {
-	injectAUContext,
 	injectContextFiles,
 	injectDirectoryListing,
+	injectSquintContext,
 	injectSyntheticCall,
 } from './shared/syntheticCalls.js';
 import type { AgentLogger } from './utils/logging.js';
@@ -318,7 +318,7 @@ async function injectSyntheticCalls(
 	}
 
 	builder = injectContextFiles(builder, trackingContext, contextFiles);
-	builder = await injectAUContext(builder, trackingContext, repoDir);
+	builder = injectSquintContext(builder, trackingContext, repoDir);
 
 	return builder;
 }

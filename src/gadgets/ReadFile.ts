@@ -5,10 +5,9 @@
  * - Current working directory and subdirectories
  * - /tmp directory (for test logs, build artifacts, etc.)
  */
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { readFileSync, realpathSync } from 'node:fs';
+import { resolve, sep } from 'node:path';
 
-import { auRead } from '@zbigniewsobiecki/au';
 import { Gadget, z } from 'llmist';
 
 import { hasReadFile, markFileRead } from './readTracking.js';
@@ -97,43 +96,6 @@ Allowed paths:
 		const content = readFileSync(validatedPath, 'utf-8');
 		markFileRead(validatedPath);
 
-		const header = `path=${filePath}`;
-
-		// Try to include AU understanding if available
-		const auUnderstanding = await this.getAUUnderstanding(filePath);
-
-		if (auUnderstanding) {
-			return `${header}\n\n## Understanding\n${auUnderstanding}\n\n## Content\n${content}`;
-		}
-
-		return `${header}\n\n${content}`;
-	}
-
-	private async getAUUnderstanding(filePath: string): Promise<string | null> {
-		const cwd = process.cwd();
-
-		// Check if AU is enabled (repo has .au file at root)
-		if (!existsSync(join(cwd, '.au'))) {
-			return null;
-		}
-
-		try {
-			// Use relative path for AU lookup
-			const relativePath = relative(cwd, resolve(cwd, filePath)) || filePath;
-			const result = (await auRead.execute({
-				comment: `Fetching understanding for ${relativePath}`,
-				paths: relativePath,
-			})) as string;
-
-			// Return null if no understanding exists
-			if (!result || result.includes('No understanding exists yet')) {
-				return null;
-			}
-
-			return result;
-		} catch {
-			// AU lookup failed, continue without it
-			return null;
-		}
+		return `path=${filePath}\n\n${content}`;
 	}
 }
