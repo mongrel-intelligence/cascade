@@ -14,12 +14,25 @@ import type {
 	ObserveRetryAttemptContext,
 } from 'llmist';
 
+import { formatStatusMessage, getStatusUpdateConfig } from '../../config/statusUpdateConfig.js';
+import { trelloClient } from '../../trello/client.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
 import { calculateCost } from '../../utils/llmMetrics.js';
+import { syncCompletedTodosToChecklist } from './checklistSync.js';
 import { type TrackingContext, checkForLoopAndAdvance, incrementLLMIteration } from './tracking.js';
 
 /** Function signature for writing to cascade log file */
 export type LogWriter = (level: string, message: string, context?: Record<string, unknown>) => void;
+
+/** Configuration for status update feature */
+export interface StatusUpdateHooksConfig {
+	/** Trello card ID to post updates to */
+	cardId: string;
+	/** Agent type for formatting */
+	agentType: string;
+	/** Maximum iterations for progress calculation */
+	maxIterations: number;
+}
 
 /** Configuration for creating observer hooks */
 export interface ObserverHooksConfig {
@@ -31,6 +44,47 @@ export interface ObserverHooksConfig {
 	trackingContext: TrackingContext;
 	/** Logger for raw LLM request/response logging */
 	llmCallLogger: LLMCallLogger;
+	/** Optional status update configuration */
+	statusUpdate?: StatusUpdateHooksConfig;
+}
+
+/**
+ * Post a status update to Trello and optionally sync checklist items.
+ * Extracted from onLLMCallReady to reduce cognitive complexity.
+ */
+async function postStatusUpdate(
+	config: StatusUpdateHooksConfig,
+	iteration: number,
+	logWriter: LogWriter,
+): Promise<void> {
+	const { cardId, agentType, maxIterations } = config;
+	const statusConfig = getStatusUpdateConfig(agentType);
+
+	if (
+		!statusConfig.enabled ||
+		iteration === 0 ||
+		iteration % statusConfig.intervalIterations !== 0
+	) {
+		return;
+	}
+
+	try {
+		// Post status comment
+		const message = formatStatusMessage(iteration, maxIterations, agentType);
+		await trelloClient.addComment(cardId, message);
+		logWriter('INFO', 'Posted status update to Trello', { iteration, cardId });
+
+		// For implementation agent: sync completed TODOs to checklist
+		if (agentType === 'implementation') {
+			await syncCompletedTodosToChecklist(cardId);
+		}
+	} catch (err) {
+		logWriter('WARN', 'Failed to post status update', {
+			iteration,
+			cardId,
+			error: String(err),
+		});
+	}
 }
 
 /**
@@ -73,6 +127,11 @@ export function createObserverHooks(config: ObserverHooksConfig) {
 			incrementLLMIteration(trackingContext);
 			const callNumber = trackingContext.metrics.llmIterations;
 			llmCallLogger.logRequest(callNumber, context.options.messages);
+
+			// Post periodic status updates to Trello
+			if (config.statusUpdate) {
+				await postStatusUpdate(config.statusUpdate, callNumber, logWriter);
+			}
 		},
 
 		onLLMCallComplete: async (context: ObserveLLMCompleteContext) => {
