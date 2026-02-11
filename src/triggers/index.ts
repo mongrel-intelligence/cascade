@@ -2,6 +2,7 @@ import { CheckSuiteFailureTrigger } from './github/check-suite-failure.js';
 import { CheckSuiteSuccessTrigger } from './github/check-suite-success.js';
 import { IssueCommentTrigger } from './github/issue-comment.js';
 // import { PROpenedTrigger } from './github/pr-opened.js';
+import { PRMergedTrigger } from './github/pr-merged.js';
 import { PRReadyToMergeTrigger } from './github/pr-ready-to-merge.js';
 import { PRReviewCommentTrigger } from './github/pr-review-comment.js';
 import { PRReviewSubmittedTrigger } from './github/pr-review-submitted.js';
@@ -58,4 +59,7 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 
 	// GitHub: PR ready to merge trigger (auto-moves card to DONE)
 	registry.register(new PRReadyToMergeTrigger());
+
+	// GitHub: PR merged trigger (auto-moves card to MERGED)
+	registry.register(new PRMergedTrigger());
 }
