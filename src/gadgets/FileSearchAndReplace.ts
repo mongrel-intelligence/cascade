@@ -236,6 +236,82 @@ All matches deleted.`,
 			comment:
 				'Use replaceAll=true to replace all matches (for bulk renames or removing duplicates)',
 		},
+		// Example 6: Adding a new import statement
+		{
+			params: {
+				comment: 'Adding Sentry import for error tracking',
+				filePath: 'src/services/api.ts',
+				search: `import { Logger } from './logger';
+import { Config } from './config';`,
+				replace: `import { Logger } from './logger';
+import { Config } from './config';
+import * as Sentry from '@sentry/node';`,
+			},
+			output: `path=src/services/api.ts status=success strategy=exact
+
+=== Edit (lines 2-3) ===
+--- BEFORE ---
+   1 | import { db } from './db';
+<  2 | import { Logger } from './logger';
+<  3 | import { Config } from './config';
+   4 |
+   5 | const logger = new Logger('api');
+
+--- AFTER ---
+   1 | import { db } from './db';
+>  2 | import { Logger } from './logger';
+>  3 | import { Config } from './config';
+>  4 | import * as Sentry from '@sentry/node';
+   5 |
+   6 | const logger = new Logger('api');
+
+✓ No issues`,
+			comment:
+				'Adding imports: include surrounding imports in search for context, add new import in replace',
+		},
+		// Example 7: Adding error capture code inside a function
+		{
+			params: {
+				comment: 'Adding Sentry error capture when request fails',
+				filePath: 'src/services/api.ts',
+				search: `      logger.error('Request failed', { error, requestId });
+      throw error;`,
+				replace: `      logger.error('Request failed', { error, requestId });
+      Sentry.captureException(error, {
+        tags: { requestId },
+        extra: { endpoint, method },
+      });
+      throw error;`,
+			},
+			output: `path=src/services/api.ts status=success strategy=exact
+
+=== Edit (lines 45-46) ===
+--- BEFORE ---
+  42 |     } catch (error) {
+  43 |       const requestId = headers['x-request-id'];
+  44 |
+< 45 |       logger.error('Request failed', { error, requestId });
+< 46 |       throw error;
+  47 |     }
+  48 |   }
+
+--- AFTER ---
+  42 |     } catch (error) {
+  43 |       const requestId = headers['x-request-id'];
+  44 |
+> 45 |       logger.error('Request failed', { error, requestId });
+> 46 |       Sentry.captureException(error, {
+> 47 |         tags: { requestId },
+> 48 |         extra: { endpoint, method },
+> 49 |       });
+> 50 |       throw error;
+  51 |     }
+  52 |   }
+
+✓ No issues`,
+			comment:
+				'Adding code inside a function: preserve exact indentation from the file, include enough context to uniquely identify the location',
+		},
 	],
 }) {
 	override execute(params: this['params']): string {
