@@ -468,18 +468,13 @@ async function injectCISyntheticCalls(
 	ctx: CIContextData,
 	trackingContext: TrackingContext,
 	auEnabled: boolean,
+	initialCommentId: number,
+	initialCommentUrl: string,
 ): Promise<BuilderType> {
 	let builder = initialBuilder;
 
-	// Post initial "getting to work" comment on the PR
+	// Record the acknowledgment comment as synthetic call (already posted earlier)
 	const initialCommentBody = '🤖 Working on fixing CI failures...';
-	const initialComment = await githubClient.createPRComment(
-		owner,
-		repo,
-		prNumber,
-		initialCommentBody,
-	);
-	recordInitialComment(initialComment.id);
 	recordSyntheticInvocationId(trackingContext, 'gc_initial_comment');
 	builder = builder.withSyntheticGadgetCall(
 		'PostPRComment',
@@ -490,7 +485,7 @@ async function injectCISyntheticCalls(
 			prNumber,
 			body: initialCommentBody,
 		},
-		`Comment posted (id: ${initialComment.id}): ${initialComment.htmlUrl}`,
+		`Comment posted (id: ${initialCommentId}): ${initialCommentUrl}`,
 		'gc_initial_comment',
 	);
 
@@ -610,6 +605,35 @@ export async function executeRespondToCIAgent(input: RespondToCIAgentInput): Pro
 		return { success: false, output: '', error: `Invalid repo format: ${repoFullName}` };
 	}
 
+	// Verify there are actually failed checks before proceeding
+	const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
+	const hasFailedChecks = checkStatus.checkRuns.some(
+		(cr) =>
+			cr.conclusion === 'failure' ||
+			cr.conclusion === 'timed_out' ||
+			cr.conclusion === 'action_required',
+	);
+
+	if (!hasFailedChecks) {
+		logger.info('No failed checks found, skipping CI fix agent', {
+			prNumber,
+			headSha,
+			totalChecks: checkStatus.totalCount,
+		});
+		return { success: true, output: 'No failed checks to fix' };
+	}
+
+	// Post acknowledgment comment immediately so user knows we're working on it
+	const initialCommentBody = '🤖 Working on fixing CI failures...';
+	const initialComment = await githubClient.createPRComment(
+		owner,
+		repo,
+		prNumber,
+		initialCommentBody,
+	);
+	recordInitialComment(initialComment.id);
+	logger.info('Posted initial acknowledgment comment', { prNumber, commentId: initialComment.id });
+
 	let repoDir: string | null = null;
 
 	// Create file logger for this agent run
@@ -689,6 +713,8 @@ export async function executeRespondToCIAgent(input: RespondToCIAgentInput): Pro
 				ctx,
 				trackingContext,
 				auEnabled,
+				initialComment.id,
+				initialComment.htmlUrl,
 			);
 
 			// Run the agent
