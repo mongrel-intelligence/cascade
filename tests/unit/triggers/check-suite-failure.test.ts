@@ -1,0 +1,339 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+	CheckSuiteFailureTrigger,
+	resetFixAttempts,
+} from '../../../src/triggers/github/check-suite-failure.js';
+import type { TriggerContext } from '../../../src/triggers/types.js';
+
+vi.mock('../../../src/github/client.js', () => ({
+	githubClient: {
+		getPR: vi.fn(),
+		getCheckSuiteStatus: vi.fn(),
+		createPRComment: vi.fn(),
+	},
+}));
+
+import { githubClient } from '../../../src/github/client.js';
+
+describe('CheckSuiteFailureTrigger', () => {
+	const trigger = new CheckSuiteFailureTrigger();
+
+	const mockProject = {
+		id: 'test',
+		name: 'Test',
+		repo: 'owner/repo',
+		baseBranch: 'main',
+		branchPrefix: 'feature/',
+		githubTokenEnv: 'GITHUB_TOKEN',
+		trello: {
+			boardId: 'board123',
+			lists: {
+				briefing: 'briefing-list-id',
+				planning: 'planning-list-id',
+				todo: 'todo-list-id',
+			},
+			labels: {},
+		},
+	};
+
+	const makeFailurePayload = (overrides: Record<string, unknown> = {}) => ({
+		action: 'completed',
+		check_suite: {
+			id: 1,
+			status: 'completed',
+			conclusion: 'failure',
+			head_sha: 'sha123',
+			pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'sha123' } }],
+		},
+		repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+		sender: { login: 'github-actions' },
+		...overrides,
+	});
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		resetFixAttempts(42);
+	});
+
+	describe('matches', () => {
+		it('matches completed check suite with failure conclusion and PRs', () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeFailurePayload(),
+			};
+
+			expect(trigger.matches(ctx)).toBe(true);
+		});
+
+		it('does not match trello source', () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'trello',
+				payload: {},
+			};
+
+			expect(trigger.matches(ctx)).toBe(false);
+		});
+
+		it('does not match non-completed action', () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeFailurePayload({ action: 'requested' }),
+			};
+
+			expect(trigger.matches(ctx)).toBe(false);
+		});
+
+		it('does not match success conclusion', () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'completed',
+					check_suite: {
+						id: 1,
+						status: 'completed',
+						conclusion: 'success',
+						head_sha: 'sha123',
+						pull_requests: [{ number: 42, head: { ref: 'feat', sha: 'sha123' } }],
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'github-actions' },
+				},
+			};
+
+			expect(trigger.matches(ctx)).toBe(false);
+		});
+
+		it('does not match when no PRs associated', () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'completed',
+					check_suite: {
+						id: 1,
+						status: 'completed',
+						conclusion: 'failure',
+						head_sha: 'sha123',
+						pull_requests: [],
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'github-actions' },
+				},
+			};
+
+			expect(trigger.matches(ctx)).toBe(false);
+		});
+	});
+
+	describe('handle', () => {
+		it('returns respond-to-ci result when PR has Trello URL and checks failed', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+			});
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: false,
+				totalCount: 2,
+				checkRuns: [
+					{ name: 'lint', status: 'completed', conclusion: 'success' },
+					{ name: 'test', status: 'completed', conclusion: 'failure' },
+				],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeFailurePayload(),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toEqual({
+				agentType: 'respond-to-ci',
+				agentInput: {
+					prNumber: 42,
+					prBranch: 'feature/test',
+					repoFullName: 'owner/repo',
+					headSha: 'sha123',
+					triggerType: 'check-failure',
+					cardId: 'abc123',
+				},
+				prNumber: 42,
+				cardId: 'abc123',
+			});
+		});
+
+		it('returns null when PR has no Trello URL', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'No Trello link',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeFailurePayload(),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+		});
+
+		it('returns null when not all checks are complete', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+			});
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: false,
+				totalCount: 2,
+				checkRuns: [
+					{ name: 'lint', status: 'completed', conclusion: 'success' },
+					{ name: 'test', status: 'in_progress', conclusion: null },
+				],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeFailurePayload(),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+		});
+
+		it('returns null when all checks actually passed (no failures)', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+			});
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: true,
+				totalCount: 2,
+				checkRuns: [
+					{ name: 'lint', status: 'completed', conclusion: 'success' },
+					{ name: 'test', status: 'completed', conclusion: 'success' },
+				],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeFailurePayload(),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+		});
+
+		it('posts warning and returns null after MAX_ATTEMPTS (3)', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+			});
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: false,
+				totalCount: 1,
+				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'failure' }],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeFailurePayload(),
+			};
+
+			// First 3 attempts should succeed
+			await trigger.handle(ctx);
+			await trigger.handle(ctx);
+			await trigger.handle(ctx);
+
+			// 4th attempt should be blocked
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+			expect(githubClient.createPRComment).toHaveBeenCalledWith(
+				'owner',
+				'repo',
+				42,
+				expect.stringContaining('Unable to automatically fix'),
+			);
+		});
+
+		it('resetFixAttempts clears attempts for a PR', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+			});
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: false,
+				totalCount: 1,
+				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'failure' }],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeFailurePayload(),
+			};
+
+			// Use up 3 attempts
+			await trigger.handle(ctx);
+			await trigger.handle(ctx);
+			await trigger.handle(ctx);
+
+			// Reset
+			resetFixAttempts(42);
+
+			// Should work again
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('respond-to-ci');
+		});
+	});
+});
