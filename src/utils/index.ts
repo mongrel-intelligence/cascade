@@ -20,3 +20,10 @@ export {
 	canAcceptWebhook,
 } from './webhookQueue.js';
 export { createFileLogger, cleanupLogFile, type FileLogger } from './fileLogger.js';
+export {
+	isCardActive,
+	setCardActive,
+	clearCardActive,
+	getActiveCardCount,
+	clearAllActiveCards,
+} from './activeCards.js';
