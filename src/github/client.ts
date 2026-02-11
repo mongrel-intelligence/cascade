@@ -25,6 +25,7 @@ export interface PRDetails {
 	headRef: string;
 	headSha: string;
 	baseRef: string;
+	merged: boolean;
 }
 
 export interface PRReviewComment {
@@ -112,6 +113,7 @@ export const githubClient = {
 			headRef: data.head.ref,
 			headSha: data.head.sha,
 			baseRef: data.base.ref,
+			merged: data.merged ?? false,
 		};
 	},
 
