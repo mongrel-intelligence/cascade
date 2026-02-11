@@ -1,8 +1,8 @@
-import { getAuthenticatedUser, githubClient } from '../../github/client.js';
+import { githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubIssueCommentPayload } from './types.js';
-import { extractTrelloCardId, hasTrelloCardUrl } from './utils.js';
+import { isSelfAuthored, requireTrelloCardId } from './utils.js';
 
 export class IssueCommentTrigger implements TriggerHandler {
 	name = 'issue-comment-created';
@@ -32,33 +32,18 @@ export class IssueCommentTrigger implements TriggerHandler {
 		const [owner, repo] = payload.repository.full_name.split('/');
 
 		// Skip comments from ourselves to avoid infinite loops
-		try {
-			const authenticatedUser = await getAuthenticatedUser();
-			if (commentAuthor === authenticatedUser || commentAuthor === `${authenticatedUser}[bot]`) {
-				logger.info('Skipping self-authored comment', {
-					prNumber,
-					commentAuthor,
-					authenticatedUser,
-				});
-				return null;
-			}
-		} catch (err) {
-			logger.warn('Failed to get authenticated user, proceeding with caution', {
-				error: String(err),
-			});
+		if (await isSelfAuthored(commentAuthor, { prNumber, authorField: 'commentAuthor' })) {
+			return null;
 		}
 
 		// Fetch PR to check for Trello card URL and get branch info
 		const prDetails = await githubClient.getPR(owner, repo, prNumber);
 
-		if (!hasTrelloCardUrl(prDetails.body)) {
-			logger.info('PR does not have Trello card URL, skipping issue comment trigger', {
-				prNumber,
-			});
-			return null;
-		}
-
-		const cardId = extractTrelloCardId(prDetails.body);
+		const cardId = requireTrelloCardId(prDetails.body, {
+			prNumber,
+			triggerName: 'issue comment trigger',
+		});
+		if (cardId === null) return null;
 
 		logger.info('PR issue comment received, triggering respond-to-review agent', {
 			prNumber,

@@ -1,3 +1,6 @@
+import { getAuthenticatedUser } from '../../github/client.js';
+import { logger } from '../../utils/logging.js';
+
 // Trello card URL pattern: https://trello.com/c/SHORT_ID/optional-slug
 const TRELLO_CARD_URL_REGEX = /https:\/\/trello\.com\/c\/([a-zA-Z0-9]+)/;
 
@@ -26,4 +29,47 @@ export function extractTrelloCardUrl(text: string | null): string | null {
 	if (!text) return null;
 	const match = text.match(TRELLO_CARD_URL_REGEX);
 	return match ? match[0] : null;
+}
+
+/**
+ * Check if a comment/review author is the authenticated GitHub user (self).
+ * Returns true if self-authored (should skip), false otherwise.
+ */
+export async function isSelfAuthored(
+	author: string,
+	context: { prNumber: number; authorField: string },
+): Promise<boolean> {
+	try {
+		const authenticatedUser = await getAuthenticatedUser();
+		if (author === authenticatedUser || author === `${authenticatedUser}[bot]`) {
+			logger.info(`Skipping self-authored ${context.authorField}`, {
+				prNumber: context.prNumber,
+				[context.authorField]: author,
+				authenticatedUser,
+			});
+			return true;
+		}
+	} catch (err) {
+		logger.warn('Failed to get authenticated user, proceeding with caution', {
+			error: String(err),
+		});
+	}
+	return false;
+}
+
+/**
+ * Validate PR body has Trello card URL and extract card ID.
+ * Returns card ID or null (with logging) if not found.
+ */
+export function requireTrelloCardId(
+	prBody: string | null,
+	context: { prNumber: number; triggerName: string },
+): string | null {
+	if (!hasTrelloCardUrl(prBody)) {
+		logger.info(`PR does not have Trello card URL, skipping ${context.triggerName}`, {
+			prNumber: context.prNumber,
+		});
+		return null;
+	}
+	return extractTrelloCardId(prBody);
 }

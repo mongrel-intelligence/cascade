@@ -16,6 +16,7 @@ import {
 } from '../../utils/index.js';
 import { safeOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
+import { handleAgentResultArtifacts } from '../shared/agent-result-handler.js';
 import type { TriggerResult } from '../types.js';
 
 async function executeGitHubAgent(
@@ -31,37 +32,9 @@ async function executeGitHubAgent(
 		config,
 	});
 
-	// Upload zipped log file to card (if available)
-	if (cardId && agentResult.logBuffer) {
-		const logBuffer = agentResult.logBuffer;
-		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-		const logName = `${result.agentType}-${timestamp}.zip`;
-		await safeOperation(() => trelloClient.addAttachmentFile(cardId, logBuffer, logName), {
-			action: 'upload agent log',
-			cardId,
-			logName,
-		});
-	}
-
-	// Update cost custom field (accumulate with existing)
-	const costFieldId = project.trello?.customFields?.cost;
-	if (cardId && costFieldId && agentResult.cost !== undefined && agentResult.cost > 0) {
-		const sessionCost = agentResult.cost;
-		await safeOperation(
-			async () => {
-				const items = await trelloClient.getCardCustomFieldItems(cardId);
-				const currentItem = items.find((i) => i.idCustomField === costFieldId);
-				const currentCost = Number.parseFloat(currentItem?.value?.number ?? '0');
-				const newTotal = Math.round((currentCost + sessionCost) * 10000) / 10000;
-				await trelloClient.updateCardCustomFieldNumber(cardId, costFieldId, newTotal);
-				logger.info('Updated card cost', {
-					cardId,
-					sessionCost,
-					totalCost: newTotal,
-				});
-			},
-			{ action: 'update cost field' },
-		);
+	// Upload log and update cost on Trello card
+	if (cardId) {
+		await handleAgentResultArtifacts(cardId, result.agentType, agentResult, project);
 	}
 
 	// Move to in-review if implementation completed successfully
