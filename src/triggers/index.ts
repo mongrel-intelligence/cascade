@@ -1,5 +1,6 @@
 import { CheckSuiteFailureTrigger } from './github/check-suite-failure.js';
 import { CheckSuiteSuccessTrigger } from './github/check-suite-success.js';
+import { IssueCommentTrigger } from './github/issue-comment.js';
 // import { PROpenedTrigger } from './github/pr-opened.js';
 import { PRReadyToMergeTrigger } from './github/pr-ready-to-merge.js';
 import { PRReviewCommentTrigger } from './github/pr-review-comment.js';
@@ -40,11 +41,14 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 	// DISABLED: Triggers respond-to-review which has file editing gadgets - needs review
 	// registry.register(new PROpenedTrigger());
 
-	// GitHub: PR review comment trigger
+	// GitHub: PR review comment trigger (inline code comments)
 	registry.register(new PRReviewCommentTrigger());
 
 	// GitHub: PR review submission trigger (when someone submits a review)
 	registry.register(new PRReviewSubmittedTrigger());
+
+	// GitHub: Issue comment trigger (PR conversation comments)
+	registry.register(new IssueCommentTrigger());
 
 	// GitHub: Check suite failure trigger (runs implementation agent to fix)
 	registry.register(new CheckSuiteFailureTrigger());
