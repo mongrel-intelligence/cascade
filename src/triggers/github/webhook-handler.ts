@@ -1,5 +1,6 @@
 import { runAgent } from '../../agents/registry.js';
 import { findProjectByRepo } from '../../config/projects.js';
+import { githubClient } from '../../github/client.js';
 import { trelloClient } from '../../trello/client.js';
 import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
 import {
@@ -63,16 +64,21 @@ async function executeGitHubAgent(
 		);
 	}
 
-	// Move to in-review if implementation and PR was created
-	if (cardId && result.agentType === 'implementation' && agentResult.prUrl) {
+	// Move to in-review if implementation completed successfully
+	if (cardId && result.agentType === 'implementation' && agentResult.success) {
 		await safeOperation(() => trelloClient.moveCardToList(cardId, project.trello.lists.inReview), {
 			action: 'move card to in-review',
 			cardId,
 		});
-		await safeOperation(() => trelloClient.addComment(cardId, `PR created: ${agentResult.prUrl}`), {
-			action: 'add PR comment',
-			cardId,
-		});
+		if (agentResult.prUrl) {
+			await safeOperation(
+				() => trelloClient.addComment(cardId, `PR created: ${agentResult.prUrl}`),
+				{
+					action: 'add PR comment',
+					cardId,
+				},
+			);
+		}
 	}
 
 	logger.info('GitHub agent completed', {
@@ -81,6 +87,22 @@ async function executeGitHubAgent(
 		success: agentResult.success,
 		cost: agentResult.cost,
 	});
+}
+
+async function postAcknowledgmentComment(result: TriggerResult): Promise<void> {
+	if (result.agentType !== 'respond-to-review' || !result.prNumber) {
+		return;
+	}
+	const input = result.agentInput as { repoFullName?: string };
+	if (!input.repoFullName) {
+		return;
+	}
+	const [owner, repo] = input.repoFullName.split('/');
+	const prNumber = result.prNumber;
+	await safeOperation(
+		() => githubClient.createPRComment(owner, repo, prNumber, '👀 Checking this out...'),
+		{ action: 'post acknowledgment comment', prNumber },
+	);
 }
 
 function processNextQueuedGitHubWebhook(config: CascadeConfig, registry: TriggerRegistry): void {
@@ -155,6 +177,7 @@ export async function processGitHubWebhook(
 	// Only run agent if agentType is specified
 	// Some triggers (like PRReadyToMergeTrigger) perform actions directly without needing an agent
 	if (result.agentType) {
+		await postAcknowledgmentComment(result);
 		cancelFreshMachineTimer();
 		setProcessing(true);
 

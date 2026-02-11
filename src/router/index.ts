@@ -212,7 +212,12 @@ app.post('/github/webhook', async (c) => {
 	const repoFullName = (repo?.full_name as string) || 'unknown';
 
 	// Determine if we should process this event
-	const processableEvents = ['pull_request', 'pull_request_review', 'pull_request_review_comment'];
+	const processableEvents = [
+		'pull_request',
+		'pull_request_review',
+		'pull_request_review_comment',
+		'issue_comment',
+	];
 	const shouldProcess = processableEvents.includes(eventType);
 
 	if (shouldProcess) {

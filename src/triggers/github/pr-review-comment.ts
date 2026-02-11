@@ -1,4 +1,4 @@
-import { githubClient } from '../../github/client.js';
+import { getAuthenticatedUser, githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubPRReviewCommentPayload } from './types.js';
@@ -21,11 +21,35 @@ export class PRReviewCommentTrigger implements TriggerHandler {
 		const prPayload = ctx.payload as {
 			pull_request: { number: number; head: { ref: string } };
 			repository: { full_name: string };
-			comment: { id: number; body: string; path: string; html_url: string };
+			comment: {
+				id: number;
+				body: string;
+				path: string;
+				html_url: string;
+				user: { login: string };
+			};
 		};
 
 		const [owner, repo] = prPayload.repository.full_name.split('/');
 		const prNumber = prPayload.pull_request.number;
+		const commentAuthor = prPayload.comment.user.login;
+
+		// Skip comments from ourselves to avoid infinite loops
+		try {
+			const authenticatedUser = await getAuthenticatedUser();
+			if (commentAuthor === authenticatedUser || commentAuthor === `${authenticatedUser}[bot]`) {
+				logger.info('Skipping self-authored review comment', {
+					prNumber,
+					commentAuthor,
+					authenticatedUser,
+				});
+				return null;
+			}
+		} catch (err) {
+			logger.warn('Failed to get authenticated user, proceeding with caution', {
+				error: String(err),
+			});
+		}
 
 		// Fetch PR to check for Trello card URL
 		const prDetails = await githubClient.getPR(owner, repo, prNumber);
