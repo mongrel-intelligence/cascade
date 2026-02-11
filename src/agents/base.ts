@@ -313,7 +313,8 @@ function createAgentBuilderWithGadgets(
 		new ListTrelloCards(),
 		// new GetMyRecentActivity(), // Temporarily disabled
 		new AddChecklistToCard(),
-		new UpdateChecklistItem(),
+		// UpdateChecklistItem not available for planning - prevents marking items complete prematurely
+		...(isReadOnlyAgent ? [] : [new UpdateChecklistItem()]),
 		// Session control
 		new Finish(),
 	];
