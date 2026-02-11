@@ -9,12 +9,15 @@ import type {
 } from '../../types/index.js';
 import {
 	cancelFreshMachineTimer,
+	clearCardActive,
 	dequeueWebhook,
 	enqueueWebhook,
 	getQueueLength,
+	isCardActive,
 	isCurrentlyProcessing,
 	logger,
 	scheduleShutdownAfterJob,
+	setCardActive,
 	setProcessing,
 	startWatchdog,
 } from '../../utils/index.js';
@@ -96,8 +99,11 @@ async function executeAgent(
 	const { cardId } = result;
 
 	if (cardId) {
+		setCardActive(cardId);
 		await safeAddLabel(cardId, project.trello.labels.processing);
 		await safeRemoveLabel(cardId, project.trello.labels.readyToProcess);
+		// Remove PROCESSED label - card is starting fresh work, not yet processed by this agent
+		await safeRemoveLabel(cardId, project.trello.labels.processed);
 
 		// Move to IN PROGRESS when implementation starts
 		if (result.agentType === 'implementation') {
@@ -238,6 +244,11 @@ export async function processTrelloWebhook(
 		return;
 	}
 
+	if (result.cardId && isCardActive(result.cardId)) {
+		logger.info('Card already being processed, skipping', { cardId: result.cardId });
+		return;
+	}
+
 	logger.info('Trigger matched', { agentType: result.agentType, cardId: result.cardId });
 	cancelFreshMachineTimer();
 	setProcessing(true);
@@ -255,6 +266,9 @@ export async function processTrelloWebhook(
 			await safeAddComment(result.cardId, `❌ Error: ${String(err)}`);
 		}
 	} finally {
+		if (result?.cardId) {
+			clearCardActive(result.cardId);
+		}
 		await cleanupDebugDirectory(result?.agentInput?.logDir as string | undefined);
 		setProcessing(false);
 		processNextQueuedWebhook(config, registry);
