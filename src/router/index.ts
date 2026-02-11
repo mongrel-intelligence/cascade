@@ -217,6 +217,7 @@ app.post('/github/webhook', async (c) => {
 		'pull_request_review',
 		'pull_request_review_comment',
 		'issue_comment',
+		'check_suite',
 	];
 	const shouldProcess = processableEvents.includes(eventType);
 

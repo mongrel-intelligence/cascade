@@ -13,7 +13,12 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 		if (!isGitHubPullRequestReviewPayload(ctx.payload)) return false;
 
 		// Only trigger on submitted reviews, not edits or dismissals
-		return ctx.payload.action === 'submitted';
+		if (ctx.payload.action !== 'submitted') return false;
+
+		// Skip approval-only reviews - no point responding to these
+		if (ctx.payload.review.state === 'approved') return false;
+
+		return true;
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
