@@ -12,3 +12,8 @@ export {
 	CascadeConfigSchema,
 	TriggerConfigSchema,
 } from './schema.js';
+export {
+	getStatusUpdateConfig,
+	formatStatusMessage,
+	type StatusUpdateConfig,
+} from './statusUpdateConfig.js';

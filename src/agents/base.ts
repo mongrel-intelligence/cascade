@@ -278,6 +278,7 @@ function createAgentBuilderWithGadgets(
 	logWriter: (level: string, message: string, context?: Record<string, unknown>) => void,
 	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
 	repoDir: string,
+	cardId: string | undefined,
 ): BuilderType {
 	// Initialize session state for gadgets (e.g., Finish checks PR requirement for implementation)
 	initSessionState(agentType);
@@ -321,6 +322,15 @@ function createAgentBuilderWithGadgets(
 
 	const allGadgets = auEnabled ? [...baseGadgets, auList, auRead] : baseGadgets;
 
+	// Build status update config if we have a cardId
+	const statusUpdate = cardId
+		? {
+				cardId,
+				agentType,
+				maxIterations: ctx.maxIterations,
+			}
+		: undefined;
+
 	const builder = new AgentBuilder(client)
 		.withModel(ctx.model)
 		.withTemperature(0)
@@ -338,6 +348,7 @@ function createAgentBuilderWithGadgets(
 				logWriter,
 				trackingContext,
 				llmCallLogger,
+				statusUpdate,
 			}),
 		})
 		.withGadgets(...allGadgets);
@@ -584,6 +595,7 @@ export async function executeAgent(
 				fileLogger.write.bind(fileLogger),
 				fileLogger.llmCallLogger,
 				repoDir,
+				cardId,
 			);
 			builder = await injectSyntheticCalls(
 				builder,
