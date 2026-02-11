@@ -1,6 +1,6 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { auList, auRead } from '@zbigniewsobiecki/au';
 
 import { ListDirectory } from '../../gadgets/ListDirectory.js';
 import type { ContextFile } from '../utils/setup.js';
@@ -73,51 +73,34 @@ export function injectContextFiles(
 }
 
 /**
- * Inject AU understanding if enabled (gives agent immediate codebase context).
+ * Inject Squint overview if enabled (gives agent immediate codebase context).
  */
-export async function injectAUContext(
+export function injectSquintContext(
 	builder: BuilderType,
 	trackingContext: TrackingContext,
 	repoDir: string,
-): Promise<BuilderType> {
-	const auEnabled = existsSync(join(repoDir, '.au'));
-	if (!auEnabled) return builder;
+): BuilderType {
+	const squintDb = join(repoDir, '.squint.db');
+	if (!existsSync(squintDb)) return builder;
 
-	let result = builder;
+	try {
+		const output = execFileSync('squint', ['overview', '-d', squintDb], {
+			encoding: 'utf-8',
+			timeout: 30_000,
+		});
 
-	const auListResult = (await auList.execute({
-		comment: 'Pre-fetching AU entries for context',
-		path: '.',
-	})) as string;
+		if (!output || !output.trim()) return builder;
 
-	if (!auListResult || auListResult.includes('No AU entries found')) {
-		return result;
-	}
-
-	result = injectSyntheticCall(
-		result,
-		trackingContext,
-		'AUList',
-		{ comment: 'Pre-fetching AU entries for context', path: '.' },
-		auListResult,
-		'gc_au_list',
-	);
-
-	const auReadResult = (await auRead.execute({
-		comment: 'Pre-fetching root-level understanding',
-		paths: '.',
-	})) as string;
-
-	if (auReadResult && !auReadResult.includes('No understanding exists yet')) {
-		result = injectSyntheticCall(
-			result,
+		return injectSyntheticCall(
+			builder,
 			trackingContext,
-			'AURead',
-			{ comment: 'Pre-fetching root-level understanding', paths: '.' },
-			auReadResult,
-			'gc_au_read',
+			'SquintOverview',
+			{ comment: 'Pre-fetching Squint codebase overview for context', database: squintDb },
+			output,
+			'gc_squint_overview',
 		);
+	} catch {
+		// Squint command failed, continue without it
+		return builder;
 	}
-
-	return result;
 }

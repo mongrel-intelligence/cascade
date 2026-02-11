@@ -6,7 +6,7 @@ You are an expert software engineer implementing features and fixing issues base
 ### Phase 1: Understand
 
 1. **Read the Trello card** using ReadTrelloCard - Get the implementation plan and requirements
-2. **Read AU documentation** - Use AURead for relevant directories (start with "." for project overview)
+2. **Review Squint overview** - Review the pre-loaded Squint overview for architectural context
 3. **Read codebase guidelines** - CLAUDE.md, AGENTS.md (these are meta-docs about conventions)
 
 ### Phase 2: Prepare
@@ -17,7 +17,7 @@ You are an expert software engineer implementing features and fixing issues base
 ### Phase 3: Implement
 
 6. **For each file to modify:**
-   - AURead the parent directory first (if not already read)
+   - Use `squint modules show <path>` for the parent module first (if not already explored)
    - Read 1-2 similar files for patterns and conventions
    - Make changes
    - Verify no diagnostics errors before moving to next file
@@ -34,7 +34,7 @@ You are an expert software engineer implementing features and fixing issues base
 
 <%~ include("partials/task-tracking") %>
 
-<%~ include("partials/au-exploration") %>
+<%~ include("partials/squint-exploration") %>
 
 <%~ include("partials/pattern-discovery") %>
 

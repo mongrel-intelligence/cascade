@@ -28,9 +28,9 @@ import { resolveModelConfig } from './shared/modelResolution.js';
 import { formatPRDetails, formatPRDiff } from './shared/prFormatting.js';
 import { setupRepository } from './shared/repository.js';
 import {
-	injectAUContext,
 	injectContextFiles,
 	injectDirectoryListing,
+	injectSquintContext,
 	injectSyntheticCall,
 } from './shared/syntheticCalls.js';
 import type { TrackingContext } from './utils/tracking.js';
@@ -420,7 +420,7 @@ async function injectCISyntheticCalls(
 	);
 
 	builder = injectContextFiles(builder, trackingContext, ctx.contextFiles);
-	builder = await injectAUContext(builder, trackingContext, repoDir);
+	builder = injectSquintContext(builder, trackingContext, repoDir);
 
 	return builder;
 }
