@@ -1,6 +1,5 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { auList, auRead } from '@zbigniewsobiecki/au';
 import { AgentBuilder, type LLMist, type createLogger } from 'llmist';
 
 import { getCompactionConfig } from '../../config/compactionConfig.js';
@@ -33,8 +32,8 @@ export interface CreateBuilderOptions {
 	postConfigure?: (builder: BuilderType) => BuilderType;
 }
 
-export function isAUEnabled(repoDir: string): boolean {
-	return existsSync(join(repoDir, '.au'));
+export function isSquintEnabled(repoDir: string): boolean {
+	return existsSync(join(repoDir, '.squint.db'));
 }
 
 export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderType {
@@ -48,7 +47,6 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 		trackingContext,
 		logWriter,
 		llmCallLogger,
-		repoDir,
 		gadgets,
 		statusUpdate,
 		skipSessionState,
@@ -59,10 +57,6 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 	if (!skipSessionState) {
 		initSessionState(agentType);
 	}
-
-	// Check if AU features should be enabled (repo has .au file at root)
-	const auEnabled = isAUEnabled(repoDir);
-	const allGadgets = auEnabled ? [...gadgets, auList, auRead] : gadgets;
 
 	let builder = new AgentBuilder(client)
 		.withModel(model)
@@ -84,7 +78,7 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 				statusUpdate,
 			}),
 		})
-		.withGadgets(...allGadgets);
+		.withGadgets(...gadgets);
 
 	if (postConfigure) {
 		builder = postConfigure(builder);

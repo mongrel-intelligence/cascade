@@ -1,0 +1,20 @@
+### Codebase Understanding (Squint)
+
+If a `.squint.db` file exists at the repository root, the `squint` CLI is available for structured codebase exploration. An overview has been pre-loaded for you.
+
+**Exploration strategy (top-down drill-down):**
+1. Review the pre-loaded overview output for the big picture (features, modules, file tree)
+2. Drill into features: `squint features show <slug> --json`
+3. Drill into modules: `squint modules show <path> --json`
+4. Drill into symbols: `squint symbols show <name> --json`
+5. Drill into files: `squint files show <path> --json`
+6. Explore relationships: `squint relationships show --from <id> --to <id> --json`
+
+**When to use squint:**
+- ALWAYS start by reviewing the pre-loaded overview before reading files
+- Before modifying a module, check its squint entry to understand purpose and interactions
+- Use `squint modules show <path>` to understand module boundaries and dependencies
+- Use `squint symbols show <name>` to see a symbol's relationships, flows, and call sites
+- Use `squint files show <path>` before reading a file to understand its role and imports
+
+**Run squint commands via Tmux.** Use `--json` flag for structured output when you need to parse results.

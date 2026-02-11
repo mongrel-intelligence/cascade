@@ -17,12 +17,12 @@ CRITICAL:
 You are running in a cloned copy of the project repository. Before creating your plan:
 
 1. **Read the card** to identify scope signals (file names, components, features, domain terms)
-2. **Start with AU** - review AUList output and use AURead (start with ".") for architectural context
+2. **Start with Squint** - review the pre-loaded Squint overview for architectural context
 3. **THEN explore implementation** - use `ListDirectory`, `ReadFile`, and `Tmux` to verify specifics
 4. **Understand existing patterns** - how does the codebase already solve similar problems?
 5. **Map terminology** - card may use different terms than code
 
-<%~ include("partials/au-exploration") %>
+<%~ include("partials/squint-exploration") %>
 
 ## Codebase Pattern Analysis
 

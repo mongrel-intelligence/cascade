@@ -25,8 +25,8 @@ import { resolveModelConfig } from './shared/modelResolution.js';
 import { type PRDiff, formatPRDetails, formatPRDiff } from './shared/prFormatting.js';
 import { setupRepository } from './shared/repository.js';
 import {
-	injectAUContext,
 	injectContextFiles,
+	injectSquintContext,
 	injectSyntheticCall,
 } from './shared/syntheticCalls.js';
 import type { TrackingContext } from './utils/tracking.js';
@@ -272,7 +272,7 @@ async function injectReviewSyntheticCalls(
 		);
 	}
 
-	builder = await injectAUContext(builder, trackingContext, repoDir);
+	builder = injectSquintContext(builder, trackingContext, repoDir);
 
 	return builder;
 }
