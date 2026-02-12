@@ -215,7 +215,6 @@ function createReviewAgentBuilder(
 		llmCallLogger,
 		repoDir,
 		gadgets: getReviewGadgets(),
-		skipSessionState: true,
 	});
 }
 

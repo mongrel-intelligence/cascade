@@ -3,11 +3,17 @@ import { CreatePR } from '../../../src/gadgets/github/CreatePR.js';
 import { githubClient } from '../../../src/github/client.js';
 import { runCommand } from '../../../src/utils/repo.js';
 
+// Mock session state
+vi.mock('../../../src/gadgets/sessionState.js', () => ({
+	recordPRCreation: vi.fn(),
+}));
+
 // Mock the github client
 vi.mock('../../../src/github/client.js', () => ({
 	githubClient: {
 		branchExists: vi.fn(),
 		createPR: vi.fn(),
+		getOpenPRByBranch: vi.fn(),
 	},
 }));
 
@@ -294,6 +300,64 @@ describe('GitHub Gadgets', () => {
 
 			expect(githubClient.branchExists).not.toHaveBeenCalled();
 			expect(githubClient.createPR).not.toHaveBeenCalled();
+		});
+
+		it('returns existing PR when GitHub returns 422 "already exists"', async () => {
+			const error = new Error('A pull request already exists for test-owner:feature/test');
+			Object.assign(error, { status: 422 });
+
+			vi.mocked(githubClient.branchExists).mockResolvedValue(true);
+			vi.mocked(githubClient.createPR).mockRejectedValue(error);
+			vi.mocked(githubClient.getOpenPRByBranch).mockResolvedValue({
+				number: 4,
+				htmlUrl: 'https://github.com/test-owner/test-repo/pull/4',
+				title: 'Existing PR',
+			});
+
+			const { recordPRCreation } = await import('../../../src/gadgets/sessionState.js');
+
+			const gadget = new CreatePR();
+			const result = await gadget.execute({
+				owner: 'test-owner',
+				repo: 'test-repo',
+				title: 'Test PR',
+				body: 'Test body',
+				head: 'feature/test',
+				base: 'main',
+				commit: false,
+				push: false,
+			});
+
+			expect(result).toContain('PR already exists');
+			expect(result).toContain('#4');
+			expect(result).toContain('https://github.com/test-owner/test-repo/pull/4');
+			expect(recordPRCreation).toHaveBeenCalledWith(
+				'https://github.com/test-owner/test-repo/pull/4',
+			);
+		});
+
+		it('re-throws non-422 errors from createPR', async () => {
+			const error = new Error('Internal Server Error');
+			Object.assign(error, { status: 500 });
+
+			vi.mocked(githubClient.branchExists).mockResolvedValue(true);
+			vi.mocked(githubClient.createPR).mockRejectedValue(error);
+
+			const gadget = new CreatePR();
+			await expect(
+				gadget.execute({
+					owner: 'test-owner',
+					repo: 'test-repo',
+					title: 'Test PR',
+					body: 'Test body',
+					head: 'feature/test',
+					base: 'main',
+					commit: false,
+					push: false,
+				}),
+			).rejects.toThrow('Internal Server Error');
+
+			expect(githubClient.getOpenPRByBranch).not.toHaveBeenCalled();
 		});
 	});
 });

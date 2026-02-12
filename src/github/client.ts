@@ -325,6 +325,23 @@ export const githubClient = {
 		};
 	},
 
+	async getOpenPRByBranch(owner: string, repo: string, head: string): Promise<CreatedPR | null> {
+		logger.debug('Looking up open PR by branch', { owner, repo, head });
+		const { data } = await getClient().pulls.list({
+			owner,
+			repo,
+			head: `${owner}:${head}`,
+			state: 'open',
+			per_page: 1,
+		});
+		if (data.length === 0) return null;
+		return {
+			number: data[0].number,
+			htmlUrl: data[0].html_url,
+			title: data[0].title,
+		};
+	},
+
 	async createPR(owner: string, repo: string, params: CreatePRParams): Promise<CreatedPR> {
 		logger.debug('Creating PR', { owner, repo, head: params.head, base: params.base });
 		const { data } = await getClient().pulls.create({

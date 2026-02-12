@@ -1,5 +1,6 @@
 import { Gadget, z } from 'llmist';
 import { githubClient } from '../../github/client.js';
+import { recordReviewSubmission } from '../sessionState.js';
 import { formatGadgetError } from '../utils.js';
 
 export class CreatePRReview extends Gadget({
@@ -69,6 +70,7 @@ export class CreatePRReview extends Gadget({
 				params.body,
 				params.comments,
 			);
+			recordReviewSubmission(review.htmlUrl);
 			return `Review submitted successfully (${params.event}): ${review.htmlUrl}`;
 		} catch (error) {
 			const baseError = formatGadgetError('submitting review', error);
