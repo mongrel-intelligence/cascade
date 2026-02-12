@@ -235,7 +235,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(result).toBeNull();
 		});
 
-		it('returns null when PR was already reviewed by us', async () => {
+		it('returns null when PR was already reviewed by us at current HEAD', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
@@ -247,7 +247,14 @@ describe('CheckSuiteSuccessTrigger', () => {
 				merged: false,
 			});
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
-				{ id: 1, user: { login: 'cascade-bot' }, state: 'approved', body: 'LGTM', submittedAt: '' },
+				{
+					id: 1,
+					user: { login: 'cascade-bot' },
+					state: 'approved',
+					body: 'LGTM',
+					submittedAt: '',
+					commitId: 'sha123',
+				},
 			]);
 			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
 
@@ -263,7 +270,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
-		it('returns null when PR was already reviewed by reviewer identity', async () => {
+		it('returns null when PR was already reviewed by reviewer identity at current HEAD', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
@@ -281,6 +288,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 					state: 'approved',
 					body: 'LGTM',
 					submittedAt: '',
+					commitId: 'sha123',
 				},
 			]);
 			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
@@ -296,6 +304,90 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			expect(result).toBeNull();
 			expect(getReviewerUser).toHaveBeenCalledWith('REVIEWER_TOKEN');
+			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
+		});
+
+		it('re-triggers when review commitId differs from headSha', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
+				{
+					id: 1,
+					user: { login: 'cascade-bot' },
+					state: 'changes_requested',
+					body: 'Please fix',
+					submittedAt: '',
+					commitId: 'old-sha',
+				},
+			]);
+			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: true,
+				totalCount: 1,
+				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('review');
+			expect(githubClient.getCheckSuiteStatus).toHaveBeenCalled();
+		});
+
+		it('skips when latest of multiple reviews covers current HEAD', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
+				{
+					id: 1,
+					user: { login: 'cascade-bot' },
+					state: 'changes_requested',
+					body: 'Please fix',
+					submittedAt: '',
+					commitId: 'old-sha',
+				},
+				{
+					id: 2,
+					user: { login: 'cascade-bot' },
+					state: 'approved',
+					body: 'LGTM',
+					submittedAt: '',
+					commitId: 'sha123',
+				},
+			]);
+			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
@@ -317,6 +409,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 					state: 'commented',
 					body: 'Nice work',
 					submittedAt: '',
+					commitId: 'sha123',
 				},
 			]);
 			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
