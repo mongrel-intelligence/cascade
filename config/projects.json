@@ -21,6 +21,7 @@
 			"repo": "zbigniewsobiecki/niu",
 			"baseBranch": "dev",
 			"branchPrefix": "feature/",
+			"reviewerTokenEnv": "GITHUB_REVIEWER_TOKEN",
 			"trello": {
 				"boardId": "694ec393370da080b52eb64c",
 				"lists": {
@@ -51,6 +52,7 @@
 			"repo": "zbigniewsobiecki/car-dealership",
 			"baseBranch": "dev",
 			"branchPrefix": "feature/",
+			"reviewerTokenEnv": "GITHUB_REVIEWER_TOKEN",
 			"trello": {
 				"boardId": "698db5df2b873930c7c38bc0",
 				"lists": {

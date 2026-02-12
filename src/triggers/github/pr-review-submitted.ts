@@ -38,7 +38,9 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 		const reviewAuthor = reviewPayload.review.user.login;
 
 		// Skip reviews from ourselves to avoid infinite loops
-		if (await isSelfAuthored(reviewAuthor, { prNumber, authorField: 'reviewAuthor' })) {
+		if (
+			await isSelfAuthored(reviewAuthor, { prNumber, authorField: 'reviewAuthor' }, ctx.project)
+		) {
 			return null;
 		}
 

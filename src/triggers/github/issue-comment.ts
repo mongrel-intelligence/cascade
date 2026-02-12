@@ -32,7 +32,9 @@ export class IssueCommentTrigger implements TriggerHandler {
 		const [owner, repo] = payload.repository.full_name.split('/');
 
 		// Skip comments from ourselves to avoid infinite loops
-		if (await isSelfAuthored(commentAuthor, { prNumber, authorField: 'commentAuthor' })) {
+		if (
+			await isSelfAuthored(commentAuthor, { prNumber, authorField: 'commentAuthor' }, ctx.project)
+		) {
 			return null;
 		}
 

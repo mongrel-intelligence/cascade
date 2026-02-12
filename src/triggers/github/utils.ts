@@ -1,4 +1,5 @@
-import { getAuthenticatedUser } from '../../github/client.js';
+import { getAuthenticatedUser, getReviewerUser } from '../../github/client.js';
+import type { ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 
 // Trello card URL pattern: https://trello.com/c/SHORT_ID/optional-slug
@@ -38,6 +39,7 @@ export function extractTrelloCardUrl(text: string | null): string | null {
 export async function isSelfAuthored(
 	author: string,
 	context: { prNumber: number; authorField: string },
+	project?: ProjectConfig,
 ): Promise<boolean> {
 	try {
 		const authenticatedUser = await getAuthenticatedUser();
@@ -54,6 +56,19 @@ export async function isSelfAuthored(
 			error: String(err),
 		});
 	}
+
+	if (project?.reviewerTokenEnv) {
+		const reviewerUser = await getReviewerUser(project.reviewerTokenEnv);
+		if (reviewerUser && (author === reviewerUser || author === `${reviewerUser}[bot]`)) {
+			logger.info(`Skipping reviewer-authored ${context.authorField}`, {
+				prNumber: context.prNumber,
+				[context.authorField]: author,
+				reviewerUser,
+			});
+			return true;
+		}
+	}
+
 	return false;
 }
 
