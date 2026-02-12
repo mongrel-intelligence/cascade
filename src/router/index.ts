@@ -17,25 +17,37 @@ function isAgentLogFilename(filename: string): boolean {
 	return /^[a-z]+(?:-timeout)?-[\d-TZ]+\.zip$/i.test(filename);
 }
 
-function isCardMovedToTriggerList(
+function isCardInTriggerList(
 	actionType: string,
 	data: Record<string, unknown> | undefined,
 	project: ProjectConfig,
 ): boolean {
-	if (actionType !== 'updateCard' || !data?.listAfter) return false;
-
-	const listAfter = data.listAfter as Record<string, unknown>;
-	const listId = listAfter.id as string;
 	const triggerLists = [
 		project.trello.lists.briefing,
 		project.trello.lists.planning,
 		project.trello.lists.todo,
 	];
 
-	if (triggerLists.includes(listId)) {
-		console.log(`[Router] Card moved to trigger list: ${listId}`);
-		return true;
+	// Card moved into a trigger list
+	if (actionType === 'updateCard' && data?.listAfter) {
+		const listAfter = data.listAfter as Record<string, unknown>;
+		const listId = listAfter.id as string;
+		if (triggerLists.includes(listId)) {
+			console.log(`[Router] Card moved to trigger list: ${listId}`);
+			return true;
+		}
 	}
+
+	// Card created directly in a trigger list
+	if (actionType === 'createCard' && data?.list) {
+		const list = data.list as Record<string, unknown>;
+		const listId = list.id as string;
+		if (triggerLists.includes(listId)) {
+			console.log(`[Router] Card created in trigger list: ${listId}`);
+			return true;
+		}
+	}
+
 	return false;
 }
 
@@ -108,7 +120,7 @@ function parseTrelloWebhook(payload: unknown): TrelloWebhookResult {
 	const cardId = card?.id as string | undefined;
 
 	const shouldProcess =
-		isCardMovedToTriggerList(actionType, data, project) ||
+		isCardInTriggerList(actionType, data, project) ||
 		isReadyToProcessLabelAdded(actionType, data, project) ||
 		isAgentLogAttachmentUploaded(actionType, data, project);
 
