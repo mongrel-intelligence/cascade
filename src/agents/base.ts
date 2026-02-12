@@ -101,6 +101,7 @@ async function buildAgentContext(
 		cardId,
 		cardUrl: cardId ? `https://trello.com/c/${cardId}` : undefined,
 		projectId: project.id,
+		baseBranch: project.baseBranch,
 		storiesListId: project.trello?.lists?.stories,
 		processedLabelId: project.trello?.labels?.processed,
 		...(prContext && {

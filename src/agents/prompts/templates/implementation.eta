@@ -28,6 +28,7 @@ You are an expert software engineer implementing features and fixing issues base
 
 7. **Run linting** (with fixing first, then without) **and type checking**
 8. **Create a PR** using the CreatePR gadget (it handles commit, push, and PR creation automatically)
+   - **IMPORTANT: Set `base` to `<%= it.baseBranch %>` (the project's base branch)**
    - IMPORTANT: DO NOT PROCEED FURTHER UNTIL YOU HAVE CONFIRMED CreatePR EXECUTED SUCCESSFULLY.
 9. **Mark acceptance criteria complete** using UpdateChecklistItem for each criterion you've implemented
 10. **Post summary comment** on the Trello card describing what was implemented and linking to the PR
