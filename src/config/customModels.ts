@@ -70,6 +70,21 @@ export const CUSTOM_MODELS: ModelSpec[] = [
 	},
 	{
 		provider: 'openrouter',
+		modelId: 'google/gemini-3-pro-preview',
+		displayName: 'Gemini 3 Pro Preview',
+		contextWindow: 1_048_576,
+		maxOutputTokens: 65_536,
+		pricing: { input: 2.0, output: 12.0 },
+		knowledgeCutoff: '2025-12',
+		features: {
+			streaming: true,
+			functionCalling: true,
+			vision: true,
+			reasoning: true,
+		},
+	},
+	{
+		provider: 'openrouter',
 		modelId: 'deepseek/deepseek-v3.2-speciale',
 		displayName: 'DeepSeek V3.2 Speciale',
 		contextWindow: 163_840,
