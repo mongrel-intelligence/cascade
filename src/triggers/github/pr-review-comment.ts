@@ -34,7 +34,9 @@ export class PRReviewCommentTrigger implements TriggerHandler {
 		const commentAuthor = prPayload.comment.user.login;
 
 		// Skip comments from ourselves to avoid infinite loops
-		if (await isSelfAuthored(commentAuthor, { prNumber, authorField: 'commentAuthor' })) {
+		if (
+			await isSelfAuthored(commentAuthor, { prNumber, authorField: 'commentAuthor' }, ctx.project)
+		) {
 			return null;
 		}
 

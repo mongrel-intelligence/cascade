@@ -4,9 +4,10 @@ import type { TriggerContext } from '../../../src/triggers/types.js';
 
 vi.mock('../../../src/github/client.js', () => ({
 	getAuthenticatedUser: vi.fn(),
+	getReviewerUser: vi.fn(),
 }));
 
-import { getAuthenticatedUser } from '../../../src/github/client.js';
+import { getAuthenticatedUser, getReviewerUser } from '../../../src/github/client.js';
 
 describe('PRReviewSubmittedTrigger', () => {
 	const trigger = new PRReviewSubmittedTrigger();
@@ -53,6 +54,7 @@ describe('PRReviewSubmittedTrigger', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(getReviewerUser).mockResolvedValue(null);
 	});
 
 	describe('matches', () => {
@@ -188,6 +190,29 @@ describe('PRReviewSubmittedTrigger', () => {
 						body: 'Fix this',
 						html_url: 'https://github.com/...',
 						user: { login: 'reviewer[bot]' },
+					},
+				}),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+		});
+
+		it('returns null for reviewer-authored review', async () => {
+			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
+			vi.mocked(getReviewerUser).mockResolvedValue('cascade-reviewer');
+
+			const ctx: TriggerContext = {
+				project: { ...mockProject, reviewerTokenEnv: 'REVIEWER_TOKEN' },
+				source: 'github',
+				payload: makeReviewPayload({
+					review: {
+						id: 100,
+						state: 'changes_requested',
+						body: 'Fix this',
+						html_url: 'https://github.com/...',
+						user: { login: 'cascade-reviewer' },
 					},
 				}),
 			};

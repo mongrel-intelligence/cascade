@@ -58,6 +58,39 @@ describe('ProjectConfigSchema', () => {
 		expect(result.branchPrefix).toBe('feature/');
 		expect(result.githubTokenEnv).toBe('GITHUB_TOKEN');
 	});
+
+	it('accepts optional reviewerTokenEnv', () => {
+		const config = {
+			id: 'test',
+			name: 'Test',
+			repo: 'owner/repo',
+			reviewerTokenEnv: 'GITHUB_REVIEWER_TOKEN',
+			trello: {
+				boardId: 'board123',
+				lists: {},
+				labels: {},
+			},
+		};
+
+		const result = ProjectConfigSchema.parse(config);
+		expect(result.reviewerTokenEnv).toBe('GITHUB_REVIEWER_TOKEN');
+	});
+
+	it('does not require reviewerTokenEnv', () => {
+		const config = {
+			id: 'test',
+			name: 'Test',
+			repo: 'owner/repo',
+			trello: {
+				boardId: 'board123',
+				lists: {},
+				labels: {},
+			},
+		};
+
+		const result = ProjectConfigSchema.parse(config);
+		expect(result.reviewerTokenEnv).toBeUndefined();
+	});
 });
 
 describe('validateConfig', () => {

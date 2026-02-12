@@ -15,6 +15,7 @@ export const ProjectConfigSchema = z.object({
 	baseBranch: z.string().default('main'),
 	branchPrefix: z.string().default('feature/'),
 	githubTokenEnv: z.string().default('GITHUB_TOKEN'),
+	reviewerTokenEnv: z.string().optional(),
 
 	trello: z.object({
 		boardId: z.string().min(1),
