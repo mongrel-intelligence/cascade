@@ -73,6 +73,50 @@ describe('CardMovedToBriefingTrigger', () => {
 		expect(trigger.matches(ctx)).toBe(false);
 	});
 
+	it('matches when card created directly in briefing list', () => {
+		const ctx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: {
+				model: { id: 'board123', name: 'Board' },
+				action: {
+					id: 'action1',
+					idMemberCreator: 'member1',
+					type: 'createCard',
+					date: '2024-01-01',
+					data: {
+						card: { id: 'card1', name: 'Test Card', idShort: 1, shortLink: 'abc' },
+						list: { id: 'briefing-list-id', name: 'Briefing' },
+					},
+				},
+			},
+		};
+
+		expect(trigger.matches(ctx)).toBe(true);
+	});
+
+	it('does not match when card created in a different list', () => {
+		const ctx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: {
+				model: { id: 'board123', name: 'Board' },
+				action: {
+					id: 'action1',
+					idMemberCreator: 'member1',
+					type: 'createCard',
+					date: '2024-01-01',
+					data: {
+						card: { id: 'card1', name: 'Test Card', idShort: 1, shortLink: 'abc' },
+						list: { id: 'other-list', name: 'Other' },
+					},
+				},
+			},
+		};
+
+		expect(trigger.matches(ctx)).toBe(false);
+	});
+
 	it('does not match github source', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
