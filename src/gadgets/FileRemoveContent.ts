@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { Gadget, z } from 'llmist';
 
 import { invalidateFileRead } from './readTracking.js';
-import { formatContext, runDiagnosticsWithTracking, validatePath } from './shared/index.js';
+import { formatContext, runPostEditChecks, validatePath } from './shared/index.js';
 
 export class FileRemoveContent extends Gadget({
 	name: 'FileRemoveContent',
@@ -161,7 +161,7 @@ Removed 3 lines (lines 2-4).
 		invalidateFileRead(validatedPath);
 
 		// Check diagnostics and update state tracker
-		const diagnosticResult = runDiagnosticsWithTracking(filePath, validatedPath);
+		const diagnosticResult = runPostEditChecks(filePath, validatedPath);
 		const status = diagnosticResult?.hasErrors ? 'error' : 'success';
 
 		// Build output
