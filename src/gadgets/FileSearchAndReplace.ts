@@ -15,7 +15,7 @@ import {
 	findAllMatches,
 	formatContext,
 	getMatchFailure,
-	runDiagnosticsWithTracking,
+	runPostEditChecks,
 	validatePath,
 } from './shared/index.js';
 import type { MatchResult } from './shared/types.js';
@@ -382,7 +382,7 @@ import * as Sentry from '@sentry/node';`,
 		newContent: string,
 	): string {
 		// Check diagnostics and update state tracker
-		const diagnosticResult = runDiagnosticsWithTracking(filePath, validatedPath);
+		const diagnosticResult = runPostEditChecks(filePath, validatedPath);
 		const status = diagnosticResult?.hasErrors ? 'error' : 'success';
 
 		const newLines = newContent.split('\n');
@@ -531,7 +531,7 @@ import * as Sentry from '@sentry/node';`,
 		replace: string,
 	): string {
 		// Check diagnostics and update state tracker
-		const diagnosticResult = runDiagnosticsWithTracking(filePath, validatedPath);
+		const diagnosticResult = runPostEditChecks(filePath, validatedPath);
 		const status = diagnosticResult?.hasErrors ? 'error' : 'success';
 
 		const strategy = matches[0].strategy;

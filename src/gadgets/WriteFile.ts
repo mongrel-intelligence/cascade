@@ -14,7 +14,7 @@ import { dirname, resolve, sep } from 'node:path';
 import { Gadget, z } from 'llmist';
 
 import { invalidateFileRead } from './readTracking.js';
-import { runDiagnosticsWithTracking } from './shared/index.js';
+import { runPostEditChecks } from './shared/index.js';
 
 const ALLOWED_PATHS = ['/tmp'];
 
@@ -175,7 +175,7 @@ Wrote 542 bytes
 		const dirNote = createdDir ? ` (created directory: ${dirname(filePath)})` : '';
 
 		// Check diagnostics and update state tracker
-		const diagnosticResult = runDiagnosticsWithTracking(filePath, validatedPath);
+		const diagnosticResult = runPostEditChecks(filePath, validatedPath);
 		const status = diagnosticResult?.hasErrors ? 'error' : 'success';
 		const diagnosticsOutput = diagnosticResult ? `\n\n${diagnosticResult.statusMessage}` : '';
 
