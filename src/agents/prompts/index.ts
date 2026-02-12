@@ -15,6 +15,7 @@ export interface PromptContext {
 	cardId?: string;
 	cardUrl?: string;
 	projectId?: string;
+	baseBranch?: string;
 
 	// Briefing-specific
 	storiesListId?: string;
