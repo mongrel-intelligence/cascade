@@ -56,22 +56,31 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 
 		const cardId = extractTrelloCardId(prDetails.body);
 
-		// Skip if we already reviewed this PR (only fire once per PR)
+		// Skip if our latest review already covers the current HEAD SHA
 		const [reviews, botUser, reviewerUser] = await Promise.all([
 			githubClient.getPRReviews(owner, repo, prNumber),
 			getAuthenticatedUser(),
 			getReviewerUser(ctx.project.reviewerTokenEnv),
 		]);
 
-		const alreadyReviewed = reviews.some(
+		const ourReviews = reviews.filter(
 			(r) => r.user.login === botUser || (reviewerUser && r.user.login === reviewerUser),
 		);
-		if (alreadyReviewed) {
-			logger.info('PR already reviewed by us, skipping', {
+		if (ourReviews.length > 0) {
+			const latestReview = ourReviews[ourReviews.length - 1];
+			if (latestReview.commitId === headSha) {
+				logger.info('PR already reviewed at current HEAD, skipping', {
+					prNumber,
+					botUser,
+					headSha,
+				});
+				return null;
+			}
+			logger.info('New commits since last review, re-triggering review', {
 				prNumber,
-				botUser,
+				lastReviewCommit: latestReview.commitId,
+				headSha,
 			});
-			return null;
 		}
 
 		// Verify all checks are actually passing (double-check)

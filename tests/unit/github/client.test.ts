@@ -286,6 +286,7 @@ describe('githubClient', () => {
 						body: 'LGTM',
 						user: { login: 'reviewer' },
 						submitted_at: '2024-01-01',
+						commit_id: 'abc123',
 					},
 				],
 			});
@@ -299,6 +300,7 @@ describe('githubClient', () => {
 				body: 'LGTM',
 				user: { login: 'reviewer' },
 				submittedAt: '2024-01-01',
+				commitId: 'abc123',
 			});
 		});
 
@@ -311,6 +313,7 @@ describe('githubClient', () => {
 						body: '',
 						user: null,
 						submitted_at: null,
+						commit_id: null,
 					},
 				],
 			});
@@ -320,6 +323,7 @@ describe('githubClient', () => {
 			expect(result[0].body).toBeNull();
 			expect(result[0].user.login).toBe('unknown');
 			expect(result[0].submittedAt).toBe('');
+			expect(result[0].commitId).toBe('');
 		});
 	});
 

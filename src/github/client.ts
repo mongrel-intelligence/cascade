@@ -59,6 +59,7 @@ export interface PRReview {
 		login: string;
 	};
 	submittedAt: string;
+	commitId: string;
 }
 
 export interface PRIssueComment {
@@ -235,6 +236,7 @@ export const githubClient = {
 				login: r.user?.login || 'unknown',
 			},
 			submittedAt: r.submitted_at || '',
+			commitId: r.commit_id || '',
 		}));
 	},
 

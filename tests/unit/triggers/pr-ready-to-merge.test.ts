@@ -232,6 +232,7 @@ describe('PRReadyToMergeTrigger', () => {
 					body: 'LGTM',
 					user: { login: 'reviewer' },
 					submitted_at: '2024-01-01',
+					commitId: 'sha123',
 				},
 			]);
 
@@ -283,6 +284,7 @@ describe('PRReadyToMergeTrigger', () => {
 					body: 'LGTM',
 					user: { login: 'reviewer' },
 					submitted_at: '2024-01-01',
+					commitId: 'sha123',
 				},
 			]);
 
@@ -418,6 +420,7 @@ describe('PRReadyToMergeTrigger', () => {
 					body: 'Looks ok',
 					user: { login: 'reviewer' },
 					submitted_at: '2024-01-01',
+					commitId: 'sha123',
 				},
 			]);
 
@@ -466,6 +469,7 @@ describe('PRReadyToMergeTrigger', () => {
 					body: 'LGTM',
 					user: { login: 'reviewer1' },
 					submitted_at: '2024-01-01',
+					commitId: 'sha123',
 				},
 				{
 					id: 2,
@@ -473,6 +477,7 @@ describe('PRReadyToMergeTrigger', () => {
 					body: 'Fix this',
 					user: { login: 'reviewer2' },
 					submitted_at: '2024-01-02',
+					commitId: 'sha123',
 				},
 			]);
 
@@ -521,6 +526,7 @@ describe('PRReadyToMergeTrigger', () => {
 					body: 'LGTM',
 					user: { login: 'reviewer' },
 					submitted_at: '2024-01-01',
+					commitId: 'sha123',
 				},
 			]);
 
