@@ -7,7 +7,7 @@ import type {
 import { isTrelloWebhookPayload } from '../types.js';
 
 // ============================================================================
-// Card Moved Trigger Factory
+// Card Moved/Created Trigger Factory
 // ============================================================================
 
 interface CardMovedConfig {
@@ -29,11 +29,17 @@ function createCardMovedTrigger(config: CardMovedConfig): TriggerHandler {
 			const payload = ctx.payload;
 			const targetListId = ctx.project.trello.lists[config.listKey];
 
-			return (
+			// Card moved into the target list
+			const isMove =
 				payload.action.type === 'updateCard' &&
 				payload.action.data.listAfter?.id === targetListId &&
-				payload.action.data.listBefore?.id !== targetListId
-			);
+				payload.action.data.listBefore?.id !== targetListId;
+
+			// Card created directly in the target list
+			const isCreate =
+				payload.action.type === 'createCard' && payload.action.data.list?.id === targetListId;
+
+			return isMove || isCreate;
 		},
 
 		async handle(ctx: TriggerContext): Promise<TriggerResult> {
