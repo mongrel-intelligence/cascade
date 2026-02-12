@@ -180,6 +180,9 @@ function runAgentInDocker(
 		...(process.env.OPENROUTER_API_KEY
 			? ['-e', `OPENROUTER_API_KEY=${process.env.OPENROUTER_API_KEY}`]
 			: []),
+		...(process.env.GITHUB_REVIEWER_TOKEN
+			? ['-e', `GITHUB_REVIEWER_TOKEN=${process.env.GITHUB_REVIEWER_TOKEN}`]
+			: []),
 		// Image
 		IMAGE_NAME,
 		// Command: run the entrypoint script with tsx
