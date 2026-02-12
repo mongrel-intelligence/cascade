@@ -35,7 +35,9 @@ If hooks fail or timeout, the full output will be shown.`,
 		head: z.string().describe('The name of the branch where your changes are implemented'),
 		base: z
 			.string()
-			.describe('The name of the branch you want the changes pulled into (usually "main")'),
+			.describe(
+				'The name of the branch you want the changes pulled into (use the base branch specified in your system prompt)',
+			),
 		draft: z.boolean().optional().describe('Create as a draft pull request (default: false)'),
 		commit: z
 			.boolean()
@@ -56,9 +58,9 @@ If hooks fail or timeout, the full output will be shown.`,
 				title: 'feat: add user authentication',
 				body: '## Summary\n\nAdds OAuth2 authentication flow.\n\n## Changes\n\n- Added login page\n- Integrated with auth provider\n- Added session management',
 				head: 'feature/auth',
-				base: 'main',
+				base: 'dev',
 			},
-			comment: 'Full workflow: commits all changes, pushes, and creates PR',
+			comment: 'Full workflow: commits all changes, pushes, and creates PR against dev branch',
 		},
 		{
 			params: {
