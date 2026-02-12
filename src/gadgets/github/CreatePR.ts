@@ -145,13 +145,36 @@ If hooks fail or timeout, the full output will be shown.`,
 			);
 		}
 
-		const pr = await githubClient.createPR(params.owner, params.repo, {
-			title: params.title,
-			body: params.body,
-			head: params.head,
-			base: params.base,
-			draft: params.draft,
-		});
+		let pr: Awaited<ReturnType<typeof githubClient.createPR>>;
+		try {
+			pr = await githubClient.createPR(params.owner, params.repo, {
+				title: params.title,
+				body: params.body,
+				head: params.head,
+				base: params.base,
+				draft: params.draft,
+			});
+		} catch (error) {
+			// Handle "A pull request already exists" (422) by finding the existing PR
+			if (
+				error instanceof Error &&
+				'status' in error &&
+				error.status === 422 &&
+				error.message.includes('A pull request already exists')
+			) {
+				const existingPR = await githubClient.getOpenPRByBranch(
+					params.owner,
+					params.repo,
+					params.head,
+				);
+				if (existingPR) {
+					recordPRCreation(existingPR.htmlUrl);
+					return `PR already exists for this branch: #${existingPR.number} — ${existingPR.htmlUrl}`;
+				}
+			}
+			throw error;
+		}
+
 		const draftLabel = params.draft ? ' (draft)' : '';
 
 		// Record PR creation for session state (Finish gadget uses this to verify implementation completed)

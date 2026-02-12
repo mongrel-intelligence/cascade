@@ -58,6 +58,14 @@ export class Finish extends Gadget({
 			);
 		}
 
+		// For review agent, require review submission
+		if (state.agentType === 'review' && !state.reviewSubmitted) {
+			throw new Error(
+				'Cannot finish review session without submitting a review. ' +
+					'You must call CreatePRReview to submit your review before calling Finish.',
+			);
+		}
+
 		// For respond-to-review agent, require clean git state and pushed changes
 		if (state.agentType === 'respond-to-review') {
 			if (hasUncommittedChanges()) {
