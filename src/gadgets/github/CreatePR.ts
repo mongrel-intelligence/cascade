@@ -126,6 +126,15 @@ If hooks fail or timeout, the full output will be shown.`,
 		}
 	}
 
+	private async verifyBranchOnRemote(branch: string): Promise<boolean> {
+		const result = await runCommand(
+			'git',
+			['ls-remote', '--heads', 'origin', branch],
+			process.cwd(),
+		);
+		return result.exitCode === 0 && result.stdout.trim().length > 0;
+	}
+
 	override async execute(params: this['params']): Promise<string> {
 		const commitMessage = params.commitMessage || params.title;
 
@@ -137,8 +146,8 @@ If hooks fail or timeout, the full output will be shown.`,
 			await this.pushBranch(params.head);
 		}
 
-		// Verify the branch exists before attempting to create PR
-		const branchExists = await githubClient.branchExists(params.owner, params.repo, params.head);
+		// Verify the branch exists on remote using git protocol (avoids GitHub REST API propagation delay)
+		const branchExists = await this.verifyBranchOnRemote(params.head);
 		if (!branchExists) {
 			throw new Error(
 				`Branch '${params.head}' does not exist on remote. Push the branch first or set push=true.`,
