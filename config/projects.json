@@ -46,6 +46,33 @@
 			}
 		},
 		{
+			"id": "car-dealership",
+			"name": "car-dealership",
+			"repo": "zbigniewsobiecki/car-dealership",
+			"baseBranch": "dev",
+			"branchPrefix": "feature/",
+			"trello": {
+				"boardId": "698db5df2b873930c7c38bc0",
+				"lists": {
+					"briefing": "698db5df2b873930c7c38bbb",
+					"stories": "698db5df2b873930c7c38bbd",
+					"planning": "698db5df2b873930c7c38bb6",
+					"todo": "698db5df2b873930c7c38bb7",
+					"inProgress": "698db5df2b873930c7c38bb8",
+					"inReview": "698db5df2b873930c7c38bb9",
+					"done": "698db5df2b873930c7c38bba",
+					"merged": "698db5df2b873930c7c38bbe",
+					"debug": "698db5df2b873930c7c38bbf"
+				},
+				"labels": {
+					"readyToProcess": "698db5df2b873930c7c38c64",
+					"processing": "698db5df2b873930c7c38c62",
+					"processed": "698db5df2b873930c7c38c61",
+					"error": "698db5df2b873930c7c38c63"
+				}
+			}
+		},
+		{
 			"id": "damisa",
 			"name": "damisa",
 			"repo": "zbigniewsobiecki/damisa",
