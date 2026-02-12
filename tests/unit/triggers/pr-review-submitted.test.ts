@@ -199,7 +199,7 @@ describe('PRReviewSubmittedTrigger', () => {
 			expect(result).toBeNull();
 		});
 
-		it('returns null for reviewer-authored review', async () => {
+		it('triggers for reviewer-authored review (not treated as self)', async () => {
 			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
 			vi.mocked(getReviewerUser).mockResolvedValue('cascade-reviewer');
 
@@ -211,7 +211,7 @@ describe('PRReviewSubmittedTrigger', () => {
 						id: 100,
 						state: 'changes_requested',
 						body: 'Fix this',
-						html_url: 'https://github.com/...',
+						html_url: 'https://github.com/owner/repo/pull/42#pullrequestreview-100',
 						user: { login: 'cascade-reviewer' },
 					},
 				}),
@@ -219,7 +219,9 @@ describe('PRReviewSubmittedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('respond-to-review');
+			expect(result?.agentInput.triggerCommentBody).toBe('Fix this');
 		});
 
 		it('proceeds when getAuthenticatedUser fails', async () => {
