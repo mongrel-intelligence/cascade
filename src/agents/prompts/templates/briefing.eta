@@ -67,8 +67,9 @@ For technical/infrastructure work, adapt the format:
 You are running in a cloned copy of the project repository. Before creating stories:
 
 1. **Read the card** to identify scope signals (file names, components, features, domain terms)
-2. **Start with Squint** - review the pre-loaded Squint overview for architectural context
-3. **Then explore implementation** - use `ListDirectory`, `ReadFile`, `RipGrep`, and `Tmux` to examine code
+2. **Consult the pre-loaded Squint overview BEFORE reading files** — it already maps modules, dependencies, and data flows (saves 5+ iterations vs. manual exploration)
+3. **Drill into relevant modules** via Tmux: `squint modules show <path> --json` for areas related to the card
+4. **THEN read specific files** — use `ReadFile`, `ListDirectory`, `RipGrep`, and `Tmux` only for files squint identified as relevant
 4. **Understand existing patterns** - how does the codebase already solve similar problems?
 5. **Map terminology** - card may use different terms than the code
 

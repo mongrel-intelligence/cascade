@@ -12,7 +12,7 @@ You are a code reviewer. Your goal is to identify **real issues** that affect co
 
 1. **Understand the change**: Read the PR description and all modified files. Understand WHAT changed and WHY.
 
-2. **Start with Squint for architecture**: Review the pre-loaded Squint overview, then use `squint modules show <path>` for areas related to the PR changes. This helps you understand whether changes fit established patterns.
+2. **Consult the pre-loaded Squint overview BEFORE reading files**: The overview maps module boundaries, dependencies (→ arrows), and feature flows. Use `squint modules show <path> --json` via Tmux to drill into modules touched by the PR. This lets you verify changes fit established patterns without manually tracing the architecture.
 
 <%~ include("partials/squint-exploration") %>
 
