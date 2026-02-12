@@ -39,6 +39,11 @@ export const MODEL_RATE_LIMITS: ModelRateLimits = {
 		tokensPerMinute: 500_000,
 		safetyMargin: 0.9,
 	},
+	'openrouter:google/gemini-3-pro-preview': {
+		requestsPerMinute: 100,
+		tokensPerMinute: 500_000,
+		safetyMargin: 0.9,
+	},
 	'openrouter:x-ai/grok-code-fast-1': {
 		requestsPerMinute: 100,
 		tokensPerMinute: 500_000,

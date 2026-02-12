@@ -2,6 +2,10 @@
 	"defaults": {
 		"model": "openrouter:google/gemini-3-flash-preview",
 		"maxIterations": 70,
+		"agentModels": {
+			"planning": "openrouter:google/gemini-3-pro-preview",
+			"review": "openrouter:google/gemini-3-pro-preview"
+		},
 		"agentIterations": {
 			"planning": 50,
 			"briefing": 50

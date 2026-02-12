@@ -5,11 +5,13 @@ import type { TriggerContext } from '../../../src/triggers/types.js';
 vi.mock('../../../src/github/client.js', () => ({
 	githubClient: {
 		getPR: vi.fn(),
+		getPRReviews: vi.fn(),
 		getCheckSuiteStatus: vi.fn(),
 	},
+	getAuthenticatedUser: vi.fn(),
 }));
 
-import { githubClient } from '../../../src/github/client.js';
+import { getAuthenticatedUser, githubClient } from '../../../src/github/client.js';
 
 describe('CheckSuiteSuccessTrigger', () => {
 	const trigger = new CheckSuiteSuccessTrigger();
@@ -138,6 +140,8 @@ describe('CheckSuiteSuccessTrigger', () => {
 				baseRef: 'main',
 				merged: false,
 			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
 			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
 				allPassing: true,
 				totalCount: 2,
@@ -207,6 +211,8 @@ describe('CheckSuiteSuccessTrigger', () => {
 				baseRef: 'main',
 				merged: false,
 			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
 			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
 				allPassing: false,
 				totalCount: 2,
@@ -225,6 +231,73 @@ describe('CheckSuiteSuccessTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toBeNull();
+		});
+
+		it('returns null when PR was already reviewed by us', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
+				{ id: 1, user: { login: 'cascade-bot' }, state: 'approved', body: 'LGTM', submittedAt: '' },
+			]);
+			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
+		});
+
+		it('proceeds when PR has reviews from other users only', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
+				{
+					id: 1,
+					user: { login: 'human-reviewer' },
+					state: 'commented',
+					body: 'Nice work',
+					submittedAt: '',
+				},
+			]);
+			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: true,
+				totalCount: 1,
+				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('review');
 		});
 	});
 });

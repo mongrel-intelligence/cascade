@@ -1,4 +1,4 @@
-import { githubClient } from '../../github/client.js';
+import { getAuthenticatedUser, githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
@@ -55,6 +55,21 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		}
 
 		const cardId = extractTrelloCardId(prDetails.body);
+
+		// Skip if we already reviewed this PR (only fire once per PR)
+		const [reviews, botUser] = await Promise.all([
+			githubClient.getPRReviews(owner, repo, prNumber),
+			getAuthenticatedUser(),
+		]);
+
+		const alreadyReviewed = reviews.some((r) => r.user.login === botUser);
+		if (alreadyReviewed) {
+			logger.info('PR already reviewed by us, skipping', {
+				prNumber,
+				botUser,
+			});
+			return null;
+		}
 
 		// Verify all checks are actually passing (double-check)
 		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
