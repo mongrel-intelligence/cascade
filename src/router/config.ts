@@ -38,6 +38,7 @@ export interface RouterConfig {
 		anthropicApiKey?: string;
 		openaiApiKey?: string;
 		openrouterApiKey?: string;
+		githubReviewerToken?: string;
 	};
 }
 
@@ -71,5 +72,6 @@ export const routerConfig: RouterConfig = {
 		anthropicApiKey: process.env.ANTHROPIC_API_KEY,
 		openaiApiKey: process.env.OPENAI_API_KEY,
 		openrouterApiKey: process.env.OPENROUTER_API_KEY,
+		githubReviewerToken: process.env.GITHUB_REVIEWER_TOKEN,
 	},
 };
