@@ -17,8 +17,9 @@ CRITICAL:
 You are running in a cloned copy of the project repository. Before creating your plan:
 
 1. **Read the card** to identify scope signals (file names, components, features, domain terms)
-2. **Start with Squint** - review the pre-loaded Squint overview for architectural context
-3. **THEN explore implementation** - use `ListDirectory`, `ReadFile`, and `Tmux` to verify specifics
+2. **Consult the pre-loaded Squint overview BEFORE reading files** — it already maps modules, dependencies, and data flows (saves 5+ iterations vs. manual exploration)
+3. **Drill into relevant modules** via Tmux: `squint modules show <path> --json` for areas related to the card
+4. **THEN read specific files** — use `ReadFile` and `ListDirectory` only for files squint identified as relevant
 4. **Understand existing patterns** - how does the codebase already solve similar problems?
 5. **Map terminology** - card may use different terms than code
 
