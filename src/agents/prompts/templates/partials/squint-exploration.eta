@@ -1,20 +1,42 @@
 ### Codebase Understanding (Squint)
 
-If a `.squint.db` file exists at the repository root, the `squint` CLI is available for structured codebase exploration. An overview has been pre-loaded for you.
+Squint is a **pre-computed architectural analysis** of the codebase stored in `.squint.db`. A SquintOverview has already been pre-loaded for you. It contains:
 
-**Exploration strategy (top-down drill-down):**
-1. Review the pre-loaded overview output for the big picture (features, modules, file tree)
-2. Drill into features: `squint features show <slug> --json`
-3. Drill into modules: `squint modules show <path> --json`
-4. Drill into symbols: `squint symbols show <name> --json`
-5. Drill into files: `squint files show <path> --json`
-6. Explore relationships: `squint relationships show --from <id> --to <id> --json`
+- **Features** — high-level capabilities that aggregate data flows showing how data moves through the system (e.g., "user creates vehicle" traces Controller → Service → Model)
+- **Module Tree** — code organization units with dependency arrows (`→`) showing how modules depend on each other. Each `→` represents a real import or call relationship discovered via static analysis
+- **Files** — physical file listing grouped by directory
+
+This is an authoritative architectural map — not a search tool. It already contains the dependency graph, data flows, and module boundaries you would otherwise reconstruct by reading dozens of files.
+
+**Why start here:** Consulting the overview first saves 5+ iterations compared to manual file-by-file exploration. It tells you exactly which modules and files are involved in a given feature, so you can read only the files that matter.
+
+**Top-down drill-down (run squint commands via Tmux):**
+1. Review the pre-loaded SquintOverview — identify relevant modules and features for your task
+2. Drill into relevant modules: `Tmux(command="squint modules show <module.path> --json")` — shows files, dependencies, dependents
+3. Drill into features: `Tmux(command="squint features show <slug> --json")` — shows complete data flow
+4. Drill into symbols: `Tmux(command="squint symbols show <name> --json")` — shows relationships and call sites
+5. THEN use ReadFile on the specific files squint identified — you now know exactly which files matter
+
+**Example — adding pagination to a vehicle listing:**
+
+The pre-loaded overview shows:
+```
+backend.services.vehicles → backend.data.models, shared-types.entities.vehicles
+Feature "Vehicle Inventory": VehicleController → VehicleService → VehicleModel
+```
+From this you already know the full dependency chain. Next:
+- `Tmux(command="squint modules show backend.services.vehicles --json")` → reveals exact files and what depends on this module
+- Then ReadFile only the 2-3 files that need pagination changes
+
+Without squint, you would spend 5+ iterations calling ReadFile on controllers, services, models, types, and hooks to trace this same chain.
 
 **When to use squint:**
-- ALWAYS start by reviewing the pre-loaded overview before reading files
-- Before modifying a module, check its squint entry to understand purpose and interactions
-- Use `squint modules show <path>` to understand module boundaries and dependencies
-- Use `squint symbols show <name>` to see a symbol's relationships, flows, and call sites
-- Use `squint files show <path>` before reading a file to understand its role and imports
+- FIRST for any task: review the pre-loaded SquintOverview before calling ReadFile or ListDirectory
+- Before modifying a module: `squint modules show <path>` reveals dependencies you might break
+- Before tracing a flow: `squint features show <slug>` shows the complete data path
+- To find a symbol's callers: `squint symbols show <name>` shows relationships and call sites
 
-**Run squint commands via Tmux.** Use `--json` flag for structured output when you need to parse results.
+**When to use ReadFile/RipGrep instead:**
+- Reading actual file contents (squint shows structure, not source code)
+- Searching for specific string patterns or regex matches
+- After squint has told you which files are relevant

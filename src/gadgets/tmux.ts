@@ -769,6 +769,31 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 		{
 			params: {
 				action: 'start',
+				comment: 'Exploring vehicle service module dependencies',
+				session: 'squint-modules',
+				command: 'squint modules show backend.services.vehicles --json',
+				wait: 15000,
+			},
+			output:
+				'session=squint-modules status=exited exit_code=0\n\n{"path":"backend.services.vehicles","description":"Vehicle business logic","files":["src/services/vehicles.service.ts"],"dependencies":["backend.data.models","shared-types.entities.vehicles"],"dependents":["backend.api.vehicles"]}',
+			comment:
+				"Use squint to see a module's files, dependencies, and dependents before reading code",
+		},
+		{
+			params: {
+				action: 'start',
+				comment: 'Tracing vehicle search data flow',
+				session: 'squint-features',
+				command: 'squint features show vehicle-inventory --json',
+				wait: 15000,
+			},
+			output:
+				'session=squint-features status=exited exit_code=0\n\n{"slug":"vehicle-inventory","description":"Vehicle CRUD and search","flows":["VehicleController.getAll -> VehicleService.getAll -> VehicleModel.findAll"],"modules":["backend.api.vehicles","backend.services.vehicles","backend.data.models"]}',
+			comment: 'Use squint to trace how data flows through the system before exploring code',
+		},
+		{
+			params: {
+				action: 'start',
 				comment: 'Running lint and tests in sequence',
 				session: 'pipeline',
 				command: 'npm run lint && npm test',
