@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { TaskCompletionSignal } from 'llmist';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Finish } from '../../../src/gadgets/Finish.js';
@@ -6,10 +7,18 @@ import {
 	recordPRCreation,
 	recordReviewSubmission,
 } from '../../../src/gadgets/sessionState.js';
+import { githubClient } from '../../../src/github/client.js';
 
-// Mock git commands used by Finish for respond-to-review checks
+// Mock git commands used by Finish for respond-to-review checks and PR lookup
 vi.mock('node:child_process', () => ({
 	execSync: vi.fn().mockReturnValue(''),
+}));
+
+// Mock the github client for PR fallback check
+vi.mock('../../../src/github/client.js', () => ({
+	githubClient: {
+		getOpenPRByBranch: vi.fn(),
+	},
 }));
 
 describe('Finish gadget', () => {
@@ -17,10 +26,10 @@ describe('Finish gadget', () => {
 		vi.clearAllMocks();
 	});
 
-	it('throws TaskCompletionSignal when no agent type is set', () => {
+	it('throws TaskCompletionSignal when no agent type is set', async () => {
 		initSessionState('unknown');
 		const gadget = new Finish();
-		expect(() => gadget.execute({ comment: 'Done' })).toThrow(TaskCompletionSignal);
+		await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(TaskCompletionSignal);
 	});
 
 	describe('implementation agent', () => {
@@ -28,17 +37,51 @@ describe('Finish gadget', () => {
 			initSessionState('implementation');
 		});
 
-		it('rejects finish without PR creation', () => {
+		it('rejects finish without PR creation and no PR on branch', async () => {
+			vi.mocked(execSync).mockImplementation((cmd: string) => {
+				if (cmd.includes('rev-parse')) return 'feature/test';
+				if (cmd.includes('get-url')) return 'git@github.com:owner/repo.git';
+				return '';
+			});
+			vi.mocked(githubClient.getOpenPRByBranch).mockResolvedValue(null);
+
 			const gadget = new Finish();
-			expect(() => gadget.execute({ comment: 'Done' })).toThrow(
+			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(
 				'Cannot finish implementation session without creating a PR',
 			);
 		});
 
-		it('allows finish after PR creation', () => {
+		it('allows finish after PR creation via CreatePR gadget', async () => {
 			recordPRCreation('https://github.com/owner/repo/pull/1');
 			const gadget = new Finish();
-			expect(() => gadget.execute({ comment: 'Done' })).toThrow(TaskCompletionSignal);
+			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(TaskCompletionSignal);
+		});
+
+		it('allows finish when PR exists on branch but was not created via CreatePR', async () => {
+			vi.mocked(execSync).mockImplementation((cmd: string) => {
+				if (cmd.includes('rev-parse')) return 'feature/test';
+				if (cmd.includes('get-url')) return 'git@github.com:owner/repo.git';
+				return '';
+			});
+			vi.mocked(githubClient.getOpenPRByBranch).mockResolvedValue({
+				number: 5,
+				htmlUrl: 'https://github.com/owner/repo/pull/5',
+				title: 'Ad-hoc PR',
+			});
+
+			const gadget = new Finish();
+			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(TaskCompletionSignal);
+		});
+
+		it('rejects when PR lookup fails', async () => {
+			vi.mocked(execSync).mockImplementation(() => {
+				throw new Error('git not available');
+			});
+
+			const gadget = new Finish();
+			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(
+				'Cannot finish implementation session without creating a PR',
+			);
 		});
 	});
 
@@ -47,17 +90,17 @@ describe('Finish gadget', () => {
 			initSessionState('review');
 		});
 
-		it('rejects finish without submitting a review', () => {
+		it('rejects finish without submitting a review', async () => {
 			const gadget = new Finish();
-			expect(() => gadget.execute({ comment: 'Done' })).toThrow(
+			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(
 				'Cannot finish review session without submitting a review',
 			);
 		});
 
-		it('allows finish after review submission', () => {
+		it('allows finish after review submission', async () => {
 			recordReviewSubmission('https://github.com/owner/repo/pull/1#pullrequestreview-123');
 			const gadget = new Finish();
-			expect(() => gadget.execute({ comment: 'Done' })).toThrow(TaskCompletionSignal);
+			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(TaskCompletionSignal);
 		});
 	});
 });

@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process';
 import { Gadget, TaskCompletionSignal, z } from 'llmist';
+import { githubClient } from '../github/client.js';
 import { getSessionState } from './sessionState.js';
 
 function hasUncommittedChanges(): boolean {
@@ -8,6 +9,20 @@ function hasUncommittedChanges(): boolean {
 		return status.trim().length > 0;
 	} catch {
 		return true; // Assume uncommitted if check fails
+	}
+}
+
+async function findPRForCurrentBranch(): Promise<string | null> {
+	try {
+		const branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+		const remote = execSync('git remote get-url origin', { encoding: 'utf-8' }).trim();
+		const match = remote.match(/github\.com[:/](.+?)\/(.+?)(?:\.git)?$/);
+		if (!match) return null;
+		const [, owner, repo] = match;
+		const pr = await githubClient.getOpenPRByBranch(owner, repo, branch);
+		return pr?.htmlUrl ?? null;
+	} catch {
+		return null;
 	}
 }
 
@@ -47,15 +62,19 @@ export class Finish extends Gadget({
 		},
 	],
 }) {
-	override execute(params: this['params']): never {
+	override async execute(params: this['params']): Promise<never> {
 		const state = getSessionState();
 
-		// For implementation agent, require PR creation
+		// For implementation agent, require PR creation (with fallback check for ad-hoc PRs)
 		if (state.agentType === 'implementation' && !state.prCreated) {
-			throw new Error(
-				'Cannot finish implementation session without creating a PR. ' +
-					'You must call CreatePR to submit your changes before calling Finish.',
-			);
+			const prUrl = await findPRForCurrentBranch();
+			if (!prUrl) {
+				throw new Error(
+					'Cannot finish implementation session without creating a PR. ' +
+						'You must call CreatePR to submit your changes before calling Finish.',
+				);
+			}
+			// PR exists but wasn't created via CreatePR gadget — allow finishing
 		}
 
 		// For review agent, require review submission

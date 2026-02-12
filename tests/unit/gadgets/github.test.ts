@@ -11,7 +11,6 @@ vi.mock('../../../src/gadgets/sessionState.js', () => ({
 // Mock the github client
 vi.mock('../../../src/github/client.js', () => ({
 	githubClient: {
-		branchExists: vi.fn(),
 		createPR: vi.fn(),
 		getOpenPRByBranch: vi.fn(),
 	},
@@ -46,7 +45,8 @@ describe('GitHub Gadgets', () => {
 		});
 
 		it('throws error when branch does not exist (commit=false, push=false)', async () => {
-			vi.mocked(githubClient.branchExists).mockResolvedValue(false);
+			// git ls-remote returns empty stdout when branch doesn't exist
+			vi.mocked(runCommand).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
 
 			const gadget = new CreatePR();
 			await expect(
@@ -66,7 +66,12 @@ describe('GitHub Gadgets', () => {
 		});
 
 		it('creates PR when branch exists (commit=false, push=false)', async () => {
-			vi.mocked(githubClient.branchExists).mockResolvedValue(true);
+			// git ls-remote returns ref line when branch exists
+			vi.mocked(runCommand).mockResolvedValue({
+				stdout: 'abc123\trefs/heads/feature/test',
+				stderr: '',
+				exitCode: 0,
+			});
 			vi.mocked(githubClient.createPR).mockResolvedValue({
 				number: 42,
 				htmlUrl: 'https://github.com/test-owner/test-repo/pull/42',
@@ -94,11 +99,21 @@ describe('GitHub Gadgets', () => {
 				base: 'main',
 				draft: undefined,
 			});
-			expect(runCommand).not.toHaveBeenCalled();
+			// Only ls-remote should have been called (no commit/push)
+			expect(runCommand).toHaveBeenCalledTimes(1);
+			expect(runCommand).toHaveBeenCalledWith(
+				'git',
+				['ls-remote', '--heads', 'origin', 'feature/test'],
+				expect.any(String),
+			);
 		});
 
 		it('includes draft label when creating draft PR', async () => {
-			vi.mocked(githubClient.branchExists).mockResolvedValue(true);
+			vi.mocked(runCommand).mockResolvedValue({
+				stdout: 'abc123\trefs/heads/feature/draft',
+				stderr: '',
+				exitCode: 0,
+			});
 			vi.mocked(githubClient.createPR).mockResolvedValue({
 				number: 43,
 				htmlUrl: 'https://github.com/test-owner/test-repo/pull/43',
@@ -122,8 +137,12 @@ describe('GitHub Gadgets', () => {
 		});
 
 		it('commits and pushes branch before creating PR by default', async () => {
-			vi.mocked(runCommand).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
-			vi.mocked(githubClient.branchExists).mockResolvedValue(true);
+			vi.mocked(runCommand).mockImplementation(async (_cmd, args) => {
+				if (args?.[0] === 'ls-remote') {
+					return { stdout: 'abc123\trefs/heads/feature/test', stderr: '', exitCode: 0 };
+				}
+				return { stdout: '', stderr: '', exitCode: 0 };
+			});
 			vi.mocked(githubClient.createPR).mockResolvedValue({
 				number: 44,
 				htmlUrl: 'https://github.com/test-owner/test-repo/pull/44',
@@ -158,8 +177,12 @@ describe('GitHub Gadgets', () => {
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add
 				.mockResolvedValueOnce({ stdout: 'M file.ts', stderr: '', exitCode: 0 }) // git status --porcelain
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git commit
-				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }); // git push
-			vi.mocked(githubClient.branchExists).mockResolvedValue(true);
+				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git push
+				.mockResolvedValueOnce({
+					stdout: 'abc123\trefs/heads/feature/test',
+					stderr: '',
+					exitCode: 0,
+				}); // git ls-remote
 			vi.mocked(githubClient.createPR).mockResolvedValue({
 				number: 45,
 				htmlUrl: 'https://github.com/test-owner/test-repo/pull/45',
@@ -189,8 +212,12 @@ describe('GitHub Gadgets', () => {
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add
 				.mockResolvedValueOnce({ stdout: 'M file.ts', stderr: '', exitCode: 0 }) // git status --porcelain
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git commit
-				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }); // git push
-			vi.mocked(githubClient.branchExists).mockResolvedValue(true);
+				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git push
+				.mockResolvedValueOnce({
+					stdout: 'abc123\trefs/heads/feature/test',
+					stderr: '',
+					exitCode: 0,
+				}); // git ls-remote
 			vi.mocked(githubClient.createPR).mockResolvedValue({
 				number: 46,
 				htmlUrl: 'https://github.com/test-owner/test-repo/pull/46',
@@ -216,8 +243,12 @@ describe('GitHub Gadgets', () => {
 		});
 
 		it('skips commit when commit=false', async () => {
-			vi.mocked(runCommand).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
-			vi.mocked(githubClient.branchExists).mockResolvedValue(true);
+			vi.mocked(runCommand).mockImplementation(async (_cmd, args) => {
+				if (args?.[0] === 'ls-remote') {
+					return { stdout: 'abc123\trefs/heads/feature/test', stderr: '', exitCode: 0 };
+				}
+				return { stdout: '', stderr: '', exitCode: 0 };
+			});
 			vi.mocked(githubClient.createPR).mockResolvedValue({
 				number: 47,
 				htmlUrl: 'https://github.com/test-owner/test-repo/pull/47',
@@ -272,7 +303,6 @@ describe('GitHub Gadgets', () => {
 				}),
 			).rejects.toThrow('COMMIT FAILED');
 
-			expect(githubClient.branchExists).not.toHaveBeenCalled();
 			expect(githubClient.createPR).not.toHaveBeenCalled();
 		});
 
@@ -298,7 +328,6 @@ describe('GitHub Gadgets', () => {
 				}),
 			).rejects.toThrow('PUSH FAILED');
 
-			expect(githubClient.branchExists).not.toHaveBeenCalled();
 			expect(githubClient.createPR).not.toHaveBeenCalled();
 		});
 
@@ -306,7 +335,11 @@ describe('GitHub Gadgets', () => {
 			const error = new Error('A pull request already exists for test-owner:feature/test');
 			Object.assign(error, { status: 422 });
 
-			vi.mocked(githubClient.branchExists).mockResolvedValue(true);
+			vi.mocked(runCommand).mockResolvedValue({
+				stdout: 'abc123\trefs/heads/feature/test',
+				stderr: '',
+				exitCode: 0,
+			});
 			vi.mocked(githubClient.createPR).mockRejectedValue(error);
 			vi.mocked(githubClient.getOpenPRByBranch).mockResolvedValue({
 				number: 4,
@@ -340,7 +373,11 @@ describe('GitHub Gadgets', () => {
 			const error = new Error('Internal Server Error');
 			Object.assign(error, { status: 500 });
 
-			vi.mocked(githubClient.branchExists).mockResolvedValue(true);
+			vi.mocked(runCommand).mockResolvedValue({
+				stdout: 'abc123\trefs/heads/feature/test',
+				stderr: '',
+				exitCode: 0,
+			});
 			vi.mocked(githubClient.createPR).mockRejectedValue(error);
 
 			const gadget = new CreatePR();
