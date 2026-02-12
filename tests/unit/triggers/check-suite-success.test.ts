@@ -391,6 +391,64 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
+		it('ignores COMMENTED reviews from our bot when checking for prior review', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
+				{
+					id: 1,
+					user: { login: 'cascade-reviewer' },
+					state: 'changes_requested',
+					body: 'Please fix',
+					submittedAt: '',
+					commitId: 'old-sha',
+				},
+				{
+					id: 2,
+					user: { login: 'cascade-bot' },
+					state: 'commented',
+					body: '',
+					submittedAt: '',
+					commitId: 'sha123',
+				},
+				{
+					id: 3,
+					user: { login: 'cascade-bot' },
+					state: 'commented',
+					body: '',
+					submittedAt: '',
+					commitId: 'sha123',
+				},
+			]);
+			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
+			vi.mocked(getReviewerUser).mockResolvedValue('cascade-reviewer');
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: true,
+				totalCount: 1,
+				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+			});
+
+			const ctx: TriggerContext = {
+				project: { ...mockProject, reviewerTokenEnv: 'REVIEWER_TOKEN' },
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('review');
+			expect(githubClient.getCheckSuiteStatus).toHaveBeenCalled();
+		});
+
 		it('proceeds when PR has reviews from other users only', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
