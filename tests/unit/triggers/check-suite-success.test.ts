@@ -9,9 +9,10 @@ vi.mock('../../../src/github/client.js', () => ({
 		getCheckSuiteStatus: vi.fn(),
 	},
 	getAuthenticatedUser: vi.fn(),
+	getReviewerUser: vi.fn(),
 }));
 
-import { getAuthenticatedUser, githubClient } from '../../../src/github/client.js';
+import { getAuthenticatedUser, getReviewerUser, githubClient } from '../../../src/github/client.js';
 
 describe('CheckSuiteSuccessTrigger', () => {
 	const trigger = new CheckSuiteSuccessTrigger();
@@ -50,6 +51,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(getReviewerUser).mockResolvedValue(null);
 	});
 
 	describe('matches', () => {
@@ -258,6 +260,42 @@ describe('CheckSuiteSuccessTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toBeNull();
+			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
+		});
+
+		it('returns null when PR was already reviewed by reviewer identity', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
+				{
+					id: 1,
+					user: { login: 'cascade-reviewer' },
+					state: 'approved',
+					body: 'LGTM',
+					submittedAt: '',
+				},
+			]);
+			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
+			vi.mocked(getReviewerUser).mockResolvedValue('cascade-reviewer');
+
+			const ctx: TriggerContext = {
+				project: { ...mockProject, reviewerTokenEnv: 'REVIEWER_TOKEN' },
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+			expect(getReviewerUser).toHaveBeenCalledWith('REVIEWER_TOKEN');
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 

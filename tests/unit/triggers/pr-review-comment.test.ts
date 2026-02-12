@@ -4,12 +4,13 @@ import type { TriggerContext } from '../../../src/triggers/types.js';
 
 vi.mock('../../../src/github/client.js', () => ({
 	getAuthenticatedUser: vi.fn(),
+	getReviewerUser: vi.fn(),
 	githubClient: {
 		getPR: vi.fn(),
 	},
 }));
 
-import { getAuthenticatedUser, githubClient } from '../../../src/github/client.js';
+import { getAuthenticatedUser, getReviewerUser, githubClient } from '../../../src/github/client.js';
 
 describe('PRReviewCommentTrigger', () => {
 	const trigger = new PRReviewCommentTrigger();
@@ -56,6 +57,7 @@ describe('PRReviewCommentTrigger', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(getReviewerUser).mockResolvedValue(null);
 	});
 
 	describe('matches', () => {
@@ -185,6 +187,31 @@ describe('PRReviewCommentTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toBeNull();
+		});
+
+		it('returns null for reviewer-authored comment', async () => {
+			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
+			vi.mocked(getReviewerUser).mockResolvedValue('cascade-reviewer');
+
+			const ctx: TriggerContext = {
+				project: { ...mockProject, reviewerTokenEnv: 'REVIEWER_TOKEN' },
+				source: 'github',
+				payload: makeReviewCommentPayload({
+					comment: {
+						id: 300,
+						body: 'Reviewer comment',
+						path: 'src/index.ts',
+						line: 42,
+						user: { login: 'cascade-reviewer' },
+						html_url: 'https://github.com/...',
+					},
+				}),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+			expect(githubClient.getPR).not.toHaveBeenCalled();
 		});
 
 		it('proceeds when getAuthenticatedUser fails', async () => {

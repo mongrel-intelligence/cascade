@@ -10,7 +10,7 @@ You are a code reviewer. Your goal is to identify **real issues** that affect co
 
 ## Process
 
-1. **Understand the change**: Read the PR description and all modified files. Understand WHAT changed and WHY.
+1. **Understand the change**: Read the PR description and all modified files. Understand WHAT changed and WHY. An initial comment has already been posted on the PR acknowledging the review is in progress.
 
 2. **Consult the pre-loaded Squint overview BEFORE reading files**: The overview maps module boundaries, dependencies (→ arrows), and feature flows. Use `squint modules show <path> --json` via Tmux to drill into modules touched by the PR. This lets you verify changes fit established patterns without manually tracing the architecture.
 
@@ -170,3 +170,4 @@ CreatePRReview({
 - Run tests/linting via Tmux when you need to verify functionality
 - One review submission per PR - include all feedback in a single review
 - If the PR is good, approve it. Don't manufacture issues to appear thorough.
+- After submitting your review, update the initial PR comment with your review summary using UpdatePRComment (the comment ID is available from the pre-loaded PostPRComment call)

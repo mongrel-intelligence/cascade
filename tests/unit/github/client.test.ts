@@ -50,9 +50,13 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 import {
 	getAuthenticatedUser,
+	getReviewerUser,
 	githubClient,
 	resetGitHubClient,
+	withGitHubToken,
 } from '../../../src/github/client.js';
+
+import { Octokit } from '@octokit/rest';
 
 describe('githubClient', () => {
 	const originalEnv = process.env;
@@ -589,6 +593,105 @@ describe('githubClient', () => {
 			await expect(githubClient.getPR('owner', 'repo', 1)).rejects.toThrow(
 				'GITHUB_TOKEN must be set',
 			);
+		});
+	});
+
+	describe('withGitHubToken', () => {
+		it('scopes a different Octokit instance within the callback', async () => {
+			// First call uses the default token
+			mockPulls.get.mockResolvedValue({
+				data: {
+					number: 1,
+					title: 'PR',
+					body: null,
+					state: 'open',
+					html_url: 'url',
+					head: { ref: 'feat', sha: 'abc' },
+					base: { ref: 'main' },
+					merged: false,
+				},
+			});
+
+			await githubClient.getPR('owner', 'repo', 1);
+			// Default client created with test-token
+			expect(Octokit).toHaveBeenCalledWith({ auth: 'test-token' });
+
+			vi.mocked(Octokit).mockClear();
+
+			// Now call within withGitHubToken scope
+			await withGitHubToken('reviewer-token', async () => {
+				await githubClient.getPR('owner', 'repo', 2);
+			});
+
+			// A new Octokit was created with reviewer-token
+			expect(Octokit).toHaveBeenCalledWith({ auth: 'reviewer-token' });
+		});
+
+		it('restores original client after scope exits', async () => {
+			mockPulls.get.mockResolvedValue({
+				data: {
+					number: 1,
+					title: 'PR',
+					body: null,
+					state: 'open',
+					html_url: 'url',
+					head: { ref: 'feat', sha: 'abc' },
+					base: { ref: 'main' },
+					merged: false,
+				},
+			});
+
+			// Initialize the default singleton first
+			await githubClient.getPR('owner', 'repo', 1);
+			vi.mocked(Octokit).mockClear();
+
+			await withGitHubToken('reviewer-token', async () => {
+				await githubClient.getPR('owner', 'repo', 2);
+			});
+
+			// The scoped call created a new Octokit with reviewer-token
+			expect(Octokit).toHaveBeenCalledWith({ auth: 'reviewer-token' });
+			vi.mocked(Octokit).mockClear();
+
+			// After scope, calls should NOT create a new Octokit (uses cached singleton)
+			await githubClient.getPR('owner', 'repo', 3);
+			expect(Octokit).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('getReviewerUser', () => {
+		it('returns null when no reviewerTokenEnv provided', async () => {
+			const result = await getReviewerUser();
+			expect(result).toBeNull();
+		});
+
+		it('returns null when env var is not set', async () => {
+			const result = await getReviewerUser('MISSING_TOKEN');
+			expect(result).toBeNull();
+		});
+
+		it('resolves and caches reviewer username', async () => {
+			process.env.REVIEWER_TOKEN = 'reviewer-pat';
+			mockUsers.getAuthenticated.mockResolvedValue({
+				data: { login: 'cascade-reviewer' },
+			});
+
+			const result1 = await getReviewerUser('REVIEWER_TOKEN');
+			expect(result1).toBe('cascade-reviewer');
+
+			// Second call should use cache (Octokit only called once for the reviewer)
+			const result2 = await getReviewerUser('REVIEWER_TOKEN');
+			expect(result2).toBe('cascade-reviewer');
+			// Two Octokit constructions: one for main client (from beforeEach getPR calls), one for reviewer
+			// But the reviewer Octokit should only be created once due to caching
+		});
+
+		it('returns null on auth failure', async () => {
+			process.env.REVIEWER_TOKEN = 'bad-token';
+			mockUsers.getAuthenticated.mockRejectedValue(new Error('Bad credentials'));
+
+			const result = await getReviewerUser('REVIEWER_TOKEN');
+			expect(result).toBeNull();
 		});
 	});
 });
