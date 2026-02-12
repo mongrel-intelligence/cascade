@@ -63,8 +63,12 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			getReviewerUser(ctx.project.reviewerTokenEnv),
 		]);
 
+		// Only consider actual reviews (approved/changes_requested), not COMMENTED
+		// which are reply acknowledgments posted by respond-to-review agent
 		const ourReviews = reviews.filter(
-			(r) => r.user.login === botUser || (reviewerUser && r.user.login === reviewerUser),
+			(r) =>
+				(r.user.login === botUser || (reviewerUser && r.user.login === reviewerUser)) &&
+				(r.state === 'approved' || r.state === 'changes_requested'),
 		);
 		if (ourReviews.length > 0) {
 			const latestReview = ourReviews[ourReviews.length - 1];
