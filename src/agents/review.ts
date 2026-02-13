@@ -1,6 +1,5 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { createLogger } from 'llmist';
 
 import { REVIEW_FILE_CONTENT_TOKEN_LIMIT, estimateTokens } from '../config/reviewConfig.js';
 import { Finish } from '../gadgets/Finish.js';
@@ -15,25 +14,28 @@ import {
 	UpdatePRComment,
 	formatCheckStatus,
 } from '../gadgets/github/index.js';
-import { recordInitialComment } from '../gadgets/sessionState.js';
 import { Tmux } from '../gadgets/tmux.js';
 import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
-import { githubClient, withGitHubToken } from '../github/client.js';
-import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
+import { withGitHubToken } from '../github/client.js';
+import { githubClient } from '../github/client.js';
+import type { AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
-import { type BuilderType, createConfiguredBuilder } from './shared/builderFactory.js';
-import { executeAgentLifecycle } from './shared/lifecycle.js';
+import {
+	type GitHubAgentContext,
+	type GitHubAgentDefinition,
+	type GitHubAgentInput,
+	createInitialPRComment,
+	executeGitHubAgent,
+} from './shared/githubAgent.js';
 import { resolveModelConfig } from './shared/modelResolution.js';
 import { type PRDiff, formatPRDetails, formatPRDiff } from './shared/prFormatting.js';
-import { setupRepository } from './shared/repository.js';
 import {
 	injectContextFiles,
 	injectSquintContext,
 	injectSyntheticCall,
 } from './shared/syntheticCalls.js';
-import type { TrackingContext } from './utils/tracking.js';
 
-interface ReviewAgentInput extends AgentInput {
+interface ReviewAgentInput extends GitHubAgentInput {
 	prNumber: number;
 	prBranch: string;
 	repoFullName: string;
@@ -82,16 +84,12 @@ async function readPRFileContents(repoDir: string, prDiff: PRDiff): Promise<PRFi
 // Context Building
 // ============================================================================
 
-interface ReviewContextData {
-	systemPrompt: string;
-	model: string;
-	maxIterations: number;
+interface ReviewContextData extends GitHubAgentContext {
 	contextFiles: Awaited<ReturnType<typeof resolveModelConfig>>['contextFiles'];
 	prDetailsFormatted: string;
 	diffFormatted: string;
 	checkStatusFormatted: string;
 	fileContents: PRFileContents;
-	prompt: string;
 }
 
 async function buildReviewContext(
@@ -176,11 +174,17 @@ ${skippedFiles.map((f) => `- ${f}`).join('\n')}`;
 }
 
 // ============================================================================
-// Agent Builder
+// Agent Definition
 // ============================================================================
 
-function getReviewGadgets() {
-	return [
+const reviewAgentDefinition: GitHubAgentDefinition<ReviewAgentInput, ReviewContextData> = {
+	agentType: 'review',
+	headerMessage: '🔍 Reviewing PR...',
+	initialCommentDescription: 'Post initial review status comment',
+	timeoutMessage: '⚠️ Review agent timed out while reviewing the PR.',
+	loggerPrefix: 'review',
+
+	getGadgets: () => [
 		new ListDirectory(),
 		new ReadFile(),
 		new Tmux(),
@@ -194,198 +198,108 @@ function getReviewGadgets() {
 		new CreatePRReview(),
 		new UpdatePRComment(),
 		new Finish(),
-	];
-}
+	],
 
-function createReviewAgentBuilder(
-	client: import('llmist').LLMist,
-	ctx: ReviewContextData,
-	llmistLogger: ReturnType<typeof createLogger>,
-	trackingContext: TrackingContext,
-	logWriter: (level: string, message: string, context?: Record<string, unknown>) => void,
-	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
-	repoDir: string,
-	owner: string,
-	repo: string,
-): BuilderType {
-	return createConfiguredBuilder({
-		client,
-		agentType: 'review',
-		model: ctx.model,
-		systemPrompt: ctx.systemPrompt,
-		maxIterations: ctx.maxIterations,
-		llmistLogger,
+	postInitialComment: (input, id, headerMessage) =>
+		createInitialPRComment(input.prNumber, id, headerMessage),
+
+	buildContext: ({ owner, repo }, input, repoDir, log) =>
+		buildReviewContext(
+			owner,
+			repo,
+			input.prNumber,
+			repoDir,
+			input.project,
+			input.config,
+			log,
+			input.modelOverride,
+		),
+
+	async injectSyntheticCalls({
+		builder,
+		ctx,
 		trackingContext,
-		logWriter,
-		llmCallLogger,
 		repoDir,
-		gadgets: getReviewGadgets(),
-		githubProgress: {
-			owner,
-			repo,
-			headerMessage: '🔍 Reviewing PR...',
-			agentType: 'review',
-			maxIterations: ctx.maxIterations,
-		},
-	});
-}
-
-async function injectReviewSyntheticCalls(
-	initialBuilder: BuilderType,
-	owner: string,
-	repo: string,
-	prNumber: number,
-	ctx: ReviewContextData,
-	trackingContext: TrackingContext,
-	repoDir: string,
-): Promise<BuilderType> {
-	// Post initial "reviewing" comment on the PR
-	const initialCommentBody = '🔍 Reviewing PR...';
-	const initialComment = await githubClient.createPRComment(
-		owner,
-		repo,
-		prNumber,
-		initialCommentBody,
-	);
-	recordInitialComment(initialComment.id);
-	let builder = injectSyntheticCall(
-		initialBuilder,
-		trackingContext,
-		'PostPRComment',
-		{
-			comment: 'Post initial review status comment',
-			owner,
-			repo,
-			prNumber,
-			body: initialCommentBody,
-		},
-		`Comment posted (id: ${initialComment.id}): ${initialComment.htmlUrl}`,
-		'gc_initial_comment',
-	);
-
-	// Inject PR details, diff, and check status
-	builder = injectSyntheticCall(
-		builder,
-		trackingContext,
-		'GetPRDetails',
-		{ comment: 'Pre-fetching PR details for review context', owner, repo, prNumber },
-		ctx.prDetailsFormatted,
-		'gc_pr_details',
-	);
-
-	builder = injectSyntheticCall(
-		builder,
-		trackingContext,
-		'GetPRDiff',
-		{ comment: 'Pre-fetching PR diff for code review', owner, repo, prNumber },
-		ctx.diffFormatted,
-		'gc_pr_diff',
-	);
-
-	builder = injectSyntheticCall(
-		builder,
-		trackingContext,
-		'GetPRChecks',
-		{ comment: 'Pre-fetching CI check status for review', owner, repo, prNumber },
-		ctx.checkStatusFormatted,
-		'gc_pr_checks',
-	);
-
-	// Inject context files (CLAUDE.md, README.md, etc.)
-	builder = injectContextFiles(builder, trackingContext, ctx.contextFiles);
-
-	// Inject Squint overview BEFORE file contents — agent sees architectural map
-	// before encountering specific file contents
-	builder = injectSquintContext(builder, trackingContext, repoDir);
-
-	// Inject full contents of PR changed files (up to token limit)
-	for (let i = 0; i < ctx.fileContents.included.length; i++) {
-		const file = ctx.fileContents.included[i];
-		builder = injectSyntheticCall(
+		id: { owner, repo },
+		input,
+	}) {
+		let b = injectSyntheticCall(
 			builder,
 			trackingContext,
-			'ReadFile',
-			{ comment: `Pre-fetching ${file.path} for review`, filePath: file.path },
-			`path=${file.path}\n\n${file.content}`,
-			`gc_file_${i + 1}`,
+			'GetPRDetails',
+			{
+				comment: 'Pre-fetching PR details for review context',
+				owner,
+				repo,
+				prNumber: input.prNumber,
+			},
+			ctx.prDetailsFormatted,
+			'gc_pr_details',
 		);
-	}
 
-	return builder;
-}
+		b = injectSyntheticCall(
+			b,
+			trackingContext,
+			'GetPRDiff',
+			{ comment: 'Pre-fetching PR diff for code review', owner, repo, prNumber: input.prNumber },
+			ctx.diffFormatted,
+			'gc_pr_diff',
+		);
+
+		b = injectSyntheticCall(
+			b,
+			trackingContext,
+			'GetPRChecks',
+			{ comment: 'Pre-fetching CI check status for review', owner, repo, prNumber: input.prNumber },
+			ctx.checkStatusFormatted,
+			'gc_pr_checks',
+		);
+
+		// Inject context files (CLAUDE.md, README.md, etc.)
+		b = injectContextFiles(b, trackingContext, ctx.contextFiles);
+
+		// Inject Squint overview BEFORE file contents — agent sees architectural map
+		// before encountering specific file contents
+		b = injectSquintContext(b, trackingContext, repoDir);
+
+		// Inject full contents of PR changed files (up to token limit)
+		for (let i = 0; i < ctx.fileContents.included.length; i++) {
+			const file = ctx.fileContents.included[i];
+			b = injectSyntheticCall(
+				b,
+				trackingContext,
+				'ReadFile',
+				{ comment: `Pre-fetching ${file.path} for review`, filePath: file.path },
+				`path=${file.path}\n\n${file.content}`,
+				`gc_file_${i + 1}`,
+			);
+		}
+
+		return b;
+	},
+
+	wrapExecution(input, runLifecycle) {
+		const reviewerToken = input.project.reviewerTokenEnv
+			? process.env[input.project.reviewerTokenEnv]
+			: undefined;
+
+		if (input.project.reviewerTokenEnv && !reviewerToken) {
+			logger.warn('Reviewer token env configured but not set, falling back to main token', {
+				reviewerTokenEnv: input.project.reviewerTokenEnv,
+			});
+		}
+
+		if (reviewerToken) {
+			return withGitHubToken(reviewerToken, runLifecycle);
+		}
+		return runLifecycle();
+	},
+};
 
 // ============================================================================
 // Review Agent Execution
 // ============================================================================
 
 export async function executeReviewAgent(input: ReviewAgentInput): Promise<AgentResult> {
-	const { project, config, prNumber, prBranch, repoFullName, interactive } = input;
-
-	// Parse owner/repo from repoFullName
-	const [owner, repo] = repoFullName.split('/');
-	if (!owner || !repo) {
-		return { success: false, output: '', error: `Invalid repo format: ${repoFullName}` };
-	}
-
-	const reviewerToken = project.reviewerTokenEnv
-		? process.env[project.reviewerTokenEnv]
-		: undefined;
-
-	if (project.reviewerTokenEnv && !reviewerToken) {
-		logger.warn('Reviewer token env configured but not set, falling back to main token', {
-			reviewerTokenEnv: project.reviewerTokenEnv,
-		});
-	}
-
-	const runLifecycle = () =>
-		executeAgentLifecycle<ReviewContextData>({
-			loggerIdentifier: `review-${prNumber}`,
-
-			onWatchdogTimeout: async () => {
-				await githubClient.createPRComment(
-					owner,
-					repo,
-					prNumber,
-					'⚠️ Review agent timed out while reviewing the PR.',
-				);
-				logger.info('Posted timeout notice to PR', { prNumber });
-			},
-
-			setupRepoDir: (log) => setupRepository({ project, log, agentType: 'review', prBranch }),
-
-			buildContext: (repoDir, log) =>
-				buildReviewContext(
-					owner,
-					repo,
-					prNumber,
-					repoDir,
-					project,
-					config,
-					log,
-					input.modelOverride,
-				),
-
-			createBuilder: ({ client, ctx, llmistLogger, trackingContext, fileLogger, repoDir }) =>
-				createReviewAgentBuilder(
-					client,
-					ctx,
-					llmistLogger,
-					trackingContext,
-					fileLogger.write.bind(fileLogger),
-					fileLogger.llmCallLogger,
-					repoDir,
-					owner,
-					repo,
-				),
-
-			injectSyntheticCalls: ({ builder, ctx, trackingContext, repoDir }) =>
-				injectReviewSyntheticCalls(builder, owner, repo, prNumber, ctx, trackingContext, repoDir),
-
-			interactive,
-		});
-
-	if (reviewerToken) {
-		return withGitHubToken(reviewerToken, runLifecycle);
-	}
-	return runLifecycle();
+	return executeGitHubAgent(reviewAgentDefinition, input);
 }

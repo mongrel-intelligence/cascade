@@ -1,0 +1,195 @@
+import { recordInitialComment } from '../../gadgets/sessionState.js';
+import { githubClient } from '../../github/client.js';
+import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
+import { logger } from '../../utils/logging.js';
+import type { AgentLogger } from '../utils/logging.js';
+import type { TrackingContext } from '../utils/tracking.js';
+import {
+	type BuilderType,
+	type CreateBuilderOptions,
+	createConfiguredBuilder,
+} from './builderFactory.js';
+import { type BaseAgentContext, executeAgentLifecycle } from './lifecycle.js';
+import { setupRepository } from './repository.js';
+import { injectSyntheticCall } from './syntheticCalls.js';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface GitHubAgentInput extends AgentInput {
+	prNumber: number;
+	prBranch: string;
+	repoFullName: string;
+	project: ProjectConfig;
+	config: CascadeConfig;
+}
+
+export interface RepoIdentifier {
+	owner: string;
+	repo: string;
+}
+
+export interface InitialCommentResult {
+	id: number;
+	htmlUrl: string;
+	gadgetName: string;
+}
+
+export interface GitHubAgentContext extends BaseAgentContext {
+	systemPrompt: string;
+}
+
+export interface GitHubAgentDefinition<
+	TInput extends GitHubAgentInput,
+	TContext extends GitHubAgentContext,
+> {
+	agentType: string;
+	headerMessage: string;
+	initialCommentDescription: string;
+	timeoutMessage: string;
+	loggerPrefix: string;
+
+	getGadgets(): CreateBuilderOptions['gadgets'];
+
+	preExecute?(input: TInput, id: RepoIdentifier): Promise<AgentResult | null>;
+
+	postInitialComment(
+		input: TInput,
+		id: RepoIdentifier,
+		headerMessage: string,
+	): Promise<InitialCommentResult>;
+
+	buildContext(
+		id: RepoIdentifier,
+		input: TInput,
+		repoDir: string,
+		log: AgentLogger,
+	): Promise<TContext>;
+
+	injectSyntheticCalls(params: {
+		builder: BuilderType;
+		ctx: TContext;
+		trackingContext: TrackingContext;
+		repoDir: string;
+		id: RepoIdentifier;
+		input: TInput;
+	}): Promise<BuilderType>;
+
+	wrapExecution?(input: TInput, runLifecycle: () => Promise<AgentResult>): Promise<AgentResult>;
+
+	builderOptions?: Pick<CreateBuilderOptions, 'postConfigure' | 'skipSessionState'>;
+}
+
+// ============================================================================
+// Default Helpers
+// ============================================================================
+
+export async function createInitialPRComment(
+	prNumber: number,
+	id: RepoIdentifier,
+	headerMessage: string,
+): Promise<InitialCommentResult> {
+	const comment = await githubClient.createPRComment(id.owner, id.repo, prNumber, headerMessage);
+	return { id: comment.id, htmlUrl: comment.htmlUrl, gadgetName: 'PostPRComment' };
+}
+
+// ============================================================================
+// Shared Execution
+// ============================================================================
+
+export async function executeGitHubAgent<
+	TInput extends GitHubAgentInput,
+	TContext extends GitHubAgentContext,
+>(definition: GitHubAgentDefinition<TInput, TContext>, input: TInput): Promise<AgentResult> {
+	const { prNumber, prBranch, repoFullName, project, interactive, autoAccept } = input;
+
+	const [owner, repo] = repoFullName.split('/');
+	if (!owner || !repo) {
+		return { success: false, output: '', error: `Invalid repo format: ${repoFullName}` };
+	}
+	const id: RepoIdentifier = { owner, repo };
+
+	if (definition.preExecute) {
+		const earlyResult = await definition.preExecute(input, id);
+		if (earlyResult) return earlyResult;
+	}
+
+	const runLifecycle = () =>
+		executeAgentLifecycle<TContext>({
+			loggerIdentifier: `${definition.loggerPrefix}-${prNumber}`,
+
+			onWatchdogTimeout: async () => {
+				await githubClient.createPRComment(owner, repo, prNumber, definition.timeoutMessage);
+				logger.info('Posted timeout notice to PR', { prNumber });
+			},
+
+			setupRepoDir: (log) =>
+				setupRepository({ project, log, agentType: definition.agentType, prBranch }),
+
+			buildContext: (repoDir, log) => definition.buildContext(id, input, repoDir, log),
+
+			createBuilder: ({ client, ctx, llmistLogger, trackingContext, fileLogger, repoDir }) =>
+				createConfiguredBuilder({
+					client,
+					agentType: definition.agentType,
+					model: ctx.model,
+					systemPrompt: ctx.systemPrompt,
+					maxIterations: ctx.maxIterations,
+					llmistLogger,
+					trackingContext,
+					logWriter: fileLogger.write.bind(fileLogger),
+					llmCallLogger: fileLogger.llmCallLogger,
+					repoDir,
+					gadgets: definition.getGadgets(),
+					githubProgress: {
+						owner,
+						repo,
+						headerMessage: definition.headerMessage,
+						agentType: definition.agentType,
+						maxIterations: ctx.maxIterations,
+					},
+					...definition.builderOptions,
+				}),
+
+			injectSyntheticCalls: async ({ builder, ctx, trackingContext, repoDir }) => {
+				const initialComment = await definition.postInitialComment(
+					input,
+					id,
+					definition.headerMessage,
+				);
+				recordInitialComment(initialComment.id);
+				const withComment = injectSyntheticCall(
+					builder,
+					trackingContext,
+					initialComment.gadgetName,
+					{
+						comment: definition.initialCommentDescription,
+						owner,
+						repo,
+						prNumber,
+						body: definition.headerMessage,
+					},
+					`Comment posted (id: ${initialComment.id}): ${initialComment.htmlUrl}`,
+					'gc_initial_comment',
+				);
+
+				return definition.injectSyntheticCalls({
+					builder: withComment,
+					ctx,
+					trackingContext,
+					repoDir,
+					id,
+					input,
+				});
+			},
+
+			interactive,
+			autoAccept,
+		});
+
+	if (definition.wrapExecution) {
+		return definition.wrapExecution(input, runLifecycle);
+	}
+	return runLifecycle();
+}
