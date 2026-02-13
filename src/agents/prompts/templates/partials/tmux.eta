@@ -13,6 +13,8 @@ Use the Tmux gadget for ALL shell commands:
 3. **Stop/cleanup:** `Tmux(action="kill", session="unique-name")`
    - Terminate the session when done (always clean up!)
 
+**Avoid interactive/watch modes:** Commands run inside Tmux have a TTY, so tools may default to interactive or watch mode. Always pass flags to force non-interactive, single-run execution (e.g., `--run`, `--watchAll=false`, `--no-watch`, `--ci`, or similar). If a session hangs with `status=running` after your command should have finished, it is likely in watch/interactive mode — kill it and retry with the correct flag.
+
 **Command Format:** Pass command as a shell string. Pipes, &&, ||, redirects, and globs all work:
 - Simple: `command="npm test"`
 - Chained: `command="npm run lint && npm test"`

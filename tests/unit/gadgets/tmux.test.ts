@@ -1,6 +1,11 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { Tmux, resolveWorkingDirectory, validateGitCommand } from '../../../src/gadgets/tmux.js';
+import {
+	Tmux,
+	detectInteractiveWait,
+	resolveWorkingDirectory,
+	validateGitCommand,
+} from '../../../src/gadgets/tmux.js';
 
 describe('Tmux Gadget', () => {
 	describe('validateGitCommand', () => {
@@ -166,6 +171,38 @@ describe('Tmux Gadget', () => {
 
 		it('defaults to process.cwd() when cwd is undefined', () => {
 			expect(resolveWorkingDirectory(undefined)).toBe(process.cwd());
+		});
+	});
+
+	describe('detectInteractiveWait', () => {
+		it('detects "waiting for file changes" output', () => {
+			const output = 'Tests: 5 passed\nWaiting for file changes...';
+			expect(detectInteractiveWait(output)).toBe('waiting for file changes');
+		});
+
+		it('detects "Watch Usage" output', () => {
+			const output = 'Tests passed\n\nWatch Usage\n› Press a to run all tests.';
+			expect(detectInteractiveWait(output)).toBe('watch usage');
+		});
+
+		it('detects "press q to quit" output', () => {
+			const output = 'All tests passed\nPress q to quit';
+			expect(detectInteractiveWait(output)).toBe('press q to quit');
+		});
+
+		it('detects Node REPL prompt', () => {
+			const output = 'Welcome to Node.js v20\nType .help for more information\n>';
+			expect(detectInteractiveWait(output)).toBe('type .help for more information');
+		});
+
+		it('returns null for normal completed output', () => {
+			const output = 'Tests: 5 passed\nDone in 2.4s';
+			expect(detectInteractiveWait(output)).toBeNull();
+		});
+
+		it('is case-insensitive', () => {
+			const output = 'WAITING FOR FILE CHANGES';
+			expect(detectInteractiveWait(output)).toBe('waiting for file changes');
 		});
 	});
 
