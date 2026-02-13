@@ -6,7 +6,7 @@
  */
 
 import type { DiagnosticCheckResult } from './diagnosticState.js';
-import { runDiagnosticsWithTracking } from './diagnosticState.js';
+import { runDiagnosticsWithTracking, trackModifiedFile } from './diagnosticState.js';
 import { runOnFileEditHook } from './onFileEditHook.js';
 
 /**
@@ -23,6 +23,9 @@ export function runPostEditChecks(
 	filePath: string,
 	validatedPath: string,
 ): DiagnosticCheckResult | null {
+	// Track every file that gets post-edit checks (i.e., every edited file)
+	trackModifiedFile(filePath);
+
 	const hookResult = runOnFileEditHook(filePath);
 
 	if (hookResult) {

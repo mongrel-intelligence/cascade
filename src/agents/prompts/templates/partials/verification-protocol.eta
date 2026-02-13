@@ -6,3 +6,8 @@ NEVER push changes until ALL of:
 3. Lint passes (zero errors)
 
 Run verification BEFORE pushing. Do not push "optimistically."
+
+**Use VerifyChanges** to run automated checks:
+- After completing a batch of related edits, call `VerifyChanges` with `scope=diagnostics` to catch type/lint errors early
+- Before creating a PR or pushing, call `VerifyChanges` with `scope=full` to run both diagnostics and tests
+- If checks fail, fix the issues and re-verify before proceeding

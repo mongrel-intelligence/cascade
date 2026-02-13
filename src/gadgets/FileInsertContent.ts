@@ -11,6 +11,36 @@ import { Gadget, z } from 'llmist';
 import { assertFileRead, invalidateFileRead } from './readTracking.js';
 import { formatContext, runPostEditChecks, validatePath } from './shared/index.js';
 
+function readOrCreateFile(validatedPath: string): { content: string; isNewFile: boolean } {
+	try {
+		return { content: readFileSync(validatedPath, 'utf-8'), isNewFile: false };
+	} catch (error) {
+		const nodeError = error as NodeJS.ErrnoException;
+		if (nodeError.code === 'ENOENT') {
+			return { content: '', isNewFile: true };
+		}
+		throw error;
+	}
+}
+
+function calculateInsertionIndex(
+	mode: 'before' | 'after',
+	line: number,
+	lineCount: number,
+): { insertIndex: number; insertAtEnd: boolean } {
+	if (mode === 'before') {
+		if (line === 0 || line > lineCount) {
+			return { insertIndex: lineCount, insertAtEnd: line > lineCount };
+		}
+		return { insertIndex: line - 1, insertAtEnd: false };
+	}
+	// mode === 'after'
+	if (line >= lineCount) {
+		return { insertIndex: lineCount, insertAtEnd: true };
+	}
+	return { insertIndex: line, insertAtEnd: false };
+}
+
 export class FileInsertContent extends Gadget({
 	name: 'FileInsertContent',
 	description: `Insert content before or after a specific line in a file.
@@ -165,20 +195,7 @@ Inserted 5 lines before line 10.
 		const validatedPath = validatePath(filePath);
 
 		// Read file content
-		let content: string;
-		let isNewFile = false;
-		try {
-			content = readFileSync(validatedPath, 'utf-8');
-		} catch (error) {
-			const nodeError = error as NodeJS.ErrnoException;
-			if (nodeError.code === 'ENOENT') {
-				// For insert, create empty file
-				content = '';
-				isNewFile = true;
-			} else {
-				throw error;
-			}
-		}
+		const { content, isNewFile } = readOrCreateFile(validatedPath);
 
 		if (!isNewFile) {
 			assertFileRead(validatedPath, 'FileInsertContent');
@@ -187,29 +204,7 @@ Inserted 5 lines before line 10.
 		const lines = content.split('\n');
 		const insertLines = insertContent.split('\n');
 
-		// Calculate insertion index based on mode
-		let insertIndex: number;
-		let insertAtEnd = false;
-
-		if (mode === 'before') {
-			// Insert before the specified line
-			if (line === 0 || line > lines.length) {
-				// line=0 or beyond EOF: append at end
-				insertIndex = lines.length;
-				insertAtEnd = line > lines.length;
-			} else {
-				insertIndex = line - 1; // Convert to 0-based
-			}
-		} else {
-			// mode === 'after': Insert after the specified line
-			if (line >= lines.length) {
-				// At or beyond EOF: append at end
-				insertIndex = lines.length;
-				insertAtEnd = true;
-			} else {
-				insertIndex = line; // After line N means index N (0-based)
-			}
-		}
+		const { insertIndex, insertAtEnd } = calculateInsertionIndex(mode, line, lines.length);
 
 		// Insert lines
 		const newLines = [...lines.slice(0, insertIndex), ...insertLines, ...lines.slice(insertIndex)];

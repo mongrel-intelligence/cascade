@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	adjustIndentation,
 	applyReplacement,
 	findAllMatches,
 	findMatch,
@@ -90,6 +91,28 @@ describe('Matcher', () => {
 				// Exact match works because search is a substring of content
 				expect(result?.strategy).toBe('exact');
 				expect(result?.startIndex).toBe(2); // After the two tabs
+			});
+
+			it('computes indentation delta for replacement adjustment', () => {
+				const content = '    function foo() {\n        return 1;\n    }';
+				const search = 'function foo() {\n    return 1;\n}';
+
+				const result = findMatch(content, search);
+
+				expect(result).not.toBeNull();
+				expect(result?.strategy).toBe('indentation');
+				expect(result?.indentationDelta).toBe('    ');
+			});
+
+			it('returns no delta when search has matching indentation', () => {
+				const content = '    function foo() {\n        return 1;\n    }';
+				const search = '    function foo() {\n        return 1;\n    }';
+
+				const result = findMatch(content, search);
+
+				expect(result).not.toBeNull();
+				// Should be exact match since indentation is the same
+				expect(result?.strategy).toBe('exact');
 			});
 		});
 
@@ -276,6 +299,34 @@ describe('Matcher', () => {
 			// Should match via fuzzy or dmp strategy
 			expect(['fuzzy', 'dmp']).toContain(result?.strategy);
 		});
+
+		it('handles search strings longer than 32 chars', () => {
+			// Create content with a multi-line function that has a slight difference
+			const content = [
+				'function calculateTotal(items, taxRate, discount) {',
+				'  const subtotal = items.reduce((sum, item) => sum + item.price, 0);',
+				'  const tax = subtotal * taxRate;',
+				'  return subtotal + tax - discount;',
+				'}',
+			].join('\n');
+
+			// Search for a slightly different version (> 32 chars)
+			const search = [
+				'function calculateTotal(items, taxRate, discount) {',
+				'  const subtotal = items.reduce((sum, item) => sum + item.price, 0);',
+				'  const tax = subtotal * taxRate;',
+				'  return subtotal + tax;',
+				'}',
+			].join('\n');
+
+			expect(search.length).toBeGreaterThan(32);
+
+			// Should find a match via fuzzy strategy (DMP may or may not match depending on similarity)
+			const result = findMatch(content, search, { fuzzyThreshold: 0.7 });
+
+			expect(result).not.toBeNull();
+			expect(result?.confidence).toBeGreaterThanOrEqual(0.7);
+		});
 	});
 
 	describe('replaceAll support', () => {
@@ -328,6 +379,71 @@ describe('Matcher', () => {
 
 			// Newlines remain but DEBUG; is removed from both locations
 			expect(newContent).toBe('\ncode here;\n');
+		});
+	});
+
+	describe('adjustIndentation', () => {
+		it('adds indentation to each non-empty line', () => {
+			const replacement = 'function foo() {\n  return 1;\n}';
+			const result = adjustIndentation(replacement, '    ');
+
+			expect(result).toBe('    function foo() {\n      return 1;\n    }');
+		});
+
+		it('preserves empty lines without adding indentation', () => {
+			const replacement = 'line1\n\nline3';
+			const result = adjustIndentation(replacement, '  ');
+
+			expect(result).toBe('  line1\n\n  line3');
+		});
+
+		it('handles single-line replacement', () => {
+			const replacement = 'return 42;';
+			const result = adjustIndentation(replacement, '\t\t');
+
+			expect(result).toBe('\t\treturn 42;');
+		});
+
+		it('returns unchanged content with empty delta', () => {
+			const replacement = 'const x = 1;';
+			const result = adjustIndentation(replacement, '');
+
+			expect(result).toBe('const x = 1;');
+		});
+	});
+
+	describe('indentation-preserving replacement integration', () => {
+		it('indentationMatch provides delta for unindented search against indented content', () => {
+			// Content is indented at 4 spaces
+			const content = 'class Foo {\n    getValue() {\n        return 42;\n    }\n}';
+			// Search has no indentation
+			const search = 'getValue() {\n    return 42;\n}';
+
+			const result = findMatch(content, search);
+
+			expect(result).not.toBeNull();
+			expect(result?.strategy).toBe('indentation');
+			expect(result?.indentationDelta).toBe('    ');
+		});
+
+		it('replacement with delta produces correctly indented output', () => {
+			const content = 'class Foo {\n    getValue() {\n        return 42;\n    }\n}';
+			const search = 'getValue() {\n    return 42;\n}';
+
+			const result = findMatch(content, search);
+			expect(result).not.toBeNull();
+			if (!result) return;
+
+			// Simulate what FileSearchAndReplace does: adjust replacement indentation
+			const replacement = 'getValue() {\n    return 99;\n}';
+			const adjusted =
+				result.strategy === 'indentation' && result.indentationDelta
+					? adjustIndentation(replacement, result.indentationDelta)
+					: replacement;
+
+			const newContent = applyReplacement(content, result, adjusted);
+
+			expect(newContent).toBe('class Foo {\n    getValue() {\n        return 99;\n    }\n}');
 		});
 	});
 });

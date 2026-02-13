@@ -222,6 +222,9 @@ function indentationMatch(content: string, search: string): MatchResult | null {
 			const endIndex = startIndex + matchedContent.length;
 			const { startLine, endLine } = getLineNumbers(content, startIndex, endIndex);
 
+			// Compute indentation delta between file content and search string
+			const indentationDelta = computeIndentationDelta(windowLines, search.split('\n'));
+
 			return {
 				found: true,
 				strategy: 'indentation',
@@ -231,11 +234,65 @@ function indentationMatch(content: string, search: string): MatchResult | null {
 				endIndex,
 				startLine,
 				endLine,
+				indentationDelta,
 			};
 		}
 	}
 
 	return null;
+}
+
+/**
+ * Compute the indentation delta between matched content and search string.
+ * Returns the whitespace prefix to prepend to each replacement line.
+ */
+function computeIndentationDelta(
+	contentLines: string[],
+	searchLines: string[],
+): string | undefined {
+	// Find first non-empty line in both to determine indentation levels
+	const contentIndent = getLeadingWhitespace(contentLines);
+	const searchIndent = getLeadingWhitespace(searchLines);
+
+	if (contentIndent === null || contentIndent === searchIndent) {
+		return undefined; // No delta needed
+	}
+
+	// Delta is what we need to add to search indentation to reach content indentation
+	if (searchIndent === null || searchIndent === '') {
+		return contentIndent;
+	}
+
+	// If search has some indentation, compute the difference
+	if (contentIndent.startsWith(searchIndent)) {
+		return contentIndent.slice(searchIndent.length);
+	}
+
+	// Different indentation styles or search is more indented — return full content indent
+	return contentIndent;
+}
+
+/**
+ * Get the leading whitespace of the first non-empty line.
+ */
+function getLeadingWhitespace(lines: string[]): string | null {
+	for (const line of lines) {
+		if (line.trim().length > 0) {
+			return line.slice(0, line.length - line.trimStart().length);
+		}
+	}
+	return null;
+}
+
+/**
+ * Apply indentation delta to a replacement string.
+ * Prepends the delta to each non-empty line.
+ */
+export function adjustIndentation(replacement: string, delta: string): string {
+	return replacement
+		.split('\n')
+		.map((line) => (line.trim().length > 0 ? delta + line : line))
+		.join('\n');
 }
 
 // ============================================================================
@@ -297,31 +354,69 @@ function fuzzyMatch(content: string, search: string, threshold: number): MatchRe
 // ============================================================================
 
 /**
+ * DMP match for short patterns (<= 32 chars) using native bitap algorithm.
+ */
+function dmpMatchShortPattern(content: string, search: string, threshold: number): number {
+	const dmp = new DiffMatchPatch();
+	dmp.Match_Threshold = 1.0 - threshold;
+	dmp.Match_Distance = 100000;
+	try {
+		return dmp.match_main(content, search, 0);
+	} catch {
+		return -1;
+	}
+}
+
+/**
+ * DMP match for long patterns (> 32 chars). Uses DMP on a 32-char prefix
+ * to find the approximate region, then verifies full match with Levenshtein.
+ */
+function dmpMatchLongPattern(content: string, search: string, threshold: number): number {
+	const dmp = new DiffMatchPatch();
+	dmp.Match_Threshold = 1.0 - threshold;
+	dmp.Match_Distance = 100000;
+
+	let approxIndex: number;
+	try {
+		approxIndex = dmp.match_main(content, search.substring(0, 32), 0);
+	} catch {
+		return -1;
+	}
+	if (approxIndex === -1) return -1;
+
+	// Verify full match around the approximate position using Levenshtein
+	const regionStart = Math.max(0, approxIndex - 10);
+	const regionEnd = Math.min(content.length, approxIndex + search.length + 10);
+	const region = content.substring(regionStart, regionEnd);
+
+	let bestIndex = -1;
+	let bestSimilarity = 0;
+
+	for (let i = 0; i <= region.length - search.length; i++) {
+		const candidate = region.substring(i, i + search.length);
+		const sim =
+			1.0 - levenshteinDistance(candidate, search) / Math.max(candidate.length, search.length);
+		if (sim > bestSimilarity) {
+			bestSimilarity = sim;
+			bestIndex = regionStart + i;
+		}
+	}
+
+	return bestSimilarity >= threshold ? bestIndex : -1;
+}
+
+/**
  * Use Google's diff-match-patch library for character-level fuzzy matching.
  * This is more robust than Levenshtein for code that has been refactored.
  */
 function dmpMatch(content: string, search: string, threshold: number): MatchResult | null {
-	// DMP has a pattern length limit (typically 32 chars for bitap algorithm)
-	// Skip DMP for long search strings
-	if (search.length > 32) return null;
+	// Skip DMP for very long patterns where it becomes too slow
+	if (search.length > 1000) return null;
 
-	const dmp = new DiffMatchPatch();
-
-	// DMP threshold is inverted (0.0 = exact, 1.0 = fuzzy)
-	// Convert our threshold (0.8 = 80% similar) to DMP format
-	dmp.Match_Threshold = 1.0 - threshold;
-
-	// Allow matching anywhere in large files
-	dmp.Match_Distance = 100000;
-
-	// Find approximate position of search in content
-	let matchIndex: number;
-	try {
-		matchIndex = dmp.match_main(content, search, 0);
-	} catch {
-		// DMP can throw for patterns that are still too complex
-		return null;
-	}
+	const matchIndex =
+		search.length > 32
+			? dmpMatchLongPattern(content, search, threshold)
+			: dmpMatchShortPattern(content, search, threshold);
 
 	if (matchIndex === -1) return null;
 

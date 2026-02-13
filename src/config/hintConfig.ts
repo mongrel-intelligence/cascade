@@ -113,6 +113,44 @@ function formatIterationStatus(
  * @param agentType - The type of agent (e.g., 'implementation', 'review')
  * @returns Trailing message function
  */
+/**
+ * Build the trailing message for the implementation agent.
+ * Includes diagnostics, todo progress, git status, PR status, and reminders.
+ */
+function buildImplementationTrailingMessage(timestamp: string, iterationStatus: string): string {
+	const sections: string[] = [timestamp, iterationStatus];
+
+	if (hasAnyDiagnosticErrors()) {
+		sections.push(formatDiagnosticStatus());
+	}
+
+	const todos = loadTodos();
+	if (todos.length > 0) {
+		sections.push(`## Current Progress\n\n${formatTodoList(todos)}`);
+	}
+
+	const gitStatus = getGitStatus();
+	sections.push(
+		gitStatus
+			? `## Git Status\n\n\`\`\`\n${gitStatus}\n\`\`\``
+			: '## Git Status\n\nNo uncommitted changes.',
+	);
+
+	const prView = getPRView();
+	sections.push(
+		prView
+			? `## PR Status\n\n\`\`\`\n${prView}\n\`\`\``
+			: '## PR Status\n\nNo PR exists for current branch.',
+	);
+
+	sections.push(
+		'## Reminder\n\nCall multiple gadgets in a single response when you know which ones you need. ' +
+			'For example, read multiple related files at once, or make multiple independent edits together.',
+	);
+
+	return sections.join('\n\n');
+}
+
 export function getIterationTrailingMessage(agentType?: string): TrailingMessage {
 	const batchHint = getAgentHint(agentType);
 
@@ -120,47 +158,10 @@ export function getIterationTrailingMessage(agentType?: string): TrailingMessage
 		const timestamp = `**Timestamp:** ${getCurrentTimestamp()}`;
 		const iterationStatus = formatIterationStatus(ctx.iteration, ctx.maxIterations, batchHint);
 
-		// For implementation agent, include progress info, git status, PR status, and diagnostics
 		if (agentType === 'implementation') {
-			const sections: string[] = [timestamp, iterationStatus];
-
-			// Add diagnostic status (only if there are errors to show)
-			if (hasAnyDiagnosticErrors()) {
-				sections.push(formatDiagnosticStatus());
-			}
-
-			// Add todo list if there are todos
-			const todos = loadTodos();
-			if (todos.length > 0) {
-				sections.push(`## Current Progress\n\n${formatTodoList(todos)}`);
-			}
-
-			// Add git status
-			const gitStatus = getGitStatus();
-			if (gitStatus) {
-				sections.push(`## Git Status\n\n\`\`\`\n${gitStatus}\n\`\`\``);
-			} else {
-				sections.push('## Git Status\n\nNo uncommitted changes.');
-			}
-
-			// Add PR status if a PR exists
-			const prView = getPRView();
-			if (prView) {
-				sections.push(`## PR Status\n\n\`\`\`\n${prView}\n\`\`\``);
-			} else {
-				sections.push('## PR Status\n\nNo PR exists for current branch.');
-			}
-
-			// Reminder about parallel gadget calls
-			sections.push(
-				'## Reminder\n\nCall multiple gadgets in a single response when you know which ones you need. ' +
-					'For example, read multiple related files at once, or make multiple independent edits together.',
-			);
-
-			return sections.join('\n\n');
+			return buildImplementationTrailingMessage(timestamp, iterationStatus);
 		}
 
-		// For respond-to-review agent, include diagnostic status
 		if (agentType === 'respond-to-review' && hasAnyDiagnosticErrors()) {
 			return `${timestamp}\n\n${iterationStatus}\n\n${formatDiagnosticStatus()}`;
 		}

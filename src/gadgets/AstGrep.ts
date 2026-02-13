@@ -151,39 +151,7 @@ Use for:
 			});
 
 			sg.on('close', (code) => {
-				if (code !== 0 && code !== 1) {
-					resolve(`ast-grep error (code ${code}): ${errorOutput || 'Unknown error'}`);
-					return;
-				}
-
-				// Check for changes
-				let afterContent: string;
-				try {
-					afterContent = readFileSync(validatedPath, 'utf-8');
-				} catch (err) {
-					resolve(`Failed to read file after rewrite: ${err}`);
-					return;
-				}
-
-				if (beforeContent === afterContent) {
-					resolve(`path=${path} status=no_change\n\nPattern matched nothing or no changes needed.`);
-					return;
-				}
-
-				// Invalidate cache
-				invalidateFileRead(validatedPath);
-
-				// Build diff
-				const diff = this.buildDiff(beforeContent, afterContent);
-
-				// Run diagnostics and update state tracker
-				const diagnosticResult = runPostEditChecks(path, validatedPath);
-				const status = diagnosticResult?.hasErrors ? 'error' : 'success';
-				const diagnosticsOutput = diagnosticResult ? diagnosticResult.statusMessage : '';
-
-				resolve(
-					`path=${path} status=${status}\n\n${diff}${diagnosticsOutput ? `\n\n${diagnosticsOutput}` : ''}`,
-				);
+				resolve(this.handleRewriteClose(code, errorOutput, beforeContent, path, validatedPath));
 			});
 
 			sg.on('error', (error) => {
@@ -192,6 +160,37 @@ Use for:
 				);
 			});
 		});
+	}
+
+	private handleRewriteClose(
+		code: number | null,
+		errorOutput: string,
+		beforeContent: string,
+		path: string,
+		validatedPath: string,
+	): string {
+		if (code !== 0 && code !== 1) {
+			return `ast-grep error (code ${code}): ${errorOutput || 'Unknown error'}`;
+		}
+
+		let afterContent: string;
+		try {
+			afterContent = readFileSync(validatedPath, 'utf-8');
+		} catch (err) {
+			return `Failed to read file after rewrite: ${err}`;
+		}
+
+		if (beforeContent === afterContent) {
+			return `path=${path} status=no_change\n\nPattern matched nothing or no changes needed.`;
+		}
+
+		invalidateFileRead(validatedPath);
+		const diff = this.buildDiff(beforeContent, afterContent);
+		const diagnosticResult = runPostEditChecks(path, validatedPath);
+		const status = diagnosticResult?.hasErrors ? 'error' : 'success';
+		const diagnosticsOutput = diagnosticResult ? diagnosticResult.statusMessage : '';
+
+		return `path=${path} status=${status}\n\n${diff}${diagnosticsOutput ? `\n\n${diagnosticsOutput}` : ''}`;
 	}
 
 	private async executeDirectoryRewrite(
