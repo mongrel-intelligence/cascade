@@ -149,6 +149,7 @@ export async function executeGitHubAgent<
 						agentType: definition.agentType,
 						maxIterations: ctx.maxIterations,
 					},
+					remainingBudgetUsd: input.remainingBudgetUsd as number | undefined,
 					...definition.builderOptions,
 				}),
 
