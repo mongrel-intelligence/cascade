@@ -3,12 +3,14 @@ import { WriteFile } from '../gadgets/WriteFile.js';
 
 import { CUSTOM_MODELS } from '../config/customModels.js';
 import { AstGrep } from '../gadgets/AstGrep.js';
+import { FileMultiEdit } from '../gadgets/FileMultiEdit.js';
 import { FileSearchAndReplace } from '../gadgets/FileSearchAndReplace.js';
 import { Finish } from '../gadgets/Finish.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
 import { RipGrep } from '../gadgets/RipGrep.js';
 import { Sleep } from '../gadgets/Sleep.js';
+import { VerifyChanges } from '../gadgets/VerifyChanges.js';
 import { CreatePR } from '../gadgets/github/index.js';
 import { Tmux } from '../gadgets/tmux.js';
 import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
@@ -256,7 +258,9 @@ function getBaseAgentGadgets(agentType: string) {
 		new ReadFile(),
 		new RipGrep(),
 		new AstGrep(),
-		...(isReadOnlyAgent ? [] : [new FileSearchAndReplace(), new WriteFile()]),
+		...(isReadOnlyAgent
+			? []
+			: [new FileSearchAndReplace(), new FileMultiEdit(), new WriteFile(), new VerifyChanges()]),
 		// Shell commands via tmux (no timeout issues)
 		new Tmux(),
 		new Sleep(),

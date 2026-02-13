@@ -64,6 +64,47 @@ function parseTypeScriptErrors(output: string, filePath: string): DiagnosticErro
  * Biome output format includes both parse errors and lint errors.
  * Parse errors contain "parse" keyword, lint errors have rule names like "lint/xxx".
  */
+function parseBiomeParseErrors(output: string, filePath: string): DiagnosticError[] {
+	if (!output.includes(filePath)) return [];
+
+	const lineMatch = output.match(new RegExp(`${escapeRegExp(filePath)}:(\\d+):\\d+`));
+	return [
+		{
+			type: 'biome-parse',
+			line: lineMatch ? Number.parseInt(lineMatch[1], 10) : undefined,
+			message: 'parse error',
+		},
+	];
+}
+
+function parseBiomeLintErrors(output: string, filePath: string): DiagnosticError[] {
+	if (!output.includes(filePath)) return [];
+
+	const errors: DiagnosticError[] = [];
+	const lintRuleMatches = output.matchAll(/lint\/\w+\/(\w+)/g);
+	const seenRules = new Set<string>();
+
+	for (const match of lintRuleMatches) {
+		const ruleName = match[1];
+		if (seenRules.has(ruleName)) continue;
+		seenRules.add(ruleName);
+
+		const lineMatch = output.match(new RegExp(`${escapeRegExp(filePath)}:(\\d+):\\d+`));
+		errors.push({
+			type: 'biome-lint',
+			code: ruleName,
+			line: lineMatch ? Number.parseInt(lineMatch[1], 10) : undefined,
+			message: `lint: ${ruleName}`,
+		});
+	}
+
+	if (errors.length === 0) {
+		errors.push({ type: 'biome-lint', message: 'lint error(s) detected' });
+	}
+
+	return errors;
+}
+
 function parseBiomeErrors(
 	output: string,
 	filePath: string,
@@ -71,48 +112,8 @@ function parseBiomeErrors(
 	hasLintErrors: boolean,
 ): DiagnosticError[] {
 	const errors: DiagnosticError[] = [];
-
-	// Check for parse errors (most critical)
-	if (hasParseErrors && output.includes(filePath)) {
-		// Extract line number if present (format: file.ts:line:col)
-		const lineMatch = output.match(new RegExp(`${escapeRegExp(filePath)}:(\\d+):\\d+`));
-		errors.push({
-			type: 'biome-parse',
-			line: lineMatch ? Number.parseInt(lineMatch[1], 10) : undefined,
-			message: 'parse error',
-		});
-	}
-
-	// Check for lint errors
-	if (hasLintErrors && output.includes(filePath)) {
-		// Extract lint rules from output (format: lint/category/ruleName)
-		const lintRuleMatches = output.matchAll(/lint\/\w+\/(\w+)/g);
-		const seenRules = new Set<string>();
-
-		for (const match of lintRuleMatches) {
-			const ruleName = match[1];
-			if (!seenRules.has(ruleName)) {
-				seenRules.add(ruleName);
-				// Try to find line number for this rule
-				const lineMatch = output.match(new RegExp(`${escapeRegExp(filePath)}:(\\d+):\\d+`));
-				errors.push({
-					type: 'biome-lint',
-					code: ruleName,
-					line: lineMatch ? Number.parseInt(lineMatch[1], 10) : undefined,
-					message: `lint: ${ruleName}`,
-				});
-			}
-		}
-
-		// If no specific rules found but we know there are lint errors
-		if (errors.length === 0) {
-			errors.push({
-				type: 'biome-lint',
-				message: 'lint error(s) detected',
-			});
-		}
-	}
-
+	if (hasParseErrors) errors.push(...parseBiomeParseErrors(output, filePath));
+	if (hasLintErrors) errors.push(...parseBiomeLintErrors(output, filePath));
 	return errors;
 }
 
@@ -125,6 +126,30 @@ function escapeRegExp(str: string): string {
 
 // Track files with diagnostic issues (session-scoped)
 const fileStatuses = new Map<string, FileStatus>();
+
+// Track all modified files during the session (for VerifyChanges)
+const modifiedFiles = new Set<string>();
+
+/**
+ * Mark a file as modified during this session.
+ */
+export function trackModifiedFile(filePath: string): void {
+	modifiedFiles.add(filePath);
+}
+
+/**
+ * Get all files modified during this session.
+ */
+export function getModifiedFiles(): string[] {
+	return Array.from(modifiedFiles).sort();
+}
+
+/**
+ * Clear modified file tracking.
+ */
+export function clearModifiedFiles(): void {
+	modifiedFiles.clear();
+}
 
 /**
  * Update diagnostic state for a file.
@@ -207,6 +232,7 @@ export function hasAnyDiagnosticErrors(): boolean {
  */
 export function clearDiagnosticState(): void {
 	fileStatuses.clear();
+	modifiedFiles.clear();
 }
 
 /**
