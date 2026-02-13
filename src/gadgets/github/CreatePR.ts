@@ -102,10 +102,26 @@ If hooks fail or timeout, the full output will be shown.`,
 	}
 
 	private async stageAndCommit(commitMessage: string): Promise<void> {
-		// Stage all changes
-		const addResult = await runCommand('git', ['add', '.'], process.cwd());
+		// Stage only tracked files that have been modified/deleted (safe — won't add build artifacts)
+		const addResult = await runCommand('git', ['add', '-u'], process.cwd());
 		if (addResult.exitCode !== 0) {
 			throw new Error(`Failed to stage changes: ${addResult.stderr || addResult.stdout}`.trim());
+		}
+
+		// Stage new (untracked) files that aren't ignored by .gitignore
+		const untrackedResult = await runCommand(
+			'git',
+			['ls-files', '--others', '--exclude-standard'],
+			process.cwd(),
+		);
+		if (untrackedResult.exitCode === 0 && untrackedResult.stdout.trim()) {
+			const newFiles = untrackedResult.stdout.trim().split('\n');
+			const addNewResult = await runCommand('git', ['add', '--', ...newFiles], process.cwd());
+			if (addNewResult.exitCode !== 0) {
+				throw new Error(
+					`Failed to stage new files: ${addNewResult.stderr || addNewResult.stdout}`.trim(),
+				);
+			}
 		}
 
 		// Check if there are changes to commit
