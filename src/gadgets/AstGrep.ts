@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { Gadget, z } from 'llmist';
 
-import { assertFileRead, invalidateFileRead } from './readTracking.js';
+import { assertFileRead, markFileRead } from './readTracking.js';
 import { runPostEditChecks, validatePath } from './shared/index.js';
 
 export class AstGrep extends Gadget({
@@ -184,7 +184,7 @@ Use for:
 			return `path=${path} status=no_change\n\nPattern matched nothing or no changes needed.`;
 		}
 
-		invalidateFileRead(validatedPath);
+		markFileRead(validatedPath);
 		const diff = this.buildDiff(beforeContent, afterContent);
 		const diagnosticResult = runPostEditChecks(path, validatedPath);
 		const status = diagnosticResult?.hasErrors ? 'error' : 'success';

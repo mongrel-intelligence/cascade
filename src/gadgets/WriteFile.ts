@@ -1,8 +1,8 @@
 /**
- * WriteFile gadget - Write content to a file with read tracking invalidation.
+ * WriteFile gadget - Write content to a file with read tracking.
  *
- * Custom version that invalidates read tracking after writing, ensuring
- * subsequent ReadFile calls return fresh content instead of cached responses.
+ * After writing, marks the file as read (the agent wrote the content,
+ * so it knows what's in the file) to avoid unnecessary re-reads.
  *
  * Allows writing to:
  * - Current working directory and subdirectories
@@ -13,7 +13,7 @@ import { dirname, resolve, sep } from 'node:path';
 
 import { Gadget, z } from 'llmist';
 
-import { invalidateFileRead } from './readTracking.js';
+import { markFileRead } from './readTracking.js';
 import { runPostEditChecks } from './shared/index.js';
 
 const ALLOWED_PATHS = ['/tmp'];
@@ -164,8 +164,8 @@ Wrote 542 bytes
 		// Write the file
 		try {
 			writeFileSync(validatedPath, content, 'utf-8');
-			// Invalidate read tracking so subsequent reads return fresh content
-			invalidateFileRead(validatedPath);
+			// Agent wrote this content — it knows what's in the file
+			markFileRead(validatedPath);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			return `path=${filePath} status=error\n\nError writing file: ${message}`;
