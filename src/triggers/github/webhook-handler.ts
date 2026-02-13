@@ -1,5 +1,6 @@
 import { runAgent } from '../../agents/registry.js';
 import { findProjectByRepo } from '../../config/projects.js';
+import { getSessionState } from '../../gadgets/sessionState.js';
 import { githubClient } from '../../github/client.js';
 import { trelloClient } from '../../trello/client.js';
 import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
@@ -54,11 +55,38 @@ async function executeGitHubAgent(
 		}
 	}
 
+	// Update initial PR comment on failure for GitHub-bound agents
+	if (!agentResult.success && result.prNumber) {
+		await updateInitialCommentWithError(result, agentResult);
+	}
+
 	logger.info('GitHub agent completed', {
 		agentType: result.agentType,
 		prNumber: result.prNumber,
 		success: agentResult.success,
 		cost: agentResult.cost,
+	});
+}
+
+async function updateInitialCommentWithError(
+	result: TriggerResult,
+	agentResult: { success: boolean; error?: string },
+): Promise<void> {
+	const input = result.agentInput as { repoFullName?: string };
+	if (!input.repoFullName || !result.prNumber) return;
+
+	const [owner, repo] = input.repoFullName.split('/');
+	if (!owner || !repo) return;
+
+	const { initialCommentId } = getSessionState();
+	if (!initialCommentId) return;
+
+	const errorMessage = agentResult.error || 'Agent completed without making changes';
+	const body = `⚠️ **${result.agentType} agent failed**\n\n${errorMessage}\n\n<sub>Manual intervention may be required.</sub>`;
+
+	await safeOperation(() => githubClient.updatePRComment(owner, repo, initialCommentId, body), {
+		action: 'update PR comment with error',
+		prNumber: result.prNumber,
 	});
 }
 
@@ -165,6 +193,7 @@ export async function processGitHubWebhook(
 			await executeGitHubAgent(result, project, config);
 		} catch (err) {
 			logger.error('Failed to process GitHub webhook', { error: String(err) });
+			await updateInitialCommentWithError(result, { success: false, error: String(err) });
 		} finally {
 			setProcessing(false);
 			processNextQueuedGitHubWebhook(config, registry);
