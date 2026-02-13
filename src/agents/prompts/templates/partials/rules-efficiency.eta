@@ -81,3 +81,15 @@ If an operation fails twice with the same error:
 3. Try a different approach (different search pattern, different tool)
 
 Looping on the same error wastes iteration budget and never succeeds.
+
+### Stuck on a Failing Test
+
+If a test you WROTE (not a pre-existing test) fails after 2-3 fix attempts:
+
+1. Do NOT keep editing the same test — you are likely in a loop
+2. Delete the failing test case (keep the ones that pass)
+3. Ship what works — partial test coverage is better than no PR
+4. Note in the PR description which test scenario was skipped
+
+The system will forcefully terminate your session if it detects you are stuck
+in a fix-retry loop. Avoid this by recognizing when you're stuck and moving on.

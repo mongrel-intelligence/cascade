@@ -24,6 +24,23 @@ export interface GadgetCallRecord {
 }
 
 /**
+ * Action to take when a name-only loop is detected.
+ */
+export interface LoopAction {
+	type: 'warning' | 'hard_stop';
+	message: string;
+}
+
+/**
+ * Thresholds for name-only loop detection (exported for testing).
+ */
+export const LOOP_THRESHOLDS = {
+	WARNING: 3,
+	STRONG_WARNING: 4,
+	HARD_STOP: 5,
+} as const;
+
+/**
  * Loop detection state.
  */
 export interface LoopDetectionState {
@@ -37,6 +54,10 @@ export interface LoopDetectionState {
 	repeatedPattern: string | null;
 	/** Pending warning to be injected as user message */
 	pendingWarning: string | null;
+	/** Number of consecutive iterations with same gadget name pattern (ignoring params) */
+	nameOnlyRepeatCount: number;
+	/** Pending action from name-only detection */
+	pendingAction: LoopAction | null;
 }
 
 /**
@@ -61,6 +82,8 @@ export function createLoopDetectionState(): LoopDetectionState {
 		repeatCount: 1,
 		repeatedPattern: null,
 		pendingWarning: null,
+		nameOnlyRepeatCount: 1,
+		pendingAction: null,
 	};
 }
 
@@ -134,6 +157,15 @@ function createHashForCalls(calls: GadgetCallRecord[]): string {
 }
 
 /**
+ * Create a deterministic hash for a set of gadget calls using only names (ignoring parameters).
+ * Used for name-only loop detection.
+ */
+function createHashForCallsNameOnly(calls: GadgetCallRecord[]): string {
+	const sorted = [...calls].sort((a, b) => a.gadgetName.localeCompare(b.gadgetName));
+	return sorted.map((c) => c.gadgetName).join('|');
+}
+
+/**
  * Format gadget calls for human-readable display in warning messages.
  */
 function formatCallsForDisplay(calls: GadgetCallRecord[]): string {
@@ -173,6 +205,46 @@ STOP. THINK VERY HARD. TRY A COMPLETELY DIFFERENT APPROACH.`;
 }
 
 /**
+ * Generate the appropriate action for name-only loop detection based on repeat count.
+ */
+function generateNameOnlyLoopAction(repeatCount: number, pattern: string): LoopAction | null {
+	if (repeatCount >= LOOP_THRESHOLDS.HARD_STOP) {
+		return {
+			type: 'hard_stop',
+			message: `[System] 🛑 SEMANTIC LOOP — FORCED TERMINATION
+
+You have repeated the same operation types (${pattern}) ${repeatCount} times with different parameters.
+Each attempt produces a different error, but you are cycling between the same failing strategies.
+
+Session terminated. Ship what works or delete the failing test.`,
+		};
+	}
+	if (repeatCount >= LOOP_THRESHOLDS.STRONG_WARNING) {
+		return {
+			type: 'warning',
+			message: `[System] 🚨 SEMANTIC LOOP — 1 iteration before forced termination
+
+You are repeating the same operation types (${pattern}) with different parameters — ${repeatCount} times now.
+You have ONE more iteration before this session is forcefully terminated.
+
+DELETE the failing test and move on. Partial coverage is better than no PR.`,
+		};
+	}
+	if (repeatCount >= LOOP_THRESHOLDS.WARNING) {
+		return {
+			type: 'warning',
+			message: `[System] ⚠️ SEMANTIC LOOP DETECTED (×${repeatCount})
+
+You are repeating the same operation types (${pattern}) with different parameters each time.
+This suggests you're cycling between approaches that don't work.
+
+STOP and try a fundamentally different approach, or delete the failing test.`,
+		};
+	}
+	return null;
+}
+
+/**
  * Check for loop pattern and advance to next iteration.
  * Should be called at the START of each new LLM iteration.
  * Returns true if a loop was detected.
@@ -205,11 +277,36 @@ export function checkForLoopAndAdvance(context: TrackingContext): boolean {
 		state.pendingWarning = null;
 	}
 
+	const exactMatchFired = isLoop && state.repeatCount >= 2;
+
+	// Name-only loop detection (secondary defense — catches same gadget types with different params)
+	// Only fire when exact-match detection did NOT already fire
+	if (!exactMatchFired) {
+		const prevNameHash = createHashForCallsNameOnly(state.previousIterationCalls);
+		const currNameHash = createHashForCallsNameOnly(state.currentIterationCalls);
+		const isNameOnlyLoop = prevNameHash === currNameHash && prevNameHash !== '';
+
+		if (isNameOnlyLoop) {
+			state.nameOnlyRepeatCount++;
+			state.pendingAction = generateNameOnlyLoopAction(
+				state.nameOnlyRepeatCount,
+				formatCallsForDisplay(state.currentIterationCalls),
+			);
+		} else {
+			state.nameOnlyRepeatCount = 1;
+			state.pendingAction = null;
+		}
+	} else {
+		// Reset name-only tracking when exact-match is active
+		state.nameOnlyRepeatCount = 1;
+		state.pendingAction = null;
+	}
+
 	// Advance: current becomes previous, reset current for next iteration
 	state.previousIterationCalls = state.currentIterationCalls;
 	state.currentIterationCalls = [];
 
-	return isLoop && state.repeatCount >= 2;
+	return exactMatchFired;
 }
 
 /**
@@ -220,4 +317,14 @@ export function consumeLoopWarning(context: TrackingContext): string | null {
 	const warning = context.loopDetection.pendingWarning;
 	context.loopDetection.pendingWarning = null;
 	return warning;
+}
+
+/**
+ * Consume and return any pending name-only loop action.
+ * Returns the action and clears it, or null if none.
+ */
+export function consumeLoopAction(context: TrackingContext): LoopAction | null {
+	const action = context.loopDetection.pendingAction;
+	context.loopDetection.pendingAction = null;
+	return action;
 }

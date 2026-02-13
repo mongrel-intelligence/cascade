@@ -16,6 +16,20 @@ const IMPLEMENTATION_COMPACTION_BASE = {
 	triggerThresholdPercent: 70,
 	targetPercent: 40,
 	preserveRecentTurns: 8,
+	summarizationPrompt: `Summarize this conversation history concisely, preserving:
+1. The current task goals and acceptance criteria
+2. Key decisions made and their rationale
+3. Important facts and data discovered about the codebase
+4. ALL files that were created or modified, and their current state
+5. Current todo list status (what's done, what's in progress, what's pending)
+
+CRITICAL — Preserve a "Failed Approaches" section listing:
+- Each distinct approach that was tried and FAILED (tool/technique, why it failed)
+- Specific error messages that were encountered
+- This information prevents re-trying the same failed approaches after compaction
+
+Format as a brief narrative, with the failed approaches as a bullet list at the end.
+Previous conversation:`,
 };
 
 /**
@@ -32,6 +46,20 @@ const DEFAULT_COMPACTION_BASE = {
 	triggerThresholdPercent: 80,
 	targetPercent: 50,
 	preserveRecentTurns: 5,
+	summarizationPrompt: `Summarize this conversation history concisely, preserving:
+1. The current task goals and acceptance criteria
+2. Key decisions made and their rationale
+3. Important facts and data discovered
+4. Errors encountered and how they were resolved
+5. Current progress — what's done and what remains
+
+CRITICAL — Preserve a "Failed Approaches" section listing:
+- Each distinct approach that was tried and FAILED (tool/technique, why it failed)
+- Specific error messages that were encountered
+- This information prevents re-trying the same failed approaches after compaction
+
+Format as a brief narrative, with the failed approaches as a bullet list at the end.
+Previous conversation:`,
 };
 
 /**

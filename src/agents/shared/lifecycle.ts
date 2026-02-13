@@ -134,10 +134,21 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 				iterations: result.iterations,
 				gadgetCalls: result.gadgetCalls,
 				cost: result.cost,
+				loopTerminated: result.loopTerminated ?? false,
 			});
 
 			fileLogger.close();
 			const logBuffer = await fileLogger.getZippedBuffer();
+
+			if (result.loopTerminated) {
+				return {
+					success: false,
+					output: result.output,
+					error: 'Agent terminated due to persistent loop',
+					logBuffer,
+					cost: result.cost,
+				};
+			}
 
 			const postProcessed = options.postProcess?.(result.output) ?? {};
 
