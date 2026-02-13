@@ -1,4 +1,3 @@
-import type { createLogger } from 'llmist';
 import { WriteFile } from '../gadgets/WriteFile.js';
 
 import { AstGrep } from '../gadgets/AstGrep.js';
@@ -14,34 +13,32 @@ import {
 	PostPRComment,
 	UpdatePRComment,
 } from '../gadgets/github/index.js';
-import { recordInitialComment } from '../gadgets/sessionState.js';
 import { Tmux } from '../gadgets/tmux.js';
 import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
 import type { CheckSuiteStatus } from '../github/client.js';
 import { githubClient } from '../github/client.js';
-import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
+import type { AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import { runCommand as execCommand } from '../utils/repo.js';
-import { type BuilderType, createConfiguredBuilder } from './shared/builderFactory.js';
-import { executeAgentLifecycle } from './shared/lifecycle.js';
+import {
+	type GitHubAgentContext,
+	type GitHubAgentDefinition,
+	type GitHubAgentInput,
+	type RepoIdentifier,
+	createInitialPRComment,
+	executeGitHubAgent,
+} from './shared/githubAgent.js';
 import { resolveModelConfig } from './shared/modelResolution.js';
 import { formatPRDetails, formatPRDiff } from './shared/prFormatting.js';
-import { setupRepository } from './shared/repository.js';
 import {
 	injectContextFiles,
 	injectDirectoryListing,
 	injectSquintContext,
 	injectSyntheticCall,
 } from './shared/syntheticCalls.js';
-import type { TrackingContext } from './utils/tracking.js';
 
-interface RespondToCIAgentInput extends AgentInput {
-	prNumber: number;
-	prBranch: string;
-	repoFullName: string;
+interface RespondToCIAgentInput extends GitHubAgentInput {
 	headSha: string;
-	project: ProjectConfig;
-	config: CascadeConfig;
 }
 
 // ============================================================================
@@ -92,20 +89,8 @@ function formatCheckStatus(checkStatus: CheckSuiteStatus): string {
 }
 
 // ============================================================================
-// Context Building
+// CI Log Fetching
 // ============================================================================
-
-interface CIContextData {
-	systemPrompt: string;
-	model: string;
-	maxIterations: number;
-	contextFiles: Awaited<ReturnType<typeof resolveModelConfig>>['contextFiles'];
-	prDetailsFormatted: string;
-	diffFormatted: string;
-	checkStatusFormatted: string;
-	failedLogsFormatted: string;
-	prompt: string;
-}
 
 interface WorkflowRun {
 	databaseId: number;
@@ -235,6 +220,18 @@ async function processFailedCheck(
 	return formatCheckLogEntry(failedCheck.name, `Unable to fetch logs: ${result.content}`);
 }
 
+// ============================================================================
+// Context Building
+// ============================================================================
+
+interface CIContextData extends GitHubAgentContext {
+	contextFiles: Awaited<ReturnType<typeof resolveModelConfig>>['contextFiles'];
+	prDetailsFormatted: string;
+	diffFormatted: string;
+	checkStatusFormatted: string;
+	failedLogsFormatted: string;
+}
+
 async function buildCIContext(
 	owner: string,
 	repo: string,
@@ -306,11 +303,17 @@ Use these values when calling GitHub gadgets (GetPRDetails, PostPRComment, Updat
 }
 
 // ============================================================================
-// Agent Builder
+// Agent Definition
 // ============================================================================
 
-function getCIGadgets() {
-	return [
+const ciAgentDefinition: GitHubAgentDefinition<RespondToCIAgentInput, CIContextData> = {
+	agentType: 'respond-to-ci',
+	headerMessage: '🤖 Working on fixing CI failures...',
+	initialCommentDescription: 'Acknowledge CI failures',
+	timeoutMessage: '⚠️ CI fix agent timed out while attempting to fix failures.',
+	loggerPrefix: 'ci',
+
+	getGadgets: () => [
 		new ListDirectory(),
 		new ReadFile(),
 		new FileSearchAndReplace(),
@@ -327,212 +330,102 @@ function getCIGadgets() {
 		new PostPRComment(),
 		new UpdatePRComment(),
 		new Finish(),
-	];
-}
+	],
 
-function createRespondToCIAgentBuilder(
-	client: import('llmist').LLMist,
-	ctx: CIContextData,
-	llmistLogger: ReturnType<typeof createLogger>,
-	trackingContext: TrackingContext,
-	logWriter: (level: string, message: string, context?: Record<string, unknown>) => void,
-	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
-	repoDir: string,
-	owner: string,
-	repo: string,
-): BuilderType {
-	return createConfiguredBuilder({
-		client,
-		agentType: 'respond-to-ci',
-		model: ctx.model,
-		systemPrompt: ctx.systemPrompt,
-		maxIterations: ctx.maxIterations,
-		llmistLogger,
+	async preExecute(input: RespondToCIAgentInput, id: RepoIdentifier) {
+		const checkStatus = await githubClient.getCheckSuiteStatus(id.owner, id.repo, input.headSha);
+		const hasFailedChecks = checkStatus.checkRuns.some(
+			(cr) =>
+				cr.conclusion === 'failure' ||
+				cr.conclusion === 'timed_out' ||
+				cr.conclusion === 'action_required',
+		);
+
+		if (!hasFailedChecks) {
+			logger.info('No failed checks found, skipping CI fix agent', {
+				prNumber: input.prNumber,
+				headSha: input.headSha,
+				totalChecks: checkStatus.totalCount,
+			});
+			return { success: true, output: 'No failed checks to fix' };
+		}
+		return null;
+	},
+
+	postInitialComment: (input, id, headerMessage) =>
+		createInitialPRComment(input.prNumber, id, headerMessage),
+
+	buildContext: ({ owner, repo }, input, repoDir, log) =>
+		buildCIContext(
+			owner,
+			repo,
+			input.prNumber,
+			input.prBranch,
+			input.headSha,
+			repoDir,
+			input.project,
+			input.config,
+			log,
+			input.modelOverride,
+		),
+
+	async injectSyntheticCalls({
+		builder,
+		ctx,
 		trackingContext,
-		logWriter,
-		llmCallLogger,
 		repoDir,
-		gadgets: getCIGadgets(),
-		githubProgress: {
-			owner,
-			repo,
-			headerMessage: '🤖 Working on fixing CI failures...',
-			agentType: 'respond-to-ci',
-			maxIterations: ctx.maxIterations,
-		},
-	});
-}
+		id: { owner, repo },
+		input,
+	}) {
+		let b = injectDirectoryListing(builder, trackingContext);
 
-async function injectCISyntheticCalls(
-	initialBuilder: BuilderType,
-	owner: string,
-	repo: string,
-	prNumber: number,
-	ctx: CIContextData,
-	trackingContext: TrackingContext,
-	repoDir: string,
-	initialCommentId: number,
-	initialCommentUrl: string,
-): Promise<BuilderType> {
-	// Record the acknowledgment comment as synthetic call (already posted earlier)
-	let builder = injectSyntheticCall(
-		initialBuilder,
-		trackingContext,
-		'PostPRComment',
-		{
-			comment: 'Acknowledge CI failures',
-			owner,
-			repo,
-			prNumber,
-			body: '🤖 Working on fixing CI failures...',
-		},
-		`Comment posted (id: ${initialCommentId}): ${initialCommentUrl}`,
-		'gc_initial_comment',
-	);
+		b = injectSyntheticCall(
+			b,
+			trackingContext,
+			'GetPRDetails',
+			{ comment: 'Pre-fetching PR details for context', owner, repo, prNumber: input.prNumber },
+			ctx.prDetailsFormatted,
+			'gc_pr_details',
+		);
 
-	builder = injectDirectoryListing(builder, trackingContext);
+		b = injectSyntheticCall(
+			b,
+			trackingContext,
+			'GetPRDiff',
+			{ comment: 'Pre-fetching PR diff for context', owner, repo, prNumber: input.prNumber },
+			ctx.diffFormatted,
+			'gc_pr_diff',
+		);
 
-	builder = injectSyntheticCall(
-		builder,
-		trackingContext,
-		'GetPRDetails',
-		{ comment: 'Pre-fetching PR details for context', owner, repo, prNumber },
-		ctx.prDetailsFormatted,
-		'gc_pr_details',
-	);
+		b = injectSyntheticCall(
+			b,
+			trackingContext,
+			'GetCheckStatus',
+			{ comment: 'Pre-fetching CI check status', owner, repo, prNumber: input.prNumber },
+			ctx.checkStatusFormatted,
+			'gc_check_status',
+		);
 
-	builder = injectSyntheticCall(
-		builder,
-		trackingContext,
-		'GetPRDiff',
-		{ comment: 'Pre-fetching PR diff for context', owner, repo, prNumber },
-		ctx.diffFormatted,
-		'gc_pr_diff',
-	);
+		b = injectSyntheticCall(
+			b,
+			trackingContext,
+			'GetFailedCheckLogs',
+			{ comment: 'Pre-fetching failed CI check logs', owner, repo, prNumber: input.prNumber },
+			ctx.failedLogsFormatted,
+			'gc_failed_logs',
+		);
 
-	builder = injectSyntheticCall(
-		builder,
-		trackingContext,
-		'GetCheckStatus',
-		{ comment: 'Pre-fetching CI check status', owner, repo, prNumber },
-		ctx.checkStatusFormatted,
-		'gc_check_status',
-	);
+		b = injectContextFiles(b, trackingContext, ctx.contextFiles);
+		b = injectSquintContext(b, trackingContext, repoDir);
 
-	builder = injectSyntheticCall(
-		builder,
-		trackingContext,
-		'GetFailedCheckLogs',
-		{ comment: 'Pre-fetching failed CI check logs', owner, repo, prNumber },
-		ctx.failedLogsFormatted,
-		'gc_failed_logs',
-	);
-
-	builder = injectContextFiles(builder, trackingContext, ctx.contextFiles);
-	builder = injectSquintContext(builder, trackingContext, repoDir);
-
-	return builder;
-}
+		return b;
+	},
+};
 
 // ============================================================================
 // CI Agent Execution
 // ============================================================================
 
 export async function executeRespondToCIAgent(input: RespondToCIAgentInput): Promise<AgentResult> {
-	const { project, config, prNumber, prBranch, repoFullName, headSha, interactive, autoAccept } =
-		input;
-
-	// Parse owner/repo from repoFullName
-	const [owner, repo] = repoFullName.split('/');
-	if (!owner || !repo) {
-		return { success: false, output: '', error: `Invalid repo format: ${repoFullName}` };
-	}
-
-	// Verify there are actually failed checks before proceeding
-	const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
-	const hasFailedChecks = checkStatus.checkRuns.some(
-		(cr) =>
-			cr.conclusion === 'failure' ||
-			cr.conclusion === 'timed_out' ||
-			cr.conclusion === 'action_required',
-	);
-
-	if (!hasFailedChecks) {
-		logger.info('No failed checks found, skipping CI fix agent', {
-			prNumber,
-			headSha,
-			totalChecks: checkStatus.totalCount,
-		});
-		return { success: true, output: 'No failed checks to fix' };
-	}
-
-	// Post acknowledgment comment immediately so user knows we're working on it
-	const initialCommentBody = '🤖 Working on fixing CI failures...';
-	const initialComment = await githubClient.createPRComment(
-		owner,
-		repo,
-		prNumber,
-		initialCommentBody,
-	);
-	recordInitialComment(initialComment.id);
-	logger.info('Posted initial acknowledgment comment', { prNumber, commentId: initialComment.id });
-
-	return executeAgentLifecycle<CIContextData>({
-		loggerIdentifier: `ci-${prNumber}`,
-
-		onWatchdogTimeout: async () => {
-			await githubClient.createPRComment(
-				owner,
-				repo,
-				prNumber,
-				'⚠️ CI fix agent timed out while attempting to fix failures.',
-			);
-			logger.info('Posted timeout notice to PR', { prNumber });
-		},
-
-		setupRepoDir: (log) => setupRepository({ project, log, agentType: 'respond-to-ci', prBranch }),
-
-		buildContext: (repoDir, log) =>
-			buildCIContext(
-				owner,
-				repo,
-				prNumber,
-				prBranch,
-				headSha,
-				repoDir,
-				project,
-				config,
-				log,
-				input.modelOverride,
-			),
-
-		createBuilder: ({ client, ctx, llmistLogger, trackingContext, fileLogger, repoDir }) =>
-			createRespondToCIAgentBuilder(
-				client,
-				ctx,
-				llmistLogger,
-				trackingContext,
-				fileLogger.write.bind(fileLogger),
-				fileLogger.llmCallLogger,
-				repoDir,
-				owner,
-				repo,
-			),
-
-		injectSyntheticCalls: ({ builder, ctx, trackingContext, repoDir }) =>
-			injectCISyntheticCalls(
-				builder,
-				owner,
-				repo,
-				prNumber,
-				ctx,
-				trackingContext,
-				repoDir,
-				initialComment.id,
-				initialComment.htmlUrl,
-			),
-
-		interactive,
-		autoAccept,
-	});
+	return executeGitHubAgent(ciAgentDefinition, input);
 }
