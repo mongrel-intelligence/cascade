@@ -295,6 +295,7 @@ function createAgentBuilderWithGadgets(
 	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
 	repoDir: string,
 	cardId: string | undefined,
+	remainingBudgetUsd?: number,
 ): BuilderType {
 	// Build status update config if we have a cardId
 	const statusUpdate = cardId
@@ -318,6 +319,7 @@ function createAgentBuilderWithGadgets(
 		repoDir,
 		gadgets: getBaseAgentGadgets(agentType),
 		statusUpdate,
+		remainingBudgetUsd,
 		// Implementation agent uses sequential execution to ensure file operations
 		// are properly ordered (e.g., FileSearchAndReplace then ReadFile on same file)
 		postConfigure:
@@ -508,6 +510,7 @@ export async function executeAgent(
 				fileLogger.llmCallLogger,
 				repoDir,
 				cardId,
+				input.remainingBudgetUsd as number | undefined,
 			),
 
 		injectSyntheticCalls: ({ builder, ctx, trackingContext, repoDir }) =>

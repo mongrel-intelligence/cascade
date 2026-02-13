@@ -1,6 +1,11 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { AgentBuilder, type LLMist, type createLogger } from 'llmist';
+import {
+	AgentBuilder,
+	BudgetPricingUnavailableError,
+	type LLMist,
+	type createLogger,
+} from 'llmist';
 
 import { getCompactionConfig } from '../../config/compactionConfig.js';
 import { getIterationTrailingMessage } from '../../config/hintConfig.js';
@@ -34,6 +39,8 @@ export interface CreateBuilderOptions {
 	githubProgress?: GitHubProgressHooksConfig;
 	/** Set to true to skip calling initSessionState (review agent doesn't use it) */
 	skipSessionState?: boolean;
+	/** Remaining card budget in USD — passed to llmist's withBudget() for in-flight enforcement */
+	remainingBudgetUsd?: number;
 	/** Post-configuration callback for agent-specific builder tweaks */
 	postConfigure?: (builder: BuilderType) => BuilderType;
 }
@@ -57,6 +64,7 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 		statusUpdate,
 		githubProgress,
 		skipSessionState,
+		remainingBudgetUsd,
 		postConfigure,
 	} = options;
 
@@ -87,6 +95,18 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 			}),
 		})
 		.withGadgets(...gadgets);
+
+	if (remainingBudgetUsd !== undefined && remainingBudgetUsd > 0) {
+		try {
+			builder = builder.withBudget(remainingBudgetUsd);
+		} catch (err) {
+			if (err instanceof BudgetPricingUnavailableError) {
+				logWriter('warn', 'Budget enforcement unavailable for model', { model });
+			} else {
+				throw err;
+			}
+		}
+	}
 
 	if (postConfigure) {
 		builder = postConfigure(builder);

@@ -32,6 +32,7 @@ export const ProjectConfigSchema = z.object({
 	prompts: z.record(z.string()).optional(),
 	model: z.string().optional(),
 	agentModels: z.record(z.string()).optional(),
+	cardBudgetUsd: z.number().positive().optional(),
 });
 
 export const CascadeConfigSchema = z.object({
@@ -52,6 +53,7 @@ export const CascadeConfigSchema = z.object({
 				.positive()
 				.default(30 * 60 * 1000), // 30 min max job duration
 			postJobGracePeriodMs: z.number().int().nonnegative().default(5000), // 5 sec grace before exit
+			cardBudgetUsd: z.number().positive().default(3.5),
 		})
 		.default({}),
 	projects: z.array(ProjectConfigSchema).min(1),
