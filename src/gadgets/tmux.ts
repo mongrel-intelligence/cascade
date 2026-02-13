@@ -5,6 +5,7 @@
  * All commands run as windows within a single control session.
  */
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
+import { resolve } from 'node:path';
 import * as readline from 'node:readline';
 import { Gadget, z } from 'llmist';
 
@@ -454,8 +455,8 @@ class TmuxControlClient {
 		const base64 = Buffer.from(command).toString('base64');
 		const shellCmd = `bash -c 'eval "$(echo ${base64} | base64 -d)"; echo "${EXIT_MARKER_PREFIX}$?${EXIT_MARKER_SUFFIX}"'`;
 
-		// Default to process.cwd() when cwd not provided, since control session uses /tmp
-		const effectiveCwd = cwd ?? process.cwd();
+		// Resolve relative cwd against process.cwd() (repo root), since control session uses /tmp
+		const effectiveCwd = resolveWorkingDirectory(cwd);
 		const cwdArg = `-c "${effectiveCwd.replace(/"/g, '\\"')}" `;
 		const result = await this.sendCommand(
 			`new-window -t ${CONTROL_SESSION} -n ${windowName} ${cwdArg}-PF "#{pane_id}" ${shellCmd}`,
@@ -1106,4 +1107,13 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 	}
 }
 
-export { TmuxGadget as Tmux, validateGitCommand };
+/**
+ * Resolve working directory for tmux commands.
+ * Relative paths are resolved against process.cwd() (the repo root),
+ * since the tmux control session runs in /tmp.
+ */
+function resolveWorkingDirectory(cwd?: string): string {
+	return cwd ? resolve(cwd) : process.cwd();
+}
+
+export { TmuxGadget as Tmux, resolveWorkingDirectory, validateGitCommand };

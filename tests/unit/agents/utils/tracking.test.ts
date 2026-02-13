@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+	LOOP_THRESHOLDS,
 	checkForLoopAndAdvance,
+	consumeLoopAction,
 	consumeLoopWarning,
 	createTrackingContext,
 	recordGadgetCallForLoop,
@@ -288,6 +290,153 @@ describe('loop detection', () => {
 
 			expect(ctx.loopDetection.repeatedPattern).toContain('ReadFile');
 			expect(ctx.loopDetection.repeatedPattern).toContain('3'); // shows count
+		});
+	});
+
+	describe('name-only loop detection', () => {
+		it('produces no action below threshold (count 1-2)', () => {
+			const ctx = createTrackingContext();
+
+			// Iteration 1: FileSearchAndReplace + Tmux with params A
+			recordGadgetCallForLoop(ctx, 'FileSearchAndReplace', { filePath: '/foo.ts', search: 'a' });
+			recordGadgetCallForLoop(ctx, 'Tmux', { session: 'test-1', command: 'npm test' });
+			checkForLoopAndAdvance(ctx);
+
+			// Iteration 2: same gadget names, different params
+			recordGadgetCallForLoop(ctx, 'FileSearchAndReplace', { filePath: '/foo.ts', search: 'b' });
+			recordGadgetCallForLoop(ctx, 'Tmux', { session: 'test-2', command: 'npm test' });
+			checkForLoopAndAdvance(ctx);
+
+			// Count is 2, below WARNING threshold of 3
+			expect(ctx.loopDetection.nameOnlyRepeatCount).toBe(2);
+			expect(ctx.loopDetection.pendingAction).toBeNull();
+		});
+
+		it('produces warning at threshold (count 3)', () => {
+			const ctx = createTrackingContext();
+
+			for (let i = 0; i < LOOP_THRESHOLDS.WARNING; i++) {
+				recordGadgetCallForLoop(ctx, 'FileSearchAndReplace', {
+					filePath: '/foo.ts',
+					search: `v${i}`,
+				});
+				recordGadgetCallForLoop(ctx, 'Tmux', { session: `s${i}`, command: 'npm test' });
+				checkForLoopAndAdvance(ctx);
+			}
+
+			expect(ctx.loopDetection.nameOnlyRepeatCount).toBe(LOOP_THRESHOLDS.WARNING);
+			const action = consumeLoopAction(ctx);
+			expect(action).not.toBeNull();
+			expect(action?.type).toBe('warning');
+			expect(action?.message).toContain('SEMANTIC LOOP DETECTED');
+		});
+
+		it('produces strong warning at count 4 (contains forced termination)', () => {
+			const ctx = createTrackingContext();
+
+			for (let i = 0; i < LOOP_THRESHOLDS.STRONG_WARNING; i++) {
+				recordGadgetCallForLoop(ctx, 'FileSearchAndReplace', {
+					filePath: '/foo.ts',
+					search: `v${i}`,
+				});
+				recordGadgetCallForLoop(ctx, 'Tmux', { session: `s${i}`, command: 'npm test' });
+				checkForLoopAndAdvance(ctx);
+			}
+
+			expect(ctx.loopDetection.nameOnlyRepeatCount).toBe(LOOP_THRESHOLDS.STRONG_WARNING);
+			const action = consumeLoopAction(ctx);
+			expect(action).not.toBeNull();
+			expect(action?.type).toBe('warning');
+			expect(action?.message).toContain('forced termination');
+		});
+
+		it('produces hard_stop at count 5', () => {
+			const ctx = createTrackingContext();
+
+			for (let i = 0; i < LOOP_THRESHOLDS.HARD_STOP; i++) {
+				recordGadgetCallForLoop(ctx, 'FileSearchAndReplace', {
+					filePath: '/foo.ts',
+					search: `v${i}`,
+				});
+				recordGadgetCallForLoop(ctx, 'Tmux', { session: `s${i}`, command: 'npm test' });
+				checkForLoopAndAdvance(ctx);
+			}
+
+			expect(ctx.loopDetection.nameOnlyRepeatCount).toBe(LOOP_THRESHOLDS.HARD_STOP);
+			const action = consumeLoopAction(ctx);
+			expect(action).not.toBeNull();
+			expect(action?.type).toBe('hard_stop');
+			expect(action?.message).toContain('FORCED TERMINATION');
+		});
+
+		it('resets when gadget name pattern changes', () => {
+			const ctx = createTrackingContext();
+
+			// Build up to count 3 (warning threshold)
+			for (let i = 0; i < LOOP_THRESHOLDS.WARNING; i++) {
+				recordGadgetCallForLoop(ctx, 'FileSearchAndReplace', {
+					filePath: '/foo.ts',
+					search: `v${i}`,
+				});
+				checkForLoopAndAdvance(ctx);
+			}
+			expect(ctx.loopDetection.nameOnlyRepeatCount).toBe(LOOP_THRESHOLDS.WARNING);
+
+			// Different gadget name pattern
+			recordGadgetCallForLoop(ctx, 'ReadFile', { filePath: '/bar.ts' });
+			checkForLoopAndAdvance(ctx);
+
+			expect(ctx.loopDetection.nameOnlyRepeatCount).toBe(1);
+			expect(ctx.loopDetection.pendingAction).toBeNull();
+		});
+
+		it('does not fire when exact-match detection is active', () => {
+			const ctx = createTrackingContext();
+
+			// Iteration 1: exact same calls
+			recordGadgetCallForLoop(ctx, 'FileSearchAndReplace', {
+				filePath: '/foo.ts',
+				search: 'x',
+			});
+			checkForLoopAndAdvance(ctx);
+
+			// Iteration 2: exact same calls (exact match fires)
+			recordGadgetCallForLoop(ctx, 'FileSearchAndReplace', {
+				filePath: '/foo.ts',
+				search: 'x',
+			});
+			const loopDetected = checkForLoopAndAdvance(ctx);
+
+			expect(loopDetected).toBe(true); // exact-match fired
+			expect(ctx.loopDetection.nameOnlyRepeatCount).toBe(1); // name-only reset
+			expect(ctx.loopDetection.pendingAction).toBeNull();
+		});
+	});
+
+	describe('consumeLoopAction', () => {
+		it('returns null when no action is pending', () => {
+			const ctx = createTrackingContext();
+			expect(consumeLoopAction(ctx)).toBeNull();
+		});
+
+		it('returns and clears the pending action', () => {
+			const ctx = createTrackingContext();
+
+			// Build up to warning threshold
+			for (let i = 0; i < LOOP_THRESHOLDS.WARNING; i++) {
+				recordGadgetCallForLoop(ctx, 'FileSearchAndReplace', {
+					filePath: '/foo.ts',
+					search: `v${i}`,
+				});
+				checkForLoopAndAdvance(ctx);
+			}
+
+			const action = consumeLoopAction(ctx);
+			expect(action).not.toBeNull();
+			expect(action?.type).toBe('warning');
+
+			// Second call should return null (action was consumed)
+			expect(consumeLoopAction(ctx)).toBeNull();
 		});
 	});
 });

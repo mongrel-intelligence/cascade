@@ -1,5 +1,6 @@
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { Tmux, validateGitCommand } from '../../../src/gadgets/tmux.js';
+import { Tmux, resolveWorkingDirectory, validateGitCommand } from '../../../src/gadgets/tmux.js';
 
 describe('Tmux Gadget', () => {
 	describe('validateGitCommand', () => {
@@ -145,6 +146,26 @@ describe('Tmux Gadget', () => {
 			it('git log -n is allowed', () => {
 				expect(() => validateGitCommand('git log -n 10')).not.toThrow();
 			});
+		});
+	});
+
+	describe('resolveWorkingDirectory', () => {
+		it('resolves "." to process.cwd()', () => {
+			expect(resolveWorkingDirectory('.')).toBe(process.cwd());
+		});
+
+		it('resolves relative path against process.cwd()', () => {
+			expect(resolveWorkingDirectory('apps/frontend')).toBe(
+				resolve(process.cwd(), 'apps/frontend'),
+			);
+		});
+
+		it('leaves absolute paths unchanged', () => {
+			expect(resolveWorkingDirectory('/absolute/path')).toBe('/absolute/path');
+		});
+
+		it('defaults to process.cwd() when cwd is undefined', () => {
+			expect(resolveWorkingDirectory(undefined)).toBe(process.cwd());
 		});
 	});
 
