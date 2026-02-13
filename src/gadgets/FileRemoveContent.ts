@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 import { Gadget, z } from 'llmist';
 
-import { invalidateFileRead } from './readTracking.js';
+import { assertFileRead, invalidateFileRead } from './readTracking.js';
 import { formatContext, runPostEditChecks, validatePath } from './shared/index.js';
 
 export class FileRemoveContent extends Gadget({
@@ -127,6 +127,7 @@ Removed 3 lines (lines 2-4).
 
 		// Validate and resolve path
 		const validatedPath = validatePath(filePath);
+		assertFileRead(validatedPath, 'FileRemoveContent');
 
 		// Read file content
 		let content: string;
