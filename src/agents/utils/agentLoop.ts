@@ -14,6 +14,7 @@ import {
 import type { createAgentLogger } from './logging.js';
 import {
 	type TrackingContext,
+	consumeLoopAction,
 	consumeLoopWarning,
 	incrementGadgetCall,
 	isSyntheticCall,
@@ -29,6 +30,7 @@ export interface AgentRunResult {
 	iterations: number; // LLM request cycles
 	gadgetCalls: number; // Non-synthetic gadget calls
 	cost: number;
+	loopTerminated?: boolean;
 }
 
 interface GadgetCallEvent {
@@ -126,12 +128,14 @@ function injectSessionCompletionNotices(agent: RunnableAgent): void {
 /**
  * Check for pending loop warnings and inject as user messages.
  * Called during agent loop to warn the agent about detected loops.
+ * Returns 'hard_stop' if the agent should be terminated.
  */
 function injectLoopWarnings(
 	agent: RunnableAgent,
 	trackingContext: TrackingContext,
 	log: ReturnType<typeof createAgentLogger>,
-): void {
+): 'hard_stop' | undefined {
+	// Exact-match loop warnings
 	const warning = consumeLoopWarning(trackingContext);
 	if (warning) {
 		log.warn('[Loop Warning Injected]', {
@@ -139,6 +143,20 @@ function injectLoopWarnings(
 		});
 		agent.injectUserMessage(warning);
 	}
+
+	// Name-only loop actions (secondary defense)
+	const action = consumeLoopAction(trackingContext);
+	if (action) {
+		log.warn('[Name-Only Loop Action]', {
+			type: action.type,
+			nameOnlyRepeatCount: trackingContext.loopDetection.nameOnlyRepeatCount,
+		});
+		agent.injectUserMessage(action.message);
+		if (action.type === 'hard_stop') {
+			return 'hard_stop';
+		}
+	}
+	return undefined;
 }
 
 // ============================================================================
@@ -282,19 +300,30 @@ export async function runAgentLoop(
 	autoAccept = false,
 ): Promise<AgentRunResult> {
 	const outputLines: string[] = [];
+	let loopTerminated = false;
 
 	for await (const event of agent.run()) {
 		// Check for session completions after each event
 		injectSessionCompletionNotices(agent);
 		// Check for loop warnings (set by hooks at iteration start)
-		injectLoopWarnings(agent, trackingContext, log);
+		const loopResult = injectLoopWarnings(agent, trackingContext, log);
+		if (loopResult === 'hard_stop') {
+			log.error('[Loop Hard Stop] Agent terminated due to persistent semantic loop', {
+				iterations: trackingContext.metrics.llmIterations,
+				nameOnlyRepeatCount: trackingContext.loopDetection.nameOnlyRepeatCount,
+			});
+			loopTerminated = true;
+			break;
+		}
 		await handleStreamEvent(event, outputLines, log, trackingContext, interactive, autoAccept);
 	}
 
-	// Final check for any completions that occurred during the last event
-	injectSessionCompletionNotices(agent);
-	// Final check for any pending loop warnings
-	injectLoopWarnings(agent, trackingContext, log);
+	if (!loopTerminated) {
+		// Final check for any completions that occurred during the last event
+		injectSessionCompletionNotices(agent);
+		// Final check for any pending loop warnings
+		injectLoopWarnings(agent, trackingContext, log);
+	}
 
 	const cost = agent.getTree()?.getTotalCost() ?? 0;
 
@@ -303,5 +332,6 @@ export async function runAgentLoop(
 		iterations: trackingContext.metrics.llmIterations,
 		gadgetCalls: trackingContext.metrics.gadgetCalls,
 		cost,
+		loopTerminated,
 	};
 }
