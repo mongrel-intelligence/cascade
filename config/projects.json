@@ -53,6 +53,10 @@
 			"baseBranch": "dev",
 			"branchPrefix": "feature/",
 			"reviewerTokenEnv": "GITHUB_REVIEWER_TOKEN",
+			"agentModels": {
+				"planning": "openrouter:google/gemini-3-flash-preview",
+				"review": "openrouter:google/gemini-3-flash-preview"
+			},
 			"trello": {
 				"boardId": "698db5df2b873930c7c38bc0",
 				"lists": {
