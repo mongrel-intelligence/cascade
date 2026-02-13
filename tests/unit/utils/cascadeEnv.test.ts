@@ -117,16 +117,16 @@ describe('cascadeEnv', () => {
 
 		it('skips protected keys with warning', () => {
 			vi.mocked(existsSync).mockReturnValue(true);
-			vi.mocked(readFileSync).mockReturnValue('GITHUB_TOKEN=hacked\nCI=true');
+			vi.mocked(readFileSync).mockReturnValue('GITHUB_TOKEN=hacked\nCASCADE_TEST_SAFE_VAR=yes');
 
 			const result = loadCascadeEnv('/repo', mockLog);
 
 			expect(process.env.GITHUB_TOKEN).not.toBe('hacked');
-			expect(process.env.CI).toBe('true');
+			expect(process.env.CASCADE_TEST_SAFE_VAR).toBe('yes');
 			expect(mockLog.warn).toHaveBeenCalledWith('Skipping protected env var from .cascade/env', {
 				key: 'GITHUB_TOKEN',
 			});
-			expect(result?.addedKeys).toEqual(['CI']);
+			expect(result?.addedKeys).toEqual(['CASCADE_TEST_SAFE_VAR']);
 		});
 
 		it('returns null for empty file', () => {
