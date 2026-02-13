@@ -16,10 +16,28 @@ vi.mock('../../../src/github/client.js', () => ({
 	},
 }));
 
-// Mock runCommand for git push
+// Mock runCommand for git operations
 vi.mock('../../../src/utils/repo.js', () => ({
 	runCommand: vi.fn(),
 }));
+
+const REMOTE_URL = 'https://x-access-token@github.com/test-owner/test-repo.git';
+
+/** Mock runCommand to handle git remote detection + other commands via a delegate */
+function mockRunCommand(
+	delegate: (
+		cmd: string,
+		args?: string[],
+	) => Promise<{ stdout: string; stderr: string; exitCode: number }>,
+) {
+	vi.mocked(runCommand).mockImplementation(async (cmd, args, cwd) => {
+		// Auto-detect owner/repo from git remote
+		if (args?.[0] === 'remote') {
+			return { stdout: REMOTE_URL, stderr: '', exitCode: 0 };
+		}
+		return delegate(cmd, args);
+	});
+}
 
 describe('GitHub Gadgets', () => {
 	describe('CreatePR', () => {
@@ -39,20 +57,18 @@ describe('GitHub Gadgets', () => {
 			expect(gadget.description).toContain('pull request');
 		});
 
-		it('mentions push behavior in description', () => {
+		it('mentions auto-detection in description', () => {
 			const gadget = new CreatePR();
-			expect(gadget.description).toContain('Push the branch to remote');
+			expect(gadget.description).toContain('auto-detected');
 		});
 
 		it('throws error when branch does not exist (commit=false, push=false)', async () => {
 			// git ls-remote returns empty stdout when branch doesn't exist
-			vi.mocked(runCommand).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
+			mockRunCommand(async () => ({ stdout: '', stderr: '', exitCode: 0 }));
 
 			const gadget = new CreatePR();
 			await expect(
 				gadget.execute({
-					owner: 'test-owner',
-					repo: 'test-repo',
 					title: 'Test PR',
 					body: 'Test body',
 					head: 'feature/test',
@@ -65,12 +81,12 @@ describe('GitHub Gadgets', () => {
 			expect(githubClient.createPR).not.toHaveBeenCalled();
 		});
 
-		it('creates PR when branch exists (commit=false, push=false)', async () => {
-			// git ls-remote returns ref line when branch exists
-			vi.mocked(runCommand).mockResolvedValue({
-				stdout: 'abc123\trefs/heads/feature/test',
-				stderr: '',
-				exitCode: 0,
+		it('auto-detects owner/repo from git remote and creates PR', async () => {
+			mockRunCommand(async (_cmd, args) => {
+				if (args?.[0] === 'ls-remote') {
+					return { stdout: 'abc123\trefs/heads/feature/test', stderr: '', exitCode: 0 };
+				}
+				return { stdout: '', stderr: '', exitCode: 0 };
 			});
 			vi.mocked(githubClient.createPR).mockResolvedValue({
 				number: 42,
@@ -80,8 +96,6 @@ describe('GitHub Gadgets', () => {
 
 			const gadget = new CreatePR();
 			const result = await gadget.execute({
-				owner: 'test-owner',
-				repo: 'test-repo',
 				title: 'Test PR',
 				body: 'Test body',
 				head: 'feature/test',
@@ -99,20 +113,14 @@ describe('GitHub Gadgets', () => {
 				base: 'main',
 				draft: undefined,
 			});
-			// Only ls-remote should have been called (no commit/push)
-			expect(runCommand).toHaveBeenCalledTimes(1);
-			expect(runCommand).toHaveBeenCalledWith(
-				'git',
-				['ls-remote', '--heads', 'origin', 'feature/test'],
-				expect.any(String),
-			);
 		});
 
 		it('includes draft label when creating draft PR', async () => {
-			vi.mocked(runCommand).mockResolvedValue({
-				stdout: 'abc123\trefs/heads/feature/draft',
-				stderr: '',
-				exitCode: 0,
+			mockRunCommand(async (_cmd, args) => {
+				if (args?.[0] === 'ls-remote') {
+					return { stdout: 'abc123\trefs/heads/feature/draft', stderr: '', exitCode: 0 };
+				}
+				return { stdout: '', stderr: '', exitCode: 0 };
 			});
 			vi.mocked(githubClient.createPR).mockResolvedValue({
 				number: 43,
@@ -122,8 +130,6 @@ describe('GitHub Gadgets', () => {
 
 			const gadget = new CreatePR();
 			const result = await gadget.execute({
-				owner: 'test-owner',
-				repo: 'test-repo',
 				title: 'Draft PR',
 				body: 'Test body',
 				head: 'feature/draft',
@@ -137,7 +143,7 @@ describe('GitHub Gadgets', () => {
 		});
 
 		it('commits and pushes branch before creating PR by default', async () => {
-			vi.mocked(runCommand).mockImplementation(async (_cmd, args) => {
+			mockRunCommand(async (_cmd, args) => {
 				if (args?.[0] === 'ls-remote') {
 					return { stdout: 'abc123\trefs/heads/feature/test', stderr: '', exitCode: 0 };
 				}
@@ -151,8 +157,6 @@ describe('GitHub Gadgets', () => {
 
 			const gadget = new CreatePR();
 			const result = await gadget.execute({
-				owner: 'test-owner',
-				repo: 'test-repo',
 				title: 'Test PR',
 				body: 'Test body',
 				head: 'feature/test',
@@ -174,6 +178,7 @@ describe('GitHub Gadgets', () => {
 
 		it('commits changes when there are unstaged changes', async () => {
 			vi.mocked(runCommand)
+				.mockResolvedValueOnce({ stdout: REMOTE_URL, stderr: '', exitCode: 0 }) // git remote
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add
 				.mockResolvedValueOnce({ stdout: 'M file.ts', stderr: '', exitCode: 0 }) // git status --porcelain
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git commit
@@ -191,8 +196,6 @@ describe('GitHub Gadgets', () => {
 
 			const gadget = new CreatePR();
 			await gadget.execute({
-				owner: 'test-owner',
-				repo: 'test-repo',
 				title: 'Test PR',
 				body: 'Test body',
 				head: 'feature/test',
@@ -209,6 +212,7 @@ describe('GitHub Gadgets', () => {
 
 		it('uses custom commit message when provided', async () => {
 			vi.mocked(runCommand)
+				.mockResolvedValueOnce({ stdout: REMOTE_URL, stderr: '', exitCode: 0 }) // git remote
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add
 				.mockResolvedValueOnce({ stdout: 'M file.ts', stderr: '', exitCode: 0 }) // git status --porcelain
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git commit
@@ -226,8 +230,6 @@ describe('GitHub Gadgets', () => {
 
 			const gadget = new CreatePR();
 			await gadget.execute({
-				owner: 'test-owner',
-				repo: 'test-repo',
 				title: 'Test PR',
 				body: 'Test body',
 				head: 'feature/test',
@@ -243,7 +245,7 @@ describe('GitHub Gadgets', () => {
 		});
 
 		it('skips commit when commit=false', async () => {
-			vi.mocked(runCommand).mockImplementation(async (_cmd, args) => {
+			mockRunCommand(async (_cmd, args) => {
 				if (args?.[0] === 'ls-remote') {
 					return { stdout: 'abc123\trefs/heads/feature/test', stderr: '', exitCode: 0 };
 				}
@@ -257,8 +259,6 @@ describe('GitHub Gadgets', () => {
 
 			const gadget = new CreatePR();
 			await gadget.execute({
-				owner: 'test-owner',
-				repo: 'test-repo',
 				title: 'Test PR',
 				body: 'Test body',
 				head: 'feature/test',
@@ -283,6 +283,7 @@ describe('GitHub Gadgets', () => {
 
 		it('throws error when commit fails', async () => {
 			vi.mocked(runCommand)
+				.mockResolvedValueOnce({ stdout: REMOTE_URL, stderr: '', exitCode: 0 }) // git remote
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add
 				.mockResolvedValueOnce({ stdout: 'M file.ts', stderr: '', exitCode: 0 }) // git status --porcelain
 				.mockResolvedValueOnce({
@@ -294,8 +295,6 @@ describe('GitHub Gadgets', () => {
 			const gadget = new CreatePR();
 			await expect(
 				gadget.execute({
-					owner: 'test-owner',
-					repo: 'test-repo',
 					title: 'Test PR',
 					body: 'Test body',
 					head: 'feature/test',
@@ -308,6 +307,7 @@ describe('GitHub Gadgets', () => {
 
 		it('throws error when push fails', async () => {
 			vi.mocked(runCommand)
+				.mockResolvedValueOnce({ stdout: REMOTE_URL, stderr: '', exitCode: 0 }) // git remote
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git status --porcelain (no changes)
 				.mockResolvedValueOnce({
@@ -319,8 +319,6 @@ describe('GitHub Gadgets', () => {
 			const gadget = new CreatePR();
 			await expect(
 				gadget.execute({
-					owner: 'test-owner',
-					repo: 'test-repo',
 					title: 'Test PR',
 					body: 'Test body',
 					head: 'feature/test',
@@ -335,10 +333,11 @@ describe('GitHub Gadgets', () => {
 			const error = new Error('A pull request already exists for test-owner:feature/test');
 			Object.assign(error, { status: 422 });
 
-			vi.mocked(runCommand).mockResolvedValue({
-				stdout: 'abc123\trefs/heads/feature/test',
-				stderr: '',
-				exitCode: 0,
+			mockRunCommand(async (_cmd, args) => {
+				if (args?.[0] === 'ls-remote') {
+					return { stdout: 'abc123\trefs/heads/feature/test', stderr: '', exitCode: 0 };
+				}
+				return { stdout: '', stderr: '', exitCode: 0 };
 			});
 			vi.mocked(githubClient.createPR).mockRejectedValue(error);
 			vi.mocked(githubClient.getOpenPRByBranch).mockResolvedValue({
@@ -351,8 +350,6 @@ describe('GitHub Gadgets', () => {
 
 			const gadget = new CreatePR();
 			const result = await gadget.execute({
-				owner: 'test-owner',
-				repo: 'test-repo',
 				title: 'Test PR',
 				body: 'Test body',
 				head: 'feature/test',
@@ -373,18 +370,17 @@ describe('GitHub Gadgets', () => {
 			const error = new Error('Internal Server Error');
 			Object.assign(error, { status: 500 });
 
-			vi.mocked(runCommand).mockResolvedValue({
-				stdout: 'abc123\trefs/heads/feature/test',
-				stderr: '',
-				exitCode: 0,
+			mockRunCommand(async (_cmd, args) => {
+				if (args?.[0] === 'ls-remote') {
+					return { stdout: 'abc123\trefs/heads/feature/test', stderr: '', exitCode: 0 };
+				}
+				return { stdout: '', stderr: '', exitCode: 0 };
 			});
 			vi.mocked(githubClient.createPR).mockRejectedValue(error);
 
 			const gadget = new CreatePR();
 			await expect(
 				gadget.execute({
-					owner: 'test-owner',
-					repo: 'test-repo',
 					title: 'Test PR',
 					body: 'Test body',
 					head: 'feature/test',
@@ -395,6 +391,55 @@ describe('GitHub Gadgets', () => {
 			).rejects.toThrow('Internal Server Error');
 
 			expect(githubClient.getOpenPRByBranch).not.toHaveBeenCalled();
+		});
+
+		it('throws when git remote is not available', async () => {
+			vi.mocked(runCommand).mockResolvedValue({
+				stdout: '',
+				stderr: 'fatal: not a git repository',
+				exitCode: 128,
+			});
+
+			const gadget = new CreatePR();
+			await expect(
+				gadget.execute({
+					title: 'Test PR',
+					body: 'Test body',
+					head: 'feature/test',
+					base: 'main',
+					commit: false,
+					push: false,
+				}),
+			).rejects.toThrow('no git remote "origin" found');
+		});
+
+		it('parses SSH remote URL correctly', async () => {
+			vi.mocked(runCommand).mockImplementation(async (_cmd, args) => {
+				if (args?.[0] === 'remote') {
+					return { stdout: 'git@github.com:my-org/my-repo.git', stderr: '', exitCode: 0 };
+				}
+				if (args?.[0] === 'ls-remote') {
+					return { stdout: 'abc123\trefs/heads/feature/test', stderr: '', exitCode: 0 };
+				}
+				return { stdout: '', stderr: '', exitCode: 0 };
+			});
+			vi.mocked(githubClient.createPR).mockResolvedValue({
+				number: 50,
+				htmlUrl: 'https://github.com/my-org/my-repo/pull/50',
+				title: 'Test PR',
+			});
+
+			const gadget = new CreatePR();
+			await gadget.execute({
+				title: 'Test PR',
+				body: 'Test body',
+				head: 'feature/test',
+				base: 'main',
+				commit: false,
+				push: false,
+			});
+
+			expect(githubClient.createPR).toHaveBeenCalledWith('my-org', 'my-repo', expect.any(Object));
 		});
 	});
 });
