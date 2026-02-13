@@ -2,6 +2,7 @@ import { execSync } from 'node:child_process';
 import type { TrailingMessage } from 'llmist';
 import {
 	formatDiagnosticStatus,
+	getDiagnosticLoopFiles,
 	hasAnyDiagnosticErrors,
 } from '../gadgets/shared/diagnosticState.js';
 import { formatTodoList, loadTodos } from '../gadgets/todo/storage.js';
@@ -16,6 +17,8 @@ const AGENT_HINTS: Record<string, string> = {
 		'Complete the current todo in as few iterations as possible. Batch related edits together. Verify with Tmux after edits. NEVER mark acceptance criteria complete without passing verification.',
 	'respond-to-review':
 		'Address the current review comment fully before moving to the next. Batch related file edits together.',
+	'respond-to-ci':
+		'Fix CI failures with minimal, focused changes. Batch related file edits together.',
 
 	// Read-only agents
 	review:
@@ -122,6 +125,8 @@ function buildImplementationTrailingMessage(timestamp: string, iterationStatus: 
 
 	if (hasAnyDiagnosticErrors()) {
 		sections.push(formatDiagnosticStatus());
+		const loopWarning = formatDiagnosticLoopWarning();
+		if (loopWarning) sections.push(loopWarning);
 	}
 
 	const todos = loadTodos();
@@ -151,6 +156,35 @@ function buildImplementationTrailingMessage(timestamp: string, iterationStatus: 
 	return sections.join('\n\n');
 }
 
+/**
+ * Format a diagnostic loop warning for files that have been edited multiple times
+ * with diagnostic errors persisting after each edit.
+ */
+function formatDiagnosticLoopWarning(): string | null {
+	const loopFiles = getDiagnosticLoopFiles();
+	const loopEntries = Array.from(loopFiles.entries()).filter(([, count]) => count >= 2);
+
+	if (loopEntries.length === 0) return null;
+
+	const lines: string[] = ['## ⚠️ Diagnostic Loop Detected', ''];
+
+	for (const [filePath, count] of loopEntries) {
+		lines.push(
+			`**${filePath}** has been edited ${count} times with diagnostic errors persisting after each edit.`,
+		);
+	}
+
+	lines.push(
+		'',
+		'Your edits may be causing cascading errors in dependent files. STOP and:',
+		'- Read the error output from your last edit — if errors are in OTHER files, read those files first',
+		'- Consider whether a simpler fix (like a lint-suppression comment) would avoid the cascade',
+		'- If removing a type breaks consumers, the original type choice was likely intentional',
+	);
+
+	return lines.join('\n');
+}
+
 export function getIterationTrailingMessage(agentType?: string): TrailingMessage {
 	const batchHint = getAgentHint(agentType);
 
@@ -162,8 +196,14 @@ export function getIterationTrailingMessage(agentType?: string): TrailingMessage
 			return buildImplementationTrailingMessage(timestamp, iterationStatus);
 		}
 
-		if (agentType === 'respond-to-review' && hasAnyDiagnosticErrors()) {
-			return `${timestamp}\n\n${iterationStatus}\n\n${formatDiagnosticStatus()}`;
+		if (
+			(agentType === 'respond-to-review' || agentType === 'respond-to-ci') &&
+			hasAnyDiagnosticErrors()
+		) {
+			const sections = [timestamp, iterationStatus, formatDiagnosticStatus()];
+			const loopWarning = formatDiagnosticLoopWarning();
+			if (loopWarning) sections.push(loopWarning);
+			return sections.join('\n\n');
 		}
 
 		return `${timestamp}\n\n${iterationStatus}`;

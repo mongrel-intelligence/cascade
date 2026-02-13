@@ -5,7 +5,7 @@
  * to provide visibility into long-running sessions.
  */
 
-import { loadTodos } from '../gadgets/todo/storage.js';
+import { formatTodoList, loadTodos } from '../gadgets/todo/storage.js';
 
 /**
  * Configuration for periodic status updates.
@@ -75,6 +75,44 @@ export function formatStatusMessage(
 			lines.push(`**Working on:** ${inProgressTodo.content}`);
 		}
 	}
+
+	return lines.join('\n');
+}
+
+/**
+ * Format a GitHub progress comment that updates the initial PR comment.
+ *
+ * Renders a progress bar, todo list, and metadata footer.
+ *
+ * @param headerMessage - Original comment text preserved as header (e.g., "🔍 Reviewing PR...")
+ * @param iteration - Current iteration number
+ * @param maxIterations - Maximum allowed iterations
+ * @param agentType - Type of agent posting the update
+ * @returns Formatted markdown comment body
+ */
+export function formatGitHubProgressComment(
+	headerMessage: string,
+	iteration: number,
+	maxIterations: number,
+	agentType: string,
+): string {
+	const progress = Math.round((iteration / maxIterations) * 100);
+	const progressBar = createProgressBar(progress);
+
+	const todos = loadTodos();
+	const todoSection = formatTodoList(todos);
+
+	const lines = [
+		headerMessage,
+		'',
+		'---',
+		'',
+		`**Progress:** ${progressBar} ${progress}% (iteration ${iteration}/${maxIterations})`,
+		'',
+		todoSection,
+		'',
+		`<sub>Last updated: iteration ${iteration} · ${agentType} agent</sub>`,
+	];
 
 	return lines.join('\n');
 }

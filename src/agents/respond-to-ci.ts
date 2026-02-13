@@ -338,6 +338,8 @@ function createRespondToCIAgentBuilder(
 	logWriter: (level: string, message: string, context?: Record<string, unknown>) => void,
 	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
 	repoDir: string,
+	owner: string,
+	repo: string,
 ): BuilderType {
 	return createConfiguredBuilder({
 		client,
@@ -351,6 +353,13 @@ function createRespondToCIAgentBuilder(
 		llmCallLogger,
 		repoDir,
 		gadgets: getCIGadgets(),
+		githubProgress: {
+			owner,
+			repo,
+			headerMessage: '🤖 Working on fixing CI failures...',
+			agentType: 'respond-to-ci',
+			maxIterations: ctx.maxIterations,
+		},
 	});
 }
 
@@ -506,6 +515,8 @@ export async function executeRespondToCIAgent(input: RespondToCIAgentInput): Pro
 				fileLogger.write.bind(fileLogger),
 				fileLogger.llmCallLogger,
 				repoDir,
+				owner,
+				repo,
 			),
 
 		injectSyntheticCalls: ({ builder, ctx, trackingContext, repoDir }) =>
