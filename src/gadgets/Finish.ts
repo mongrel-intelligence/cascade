@@ -85,18 +85,16 @@ export class Finish extends Gadget({
 			);
 		}
 
-		// For respond-to-review agent, require clean git state and pushed changes
-		if (state.agentType === 'respond-to-review') {
+		// For respond-to-review and respond-to-ci agents, require clean git state and pushed changes
+		if (state.agentType === 'respond-to-review' || state.agentType === 'respond-to-ci') {
 			if (hasUncommittedChanges()) {
 				throw new Error(
-					'Cannot finish respond-to-review session with uncommitted changes. ' +
-						'You must commit your changes (git add && git commit) before calling Finish.',
+					`Cannot finish ${state.agentType} session with uncommitted changes. You must commit your changes (git add && git commit) before calling Finish.`,
 				);
 			}
 			if (hasUnpushedCommits()) {
 				throw new Error(
-					'Cannot finish respond-to-review session without pushing changes. ' +
-						'You must push your commits (git push) before calling Finish.',
+					`Cannot finish ${state.agentType} session without pushing changes. You must push your commits (git push) before calling Finish.`,
 				);
 			}
 		}
