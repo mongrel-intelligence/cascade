@@ -41,6 +41,35 @@ const EXIT_MARKER_PREFIX = '___CASCADE_EXIT_';
 const EXIT_MARKER_SUFFIX = '___';
 
 /**
+ * Patterns indicating a process completed its work but is blocked waiting
+ * for user input.  Covers test-runner watch modes, build watchers, REPLs,
+ * and other interactive loops that will never exit on their own.
+ */
+const INTERACTIVE_WAIT_PATTERNS = [
+	'waiting for file changes',
+	'press h to show help, press q to quit',
+	'press q to quit',
+	'watch usage',
+	'watching for changes',
+	'waiting for changes',
+	'type .help for more information', // Node REPL
+	'press enter to exit',
+];
+
+/**
+ * Detect if command output contains patterns suggesting the process is
+ * blocked waiting for interactive input rather than still doing useful work.
+ * Returns the matched pattern if found, null otherwise.
+ */
+function detectInteractiveWait(output: string): string | null {
+	const lower = output.toLowerCase();
+	for (const pattern of INTERACTIVE_WAIT_PATTERNS) {
+		if (lower.includes(pattern)) return pattern;
+	}
+	return null;
+}
+
+/**
  * Session name schema - accepts any string, sanitized at runtime.
  * Invalid characters (like /) are automatically replaced with dashes.
  */
@@ -1016,7 +1045,11 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 
 		// Still running - get partial output
 		const output = this.cleanupOutput(await this.getSessionOutput(client, session));
-		return `session=${session} status=running\n\n${output || '(no output yet)'}\n\n(Process still running in session '${session}'. Use capture to check progress, kill when done.)`;
+		const waitPattern = detectInteractiveWait(output);
+		const waitWarning = waitPattern
+			? `\n\n⚠️ INTERACTIVE MODE DETECTED: The process appears to have finished but is waiting for input (matched: "${waitPattern}"). Kill this session and re-run the command in non-interactive / single-run mode.`
+			: '';
+		return `session=${session} status=running\n\n${output || '(no output yet)'}${waitWarning}\n\n(Process still running in session '${session}'. Use capture to check progress, kill when done.)`;
 	}
 
 	private async handleSend(params: {
@@ -1073,7 +1106,11 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 			return `session=${params.session} status=exited exit_code=${sessionStatus.exitCode} lines=${lines}\n\n${captured || '(no output)'}`;
 		}
 
-		return `session=${params.session} status=running lines=${lines}\n\n${captured || '(no output yet)'}`;
+		const waitPattern = detectInteractiveWait(captured);
+		const waitWarning = waitPattern
+			? `\n\n⚠️ INTERACTIVE MODE DETECTED: The process appears to have finished but is waiting for input (matched: "${waitPattern}"). Kill this session and re-run the command in non-interactive / single-run mode.`
+			: '';
+		return `session=${params.session} status=running lines=${lines}\n\n${captured || '(no output yet)'}${waitWarning}`;
 	}
 
 	private async handleList(): Promise<string> {
@@ -1116,4 +1153,4 @@ function resolveWorkingDirectory(cwd?: string): string {
 	return cwd ? resolve(cwd) : process.cwd();
 }
 
-export { TmuxGadget as Tmux, resolveWorkingDirectory, validateGitCommand };
+export { TmuxGadget as Tmux, resolveWorkingDirectory, validateGitCommand, detectInteractiveWait };
