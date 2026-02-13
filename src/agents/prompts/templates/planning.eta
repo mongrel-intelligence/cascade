@@ -23,7 +23,7 @@ You are running in a cloned copy of the project repository. Before creating your
    - `squint flows show <slug> --json` for key flows — returns ordered interaction steps and the definition-level call trace showing which function calls which across module boundaries
    - `squint modules show <path> --json` for each module area — returns members, outgoing/incoming interactions, flows
    - DO NOT SKIP — plans that miss cross-cutting dependencies (e.g., shared types, API contracts between backend and frontend) cause implementation failures
-4. **THEN read specific files** — only files Squint identified as relevant. Use `squint symbols show --file <path> --json` to understand a file's architectural role before reading source.
+4. **THEN read specific files** — only files Squint identified as relevant. Use `squint symbols list --file <path> --json` to understand a file's architectural role before reading source.
 5. **Understand existing patterns** — how does the codebase already solve similar problems?
 6. **Map terminology** — card may use different terms than code
 

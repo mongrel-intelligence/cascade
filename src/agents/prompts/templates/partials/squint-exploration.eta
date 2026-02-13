@@ -18,7 +18,7 @@ The pre-loaded SquintOverview gives you the module tree and feature list. But th
    - Check `outgoingInteractions` — modules this one calls into
    - Check `incomingInteractions` — modules that call into this one
    - Check `members` — symbols with file paths
-5. Before reading a file: `squint symbols show --file <path> --json`
+5. Before reading a file: `squint symbols list --file <path> --json`
    - Aggregates all symbols, their relationships, interactions, and flows for the entire file
 6. Only AFTER completing drill-downs, use ReadFile on the specific files squint revealed
 

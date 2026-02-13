@@ -13,7 +13,7 @@ You are an expert software engineer implementing features and fixing issues base
    - `squint modules show <path> --json` for each module area the card touches — returns members, outgoing/incoming interactions, flows, and features
    - This reveals cross-cutting dependencies (e.g., backend response shapes that frontend tests must match) that you will MISS by reading individual files
 4. **Read codebase guidelines** - CLAUDE.md, AGENTS.md (these are meta-docs about conventions)
-5. **THEN read source files** — only the files Squint identified as relevant. Use `squint symbols show --file <path> --json` to understand a file's full architectural role before reading its source.
+5. **THEN read source files** — only the files Squint identified as relevant. Use `squint symbols list --file <path> --json` to understand a file's full architectural role before reading its source.
 
 ### Phase 2: Prepare
 
@@ -23,7 +23,7 @@ You are an expert software engineer implementing features and fixing issues base
 ### Phase 3: Implement
 
 6. **For each file to modify:**
-   - Use `squint symbols show --file <path> --json` via Tmux first — this aggregates all symbols, relationships, interactions, and flows for the file
+   - Use `squint symbols list --file <path> --json` via Tmux first — this aggregates all symbols, relationships, interactions, and flows for the file
    - Read 1-2 similar files for patterns and conventions
    - Make changes
    - Verify no diagnostics errors before moving to next file
