@@ -66,16 +66,19 @@ async function postAcknowledgmentComment(result: TriggerResult): Promise<void> {
 	if (result.agentType !== 'respond-to-review' || !result.prNumber) {
 		return;
 	}
-	const input = result.agentInput as { repoFullName?: string };
+	const input = result.agentInput as { repoFullName?: string; acknowledgmentCommentId?: number };
 	if (!input.repoFullName) {
 		return;
 	}
 	const [owner, repo] = input.repoFullName.split('/');
 	const prNumber = result.prNumber;
-	await safeOperation(
+	const comment = await safeOperation(
 		() => githubClient.createPRComment(owner, repo, prNumber, '👀 Checking this out...'),
 		{ action: 'post acknowledgment comment', prNumber },
 	);
+	if (comment) {
+		input.acknowledgmentCommentId = comment.id;
+	}
 }
 
 function processNextQueuedGitHubWebhook(config: CascadeConfig, registry: TriggerRegistry): void {

@@ -43,6 +43,7 @@ interface RespondToReviewAgentInput extends AgentInput {
 	triggerCommentBody: string;
 	triggerCommentPath: string;
 	triggerCommentUrl: string;
+	acknowledgmentCommentId?: number;
 	project: ProjectConfig;
 	config: CascadeConfig;
 }
@@ -269,20 +270,27 @@ async function injectReviewSyntheticCalls(
 	ctx: ReviewContextData,
 	trackingContext: TrackingContext,
 	repoDir: string,
+	acknowledgmentCommentId?: number,
 ): Promise<BuilderType> {
-	// Post initial "getting to work" comment on the PR
+	// Update or post initial "getting to work" comment on the PR
 	const initialCommentBody = '🤖 Working on addressing the review feedback...';
-	const initialComment = await githubClient.createPRComment(
-		owner,
-		repo,
-		prNumber,
-		initialCommentBody,
-	);
+	let initialComment: { id: number; htmlUrl: string };
+	if (acknowledgmentCommentId) {
+		initialComment = await githubClient.updatePRComment(
+			owner,
+			repo,
+			acknowledgmentCommentId,
+			initialCommentBody,
+		);
+	} else {
+		initialComment = await githubClient.createPRComment(owner, repo, prNumber, initialCommentBody);
+	}
 	recordInitialComment(initialComment.id);
+	const syntheticGadgetName = acknowledgmentCommentId ? 'UpdatePRComment' : 'PostPRComment';
 	let builder = injectSyntheticCall(
 		initialBuilder,
 		trackingContext,
-		'PostPRComment',
+		syntheticGadgetName,
 		{ comment: 'Acknowledge review feedback', owner, repo, prNumber, body: initialCommentBody },
 		`Comment posted (id: ${initialComment.id}): ${initialComment.htmlUrl}`,
 		'gc_initial_comment',
@@ -410,7 +418,16 @@ export async function executeRespondToReviewAgent(
 			),
 
 		injectSyntheticCalls: ({ builder, ctx, trackingContext, repoDir }) =>
-			injectReviewSyntheticCalls(builder, owner, repo, prNumber, ctx, trackingContext, repoDir),
+			injectReviewSyntheticCalls(
+				builder,
+				owner,
+				repo,
+				prNumber,
+				ctx,
+				trackingContext,
+				repoDir,
+				input.acknowledgmentCommentId,
+			),
 
 		interactive,
 		autoAccept,
