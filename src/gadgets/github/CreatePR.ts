@@ -12,6 +12,8 @@ By default, this gadget will:
 2. Push the branch to remote
 3. Create the pull request
 
+The repository owner and name are auto-detected from the git remote — you do not need to specify them.
+
 Set commit=false if you have already committed your changes.
 Set push=false if you have already pushed the branch.
 
@@ -26,8 +28,6 @@ If hooks fail or timeout, the full output will be shown.`,
 	timeoutMs: 240000, // 4 minutes - hooks may run test suites
 	schema: z.object({
 		comment: z.string().min(1).describe('Brief rationale for this gadget call'),
-		owner: z.string().describe('The repository owner (username or organization)'),
-		repo: z.string().describe('The repository name'),
 		title: z
 			.string()
 			.describe('The pull request title (also used as commit message if committing)'),
@@ -53,8 +53,6 @@ If hooks fail or timeout, the full output will be shown.`,
 		{
 			params: {
 				comment: 'Creating PR for completed auth feature',
-				owner: 'acme',
-				repo: 'myapp',
 				title: 'feat: add user authentication',
 				body: '## Summary\n\nAdds OAuth2 authentication flow.\n\n## Changes\n\n- Added login page\n- Integrated with auth provider\n- Added session management',
 				head: 'feature/auth',
@@ -65,8 +63,6 @@ If hooks fail or timeout, the full output will be shown.`,
 		{
 			params: {
 				comment: 'Creating draft PR for early feedback',
-				owner: 'acme',
-				repo: 'myapp',
 				title: 'fix: resolve null pointer in checkout',
 				body: 'Fixes #123\n\nAdded null check before accessing cart items.',
 				head: 'fix/checkout-null',
@@ -79,8 +75,6 @@ If hooks fail or timeout, the full output will be shown.`,
 		{
 			params: {
 				comment: 'Creating PR - already committed and pushed',
-				owner: 'acme',
-				repo: 'myapp',
 				title: 'chore: update dependencies',
 				body: 'Updated all dependencies to latest versions.',
 				head: 'chore/deps',
@@ -92,6 +86,21 @@ If hooks fail or timeout, the full output will be shown.`,
 		},
 	],
 }) {
+	private async detectOwnerRepo(): Promise<{ owner: string; repo: string }> {
+		const result = await runCommand('git', ['remote', 'get-url', 'origin'], process.cwd());
+		if (result.exitCode !== 0) {
+			throw new Error('Failed to detect repository: no git remote "origin" found');
+		}
+		// Handles both HTTPS and SSH URLs:
+		//   https://TOKEN@github.com/owner/repo.git
+		//   git@github.com:owner/repo.git
+		const match = result.stdout.trim().match(/github\.com[/:]([^/]+)\/(.+?)(?:\.git)?$/);
+		if (!match) {
+			throw new Error(`Cannot parse owner/repo from git remote URL: ${result.stdout.trim()}`);
+		}
+		return { owner: match[1], repo: match[2] };
+	}
+
 	private async stageAndCommit(commitMessage: string): Promise<void> {
 		// Stage all changes
 		const addResult = await runCommand('git', ['add', '.'], process.cwd());
@@ -136,6 +145,7 @@ If hooks fail or timeout, the full output will be shown.`,
 	}
 
 	override async execute(params: this['params']): Promise<string> {
+		const { owner, repo } = await this.detectOwnerRepo();
 		const commitMessage = params.commitMessage || params.title;
 
 		if (params.commit !== false) {
@@ -156,7 +166,7 @@ If hooks fail or timeout, the full output will be shown.`,
 
 		let pr: Awaited<ReturnType<typeof githubClient.createPR>>;
 		try {
-			pr = await githubClient.createPR(params.owner, params.repo, {
+			pr = await githubClient.createPR(owner, repo, {
 				title: params.title,
 				body: params.body,
 				head: params.head,
@@ -171,11 +181,7 @@ If hooks fail or timeout, the full output will be shown.`,
 				error.status === 422 &&
 				error.message.includes('A pull request already exists')
 			) {
-				const existingPR = await githubClient.getOpenPRByBranch(
-					params.owner,
-					params.repo,
-					params.head,
-				);
+				const existingPR = await githubClient.getOpenPRByBranch(owner, repo, params.head);
 				if (existingPR) {
 					recordPRCreation(existingPR.htmlUrl);
 					return `PR already exists for this branch: #${existingPR.number} — ${existingPR.htmlUrl}`;
