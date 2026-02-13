@@ -130,6 +130,9 @@ const fileStatuses = new Map<string, FileStatus>();
 // Track all modified files during the session (for VerifyChanges)
 const modifiedFiles = new Set<string>();
 
+// Track consecutive edit failures per file (for escalation hints)
+const editFailureCounts = new Map<string, number>();
+
 /**
  * Mark a file as modified during this session.
  */
@@ -228,11 +231,35 @@ export function hasAnyDiagnosticErrors(): boolean {
 }
 
 /**
+ * Record an edit failure for a file and return the new failure count.
+ */
+export function recordEditFailure(filePath: string): number {
+	const count = (editFailureCounts.get(filePath) ?? 0) + 1;
+	editFailureCounts.set(filePath, count);
+	return count;
+}
+
+/**
+ * Clear the edit failure counter for a file (call after successful edit).
+ */
+export function clearEditFailure(filePath: string): void {
+	editFailureCounts.delete(filePath);
+}
+
+/**
+ * Clear all edit failure counters.
+ */
+export function clearEditFailures(): void {
+	editFailureCounts.clear();
+}
+
+/**
  * Clear all diagnostic state (call at session start).
  */
 export function clearDiagnosticState(): void {
 	fileStatuses.clear();
 	modifiedFiles.clear();
+	editFailureCounts.clear();
 }
 
 /**

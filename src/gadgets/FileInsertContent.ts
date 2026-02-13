@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 import { Gadget, z } from 'llmist';
 
-import { assertFileRead, invalidateFileRead } from './readTracking.js';
+import { assertFileRead, markFileRead } from './readTracking.js';
 import { formatContext, runPostEditChecks, validatePath } from './shared/index.js';
 
 function readOrCreateFile(validatedPath: string): { content: string; isNewFile: boolean } {
@@ -211,7 +211,7 @@ Inserted 5 lines before line 10.
 
 		const newContent = newLines.join('\n');
 		writeFileSync(validatedPath, newContent, 'utf-8');
-		invalidateFileRead(validatedPath);
+		markFileRead(validatedPath);
 
 		// The effective line where content now appears (1-based)
 		const effectiveLine = insertIndex + 1;
