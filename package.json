@@ -33,7 +33,6 @@
 		"@octokit/rest": "^22.0.1",
 		"@types/archiver": "^7.0.0",
 		"archiver": "^7.0.1",
-
 		"bullmq": "^5.66.4",
 		"chalk": "^5.4.1",
 		"dhalsim": "^2.2.0",
@@ -41,7 +40,7 @@
 		"dockerode": "^4.0.9",
 		"eta": "^4.5.0",
 		"hono": "^4.6.14",
-		"llmist": "^15.10.0",
+		"llmist": "^15.17.0",
 		"trello.js": "^1.2.8",
 		"zangief": "latest",
 		"zod": "^3.24.1"
