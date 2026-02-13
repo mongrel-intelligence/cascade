@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 import { Gadget, z } from 'llmist';
 
-import { invalidateFileRead } from './readTracking.js';
+import { assertFileRead, invalidateFileRead } from './readTracking.js';
 import {
 	applyReplacement,
 	findAllMatches,
@@ -319,6 +319,7 @@ import * as Sentry from '@sentry/node';`,
 
 		// Validate and resolve path
 		const validatedPath = validatePath(filePath);
+		assertFileRead(validatedPath, 'FileSearchAndReplace');
 
 		// Read file content
 		let content: string;

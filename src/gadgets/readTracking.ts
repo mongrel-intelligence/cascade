@@ -16,6 +16,18 @@ export function hasReadFile(path: string): boolean {
 }
 
 /**
+ * Assert that a file has been read before allowing edits.
+ * Throws if the file hasn't been read, instructing the agent to use ReadFile first.
+ */
+export function assertFileRead(path: string, gadgetName: string): void {
+	if (!hasReadFile(path)) {
+		throw new Error(
+			`${gadgetName} requires reading the file before editing. Use ReadFile on this path first, then retry your edit.\n\nPath: ${path}`,
+		);
+	}
+}
+
+/**
  * Mark a file as read.
  */
 export function markFileRead(path: string): void {

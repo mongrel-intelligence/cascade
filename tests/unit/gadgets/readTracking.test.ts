@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+	assertFileRead,
 	clearReadTracking,
 	hasReadFile,
 	invalidateFileRead,
@@ -78,6 +79,43 @@ describe('readTracking', () => {
 
 			expect(hasReadFile('/path/to/file1.ts')).toBe(false);
 			expect(hasReadFile('/path/to/file2.ts')).toBe(false);
+		});
+	});
+
+	describe('assertFileRead', () => {
+		it('throws when file has not been read', () => {
+			expect(() => assertFileRead('/path/to/unread.ts', 'TestGadget')).toThrow(
+				'TestGadget requires reading the file before editing',
+			);
+		});
+
+		it('includes gadget name and path in error message', () => {
+			expect(() => assertFileRead('/some/file.ts', 'FileSearchAndReplace')).toThrow(
+				/FileSearchAndReplace.*\/some\/file\.ts/s,
+			);
+		});
+
+		it('does not throw when file has been read', () => {
+			markFileRead('/path/to/read.ts');
+			expect(() => assertFileRead('/path/to/read.ts', 'TestGadget')).not.toThrow();
+		});
+
+		it('throws after invalidateFileRead', () => {
+			markFileRead('/path/to/file.ts');
+			invalidateFileRead('/path/to/file.ts');
+
+			expect(() => assertFileRead('/path/to/file.ts', 'TestGadget')).toThrow(
+				'TestGadget requires reading the file before editing',
+			);
+		});
+
+		it('throws after clearReadTracking', () => {
+			markFileRead('/path/to/file.ts');
+			clearReadTracking();
+
+			expect(() => assertFileRead('/path/to/file.ts', 'TestGadget')).toThrow(
+				'TestGadget requires reading the file before editing',
+			);
 		});
 	});
 });

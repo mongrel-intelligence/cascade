@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { Gadget, z } from 'llmist';
 
-import { invalidateFileRead } from './readTracking.js';
+import { assertFileRead, invalidateFileRead } from './readTracking.js';
 import { runPostEditChecks, validatePath } from './shared/index.js';
 
 export class AstGrep extends Gadget({
@@ -114,6 +114,8 @@ Use for:
 			// For directory paths that don't resolve to a file, run directory rewrite
 			return this.executeDirectoryRewrite(pattern, language, path, rewrite);
 		}
+
+		assertFileRead(validatedPath, 'AstGrep');
 
 		// Read before content
 		let beforeContent: string;
