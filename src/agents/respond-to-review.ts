@@ -355,7 +355,7 @@ async function injectReviewSyntheticCalls(
 		'gc_pr_diff',
 	);
 
-	// Inject context files and squint context
+	// Inject context files, then squint overview before PR-specific data
 	builder = injectContextFiles(builder, trackingContext, ctx.contextFiles);
 	builder = injectSquintContext(builder, trackingContext, repoDir);
 

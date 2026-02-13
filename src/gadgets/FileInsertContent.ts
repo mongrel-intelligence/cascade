@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 import { Gadget, z } from 'llmist';
 
-import { invalidateFileRead } from './readTracking.js';
+import { assertFileRead, invalidateFileRead } from './readTracking.js';
 import { formatContext, runPostEditChecks, validatePath } from './shared/index.js';
 
 export class FileInsertContent extends Gadget({
@@ -166,6 +166,7 @@ Inserted 5 lines before line 10.
 
 		// Read file content
 		let content: string;
+		let isNewFile = false;
 		try {
 			content = readFileSync(validatedPath, 'utf-8');
 		} catch (error) {
@@ -173,9 +174,14 @@ Inserted 5 lines before line 10.
 			if (nodeError.code === 'ENOENT') {
 				// For insert, create empty file
 				content = '';
+				isNewFile = true;
 			} else {
 				throw error;
 			}
+		}
+
+		if (!isNewFile) {
+			assertFileRead(validatedPath, 'FileInsertContent');
 		}
 
 		const lines = content.split('\n');
