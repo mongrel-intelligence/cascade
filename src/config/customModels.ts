@@ -85,6 +85,21 @@ export const CUSTOM_MODELS: ModelSpec[] = [
 	},
 	{
 		provider: 'openrouter',
+		modelId: 'deepseek/deepseek-v3.2',
+		displayName: 'DeepSeek V3.2',
+		contextWindow: 163_840,
+		maxOutputTokens: 65_536,
+		pricing: { input: 0.25, output: 0.38 },
+		knowledgeCutoff: '2025-06',
+		features: {
+			streaming: true,
+			functionCalling: true,
+			vision: false,
+			reasoning: true,
+		},
+	},
+	{
+		provider: 'openrouter',
 		modelId: 'deepseek/deepseek-v3.2-speciale',
 		displayName: 'DeepSeek V3.2 Speciale',
 		contextWindow: 163_840,
