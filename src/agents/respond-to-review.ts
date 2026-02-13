@@ -1,4 +1,3 @@
-import type { LLMist, createLogger } from 'llmist';
 import { WriteFile } from '../gadgets/WriteFile.js';
 
 import { AstGrep } from '../gadgets/AstGrep.js';
@@ -16,36 +15,32 @@ import {
 	ReplyToReviewComment,
 	UpdatePRComment,
 } from '../gadgets/github/index.js';
-import { recordInitialComment } from '../gadgets/sessionState.js';
 import { Tmux } from '../gadgets/tmux.js';
 import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
 import { githubClient } from '../github/client.js';
-import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
-import { logger } from '../utils/logging.js';
-import { type BuilderType, createConfiguredBuilder } from './shared/builderFactory.js';
-import { executeAgentLifecycle } from './shared/lifecycle.js';
+import type { AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
+import {
+	type GitHubAgentContext,
+	type GitHubAgentDefinition,
+	type GitHubAgentInput,
+	createInitialPRComment,
+	executeGitHubAgent,
+} from './shared/githubAgent.js';
 import { resolveModelConfig } from './shared/modelResolution.js';
 import { formatPRDetails, formatPRDiff } from './shared/prFormatting.js';
-import { setupRepository } from './shared/repository.js';
 import {
 	injectContextFiles,
 	injectDirectoryListing,
 	injectSquintContext,
 	injectSyntheticCall,
 } from './shared/syntheticCalls.js';
-import type { TrackingContext } from './utils/tracking.js';
 
-interface RespondToReviewAgentInput extends AgentInput {
-	prNumber: number;
-	prBranch: string;
-	repoFullName: string;
+interface RespondToReviewAgentInput extends GitHubAgentInput {
 	triggerCommentId: number;
 	triggerCommentBody: string;
 	triggerCommentPath: string;
 	triggerCommentUrl: string;
 	acknowledgmentCommentId?: number;
-	project: ProjectConfig;
-	config: CascadeConfig;
 }
 
 // ============================================================================
@@ -122,17 +117,13 @@ function formatPRIssueComments(prIssueComments: PRIssueComments): string {
 // Context Building
 // ============================================================================
 
-interface ReviewContextData {
-	systemPrompt: string;
-	model: string;
-	maxIterations: number;
+interface ReviewContextData extends GitHubAgentContext {
 	contextFiles: Awaited<ReturnType<typeof resolveModelConfig>>['contextFiles'];
 	prDetailsFormatted: string;
 	commentsFormatted: string;
 	reviewsFormatted: string;
 	issueCommentsFormatted: string;
 	diffFormatted: string;
-	prompt: string;
 }
 
 async function buildReviewContext(
@@ -212,11 +203,20 @@ Use these values when calling GitHub gadgets (GetPRComments, ReplyToReviewCommen
 }
 
 // ============================================================================
-// Agent Builder
+// Agent Definition
 // ============================================================================
 
-function getRespondToReviewGadgets() {
-	return [
+const respondToReviewDefinition: GitHubAgentDefinition<
+	RespondToReviewAgentInput,
+	ReviewContextData
+> = {
+	agentType: 'respond-to-review',
+	headerMessage: '🤖 Working on addressing the review feedback...',
+	initialCommentDescription: 'Acknowledge review feedback',
+	timeoutMessage: '⚠️ Review agent timed out while addressing feedback.',
+	loggerPrefix: 'review',
+
+	getGadgets: () => [
 		new ListDirectory(),
 		new ReadFile(),
 		new FileSearchAndReplace(),
@@ -235,141 +235,110 @@ function getRespondToReviewGadgets() {
 		new PostPRComment(),
 		new UpdatePRComment(),
 		new Finish(),
-	];
-}
+	],
 
-function createRespondToReviewAgentBuilder(
-	client: LLMist,
-	ctx: ReviewContextData,
-	llmistLogger: ReturnType<typeof createLogger>,
-	trackingContext: TrackingContext,
-	logWriter: (level: string, message: string, context?: Record<string, unknown>) => void,
-	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
-	repoDir: string,
-	owner: string,
-	repo: string,
-): BuilderType {
-	return createConfiguredBuilder({
-		client,
-		agentType: 'respond-to-review',
-		model: ctx.model,
-		systemPrompt: ctx.systemPrompt,
-		maxIterations: ctx.maxIterations,
-		llmistLogger,
+	async postInitialComment(input, id, headerMessage) {
+		if (input.acknowledgmentCommentId) {
+			const comment = await githubClient.updatePRComment(
+				id.owner,
+				id.repo,
+				input.acknowledgmentCommentId,
+				headerMessage,
+			);
+			return { id: comment.id, htmlUrl: comment.htmlUrl, gadgetName: 'UpdatePRComment' };
+		}
+		return createInitialPRComment(input.prNumber, id, headerMessage);
+	},
+
+	buildContext: ({ owner, repo }, input, repoDir, log) =>
+		buildReviewContext(
+			owner,
+			repo,
+			input.prNumber,
+			input.prBranch,
+			repoDir,
+			input.project,
+			input.config,
+			log,
+			input.modelOverride,
+		),
+
+	async injectSyntheticCalls({
+		builder,
+		ctx,
 		trackingContext,
-		logWriter,
-		llmCallLogger,
 		repoDir,
-		gadgets: getRespondToReviewGadgets(),
-		githubProgress: {
-			owner,
-			repo,
-			headerMessage: '🤖 Working on addressing the review feedback...',
-			agentType: 'respond-to-review',
-			maxIterations: ctx.maxIterations,
-		},
-	});
-}
+		id: { owner, repo },
+		input,
+	}) {
+		let b = injectDirectoryListing(builder, trackingContext);
 
-async function injectReviewSyntheticCalls(
-	initialBuilder: BuilderType,
-	owner: string,
-	repo: string,
-	prNumber: number,
-	ctx: ReviewContextData,
-	trackingContext: TrackingContext,
-	repoDir: string,
-	acknowledgmentCommentId?: number,
-): Promise<BuilderType> {
-	// Update or post initial "getting to work" comment on the PR
-	const initialCommentBody = '🤖 Working on addressing the review feedback...';
-	let initialComment: { id: number; htmlUrl: string };
-	if (acknowledgmentCommentId) {
-		initialComment = await githubClient.updatePRComment(
-			owner,
-			repo,
-			acknowledgmentCommentId,
-			initialCommentBody,
+		b = injectSyntheticCall(
+			b,
+			trackingContext,
+			'GetPRDetails',
+			{ comment: 'Pre-fetching PR details for context', owner, repo, prNumber: input.prNumber },
+			ctx.prDetailsFormatted,
+			'gc_pr_details',
 		);
-	} else {
-		initialComment = await githubClient.createPRComment(owner, repo, prNumber, initialCommentBody);
-	}
-	recordInitialComment(initialComment.id);
-	const syntheticGadgetName = acknowledgmentCommentId ? 'UpdatePRComment' : 'PostPRComment';
-	let builder = injectSyntheticCall(
-		initialBuilder,
-		trackingContext,
-		syntheticGadgetName,
-		{ comment: 'Acknowledge review feedback', owner, repo, prNumber, body: initialCommentBody },
-		`Comment posted (id: ${initialComment.id}): ${initialComment.htmlUrl}`,
-		'gc_initial_comment',
-	);
 
-	// Inject directory listing
-	builder = injectDirectoryListing(builder, trackingContext);
+		b = injectSyntheticCall(
+			b,
+			trackingContext,
+			'GetPRComments',
+			{
+				comment: 'Pre-fetching line-specific review comments to address',
+				owner,
+				repo,
+				prNumber: input.prNumber,
+			},
+			ctx.commentsFormatted,
+			'gc_pr_comments',
+		);
 
-	// Inject PR details, comments, reviews, issue comments, and diff
-	builder = injectSyntheticCall(
-		builder,
-		trackingContext,
-		'GetPRDetails',
-		{ comment: 'Pre-fetching PR details for context', owner, repo, prNumber },
-		ctx.prDetailsFormatted,
-		'gc_pr_details',
-	);
+		b = injectSyntheticCall(
+			b,
+			trackingContext,
+			'GetPRReviews',
+			{
+				comment: 'Pre-fetching review submissions (approve/request changes with body text)',
+				owner,
+				repo,
+				prNumber: input.prNumber,
+			},
+			ctx.reviewsFormatted,
+			'gc_pr_reviews',
+		);
 
-	builder = injectSyntheticCall(
-		builder,
-		trackingContext,
-		'GetPRComments',
-		{ comment: 'Pre-fetching line-specific review comments to address', owner, repo, prNumber },
-		ctx.commentsFormatted,
-		'gc_pr_comments',
-	);
+		b = injectSyntheticCall(
+			b,
+			trackingContext,
+			'GetPRIssueComments',
+			{
+				comment: 'Pre-fetching general PR comments (issue-style conversation)',
+				owner,
+				repo,
+				prNumber: input.prNumber,
+			},
+			ctx.issueCommentsFormatted,
+			'gc_pr_issue_comments',
+		);
 
-	builder = injectSyntheticCall(
-		builder,
-		trackingContext,
-		'GetPRReviews',
-		{
-			comment: 'Pre-fetching review submissions (approve/request changes with body text)',
-			owner,
-			repo,
-			prNumber,
-		},
-		ctx.reviewsFormatted,
-		'gc_pr_reviews',
-	);
+		b = injectSyntheticCall(
+			b,
+			trackingContext,
+			'GetPRDiff',
+			{ comment: 'Pre-fetching PR diff for context', owner, repo, prNumber: input.prNumber },
+			ctx.diffFormatted,
+			'gc_pr_diff',
+		);
 
-	builder = injectSyntheticCall(
-		builder,
-		trackingContext,
-		'GetPRIssueComments',
-		{
-			comment: 'Pre-fetching general PR comments (issue-style conversation)',
-			owner,
-			repo,
-			prNumber,
-		},
-		ctx.issueCommentsFormatted,
-		'gc_pr_issue_comments',
-	);
+		b = injectContextFiles(b, trackingContext, ctx.contextFiles);
+		b = injectSquintContext(b, trackingContext, repoDir);
 
-	builder = injectSyntheticCall(
-		builder,
-		trackingContext,
-		'GetPRDiff',
-		{ comment: 'Pre-fetching PR diff for context', owner, repo, prNumber },
-		ctx.diffFormatted,
-		'gc_pr_diff',
-	);
-
-	// Inject context files, then squint overview before PR-specific data
-	builder = injectContextFiles(builder, trackingContext, ctx.contextFiles);
-	builder = injectSquintContext(builder, trackingContext, repoDir);
-
-	return builder;
-}
+		return b;
+	},
+};
 
 // ============================================================================
 // Review Agent Execution
@@ -378,69 +347,5 @@ async function injectReviewSyntheticCalls(
 export async function executeRespondToReviewAgent(
 	input: RespondToReviewAgentInput,
 ): Promise<AgentResult> {
-	const { project, config, prNumber, prBranch, repoFullName, interactive, autoAccept } = input;
-
-	// Parse owner/repo from repoFullName
-	const [owner, repo] = repoFullName.split('/');
-	if (!owner || !repo) {
-		return { success: false, output: '', error: `Invalid repo format: ${repoFullName}` };
-	}
-
-	return executeAgentLifecycle<ReviewContextData>({
-		loggerIdentifier: `review-${prNumber}`,
-
-		onWatchdogTimeout: async () => {
-			await githubClient.createPRComment(
-				owner,
-				repo,
-				prNumber,
-				'⚠️ Review agent timed out while addressing feedback.',
-			);
-			logger.info('Posted timeout notice to PR', { prNumber });
-		},
-
-		setupRepoDir: (log) =>
-			setupRepository({ project, log, agentType: 'respond-to-review', prBranch }),
-
-		buildContext: (repoDir, log) =>
-			buildReviewContext(
-				owner,
-				repo,
-				prNumber,
-				prBranch,
-				repoDir,
-				project,
-				config,
-				log,
-				input.modelOverride,
-			),
-
-		createBuilder: ({ client, ctx, llmistLogger, trackingContext, fileLogger, repoDir }) =>
-			createRespondToReviewAgentBuilder(
-				client,
-				ctx,
-				llmistLogger,
-				trackingContext,
-				fileLogger.write.bind(fileLogger),
-				fileLogger.llmCallLogger,
-				repoDir,
-				owner,
-				repo,
-			),
-
-		injectSyntheticCalls: ({ builder, ctx, trackingContext, repoDir }) =>
-			injectReviewSyntheticCalls(
-				builder,
-				owner,
-				repo,
-				prNumber,
-				ctx,
-				trackingContext,
-				repoDir,
-				input.acknowledgmentCommentId,
-			),
-
-		interactive,
-		autoAccept,
-	});
+	return executeGitHubAgent(respondToReviewDefinition, input);
 }
