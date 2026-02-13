@@ -69,6 +69,22 @@ Always commit and push before calling Finish!
 - **Test failures**: Run `npm test` and check failing test output
 - **Build errors**: Run `npm run build` for compilation issues
 
+### Lint Warning Strategy
+
+When the ONLY CI failure is lint warnings (no type errors, no test failures):
+- Prefer inline lint-suppression comments (e.g., `// eslint-disable-next-line`, `// biome-ignore`, `// @ts-expect-error`) over refactoring types
+- The original author may have chosen the flagged pattern deliberately (e.g., `any` as generic defaults)
+- Type refactoring to satisfy lint often cascades into type errors elsewhere — avoid this
+- Suppression comments are a valid, minimal fix that preserves the original design intent
+
+### Cascading Type Errors
+
+When editing a base class/interface causes TypeScript errors in OTHER files:
+1. STOP editing the base class
+2. Read the files with errors to understand their type requirements
+3. Consider whether your fix strategy is correct — if removing `any` breaks consumers, the `any` was intentional
+4. Prefer the minimal change that fixes the original CI failure without introducing new errors
+
 ### Getting More Details
 
 - List recent CI runs: `gh run list --branch <branch> --limit 5`

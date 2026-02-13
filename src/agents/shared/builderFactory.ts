@@ -8,7 +8,11 @@ import { getRateLimitForModel } from '../../config/rateLimits.js';
 import { getRetryConfig } from '../../config/retryConfig.js';
 import { initSessionState } from '../../gadgets/sessionState.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
-import { type StatusUpdateHooksConfig, createObserverHooks } from '../utils/hooks.js';
+import {
+	type GitHubProgressHooksConfig,
+	type StatusUpdateHooksConfig,
+	createObserverHooks,
+} from '../utils/hooks.js';
 import type { TrackingContext } from '../utils/tracking.js';
 
 export type BuilderType = ReturnType<typeof AgentBuilder.prototype.withGadgets>;
@@ -26,6 +30,8 @@ export interface CreateBuilderOptions {
 	repoDir: string;
 	gadgets: Parameters<typeof AgentBuilder.prototype.withGadgets>;
 	statusUpdate?: StatusUpdateHooksConfig;
+	/** Optional GitHub PR comment progress configuration */
+	githubProgress?: GitHubProgressHooksConfig;
 	/** Set to true to skip calling initSessionState (review agent doesn't use it) */
 	skipSessionState?: boolean;
 	/** Post-configuration callback for agent-specific builder tweaks */
@@ -49,6 +55,7 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 		llmCallLogger,
 		gadgets,
 		statusUpdate,
+		githubProgress,
 		skipSessionState,
 		postConfigure,
 	} = options;
@@ -76,6 +83,7 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 				trackingContext,
 				llmCallLogger,
 				statusUpdate,
+				githubProgress,
 			}),
 		})
 		.withGadgets(...gadgets);

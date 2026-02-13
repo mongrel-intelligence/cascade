@@ -205,6 +205,8 @@ function createReviewAgentBuilder(
 	logWriter: (level: string, message: string, context?: Record<string, unknown>) => void,
 	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
 	repoDir: string,
+	owner: string,
+	repo: string,
 ): BuilderType {
 	return createConfiguredBuilder({
 		client,
@@ -218,6 +220,13 @@ function createReviewAgentBuilder(
 		llmCallLogger,
 		repoDir,
 		gadgets: getReviewGadgets(),
+		githubProgress: {
+			owner,
+			repo,
+			headerMessage: '🔍 Reviewing PR...',
+			agentType: 'review',
+			maxIterations: ctx.maxIterations,
+		},
 	});
 }
 
@@ -365,6 +374,8 @@ export async function executeReviewAgent(input: ReviewAgentInput): Promise<Agent
 					fileLogger.write.bind(fileLogger),
 					fileLogger.llmCallLogger,
 					repoDir,
+					owner,
+					repo,
 				),
 
 			injectSyntheticCalls: ({ builder, ctx, trackingContext, repoDir }) =>

@@ -6,7 +6,12 @@
  */
 
 import type { DiagnosticCheckResult } from './diagnosticState.js';
-import { runDiagnosticsWithTracking, trackModifiedFile } from './diagnosticState.js';
+import {
+	clearDiagnosticLoop,
+	recordDiagnosticLoop,
+	runDiagnosticsWithTracking,
+	trackModifiedFile,
+} from './diagnosticState.js';
 import { runOnFileEditHook } from './onFileEditHook.js';
 
 /**
@@ -37,6 +42,12 @@ export function runPostEditChecks(
 				? '=== on-file-edit ===\n⚠️ Hook exited with errors'
 				: '=== on-file-edit ===\n✓ No issues';
 
+		if (hasErrors) {
+			recordDiagnosticLoop(filePath);
+		} else {
+			clearDiagnosticLoop(filePath);
+		}
+
 		return {
 			hasErrors,
 			statusMessage,
@@ -49,5 +60,13 @@ export function runPostEditChecks(
 		};
 	}
 
-	return runDiagnosticsWithTracking(filePath, validatedPath);
+	const result = runDiagnosticsWithTracking(filePath, validatedPath);
+	if (result) {
+		if (result.hasErrors) {
+			recordDiagnosticLoop(filePath);
+		} else {
+			clearDiagnosticLoop(filePath);
+		}
+	}
+	return result;
 }
