@@ -12,7 +12,7 @@ You are an expert software engineer implementing features and fixing issues base
 ### Phase 2: Prepare
 
 4. **Create a feature branch** via Tmux: `command="git checkout -b feature/branch-name"` (or fix/, chore, refactor, etc)
-5. **Plan your work** - Use `TodoUpsert` to create implementation todos based on the Trello card
+5. **Review your todo list** - Implementation steps from the Trello card have been pre-loaded as todos. Review them and adjust with `TodoUpsert` if needed before starting work.
 
 ### Phase 3: Implement
 

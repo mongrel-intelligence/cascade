@@ -12,6 +12,7 @@ import { Sleep } from '../gadgets/Sleep.js';
 import { CreatePR } from '../gadgets/github/index.js';
 import { Tmux } from '../gadgets/tmux.js';
 import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
+import { type Todo, formatTodoList, initTodoSession, saveTodos } from '../gadgets/todo/storage.js';
 import {
 	AddChecklistToCard,
 	CreateTrelloCard,
@@ -76,6 +77,19 @@ interface AgentContextData {
 	contextFiles: Awaited<ReturnType<typeof resolveModelConfig>>['contextFiles'];
 	cardData: string;
 	prompt: string;
+	implementationSteps?: string[];
+}
+
+export async function fetchImplementationSteps(cardId: string): Promise<string[] | undefined> {
+	try {
+		const checklists = await trelloClient.getCardChecklists(cardId);
+		const implChecklist = checklists.find((cl) => cl.name.includes('Implementation Steps'));
+		if (!implChecklist || implChecklist.checkItems.length === 0) return undefined;
+		const incompleteItems = implChecklist.checkItems.filter((item) => item.state !== 'complete');
+		return incompleteItems.length > 0 ? incompleteItems.map((item) => item.name) : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 async function buildAgentContext(
@@ -137,6 +151,12 @@ async function buildAgentContext(
 		cardData = await formatCardData(cardId, true);
 	}
 
+	// Pre-fetch implementation steps for synthetic todo injection
+	let implementationSteps: string[] | undefined;
+	if (agentType === 'implementation' && cardId && !debugContext) {
+		implementationSteps = await fetchImplementationSteps(cardId);
+	}
+
 	// Build different prompt based on flow
 	let prompt: string;
 	if (prContext) {
@@ -147,7 +167,15 @@ async function buildAgentContext(
 		prompt = buildPrompt(cardId ?? '');
 	}
 
-	return { systemPrompt, model, maxIterations, contextFiles, cardData, prompt };
+	return {
+		systemPrompt,
+		model,
+		maxIterations,
+		contextFiles,
+		cardData,
+		prompt,
+		implementationSteps,
+	};
 }
 
 function buildPrompt(cardId: string): string {
@@ -302,6 +330,7 @@ async function injectSyntheticCalls(
 	contextFiles: AgentContextData['contextFiles'],
 	trackingContext: TrackingContext,
 	repoDir: string,
+	implementationSteps?: string[],
 ): Promise<BuilderType> {
 	// Use maxDepth=5 to give agents better visibility into nested structures
 	let builder = injectDirectoryListing(initialBuilder, trackingContext, 5);
@@ -315,6 +344,33 @@ async function injectSyntheticCalls(
 			{ cardId, includeComments: true },
 			cardData,
 			'gc_card',
+		);
+	}
+
+	// Inject pre-populated todos from Implementation Steps checklist
+	if (implementationSteps && implementationSteps.length > 0) {
+		initTodoSession(`impl-${Date.now()}`);
+
+		const now = new Date().toISOString();
+		const todos: Todo[] = implementationSteps.map((step, i) => ({
+			id: String(i + 1),
+			content: step,
+			status: 'pending' as const,
+			createdAt: now,
+			updatedAt: now,
+		}));
+		saveTodos(todos);
+
+		builder = injectSyntheticCall(
+			builder,
+			trackingContext,
+			'TodoUpsert',
+			{
+				items: implementationSteps.map((step) => ({ content: step })),
+				comment: 'Pre-populated from Implementation Steps checklist',
+			},
+			`➕ Created ${todos.length} todos.\n\n${formatTodoList(todos)}`,
+			'gc_todos',
 		);
 	}
 
@@ -454,6 +510,7 @@ export async function executeAgent(
 				ctx.contextFiles,
 				trackingContext,
 				repoDir,
+				ctx.implementationSteps,
 			),
 
 		interactive,
