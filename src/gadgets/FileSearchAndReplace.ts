@@ -11,6 +11,7 @@ import { Gadget, z } from 'llmist';
 
 import { assertFileRead, invalidateFileRead } from './readTracking.js';
 import {
+	adjustIndentation,
 	applyReplacement,
 	findAllMatches,
 	formatContext,
@@ -41,6 +42,14 @@ Set replaceAll=true to replace ALL matches (for bulk renames or removing duplica
 			.optional()
 			.describe(
 				'Replace ALL occurrences (default: false). Use for bulk renames or removing duplicates.',
+			),
+		expectedCount: z
+			.number()
+			.int()
+			.positive()
+			.optional()
+			.describe(
+				'Expected number of matches. If set, operation aborts when actual count differs (prevents partial refactors).',
 			),
 	}),
 	examples: [
@@ -315,7 +324,7 @@ import * as Sentry from '@sentry/node';`,
 	],
 }) {
 	override execute(params: this['params']): string {
-		const { filePath, search, replace, replaceAll = false } = params;
+		const { filePath, search, replace, replaceAll = false, expectedCount } = params;
 
 		// Validate and resolve path
 		const validatedPath = validatePath(filePath);
@@ -342,6 +351,14 @@ import * as Sentry from '@sentry/node';`,
 			throw new Error(this.formatFailure(filePath, search, failure));
 		}
 
+		// Validate expectedCount if provided
+		if (expectedCount !== undefined && matches.length !== expectedCount) {
+			const lineRanges = matches.map((m) => `lines ${m.startLine}-${m.endLine}`).join(', ');
+			throw new Error(
+				`ERROR: Expected ${expectedCount} match${expectedCount !== 1 ? 'es' : ''} but found ${matches.length} in ${filePath}\n\nFound matches at: ${lineRanges}\n\nReview the file to verify all intended targets before retrying.`,
+			);
+		}
+
 		if (matches.length > 1 && !replaceAll) {
 			// Multiple matches found - require explicit opt-in or more specific search
 			throw new Error(this.formatMultipleMatchesError(filePath, matches, content));
@@ -355,19 +372,32 @@ import * as Sentry from '@sentry/node';`,
 		// Single match found - proceed with replacement
 		const match = matches[0];
 
+		// Adjust replacement indentation if matched via indentation strategy
+		const adjustedReplace =
+			match.strategy === 'indentation' && match.indentationDelta
+				? adjustIndentation(replace, match.indentationDelta)
+				: replace;
+
 		// Store original content for before/after display
 		const originalLines = content.split('\n');
 		const beforeContext = formatContext(originalLines, match.startLine, match.endLine, 5, '<');
 
 		// Apply replacement
-		const newContent = applyReplacement(content, match, replace);
+		const newContent = applyReplacement(content, match, adjustedReplace);
 
 		// Write file
 		writeFileSync(validatedPath, newContent, 'utf-8');
 		invalidateFileRead(validatedPath);
 
 		// Build and return success output
-		return this.buildOutput(filePath, validatedPath, match, beforeContext, replace, newContent);
+		return this.buildOutput(
+			filePath,
+			validatedPath,
+			match,
+			beforeContext,
+			adjustedReplace,
+			newContent,
+		);
 	}
 
 	private buildOutput(
@@ -514,7 +544,11 @@ import * as Sentry from '@sentry/node';`,
 		const sortedMatches = [...matches].sort((a, b) => b.startIndex - a.startIndex);
 
 		for (const match of sortedMatches) {
-			newContent = applyReplacement(newContent, match, replace);
+			const adjustedReplace =
+				match.strategy === 'indentation' && match.indentationDelta
+					? adjustIndentation(replace, match.indentationDelta)
+					: replace;
+			newContent = applyReplacement(newContent, match, adjustedReplace);
 		}
 
 		// Write file

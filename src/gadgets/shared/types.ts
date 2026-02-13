@@ -27,6 +27,8 @@ export interface MatchResult {
 	startLine: number;
 	/** 1-based end line number for display */
 	endLine: number;
+	/** Indentation prefix to apply to replacement lines (set by indentation strategy) */
+	indentationDelta?: string;
 }
 
 /**

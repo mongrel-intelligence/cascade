@@ -129,6 +129,43 @@ async function prepareGitHubPRInput(
 	return { project, agentInput };
 }
 
+function applyEnvironmentOverrides(agentInput: AgentInput): void {
+	if (process.env.CASCADE_INTERACTIVE === 'true') {
+		agentInput.interactive = true;
+		console.log('Interactive mode: enabled');
+	}
+	if (process.env.CASCADE_YES === 'true') {
+		agentInput.autoAccept = true;
+		console.log('Auto-accept mode: enabled');
+	}
+	if (process.env.CASCADE_MODEL_OVERRIDE) {
+		agentInput.modelOverride = process.env.CASCADE_MODEL_OVERRIDE;
+		console.log(`Model override: ${process.env.CASCADE_MODEL_OVERRIDE}`);
+	}
+}
+
+function printAgentResult(
+	result: { success: boolean; cost?: number; error?: string; prUrl?: string; output: string },
+	durationMs: number,
+): void {
+	console.log('');
+	console.log('='.repeat(60));
+	console.log('Agent Result');
+	console.log('='.repeat(60));
+	console.log(`Success: ${result.success}`);
+	console.log(`Duration: ${(durationMs / 1000).toFixed(1)}s`);
+	if (result.cost) console.log(`Cost: $${result.cost.toFixed(4)}`);
+	if (result.error) console.log(`Error: ${result.error}`);
+	if (result.prUrl) console.log(`PR URL: ${result.prUrl}`);
+	console.log('');
+	console.log('Output (truncated):');
+	console.log('-'.repeat(60));
+	console.log(result.output.slice(0, 2000));
+	if (result.output.length > 2000) {
+		console.log(`... (${result.output.length - 2000} more characters)`);
+	}
+}
+
 async function main() {
 	const { agentType, input } = parseEntrypointArgs();
 
@@ -179,26 +216,7 @@ async function main() {
 		};
 	}
 
-	// Check for interactive mode from environment
-	const isInteractive = process.env.CASCADE_INTERACTIVE === 'true';
-	if (isInteractive) {
-		agentInput.interactive = true;
-		console.log('Interactive mode: enabled');
-	}
-
-	// Check for auto-accept mode (only meaningful with interactive)
-	const autoAccept = process.env.CASCADE_YES === 'true';
-	if (autoAccept) {
-		agentInput.autoAccept = true;
-		console.log('Auto-accept mode: enabled');
-	}
-
-	// Check for model override
-	const modelOverride = process.env.CASCADE_MODEL_OVERRIDE;
-	if (modelOverride) {
-		agentInput.modelOverride = modelOverride;
-		console.log(`Model override: ${modelOverride}`);
-	}
+	applyEnvironmentOverrides(agentInput);
 
 	console.log(`Using project: ${project.id} (${project.name})`);
 	console.log('');
@@ -212,29 +230,7 @@ async function main() {
 	const result = await runAgent(agentType, agentInput);
 	const durationMs = Date.now() - startTime;
 
-	console.log('');
-	console.log('='.repeat(60));
-	console.log('Agent Result');
-	console.log('='.repeat(60));
-	console.log(`Success: ${result.success}`);
-	console.log(`Duration: ${(durationMs / 1000).toFixed(1)}s`);
-	if (result.cost) {
-		console.log(`Cost: $${result.cost.toFixed(4)}`);
-	}
-	if (result.error) {
-		console.log(`Error: ${result.error}`);
-	}
-	if (result.prUrl) {
-		console.log(`PR URL: ${result.prUrl}`);
-	}
-	console.log('');
-	console.log('Output (truncated):');
-	console.log('-'.repeat(60));
-	console.log(result.output.slice(0, 2000));
-	if (result.output.length > 2000) {
-		console.log(`... (${result.output.length - 2000} more characters)`);
-	}
-
+	printAgentResult(result, durationMs);
 	process.exit(result.success ? 0 : 1);
 }
 
