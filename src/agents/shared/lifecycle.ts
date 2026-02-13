@@ -1,6 +1,7 @@
 import { LLMist, type ModelSpec, createLogger } from 'llmist';
 
 import type { AgentResult } from '../../types/index.js';
+import { loadCascadeEnv, unloadCascadeEnv } from '../../utils/cascadeEnv.js';
 import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../../utils/fileLogger.js';
 import { clearWatchdogCleanup, setWatchdogCleanup } from '../../utils/lifecycle.js';
 import { logger } from '../../utils/logging.js';
@@ -85,6 +86,7 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 
 	try {
 		repoDir = await options.setupRepoDir(log);
+		const envSnapshot = loadCascadeEnv(repoDir, log);
 
 		const ctx = await options.buildContext(repoDir, log);
 
@@ -161,6 +163,7 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 			};
 		} finally {
 			process.chdir(originalCwd);
+			unloadCascadeEnv(envSnapshot);
 		}
 	} catch (err) {
 		logger.error('Agent execution failed', {
