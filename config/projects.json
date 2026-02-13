@@ -4,7 +4,8 @@
 		"maxIterations": 70,
 		"agentModels": {
 			"planning": "openrouter:google/gemini-3-pro-preview",
-			"review": "openrouter:google/gemini-3-pro-preview"
+			"review": "openrouter:google/gemini-3-pro-preview",
+			"implementation": "openrouter:deepseek/deepseek-v3.2"
 		},
 		"agentIterations": {
 			"planning": 50,

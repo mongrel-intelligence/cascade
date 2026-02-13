@@ -54,6 +54,11 @@ export const MODEL_RATE_LIMITS: ModelRateLimits = {
 		tokensPerMinute: 500_000,
 		safetyMargin: 0.9,
 	},
+	'openrouter:deepseek/deepseek-v3.2': {
+		requestsPerMinute: 100,
+		tokensPerMinute: 500_000,
+		safetyMargin: 0.9,
+	},
 	'openrouter:minimax/minimax-m2.1': {
 		requestsPerMinute: 100,
 		tokensPerMinute: 500_000,
