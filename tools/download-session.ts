@@ -128,7 +128,10 @@ async function downloadZipAttachments(
 		console.log(`  ${attachment.name}:`);
 
 		try {
-			const files = await downloadAndExtractZip(attachment.url, sessionDir);
+			// Extract each zip to its own subdirectory to prevent file collisions
+			const subDir = join(sessionDir, attachment.name.replace(/\.zip$/, ''));
+			await mkdir(subDir, { recursive: true });
+			const files = await downloadAndExtractZip(attachment.url, subDir);
 			for (const file of files) {
 				console.log(`    -> ${file}`);
 			}
