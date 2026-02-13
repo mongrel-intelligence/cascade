@@ -23,7 +23,11 @@ export class TriggerRegistry {
 			if (handler.matches(ctx)) {
 				logger.info('Trigger matched', { handler: handler.name, source: ctx.source });
 				try {
-					return await handler.handle(ctx);
+					const result = await handler.handle(ctx);
+					if (result !== null) return result;
+					logger.debug('Trigger handler returned null, continuing', {
+						handler: handler.name,
+					});
 				} catch (err) {
 					logger.error('Trigger handler failed', {
 						handler: handler.name,

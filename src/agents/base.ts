@@ -111,6 +111,7 @@ async function buildAgentContext(
 		detectedAgentType: string;
 	},
 	modelOverride?: string,
+	commentContext?: { text: string; author: string },
 ): Promise<AgentContextData> {
 	// Build prompt context for template rendering
 	const promptContext: PromptContext = {
@@ -137,6 +138,11 @@ async function buildAgentContext(
 		}),
 	};
 
+	// Some agents share model/iteration config with another agent type
+	const configKeyOverrides: Record<string, string> = {
+		'respond-to-planning-comment': 'planning',
+	};
+
 	const { systemPrompt, model, maxIterations, contextFiles } = await resolveModelConfig({
 		agentType,
 		project,
@@ -144,6 +150,7 @@ async function buildAgentContext(
 		repoDir,
 		modelOverride,
 		promptContext,
+		configKey: configKeyOverrides[agentType],
 	});
 
 	// Pre-fetch card data for synthetic gadget call (only if cardId exists and not debug flow)
@@ -161,7 +168,9 @@ async function buildAgentContext(
 
 	// Build different prompt based on flow
 	let prompt: string;
-	if (prContext) {
+	if (commentContext) {
+		prompt = buildCommentResponsePrompt(cardId ?? '', commentContext.text, commentContext.author);
+	} else if (prContext) {
 		prompt = buildCheckFailurePrompt(prContext);
 	} else if (debugContext) {
 		prompt = buildDebugPrompt(debugContext);
@@ -178,6 +187,22 @@ async function buildAgentContext(
 		prompt,
 		implementationSteps,
 	};
+}
+
+function buildCommentResponsePrompt(
+	cardId: string,
+	commentText: string,
+	commentAuthor: string,
+): string {
+	return `A user (@${commentAuthor}) mentioned you in a comment on Trello card ${cardId}.
+
+Their comment:
+---
+${commentText}
+---
+
+The card data (title, description, checklists, attachments, comments) has been pre-loaded above.
+Read the user's comment carefully and respond accordingly. Default to surgical, targeted updates unless they clearly ask for a full rewrite.`;
 }
 
 function buildPrompt(cardId: string): string {
@@ -249,8 +274,8 @@ Start by listing the contents of the log directory, then read and analyze the lo
 // ============================================================================
 
 function getBaseAgentGadgets(agentType: string) {
-	// Planning agent is read-only - no file editing capabilities
-	const isReadOnlyAgent = agentType === 'planning';
+	// Planning agents are read-only - no file editing capabilities
+	const isReadOnlyAgent = agentType === 'planning' || agentType === 'respond-to-planning-comment';
 
 	return [
 		// Filesystem gadgets (read-only for planning)
@@ -279,7 +304,8 @@ function getBaseAgentGadgets(agentType: string) {
 		// new GetMyRecentActivity(), // Temporarily disabled
 		new AddChecklistToCard(),
 		// UpdateChecklistItem not available for planning - prevents marking items complete prematurely
-		...(isReadOnlyAgent ? [] : [new UpdateChecklistItem()]),
+		// But respond-to-planning-comment CAN update checklist items (user may ask to check/uncheck steps)
+		...(agentType === 'planning' ? [] : [new UpdateChecklistItem()]),
 		// Session control
 		new Finish(),
 	];
@@ -485,6 +511,9 @@ export async function executeAgent(
 
 		buildContext: (repoDir, log) => {
 			const debugContext = extractDebugContext(agentType, input);
+			const commentContext = input.triggerCommentText
+				? { text: input.triggerCommentText, author: input.triggerCommentAuthor || 'unknown' }
+				: undefined;
 			return buildAgentContext(
 				agentType,
 				cardId,
@@ -496,6 +525,7 @@ export async function executeAgent(
 				prContext,
 				debugContext,
 				input.modelOverride,
+				commentContext,
 			);
 		},
 

@@ -22,6 +22,10 @@ export interface AgentInput {
 	originalCardUrl?: string;
 	detectedAgentType?: string;
 
+	// Trello comment trigger fields
+	triggerCommentText?: string;
+	triggerCommentAuthor?: string;
+
 	// Interactive mode (local development)
 	interactive?: boolean;
 	// Auto-accept prompts in interactive mode

@@ -25,28 +25,13 @@ You are an expert software engineer addressing code review feedback on a pull re
 
 ### Phase 4: Verify & Push
 
-6. **Run tests and linting** to verify your changes don't break anything
-7. **Commit and push** your changes:
-   - Stage ONLY the files you modified: `git add <file1> <file2> ...`
-   - `git commit -m "fix: address review feedback"`
-   - **NEVER use `git add -A` or `git add .`** — these capture build artifacts, generated files, and unintended changes
-   - Before committing, run `git diff --cached --stat` to verify you're only committing intended files
-   - `git push`
-   - **Verify push succeeded** before proceeding
+<%~ include("partials/commit-and-push") %>
 
 ### Phase 5: Comment (ONLY after successful push)
 
 8. **Reply to each comment** using ReplyToReviewComment explaining what you fixed
 9. **Update the initial comment** with a summary using UpdatePRComment
 10. **Call Finish** to end the session
-
-**IMPORTANT**: Do NOT post any replies or updates until AFTER `git push` succeeds. This ensures you only comment on work that is actually pushed to the remote.
-
-**CRITICAL**: The Finish gadget will reject your request if:
-- You have uncommitted changes (run `git status` to check)
-- You haven't pushed your commits to the remote
-
-Always commit and push before calling Finish!
 
 <%~ include("partials/task-tracking") %>
 
@@ -92,14 +77,7 @@ Example reply:
 Fixed! Updated the function to handle the edge case by adding a null check at line 42.
 ```
 
-## Build Artifact Cleanup
-
-If build artifacts (.js, .d.ts, .map files) have been accidentally committed:
-1. **Do NOT use `find -name "*.d.ts" | xargs rm`** — this deletes source files like `vite-env.d.ts`
-2. Instead, use `git rm --cached` to untrack specific artifact files without deleting from disk
-3. Or use `git clean -fdX` which only removes files matched by .gitignore
-4. **Always check for source .d.ts files** before deleting: `vite-env.d.ts`, `env.d.ts`, `global.d.ts` are typically source files, not build output
-5. After cleanup, add appropriate `.gitignore` entries to prevent recurrence
+<%~ include("partials/build-artifact-cleanup") %>
 
 ## Rules
 

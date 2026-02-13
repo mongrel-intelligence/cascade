@@ -137,7 +137,10 @@ async function updateInitialCommentWithError(
 }
 
 async function postAcknowledgmentComment(result: TriggerResult): Promise<void> {
-	if (result.agentType !== 'respond-to-review' || !result.prNumber) {
+	if (
+		(result.agentType !== 'respond-to-review' && result.agentType !== 'respond-to-pr-comment') ||
+		!result.prNumber
+	) {
 		return;
 	}
 	const input = result.agentInput as { repoFullName?: string; acknowledgmentCommentId?: number };

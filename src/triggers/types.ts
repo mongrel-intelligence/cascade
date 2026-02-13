@@ -48,6 +48,7 @@ export interface TrelloWebhookPayload {
 				mimeType: string;
 				bytes?: number;
 			};
+			text?: string; // Comment text for commentCard events
 			old?: Record<string, unknown>;
 		};
 		memberCreator?: {
