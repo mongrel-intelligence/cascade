@@ -18,6 +18,7 @@ const PROTECTED_ENV_KEYS = new Set([
 	'PORT',
 	'LOG_LEVEL',
 	'LLMIST_LOG_FILE',
+	'LLMIST_LOG_TEE',
 	'REDIS_URL',
 	'JOB_ID',
 	'JOB_TYPE',
