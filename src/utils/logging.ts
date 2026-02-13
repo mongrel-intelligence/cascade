@@ -1,67 +1,29 @@
-type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error';
+import { createLogger } from 'llmist';
+import type { ILogObj, Logger } from 'llmist';
 
-export const LOG_LEVELS: Record<LogLevel, number> = {
-	trace: 0,
-	debug: 1,
-	info: 2,
-	warn: 3,
-	error: 4,
+export const LOG_LEVELS: Record<string, number> = {
+	silly: 0,
+	trace: 1,
+	debug: 2,
+	info: 3,
+	warn: 4,
+	error: 5,
+	fatal: 6,
 };
 
-let currentLogLevel: LogLevel = 'debug';
+export const logger: Logger<ILogObj> = createLogger({
+	name: 'cascade',
+	minLevel: LOG_LEVELS.debug,
+});
 
 export function setLogLevel(level: string): void {
-	if (level in LOG_LEVELS) {
-		currentLogLevel = level as LogLevel;
+	const numericLevel = LOG_LEVELS[level.toLowerCase()];
+	if (numericLevel !== undefined) {
+		logger.settings.minLevel = numericLevel;
 	}
 }
 
-export function getLogLevel(): LogLevel {
-	return currentLogLevel;
+export function getLogLevel(): string {
+	const match = Object.entries(LOG_LEVELS).find(([, v]) => v === logger.settings.minLevel);
+	return match ? match[0] : 'debug';
 }
-
-function shouldLog(level: LogLevel): boolean {
-	return LOG_LEVELS[level] >= LOG_LEVELS[currentLogLevel];
-}
-
-function formatMessage(
-	level: LogLevel,
-	message: string,
-	context?: Record<string, unknown>,
-): string {
-	const timestamp = new Date().toISOString();
-	const contextStr = context ? ` ${JSON.stringify(context)}` : '';
-	return `[${timestamp}] [${level.toUpperCase()}] ${message}${contextStr}`;
-}
-
-export const logger = {
-	trace(message: string, context?: Record<string, unknown>): void {
-		if (shouldLog('trace')) {
-			console.log(formatMessage('trace', message, context));
-		}
-	},
-
-	debug(message: string, context?: Record<string, unknown>): void {
-		if (shouldLog('debug')) {
-			console.log(formatMessage('debug', message, context));
-		}
-	},
-
-	info(message: string, context?: Record<string, unknown>): void {
-		if (shouldLog('info')) {
-			console.log(formatMessage('info', message, context));
-		}
-	},
-
-	warn(message: string, context?: Record<string, unknown>): void {
-		if (shouldLog('warn')) {
-			console.warn(formatMessage('warn', message, context));
-		}
-	},
-
-	error(message: string, context?: Record<string, unknown>): void {
-		if (shouldLog('error')) {
-			console.error(formatMessage('error', message, context));
-		}
-	},
-};
