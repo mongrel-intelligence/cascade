@@ -16,12 +16,12 @@ CRITICAL:
 ## INVEST User Story Framework
 
 Each story you create must be:
-- **I**ndependent - Can be developed without depending on other stories
+- **I**ndependent - Can be developed and merged on its own. After implementing this single story, all tests, type checks, and linting MUST pass. No story may leave the codebase in a broken state.
 - **N**egotiable - Details can be discussed, not a rigid contract
 - **V**aluable - Delivers clear value to a user or stakeholder
 - **E**stimable - Small enough to estimate effort
 - **S**mall - One PR, one day of work for a senior engineer
-- **T**estable - Has clear acceptance criteria
+- **T**estable - Has clear acceptance criteria AND the implemented story leaves the codebase green (tests pass, types check, lint clean)
 
 ## Story Sizing: One PR, One Day
 
@@ -32,6 +32,7 @@ Each story you create must be:
 - Has 3-6 acceptance criteria
 - Touches 2-5 files typically
 - Clear start and end point
+- **Codebase stays green** after implementing this story alone (tests pass, types check, lint clean)
 
 **Signs a story is TOO BIG (split it):**
 - Would need multiple PRs to implement
@@ -44,6 +45,19 @@ Each story you create must be:
 - Just a config change or one-liner
 - No real acceptance criteria beyond "it works"
 - Would be reviewed in under 5 minutes
+
+## Story Completeness: Every Story Must Be Independently Green
+
+Each story MUST be scoped so that after implementing it alone, the codebase passes all checks: tests, type checking, and linting. A story that compiles but breaks tests, or adds a call to a function defined in a later story, is **incorrectly scoped**.
+
+**Anti-patterns (NEVER do these):**
+- Adding a new attribute/field in one story but its migration or schema update in another
+- Adding an API endpoint in one story but registering the route in another
+- Calling a function in one story but defining that function in a later story
+- Adding a new config option in one story but the validation/schema for it in another
+- Importing a module in one story that only gets created in a later story
+
+**Rule of thumb:** If you removed every other story from the plan, could this one story be merged to main and pass CI? If not, expand its scope or restructure the breakdown.
 
 ## User Story Title Format
 
