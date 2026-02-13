@@ -21,6 +21,16 @@ Set `commit=false` or `push=false` if you've already done those steps manually.
 - View PR: `command=["gh", "pr", "view"]`
 - List PRs: `command=["gh", "pr", "list"]`
 
+### Staging Safety
+
+**NEVER use `git add -A`, `git add .`, or `git add --all`.**
+These commands capture build artifacts, generated files, and unintended changes.
+
+Always stage specific files: `git add path/to/file1.ts path/to/file2.ts`
+
+Before committing, verify staged files: `git diff --cached --stat`
+If more than ~10 files are staged, double-check that you haven't captured build output.
+
 ## Commit Message Format
 
 Use conventional commits:
