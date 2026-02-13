@@ -107,6 +107,18 @@ function validateGitCommand(command: string): void {
 				'Pre-commit and pre-push hooks must run to ensure code quality.',
 		);
 	}
+
+	// Block broad staging commands that capture unintended files (build artifacts, generated files)
+	// Note: normalized is already lowercased, so -A becomes -a
+	const broadStagingPattern =
+		/\bgit\s+add\s+(-a\b|--all\b|\.\s*($|&&|\||;|"|')|\.\/\s*($|&&|\||;|"|'))/;
+	if (broadStagingPattern.test(normalized)) {
+		throw new Error(
+			'Broad git staging (git add -A / git add . / git add --all) is not allowed. ' +
+				'Stage specific files instead: git add <file1> <file2> ...\n' +
+				'This prevents accidentally committing build artifacts and generated files.',
+		);
+	}
 }
 
 // ============================================================================

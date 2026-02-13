@@ -147,6 +147,9 @@ describe('GitHub Gadgets', () => {
 				if (args?.[0] === 'ls-remote') {
 					return { stdout: 'abc123\trefs/heads/feature/test', stderr: '', exitCode: 0 };
 				}
+				if (args?.[0] === 'ls-files') {
+					return { stdout: '', stderr: '', exitCode: 0 }; // No untracked files
+				}
 				return { stdout: '', stderr: '', exitCode: 0 };
 			});
 			vi.mocked(githubClient.createPR).mockResolvedValue({
@@ -163,8 +166,14 @@ describe('GitHub Gadgets', () => {
 				base: 'main',
 			});
 
-			// Should stage changes
-			expect(runCommand).toHaveBeenCalledWith('git', ['add', '.'], expect.any(String));
+			// Should stage tracked changes with -u (not git add .)
+			expect(runCommand).toHaveBeenCalledWith('git', ['add', '-u'], expect.any(String));
+			// Should check for untracked files
+			expect(runCommand).toHaveBeenCalledWith(
+				'git',
+				['ls-files', '--others', '--exclude-standard'],
+				expect.any(String),
+			);
 			// Should check for changes
 			expect(runCommand).toHaveBeenCalledWith('git', ['status', '--porcelain'], expect.any(String));
 			// Should push
@@ -176,10 +185,51 @@ describe('GitHub Gadgets', () => {
 			expect(result).toContain('PR #44 created successfully');
 		});
 
+		it('stages untracked non-ignored files individually', async () => {
+			vi.mocked(runCommand)
+				.mockResolvedValueOnce({ stdout: REMOTE_URL, stderr: '', exitCode: 0 }) // git remote
+				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add -u
+				.mockResolvedValueOnce({
+					stdout: 'src/new-file.ts\nsrc/another.ts',
+					stderr: '',
+					exitCode: 0,
+				}) // git ls-files --others
+				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add -- new files
+				.mockResolvedValueOnce({ stdout: 'M file.ts', stderr: '', exitCode: 0 }) // git status --porcelain
+				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git commit
+				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git push
+				.mockResolvedValueOnce({
+					stdout: 'abc123\trefs/heads/feature/test',
+					stderr: '',
+					exitCode: 0,
+				}); // git ls-remote
+			vi.mocked(githubClient.createPR).mockResolvedValue({
+				number: 48,
+				htmlUrl: 'https://github.com/test-owner/test-repo/pull/48',
+				title: 'Test PR',
+			});
+
+			const gadget = new CreatePR();
+			await gadget.execute({
+				title: 'Test PR',
+				body: 'Test body',
+				head: 'feature/test',
+				base: 'main',
+			});
+
+			// Should add specific untracked files
+			expect(runCommand).toHaveBeenCalledWith(
+				'git',
+				['add', '--', 'src/new-file.ts', 'src/another.ts'],
+				expect.any(String),
+			);
+		});
+
 		it('commits changes when there are unstaged changes', async () => {
 			vi.mocked(runCommand)
 				.mockResolvedValueOnce({ stdout: REMOTE_URL, stderr: '', exitCode: 0 }) // git remote
-				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add
+				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add -u
+				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git ls-files --others
 				.mockResolvedValueOnce({ stdout: 'M file.ts', stderr: '', exitCode: 0 }) // git status --porcelain
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git commit
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git push
@@ -213,7 +263,8 @@ describe('GitHub Gadgets', () => {
 		it('uses custom commit message when provided', async () => {
 			vi.mocked(runCommand)
 				.mockResolvedValueOnce({ stdout: REMOTE_URL, stderr: '', exitCode: 0 }) // git remote
-				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add
+				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add -u
+				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git ls-files --others
 				.mockResolvedValueOnce({ stdout: 'M file.ts', stderr: '', exitCode: 0 }) // git status --porcelain
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git commit
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git push
@@ -266,8 +317,8 @@ describe('GitHub Gadgets', () => {
 				commit: false,
 			});
 
-			// Should NOT call git add or git commit
-			expect(runCommand).not.toHaveBeenCalledWith('git', ['add', '.'], expect.any(String));
+			// Should NOT call git add -u or git commit
+			expect(runCommand).not.toHaveBeenCalledWith('git', ['add', '-u'], expect.any(String));
 			expect(runCommand).not.toHaveBeenCalledWith(
 				'git',
 				['status', '--porcelain'],
@@ -284,7 +335,8 @@ describe('GitHub Gadgets', () => {
 		it('throws error when commit fails', async () => {
 			vi.mocked(runCommand)
 				.mockResolvedValueOnce({ stdout: REMOTE_URL, stderr: '', exitCode: 0 }) // git remote
-				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add
+				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add -u
+				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git ls-files --others
 				.mockResolvedValueOnce({ stdout: 'M file.ts', stderr: '', exitCode: 0 }) // git status --porcelain
 				.mockResolvedValueOnce({
 					stdout: '',
@@ -308,7 +360,8 @@ describe('GitHub Gadgets', () => {
 		it('throws error when push fails', async () => {
 			vi.mocked(runCommand)
 				.mockResolvedValueOnce({ stdout: REMOTE_URL, stderr: '', exitCode: 0 }) // git remote
-				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add
+				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git add -u
+				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git ls-files --others
 				.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // git status --porcelain (no changes)
 				.mockResolvedValueOnce({
 					stdout: '',

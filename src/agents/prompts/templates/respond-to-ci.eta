@@ -25,13 +25,17 @@ You are an expert software engineer fixing CI check failures on a pull request.
 
 ### Phase 4: Verify & Push
 
-6. **Run checks locally** - Verify fixes before pushing:
-   - Lint: `npm run lint`
-   - Types: `npm run typecheck`
-   - Tests: `npm test`
-   - Build: `npm run build`
+6. **Run the FULL CI pipeline locally** - Read `.github/workflows/` to match CI exactly, then run ALL steps:
+   - Lint (e.g., `npm run lint` or `pnpm run lint`)
+   - Type checking (e.g., `npm run type-check` — note: script names vary per project)
+   - Tests (e.g., `npm test`)
+   - Build (e.g., `npm run build`)
+   - **Run ALL of these, not just the step that failed** — fixing one step often breaks another
 7. **Commit and push** your changes:
-   - `git add -A && git commit -m "fix: resolve CI failures"`
+   - Stage ONLY the files you modified: `git add <file1> <file2> ...`
+   - `git commit -m "fix: resolve CI failures"`
+   - **NEVER use `git add -A` or `git add .`** — these capture build artifacts, generated files, and unintended changes
+   - Before committing, run `git diff --cached --stat` to verify you're only committing intended files
    - `git push`
    - **Verify push succeeded** before proceeding
 
@@ -84,6 +88,26 @@ When editing a base class/interface causes TypeScript errors in OTHER files:
 2. Read the files with errors to understand their type requirements
 3. Consider whether your fix strategy is correct — if removing `any` breaks consumers, the `any` was intentional
 4. Prefer the minimal change that fixes the original CI failure without introducing new errors
+
+### Replicate CI Exactly
+
+Your local verification MUST run the same commands CI runs. CI failures happen because your
+local checks don't match CI's pipeline.
+
+1. **Read the CI workflow**: Check `.github/workflows/` to understand what CI runs and in what order
+2. **Run ALL steps**, not just the one that failed — CI runs lint, type-check, test, AND build
+3. **Don't skip steps** because they "should be fine" — run the full pipeline every time
+4. **Watch for setup steps**: CI may run migrations, install browsers, or seed data before tests.
+   If your local setup differs from CI's, your local results are unreliable.
+
+### Build Artifact Cleanup
+
+If build artifacts (.js, .d.ts, .map files) have been accidentally committed:
+1. **Do NOT use `find -name "*.d.ts" | xargs rm`** — this deletes source files like `vite-env.d.ts`
+2. Instead, use `git rm --cached` to untrack specific artifact files without deleting from disk
+3. Or use `git clean -fdX` which only removes files matched by .gitignore
+4. **Always check for source .d.ts files** before deleting: `vite-env.d.ts`, `env.d.ts`, `global.d.ts` are typically source files, not build output
+5. After cleanup, add appropriate `.gitignore` entries to prevent recurrence
 
 ### Getting More Details
 

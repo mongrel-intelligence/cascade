@@ -119,6 +119,11 @@ Style and preferences - mention only if egregious:
 - **Duplication**: Is there actual copy-paste that creates maintenance burden?
 - **Hardcoded values**: Look for hardcoded strings/numbers that should be derived from a source of truth (e.g., version numbers should come from package.json, not be hardcoded)
 
+### Repository Hygiene
+- **Build artifacts**: Check if the PR includes compiled output (.js, .d.ts, .map files in source directories, dist/ contents, etc.). These should NEVER be committed — flag as BLOCKING.
+- **.gitignore coverage**: If build artifacts are present, the project likely needs .gitignore updates. Recommend specific entries.
+- **File count sanity check**: If a small feature PR has 50+ files changed, investigate — it likely includes generated files.
+
 ### Deployment & Integration
 - **Environment variables**: If code uses env vars (especially build-time like `VITE_*`), check if CI/Dockerfile actually sets them
 - **Build-time config**: For features requiring build-time injection, verify the injection point exists

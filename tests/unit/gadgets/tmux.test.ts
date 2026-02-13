@@ -68,6 +68,48 @@ describe('Tmux Gadget', () => {
 			});
 		});
 
+		describe('should reject broad git staging commands', () => {
+			it('git add -A', () => {
+				expect(() => validateGitCommand('git add -A')).toThrow('Broad git staging');
+			});
+
+			it('git add --all', () => {
+				expect(() => validateGitCommand('git add --all')).toThrow('Broad git staging');
+			});
+
+			it('git add .', () => {
+				expect(() => validateGitCommand('git add .')).toThrow('Broad git staging');
+			});
+
+			it('git add . in a chain', () => {
+				expect(() => validateGitCommand('git add . && git commit -m "test"')).toThrow(
+					'Broad git staging',
+				);
+			});
+
+			it('git add -A in a chain', () => {
+				expect(() => validateGitCommand('git add -A && git commit -m "test"')).toThrow(
+					'Broad git staging',
+				);
+			});
+
+			it('git add ./ (with trailing slash)', () => {
+				expect(() => validateGitCommand('git add ./')).toThrow('Broad git staging');
+			});
+
+			it('allows git add with specific files', () => {
+				expect(() => validateGitCommand('git add src/index.ts src/app.ts')).not.toThrow();
+			});
+
+			it('allows git add -u (tracked files only)', () => {
+				expect(() => validateGitCommand('git add -u')).not.toThrow();
+			});
+
+			it('allows git add -p (patch mode)', () => {
+				expect(() => validateGitCommand('git add -p')).not.toThrow();
+			});
+		});
+
 		describe('should allow normal git commands', () => {
 			it('normal git commit', () => {
 				expect(() => validateGitCommand('git commit -m "test message"')).not.toThrow();
