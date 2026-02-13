@@ -33,6 +33,7 @@ async function main(): Promise<void> {
 				freshMachineTimeoutMs: 5 * 60 * 1000,
 				watchdogTimeoutMs: 30 * 60 * 1000,
 				postJobGracePeriodMs: 5000,
+				cardBudgetUsd: 3.5,
 			},
 			projects: [],
 		};

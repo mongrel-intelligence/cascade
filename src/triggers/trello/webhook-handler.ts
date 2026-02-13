@@ -24,6 +24,7 @@ import {
 import { safeOperation, silentOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
 import { handleAgentResultArtifacts } from '../shared/agent-result-handler.js';
+import { checkBudgetExceeded } from '../shared/budget.js';
 import type { TrelloWebhookPayload, TriggerResult } from '../types.js';
 import { isTrelloWebhookPayload } from '../types.js';
 
@@ -99,6 +100,29 @@ async function executeAgent(
 ): Promise<void> {
 	const { cardId } = result;
 
+	// Pre-flight budget check
+	let remainingBudgetUsd: number | undefined;
+	if (cardId) {
+		const budgetCheck = await checkBudgetExceeded(cardId, project, config);
+		if (budgetCheck?.exceeded) {
+			logger.warn('Card budget exceeded, agent not started', {
+				cardId,
+				currentCost: budgetCheck.currentCost,
+				budget: budgetCheck.budget,
+			});
+			await safeRemoveLabel(cardId, project.trello.labels.processing);
+			await safeAddLabel(cardId, project.trello.labels.error);
+			await safeAddComment(
+				cardId,
+				`⛔ Budget exceeded: card cost $${budgetCheck.currentCost.toFixed(2)} >= limit $${budgetCheck.budget.toFixed(2)}. Agent not started.`,
+			);
+			return;
+		}
+		if (budgetCheck) {
+			remainingBudgetUsd = budgetCheck.remaining;
+		}
+	}
+
 	if (cardId) {
 		setCardActive(cardId);
 		await safeAddLabel(cardId, project.trello.labels.processing);
@@ -114,6 +138,7 @@ async function executeAgent(
 
 	const agentResult = await runAgent(result.agentType, {
 		...result.agentInput,
+		remainingBudgetUsd,
 		project,
 		config,
 	});
@@ -121,6 +146,16 @@ async function executeAgent(
 	// Upload log and update cost on Trello card
 	if (cardId) {
 		await handleAgentResultArtifacts(cardId, result.agentType, agentResult, project);
+
+		// Post-flight budget check
+		const postBudgetCheck = await checkBudgetExceeded(cardId, project, config);
+		if (postBudgetCheck?.exceeded) {
+			await safeAddLabel(cardId, project.trello.labels.error);
+			await safeAddComment(
+				cardId,
+				`⚠️ Budget limit reached: card cost $${postBudgetCheck.currentCost.toFixed(2)} >= limit $${postBudgetCheck.budget.toFixed(2)}. Further agent runs will be blocked.`,
+			);
+		}
 	}
 
 	if (cardId) {
