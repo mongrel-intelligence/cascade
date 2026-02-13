@@ -9,17 +9,29 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 import { Gadget, z } from 'llmist';
 
-import { assertFileRead, invalidateFileRead } from './readTracking.js';
+import { assertFileRead, markFileRead } from './readTracking.js';
 import {
 	adjustIndentation,
 	applyReplacement,
+	clearEditFailure,
 	findAllMatches,
 	formatContext,
 	getMatchFailure,
+	recordEditFailure,
 	runPostEditChecks,
 	validatePath,
 } from './shared/index.js';
 import type { MatchResult } from './shared/types.js';
+
+const ESCALATION_HINT =
+	'\n\nTIP: This file has failed multiple edit attempts. For files with repetitive structure ' +
+	'(CRUD methods, similar function signatures), use ReadFile to get the current content, ' +
+	'then WriteFile to rewrite the entire file or section.';
+
+function withEscalationHint(message: string, filePath: string): string {
+	const failCount = recordEditFailure(filePath);
+	return failCount >= 2 ? message + ESCALATION_HINT : message;
+}
 
 export class FileSearchAndReplace extends Gadget({
 	name: 'FileSearchAndReplace',
@@ -348,7 +360,9 @@ import * as Sentry from '@sentry/node';`,
 		if (matches.length === 0) {
 			// No match found - throw with helpful suggestions
 			const failure = getMatchFailure(content, search);
-			throw new Error(this.formatFailure(filePath, search, failure));
+			throw new Error(
+				withEscalationHint(this.formatFailure(filePath, search, failure), validatedPath),
+			);
 		}
 
 		// Validate expectedCount if provided
@@ -361,7 +375,12 @@ import * as Sentry from '@sentry/node';`,
 
 		if (matches.length > 1 && !replaceAll) {
 			// Multiple matches found - require explicit opt-in or more specific search
-			throw new Error(this.formatMultipleMatchesError(filePath, matches, content));
+			throw new Error(
+				withEscalationHint(
+					this.formatMultipleMatchesError(filePath, matches, content),
+					validatedPath,
+				),
+			);
 		}
 
 		// If replaceAll=true OR single match, proceed with replacement
@@ -387,7 +406,8 @@ import * as Sentry from '@sentry/node';`,
 
 		// Write file
 		writeFileSync(validatedPath, newContent, 'utf-8');
-		invalidateFileRead(validatedPath);
+		markFileRead(validatedPath);
+		clearEditFailure(validatedPath);
 
 		// Build and return success output
 		return this.buildOutput(
@@ -553,7 +573,8 @@ import * as Sentry from '@sentry/node';`,
 
 		// Write file
 		writeFileSync(validatedPath, newContent, 'utf-8');
-		invalidateFileRead(validatedPath);
+		markFileRead(validatedPath);
+		clearEditFailure(validatedPath);
 
 		// Build output for replaceAll
 		return this.buildReplaceAllOutput(filePath, validatedPath, matches, replace);

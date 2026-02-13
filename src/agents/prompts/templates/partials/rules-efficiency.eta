@@ -82,6 +82,17 @@ If an operation fails twice with the same error:
 
 Looping on the same error wastes iteration budget and never succeeds.
 
+### Edit Escalation Ladder
+
+When FileSearchAndReplace or FileMultiEdit fails:
+
+1. **First failure**: Add more surrounding context to make the search unique
+2. **Second failure**: STOP. ReadFile the file, then try a completely different search pattern
+3. **Third failure**: Abandon search/replace. Use ReadFile + WriteFile to rewrite the section
+
+For files with repetitive structure (CRUD services, models with similar methods),
+skip straight to ReadFile + WriteFile — search/replace will keep matching multiple locations.
+
 ### Stuck on a Failing Test
 
 If a test you WROTE (not a pre-existing test) fails after 2-3 fix attempts:

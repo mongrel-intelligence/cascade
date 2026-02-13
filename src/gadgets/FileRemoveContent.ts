@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 import { Gadget, z } from 'llmist';
 
-import { assertFileRead, invalidateFileRead } from './readTracking.js';
+import { assertFileRead, markFileRead } from './readTracking.js';
 import { formatContext, runPostEditChecks, validatePath } from './shared/index.js';
 
 export class FileRemoveContent extends Gadget({
@@ -159,7 +159,7 @@ Removed 3 lines (lines 2-4).
 
 		const newContent = newLines.join('\n');
 		writeFileSync(validatedPath, newContent, 'utf-8');
-		invalidateFileRead(validatedPath);
+		markFileRead(validatedPath);
 
 		// Check diagnostics and update state tracker
 		const diagnosticResult = runPostEditChecks(filePath, validatedPath);

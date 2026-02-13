@@ -70,6 +70,33 @@ describe('readTracking', () => {
 		});
 	});
 
+	describe('markFileRead preserves read status after edits', () => {
+		it('file remains readable after markFileRead (simulates post-edit)', () => {
+			// Agent reads file
+			markFileRead('/path/to/file.ts');
+			expect(hasReadFile('/path/to/file.ts')).toBe(true);
+
+			// Agent edits file — gadgets now call markFileRead instead of invalidateFileRead
+			markFileRead('/path/to/file.ts');
+			expect(hasReadFile('/path/to/file.ts')).toBe(true);
+
+			// assertFileRead should not throw — agent has seen the content
+			expect(() => assertFileRead('/path/to/file.ts', 'TestGadget')).not.toThrow();
+		});
+
+		it('chained edits keep file readable', () => {
+			markFileRead('/path/to/file.ts');
+
+			// Simulate multiple sequential edits
+			markFileRead('/path/to/file.ts');
+			markFileRead('/path/to/file.ts');
+			markFileRead('/path/to/file.ts');
+
+			expect(hasReadFile('/path/to/file.ts')).toBe(true);
+			expect(() => assertFileRead('/path/to/file.ts', 'FileMultiEdit')).not.toThrow();
+		});
+	});
+
 	describe('clearReadTracking', () => {
 		it('clears all tracked files', () => {
 			markFileRead('/path/to/file1.ts');

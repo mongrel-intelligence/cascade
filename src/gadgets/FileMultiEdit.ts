@@ -10,16 +10,28 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 import { Gadget, z } from 'llmist';
 
-import { assertFileRead, invalidateFileRead } from './readTracking.js';
+import { assertFileRead, markFileRead } from './readTracking.js';
 import {
 	adjustIndentation,
 	applyReplacement,
+	clearEditFailure,
 	findAllMatches,
 	formatContext,
 	getMatchFailure,
+	recordEditFailure,
 	runPostEditChecks,
 	validatePath,
 } from './shared/index.js';
+
+const ESCALATION_HINT =
+	'\n\nTIP: This file has failed multiple edit attempts. For files with repetitive structure ' +
+	'(CRUD methods, similar function signatures), use ReadFile to get the current content, ' +
+	'then WriteFile to rewrite the entire file or section.';
+
+function withEscalationHint(message: string, filePath: string): string {
+	const failCount = recordEditFailure(filePath);
+	return failCount >= 2 ? message + ESCALATION_HINT : message;
+}
 
 export class FileMultiEdit extends Gadget({
 	name: 'FileMultiEdit',
@@ -111,12 +123,20 @@ Use this instead of multiple FileSearchAndReplace calls when edits are related
 
 			if (matches.length === 0) {
 				const failure = getMatchFailure(workingContent, edit.search);
-				throw new Error(this.formatAbortError(filePath, i + 1, edits.length, edit.search, failure));
+				throw new Error(
+					withEscalationHint(
+						this.formatAbortError(filePath, i + 1, edits.length, edit.search, failure),
+						validatedPath,
+					),
+				);
 			}
 
 			if (matches.length > 1) {
 				throw new Error(
-					`ABORTED: Edit ${i + 1}/${edits.length} found ${matches.length} matches (expected 1) in ${filePath}\n\nAdd more surrounding context to uniquely identify the target.\n\nNo changes were made to the file.`,
+					withEscalationHint(
+						`ABORTED: Edit ${i + 1}/${edits.length} found ${matches.length} matches (expected 1) in ${filePath}\n\nAdd more surrounding context to uniquely identify the target.\n\nNo changes were made to the file.`,
+						validatedPath,
+					),
 				);
 			}
 
@@ -153,7 +173,8 @@ Use this instead of multiple FileSearchAndReplace calls when edits are related
 
 		// All edits succeeded — write to disk
 		writeFileSync(validatedPath, workingContent, 'utf-8');
-		invalidateFileRead(validatedPath);
+		markFileRead(validatedPath);
+		clearEditFailure(validatedPath);
 
 		// Run post-edit checks once
 		const diagnosticResult = runPostEditChecks(filePath, validatedPath);
