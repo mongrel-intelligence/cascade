@@ -1,6 +1,7 @@
 import { CheckSuiteFailureTrigger } from './github/check-suite-failure.js';
 import { CheckSuiteSuccessTrigger } from './github/check-suite-success.js';
 import { IssueCommentTrigger } from './github/issue-comment.js';
+import { PRCommentMentionTrigger } from './github/pr-comment-mention.js';
 // import { PROpenedTrigger } from './github/pr-opened.js';
 import { PRMergedTrigger } from './github/pr-merged.js';
 import { PRReadyToMergeTrigger } from './github/pr-ready-to-merge.js';
@@ -13,6 +14,7 @@ import {
 	CardMovedToPlanningTrigger,
 	CardMovedToTodoTrigger,
 } from './trello/card-moved.js';
+import { TrelloCommentMentionTrigger } from './trello/comment-mention.js';
 import { ReadyToProcessLabelTrigger } from './trello/label-added.js';
 
 export { type TriggerRegistry, createTriggerRegistry } from './registry.js';
@@ -27,6 +29,10 @@ export { processTrelloWebhook } from './trello/webhook-handler.js';
 export { processGitHubWebhook } from './github/webhook-handler.js';
 
 export function registerBuiltInTriggers(registry: TriggerRegistry): void {
+	// Trello: Comment @mention trigger (runs respond-to-planning-comment when bot is @mentioned)
+	// Must be registered before card-moved triggers so it gets first crack at comment events
+	registry.register(new TrelloCommentMentionTrigger());
+
 	// Trello: Card moved triggers (factory-created objects)
 	registry.register(CardMovedToBriefingTrigger);
 	registry.register(CardMovedToPlanningTrigger);
@@ -41,6 +47,10 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 	// GitHub: PR opened trigger (initial review on new PRs)
 	// DISABLED: Triggers respond-to-review which has file editing gadgets - needs review
 	// registry.register(new PROpenedTrigger());
+
+	// GitHub: PR comment @mention trigger (runs respond-to-pr-comment when reviewer is @mentioned)
+	// Must be registered before other comment triggers so it can intercept mentions and fall through otherwise
+	registry.register(new PRCommentMentionTrigger());
 
 	// GitHub: PR review comment trigger (inline code comments)
 	registry.register(new PRReviewCommentTrigger());

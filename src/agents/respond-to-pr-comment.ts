@@ -23,7 +23,7 @@ import {
 	injectSyntheticCall,
 } from './shared/syntheticCalls.js';
 
-interface RespondToReviewAgentInput extends GitHubAgentInput {
+interface RespondToPRCommentAgentInput extends GitHubAgentInput {
 	triggerCommentId: number;
 	triggerCommentBody: string;
 	triggerCommentPath: string;
@@ -35,7 +35,7 @@ interface RespondToReviewAgentInput extends GitHubAgentInput {
 // Context Building
 // ============================================================================
 
-interface ReviewContextData extends GitHubAgentContext {
+interface PRCommentContextData extends GitHubAgentContext {
 	contextFiles: Awaited<ReturnType<typeof resolveModelConfig>>['contextFiles'];
 	prDetailsFormatted: string;
 	commentsFormatted: string;
@@ -44,7 +44,7 @@ interface ReviewContextData extends GitHubAgentContext {
 	diffFormatted: string;
 }
 
-async function buildReviewContext(
+async function buildPRCommentContext(
 	owner: string,
 	repo: string,
 	prNumber: number,
@@ -54,10 +54,10 @@ async function buildReviewContext(
 	config: CascadeConfig,
 	log: { info: (msg: string, ctx?: Record<string, unknown>) => void },
 	modelOverride?: string,
-): Promise<ReviewContextData> {
-	// respond-to-review shares model/iteration config with 'review' agent
+): Promise<PRCommentContextData> {
+	// respond-to-pr-comment shares model/iteration config with 'review' agent
 	const { systemPrompt, model, maxIterations, contextFiles } = await resolveModelConfig({
-		agentType: 'respond-to-review',
+		agentType: 'respond-to-pr-comment',
 		project,
 		config,
 		repoDir,
@@ -85,7 +85,7 @@ async function buildReviewContext(
 	const diffFormatted = formatPRDiff(prDiff);
 
 	// Build prompt
-	const prompt = buildReviewPrompt(prBranch, prNumber, owner, repo);
+	const prompt = buildPRCommentPrompt(prBranch, prNumber, owner, repo);
 
 	return {
 		systemPrompt,
@@ -101,7 +101,7 @@ async function buildReviewContext(
 	};
 }
 
-function buildReviewPrompt(
+function buildPRCommentPrompt(
 	prBranch: string,
 	prNumber: number,
 	owner: string,
@@ -109,7 +109,7 @@ function buildReviewPrompt(
 ): string {
 	return `You are on the branch \`${prBranch}\` for PR #${prNumber}.
 
-Address the review comments and push your changes.
+A user @mentioned you in a PR comment. Read their request and execute it.
 
 ## GitHub Context
 
@@ -117,22 +117,22 @@ Owner: ${owner}
 Repo: ${repo}
 PR Number: ${prNumber}
 
-Use these values when calling GitHub gadgets (GetPRComments, ReplyToReviewComment).`;
+Use these values when calling GitHub gadgets (GetPRComments, ReplyToReviewComment, PostPRComment, UpdatePRComment).`;
 }
 
 // ============================================================================
 // Agent Definition
 // ============================================================================
 
-const respondToReviewDefinition: GitHubAgentDefinition<
-	RespondToReviewAgentInput,
-	ReviewContextData
+const respondToPRCommentDefinition: GitHubAgentDefinition<
+	RespondToPRCommentAgentInput,
+	PRCommentContextData
 > = {
-	agentType: 'respond-to-review',
-	headerMessage: '🤖 Working on addressing the review feedback...',
-	initialCommentDescription: 'Acknowledge review feedback',
-	timeoutMessage: '⚠️ Review agent timed out while addressing feedback.',
-	loggerPrefix: 'review',
+	agentType: 'respond-to-pr-comment',
+	headerMessage: '🤖 Working on your request...',
+	initialCommentDescription: 'Acknowledge PR comment request',
+	timeoutMessage: '⚠️ PR comment agent timed out while working on the request.',
+	loggerPrefix: 'pr-comment',
 
 	getGadgets: () => createPRAgentGadgets({ includeReviewComments: true }),
 
@@ -150,7 +150,7 @@ const respondToReviewDefinition: GitHubAgentDefinition<
 	},
 
 	buildContext: ({ owner, repo }, input, repoDir, log) =>
-		buildReviewContext(
+		buildPRCommentContext(
 			owner,
 			repo,
 			input.prNumber,
@@ -172,6 +172,22 @@ const respondToReviewDefinition: GitHubAgentDefinition<
 	}) {
 		let b = injectDirectoryListing(builder, trackingContext);
 
+		// Inject the triggering comment prominently
+		b = injectSyntheticCall(
+			b,
+			trackingContext,
+			'TriggeringComment',
+			{
+				comment:
+					'The @mention comment that triggered this agent — this is your primary instruction',
+				commentId: input.triggerCommentId,
+				url: input.triggerCommentUrl,
+				path: input.triggerCommentPath || '(general PR comment)',
+			},
+			input.triggerCommentBody,
+			'gc_triggering_comment',
+		);
+
 		b = injectSyntheticCall(
 			b,
 			trackingContext,
@@ -186,7 +202,7 @@ const respondToReviewDefinition: GitHubAgentDefinition<
 			trackingContext,
 			'GetPRComments',
 			{
-				comment: 'Pre-fetching line-specific review comments to address',
+				comment: 'Pre-fetching line-specific review comments for context',
 				owner,
 				repo,
 				prNumber: input.prNumber,
@@ -200,7 +216,7 @@ const respondToReviewDefinition: GitHubAgentDefinition<
 			trackingContext,
 			'GetPRReviews',
 			{
-				comment: 'Pre-fetching review submissions (approve/request changes with body text)',
+				comment: 'Pre-fetching review submissions for context',
 				owner,
 				repo,
 				prNumber: input.prNumber,
@@ -214,7 +230,7 @@ const respondToReviewDefinition: GitHubAgentDefinition<
 			trackingContext,
 			'GetPRIssueComments',
 			{
-				comment: 'Pre-fetching general PR comments (issue-style conversation)',
+				comment: 'Pre-fetching general PR comments for context',
 				owner,
 				repo,
 				prNumber: input.prNumber,
@@ -240,11 +256,11 @@ const respondToReviewDefinition: GitHubAgentDefinition<
 };
 
 // ============================================================================
-// Review Agent Execution
+// PR Comment Agent Execution
 // ============================================================================
 
-export async function executeRespondToReviewAgent(
-	input: RespondToReviewAgentInput,
+export async function executeRespondToPRCommentAgent(
+	input: RespondToPRCommentAgentInput,
 ): Promise<AgentResult> {
-	return executeGitHubAgent(respondToReviewDefinition, input);
+	return executeGitHubAgent(respondToPRCommentDefinition, input);
 }

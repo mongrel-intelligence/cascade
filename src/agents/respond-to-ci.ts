@@ -1,25 +1,9 @@
-import { WriteFile } from '../gadgets/WriteFile.js';
-
-import { AstGrep } from '../gadgets/AstGrep.js';
-import { FileSearchAndReplace } from '../gadgets/FileSearchAndReplace.js';
-import { Finish } from '../gadgets/Finish.js';
-import { ListDirectory } from '../gadgets/ListDirectory.js';
-import { ReadFile } from '../gadgets/ReadFile.js';
-import { RipGrep } from '../gadgets/RipGrep.js';
-import { Sleep } from '../gadgets/Sleep.js';
-import {
-	GetPRDetails,
-	GetPRDiff,
-	PostPRComment,
-	UpdatePRComment,
-} from '../gadgets/github/index.js';
-import { Tmux } from '../gadgets/tmux.js';
-import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
 import type { CheckSuiteStatus } from '../github/client.js';
 import { githubClient } from '../github/client.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import { runCommand as execCommand } from '../utils/repo.js';
+import { createPRAgentGadgets } from './shared/gadgets.js';
 import {
 	type GitHubAgentContext,
 	type GitHubAgentDefinition,
@@ -313,24 +297,7 @@ const ciAgentDefinition: GitHubAgentDefinition<RespondToCIAgentInput, CIContextD
 	timeoutMessage: '⚠️ CI fix agent timed out while attempting to fix failures.',
 	loggerPrefix: 'ci',
 
-	getGadgets: () => [
-		new ListDirectory(),
-		new ReadFile(),
-		new FileSearchAndReplace(),
-		new WriteFile(),
-		new RipGrep(),
-		new AstGrep(),
-		new Tmux(),
-		new Sleep(),
-		new TodoUpsert(),
-		new TodoUpdateStatus(),
-		new TodoDelete(),
-		new GetPRDetails(),
-		new GetPRDiff(),
-		new PostPRComment(),
-		new UpdatePRComment(),
-		new Finish(),
-	],
+	getGadgets: () => createPRAgentGadgets(),
 
 	async preExecute(input: RespondToCIAgentInput, id: RepoIdentifier) {
 		const checkStatus = await githubClient.getCheckSuiteStatus(id.owner, id.repo, input.headSha);

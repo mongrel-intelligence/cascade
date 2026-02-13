@@ -1,0 +1,8 @@
+## Build Artifact Cleanup
+
+If build artifacts (.js, .d.ts, .map files) have been accidentally committed:
+1. **Do NOT use `find -name "*.d.ts" | xargs rm`** — this deletes source files like `vite-env.d.ts`
+2. Instead, use `git rm --cached` to untrack specific artifact files without deleting from disk
+3. Or use `git clean -fdX` which only removes files matched by .gitignore
+4. **Always check for source .d.ts files** before deleting: `vite-env.d.ts`, `env.d.ts`, `global.d.ts` are typically source files, not build output
+5. After cleanup, add appropriate `.gitignore` entries to prevent recurrence
