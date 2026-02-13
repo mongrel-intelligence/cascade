@@ -1,0 +1,18 @@
+## Verify & Push
+
+1. **Run tests and linting** to verify your changes don't break anything
+2. **Commit and push** your changes:
+   - Stage ONLY the files you modified: `git add <file1> <file2> ...`
+   - **NEVER use `git add -A` or `git add .`** — these capture build artifacts, generated files, and unintended changes
+   - Before committing, run `git diff --cached --stat` to verify you're only committing intended files
+   - `git commit -m "fix: address feedback"`
+   - `git push`
+   - **Verify push succeeded** before proceeding
+
+**IMPORTANT**: Do NOT post any replies or updates until AFTER `git push` succeeds. This ensures you only comment on work that is actually pushed to the remote.
+
+**CRITICAL**: The Finish gadget will reject your request if:
+- You have uncommitted changes (run `git status` to check)
+- You haven't pushed your commits to the remote
+
+Always commit and push before calling Finish!

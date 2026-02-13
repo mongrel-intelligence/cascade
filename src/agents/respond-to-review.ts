@@ -1,24 +1,6 @@
-import { WriteFile } from '../gadgets/WriteFile.js';
-
-import { AstGrep } from '../gadgets/AstGrep.js';
-import { FileSearchAndReplace } from '../gadgets/FileSearchAndReplace.js';
-import { Finish } from '../gadgets/Finish.js';
-import { ListDirectory } from '../gadgets/ListDirectory.js';
-import { ReadFile } from '../gadgets/ReadFile.js';
-import { RipGrep } from '../gadgets/RipGrep.js';
-import { Sleep } from '../gadgets/Sleep.js';
-import {
-	GetPRComments,
-	GetPRDetails,
-	GetPRDiff,
-	PostPRComment,
-	ReplyToReviewComment,
-	UpdatePRComment,
-} from '../gadgets/github/index.js';
-import { Tmux } from '../gadgets/tmux.js';
-import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
 import { githubClient } from '../github/client.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
+import { createPRAgentGadgets } from './shared/gadgets.js';
 import {
 	type GitHubAgentContext,
 	type GitHubAgentDefinition,
@@ -27,7 +9,13 @@ import {
 	executeGitHubAgent,
 } from './shared/githubAgent.js';
 import { resolveModelConfig } from './shared/modelResolution.js';
-import { formatPRDetails, formatPRDiff } from './shared/prFormatting.js';
+import {
+	formatPRComments,
+	formatPRDetails,
+	formatPRDiff,
+	formatPRIssueComments,
+	formatPRReviews,
+} from './shared/prFormatting.js';
 import {
 	injectContextFiles,
 	injectDirectoryListing,
@@ -41,76 +29,6 @@ interface RespondToReviewAgentInput extends GitHubAgentInput {
 	triggerCommentPath: string;
 	triggerCommentUrl: string;
 	acknowledgmentCommentId?: number;
-}
-
-// ============================================================================
-// PR Data Formatting
-// ============================================================================
-
-type PRComments = Awaited<ReturnType<typeof githubClient.getPRReviewComments>>;
-type PRReviews = Awaited<ReturnType<typeof githubClient.getPRReviews>>;
-type PRIssueComments = Awaited<ReturnType<typeof githubClient.getPRIssueComments>>;
-
-function formatPRComments(prComments: PRComments): string {
-	if (prComments.length === 0) {
-		return 'No review comments found.';
-	}
-
-	return prComments
-		.map((c) =>
-			[
-				`Comment #${c.id} by @${c.user.login}`,
-				`File: ${c.path}${c.line ? `:${c.line}` : ''}`,
-				`URL: ${c.htmlUrl}`,
-				c.inReplyToId ? `In reply to: #${c.inReplyToId}` : null,
-				'',
-				c.body,
-				'---',
-			]
-				.filter(Boolean)
-				.join('\n'),
-		)
-		.join('\n\n');
-}
-
-function formatPRReviews(prReviews: PRReviews): string {
-	// Filter to reviews that have body text (the main review comment)
-	const reviewsWithBody = prReviews.filter((r) => r.body && r.body.trim().length > 0);
-
-	if (reviewsWithBody.length === 0) {
-		return 'No review submissions with body text.';
-	}
-
-	return reviewsWithBody
-		.map((r) =>
-			[
-				`Review by @${r.user.login} (${r.state})`,
-				`Submitted: ${r.submittedAt}`,
-				'',
-				r.body,
-				'---',
-			].join('\n'),
-		)
-		.join('\n\n');
-}
-
-function formatPRIssueComments(prIssueComments: PRIssueComments): string {
-	if (prIssueComments.length === 0) {
-		return 'No general PR comments found.';
-	}
-
-	return prIssueComments
-		.map((c) =>
-			[
-				`Comment #${c.id} by @${c.user.login}`,
-				`URL: ${c.htmlUrl}`,
-				`Created: ${c.createdAt}`,
-				'',
-				c.body,
-				'---',
-			].join('\n'),
-		)
-		.join('\n\n');
 }
 
 // ============================================================================
@@ -216,26 +134,7 @@ const respondToReviewDefinition: GitHubAgentDefinition<
 	timeoutMessage: '⚠️ Review agent timed out while addressing feedback.',
 	loggerPrefix: 'review',
 
-	getGadgets: () => [
-		new ListDirectory(),
-		new ReadFile(),
-		new FileSearchAndReplace(),
-		new WriteFile(),
-		new RipGrep(),
-		new AstGrep(),
-		new Tmux(),
-		new Sleep(),
-		new TodoUpsert(),
-		new TodoUpdateStatus(),
-		new TodoDelete(),
-		new GetPRDetails(),
-		new GetPRComments(),
-		new GetPRDiff(),
-		new ReplyToReviewComment(),
-		new PostPRComment(),
-		new UpdatePRComment(),
-		new Finish(),
-	],
+	getGadgets: () => createPRAgentGadgets({ includeReviewComments: true }),
 
 	async postInitialComment(input, id, headerMessage) {
 		if (input.acknowledgmentCommentId) {
