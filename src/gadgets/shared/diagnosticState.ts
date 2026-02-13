@@ -133,6 +133,9 @@ const modifiedFiles = new Set<string>();
 // Track consecutive edit failures per file (for escalation hints)
 const editFailureCounts = new Map<string, number>();
 
+// Track successive edits where diagnostics still have errors (for diagnostic loop detection)
+const diagnosticLoopCounts = new Map<string, number>();
+
 /**
  * Mark a file as modified during this session.
  */
@@ -254,12 +257,37 @@ export function clearEditFailures(): void {
 }
 
 /**
+ * Record a diagnostic loop for a file (edit succeeded but diagnostics still have errors).
+ * Returns the new loop count.
+ */
+export function recordDiagnosticLoop(filePath: string): number {
+	const count = (diagnosticLoopCounts.get(filePath) ?? 0) + 1;
+	diagnosticLoopCounts.set(filePath, count);
+	return count;
+}
+
+/**
+ * Clear the diagnostic loop counter for a file (diagnostics passed after edit).
+ */
+export function clearDiagnosticLoop(filePath: string): void {
+	diagnosticLoopCounts.delete(filePath);
+}
+
+/**
+ * Get all files with diagnostic loop counts.
+ */
+export function getDiagnosticLoopFiles(): Map<string, number> {
+	return diagnosticLoopCounts;
+}
+
+/**
  * Clear all diagnostic state (call at session start).
  */
 export function clearDiagnosticState(): void {
 	fileStatuses.clear();
 	modifiedFiles.clear();
 	editFailureCounts.clear();
+	diagnosticLoopCounts.clear();
 }
 
 /**
