@@ -1,5 +1,5 @@
 import { type RetryConfig, isRetryableError } from 'llmist';
-import type { ILogObj, Logger } from 'tslog';
+import type { ILogObj, Logger } from 'llmist';
 
 /**
  * Check if an error is a transient stream/connection error from undici/fetch.
