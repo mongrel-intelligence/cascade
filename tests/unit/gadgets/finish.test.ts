@@ -85,6 +85,48 @@ describe('Finish gadget', () => {
 		});
 	});
 
+	describe('respond-to-ci agent', () => {
+		beforeEach(() => {
+			initSessionState('respond-to-ci');
+		});
+
+		it('rejects finish with uncommitted changes', async () => {
+			vi.mocked(execSync).mockImplementation((cmd: string) => {
+				if (cmd.includes('status --porcelain')) return 'M src/file.ts';
+				return '';
+			});
+
+			const gadget = new Finish();
+			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(
+				'Cannot finish respond-to-ci session with uncommitted changes',
+			);
+		});
+
+		it('rejects finish with unpushed commits', async () => {
+			vi.mocked(execSync).mockImplementation((cmd: string) => {
+				if (cmd.includes('status --porcelain')) return '';
+				if (cmd.includes('rev-list')) return '1';
+				return '';
+			});
+
+			const gadget = new Finish();
+			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(
+				'Cannot finish respond-to-ci session without pushing changes',
+			);
+		});
+
+		it('allows finish when changes are committed and pushed', async () => {
+			vi.mocked(execSync).mockImplementation((cmd: string) => {
+				if (cmd.includes('status --porcelain')) return '';
+				if (cmd.includes('rev-list')) return '0';
+				return '';
+			});
+
+			const gadget = new Finish();
+			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(TaskCompletionSignal);
+		});
+	});
+
 	describe('review agent', () => {
 		beforeEach(() => {
 			initSessionState('review');
