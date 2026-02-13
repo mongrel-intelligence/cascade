@@ -285,6 +285,10 @@ async function injectReviewSyntheticCalls(
 	// Inject context files (CLAUDE.md, README.md, etc.)
 	builder = injectContextFiles(builder, trackingContext, ctx.contextFiles);
 
+	// Inject Squint overview BEFORE file contents — agent sees architectural map
+	// before encountering specific file contents
+	builder = injectSquintContext(builder, trackingContext, repoDir);
+
 	// Inject full contents of PR changed files (up to token limit)
 	for (let i = 0; i < ctx.fileContents.included.length; i++) {
 		const file = ctx.fileContents.included[i];
@@ -297,8 +301,6 @@ async function injectReviewSyntheticCalls(
 			`gc_file_${i + 1}`,
 		);
 	}
-
-	builder = injectSquintContext(builder, trackingContext, repoDir);
 
 	return builder;
 }

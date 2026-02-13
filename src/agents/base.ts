@@ -335,6 +335,13 @@ async function injectSyntheticCalls(
 	// Use maxDepth=5 to give agents better visibility into nested structures
 	let builder = injectDirectoryListing(initialBuilder, trackingContext, 5);
 
+	// Inject context files (CLAUDE.md, AGENTS.md) — conventions first
+	builder = injectContextFiles(builder, trackingContext, contextFiles);
+
+	// Inject Squint overview BEFORE card data — agent sees architectural map
+	// before encountering specific file paths from the card
+	builder = injectSquintContext(builder, trackingContext, repoDir);
+
 	// Inject card data as synthetic ReadTrelloCard call (only if cardId exists)
 	if (cardId && cardData) {
 		builder = injectSyntheticCall(
@@ -347,7 +354,7 @@ async function injectSyntheticCalls(
 		);
 	}
 
-	// Inject pre-populated todos from Implementation Steps checklist
+	// Inject pre-populated todos LAST — strongest "start coding" signal
 	if (implementationSteps && implementationSteps.length > 0) {
 		initTodoSession(`impl-${Date.now()}`);
 
@@ -373,9 +380,6 @@ async function injectSyntheticCalls(
 			'gc_todos',
 		);
 	}
-
-	builder = injectContextFiles(builder, trackingContext, contextFiles);
-	builder = injectSquintContext(builder, trackingContext, repoDir);
 
 	return builder;
 }
