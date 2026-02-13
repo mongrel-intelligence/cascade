@@ -101,6 +101,7 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 
 		try {
 			process.env.LLMIST_LOG_FILE = fileLogger.llmistLogPath;
+			process.env.LLMIST_LOG_TEE = 'true';
 
 			const client = options.customModels
 				? new LLMist({ customModels: options.customModels })
