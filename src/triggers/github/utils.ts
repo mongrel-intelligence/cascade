@@ -1,4 +1,4 @@
-import { getAuthenticatedUser, getReviewerUser } from '../../github/client.js';
+import { getReviewerUser } from '../../github/client.js';
 import type { ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 
@@ -33,43 +33,13 @@ export function extractTrelloCardUrl(text: string | null): string | null {
 }
 
 /**
- * Check if a comment/review author is the authenticated GitHub user (self).
- * Returns true if self-authored (should skip), false otherwise.
+ * Check if a comment/review author is the reviewer bot user.
+ * Returns true if the author matches the reviewer user configured for the project.
  */
-export async function isSelfAuthored(
-	author: string,
-	context: { prNumber: number; authorField: string },
-	project?: ProjectConfig,
-): Promise<boolean> {
-	try {
-		const authenticatedUser = await getAuthenticatedUser();
-		if (author === authenticatedUser || author === `${authenticatedUser}[bot]`) {
-			logger.info(`Skipping self-authored ${context.authorField}`, {
-				prNumber: context.prNumber,
-				[context.authorField]: author,
-				authenticatedUser,
-			});
-			return true;
-		}
-	} catch (err) {
-		logger.warn('Failed to get authenticated user, proceeding with caution', {
-			error: String(err),
-		});
-	}
-
-	if (project?.reviewerTokenEnv) {
-		const reviewerUser = await getReviewerUser(project.reviewerTokenEnv);
-		if (reviewerUser && (author === reviewerUser || author === `${reviewerUser}[bot]`)) {
-			logger.info(`Skipping reviewer-authored ${context.authorField}`, {
-				prNumber: context.prNumber,
-				[context.authorField]: author,
-				reviewerUser,
-			});
-			return true;
-		}
-	}
-
-	return false;
+export async function isReviewerUser(author: string, project?: ProjectConfig): Promise<boolean> {
+	if (!project?.reviewerTokenEnv) return false;
+	const reviewerUser = await getReviewerUser(project.reviewerTokenEnv);
+	return !!reviewerUser && (author === reviewerUser || author === `${reviewerUser}[bot]`);
 }
 
 /**
