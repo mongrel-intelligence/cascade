@@ -1,7 +1,6 @@
 import { Gadget, z } from 'llmist';
-import { githubClient } from '../../github/client.js';
-import { runCommand } from '../../utils/repo.js';
 import { recordPRCreation } from '../sessionState.js';
+import { createPR } from './core/createPR.js';
 
 export class CreatePR extends Gadget({
 	name: 'CreatePR',
@@ -86,131 +85,25 @@ If hooks fail or timeout, the full output will be shown.`,
 		},
 	],
 }) {
-	private async detectOwnerRepo(): Promise<{ owner: string; repo: string }> {
-		const result = await runCommand('git', ['remote', 'get-url', 'origin'], process.cwd());
-		if (result.exitCode !== 0) {
-			throw new Error('Failed to detect repository: no git remote "origin" found');
-		}
-		// Handles both HTTPS and SSH URLs:
-		//   https://TOKEN@github.com/owner/repo.git
-		//   git@github.com:owner/repo.git
-		const match = result.stdout.trim().match(/github\.com[/:]([^/]+)\/(.+?)(?:\.git)?$/);
-		if (!match) {
-			throw new Error(`Cannot parse owner/repo from git remote URL: ${result.stdout.trim()}`);
-		}
-		return { owner: match[1], repo: match[2] };
-	}
-
-	private async stageAndCommit(commitMessage: string): Promise<void> {
-		// Stage only tracked files that have been modified/deleted (safe — won't add build artifacts)
-		const addResult = await runCommand('git', ['add', '-u'], process.cwd());
-		if (addResult.exitCode !== 0) {
-			throw new Error(`Failed to stage changes: ${addResult.stderr || addResult.stdout}`.trim());
-		}
-
-		// Stage new (untracked) files that aren't ignored by .gitignore
-		const untrackedResult = await runCommand(
-			'git',
-			['ls-files', '--others', '--exclude-standard'],
-			process.cwd(),
-		);
-		if (untrackedResult.exitCode === 0 && untrackedResult.stdout.trim()) {
-			const newFiles = untrackedResult.stdout.trim().split('\n');
-			const addNewResult = await runCommand('git', ['add', '--', ...newFiles], process.cwd());
-			if (addNewResult.exitCode !== 0) {
-				throw new Error(
-					`Failed to stage new files: ${addNewResult.stderr || addNewResult.stdout}`.trim(),
-				);
-			}
-		}
-
-		// Check if there are changes to commit
-		const statusResult = await runCommand('git', ['status', '--porcelain'], process.cwd());
-		if (statusResult.stdout.trim() === '') {
-			return; // No changes to commit - already committed
-		}
-
-		// Commit the changes (pre-commit hooks may run here)
-		const commitResult = await runCommand('git', ['commit', '-m', commitMessage], process.cwd());
-		if (commitResult.exitCode !== 0) {
-			const output = [commitResult.stdout, commitResult.stderr].filter(Boolean).join('\n').trim();
-			throw new Error(
-				`COMMIT FAILED (pre-commit hooks may have failed)\n\n--- OUTPUT ---\n${output}`,
-			);
-		}
-	}
-
-	private async pushBranch(branch: string): Promise<void> {
-		// Push the branch (pre-push hooks may run here)
-		const pushResult = await runCommand('git', ['push', '-u', 'origin', branch], process.cwd());
-		if (pushResult.exitCode !== 0) {
-			const output = [pushResult.stdout, pushResult.stderr].filter(Boolean).join('\n').trim();
-			throw new Error(
-				`PUSH FAILED for branch '${branch}' (pre-push hooks may have failed)\n\n--- OUTPUT ---\n${output}`,
-			);
-		}
-	}
-
-	private async verifyBranchOnRemote(branch: string): Promise<boolean> {
-		const result = await runCommand(
-			'git',
-			['ls-remote', '--heads', 'origin', branch],
-			process.cwd(),
-		);
-		return result.exitCode === 0 && result.stdout.trim().length > 0;
-	}
-
 	override async execute(params: this['params']): Promise<string> {
-		const { owner, repo } = await this.detectOwnerRepo();
-		const commitMessage = params.commitMessage || params.title;
+		const result = await createPR({
+			title: params.title,
+			body: params.body,
+			head: params.head,
+			base: params.base,
+			draft: params.draft,
+			commit: params.commit,
+			commitMessage: params.commitMessage,
+			push: params.push,
+		});
 
-		if (params.commit !== false) {
-			await this.stageAndCommit(commitMessage);
-		}
+		recordPRCreation(result.prUrl);
 
-		if (params.push !== false) {
-			await this.pushBranch(params.head);
-		}
-
-		// Verify the branch exists on remote using git protocol (avoids GitHub REST API propagation delay)
-		const branchExists = await this.verifyBranchOnRemote(params.head);
-		if (!branchExists) {
-			throw new Error(
-				`Branch '${params.head}' does not exist on remote. Push the branch first or set push=true.`,
-			);
-		}
-
-		let pr: Awaited<ReturnType<typeof githubClient.createPR>>;
-		try {
-			pr = await githubClient.createPR(owner, repo, {
-				title: params.title,
-				body: params.body,
-				head: params.head,
-				base: params.base,
-				draft: params.draft,
-			});
-		} catch (error) {
-			// Handle "A pull request already exists" (422) by finding the existing PR
-			if (
-				error instanceof Error &&
-				'status' in error &&
-				error.status === 422 &&
-				error.message.includes('A pull request already exists')
-			) {
-				const existingPR = await githubClient.getOpenPRByBranch(owner, repo, params.head);
-				if (existingPR) {
-					recordPRCreation(existingPR.htmlUrl);
-					return `PR already exists for this branch: #${existingPR.number} — ${existingPR.htmlUrl}`;
-				}
-			}
-			throw error;
+		if (result.alreadyExisted) {
+			return `PR already exists for this branch: #${result.prNumber} — ${result.prUrl}`;
 		}
 
 		const draftLabel = params.draft ? ' (draft)' : '';
-
-		// Record PR creation for session state (Finish gadget uses this to verify implementation completed)
-		recordPRCreation(pr.htmlUrl);
-
-		return `PR #${pr.number} created successfully${draftLabel}: ${pr.htmlUrl}`;
+		return `PR #${result.prNumber} created successfully${draftLabel}: ${result.prUrl}`;
 	}
 }

@@ -1,6 +1,5 @@
 import { Gadget, z } from 'llmist';
-import { githubClient } from '../../github/client.js';
-import { formatGadgetError } from '../utils.js';
+import { postPRComment } from './core/postPRComment.js';
 
 export class PostPRComment extends Gadget({
 	name: 'PostPRComment',
@@ -28,16 +27,6 @@ export class PostPRComment extends Gadget({
 	],
 }) {
 	override async execute(params: this['params']): Promise<string> {
-		try {
-			const result = await githubClient.createPRComment(
-				params.owner,
-				params.repo,
-				params.prNumber,
-				params.body,
-			);
-			return `Comment posted (id: ${result.id}): ${result.htmlUrl}`;
-		} catch (error) {
-			return formatGadgetError('posting PR comment', error);
-		}
+		return postPRComment(params.owner, params.repo, params.prNumber, params.body);
 	}
 }

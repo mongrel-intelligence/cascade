@@ -1,6 +1,5 @@
 import { Gadget, z } from 'llmist';
-import { githubClient } from '../../github/client.js';
-import { formatGadgetError } from '../utils.js';
+import { updatePRComment } from './core/updatePRComment.js';
 
 export class UpdatePRComment extends Gadget({
 	name: 'UpdatePRComment',
@@ -28,16 +27,6 @@ export class UpdatePRComment extends Gadget({
 	],
 }) {
 	override async execute(params: this['params']): Promise<string> {
-		try {
-			const result = await githubClient.updatePRComment(
-				params.owner,
-				params.repo,
-				params.commentId,
-				params.body,
-			);
-			return `Comment updated (id: ${result.id}): ${result.htmlUrl}`;
-		} catch (error) {
-			return formatGadgetError('updating PR comment', error);
-		}
+		return updatePRComment(params.owner, params.repo, params.commentId, params.body);
 	}
 }

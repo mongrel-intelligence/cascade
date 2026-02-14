@@ -1,6 +1,5 @@
 import { Gadget, z } from 'llmist';
-import { githubClient } from '../../github/client.js';
-import { formatGadgetError } from '../utils.js';
+import { getPRDetails } from './core/getPRDetails.js';
 
 export class GetPRDetails extends Gadget({
 	name: 'GetPRDetails',
@@ -26,20 +25,6 @@ export class GetPRDetails extends Gadget({
 	],
 }) {
 	override async execute(params: this['params']): Promise<string> {
-		try {
-			const pr = await githubClient.getPR(params.owner, params.repo, params.prNumber);
-
-			return [
-				`PR #${pr.number}: ${pr.title}`,
-				`State: ${pr.state}`,
-				`Branch: ${pr.headRef} -> ${pr.baseRef}`,
-				`URL: ${pr.htmlUrl}`,
-				'',
-				'Description:',
-				pr.body || '(no description)',
-			].join('\n');
-		} catch (error) {
-			return formatGadgetError('fetching PR details', error);
-		}
+		return getPRDetails(params.owner, params.repo, params.prNumber);
 	}
 }

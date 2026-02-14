@@ -91,6 +91,49 @@ describe('ProjectConfigSchema', () => {
 		const result = ProjectConfigSchema.parse(config);
 		expect(result.reviewerTokenEnv).toBeUndefined();
 	});
+
+	it('accepts agentBackend with default and overrides', () => {
+		const config = {
+			id: 'test',
+			name: 'Test',
+			repo: 'owner/repo',
+			trello: { boardId: 'b1', lists: {}, labels: {} },
+			agentBackend: {
+				default: 'claude-code',
+				overrides: { review: 'llmist' },
+			},
+		};
+
+		const result = ProjectConfigSchema.parse(config);
+		expect(result.agentBackend?.default).toBe('claude-code');
+		expect(result.agentBackend?.overrides).toEqual({ review: 'llmist' });
+	});
+
+	it('works without agentBackend (optional field)', () => {
+		const config = {
+			id: 'test',
+			name: 'Test',
+			repo: 'owner/repo',
+			trello: { boardId: 'b1', lists: {}, labels: {} },
+		};
+
+		const result = ProjectConfigSchema.parse(config);
+		expect(result.agentBackend).toBeUndefined();
+	});
+
+	it('applies default "llmist" for agentBackend.default when object provided', () => {
+		const config = {
+			id: 'test',
+			name: 'Test',
+			repo: 'owner/repo',
+			trello: { boardId: 'b1', lists: {}, labels: {} },
+			agentBackend: {},
+		};
+
+		const result = ProjectConfigSchema.parse(config);
+		expect(result.agentBackend?.default).toBe('llmist');
+		expect(result.agentBackend?.overrides).toEqual({});
+	});
 });
 
 describe('validateConfig', () => {
@@ -118,5 +161,40 @@ describe('validateConfig', () => {
 
 	it('rejects config without projects', () => {
 		expect(() => validateConfig({ projects: [] })).toThrow();
+	});
+
+	it('applies default "llmist" for defaults.agentBackend', () => {
+		const config = {
+			projects: [
+				{
+					id: 'test',
+					name: 'Test',
+					repo: 'owner/repo',
+					trello: { boardId: 'b1', lists: {}, labels: {} },
+				},
+			],
+		};
+
+		const result = validateConfig(config);
+		expect(result.defaults.agentBackend).toBe('llmist');
+	});
+
+	it('accepts custom defaults.agentBackend value', () => {
+		const config = {
+			defaults: {
+				agentBackend: 'claude-code',
+			},
+			projects: [
+				{
+					id: 'test',
+					name: 'Test',
+					repo: 'owner/repo',
+					trello: { boardId: 'b1', lists: {}, labels: {} },
+				},
+			],
+		};
+
+		const result = validateConfig(config);
+		expect(result.defaults.agentBackend).toBe('claude-code');
 	});
 });
