@@ -3,7 +3,7 @@ FROM node:22-slim AS builder
 WORKDIR /app
 
 # Install dependencies
-COPY package*.json ./
+COPY package*.json .npmrc ./
 RUN npm ci --ignore-scripts
 
 # Build
@@ -19,7 +19,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Install only production dependencies
-COPY package*.json ./
+COPY package*.json .npmrc ./
 RUN npm ci --omit=dev --ignore-scripts
 
 # Copy built router code (includes config, queue, worker-manager modules)
