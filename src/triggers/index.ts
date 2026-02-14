@@ -1,6 +1,5 @@
 import { CheckSuiteFailureTrigger } from './github/check-suite-failure.js';
 import { CheckSuiteSuccessTrigger } from './github/check-suite-success.js';
-import { IssueCommentTrigger } from './github/issue-comment.js';
 import { PRCommentMentionTrigger } from './github/pr-comment-mention.js';
 // import { PROpenedTrigger } from './github/pr-opened.js';
 import { PRMergedTrigger } from './github/pr-merged.js';
@@ -57,9 +56,6 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 
 	// GitHub: PR review submission trigger (when someone submits a review)
 	registry.register(new PRReviewSubmittedTrigger());
-
-	// GitHub: Issue comment trigger (PR conversation comments)
-	registry.register(new IssueCommentTrigger());
 
 	// GitHub: Check suite failure trigger (runs implementation agent to fix)
 	registry.register(new CheckSuiteFailureTrigger());

@@ -3,10 +3,10 @@ import { PRReviewSubmittedTrigger } from '../../../src/triggers/github/pr-review
 import type { TriggerContext } from '../../../src/triggers/types.js';
 
 vi.mock('../../../src/github/client.js', () => ({
-	getReviewerUser: vi.fn(),
+	getAuthenticatedUser: vi.fn(),
 }));
 
-import { getReviewerUser } from '../../../src/github/client.js';
+import { getAuthenticatedUser } from '../../../src/github/client.js';
 
 describe('PRReviewSubmittedTrigger', () => {
 	const trigger = new PRReviewSubmittedTrigger();
@@ -18,7 +18,6 @@ describe('PRReviewSubmittedTrigger', () => {
 		baseBranch: 'main',
 		branchPrefix: 'feature/',
 		githubTokenEnv: 'GITHUB_TOKEN',
-		reviewerTokenEnv: 'REVIEWER_TOKEN',
 		trello: {
 			boardId: 'board123',
 			lists: {
@@ -54,7 +53,7 @@ describe('PRReviewSubmittedTrigger', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(getReviewerUser).mockResolvedValue('aaight');
+		vi.mocked(getAuthenticatedUser).mockResolvedValue('zbigniewsobiecki');
 	});
 
 	describe('matches', () => {
@@ -161,7 +160,7 @@ describe('PRReviewSubmittedTrigger', () => {
 			});
 		});
 
-		it('returns null for non-reviewer user review', async () => {
+		it('returns null for self-authored review', async () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -171,7 +170,7 @@ describe('PRReviewSubmittedTrigger', () => {
 						state: 'changes_requested',
 						body: 'Fix this',
 						html_url: 'https://github.com/...',
-						user: { login: 'some-human' },
+						user: { login: 'zbigniewsobiecki' },
 					},
 				}),
 			};
@@ -181,13 +180,19 @@ describe('PRReviewSubmittedTrigger', () => {
 			expect(result).toBeNull();
 		});
 
-		it('returns null when no reviewer token configured', async () => {
-			vi.mocked(getReviewerUser).mockResolvedValue(null);
-
+		it('returns null for self-authored review with [bot] suffix', async () => {
 			const ctx: TriggerContext = {
-				project: { ...mockProject, reviewerTokenEnv: undefined },
+				project: mockProject,
 				source: 'github',
-				payload: makeReviewPayload(),
+				payload: makeReviewPayload({
+					review: {
+						id: 100,
+						state: 'changes_requested',
+						body: 'Fix this',
+						html_url: 'https://github.com/...',
+						user: { login: 'zbigniewsobiecki[bot]' },
+					},
+				}),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -195,7 +200,7 @@ describe('PRReviewSubmittedTrigger', () => {
 			expect(result).toBeNull();
 		});
 
-		it('triggers for reviewer bot user (appended [bot])', async () => {
+		it('returns result for reviewer review', async () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -205,7 +210,28 @@ describe('PRReviewSubmittedTrigger', () => {
 						state: 'changes_requested',
 						body: 'Fix this',
 						html_url: 'https://github.com/owner/repo/pull/42#pullrequestreview-100',
-						user: { login: 'aaight[bot]' },
+						user: { login: 'aaight' },
+					},
+				}),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('respond-to-review');
+		});
+
+		it('returns result for human review', async () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeReviewPayload({
+					review: {
+						id: 100,
+						state: 'changes_requested',
+						body: 'Fix this',
+						html_url: 'https://github.com/owner/repo/pull/42#pullrequestreview-100',
+						user: { login: 'some-human' },
 					},
 				}),
 			};
