@@ -2,7 +2,7 @@ import { githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubIssueCommentPayload } from './types.js';
-import { isSelfAuthored, requireTrelloCardId } from './utils.js';
+import { isReviewerUser, requireTrelloCardId } from './utils.js';
 
 export class IssueCommentTrigger implements TriggerHandler {
 	name = 'issue-comment-created';
@@ -31,10 +31,8 @@ export class IssueCommentTrigger implements TriggerHandler {
 		const commentAuthor = payload.comment.user.login;
 		const [owner, repo] = payload.repository.full_name.split('/');
 
-		// Skip comments from ourselves to avoid infinite loops
-		if (
-			await isSelfAuthored(commentAuthor, { prNumber, authorField: 'commentAuthor' }, ctx.project)
-		) {
+		// Only respond to comments from the reviewer bot
+		if (!(await isReviewerUser(commentAuthor, ctx.project))) {
 			return null;
 		}
 

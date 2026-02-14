@@ -3,14 +3,13 @@ import { IssueCommentTrigger } from '../../../src/triggers/github/issue-comment.
 import type { TriggerContext } from '../../../src/triggers/types.js';
 
 vi.mock('../../../src/github/client.js', () => ({
-	getAuthenticatedUser: vi.fn(),
 	getReviewerUser: vi.fn(),
 	githubClient: {
 		getPR: vi.fn(),
 	},
 }));
 
-import { getAuthenticatedUser, getReviewerUser, githubClient } from '../../../src/github/client.js';
+import { getReviewerUser, githubClient } from '../../../src/github/client.js';
 
 describe('IssueCommentTrigger', () => {
 	const trigger = new IssueCommentTrigger();
@@ -22,6 +21,7 @@ describe('IssueCommentTrigger', () => {
 		baseBranch: 'main',
 		branchPrefix: 'feature/',
 		githubTokenEnv: 'GITHUB_TOKEN',
+		reviewerTokenEnv: 'REVIEWER_TOKEN',
 		trello: {
 			boardId: 'board123',
 			lists: {
@@ -45,16 +45,16 @@ describe('IssueCommentTrigger', () => {
 			id: 200,
 			body: 'Please review this section',
 			html_url: 'https://github.com/owner/repo/pull/42#issuecomment-200',
-			user: { login: 'reviewer' },
+			user: { login: 'aaight' },
 		},
 		repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-		sender: { login: 'reviewer' },
+		sender: { login: 'aaight' },
 		...overrides,
 	});
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(getReviewerUser).mockResolvedValue(null);
+		vi.mocked(getReviewerUser).mockResolvedValue('aaight');
 	});
 
 	describe('matches', () => {
@@ -127,8 +127,7 @@ describe('IssueCommentTrigger', () => {
 	});
 
 	describe('handle', () => {
-		it('returns respond-to-review result for valid comment', async () => {
-			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
+		it('returns respond-to-review result when reviewer user comments', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
@@ -165,55 +164,16 @@ describe('IssueCommentTrigger', () => {
 			});
 		});
 
-		it('returns null for self-authored comment', async () => {
-			vi.mocked(getAuthenticatedUser).mockResolvedValue('reviewer');
-
-			const ctx: TriggerContext = {
-				project: mockProject,
-				source: 'github',
-				payload: makeIssueCommentPayload(),
-			};
-
-			const result = await trigger.handle(ctx);
-
-			expect(result).toBeNull();
-			expect(githubClient.getPR).not.toHaveBeenCalled();
-		});
-
-		it('returns null for bot user comment', async () => {
-			vi.mocked(getAuthenticatedUser).mockResolvedValue('reviewer');
-
+		it('returns null for non-reviewer user comment', async () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
 				payload: makeIssueCommentPayload({
 					comment: {
 						id: 200,
-						body: 'Automated comment',
-						html_url: 'https://github.com/...',
-						user: { login: 'reviewer[bot]' },
-					},
-				}),
-			};
-
-			const result = await trigger.handle(ctx);
-
-			expect(result).toBeNull();
-		});
-
-		it('returns null for reviewer-authored comment', async () => {
-			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
-			vi.mocked(getReviewerUser).mockResolvedValue('cascade-reviewer');
-
-			const ctx: TriggerContext = {
-				project: { ...mockProject, reviewerTokenEnv: 'REVIEWER_TOKEN' },
-				source: 'github',
-				payload: makeIssueCommentPayload({
-					comment: {
-						id: 200,
-						body: 'Reviewer comment',
-						html_url: 'https://github.com/...',
-						user: { login: 'cascade-reviewer' },
+						body: 'Human comment',
+						html_url: 'https://github.com/owner/repo/pull/42#issuecomment-200',
+						user: { login: 'some-human' },
 					},
 				}),
 			};
@@ -224,12 +184,31 @@ describe('IssueCommentTrigger', () => {
 			expect(githubClient.getPR).not.toHaveBeenCalled();
 		});
 
-		it('proceeds when getAuthenticatedUser fails', async () => {
-			vi.mocked(getAuthenticatedUser).mockRejectedValue(new Error('Auth error'));
+		it('returns null for owner user comment', async () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeIssueCommentPayload({
+					comment: {
+						id: 200,
+						body: 'Owner comment',
+						html_url: 'https://github.com/owner/repo/pull/42#issuecomment-200',
+						user: { login: 'zbigniewsobiecki' },
+					},
+				}),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+			expect(githubClient.getPR).not.toHaveBeenCalled();
+		});
+
+		it('triggers for reviewer bot user (appended [bot])', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
-				body: 'https://trello.com/c/abc123',
+				body: 'https://trello.com/c/abc123/card-name',
 				state: 'open',
 				headRef: 'feature/test',
 				headSha: 'sha123',
@@ -240,7 +219,14 @@ describe('IssueCommentTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
-				payload: makeIssueCommentPayload(),
+				payload: makeIssueCommentPayload({
+					comment: {
+						id: 200,
+						body: 'Bot review comment',
+						html_url: 'https://github.com/owner/repo/pull/42#issuecomment-200',
+						user: { login: 'aaight[bot]' },
+					},
+				}),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -249,8 +235,21 @@ describe('IssueCommentTrigger', () => {
 			expect(result?.agentType).toBe('respond-to-review');
 		});
 
+		it('returns null when no reviewer token configured', async () => {
+			vi.mocked(getReviewerUser).mockResolvedValue(null);
+
+			const ctx: TriggerContext = {
+				project: { ...mockProject, reviewerTokenEnv: undefined },
+				source: 'github',
+				payload: makeIssueCommentPayload(),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+		});
+
 		it('returns null when PR has no Trello URL', async () => {
-			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
