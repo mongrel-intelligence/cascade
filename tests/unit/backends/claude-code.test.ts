@@ -5,17 +5,28 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 	query: vi.fn(),
 }));
 
+import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import {
 	ClaudeCodeBackend,
+	buildEnv,
 	buildSystemPrompt,
 	buildTaskPrompt,
 	buildToolGuidance,
+	installCredentials,
 	resolveClaudeModel,
 } from '../../../src/backends/claude-code/index.js';
 import type { AgentBackendInput, ToolManifest } from '../../../src/backends/types.js';
 
 const mockQuery = vi.mocked(query);
+
+/** Remove an env var without triggering biome's noDelete rule. */
+function unsetEnv(key: string) {
+	Reflect.deleteProperty(process.env, key);
+}
 
 const sampleTools: ToolManifest[] = [
 	{
@@ -353,5 +364,160 @@ describe('execute', () => {
 
 		expect(result.success).toBe(true);
 		expect(input.progressReporter.onIteration).not.toHaveBeenCalled();
+	});
+
+	it('installs credentials and cleans up temp dir', async () => {
+		const fakeCreds = '{"claudeAiOauth":{"accessToken":"test"}}';
+		process.env.CLAUDE_CREDENTIALS = fakeCreds;
+
+		mockStream([
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.01,
+				num_turns: 1,
+			},
+		]);
+
+		const backend = new ClaudeCodeBackend();
+		const input = makeInput();
+		await backend.execute(input);
+
+		// Verify CLAUDE_CONFIG_DIR was passed to query
+		expect(mockQuery).toHaveBeenCalledWith(
+			expect.objectContaining({
+				options: expect.objectContaining({
+					env: expect.objectContaining({
+						CLAUDE_CONFIG_DIR: expect.stringContaining('cascade-claude-'),
+						CLAUDE_CREDENTIALS: fakeCreds,
+					}),
+				}),
+			}),
+		);
+
+		// The temp dir should have been cleaned up after execution
+		const call = mockQuery.mock.calls[0];
+		expect(call).toBeDefined();
+		const callArgs = call[0] as { options: { env: Record<string, string> } };
+		const configDir = callArgs.options.env.CLAUDE_CONFIG_DIR;
+		expect(existsSync(configDir)).toBe(false);
+
+		unsetEnv('CLAUDE_CREDENTIALS');
+	});
+});
+
+describe('installCredentials', () => {
+	let fakeHome: string;
+	let originalHome: string | undefined;
+
+	beforeEach(() => {
+		fakeHome = mkdtempSync(join(tmpdir(), 'cascade-test-home-'));
+		originalHome = process.env.HOME;
+		process.env.HOME = fakeHome;
+	});
+
+	afterEach(async () => {
+		process.env.HOME = originalHome;
+		await rm(fakeHome, { recursive: true, force: true });
+	});
+
+	it('writes .credentials.json to temp dir with mode 0o600', async () => {
+		const fakeCreds = '{"claudeAiOauth":{"accessToken":"test-token"}}';
+		const configDir = installCredentials(fakeCreds);
+
+		try {
+			const credPath = join(configDir, '.credentials.json');
+			expect(existsSync(credPath)).toBe(true);
+			expect(readFileSync(credPath, 'utf8')).toBe(fakeCreds);
+
+			const stats = statSync(credPath);
+			// Check file mode is 0o600 (owner read/write only)
+			expect(stats.mode & 0o777).toBe(0o600);
+		} finally {
+			await rm(configDir, { recursive: true, force: true });
+		}
+	});
+
+	it('creates $HOME/.claude.json with onboarding flag', async () => {
+		const fakeCreds = '{"claudeAiOauth":{"accessToken":"test-token"}}';
+		const configDir = installCredentials(fakeCreds);
+
+		try {
+			const claudeJsonPath = join(fakeHome, '.claude.json');
+			expect(existsSync(claudeJsonPath)).toBe(true);
+
+			const content = JSON.parse(readFileSync(claudeJsonPath, 'utf8'));
+			expect(content).toEqual({ hasCompletedOnboarding: true });
+
+			const stats = statSync(claudeJsonPath);
+			expect(stats.mode & 0o777).toBe(0o600);
+		} finally {
+			await rm(configDir, { recursive: true, force: true });
+		}
+	});
+
+	it('does not overwrite existing $HOME/.claude.json', async () => {
+		const existingContent = '{"hasCompletedOnboarding":true,"custom":"data"}';
+		const claudeJsonPath = join(fakeHome, '.claude.json');
+		const { writeFileSync: writeFs } = await import('node:fs');
+		writeFs(claudeJsonPath, existingContent);
+
+		const fakeCreds = '{"claudeAiOauth":{"accessToken":"test-token"}}';
+		const configDir = installCredentials(fakeCreds);
+
+		try {
+			expect(readFileSync(claudeJsonPath, 'utf8')).toBe(existingContent);
+		} finally {
+			await rm(configDir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe('buildEnv', () => {
+	it('sets CLAUDE_CONFIG_DIR when CLAUDE_CREDENTIALS is set', async () => {
+		const fakeCreds = '{"claudeAiOauth":{"accessToken":"test"}}';
+		process.env.CLAUDE_CREDENTIALS = fakeCreds;
+
+		try {
+			const result = buildEnv();
+			const { env, configDir } = result;
+			expect(configDir).toBeDefined();
+			expect(env.CLAUDE_CONFIG_DIR).toBe(configDir);
+			expect(env.CLAUDE_AGENT_SDK_CLIENT_APP).toBe('cascade/1.0.0');
+
+			// Verify credentials were written
+			const dir = configDir as string;
+			const credPath = join(dir, '.credentials.json');
+			expect(readFileSync(credPath, 'utf8')).toBe(fakeCreds);
+
+			await rm(dir, { recursive: true, force: true });
+		} finally {
+			unsetEnv('CLAUDE_CREDENTIALS');
+		}
+	});
+
+	it('does not set CLAUDE_CONFIG_DIR when CLAUDE_CREDENTIALS is not set', () => {
+		unsetEnv('CLAUDE_CREDENTIALS');
+
+		const { env, configDir } = buildEnv();
+		expect(configDir).toBeUndefined();
+		expect(env.CLAUDE_CONFIG_DIR).toBeUndefined();
+		expect(env.CLAUDE_AGENT_SDK_CLIENT_APP).toBe('cascade/1.0.0');
+	});
+
+	it('strips NODE_OPTIONS and VSCODE_INSPECTOR_OPTIONS from env', () => {
+		process.env.NODE_OPTIONS = '--inspect=9229';
+		process.env.VSCODE_INSPECTOR_OPTIONS = '{"some":"config"}';
+		unsetEnv('CLAUDE_CREDENTIALS');
+
+		try {
+			const { env } = buildEnv();
+			expect(env.NODE_OPTIONS).toBeUndefined();
+			expect(env.VSCODE_INSPECTOR_OPTIONS).toBeUndefined();
+		} finally {
+			unsetEnv('NODE_OPTIONS');
+			unsetEnv('VSCODE_INSPECTOR_OPTIONS');
+		}
 	});
 });
