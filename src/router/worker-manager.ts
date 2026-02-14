@@ -1,6 +1,7 @@
 import { type Job, Worker } from 'bullmq';
 import Docker from 'dockerode';
 import { routerConfig } from './config.js';
+import { notifyTimeout } from './notifications.js';
 import type { CascadeJob } from './queue.js';
 
 const docker = new Docker();
@@ -10,6 +11,7 @@ interface ActiveWorker {
 	jobId: string;
 	startedAt: Date;
 	timeoutHandle: NodeJS.Timeout;
+	job: CascadeJob;
 }
 
 const activeWorkers = new Map<string, ActiveWorker>();
@@ -78,8 +80,13 @@ async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 		await container.start();
 
 		// Set up timeout
+		const startedAt = new Date();
 		const timeoutHandle = setTimeout(() => {
-			console.warn('[WorkerManager] Worker timeout, killing:', { jobId });
+			const durationMs = Date.now() - startedAt.getTime();
+			console.warn('[WorkerManager] Worker timeout, killing:', {
+				jobId,
+				durationMs,
+			});
 			killWorker(jobId).catch((err) => {
 				console.error('[WorkerManager] Failed to kill timed-out worker:', err);
 			});
@@ -89,8 +96,9 @@ async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 		activeWorkers.set(jobId, {
 			containerId: container.id,
 			jobId,
-			startedAt: new Date(),
+			startedAt,
 			timeoutHandle,
+			job: job.data,
 		});
 
 		console.log('[WorkerManager] Worker started:', {
@@ -121,22 +129,35 @@ async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 	}
 }
 
-// Kill a worker container
+// Kill a worker container with two-phase shutdown:
+// 1. SIGTERM via container.stop(t=15) — gives agent watchdog 15s to clean up
+// 2. Docker auto-escalates to SIGKILL after 15s
+// 3. Router posts its own timeout notification
 async function killWorker(jobId: string): Promise<void> {
 	const worker = activeWorkers.get(jobId);
 	if (!worker) return;
 
 	try {
 		const container = docker.getContainer(worker.containerId);
-		await container.kill();
-		console.log('[WorkerManager] Worker killed:', { jobId });
+		await container.stop({ t: 15 });
+		console.log('[WorkerManager] Worker stopped:', { jobId });
 	} catch (err) {
 		// Container might already be stopped
-		console.warn('[WorkerManager] Error killing worker (may already be stopped):', {
+		console.warn('[WorkerManager] Error stopping worker (may already be stopped):', {
 			jobId,
 			error: String(err),
 		});
 	}
+
+	// Send timeout notification (fire-and-forget)
+	const durationMs = Date.now() - worker.startedAt.getTime();
+	notifyTimeout(worker.job, {
+		jobId: worker.jobId,
+		startedAt: worker.startedAt,
+		durationMs,
+	}).catch((err) => {
+		console.error('[WorkerManager] Timeout notification error:', String(err));
+	});
 
 	cleanupWorker(jobId);
 }
