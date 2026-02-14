@@ -81,14 +81,16 @@ export function resolveClaudeModel(cascadeModel: string): string {
 
 /**
  * Build environment variables to pass through to the SDK subprocess.
+ *
+ * Inherits the full process.env so the subprocess has access to HOME, PATH,
+ * and ~/.claude/ (needed for subscription auth). CASCADE-specific vars are
+ * explicitly ensured.
  */
 function buildEnv(): Record<string, string | undefined> {
-	const env: Record<string, string | undefined> = {};
-	if (process.env.ANTHROPIC_API_KEY) env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-	if (process.env.TRELLO_API_KEY) env.TRELLO_API_KEY = process.env.TRELLO_API_KEY;
-	if (process.env.TRELLO_TOKEN) env.TRELLO_TOKEN = process.env.TRELLO_TOKEN;
-	if (process.env.GITHUB_TOKEN) env.GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-	return env;
+	return {
+		...process.env,
+		CLAUDE_AGENT_SDK_CLIENT_APP: 'cascade/1.0.0',
+	};
 }
 
 /**
