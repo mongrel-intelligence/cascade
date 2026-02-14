@@ -1,3 +1,7 @@
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type {
 	SDKAssistantMessage,
@@ -80,17 +84,55 @@ export function resolveClaudeModel(cascadeModel: string): string {
 }
 
 /**
+ * Write a credentials JSON string to a temp directory for the Claude Code SDK.
+ * Returns the path to the temp config directory.
+ */
+export function installCredentials(credentialsJson: string): string {
+	const configDir = mkdtempSync(path.join(tmpdir(), 'cascade-claude-'));
+	writeFileSync(path.join(configDir, '.credentials.json'), credentialsJson, { mode: 0o600 });
+
+	// Claude Code requires this file to skip interactive onboarding.
+	// It lives at $HOME/.claude.json (separate from CLAUDE_CONFIG_DIR).
+	const homeDir = process.env.HOME ?? '/root';
+	const claudeJsonPath = path.join(homeDir, '.claude.json');
+	if (!existsSync(claudeJsonPath)) {
+		writeFileSync(claudeJsonPath, JSON.stringify({ hasCompletedOnboarding: true }), {
+			mode: 0o600,
+		});
+	}
+
+	return configDir;
+}
+
+/**
  * Build environment variables to pass through to the SDK subprocess.
  *
  * Inherits the full process.env so the subprocess has access to HOME, PATH,
  * and ~/.claude/ (needed for subscription auth). CASCADE-specific vars are
  * explicitly ensured.
+ *
+ * When `CLAUDE_CREDENTIALS` env var is set, installs the credentials JSON
+ * to a temp directory and sets `CLAUDE_CONFIG_DIR` so the SDK reads them
+ * instead of ~/.claude/.credentials.json.
  */
-function buildEnv(): Record<string, string | undefined> {
-	return {
+export function buildEnv(): { env: Record<string, string | undefined>; configDir?: string } {
+	const env: Record<string, string | undefined> = {
 		...process.env,
 		CLAUDE_AGENT_SDK_CLIENT_APP: 'cascade/1.0.0',
 	};
+
+	// Prevent debugger/inspector variables from contaminating the subprocess
+	env.NODE_OPTIONS = undefined;
+	env.VSCODE_INSPECTOR_OPTIONS = undefined;
+
+	let configDir: string | undefined;
+	const credentialsJson = process.env.CLAUDE_CREDENTIALS;
+	if (credentialsJson) {
+		configDir = installCredentials(credentialsJson);
+		env.CLAUDE_CONFIG_DIR = configDir;
+	}
+
+	return { env, configDir };
 }
 
 /**
@@ -140,49 +182,66 @@ export class ClaudeCodeBackend implements AgentBackend {
 			maxIterations: input.maxIterations,
 		});
 
+		const { env, configDir } = buildEnv();
+
+		if (configDir) {
+			input.logWriter('INFO', 'Installed Claude credentials to temp dir', {
+				configDir,
+			});
+		}
+
 		const assistantMessages: SDKAssistantMessage[] = [];
 		let resultMessage: SDKResultMessage | undefined;
 		let turnCount = 0;
 
-		const stream = query({
-			prompt: taskPrompt,
-			options: {
-				model,
-				systemPrompt,
-				cwd: input.repoDir,
-				maxTurns: input.maxIterations,
-				maxBudgetUsd: input.budgetUsd,
-				permissionMode: 'bypassPermissions',
-				allowDangerouslySkipPermissions: true,
-				tools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
-				allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
-				persistSession: false,
-				env: buildEnv(),
-			},
-		});
+		try {
+			const stream = query({
+				prompt: taskPrompt,
+				options: {
+					model,
+					systemPrompt,
+					cwd: input.repoDir,
+					maxTurns: input.maxIterations,
+					maxBudgetUsd: input.budgetUsd,
+					permissionMode: 'bypassPermissions',
+					allowDangerouslySkipPermissions: true,
+					tools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+					allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+					persistSession: false,
+					env,
+				},
+			});
 
-		for await (const message of stream) {
-			if (message.type === 'assistant') {
-				const assistantMsg = message as SDKAssistantMessage;
-				assistantMessages.push(assistantMsg);
-				turnCount++;
+			for await (const message of stream) {
+				if (message.type === 'assistant') {
+					const assistantMsg = message as SDKAssistantMessage;
+					assistantMessages.push(assistantMsg);
+					turnCount++;
 
-				await input.progressReporter.onIteration(turnCount, input.maxIterations);
+					await input.progressReporter.onIteration(turnCount, input.maxIterations);
 
-				if (assistantMsg.message?.content) {
-					for (const block of assistantMsg.message.content) {
-						if (block.type === 'tool_use') {
-							input.progressReporter.onToolCall(block.name, block.input as Record<string, unknown>);
-						}
-						if (block.type === 'text') {
-							input.progressReporter.onText(block.text);
+					if (assistantMsg.message?.content) {
+						for (const block of assistantMsg.message.content) {
+							if (block.type === 'tool_use') {
+								input.progressReporter.onToolCall(
+									block.name,
+									block.input as Record<string, unknown>,
+								);
+							}
+							if (block.type === 'text') {
+								input.progressReporter.onText(block.text);
+							}
 						}
 					}
 				}
-			}
 
-			if (message.type === 'result') {
-				resultMessage = message as SDKResultMessage;
+				if (message.type === 'result') {
+					resultMessage = message as SDKResultMessage;
+				}
+			}
+		} finally {
+			if (configDir) {
+				await rm(configDir, { recursive: true, force: true }).catch(() => {});
 			}
 		}
 
