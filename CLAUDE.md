@@ -90,6 +90,41 @@ Optional:
 - `LOG_LEVEL` - Logging level (default: info)
 - `CONFIG_PATH` - Path to projects config file
 
+## Claude Code Backend
+
+CASCADE supports using Claude Code SDK as an alternative agent backend. Configure per-project:
+
+```json
+{
+  "agentBackend": {
+    "default": "claude-code",
+    "overrides": {
+      "implementation": "claude-code",
+      "review": "claude-code"
+    }
+  }
+}
+```
+
+### Authentication
+
+**API Key (recommended for production/server):**
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+**Claude Max Subscription (local/dev only):**
+1. Install Claude Code CLI: `npm install -g @anthropic-ai/claude-code`
+2. Authenticate: `claude login` -> select "Log in with your subscription account"
+3. Complete OAuth in browser
+4. Usage is billed to your Claude Max subscription ($200/month, 20x usage tier)
+
+Note: Claude Max auth stores tokens in `~/.claude/auth.json`. For headless/server
+environments, either use API key auth or copy the auth file from a local machine
+(tokens may expire and require re-authentication).
+
+When `ANTHROPIC_API_KEY` is set, it takes priority over subscription auth.
+
 ## Adding New Triggers
 
 1. Create trigger handler in `src/triggers/`

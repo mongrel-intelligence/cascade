@@ -1,6 +1,5 @@
 import { Gadget, z } from 'llmist';
-import { githubClient } from '../../github/client.js';
-import { formatGadgetError } from '../utils.js';
+import { getPRComments } from './core/getPRComments.js';
 
 export class GetPRComments extends Gadget({
 	name: 'GetPRComments',
@@ -26,35 +25,6 @@ export class GetPRComments extends Gadget({
 	],
 }) {
 	override async execute(params: this['params']): Promise<string> {
-		try {
-			const comments = await githubClient.getPRReviewComments(
-				params.owner,
-				params.repo,
-				params.prNumber,
-			);
-
-			if (comments.length === 0) {
-				return 'No review comments found on this PR.';
-			}
-
-			const formatted = comments.map((c) => {
-				const lines = [
-					`Comment #${c.id} by @${c.user.login}`,
-					`File: ${c.path}${c.line ? `:${c.line}` : ''}`,
-					`URL: ${c.htmlUrl}`,
-					c.inReplyToId ? `In reply to: #${c.inReplyToId}` : null,
-					'',
-					c.body,
-					'---',
-				]
-					.filter(Boolean)
-					.join('\n');
-				return lines;
-			});
-
-			return `Found ${comments.length} review comment(s):\n\n${formatted.join('\n')}`;
-		} catch (error) {
-			return formatGadgetError('fetching PR comments', error);
-		}
+		return getPRComments(params.owner, params.repo, params.prNumber);
 	}
 }

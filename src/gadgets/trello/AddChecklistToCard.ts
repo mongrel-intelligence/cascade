@@ -1,6 +1,5 @@
 import { Gadget, z } from 'llmist';
-import { trelloClient } from '../../trello/client.js';
-import { formatGadgetError } from '../utils.js';
+import { addChecklist } from './core/addChecklist.js';
 
 export class AddChecklistToCard extends Gadget({
 	name: 'AddChecklistToCard',
@@ -44,18 +43,10 @@ export class AddChecklistToCard extends Gadget({
 	],
 }) {
 	override async execute(params: this['params']): Promise<string> {
-		try {
-			// Create the checklist on the card
-			const checklist = await trelloClient.createChecklist(params.cardId, params.checklistName);
-
-			// Add all items to the checklist
-			for (const item of params.items) {
-				await trelloClient.addChecklistItem(checklist.id, item);
-			}
-
-			return `Checklist "${params.checklistName}" created with ${params.items.length} items on card ${params.cardId}`;
-		} catch (error) {
-			return formatGadgetError('adding checklist', error);
-		}
+		return addChecklist({
+			cardId: params.cardId,
+			checklistName: params.checklistName,
+			items: params.items,
+		});
 	}
 }

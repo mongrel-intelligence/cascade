@@ -1,7 +1,7 @@
 import { Gadget, z } from 'llmist';
-import { githubClient } from '../../github/client.js';
 import { recordReviewSubmission } from '../sessionState.js';
 import { formatGadgetError } from '../utils.js';
+import { createPRReview } from './core/createPRReview.js';
 
 export class CreatePRReview extends Gadget({
 	name: 'CreatePRReview',
@@ -62,16 +62,16 @@ export class CreatePRReview extends Gadget({
 }) {
 	override async execute(params: this['params']): Promise<string> {
 		try {
-			const review = await githubClient.createPRReview(
-				params.owner,
-				params.repo,
-				params.prNumber,
-				params.event,
-				params.body,
-				params.comments,
-			);
-			recordReviewSubmission(review.htmlUrl);
-			return `Review submitted successfully (${params.event}): ${review.htmlUrl}`;
+			const result = await createPRReview({
+				owner: params.owner,
+				repo: params.repo,
+				prNumber: params.prNumber,
+				event: params.event,
+				body: params.body,
+				comments: params.comments,
+			});
+			recordReviewSubmission(result.reviewUrl);
+			return `Review submitted successfully (${result.event}): ${result.reviewUrl}`;
 		} catch (error) {
 			const baseError = formatGadgetError('submitting review', error);
 

@@ -1,6 +1,5 @@
 import { Gadget, z } from 'llmist';
-import { trelloClient } from '../../trello/client.js';
-import { formatGadgetError } from '../utils.js';
+import { createCard } from './core/createCard.js';
 
 export class CreateTrelloCard extends Gadget({
 	name: 'CreateTrelloCard',
@@ -44,15 +43,10 @@ export class CreateTrelloCard extends Gadget({
 	],
 }) {
 	override async execute(params: this['params']): Promise<string> {
-		try {
-			const card = await trelloClient.createCard(params.listId, {
-				name: params.title,
-				desc: params.description,
-			});
-
-			return `Card created successfully: "${card.name}" - ${card.shortUrl}`;
-		} catch (error) {
-			return formatGadgetError('creating card', error);
-		}
+		return createCard({
+			listId: params.listId,
+			title: params.title,
+			description: params.description,
+		});
 	}
 }

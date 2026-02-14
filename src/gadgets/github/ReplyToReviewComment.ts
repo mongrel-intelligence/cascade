@@ -1,6 +1,5 @@
 import { Gadget, z } from 'llmist';
-import { githubClient } from '../../github/client.js';
-import { formatGadgetError } from '../utils.js';
+import { replyToReviewComment } from './core/replyToReviewComment.js';
 
 export class ReplyToReviewComment extends Gadget({
 	name: 'ReplyToReviewComment',
@@ -30,17 +29,12 @@ export class ReplyToReviewComment extends Gadget({
 	],
 }) {
 	override async execute(params: this['params']): Promise<string> {
-		try {
-			const reply = await githubClient.replyToReviewComment(
-				params.owner,
-				params.repo,
-				params.prNumber,
-				params.commentId,
-				params.body,
-			);
-			return `Reply posted successfully: ${reply.htmlUrl}`;
-		} catch (error) {
-			return formatGadgetError('replying to comment', error);
-		}
+		return replyToReviewComment(
+			params.owner,
+			params.repo,
+			params.prNumber,
+			params.commentId,
+			params.body,
+		);
 	}
 }

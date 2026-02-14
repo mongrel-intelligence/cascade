@@ -1,6 +1,5 @@
 import { Gadget, z } from 'llmist';
-import { trelloClient } from '../../trello/client.js';
-import { formatGadgetError } from '../utils.js';
+import { postComment } from './core/postComment.js';
 
 export class PostTrelloComment extends Gadget({
 	name: 'PostTrelloComment',
@@ -22,11 +21,6 @@ export class PostTrelloComment extends Gadget({
 	],
 }) {
 	override async execute(params: this['params']): Promise<string> {
-		try {
-			await trelloClient.addComment(params.cardId, params.text);
-			return 'Comment posted successfully';
-		} catch (error) {
-			return formatGadgetError('posting comment', error);
-		}
+		return postComment(params.cardId, params.text);
 	}
 }

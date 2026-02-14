@@ -1,6 +1,5 @@
 import { Gadget, z } from 'llmist';
-import { trelloClient } from '../../trello/client.js';
-import { formatGadgetError } from '../utils.js';
+import { listCards } from './core/listCards.js';
 
 export class ListTrelloCards extends Gadget({
 	name: 'ListTrelloCards',
@@ -18,27 +17,6 @@ export class ListTrelloCards extends Gadget({
 	],
 }) {
 	override async execute(params: this['params']): Promise<string> {
-		try {
-			const cards = await trelloClient.getListCards(params.listId);
-
-			if (cards.length === 0) {
-				return 'No cards found in this list.';
-			}
-
-			let result = `# Cards (${cards.length})\n\n`;
-			for (const card of cards) {
-				result += `## ${card.name}\n`;
-				result += `- **ID:** ${card.id}\n`;
-				result += `- **URL:** ${card.shortUrl}\n`;
-				if (card.desc) {
-					result += `- **Description:** ${card.desc.slice(0, 100)}${card.desc.length > 100 ? '...' : ''}\n`;
-				}
-				result += '\n';
-			}
-
-			return result;
-		} catch (error) {
-			return formatGadgetError('listing cards', error);
-		}
+		return listCards(params.listId);
 	}
 }

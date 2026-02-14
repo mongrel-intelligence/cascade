@@ -1,6 +1,5 @@
 import { Gadget, z } from 'llmist';
-import { trelloClient } from '../../trello/client.js';
-import { formatGadgetError } from '../utils.js';
+import { updateChecklistItem } from './core/updateChecklistItem.js';
 
 export class UpdateChecklistItem extends Gadget({
 	name: 'UpdateChecklistItem',
@@ -32,13 +31,6 @@ export class UpdateChecklistItem extends Gadget({
 	],
 }) {
 	override async execute(params: this['params']): Promise<string> {
-		try {
-			await trelloClient.updateChecklistItem(params.cardId, params.checkItemId, params.state);
-
-			const action = params.state === 'complete' ? 'marked complete' : 'marked incomplete';
-			return `Checklist item ${params.checkItemId} ${action} on card ${params.cardId}`;
-		} catch (error) {
-			return formatGadgetError('updating checklist item', error);
-		}
+		return updateChecklistItem(params.cardId, params.checkItemId, params.state);
 	}
 }

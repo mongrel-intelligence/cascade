@@ -8,6 +8,11 @@ export const TriggerConfigSchema = z.object({
 	labelId: z.string().optional(),
 });
 
+const AgentBackendConfigSchema = z.object({
+	default: z.string().default('llmist'),
+	overrides: z.record(z.string()).default({}),
+});
+
 export const ProjectConfigSchema = z.object({
 	id: z.string().min(1),
 	name: z.string().min(1),
@@ -33,6 +38,7 @@ export const ProjectConfigSchema = z.object({
 	model: z.string().optional(),
 	agentModels: z.record(z.string()).optional(),
 	cardBudgetUsd: z.number().positive().optional(),
+	agentBackend: AgentBackendConfigSchema.optional(),
 });
 
 export const CascadeConfigSchema = z.object({
@@ -54,6 +60,7 @@ export const CascadeConfigSchema = z.object({
 				.default(30 * 60 * 1000), // 30 min max job duration
 			postJobGracePeriodMs: z.number().int().nonnegative().default(5000), // 5 sec grace before exit
 			cardBudgetUsd: z.number().positive().default(3.5),
+			agentBackend: z.string().default('llmist'),
 		})
 		.default({}),
 	projects: z.array(ProjectConfigSchema).min(1),
