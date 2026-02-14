@@ -1,5 +1,4 @@
-import { getReviewerUser } from '../../github/client.js';
-import type { ProjectConfig } from '../../types/index.js';
+import { getAuthenticatedUser } from '../../github/client.js';
 import { logger } from '../../utils/logging.js';
 
 // Trello card URL pattern: https://trello.com/c/SHORT_ID/optional-slug
@@ -33,13 +32,16 @@ export function extractTrelloCardUrl(text: string | null): string | null {
 }
 
 /**
- * Check if a comment/review author is the reviewer bot user.
- * Returns true if the author matches the reviewer user configured for the project.
+ * Check if a comment/review author is the authenticated (implementation) user.
+ * Used to skip self-authored events and avoid loops.
  */
-export async function isReviewerUser(author: string, project?: ProjectConfig): Promise<boolean> {
-	if (!project?.reviewerTokenEnv) return false;
-	const reviewerUser = await getReviewerUser(project.reviewerTokenEnv);
-	return !!reviewerUser && (author === reviewerUser || author === `${reviewerUser}[bot]`);
+export async function isAuthenticatedUser(author: string): Promise<boolean> {
+	try {
+		const authenticatedUser = await getAuthenticatedUser();
+		return author === authenticatedUser || author === `${authenticatedUser}[bot]`;
+	} catch {
+		return false;
+	}
 }
 
 /**
