@@ -3,13 +3,13 @@ import { PRReviewCommentTrigger } from '../../../src/triggers/github/pr-review-c
 import type { TriggerContext } from '../../../src/triggers/types.js';
 
 vi.mock('../../../src/github/client.js', () => ({
-	getReviewerUser: vi.fn(),
+	getAuthenticatedUser: vi.fn(),
 	githubClient: {
 		getPR: vi.fn(),
 	},
 }));
 
-import { getReviewerUser, githubClient } from '../../../src/github/client.js';
+import { getAuthenticatedUser, githubClient } from '../../../src/github/client.js';
 
 describe('PRReviewCommentTrigger', () => {
 	const trigger = new PRReviewCommentTrigger();
@@ -21,7 +21,6 @@ describe('PRReviewCommentTrigger', () => {
 		baseBranch: 'main',
 		branchPrefix: 'feature/',
 		githubTokenEnv: 'GITHUB_TOKEN',
-		reviewerTokenEnv: 'REVIEWER_TOKEN',
 		trello: {
 			boardId: 'board123',
 			lists: {
@@ -57,7 +56,7 @@ describe('PRReviewCommentTrigger', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(getReviewerUser).mockResolvedValue('aaight');
+		vi.mocked(getAuthenticatedUser).mockResolvedValue('zbigniewsobiecki');
 	});
 
 	describe('matches', () => {
@@ -150,36 +149,14 @@ describe('PRReviewCommentTrigger', () => {
 			});
 		});
 
-		it('returns null for non-reviewer user comment', async () => {
+		it('returns null for self-authored comment', async () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
 				payload: makeReviewCommentPayload({
 					comment: {
 						id: 300,
-						body: 'Human comment',
-						path: 'src/index.ts',
-						line: 42,
-						user: { login: 'some-human' },
-						html_url: 'https://github.com/...',
-					},
-				}),
-			};
-
-			const result = await trigger.handle(ctx);
-
-			expect(result).toBeNull();
-			expect(githubClient.getPR).not.toHaveBeenCalled();
-		});
-
-		it('returns null for owner user comment', async () => {
-			const ctx: TriggerContext = {
-				project: mockProject,
-				source: 'github',
-				payload: makeReviewCommentPayload({
-					comment: {
-						id: 300,
-						body: 'Owner comment',
+						body: 'Self comment',
 						path: 'src/index.ts',
 						line: 42,
 						user: { login: 'zbigniewsobiecki' },
@@ -194,7 +171,53 @@ describe('PRReviewCommentTrigger', () => {
 			expect(githubClient.getPR).not.toHaveBeenCalled();
 		});
 
-		it('triggers for reviewer bot user (appended [bot])', async () => {
+		it('returns null for self-authored comment with [bot] suffix', async () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeReviewCommentPayload({
+					comment: {
+						id: 300,
+						body: 'Bot self comment',
+						path: 'src/index.ts',
+						line: 42,
+						user: { login: 'zbigniewsobiecki[bot]' },
+						html_url: 'https://github.com/...',
+					},
+				}),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+			expect(githubClient.getPR).not.toHaveBeenCalled();
+		});
+
+		it('returns result for reviewer user comment', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeReviewCommentPayload(),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('respond-to-review');
+		});
+
+		it('returns result for human user comment', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
@@ -212,10 +235,10 @@ describe('PRReviewCommentTrigger', () => {
 				payload: makeReviewCommentPayload({
 					comment: {
 						id: 300,
-						body: 'Bot comment',
+						body: 'Human comment',
 						path: 'src/index.ts',
 						line: 42,
-						user: { login: 'aaight[bot]' },
+						user: { login: 'some-human' },
 						html_url: 'https://github.com/owner/repo/pull/42#discussion_r300',
 					},
 				}),
@@ -225,20 +248,6 @@ describe('PRReviewCommentTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('respond-to-review');
-		});
-
-		it('returns null when no reviewer token configured', async () => {
-			vi.mocked(getReviewerUser).mockResolvedValue(null);
-
-			const ctx: TriggerContext = {
-				project: { ...mockProject, reviewerTokenEnv: undefined },
-				source: 'github',
-				payload: makeReviewCommentPayload(),
-			};
-
-			const result = await trigger.handle(ctx);
-
-			expect(result).toBeNull();
 		});
 
 		it('returns null when PR has no Trello URL', async () => {

@@ -3,7 +3,7 @@ import { githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubIssueCommentPayload, isGitHubPRReviewCommentPayload } from './types.js';
-import { isReviewerUser, requireTrelloCardId } from './utils.js';
+import { requireTrelloCardId } from './utils.js';
 
 /**
  * Trigger that fires when someone @mentions the reviewer bot in a PR comment.
@@ -91,7 +91,7 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 		}
 
 		// Skip mentions from the reviewer bot itself
-		if (await isReviewerUser(commentAuthor, ctx.project)) {
+		if (commentAuthor === reviewerUser || commentAuthor === `${reviewerUser}[bot]`) {
 			logger.info('Skipping @mention from reviewer bot itself', { prNumber, commentAuthor });
 			return null;
 		}

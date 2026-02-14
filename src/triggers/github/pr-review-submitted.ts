@@ -1,7 +1,7 @@
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubPullRequestReviewPayload } from './types.js';
-import { isReviewerUser, requireTrelloCardId } from './utils.js';
+import { isAuthenticatedUser, requireTrelloCardId } from './utils.js';
 
 export class PRReviewSubmittedTrigger implements TriggerHandler {
 	name = 'pr-review-submitted';
@@ -37,8 +37,8 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 		const prNumber = reviewPayload.pull_request.number;
 		const reviewAuthor = reviewPayload.review.user.login;
 
-		// Only respond to reviews from the reviewer bot
-		if (!(await isReviewerUser(reviewAuthor, ctx.project))) {
+		// Skip reviews from ourselves (implementation user) to avoid loops
+		if (await isAuthenticatedUser(reviewAuthor)) {
 			return null;
 		}
 
