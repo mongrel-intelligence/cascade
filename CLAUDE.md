@@ -113,15 +113,31 @@ CASCADE supports using Claude Code SDK as an alternative agent backend. Configur
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
+**Claude Max Subscription via `CLAUDE_CREDENTIALS` (Docker/CI):**
+
+For containerized or headless environments, pass the credentials JSON as an env var:
+
+1. Log in locally: `claude login` -> "Log in with your subscription account"
+2. Export the credentials:
+   ```bash
+   export CLAUDE_CREDENTIALS=$(cat ~/.claude/.credentials.json)
+   ```
+3. The Claude Code backend reads `CLAUDE_CREDENTIALS`, writes it to a temp dir, and sets `CLAUDE_CONFIG_DIR` so the SDK uses it. It also creates `~/.claude.json` with `{"hasCompletedOnboarding": true}` to skip the CLI's interactive onboarding (required for headless environments). No volume mounts needed.
+
+**Docker verification test:**
+```bash
+bash tests/docker/claude-code-auth/run-test.sh
+```
+
 **Claude Max Subscription (local/dev only):**
 1. Install Claude Code CLI: `npm install -g @anthropic-ai/claude-code`
 2. Authenticate: `claude login` -> select "Log in with your subscription account"
 3. Complete OAuth in browser
 4. Usage is billed to your Claude Max subscription ($200/month, 20x usage tier)
 
-Note: Claude Max auth stores tokens in `~/.claude/auth.json`. For headless/server
-environments, either use API key auth or copy the auth file from a local machine
-(tokens may expire and require re-authentication).
+Note: Claude Max auth stores tokens in `~/.claude/.credentials.json`. For headless/server
+environments, set the `CLAUDE_CREDENTIALS` env var with the file contents (tokens may
+expire and require re-authentication).
 
 When `ANTHROPIC_API_KEY` is set, it takes priority over subscription auth.
 
