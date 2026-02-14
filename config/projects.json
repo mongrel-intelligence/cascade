@@ -55,6 +55,12 @@
 			"baseBranch": "dev",
 			"branchPrefix": "feature/",
 			"reviewerTokenEnv": "GITHUB_REVIEWER_TOKEN",
+			"agentBackend": {
+				"default": "llmist",
+				"overrides": {
+					"implementation": "claude-code"
+				}
+			},
 			"agentModels": {
 				"planning": "openrouter:google/gemini-3-flash-preview",
 				"review": "openrouter:google/gemini-3-flash-preview"

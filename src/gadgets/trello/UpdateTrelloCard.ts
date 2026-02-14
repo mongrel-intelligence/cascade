@@ -1,6 +1,5 @@
 import { Gadget, z } from 'llmist';
-import { trelloClient } from '../../trello/client.js';
-import { formatGadgetError } from '../utils.js';
+import { updateCard } from './core/updateCard.js';
 
 export class UpdateTrelloCard extends Gadget({
 	name: 'UpdateTrelloCard',
@@ -43,34 +42,11 @@ export class UpdateTrelloCard extends Gadget({
 	],
 }) {
 	override async execute(params: this['params']): Promise<string> {
-		if (!params.title && !params.description && !params.addLabelIds?.length) {
-			return 'Nothing to update - provide title, description, or labels';
-		}
-
-		try {
-			// Update title/description if provided
-			if (params.title || params.description) {
-				await trelloClient.updateCard(params.cardId, {
-					name: params.title,
-					desc: params.description,
-				});
-			}
-
-			// Add labels if provided
-			if (params.addLabelIds?.length) {
-				for (const labelId of params.addLabelIds) {
-					await trelloClient.addLabelToCard(params.cardId, labelId);
-				}
-			}
-
-			const updated: string[] = [];
-			if (params.title) updated.push('title');
-			if (params.description) updated.push('description');
-			if (params.addLabelIds?.length) updated.push(`${params.addLabelIds.length} label(s)`);
-
-			return `Card updated: ${updated.join(', ')}`;
-		} catch (error) {
-			return formatGadgetError('updating card', error);
-		}
+		return updateCard({
+			cardId: params.cardId,
+			title: params.title,
+			description: params.description,
+			addLabelIds: params.addLabelIds,
+		});
 	}
 }
