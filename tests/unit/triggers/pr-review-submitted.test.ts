@@ -3,11 +3,10 @@ import { PRReviewSubmittedTrigger } from '../../../src/triggers/github/pr-review
 import type { TriggerContext } from '../../../src/triggers/types.js';
 
 vi.mock('../../../src/github/client.js', () => ({
-	getAuthenticatedUser: vi.fn(),
 	getReviewerUser: vi.fn(),
 }));
 
-import { getAuthenticatedUser, getReviewerUser } from '../../../src/github/client.js';
+import { getReviewerUser } from '../../../src/github/client.js';
 
 describe('PRReviewSubmittedTrigger', () => {
 	const trigger = new PRReviewSubmittedTrigger();
@@ -19,6 +18,7 @@ describe('PRReviewSubmittedTrigger', () => {
 		baseBranch: 'main',
 		branchPrefix: 'feature/',
 		githubTokenEnv: 'GITHUB_TOKEN',
+		reviewerTokenEnv: 'REVIEWER_TOKEN',
 		trello: {
 			boardId: 'board123',
 			lists: {
@@ -37,7 +37,7 @@ describe('PRReviewSubmittedTrigger', () => {
 			state: 'changes_requested',
 			body: 'Please fix the bug',
 			html_url: 'https://github.com/owner/repo/pull/42#pullrequestreview-100',
-			user: { login: 'reviewer' },
+			user: { login: 'aaight' },
 		},
 		pull_request: {
 			number: 42,
@@ -48,13 +48,13 @@ describe('PRReviewSubmittedTrigger', () => {
 			base: { ref: 'main' },
 		},
 		repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-		sender: { login: 'reviewer' },
+		sender: { login: 'aaight' },
 		...overrides,
 	});
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(getReviewerUser).mockResolvedValue(null);
+		vi.mocked(getReviewerUser).mockResolvedValue('aaight');
 	});
 
 	describe('matches', () => {
@@ -78,7 +78,7 @@ describe('PRReviewSubmittedTrigger', () => {
 						state: 'commented',
 						body: 'Nice work',
 						html_url: 'https://github.com/...',
-						user: { login: 'reviewer' },
+						user: { login: 'aaight' },
 					},
 				}),
 			};
@@ -116,7 +116,7 @@ describe('PRReviewSubmittedTrigger', () => {
 						state: 'approved',
 						body: 'LGTM',
 						html_url: 'https://github.com/...',
-						user: { login: 'reviewer' },
+						user: { login: 'aaight' },
 					},
 				}),
 			};
@@ -136,9 +136,7 @@ describe('PRReviewSubmittedTrigger', () => {
 	});
 
 	describe('handle', () => {
-		it('returns respond-to-review result for valid review', async () => {
-			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
-
+		it('returns respond-to-review result when reviewer user posts review', async () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -163,23 +161,7 @@ describe('PRReviewSubmittedTrigger', () => {
 			});
 		});
 
-		it('returns null for self-authored review', async () => {
-			vi.mocked(getAuthenticatedUser).mockResolvedValue('reviewer');
-
-			const ctx: TriggerContext = {
-				project: mockProject,
-				source: 'github',
-				payload: makeReviewPayload(),
-			};
-
-			const result = await trigger.handle(ctx);
-
-			expect(result).toBeNull();
-		});
-
-		it('returns null for bot user review (appended [bot])', async () => {
-			vi.mocked(getAuthenticatedUser).mockResolvedValue('reviewer');
-
+		it('returns null for non-reviewer user review', async () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -189,7 +171,7 @@ describe('PRReviewSubmittedTrigger', () => {
 						state: 'changes_requested',
 						body: 'Fix this',
 						html_url: 'https://github.com/...',
-						user: { login: 'reviewer[bot]' },
+						user: { login: 'some-human' },
 					},
 				}),
 			};
@@ -199,12 +181,23 @@ describe('PRReviewSubmittedTrigger', () => {
 			expect(result).toBeNull();
 		});
 
-		it('triggers for reviewer-authored review (not treated as self)', async () => {
-			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
-			vi.mocked(getReviewerUser).mockResolvedValue('cascade-reviewer');
+		it('returns null when no reviewer token configured', async () => {
+			vi.mocked(getReviewerUser).mockResolvedValue(null);
 
 			const ctx: TriggerContext = {
-				project: { ...mockProject, reviewerTokenEnv: 'REVIEWER_TOKEN' },
+				project: { ...mockProject, reviewerTokenEnv: undefined },
+				source: 'github',
+				payload: makeReviewPayload(),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+		});
+
+		it('triggers for reviewer bot user (appended [bot])', async () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
 				source: 'github',
 				payload: makeReviewPayload({
 					review: {
@@ -212,25 +205,9 @@ describe('PRReviewSubmittedTrigger', () => {
 						state: 'changes_requested',
 						body: 'Fix this',
 						html_url: 'https://github.com/owner/repo/pull/42#pullrequestreview-100',
-						user: { login: 'cascade-reviewer' },
+						user: { login: 'aaight[bot]' },
 					},
 				}),
-			};
-
-			const result = await trigger.handle(ctx);
-
-			expect(result).not.toBeNull();
-			expect(result?.agentType).toBe('respond-to-review');
-			expect(result?.agentInput.triggerCommentBody).toBe('Fix this');
-		});
-
-		it('proceeds when getAuthenticatedUser fails', async () => {
-			vi.mocked(getAuthenticatedUser).mockRejectedValue(new Error('Token error'));
-
-			const ctx: TriggerContext = {
-				project: mockProject,
-				source: 'github',
-				payload: makeReviewPayload(),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -240,8 +217,6 @@ describe('PRReviewSubmittedTrigger', () => {
 		});
 
 		it('returns null when PR has no Trello URL', async () => {
-			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
-
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -263,8 +238,6 @@ describe('PRReviewSubmittedTrigger', () => {
 		});
 
 		it('uses review state as fallback when review body is null', async () => {
-			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
-
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -274,7 +247,7 @@ describe('PRReviewSubmittedTrigger', () => {
 						state: 'changes_requested',
 						body: null,
 						html_url: 'https://github.com/owner/repo/pull/42#pullrequestreview-100',
-						user: { login: 'reviewer' },
+						user: { login: 'aaight' },
 					},
 				}),
 			};
