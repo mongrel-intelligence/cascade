@@ -41,6 +41,7 @@ import {
 	injectSquintContext,
 	injectSyntheticCall,
 } from './shared/syntheticCalls.js';
+import type { AccumulatedLlmCall } from './utils/hooks.js';
 import type { AgentLogger } from './utils/logging.js';
 import type { TrackingContext } from './utils/tracking.js';
 
@@ -323,6 +324,7 @@ function createAgentBuilderWithGadgets(
 	repoDir: string,
 	progressMonitor?: ProgressMonitor,
 	remainingBudgetUsd?: number,
+	llmCallAccumulator?: AccumulatedLlmCall[],
 ): BuilderType {
 	return createConfiguredBuilder({
 		client,
@@ -338,6 +340,7 @@ function createAgentBuilderWithGadgets(
 		gadgets: getBaseAgentGadgets(agentType),
 		progressMonitor,
 		remainingBudgetUsd,
+		llmCallAccumulator,
 		// Implementation agent uses sequential execution to ensure file operations
 		// are properly ordered (e.g., FileSearchAndReplace then ReadFile on same file)
 		postConfigure:
@@ -488,13 +491,13 @@ export async function executeAgent(
 	return executeAgentLifecycle<AgentContextData>({
 		loggerIdentifier: identifier,
 
-		onWatchdogTimeout: async (fileLogger: FileLogger) => {
+		onWatchdogTimeout: async (_fileLogger: FileLogger, runId?: string) => {
 			if (cardId) {
-				const logBuffer = await fileLogger.getZippedBuffer();
-				const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-				const logName = `${agentType}-timeout-${timestamp}.zip`;
-				await trelloClient.addAttachmentFile(cardId, logBuffer, logName);
-				logger.info('Uploaded timeout log to card', { cardId, logName });
+				await trelloClient.addComment(
+					cardId,
+					`⏱️ Agent timed out (watchdog).${runId ? ` Run ID: ${runId}` : ''}`,
+				);
+				logger.info('Posted timeout comment to card', { cardId, runId });
 			}
 		},
 
@@ -529,6 +532,7 @@ export async function executeAgent(
 			fileLogger,
 			repoDir,
 			progressMonitor,
+			llmCallAccumulator,
 		}) =>
 			createAgentBuilderWithGadgets(
 				client,
@@ -541,6 +545,7 @@ export async function executeAgent(
 				repoDir,
 				progressMonitor ?? undefined,
 				input.remainingBudgetUsd as number | undefined,
+				llmCallAccumulator,
 			),
 
 		injectSyntheticCalls: ({ builder, ctx, trackingContext, repoDir }) =>
@@ -572,6 +577,15 @@ export async function executeAgent(
 		postProcess: (output) => {
 			const prUrl = extractPRUrl(output);
 			return prUrl ? { prUrl } : {};
+		},
+
+		runTracking: {
+			projectId: project.id,
+			cardId,
+			prNumber: prContext?.prNumber ?? (input.prNumber as number | undefined),
+			agentType,
+			backendName: 'llmist',
+			triggerType: input.triggerType,
 		},
 	});
 }

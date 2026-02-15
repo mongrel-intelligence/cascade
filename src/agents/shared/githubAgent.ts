@@ -141,6 +141,7 @@ export async function executeGitHubAgent<
 				fileLogger,
 				repoDir,
 				progressMonitor,
+				llmCallAccumulator,
 			}) =>
 				createConfiguredBuilder({
 					client,
@@ -156,6 +157,7 @@ export async function executeGitHubAgent<
 					gadgets: definition.getGadgets(),
 					progressMonitor: progressMonitor ?? undefined,
 					remainingBudgetUsd: input.remainingBudgetUsd as number | undefined,
+					llmCallAccumulator,
 					...definition.builderOptions,
 				}),
 
@@ -205,6 +207,15 @@ export async function executeGitHubAgent<
 			interactive,
 			autoAccept,
 			customModels: CUSTOM_MODELS,
+
+			runTracking: {
+				projectId: project.id,
+				cardId: input.cardId,
+				prNumber,
+				agentType: definition.agentType,
+				backendName: 'llmist',
+				triggerType: input.triggerType,
+			},
 		});
 
 	if (definition.wrapExecution) {

@@ -1,6 +1,15 @@
+import fs from 'node:fs';
 import { LLMist, type ModelSpec, createLogger } from 'llmist';
 
 import type { ProgressMonitor } from '../../backends/progressMonitor.js';
+import {
+	type CompleteRunInput,
+	type LlmCallRecord,
+	completeRun,
+	createRun,
+	storeLlmCallsBulk,
+	storeRunLogs,
+} from '../../db/repositories/runsRepository.js';
 import type { AgentResult } from '../../types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../../utils/cascadeEnv.js';
 import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../../utils/fileLogger.js';
@@ -8,6 +17,7 @@ import { clearWatchdogCleanup, setWatchdogCleanup } from '../../utils/lifecycle.
 import { logger } from '../../utils/logging.js';
 import { cleanupTempDir } from '../../utils/repo.js';
 import { runAgentLoop } from '../utils/agentLoop.js';
+import type { AccumulatedLlmCall } from '../utils/hooks.js';
 import { getLogLevel } from '../utils/index.js';
 import { createAgentLogger } from '../utils/logging.js';
 import { type TrackingContext, createTrackingContext } from '../utils/tracking.js';
@@ -24,12 +34,21 @@ export interface BaseAgentContext {
 	prompt: string;
 }
 
+export interface RunTrackingConfig {
+	projectId: string;
+	cardId?: string;
+	prNumber?: number;
+	agentType: string;
+	backendName: string;
+	triggerType?: string;
+}
+
 export interface ExecuteAgentOptions<TContext extends BaseAgentContext> {
 	/** Identifier for log file naming (e.g., "review-42", "ci-42") */
 	loggerIdentifier: string;
 
 	/** Called when the watchdog timer expires. FileLogger is already closed. */
-	onWatchdogTimeout: (fileLogger: FileLogger) => Promise<void>;
+	onWatchdogTimeout: (fileLogger: FileLogger, runId?: string) => Promise<void>;
 
 	/** Set up the working directory (clone repo, etc.) */
 	setupRepoDir: (log: AgentLogger) => Promise<string>;
@@ -46,6 +65,7 @@ export interface ExecuteAgentOptions<TContext extends BaseAgentContext> {
 		fileLogger: FileLogger;
 		repoDir: string;
 		progressMonitor: ProgressMonitor | null;
+		llmCallAccumulator: AccumulatedLlmCall[];
 	}) => BuilderType;
 
 	/** Inject pre-fetched data as synthetic gadget calls */
@@ -70,7 +90,180 @@ export interface ExecuteAgentOptions<TContext extends BaseAgentContext> {
 
 	/** Extract additional fields from agent output (e.g., PR URL) */
 	postProcess?: (output: string) => Partial<AgentResult>;
+
+	/** Run tracking configuration (if set, creates DB records) */
+	runTracking?: RunTrackingConfig;
 }
+
+// ============================================================================
+// Run Tracking Helpers
+// ============================================================================
+
+async function tryCreateRun(
+	config: RunTrackingConfig,
+	model?: string,
+	maxIterations?: number,
+): Promise<string | undefined> {
+	try {
+		return await createRun({
+			projectId: config.projectId,
+			cardId: config.cardId,
+			prNumber: config.prNumber,
+			agentType: config.agentType,
+			backend: config.backendName,
+			triggerType: config.triggerType,
+			model,
+			maxIterations,
+		});
+	} catch (err) {
+		logger.warn('Failed to create run record', { error: String(err) });
+		return undefined;
+	}
+}
+
+async function tryStoreLogsAndCalls(
+	runId: string,
+	fileLogger: FileLogger,
+	llmCallAccumulator: AccumulatedLlmCall[],
+): Promise<void> {
+	try {
+		// Read log files from disk
+		const cascadeLog = fs.existsSync(fileLogger.logPath)
+			? fs.readFileSync(fileLogger.logPath, 'utf-8')
+			: undefined;
+		const llmistLog = fs.existsSync(fileLogger.llmistLogPath)
+			? fs.readFileSync(fileLogger.llmistLogPath, 'utf-8')
+			: undefined;
+
+		await storeRunLogs(runId, cascadeLog, llmistLog);
+
+		// Merge file-based request/response text with accumulator-based token/cost metrics
+		const llmLogFiles = fileLogger.llmCallLogger.getLogFiles();
+		const requestFiles = new Map<number, string>();
+		const responseFiles = new Map<number, string>();
+
+		for (const filePath of llmLogFiles) {
+			const basename = filePath.split('/').pop() ?? '';
+			const match = basename.match(/^(\d+)\.(request|response)$/);
+			if (!match) continue;
+			const callNum = Number.parseInt(match[1], 10);
+			const content = fs.readFileSync(filePath, 'utf-8');
+			if (match[2] === 'request') {
+				requestFiles.set(callNum, content);
+			} else {
+				responseFiles.set(callNum, content);
+			}
+		}
+
+		// Build LLM call records by merging file content with accumulator metrics
+		const accumulatorMap = new Map<number, AccumulatedLlmCall>();
+		for (const acc of llmCallAccumulator) {
+			accumulatorMap.set(acc.callNumber, acc);
+		}
+
+		const allCallNumbers = new Set([
+			...requestFiles.keys(),
+			...responseFiles.keys(),
+			...accumulatorMap.keys(),
+		]);
+
+		const calls: LlmCallRecord[] = [];
+		for (const callNumber of allCallNumbers) {
+			const acc = accumulatorMap.get(callNumber);
+			calls.push({
+				runId,
+				callNumber,
+				request: requestFiles.get(callNumber),
+				response: responseFiles.get(callNumber),
+				inputTokens: acc?.inputTokens,
+				outputTokens: acc?.outputTokens,
+				cachedTokens: acc?.cachedTokens,
+				costUsd: acc?.costUsd,
+				durationMs: acc?.durationMs,
+			});
+		}
+
+		if (calls.length > 0) {
+			await storeLlmCallsBulk(calls);
+		}
+	} catch (err) {
+		logger.warn('Failed to store run logs', { runId, error: String(err) });
+	}
+}
+
+async function tryCompleteRun(runId: string, input: CompleteRunInput): Promise<void> {
+	try {
+		await completeRun(runId, input);
+	} catch (err) {
+		logger.warn('Failed to complete run record', { runId, error: String(err) });
+	}
+}
+
+// ============================================================================
+// Run Finalization Helper
+// ============================================================================
+
+async function finalizeRun(
+	runId: string | undefined,
+	fileLogger: FileLogger,
+	llmCallAccumulator: AccumulatedLlmCall[],
+	input: CompleteRunInput,
+): Promise<void> {
+	if (!runId) return;
+	await tryStoreLogsAndCalls(runId, fileLogger, llmCallAccumulator);
+	await tryCompleteRun(runId, input);
+}
+
+function cleanupLifecycleResources(repoDir: string | null, fileLogger: FileLogger): void {
+	clearWatchdogCleanup();
+
+	const isLocalMode = process.env.CASCADE_LOCAL_MODE === 'true';
+
+	if (repoDir && !isLocalMode) {
+		try {
+			cleanupTempDir(repoDir);
+		} catch (err) {
+			logger.warn('Failed to cleanup temp directory', { repoDir, error: String(err) });
+		}
+	}
+	if (!isLocalMode) {
+		cleanupLogFile(fileLogger.logPath);
+		cleanupLogFile(fileLogger.llmistLogPath);
+		cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
+	}
+}
+
+function buildAgentResult(
+	result: Awaited<ReturnType<typeof runAgentLoop>>,
+	logBuffer: Buffer,
+	runId: string | undefined,
+	postProcess?: (output: string) => Partial<AgentResult>,
+): AgentResult {
+	if (result.loopTerminated) {
+		return {
+			success: false,
+			output: result.output,
+			error: 'Agent terminated due to persistent loop',
+			logBuffer,
+			cost: result.cost,
+			runId,
+		};
+	}
+
+	const postProcessed = postProcess?.(result.output) ?? {};
+	return {
+		success: true,
+		output: result.output,
+		logBuffer,
+		cost: result.cost,
+		runId,
+		...postProcessed,
+	};
+}
+
+// ============================================================================
+// Main Lifecycle
+// ============================================================================
 
 /**
  * Shared agent execution lifecycle handling logger setup, watchdog,
@@ -80,13 +273,22 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 	options: ExecuteAgentOptions<TContext>,
 ): Promise<AgentResult> {
 	let repoDir: string | null = null;
+	let runId: string | undefined;
+	const startTime = Date.now();
+	const llmCallAccumulator: AccumulatedLlmCall[] = [];
 
 	const fileLogger = createFileLogger(`cascade-${options.loggerIdentifier}`);
 	const log = createAgentLogger(fileLogger);
 
 	setWatchdogCleanup(async () => {
 		fileLogger.close();
-		await options.onWatchdogTimeout(fileLogger);
+		await finalizeRun(runId, fileLogger, llmCallAccumulator, {
+			status: 'timed_out',
+			durationMs: Date.now() - startTime,
+			success: false,
+			error: 'Watchdog timeout',
+		});
+		await options.onWatchdogTimeout(fileLogger, runId);
 	});
 
 	try {
@@ -95,6 +297,10 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 
 		const ctx = await options.buildContext(repoDir, log);
 
+		if (options.runTracking) {
+			runId = await tryCreateRun(options.runTracking, ctx.model, ctx.maxIterations);
+		}
+
 		const originalCwd = process.cwd();
 		process.chdir(repoDir);
 
@@ -102,6 +308,7 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 			model: ctx.model,
 			maxIterations: ctx.maxIterations,
 			promptLength: ctx.prompt.length,
+			runId,
 		});
 
 		try {
@@ -113,7 +320,6 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 				: new LLMist();
 			const llmistLogger = createLogger({ minLevel: getLogLevel() });
 			const trackingContext = createTrackingContext();
-
 			const progressMonitor = options.createProgressMonitor?.(fileLogger) ?? null;
 
 			let builder = options.createBuilder({
@@ -124,13 +330,9 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 				fileLogger,
 				repoDir,
 				progressMonitor,
+				llmCallAccumulator,
 			});
-			builder = await options.injectSyntheticCalls({
-				builder,
-				ctx,
-				trackingContext,
-				repoDir,
-			});
+			builder = await options.injectSyntheticCalls({ builder, ctx, trackingContext, repoDir });
 
 			const agent = builder.ask(ctx.prompt);
 
@@ -158,25 +360,31 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 			fileLogger.close();
 			const logBuffer = await fileLogger.getZippedBuffer();
 
-			if (result.loopTerminated) {
-				return {
-					success: false,
-					output: result.output,
-					error: 'Agent terminated due to persistent loop',
-					logBuffer,
-					cost: result.cost,
-				};
-			}
+			const completionInput: CompleteRunInput = result.loopTerminated
+				? {
+						status: 'failed',
+						durationMs: Date.now() - startTime,
+						llmIterations: result.iterations,
+						gadgetCalls: result.gadgetCalls,
+						costUsd: result.cost,
+						success: false,
+						error: 'Agent terminated due to persistent loop',
+						outputSummary: result.output.slice(0, 500),
+					}
+				: {
+						status: 'completed',
+						durationMs: Date.now() - startTime,
+						llmIterations: result.iterations,
+						gadgetCalls: result.gadgetCalls,
+						costUsd: result.cost,
+						success: true,
+						prUrl: options.postProcess?.(result.output)?.prUrl,
+						outputSummary: result.output.slice(0, 500),
+					};
 
-			const postProcessed = options.postProcess?.(result.output) ?? {};
+			await finalizeRun(runId, fileLogger, llmCallAccumulator, completionInput);
 
-			return {
-				success: true,
-				output: result.output,
-				logBuffer,
-				cost: result.cost,
-				...postProcessed,
-			};
+			return buildAgentResult(result, logBuffer, runId, options.postProcess);
 		} finally {
 			process.chdir(originalCwd);
 			unloadCascadeEnv(envSnapshot);
@@ -195,28 +403,15 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 			// Ignore log buffer errors
 		}
 
-		return {
+		await finalizeRun(runId, fileLogger, llmCallAccumulator, {
+			status: 'failed',
+			durationMs: Date.now() - startTime,
 			success: false,
-			output: '',
 			error: String(err),
-			logBuffer,
-		};
+		});
+
+		return { success: false, output: '', error: String(err), logBuffer, runId };
 	} finally {
-		clearWatchdogCleanup();
-
-		const isLocalMode = process.env.CASCADE_LOCAL_MODE === 'true';
-
-		if (repoDir && !isLocalMode) {
-			try {
-				cleanupTempDir(repoDir);
-			} catch (err) {
-				logger.warn('Failed to cleanup temp directory', { repoDir, error: String(err) });
-			}
-		}
-		if (!isLocalMode) {
-			cleanupLogFile(fileLogger.logPath);
-			cleanupLogFile(fileLogger.llmistLogPath);
-			cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
-		}
+		cleanupLifecycleResources(repoDir, fileLogger);
 	}
 }

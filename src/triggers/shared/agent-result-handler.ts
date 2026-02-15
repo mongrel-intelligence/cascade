@@ -4,27 +4,18 @@ import { logger } from '../../utils/logging.js';
 import { safeOperation } from '../../utils/safeOperation.js';
 
 /**
- * Upload agent session log and update cost custom field on the Trello card.
+ * Update cost custom field on the Trello card.
  * Shared between GitHub and Trello webhook handlers.
+ *
+ * Logs are now stored in the database (agent_run_logs table) instead of
+ * being uploaded as ZIP attachments to Trello cards.
  */
 export async function handleAgentResultArtifacts(
 	cardId: string,
-	agentType: string,
+	_agentType: string,
 	agentResult: AgentResult,
 	project: ProjectConfig,
 ): Promise<void> {
-	// Upload zipped log file to card (if available)
-	if (agentResult.logBuffer) {
-		const logBuffer = agentResult.logBuffer;
-		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-		const logName = `${agentType}-${timestamp}.zip`;
-		await safeOperation(() => trelloClient.addAttachmentFile(cardId, logBuffer, logName), {
-			action: 'upload agent log',
-			cardId,
-			logName,
-		});
-	}
-
 	// Update cost custom field (accumulate with existing)
 	const costFieldId = project.trello?.customFields?.cost;
 	if (costFieldId && agentResult.cost !== undefined && agentResult.cost > 0) {

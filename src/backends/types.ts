@@ -74,6 +74,7 @@ export interface AgentBackendResult {
 	error?: string;
 	cost?: number;
 	logBuffer?: Buffer;
+	runId?: string;
 }
 
 /**

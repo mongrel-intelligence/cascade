@@ -17,6 +17,7 @@
 		"prepare": "lefthook install",
 		"tool:download-session": "node --env-file=.env --import tsx tools/download-session.ts",
 		"tool:run-local": "node --env-file=.env --import tsx tools/run-local.ts",
+		"tool:debug-run": "node --env-file=.env --import tsx tools/debug-run.ts",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",
 		"db:push": "drizzle-kit push",

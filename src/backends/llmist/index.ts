@@ -59,6 +59,7 @@ export class LlmistBackend implements AgentBackend {
 			error: result.error,
 			cost: result.cost,
 			logBuffer: result.logBuffer,
+			runId: result.runId,
 		};
 	}
 }

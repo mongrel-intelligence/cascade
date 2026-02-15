@@ -22,10 +22,13 @@ import {
 	setProcessing,
 	startWatchdog,
 } from '../../utils/index.js';
+import { injectLlmApiKeys } from '../../utils/llmEnv.js';
 import { safeOperation, silentOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
 import { handleAgentResultArtifacts } from '../shared/agent-result-handler.js';
 import { checkBudgetExceeded } from '../shared/budget.js';
+import { triggerDebugAnalysis } from '../shared/debug-runner.js';
+import { shouldTriggerDebug } from '../shared/debug-trigger.js';
 import type { TrelloWebhookPayload, TriggerResult } from '../types.js';
 import { isTrelloWebhookPayload } from '../types.js';
 
@@ -106,9 +109,83 @@ async function executeAgent(
 	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN');
 	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
 
-	await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
-		withGitHubToken(githubToken, () => executeAgentWithCreds(result, project, config)),
-	);
+	// Inject LLM API keys into process.env for llmist backend
+	const restoreLlmEnv = await injectLlmApiKeys(project.id);
+
+	try {
+		await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
+			withGitHubToken(githubToken, () => executeAgentWithCreds(result, project, config)),
+		);
+	} finally {
+		restoreLlmEnv();
+	}
+}
+
+async function checkPreFlightBudget(
+	cardId: string,
+	project: ProjectConfig,
+	config: CascadeConfig,
+): Promise<{ blocked: boolean; remainingBudgetUsd?: number }> {
+	const budgetCheck = await checkBudgetExceeded(cardId, project, config);
+	if (budgetCheck?.exceeded) {
+		logger.warn('Card budget exceeded, agent not started', {
+			cardId,
+			currentCost: budgetCheck.currentCost,
+			budget: budgetCheck.budget,
+		});
+		await safeRemoveLabel(cardId, project.trello.labels.processing);
+		await safeAddLabel(cardId, project.trello.labels.error);
+		await safeAddComment(
+			cardId,
+			`⛔ Budget exceeded: card cost $${budgetCheck.currentCost.toFixed(2)} >= limit $${budgetCheck.budget.toFixed(2)}. Agent not started.`,
+		);
+		return { blocked: true };
+	}
+	return { blocked: false, remainingBudgetUsd: budgetCheck?.remaining };
+}
+
+async function prepareCardForAgent(
+	cardId: string,
+	project: ProjectConfig,
+	agentType: string,
+): Promise<void> {
+	setCardActive(cardId);
+	await safeAddLabel(cardId, project.trello.labels.processing);
+	await safeRemoveLabel(cardId, project.trello.labels.readyToProcess);
+	await safeRemoveLabel(cardId, project.trello.labels.processed);
+
+	if (agentType === 'implementation') {
+		await safeMoveCard(cardId, project.trello.lists.inProgress);
+	}
+}
+
+async function checkPostFlightBudget(
+	cardId: string,
+	project: ProjectConfig,
+	config: CascadeConfig,
+): Promise<void> {
+	const postBudgetCheck = await checkBudgetExceeded(cardId, project, config);
+	if (postBudgetCheck?.exceeded) {
+		await safeAddLabel(cardId, project.trello.labels.error);
+		await safeAddComment(
+			cardId,
+			`⚠️ Budget limit reached: card cost $${postBudgetCheck.currentCost.toFixed(2)} >= limit $${postBudgetCheck.budget.toFixed(2)}. Further agent runs will be blocked.`,
+		);
+	}
+}
+
+async function tryAutoDebug(
+	agentResult: AgentResult,
+	project: ProjectConfig,
+	config: CascadeConfig,
+): Promise<void> {
+	if (!agentResult.runId) return;
+	const debugTarget = await shouldTriggerDebug(agentResult.runId);
+	if (debugTarget) {
+		triggerDebugAnalysis(debugTarget.runId, project, config, debugTarget.cardId).catch((err) =>
+			logger.error('Auto-debug failed', { error: String(err) }),
+		);
+	}
 }
 
 async function executeAgentWithCreds(
@@ -118,40 +195,15 @@ async function executeAgentWithCreds(
 ): Promise<void> {
 	const { cardId } = result;
 
-	// Pre-flight budget check
 	let remainingBudgetUsd: number | undefined;
 	if (cardId) {
-		const budgetCheck = await checkBudgetExceeded(cardId, project, config);
-		if (budgetCheck?.exceeded) {
-			logger.warn('Card budget exceeded, agent not started', {
-				cardId,
-				currentCost: budgetCheck.currentCost,
-				budget: budgetCheck.budget,
-			});
-			await safeRemoveLabel(cardId, project.trello.labels.processing);
-			await safeAddLabel(cardId, project.trello.labels.error);
-			await safeAddComment(
-				cardId,
-				`⛔ Budget exceeded: card cost $${budgetCheck.currentCost.toFixed(2)} >= limit $${budgetCheck.budget.toFixed(2)}. Agent not started.`,
-			);
-			return;
-		}
-		if (budgetCheck) {
-			remainingBudgetUsd = budgetCheck.remaining;
-		}
+		const budget = await checkPreFlightBudget(cardId, project, config);
+		if (budget.blocked) return;
+		remainingBudgetUsd = budget.remainingBudgetUsd;
 	}
 
 	if (cardId) {
-		setCardActive(cardId);
-		await safeAddLabel(cardId, project.trello.labels.processing);
-		await safeRemoveLabel(cardId, project.trello.labels.readyToProcess);
-		// Remove PROCESSED label - card is starting fresh work, not yet processed by this agent
-		await safeRemoveLabel(cardId, project.trello.labels.processed);
-
-		// Move to IN PROGRESS when implementation starts
-		if (result.agentType === 'implementation') {
-			await safeMoveCard(cardId, project.trello.lists.inProgress);
-		}
+		await prepareCardForAgent(cardId, project, result.agentType);
 	}
 
 	const agentResult = await runAgent(result.agentType, {
@@ -161,22 +213,9 @@ async function executeAgentWithCreds(
 		config,
 	});
 
-	// Upload log and update cost on Trello card
 	if (cardId) {
 		await handleAgentResultArtifacts(cardId, result.agentType, agentResult, project);
-
-		// Post-flight budget check
-		const postBudgetCheck = await checkBudgetExceeded(cardId, project, config);
-		if (postBudgetCheck?.exceeded) {
-			await safeAddLabel(cardId, project.trello.labels.error);
-			await safeAddComment(
-				cardId,
-				`⚠️ Budget limit reached: card cost $${postBudgetCheck.currentCost.toFixed(2)} >= limit $${postBudgetCheck.budget.toFixed(2)}. Further agent runs will be blocked.`,
-			);
-		}
-	}
-
-	if (cardId) {
+		await checkPostFlightBudget(cardId, project, config);
 		await safeRemoveLabel(cardId, project.trello.labels.processing);
 
 		if (agentResult.success) {
@@ -189,7 +228,10 @@ async function executeAgentWithCreds(
 	logger.info('Agent completed', {
 		agentType: result.agentType,
 		success: agentResult.success,
+		runId: agentResult.runId,
 	});
+
+	await tryAutoDebug(agentResult, project, config);
 }
 
 // ============================================================================
@@ -220,19 +262,6 @@ function tryQueueWebhook(payload: TrelloWebhookPayload): boolean {
 		logger.warn('Queue full, webhook rejected', { queueLength: getQueueLength() });
 	}
 	return true;
-}
-
-async function cleanupDebugDirectory(logDir: string | undefined): Promise<void> {
-	if (!logDir || typeof logDir !== 'string' || !logDir.startsWith('/tmp/debug-')) {
-		return;
-	}
-
-	logger.info('Cleaning up debug temp directory', { logDir });
-	const { cleanupTempDir } = await import('../../utils/repo.js');
-	await safeOperation(async () => await cleanupTempDir(logDir), {
-		action: 'cleanup temp directory',
-		logDir,
-	});
 }
 
 export async function processTrelloWebhook(
@@ -302,7 +331,6 @@ export async function processTrelloWebhook(
 			if (result?.cardId) {
 				clearCardActive(result.cardId);
 			}
-			await cleanupDebugDirectory(result?.agentInput?.logDir as string | undefined);
 			setProcessing(false);
 			processNextQueuedWebhook(config, registry);
 		}
