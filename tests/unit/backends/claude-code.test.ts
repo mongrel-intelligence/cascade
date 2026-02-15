@@ -211,6 +211,10 @@ describe('execute', () => {
 				permissionMode: 'bypassPermissions',
 				allowDangerouslySkipPermissions: true,
 				persistSession: false,
+				hooks: expect.objectContaining({
+					PreToolUse: expect.arrayContaining([expect.objectContaining({ matcher: 'Bash' })]),
+					Stop: expect.arrayContaining([expect.objectContaining({ hooks: expect.any(Array) })]),
+				}),
 			}),
 		});
 	});
