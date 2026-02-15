@@ -422,17 +422,8 @@ async function tryCompleteBackendRun(runId: string, input: CompleteRunInput): Pr
 	}
 }
 
-function warnIfSubscriptionCostMismatch(backend: AgentBackend, project: ProjectConfig): void {
-	if (
-		backend.name === 'claude-code' &&
-		project.agentBackend?.subscriptionCostZero === true &&
-		process.env.ANTHROPIC_API_KEY
-	) {
-		logger.warn(
-			'subscriptionCostZero enabled but ANTHROPIC_API_KEY is set — API key takes priority, costs are real',
-			{ project: project.id },
-		);
-	}
+function warnIfSubscriptionCostMismatch(_backend: AgentBackend, _project: ProjectConfig): void {
+	// No-op: ANTHROPIC_API_KEY is no longer used. Claude Code uses OAuth only.
 }
 
 async function finalizeBackendRun(

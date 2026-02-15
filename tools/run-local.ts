@@ -170,9 +170,6 @@ function runAgentInDocker(
 		// Pass model override
 		...(model ? ['-e', `CASCADE_MODEL_OVERRIDE=${model}`] : []),
 		// Pass infrastructure tokens from host environment (project secrets come from DB)
-		...(process.env.ANTHROPIC_API_KEY
-			? ['-e', `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`]
-			: []),
 		...(process.env.CLAUDE_CODE_OAUTH_TOKEN
 			? ['-e', `CLAUDE_CODE_OAUTH_TOKEN=${process.env.CLAUDE_CODE_OAUTH_TOKEN}`]
 			: []),
