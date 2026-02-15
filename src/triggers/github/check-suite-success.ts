@@ -55,6 +55,16 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			return null;
 		}
 
+		// Only trigger for PRs targeting the project's base branch
+		if (prDetails.baseRef !== ctx.project.baseBranch) {
+			logger.info('PR targets non-base branch, skipping review trigger', {
+				prNumber,
+				baseRef: prDetails.baseRef,
+				projectBaseBranch: ctx.project.baseBranch,
+			});
+			return null;
+		}
+
 		const cardId = extractTrelloCardId(prDetails.body);
 
 		// Skip if our latest review already covers the current HEAD SHA
