@@ -203,7 +203,7 @@ export class ClaudeCodeBackend implements AgentBackend {
 					debug: true,
 					stderr: (data: string) => {
 						stderrChunks.push(data);
-						input.logWriter('DEBUG', 'Claude Code stderr', { data: data.trim() });
+						input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
 					},
 				},
 			});

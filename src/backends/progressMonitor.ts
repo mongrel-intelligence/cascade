@@ -56,11 +56,11 @@ export class ProgressMonitor implements ProgressReporter {
 		if (this.recentToolCalls.length > RING_BUFFER_MAX) {
 			this.recentToolCalls.shift();
 		}
-		this.config.logWriter('DEBUG', 'Tool call', { toolName, params });
+		this.config.logWriter('INFO', 'Tool call', { toolName, params });
 	}
 
 	onText(content: string): void {
-		this.config.logWriter('DEBUG', 'Agent text output', { length: content.length });
+		this.config.logWriter('INFO', 'Agent text output', { length: content.length });
 	}
 
 	// ── Lifecycle ──
