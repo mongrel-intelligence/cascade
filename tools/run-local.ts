@@ -183,6 +183,9 @@ function runAgentInDocker(
 		...(process.env.GITHUB_REVIEWER_TOKEN
 			? ['-e', `GITHUB_REVIEWER_TOKEN=${process.env.GITHUB_REVIEWER_TOKEN}`]
 			: []),
+		...(process.env.CLAUDE_CREDENTIALS
+			? ['-e', `CLAUDE_CREDENTIALS=${process.env.CLAUDE_CREDENTIALS}`]
+			: []),
 		// Image
 		IMAGE_NAME,
 		// Command: run the entrypoint script with tsx

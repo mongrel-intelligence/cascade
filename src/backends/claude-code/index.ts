@@ -99,7 +99,7 @@ export function installCredentials(credentialsJson: string): string {
  * in headless environments, regardless of auth method (API key or subscription).
  */
 export function ensureOnboardingFlag(): void {
-	const homeDir = process.env.HOME ?? '/root';
+	const homeDir = process.env.HOME ?? '/home/node';
 	const claudeJsonPath = path.join(homeDir, '.claude.json');
 	if (!existsSync(claudeJsonPath)) {
 		writeFileSync(claudeJsonPath, JSON.stringify({ hasCompletedOnboarding: true }), {
@@ -200,6 +200,7 @@ export class ClaudeCodeBackend implements AgentBackend {
 		const assistantMessages: SDKAssistantMessage[] = [];
 		let resultMessage: SDKResultMessage | undefined;
 		let turnCount = 0;
+		const stderrChunks: string[] = [];
 
 		try {
 			const stream = query({
@@ -216,6 +217,11 @@ export class ClaudeCodeBackend implements AgentBackend {
 					allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
 					persistSession: false,
 					env,
+					debug: true,
+					stderr: (data: string) => {
+						stderrChunks.push(data);
+						input.logWriter('DEBUG', 'Claude Code stderr', { data: data.trim() });
+					},
 				},
 			});
 
@@ -265,6 +271,14 @@ export class ClaudeCodeBackend implements AgentBackend {
 		if (resultMessage && resultMessage.subtype !== 'success') {
 			const errorResult = resultMessage as Exclude<SDKResultMessage, SDKResultSuccess>;
 			error = errorResult.errors?.join('; ') ?? errorResult.subtype;
+		}
+
+		const stderrOutput = stderrChunks.join('').trim();
+		if (stderrOutput) {
+			input.logWriter('WARN', 'Claude Code stderr output', { stderr: stderrOutput });
+			if (error) {
+				error += ` | stderr: ${stderrOutput}`;
+			}
 		}
 
 		input.logWriter('INFO', 'Claude Code SDK execution completed', {
