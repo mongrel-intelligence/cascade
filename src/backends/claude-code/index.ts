@@ -90,9 +90,15 @@ export function resolveClaudeModel(cascadeModel: string): string {
 export function installCredentials(credentialsJson: string): string {
 	const configDir = mkdtempSync(path.join(tmpdir(), 'cascade-claude-'));
 	writeFileSync(path.join(configDir, '.credentials.json'), credentialsJson, { mode: 0o600 });
+	return configDir;
+}
 
-	// Claude Code requires this file to skip interactive onboarding.
-	// It lives at $HOME/.claude.json (separate from CLAUDE_CONFIG_DIR).
+/**
+ * Ensure $HOME/.claude.json exists with the onboarding flag.
+ * Claude Code CLI requires this file to skip interactive onboarding
+ * in headless environments, regardless of auth method (API key or subscription).
+ */
+export function ensureOnboardingFlag(): void {
 	const homeDir = process.env.HOME ?? '/root';
 	const claudeJsonPath = path.join(homeDir, '.claude.json');
 	if (!existsSync(claudeJsonPath)) {
@@ -100,8 +106,6 @@ export function installCredentials(credentialsJson: string): string {
 			mode: 0o600,
 		});
 	}
-
-	return configDir;
 }
 
 /**
@@ -124,6 +128,9 @@ export function buildEnv(): { env: Record<string, string | undefined>; configDir
 	// Prevent debugger/inspector variables from contaminating the subprocess
 	env.NODE_OPTIONS = undefined;
 	env.VSCODE_INSPECTOR_OPTIONS = undefined;
+
+	// Always ensure onboarding flag exists (required for both API key and subscription auth)
+	ensureOnboardingFlag();
 
 	let configDir: string | undefined;
 	const credentialsJson = process.env.CLAUDE_CREDENTIALS;

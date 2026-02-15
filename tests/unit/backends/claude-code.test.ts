@@ -16,6 +16,7 @@ import {
 	buildSystemPrompt,
 	buildTaskPrompt,
 	buildToolGuidance,
+	ensureOnboardingFlag,
 	installCredentials,
 	resolveClaudeModel,
 } from '../../../src/backends/claude-code/index.js';
@@ -408,6 +409,24 @@ describe('execute', () => {
 });
 
 describe('installCredentials', () => {
+	it('writes .credentials.json to temp dir with mode 0o600', async () => {
+		const fakeCreds = '{"claudeAiOauth":{"accessToken":"test-token"}}';
+		const configDir = installCredentials(fakeCreds);
+
+		try {
+			const credPath = join(configDir, '.credentials.json');
+			expect(existsSync(credPath)).toBe(true);
+			expect(readFileSync(credPath, 'utf8')).toBe(fakeCreds);
+
+			const stats = statSync(credPath);
+			expect(stats.mode & 0o777).toBe(0o600);
+		} finally {
+			await rm(configDir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe('ensureOnboardingFlag', () => {
 	let fakeHome: string;
 	let originalHome: string | undefined;
 
@@ -422,39 +441,17 @@ describe('installCredentials', () => {
 		await rm(fakeHome, { recursive: true, force: true });
 	});
 
-	it('writes .credentials.json to temp dir with mode 0o600', async () => {
-		const fakeCreds = '{"claudeAiOauth":{"accessToken":"test-token"}}';
-		const configDir = installCredentials(fakeCreds);
+	it('creates $HOME/.claude.json with onboarding flag', () => {
+		ensureOnboardingFlag();
 
-		try {
-			const credPath = join(configDir, '.credentials.json');
-			expect(existsSync(credPath)).toBe(true);
-			expect(readFileSync(credPath, 'utf8')).toBe(fakeCreds);
+		const claudeJsonPath = join(fakeHome, '.claude.json');
+		expect(existsSync(claudeJsonPath)).toBe(true);
 
-			const stats = statSync(credPath);
-			// Check file mode is 0o600 (owner read/write only)
-			expect(stats.mode & 0o777).toBe(0o600);
-		} finally {
-			await rm(configDir, { recursive: true, force: true });
-		}
-	});
+		const content = JSON.parse(readFileSync(claudeJsonPath, 'utf8'));
+		expect(content).toEqual({ hasCompletedOnboarding: true });
 
-	it('creates $HOME/.claude.json with onboarding flag', async () => {
-		const fakeCreds = '{"claudeAiOauth":{"accessToken":"test-token"}}';
-		const configDir = installCredentials(fakeCreds);
-
-		try {
-			const claudeJsonPath = join(fakeHome, '.claude.json');
-			expect(existsSync(claudeJsonPath)).toBe(true);
-
-			const content = JSON.parse(readFileSync(claudeJsonPath, 'utf8'));
-			expect(content).toEqual({ hasCompletedOnboarding: true });
-
-			const stats = statSync(claudeJsonPath);
-			expect(stats.mode & 0o777).toBe(0o600);
-		} finally {
-			await rm(configDir, { recursive: true, force: true });
-		}
+		const stats = statSync(claudeJsonPath);
+		expect(stats.mode & 0o777).toBe(0o600);
 	});
 
 	it('does not overwrite existing $HOME/.claude.json', async () => {
@@ -463,14 +460,9 @@ describe('installCredentials', () => {
 		const { writeFileSync: writeFs } = await import('node:fs');
 		writeFs(claudeJsonPath, existingContent);
 
-		const fakeCreds = '{"claudeAiOauth":{"accessToken":"test-token"}}';
-		const configDir = installCredentials(fakeCreds);
+		ensureOnboardingFlag();
 
-		try {
-			expect(readFileSync(claudeJsonPath, 'utf8')).toBe(existingContent);
-		} finally {
-			await rm(configDir, { recursive: true, force: true });
-		}
+		expect(readFileSync(claudeJsonPath, 'utf8')).toBe(existingContent);
 	});
 });
 
