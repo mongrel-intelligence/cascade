@@ -172,6 +172,30 @@ describe('CheckSuiteFailureTrigger', () => {
 			});
 		});
 
+		it('returns null when PR targets non-base branch', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'develop',
+				merged: false,
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeFailurePayload(),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
+		});
+
 		it('returns null when PR has no Trello URL', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,

@@ -34,9 +34,7 @@ function buildWorkerEnv(job: Job<CascadeJob>): string[] {
 	];
 
 	// Workers resolve project secrets from the database — no env var injection needed.
-	// Infrastructure secrets (ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN) are for
-	// the Claude Code backend and are passed through if set.
-	if (process.env.ANTHROPIC_API_KEY) env.push(`ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`);
+	// CLAUDE_CODE_OAUTH_TOKEN is for the Claude Code backend (subscription auth).
 	if (process.env.CLAUDE_CODE_OAUTH_TOKEN)
 		env.push(`CLAUDE_CODE_OAUTH_TOKEN=${process.env.CLAUDE_CODE_OAUTH_TOKEN}`);
 
