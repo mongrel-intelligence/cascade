@@ -39,6 +39,7 @@ export interface RouterConfig {
 		openaiApiKey?: string;
 		openrouterApiKey?: string;
 		githubReviewerToken?: string;
+		claudeCredentials?: string;
 	};
 }
 
@@ -73,5 +74,6 @@ export const routerConfig: RouterConfig = {
 		openaiApiKey: process.env.OPENAI_API_KEY,
 		openrouterApiKey: process.env.OPENROUTER_API_KEY,
 		githubReviewerToken: process.env.GITHUB_REVIEWER_TOKEN,
+		claudeCredentials: process.env.CLAUDE_CREDENTIALS,
 	},
 };

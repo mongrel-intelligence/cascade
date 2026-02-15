@@ -44,6 +44,7 @@ function buildWorkerEnv(job: Job<CascadeJob>): string[] {
 	if (secrets.openaiApiKey) env.push(`OPENAI_API_KEY=${secrets.openaiApiKey}`);
 	if (secrets.openrouterApiKey) env.push(`OPENROUTER_API_KEY=${secrets.openrouterApiKey}`);
 	if (secrets.githubReviewerToken) env.push(`GITHUB_REVIEWER_TOKEN=${secrets.githubReviewerToken}`);
+	if (secrets.claudeCredentials) env.push(`CLAUDE_CREDENTIALS=${secrets.claudeCredentials}`);
 
 	return env;
 }
