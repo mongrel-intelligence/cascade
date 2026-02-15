@@ -5,6 +5,7 @@ import { resolveModelConfig } from '../agents/shared/modelResolution.js';
 import { setupRepository } from '../agents/shared/repository.js';
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
+import { getProjectSecretOrNull } from '../config/provider.js';
 import { readCard } from '../gadgets/trello/core/readCard.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../utils/cascadeEnv.js';
@@ -275,6 +276,13 @@ async function buildBackendInput(
 
 	const cliToolsDir = new URL('../../bin', import.meta.url).pathname;
 
+	// Resolve per-project secrets for subprocess injection
+	const projectSecrets: Record<string, string> = {};
+	for (const key of ['GITHUB_TOKEN', 'TRELLO_API_KEY', 'TRELLO_TOKEN']) {
+		const value = await getProjectSecretOrNull(project.id, key);
+		if (value) projectSecrets[key] = value;
+	}
+
 	return {
 		agentType,
 		project,
@@ -290,6 +298,7 @@ async function buildBackendInput(
 		model,
 		logWriter: fileLogger.write.bind(fileLogger),
 		agentInput: input,
+		...(Object.keys(projectSecrets).length > 0 && { projectSecrets }),
 	};
 }
 

@@ -58,6 +58,8 @@ export interface AgentBackendInput {
 	progressReporter: ProgressReporter;
 	logWriter: LogWriter;
 	agentInput: AgentInput;
+	/** Per-project secrets to inject into subprocess environment */
+	projectSecrets?: Record<string, string>;
 }
 
 export type LogWriter = (level: string, message: string, context?: Record<string, unknown>) => void;
