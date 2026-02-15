@@ -1,21 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 
-# Docker auth verification test for Claude Code subscription credentials.
-# Reads local ~/.claude/.credentials.json and passes it into a container
-# to verify that CLAUDE_CONFIG_DIR-based auth works without volume mounts.
+# Docker auth verification test for Claude Code OAuth token.
+# Uses CLAUDE_CODE_OAUTH_TOKEN (generated via `claude setup-token`)
+# to verify that subscription auth works in a containerized environment.
 
-CREDS_FILE="$HOME/.claude/.credentials.json"
-
-if [ ! -f "$CREDS_FILE" ]; then
-	echo "Error: $CREDS_FILE not found. Run 'claude login' first."
+if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+	echo "Error: CLAUDE_CODE_OAUTH_TOKEN env var is required."
+	echo "Generate one with: claude setup-token"
 	exit 1
 fi
-
-CREDS=$(cat "$CREDS_FILE")
 
 echo "Building test container..."
 docker build -f tests/docker/claude-code-auth/Dockerfile -t cascade-auth-test .
 
 echo "Running auth verification..."
-docker run --rm -e "CLAUDE_CREDENTIALS=$CREDS" cascade-auth-test
+docker run --rm -e "CLAUDE_CODE_OAUTH_TOKEN=$CLAUDE_CODE_OAUTH_TOKEN" cascade-auth-test
