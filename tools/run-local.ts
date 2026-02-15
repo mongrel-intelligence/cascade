@@ -169,19 +169,9 @@ function runAgentInDocker(
 		...(yes ? ['-e', 'CASCADE_YES=true'] : []),
 		// Pass model override
 		...(model ? ['-e', `CASCADE_MODEL_OVERRIDE=${model}`] : []),
-		// Pass tokens from host environment (may override .env)
-		...(process.env.GITHUB_TOKEN ? ['-e', `GITHUB_TOKEN=${process.env.GITHUB_TOKEN}`] : []),
-		...(process.env.HF_TOKEN ? ['-e', `HF_TOKEN=${process.env.HF_TOKEN}`] : []),
+		// Pass infrastructure tokens from host environment (project secrets come from DB)
 		...(process.env.ANTHROPIC_API_KEY
 			? ['-e', `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`]
-			: []),
-		...(process.env.OPENAI_API_KEY ? ['-e', `OPENAI_API_KEY=${process.env.OPENAI_API_KEY}`] : []),
-		...(process.env.GEMINI_API_KEY ? ['-e', `GEMINI_API_KEY=${process.env.GEMINI_API_KEY}`] : []),
-		...(process.env.OPENROUTER_API_KEY
-			? ['-e', `OPENROUTER_API_KEY=${process.env.OPENROUTER_API_KEY}`]
-			: []),
-		...(process.env.GITHUB_REVIEWER_TOKEN
-			? ['-e', `GITHUB_REVIEWER_TOKEN=${process.env.GITHUB_REVIEWER_TOKEN}`]
 			: []),
 		...(process.env.CLAUDE_CODE_OAUTH_TOKEN
 			? ['-e', `CLAUDE_CODE_OAUTH_TOKEN=${process.env.CLAUDE_CODE_OAUTH_TOKEN}`]

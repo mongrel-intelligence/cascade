@@ -33,19 +33,12 @@ function buildWorkerEnv(job: Job<CascadeJob>): string[] {
 		`LOG_LEVEL=${process.env.LOG_LEVEL || 'info'}`,
 	];
 
-	// Add secrets
-	const { secrets } = routerConfig;
-	if (secrets.trelloApiKey) env.push(`TRELLO_API_KEY=${secrets.trelloApiKey}`);
-	if (secrets.trelloToken) env.push(`TRELLO_TOKEN=${secrets.trelloToken}`);
-	if (secrets.githubToken) env.push(`GITHUB_TOKEN=${secrets.githubToken}`);
-	if (secrets.hfToken) env.push(`HF_TOKEN=${secrets.hfToken}`);
-	if (secrets.geminiApiKey) env.push(`GEMINI_API_KEY=${secrets.geminiApiKey}`);
-	if (secrets.anthropicApiKey) env.push(`ANTHROPIC_API_KEY=${secrets.anthropicApiKey}`);
-	if (secrets.openaiApiKey) env.push(`OPENAI_API_KEY=${secrets.openaiApiKey}`);
-	if (secrets.openrouterApiKey) env.push(`OPENROUTER_API_KEY=${secrets.openrouterApiKey}`);
-	if (secrets.githubReviewerToken) env.push(`GITHUB_REVIEWER_TOKEN=${secrets.githubReviewerToken}`);
-	if (secrets.claudeCodeOauthToken)
-		env.push(`CLAUDE_CODE_OAUTH_TOKEN=${secrets.claudeCodeOauthToken}`);
+	// Workers resolve project secrets from the database — no env var injection needed.
+	// Infrastructure secrets (ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN) are for
+	// the Claude Code backend and are passed through if set.
+	if (process.env.ANTHROPIC_API_KEY) env.push(`ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`);
+	if (process.env.CLAUDE_CODE_OAUTH_TOKEN)
+		env.push(`CLAUDE_CODE_OAUTH_TOKEN=${process.env.CLAUDE_CODE_OAUTH_TOKEN}`);
 
 	return env;
 }

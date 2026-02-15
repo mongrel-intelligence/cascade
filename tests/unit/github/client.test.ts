@@ -9,6 +9,7 @@ const mockPulls = {
 	listFiles: vi.fn(),
 	createReview: vi.fn(),
 	create: vi.fn(),
+	list: vi.fn(),
 };
 
 const mockIssues = {
@@ -52,28 +53,26 @@ import {
 	getAuthenticatedUser,
 	getReviewerUser,
 	githubClient,
-	resetGitHubClient,
 	withGitHubToken,
 } from '../../../src/github/client.js';
 
 import { Octokit } from '@octokit/rest';
 
 describe('githubClient', () => {
-	const originalEnv = process.env;
-
 	beforeEach(() => {
 		vi.clearAllMocks();
-		resetGitHubClient();
-		process.env = { ...originalEnv, GITHUB_TOKEN: 'test-token' };
 	});
 
-	afterEach(() => {
-		process.env = originalEnv;
-		resetGitHubClient();
+	describe('getClient throws without scope', () => {
+		it('throws when no withGitHubToken scope is active', async () => {
+			await expect(githubClient.getPR('owner', 'repo', 1)).rejects.toThrow(
+				'No GitHub client in scope',
+			);
+		});
 	});
 
 	describe('getPR', () => {
-		it('returns PR details', async () => {
+		it('returns PR details within withGitHubToken scope', async () => {
 			mockPulls.get.mockResolvedValue({
 				data: {
 					number: 42,
@@ -87,7 +86,9 @@ describe('githubClient', () => {
 				},
 			});
 
-			const result = await githubClient.getPR('owner', 'repo', 42);
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getPR('owner', 'repo', 42),
+			);
 
 			expect(result).toEqual({
 				number: 42,
@@ -121,7 +122,9 @@ describe('githubClient', () => {
 				},
 			});
 
-			const result = await githubClient.getPR('owner', 'repo', 42);
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getPR('owner', 'repo', 42),
+			);
 
 			expect(result.merged).toBe(false);
 		});
@@ -144,7 +147,9 @@ describe('githubClient', () => {
 				],
 			});
 
-			const result = await githubClient.getPRReviewComments('owner', 'repo', 42);
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getPRReviewComments('owner', 'repo', 42),
+			);
 
 			expect(result).toHaveLength(1);
 			expect(result[0]).toEqual({
@@ -175,7 +180,9 @@ describe('githubClient', () => {
 				],
 			});
 
-			const result = await githubClient.getPRReviewComments('owner', 'repo', 42);
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getPRReviewComments('owner', 'repo', 42),
+			);
 
 			expect(result[0].line).toBeNull();
 			expect(result[0].inReplyToId).toBe(5);
@@ -196,7 +203,9 @@ describe('githubClient', () => {
 				],
 			});
 
-			const result = await githubClient.getPRReviewComments('owner', 'repo', 42);
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getPRReviewComments('owner', 'repo', 42),
+			);
 
 			expect(result[0].user.login).toBe('unknown');
 		});
@@ -217,7 +226,9 @@ describe('githubClient', () => {
 				},
 			});
 
-			const result = await githubClient.replyToReviewComment('owner', 'repo', 42, 1, 'Reply body');
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.replyToReviewComment('owner', 'repo', 42, 1, 'Reply body'),
+			);
 
 			expect(result.id).toBe(99);
 			expect(result.inReplyToId).toBe(1);
@@ -240,7 +251,9 @@ describe('githubClient', () => {
 				},
 			});
 
-			const result = await githubClient.createPRComment('owner', 'repo', 42, 'Hello');
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.createPRComment('owner', 'repo', 42, 'Hello'),
+			);
 
 			expect(result).toEqual({
 				id: 200,
@@ -264,7 +277,9 @@ describe('githubClient', () => {
 				},
 			});
 
-			const result = await githubClient.updatePRComment('owner', 'repo', 200, 'Updated');
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.updatePRComment('owner', 'repo', 200, 'Updated'),
+			);
 
 			expect(result.id).toBe(200);
 			expect(mockIssues.updateComment).toHaveBeenCalledWith({
@@ -291,7 +306,9 @@ describe('githubClient', () => {
 				],
 			});
 
-			const result = await githubClient.getPRReviews('owner', 'repo', 42);
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getPRReviews('owner', 'repo', 42),
+			);
 
 			expect(result).toHaveLength(1);
 			expect(result[0]).toEqual({
@@ -318,7 +335,9 @@ describe('githubClient', () => {
 				],
 			});
 
-			const result = await githubClient.getPRReviews('owner', 'repo', 42);
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getPRReviews('owner', 'repo', 42),
+			);
 
 			expect(result[0].body).toBeNull();
 			expect(result[0].user.login).toBe('unknown');
@@ -341,7 +360,9 @@ describe('githubClient', () => {
 				],
 			});
 
-			const result = await githubClient.getPRIssueComments('owner', 'repo', 42);
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getPRIssueComments('owner', 'repo', 42),
+			);
 
 			expect(result).toHaveLength(1);
 			expect(result[0]).toEqual({
@@ -366,7 +387,9 @@ describe('githubClient', () => {
 				],
 			});
 
-			const result = await githubClient.getPRIssueComments('owner', 'repo', 42);
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getPRIssueComments('owner', 'repo', 42),
+			);
 
 			expect(result[0].body).toBe('');
 			expect(result[0].user.login).toBe('unknown');
@@ -385,7 +408,9 @@ describe('githubClient', () => {
 				},
 			});
 
-			const result = await githubClient.getCheckSuiteStatus('owner', 'repo', 'sha123');
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getCheckSuiteStatus('owner', 'repo', 'sha123'),
+			);
 
 			expect(result.allPassing).toBe(true);
 			expect(result.totalCount).toBe(2);
@@ -403,7 +428,9 @@ describe('githubClient', () => {
 				},
 			});
 
-			const result = await githubClient.getCheckSuiteStatus('owner', 'repo', 'sha123');
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getCheckSuiteStatus('owner', 'repo', 'sha123'),
+			);
 
 			expect(result.allPassing).toBe(false);
 		});
@@ -419,7 +446,9 @@ describe('githubClient', () => {
 				},
 			});
 
-			const result = await githubClient.getCheckSuiteStatus('owner', 'repo', 'sha123');
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getCheckSuiteStatus('owner', 'repo', 'sha123'),
+			);
 
 			expect(result.allPassing).toBe(true);
 		});
@@ -432,7 +461,9 @@ describe('githubClient', () => {
 				},
 			});
 
-			const result = await githubClient.getCheckSuiteStatus('owner', 'repo', 'sha123');
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getCheckSuiteStatus('owner', 'repo', 'sha123'),
+			);
 
 			expect(result.allPassing).toBe(false);
 		});
@@ -453,7 +484,9 @@ describe('githubClient', () => {
 				],
 			});
 
-			const result = await githubClient.getPRDiff('owner', 'repo', 42);
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getPRDiff('owner', 'repo', 42),
+			);
 
 			expect(result).toHaveLength(1);
 			expect(result[0]).toEqual({
@@ -476,7 +509,9 @@ describe('githubClient', () => {
 				},
 			});
 
-			const result = await githubClient.createPRReview('owner', 'repo', 42, 'APPROVE', 'LGTM');
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.createPRReview('owner', 'repo', 42, 'APPROVE', 'LGTM'),
+			);
 
 			expect(result).toEqual({
 				id: 500,
@@ -497,9 +532,11 @@ describe('githubClient', () => {
 				data: { id: 501, html_url: 'url' },
 			});
 
-			await githubClient.createPRReview('owner', 'repo', 42, 'REQUEST_CHANGES', 'Please fix', [
-				{ path: 'src/index.ts', line: 10, body: 'Fix this line' },
-			]);
+			await withGitHubToken('test-token', () =>
+				githubClient.createPRReview('owner', 'repo', 42, 'REQUEST_CHANGES', 'Please fix', [
+					{ path: 'src/index.ts', line: 10, body: 'Fix this line' },
+				]),
+			);
 
 			expect(mockPulls.createReview).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -519,12 +556,14 @@ describe('githubClient', () => {
 				},
 			});
 
-			const result = await githubClient.createPR('owner', 'repo', {
-				title: 'New Feature',
-				body: 'Description',
-				head: 'feature/new',
-				base: 'main',
-			});
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.createPR('owner', 'repo', {
+					title: 'New Feature',
+					body: 'Description',
+					head: 'feature/new',
+					base: 'main',
+				}),
+			);
 
 			expect(result).toEqual({
 				number: 100,
@@ -538,12 +577,14 @@ describe('githubClient', () => {
 				data: { number: 101, html_url: 'url', title: 'PR' },
 			});
 
-			await githubClient.createPR('owner', 'repo', {
-				title: 'PR',
-				body: 'body',
-				head: 'feat',
-				base: 'main',
-			});
+			await withGitHubToken('test-token', () =>
+				githubClient.createPR('owner', 'repo', {
+					title: 'PR',
+					body: 'body',
+					head: 'feat',
+					base: 'main',
+				}),
+			);
 
 			expect(mockPulls.create).toHaveBeenCalledWith(expect.objectContaining({ draft: false }));
 		});
@@ -553,7 +594,9 @@ describe('githubClient', () => {
 		it('returns true when branch exists', async () => {
 			mockRepos.getBranch.mockResolvedValue({ data: {} });
 
-			const result = await githubClient.branchExists('owner', 'repo', 'main');
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.branchExists('owner', 'repo', 'main'),
+			);
 
 			expect(result).toBe(true);
 		});
@@ -563,7 +606,9 @@ describe('githubClient', () => {
 			error.status = 404;
 			mockRepos.getBranch.mockRejectedValue(error);
 
-			const result = await githubClient.branchExists('owner', 'repo', 'nonexistent');
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.branchExists('owner', 'repo', 'nonexistent'),
+			);
 
 			expect(result).toBe(false);
 		});
@@ -571,9 +616,9 @@ describe('githubClient', () => {
 		it('throws on other errors', async () => {
 			mockRepos.getBranch.mockRejectedValue(new Error('Server Error'));
 
-			await expect(githubClient.branchExists('owner', 'repo', 'branch')).rejects.toThrow(
-				'Server Error',
-			);
+			await expect(
+				withGitHubToken('test-token', () => githubClient.branchExists('owner', 'repo', 'branch')),
+			).rejects.toThrow('Server Error');
 		});
 	});
 
@@ -583,26 +628,14 @@ describe('githubClient', () => {
 				data: { login: 'cascade-bot' },
 			});
 
-			const result = await getAuthenticatedUser();
+			const result = await withGitHubToken('test-token', () => getAuthenticatedUser());
 
 			expect(result).toBe('cascade-bot');
 		});
 	});
 
-	describe('GITHUB_TOKEN required', () => {
-		it('throws when GITHUB_TOKEN is not set', async () => {
-			resetGitHubClient();
-			process.env.GITHUB_TOKEN = undefined;
-
-			await expect(githubClient.getPR('owner', 'repo', 1)).rejects.toThrow(
-				'GITHUB_TOKEN must be set',
-			);
-		});
-	});
-
 	describe('withGitHubToken', () => {
 		it('scopes a different Octokit instance within the callback', async () => {
-			// First call uses the default token
 			mockPulls.get.mockResolvedValue({
 				data: {
 					number: 1,
@@ -616,79 +649,36 @@ describe('githubClient', () => {
 				},
 			});
 
-			await githubClient.getPR('owner', 'repo', 1);
-			// Default client created with test-token
-			expect(Octokit).toHaveBeenCalledWith({ auth: 'test-token' });
+			await withGitHubToken('token-a', () => githubClient.getPR('owner', 'repo', 1));
+			expect(Octokit).toHaveBeenCalledWith({ auth: 'token-a' });
 
 			vi.mocked(Octokit).mockClear();
 
-			// Now call within withGitHubToken scope
-			await withGitHubToken('reviewer-token', async () => {
-				await githubClient.getPR('owner', 'repo', 2);
-			});
-
-			// A new Octokit was created with reviewer-token
-			expect(Octokit).toHaveBeenCalledWith({ auth: 'reviewer-token' });
-		});
-
-		it('restores original client after scope exits', async () => {
-			mockPulls.get.mockResolvedValue({
-				data: {
-					number: 1,
-					title: 'PR',
-					body: null,
-					state: 'open',
-					html_url: 'url',
-					head: { ref: 'feat', sha: 'abc' },
-					base: { ref: 'main' },
-					merged: false,
-				},
-			});
-
-			// Initialize the default singleton first
-			await githubClient.getPR('owner', 'repo', 1);
-			vi.mocked(Octokit).mockClear();
-
-			await withGitHubToken('reviewer-token', async () => {
-				await githubClient.getPR('owner', 'repo', 2);
-			});
-
-			// The scoped call created a new Octokit with reviewer-token
-			expect(Octokit).toHaveBeenCalledWith({ auth: 'reviewer-token' });
-			vi.mocked(Octokit).mockClear();
-
-			// After scope, calls should NOT create a new Octokit (uses cached singleton)
-			await githubClient.getPR('owner', 'repo', 3);
-			expect(Octokit).not.toHaveBeenCalled();
+			await withGitHubToken('token-b', () => githubClient.getPR('owner', 'repo', 2));
+			expect(Octokit).toHaveBeenCalledWith({ auth: 'token-b' });
 		});
 	});
 
 	describe('getReviewerUser', () => {
-		it('returns null when GITHUB_REVIEWER_TOKEN is not set', async () => {
-			process.env.GITHUB_REVIEWER_TOKEN = undefined;
-			const result = await getReviewerUser();
+		it('returns null when token is null', async () => {
+			const result = await getReviewerUser(null);
 			expect(result).toBeNull();
 		});
 
-		it('resolves and caches reviewer username', async () => {
-			process.env.GITHUB_REVIEWER_TOKEN = 'reviewer-pat';
+		it('resolves reviewer username from token', async () => {
 			mockUsers.getAuthenticated.mockResolvedValue({
 				data: { login: 'cascade-reviewer' },
 			});
 
-			const result1 = await getReviewerUser();
-			expect(result1).toBe('cascade-reviewer');
-
-			// Second call should use cache (Octokit only called once for the reviewer)
-			const result2 = await getReviewerUser();
-			expect(result2).toBe('cascade-reviewer');
+			const result = await getReviewerUser('reviewer-pat');
+			expect(result).toBe('cascade-reviewer');
+			expect(Octokit).toHaveBeenCalledWith({ auth: 'reviewer-pat' });
 		});
 
 		it('returns null on auth failure', async () => {
-			process.env.GITHUB_REVIEWER_TOKEN = 'bad-token';
 			mockUsers.getAuthenticated.mockRejectedValue(new Error('Bad credentials'));
 
-			const result = await getReviewerUser();
+			const result = await getReviewerUser('bad-token');
 			expect(result).toBeNull();
 		});
 	});

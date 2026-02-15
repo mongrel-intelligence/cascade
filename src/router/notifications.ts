@@ -1,4 +1,5 @@
-import { routerConfig } from './config.js';
+import { getProjectSecret } from '../config/provider.js';
+import { findProjectByRepo } from '../config/provider.js';
 import type { CascadeJob, GitHubJob, TrelloJob } from './queue.js';
 
 /**
@@ -71,9 +72,13 @@ interface TimeoutInfo {
 }
 
 async function notifyTrelloTimeout(job: TrelloJob, info: TimeoutInfo): Promise<void> {
-	const { trelloApiKey, trelloToken } = routerConfig.secrets;
-	if (!trelloApiKey || !trelloToken) {
-		console.warn('[Notifications] Missing Trello credentials, skipping timeout notification');
+	let trelloApiKey: string;
+	let trelloToken: string;
+	try {
+		trelloApiKey = await getProjectSecret(job.projectId, 'TRELLO_API_KEY');
+		trelloToken = await getProjectSecret(job.projectId, 'TRELLO_TOKEN');
+	} catch {
+		console.warn('[Notifications] Missing Trello credentials in DB, skipping timeout notification');
 		return;
 	}
 
@@ -99,9 +104,20 @@ async function notifyTrelloTimeout(job: TrelloJob, info: TimeoutInfo): Promise<v
 }
 
 async function notifyGitHubTimeout(job: GitHubJob, info: TimeoutInfo): Promise<void> {
-	const { githubToken } = routerConfig.secrets;
-	if (!githubToken) {
-		console.warn('[Notifications] Missing GitHub token, skipping timeout notification');
+	// Resolve project from repo name, then get GitHub token from DB
+	const project = await findProjectByRepo(job.repoFullName);
+	if (!project) {
+		console.warn('[Notifications] No project found for repo, skipping notification', {
+			repoFullName: job.repoFullName,
+		});
+		return;
+	}
+
+	let githubToken: string;
+	try {
+		githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
+	} catch {
+		console.warn('[Notifications] Missing GitHub token in DB, skipping timeout notification');
 		return;
 	}
 

@@ -54,7 +54,7 @@ vi.mock('../../../src/utils/logging.js', () => ({
 }));
 
 vi.mock('../../../src/config/provider.js', () => ({
-	getProjectSecretOrNull: vi.fn(),
+	getProjectSecrets: vi.fn(),
 }));
 
 vi.mock('../../../src/agents/prompts/index.js', () => ({}));
@@ -65,7 +65,7 @@ import { createAgentLogger } from '../../../src/agents/utils/logging.js';
 import { executeWithBackend } from '../../../src/backends/adapter.js';
 import { createProgressMonitor } from '../../../src/backends/progress.js';
 import type { AgentBackend } from '../../../src/backends/types.js';
-import { getProjectSecretOrNull } from '../../../src/config/provider.js';
+import { getProjectSecrets } from '../../../src/config/provider.js';
 import { readCard } from '../../../src/gadgets/trello/core/readCard.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../../../src/utils/cascadeEnv.js';
@@ -90,7 +90,7 @@ const mockCleanupLogFile = vi.mocked(cleanupLogFile);
 const mockCleanupLogDirectory = vi.mocked(cleanupLogDirectory);
 const mockClearWatchdogCleanup = vi.mocked(clearWatchdogCleanup);
 const mockCreateProgressMonitor = vi.mocked(createProgressMonitor);
-const mockGetProjectSecretOrNull = vi.mocked(getProjectSecretOrNull);
+const mockGetProjectSecrets = vi.mocked(getProjectSecrets);
 
 function makeProject(): ProjectConfig {
 	return {
@@ -166,7 +166,7 @@ function setupMocks() {
 	} as never);
 	mockReadCard.mockResolvedValue('Card data');
 	mockCreateProgressMonitor.mockReturnValue(null);
-	mockGetProjectSecretOrNull.mockResolvedValue(null);
+	mockGetProjectSecrets.mockResolvedValue({});
 	return mockLoggerInstance;
 }
 
@@ -457,10 +457,9 @@ describe('executeWithBackend', () => {
 
 	it('resolves per-project secrets and passes them to backend', async () => {
 		setupMocks();
-		mockGetProjectSecretOrNull.mockImplementation(async (_projectId, key) => {
-			if (key === 'GITHUB_TOKEN') return 'proj-gh-token';
-			if (key === 'TRELLO_API_KEY') return 'proj-trello-key';
-			return null;
+		mockGetProjectSecrets.mockResolvedValue({
+			GITHUB_TOKEN: 'proj-gh-token',
+			TRELLO_API_KEY: 'proj-trello-key',
 		});
 
 		const backend = makeMockBackend();
@@ -468,9 +467,7 @@ describe('executeWithBackend', () => {
 
 		await executeWithBackend(backend, 'implementation', input);
 
-		expect(mockGetProjectSecretOrNull).toHaveBeenCalledWith('test', 'GITHUB_TOKEN');
-		expect(mockGetProjectSecretOrNull).toHaveBeenCalledWith('test', 'TRELLO_API_KEY');
-		expect(mockGetProjectSecretOrNull).toHaveBeenCalledWith('test', 'TRELLO_TOKEN');
+		expect(mockGetProjectSecrets).toHaveBeenCalledWith('test');
 
 		const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
 		expect(backendInput.projectSecrets).toEqual({
@@ -481,7 +478,7 @@ describe('executeWithBackend', () => {
 
 	it('omits projectSecrets when no per-project secrets are found', async () => {
 		setupMocks();
-		mockGetProjectSecretOrNull.mockResolvedValue(null);
+		mockGetProjectSecrets.mockResolvedValue({});
 
 		const backend = makeMockBackend();
 		const input = makeInput();
