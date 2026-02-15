@@ -88,13 +88,18 @@ function getToolManifests(): ToolManifest[] {
 		{
 			name: 'CreatePR',
 			description:
-				'Create a GitHub pull request. Handles the full workflow: stages changes, commits, pushes branch to remote, and creates the PR. ALWAYS use this instead of gh pr create or manual git push.',
+				'Create a GitHub pull request. Handles the full workflow: stages changes, commits, pushes branch to remote, and creates the PR. ALWAYS use this instead of gh pr create or manual git push. If you have already committed your changes, use --no-commit to skip the commit step.',
 			cliCommand: 'cascade-tools github create-pr',
 			parameters: {
 				title: { type: 'string', required: true },
 				body: { type: 'string', required: true },
 				head: { type: 'string', required: true },
 				base: { type: 'string', required: true },
+				'no-commit': {
+					type: 'boolean',
+					description: 'Skip staging and committing (use when changes are already committed)',
+				},
+				draft: { type: 'boolean', description: 'Create as draft PR' },
 			},
 		},
 		{
@@ -315,6 +320,42 @@ function cleanupResources(
 }
 
 /**
+ * Post-process a backend result: validate PR creation for implementation agents
+ * and zero out cost for subscription-backed Claude Code sessions.
+ */
+function postProcessResult(
+	result: Awaited<ReturnType<AgentBackend['execute']>>,
+	agentType: string,
+	backend: AgentBackend,
+	input: AgentInput & { project: ProjectConfig },
+	identifier: string,
+): void {
+	// Validate PR creation for implementation agents
+	if (agentType === 'implementation' && result.success && !result.prUrl) {
+		logger.warn('Implementation agent completed without creating a PR', {
+			identifier,
+			backend: backend.name,
+		});
+		result.success = false;
+		result.error = 'Implementation completed but no PR was created';
+	}
+
+	// Zero out cost for subscription-backed Claude Code sessions
+	if (
+		backend.name === 'claude-code' &&
+		input.project.agentBackend?.subscriptionCostZero === true &&
+		result.cost !== undefined &&
+		result.cost > 0
+	) {
+		logger.info('Zeroing Claude Code cost (subscription mode)', {
+			originalCost: result.cost,
+			project: input.project.id,
+		});
+		result.cost = 0;
+	}
+}
+
+/**
  * Execute an agent using the given backend with full lifecycle management.
  * This handles repository setup, context fetching, logging, and cleanup.
  *
@@ -388,19 +429,7 @@ export async function executeWithBackend(
 		try {
 			const result = await backend.execute(backendInput);
 
-			// Zero out cost for subscription-backed Claude Code sessions
-			if (
-				backend.name === 'claude-code' &&
-				input.project.agentBackend?.subscriptionCostZero === true &&
-				result.cost !== undefined &&
-				result.cost > 0
-			) {
-				logger.info('Zeroing Claude Code cost (subscription mode)', {
-					originalCost: result.cost,
-					project: input.project.id,
-				});
-				result.cost = 0;
-			}
+			postProcessResult(result, agentType, backend, input, identifier);
 
 			fileLogger.close();
 			const logBuffer = await fileLogger.getZippedBuffer();

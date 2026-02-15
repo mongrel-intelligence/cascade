@@ -130,6 +130,30 @@ export function buildEnv(): { env: Record<string, string | undefined> } {
 }
 
 /**
+ * Extract a GitHub PR URL from text.
+ */
+function extractPRUrl(text: string): string | undefined {
+	const match = text.match(/https:\/\/github\.com\/[^\s"')\]]+\/pull\/\d+/);
+	return match ? match[0] : undefined;
+}
+
+/**
+ * Extract a GitHub PR URL from assistant messages (tool results containing create-pr output).
+ */
+function extractPRUrlFromMessages(assistantMessages: SDKAssistantMessage[]): string | undefined {
+	for (const msg of assistantMessages) {
+		if (!msg.message?.content) continue;
+		for (const block of msg.message.content) {
+			if (block.type === 'text') {
+				const url = extractPRUrl(block.text);
+				if (url) return url;
+			}
+		}
+	}
+	return undefined;
+}
+
+/**
  * Extract finish comment from assistant messages that invoked cascade-tools session finish.
  */
 function extractFinishComment(assistantMessages: SDKAssistantMessage[]): string | undefined {
@@ -269,6 +293,8 @@ export class ClaudeCodeBackend implements AgentBackend {
 			cost,
 		});
 
-		return { success, output, cost, error };
+		const prUrl = extractPRUrl(output) ?? extractPRUrlFromMessages(assistantMessages);
+
+		return { success, output, cost, error, prUrl };
 	}
 }
