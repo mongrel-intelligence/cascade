@@ -62,25 +62,43 @@ RUN npm install -g @anthropic-ai/claude-code
 
 # Browsers (Playwright Chromium, Camoufox) are pre-installed in niu-browser-base
 
-# Install production dependencies only
-COPY package*.json .npmrc ./
+# Switch to non-root user for running workers.
+# Claude Code CLI refuses --dangerously-skip-permissions when running as root.
+# The node user (uid 1000) is pre-created by the Node.js base image and matches
+# the default host user for volume mount compatibility.
+# Passwordless sudo is needed for setup scripts that require root (e.g. apt-get).
+RUN echo "node ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/node
+
+# Create workspace directory owned by node user
+RUN mkdir -p /workspace && chown node:node /workspace
+
+# Configure tmux for node user
+RUN cp /root/.tmux.conf /home/node/.tmux.conf && chown node:node /home/node/.tmux.conf
+
+# Give node user ownership of the (empty) app directory before switching
+RUN chown node:node /app
+
+# Switch to node user before installing app files (avoids slow chown -R)
+USER node
+
+# Install production dependencies as node user
+COPY --chown=node:node package*.json .npmrc ./
 RUN npm ci --omit=dev --ignore-scripts
 
 # Copy built code from builder
-COPY --from=builder /app/dist ./dist
+COPY --chown=node:node --from=builder /app/dist ./dist
 
 # Copy cascade-tools CLI entry point and make it executable
-COPY bin ./bin
-RUN chmod +x bin/cascade-tools.js && ln -s /app/bin/cascade-tools.js /usr/local/bin/cascade-tools
+COPY --chown=node:node bin ./bin
+RUN chmod +x bin/cascade-tools.js
+# Symlink needs root — use sudo
+RUN sudo ln -sf /app/bin/cascade-tools.js /usr/local/bin/cascade-tools
 
 # Copy Eta template files (not handled by TypeScript compiler)
-COPY src/agents/prompts/templates ./dist/agents/prompts/templates
+COPY --chown=node:node src/agents/prompts/templates ./dist/agents/prompts/templates
 
 # Copy config
-COPY config ./config
-
-# Create workspace directory for repos and logs
-RUN mkdir -p /workspace
+COPY --chown=node:node config ./config
 
 # Worker entry point - processes a single job and exits
 CMD ["node", "dist/worker-entry.js"]
