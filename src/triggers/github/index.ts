@@ -1,7 +1,6 @@
 export { CheckSuiteFailureTrigger } from './check-suite-failure.js';
 export { PROpenedTrigger } from './pr-opened.js';
 export { PRReadyToMergeTrigger } from './pr-ready-to-merge.js';
-export { PRReviewCommentTrigger } from './pr-review-comment.js';
 export { PRReviewSubmittedTrigger } from './pr-review-submitted.js';
 export { processGitHubWebhook } from './webhook-handler.js';
 export * from './types.js';

@@ -13,6 +13,7 @@ import type {
 	ContextInjection,
 	ToolManifest,
 } from '../types.js';
+import { buildHooks } from './hooks.js';
 
 /**
  * Build prompt guidance for CASCADE-specific CLI tools.
@@ -176,6 +177,7 @@ export class ClaudeCodeBackend implements AgentBackend {
 		});
 
 		const { env } = buildEnv();
+		const hooks = buildHooks(input.logWriter, input.repoDir);
 
 		const assistantMessages: SDKAssistantMessage[] = [];
 		let resultMessage: SDKResultMessage | undefined;
@@ -196,6 +198,7 @@ export class ClaudeCodeBackend implements AgentBackend {
 					tools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
 					allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
 					persistSession: false,
+					hooks,
 					env,
 					debug: true,
 					stderr: (data: string) => {
