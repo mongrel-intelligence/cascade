@@ -43,6 +43,15 @@ function orUndefined<T extends Record<string, unknown>>(obj: T): T | undefined {
 	return Object.keys(obj).length > 0 ? obj : undefined;
 }
 
+/** Filter null/undefined values from a key-value mapping, returning only string entries. */
+function compactRecord(entries: Record<string, string | null>): Record<string, string> {
+	const result: Record<string, string> = {};
+	for (const [key, value] of Object.entries(entries)) {
+		if (value != null) result[key] = value;
+	}
+	return result;
+}
+
 function mapDefaultsRow(row: DefaultsRow | undefined, globalAgentConfigs: AgentConfigRow[]) {
 	const { models, iterations } = buildAgentMaps(globalAgentConfigs);
 
@@ -71,6 +80,25 @@ function mapProjectRow(
 ): Record<string, unknown> {
 	const { models, prompts, backends } = buildAgentMaps(projectAgentConfigs);
 
+	const lists = compactRecord({
+		briefing: row.trelloListBriefing,
+		stories: row.trelloListStories,
+		planning: row.trelloListPlanning,
+		todo: row.trelloListTodo,
+		inProgress: row.trelloListInProgress,
+		inReview: row.trelloListInReview,
+		done: row.trelloListDone,
+		merged: row.trelloListMerged,
+		debug: row.trelloListDebug,
+	});
+
+	const labels = compactRecord({
+		readyToProcess: row.trelloLabelReadyToProcess,
+		processing: row.trelloLabelProcessing,
+		processed: row.trelloLabelProcessed,
+		error: row.trelloLabelError,
+	});
+
 	const project: Record<string, unknown> = {
 		id: row.id,
 		name: row.name,
@@ -79,23 +107,8 @@ function mapProjectRow(
 		branchPrefix: row.branchPrefix ?? 'feature/',
 		trello: {
 			boardId: row.trelloBoardId,
-			lists: {
-				briefing: row.trelloListBriefing,
-				stories: row.trelloListStories,
-				planning: row.trelloListPlanning,
-				todo: row.trelloListTodo,
-				inProgress: row.trelloListInProgress,
-				inReview: row.trelloListInReview,
-				done: row.trelloListDone,
-				merged: row.trelloListMerged,
-				debug: row.trelloListDebug,
-			},
-			labels: {
-				readyToProcess: row.trelloLabelReadyToProcess,
-				processing: row.trelloLabelProcessing,
-				processed: row.trelloLabelProcessed,
-				error: row.trelloLabelError,
-			},
+			lists,
+			labels,
 			customFields: row.trelloCustomFieldCost ? { cost: row.trelloCustomFieldCost } : undefined,
 		},
 		prompts: orUndefined(prompts),
