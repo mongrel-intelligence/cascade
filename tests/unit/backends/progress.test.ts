@@ -105,7 +105,7 @@ describe('ProgressMonitor — state accumulation', () => {
 		}
 
 		expect(logWriter).toHaveBeenCalledTimes(25);
-		expect(logWriter).toHaveBeenCalledWith('DEBUG', 'Tool call', expect.any(Object));
+		expect(logWriter).toHaveBeenCalledWith('INFO', 'Tool call', expect.any(Object));
 	});
 
 	it('logs text output via onText()', () => {
@@ -121,7 +121,7 @@ describe('ProgressMonitor — state accumulation', () => {
 
 		monitor.onText('Hello world');
 
-		expect(logWriter).toHaveBeenCalledWith('DEBUG', 'Agent text output', { length: 11 });
+		expect(logWriter).toHaveBeenCalledWith('INFO', 'Agent text output', { length: 11 });
 	});
 });
 
