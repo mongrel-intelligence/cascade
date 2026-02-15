@@ -3,6 +3,8 @@ import type {
 	HookCallbackMatcher,
 	HookEvent,
 	HookInput,
+	PostToolUseFailureHookInput,
+	PostToolUseHookInput,
 	PreToolUseHookInput,
 	SyncHookJSONOutput,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -56,6 +58,51 @@ export function buildPreToolUseHooks(logWriter: LogWriter): HookCallbackMatcher[
 						}
 					}
 
+					return {};
+				},
+			],
+		},
+	];
+}
+
+/**
+ * Build PostToolUse hooks that log tool results (truncated).
+ */
+export function buildPostToolUseHooks(logWriter: LogWriter): HookCallbackMatcher[] {
+	return [
+		{
+			hooks: [
+				async (input: HookInput): Promise<SyncHookJSONOutput> => {
+					const hookInput = input as PostToolUseHookInput;
+					const response = String(hookInput.tool_response ?? '');
+					const truncated =
+						response.length > 500
+							? `${response.slice(0, 500)}... (${response.length} chars)`
+							: response;
+					logWriter('INFO', 'Tool result', {
+						tool: hookInput.tool_name,
+						result: truncated,
+					});
+					return {};
+				},
+			],
+		},
+	];
+}
+
+/**
+ * Build PostToolUseFailure hooks that log tool errors.
+ */
+export function buildPostToolUseFailureHooks(logWriter: LogWriter): HookCallbackMatcher[] {
+	return [
+		{
+			hooks: [
+				async (input: HookInput): Promise<SyncHookJSONOutput> => {
+					const hookInput = input as PostToolUseFailureHookInput;
+					logWriter('ERROR', 'Tool failed', {
+						tool: hookInput.tool_name,
+						error: hookInput.error,
+					});
 					return {};
 				},
 			],
@@ -152,6 +199,8 @@ export function buildHooks(
 ): Partial<Record<HookEvent, HookCallbackMatcher[]>> {
 	return {
 		PreToolUse: buildPreToolUseHooks(logWriter),
+		PostToolUse: buildPostToolUseHooks(logWriter),
+		PostToolUseFailure: buildPostToolUseFailureHooks(logWriter),
 		Stop: buildStopHooks(logWriter, repoDir),
 	};
 }

@@ -416,9 +416,8 @@ describe('execute', () => {
 		);
 	});
 
-	it('ignores non-assistant non-result messages', async () => {
+	it('ignores non-assistant non-result non-system messages', async () => {
 		mockStream([
-			{ type: 'system', subtype: 'init' },
 			{ type: 'user', message: {} },
 			{
 				type: 'result',
@@ -435,6 +434,181 @@ describe('execute', () => {
 
 		expect(result.success).toBe(true);
 		expect(input.progressReporter.onIteration).not.toHaveBeenCalled();
+	});
+
+	it('logs truncated agent text content', async () => {
+		const longText = 'A'.repeat(400);
+		mockStream([
+			{
+				type: 'assistant',
+				message: {
+					content: [{ type: 'text', text: longText }],
+				},
+				uuid: 'uuid-1',
+				session_id: 's1',
+				parent_tool_use_id: null,
+			},
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.01,
+				num_turns: 1,
+			},
+		]);
+
+		const input = makeInput();
+		const backend = new ClaudeCodeBackend();
+		await backend.execute(input);
+
+		expect(input.logWriter).toHaveBeenCalledWith('INFO', 'Agent text', {
+			text: `${'A'.repeat(300)}...`,
+		});
+	});
+
+	it('logs assistant message errors', async () => {
+		mockStream([
+			{
+				type: 'assistant',
+				message: { content: [] },
+				error: 'rate_limit',
+				uuid: 'uuid-1',
+				session_id: 's1',
+				parent_tool_use_id: null,
+			},
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.01,
+				num_turns: 1,
+			},
+		]);
+
+		const input = makeInput();
+		const backend = new ClaudeCodeBackend();
+		await backend.execute(input);
+
+		expect(input.logWriter).toHaveBeenCalledWith('ERROR', 'Assistant message error', {
+			error: 'rate_limit',
+			turn: 1,
+		});
+	});
+
+	it('logs token usage per turn', async () => {
+		mockStream([
+			{
+				type: 'assistant',
+				message: {
+					content: [],
+					usage: { input_tokens: 1000, output_tokens: 500 },
+				},
+				uuid: 'uuid-1',
+				session_id: 's1',
+				parent_tool_use_id: null,
+			},
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.01,
+				num_turns: 1,
+			},
+		]);
+
+		const input = makeInput();
+		const backend = new ClaudeCodeBackend();
+		await backend.execute(input);
+
+		expect(input.logWriter).toHaveBeenCalledWith('DEBUG', 'Token usage', {
+			turn: 1,
+			inputTokens: 1000,
+			outputTokens: 500,
+		});
+	});
+
+	it('logs SDK system init events', async () => {
+		mockStream([
+			{
+				type: 'system',
+				subtype: 'init',
+				model: 'claude-sonnet-4-5-20250929',
+				claude_code_version: '1.0.0',
+				tools: ['Read', 'Write', 'Bash'],
+				uuid: 'uuid-sys',
+				session_id: 's1',
+			},
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.01,
+				num_turns: 0,
+			},
+		]);
+
+		const input = makeInput();
+		const backend = new ClaudeCodeBackend();
+		await backend.execute(input);
+
+		expect(input.logWriter).toHaveBeenCalledWith('INFO', 'Claude Code session initialized', {
+			model: 'claude-sonnet-4-5-20250929',
+			claudeCodeVersion: '1.0.0',
+			tools: ['Read', 'Write', 'Bash'],
+		});
+	});
+
+	it('logs SDK system status events', async () => {
+		mockStream([
+			{
+				type: 'system',
+				subtype: 'status',
+				status: 'compacting',
+				uuid: 'uuid-sys',
+				session_id: 's1',
+			},
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.01,
+				num_turns: 0,
+			},
+		]);
+
+		const input = makeInput();
+		const backend = new ClaudeCodeBackend();
+		await backend.execute(input);
+
+		expect(input.logWriter).toHaveBeenCalledWith('INFO', 'Session status change', {
+			status: 'compacting',
+		});
+	});
+
+	it('includes durationMs and prUrl in completion log', async () => {
+		mockStream([
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Created PR: https://github.com/owner/repo/pull/42',
+				total_cost_usd: 0.05,
+				num_turns: 3,
+			},
+		]);
+
+		const input = makeInput();
+		const backend = new ClaudeCodeBackend();
+		await backend.execute(input);
+
+		expect(input.logWriter).toHaveBeenCalledWith(
+			'INFO',
+			'Claude Code SDK execution completed',
+			expect.objectContaining({
+				success: true,
+				durationMs: expect.any(Number),
+				prUrl: 'https://github.com/owner/repo/pull/42',
+			}),
+		);
 	});
 });
 
