@@ -6,7 +6,6 @@ import { PRMergedTrigger } from './github/pr-merged.js';
 import { PRReadyToMergeTrigger } from './github/pr-ready-to-merge.js';
 import { PRReviewSubmittedTrigger } from './github/pr-review-submitted.js';
 import type { TriggerRegistry } from './registry.js';
-import { AttachmentAddedTrigger } from './trello/attachment-added.js';
 import {
 	CardMovedToBriefingTrigger,
 	CardMovedToPlanningTrigger,
@@ -38,9 +37,6 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 
 	// Trello: Label triggers
 	registry.register(new ReadyToProcessLabelTrigger());
-
-	// Trello: Attachment triggers
-	registry.register(new AttachmentAddedTrigger());
 
 	// GitHub: PR opened trigger (initial review on new PRs)
 	// DISABLED: Triggers respond-to-review which has file editing gadgets - needs review

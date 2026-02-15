@@ -22,6 +22,16 @@ import { type TrackingContext, checkForLoopAndAdvance, incrementLLMIteration } f
 /** Function signature for writing to cascade log file */
 export type LogWriter = (level: string, message: string, context?: Record<string, unknown>) => void;
 
+/** Accumulated per-call metrics collected during agent execution */
+export interface AccumulatedLlmCall {
+	callNumber: number;
+	inputTokens?: number;
+	outputTokens?: number;
+	cachedTokens?: number;
+	costUsd?: number;
+	durationMs?: number;
+}
+
 /** Configuration for creating observer hooks */
 export interface ObserverHooksConfig {
 	/** Model name for cost calculation */
@@ -34,6 +44,8 @@ export interface ObserverHooksConfig {
 	llmCallLogger: LLMCallLogger;
 	/** Optional progress monitor for feeding iteration state */
 	progressMonitor?: ProgressMonitor;
+	/** Accumulator for per-call metrics (populated during execution) */
+	llmCallAccumulator?: AccumulatedLlmCall[];
 }
 
 /**
@@ -91,6 +103,8 @@ export function createObserverHooks(config: ObserverHooksConfig) {
 			const durationMs = Date.now() - startTime;
 			llmCallStartTimes.delete(context.iteration);
 
+			const callNumber = trackingContext.metrics.llmIterations;
+
 			// Log metrics to cascade log file
 			if (context.usage) {
 				const cost = calculateCost(model, context.usage);
@@ -103,10 +117,21 @@ export function createObserverHooks(config: ObserverHooksConfig) {
 					durationMs,
 					cost: `$${cost.toFixed(6)}`,
 				});
+
+				// Accumulate per-call metrics for run tracking
+				if (config.llmCallAccumulator) {
+					config.llmCallAccumulator.push({
+						callNumber,
+						inputTokens: context.usage.inputTokens,
+						outputTokens: context.usage.outputTokens,
+						cachedTokens: context.usage.cachedInputTokens ?? 0,
+						costUsd: cost,
+						durationMs,
+					});
+				}
 			}
 
 			// File logging for debugging
-			const callNumber = trackingContext.metrics.llmIterations;
 			llmCallLogger.logResponse(callNumber, context.rawResponse as string);
 		},
 

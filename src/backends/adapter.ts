@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import type { ModelSpec } from 'llmist';
 
 import type { PromptContext } from '../agents/prompts/index.js';
@@ -6,6 +7,12 @@ import { setupRepository } from '../agents/shared/repository.js';
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
 import { getProjectSecrets } from '../config/provider.js';
+import {
+	type CompleteRunInput,
+	completeRun,
+	createRun,
+	storeRunLogs,
+} from '../db/repositories/runsRepository.js';
 import { readCard } from '../gadgets/trello/core/readCard.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../utils/cascadeEnv.js';
@@ -366,6 +373,78 @@ function postProcessResult(
  *
  * Used by non-llmist backends. The llmist backend wraps existing code directly.
  */
+async function tryCreateBackendRun(
+	agentType: string,
+	backendName: string,
+	input: AgentInput & { project: ProjectConfig },
+	model?: string,
+	maxIterations?: number,
+): Promise<string | undefined> {
+	try {
+		return await createRun({
+			projectId: input.project.id,
+			cardId: input.cardId,
+			prNumber: input.prNumber,
+			agentType,
+			backend: backendName,
+			triggerType: input.triggerType,
+			model,
+			maxIterations,
+		});
+	} catch (err) {
+		logger.warn('Failed to create run record', { error: String(err) });
+		return undefined;
+	}
+}
+
+async function tryStoreBackendLogs(
+	runId: string,
+	fileLogger: ReturnType<typeof createFileLogger>,
+): Promise<void> {
+	try {
+		const cascadeLog = fs.existsSync(fileLogger.logPath)
+			? fs.readFileSync(fileLogger.logPath, 'utf-8')
+			: undefined;
+		const llmistLog = fs.existsSync(fileLogger.llmistLogPath)
+			? fs.readFileSync(fileLogger.llmistLogPath, 'utf-8')
+			: undefined;
+		await storeRunLogs(runId, cascadeLog, llmistLog);
+	} catch (err) {
+		logger.warn('Failed to store backend run logs', { runId, error: String(err) });
+	}
+}
+
+async function tryCompleteBackendRun(runId: string, input: CompleteRunInput): Promise<void> {
+	try {
+		await completeRun(runId, input);
+	} catch (err) {
+		logger.warn('Failed to complete backend run record', { runId, error: String(err) });
+	}
+}
+
+function warnIfSubscriptionCostMismatch(backend: AgentBackend, project: ProjectConfig): void {
+	if (
+		backend.name === 'claude-code' &&
+		project.agentBackend?.subscriptionCostZero === true &&
+		process.env.ANTHROPIC_API_KEY
+	) {
+		logger.warn(
+			'subscriptionCostZero enabled but ANTHROPIC_API_KEY is set — API key takes priority, costs are real',
+			{ project: project.id },
+		);
+	}
+}
+
+async function finalizeBackendRun(
+	runId: string | undefined,
+	fileLogger: ReturnType<typeof createFileLogger>,
+	input: CompleteRunInput,
+): Promise<void> {
+	if (!runId) return;
+	await tryStoreBackendLogs(runId, fileLogger);
+	await tryCompleteBackendRun(runId, input);
+}
+
 export async function executeWithBackend(
 	backend: AgentBackend,
 	agentType: string,
@@ -373,6 +452,8 @@ export async function executeWithBackend(
 ): Promise<AgentResult> {
 	const { cardId } = input;
 	let repoDir: string | null = null;
+	let runId: string | undefined;
+	const startTime = Date.now();
 
 	const identifier = `${agentType}-${cardId || 'unknown'}`;
 	const fileLogger = createFileLogger(`cascade-${identifier}`);
@@ -380,6 +461,12 @@ export async function executeWithBackend(
 
 	setWatchdogCleanup(async () => {
 		fileLogger.close();
+		await finalizeBackendRun(runId, fileLogger, {
+			status: 'timed_out',
+			durationMs: Date.now() - startTime,
+			success: false,
+			error: 'Watchdog timeout',
+		});
 	});
 
 	try {
@@ -395,7 +482,14 @@ export async function executeWithBackend(
 			backend.name,
 		);
 
-		// Create a ProgressMonitor for time-based progress reporting
+		runId = await tryCreateBackendRun(
+			agentType,
+			backend.name,
+			input,
+			partialInput.model,
+			partialInput.maxIterations,
+		);
+
 		const monitor = createProgressMonitor({
 			logWriter: fileLogger.write.bind(fileLogger),
 			agentType,
@@ -417,27 +511,25 @@ export async function executeWithBackend(
 
 		const originalCwd = process.cwd();
 		process.chdir(repoDir);
-
 		monitor?.start();
-
-		if (
-			backend.name === 'claude-code' &&
-			input.project.agentBackend?.subscriptionCostZero === true &&
-			process.env.ANTHROPIC_API_KEY
-		) {
-			logger.warn(
-				'subscriptionCostZero enabled but ANTHROPIC_API_KEY is set — API key takes priority, costs are real',
-				{ project: input.project.id },
-			);
-		}
+		warnIfSubscriptionCostMismatch(backend, input.project);
 
 		try {
 			const result = await backend.execute(backendInput);
-
 			postProcessResult(result, agentType, backend, input, identifier);
 
 			fileLogger.close();
 			const logBuffer = await fileLogger.getZippedBuffer();
+
+			await finalizeBackendRun(runId, fileLogger, {
+				status: result.success ? 'completed' : 'failed',
+				durationMs: Date.now() - startTime,
+				costUsd: result.cost,
+				success: result.success,
+				error: result.error,
+				prUrl: result.prUrl,
+				outputSummary: result.output.slice(0, 500),
+			});
 
 			return {
 				success: result.success,
@@ -446,6 +538,7 @@ export async function executeWithBackend(
 				error: result.error,
 				cost: result.cost,
 				logBuffer: logBuffer ?? result.logBuffer,
+				runId,
 			};
 		} finally {
 			monitor?.stop();
@@ -467,12 +560,14 @@ export async function executeWithBackend(
 			// Ignore log buffer errors
 		}
 
-		return {
+		await finalizeBackendRun(runId, fileLogger, {
+			status: 'failed',
+			durationMs: Date.now() - startTime,
 			success: false,
-			output: '',
 			error: String(err),
-			logBuffer,
-		};
+		});
+
+		return { success: false, output: '', error: String(err), logBuffer, runId };
 	} finally {
 		cleanupResources(repoDir, fileLogger, Boolean(input.logDir));
 	}
