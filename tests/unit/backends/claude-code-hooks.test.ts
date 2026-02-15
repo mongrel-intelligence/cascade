@@ -143,8 +143,35 @@ describe('buildPreToolUseHooks', () => {
 });
 
 describe('buildStopHooks', () => {
-	it('blocks when unpushed commits exist', async () => {
-		mockExecSync.mockReturnValue('abc1234 feat: add feature\ndef5678 fix: bug fix');
+	it('blocks when uncommitted changes exist', async () => {
+		mockExecSync.mockReturnValueOnce(' M src/index.ts');
+
+		const logWriter = makeLogWriter();
+		const [matcher] = buildStopHooks(logWriter, '/tmp/repo');
+		const [hook] = matcher.hooks;
+
+		const result = await hook(makeStopInput(), undefined, { signal: AbortSignal.timeout(5000) });
+
+		expect(result).toEqual({
+			decision: 'block',
+			reason: expect.stringContaining('uncommitted changes'),
+		});
+		expect(logWriter).toHaveBeenCalledWith(
+			'WARN',
+			'Stop hook blocked: uncommitted changes',
+			expect.objectContaining({ status: 'M src/index.ts' }),
+		);
+		expect(mockExecSync).toHaveBeenCalledWith(
+			'git status --porcelain',
+			expect.objectContaining({ cwd: '/tmp/repo' }),
+		);
+	});
+
+	it('blocks when unpushed commits exist (no upstream tracking)', async () => {
+		// git status --porcelain returns clean
+		mockExecSync.mockReturnValueOnce('');
+		// git log --branches --not --remotes returns unpushed commits
+		mockExecSync.mockReturnValueOnce('abc1234 feat: add feature\ndef5678 fix: bug fix');
 
 		const logWriter = makeLogWriter();
 		const [matcher] = buildStopHooks(logWriter, '/tmp/repo');
@@ -164,13 +191,14 @@ describe('buildStopHooks', () => {
 			}),
 		);
 		expect(mockExecSync).toHaveBeenCalledWith(
-			'git log @{upstream}..HEAD --oneline',
+			'git log --branches --not --remotes --oneline',
 			expect.objectContaining({ cwd: '/tmp/repo' }),
 		);
 	});
 
-	it('approves when no unpushed commits', async () => {
-		mockExecSync.mockReturnValue('');
+	it('approves when no uncommitted changes and no unpushed commits', async () => {
+		mockExecSync.mockReturnValueOnce(''); // git status --porcelain
+		mockExecSync.mockReturnValueOnce(''); // git log --branches --not --remotes
 
 		const logWriter = makeLogWriter();
 		const [matcher] = buildStopHooks(logWriter, '/tmp/repo');
@@ -182,9 +210,51 @@ describe('buildStopHooks', () => {
 		expect(logWriter).not.toHaveBeenCalledWith('WARN', expect.anything(), expect.anything());
 	});
 
-	it('approves gracefully when git command fails', async () => {
+	it('blocks on non-default branch when git commands fail', async () => {
+		// Primary commands fail
+		mockExecSync.mockImplementationOnce(() => {
+			throw new Error('git status failed');
+		});
+		// Fallback: git branch --show-current returns non-default branch
+		mockExecSync.mockReturnValueOnce('feature/my-branch');
+
+		const logWriter = makeLogWriter();
+		const [matcher] = buildStopHooks(logWriter, '/tmp/repo');
+		const [hook] = matcher.hooks;
+
+		const result = await hook(makeStopInput(), undefined, { signal: AbortSignal.timeout(5000) });
+
+		expect(result).toEqual({
+			decision: 'block',
+			reason: expect.stringContaining("non-default branch 'feature/my-branch'"),
+		});
+		expect(logWriter).toHaveBeenCalledWith(
+			'WARN',
+			'Stop hook blocked: on non-default branch with git errors',
+			expect.objectContaining({ branch: 'feature/my-branch' }),
+		);
+	});
+
+	it('approves on default branch when git commands fail', async () => {
+		// Primary commands fail
+		mockExecSync.mockImplementationOnce(() => {
+			throw new Error('git status failed');
+		});
+		// Fallback: git branch --show-current returns default branch
+		mockExecSync.mockReturnValueOnce('main');
+
+		const logWriter = makeLogWriter();
+		const [matcher] = buildStopHooks(logWriter, '/tmp/repo');
+		const [hook] = matcher.hooks;
+
+		const result = await hook(makeStopInput(), undefined, { signal: AbortSignal.timeout(5000) });
+
+		expect(result).toEqual({ decision: 'approve' });
+	});
+
+	it('approves gracefully when all git commands fail', async () => {
 		mockExecSync.mockImplementation(() => {
-			throw new Error('fatal: no upstream configured');
+			throw new Error('fatal: not a git repository');
 		});
 
 		const logWriter = makeLogWriter();
@@ -194,7 +264,10 @@ describe('buildStopHooks', () => {
 		const result = await hook(makeStopInput(), undefined, { signal: AbortSignal.timeout(5000) });
 
 		expect(result).toEqual({ decision: 'approve' });
-		expect(logWriter).toHaveBeenCalledWith('DEBUG', 'Stop hook: git check failed, allowing stop');
+		expect(logWriter).toHaveBeenCalledWith(
+			'DEBUG',
+			'Stop hook: all git checks failed, allowing stop',
+		);
 	});
 });
 
