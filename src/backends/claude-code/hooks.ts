@@ -72,7 +72,7 @@ export function buildStopHooks(logWriter: LogWriter, repoDir: string): HookCallb
 			hooks: [
 				async (): Promise<SyncHookJSONOutput> => {
 					try {
-						const output = execSync('git log origin/HEAD..HEAD --oneline', {
+						const output = execSync('git log @{upstream}..HEAD --oneline', {
 							cwd: repoDir,
 							encoding: 'utf-8',
 							timeout: 10_000,
