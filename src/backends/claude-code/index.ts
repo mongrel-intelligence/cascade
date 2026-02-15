@@ -112,7 +112,6 @@ export function ensureOnboardingFlag(): void {
  * explicitly ensured.
  *
  * Auth (handled by SDK via inherited env vars):
- * - ANTHROPIC_API_KEY — direct API key
  * - CLAUDE_CODE_OAUTH_TOKEN — long-lived OAuth token from `claude setup-token`
  */
 export function buildEnv(projectSecrets?: Record<string, string>): {

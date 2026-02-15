@@ -69,7 +69,6 @@ Optional (infrastructure):
 - `PORT` - Server port (default: 3000)
 - `LOG_LEVEL` - Logging level (default: info)
 - `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled)
-- `ANTHROPIC_API_KEY` - For Claude Code backend (API key auth)
 - `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code backend (subscription auth)
 
 **Project credentials** (`GITHUB_TOKEN`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored per-project in the database `project_secrets` table. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
@@ -123,14 +122,9 @@ CASCADE supports using Claude Code SDK as an alternative agent backend. Configur
 
 ### Authentication
 
-**API Key (recommended for production/server):**
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-```
+**Claude Max Subscription via `CLAUDE_CODE_OAUTH_TOKEN`:**
 
-**Claude Max Subscription via `CLAUDE_CODE_OAUTH_TOKEN` (Docker/CI):**
-
-For containerized or headless environments, generate a long-lived OAuth token:
+Generate a long-lived OAuth token for headless/containerized environments:
 
 1. Install Claude Code CLI: `npm install -g @anthropic-ai/claude-code`
 2. Authenticate: `claude login` -> select "Log in with your subscription account"
@@ -146,8 +140,6 @@ For containerized or headless environments, generate a long-lived OAuth token:
 bash tests/docker/claude-code-auth/run-test.sh
 ```
 
-When `ANTHROPIC_API_KEY` is set, it takes priority over subscription auth.
-
 ### Subscription Cost Zeroing
 
 When using a Claude Max subscription (OAuth token), API costs are covered by the subscription. Enable `subscriptionCostZero` to prevent these costs from counting against the per-card budget:
@@ -161,7 +153,7 @@ When using a Claude Max subscription (OAuth token), API costs are covered by the
 }
 ```
 
-When enabled and the backend is `claude-code`, reported costs are zeroed after each session. If `ANTHROPIC_API_KEY` is also set (which takes priority over subscription auth), a warning is logged since costs are real in that case.
+When enabled and the backend is `claude-code`, reported costs are zeroed after each session.
 
 ## Adding New Triggers
 

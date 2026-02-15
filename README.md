@@ -49,12 +49,8 @@ TRELLO_TOKEN=your_trello_token
 # Required for GitHub PR creation
 GITHUB_TOKEN=your_github_token
 
-# Required for AI agents
-GEMINI_API_KEY=your_gemini_api_key
-# or
-ANTHROPIC_API_KEY=your_anthropic_api_key
-# or
-OPENAI_API_KEY=your_openai_api_key
+# Required for AI agents (via OpenRouter)
+OPENROUTER_API_KEY=your_openrouter_api_key
 
 # Optional
 PORT=3000
@@ -248,7 +244,7 @@ fly secrets set \
   TRELLO_API_KEY="..." \
   TRELLO_TOKEN="..." \
   GITHUB_TOKEN="..." \
-  GEMINI_API_KEY="..."
+  OPENROUTER_API_KEY="..."
 
 # Deploy
 fly deploy

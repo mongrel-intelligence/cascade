@@ -2,13 +2,7 @@ import { getProjectSecretOrNull } from '../config/provider.js';
 import { logger } from './logging.js';
 
 // Keys that llmist reads from process.env for provider discovery
-const LLM_ENV_KEYS = [
-	'OPENROUTER_API_KEY',
-	'GEMINI_API_KEY',
-	'OPENAI_API_KEY',
-	'HF_TOKEN',
-	// ANTHROPIC_API_KEY is already passed through buildWorkerEnv for Claude Code
-] as const;
+const LLM_ENV_KEYS = ['OPENROUTER_API_KEY'] as const;
 
 export async function injectLlmApiKeys(projectId: string): Promise<() => void> {
 	const snapshot: Record<string, string | undefined> = {};
