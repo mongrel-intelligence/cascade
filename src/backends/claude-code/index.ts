@@ -113,9 +113,12 @@ export function ensureOnboardingFlag(): void {
  * - ANTHROPIC_API_KEY — direct API key
  * - CLAUDE_CODE_OAUTH_TOKEN — long-lived OAuth token from `claude setup-token`
  */
-export function buildEnv(): { env: Record<string, string | undefined> } {
+export function buildEnv(projectSecrets?: Record<string, string>): {
+	env: Record<string, string | undefined>;
+} {
 	const env: Record<string, string | undefined> = {
 		...process.env,
+		...projectSecrets,
 		CLAUDE_AGENT_SDK_CLIENT_APP: 'cascade/1.0.0',
 	};
 
@@ -200,7 +203,7 @@ export class ClaudeCodeBackend implements AgentBackend {
 			maxIterations: input.maxIterations,
 		});
 
-		const { env } = buildEnv();
+		const { env } = buildEnv(input.projectSecrets);
 		const hooks = buildHooks(input.logWriter, input.repoDir);
 
 		const assistantMessages: SDKAssistantMessage[] = [];
