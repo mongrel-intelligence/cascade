@@ -61,6 +61,8 @@ export const CascadeConfigSchema = z.object({
 			postJobGracePeriodMs: z.number().int().nonnegative().default(5000), // 5 sec grace before exit
 			cardBudgetUsd: z.number().positive().default(3.5),
 			agentBackend: z.string().default('llmist'),
+			progressModel: z.string().default('openrouter:google/gemini-2.5-flash-lite'),
+			progressIntervalMinutes: z.number().positive().default(5),
 		})
 		.default({}),
 	projects: z.array(ProjectConfigSchema).min(1),

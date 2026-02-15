@@ -1,7 +1,10 @@
+import type { ModelSpec } from 'llmist';
+
 import type { PromptContext } from '../agents/prompts/index.js';
 import { resolveModelConfig } from '../agents/shared/modelResolution.js';
 import { setupRepository } from '../agents/shared/repository.js';
 import { createAgentLogger } from '../agents/utils/logging.js';
+import { CUSTOM_MODELS } from '../config/customModels.js';
 import { readCard } from '../gadgets/trello/core/readCard.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../utils/cascadeEnv.js';
@@ -9,7 +12,7 @@ import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../utils/
 import { clearWatchdogCleanup, setWatchdogCleanup } from '../utils/lifecycle.js';
 import { logger } from '../utils/logging.js';
 import { cleanupTempDir } from '../utils/repo.js';
-import { createProgressReporter } from './progress.js';
+import { createProgressMonitor } from './progress.js';
 import type { AgentBackend, AgentBackendInput, ContextInjection, ToolManifest } from './types.js';
 
 /**
@@ -84,7 +87,8 @@ function getToolManifests(): ToolManifest[] {
 		},
 		{
 			name: 'CreatePR',
-			description: 'Create a GitHub pull request with commit and push.',
+			description:
+				'Create a GitHub pull request. Handles the full workflow: stages changes, commits, pushes branch to remote, and creates the PR. ALWAYS use this instead of gh pr create or manual git push.',
 			cliCommand: 'cascade-tools github create-pr',
 			parameters: {
 				title: { type: 'string', required: true },
@@ -241,8 +245,8 @@ async function buildBackendInput(
 	repoDir: string,
 	fileLogger: ReturnType<typeof createFileLogger>,
 	log: ReturnType<typeof createAgentLogger>,
-	backendName?: string,
-): Promise<AgentBackendInput> {
+	_backendName?: string,
+): Promise<Omit<AgentBackendInput, 'progressReporter'>> {
 	const { project, config, cardId } = input;
 
 	const promptContext: PromptContext = {
@@ -263,11 +267,6 @@ async function buildBackendInput(
 	});
 
 	const contextInjections = await fetchContextInjections(input, log);
-	const progressReporter = createProgressReporter({
-		logWriter: fileLogger.write.bind(fileLogger),
-		trello: cardId ? { cardId, agentType, maxIterations } : undefined,
-		backendName,
-	});
 
 	const cliToolsDir = new URL('../../bin', import.meta.url).pathname;
 
@@ -284,7 +283,6 @@ async function buildBackendInput(
 		maxIterations,
 		budgetUsd: input.remainingBudgetUsd as number | undefined,
 		model,
-		progressReporter,
 		logWriter: fileLogger.write.bind(fileLogger),
 		agentInput: input,
 	};
@@ -342,7 +340,7 @@ export async function executeWithBackend(
 		repoDir = await resolveRepoDir(input, log, agentType);
 		const envSnapshot = loadCascadeEnv(repoDir, log);
 
-		const backendInput = await buildBackendInput(
+		const partialInput = await buildBackendInput(
 			agentType,
 			input,
 			repoDir,
@@ -351,8 +349,30 @@ export async function executeWithBackend(
 			backend.name,
 		);
 
+		// Create a ProgressMonitor for time-based progress reporting
+		const monitor = createProgressMonitor({
+			logWriter: fileLogger.write.bind(fileLogger),
+			agentType,
+			taskDescription: cardId ? `Trello card ${cardId}` : 'Unknown task',
+			progressModel: input.config.defaults.progressModel,
+			intervalMinutes: input.config.defaults.progressIntervalMinutes,
+			customModels: CUSTOM_MODELS as ModelSpec[],
+			trello: cardId ? { cardId } : undefined,
+		});
+
+		const backendInput: AgentBackendInput = {
+			...partialInput,
+			progressReporter: monitor ?? {
+				onIteration: async () => {},
+				onToolCall: () => {},
+				onText: () => {},
+			},
+		};
+
 		const originalCwd = process.cwd();
 		process.chdir(repoDir);
+
+		monitor?.start();
 
 		try {
 			const result = await backend.execute(backendInput);
@@ -369,6 +389,7 @@ export async function executeWithBackend(
 				logBuffer: logBuffer ?? result.logBuffer,
 			};
 		} finally {
+			monitor?.stop();
 			process.chdir(originalCwd);
 			unloadCascadeEnv(envSnapshot);
 		}

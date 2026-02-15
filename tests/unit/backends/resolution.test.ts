@@ -27,6 +27,8 @@ function makeConfig(overrides?: Partial<CascadeConfig['defaults']>): CascadeConf
 			postJobGracePeriodMs: 5000,
 			cardBudgetUsd: 3.5,
 			agentBackend: 'llmist',
+			progressModel: 'openrouter:google/gemini-2.5-flash-lite',
+			progressIntervalMinutes: 5,
 			...overrides,
 		},
 		projects: [],

@@ -1,3 +1,7 @@
+import type { ModelSpec } from 'llmist';
+
+import { createProgressMonitor } from '../../backends/progress.js';
+import { CUSTOM_MODELS } from '../../config/customModels.js';
 import { recordInitialComment } from '../../gadgets/sessionState.js';
 import { githubClient } from '../../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
@@ -129,7 +133,15 @@ export async function executeGitHubAgent<
 
 			buildContext: (repoDir, log) => definition.buildContext(id, input, repoDir, log),
 
-			createBuilder: ({ client, ctx, llmistLogger, trackingContext, fileLogger, repoDir }) =>
+			createBuilder: ({
+				client,
+				ctx,
+				llmistLogger,
+				trackingContext,
+				fileLogger,
+				repoDir,
+				progressMonitor,
+			}) =>
 				createConfiguredBuilder({
 					client,
 					agentType: definition.agentType,
@@ -142,13 +154,7 @@ export async function executeGitHubAgent<
 					llmCallLogger: fileLogger.llmCallLogger,
 					repoDir,
 					gadgets: definition.getGadgets(),
-					githubProgress: {
-						owner,
-						repo,
-						headerMessage: definition.headerMessage,
-						agentType: definition.agentType,
-						maxIterations: ctx.maxIterations,
-					},
+					progressMonitor: progressMonitor ?? undefined,
 					remainingBudgetUsd: input.remainingBudgetUsd as number | undefined,
 					...definition.builderOptions,
 				}),
@@ -185,8 +191,20 @@ export async function executeGitHubAgent<
 				});
 			},
 
+			createProgressMonitor: (fileLogger) =>
+				createProgressMonitor({
+					logWriter: fileLogger.write.bind(fileLogger),
+					agentType: definition.agentType,
+					taskDescription: `PR #${prNumber} in ${repoFullName}`,
+					progressModel: input.config.defaults.progressModel,
+					intervalMinutes: input.config.defaults.progressIntervalMinutes,
+					customModels: CUSTOM_MODELS as ModelSpec[],
+					github: { owner, repo, headerMessage: definition.headerMessage },
+				}),
+
 			interactive,
 			autoAccept,
+			customModels: CUSTOM_MODELS,
 		});
 
 	if (definition.wrapExecution) {

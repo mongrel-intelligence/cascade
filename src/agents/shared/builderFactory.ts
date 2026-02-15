@@ -7,17 +7,14 @@ import {
 	type createLogger,
 } from 'llmist';
 
+import type { ProgressMonitor } from '../../backends/progressMonitor.js';
 import { getCompactionConfig } from '../../config/compactionConfig.js';
 import { getIterationTrailingMessage } from '../../config/hintConfig.js';
 import { getRateLimitForModel } from '../../config/rateLimits.js';
 import { getRetryConfig } from '../../config/retryConfig.js';
 import { initSessionState } from '../../gadgets/sessionState.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
-import {
-	type GitHubProgressHooksConfig,
-	type StatusUpdateHooksConfig,
-	createObserverHooks,
-} from '../utils/hooks.js';
+import { createObserverHooks } from '../utils/hooks.js';
 import type { TrackingContext } from '../utils/tracking.js';
 
 export type BuilderType = ReturnType<typeof AgentBuilder.prototype.withGadgets>;
@@ -34,9 +31,8 @@ export interface CreateBuilderOptions {
 	llmCallLogger: LLMCallLogger;
 	repoDir: string;
 	gadgets: Parameters<typeof AgentBuilder.prototype.withGadgets>;
-	statusUpdate?: StatusUpdateHooksConfig;
-	/** Optional GitHub PR comment progress configuration */
-	githubProgress?: GitHubProgressHooksConfig;
+	/** Optional progress monitor for time-based progress reporting */
+	progressMonitor?: ProgressMonitor;
 	/** Set to true to skip calling initSessionState (review agent doesn't use it) */
 	skipSessionState?: boolean;
 	/** Remaining card budget in USD — passed to llmist's withBudget() for in-flight enforcement */
@@ -61,8 +57,7 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 		logWriter,
 		llmCallLogger,
 		gadgets,
-		statusUpdate,
-		githubProgress,
+		progressMonitor,
 		skipSessionState,
 		remainingBudgetUsd,
 		postConfigure,
@@ -90,8 +85,7 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 				logWriter,
 				trackingContext,
 				llmCallLogger,
-				statusUpdate,
-				githubProgress,
+				progressMonitor,
 			}),
 		})
 		.withGadgets(...gadgets);

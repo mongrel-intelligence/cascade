@@ -13,8 +13,10 @@ import { formatTodoList, loadTodos } from '../gadgets/todo/storage.js';
 export interface StatusUpdateConfig {
 	/** Whether status updates are enabled */
 	enabled: boolean;
-	/** Number of iterations between status updates */
-	intervalIterations: number;
+	/** Number of minutes between status updates */
+	intervalMinutes: number;
+	/** Model to use for progress summaries */
+	progressModel: string;
 }
 
 /**
@@ -22,7 +24,8 @@ export interface StatusUpdateConfig {
  */
 const DEFAULT_STATUS_UPDATE_CONFIG: StatusUpdateConfig = {
 	enabled: true,
-	intervalIterations: 5,
+	intervalMinutes: 5,
+	progressModel: 'openrouter:google/gemini-2.5-flash-lite',
 };
 
 /**
@@ -36,7 +39,11 @@ export function getStatusUpdateConfig(agentType: string): StatusUpdateConfig {
 	// per-agent customization in the future
 	if (agentType === 'debug') {
 		// Debug agent doesn't need status updates (analyzing logs, not modifying code)
-		return { enabled: false, intervalIterations: 5 };
+		return {
+			enabled: false,
+			intervalMinutes: 5,
+			progressModel: DEFAULT_STATUS_UPDATE_CONFIG.progressModel,
+		};
 	}
 	return { ...DEFAULT_STATUS_UPDATE_CONFIG };
 }

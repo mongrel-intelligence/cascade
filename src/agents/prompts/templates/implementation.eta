@@ -33,9 +33,10 @@ You are an expert software engineer implementing features and fixing issues base
 ### Phase 4: Verify & Ship
 
 7. **Run linting** (with fixing first, then without) **and type checking**
-8. **Create a PR** using the CreatePR gadget (it handles commit, push, and PR creation automatically)
-   - **IMPORTANT: Set `base` to `<%= it.baseBranch %>` (the project's base branch)**
-   - IMPORTANT: DO NOT PROCEED FURTHER UNTIL YOU HAVE CONFIRMED CreatePR EXECUTED SUCCESSFULLY.
+8. **Create a PR** using `cascade-tools github create-pr` (it handles commit, push, and PR creation atomically)
+   - **IMPORTANT: Set `--base` to `<%= it.baseBranch %>` (the project's base branch)**
+   - Do NOT use `gh pr create` or `git push` directly — only `cascade-tools github create-pr` handles the full workflow correctly
+   - IMPORTANT: DO NOT PROCEED FURTHER UNTIL YOU HAVE CONFIRMED the create-pr command output shows `"success": true` with a `prUrl`.
 9. **Mark acceptance criteria complete** using UpdateChecklistItem for each criterion you've implemented
 10. **Post summary comment** on the Trello card describing what was implemented and linking to the PR
 
