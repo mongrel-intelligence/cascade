@@ -57,6 +57,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Claude Code CLI (required by Claude Code SDK - spawns claude subprocess)
+RUN npm install -g @anthropic-ai/claude-code
+
 # Browsers (Playwright Chromium, Camoufox) are pre-installed in niu-browser-base
 
 # Install production dependencies only
