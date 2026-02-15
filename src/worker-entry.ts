@@ -10,16 +10,17 @@
  * - JOB_ID: Unique job identifier
  * - JOB_TYPE: 'trello' or 'github'
  * - JOB_DATA: JSON-encoded job payload
+ * - DATABASE_URL: PostgreSQL connection string for config
  */
 
-import { loadEnvConfigSafe, loadProjectsConfig } from './config/index.js';
+import { loadEnvConfigSafe } from './config/env.js';
+import { loadConfig } from './config/provider.js';
 import {
 	createTriggerRegistry,
 	processGitHubWebhook,
 	registerBuiltInTriggers,
 } from './triggers/index.js';
 import { processTrelloWebhook } from './triggers/trello/webhook-handler.js';
-import type { CascadeConfig } from './types/index.js';
 import { logger, setLogLevel } from './utils/index.js';
 
 interface TrelloJobData {
@@ -67,15 +68,9 @@ async function main(): Promise<void> {
 
 	logger.info('[Worker] Starting job', { jobId, jobType });
 
-	// Load projects config
-	let config: CascadeConfig;
-	try {
-		config = loadProjectsConfig(envConfig.configPath || './config/projects.json');
-		logger.info('[Worker] Loaded projects config', { projects: config.projects.map((p) => p.id) });
-	} catch (err) {
-		logger.error('[Worker] Failed to load projects config', { error: String(err) });
-		process.exit(1);
-	}
+	// Load projects config from database
+	const config = await loadConfig();
+	logger.info('[Worker] Loaded projects config', { projects: config.projects.map((p) => p.id) });
 
 	// Create trigger registry
 	const triggerRegistry = createTriggerRegistry();
@@ -88,14 +83,14 @@ async function main(): Promise<void> {
 				cardId: jobData.cardId,
 				actionType: jobData.actionType,
 			});
-			await processTrelloWebhook(jobData.payload, config, triggerRegistry);
+			await processTrelloWebhook(jobData.payload, triggerRegistry);
 		} else if (jobData.type === 'github') {
 			logger.info('[Worker] Processing GitHub job', {
 				jobId,
 				eventType: jobData.eventType,
 				repoFullName: jobData.repoFullName,
 			});
-			await processGitHubWebhook(jobData.payload, jobData.eventType, config, triggerRegistry);
+			await processGitHubWebhook(jobData.payload, jobData.eventType, triggerRegistry);
 		} else {
 			logger.error('[Worker] Unknown job type', { jobType: (jobData as { type: string }).type });
 			process.exit(1);

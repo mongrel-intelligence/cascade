@@ -51,7 +51,6 @@ function makeInput(): AgentInput & { project: ProjectConfig; config: CascadeConf
 			repo: 'owner/repo',
 			baseBranch: 'main',
 			branchPrefix: 'feature/',
-			githubTokenEnv: 'GITHUB_TOKEN',
 			trello: { boardId: 'b1', lists: {}, labels: {} },
 		},
 		config: {

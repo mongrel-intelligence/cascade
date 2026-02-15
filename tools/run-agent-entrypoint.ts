@@ -7,11 +7,9 @@
  */
 
 import { runAgent } from '../src/agents/registry.js';
-import { findProjectByRepo, loadProjectsConfig } from '../src/config/projects.js';
+import { findProjectByBoardId, findProjectByRepo, loadConfig } from '../src/config/provider.js';
 import { githubClient } from '../src/github/client.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../src/types/index.js';
-
-const CONFIG_PATH = '/app/config/projects.json';
 
 // Input types
 interface TrelloInput {
@@ -96,7 +94,7 @@ async function prepareGitHubPRInput(
 	const repoFullName = `${owner}/${repo}`;
 
 	// Find project by repository name
-	const project = findProjectByRepo(config, repoFullName);
+	const project = await findProjectByRepo(repoFullName);
 	if (!project) {
 		console.error(`No project configured for repo ${repoFullName}`);
 		console.error('Available projects:');
@@ -180,9 +178,9 @@ async function main() {
 	}
 	console.log('');
 
-	// Load config
+	// Load config from database
 	console.log('Loading configuration...');
-	const config = loadProjectsConfig(CONFIG_PATH);
+	const config = await loadConfig();
 	console.log(`Found ${config.projects.length} project(s)`);
 
 	let project: ProjectConfig;
@@ -199,7 +197,7 @@ async function main() {
 		const boardId = await getCardBoardId(input.cardId);
 		console.log(`Card belongs to board: ${boardId}`);
 
-		const foundProject = config.projects.find((p) => p.trello.boardId === boardId);
+		const foundProject = await findProjectByBoardId(boardId);
 		if (!foundProject) {
 			console.error(`No project configured for board ${boardId}`);
 			console.error('Available projects:');

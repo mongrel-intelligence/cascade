@@ -60,7 +60,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		const [reviews, botUser, reviewerUser] = await Promise.all([
 			githubClient.getPRReviews(owner, repo, prNumber),
 			getAuthenticatedUser(),
-			getReviewerUser(ctx.project.reviewerTokenEnv),
+			getReviewerUser(),
 		]);
 
 		// Only consider actual reviews (approved/changes_requested), not COMMENTED

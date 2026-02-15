@@ -1,17 +1,16 @@
 export { loadEnvConfig, loadEnvConfigSafe, type EnvConfig } from './env.js';
+export { getProjectGitHubToken, getProjectReviewerToken } from './projects.js';
 export {
-	loadProjectsConfig,
+	loadConfig,
 	findProjectByBoardId,
+	findProjectByRepo,
 	findProjectById,
-	getProjectGitHubToken,
-	clearConfigCache,
-} from './projects.js';
-export {
-	validateConfig,
-	ProjectConfigSchema,
-	CascadeConfigSchema,
-	TriggerConfigSchema,
-} from './schema.js';
+	getProjectSecret,
+	getProjectSecretOrNull,
+	getProjectSecrets,
+	invalidateConfigCache,
+} from './provider.js';
+export { validateConfig, ProjectConfigSchema, CascadeConfigSchema } from './schema.js';
 export {
 	getStatusUpdateConfig,
 	formatStatusMessage,

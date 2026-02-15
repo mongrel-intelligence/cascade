@@ -1,8 +1,8 @@
 import { runAgent } from '../../agents/registry.js';
-import { findProjectByRepo } from '../../config/projects.js';
+import { findProjectByRepo, getProjectSecret, loadConfig } from '../../config/provider.js';
 import { getSessionState } from '../../gadgets/sessionState.js';
-import { githubClient } from '../../github/client.js';
-import { trelloClient } from '../../trello/client.js';
+import { githubClient, withGitHubToken } from '../../github/client.js';
+import { trelloClient, withTrelloCredentials } from '../../trello/client.js';
 import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
 import {
 	cancelFreshMachineTimer,
@@ -56,12 +56,23 @@ async function executeGitHubAgent(
 		}
 	}
 
-	const agentResult = await runAgent(result.agentType, {
-		...result.agentInput,
-		remainingBudgetUsd,
-		project,
-		config,
-	});
+	// Resolve per-project credentials and wrap agent execution
+	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY', 'TRELLO_API_KEY');
+	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN', 'TRELLO_TOKEN');
+	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN', 'GITHUB_TOKEN');
+
+	const agentResult = await withTrelloCredentials(
+		{ apiKey: trelloApiKey, token: trelloToken },
+		() =>
+			withGitHubToken(githubToken, () =>
+				runAgent(result.agentType, {
+					...result.agentInput,
+					remainingBudgetUsd,
+					project,
+					config,
+				}),
+			),
+	);
 
 	// Upload log and update cost on Trello card
 	if (cardId) {
@@ -161,13 +172,13 @@ async function postAcknowledgmentComment(result: TriggerResult): Promise<void> {
 function processNextQueuedGitHubWebhook(config: CascadeConfig, registry: TriggerRegistry): void {
 	const next = dequeueWebhook();
 	if (next) {
-		const eventType = next.eventType || 'pull_request_review_comment'; // Fallback for backward compatibility
+		const eventType = next.eventType || 'pull_request_review_comment';
 		logger.info('Processing queued GitHub webhook', {
 			queueLength: getQueueLength(),
 			eventType,
 		});
 		setImmediate(() => {
-			processGitHubWebhook(next.payload, eventType, config, registry).catch((err) => {
+			processGitHubWebhook(next.payload, eventType, registry).catch((err) => {
 				logger.error('Failed to process queued GitHub webhook', { error: String(err) });
 			});
 		});
@@ -179,7 +190,6 @@ function processNextQueuedGitHubWebhook(config: CascadeConfig, registry: Trigger
 export async function processGitHubWebhook(
 	payload: unknown,
 	eventType: string,
-	config: CascadeConfig,
 	registry: TriggerRegistry,
 ): Promise<void> {
 	logger.info('Processing GitHub webhook', { eventType });
@@ -207,7 +217,9 @@ export async function processGitHubWebhook(
 		return;
 	}
 
-	const project = findProjectByRepo(config, repoFullName);
+	const config = await loadConfig();
+
+	const project = await findProjectByRepo(repoFullName);
 
 	if (!project) {
 		logger.warn('No project configured for repository', { repoFullName });

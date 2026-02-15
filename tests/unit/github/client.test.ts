@@ -664,37 +664,31 @@ describe('githubClient', () => {
 	});
 
 	describe('getReviewerUser', () => {
-		it('returns null when no reviewerTokenEnv provided', async () => {
+		it('returns null when GITHUB_REVIEWER_TOKEN is not set', async () => {
+			process.env.GITHUB_REVIEWER_TOKEN = undefined;
 			const result = await getReviewerUser();
 			expect(result).toBeNull();
 		});
 
-		it('returns null when env var is not set', async () => {
-			const result = await getReviewerUser('MISSING_TOKEN');
-			expect(result).toBeNull();
-		});
-
 		it('resolves and caches reviewer username', async () => {
-			process.env.REVIEWER_TOKEN = 'reviewer-pat';
+			process.env.GITHUB_REVIEWER_TOKEN = 'reviewer-pat';
 			mockUsers.getAuthenticated.mockResolvedValue({
 				data: { login: 'cascade-reviewer' },
 			});
 
-			const result1 = await getReviewerUser('REVIEWER_TOKEN');
+			const result1 = await getReviewerUser();
 			expect(result1).toBe('cascade-reviewer');
 
 			// Second call should use cache (Octokit only called once for the reviewer)
-			const result2 = await getReviewerUser('REVIEWER_TOKEN');
+			const result2 = await getReviewerUser();
 			expect(result2).toBe('cascade-reviewer');
-			// Two Octokit constructions: one for main client (from beforeEach getPR calls), one for reviewer
-			// But the reviewer Octokit should only be created once due to caching
 		});
 
 		it('returns null on auth failure', async () => {
-			process.env.REVIEWER_TOKEN = 'bad-token';
+			process.env.GITHUB_REVIEWER_TOKEN = 'bad-token';
 			mockUsers.getAuthenticated.mockRejectedValue(new Error('Bad credentials'));
 
-			const result = await getReviewerUser('REVIEWER_TOKEN');
+			const result = await getReviewerUser();
 			expect(result).toBeNull();
 		});
 	});

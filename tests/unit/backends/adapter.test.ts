@@ -70,6 +70,7 @@ import {
 	createFileLogger,
 } from '../../../src/utils/fileLogger.js';
 import { clearWatchdogCleanup, setWatchdogCleanup } from '../../../src/utils/lifecycle.js';
+import { logger } from '../../../src/utils/logging.js';
 import { cleanupTempDir } from '../../../src/utils/repo.js';
 
 const mockReadCard = vi.mocked(readCard);
@@ -92,7 +93,6 @@ function makeProject(): ProjectConfig {
 		repo: 'owner/repo',
 		baseBranch: 'main',
 		branchPrefix: 'feature/',
-		githubTokenEnv: 'GITHUB_TOKEN',
 		trello: { boardId: 'b1', lists: {}, labels: {} },
 	};
 }
@@ -295,5 +295,89 @@ describe('executeWithBackend', () => {
 		await executeWithBackend(backend, 'implementation', input);
 
 		expect(mockReadCard).not.toHaveBeenCalled();
+	});
+
+	it('zeroes cost when subscriptionCostZero is true and backend is claude-code', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		backend.name = 'claude-code';
+		vi.mocked(backend.execute).mockResolvedValue({
+			success: true,
+			output: 'Done',
+			cost: 1.5,
+		});
+		const input = makeInput();
+		input.project.agentBackend = {
+			default: 'claude-code',
+			overrides: {},
+			subscriptionCostZero: true,
+		};
+
+		const result = await executeWithBackend(backend, 'implementation', input);
+
+		expect(result.cost).toBe(0);
+		expect(logger.info).toHaveBeenCalledWith(
+			'Zeroing Claude Code cost (subscription mode)',
+			expect.objectContaining({ originalCost: 1.5 }),
+		);
+	});
+
+	it('preserves cost when subscriptionCostZero is false', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		backend.name = 'claude-code';
+		vi.mocked(backend.execute).mockResolvedValue({
+			success: true,
+			output: 'Done',
+			cost: 2.0,
+		});
+		const input = makeInput();
+		input.project.agentBackend = {
+			default: 'claude-code',
+			overrides: {},
+			subscriptionCostZero: false,
+		};
+
+		const result = await executeWithBackend(backend, 'implementation', input);
+
+		expect(result.cost).toBe(2.0);
+	});
+
+	it('preserves cost for non-claude-code backends even with subscriptionCostZero', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		backend.name = 'llmist';
+		vi.mocked(backend.execute).mockResolvedValue({
+			success: true,
+			output: 'Done',
+			cost: 3.0,
+		});
+		const input = makeInput();
+		input.project.agentBackend = {
+			default: 'llmist',
+			overrides: {},
+			subscriptionCostZero: true,
+		};
+
+		const result = await executeWithBackend(backend, 'implementation', input);
+
+		expect(result.cost).toBe(3.0);
+	});
+
+	it('preserves cost when agentBackend config is undefined', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		backend.name = 'claude-code';
+		vi.mocked(backend.execute).mockResolvedValue({
+			success: true,
+			output: 'Done',
+			cost: 1.0,
+		});
+		const input = makeInput();
+		// agentBackend is not set (default from makeProject)
+
+		const result = await executeWithBackend(backend, 'implementation', input);
+
+		expect(result.cost).toBe(1.0);
 	});
 });
