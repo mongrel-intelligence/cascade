@@ -1,8 +1,15 @@
 import { execSync } from 'node:child_process';
-import type { PreToolUseHookInput, StopHookInput } from '@anthropic-ai/claude-agent-sdk';
+import type {
+	PostToolUseFailureHookInput,
+	PostToolUseHookInput,
+	PreToolUseHookInput,
+	StopHookInput,
+} from '@anthropic-ai/claude-agent-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	buildHooks,
+	buildPostToolUseFailureHooks,
+	buildPostToolUseHooks,
 	buildPreToolUseHooks,
 	buildStopHooks,
 } from '../../../src/backends/claude-code/hooks.js';
@@ -271,13 +278,115 @@ describe('buildStopHooks', () => {
 	});
 });
 
+describe('buildPostToolUseHooks', () => {
+	function makePostToolUseInput(toolName: string, toolResponse: unknown): PostToolUseHookInput {
+		return {
+			hook_event_name: 'PostToolUse',
+			tool_name: toolName,
+			tool_input: {},
+			tool_response: toolResponse,
+			tool_use_id: 'tu-1',
+			session_id: 's1',
+			transcript_path: '/tmp/transcript',
+			cwd: '/tmp/repo',
+		};
+	}
+
+	it('logs tool result', async () => {
+		const logWriter = makeLogWriter();
+		const [matcher] = buildPostToolUseHooks(logWriter);
+		const [hook] = matcher.hooks;
+
+		const result = await hook(makePostToolUseInput('Read', 'file content here'), 'tu-1', {
+			signal: AbortSignal.timeout(5000),
+		});
+
+		expect(result).toEqual({});
+		expect(logWriter).toHaveBeenCalledWith('INFO', 'Tool result', {
+			tool: 'Read',
+			result: 'file content here',
+		});
+	});
+
+	it('truncates long tool results', async () => {
+		const logWriter = makeLogWriter();
+		const [matcher] = buildPostToolUseHooks(logWriter);
+		const [hook] = matcher.hooks;
+
+		const longResponse = 'x'.repeat(600);
+		await hook(makePostToolUseInput('Bash', longResponse), 'tu-1', {
+			signal: AbortSignal.timeout(5000),
+		});
+
+		expect(logWriter).toHaveBeenCalledWith('INFO', 'Tool result', {
+			tool: 'Bash',
+			result: `${'x'.repeat(500)}... (600 chars)`,
+		});
+	});
+
+	it('handles null tool response', async () => {
+		const logWriter = makeLogWriter();
+		const [matcher] = buildPostToolUseHooks(logWriter);
+		const [hook] = matcher.hooks;
+
+		await hook(makePostToolUseInput('Read', null), 'tu-1', {
+			signal: AbortSignal.timeout(5000),
+		});
+
+		expect(logWriter).toHaveBeenCalledWith('INFO', 'Tool result', {
+			tool: 'Read',
+			result: '',
+		});
+	});
+});
+
+describe('buildPostToolUseFailureHooks', () => {
+	function makePostToolUseFailureInput(
+		toolName: string,
+		error: string,
+	): PostToolUseFailureHookInput {
+		return {
+			hook_event_name: 'PostToolUseFailure',
+			tool_name: toolName,
+			tool_input: {},
+			tool_use_id: 'tu-1',
+			error,
+			session_id: 's1',
+			transcript_path: '/tmp/transcript',
+			cwd: '/tmp/repo',
+		};
+	}
+
+	it('logs tool failure', async () => {
+		const logWriter = makeLogWriter();
+		const [matcher] = buildPostToolUseFailureHooks(logWriter);
+		const [hook] = matcher.hooks;
+
+		const result = await hook(makePostToolUseFailureInput('Bash', 'Permission denied'), 'tu-1', {
+			signal: AbortSignal.timeout(5000),
+		});
+
+		expect(result).toEqual({});
+		expect(logWriter).toHaveBeenCalledWith('ERROR', 'Tool failed', {
+			tool: 'Bash',
+			error: 'Permission denied',
+		});
+	});
+});
+
 describe('buildHooks', () => {
-	it('returns PreToolUse and Stop hook matchers', () => {
+	it('returns all hook matchers', () => {
 		const hooks = buildHooks(makeLogWriter(), '/tmp/repo');
 
 		expect(hooks.PreToolUse).toBeDefined();
 		expect(hooks.PreToolUse).toHaveLength(1);
 		expect(hooks.PreToolUse?.[0].matcher).toBe('Bash');
+
+		expect(hooks.PostToolUse).toBeDefined();
+		expect(hooks.PostToolUse).toHaveLength(1);
+
+		expect(hooks.PostToolUseFailure).toBeDefined();
+		expect(hooks.PostToolUseFailure).toHaveLength(1);
 
 		expect(hooks.Stop).toBeDefined();
 		expect(hooks.Stop).toHaveLength(1);

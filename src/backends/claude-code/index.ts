@@ -5,6 +5,8 @@ import type {
 	SDKAssistantMessage,
 	SDKResultMessage,
 	SDKResultSuccess,
+	SDKStatusMessage,
+	SDKSystemMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import type {
 	AgentBackend,
@@ -177,6 +179,64 @@ function extractFinishComment(assistantMessages: SDKAssistantMessage[]): string 
 }
 
 /**
+ * Process an assistant message: report progress, log text/errors/usage.
+ */
+function processAssistantMessage(
+	assistantMsg: SDKAssistantMessage,
+	turnCount: number,
+	input: AgentBackendInput,
+): void {
+	if (assistantMsg.message?.content) {
+		for (const block of assistantMsg.message.content) {
+			if (block.type === 'tool_use') {
+				input.progressReporter.onToolCall(block.name, block.input as Record<string, unknown>);
+			}
+			if (block.type === 'text') {
+				const truncated = block.text.length > 300 ? `${block.text.slice(0, 300)}...` : block.text;
+				input.logWriter('INFO', 'Agent text', { text: truncated });
+				input.progressReporter.onText(block.text);
+			}
+		}
+	}
+
+	if (assistantMsg.error) {
+		input.logWriter('ERROR', 'Assistant message error', {
+			error: assistantMsg.error,
+			turn: turnCount,
+		});
+	}
+
+	const usage = assistantMsg.message?.usage;
+	if (usage) {
+		input.logWriter('DEBUG', 'Token usage', {
+			turn: turnCount,
+			inputTokens: usage.input_tokens,
+			outputTokens: usage.output_tokens,
+		});
+	}
+}
+
+/**
+ * Process a system message: log init and status events.
+ */
+function processSystemMessage(
+	message: { subtype: string; [key: string]: unknown },
+	logWriter: AgentBackendInput['logWriter'],
+): void {
+	if (message.subtype === 'init') {
+		const initMsg = message as unknown as SDKSystemMessage;
+		logWriter('INFO', 'Claude Code session initialized', {
+			model: initMsg.model,
+			claudeCodeVersion: initMsg.claude_code_version,
+			tools: initMsg.tools,
+		});
+	} else if (message.subtype === 'status') {
+		const statusMsg = message as unknown as SDKStatusMessage;
+		logWriter('INFO', 'Session status change', { status: statusMsg.status });
+	}
+}
+
+/**
  * Claude Code SDK backend for CASCADE.
  *
  * Uses the Claude Code SDK's query() function to run agents with built-in file tools
@@ -192,6 +252,7 @@ export class ClaudeCodeBackend implements AgentBackend {
 	}
 
 	async execute(input: AgentBackendInput): Promise<AgentBackendResult> {
+		const startTime = Date.now();
 		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools);
 		const taskPrompt = buildTaskPrompt(input.taskPrompt, input.contextInjections);
 		const model = resolveClaudeModel(input.model);
@@ -240,22 +301,15 @@ export class ClaudeCodeBackend implements AgentBackend {
 					const assistantMsg = message as SDKAssistantMessage;
 					assistantMessages.push(assistantMsg);
 					turnCount++;
-
 					await input.progressReporter.onIteration(turnCount, input.maxIterations);
+					processAssistantMessage(assistantMsg, turnCount, input);
+				}
 
-					if (assistantMsg.message?.content) {
-						for (const block of assistantMsg.message.content) {
-							if (block.type === 'tool_use') {
-								input.progressReporter.onToolCall(
-									block.name,
-									block.input as Record<string, unknown>,
-								);
-							}
-							if (block.type === 'text') {
-								input.progressReporter.onText(block.text);
-							}
-						}
-					}
+				if (message.type === 'system') {
+					processSystemMessage(
+						message as { subtype: string; [key: string]: unknown },
+						input.logWriter,
+					);
 				}
 
 				if (message.type === 'result') {
@@ -289,14 +343,16 @@ export class ClaudeCodeBackend implements AgentBackend {
 			}
 		}
 
+		const prUrl = extractPRUrl(output) ?? extractPRUrlFromMessages(assistantMessages);
+
 		input.logWriter('INFO', 'Claude Code SDK execution completed', {
 			success,
 			subtype: resultMessage?.subtype,
 			turns: resultMessage?.num_turns,
 			cost,
+			prUrl: prUrl ?? null,
+			durationMs: Date.now() - startTime,
 		});
-
-		const prUrl = extractPRUrl(output) ?? extractPRUrlFromMessages(assistantMessages);
 
 		return { success, output, cost, error, prUrl };
 	}
