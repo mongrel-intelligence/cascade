@@ -508,4 +508,27 @@ describe('buildEnv', () => {
 			unsetEnv('VSCODE_INSPECTOR_OPTIONS');
 		}
 	});
+
+	it('injects projectSecrets into env, overriding process.env', () => {
+		process.env.GITHUB_TOKEN = 'global-token';
+
+		try {
+			const { env } = buildEnv({ GITHUB_TOKEN: 'project-token', TRELLO_API_KEY: 'proj-key' });
+			expect(env.GITHUB_TOKEN).toBe('project-token');
+			expect(env.TRELLO_API_KEY).toBe('proj-key');
+		} finally {
+			unsetEnv('GITHUB_TOKEN');
+		}
+	});
+
+	it('uses process.env values when no projectSecrets provided', () => {
+		process.env.GITHUB_TOKEN = 'global-token';
+
+		try {
+			const { env } = buildEnv();
+			expect(env.GITHUB_TOKEN).toBe('global-token');
+		} finally {
+			unsetEnv('GITHUB_TOKEN');
+		}
+	});
 });

@@ -53,6 +53,10 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
+vi.mock('../../../src/config/provider.js', () => ({
+	getProjectSecretOrNull: vi.fn(),
+}));
+
 vi.mock('../../../src/agents/prompts/index.js', () => ({}));
 
 import { resolveModelConfig } from '../../../src/agents/shared/modelResolution.js';
@@ -61,6 +65,7 @@ import { createAgentLogger } from '../../../src/agents/utils/logging.js';
 import { executeWithBackend } from '../../../src/backends/adapter.js';
 import { createProgressMonitor } from '../../../src/backends/progress.js';
 import type { AgentBackend } from '../../../src/backends/types.js';
+import { getProjectSecretOrNull } from '../../../src/config/provider.js';
 import { readCard } from '../../../src/gadgets/trello/core/readCard.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../../../src/utils/cascadeEnv.js';
@@ -85,6 +90,7 @@ const mockCleanupLogFile = vi.mocked(cleanupLogFile);
 const mockCleanupLogDirectory = vi.mocked(cleanupLogDirectory);
 const mockClearWatchdogCleanup = vi.mocked(clearWatchdogCleanup);
 const mockCreateProgressMonitor = vi.mocked(createProgressMonitor);
+const mockGetProjectSecretOrNull = vi.mocked(getProjectSecretOrNull);
 
 function makeProject(): ProjectConfig {
 	return {
@@ -160,6 +166,7 @@ function setupMocks() {
 	} as never);
 	mockReadCard.mockResolvedValue('Card data');
 	mockCreateProgressMonitor.mockReturnValue(null);
+	mockGetProjectSecretOrNull.mockResolvedValue(null);
 	return mockLoggerInstance;
 }
 
@@ -446,5 +453,42 @@ describe('executeWithBackend', () => {
 		const result = await executeWithBackend(backend, 'implementation', input);
 
 		expect(result.cost).toBe(1.0);
+	});
+
+	it('resolves per-project secrets and passes them to backend', async () => {
+		setupMocks();
+		mockGetProjectSecretOrNull.mockImplementation(async (_projectId, key) => {
+			if (key === 'GITHUB_TOKEN') return 'proj-gh-token';
+			if (key === 'TRELLO_API_KEY') return 'proj-trello-key';
+			return null;
+		});
+
+		const backend = makeMockBackend();
+		const input = makeInput();
+
+		await executeWithBackend(backend, 'implementation', input);
+
+		expect(mockGetProjectSecretOrNull).toHaveBeenCalledWith('test', 'GITHUB_TOKEN');
+		expect(mockGetProjectSecretOrNull).toHaveBeenCalledWith('test', 'TRELLO_API_KEY');
+		expect(mockGetProjectSecretOrNull).toHaveBeenCalledWith('test', 'TRELLO_TOKEN');
+
+		const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
+		expect(backendInput.projectSecrets).toEqual({
+			GITHUB_TOKEN: 'proj-gh-token',
+			TRELLO_API_KEY: 'proj-trello-key',
+		});
+	});
+
+	it('omits projectSecrets when no per-project secrets are found', async () => {
+		setupMocks();
+		mockGetProjectSecretOrNull.mockResolvedValue(null);
+
+		const backend = makeMockBackend();
+		const input = makeInput();
+
+		await executeWithBackend(backend, 'implementation', input);
+
+		const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
+		expect(backendInput.projectSecrets).toBeUndefined();
 	});
 });
