@@ -2,13 +2,6 @@ export interface EnvConfig {
 	port: number;
 	logLevel: string;
 	databaseUrl: string;
-	trelloApiKey: string;
-	trelloToken: string;
-	githubToken: string;
-	geminiApiKey?: string;
-	anthropicApiKey?: string;
-	openaiApiKey?: string;
-	openrouterApiKey?: string;
 }
 
 function getEnvOrThrow(key: string): string {
@@ -28,13 +21,6 @@ export function loadEnvConfig(): EnvConfig {
 		port: Number.parseInt(getEnvOrDefault('PORT', '3000'), 10),
 		logLevel: getEnvOrDefault('LOG_LEVEL', 'info'),
 		databaseUrl: getEnvOrThrow('DATABASE_URL'),
-		trelloApiKey: getEnvOrThrow('TRELLO_API_KEY'),
-		trelloToken: getEnvOrThrow('TRELLO_TOKEN'),
-		githubToken: getEnvOrThrow('GITHUB_TOKEN'),
-		geminiApiKey: process.env.GEMINI_API_KEY,
-		anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-		openaiApiKey: process.env.OPENAI_API_KEY,
-		openrouterApiKey: process.env.OPENROUTER_API_KEY,
 	};
 }
 
@@ -43,12 +29,5 @@ export function loadEnvConfigSafe(): Partial<EnvConfig> {
 		port: Number.parseInt(getEnvOrDefault('PORT', '3000'), 10),
 		logLevel: getEnvOrDefault('LOG_LEVEL', 'info'),
 		databaseUrl: process.env.DATABASE_URL,
-		trelloApiKey: process.env.TRELLO_API_KEY,
-		trelloToken: process.env.TRELLO_TOKEN,
-		githubToken: process.env.GITHUB_TOKEN,
-		geminiApiKey: process.env.GEMINI_API_KEY,
-		anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-		openaiApiKey: process.env.OPENAI_API_KEY,
-		openrouterApiKey: process.env.OPENROUTER_API_KEY,
 	};
 }

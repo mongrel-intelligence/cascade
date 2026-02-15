@@ -1,3 +1,4 @@
+import { getProjectReviewerToken } from '../../config/projects.js';
 import { getReviewerUser } from '../../github/client.js';
 import { githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
@@ -34,7 +35,8 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		// Resolve reviewer username — if no reviewer token configured, fall through
-		const reviewerUser = await getReviewerUser();
+		const reviewerToken = await getProjectReviewerToken(ctx.project);
+		const reviewerUser = await getReviewerUser(reviewerToken);
 		if (!reviewerUser) {
 			return null;
 		}

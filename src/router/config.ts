@@ -24,20 +24,6 @@ export interface RouterConfig {
 
 	// Network settings
 	dockerNetwork: string;
-
-	// Secrets to pass to workers (global fallbacks)
-	secrets: {
-		trelloApiKey: string;
-		trelloToken: string;
-		githubToken: string;
-		hfToken?: string;
-		geminiApiKey?: string;
-		anthropicApiKey?: string;
-		openaiApiKey?: string;
-		openrouterApiKey?: string;
-		githubReviewerToken?: string;
-		claudeCodeOauthToken?: string;
-	};
 }
 
 // Cached project config for fast webhook filtering
@@ -77,16 +63,4 @@ export const routerConfig: RouterConfig = {
 	workerMemoryMb: Number(process.env.WORKER_MEMORY_MB) || 4096,
 	workerTimeoutMs: Number(process.env.WORKER_TIMEOUT_MS) || 30 * 60 * 1000, // 30 minutes
 	dockerNetwork: process.env.DOCKER_NETWORK || 'services_default',
-	secrets: {
-		trelloApiKey: process.env.TRELLO_API_KEY || '',
-		trelloToken: process.env.TRELLO_TOKEN || '',
-		githubToken: process.env.GITHUB_TOKEN || '',
-		hfToken: process.env.HF_TOKEN,
-		geminiApiKey: process.env.GEMINI_API_KEY,
-		anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-		openaiApiKey: process.env.OPENAI_API_KEY,
-		openrouterApiKey: process.env.OPENROUTER_API_KEY,
-		githubReviewerToken: process.env.GITHUB_REVIEWER_TOKEN,
-		claudeCodeOauthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN,
-	},
 };

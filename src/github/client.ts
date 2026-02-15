@@ -2,23 +2,16 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { Octokit } from '@octokit/rest';
 import { logger } from '../utils/logging.js';
 
-let client: Octokit | null = null;
 const clientStorage = new AsyncLocalStorage<Octokit>();
 
 function getClient(): Octokit {
 	const scopedClient = clientStorage.getStore();
-	if (scopedClient) return scopedClient;
-
-	if (!client) {
-		const token = process.env.GITHUB_TOKEN;
-
-		if (!token) {
-			throw new Error('GITHUB_TOKEN must be set');
-		}
-
-		client = new Octokit({ auth: token });
+	if (!scopedClient) {
+		throw new Error(
+			'No GitHub client in scope. Wrap the call with withGitHubToken() or ensure per-project GITHUB_TOKEN is set in the database.',
+		);
 	}
-	return client;
+	return scopedClient;
 }
 
 export function withGitHubToken<T>(token: string, fn: () => Promise<T>): Promise<T> {
@@ -395,30 +388,15 @@ export async function getAuthenticatedUser(): Promise<string> {
 	return data.login;
 }
 
-let reviewerUserCached: string | null | undefined;
-
-export async function getReviewerUser(): Promise<string | null> {
-	if (reviewerUserCached !== undefined) return reviewerUserCached;
-
-	const token = process.env.GITHUB_REVIEWER_TOKEN;
-	if (!token) {
-		reviewerUserCached = null;
-		return null;
-	}
+export async function getReviewerUser(token: string | null): Promise<string | null> {
+	if (!token) return null;
 
 	try {
 		const reviewerClient = new Octokit({ auth: token });
 		const { data } = await reviewerClient.users.getAuthenticated();
-		reviewerUserCached = data.login;
 		return data.login;
 	} catch (err) {
 		logger.warn('Failed to resolve reviewer GitHub identity', { error: String(err) });
-		reviewerUserCached = null;
 		return null;
 	}
-}
-
-export function resetGitHubClient(): void {
-	client = null;
-	reviewerUserCached = undefined;
 }

@@ -169,61 +169,28 @@ describe('config provider', () => {
 			expect(result).toBe('db-secret-value');
 		});
 
-		it('falls back to env var when DB has no value', async () => {
+		it('throws when secret not found in DB', async () => {
 			vi.mocked(getProjectSecretFromDb).mockResolvedValue(null);
-			process.env.TRELLO_API_KEY = 'env-api-key';
-
-			const result = await getProjectSecret('project1', 'TRELLO_API_KEY');
-			expect(result).toBe('env-api-key');
-		});
-
-		it('uses custom fallback env var', async () => {
-			vi.mocked(getProjectSecretFromDb).mockResolvedValue(null);
-			process.env.MY_CUSTOM_KEY = 'custom-value';
-
-			const result = await getProjectSecret('project1', 'SOME_KEY', 'MY_CUSTOM_KEY');
-			expect(result).toBe('custom-value');
-
-			// biome-ignore lint/performance/noDelete: must actually remove env var
-			delete process.env.MY_CUSTOM_KEY;
-		});
-
-		it('throws when no DB secret and no env var', async () => {
-			vi.mocked(getProjectSecretFromDb).mockResolvedValue(null);
-			// biome-ignore lint/performance/noDelete: must actually remove env var, not set to "undefined" string
-			delete process.env.MISSING_KEY;
 
 			await expect(getProjectSecret('project1', 'MISSING_KEY')).rejects.toThrow(
-				"Secret 'MISSING_KEY' not found",
+				"Secret 'MISSING_KEY' not found for project 'project1' in database",
 			);
 		});
 	});
 
 	describe('getProjectGitHubToken', () => {
-		const originalEnv = process.env;
-
-		beforeEach(() => {
-			process.env = { ...originalEnv };
-		});
-
-		afterEach(() => {
-			process.env = originalEnv;
-		});
-
-		it('falls back to GITHUB_TOKEN env var', async () => {
-			vi.mocked(getProjectSecretFromDb).mockResolvedValue(null);
-			process.env.GITHUB_TOKEN = 'test-token-123';
+		it('returns DB secret when available', async () => {
+			vi.mocked(getProjectSecretFromDb).mockResolvedValue('db-github-token');
 
 			const result = await getProjectGitHubToken(mockConfig.projects[0]);
-			expect(result).toBe('test-token-123');
+			expect(result).toBe('db-github-token');
 		});
 
-		it('throws when no token available', async () => {
+		it('throws when no token in DB', async () => {
 			vi.mocked(getProjectSecretFromDb).mockResolvedValue(null);
-			process.env.GITHUB_TOKEN = undefined;
 
 			await expect(getProjectGitHubToken(mockConfig.projects[0])).rejects.toThrow(
-				'Missing GitHub token for project project1',
+				"Missing GITHUB_TOKEN in database for project 'project1'",
 			);
 		});
 	});

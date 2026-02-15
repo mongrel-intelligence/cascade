@@ -43,38 +43,26 @@ export async function findProjectById(id: string): Promise<ProjectConfig | undef
 	return findProjectByIdFromDb(id);
 }
 
-export async function getProjectSecret(
-	projectId: string,
-	key: string,
-	fallbackEnvVar?: string,
-): Promise<string> {
+export async function getProjectSecret(projectId: string, key: string): Promise<string> {
 	// Check cached secrets first
 	const cachedSecrets = configCache.getSecrets(projectId);
 	if (cachedSecrets && key in cachedSecrets) {
 		return cachedSecrets[key];
 	}
 
-	// Try DB
+	// DB is the sole source of truth for project secrets
 	const dbValue = await getProjectSecretFromDb(projectId, key);
 	if (dbValue) return dbValue;
 
-	// Fallback to env var
-	const envKey = fallbackEnvVar ?? key;
-	const envValue = process.env[envKey];
-	if (envValue) return envValue;
-
-	throw new Error(
-		`Secret '${key}' not found for project '${projectId}' and env var '${envKey}' is not set`,
-	);
+	throw new Error(`Secret '${key}' not found for project '${projectId}' in database`);
 }
 
 export async function getProjectSecretOrNull(
 	projectId: string,
 	key: string,
-	fallbackEnvVar?: string,
 ): Promise<string | null> {
 	try {
-		return await getProjectSecret(projectId, key, fallbackEnvVar);
+		return await getProjectSecret(projectId, key);
 	} catch {
 		return null;
 	}

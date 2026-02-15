@@ -138,9 +138,9 @@ async function executeAgent(
 	}
 
 	// Resolve per-project credentials and wrap agent execution
-	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY', 'TRELLO_API_KEY');
-	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN', 'TRELLO_TOKEN');
-	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN', 'GITHUB_TOKEN');
+	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY');
+	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN');
+	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
 
 	const runAgentWithCreds = () =>
 		withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
