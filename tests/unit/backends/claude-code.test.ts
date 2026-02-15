@@ -325,6 +325,74 @@ describe('execute', () => {
 		expect(result.output).toBe('All done');
 	});
 
+	it('extracts prUrl from result text', async () => {
+		mockStream([
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Created PR: https://github.com/owner/repo/pull/42',
+				total_cost_usd: 0.05,
+				num_turns: 5,
+			},
+		]);
+
+		const backend = new ClaudeCodeBackend();
+		const result = await backend.execute(makeInput());
+
+		expect(result.success).toBe(true);
+		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/42');
+	});
+
+	it('extracts prUrl from assistant messages when not in result text', async () => {
+		mockStream([
+			{
+				type: 'assistant',
+				message: {
+					content: [
+						{
+							type: 'text',
+							text: 'PR created at https://github.com/owner/repo/pull/99',
+						},
+					],
+				},
+				uuid: 'uuid-1',
+				session_id: 's1',
+				parent_tool_use_id: null,
+			},
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.03,
+				num_turns: 2,
+			},
+		]);
+
+		const backend = new ClaudeCodeBackend();
+		const result = await backend.execute(makeInput());
+
+		expect(result.success).toBe(true);
+		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/99');
+	});
+
+	it('returns undefined prUrl when no PR URL present', async () => {
+		mockStream([
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done with no PR',
+				total_cost_usd: 0.01,
+				num_turns: 1,
+			},
+		]);
+
+		const backend = new ClaudeCodeBackend();
+		const result = await backend.execute(makeInput());
+
+		expect(result.success).toBe(true);
+		expect(result.prUrl).toBeUndefined();
+	});
+
 	it('resolves model for non-Claude models', async () => {
 		mockStream([
 			{

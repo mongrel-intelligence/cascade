@@ -65,6 +65,10 @@ export function buildPreToolUseHooks(logWriter: LogWriter): HookCallbackMatcher[
 
 /**
  * Build Stop hooks that block session completion when unpushed commits exist.
+ *
+ * Uses a multi-strategy approach to avoid the loophole where `git log @{upstream}..HEAD`
+ * fails when the branch has no upstream tracking (e.g., push never succeeded), causing
+ * the catch block to silently allow stop.
  */
 export function buildStopHooks(logWriter: LogWriter, repoDir: string): HookCallbackMatcher[] {
 	return [
@@ -72,23 +76,64 @@ export function buildStopHooks(logWriter: LogWriter, repoDir: string): HookCallb
 			hooks: [
 				async (): Promise<SyncHookJSONOutput> => {
 					try {
-						const output = execSync('git log @{upstream}..HEAD --oneline', {
+						// Strategy 1: Check for uncommitted changes
+						const status = execSync('git status --porcelain', {
 							cwd: repoDir,
 							encoding: 'utf-8',
 							timeout: 10_000,
 						}).trim();
 
-						if (output) {
-							const reason =
-								'You have unpushed commits. Use cascade-tools github create-pr to push and create a PR.';
-							logWriter('WARN', 'Stop hook blocked: unpushed commits', {
-								commits: output,
+						if (status) {
+							logWriter('WARN', 'Stop hook blocked: uncommitted changes', {
+								status,
 							});
-							return { decision: 'block', reason };
+							return {
+								decision: 'block',
+								reason:
+									'You have uncommitted changes. Stage, commit, then use cascade-tools github create-pr.',
+							};
+						}
+
+						// Strategy 2: Check for unpushed commits on ANY branch
+						// Uses --branches --not --remotes which works even without upstream tracking
+						const unpushed = execSync('git log --branches --not --remotes --oneline', {
+							cwd: repoDir,
+							encoding: 'utf-8',
+							timeout: 10_000,
+						}).trim();
+
+						if (unpushed) {
+							logWriter('WARN', 'Stop hook blocked: unpushed commits', {
+								commits: unpushed,
+							});
+							return {
+								decision: 'block',
+								reason:
+									'You have unpushed commits. Use cascade-tools github create-pr to push and create a PR.',
+							};
 						}
 					} catch {
-						// If git command fails (e.g., no remote), don't block
-						logWriter('DEBUG', 'Stop hook: git check failed, allowing stop');
+						// Git commands failed entirely — still block if on a non-default branch
+						// (the agent likely created a branch and made changes but something went wrong)
+						try {
+							const branch = execSync('git branch --show-current', {
+								cwd: repoDir,
+								encoding: 'utf-8',
+								timeout: 5_000,
+							}).trim();
+							const isDefaultBranch = ['main', 'master', 'dev'].includes(branch);
+							if (!isDefaultBranch) {
+								logWriter('WARN', 'Stop hook blocked: on non-default branch with git errors', {
+									branch,
+								});
+								return {
+									decision: 'block',
+									reason: `On non-default branch '${branch}' — use cascade-tools github create-pr to push and create a PR.`,
+								};
+							}
+						} catch {
+							logWriter('DEBUG', 'Stop hook: all git checks failed, allowing stop');
+						}
 					}
 
 					return { decision: 'approve' };

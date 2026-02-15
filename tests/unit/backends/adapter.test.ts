@@ -297,6 +297,73 @@ describe('executeWithBackend', () => {
 		expect(mockReadCard).not.toHaveBeenCalled();
 	});
 
+	it('marks implementation agent as failed when no PR was created', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		vi.mocked(backend.execute).mockResolvedValue({
+			success: true,
+			output: 'Done',
+			// No prUrl
+		});
+		const input = makeInput();
+
+		const result = await executeWithBackend(backend, 'implementation', input);
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe('Implementation completed but no PR was created');
+		expect(logger.warn).toHaveBeenCalledWith(
+			'Implementation agent completed without creating a PR',
+			expect.objectContaining({ backend: 'test-backend' }),
+		);
+	});
+
+	it('does not validate PR creation for non-implementation agents', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		vi.mocked(backend.execute).mockResolvedValue({
+			success: true,
+			output: 'Done',
+			// No prUrl
+		});
+		const input = makeInput();
+
+		const result = await executeWithBackend(backend, 'briefing', input);
+
+		expect(result.success).toBe(true);
+	});
+
+	it('passes through when implementation agent creates a PR', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		vi.mocked(backend.execute).mockResolvedValue({
+			success: true,
+			output: 'Done',
+			prUrl: 'https://github.com/o/r/pull/5',
+		});
+		const input = makeInput();
+
+		const result = await executeWithBackend(backend, 'implementation', input);
+
+		expect(result.success).toBe(true);
+		expect(result.prUrl).toBe('https://github.com/o/r/pull/5');
+	});
+
+	it('does not validate PR creation when implementation agent already failed', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		vi.mocked(backend.execute).mockResolvedValue({
+			success: false,
+			output: '',
+			error: 'Budget exceeded',
+		});
+		const input = makeInput();
+
+		const result = await executeWithBackend(backend, 'implementation', input);
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe('Budget exceeded');
+	});
+
 	it('zeroes cost when subscriptionCostZero is true and backend is claude-code', async () => {
 		setupMocks();
 		const backend = makeMockBackend();
