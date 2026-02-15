@@ -26,6 +26,22 @@ async function executeGitHubAgent(
 	project: ProjectConfig,
 	config: CascadeConfig,
 ): Promise<void> {
+	// Resolve per-project credentials up front — all Trello/GitHub API calls
+	// in this function (budget checks, labels, comments, agent run) require scoped credentials.
+	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY');
+	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN');
+	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
+
+	await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
+		withGitHubToken(githubToken, () => executeGitHubAgentWithCreds(result, project, config)),
+	);
+}
+
+async function executeGitHubAgentWithCreds(
+	result: TriggerResult,
+	project: ProjectConfig,
+	config: CascadeConfig,
+): Promise<void> {
 	const { cardId } = result;
 
 	// Pre-flight budget check
@@ -56,23 +72,12 @@ async function executeGitHubAgent(
 		}
 	}
 
-	// Resolve per-project credentials and wrap agent execution
-	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY');
-	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN');
-	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
-
-	const agentResult = await withTrelloCredentials(
-		{ apiKey: trelloApiKey, token: trelloToken },
-		() =>
-			withGitHubToken(githubToken, () =>
-				runAgent(result.agentType, {
-					...result.agentInput,
-					remainingBudgetUsd,
-					project,
-					config,
-				}),
-			),
-	);
+	const agentResult = await runAgent(result.agentType, {
+		...result.agentInput,
+		remainingBudgetUsd,
+		project,
+		config,
+	});
 
 	// Upload log and update cost on Trello card
 	if (cardId) {
@@ -242,7 +247,10 @@ export async function processGitHubWebhook(
 	// Only run agent if agentType is specified
 	// Some triggers (like PRReadyToMergeTrigger) perform actions directly without needing an agent
 	if (result.agentType) {
-		await postAcknowledgmentComment(result);
+		// Resolve credentials early — acknowledgment comment and error reporting need GitHub scope
+		const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
+
+		await withGitHubToken(githubToken, () => postAcknowledgmentComment(result));
 		cancelFreshMachineTimer();
 		setProcessing(true);
 
@@ -254,7 +262,9 @@ export async function processGitHubWebhook(
 			await executeGitHubAgent(result, project, config);
 		} catch (err) {
 			logger.error('Failed to process GitHub webhook', { error: String(err) });
-			await updateInitialCommentWithError(result, { success: false, error: String(err) });
+			await withGitHubToken(githubToken, () =>
+				updateInitialCommentWithError(result, { success: false, error: String(err) }),
+			);
 		} finally {
 			setProcessing(false);
 			processNextQueuedGitHubWebhook(config, registry);

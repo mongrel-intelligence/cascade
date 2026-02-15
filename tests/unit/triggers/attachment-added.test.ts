@@ -7,6 +7,7 @@ vi.mock('../../../src/trello/client.js', () => ({
 		getMe: vi.fn(),
 		getCard: vi.fn(),
 	},
+	getTrelloCredentials: vi.fn(() => ({ apiKey: 'test-key', token: 'test-token' })),
 }));
 
 // Mock global fetch
