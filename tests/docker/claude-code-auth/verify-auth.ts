@@ -1,26 +1,19 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 /**
  * Docker auth verification script.
  *
- * Reads CLAUDE_CREDENTIALS env var, installs it to a temp dir,
- * sets CLAUDE_CONFIG_DIR, then calls the Claude Code SDK to verify
- * that subscription auth works in a containerized environment.
+ * Reads CLAUDE_CODE_OAUTH_TOKEN env var and calls the Claude Code SDK
+ * to verify that subscription auth works in a containerized environment.
+ * The SDK picks up the token automatically from the environment.
  */
 import { type SDKResultMessage, query } from '@anthropic-ai/claude-agent-sdk';
 
-const credentials = process.env.CLAUDE_CREDENTIALS;
-if (!credentials) {
-	console.error('CLAUDE_CREDENTIALS env var is required');
+const token = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+if (!token) {
+	console.error('CLAUDE_CODE_OAUTH_TOKEN env var is required');
 	process.exit(1);
 }
-
-// Install credentials to temp dir (same as CASCADE's installCredentials)
-const configDir = mkdtempSync(join(tmpdir(), 'cascade-claude-'));
-writeFileSync(join(configDir, '.credentials.json'), credentials, { mode: 0o600 });
-process.env.CLAUDE_CONFIG_DIR = configDir;
 
 // Claude Code requires this file to skip interactive onboarding
 const homeDir = process.env.HOME ?? '/root';
@@ -28,7 +21,6 @@ writeFileSync(join(homeDir, '.claude.json'), JSON.stringify({ hasCompletedOnboar
 	mode: 0o600,
 });
 
-console.log(`Installed credentials to ${configDir}`);
 console.log(`Wrote onboarding flag to ${join(homeDir, '.claude.json')}`);
 console.log('Calling Claude Code SDK...');
 
@@ -69,6 +61,4 @@ try {
 } catch (error) {
 	console.error('SDK call failed:', error);
 	process.exit(1);
-} finally {
-	await rm(configDir, { recursive: true, force: true }).catch(() => {});
 }

@@ -17,7 +17,6 @@ import {
 	buildTaskPrompt,
 	buildToolGuidance,
 	ensureOnboardingFlag,
-	installCredentials,
 	resolveClaudeModel,
 } from '../../../src/backends/claude-code/index.js';
 import type { AgentBackendInput, ToolManifest } from '../../../src/backends/types.js';
@@ -208,7 +207,6 @@ describe('execute', () => {
 			options: expect.objectContaining({
 				model: 'claude-sonnet-4-5-20250929',
 				cwd: '/tmp/repo',
-				maxTurns: 20,
 				maxBudgetUsd: 5,
 				permissionMode: 'bypassPermissions',
 				allowDangerouslySkipPermissions: true,
@@ -366,64 +364,6 @@ describe('execute', () => {
 		expect(result.success).toBe(true);
 		expect(input.progressReporter.onIteration).not.toHaveBeenCalled();
 	});
-
-	it('installs credentials and cleans up temp dir', async () => {
-		const fakeCreds = '{"claudeAiOauth":{"accessToken":"test"}}';
-		process.env.CLAUDE_CREDENTIALS = fakeCreds;
-
-		mockStream([
-			{
-				type: 'result',
-				subtype: 'success',
-				result: 'Done',
-				total_cost_usd: 0.01,
-				num_turns: 1,
-			},
-		]);
-
-		const backend = new ClaudeCodeBackend();
-		const input = makeInput();
-		await backend.execute(input);
-
-		// Verify CLAUDE_CONFIG_DIR was passed to query
-		expect(mockQuery).toHaveBeenCalledWith(
-			expect.objectContaining({
-				options: expect.objectContaining({
-					env: expect.objectContaining({
-						CLAUDE_CONFIG_DIR: expect.stringContaining('cascade-claude-'),
-						CLAUDE_CREDENTIALS: fakeCreds,
-					}),
-				}),
-			}),
-		);
-
-		// The temp dir should have been cleaned up after execution
-		const call = mockQuery.mock.calls[0];
-		expect(call).toBeDefined();
-		const callArgs = call[0] as { options: { env: Record<string, string> } };
-		const configDir = callArgs.options.env.CLAUDE_CONFIG_DIR;
-		expect(existsSync(configDir)).toBe(false);
-
-		unsetEnv('CLAUDE_CREDENTIALS');
-	});
-});
-
-describe('installCredentials', () => {
-	it('writes .credentials.json to temp dir with mode 0o600', async () => {
-		const fakeCreds = '{"claudeAiOauth":{"accessToken":"test-token"}}';
-		const configDir = installCredentials(fakeCreds);
-
-		try {
-			const credPath = join(configDir, '.credentials.json');
-			expect(existsSync(credPath)).toBe(true);
-			expect(readFileSync(credPath, 'utf8')).toBe(fakeCreds);
-
-			const stats = statSync(credPath);
-			expect(stats.mode & 0o777).toBe(0o600);
-		} finally {
-			await rm(configDir, { recursive: true, force: true });
-		}
-	});
 });
 
 describe('ensureOnboardingFlag', () => {
@@ -467,41 +407,25 @@ describe('ensureOnboardingFlag', () => {
 });
 
 describe('buildEnv', () => {
-	it('sets CLAUDE_CONFIG_DIR when CLAUDE_CREDENTIALS is set', async () => {
-		const fakeCreds = '{"claudeAiOauth":{"accessToken":"test"}}';
-		process.env.CLAUDE_CREDENTIALS = fakeCreds;
-
-		try {
-			const result = buildEnv();
-			const { env, configDir } = result;
-			expect(configDir).toBeDefined();
-			expect(env.CLAUDE_CONFIG_DIR).toBe(configDir);
-			expect(env.CLAUDE_AGENT_SDK_CLIENT_APP).toBe('cascade/1.0.0');
-
-			// Verify credentials were written
-			const dir = configDir as string;
-			const credPath = join(dir, '.credentials.json');
-			expect(readFileSync(credPath, 'utf8')).toBe(fakeCreds);
-
-			await rm(dir, { recursive: true, force: true });
-		} finally {
-			unsetEnv('CLAUDE_CREDENTIALS');
-		}
+	it('sets CLAUDE_AGENT_SDK_CLIENT_APP', () => {
+		const { env } = buildEnv();
+		expect(env.CLAUDE_AGENT_SDK_CLIENT_APP).toBe('cascade/1.0.0');
 	});
 
-	it('does not set CLAUDE_CONFIG_DIR when CLAUDE_CREDENTIALS is not set', () => {
-		unsetEnv('CLAUDE_CREDENTIALS');
+	it('passes through CLAUDE_CODE_OAUTH_TOKEN from environment', () => {
+		process.env.CLAUDE_CODE_OAUTH_TOKEN = 'sk-ant-oat01-test';
 
-		const { env, configDir } = buildEnv();
-		expect(configDir).toBeUndefined();
-		expect(env.CLAUDE_CONFIG_DIR).toBeUndefined();
-		expect(env.CLAUDE_AGENT_SDK_CLIENT_APP).toBe('cascade/1.0.0');
+		try {
+			const { env } = buildEnv();
+			expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-test');
+		} finally {
+			unsetEnv('CLAUDE_CODE_OAUTH_TOKEN');
+		}
 	});
 
 	it('strips NODE_OPTIONS and VSCODE_INSPECTOR_OPTIONS from env', () => {
 		process.env.NODE_OPTIONS = '--inspect=9229';
 		process.env.VSCODE_INSPECTOR_OPTIONS = '{"some":"config"}';
-		unsetEnv('CLAUDE_CREDENTIALS');
 
 		try {
 			const { env } = buildEnv();

@@ -1,6 +1,4 @@
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type {
@@ -84,16 +82,6 @@ export function resolveClaudeModel(cascadeModel: string): string {
 }
 
 /**
- * Write a credentials JSON string to a temp directory for the Claude Code SDK.
- * Returns the path to the temp config directory.
- */
-export function installCredentials(credentialsJson: string): string {
-	const configDir = mkdtempSync(path.join(tmpdir(), 'cascade-claude-'));
-	writeFileSync(path.join(configDir, '.credentials.json'), credentialsJson, { mode: 0o600 });
-	return configDir;
-}
-
-/**
  * Ensure $HOME/.claude.json exists with the onboarding flag.
  * Claude Code CLI requires this file to skip interactive onboarding
  * in headless environments, regardless of auth method (API key or subscription).
@@ -115,11 +103,11 @@ export function ensureOnboardingFlag(): void {
  * and ~/.claude/ (needed for subscription auth). CASCADE-specific vars are
  * explicitly ensured.
  *
- * When `CLAUDE_CREDENTIALS` env var is set, installs the credentials JSON
- * to a temp directory and sets `CLAUDE_CONFIG_DIR` so the SDK reads them
- * instead of ~/.claude/.credentials.json.
+ * Auth (handled by SDK via inherited env vars):
+ * - ANTHROPIC_API_KEY — direct API key
+ * - CLAUDE_CODE_OAUTH_TOKEN — long-lived OAuth token from `claude setup-token`
  */
-export function buildEnv(): { env: Record<string, string | undefined>; configDir?: string } {
+export function buildEnv(): { env: Record<string, string | undefined> } {
 	const env: Record<string, string | undefined> = {
 		...process.env,
 		CLAUDE_AGENT_SDK_CLIENT_APP: 'cascade/1.0.0',
@@ -132,14 +120,7 @@ export function buildEnv(): { env: Record<string, string | undefined>; configDir
 	// Always ensure onboarding flag exists (required for both API key and subscription auth)
 	ensureOnboardingFlag();
 
-	let configDir: string | undefined;
-	const credentialsJson = process.env.CLAUDE_CREDENTIALS;
-	if (credentialsJson) {
-		configDir = installCredentials(credentialsJson);
-		env.CLAUDE_CONFIG_DIR = configDir;
-	}
-
-	return { env, configDir };
+	return { env };
 }
 
 /**
@@ -189,13 +170,7 @@ export class ClaudeCodeBackend implements AgentBackend {
 			maxIterations: input.maxIterations,
 		});
 
-		const { env, configDir } = buildEnv();
-
-		if (configDir) {
-			input.logWriter('INFO', 'Installed Claude credentials to temp dir', {
-				configDir,
-			});
-		}
+		const { env } = buildEnv();
 
 		const assistantMessages: SDKAssistantMessage[] = [];
 		let resultMessage: SDKResultMessage | undefined;
@@ -209,7 +184,7 @@ export class ClaudeCodeBackend implements AgentBackend {
 					model,
 					systemPrompt,
 					cwd: input.repoDir,
-					maxTurns: input.maxIterations,
+					// No maxTurns — rely on watchdog time limit instead
 					maxBudgetUsd: input.budgetUsd,
 					permissionMode: 'bypassPermissions',
 					allowDangerouslySkipPermissions: true,
@@ -253,9 +228,7 @@ export class ClaudeCodeBackend implements AgentBackend {
 				}
 			}
 		} finally {
-			if (configDir) {
-				await rm(configDir, { recursive: true, force: true }).catch(() => {});
-			}
+			// no-op: auth via env vars, no temp dirs to clean up
 		}
 
 		const finishComment = extractFinishComment(assistantMessages);
