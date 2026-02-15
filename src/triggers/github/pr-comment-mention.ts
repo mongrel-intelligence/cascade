@@ -34,7 +34,7 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		// Resolve reviewer username — if no reviewer token configured, fall through
-		const reviewerUser = await getReviewerUser(ctx.project.reviewerTokenEnv);
+		const reviewerUser = await getReviewerUser();
 		if (!reviewerUser) {
 			return null;
 		}

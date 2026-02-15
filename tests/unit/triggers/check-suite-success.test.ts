@@ -23,7 +23,6 @@ describe('CheckSuiteSuccessTrigger', () => {
 		repo: 'owner/repo',
 		baseBranch: 'main',
 		branchPrefix: 'feature/',
-		githubTokenEnv: 'GITHUB_TOKEN',
 		trello: {
 			boardId: 'board123',
 			lists: {
@@ -295,7 +294,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			vi.mocked(getReviewerUser).mockResolvedValue('cascade-reviewer');
 
 			const ctx: TriggerContext = {
-				project: { ...mockProject, reviewerTokenEnv: 'REVIEWER_TOKEN' },
+				project: mockProject,
 				source: 'github',
 				payload: makeCheckSuitePayload(),
 			};
@@ -303,7 +302,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toBeNull();
-			expect(getReviewerUser).toHaveBeenCalledWith('REVIEWER_TOKEN');
+			expect(getReviewerUser).toHaveBeenCalled();
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
@@ -437,7 +436,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			});
 
 			const ctx: TriggerContext = {
-				project: { ...mockProject, reviewerTokenEnv: 'REVIEWER_TOKEN' },
+				project: mockProject,
 				source: 'github',
 				payload: makeCheckSuitePayload(),
 			};

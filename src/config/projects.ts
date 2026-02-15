@@ -1,51 +1,22 @@
-import { existsSync, readFileSync } from 'node:fs';
-import type { CascadeConfig, ProjectConfig } from '../types/index.js';
-import { validateConfig } from './schema.js';
+import type { ProjectConfig } from '../types/index.js';
+import { getProjectSecretOrNull } from './provider.js';
 
-let cachedConfig: CascadeConfig | null = null;
+export async function getProjectGitHubToken(project: ProjectConfig): Promise<string> {
+	// Try DB secret first, then fall back to env var
+	const secret = await getProjectSecretOrNull(project.id, 'GITHUB_TOKEN');
+	if (secret) return secret;
 
-export function loadProjectsConfig(configPath: string): CascadeConfig {
-	if (cachedConfig) {
-		return cachedConfig;
-	}
-
-	if (!existsSync(configPath)) {
-		throw new Error(`Config file not found: ${configPath}`);
-	}
-
-	const configContent = readFileSync(configPath, 'utf-8');
-	const rawConfig = JSON.parse(configContent);
-	cachedConfig = validateConfig(rawConfig);
-	return cachedConfig;
-}
-
-export function findProjectByBoardId(
-	config: CascadeConfig,
-	boardId: string,
-): ProjectConfig | undefined {
-	return config.projects.find((p) => p.trello.boardId === boardId);
-}
-
-export function findProjectById(config: CascadeConfig, id: string): ProjectConfig | undefined {
-	return config.projects.find((p) => p.id === id);
-}
-
-export function findProjectByRepo(
-	config: CascadeConfig,
-	repoFullName: string,
-): ProjectConfig | undefined {
-	return config.projects.find((p) => p.repo === repoFullName);
-}
-
-export function getProjectGitHubToken(project: ProjectConfig): string {
-	const tokenEnvVar = project.githubTokenEnv || 'GITHUB_TOKEN';
-	const token = process.env[tokenEnvVar];
+	const token = process.env.GITHUB_TOKEN;
 	if (!token) {
-		throw new Error(`Missing GitHub token for project ${project.id}: ${tokenEnvVar} not set`);
+		throw new Error(`Missing GitHub token for project ${project.id}: GITHUB_TOKEN not set`);
 	}
 	return token;
 }
 
-export function clearConfigCache(): void {
-	cachedConfig = null;
+export async function getProjectReviewerToken(project: ProjectConfig): Promise<string | null> {
+	// Try DB secret first
+	const secret = await getProjectSecretOrNull(project.id, 'GITHUB_REVIEWER_TOKEN');
+	if (secret) return secret;
+
+	return process.env.GITHUB_REVIEWER_TOKEN ?? null;
 }

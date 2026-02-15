@@ -9,7 +9,6 @@ function makeProject(overrides?: Partial<ProjectConfig>): ProjectConfig {
 		repo: 'owner/repo',
 		baseBranch: 'main',
 		branchPrefix: 'feature/',
-		githubTokenEnv: 'GITHUB_TOKEN',
 		trello: { boardId: 'b1', lists: {}, labels: {} },
 		...overrides,
 	};

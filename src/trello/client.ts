@@ -1,18 +1,50 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { TrelloClient as TrelloJsClient } from 'trello.js';
 import { logger } from '../utils/logging.js';
 
+interface TrelloCredentials {
+	apiKey: string;
+	token: string;
+}
+
+const trelloCredentialStore = new AsyncLocalStorage<TrelloCredentials>();
+
+export function withTrelloCredentials<T>(
+	creds: TrelloCredentials,
+	fn: () => Promise<T>,
+): Promise<T> {
+	return trelloCredentialStore.run(creds, fn);
+}
+
+export function getTrelloCredentials(): TrelloCredentials {
+	const scoped = trelloCredentialStore.getStore();
+	if (scoped) return scoped;
+
+	const apiKey = process.env.TRELLO_API_KEY;
+	const token = process.env.TRELLO_TOKEN;
+	if (!apiKey || !token) {
+		throw new Error('TRELLO_API_KEY and TRELLO_TOKEN must be set');
+	}
+	return { apiKey, token };
+}
+
 let client: TrelloJsClient | null = null;
+let clientCredKey: string | null = null;
 
 function getClient(): TrelloJsClient {
-	if (!client) {
-		const apiKey = process.env.TRELLO_API_KEY;
-		const token = process.env.TRELLO_TOKEN;
+	const creds = getTrelloCredentials();
+	const credKey = `${creds.apiKey}:${creds.token}`;
 
-		if (!apiKey || !token) {
-			throw new Error('TRELLO_API_KEY and TRELLO_TOKEN must be set');
-		}
+	// Scoped credentials always get a fresh client
+	const scoped = trelloCredentialStore.getStore();
+	if (scoped) {
+		return new TrelloJsClient({ key: creds.apiKey, token: creds.token });
+	}
 
-		client = new TrelloJsClient({ key: apiKey, token });
+	// Global singleton
+	if (!client || clientCredKey !== credKey) {
+		client = new TrelloJsClient({ key: creds.apiKey, token: creds.token });
+		clientCredKey = credKey;
 	}
 	return client;
 }
@@ -190,8 +222,7 @@ export const trelloClient = {
 	async getMyActions(limit = 20): Promise<TrelloAction[]> {
 		logger.debug('Fetching my recent actions', { limit });
 		// Use raw fetch since trello.js types don't expose 'limit' parameter
-		const apiKey = process.env.TRELLO_API_KEY;
-		const token = process.env.TRELLO_TOKEN;
+		const { apiKey, token } = getTrelloCredentials();
 		const response = await fetch(
 			`https://api.trello.com/1/members/me/actions?key=${apiKey}&token=${token}&limit=${limit}`,
 		);
@@ -240,8 +271,7 @@ export const trelloClient = {
 
 	async getMe(): Promise<{ id: string; fullName: string; username: string }> {
 		logger.debug('Fetching authenticated member info');
-		const apiKey = process.env.TRELLO_API_KEY;
-		const token = process.env.TRELLO_TOKEN;
+		const { apiKey, token } = getTrelloCredentials();
 		const response = await fetch(
 			`https://api.trello.com/1/members/me?key=${apiKey}&token=${token}`,
 		);
@@ -378,8 +408,7 @@ export const trelloClient = {
 
 	async getCardCustomFieldItems(cardId: string): Promise<CustomFieldItem[]> {
 		logger.debug('Fetching card custom field items', { cardId });
-		const apiKey = process.env.TRELLO_API_KEY;
-		const token = process.env.TRELLO_TOKEN;
+		const { apiKey, token } = getTrelloCredentials();
 		const response = await fetch(
 			`https://api.trello.com/1/cards/${cardId}/customFieldItems?key=${apiKey}&token=${token}`,
 		);
@@ -400,8 +429,7 @@ export const trelloClient = {
 
 	async getCardAttachments(cardId: string): Promise<TrelloAttachment[]> {
 		logger.debug('Fetching card attachments', { cardId });
-		const apiKey = process.env.TRELLO_API_KEY;
-		const token = process.env.TRELLO_TOKEN;
+		const { apiKey, token } = getTrelloCredentials();
 		const response = await fetch(
 			`https://api.trello.com/1/cards/${cardId}/attachments?key=${apiKey}&token=${token}`,
 		);
@@ -432,8 +460,7 @@ export const trelloClient = {
 		value: number,
 	): Promise<void> {
 		logger.debug('Updating card custom field', { cardId, customFieldId, value });
-		const apiKey = process.env.TRELLO_API_KEY;
-		const token = process.env.TRELLO_TOKEN;
+		const { apiKey, token } = getTrelloCredentials();
 		const response = await fetch(
 			`https://api.trello.com/1/cards/${cardId}/customField/${customFieldId}/item?key=${apiKey}&token=${token}`,
 			{
@@ -450,4 +477,5 @@ export const trelloClient = {
 
 export function resetTrelloClient(): void {
 	client = null;
+	clientCredKey = null;
 }

@@ -24,7 +24,6 @@ describe('CheckSuiteFailureTrigger', () => {
 		repo: 'owner/repo',
 		baseBranch: 'main',
 		branchPrefix: 'feature/',
-		githubTokenEnv: 'GITHUB_TOKEN',
 		trello: {
 			boardId: 'board123',
 			lists: {

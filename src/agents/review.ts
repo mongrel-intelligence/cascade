@@ -19,7 +19,6 @@ import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.
 import { withGitHubToken } from '../github/client.js';
 import { githubClient } from '../github/client.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
-import { logger } from '../utils/logging.js';
 import {
 	type GitHubAgentContext,
 	type GitHubAgentDefinition,
@@ -278,16 +277,8 @@ const reviewAgentDefinition: GitHubAgentDefinition<ReviewAgentInput, ReviewConte
 		return b;
 	},
 
-	wrapExecution(input, runLifecycle) {
-		const reviewerToken = input.project.reviewerTokenEnv
-			? process.env[input.project.reviewerTokenEnv]
-			: undefined;
-
-		if (input.project.reviewerTokenEnv && !reviewerToken) {
-			logger.warn('Reviewer token env configured but not set, falling back to main token', {
-				reviewerTokenEnv: input.project.reviewerTokenEnv,
-			});
-		}
+	wrapExecution(_input, runLifecycle) {
+		const reviewerToken = process.env.GITHUB_REVIEWER_TOKEN;
 
 		if (reviewerToken) {
 			return withGitHubToken(reviewerToken, runLifecycle);

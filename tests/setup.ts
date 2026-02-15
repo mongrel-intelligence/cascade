@@ -1,5 +1,5 @@
 import { afterEach, beforeEach } from 'vitest';
-import { clearConfigCache } from '../src/config/projects.js';
+import { invalidateConfigCache } from '../src/config/provider.js';
 import { resetTrelloClient } from '../src/trello/client.js';
 
 beforeEach(() => {
@@ -12,5 +12,5 @@ beforeEach(() => {
 afterEach(() => {
 	// Cleanup
 	resetTrelloClient();
-	clearConfigCache();
+	invalidateConfigCache();
 });

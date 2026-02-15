@@ -16,7 +16,12 @@
 		"typecheck": "tsc --noEmit",
 		"prepare": "lefthook install",
 		"tool:download-session": "node --env-file=.env --import tsx tools/download-session.ts",
-		"tool:run-local": "node --env-file=.env --import tsx tools/run-local.ts"
+		"tool:run-local": "node --env-file=.env --import tsx tools/run-local.ts",
+		"db:generate": "drizzle-kit generate",
+		"db:migrate": "drizzle-kit migrate",
+		"db:push": "drizzle-kit push",
+		"db:studio": "drizzle-kit studio",
+		"db:seed": "node --env-file=.env --import tsx tools/seed-config-from-json.ts"
 	},
 	"keywords": [
 		"trello",
@@ -40,9 +45,11 @@
 		"dhalsim": "^2.2.0",
 		"diff-match-patch": "^1.0.5",
 		"dockerode": "^4.0.9",
+		"drizzle-orm": "^0.45.1",
 		"eta": "^4.5.0",
 		"hono": "^4.6.14",
 		"llmist": "^15.18.0",
+		"pg": "^8.18.0",
 		"trello.js": "^1.2.8",
 		"zangief": "latest",
 		"zod": "^3.24.1"
@@ -55,8 +62,10 @@
 		"@types/diff-match-patch": "^1.0.36",
 		"@types/dockerode": "^3.3.47",
 		"@types/node": "^22.10.2",
+		"@types/pg": "^8.16.0",
 		"@vitest/coverage-v8": "^2.1.8",
 		"commander": "^14.0.2",
+		"drizzle-kit": "^0.31.9",
 		"lefthook": "^1.10.10",
 		"tsx": "^4.19.2",
 		"typescript": "^5.7.2",

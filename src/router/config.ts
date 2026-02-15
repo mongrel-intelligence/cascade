@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { loadConfig } from '../config/provider.js';
+import type { CascadeConfig } from '../types/index.js';
 
-// Minimal config types - what router needs
-export interface ProjectConfig {
+// Minimal config types - what router needs for quick filtering
+export interface RouterProjectConfig {
 	id: string;
 	repo: string; // owner/repo format
 	trello: {
@@ -9,10 +10,6 @@ export interface ProjectConfig {
 		lists: Record<string, string>;
 		labels: Record<string, string>;
 	};
-}
-
-export interface Config {
-	projects: ProjectConfig[];
 }
 
 export interface RouterConfig {
@@ -28,7 +25,7 @@ export interface RouterConfig {
 	// Network settings
 	dockerNetwork: string;
 
-	// Secrets to pass to workers
+	// Secrets to pass to workers (global fallbacks)
 	secrets: {
 		trelloApiKey: string;
 		trelloToken: string;
@@ -43,18 +40,34 @@ export interface RouterConfig {
 	};
 }
 
-// Load project config at startup
-const configPath = process.env.CONFIG_PATH || './config/projects.json';
-let projectConfig: Config;
-try {
-	projectConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
+// Cached project config for fast webhook filtering
+let projectConfig: { projects: RouterProjectConfig[] } | null = null;
+
+export async function loadProjectConfig(): Promise<{ projects: RouterProjectConfig[] }> {
+	if (projectConfig) return projectConfig;
+
+	const config: CascadeConfig = await loadConfig();
+	projectConfig = {
+		projects: config.projects.map((p) => ({
+			id: p.id,
+			repo: p.repo,
+			trello: {
+				boardId: p.trello.boardId,
+				lists: p.trello.lists,
+				labels: p.trello.labels,
+			},
+		})),
+	};
 	console.log(`[Router] Loaded config with ${projectConfig.projects.length} projects`);
-} catch (err) {
-	console.error('[Router] Failed to load config:', err);
-	process.exit(1);
+	return projectConfig;
 }
 
-export { projectConfig };
+export function getProjectConfig(): { projects: RouterProjectConfig[] } {
+	if (!projectConfig) {
+		throw new Error('[Router] Config not loaded yet. Call loadProjectConfig() first.');
+	}
+	return projectConfig;
+}
 
 // Router runtime config from environment
 export const routerConfig: RouterConfig = {

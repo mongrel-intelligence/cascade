@@ -1,6 +1,7 @@
 import { runAgent } from '../../agents/registry.js';
-import { findProjectByBoardId } from '../../config/projects.js';
-import { trelloClient } from '../../trello/client.js';
+import { findProjectByBoardId, getProjectSecret, loadConfig } from '../../config/provider.js';
+import { withGitHubToken } from '../../github/client.js';
+import { trelloClient, withTrelloCredentials } from '../../trello/client.js';
 import type {
 	AgentResult,
 	CascadeConfig,
@@ -136,12 +137,24 @@ async function executeAgent(
 		}
 	}
 
-	const agentResult = await runAgent(result.agentType, {
-		...result.agentInput,
-		remainingBudgetUsd,
-		project,
-		config,
-	});
+	// Resolve per-project credentials and wrap agent execution
+	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY', 'TRELLO_API_KEY');
+	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN', 'TRELLO_TOKEN');
+	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN', 'GITHUB_TOKEN');
+
+	const runAgentWithCreds = () =>
+		withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
+			withGitHubToken(githubToken, () =>
+				runAgent(result.agentType, {
+					...result.agentInput,
+					remainingBudgetUsd,
+					project,
+					config,
+				}),
+			),
+		);
+
+	const agentResult = await runAgentWithCreds();
 
 	// Upload log and update cost on Trello card
 	if (cardId) {
@@ -183,7 +196,7 @@ function processNextQueuedWebhook(config: CascadeConfig, registry: TriggerRegist
 	if (next) {
 		logger.info('Processing queued webhook', { queueLength: getQueueLength() });
 		setImmediate(() => {
-			processTrelloWebhook(next.payload, config, registry).catch((err) => {
+			processTrelloWebhook(next.payload, registry).catch((err) => {
 				logger.error('Failed to process queued webhook', { error: String(err) });
 			});
 		});
@@ -219,7 +232,6 @@ async function cleanupDebugDirectory(logDir: string | undefined): Promise<void> 
 
 export async function processTrelloWebhook(
 	payload: unknown,
-	config: CascadeConfig,
 	registry: TriggerRegistry,
 ): Promise<void> {
 	logger.info('Processing Trello webhook');
@@ -239,7 +251,9 @@ export async function processTrelloWebhook(
 	const actionType = payload.action?.type;
 	logger.info('Webhook details', { boardId, actionType });
 
-	const project = findProjectByBoardId(config, boardId);
+	const config = await loadConfig();
+
+	const project = await findProjectByBoardId(boardId);
 	if (!project) {
 		logger.warn('No project configured for board', { boardId });
 		return;
