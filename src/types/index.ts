@@ -43,6 +43,7 @@ export interface AgentResult {
 	error?: string;
 	logBuffer?: Buffer;
 	cost?: number;
+	runId?: string;
 }
 
 export type TriggerSource = 'trello' | 'github' | 'manual';

@@ -15,10 +15,13 @@ import {
 	setProcessing,
 	startWatchdog,
 } from '../../utils/index.js';
+import { injectLlmApiKeys } from '../../utils/llmEnv.js';
 import { safeOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
 import { handleAgentResultArtifacts } from '../shared/agent-result-handler.js';
 import { checkBudgetExceeded } from '../shared/budget.js';
+import { triggerDebugAnalysis } from '../shared/debug-runner.js';
+import { shouldTriggerDebug } from '../shared/debug-trigger.js';
 import type { TriggerResult } from '../types.js';
 
 async function executeGitHubAgent(
@@ -32,9 +35,79 @@ async function executeGitHubAgent(
 	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN');
 	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
 
-	await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
-		withGitHubToken(githubToken, () => executeGitHubAgentWithCreds(result, project, config)),
-	);
+	// Inject LLM API keys into process.env for llmist backend
+	const restoreLlmEnv = await injectLlmApiKeys(project.id);
+
+	try {
+		await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
+			withGitHubToken(githubToken, () => executeGitHubAgentWithCreds(result, project, config)),
+		);
+	} finally {
+		restoreLlmEnv();
+	}
+}
+
+async function checkGitHubPreFlightBudget(
+	cardId: string,
+	project: ProjectConfig,
+	config: CascadeConfig,
+): Promise<{ blocked: boolean; remainingBudgetUsd?: number }> {
+	const budgetCheck = await checkBudgetExceeded(cardId, project, config);
+	if (budgetCheck?.exceeded) {
+		logger.warn('Card budget exceeded, GitHub agent not started', {
+			cardId,
+			currentCost: budgetCheck.currentCost,
+			budget: budgetCheck.budget,
+		});
+		await safeOperation(() => trelloClient.addLabelToCard(cardId, project.trello.labels.error), {
+			action: 'add error label',
+		});
+		await safeOperation(
+			() =>
+				trelloClient.addComment(
+					cardId,
+					`⛔ Budget exceeded: card cost $${budgetCheck.currentCost.toFixed(2)} >= limit $${budgetCheck.budget.toFixed(2)}. Agent not started.`,
+				),
+			{ action: 'add budget comment' },
+		);
+		return { blocked: true };
+	}
+	return { blocked: false, remainingBudgetUsd: budgetCheck?.remaining };
+}
+
+async function handleGitHubPostFlightBudget(
+	cardId: string,
+	project: ProjectConfig,
+	config: CascadeConfig,
+): Promise<void> {
+	const postBudgetCheck = await checkBudgetExceeded(cardId, project, config);
+	if (postBudgetCheck?.exceeded) {
+		await safeOperation(() => trelloClient.addLabelToCard(cardId, project.trello.labels.error), {
+			action: 'add error label',
+		});
+		await safeOperation(
+			() =>
+				trelloClient.addComment(
+					cardId,
+					`⚠️ Budget limit reached: card cost $${postBudgetCheck.currentCost.toFixed(2)} >= limit $${postBudgetCheck.budget.toFixed(2)}. Further agent runs will be blocked.`,
+				),
+			{ action: 'add budget warning comment' },
+		);
+	}
+}
+
+async function tryGitHubAutoDebug(
+	agentResult: { runId?: string },
+	project: ProjectConfig,
+	config: CascadeConfig,
+): Promise<void> {
+	if (!agentResult.runId) return;
+	const debugTarget = await shouldTriggerDebug(agentResult.runId);
+	if (debugTarget) {
+		triggerDebugAnalysis(debugTarget.runId, project, config, debugTarget.cardId).catch((err) =>
+			logger.error('Auto-debug failed', { error: String(err) }),
+		);
+	}
 }
 
 async function executeGitHubAgentWithCreds(
@@ -44,32 +117,11 @@ async function executeGitHubAgentWithCreds(
 ): Promise<void> {
 	const { cardId } = result;
 
-	// Pre-flight budget check
 	let remainingBudgetUsd: number | undefined;
 	if (cardId) {
-		const budgetCheck = await checkBudgetExceeded(cardId, project, config);
-		if (budgetCheck?.exceeded) {
-			logger.warn('Card budget exceeded, GitHub agent not started', {
-				cardId,
-				currentCost: budgetCheck.currentCost,
-				budget: budgetCheck.budget,
-			});
-			await safeOperation(() => trelloClient.addLabelToCard(cardId, project.trello.labels.error), {
-				action: 'add error label',
-			});
-			await safeOperation(
-				() =>
-					trelloClient.addComment(
-						cardId,
-						`⛔ Budget exceeded: card cost $${budgetCheck.currentCost.toFixed(2)} >= limit $${budgetCheck.budget.toFixed(2)}. Agent not started.`,
-					),
-				{ action: 'add budget comment' },
-			);
-			return;
-		}
-		if (budgetCheck) {
-			remainingBudgetUsd = budgetCheck.remaining;
-		}
+		const budget = await checkGitHubPreFlightBudget(cardId, project, config);
+		if (budget.blocked) return;
+		remainingBudgetUsd = budget.remainingBudgetUsd;
 	}
 
 	const agentResult = await runAgent(result.agentType, {
@@ -79,25 +131,9 @@ async function executeGitHubAgentWithCreds(
 		config,
 	});
 
-	// Upload log and update cost on Trello card
 	if (cardId) {
 		await handleAgentResultArtifacts(cardId, result.agentType, agentResult, project);
-
-		// Post-flight budget check
-		const postBudgetCheck = await checkBudgetExceeded(cardId, project, config);
-		if (postBudgetCheck?.exceeded) {
-			await safeOperation(() => trelloClient.addLabelToCard(cardId, project.trello.labels.error), {
-				action: 'add error label',
-			});
-			await safeOperation(
-				() =>
-					trelloClient.addComment(
-						cardId,
-						`⚠️ Budget limit reached: card cost $${postBudgetCheck.currentCost.toFixed(2)} >= limit $${postBudgetCheck.budget.toFixed(2)}. Further agent runs will be blocked.`,
-					),
-				{ action: 'add budget warning comment' },
-			);
-		}
+		await handleGitHubPostFlightBudget(cardId, project, config);
 	}
 
 	// Move to in-review if implementation completed successfully
@@ -109,15 +145,11 @@ async function executeGitHubAgentWithCreds(
 		if (agentResult.prUrl) {
 			await safeOperation(
 				() => trelloClient.addComment(cardId, `PR created: ${agentResult.prUrl}`),
-				{
-					action: 'add PR comment',
-					cardId,
-				},
+				{ action: 'add PR comment', cardId },
 			);
 		}
 	}
 
-	// Update initial PR comment on failure for GitHub-bound agents
 	if (!agentResult.success && result.prNumber) {
 		await updateInitialCommentWithError(result, agentResult);
 	}
@@ -127,7 +159,10 @@ async function executeGitHubAgentWithCreds(
 		prNumber: result.prNumber,
 		success: agentResult.success,
 		cost: agentResult.cost,
+		runId: agentResult.runId,
 	});
+
+	await tryGitHubAutoDebug(agentResult, project, config);
 }
 
 async function updateInitialCommentWithError(

@@ -14,7 +14,7 @@ import { getRateLimitForModel } from '../../config/rateLimits.js';
 import { getRetryConfig } from '../../config/retryConfig.js';
 import { initSessionState } from '../../gadgets/sessionState.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
-import { createObserverHooks } from '../utils/hooks.js';
+import { type AccumulatedLlmCall, createObserverHooks } from '../utils/hooks.js';
 import type { TrackingContext } from '../utils/tracking.js';
 
 export type BuilderType = ReturnType<typeof AgentBuilder.prototype.withGadgets>;
@@ -39,6 +39,8 @@ export interface CreateBuilderOptions {
 	remainingBudgetUsd?: number;
 	/** Post-configuration callback for agent-specific builder tweaks */
 	postConfigure?: (builder: BuilderType) => BuilderType;
+	/** Accumulator for per-call LLM metrics (for run tracking) */
+	llmCallAccumulator?: AccumulatedLlmCall[];
 }
 
 export function isSquintEnabled(repoDir: string): boolean {
@@ -86,6 +88,7 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 				trackingContext,
 				llmCallLogger,
 				progressMonitor,
+				llmCallAccumulator: options.llmCallAccumulator,
 			}),
 		})
 		.withGadgets(...gadgets);
