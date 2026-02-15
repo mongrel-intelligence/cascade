@@ -1,16 +1,9 @@
 import { z } from 'zod';
 
-export const TriggerConfigSchema = z.object({
-	type: z.string(),
-	enabled: z.boolean().default(true),
-	agentType: z.string(),
-	listId: z.string().optional(),
-	labelId: z.string().optional(),
-});
-
 const AgentBackendConfigSchema = z.object({
 	default: z.string().default('llmist'),
 	overrides: z.record(z.string()).default({}),
+	subscriptionCostZero: z.boolean().default(false),
 });
 
 export const ProjectConfigSchema = z.object({
@@ -19,8 +12,6 @@ export const ProjectConfigSchema = z.object({
 	repo: z.string().regex(/^[^/]+\/[^/]+$/, 'Must be in format "owner/repo"'),
 	baseBranch: z.string().default('main'),
 	branchPrefix: z.string().default('feature/'),
-	githubTokenEnv: z.string().default('GITHUB_TOKEN'),
-	reviewerTokenEnv: z.string().optional(),
 
 	trello: z.object({
 		boardId: z.string().min(1),
@@ -33,7 +24,6 @@ export const ProjectConfigSchema = z.object({
 			.optional(),
 	}),
 
-	triggers: z.array(TriggerConfigSchema).optional(),
 	prompts: z.record(z.string()).optional(),
 	model: z.string().optional(),
 	agentModels: z.record(z.string()).optional(),

@@ -395,31 +395,30 @@ export async function getAuthenticatedUser(): Promise<string> {
 	return data.login;
 }
 
-const reviewerUserCache = new Map<string, string>();
+let reviewerUserCached: string | null | undefined;
 
-export async function getReviewerUser(reviewerTokenEnv?: string): Promise<string | null> {
-	if (!reviewerTokenEnv) return null;
-	const cached = reviewerUserCache.get(reviewerTokenEnv);
-	if (cached) return cached;
+export async function getReviewerUser(): Promise<string | null> {
+	if (reviewerUserCached !== undefined) return reviewerUserCached;
 
-	const token = process.env[reviewerTokenEnv];
+	const token = process.env.GITHUB_REVIEWER_TOKEN;
 	if (!token) {
-		logger.warn('Reviewer token env var configured but not set', { reviewerTokenEnv });
+		reviewerUserCached = null;
 		return null;
 	}
 
 	try {
 		const reviewerClient = new Octokit({ auth: token });
 		const { data } = await reviewerClient.users.getAuthenticated();
-		reviewerUserCache.set(reviewerTokenEnv, data.login);
+		reviewerUserCached = data.login;
 		return data.login;
 	} catch (err) {
 		logger.warn('Failed to resolve reviewer GitHub identity', { error: String(err) });
+		reviewerUserCached = null;
 		return null;
 	}
 }
 
 export function resetGitHubClient(): void {
 	client = null;
-	reviewerUserCache.clear();
+	reviewerUserCached = undefined;
 }

@@ -1,7 +1,7 @@
 export interface EnvConfig {
 	port: number;
 	logLevel: string;
-	configPath: string;
+	databaseUrl: string;
 	trelloApiKey: string;
 	trelloToken: string;
 	githubToken: string;
@@ -27,7 +27,7 @@ export function loadEnvConfig(): EnvConfig {
 	return {
 		port: Number.parseInt(getEnvOrDefault('PORT', '3000'), 10),
 		logLevel: getEnvOrDefault('LOG_LEVEL', 'info'),
-		configPath: getEnvOrDefault('CONFIG_PATH', './config/projects.json'),
+		databaseUrl: getEnvOrThrow('DATABASE_URL'),
 		trelloApiKey: getEnvOrThrow('TRELLO_API_KEY'),
 		trelloToken: getEnvOrThrow('TRELLO_TOKEN'),
 		githubToken: getEnvOrThrow('GITHUB_TOKEN'),
@@ -42,7 +42,7 @@ export function loadEnvConfigSafe(): Partial<EnvConfig> {
 	return {
 		port: Number.parseInt(getEnvOrDefault('PORT', '3000'), 10),
 		logLevel: getEnvOrDefault('LOG_LEVEL', 'info'),
-		configPath: getEnvOrDefault('CONFIG_PATH', './config/projects.json'),
+		databaseUrl: process.env.DATABASE_URL,
 		trelloApiKey: process.env.TRELLO_API_KEY,
 		trelloToken: process.env.TRELLO_TOKEN,
 		githubToken: process.env.GITHUB_TOKEN,

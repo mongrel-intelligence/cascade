@@ -25,22 +25,7 @@ Trello/GitHub Webhook → TriggerRegistry → Agent → Code Changes → PR
 
 ### Multi-Project Support
 
-Configure multiple projects in `config/projects.json`:
-
-```json
-{
-  "projects": [
-    {
-      "id": "my-project",
-      "repo": "owner/repo",
-      "trello": {
-        "boardId": "...",
-        "lists": { "briefing": "...", "planning": "...", "todo": "..." }
-      }
-    }
-  ]
-}
-```
+Projects are configured in the PostgreSQL database (`projects` table). Each project has its own Trello board, GitHub repo, and optional per-project credentials. Use `npm run db:seed` to seed from `config/projects.json` during initial setup.
 
 ## Development
 
@@ -66,19 +51,21 @@ Lefthook runs pre-commit (lint, typecheck) and pre-push (test) hooks automatical
 
 ## Key Directories
 
-- `src/config/` - Project configuration and Zod schemas
+- `src/config/` - Configuration provider, caching, Zod schemas
+- `src/db/` - Database client, Drizzle schema, repositories
 - `src/triggers/` - Extensible trigger system (Trello, GitHub)
 - `src/agents/` - AI agent implementations
 - `src/gadgets/` - Custom gadgets (Trello, Git)
 - `src/trello/` - Trello API client
 - `src/utils/` - Utilities (logging, repo cloning, lifecycle)
-- `tools/` - Developer scripts (session debugging)
+- `tools/` - Developer scripts (session debugging, DB seeding, secrets management)
 
 ## Environment Variables
 
 Required:
-- `TRELLO_API_KEY`, `TRELLO_TOKEN` - Trello API credentials
-- `GITHUB_TOKEN` - For cloning repos and creating PRs
+- `DATABASE_URL` - PostgreSQL connection string (Supabase transaction pooler, port 6543)
+- `TRELLO_API_KEY`, `TRELLO_TOKEN` - Trello API credentials (global fallback)
+- `GITHUB_TOKEN` - For cloning repos and creating PRs (global fallback)
 - `OPENROUTER_API_KEY` - LLM provider (default, uses Gemini 3 Flash Preview)
 
 Alternative LLM providers:
@@ -88,7 +75,38 @@ Alternative LLM providers:
 Optional:
 - `PORT` - Server port (default: 3000)
 - `LOG_LEVEL` - Logging level (default: info)
-- `CONFIG_PATH` - Path to projects config file
+- `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled)
+
+## Database Configuration
+
+CASCADE stores all project configuration in PostgreSQL (Supabase). The `config/projects.json` file is no longer used at runtime.
+
+### Schema
+
+- `cascade_defaults` - Global defaults (model, iterations, timeouts, budget)
+- `projects` - Per-project config (repo, Trello board/lists/labels, budget, backend)
+- `agent_configs` - Per-agent-type overrides (model, iterations, backend, prompt), scoped to global or per-project
+- `project_secrets` - Per-project credentials (Trello, GitHub, LLM API keys)
+
+### Database Scripts
+
+```bash
+npm run db:generate      # Generate migration SQL from schema changes
+npm run db:migrate       # Apply migrations
+npm run db:push          # Push schema directly (dev)
+npm run db:studio        # Open Drizzle Studio
+npm run db:seed          # Seed DB from config/projects.json
+```
+
+### Per-Project Secrets
+
+Store per-project credentials in `project_secrets` table. Falls back to global env vars when not set.
+
+```bash
+npx tsx tools/manage-secrets.ts set <project-id> TRELLO_API_KEY <value>
+npx tsx tools/manage-secrets.ts list <project-id>
+npx tsx tools/manage-secrets.ts delete <project-id> <key>
+```
 
 ## Claude Code Backend
 
@@ -132,6 +150,21 @@ bash tests/docker/claude-code-auth/run-test.sh
 ```
 
 When `ANTHROPIC_API_KEY` is set, it takes priority over subscription auth.
+
+### Subscription Cost Zeroing
+
+When using a Claude Max subscription (OAuth token), API costs are covered by the subscription. Enable `subscriptionCostZero` to prevent these costs from counting against the per-card budget:
+
+```json
+{
+  "agentBackend": {
+    "default": "claude-code",
+    "subscriptionCostZero": true
+  }
+}
+```
+
+When enabled and the backend is `claude-code`, reported costs are zeroed after each session. If `ANTHROPIC_API_KEY` is also set (which takes priority over subscription auth), a warning is logged since costs are real in that case.
 
 ## Adding New Triggers
 

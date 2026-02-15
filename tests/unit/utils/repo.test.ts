@@ -16,7 +16,7 @@ vi.mock('node:fs', () => ({
 }));
 
 vi.mock('../../../src/config/projects.js', () => ({
-	getProjectGitHubToken: vi.fn(() => 'test-token'),
+	getProjectGitHubToken: vi.fn(() => Promise.resolve('test-token')),
 }));
 
 vi.mock('../../../src/utils/logging.js', () => ({
@@ -72,18 +72,17 @@ describe('repo utils', () => {
 	});
 
 	describe('cloneRepo', () => {
-		it('clones repo and configures git user', () => {
+		it('clones repo and configures git user', async () => {
 			const project = {
 				id: 'test',
 				name: 'Test',
 				repo: 'owner/repo',
 				baseBranch: 'main',
 				branchPrefix: 'feature/',
-				githubTokenEnv: 'GITHUB_TOKEN',
 				trello: { boardId: 'board', lists: {}, labels: {} },
 			};
 
-			cloneRepo(project, '/tmp/repo');
+			await cloneRepo(project, '/tmp/repo');
 
 			expect(execSync).toHaveBeenCalledWith(
 				expect.stringContaining('git clone'),

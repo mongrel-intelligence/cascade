@@ -374,8 +374,33 @@ export async function executeWithBackend(
 
 		monitor?.start();
 
+		if (
+			backend.name === 'claude-code' &&
+			input.project.agentBackend?.subscriptionCostZero === true &&
+			process.env.ANTHROPIC_API_KEY
+		) {
+			logger.warn(
+				'subscriptionCostZero enabled but ANTHROPIC_API_KEY is set — API key takes priority, costs are real',
+				{ project: input.project.id },
+			);
+		}
+
 		try {
 			const result = await backend.execute(backendInput);
+
+			// Zero out cost for subscription-backed Claude Code sessions
+			if (
+				backend.name === 'claude-code' &&
+				input.project.agentBackend?.subscriptionCostZero === true &&
+				result.cost !== undefined &&
+				result.cost > 0
+			) {
+				logger.info('Zeroing Claude Code cost (subscription mode)', {
+					originalCost: result.cost,
+					project: input.project.id,
+				});
+				result.cost = 0;
+			}
 
 			fileLogger.close();
 			const logBuffer = await fileLogger.getZippedBuffer();

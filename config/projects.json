@@ -23,7 +23,7 @@
 			"repo": "zbigniewsobiecki/niu",
 			"baseBranch": "dev",
 			"branchPrefix": "feature/",
-			"reviewerTokenEnv": "GITHUB_REVIEWER_TOKEN",
+
 			"trello": {
 				"boardId": "694ec393370da080b52eb64c",
 				"lists": {
@@ -54,7 +54,7 @@
 			"repo": "zbigniewsobiecki/car-dealership",
 			"baseBranch": "dev",
 			"branchPrefix": "feature/",
-			"reviewerTokenEnv": "GITHUB_REVIEWER_TOKEN",
+
 			"agentBackend": {
 				"default": "llmist",
 				"overrides": {
@@ -62,7 +62,8 @@
 					"respond-to-review": "claude-code",
 					"respond-to-ci": "claude-code",
 					"respond-to-pr-comment": "claude-code"
-				}
+				},
+				"subscriptionCostZero": true
 			},
 			"agentModels": {
 				"planning": "openrouter:google/gemini-3-flash-preview",

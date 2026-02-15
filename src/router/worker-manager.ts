@@ -27,10 +27,10 @@ function buildWorkerEnv(job: Job<CascadeJob>): string[] {
 		// Database connection
 		`CASCADE_POSTGRES_HOST=${process.env.CASCADE_POSTGRES_HOST || 'postgres'}`,
 		`CASCADE_POSTGRES_PORT=${process.env.CASCADE_POSTGRES_PORT || '5432'}`,
+		// Database connection for config
+		`DATABASE_URL=${process.env.DATABASE_URL || ''}`,
 		// Logging
 		`LOG_LEVEL=${process.env.LOG_LEVEL || 'info'}`,
-		// Config
-		'CONFIG_PATH=./config/projects.json',
 	];
 
 	// Add secrets

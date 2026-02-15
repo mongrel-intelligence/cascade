@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
-import { type ProjectConfig, projectConfig } from './config.js';
+import { type RouterProjectConfig, getProjectConfig, loadProjectConfig } from './config.js';
 import { type CascadeJob, addJob, getQueueStats } from './queue.js';
 import {
 	getActiveWorkerCount,
@@ -20,7 +20,7 @@ function isAgentLogFilename(filename: string): boolean {
 function isCardInTriggerList(
 	actionType: string,
 	data: Record<string, unknown> | undefined,
-	project: ProjectConfig,
+	project: RouterProjectConfig,
 ): boolean {
 	const triggerLists = [
 		project.trello.lists.briefing,
@@ -54,7 +54,7 @@ function isCardInTriggerList(
 function isReadyToProcessLabelAdded(
 	actionType: string,
 	data: Record<string, unknown> | undefined,
-	project: ProjectConfig,
+	project: RouterProjectConfig,
 ): boolean {
 	if (actionType !== 'addLabelToCard' || !data?.label) return false;
 
@@ -71,7 +71,7 @@ function isReadyToProcessLabelAdded(
 function isAgentLogAttachmentUploaded(
 	actionType: string,
 	data: Record<string, unknown> | undefined,
-	project: ProjectConfig,
+	project: RouterProjectConfig,
 ): boolean {
 	if (actionType !== 'addAttachmentToCard' || !data?.attachment) return false;
 	if (!project.trello.lists.debug) return false;
@@ -88,7 +88,7 @@ function isAgentLogAttachmentUploaded(
 
 interface TrelloWebhookResult {
 	shouldProcess: boolean;
-	project?: ProjectConfig;
+	project?: RouterProjectConfig;
 	actionType?: string;
 	cardId?: string;
 }
@@ -110,7 +110,7 @@ function parseTrelloWebhook(payload: unknown): TrelloWebhookResult {
 	const actionType = action.type as string;
 	const data = action.data as Record<string, unknown> | undefined;
 
-	const project = projectConfig.projects.find((proj) => proj.trello.boardId === boardId);
+	const project = getProjectConfig().projects.find((proj) => proj.trello.boardId === boardId);
 	if (!project) {
 		return { shouldProcess: false };
 	}
@@ -269,9 +269,16 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 // Start server and worker processor
-const port = Number(process.env.PORT) || 3000;
+async function startRouter(): Promise<void> {
+	await loadProjectConfig();
 
-startWorkerProcessor();
+	const port = Number(process.env.PORT) || 3000;
+	startWorkerProcessor();
+	console.log(`[Router] Starting on port ${port}`);
+	serve({ fetch: app.fetch, port });
+}
 
-console.log(`[Router] Starting on port ${port}`);
-serve({ fetch: app.fetch, port });
+startRouter().catch((err) => {
+	console.error('[Router] Failed to start:', err);
+	process.exit(1);
+});

@@ -19,7 +19,7 @@ export async function setupRepository(options: SetupRepositoryOptions): Promise<
 
 	// Clone repo to temp directory
 	const repoDir = createTempDir(project.id);
-	cloneRepo(project, repoDir);
+	await cloneRepo(project, repoDir);
 
 	// Checkout PR branch if provided
 	if (prBranch) {

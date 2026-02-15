@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
-import { loadEnvConfigSafe, loadProjectsConfig } from './config/index.js';
+import { loadEnvConfigSafe } from './config/env.js';
+import { loadConfig } from './config/provider.js';
 import { createServer } from './server.js';
 import {
 	createTriggerRegistry,
@@ -7,7 +8,6 @@ import {
 	registerBuiltInTriggers,
 } from './triggers/index.js';
 import { processTrelloWebhook } from './triggers/trello/webhook-handler.js';
-import type { CascadeConfig } from './types/index.js';
 import { logger, setLogLevel, startFreshMachineTimer } from './utils/index.js';
 
 async function main(): Promise<void> {
@@ -17,30 +17,9 @@ async function main(): Promise<void> {
 
 	logger.info('Starting Cascade server', { port: envConfig.port });
 
-	// Load projects config
-	let config: CascadeConfig;
-	try {
-		config = loadProjectsConfig(envConfig.configPath || './config/projects.json');
-		logger.info('Loaded projects config', { projects: config.projects.map((p) => p.id) });
-	} catch (err) {
-		logger.warn('Failed to load projects config, using empty config', { error: String(err) });
-		config = {
-			defaults: {
-				model: 'openrouter:google/gemini-3-flash-preview',
-				agentModels: {},
-				maxIterations: 50,
-				agentIterations: {},
-				freshMachineTimeoutMs: 5 * 60 * 1000,
-				watchdogTimeoutMs: 30 * 60 * 1000,
-				postJobGracePeriodMs: 5000,
-				cardBudgetUsd: 5,
-				agentBackend: 'llmist',
-				progressModel: 'openrouter:google/gemini-2.5-flash-lite',
-				progressIntervalMinutes: 5,
-			},
-			projects: [],
-		};
-	}
+	// Load projects config from database
+	const config = await loadConfig();
+	logger.info('Loaded projects config', { projects: config.projects.map((p) => p.id) });
 
 	// Create trigger registry
 	const triggerRegistry = createTriggerRegistry();
@@ -50,10 +29,10 @@ async function main(): Promise<void> {
 	const app = createServer({
 		config,
 		onTrelloWebhook: async (payload) => {
-			await processTrelloWebhook(payload, config, triggerRegistry);
+			await processTrelloWebhook(payload, triggerRegistry);
 		},
 		onGitHubWebhook: async (payload, eventType) => {
-			await processGitHubWebhook(payload, eventType, config, triggerRegistry);
+			await processGitHubWebhook(payload, eventType, triggerRegistry);
 		},
 	});
 
