@@ -64,18 +64,15 @@ Lefthook runs pre-commit (lint, typecheck) and pre-push (test) hooks automatical
 
 Required:
 - `DATABASE_URL` - PostgreSQL connection string (Supabase transaction pooler, port 6543)
-- `TRELLO_API_KEY`, `TRELLO_TOKEN` - Trello API credentials (global fallback)
-- `GITHUB_TOKEN` - For cloning repos and creating PRs (global fallback)
-- `OPENROUTER_API_KEY` - LLM provider (default, uses Gemini 3 Flash Preview)
 
-Alternative LLM providers:
-- `GEMINI_API_KEY` - For direct Gemini API access
-- `ANTHROPIC_API_KEY` - For Anthropic Claude models
-
-Optional:
+Optional (infrastructure):
 - `PORT` - Server port (default: 3000)
 - `LOG_LEVEL` - Logging level (default: info)
 - `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled)
+- `ANTHROPIC_API_KEY` - For Claude Code backend (API key auth)
+- `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code backend (subscription auth)
+
+**Project credentials** (`GITHUB_TOKEN`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored per-project in the database `project_secrets` table. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
 
 ## Database Configuration
 

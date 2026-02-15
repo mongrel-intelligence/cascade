@@ -1,3 +1,4 @@
+import { getProjectReviewerToken } from '../../config/projects.js';
 import { getAuthenticatedUser, getReviewerUser, githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -57,10 +58,11 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		const cardId = extractTrelloCardId(prDetails.body);
 
 		// Skip if our latest review already covers the current HEAD SHA
+		const reviewerToken = await getProjectReviewerToken(ctx.project);
 		const [reviews, botUser, reviewerUser] = await Promise.all([
 			githubClient.getPRReviews(owner, repo, prNumber),
 			getAuthenticatedUser(),
-			getReviewerUser(),
+			getReviewerUser(reviewerToken),
 		]);
 
 		// Only consider actual reviews (approved/changes_requested), not COMMENTED

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { getProjectReviewerToken } from '../config/projects.js';
 import { REVIEW_FILE_CONTENT_TOKEN_LIMIT, estimateTokens } from '../config/reviewConfig.js';
 import { Finish } from '../gadgets/Finish.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
@@ -277,9 +278,8 @@ const reviewAgentDefinition: GitHubAgentDefinition<ReviewAgentInput, ReviewConte
 		return b;
 	},
 
-	wrapExecution(_input, runLifecycle) {
-		const reviewerToken = process.env.GITHUB_REVIEWER_TOKEN;
-
+	async wrapExecution(input, runLifecycle) {
+		const reviewerToken = await getProjectReviewerToken(input.project);
 		if (reviewerToken) {
 			return withGitHubToken(reviewerToken, runLifecycle);
 		}

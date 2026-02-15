@@ -1,23 +1,36 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock config before importing notifications
-vi.mock('../../../src/router/config.js', () => ({
-	routerConfig: {
-		secrets: {
-			trelloApiKey: 'test-trello-key',
-			trelloToken: 'test-trello-token',
-			githubToken: 'test-github-token',
-		},
+// Mock config provider for DB secret resolution
+vi.mock('../../../src/config/provider.js', () => ({
+	getProjectSecret: vi.fn(),
+	findProjectByRepo: vi.fn(),
+}));
+
+// Mock config cache (imported transitively)
+vi.mock('../../../src/config/configCache.js', () => ({
+	configCache: {
+		getSecrets: vi.fn().mockReturnValue(null),
+		getConfig: vi.fn().mockReturnValue(null),
+		getProjectByBoardId: vi.fn().mockReturnValue(null),
+		getProjectByRepo: vi.fn().mockReturnValue(null),
+		setConfig: vi.fn(),
+		setProjectByBoardId: vi.fn(),
+		setProjectByRepo: vi.fn(),
+		setSecrets: vi.fn(),
+		invalidate: vi.fn(),
 	},
 }));
 
-import { routerConfig } from '../../../src/router/config.js';
+import { findProjectByRepo, getProjectSecret } from '../../../src/config/provider.js';
 import {
 	extractPRNumber,
 	formatDuration,
 	notifyTimeout,
 } from '../../../src/router/notifications.js';
 import type { CascadeJob, GitHubJob, TrelloJob } from '../../../src/router/queue.js';
+
+const mockGetProjectSecret = vi.mocked(getProjectSecret);
+const mockFindProjectByRepo = vi.mocked(findProjectByRepo);
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -114,6 +127,22 @@ describe('notifyTimeout', () => {
 		vi.spyOn(console, 'log').mockImplementation(() => {});
 		vi.spyOn(console, 'warn').mockImplementation(() => {});
 		vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		// Default: DB returns secrets
+		mockGetProjectSecret.mockImplementation(async (_projectId, key) => {
+			if (key === 'TRELLO_API_KEY') return 'test-trello-key';
+			if (key === 'TRELLO_TOKEN') return 'test-trello-token';
+			if (key === 'GITHUB_TOKEN') return 'test-github-token';
+			throw new Error(`Secret '${key}' not found`);
+		});
+		mockFindProjectByRepo.mockResolvedValue({
+			id: 'test',
+			name: 'Test',
+			repo: 'owner/repo',
+			baseBranch: 'main',
+			branchPrefix: 'feature/',
+			trello: { boardId: 'b1', lists: {}, labels: {} },
+		});
 	});
 
 	afterEach(() => {
@@ -148,19 +177,15 @@ describe('notifyTimeout', () => {
 			expect(body.text).toContain('trello-1707900000000-abc123');
 		});
 
-		it('skips notification when Trello credentials are missing', async () => {
-			const secrets = routerConfig.secrets as Record<string, string>;
-			const origKey = secrets.trelloApiKey;
-			secrets.trelloApiKey = '';
+		it('skips notification when Trello credentials are missing in DB', async () => {
+			mockGetProjectSecret.mockRejectedValue(new Error('Secret not found'));
 
 			await notifyTimeout(trelloJob, defaultInfo);
 
 			expect(mockFetch).not.toHaveBeenCalled();
 			expect(console.warn).toHaveBeenCalledWith(
-				expect.stringContaining('Missing Trello credentials'),
+				expect.stringContaining('Missing Trello credentials in DB'),
 			);
-
-			secrets.trelloApiKey = origKey;
 		});
 
 		it('logs warning on Trello API error', async () => {
@@ -205,17 +230,27 @@ describe('notifyTimeout', () => {
 			expect(body.body).toContain('30m 0s');
 		});
 
-		it('skips notification when GitHub token is missing', async () => {
-			const secrets = routerConfig.secrets as Record<string, string>;
-			const origToken = secrets.githubToken;
-			secrets.githubToken = '';
+		it('skips notification when GitHub token is missing in DB', async () => {
+			mockGetProjectSecret.mockRejectedValue(new Error('Secret not found'));
 
 			await notifyTimeout(githubJob, defaultInfo);
 
 			expect(mockFetch).not.toHaveBeenCalled();
-			expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('Missing GitHub token'));
+			expect(console.warn).toHaveBeenCalledWith(
+				expect.stringContaining('Missing GitHub token in DB'),
+			);
+		});
 
-			secrets.githubToken = origToken;
+		it('skips notification when project not found for repo', async () => {
+			mockFindProjectByRepo.mockResolvedValue(undefined);
+
+			await notifyTimeout(githubJob, defaultInfo);
+
+			expect(mockFetch).not.toHaveBeenCalled();
+			expect(console.warn).toHaveBeenCalledWith(
+				expect.stringContaining('No project found for repo'),
+				expect.objectContaining({ repoFullName: 'owner/repo' }),
+			);
 		});
 
 		it('skips notification when PR number cannot be extracted', async () => {
