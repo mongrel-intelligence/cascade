@@ -4,7 +4,6 @@ import { PRCommentMentionTrigger } from './github/pr-comment-mention.js';
 // import { PROpenedTrigger } from './github/pr-opened.js';
 import { PRMergedTrigger } from './github/pr-merged.js';
 import { PRReadyToMergeTrigger } from './github/pr-ready-to-merge.js';
-import { PRReviewCommentTrigger } from './github/pr-review-comment.js';
 import { PRReviewSubmittedTrigger } from './github/pr-review-submitted.js';
 import type { TriggerRegistry } from './registry.js';
 import { AttachmentAddedTrigger } from './trello/attachment-added.js';
@@ -50,9 +49,6 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 	// GitHub: PR comment @mention trigger (runs respond-to-pr-comment when reviewer is @mentioned)
 	// Must be registered before other comment triggers so it can intercept mentions and fall through otherwise
 	registry.register(new PRCommentMentionTrigger());
-
-	// GitHub: PR review comment trigger (inline code comments)
-	registry.register(new PRReviewCommentTrigger());
 
 	// GitHub: PR review submission trigger (when someone submits a review)
 	registry.register(new PRReviewSubmittedTrigger());
