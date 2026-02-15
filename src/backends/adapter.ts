@@ -241,6 +241,7 @@ async function buildBackendInput(
 	repoDir: string,
 	fileLogger: ReturnType<typeof createFileLogger>,
 	log: ReturnType<typeof createAgentLogger>,
+	backendName?: string,
 ): Promise<AgentBackendInput> {
 	const { project, config, cardId } = input;
 
@@ -265,6 +266,7 @@ async function buildBackendInput(
 	const progressReporter = createProgressReporter({
 		logWriter: fileLogger.write.bind(fileLogger),
 		trello: cardId ? { cardId, agentType, maxIterations } : undefined,
+		backendName,
 	});
 
 	const cliToolsDir = new URL('../../bin', import.meta.url).pathname;
@@ -340,7 +342,14 @@ export async function executeWithBackend(
 		repoDir = await resolveRepoDir(input, log, agentType);
 		const envSnapshot = loadCascadeEnv(repoDir, log);
 
-		const backendInput = await buildBackendInput(agentType, input, repoDir, fileLogger, log);
+		const backendInput = await buildBackendInput(
+			agentType,
+			input,
+			repoDir,
+			fileLogger,
+			log,
+			backend.name,
+		);
 
 		const originalCwd = process.cwd();
 		process.chdir(repoDir);

@@ -10,6 +10,7 @@ import type { LogWriter, ProgressReporter } from './types.js';
 
 export interface ProgressReporterConfig {
 	logWriter: LogWriter;
+	backendName?: string;
 	trello?: {
 		cardId: string;
 		agentType: string;
@@ -32,7 +33,7 @@ export function createProgressReporter(config: ProgressReporterConfig): Progress
 
 	return {
 		async onIteration(iteration: number, maxIterations: number): Promise<void> {
-			if (config.trello) {
+			if (config.trello && config.backendName !== 'claude-code') {
 				const statusConfig = getStatusUpdateConfig(config.trello.agentType);
 				if (
 					statusConfig.enabled &&
