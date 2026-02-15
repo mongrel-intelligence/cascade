@@ -164,7 +164,7 @@ describe('buildStopHooks', () => {
 			}),
 		);
 		expect(mockExecSync).toHaveBeenCalledWith(
-			'git log origin/HEAD..HEAD --oneline',
+			'git log @{upstream}..HEAD --oneline',
 			expect.objectContaining({ cwd: '/tmp/repo' }),
 		);
 	});
