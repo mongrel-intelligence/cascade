@@ -38,7 +38,11 @@ vi.mock('../../../src/utils/lifecycle.js', () => ({
 }));
 
 vi.mock('../../../src/backends/progress.js', () => ({
-	createProgressReporter: vi.fn(),
+	createProgressMonitor: vi.fn(),
+}));
+
+vi.mock('../../../src/config/customModels.js', () => ({
+	CUSTOM_MODELS: [],
 }));
 
 vi.mock('../../../src/utils/logging.js', () => ({
@@ -55,7 +59,7 @@ import { resolveModelConfig } from '../../../src/agents/shared/modelResolution.j
 import { setupRepository } from '../../../src/agents/shared/repository.js';
 import { createAgentLogger } from '../../../src/agents/utils/logging.js';
 import { executeWithBackend } from '../../../src/backends/adapter.js';
-import { createProgressReporter } from '../../../src/backends/progress.js';
+import { createProgressMonitor } from '../../../src/backends/progress.js';
 import type { AgentBackend } from '../../../src/backends/types.js';
 import { readCard } from '../../../src/gadgets/trello/core/readCard.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
@@ -79,7 +83,7 @@ const mockCleanupTempDir = vi.mocked(cleanupTempDir);
 const mockCleanupLogFile = vi.mocked(cleanupLogFile);
 const mockCleanupLogDirectory = vi.mocked(cleanupLogDirectory);
 const mockClearWatchdogCleanup = vi.mocked(clearWatchdogCleanup);
-const mockCreateProgressReporter = vi.mocked(createProgressReporter);
+const mockCreateProgressMonitor = vi.mocked(createProgressMonitor);
 
 function makeProject(): ProjectConfig {
 	return {
@@ -105,6 +109,8 @@ function makeConfig(): CascadeConfig {
 			postJobGracePeriodMs: 5000,
 			cardBudgetUsd: 3.5,
 			agentBackend: 'llmist',
+			progressModel: 'openrouter:google/gemini-2.5-flash-lite',
+			progressIntervalMinutes: 5,
 		},
 		projects: [],
 	};
@@ -153,11 +159,7 @@ function setupMocks() {
 		maxIterations: 50,
 	} as never);
 	mockReadCard.mockResolvedValue('Card data');
-	mockCreateProgressReporter.mockReturnValue({
-		onIteration: vi.fn(),
-		onToolCall: vi.fn(),
-		onText: vi.fn(),
-	});
+	mockCreateProgressMonitor.mockReturnValue(null);
 	return mockLoggerInstance;
 }
 

@@ -1,104 +1,44 @@
-import {
-	formatGitHubProgressComment,
-	formatStatusMessage,
-	getStatusUpdateConfig,
-} from '../config/statusUpdateConfig.js';
-import { getSessionState } from '../gadgets/sessionState.js';
-import { githubClient } from '../github/client.js';
-import { trelloClient } from '../trello/client.js';
-import type { LogWriter, ProgressReporter } from './types.js';
+import type { ModelSpec } from 'llmist';
 
-export interface ProgressReporterConfig {
+import { getStatusUpdateConfig } from '../config/statusUpdateConfig.js';
+import { ProgressMonitor, type ProgressMonitorConfig } from './progressMonitor.js';
+import type { LogWriter } from './types.js';
+
+export interface ProgressMonitorOptions {
 	logWriter: LogWriter;
-	backendName?: string;
-	trello?: {
-		cardId: string;
-		agentType: string;
-		maxIterations: number;
-	};
-	github?: {
-		owner: string;
-		repo: string;
-		headerMessage: string;
-		agentType: string;
-		maxIterations: number;
-	};
+	agentType: string;
+	taskDescription: string;
+	progressModel: string;
+	intervalMinutes: number;
+	customModels: ModelSpec[];
+	trello?: { cardId: string };
+	github?: { owner: string; repo: string; headerMessage: string };
 }
 
 /**
- * Creates a ProgressReporter that wraps existing Trello/GitHub status update logic.
+ * Creates a ProgressMonitor that posts time-based progress updates
+ * using a lightweight LLM for natural-language summaries.
+ *
+ * Returns null if status updates are disabled for this agent type.
  */
-export function createProgressReporter(config: ProgressReporterConfig): ProgressReporter {
-	const { logWriter } = config;
+export function createProgressMonitor(options: ProgressMonitorOptions): ProgressMonitor | null {
+	const statusConfig = getStatusUpdateConfig(options.agentType);
+	if (!statusConfig.enabled) {
+		return null;
+	}
 
-	return {
-		async onIteration(iteration: number, maxIterations: number): Promise<void> {
-			if (config.trello && config.backendName !== 'claude-code') {
-				const statusConfig = getStatusUpdateConfig(config.trello.agentType);
-				if (
-					statusConfig.enabled &&
-					iteration > 0 &&
-					iteration % statusConfig.intervalIterations === 0
-				) {
-					try {
-						const message = formatStatusMessage(iteration, maxIterations, config.trello.agentType);
-						await trelloClient.addComment(config.trello.cardId, message);
-						logWriter('INFO', 'Posted status update to Trello', {
-							iteration,
-							cardId: config.trello.cardId,
-						});
-					} catch (err) {
-						logWriter('WARN', 'Failed to post status update', {
-							iteration,
-							error: String(err),
-						});
-					}
-				}
-			}
-
-			if (config.github) {
-				const statusConfig = getStatusUpdateConfig(config.github.agentType);
-				if (
-					statusConfig.enabled &&
-					iteration > 0 &&
-					iteration % statusConfig.intervalIterations === 0
-				) {
-					const { initialCommentId } = getSessionState();
-					if (initialCommentId) {
-						try {
-							const body = formatGitHubProgressComment(
-								config.github.headerMessage,
-								iteration,
-								maxIterations,
-								config.github.agentType,
-							);
-							await githubClient.updatePRComment(
-								config.github.owner,
-								config.github.repo,
-								initialCommentId,
-								body,
-							);
-							logWriter('INFO', 'Updated GitHub PR comment with progress', {
-								iteration,
-								commentId: initialCommentId,
-							});
-						} catch (err) {
-							logWriter('WARN', 'Failed to update GitHub PR comment', {
-								iteration,
-								error: String(err),
-							});
-						}
-					}
-				}
-			}
-		},
-
-		onToolCall(toolName: string, params?: Record<string, unknown>): void {
-			logWriter('DEBUG', 'Tool call', { toolName, params });
-		},
-
-		onText(content: string): void {
-			logWriter('DEBUG', 'Agent text output', { length: content.length });
-		},
+	const config: ProgressMonitorConfig = {
+		agentType: options.agentType,
+		taskDescription: options.taskDescription,
+		intervalMinutes: options.intervalMinutes,
+		progressModel: options.progressModel,
+		customModels: options.customModels,
+		logWriter: options.logWriter,
+		trello: options.trello,
+		github: options.github,
 	};
+
+	return new ProgressMonitor(config);
 }
+
+export { ProgressMonitor } from './progressMonitor.js';

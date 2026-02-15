@@ -14,45 +14,13 @@ import type {
 	ObserveRetryAttemptContext,
 } from 'llmist';
 
-import {
-	formatGitHubProgressComment,
-	formatStatusMessage,
-	getStatusUpdateConfig,
-} from '../../config/statusUpdateConfig.js';
-import { getSessionState } from '../../gadgets/sessionState.js';
-import { githubClient } from '../../github/client.js';
-import { trelloClient } from '../../trello/client.js';
+import type { ProgressMonitor } from '../../backends/progressMonitor.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
 import { calculateCost } from '../../utils/llmMetrics.js';
-import { syncCompletedTodosToChecklist } from './checklistSync.js';
 import { type TrackingContext, checkForLoopAndAdvance, incrementLLMIteration } from './tracking.js';
 
 /** Function signature for writing to cascade log file */
 export type LogWriter = (level: string, message: string, context?: Record<string, unknown>) => void;
-
-/** Configuration for status update feature */
-export interface StatusUpdateHooksConfig {
-	/** Trello card ID to post updates to */
-	cardId: string;
-	/** Agent type for formatting */
-	agentType: string;
-	/** Maximum iterations for progress calculation */
-	maxIterations: number;
-}
-
-/** Configuration for GitHub PR comment progress updates */
-export interface GitHubProgressHooksConfig {
-	/** GitHub repository owner */
-	owner: string;
-	/** GitHub repository name */
-	repo: string;
-	/** Original comment text to preserve as header */
-	headerMessage: string;
-	/** Agent type for formatting */
-	agentType: string;
-	/** Maximum iterations for progress calculation */
-	maxIterations: number;
-}
 
 /** Configuration for creating observer hooks */
 export interface ObserverHooksConfig {
@@ -64,93 +32,8 @@ export interface ObserverHooksConfig {
 	trackingContext: TrackingContext;
 	/** Logger for raw LLM request/response logging */
 	llmCallLogger: LLMCallLogger;
-	/** Optional status update configuration */
-	statusUpdate?: StatusUpdateHooksConfig;
-	/** Optional GitHub PR comment progress configuration */
-	githubProgress?: GitHubProgressHooksConfig;
-}
-
-/**
- * Post a status update to Trello and optionally sync checklist items.
- * Extracted from onLLMCallReady to reduce cognitive complexity.
- */
-async function postStatusUpdate(
-	config: StatusUpdateHooksConfig,
-	iteration: number,
-	logWriter: LogWriter,
-): Promise<void> {
-	const { cardId, agentType, maxIterations } = config;
-	const statusConfig = getStatusUpdateConfig(agentType);
-
-	if (
-		!statusConfig.enabled ||
-		iteration === 0 ||
-		iteration % statusConfig.intervalIterations !== 0
-	) {
-		return;
-	}
-
-	try {
-		// Post status comment
-		const message = formatStatusMessage(iteration, maxIterations, agentType);
-		await trelloClient.addComment(cardId, message);
-		logWriter('INFO', 'Posted status update to Trello', { iteration, cardId });
-
-		// For implementation agent: sync completed TODOs to checklist
-		if (agentType === 'implementation') {
-			await syncCompletedTodosToChecklist(cardId);
-		}
-	} catch (err) {
-		logWriter('WARN', 'Failed to post status update', {
-			iteration,
-			cardId,
-			error: String(err),
-		});
-	}
-}
-
-/**
- * Post a progress update to a GitHub PR comment.
- * Updates the initial comment with current progress bar and todo list.
- */
-async function postGitHubProgressUpdate(
-	config: GitHubProgressHooksConfig,
-	iteration: number,
-	logWriter: LogWriter,
-): Promise<void> {
-	const { owner, repo, headerMessage, agentType, maxIterations } = config;
-	const statusConfig = getStatusUpdateConfig(agentType);
-
-	if (
-		!statusConfig.enabled ||
-		iteration === 0 ||
-		iteration % statusConfig.intervalIterations !== 0
-	) {
-		return;
-	}
-
-	const { initialCommentId } = getSessionState();
-	if (!initialCommentId) {
-		logWriter('WARN', 'No initial comment ID found, skipping GitHub progress update', {
-			iteration,
-		});
-		return;
-	}
-
-	try {
-		const body = formatGitHubProgressComment(headerMessage, iteration, maxIterations, agentType);
-		await githubClient.updatePRComment(owner, repo, initialCommentId, body);
-		logWriter('INFO', 'Updated GitHub PR comment with progress', {
-			iteration,
-			commentId: initialCommentId,
-		});
-	} catch (err) {
-		logWriter('WARN', 'Failed to update GitHub PR comment with progress', {
-			iteration,
-			commentId: initialCommentId,
-			error: String(err),
-		});
-	}
+	/** Optional progress monitor for feeding iteration state */
+	progressMonitor?: ProgressMonitor;
 }
 
 /**
@@ -194,14 +77,9 @@ export function createObserverHooks(config: ObserverHooksConfig) {
 			const callNumber = trackingContext.metrics.llmIterations;
 			llmCallLogger.logRequest(callNumber, context.options.messages);
 
-			// Post periodic status updates to Trello
-			if (config.statusUpdate) {
-				await postStatusUpdate(config.statusUpdate, callNumber, logWriter);
-			}
-
-			// Post periodic progress updates to GitHub PR comment
-			if (config.githubProgress) {
-				await postGitHubProgressUpdate(config.githubProgress, callNumber, logWriter);
+			// Feed iteration state to progress monitor (no posting — timer handles that)
+			if (config.progressMonitor) {
+				await config.progressMonitor.onIteration(callNumber, 0);
 			}
 		},
 

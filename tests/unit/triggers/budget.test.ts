@@ -37,6 +37,9 @@ const baseConfig: CascadeConfig = {
 		watchdogTimeoutMs: 1800000,
 		postJobGracePeriodMs: 5000,
 		cardBudgetUsd: 3.5,
+		agentBackend: 'llmist',
+		progressModel: 'openrouter:google/gemini-2.5-flash-lite',
+		progressIntervalMinutes: 5,
 	},
 	projects: [baseProject],
 };
