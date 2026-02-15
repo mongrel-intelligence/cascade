@@ -58,6 +58,20 @@ jobs:
       - name: Validate PR commits
         run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
 
+  docker-build-check:
+    name: Validate Docker builds
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build router image
+        run: docker build -f Dockerfile.router -t cascade-router:ci-check .
+
+      - name: Build worker image (builder stage only)
+        run: docker build -f Dockerfile.worker --target builder -t cascade-worker:ci-check .
+
   enforce-dev-to-main:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
