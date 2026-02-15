@@ -52,6 +52,16 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 			return null;
 		}
 
+		// Only trigger for PRs targeting the project's base branch
+		if (prDetails.baseRef !== ctx.project.baseBranch) {
+			logger.info('PR targets non-base branch, skipping check failure trigger', {
+				prNumber,
+				baseRef: prDetails.baseRef,
+				projectBaseBranch: ctx.project.baseBranch,
+			});
+			return null;
+		}
+
 		const cardId = extractTrelloCardId(prDetails.body);
 
 		// Get ALL check runs for this commit to verify they're all complete
