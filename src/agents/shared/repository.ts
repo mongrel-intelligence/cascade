@@ -31,7 +31,7 @@ export async function setupRepository(options: SetupRepositoryOptions): Promise<
 	const setupScriptPath = join(repoDir, '.cascade', 'setup.sh');
 	if (existsSync(setupScriptPath)) {
 		log.info('Running project setup script', { path: '.cascade/setup.sh', agentType });
-		const setupResult = await runCommand('bash', [setupScriptPath], repoDir, {
+		const setupResult = await runCommand('sudo', ['bash', setupScriptPath], repoDir, {
 			AGENT_PROFILE_NAME: agentType,
 		});
 		log.info('Setup script completed', {
