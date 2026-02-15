@@ -37,4 +37,4 @@ jobs:
       - name: Restart cascade-router
         run: |
           cd /opt/services
-          docker compose up -d cascade-router
+          docker compose up -d --force-recreate cascade-router
