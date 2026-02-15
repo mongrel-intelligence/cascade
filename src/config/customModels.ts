@@ -113,4 +113,18 @@ export const CUSTOM_MODELS: ModelSpec[] = [
 			reasoning: true,
 		},
 	},
+	{
+		provider: 'openrouter',
+		modelId: 'google/gemini-2.5-flash-lite',
+		displayName: 'Gemini 2.5 Flash Lite',
+		contextWindow: 1_048_576,
+		maxOutputTokens: 8_192,
+		pricing: { input: 0.075, output: 0.3 },
+		knowledgeCutoff: '2025-03',
+		features: {
+			streaming: true,
+			functionCalling: false,
+			vision: false,
+		},
+	},
 ];

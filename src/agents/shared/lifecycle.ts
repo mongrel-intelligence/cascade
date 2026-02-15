@@ -1,5 +1,6 @@
 import { LLMist, type ModelSpec, createLogger } from 'llmist';
 
+import type { ProgressMonitor } from '../../backends/progressMonitor.js';
 import type { AgentResult } from '../../types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../../utils/cascadeEnv.js';
 import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../../utils/fileLogger.js';
@@ -44,6 +45,7 @@ export interface ExecuteAgentOptions<TContext extends BaseAgentContext> {
 		trackingContext: TrackingContext;
 		fileLogger: FileLogger;
 		repoDir: string;
+		progressMonitor: ProgressMonitor | null;
 	}) => BuilderType;
 
 	/** Inject pre-fetched data as synthetic gadget calls */
@@ -53,6 +55,9 @@ export interface ExecuteAgentOptions<TContext extends BaseAgentContext> {
 		trackingContext: TrackingContext;
 		repoDir: string;
 	}) => Promise<BuilderType>;
+
+	/** Create a ProgressMonitor for time-based progress reporting */
+	createProgressMonitor?: (fileLogger: FileLogger) => ProgressMonitor | null;
 
 	/** Whether to run in interactive mode */
 	interactive?: boolean;
@@ -109,6 +114,8 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 			const llmistLogger = createLogger({ minLevel: getLogLevel() });
 			const trackingContext = createTrackingContext();
 
+			const progressMonitor = options.createProgressMonitor?.(fileLogger) ?? null;
+
 			let builder = options.createBuilder({
 				client,
 				ctx,
@@ -116,6 +123,7 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 				trackingContext,
 				fileLogger,
 				repoDir,
+				progressMonitor,
 			});
 			builder = await options.injectSyntheticCalls({
 				builder,
@@ -125,13 +133,20 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 			});
 
 			const agent = builder.ask(ctx.prompt);
-			const result = await runAgentLoop(
-				agent,
-				log,
-				trackingContext,
-				options.interactive === true,
-				options.autoAccept === true,
-			);
+
+			progressMonitor?.start();
+			let result: Awaited<ReturnType<typeof runAgentLoop>>;
+			try {
+				result = await runAgentLoop(
+					agent,
+					log,
+					trackingContext,
+					options.interactive === true,
+					options.autoAccept === true,
+				);
+			} finally {
+				progressMonitor?.stop();
+			}
 
 			log.info('Agent completed', {
 				iterations: result.iterations,

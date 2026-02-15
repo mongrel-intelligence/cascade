@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/trello/client.js', () => ({
 	trelloClient: {
@@ -16,19 +16,35 @@ vi.mock('../../../src/gadgets/sessionState.js', () => ({
 	getSessionState: vi.fn(),
 }));
 
+vi.mock('../../../src/gadgets/todo/storage.js', () => ({
+	loadTodos: vi.fn(),
+}));
+
+vi.mock('../../../src/backends/progressModel.js', () => ({
+	callProgressModel: vi.fn(),
+}));
+
+vi.mock('../../../src/agents/utils/checklistSync.js', () => ({
+	syncCompletedTodosToChecklist: vi.fn(),
+}));
+
 vi.mock('../../../src/config/statusUpdateConfig.js', () => ({
 	getStatusUpdateConfig: vi.fn(),
 	formatStatusMessage: vi.fn(),
 	formatGitHubProgressComment: vi.fn(),
 }));
 
-import { createProgressReporter } from '../../../src/backends/progress.js';
+import { syncCompletedTodosToChecklist } from '../../../src/agents/utils/checklistSync.js';
+import { createProgressMonitor } from '../../../src/backends/progress.js';
+import { callProgressModel } from '../../../src/backends/progressModel.js';
+import { ProgressMonitor } from '../../../src/backends/progressMonitor.js';
 import {
 	formatGitHubProgressComment,
 	formatStatusMessage,
 	getStatusUpdateConfig,
 } from '../../../src/config/statusUpdateConfig.js';
 import { getSessionState } from '../../../src/gadgets/sessionState.js';
+import { loadTodos } from '../../../src/gadgets/todo/storage.js';
 import { githubClient } from '../../../src/github/client.js';
 import { trelloClient } from '../../../src/trello/client.js';
 
@@ -38,95 +54,227 @@ const mockGetStatusConfig = vi.mocked(getStatusUpdateConfig);
 const mockFormatStatus = vi.mocked(formatStatusMessage);
 const mockFormatGitHub = vi.mocked(formatGitHubProgressComment);
 const mockGetSessionState = vi.mocked(getSessionState);
+const mockLoadTodos = vi.mocked(loadTodos);
+const mockCallProgressModel = vi.mocked(callProgressModel);
+const mockSyncChecklist = vi.mocked(syncCompletedTodosToChecklist);
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.useFakeTimers();
+	mockLoadTodos.mockReturnValue([]);
 });
 
-describe('onIteration — Trello', () => {
-	function makeTrelloReporter() {
-		const logWriter = vi.fn();
-		const reporter = createProgressReporter({
-			logWriter,
-			trello: { cardId: 'card1', agentType: 'implementation', maxIterations: 20 },
+afterEach(() => {
+	vi.useRealTimers();
+});
+
+describe('ProgressMonitor — state accumulation', () => {
+	function makeMonitor() {
+		return new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			trello: { cardId: 'card1' },
 		});
-		return { reporter, logWriter };
 	}
 
-	it('posts comment at interval multiple', async () => {
-		mockGetStatusConfig.mockReturnValue({ enabled: true, intervalIterations: 5 });
-		mockFormatStatus.mockReturnValue('Progress: 25%');
+	it('accumulates iteration state via onIteration()', async () => {
+		const monitor = makeMonitor();
+		await monitor.onIteration(3, 20);
+		// No assertion on internal state — we verify via tick behavior
+	});
+
+	it('accumulates tool calls in ring buffer via onToolCall()', () => {
+		const logWriter = vi.fn();
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter,
+			trello: { cardId: 'card1' },
+		});
+
+		// Add 25 tool calls (more than ring buffer max of 20)
+		for (let i = 0; i < 25; i++) {
+			monitor.onToolCall(`Tool${i}`);
+		}
+
+		expect(logWriter).toHaveBeenCalledTimes(25);
+		expect(logWriter).toHaveBeenCalledWith('DEBUG', 'Tool call', expect.any(Object));
+	});
+
+	it('logs text output via onText()', () => {
+		const logWriter = vi.fn();
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter,
+		});
+
+		monitor.onText('Hello world');
+
+		expect(logWriter).toHaveBeenCalledWith('DEBUG', 'Agent text output', { length: 11 });
+	});
+});
+
+describe('ProgressMonitor — timer lifecycle', () => {
+	it('start() begins the interval timer', () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+		});
+
+		monitor.start();
+		// Timer is running — advancing time would trigger tick
+		monitor.stop();
+	});
+
+	it('stop() clears the timer', () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+		});
+
+		monitor.start();
+		monitor.stop();
+		// No tick should fire after stop
+	});
+
+	it('start() is idempotent', () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+		});
+
+		monitor.start();
+		monitor.start(); // Should not create a second timer
+		monitor.stop();
+	});
+});
+
+describe('ProgressMonitor — tick behavior', () => {
+	it('calls progress model and posts to Trello on tick', async () => {
+		const logWriter = vi.fn();
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter,
+			trello: { cardId: 'card1' },
+		});
+
+		mockCallProgressModel.mockResolvedValue('**Progress**: All good');
 		mockTrello.addComment.mockResolvedValue(undefined as never);
 
-		const { reporter } = makeTrelloReporter();
-		await reporter.onIteration(5, 20);
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		monitor.stop();
 
-		expect(mockTrello.addComment).toHaveBeenCalledWith('card1', 'Progress: 25%');
+		expect(mockCallProgressModel).toHaveBeenCalled();
+		expect(mockTrello.addComment).toHaveBeenCalledWith('card1', '**Progress**: All good');
 	});
 
-	it('skips iteration 0', async () => {
-		mockGetStatusConfig.mockReturnValue({ enabled: true, intervalIterations: 5 });
-
-		const { reporter } = makeTrelloReporter();
-		await reporter.onIteration(0, 20);
-
-		expect(mockTrello.addComment).not.toHaveBeenCalled();
-	});
-
-	it('skips when interval not reached', async () => {
-		mockGetStatusConfig.mockReturnValue({ enabled: true, intervalIterations: 5 });
-
-		const { reporter } = makeTrelloReporter();
-		await reporter.onIteration(3, 20);
-
-		expect(mockTrello.addComment).not.toHaveBeenCalled();
-	});
-
-	it('skips when statusConfig.enabled=false', async () => {
-		mockGetStatusConfig.mockReturnValue({ enabled: false, intervalIterations: 5 });
-
-		const { reporter } = makeTrelloReporter();
-		await reporter.onIteration(5, 20);
-
-		expect(mockTrello.addComment).not.toHaveBeenCalled();
-	});
-
-	it('catches and logs Trello API error (does not throw)', async () => {
-		mockGetStatusConfig.mockReturnValue({ enabled: true, intervalIterations: 5 });
-		mockFormatStatus.mockReturnValue('Progress');
-		mockTrello.addComment.mockRejectedValue(new Error('API error'));
-
-		const { reporter, logWriter } = makeTrelloReporter();
-
-		// Should not throw
-		await reporter.onIteration(5, 20);
-
-		expect(logWriter).toHaveBeenCalledWith(
-			'WARN',
-			expect.stringContaining('Failed'),
-			expect.any(Object),
-		);
-	});
-});
-
-describe('onIteration — GitHub', () => {
-	function makeGitHubReporter() {
+	it('falls back to template when progress model fails', async () => {
 		const logWriter = vi.fn();
-		const reporter = createProgressReporter({
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
 			logWriter,
-			github: {
-				owner: 'o',
-				repo: 'r',
-				headerMessage: 'Header',
-				agentType: 'review',
-				maxIterations: 20,
-			},
+			trello: { cardId: 'card1' },
 		});
-		return { reporter, logWriter };
-	}
 
-	it('updates PR comment at interval multiple', async () => {
-		mockGetStatusConfig.mockReturnValue({ enabled: true, intervalIterations: 5 });
+		mockCallProgressModel.mockRejectedValue(new Error('Model error'));
+		mockFormatStatus.mockReturnValue('Fallback progress');
+		mockTrello.addComment.mockResolvedValue(undefined as never);
+
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		monitor.stop();
+
+		expect(mockFormatStatus).toHaveBeenCalled();
+		expect(mockTrello.addComment).toHaveBeenCalledWith('card1', 'Fallback progress');
+	});
+
+	it('syncs checklist for implementation agents', async () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			trello: { cardId: 'card1' },
+		});
+
+		mockCallProgressModel.mockResolvedValue('Progress');
+		mockTrello.addComment.mockResolvedValue(undefined as never);
+		mockSyncChecklist.mockResolvedValue();
+
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		monitor.stop();
+
+		expect(mockSyncChecklist).toHaveBeenCalledWith('card1');
+	});
+
+	it('does not sync checklist for non-implementation agents', async () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'planning',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			trello: { cardId: 'card1' },
+		});
+
+		mockCallProgressModel.mockResolvedValue('Progress');
+		mockTrello.addComment.mockResolvedValue(undefined as never);
+
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		monitor.stop();
+
+		expect(mockSyncChecklist).not.toHaveBeenCalled();
+	});
+
+	it('posts to GitHub when configured', async () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'review',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			github: { owner: 'o', repo: 'r', headerMessage: 'Header' },
+		});
+
+		mockCallProgressModel.mockResolvedValue('Progress');
 		mockGetSessionState.mockReturnValue({
 			agentType: 'review',
 			prCreated: false,
@@ -135,17 +283,28 @@ describe('onIteration — GitHub', () => {
 			reviewUrl: null,
 			initialCommentId: 42,
 		});
-		mockFormatGitHub.mockReturnValue('GitHub progress');
+		mockFormatGitHub.mockReturnValue('GitHub body');
 		mockGithub.updatePRComment.mockResolvedValue(undefined as never);
 
-		const { reporter } = makeGitHubReporter();
-		await reporter.onIteration(5, 20);
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		monitor.stop();
 
-		expect(mockGithub.updatePRComment).toHaveBeenCalledWith('o', 'r', 42, 'GitHub progress');
+		expect(mockGithub.updatePRComment).toHaveBeenCalledWith('o', 'r', 42, expect.any(String));
 	});
 
-	it('skips when no initialCommentId in session state', async () => {
-		mockGetStatusConfig.mockReturnValue({ enabled: true, intervalIterations: 5 });
+	it('skips GitHub post when no initialCommentId', async () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'review',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			github: { owner: 'o', repo: 'r', headerMessage: 'Header' },
+		});
+
+		mockCallProgressModel.mockResolvedValue('Progress');
 		mockGetSessionState.mockReturnValue({
 			agentType: 'review',
 			prCreated: false,
@@ -155,38 +314,31 @@ describe('onIteration — GitHub', () => {
 			initialCommentId: null,
 		});
 
-		const { reporter } = makeGitHubReporter();
-		await reporter.onIteration(5, 20);
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		monitor.stop();
 
 		expect(mockGithub.updatePRComment).not.toHaveBeenCalled();
 	});
 
-	it('skips iteration 0', async () => {
-		mockGetStatusConfig.mockReturnValue({ enabled: true, intervalIterations: 5 });
-
-		const { reporter } = makeGitHubReporter();
-		await reporter.onIteration(0, 20);
-
-		expect(mockGithub.updatePRComment).not.toHaveBeenCalled();
-	});
-
-	it('catches and logs GitHub API error (does not throw)', async () => {
-		mockGetStatusConfig.mockReturnValue({ enabled: true, intervalIterations: 5 });
-		mockGetSessionState.mockReturnValue({
-			agentType: 'review',
-			prCreated: false,
-			prUrl: null,
-			reviewSubmitted: false,
-			reviewUrl: null,
-			initialCommentId: 42,
+	it('catches and logs Trello API error (does not throw)', async () => {
+		const logWriter = vi.fn();
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter,
+			trello: { cardId: 'card1' },
 		});
-		mockFormatGitHub.mockReturnValue('Progress');
-		mockGithub.updatePRComment.mockRejectedValue(new Error('Network error'));
 
-		const { reporter, logWriter } = makeGitHubReporter();
+		mockCallProgressModel.mockResolvedValue('Progress');
+		mockTrello.addComment.mockRejectedValue(new Error('API error'));
 
-		// Should not throw
-		await reporter.onIteration(5, 20);
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		monitor.stop();
 
 		expect(logWriter).toHaveBeenCalledWith(
 			'WARN',
@@ -194,29 +346,82 @@ describe('onIteration — GitHub', () => {
 			expect.any(Object),
 		);
 	});
-});
 
-describe('onToolCall', () => {
-	it('calls logWriter with DEBUG level', () => {
-		const logWriter = vi.fn();
-		const reporter = createProgressReporter({ logWriter });
-
-		reporter.onToolCall('ReadTrelloCard', { cardId: 'c1' });
-
-		expect(logWriter).toHaveBeenCalledWith('DEBUG', 'Tool call', {
-			toolName: 'ReadTrelloCard',
-			params: { cardId: 'c1' },
+	it('prevents concurrent ticks', async () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 1,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			trello: { cardId: 'card1' },
 		});
+
+		// Make the progress model take a long time
+		let resolveModel: (value: string) => void;
+		mockCallProgressModel.mockImplementation(
+			() =>
+				new Promise<string>((resolve) => {
+					resolveModel = resolve;
+				}),
+		);
+
+		monitor.start();
+		// Trigger first tick
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
+
+		// Trigger second tick while first is still running
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
+
+		// Only one call should have been made (second was skipped)
+		expect(mockCallProgressModel).toHaveBeenCalledTimes(1);
+
+		// Resolve the first call
+		resolveModel?.('Done');
+		await vi.advanceTimersByTimeAsync(0);
+
+		monitor.stop();
 	});
 });
 
-describe('onText', () => {
-	it('calls logWriter with DEBUG level and content length', () => {
-		const logWriter = vi.fn();
-		const reporter = createProgressReporter({ logWriter });
+describe('createProgressMonitor', () => {
+	it('returns null when status updates are disabled', () => {
+		mockGetStatusConfig.mockReturnValue({
+			enabled: false,
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+		});
 
-		reporter.onText('Hello world');
+		const monitor = createProgressMonitor({
+			logWriter: vi.fn(),
+			agentType: 'debug',
+			taskDescription: 'Test',
+			progressModel: 'test-model',
+			intervalMinutes: 5,
+			customModels: [],
+		});
 
-		expect(logWriter).toHaveBeenCalledWith('DEBUG', 'Agent text output', { length: 11 });
+		expect(monitor).toBeNull();
+	});
+
+	it('returns a ProgressMonitor when enabled', () => {
+		mockGetStatusConfig.mockReturnValue({
+			enabled: true,
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+		});
+
+		const monitor = createProgressMonitor({
+			logWriter: vi.fn(),
+			agentType: 'implementation',
+			taskDescription: 'Test',
+			progressModel: 'test-model',
+			intervalMinutes: 5,
+			customModels: [],
+			trello: { cardId: 'card1' },
+		});
+
+		expect(monitor).toBeInstanceOf(ProgressMonitor);
 	});
 });

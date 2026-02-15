@@ -1,6 +1,7 @@
-import type { createLogger } from 'llmist';
+import type { ModelSpec, createLogger } from 'llmist';
 import { WriteFile } from '../gadgets/WriteFile.js';
 
+import { type ProgressMonitor, createProgressMonitor } from '../backends/progress.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
 import { AstGrep } from '../gadgets/AstGrep.js';
 import { FileMultiEdit } from '../gadgets/FileMultiEdit.js';
@@ -320,18 +321,9 @@ function createAgentBuilderWithGadgets(
 	logWriter: (level: string, message: string, context?: Record<string, unknown>) => void,
 	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
 	repoDir: string,
-	cardId: string | undefined,
+	progressMonitor?: ProgressMonitor,
 	remainingBudgetUsd?: number,
 ): BuilderType {
-	// Build status update config if we have a cardId
-	const statusUpdate = cardId
-		? {
-				cardId,
-				agentType,
-				maxIterations: ctx.maxIterations,
-			}
-		: undefined;
-
 	return createConfiguredBuilder({
 		client,
 		agentType,
@@ -344,7 +336,7 @@ function createAgentBuilderWithGadgets(
 		llmCallLogger,
 		repoDir,
 		gadgets: getBaseAgentGadgets(agentType),
-		statusUpdate,
+		progressMonitor,
 		remainingBudgetUsd,
 		// Implementation agent uses sequential execution to ensure file operations
 		// are properly ordered (e.g., FileSearchAndReplace then ReadFile on same file)
@@ -529,7 +521,15 @@ export async function executeAgent(
 			);
 		},
 
-		createBuilder: ({ client, ctx, llmistLogger, trackingContext, fileLogger, repoDir }) =>
+		createBuilder: ({
+			client,
+			ctx,
+			llmistLogger,
+			trackingContext,
+			fileLogger,
+			repoDir,
+			progressMonitor,
+		}) =>
 			createAgentBuilderWithGadgets(
 				client,
 				ctx,
@@ -539,7 +539,7 @@ export async function executeAgent(
 				fileLogger.write.bind(fileLogger),
 				fileLogger.llmCallLogger,
 				repoDir,
-				cardId,
+				progressMonitor ?? undefined,
 				input.remainingBudgetUsd as number | undefined,
 			),
 
@@ -553,6 +553,17 @@ export async function executeAgent(
 				repoDir,
 				ctx.implementationSteps,
 			),
+
+		createProgressMonitor: (fileLogger) =>
+			createProgressMonitor({
+				logWriter: fileLogger.write.bind(fileLogger),
+				agentType,
+				taskDescription: cardId ? `Trello card ${cardId}` : 'Unknown task',
+				progressModel: config.defaults.progressModel,
+				intervalMinutes: config.defaults.progressIntervalMinutes,
+				customModels: CUSTOM_MODELS as ModelSpec[],
+				trello: cardId ? { cardId } : undefined,
+			}),
 
 		interactive,
 		autoAccept,
