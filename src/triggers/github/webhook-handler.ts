@@ -266,8 +266,16 @@ export async function processGitHubWebhook(
 		return;
 	}
 
+	// Resolve credentials early — trigger handlers (dispatch) may call GitHub/Trello APIs
+	// (e.g. PRMergedTrigger, PRReadyToMergeTrigger perform actions directly in handle())
+	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY');
+	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN');
+	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
+
 	const ctx: TriggerContext = { project, source: 'github', payload };
-	const result = await registry.dispatch(ctx);
+	const result = await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
+		withGitHubToken(githubToken, () => registry.dispatch(ctx)),
+	);
 
 	if (!result) {
 		logger.info('No trigger matched for GitHub webhook', { eventType, repoFullName });
@@ -282,9 +290,6 @@ export async function processGitHubWebhook(
 	// Only run agent if agentType is specified
 	// Some triggers (like PRReadyToMergeTrigger) perform actions directly without needing an agent
 	if (result.agentType) {
-		// Resolve credentials early — acknowledgment comment and error reporting need GitHub scope
-		const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
-
 		await withGitHubToken(githubToken, () => postAcknowledgmentComment(result));
 		cancelFreshMachineTimer();
 		setProcessing(true);
