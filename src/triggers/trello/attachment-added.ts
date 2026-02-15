@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import AdmZip from 'adm-zip';
-import { trelloClient } from '../../trello/client.js';
+import { getTrelloCredentials, trelloClient } from '../../trello/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import type { TrelloWebhookPayload } from '../types.js';
@@ -41,9 +41,8 @@ function parseAgentLogFilename(filename: string): { agentType: string } | null {
 async function downloadAndExtractZip(url: string, destDir: string): Promise<void> {
 	logger.debug('Downloading zip attachment', { url, destDir });
 
-	// Download with Trello OAuth headers
-	const apiKey = process.env.TRELLO_API_KEY;
-	const token = process.env.TRELLO_TOKEN;
+	// Download with Trello OAuth headers (from scoped credentials)
+	const { apiKey, token } = getTrelloCredentials();
 	const response = await fetch(url, {
 		headers: {
 			Authorization: `OAuth oauth_consumer_key="${apiKey}", oauth_token="${token}"`,
