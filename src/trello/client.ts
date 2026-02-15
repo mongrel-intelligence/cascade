@@ -18,35 +18,17 @@ export function withTrelloCredentials<T>(
 
 export function getTrelloCredentials(): TrelloCredentials {
 	const scoped = trelloCredentialStore.getStore();
-	if (scoped) return scoped;
-
-	const apiKey = process.env.TRELLO_API_KEY;
-	const token = process.env.TRELLO_TOKEN;
-	if (!apiKey || !token) {
-		throw new Error('TRELLO_API_KEY and TRELLO_TOKEN must be set');
+	if (!scoped) {
+		throw new Error(
+			'No Trello credentials in scope. Wrap the call with withTrelloCredentials() or ensure per-project TRELLO_API_KEY/TRELLO_TOKEN are set in the database.',
+		);
 	}
-	return { apiKey, token };
+	return scoped;
 }
-
-let client: TrelloJsClient | null = null;
-let clientCredKey: string | null = null;
 
 function getClient(): TrelloJsClient {
 	const creds = getTrelloCredentials();
-	const credKey = `${creds.apiKey}:${creds.token}`;
-
-	// Scoped credentials always get a fresh client
-	const scoped = trelloCredentialStore.getStore();
-	if (scoped) {
-		return new TrelloJsClient({ key: creds.apiKey, token: creds.token });
-	}
-
-	// Global singleton
-	if (!client || clientCredKey !== credKey) {
-		client = new TrelloJsClient({ key: creds.apiKey, token: creds.token });
-		clientCredKey = credKey;
-	}
-	return client;
+	return new TrelloJsClient({ key: creds.apiKey, token: creds.token });
 }
 
 export interface TrelloCard {
@@ -474,8 +456,3 @@ export const trelloClient = {
 		}
 	},
 };
-
-export function resetTrelloClient(): void {
-	client = null;
-	clientCredKey = null;
-}

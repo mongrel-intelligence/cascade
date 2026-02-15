@@ -99,6 +99,23 @@ async function executeAgent(
 	project: ProjectConfig,
 	config: CascadeConfig,
 ): Promise<void> {
+	// Resolve per-project credentials up front — all Trello/GitHub API calls
+	// in this function (labels, comments, card moves, budget checks, agent run)
+	// require scoped credentials.
+	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY');
+	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN');
+	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
+
+	await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
+		withGitHubToken(githubToken, () => executeAgentWithCreds(result, project, config)),
+	);
+}
+
+async function executeAgentWithCreds(
+	result: TriggerResult,
+	project: ProjectConfig,
+	config: CascadeConfig,
+): Promise<void> {
 	const { cardId } = result;
 
 	// Pre-flight budget check
@@ -137,24 +154,12 @@ async function executeAgent(
 		}
 	}
 
-	// Resolve per-project credentials and wrap agent execution
-	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY');
-	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN');
-	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
-
-	const runAgentWithCreds = () =>
-		withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
-			withGitHubToken(githubToken, () =>
-				runAgent(result.agentType, {
-					...result.agentInput,
-					remainingBudgetUsd,
-					project,
-					config,
-				}),
-			),
-		);
-
-	const agentResult = await runAgentWithCreds();
+	const agentResult = await runAgent(result.agentType, {
+		...result.agentInput,
+		remainingBudgetUsd,
+		project,
+		config,
+	});
 
 	// Upload log and update cost on Trello card
 	if (cardId) {
@@ -259,40 +264,47 @@ export async function processTrelloWebhook(
 		return;
 	}
 
-	const ctx: TriggerContext = { project, source: 'trello', payload };
-	const result = await registry.dispatch(ctx);
-	if (!result) {
-		logger.info('No trigger matched for webhook', { actionType });
-		return;
-	}
+	// Establish Trello credential scope for all downstream operations
+	// (trigger dispatch, label/comment updates, agent execution)
+	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY');
+	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN');
 
-	if (result.cardId && isCardActive(result.cardId)) {
-		logger.info('Card already being processed, skipping', { cardId: result.cardId });
-		return;
-	}
-
-	logger.info('Trigger matched', { agentType: result.agentType, cardId: result.cardId });
-	cancelFreshMachineTimer();
-	setProcessing(true);
-
-	if (process.env.FLY_APP_NAME) {
-		startWatchdog(config.defaults.watchdogTimeoutMs);
-	}
-
-	try {
-		await executeAgent(result, project, config);
-	} catch (err) {
-		logger.error('Failed to process webhook', { error: String(err) });
-		if (result.cardId) {
-			await safeAddLabel(result.cardId, project.trello.labels.error);
-			await safeAddComment(result.cardId, `❌ Error: ${String(err)}`);
+	await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, async () => {
+		const ctx: TriggerContext = { project, source: 'trello', payload };
+		const result = await registry.dispatch(ctx);
+		if (!result) {
+			logger.info('No trigger matched for webhook', { actionType });
+			return;
 		}
-	} finally {
-		if (result?.cardId) {
-			clearCardActive(result.cardId);
+
+		if (result.cardId && isCardActive(result.cardId)) {
+			logger.info('Card already being processed, skipping', { cardId: result.cardId });
+			return;
 		}
-		await cleanupDebugDirectory(result?.agentInput?.logDir as string | undefined);
-		setProcessing(false);
-		processNextQueuedWebhook(config, registry);
-	}
+
+		logger.info('Trigger matched', { agentType: result.agentType, cardId: result.cardId });
+		cancelFreshMachineTimer();
+		setProcessing(true);
+
+		if (process.env.FLY_APP_NAME) {
+			startWatchdog(config.defaults.watchdogTimeoutMs);
+		}
+
+		try {
+			await executeAgent(result, project, config);
+		} catch (err) {
+			logger.error('Failed to process webhook', { error: String(err) });
+			if (result.cardId) {
+				await safeAddLabel(result.cardId, project.trello.labels.error);
+				await safeAddComment(result.cardId, `❌ Error: ${String(err)}`);
+			}
+		} finally {
+			if (result?.cardId) {
+				clearCardActive(result.cardId);
+			}
+			await cleanupDebugDirectory(result?.agentInput?.logDir as string | undefined);
+			setProcessing(false);
+			processNextQueuedWebhook(config, registry);
+		}
+	});
 }
