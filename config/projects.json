@@ -14,7 +14,7 @@
 		"watchdogTimeoutMs": 2700000,
 		"selfDestructTimeoutMs": 1800000,
 		"postJobGracePeriodMs": 45000,
-		"cardBudgetUsd": 3.50
+		"cardBudgetUsd": 5.00
 	},
 	"projects": [
 		{
@@ -58,7 +58,10 @@
 			"agentBackend": {
 				"default": "llmist",
 				"overrides": {
-					"implementation": "claude-code"
+					"implementation": "claude-code",
+					"respond-to-review": "claude-code",
+					"respond-to-ci": "claude-code",
+					"respond-to-pr-comment": "claude-code"
 				}
 			},
 			"agentModels": {

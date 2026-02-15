@@ -36,7 +36,7 @@ const baseConfig: CascadeConfig = {
 		freshMachineTimeoutMs: 300000,
 		watchdogTimeoutMs: 1800000,
 		postJobGracePeriodMs: 5000,
-		cardBudgetUsd: 3.5,
+		cardBudgetUsd: 5,
 		agentBackend: 'llmist',
 		progressModel: 'openrouter:google/gemini-2.5-flash-lite',
 		progressIntervalMinutes: 5,
@@ -62,12 +62,12 @@ describe('resolveCardBudget', () => {
 	});
 
 	it('returns global default when project has no override', () => {
-		expect(resolveCardBudget(baseProject, baseConfig)).toBe(3.5);
+		expect(resolveCardBudget(baseProject, baseConfig)).toBe(5);
 	});
 
 	it('returns project override when set', () => {
-		const project = { ...baseProject, cardBudgetUsd: 5.0 };
-		expect(resolveCardBudget(project, baseConfig)).toBe(5.0);
+		const project = { ...baseProject, cardBudgetUsd: 8.0 };
+		expect(resolveCardBudget(project, baseConfig)).toBe(8.0);
 	});
 });
 
@@ -92,8 +92,8 @@ describe('checkBudgetExceeded', () => {
 		expect(result).toEqual({
 			exceeded: false,
 			currentCost: 0,
-			budget: 3.5,
-			remaining: 3.5,
+			budget: 5,
+			remaining: 5,
 		});
 	});
 
@@ -105,33 +105,33 @@ describe('checkBudgetExceeded', () => {
 		expect(result).toEqual({
 			exceeded: false,
 			currentCost: 1.25,
-			budget: 3.5,
-			remaining: 2.25,
+			budget: 5,
+			remaining: 3.75,
 		});
 	});
 
 	it('returns exceeded when cost equals budget', async () => {
 		mockGetCustomFields.mockResolvedValue([
-			{ idCustomField: 'cf-cost-123', value: { number: '3.50' } },
+			{ idCustomField: 'cf-cost-123', value: { number: '5.00' } },
 		]);
 		const result = await checkBudgetExceeded('card1', baseProject, baseConfig);
 		expect(result).toEqual({
 			exceeded: true,
-			currentCost: 3.5,
-			budget: 3.5,
+			currentCost: 5,
+			budget: 5,
 			remaining: 0,
 		});
 	});
 
 	it('returns exceeded when over budget', async () => {
 		mockGetCustomFields.mockResolvedValue([
-			{ idCustomField: 'cf-cost-123', value: { number: '4.00' } },
+			{ idCustomField: 'cf-cost-123', value: { number: '6.00' } },
 		]);
 		const result = await checkBudgetExceeded('card1', baseProject, baseConfig);
 		expect(result).toEqual({
 			exceeded: true,
-			currentCost: 4.0,
-			budget: 3.5,
+			currentCost: 6,
+			budget: 5,
 			remaining: 0,
 		});
 	});
