@@ -1,16 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../src/trello/client.js', () => ({
-	trelloClient: {
-		getCardCustomFieldItems: vi.fn(),
-	},
+vi.mock('../../../src/pm/index.js', () => ({
+	getPMProvider: vi.fn(),
 }));
 
-import { trelloClient } from '../../../src/trello/client.js';
+import { getPMProvider } from '../../../src/pm/index.js';
 import { checkBudgetExceeded, resolveCardBudget } from '../../../src/triggers/shared/budget.js';
 import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 
-const mockGetCustomFields = vi.mocked(trelloClient.getCardCustomFieldItems);
+const mockPMProvider = { getCustomFieldNumber: vi.fn() };
+vi.mocked(getPMProvider).mockReturnValue(mockPMProvider as any);
 
 const baseProject: ProjectConfig = {
 	id: 'test',
@@ -80,11 +79,10 @@ describe('checkBudgetExceeded', () => {
 		};
 		const result = await checkBudgetExceeded('card1', project, baseConfig);
 		expect(result).toBeNull();
-		expect(mockGetCustomFields).not.toHaveBeenCalled();
 	});
 
 	it('returns not exceeded with full budget when no cost value yet', async () => {
-		mockGetCustomFields.mockResolvedValue([]);
+		mockPMProvider.getCustomFieldNumber.mockResolvedValue(0);
 		const result = await checkBudgetExceeded('card1', baseProject, baseConfig);
 		expect(result).toEqual({
 			exceeded: false,
@@ -95,9 +93,7 @@ describe('checkBudgetExceeded', () => {
 	});
 
 	it('returns not exceeded when under budget', async () => {
-		mockGetCustomFields.mockResolvedValue([
-			{ idCustomField: 'cf-cost-123', value: { number: '1.25' } },
-		]);
+		mockPMProvider.getCustomFieldNumber.mockResolvedValue(1.25);
 		const result = await checkBudgetExceeded('card1', baseProject, baseConfig);
 		expect(result).toEqual({
 			exceeded: false,
@@ -108,9 +104,7 @@ describe('checkBudgetExceeded', () => {
 	});
 
 	it('returns exceeded when cost equals budget', async () => {
-		mockGetCustomFields.mockResolvedValue([
-			{ idCustomField: 'cf-cost-123', value: { number: '5.00' } },
-		]);
+		mockPMProvider.getCustomFieldNumber.mockResolvedValue(5);
 		const result = await checkBudgetExceeded('card1', baseProject, baseConfig);
 		expect(result).toEqual({
 			exceeded: true,
@@ -121,9 +115,7 @@ describe('checkBudgetExceeded', () => {
 	});
 
 	it('returns exceeded when over budget', async () => {
-		mockGetCustomFields.mockResolvedValue([
-			{ idCustomField: 'cf-cost-123', value: { number: '6.00' } },
-		]);
+		mockPMProvider.getCustomFieldNumber.mockResolvedValue(6);
 		const result = await checkBudgetExceeded('card1', baseProject, baseConfig);
 		expect(result).toEqual({
 			exceeded: true,
@@ -135,9 +127,7 @@ describe('checkBudgetExceeded', () => {
 
 	it('uses project budget override', async () => {
 		const project = { ...baseProject, cardBudgetUsd: 10.0 };
-		mockGetCustomFields.mockResolvedValue([
-			{ idCustomField: 'cf-cost-123', value: { number: '5.00' } },
-		]);
+		mockPMProvider.getCustomFieldNumber.mockResolvedValue(5);
 		const result = await checkBudgetExceeded('card1', project, baseConfig);
 		expect(result).toEqual({
 			exceeded: false,

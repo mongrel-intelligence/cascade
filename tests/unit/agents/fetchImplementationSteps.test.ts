@@ -1,31 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../src/trello/client.js', () => ({
-	trelloClient: {
-		getCardChecklists: vi.fn(),
-	},
+vi.mock('../../../src/pm/index.js', () => ({
+	getPMProvider: vi.fn(),
 }));
 
 import { fetchImplementationSteps } from '../../../src/agents/base.js';
-import { trelloClient } from '../../../src/trello/client.js';
+import { getPMProvider } from '../../../src/pm/index.js';
 
-const mockGetCardChecklists = vi.mocked(trelloClient.getCardChecklists);
+const mockPMProvider = {
+	getChecklists: vi.fn(),
+};
 
 describe('fetchImplementationSteps', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(getPMProvider).mockReturnValue(mockPMProvider as any);
 	});
 
 	it('extracts incomplete items from Implementation Steps checklist', async () => {
-		mockGetCardChecklists.mockResolvedValue([
+		mockPMProvider.getChecklists.mockResolvedValue([
 			{
 				id: 'cl1',
 				name: '📋 Implementation Steps',
-				idCard: 'card1',
-				checkItems: [
-					{ id: 'ci1', name: 'Add helper function', state: 'incomplete' },
-					{ id: 'ci2', name: 'Update prompt template', state: 'incomplete' },
-					{ id: 'ci3', name: 'Write tests', state: 'incomplete' },
+				items: [
+					{ id: 'ci1', name: 'Add helper function', complete: false },
+					{ id: 'ci2', name: 'Update prompt template', complete: false },
+					{ id: 'ci3', name: 'Write tests', complete: false },
 				],
 			},
 		]);
@@ -33,18 +33,17 @@ describe('fetchImplementationSteps', () => {
 		const result = await fetchImplementationSteps('card1');
 
 		expect(result).toEqual(['Add helper function', 'Update prompt template', 'Write tests']);
-		expect(mockGetCardChecklists).toHaveBeenCalledWith('card1');
+		expect(mockPMProvider.getChecklists).toHaveBeenCalledWith('card1');
 	});
 
 	it('filters out already-complete items', async () => {
-		mockGetCardChecklists.mockResolvedValue([
+		mockPMProvider.getChecklists.mockResolvedValue([
 			{
 				id: 'cl1',
 				name: '📋 Implementation Steps',
-				idCard: 'card1',
-				checkItems: [
-					{ id: 'ci1', name: 'Already done step', state: 'complete' },
-					{ id: 'ci2', name: 'Remaining step', state: 'incomplete' },
+				items: [
+					{ id: 'ci1', name: 'Already done step', complete: true },
+					{ id: 'ci2', name: 'Remaining step', complete: false },
 				],
 			},
 		]);
@@ -55,14 +54,13 @@ describe('fetchImplementationSteps', () => {
 	});
 
 	it('returns undefined when all items are complete', async () => {
-		mockGetCardChecklists.mockResolvedValue([
+		mockPMProvider.getChecklists.mockResolvedValue([
 			{
 				id: 'cl1',
 				name: '📋 Implementation Steps',
-				idCard: 'card1',
-				checkItems: [
-					{ id: 'ci1', name: 'Done step 1', state: 'complete' },
-					{ id: 'ci2', name: 'Done step 2', state: 'complete' },
+				items: [
+					{ id: 'ci1', name: 'Done step 1', complete: true },
+					{ id: 'ci2', name: 'Done step 2', complete: true },
 				],
 			},
 		]);
@@ -73,12 +71,11 @@ describe('fetchImplementationSteps', () => {
 	});
 
 	it('returns undefined when no Implementation Steps checklist exists', async () => {
-		mockGetCardChecklists.mockResolvedValue([
+		mockPMProvider.getChecklists.mockResolvedValue([
 			{
 				id: 'cl1',
 				name: '✅ Acceptance Criteria',
-				idCard: 'card1',
-				checkItems: [{ id: 'ci1', name: 'Some criterion', state: 'incomplete' }],
+				items: [{ id: 'ci1', name: 'Some criterion', complete: false }],
 			},
 		]);
 
@@ -88,12 +85,11 @@ describe('fetchImplementationSteps', () => {
 	});
 
 	it('returns undefined when checklist has no items', async () => {
-		mockGetCardChecklists.mockResolvedValue([
+		mockPMProvider.getChecklists.mockResolvedValue([
 			{
 				id: 'cl1',
 				name: '📋 Implementation Steps',
-				idCard: 'card1',
-				checkItems: [],
+				items: [],
 			},
 		]);
 
@@ -103,7 +99,7 @@ describe('fetchImplementationSteps', () => {
 	});
 
 	it('returns undefined when card has no checklists', async () => {
-		mockGetCardChecklists.mockResolvedValue([]);
+		mockPMProvider.getChecklists.mockResolvedValue([]);
 
 		const result = await fetchImplementationSteps('card1');
 
@@ -111,7 +107,7 @@ describe('fetchImplementationSteps', () => {
 	});
 
 	it('returns undefined when API call fails', async () => {
-		mockGetCardChecklists.mockRejectedValue(new Error('API error'));
+		mockPMProvider.getChecklists.mockRejectedValue(new Error('API error'));
 
 		const result = await fetchImplementationSteps('card1');
 
@@ -119,18 +115,16 @@ describe('fetchImplementationSteps', () => {
 	});
 
 	it('matches checklist by substring (handles emoji prefix)', async () => {
-		mockGetCardChecklists.mockResolvedValue([
+		mockPMProvider.getChecklists.mockResolvedValue([
 			{
 				id: 'cl1',
 				name: 'Some other checklist',
-				idCard: 'card1',
-				checkItems: [{ id: 'ci1', name: 'Ignored', state: 'incomplete' }],
+				items: [{ id: 'ci1', name: 'Ignored', complete: false }],
 			},
 			{
 				id: 'cl2',
 				name: '📋 Implementation Steps (Phase 1)',
-				idCard: 'card1',
-				checkItems: [{ id: 'ci2', name: 'Phase 1 step', state: 'incomplete' }],
+				items: [{ id: 'ci2', name: 'Phase 1 step', complete: false }],
 			},
 		]);
 
