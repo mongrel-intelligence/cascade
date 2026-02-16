@@ -9,7 +9,10 @@ export default class CreatePR extends CredentialScopedCommand {
 		title: Flags.string({ description: 'PR title', required: true }),
 		body: Flags.string({ description: 'PR description (markdown supported)', required: true }),
 		head: Flags.string({ description: 'Source branch name', required: true }),
-		base: Flags.string({ description: 'Target branch name', required: true }),
+		base: Flags.string({
+			description: 'Target branch name (defaults to CASCADE_BASE_BRANCH env var)',
+			env: 'CASCADE_BASE_BRANCH',
+		}),
 		draft: Flags.boolean({ description: 'Create as draft PR', default: false }),
 		commit: Flags.boolean({
 			description: 'Stage and commit changes before pushing',
@@ -26,11 +29,15 @@ export default class CreatePR extends CredentialScopedCommand {
 
 	async execute(): Promise<void> {
 		const { flags } = await this.parse(CreatePR);
+		const base = flags.base;
+		if (!base) {
+			this.error('--base is required (or set CASCADE_BASE_BRANCH env var)');
+		}
 		const result = await createPR({
 			title: flags.title,
 			body: flags.body,
 			head: flags.head,
-			base: flags.base,
+			base,
 			draft: flags.draft,
 			commit: flags.commit,
 			commitMessage: flags['commit-message'],

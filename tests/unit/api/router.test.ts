@@ -18,7 +18,25 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	listLlmCallsMeta: vi.fn(),
 	getLlmCallByNumber: vi.fn(),
 	getDebugAnalysisByRunId: vi.fn(),
+	deleteDebugAnalysisByRunId: vi.fn(),
 	listProjectsForOrg: vi.fn(),
+}));
+
+vi.mock('../../../src/config/provider.js', () => ({
+	findProjectById: vi.fn(),
+	loadConfig: vi.fn(),
+}));
+
+vi.mock('../../../src/triggers/shared/debug-status.js', () => ({
+	isAnalysisRunning: vi.fn(),
+}));
+
+vi.mock('../../../src/triggers/shared/debug-runner.js', () => ({
+	triggerDebugAnalysis: vi.fn(),
+}));
+
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock('../../../src/db/repositories/settingsRepository.js', () => ({
@@ -83,6 +101,8 @@ describe('appRouter', () => {
 		expect(procedures).toContain('runs.listLlmCalls');
 		expect(procedures).toContain('runs.getLlmCall');
 		expect(procedures).toContain('runs.getDebugAnalysis');
+		expect(procedures).toContain('runs.getDebugAnalysisStatus');
+		expect(procedures).toContain('runs.triggerDebugAnalysis');
 	});
 
 	it('has projects sub-router with all procedures', () => {

@@ -209,6 +209,11 @@ export async function getDebugAnalysisByRunId(analyzedRunId: string) {
 	return row ?? null;
 }
 
+export async function deleteDebugAnalysisByRunId(analyzedRunId: string): Promise<void> {
+	const db = getDb();
+	await db.delete(debugAnalyses).where(eq(debugAnalyses.analyzedRunId, analyzedRunId));
+}
+
 export async function getDebugAnalysisByDebugRunId(debugRunId: string) {
 	const db = getDb();
 	const [row] = await db
