@@ -5,6 +5,7 @@ describe('ProjectConfigSchema', () => {
 	it('validates a valid project config', () => {
 		const config = {
 			id: 'test-project',
+			orgId: 'default',
 			name: 'Test Project',
 			repo: 'owner/repo',
 			trello: {
@@ -29,6 +30,7 @@ describe('ProjectConfigSchema', () => {
 	it('rejects invalid repo format', () => {
 		const config = {
 			id: 'test',
+			orgId: 'default',
 			name: 'Test',
 			repo: 'invalid-repo-format',
 			trello: {
@@ -44,6 +46,7 @@ describe('ProjectConfigSchema', () => {
 	it('applies default values', () => {
 		const config = {
 			id: 'test',
+			orgId: 'default',
 			name: 'Test',
 			repo: 'owner/repo',
 			trello: {
@@ -61,6 +64,7 @@ describe('ProjectConfigSchema', () => {
 	it('accepts agentBackend with default and overrides', () => {
 		const config = {
 			id: 'test',
+			orgId: 'default',
 			name: 'Test',
 			repo: 'owner/repo',
 			trello: { boardId: 'b1', lists: {}, labels: {} },
@@ -78,6 +82,7 @@ describe('ProjectConfigSchema', () => {
 	it('works without agentBackend (optional field)', () => {
 		const config = {
 			id: 'test',
+			orgId: 'default',
 			name: 'Test',
 			repo: 'owner/repo',
 			trello: { boardId: 'b1', lists: {}, labels: {} },
@@ -90,6 +95,7 @@ describe('ProjectConfigSchema', () => {
 	it('accepts subscriptionCostZero on agentBackend', () => {
 		const config = {
 			id: 'test',
+			orgId: 'default',
 			name: 'Test',
 			repo: 'owner/repo',
 			trello: { boardId: 'b1', lists: {}, labels: {} },
@@ -106,6 +112,7 @@ describe('ProjectConfigSchema', () => {
 	it('defaults subscriptionCostZero to false', () => {
 		const config = {
 			id: 'test',
+			orgId: 'default',
 			name: 'Test',
 			repo: 'owner/repo',
 			trello: { boardId: 'b1', lists: {}, labels: {} },
@@ -121,6 +128,7 @@ describe('ProjectConfigSchema', () => {
 	it('applies default "llmist" for agentBackend.default when object provided', () => {
 		const config = {
 			id: 'test',
+			orgId: 'default',
 			name: 'Test',
 			repo: 'owner/repo',
 			trello: { boardId: 'b1', lists: {}, labels: {} },
@@ -139,6 +147,7 @@ describe('validateConfig', () => {
 			projects: [
 				{
 					id: 'test',
+					orgId: 'default',
 					name: 'Test',
 					repo: 'owner/repo',
 					trello: {
@@ -165,6 +174,7 @@ describe('validateConfig', () => {
 			projects: [
 				{
 					id: 'test',
+					orgId: 'default',
 					name: 'Test',
 					repo: 'owner/repo',
 					trello: { boardId: 'b1', lists: {}, labels: {} },
@@ -184,6 +194,7 @@ describe('validateConfig', () => {
 			projects: [
 				{
 					id: 'test',
+					orgId: 'default',
 					name: 'Test',
 					repo: 'owner/repo',
 					trello: { boardId: 'b1', lists: {}, labels: {} },

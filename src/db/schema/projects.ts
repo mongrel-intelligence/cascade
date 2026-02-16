@@ -9,11 +9,15 @@ import {
 	timestamp,
 	uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { organizations } from './organizations.js';
 
 export const projects = pgTable(
 	'projects',
 	{
 		id: text('id').primaryKey(),
+		orgId: text('org_id')
+			.notNull()
+			.references(() => organizations.id, { onDelete: 'cascade' }),
 		name: text('name').notNull(),
 		repo: text('repo').notNull().unique(),
 		baseBranch: text('base_branch').default('main'),
@@ -60,6 +64,7 @@ export const agentConfigs = pgTable(
 	'agent_configs',
 	{
 		id: serial('id').primaryKey(),
+		orgId: text('org_id').references(() => organizations.id, { onDelete: 'cascade' }),
 		projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
 		agentType: text('agent_type').notNull(),
 		model: text('model'),

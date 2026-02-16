@@ -5,9 +5,9 @@ import {
 	loadConfigFromDb,
 } from '../db/repositories/configRepository.js';
 import {
-	getProjectSecret as getProjectSecretFromDb,
-	getProjectSecrets as getProjectSecretsFromDb,
-} from '../db/repositories/secretsRepository.js';
+	resolveAllCredentials,
+	resolveCredential,
+} from '../db/repositories/credentialsRepository.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 import { configCache } from './configCache.js';
 
@@ -43,6 +43,19 @@ export async function findProjectById(id: string): Promise<ProjectConfig | undef
 	return findProjectByIdFromDb(id);
 }
 
+/**
+ * Resolve the org ID for a project. Cached to avoid repeated DB lookups.
+ */
+async function getOrgIdForProject(projectId: string): Promise<string> {
+	const cached = configCache.getOrgIdForProject(projectId);
+	if (cached) return cached;
+
+	const project = await findProjectByIdFromDb(projectId);
+	const orgId = project?.orgId ?? 'default';
+	configCache.setOrgIdForProject(projectId, orgId);
+	return orgId;
+}
+
 export async function getProjectSecret(projectId: string, key: string): Promise<string> {
 	// Check cached secrets first
 	const cachedSecrets = configCache.getSecrets(projectId);
@@ -50,8 +63,9 @@ export async function getProjectSecret(projectId: string, key: string): Promise<
 		return cachedSecrets[key];
 	}
 
-	// DB is the sole source of truth for project secrets
-	const dbValue = await getProjectSecretFromDb(projectId, key);
+	// Resolve via credentials system (project override → org default)
+	const orgId = await getOrgIdForProject(projectId);
+	const dbValue = await resolveCredential(projectId, orgId, key);
 	if (dbValue) return dbValue;
 
 	throw new Error(`Secret '${key}' not found for project '${projectId}' in database`);
@@ -72,7 +86,8 @@ export async function getProjectSecrets(projectId: string): Promise<Record<strin
 	const cached = configCache.getSecrets(projectId);
 	if (cached) return cached;
 
-	const secrets = await getProjectSecretsFromDb(projectId);
+	const orgId = await getOrgIdForProject(projectId);
+	const secrets = await resolveAllCredentials(projectId, orgId);
 	configCache.setSecrets(projectId, secrets);
 	return secrets;
 }

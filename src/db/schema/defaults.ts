@@ -1,7 +1,12 @@
 import { integer, numeric, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { organizations } from './organizations.js';
 
 export const cascadeDefaults = pgTable('cascade_defaults', {
-	id: text('id').primaryKey().default('singleton'),
+	id: text('id').primaryKey(),
+	orgId: text('org_id')
+		.notNull()
+		.unique()
+		.references(() => organizations.id, { onDelete: 'cascade' }),
 	model: text('model'),
 	maxIterations: integer('max_iterations'),
 	freshMachineTimeoutMs: integer('fresh_machine_timeout_ms'),
