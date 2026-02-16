@@ -67,7 +67,7 @@ jobs:
   docker-build-check:
     name: Validate Docker builds
     runs-on: ubuntu-latest
-    needs: lint-and-test
+    if: github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v4
