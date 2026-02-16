@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock all external dependencies
-vi.mock('../../../src/gadgets/pm/core/readWorkItem.js', () => ({
-	readWorkItem: vi.fn(),
-}));
-
 vi.mock('../../../src/agents/shared/repository.js', () => ({
 	setupRepository: vi.fn(),
 }));
@@ -55,6 +51,15 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 vi.mock('../../../src/config/provider.js', () => ({
 	getProjectSecrets: vi.fn(),
+	getAgentCredential: vi.fn(),
+}));
+
+vi.mock('../../../src/github/client.js', () => ({
+	withGitHubToken: vi.fn((_token: string, fn: () => Promise<unknown>) => fn()),
+}));
+
+vi.mock('../../../src/backends/agent-profiles.js', () => ({
+	getAgentProfile: vi.fn(),
 }));
 
 vi.mock('../../../src/agents/prompts/index.js', () => ({}));
@@ -63,10 +68,10 @@ import { resolveModelConfig } from '../../../src/agents/shared/modelResolution.j
 import { setupRepository } from '../../../src/agents/shared/repository.js';
 import { createAgentLogger } from '../../../src/agents/utils/logging.js';
 import { executeWithBackend } from '../../../src/backends/adapter.js';
+import { type AgentProfile, getAgentProfile } from '../../../src/backends/agent-profiles.js';
 import { createProgressMonitor } from '../../../src/backends/progress.js';
 import type { AgentBackend } from '../../../src/backends/types.js';
 import { getProjectSecrets } from '../../../src/config/provider.js';
-import { readWorkItem } from '../../../src/gadgets/pm/core/readWorkItem.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../../../src/utils/cascadeEnv.js';
 import {
@@ -78,7 +83,6 @@ import { clearWatchdogCleanup, setWatchdogCleanup } from '../../../src/utils/lif
 import { logger } from '../../../src/utils/logging.js';
 import { cleanupTempDir } from '../../../src/utils/repo.js';
 
-const mockReadWorkItem = vi.mocked(readWorkItem);
 const mockSetupRepository = vi.mocked(setupRepository);
 const mockResolveModelConfig = vi.mocked(resolveModelConfig);
 const mockCreateFileLogger = vi.mocked(createFileLogger);
@@ -91,6 +95,7 @@ const mockCleanupLogDirectory = vi.mocked(cleanupLogDirectory);
 const mockClearWatchdogCleanup = vi.mocked(clearWatchdogCleanup);
 const mockCreateProgressMonitor = vi.mocked(createProgressMonitor);
 const mockGetProjectSecrets = vi.mocked(getProjectSecrets);
+const mockGetAgentProfile = vi.mocked(getAgentProfile);
 
 function makeProject(): ProjectConfig {
 	return {
@@ -143,6 +148,18 @@ function makeMockBackend(): AgentBackend {
 	};
 }
 
+function makeMockProfile(overrides?: Partial<AgentProfile>): AgentProfile {
+	return {
+		filterTools: (tools) => tools,
+		sdkTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+		enableStopHooks: true,
+		needsGitHubToken: false,
+		fetchContext: vi.fn().mockResolvedValue([]),
+		buildTaskPrompt: () => 'Process the work item',
+		...overrides,
+	};
+}
+
 function setupMocks() {
 	const mockLoggerInstance = {
 		write: vi.fn(),
@@ -161,10 +178,11 @@ function setupMocks() {
 		systemPrompt: 'You are an agent',
 		model: 'test-model',
 		maxIterations: 50,
+		contextFiles: [],
 	} as never);
-	mockReadWorkItem.mockResolvedValue('Card data');
 	mockCreateProgressMonitor.mockReturnValue(null);
 	mockGetProjectSecrets.mockResolvedValue({});
+	mockGetAgentProfile.mockReturnValue(makeMockProfile());
 	return mockLoggerInstance;
 }
 
@@ -282,24 +300,46 @@ describe('executeWithBackend', () => {
 		expect(mockCleanupLogFile).toHaveBeenCalled();
 	});
 
-	it('fetches card data for context injection when cardId present and no logDir', async () => {
+	it('calls profile.fetchContext for context injection', async () => {
 		setupMocks();
+		const mockFetchContext = vi.fn().mockResolvedValue([]);
+		mockGetAgentProfile.mockReturnValue(makeMockProfile({ fetchContext: mockFetchContext }));
 		const backend = makeMockBackend();
 		const input = makeInput({ cardId: 'card123' });
 
 		await executeWithBackend(backend, 'implementation', input);
 
-		expect(mockReadWorkItem).toHaveBeenCalledWith('card123', true);
+		expect(mockFetchContext).toHaveBeenCalledWith(
+			expect.objectContaining({
+				input: expect.objectContaining({ cardId: 'card123' }),
+				contextFiles: [],
+			}),
+		);
 	});
 
-	it('skips context injection when logDir present', async () => {
+	it('uses profile to filter tools and set sdkTools', async () => {
 		setupMocks();
+		const filterTools = vi.fn((tools) =>
+			tools.filter((t: { name: string }) => t.name === 'Finish'),
+		);
+		mockGetAgentProfile.mockReturnValue(
+			makeMockProfile({
+				filterTools,
+				sdkTools: ['Read', 'Bash', 'Glob', 'Grep'],
+				enableStopHooks: false,
+			}),
+		);
 		const backend = makeMockBackend();
-		const input = makeInput({ cardId: 'card123', logDir: '/some/dir' });
+		const input = makeInput();
 
 		await executeWithBackend(backend, 'implementation', input);
 
-		expect(mockReadWorkItem).not.toHaveBeenCalled();
+		expect(filterTools).toHaveBeenCalled();
+		const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
+		expect(backendInput.availableTools).toHaveLength(1);
+		expect(backendInput.availableTools[0].name).toBe('Finish');
+		expect(backendInput.sdkTools).toEqual(['Read', 'Bash', 'Glob', 'Grep']);
+		expect(backendInput.enableStopHooks).toBe(false);
 	});
 
 	it('marks implementation agent as failed when no PR was created', async () => {

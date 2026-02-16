@@ -60,6 +60,10 @@ export interface AgentBackendInput {
 	agentInput: AgentInput;
 	/** Per-project secrets to inject into subprocess environment */
 	projectSecrets?: Record<string, string>;
+	/** SDK tools to allow (defaults to all 6: Read, Write, Edit, Bash, Glob, Grep) */
+	sdkTools?: string[];
+	/** Whether to enable stop hooks that check for uncommitted/unpushed changes (defaults to true) */
+	enableStopHooks?: boolean;
 }
 
 export type LogWriter = (level: string, message: string, context?: Record<string, unknown>) => void;
