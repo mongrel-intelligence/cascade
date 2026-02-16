@@ -12,6 +12,7 @@ class ConfigCache {
 	private projectByBoardId = new Map<string, CacheEntry<ProjectConfig | undefined>>();
 	private projectByRepo = new Map<string, CacheEntry<ProjectConfig | undefined>>();
 	private projectSecrets = new Map<string, CacheEntry<Record<string, string>>>();
+	private orgIdByProject = new Map<string, CacheEntry<string>>();
 	private ttlMs: number;
 
 	constructor(ttlMs = DEFAULT_TTL_MS) {
@@ -52,6 +53,15 @@ class ConfigCache {
 		this.projectByRepo.set(repo, this.makeEntry(project));
 	}
 
+	getOrgIdForProject(projectId: string): string | null {
+		const entry = this.orgIdByProject.get(projectId);
+		return this.isValid(entry) ? entry.data : null;
+	}
+
+	setOrgIdForProject(projectId: string, orgId: string): void {
+		this.orgIdByProject.set(projectId, this.makeEntry(orgId));
+	}
+
 	getSecrets(projectId: string): Record<string, string> | null {
 		const entry = this.projectSecrets.get(projectId);
 		return this.isValid(entry) ? entry.data : null;
@@ -66,6 +76,7 @@ class ConfigCache {
 		this.projectByBoardId.clear();
 		this.projectByRepo.clear();
 		this.projectSecrets.clear();
+		this.orgIdByProject.clear();
 	}
 }
 

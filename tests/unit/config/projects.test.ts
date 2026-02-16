@@ -8,9 +8,9 @@ vi.mock('../../../src/db/repositories/configRepository.js', () => ({
 	findProjectByIdFromDb: vi.fn(),
 }));
 
-vi.mock('../../../src/db/repositories/secretsRepository.js', () => ({
-	getProjectSecret: vi.fn(),
-	getProjectSecrets: vi.fn(),
+vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
+	resolveCredential: vi.fn(),
+	resolveAllCredentials: vi.fn(),
 }));
 
 import { getProjectGitHubToken } from '../../../src/config/projects.js';
@@ -19,6 +19,8 @@ import {
 	findProjectById,
 	findProjectByRepo,
 	getProjectSecret,
+	getProjectSecretOrNull,
+	getProjectSecrets,
 	invalidateConfigCache,
 	loadConfig,
 } from '../../../src/config/provider.js';
@@ -28,11 +30,15 @@ import {
 	findProjectByRepoFromDb,
 	loadConfigFromDb,
 } from '../../../src/db/repositories/configRepository.js';
-import { getProjectSecret as getProjectSecretFromDb } from '../../../src/db/repositories/secretsRepository.js';
+import {
+	resolveAllCredentials,
+	resolveCredential,
+} from '../../../src/db/repositories/credentialsRepository.js';
 
 describe('config provider', () => {
 	const mockProject1 = {
 		id: 'project1',
+		orgId: 'default',
 		name: 'Project 1',
 		repo: 'owner/repo1',
 		baseBranch: 'main',
@@ -46,6 +52,7 @@ describe('config provider', () => {
 
 	const mockProject2 = {
 		id: 'project2',
+		orgId: 'default',
 		name: 'Project 2',
 		repo: 'owner/repo2',
 		baseBranch: 'main',
@@ -162,15 +169,17 @@ describe('config provider', () => {
 	});
 
 	describe('getProjectSecret', () => {
-		it('returns DB secret when available', async () => {
-			vi.mocked(getProjectSecretFromDb).mockResolvedValue('db-secret-value');
+		it('returns DB credential when available', async () => {
+			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
+			vi.mocked(resolveCredential).mockResolvedValue('db-secret-value');
 
 			const result = await getProjectSecret('project1', 'TRELLO_API_KEY');
 			expect(result).toBe('db-secret-value');
 		});
 
 		it('throws when secret not found in DB', async () => {
-			vi.mocked(getProjectSecretFromDb).mockResolvedValue(null);
+			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
+			vi.mocked(resolveCredential).mockResolvedValue(null);
 
 			await expect(getProjectSecret('project1', 'MISSING_KEY')).rejects.toThrow(
 				"Secret 'MISSING_KEY' not found for project 'project1' in database",
@@ -178,16 +187,127 @@ describe('config provider', () => {
 		});
 	});
 
+	describe('getProjectSecret - cached secrets path', () => {
+		it('returns from cached secrets without hitting resolveCredential', async () => {
+			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
+			vi.mocked(resolveAllCredentials).mockResolvedValue({
+				TRELLO_API_KEY: 'cached-value',
+				GITHUB_TOKEN: 'cached-gh-token',
+			});
+
+			// Populate the secrets cache via getProjectSecrets
+			await getProjectSecrets('project1');
+
+			vi.clearAllMocks();
+
+			// Now getProjectSecret should use the cached secrets
+			const result = await getProjectSecret('project1', 'TRELLO_API_KEY');
+			expect(result).toBe('cached-value');
+
+			// resolveCredential should NOT have been called (cache hit)
+			expect(resolveCredential).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('getProjectSecretOrNull', () => {
+		it('returns credential value when found', async () => {
+			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
+			vi.mocked(resolveCredential).mockResolvedValue('secret-value');
+
+			const result = await getProjectSecretOrNull('project1', 'TRELLO_API_KEY');
+			expect(result).toBe('secret-value');
+		});
+
+		it('returns null when no credential found', async () => {
+			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
+			vi.mocked(resolveCredential).mockResolvedValue(null);
+
+			const result = await getProjectSecretOrNull('project1', 'NO_SUCH_KEY');
+			expect(result).toBeNull();
+		});
+	});
+
+	describe('getProjectSecrets', () => {
+		it('resolves all credentials via org ID', async () => {
+			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
+			vi.mocked(resolveAllCredentials).mockResolvedValue({
+				GITHUB_TOKEN: 'ghp_abc',
+				TRELLO_API_KEY: 'trello123',
+			});
+
+			const result = await getProjectSecrets('project1');
+			expect(result).toEqual({
+				GITHUB_TOKEN: 'ghp_abc',
+				TRELLO_API_KEY: 'trello123',
+			});
+			expect(resolveAllCredentials).toHaveBeenCalledWith('project1', 'default');
+		});
+
+		it('caches secrets after first call', async () => {
+			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
+			vi.mocked(resolveAllCredentials).mockResolvedValue({ KEY: 'val' });
+
+			await getProjectSecrets('project1');
+			await getProjectSecrets('project1');
+
+			// resolveAllCredentials called only once
+			expect(resolveAllCredentials).toHaveBeenCalledTimes(1);
+		});
+
+		it('returns empty object when no credentials exist', async () => {
+			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject2);
+			vi.mocked(resolveAllCredentials).mockResolvedValue({});
+
+			const result = await getProjectSecrets('project2');
+			expect(result).toEqual({});
+		});
+	});
+
+	describe('orgId resolution', () => {
+		it('caches org ID after first lookup', async () => {
+			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
+			vi.mocked(resolveCredential).mockResolvedValue('value1');
+
+			// Two calls for the same project
+			await getProjectSecret('project1', 'KEY1');
+			await getProjectSecret('project1', 'KEY2');
+
+			// findProjectByIdFromDb called once (for orgId), not twice
+			expect(findProjectByIdFromDb).toHaveBeenCalledTimes(1);
+		});
+
+		it('defaults org ID to "default" when project not found', async () => {
+			vi.mocked(findProjectByIdFromDb).mockResolvedValue(undefined);
+			vi.mocked(resolveCredential).mockResolvedValue('value1');
+
+			await getProjectSecret('nonexistent', 'KEY');
+
+			expect(resolveCredential).toHaveBeenCalledWith('nonexistent', 'default', 'KEY');
+		});
+
+		it('uses project-specific org ID', async () => {
+			const customOrgProject = { ...mockProject1, orgId: 'acme-corp' };
+			vi.mocked(findProjectByIdFromDb).mockResolvedValue(customOrgProject);
+			vi.mocked(resolveCredential).mockResolvedValue('value1');
+
+			await getProjectSecret('project1', 'KEY');
+
+			expect(resolveCredential).toHaveBeenCalledWith('project1', 'acme-corp', 'KEY');
+		});
+	});
+
 	describe('getProjectGitHubToken', () => {
 		it('returns DB secret when available', async () => {
-			vi.mocked(getProjectSecretFromDb).mockResolvedValue('db-github-token');
+			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
+			vi.mocked(resolveCredential).mockResolvedValue('db-github-token');
 
 			const result = await getProjectGitHubToken(mockConfig.projects[0]);
 			expect(result).toBe('db-github-token');
 		});
 
 		it('throws when no token in DB', async () => {
-			vi.mocked(getProjectSecretFromDb).mockResolvedValue(null);
+			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
+			vi.mocked(resolveCredential).mockResolvedValue(null);
 
 			await expect(getProjectGitHubToken(mockConfig.projects[0])).rejects.toThrow(
 				"Missing GITHUB_TOKEN in database for project 'project1'",
