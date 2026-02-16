@@ -7,6 +7,7 @@ import { setupRepository } from '../agents/shared/repository.js';
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
 import { getAgentCredential, getProjectSecrets } from '../config/provider.js';
+import { loadPartials } from '../db/repositories/partialsRepository.js';
 import {
 	type CompleteRunInput,
 	completeRun,
@@ -37,7 +38,7 @@ function getToolManifests(): ToolManifest[] {
 			cliCommand: 'cascade-tools pm read-work-item',
 			parameters: {
 				workItemId: { type: 'string', required: true },
-				includeComments: { type: 'boolean', default: true },
+				'include-comments': { type: 'boolean', default: true },
 			},
 		},
 		{
@@ -90,8 +91,8 @@ function getToolManifests(): ToolManifest[] {
 			cliCommand: 'cascade-tools pm update-checklist-item',
 			parameters: {
 				workItemId: { type: 'string', required: true },
-				checkItemId: { type: 'string', required: true },
-				complete: { type: 'boolean' },
+				'check-item-id': { type: 'string', required: true },
+				state: { type: 'string', required: true, description: 'complete or incomplete' },
 			},
 		},
 		{
@@ -273,12 +274,21 @@ async function buildBackendInput(
 		pmType,
 	};
 
+	// Load DB partials for template include resolution
+	let dbPartials: Map<string, string> | undefined;
+	try {
+		dbPartials = await loadPartials(project.orgId);
+	} catch {
+		// DB not available — fall back to disk-only partials
+	}
+
 	const { systemPrompt, model, maxIterations, contextFiles } = await resolveModelConfig({
 		agentType,
 		project,
 		config,
 		repoDir,
 		promptContext,
+		dbPartials,
 	});
 
 	const profile = getAgentProfile(agentType);

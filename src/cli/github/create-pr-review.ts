@@ -1,17 +1,14 @@
-import { Args, Flags } from '@oclif/core';
+import { Flags } from '@oclif/core';
 import { createPRReview } from '../../gadgets/github/core/createPRReview.js';
 import { CredentialScopedCommand } from '../base.js';
 
 export default class CreatePRReviewCommand extends CredentialScopedCommand {
 	static override description = 'Submit a code review on a GitHub pull request.';
 
-	static override args = {
-		prNumber: Args.integer({ description: 'The pull request number', required: true }),
-	};
-
 	static override flags = {
 		owner: Flags.string({ description: 'Repository owner', required: true }),
 		repo: Flags.string({ description: 'Repository name', required: true }),
+		prNumber: Flags.integer({ description: 'The pull request number', required: true }),
 		event: Flags.string({
 			description: 'Review action',
 			required: true,
@@ -24,7 +21,7 @@ export default class CreatePRReviewCommand extends CredentialScopedCommand {
 	};
 
 	async execute(): Promise<void> {
-		const { args, flags } = await this.parse(CreatePRReviewCommand);
+		const { flags } = await this.parse(CreatePRReviewCommand);
 
 		let comments: Array<{ path: string; line?: number; body: string }> | undefined;
 		if (flags.comments) {
@@ -38,7 +35,7 @@ export default class CreatePRReviewCommand extends CredentialScopedCommand {
 		const result = await createPRReview({
 			owner: flags.owner,
 			repo: flags.repo,
-			prNumber: args.prNumber,
+			prNumber: flags.prNumber,
 			event: flags.event as 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT',
 			body: flags.body,
 			comments,

@@ -37,6 +37,7 @@ export interface ProgressReporter {
 	onIteration(iteration: number, maxIterations: number): Promise<void>;
 	onToolCall(toolName: string, params?: Record<string, unknown>): void;
 	onText(content: string): void;
+	onTaskCompleted?(taskId: string, subject: string, summary: string): void;
 }
 
 /**

@@ -245,7 +245,22 @@ if pg_isready -q 2>/dev/null; then
 fi
 
 # =============================================================================
-# 4. Run migrations
+# 4. Create .env for local database (npm scripts use --env-file=.env)
+# =============================================================================
+if pg_isready -q 2>/dev/null && [ ! -f .env ]; then
+  echo ""
+  echo "--- Creating .env for local database ---"
+  if [ "$OS" = "linux" ]; then
+    echo "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/cascade" > .env
+  else
+    echo "DATABASE_URL=postgresql://localhost:5432/cascade" > .env
+  fi
+  echo "DATABASE_SSL=false" >> .env
+  log_info "Created .env with local DATABASE_URL"
+fi
+
+# =============================================================================
+# 5. Run migrations
 # =============================================================================
 echo ""
 echo "--- Database Migrations ---"

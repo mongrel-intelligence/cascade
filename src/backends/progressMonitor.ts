@@ -33,9 +33,30 @@ export interface ProgressMonitorConfig {
 }
 
 const RING_BUFFER_MAX = 20;
+const TEXT_SNIPPETS_MAX = 10;
+const COMPLETED_TASKS_MAX = 5;
+
+/**
+ * Extract a meaningful detail string from tool call params.
+ * Returns file paths, commands, or search patterns — the most useful
+ * context for progress reporting.
+ */
+function summarizeToolParams(_toolName: string, params?: Record<string, unknown>): string {
+	if (!params) return '';
+	if (params.file_path) return String(params.file_path);
+	if (params.filePath) return String(params.filePath);
+	if (params.command) return String(params.command).slice(0, 100);
+	if (params.pattern) {
+		const detail = String(params.pattern);
+		return params.path ? `${detail} in ${params.path}` : detail;
+	}
+	return '';
+}
 
 export class ProgressMonitor implements ProgressReporter {
-	private recentToolCalls: { name: string; timestamp: number }[] = [];
+	private recentToolCalls: { name: string; detail?: string; timestamp: number }[] = [];
+	private recentTextSnippets: { text: string; timestamp: number }[] = [];
+	private completedTasks: { subject: string; summary: string; timestamp: number }[] = [];
 	private currentIteration = 0;
 	private maxIterations = 0;
 	private startTime = Date.now();
@@ -52,7 +73,12 @@ export class ProgressMonitor implements ProgressReporter {
 	}
 
 	onToolCall(toolName: string, params?: Record<string, unknown>): void {
-		this.recentToolCalls.push({ name: toolName, timestamp: Date.now() });
+		const detail = summarizeToolParams(toolName, params);
+		this.recentToolCalls.push({
+			name: toolName,
+			detail: detail || undefined,
+			timestamp: Date.now(),
+		});
 		if (this.recentToolCalls.length > RING_BUFFER_MAX) {
 			this.recentToolCalls.shift();
 		}
@@ -60,7 +86,28 @@ export class ProgressMonitor implements ProgressReporter {
 	}
 
 	onText(content: string): void {
+		if (content.trim()) {
+			this.recentTextSnippets.push({
+				text: content.slice(0, 200),
+				timestamp: Date.now(),
+			});
+			if (this.recentTextSnippets.length > TEXT_SNIPPETS_MAX) {
+				this.recentTextSnippets.shift();
+			}
+		}
 		this.config.logWriter('INFO', 'Agent text output', { length: content.length });
+	}
+
+	onTaskCompleted(taskId: string, subject: string, summary: string): void {
+		this.completedTasks.push({
+			subject,
+			summary: summary.slice(0, 300),
+			timestamp: Date.now(),
+		});
+		if (this.completedTasks.length > COMPLETED_TASKS_MAX) {
+			this.completedTasks.shift();
+		}
+		this.config.logWriter('INFO', 'Task completed', { taskId, subject });
 	}
 
 	// ── Lifecycle ──
@@ -99,6 +146,8 @@ export class ProgressMonitor implements ProgressReporter {
 				maxIterations: this.maxIterations,
 				todos,
 				recentToolCalls: [...this.recentToolCalls],
+				recentTextSnippets: [...this.recentTextSnippets],
+				completedTasks: [...this.completedTasks],
 			};
 
 			let summary: string;

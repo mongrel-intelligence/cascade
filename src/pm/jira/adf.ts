@@ -9,6 +9,41 @@
  * Convert a simple markdown string to ADF document.
  * Handles paragraphs, headings, bullet lists, bold, inline code, and code blocks.
  */
+function parseCodeBlock(lines: string[], startIndex: number): { node: unknown; nextIndex: number } {
+	const lang = lines[startIndex].slice(3).trim();
+	const codeLines: string[] = [];
+	let i = startIndex + 1;
+	while (i < lines.length && !lines[i].startsWith('```')) {
+		codeLines.push(lines[i]);
+		i++;
+	}
+	return {
+		node: {
+			type: 'codeBlock',
+			attrs: lang ? { language: lang } : {},
+			content: [{ type: 'text', text: codeLines.join('\n') }],
+		},
+		nextIndex: i + 1, // skip closing ```
+	};
+}
+
+function parseBulletList(
+	lines: string[],
+	startIndex: number,
+): { node: unknown; nextIndex: number } {
+	const items: unknown[] = [];
+	let i = startIndex;
+	while (i < lines.length && lines[i].match(/^[-*]\s+/)) {
+		const itemText = lines[i].replace(/^[-*]\s+/, '');
+		items.push({
+			type: 'listItem',
+			content: [{ type: 'paragraph', content: inlineToAdf(itemText) }],
+		});
+		i++;
+	}
+	return { node: { type: 'bulletList', content: items }, nextIndex: i };
+}
+
 export function markdownToAdf(markdown: string): unknown {
 	const lines = markdown.split('\n');
 	const content: unknown[] = [];
@@ -17,25 +52,13 @@ export function markdownToAdf(markdown: string): unknown {
 	while (i < lines.length) {
 		const line = lines[i];
 
-		// Code block
 		if (line.startsWith('```')) {
-			const lang = line.slice(3).trim();
-			const codeLines: string[] = [];
-			i++;
-			while (i < lines.length && !lines[i].startsWith('```')) {
-				codeLines.push(lines[i]);
-				i++;
-			}
-			i++; // skip closing ```
-			content.push({
-				type: 'codeBlock',
-				attrs: lang ? { language: lang } : {},
-				content: [{ type: 'text', text: codeLines.join('\n') }],
-			});
+			const result = parseCodeBlock(lines, i);
+			content.push(result.node);
+			i = result.nextIndex;
 			continue;
 		}
 
-		// Heading
 		const headingMatch = line.match(/^(#{1,6})\s+(.+)/);
 		if (headingMatch) {
 			content.push({
@@ -47,28 +70,18 @@ export function markdownToAdf(markdown: string): unknown {
 			continue;
 		}
 
-		// Bullet list
 		if (line.match(/^[-*]\s+/)) {
-			const items: unknown[] = [];
-			while (i < lines.length && lines[i].match(/^[-*]\s+/)) {
-				const itemText = lines[i].replace(/^[-*]\s+/, '');
-				items.push({
-					type: 'listItem',
-					content: [{ type: 'paragraph', content: inlineToAdf(itemText) }],
-				});
-				i++;
-			}
-			content.push({ type: 'bulletList', content: items });
+			const result = parseBulletList(lines, i);
+			content.push(result.node);
+			i = result.nextIndex;
 			continue;
 		}
 
-		// Empty line
 		if (line.trim() === '') {
 			i++;
 			continue;
 		}
 
-		// Regular paragraph
 		content.push({
 			type: 'paragraph',
 			content: inlineToAdf(line),
@@ -128,63 +141,45 @@ function inlineToAdf(text: string): unknown[] {
  * Convert ADF document to plain text.
  * Used when reading JIRA issue descriptions/comments.
  */
+interface AdfNode {
+	type?: string;
+	content?: unknown[];
+	text?: string;
+	attrs?: Record<string, unknown>;
+}
+
+function convertAdfNode(n: AdfNode): string[] {
+	switch (n.type) {
+		case 'paragraph':
+			return [adfToPlainText(n), ''];
+		case 'heading': {
+			const level = (n.attrs?.level as number) ?? 1;
+			return [`${'#'.repeat(level)} ${adfToPlainText(n)}`, ''];
+		}
+		case 'bulletList':
+			return [...(n.content ?? []).map((item) => `- ${adfToPlainText(item)}`), ''];
+		case 'listItem':
+			return [adfToPlainText(n)];
+		case 'codeBlock':
+			return ['```', adfToPlainText(n), '```', ''];
+		case 'text':
+			return [n.text ?? ''];
+		default:
+			return [adfToPlainText(n)];
+	}
+}
+
 export function adfToPlainText(adf: unknown): string {
 	if (!adf || typeof adf !== 'object') return '';
 
-	const doc = adf as { type?: string; content?: unknown[]; text?: string };
+	const doc = adf as AdfNode;
 
-	if (doc.type === 'text') {
-		return doc.text ?? '';
-	}
-
-	if (!doc.content || !Array.isArray(doc.content)) {
-		return doc.text ?? '';
-	}
+	if (doc.type === 'text') return doc.text ?? '';
+	if (!doc.content || !Array.isArray(doc.content)) return doc.text ?? '';
 
 	const parts: string[] = [];
 	for (const node of doc.content) {
-		const n = node as {
-			type?: string;
-			content?: unknown[];
-			text?: string;
-			attrs?: Record<string, unknown>;
-		};
-
-		switch (n.type) {
-			case 'paragraph':
-				parts.push(adfToPlainText(n));
-				parts.push('');
-				break;
-			case 'heading': {
-				const level = (n.attrs?.level as number) ?? 1;
-				parts.push(`${'#'.repeat(level)} ${adfToPlainText(n)}`);
-				parts.push('');
-				break;
-			}
-			case 'bulletList':
-				if (n.content) {
-					for (const item of n.content) {
-						parts.push(`- ${adfToPlainText(item)}`);
-					}
-				}
-				parts.push('');
-				break;
-			case 'listItem':
-				parts.push(adfToPlainText(n));
-				break;
-			case 'codeBlock':
-				parts.push('```');
-				parts.push(adfToPlainText(n));
-				parts.push('```');
-				parts.push('');
-				break;
-			case 'text':
-				parts.push(n.text ?? '');
-				break;
-			default:
-				parts.push(adfToPlainText(n));
-				break;
-		}
+		parts.push(...convertAdfNode(node as AdfNode));
 	}
 
 	return parts

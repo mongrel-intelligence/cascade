@@ -1,7 +1,10 @@
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { validateTemplate } from '../../agents/prompts/index.js';
+import { CLAUDE_CODE_MODELS } from '../../backends/claude-code/models.js';
 import { getDb } from '../../db/client.js';
+import { loadPartials } from '../../db/repositories/partialsRepository.js';
 import {
 	createAgentConfig,
 	deleteAgentConfig,
@@ -9,9 +12,25 @@ import {
 	updateAgentConfig,
 } from '../../db/repositories/settingsRepository.js';
 import { agentConfigs, projects } from '../../db/schema/index.js';
-import { protectedProcedure, router } from '../trpc.js';
+import { protectedProcedure, publicProcedure, router } from '../trpc.js';
+
+async function validatePromptIfPresent(prompt: string | null | undefined) {
+	if (!prompt) return;
+	const dbPartials = await loadPartials();
+	const result = validateTemplate(prompt, dbPartials);
+	if (!result.valid) {
+		throw new TRPCError({
+			code: 'BAD_REQUEST',
+			message: `Invalid prompt template: ${result.error}`,
+		});
+	}
+}
 
 export const agentConfigsRouter = router({
+	claudeCodeModels: publicProcedure.query(() => {
+		return CLAUDE_CODE_MODELS;
+	}),
+
 	list: protectedProcedure
 		.input(z.object({ projectId: z.string().optional() }).optional())
 		.query(async ({ ctx, input }) => {
@@ -54,6 +73,7 @@ export const agentConfigsRouter = router({
 					throw new TRPCError({ code: 'NOT_FOUND' });
 				}
 			}
+			await validatePromptIfPresent(input.prompt);
 			return createAgentConfig({
 				orgId: input.orgId ?? ctx.user.orgId,
 				projectId: input.projectId,
@@ -102,6 +122,7 @@ export const agentConfigsRouter = router({
 			}
 
 			const { id, ...updates } = input;
+			await validatePromptIfPresent(updates.prompt);
 			await updateAgentConfig(id, updates);
 		}),
 

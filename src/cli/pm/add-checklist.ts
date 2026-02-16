@@ -1,15 +1,12 @@
-import { Args, Flags } from '@oclif/core';
+import { Flags } from '@oclif/core';
 import { addChecklist } from '../../gadgets/pm/core/addChecklist.js';
 import { CredentialScopedCommand } from '../base.js';
 
 export default class AddChecklist extends CredentialScopedCommand {
 	static override description = 'Add a checklist with items to a work item.';
 
-	static override args = {
-		workItemId: Args.string({ description: 'The work item ID', required: true }),
-	};
-
 	static override flags = {
+		workItemId: Flags.string({ description: 'The work item ID', required: true }),
 		name: Flags.string({ description: 'Checklist name', required: true }),
 		items: Flags.string({
 			description: 'Checklist items (can be specified multiple times)',
@@ -19,9 +16,9 @@ export default class AddChecklist extends CredentialScopedCommand {
 	};
 
 	async execute(): Promise<void> {
-		const { args, flags } = await this.parse(AddChecklist);
+		const { flags } = await this.parse(AddChecklist);
 		const result = await addChecklist({
-			workItemId: args.workItemId,
+			workItemId: flags.workItemId,
 			checklistName: flags.name,
 			items: flags.items,
 		});

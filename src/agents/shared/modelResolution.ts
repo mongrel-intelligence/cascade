@@ -1,7 +1,7 @@
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { type ContextFile, readContextFiles } from '../utils/setup.js';
 
-import { type PromptContext, getSystemPrompt } from '../prompts/index.js';
+import { type PromptContext, getSystemPrompt, renderCustomPrompt } from '../prompts/index.js';
 
 export interface ModelConfig {
 	systemPrompt: string;
@@ -19,14 +19,23 @@ export interface ResolveModelConfigOptions {
 	promptContext?: PromptContext;
 	/** Optional key override for model/iteration config lookup (e.g., respond-to-review uses 'review') */
 	configKey?: string;
+	/** DB partials for template include resolution */
+	dbPartials?: Map<string, string>;
 }
 
 export async function resolveModelConfig(options: ResolveModelConfigOptions): Promise<ModelConfig> {
-	const { agentType, project, config, repoDir, modelOverride, promptContext } = options;
+	const { agentType, project, config, repoDir, modelOverride, promptContext, dbPartials } = options;
 	const configKey = options.configKey ?? agentType;
 
-	const systemPrompt =
-		project.prompts?.[agentType] || getSystemPrompt(agentType, promptContext ?? {});
+	// Resolution chain: project prompt → defaults prompt → .eta file
+	const customPromptSource = project.prompts?.[agentType] ?? config.defaults.prompts?.[agentType];
+
+	let systemPrompt: string;
+	if (customPromptSource) {
+		systemPrompt = renderCustomPrompt(customPromptSource, promptContext ?? {}, dbPartials);
+	} else {
+		systemPrompt = getSystemPrompt(agentType, promptContext ?? {}, dbPartials);
+	}
 
 	const model =
 		modelOverride ||

@@ -25,7 +25,8 @@
 		"db:push": "node --env-file=.env ./node_modules/.bin/drizzle-kit push",
 		"db:studio": "node --env-file=.env ./node_modules/.bin/drizzle-kit studio",
 		"db:seed": "node --env-file=.env --import tsx tools/seed-config-from-json.ts",
-		"db:bootstrap-journal": "node --env-file=.env --import tsx tools/db-bootstrap-journal.ts"
+		"db:bootstrap-journal": "node --env-file=.env --import tsx tools/db-bootstrap-journal.ts",
+		"db:seed-prompts": "node --env-file=.env --import tsx tools/seed-prompts.ts"
 	},
 	"keywords": [
 		"trello",

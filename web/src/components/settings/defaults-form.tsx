@@ -1,3 +1,4 @@
+import { ModelField } from '@/components/settings/model-field.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import {
@@ -67,12 +68,7 @@ export function DefaultsForm() {
 			<div className="grid grid-cols-2 gap-4">
 				<div className="space-y-2">
 					<Label htmlFor="d-model">Model</Label>
-					<Input
-						id="d-model"
-						value={model}
-						onChange={(e) => setModel(e.target.value)}
-						placeholder="e.g. claude-sonnet-4-5-20250929"
-					/>
+					<ModelField id="d-model" value={model} onChange={setModel} backend={agentBackend} />
 				</div>
 				<div className="space-y-2">
 					<Label htmlFor="d-iterations">Max Iterations</Label>
