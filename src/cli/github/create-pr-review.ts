@@ -1,7 +1,8 @@
-import { Args, Command, Flags } from '@oclif/core';
+import { Args, Flags } from '@oclif/core';
 import { createPRReview } from '../../gadgets/github/core/createPRReview.js';
+import { CredentialScopedCommand } from '../base.js';
 
-export default class CreatePRReviewCommand extends Command {
+export default class CreatePRReviewCommand extends CredentialScopedCommand {
 	static override description = 'Submit a code review on a GitHub pull request.';
 
 	static override args = {
@@ -22,7 +23,7 @@ export default class CreatePRReviewCommand extends Command {
 		}),
 	};
 
-	async run(): Promise<void> {
+	async execute(): Promise<void> {
 		const { args, flags } = await this.parse(CreatePRReviewCommand);
 
 		let comments: Array<{ path: string; line?: number; body: string }> | undefined;

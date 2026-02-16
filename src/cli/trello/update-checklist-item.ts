@@ -1,7 +1,8 @@
-import { Args, Command, Flags } from '@oclif/core';
+import { Args, Flags } from '@oclif/core';
 import { updateChecklistItem } from '../../gadgets/trello/core/updateChecklistItem.js';
+import { CredentialScopedCommand } from '../base.js';
 
-export default class UpdateChecklistItem extends Command {
+export default class UpdateChecklistItem extends CredentialScopedCommand {
 	static override description = 'Update a checklist item state on a Trello card.';
 
 	static override args = {
@@ -17,7 +18,7 @@ export default class UpdateChecklistItem extends Command {
 		}),
 	};
 
-	async run(): Promise<void> {
+	async execute(): Promise<void> {
 		const { args, flags } = await this.parse(UpdateChecklistItem);
 		const result = await updateChecklistItem(
 			args.cardId,

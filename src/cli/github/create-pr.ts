@@ -1,7 +1,8 @@
-import { Command, Flags } from '@oclif/core';
+import { Flags } from '@oclif/core';
 import { createPR } from '../../gadgets/github/core/createPR.js';
+import { CredentialScopedCommand } from '../base.js';
 
-export default class CreatePR extends Command {
+export default class CreatePR extends CredentialScopedCommand {
 	static override description = 'Create a GitHub pull request with optional commit and push.';
 
 	static override flags = {
@@ -23,7 +24,7 @@ export default class CreatePR extends Command {
 		}),
 	};
 
-	async run(): Promise<void> {
+	async execute(): Promise<void> {
 		const { flags } = await this.parse(CreatePR);
 		const result = await createPR({
 			title: flags.title,
