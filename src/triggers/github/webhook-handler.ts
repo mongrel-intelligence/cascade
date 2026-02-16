@@ -40,7 +40,8 @@ async function executeGitHubAgent(
 ): Promise<void> {
 	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY').catch(() => '');
 	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN').catch(() => '');
-	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
+	const agentGitHubToken = await getAgentCredential(project.id, result.agentType, 'GITHUB_TOKEN');
+	const githubToken = agentGitHubToken || (await getProjectSecret(project.id, 'GITHUB_TOKEN'));
 
 	const restoreLlmEnv = await injectLlmApiKeys(project.id);
 
