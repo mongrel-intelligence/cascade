@@ -1,0 +1,270 @@
+import { TRPCError } from '@trpc/server';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { TRPCContext } from '../../../../src/api/trpc.js';
+
+const mockListAgentConfigs = vi.fn();
+const mockCreateAgentConfig = vi.fn();
+const mockUpdateAgentConfig = vi.fn();
+const mockDeleteAgentConfig = vi.fn();
+
+vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
+	listAgentConfigs: (...args: unknown[]) => mockListAgentConfigs(...args),
+	createAgentConfig: (...args: unknown[]) => mockCreateAgentConfig(...args),
+	updateAgentConfig: (...args: unknown[]) => mockUpdateAgentConfig(...args),
+	deleteAgentConfig: (...args: unknown[]) => mockDeleteAgentConfig(...args),
+}));
+
+// Mock getDb for ownership checks
+const mockDbSelect = vi.fn();
+const mockDbFrom = vi.fn();
+const mockDbWhere = vi.fn();
+
+vi.mock('../../../../src/db/client.js', () => ({
+	getDb: () => ({
+		select: mockDbSelect,
+	}),
+}));
+
+vi.mock('../../../../src/db/schema/index.js', () => ({
+	agentConfigs: { id: 'id', orgId: 'org_id', projectId: 'project_id' },
+	projects: { id: 'id', orgId: 'org_id' },
+}));
+
+import { agentConfigsRouter } from '../../../../src/api/routers/agentConfigs.js';
+
+function createCaller(ctx: TRPCContext) {
+	return agentConfigsRouter.createCaller(ctx);
+}
+
+const mockUser = {
+	id: 'user-1',
+	orgId: 'org-1',
+	email: 'test@example.com',
+	name: 'Test',
+	role: 'admin',
+};
+
+describe('agentConfigsRouter', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockDbSelect.mockReturnValue({ from: mockDbFrom });
+		mockDbFrom.mockReturnValue({ where: mockDbWhere });
+	});
+
+	describe('list', () => {
+		it('lists org-scoped configs when no projectId', async () => {
+			const configs = [{ id: 1, agentType: 'implementation', model: 'claude-sonnet-4-5-20250929' }];
+			mockListAgentConfigs.mockResolvedValue(configs);
+			const caller = createCaller({ user: mockUser });
+
+			const result = await caller.list();
+
+			expect(mockListAgentConfigs).toHaveBeenCalledWith({ orgId: 'org-1' });
+			expect(result).toEqual(configs);
+		});
+
+		it('lists project-scoped configs when projectId provided', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			const configs = [{ id: 2, agentType: 'review', projectId: 'proj-1' }];
+			mockListAgentConfigs.mockResolvedValue(configs);
+			const caller = createCaller({ user: mockUser });
+
+			const result = await caller.list({ projectId: 'proj-1' });
+
+			expect(mockListAgentConfigs).toHaveBeenCalledWith({ projectId: 'proj-1' });
+			expect(result).toEqual(configs);
+		});
+
+		it('throws NOT_FOUND when project does not belong to org', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
+			const caller = createCaller({ user: mockUser });
+
+			await expect(caller.list({ projectId: 'proj-x' })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws NOT_FOUND when project does not exist', async () => {
+			mockDbWhere.mockResolvedValue([]);
+			const caller = createCaller({ user: mockUser });
+
+			await expect(caller.list({ projectId: 'missing' })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null });
+			await expect(caller.list()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+		});
+	});
+
+	describe('create', () => {
+		it('creates org-scoped config', async () => {
+			mockCreateAgentConfig.mockResolvedValue({ id: 10 });
+			const caller = createCaller({ user: mockUser });
+
+			const result = await caller.create({
+				agentType: 'implementation',
+				model: 'claude-sonnet-4-5-20250929',
+				maxIterations: 25,
+			});
+
+			expect(mockCreateAgentConfig).toHaveBeenCalledWith({
+				orgId: 'org-1',
+				projectId: undefined,
+				agentType: 'implementation',
+				model: 'claude-sonnet-4-5-20250929',
+				maxIterations: 25,
+				agentBackend: undefined,
+				prompt: undefined,
+			});
+			expect(result).toEqual({ id: 10 });
+		});
+
+		it('creates project-scoped config after verifying ownership', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 11 });
+			const caller = createCaller({ user: mockUser });
+
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'review',
+				agentBackend: 'claude-code',
+			});
+
+			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+				expect.objectContaining({
+					projectId: 'proj-1',
+					agentType: 'review',
+					agentBackend: 'claude-code',
+				}),
+			);
+		});
+
+		it('throws NOT_FOUND when project does not belong to org', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
+			const caller = createCaller({ user: mockUser });
+
+			await expect(
+				caller.create({ projectId: 'proj-x', agentType: 'review' }),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+
+		it('rejects empty agentType', async () => {
+			const caller = createCaller({ user: mockUser });
+			await expect(caller.create({ agentType: '' })).rejects.toThrow();
+		});
+
+		it('throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null });
+			await expect(caller.create({ agentType: 'test' })).rejects.toMatchObject({
+				code: 'UNAUTHORIZED',
+			});
+		});
+	});
+
+	describe('update', () => {
+		it('updates org-scoped config', async () => {
+			// First call: find config
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1', projectId: null }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser });
+
+			await caller.update({ id: 10, model: 'new-model', maxIterations: 30 });
+
+			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(10, {
+				model: 'new-model',
+				maxIterations: 30,
+			});
+		});
+
+		it('updates project-scoped config after verifying project ownership', async () => {
+			// First call: find config
+			mockDbWhere.mockResolvedValueOnce([{ orgId: null, projectId: 'proj-1' }]);
+			// Second call: verify project
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser });
+
+			await caller.update({ id: 11, agentBackend: 'claude-code' });
+
+			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(11, {
+				agentBackend: 'claude-code',
+			});
+		});
+
+		it('throws NOT_FOUND when config does not exist', async () => {
+			mockDbWhere.mockResolvedValue([]);
+			const caller = createCaller({ user: mockUser });
+
+			await expect(caller.update({ id: 999, model: 'x' })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws NOT_FOUND when org-scoped config belongs to different org', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'different-org', projectId: null }]);
+			const caller = createCaller({ user: mockUser });
+
+			await expect(caller.update({ id: 10, model: 'x' })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null });
+			await expect(caller.update({ id: 10, model: 'x' })).rejects.toMatchObject({
+				code: 'UNAUTHORIZED',
+			});
+		});
+	});
+
+	describe('delete', () => {
+		it('deletes org-scoped config', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1', projectId: null }]);
+			mockDeleteAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser });
+
+			await caller.delete({ id: 10 });
+
+			expect(mockDeleteAgentConfig).toHaveBeenCalledWith(10);
+		});
+
+		it('deletes project-scoped config after verifying project ownership', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ orgId: null, projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockDeleteAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser });
+
+			await caller.delete({ id: 11 });
+
+			expect(mockDeleteAgentConfig).toHaveBeenCalledWith(11);
+		});
+
+		it('throws NOT_FOUND when config does not exist', async () => {
+			mockDbWhere.mockResolvedValue([]);
+			const caller = createCaller({ user: mockUser });
+
+			await expect(caller.delete({ id: 999 })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws NOT_FOUND when org-scoped config belongs to different org', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'different-org', projectId: null }]);
+			const caller = createCaller({ user: mockUser });
+
+			await expect(caller.delete({ id: 10 })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null });
+			await expect(caller.delete({ id: 10 })).rejects.toMatchObject({
+				code: 'UNAUTHORIZED',
+			});
+		});
+	});
+});

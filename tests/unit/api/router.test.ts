@@ -7,6 +7,8 @@ vi.mock('../../../src/db/client.js', () => ({
 
 vi.mock('../../../src/db/schema/index.js', () => ({
 	projects: {},
+	credentials: {},
+	agentConfigs: {},
 }));
 
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
@@ -17,6 +19,37 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	getLlmCallByNumber: vi.fn(),
 	getDebugAnalysisByRunId: vi.fn(),
 	listProjectsForOrg: vi.fn(),
+}));
+
+vi.mock('../../../src/db/repositories/settingsRepository.js', () => ({
+	getOrganization: vi.fn(),
+	updateOrganization: vi.fn(),
+	getCascadeDefaults: vi.fn(),
+	upsertCascadeDefaults: vi.fn(),
+	listProjectsFull: vi.fn(),
+	getProjectFull: vi.fn(),
+	createProject: vi.fn(),
+	updateProject: vi.fn(),
+	deleteProject: vi.fn(),
+	listProjectIntegrations: vi.fn(),
+	upsertProjectIntegration: vi.fn(),
+	deleteProjectIntegration: vi.fn(),
+	listAgentConfigs: vi.fn(),
+	createAgentConfig: vi.fn(),
+	updateAgentConfig: vi.fn(),
+	deleteAgentConfig: vi.fn(),
+}));
+
+vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
+	listOrgCredentials: vi.fn(),
+	createCredential: vi.fn(),
+	updateCredential: vi.fn(),
+	deleteCredential: vi.fn(),
+	listProjectOverrides: vi.fn(),
+	setProjectCredentialOverride: vi.fn(),
+	removeProjectCredentialOverride: vi.fn(),
+	setAgentCredentialOverride: vi.fn(),
+	removeAgentCredentialOverride: vi.fn(),
 }));
 
 import { appRouter } from '../../../src/api/router.js';
@@ -37,8 +70,49 @@ describe('appRouter', () => {
 		expect(procedures).toContain('runs.getDebugAnalysis');
 	});
 
-	it('has projects sub-router with list procedure', () => {
+	it('has projects sub-router with all procedures', () => {
 		const procedures = Object.keys(appRouter._def.procedures);
 		expect(procedures).toContain('projects.list');
+		expect(procedures).toContain('projects.listFull');
+		expect(procedures).toContain('projects.getById');
+		expect(procedures).toContain('projects.create');
+		expect(procedures).toContain('projects.update');
+		expect(procedures).toContain('projects.delete');
+		expect(procedures).toContain('projects.integrations.list');
+		expect(procedures).toContain('projects.integrations.upsert');
+		expect(procedures).toContain('projects.integrations.delete');
+		expect(procedures).toContain('projects.credentialOverrides.list');
+		expect(procedures).toContain('projects.credentialOverrides.set');
+		expect(procedures).toContain('projects.credentialOverrides.remove');
+		expect(procedures).toContain('projects.credentialOverrides.setAgent');
+		expect(procedures).toContain('projects.credentialOverrides.removeAgent');
+	});
+
+	it('has organization sub-router with all procedures', () => {
+		const procedures = Object.keys(appRouter._def.procedures);
+		expect(procedures).toContain('organization.get');
+		expect(procedures).toContain('organization.update');
+	});
+
+	it('has defaults sub-router with all procedures', () => {
+		const procedures = Object.keys(appRouter._def.procedures);
+		expect(procedures).toContain('defaults.get');
+		expect(procedures).toContain('defaults.upsert');
+	});
+
+	it('has credentials sub-router with all procedures', () => {
+		const procedures = Object.keys(appRouter._def.procedures);
+		expect(procedures).toContain('credentials.list');
+		expect(procedures).toContain('credentials.create');
+		expect(procedures).toContain('credentials.update');
+		expect(procedures).toContain('credentials.delete');
+	});
+
+	it('has agentConfigs sub-router with all procedures', () => {
+		const procedures = Object.keys(appRouter._def.procedures);
+		expect(procedures).toContain('agentConfigs.list');
+		expect(procedures).toContain('agentConfigs.create');
+		expect(procedures).toContain('agentConfigs.update');
+		expect(procedures).toContain('agentConfigs.delete');
 	});
 });
