@@ -1,7 +1,8 @@
-import { Args, Command, Flags } from '@oclif/core';
+import { Args, Flags } from '@oclif/core';
 import { replyToReviewComment } from '../../gadgets/github/core/replyToReviewComment.js';
+import { CredentialScopedCommand } from '../base.js';
 
-export default class ReplyToReviewComment extends Command {
+export default class ReplyToReviewComment extends CredentialScopedCommand {
 	static override description = 'Reply to a specific review comment on a GitHub pull request.';
 
 	static override args = {
@@ -15,7 +16,7 @@ export default class ReplyToReviewComment extends Command {
 		body: Flags.string({ description: 'Reply message (markdown supported)', required: true }),
 	};
 
-	async run(): Promise<void> {
+	async execute(): Promise<void> {
 		const { args, flags } = await this.parse(ReplyToReviewComment);
 		const result = await replyToReviewComment(
 			flags.owner,

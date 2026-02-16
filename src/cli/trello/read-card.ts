@@ -1,7 +1,8 @@
-import { Args, Command, Flags } from '@oclif/core';
+import { Args, Flags } from '@oclif/core';
 import { readCard } from '../../gadgets/trello/core/readCard.js';
+import { CredentialScopedCommand } from '../base.js';
 
-export default class ReadCard extends Command {
+export default class ReadCard extends CredentialScopedCommand {
 	static override description =
 		'Read a Trello card with its title, description, comments, checklists, and attachments.';
 
@@ -17,7 +18,7 @@ export default class ReadCard extends Command {
 		}),
 	};
 
-	async run(): Promise<void> {
+	async execute(): Promise<void> {
 		const { args, flags } = await this.parse(ReadCard);
 		const result = await readCard(args.cardId, flags['include-comments']);
 		this.log(JSON.stringify({ success: true, data: result }));

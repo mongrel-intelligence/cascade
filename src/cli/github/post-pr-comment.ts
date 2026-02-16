@@ -1,7 +1,8 @@
-import { Args, Command, Flags } from '@oclif/core';
+import { Args, Flags } from '@oclif/core';
 import { postPRComment } from '../../gadgets/github/core/postPRComment.js';
+import { CredentialScopedCommand } from '../base.js';
 
-export default class PostPRComment extends Command {
+export default class PostPRComment extends CredentialScopedCommand {
 	static override description = 'Post a comment on a GitHub pull request.';
 
 	static override args = {
@@ -14,7 +15,7 @@ export default class PostPRComment extends Command {
 		body: Flags.string({ description: 'Comment body (markdown supported)', required: true }),
 	};
 
-	async run(): Promise<void> {
+	async execute(): Promise<void> {
 		const { args, flags } = await this.parse(PostPRComment);
 		const result = await postPRComment(flags.owner, flags.repo, args.prNumber, flags.body);
 		this.log(JSON.stringify({ success: true, data: result }));

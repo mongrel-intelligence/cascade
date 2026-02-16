@@ -1,7 +1,8 @@
-import { Args, Command, Flags } from '@oclif/core';
+import { Args, Flags } from '@oclif/core';
 import { getPRDiff } from '../../gadgets/github/core/getPRDiff.js';
+import { CredentialScopedCommand } from '../base.js';
 
-export default class GetPRDiff extends Command {
+export default class GetPRDiff extends CredentialScopedCommand {
 	static override description = 'Get the unified diff of all file changes in a GitHub PR.';
 
 	static override args = {
@@ -13,7 +14,7 @@ export default class GetPRDiff extends Command {
 		repo: Flags.string({ description: 'Repository name', required: true }),
 	};
 
-	async run(): Promise<void> {
+	async execute(): Promise<void> {
 		const { args, flags } = await this.parse(GetPRDiff);
 		const result = await getPRDiff(flags.owner, flags.repo, args.prNumber);
 		this.log(JSON.stringify({ success: true, data: result }));
