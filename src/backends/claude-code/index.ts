@@ -22,13 +22,23 @@ import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
 /**
  * Format a single CLI parameter for tool guidance documentation.
  */
-function formatParam(key: string, schema: { type: string; required?: boolean }): string {
+function formatParam(
+	key: string,
+	schema: { type: string; required?: boolean; default?: unknown },
+): string {
 	if (schema.type === 'array') {
 		// Array params use repeated flags: --item "a" --item "b"
 		const singular = key.replace(/s$/, '');
 		return schema.required
 			? ` --${singular} <string> (repeatable)`
 			: ` [--${singular} <string> (repeatable)]`;
+	}
+	if (schema.type === 'boolean') {
+		// Boolean flags are presence-based: --flag (true) or --no-flag (false), no value argument
+		if (schema.default === true) {
+			return ` [--no-${key}]`;
+		}
+		return ` [--${key}]`;
 	}
 	return schema.required ? ` --${key} <${schema.type}>` : ` [--${key} <${schema.type}>]`;
 }
