@@ -23,17 +23,29 @@ import {
 	listProjectOverrides,
 	resolveAllCredentials,
 } from '../src/db/repositories/credentialsRepository.js';
-import { agentConfigs, cascadeDefaults, projects } from '../src/db/schema/index.js';
+import {
+	agentConfigs,
+	cascadeDefaults,
+	projectIntegrations,
+	projects,
+} from '../src/db/schema/index.js';
 
 function maskValue(value: string): string {
 	if (value.length <= 8) return '****';
 	return `${value.slice(0, 4)}...${value.slice(-4)}`;
 }
 
+interface TrelloIntegrationConfig {
+	boardId: string;
+	lists: Record<string, string>;
+	labels: Record<string, string>;
+	customFields?: Record<string, string>;
+}
+
 interface AgentConfigInfo {
 	model: string | null;
 	maxIterations: number | null;
-	backend: string | null;
+	agentBackend: string | null;
 	prompt: string | null;
 }
 
@@ -54,12 +66,7 @@ interface EffectiveConfig {
 		org: AgentConfigInfo | null;
 		project: AgentConfigInfo | null;
 	};
-	trello: {
-		boardId: string;
-		lists: Record<string, string>;
-		labels: Record<string, string>;
-		customFields: Record<string, string>;
-	};
+	trello: TrelloIntegrationConfig | null;
 	credentials: Record<string, string>;
 	credentialOverrides: { envVarKey: string; credentialId: number; credentialName: string }[];
 }
@@ -69,43 +76,9 @@ function toInfo(ac: typeof agentConfigs.$inferSelect | null | undefined): AgentC
 	return {
 		model: ac.model,
 		maxIterations: ac.maxIterations,
-		backend: ac.backend,
+		agentBackend: ac.agentBackend,
 		prompt: ac.prompt,
 	};
-}
-
-function compactRecord(entries: Record<string, string | null>): Record<string, string> {
-	const result: Record<string, string> = {};
-	for (const [key, value] of Object.entries(entries)) {
-		if (value) result[key] = value;
-	}
-	return result;
-}
-
-function buildTrelloConfig(projectRow: typeof projects.$inferSelect) {
-	const lists = compactRecord({
-		briefing: projectRow.trelloListBriefing,
-		stories: projectRow.trelloListStories,
-		planning: projectRow.trelloListPlanning,
-		todo: projectRow.trelloListTodo,
-		inProgress: projectRow.trelloListInProgress,
-		inReview: projectRow.trelloListInReview,
-		done: projectRow.trelloListDone,
-		merged: projectRow.trelloListMerged,
-		debug: projectRow.trelloListDebug,
-	});
-
-	const labels = compactRecord({
-		readyToProcess: projectRow.trelloLabelReadyToProcess,
-		processing: projectRow.trelloLabelProcessing,
-		processed: projectRow.trelloLabelProcessed,
-		error: projectRow.trelloLabelError,
-	});
-
-	const customFields: Record<string, string> = {};
-	if (projectRow.trelloCustomFieldCost) customFields.cost = projectRow.trelloCustomFieldCost;
-
-	return { boardId: projectRow.trelloBoardId, lists, labels, customFields };
 }
 
 function resolveBackend(
@@ -116,9 +89,9 @@ function resolveBackend(
 	orgBackend: string | null,
 ): string {
 	return (
-		projectAc?.backend ??
-		orgAc?.backend ??
-		globalAc?.backend ??
+		projectAc?.agentBackend ??
+		orgAc?.agentBackend ??
+		globalAc?.agentBackend ??
 		projectBackendDefault ??
 		orgBackend ??
 		'llmist'
@@ -136,25 +109,37 @@ async function resolveEffectiveConfig(
 
 	const orgId = projectRow.orgId;
 
-	const [defaultsRow] = await db
-		.select()
-		.from(cascadeDefaults)
-		.where(eq(cascadeDefaults.orgId, orgId));
+	const [
+		defaultsRow,
+		globalAcs,
+		orgAcs,
+		projectAcs,
+		integrations,
+		credentials,
+		credentialOverrides,
+	] = await Promise.all([
+		db
+			.select()
+			.from(cascadeDefaults)
+			.where(eq(cascadeDefaults.orgId, orgId))
+			.then((r) => r[0]),
+		db
+			.select()
+			.from(agentConfigs)
+			.where(and(isNull(agentConfigs.projectId), isNull(agentConfigs.orgId))),
+		db
+			.select()
+			.from(agentConfigs)
+			.where(and(eq(agentConfigs.orgId, orgId), isNull(agentConfigs.projectId))),
+		db.select().from(agentConfigs).where(eq(agentConfigs.projectId, projectId)),
+		db.select().from(projectIntegrations).where(eq(projectIntegrations.projectId, projectId)),
+		resolveAllCredentials(projectId, orgId),
+		listProjectOverrides(projectId),
+	]);
 
-	const globalAcs = await db
-		.select()
-		.from(agentConfigs)
-		.where(and(isNull(agentConfigs.projectId), isNull(agentConfigs.orgId)));
-
-	const orgAcs = await db
-		.select()
-		.from(agentConfigs)
-		.where(and(eq(agentConfigs.orgId, orgId), isNull(agentConfigs.projectId)));
-
-	const projectAcs = await db
-		.select()
-		.from(agentConfigs)
-		.where(eq(agentConfigs.projectId, projectId));
+	const trelloConfig = integrations.find((i) => i.type === 'trello')?.config as
+		| TrelloIntegrationConfig
+		| undefined;
 
 	const findByType = (acs: (typeof agentConfigs.$inferSelect)[]) =>
 		agentType ? acs.find((ac) => ac.agentType === agentType) : null;
@@ -162,9 +147,6 @@ async function resolveEffectiveConfig(
 	const globalAc = toInfo(findByType(globalAcs));
 	const orgAc = toInfo(findByType(orgAcs));
 	const projectAc = toInfo(findByType(projectAcs));
-
-	const credentials = await resolveAllCredentials(projectId, orgId);
-	const credentialOverrides = await listProjectOverrides(projectId);
 
 	return {
 		projectId,
@@ -189,7 +171,7 @@ async function resolveEffectiveConfig(
 			projectAc,
 			orgAc,
 			globalAc,
-			projectRow.agentBackendDefault,
+			projectRow.agentBackend,
 			defaultsRow?.agentBackend ?? null,
 		),
 		effectivePrompt: projectAc?.prompt ?? orgAc?.prompt ?? globalAc?.prompt ?? null,
@@ -207,13 +189,13 @@ async function resolveEffectiveConfig(
 		projectOverrides: {
 			model: projectRow.model,
 			cardBudgetUsd: projectRow.cardBudgetUsd,
-			agentBackendDefault: projectRow.agentBackendDefault,
+			agentBackend: projectRow.agentBackend,
 			subscriptionCostZero: projectRow.subscriptionCostZero,
 			baseBranch: projectRow.baseBranch,
 			branchPrefix: projectRow.branchPrefix,
 		},
 		agentConfigLayers: { global: globalAc, org: orgAc, project: projectAc },
-		trello: buildTrelloConfig(projectRow),
+		trello: trelloConfig ?? null,
 		credentials,
 		credentialOverrides,
 	};
@@ -241,20 +223,24 @@ function printAgentLayer(name: string, data: AgentConfigInfo | null): void {
 	console.log(`  ${name}:`);
 	if (data.model) console.log(`    model: ${data.model}`);
 	if (data.maxIterations != null) console.log(`    maxIterations: ${data.maxIterations}`);
-	if (data.backend) console.log(`    backend: ${data.backend}`);
+	if (data.agentBackend) console.log(`    agentBackend: ${data.agentBackend}`);
 	if (data.prompt) {
 		const truncated = data.prompt.length > 80 ? `${data.prompt.slice(0, 80)}...` : data.prompt;
 		console.log(`    prompt: ${truncated}`);
 	}
 }
 
-function printTrello(trello: EffectiveConfig['trello']): void {
+function printTrello(trello: TrelloIntegrationConfig | null): void {
 	console.log('\n--- Trello ---');
+	if (!trello) {
+		console.log('  (no Trello integration configured)');
+		return;
+	}
 	console.log(`  Board ID: ${trello.boardId}`);
 	for (const [section, data] of Object.entries({
 		Lists: trello.lists,
 		Labels: trello.labels,
-		'Custom Fields': trello.customFields,
+		'Custom Fields': trello.customFields ?? {},
 	})) {
 		const entries = Object.entries(data);
 		if (entries.length === 0 && section !== 'Custom Fields') {

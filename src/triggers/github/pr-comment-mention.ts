@@ -1,6 +1,5 @@
-import { getProjectReviewerToken } from '../../config/projects.js';
-import { getReviewerUser } from '../../github/client.js';
-import { githubClient } from '../../github/client.js';
+import { getAgentCredential } from '../../config/provider.js';
+import { getGitHubUserForToken, githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubIssueCommentPayload, isGitHubPRReviewCommentPayload } from './types.js';
@@ -34,9 +33,13 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
-		// Resolve reviewer username — if no reviewer token configured, fall through
-		const reviewerToken = await getProjectReviewerToken(ctx.project);
-		const reviewerUser = await getReviewerUser(reviewerToken);
+		// Resolve reviewer username — if no agent-scoped GITHUB_TOKEN configured, fall through
+		const agentGitHubToken = await getAgentCredential(
+			ctx.project.id,
+			'respond-to-pr-comment',
+			'GITHUB_TOKEN',
+		);
+		const reviewerUser = await getGitHubUserForToken(agentGitHubToken);
 		if (!reviewerUser) {
 			return null;
 		}

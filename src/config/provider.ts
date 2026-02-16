@@ -5,6 +5,7 @@ import {
 	loadConfigFromDb,
 } from '../db/repositories/configRepository.js';
 import {
+	resolveAgentCredential,
 	resolveAllCredentials,
 	resolveCredential,
 } from '../db/repositories/credentialsRepository.js';
@@ -90,6 +91,19 @@ export async function getProjectSecrets(projectId: string): Promise<Record<strin
 	const secrets = await resolveAllCredentials(projectId, orgId);
 	configCache.setSecrets(projectId, secrets);
 	return secrets;
+}
+
+/**
+ * Resolve a credential for a specific agent type.
+ * Resolution: agent+project override → project override → org default → null.
+ */
+export async function getAgentCredential(
+	projectId: string,
+	agentType: string,
+	key: string,
+): Promise<string | null> {
+	const orgId = await getOrgIdForProject(projectId);
+	return resolveAgentCredential(projectId, orgId, agentType, key);
 }
 
 export function invalidateConfigCache(): void {

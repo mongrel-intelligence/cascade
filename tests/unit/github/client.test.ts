@@ -51,7 +51,7 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 import {
 	getAuthenticatedUser,
-	getReviewerUser,
+	getGitHubUserForToken,
 	githubClient,
 	withGitHubToken,
 } from '../../../src/github/client.js';
@@ -659,9 +659,9 @@ describe('githubClient', () => {
 		});
 	});
 
-	describe('getReviewerUser', () => {
+	describe('getGitHubUserForToken', () => {
 		it('returns null when token is null', async () => {
-			const result = await getReviewerUser(null);
+			const result = await getGitHubUserForToken(null);
 			expect(result).toBeNull();
 		});
 
@@ -670,7 +670,7 @@ describe('githubClient', () => {
 				data: { login: 'cascade-reviewer' },
 			});
 
-			const result = await getReviewerUser('reviewer-pat');
+			const result = await getGitHubUserForToken('reviewer-pat');
 			expect(result).toBe('cascade-reviewer');
 			expect(Octokit).toHaveBeenCalledWith({ auth: 'reviewer-pat' });
 		});
@@ -678,7 +678,7 @@ describe('githubClient', () => {
 		it('returns null on auth failure', async () => {
 			mockUsers.getAuthenticated.mockRejectedValue(new Error('Bad credentials'));
 
-			const result = await getReviewerUser('bad-token');
+			const result = await getGitHubUserForToken('bad-token');
 			expect(result).toBeNull();
 		});
 	});

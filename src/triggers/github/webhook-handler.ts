@@ -1,6 +1,10 @@
 import { runAgent } from '../../agents/registry.js';
-import { getProjectReviewerToken } from '../../config/projects.js';
-import { findProjectByRepo, getProjectSecret, loadConfig } from '../../config/provider.js';
+import {
+	findProjectByRepo,
+	getAgentCredential,
+	getProjectSecret,
+	loadConfig,
+} from '../../config/provider.js';
 import { getSessionState } from '../../gadgets/sessionState.js';
 import { githubClient, withGitHubToken } from '../../github/client.js';
 import { trelloClient, withTrelloCredentials } from '../../trello/client.js';
@@ -217,10 +221,12 @@ async function runGitHubAgentJob(
 	githubToken: string,
 	registry: TriggerRegistry,
 ): Promise<void> {
-	// Use reviewer token for PR comments when available, so acknowledgments
-	// and error messages appear from the reviewer identity (not the repo owner).
-	const reviewerToken = await getProjectReviewerToken(project);
-	const prCommentToken = reviewerToken || githubToken;
+	// Use agent-scoped GITHUB_TOKEN when available, so acknowledgments
+	// and error messages appear from the agent's identity (not the repo owner).
+	const agentGitHubToken = result.agentType
+		? await getAgentCredential(project.id, result.agentType, 'GITHUB_TOKEN')
+		: null;
+	const prCommentToken = agentGitHubToken || githubToken;
 
 	await withGitHubToken(prCommentToken, () => postAcknowledgmentComment(result));
 	cancelFreshMachineTimer();

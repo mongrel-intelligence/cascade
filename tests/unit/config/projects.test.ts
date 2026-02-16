@@ -10,6 +10,7 @@ vi.mock('../../../src/db/repositories/configRepository.js', () => ({
 
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
 	resolveCredential: vi.fn(),
+	resolveAgentCredential: vi.fn(),
 	resolveAllCredentials: vi.fn(),
 }));
 

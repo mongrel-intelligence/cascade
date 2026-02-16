@@ -15,7 +15,12 @@ import { sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { type CascadeConfigSchema, validateConfig } from '../src/config/schema.js';
 import { closeDb, getDb } from '../src/db/client.js';
-import { agentConfigs, cascadeDefaults, projects } from '../src/db/schema/index.js';
+import {
+	agentConfigs,
+	cascadeDefaults,
+	projectIntegrations,
+	projects,
+} from '../src/db/schema/index.js';
 
 type CascadeConfig = z.infer<typeof CascadeConfigSchema>;
 type ProjectConfig = CascadeConfig['projects'][number];
@@ -30,27 +35,6 @@ for (let i = 0; i < args.length; i++) {
 	}
 }
 
-function buildTrelloColumns(p: ProjectConfig) {
-	const l = p.trello.lists;
-	const lb = p.trello.labels;
-	return {
-		trelloListBriefing: l.briefing ?? null,
-		trelloListStories: l.stories ?? null,
-		trelloListPlanning: l.planning ?? null,
-		trelloListTodo: l.todo ?? null,
-		trelloListInProgress: l.inProgress ?? null,
-		trelloListInReview: l.inReview ?? null,
-		trelloListDone: l.done ?? null,
-		trelloListMerged: l.merged ?? null,
-		trelloListDebug: l.debug ?? null,
-		trelloLabelReadyToProcess: lb.readyToProcess ?? null,
-		trelloLabelProcessing: lb.processing ?? null,
-		trelloLabelProcessed: lb.processed ?? null,
-		trelloLabelError: lb.error ?? null,
-		trelloCustomFieldCost: p.trello.customFields?.cost ?? null,
-	};
-}
-
 function buildProjectValues(p: ProjectConfig) {
 	return {
 		id: p.id,
@@ -58,11 +42,9 @@ function buildProjectValues(p: ProjectConfig) {
 		repo: p.repo,
 		baseBranch: p.baseBranch,
 		branchPrefix: p.branchPrefix,
-		trelloBoardId: p.trello.boardId,
-		...buildTrelloColumns(p),
 		model: p.model ?? null,
 		cardBudgetUsd: p.cardBudgetUsd ? String(p.cardBudgetUsd) : null,
-		agentBackendDefault: p.agentBackend?.default ?? null,
+		agentBackend: p.agentBackend?.default ?? null,
 		subscriptionCostZero: p.agentBackend?.subscriptionCostZero ?? false,
 	};
 }
@@ -71,6 +53,7 @@ async function seedDefaults(d: CascadeConfig['defaults']) {
 	console.log('Inserting defaults...');
 	const db = getDb();
 	const values = {
+		orgId: 'default',
 		model: d.model,
 		maxIterations: d.maxIterations,
 		freshMachineTimeoutMs: d.freshMachineTimeoutMs,
@@ -83,9 +66,9 @@ async function seedDefaults(d: CascadeConfig['defaults']) {
 	};
 	await db
 		.insert(cascadeDefaults)
-		.values({ id: 'singleton', ...values })
+		.values(values)
 		.onConflictDoUpdate({
-			target: cascadeDefaults.id,
+			target: cascadeDefaults.orgId,
 			set: { ...values, updatedAt: new Date() },
 		});
 	console.log('  Defaults upserted.');
@@ -130,6 +113,24 @@ async function seedProject(p: ProjectConfig) {
 	console.log(`  Project ${p.id} upserted.`);
 }
 
+async function seedProjectIntegrations(p: ProjectConfig) {
+	const db = getDb();
+	const config = {
+		boardId: p.trello.boardId,
+		lists: p.trello.lists,
+		labels: p.trello.labels,
+		customFields: p.trello.customFields,
+	};
+	await db
+		.insert(projectIntegrations)
+		.values({ projectId: p.id, type: 'trello', config })
+		.onConflictDoUpdate({
+			target: [projectIntegrations.projectId, projectIntegrations.type],
+			set: { config: sql`EXCLUDED.config`, updatedAt: new Date() },
+		});
+	console.log('  Trello integration upserted.');
+}
+
 async function seedProjectAgentConfigs(p: ProjectConfig) {
 	const db = getDb();
 	const agentTypes = new Set([
@@ -140,17 +141,17 @@ async function seedProjectAgentConfigs(p: ProjectConfig) {
 	for (const agentType of agentTypes) {
 		console.log(`    Inserting project agent config: ${agentType}...`);
 		const model = p.agentModels?.[agentType] ?? null;
-		const backend = p.agentBackend?.overrides?.[agentType] ?? null;
+		const agentBackend = p.agentBackend?.overrides?.[agentType] ?? null;
 		const prompt = p.prompts?.[agentType] ?? null;
 		// Use raw SQL because the partial unique index (WHERE project_id IS NOT NULL)
 		// can't be expressed via Drizzle's onConflictDoUpdate target
 		await db.execute(sql`
-			INSERT INTO agent_configs (project_id, agent_type, model, backend, prompt)
-			VALUES (${p.id}, ${agentType}, ${model}, ${backend}, ${prompt})
+			INSERT INTO agent_configs (project_id, agent_type, model, agent_backend, prompt)
+			VALUES (${p.id}, ${agentType}, ${model}, ${agentBackend}, ${prompt})
 			ON CONFLICT (project_id, agent_type) WHERE project_id IS NOT NULL
 			DO UPDATE SET
 				model = COALESCE(EXCLUDED.model, agent_configs.model),
-				backend = COALESCE(EXCLUDED.backend, agent_configs.backend),
+				agent_backend = COALESCE(EXCLUDED.agent_backend, agent_configs.agent_backend),
 				prompt = COALESCE(EXCLUDED.prompt, agent_configs.prompt),
 				updated_at = NOW()
 		`);
@@ -170,6 +171,7 @@ async function main() {
 
 	for (const p of config.projects) {
 		await seedProject(p);
+		await seedProjectIntegrations(p);
 		await seedProjectAgentConfigs(p);
 	}
 
