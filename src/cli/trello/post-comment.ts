@@ -1,7 +1,8 @@
-import { Args, Command, Flags } from '@oclif/core';
+import { Args, Flags } from '@oclif/core';
 import { postComment } from '../../gadgets/trello/core/postComment.js';
+import { CredentialScopedCommand } from '../base.js';
 
-export default class PostComment extends Command {
+export default class PostComment extends CredentialScopedCommand {
 	static override description = 'Post a comment to a Trello card.';
 
 	static override args = {
@@ -12,7 +13,7 @@ export default class PostComment extends Command {
 		text: Flags.string({ description: 'The comment text (supports markdown)', required: true }),
 	};
 
-	async run(): Promise<void> {
+	async execute(): Promise<void> {
 		const { args, flags } = await this.parse(PostComment);
 		const result = await postComment(args.cardId, flags.text);
 		this.log(JSON.stringify({ success: true, data: result }));

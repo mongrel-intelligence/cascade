@@ -1,7 +1,8 @@
-import { Args, Command, Flags } from '@oclif/core';
+import { Args, Flags } from '@oclif/core';
 import { createCard } from '../../gadgets/trello/core/createCard.js';
+import { CredentialScopedCommand } from '../base.js';
 
-export default class CreateCard extends Command {
+export default class CreateCard extends CredentialScopedCommand {
 	static override description = 'Create a new Trello card in a specific list.';
 
 	static override args = {
@@ -13,7 +14,7 @@ export default class CreateCard extends Command {
 		description: Flags.string({ description: 'Card description (markdown supported)' }),
 	};
 
-	async run(): Promise<void> {
+	async execute(): Promise<void> {
 		const { args, flags } = await this.parse(CreateCard);
 		const result = await createCard({
 			listId: args.listId,
