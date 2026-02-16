@@ -96,7 +96,7 @@ describe('buildToolGuidance', () => {
 		expect(guidance).toContain('### ReadWorkItem');
 		expect(guidance).toContain('cascade-tools pm read-work-item');
 		expect(guidance).toContain('--workItemId <string>');
-		expect(guidance).toContain('[--includeComments <boolean>]');
+		expect(guidance).toContain('[--includeComments]');
 		expect(guidance).toContain('### Finish');
 		expect(guidance).toContain('--comment <string>');
 	});
@@ -110,7 +110,24 @@ describe('buildToolGuidance', () => {
 
 	it('marks optional params with brackets', () => {
 		const guidance = buildToolGuidance(sampleTools);
-		expect(guidance).toContain('[--includeComments <boolean>]');
+		expect(guidance).toContain('[--includeComments]');
+		expect(guidance).not.toContain('<boolean>');
+	});
+
+	it('renders boolean flags with default:true as --no-flag', () => {
+		const tools: ToolManifest[] = [
+			{
+				name: 'TestTool',
+				description: 'Test.',
+				cliCommand: 'cascade-tools test',
+				parameters: {
+					'include-comments': { type: 'boolean', default: true },
+				},
+			},
+		];
+		const guidance = buildToolGuidance(tools);
+		expect(guidance).toContain('[--no-include-comments]');
+		expect(guidance).not.toContain('<boolean>');
 	});
 
 	it('renders array params as repeatable flags with singular name', () => {
