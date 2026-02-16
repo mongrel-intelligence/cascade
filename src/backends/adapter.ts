@@ -82,7 +82,7 @@ function getToolManifests(): ToolManifest[] {
 			parameters: {
 				workItemId: { type: 'string', required: true },
 				name: { type: 'string', required: true },
-				items: { type: 'array', required: true },
+				item: { type: 'array', required: true },
 			},
 		},
 		{
