@@ -4,12 +4,13 @@ vi.mock('../../../src/pm/index.js', () => ({
 	getPMProvider: vi.fn(),
 }));
 
+import type { PMProvider } from '../../../src/pm/index.js';
 import { getPMProvider } from '../../../src/pm/index.js';
 import { checkBudgetExceeded, resolveCardBudget } from '../../../src/triggers/shared/budget.js';
 import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 
 const mockPMProvider = { getCustomFieldNumber: vi.fn() };
-vi.mocked(getPMProvider).mockReturnValue(mockPMProvider as any);
+vi.mocked(getPMProvider).mockReturnValue(mockPMProvider as unknown as PMProvider);
 
 const baseProject: ProjectConfig = {
 	id: 'test',
