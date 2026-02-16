@@ -1,0 +1,161 @@
+import { runAgent } from '../../agents/registry.js';
+import { getRunById } from '../../db/repositories/runsRepository.js';
+import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
+import { logger } from '../../utils/logging.js';
+
+/**
+ * In-memory tracking to prevent duplicate concurrent manual triggers.
+ */
+const runningTriggers = new Map<string, boolean>();
+
+function generateTriggerKey(
+	projectId: string,
+	agentType: string,
+	cardId?: string,
+	prNumber?: number,
+): string {
+	return `${projectId}:${agentType}:${cardId ?? 'no-card'}:${prNumber ?? 'no-pr'}`;
+}
+
+function markTriggerRunning(key: string): void {
+	runningTriggers.set(key, true);
+}
+
+function markTriggerComplete(key: string): void {
+	runningTriggers.delete(key);
+}
+
+export function isTriggerRunning(key: string): boolean {
+	return runningTriggers.has(key);
+}
+
+/**
+ * Clear all trigger tracking (test utility).
+ */
+export function clearTriggerTracking(): void {
+	runningTriggers.clear();
+}
+
+/**
+ * Input for manual agent triggers.
+ */
+export interface ManualTriggerInput {
+	projectId: string;
+	agentType: string;
+	cardId?: string;
+	prNumber?: number;
+	prBranch?: string;
+	repoFullName?: string;
+	headSha?: string;
+	modelOverride?: string;
+}
+
+/**
+ * Trigger a manual agent run.
+ *
+ * This runs fire-and-forget (does not await runAgent completion).
+ * Status tracking is handled via in-memory map to prevent duplicates.
+ */
+export async function triggerManualRun(
+	input: ManualTriggerInput,
+	project: ProjectConfig,
+	config: CascadeConfig,
+): Promise<void> {
+	const triggerKey = generateTriggerKey(
+		input.projectId,
+		input.agentType,
+		input.cardId,
+		input.prNumber,
+	);
+
+	if (isTriggerRunning(triggerKey)) {
+		throw new Error(
+			`Manual trigger already running for project=${input.projectId}, agent=${input.agentType}, card=${input.cardId ?? 'N/A'}, pr=${input.prNumber ?? 'N/A'}`,
+		);
+	}
+
+	logger.info('Triggering manual agent run', {
+		projectId: input.projectId,
+		agentType: input.agentType,
+		cardId: input.cardId,
+		prNumber: input.prNumber,
+		modelOverride: input.modelOverride,
+	});
+
+	markTriggerRunning(triggerKey);
+
+	const agentInput: AgentInput & { project: ProjectConfig; config: CascadeConfig } = {
+		cardId: input.cardId,
+		prNumber: input.prNumber,
+		prBranch: input.prBranch,
+		repoFullName: input.repoFullName,
+		headSha: input.headSha,
+		modelOverride: input.modelOverride,
+		triggerType: 'manual',
+		project,
+		config,
+	};
+
+	// Fire-and-forget execution
+	runAgent(input.agentType, agentInput)
+		.then((result: AgentResult) => {
+			logger.info('Manual agent run completed', {
+				projectId: input.projectId,
+				agentType: input.agentType,
+				success: result.success,
+				runId: result.runId,
+			});
+		})
+		.catch((err) => {
+			logger.error('Manual agent run failed', {
+				projectId: input.projectId,
+				agentType: input.agentType,
+				error: String(err),
+			});
+		})
+		.finally(() => {
+			markTriggerComplete(triggerKey);
+		});
+}
+
+/**
+ * Retry a previous agent run.
+ *
+ * Reads the original run from DB, extracts parameters, and triggers a new manual run.
+ */
+export async function triggerRetryRun(
+	runId: string,
+	project: ProjectConfig,
+	config: CascadeConfig,
+	modelOverride?: string,
+): Promise<void> {
+	const run = await getRunById(runId);
+	if (!run) {
+		throw new Error(`Run not found: ${runId}`);
+	}
+
+	if (!run.projectId) {
+		throw new Error(`Run ${runId} has no associated project`);
+	}
+
+	logger.info('Retrying agent run', {
+		originalRunId: runId,
+		agentType: run.agentType,
+		projectId: run.projectId,
+		modelOverride,
+	});
+
+	// Extract params from original run
+	const triggerInput: ManualTriggerInput = {
+		projectId: run.projectId,
+		agentType: run.agentType,
+		cardId: run.cardId ?? undefined,
+		prNumber: run.prNumber ?? undefined,
+		modelOverride: modelOverride ?? run.model ?? undefined,
+	};
+
+	// For PR-based agents, we don't store branch/SHA in DB, so we can't restore them.
+	// The retry will fetch fresh data from GitHub if needed.
+
+	await triggerManualRun(triggerInput, project, config);
+}
