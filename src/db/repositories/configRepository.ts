@@ -1,4 +1,4 @@
-import { eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { validateConfig } from '../../config/schema.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { getDb } from '../client.js';
@@ -17,6 +17,7 @@ interface DefaultsRow {
 }
 
 interface AgentConfigRow {
+	orgId: string | null;
 	projectId: string | null;
 	agentType: string;
 	model: string | null;
@@ -101,6 +102,7 @@ function mapProjectRow(
 
 	const project: Record<string, unknown> = {
 		id: row.id,
+		orgId: row.orgId,
 		name: row.name,
 		repo: row.repo,
 		baseBranch: row.baseBranch ?? 'main',
@@ -136,23 +138,38 @@ async function loadAgentConfigs(): Promise<AgentConfigRow[]> {
 export async function loadConfigFromDb(): Promise<CascadeConfig> {
 	const db = getDb();
 
+	// Load first defaults row (for the primary/default org)
 	const [defaultsRow] = await db.select().from(cascadeDefaults).limit(1);
 	const projectRows = await db.select().from(projects);
 	const allAgentConfigs = await loadAgentConfigs();
 
-	// Split agent configs into global (project_id IS NULL) and per-project
-	const globalAgentConfigs = allAgentConfigs.filter((ac) => ac.projectId === null);
+	// Split agent configs: global (project_id IS NULL, org_id IS NULL) and per-project
+	// Also collect org-level configs (org_id set, project_id IS NULL) as fallback globals
+	const globalAgentConfigs = allAgentConfigs.filter(
+		(ac) => ac.projectId === null && ac.orgId === null,
+	);
+	const orgAgentConfigsMap = new Map<string, AgentConfigRow[]>();
 	const projectAgentConfigsMap = new Map<string, AgentConfigRow[]>();
 	for (const ac of allAgentConfigs) {
 		if (ac.projectId !== null) {
 			const existing = projectAgentConfigsMap.get(ac.projectId) ?? [];
 			existing.push(ac);
 			projectAgentConfigsMap.set(ac.projectId, existing);
+		} else if (ac.orgId !== null) {
+			const existing = orgAgentConfigsMap.get(ac.orgId) ?? [];
+			existing.push(ac);
+			orgAgentConfigsMap.set(ac.orgId, existing);
 		}
 	}
 
+	// Merge global + org-level agent configs for defaults
+	const mergedGlobalConfigs = [
+		...globalAgentConfigs,
+		...(orgAgentConfigsMap.get(defaultsRow?.orgId ?? 'default') ?? []),
+	];
+
 	const rawConfig = {
-		defaults: mapDefaultsRow(defaultsRow, globalAgentConfigs),
+		defaults: mapDefaultsRow(defaultsRow, mergedGlobalConfigs),
 		projects: projectRows.map((row) =>
 			mapProjectRow(row, projectAgentConfigsMap.get(row.id) ?? []),
 		),
@@ -169,11 +186,21 @@ export async function findProjectByBoardIdFromDb(
 	if (!row) return undefined;
 
 	const projectAcs = await db.select().from(agentConfigs).where(eq(agentConfigs.projectId, row.id));
-	const globalAcs = await db.select().from(agentConfigs).where(isNull(agentConfigs.projectId));
+	const orgAcs = await db
+		.select()
+		.from(agentConfigs)
+		.where(and(eq(agentConfigs.orgId, row.orgId), isNull(agentConfigs.projectId)));
+	const globalAcs = await db
+		.select()
+		.from(agentConfigs)
+		.where(and(isNull(agentConfigs.projectId), isNull(agentConfigs.orgId)));
 
-	const [defaultsRow] = await db.select().from(cascadeDefaults).limit(1);
+	const [defaultsRow] = await db
+		.select()
+		.from(cascadeDefaults)
+		.where(eq(cascadeDefaults.orgId, row.orgId));
 	const rawConfig = {
-		defaults: mapDefaultsRow(defaultsRow, globalAcs),
+		defaults: mapDefaultsRow(defaultsRow, [...globalAcs, ...orgAcs]),
 		projects: [mapProjectRow(row, projectAcs)],
 	};
 	const validated = validateConfig(rawConfig);
@@ -186,11 +213,21 @@ export async function findProjectByRepoFromDb(repo: string): Promise<ProjectConf
 	if (!row) return undefined;
 
 	const projectAcs = await db.select().from(agentConfigs).where(eq(agentConfigs.projectId, row.id));
-	const globalAcs = await db.select().from(agentConfigs).where(isNull(agentConfigs.projectId));
+	const orgAcs = await db
+		.select()
+		.from(agentConfigs)
+		.where(and(eq(agentConfigs.orgId, row.orgId), isNull(agentConfigs.projectId)));
+	const globalAcs = await db
+		.select()
+		.from(agentConfigs)
+		.where(and(isNull(agentConfigs.projectId), isNull(agentConfigs.orgId)));
 
-	const [defaultsRow] = await db.select().from(cascadeDefaults).limit(1);
+	const [defaultsRow] = await db
+		.select()
+		.from(cascadeDefaults)
+		.where(eq(cascadeDefaults.orgId, row.orgId));
 	const rawConfig = {
-		defaults: mapDefaultsRow(defaultsRow, globalAcs),
+		defaults: mapDefaultsRow(defaultsRow, [...globalAcs, ...orgAcs]),
 		projects: [mapProjectRow(row, projectAcs)],
 	};
 	const validated = validateConfig(rawConfig);
@@ -203,11 +240,21 @@ export async function findProjectByIdFromDb(id: string): Promise<ProjectConfig |
 	if (!row) return undefined;
 
 	const projectAcs = await db.select().from(agentConfigs).where(eq(agentConfigs.projectId, row.id));
-	const globalAcs = await db.select().from(agentConfigs).where(isNull(agentConfigs.projectId));
+	const orgAcs = await db
+		.select()
+		.from(agentConfigs)
+		.where(and(eq(agentConfigs.orgId, row.orgId), isNull(agentConfigs.projectId)));
+	const globalAcs = await db
+		.select()
+		.from(agentConfigs)
+		.where(and(isNull(agentConfigs.projectId), isNull(agentConfigs.orgId)));
 
-	const [defaultsRow] = await db.select().from(cascadeDefaults).limit(1);
+	const [defaultsRow] = await db
+		.select()
+		.from(cascadeDefaults)
+		.where(eq(cascadeDefaults.orgId, row.orgId));
 	const rawConfig = {
-		defaults: mapDefaultsRow(defaultsRow, globalAcs),
+		defaults: mapDefaultsRow(defaultsRow, [...globalAcs, ...orgAcs]),
 		projects: [mapProjectRow(row, projectAcs)],
 	};
 	const validated = validateConfig(rawConfig);
