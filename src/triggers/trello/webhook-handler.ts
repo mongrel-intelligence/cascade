@@ -1,11 +1,4 @@
-import { runAgent } from '../../agents/registry.js';
-import {
-	findProjectByBoardId,
-	getAgentCredential,
-	getProjectSecret,
-	loadConfig,
-} from '../../config/provider.js';
-import { withGitHubToken } from '../../github/client.js';
+import { findProjectByBoardId, getProjectSecret, loadConfig } from '../../config/provider.js';
 import {
 	PMLifecycleManager,
 	createPMProvider,
@@ -13,12 +6,7 @@ import {
 	withPMProvider,
 } from '../../pm/index.js';
 import { withTrelloCredentials } from '../../trello/client.js';
-import type {
-	AgentResult,
-	CascadeConfig,
-	ProjectConfig,
-	TriggerContext,
-} from '../../types/index.js';
+import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
 import {
 	clearCardActive,
 	dequeueWebhook,
@@ -27,16 +15,12 @@ import {
 	isCardActive,
 	isCurrentlyProcessing,
 	logger,
-	setCardActive,
 	setProcessing,
 	startWatchdog,
 } from '../../utils/index.js';
-import { injectLlmApiKeys } from '../../utils/llmEnv.js';
 import type { TriggerRegistry } from '../registry.js';
-import { handleAgentResultArtifacts } from '../shared/agent-result-handler.js';
-import { checkBudgetExceeded } from '../shared/budget.js';
-import { triggerDebugAnalysis } from '../shared/debug-runner.js';
-import { shouldTriggerDebug } from '../shared/debug-trigger.js';
+import { executeAgentPipeline } from '../shared/agent-pipeline.js';
+import { withProjectCredentials } from '../shared/credential-scope.js';
 import type { TrelloWebhookPayload, TriggerResult } from '../types.js';
 import { isTrelloWebhookPayload } from '../types.js';
 
@@ -49,106 +33,21 @@ async function executeAgent(
 	project: ProjectConfig,
 	config: CascadeConfig,
 ): Promise<void> {
-	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY');
-	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN');
-	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
-
-	const agentGitHubToken = await getAgentCredential(project.id, result.agentType, 'GITHUB_TOKEN');
-	const effectiveGithubToken = agentGitHubToken || githubToken;
-
-	const restoreLlmEnv = await injectLlmApiKeys(project.id);
-
-	try {
-		const pmProvider = createPMProvider(project);
-		await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
-			withPMProvider(pmProvider, () =>
-				withGitHubToken(effectiveGithubToken, () => executeAgentWithCreds(result, project, config)),
-			),
-		);
-	} finally {
-		restoreLlmEnv();
-	}
-}
-
-async function executeAgentWithCreds(
-	result: TriggerResult,
-	project: ProjectConfig,
-	config: CascadeConfig,
-): Promise<void> {
 	const cardId = result.cardId ?? result.workItemId;
 	const pmProvider = createPMProvider(project);
 	const pmConfig = resolveProjectPMConfig(project);
 	const lifecycle = new PMLifecycleManager(pmProvider, pmConfig);
 
-	let remainingBudgetUsd: number | undefined;
-	if (cardId) {
-		const budgetCheck = await checkBudgetExceeded(cardId, project, config);
-		if (budgetCheck?.exceeded) {
-			logger.warn('Budget exceeded, agent not started', {
-				cardId,
-				currentCost: budgetCheck.currentCost,
-				budget: budgetCheck.budget,
-			});
-			await lifecycle.handleBudgetExceeded(cardId, budgetCheck.currentCost, budgetCheck.budget);
-			return;
-		}
-		remainingBudgetUsd = budgetCheck?.remaining;
-	}
-
-	if (cardId) {
-		setCardActive(cardId);
-		await lifecycle.prepareForAgent(cardId, result.agentType);
-	}
-
-	const agentResult = await runAgent(result.agentType, {
-		...result.agentInput,
-		remainingBudgetUsd,
-		project,
-		config,
-	});
-
-	if (cardId) {
-		await handleAgentResultArtifacts(cardId, result.agentType, agentResult, project);
-
-		const postBudgetCheck = await checkBudgetExceeded(cardId, project, config);
-		if (postBudgetCheck?.exceeded) {
-			await lifecycle.handleBudgetWarning(
-				cardId,
-				postBudgetCheck.currentCost,
-				postBudgetCheck.budget,
-			);
-		}
-
-		await lifecycle.cleanupProcessing(cardId);
-
-		if (agentResult.success) {
-			await lifecycle.handleSuccess(cardId, result.agentType, agentResult.prUrl);
-		} else {
-			await lifecycle.handleFailure(cardId, agentResult.error);
-		}
-	}
-
-	logger.info('Agent completed', {
-		agentType: result.agentType,
-		success: agentResult.success,
-		runId: agentResult.runId,
-	});
-
-	await tryAutoDebug(agentResult, project, config);
-}
-
-async function tryAutoDebug(
-	agentResult: AgentResult,
-	project: ProjectConfig,
-	config: CascadeConfig,
-): Promise<void> {
-	if (!agentResult.runId) return;
-	const debugTarget = await shouldTriggerDebug(agentResult.runId);
-	if (debugTarget) {
-		triggerDebugAnalysis(debugTarget.runId, project, config, debugTarget.cardId).catch((err) =>
-			logger.error('Auto-debug failed', { error: String(err) }),
-		);
-	}
+	await withProjectCredentials(project, result.agentType, () =>
+		executeAgentPipeline({
+			agentType: result.agentType,
+			agentInput: result.agentInput,
+			workItemId: cardId,
+			project,
+			config,
+			lifecycle,
+		}),
+	);
 }
 
 // ============================================================================
