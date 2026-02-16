@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mockInsert = vi.fn();
 const mockUpdate = vi.fn();
 const mockSelect = vi.fn();
+const mockDelete = vi.fn();
 const mockValues = vi.fn();
 const mockReturning = vi.fn();
 const mockSet = vi.fn();
@@ -16,6 +17,7 @@ vi.mock('../../../src/db/client.js', () => ({
 		insert: mockInsert,
 		update: mockUpdate,
 		select: mockSelect,
+		delete: mockDelete,
 	}),
 }));
 
@@ -35,6 +37,7 @@ vi.mock('../../../src/db/schema/index.js', () => ({
 import {
 	completeRun,
 	createRun,
+	deleteDebugAnalysisByRunId,
 	getDebugAnalysisByDebugRunId,
 	getDebugAnalysisByRunId,
 	getLlmCallsByRunId,
@@ -59,6 +62,7 @@ describe('runsRepository', () => {
 		mockSelect.mockReturnValue({ from: mockFrom });
 		mockFrom.mockReturnValue({ where: mockWhere, orderBy: mockOrderBy });
 		mockWhere.mockReturnValue({ orderBy: mockOrderBy });
+		mockDelete.mockReturnValue({ where: mockWhere });
 	});
 
 	describe('createRun', () => {
@@ -375,6 +379,17 @@ describe('runsRepository', () => {
 
 			const result = await getDebugAnalysisByDebugRunId('nonexistent');
 			expect(result).toBeNull();
+		});
+	});
+
+	describe('deleteDebugAnalysisByRunId', () => {
+		it('calls delete with the correct analyzedRunId', async () => {
+			mockWhere.mockResolvedValue(undefined);
+
+			await deleteDebugAnalysisByRunId('run-1');
+
+			expect(mockDelete).toHaveBeenCalled();
+			expect(mockWhere).toHaveBeenCalled();
 		});
 	});
 });

@@ -98,13 +98,12 @@ function getToolManifests(): ToolManifest[] {
 		{
 			name: 'CreatePR',
 			description:
-				'Create a GitHub pull request. Handles the full workflow: stages changes, commits, pushes branch to remote, and creates the PR. ALWAYS use this instead of gh pr create or manual git push. If you have already committed your changes, use --no-commit to skip the commit step.',
+				'Create a GitHub pull request. Handles the full workflow: stages changes, commits, pushes branch to remote, and creates the PR. ALWAYS use this instead of gh pr create or manual git push. If you have already committed your changes, use --no-commit to skip the commit step. The target base branch is set automatically — do not specify --base.',
 			cliCommand: 'cascade-tools github create-pr',
 			parameters: {
 				title: { type: 'string', required: true },
 				body: { type: 'string', required: true },
 				head: { type: 'string', required: true },
-				base: { type: 'string', required: true },
 				'no-commit': {
 					type: 'boolean',
 					description: 'Skip staging and committing (use when changes are already committed)',
@@ -305,6 +304,11 @@ async function buildBackendInput(
 
 	// Resolve all per-project secrets for subprocess injection
 	const projectSecrets = await getProjectSecrets(project.id);
+
+	// Inject base branch so cascade-tools create-pr uses the correct target automatically
+	if (project.baseBranch) {
+		projectSecrets.CASCADE_BASE_BRANCH = project.baseBranch;
+	}
 
 	return {
 		agentType,
