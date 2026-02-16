@@ -43,6 +43,8 @@ export interface CreateBuilderOptions {
 	llmCallAccumulator?: AccumulatedLlmCall[];
 }
 
+const MAX_GADGETS_PER_RESPONSE = 25;
+
 export function isSquintEnabled(repoDir: string): boolean {
 	return existsSync(join(repoDir, '.squint.db'));
 }
@@ -91,7 +93,8 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 				llmCallAccumulator: options.llmCallAccumulator,
 			}),
 		})
-		.withGadgets(...gadgets);
+		.withGadgets(...gadgets)
+		.withMaxGadgetsPerResponse(MAX_GADGETS_PER_RESPONSE);
 
 	if (remainingBudgetUsd !== undefined && remainingBudgetUsd > 0) {
 		try {
