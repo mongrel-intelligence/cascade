@@ -1,4 +1,5 @@
 import { runAgent } from '../../agents/registry.js';
+import { getProjectReviewerToken } from '../../config/projects.js';
 import { findProjectByRepo, getProjectSecret, loadConfig } from '../../config/provider.js';
 import { getSessionState } from '../../gadgets/sessionState.js';
 import { githubClient, withGitHubToken } from '../../github/client.js';
@@ -209,6 +210,39 @@ async function postAcknowledgmentComment(result: TriggerResult): Promise<void> {
 	}
 }
 
+async function runGitHubAgentJob(
+	result: TriggerResult,
+	project: ProjectConfig,
+	config: CascadeConfig,
+	githubToken: string,
+	registry: TriggerRegistry,
+): Promise<void> {
+	// Use reviewer token for PR comments when available, so acknowledgments
+	// and error messages appear from the reviewer identity (not the repo owner).
+	const reviewerToken = await getProjectReviewerToken(project);
+	const prCommentToken = reviewerToken || githubToken;
+
+	await withGitHubToken(prCommentToken, () => postAcknowledgmentComment(result));
+	cancelFreshMachineTimer();
+	setProcessing(true);
+
+	if (process.env.FLY_APP_NAME) {
+		startWatchdog(config.defaults.watchdogTimeoutMs);
+	}
+
+	try {
+		await executeGitHubAgent(result, project, config);
+	} catch (err) {
+		logger.error('Failed to process GitHub webhook', { error: String(err) });
+		await withGitHubToken(prCommentToken, () =>
+			updateInitialCommentWithError(result, { success: false, error: String(err) }),
+		);
+	} finally {
+		setProcessing(false);
+		processNextQueuedGitHubWebhook(config, registry);
+	}
+}
+
 function processNextQueuedGitHubWebhook(config: CascadeConfig, registry: TriggerRegistry): void {
 	const next = dequeueWebhook();
 	if (next) {
@@ -290,25 +324,7 @@ export async function processGitHubWebhook(
 	// Only run agent if agentType is specified
 	// Some triggers (like PRReadyToMergeTrigger) perform actions directly without needing an agent
 	if (result.agentType) {
-		await withGitHubToken(githubToken, () => postAcknowledgmentComment(result));
-		cancelFreshMachineTimer();
-		setProcessing(true);
-
-		if (process.env.FLY_APP_NAME) {
-			startWatchdog(config.defaults.watchdogTimeoutMs);
-		}
-
-		try {
-			await executeGitHubAgent(result, project, config);
-		} catch (err) {
-			logger.error('Failed to process GitHub webhook', { error: String(err) });
-			await withGitHubToken(githubToken, () =>
-				updateInitialCommentWithError(result, { success: false, error: String(err) }),
-			);
-		} finally {
-			setProcessing(false);
-			processNextQueuedGitHubWebhook(config, registry);
-		}
+		await runGitHubAgentJob(result, project, config, githubToken, registry);
 	} else {
 		// No agent needed, trigger already performed its action
 		logger.info('Trigger completed without agent', { prNumber: result.prNumber });
