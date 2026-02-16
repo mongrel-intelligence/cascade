@@ -278,6 +278,8 @@ cascade runs llm-call <run-id> <call-number>
 cascade runs debug <run-id>                    # View debug analysis
 cascade runs debug <run-id> --analyze          # Trigger new debug analysis
 cascade runs debug <run-id> --analyze --wait   # Trigger and wait for completion
+cascade runs trigger --project <id> --agent-type <type> [--card-id ID] [--model MODEL]
+cascade runs retry <run-id> [--model MODEL]
 
 # Projects
 cascade projects list

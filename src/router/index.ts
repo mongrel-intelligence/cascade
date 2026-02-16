@@ -124,7 +124,8 @@ function parseTrelloWebhook(payload: unknown): TrelloWebhookResult {
 	const shouldProcess =
 		isCardInTriggerList(actionType, data, project) ||
 		isReadyToProcessLabelAdded(actionType, data, project) ||
-		isAgentLogAttachmentUploaded(actionType, data, project);
+		isAgentLogAttachmentUploaded(actionType, data, project) ||
+		actionType === 'commentCard';
 
 	return { shouldProcess, project, actionType, cardId };
 }
