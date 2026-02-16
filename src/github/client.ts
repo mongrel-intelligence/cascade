@@ -257,29 +257,51 @@ export const githubClient = {
 	},
 
 	async getCheckSuiteStatus(owner: string, repo: string, ref: string): Promise<CheckSuiteStatus> {
-		logger.debug('Fetching check runs for ref', { owner, repo, ref });
-		const { data } = await getClient().checks.listForRef({
+		logger.debug('Fetching workflow runs for ref', { owner, repo, ref });
+		const client = getClient();
+
+		// Use Actions API (workflow runs + jobs) instead of Checks API,
+		// because fine-grained PATs cannot access the Checks API.
+		const { data: runsData } = await client.actions.listWorkflowRunsForRepo({
 			owner,
 			repo,
-			ref,
+			head_sha: ref,
 			per_page: 100,
 		});
 
-		const checkRuns = data.check_runs.map((cr) => ({
-			name: cr.name,
-			status: cr.status,
-			conclusion: cr.conclusion,
-		}));
-
-		// All checks pass if every completed check has success/skipped/neutral conclusion
-		const allPassing = checkRuns.every(
-			(cr) =>
-				cr.status === 'completed' &&
-				(cr.conclusion === 'success' || cr.conclusion === 'skipped' || cr.conclusion === 'neutral'),
+		// Fetch jobs for each workflow run to get per-job granularity
+		const jobResults = await Promise.all(
+			runsData.workflow_runs.map((run) =>
+				client.actions.listJobsForWorkflowRun({
+					owner,
+					repo,
+					run_id: run.id,
+					per_page: 100,
+				}),
+			),
 		);
 
+		const checkRuns = jobResults.flatMap(({ data }) =>
+			data.jobs.map((job) => ({
+				name: job.name,
+				status: job.status,
+				conclusion: job.conclusion,
+			})),
+		);
+
+		// All checks pass if every completed check has success/skipped/neutral conclusion
+		const allPassing =
+			checkRuns.length > 0 &&
+			checkRuns.every(
+				(cr) =>
+					cr.status === 'completed' &&
+					(cr.conclusion === 'success' ||
+						cr.conclusion === 'skipped' ||
+						cr.conclusion === 'neutral'),
+			);
+
 		return {
-			totalCount: data.total_count,
+			totalCount: checkRuns.length,
 			checkRuns,
 			allPassing,
 		};

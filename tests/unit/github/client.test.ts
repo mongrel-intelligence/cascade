@@ -22,6 +22,11 @@ const mockChecks = {
 	listForRef: vi.fn(),
 };
 
+const mockActions = {
+	listWorkflowRunsForRepo: vi.fn(),
+	listJobsForWorkflowRun: vi.fn(),
+};
+
 const mockRepos = {
 	getBranch: vi.fn(),
 };
@@ -35,6 +40,7 @@ vi.mock('@octokit/rest', () => ({
 		pulls: mockPulls,
 		issues: mockIssues,
 		checks: mockChecks,
+		actions: mockActions,
 		repos: mockRepos,
 		users: mockUsers,
 	})),
@@ -397,15 +403,26 @@ describe('githubClient', () => {
 	});
 
 	describe('getCheckSuiteStatus', () => {
+		function mockWorkflowRuns(
+			runs: { id: number }[],
+			jobsMap: Record<number, { name: string; status: string; conclusion: string | null }[]>,
+		) {
+			mockActions.listWorkflowRunsForRepo.mockResolvedValue({
+				data: { workflow_runs: runs },
+			});
+			mockActions.listJobsForWorkflowRun.mockImplementation(({ run_id }: { run_id: number }) => {
+				return Promise.resolve({
+					data: { jobs: jobsMap[run_id] ?? [] },
+				});
+			});
+		}
+
 		it('returns status with all passing', async () => {
-			mockChecks.listForRef.mockResolvedValue({
-				data: {
-					total_count: 2,
-					check_runs: [
-						{ name: 'lint', status: 'completed', conclusion: 'success' },
-						{ name: 'test', status: 'completed', conclusion: 'success' },
-					],
-				},
+			mockWorkflowRuns([{ id: 1 }], {
+				1: [
+					{ name: 'lint', status: 'completed', conclusion: 'success' },
+					{ name: 'test', status: 'completed', conclusion: 'success' },
+				],
 			});
 
 			const result = await withGitHubToken('test-token', () =>
@@ -418,14 +435,11 @@ describe('githubClient', () => {
 		});
 
 		it('returns allPassing false when some checks fail', async () => {
-			mockChecks.listForRef.mockResolvedValue({
-				data: {
-					total_count: 2,
-					check_runs: [
-						{ name: 'lint', status: 'completed', conclusion: 'success' },
-						{ name: 'test', status: 'completed', conclusion: 'failure' },
-					],
-				},
+			mockWorkflowRuns([{ id: 1 }], {
+				1: [
+					{ name: 'lint', status: 'completed', conclusion: 'success' },
+					{ name: 'test', status: 'completed', conclusion: 'failure' },
+				],
 			});
 
 			const result = await withGitHubToken('test-token', () =>
@@ -436,14 +450,11 @@ describe('githubClient', () => {
 		});
 
 		it('treats skipped and neutral as passing', async () => {
-			mockChecks.listForRef.mockResolvedValue({
-				data: {
-					total_count: 2,
-					check_runs: [
-						{ name: 'lint', status: 'completed', conclusion: 'skipped' },
-						{ name: 'test', status: 'completed', conclusion: 'neutral' },
-					],
-				},
+			mockWorkflowRuns([{ id: 1 }], {
+				1: [
+					{ name: 'lint', status: 'completed', conclusion: 'skipped' },
+					{ name: 'test', status: 'completed', conclusion: 'neutral' },
+				],
 			});
 
 			const result = await withGitHubToken('test-token', () =>
@@ -454,11 +465,8 @@ describe('githubClient', () => {
 		});
 
 		it('returns allPassing false when checks are still in_progress', async () => {
-			mockChecks.listForRef.mockResolvedValue({
-				data: {
-					total_count: 1,
-					check_runs: [{ name: 'test', status: 'in_progress', conclusion: null }],
-				},
+			mockWorkflowRuns([{ id: 1 }], {
+				1: [{ name: 'test', status: 'in_progress', conclusion: null }],
 			});
 
 			const result = await withGitHubToken('test-token', () =>
@@ -466,6 +474,32 @@ describe('githubClient', () => {
 			);
 
 			expect(result.allPassing).toBe(false);
+		});
+
+		it('returns allPassing false when no workflow runs exist', async () => {
+			mockWorkflowRuns([], {});
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getCheckSuiteStatus('owner', 'repo', 'sha123'),
+			);
+
+			expect(result.allPassing).toBe(false);
+			expect(result.totalCount).toBe(0);
+		});
+
+		it('aggregates jobs across multiple workflow runs', async () => {
+			mockWorkflowRuns([{ id: 1 }, { id: 2 }], {
+				1: [{ name: 'lint', status: 'completed', conclusion: 'success' }],
+				2: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+			});
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getCheckSuiteStatus('owner', 'repo', 'sha123'),
+			);
+
+			expect(result.allPassing).toBe(true);
+			expect(result.totalCount).toBe(2);
+			expect(result.checkRuns).toHaveLength(2);
 		});
 	});
 

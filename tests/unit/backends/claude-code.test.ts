@@ -5,6 +5,10 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 	query: vi.fn(),
 }));
 
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
 import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -19,7 +23,13 @@ import {
 	ensureOnboardingFlag,
 	resolveClaudeModel,
 } from '../../../src/backends/claude-code/index.js';
+import {
+	CLAUDE_CODE_MODELS,
+	CLAUDE_CODE_MODEL_IDS,
+	DEFAULT_CLAUDE_CODE_MODEL,
+} from '../../../src/backends/claude-code/models.js';
 import type { AgentBackendInput, ToolManifest } from '../../../src/backends/types.js';
+import { logger } from '../../../src/utils/logging.js';
 
 const mockQuery = vi.mocked(query);
 
@@ -137,9 +147,35 @@ describe('buildSystemPrompt', () => {
 	});
 });
 
+describe('CLAUDE_CODE_MODELS constants', () => {
+	it('contains three models', () => {
+		expect(CLAUDE_CODE_MODELS).toHaveLength(3);
+	});
+
+	it('has value/label pairs', () => {
+		for (const m of CLAUDE_CODE_MODELS) {
+			expect(m.value).toBeTruthy();
+			expect(m.label).toBeTruthy();
+		}
+	});
+
+	it('CLAUDE_CODE_MODEL_IDS matches model values', () => {
+		expect(CLAUDE_CODE_MODEL_IDS).toEqual(CLAUDE_CODE_MODELS.map((m) => m.value));
+	});
+
+	it('DEFAULT_CLAUDE_CODE_MODEL is a known model ID', () => {
+		expect(CLAUDE_CODE_MODEL_IDS).toContain(DEFAULT_CLAUDE_CODE_MODEL);
+	});
+});
+
 describe('resolveClaudeModel', () => {
-	it('passes through claude-* models', () => {
+	it('passes through known Claude Code model IDs', () => {
+		expect(resolveClaudeModel('claude-opus-4-6')).toBe('claude-opus-4-6');
 		expect(resolveClaudeModel('claude-sonnet-4-5-20250929')).toBe('claude-sonnet-4-5-20250929');
+		expect(resolveClaudeModel('claude-haiku-4-5-20251001')).toBe('claude-haiku-4-5-20251001');
+	});
+
+	it('passes through other claude-* models', () => {
 		expect(resolveClaudeModel('claude-opus-4-20250514')).toBe('claude-opus-4-20250514');
 	});
 
@@ -149,11 +185,26 @@ describe('resolveClaudeModel', () => {
 		);
 	});
 
-	it('falls back to sonnet for non-Claude models', () => {
+	it('falls back to default for non-Claude models', () => {
 		expect(resolveClaudeModel('openrouter:google/gemini-3-flash-preview')).toBe(
-			'claude-sonnet-4-5-20250929',
+			DEFAULT_CLAUDE_CODE_MODEL,
 		);
-		expect(resolveClaudeModel('gpt-4o')).toBe('claude-sonnet-4-5-20250929');
+		expect(resolveClaudeModel('gpt-4o')).toBe(DEFAULT_CLAUDE_CODE_MODEL);
+	});
+
+	it('logs a warning when falling back', () => {
+		vi.mocked(logger.warn).mockClear();
+		resolveClaudeModel('gpt-4o');
+		expect(logger.warn).toHaveBeenCalledWith(
+			'Non-Claude model configured for Claude Code backend, falling back to default',
+			{ configured: 'gpt-4o', fallback: DEFAULT_CLAUDE_CODE_MODEL },
+		);
+	});
+
+	it('does not warn for valid Claude models', () => {
+		vi.mocked(logger.warn).mockClear();
+		resolveClaudeModel('claude-sonnet-4-5-20250929');
+		expect(logger.warn).not.toHaveBeenCalled();
 	});
 });
 

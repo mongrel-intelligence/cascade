@@ -8,6 +8,7 @@ import type {
 	SDKStatusMessage,
 	SDKSystemMessage,
 } from '@anthropic-ai/claude-agent-sdk';
+import { logger } from '../../utils/logging.js';
 import type {
 	AgentBackend,
 	AgentBackendInput,
@@ -16,6 +17,7 @@ import type {
 	ToolManifest,
 } from '../types.js';
 import { buildHooks } from './hooks.js';
+import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
 
 /**
  * Build prompt guidance for CASCADE-specific CLI tools.
@@ -83,10 +85,15 @@ export function buildSystemPrompt(systemPrompt: string, tools: ToolManifest[]): 
  * The Claude Code SDK expects Anthropic model IDs.
  */
 export function resolveClaudeModel(cascadeModel: string): string {
+	if (CLAUDE_CODE_MODEL_IDS.includes(cascadeModel)) return cascadeModel;
 	if (cascadeModel.startsWith('claude-')) return cascadeModel;
 	if (cascadeModel.startsWith('anthropic:')) return cascadeModel.replace('anthropic:', '');
-	// Fallback for non-Claude models configured in CASCADE
-	return 'claude-sonnet-4-5-20250929';
+	// Non-Claude model configured for Claude Code backend — warn and fall back
+	logger.warn('Non-Claude model configured for Claude Code backend, falling back to default', {
+		configured: cascadeModel,
+		fallback: DEFAULT_CLAUDE_CODE_MODEL,
+	});
+	return DEFAULT_CLAUDE_CODE_MODEL;
 }
 
 /**
@@ -290,6 +297,28 @@ function buildResult(
 }
 
 /**
+ * Process a task_notification system message: log and report completed tasks.
+ */
+function processTaskNotification(
+	sysMsg: { [key: string]: unknown },
+	input: AgentBackendInput,
+): void {
+	const taskMsg = sysMsg as unknown as {
+		task_id: string;
+		status: string;
+		summary: string;
+	};
+	if (taskMsg.status === 'completed' && input.progressReporter.onTaskCompleted) {
+		input.progressReporter.onTaskCompleted(taskMsg.task_id, '', taskMsg.summary);
+	}
+	input.logWriter('INFO', 'Task notification', {
+		taskId: taskMsg.task_id,
+		status: taskMsg.status,
+		summary: taskMsg.summary,
+	});
+}
+
+/**
  * Claude Code SDK backend for CASCADE.
  *
  * Uses the Claude Code SDK's query() function to run agents with built-in file tools
@@ -357,10 +386,12 @@ export class ClaudeCodeBackend implements AgentBackend {
 				await input.progressReporter.onIteration(turnCount, input.maxIterations);
 				processAssistantMessage(assistantMsg, turnCount, input);
 			} else if (message.type === 'system') {
-				processSystemMessage(
-					message as { subtype: string; [key: string]: unknown },
-					input.logWriter,
-				);
+				const sysMsg = message as { subtype: string; [key: string]: unknown };
+				if (sysMsg.subtype === 'task_notification') {
+					processTaskNotification(sysMsg, input);
+				} else {
+					processSystemMessage(sysMsg, input.logWriter);
+				}
 			} else if (message.type === 'result') {
 				resultMessage = message as SDKResultMessage;
 			}
