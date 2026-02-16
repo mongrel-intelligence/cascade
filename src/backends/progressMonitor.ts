@@ -17,7 +17,7 @@ import { formatGitHubProgressComment, formatStatusMessage } from '../config/stat
 import { getSessionState } from '../gadgets/sessionState.js';
 import { loadTodos } from '../gadgets/todo/storage.js';
 import { githubClient } from '../github/client.js';
-import { trelloClient } from '../trello/client.js';
+import { getPMProviderOrNull } from '../pm/index.js';
 import { type ProgressContext, callProgressModel } from './progressModel.js';
 import type { LogWriter, ProgressReporter } from './types.js';
 
@@ -137,15 +137,18 @@ export class ProgressMonitor implements ProgressReporter {
 	}
 
 	private async postProgress(summary: string): Promise<void> {
-		// Post to Trello
+		// Post to PM provider (Trello/JIRA)
 		if (this.config.trello) {
 			try {
-				await trelloClient.addComment(this.config.trello.cardId, summary);
-				this.config.logWriter('INFO', 'Posted progress update to Trello', {
-					cardId: this.config.trello.cardId,
-				});
+				const provider = getPMProviderOrNull();
+				if (provider) {
+					await provider.addComment(this.config.trello.cardId, summary);
+					this.config.logWriter('INFO', 'Posted progress update to work item', {
+						cardId: this.config.trello.cardId,
+					});
+				}
 			} catch (err) {
-				this.config.logWriter('WARN', 'Failed to post progress to Trello', {
+				this.config.logWriter('WARN', 'Failed to post progress to work item', {
 					error: String(err),
 				});
 			}

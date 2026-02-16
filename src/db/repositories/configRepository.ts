@@ -11,12 +11,18 @@ interface TrelloIntegrationConfig {
 	customFields?: { cost?: string };
 }
 
+interface JiraIntegrationConfig {
+	projectKey: string;
+	baseUrl: string;
+	statuses: Record<string, string>;
+	issueTypes?: Record<string, string>;
+	customFields?: { cost?: string };
+}
+
 interface DefaultsRow {
 	model: string | null;
 	maxIterations: number | null;
-	freshMachineTimeoutMs: number | null;
 	watchdogTimeoutMs: number | null;
-	postJobGracePeriodMs: number | null;
 	cardBudgetUsd: string | null;
 	agentBackend: string | null;
 	progressModel: string | null;
@@ -59,9 +65,7 @@ function mapDefaultsRow(row: DefaultsRow | undefined, globalAgentConfigs: AgentC
 		agentModels: orUndefined(models),
 		maxIterations: row?.maxIterations ?? undefined,
 		agentIterations: orUndefined(iterations),
-		freshMachineTimeoutMs: row?.freshMachineTimeoutMs ?? undefined,
 		watchdogTimeoutMs: row?.watchdogTimeoutMs ?? undefined,
-		postJobGracePeriodMs: row?.postJobGracePeriodMs ?? undefined,
 		cardBudgetUsd: row?.cardBudgetUsd ? Number(row.cardBudgetUsd) : undefined,
 		agentBackend: row?.agentBackend ?? undefined,
 		progressModel: row?.progressModel ?? undefined,
@@ -77,8 +81,12 @@ function mapProjectRow(
 	row: ProjectRow,
 	projectAgentConfigs: AgentConfigRow[],
 	trelloConfig?: TrelloIntegrationConfig,
+	jiraConfig?: JiraIntegrationConfig,
 ): Record<string, unknown> {
 	const { models, prompts, backends } = buildAgentMaps(projectAgentConfigs);
+
+	// Derive PM type from integration config
+	const pmType = jiraConfig ? 'jira' : 'trello';
 
 	const project: Record<string, unknown> = {
 		id: row.id,
@@ -87,19 +95,31 @@ function mapProjectRow(
 		repo: row.repo,
 		baseBranch: row.baseBranch ?? 'main',
 		branchPrefix: row.branchPrefix ?? 'feature/',
-		trello: trelloConfig
-			? {
-					boardId: trelloConfig.boardId,
-					lists: trelloConfig.lists,
-					labels: trelloConfig.labels,
-					customFields: trelloConfig.customFields,
-				}
-			: { boardId: '', lists: {}, labels: {} },
+		pm: { type: pmType },
 		prompts: orUndefined(prompts),
 		model: row.model ?? undefined,
 		agentModels: orUndefined(models),
 		cardBudgetUsd: row.cardBudgetUsd ? Number(row.cardBudgetUsd) : undefined,
 	};
+
+	if (trelloConfig) {
+		project.trello = {
+			boardId: trelloConfig.boardId,
+			lists: trelloConfig.lists,
+			labels: trelloConfig.labels,
+			customFields: trelloConfig.customFields,
+		};
+	}
+
+	if (jiraConfig) {
+		project.jira = {
+			projectKey: jiraConfig.projectKey,
+			baseUrl: jiraConfig.baseUrl,
+			statuses: jiraConfig.statuses,
+			issueTypes: jiraConfig.issueTypes,
+			customFields: jiraConfig.customFields,
+		};
+	}
 
 	if (row.agentBackend) {
 		project.agentBackend = {
@@ -171,7 +191,10 @@ export async function loadConfigFromDb(): Promise<CascadeConfig> {
 			const trelloConfig = integrations.find((i) => i.type === 'trello')?.config as
 				| TrelloIntegrationConfig
 				| undefined;
-			return mapProjectRow(row, projectAgentConfigsMap.get(row.id) ?? [], trelloConfig);
+			const jiraConfig = integrations.find((i) => i.type === 'jira')?.config as
+				| JiraIntegrationConfig
+				| undefined;
+			return mapProjectRow(row, projectAgentConfigsMap.get(row.id) ?? [], trelloConfig, jiraConfig);
 		}),
 	};
 
@@ -204,10 +227,13 @@ async function findProjectFromDb(whereClause: SQL): Promise<ProjectConfig | unde
 	const trelloConfig = integrations.find((i) => i.type === 'trello')?.config as
 		| TrelloIntegrationConfig
 		| undefined;
+	const jiraConfig = integrations.find((i) => i.type === 'jira')?.config as
+		| JiraIntegrationConfig
+		| undefined;
 
 	const rawConfig = {
 		defaults: mapDefaultsRow(defaultsRow, [...globalAcs, ...orgAcs]),
-		projects: [mapProjectRow(row, projectAcs, trelloConfig)],
+		projects: [mapProjectRow(row, projectAcs, trelloConfig, jiraConfig)],
 	};
 	const validated = validateConfig(rawConfig);
 	return validated.projects[0];
@@ -229,4 +255,16 @@ export function findProjectByRepoFromDb(repo: string): Promise<ProjectConfig | u
 
 export function findProjectByIdFromDb(id: string): Promise<ProjectConfig | undefined> {
 	return findProjectFromDb(eq(projects.id, id));
+}
+
+export function findProjectByJiraProjectKeyFromDb(
+	projectKey: string,
+): Promise<ProjectConfig | undefined> {
+	return findProjectFromDb(
+		sql`${projects.id} IN (
+			SELECT ${projectIntegrations.projectId} FROM ${projectIntegrations}
+			WHERE ${projectIntegrations.type} = 'jira'
+			AND ${projectIntegrations.config}->>'projectKey' = ${projectKey}
+		)`,
+	);
 }

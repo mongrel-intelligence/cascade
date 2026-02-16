@@ -9,14 +9,11 @@ vi.mock('../../../src/utils/logging.js', () => ({
 }));
 
 import {
-	cancelFreshMachineTimer,
 	clearWatchdog,
 	clearWatchdogCleanup,
 	isCurrentlyProcessing,
-	scheduleShutdownAfterJob,
 	setProcessing,
 	setWatchdogCleanup,
-	startFreshMachineTimer,
 	startWatchdog,
 } from '../../../src/utils/lifecycle.js';
 
@@ -29,7 +26,6 @@ describe('lifecycle', () => {
 
 	afterEach(() => {
 		// Clean up all timers
-		cancelFreshMachineTimer();
 		clearWatchdog();
 		clearWatchdogCleanup();
 		setProcessing(false);
@@ -51,44 +47,6 @@ describe('lifecycle', () => {
 			setProcessing(true);
 			setProcessing(false);
 			expect(isCurrentlyProcessing()).toBe(false);
-		});
-	});
-
-	describe('fresh machine timer', () => {
-		it('exits after timeout when no work received', () => {
-			startFreshMachineTimer(5000);
-
-			vi.advanceTimersByTime(5000);
-
-			expect(process.exit).toHaveBeenCalledWith(0);
-		});
-
-		it('does not exit before timeout', () => {
-			startFreshMachineTimer(5000);
-
-			vi.advanceTimersByTime(4999);
-
-			expect(process.exit).not.toHaveBeenCalled();
-		});
-
-		it('can be cancelled', () => {
-			startFreshMachineTimer(5000);
-			cancelFreshMachineTimer();
-
-			vi.advanceTimersByTime(10000);
-
-			expect(process.exit).not.toHaveBeenCalled();
-		});
-
-		it('replaces existing timer when started again', () => {
-			startFreshMachineTimer(5000);
-			startFreshMachineTimer(10000);
-
-			vi.advanceTimersByTime(5000);
-			expect(process.exit).not.toHaveBeenCalled();
-
-			vi.advanceTimersByTime(5000);
-			expect(process.exit).toHaveBeenCalledWith(0);
 		});
 	});
 
@@ -119,38 +77,6 @@ describe('lifecycle', () => {
 
 			vi.advanceTimersByTime(5000);
 			expect(process.exit).toHaveBeenCalledWith(1);
-		});
-	});
-
-	describe('shutdown after job', () => {
-		it('exits after grace period', () => {
-			scheduleShutdownAfterJob(5000);
-
-			vi.advanceTimersByTime(5000);
-
-			expect(process.exit).toHaveBeenCalledWith(0);
-		});
-
-		it('clears watchdog when scheduling shutdown', () => {
-			startWatchdog(30000);
-			scheduleShutdownAfterJob(5000);
-
-			vi.advanceTimersByTime(30000);
-
-			// Should exit at 5000 (shutdown), not at 30000 (watchdog)
-			expect(process.exit).toHaveBeenCalledTimes(1);
-			expect(process.exit).toHaveBeenCalledWith(0);
-		});
-
-		it('replaces existing shutdown timer', () => {
-			scheduleShutdownAfterJob(5000);
-			scheduleShutdownAfterJob(10000);
-
-			vi.advanceTimersByTime(5000);
-			expect(process.exit).not.toHaveBeenCalled();
-
-			vi.advanceTimersByTime(5000);
-			expect(process.exit).toHaveBeenCalledWith(0);
 		});
 	});
 

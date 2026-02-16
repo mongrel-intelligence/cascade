@@ -11,6 +11,7 @@ class ConfigCache {
 	private configEntry: CacheEntry<CascadeConfig> | null = null;
 	private projectByBoardId = new Map<string, CacheEntry<ProjectConfig | undefined>>();
 	private projectByRepo = new Map<string, CacheEntry<ProjectConfig | undefined>>();
+	private projectByJiraKey = new Map<string, CacheEntry<ProjectConfig | undefined>>();
 	private projectSecrets = new Map<string, CacheEntry<Record<string, string>>>();
 	private orgIdByProject = new Map<string, CacheEntry<string>>();
 	private ttlMs: number;
@@ -53,6 +54,15 @@ class ConfigCache {
 		this.projectByRepo.set(repo, this.makeEntry(project));
 	}
 
+	getProjectByJiraKey(projectKey: string): ProjectConfig | undefined | null {
+		const entry = this.projectByJiraKey.get(projectKey);
+		return this.isValid(entry) ? entry.data : null;
+	}
+
+	setProjectByJiraKey(projectKey: string, project: ProjectConfig | undefined): void {
+		this.projectByJiraKey.set(projectKey, this.makeEntry(project));
+	}
+
 	getOrgIdForProject(projectId: string): string | null {
 		const entry = this.orgIdByProject.get(projectId);
 		return this.isValid(entry) ? entry.data : null;
@@ -75,6 +85,7 @@ class ConfigCache {
 		this.configEntry = null;
 		this.projectByBoardId.clear();
 		this.projectByRepo.clear();
+		this.projectByJiraKey.clear();
 		this.projectSecrets.clear();
 		this.orgIdByProject.clear();
 	}

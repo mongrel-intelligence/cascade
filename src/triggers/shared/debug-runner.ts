@@ -8,7 +8,7 @@ import {
 	getRunLogs,
 	storeDebugAnalysis,
 } from '../../db/repositories/runsRepository.js';
-import { trelloClient } from '../../trello/client.js';
+import { getPMProvider } from '../../pm/index.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { cleanupTempDir } from '../../utils/repo.js';
@@ -127,7 +127,15 @@ export async function triggerDebugAnalysis(
 		logDir = await extractLogsToTempDir(analyzedRunId);
 
 		const originalCardName = cardId ? `Card ${cardId}` : 'Unknown card';
-		const originalCardUrl = cardId ? `https://trello.com/c/${cardId}` : '';
+		let originalCardUrl = '';
+		if (cardId) {
+			try {
+				const provider = getPMProvider();
+				originalCardUrl = provider.getWorkItemUrl(cardId);
+			} catch {
+				originalCardUrl = `https://trello.com/c/${cardId}`;
+			}
+		}
 
 		const agentResult: AgentResult = await runAgent('debug', {
 			logDir,
@@ -152,14 +160,15 @@ export async function triggerDebugAnalysis(
 			severity: run.status === 'timed_out' ? 'timeout' : 'failure',
 		});
 
-		// Post summary comment on original Trello card
+		// Post summary comment on original work item
 		if (cardId && parsed.summary) {
 			try {
+				const provider = getPMProvider();
 				const rootCauseText = parsed.rootCause
 					? `**Root Cause:** ${parsed.rootCause.slice(0, 200)}\n\n`
 					: '';
 				const comment = `🔍 **Debug Analysis** (run: ${analyzedRunId.slice(0, 8)})\n\n${parsed.summary}\n\n${rootCauseText}_Full analysis stored in database._`;
-				await trelloClient.addComment(cardId, comment);
+				await provider.addComment(cardId, comment);
 			} catch (err) {
 				logger.warn('Failed to post debug summary comment', {
 					cardId,

@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../src/trello/client.js', () => ({
-	trelloClient: {
-		addComment: vi.fn(),
-	},
+vi.mock('../../../src/pm/index.js', () => ({
+	getPMProviderOrNull: vi.fn(),
 }));
 
 vi.mock('../../../src/github/client.js', () => ({
@@ -46,9 +44,10 @@ import {
 import { getSessionState } from '../../../src/gadgets/sessionState.js';
 import { loadTodos } from '../../../src/gadgets/todo/storage.js';
 import { githubClient } from '../../../src/github/client.js';
-import { trelloClient } from '../../../src/trello/client.js';
+import { getPMProviderOrNull } from '../../../src/pm/index.js';
 
-const mockTrello = vi.mocked(trelloClient);
+const mockGetPMProvider = vi.mocked(getPMProviderOrNull);
+const mockPMProvider = { addComment: vi.fn() };
 const mockGithub = vi.mocked(githubClient);
 const mockGetStatusConfig = vi.mocked(getStatusUpdateConfig);
 const mockFormatStatus = vi.mocked(formatStatusMessage);
@@ -62,6 +61,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	vi.useFakeTimers();
 	mockLoadTodos.mockReturnValue([]);
+	mockGetPMProvider.mockReturnValue(null);
 });
 
 afterEach(() => {
@@ -185,15 +185,16 @@ describe('ProgressMonitor — tick behavior', () => {
 			trello: { cardId: 'card1' },
 		});
 
+		mockGetPMProvider.mockReturnValue(mockPMProvider as any);
 		mockCallProgressModel.mockResolvedValue('**Progress**: All good');
-		mockTrello.addComment.mockResolvedValue(undefined as never);
+		mockPMProvider.addComment.mockResolvedValue(undefined as never);
 
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
 		monitor.stop();
 
 		expect(mockCallProgressModel).toHaveBeenCalled();
-		expect(mockTrello.addComment).toHaveBeenCalledWith('card1', '**Progress**: All good');
+		expect(mockPMProvider.addComment).toHaveBeenCalledWith('card1', '**Progress**: All good');
 	});
 
 	it('falls back to template when progress model fails', async () => {
@@ -208,16 +209,17 @@ describe('ProgressMonitor — tick behavior', () => {
 			trello: { cardId: 'card1' },
 		});
 
+		mockGetPMProvider.mockReturnValue(mockPMProvider as any);
 		mockCallProgressModel.mockRejectedValue(new Error('Model error'));
 		mockFormatStatus.mockReturnValue('Fallback progress');
-		mockTrello.addComment.mockResolvedValue(undefined as never);
+		mockPMProvider.addComment.mockResolvedValue(undefined as never);
 
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
 		monitor.stop();
 
 		expect(mockFormatStatus).toHaveBeenCalled();
-		expect(mockTrello.addComment).toHaveBeenCalledWith('card1', 'Fallback progress');
+		expect(mockPMProvider.addComment).toHaveBeenCalledWith('card1', 'Fallback progress');
 	});
 
 	it('syncs checklist for implementation agents', async () => {
@@ -231,8 +233,9 @@ describe('ProgressMonitor — tick behavior', () => {
 			trello: { cardId: 'card1' },
 		});
 
+		mockGetPMProvider.mockReturnValue(mockPMProvider as any);
 		mockCallProgressModel.mockResolvedValue('Progress');
-		mockTrello.addComment.mockResolvedValue(undefined as never);
+		mockPMProvider.addComment.mockResolvedValue(undefined as never);
 		mockSyncChecklist.mockResolvedValue();
 
 		monitor.start();
@@ -253,8 +256,9 @@ describe('ProgressMonitor — tick behavior', () => {
 			trello: { cardId: 'card1' },
 		});
 
+		mockGetPMProvider.mockReturnValue(mockPMProvider as any);
 		mockCallProgressModel.mockResolvedValue('Progress');
-		mockTrello.addComment.mockResolvedValue(undefined as never);
+		mockPMProvider.addComment.mockResolvedValue(undefined as never);
 
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
@@ -333,8 +337,9 @@ describe('ProgressMonitor — tick behavior', () => {
 			trello: { cardId: 'card1' },
 		});
 
+		mockGetPMProvider.mockReturnValue(mockPMProvider as any);
 		mockCallProgressModel.mockResolvedValue('Progress');
-		mockTrello.addComment.mockRejectedValue(new Error('API error'));
+		mockPMProvider.addComment.mockRejectedValue(new Error('API error'));
 
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
@@ -348,6 +353,7 @@ describe('ProgressMonitor — tick behavior', () => {
 	});
 
 	it('prevents concurrent ticks', async () => {
+		mockGetPMProvider.mockReturnValue(mockPMProvider as any);
 		const monitor = new ProgressMonitor({
 			agentType: 'implementation',
 			taskDescription: 'Test task',

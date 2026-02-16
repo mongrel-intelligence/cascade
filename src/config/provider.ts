@@ -1,6 +1,7 @@
 import {
 	findProjectByBoardIdFromDb,
 	findProjectByIdFromDb,
+	findProjectByJiraProjectKeyFromDb,
 	findProjectByRepoFromDb,
 	loadConfigFromDb,
 } from '../db/repositories/configRepository.js';
@@ -36,6 +37,17 @@ export async function findProjectByRepo(repo: string): Promise<ProjectConfig | u
 
 	const project = await findProjectByRepoFromDb(repo);
 	configCache.setProjectByRepo(repo, project);
+	return project;
+}
+
+export async function findProjectByJiraProjectKey(
+	projectKey: string,
+): Promise<ProjectConfig | undefined> {
+	const cached = configCache.getProjectByJiraKey(projectKey);
+	if (cached !== null) return cached;
+
+	const project = await findProjectByJiraProjectKeyFromDb(projectKey);
+	configCache.setProjectByJiraKey(projectKey, project);
 	return project;
 }
 

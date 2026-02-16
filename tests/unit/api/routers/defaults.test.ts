@@ -68,9 +68,7 @@ describe('defaultsRouter', () => {
 			await caller.upsert({
 				model: 'claude-sonnet-4-5-20250929',
 				maxIterations: 30,
-				freshMachineTimeoutMs: 600000,
 				watchdogTimeoutMs: 300000,
-				postJobGracePeriodMs: 30000,
 				cardBudgetUsd: '5.00',
 				agentBackend: 'claude-code',
 				progressModel: 'claude-haiku-3-20240307',
@@ -80,9 +78,7 @@ describe('defaultsRouter', () => {
 			expect(mockUpsertCascadeDefaults).toHaveBeenCalledWith('org-1', {
 				model: 'claude-sonnet-4-5-20250929',
 				maxIterations: 30,
-				freshMachineTimeoutMs: 600000,
 				watchdogTimeoutMs: 300000,
-				postJobGracePeriodMs: 30000,
 				cardBudgetUsd: '5.00',
 				agentBackend: 'claude-code',
 				progressModel: 'claude-haiku-3-20240307',

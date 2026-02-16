@@ -5,10 +5,11 @@ import { createServer } from './server.js';
 import {
 	createTriggerRegistry,
 	processGitHubWebhook,
+	processJiraWebhook,
 	registerBuiltInTriggers,
 } from './triggers/index.js';
 import { processTrelloWebhook } from './triggers/trello/webhook-handler.js';
-import { logger, setLogLevel, startFreshMachineTimer } from './utils/index.js';
+import { logger, setLogLevel } from './utils/index.js';
 
 async function main(): Promise<void> {
 	// Load environment config
@@ -34,13 +35,10 @@ async function main(): Promise<void> {
 		onGitHubWebhook: async (payload, eventType) => {
 			await processGitHubWebhook(payload, eventType, triggerRegistry);
 		},
+		onJiraWebhook: async (payload) => {
+			await processJiraWebhook(payload, triggerRegistry);
+		},
 	});
-
-	// Start fresh machine timer (for Fly.io cost management)
-	// Exits if no work received within timeout
-	if (process.env.FLY_APP_NAME) {
-		startFreshMachineTimer(config.defaults.freshMachineTimeoutMs);
-	}
 
 	// Start server
 	const server = serve({

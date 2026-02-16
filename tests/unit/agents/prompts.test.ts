@@ -43,14 +43,14 @@ describe('getSystemPrompt', () => {
 describe('system prompts content', () => {
 	it('briefing prompt includes key instructions', () => {
 		const prompt = getSystemPrompt('briefing');
-		expect(prompt).toContain('ReadTrelloCard');
-		expect(prompt).toContain('CreateTrelloCard');
+		expect(prompt).toContain('ReadWorkItem');
+		expect(prompt).toContain('CreateWorkItem');
 		expect(prompt).toContain('INVEST');
 	});
 
 	it('planning prompt includes key instructions', () => {
 		const prompt = getSystemPrompt('planning');
-		expect(prompt).toContain('ReadTrelloCard');
+		expect(prompt).toContain('ReadWorkItem');
 		expect(prompt).toContain('step-by-step');
 	});
 

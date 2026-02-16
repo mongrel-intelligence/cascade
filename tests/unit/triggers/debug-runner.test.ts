@@ -12,10 +12,8 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	storeDebugAnalysis: vi.fn(),
 }));
 
-vi.mock('../../../src/trello/client.js', () => ({
-	trelloClient: {
-		addComment: vi.fn(),
-	},
+vi.mock('../../../src/pm/index.js', () => ({
+	getPMProvider: vi.fn(),
 }));
 
 vi.mock('../../../src/utils/logging.js', () => ({
@@ -37,8 +35,10 @@ import {
 	getRunLogs,
 	storeDebugAnalysis,
 } from '../../../src/db/repositories/runsRepository.js';
-import { trelloClient } from '../../../src/trello/client.js';
+import { getPMProvider } from '../../../src/pm/index.js';
 import { triggerDebugAnalysis } from '../../../src/triggers/shared/debug-runner.js';
+
+const mockPMProvider = { addComment: vi.fn() };
 import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 
 const mockProject = {
@@ -59,6 +59,7 @@ const mockConfig = {} as CascadeConfig;
 describe('triggerDebugAnalysis', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(getPMProvider).mockReturnValue(mockPMProvider as any);
 	});
 
 	it('returns early when run is not found', async () => {
@@ -118,7 +119,7 @@ describe('triggerDebugAnalysis', () => {
 		);
 
 		// Should post Trello comment
-		expect(trelloClient.addComment).toHaveBeenCalledWith(
+		expect(mockPMProvider.addComment).toHaveBeenCalledWith(
 			'card-1',
 			expect.stringContaining('Debug Analysis'),
 		);
@@ -171,7 +172,7 @@ describe('triggerDebugAnalysis', () => {
 
 		await triggerDebugAnalysis('run-1', mockProject, mockConfig);
 
-		expect(trelloClient.addComment).not.toHaveBeenCalled();
+		expect(mockPMProvider.addComment).not.toHaveBeenCalled();
 	});
 
 	it('writes LLM call files to temp dir', async () => {

@@ -22,6 +22,7 @@ function isCardInTriggerList(
 	data: Record<string, unknown> | undefined,
 	project: RouterProjectConfig,
 ): boolean {
+	if (!project.trello) return false;
 	const triggerLists = [
 		project.trello.lists.briefing,
 		project.trello.lists.planning,
@@ -57,6 +58,7 @@ function isReadyToProcessLabelAdded(
 	project: RouterProjectConfig,
 ): boolean {
 	if (actionType !== 'addLabelToCard' || !data?.label) return false;
+	if (!project.trello) return false;
 
 	const label = data.label as Record<string, unknown>;
 	const labelId = label.id as string;
@@ -74,7 +76,7 @@ function isAgentLogAttachmentUploaded(
 	project: RouterProjectConfig,
 ): boolean {
 	if (actionType !== 'addAttachmentToCard' || !data?.attachment) return false;
-	if (!project.trello.lists.debug) return false;
+	if (!project.trello?.lists.debug) return false;
 
 	const attachment = data.attachment as Record<string, unknown>;
 	const name = attachment.name as string | undefined;
@@ -110,7 +112,7 @@ function parseTrelloWebhook(payload: unknown): TrelloWebhookResult {
 	const actionType = action.type as string;
 	const data = action.data as Record<string, unknown> | undefined;
 
-	const project = getProjectConfig().projects.find((proj) => proj.trello.boardId === boardId);
+	const project = getProjectConfig().projects.find((proj) => proj.trello?.boardId === boardId);
 	if (!project) {
 		return { shouldProcess: false };
 	}
@@ -253,6 +255,68 @@ app.post('/github/webhook', async (c) => {
 		}
 	} else {
 		console.log('[Router] Ignoring GitHub event:', eventType);
+	}
+
+	return c.text('OK', 200);
+});
+
+// JIRA webhook verification
+app.get('/jira/webhook', (c) => {
+	return c.text('OK', 200);
+});
+
+// JIRA webhook handler
+app.post('/jira/webhook', async (c) => {
+	let payload: unknown;
+	try {
+		payload = await c.req.json();
+	} catch {
+		return c.text('Bad Request', 400);
+	}
+
+	const p = payload as Record<string, unknown>;
+	const webhookEvent = (p.webhookEvent as string) || '';
+	const issue = p.issue as Record<string, unknown> | undefined;
+	const issueKey = (issue?.key as string) || '';
+	const fields = issue?.fields as Record<string, unknown> | undefined;
+	const projectField = fields?.project as Record<string, unknown> | undefined;
+	const jiraProjectKey = (projectField?.key as string) || '';
+
+	// Match JIRA project key to a configured project
+	const project = jiraProjectKey
+		? getProjectConfig().projects.find((proj) => proj.jira?.projectKey === jiraProjectKey)
+		: undefined;
+
+	// Process issue transitions and comment events
+	const processableEvents = [
+		'jira:issue_updated',
+		'jira:issue_created',
+		'comment_created',
+		'comment_updated',
+	];
+	const shouldProcess = project && processableEvents.some((e) => webhookEvent.startsWith(e));
+
+	if (shouldProcess && project) {
+		console.log('[Router] Queueing JIRA job:', { webhookEvent, issueKey, projectId: project.id });
+
+		const job: CascadeJob = {
+			type: 'jira',
+			source: 'jira',
+			payload,
+			projectId: project.id,
+			issueKey,
+			webhookEvent,
+			receivedAt: new Date().toISOString(),
+		};
+
+		try {
+			const jobId = await addJob(job);
+			console.log('[Router] JIRA job queued:', { jobId, webhookEvent });
+		} catch (err) {
+			console.error('[Router] Failed to queue JIRA job:', err);
+		}
+	} else {
+		console.log(`[Router] Ignoring JIRA: ${webhookEvent}`);
 	}
 
 	return c.text('OK', 200);

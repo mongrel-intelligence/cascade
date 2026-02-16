@@ -17,6 +17,7 @@ export interface ServerDependencies {
 	config: CascadeConfig;
 	onTrelloWebhook: (payload: unknown) => Promise<void>;
 	onGitHubWebhook: (payload: unknown, eventType: string) => Promise<void>;
+	onJiraWebhook: (payload: unknown) => Promise<void>;
 }
 
 export function createServer(deps: ServerDependencies): Hono {
@@ -68,7 +69,6 @@ export function createServer(deps: ServerDependencies): Hono {
 
 	// Trello webhook - POST for events
 	app.post('/trello/webhook', async (c) => {
-		// Check capacity synchronously - return 503 if at capacity so Fly.io routes to another machine
 		if (isCurrentlyProcessing() && !canAcceptWebhook()) {
 			logger.warn('Machine at capacity, returning 503');
 			return c.text('Service Unavailable', 503);
@@ -101,7 +101,6 @@ export function createServer(deps: ServerDependencies): Hono {
 	});
 
 	app.post('/github/webhook', async (c) => {
-		// Check capacity synchronously - return 503 if at capacity so Fly.io routes to another machine
 		if (isCurrentlyProcessing() && !canAcceptWebhook()) {
 			logger.warn('Machine at capacity, returning 503');
 			return c.text('Service Unavailable', 503);
@@ -153,6 +152,42 @@ export function createServer(deps: ServerDependencies): Hono {
 				contentType,
 				eventType,
 			});
+			return c.text('Bad Request', 400);
+		}
+	});
+
+	// JIRA webhook - GET/HEAD for verification
+	app.get('/jira/webhook', (c) => {
+		return c.text('OK', 200);
+	});
+
+	// JIRA webhook - POST for events
+	app.post('/jira/webhook', async (c) => {
+		if (isCurrentlyProcessing() && !canAcceptWebhook()) {
+			logger.warn('Machine at capacity, returning 503');
+			return c.text('Service Unavailable', 503);
+		}
+
+		try {
+			const payload = await c.req.json();
+			logger.info('Received JIRA webhook', {
+				event: (payload as Record<string, unknown>)?.webhookEvent,
+				issueKey: ((payload as Record<string, unknown>)?.issue as Record<string, unknown>)?.key,
+			});
+
+			// Process asynchronously - respond immediately
+			setImmediate(() => {
+				deps.onJiraWebhook(payload).catch((err) => {
+					logger.error('Error processing JIRA webhook', {
+						error: String(err),
+						stack: err instanceof Error ? err.stack : undefined,
+					});
+				});
+			});
+
+			return c.text('OK', 200);
+		} catch (err) {
+			logger.error('Failed to parse JIRA webhook', { error: String(err) });
 			return c.text('Bad Request', 400);
 		}
 	});
