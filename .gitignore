@@ -30,6 +30,7 @@ logs/
 # Temp
 /tmp/
 *.tmp
+tmp-*.ts
 
 # Local agent workspace (repos, logs)
 workspace/

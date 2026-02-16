@@ -5,7 +5,7 @@
 	"type": "module",
 	"main": "dist/index.js",
 	"scripts": {
-		"dev": "tsx watch src/index.ts",
+		"dev": "node --env-file=.env --import tsx/esm --watch src/index.ts",
 		"dev:web": "cd web && npx vite",
 		"build": "tsc",
 		"build:web": "cd web && npm run build",
