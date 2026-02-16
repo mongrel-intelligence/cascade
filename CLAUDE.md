@@ -71,7 +71,7 @@ Optional (infrastructure):
 - `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled)
 - `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code backend (subscription auth)
 
-**Project credentials** (`GITHUB_TOKEN`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored per-project in the database `project_secrets` table. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
+**Project credentials** (`GITHUB_TOKEN`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored in the `credentials` table (org-scoped) with optional per-project overrides via `project_credential_overrides`. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
 
 ## Database Configuration
 
@@ -79,10 +79,13 @@ CASCADE stores all project configuration in PostgreSQL (Supabase). The `config/p
 
 ### Schema
 
-- `cascade_defaults` - Global defaults (model, iterations, timeouts, budget)
-- `projects` - Per-project config (repo, Trello board/lists/labels, budget, backend)
-- `agent_configs` - Per-agent-type overrides (model, iterations, backend, prompt), scoped to global or per-project
-- `project_secrets` - Per-project credentials (Trello, GitHub, LLM API keys)
+- `organizations` - Organization definitions (multi-tenant support)
+- `cascade_defaults` - Global defaults per org (model, iterations, timeouts, budget)
+- `projects` - Per-project config (repo, base branch, budget, backend)
+- `project_integrations` - Integration configs per project (Trello boards/lists/labels as JSONB)
+- `agent_configs` - Per-agent-type overrides (model, iterations, backend, prompt), scoped globally, per-org, or per-project
+- `credentials` - Org-scoped credentials (API keys, tokens)
+- `project_credential_overrides` - Per-project credential overrides (optional, falls back to org defaults)
 
 ### Database Scripts
 
@@ -96,13 +99,31 @@ npm run db:seed          # Seed DB from config/projects.json
 
 ### Per-Project Secrets
 
-Store per-project credentials in `project_secrets` table. Falls back to global env vars when not set.
+Credentials are stored in the `credentials` table (org-scoped) with optional per-project overrides via `project_credential_overrides`.
 
 ```bash
-npx tsx tools/manage-secrets.ts set <project-id> TRELLO_API_KEY <value>
-npx tsx tools/manage-secrets.ts list <project-id>
-npx tsx tools/manage-secrets.ts delete <project-id> <key>
+npx tsx tools/manage-secrets.ts create <org-id> <env-var-key> <value> [--name "..."] [--default]
+npx tsx tools/manage-secrets.ts list <org-id>
+npx tsx tools/manage-secrets.ts set-override <project-id> <env-var-key> <credential-id>
+npx tsx tools/manage-secrets.ts remove-override <project-id> <env-var-key>
+npx tsx tools/manage-secrets.ts resolve <project-id>
 ```
+
+### Per-Agent Credential Overrides
+
+Override any credential for a specific agent type. For example, to make the `review` agent use a separate GitHub identity:
+
+```bash
+# Create a credential for the reviewer bot
+npx tsx tools/manage-secrets.ts create <org-id> GITHUB_TOKEN <reviewer-pat> --name "Reviewer Bot"
+
+# Set agent-scoped overrides (review-related agents use the reviewer token)
+npx tsx tools/manage-secrets.ts set-override <project-id> GITHUB_TOKEN <credential-id> --agent-type review
+npx tsx tools/manage-secrets.ts set-override <project-id> GITHUB_TOKEN <credential-id> --agent-type respond-to-review
+npx tsx tools/manage-secrets.ts set-override <project-id> GITHUB_TOKEN <credential-id> --agent-type respond-to-pr-comment
+```
+
+Resolution order: agent+project override → project override → org default → null.
 
 ## Claude Code Backend
 

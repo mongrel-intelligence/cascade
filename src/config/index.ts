@@ -1,10 +1,11 @@
 export { loadEnvConfig, loadEnvConfigSafe, type EnvConfig } from './env.js';
-export { getProjectGitHubToken, getProjectReviewerToken } from './projects.js';
+export { getProjectGitHubToken } from './projects.js';
 export {
 	loadConfig,
 	findProjectByBoardId,
 	findProjectByRepo,
 	findProjectById,
+	getAgentCredential,
 	getProjectSecret,
 	getProjectSecretOrNull,
 	getProjectSecrets,

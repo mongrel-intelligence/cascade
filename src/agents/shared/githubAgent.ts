@@ -2,7 +2,7 @@ import type { ModelSpec } from 'llmist';
 
 import { createProgressMonitor } from '../../backends/progress.js';
 import { CUSTOM_MODELS } from '../../config/customModels.js';
-import { getProjectReviewerToken } from '../../config/projects.js';
+import { getAgentCredential } from '../../config/provider.js';
 import { recordInitialComment } from '../../gadgets/sessionState.js';
 import { githubClient, withGitHubToken } from '../../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
@@ -219,12 +219,15 @@ export async function executeGitHubAgent<
 			},
 		});
 
-	// Scope reviewer token for all GitHub agents — if GITHUB_REVIEWER_TOKEN is set,
-	// all PR interactions (comments, reviews) use the reviewer identity instead of
-	// the main GITHUB_TOKEN. Individual agents can add further wrapping via wrapExecution.
-	const reviewerToken = await getProjectReviewerToken(input.project);
-	const scopedLifecycle = reviewerToken
-		? () => withGitHubToken(reviewerToken, runLifecycle)
+	// If this agent type has a dedicated GITHUB_TOKEN override, use it for all
+	// PR interactions (comments, reviews). Individual agents can add further wrapping via wrapExecution.
+	const agentGitHubToken = await getAgentCredential(
+		input.project.id,
+		definition.agentType,
+		'GITHUB_TOKEN',
+	);
+	const scopedLifecycle = agentGitHubToken
+		? () => withGitHubToken(agentGitHubToken, runLifecycle)
 		: runLifecycle;
 
 	if (definition.wrapExecution) {

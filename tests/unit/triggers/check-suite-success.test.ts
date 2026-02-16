@@ -9,10 +9,18 @@ vi.mock('../../../src/github/client.js', () => ({
 		getCheckSuiteStatus: vi.fn(),
 	},
 	getAuthenticatedUser: vi.fn(),
-	getReviewerUser: vi.fn(),
+	getGitHubUserForToken: vi.fn(),
 }));
 
-import { getAuthenticatedUser, getReviewerUser, githubClient } from '../../../src/github/client.js';
+vi.mock('../../../src/config/provider.js', () => ({
+	getAgentCredential: vi.fn().mockResolvedValue(null),
+}));
+
+import {
+	getAuthenticatedUser,
+	getGitHubUserForToken,
+	githubClient,
+} from '../../../src/github/client.js';
 
 describe('CheckSuiteSuccessTrigger', () => {
 	const trigger = new CheckSuiteSuccessTrigger();
@@ -50,7 +58,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(getReviewerUser).mockResolvedValue(null);
+		vi.mocked(getGitHubUserForToken).mockResolvedValue(null);
 	});
 
 	describe('matches', () => {
@@ -316,7 +324,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 				},
 			]);
 			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
-			vi.mocked(getReviewerUser).mockResolvedValue('cascade-reviewer');
+			vi.mocked(getGitHubUserForToken).mockResolvedValue('cascade-reviewer');
 
 			const ctx: TriggerContext = {
 				project: mockProject,
@@ -327,7 +335,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toBeNull();
-			expect(getReviewerUser).toHaveBeenCalled();
+			expect(getGitHubUserForToken).toHaveBeenCalled();
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
@@ -453,7 +461,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 				},
 			]);
 			vi.mocked(getAuthenticatedUser).mockResolvedValue('cascade-bot');
-			vi.mocked(getReviewerUser).mockResolvedValue('cascade-reviewer');
+			vi.mocked(getGitHubUserForToken).mockResolvedValue('cascade-reviewer');
 			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
 				allPassing: true,
 				totalCount: 1,

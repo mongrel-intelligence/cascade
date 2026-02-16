@@ -1,6 +1,19 @@
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { Tmux, resolveWorkingDirectory, validateGitCommand } from '../../../src/gadgets/tmux.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+	Tmux,
+	consumePendingSessionNotices,
+	resolveWorkingDirectory,
+	validateGitCommand,
+} from '../../../src/gadgets/tmux.js';
+import { CommandFailedError } from '../../../src/gadgets/tmux/errors.js';
+import { addPendingNotice } from '../../../src/gadgets/tmux/sessionNotices.js';
+import {
+	sanitizeSessionName,
+	sleep,
+	stripAnsi,
+	unescapeOutput,
+} from '../../../src/gadgets/tmux/utils.js';
 
 describe('Tmux Gadget', () => {
 	describe('validateGitCommand', () => {
@@ -222,6 +235,186 @@ describe('Tmux Gadget', () => {
 			const gadget = new Tmux();
 			expect(gadget.name).toBe('Tmux');
 			expect(gadget.description).toContain('tmux');
+		});
+	});
+
+	describe('sanitizeSessionName', () => {
+		it('passes through valid names unchanged', () => {
+			expect(sanitizeSessionName('test-run')).toBe('test-run');
+			expect(sanitizeSessionName('my_session')).toBe('my_session');
+			expect(sanitizeSessionName('Run123')).toBe('Run123');
+		});
+
+		it('replaces slashes with dashes', () => {
+			expect(sanitizeSessionName('feat/my-branch')).toBe('feat-my-branch');
+		});
+
+		it('replaces spaces and special characters', () => {
+			expect(sanitizeSessionName('my session!')).toBe('my-session-');
+			expect(sanitizeSessionName('a@b#c$d')).toBe('a-b-c-d');
+		});
+
+		it('replaces dots with dashes', () => {
+			expect(sanitizeSessionName('file.test')).toBe('file-test');
+		});
+	});
+
+	describe('unescapeOutput', () => {
+		it('converts octal newline escape to actual newline', () => {
+			expect(unescapeOutput('hello\\012world')).toBe('hello\nworld');
+		});
+
+		it('converts octal tab escape', () => {
+			expect(unescapeOutput('col1\\011col2')).toBe('col1\tcol2');
+		});
+
+		it('leaves strings without escapes unchanged', () => {
+			expect(unescapeOutput('plain text')).toBe('plain text');
+		});
+
+		it('handles multiple octal escapes', () => {
+			expect(unescapeOutput('a\\012b\\012c')).toBe('a\nb\nc');
+		});
+	});
+
+	describe('stripAnsi', () => {
+		it('strips CSI sequences (colors, bold, etc.)', () => {
+			expect(stripAnsi('\u001b[31mred\u001b[0m')).toBe('red');
+			expect(stripAnsi('\u001b[1;32mbold green\u001b[0m')).toBe('bold green');
+		});
+
+		it('strips OSC sequences (title sets, hyperlinks)', () => {
+			expect(stripAnsi('\u001b]0;window title\u0007rest')).toBe('rest');
+		});
+
+		it('strips DCS sequences', () => {
+			expect(stripAnsi('\u001bPsome data\u001b\\rest')).toBe('rest');
+		});
+
+		it('removes carriage returns', () => {
+			expect(stripAnsi('line1\r\nline2')).toBe('line1\nline2');
+		});
+
+		it('leaves plain text unchanged', () => {
+			expect(stripAnsi('no escape codes here')).toBe('no escape codes here');
+		});
+
+		it('handles mixed ANSI and plain text', () => {
+			expect(stripAnsi('before \u001b[32mgreen\u001b[0m after')).toBe('before green after');
+		});
+	});
+
+	describe('sleep', () => {
+		it('resolves after the specified delay', async () => {
+			vi.useFakeTimers();
+			const promise = sleep(100);
+			vi.advanceTimersByTime(100);
+			await expect(promise).resolves.toBeUndefined();
+			vi.useRealTimers();
+		});
+	});
+
+	describe('CommandFailedError', () => {
+		it('stores session, exitCode, and output', () => {
+			const err = new CommandFailedError('test-session', 1, 'some output');
+			expect(err.session).toBe('test-session');
+			expect(err.exitCode).toBe(1);
+			expect(err.output).toBe('some output');
+		});
+
+		it('has correct name', () => {
+			const err = new CommandFailedError('s', 1, '');
+			expect(err.name).toBe('CommandFailedError');
+		});
+
+		it('includes session and exit code in message', () => {
+			const err = new CommandFailedError('my-cmd', 127, 'command not found');
+			expect(err.message).toContain('Session: my-cmd');
+			expect(err.message).toContain('Exit code: 127');
+			expect(err.message).toContain('command not found');
+		});
+
+		it('truncates long output to last 1000 chars', () => {
+			const longOutput = 'x'.repeat(2000);
+			const err = new CommandFailedError('s', 1, longOutput);
+			// Preview should be the last 1000 chars
+			expect(err.message).toContain('x'.repeat(1000));
+			expect(err.message).not.toContain('x'.repeat(1001));
+		});
+
+		it('shows "(no output)" for empty output', () => {
+			const err = new CommandFailedError('s', 1, '');
+			expect(err.message).toContain('(no output)');
+		});
+
+		it('is an instance of Error', () => {
+			const err = new CommandFailedError('s', 1, 'out');
+			expect(err).toBeInstanceOf(Error);
+		});
+	});
+
+	describe('sessionNotices', () => {
+		afterEach(() => {
+			// Drain any leftover notices from previous tests
+			consumePendingSessionNotices();
+		});
+
+		it('addPendingNotice + consumePendingSessionNotices round-trip', () => {
+			addPendingNotice('sess-1', { exitCode: 0, tailOutput: 'all good' });
+
+			const notices = consumePendingSessionNotices();
+			expect(notices.size).toBe(1);
+			expect(notices.get('sess-1')).toEqual({ exitCode: 0, tailOutput: 'all good' });
+		});
+
+		it('consume clears the pending notices', () => {
+			addPendingNotice('sess-2', { exitCode: 1, tailOutput: 'fail' });
+
+			consumePendingSessionNotices(); // first consume
+			const second = consumePendingSessionNotices(); // should be empty
+			expect(second.size).toBe(0);
+		});
+
+		it('handles multiple notices', () => {
+			addPendingNotice('a', { exitCode: 0, tailOutput: 'output-a' });
+			addPendingNotice('b', { exitCode: 1, tailOutput: 'output-b' });
+
+			const notices = consumePendingSessionNotices();
+			expect(notices.size).toBe(2);
+			expect(notices.get('a')?.exitCode).toBe(0);
+			expect(notices.get('b')?.exitCode).toBe(1);
+		});
+
+		it('later notice for same session overwrites earlier one', () => {
+			addPendingNotice('dup', { exitCode: 0, tailOutput: 'first' });
+			addPendingNotice('dup', { exitCode: 1, tailOutput: 'second' });
+
+			const notices = consumePendingSessionNotices();
+			expect(notices.size).toBe(1);
+			expect(notices.get('dup')).toEqual({ exitCode: 1, tailOutput: 'second' });
+		});
+
+		it('consumePendingSessionNotices returns empty map when nothing pending', () => {
+			const notices = consumePendingSessionNotices();
+			expect(notices.size).toBe(0);
+		});
+	});
+
+	describe('backward-compat shim re-exports', () => {
+		it('Tmux is importable from the shim path', () => {
+			expect(Tmux).toBeDefined();
+		});
+
+		it('consumePendingSessionNotices is importable from the shim path', () => {
+			expect(typeof consumePendingSessionNotices).toBe('function');
+		});
+
+		it('validateGitCommand is importable from the shim path', () => {
+			expect(typeof validateGitCommand).toBe('function');
+		});
+
+		it('resolveWorkingDirectory is importable from the shim path', () => {
+			expect(typeof resolveWorkingDirectory).toBe('function');
 		});
 	});
 });

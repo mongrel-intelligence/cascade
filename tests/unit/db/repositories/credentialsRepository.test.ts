@@ -11,9 +11,12 @@ import {
 	deleteCredential,
 	listOrgCredentials,
 	listProjectOverrides,
+	removeAgentCredentialOverride,
 	removeProjectCredentialOverride,
+	resolveAgentCredential,
 	resolveAllCredentials,
 	resolveCredential,
+	setAgentCredentialOverride,
 	setProjectCredentialOverride,
 	updateCredential,
 } from '../../../../src/db/repositories/credentialsRepository.js';
@@ -136,6 +139,83 @@ describe('credentialsRepository', () => {
 		});
 	});
 
+	describe('resolveAgentCredential', () => {
+		it('returns agent-scoped override when found', async () => {
+			// First query (agent override) returns a result
+			mockDb.chain.where.mockResolvedValueOnce([{ value: 'agent-override-secret' }]);
+
+			const result = await resolveAgentCredential('proj1', 'org1', 'review', 'GITHUB_TOKEN');
+			expect(result).toBe('agent-override-secret');
+
+			// Should only call select once (found agent override, short-circuits)
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
+		});
+
+		it('falls through to project override when no agent override', async () => {
+			// First query (agent override) returns empty
+			mockDb.chain.where.mockResolvedValueOnce([]);
+			// Second query (project override via resolveCredential) returns a result
+			mockDb.chain.where.mockResolvedValueOnce([{ value: 'project-override-secret' }]);
+
+			const result = await resolveAgentCredential('proj1', 'org1', 'review', 'GITHUB_TOKEN');
+			expect(result).toBe('project-override-secret');
+
+			// Two selects: agent override check + project override check
+			expect(mockDb.db.select).toHaveBeenCalledTimes(2);
+		});
+
+		it('falls through to org default when no agent or project override', async () => {
+			// First query (agent override) returns empty
+			mockDb.chain.where.mockResolvedValueOnce([]);
+			// Second query (project override) returns empty
+			mockDb.chain.where.mockResolvedValueOnce([]);
+			// Third query (org default) returns a result
+			mockDb.chain.where.mockResolvedValueOnce([{ value: 'org-default-secret' }]);
+
+			const result = await resolveAgentCredential('proj1', 'org1', 'review', 'GITHUB_TOKEN');
+			expect(result).toBe('org-default-secret');
+
+			expect(mockDb.db.select).toHaveBeenCalledTimes(3);
+		});
+
+		it('returns null when no override at any level', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+			mockDb.chain.where.mockResolvedValueOnce([]);
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			const result = await resolveAgentCredential('proj1', 'org1', 'review', 'GITHUB_TOKEN');
+			expect(result).toBeNull();
+		});
+	});
+
+	describe('setAgentCredentialOverride', () => {
+		it('deletes then inserts agent-scoped override', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined); // delete
+			mockDb.chain.returning.mockResolvedValueOnce([]); // insert (no returning needed)
+
+			await setAgentCredentialOverride('proj1', 'GITHUB_TOKEN', 'review', 42);
+
+			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
+			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
+			expect(mockDb.chain.values).toHaveBeenCalledWith({
+				projectId: 'proj1',
+				envVarKey: 'GITHUB_TOKEN',
+				credentialId: 42,
+				agentType: 'review',
+			});
+		});
+	});
+
+	describe('removeAgentCredentialOverride', () => {
+		it('deletes agent-scoped override', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await removeAgentCredentialOverride('proj1', 'GITHUB_TOKEN', 'review');
+
+			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
+		});
+	});
+
 	describe('createCredential', () => {
 		it('inserts credential and returns id', async () => {
 			mockDb.chain.returning.mockResolvedValueOnce([{ id: 42 }]);
@@ -247,18 +327,19 @@ describe('credentialsRepository', () => {
 	});
 
 	describe('setProjectCredentialOverride', () => {
-		it('upserts override', async () => {
-			mockDb.chain.onConflictDoUpdate.mockResolvedValueOnce(undefined);
+		it('deletes then inserts project-wide override', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined); // delete
 
 			await setProjectCredentialOverride('proj1', 'GITHUB_TOKEN', 42);
 
+			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
 			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
 			expect(mockDb.chain.values).toHaveBeenCalledWith({
 				projectId: 'proj1',
 				envVarKey: 'GITHUB_TOKEN',
 				credentialId: 42,
+				agentType: null,
 			});
-			expect(mockDb.chain.onConflictDoUpdate).toHaveBeenCalled();
 		});
 	});
 

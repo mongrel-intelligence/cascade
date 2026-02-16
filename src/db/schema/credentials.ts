@@ -1,13 +1,4 @@
-import {
-	boolean,
-	index,
-	integer,
-	pgTable,
-	serial,
-	text,
-	timestamp,
-	uniqueIndex,
-} from 'drizzle-orm/pg-core';
+import { boolean, index, integer, pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core';
 import { organizations } from './organizations.js';
 import { projects } from './projects.js';
 
@@ -47,15 +38,15 @@ export const projectCredentialOverrides = pgTable(
 		credentialId: integer('credential_id')
 			.notNull()
 			.references(() => credentials.id, { onDelete: 'cascade' }),
+		agentType: text('agent_type'),
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')
 			.defaultNow()
 			.$onUpdate(() => new Date()),
 	},
-	(table) => [
-		uniqueIndex('uq_project_credential_overrides_project_env_var_key').on(
-			table.projectId,
-			table.envVarKey,
-		),
+	() => [
+		// Partial unique indexes enforced via migration SQL:
+		// - (project_id, env_var_key) WHERE agent_type IS NULL — project-wide overrides
+		// - (project_id, env_var_key, agent_type) WHERE agent_type IS NOT NULL — agent-scoped
 	],
 );

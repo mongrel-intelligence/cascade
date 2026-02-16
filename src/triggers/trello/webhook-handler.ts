@@ -1,5 +1,10 @@
 import { runAgent } from '../../agents/registry.js';
-import { findProjectByBoardId, getProjectSecret, loadConfig } from '../../config/provider.js';
+import {
+	findProjectByBoardId,
+	getAgentCredential,
+	getProjectSecret,
+	loadConfig,
+} from '../../config/provider.js';
 import { withGitHubToken } from '../../github/client.js';
 import { trelloClient, withTrelloCredentials } from '../../trello/client.js';
 import type {
@@ -109,12 +114,16 @@ async function executeAgent(
 	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN');
 	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
 
+	// Check for agent-scoped credential overrides
+	const agentGitHubToken = await getAgentCredential(project.id, result.agentType, 'GITHUB_TOKEN');
+	const effectiveGithubToken = agentGitHubToken || githubToken;
+
 	// Inject LLM API keys into process.env for llmist backend
 	const restoreLlmEnv = await injectLlmApiKeys(project.id);
 
 	try {
 		await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
-			withGitHubToken(githubToken, () => executeAgentWithCreds(result, project, config)),
+			withGitHubToken(effectiveGithubToken, () => executeAgentWithCreds(result, project, config)),
 		);
 	} finally {
 		restoreLlmEnv();
