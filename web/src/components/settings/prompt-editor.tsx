@@ -218,8 +218,9 @@ function PartialEditor({ name, onClose }: { name: string; onClose: () => void })
 
 	const resetMutation = useMutation({
 		mutationFn: async () => {
-			if (partialQuery.data?.id != null) {
-				await trpcClient.prompts.deletePartial.mutate({ id: partialQuery.data.id });
+			const data = partialQuery.data;
+			if (data && 'id' in data && data.id != null) {
+				await trpcClient.prompts.deletePartial.mutate({ id: data.id });
 			}
 		},
 		onSuccess: () => {

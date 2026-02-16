@@ -4,61 +4,81 @@ import { promptPartials } from '../schema/index.js';
 
 export type PartialRow = typeof promptPartials.$inferSelect;
 
+/** Returns true if the error indicates the prompt_partials table doesn't exist yet. */
+function isTableMissing(err: unknown): boolean {
+	return err instanceof Error && err.message.includes('prompt_partials');
+}
+
 export async function loadPartials(orgId?: string): Promise<Map<string, string>> {
-	const db = getDb();
-	// Load global partials (org_id IS NULL)
-	const globalRows = await db.select().from(promptPartials).where(isNull(promptPartials.orgId));
+	try {
+		const db = getDb();
+		// Load global partials (org_id IS NULL)
+		const globalRows = await db.select().from(promptPartials).where(isNull(promptPartials.orgId));
 
-	const result = new Map<string, string>();
-	for (const row of globalRows) {
-		result.set(row.name, row.content);
-	}
-
-	// If org-scoped, overlay org partials on top of globals
-	if (orgId) {
-		const orgRows = await db.select().from(promptPartials).where(eq(promptPartials.orgId, orgId));
-		for (const row of orgRows) {
+		const result = new Map<string, string>();
+		for (const row of globalRows) {
 			result.set(row.name, row.content);
 		}
-	}
 
-	return result;
+		// If org-scoped, overlay org partials on top of globals
+		if (orgId) {
+			const orgRows = await db.select().from(promptPartials).where(eq(promptPartials.orgId, orgId));
+			for (const row of orgRows) {
+				result.set(row.name, row.content);
+			}
+		}
+
+		return result;
+	} catch (err) {
+		if (isTableMissing(err)) return new Map();
+		throw err;
+	}
 }
 
 export async function listPartials(orgId?: string): Promise<PartialRow[]> {
-	const db = getDb();
-	if (orgId) {
-		// Return both global and org-scoped
-		return db
-			.select()
-			.from(promptPartials)
-			.where(isNull(promptPartials.orgId))
-			.then(async (globals) => {
-				const orgRows = await db
-					.select()
-					.from(promptPartials)
-					.where(eq(promptPartials.orgId, orgId));
-				return [...globals, ...orgRows];
-			});
+	try {
+		const db = getDb();
+		if (orgId) {
+			// Return both global and org-scoped
+			return await db
+				.select()
+				.from(promptPartials)
+				.where(isNull(promptPartials.orgId))
+				.then(async (globals) => {
+					const orgRows = await db
+						.select()
+						.from(promptPartials)
+						.where(eq(promptPartials.orgId, orgId));
+					return [...globals, ...orgRows];
+				});
+		}
+		return await db.select().from(promptPartials).where(isNull(promptPartials.orgId));
+	} catch (err) {
+		if (isTableMissing(err)) return [];
+		throw err;
 	}
-	return db.select().from(promptPartials).where(isNull(promptPartials.orgId));
 }
 
 export async function getPartial(name: string, orgId?: string): Promise<PartialRow | null> {
-	const db = getDb();
-	// Try org-scoped first, then global
-	if (orgId) {
-		const [orgRow] = await db
+	try {
+		const db = getDb();
+		// Try org-scoped first, then global
+		if (orgId) {
+			const [orgRow] = await db
+				.select()
+				.from(promptPartials)
+				.where(and(eq(promptPartials.orgId, orgId), eq(promptPartials.name, name)));
+			if (orgRow) return orgRow;
+		}
+		const [globalRow] = await db
 			.select()
 			.from(promptPartials)
-			.where(and(eq(promptPartials.orgId, orgId), eq(promptPartials.name, name)));
-		if (orgRow) return orgRow;
+			.where(and(isNull(promptPartials.orgId), eq(promptPartials.name, name)));
+		return globalRow ?? null;
+	} catch (err) {
+		if (isTableMissing(err)) return null;
+		throw err;
 	}
-	const [globalRow] = await db
-		.select()
-		.from(promptPartials)
-		.where(and(isNull(promptPartials.orgId), eq(promptPartials.name, name)));
-	return globalRow ?? null;
 }
 
 export async function upsertPartial(data: {
