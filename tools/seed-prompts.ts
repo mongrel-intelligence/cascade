@@ -34,23 +34,16 @@ async function seedTemplates() {
 	for (const agentType of agentTypes) {
 		const content = getRawTemplate(agentType);
 
-		// Check if a global config row already exists for this agent type
-		const [existing] = await db
-			.select({ id: agentConfigs.id })
-			.from(agentConfigs)
-			.where(
-				and(
-					eq(agentConfigs.agentType, agentType),
-					isNull(agentConfigs.projectId),
-					isNull(agentConfigs.orgId),
-				),
-			);
+		// Update-first approach: try updating existing non-project row, insert if none affected.
+		// The unique constraint uq_agent_configs_global is on (agent_type) WHERE project_id IS NULL,
+		// so we match any row with this agent_type and no project (regardless of org_id).
+		const updated = await db
+			.update(agentConfigs)
+			.set({ prompt: content, updatedAt: new Date() })
+			.where(and(eq(agentConfigs.agentType, agentType), isNull(agentConfigs.projectId)))
+			.returning({ id: agentConfigs.id });
 
-		if (existing) {
-			await db
-				.update(agentConfigs)
-				.set({ prompt: content, updatedAt: new Date() })
-				.where(eq(agentConfigs.id, existing.id));
+		if (updated.length > 0) {
 			console.log(`  Updated: ${agentType}`);
 		} else {
 			await db.insert(agentConfigs).values({

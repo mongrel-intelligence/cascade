@@ -16,42 +16,73 @@ export interface ProgressContext {
 	iteration: number;
 	maxIterations: number;
 	todos: Todo[];
-	recentToolCalls: { name: string; timestamp: number }[];
+	recentToolCalls: { name: string; detail?: string; timestamp: number }[];
+	recentTextSnippets?: { text: string; timestamp: number }[];
+	completedTasks?: { subject: string; summary: string; timestamp: number }[];
 }
 
-const PROGRESS_SYSTEM_PROMPT = `You are a progress reporter for an AI coding agent called CASCADE. Write a brief, informative progress update based on the agent's current state. Be concise (3-5 sentences max). Focus on what has been accomplished, what's currently in progress, and what remains. Use markdown formatting. Start with a bold header like "**implementation agent progress** (X min)". Do not include a progress bar — the system adds that separately.`;
+const PROGRESS_SYSTEM_PROMPT = `You are a progress reporter for an AI coding agent called CASCADE. Write a brief, informative progress update based on the agent's current state. Be concise (3-5 sentences max). Focus on what has been accomplished, what's currently in progress, and what remains. Synthesize the agent's own commentary, tool call details (file paths, commands), and completed task summaries into a coherent narrative — do not just list tool names. Use markdown formatting. Start with a bold header like "**implementation agent progress** (X min)". Do not include a progress bar — the system adds that separately.`;
 
 function formatProgressUserPrompt(context: ProgressContext): string {
-	const { agentType, taskDescription, elapsedMinutes, iteration, todos, recentToolCalls } = context;
+	const {
+		agentType,
+		taskDescription,
+		elapsedMinutes,
+		iteration,
+		todos,
+		recentToolCalls,
+		recentTextSnippets,
+		completedTasks,
+	} = context;
 
-	const todoLines =
-		todos.length > 0
-			? todos
-					.map((t) => {
-						const icon = t.status === 'done' ? '✅' : t.status === 'in_progress' ? '🔄' : '⬜';
-						return `${icon} ${t.content}`;
-					})
-					.join('\n')
-			: '(no todos)';
+	const sections: string[] = [
+		`Agent: ${agentType}`,
+		`Task: ${taskDescription.slice(0, 500)}`,
+		`Time elapsed: ${Math.round(elapsedMinutes)} minutes`,
+		`Iterations: ${iteration}`,
+	];
 
-	const recentActivity =
-		recentToolCalls.length > 0
-			? recentToolCalls
-					.slice(-10)
-					.map((tc) => tc.name)
-					.join(', ')
-			: '(no recent activity)';
+	// Todos — only include if there are any (avoids noise for claude-code backend)
+	if (todos.length > 0) {
+		const todoLines = todos
+			.map((t) => {
+				const icon = t.status === 'done' ? '✅' : t.status === 'in_progress' ? '🔄' : '⬜';
+				return `${icon} ${t.content}`;
+			})
+			.join('\n');
+		sections.push(`\n## Todo List\n${todoLines}`);
+	}
 
-	return `Agent: ${agentType}
-Task: ${taskDescription.slice(0, 500)}
-Time elapsed: ${Math.round(elapsedMinutes)} minutes
-Iterations: ${iteration}
+	// Recent activity with tool details (file paths, commands)
+	if (recentToolCalls.length > 0) {
+		const activityLines = recentToolCalls
+			.slice(-10)
+			.map((tc) => (tc.detail ? `${tc.name}: ${tc.detail}` : tc.name))
+			.join('\n');
+		sections.push(`\n## Recent Activity\n${activityLines}`);
+	}
 
-## Todo List
-${todoLines}
+	// Agent commentary — what the LLM said it's doing
+	if (recentTextSnippets && recentTextSnippets.length > 0) {
+		const commentaryLines = recentTextSnippets
+			.slice(-5)
+			.map((s) => s.text)
+			.join('\n---\n');
+		sections.push(`\n## Agent Commentary\n${commentaryLines}`);
+	}
 
-## Recent Activity
-${recentActivity}`;
+	// Completed tasks — subagent task summaries
+	if (completedTasks && completedTasks.length > 0) {
+		const taskLines = completedTasks
+			.map((t) => {
+				const label = t.subject ? `**${t.subject}**: ` : '';
+				return `- ${label}${t.summary}`;
+			})
+			.join('\n');
+		sections.push(`\n## Completed Tasks\n${taskLines}`);
+	}
+
+	return sections.join('\n');
 }
 
 /**

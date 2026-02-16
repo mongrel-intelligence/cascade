@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { validateTemplate } from '../../agents/prompts/index.js';
+import { CLAUDE_CODE_MODELS } from '../../backends/claude-code/models.js';
 import { getDb } from '../../db/client.js';
 import { loadPartials } from '../../db/repositories/partialsRepository.js';
 import {
@@ -11,7 +12,7 @@ import {
 	updateAgentConfig,
 } from '../../db/repositories/settingsRepository.js';
 import { agentConfigs, projects } from '../../db/schema/index.js';
-import { protectedProcedure, router } from '../trpc.js';
+import { protectedProcedure, publicProcedure, router } from '../trpc.js';
 
 async function validatePromptIfPresent(prompt: string | null | undefined) {
 	if (!prompt) return;
@@ -26,6 +27,10 @@ async function validatePromptIfPresent(prompt: string | null | undefined) {
 }
 
 export const agentConfigsRouter = router({
+	claudeCodeModels: publicProcedure.query(() => {
+		return CLAUDE_CODE_MODELS;
+	}),
+
 	list: protectedProcedure
 		.input(z.object({ projectId: z.string().optional() }).optional())
 		.query(async ({ ctx, input }) => {

@@ -1,3 +1,4 @@
+import { ModelField } from '@/components/settings/model-field.js';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
@@ -99,12 +100,7 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 					<div className="grid grid-cols-2 gap-4">
 						<div className="space-y-2">
 							<Label htmlFor="gac-model">Model</Label>
-							<Input
-								id="gac-model"
-								value={model}
-								onChange={(e) => setModel(e.target.value)}
-								placeholder="Optional"
-							/>
+							<ModelField id="gac-model" value={model} onChange={setModel} backend={agentBackend} />
 						</div>
 						<div className="space-y-2">
 							<Label htmlFor="gac-iterations">Max Iterations</Label>
