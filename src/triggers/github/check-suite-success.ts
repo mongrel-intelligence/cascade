@@ -1,5 +1,10 @@
 import { getAgentCredential } from '../../config/provider.js';
-import { getAuthenticatedUser, getGitHubUserForToken, githubClient } from '../../github/client.js';
+import {
+	getAuthenticatedUser,
+	getGitHubUserForToken,
+	githubClient,
+	withGitHubToken,
+} from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
@@ -100,7 +105,12 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		}
 
 		// Verify all checks are actually passing (double-check)
-		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
+		// Use the review agent's token if available, since the default project token
+		// may lack actions:read permission (fine-grained PATs need it explicitly).
+		const fetchCheckStatus = () => githubClient.getCheckSuiteStatus(owner, repo, headSha);
+		const checkStatus = agentGitHubToken
+			? await withGitHubToken(agentGitHubToken, fetchCheckStatus)
+			: await fetchCheckStatus();
 
 		if (!checkStatus.allPassing) {
 			logger.info('Not all checks passing, skipping review trigger', {
