@@ -4,7 +4,9 @@
 
 ```bash
 npm install
-npm run dev
+cd web && npm install && cd ..
+npm run dev          # Backend
+npm run dev:web      # Dashboard frontend (separate terminal)
 ```
 
 ## Architecture
@@ -56,8 +58,10 @@ Lefthook runs pre-commit (lint, typecheck) and pre-push (test) hooks automatical
 - `src/triggers/` - Extensible trigger system (Trello, GitHub)
 - `src/agents/` - AI agent implementations
 - `src/gadgets/` - Custom gadgets (Trello, Git)
+- `src/api/` - Dashboard API (tRPC routers, auth handlers)
 - `src/trello/` - Trello API client
 - `src/utils/` - Utilities (logging, repo cloning, lifecycle)
+- `web/` - Dashboard frontend (React 19, Vite, Tailwind v4, TanStack Router)
 - `tools/` - Developer scripts (session debugging, DB seeding, secrets management)
 
 ## Environment Variables
@@ -86,6 +90,8 @@ CASCADE stores all project configuration in PostgreSQL (Supabase). The `config/p
 - `agent_configs` - Per-agent-type overrides (model, iterations, backend, prompt), scoped globally, per-org, or per-project
 - `credentials` - Org-scoped credentials (API keys, tokens)
 - `project_credential_overrides` - Per-project credential overrides (optional, falls back to org defaults)
+- `users` - Dashboard users (email, bcrypt password hash, org-scoped)
+- `sessions` - Session tokens for cookie-based auth (30-day expiry)
 
 ### Database Scripts
 
@@ -186,6 +192,54 @@ When using a Claude Max subscription (OAuth token), API costs are covered by the
 ```
 
 When enabled and the backend is `claude-code`, reported costs are zeroed after each session.
+
+## Dashboard
+
+CASCADE includes a web dashboard for exploring agent runs, logs, LLM calls, and debug analyses.
+
+### Running the Dashboard
+
+```bash
+npm run dev          # Backend on :3000 (existing tsx watch)
+npm run dev:web      # Frontend on :5173 (Vite, proxies /trpc + /api to :3000)
+```
+
+### Production Build
+
+```bash
+npm run build:web    # Vite builds frontend to dist/web/
+npm run build        # tsc compiles backend to dist/
+npm start            # Serves API + static frontend on single port
+```
+
+### Architecture
+
+The dashboard is a single-process deployment. The Hono server mounts tRPC routes (`/trpc/*`), auth routes (`/api/auth/*`), and in production serves the built frontend as static files.
+
+- **API**: tRPC v11 via `@hono/trpc-server` for end-to-end type safety
+- **Auth**: Session cookies (HTTP-only, 30-day expiry) with bcrypt password hashing
+- **Frontend**: React 19 + Vite + Tailwind CSS v4 + shadcn/ui + TanStack Router
+- **Type sharing**: Frontend imports `type AppRouter` from the backend (type-only, no server code in bundle)
+
+### User Management
+
+Users are managed via direct database inserts:
+
+```bash
+# Generate bcrypt hash
+node -e "import('bcrypt').then(b => b.default.hash('password', 10).then(console.log))"
+
+# Insert user
+psql $DATABASE_URL -c "INSERT INTO users (org_id, email, password_hash, name, role) VALUES ('my-org', 'user@example.com', '\$2b\$10\$...', 'User Name', 'admin');"
+```
+
+### Key Files
+
+- `src/api/trpc.ts` - tRPC context, procedures, auth middleware
+- `src/api/router.ts` - Root router composition (exports `type AppRouter`)
+- `src/api/routers/` - tRPC routers (auth, runs, projects)
+- `src/api/auth/` - Login/logout Hono handlers, session resolution
+- `web/src/lib/trpc.ts` - Frontend tRPC client (type-safe via AppRouter import)
 
 ## Adding New Triggers
 

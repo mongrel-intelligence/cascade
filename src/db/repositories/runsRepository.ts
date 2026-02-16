@@ -1,6 +1,12 @@
-import { desc, eq } from 'drizzle-orm';
+import { type SQL, and, asc, count, desc, eq, gte, inArray, lte } from 'drizzle-orm';
 import { getDb } from '../client.js';
-import { agentRunLlmCalls, agentRunLogs, agentRuns, debugAnalyses } from '../schema/index.js';
+import {
+	agentRunLlmCalls,
+	agentRunLogs,
+	agentRuns,
+	debugAnalyses,
+	projects,
+} from '../schema/index.js';
 
 // ============================================================================
 // Types
@@ -210,4 +216,125 @@ export async function getDebugAnalysisByDebugRunId(debugRunId: string) {
 		.from(debugAnalyses)
 		.where(eq(debugAnalyses.debugRunId, debugRunId));
 	return row ?? null;
+}
+
+// ============================================================================
+// Dashboard queries
+// ============================================================================
+
+export interface ListRunsInput {
+	orgId: string;
+	projectId?: string;
+	status?: string[];
+	agentType?: string;
+	startedAfter?: Date;
+	startedBefore?: Date;
+	limit: number;
+	offset: number;
+	sort?: 'startedAt' | 'durationMs' | 'costUsd';
+	order?: 'asc' | 'desc';
+}
+
+export async function listRuns(input: ListRunsInput) {
+	const db = getDb();
+
+	const conditions: SQL[] = [eq(projects.orgId, input.orgId)];
+
+	if (input.projectId) {
+		conditions.push(eq(agentRuns.projectId, input.projectId));
+	}
+	if (input.status && input.status.length > 0) {
+		conditions.push(inArray(agentRuns.status, input.status));
+	}
+	if (input.agentType) {
+		conditions.push(eq(agentRuns.agentType, input.agentType));
+	}
+	if (input.startedAfter) {
+		conditions.push(gte(agentRuns.startedAt, input.startedAfter));
+	}
+	if (input.startedBefore) {
+		conditions.push(lte(agentRuns.startedAt, input.startedBefore));
+	}
+
+	const where = and(...conditions);
+
+	const sortColumn =
+		input.sort === 'durationMs'
+			? agentRuns.durationMs
+			: input.sort === 'costUsd'
+				? agentRuns.costUsd
+				: agentRuns.startedAt;
+	const orderFn = input.order === 'asc' ? asc : desc;
+
+	const [data, [{ total }]] = await Promise.all([
+		db
+			.select({
+				id: agentRuns.id,
+				projectId: agentRuns.projectId,
+				projectName: projects.name,
+				cardId: agentRuns.cardId,
+				prNumber: agentRuns.prNumber,
+				agentType: agentRuns.agentType,
+				backend: agentRuns.backend,
+				triggerType: agentRuns.triggerType,
+				status: agentRuns.status,
+				model: agentRuns.model,
+				startedAt: agentRuns.startedAt,
+				completedAt: agentRuns.completedAt,
+				durationMs: agentRuns.durationMs,
+				llmIterations: agentRuns.llmIterations,
+				gadgetCalls: agentRuns.gadgetCalls,
+				costUsd: agentRuns.costUsd,
+				success: agentRuns.success,
+				prUrl: agentRuns.prUrl,
+			})
+			.from(agentRuns)
+			.innerJoin(projects, eq(agentRuns.projectId, projects.id))
+			.where(where)
+			.orderBy(orderFn(sortColumn))
+			.limit(input.limit)
+			.offset(input.offset),
+		db
+			.select({ total: count() })
+			.from(agentRuns)
+			.innerJoin(projects, eq(agentRuns.projectId, projects.id))
+			.where(where),
+	]);
+
+	return { data, total };
+}
+
+export async function getLlmCallByNumber(runId: string, callNumber: number) {
+	const db = getDb();
+	const [row] = await db
+		.select()
+		.from(agentRunLlmCalls)
+		.where(and(eq(agentRunLlmCalls.runId, runId), eq(agentRunLlmCalls.callNumber, callNumber)));
+	return row ?? null;
+}
+
+export async function listLlmCallsMeta(runId: string) {
+	const db = getDb();
+	return db
+		.select({
+			id: agentRunLlmCalls.id,
+			runId: agentRunLlmCalls.runId,
+			callNumber: agentRunLlmCalls.callNumber,
+			inputTokens: agentRunLlmCalls.inputTokens,
+			outputTokens: agentRunLlmCalls.outputTokens,
+			cachedTokens: agentRunLlmCalls.cachedTokens,
+			costUsd: agentRunLlmCalls.costUsd,
+			durationMs: agentRunLlmCalls.durationMs,
+		})
+		.from(agentRunLlmCalls)
+		.where(eq(agentRunLlmCalls.runId, runId))
+		.orderBy(agentRunLlmCalls.callNumber);
+}
+
+export async function listProjectsForOrg(orgId: string) {
+	const db = getDb();
+	return db
+		.select({ id: projects.id, name: projects.name })
+		.from(projects)
+		.where(eq(projects.orgId, orgId));
 }
