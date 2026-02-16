@@ -30,11 +30,11 @@ function unsetEnv(key: string) {
 
 const sampleTools: ToolManifest[] = [
 	{
-		name: 'ReadTrelloCard',
-		description: 'Read a Trello card.',
-		cliCommand: 'cascade-tools trello read-card',
+		name: 'ReadWorkItem',
+		description: 'Read a work item.',
+		cliCommand: 'cascade-tools pm read-work-item',
 		parameters: {
-			cardId: { type: 'string', required: true },
+			workItemId: { type: 'string', required: true },
 			includeComments: { type: 'boolean' },
 		},
 	},
@@ -83,9 +83,9 @@ describe('buildToolGuidance', () => {
 	it('generates markdown reference for tools', () => {
 		const guidance = buildToolGuidance(sampleTools);
 		expect(guidance).toContain('## CASCADE Tools');
-		expect(guidance).toContain('### ReadTrelloCard');
-		expect(guidance).toContain('cascade-tools trello read-card');
-		expect(guidance).toContain('--cardId <string>');
+		expect(guidance).toContain('### ReadWorkItem');
+		expect(guidance).toContain('cascade-tools pm read-work-item');
+		expect(guidance).toContain('--workItemId <string>');
 		expect(guidance).toContain('[--includeComments <boolean>]');
 		expect(guidance).toContain('### Finish');
 		expect(guidance).toContain('--comment <string>');
@@ -94,8 +94,8 @@ describe('buildToolGuidance', () => {
 	it('marks required params without brackets', () => {
 		const guidance = buildToolGuidance(sampleTools);
 		// Required param has no brackets
-		expect(guidance).toContain(' --cardId <string>');
-		expect(guidance).not.toContain('[--cardId');
+		expect(guidance).toContain(' --workItemId <string>');
+		expect(guidance).not.toContain('[--workItemId');
 	});
 
 	it('marks optional params with brackets', () => {
@@ -112,15 +112,15 @@ describe('buildTaskPrompt', () => {
 	it('appends context injections', () => {
 		const prompt = buildTaskPrompt('Do the thing.', [
 			{
-				toolName: 'ReadTrelloCard',
-				params: { cardId: 'abc' },
+				toolName: 'ReadWorkItem',
+				params: { workItemId: 'abc' },
 				result: '{"title":"My card"}',
-				description: 'Pre-fetched Trello card data',
+				description: 'Pre-fetched work item data',
 			},
 		]);
 		expect(prompt).toContain('## Pre-loaded Context');
-		expect(prompt).toContain('### Pre-fetched Trello card data (ReadTrelloCard)');
-		expect(prompt).toContain('"cardId":"abc"');
+		expect(prompt).toContain('### Pre-fetched work item data (ReadWorkItem)');
+		expect(prompt).toContain('"workItemId":"abc"');
 		expect(prompt).toContain('{"title":"My card"}');
 	});
 });

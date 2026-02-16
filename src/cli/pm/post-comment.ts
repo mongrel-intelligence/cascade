@@ -1,12 +1,12 @@
 import { Args, Flags } from '@oclif/core';
-import { postComment } from '../../gadgets/trello/core/postComment.js';
+import { postComment } from '../../gadgets/pm/core/postComment.js';
 import { CredentialScopedCommand } from '../base.js';
 
 export default class PostComment extends CredentialScopedCommand {
-	static override description = 'Post a comment to a Trello card.';
+	static override description = 'Post a comment to a work item.';
 
 	static override args = {
-		cardId: Args.string({ description: 'The Trello card ID', required: true }),
+		workItemId: Args.string({ description: 'The work item ID', required: true }),
 	};
 
 	static override flags = {
@@ -15,7 +15,7 @@ export default class PostComment extends CredentialScopedCommand {
 
 	async execute(): Promise<void> {
 		const { args, flags } = await this.parse(PostComment);
-		const result = await postComment(args.cardId, flags.text);
+		const result = await postComment(args.workItemId, flags.text);
 		this.log(JSON.stringify({ success: true, data: result }));
 	}
 }
