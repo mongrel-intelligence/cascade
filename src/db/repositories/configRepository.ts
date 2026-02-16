@@ -1,8 +1,15 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { type SQL, and, eq, isNull, sql } from 'drizzle-orm';
 import { validateConfig } from '../../config/schema.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { getDb } from '../client.js';
-import { agentConfigs, cascadeDefaults, projects } from '../schema/index.js';
+import { agentConfigs, cascadeDefaults, projectIntegrations, projects } from '../schema/index.js';
+
+interface TrelloIntegrationConfig {
+	boardId: string;
+	lists: Record<string, string>;
+	labels: Record<string, string>;
+	customFields?: { cost?: string };
+}
 
 interface DefaultsRow {
 	model: string | null;
@@ -22,7 +29,7 @@ interface AgentConfigRow {
 	agentType: string;
 	model: string | null;
 	maxIterations: number | null;
-	backend: string | null;
+	agentBackend: string | null;
 	prompt: string | null;
 }
 
@@ -35,22 +42,13 @@ function buildAgentMaps(configs: AgentConfigRow[]) {
 		if (ac.model) models[ac.agentType] = ac.model;
 		if (ac.maxIterations != null) iterations[ac.agentType] = ac.maxIterations;
 		if (ac.prompt) prompts[ac.agentType] = ac.prompt;
-		if (ac.backend) backends[ac.agentType] = ac.backend;
+		if (ac.agentBackend) backends[ac.agentType] = ac.agentBackend;
 	}
 	return { models, iterations, prompts, backends };
 }
 
 function orUndefined<T extends Record<string, unknown>>(obj: T): T | undefined {
 	return Object.keys(obj).length > 0 ? obj : undefined;
-}
-
-/** Filter null/undefined values from a key-value mapping, returning only string entries. */
-function compactRecord(entries: Record<string, string | null>): Record<string, string> {
-	const result: Record<string, string> = {};
-	for (const [key, value] of Object.entries(entries)) {
-		if (value != null) result[key] = value;
-	}
-	return result;
 }
 
 function mapDefaultsRow(row: DefaultsRow | undefined, globalAgentConfigs: AgentConfigRow[]) {
@@ -78,27 +76,9 @@ type ProjectRow = typeof projects.$inferSelect;
 function mapProjectRow(
 	row: ProjectRow,
 	projectAgentConfigs: AgentConfigRow[],
+	trelloConfig?: TrelloIntegrationConfig,
 ): Record<string, unknown> {
 	const { models, prompts, backends } = buildAgentMaps(projectAgentConfigs);
-
-	const lists = compactRecord({
-		briefing: row.trelloListBriefing,
-		stories: row.trelloListStories,
-		planning: row.trelloListPlanning,
-		todo: row.trelloListTodo,
-		inProgress: row.trelloListInProgress,
-		inReview: row.trelloListInReview,
-		done: row.trelloListDone,
-		merged: row.trelloListMerged,
-		debug: row.trelloListDebug,
-	});
-
-	const labels = compactRecord({
-		readyToProcess: row.trelloLabelReadyToProcess,
-		processing: row.trelloLabelProcessing,
-		processed: row.trelloLabelProcessed,
-		error: row.trelloLabelError,
-	});
 
 	const project: Record<string, unknown> = {
 		id: row.id,
@@ -107,21 +87,23 @@ function mapProjectRow(
 		repo: row.repo,
 		baseBranch: row.baseBranch ?? 'main',
 		branchPrefix: row.branchPrefix ?? 'feature/',
-		trello: {
-			boardId: row.trelloBoardId,
-			lists,
-			labels,
-			customFields: row.trelloCustomFieldCost ? { cost: row.trelloCustomFieldCost } : undefined,
-		},
+		trello: trelloConfig
+			? {
+					boardId: trelloConfig.boardId,
+					lists: trelloConfig.lists,
+					labels: trelloConfig.labels,
+					customFields: trelloConfig.customFields,
+				}
+			: { boardId: '', lists: {}, labels: {} },
 		prompts: orUndefined(prompts),
 		model: row.model ?? undefined,
 		agentModels: orUndefined(models),
 		cardBudgetUsd: row.cardBudgetUsd ? Number(row.cardBudgetUsd) : undefined,
 	};
 
-	if (row.agentBackendDefault) {
+	if (row.agentBackend) {
 		project.agentBackend = {
-			default: row.agentBackendDefault,
+			default: row.agentBackend,
 			overrides: backends,
 			subscriptionCostZero: row.subscriptionCostZero ?? false,
 		};
@@ -138,10 +120,24 @@ async function loadAgentConfigs(): Promise<AgentConfigRow[]> {
 export async function loadConfigFromDb(): Promise<CascadeConfig> {
 	const db = getDb();
 
-	// Load first defaults row (for the primary/default org)
-	const [defaultsRow] = await db.select().from(cascadeDefaults).limit(1);
-	const projectRows = await db.select().from(projects);
-	const allAgentConfigs = await loadAgentConfigs();
+	const [defaultsRow, projectRows, allAgentConfigs, integrationRows] = await Promise.all([
+		db
+			.select()
+			.from(cascadeDefaults)
+			.limit(1)
+			.then((r) => r[0]),
+		db.select().from(projects),
+		loadAgentConfigs(),
+		db.select().from(projectIntegrations),
+	]);
+
+	// Index integrations by project ID
+	const integrationsByProject = new Map<string, typeof integrationRows>();
+	for (const row of integrationRows) {
+		const existing = integrationsByProject.get(row.projectId) ?? [];
+		existing.push(row);
+		integrationsByProject.set(row.projectId, existing);
+	}
 
 	// Split agent configs: global (project_id IS NULL, org_id IS NULL) and per-project
 	// Also collect org-level configs (org_id set, project_id IS NULL) as fallback globals
@@ -170,93 +166,67 @@ export async function loadConfigFromDb(): Promise<CascadeConfig> {
 
 	const rawConfig = {
 		defaults: mapDefaultsRow(defaultsRow, mergedGlobalConfigs),
-		projects: projectRows.map((row) =>
-			mapProjectRow(row, projectAgentConfigsMap.get(row.id) ?? []),
-		),
+		projects: projectRows.map((row) => {
+			const integrations = integrationsByProject.get(row.id) ?? [];
+			const trelloConfig = integrations.find((i) => i.type === 'trello')?.config as
+				| TrelloIntegrationConfig
+				| undefined;
+			return mapProjectRow(row, projectAgentConfigsMap.get(row.id) ?? [], trelloConfig);
+		}),
 	};
 
 	return validateConfig(rawConfig);
 }
 
-export async function findProjectByBoardIdFromDb(
-	boardId: string,
-): Promise<ProjectConfig | undefined> {
+async function findProjectFromDb(whereClause: SQL): Promise<ProjectConfig | undefined> {
 	const db = getDb();
-	const [row] = await db.select().from(projects).where(eq(projects.trelloBoardId, boardId));
+	const [row] = await db.select().from(projects).where(whereClause);
 	if (!row) return undefined;
 
-	const projectAcs = await db.select().from(agentConfigs).where(eq(agentConfigs.projectId, row.id));
-	const orgAcs = await db
-		.select()
-		.from(agentConfigs)
-		.where(and(eq(agentConfigs.orgId, row.orgId), isNull(agentConfigs.projectId)));
-	const globalAcs = await db
-		.select()
-		.from(agentConfigs)
-		.where(and(isNull(agentConfigs.projectId), isNull(agentConfigs.orgId)));
+	const [projectAcs, orgAcs, globalAcs, defaultsRow, integrations] = await Promise.all([
+		db.select().from(agentConfigs).where(eq(agentConfigs.projectId, row.id)),
+		db
+			.select()
+			.from(agentConfigs)
+			.where(and(eq(agentConfigs.orgId, row.orgId), isNull(agentConfigs.projectId))),
+		db
+			.select()
+			.from(agentConfigs)
+			.where(and(isNull(agentConfigs.projectId), isNull(agentConfigs.orgId))),
+		db
+			.select()
+			.from(cascadeDefaults)
+			.where(eq(cascadeDefaults.orgId, row.orgId))
+			.then((r) => r[0]),
+		db.select().from(projectIntegrations).where(eq(projectIntegrations.projectId, row.id)),
+	]);
 
-	const [defaultsRow] = await db
-		.select()
-		.from(cascadeDefaults)
-		.where(eq(cascadeDefaults.orgId, row.orgId));
+	const trelloConfig = integrations.find((i) => i.type === 'trello')?.config as
+		| TrelloIntegrationConfig
+		| undefined;
+
 	const rawConfig = {
 		defaults: mapDefaultsRow(defaultsRow, [...globalAcs, ...orgAcs]),
-		projects: [mapProjectRow(row, projectAcs)],
+		projects: [mapProjectRow(row, projectAcs, trelloConfig)],
 	};
 	const validated = validateConfig(rawConfig);
 	return validated.projects[0];
 }
 
-export async function findProjectByRepoFromDb(repo: string): Promise<ProjectConfig | undefined> {
-	const db = getDb();
-	const [row] = await db.select().from(projects).where(eq(projects.repo, repo));
-	if (!row) return undefined;
-
-	const projectAcs = await db.select().from(agentConfigs).where(eq(agentConfigs.projectId, row.id));
-	const orgAcs = await db
-		.select()
-		.from(agentConfigs)
-		.where(and(eq(agentConfigs.orgId, row.orgId), isNull(agentConfigs.projectId)));
-	const globalAcs = await db
-		.select()
-		.from(agentConfigs)
-		.where(and(isNull(agentConfigs.projectId), isNull(agentConfigs.orgId)));
-
-	const [defaultsRow] = await db
-		.select()
-		.from(cascadeDefaults)
-		.where(eq(cascadeDefaults.orgId, row.orgId));
-	const rawConfig = {
-		defaults: mapDefaultsRow(defaultsRow, [...globalAcs, ...orgAcs]),
-		projects: [mapProjectRow(row, projectAcs)],
-	};
-	const validated = validateConfig(rawConfig);
-	return validated.projects[0];
+export function findProjectByBoardIdFromDb(boardId: string): Promise<ProjectConfig | undefined> {
+	return findProjectFromDb(
+		sql`${projects.id} IN (
+			SELECT ${projectIntegrations.projectId} FROM ${projectIntegrations}
+			WHERE ${projectIntegrations.type} = 'trello'
+			AND ${projectIntegrations.config}->>'boardId' = ${boardId}
+		)`,
+	);
 }
 
-export async function findProjectByIdFromDb(id: string): Promise<ProjectConfig | undefined> {
-	const db = getDb();
-	const [row] = await db.select().from(projects).where(eq(projects.id, id));
-	if (!row) return undefined;
+export function findProjectByRepoFromDb(repo: string): Promise<ProjectConfig | undefined> {
+	return findProjectFromDb(eq(projects.repo, repo));
+}
 
-	const projectAcs = await db.select().from(agentConfigs).where(eq(agentConfigs.projectId, row.id));
-	const orgAcs = await db
-		.select()
-		.from(agentConfigs)
-		.where(and(eq(agentConfigs.orgId, row.orgId), isNull(agentConfigs.projectId)));
-	const globalAcs = await db
-		.select()
-		.from(agentConfigs)
-		.where(and(isNull(agentConfigs.projectId), isNull(agentConfigs.orgId)));
-
-	const [defaultsRow] = await db
-		.select()
-		.from(cascadeDefaults)
-		.where(eq(cascadeDefaults.orgId, row.orgId));
-	const rawConfig = {
-		defaults: mapDefaultsRow(defaultsRow, [...globalAcs, ...orgAcs]),
-		projects: [mapProjectRow(row, projectAcs)],
-	};
-	const validated = validateConfig(rawConfig);
-	return validated.projects[0];
+export function findProjectByIdFromDb(id: string): Promise<ProjectConfig | undefined> {
+	return findProjectFromDb(eq(projects.id, id));
 }

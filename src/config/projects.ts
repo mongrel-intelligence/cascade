@@ -7,7 +7,3 @@ export async function getProjectGitHubToken(project: ProjectConfig): Promise<str
 
 	throw new Error(`Missing GITHUB_TOKEN in database for project '${project.id}'`);
 }
-
-export async function getProjectReviewerToken(project: ProjectConfig): Promise<string | null> {
-	return getProjectSecretOrNull(project.id, 'GITHUB_REVIEWER_TOKEN');
-}

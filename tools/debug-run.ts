@@ -8,13 +8,13 @@
  * Requires DATABASE_URL to be set.
  */
 
+import { getProjectSecrets } from '../src/config/provider.js';
 import { closeDb } from '../src/db/client.js';
 import {
 	findProjectByIdFromDb,
 	loadConfigFromDb,
 } from '../src/db/repositories/configRepository.js';
 import { getRunById } from '../src/db/repositories/runsRepository.js';
-import { getProjectSecrets } from '../src/db/repositories/secretsRepository.js';
 import { withTrelloCredentials } from '../src/trello/client.js';
 import { triggerDebugAnalysis } from '../src/triggers/shared/debug-runner.js';
 

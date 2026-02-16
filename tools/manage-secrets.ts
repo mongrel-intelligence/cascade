@@ -6,8 +6,8 @@
  *   npx tsx tools/manage-secrets.ts create <org-id> <env-var-key> <value> [--name "..."] [--description "..."] [--default]
  *   npx tsx tools/manage-secrets.ts list <org-id>
  *   npx tsx tools/manage-secrets.ts delete <credential-id>
- *   npx tsx tools/manage-secrets.ts set-override <project-id> <env-var-key> <credential-id>
- *   npx tsx tools/manage-secrets.ts remove-override <project-id> <env-var-key>
+ *   npx tsx tools/manage-secrets.ts set-override <project-id> <env-var-key> <credential-id> [--agent-type <type>]
+ *   npx tsx tools/manage-secrets.ts remove-override <project-id> <env-var-key> [--agent-type <type>]
  *   npx tsx tools/manage-secrets.ts resolve <project-id>
  *
  * Requires DATABASE_URL to be set.
@@ -20,8 +20,10 @@ import {
 	deleteCredential,
 	listOrgCredentials,
 	listProjectOverrides,
+	removeAgentCredentialOverride,
 	removeProjectCredentialOverride,
 	resolveAllCredentials,
+	setAgentCredentialOverride,
 	setProjectCredentialOverride,
 } from '../src/db/repositories/credentialsRepository.js';
 
@@ -33,9 +35,11 @@ function printUsage(): void {
 	console.log('  npx tsx tools/manage-secrets.ts list <org-id>');
 	console.log('  npx tsx tools/manage-secrets.ts delete <credential-id>');
 	console.log(
-		'  npx tsx tools/manage-secrets.ts set-override <project-id> <env-var-key> <credential-id>',
+		'  npx tsx tools/manage-secrets.ts set-override <project-id> <env-var-key> <credential-id> [--agent-type <type>]',
 	);
-	console.log('  npx tsx tools/manage-secrets.ts remove-override <project-id> <env-var-key>');
+	console.log(
+		'  npx tsx tools/manage-secrets.ts remove-override <project-id> <env-var-key> [--agent-type <type>]',
+	);
 	console.log('  npx tsx tools/manage-secrets.ts resolve <project-id>');
 }
 
@@ -141,8 +145,16 @@ async function main() {
 				console.error('Error: credential-id must be a number');
 				process.exit(1);
 			}
-			await setProjectCredentialOverride(projectId, envVarKey, credId);
-			console.log(`Set override: project ${projectId} → ${envVarKey} → credential #${credId}`);
+			const agentType = parseFlag(args, '--agent-type');
+			if (agentType) {
+				await setAgentCredentialOverride(projectId, envVarKey, agentType, credId);
+				console.log(
+					`Set agent override: project ${projectId} → ${envVarKey} → credential #${credId} (agent: ${agentType})`,
+				);
+			} else {
+				await setProjectCredentialOverride(projectId, envVarKey, credId);
+				console.log(`Set override: project ${projectId} → ${envVarKey} → credential #${credId}`);
+			}
 			break;
 		}
 
@@ -153,8 +165,16 @@ async function main() {
 				printUsage();
 				process.exit(1);
 			}
-			await removeProjectCredentialOverride(projectId, envVarKey);
-			console.log(`Removed override: project ${projectId} → ${envVarKey}`);
+			const agentType = parseFlag(args, '--agent-type');
+			if (agentType) {
+				await removeAgentCredentialOverride(projectId, envVarKey, agentType);
+				console.log(
+					`Removed agent override: project ${projectId} → ${envVarKey} (agent: ${agentType})`,
+				);
+			} else {
+				await removeProjectCredentialOverride(projectId, envVarKey);
+				console.log(`Removed override: project ${projectId} → ${envVarKey}`);
+			}
 			break;
 		}
 
@@ -172,15 +192,24 @@ async function main() {
 			}
 			const resolved = await resolveAllCredentials(projectId, project.orgId);
 			const overrides = await listProjectOverrides(projectId);
-			const overrideKeys = new Set(overrides.map((o) => o.envVarKey));
+			const projectOverrideKeys = new Set(
+				overrides.filter((o) => !o.agentType).map((o) => o.envVarKey),
+			);
+			const agentOverrides = overrides.filter((o) => o.agentType);
 
-			if (Object.keys(resolved).length === 0) {
+			if (Object.keys(resolved).length === 0 && agentOverrides.length === 0) {
 				console.log(`No credentials resolved for project ${projectId}`);
 			} else {
 				console.log(`Resolved credentials for project ${projectId} (org: ${project.orgId}):`);
 				for (const [key, value] of Object.entries(resolved)) {
-					const source = overrideKeys.has(key) ? 'override' : 'org-default';
+					const source = projectOverrideKeys.has(key) ? 'override' : 'org-default';
 					console.log(`  ${key}: ${maskValue(value)} [${source}]`);
+				}
+				if (agentOverrides.length > 0) {
+					console.log('  Agent-scoped overrides:');
+					for (const o of agentOverrides) {
+						console.log(`    ${o.envVarKey} → ${o.credentialName} (agent: ${o.agentType})`);
+					}
 				}
 			}
 			break;

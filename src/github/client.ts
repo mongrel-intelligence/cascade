@@ -388,7 +388,7 @@ export async function getAuthenticatedUser(): Promise<string> {
 	return data.login;
 }
 
-export async function getReviewerUser(token: string | null): Promise<string | null> {
+export async function getGitHubUserForToken(token: string | null): Promise<string | null> {
 	if (!token) return null;
 
 	try {
