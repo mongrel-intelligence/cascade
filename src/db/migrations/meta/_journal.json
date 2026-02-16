@@ -1,1 +1,41 @@
-{"version":"7","dialect":"postgresql","entries":[]}
+{
+	"version": "7",
+	"dialect": "postgresql",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "7",
+			"when": 1736000000000,
+			"tag": "0001_three_tier_normalization",
+			"breakpoints": false
+		},
+		{
+			"idx": 1,
+			"version": "7",
+			"when": 1737000000000,
+			"tag": "0002_agent_run_tracking",
+			"breakpoints": false
+		},
+		{
+			"idx": 2,
+			"version": "7",
+			"when": 1738000000000,
+			"tag": "0003_organizations_and_credentials",
+			"breakpoints": false
+		},
+		{
+			"idx": 3,
+			"version": "7",
+			"when": 1739000000000,
+			"tag": "0004_agent_credential_overrides",
+			"breakpoints": false
+		},
+		{
+			"idx": 4,
+			"version": "7",
+			"when": 1740000000000,
+			"tag": "0005_config_schema_cleanup",
+			"breakpoints": false
+		}
+	]
+}

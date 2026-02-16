@@ -90,12 +90,23 @@ CASCADE stores all project configuration in PostgreSQL (Supabase). The `config/p
 ### Database Scripts
 
 ```bash
-npm run db:generate      # Generate migration SQL from schema changes
-npm run db:migrate       # Apply migrations
-npm run db:push          # Push schema directly (dev)
-npm run db:studio        # Open Drizzle Studio
-npm run db:seed          # Seed DB from config/projects.json
+npm run db:generate            # Generate migration SQL from schema changes
+npm run db:migrate             # Apply pending migrations
+npm run db:push                # Push schema directly (dev only)
+npm run db:studio              # Open Drizzle Studio
+npm run db:seed                # Seed DB from config/projects.json
+npm run db:bootstrap-journal   # Bootstrap migration journal (one-time setup for existing DBs)
 ```
+
+### Migration Workflow
+
+Migrations are hand-written SQL files in `src/db/migrations/` tracked by drizzle-kit's journal (`meta/_journal.json`). When adding a new migration:
+
+1. Create `src/db/migrations/NNNN_description.sql`
+2. Add a corresponding entry to `src/db/migrations/meta/_journal.json` with a unique `when` timestamp (ms since epoch) and `tag` matching the filename without `.sql`
+3. Run `npm run db:migrate` to apply
+
+For databases initially set up with `drizzle-kit push` (no migration journal), run `npm run db:bootstrap-journal` once to register existing migrations in the `drizzle.__drizzle_migrations` tracking table.
 
 ### Per-Project Secrets
 
