@@ -38,3 +38,7 @@ workspace/
 
 # Test artifacts
 test-results/
+
+# Claude Code — commit settings.json but exclude local settings (may contain secrets)
+.claude/settings.local.json
+

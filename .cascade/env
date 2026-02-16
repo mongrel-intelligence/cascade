@@ -1,0 +1,3 @@
+CI=true
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/cascade
+DATABASE_SSL=false

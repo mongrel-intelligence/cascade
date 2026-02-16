@@ -50,6 +50,21 @@ vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
 	removeProjectCredentialOverride: vi.fn(),
 	setAgentCredentialOverride: vi.fn(),
 	removeAgentCredentialOverride: vi.fn(),
+	resolveAllCredentials: vi.fn(),
+}));
+
+vi.mock('../../../src/db/repositories/configRepository.js', () => ({
+	findProjectByIdFromDb: vi.fn(),
+}));
+
+vi.mock('@octokit/rest', () => ({
+	Octokit: vi.fn(() => ({
+		repos: {
+			listWebhooks: vi.fn(),
+			createWebhook: vi.fn(),
+			deleteWebhook: vi.fn(),
+		},
+	})),
 }));
 
 import { appRouter } from '../../../src/api/router.js';
@@ -114,5 +129,12 @@ describe('appRouter', () => {
 		expect(procedures).toContain('agentConfigs.create');
 		expect(procedures).toContain('agentConfigs.update');
 		expect(procedures).toContain('agentConfigs.delete');
+	});
+
+	it('has webhooks sub-router with all procedures', () => {
+		const procedures = Object.keys(appRouter._def.procedures);
+		expect(procedures).toContain('webhooks.list');
+		expect(procedures).toContain('webhooks.create');
+		expect(procedures).toContain('webhooks.delete');
 	});
 });
