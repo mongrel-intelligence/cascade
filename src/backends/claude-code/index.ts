@@ -20,6 +20,20 @@ import { buildHooks } from './hooks.js';
 import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
 
 /**
+ * Format a single CLI parameter for tool guidance documentation.
+ */
+function formatParam(key: string, schema: { type: string; required?: boolean }): string {
+	if (schema.type === 'array') {
+		// Array params use repeated flags: --item "a" --item "b"
+		const singular = key.replace(/s$/, '');
+		return schema.required
+			? ` --${singular} <string> (repeatable)`
+			: ` [--${singular} <string> (repeatable)]`;
+	}
+	return schema.required ? ` --${key} <${schema.type}>` : ` [--${key} <${schema.type}>]`;
+}
+
+/**
  * Build prompt guidance for CASCADE-specific CLI tools.
  * The Claude Code agent invokes these via its built-in Bash tool.
  */
@@ -41,8 +55,7 @@ export function buildToolGuidance(tools: ToolManifest[]): string {
 		guidance += `\`\`\`bash\n${tool.cliCommand}`;
 
 		for (const [key, schema] of Object.entries(tool.parameters)) {
-			const s = schema as { type: string; required?: boolean };
-			guidance += s.required ? ` --${key} <${s.type}>` : ` [--${key} <${s.type}>]`;
+			guidance += formatParam(key, schema as { type: string; required?: boolean });
 		}
 
 		guidance += '\n```\n\n';
