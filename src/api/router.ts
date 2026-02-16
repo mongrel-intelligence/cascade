@@ -5,6 +5,7 @@ import { defaultsRouter } from './routers/defaults.js';
 import { organizationRouter } from './routers/organization.js';
 import { projectsRouter } from './routers/projects.js';
 import { runsRouter } from './routers/runs.js';
+import { webhooksRouter } from './routers/webhooks.js';
 import { router } from './trpc.js';
 
 export const appRouter = router({
@@ -15,6 +16,7 @@ export const appRouter = router({
 	defaults: defaultsRouter,
 	credentials: credentialsRouter,
 	agentConfigs: agentConfigsRouter,
+	webhooks: webhooksRouter,
 });
 
 export type AppRouter = typeof appRouter;
