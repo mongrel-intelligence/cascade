@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('clsx', () => ({ clsx: (...args: unknown[]) => args.join(' ') }));
+vi.mock('tailwind-merge', () => ({ twMerge: (s: string) => s }));
+
 import { formatCost, formatDuration, formatRelativeTime } from '../../../web/src/lib/utils.js';
 
 describe('formatDuration', () => {
