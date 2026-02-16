@@ -511,10 +511,11 @@ describe('executeWithBackend', () => {
 		expect(backendInput.projectSecrets).toEqual({
 			GITHUB_TOKEN: 'proj-gh-token',
 			TRELLO_API_KEY: 'proj-trello-key',
+			CASCADE_BASE_BRANCH: 'main',
 		});
 	});
 
-	it('omits projectSecrets when no per-project secrets are found', async () => {
+	it('includes CASCADE_BASE_BRANCH even when no other per-project secrets exist', async () => {
 		setupMocks();
 		mockGetProjectSecrets.mockResolvedValue({});
 
@@ -524,6 +525,8 @@ describe('executeWithBackend', () => {
 		await executeWithBackend(backend, 'implementation', input);
 
 		const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
-		expect(backendInput.projectSecrets).toBeUndefined();
+		expect(backendInput.projectSecrets).toEqual({
+			CASCADE_BASE_BRANCH: 'main',
+		});
 	});
 });

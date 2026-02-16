@@ -12,6 +12,7 @@ import { getPMProvider } from '../../pm/index.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { cleanupTempDir } from '../../utils/repo.js';
+import { markAnalysisComplete, markAnalysisRunning } from './debug-status.js';
 
 /**
  * Extract logs from the database and write them to a temp directory
@@ -151,6 +152,7 @@ export async function triggerDebugAnalysis(
 		cardId,
 	});
 
+	markAnalysisRunning(analyzedRunId);
 	let logDir: string | undefined;
 	try {
 		logDir = await extractLogsToTempDir(analyzedRunId);
@@ -175,7 +177,8 @@ export async function triggerDebugAnalysis(
 			timeline: parsed.timeline,
 			recommendations: parsed.recommendations,
 			rootCause: parsed.rootCause,
-			severity: run.status === 'timed_out' ? 'timeout' : 'failure',
+			severity:
+				run.status === 'timed_out' ? 'timeout' : run.status === 'failed' ? 'failure' : 'manual',
 		});
 
 		if (cardId && parsed.summary) {
@@ -188,6 +191,7 @@ export async function triggerDebugAnalysis(
 			success: agentResult.success,
 		});
 	} finally {
+		markAnalysisComplete(analyzedRunId);
 		if (logDir) {
 			try {
 				cleanupTempDir(logDir);

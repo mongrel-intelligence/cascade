@@ -28,6 +28,11 @@ vi.mock('../../../src/utils/repo.js', () => ({
 	cleanupTempDir: vi.fn(),
 }));
 
+vi.mock('../../../src/triggers/shared/debug-status.js', () => ({
+	markAnalysisRunning: vi.fn(),
+	markAnalysisComplete: vi.fn(),
+}));
+
 import { runAgent } from '../../../src/agents/registry.js';
 import {
 	getLlmCallsByRunId,
@@ -38,6 +43,10 @@ import {
 import type { PMProvider } from '../../../src/pm/index.js';
 import { getPMProvider } from '../../../src/pm/index.js';
 import { triggerDebugAnalysis } from '../../../src/triggers/shared/debug-runner.js';
+import {
+	markAnalysisComplete,
+	markAnalysisRunning,
+} from '../../../src/triggers/shared/debug-status.js';
 
 const mockPMProvider = { addComment: vi.fn() };
 import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
@@ -149,6 +158,77 @@ describe('triggerDebugAnalysis', () => {
 		expect(storeDebugAnalysis).toHaveBeenCalledWith(
 			expect.objectContaining({
 				severity: 'timeout',
+			}),
+		);
+	});
+
+	it('calls markAnalysisRunning at start and markAnalysisComplete on success', async () => {
+		vi.mocked(getRunById).mockResolvedValue({
+			id: 'run-1',
+			agentType: 'implementation',
+			status: 'failed',
+		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
+
+		vi.mocked(getRunLogs).mockResolvedValue(null);
+		vi.mocked(getLlmCallsByRunId).mockResolvedValue([]);
+
+		vi.mocked(runAgent).mockResolvedValue({
+			success: true,
+			output: '## Executive Summary\nFailed.\n',
+			runId: 'debug-run-status',
+		});
+
+		vi.mocked(storeDebugAnalysis).mockResolvedValue('da-status');
+
+		await triggerDebugAnalysis('run-1', mockProject, mockConfig);
+
+		expect(markAnalysisRunning).toHaveBeenCalledWith('run-1');
+		expect(markAnalysisComplete).toHaveBeenCalledWith('run-1');
+	});
+
+	it('calls markAnalysisComplete even when agent throws', async () => {
+		vi.mocked(getRunById).mockResolvedValue({
+			id: 'run-1',
+			agentType: 'implementation',
+			status: 'failed',
+		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
+
+		vi.mocked(getRunLogs).mockResolvedValue(null);
+		vi.mocked(getLlmCallsByRunId).mockResolvedValue([]);
+
+		vi.mocked(runAgent).mockRejectedValue(new Error('Agent crashed'));
+
+		await expect(triggerDebugAnalysis('run-1', mockProject, mockConfig)).rejects.toThrow(
+			'Agent crashed',
+		);
+
+		expect(markAnalysisRunning).toHaveBeenCalledWith('run-1');
+		expect(markAnalysisComplete).toHaveBeenCalledWith('run-1');
+	});
+
+	it('sets severity to manual for completed runs', async () => {
+		vi.mocked(getRunById).mockResolvedValue({
+			id: 'run-1',
+			agentType: 'implementation',
+			status: 'completed',
+		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
+
+		vi.mocked(getRunLogs).mockResolvedValue(null);
+		vi.mocked(getLlmCallsByRunId).mockResolvedValue([]);
+
+		vi.mocked(runAgent).mockResolvedValue({
+			success: true,
+			output: '## Executive Summary\nCompleted analysis.\n',
+			runId: 'debug-run-manual',
+		});
+
+		vi.mocked(storeDebugAnalysis).mockResolvedValue('da-manual');
+
+		await triggerDebugAnalysis('run-1', mockProject, mockConfig);
+
+		expect(storeDebugAnalysis).toHaveBeenCalledWith(
+			expect.objectContaining({
+				severity: 'manual',
 			}),
 		);
 	});

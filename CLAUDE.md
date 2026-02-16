@@ -275,7 +275,9 @@ cascade runs show <run-id>
 cascade runs logs <run-id>                    # Pipe: cascade runs logs ID | grep error
 cascade runs llm-calls <run-id>
 cascade runs llm-call <run-id> <call-number>
-cascade runs debug <run-id>
+cascade runs debug <run-id>                    # View debug analysis
+cascade runs debug <run-id> --analyze          # Trigger new debug analysis
+cascade runs debug <run-id> --analyze --wait   # Trigger and wait for completion
 
 # Projects
 cascade projects list
