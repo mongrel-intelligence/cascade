@@ -36,6 +36,13 @@
 			"when": 1740000000000,
 			"tag": "0005_config_schema_cleanup",
 			"breakpoints": false
+		},
+		{
+			"idx": 5,
+			"version": "7",
+			"when": 1741000000000,
+			"tag": "0006_users_and_sessions",
+			"breakpoints": false
 		}
 	]
 }

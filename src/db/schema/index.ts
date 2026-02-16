@@ -5,3 +5,4 @@ export { agentConfigs } from './agentConfigs.js';
 export { projectIntegrations } from './integrations.js';
 export { projects } from './projects.js';
 export { agentRunLlmCalls, agentRunLogs, agentRuns, debugAnalyses } from './runs.js';
+export { sessions, users } from './users.js';
