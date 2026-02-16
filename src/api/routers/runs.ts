@@ -15,6 +15,7 @@ import {
 import { projects } from '../../db/schema/index.js';
 import { triggerDebugAnalysis } from '../../triggers/shared/debug-runner.js';
 import { isAnalysisRunning } from '../../triggers/shared/debug-status.js';
+import { triggerManualRun, triggerRetryRun } from '../../triggers/shared/manual-runner.js';
 import { logger } from '../../utils/logging.js';
 import { protectedProcedure, router } from '../trpc.js';
 
@@ -165,6 +166,120 @@ export const runsRouter = router({
 			// Fire-and-forget
 			triggerDebugAnalysis(input.runId, project, config, run.cardId ?? undefined).catch((err) => {
 				logger.error('Manual debug analysis failed', {
+					runId: input.runId,
+					error: String(err),
+				});
+			});
+
+			return { triggered: true };
+		}),
+
+	trigger: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string(),
+				agentType: z.string(),
+				cardId: z.string().optional(),
+				prNumber: z.number().optional(),
+				prBranch: z.string().optional(),
+				repoFullName: z.string().optional(),
+				headSha: z.string().optional(),
+				model: z.string().optional(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			// Verify org ownership of project
+			const db = getDb();
+			const [project] = await db
+				.select({ orgId: projects.orgId })
+				.from(projects)
+				.where(eq(projects.id, input.projectId));
+
+			if (!project || project.orgId !== ctx.user.orgId) {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'Project not found',
+				});
+			}
+
+			const projectConfig = await findProjectById(input.projectId);
+			if (!projectConfig) {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'Project configuration not found',
+				});
+			}
+
+			const config = await loadConfig();
+
+			// Fire-and-forget
+			triggerManualRun(
+				{
+					projectId: input.projectId,
+					agentType: input.agentType,
+					cardId: input.cardId,
+					prNumber: input.prNumber,
+					prBranch: input.prBranch,
+					repoFullName: input.repoFullName,
+					headSha: input.headSha,
+					modelOverride: input.model,
+				},
+				projectConfig,
+				config,
+			).catch((err) => {
+				logger.error('Manual trigger failed', {
+					projectId: input.projectId,
+					agentType: input.agentType,
+					error: String(err),
+				});
+			});
+
+			return { triggered: true };
+		}),
+
+	retry: protectedProcedure
+		.input(
+			z.object({
+				runId: z.string().uuid(),
+				model: z.string().optional(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const run = await getRunById(input.runId);
+			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
+
+			// Verify org access
+			if (run.projectId) {
+				const db = getDb();
+				const [project] = await db
+					.select({ orgId: projects.orgId })
+					.from(projects)
+					.where(eq(projects.id, run.projectId));
+				if (!project || project.orgId !== ctx.user.orgId) {
+					throw new TRPCError({ code: 'NOT_FOUND' });
+				}
+			}
+
+			if (!run.projectId) {
+				throw new TRPCError({
+					code: 'BAD_REQUEST',
+					message: 'Run has no associated project',
+				});
+			}
+
+			const projectConfig = await findProjectById(run.projectId);
+			if (!projectConfig) {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'Project configuration not found',
+				});
+			}
+
+			const config = await loadConfig();
+
+			// Fire-and-forget
+			triggerRetryRun(input.runId, projectConfig, config, input.model).catch((err) => {
+				logger.error('Retry run failed', {
 					runId: input.runId,
 					error: String(err),
 				});

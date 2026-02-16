@@ -1,0 +1,276 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../../src/agents/registry.js', () => ({
+	runAgent: vi.fn(),
+}));
+
+vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
+	getRunById: vi.fn(),
+}));
+
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: {
+		info: vi.fn(),
+		error: vi.fn(),
+	},
+}));
+
+import { runAgent } from '../../../src/agents/registry.js';
+import { getRunById } from '../../../src/db/repositories/runsRepository.js';
+import {
+	clearTriggerTracking,
+	isTriggerRunning,
+	triggerManualRun,
+	triggerRetryRun,
+} from '../../../src/triggers/shared/manual-runner.js';
+import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
+
+const mockProject: ProjectConfig = {
+	id: 'test-project',
+	name: 'Test',
+	repo: 'owner/repo',
+	baseBranch: 'main',
+	branchPrefix: 'feature/',
+	trello: {
+		boardId: 'board-1',
+		lists: { briefing: 'l1', planning: 'l2', todo: 'l3' },
+		labels: {},
+	},
+} as unknown as ProjectConfig;
+
+const mockConfig = {} as CascadeConfig;
+
+describe('triggerManualRun', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		clearTriggerTracking();
+	});
+
+	it('throws when trigger is already running for same project+agent+card', async () => {
+		vi.mocked(runAgent).mockImplementation(() => new Promise(() => {})); // Never resolves
+
+		// Start first trigger (fire-and-forget, so no await)
+		triggerManualRun(
+			{
+				projectId: 'test-project',
+				agentType: 'implementation',
+				cardId: 'card-1',
+			},
+			mockProject,
+			mockConfig,
+		);
+
+		// Wait a tick for the trigger to mark itself as running
+		await new Promise((resolve) => setImmediate(resolve));
+
+		// Try to trigger again
+		await expect(
+			triggerManualRun(
+				{
+					projectId: 'test-project',
+					agentType: 'implementation',
+					cardId: 'card-1',
+				},
+				mockProject,
+				mockConfig,
+			),
+		).rejects.toThrow('Manual trigger already running');
+	});
+
+	it('calls runAgent with correct input including triggerType: manual', async () => {
+		vi.mocked(runAgent).mockResolvedValue({
+			success: true,
+			output: 'Done',
+			runId: 'run-1',
+		});
+
+		await triggerManualRun(
+			{
+				projectId: 'test-project',
+				agentType: 'implementation',
+				cardId: 'card-1',
+				modelOverride: 'claude-3-5-sonnet-20241022',
+			},
+			mockProject,
+			mockConfig,
+		);
+
+		// Wait for async execution
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(runAgent).toHaveBeenCalledWith(
+			'implementation',
+			expect.objectContaining({
+				cardId: 'card-1',
+				modelOverride: 'claude-3-5-sonnet-20241022',
+				triggerType: 'manual',
+				project: mockProject,
+				config: mockConfig,
+			}),
+		);
+	});
+
+	it('calls runAgent with PR fields when provided', async () => {
+		vi.mocked(runAgent).mockResolvedValue({
+			success: true,
+			output: 'Done',
+			runId: 'run-2',
+		});
+
+		await triggerManualRun(
+			{
+				projectId: 'test-project',
+				agentType: 'review',
+				prNumber: 42,
+				prBranch: 'feature/test',
+				repoFullName: 'owner/repo',
+				headSha: 'abc123',
+			},
+			mockProject,
+			mockConfig,
+		);
+
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(runAgent).toHaveBeenCalledWith(
+			'review',
+			expect.objectContaining({
+				prNumber: 42,
+				prBranch: 'feature/test',
+				repoFullName: 'owner/repo',
+				headSha: 'abc123',
+				triggerType: 'manual',
+			}),
+		);
+	});
+
+	it('marks trigger as complete after runAgent finishes', async () => {
+		const projectId = 'test-project';
+		const agentType = 'implementation';
+		const cardId = 'card-complete';
+
+		vi.mocked(runAgent).mockResolvedValue({
+			success: true,
+			output: 'Done',
+			runId: 'run-complete',
+		});
+
+		await triggerManualRun({ projectId, agentType, cardId }, mockProject, mockConfig);
+
+		// Immediately after triggering, should be running
+		const key = `${projectId}:${agentType}:${cardId}:no-pr`;
+		expect(isTriggerRunning(key)).toBe(true);
+
+		// Wait for completion
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		// Should be marked complete
+		expect(isTriggerRunning(key)).toBe(false);
+	});
+
+	it('marks trigger as complete even when runAgent fails', async () => {
+		const projectId = 'test-project';
+		const agentType = 'implementation';
+		const cardId = 'card-fail';
+
+		vi.mocked(runAgent).mockRejectedValue(new Error('Agent error'));
+
+		await triggerManualRun({ projectId, agentType, cardId }, mockProject, mockConfig);
+
+		// Should be running
+		const key = `${projectId}:${agentType}:${cardId}:no-pr`;
+		expect(isTriggerRunning(key)).toBe(true);
+
+		// Wait for failure
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		// Should be marked complete
+		expect(isTriggerRunning(key)).toBe(false);
+	});
+});
+
+describe('triggerRetryRun', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		clearTriggerTracking();
+	});
+
+	it('throws when run is not found', async () => {
+		vi.mocked(getRunById).mockResolvedValue(null);
+
+		await expect(triggerRetryRun('run-1', mockProject, mockConfig)).rejects.toThrow(
+			'Run not found: run-1',
+		);
+	});
+
+	it('throws when run has no projectId', async () => {
+		vi.mocked(getRunById).mockResolvedValue({
+			id: 'run-1',
+			agentType: 'implementation',
+			projectId: null,
+		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
+
+		await expect(triggerRetryRun('run-1', mockProject, mockConfig)).rejects.toThrow(
+			'Run run-1 has no associated project',
+		);
+	});
+
+	it('extracts params from original run and calls triggerManualRun', async () => {
+		vi.mocked(getRunById).mockResolvedValue({
+			id: 'run-1',
+			agentType: 'implementation',
+			projectId: 'test-project',
+			cardId: 'card-1',
+			prNumber: null,
+			model: 'claude-sonnet-4-5-20250929',
+		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
+
+		vi.mocked(runAgent).mockResolvedValue({
+			success: true,
+			output: 'Retried',
+			runId: 'run-2',
+		});
+
+		await triggerRetryRun('run-1', mockProject, mockConfig);
+
+		// Wait for async execution
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(runAgent).toHaveBeenCalledWith(
+			'implementation',
+			expect.objectContaining({
+				cardId: 'card-1',
+				modelOverride: 'claude-sonnet-4-5-20250929',
+				triggerType: 'manual',
+			}),
+		);
+	});
+
+	it('uses modelOverride param if provided, otherwise falls back to original run model', async () => {
+		vi.mocked(getRunById).mockResolvedValue({
+			id: 'run-1',
+			agentType: 'review',
+			projectId: 'test-project',
+			cardId: null,
+			prNumber: 10,
+			model: 'claude-sonnet-4-5-20250929',
+		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
+
+		vi.mocked(runAgent).mockResolvedValue({
+			success: true,
+			output: 'Retried',
+			runId: 'run-3',
+		});
+
+		await triggerRetryRun('run-1', mockProject, mockConfig, 'claude-3-5-sonnet-20241022');
+
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(runAgent).toHaveBeenCalledWith(
+			'review',
+			expect.objectContaining({
+				modelOverride: 'claude-3-5-sonnet-20241022',
+			}),
+		);
+	});
+});
