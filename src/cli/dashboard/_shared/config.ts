@@ -1,0 +1,48 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+export interface CliConfig {
+	serverUrl: string;
+	sessionToken: string;
+}
+
+const CONFIG_DIR = join(homedir(), '.cascade');
+const CONFIG_FILE = join(CONFIG_DIR, 'cli.json');
+
+export function loadConfig(): CliConfig | null {
+	// Env var overrides take priority
+	const envUrl = process.env.CASCADE_SERVER_URL;
+	const envToken = process.env.CASCADE_SESSION_TOKEN;
+	if (envUrl && envToken) {
+		return { serverUrl: envUrl, sessionToken: envToken };
+	}
+
+	if (!existsSync(CONFIG_FILE)) return null;
+
+	try {
+		const raw = readFileSync(CONFIG_FILE, 'utf-8');
+		const parsed = JSON.parse(raw) as Partial<CliConfig>;
+		if (!parsed.serverUrl || !parsed.sessionToken) return null;
+
+		return {
+			serverUrl: envUrl ?? parsed.serverUrl,
+			sessionToken: envToken ?? parsed.sessionToken,
+		};
+	} catch {
+		return null;
+	}
+}
+
+export function saveConfig(config: CliConfig): void {
+	if (!existsSync(CONFIG_DIR)) {
+		mkdirSync(CONFIG_DIR, { recursive: true });
+	}
+	writeFileSync(CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`, 'utf-8');
+}
+
+export function clearConfig(): void {
+	if (existsSync(CONFIG_FILE)) {
+		writeFileSync(CONFIG_FILE, '{}', 'utf-8');
+	}
+}

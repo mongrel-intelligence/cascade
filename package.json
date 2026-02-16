@@ -43,6 +43,7 @@
 		"@llmist/cli": "^15.2.1",
 		"@oclif/core": "^4.8.0",
 		"@octokit/rest": "^22.0.1",
+		"@trpc/client": "^11.10.0",
 		"@trpc/server": "^11.10.0",
 		"@types/archiver": "^7.0.0",
 		"archiver": "^7.0.1",
@@ -80,13 +81,14 @@
 		"vitest": "^2.1.8"
 	},
 	"bin": {
-		"cascade-tools": "./bin/cascade-tools.js"
+		"cascade-tools": "./bin/cascade-tools.js",
+		"cascade": "./bin/cascade.js"
 	},
 	"oclif": {
-		"bin": "cascade-tools",
+		"bin": "cascade",
 		"commands": {
 			"strategy": "pattern",
-			"target": "./dist/cli",
+			"target": "./dist/cli/dashboard",
 			"globPatterns": [
 				"**/*.js",
 				"!**/_shared/**"

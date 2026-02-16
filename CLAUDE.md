@@ -58,6 +58,7 @@ Lefthook runs pre-commit (lint, typecheck) and pre-push (test) hooks automatical
 - `src/triggers/` - Extensible trigger system (Trello, GitHub)
 - `src/agents/` - AI agent implementations
 - `src/gadgets/` - Custom gadgets (Trello, Git)
+- `src/cli/dashboard/` - Dashboard CLI commands (`cascade` binary)
 - `src/api/` - Dashboard API (tRPC routers, auth handlers)
 - `src/trello/` - Trello API client
 - `src/utils/` - Utilities (logging, repo cloning, lifecycle)
@@ -240,6 +241,106 @@ psql $DATABASE_URL -c "INSERT INTO users (org_id, email, password_hash, name, ro
 - `src/api/routers/` - tRPC routers (auth, runs, projects)
 - `src/api/auth/` - Login/logout Hono handlers, session resolution
 - `web/src/lib/trpc.ts` - Frontend tRPC client (type-safe via AppRouter import)
+
+## CLI (`cascade`)
+
+CASCADE includes a `cascade` CLI for managing the platform from the terminal. It consumes the same tRPC endpoints as the web dashboard — no business logic duplication, full type safety.
+
+### Setup
+
+```bash
+npm run build                    # Compile TypeScript
+cascade login --server http://localhost:3000 --email you@example.com --password secret
+cascade whoami                   # Verify session
+```
+
+Config is stored in `~/.cascade/cli.json`. Override with env vars for CI/scripts:
+
+```bash
+export CASCADE_SERVER_URL=http://localhost:3000
+export CASCADE_SESSION_TOKEN=<token>
+```
+
+### Commands
+
+```bash
+# Auth
+cascade login --server URL --email X --password Y
+cascade logout
+cascade whoami
+
+# Runs
+cascade runs list [--project ID] [--status running,failed] [--agent-type impl] [--limit 20]
+cascade runs show <run-id>
+cascade runs logs <run-id>                    # Pipe: cascade runs logs ID | grep error
+cascade runs llm-calls <run-id>
+cascade runs llm-call <run-id> <call-number>
+cascade runs debug <run-id>
+
+# Projects
+cascade projects list
+cascade projects show <id>
+cascade projects create --id my-project --name "My Project" --repo owner/repo
+cascade projects update <id> --model claude-sonnet-4-5-20250929
+cascade projects delete <id> --yes
+cascade projects integrations <id>
+cascade projects integration-set <id> --type trello --config '{"boardId":"..."}'
+cascade projects overrides <id>
+cascade projects override-set <id> --key GITHUB_TOKEN --credential-id 5
+cascade projects override-set <id> --key GITHUB_TOKEN --credential-id 7 --agent-type review
+cascade projects override-rm <id> --key GITHUB_TOKEN
+
+# Credentials
+cascade credentials list
+cascade credentials create --name "GitHub Bot" --key GITHUB_TOKEN --value ghp_... [--default]
+cascade credentials update <id> --value new-secret
+cascade credentials delete <id> --yes
+
+# Defaults
+cascade defaults show
+cascade defaults set --model claude-sonnet-4-5-20250929 --max-iterations 25 --agent-backend claude-code
+
+# Organization
+cascade org show
+cascade org update --name "My Org"
+
+# Agent Configs
+cascade agents list [--project-id ID]
+cascade agents create --agent-type implementation --model claude-sonnet-4-5-20250929 [--project-id ID]
+cascade agents update <id> --max-iterations 30
+cascade agents delete <id> --yes
+
+# Webhooks
+cascade webhooks list <project-id>
+cascade webhooks create <project-id> --callback-url https://cascade.example.com
+cascade webhooks delete <project-id> --callback-url https://cascade.example.com
+```
+
+### Global Flags
+
+- `--json` — Machine-readable JSON output (all commands). Pipe to `jq` for scripting.
+- `--server URL` — Override server URL for a single invocation.
+
+### Architecture
+
+Each command is a thin adapter: **parse flags → call tRPC → format output**. All business logic lives server-side.
+
+```
+src/cli/dashboard/
+├── _shared/          # Config, tRPC client, base class, formatters
+├── login.ts          # Auth (HTTP, not tRPC)
+├── logout.ts
+├── whoami.ts
+├── runs/             # 6 commands
+├── projects/         # 10 commands
+├── credentials/      # 4 commands
+├── defaults/         # 2 commands
+├── org/              # 2 commands
+├── agents/           # 4 commands
+└── webhooks/         # 3 commands
+```
+
+The `cascade` binary is separate from `cascade-tools` (which is for agents). The `cascade-tools` binary uses a custom oclif config in `bin/cascade-tools.js` to discover only agent tool commands (`dist/cli/trello/`, `dist/cli/github/`, `dist/cli/session/`), while `cascade` discovers only dashboard commands (`dist/cli/dashboard/`).
 
 ## Adding New Triggers
 
