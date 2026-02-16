@@ -1,15 +1,12 @@
-import { Args, Flags } from '@oclif/core';
+import { Flags } from '@oclif/core';
 import { updateChecklistItem } from '../../gadgets/pm/core/updateChecklistItem.js';
 import { CredentialScopedCommand } from '../base.js';
 
 export default class UpdateChecklistItem extends CredentialScopedCommand {
 	static override description = 'Update a checklist item state on a work item.';
 
-	static override args = {
-		workItemId: Args.string({ description: 'The work item ID', required: true }),
-	};
-
 	static override flags = {
+		workItemId: Flags.string({ description: 'The work item ID', required: true }),
 		'check-item-id': Flags.string({ description: 'The checklist item ID', required: true }),
 		state: Flags.string({
 			description: 'The new state',
@@ -19,9 +16,9 @@ export default class UpdateChecklistItem extends CredentialScopedCommand {
 	};
 
 	async execute(): Promise<void> {
-		const { args, flags } = await this.parse(UpdateChecklistItem);
+		const { flags } = await this.parse(UpdateChecklistItem);
 		const result = await updateChecklistItem(
-			args.workItemId,
+			flags.workItemId,
 			flags['check-item-id'],
 			flags.state === 'complete',
 		);
