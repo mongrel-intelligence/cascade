@@ -112,6 +112,38 @@ describe('buildToolGuidance', () => {
 		const guidance = buildToolGuidance(sampleTools);
 		expect(guidance).toContain('[--includeComments <boolean>]');
 	});
+
+	it('renders array params as repeatable flags with singular name', () => {
+		const tools: ToolManifest[] = [
+			{
+				name: 'AddChecklist',
+				description: 'Add a checklist.',
+				cliCommand: 'cascade-tools pm add-checklist',
+				parameters: {
+					workItemId: { type: 'string', required: true },
+					item: { type: 'array', required: true },
+				},
+			},
+		];
+		const guidance = buildToolGuidance(tools);
+		expect(guidance).toContain('--item <string> (repeatable)');
+		expect(guidance).not.toContain('<array>');
+	});
+
+	it('renders optional array params with brackets and repeatable hint', () => {
+		const tools: ToolManifest[] = [
+			{
+				name: 'TestTool',
+				description: 'Test.',
+				cliCommand: 'cascade-tools test',
+				parameters: {
+					tags: { type: 'array' },
+				},
+			},
+		];
+		const guidance = buildToolGuidance(tools);
+		expect(guidance).toContain('[--tag <string> (repeatable)]');
+	});
 });
 
 describe('buildTaskPrompt', () => {

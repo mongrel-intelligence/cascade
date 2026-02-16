@@ -8,8 +8,8 @@ export default class AddChecklist extends CredentialScopedCommand {
 	static override flags = {
 		workItemId: Flags.string({ description: 'The work item ID', required: true }),
 		name: Flags.string({ description: 'Checklist name', required: true }),
-		items: Flags.string({
-			description: 'Checklist items (can be specified multiple times)',
+		item: Flags.string({
+			description: 'Checklist item (repeatable, specify multiple times)',
 			required: true,
 			multiple: true,
 		}),
@@ -20,7 +20,7 @@ export default class AddChecklist extends CredentialScopedCommand {
 		const result = await addChecklist({
 			workItemId: flags.workItemId,
 			checklistName: flags.name,
-			items: flags.items,
+			items: flags.item,
 		});
 		this.log(JSON.stringify({ success: true, data: result }));
 	}
