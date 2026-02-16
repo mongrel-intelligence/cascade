@@ -5,6 +5,7 @@ vi.mock('../../../src/pm/index.js', () => ({
 }));
 
 import { fetchImplementationSteps } from '../../../src/agents/base.js';
+import type { PMProvider } from '../../../src/pm/index.js';
 import { getPMProvider } from '../../../src/pm/index.js';
 
 const mockPMProvider = {
@@ -14,7 +15,7 @@ const mockPMProvider = {
 describe('fetchImplementationSteps', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(getPMProvider).mockReturnValue(mockPMProvider as any);
+		vi.mocked(getPMProvider).mockReturnValue(mockPMProvider as unknown as PMProvider);
 	});
 
 	it('extracts incomplete items from Implementation Steps checklist', async () => {

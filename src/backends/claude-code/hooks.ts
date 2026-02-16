@@ -192,15 +192,19 @@ export function buildStopHooks(logWriter: LogWriter, repoDir: string): HookCallb
 
 /**
  * Build all SDK hooks for the Claude Code backend.
+ *
+ * @param enableStopHooks - Whether to include Stop hooks that check for uncommitted/unpushed changes.
+ *   Should be true for implementation agents, false for briefing/planning/review agents.
  */
 export function buildHooks(
 	logWriter: LogWriter,
 	repoDir: string,
+	enableStopHooks = true,
 ): Partial<Record<HookEvent, HookCallbackMatcher[]>> {
 	return {
 		PreToolUse: buildPreToolUseHooks(logWriter),
 		PostToolUse: buildPostToolUseHooks(logWriter),
 		PostToolUseFailure: buildPostToolUseFailureHooks(logWriter),
-		Stop: buildStopHooks(logWriter, repoDir),
+		...(enableStopHooks && { Stop: buildStopHooks(logWriter, repoDir) }),
 	};
 }

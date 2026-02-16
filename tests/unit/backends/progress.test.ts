@@ -44,6 +44,7 @@ import {
 import { getSessionState } from '../../../src/gadgets/sessionState.js';
 import { loadTodos } from '../../../src/gadgets/todo/storage.js';
 import { githubClient } from '../../../src/github/client.js';
+import type { PMProvider } from '../../../src/pm/index.js';
 import { getPMProviderOrNull } from '../../../src/pm/index.js';
 
 const mockGetPMProvider = vi.mocked(getPMProviderOrNull);
@@ -185,7 +186,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			trello: { cardId: 'card1' },
 		});
 
-		mockGetPMProvider.mockReturnValue(mockPMProvider as any);
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
 		mockCallProgressModel.mockResolvedValue('**Progress**: All good');
 		mockPMProvider.addComment.mockResolvedValue(undefined as never);
 
@@ -209,7 +210,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			trello: { cardId: 'card1' },
 		});
 
-		mockGetPMProvider.mockReturnValue(mockPMProvider as any);
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
 		mockCallProgressModel.mockRejectedValue(new Error('Model error'));
 		mockFormatStatus.mockReturnValue('Fallback progress');
 		mockPMProvider.addComment.mockResolvedValue(undefined as never);
@@ -233,7 +234,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			trello: { cardId: 'card1' },
 		});
 
-		mockGetPMProvider.mockReturnValue(mockPMProvider as any);
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
 		mockCallProgressModel.mockResolvedValue('Progress');
 		mockPMProvider.addComment.mockResolvedValue(undefined as never);
 		mockSyncChecklist.mockResolvedValue();
@@ -256,7 +257,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			trello: { cardId: 'card1' },
 		});
 
-		mockGetPMProvider.mockReturnValue(mockPMProvider as any);
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
 		mockCallProgressModel.mockResolvedValue('Progress');
 		mockPMProvider.addComment.mockResolvedValue(undefined as never);
 
@@ -337,7 +338,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			trello: { cardId: 'card1' },
 		});
 
-		mockGetPMProvider.mockReturnValue(mockPMProvider as any);
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
 		mockCallProgressModel.mockResolvedValue('Progress');
 		mockPMProvider.addComment.mockRejectedValue(new Error('API error'));
 
@@ -353,7 +354,7 @@ describe('ProgressMonitor — tick behavior', () => {
 	});
 
 	it('prevents concurrent ticks', async () => {
-		mockGetPMProvider.mockReturnValue(mockPMProvider as any);
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
 		const monitor = new ProgressMonitor({
 			agentType: 'implementation',
 			taskDescription: 'Test task',

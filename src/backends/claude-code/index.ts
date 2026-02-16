@@ -318,7 +318,9 @@ export class ClaudeCodeBackend implements AgentBackend {
 		});
 
 		const { env } = buildEnv(input.projectSecrets);
-		const hooks = buildHooks(input.logWriter, input.repoDir);
+		const hooks = buildHooks(input.logWriter, input.repoDir, input.enableStopHooks ?? true);
+
+		const sdkTools = input.sdkTools ?? ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
 
 		const assistantMessages: SDKAssistantMessage[] = [];
 		let resultMessage: SDKResultMessage | undefined;
@@ -334,8 +336,8 @@ export class ClaudeCodeBackend implements AgentBackend {
 				maxBudgetUsd: input.budgetUsd,
 				permissionMode: 'bypassPermissions',
 				allowDangerouslySkipPermissions: true,
-				tools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
-				allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+				tools: sdkTools,
+				allowedTools: sdkTools,
 				persistSession: false,
 				hooks,
 				env,

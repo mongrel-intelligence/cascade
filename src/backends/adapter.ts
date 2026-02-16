@@ -6,22 +6,23 @@ import { resolveModelConfig } from '../agents/shared/modelResolution.js';
 import { setupRepository } from '../agents/shared/repository.js';
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
-import { getProjectSecrets } from '../config/provider.js';
+import { getAgentCredential, getProjectSecrets } from '../config/provider.js';
 import {
 	type CompleteRunInput,
 	completeRun,
 	createRun,
 	storeRunLogs,
 } from '../db/repositories/runsRepository.js';
-import { readWorkItem } from '../gadgets/pm/core/readWorkItem.js';
+import { withGitHubToken } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../utils/cascadeEnv.js';
 import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
 import { clearWatchdogCleanup, setWatchdogCleanup } from '../utils/lifecycle.js';
 import { logger } from '../utils/logging.js';
 import { cleanupTempDir } from '../utils/repo.js';
+import { getAgentProfile } from './agent-profiles.js';
 import { createProgressMonitor } from './progress.js';
-import type { AgentBackend, AgentBackendInput, ContextInjection, ToolManifest } from './types.js';
+import type { AgentBackend, AgentBackendInput, LogWriter, ToolManifest } from './types.js';
 
 /**
  * Get the CLI tool manifests for CASCADE-specific tools.
@@ -206,30 +207,6 @@ function getToolManifests(): ToolManifest[] {
 }
 
 /**
- * Pre-fetch context data (card content, etc.) for injection into agent context.
- */
-async function fetchContextInjections(
-	input: AgentInput,
-	log: ReturnType<typeof createAgentLogger>,
-): Promise<ContextInjection[]> {
-	const injections: ContextInjection[] = [];
-	const cardId = input.cardId;
-
-	if (cardId && !input.logDir) {
-		log.info('Fetching work item data for context injection', { cardId });
-		const cardData = await readWorkItem(cardId, true);
-		injections.push({
-			toolName: 'ReadWorkItem',
-			params: { workItemId: cardId, includeComments: true },
-			result: cardData,
-			description: 'Pre-fetched work item data',
-		});
-	}
-
-	return injections;
-}
-
-/**
  * Resolve the working directory — either a pre-existing log dir or a fresh repo clone.
  */
 async function resolveRepoDir(
@@ -250,14 +227,33 @@ async function resolveRepoDir(
 }
 
 /**
+ * Create a LogWriter that writes to both the file logger and the structured logger.
+ */
+function createLogWriter(fileLogger: ReturnType<typeof createFileLogger>): LogWriter {
+	return (level: string, message: string, context?: Record<string, unknown>) => {
+		fileLogger.write(level, message, context);
+		const logFn =
+			level === 'ERROR'
+				? logger.error
+				: level === 'WARN'
+					? logger.warn
+					: level === 'DEBUG'
+						? logger.debug
+						: logger.info;
+		logFn.call(logger, message, context);
+	};
+}
+
+/**
  * Build the BackendInput by resolving model config, fetching context, etc.
+ * Uses agent profiles to customize tools, context, and prompts per agent type.
  */
 async function buildBackendInput(
 	agentType: string,
 	input: AgentInput & { project: ProjectConfig; config: CascadeConfig },
 	repoDir: string,
-	fileLogger: ReturnType<typeof createFileLogger>,
-	log: ReturnType<typeof createAgentLogger>,
+	logWriter: LogWriter,
+	_log: ReturnType<typeof createAgentLogger>,
 	_backendName?: string,
 ): Promise<Omit<AgentBackendInput, 'progressReporter'>> {
 	const { project, config, cardId } = input;
@@ -277,7 +273,7 @@ async function buildBackendInput(
 		pmType,
 	};
 
-	const { systemPrompt, model, maxIterations } = await resolveModelConfig({
+	const { systemPrompt, model, maxIterations, contextFiles } = await resolveModelConfig({
 		agentType,
 		project,
 		config,
@@ -285,7 +281,15 @@ async function buildBackendInput(
 		promptContext,
 	});
 
-	const contextInjections = await fetchContextInjections(input, log);
+	const profile = getAgentProfile(agentType);
+
+	// Use profile to fetch agent-specific context injections
+	const contextInjections = await profile.fetchContext({
+		input,
+		repoDir,
+		contextFiles,
+		logWriter,
+	});
 
 	const cliToolsDir = new URL('../../bin', import.meta.url).pathname;
 
@@ -298,26 +302,17 @@ async function buildBackendInput(
 		config,
 		repoDir,
 		systemPrompt,
-		taskPrompt: `Analyze and process the work item with ID: ${cardId || 'unknown'}. The work item data has been pre-loaded.`,
+		taskPrompt: profile.buildTaskPrompt(input),
 		cliToolsDir,
-		availableTools: getToolManifests(),
+		availableTools: profile.filterTools(getToolManifests()),
 		contextInjections,
 		maxIterations,
 		budgetUsd: input.remainingBudgetUsd as number | undefined,
 		model,
-		logWriter: (level: string, message: string, context?: Record<string, unknown>) => {
-			fileLogger.write(level, message, context);
-			const logFn =
-				level === 'ERROR'
-					? logger.error
-					: level === 'WARN'
-						? logger.warn
-						: level === 'DEBUG'
-							? logger.debug
-							: logger.info;
-			logFn.call(logger, message, context);
-		},
+		logWriter,
 		agentInput: input,
+		sdkTools: profile.sdkTools,
+		enableStopHooks: profile.enableStopHooks,
 		...(Object.keys(projectSecrets).length > 0 && { projectSecrets }),
 	};
 }
@@ -443,6 +438,24 @@ function warnIfSubscriptionCostMismatch(_backend: AgentBackend, _project: Projec
 	// No-op: ANTHROPIC_API_KEY is no longer used. Claude Code uses OAuth only.
 }
 
+/**
+ * Resolve the GitHub token for profiles that need GitHub client access.
+ * Uses agent-scoped override if available, otherwise falls back to project secrets.
+ */
+async function resolveGitHubToken(
+	profile: ReturnType<typeof getAgentProfile>,
+	projectId: string,
+	agentType: string,
+): Promise<string | undefined> {
+	if (!profile.needsGitHubToken) return undefined;
+
+	const agentToken = await getAgentCredential(projectId, agentType, 'GITHUB_TOKEN');
+	if (agentToken) return agentToken;
+
+	const secrets = await getProjectSecrets(projectId);
+	return secrets.GITHUB_TOKEN;
+}
+
 async function finalizeBackendRun(
 	runId: string | undefined,
 	fileLogger: ReturnType<typeof createFileLogger>,
@@ -480,15 +493,42 @@ export async function executeWithBackend(
 	try {
 		repoDir = await resolveRepoDir(input, log, agentType);
 		const envSnapshot = loadCascadeEnv(repoDir, log);
+		const logWriter = createLogWriter(fileLogger);
 
-		const partialInput = await buildBackendInput(
-			agentType,
-			input,
-			repoDir,
-			fileLogger,
-			log,
-			backend.name,
-		);
+		const profile = getAgentProfile(agentType);
+		const gitHubToken = await resolveGitHubToken(profile, input.project.id, agentType);
+
+		// Build backend input and run pre-execute, wrapped in GitHub token scope if needed
+		const resolvedRepoDir = repoDir;
+		const buildAndPrepare = async () => {
+			const partial = await buildBackendInput(
+				agentType,
+				input,
+				resolvedRepoDir,
+				logWriter,
+				log,
+				backend.name,
+			);
+
+			// Override GITHUB_TOKEN in subprocess secrets with agent-scoped token
+			if (gitHubToken && profile.needsGitHubToken) {
+				partial.projectSecrets = {
+					...partial.projectSecrets,
+					GITHUB_TOKEN: gitHubToken,
+				};
+			}
+
+			// Pre-execute hook (e.g., post initial PR comment for review)
+			if (profile.preExecute) {
+				await profile.preExecute({ input, logWriter });
+			}
+
+			return partial;
+		};
+
+		const partialInput = gitHubToken
+			? await withGitHubToken(gitHubToken, buildAndPrepare)
+			: await buildAndPrepare();
 
 		runId = await tryCreateBackendRun(
 			agentType,
@@ -499,18 +539,7 @@ export async function executeWithBackend(
 		);
 
 		const monitor = createProgressMonitor({
-			logWriter: (level: string, message: string, context?: Record<string, unknown>) => {
-				fileLogger.write(level, message, context);
-				const logFn =
-					level === 'ERROR'
-						? logger.error
-						: level === 'WARN'
-							? logger.warn
-							: level === 'DEBUG'
-								? logger.debug
-								: logger.info;
-				logFn.call(logger, message, context);
-			},
+			logWriter,
 			agentType,
 			taskDescription: cardId ? `Work item ${cardId}` : 'Unknown task',
 			progressModel: input.config.defaults.progressModel,

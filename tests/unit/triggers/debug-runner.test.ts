@@ -35,6 +35,7 @@ import {
 	getRunLogs,
 	storeDebugAnalysis,
 } from '../../../src/db/repositories/runsRepository.js';
+import type { PMProvider } from '../../../src/pm/index.js';
 import { getPMProvider } from '../../../src/pm/index.js';
 import { triggerDebugAnalysis } from '../../../src/triggers/shared/debug-runner.js';
 
@@ -59,7 +60,7 @@ const mockConfig = {} as CascadeConfig;
 describe('triggerDebugAnalysis', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(getPMProvider).mockReturnValue(mockPMProvider as any);
+		vi.mocked(getPMProvider).mockReturnValue(mockPMProvider as unknown as PMProvider);
 	});
 
 	it('returns early when run is not found', async () => {
