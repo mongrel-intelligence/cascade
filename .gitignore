@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+*.tsbuildinfo
 
 # Coverage
 coverage/
@@ -25,11 +26,12 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
-logs/
+/logs/
 
 # Temp
 /tmp/
 *.tmp
+tmp-*.ts
 
 # Local agent workspace (repos, logs)
 workspace/

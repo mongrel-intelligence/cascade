@@ -158,20 +158,27 @@ function extractPRUrlFromMessages(assistantMessages: SDKAssistantMessage[]): str
 }
 
 /**
+ * Try to extract a finish comment from a single content block.
+ */
+function extractCommentFromBlock(block: { type: string; name?: string; input?: unknown }):
+	| string
+	| undefined {
+	if (block.type !== 'tool_use' || block.name !== 'Bash') return undefined;
+	const { command } = block.input as { command?: string };
+	if (!command?.includes('cascade-tools') || !command?.includes('session finish')) return undefined;
+	const match = command.match(/--comment\s+(?:"([^"]+)"|'([^']+)'|(\S+))/);
+	return match ? (match[1] ?? match[2] ?? match[3]) : undefined;
+}
+
+/**
  * Extract finish comment from assistant messages that invoked cascade-tools session finish.
  */
 function extractFinishComment(assistantMessages: SDKAssistantMessage[]): string | undefined {
 	for (const msg of assistantMessages) {
 		if (!msg.message?.content) continue;
 		for (const block of msg.message.content) {
-			if (block.type === 'tool_use' && block.name === 'Bash') {
-				const input = block.input as { command?: string };
-				if (input.command?.includes('cascade-tools') && input.command?.includes('session finish')) {
-					// Extract --comment value from the command
-					const match = input.command.match(/--comment\s+(?:"([^"]+)"|'([^']+)'|(\S+))/);
-					if (match) return match[1] ?? match[2] ?? match[3];
-				}
-			}
+			const comment = extractCommentFromBlock(block);
+			if (comment) return comment;
 		}
 	}
 	return undefined;
@@ -236,6 +243,53 @@ function processSystemMessage(
 }
 
 /**
+ * Build the result from collected stream data.
+ */
+function buildResult(
+	assistantMessages: SDKAssistantMessage[],
+	resultMessage: SDKResultMessage | undefined,
+	stderrChunks: string[],
+	input: AgentBackendInput,
+	startTime: number,
+): AgentBackendResult {
+	const finishComment = extractFinishComment(assistantMessages);
+	const success = resultMessage?.subtype === 'success';
+	const cost = resultMessage?.total_cost_usd;
+
+	let output = finishComment ?? '';
+	if (!output && resultMessage?.subtype === 'success') {
+		output = (resultMessage as SDKResultSuccess).result ?? '';
+	}
+
+	let error: string | undefined;
+	if (resultMessage && resultMessage.subtype !== 'success') {
+		const errorResult = resultMessage as Exclude<SDKResultMessage, SDKResultSuccess>;
+		error = errorResult.errors?.join('; ') ?? errorResult.subtype;
+	}
+
+	const stderrOutput = stderrChunks.join('').trim();
+	if (stderrOutput) {
+		input.logWriter('WARN', 'Claude Code stderr output', { stderr: stderrOutput });
+		if (error) {
+			error += ` | stderr: ${stderrOutput}`;
+		}
+	}
+
+	const prUrl = extractPRUrl(output) ?? extractPRUrlFromMessages(assistantMessages);
+
+	input.logWriter('INFO', 'Claude Code SDK execution completed', {
+		success,
+		subtype: resultMessage?.subtype,
+		turns: resultMessage?.num_turns,
+		cost,
+		prUrl: prUrl ?? null,
+		durationMs: Date.now() - startTime,
+	});
+
+	return { success, output, cost, error, prUrl };
+}
+
+/**
  * Claude Code SDK backend for CASCADE.
  *
  * Uses the Claude Code SDK's query() function to run agents with built-in file tools
@@ -271,88 +325,45 @@ export class ClaudeCodeBackend implements AgentBackend {
 		let turnCount = 0;
 		const stderrChunks: string[] = [];
 
-		try {
-			const stream = query({
-				prompt: taskPrompt,
-				options: {
-					model,
-					systemPrompt,
-					cwd: input.repoDir,
-					// No maxTurns — rely on watchdog time limit instead
-					maxBudgetUsd: input.budgetUsd,
-					permissionMode: 'bypassPermissions',
-					allowDangerouslySkipPermissions: true,
-					tools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
-					allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
-					persistSession: false,
-					hooks,
-					env,
-					debug: true,
-					stderr: (data: string) => {
-						stderrChunks.push(data);
-						input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
-					},
+		const stream = query({
+			prompt: taskPrompt,
+			options: {
+				model,
+				systemPrompt,
+				cwd: input.repoDir,
+				maxBudgetUsd: input.budgetUsd,
+				permissionMode: 'bypassPermissions',
+				allowDangerouslySkipPermissions: true,
+				tools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+				allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+				persistSession: false,
+				hooks,
+				env,
+				debug: true,
+				stderr: (data: string) => {
+					stderrChunks.push(data);
+					input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
 				},
-			});
-
-			for await (const message of stream) {
-				if (message.type === 'assistant') {
-					const assistantMsg = message as SDKAssistantMessage;
-					assistantMessages.push(assistantMsg);
-					turnCount++;
-					await input.progressReporter.onIteration(turnCount, input.maxIterations);
-					processAssistantMessage(assistantMsg, turnCount, input);
-				}
-
-				if (message.type === 'system') {
-					processSystemMessage(
-						message as { subtype: string; [key: string]: unknown },
-						input.logWriter,
-					);
-				}
-
-				if (message.type === 'result') {
-					resultMessage = message as SDKResultMessage;
-				}
-			}
-		} finally {
-			// no-op: auth via env vars, no temp dirs to clean up
-		}
-
-		const finishComment = extractFinishComment(assistantMessages);
-		const success = resultMessage?.subtype === 'success';
-		const cost = resultMessage?.total_cost_usd;
-
-		let output = finishComment ?? '';
-		if (!output && resultMessage?.subtype === 'success') {
-			output = (resultMessage as SDKResultSuccess).result ?? '';
-		}
-
-		let error: string | undefined;
-		if (resultMessage && resultMessage.subtype !== 'success') {
-			const errorResult = resultMessage as Exclude<SDKResultMessage, SDKResultSuccess>;
-			error = errorResult.errors?.join('; ') ?? errorResult.subtype;
-		}
-
-		const stderrOutput = stderrChunks.join('').trim();
-		if (stderrOutput) {
-			input.logWriter('WARN', 'Claude Code stderr output', { stderr: stderrOutput });
-			if (error) {
-				error += ` | stderr: ${stderrOutput}`;
-			}
-		}
-
-		const prUrl = extractPRUrl(output) ?? extractPRUrlFromMessages(assistantMessages);
-
-		input.logWriter('INFO', 'Claude Code SDK execution completed', {
-			success,
-			subtype: resultMessage?.subtype,
-			turns: resultMessage?.num_turns,
-			cost,
-			prUrl: prUrl ?? null,
-			durationMs: Date.now() - startTime,
+			},
 		});
 
-		return { success, output, cost, error, prUrl };
+		for await (const message of stream) {
+			if (message.type === 'assistant') {
+				const assistantMsg = message as SDKAssistantMessage;
+				assistantMessages.push(assistantMsg);
+				turnCount++;
+				await input.progressReporter.onIteration(turnCount, input.maxIterations);
+				processAssistantMessage(assistantMsg, turnCount, input);
+			} else if (message.type === 'system') {
+				processSystemMessage(
+					message as { subtype: string; [key: string]: unknown },
+					input.logWriter,
+				);
+			} else if (message.type === 'result') {
+				resultMessage = message as SDKResultMessage;
+			}
+		}
+
+		return buildResult(assistantMessages, resultMessage, stderrChunks, input, startTime);
 	}
 }
