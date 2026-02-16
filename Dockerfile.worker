@@ -23,6 +23,7 @@ RUN npm install -g pnpm @zbigniewsobiecki/squint --force
 # (niu-browser-base already has: git, curl, ca-certificates, gnupg, postgresql-client)
 RUN apt-get update && apt-get install -y \
     fd-find \
+    jq \
     ripgrep \
     ed \
     unzip \
