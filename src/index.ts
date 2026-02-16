@@ -13,7 +13,7 @@ import { logger, setLogLevel, startFreshMachineTimer } from './utils/index.js';
 async function main(): Promise<void> {
 	// Load environment config
 	const envConfig = loadEnvConfigSafe();
-	setLogLevel(envConfig.logLevel || 'info');
+	setLogLevel(envConfig.logLevel);
 
 	logger.info('Starting Cascade server', { port: envConfig.port });
 

@@ -18,7 +18,8 @@ export const LOG_LEVELS: Record<string, number> = {
 };
 
 export function getLogLevel(): number {
-	const level = process.env.LLMIST_LOG_LEVEL?.toLowerCase() || 'debug';
+	const level =
+		process.env.LLMIST_LOG_LEVEL?.toLowerCase() || process.env.LOG_LEVEL?.toLowerCase() || 'debug';
 	return LOG_LEVELS[level] ?? LOG_LEVELS.debug;
 }
 
