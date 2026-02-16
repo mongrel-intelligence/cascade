@@ -66,7 +66,7 @@ export class TrelloCommentMentionTrigger implements TriggerHandler {
 		}
 
 		// Fetch card to verify it's in the PLANNING list
-		const planningListId = ctx.project.trello.lists.planning;
+		const planningListId = ctx.project.trello?.lists.planning;
 		if (!planningListId) {
 			logger.debug('Planning list not configured, skipping comment mention trigger', {
 				projectId: ctx.project.id,

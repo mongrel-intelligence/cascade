@@ -6,7 +6,8 @@
  */
 
 import { type Todo, loadTodos } from '../../gadgets/todo/storage.js';
-import { type TrelloCheckItem, type TrelloChecklist, trelloClient } from '../../trello/client.js';
+import { type ChecklistItem, getPMProvider } from '../../pm/index.js';
+import type { Checklist } from '../../pm/types.js';
 import { logger } from '../../utils/logging.js';
 
 /** Track which TODO IDs have been synced to avoid duplicate API calls */
@@ -53,17 +54,17 @@ function stringsMatch(todoContent: string, checkItemName: string): boolean {
  * Find a matching checklist item for a TODO.
  *
  * @param todo - Local TODO to match
- * @param checklists - Trello checklists to search
- * @returns Matching checklist item and its card ID, or undefined
+ * @param checklists - PM checklists to search
+ * @returns Matching checklist item and its work item ID, or undefined
  */
 function findMatchingCheckItem(
 	todo: Todo,
-	checklists: TrelloChecklist[],
-): { checkItem: TrelloCheckItem; cardId: string } | undefined {
+	checklists: Checklist[],
+): { checkItem: ChecklistItem; workItemId: string } | undefined {
 	for (const checklist of checklists) {
-		for (const checkItem of checklist.checkItems) {
+		for (const checkItem of checklist.items) {
 			if (stringsMatch(todo.content, checkItem.name)) {
-				return { checkItem, cardId: checklist.idCard };
+				return { checkItem, workItemId: checklist.workItemId };
 			}
 		}
 	}
@@ -71,17 +72,18 @@ function findMatchingCheckItem(
 }
 
 /**
- * Sync completed local TODOs to Trello checklist items.
+ * Sync completed local TODOs to PM checklist items.
  *
  * For each TODO with status 'done':
  * 1. Find matching checklist item by content similarity
  * 2. If found and not already complete, mark it complete
  * 3. Track synced items to avoid duplicate calls
  *
- * @param cardId - Trello card ID to sync checklists for
+ * @param workItemId - Work item ID to sync checklists for
  */
-export async function syncCompletedTodosToChecklist(cardId: string): Promise<void> {
+export async function syncCompletedTodosToChecklist(workItemId: string): Promise<void> {
 	try {
+		const provider = getPMProvider();
 		const todos = loadTodos();
 		const doneTodos = todos.filter((t) => t.status === 'done' && !syncedTodoIds.has(t.id));
 
@@ -89,16 +91,16 @@ export async function syncCompletedTodosToChecklist(cardId: string): Promise<voi
 			return;
 		}
 
-		const checklists = await trelloClient.getCardChecklists(cardId);
+		const checklists = await provider.getChecklists(workItemId);
 		if (checklists.length === 0) {
 			return;
 		}
 
 		for (const todo of doneTodos) {
 			const match = findMatchingCheckItem(todo, checklists);
-			if (match && match.checkItem.state !== 'complete') {
+			if (match && !match.checkItem.complete) {
 				try {
-					await trelloClient.updateChecklistItem(match.cardId, match.checkItem.id, 'complete');
+					await provider.updateChecklistItem(match.workItemId, match.checkItem.id, true);
 					syncedTodoIds.add(todo.id);
 					logger.debug('Synced TODO to checklist', {
 						todoId: todo.id,
@@ -112,13 +114,13 @@ export async function syncCompletedTodosToChecklist(cardId: string): Promise<voi
 						error: String(err),
 					});
 				}
-			} else if (match && match.checkItem.state === 'complete') {
+			} else if (match?.checkItem.complete) {
 				// Already complete, just mark as synced to avoid re-checking
 				syncedTodoIds.add(todo.id);
 			}
 		}
 	} catch (err) {
-		logger.warn('Failed to sync TODOs to checklist', { cardId, error: String(err) });
+		logger.warn('Failed to sync TODOs to checklist', { workItemId, error: String(err) });
 	}
 }
 

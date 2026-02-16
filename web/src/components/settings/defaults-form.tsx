@@ -17,9 +17,7 @@ export function DefaultsForm() {
 
 	const [model, setModel] = useState('');
 	const [maxIterations, setMaxIterations] = useState('');
-	const [freshMachineTimeoutMs, setFreshMachineTimeoutMs] = useState('');
 	const [watchdogTimeoutMs, setWatchdogTimeoutMs] = useState('');
-	const [postJobGracePeriodMs, setPostJobGracePeriodMs] = useState('');
 	const [cardBudgetUsd, setCardBudgetUsd] = useState('');
 	const [agentBackend, setAgentBackend] = useState('');
 	const [progressModel, setProgressModel] = useState('');
@@ -30,9 +28,7 @@ export function DefaultsForm() {
 			const d = defaultsQuery.data;
 			setModel(d.model ?? '');
 			setMaxIterations(d.maxIterations?.toString() ?? '');
-			setFreshMachineTimeoutMs(d.freshMachineTimeoutMs?.toString() ?? '');
 			setWatchdogTimeoutMs(d.watchdogTimeoutMs?.toString() ?? '');
-			setPostJobGracePeriodMs(d.postJobGracePeriodMs?.toString() ?? '');
 			setCardBudgetUsd(d.cardBudgetUsd ?? '');
 			setAgentBackend(d.agentBackend ?? '');
 			setProgressModel(d.progressModel ?? '');
@@ -45,9 +41,7 @@ export function DefaultsForm() {
 			trpcClient.defaults.upsert.mutate({
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
-				freshMachineTimeoutMs: freshMachineTimeoutMs ? Number(freshMachineTimeoutMs) : null,
 				watchdogTimeoutMs: watchdogTimeoutMs ? Number(watchdogTimeoutMs) : null,
-				postJobGracePeriodMs: postJobGracePeriodMs ? Number(postJobGracePeriodMs) : null,
 				cardBudgetUsd: cardBudgetUsd || null,
 				agentBackend: agentBackend || null,
 				progressModel: progressModel || null,
@@ -91,16 +85,7 @@ export function DefaultsForm() {
 					/>
 				</div>
 			</div>
-			<div className="grid grid-cols-3 gap-4">
-				<div className="space-y-2">
-					<Label htmlFor="d-freshTimeout">Fresh Machine Timeout (ms)</Label>
-					<Input
-						id="d-freshTimeout"
-						type="number"
-						value={freshMachineTimeoutMs}
-						onChange={(e) => setFreshMachineTimeoutMs(e.target.value)}
-					/>
-				</div>
+			<div className="grid grid-cols-2 gap-4">
 				<div className="space-y-2">
 					<Label htmlFor="d-watchdog">Watchdog Timeout (ms)</Label>
 					<Input
@@ -110,17 +95,6 @@ export function DefaultsForm() {
 						onChange={(e) => setWatchdogTimeoutMs(e.target.value)}
 					/>
 				</div>
-				<div className="space-y-2">
-					<Label htmlFor="d-grace">Grace Period (ms)</Label>
-					<Input
-						id="d-grace"
-						type="number"
-						value={postJobGracePeriodMs}
-						onChange={(e) => setPostJobGracePeriodMs(e.target.value)}
-					/>
-				</div>
-			</div>
-			<div className="grid grid-cols-2 gap-4">
 				<div className="space-y-2">
 					<Label htmlFor="d-budget">Card Budget (USD)</Label>
 					<Input

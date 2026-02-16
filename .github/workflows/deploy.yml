@@ -38,3 +38,22 @@ jobs:
         run: |
           cd /opt/services
           docker compose up -d --force-recreate cascade-router
+
+      - name: Verify cascade-router is healthy
+        run: |
+          echo "Waiting for cascade-router to start..."
+          for i in $(seq 1 30); do
+            if docker inspect cascade-router --format '{{.State.Health.Status}}' 2>/dev/null | grep -q healthy; then
+              echo "cascade-router is healthy"
+              exit 0
+            fi
+            if docker inspect cascade-router --format '{{.State.Status}}' 2>/dev/null | grep -q restarting; then
+              echo "ERROR: cascade-router is crashlooping!"
+              docker logs cascade-router --tail 20
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "ERROR: cascade-router did not become healthy within 150s"
+          docker logs cascade-router --tail 20
+          exit 1

@@ -27,7 +27,7 @@ function createCardMovedTrigger(config: CardMovedConfig): TriggerHandler {
 			if (!isTrelloWebhookPayload(ctx.payload)) return false;
 
 			const payload = ctx.payload;
-			const targetListId = ctx.project.trello.lists[config.listKey];
+			const targetListId = ctx.project.trello?.lists[config.listKey];
 
 			// Card moved into the target list
 			const isMove =

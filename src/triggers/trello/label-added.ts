@@ -17,7 +17,7 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 		if (!isTrelloWebhookPayload(ctx.payload)) return false;
 
 		const payload = ctx.payload;
-		const readyLabelId = ctx.project.trello.labels.readyToProcess;
+		const readyLabelId = ctx.project.trello?.labels.readyToProcess;
 
 		return (
 			payload.action.type === 'addLabelToCard' && payload.action.data.label?.id === readyLabelId
@@ -39,7 +39,7 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 		logger.info('Determining agent type from list', { cardId, currentListId });
 
 		// Determine agent type based on current list
-		const lists = ctx.project.trello.lists;
+		const lists = ctx.project.trello?.lists ?? {};
 		let agentType: string;
 
 		if (currentListId === lists.briefing) {

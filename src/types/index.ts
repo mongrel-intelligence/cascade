@@ -46,7 +46,7 @@ export interface AgentResult {
 	runId?: string;
 }
 
-export type TriggerSource = 'trello' | 'github' | 'manual';
+export type TriggerSource = 'trello' | 'github' | 'jira' | 'manual';
 
 export interface TriggerContext {
 	project: ProjectConfig;
@@ -57,7 +57,10 @@ export interface TriggerContext {
 export interface TriggerResult {
 	agentType: string;
 	agentInput: AgentInput;
+	/** @deprecated Use workItemId instead */
 	cardId?: string;
+	/** Alias for cardId — preferred name for PM-agnostic code */
+	workItemId?: string;
 	prNumber?: number;
 }
 
