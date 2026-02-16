@@ -299,7 +299,18 @@ async function buildBackendInput(
 		maxIterations,
 		budgetUsd: input.remainingBudgetUsd as number | undefined,
 		model,
-		logWriter: fileLogger.write.bind(fileLogger),
+		logWriter: (level: string, message: string, context?: Record<string, unknown>) => {
+			fileLogger.write(level, message, context);
+			const logFn =
+				level === 'ERROR'
+					? logger.error
+					: level === 'WARN'
+						? logger.warn
+						: level === 'DEBUG'
+							? logger.debug
+							: logger.info;
+			logFn.call(logger, message, context);
+		},
 		agentInput: input,
 		...(Object.keys(projectSecrets).length > 0 && { projectSecrets }),
 	};
@@ -482,7 +493,18 @@ export async function executeWithBackend(
 		);
 
 		const monitor = createProgressMonitor({
-			logWriter: fileLogger.write.bind(fileLogger),
+			logWriter: (level: string, message: string, context?: Record<string, unknown>) => {
+				fileLogger.write(level, message, context);
+				const logFn =
+					level === 'ERROR'
+						? logger.error
+						: level === 'WARN'
+							? logger.warn
+							: level === 'DEBUG'
+								? logger.debug
+								: logger.info;
+				logFn.call(logger, message, context);
+			},
 			agentType,
 			taskDescription: cardId ? `Trello card ${cardId}` : 'Unknown task',
 			progressModel: input.config.defaults.progressModel,
