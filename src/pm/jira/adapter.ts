@@ -26,6 +26,50 @@ interface JiraConfig {
 	customFields?: { cost?: string };
 }
 
+/** Partial shape of a JIRA comment from the API */
+interface JiraComment {
+	id?: string;
+	created?: string;
+	body?: unknown;
+	author?: { accountId?: string; displayName?: string; emailAddress?: string };
+}
+
+/** Partial shape of a JIRA issue from search results */
+interface JiraSearchIssue {
+	key?: string;
+	fields?: {
+		summary?: string;
+		status?: { name?: string };
+		labels?: string[];
+		subtasks?: JiraSubtask[];
+		attachment?: JiraAttachment[];
+	};
+}
+
+/** Partial shape of a JIRA subtask */
+interface JiraSubtask {
+	key?: string;
+	id?: string;
+	fields?: { summary?: string; status?: { name?: string } };
+}
+
+/** Partial shape of a JIRA attachment */
+interface JiraAttachment {
+	id?: string;
+	filename?: string;
+	content?: string;
+	mimeType?: string;
+	size?: number;
+	created?: string;
+}
+
+/** Partial shape of a JIRA transition */
+interface JiraTransition {
+	id?: string;
+	name?: string;
+	to?: { name?: string };
+}
+
 export class JiraPMProvider implements PMProvider {
 	readonly type = 'jira' as const;
 
@@ -51,7 +95,7 @@ export class JiraPMProvider implements PMProvider {
 
 	async getWorkItemComments(id: string): Promise<WorkItemComment[]> {
 		const comments = await jiraClient.getIssueComments(id);
-		return comments.map((c: any) => ({
+		return comments.map((c: JiraComment) => ({
 			id: c.id ?? '',
 			date: c.created ?? '',
 			text: adfToPlainText(c.body),
@@ -101,7 +145,7 @@ export class JiraPMProvider implements PMProvider {
 		// containerId is the JIRA project key
 		const jql = `project = "${containerId}" ORDER BY created DESC`;
 		const issues = await jiraClient.searchIssues(jql);
-		return issues.map((issue: any) => ({
+		return issues.map((issue: JiraSearchIssue) => ({
 			id: issue.key ?? '',
 			title: issue.fields?.summary ?? '',
 			description: '',
@@ -117,7 +161,7 @@ export class JiraPMProvider implements PMProvider {
 		// destination is a JIRA status name — find the transition ID
 		const transitions = await jiraClient.getTransitions(id);
 		const transition = transitions.find(
-			(t: any) =>
+			(t: JiraTransition) =>
 				t.name?.toLowerCase() === destination.toLowerCase() ||
 				t.to?.name?.toLowerCase() === destination.toLowerCase() ||
 				t.id === destination,
@@ -126,7 +170,7 @@ export class JiraPMProvider implements PMProvider {
 			logger.warn('No JIRA transition found for destination', {
 				issueKey: id,
 				destination,
-				available: transitions.map((t: any) => `${t.id}:${t.name}`),
+				available: transitions.map((t: JiraTransition) => `${t.id}:${t.name}`),
 			});
 			return;
 		}
@@ -151,10 +195,10 @@ export class JiraPMProvider implements PMProvider {
 	async getChecklists(workItemId: string): Promise<Checklist[]> {
 		// JIRA doesn't have native checklists — map subtasks
 		const issue = await jiraClient.getIssue(workItemId);
-		const subtasks = (issue.fields as any)?.subtasks ?? [];
+		const subtasks = ((issue.fields as JiraSearchIssue['fields'])?.subtasks as JiraSubtask[]) ?? [];
 		if (subtasks.length === 0) return [];
 
-		const items: ChecklistItem[] = subtasks.map((st: any) => ({
+		const items: ChecklistItem[] = subtasks.map((st: JiraSubtask) => ({
 			id: st.key ?? st.id ?? '',
 			name: st.fields?.summary ?? '',
 			complete: st.fields?.status?.name === 'Done',
@@ -212,8 +256,9 @@ export class JiraPMProvider implements PMProvider {
 
 	async getAttachments(workItemId: string): Promise<Attachment[]> {
 		const issue = await jiraClient.getIssue(workItemId);
-		const attachments = (issue.fields as any)?.attachment ?? [];
-		return attachments.map((a: any) => ({
+		const attachments =
+			((issue.fields as JiraSearchIssue['fields'])?.attachment as JiraAttachment[]) ?? [];
+		return attachments.map((a: JiraAttachment) => ({
 			id: a.id ?? '',
 			name: a.filename ?? '',
 			url: a.content ?? '',

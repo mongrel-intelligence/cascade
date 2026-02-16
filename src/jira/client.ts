@@ -81,13 +81,17 @@ export const jiraClient = {
 		logger.debug('Adding JIRA comment', { issueKey });
 		await getClient().issueComments.addComment({
 			issueIdOrKey: issueKey,
-			comment: body as any,
+			comment: body as Parameters<Version3Client['issueComments']['addComment']>[0]['comment'],
 		});
 	},
 
 	async createIssue(fields: Record<string, unknown>) {
-		logger.debug('Creating JIRA issue', { project: (fields.project as any)?.key });
-		return getClient().issues.createIssue({ fields: fields as any });
+		logger.debug('Creating JIRA issue', {
+			project: (fields.project as { key?: string })?.key,
+		});
+		return getClient().issues.createIssue({
+			fields: fields as Parameters<Version3Client['issues']['createIssue']>[0]['fields'],
+		});
 	},
 
 	async transitionIssue(issueKey: string, transitionId: string) {
