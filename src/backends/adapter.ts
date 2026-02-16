@@ -583,9 +583,10 @@ export async function executeWithBackend(
 			fileLogger.close();
 			const logBuffer = await fileLogger.getZippedBuffer();
 
+			const durationMs = Date.now() - startTime;
 			await finalizeBackendRun(runId, fileLogger, {
 				status: result.success ? 'completed' : 'failed',
-				durationMs: Date.now() - startTime,
+				durationMs,
 				costUsd: result.cost,
 				success: result.success,
 				error: result.error,
@@ -601,6 +602,7 @@ export async function executeWithBackend(
 				cost: result.cost,
 				logBuffer: logBuffer ?? result.logBuffer,
 				runId,
+				durationMs,
 			};
 		} finally {
 			monitor?.stop();
@@ -622,14 +624,15 @@ export async function executeWithBackend(
 			// Ignore log buffer errors
 		}
 
+		const durationMs = Date.now() - startTime;
 		await finalizeBackendRun(runId, fileLogger, {
 			status: 'failed',
-			durationMs: Date.now() - startTime,
+			durationMs,
 			success: false,
 			error: String(err),
 		});
 
-		return { success: false, output: '', error: String(err), logBuffer, runId };
+		return { success: false, output: '', error: String(err), logBuffer, runId, durationMs };
 	} finally {
 		cleanupResources(repoDir, fileLogger, Boolean(input.logDir));
 	}
