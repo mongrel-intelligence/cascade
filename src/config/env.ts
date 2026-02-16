@@ -24,7 +24,7 @@ export function loadEnvConfig(): EnvConfig {
 	};
 }
 
-export function loadEnvConfigSafe(): Partial<EnvConfig> {
+export function loadEnvConfigSafe(): Omit<EnvConfig, 'databaseUrl'> & { databaseUrl?: string } {
 	return {
 		port: Number.parseInt(getEnvOrDefault('PORT', '3000'), 10),
 		logLevel: getEnvOrDefault('LOG_LEVEL', 'info'),

@@ -64,7 +64,7 @@ async function main(): Promise<void> {
 
 	// Load environment config
 	const envConfig = loadEnvConfigSafe();
-	setLogLevel(envConfig.logLevel || 'info');
+	setLogLevel(envConfig.logLevel);
 
 	logger.info('[Worker] Starting job', { jobId, jobType });
 
