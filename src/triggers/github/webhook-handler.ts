@@ -1,4 +1,3 @@
-import { runAgent } from '../../agents/registry.js';
 import {
 	findProjectByRepo,
 	getAgentCredential,
@@ -24,39 +23,13 @@ import {
 	setProcessing,
 	startWatchdog,
 } from '../../utils/index.js';
-import { injectLlmApiKeys } from '../../utils/llmEnv.js';
 import { safeOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
-import { handleAgentResultArtifacts } from '../shared/agent-result-handler.js';
-import { checkBudgetExceeded } from '../shared/budget.js';
-import { triggerDebugAnalysis } from '../shared/debug-runner.js';
-import { shouldTriggerDebug } from '../shared/debug-trigger.js';
+import { executeAgentPipeline } from '../shared/agent-pipeline.js';
+import { withProjectCredentials } from '../shared/credential-scope.js';
 import type { TriggerResult } from '../types.js';
 
 async function executeGitHubAgent(
-	result: TriggerResult,
-	project: ProjectConfig,
-	config: CascadeConfig,
-): Promise<void> {
-	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY').catch(() => '');
-	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN').catch(() => '');
-	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
-
-	const restoreLlmEnv = await injectLlmApiKeys(project.id);
-
-	try {
-		const pmProvider = createPMProvider(project);
-		await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
-			withPMProvider(pmProvider, () =>
-				withGitHubToken(githubToken, () => executeGitHubAgentWithCreds(result, project, config)),
-			),
-		);
-	} finally {
-		restoreLlmEnv();
-	}
-}
-
-async function executeGitHubAgentWithCreds(
 	result: TriggerResult,
 	project: ProjectConfig,
 	config: CascadeConfig,
@@ -66,73 +39,36 @@ async function executeGitHubAgentWithCreds(
 	const pmConfig = resolveProjectPMConfig(project);
 	const lifecycle = new PMLifecycleManager(pmProvider, pmConfig);
 
-	let remainingBudgetUsd: number | undefined;
-	if (cardId) {
-		const budgetCheck = await checkBudgetExceeded(cardId, project, config);
-		if (budgetCheck?.exceeded) {
-			logger.warn('Budget exceeded, GitHub agent not started', {
-				cardId,
-				currentCost: budgetCheck.currentCost,
-				budget: budgetCheck.budget,
-			});
-			await lifecycle.handleBudgetExceeded(cardId, budgetCheck.currentCost, budgetCheck.budget);
-			return;
+	await withProjectCredentials(project, result.agentType, async () => {
+		const agentResult = await executeAgentPipeline({
+			agentType: result.agentType,
+			agentInput: result.agentInput,
+			workItemId: cardId,
+			project,
+			config,
+			lifecycle,
+			prepareLifecycle: false, // GitHub agents don't call prepareForAgent
+			cleanupLifecycle: false, // GitHub agents don't call cleanupProcessing
+			onAgentFailure: async (agentResult) => {
+				if (result.prNumber) {
+					await updateInitialCommentWithError(result, agentResult);
+				}
+			},
+		});
+
+		// GitHub-specific: Move to in-review if implementation completed successfully
+		if (cardId && result.agentType === 'implementation' && agentResult.success) {
+			await lifecycle.handleSuccess(cardId, result.agentType, agentResult.prUrl);
 		}
-		remainingBudgetUsd = budgetCheck?.remaining;
-	}
 
-	const agentResult = await runAgent(result.agentType, {
-		...result.agentInput,
-		remainingBudgetUsd,
-		project,
-		config,
+		logger.info('GitHub agent completed', {
+			agentType: result.agentType,
+			prNumber: result.prNumber,
+			success: agentResult.success,
+			cost: agentResult.cost,
+			runId: agentResult.runId,
+		});
 	});
-
-	if (cardId) {
-		await handleAgentResultArtifacts(cardId, result.agentType, agentResult, project);
-
-		const postBudgetCheck = await checkBudgetExceeded(cardId, project, config);
-		if (postBudgetCheck?.exceeded) {
-			await lifecycle.handleBudgetWarning(
-				cardId,
-				postBudgetCheck.currentCost,
-				postBudgetCheck.budget,
-			);
-		}
-	}
-
-	// Move to in-review if implementation completed successfully
-	if (cardId && result.agentType === 'implementation' && agentResult.success) {
-		await lifecycle.handleSuccess(cardId, result.agentType, agentResult.prUrl);
-	}
-
-	if (!agentResult.success && result.prNumber) {
-		await updateInitialCommentWithError(result, agentResult);
-	}
-
-	logger.info('GitHub agent completed', {
-		agentType: result.agentType,
-		prNumber: result.prNumber,
-		success: agentResult.success,
-		cost: agentResult.cost,
-		runId: agentResult.runId,
-	});
-
-	await tryGitHubAutoDebug(agentResult, project, config);
-}
-
-async function tryGitHubAutoDebug(
-	agentResult: { runId?: string },
-	project: ProjectConfig,
-	config: CascadeConfig,
-): Promise<void> {
-	if (!agentResult.runId) return;
-	const debugTarget = await shouldTriggerDebug(agentResult.runId);
-	if (debugTarget) {
-		triggerDebugAnalysis(debugTarget.runId, project, config, debugTarget.cardId).catch((err) =>
-			logger.error('Auto-debug failed', { error: String(err) }),
-		);
-	}
 }
 
 async function updateInitialCommentWithError(

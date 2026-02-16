@@ -30,6 +30,7 @@ import { type Todo, formatTodoList, initTodoSession, saveTodos } from '../gadget
 import { getPMProvider } from '../pm/index.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
+import { extractPRUrl } from '../utils/prUrl.js';
 import type { PromptContext } from './prompts/index.js';
 import { type BuilderType, createConfiguredBuilder } from './shared/builderFactory.js';
 import { type FileLogger, executeAgentLifecycle } from './shared/lifecycle.js';
@@ -509,11 +510,6 @@ async function setupWorkingDirectory(
 	}
 
 	return setupRepository(project, log, agentType, prBranch);
-}
-
-function extractPRUrl(output: string): string | undefined {
-	const match = output.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/);
-	return match ? match[0] : undefined;
 }
 
 export async function executeAgent(

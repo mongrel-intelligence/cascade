@@ -6,14 +6,11 @@
  * and dispatches to the trigger registry.
  */
 
-import { runAgent } from '../../agents/registry.js';
 import {
 	findProjectByJiraProjectKey,
-	getAgentCredential,
 	getProjectSecret,
 	loadConfig,
 } from '../../config/provider.js';
-import { withGitHubToken } from '../../github/client.js';
 import { withJiraCredentials } from '../../jira/client.js';
 import {
 	PMLifecycleManager,
@@ -31,12 +28,9 @@ import {
 	setProcessing,
 	startWatchdog,
 } from '../../utils/index.js';
-import { injectLlmApiKeys } from '../../utils/llmEnv.js';
 import type { TriggerRegistry } from '../registry.js';
-import { handleAgentResultArtifacts } from '../shared/agent-result-handler.js';
-import { checkBudgetExceeded } from '../shared/budget.js';
-import { triggerDebugAnalysis } from '../shared/debug-runner.js';
-import { shouldTriggerDebug } from '../shared/debug-trigger.js';
+import { executeAgentPipeline } from '../shared/agent-pipeline.js';
+import { withProjectCredentials } from '../shared/credential-scope.js';
 import type { TriggerResult } from '../types.js';
 
 interface JiraWebhookPayload {
@@ -77,106 +71,21 @@ async function executeJiraAgent(
 	project: ProjectConfig,
 	config: CascadeConfig,
 ): Promise<void> {
-	const jiraEmail = await getProjectSecret(project.id, 'JIRA_EMAIL');
-	const jiraApiToken = await getProjectSecret(project.id, 'JIRA_API_TOKEN');
-	const jiraBaseUrl =
-		project.jira?.baseUrl ?? (await getProjectSecret(project.id, 'JIRA_BASE_URL'));
-	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
-
-	const agentGitHubToken = await getAgentCredential(project.id, result.agentType, 'GITHUB_TOKEN');
-	const effectiveGithubToken = agentGitHubToken || githubToken;
-
-	const restoreLlmEnv = await injectLlmApiKeys(project.id);
-
-	try {
-		const pmProvider = createPMProvider(project);
-		await withJiraCredentials(
-			{ email: jiraEmail, apiToken: jiraApiToken, baseUrl: jiraBaseUrl },
-			() =>
-				withPMProvider(pmProvider, () =>
-					withGitHubToken(effectiveGithubToken, () =>
-						executeJiraAgentWithCreds(result, project, config),
-					),
-				),
-		);
-	} finally {
-		restoreLlmEnv();
-	}
-}
-
-async function executeJiraAgentWithCreds(
-	result: TriggerResult,
-	project: ProjectConfig,
-	config: CascadeConfig,
-): Promise<void> {
 	const workItemId = result.workItemId ?? result.cardId;
 	const pmProvider = createPMProvider(project);
 	const pmConfig = resolveProjectPMConfig(project);
 	const lifecycle = new PMLifecycleManager(pmProvider, pmConfig);
 
-	let remainingBudgetUsd: number | undefined;
-	if (workItemId) {
-		const budgetCheck = await checkBudgetExceeded(workItemId, project, config);
-		if (budgetCheck?.exceeded) {
-			logger.warn('Budget exceeded, JIRA agent not started', {
-				workItemId,
-				currentCost: budgetCheck.currentCost,
-				budget: budgetCheck.budget,
-			});
-			await lifecycle.handleBudgetExceeded(workItemId, budgetCheck.currentCost, budgetCheck.budget);
-			return;
-		}
-		remainingBudgetUsd = budgetCheck?.remaining;
-	}
-
-	if (workItemId) {
-		await lifecycle.prepareForAgent(workItemId, result.agentType);
-	}
-
-	const agentResult = await runAgent(result.agentType, {
-		...result.agentInput,
-		cardId: workItemId,
-		remainingBudgetUsd,
-		project,
-		config,
-	});
-
-	if (workItemId) {
-		await handleAgentResultArtifacts(workItemId, result.agentType, agentResult, project);
-
-		const postBudgetCheck = await checkBudgetExceeded(workItemId, project, config);
-		if (postBudgetCheck?.exceeded) {
-			await lifecycle.handleBudgetWarning(
-				workItemId,
-				postBudgetCheck.currentCost,
-				postBudgetCheck.budget,
-			);
-		}
-
-		await lifecycle.cleanupProcessing(workItemId);
-
-		if (agentResult.success) {
-			await lifecycle.handleSuccess(workItemId, result.agentType, agentResult.prUrl);
-		} else {
-			await lifecycle.handleFailure(workItemId, agentResult.error);
-		}
-	}
-
-	logger.info('JIRA agent completed', {
-		agentType: result.agentType,
-		success: agentResult.success,
-		runId: agentResult.runId,
-	});
-
-	// Auto-debug
-	if (agentResult.runId) {
-		const debugTarget = await shouldTriggerDebug(agentResult.runId);
-		if (debugTarget) {
-			triggerDebugAnalysis(debugTarget.runId, project, config, debugTarget.cardId).catch((err) =>
-				logger.error('Auto-debug failed', { error: String(err) }),
-			);
-		}
-	}
+	await withProjectCredentials(project, result.agentType, () =>
+		executeAgentPipeline({
+			agentType: result.agentType,
+			agentInput: { ...result.agentInput, cardId: workItemId },
+			workItemId,
+			project,
+			config,
+			lifecycle,
+		}),
+	);
 }
 
 function processNextQueuedJiraWebhook(registry: TriggerRegistry): void {
