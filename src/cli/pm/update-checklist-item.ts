@@ -1,12 +1,12 @@
 import { Args, Flags } from '@oclif/core';
-import { updateChecklistItem } from '../../gadgets/trello/core/updateChecklistItem.js';
+import { updateChecklistItem } from '../../gadgets/pm/core/updateChecklistItem.js';
 import { CredentialScopedCommand } from '../base.js';
 
 export default class UpdateChecklistItem extends CredentialScopedCommand {
-	static override description = 'Update a checklist item state on a Trello card.';
+	static override description = 'Update a checklist item state on a work item.';
 
 	static override args = {
-		cardId: Args.string({ description: 'The Trello card ID', required: true }),
+		workItemId: Args.string({ description: 'The work item ID', required: true }),
 	};
 
 	static override flags = {
@@ -21,9 +21,9 @@ export default class UpdateChecklistItem extends CredentialScopedCommand {
 	async execute(): Promise<void> {
 		const { args, flags } = await this.parse(UpdateChecklistItem);
 		const result = await updateChecklistItem(
-			args.cardId,
+			args.workItemId,
 			flags['check-item-id'],
-			flags.state as 'complete' | 'incomplete',
+			flags.state === 'complete',
 		);
 		this.log(JSON.stringify({ success: true, data: result }));
 	}

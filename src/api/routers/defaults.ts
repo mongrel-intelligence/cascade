@@ -15,9 +15,7 @@ export const defaultsRouter = router({
 			z.object({
 				model: z.string().nullish(),
 				maxIterations: z.number().int().positive().nullish(),
-				freshMachineTimeoutMs: z.number().int().positive().nullish(),
 				watchdogTimeoutMs: z.number().int().positive().nullish(),
-				postJobGracePeriodMs: z.number().int().positive().nullish(),
 				cardBudgetUsd: z.string().nullish(),
 				agentBackend: z.string().nullish(),
 				progressModel: z.string().nullish(),

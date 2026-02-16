@@ -26,9 +26,7 @@ export default class DefaultsShow extends DashboardCommand {
 			this.outputDetail(defaults as unknown as Record<string, unknown>, {
 				model: { label: 'Model' },
 				maxIterations: { label: 'Max Iterations' },
-				freshMachineTimeoutMs: { label: 'Fresh Machine Timeout' },
 				watchdogTimeoutMs: { label: 'Watchdog Timeout' },
-				postJobGracePeriodMs: { label: 'Post-Job Grace' },
 				cardBudgetUsd: { label: 'Card Budget' },
 				agentBackend: { label: 'Agent Backend' },
 				progressModel: { label: 'Progress Model' },

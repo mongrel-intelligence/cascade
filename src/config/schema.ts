@@ -6,6 +6,18 @@ const AgentBackendConfigSchema = z.object({
 	subscriptionCostZero: z.boolean().default(false),
 });
 
+const JiraConfigSchema = z.object({
+	projectKey: z.string().min(1),
+	baseUrl: z.string().url(),
+	statuses: z.record(z.string()), // CASCADE status names → JIRA status IDs/names
+	issueTypes: z.record(z.string()).optional(),
+	customFields: z
+		.object({
+			cost: z.string().optional(),
+		})
+		.optional(),
+});
+
 export const ProjectConfigSchema = z.object({
 	id: z.string().min(1),
 	orgId: z.string().min(1),
@@ -14,16 +26,26 @@ export const ProjectConfigSchema = z.object({
 	baseBranch: z.string().default('main'),
 	branchPrefix: z.string().default('feature/'),
 
-	trello: z.object({
-		boardId: z.string().min(1),
-		lists: z.record(z.string()),
-		labels: z.record(z.string()),
-		customFields: z
-			.object({
-				cost: z.string().optional(),
-			})
-			.optional(),
-	}),
+	pm: z
+		.object({
+			type: z.enum(['trello', 'jira']).default('trello'),
+		})
+		.default({ type: 'trello' }),
+
+	trello: z
+		.object({
+			boardId: z.string().min(1),
+			lists: z.record(z.string()),
+			labels: z.record(z.string()),
+			customFields: z
+				.object({
+					cost: z.string().optional(),
+				})
+				.optional(),
+		})
+		.optional(),
+
+	jira: JiraConfigSchema.optional(),
 
 	prompts: z.record(z.string()).optional(),
 	model: z.string().optional(),
@@ -39,17 +61,11 @@ export const CascadeConfigSchema = z.object({
 			agentModels: z.record(z.string()).default({}),
 			maxIterations: z.number().int().positive().default(50),
 			agentIterations: z.record(z.number().int().positive()).default({}),
-			freshMachineTimeoutMs: z
-				.number()
-				.int()
-				.positive()
-				.default(5 * 60 * 1000), // 5 min - exit if no work received after boot
 			watchdogTimeoutMs: z
 				.number()
 				.int()
 				.positive()
 				.default(30 * 60 * 1000), // 30 min max job duration
-			postJobGracePeriodMs: z.number().int().nonnegative().default(5000), // 5 sec grace before exit
 			cardBudgetUsd: z.number().positive().default(5),
 			agentBackend: z.string().default('llmist'),
 			progressModel: z.string().default('openrouter:google/gemini-2.5-flash-lite'),

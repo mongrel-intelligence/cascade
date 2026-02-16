@@ -5,10 +5,15 @@ import type { CascadeConfig } from '../types/index.js';
 export interface RouterProjectConfig {
 	id: string;
 	repo: string; // owner/repo format
-	trello: {
+	pmType: 'trello' | 'jira';
+	trello?: {
 		boardId: string;
 		lists: Record<string, string>;
 		labels: Record<string, string>;
+	};
+	jira?: {
+		projectKey: string;
+		baseUrl: string;
 	};
 }
 
@@ -37,11 +42,20 @@ export async function loadProjectConfig(): Promise<{ projects: RouterProjectConf
 		projects: config.projects.map((p) => ({
 			id: p.id,
 			repo: p.repo,
-			trello: {
-				boardId: p.trello.boardId,
-				lists: p.trello.lists,
-				labels: p.trello.labels,
-			},
+			pmType: p.pm?.type ?? 'trello',
+			...(p.trello && {
+				trello: {
+					boardId: p.trello.boardId,
+					lists: p.trello.lists,
+					labels: p.trello.labels,
+				},
+			}),
+			...(p.jira && {
+				jira: {
+					projectKey: p.jira.projectKey,
+					baseUrl: p.jira.baseUrl,
+				},
+			}),
 		})),
 	};
 	console.log(`[Router] Loaded config with ${projectConfig.projects.length} projects`);

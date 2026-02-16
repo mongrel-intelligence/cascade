@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock all external dependencies
-vi.mock('../../../src/gadgets/trello/core/readCard.js', () => ({
-	readCard: vi.fn(),
+vi.mock('../../../src/gadgets/pm/core/readWorkItem.js', () => ({
+	readWorkItem: vi.fn(),
 }));
 
 vi.mock('../../../src/agents/shared/repository.js', () => ({
@@ -66,7 +66,7 @@ import { executeWithBackend } from '../../../src/backends/adapter.js';
 import { createProgressMonitor } from '../../../src/backends/progress.js';
 import type { AgentBackend } from '../../../src/backends/types.js';
 import { getProjectSecrets } from '../../../src/config/provider.js';
-import { readCard } from '../../../src/gadgets/trello/core/readCard.js';
+import { readWorkItem } from '../../../src/gadgets/pm/core/readWorkItem.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../../../src/utils/cascadeEnv.js';
 import {
@@ -78,7 +78,7 @@ import { clearWatchdogCleanup, setWatchdogCleanup } from '../../../src/utils/lif
 import { logger } from '../../../src/utils/logging.js';
 import { cleanupTempDir } from '../../../src/utils/repo.js';
 
-const mockReadCard = vi.mocked(readCard);
+const mockReadWorkItem = vi.mocked(readWorkItem);
 const mockSetupRepository = vi.mocked(setupRepository);
 const mockResolveModelConfig = vi.mocked(resolveModelConfig);
 const mockCreateFileLogger = vi.mocked(createFileLogger);
@@ -110,9 +110,7 @@ function makeConfig(): CascadeConfig {
 			agentModels: {},
 			maxIterations: 50,
 			agentIterations: {},
-			freshMachineTimeoutMs: 300000,
 			watchdogTimeoutMs: 1800000,
-			postJobGracePeriodMs: 5000,
 			cardBudgetUsd: 5,
 			agentBackend: 'llmist',
 			progressModel: 'openrouter:google/gemini-2.5-flash-lite',
@@ -164,7 +162,7 @@ function setupMocks() {
 		model: 'test-model',
 		maxIterations: 50,
 	} as never);
-	mockReadCard.mockResolvedValue('Card data');
+	mockReadWorkItem.mockResolvedValue('Card data');
 	mockCreateProgressMonitor.mockReturnValue(null);
 	mockGetProjectSecrets.mockResolvedValue({});
 	return mockLoggerInstance;
@@ -291,7 +289,7 @@ describe('executeWithBackend', () => {
 
 		await executeWithBackend(backend, 'implementation', input);
 
-		expect(mockReadCard).toHaveBeenCalledWith('card123', true);
+		expect(mockReadWorkItem).toHaveBeenCalledWith('card123', true);
 	});
 
 	it('skips context injection when logDir present', async () => {
@@ -301,7 +299,7 @@ describe('executeWithBackend', () => {
 
 		await executeWithBackend(backend, 'implementation', input);
 
-		expect(mockReadCard).not.toHaveBeenCalled();
+		expect(mockReadWorkItem).not.toHaveBeenCalled();
 	});
 
 	it('marks implementation agent as failed when no PR was created', async () => {

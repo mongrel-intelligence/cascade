@@ -17,6 +17,14 @@ export interface PromptContext {
 	projectId?: string;
 	baseBranch?: string;
 
+	// PM vocabulary (computed from pmType)
+	pmType?: 'trello' | 'jira';
+	workItemNoun?: string; // "card" or "issue"
+	workItemNounPlural?: string; // "cards" or "issues"
+	workItemNounCap?: string; // "Card" or "Issue"
+	workItemNounPluralCap?: string; // "Cards" or "Issues"
+	pmName?: string; // "Trello" or "JIRA"
+
 	// Briefing-specific
 	storiesListId?: string;
 	processedLabelId?: string;

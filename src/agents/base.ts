@@ -13,21 +13,20 @@ import { RipGrep } from '../gadgets/RipGrep.js';
 import { Sleep } from '../gadgets/Sleep.js';
 import { VerifyChanges } from '../gadgets/VerifyChanges.js';
 import { CreatePR } from '../gadgets/github/index.js';
+import {
+	AddChecklist,
+	CreateWorkItem,
+	ListWorkItems,
+	PMUpdateChecklistItem,
+	PostComment,
+	ReadWorkItem,
+	UpdateWorkItem,
+	formatWorkItemData,
+} from '../gadgets/pm/index.js';
 import { Tmux } from '../gadgets/tmux.js';
 import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
 import { type Todo, formatTodoList, initTodoSession, saveTodos } from '../gadgets/todo/storage.js';
-import {
-	AddChecklistToCard,
-	CreateTrelloCard,
-	// GetMyRecentActivity, // Temporarily disabled
-	ListTrelloCards,
-	PostTrelloComment,
-	ReadTrelloCard,
-	UpdateChecklistItem,
-	UpdateTrelloCard,
-	formatCardData,
-} from '../gadgets/trello/index.js';
-import { trelloClient } from '../trello/client.js';
+import { getPMProvider } from '../pm/index.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import type { PromptContext } from './prompts/index.js';
@@ -86,10 +85,11 @@ interface AgentContextData {
 
 export async function fetchImplementationSteps(cardId: string): Promise<string[] | undefined> {
 	try {
-		const checklists = await trelloClient.getCardChecklists(cardId);
+		const provider = getPMProvider();
+		const checklists = await provider.getChecklists(cardId);
 		const implChecklist = checklists.find((cl) => cl.name.includes('Implementation Steps'));
-		if (!implChecklist || implChecklist.checkItems.length === 0) return undefined;
-		const incompleteItems = implChecklist.checkItems.filter((item) => item.state !== 'complete');
+		if (!implChecklist || implChecklist.items.length === 0) return undefined;
+		const incompleteItems = implChecklist.items.filter((item) => !item.complete);
 		return incompleteItems.length > 0 ? incompleteItems.map((item) => item.name) : undefined;
 	} catch {
 		return undefined;
@@ -116,13 +116,21 @@ async function buildAgentContext(
 	commentContext?: { text: string; author: string },
 ): Promise<AgentContextData> {
 	// Build prompt context for template rendering
+	const pmProvider = getPMProvider();
+	const isJira = pmProvider.type === 'jira';
 	const promptContext: PromptContext = {
 		cardId,
-		cardUrl: cardId ? `https://trello.com/c/${cardId}` : undefined,
+		cardUrl: cardId ? pmProvider.getWorkItemUrl(cardId) : undefined,
 		projectId: project.id,
 		baseBranch: project.baseBranch,
 		storiesListId: project.trello?.lists?.stories,
 		processedLabelId: project.trello?.labels?.processed,
+		pmType: pmProvider.type,
+		workItemNoun: isJira ? 'issue' : 'card',
+		workItemNounPlural: isJira ? 'issues' : 'cards',
+		workItemNounCap: isJira ? 'Issue' : 'Card',
+		workItemNounPluralCap: isJira ? 'Issues' : 'Cards',
+		pmName: isJira ? 'JIRA' : 'Trello',
 		...(prContext && {
 			prNumber: prContext.prNumber,
 			prBranch: prContext.prBranch,
@@ -155,11 +163,11 @@ async function buildAgentContext(
 		configKey: configKeyOverrides[agentType],
 	});
 
-	// Pre-fetch card data for synthetic gadget call (only if cardId exists and not debug flow)
+	// Pre-fetch work item data for synthetic gadget call (only if cardId exists and not debug flow)
 	let cardData = '';
 	if (cardId && !debugContext) {
-		log.info('Fetching card data for context', { cardId });
-		cardData = await formatCardData(cardId, true);
+		log.info('Fetching work item data for context', { cardId });
+		cardData = await formatWorkItemData(cardId, true);
 	}
 
 	// Pre-fetch implementation steps for synthetic todo injection
@@ -196,19 +204,19 @@ function buildCommentResponsePrompt(
 	commentText: string,
 	commentAuthor: string,
 ): string {
-	return `A user (@${commentAuthor}) mentioned you in a comment on Trello card ${cardId}.
+	return `A user (@${commentAuthor}) mentioned you in a comment on work item ${cardId}.
 
 Their comment:
 ---
 ${commentText}
 ---
 
-The card data (title, description, checklists, attachments, comments) has been pre-loaded above.
+The work item data (title, description, checklists, attachments, comments) has been pre-loaded above.
 Read the user's comment carefully and respond accordingly. Default to surgical, targeted updates unless they clearly ask for a full rewrite.`;
 }
 
 function buildPrompt(cardId: string): string {
-	return `Analyze and process the Trello card with ID: ${cardId}. The card data (title, description, checklists, attachments, comments) has been pre-loaded above. Review it and proceed with your task.`;
+	return `Analyze and process the work item with ID: ${cardId}. The work item data (title, description, checklists, attachments, comments) has been pre-loaded above. Review it and proceed with your task.`;
 }
 
 function buildCheckFailurePrompt(prContext: {
@@ -297,17 +305,16 @@ function getBaseAgentGadgets(agentType: string) {
 		new TodoDelete(),
 		// GitHub gadgets (no PR creation for planning)
 		...(isReadOnlyAgent ? [] : [new CreatePR()]),
-		// Trello gadgets
-		new ReadTrelloCard(),
-		new PostTrelloComment(),
-		new UpdateTrelloCard(),
-		new CreateTrelloCard(),
-		new ListTrelloCards(),
-		// new GetMyRecentActivity(), // Temporarily disabled
-		new AddChecklistToCard(),
+		// PM gadgets (work items, comments, checklists — PM-agnostic)
+		new ReadWorkItem(),
+		new PostComment(),
+		new UpdateWorkItem(),
+		new CreateWorkItem(),
+		new ListWorkItems(),
+		new AddChecklist(),
 		// UpdateChecklistItem not available for planning - prevents marking items complete prematurely
 		// But respond-to-planning-comment CAN update checklist items (user may ask to check/uncheck steps)
-		...(agentType === 'planning' ? [] : [new UpdateChecklistItem()]),
+		...(agentType === 'planning' ? [] : [new PMUpdateChecklistItem()]),
 		// Session control
 		new Finish(),
 	];
@@ -369,13 +376,13 @@ async function injectSyntheticCalls(
 	// before encountering specific file paths from the card
 	builder = injectSquintContext(builder, trackingContext, repoDir);
 
-	// Inject card data as synthetic ReadTrelloCard call (only if cardId exists)
+	// Inject work item data as synthetic ReadWorkItem call (only if cardId exists)
 	if (cardId && cardData) {
 		builder = injectSyntheticCall(
 			builder,
 			trackingContext,
-			'ReadTrelloCard',
-			{ cardId, includeComments: true },
+			'ReadWorkItem',
+			{ workItemId: cardId, includeComments: true },
 			cardData,
 			'gc_card',
 		);
@@ -493,11 +500,16 @@ export async function executeAgent(
 
 		onWatchdogTimeout: async (_fileLogger: FileLogger, runId?: string) => {
 			if (cardId) {
-				await trelloClient.addComment(
-					cardId,
-					`⏱️ Agent timed out (watchdog).${runId ? ` Run ID: ${runId}` : ''}`,
-				);
-				logger.info('Posted timeout comment to card', { cardId, runId });
+				try {
+					const provider = getPMProvider();
+					await provider.addComment(
+						cardId,
+						`⏱️ Agent timed out (watchdog).${runId ? ` Run ID: ${runId}` : ''}`,
+					);
+					logger.info('Posted timeout comment to work item', { cardId, runId });
+				} catch {
+					logger.warn('Failed to post timeout comment', { cardId, runId });
+				}
 			}
 		},
 
@@ -563,7 +575,7 @@ export async function executeAgent(
 			createProgressMonitor({
 				logWriter: fileLogger.write.bind(fileLogger),
 				agentType,
-				taskDescription: cardId ? `Trello card ${cardId}` : 'Unknown task',
+				taskDescription: cardId ? `Work item ${cardId}` : 'Unknown task',
 				progressModel: config.defaults.progressModel,
 				intervalMinutes: config.defaults.progressIntervalMinutes,
 				customModels: CUSTOM_MODELS as ModelSpec[],

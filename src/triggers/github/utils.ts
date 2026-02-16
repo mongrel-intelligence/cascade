@@ -1,8 +1,12 @@
 import { getAuthenticatedUser } from '../../github/client.js';
+import type { ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 
 // Trello card URL pattern: https://trello.com/c/SHORT_ID/optional-slug
 const TRELLO_CARD_URL_REGEX = /https:\/\/trello\.com\/c\/([a-zA-Z0-9]+)/;
+
+// JIRA issue key pattern: PROJECT-123
+const JIRA_ISSUE_KEY_REGEX = /\b([A-Z][A-Z0-9]+-\d+)\b/;
 
 /**
  * Extract Trello card short ID from text (e.g., PR body).
@@ -59,4 +63,45 @@ export function requireTrelloCardId(
 		return null;
 	}
 	return extractTrelloCardId(prBody);
+}
+
+/**
+ * Extract a JIRA issue key (e.g., "PROJ-123") from text.
+ */
+export function extractJiraIssueKey(text: string | null): string | null {
+	if (!text) return null;
+	const match = text.match(JIRA_ISSUE_KEY_REGEX);
+	return match ? match[1] : null;
+}
+
+/**
+ * Extract work item ID from text based on the project's PM type.
+ * For Trello projects, looks for Trello card URLs.
+ * For JIRA projects, looks for JIRA issue keys.
+ */
+export function extractWorkItemId(text: string | null, project: ProjectConfig): string | null {
+	if (!text) return null;
+	if (project.pm?.type === 'jira') {
+		return extractJiraIssueKey(text);
+	}
+	return extractTrelloCardId(text);
+}
+
+/**
+ * Validate PR body has a work item reference and extract the ID.
+ * Works for both Trello (card URL) and JIRA (issue key) projects.
+ */
+export function requireWorkItemId(
+	prBody: string | null,
+	project: ProjectConfig,
+	context: { prNumber: number; triggerName: string },
+): string | null {
+	const id = extractWorkItemId(prBody, project);
+	if (!id) {
+		logger.info(`PR does not have work item reference, skipping ${context.triggerName}`, {
+			prNumber: context.prNumber,
+			pmType: project.pm?.type ?? 'trello',
+		});
+	}
+	return id;
 }

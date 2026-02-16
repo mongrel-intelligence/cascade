@@ -31,14 +31,26 @@ export interface GitHubWebhook {
 	config: { url?: string; content_type?: string };
 }
 
+export interface JiraWebhookInfo {
+	id: number;
+	name: string;
+	url: string;
+	events: string[];
+	enabled: boolean;
+}
+
 interface ProjectContext {
 	projectId: string;
 	orgId: string;
 	repo: string;
-	boardId: string;
+	pmType: 'trello' | 'jira';
+	boardId?: string;
+	jiraBaseUrl?: string;
 	trelloApiKey: string;
 	trelloToken: string;
 	githubToken: string;
+	jiraEmail?: string;
+	jiraApiToken?: string;
 }
 
 async function resolveProjectContext(
@@ -66,17 +78,21 @@ async function resolveProjectContext(
 		projectId,
 		orgId: project.orgId,
 		repo: project.repo,
-		boardId: project.trello.boardId,
+		pmType: project.pm?.type ?? 'trello',
+		boardId: project.trello?.boardId,
+		jiraBaseUrl: project.jira?.baseUrl,
 		trelloApiKey: creds.TRELLO_API_KEY ?? '',
 		trelloToken: creds.TRELLO_TOKEN ?? '',
 		githubToken: creds.GITHUB_TOKEN ?? '',
+		jiraEmail: creds.JIRA_EMAIL ?? '',
+		jiraApiToken: creds.JIRA_API_TOKEN ?? '',
 	};
 }
 
 // --- Trello helpers ---
 
 async function trelloListWebhooks(ctx: ProjectContext): Promise<TrelloWebhook[]> {
-	if (!ctx.trelloApiKey || !ctx.trelloToken) return [];
+	if (!ctx.trelloApiKey || !ctx.trelloToken || !ctx.boardId) return [];
 	const response = await fetch(
 		`https://api.trello.com/1/tokens/${ctx.trelloToken}/webhooks?key=${ctx.trelloApiKey}`,
 	);
@@ -128,6 +144,91 @@ async function trelloDeleteWebhook(ctx: ProjectContext, webhookId: string): Prom
 	}
 }
 
+// --- JIRA helpers ---
+
+function jiraAuthHeader(ctx: ProjectContext): string {
+	return `Basic ${Buffer.from(`${ctx.jiraEmail}:${ctx.jiraApiToken}`).toString('base64')}`;
+}
+
+async function jiraListWebhooks(ctx: ProjectContext): Promise<JiraWebhookInfo[]> {
+	if (!ctx.jiraBaseUrl || !ctx.jiraEmail || !ctx.jiraApiToken) return [];
+	const response = await fetch(`${ctx.jiraBaseUrl}/rest/api/3/webhook`, {
+		headers: {
+			Authorization: jiraAuthHeader(ctx),
+			Accept: 'application/json',
+		},
+	});
+	if (!response.ok) {
+		throw new TRPCError({
+			code: 'INTERNAL_SERVER_ERROR',
+			message: `Failed to list JIRA webhooks: ${response.status}`,
+		});
+	}
+	const data = (await response.json()) as { values?: JiraWebhookInfo[] };
+	return data.values ?? [];
+}
+
+async function jiraCreateWebhook(
+	ctx: ProjectContext,
+	callbackURL: string,
+): Promise<JiraWebhookInfo> {
+	if (!ctx.jiraBaseUrl || !ctx.jiraEmail || !ctx.jiraApiToken) {
+		throw new TRPCError({
+			code: 'BAD_REQUEST',
+			message: 'JIRA credentials not configured',
+		});
+	}
+	const response = await fetch(`${ctx.jiraBaseUrl}/rest/api/3/webhook`, {
+		method: 'POST',
+		headers: {
+			Authorization: jiraAuthHeader(ctx),
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			url: callbackURL,
+			webhooks: [
+				{
+					jqlFilter: '*',
+					events: [
+						'jira:issue_created',
+						'jira:issue_updated',
+						'comment_created',
+						'comment_updated',
+					],
+				},
+			],
+		}),
+	});
+	if (!response.ok) {
+		const errorText = await response.text().catch(() => '');
+		throw new TRPCError({
+			code: 'INTERNAL_SERVER_ERROR',
+			message: `Failed to create JIRA webhook: ${response.status} ${errorText}`,
+		});
+	}
+	return (await response.json()) as JiraWebhookInfo;
+}
+
+async function jiraDeleteWebhook(ctx: ProjectContext, webhookId: number): Promise<void> {
+	if (!ctx.jiraBaseUrl || !ctx.jiraEmail || !ctx.jiraApiToken) return;
+	const response = await fetch(`${ctx.jiraBaseUrl}/rest/api/3/webhook`, {
+		method: 'DELETE',
+		headers: {
+			Authorization: jiraAuthHeader(ctx),
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({ webhookIds: [webhookId] }),
+	});
+	if (!response.ok) {
+		throw new TRPCError({
+			code: 'INTERNAL_SERVER_ERROR',
+			message: `Failed to delete JIRA webhook ${webhookId}: ${response.status}`,
+		});
+	}
+}
+
 // --- GitHub helpers ---
 
 function parseRepo(repo: string): { owner: string; repo: string } {
@@ -173,12 +274,13 @@ export const webhooksRouter = router({
 		.query(async ({ ctx, input }) => {
 			const pctx = await resolveProjectContext(input.projectId, ctx.user.orgId);
 
-			const [trello, github] = await Promise.all([
+			const [trello, github, jira] = await Promise.all([
 				trelloListWebhooks(pctx),
 				githubListWebhooks(pctx),
+				jiraListWebhooks(pctx),
 			]);
 
-			return { trello, github };
+			return { trello, github, jira };
 		}),
 
 	create: protectedProcedure
@@ -188,15 +290,26 @@ export const webhooksRouter = router({
 				callbackBaseUrl: z.string().url(),
 				trelloOnly: z.boolean().optional(),
 				githubOnly: z.boolean().optional(),
+				jiraOnly: z.boolean().optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
 			const pctx = await resolveProjectContext(input.projectId, ctx.user.orgId);
 			const baseUrl = input.callbackBaseUrl.replace(/\/$/, '');
-			const results: { trello?: TrelloWebhook | string; github?: GitHubWebhook | string } = {};
+			const results: {
+				trello?: TrelloWebhook | string;
+				github?: GitHubWebhook | string;
+				jira?: JiraWebhookInfo | string;
+			} = {};
 
-			// Trello webhook
-			if (!input.githubOnly && pctx.trelloApiKey && pctx.trelloToken) {
+			// Trello webhook (skip for JIRA-only projects)
+			if (
+				!input.githubOnly &&
+				!input.jiraOnly &&
+				pctx.trelloApiKey &&
+				pctx.trelloToken &&
+				pctx.boardId
+			) {
 				const trelloCallbackUrl = `${baseUrl}/webhook/trello`;
 				const existing = await trelloListWebhooks(pctx);
 				const duplicate = existing.find((w) => w.callbackURL === trelloCallbackUrl);
@@ -208,8 +321,27 @@ export const webhooksRouter = router({
 				}
 			}
 
+			// JIRA webhook (skip for Trello-only projects)
+			if (
+				!input.trelloOnly &&
+				!input.githubOnly &&
+				pctx.jiraEmail &&
+				pctx.jiraApiToken &&
+				pctx.jiraBaseUrl
+			) {
+				const jiraCallbackUrl = `${baseUrl}/webhook/jira`;
+				const existing = await jiraListWebhooks(pctx);
+				const duplicate = existing.find((w) => w.url === jiraCallbackUrl);
+
+				if (duplicate) {
+					results.jira = `Already exists: ${duplicate.id}`;
+				} else {
+					results.jira = await jiraCreateWebhook(pctx, jiraCallbackUrl);
+				}
+			}
+
 			// GitHub webhook
-			if (!input.trelloOnly && pctx.githubToken) {
+			if (!input.trelloOnly && !input.jiraOnly && pctx.githubToken) {
 				const githubCallbackUrl = `${baseUrl}/webhook/github`;
 				const existing = await githubListWebhooks(pctx);
 				const duplicate = existing.find((w) => w.config.url === githubCallbackUrl);
@@ -231,15 +363,20 @@ export const webhooksRouter = router({
 				callbackBaseUrl: z.string().url(),
 				trelloOnly: z.boolean().optional(),
 				githubOnly: z.boolean().optional(),
+				jiraOnly: z.boolean().optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
 			const pctx = await resolveProjectContext(input.projectId, ctx.user.orgId);
 			const baseUrl = input.callbackBaseUrl.replace(/\/$/, '');
-			const deleted: { trello: string[]; github: number[] } = { trello: [], github: [] };
+			const deleted: { trello: string[]; github: number[]; jira: number[] } = {
+				trello: [],
+				github: [],
+				jira: [],
+			};
 
 			// Trello
-			if (!input.githubOnly && pctx.trelloApiKey && pctx.trelloToken) {
+			if (!input.githubOnly && !input.jiraOnly && pctx.trelloApiKey && pctx.trelloToken) {
 				const trelloCallbackUrl = `${baseUrl}/webhook/trello`;
 				const existing = await trelloListWebhooks(pctx);
 				const matching = existing.filter((w) => w.callbackURL === trelloCallbackUrl);
@@ -249,8 +386,19 @@ export const webhooksRouter = router({
 				}
 			}
 
+			// JIRA
+			if (!input.trelloOnly && !input.githubOnly && pctx.jiraEmail && pctx.jiraApiToken) {
+				const jiraCallbackUrl = `${baseUrl}/webhook/jira`;
+				const existing = await jiraListWebhooks(pctx);
+				const matching = existing.filter((w) => w.url === jiraCallbackUrl);
+				for (const w of matching) {
+					await jiraDeleteWebhook(pctx, w.id);
+					deleted.jira.push(w.id);
+				}
+			}
+
 			// GitHub
-			if (!input.trelloOnly && pctx.githubToken) {
+			if (!input.trelloOnly && !input.jiraOnly && pctx.githubToken) {
 				const githubCallbackUrl = `${baseUrl}/webhook/github`;
 				const existing = await githubListWebhooks(pctx);
 				const matching = existing.filter((w) => w.config.url === githubCallbackUrl);

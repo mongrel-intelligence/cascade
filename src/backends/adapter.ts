@@ -13,7 +13,7 @@ import {
 	createRun,
 	storeRunLogs,
 } from '../db/repositories/runsRepository.js';
-import { readCard } from '../gadgets/trello/core/readCard.js';
+import { readWorkItem } from '../gadgets/pm/core/readWorkItem.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../utils/cascadeEnv.js';
 import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
@@ -30,67 +30,67 @@ import type { AgentBackend, AgentBackendInput, ContextInjection, ToolManifest } 
 function getToolManifests(): ToolManifest[] {
 	return [
 		{
-			name: 'ReadTrelloCard',
+			name: 'ReadWorkItem',
 			description:
-				'Read a Trello card with title, description, comments, checklists, and attachments.',
-			cliCommand: 'cascade-tools trello read-card',
+				'Read a work item (card/issue) with title, description, comments, checklists, and attachments.',
+			cliCommand: 'cascade-tools pm read-work-item',
 			parameters: {
-				cardId: { type: 'string', required: true },
+				workItemId: { type: 'string', required: true },
 				includeComments: { type: 'boolean', default: true },
 			},
 		},
 		{
-			name: 'PostTrelloComment',
-			description: 'Post a comment to a Trello card.',
-			cliCommand: 'cascade-tools trello post-comment',
+			name: 'PostComment',
+			description: 'Post a comment to a work item (card/issue).',
+			cliCommand: 'cascade-tools pm post-comment',
 			parameters: {
-				cardId: { type: 'string', required: true },
+				workItemId: { type: 'string', required: true },
 				text: { type: 'string', required: true },
 			},
 		},
 		{
-			name: 'UpdateTrelloCard',
-			description: 'Update a Trello card title, description, or labels.',
-			cliCommand: 'cascade-tools trello update-card',
+			name: 'UpdateWorkItem',
+			description: 'Update a work item title, description, or labels.',
+			cliCommand: 'cascade-tools pm update-work-item',
 			parameters: {
-				cardId: { type: 'string', required: true },
+				workItemId: { type: 'string', required: true },
 				title: { type: 'string' },
 				description: { type: 'string' },
 			},
 		},
 		{
-			name: 'CreateTrelloCard',
-			description: 'Create a new Trello card.',
-			cliCommand: 'cascade-tools trello create-card',
+			name: 'CreateWorkItem',
+			description: 'Create a new work item (card/issue).',
+			cliCommand: 'cascade-tools pm create-work-item',
 			parameters: {
-				listId: { type: 'string', required: true },
+				containerId: { type: 'string', required: true },
 				title: { type: 'string', required: true },
 			},
 		},
 		{
-			name: 'ListTrelloCards',
-			description: 'List all cards in a Trello list.',
-			cliCommand: 'cascade-tools trello list-cards',
-			parameters: { listId: { type: 'string', required: true } },
+			name: 'ListWorkItems',
+			description: 'List all work items in a container.',
+			cliCommand: 'cascade-tools pm list-work-items',
+			parameters: { containerId: { type: 'string', required: true } },
 		},
 		{
-			name: 'AddChecklistToCard',
-			description: 'Add a checklist with items to a Trello card.',
-			cliCommand: 'cascade-tools trello add-checklist',
+			name: 'AddChecklist',
+			description: 'Add a checklist with items to a work item.',
+			cliCommand: 'cascade-tools pm add-checklist',
 			parameters: {
-				cardId: { type: 'string', required: true },
+				workItemId: { type: 'string', required: true },
 				name: { type: 'string', required: true },
 				items: { type: 'array', required: true },
 			},
 		},
 		{
 			name: 'UpdateChecklistItem',
-			description: 'Update a checklist item state on a Trello card.',
-			cliCommand: 'cascade-tools trello update-checklist-item',
+			description: 'Update a checklist item state on a work item.',
+			cliCommand: 'cascade-tools pm update-checklist-item',
 			parameters: {
-				cardId: { type: 'string', required: true },
+				workItemId: { type: 'string', required: true },
 				checkItemId: { type: 'string', required: true },
-				state: { type: 'string', enum: ['complete', 'incomplete'] },
+				complete: { type: 'boolean' },
 			},
 		},
 		{
@@ -216,13 +216,13 @@ async function fetchContextInjections(
 	const cardId = input.cardId;
 
 	if (cardId && !input.logDir) {
-		log.info('Fetching card data for context injection', { cardId });
-		const cardData = await readCard(cardId, true);
+		log.info('Fetching work item data for context injection', { cardId });
+		const cardData = await readWorkItem(cardId, true);
 		injections.push({
-			toolName: 'ReadTrelloCard',
-			params: { cardId, includeComments: true },
+			toolName: 'ReadWorkItem',
+			params: { workItemId: cardId, includeComments: true },
 			result: cardData,
-			description: 'Pre-fetched Trello card data',
+			description: 'Pre-fetched work item data',
 		});
 	}
 
@@ -262,13 +262,19 @@ async function buildBackendInput(
 ): Promise<Omit<AgentBackendInput, 'progressReporter'>> {
 	const { project, config, cardId } = input;
 
+	const pmType = project.pm?.type ?? 'trello';
 	const promptContext: PromptContext = {
 		cardId,
-		cardUrl: cardId ? `https://trello.com/c/${cardId}` : undefined,
+		cardUrl: cardId
+			? pmType === 'jira' && project.jira
+				? `${project.jira.baseUrl}/browse/${cardId}`
+				: `https://trello.com/c/${cardId}`
+			: undefined,
 		projectId: project.id,
 		baseBranch: project.baseBranch,
 		storiesListId: project.trello?.lists?.stories,
 		processedLabelId: project.trello?.labels?.processed,
+		pmType,
 	};
 
 	const { systemPrompt, model, maxIterations } = await resolveModelConfig({
@@ -292,7 +298,7 @@ async function buildBackendInput(
 		config,
 		repoDir,
 		systemPrompt,
-		taskPrompt: `Analyze and process the Trello card with ID: ${cardId || 'unknown'}. The card data has been pre-loaded.`,
+		taskPrompt: `Analyze and process the work item with ID: ${cardId || 'unknown'}. The work item data has been pre-loaded.`,
 		cliToolsDir,
 		availableTools: getToolManifests(),
 		contextInjections,
@@ -506,7 +512,7 @@ export async function executeWithBackend(
 				logFn.call(logger, message, context);
 			},
 			agentType,
-			taskDescription: cardId ? `Trello card ${cardId}` : 'Unknown task',
+			taskDescription: cardId ? `Work item ${cardId}` : 'Unknown task',
 			progressModel: input.config.defaults.progressModel,
 			intervalMinutes: input.config.defaults.progressIntervalMinutes,
 			customModels: CUSTOM_MODELS as ModelSpec[],

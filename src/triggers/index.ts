@@ -5,6 +5,8 @@ import { PRCommentMentionTrigger } from './github/pr-comment-mention.js';
 import { PRMergedTrigger } from './github/pr-merged.js';
 import { PRReadyToMergeTrigger } from './github/pr-ready-to-merge.js';
 import { PRReviewSubmittedTrigger } from './github/pr-review-submitted.js';
+import { JiraCommentMentionTrigger } from './jira/comment-mention.js';
+import { JiraIssueTransitionedTrigger } from './jira/issue-transitioned.js';
 import type { TriggerRegistry } from './registry.js';
 import {
 	CardMovedToBriefingTrigger,
@@ -24,6 +26,7 @@ export type {
 export { isTrelloWebhookPayload } from './types.js';
 export { processTrelloWebhook } from './trello/webhook-handler.js';
 export { processGitHubWebhook } from './github/webhook-handler.js';
+export { processJiraWebhook } from './jira/webhook-handler.js';
 
 export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 	// Trello: Comment @mention trigger (runs respond-to-planning-comment when bot is @mentioned)
@@ -37,6 +40,13 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 
 	// Trello: Label triggers
 	registry.register(new ReadyToProcessLabelTrigger());
+
+	// JIRA: Comment @mention trigger (runs respond-to-planning-comment when bot is @mentioned)
+	// Must be registered before issue transition trigger so it gets first crack at comment events
+	registry.register(new JiraCommentMentionTrigger());
+
+	// JIRA: Issue transitioned trigger (runs briefing/planning/implementation based on status)
+	registry.register(new JiraIssueTransitionedTrigger());
 
 	// GitHub: PR opened trigger (initial review on new PRs)
 	// DISABLED: Triggers respond-to-review which has file editing gadgets - needs review

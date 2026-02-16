@@ -33,7 +33,17 @@ export interface GitHubJob {
 	receivedAt: string;
 }
 
-export type CascadeJob = TrelloJob | GitHubJob;
+export interface JiraJob {
+	type: 'jira';
+	source: 'jira';
+	payload: unknown;
+	projectId: string;
+	issueKey: string;
+	webhookEvent: string;
+	receivedAt: string;
+}
+
+export type CascadeJob = TrelloJob | GitHubJob | JiraJob;
 
 // Create the job queue
 export const jobQueue = new Queue<CascadeJob>('cascade-jobs', {
