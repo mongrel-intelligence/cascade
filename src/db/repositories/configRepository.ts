@@ -58,7 +58,7 @@ function orUndefined<T extends Record<string, unknown>>(obj: T): T | undefined {
 }
 
 function mapDefaultsRow(row: DefaultsRow | undefined, globalAgentConfigs: AgentConfigRow[]) {
-	const { models, iterations } = buildAgentMaps(globalAgentConfigs);
+	const { models, iterations, prompts } = buildAgentMaps(globalAgentConfigs);
 
 	return {
 		model: row?.model ?? undefined,
@@ -72,6 +72,7 @@ function mapDefaultsRow(row: DefaultsRow | undefined, globalAgentConfigs: AgentC
 		progressIntervalMinutes: row?.progressIntervalMinutes
 			? Number(row.progressIntervalMinutes)
 			: undefined,
+		prompts: orUndefined(prompts),
 	};
 }
 

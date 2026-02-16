@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Eta } from 'eta';
@@ -8,6 +8,19 @@ const templatesDir = join(__dirname, 'templates');
 
 // Initialize Eta with the templates directory
 const eta = new Eta({ views: templatesDir, autoEscape: false });
+
+// Valid agent types
+const validTypes = [
+	'briefing',
+	'planning',
+	'implementation',
+	'debug',
+	'respond-to-review',
+	'respond-to-ci',
+	'respond-to-pr-comment',
+	'respond-to-planning-comment',
+	'review',
+];
 
 // Template context interface
 export interface PromptContext {
@@ -63,24 +76,135 @@ function loadTemplate(agentType: string): string {
 	return template;
 }
 
-export function getSystemPrompt(agentType: string, context: PromptContext = {}): string {
-	const validTypes = [
-		'briefing',
-		'planning',
-		'implementation',
-		'debug',
-		'respond-to-review',
-		'respond-to-ci',
-		'respond-to-pr-comment',
-		'respond-to-planning-comment',
-		'review',
-	];
+/**
+ * Resolve `<%~ include("partials/...") %>` directives by looking up DB partials first,
+ * falling back to disk. This pre-processing happens before Eta variable interpolation.
+ */
+export function resolveIncludes(template: string, dbPartials: Map<string, string>): string {
+	return template.replace(
+		/<%~\s*include\(\s*"partials\/([^"]+)"\s*\)\s*%>/g,
+		(_match, name: string) => {
+			const dbContent = dbPartials.get(name);
+			if (dbContent !== undefined) return dbContent;
+			// Fall back to disk
+			const diskPath = join(templatesDir, 'partials', `${name}.eta`);
+			try {
+				return readFileSync(diskPath, 'utf-8');
+			} catch {
+				throw new Error(`Partial not found: partials/${name}`);
+			}
+		},
+	);
+}
+
+/**
+ * Render a DB-stored template with include resolution + Eta variable interpolation.
+ */
+export function renderCustomPrompt(
+	templateSource: string,
+	context: PromptContext = {},
+	dbPartials?: Map<string, string>,
+): string {
+	const expanded = resolveIncludes(templateSource, dbPartials ?? new Map());
+	return eta.renderString(expanded, context);
+}
+
+/**
+ * Validate a template string for correct Eta syntax and resolvable includes.
+ */
+export function validateTemplate(
+	templateSource: string,
+	dbPartials?: Map<string, string>,
+): { valid: true } | { valid: false; error: string } {
+	try {
+		const expanded = resolveIncludes(templateSource, dbPartials ?? new Map());
+		eta.renderString(expanded, {});
+		return { valid: true };
+	} catch (err) {
+		return { valid: false, error: err instanceof Error ? err.message : String(err) };
+	}
+}
+
+export function getSystemPrompt(
+	agentType: string,
+	context: PromptContext = {},
+	dbPartials?: Map<string, string>,
+): string {
 	if (!validTypes.includes(agentType)) {
 		throw new Error(`Unknown agent type: ${agentType}`);
 	}
 
 	const template = loadTemplate(agentType);
+	if (dbPartials && dbPartials.size > 0) {
+		const expanded = resolveIncludes(template, dbPartials);
+		return eta.renderString(expanded, context);
+	}
 	return eta.renderString(template, context);
+}
+
+/** Returns the raw .eta template source from disk (before rendering). */
+export function getRawTemplate(agentType: string): string {
+	if (!validTypes.includes(agentType)) {
+		throw new Error(`Unknown agent type: ${agentType}`);
+	}
+	return loadTemplate(agentType);
+}
+
+/** Returns the raw partial source from disk. */
+export function getRawPartial(name: string): string {
+	const diskPath = join(templatesDir, 'partials', `${name}.eta`);
+	return readFileSync(diskPath, 'utf-8');
+}
+
+/** Returns the list of valid agent types. */
+export function getValidAgentTypes(): string[] {
+	return [...validTypes];
+}
+
+/** Returns the list of available disk-based partial names. */
+export function getAvailablePartialNames(): string[] {
+	try {
+		const entries = readdirSync(join(templatesDir, 'partials'));
+		return entries
+			.filter((f) => f.endsWith('.eta'))
+			.map((f) => f.replace(/\.eta$/, ''))
+			.sort();
+	} catch {
+		return [];
+	}
+}
+
+/** Returns template variable info for documentation/reference. */
+export function getTemplateVariables(): Array<{
+	name: string;
+	group: string;
+	description: string;
+}> {
+	return [
+		{ name: 'cardId', group: 'Common', description: 'Work item ID' },
+		{ name: 'cardUrl', group: 'Common', description: 'Work item URL' },
+		{ name: 'projectId', group: 'Common', description: 'Project identifier' },
+		{ name: 'baseBranch', group: 'Common', description: 'Base branch name (e.g. main)' },
+		{ name: 'pmType', group: 'PM', description: 'PM type: trello or jira' },
+		{ name: 'workItemNoun', group: 'PM', description: 'card or issue' },
+		{ name: 'workItemNounPlural', group: 'PM', description: 'cards or issues' },
+		{ name: 'workItemNounCap', group: 'PM', description: 'Card or Issue' },
+		{ name: 'workItemNounPluralCap', group: 'PM', description: 'Cards or Issues' },
+		{ name: 'pmName', group: 'PM', description: 'Trello or JIRA' },
+		{ name: 'storiesListId', group: 'Briefing', description: 'Trello stories list ID' },
+		{ name: 'processedLabelId', group: 'Briefing', description: 'Trello processed label ID' },
+		{ name: 'prNumber', group: 'CI', description: 'Pull request number' },
+		{ name: 'prBranch', group: 'CI', description: 'Pull request branch name' },
+		{ name: 'repoFullName', group: 'CI', description: 'Repository full name (owner/repo)' },
+		{ name: 'headSha', group: 'CI', description: 'HEAD commit SHA' },
+		{ name: 'triggerType', group: 'CI', description: 'Trigger type identifier' },
+		{ name: 'logDir', group: 'Debug', description: 'Debug log directory path' },
+		{ name: 'originalCardId', group: 'Debug', description: 'Original card ID being debugged' },
+		{ name: 'originalCardName', group: 'Debug', description: 'Original card name' },
+		{ name: 'originalCardUrl', group: 'Debug', description: 'Original card URL' },
+		{ name: 'detectedAgentType', group: 'Debug', description: 'Agent type from session log' },
+		{ name: 'debugListId', group: 'Debug', description: 'Debug list ID for output cards' },
+	];
 }
 
 // Export individual prompts for backwards compatibility (rendered without context)

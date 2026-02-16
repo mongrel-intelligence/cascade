@@ -9,6 +9,7 @@ export default defineConfig({
 		'./src/db/schema/agentConfigs.ts',
 		'./src/db/schema/integrations.ts',
 		'./src/db/schema/runs.ts',
+		'./src/db/schema/promptPartials.ts',
 	],
 	out: './src/db/migrations',
 	dialect: 'postgresql',

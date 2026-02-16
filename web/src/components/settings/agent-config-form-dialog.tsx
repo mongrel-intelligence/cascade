@@ -8,9 +8,9 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select.js';
-import { Textarea } from '@/components/ui/textarea.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 
 interface AgentConfig {
@@ -134,14 +134,22 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 						</Select>
 					</div>
 					<div className="space-y-2">
-						<Label htmlFor="gac-prompt">Prompt</Label>
-						<Textarea
-							id="gac-prompt"
-							value={prompt}
-							onChange={(e) => setPrompt(e.target.value)}
-							placeholder="Optional system prompt override"
-							rows={3}
-						/>
+						<Label>Prompt</Label>
+						{config?.prompt ? (
+							<p className="text-sm text-muted-foreground">
+								Custom prompt set.{' '}
+								<Link to="/settings/prompts" className="text-primary hover:underline">
+									Edit in Prompt Editor
+								</Link>
+							</p>
+						) : (
+							<p className="text-sm text-muted-foreground">
+								Using default.{' '}
+								<Link to="/settings/prompts" className="text-primary hover:underline">
+									Customize in Prompt Editor
+								</Link>
+							</p>
+						)}
 					</div>
 					<div className="flex justify-end gap-2">
 						<button

@@ -29,6 +29,7 @@ export default class AgentsList extends DashboardCommand {
 				{ key: 'model', header: 'Model' },
 				{ key: 'maxIterations', header: 'Max Iter' },
 				{ key: 'agentBackend', header: 'Backend' },
+				{ key: 'prompt', header: 'Prompt', format: (v) => (v ? 'custom' : '-') },
 			]);
 		} catch (err) {
 			this.handleError(err);

@@ -3,6 +3,7 @@ import { WriteFile } from '../gadgets/WriteFile.js';
 
 import { type ProgressMonitor, createProgressMonitor } from '../backends/progress.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
+import { loadPartials } from '../db/repositories/partialsRepository.js';
 import { AstGrep } from '../gadgets/AstGrep.js';
 import { FileMultiEdit } from '../gadgets/FileMultiEdit.js';
 import { FileSearchAndReplace } from '../gadgets/FileSearchAndReplace.js';
@@ -96,13 +97,18 @@ export async function fetchImplementationSteps(cardId: string): Promise<string[]
 	}
 }
 
-async function buildAgentContext(
-	agentType: string,
+async function loadDbPartials(orgId: string): Promise<Map<string, string> | undefined> {
+	try {
+		return await loadPartials(orgId);
+	} catch {
+		// DB not available — fall back to disk-only partials
+		return undefined;
+	}
+}
+
+function buildPromptContext(
 	cardId: string | undefined,
-	repoDir: string,
 	project: ProjectConfig,
-	config: CascadeConfig,
-	log: { info: (msg: string, ctx?: Record<string, unknown>) => void },
 	triggerType?: string,
 	prContext?: { prNumber: number; prBranch: string; repoFullName: string; headSha: string },
 	debugContext?: {
@@ -112,13 +118,10 @@ async function buildAgentContext(
 		originalCardUrl: string;
 		detectedAgentType: string;
 	},
-	modelOverride?: string,
-	commentContext?: { text: string; author: string },
-): Promise<AgentContextData> {
-	// Build prompt context for template rendering
+): PromptContext {
 	const pmProvider = getPMProvider();
 	const isJira = pmProvider.type === 'jira';
-	const promptContext: PromptContext = {
+	return {
 		cardId,
 		cardUrl: cardId ? pmProvider.getWorkItemUrl(cardId) : undefined,
 		projectId: project.id,
@@ -147,6 +150,48 @@ async function buildAgentContext(
 			debugListId: project.trello?.lists?.debug,
 		}),
 	};
+}
+
+function selectPrompt(
+	cardId: string | undefined,
+	commentContext?: { text: string; author: string },
+	prContext?: { prNumber: number; prBranch: string; repoFullName: string; headSha: string },
+	debugContext?: {
+		logDir: string;
+		originalCardName: string;
+		originalCardUrl: string;
+		detectedAgentType: string;
+	},
+): string {
+	if (commentContext) {
+		return buildCommentResponsePrompt(cardId ?? '', commentContext.text, commentContext.author);
+	}
+	if (prContext) return buildCheckFailurePrompt(prContext);
+	if (debugContext) return buildDebugPrompt(debugContext);
+	return buildPrompt(cardId ?? '');
+}
+
+async function buildAgentContext(
+	agentType: string,
+	cardId: string | undefined,
+	repoDir: string,
+	project: ProjectConfig,
+	config: CascadeConfig,
+	log: { info: (msg: string, ctx?: Record<string, unknown>) => void },
+	triggerType?: string,
+	prContext?: { prNumber: number; prBranch: string; repoFullName: string; headSha: string },
+	debugContext?: {
+		logDir: string;
+		originalCardId: string;
+		originalCardName: string;
+		originalCardUrl: string;
+		detectedAgentType: string;
+	},
+	modelOverride?: string,
+	commentContext?: { text: string; author: string },
+): Promise<AgentContextData> {
+	const promptContext = buildPromptContext(cardId, project, triggerType, prContext, debugContext);
+	const dbPartials = await loadDbPartials(project.orgId);
 
 	// Some agents share model/iteration config with another agent type
 	const configKeyOverrides: Record<string, string> = {
@@ -161,6 +206,7 @@ async function buildAgentContext(
 		modelOverride,
 		promptContext,
 		configKey: configKeyOverrides[agentType],
+		dbPartials,
 	});
 
 	// Pre-fetch work item data for synthetic gadget call (only if cardId exists and not debug flow)
@@ -176,17 +222,7 @@ async function buildAgentContext(
 		implementationSteps = await fetchImplementationSteps(cardId);
 	}
 
-	// Build different prompt based on flow
-	let prompt: string;
-	if (commentContext) {
-		prompt = buildCommentResponsePrompt(cardId ?? '', commentContext.text, commentContext.author);
-	} else if (prContext) {
-		prompt = buildCheckFailurePrompt(prContext);
-	} else if (debugContext) {
-		prompt = buildDebugPrompt(debugContext);
-	} else {
-		prompt = buildPrompt(cardId ?? '');
-	}
+	const prompt = selectPrompt(cardId, commentContext, prContext, debugContext);
 
 	return {
 		systemPrompt,
