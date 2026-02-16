@@ -70,6 +70,7 @@ export const CascadeConfigSchema = z.object({
 			agentBackend: z.string().default('llmist'),
 			progressModel: z.string().default('openrouter:google/gemini-2.5-flash-lite'),
 			progressIntervalMinutes: z.number().positive().default(5),
+			prompts: z.record(z.string()).default({}),
 		})
 		.default({}),
 	projects: z.array(ProjectConfigSchema).min(1),

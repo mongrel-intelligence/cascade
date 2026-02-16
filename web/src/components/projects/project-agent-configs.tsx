@@ -16,9 +16,9 @@ import {
 	TableHeader,
 	TableRow,
 } from '@/components/ui/table.js';
-import { Textarea } from '@/components/ui/textarea.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -130,13 +130,14 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 							<TableHead>Model</TableHead>
 							<TableHead>Max Iterations</TableHead>
 							<TableHead>Backend</TableHead>
+							<TableHead>Prompt</TableHead>
 							<TableHead className="w-20" />
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{configs.length === 0 && (
 							<TableRow>
-								<TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+								<TableCell colSpan={6} className="text-center text-muted-foreground py-8">
 									No project-scoped agent configs
 								</TableCell>
 							</TableRow>
@@ -147,6 +148,15 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 								<TableCell>{config.model ?? '-'}</TableCell>
 								<TableCell>{config.maxIterations ?? '-'}</TableCell>
 								<TableCell>{config.agentBackend ?? '-'}</TableCell>
+								<TableCell>
+									{config.prompt ? (
+										<Link to="/settings/prompts" className="text-primary hover:underline text-sm">
+											custom
+										</Link>
+									) : (
+										'-'
+									)}
+								</TableCell>
 								<TableCell>
 									<div className="flex gap-1">
 										<button
@@ -231,14 +241,22 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 							</Select>
 						</div>
 						<div className="space-y-2">
-							<Label htmlFor="ac-prompt">Prompt</Label>
-							<Textarea
-								id="ac-prompt"
-								value={prompt}
-								onChange={(e) => setPrompt(e.target.value)}
-								placeholder="Optional system prompt override"
-								rows={3}
-							/>
+							<Label>Prompt</Label>
+							{editing?.prompt ? (
+								<p className="text-sm text-muted-foreground">
+									Custom prompt set.{' '}
+									<Link to="/settings/prompts" className="text-primary hover:underline">
+										Edit in Prompt Editor
+									</Link>
+								</p>
+							) : (
+								<p className="text-sm text-muted-foreground">
+									Using default.{' '}
+									<Link to="/settings/prompts" className="text-primary hover:underline">
+										Customize in Prompt Editor
+									</Link>
+								</p>
+							)}
 						</div>
 						<div className="flex justify-end gap-2">
 							<button

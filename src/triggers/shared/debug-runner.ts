@@ -104,6 +104,35 @@ function parseDebugOutput(output: string): {
  * 5. Post summary comment on original Trello card
  * 6. Cleanup temp directory
  */
+function resolveCardUrl(cardId: string): string {
+	try {
+		const provider = getPMProvider();
+		return provider.getWorkItemUrl(cardId);
+	} catch {
+		return `https://trello.com/c/${cardId}`;
+	}
+}
+
+async function postDebugComment(
+	cardId: string,
+	analyzedRunId: string,
+	parsed: ReturnType<typeof parseDebugOutput>,
+): Promise<void> {
+	try {
+		const provider = getPMProvider();
+		const rootCauseText = parsed.rootCause
+			? `**Root Cause:** ${parsed.rootCause.slice(0, 200)}\n\n`
+			: '';
+		const comment = `🔍 **Debug Analysis** (run: ${analyzedRunId.slice(0, 8)})\n\n${parsed.summary}\n\n${rootCauseText}_Full analysis stored in database._`;
+		await provider.addComment(cardId, comment);
+	} catch (err) {
+		logger.warn('Failed to post debug summary comment', {
+			cardId,
+			error: String(err),
+		});
+	}
+}
+
 export async function triggerDebugAnalysis(
 	analyzedRunId: string,
 	project: ProjectConfig,
@@ -126,22 +155,11 @@ export async function triggerDebugAnalysis(
 	try {
 		logDir = await extractLogsToTempDir(analyzedRunId);
 
-		const originalCardName = cardId ? `Card ${cardId}` : 'Unknown card';
-		let originalCardUrl = '';
-		if (cardId) {
-			try {
-				const provider = getPMProvider();
-				originalCardUrl = provider.getWorkItemUrl(cardId);
-			} catch {
-				originalCardUrl = `https://trello.com/c/${cardId}`;
-			}
-		}
-
 		const agentResult: AgentResult = await runAgent('debug', {
 			logDir,
 			originalCardId: cardId,
-			originalCardName,
-			originalCardUrl,
+			originalCardName: cardId ? `Card ${cardId}` : 'Unknown card',
+			originalCardUrl: cardId ? resolveCardUrl(cardId) : '',
 			detectedAgentType: run.agentType,
 			project,
 			config,
@@ -160,21 +178,8 @@ export async function triggerDebugAnalysis(
 			severity: run.status === 'timed_out' ? 'timeout' : 'failure',
 		});
 
-		// Post summary comment on original work item
 		if (cardId && parsed.summary) {
-			try {
-				const provider = getPMProvider();
-				const rootCauseText = parsed.rootCause
-					? `**Root Cause:** ${parsed.rootCause.slice(0, 200)}\n\n`
-					: '';
-				const comment = `🔍 **Debug Analysis** (run: ${analyzedRunId.slice(0, 8)})\n\n${parsed.summary}\n\n${rootCauseText}_Full analysis stored in database._`;
-				await provider.addComment(cardId, comment);
-			} catch (err) {
-				logger.warn('Failed to post debug summary comment', {
-					cardId,
-					error: String(err),
-				});
-			}
+			await postDebugComment(cardId, analyzedRunId, parsed);
 		}
 
 		logger.info('Debug analysis completed', {

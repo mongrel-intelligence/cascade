@@ -1,7 +1,15 @@
 import { Separator } from '@/components/ui/separator.js';
 import { cn } from '@/lib/utils.js';
 import { Link, useRouterState } from '@tanstack/react-router';
-import { Activity, Bot, FolderGit2, KeyRound, LayoutDashboard, Settings } from 'lucide-react';
+import {
+	Activity,
+	Bot,
+	FileText,
+	FolderGit2,
+	KeyRound,
+	LayoutDashboard,
+	Settings,
+} from 'lucide-react';
 
 interface SidebarProps {
 	user: { name: string; email: string } | undefined;
@@ -16,6 +24,7 @@ const settingsNav = [
 	{ to: '/settings/general' as const, label: 'General', icon: Settings },
 	{ to: '/settings/credentials' as const, label: 'Credentials', icon: KeyRound },
 	{ to: '/settings/agents' as const, label: 'Agent Configs', icon: Bot },
+	{ to: '/settings/prompts' as const, label: 'Prompts', icon: FileText },
 ];
 
 function NavLink({

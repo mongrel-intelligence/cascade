@@ -1,0 +1,394 @@
+import { Badge } from '@/components/ui/badge.js';
+import { trpc, trpcClient } from '@/lib/trpc.js';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useEffect, useState } from 'react';
+
+type EditTarget = { type: 'template'; agentType: string } | { type: 'partial'; name: string };
+
+interface PromptEditorProps {
+	target: EditTarget;
+	onClose: () => void;
+}
+
+export function PromptEditor({ target, onClose }: PromptEditorProps) {
+	if (target.type === 'template') {
+		return <TemplateEditor agentType={target.agentType} onClose={onClose} />;
+	}
+	return <PartialEditor name={target.name} onClose={onClose} />;
+}
+
+function TemplateEditor({ agentType, onClose }: { agentType: string; onClose: () => void }) {
+	const queryClient = useQueryClient();
+	const [content, setContent] = useState('');
+	const [validationStatus, setValidationStatus] = useState<string | null>(null);
+	const [isDirty, setIsDirty] = useState(false);
+
+	// Fetch current custom prompt (if any) from agent configs
+	const configsQuery = useQuery(trpc.agentConfigs.list.queryOptions());
+	const defaultQuery = useQuery(trpc.prompts.getDefault.queryOptions({ agentType }));
+	const variablesQuery = useQuery(trpc.prompts.variables.queryOptions());
+	const partialsQuery = useQuery(trpc.prompts.listPartials.queryOptions());
+
+	const configs = (configsQuery.data ?? []) as Array<{
+		id: number;
+		agentType: string;
+		prompt: string | null;
+		orgId: string | null;
+		projectId: string | null;
+	}>;
+
+	const existingConfig = configs.find((c) => c.agentType === agentType && c.projectId === null);
+	const hasCustom = !!existingConfig?.prompt;
+
+	useEffect(() => {
+		if (existingConfig?.prompt) {
+			setContent(existingConfig.prompt);
+		} else if (defaultQuery.data) {
+			setContent(defaultQuery.data.content);
+		}
+	}, [existingConfig?.prompt, defaultQuery.data]);
+
+	const saveMutation = useMutation({
+		mutationFn: async () => {
+			if (existingConfig) {
+				await trpcClient.agentConfigs.update.mutate({
+					id: existingConfig.id,
+					prompt: content,
+				});
+			} else {
+				await trpcClient.agentConfigs.create.mutate({
+					agentType,
+					prompt: content,
+				});
+			}
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({
+				queryKey: trpc.agentConfigs.list.queryOptions().queryKey,
+			});
+			setIsDirty(false);
+			setValidationStatus('Saved.');
+		},
+	});
+
+	const resetMutation = useMutation({
+		mutationFn: async () => {
+			if (existingConfig) {
+				await trpcClient.agentConfigs.update.mutate({
+					id: existingConfig.id,
+					prompt: null,
+				});
+			}
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({
+				queryKey: trpc.agentConfigs.list.queryOptions().queryKey,
+			});
+			if (defaultQuery.data) {
+				setContent(defaultQuery.data.content);
+			}
+			setIsDirty(false);
+			setValidationStatus('Reset to default.');
+		},
+	});
+
+	const validateMutation = useMutation({
+		mutationFn: () => trpcClient.prompts.validate.mutate({ template: content }),
+		onSuccess: (result) => {
+			if (result.valid) {
+				setValidationStatus('Valid.');
+			} else {
+				setValidationStatus(`Invalid: ${result.error}`);
+			}
+		},
+	});
+
+	function loadDefault() {
+		if (defaultQuery.data) {
+			setContent(defaultQuery.data.content);
+			setIsDirty(true);
+		}
+	}
+
+	return (
+		<div className="space-y-4">
+			<div className="flex items-center justify-between">
+				<h2 className="text-xl font-bold">
+					Prompt: {agentType}
+					{hasCustom && <Badge className="ml-2">custom</Badge>}
+				</h2>
+				<div className="flex gap-2">
+					<button
+						type="button"
+						onClick={() => resetMutation.mutate()}
+						disabled={!hasCustom || resetMutation.isPending}
+						className="inline-flex h-9 items-center rounded-md border border-input px-4 text-sm hover:bg-accent disabled:opacity-50"
+					>
+						Reset to Default
+					</button>
+					<button
+						type="button"
+						onClick={() => saveMutation.mutate()}
+						disabled={saveMutation.isPending}
+						className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+					>
+						{saveMutation.isPending ? 'Saving...' : 'Save'}
+					</button>
+				</div>
+			</div>
+
+			<div className="grid grid-cols-3 gap-4">
+				<div className="col-span-2 space-y-2">
+					<textarea
+						value={content}
+						onChange={(e) => {
+							setContent(e.target.value);
+							setIsDirty(true);
+							setValidationStatus(null);
+						}}
+						className="w-full h-[600px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+						spellCheck={false}
+					/>
+					<div className="flex items-center gap-4">
+						<button
+							type="button"
+							onClick={loadDefault}
+							className="text-sm text-muted-foreground hover:text-foreground"
+						>
+							Load Default
+						</button>
+						<button
+							type="button"
+							onClick={() => validateMutation.mutate()}
+							disabled={validateMutation.isPending}
+							className="text-sm text-muted-foreground hover:text-foreground"
+						>
+							Validate
+						</button>
+						{validationStatus && (
+							<span
+								className={`text-sm ${
+									validationStatus.startsWith('Invalid') ? 'text-destructive' : 'text-green-600'
+								}`}
+							>
+								{validationStatus}
+							</span>
+						)}
+						{saveMutation.isError && (
+							<span className="text-sm text-destructive">{saveMutation.error.message}</span>
+						)}
+					</div>
+				</div>
+
+				<ReferencePanel variables={variablesQuery.data} partials={partialsQuery.data} />
+			</div>
+		</div>
+	);
+}
+
+function PartialEditor({ name, onClose }: { name: string; onClose: () => void }) {
+	const queryClient = useQueryClient();
+	const [content, setContent] = useState('');
+	const [validationStatus, setValidationStatus] = useState<string | null>(null);
+
+	const partialQuery = useQuery(trpc.prompts.getPartial.queryOptions({ name }));
+	const defaultQuery = useQuery(trpc.prompts.getDefaultPartial.queryOptions({ name }));
+
+	const isCustom = partialQuery.data?.source === 'db';
+
+	useEffect(() => {
+		if (partialQuery.data) {
+			setContent(partialQuery.data.content);
+		}
+	}, [partialQuery.data]);
+
+	const saveMutation = useMutation({
+		mutationFn: () => trpcClient.prompts.upsertPartial.mutate({ name, content }),
+		onSuccess: () => {
+			queryClient.invalidateQueries({
+				queryKey: trpc.prompts.listPartials.queryOptions().queryKey,
+			});
+			queryClient.invalidateQueries({
+				queryKey: trpc.prompts.getPartial.queryOptions({ name }).queryKey,
+			});
+			setValidationStatus('Saved.');
+		},
+	});
+
+	const resetMutation = useMutation({
+		mutationFn: async () => {
+			const data = partialQuery.data;
+			if (data && 'id' in data && data.id != null) {
+				await trpcClient.prompts.deletePartial.mutate({ id: data.id });
+			}
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({
+				queryKey: trpc.prompts.listPartials.queryOptions().queryKey,
+			});
+			queryClient.invalidateQueries({
+				queryKey: trpc.prompts.getPartial.queryOptions({ name }).queryKey,
+			});
+			if (defaultQuery.data) {
+				setContent(defaultQuery.data.content);
+			}
+			setValidationStatus('Reset to disk default.');
+		},
+	});
+
+	function loadDefault() {
+		if (defaultQuery.data) {
+			setContent(defaultQuery.data.content);
+		}
+	}
+
+	return (
+		<div className="space-y-4">
+			<div className="flex items-center justify-between">
+				<h2 className="text-xl font-bold">
+					Partial: {name}
+					{isCustom && <Badge className="ml-2">custom</Badge>}
+				</h2>
+				<div className="flex gap-2">
+					<button
+						type="button"
+						onClick={() => resetMutation.mutate()}
+						disabled={!isCustom || resetMutation.isPending}
+						className="inline-flex h-9 items-center rounded-md border border-input px-4 text-sm hover:bg-accent disabled:opacity-50"
+					>
+						Reset to Default
+					</button>
+					<button
+						type="button"
+						onClick={() => saveMutation.mutate()}
+						disabled={saveMutation.isPending}
+						className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+					>
+						{saveMutation.isPending ? 'Saving...' : 'Save'}
+					</button>
+				</div>
+			</div>
+
+			<textarea
+				value={content}
+				onChange={(e) => {
+					setContent(e.target.value);
+					setValidationStatus(null);
+				}}
+				className="w-full h-[500px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+				spellCheck={false}
+			/>
+			<div className="flex items-center gap-4">
+				<button
+					type="button"
+					onClick={loadDefault}
+					className="text-sm text-muted-foreground hover:text-foreground"
+				>
+					Load Default
+				</button>
+				{validationStatus && (
+					<span
+						className={`text-sm ${
+							validationStatus.startsWith('Invalid') ? 'text-destructive' : 'text-green-600'
+						}`}
+					>
+						{validationStatus}
+					</span>
+				)}
+				{saveMutation.isError && (
+					<span className="text-sm text-destructive">{saveMutation.error.message}</span>
+				)}
+			</div>
+		</div>
+	);
+}
+
+function ReferencePanel({
+	variables,
+	partials,
+}: {
+	variables?: Array<{ name: string; group: string; description: string }>;
+	partials?: Array<{ name: string; source: string; lines: number }>;
+}) {
+	const [varsExpanded, setVarsExpanded] = useState(true);
+	const [partialsExpanded, setPartialsExpanded] = useState(true);
+
+	const groups = new Map<string, typeof variables>();
+	if (variables) {
+		for (const v of variables) {
+			const existing = groups.get(v.group) ?? [];
+			existing.push(v);
+			groups.set(v.group, existing);
+		}
+	}
+
+	return (
+		<div className="space-y-4 text-sm">
+			<h3 className="font-semibold">Reference</h3>
+
+			<div>
+				<button
+					type="button"
+					onClick={() => setVarsExpanded(!varsExpanded)}
+					className="flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground"
+				>
+					{varsExpanded ? (
+						<ChevronDown className="h-4 w-4" />
+					) : (
+						<ChevronRight className="h-4 w-4" />
+					)}
+					Variables
+				</button>
+				{varsExpanded && (
+					<div className="mt-2 space-y-3 pl-5">
+						{[...groups.entries()].map(([group, vars]) => (
+							<div key={group}>
+								<div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
+									{group}
+								</div>
+								{vars?.map((v) => (
+									<div key={v.name} className="flex justify-between gap-2 py-0.5">
+										<code className="text-xs bg-muted px-1 rounded">{`<%= it.${v.name} %>`}</code>
+									</div>
+								))}
+							</div>
+						))}
+					</div>
+				)}
+			</div>
+
+			<div>
+				<button
+					type="button"
+					onClick={() => setPartialsExpanded(!partialsExpanded)}
+					className="flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground"
+				>
+					{partialsExpanded ? (
+						<ChevronDown className="h-4 w-4" />
+					) : (
+						<ChevronRight className="h-4 w-4" />
+					)}
+					Partials
+				</button>
+				{partialsExpanded && (
+					<div className="mt-2 space-y-1 pl-5">
+						{partials?.map((p) => (
+							<div key={p.name} className="flex items-center justify-between py-0.5">
+								<code className="text-xs bg-muted px-1 rounded">{p.name}</code>
+								<span className="text-xs text-muted-foreground">
+									{p.lines}L
+									{p.source === 'db' && (
+										<Badge variant="outline" className="ml-1 text-[10px] px-1 py-0">
+											db
+										</Badge>
+									)}
+								</span>
+							</div>
+						))}
+					</div>
+				)}
+			</div>
+		</div>
+	);
+}
