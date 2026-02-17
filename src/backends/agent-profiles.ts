@@ -3,7 +3,13 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { formatPRDetails, formatPRDiff } from '../agents/shared/prFormatting.js';
+import {
+	formatPRComments,
+	formatPRDetails,
+	formatPRDiff,
+	formatPRIssueComments,
+	formatPRReviews,
+} from '../agents/shared/prFormatting.js';
 import type { ContextFile } from '../agents/utils/setup.js';
 import { REVIEW_FILE_CONTENT_TOKEN_LIMIT, estimateTokens } from '../config/reviewConfig.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
@@ -342,6 +348,75 @@ async function fetchCIContext(params: FetchContextParams): Promise<ContextInject
 	return injections;
 }
 
+/** PR comment response context: PR details + diff + conversation + dirListing + contextFiles + squint */
+async function fetchPRCommentResponseContext(
+	params: FetchContextParams,
+): Promise<ContextInjection[]> {
+	const injections: ContextInjection[] = [];
+	const repoFullName = params.input.repoFullName as string;
+	const prNumber = params.input.prNumber as number;
+	const [owner, repo] = repoFullName.split('/');
+
+	// PR context (details, diff, checks)
+	const { injections: prInjections } = await fetchPRContextInjections(
+		owner,
+		repo,
+		prNumber,
+		params.repoDir,
+		params.logWriter,
+	);
+	injections.push(...prInjections);
+
+	// Conversation context (review comments, reviews, issue comments)
+	params.logWriter('INFO', 'Fetching PR conversation context', { owner, repo, prNumber });
+
+	const [reviewComments, reviews, issueComments] = await Promise.all([
+		githubClient.getPRReviewComments(owner, repo, prNumber),
+		githubClient.getPRReviews(owner, repo, prNumber),
+		githubClient.getPRIssueComments(owner, repo, prNumber),
+	]);
+
+	injections.push({
+		toolName: 'GetPRComments',
+		params: {
+			comment: 'Pre-fetching PR review comments for conversation context',
+			owner,
+			repo,
+			prNumber,
+		},
+		result: formatPRComments(reviewComments),
+		description: 'Pre-fetched PR review comments',
+	});
+
+	injections.push({
+		toolName: 'GetPRComments',
+		params: { comment: 'Pre-fetching PR reviews for conversation context', owner, repo, prNumber },
+		result: formatPRReviews(reviews),
+		description: 'Pre-fetched PR reviews',
+	});
+
+	injections.push({
+		toolName: 'GetPRComments',
+		params: {
+			comment: 'Pre-fetching PR issue comments for conversation context',
+			owner,
+			repo,
+			prNumber,
+		},
+		result: formatPRIssueComments(issueComments),
+		description: 'Pre-fetched PR issue comments',
+	});
+
+	// Codebase context
+	injections.push(fetchDirectoryListing(params.repoDir));
+	injections.push(...fetchContextFileInjections(params.contextFiles));
+
+	const squint = fetchSquintOverview(params.repoDir);
+	if (squint) injections.push(squint);
+
+	return injections;
+}
+
 // ============================================================================
 // Task Prompt Builders
 // ============================================================================
@@ -399,6 +474,37 @@ Repo: ${repo}
 PR Number: ${prNumber}
 
 Use these values when calling GitHub tools (GetPRDetails, GetPRDiff, PostPRComment, UpdatePRComment).`;
+}
+
+function buildPRCommentResponseTaskPrompt(input: AgentInput): string {
+	const repoFullName = input.repoFullName as string;
+	const prNumber = input.prNumber as number;
+	const prBranch = input.prBranch as string;
+	const [owner, repo] = repoFullName.split('/');
+	const commentBody = input.triggerCommentBody as string;
+	const commentPath = input.triggerCommentPath as string;
+
+	const pathContext = commentPath ? `\nFile: ${commentPath}` : '';
+
+	return `You are on the branch \`${prBranch}\` for PR #${prNumber}.
+
+A user commented on this PR and mentioned you. Respond to their comment.
+${pathContext}
+
+Their comment:
+---
+${commentBody}
+---
+
+Read the comment carefully and respond accordingly. If they ask for code changes, make the changes, commit, and push. If they ask a question, reply with a PR comment. Default to surgical, targeted changes unless they clearly ask for something broader.
+
+## GitHub Context
+
+Owner: ${owner}
+Repo: ${repo}
+PR Number: ${prNumber}
+
+Use these values when calling GitHub tools (GetPRDetails, GetPRDiff, PostPRComment, UpdatePRComment, ReplyToReviewComment, CreatePRReview).`;
 }
 
 // ============================================================================
@@ -481,6 +587,15 @@ const respondToCIProfile: AgentProfile = {
 	},
 };
 
+const respondToPRCommentProfile: AgentProfile = {
+	filterTools: (allTools) => filterToolsByNames(allTools, [...GITHUB_REVIEW_TOOLS, SESSION_TOOL]),
+	sdkTools: ALL_SDK_TOOLS,
+	enableStopHooks: true,
+	needsGitHubToken: true,
+	fetchContext: fetchPRCommentResponseContext,
+	buildTaskPrompt: buildPRCommentResponseTaskPrompt,
+};
+
 const defaultProfile: AgentProfile = {
 	filterTools: (allTools) => allTools,
 	sdkTools: ALL_SDK_TOOLS,
@@ -500,7 +615,7 @@ const PROFILE_REGISTRY: Record<string, AgentProfile> = {
 	review: reviewProfile,
 	'respond-to-planning-comment': respondToPlanningCommentProfile,
 	'respond-to-review': reviewProfile,
-	'respond-to-pr-comment': reviewProfile,
+	'respond-to-pr-comment': respondToPRCommentProfile,
 	'respond-to-ci': respondToCIProfile,
 };
 
