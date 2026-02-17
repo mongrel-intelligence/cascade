@@ -57,9 +57,9 @@ describe('getAgentProfile', () => {
 		});
 
 		it('returns a dedicated profile (not defaultProfile)', () => {
-			const defaultProfile = getAgentProfile('some-unknown-agent-type');
-			// The default profile returns all tools unfiltered; respond-to-ci filters them
-			expect(profile).not.toBe(defaultProfile);
+			const debugProfile = getAgentProfile('debug');
+			// The debug profile uses defaultProfile which returns all tools unfiltered; respond-to-ci filters them
+			expect(profile).not.toBe(debugProfile);
 		});
 
 		it('excludes CreatePR from filtered tools', () => {
@@ -138,9 +138,9 @@ describe('getAgentProfile', () => {
 
 		it('returns a dedicated profile (not reviewProfile or defaultProfile)', () => {
 			const reviewProfile = getAgentProfile('review');
-			const defaultProfile = getAgentProfile('some-unknown-agent-type');
+			const debugProfile = getAgentProfile('debug');
 			expect(profile).not.toBe(reviewProfile);
-			expect(profile).not.toBe(defaultProfile);
+			expect(profile).not.toBe(debugProfile);
 		});
 
 		it('includes GitHub review tools and session tool', () => {
@@ -212,10 +212,22 @@ describe('getAgentProfile', () => {
 		});
 	});
 
-	it('returns defaultProfile for unknown agent types', () => {
-		const profile = getAgentProfile('nonexistent-agent');
-		// Default profile passes all tools through
+	it('throws for unknown agent types', () => {
+		expect(() => getAgentProfile('nonexistent-agent')).toThrow(
+			"Unknown agent type 'nonexistent-agent'",
+		);
+	});
+
+	it('returns implementation profile with needsGitHubToken', () => {
+		const profile = getAgentProfile('implementation');
+		expect(profile.needsGitHubToken).toBe(true);
+	});
+
+	it('returns debug profile (defaultProfile)', () => {
+		const profile = getAgentProfile('debug');
+		// Debug uses defaultProfile — passes all tools through, no GitHub token
 		const tools = [{ name: 'Anything', description: '', cliCommand: '', parameters: {} }];
 		expect(profile.filterTools(tools)).toHaveLength(1);
+		expect(profile.needsGitHubToken).toBe(false);
 	});
 });
