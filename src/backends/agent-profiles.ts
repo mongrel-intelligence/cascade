@@ -579,6 +579,11 @@ const defaultProfile: AgentProfile = {
 	buildTaskPrompt: buildWorkItemTaskPrompt,
 };
 
+const implementationProfile: AgentProfile = {
+	...defaultProfile,
+	needsGitHubToken: true,
+};
+
 // ============================================================================
 // Profile Registry
 // ============================================================================
@@ -586,13 +591,21 @@ const defaultProfile: AgentProfile = {
 const PROFILE_REGISTRY: Record<string, AgentProfile> = {
 	briefing: briefingProfile,
 	planning: planningProfile,
+	implementation: implementationProfile,
 	review: reviewProfile,
 	'respond-to-planning-comment': respondToPlanningCommentProfile,
 	'respond-to-review': reviewProfile,
 	'respond-to-pr-comment': respondToPRCommentProfile,
 	'respond-to-ci': respondToCIProfile,
+	debug: defaultProfile,
 };
 
 export function getAgentProfile(agentType: string): AgentProfile {
-	return PROFILE_REGISTRY[agentType] ?? defaultProfile;
+	const profile = PROFILE_REGISTRY[agentType];
+	if (!profile) {
+		throw new Error(
+			`Unknown agent type '${agentType}' — add it to PROFILE_REGISTRY in agent-profiles.ts`,
+		);
+	}
+	return profile;
 }
