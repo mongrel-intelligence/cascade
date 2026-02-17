@@ -1,5 +1,5 @@
 import { runAgent } from '../../agents/registry.js';
-import { findProjectByRepo, getProjectSecret, loadConfig } from '../../config/provider.js';
+import { getProjectSecret, loadProjectConfigByRepo } from '../../config/provider.js';
 import { getSessionState } from '../../gadgets/sessionState.js';
 import { githubClient, withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
@@ -252,14 +252,12 @@ export async function processGitHubWebhook(
 		return;
 	}
 
-	const config = await loadConfig();
-
-	const project = await findProjectByRepo(repoFullName);
-
-	if (!project) {
+	const projectConfig = await loadProjectConfigByRepo(repoFullName);
+	if (!projectConfig) {
 		logger.warn('No project configured for repository', { repoFullName });
 		return;
 	}
+	const { project, config } = projectConfig;
 
 	// Resolve credentials early — trigger handlers may call GitHub/Trello APIs
 	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY').catch(() => '');

@@ -332,17 +332,14 @@ describe('config/provider', () => {
 			);
 		});
 
-		it('uses default org ID when project has no orgId', async () => {
-			const projectNoOrg = { ...mockProject, orgId: undefined };
+		it('throws when project not found', async () => {
 			vi.mocked(configCache.getSecrets).mockReturnValue(null);
 			vi.mocked(configCache.getOrgIdForProject).mockReturnValue(null);
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(projectNoOrg);
-			vi.mocked(resolveCredential).mockResolvedValue('ghp_token');
+			vi.mocked(findProjectByIdFromDb).mockResolvedValue(undefined);
 
-			await getProjectSecret('proj1', 'GITHUB_TOKEN');
-
-			expect(configCache.setOrgIdForProject).toHaveBeenCalledWith('proj1', 'default');
-			expect(resolveCredential).toHaveBeenCalledWith('proj1', 'default', 'GITHUB_TOKEN');
+			await expect(getProjectSecret('proj1', 'GITHUB_TOKEN')).rejects.toThrow(
+				'Project not found: proj1',
+			);
 		});
 	});
 

@@ -3,6 +3,10 @@ import {
 	findProjectByIdFromDb,
 	findProjectByJiraProjectKeyFromDb,
 	findProjectByRepoFromDb,
+	findProjectWithConfigByBoardId,
+	findProjectWithConfigById,
+	findProjectWithConfigByJiraProjectKey,
+	findProjectWithConfigByRepo,
 	loadConfigFromDb,
 } from '../db/repositories/configRepository.js';
 import {
@@ -56,6 +60,32 @@ export async function findProjectById(id: string): Promise<ProjectConfig | undef
 	return findProjectByIdFromDb(id);
 }
 
+// --- Project + org-scoped config lookups (for webhook handlers / agent runners) ---
+
+type ProjectWithConfig = { project: ProjectConfig; config: CascadeConfig };
+
+export async function loadProjectConfigByBoardId(
+	boardId: string,
+): Promise<ProjectWithConfig | undefined> {
+	return findProjectWithConfigByBoardId(boardId);
+}
+
+export async function loadProjectConfigByRepo(
+	repo: string,
+): Promise<ProjectWithConfig | undefined> {
+	return findProjectWithConfigByRepo(repo);
+}
+
+export async function loadProjectConfigByJiraProjectKey(
+	projectKey: string,
+): Promise<ProjectWithConfig | undefined> {
+	return findProjectWithConfigByJiraProjectKey(projectKey);
+}
+
+export async function loadProjectConfigById(id: string): Promise<ProjectWithConfig | undefined> {
+	return findProjectWithConfigById(id);
+}
+
 /**
  * Resolve the org ID for a project. Cached to avoid repeated DB lookups.
  */
@@ -64,7 +94,10 @@ async function getOrgIdForProject(projectId: string): Promise<string> {
 	if (cached) return cached;
 
 	const project = await findProjectByIdFromDb(projectId);
-	const orgId = project?.orgId ?? 'default';
+	if (!project) {
+		throw new Error(`Project not found: ${projectId}`);
+	}
+	const orgId = project.orgId;
 	configCache.setOrgIdForProject(projectId, orgId);
 	return orgId;
 }

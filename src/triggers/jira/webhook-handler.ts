@@ -7,11 +7,7 @@
  */
 
 import { runAgent } from '../../agents/registry.js';
-import {
-	findProjectByJiraProjectKey,
-	getProjectSecret,
-	loadConfig,
-} from '../../config/provider.js';
+import { getProjectSecret, loadProjectConfigByJiraProjectKey } from '../../config/provider.js';
 import { withGitHubToken } from '../../github/client.js';
 import { getPersonaToken } from '../../github/personas.js';
 import { withJiraCredentials } from '../../jira/client.js';
@@ -221,13 +217,12 @@ export async function processJiraWebhook(
 		projectKey,
 	});
 
-	const config = await loadConfig();
-
-	const project = await findProjectByJiraProjectKey(projectKey);
-	if (!project) {
+	const projectConfig = await loadProjectConfigByJiraProjectKey(projectKey);
+	if (!projectConfig) {
 		logger.warn('No project configured for JIRA project key', { projectKey });
 		return;
 	}
+	const { project, config } = projectConfig;
 
 	// Establish JIRA credential + PM provider scope
 	const jiraEmail = await getProjectSecret(project.id, 'JIRA_EMAIL');
