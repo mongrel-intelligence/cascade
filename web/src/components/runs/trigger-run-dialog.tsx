@@ -11,8 +11,9 @@ import {
 } from '@/components/ui/select.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
+// Keep in sync with AgentType in src/types/index.ts
 const agentTypes = [
 	'briefing',
 	'planning',
@@ -38,6 +39,25 @@ export function TriggerRunDialog({ open, onOpenChange }: TriggerRunDialogProps) 
 	const [prBranch, setPrBranch] = useState('');
 	const [model, setModel] = useState('');
 
+	const resetForm = useCallback(() => {
+		setProjectId('');
+		setAgentType('');
+		setCardId('');
+		setPrNumber('');
+		setPrBranch('');
+		setModel('');
+	}, []);
+
+	const handleOpenChange = useCallback(
+		(nextOpen: boolean) => {
+			onOpenChange(nextOpen);
+			if (!nextOpen) {
+				resetForm();
+			}
+		},
+		[onOpenChange, resetForm],
+	);
+
 	const projectsQuery = useQuery(trpc.projects.list.queryOptions());
 
 	const runsQueryKey = trpc.runs.list.queryOptions({}).queryKey;
@@ -54,19 +74,12 @@ export function TriggerRunDialog({ open, onOpenChange }: TriggerRunDialogProps) 
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: runsQueryKey });
-			onOpenChange(false);
-			// Reset form
-			setProjectId('');
-			setAgentType('');
-			setCardId('');
-			setPrNumber('');
-			setPrBranch('');
-			setModel('');
+			handleOpenChange(false);
 		},
 	});
 
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
+		<Dialog open={open} onOpenChange={handleOpenChange}>
 			<DialogContent>
 				<DialogHeader>
 					<DialogTitle>Trigger Run</DialogTitle>
@@ -80,6 +93,7 @@ export function TriggerRunDialog({ open, onOpenChange }: TriggerRunDialogProps) 
 				>
 					<div className="space-y-2">
 						<Label htmlFor="tr-project">Project</Label>
+						{/* Radix Select requires non-empty value; '_none' is used as a sentinel for unselected state */}
 						<Select
 							value={projectId || '_none'}
 							onValueChange={(v) => setProjectId(v === '_none' ? '' : v)}
@@ -89,6 +103,16 @@ export function TriggerRunDialog({ open, onOpenChange }: TriggerRunDialogProps) 
 							</SelectTrigger>
 							<SelectContent>
 								<SelectItem value="_none">Select project</SelectItem>
+								{projectsQuery.isLoading && (
+									<SelectItem value="_loading" disabled>
+										Loading projects...
+									</SelectItem>
+								)}
+								{projectsQuery.isError && (
+									<SelectItem value="_error" disabled>
+										Failed to load projects
+									</SelectItem>
+								)}
 								{projectsQuery.data?.map((p) => (
 									<SelectItem key={p.id} value={p.id}>
 										{p.name}
@@ -100,6 +124,7 @@ export function TriggerRunDialog({ open, onOpenChange }: TriggerRunDialogProps) 
 
 					<div className="space-y-2">
 						<Label htmlFor="tr-agentType">Agent Type</Label>
+						{/* Radix Select requires non-empty value; '_none' is used as a sentinel for unselected state */}
 						<Select
 							value={agentType || '_none'}
 							onValueChange={(v) => setAgentType(v === '_none' ? '' : v)}
@@ -161,13 +186,9 @@ export function TriggerRunDialog({ open, onOpenChange }: TriggerRunDialogProps) 
 					</div>
 
 					<div className="flex justify-end gap-2">
-						<button
-							type="button"
-							onClick={() => onOpenChange(false)}
-							className="inline-flex h-9 items-center rounded-md border border-input px-4 text-sm hover:bg-accent"
-						>
+						<Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
 							Cancel
-						</button>
+						</Button>
 						<Button type="submit" disabled={triggerMutation.isPending || !projectId || !agentType}>
 							{triggerMutation.isPending ? 'Triggering...' : 'Trigger Run'}
 						</Button>

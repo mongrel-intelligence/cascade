@@ -5,6 +5,7 @@ import { RefreshCw } from 'lucide-react';
 
 interface RetryRunButtonProps {
 	runId: string;
+	/** Hide button when status is 'running' */
 	status: string;
 }
 
@@ -26,18 +27,30 @@ export function RetryRunButton({ runId, status }: RetryRunButtonProps) {
 	}
 
 	return (
-		<Button
-			variant="outline"
-			size="sm"
-			onClick={(e) => {
-				e.preventDefault();
-				e.stopPropagation();
-				retryMutation.mutate();
-			}}
-			disabled={retryMutation.isPending}
-			title="Retry run"
-		>
-			<RefreshCw className="h-4 w-4" />
-		</Button>
+		<span className="inline-flex items-center gap-1">
+			<Button
+				variant="outline"
+				size="sm"
+				onClick={(e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					retryMutation.mutate();
+				}}
+				disabled={retryMutation.isPending}
+				title="Retry run"
+			>
+				<RefreshCw className="h-4 w-4" />
+			</Button>
+			{retryMutation.isError && (
+				<span
+					className="text-xs text-destructive"
+					title={
+						retryMutation.error instanceof Error ? retryMutation.error.message : 'Retry failed'
+					}
+				>
+					Failed
+				</span>
+			)}
+		</span>
 	);
 }
