@@ -1,9 +1,31 @@
+import { execFileSync } from 'node:child_process';
+
 import { Command } from '@oclif/core';
 import { withGitHubToken } from '../github/client.js';
 import { withJiraCredentials } from '../jira/client.js';
 import { createPMProvider, withPMProvider } from '../pm/index.js';
 import { withTrelloCredentials } from '../trello/client.js';
 import type { ProjectConfig } from '../types/index.js';
+
+/**
+ * Resolve repository owner/repo from flags, env vars, or git remote (in that order).
+ */
+export function resolveOwnerRepo(
+	flagOwner?: string,
+	flagRepo?: string,
+): { owner: string; repo: string } {
+	if (flagOwner && flagRepo) return { owner: flagOwner, repo: flagRepo };
+
+	const envOwner = process.env.CASCADE_REPO_OWNER;
+	const envRepo = process.env.CASCADE_REPO_NAME;
+	if (envOwner && envRepo) return { owner: envOwner, repo: envRepo };
+
+	// Fallback: detect from git remote (same as create-pr)
+	const url = execFileSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf-8' }).trim();
+	const match = url.match(/github\.com[/:]([^/]+)\/(.+?)(?:\.git)?$/);
+	if (!match) throw new Error(`Cannot detect owner/repo from git remote: ${url}`);
+	return { owner: match[1], repo: match[2] };
+}
 
 export abstract class CredentialScopedCommand extends Command {
 	/** Subclasses implement this instead of run() */
@@ -38,7 +60,19 @@ export abstract class CredentialScopedCommand extends Command {
 
 		// Establish PM provider scope — infer type from available credentials
 		const pmType = jiraEmail && jiraApiToken && jiraBaseUrl ? 'jira' : 'trello';
-		const pmProject = { pm: { type: pmType } } as ProjectConfig;
+		const jiraProjectKey = process.env.CASCADE_JIRA_PROJECT_KEY;
+		const jiraStatuses = process.env.CASCADE_JIRA_STATUSES;
+
+		const pmProject = {
+			pm: { type: pmType },
+			...(pmType === 'jira' && {
+				jira: {
+					projectKey: jiraProjectKey ?? '',
+					baseUrl: jiraBaseUrl as string,
+					statuses: jiraStatuses ? JSON.parse(jiraStatuses) : {},
+				},
+			}),
+		} as ProjectConfig;
 		const pmProvider = createPMProvider(pmProject);
 		const prev = fn;
 		fn = () => withPMProvider(pmProvider, prev);

@@ -56,7 +56,7 @@ describe('promptsRouter', () => {
 		it('returns list of agent types', async () => {
 			const types = ['briefing', 'planning', 'implementation'];
 			mockGetValidAgentTypes.mockReturnValue(types);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.agentTypes();
 
@@ -65,7 +65,7 @@ describe('promptsRouter', () => {
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.agentTypes()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 		});
 	});
@@ -73,7 +73,7 @@ describe('promptsRouter', () => {
 	describe('getDefault', () => {
 		it('returns raw template for valid agent type', async () => {
 			mockGetRawTemplate.mockReturnValue('Template content: <%= it.baseBranch %>');
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.getDefault({ agentType: 'briefing' });
 
@@ -85,7 +85,7 @@ describe('promptsRouter', () => {
 			mockGetRawTemplate.mockImplementation(() => {
 				throw new Error('Unknown');
 			});
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.getDefault({ agentType: 'unknown' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -93,7 +93,7 @@ describe('promptsRouter', () => {
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.getDefault({ agentType: 'briefing' })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
@@ -104,7 +104,7 @@ describe('promptsRouter', () => {
 		it('returns template variables', async () => {
 			const vars = [{ name: 'baseBranch', group: 'Common', description: 'Base branch' }];
 			mockGetTemplateVariables.mockReturnValue(vars);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.variables();
 
@@ -116,7 +116,7 @@ describe('promptsRouter', () => {
 		it('returns valid for correct template', async () => {
 			mockLoadPartials.mockResolvedValue(new Map());
 			mockValidateTemplate.mockReturnValue({ valid: true });
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.validate({ template: 'Hello <%= it.name %>' });
 
@@ -127,7 +127,7 @@ describe('promptsRouter', () => {
 		it('returns invalid with error for bad template', async () => {
 			mockLoadPartials.mockResolvedValue(new Map());
 			mockValidateTemplate.mockReturnValue({ valid: false, error: 'Syntax error' });
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.validate({ template: '<% broken' });
 
@@ -145,7 +145,7 @@ describe('promptsRouter', () => {
 				if (name === 'tmux') return 'Tmux content\nline 2\nline 3';
 				throw new Error('Not found');
 			});
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.listPartials();
 
@@ -160,7 +160,7 @@ describe('promptsRouter', () => {
 				{ id: 5, name: 'custom-partial', content: 'Custom\ncontent', orgId: null },
 			]);
 			mockGetAvailablePartialNames.mockReturnValue([]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.listPartials();
 
@@ -171,7 +171,7 @@ describe('promptsRouter', () => {
 	describe('getPartial', () => {
 		it('returns DB partial when available', async () => {
 			mockGetPartial.mockResolvedValue({ id: 1, name: 'git', content: 'DB content' });
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.getPartial({ name: 'git' });
 
@@ -181,7 +181,7 @@ describe('promptsRouter', () => {
 		it('falls back to disk when no DB partial', async () => {
 			mockGetPartial.mockResolvedValue(null);
 			mockGetRawPartial.mockReturnValue('Disk content');
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.getPartial({ name: 'git' });
 
@@ -193,7 +193,7 @@ describe('promptsRouter', () => {
 			mockGetRawPartial.mockImplementation(() => {
 				throw new Error('Not found');
 			});
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.getPartial({ name: 'nonexistent' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -204,7 +204,7 @@ describe('promptsRouter', () => {
 	describe('getDefaultPartial', () => {
 		it('returns disk partial content', async () => {
 			mockGetRawPartial.mockReturnValue('Default content');
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.getDefaultPartial({ name: 'git' });
 
@@ -215,7 +215,7 @@ describe('promptsRouter', () => {
 			mockGetRawPartial.mockImplementation(() => {
 				throw new Error('Not found');
 			});
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.getDefaultPartial({ name: 'nonexistent' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -233,7 +233,7 @@ describe('promptsRouter', () => {
 				content: 'New content',
 				orgId: null,
 			});
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.upsertPartial({ name: 'git', content: 'New content' });
 
@@ -244,7 +244,7 @@ describe('promptsRouter', () => {
 		it('rejects invalid partial content', async () => {
 			mockLoadPartials.mockResolvedValue(new Map());
 			mockValidateTemplate.mockReturnValue({ valid: false, error: 'Bad syntax' });
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(
 				caller.upsertPartial({ name: 'git', content: '<% broken' }),
@@ -255,7 +255,7 @@ describe('promptsRouter', () => {
 	describe('deletePartial', () => {
 		it('deletes a partial by id', async () => {
 			mockDeletePartial.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.deletePartial({ id: 1 });
 
@@ -263,7 +263,7 @@ describe('promptsRouter', () => {
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.deletePartial({ id: 1 })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});

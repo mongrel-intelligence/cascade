@@ -41,12 +41,12 @@ export const agentConfigsRouter = router({
 					.select({ orgId: projects.orgId })
 					.from(projects)
 					.where(eq(projects.id, input.projectId));
-				if (!project || project.orgId !== ctx.user.orgId) {
+				if (!project || project.orgId !== ctx.effectiveOrgId) {
 					throw new TRPCError({ code: 'NOT_FOUND' });
 				}
 				return listAgentConfigs({ projectId: input.projectId });
 			}
-			return listAgentConfigs({ orgId: ctx.user.orgId });
+			return listAgentConfigs({ orgId: ctx.effectiveOrgId });
 		}),
 
 	create: protectedProcedure
@@ -69,13 +69,13 @@ export const agentConfigsRouter = router({
 					.select({ orgId: projects.orgId })
 					.from(projects)
 					.where(eq(projects.id, input.projectId));
-				if (!project || project.orgId !== ctx.user.orgId) {
+				if (!project || project.orgId !== ctx.effectiveOrgId) {
 					throw new TRPCError({ code: 'NOT_FOUND' });
 				}
 			}
 			await validatePromptIfPresent(input.prompt);
 			return createAgentConfig({
-				orgId: input.orgId ?? ctx.user.orgId,
+				orgId: input.orgId ?? ctx.effectiveOrgId,
 				projectId: input.projectId,
 				agentType: input.agentType,
 				model: input.model,
@@ -107,7 +107,7 @@ export const agentConfigsRouter = router({
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 			// Check org-scoped configs belong to user's org
-			if (config.orgId && config.orgId !== ctx.user.orgId) {
+			if (config.orgId && config.orgId !== ctx.effectiveOrgId) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 			// Check project-scoped configs belong to user's org
@@ -116,7 +116,7 @@ export const agentConfigsRouter = router({
 					.select({ orgId: projects.orgId })
 					.from(projects)
 					.where(eq(projects.id, config.projectId));
-				if (!project || project.orgId !== ctx.user.orgId) {
+				if (!project || project.orgId !== ctx.effectiveOrgId) {
 					throw new TRPCError({ code: 'NOT_FOUND' });
 				}
 			}
@@ -137,7 +137,7 @@ export const agentConfigsRouter = router({
 			if (!config) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
-			if (config.orgId && config.orgId !== ctx.user.orgId) {
+			if (config.orgId && config.orgId !== ctx.effectiveOrgId) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 			if (config.projectId) {
@@ -145,7 +145,7 @@ export const agentConfigsRouter = router({
 					.select({ orgId: projects.orgId })
 					.from(projects)
 					.where(eq(projects.id, config.projectId));
-				if (!project || project.orgId !== ctx.user.orgId) {
+				if (!project || project.orgId !== ctx.effectiveOrgId) {
 					throw new TRPCError({ code: 'NOT_FOUND' });
 				}
 			}

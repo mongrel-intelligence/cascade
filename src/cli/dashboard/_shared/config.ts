@@ -5,6 +5,7 @@ import { join } from 'node:path';
 export interface CliConfig {
 	serverUrl: string;
 	sessionToken: string;
+	orgId?: string;
 }
 
 const CONFIG_DIR = join(homedir(), '.cascade');
@@ -14,8 +15,9 @@ export function loadConfig(): CliConfig | null {
 	// Env var overrides take priority
 	const envUrl = process.env.CASCADE_SERVER_URL;
 	const envToken = process.env.CASCADE_SESSION_TOKEN;
+	const envOrgId = process.env.CASCADE_ORG_ID;
 	if (envUrl && envToken) {
-		return { serverUrl: envUrl, sessionToken: envToken };
+		return { serverUrl: envUrl, sessionToken: envToken, orgId: envOrgId };
 	}
 
 	if (!existsSync(CONFIG_FILE)) return null;
@@ -28,6 +30,7 @@ export function loadConfig(): CliConfig | null {
 		return {
 			serverUrl: envUrl ?? parsed.serverUrl,
 			sessionToken: envToken ?? parsed.sessionToken,
+			orgId: envOrgId ?? parsed.orgId,
 		};
 	} catch {
 		return null;

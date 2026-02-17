@@ -442,47 +442,25 @@ Read the user's comment carefully and respond accordingly. Default to surgical, 
 }
 
 function buildReviewTaskPrompt(input: AgentInput): string {
-	const repoFullName = input.repoFullName as string;
 	const prNumber = input.prNumber as number;
-	const [owner, repo] = repoFullName.split('/');
 
-	return `Review PR #${prNumber} in ${owner}/${repo}.
+	return `Review PR #${prNumber}.
 
-Examine the code changes carefully and submit your review using CreatePRReview.
-
-## GitHub Context
-
-Owner: ${owner}
-Repo: ${repo}
-PR Number: ${prNumber}
-
-Use these values when calling GitHub tools (GetPRDetails, GetPRDiff, CreatePRReview).`;
+Examine the code changes carefully and submit your review using CreatePRReview.`;
 }
 
 function buildCITaskPrompt(input: AgentInput): string {
-	const repoFullName = input.repoFullName as string;
 	const prNumber = input.prNumber as number;
 	const prBranch = input.prBranch as string;
-	const [owner, repo] = repoFullName.split('/');
 
 	return `You are on the branch \`${prBranch}\` for PR #${prNumber}.
 
-CI checks have failed. Analyze the failures and fix them.
-
-## GitHub Context
-
-Owner: ${owner}
-Repo: ${repo}
-PR Number: ${prNumber}
-
-Use these values when calling GitHub tools (GetPRDetails, GetPRDiff, PostPRComment, UpdatePRComment).`;
+CI checks have failed. Analyze the failures and fix them.`;
 }
 
 function buildPRCommentResponseTaskPrompt(input: AgentInput): string {
-	const repoFullName = input.repoFullName as string;
 	const prNumber = input.prNumber as number;
 	const prBranch = input.prBranch as string;
-	const [owner, repo] = repoFullName.split('/');
 	const commentBody = input.triggerCommentBody as string;
 	const commentPath = input.triggerCommentPath as string;
 
@@ -498,15 +476,7 @@ Their comment:
 ${commentBody}
 ---
 
-Read the comment carefully and respond accordingly. If they ask for code changes, make the changes, commit, and push. If they ask a question, reply with a PR comment. Default to surgical, targeted changes unless they clearly ask for something broader.
-
-## GitHub Context
-
-Owner: ${owner}
-Repo: ${repo}
-PR Number: ${prNumber}
-
-Use these values when calling GitHub tools (GetPRDetails, GetPRDiff, PostPRComment, UpdatePRComment, ReplyToReviewComment, CreatePRReview).`;
+Read the comment carefully and respond accordingly. If they ask for code changes, make the changes, commit, and push. If they ask a question, reply with a PR comment. Default to surgical, targeted changes unless they clearly ask for something broader.`;
 }
 
 // ============================================================================

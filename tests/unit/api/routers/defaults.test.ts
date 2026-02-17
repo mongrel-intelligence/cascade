@@ -37,7 +37,7 @@ describe('defaultsRouter', () => {
 				maxIterations: 20,
 			};
 			mockGetCascadeDefaults.mockResolvedValue(mockDefaults);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.get();
 
@@ -47,14 +47,14 @@ describe('defaultsRouter', () => {
 
 		it('returns null when no defaults configured', async () => {
 			mockGetCascadeDefaults.mockResolvedValue(null);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.get();
 			expect(result).toBeNull();
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.get()).rejects.toThrow(TRPCError);
 			await expect(caller.get()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 		});
@@ -63,7 +63,7 @@ describe('defaultsRouter', () => {
 	describe('upsert', () => {
 		it('upserts all fields', async () => {
 			mockUpsertCascadeDefaults.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.upsert({
 				model: 'claude-sonnet-4-5-20250929',
@@ -88,7 +88,7 @@ describe('defaultsRouter', () => {
 
 		it('accepts partial updates with null values', async () => {
 			mockUpsertCascadeDefaults.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.upsert({ model: null, maxIterations: 15 });
 
@@ -100,7 +100,7 @@ describe('defaultsRouter', () => {
 
 		it('accepts empty input', async () => {
 			mockUpsertCascadeDefaults.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.upsert({});
 
@@ -108,12 +108,12 @@ describe('defaultsRouter', () => {
 		});
 
 		it('rejects negative maxIterations', async () => {
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.upsert({ maxIterations: -1 })).rejects.toThrow();
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.upsert({ model: 'test' })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
