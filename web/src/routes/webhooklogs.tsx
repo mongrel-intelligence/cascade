@@ -37,7 +37,7 @@ function WebhookLogsPage() {
 			search: (prev) => ({
 				...prev,
 				...updates,
-				offset: updates.offset !== undefined ? updates.offset : 0,
+				offset: updates.offset !== undefined ? Number(updates.offset) : 0,
 			}),
 		});
 	}

@@ -86,14 +86,14 @@ export function WebhookLogDetailDialog({ logId, onClose }: WebhookLogDetailDialo
 							</div>
 						</div>
 
-						{log.headers && (
+						{!!log.headers && (
 							<div>
 								<div className="mb-1 text-xs font-medium text-muted-foreground">Headers</div>
 								<JsonBlock value={log.headers} />
 							</div>
 						)}
 
-						{log.body && (
+						{!!log.body && (
 							<div>
 								<div className="mb-1 text-xs font-medium text-muted-foreground">Body</div>
 								<JsonBlock value={log.body} />
