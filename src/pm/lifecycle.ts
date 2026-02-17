@@ -34,12 +34,13 @@ export interface ProjectPMConfig {
 export function resolveProjectPMConfig(project: ProjectConfig): ProjectPMConfig {
 	if (project.pm?.type === 'jira' && project.jira) {
 		// JIRA uses label strings (not IDs) and status names from config
+		const jiraLabels = project.jira.labels;
 		return {
 			labels: {
-				processing: 'cascade-processing',
-				processed: 'cascade-processed',
-				error: 'cascade-error',
-				readyToProcess: 'cascade-ready',
+				processing: jiraLabels?.processing ?? 'cascade-processing',
+				processed: jiraLabels?.processed ?? 'cascade-processed',
+				error: jiraLabels?.error ?? 'cascade-error',
+				readyToProcess: jiraLabels?.readyToProcess ?? 'cascade-ready',
 			},
 			statuses: {
 				inProgress: project.jira.statuses.inProgress,

@@ -17,6 +17,7 @@ interface JiraIntegrationConfig {
 	statuses: Record<string, string>;
 	issueTypes?: Record<string, string>;
 	customFields?: { cost?: string };
+	labels?: Record<string, string>;
 }
 
 interface DefaultsRow {
@@ -120,6 +121,7 @@ function mapProjectRow(
 			statuses: jiraConfig.statuses,
 			issueTypes: jiraConfig.issueTypes,
 			customFields: jiraConfig.customFields,
+			labels: jiraConfig.labels,
 		};
 	}
 

@@ -183,6 +183,12 @@ function JiraForm({
 	const [baseUrl, setBaseUrl] = useState('');
 	const [statuses, setStatuses] = useState<KVPair[]>([]);
 	const [issueTypes, setIssueTypes] = useState<KVPair[]>([]);
+	const [jiraLabels, setJiraLabels] = useState<KVPair[]>([
+		{ key: 'processing', value: 'cascade-processing' },
+		{ key: 'processed', value: 'cascade-processed' },
+		{ key: 'error', value: 'cascade-error' },
+		{ key: 'readyToProcess', value: 'cascade-ready' },
+	]);
 	const [costField, setCostField] = useState('');
 
 	useEffect(() => {
@@ -191,6 +197,10 @@ function JiraForm({
 			setBaseUrl((initialConfig.baseUrl as string) ?? '');
 			setStatuses(toKVPairs(initialConfig.statuses as Record<string, string>));
 			setIssueTypes(toKVPairs(initialConfig.issueTypes as Record<string, string>));
+			const labels = initialConfig.labels as Record<string, string> | undefined;
+			if (labels) {
+				setJiraLabels(toKVPairs(labels));
+			}
 			const cf = initialConfig.customFields as Record<string, string> | undefined;
 			setCostField(cf?.cost ?? '');
 		}
@@ -206,6 +216,7 @@ function JiraForm({
 					baseUrl,
 					statuses: fromKVPairs(statuses),
 					...(issueTypes.length > 0 ? { issueTypes: fromKVPairs(issueTypes) } : {}),
+					...(jiraLabels.length > 0 ? { labels: fromKVPairs(jiraLabels) } : {}),
 					...(costField ? { customFields: { cost: costField } } : {}),
 				},
 			}),
@@ -245,6 +256,11 @@ function JiraForm({
 			</p>
 
 			<KeyValueEditor label="Issue Types (optional)" pairs={issueTypes} onChange={setIssueTypes} />
+
+			<KeyValueEditor label="Labels" pairs={jiraLabels} onChange={setJiraLabels} />
+			<p className="text-xs text-muted-foreground -mt-1">
+				JIRA label names used by CASCADE. Keys: processing, processed, error, readyToProcess.
+			</p>
 
 			<div className="space-y-2">
 				<Label htmlFor="jiraCostField">Custom Field: Cost</Label>

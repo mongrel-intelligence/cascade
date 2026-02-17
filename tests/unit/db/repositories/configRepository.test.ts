@@ -67,6 +67,20 @@ const trelloIntegration = {
 	updatedAt: new Date(),
 };
 
+const jiraIntegration = {
+	id: 3,
+	projectId: 'proj1',
+	type: 'jira' as const,
+	config: {
+		projectKey: 'PROJ',
+		baseUrl: 'https://test.atlassian.net',
+		statuses: { briefing: 'Briefing', planning: 'Planning', todo: 'To Do' },
+		labels: { processing: 'my-proc', readyToProcess: 'my-ready' },
+	},
+	createdAt: new Date(),
+	updatedAt: new Date(),
+};
+
 const globalAgentConfig = {
 	id: 1,
 	orgId: null,
@@ -169,6 +183,43 @@ describe('configRepository', () => {
 			expect(proj.trello.lists).toEqual({ todo: 'list-todo', done: 'list-done' });
 			expect(proj.trello.labels).toEqual({ processing: 'label-proc' });
 			expect(proj.trello.customFields).toEqual({ cost: 'cf-cost' });
+		});
+
+		it('loads config with JIRA integration including labels', async () => {
+			const mockDb = createSequentialMockDb([[defaultsRow], [projectRow], [], [jiraIntegration]]);
+			vi.mocked(getDb).mockReturnValue(mockDb as never);
+
+			const config = await loadConfigFromDb();
+
+			expect(config.projects).toHaveLength(1);
+			const proj = config.projects[0];
+			expect(proj.pm?.type).toBe('jira');
+			expect(proj.jira?.projectKey).toBe('PROJ');
+			expect(proj.jira?.baseUrl).toBe('https://test.atlassian.net');
+			expect(proj.jira?.statuses).toEqual({
+				briefing: 'Briefing',
+				planning: 'Planning',
+				todo: 'To Do',
+			});
+			expect(proj.jira?.labels?.processing).toBe('my-proc');
+			expect(proj.jira?.labels?.readyToProcess).toBe('my-ready');
+		});
+
+		it('loads JIRA integration without labels (optional field)', async () => {
+			const jiraNoLabels = {
+				...jiraIntegration,
+				config: {
+					projectKey: 'PROJ',
+					baseUrl: 'https://test.atlassian.net',
+					statuses: { briefing: 'Briefing' },
+				},
+			};
+			const mockDb = createSequentialMockDb([[defaultsRow], [projectRow], [], [jiraNoLabels]]);
+			vi.mocked(getDb).mockReturnValue(mockDb as never);
+
+			const config = await loadConfigFromDb();
+			const proj = config.projects[0];
+			expect(proj.jira?.labels).toBeUndefined();
 		});
 
 		it('maps defaults correctly from DB row', async () => {

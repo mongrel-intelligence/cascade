@@ -68,6 +68,36 @@ const mockProject = {
 	trello: { boardId: 'board-123' },
 };
 
+const mockJiraProject = {
+	id: 'jira-project',
+	orgId: 'org-1',
+	repo: 'owner/jira-repo',
+	pm: { type: 'jira' },
+	jira: {
+		projectKey: 'PROJ',
+		baseUrl: 'https://test.atlassian.net',
+		statuses: { briefing: 'Briefing' },
+		labels: {
+			processing: 'my-processing',
+			processed: 'my-processed',
+			error: 'my-error',
+			readyToProcess: 'my-ready',
+		},
+	},
+};
+
+function setupJiraProjectContext() {
+	mockDbSelect.mockReturnValue({ from: mockDbFrom });
+	mockDbFrom.mockReturnValue({ where: mockDbWhere });
+	mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+	mockFindProjectByIdFromDb.mockResolvedValue(mockJiraProject);
+	mockResolveAllCredentials.mockResolvedValue({
+		JIRA_EMAIL: 'bot@example.com',
+		JIRA_API_TOKEN: 'jira-token-123',
+		GITHUB_TOKEN: 'ghp_test123',
+	});
+}
+
 function setupProjectContext(opts?: { noTrello?: boolean; noGithub?: boolean }) {
 	mockDbSelect.mockReturnValue({ from: mockDbFrom });
 	mockDbFrom.mockReturnValue({ where: mockDbWhere });
@@ -327,6 +357,115 @@ describe('webhooksRouter', () => {
 			expect(result.github).toMatchObject({ id: 1 });
 			// No Trello fetch calls (only GitHub Octokit calls)
 			expect(mockFetch).not.toHaveBeenCalled();
+		});
+
+		it('seeds JIRA labels when creating JIRA webhook', async () => {
+			setupJiraProjectContext();
+
+			// Calls in order:
+			// 1. jiraListWebhooks (GET /rest/api/3/webhook) - empty
+			// 2. jiraCreateWebhook (POST /rest/api/3/webhook) - success
+			// 3. jiraEnsureLabels: JQL search (GET /rest/api/3/search) - returns 1 issue
+			// 4. jiraEnsureLabels: add labels (PUT /rest/api/3/issue/PROJ-1)
+			// 5. jiraEnsureLabels: restore labels (PUT /rest/api/3/issue/PROJ-1)
+			mockFetch
+				.mockResolvedValueOnce({
+					ok: true,
+					json: () => Promise.resolve({ values: [] }),
+				})
+				.mockResolvedValueOnce({
+					ok: true,
+					json: () =>
+						Promise.resolve({
+							id: 100,
+							name: 'cascade-webhook',
+							url: 'http://example.com/webhook/jira',
+							events: [],
+							enabled: true,
+						}),
+				})
+				.mockResolvedValueOnce({
+					ok: true,
+					json: () =>
+						Promise.resolve({
+							issues: [
+								{
+									key: 'PROJ-1',
+									fields: { labels: ['existing-label'] },
+								},
+							],
+						}),
+				})
+				.mockResolvedValueOnce({ ok: true }) // add labels
+				.mockResolvedValueOnce({ ok: true }); // restore labels
+
+			mockListWebhooks.mockResolvedValue({ data: [] });
+			mockCreateWebhook.mockResolvedValue({
+				data: {
+					id: 1,
+					config: { url: 'http://example.com/webhook/github' },
+					events: [],
+					active: true,
+				},
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.create({
+				projectId: 'jira-project',
+				callbackBaseUrl: 'http://example.com',
+			});
+
+			expect(result.jira).toMatchObject({ id: 100 });
+			expect(result.labelsEnsured).toEqual([
+				'my-processing',
+				'my-processed',
+				'my-error',
+				'my-ready',
+			]);
+		});
+
+		it('returns empty labelsEnsured when JIRA project has no issues', async () => {
+			setupJiraProjectContext();
+
+			mockFetch
+				.mockResolvedValueOnce({
+					ok: true,
+					json: () => Promise.resolve({ values: [] }),
+				})
+				.mockResolvedValueOnce({
+					ok: true,
+					json: () =>
+						Promise.resolve({
+							id: 101,
+							name: 'cascade-webhook',
+							url: 'http://example.com/webhook/jira',
+							events: [],
+							enabled: true,
+						}),
+				})
+				.mockResolvedValueOnce({
+					ok: true,
+					json: () => Promise.resolve({ issues: [] }),
+				});
+
+			mockListWebhooks.mockResolvedValue({ data: [] });
+			mockCreateWebhook.mockResolvedValue({
+				data: {
+					id: 1,
+					config: { url: 'http://example.com/webhook/github' },
+					events: [],
+					active: true,
+				},
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.create({
+				projectId: 'jira-project',
+				callbackBaseUrl: 'http://example.com',
+			});
+
+			expect(result.jira).toMatchObject({ id: 101 });
+			expect(result.labelsEnsured).toEqual([]);
 		});
 	});
 

@@ -431,6 +431,55 @@ describe('buildPostToolUseHooks', () => {
 			result: '',
 		});
 	});
+
+	it('serializes object tool response as JSON instead of [object Object]', async () => {
+		const logWriter = makeLogWriter();
+		const [matcher] = buildPostToolUseHooks(logWriter);
+		const [hook] = matcher.hooks;
+
+		const objectResponse = { success: true, data: { id: 'abc', name: 'test' } };
+		await hook(makePostToolUseInput('Bash', objectResponse), 'tu-1', {
+			signal: AbortSignal.timeout(5000),
+		});
+
+		expect(logWriter).toHaveBeenCalledWith('INFO', 'Tool result', {
+			tool: 'Bash',
+			result: JSON.stringify(objectResponse),
+		});
+	});
+
+	it('serializes array tool response as JSON', async () => {
+		const logWriter = makeLogWriter();
+		const [matcher] = buildPostToolUseHooks(logWriter);
+		const [hook] = matcher.hooks;
+
+		const arrayResponse = [{ file: 'a.ts' }, { file: 'b.ts' }];
+		await hook(makePostToolUseInput('Glob', arrayResponse), 'tu-1', {
+			signal: AbortSignal.timeout(5000),
+		});
+
+		expect(logWriter).toHaveBeenCalledWith('INFO', 'Tool result', {
+			tool: 'Glob',
+			result: JSON.stringify(arrayResponse),
+		});
+	});
+
+	it('truncates long JSON-serialized object responses', async () => {
+		const logWriter = makeLogWriter();
+		const [matcher] = buildPostToolUseHooks(logWriter);
+		const [hook] = matcher.hooks;
+
+		const largeObject = { data: 'x'.repeat(600) };
+		const serialized = JSON.stringify(largeObject);
+		await hook(makePostToolUseInput('Bash', largeObject), 'tu-1', {
+			signal: AbortSignal.timeout(5000),
+		});
+
+		expect(logWriter).toHaveBeenCalledWith('INFO', 'Tool result', {
+			tool: 'Bash',
+			result: `${serialized.slice(0, 500)}... (${serialized.length} chars)`,
+		});
+	});
 });
 
 describe('buildPostToolUseFailureHooks', () => {

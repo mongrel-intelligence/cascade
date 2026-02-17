@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { Flags } from '@oclif/core';
 import { createPR } from '../../gadgets/github/core/createPR.js';
 import { CredentialScopedCommand } from '../base.js';
@@ -7,7 +8,10 @@ export default class CreatePR extends CredentialScopedCommand {
 
 	static override flags = {
 		title: Flags.string({ description: 'PR title', required: true }),
-		body: Flags.string({ description: 'PR description (markdown supported)', required: true }),
+		body: Flags.string({ description: 'PR description (markdown supported)' }),
+		'body-file': Flags.string({
+			description: 'Read PR body from file (use - for stdin)',
+		}),
 		head: Flags.string({ description: 'Source branch name', required: true }),
 		base: Flags.string({
 			description: 'Target branch name (defaults to CASCADE_BASE_BRANCH env var)',
@@ -33,9 +37,19 @@ export default class CreatePR extends CredentialScopedCommand {
 		if (!base) {
 			this.error('--base is required (or set CASCADE_BASE_BRANCH env var)');
 		}
+		let body = flags.body;
+		if (flags['body-file']) {
+			body =
+				flags['body-file'] === '-'
+					? readFileSync(0, 'utf-8')
+					: readFileSync(flags['body-file'], 'utf-8');
+		}
+		if (!body) {
+			this.error('Either --body or --body-file is required');
+		}
 		const result = await createPR({
 			title: flags.title,
-			body: flags.body,
+			body,
 			head: flags.head,
 			base,
 			draft: flags.draft,

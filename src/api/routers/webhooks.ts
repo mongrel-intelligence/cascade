@@ -46,6 +46,8 @@ interface ProjectContext {
 	pmType: 'trello' | 'jira';
 	boardId?: string;
 	jiraBaseUrl?: string;
+	jiraProjectKey?: string;
+	jiraLabels?: string[];
 	trelloApiKey: string;
 	trelloToken: string;
 	githubToken: string;
@@ -74,6 +76,16 @@ async function resolveProjectContext(
 
 	const creds = await resolveAllCredentials(projectId, project.orgId);
 
+	// Resolve JIRA label names from config (with defaults)
+	const jiraLabels = project.jira
+		? [
+				project.jira.labels?.processing ?? 'cascade-processing',
+				project.jira.labels?.processed ?? 'cascade-processed',
+				project.jira.labels?.error ?? 'cascade-error',
+				project.jira.labels?.readyToProcess ?? 'cascade-ready',
+			]
+		: undefined;
+
 	return {
 		projectId,
 		orgId: project.orgId,
@@ -81,6 +93,8 @@ async function resolveProjectContext(
 		pmType: project.pm?.type ?? 'trello',
 		boardId: project.trello?.boardId,
 		jiraBaseUrl: project.jira?.baseUrl,
+		jiraProjectKey: project.jira?.projectKey,
+		jiraLabels,
 		trelloApiKey: creds.TRELLO_API_KEY ?? '',
 		trelloToken: creds.TRELLO_TOKEN ?? '',
 		githubToken: creds.GITHUB_TOKEN ?? '',
@@ -266,6 +280,89 @@ async function githubDeleteWebhook(ctx: ProjectContext, hookId: number): Promise
 	await octokit.repos.deleteWebhook({ owner, repo, hook_id: hookId });
 }
 
+// --- JIRA label seeding ---
+
+/**
+ * Ensure CASCADE labels exist in JIRA's autocomplete by briefly adding them to
+ * an issue and immediately removing them. JIRA auto-creates labels when first
+ * used, but they won't appear in autocomplete until then.
+ *
+ * Returns the list of labels that were seeded, or an empty array if the project
+ * has no issues yet.
+ */
+async function jiraEnsureLabels(ctx: ProjectContext): Promise<string[]> {
+	if (!ctx.jiraBaseUrl || !ctx.jiraEmail || !ctx.jiraApiToken || !ctx.jiraProjectKey) {
+		return [];
+	}
+
+	const labelsToSeed = ctx.jiraLabels ?? [];
+	if (labelsToSeed.length === 0) return [];
+
+	const auth = jiraAuthHeader(ctx);
+
+	// Find one issue in the project
+	const searchResponse = await fetch(
+		`${ctx.jiraBaseUrl}/rest/api/3/search?jql=${encodeURIComponent(`project = "${ctx.jiraProjectKey}" ORDER BY created DESC`)}&maxResults=1&fields=labels`,
+		{
+			headers: { Authorization: auth, Accept: 'application/json' },
+		},
+	);
+
+	if (!searchResponse.ok) return [];
+
+	const searchData = (await searchResponse.json()) as {
+		issues?: Array<{ key: string; fields?: { labels?: string[] } }>;
+	};
+
+	const issue = searchData.issues?.[0];
+	if (!issue) {
+		// No issues in the project yet — labels will be created when first agent runs
+		return [];
+	}
+
+	const existingLabels = issue.fields?.labels ?? [];
+	const newLabels = labelsToSeed.filter((l) => !existingLabels.includes(l));
+
+	if (newLabels.length === 0) {
+		// All labels already exist in the project
+		return labelsToSeed;
+	}
+
+	// Add all CASCADE labels to the issue
+	const addResponse = await fetch(`${ctx.jiraBaseUrl}/rest/api/3/issue/${issue.key}`, {
+		method: 'PUT',
+		headers: {
+			Authorization: auth,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			fields: {
+				labels: [...existingLabels, ...newLabels],
+			},
+		}),
+	});
+
+	if (!addResponse.ok) return [];
+
+	// Immediately restore original labels
+	await fetch(`${ctx.jiraBaseUrl}/rest/api/3/issue/${issue.key}`, {
+		method: 'PUT',
+		headers: {
+			Authorization: auth,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			fields: {
+				labels: existingLabels,
+			},
+		}),
+	});
+
+	return labelsToSeed;
+}
+
 // --- Router ---
 
 export const webhooksRouter = router({
@@ -300,6 +397,7 @@ export const webhooksRouter = router({
 				trello?: TrelloWebhook | string;
 				github?: GitHubWebhook | string;
 				jira?: JiraWebhookInfo | string;
+				labelsEnsured?: string[];
 			} = {};
 
 			// Trello webhook (skip for JIRA-only projects)
@@ -338,6 +436,9 @@ export const webhooksRouter = router({
 				} else {
 					results.jira = await jiraCreateWebhook(pctx, jiraCallbackUrl);
 				}
+
+				// Seed CASCADE labels in JIRA autocomplete
+				results.labelsEnsured = await jiraEnsureLabels(pctx);
 			}
 
 			// GitHub webhook
