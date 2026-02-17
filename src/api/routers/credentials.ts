@@ -32,7 +32,6 @@ export const credentialsRouter = router({
 				name: z.string().min(1),
 				envVarKey: z.string().regex(/^[A-Z_][A-Z0-9_]*$/),
 				value: z.string().min(1),
-				description: z.string().optional(),
 				isDefault: z.boolean().optional(),
 			}),
 		)
@@ -42,7 +41,6 @@ export const credentialsRouter = router({
 				name: input.name,
 				envVarKey: input.envVarKey,
 				value: input.value,
-				description: input.description,
 				isDefault: input.isDefault,
 			});
 		}),
@@ -53,7 +51,6 @@ export const credentialsRouter = router({
 				id: z.number(),
 				name: z.string().min(1).optional(),
 				value: z.string().min(1).optional(),
-				description: z.string().optional(),
 				isDefault: z.boolean().optional(),
 			}),
 		)
