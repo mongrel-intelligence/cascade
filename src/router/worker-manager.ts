@@ -254,16 +254,28 @@ export function startWorkerProcessor(): void {
 	console.log('[WorkerManager] Started with max', routerConfig.maxWorkers, 'concurrent workers');
 }
 
-// Graceful shutdown
+// Graceful shutdown — detach from workers, let them finish independently
 export async function stopWorkerProcessor(): Promise<void> {
 	if (bullWorker) {
 		await bullWorker.close();
 		bullWorker = null;
 	}
 
-	// Kill any active workers
-	const killPromises = Array.from(activeWorkers.keys()).map((jobId) => killWorker(jobId));
-	await Promise.all(killPromises);
+	// Don't kill active workers — they're independent containers that will
+	// finish their jobs and auto-remove. Workers have their own internal
+	// watchdog (src/utils/lifecycle.ts) for timeout enforcement.
+	if (activeWorkers.size > 0) {
+		console.log('[WorkerManager] Detaching from active workers (will continue running):', {
+			count: activeWorkers.size,
+			workers: Array.from(activeWorkers.keys()),
+		});
+	}
+
+	// Clear timeout handles so the router process can exit cleanly
+	for (const [, worker] of activeWorkers) {
+		clearTimeout(worker.timeoutHandle);
+	}
+	activeWorkers.clear();
 
 	console.log('[WorkerManager] Stopped');
 }
