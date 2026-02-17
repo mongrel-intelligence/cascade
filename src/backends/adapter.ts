@@ -22,6 +22,7 @@ import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../utils/
 import { clearWatchdogCleanup, setWatchdogCleanup } from '../utils/lifecycle.js';
 import { logger } from '../utils/logging.js';
 import { cleanupTempDir } from '../utils/repo.js';
+import { setupRemoteSquintDb } from '../utils/squintDb.js';
 import { getAgentProfile } from './agent-profiles.js';
 import { createProgressMonitor } from './progress.js';
 import type { AgentBackend, AgentBackendInput, LogWriter, ToolManifest } from './types.js';
@@ -520,6 +521,7 @@ export async function executeWithBackend(
 	try {
 		repoDir = await resolveRepoDir(input, log, agentType);
 		const envSnapshot = loadCascadeEnv(repoDir, log);
+		const squintCleanup = await setupRemoteSquintDb(repoDir, input.project, log);
 		const logWriter = createLogWriter(fileLogger);
 
 		const profile = getAgentProfile(agentType);
@@ -620,6 +622,7 @@ export async function executeWithBackend(
 		} finally {
 			monitor?.stop();
 			process.chdir(originalCwd);
+			squintCleanup?.();
 			unloadCascadeEnv(envSnapshot);
 		}
 	} catch (err) {
