@@ -72,6 +72,16 @@ function buildAdfBodyPlainText(text = 'just a regular comment'): unknown {
 	};
 }
 
+/** Build a wiki markup comment body with an @mention */
+function buildWikiMarkupWithMention(accountId: string, text = 'please look at this'): string {
+	return `[~accountid:${accountId}] ${text}`;
+}
+
+/** Build a wiki markup body with no mentions */
+function buildWikiMarkupPlainText(text = 'just a regular comment'): string {
+	return text;
+}
+
 function buildCtx(
 	overrides: {
 		webhookEvent?: string;
@@ -189,6 +199,83 @@ describe('JiraCommentMentionTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toBeNull();
+		});
+	});
+
+	describe('handle — wiki markup bodies', () => {
+		it('triggers agent when bot is @mentioned in wiki markup comment', async () => {
+			const ctx = buildCtx({
+				commentBody: buildWikiMarkupWithMention(BOT_ACCOUNT_ID),
+			});
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('respond-to-planning-comment');
+			expect(result?.workItemId).toBe('DAM-13');
+			expect(result?.cardId).toBe('DAM-13');
+			expect(result?.agentInput.triggerCommentAuthor).toBe('Human User');
+		});
+
+		it('returns null when wiki markup @mention is for a different user', async () => {
+			const ctx = buildCtx({
+				commentBody: buildWikiMarkupWithMention('some-other-user-789'),
+			});
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+		});
+
+		it('returns null when wiki markup comment is self-authored', async () => {
+			const ctx = buildCtx({
+				commentAuthorAccountId: BOT_ACCOUNT_ID,
+				commentBody: buildWikiMarkupWithMention(BOT_ACCOUNT_ID),
+			});
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+		});
+
+		it('returns null when wiki markup has no mentions', async () => {
+			const ctx = buildCtx({
+				commentBody: buildWikiMarkupPlainText(),
+			});
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+		});
+
+		it('preserves wiki markup text in triggerCommentText', async () => {
+			const ctx = buildCtx({
+				commentBody: buildWikiMarkupWithMention(BOT_ACCOUNT_ID, 'simplify the plan'),
+			});
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentInput.triggerCommentText).toBe(
+				`[~accountid:${BOT_ACCOUNT_ID}] simplify the plan`,
+			);
+		});
+
+		it('handles mention in the middle of wiki markup text', async () => {
+			const ctx = buildCtx({
+				commentBody: `Hey [~accountid:${BOT_ACCOUNT_ID}] can you help?`,
+			});
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentInput.triggerCommentText).toBe(
+				`Hey [~accountid:${BOT_ACCOUNT_ID}] can you help?`,
+			);
+		});
+
+		it('handles multiple mentions in wiki markup (one matching)', async () => {
+			const ctx = buildCtx({
+				commentBody: `[~accountid:other-user] and [~accountid:${BOT_ACCOUNT_ID}] please review`,
+			});
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('respond-to-planning-comment');
 		});
 	});
 });

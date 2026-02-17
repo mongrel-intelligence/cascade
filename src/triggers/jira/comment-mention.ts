@@ -46,9 +46,11 @@ async function getAuthenticatedUserInfo(): Promise<{ accountId: string; displayN
 }
 
 /**
- * Extract plain text from an ADF body (simple recursive extraction).
+ * Extract plain text from a comment body.
+ * Handles both ADF objects (recursive extraction) and wiki markup strings.
  */
-function extractTextFromAdf(body: unknown): string {
+function extractText(body: unknown): string {
+	if (typeof body === 'string') return body;
 	if (!body || typeof body !== 'object') return '';
 	const node = body as Record<string, unknown>;
 
@@ -62,17 +64,21 @@ function extractTextFromAdf(body: unknown): string {
 	}
 
 	if (Array.isArray(node.content)) {
-		return (node.content as unknown[]).map(extractTextFromAdf).join('');
+		return (node.content as unknown[]).map(extractText).join('');
 	}
 
 	return '';
 }
 
 /**
- * Check if ADF body contains an @mention for the given account ID.
- * JIRA ADF represents mentions as nodes with type=mention and attrs.id=accountId.
+ * Check if a comment body contains an @mention for the given account ID.
+ * Handles both ADF objects (type=mention nodes) and wiki markup strings
+ * (pattern: [~accountid:{accountId}]).
  */
-function hasMentionInAdf(body: unknown, accountId: string, depth = 0): boolean {
+function hasMention(body: unknown, accountId: string, depth = 0): boolean {
+	if (typeof body === 'string') {
+		return body.includes(`[~accountid:${accountId}]`);
+	}
 	if (!body || typeof body !== 'object') return false;
 	const node = body as Record<string, unknown>;
 
@@ -89,9 +95,7 @@ function hasMentionInAdf(body: unknown, accountId: string, depth = 0): boolean {
 	}
 
 	if (Array.isArray(node.content)) {
-		return (node.content as unknown[]).some((child) =>
-			hasMentionInAdf(child, accountId, depth + 1),
-		);
+		return (node.content as unknown[]).some((child) => hasMention(child, accountId, depth + 1));
 	}
 
 	return false;
@@ -137,16 +141,15 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 			botDisplayName: userInfo.displayName,
 		});
 
-		// Check for @mention in ADF body
-		const hasMention = hasMentionInAdf(commentBody, userInfo.accountId);
-		if (!hasMention) {
-			// Log a truncated snapshot of the ADF body so we can see the actual structure
+		// Check for @mention in comment body (ADF object or wiki markup string)
+		const mentionFound = hasMention(commentBody, userInfo.accountId);
+		if (!mentionFound) {
+			// Log a truncated snapshot of the body so we can see the actual structure
 			const bodySnapshot = JSON.stringify(commentBody);
-			logger.info('JIRA comment trigger: no @mention of bot found in ADF body', {
+			logger.info('JIRA comment trigger: no @mention of bot found in comment body', {
 				issueKey,
 				botAccountId: userInfo.accountId,
-				adfBodySnapshot:
-					bodySnapshot.length > 500 ? `${bodySnapshot.slice(0, 500)}...` : bodySnapshot,
+				bodySnapshot: bodySnapshot.length > 500 ? `${bodySnapshot.slice(0, 500)}...` : bodySnapshot,
 			});
 			return null;
 		}
@@ -160,7 +163,7 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const commentText = extractTextFromAdf(commentBody);
+		const commentText = extractText(commentBody);
 		const authorName = commentAuthor?.displayName || 'unknown';
 
 		logger.info('JIRA comment @mention detected, triggering agent', {
