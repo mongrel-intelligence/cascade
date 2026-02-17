@@ -31,7 +31,11 @@ function WebhookLogsPage() {
 
 	const statsQuery = useQuery(trpc.webhookLogs.getStats.queryOptions());
 
-	function updateSearch(updates: Record<string, string | number | undefined>) {
+	function updateSearch(updates: {
+		source?: string | undefined;
+		eventType?: string | undefined;
+		offset?: number | undefined;
+	}) {
 		navigate({
 			search: (prev) => ({
 				...prev,
