@@ -635,5 +635,7 @@ export async function executeAgent(
 			backendName: 'llmist',
 			triggerType: input.triggerType,
 		},
+
+		squintDbUrl: project.squintDbUrl,
 	});
 }

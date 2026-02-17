@@ -101,6 +101,7 @@ function mapProjectRow(
 		model: row.model ?? undefined,
 		agentModels: orUndefined(models),
 		cardBudgetUsd: row.cardBudgetUsd ? Number(row.cardBudgetUsd) : undefined,
+		squintDbUrl: row.squintDbUrl ?? undefined,
 	};
 
 	if (trelloConfig) {

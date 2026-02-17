@@ -16,6 +16,7 @@ import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../../uti
 import { clearWatchdogCleanup, setWatchdogCleanup } from '../../utils/lifecycle.js';
 import { logger } from '../../utils/logging.js';
 import { cleanupTempDir } from '../../utils/repo.js';
+import { setupRemoteSquintDb } from '../../utils/squintDb.js';
 import { runAgentLoop } from '../utils/agentLoop.js';
 import type { AccumulatedLlmCall } from '../utils/hooks.js';
 import { getLogLevel } from '../utils/index.js';
@@ -93,6 +94,9 @@ export interface ExecuteAgentOptions<TContext extends BaseAgentContext> {
 
 	/** Run tracking configuration (if set, creates DB records) */
 	runTracking?: RunTrackingConfig;
+
+	/** Remote Squint DB URL for projects that don't commit .squint.db */
+	squintDbUrl?: string;
 }
 
 // ============================================================================
@@ -297,6 +301,11 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 	try {
 		repoDir = await options.setupRepoDir(log);
 		const envSnapshot = loadCascadeEnv(repoDir, log);
+		const squintCleanup = await setupRemoteSquintDb(
+			repoDir,
+			{ squintDbUrl: options.squintDbUrl },
+			log,
+		);
 
 		const ctx = await options.buildContext(repoDir, log);
 
@@ -396,6 +405,7 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 			);
 		} finally {
 			process.chdir(originalCwd);
+			squintCleanup?.();
 			unloadCascadeEnv(envSnapshot);
 		}
 	} catch (err) {

@@ -24,6 +24,9 @@ export const ALLOWED_ENV_EXACT = new Set([
 	'CLAUDE_CODE_OAUTH_TOKEN',
 	'ANTHROPIC_API_KEY',
 
+	// Squint
+	'SQUINT_DB_PATH',
+
 	// Node
 	'NODE_PATH',
 	'NODE_EXTRA_CA_CERTS',

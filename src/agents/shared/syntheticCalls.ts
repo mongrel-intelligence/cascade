@@ -1,8 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { ListDirectory } from '../../gadgets/ListDirectory.js';
+import { resolveSquintDbPath } from '../../utils/squintDb.js';
 import type { ContextFile } from '../utils/setup.js';
 import { type TrackingContext, recordSyntheticInvocationId } from '../utils/tracking.js';
 import type { BuilderType } from './builderFactory.js';
@@ -80,8 +78,8 @@ export function injectSquintContext(
 	trackingContext: TrackingContext,
 	repoDir: string,
 ): BuilderType {
-	const squintDb = join(repoDir, '.squint.db');
-	if (!existsSync(squintDb)) return builder;
+	const squintDb = resolveSquintDbPath(repoDir);
+	if (!squintDb) return builder;
 
 	try {
 		const output = execFileSync('squint', ['overview', '-d', squintDb], {

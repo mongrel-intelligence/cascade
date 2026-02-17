@@ -52,6 +52,7 @@ export const ProjectConfigSchema = z.object({
 	agentModels: z.record(z.string()).optional(),
 	cardBudgetUsd: z.number().positive().optional(),
 	agentBackend: AgentBackendConfigSchema.optional(),
+	squintDbUrl: z.string().url().optional(),
 });
 
 export const CascadeConfigSchema = z.object({

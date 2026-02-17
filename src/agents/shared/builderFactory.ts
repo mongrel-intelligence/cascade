@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import {
 	AgentBuilder,
 	BudgetPricingUnavailableError,
@@ -14,6 +12,7 @@ import { getRateLimitForModel } from '../../config/rateLimits.js';
 import { getRetryConfig } from '../../config/retryConfig.js';
 import { initSessionState } from '../../gadgets/sessionState.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
+import { resolveSquintDbPath } from '../../utils/squintDb.js';
 import { type AccumulatedLlmCall, createObserverHooks } from '../utils/hooks.js';
 import type { TrackingContext } from '../utils/tracking.js';
 
@@ -46,7 +45,7 @@ export interface CreateBuilderOptions {
 const MAX_GADGETS_PER_RESPONSE = 25;
 
 export function isSquintEnabled(repoDir: string): boolean {
-	return existsSync(join(repoDir, '.squint.db'));
+	return resolveSquintDbPath(repoDir) !== null;
 }
 
 export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderType {
