@@ -29,6 +29,7 @@ import {
 } from '../../utils/index.js';
 import { injectLlmApiKeys } from '../../utils/llmEnv.js';
 import type { TriggerRegistry } from '../registry.js';
+import { acknowledgeWithReaction } from '../shared/acknowledge-reaction.js';
 import { handleAgentResultArtifacts } from '../shared/agent-result-handler.js';
 import { checkBudgetExceeded } from '../shared/budget.js';
 import { triggerDebugAnalysis } from '../shared/debug-runner.js';
@@ -194,6 +195,7 @@ async function handleMatchedTrigger(
 	}
 
 	logger.info('Trigger matched', { agentType: result.agentType, cardId });
+	await acknowledgeWithReaction('trello', payload);
 	setProcessing(true);
 	startWatchdog(config.defaults.watchdogTimeoutMs);
 

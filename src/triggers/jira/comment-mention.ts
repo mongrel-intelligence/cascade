@@ -12,6 +12,7 @@ import { logger } from '../../utils/logging.js';
 interface JiraWebhookPayload {
 	webhookEvent: string;
 	issue?: {
+		id?: string;
 		key: string;
 		fields?: {
 			project?: { key?: string };
@@ -19,6 +20,7 @@ interface JiraWebhookPayload {
 		};
 	};
 	comment?: {
+		id?: string;
 		body?: unknown;
 		author?: { displayName?: string; accountId?: string };
 	};
@@ -70,17 +72,26 @@ function extractTextFromAdf(body: unknown): string {
  * Check if ADF body contains an @mention for the given account ID.
  * JIRA ADF represents mentions as nodes with type=mention and attrs.id=accountId.
  */
-function hasMentionInAdf(body: unknown, accountId: string): boolean {
+function hasMentionInAdf(body: unknown, accountId: string, depth = 0): boolean {
 	if (!body || typeof body !== 'object') return false;
 	const node = body as Record<string, unknown>;
 
 	if (node.type === 'mention' && typeof node.attrs === 'object') {
 		const attrs = node.attrs as Record<string, unknown>;
-		return attrs.id === accountId;
+		const isMatch = attrs.id === accountId;
+		logger.info('ADF mention node found', {
+			mentionId: attrs.id,
+			lookingFor: accountId,
+			isMatch,
+			depth,
+		});
+		return isMatch;
 	}
 
 	if (Array.isArray(node.content)) {
-		return (node.content as unknown[]).some((child) => hasMentionInAdf(child, accountId));
+		return (node.content as unknown[]).some((child) =>
+			hasMentionInAdf(child, accountId, depth + 1),
+		);
 	}
 
 	return false;
@@ -104,21 +115,45 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 		const commentBody = payload.comment?.body;
 		const commentAuthor = payload.comment?.author;
 
+		logger.info('JIRA comment trigger processing', {
+			issueKey: issueKey ?? '<missing>',
+			hasCommentBody: !!commentBody,
+			commentAuthor: commentAuthor?.displayName ?? '<missing>',
+			commentAuthorAccountId: commentAuthor?.accountId ?? '<missing>',
+		});
+
 		if (!issueKey || !commentBody) {
+			logger.info('JIRA comment trigger: missing issueKey or commentBody, skipping', {
+				hasIssueKey: !!issueKey,
+				hasCommentBody: !!commentBody,
+			});
 			return null;
 		}
 
 		// Resolve our JIRA identity
 		const userInfo = await getAuthenticatedUserInfo();
+		logger.info('JIRA bot identity resolved', {
+			botAccountId: userInfo.accountId,
+			botDisplayName: userInfo.displayName,
+		});
 
 		// Check for @mention in ADF body
-		if (!hasMentionInAdf(commentBody, userInfo.accountId)) {
+		const hasMention = hasMentionInAdf(commentBody, userInfo.accountId);
+		if (!hasMention) {
+			// Log a truncated snapshot of the ADF body so we can see the actual structure
+			const bodySnapshot = JSON.stringify(commentBody);
+			logger.info('JIRA comment trigger: no @mention of bot found in ADF body', {
+				issueKey,
+				botAccountId: userInfo.accountId,
+				adfBodySnapshot:
+					bodySnapshot.length > 500 ? `${bodySnapshot.slice(0, 500)}...` : bodySnapshot,
+			});
 			return null;
 		}
 
 		// Skip self-authored comments to prevent infinite loops
 		if (commentAuthor?.accountId === userInfo.accountId) {
-			logger.debug('Skipping self-authored JIRA comment to prevent infinite loop', {
+			logger.info('Skipping self-authored JIRA comment to prevent infinite loop', {
 				issueKey,
 				accountId: userInfo.accountId,
 			});

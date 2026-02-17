@@ -29,6 +29,7 @@ import {
 } from '../../utils/index.js';
 import { injectLlmApiKeys } from '../../utils/llmEnv.js';
 import type { TriggerRegistry } from '../registry.js';
+import { acknowledgeWithReaction } from '../shared/acknowledge-reaction.js';
 import { handleAgentResultArtifacts } from '../shared/agent-result-handler.js';
 import { checkBudgetExceeded } from '../shared/budget.js';
 import { triggerDebugAnalysis } from '../shared/debug-runner.js';
@@ -38,6 +39,7 @@ import type { TriggerResult } from '../types.js';
 interface JiraWebhookPayload {
 	webhookEvent: string;
 	issue?: {
+		id?: string;
 		key: string;
 		fields?: {
 			project?: { key?: string };
@@ -47,6 +49,7 @@ interface JiraWebhookPayload {
 		};
 	};
 	comment?: {
+		id?: string;
 		body?: unknown;
 		author?: { displayName?: string; accountId?: string };
 	};
@@ -247,6 +250,7 @@ export async function processJiraWebhook(
 					workItemId: result.workItemId,
 				});
 
+				await acknowledgeWithReaction('jira', payload);
 				setProcessing(true);
 				startWatchdog(config.defaults.watchdogTimeoutMs);
 
