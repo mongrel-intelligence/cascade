@@ -33,7 +33,7 @@ import {
 	formatDuration,
 	notifyTimeout,
 } from '../../../src/router/notifications.js';
-import type { CascadeJob, GitHubJob, TrelloJob } from '../../../src/router/queue.js';
+import type { CascadeJob, GitHubJob, JiraJob, TrelloJob } from '../../../src/router/queue.js';
 
 const mockGetProjectSecret = vi.mocked(getProjectSecret);
 const mockGetProjectGitHubToken = vi.mocked(getProjectGitHubToken);
@@ -288,6 +288,69 @@ describe('notifyTimeout', () => {
 				expect.stringContaining('GitHub comment failed'),
 				403,
 				'Forbidden',
+			);
+		});
+	});
+
+	describe('JIRA jobs', () => {
+		const jiraJob: JiraJob = {
+			type: 'jira',
+			source: 'jira',
+			payload: {},
+			projectId: 'test',
+			issueKey: 'DAM-1',
+			webhookEvent: 'jira:issue_updated',
+			receivedAt: '2026-02-14T10:00:00.000Z',
+		};
+
+		beforeEach(() => {
+			mockGetProjectSecret.mockImplementation(async (_projectId, key) => {
+				if (key === 'TRELLO_API_KEY') return 'test-trello-key';
+				if (key === 'TRELLO_TOKEN') return 'test-trello-token';
+				if (key === 'JIRA_EMAIL') return 'bot@example.com';
+				if (key === 'JIRA_API_TOKEN') return 'test-jira-token';
+				if (key === 'JIRA_BASE_URL') return 'https://test.atlassian.net';
+				throw new Error(`Secret '${key}' not found`);
+			});
+		});
+
+		it('posts a comment to the JIRA issue', async () => {
+			mockFetch.mockResolvedValueOnce({ ok: true });
+
+			await notifyTimeout(jiraJob, defaultInfo);
+
+			expect(mockFetch).toHaveBeenCalledOnce();
+			const [url, options] = mockFetch.mock.calls[0];
+			expect(url).toBe('https://test.atlassian.net/rest/api/3/issue/DAM-1/comment');
+			expect(options.method).toBe('POST');
+			expect(options.headers.Authorization).toMatch(/^Basic /);
+			expect(JSON.parse(options.body)).toHaveProperty('body'); // ADF document
+		});
+
+		it('skips notification when JIRA credentials are missing in DB', async () => {
+			mockGetProjectSecret.mockRejectedValue(new Error('Secret not found'));
+
+			await notifyTimeout(jiraJob, defaultInfo);
+
+			expect(mockFetch).not.toHaveBeenCalled();
+			expect(console.warn).toHaveBeenCalledWith(
+				expect.stringContaining('Missing JIRA credentials in DB'),
+			);
+		});
+
+		it('logs warning on JIRA API error', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: false,
+				status: 401,
+				text: async () => 'Unauthorized',
+			});
+
+			await notifyTimeout(jiraJob, defaultInfo);
+
+			expect(console.warn).toHaveBeenCalledWith(
+				expect.stringContaining('JIRA comment failed'),
+				401,
+				'Unauthorized',
 			);
 		});
 	});
