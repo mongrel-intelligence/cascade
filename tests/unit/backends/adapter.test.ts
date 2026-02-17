@@ -515,6 +515,31 @@ describe('executeWithBackend', () => {
 		});
 	});
 
+	it('passes PR context fields to promptContext for respond-to-ci agent', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		const input = makeInput({
+			prNumber: 42,
+			prBranch: 'fix/ci-errors',
+			repoFullName: 'acme/widgets',
+			headSha: 'abc123',
+			triggerType: 'check-failure',
+		});
+
+		await executeWithBackend(backend, 'respond-to-ci', input);
+
+		const resolveCall = mockResolveModelConfig.mock.calls[0][0] as {
+			promptContext: Record<string, unknown>;
+		};
+		expect(resolveCall.promptContext).toMatchObject({
+			prNumber: 42,
+			prBranch: 'fix/ci-errors',
+			repoFullName: 'acme/widgets',
+			headSha: 'abc123',
+			triggerType: 'check-failure',
+		});
+	});
+
 	it('includes CASCADE_BASE_BRANCH even when no other per-project secrets exist', async () => {
 		setupMocks();
 		mockGetProjectSecrets.mockResolvedValue({});
@@ -528,5 +553,51 @@ describe('executeWithBackend', () => {
 		expect(backendInput.projectSecrets).toEqual({
 			CASCADE_BASE_BRANCH: 'main',
 		});
+	});
+
+	it('returns durationMs in successful result', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		const input = makeInput();
+
+		const result = await executeWithBackend(backend, 'implementation', input);
+
+		expect(result.success).toBe(true);
+		expect(result.durationMs).toBeDefined();
+		expect(result.durationMs).toBeGreaterThanOrEqual(0);
+		expect(typeof result.durationMs).toBe('number');
+	});
+
+	it('returns durationMs in error result', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		vi.mocked(backend.execute).mockRejectedValue(new Error('Backend crashed'));
+		const input = makeInput();
+
+		const result = await executeWithBackend(backend, 'implementation', input);
+
+		expect(result.success).toBe(false);
+		expect(result.durationMs).toBeDefined();
+		expect(result.durationMs).toBeGreaterThanOrEqual(0);
+		expect(typeof result.durationMs).toBe('number');
+	});
+
+	it('returns durationMs when backend returns error', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		vi.mocked(backend.execute).mockResolvedValue({
+			success: false,
+			output: '',
+			error: 'Budget exceeded',
+		});
+		const input = makeInput();
+
+		const result = await executeWithBackend(backend, 'implementation', input);
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe('Budget exceeded');
+		expect(result.durationMs).toBeDefined();
+		expect(result.durationMs).toBeGreaterThanOrEqual(0);
+		expect(typeof result.durationMs).toBe('number');
 	});
 });

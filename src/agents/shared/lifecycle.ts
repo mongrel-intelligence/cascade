@@ -237,6 +237,7 @@ function buildAgentResult(
 	result: Awaited<ReturnType<typeof runAgentLoop>>,
 	logBuffer: Buffer,
 	runId: string | undefined,
+	durationMs: number,
 	postProcess?: (output: string) => Partial<AgentResult>,
 ): AgentResult {
 	if (result.loopTerminated) {
@@ -247,6 +248,7 @@ function buildAgentResult(
 			logBuffer,
 			cost: result.cost,
 			runId,
+			durationMs,
 		};
 	}
 
@@ -257,6 +259,7 @@ function buildAgentResult(
 		logBuffer,
 		cost: result.cost,
 		runId,
+		durationMs,
 		...postProcessed,
 	};
 }
@@ -384,7 +387,13 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 
 			await finalizeRun(runId, fileLogger, llmCallAccumulator, completionInput);
 
-			return buildAgentResult(result, logBuffer, runId, options.postProcess);
+			return buildAgentResult(
+				result,
+				logBuffer,
+				runId,
+				Date.now() - startTime,
+				options.postProcess,
+			);
 		} finally {
 			process.chdir(originalCwd);
 			unloadCascadeEnv(envSnapshot);
@@ -403,14 +412,15 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 			// Ignore log buffer errors
 		}
 
+		const durationMs = Date.now() - startTime;
 		await finalizeRun(runId, fileLogger, llmCallAccumulator, {
 			status: 'failed',
-			durationMs: Date.now() - startTime,
+			durationMs,
 			success: false,
 			error: String(err),
 		});
 
-		return { success: false, output: '', error: String(err), logBuffer, runId };
+		return { success: false, output: '', error: String(err), logBuffer, runId, durationMs };
 	} finally {
 		cleanupLifecycleResources(repoDir, fileLogger);
 	}
