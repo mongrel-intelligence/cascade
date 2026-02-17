@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { findProjectById, loadConfig } from '../../config/provider.js';
+import { loadProjectConfigById } from '../../config/provider.js';
 import { getDb } from '../../db/client.js';
 import {
 	deleteDebugAnalysisByRunId,
@@ -150,26 +150,26 @@ export const runsRouter = router({
 				});
 			}
 
-			const project = await findProjectById(run.projectId);
-			if (!project) {
+			const pc = await loadProjectConfigById(run.projectId);
+			if (!pc) {
 				throw new TRPCError({
 					code: 'NOT_FOUND',
 					message: 'Project not found for this run',
 				});
 			}
 
-			const config = await loadConfig();
-
 			// Delete existing analysis before re-running
 			await deleteDebugAnalysisByRunId(input.runId);
 
 			// Fire-and-forget
-			triggerDebugAnalysis(input.runId, project, config, run.cardId ?? undefined).catch((err) => {
-				logger.error('Manual debug analysis failed', {
-					runId: input.runId,
-					error: String(err),
-				});
-			});
+			triggerDebugAnalysis(input.runId, pc.project, pc.config, run.cardId ?? undefined).catch(
+				(err) => {
+					logger.error('Manual debug analysis failed', {
+						runId: input.runId,
+						error: String(err),
+					});
+				},
+			);
 
 			return { triggered: true };
 		}),
@@ -202,15 +202,13 @@ export const runsRouter = router({
 				});
 			}
 
-			const projectConfig = await findProjectById(input.projectId);
-			if (!projectConfig) {
+			const pc = await loadProjectConfigById(input.projectId);
+			if (!pc) {
 				throw new TRPCError({
 					code: 'NOT_FOUND',
 					message: 'Project configuration not found',
 				});
 			}
-
-			const config = await loadConfig();
 
 			// Fire-and-forget
 			triggerManualRun(
@@ -224,8 +222,8 @@ export const runsRouter = router({
 					headSha: input.headSha,
 					modelOverride: input.model,
 				},
-				projectConfig,
-				config,
+				pc.project,
+				pc.config,
 			).catch((err) => {
 				logger.error('Manual trigger failed', {
 					projectId: input.projectId,
@@ -267,18 +265,16 @@ export const runsRouter = router({
 				});
 			}
 
-			const projectConfig = await findProjectById(run.projectId);
-			if (!projectConfig) {
+			const pc = await loadProjectConfigById(run.projectId);
+			if (!pc) {
 				throw new TRPCError({
 					code: 'NOT_FOUND',
 					message: 'Project configuration not found',
 				});
 			}
 
-			const config = await loadConfig();
-
 			// Fire-and-forget
-			triggerRetryRun(input.runId, projectConfig, config, input.model).catch((err) => {
+			triggerRetryRun(input.runId, pc.project, pc.config, input.model).catch((err) => {
 				logger.error('Retry run failed', {
 					runId: input.runId,
 					error: String(err),

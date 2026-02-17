@@ -57,11 +57,9 @@ vi.mock('../../../../src/triggers/shared/manual-runner.js', () => ({
 }));
 
 // Mock config provider
-const mockFindProjectById = vi.fn();
-const mockLoadConfig = vi.fn();
+const mockLoadProjectConfigById = vi.fn();
 vi.mock('../../../../src/config/provider.js', () => ({
-	findProjectById: (...args: unknown[]) => mockFindProjectById(...args),
-	loadConfig: (...args: unknown[]) => mockLoadConfig(...args),
+	loadProjectConfigById: (...args: unknown[]) => mockLoadProjectConfigById(...args),
 }));
 
 // Mock logger
@@ -381,8 +379,10 @@ describe('runsRouter', () => {
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockIsAnalysisRunning.mockReturnValue(false);
-			mockFindProjectById.mockResolvedValue({ id: 'p1', name: 'Test' });
-			mockLoadConfig.mockResolvedValue({});
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test' },
+				config: {},
+			});
 			mockDeleteDebugAnalysisByRunId.mockResolvedValue(undefined);
 
 			const caller = createCaller({ user: mockUser });
@@ -407,8 +407,10 @@ describe('runsRouter', () => {
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockIsAnalysisRunning.mockReturnValue(false);
-			mockFindProjectById.mockResolvedValue({ id: 'p1', name: 'Test' });
-			mockLoadConfig.mockResolvedValue({});
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test' },
+				config: {},
+			});
 			mockDeleteDebugAnalysisByRunId.mockResolvedValue(undefined);
 
 			const caller = createCaller({ user: mockUser });
@@ -496,7 +498,7 @@ describe('runsRouter', () => {
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockIsAnalysisRunning.mockReturnValue(false);
-			mockFindProjectById.mockResolvedValue(undefined);
+			mockLoadProjectConfigById.mockResolvedValue(undefined);
 
 			const caller = createCaller({ user: mockUser });
 			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
@@ -515,8 +517,10 @@ describe('runsRouter', () => {
 	describe('trigger', () => {
 		it('fires a manual run and returns triggered:true', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-			mockFindProjectById.mockResolvedValue({ id: 'p1', name: 'Test Project' });
-			mockLoadConfig.mockResolvedValue({});
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test Project' },
+				config: {},
+			});
 
 			const caller = createCaller({ user: mockUser });
 			const result = await caller.trigger({
@@ -539,8 +543,10 @@ describe('runsRouter', () => {
 
 		it('passes optional fields when provided', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-			mockFindProjectById.mockResolvedValue({ id: 'p1', name: 'Test Project' });
-			mockLoadConfig.mockResolvedValue({});
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test Project' },
+				config: {},
+			});
 
 			const caller = createCaller({ user: mockUser });
 			await caller.trigger({
@@ -582,7 +588,7 @@ describe('runsRouter', () => {
 
 		it('throws NOT_FOUND when project config not found', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-			mockFindProjectById.mockResolvedValue(undefined);
+			mockLoadProjectConfigById.mockResolvedValue(undefined);
 
 			const caller = createCaller({ user: mockUser });
 			await expect(
@@ -606,8 +612,10 @@ describe('runsRouter', () => {
 				agentType: 'implementation',
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-			mockFindProjectById.mockResolvedValue({ id: 'p1', name: 'Test Project' });
-			mockLoadConfig.mockResolvedValue({});
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test Project' },
+				config: {},
+			});
 
 			const caller = createCaller({ user: mockUser });
 			const result = await caller.retry({ runId: RUN_UUID });
@@ -628,8 +636,10 @@ describe('runsRouter', () => {
 				agentType: 'implementation',
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-			mockFindProjectById.mockResolvedValue({ id: 'p1', name: 'Test Project' });
-			mockLoadConfig.mockResolvedValue({});
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test Project' },
+				config: {},
+			});
 
 			const caller = createCaller({ user: mockUser });
 			await caller.retry({ runId: RUN_UUID, model: 'claude-opus-4-5' });
@@ -685,7 +695,7 @@ describe('runsRouter', () => {
 				agentType: 'implementation',
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-			mockFindProjectById.mockResolvedValue(undefined);
+			mockLoadProjectConfigById.mockResolvedValue(undefined);
 
 			const caller = createCaller({ user: mockUser });
 			await expect(caller.retry({ runId: RUN_UUID })).rejects.toMatchObject({

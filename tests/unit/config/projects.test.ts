@@ -275,13 +275,12 @@ describe('config provider', () => {
 			expect(findProjectByIdFromDb).toHaveBeenCalledTimes(1);
 		});
 
-		it('defaults org ID to "default" when project not found', async () => {
+		it('throws when project not found', async () => {
 			vi.mocked(findProjectByIdFromDb).mockResolvedValue(undefined);
-			vi.mocked(resolveCredential).mockResolvedValue('value1');
 
-			await getProjectSecret('nonexistent', 'KEY');
-
-			expect(resolveCredential).toHaveBeenCalledWith('nonexistent', 'default', 'KEY');
+			await expect(getProjectSecret('nonexistent', 'KEY')).rejects.toThrow(
+				'Project not found: nonexistent',
+			);
 		});
 
 		it('uses project-specific org ID', async () => {

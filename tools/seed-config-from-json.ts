@@ -5,7 +5,7 @@
  * Reads the existing JSON config and inserts it into the database.
  *
  * Usage:
- *   npx tsx tools/seed-config-from-json.ts [--config ./config/projects.json]
+ *   npx tsx tools/seed-config-from-json.ts --org <org-id> [--config ./config/projects.json]
  *
  * Requires DATABASE_URL to be set.
  */
@@ -27,12 +27,21 @@ type ProjectConfig = CascadeConfig['projects'][number];
 
 const args = process.argv.slice(2);
 let configPath = './config/projects.json';
+let orgId: string | undefined;
 
 for (let i = 0; i < args.length; i++) {
 	if (args[i] === '--config' && args[i + 1]) {
 		configPath = args[i + 1];
 		i++;
+	} else if (args[i] === '--org' && args[i + 1]) {
+		orgId = args[i + 1];
+		i++;
 	}
+}
+
+if (!orgId) {
+	console.error('Error: --org <org-id> is required');
+	process.exit(1);
 }
 
 function buildProjectValues(p: ProjectConfig) {
@@ -53,7 +62,7 @@ async function seedDefaults(d: CascadeConfig['defaults']) {
 	console.log('Inserting defaults...');
 	const db = getDb();
 	const values = {
-		orgId: 'default',
+		orgId,
 		model: d.model,
 		maxIterations: d.maxIterations,
 		freshMachineTimeoutMs: d.freshMachineTimeoutMs,
