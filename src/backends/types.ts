@@ -65,6 +65,8 @@ export interface AgentBackendInput {
 	sdkTools?: string[];
 	/** Whether to enable stop hooks that check for uncommitted/unpushed changes (defaults to true) */
 	enableStopHooks?: boolean;
+	/** Whether to block git push in hooks (defaults to true) */
+	blockGitPush?: boolean;
 }
 
 export type LogWriter = (level: string, message: string, context?: Record<string, unknown>) => void;

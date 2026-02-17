@@ -1,5 +1,5 @@
-import { getAgentCredential } from '../../config/provider.js';
-import { getGitHubUserForToken, githubClient } from '../../github/client.js';
+import { githubClient } from '../../github/client.js';
+import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubIssueCommentPayload, isGitHubPRReviewCommentPayload } from './types.js';
@@ -33,16 +33,14 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
-		// Resolve reviewer username — if no agent-scoped GITHUB_TOKEN configured, fall through
-		const agentGitHubToken = await getAgentCredential(
-			ctx.project.id,
-			'respond-to-pr-comment',
-			'GITHUB_TOKEN',
-		);
-		const reviewerUser = await getGitHubUserForToken(agentGitHubToken);
-		if (!reviewerUser) {
+		// Require persona identities for @mention detection
+		if (!ctx.personaIdentities) {
+			logger.warn('No persona identities available, skipping @mention trigger');
 			return null;
 		}
+
+		// The implementer persona is who humans @mention (it writes code and responds)
+		const mentionTarget = ctx.personaIdentities.implementer;
 
 		// Extract comment body from whichever payload type matched
 		let commentBody: string;
@@ -89,15 +87,15 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Check for @mention (case-insensitive)
-		const mentionPattern = new RegExp(`@${reviewerUser}\\b`, 'i');
+		// Check for @mention of the implementer persona (case-insensitive)
+		const mentionPattern = new RegExp(`@${mentionTarget}\\b`, 'i');
 		if (!mentionPattern.test(commentBody)) {
 			return null;
 		}
 
-		// Skip mentions from the reviewer bot itself
-		if (commentAuthor === reviewerUser || commentAuthor === `${reviewerUser}[bot]`) {
-			logger.info('Skipping @mention from reviewer bot itself', { prNumber, commentAuthor });
+		// Skip @mentions from any known bot persona
+		if (isCascadeBot(commentAuthor, ctx.personaIdentities)) {
+			logger.info('Skipping @mention from cascade bot', { prNumber, commentAuthor });
 			return null;
 		}
 
@@ -111,7 +109,7 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 		logger.info('PR comment @mention detected, triggering respond-to-pr-comment agent', {
 			prNumber,
 			commentAuthor,
-			reviewerUser,
+			mentionTarget,
 			cardId,
 		});
 

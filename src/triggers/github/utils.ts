@@ -1,4 +1,3 @@
-import { getAuthenticatedUser } from '../../github/client.js';
 import type { ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 
@@ -33,19 +32,6 @@ export function extractTrelloCardUrl(text: string | null): string | null {
 	if (!text) return null;
 	const match = text.match(TRELLO_CARD_URL_REGEX);
 	return match ? match[0] : null;
-}
-
-/**
- * Check if a comment/review author is the authenticated (implementation) user.
- * Used to skip self-authored events and avoid loops.
- */
-export async function isAuthenticatedUser(author: string): Promise<boolean> {
-	try {
-		const authenticatedUser = await getAuthenticatedUser();
-		return author === authenticatedUser || author === `${authenticatedUser}[bot]`;
-	} catch {
-		return false;
-	}
 }
 
 /**

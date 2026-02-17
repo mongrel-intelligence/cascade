@@ -87,6 +87,8 @@ export interface AgentProfile {
 	enableStopHooks: boolean;
 	/** Whether this profile needs the GitHub client for context fetching */
 	needsGitHubToken: boolean;
+	/** Whether to block git push in hooks (default: true — set false for agents on existing PR branches) */
+	blockGitPush?: boolean;
 	/** Fetch context injections for this agent type */
 	fetchContext(params: FetchContextParams): Promise<ContextInjection[]>;
 	/** Build the task prompt for this agent type */
@@ -569,6 +571,7 @@ const respondToCIProfile: AgentProfile = {
 	sdkTools: ALL_SDK_TOOLS,
 	enableStopHooks: true,
 	needsGitHubToken: true,
+	blockGitPush: false,
 	fetchContext: fetchCIContext,
 	buildTaskPrompt: buildCITaskPrompt,
 
@@ -592,6 +595,7 @@ const respondToPRCommentProfile: AgentProfile = {
 	sdkTools: ALL_SDK_TOOLS,
 	enableStopHooks: true,
 	needsGitHubToken: true,
+	blockGitPush: false,
 	fetchContext: fetchPRCommentResponseContext,
 	buildTaskPrompt: buildPRCommentResponseTaskPrompt,
 };

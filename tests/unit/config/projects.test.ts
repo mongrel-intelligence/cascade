@@ -296,20 +296,30 @@ describe('config provider', () => {
 	});
 
 	describe('getProjectGitHubToken', () => {
-		it('returns DB secret when available', async () => {
+		it('returns GITHUB_TOKEN_IMPLEMENTER when available', async () => {
 			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
-			vi.mocked(resolveCredential).mockResolvedValue('db-github-token');
+			vi.mocked(resolveCredential).mockResolvedValue('implementer-token');
 
 			const result = await getProjectGitHubToken(mockConfig.projects[0]);
-			expect(result).toBe('db-github-token');
+			expect(result).toBe('implementer-token');
 		});
 
-		it('throws when no token in DB', async () => {
+		it('falls back to legacy GITHUB_TOKEN when IMPLEMENTER token is missing', async () => {
+			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
+			vi.mocked(resolveCredential)
+				.mockResolvedValueOnce(null) // GITHUB_TOKEN_IMPLEMENTER not found
+				.mockResolvedValueOnce('legacy-token'); // GITHUB_TOKEN found
+
+			const result = await getProjectGitHubToken(mockConfig.projects[0]);
+			expect(result).toBe('legacy-token');
+		});
+
+		it('throws when neither IMPLEMENTER nor legacy token exists', async () => {
 			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
 			vi.mocked(resolveCredential).mockResolvedValue(null);
 
 			await expect(getProjectGitHubToken(mockConfig.projects[0])).rejects.toThrow(
-				"Missing GITHUB_TOKEN in database for project 'project1'",
+				"Missing GITHUB_TOKEN_IMPLEMENTER (or legacy GITHUB_TOKEN) in database for project 'project1'",
 			);
 		});
 	});

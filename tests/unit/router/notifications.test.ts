@@ -6,6 +6,11 @@ vi.mock('../../../src/config/provider.js', () => ({
 	findProjectByRepo: vi.fn(),
 }));
 
+// Mock getProjectGitHubToken (uses GITHUB_TOKEN_IMPLEMENTER with legacy fallback)
+vi.mock('../../../src/config/projects.js', () => ({
+	getProjectGitHubToken: vi.fn(),
+}));
+
 // Mock config cache (imported transitively)
 vi.mock('../../../src/config/configCache.js', () => ({
 	configCache: {
@@ -21,6 +26,7 @@ vi.mock('../../../src/config/configCache.js', () => ({
 	},
 }));
 
+import { getProjectGitHubToken } from '../../../src/config/projects.js';
 import { findProjectByRepo, getProjectSecret } from '../../../src/config/provider.js';
 import {
 	extractPRNumber,
@@ -30,6 +36,7 @@ import {
 import type { CascadeJob, GitHubJob, TrelloJob } from '../../../src/router/queue.js';
 
 const mockGetProjectSecret = vi.mocked(getProjectSecret);
+const mockGetProjectGitHubToken = vi.mocked(getProjectGitHubToken);
 const mockFindProjectByRepo = vi.mocked(findProjectByRepo);
 
 // Mock global fetch
@@ -132,9 +139,9 @@ describe('notifyTimeout', () => {
 		mockGetProjectSecret.mockImplementation(async (_projectId, key) => {
 			if (key === 'TRELLO_API_KEY') return 'test-trello-key';
 			if (key === 'TRELLO_TOKEN') return 'test-trello-token';
-			if (key === 'GITHUB_TOKEN') return 'test-github-token';
 			throw new Error(`Secret '${key}' not found`);
 		});
+		mockGetProjectGitHubToken.mockResolvedValue('test-github-token');
 		mockFindProjectByRepo.mockResolvedValue({
 			id: 'test',
 			name: 'Test',
@@ -231,7 +238,7 @@ describe('notifyTimeout', () => {
 		});
 
 		it('skips notification when GitHub token is missing in DB', async () => {
-			mockGetProjectSecret.mockRejectedValue(new Error('Secret not found'));
+			mockGetProjectGitHubToken.mockRejectedValue(new Error('Missing GITHUB_TOKEN_IMPLEMENTER'));
 
 			await notifyTimeout(githubJob, defaultInfo);
 

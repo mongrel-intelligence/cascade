@@ -1,7 +1,8 @@
+import { getPersonaForLogin } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubPullRequestReviewPayload } from './types.js';
-import { isAuthenticatedUser, requireTrelloCardId } from './utils.js';
+import { requireTrelloCardId } from './utils.js';
 
 export class PRReviewSubmittedTrigger implements TriggerHandler {
 	name = 'pr-review-submitted';
@@ -14,8 +15,8 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 		// Only trigger on submitted reviews, not edits or dismissals
 		if (ctx.payload.action !== 'submitted') return false;
 
-		// Skip approval-only reviews - no point responding to these
-		if (ctx.payload.review.state === 'approved') return false;
+		// Only respond to changes_requested reviews — not approved or commented
+		if (ctx.payload.review.state !== 'changes_requested') return false;
 
 		return true;
 	}
@@ -37,8 +38,19 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 		const prNumber = reviewPayload.pull_request.number;
 		const reviewAuthor = reviewPayload.review.user.login;
 
-		// Skip reviews from ourselves (implementation user) to avoid loops
-		if (await isAuthenticatedUser(reviewAuthor)) {
+		// Only respond to changes_requested from the reviewer persona
+		if (!ctx.personaIdentities) {
+			logger.warn('No persona identities available, skipping review trigger', { prNumber });
+			return null;
+		}
+
+		const persona = getPersonaForLogin(reviewAuthor, ctx.personaIdentities);
+		if (persona !== 'reviewer') {
+			logger.info('Skipping review not from reviewer persona', {
+				prNumber,
+				reviewAuthor,
+				expectedReviewer: ctx.personaIdentities.reviewer,
+			});
 			return null;
 		}
 

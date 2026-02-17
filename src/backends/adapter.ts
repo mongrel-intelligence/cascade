@@ -6,7 +6,7 @@ import { resolveModelConfig } from '../agents/shared/modelResolution.js';
 import { setupRepository } from '../agents/shared/repository.js';
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
-import { getAgentCredential, getProjectSecrets } from '../config/provider.js';
+import { getProjectSecrets } from '../config/provider.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import {
 	type CompleteRunInput,
@@ -15,6 +15,7 @@ import {
 	storeRunLogs,
 } from '../db/repositories/runsRepository.js';
 import { withGitHubToken } from '../github/client.js';
+import { getPersonaToken } from '../github/personas.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../utils/cascadeEnv.js';
 import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
@@ -333,6 +334,7 @@ async function buildBackendInput(
 		agentInput: input,
 		sdkTools: profile.sdkTools,
 		enableStopHooks: profile.enableStopHooks,
+		blockGitPush: profile.blockGitPush,
 		...(Object.keys(projectSecrets).length > 0 && { projectSecrets }),
 	};
 }
@@ -460,7 +462,7 @@ function warnIfSubscriptionCostMismatch(_backend: AgentBackend, _project: Projec
 
 /**
  * Resolve the GitHub token for profiles that need GitHub client access.
- * Uses agent-scoped override if available, otherwise falls back to project secrets.
+ * Uses the persona token system (GITHUB_TOKEN_IMPLEMENTER / GITHUB_TOKEN_REVIEWER).
  */
 async function resolveGitHubToken(
 	profile: ReturnType<typeof getAgentProfile>,
@@ -469,11 +471,13 @@ async function resolveGitHubToken(
 ): Promise<string | undefined> {
 	if (!profile.needsGitHubToken) return undefined;
 
-	const agentToken = await getAgentCredential(projectId, agentType, 'GITHUB_TOKEN');
-	if (agentToken) return agentToken;
-
-	const secrets = await getProjectSecrets(projectId);
-	return secrets.GITHUB_TOKEN;
+	try {
+		return await getPersonaToken(projectId, agentType);
+	} catch {
+		// Fall back to legacy GITHUB_TOKEN for projects not yet migrated
+		const secrets = await getProjectSecrets(projectId);
+		return secrets.GITHUB_TOKEN;
+	}
 }
 
 async function finalizeBackendRun(

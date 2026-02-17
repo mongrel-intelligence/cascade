@@ -1,11 +1,7 @@
 import { runAgent } from '../../agents/registry.js';
-import {
-	findProjectByBoardId,
-	getAgentCredential,
-	getProjectSecret,
-	loadConfig,
-} from '../../config/provider.js';
+import { findProjectByBoardId, getProjectSecret, loadConfig } from '../../config/provider.js';
 import { withGitHubToken } from '../../github/client.js';
+import { getPersonaToken } from '../../github/personas.js';
 import {
 	PMLifecycleManager,
 	createPMProvider,
@@ -51,10 +47,7 @@ async function executeAgent(
 ): Promise<void> {
 	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY');
 	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN');
-	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
-
-	const agentGitHubToken = await getAgentCredential(project.id, result.agentType, 'GITHUB_TOKEN');
-	const effectiveGithubToken = agentGitHubToken || githubToken;
+	const githubToken = await getPersonaToken(project.id, result.agentType);
 
 	const restoreLlmEnv = await injectLlmApiKeys(project.id);
 
@@ -62,7 +55,7 @@ async function executeAgent(
 		const pmProvider = createPMProvider(project);
 		await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
 			withPMProvider(pmProvider, () =>
-				withGitHubToken(effectiveGithubToken, () => executeAgentWithCreds(result, project, config)),
+				withGitHubToken(githubToken, () => executeAgentWithCreds(result, project, config)),
 			),
 		);
 	} finally {
