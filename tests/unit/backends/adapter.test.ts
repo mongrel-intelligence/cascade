@@ -529,4 +529,50 @@ describe('executeWithBackend', () => {
 			CASCADE_BASE_BRANCH: 'main',
 		});
 	});
+
+	it('returns durationMs in successful result', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		const input = makeInput();
+
+		const result = await executeWithBackend(backend, 'implementation', input);
+
+		expect(result.success).toBe(true);
+		expect(result.durationMs).toBeDefined();
+		expect(result.durationMs).toBeGreaterThanOrEqual(0);
+		expect(typeof result.durationMs).toBe('number');
+	});
+
+	it('returns durationMs in error result', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		vi.mocked(backend.execute).mockRejectedValue(new Error('Backend crashed'));
+		const input = makeInput();
+
+		const result = await executeWithBackend(backend, 'implementation', input);
+
+		expect(result.success).toBe(false);
+		expect(result.durationMs).toBeDefined();
+		expect(result.durationMs).toBeGreaterThanOrEqual(0);
+		expect(typeof result.durationMs).toBe('number');
+	});
+
+	it('returns durationMs when backend returns error', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		vi.mocked(backend.execute).mockResolvedValue({
+			success: false,
+			output: '',
+			error: 'Budget exceeded',
+		});
+		const input = makeInput();
+
+		const result = await executeWithBackend(backend, 'implementation', input);
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe('Budget exceeded');
+		expect(result.durationMs).toBeDefined();
+		expect(result.durationMs).toBeGreaterThanOrEqual(0);
+		expect(typeof result.durationMs).toBe('number');
+	});
 });

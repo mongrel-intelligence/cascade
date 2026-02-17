@@ -44,6 +44,7 @@ export interface AgentResult {
 	logBuffer?: Buffer;
 	cost?: number;
 	runId?: string;
+	durationMs?: number;
 }
 
 export type TriggerSource = 'trello' | 'github' | 'jira' | 'manual';
