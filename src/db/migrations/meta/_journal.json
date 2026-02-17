@@ -71,6 +71,13 @@
 			"when": 1745000000000,
 			"tag": "0010_webhook_logs",
 			"breakpoints": false
+		},
+		{
+			"idx": 10,
+			"version": "7",
+			"when": 1746000000000,
+			"tag": "0011_remove_credentials_description",
+			"breakpoints": false
 		}
 	]
 }

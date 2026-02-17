@@ -95,7 +95,6 @@ describe('credentialsRouter', () => {
 				name: 'GitHub Bot',
 				envVarKey: 'GITHUB_TOKEN',
 				value: 'ghp_test123',
-				description: 'Bot token',
 				isDefault: true,
 			});
 
@@ -104,7 +103,6 @@ describe('credentialsRouter', () => {
 				name: 'GitHub Bot',
 				envVarKey: 'GITHUB_TOKEN',
 				value: 'ghp_test123',
-				description: 'Bot token',
 				isDefault: true,
 			});
 			expect(result).toEqual({ id: 42 });

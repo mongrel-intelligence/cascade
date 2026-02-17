@@ -30,7 +30,7 @@ import {
 function printUsage(): void {
 	console.log('Usage:');
 	console.log(
-		'  npx tsx tools/manage-secrets.ts create <org-id> <env-var-key> <value> [--name "..."] [--description "..."] [--default]',
+		'  npx tsx tools/manage-secrets.ts create <org-id> <env-var-key> <value> [--name "..."] [--default]',
 	);
 	console.log('  npx tsx tools/manage-secrets.ts list <org-id>');
 	console.log('  npx tsx tools/manage-secrets.ts delete <credential-id>');
@@ -66,10 +66,9 @@ async function handleCreate(args: string[]): Promise<void> {
 		process.exit(1);
 	}
 	const name = parseFlag(args, '--name') ?? envVarKey;
-	const description = parseFlag(args, '--description');
 	const isDefault = hasFlag(args, '--default');
 
-	const { id } = await createCredential({ orgId, name, envVarKey, value, description, isDefault });
+	const { id } = await createCredential({ orgId, name, envVarKey, value, isDefault });
 	console.log(
 		`Created credential #${id}: ${name} (${envVarKey}) for org ${orgId}${isDefault ? ' [DEFAULT]' : ''}`,
 	);
@@ -90,10 +89,7 @@ async function handleList(args: string[]): Promise<void> {
 	console.log(`Credentials for org ${orgId}:`);
 	for (const c of creds) {
 		const defaultTag = c.isDefault ? ' [DEFAULT]' : '';
-		const desc = c.description ? ` - ${c.description}` : '';
-		console.log(
-			`  #${c.id}: ${c.name} (${c.envVarKey}) = ${maskValue(c.value)}${defaultTag}${desc}`,
-		);
+		console.log(`  #${c.id}: ${c.name} (${c.envVarKey}) = ${maskValue(c.value)}${defaultTag}`);
 	}
 }
 
