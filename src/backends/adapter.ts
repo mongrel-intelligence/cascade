@@ -341,6 +341,9 @@ async function buildBackendInput(
 	// Inject agent type so Finish command can validate without flags
 	projectSecrets.CASCADE_AGENT_TYPE = agentType;
 
+	// Inject PM type so cascade-tools uses the correct provider
+	projectSecrets.CASCADE_PM_TYPE = project.pm?.type ?? 'trello';
+
 	return {
 		agentType,
 		project,

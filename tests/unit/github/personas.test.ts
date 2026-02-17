@@ -21,7 +21,6 @@ vi.mock('../../../src/utils/logging.js', () => ({
 import { getAgentCredential } from '../../../src/config/provider.js';
 import { getGitHubUserForToken } from '../../../src/github/client.js';
 import {
-	clearPersonaCache,
 	getPersonaForAgentType,
 	getPersonaForLogin,
 	getPersonaToken,
@@ -34,11 +33,6 @@ import type { PersonaIdentities } from '../../../src/github/personas.js';
 describe('personas', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		clearPersonaCache();
-	});
-
-	afterEach(() => {
-		clearPersonaCache();
 	});
 
 	// ========================================================================
@@ -175,19 +169,23 @@ describe('personas', () => {
 			});
 		});
 
-		it('caches identities per-project', async () => {
+		it('fetches fresh data on each call', async () => {
 			vi.mocked(getAgentCredential)
+				.mockResolvedValueOnce('ghp_impl')
+				.mockResolvedValueOnce('ghp_review')
 				.mockResolvedValueOnce('ghp_impl')
 				.mockResolvedValueOnce('ghp_review');
 			vi.mocked(getGitHubUserForToken)
+				.mockResolvedValueOnce('cascade-impl-bot')
+				.mockResolvedValueOnce('cascade-review-bot')
 				.mockResolvedValueOnce('cascade-impl-bot')
 				.mockResolvedValueOnce('cascade-review-bot');
 
 			const first = await resolvePersonaIdentities('project1');
 			const second = await resolvePersonaIdentities('project1');
 
-			expect(first).toBe(second); // Same reference from cache
-			expect(getAgentCredential).toHaveBeenCalledTimes(2); // Only called during first resolution
+			expect(first).toEqual(second);
+			expect(getAgentCredential).toHaveBeenCalledTimes(4); // Called on every invocation
 		});
 
 		it('resolves separately for different projects', async () => {
@@ -251,56 +249,6 @@ describe('personas', () => {
 			await expect(resolvePersonaIdentities('project1')).rejects.toThrow(
 				'Failed to resolve GitHub identity for GITHUB_TOKEN_REVIEWER',
 			);
-		});
-	});
-
-	// ========================================================================
-	// clearPersonaCache
-	// ========================================================================
-
-	describe('clearPersonaCache', () => {
-		it('clears cache for a specific project', async () => {
-			vi.mocked(getAgentCredential)
-				.mockResolvedValueOnce('ghp_impl')
-				.mockResolvedValueOnce('ghp_review');
-			vi.mocked(getGitHubUserForToken)
-				.mockResolvedValueOnce('impl-bot')
-				.mockResolvedValueOnce('review-bot');
-
-			await resolvePersonaIdentities('project1');
-			clearPersonaCache('project1');
-
-			// Should need to resolve again
-			vi.mocked(getAgentCredential)
-				.mockResolvedValueOnce('ghp_impl_new')
-				.mockResolvedValueOnce('ghp_review_new');
-			vi.mocked(getGitHubUserForToken)
-				.mockResolvedValueOnce('new-impl-bot')
-				.mockResolvedValueOnce('new-review-bot');
-
-			const identities = await resolvePersonaIdentities('project1');
-			expect(identities.implementer).toBe('new-impl-bot');
-		});
-
-		it('clears all projects when no project ID is given', async () => {
-			vi.mocked(getAgentCredential).mockResolvedValue('ghp_token');
-			vi.mocked(getGitHubUserForToken).mockResolvedValue('bot');
-
-			await resolvePersonaIdentities('project1');
-			await resolvePersonaIdentities('project2');
-
-			// Clear both
-			clearPersonaCache();
-
-			// getAgentCredential will be called again for both projects
-			expect(getAgentCredential).toHaveBeenCalledTimes(4); // 2 per project
-
-			vi.clearAllMocks();
-			vi.mocked(getAgentCredential).mockResolvedValue('ghp_token');
-			vi.mocked(getGitHubUserForToken).mockResolvedValue('new-bot');
-
-			await resolvePersonaIdentities('project1');
-			expect(getAgentCredential).toHaveBeenCalledTimes(2); // Called again after cache clear
 		});
 	});
 
