@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { logWebhookCall } from '../utils/webhookLogger.js';
 import { type RouterProjectConfig, getProjectConfig, loadProjectConfig } from './config.js';
 import { type CascadeJob, addJob, getQueueStats } from './queue.js';
 import {
@@ -152,13 +153,37 @@ app.on(['HEAD', 'GET'], '/trello/webhook', (c) => {
 // Trello webhook handler
 app.post('/trello/webhook', async (c) => {
 	let payload: unknown;
+	let bodyRaw: string | undefined;
 	try {
-		payload = await c.req.json();
+		bodyRaw = await c.req.text();
+		payload = JSON.parse(bodyRaw);
 	} catch {
+		logWebhookCall({
+			source: 'trello',
+			method: c.req.method,
+			path: c.req.path,
+			headers: Object.fromEntries(c.req.raw.headers.entries()),
+			bodyRaw,
+			statusCode: 400,
+			processed: false,
+		});
 		return c.text('Bad Request', 400);
 	}
 
 	const { shouldProcess, project, actionType, cardId } = parseTrelloWebhook(payload);
+
+	logWebhookCall({
+		source: 'trello',
+		method: c.req.method,
+		path: c.req.path,
+		headers: Object.fromEntries(c.req.raw.headers.entries()),
+		body: payload,
+		bodyRaw,
+		statusCode: 200,
+		eventType: actionType ?? undefined,
+		projectId: project?.id,
+		processed: shouldProcess && !!project && !!cardId,
+	});
 
 	if (shouldProcess && project && cardId) {
 		console.log('[Router] Queueing Trello job:', { actionType, cardId, projectId: project.id });
@@ -198,6 +223,7 @@ app.post('/github/webhook', async (c) => {
 	const contentType = c.req.header('Content-Type') || '';
 
 	let payload: unknown;
+	let bodyRaw: string | undefined;
 
 	try {
 		// GitHub can send webhooks as JSON or form-urlencoded
@@ -205,18 +231,30 @@ app.post('/github/webhook', async (c) => {
 			const formData = await c.req.parseBody();
 			const payloadStr = formData.payload;
 			if (typeof payloadStr === 'string') {
+				bodyRaw = payloadStr;
 				payload = JSON.parse(payloadStr);
 			} else {
 				throw new Error('Missing payload field in form data');
 			}
 		} else {
-			payload = await c.req.json();
+			bodyRaw = await c.req.text();
+			payload = JSON.parse(bodyRaw);
 		}
 	} catch (err) {
 		console.log('[Router] GitHub webhook parse error:', {
 			error: String(err),
 			contentType,
 			eventType,
+		});
+		logWebhookCall({
+			source: 'github',
+			method: c.req.method,
+			path: c.req.path,
+			headers: Object.fromEntries(c.req.raw.headers.entries()),
+			bodyRaw,
+			statusCode: 400,
+			eventType,
+			processed: false,
 		});
 		return c.text('Bad Request', 400);
 	}
@@ -235,6 +273,18 @@ app.post('/github/webhook', async (c) => {
 		'check_suite',
 	];
 	const shouldProcess = processableEvents.includes(eventType);
+
+	logWebhookCall({
+		source: 'github',
+		method: c.req.method,
+		path: c.req.path,
+		headers: Object.fromEntries(c.req.raw.headers.entries()),
+		body: payload,
+		bodyRaw,
+		statusCode: 200,
+		eventType,
+		processed: shouldProcess,
+	});
 
 	if (shouldProcess) {
 		console.log('[Router] Queueing GitHub job:', { eventType, repoFullName });
@@ -269,9 +319,20 @@ app.get('/jira/webhook', (c) => {
 // JIRA webhook handler
 app.post('/jira/webhook', async (c) => {
 	let payload: unknown;
+	let bodyRaw: string | undefined;
 	try {
-		payload = await c.req.json();
+		bodyRaw = await c.req.text();
+		payload = JSON.parse(bodyRaw);
 	} catch {
+		logWebhookCall({
+			source: 'jira',
+			method: c.req.method,
+			path: c.req.path,
+			headers: Object.fromEntries(c.req.raw.headers.entries()),
+			bodyRaw,
+			statusCode: 400,
+			processed: false,
+		});
 		return c.text('Bad Request', 400);
 	}
 
@@ -296,6 +357,19 @@ app.post('/jira/webhook', async (c) => {
 		'comment_updated',
 	];
 	const shouldProcess = project && processableEvents.some((e) => webhookEvent.startsWith(e));
+
+	logWebhookCall({
+		source: 'jira',
+		method: c.req.method,
+		path: c.req.path,
+		headers: Object.fromEntries(c.req.raw.headers.entries()),
+		body: payload,
+		bodyRaw,
+		statusCode: 200,
+		eventType: webhookEvent || undefined,
+		projectId: project?.id,
+		processed: !!shouldProcess,
+	});
 
 	if (shouldProcess && project) {
 		console.log('[Router] Queueing JIRA job:', { webhookEvent, issueKey, projectId: project.id });

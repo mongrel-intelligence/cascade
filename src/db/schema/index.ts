@@ -7,3 +7,4 @@ export { projects } from './projects.js';
 export { agentRunLlmCalls, agentRunLogs, agentRuns, debugAnalyses } from './runs.js';
 export { promptPartials } from './promptPartials.js';
 export { sessions, users } from './users.js';
+export { webhookLogs } from './webhookLogs.js';

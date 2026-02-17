@@ -57,6 +57,13 @@
 			"when": 1743000000000,
 			"tag": "0008_prompt_partials",
 			"breakpoints": false
+		},
+		{
+			"idx": 8,
+			"version": "7",
+			"when": 1744000000000,
+			"tag": "0009_webhook_logs",
+			"breakpoints": false
 		}
 	]
 }

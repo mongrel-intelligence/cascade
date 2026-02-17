@@ -9,6 +9,7 @@ import {
 	KeyRound,
 	LayoutDashboard,
 	Settings,
+	Zap,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -18,6 +19,7 @@ interface SidebarProps {
 const mainNav = [
 	{ to: '/' as const, label: 'Runs', icon: Activity },
 	{ to: '/projects' as const, label: 'Projects', icon: FolderGit2 },
+	{ to: '/webhooklogs' as const, label: 'Webhook Logs', icon: Zap },
 ];
 
 const settingsNav = [
