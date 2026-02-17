@@ -39,6 +39,13 @@ function getClient(): Version3Client {
 	});
 }
 
+let cachedCloudId: string | null = null;
+
+/** @internal Visible for testing only */
+export function _resetCloudIdCache(): void {
+	cachedCloudId = null;
+}
+
 export const jiraClient = {
 	async getIssue(issueKey: string) {
 		logger.debug('Fetching JIRA issue', { issueKey });
@@ -151,6 +158,45 @@ export const jiraClient = {
 	async getMyself() {
 		logger.debug('Fetching authenticated JIRA user');
 		return getClient().myself.getCurrentUser();
+	},
+
+	async getCloudId(): Promise<string> {
+		if (cachedCloudId) return cachedCloudId;
+		const creds = getJiraCredentials();
+		const response = await fetch(`${creds.baseUrl}/_edge/tenant_info`, {
+			headers: {
+				Authorization: `Basic ${Buffer.from(`${creds.email}:${creds.apiToken}`).toString('base64')}`,
+			},
+		});
+		if (!response.ok) {
+			throw new Error(`Failed to fetch JIRA cloud ID: ${response.status}`);
+		}
+		const data = (await response.json()) as { cloudId?: string };
+		if (!data.cloudId) {
+			throw new Error('JIRA tenant_info response missing cloudId');
+		}
+		cachedCloudId = data.cloudId;
+		return cachedCloudId;
+	},
+
+	async addCommentReaction(issueId: string, commentId: string, emojiId: string): Promise<void> {
+		logger.debug('Adding reaction to JIRA comment', { issueId, commentId, emojiId });
+		const creds = getJiraCredentials();
+		const cloudId = await jiraClient.getCloudId();
+		const ari = `ari%3Acloud%3Ajira%3A${cloudId}%3Acomment%2F${issueId}%2F${commentId}`;
+		const response = await fetch(
+			`${creds.baseUrl}/rest/reactions/1.0/reactions/${ari}/${emojiId}`,
+			{
+				method: 'PUT',
+				headers: {
+					Authorization: `Basic ${Buffer.from(`${creds.email}:${creds.apiToken}`).toString('base64')}`,
+					'Content-Type': 'application/json',
+				},
+			},
+		);
+		if (!response.ok) {
+			throw new Error(`Failed to add JIRA comment reaction: ${response.status}`);
+		}
 	},
 
 	async addAttachmentFile(issueKey: string, buffer: Buffer, filename: string) {
