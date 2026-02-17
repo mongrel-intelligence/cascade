@@ -1,7 +1,8 @@
 import { getProjectGitHubToken } from '../config/projects.js';
 import { getProjectSecret } from '../config/provider.js';
 import { findProjectByRepo } from '../config/provider.js';
-import type { CascadeJob, GitHubJob, TrelloJob } from './queue.js';
+import { markdownToAdf } from '../pm/jira/adf.js';
+import type { CascadeJob, GitHubJob, JiraJob, TrelloJob } from './queue.js';
 
 /**
  * Format a duration in milliseconds to a human-readable string.
@@ -155,8 +156,47 @@ async function notifyGitHubTimeout(job: GitHubJob, info: TimeoutInfo): Promise<v
 	}
 }
 
+async function notifyJiraTimeout(job: JiraJob, info: TimeoutInfo): Promise<void> {
+	let jiraEmail: string;
+	let jiraApiToken: string;
+	let jiraBaseUrl: string;
+	try {
+		jiraEmail = await getProjectSecret(job.projectId, 'JIRA_EMAIL');
+		jiraApiToken = await getProjectSecret(job.projectId, 'JIRA_API_TOKEN');
+		jiraBaseUrl = await getProjectSecret(job.projectId, 'JIRA_BASE_URL');
+	} catch {
+		console.warn('[Notifications] Missing JIRA credentials in DB, skipping timeout notification');
+		return;
+	}
+
+	const message = buildTimeoutMessage(
+		info.jobId,
+		info.startedAt,
+		info.durationMs,
+		'Transition the issue back to the trigger status to retry.',
+	);
+
+	const adfBody = markdownToAdf(message);
+	const url = `${jiraBaseUrl}/rest/api/3/issue/${job.issueKey}/comment`;
+	const auth = Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString('base64');
+	const response = await fetch(url, {
+		method: 'POST',
+		headers: {
+			Authorization: `Basic ${auth}`,
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({ body: adfBody }),
+	});
+
+	if (!response.ok) {
+		console.warn('[Notifications] JIRA comment failed:', response.status, await response.text());
+	} else {
+		console.log('[Notifications] JIRA timeout comment posted for issue:', job.issueKey);
+	}
+}
+
 /**
- * Send a timeout notification for a job. Dispatches to Trello or GitHub
+ * Send a timeout notification for a job. Dispatches to Trello, GitHub, or JIRA
  * based on job type. Errors are caught and logged — never propagated.
  */
 export async function notifyTimeout(job: CascadeJob, info: TimeoutInfo): Promise<void> {
@@ -165,6 +205,8 @@ export async function notifyTimeout(job: CascadeJob, info: TimeoutInfo): Promise
 			await notifyTrelloTimeout(job, info);
 		} else if (job.type === 'github') {
 			await notifyGitHubTimeout(job, info);
+		} else if (job.type === 'jira') {
+			await notifyJiraTimeout(job, info);
 		} else {
 			console.warn('[Notifications] Unknown job type, skipping notification');
 		}

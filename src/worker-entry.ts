@@ -3,12 +3,12 @@
  *
  * This is the entry point for Cascade worker containers. It:
  * 1. Reads job data from environment variables
- * 2. Processes the job (Trello or GitHub webhook)
+ * 2. Processes the job (Trello, GitHub, or JIRA webhook)
  * 3. Exits when complete
  *
  * Environment variables:
  * - JOB_ID: Unique job identifier
- * - JOB_TYPE: 'trello' or 'github'
+ * - JOB_TYPE: 'trello', 'github', or 'jira'
  * - JOB_DATA: JSON-encoded job payload
  * - DATABASE_URL: PostgreSQL connection string for config
  */
@@ -18,6 +18,7 @@ import { loadConfig } from './config/provider.js';
 import {
 	createTriggerRegistry,
 	processGitHubWebhook,
+	processJiraWebhook,
 	registerBuiltInTriggers,
 } from './triggers/index.js';
 import { processTrelloWebhook } from './triggers/trello/webhook-handler.js';
@@ -42,7 +43,17 @@ interface GitHubJobData {
 	receivedAt: string;
 }
 
-type JobData = TrelloJobData | GitHubJobData;
+interface JiraJobData {
+	type: 'jira';
+	source: 'jira';
+	payload: unknown;
+	projectId: string;
+	issueKey: string;
+	webhookEvent: string;
+	receivedAt: string;
+}
+
+type JobData = TrelloJobData | GitHubJobData | JiraJobData;
 
 async function main(): Promise<void> {
 	const jobId = process.env.JOB_ID;
@@ -91,6 +102,13 @@ async function main(): Promise<void> {
 				repoFullName: jobData.repoFullName,
 			});
 			await processGitHubWebhook(jobData.payload, jobData.eventType, triggerRegistry);
+		} else if (jobData.type === 'jira') {
+			logger.info('[Worker] Processing JIRA job', {
+				jobId,
+				issueKey: jobData.issueKey,
+				webhookEvent: jobData.webhookEvent,
+			});
+			await processJiraWebhook(jobData.payload, triggerRegistry);
 		} else {
 			logger.error('[Worker] Unknown job type', { jobType: (jobData as { type: string }).type });
 			process.exit(1);
