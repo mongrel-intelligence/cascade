@@ -271,6 +271,12 @@ async function buildBackendInput(
 		storiesListId: project.trello?.lists?.stories,
 		processedLabelId: project.trello?.labels?.processed,
 		pmType,
+		// PR context fields (from check-failure trigger)
+		prNumber: input.prNumber,
+		prBranch: input.prBranch,
+		repoFullName: input.repoFullName,
+		headSha: input.headSha,
+		triggerType: input.triggerType,
 	};
 
 	// Load DB partials for template include resolution

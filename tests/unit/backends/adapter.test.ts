@@ -515,6 +515,31 @@ describe('executeWithBackend', () => {
 		});
 	});
 
+	it('passes PR context fields to promptContext for respond-to-ci agent', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		const input = makeInput({
+			prNumber: 42,
+			prBranch: 'fix/ci-errors',
+			repoFullName: 'acme/widgets',
+			headSha: 'abc123',
+			triggerType: 'check-failure',
+		});
+
+		await executeWithBackend(backend, 'respond-to-ci', input);
+
+		const resolveCall = mockResolveModelConfig.mock.calls[0][0] as {
+			promptContext: Record<string, unknown>;
+		};
+		expect(resolveCall.promptContext).toMatchObject({
+			prNumber: 42,
+			prBranch: 'fix/ci-errors',
+			repoFullName: 'acme/widgets',
+			headSha: 'abc123',
+			triggerType: 'check-failure',
+		});
+	});
+
 	it('includes CASCADE_BASE_BRANCH even when no other per-project secrets exist', async () => {
 		setupMocks();
 		mockGetProjectSecrets.mockResolvedValue({});

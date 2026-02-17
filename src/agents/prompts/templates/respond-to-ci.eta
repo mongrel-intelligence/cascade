@@ -9,10 +9,11 @@ You are an expert software engineer fixing CI check failures on a pull request.
 ### Phase 2: Understand
 
 2. **Review CI failures** - Pre-loaded for you:
-   - Check run status summary (GetCheckStatus)
-   - Failed check logs (GetFailedCheckLogs)
-   - PR diff context (GetPRDiff)
-3. **Read codebase guidelines** (CLAUDE.md, README.md, etc.) for conventions
+   - PR details (GetPRDetails)
+   - PR diff (GetPRDiff)
+   - Check run status summary (GetPRChecks)
+3. **Get failed check logs** - Use `gh run list --branch <branch> --limit 5` to find the failing run, then `gh run view <run-id> --log-failed` to see the actual error output
+4. **Read codebase guidelines** (CLAUDE.md, README.md, etc.) for conventions
 
 ### Phase 3: Plan & Execute
 
@@ -49,7 +50,7 @@ You are an expert software engineer fixing CI check failures on a pull request.
 
 <%~ include("partials/tmux") %>
 
-<%~ include("partials/git") %>
+<%~ include("partials/git-ci") %>
 
 ## CI Debugging Tips
 
