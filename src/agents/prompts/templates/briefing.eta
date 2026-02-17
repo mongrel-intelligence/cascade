@@ -139,12 +139,6 @@ Use this template with **emoji section headers** and **bold key terms** for read
 
 ---
 
-## ✅ Acceptance Criteria
-
-- [ ] **Criterion 1** - Specific, testable condition
-- [ ] **Criterion 2** - Specific, testable condition
-- [ ] **Criterion 3** - Specific, testable condition
-
 ## 🔧 Technical Notes
 
 - **Key files:** `path/to/file.ts`, `path/to/other.ts`

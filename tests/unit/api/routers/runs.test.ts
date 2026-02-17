@@ -48,6 +48,14 @@ vi.mock('../../../../src/triggers/shared/debug-runner.js', () => ({
 	triggerDebugAnalysis: (...args: unknown[]) => mockTriggerDebugAnalysis(...args),
 }));
 
+// Mock triggerManualRun and triggerRetryRun (fire-and-forget)
+const mockTriggerManualRun = vi.fn();
+const mockTriggerRetryRun = vi.fn();
+vi.mock('../../../../src/triggers/shared/manual-runner.js', () => ({
+	triggerManualRun: (...args: unknown[]) => mockTriggerManualRun(...args),
+	triggerRetryRun: (...args: unknown[]) => mockTriggerRetryRun(...args),
+}));
+
 // Mock config provider
 const mockFindProjectById = vi.fn();
 const mockLoadConfig = vi.fn();
@@ -83,8 +91,10 @@ describe('runsRouter', () => {
 		// Set up DB chain for getById org check
 		mockDbSelect.mockReturnValue({ from: mockDbFrom });
 		mockDbFrom.mockReturnValue({ where: mockDbWhere });
-		// Default: triggerDebugAnalysis returns a resolved promise (fire-and-forget)
+		// Default: fire-and-forget mocks return resolved promises
 		mockTriggerDebugAnalysis.mockReturnValue(Promise.resolve());
+		mockTriggerManualRun.mockReturnValue(Promise.resolve());
+		mockTriggerRetryRun.mockReturnValue(Promise.resolve());
 	});
 
 	describe('list', () => {
@@ -497,6 +507,195 @@ describe('runsRouter', () => {
 		it('throws UNAUTHORIZED when unauthenticated', async () => {
 			const caller = createCaller({ user: null });
 			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'UNAUTHORIZED',
+			});
+		});
+	});
+
+	describe('trigger', () => {
+		it('fires a manual run and returns triggered:true', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockFindProjectById.mockResolvedValue({ id: 'p1', name: 'Test Project' });
+			mockLoadConfig.mockResolvedValue({});
+
+			const caller = createCaller({ user: mockUser });
+			const result = await caller.trigger({
+				projectId: 'p1',
+				agentType: 'implementation',
+				cardId: 'card-abc',
+			});
+
+			expect(result).toEqual({ triggered: true });
+			expect(mockTriggerManualRun).toHaveBeenCalledWith(
+				expect.objectContaining({
+					projectId: 'p1',
+					agentType: 'implementation',
+					cardId: 'card-abc',
+				}),
+				{ id: 'p1', name: 'Test Project' },
+				{},
+			);
+		});
+
+		it('passes optional fields when provided', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockFindProjectById.mockResolvedValue({ id: 'p1', name: 'Test Project' });
+			mockLoadConfig.mockResolvedValue({});
+
+			const caller = createCaller({ user: mockUser });
+			await caller.trigger({
+				projectId: 'p1',
+				agentType: 'review',
+				prNumber: 42,
+				prBranch: 'feature/my-branch',
+				model: 'claude-opus-4-5',
+			});
+
+			expect(mockTriggerManualRun).toHaveBeenCalledWith(
+				expect.objectContaining({
+					prNumber: 42,
+					prBranch: 'feature/my-branch',
+					modelOverride: 'claude-opus-4-5',
+				}),
+				expect.anything(),
+				expect.anything(),
+			);
+		});
+
+		it('throws NOT_FOUND when project does not exist in DB', async () => {
+			mockDbWhere.mockResolvedValue([]);
+
+			const caller = createCaller({ user: mockUser });
+			await expect(
+				caller.trigger({ projectId: 'missing', agentType: 'implementation' }),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+
+		it('throws NOT_FOUND when project belongs to different org', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'other-org' }]);
+
+			const caller = createCaller({ user: mockUser });
+			await expect(
+				caller.trigger({ projectId: 'p1', agentType: 'implementation' }),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+
+		it('throws NOT_FOUND when project config not found', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockFindProjectById.mockResolvedValue(undefined);
+
+			const caller = createCaller({ user: mockUser });
+			await expect(
+				caller.trigger({ projectId: 'p1', agentType: 'implementation' }),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+
+		it('throws UNAUTHORIZED when unauthenticated', async () => {
+			const caller = createCaller({ user: null });
+			await expect(
+				caller.trigger({ projectId: 'p1', agentType: 'implementation' }),
+			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+		});
+	});
+
+	describe('retry', () => {
+		it('fires a retry run and returns triggered:true', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				agentType: 'implementation',
+			});
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockFindProjectById.mockResolvedValue({ id: 'p1', name: 'Test Project' });
+			mockLoadConfig.mockResolvedValue({});
+
+			const caller = createCaller({ user: mockUser });
+			const result = await caller.retry({ runId: RUN_UUID });
+
+			expect(result).toEqual({ triggered: true });
+			expect(mockTriggerRetryRun).toHaveBeenCalledWith(
+				RUN_UUID,
+				{ id: 'p1', name: 'Test Project' },
+				{},
+				undefined,
+			);
+		});
+
+		it('passes model override when provided', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				agentType: 'implementation',
+			});
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockFindProjectById.mockResolvedValue({ id: 'p1', name: 'Test Project' });
+			mockLoadConfig.mockResolvedValue({});
+
+			const caller = createCaller({ user: mockUser });
+			await caller.retry({ runId: RUN_UUID, model: 'claude-opus-4-5' });
+
+			expect(mockTriggerRetryRun).toHaveBeenCalledWith(
+				RUN_UUID,
+				expect.anything(),
+				expect.anything(),
+				'claude-opus-4-5',
+			);
+		});
+
+		it('throws NOT_FOUND when run does not exist', async () => {
+			mockGetRunById.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser });
+			await expect(caller.retry({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws NOT_FOUND when org does not match', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				agentType: 'implementation',
+			});
+			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
+
+			const caller = createCaller({ user: mockUser });
+			await expect(caller.retry({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws BAD_REQUEST when run has no projectId', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: null,
+				agentType: 'implementation',
+			});
+
+			const caller = createCaller({ user: mockUser });
+			await expect(caller.retry({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'BAD_REQUEST',
+			});
+		});
+
+		it('throws NOT_FOUND when project config not found', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p-missing',
+				agentType: 'implementation',
+			});
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockFindProjectById.mockResolvedValue(undefined);
+
+			const caller = createCaller({ user: mockUser });
+			await expect(caller.retry({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws UNAUTHORIZED when unauthenticated', async () => {
+			const caller = createCaller({ user: null });
+			await expect(caller.retry({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
 		});

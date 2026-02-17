@@ -1,8 +1,12 @@
 import { RunFilters } from '@/components/runs/run-filters.js';
 import { RunsTable } from '@/components/runs/runs-table.js';
+import { TriggerRunDialog } from '@/components/runs/trigger-run-dialog.js';
+import { Button } from '@/components/ui/button.js';
 import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { createRoute, useNavigate, useSearch } from '@tanstack/react-router';
+import { Play } from 'lucide-react';
+import { useState } from 'react';
 import { z } from 'zod';
 import { rootRoute } from './__root.js';
 
@@ -16,6 +20,7 @@ const searchSchema = z.object({
 function RunsListPage() {
 	const navigate = useNavigate({ from: '/' });
 	const search = useSearch({ from: '/' });
+	const [triggerDialogOpen, setTriggerDialogOpen] = useState(false);
 
 	const projectId = search.projectId ?? '';
 	const status = search.status ?? '';
@@ -51,10 +56,17 @@ function RunsListPage() {
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
 				<h1 className="text-2xl font-bold tracking-tight">Agent Runs</h1>
-				{runsQuery.data && (
-					<span className="text-sm text-muted-foreground">{runsQuery.data.total} total</span>
-				)}
+				<div className="flex items-center gap-3">
+					{runsQuery.data && (
+						<span className="text-sm text-muted-foreground">{runsQuery.data.total} total</span>
+					)}
+					<Button size="sm" onClick={() => setTriggerDialogOpen(true)}>
+						<Play className="mr-1 h-4 w-4" />
+						Trigger Run
+					</Button>
+				</div>
 			</div>
+			<TriggerRunDialog open={triggerDialogOpen} onOpenChange={setTriggerDialogOpen} />
 
 			<RunFilters
 				projectId={projectId}
