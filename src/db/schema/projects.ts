@@ -17,6 +17,7 @@ export const projects = pgTable(
 		cardBudgetUsd: numeric('card_budget_usd', { precision: 10, scale: 2 }),
 		agentBackend: text('agent_backend'),
 		subscriptionCostZero: boolean('subscription_cost_zero').default(false),
+		squintDbUrl: text('squint_db_url'),
 
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')

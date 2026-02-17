@@ -1,5 +1,4 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -17,6 +16,7 @@ import { formatCheckStatus } from '../gadgets/github/core/getPRChecks.js';
 import { readWorkItem } from '../gadgets/pm/core/readWorkItem.js';
 import { type PRDiffFile, githubClient } from '../github/client.js';
 import type { AgentInput } from '../types/index.js';
+import { resolveSquintDbPath } from '../utils/squintDb.js';
 import type { ContextInjection, LogWriter, ToolManifest } from './types.js';
 
 // ============================================================================
@@ -141,8 +141,8 @@ function fetchContextFileInjections(contextFiles: ContextFile[]): ContextInjecti
 }
 
 function fetchSquintOverview(repoDir: string): ContextInjection | null {
-	const squintDb = join(repoDir, '.squint.db');
-	if (!existsSync(squintDb)) return null;
+	const squintDb = resolveSquintDbPath(repoDir);
+	if (!squintDb) return null;
 
 	try {
 		const output = execFileSync('squint', ['overview', '-d', squintDb], {
