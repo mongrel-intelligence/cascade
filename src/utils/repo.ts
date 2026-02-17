@@ -19,9 +19,13 @@ export function createTempDir(projectId: string): string {
 	return tempDir;
 }
 
-export async function cloneRepo(project: ProjectConfig, targetDir: string): Promise<void> {
-	const token = await getProjectGitHubToken(project);
-	const cloneUrl = `https://${token}@github.com/${project.repo}.git`;
+export async function cloneRepo(
+	project: ProjectConfig,
+	targetDir: string,
+	token?: string,
+): Promise<void> {
+	const cloneToken = token ?? (await getProjectGitHubToken(project));
+	const cloneUrl = `https://${cloneToken}@github.com/${project.repo}.git`;
 
 	logger.info('Cloning repository', { repo: project.repo, targetDir });
 

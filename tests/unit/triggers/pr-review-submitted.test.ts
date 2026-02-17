@@ -1,12 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { PRReviewSubmittedTrigger } from '../../../src/triggers/github/pr-review-submitted.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
-
-vi.mock('../../../src/github/client.js', () => ({
-	getAuthenticatedUser: vi.fn(),
-}));
-
-import { getAuthenticatedUser } from '../../../src/github/client.js';
 
 describe('PRReviewSubmittedTrigger', () => {
 	const trigger = new PRReviewSubmittedTrigger();
@@ -28,6 +22,11 @@ describe('PRReviewSubmittedTrigger', () => {
 		},
 	};
 
+	const mockPersonaIdentities = {
+		implementer: 'cascade-impl',
+		reviewer: 'cascade-reviewer',
+	};
+
 	const makeReviewPayload = (overrides: Record<string, unknown> = {}) => ({
 		action: 'submitted',
 		review: {
@@ -35,7 +34,7 @@ describe('PRReviewSubmittedTrigger', () => {
 			state: 'changes_requested',
 			body: 'Please fix the bug',
 			html_url: 'https://github.com/owner/repo/pull/42#pullrequestreview-100',
-			user: { login: 'aaight' },
+			user: { login: 'cascade-reviewer' },
 		},
 		pull_request: {
 			number: 42,
@@ -46,13 +45,8 @@ describe('PRReviewSubmittedTrigger', () => {
 			base: { ref: 'main' },
 		},
 		repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-		sender: { login: 'aaight' },
+		sender: { login: 'cascade-reviewer' },
 		...overrides,
-	});
-
-	beforeEach(() => {
-		vi.clearAllMocks();
-		vi.mocked(getAuthenticatedUser).mockResolvedValue('zbigniewsobiecki');
 	});
 
 	describe('matches', () => {
@@ -66,7 +60,7 @@ describe('PRReviewSubmittedTrigger', () => {
 			expect(trigger.matches(ctx)).toBe(true);
 		});
 
-		it('matches submitted review with commented state', () => {
+		it('does not match submitted review with commented state', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -76,12 +70,12 @@ describe('PRReviewSubmittedTrigger', () => {
 						state: 'commented',
 						body: 'Nice work',
 						html_url: 'https://github.com/...',
-						user: { login: 'aaight' },
+						user: { login: 'cascade-reviewer' },
 					},
 				}),
 			};
 
-			expect(trigger.matches(ctx)).toBe(true);
+			expect(trigger.matches(ctx)).toBe(false);
 		});
 
 		it('does not match trello source', () => {
@@ -114,7 +108,7 @@ describe('PRReviewSubmittedTrigger', () => {
 						state: 'approved',
 						body: 'LGTM',
 						html_url: 'https://github.com/...',
-						user: { login: 'aaight' },
+						user: { login: 'cascade-reviewer' },
 					},
 				}),
 			};
@@ -134,11 +128,12 @@ describe('PRReviewSubmittedTrigger', () => {
 	});
 
 	describe('handle', () => {
-		it('returns respond-to-review result when reviewer user posts review', async () => {
+		it('returns respond-to-review result when reviewer persona posts changes_requested', async () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
 				payload: makeReviewPayload(),
+				personaIdentities: mockPersonaIdentities,
 			};
 
 			const result = await trigger.handle(ctx);
@@ -159,7 +154,7 @@ describe('PRReviewSubmittedTrigger', () => {
 			});
 		});
 
-		it('returns null for self-authored review', async () => {
+		it('returns null for review from implementer persona', async () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -169,9 +164,10 @@ describe('PRReviewSubmittedTrigger', () => {
 						state: 'changes_requested',
 						body: 'Fix this',
 						html_url: 'https://github.com/...',
-						user: { login: 'zbigniewsobiecki' },
+						user: { login: 'cascade-impl' },
 					},
 				}),
+				personaIdentities: mockPersonaIdentities,
 			};
 
 			const result = await trigger.handle(ctx);
@@ -179,48 +175,7 @@ describe('PRReviewSubmittedTrigger', () => {
 			expect(result).toBeNull();
 		});
 
-		it('returns null for self-authored review with [bot] suffix', async () => {
-			const ctx: TriggerContext = {
-				project: mockProject,
-				source: 'github',
-				payload: makeReviewPayload({
-					review: {
-						id: 100,
-						state: 'changes_requested',
-						body: 'Fix this',
-						html_url: 'https://github.com/...',
-						user: { login: 'zbigniewsobiecki[bot]' },
-					},
-				}),
-			};
-
-			const result = await trigger.handle(ctx);
-
-			expect(result).toBeNull();
-		});
-
-		it('returns result for reviewer review', async () => {
-			const ctx: TriggerContext = {
-				project: mockProject,
-				source: 'github',
-				payload: makeReviewPayload({
-					review: {
-						id: 100,
-						state: 'changes_requested',
-						body: 'Fix this',
-						html_url: 'https://github.com/owner/repo/pull/42#pullrequestreview-100',
-						user: { login: 'aaight' },
-					},
-				}),
-			};
-
-			const result = await trigger.handle(ctx);
-
-			expect(result).not.toBeNull();
-			expect(result?.agentType).toBe('respond-to-review');
-		});
-
-		it('returns result for human review', async () => {
+		it('returns null for review from human user', async () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -233,12 +188,24 @@ describe('PRReviewSubmittedTrigger', () => {
 						user: { login: 'some-human' },
 					},
 				}),
+				personaIdentities: mockPersonaIdentities,
 			};
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).not.toBeNull();
-			expect(result?.agentType).toBe('respond-to-review');
+			expect(result).toBeNull();
+		});
+
+		it('returns null when no persona identities available', async () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeReviewPayload(),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
 		});
 
 		it('returns null when PR has no Trello URL', async () => {
@@ -255,6 +222,7 @@ describe('PRReviewSubmittedTrigger', () => {
 						base: { ref: 'main' },
 					},
 				}),
+				personaIdentities: mockPersonaIdentities,
 			};
 
 			const result = await trigger.handle(ctx);
@@ -272,9 +240,10 @@ describe('PRReviewSubmittedTrigger', () => {
 						state: 'changes_requested',
 						body: null,
 						html_url: 'https://github.com/owner/repo/pull/42#pullrequestreview-100',
-						user: { login: 'aaight' },
+						user: { login: 'cascade-reviewer' },
 					},
 				}),
+				personaIdentities: mockPersonaIdentities,
 			};
 
 			const result = await trigger.handle(ctx);

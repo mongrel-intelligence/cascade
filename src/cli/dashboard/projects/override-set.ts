@@ -11,7 +11,7 @@ export default class ProjectsOverrideSet extends DashboardCommand {
 	static override flags = {
 		...DashboardCommand.baseFlags,
 		key: Flags.string({
-			description: 'Environment variable key (e.g. GITHUB_TOKEN)',
+			description: 'Environment variable key (e.g. GITHUB_TOKEN_IMPLEMENTER)',
 			required: true,
 		}),
 		'credential-id': Flags.integer({ description: 'Credential ID to use', required: true }),

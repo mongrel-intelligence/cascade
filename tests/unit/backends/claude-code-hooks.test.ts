@@ -147,6 +147,59 @@ describe('buildPreToolUseHooks', () => {
 		const [matcher] = buildPreToolUseHooks(makeLogWriter());
 		expect(matcher.matcher).toBe('Bash');
 	});
+
+	describe('with blockGitPush: false', () => {
+		it('allows git push commands', async () => {
+			const logWriter = makeLogWriter();
+			const [matcher] = buildPreToolUseHooks(logWriter, { blockGitPush: false });
+			const [hook] = matcher.hooks;
+
+			const result = await hook(makePreToolUseInput('git push origin feature-branch'), 'tu-1', {
+				signal: AbortSignal.timeout(5000),
+			});
+
+			expect(result).toEqual({});
+			expect(logWriter).not.toHaveBeenCalled();
+		});
+
+		it('still blocks gh pr create commands', async () => {
+			const logWriter = makeLogWriter();
+			const [matcher] = buildPreToolUseHooks(logWriter, { blockGitPush: false });
+			const [hook] = matcher.hooks;
+
+			const result = await hook(
+				makePreToolUseInput('gh pr create --title "test" --body "body"'),
+				'tu-1',
+				{ signal: AbortSignal.timeout(5000) },
+			);
+
+			expect(result).toEqual({
+				hookSpecificOutput: {
+					hookEventName: 'PreToolUse',
+					permissionDecision: 'deny',
+					permissionDecisionReason: expect.stringContaining('cascade-tools github create-pr'),
+				},
+			});
+		});
+
+		it('still blocks gh pr merge commands', async () => {
+			const logWriter = makeLogWriter();
+			const [matcher] = buildPreToolUseHooks(logWriter, { blockGitPush: false });
+			const [hook] = matcher.hooks;
+
+			const result = await hook(makePreToolUseInput('gh pr merge 42 --squash'), 'tu-1', {
+				signal: AbortSignal.timeout(5000),
+			});
+
+			expect(result).toEqual({
+				hookSpecificOutput: {
+					hookEventName: 'PreToolUse',
+					permissionDecision: 'deny',
+					permissionDecisionReason: expect.stringContaining('Merging is managed externally'),
+				},
+			});
+		});
+	});
 });
 
 describe('buildStopHooks', () => {
@@ -276,6 +329,46 @@ describe('buildStopHooks', () => {
 			'Stop hook: all git checks failed, allowing stop',
 		);
 	});
+
+	describe('with blockGitPush: false', () => {
+		it('uses "git push" message for unpushed commits', async () => {
+			mockExecSync.mockReturnValueOnce(''); // git status --porcelain
+			mockExecSync.mockReturnValueOnce('abc1234 feat: add feature'); // unpushed commits
+
+			const logWriter = makeLogWriter();
+			const [matcher] = buildStopHooks(logWriter, '/tmp/repo', { blockGitPush: false });
+			const [hook] = matcher.hooks;
+
+			const result = await hook(makeStopInput(), undefined, {
+				signal: AbortSignal.timeout(5000),
+			});
+
+			expect(result).toEqual({
+				decision: 'block',
+				reason: 'You have unpushed commits. Push your changes with git push before finishing.',
+			});
+		});
+
+		it('uses "git push" message for non-default branch fallback', async () => {
+			mockExecSync.mockImplementationOnce(() => {
+				throw new Error('git status failed');
+			});
+			mockExecSync.mockReturnValueOnce('feature/my-branch');
+
+			const logWriter = makeLogWriter();
+			const [matcher] = buildStopHooks(logWriter, '/tmp/repo', { blockGitPush: false });
+			const [hook] = matcher.hooks;
+
+			const result = await hook(makeStopInput(), undefined, {
+				signal: AbortSignal.timeout(5000),
+			});
+
+			expect(result).toEqual({
+				decision: 'block',
+				reason: expect.stringContaining('push your changes with git push before finishing'),
+			});
+		});
+	});
 });
 
 describe('buildPostToolUseHooks', () => {
@@ -390,5 +483,29 @@ describe('buildHooks', () => {
 
 		expect(hooks.Stop).toBeDefined();
 		expect(hooks.Stop).toHaveLength(1);
+	});
+
+	it('threads blockGitPush option to PreToolUse hooks', async () => {
+		const hooks = buildHooks(makeLogWriter(), '/tmp/repo', true, { blockGitPush: false });
+
+		const preToolUse = hooks.PreToolUse ?? [];
+		const [matcher] = preToolUse;
+		const [hook] = matcher.hooks;
+
+		// git push should be allowed
+		const result = await hook(makePreToolUseInput('git push origin main'), 'tu-1', {
+			signal: AbortSignal.timeout(5000),
+		});
+		expect(result).toEqual({});
+
+		// gh pr create should still be blocked
+		const result2 = await hook(makePreToolUseInput('gh pr create --title "test"'), 'tu-1', {
+			signal: AbortSignal.timeout(5000),
+		});
+		expect(result2).toEqual({
+			hookSpecificOutput: expect.objectContaining({
+				permissionDecision: 'deny',
+			}),
+		});
 	});
 });

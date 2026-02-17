@@ -9,11 +9,11 @@
 import { runAgent } from '../../agents/registry.js';
 import {
 	findProjectByJiraProjectKey,
-	getAgentCredential,
 	getProjectSecret,
 	loadConfig,
 } from '../../config/provider.js';
 import { withGitHubToken } from '../../github/client.js';
+import { getPersonaToken } from '../../github/personas.js';
 import { withJiraCredentials } from '../../jira/client.js';
 import {
 	PMLifecycleManager,
@@ -81,10 +81,7 @@ async function executeJiraAgent(
 	const jiraApiToken = await getProjectSecret(project.id, 'JIRA_API_TOKEN');
 	const jiraBaseUrl =
 		project.jira?.baseUrl ?? (await getProjectSecret(project.id, 'JIRA_BASE_URL'));
-	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
-
-	const agentGitHubToken = await getAgentCredential(project.id, result.agentType, 'GITHUB_TOKEN');
-	const effectiveGithubToken = agentGitHubToken || githubToken;
+	const githubToken = await getPersonaToken(project.id, result.agentType);
 
 	const restoreLlmEnv = await injectLlmApiKeys(project.id);
 
@@ -94,9 +91,7 @@ async function executeJiraAgent(
 			{ email: jiraEmail, apiToken: jiraApiToken, baseUrl: jiraBaseUrl },
 			() =>
 				withPMProvider(pmProvider, () =>
-					withGitHubToken(effectiveGithubToken, () =>
-						executeJiraAgentWithCreds(result, project, config),
-					),
+					withGitHubToken(githubToken, () => executeJiraAgentWithCreds(result, project, config)),
 				),
 		);
 	} finally {

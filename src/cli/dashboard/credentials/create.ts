@@ -8,7 +8,7 @@ export default class CredentialsCreate extends DashboardCommand {
 		...DashboardCommand.baseFlags,
 		name: Flags.string({ description: 'Credential name', required: true }),
 		key: Flags.string({
-			description: 'Environment variable key (e.g. GITHUB_TOKEN)',
+			description: 'Environment variable key (e.g. GITHUB_TOKEN_IMPLEMENTER)',
 			required: true,
 		}),
 		value: Flags.string({ description: 'Credential value', required: true }),

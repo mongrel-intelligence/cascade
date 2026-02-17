@@ -1,3 +1,4 @@
+import { getProjectGitHubToken } from '../config/projects.js';
 import { getProjectSecret } from '../config/provider.js';
 import { findProjectByRepo } from '../config/provider.js';
 import type { CascadeJob, GitHubJob, TrelloJob } from './queue.js';
@@ -115,7 +116,7 @@ async function notifyGitHubTimeout(job: GitHubJob, info: TimeoutInfo): Promise<v
 
 	let githubToken: string;
 	try {
-		githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
+		githubToken = await getProjectGitHubToken(project);
 	} catch {
 		console.warn('[Notifications] Missing GitHub token in DB, skipping timeout notification');
 		return;

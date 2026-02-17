@@ -1,10 +1,6 @@
 import { getAgentCredential } from '../../config/provider.js';
-import {
-	getAuthenticatedUser,
-	getGitHubUserForToken,
-	githubClient,
-	withGitHubToken,
-} from '../../github/client.js';
+import { githubClient, withGitHubToken } from '../../github/client.js';
+import { getTokenKeyForPersona } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
@@ -72,19 +68,20 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 
 		const cardId = extractTrelloCardId(prDetails.body);
 
-		// Skip if our latest review already covers the current HEAD SHA
-		const agentGitHubToken = await getAgentCredential(ctx.project.id, 'review', 'GITHUB_TOKEN');
-		const [reviews, botUser, reviewerUser] = await Promise.all([
-			githubClient.getPRReviews(owner, repo, prNumber),
-			getAuthenticatedUser(),
-			getGitHubUserForToken(agentGitHubToken),
-		]);
+		// Skip if the reviewer persona's latest review already covers the current HEAD SHA
+		const reviewerTokenKey = getTokenKeyForPersona('reviewer');
+		const agentGitHubToken = await getAgentCredential(ctx.project.id, 'review', reviewerTokenKey);
+		const reviews = await githubClient.getPRReviews(owner, repo, prNumber);
+
+		// Use persona identities to identify reviewer bot's reviews
+		const reviewerUsername = ctx.personaIdentities?.reviewer;
 
 		// Only consider actual reviews (approved/changes_requested), not COMMENTED
 		// which are reply acknowledgments posted by respond-to-review agent
 		const ourReviews = reviews.filter(
 			(r) =>
-				(r.user.login === botUser || (reviewerUser && r.user.login === reviewerUser)) &&
+				reviewerUsername &&
+				r.user.login === reviewerUsername &&
 				(r.state === 'approved' || r.state === 'changes_requested'),
 		);
 		if (ourReviews.length > 0) {
@@ -92,7 +89,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			if (latestReview.commitId === headSha) {
 				logger.info('PR already reviewed at current HEAD, skipping', {
 					prNumber,
-					botUser,
+					reviewerUsername,
 					headSha,
 				});
 				return null;
@@ -105,7 +102,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		}
 
 		// Verify all checks are actually passing (double-check)
-		// Use the review agent's token if available, since the default project token
+		// Use the reviewer agent's token if available, since the default project token
 		// may lack actions:read permission (fine-grained PATs need it explicitly).
 		const fetchCheckStatus = () => githubClient.getCheckSuiteStatus(owner, repo, headSha);
 		const checkStatus = agentGitHubToken

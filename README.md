@@ -46,8 +46,9 @@ Edit `.env` with your credentials:
 TRELLO_API_KEY=your_trello_api_key
 TRELLO_TOKEN=your_trello_token
 
-# Required for GitHub PR creation
-GITHUB_TOKEN=your_github_token
+# Required for GitHub dual-persona model
+GITHUB_TOKEN_IMPLEMENTER=your_implementer_bot_token
+GITHUB_TOKEN_REVIEWER=your_reviewer_bot_token
 
 # Required for AI agents (via OpenRouter)
 OPENROUTER_API_KEY=your_openrouter_api_key
@@ -243,7 +244,8 @@ fly apps create cascade
 fly secrets set \
   TRELLO_API_KEY="..." \
   TRELLO_TOKEN="..." \
-  GITHUB_TOKEN="..." \
+  GITHUB_TOKEN_IMPLEMENTER="..." \
+  GITHUB_TOKEN_REVIEWER="..." \
   OPENROUTER_API_KEY="..."
 
 # Deploy

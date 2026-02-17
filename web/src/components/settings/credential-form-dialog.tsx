@@ -96,7 +96,7 @@ export function CredentialFormDialog({
 							id="cred-key"
 							value={envVarKey}
 							onChange={(e) => setEnvVarKey(e.target.value.toUpperCase())}
-							placeholder="e.g. GITHUB_TOKEN"
+							placeholder="e.g. GITHUB_TOKEN_IMPLEMENTER"
 							pattern="^[A-Z_][A-Z0-9_]*$"
 							required
 							disabled={isEdit}
