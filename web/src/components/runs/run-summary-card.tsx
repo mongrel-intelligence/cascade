@@ -1,3 +1,4 @@
+import { useElapsedTime } from '@/lib/useElapsedTime.js';
 import { formatCost, formatDuration } from '@/lib/utils.js';
 import { ExternalLink } from 'lucide-react';
 
@@ -36,6 +37,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export function RunSummaryCard({ run }: RunSummaryProps) {
+	const elapsed = useElapsedTime(run.startedAt, run.status === 'running');
+	const displayDuration = elapsed ?? run.durationMs;
+
 	return (
 		<div className="space-y-6">
 			<div className="grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-3 lg:grid-cols-4">
@@ -43,7 +47,7 @@ export function RunSummaryCard({ run }: RunSummaryProps) {
 				<Field label="Backend">{run.backend}</Field>
 				<Field label="Model">{run.model ?? '-'}</Field>
 				<Field label="Trigger">{run.triggerType ?? '-'}</Field>
-				<Field label="Duration">{formatDuration(run.durationMs)}</Field>
+				<Field label="Duration">{formatDuration(displayDuration)}</Field>
 				<Field label="Cost">{formatCost(run.costUsd)}</Field>
 				<Field label="LLM Iterations">
 					{run.llmIterations != null
