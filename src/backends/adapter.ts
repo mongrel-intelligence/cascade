@@ -117,8 +117,6 @@ function getToolManifests(): ToolManifest[] {
 			description: 'Get details about a GitHub pull request.',
 			cliCommand: 'cascade-tools github get-pr-details',
 			parameters: {
-				owner: { type: 'string', required: true },
-				repo: { type: 'string', required: true },
 				prNumber: { type: 'number', required: true },
 			},
 		},
@@ -127,8 +125,6 @@ function getToolManifests(): ToolManifest[] {
 			description: 'Get the unified diff of all file changes in a PR.',
 			cliCommand: 'cascade-tools github get-pr-diff',
 			parameters: {
-				owner: { type: 'string', required: true },
-				repo: { type: 'string', required: true },
 				prNumber: { type: 'number', required: true },
 			},
 		},
@@ -137,8 +133,6 @@ function getToolManifests(): ToolManifest[] {
 			description: 'Get CI check status for a PR.',
 			cliCommand: 'cascade-tools github get-pr-checks',
 			parameters: {
-				owner: { type: 'string', required: true },
-				repo: { type: 'string', required: true },
 				prNumber: { type: 'number', required: true },
 			},
 		},
@@ -147,8 +141,6 @@ function getToolManifests(): ToolManifest[] {
 			description: 'Get all review comments on a PR.',
 			cliCommand: 'cascade-tools github get-pr-comments',
 			parameters: {
-				owner: { type: 'string', required: true },
-				repo: { type: 'string', required: true },
 				prNumber: { type: 'number', required: true },
 			},
 		},
@@ -157,8 +149,6 @@ function getToolManifests(): ToolManifest[] {
 			description: 'Post a comment on a GitHub pull request.',
 			cliCommand: 'cascade-tools github post-pr-comment',
 			parameters: {
-				owner: { type: 'string', required: true },
-				repo: { type: 'string', required: true },
 				prNumber: { type: 'number', required: true },
 				body: { type: 'string', required: true },
 			},
@@ -168,8 +158,6 @@ function getToolManifests(): ToolManifest[] {
 			description: 'Update an existing PR comment.',
 			cliCommand: 'cascade-tools github update-pr-comment',
 			parameters: {
-				owner: { type: 'string', required: true },
-				repo: { type: 'string', required: true },
 				commentId: { type: 'number', required: true },
 				body: { type: 'string', required: true },
 			},
@@ -179,8 +167,6 @@ function getToolManifests(): ToolManifest[] {
 			description: 'Reply to a review comment on a PR.',
 			cliCommand: 'cascade-tools github reply-to-review-comment',
 			parameters: {
-				owner: { type: 'string', required: true },
-				repo: { type: 'string', required: true },
 				prNumber: { type: 'number', required: true },
 				commentId: { type: 'number', required: true },
 				body: { type: 'string', required: true },
@@ -191,8 +177,6 @@ function getToolManifests(): ToolManifest[] {
 			description: 'Submit a code review on a PR.',
 			cliCommand: 'cascade-tools github create-pr-review',
 			parameters: {
-				owner: { type: 'string', required: true },
-				repo: { type: 'string', required: true },
 				prNumber: { type: 'number', required: true },
 				event: { type: 'string', required: true },
 				body: { type: 'string', required: true },
@@ -316,6 +300,25 @@ async function buildBackendInput(
 	if (project.baseBranch) {
 		projectSecrets.CASCADE_BASE_BRANCH = project.baseBranch;
 	}
+
+	// Inject JIRA integration config so cascade-tools can construct JiraPMProvider
+	if (project.jira) {
+		projectSecrets.CASCADE_JIRA_PROJECT_KEY = project.jira.projectKey;
+		projectSecrets.CASCADE_JIRA_BASE_URL = project.jira.baseUrl;
+		if (project.jira.statuses) {
+			projectSecrets.CASCADE_JIRA_STATUSES = JSON.stringify(project.jira.statuses);
+		}
+	}
+
+	// Inject repo owner/name so cascade-tools auto-resolve without flags
+	const [repoOwner, repoName] = (project.repo || '').split('/');
+	if (repoOwner && repoName) {
+		projectSecrets.CASCADE_REPO_OWNER = repoOwner;
+		projectSecrets.CASCADE_REPO_NAME = repoName;
+	}
+
+	// Inject agent type so Finish command can validate without flags
+	projectSecrets.CASCADE_AGENT_TYPE = agentType;
 
 	return {
 		agentType,

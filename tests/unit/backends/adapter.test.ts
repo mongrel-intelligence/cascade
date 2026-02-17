@@ -512,6 +512,9 @@ describe('executeWithBackend', () => {
 			GITHUB_TOKEN: 'proj-gh-token',
 			TRELLO_API_KEY: 'proj-trello-key',
 			CASCADE_BASE_BRANCH: 'main',
+			CASCADE_REPO_OWNER: 'owner',
+			CASCADE_REPO_NAME: 'repo',
+			CASCADE_AGENT_TYPE: 'implementation',
 		});
 	});
 
@@ -552,6 +555,9 @@ describe('executeWithBackend', () => {
 		const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
 		expect(backendInput.projectSecrets).toEqual({
 			CASCADE_BASE_BRANCH: 'main',
+			CASCADE_REPO_OWNER: 'owner',
+			CASCADE_REPO_NAME: 'repo',
+			CASCADE_AGENT_TYPE: 'implementation',
 		});
 	});
 

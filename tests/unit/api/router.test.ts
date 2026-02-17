@@ -56,6 +56,7 @@ vi.mock('../../../src/db/repositories/settingsRepository.js', () => ({
 	createAgentConfig: vi.fn(),
 	updateAgentConfig: vi.fn(),
 	deleteAgentConfig: vi.fn(),
+	listAllOrganizations: vi.fn(),
 }));
 
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
@@ -127,6 +128,7 @@ describe('appRouter', () => {
 		const procedures = Object.keys(appRouter._def.procedures);
 		expect(procedures).toContain('organization.get');
 		expect(procedures).toContain('organization.update');
+		expect(procedures).toContain('organization.list');
 	});
 
 	it('has defaults sub-router with all procedures', () => {

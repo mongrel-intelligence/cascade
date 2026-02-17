@@ -7,7 +7,7 @@ import { protectedProcedure, router } from '../trpc.js';
 
 export const defaultsRouter = router({
 	get: protectedProcedure.query(async ({ ctx }) => {
-		return getCascadeDefaults(ctx.user.orgId);
+		return getCascadeDefaults(ctx.effectiveOrgId);
 	}),
 
 	upsert: protectedProcedure
@@ -23,6 +23,6 @@ export const defaultsRouter = router({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			await upsertCascadeDefaults(ctx.user.orgId, input);
+			await upsertCascadeDefaults(ctx.effectiveOrgId, input);
 		}),
 });

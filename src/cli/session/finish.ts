@@ -25,7 +25,7 @@ export default class Finish extends Command {
 		const { flags } = await this.parse(Finish);
 
 		const result = await validateFinish({
-			agentType: flags['agent-type'] ?? null,
+			agentType: flags['agent-type'] ?? process.env.CASCADE_AGENT_TYPE ?? null,
 			prCreated: flags['pr-created'],
 			reviewSubmitted: flags['review-submitted'],
 		});

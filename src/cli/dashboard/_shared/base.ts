@@ -8,6 +8,7 @@ export abstract class DashboardCommand extends Command {
 	static override baseFlags = {
 		json: Flags.boolean({ description: 'Output as JSON', default: false }),
 		server: Flags.string({ description: 'Override server URL' }),
+		org: Flags.string({ description: 'Override organization context (admin only)' }),
 	};
 
 	private _client: DashboardClient | undefined;
@@ -27,17 +28,20 @@ export abstract class DashboardCommand extends Command {
 	protected get client(): DashboardClient {
 		if (!this._client) {
 			const config = this.config_;
-			// Allow --server flag to override
+			// Allow --server and --org flags to override
 			const flags = this.parseBaseFlags();
 			if (flags?.server) {
 				config.serverUrl = flags.server;
+			}
+			if (flags?.org) {
+				config.orgId = flags.org;
 			}
 			this._client = createDashboardClient(config);
 		}
 		return this._client;
 	}
 
-	private parseBaseFlags(): { server?: string; json?: boolean } | undefined {
+	private parseBaseFlags(): { server?: string; json?: boolean; org?: string } | undefined {
 		// Base flags are parsed in run() — this is a fallback for the getter
 		return undefined;
 	}

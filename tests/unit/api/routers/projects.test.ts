@@ -90,7 +90,7 @@ describe('projectsRouter', () => {
 				{ id: 'p1', name: 'Project 1' },
 				{ id: 'p2', name: 'Project 2' },
 			]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.list();
 
@@ -103,14 +103,14 @@ describe('projectsRouter', () => {
 
 		it('returns empty array when org has no projects', async () => {
 			mockListProjectsForOrg.mockResolvedValue([]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.list();
 			expect(result).toEqual([]);
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 
 			await expect(caller.list()).rejects.toThrow(TRPCError);
 			await expect(caller.list()).rejects.toMatchObject({
@@ -127,7 +127,7 @@ describe('projectsRouter', () => {
 		it('returns all project columns', async () => {
 			const projects = [{ id: 'p1', name: 'Project 1', repo: 'owner/repo1', baseBranch: 'main' }];
 			mockListProjectsFull.mockResolvedValue(projects);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.listFull();
 
@@ -136,7 +136,7 @@ describe('projectsRouter', () => {
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.listFull()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 		});
 	});
@@ -145,7 +145,7 @@ describe('projectsRouter', () => {
 		it('returns project when found', async () => {
 			const project = { id: 'p1', orgId: 'org-1', name: 'Project 1' };
 			mockGetProjectFull.mockResolvedValue(project);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.getById({ id: 'p1' });
 
@@ -155,7 +155,7 @@ describe('projectsRouter', () => {
 
 		it('throws NOT_FOUND when project does not exist', async () => {
 			mockGetProjectFull.mockResolvedValue(null);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.getById({ id: 'missing' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -167,7 +167,7 @@ describe('projectsRouter', () => {
 		it('creates project with required fields', async () => {
 			const created = { id: 'my-project', orgId: 'org-1', name: 'My Project', repo: 'owner/repo' };
 			mockCreateProject.mockResolvedValue(created);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.create({
 				id: 'my-project',
@@ -184,14 +184,14 @@ describe('projectsRouter', () => {
 		});
 
 		it('rejects invalid id format', async () => {
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(
 				caller.create({ id: 'INVALID ID!', name: 'X', repo: 'owner/repo' }),
 			).rejects.toThrow();
 		});
 
 		it('rejects empty name', async () => {
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(
 				caller.create({ id: 'valid-id', name: '', repo: 'owner/repo' }),
 			).rejects.toThrow();
@@ -202,7 +202,7 @@ describe('projectsRouter', () => {
 		it('updates project after verifying ownership', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockUpdateProject.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.update({ id: 'p1', name: 'Updated Name', model: 'new-model' });
 
@@ -214,7 +214,7 @@ describe('projectsRouter', () => {
 
 		it('throws NOT_FOUND when project belongs to different org', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.update({ id: 'p1', name: 'X' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -227,7 +227,7 @@ describe('projectsRouter', () => {
 		it('deletes project after verifying ownership', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockDeleteProject.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.delete({ id: 'p1' });
 
@@ -236,7 +236,7 @@ describe('projectsRouter', () => {
 
 		it('throws NOT_FOUND when project belongs to different org', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.delete({ id: 'p1' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -255,7 +255,7 @@ describe('projectsRouter', () => {
 				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 				const integrations = [{ id: 1, type: 'trello', config: { boardId: 'abc' } }];
 				mockListProjectIntegrations.mockResolvedValue(integrations);
-				const caller = createCaller({ user: mockUser });
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 				const result = await caller.integrations.list({ projectId: 'p1' });
 
@@ -264,7 +264,7 @@ describe('projectsRouter', () => {
 
 			it('throws NOT_FOUND when project not owned', async () => {
 				mockDbWhere.mockResolvedValue([{ orgId: 'other-org' }]);
-				const caller = createCaller({ user: mockUser });
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 				await expect(caller.integrations.list({ projectId: 'p1' })).rejects.toMatchObject({
 					code: 'NOT_FOUND',
@@ -276,7 +276,7 @@ describe('projectsRouter', () => {
 			it('upserts integration after verifying ownership', async () => {
 				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 				mockUpsertProjectIntegration.mockResolvedValue(undefined);
-				const caller = createCaller({ user: mockUser });
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 				await caller.integrations.upsert({
 					projectId: 'p1',
@@ -294,7 +294,7 @@ describe('projectsRouter', () => {
 			it('deletes integration after verifying ownership', async () => {
 				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 				mockDeleteProjectIntegration.mockResolvedValue(undefined);
-				const caller = createCaller({ user: mockUser });
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 				await caller.integrations.delete({ projectId: 'p1', type: 'trello' });
 
@@ -315,7 +315,7 @@ describe('projectsRouter', () => {
 					{ envVarKey: 'GITHUB_TOKEN', credentialId: 42, credentialName: 'Bot', agentType: null },
 				];
 				mockListProjectOverrides.mockResolvedValue(overrides);
-				const caller = createCaller({ user: mockUser });
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 				const result = await caller.credentialOverrides.list({ projectId: 'p1' });
 
@@ -329,7 +329,7 @@ describe('projectsRouter', () => {
 				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
 				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
 				mockSetProjectCredentialOverride.mockResolvedValue(undefined);
-				const caller = createCaller({ user: mockUser });
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 				await caller.credentialOverrides.set({
 					projectId: 'p1',
@@ -343,7 +343,7 @@ describe('projectsRouter', () => {
 			it('throws NOT_FOUND when credential belongs to different org', async () => {
 				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project OK
 				mockDbWhere.mockResolvedValueOnce([{ orgId: 'different-org' }]); // credential not owned
-				const caller = createCaller({ user: mockUser });
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 				await expect(
 					caller.credentialOverrides.set({
@@ -359,7 +359,7 @@ describe('projectsRouter', () => {
 			it('removes override after verifying ownership', async () => {
 				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 				mockRemoveProjectCredentialOverride.mockResolvedValue(undefined);
-				const caller = createCaller({ user: mockUser });
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 				await caller.credentialOverrides.remove({
 					projectId: 'p1',
@@ -375,7 +375,7 @@ describe('projectsRouter', () => {
 				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project
 				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // credential
 				mockSetAgentCredentialOverride.mockResolvedValue(undefined);
-				const caller = createCaller({ user: mockUser });
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 				await caller.credentialOverrides.setAgent({
 					projectId: 'p1',
@@ -397,7 +397,7 @@ describe('projectsRouter', () => {
 			it('removes agent-scoped override after verifying ownership', async () => {
 				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 				mockRemoveAgentCredentialOverride.mockResolvedValue(undefined);
-				const caller = createCaller({ user: mockUser });
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 				await caller.credentialOverrides.removeAgent({
 					projectId: 'p1',

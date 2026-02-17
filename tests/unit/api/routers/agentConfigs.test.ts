@@ -55,7 +55,7 @@ describe('agentConfigsRouter', () => {
 		it('lists org-scoped configs when no projectId', async () => {
 			const configs = [{ id: 1, agentType: 'implementation', model: 'claude-sonnet-4-5-20250929' }];
 			mockListAgentConfigs.mockResolvedValue(configs);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.list();
 
@@ -67,7 +67,7 @@ describe('agentConfigsRouter', () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			const configs = [{ id: 2, agentType: 'review', projectId: 'proj-1' }];
 			mockListAgentConfigs.mockResolvedValue(configs);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.list({ projectId: 'proj-1' });
 
@@ -77,7 +77,7 @@ describe('agentConfigsRouter', () => {
 
 		it('throws NOT_FOUND when project does not belong to org', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.list({ projectId: 'proj-x' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -86,7 +86,7 @@ describe('agentConfigsRouter', () => {
 
 		it('throws NOT_FOUND when project does not exist', async () => {
 			mockDbWhere.mockResolvedValue([]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.list({ projectId: 'missing' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -94,7 +94,7 @@ describe('agentConfigsRouter', () => {
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.list()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 		});
 	});
@@ -102,7 +102,7 @@ describe('agentConfigsRouter', () => {
 	describe('create', () => {
 		it('creates org-scoped config', async () => {
 			mockCreateAgentConfig.mockResolvedValue({ id: 10 });
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.create({
 				agentType: 'implementation',
@@ -125,7 +125,7 @@ describe('agentConfigsRouter', () => {
 		it('creates project-scoped config after verifying ownership', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockCreateAgentConfig.mockResolvedValue({ id: 11 });
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.create({
 				projectId: 'proj-1',
@@ -144,7 +144,7 @@ describe('agentConfigsRouter', () => {
 
 		it('throws NOT_FOUND when project does not belong to org', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(
 				caller.create({ projectId: 'proj-x', agentType: 'review' }),
@@ -152,12 +152,12 @@ describe('agentConfigsRouter', () => {
 		});
 
 		it('rejects empty agentType', async () => {
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.create({ agentType: '' })).rejects.toThrow();
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.create({ agentType: 'test' })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
@@ -169,7 +169,7 @@ describe('agentConfigsRouter', () => {
 			// First call: find config
 			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1', projectId: null }]);
 			mockUpdateAgentConfig.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.update({ id: 10, model: 'new-model', maxIterations: 30 });
 
@@ -185,7 +185,7 @@ describe('agentConfigsRouter', () => {
 			// Second call: verify project
 			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
 			mockUpdateAgentConfig.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.update({ id: 11, agentBackend: 'claude-code' });
 
@@ -196,7 +196,7 @@ describe('agentConfigsRouter', () => {
 
 		it('throws NOT_FOUND when config does not exist', async () => {
 			mockDbWhere.mockResolvedValue([]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.update({ id: 999, model: 'x' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -205,7 +205,7 @@ describe('agentConfigsRouter', () => {
 
 		it('throws NOT_FOUND when org-scoped config belongs to different org', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'different-org', projectId: null }]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.update({ id: 10, model: 'x' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -213,7 +213,7 @@ describe('agentConfigsRouter', () => {
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.update({ id: 10, model: 'x' })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
@@ -224,7 +224,7 @@ describe('agentConfigsRouter', () => {
 		it('deletes org-scoped config', async () => {
 			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1', projectId: null }]);
 			mockDeleteAgentConfig.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.delete({ id: 10 });
 
@@ -235,7 +235,7 @@ describe('agentConfigsRouter', () => {
 			mockDbWhere.mockResolvedValueOnce([{ orgId: null, projectId: 'proj-1' }]);
 			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
 			mockDeleteAgentConfig.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.delete({ id: 11 });
 
@@ -244,7 +244,7 @@ describe('agentConfigsRouter', () => {
 
 		it('throws NOT_FOUND when config does not exist', async () => {
 			mockDbWhere.mockResolvedValue([]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.delete({ id: 999 })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -253,7 +253,7 @@ describe('agentConfigsRouter', () => {
 
 		it('throws NOT_FOUND when org-scoped config belongs to different org', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'different-org', projectId: null }]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.delete({ id: 10 })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -261,7 +261,7 @@ describe('agentConfigsRouter', () => {
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.delete({ id: 10 })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});

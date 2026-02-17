@@ -23,6 +23,11 @@ export async function updateOrganization(orgId: string, data: { name: string }) 
 	await db.update(organizations).set({ name: data.name }).where(eq(organizations.id, orgId));
 }
 
+export async function listAllOrganizations() {
+	const db = getDb();
+	return db.select({ id: organizations.id, name: organizations.name }).from(organizations);
+}
+
 // ============================================================================
 // Cascade Defaults
 // ============================================================================

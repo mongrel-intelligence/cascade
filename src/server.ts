@@ -9,6 +9,7 @@ import { logger as honoLogger } from 'hono/logger';
 import { loginHandler } from './api/auth/login.js';
 import { logoutHandler } from './api/auth/logout.js';
 import { resolveUserFromSession } from './api/auth/session.js';
+import { computeEffectiveOrgId } from './api/context.js';
 import { appRouter } from './api/router.js';
 import type { CascadeConfig } from './types/index.js';
 import { canAcceptWebhook, isCurrentlyProcessing, logger } from './utils/index.js';
@@ -53,7 +54,9 @@ export function createServer(deps: ServerDependencies): Hono {
 			createContext: async (_opts, c) => {
 				const token = getCookie(c, 'cascade_session');
 				const user = token ? await resolveUserFromSession(token) : null;
-				return { user };
+				const effectiveOrgId = await computeEffectiveOrgId(user, c.req.header('x-org-context'));
+
+				return { user, effectiveOrgId };
 			},
 		}),
 	);

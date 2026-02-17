@@ -1,14 +1,22 @@
+import { Badge } from '@/components/ui/badge.js';
+import { useOrgContext } from '@/lib/org-context.js';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { LogOut } from 'lucide-react';
 
 interface HeaderProps {
-	user: { name: string } | undefined;
+	user: { name: string; role: string } | undefined;
 }
 
 export function Header({ user }: HeaderProps) {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
+	const { effectiveOrgId, availableOrgs, isAdmin } = useOrgContext();
+
+	const orgName =
+		isAdmin && availableOrgs
+			? (availableOrgs.find((o) => o.id === effectiveOrgId)?.name ?? effectiveOrgId)
+			: null;
 
 	async function handleLogout() {
 		await fetch('/api/auth/logout', { method: 'POST' });
@@ -18,7 +26,9 @@ export function Header({ user }: HeaderProps) {
 
 	return (
 		<header className="flex h-14 items-center justify-between border-b border-border px-6">
-			<div />
+			<div className="flex items-center gap-2">
+				{isAdmin && orgName && <Badge variant="outline">{orgName}</Badge>}
+			</div>
 			<div className="flex items-center gap-4">
 				{user && <span className="text-sm text-muted-foreground">{user.name}</span>}
 				<button

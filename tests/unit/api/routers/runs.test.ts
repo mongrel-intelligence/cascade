@@ -98,7 +98,7 @@ describe('runsRouter', () => {
 	describe('list', () => {
 		it('calls listRuns with orgId from context and forwarded filters', async () => {
 			mockListRuns.mockResolvedValue({ data: [{ id: 'run-1' }], total: 1 });
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.list({
 				projectId: 'p1',
@@ -127,7 +127,7 @@ describe('runsRouter', () => {
 
 		it('converts startedAfter/startedBefore strings to Date objects', async () => {
 			mockListRuns.mockResolvedValue({ data: [], total: 0 });
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.list({
 				startedAfter: '2025-06-01T00:00:00.000Z',
@@ -144,7 +144,7 @@ describe('runsRouter', () => {
 
 		it('uses defaults for limit/offset/sort/order when not provided', async () => {
 			mockListRuns.mockResolvedValue({ data: [], total: 0 });
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.list({});
 
@@ -159,12 +159,12 @@ describe('runsRouter', () => {
 		});
 
 		it('rejects limit > 100', async () => {
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.list({ limit: 200 })).rejects.toThrow();
 		});
 
 		it('throws UNAUTHORIZED when unauthenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.list({})).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 		});
 	});
@@ -179,7 +179,7 @@ describe('runsRouter', () => {
 			mockGetRunById.mockResolvedValue(mockRun);
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.getById({ id: RUN_UUID });
 
 			expect(result).toEqual(mockRun);
@@ -187,7 +187,7 @@ describe('runsRouter', () => {
 
 		it('throws NOT_FOUND when run does not exist', async () => {
 			mockGetRunById.mockResolvedValue(null);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.getById({ id: RUN_UUID })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -201,7 +201,7 @@ describe('runsRouter', () => {
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.getById({ id: RUN_UUID })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
 			});
@@ -214,7 +214,7 @@ describe('runsRouter', () => {
 			});
 			mockDbWhere.mockResolvedValue([]);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.getById({ id: RUN_UUID })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
 			});
@@ -228,7 +228,7 @@ describe('runsRouter', () => {
 			};
 			mockGetRunById.mockResolvedValue(mockRun);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.getById({ id: RUN_UUID });
 
 			expect(result).toEqual(mockRun);
@@ -236,7 +236,7 @@ describe('runsRouter', () => {
 		});
 
 		it('rejects non-UUID id', async () => {
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.getById({ id: 'not-a-uuid' })).rejects.toThrow();
 		});
 	});
@@ -246,7 +246,7 @@ describe('runsRouter', () => {
 			const mockLogs = { cascadeLog: 'log text', llmistLog: null };
 			mockGetRunLogs.mockResolvedValue(mockLogs);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.getLogs({ runId: RUN_UUID });
 
 			expect(mockGetRunLogs).toHaveBeenCalledWith(RUN_UUID);
@@ -255,7 +255,7 @@ describe('runsRouter', () => {
 
 		it('returns null when no logs found', async () => {
 			mockGetRunLogs.mockResolvedValue(null);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.getLogs({ runId: RUN_UUID });
 			expect(result).toBeNull();
@@ -270,7 +270,7 @@ describe('runsRouter', () => {
 			];
 			mockListLlmCallsMeta.mockResolvedValue(mockMeta);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.listLlmCalls({ runId: RUN_UUID });
 
 			expect(result).toEqual(mockMeta);
@@ -282,7 +282,7 @@ describe('runsRouter', () => {
 			const mockCall = { callNumber: 3, request: '{}', response: '{}' };
 			mockGetLlmCallByNumber.mockResolvedValue(mockCall);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.getLlmCall({
 				runId: RUN_UUID,
 				callNumber: 3,
@@ -294,7 +294,7 @@ describe('runsRouter', () => {
 
 		it('throws NOT_FOUND when call does not exist', async () => {
 			mockGetLlmCallByNumber.mockResolvedValue(null);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(
 				caller.getLlmCall({
@@ -310,7 +310,7 @@ describe('runsRouter', () => {
 			const mockAnalysis = { summary: 'Agent failed', issues: 'Issue 1' };
 			mockGetDebugAnalysisByRunId.mockResolvedValue(mockAnalysis);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.getDebugAnalysis({
 				runId: RUN_UUID,
 			});
@@ -320,7 +320,7 @@ describe('runsRouter', () => {
 
 		it('returns null when no analysis exists', async () => {
 			mockGetDebugAnalysisByRunId.mockResolvedValue(null);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.getDebugAnalysis({
 				runId: RUN_UUID,
@@ -333,7 +333,7 @@ describe('runsRouter', () => {
 		it('returns running when analysis is in progress', async () => {
 			mockIsAnalysisRunning.mockReturnValue(true);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
 
 			expect(result).toEqual({ status: 'running' });
@@ -345,7 +345,7 @@ describe('runsRouter', () => {
 			mockIsAnalysisRunning.mockReturnValue(false);
 			mockGetDebugAnalysisByRunId.mockResolvedValue({ summary: 'done' });
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
 
 			expect(result).toEqual({ status: 'completed' });
@@ -355,14 +355,14 @@ describe('runsRouter', () => {
 			mockIsAnalysisRunning.mockReturnValue(false);
 			mockGetDebugAnalysisByRunId.mockResolvedValue(null);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
 
 			expect(result).toEqual({ status: 'idle' });
 		});
 
 		it('throws UNAUTHORIZED when unauthenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.getDebugAnalysisStatus({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
@@ -385,7 +385,7 @@ describe('runsRouter', () => {
 			});
 			mockDeleteDebugAnalysisByRunId.mockResolvedValue(undefined);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.triggerDebugAnalysis({ runId: RUN_UUID });
 
 			expect(result).toEqual({ triggered: true });
@@ -413,7 +413,7 @@ describe('runsRouter', () => {
 			});
 			mockDeleteDebugAnalysisByRunId.mockResolvedValue(undefined);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await caller.triggerDebugAnalysis({ runId: RUN_UUID });
 
 			expect(mockTriggerDebugAnalysis).toHaveBeenCalledWith(
@@ -427,7 +427,7 @@ describe('runsRouter', () => {
 		it('throws NOT_FOUND when run does not exist', async () => {
 			mockGetRunById.mockResolvedValue(null);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
 			});
@@ -441,7 +441,7 @@ describe('runsRouter', () => {
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
 			});
@@ -455,7 +455,7 @@ describe('runsRouter', () => {
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'BAD_REQUEST',
 			});
@@ -470,7 +470,7 @@ describe('runsRouter', () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockIsAnalysisRunning.mockReturnValue(true);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'CONFLICT',
 			});
@@ -484,7 +484,7 @@ describe('runsRouter', () => {
 			});
 			mockIsAnalysisRunning.mockReturnValue(false);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'BAD_REQUEST',
 			});
@@ -500,14 +500,14 @@ describe('runsRouter', () => {
 			mockIsAnalysisRunning.mockReturnValue(false);
 			mockLoadProjectConfigById.mockResolvedValue(undefined);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
 			});
 		});
 
 		it('throws UNAUTHORIZED when unauthenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
@@ -522,7 +522,7 @@ describe('runsRouter', () => {
 				config: {},
 			});
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.trigger({
 				projectId: 'p1',
 				agentType: 'implementation',
@@ -548,7 +548,7 @@ describe('runsRouter', () => {
 				config: {},
 			});
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await caller.trigger({
 				projectId: 'p1',
 				agentType: 'review',
@@ -571,7 +571,7 @@ describe('runsRouter', () => {
 		it('throws NOT_FOUND when project does not exist in DB', async () => {
 			mockDbWhere.mockResolvedValue([]);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(
 				caller.trigger({ projectId: 'missing', agentType: 'implementation' }),
 			).rejects.toMatchObject({ code: 'NOT_FOUND' });
@@ -580,7 +580,7 @@ describe('runsRouter', () => {
 		it('throws NOT_FOUND when project belongs to different org', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'other-org' }]);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(
 				caller.trigger({ projectId: 'p1', agentType: 'implementation' }),
 			).rejects.toMatchObject({ code: 'NOT_FOUND' });
@@ -590,14 +590,14 @@ describe('runsRouter', () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockLoadProjectConfigById.mockResolvedValue(undefined);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(
 				caller.trigger({ projectId: 'p1', agentType: 'implementation' }),
 			).rejects.toMatchObject({ code: 'NOT_FOUND' });
 		});
 
 		it('throws UNAUTHORIZED when unauthenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(
 				caller.trigger({ projectId: 'p1', agentType: 'implementation' }),
 			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
@@ -617,7 +617,7 @@ describe('runsRouter', () => {
 				config: {},
 			});
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.retry({ runId: RUN_UUID });
 
 			expect(result).toEqual({ triggered: true });
@@ -641,7 +641,7 @@ describe('runsRouter', () => {
 				config: {},
 			});
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await caller.retry({ runId: RUN_UUID, model: 'claude-opus-4-5' });
 
 			expect(mockTriggerRetryRun).toHaveBeenCalledWith(
@@ -655,7 +655,7 @@ describe('runsRouter', () => {
 		it('throws NOT_FOUND when run does not exist', async () => {
 			mockGetRunById.mockResolvedValue(null);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.retry({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
 			});
@@ -669,7 +669,7 @@ describe('runsRouter', () => {
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.retry({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
 			});
@@ -682,7 +682,7 @@ describe('runsRouter', () => {
 				agentType: 'implementation',
 			});
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.retry({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'BAD_REQUEST',
 			});
@@ -697,14 +697,14 @@ describe('runsRouter', () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockLoadProjectConfigById.mockResolvedValue(undefined);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.retry({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
 			});
 		});
 
 		it('throws UNAUTHORIZED when unauthenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.retry({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});

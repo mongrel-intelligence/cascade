@@ -110,7 +110,7 @@ describe('getAgentProfile', () => {
 			expect(profile.needsGitHubToken).toBe(true);
 		});
 
-		it('buildTaskPrompt includes PR number, branch, owner, and repo', () => {
+		it('buildTaskPrompt includes PR number and branch', () => {
 			const prompt = profile.buildTaskPrompt({
 				prNumber: 42,
 				prBranch: 'fix/ci-errors',
@@ -121,8 +121,6 @@ describe('getAgentProfile', () => {
 
 			expect(prompt).toContain('PR #42');
 			expect(prompt).toContain('fix/ci-errors');
-			expect(prompt).toContain('acme');
-			expect(prompt).toContain('widgets');
 			expect(prompt).toContain('CI checks have failed');
 		});
 
@@ -197,8 +195,6 @@ describe('getAgentProfile', () => {
 
 			expect(prompt).toContain('PR #99');
 			expect(prompt).toContain('feat/new-thing');
-			expect(prompt).toContain('acme');
-			expect(prompt).toContain('widgets');
 			expect(prompt).toContain('Can you fix the typo on line 5?');
 			expect(prompt).toContain('src/utils.ts');
 		});

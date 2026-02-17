@@ -10,9 +10,13 @@ export function createDashboardClient(config: CliConfig) {
 			httpBatchLink({
 				url: `${config.serverUrl}/trpc`,
 				headers() {
-					return {
+					const headers: Record<string, string> = {
 						Cookie: `cascade_session=${config.sessionToken}`,
 					};
+					if (config.orgId) {
+						headers['x-org-context'] = config.orgId;
+					}
+					return headers;
 				},
 			}),
 		],

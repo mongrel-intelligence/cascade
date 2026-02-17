@@ -36,7 +36,7 @@ export const runsRouter = router({
 		)
 		.query(async ({ ctx, input }) => {
 			return listRuns({
-				orgId: ctx.user.orgId,
+				orgId: ctx.effectiveOrgId,
 				projectId: input.projectId,
 				status: input.status,
 				agentType: input.agentType,
@@ -62,7 +62,7 @@ export const runsRouter = router({
 					.select({ orgId: projects.orgId })
 					.from(projects)
 					.where(eq(projects.id, run.projectId));
-				if (!project || project.orgId !== ctx.user.orgId) {
+				if (!project || project.orgId !== ctx.effectiveOrgId) {
 					throw new TRPCError({ code: 'NOT_FOUND' });
 				}
 			}
@@ -124,7 +124,7 @@ export const runsRouter = router({
 					.select({ orgId: projects.orgId })
 					.from(projects)
 					.where(eq(projects.id, run.projectId));
-				if (!project || project.orgId !== ctx.user.orgId) {
+				if (!project || project.orgId !== ctx.effectiveOrgId) {
 					throw new TRPCError({ code: 'NOT_FOUND' });
 				}
 			}
@@ -195,7 +195,7 @@ export const runsRouter = router({
 				.from(projects)
 				.where(eq(projects.id, input.projectId));
 
-			if (!project || project.orgId !== ctx.user.orgId) {
+			if (!project || project.orgId !== ctx.effectiveOrgId) {
 				throw new TRPCError({
 					code: 'NOT_FOUND',
 					message: 'Project not found',
@@ -253,7 +253,7 @@ export const runsRouter = router({
 					.select({ orgId: projects.orgId })
 					.from(projects)
 					.where(eq(projects.id, run.projectId));
-				if (!project || project.orgId !== ctx.user.orgId) {
+				if (!project || project.orgId !== ctx.effectiveOrgId) {
 					throw new TRPCError({ code: 'NOT_FOUND' });
 				}
 			}

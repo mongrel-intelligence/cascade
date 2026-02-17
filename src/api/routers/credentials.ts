@@ -19,7 +19,7 @@ function maskValue(value: string): string {
 
 export const credentialsRouter = router({
 	list: protectedProcedure.query(async ({ ctx }) => {
-		const rows = await listOrgCredentials(ctx.user.orgId);
+		const rows = await listOrgCredentials(ctx.effectiveOrgId);
 		return rows.map((row) => ({
 			...row,
 			value: maskValue(row.value),
@@ -38,7 +38,7 @@ export const credentialsRouter = router({
 		)
 		.mutation(async ({ ctx, input }) => {
 			return createCredential({
-				orgId: ctx.user.orgId,
+				orgId: ctx.effectiveOrgId,
 				name: input.name,
 				envVarKey: input.envVarKey,
 				value: input.value,
@@ -64,7 +64,7 @@ export const credentialsRouter = router({
 				.select({ orgId: credentials.orgId })
 				.from(credentials)
 				.where(eq(credentials.id, input.id));
-			if (!cred || cred.orgId !== ctx.user.orgId) {
+			if (!cred || cred.orgId !== ctx.effectiveOrgId) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 
@@ -81,7 +81,7 @@ export const credentialsRouter = router({
 				.select({ orgId: credentials.orgId })
 				.from(credentials)
 				.where(eq(credentials.id, input.id));
-			if (!cred || cred.orgId !== ctx.user.orgId) {
+			if (!cred || cred.orgId !== ctx.effectiveOrgId) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 
@@ -96,7 +96,7 @@ export const credentialsRouter = router({
 				.select({ orgId: credentials.orgId, value: credentials.value })
 				.from(credentials)
 				.where(eq(credentials.id, input.credentialId));
-			if (!cred || cred.orgId !== ctx.user.orgId) {
+			if (!cred || cred.orgId !== ctx.effectiveOrgId) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 
