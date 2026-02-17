@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { logWebhookCall } from '../utils/webhookLogger.js';
 import { type RouterProjectConfig, getProjectConfig, loadProjectConfig } from './config.js';
 import { type CascadeJob, addJob, getQueueStats } from './queue.js';
 import {
@@ -151,14 +152,37 @@ app.on(['HEAD', 'GET'], '/trello/webhook', (c) => {
 
 // Trello webhook handler
 app.post('/trello/webhook', async (c) => {
+	const rawHeaders = Object.fromEntries(
+		Object.entries(c.req.header()).map(([k, v]) => [k, String(v)]),
+	);
 	let payload: unknown;
 	try {
 		payload = await c.req.json();
 	} catch {
+		logWebhookCall({
+			source: 'trello',
+			method: c.req.method,
+			path: c.req.path,
+			headers: rawHeaders,
+			statusCode: 400,
+			processed: false,
+		});
 		return c.text('Bad Request', 400);
 	}
 
 	const { shouldProcess, project, actionType, cardId } = parseTrelloWebhook(payload);
+
+	logWebhookCall({
+		source: 'trello',
+		method: c.req.method,
+		path: c.req.path,
+		headers: rawHeaders,
+		body: payload,
+		statusCode: 200,
+		projectId: project?.id,
+		eventType: actionType,
+		processed: shouldProcess && !!project && !!cardId,
+	});
 
 	if (shouldProcess && project && cardId) {
 		console.log('[Router] Queueing Trello job:', { actionType, cardId, projectId: project.id });
@@ -196,6 +220,9 @@ app.get('/github/webhook', (c) => {
 app.post('/github/webhook', async (c) => {
 	const eventType = c.req.header('X-GitHub-Event') || 'unknown';
 	const contentType = c.req.header('Content-Type') || '';
+	const rawHeaders = Object.fromEntries(
+		Object.entries(c.req.header()).map(([k, v]) => [k, String(v)]),
+	);
 
 	let payload: unknown;
 
@@ -218,6 +245,16 @@ app.post('/github/webhook', async (c) => {
 			contentType,
 			eventType,
 		});
+		logWebhookCall({
+			source: 'github',
+			method: c.req.method,
+			path: c.req.path,
+			headers: rawHeaders,
+			bodyRaw: String(err),
+			statusCode: 400,
+			eventType,
+			processed: false,
+		});
 		return c.text('Bad Request', 400);
 	}
 
@@ -235,6 +272,17 @@ app.post('/github/webhook', async (c) => {
 		'check_suite',
 	];
 	const shouldProcess = processableEvents.includes(eventType);
+
+	logWebhookCall({
+		source: 'github',
+		method: c.req.method,
+		path: c.req.path,
+		headers: rawHeaders,
+		body: payload,
+		statusCode: 200,
+		eventType,
+		processed: shouldProcess,
+	});
 
 	if (shouldProcess) {
 		console.log('[Router] Queueing GitHub job:', { eventType, repoFullName });
@@ -268,10 +316,21 @@ app.get('/jira/webhook', (c) => {
 
 // JIRA webhook handler
 app.post('/jira/webhook', async (c) => {
+	const rawHeaders = Object.fromEntries(
+		Object.entries(c.req.header()).map(([k, v]) => [k, String(v)]),
+	);
 	let payload: unknown;
 	try {
 		payload = await c.req.json();
 	} catch {
+		logWebhookCall({
+			source: 'jira',
+			method: c.req.method,
+			path: c.req.path,
+			headers: rawHeaders,
+			statusCode: 400,
+			processed: false,
+		});
 		return c.text('Bad Request', 400);
 	}
 
@@ -296,6 +355,18 @@ app.post('/jira/webhook', async (c) => {
 		'comment_updated',
 	];
 	const shouldProcess = project && processableEvents.some((e) => webhookEvent.startsWith(e));
+
+	logWebhookCall({
+		source: 'jira',
+		method: c.req.method,
+		path: c.req.path,
+		headers: rawHeaders,
+		body: payload,
+		statusCode: 200,
+		projectId: project?.id,
+		eventType: webhookEvent || undefined,
+		processed: !!shouldProcess,
+	});
 
 	if (shouldProcess && project) {
 		console.log('[Router] Queueing JIRA job:', { webhookEvent, issueKey, projectId: project.id });
