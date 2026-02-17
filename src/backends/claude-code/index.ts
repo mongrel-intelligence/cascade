@@ -16,6 +16,7 @@ import type {
 	ContextInjection,
 	ToolManifest,
 } from '../types.js';
+import { filterProcessEnv } from './env.js';
 import { buildHooks } from './hooks.js';
 import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
 
@@ -137,9 +138,12 @@ export function ensureOnboardingFlag(): void {
 /**
  * Build environment variables to pass through to the SDK subprocess.
  *
- * Inherits the full process.env so the subprocess has access to HOME, PATH,
- * and ~/.claude/ (needed for subscription auth). CASCADE-specific vars are
- * explicitly ensured.
+ * Uses an allowlist filter on process.env so only safe system variables
+ * (HOME, PATH, locale, etc.) reach the subprocess. Server-side secrets
+ * like DATABASE_URL are never passed through.
+ *
+ * Project-specific secrets (GITHUB_TOKEN, TRELLO_API_KEY, etc.) are
+ * injected via projectSecrets, which are layered on top.
  *
  * Auth (handled by SDK via inherited env vars):
  * - CLAUDE_CODE_OAUTH_TOKEN — long-lived OAuth token from `claude setup-token`
@@ -148,14 +152,10 @@ export function buildEnv(projectSecrets?: Record<string, string>): {
 	env: Record<string, string | undefined>;
 } {
 	const env: Record<string, string | undefined> = {
-		...process.env,
+		...filterProcessEnv(process.env),
 		...projectSecrets,
 		CLAUDE_AGENT_SDK_CLIENT_APP: 'cascade/1.0.0',
 	};
-
-	// Prevent debugger/inspector variables from contaminating the subprocess
-	env.NODE_OPTIONS = undefined;
-	env.VSCODE_INSPECTOR_OPTIONS = undefined;
 
 	// Always ensure onboarding flag exists (required for both API key and subscription auth)
 	ensureOnboardingFlag();

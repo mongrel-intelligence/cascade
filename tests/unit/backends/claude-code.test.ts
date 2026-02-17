@@ -795,14 +795,103 @@ describe('buildEnv', () => {
 		}
 	});
 
-	it('uses process.env values when no projectSecrets provided', () => {
+	it('does not pass non-allowlisted process.env vars through', () => {
 		process.env.GITHUB_TOKEN = 'global-token';
 
 		try {
 			const { env } = buildEnv();
-			expect(env.GITHUB_TOKEN).toBe('global-token');
+			expect(env.GITHUB_TOKEN).toBeUndefined();
 		} finally {
 			unsetEnv('GITHUB_TOKEN');
 		}
+	});
+
+	it('non-allowlisted vars are available via projectSecrets', () => {
+		const { env } = buildEnv({ GITHUB_TOKEN: 'project-token' });
+		expect(env.GITHUB_TOKEN).toBe('project-token');
+	});
+
+	it('blocks DATABASE_URL from process.env', () => {
+		process.env.DATABASE_URL = 'postgres://secret@localhost/db';
+
+		try {
+			const { env } = buildEnv();
+			expect(env.DATABASE_URL).toBeUndefined();
+		} finally {
+			unsetEnv('DATABASE_URL');
+		}
+	});
+
+	it('blocks REDIS_URL from process.env', () => {
+		process.env.REDIS_URL = 'redis://localhost:6379';
+
+		try {
+			const { env } = buildEnv();
+			expect(env.REDIS_URL).toBeUndefined();
+		} finally {
+			unsetEnv('REDIS_URL');
+		}
+	});
+
+	it('blocks JOB_ID, JOB_TYPE, JOB_DATA from process.env', () => {
+		process.env.JOB_ID = '123';
+		process.env.JOB_TYPE = 'implementation';
+		process.env.JOB_DATA = '{"card":"c1"}';
+
+		try {
+			const { env } = buildEnv();
+			expect(env.JOB_ID).toBeUndefined();
+			expect(env.JOB_TYPE).toBeUndefined();
+			expect(env.JOB_DATA).toBeUndefined();
+		} finally {
+			unsetEnv('JOB_ID');
+			unsetEnv('JOB_TYPE');
+			unsetEnv('JOB_DATA');
+		}
+	});
+
+	it('blocks unknown/custom vars from process.env', () => {
+		process.env.MY_CUSTOM_SECRET = 'secret-value';
+
+		try {
+			const { env } = buildEnv();
+			expect(env.MY_CUSTOM_SECRET).toBeUndefined();
+		} finally {
+			unsetEnv('MY_CUSTOM_SECRET');
+		}
+	});
+
+	it('passes through HOME and PATH from process.env', () => {
+		const { env } = buildEnv();
+		expect(env.HOME).toBe(process.env.HOME);
+		expect(env.PATH).toBe(process.env.PATH);
+	});
+
+	it('passes through LC_*, GIT_*, SSH_* prefixed vars', () => {
+		process.env.LC_ALL = 'en_US.UTF-8';
+		process.env.GIT_AUTHOR_NAME = 'Test';
+		process.env.SSH_AUTH_SOCK = '/tmp/ssh.sock';
+
+		try {
+			const { env } = buildEnv();
+			expect(env.LC_ALL).toBe('en_US.UTF-8');
+			expect(env.GIT_AUTHOR_NAME).toBe('Test');
+			expect(env.SSH_AUTH_SOCK).toBe('/tmp/ssh.sock');
+		} finally {
+			unsetEnv('LC_ALL');
+			unsetEnv('GIT_AUTHOR_NAME');
+			unsetEnv('SSH_AUTH_SOCK');
+		}
+	});
+
+	it('projectSecrets override and inject correctly', () => {
+		const { env } = buildEnv({
+			GITHUB_TOKEN: 'proj-gh',
+			TRELLO_API_KEY: 'proj-trello',
+			CUSTOM_VAR: 'custom-val',
+		});
+		expect(env.GITHUB_TOKEN).toBe('proj-gh');
+		expect(env.TRELLO_API_KEY).toBe('proj-trello');
+		expect(env.CUSTOM_VAR).toBe('custom-val');
 	});
 });
