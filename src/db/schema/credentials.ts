@@ -12,7 +12,6 @@ export const credentials = pgTable(
 		name: text('name').notNull(),
 		envVarKey: text('env_var_key').notNull(),
 		value: text('value').notNull(),
-		description: text('description'),
 		isDefault: boolean('is_default').notNull().default(false),
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')

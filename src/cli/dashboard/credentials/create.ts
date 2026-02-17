@@ -12,7 +12,6 @@ export default class CredentialsCreate extends DashboardCommand {
 			required: true,
 		}),
 		value: Flags.string({ description: 'Credential value', required: true }),
-		description: Flags.string({ description: 'Optional description' }),
 		default: Flags.boolean({ description: 'Set as org default', default: false }),
 	};
 
@@ -24,7 +23,6 @@ export default class CredentialsCreate extends DashboardCommand {
 				name: flags.name,
 				envVarKey: flags.key,
 				value: flags.value,
-				description: flags.description,
 				isDefault: flags.default,
 			});
 
