@@ -1,6 +1,7 @@
 import { DebugAnalysis } from '@/components/debug/debug-analysis.js';
 import { LlmCallList } from '@/components/llm-calls/llm-call-list.js';
 import { LogViewer } from '@/components/logs/log-viewer.js';
+import { RetryRunButton } from '@/components/runs/retry-run-button.js';
 import { RunStatusBadge } from '@/components/runs/run-status-badge.js';
 import { RunSummaryCard } from '@/components/runs/run-summary-card.js';
 import { trpc } from '@/lib/trpc.js';
@@ -49,6 +50,7 @@ function RunDetailPage() {
 				<span className="text-muted-foreground">/</span>
 				<h1 className="text-xl font-bold">{run.agentType}</h1>
 				<RunStatusBadge status={run.status} />
+				<RetryRunButton runId={run.id} status={run.status} />
 			</div>
 
 			<div className="border-b border-border">

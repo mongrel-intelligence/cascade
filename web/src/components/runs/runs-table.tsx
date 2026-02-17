@@ -1,6 +1,7 @@
 import { formatCost, formatDuration, formatRelativeTime } from '@/lib/utils.js';
 import { Link } from '@tanstack/react-router';
 import { ExternalLink } from 'lucide-react';
+import { RetryRunButton } from './retry-run-button.js';
 import { RunStatusBadge } from './run-status-badge.js';
 
 interface Run {
@@ -41,12 +42,13 @@ export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTabl
 							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Cost</th>
 							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Iterations</th>
 							<th className="px-4 py-3 text-center font-medium text-muted-foreground">PR</th>
+							<th className="px-4 py-3 text-center font-medium text-muted-foreground">Actions</th>
 						</tr>
 					</thead>
 					<tbody>
 						{runs.length === 0 && (
 							<tr>
-								<td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+								<td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
 									No runs found
 								</td>
 							</tr>
@@ -90,6 +92,9 @@ export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTabl
 									) : (
 										'-'
 									)}
+								</td>
+								<td className="px-4 py-3 text-center">
+									<RetryRunButton runId={run.id} status={run.status} />
 								</td>
 							</tr>
 						))}

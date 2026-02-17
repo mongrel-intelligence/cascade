@@ -1,0 +1,43 @@
+import { Button } from '@/components/ui/button.js';
+import { trpc, trpcClient } from '@/lib/trpc.js';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { RefreshCw } from 'lucide-react';
+
+interface RetryRunButtonProps {
+	runId: string;
+	status: string;
+}
+
+export function RetryRunButton({ runId, status }: RetryRunButtonProps) {
+	const queryClient = useQueryClient();
+
+	const retryMutation = useMutation({
+		mutationFn: () => trpcClient.runs.retry.mutate({ runId }),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: trpc.runs.list.queryOptions({}).queryKey });
+			queryClient.invalidateQueries({
+				queryKey: trpc.runs.getById.queryOptions({ id: runId }).queryKey,
+			});
+		},
+	});
+
+	if (status === 'running') {
+		return null;
+	}
+
+	return (
+		<Button
+			variant="outline"
+			size="sm"
+			onClick={(e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				retryMutation.mutate();
+			}}
+			disabled={retryMutation.isPending}
+			title="Retry run"
+		>
+			<RefreshCw className="h-4 w-4" />
+		</Button>
+	);
+}
