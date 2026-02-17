@@ -13,6 +13,7 @@ import { computeEffectiveOrgId } from './api/context.js';
 import { appRouter } from './api/router.js';
 import type { CascadeConfig } from './types/index.js';
 import { canAcceptWebhook, isCurrentlyProcessing, logger } from './utils/index.js';
+import { logWebhookCall } from './utils/webhookLogger.js';
 
 export interface ServerDependencies {
 	config: CascadeConfig;
@@ -77,9 +78,31 @@ export function createServer(deps: ServerDependencies): Hono {
 			return c.text('Service Unavailable', 503);
 		}
 
+		const bodyRaw = await c.req.text();
 		try {
-			const payload = await c.req.json();
+			const payload = JSON.parse(bodyRaw);
 			logger.debug('Received Trello webhook', { action: payload?.action?.type });
+
+			const eventType = (payload as Record<string, unknown>)?.action
+				? (((payload as Record<string, unknown>).action as Record<string, unknown>)?.type as
+						| string
+						| undefined)
+				: undefined;
+
+			logWebhookCall({
+				source: 'trello',
+				method: 'POST',
+				path: '/trello/webhook',
+				headers: {
+					'content-type': c.req.header('content-type') ?? '',
+					'x-forwarded-for': c.req.header('x-forwarded-for') ?? '',
+				},
+				body: payload,
+				bodyRaw,
+				statusCode: 200,
+				eventType: eventType,
+				processed: true,
+			});
 
 			// Process asynchronously - respond immediately
 			setImmediate(() => {
@@ -94,6 +117,14 @@ export function createServer(deps: ServerDependencies): Hono {
 			return c.text('OK', 200);
 		} catch (err) {
 			logger.error('Failed to parse Trello webhook', { error: String(err) });
+			logWebhookCall({
+				source: 'trello',
+				method: 'POST',
+				path: '/trello/webhook',
+				bodyRaw,
+				statusCode: 400,
+				processed: false,
+			});
 			return c.text('Bad Request', 400);
 		}
 	});
@@ -111,6 +142,7 @@ export function createServer(deps: ServerDependencies): Hono {
 
 		const eventType = c.req.header('X-GitHub-Event') || 'unknown';
 		const contentType = c.req.header('Content-Type') || '';
+		const bodyRaw = await c.req.text();
 
 		let payload: unknown;
 
@@ -118,8 +150,8 @@ export function createServer(deps: ServerDependencies): Hono {
 			// GitHub can send webhooks as JSON or form-urlencoded
 			if (contentType.includes('application/x-www-form-urlencoded')) {
 				// Form-urlencoded: payload is in the 'payload' field
-				const formData = await c.req.parseBody();
-				const payloadStr = formData.payload;
+				const params = new URLSearchParams(bodyRaw);
+				const payloadStr = params.get('payload');
 				if (typeof payloadStr === 'string') {
 					payload = JSON.parse(payloadStr);
 				} else {
@@ -127,7 +159,7 @@ export function createServer(deps: ServerDependencies): Hono {
 				}
 			} else {
 				// Assume JSON
-				payload = await c.req.json();
+				payload = JSON.parse(bodyRaw);
 			}
 
 			logger.info('Received GitHub webhook', {
@@ -136,6 +168,22 @@ export function createServer(deps: ServerDependencies): Hono {
 				action: (payload as Record<string, unknown>)?.action,
 				repository: ((payload as Record<string, unknown>)?.repository as Record<string, unknown>)
 					?.full_name,
+			});
+
+			logWebhookCall({
+				source: 'github',
+				method: 'POST',
+				path: '/github/webhook',
+				headers: {
+					'x-github-event': eventType,
+					'content-type': contentType,
+					'x-forwarded-for': c.req.header('x-forwarded-for') ?? '',
+				},
+				body: payload,
+				bodyRaw,
+				statusCode: 200,
+				eventType,
+				processed: true,
 			});
 
 			// Process asynchronously - respond immediately
@@ -155,6 +203,16 @@ export function createServer(deps: ServerDependencies): Hono {
 				contentType,
 				eventType,
 			});
+			logWebhookCall({
+				source: 'github',
+				method: 'POST',
+				path: '/github/webhook',
+				headers: { 'x-github-event': eventType, 'content-type': contentType },
+				bodyRaw,
+				statusCode: 400,
+				eventType,
+				processed: false,
+			});
 			return c.text('Bad Request', 400);
 		}
 	});
@@ -171,11 +229,28 @@ export function createServer(deps: ServerDependencies): Hono {
 			return c.text('Service Unavailable', 503);
 		}
 
+		const bodyRaw = await c.req.text();
 		try {
-			const payload = await c.req.json();
+			const payload = JSON.parse(bodyRaw);
+			const eventType = (payload as Record<string, unknown>)?.webhookEvent as string | undefined;
 			logger.info('Received JIRA webhook', {
-				event: (payload as Record<string, unknown>)?.webhookEvent,
+				event: eventType,
 				issueKey: ((payload as Record<string, unknown>)?.issue as Record<string, unknown>)?.key,
+			});
+
+			logWebhookCall({
+				source: 'jira',
+				method: 'POST',
+				path: '/jira/webhook',
+				headers: {
+					'content-type': c.req.header('content-type') ?? '',
+					'x-forwarded-for': c.req.header('x-forwarded-for') ?? '',
+				},
+				body: payload,
+				bodyRaw,
+				statusCode: 200,
+				eventType,
+				processed: true,
 			});
 
 			// Process asynchronously - respond immediately
@@ -191,6 +266,14 @@ export function createServer(deps: ServerDependencies): Hono {
 			return c.text('OK', 200);
 		} catch (err) {
 			logger.error('Failed to parse JIRA webhook', { error: String(err) });
+			logWebhookCall({
+				source: 'jira',
+				method: 'POST',
+				path: '/jira/webhook',
+				bodyRaw,
+				statusCode: 400,
+				processed: false,
+			});
 			return c.text('Bad Request', 400);
 		}
 	});

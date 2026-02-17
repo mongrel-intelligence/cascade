@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { logWebhookCall } from '../utils/webhookLogger.js';
 import { type RouterProjectConfig, getProjectConfig, loadProjectConfig } from './config.js';
 import { type CascadeJob, addJob, getQueueStats } from './queue.js';
 import {
@@ -151,10 +152,19 @@ app.on(['HEAD', 'GET'], '/trello/webhook', (c) => {
 
 // Trello webhook handler
 app.post('/trello/webhook', async (c) => {
+	const bodyRaw = await c.req.text();
 	let payload: unknown;
 	try {
-		payload = await c.req.json();
+		payload = JSON.parse(bodyRaw);
 	} catch {
+		logWebhookCall({
+			source: 'trello',
+			method: 'POST',
+			path: '/trello/webhook',
+			bodyRaw,
+			statusCode: 400,
+			processed: false,
+		});
 		return c.text('Bad Request', 400);
 	}
 
@@ -184,6 +194,21 @@ app.post('/trello/webhook', async (c) => {
 		console.log(`[Router] Ignoring Trello: ${actionType || 'unknown'}`);
 	}
 
+	logWebhookCall({
+		source: 'trello',
+		method: 'POST',
+		path: '/trello/webhook',
+		headers: {
+			'content-type': c.req.header('content-type') ?? '',
+		},
+		body: payload,
+		bodyRaw,
+		statusCode: 200,
+		eventType: actionType,
+		projectId: project?.id,
+		processed: !!(shouldProcess && project && cardId),
+	});
+
 	return c.text('OK', 200);
 });
 
@@ -196,27 +221,38 @@ app.get('/github/webhook', (c) => {
 app.post('/github/webhook', async (c) => {
 	const eventType = c.req.header('X-GitHub-Event') || 'unknown';
 	const contentType = c.req.header('Content-Type') || '';
+	const bodyRaw = await c.req.text();
 
 	let payload: unknown;
 
 	try {
 		// GitHub can send webhooks as JSON or form-urlencoded
 		if (contentType.includes('application/x-www-form-urlencoded')) {
-			const formData = await c.req.parseBody();
-			const payloadStr = formData.payload;
+			const params = new URLSearchParams(bodyRaw);
+			const payloadStr = params.get('payload');
 			if (typeof payloadStr === 'string') {
 				payload = JSON.parse(payloadStr);
 			} else {
 				throw new Error('Missing payload field in form data');
 			}
 		} else {
-			payload = await c.req.json();
+			payload = JSON.parse(bodyRaw);
 		}
 	} catch (err) {
 		console.log('[Router] GitHub webhook parse error:', {
 			error: String(err),
 			contentType,
 			eventType,
+		});
+		logWebhookCall({
+			source: 'github',
+			method: 'POST',
+			path: '/github/webhook',
+			headers: { 'x-github-event': eventType, 'content-type': contentType },
+			bodyRaw,
+			statusCode: 400,
+			eventType,
+			processed: false,
 		});
 		return c.text('Bad Request', 400);
 	}
@@ -258,6 +294,21 @@ app.post('/github/webhook', async (c) => {
 		console.log('[Router] Ignoring GitHub event:', eventType);
 	}
 
+	logWebhookCall({
+		source: 'github',
+		method: 'POST',
+		path: '/github/webhook',
+		headers: {
+			'x-github-event': eventType,
+			'content-type': contentType,
+		},
+		body: payload,
+		bodyRaw,
+		statusCode: 200,
+		eventType,
+		processed: shouldProcess,
+	});
+
 	return c.text('OK', 200);
 });
 
@@ -268,10 +319,19 @@ app.get('/jira/webhook', (c) => {
 
 // JIRA webhook handler
 app.post('/jira/webhook', async (c) => {
+	const bodyRaw = await c.req.text();
 	let payload: unknown;
 	try {
-		payload = await c.req.json();
+		payload = JSON.parse(bodyRaw);
 	} catch {
+		logWebhookCall({
+			source: 'jira',
+			method: 'POST',
+			path: '/jira/webhook',
+			bodyRaw,
+			statusCode: 400,
+			processed: false,
+		});
 		return c.text('Bad Request', 400);
 	}
 
@@ -319,6 +379,21 @@ app.post('/jira/webhook', async (c) => {
 	} else {
 		console.log(`[Router] Ignoring JIRA: ${webhookEvent}`);
 	}
+
+	logWebhookCall({
+		source: 'jira',
+		method: 'POST',
+		path: '/jira/webhook',
+		headers: {
+			'content-type': c.req.header('content-type') ?? '',
+		},
+		body: payload,
+		bodyRaw,
+		statusCode: 200,
+		eventType: webhookEvent || undefined,
+		projectId: project?.id,
+		processed: !!(shouldProcess && project),
+	});
 
 	return c.text('OK', 200);
 });
