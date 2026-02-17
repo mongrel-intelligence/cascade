@@ -62,7 +62,7 @@ describe('credentialsRouter', () => {
 				},
 				{ id: 2, name: 'Key', envVarKey: 'API_KEY', value: 'sk', isDefault: false },
 			]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.list();
 
@@ -74,14 +74,14 @@ describe('credentialsRouter', () => {
 
 		it('returns empty array when no credentials', async () => {
 			mockListOrgCredentials.mockResolvedValue([]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.list();
 			expect(result).toEqual([]);
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.list()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 		});
 	});
@@ -89,7 +89,7 @@ describe('credentialsRouter', () => {
 	describe('create', () => {
 		it('creates credential with all fields', async () => {
 			mockCreateCredential.mockResolvedValue({ id: 42 });
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.create({
 				name: 'GitHub Bot',
@@ -111,27 +111,27 @@ describe('credentialsRouter', () => {
 		});
 
 		it('rejects invalid env var key format', async () => {
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(
 				caller.create({ name: 'X', envVarKey: 'invalid-key', value: 'v' }),
 			).rejects.toThrow();
 		});
 
 		it('rejects env var key starting with number', async () => {
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.create({ name: 'X', envVarKey: '123KEY', value: 'v' })).rejects.toThrow();
 		});
 
 		it('accepts underscore-prefixed env var key', async () => {
 			mockCreateCredential.mockResolvedValue({ id: 1 });
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.create({ name: 'X', envVarKey: '_MY_KEY', value: 'v' });
 			expect(mockCreateCredential).toHaveBeenCalled();
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(
 				caller.create({ name: 'X', envVarKey: 'KEY', value: 'v' }),
 			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
@@ -142,7 +142,7 @@ describe('credentialsRouter', () => {
 		it('updates credential after verifying ownership', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockUpdateCredential.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.update({ id: 42, name: 'Updated Name', value: 'new-secret' });
 
@@ -154,7 +154,7 @@ describe('credentialsRouter', () => {
 
 		it('throws NOT_FOUND when credential belongs to different org', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.update({ id: 42, name: 'X' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -164,7 +164,7 @@ describe('credentialsRouter', () => {
 
 		it('throws NOT_FOUND when credential does not exist', async () => {
 			mockDbWhere.mockResolvedValue([]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.update({ id: 999, name: 'X' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -176,7 +176,7 @@ describe('credentialsRouter', () => {
 		it('deletes credential after verifying ownership', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockDeleteCredential.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await caller.delete({ id: 42 });
 
@@ -185,7 +185,7 @@ describe('credentialsRouter', () => {
 
 		it('throws NOT_FOUND when credential belongs to different org', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.delete({ id: 42 })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -195,7 +195,7 @@ describe('credentialsRouter', () => {
 
 		it('throws NOT_FOUND when credential does not exist', async () => {
 			mockDbWhere.mockResolvedValue([]);
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.delete({ id: 999 })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
@@ -203,7 +203,7 @@ describe('credentialsRouter', () => {
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.delete({ id: 42 })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});

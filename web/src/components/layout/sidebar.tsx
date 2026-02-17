@@ -1,9 +1,18 @@
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from '@/components/ui/select.js';
 import { Separator } from '@/components/ui/separator.js';
+import { useOrgContext } from '@/lib/org-context.js';
 import { cn } from '@/lib/utils.js';
 import { Link, useRouterState } from '@tanstack/react-router';
 import {
 	Activity,
 	Bot,
+	Building2,
 	FileText,
 	FolderGit2,
 	KeyRound,
@@ -12,7 +21,7 @@ import {
 } from 'lucide-react';
 
 interface SidebarProps {
-	user: { name: string; email: string } | undefined;
+	user: { name: string; email: string; role: string } | undefined;
 }
 
 const mainNav = [
@@ -55,6 +64,33 @@ function NavLink({
 	);
 }
 
+function OrgSwitcher() {
+	const { effectiveOrgId, availableOrgs, isAdmin, switchOrg } = useOrgContext();
+
+	if (!isAdmin || !availableOrgs || availableOrgs.length <= 1) return null;
+
+	return (
+		<div className="px-2 pb-2">
+			<div className="flex items-center gap-1.5 px-1 pb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+				<Building2 className="h-3 w-3" />
+				Organization
+			</div>
+			<Select value={effectiveOrgId ?? undefined} onValueChange={switchOrg}>
+				<SelectTrigger className="h-8 text-xs">
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					{availableOrgs.map((org) => (
+						<SelectItem key={org.id} value={org.id} className="text-xs">
+							{org.name ?? org.id}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+		</div>
+	);
+}
+
 export function Sidebar({ user }: SidebarProps) {
 	const routerState = useRouterState();
 	const currentPath = routerState.location.pathname;
@@ -65,6 +101,8 @@ export function Sidebar({ user }: SidebarProps) {
 				<LayoutDashboard className="mr-2 h-5 w-5" />
 				<span className="font-semibold">CASCADE</span>
 			</div>
+
+			<OrgSwitcher />
 
 			<nav className="flex-1 space-y-1 p-2">
 				{mainNav.map((item) => (

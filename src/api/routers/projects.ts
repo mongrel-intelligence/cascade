@@ -48,16 +48,16 @@ async function verifyCredentialOwnership(credentialId: number, orgId: string) {
 export const projectsRouter = router({
 	// Existing - returns id+name for dropdowns
 	list: protectedProcedure.query(async ({ ctx }) => {
-		return listProjectsForOrg(ctx.user.orgId);
+		return listProjectsForOrg(ctx.effectiveOrgId);
 	}),
 
 	// New - returns all columns
 	listFull: protectedProcedure.query(async ({ ctx }) => {
-		return listProjectsFull(ctx.user.orgId);
+		return listProjectsFull(ctx.effectiveOrgId);
 	}),
 
 	getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ ctx, input }) => {
-		const project = await getProjectFull(input.id, ctx.user.orgId);
+		const project = await getProjectFull(input.id, ctx.effectiveOrgId);
 		if (!project) throw new TRPCError({ code: 'NOT_FOUND' });
 		return project;
 	}),
@@ -80,7 +80,7 @@ export const projectsRouter = router({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			return createProject(ctx.user.orgId, input);
+			return createProject(ctx.effectiveOrgId, input);
 		}),
 
 	update: protectedProcedure
@@ -98,16 +98,16 @@ export const projectsRouter = router({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			await verifyProjectOwnership(input.id, ctx.user.orgId);
+			await verifyProjectOwnership(input.id, ctx.effectiveOrgId);
 			const { id, ...updates } = input;
-			await updateProject(id, ctx.user.orgId, updates);
+			await updateProject(id, ctx.effectiveOrgId, updates);
 		}),
 
 	delete: protectedProcedure
 		.input(z.object({ id: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			await verifyProjectOwnership(input.id, ctx.user.orgId);
-			await deleteProject(input.id, ctx.user.orgId);
+			await verifyProjectOwnership(input.id, ctx.effectiveOrgId);
+			await deleteProject(input.id, ctx.effectiveOrgId);
 		}),
 
 	// Integrations
@@ -115,7 +115,7 @@ export const projectsRouter = router({
 		list: protectedProcedure
 			.input(z.object({ projectId: z.string() }))
 			.query(async ({ ctx, input }) => {
-				await verifyProjectOwnership(input.projectId, ctx.user.orgId);
+				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				return listProjectIntegrations(input.projectId);
 			}),
 
@@ -128,14 +128,14 @@ export const projectsRouter = router({
 				}),
 			)
 			.mutation(async ({ ctx, input }) => {
-				await verifyProjectOwnership(input.projectId, ctx.user.orgId);
+				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				await upsertProjectIntegration(input.projectId, input.type, input.config);
 			}),
 
 		delete: protectedProcedure
 			.input(z.object({ projectId: z.string(), type: z.string() }))
 			.mutation(async ({ ctx, input }) => {
-				await verifyProjectOwnership(input.projectId, ctx.user.orgId);
+				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				await deleteProjectIntegration(input.projectId, input.type);
 			}),
 	}),
@@ -145,7 +145,7 @@ export const projectsRouter = router({
 		list: protectedProcedure
 			.input(z.object({ projectId: z.string() }))
 			.query(async ({ ctx, input }) => {
-				await verifyProjectOwnership(input.projectId, ctx.user.orgId);
+				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				return listProjectOverrides(input.projectId);
 			}),
 
@@ -158,15 +158,15 @@ export const projectsRouter = router({
 				}),
 			)
 			.mutation(async ({ ctx, input }) => {
-				await verifyProjectOwnership(input.projectId, ctx.user.orgId);
-				await verifyCredentialOwnership(input.credentialId, ctx.user.orgId);
+				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
+				await verifyCredentialOwnership(input.credentialId, ctx.effectiveOrgId);
 				await setProjectCredentialOverride(input.projectId, input.envVarKey, input.credentialId);
 			}),
 
 		remove: protectedProcedure
 			.input(z.object({ projectId: z.string(), envVarKey: z.string() }))
 			.mutation(async ({ ctx, input }) => {
-				await verifyProjectOwnership(input.projectId, ctx.user.orgId);
+				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				await removeProjectCredentialOverride(input.projectId, input.envVarKey);
 			}),
 
@@ -180,8 +180,8 @@ export const projectsRouter = router({
 				}),
 			)
 			.mutation(async ({ ctx, input }) => {
-				await verifyProjectOwnership(input.projectId, ctx.user.orgId);
-				await verifyCredentialOwnership(input.credentialId, ctx.user.orgId);
+				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
+				await verifyCredentialOwnership(input.credentialId, ctx.effectiveOrgId);
 				await setAgentCredentialOverride(
 					input.projectId,
 					input.envVarKey,
@@ -199,7 +199,7 @@ export const projectsRouter = router({
 				}),
 			)
 			.mutation(async ({ ctx, input }) => {
-				await verifyProjectOwnership(input.projectId, ctx.user.orgId);
+				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				await removeAgentCredentialOverride(input.projectId, input.envVarKey, input.agentType);
 			}),
 	}),

@@ -108,7 +108,7 @@ describe('webhooksRouter', () => {
 			];
 			mockListWebhooks.mockResolvedValue({ data: githubWebhooks });
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.list({ projectId: 'my-project' });
 
 			expect(result.trello).toHaveLength(1);
@@ -130,7 +130,7 @@ describe('webhooksRouter', () => {
 			});
 			mockListWebhooks.mockResolvedValue({ data: [] });
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.list({ projectId: 'my-project' });
 
 			expect(result.trello).toHaveLength(1);
@@ -140,7 +140,7 @@ describe('webhooksRouter', () => {
 		it('returns empty arrays when no credentials', async () => {
 			setupProjectContext({ noTrello: true, noGithub: true });
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.list({ projectId: 'my-project' });
 
 			expect(result.trello).toEqual([]);
@@ -154,14 +154,14 @@ describe('webhooksRouter', () => {
 			mockDbFrom.mockReturnValue({ where: mockDbWhere });
 			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.list({ projectId: 'my-project' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
 			});
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null });
+			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.list({ projectId: 'my-project' })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
@@ -200,7 +200,7 @@ describe('webhooksRouter', () => {
 				},
 			});
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.create({
 				projectId: 'my-project',
 				callbackBaseUrl: 'http://example.com',
@@ -237,7 +237,7 @@ describe('webhooksRouter', () => {
 				],
 			});
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.create({
 				projectId: 'my-project',
 				callbackBaseUrl: 'http://example.com',
@@ -260,7 +260,7 @@ describe('webhooksRouter', () => {
 				},
 			});
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await caller.create({
 				projectId: 'my-project',
 				callbackBaseUrl: 'http://example.com/',
@@ -291,7 +291,7 @@ describe('webhooksRouter', () => {
 						}),
 				});
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.create({
 				projectId: 'my-project',
 				callbackBaseUrl: 'http://example.com',
@@ -316,7 +316,7 @@ describe('webhooksRouter', () => {
 				},
 			});
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.create({
 				projectId: 'my-project',
 				callbackBaseUrl: 'http://example.com',
@@ -363,7 +363,7 @@ describe('webhooksRouter', () => {
 			});
 			mockDeleteWebhook.mockResolvedValue({});
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.delete({
 				projectId: 'my-project',
 				callbackBaseUrl: 'http://example.com',
@@ -382,7 +382,7 @@ describe('webhooksRouter', () => {
 			});
 			mockListWebhooks.mockResolvedValue({ data: [] });
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.delete({
 				projectId: 'my-project',
 				callbackBaseUrl: 'http://example.com',
@@ -420,7 +420,7 @@ describe('webhooksRouter', () => {
 
 			mockListWebhooks.mockResolvedValue({ data: [] });
 
-			const caller = createCaller({ user: mockUser });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.delete({
 				projectId: 'my-project',
 				callbackBaseUrl: 'http://example.com',

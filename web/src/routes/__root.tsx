@@ -1,5 +1,6 @@
 import { Header } from '@/components/layout/header.js';
 import { Sidebar } from '@/components/layout/sidebar.js';
+import { OrgProvider } from '@/lib/org-context.js';
 import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { Outlet, createRootRoute, useNavigate } from '@tanstack/react-router';
@@ -34,15 +35,17 @@ function RootLayout() {
 	}
 
 	return (
-		<div className="flex h-screen">
-			<Sidebar user={meQuery.data} />
-			<div className="flex flex-1 flex-col overflow-hidden">
-				<Header user={meQuery.data} />
-				<main className="flex-1 overflow-auto p-6">
-					<Outlet />
-				</main>
+		<OrgProvider me={meQuery.data}>
+			<div className="flex h-screen">
+				<Sidebar user={meQuery.data} />
+				<div className="flex flex-1 flex-col overflow-hidden">
+					<Header user={meQuery.data} />
+					<main className="flex-1 overflow-auto p-6">
+						<Outlet />
+					</main>
+				</div>
 			</div>
-		</div>
+		</OrgProvider>
 	);
 }
 

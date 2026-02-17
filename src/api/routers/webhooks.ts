@@ -272,7 +272,7 @@ export const webhooksRouter = router({
 	list: protectedProcedure
 		.input(z.object({ projectId: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const pctx = await resolveProjectContext(input.projectId, ctx.user.orgId);
+			const pctx = await resolveProjectContext(input.projectId, ctx.effectiveOrgId);
 
 			const [trello, github, jira] = await Promise.all([
 				trelloListWebhooks(pctx),
@@ -294,7 +294,7 @@ export const webhooksRouter = router({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const pctx = await resolveProjectContext(input.projectId, ctx.user.orgId);
+			const pctx = await resolveProjectContext(input.projectId, ctx.effectiveOrgId);
 			const baseUrl = input.callbackBaseUrl.replace(/\/$/, '');
 			const results: {
 				trello?: TrelloWebhook | string;
@@ -367,7 +367,7 @@ export const webhooksRouter = router({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const pctx = await resolveProjectContext(input.projectId, ctx.user.orgId);
+			const pctx = await resolveProjectContext(input.projectId, ctx.effectiveOrgId);
 			const baseUrl = input.callbackBaseUrl.replace(/\/$/, '');
 			const deleted: { trello: string[]; github: number[]; jira: number[] } = {
 				trello: [],
