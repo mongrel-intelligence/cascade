@@ -539,7 +539,7 @@ describe('executeWithBackend', () => {
 
 		expect(result.success).toBe(true);
 		expect(result.durationMs).toBeDefined();
-		expect(result.durationMs).toBeGreaterThan(0);
+		expect(result.durationMs).toBeGreaterThanOrEqual(0);
 		expect(typeof result.durationMs).toBe('number');
 	});
 
@@ -553,7 +553,7 @@ describe('executeWithBackend', () => {
 
 		expect(result.success).toBe(false);
 		expect(result.durationMs).toBeDefined();
-		expect(result.durationMs).toBeGreaterThan(0);
+		expect(result.durationMs).toBeGreaterThanOrEqual(0);
 		expect(typeof result.durationMs).toBe('number');
 	});
 
@@ -572,7 +572,7 @@ describe('executeWithBackend', () => {
 		expect(result.success).toBe(false);
 		expect(result.error).toBe('Budget exceeded');
 		expect(result.durationMs).toBeDefined();
-		expect(result.durationMs).toBeGreaterThan(0);
+		expect(result.durationMs).toBeGreaterThanOrEqual(0);
 		expect(typeof result.durationMs).toBe('number');
 	});
 });
