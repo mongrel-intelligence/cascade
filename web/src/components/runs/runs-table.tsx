@@ -1,6 +1,7 @@
-import { formatCost, formatDuration, formatRelativeTime } from '@/lib/utils.js';
+import { formatCost, formatRelativeTime } from '@/lib/utils.js';
 import { Link } from '@tanstack/react-router';
 import { ExternalLink } from 'lucide-react';
+import { LiveDuration } from './live-duration.js';
 import { RetryRunButton } from './retry-run-button.js';
 import { RunStatusBadge } from './run-status-badge.js';
 
@@ -75,7 +76,11 @@ export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTabl
 									{formatRelativeTime(run.startedAt)}
 								</td>
 								<td className="px-4 py-3 text-right tabular-nums">
-									{formatDuration(run.durationMs)}
+									<LiveDuration
+										startedAt={run.startedAt}
+										durationMs={run.durationMs}
+										status={run.status}
+									/>
 								</td>
 								<td className="px-4 py-3 text-right tabular-nums">{formatCost(run.costUsd)}</td>
 								<td className="px-4 py-3 text-right tabular-nums">{run.llmIterations ?? '-'}</td>
