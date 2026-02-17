@@ -28,7 +28,6 @@ interface Credential {
 	name: string;
 	envVarKey: string;
 	value: string;
-	description: string | null;
 	isDefault: boolean;
 }
 
@@ -55,14 +54,13 @@ export function CredentialsTable({ credentials }: { credentials: Credential[] })
 							<TableHead>Env Var Key</TableHead>
 							<TableHead>Value</TableHead>
 							<TableHead>Default</TableHead>
-							<TableHead>Description</TableHead>
 							<TableHead className="w-20" />
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{credentials.length === 0 && (
 							<TableRow>
-								<TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+								<TableCell colSpan={5} className="text-center text-muted-foreground py-8">
 									No credentials yet
 								</TableCell>
 							</TableRow>
@@ -76,9 +74,6 @@ export function CredentialsTable({ credentials }: { credentials: Credential[] })
 								</TableCell>
 								<TableCell>
 									{cred.isDefault && <Badge variant="secondary">Default</Badge>}
-								</TableCell>
-								<TableCell className="text-sm text-muted-foreground max-w-48 truncate">
-									{cred.description ?? '-'}
 								</TableCell>
 								<TableCell>
 									<div className="flex gap-1">
