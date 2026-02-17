@@ -1,36 +1,104 @@
-### Squint Drill-Down Protocol (MANDATORY)
+### Squint Codebase Intelligence Protocol (MANDATORY)
 
 **DO NOT read source files until you have completed these drill-down steps.**
 
-The pre-loaded SquintOverview gives you the module tree and feature list. But the overview alone is not enough — you MUST drill into features, flows, and modules to see their interactions and data flows.
+You have access to Squint, an AST-powered codebase analysis tool. A SquintOverview has been pre-loaded into your context showing the module tree and feature list. Use the commands below to drill deeper before opening any files.
 
-**Required drill-down for every task (run via Tmux):**
+**All squint commands accept `--json` for structured output. Always use `--json`.**
 
-1. Identify relevant features and modules from the overview
-2. For each feature: `squint features show <slug> --json`
-   - Check `flows` — each flow traces a user journey across modules
-   - Check `modulesInvolved` and `interactions` — module-to-module connections
-3. For key flows: `squint flows show <slug> --json`
-   - Check `steps` — ordered interaction chain showing how data moves between modules
-   - Check `definitionSteps` — function-to-function call trace with file paths and line numbers
-   - This is where cross-cutting data contracts become visible (e.g., backend returning snake_case that frontend must consume)
-4. For each module area: `squint modules show <path> --json`
-   - Check `outgoingInteractions` — modules this one calls into
-   - Check `incomingInteractions` — modules that call into this one
-   - Check `members` — symbols with file paths
-5. Before reading a file: `squint symbols list --file <path> --json`
-   - Aggregates all symbols, their relationships, interactions, and flows for the entire file
-6. Only AFTER completing drill-downs, use ReadFile on the specific files squint revealed
+#### Step 1: Identify relevant features and flows
 
-**Example — card says "add tests for Dashboard page":**
-- Overview shows feature "Dashboard & Reporting" and module `frontend.pages → frontend.hooks → frontend.services`
-- `squint features show dashboard-reporting --json` — reveals flows for stats fetching
-- `squint flows show <stats-flow-slug> --json` — reveals: Dashboard hook → frontend service → **backend controller** → backend service → database. The `definitionSteps` show the exact function chain and file paths.
-- Now you know: tests must mock the **backend response shape**, because the data flows across the backend/frontend boundary
+From the pre-loaded overview, identify which features relate to your task. For each:
 
-**If no SquintOverview was pre-loaded** (repo has no `.squint.db`), skip directly to reading files.
+```
+squint features show <slug> --json
+```
 
-**When to use ReadFile/RipGrep instead of squint:**
-- Reading actual file contents (squint shows structure, not source code)
-- Searching for specific string patterns
-- AFTER squint has told you which files are relevant
+Look at: `flows` (user journeys crossing module boundaries), `modulesInvolved`, `interactions` (module-to-module connections).
+
+#### Step 2: Trace data flows across boundaries
+
+For each relevant flow:
+
+```
+squint flows show <slug> --json
+```
+
+Look at: `steps` (ordered interaction chain showing how data moves between modules), `definitionSteps` (function-to-function call trace with exact file paths and line numbers). This is where cross-cutting contracts become visible (e.g., API response shapes that frontend must consume).
+
+To trace the call graph from a specific function:
+
+```
+squint flows trace --name <symbolName> --depth 5 --json
+```
+
+#### Step 3: Understand module boundaries
+
+For each module you'll be working in:
+
+```
+squint modules show <module.path> --json
+```
+
+Look at: `outgoingInteractions` (modules this one calls), `incomingInteractions` (modules that call this one), `members` (symbols with file paths), `children` (sub-modules).
+
+#### Step 4: Examine files before reading source code
+
+Before opening any file, get its structural overview:
+
+```
+squint files show <path> --json
+```
+
+Shows: all definitions (with module + metadata), imports, imported-by relationships, and cross-file references. Use this to understand a file's role before reading its source.
+
+For targeted file-level symbol aggregation (all symbols, relationships, interactions, flows for one file):
+
+```
+squint symbols show --file <path> --json
+```
+
+#### Step 5: Deep-dive on specific symbols
+
+When you need to understand a specific function, class, or type:
+
+```
+squint symbols show <name> --json
+```
+
+Returns: `sourceCode` (actual source), `callSites` (where it's called from, with context lines), `relationships` (outgoing references), `incomingRelationships` (what depends on this), `flows` (which flows involve it), `module`.
+
+If the name is ambiguous, disambiguate with: `squint symbols show <name> --file <path> --json`
+
+#### Step 6: Advanced queries (use when needed)
+
+**Call hierarchy** — find all callers/callees of a function:
+```
+squint hierarchy --type calls --root <symbolName> --depth 3 --json
+```
+
+**Relationships** — find connections between symbols:
+```
+squint relationships list --from <symbolName> --json
+```
+
+**Domain groupings** — understand domain boundaries:
+```
+squint domains show <domain-name> --json
+```
+
+**Filter symbols** — find symbols by kind, domain, or purity:
+```
+squint symbols list --kind function --domain <name> --json
+```
+
+#### When to read files instead of using Squint
+
+- Reading full source code (after squint told you which files matter)
+- Searching for specific string patterns or regex
+- Config files, tests, or non-code files that squint doesn't index
+- Any file squint identified as relevant — squint shows structure, files show content
+
+#### If no SquintOverview was pre-loaded
+
+The repository has no Squint database. Skip these steps and proceed directly to reading files.
