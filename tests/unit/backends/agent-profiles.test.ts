@@ -4,6 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../../src/agents/shared/prFormatting.js', () => ({
 	formatPRDetails: vi.fn(() => 'formatted-pr-details'),
 	formatPRDiff: vi.fn(() => 'formatted-pr-diff'),
+	formatPRComments: vi.fn(() => 'formatted-pr-comments'),
+	formatPRReviews: vi.fn(() => 'formatted-pr-reviews'),
+	formatPRIssueComments: vi.fn(() => 'formatted-pr-issue-comments'),
 }));
 
 vi.mock('../../../src/config/reviewConfig.js', () => ({
@@ -31,6 +34,9 @@ vi.mock('../../../src/github/client.js', () => ({
 		getPRDiff: vi.fn(),
 		getCheckSuiteStatus: vi.fn(),
 		createPRComment: vi.fn(),
+		getPRReviewComments: vi.fn(),
+		getPRReviews: vi.fn(),
+		getPRIssueComments: vi.fn(),
 	},
 }));
 
@@ -122,6 +128,91 @@ describe('getAgentProfile', () => {
 
 		it('has a preExecute hook', () => {
 			expect(profile.preExecute).toBeDefined();
+		});
+	});
+
+	describe('respond-to-pr-comment profile', () => {
+		let profile: AgentProfile;
+
+		beforeEach(() => {
+			profile = getAgentProfile('respond-to-pr-comment');
+		});
+
+		it('returns a dedicated profile (not reviewProfile or defaultProfile)', () => {
+			const reviewProfile = getAgentProfile('review');
+			const defaultProfile = getAgentProfile('some-unknown-agent-type');
+			expect(profile).not.toBe(reviewProfile);
+			expect(profile).not.toBe(defaultProfile);
+		});
+
+		it('includes GitHub review tools and session tool', () => {
+			const allTools = [
+				{ name: 'GetPRDetails', description: '', cliCommand: '', parameters: {} },
+				{ name: 'GetPRDiff', description: '', cliCommand: '', parameters: {} },
+				{ name: 'GetPRChecks', description: '', cliCommand: '', parameters: {} },
+				{ name: 'GetPRComments', description: '', cliCommand: '', parameters: {} },
+				{ name: 'PostPRComment', description: '', cliCommand: '', parameters: {} },
+				{ name: 'UpdatePRComment', description: '', cliCommand: '', parameters: {} },
+				{ name: 'ReplyToReviewComment', description: '', cliCommand: '', parameters: {} },
+				{ name: 'CreatePRReview', description: '', cliCommand: '', parameters: {} },
+				{ name: 'Finish', description: '', cliCommand: '', parameters: {} },
+				{ name: 'CreatePR', description: '', cliCommand: '', parameters: {} },
+			];
+
+			const filtered = profile.filterTools(allTools);
+			const names = filtered.map((t) => t.name);
+
+			expect(names).toContain('GetPRDetails');
+			expect(names).toContain('PostPRComment');
+			expect(names).toContain('ReplyToReviewComment');
+			expect(names).toContain('CreatePRReview');
+			expect(names).toContain('Finish');
+			expect(names).not.toContain('CreatePR');
+		});
+
+		it('has ALL_SDK_TOOLS for code editing', () => {
+			expect(profile.sdkTools).toEqual(['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']);
+		});
+
+		it('enables stop hooks', () => {
+			expect(profile.enableStopHooks).toBe(true);
+		});
+
+		it('needs GitHub token', () => {
+			expect(profile.needsGitHubToken).toBe(true);
+		});
+
+		it('does NOT have a preExecute hook', () => {
+			expect(profile.preExecute).toBeUndefined();
+		});
+
+		it('buildTaskPrompt includes comment body, PR number, and branch', () => {
+			const prompt = profile.buildTaskPrompt({
+				prNumber: 99,
+				prBranch: 'feat/new-thing',
+				repoFullName: 'acme/widgets',
+				triggerCommentBody: 'Can you fix the typo on line 5?',
+				triggerCommentPath: 'src/utils.ts',
+			});
+
+			expect(prompt).toContain('PR #99');
+			expect(prompt).toContain('feat/new-thing');
+			expect(prompt).toContain('acme');
+			expect(prompt).toContain('widgets');
+			expect(prompt).toContain('Can you fix the typo on line 5?');
+			expect(prompt).toContain('src/utils.ts');
+		});
+
+		it('buildTaskPrompt omits file path when triggerCommentPath is empty', () => {
+			const prompt = profile.buildTaskPrompt({
+				prNumber: 99,
+				prBranch: 'feat/new-thing',
+				repoFullName: 'acme/widgets',
+				triggerCommentBody: 'Looks good overall!',
+				triggerCommentPath: '',
+			});
+
+			expect(prompt).not.toContain('File:');
 		});
 	});
 
