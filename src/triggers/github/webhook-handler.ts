@@ -1,12 +1,8 @@
 import { runAgent } from '../../agents/registry.js';
-import {
-	findProjectByRepo,
-	getAgentCredential,
-	getProjectSecret,
-	loadConfig,
-} from '../../config/provider.js';
+import { findProjectByRepo, getProjectSecret, loadConfig } from '../../config/provider.js';
 import { getSessionState } from '../../gadgets/sessionState.js';
 import { githubClient, withGitHubToken } from '../../github/client.js';
+import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
 import {
 	PMLifecycleManager,
 	createPMProvider,
@@ -40,8 +36,7 @@ async function executeGitHubAgent(
 ): Promise<void> {
 	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY').catch(() => '');
 	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN').catch(() => '');
-	const agentGitHubToken = await getAgentCredential(project.id, result.agentType, 'GITHUB_TOKEN');
-	const githubToken = agentGitHubToken || (await getProjectSecret(project.id, 'GITHUB_TOKEN'));
+	const githubToken = await getPersonaToken(project.id, result.agentType);
 
 	const restoreLlmEnv = await injectLlmApiKeys(project.id);
 
@@ -187,10 +182,13 @@ async function runGitHubAgentJob(
 	githubToken: string,
 	registry: TriggerRegistry,
 ): Promise<void> {
-	const agentGitHubToken = result.agentType
-		? await getAgentCredential(project.id, result.agentType, 'GITHUB_TOKEN')
-		: null;
-	const prCommentToken = agentGitHubToken || githubToken;
+	// Use the persona token for the agent that will do the work (for ack comments)
+	let prCommentToken: string;
+	try {
+		prCommentToken = await getPersonaToken(project.id, result.agentType);
+	} catch {
+		prCommentToken = githubToken;
+	}
 
 	await withGitHubToken(prCommentToken, () => postAcknowledgmentComment(result));
 	setProcessing(true);
@@ -266,10 +264,13 @@ export async function processGitHubWebhook(
 	// Resolve credentials early — trigger handlers may call GitHub/Trello APIs
 	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY').catch(() => '');
 	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN').catch(() => '');
-	const githubToken = await getProjectSecret(project.id, 'GITHUB_TOKEN');
+
+	// Resolve persona identities and use implementer token for webhook processing
+	const personaIdentities = await resolvePersonaIdentities(project.id);
+	const githubToken = await getPersonaToken(project.id, 'implementation');
 	const pmProvider = createPMProvider(project);
 
-	const ctx: TriggerContext = { project, source: 'github', payload };
+	const ctx: TriggerContext = { project, source: 'github', payload, personaIdentities };
 	const result = await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
 		withPMProvider(pmProvider, () => withGitHubToken(githubToken, () => registry.dispatch(ctx))),
 	);

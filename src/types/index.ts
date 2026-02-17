@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type { CascadeConfigSchema, ProjectConfigSchema } from '../config/schema.js';
+import type { PersonaIdentities } from '../github/personas.js';
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 export type CascadeConfig = z.infer<typeof CascadeConfigSchema>;
@@ -53,6 +54,8 @@ export interface TriggerContext {
 	project: ProjectConfig;
 	source: TriggerSource;
 	payload: unknown;
+	/** Resolved GitHub usernames for bot detection. Present for GitHub-sourced triggers. */
+	personaIdentities?: PersonaIdentities;
 }
 
 export interface TriggerResult {

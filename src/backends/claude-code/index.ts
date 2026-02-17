@@ -370,7 +370,9 @@ export class ClaudeCodeBackend implements AgentBackend {
 		});
 
 		const { env } = buildEnv(input.projectSecrets);
-		const hooks = buildHooks(input.logWriter, input.repoDir, input.enableStopHooks ?? true);
+		const hooks = buildHooks(input.logWriter, input.repoDir, input.enableStopHooks ?? true, {
+			blockGitPush: input.blockGitPush,
+		});
 
 		const sdkTools = input.sdkTools ?? ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
 

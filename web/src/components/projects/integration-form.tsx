@@ -2,7 +2,7 @@ import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2 } from 'lucide-react';
+import { CheckCircle, Loader2, Plus, Trash2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface KVPair {
@@ -82,7 +82,7 @@ function fromKVPairs(pairs: KVPair[]): Record<string, string> {
 	return result;
 }
 
-type IntegrationType = 'trello' | 'jira';
+type IntegrationType = 'trello' | 'jira' | 'github';
 
 function TrelloForm({
 	projectId,
@@ -274,12 +274,245 @@ function JiraForm({
 	);
 }
 
+interface CredentialOption {
+	id: number;
+	name: string;
+	envVarKey: string;
+	value: string;
+}
+
+function CredentialSelector({
+	label,
+	description,
+	credentials,
+	selectedId,
+	onChange,
+	verifiedLogin,
+	onVerify,
+	isVerifying,
+	verifyError,
+}: {
+	label: string;
+	description: string;
+	credentials: CredentialOption[];
+	selectedId: number | null;
+	onChange: (id: number | null) => void;
+	verifiedLogin: string | null;
+	onVerify: () => void;
+	isVerifying: boolean;
+	verifyError: string | null;
+}) {
+	return (
+		<div className="space-y-2">
+			<Label>{label}</Label>
+			<p className="text-xs text-muted-foreground">{description}</p>
+			<div className="flex gap-2">
+				<select
+					value={selectedId ?? ''}
+					onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+					className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
+				>
+					<option value="">Select a credential...</option>
+					{credentials.map((c) => (
+						<option key={c.id} value={c.id}>
+							{c.name} ({c.envVarKey}) — {c.value}
+						</option>
+					))}
+				</select>
+				<button
+					type="button"
+					onClick={onVerify}
+					disabled={!selectedId || isVerifying}
+					className="inline-flex h-9 items-center rounded-md border border-input px-3 text-sm font-medium hover:bg-accent disabled:opacity-50"
+				>
+					{isVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Verify'}
+				</button>
+			</div>
+			{verifiedLogin && (
+				<div className="flex items-center gap-1.5 text-sm text-green-600">
+					<CheckCircle className="h-4 w-4" />
+					Resolved: <span className="font-medium">{verifiedLogin}</span>
+				</div>
+			)}
+			{verifyError && (
+				<div className="flex items-center gap-1.5 text-sm text-destructive">
+					<XCircle className="h-4 w-4" />
+					{verifyError}
+				</div>
+			)}
+		</div>
+	);
+}
+
+function GitHubForm({
+	projectId,
+	initialConfig,
+}: {
+	projectId: string;
+	initialConfig?: Record<string, unknown>;
+}) {
+	const queryClient = useQueryClient();
+
+	const credentialsQuery = useQuery(trpc.credentials.list.queryOptions());
+	const credentials = (credentialsQuery.data ?? []) as CredentialOption[];
+
+	const [implementerCredId, setImplementerCredId] = useState<number | null>(null);
+	const [reviewerCredId, setReviewerCredId] = useState<number | null>(null);
+
+	const [implementerLogin, setImplementerLogin] = useState<string | null>(null);
+	const [reviewerLogin, setReviewerLogin] = useState<string | null>(null);
+
+	const [implementerError, setImplementerError] = useState<string | null>(null);
+	const [reviewerError, setReviewerError] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (initialConfig) {
+			setImplementerCredId((initialConfig.implementerCredentialId as number) ?? null);
+			setReviewerCredId((initialConfig.reviewerCredentialId as number) ?? null);
+		}
+	}, [initialConfig]);
+
+	const verifyImplementer = useMutation({
+		mutationFn: () =>
+			trpcClient.credentials.verifyGithubIdentity.mutate({
+				credentialId: implementerCredId as number,
+			}),
+		onSuccess: (data) => {
+			setImplementerLogin(data.login);
+			setImplementerError(null);
+		},
+		onError: (err) => {
+			setImplementerLogin(null);
+			setImplementerError(err.message);
+		},
+	});
+
+	const verifyReviewer = useMutation({
+		mutationFn: () =>
+			trpcClient.credentials.verifyGithubIdentity.mutate({
+				credentialId: reviewerCredId as number,
+			}),
+		onSuccess: (data) => {
+			setReviewerLogin(data.login);
+			setReviewerError(null);
+		},
+		onError: (err) => {
+			setReviewerLogin(null);
+			setReviewerError(err.message);
+		},
+	});
+
+	const saveMutation = useMutation({
+		mutationFn: async () => {
+			if (!implementerCredId || !reviewerCredId) {
+				throw new Error('Both persona credentials are required');
+			}
+
+			// Save as GitHub integration
+			await trpcClient.projects.integrations.upsert.mutate({
+				projectId,
+				type: 'github',
+				config: {
+					implementerCredentialId: implementerCredId,
+					reviewerCredentialId: reviewerCredId,
+				},
+			});
+
+			// Set project-wide credential overrides for the persona token keys
+			await trpcClient.projects.credentialOverrides.set.mutate({
+				projectId,
+				envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
+				credentialId: implementerCredId,
+			});
+
+			await trpcClient.projects.credentialOverrides.set.mutate({
+				projectId,
+				envVarKey: 'GITHUB_TOKEN_REVIEWER',
+				credentialId: reviewerCredId,
+			});
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({
+				queryKey: trpc.projects.integrations.list.queryOptions({ projectId }).queryKey,
+			});
+			queryClient.invalidateQueries({
+				queryKey: trpc.projects.credentialOverrides.list.queryOptions({ projectId }).queryKey,
+			});
+		},
+	});
+
+	return (
+		<div className="space-y-6">
+			<p className="text-sm text-muted-foreground">
+				CASCADE uses two separate GitHub bot accounts to prevent feedback loops. The{' '}
+				<strong>implementer</strong> writes code and creates PRs. The <strong>reviewer</strong>{' '}
+				reviews PRs and can approve or request changes.
+			</p>
+
+			<CredentialSelector
+				label="Implementer Token"
+				description="GitHub PAT for the bot that writes code, creates PRs, and responds to review comments."
+				credentials={credentials}
+				selectedId={implementerCredId}
+				onChange={(id) => {
+					setImplementerCredId(id);
+					setImplementerLogin(null);
+					setImplementerError(null);
+				}}
+				verifiedLogin={implementerLogin}
+				onVerify={() => verifyImplementer.mutate()}
+				isVerifying={verifyImplementer.isPending}
+				verifyError={implementerError}
+			/>
+
+			<CredentialSelector
+				label="Reviewer Token"
+				description="GitHub PAT for the bot that reviews PRs. Must be a different account from the implementer."
+				credentials={credentials}
+				selectedId={reviewerCredId}
+				onChange={(id) => {
+					setReviewerCredId(id);
+					setReviewerLogin(null);
+					setReviewerError(null);
+				}}
+				verifiedLogin={reviewerLogin}
+				onVerify={() => verifyReviewer.mutate()}
+				isVerifying={verifyReviewer.isPending}
+				verifyError={reviewerError}
+			/>
+
+			{implementerLogin && reviewerLogin && implementerLogin === reviewerLogin && (
+				<p className="text-sm text-destructive">
+					Both tokens resolve to the same GitHub user ({implementerLogin}). They must be different
+					accounts for loop prevention to work.
+				</p>
+			)}
+
+			<div className="flex items-center gap-2">
+				<button
+					type="button"
+					onClick={() => saveMutation.mutate()}
+					disabled={saveMutation.isPending || !implementerCredId || !reviewerCredId}
+					className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+				>
+					{saveMutation.isPending ? 'Saving...' : 'Save Integration'}
+				</button>
+				{saveMutation.isSuccess && <span className="text-sm text-muted-foreground">Saved</span>}
+				{saveMutation.isError && (
+					<span className="text-sm text-destructive">{saveMutation.error.message}</span>
+				)}
+			</div>
+		</div>
+	);
+}
+
 export function IntegrationForm({ projectId }: { projectId: string }) {
 	const integrationsQuery = useQuery(trpc.projects.integrations.list.queryOptions({ projectId }));
 
 	// Determine active integration type from existing data
 	const trelloConfig = integrationsQuery.data?.find((i) => i.type === 'trello');
 	const jiraConfig = integrationsQuery.data?.find((i) => i.type === 'jira');
+	const githubConfig = integrationsQuery.data?.find((i) => i.type === 'github');
 
 	const defaultTab: IntegrationType = jiraConfig && !trelloConfig ? 'jira' : 'trello';
 	const [activeTab, setActiveTab] = useState<IntegrationType>(defaultTab);
@@ -320,6 +553,17 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 				>
 					JIRA
 				</button>
+				<button
+					type="button"
+					onClick={() => setActiveTab('github')}
+					className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+						activeTab === 'github'
+							? 'bg-background text-foreground shadow-sm'
+							: 'text-muted-foreground hover:text-foreground'
+					}`}
+				>
+					GitHub
+				</button>
 			</div>
 
 			{activeTab === 'trello' && (
@@ -333,6 +577,13 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 				<JiraForm
 					projectId={projectId}
 					initialConfig={jiraConfig?.config as Record<string, unknown>}
+				/>
+			)}
+
+			{activeTab === 'github' && (
+				<GitHubForm
+					projectId={projectId}
+					initialConfig={githubConfig?.config as Record<string, unknown>}
 				/>
 			)}
 		</div>

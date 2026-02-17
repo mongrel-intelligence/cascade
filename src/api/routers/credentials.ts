@@ -1,3 +1,4 @@
+import { Octokit } from '@octokit/rest';
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -85,5 +86,29 @@ export const credentialsRouter = router({
 			}
 
 			await deleteCredential(input.id);
+		}),
+
+	verifyGithubIdentity: protectedProcedure
+		.input(z.object({ credentialId: z.number() }))
+		.mutation(async ({ ctx, input }) => {
+			const db = getDb();
+			const [cred] = await db
+				.select({ orgId: credentials.orgId, value: credentials.value })
+				.from(credentials)
+				.where(eq(credentials.id, input.credentialId));
+			if (!cred || cred.orgId !== ctx.user.orgId) {
+				throw new TRPCError({ code: 'NOT_FOUND' });
+			}
+
+			try {
+				const octokit = new Octokit({ auth: cred.value });
+				const { data } = await octokit.users.getAuthenticated();
+				return { login: data.login, avatarUrl: data.avatar_url };
+			} catch (err) {
+				throw new TRPCError({
+					code: 'BAD_REQUEST',
+					message: `Failed to verify GitHub identity: ${err instanceof Error ? err.message : String(err)}`,
+				});
+			}
 		}),
 });

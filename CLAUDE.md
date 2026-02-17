@@ -60,6 +60,7 @@ Lefthook runs pre-commit (lint, typecheck) and pre-push (test) hooks automatical
 - `src/gadgets/` - Custom gadgets (Trello, Git)
 - `src/cli/dashboard/` - Dashboard CLI commands (`cascade` binary)
 - `src/api/` - Dashboard API (tRPC routers, auth handlers)
+- `src/github/` - GitHub client, dual-persona model (personas.ts)
 - `src/trello/` - Trello API client
 - `src/utils/` - Utilities (logging, repo cloning, lifecycle)
 - `web/` - Dashboard frontend (React 19, Vite, Tailwind v4, TanStack Router)
@@ -76,7 +77,7 @@ Optional (infrastructure):
 - `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled)
 - `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code backend (subscription auth)
 
-**Project credentials** (`GITHUB_TOKEN`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored in the `credentials` table (org-scoped) with optional per-project overrides via `project_credential_overrides`. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
+**Project credentials** (`GITHUB_TOKEN_IMPLEMENTER`, `GITHUB_TOKEN_REVIEWER`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored in the `credentials` table (org-scoped) with optional per-project overrides via `project_credential_overrides`. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
 
 ## Database Configuration
 
@@ -127,18 +128,37 @@ npx tsx tools/manage-secrets.ts remove-override <project-id> <env-var-key>
 npx tsx tools/manage-secrets.ts resolve <project-id>
 ```
 
-### Per-Agent Credential Overrides
+### GitHub Dual-Persona Model
 
-Override any credential for a specific agent type. For example, to make the `review` agent use a separate GitHub identity:
+CASCADE uses two dedicated GitHub bot accounts per project to prevent feedback loops:
+
+- **Implementer** (`GITHUB_TOKEN_IMPLEMENTER`) — writes code, creates PRs, responds to review comments
+  - Agents: `implementation`, `respond-to-review`, `respond-to-ci`, `respond-to-pr-comment`, `briefing`, `planning`, `respond-to-planning-comment`
+- **Reviewer** (`GITHUB_TOKEN_REVIEWER`) — reviews PRs, can approve or request changes
+  - Agents: `review`
+
+Both tokens are **required** for each project. Configure via the dashboard (Project Settings > Integrations > GitHub tab) or CLI:
 
 ```bash
-# Create a credential for the reviewer bot
-npx tsx tools/manage-secrets.ts create <org-id> GITHUB_TOKEN <reviewer-pat> --name "Reviewer Bot"
+cascade credentials create --name "Implementer Bot" --key GITHUB_TOKEN_IMPLEMENTER --value ghp_aaa... --default
+cascade credentials create --name "Reviewer Bot" --key GITHUB_TOKEN_REVIEWER --value ghp_bbb... --default
+```
 
-# Set agent-scoped overrides (review-related agents use the reviewer token)
-npx tsx tools/manage-secrets.ts set-override <project-id> GITHUB_TOKEN <credential-id> --agent-type review
-npx tsx tools/manage-secrets.ts set-override <project-id> GITHUB_TOKEN <credential-id> --agent-type respond-to-review
-npx tsx tools/manage-secrets.ts set-override <project-id> GITHUB_TOKEN <credential-id> --agent-type respond-to-pr-comment
+**Bot detection**: Both persona usernames are resolved at first use and cached. Trigger handlers use `isCascadeBot(login)` to check if an event came from either persona, preventing self-triggered loops.
+
+**Loop prevention rules**:
+- `respond-to-review` ONLY fires when the **reviewer** persona submits a `changes_requested` review
+- `respond-to-pr-comment` skips @mentions from **any** known persona
+- `check-suite-success` checks reviews from the **reviewer** persona specifically
+
+### Per-Agent Credential Overrides
+
+Override any credential for a specific agent type. The dual-persona tokens are the primary use case:
+
+```bash
+# Per-project overrides (auto-configured by the GitHub integration tab)
+cascade projects override-set <id> --key GITHUB_TOKEN_IMPLEMENTER --credential-id 5
+cascade projects override-set <id> --key GITHUB_TOKEN_REVIEWER --credential-id 7
 ```
 
 Resolution order: agent+project override → project override → org default → null.
@@ -290,13 +310,14 @@ cascade projects delete <id> --yes
 cascade projects integrations <id>
 cascade projects integration-set <id> --type trello --config '{"boardId":"..."}'
 cascade projects overrides <id>
-cascade projects override-set <id> --key GITHUB_TOKEN --credential-id 5
-cascade projects override-set <id> --key GITHUB_TOKEN --credential-id 7 --agent-type review
-cascade projects override-rm <id> --key GITHUB_TOKEN
+cascade projects override-set <id> --key GITHUB_TOKEN_IMPLEMENTER --credential-id 5
+cascade projects override-set <id> --key GITHUB_TOKEN_REVIEWER --credential-id 7
+cascade projects override-rm <id> --key GITHUB_TOKEN_IMPLEMENTER
 
 # Credentials
 cascade credentials list
-cascade credentials create --name "GitHub Bot" --key GITHUB_TOKEN --value ghp_... [--default]
+cascade credentials create --name "Implementer Bot" --key GITHUB_TOKEN_IMPLEMENTER --value ghp_aaa... [--default]
+cascade credentials create --name "Reviewer Bot" --key GITHUB_TOKEN_REVIEWER --value ghp_bbb... [--default]
 cascade credentials update <id> --value new-secret
 cascade credentials delete <id> --yes
 
