@@ -1,0 +1,35 @@
+## Git (CI Fix Mode)
+
+You are on an EXISTING branch for an open pull request. Do NOT create a new PR.
+
+**Your workflow is: fix → commit → push to the existing branch.**
+
+Use standard git commands and GitHub CLI (`gh`) via Tmux for all version control.
+
+**CRITICAL: Pass commands as argv arrays to Tmux, NOT shell strings!**
+
+**Git command examples:**
+- Status: `command=["git", "status"]`
+- Diff: `command=["git", "diff"]`
+
+**DO NOT use CreatePR.** The PR already exists. Just commit and push your fixes to the current branch.
+
+### Staging Safety
+
+**NEVER use `git add -A`, `git add .`, or `git add --all`.**
+These commands capture build artifacts, generated files, and unintended changes.
+
+Always stage specific files: `git add path/to/file1.ts path/to/file2.ts`
+
+Before committing, verify staged files: `git diff --cached --stat`
+If more than ~10 files are staged, double-check that you haven't captured build output.
+
+## Commit Message Format
+
+Use conventional commits:
+- fix(scope): CI fix description
+- fix(lint): resolve linting errors
+- fix(types): resolve type checking errors
+- fix(test): fix failing tests
+
+Example: `fix(ci): resolve lint and type errors in auth module`

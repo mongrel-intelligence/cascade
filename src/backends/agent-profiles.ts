@@ -42,6 +42,15 @@ const GITHUB_REVIEW_TOOLS = [
 	'CreatePRReview',
 ];
 
+/** GitHub CI tools for respond-to-ci agent (no CreatePR — pushes to existing branch) */
+const GITHUB_CI_TOOLS = [
+	'GetPRDetails',
+	'GetPRDiff',
+	'GetPRChecks',
+	'PostPRComment',
+	'UpdatePRComment',
+];
+
 const SESSION_TOOL = 'Finish';
 
 const ALL_SDK_TOOLS = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
@@ -300,6 +309,39 @@ async function fetchReviewContext(params: FetchContextParams): Promise<ContextIn
 	return injections;
 }
 
+/** CI context: PR details + diff + checks + dirListing + contextFiles + squint + optional workItem */
+async function fetchCIContext(params: FetchContextParams): Promise<ContextInjection[]> {
+	const injections: ContextInjection[] = [];
+	const repoFullName = params.input.repoFullName as string;
+	const prNumber = params.input.prNumber as number;
+	const [owner, repo] = repoFullName.split('/');
+
+	// PR context (details, diff, checks) — most relevant for CI fixing
+	const { injections: prInjections } = await fetchPRContextInjections(
+		owner,
+		repo,
+		prNumber,
+		params.repoDir,
+		params.logWriter,
+	);
+	injections.push(...prInjections);
+
+	// Codebase context
+	injections.push(fetchDirectoryListing(params.repoDir));
+	injections.push(...fetchContextFileInjections(params.contextFiles));
+
+	const squint = fetchSquintOverview(params.repoDir);
+	if (squint) injections.push(squint);
+
+	// Work item context (if triggered from a Trello card)
+	if (params.input.cardId) {
+		const workItem = await fetchWorkItemInjection(params.input.cardId);
+		if (workItem) injections.push(workItem);
+	}
+
+	return injections;
+}
+
 // ============================================================================
 // Task Prompt Builders
 // ============================================================================
@@ -338,6 +380,25 @@ Repo: ${repo}
 PR Number: ${prNumber}
 
 Use these values when calling GitHub tools (GetPRDetails, GetPRDiff, CreatePRReview).`;
+}
+
+function buildCITaskPrompt(input: AgentInput): string {
+	const repoFullName = input.repoFullName as string;
+	const prNumber = input.prNumber as number;
+	const prBranch = input.prBranch as string;
+	const [owner, repo] = repoFullName.split('/');
+
+	return `You are on the branch \`${prBranch}\` for PR #${prNumber}.
+
+CI checks have failed. Analyze the failures and fix them.
+
+## GitHub Context
+
+Owner: ${owner}
+Repo: ${repo}
+PR Number: ${prNumber}
+
+Use these values when calling GitHub tools (GetPRDetails, GetPRDiff, PostPRComment, UpdatePRComment).`;
 }
 
 // ============================================================================
@@ -391,6 +452,35 @@ const respondToPlanningCommentProfile: AgentProfile = {
 	buildTaskPrompt: buildCommentResponseTaskPrompt,
 };
 
+const respondToCIProfile: AgentProfile = {
+	filterTools: (allTools) =>
+		filterToolsByNames(allTools, [
+			...GITHUB_CI_TOOLS,
+			...PM_TOOLS,
+			PM_CHECKLIST_TOOL,
+			SESSION_TOOL,
+		]),
+	sdkTools: ALL_SDK_TOOLS,
+	enableStopHooks: true,
+	needsGitHubToken: true,
+	fetchContext: fetchCIContext,
+	buildTaskPrompt: buildCITaskPrompt,
+
+	async preExecute({ input, logWriter }: PreExecuteParams): Promise<void> {
+		const repoFullName = input.repoFullName as string;
+		const prNumber = input.prNumber as number;
+		const [owner, repo] = repoFullName.split('/');
+
+		logWriter('INFO', 'Posting initial CI fix comment', { owner, repo, prNumber });
+		await githubClient.createPRComment(
+			owner,
+			repo,
+			prNumber,
+			'🤖 Working on fixing CI failures...',
+		);
+	},
+};
+
 const defaultProfile: AgentProfile = {
 	filterTools: (allTools) => allTools,
 	sdkTools: ALL_SDK_TOOLS,
@@ -411,6 +501,7 @@ const PROFILE_REGISTRY: Record<string, AgentProfile> = {
 	'respond-to-planning-comment': respondToPlanningCommentProfile,
 	'respond-to-review': reviewProfile,
 	'respond-to-pr-comment': reviewProfile,
+	'respond-to-ci': respondToCIProfile,
 };
 
 export function getAgentProfile(agentType: string): AgentProfile {
