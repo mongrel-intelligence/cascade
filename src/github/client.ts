@@ -100,6 +100,16 @@ export interface CreatedPR {
 	title: string;
 }
 
+export type GitHubReactionContent =
+	| '+1'
+	| '-1'
+	| 'laugh'
+	| 'confused'
+	| 'heart'
+	| 'hooray'
+	| 'rocket'
+	| 'eyes';
+
 export const githubClient = {
 	async getPR(owner: string, repo: string, prNumber: number): Promise<PRDetails> {
 		logger.debug('Fetching PR', { owner, repo, prNumber });
@@ -385,6 +395,36 @@ export const githubClient = {
 			htmlUrl: data.html_url,
 			title: data.title,
 		};
+	},
+
+	async addIssueCommentReaction(
+		owner: string,
+		repo: string,
+		commentId: number,
+		content: GitHubReactionContent,
+	): Promise<void> {
+		logger.debug('Adding reaction to issue comment', { owner, repo, commentId, content });
+		await getClient().reactions.createForIssueComment({
+			owner,
+			repo,
+			comment_id: commentId,
+			content,
+		});
+	},
+
+	async addReviewCommentReaction(
+		owner: string,
+		repo: string,
+		commentId: number,
+		content: GitHubReactionContent,
+	): Promise<void> {
+		logger.debug('Adding reaction to review comment', { owner, repo, commentId, content });
+		await getClient().reactions.createForPullRequestReviewComment({
+			owner,
+			repo,
+			comment_id: commentId,
+			content,
+		});
 	},
 
 	async branchExists(owner: string, repo: string, branch: string): Promise<boolean> {

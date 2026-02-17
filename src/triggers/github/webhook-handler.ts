@@ -23,6 +23,7 @@ import {
 import { injectLlmApiKeys } from '../../utils/llmEnv.js';
 import { safeOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
+import { acknowledgeWithReaction } from '../shared/acknowledge-reaction.js';
 import { handleAgentResultArtifacts } from '../shared/agent-result-handler.js';
 import { checkBudgetExceeded } from '../shared/budget.js';
 import { triggerDebugAnalysis } from '../shared/debug-runner.js';
@@ -181,6 +182,7 @@ async function runGitHubAgentJob(
 	config: CascadeConfig,
 	githubToken: string,
 	registry: TriggerRegistry,
+	payload: unknown,
 ): Promise<void> {
 	// Use the persona token for the agent that will do the work (for ack comments)
 	let prCommentToken: string;
@@ -190,7 +192,10 @@ async function runGitHubAgentJob(
 		prCommentToken = githubToken;
 	}
 
-	await withGitHubToken(prCommentToken, () => postAcknowledgmentComment(result));
+	await withGitHubToken(prCommentToken, async () => {
+		await acknowledgeWithReaction('github', payload);
+		await postAcknowledgmentComment(result);
+	});
 	setProcessing(true);
 	startWatchdog(config.defaults.watchdogTimeoutMs);
 
@@ -284,7 +289,7 @@ export async function processGitHubWebhook(
 	});
 
 	if (result.agentType) {
-		await runGitHubAgentJob(result, project, config, githubToken, registry);
+		await runGitHubAgentJob(result, project, config, githubToken, registry, payload);
 	} else {
 		logger.info('Trigger completed without agent', { prNumber: result.prNumber });
 	}

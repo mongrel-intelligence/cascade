@@ -388,6 +388,25 @@ export const trelloClient = {
 		});
 	},
 
+	async addActionReaction(
+		actionId: string,
+		emoji: { shortName: string; native: string; unified: string },
+	): Promise<void> {
+		logger.debug('Adding reaction to Trello action', { actionId, emoji: emoji.shortName });
+		const { apiKey, token } = getTrelloCredentials();
+		const response = await fetch(
+			`https://api.trello.com/1/actions/${actionId}/reactions?key=${apiKey}&token=${token}`,
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ emoji }),
+			},
+		);
+		if (!response.ok) {
+			throw new Error(`Failed to add reaction to action: ${response.status}`);
+		}
+	},
+
 	async getCardCustomFieldItems(cardId: string): Promise<CustomFieldItem[]> {
 		logger.debug('Fetching card custom field items', { cardId });
 		const { apiKey, token } = getTrelloCredentials();

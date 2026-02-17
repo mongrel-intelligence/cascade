@@ -102,7 +102,26 @@ async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 		// Monitor container exit
 		container
 			.wait()
-			.then((result) => {
+			.then(async (result) => {
+				// Collect worker logs before auto-removal
+				try {
+					const logs = await container.logs({
+						stdout: true,
+						stderr: true,
+						follow: false,
+					});
+					const logText = logs.toString('utf-8');
+					if (logText.trim()) {
+						const lines = logText.trim().split('\n');
+						const tail = lines.slice(-50).join('\n');
+						console.log(
+							`[WorkerManager] Worker logs (last ${Math.min(lines.length, 50)} of ${lines.length} lines):\n${tail}`,
+						);
+					}
+				} catch {
+					// Container may already be removed — expected with AutoRemove
+				}
+
 				console.log('[WorkerManager] Worker exited:', {
 					jobId,
 					statusCode: result.StatusCode,

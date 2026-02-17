@@ -27,6 +27,11 @@ const mockActions = {
 	listJobsForWorkflowRun: vi.fn(),
 };
 
+const mockReactions = {
+	createForIssueComment: vi.fn(),
+	createForPullRequestReviewComment: vi.fn(),
+};
+
 const mockRepos = {
 	getBranch: vi.fn(),
 };
@@ -41,6 +46,7 @@ vi.mock('@octokit/rest', () => ({
 		issues: mockIssues,
 		checks: mockChecks,
 		actions: mockActions,
+		reactions: mockReactions,
 		repos: mockRepos,
 		users: mockUsers,
 	})),
@@ -690,6 +696,62 @@ describe('githubClient', () => {
 
 			await withGitHubToken('token-b', () => githubClient.getPR('owner', 'repo', 2));
 			expect(Octokit).toHaveBeenCalledWith({ auth: 'token-b' });
+		});
+	});
+
+	describe('addIssueCommentReaction', () => {
+		it('calls reactions.createForIssueComment with correct params', async () => {
+			mockReactions.createForIssueComment.mockResolvedValue({ data: {} });
+
+			await withGitHubToken('test-token', () =>
+				githubClient.addIssueCommentReaction('owner', 'repo', 42, 'eyes'),
+			);
+
+			expect(mockReactions.createForIssueComment).toHaveBeenCalledWith({
+				owner: 'owner',
+				repo: 'repo',
+				comment_id: 42,
+				content: 'eyes',
+			});
+		});
+
+		it('propagates errors from the API', async () => {
+			mockReactions.createForIssueComment.mockRejectedValue(new Error('403 Forbidden'));
+
+			await expect(
+				withGitHubToken('test-token', () =>
+					githubClient.addIssueCommentReaction('owner', 'repo', 42, 'eyes'),
+				),
+			).rejects.toThrow('403 Forbidden');
+		});
+	});
+
+	describe('addReviewCommentReaction', () => {
+		it('calls reactions.createForPullRequestReviewComment with correct params', async () => {
+			mockReactions.createForPullRequestReviewComment.mockResolvedValue({ data: {} });
+
+			await withGitHubToken('test-token', () =>
+				githubClient.addReviewCommentReaction('owner', 'repo', 99, 'heart'),
+			);
+
+			expect(mockReactions.createForPullRequestReviewComment).toHaveBeenCalledWith({
+				owner: 'owner',
+				repo: 'repo',
+				comment_id: 99,
+				content: 'heart',
+			});
+		});
+
+		it('propagates errors from the API', async () => {
+			mockReactions.createForPullRequestReviewComment.mockRejectedValue(
+				new Error('422 Unprocessable'),
+			);
+
+			await expect(
+				withGitHubToken('test-token', () =>
+					githubClient.addReviewCommentReaction('owner', 'repo', 99, 'eyes'),
+				),
+			).rejects.toThrow('422 Unprocessable');
 		});
 	});
 
