@@ -16,7 +16,7 @@ FROM zbigniew1/niu-browser-base:latest AS production
 WORKDIR /app
 
 # Install pnpm and squint globally (some repos use pnpm, squint for codebase analysis)
-RUN npm install -g pnpm @zbigniewsobiecki/squint@latest --force
+RUN npm install -g pnpm @zbigniewsobiecki/squint@^1.7.0 --force
 
 # Install additional tools not in niu-browser-base
 # Note: PostgreSQL is NOT installed - workers connect to external PostgreSQL
