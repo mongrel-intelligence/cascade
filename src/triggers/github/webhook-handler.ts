@@ -1,18 +1,11 @@
-import { runAgent } from '../../agents/registry.js';
 import { getProjectSecret, loadProjectConfigByRepo } from '../../config/provider.js';
 import { getSessionState } from '../../gadgets/sessionState.js';
 import { githubClient, withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
-import {
-	PMLifecycleManager,
-	createPMProvider,
-	resolveProjectPMConfig,
-	withPMProvider,
-} from '../../pm/index.js';
+import { createPMProvider, withPMProvider } from '../../pm/index.js';
 import { withTrelloCredentials } from '../../trello/client.js';
 import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
 import {
-	dequeueWebhook,
 	enqueueWebhook,
 	getQueueLength,
 	isCurrentlyProcessing,
@@ -24,113 +17,10 @@ import { injectLlmApiKeys } from '../../utils/llmEnv.js';
 import { safeOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
 import { acknowledgeWithReaction } from '../shared/acknowledge-reaction.js';
-import { handleAgentResultArtifacts } from '../shared/agent-result-handler.js';
-import { checkBudgetExceeded } from '../shared/budget.js';
-import { triggerDebugAnalysis } from '../shared/debug-runner.js';
-import { shouldTriggerDebug } from '../shared/debug-trigger.js';
+import type { AgentExecutionConfig } from '../shared/agent-execution.js';
+import { runAgentExecutionPipeline } from '../shared/agent-execution.js';
+import { processNextQueuedWebhook } from '../shared/webhook-queue.js';
 import type { TriggerResult } from '../types.js';
-
-async function executeGitHubAgent(
-	result: TriggerResult,
-	project: ProjectConfig,
-	config: CascadeConfig,
-): Promise<void> {
-	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY').catch(() => '');
-	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN').catch(() => '');
-	const githubToken = await getPersonaToken(project.id, result.agentType);
-
-	const restoreLlmEnv = await injectLlmApiKeys(project.id);
-
-	try {
-		const pmProvider = createPMProvider(project);
-		await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
-			withPMProvider(pmProvider, () =>
-				withGitHubToken(githubToken, () => executeGitHubAgentWithCreds(result, project, config)),
-			),
-		);
-	} finally {
-		restoreLlmEnv();
-	}
-}
-
-async function executeGitHubAgentWithCreds(
-	result: TriggerResult,
-	project: ProjectConfig,
-	config: CascadeConfig,
-): Promise<void> {
-	const cardId = result.cardId ?? result.workItemId;
-	const pmProvider = createPMProvider(project);
-	const pmConfig = resolveProjectPMConfig(project);
-	const lifecycle = new PMLifecycleManager(pmProvider, pmConfig);
-
-	let remainingBudgetUsd: number | undefined;
-	if (cardId) {
-		const budgetCheck = await checkBudgetExceeded(cardId, project, config);
-		if (budgetCheck?.exceeded) {
-			logger.warn('Budget exceeded, GitHub agent not started', {
-				cardId,
-				currentCost: budgetCheck.currentCost,
-				budget: budgetCheck.budget,
-			});
-			await lifecycle.handleBudgetExceeded(cardId, budgetCheck.currentCost, budgetCheck.budget);
-			return;
-		}
-		remainingBudgetUsd = budgetCheck?.remaining;
-	}
-
-	const agentResult = await runAgent(result.agentType, {
-		...result.agentInput,
-		remainingBudgetUsd,
-		project,
-		config,
-	});
-
-	if (cardId) {
-		await handleAgentResultArtifacts(cardId, result.agentType, agentResult, project);
-
-		const postBudgetCheck = await checkBudgetExceeded(cardId, project, config);
-		if (postBudgetCheck?.exceeded) {
-			await lifecycle.handleBudgetWarning(
-				cardId,
-				postBudgetCheck.currentCost,
-				postBudgetCheck.budget,
-			);
-		}
-	}
-
-	// Move to in-review if implementation completed successfully
-	if (cardId && result.agentType === 'implementation' && agentResult.success) {
-		await lifecycle.handleSuccess(cardId, result.agentType, agentResult.prUrl);
-	}
-
-	if (!agentResult.success && result.prNumber) {
-		await updateInitialCommentWithError(result, agentResult);
-	}
-
-	logger.info('GitHub agent completed', {
-		agentType: result.agentType,
-		prNumber: result.prNumber,
-		success: agentResult.success,
-		cost: agentResult.cost,
-		runId: agentResult.runId,
-	});
-
-	await tryGitHubAutoDebug(agentResult, project, config);
-}
-
-async function tryGitHubAutoDebug(
-	agentResult: { runId?: string },
-	project: ProjectConfig,
-	config: CascadeConfig,
-): Promise<void> {
-	if (!agentResult.runId) return;
-	const debugTarget = await shouldTriggerDebug(agentResult.runId);
-	if (debugTarget) {
-		triggerDebugAnalysis(debugTarget.runId, project, config, debugTarget.cardId).catch((err) =>
-			logger.error('Auto-debug failed', { error: String(err) }),
-		);
-	}
-}
 
 async function updateInitialCommentWithError(
 	result: TriggerResult,
@@ -176,6 +66,39 @@ async function postAcknowledgmentComment(result: TriggerResult): Promise<void> {
 	}
 }
 
+async function executeGitHubAgent(
+	result: TriggerResult,
+	project: ProjectConfig,
+	config: CascadeConfig,
+): Promise<void> {
+	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY').catch(() => '');
+	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN').catch(() => '');
+	const githubToken = await getPersonaToken(project.id, result.agentType);
+
+	const restoreLlmEnv = await injectLlmApiKeys(project.id);
+
+	const executionConfig: AgentExecutionConfig = {
+		skipPrepareForAgent: true,
+		skipHandleFailure: true,
+		handleSuccessOnlyForAgentType: 'implementation',
+		onFailure: updateInitialCommentWithError,
+		logLabel: 'GitHub agent',
+	};
+
+	try {
+		const pmProvider = createPMProvider(project);
+		await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
+			withPMProvider(pmProvider, () =>
+				withGitHubToken(githubToken, () =>
+					runAgentExecutionPipeline(result, project, config, executionConfig),
+				),
+			),
+		);
+	} finally {
+		restoreLlmEnv();
+	}
+}
+
 async function runGitHubAgentJob(
 	result: TriggerResult,
 	project: ProjectConfig,
@@ -213,19 +136,12 @@ async function runGitHubAgentJob(
 }
 
 function processNextQueuedGitHubWebhook(registry: TriggerRegistry): void {
-	const next = dequeueWebhook();
-	if (next) {
-		const eventType = next.eventType || 'pull_request_review_comment';
-		logger.info('Processing queued GitHub webhook', {
-			queueLength: getQueueLength(),
-			eventType,
-		});
-		setImmediate(() => {
-			processGitHubWebhook(next.payload, eventType, registry).catch((err) => {
-				logger.error('Failed to process queued GitHub webhook', { error: String(err) });
-			});
-		});
-	}
+	processNextQueuedWebhook(
+		(payload, eventType) =>
+			processGitHubWebhook(payload, eventType ?? 'pull_request_review_comment', registry),
+		'GitHub',
+		(entry) => entry.eventType ?? 'pull_request_review_comment',
+	);
 }
 
 export async function processGitHubWebhook(

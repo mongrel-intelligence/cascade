@@ -6,7 +6,6 @@
  * and dispatches to the trigger registry.
  */
 
-import { runAgent } from '../../agents/registry.js';
 import { getProjectSecret, loadProjectConfigByJiraProjectKey } from '../../config/provider.js';
 import { withGitHubToken } from '../../github/client.js';
 import { getPersonaToken } from '../../github/personas.js';
@@ -19,7 +18,6 @@ import {
 } from '../../pm/index.js';
 import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
 import {
-	dequeueWebhook,
 	enqueueWebhook,
 	getQueueLength,
 	isCurrentlyProcessing,
@@ -30,10 +28,8 @@ import {
 import { injectLlmApiKeys } from '../../utils/llmEnv.js';
 import type { TriggerRegistry } from '../registry.js';
 import { acknowledgeWithReaction } from '../shared/acknowledge-reaction.js';
-import { handleAgentResultArtifacts } from '../shared/agent-result-handler.js';
-import { checkBudgetExceeded } from '../shared/budget.js';
-import { triggerDebugAnalysis } from '../shared/debug-runner.js';
-import { shouldTriggerDebug } from '../shared/debug-trigger.js';
+import { runAgentExecutionPipeline } from '../shared/agent-execution.js';
+import { processNextQueuedWebhook } from '../shared/webhook-queue.js';
 import type { TriggerResult } from '../types.js';
 
 interface JiraWebhookPayload {
@@ -90,7 +86,9 @@ async function executeJiraAgent(
 			{ email: jiraEmail, apiToken: jiraApiToken, baseUrl: jiraBaseUrl },
 			() =>
 				withPMProvider(pmProvider, () =>
-					withGitHubToken(githubToken, () => executeJiraAgentWithCreds(result, project, config)),
+					withGitHubToken(githubToken, () =>
+						runAgentExecutionPipeline(result, project, config, { logLabel: 'JIRA agent' }),
+					),
 				),
 		);
 	} finally {
@@ -98,91 +96,8 @@ async function executeJiraAgent(
 	}
 }
 
-async function executeJiraAgentWithCreds(
-	result: TriggerResult,
-	project: ProjectConfig,
-	config: CascadeConfig,
-): Promise<void> {
-	const workItemId = result.workItemId ?? result.cardId;
-	const pmProvider = createPMProvider(project);
-	const pmConfig = resolveProjectPMConfig(project);
-	const lifecycle = new PMLifecycleManager(pmProvider, pmConfig);
-
-	let remainingBudgetUsd: number | undefined;
-	if (workItemId) {
-		const budgetCheck = await checkBudgetExceeded(workItemId, project, config);
-		if (budgetCheck?.exceeded) {
-			logger.warn('Budget exceeded, JIRA agent not started', {
-				workItemId,
-				currentCost: budgetCheck.currentCost,
-				budget: budgetCheck.budget,
-			});
-			await lifecycle.handleBudgetExceeded(workItemId, budgetCheck.currentCost, budgetCheck.budget);
-			return;
-		}
-		remainingBudgetUsd = budgetCheck?.remaining;
-	}
-
-	if (workItemId) {
-		await lifecycle.prepareForAgent(workItemId, result.agentType);
-	}
-
-	const agentResult = await runAgent(result.agentType, {
-		...result.agentInput,
-		cardId: workItemId,
-		remainingBudgetUsd,
-		project,
-		config,
-	});
-
-	if (workItemId) {
-		await handleAgentResultArtifacts(workItemId, result.agentType, agentResult, project);
-
-		const postBudgetCheck = await checkBudgetExceeded(workItemId, project, config);
-		if (postBudgetCheck?.exceeded) {
-			await lifecycle.handleBudgetWarning(
-				workItemId,
-				postBudgetCheck.currentCost,
-				postBudgetCheck.budget,
-			);
-		}
-
-		await lifecycle.cleanupProcessing(workItemId);
-
-		if (agentResult.success) {
-			await lifecycle.handleSuccess(workItemId, result.agentType, agentResult.prUrl);
-		} else {
-			await lifecycle.handleFailure(workItemId, agentResult.error);
-		}
-	}
-
-	logger.info('JIRA agent completed', {
-		agentType: result.agentType,
-		success: agentResult.success,
-		runId: agentResult.runId,
-	});
-
-	// Auto-debug
-	if (agentResult.runId) {
-		const debugTarget = await shouldTriggerDebug(agentResult.runId);
-		if (debugTarget) {
-			triggerDebugAnalysis(debugTarget.runId, project, config, debugTarget.cardId).catch((err) =>
-				logger.error('Auto-debug failed', { error: String(err) }),
-			);
-		}
-	}
-}
-
 function processNextQueuedJiraWebhook(registry: TriggerRegistry): void {
-	const next = dequeueWebhook();
-	if (next) {
-		logger.info('Processing queued JIRA webhook', { queueLength: getQueueLength() });
-		setImmediate(() => {
-			processJiraWebhook(next.payload, registry).catch((err) => {
-				logger.error('Failed to process queued JIRA webhook', { error: String(err) });
-			});
-		});
-	}
+	processNextQueuedWebhook((payload) => processJiraWebhook(payload, registry), 'JIRA');
 }
 
 export async function processJiraWebhook(
