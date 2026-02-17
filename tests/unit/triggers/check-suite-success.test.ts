@@ -10,10 +10,6 @@ vi.mock('../../../src/github/client.js', () => ({
 	},
 }));
 
-vi.mock('../../../src/config/provider.js', () => ({
-	getAgentCredential: vi.fn().mockResolvedValue(null),
-}));
-
 import { githubClient } from '../../../src/github/client.js';
 
 describe('CheckSuiteSuccessTrigger', () => {

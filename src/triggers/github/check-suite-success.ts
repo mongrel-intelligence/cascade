@@ -1,6 +1,4 @@
-import { getAgentCredential } from '../../config/provider.js';
-import { githubClient, withGitHubToken } from '../../github/client.js';
-import { getTokenKeyForPersona } from '../../github/personas.js';
+import { githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
@@ -69,8 +67,6 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		const cardId = extractTrelloCardId(prDetails.body);
 
 		// Skip if the reviewer persona's latest review already covers the current HEAD SHA
-		const reviewerTokenKey = getTokenKeyForPersona('reviewer');
-		const agentGitHubToken = await getAgentCredential(ctx.project.id, 'review', reviewerTokenKey);
 		const reviews = await githubClient.getPRReviews(owner, repo, prNumber);
 
 		// Use persona identities to identify reviewer bot's reviews
@@ -102,12 +98,9 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		}
 
 		// Verify all checks are actually passing (double-check)
-		// Use the reviewer agent's token if available, since the default project token
-		// may lack actions:read permission (fine-grained PATs need it explicitly).
-		const fetchCheckStatus = () => githubClient.getCheckSuiteStatus(owner, repo, headSha);
-		const checkStatus = agentGitHubToken
-			? await withGitHubToken(agentGitHubToken, fetchCheckStatus)
-			: await fetchCheckStatus();
+		// Uses the implementer token already in scope (set by webhook-handler),
+		// which has actions:read permission. The reviewer's fine-grained PAT may not.
+		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
 
 		if (!checkStatus.allPassing) {
 			logger.info('Not all checks passing, skipping review trigger', {
