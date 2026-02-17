@@ -182,7 +182,7 @@ export async function loadConfigFromDb(): Promise<CascadeConfig> {
 	// Merge global + org-level agent configs for defaults
 	const mergedGlobalConfigs = [
 		...globalAgentConfigs,
-		...(orgAgentConfigsMap.get(defaultsRow?.orgId ?? 'default') ?? []),
+		...(defaultsRow ? (orgAgentConfigsMap.get(defaultsRow.orgId) ?? []) : []),
 	];
 
 	const rawConfig = {
@@ -202,7 +202,9 @@ export async function loadConfigFromDb(): Promise<CascadeConfig> {
 	return validateConfig(rawConfig);
 }
 
-async function findProjectFromDb(whereClause: SQL): Promise<ProjectConfig | undefined> {
+async function findProjectConfigFromDb(
+	whereClause: SQL,
+): Promise<{ project: ProjectConfig; config: CascadeConfig } | undefined> {
 	const db = getDb();
 	const [row] = await db.select().from(projects).where(whereClause);
 	if (!row) return undefined;
@@ -236,18 +238,33 @@ async function findProjectFromDb(whereClause: SQL): Promise<ProjectConfig | unde
 		defaults: mapDefaultsRow(defaultsRow, [...globalAcs, ...orgAcs]),
 		projects: [mapProjectRow(row, projectAcs, trelloConfig, jiraConfig)],
 	};
-	const validated = validateConfig(rawConfig);
-	return validated.projects[0];
+	const config = validateConfig(rawConfig);
+	return { project: config.projects[0], config };
 }
 
+async function findProjectFromDb(whereClause: SQL): Promise<ProjectConfig | undefined> {
+	const result = await findProjectConfigFromDb(whereClause);
+	return result?.project;
+}
+
+type ProjectWithConfig = { project: ProjectConfig; config: CascadeConfig };
+
+const boardIdWhereClause = (boardId: string) =>
+	sql`${projects.id} IN (
+		SELECT ${projectIntegrations.projectId} FROM ${projectIntegrations}
+		WHERE ${projectIntegrations.type} = 'trello'
+		AND ${projectIntegrations.config}->>'boardId' = ${boardId}
+	)`;
+
+const jiraProjectKeyWhereClause = (projectKey: string) =>
+	sql`${projects.id} IN (
+		SELECT ${projectIntegrations.projectId} FROM ${projectIntegrations}
+		WHERE ${projectIntegrations.type} = 'jira'
+		AND ${projectIntegrations.config}->>'projectKey' = ${projectKey}
+	)`;
+
 export function findProjectByBoardIdFromDb(boardId: string): Promise<ProjectConfig | undefined> {
-	return findProjectFromDb(
-		sql`${projects.id} IN (
-			SELECT ${projectIntegrations.projectId} FROM ${projectIntegrations}
-			WHERE ${projectIntegrations.type} = 'trello'
-			AND ${projectIntegrations.config}->>'boardId' = ${boardId}
-		)`,
-	);
+	return findProjectFromDb(boardIdWhereClause(boardId));
 }
 
 export function findProjectByRepoFromDb(repo: string): Promise<ProjectConfig | undefined> {
@@ -261,11 +278,27 @@ export function findProjectByIdFromDb(id: string): Promise<ProjectConfig | undef
 export function findProjectByJiraProjectKeyFromDb(
 	projectKey: string,
 ): Promise<ProjectConfig | undefined> {
-	return findProjectFromDb(
-		sql`${projects.id} IN (
-			SELECT ${projectIntegrations.projectId} FROM ${projectIntegrations}
-			WHERE ${projectIntegrations.type} = 'jira'
-			AND ${projectIntegrations.config}->>'projectKey' = ${projectKey}
-		)`,
-	);
+	return findProjectFromDb(jiraProjectKeyWhereClause(projectKey));
+}
+
+// WithConfig variants — return both the project and its org-scoped CascadeConfig
+
+export function findProjectWithConfigByBoardId(
+	boardId: string,
+): Promise<ProjectWithConfig | undefined> {
+	return findProjectConfigFromDb(boardIdWhereClause(boardId));
+}
+
+export function findProjectWithConfigByRepo(repo: string): Promise<ProjectWithConfig | undefined> {
+	return findProjectConfigFromDb(eq(projects.repo, repo));
+}
+
+export function findProjectWithConfigById(id: string): Promise<ProjectWithConfig | undefined> {
+	return findProjectConfigFromDb(eq(projects.id, id));
+}
+
+export function findProjectWithConfigByJiraProjectKey(
+	projectKey: string,
+): Promise<ProjectWithConfig | undefined> {
+	return findProjectConfigFromDb(jiraProjectKeyWhereClause(projectKey));
 }

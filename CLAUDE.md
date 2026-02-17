@@ -27,7 +27,7 @@ Trello/GitHub Webhook → TriggerRegistry → Agent → Code Changes → PR
 
 ### Multi-Project Support
 
-Projects are configured in the PostgreSQL database (`projects` table). Each project has its own Trello board, GitHub repo, and optional per-project credentials. Use `npm run db:seed` to seed from `config/projects.json` during initial setup.
+Projects are configured in the PostgreSQL database (`projects` table). Each project has its own Trello board, GitHub repo, and optional per-project credentials. Use `npm run db:seed -- --org <org-id>` to seed from `config/projects.json` during initial setup.
 
 ## Development
 
@@ -102,7 +102,7 @@ npm run db:generate            # Generate migration SQL from schema changes
 npm run db:migrate             # Apply pending migrations
 npm run db:push                # Push schema directly (dev only)
 npm run db:studio              # Open Drizzle Studio
-npm run db:seed                # Seed DB from config/projects.json
+npm run db:seed -- --org <id>  # Seed DB from config/projects.json into an org
 npm run db:bootstrap-journal   # Bootstrap migration journal (one-time setup for existing DBs)
 ```
 

@@ -1,5 +1,5 @@
 import { runAgent } from '../../agents/registry.js';
-import { findProjectByBoardId, getProjectSecret, loadConfig } from '../../config/provider.js';
+import { getProjectSecret, loadProjectConfigByBoardId } from '../../config/provider.js';
 import { withGitHubToken } from '../../github/client.js';
 import { getPersonaToken } from '../../github/personas.js';
 import {
@@ -237,13 +237,12 @@ export async function processTrelloWebhook(
 	const actionType = payload.action?.type;
 	logger.info('Webhook details', { boardId, actionType });
 
-	const config = await loadConfig();
-
-	const project = await findProjectByBoardId(boardId);
-	if (!project) {
+	const projectConfig = await loadProjectConfigByBoardId(boardId);
+	if (!projectConfig) {
 		logger.warn('No project configured for board', { boardId });
 		return;
 	}
+	const { project, config } = projectConfig;
 
 	// Establish Trello credential + PM provider scope for all downstream operations
 	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY');
