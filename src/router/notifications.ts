@@ -1,7 +1,6 @@
 import { getProjectGitHubToken } from '../config/projects.js';
 import { getProjectSecret } from '../config/provider.js';
 import { findProjectByRepo } from '../config/provider.js';
-import { markdownToAdf } from '../pm/jira/adf.js';
 import type { CascadeJob, GitHubJob, JiraJob, TrelloJob } from './queue.js';
 
 /**
@@ -176,8 +175,9 @@ async function notifyJiraTimeout(job: JiraJob, info: TimeoutInfo): Promise<void>
 		'Transition the issue back to the trigger status to retry.',
 	);
 
-	const adfBody = markdownToAdf(message);
-	const url = `${jiraBaseUrl}/rest/api/3/issue/${job.issueKey}/comment`;
+	// Use v2 API which accepts plain text, avoiding the pm/jira/adf dependency
+	// (the router image doesn't include pm/ modules)
+	const url = `${jiraBaseUrl}/rest/api/2/issue/${job.issueKey}/comment`;
 	const auth = Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString('base64');
 	const response = await fetch(url, {
 		method: 'POST',
@@ -185,7 +185,7 @@ async function notifyJiraTimeout(job: JiraJob, info: TimeoutInfo): Promise<void>
 			Authorization: `Basic ${auth}`,
 			'Content-Type': 'application/json',
 		},
-		body: JSON.stringify({ body: adfBody }),
+		body: JSON.stringify({ body: message }),
 	});
 
 	if (!response.ok) {
