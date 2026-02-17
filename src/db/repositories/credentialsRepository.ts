@@ -128,7 +128,6 @@ export async function createCredential(params: {
 	name: string;
 	envVarKey: string;
 	value: string;
-	description?: string;
 	isDefault?: boolean;
 }): Promise<{ id: number }> {
 	const db = getDb();
@@ -139,7 +138,6 @@ export async function createCredential(params: {
 			name: params.name,
 			envVarKey: params.envVarKey,
 			value: params.value,
-			description: params.description,
 			isDefault: params.isDefault ?? false,
 		})
 		.returning({ id: credentials.id });
@@ -151,7 +149,6 @@ export async function updateCredential(
 	updates: {
 		name?: string;
 		value?: string;
-		description?: string;
 		isDefault?: boolean;
 	},
 ): Promise<void> {
@@ -159,7 +156,6 @@ export async function updateCredential(
 	const setClause: Record<string, unknown> = { updatedAt: new Date() };
 	if (updates.name !== undefined) setClause.name = updates.name;
 	if (updates.value !== undefined) setClause.value = updates.value;
-	if (updates.description !== undefined) setClause.description = updates.description;
 	if (updates.isDefault !== undefined) setClause.isDefault = updates.isDefault;
 
 	await db.update(credentials).set(setClause).where(eq(credentials.id, id));

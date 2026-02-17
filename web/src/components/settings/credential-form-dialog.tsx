@@ -9,7 +9,6 @@ interface Credential {
 	id: number;
 	name: string;
 	envVarKey: string;
-	description: string | null;
 	isDefault: boolean;
 }
 
@@ -30,7 +29,6 @@ export function CredentialFormDialog({
 	const [name, setName] = useState(credential?.name ?? '');
 	const [envVarKey, setEnvVarKey] = useState(credential?.envVarKey ?? '');
 	const [value, setValue] = useState('');
-	const [description, setDescription] = useState(credential?.description ?? '');
 	const [isDefault, setIsDefault] = useState(credential?.isDefault ?? false);
 
 	const queryKey = trpc.credentials.list.queryOptions().queryKey;
@@ -41,7 +39,6 @@ export function CredentialFormDialog({
 				name,
 				envVarKey,
 				value,
-				description: description || undefined,
 				isDefault,
 			}),
 		onSuccess: () => {
@@ -56,7 +53,6 @@ export function CredentialFormDialog({
 				id: credential?.id as number,
 				name,
 				...(value ? { value } : {}),
-				description: description || undefined,
 				isDefault,
 			}),
 		onSuccess: () => {
@@ -111,15 +107,6 @@ export function CredentialFormDialog({
 							onChange={(e) => setValue(e.target.value)}
 							placeholder={isEdit ? 'Enter new value to change' : 'Secret value'}
 							required={!isEdit}
-						/>
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="cred-desc">Description</Label>
-						<Input
-							id="cred-desc"
-							value={description}
-							onChange={(e) => setDescription(e.target.value)}
-							placeholder="Optional description"
 						/>
 					</div>
 					<div className="flex items-center gap-2">

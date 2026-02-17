@@ -225,7 +225,6 @@ describe('credentialsRepository', () => {
 				name: 'GitHub Bot',
 				envVarKey: 'GITHUB_TOKEN',
 				value: 'ghp_abc123',
-				description: 'Bot token for CI',
 				isDefault: true,
 			});
 
@@ -236,7 +235,6 @@ describe('credentialsRepository', () => {
 				name: 'GitHub Bot',
 				envVarKey: 'GITHUB_TOKEN',
 				value: 'ghp_abc123',
-				description: 'Bot token for CI',
 				isDefault: true,
 			});
 		});
@@ -275,11 +273,11 @@ describe('credentialsRepository', () => {
 		it('includes updatedAt timestamp', async () => {
 			mockDb.chain.where.mockResolvedValueOnce(undefined);
 
-			await updateCredential(1, { description: 'updated desc' });
+			await updateCredential(1, { name: 'updated name' });
 
 			const setArg = mockDb.chain.set.mock.calls[0][0];
 			expect(setArg.updatedAt).toBeInstanceOf(Date);
-			expect(setArg.description).toBe('updated desc');
+			expect(setArg.name).toBe('updated name');
 		});
 
 		it('only updates provided fields', async () => {
@@ -291,7 +289,6 @@ describe('credentialsRepository', () => {
 			expect(setArg.isDefault).toBe(true);
 			expect(setArg.name).toBeUndefined();
 			expect(setArg.value).toBeUndefined();
-			expect(setArg.description).toBeUndefined();
 		});
 	});
 

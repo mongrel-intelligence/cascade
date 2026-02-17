@@ -12,7 +12,6 @@ export default class CredentialsUpdate extends DashboardCommand {
 		...DashboardCommand.baseFlags,
 		name: Flags.string({ description: 'Credential name' }),
 		value: Flags.string({ description: 'Credential value' }),
-		description: Flags.string({ description: 'Description' }),
 		default: Flags.boolean({ description: 'Set as org default', allowNo: true }),
 	};
 
@@ -24,7 +23,6 @@ export default class CredentialsUpdate extends DashboardCommand {
 				id: args.id,
 				name: flags.name,
 				value: flags.value,
-				description: flags.description,
 				isDefault: flags.default,
 			});
 
