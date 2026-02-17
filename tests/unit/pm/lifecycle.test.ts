@@ -118,6 +118,95 @@ describe('pm/lifecycle', () => {
 			expect(config.labels.processing).toBe('label-id');
 		});
 
+		it('returns JIRA config with custom labels when configured', () => {
+			const project: ProjectConfig = {
+				id: 'proj1',
+				orgId: 'org1',
+				name: 'JIRA Project',
+				repo: 'owner/repo',
+				baseBranch: 'main',
+				branchPrefix: 'feature/',
+				pm: { type: 'jira' },
+				jira: {
+					projectKey: 'PROJ',
+					statuses: {
+						inProgress: 'In Progress',
+						inReview: 'Code Review',
+						done: 'Done',
+						merged: 'Merged',
+					},
+					labels: {
+						processing: 'my-processing',
+						processed: 'my-processed',
+						error: 'my-error',
+						readyToProcess: 'my-ready',
+					},
+				},
+			};
+
+			const config = resolveProjectPMConfig(project);
+
+			expect(config.labels).toEqual({
+				processing: 'my-processing',
+				processed: 'my-processed',
+				error: 'my-error',
+				readyToProcess: 'my-ready',
+			});
+		});
+
+		it('falls back to defaults when JIRA labels are partially configured', () => {
+			const project: ProjectConfig = {
+				id: 'proj1',
+				orgId: 'org1',
+				name: 'JIRA Project',
+				repo: 'owner/repo',
+				baseBranch: 'main',
+				branchPrefix: 'feature/',
+				pm: { type: 'jira' },
+				jira: {
+					projectKey: 'PROJ',
+					statuses: { inProgress: 'In Progress' },
+					labels: {
+						processing: 'custom-processing',
+						// others not set — defaults should be used
+					},
+				},
+			};
+
+			const config = resolveProjectPMConfig(project);
+
+			expect(config.labels.processing).toBe('custom-processing');
+			expect(config.labels.processed).toBe('cascade-processed');
+			expect(config.labels.error).toBe('cascade-error');
+			expect(config.labels.readyToProcess).toBe('cascade-ready');
+		});
+
+		it('uses defaults when JIRA labels property is undefined', () => {
+			const project: ProjectConfig = {
+				id: 'proj1',
+				orgId: 'org1',
+				name: 'JIRA Project',
+				repo: 'owner/repo',
+				baseBranch: 'main',
+				branchPrefix: 'feature/',
+				pm: { type: 'jira' },
+				jira: {
+					projectKey: 'PROJ',
+					statuses: { inProgress: 'In Progress' },
+					// no labels property at all
+				},
+			};
+
+			const config = resolveProjectPMConfig(project);
+
+			expect(config.labels).toEqual({
+				processing: 'cascade-processing',
+				processed: 'cascade-processed',
+				error: 'cascade-error',
+				readyToProcess: 'cascade-ready',
+			});
+		});
+
 		it('handles missing optional Trello labels and lists', () => {
 			const project: ProjectConfig = {
 				id: 'proj1',

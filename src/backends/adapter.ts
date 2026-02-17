@@ -50,6 +50,10 @@ function getToolManifests(): ToolManifest[] {
 			parameters: {
 				workItemId: { type: 'string', required: true },
 				text: { type: 'string', required: true },
+				'text-file': {
+					type: 'string',
+					description: 'Path to file with comment text (prefer over --text for long content)',
+				},
 			},
 		},
 		{
@@ -60,6 +64,10 @@ function getToolManifests(): ToolManifest[] {
 				workItemId: { type: 'string', required: true },
 				title: { type: 'string' },
 				description: { type: 'string' },
+				'description-file': {
+					type: 'string',
+					description: 'Path to file with description (prefer over --description for long content)',
+				},
 			},
 		},
 		{
@@ -69,6 +77,10 @@ function getToolManifests(): ToolManifest[] {
 			parameters: {
 				containerId: { type: 'string', required: true },
 				title: { type: 'string', required: true },
+				'description-file': {
+					type: 'string',
+					description: 'Path to file with description (prefer over --description for long content)',
+				},
 			},
 		},
 		{
@@ -105,6 +117,10 @@ function getToolManifests(): ToolManifest[] {
 			parameters: {
 				title: { type: 'string', required: true },
 				body: { type: 'string', required: true },
+				'body-file': {
+					type: 'string',
+					description: 'Path to file with PR body (prefer over --body for long content)',
+				},
 				head: { type: 'string', required: true },
 				'no-commit': {
 					type: 'boolean',
@@ -152,6 +168,10 @@ function getToolManifests(): ToolManifest[] {
 			parameters: {
 				prNumber: { type: 'number', required: true },
 				body: { type: 'string', required: true },
+				'body-file': {
+					type: 'string',
+					description: 'Path to file with comment body (prefer over --body for long content)',
+				},
 			},
 		},
 		{

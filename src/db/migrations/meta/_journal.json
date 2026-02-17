@@ -64,6 +64,13 @@
 			"when": 1744000000000,
 			"tag": "0009_add_squint_db_url",
 			"breakpoints": false
+		},
+		{
+			"idx": 9,
+			"version": "7",
+			"when": 1745000000000,
+			"tag": "0010_webhook_logs",
+			"breakpoints": false
 		}
 	]
 }

@@ -6,6 +6,7 @@ import { organizationRouter } from './routers/organization.js';
 import { projectsRouter } from './routers/projects.js';
 import { promptsRouter } from './routers/prompts.js';
 import { runsRouter } from './routers/runs.js';
+import { webhookLogsRouter } from './routers/webhookLogs.js';
 import { webhooksRouter } from './routers/webhooks.js';
 import { router } from './trpc.js';
 
@@ -19,6 +20,7 @@ export const appRouter = router({
 	agentConfigs: agentConfigsRouter,
 	prompts: promptsRouter,
 	webhooks: webhooksRouter,
+	webhookLogs: webhookLogsRouter,
 });
 
 export type AppRouter = typeof appRouter;

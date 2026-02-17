@@ -161,6 +161,46 @@ describe('buildToolGuidance', () => {
 		const guidance = buildToolGuidance(tools);
 		expect(guidance).toContain('[--tag <string> (repeatable)]');
 	});
+
+	it('renders parameter description as inline comment', () => {
+		const tools: ToolManifest[] = [
+			{
+				name: 'UpdateWorkItem',
+				description: 'Update a work item.',
+				cliCommand: 'cascade-tools pm update-work-item',
+				parameters: {
+					workItemId: { type: 'string', required: true },
+					'description-file': {
+						type: 'string',
+						description:
+							'Path to file with description (prefer over --description for long content)',
+					},
+				},
+			},
+		];
+		const guidance = buildToolGuidance(tools);
+		expect(guidance).toContain('--workItemId <string>');
+		expect(guidance).toContain(
+			'[--description-file <string>] # Path to file with description (prefer over --description for long content)',
+		);
+	});
+
+	it('does not render comment when parameter has no description', () => {
+		const tools: ToolManifest[] = [
+			{
+				name: 'TestTool',
+				description: 'Test.',
+				cliCommand: 'cascade-tools test',
+				parameters: {
+					name: { type: 'string', required: true },
+				},
+			},
+		];
+		const guidance = buildToolGuidance(tools);
+		expect(guidance).toContain(' --name <string>');
+		expect(guidance).not.toContain('--name <string>] #');
+		expect(guidance).not.toContain('--name <string> #');
+	});
 });
 
 describe('buildTaskPrompt', () => {
