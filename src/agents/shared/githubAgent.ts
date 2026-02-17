@@ -2,9 +2,9 @@ import type { ModelSpec } from 'llmist';
 
 import { createProgressMonitor } from '../../backends/progress.js';
 import { CUSTOM_MODELS } from '../../config/customModels.js';
-import { getAgentCredential } from '../../config/provider.js';
 import { recordInitialComment } from '../../gadgets/sessionState.js';
 import { githubClient, withGitHubToken } from '../../github/client.js';
+import { getPersonaToken } from '../../github/personas.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import type { AgentLogger } from '../utils/logging.js';
@@ -219,16 +219,10 @@ export async function executeGitHubAgent<
 			},
 		});
 
-	// If this agent type has a dedicated GITHUB_TOKEN override, use it for all
-	// PR interactions (comments, reviews). Individual agents can add further wrapping via wrapExecution.
-	const agentGitHubToken = await getAgentCredential(
-		input.project.id,
-		definition.agentType,
-		'GITHUB_TOKEN',
-	);
-	const scopedLifecycle = agentGitHubToken
-		? () => withGitHubToken(agentGitHubToken, runLifecycle)
-		: runLifecycle;
+	// Resolve the persona-based GitHub token (GITHUB_TOKEN_IMPLEMENTER or GITHUB_TOKEN_REVIEWER)
+	// for all PR interactions (comments, reviews). Individual agents can add further wrapping via wrapExecution.
+	const agentGitHubToken = await getPersonaToken(input.project.id, definition.agentType);
+	const scopedLifecycle = () => withGitHubToken(agentGitHubToken, runLifecycle);
 
 	if (definition.wrapExecution) {
 		return definition.wrapExecution(input, scopedLifecycle);
