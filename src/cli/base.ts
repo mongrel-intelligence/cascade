@@ -58,8 +58,9 @@ export abstract class CredentialScopedCommand extends Command {
 				);
 		}
 
-		// Establish PM provider scope — infer type from available credentials
-		const pmType = jiraEmail && jiraApiToken && jiraBaseUrl ? 'jira' : 'trello';
+		// Establish PM provider scope — prefer explicit env var, fall back to credential inference
+		const explicitPmType = process.env.CASCADE_PM_TYPE as 'trello' | 'jira' | undefined;
+		const pmType = explicitPmType ?? (jiraEmail && jiraApiToken && jiraBaseUrl ? 'jira' : 'trello');
 		const jiraProjectKey = process.env.CASCADE_JIRA_PROJECT_KEY;
 		const jiraStatuses = process.env.CASCADE_JIRA_STATUSES;
 

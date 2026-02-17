@@ -64,19 +64,14 @@ export async function getPersonaToken(projectId: string, agentType: string): Pro
 }
 
 // ============================================================================
-// Identity Resolution (cached per-project)
+// Identity Resolution
 // ============================================================================
-
-const identityCache = new Map<string, PersonaIdentities>();
 
 /**
  * Resolve both persona GitHub usernames for a project.
- * Cached per-project to avoid repeated API calls.
+ * Always queries the database and GitHub API for fresh data.
  */
 export async function resolvePersonaIdentities(projectId: string): Promise<PersonaIdentities> {
-	const cached = identityCache.get(projectId);
-	if (cached) return cached;
-
 	// Resolve both tokens — use getAgentCredential with a representative agent type
 	const implementerToken = await getAgentCredential(
 		projectId,
@@ -117,7 +112,6 @@ export async function resolvePersonaIdentities(projectId: string): Promise<Perso
 		reviewer: reviewerLogin,
 	};
 
-	identityCache.set(projectId, identities);
 	logger.info('Resolved persona identities', {
 		projectId,
 		implementer: implementerLogin,
@@ -125,17 +119,6 @@ export async function resolvePersonaIdentities(projectId: string): Promise<Perso
 	});
 
 	return identities;
-}
-
-/**
- * Clear cached identities for a project (useful for testing or credential rotation).
- */
-export function clearPersonaCache(projectId?: string): void {
-	if (projectId) {
-		identityCache.delete(projectId);
-	} else {
-		identityCache.clear();
-	}
 }
 
 // ============================================================================

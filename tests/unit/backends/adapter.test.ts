@@ -515,6 +515,7 @@ describe('executeWithBackend', () => {
 			CASCADE_REPO_OWNER: 'owner',
 			CASCADE_REPO_NAME: 'repo',
 			CASCADE_AGENT_TYPE: 'implementation',
+			CASCADE_PM_TYPE: 'trello',
 		});
 	});
 
@@ -558,6 +559,7 @@ describe('executeWithBackend', () => {
 			CASCADE_REPO_OWNER: 'owner',
 			CASCADE_REPO_NAME: 'repo',
 			CASCADE_AGENT_TYPE: 'implementation',
+			CASCADE_PM_TYPE: 'trello',
 		});
 	});
 
