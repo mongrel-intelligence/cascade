@@ -16,6 +16,14 @@ const JiraConfigSchema = z.object({
 			cost: z.string().optional(),
 		})
 		.optional(),
+	labels: z
+		.object({
+			processing: z.string().default('cascade-processing'),
+			processed: z.string().default('cascade-processed'),
+			error: z.string().default('cascade-error'),
+			readyToProcess: z.string().default('cascade-ready'),
+		})
+		.optional(),
 });
 
 export const ProjectConfigSchema = z.object({

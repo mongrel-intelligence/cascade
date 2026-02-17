@@ -7,6 +7,7 @@ import { PRReadyToMergeTrigger } from './github/pr-ready-to-merge.js';
 import { PRReviewSubmittedTrigger } from './github/pr-review-submitted.js';
 import { JiraCommentMentionTrigger } from './jira/comment-mention.js';
 import { JiraIssueTransitionedTrigger } from './jira/issue-transitioned.js';
+import { JiraReadyToProcessLabelTrigger } from './jira/label-added.js';
 import type { TriggerRegistry } from './registry.js';
 import {
 	CardMovedToBriefingTrigger,
@@ -47,6 +48,9 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 
 	// JIRA: Issue transitioned trigger (runs briefing/planning/implementation based on status)
 	registry.register(new JiraIssueTransitionedTrigger());
+
+	// JIRA: Label trigger (runs agent based on current status when cascade-ready label is added)
+	registry.register(new JiraReadyToProcessLabelTrigger());
 
 	// GitHub: PR opened trigger (initial review on new PRs)
 	// DISABLED: Triggers respond-to-review which has file editing gadgets - needs review

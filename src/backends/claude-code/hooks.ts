@@ -85,7 +85,8 @@ export function buildPostToolUseHooks(logWriter: LogWriter): HookCallbackMatcher
 			hooks: [
 				async (input: HookInput): Promise<SyncHookJSONOutput> => {
 					const hookInput = input as PostToolUseHookInput;
-					const response = String(hookInput.tool_response ?? '');
+					const raw = hookInput.tool_response ?? '';
+					const response = typeof raw === 'string' ? raw : JSON.stringify(raw);
 					const truncated =
 						response.length > 500
 							? `${response.slice(0, 500)}... (${response.length} chars)`

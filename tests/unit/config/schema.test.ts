@@ -139,6 +139,68 @@ describe('ProjectConfigSchema', () => {
 		expect(result.agentBackend?.default).toBe('llmist');
 		expect(result.agentBackend?.overrides).toEqual({});
 	});
+
+	it('validates JIRA config with labels', () => {
+		const config = {
+			id: 'test',
+			orgId: 'default',
+			name: 'Test',
+			repo: 'owner/repo',
+			jira: {
+				projectKey: 'TEST',
+				baseUrl: 'https://test.atlassian.net',
+				statuses: { briefing: 'Briefing' },
+				labels: {
+					processing: 'my-processing',
+					processed: 'my-processed',
+					error: 'my-error',
+					readyToProcess: 'my-ready',
+				},
+			},
+		};
+
+		const result = ProjectConfigSchema.parse(config);
+		expect(result.jira?.labels?.processing).toBe('my-processing');
+		expect(result.jira?.labels?.readyToProcess).toBe('my-ready');
+	});
+
+	it('applies default label values when labels object provided without values', () => {
+		const config = {
+			id: 'test',
+			orgId: 'default',
+			name: 'Test',
+			repo: 'owner/repo',
+			jira: {
+				projectKey: 'TEST',
+				baseUrl: 'https://test.atlassian.net',
+				statuses: { briefing: 'Briefing' },
+				labels: {},
+			},
+		};
+
+		const result = ProjectConfigSchema.parse(config);
+		expect(result.jira?.labels?.processing).toBe('cascade-processing');
+		expect(result.jira?.labels?.processed).toBe('cascade-processed');
+		expect(result.jira?.labels?.error).toBe('cascade-error');
+		expect(result.jira?.labels?.readyToProcess).toBe('cascade-ready');
+	});
+
+	it('accepts JIRA config without labels (optional)', () => {
+		const config = {
+			id: 'test',
+			orgId: 'default',
+			name: 'Test',
+			repo: 'owner/repo',
+			jira: {
+				projectKey: 'TEST',
+				baseUrl: 'https://test.atlassian.net',
+				statuses: { briefing: 'Briefing' },
+			},
+		};
+
+		const result = ProjectConfigSchema.parse(config);
+		expect(result.jira?.labels).toBeUndefined();
+	});
 });
 
 describe('validateConfig', () => {
