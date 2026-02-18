@@ -28,8 +28,6 @@ vi.mock('../../../src/config/configCache.js', () => ({
 		setProjectByJiraKey: vi.fn(),
 		getOrgIdForProject: vi.fn(),
 		setOrgIdForProject: vi.fn(),
-		getSecrets: vi.fn(),
-		setSecrets: vi.fn(),
 		invalidate: vi.fn(),
 	},
 }));
@@ -46,6 +44,7 @@ import {
 	getProjectSecrets,
 	invalidateConfigCache,
 	loadConfig,
+	setSecrets,
 } from '../../../src/config/provider.js';
 import {
 	findProjectByBoardIdFromDb,
@@ -105,10 +104,12 @@ const mockProject: ProjectConfig = {
 
 describe('config/provider', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
+		invalidateConfigCache(); // clears secretsStore + configCache
+		vi.clearAllMocks(); // reset mock call counts after setup
 	});
 
 	afterEach(() => {
+		invalidateConfigCache();
 		vi.clearAllMocks();
 	});
 
@@ -280,9 +281,7 @@ describe('config/provider', () => {
 		});
 
 		it('returns cached secret when available', async () => {
-			vi.mocked(configCache.getSecrets).mockReturnValue({
-				GITHUB_TOKEN: 'ghp_cached',
-			});
+			setSecrets('proj1', { GITHUB_TOKEN: 'ghp_cached' });
 
 			const result = await getProjectSecret('proj1', 'GITHUB_TOKEN');
 
@@ -291,7 +290,6 @@ describe('config/provider', () => {
 		});
 
 		it('resolves from credentials repository when not cached', async () => {
-			vi.mocked(configCache.getSecrets).mockReturnValue(null);
 			vi.mocked(resolveCredential).mockResolvedValue('ghp_resolved');
 
 			const result = await getProjectSecret('proj1', 'GITHUB_TOKEN');
@@ -301,7 +299,6 @@ describe('config/provider', () => {
 		});
 
 		it('caches org ID for project on first resolution', async () => {
-			vi.mocked(configCache.getSecrets).mockReturnValue(null);
 			vi.mocked(configCache.getOrgIdForProject).mockReturnValue(null);
 			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject);
 			vi.mocked(resolveCredential).mockResolvedValue('ghp_token');
@@ -312,7 +309,6 @@ describe('config/provider', () => {
 		});
 
 		it('reuses cached org ID for subsequent secret resolutions', async () => {
-			vi.mocked(configCache.getSecrets).mockReturnValue(null);
 			vi.mocked(configCache.getOrgIdForProject).mockReturnValue('org1');
 			vi.mocked(resolveCredential).mockResolvedValue('ghp_token');
 
@@ -323,7 +319,6 @@ describe('config/provider', () => {
 		});
 
 		it('throws error when secret not found', async () => {
-			vi.mocked(configCache.getSecrets).mockReturnValue(null);
 			vi.mocked(configCache.getOrgIdForProject).mockReturnValue('org1');
 			vi.mocked(resolveCredential).mockResolvedValue(null);
 
@@ -333,7 +328,6 @@ describe('config/provider', () => {
 		});
 
 		it('throws when project not found', async () => {
-			vi.mocked(configCache.getSecrets).mockReturnValue(null);
 			vi.mocked(configCache.getOrgIdForProject).mockReturnValue(null);
 			vi.mocked(findProjectByIdFromDb).mockResolvedValue(undefined);
 
@@ -349,7 +343,7 @@ describe('config/provider', () => {
 		});
 
 		it('returns secret when found', async () => {
-			vi.mocked(configCache.getSecrets).mockReturnValue({ KEY: 'value' });
+			setSecrets('proj1', { KEY: 'value' });
 
 			const result = await getProjectSecretOrNull('proj1', 'KEY');
 
@@ -357,7 +351,6 @@ describe('config/provider', () => {
 		});
 
 		it('returns null when secret not found', async () => {
-			vi.mocked(configCache.getSecrets).mockReturnValue(null);
 			vi.mocked(resolveCredential).mockResolvedValue(null);
 
 			const result = await getProjectSecretOrNull('proj1', 'MISSING');
@@ -366,7 +359,6 @@ describe('config/provider', () => {
 		});
 
 		it('returns null when getProjectSecret throws', async () => {
-			vi.mocked(configCache.getSecrets).mockReturnValue(null);
 			vi.mocked(resolveCredential).mockRejectedValue(new Error('DB error'));
 
 			const result = await getProjectSecretOrNull('proj1', 'KEY');
@@ -383,7 +375,7 @@ describe('config/provider', () => {
 
 		it('returns cached secrets when available', async () => {
 			const secrets = { GITHUB_TOKEN: 'ghp_123', TRELLO_API_KEY: 'trello_abc' };
-			vi.mocked(configCache.getSecrets).mockReturnValue(secrets);
+			setSecrets('proj1', secrets);
 
 			const result = await getProjectSecrets('proj1');
 
@@ -393,29 +385,29 @@ describe('config/provider', () => {
 
 		it('loads all credentials from repository when not cached', async () => {
 			const secrets = { GITHUB_TOKEN: 'ghp_123', TRELLO_API_KEY: 'trello_abc' };
-			vi.mocked(configCache.getSecrets).mockReturnValue(null);
 			vi.mocked(resolveAllCredentials).mockResolvedValue(secrets);
 
 			const result = await getProjectSecrets('proj1');
 
 			expect(result).toEqual(secrets);
 			expect(resolveAllCredentials).toHaveBeenCalledWith('proj1', 'org1');
-			expect(configCache.setSecrets).toHaveBeenCalledWith('proj1', secrets);
 		});
 
 		it('caches resolved secrets for future access', async () => {
 			const secrets = { KEY: 'value' };
-			vi.mocked(configCache.getSecrets).mockReturnValue(null);
 			vi.mocked(configCache.getOrgIdForProject).mockReturnValue('org1');
 			vi.mocked(resolveAllCredentials).mockResolvedValue(secrets);
 
 			await getProjectSecrets('proj1');
 
-			expect(configCache.setSecrets).toHaveBeenCalledWith('proj1', secrets);
+			// After resolving, subsequent calls should return cached value
+			const result = await getProjectSecrets('proj1');
+			expect(result).toEqual(secrets);
+			// resolveAllCredentials called only once (second call uses secretsStore)
+			expect(resolveAllCredentials).toHaveBeenCalledTimes(1);
 		});
 
 		it('resolves org ID once and caches it', async () => {
-			vi.mocked(configCache.getSecrets).mockReturnValue(null);
 			vi.mocked(configCache.getOrgIdForProject).mockReturnValue(null);
 			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject);
 			vi.mocked(resolveAllCredentials).mockResolvedValue({});
@@ -429,14 +421,11 @@ describe('config/provider', () => {
 	describe('getAgentCredential', () => {
 		beforeEach(() => {
 			vi.mocked(configCache.getOrgIdForProject).mockReturnValue(null);
-			vi.mocked(configCache.getSecrets).mockReturnValue(null);
 			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject);
 		});
 
 		it('returns cached credential when available (bypasses DB)', async () => {
-			vi.mocked(configCache.getSecrets).mockReturnValue({
-				GITHUB_TOKEN_REVIEWER: 'ghp_cached_reviewer',
-			});
+			setSecrets('proj1', { GITHUB_TOKEN_REVIEWER: 'ghp_cached_reviewer' });
 
 			const result = await getAgentCredential('proj1', 'review', 'GITHUB_TOKEN_REVIEWER');
 
@@ -446,9 +435,7 @@ describe('config/provider', () => {
 		});
 
 		it('falls back to DB when cache exists but key is missing', async () => {
-			vi.mocked(configCache.getSecrets).mockReturnValue({
-				OTHER_KEY: 'other_value',
-			});
+			setSecrets('proj1', { OTHER_KEY: 'other_value' });
 			vi.mocked(configCache.getOrgIdForProject).mockReturnValue('org1');
 			vi.mocked(resolveAgentCredential).mockResolvedValue('ghp_from_db');
 
@@ -463,8 +450,7 @@ describe('config/provider', () => {
 			);
 		});
 
-		it('falls back to DB when cache is null', async () => {
-			vi.mocked(configCache.getSecrets).mockReturnValue(null);
+		it('falls back to DB when secretsStore has no entry', async () => {
 			vi.mocked(configCache.getOrgIdForProject).mockReturnValue('org1');
 			vi.mocked(resolveAgentCredential).mockResolvedValue('ghp_from_db');
 
@@ -556,15 +542,19 @@ describe('config/provider', () => {
 			expect(configCache.invalidate).toHaveBeenCalledTimes(1);
 		});
 
-		it('clears all cached data', () => {
-			// Setup caches
-			vi.mocked(configCache.getConfig).mockReturnValue(mockConfig);
-			vi.mocked(configCache.getProjectByBoardId).mockReturnValue(mockProject);
-			vi.mocked(configCache.getSecrets).mockReturnValue({ KEY: 'val' });
+		it('clears all cached data including secretsStore', async () => {
+			// Setup secrets in the permanent store
+			setSecrets('proj1', { KEY: 'val' });
 
 			invalidateConfigCache();
 
 			expect(configCache.invalidate).toHaveBeenCalled();
+			// Verify secretsStore was cleared — getProjectSecrets should hit DB
+			vi.mocked(configCache.getOrgIdForProject).mockReturnValue('org1');
+			vi.mocked(resolveAllCredentials).mockResolvedValue({ KEY: 'from_db' });
+			const result = await getProjectSecrets('proj1');
+			expect(result).toEqual({ KEY: 'from_db' });
+			expect(resolveAllCredentials).toHaveBeenCalled();
 		});
 	});
 });

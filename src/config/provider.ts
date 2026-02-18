@@ -17,6 +17,21 @@ import {
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 import { configCache } from './configCache.js';
 
+/**
+ * Permanent secrets store — no TTL. Secrets set at worker startup persist
+ * for the entire process lifetime, avoiding re-decryption after env scrub.
+ */
+const secretsStore = new Map<string, Record<string, string>>();
+
+/**
+ * Store pre-decrypted secrets for a project. Unlike configCache entries these
+ * never expire, so workers that scrub CREDENTIAL_MASTER_KEY from env can still
+ * resolve credentials long after startup.
+ */
+export function setSecrets(projectId: string, secrets: Record<string, string>): void {
+	secretsStore.set(projectId, secrets);
+}
+
 export async function loadConfig(): Promise<CascadeConfig> {
 	const cached = configCache.getConfig();
 	if (cached) return cached;
@@ -103,8 +118,8 @@ async function getOrgIdForProject(projectId: string): Promise<string> {
 }
 
 export async function getProjectSecret(projectId: string, key: string): Promise<string> {
-	// Check cached secrets first
-	const cachedSecrets = configCache.getSecrets(projectId);
+	// Check permanent secrets store first (populated at worker startup)
+	const cachedSecrets = secretsStore.get(projectId);
 	if (cachedSecrets && key in cachedSecrets) {
 		return cachedSecrets[key];
 	}
@@ -129,12 +144,12 @@ export async function getProjectSecretOrNull(
 }
 
 export async function getProjectSecrets(projectId: string): Promise<Record<string, string>> {
-	const cached = configCache.getSecrets(projectId);
+	const cached = secretsStore.get(projectId);
 	if (cached) return cached;
 
 	const orgId = await getOrgIdForProject(projectId);
 	const secrets = await resolveAllCredentials(projectId, orgId);
-	configCache.setSecrets(projectId, secrets);
+	secretsStore.set(projectId, secrets);
 	return secrets;
 }
 
@@ -147,8 +162,8 @@ export async function getAgentCredential(
 	agentType: string,
 	key: string,
 ): Promise<string | null> {
-	// Check cached secrets first (from CASCADE_CREDENTIALS env var in workers)
-	const cachedSecrets = configCache.getSecrets(projectId);
+	// Check permanent secrets store first (from CASCADE_CREDENTIALS env var in workers)
+	const cachedSecrets = secretsStore.get(projectId);
 	if (cachedSecrets && key in cachedSecrets) {
 		return cachedSecrets[key];
 	}
@@ -160,4 +175,5 @@ export async function getAgentCredential(
 
 export function invalidateConfigCache(): void {
 	configCache.invalidate();
+	secretsStore.clear();
 }
