@@ -143,6 +143,7 @@ export async function executeGitHubAgent<
 				repoDir,
 				progressMonitor,
 				llmCallAccumulator,
+				runId,
 			}) =>
 				createConfiguredBuilder({
 					client,
@@ -159,6 +160,7 @@ export async function executeGitHubAgent<
 					progressMonitor: progressMonitor ?? undefined,
 					remainingBudgetUsd: input.remainingBudgetUsd as number | undefined,
 					llmCallAccumulator,
+					runId,
 					...definition.builderOptions,
 				}),
 

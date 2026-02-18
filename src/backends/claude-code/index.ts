@@ -8,6 +8,7 @@ import type {
 	SDKStatusMessage,
 	SDKSystemMessage,
 } from '@anthropic-ai/claude-agent-sdk';
+import { storeLlmCall } from '../../db/repositories/runsRepository.js';
 import { logger } from '../../utils/logging.js';
 import type {
 	AgentBackend,
@@ -412,10 +413,45 @@ export class ClaudeCodeBackend implements AgentBackend {
 		for await (const message of stream) {
 			if (message.type === 'assistant') {
 				const assistantMsg = message as SDKAssistantMessage;
+				const thisTurn = turnCount + 1;
 				assistantMessages.push(assistantMsg);
 				turnCount++;
 				await input.progressReporter.onIteration(turnCount, input.maxIterations);
 				processAssistantMessage(assistantMsg, turnCount, input);
+
+				// Real-time LLM call logging for Claude Code backend
+				if (input.runId && assistantMsg.message?.usage) {
+					const usage = assistantMsg.message.usage;
+
+					// Serialize response content blocks as the response payload
+					let response: string | undefined;
+					try {
+						response = JSON.stringify(assistantMsg.message.content ?? []);
+					} catch {
+						// Ignore serialization errors
+					}
+
+					storeLlmCall({
+						runId: input.runId,
+						callNumber: turnCount,
+						// Claude Code SDK doesn't expose per-turn request messages; request is null
+						request: undefined,
+						response,
+						inputTokens: usage.input_tokens,
+						outputTokens: usage.output_tokens,
+						cachedTokens: undefined,
+						costUsd: undefined,
+						// Claude Code SDK doesn't expose actual LLM call timing; omit to avoid misleading data
+						durationMs: undefined,
+						model,
+					}).catch((err) => {
+						logger.warn('Failed to store Claude Code LLM call in real-time', {
+							runId: input.runId,
+							turn: thisTurn,
+							error: String(err),
+						});
+					});
+				}
 			} else if (message.type === 'system') {
 				const sysMsg = message as { subtype: string; [key: string]: unknown };
 				if (sysMsg.subtype === 'task_notification') {

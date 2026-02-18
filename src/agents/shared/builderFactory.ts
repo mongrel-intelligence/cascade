@@ -40,6 +40,8 @@ export interface CreateBuilderOptions {
 	postConfigure?: (builder: BuilderType) => BuilderType;
 	/** Accumulator for per-call LLM metrics (for run tracking) */
 	llmCallAccumulator?: AccumulatedLlmCall[];
+	/** Run ID for real-time LLM call logging (resolved before builder creation) */
+	runId?: string;
 }
 
 const MAX_GADGETS_PER_RESPONSE = 25;
@@ -90,6 +92,7 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 				llmCallLogger,
 				progressMonitor,
 				llmCallAccumulator: options.llmCallAccumulator,
+				runId: options.runId,
 			}),
 		})
 		.withGadgets(...gadgets)

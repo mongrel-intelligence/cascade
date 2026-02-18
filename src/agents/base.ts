@@ -368,6 +368,7 @@ function createAgentBuilderWithGadgets(
 	progressMonitor?: ProgressMonitor,
 	remainingBudgetUsd?: number,
 	llmCallAccumulator?: AccumulatedLlmCall[],
+	runId?: string,
 ): BuilderType {
 	return createConfiguredBuilder({
 		client,
@@ -384,6 +385,7 @@ function createAgentBuilderWithGadgets(
 		progressMonitor,
 		remainingBudgetUsd,
 		llmCallAccumulator,
+		runId,
 		// Implementation agent uses sequential execution to ensure file operations
 		// are properly ordered (e.g., FileSearchAndReplace then ReadFile on same file)
 		postConfigure:
@@ -581,6 +583,7 @@ export async function executeAgent(
 			repoDir,
 			progressMonitor,
 			llmCallAccumulator,
+			runId,
 		}) =>
 			createAgentBuilderWithGadgets(
 				client,
@@ -594,6 +597,7 @@ export async function executeAgent(
 				progressMonitor ?? undefined,
 				input.remainingBudgetUsd as number | undefined,
 				llmCallAccumulator,
+				runId,
 			),
 
 		injectSyntheticCalls: ({ builder, ctx, trackingContext, repoDir }) =>

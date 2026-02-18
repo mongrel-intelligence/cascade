@@ -68,6 +68,8 @@ export const agentRunLlmCalls = pgTable(
 		cachedTokens: integer('cached_tokens'),
 		costUsd: numeric('cost_usd', { precision: 10, scale: 6 }),
 		durationMs: integer('duration_ms'),
+		model: text('model'),
+		createdAt: timestamp('created_at').defaultNow(),
 	},
 	(table) => [index('idx_agent_run_llm_calls_run_call').on(table.runId, table.callNumber)],
 );

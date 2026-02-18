@@ -9,6 +9,11 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+const mockStoreLlmCall = vi.fn().mockResolvedValue(undefined);
+vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
+	storeLlmCall: (...args: unknown[]) => mockStoreLlmCall(...args),
+}));
+
 import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -749,6 +754,106 @@ describe('execute', () => {
 				prUrl: 'https://github.com/owner/repo/pull/42',
 			}),
 		);
+	});
+
+	it('calls storeLlmCall per-turn when runId is provided in backendInput', async () => {
+		mockStream([
+			{
+				type: 'assistant',
+				message: {
+					content: [{ type: 'text', text: 'Working on it...' }],
+					usage: { input_tokens: 200, output_tokens: 80 },
+				},
+				uuid: 'uuid-1',
+				session_id: 's1',
+				parent_tool_use_id: null,
+			},
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.02,
+				num_turns: 1,
+			},
+		]);
+
+		const input = makeInput({ runId: 'test-run-id-cc' });
+		const backend = new ClaudeCodeBackend();
+		await backend.execute(input);
+
+		// Flush fire-and-forget promises
+		await Promise.resolve();
+
+		expect(mockStoreLlmCall).toHaveBeenCalledOnce();
+		expect(mockStoreLlmCall).toHaveBeenCalledWith(
+			expect.objectContaining({
+				runId: 'test-run-id-cc',
+				callNumber: 1,
+				inputTokens: 200,
+				outputTokens: 80,
+				// Claude Code SDK doesn't expose actual LLM call timing; durationMs is omitted
+				durationMs: undefined,
+			}),
+		);
+	});
+
+	it('does not call storeLlmCall when runId is not provided', async () => {
+		mockStream([
+			{
+				type: 'assistant',
+				message: {
+					content: [{ type: 'text', text: 'Working on it...' }],
+					usage: { input_tokens: 200, output_tokens: 80 },
+				},
+				uuid: 'uuid-1',
+				session_id: 's1',
+				parent_tool_use_id: null,
+			},
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.02,
+				num_turns: 1,
+			},
+		]);
+
+		const input = makeInput();
+		// Explicitly no runId
+		const backend = new ClaudeCodeBackend();
+		await backend.execute(input);
+
+		await Promise.resolve();
+		expect(mockStoreLlmCall).not.toHaveBeenCalled();
+	});
+
+	it('does not call storeLlmCall when assistant message has no usage data', async () => {
+		mockStream([
+			{
+				type: 'assistant',
+				message: {
+					content: [{ type: 'text', text: 'Working...' }],
+					// No usage
+				},
+				uuid: 'uuid-1',
+				session_id: 's1',
+				parent_tool_use_id: null,
+			},
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.0,
+				num_turns: 1,
+			},
+		]);
+
+		const input = makeInput({ runId: 'test-run-id-no-usage' });
+		const backend = new ClaudeCodeBackend();
+		await backend.execute(input);
+
+		await Promise.resolve();
+		expect(mockStoreLlmCall).not.toHaveBeenCalled();
 	});
 });
 
