@@ -76,8 +76,9 @@ Optional (infrastructure):
 - `LOG_LEVEL` - Logging level (default: info)
 - `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled)
 - `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code backend (subscription auth)
+- `CREDENTIAL_MASTER_KEY` - 64-char hex string (32-byte AES-256 key) for encrypting credentials at rest. Generate with `npm run credentials:generate-key`. When set, all new/updated credentials are encrypted automatically; existing plaintext credentials continue to work.
 
-**Project credentials** (`GITHUB_TOKEN_IMPLEMENTER`, `GITHUB_TOKEN_REVIEWER`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored in the `credentials` table (org-scoped) with optional per-project overrides via `project_credential_overrides`. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
+**Project credentials** (`GITHUB_TOKEN_IMPLEMENTER`, `GITHUB_TOKEN_REVIEWER`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored in the `credentials` table (org-scoped, encrypted at rest when `CREDENTIAL_MASTER_KEY` is set) with optional per-project overrides via `project_credential_overrides`. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
 
 ## Database Configuration
 
@@ -127,6 +128,26 @@ npx tsx tools/manage-secrets.ts set-override <project-id> <env-var-key> <credent
 npx tsx tools/manage-secrets.ts remove-override <project-id> <env-var-key>
 npx tsx tools/manage-secrets.ts resolve <project-id>
 ```
+
+### Credential Encryption at Rest
+
+Credentials are encrypted using AES-256-GCM when `CREDENTIAL_MASTER_KEY` is set. Encryption is transparent — all callers (config provider, tRPC, CLI, tools) are unaffected.
+
+- **Algorithm**: AES-256-GCM with 12-byte random IV, 16-byte auth tag, `orgId` as AAD
+- **Storage format**: `enc:v1:<iv_hex>:<authTag_hex>:<ciphertext_hex>` in the existing `value` TEXT column
+- **Automatic encryption**: `createCredential()` and `updateCredential()` encrypt before DB write
+- **Automatic decryption**: All resolve/list functions decrypt on read
+- **Opt-in**: Without the env var, system works identically to plaintext (zero behavior change)
+
+```bash
+npm run credentials:generate-key            # Generate a new 32-byte hex key
+npm run credentials:encrypt -- --dry-run    # Preview migration (plaintext → encrypted)
+npm run credentials:encrypt                 # Encrypt all existing plaintext credentials
+npm run credentials:decrypt                 # Rollback: decrypt all back to plaintext
+npm run credentials:rotate-key              # Re-encrypt with CREDENTIAL_MASTER_KEY_NEW
+```
+
+**Key rotation** requires both `CREDENTIAL_MASTER_KEY` (current) and `CREDENTIAL_MASTER_KEY_NEW` (new). After rotation, update the env var to the new key and restart.
 
 ### GitHub Dual-Persona Model
 
