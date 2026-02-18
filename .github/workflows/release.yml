@@ -18,17 +18,13 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Fetch latest branches
         run: |
@@ -71,20 +67,51 @@ jobs:
           echo ""
           echo "=== Dry run complete. Re-run without dry_run to perform the actual release. ==="
 
-      - name: Merge dev into main
+      - name: Check for existing release PR
         if: ${{ !inputs.dry_run }}
         run: |
-          git checkout main
-          git merge origin/dev --no-edit -m "chore: release - merge dev into main"
-          git push origin main
+          EXISTING_PR=$(gh pr list --base main --head dev --json number --jq '.[0].number')
+          if [ -n "$EXISTING_PR" ]; then
+            echo "::error::An open PR from dev to main already exists (#$EXISTING_PR). Close or merge it first."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
 
-      - name: Write step summary (post-merge)
+      - name: Create release PR
+        if: ${{ !inputs.dry_run }}
+        run: |
+          PR_URL=$(gh pr create --base main --head dev \
+            --title "chore: release - merge dev into main" \
+            --body "Automated release PR created by the release workflow.
+
+          ### Commits (${{ env.COMMIT_COUNT }}):
+          \`\`\`
+          ${{ env.COMMITS }}
+          \`\`\`")
+          echo "Created PR: $PR_URL"
+          PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]*$')
+          echo "PR_NUMBER=$PR_NUMBER" >> "$GITHUB_ENV"
+          echo "PR_URL=$PR_URL" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Enable auto-merge
+        if: ${{ !inputs.dry_run }}
+        run: |
+          gh pr merge "$PR_NUMBER" --auto --merge
+          echo "Auto-merge enabled on PR #$PR_NUMBER. It will merge once required checks pass."
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Write step summary (post-create)
         if: ${{ !inputs.dry_run }}
         run: |
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### ✅ Release complete!" >> "$GITHUB_STEP_SUMMARY"
+          echo "### ✅ Release PR created!" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "dev has been merged into main. The [deploy workflow](../actions/workflows/deploy.yml) will trigger automatically." >> "$GITHUB_STEP_SUMMARY"
+          echo "PR [#${{ env.PR_NUMBER }}](${{ env.PR_URL }}) has been created with auto-merge enabled." >> "$GITHUB_STEP_SUMMARY"
+          echo "It will merge into main automatically once required status checks pass." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Write step summary (dry run complete)
         if: ${{ inputs.dry_run }}
