@@ -60,7 +60,8 @@ describe('config/statusUpdateConfig', () => {
 
 			const message = formatStatusMessage(5, 20, 'implementation');
 
-			expect(message).toContain('**implementation agent progress**');
+			expect(message).toContain("**I'm making progress**");
+			expect(message).toContain('implementation');
 			expect(message).toContain('25%'); // (5/20) * 100
 			expect(message).toContain('iteration 5/20');
 		});
@@ -150,7 +151,7 @@ describe('config/statusUpdateConfig', () => {
 			const message = formatStatusMessage(10, 20, 'implementation');
 
 			const lines = message.split('\n');
-			expect(lines[0]).toBe('**implementation agent progress**');
+			expect(lines[0]).toBe("**I'm making progress** (implementation)");
 			expect(lines[1]).toBe('');
 			expect(lines[2]).toContain('[█████░░░░░]');
 		});
@@ -190,7 +191,7 @@ describe('config/statusUpdateConfig', () => {
 				'implementation',
 			);
 
-			expect(comment).toContain('<sub>Last updated: iteration 12 · implementation agent</sub>');
+			expect(comment).toContain('<sub>Last updated: iteration 12 · implementation</sub>');
 		});
 
 		it('separates sections with horizontal rule', () => {
