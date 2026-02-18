@@ -1,178 +1,192 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Hoist mocks before imports
+const { mockExecFileSync, mockExistsSync } = vi.hoisted(() => ({
+	mockExecFileSync: vi.fn(),
+	mockExistsSync: vi.fn(),
+}));
+
 vi.mock('node:child_process', () => ({
-	execFileSync: vi.fn(),
+	execFileSync: mockExecFileSync,
 }));
 
 vi.mock('node:fs', () => ({
-	existsSync: vi.fn(),
+	existsSync: mockExistsSync,
 }));
 
-import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import {
 	clearOnFileEditHookCache,
 	runOnFileEditHook,
 } from '../../../../src/gadgets/shared/onFileEditHook.js';
 
-const mockExecFileSync = vi.mocked(execFileSync);
-const mockExistsSync = vi.mocked(existsSync);
-
-const FAKE_CWD = '/workspace/my-project';
-
-beforeEach(() => {
-	vi.spyOn(process, 'cwd').mockReturnValue(FAKE_CWD);
-	clearOnFileEditHookCache();
-	vi.clearAllMocks();
-});
-
-afterEach(() => {
-	vi.restoreAllMocks();
-});
-
 describe('runOnFileEditHook', () => {
+	beforeEach(() => {
+		vi.resetAllMocks();
+		clearOnFileEditHookCache();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
 	describe('when hook does not exist', () => {
-		it('returns null when hook file does not exist', () => {
+		it('returns null when .cascade/on-file-edit.sh does not exist', () => {
 			mockExistsSync.mockReturnValue(false);
 
-			const result = runOnFileEditHook('src/index.ts');
+			const result = runOnFileEditHook('src/file.ts');
 
 			expect(result).toBeNull();
-			expect(mockExecFileSync).not.toHaveBeenCalled();
 		});
 
-		it('checks the correct hook path', () => {
+		it('does not call execFileSync when hook does not exist', () => {
 			mockExistsSync.mockReturnValue(false);
 
-			runOnFileEditHook('src/index.ts');
+			runOnFileEditHook('src/file.ts');
 
-			expect(mockExistsSync).toHaveBeenCalledWith(`${FAKE_CWD}/.cascade/on-file-edit.sh`);
+			expect(mockExecFileSync).not.toHaveBeenCalled();
 		});
 	});
 
-	describe('when hook exists', () => {
-		beforeEach(() => {
+	describe('when hook exists and succeeds', () => {
+		it('returns exitCode 0 and output when hook succeeds', () => {
 			mockExistsSync.mockReturnValue(true);
+			mockExecFileSync.mockReturnValue('All checks passed\n');
+
+			const result = runOnFileEditHook('src/file.ts');
+
+			expect(result).toEqual({ exitCode: 0, output: 'All checks passed\n' });
 		});
 
-		it('runs the hook with the file path', () => {
-			mockExecFileSync.mockReturnValue('output' as unknown as Buffer);
+		it('calls bash with the hook path and file path as arguments', () => {
+			const cwd = process.cwd();
+			mockExistsSync.mockReturnValue(true);
+			mockExecFileSync.mockReturnValue('');
 
-			runOnFileEditHook('src/index.ts');
+			runOnFileEditHook('src/some-file.ts');
 
 			expect(mockExecFileSync).toHaveBeenCalledWith(
 				'bash',
-				[`${FAKE_CWD}/.cascade/on-file-edit.sh`, 'src/index.ts'],
-				expect.objectContaining({
-					cwd: FAKE_CWD,
-					timeout: 30000,
-					encoding: 'utf-8',
-				}),
+				[`${cwd}/.cascade/on-file-edit.sh`, 'src/some-file.ts'],
+				expect.objectContaining({ cwd, timeout: 30000, encoding: 'utf-8' }),
 			);
 		});
 
-		it('returns exitCode 0 and output on success', () => {
-			mockExecFileSync.mockReturnValue('hook output' as unknown as Buffer);
+		it('returns empty string output when hook outputs nothing', () => {
+			mockExistsSync.mockReturnValue(true);
+			mockExecFileSync.mockReturnValue(null); // execFileSync can return null
 
-			const result = runOnFileEditHook('src/index.ts');
-
-			expect(result).toEqual({ exitCode: 0, output: 'hook output' });
-		});
-
-		it('returns exitCode 0 with empty output when hook returns undefined/null', () => {
-			mockExecFileSync.mockReturnValue(undefined as unknown as Buffer);
-
-			const result = runOnFileEditHook('src/index.ts');
+			const result = runOnFileEditHook('src/file.ts');
 
 			expect(result).toEqual({ exitCode: 0, output: '' });
 		});
+	});
 
-		it('returns exitCode and combined output when hook fails with exit code', () => {
-			const error = Object.assign(new Error('Command failed'), {
+	describe('when hook exits with non-zero code', () => {
+		it('returns the exit code and combined stdout/stderr', () => {
+			mockExistsSync.mockReturnValue(true);
+			const execError = Object.assign(new Error('Command failed'), {
 				status: 1,
-				stdout: 'stdout text',
-				stderr: 'stderr text',
+				stdout: 'stdout output',
+				stderr: 'stderr output',
 			});
 			mockExecFileSync.mockImplementation(() => {
-				throw error;
+				throw execError;
 			});
 
-			const result = runOnFileEditHook('src/index.ts');
+			const result = runOnFileEditHook('src/file.ts');
 
-			expect(result).toEqual({ exitCode: 1, output: 'stdout text\nstderr text' });
+			expect(result).toEqual({ exitCode: 1, output: 'stdout output\nstderr output' });
 		});
 
-		it('returns exitCode from status when only stderr', () => {
-			const error = Object.assign(new Error('Command failed'), {
+		it('handles non-zero exit with only stderr', () => {
+			mockExistsSync.mockReturnValue(true);
+			const execError = Object.assign(new Error('Command failed'), {
 				status: 2,
 				stdout: '',
-				stderr: 'error message',
+				stderr: 'error details',
 			});
 			mockExecFileSync.mockImplementation(() => {
-				throw error;
+				throw execError;
 			});
 
-			const result = runOnFileEditHook('src/index.ts');
+			const result = runOnFileEditHook('src/file.ts');
 
-			expect(result).toEqual({ exitCode: 2, output: 'error message' });
+			expect(result).toEqual({ exitCode: 2, output: 'error details' });
 		});
 
-		it('returns exitCode 1 and message for spawn/timeout errors', () => {
-			const error = new Error('spawn error');
+		it('handles non-zero exit with only stdout', () => {
+			mockExistsSync.mockReturnValue(true);
+			const execError = Object.assign(new Error('Command failed'), {
+				status: 1,
+				stdout: 'lint errors found',
+				stderr: '',
+			});
 			mockExecFileSync.mockImplementation(() => {
-				throw error;
+				throw execError;
 			});
 
-			const result = runOnFileEditHook('src/index.ts');
+			const result = runOnFileEditHook('src/file.ts');
 
-			expect(result).toEqual({ exitCode: 1, output: 'spawn error' });
-		});
-
-		it('returns unknown error message for errors without message', () => {
-			const error = {};
-			mockExecFileSync.mockImplementation(() => {
-				throw error;
-			});
-
-			const result = runOnFileEditHook('src/index.ts');
-
-			expect(result?.output).toBe('Unknown error running on-file-edit hook');
+			expect(result).toEqual({ exitCode: 1, output: 'lint errors found' });
 		});
 	});
 
-	describe('cache behavior', () => {
-		it('only checks existence once per session', () => {
-			mockExistsSync.mockReturnValue(false);
-
-			runOnFileEditHook('file1.ts');
-			runOnFileEditHook('file2.ts');
-			runOnFileEditHook('file3.ts');
-
-			// existsSync should only be called once due to caching
-			expect(mockExistsSync).toHaveBeenCalledTimes(1);
-		});
-
-		it('caches positive result (hook exists)', () => {
+	describe('when hook spawn/timeout fails', () => {
+		it('returns exitCode 1 with error message on spawn failure', () => {
 			mockExistsSync.mockReturnValue(true);
-			mockExecFileSync.mockReturnValue('ok' as unknown as Buffer);
+			const spawnError = new Error('spawn ENOENT');
+			// No status property = spawn/timeout error
+			mockExecFileSync.mockImplementation(() => {
+				throw spawnError;
+			});
 
-			runOnFileEditHook('file1.ts');
-			runOnFileEditHook('file2.ts');
+			const result = runOnFileEditHook('src/file.ts');
 
-			// existsSync called only once
-			expect(mockExistsSync).toHaveBeenCalledTimes(1);
-			// but execFileSync called for each file
-			expect(mockExecFileSync).toHaveBeenCalledTimes(2);
+			expect(result).toEqual({ exitCode: 1, output: 'spawn ENOENT' });
 		});
 
-		it('clearOnFileEditHookCache resets the cache', () => {
+		it('returns exitCode 1 with fallback message when error has no message', () => {
+			mockExistsSync.mockReturnValue(true);
+			const unknownError = {};
+			mockExecFileSync.mockImplementation(() => {
+				throw unknownError;
+			});
+
+			const result = runOnFileEditHook('src/file.ts');
+
+			expect(result).toEqual({ exitCode: 1, output: 'Unknown error running on-file-edit hook' });
+		});
+	});
+
+	describe('caching behavior', () => {
+		it('only checks existence once (caches hook existence)', () => {
+			mockExistsSync.mockReturnValue(true);
+			mockExecFileSync.mockReturnValue('ok');
+
+			runOnFileEditHook('src/file1.ts');
+			runOnFileEditHook('src/file2.ts');
+
+			// existsSync should only be called once — result is cached
+			expect(mockExistsSync).toHaveBeenCalledTimes(1);
+		});
+
+		it('caches "does not exist" result as well', () => {
 			mockExistsSync.mockReturnValue(false);
 
-			runOnFileEditHook('file1.ts');
-			clearOnFileEditHookCache();
-			runOnFileEditHook('file2.ts');
+			runOnFileEditHook('src/file1.ts');
+			runOnFileEditHook('src/file2.ts');
 
-			// Should be called twice — once before clear, once after
+			expect(mockExistsSync).toHaveBeenCalledTimes(1);
+			expect(mockExecFileSync).not.toHaveBeenCalled();
+		});
+
+		it('clearOnFileEditHookCache resets the cache so existsSync is called again', () => {
+			mockExistsSync.mockReturnValue(false);
+
+			runOnFileEditHook('src/file.ts');
+			clearOnFileEditHookCache();
+			runOnFileEditHook('src/file.ts');
+
 			expect(mockExistsSync).toHaveBeenCalledTimes(2);
 		});
 	});

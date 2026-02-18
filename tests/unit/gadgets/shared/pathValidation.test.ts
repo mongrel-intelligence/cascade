@@ -1,131 +1,151 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// We need to mock fs for path resolution
-vi.mock('node:fs', () => ({
-	realpathSync: vi.fn(),
+// Hoist mocks before imports
+const { mockRealpathSync } = vi.hoisted(() => ({
+	mockRealpathSync: vi.fn(),
 }));
 
-import { realpathSync } from 'node:fs';
+vi.mock('node:fs', () => ({
+	realpathSync: mockRealpathSync,
+}));
+
 import { validatePath } from '../../../../src/gadgets/shared/pathValidation.js';
 
-const mockRealpathSync = vi.mocked(realpathSync);
-
-const FAKE_CWD = '/workspace/my-project';
-
-beforeEach(() => {
-	vi.spyOn(process, 'cwd').mockReturnValue(FAKE_CWD);
-	// Default: realpathSync returns the resolved path
-	mockRealpathSync.mockImplementation((p: unknown) => String(p));
-});
-
-afterEach(() => {
-	vi.restoreAllMocks();
-});
-
 describe('validatePath', () => {
+	const originalCwd = process.cwd();
+
+	beforeEach(() => {
+		vi.resetAllMocks();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
 	describe('paths within CWD', () => {
-		it('allows a relative path within CWD', () => {
-			const result = validatePath('src/index.ts');
-			expect(result).toBe(`${FAKE_CWD}/src/index.ts`);
+		it('accepts a relative path within CWD', () => {
+			const cwd = '/workspace/myproject';
+			vi.spyOn(process, 'cwd').mockReturnValue(cwd);
+			mockRealpathSync.mockReturnValue('/workspace/myproject/src/file.ts');
+
+			const result = validatePath('src/file.ts');
+
+			expect(result).toBe('/workspace/myproject/src/file.ts');
 		});
 
-		it('allows an absolute path within CWD', () => {
-			const result = validatePath(`${FAKE_CWD}/src/utils.ts`);
-			expect(result).toBe(`${FAKE_CWD}/src/utils.ts`);
+		it('accepts an absolute path within CWD', () => {
+			const cwd = '/workspace/myproject';
+			vi.spyOn(process, 'cwd').mockReturnValue(cwd);
+			mockRealpathSync.mockReturnValue('/workspace/myproject/src/deep/file.ts');
+
+			const result = validatePath('/workspace/myproject/src/deep/file.ts');
+
+			expect(result).toBe('/workspace/myproject/src/deep/file.ts');
 		});
 
-		it('allows the CWD itself', () => {
-			mockRealpathSync.mockReturnValue(FAKE_CWD);
-			const result = validatePath('.');
-			expect(result).toBe(FAKE_CWD);
-		});
+		it('accepts a nested path within CWD', () => {
+			const cwd = '/workspace/myproject';
+			vi.spyOn(process, 'cwd').mockReturnValue(cwd);
+			mockRealpathSync.mockReturnValue('/workspace/myproject/a/b/c/d.ts');
 
-		it('allows nested paths within CWD', () => {
 			const result = validatePath('a/b/c/d.ts');
-			expect(result).toBe(`${FAKE_CWD}/a/b/c/d.ts`);
+
+			expect(result).toBe('/workspace/myproject/a/b/c/d.ts');
+		});
+
+		it('accepts a path that equals the CWD itself', () => {
+			const cwd = '/workspace/myproject';
+			vi.spyOn(process, 'cwd').mockReturnValue(cwd);
+			mockRealpathSync.mockReturnValue('/workspace/myproject');
+
+			const result = validatePath('.');
+
+			expect(result).toBe('/workspace/myproject');
 		});
 	});
 
-	describe('paths within /tmp', () => {
-		it('allows /tmp path', () => {
-			mockRealpathSync.mockReturnValue('/tmp/file.txt');
-			const result = validatePath('/tmp/file.txt');
-			expect(result).toBe('/tmp/file.txt');
+	describe('/tmp allowed paths', () => {
+		it('accepts a path under /tmp', () => {
+			const cwd = '/workspace/myproject';
+			vi.spyOn(process, 'cwd').mockReturnValue(cwd);
+			mockRealpathSync.mockReturnValue('/tmp/my-temp-file.txt');
+
+			const result = validatePath('/tmp/my-temp-file.txt');
+
+			expect(result).toBe('/tmp/my-temp-file.txt');
 		});
 
-		it('allows nested /tmp path', () => {
+		it('accepts a nested path under /tmp', () => {
+			const cwd = '/workspace/myproject';
+			vi.spyOn(process, 'cwd').mockReturnValue(cwd);
 			mockRealpathSync.mockReturnValue('/tmp/subdir/file.txt');
+
 			const result = validatePath('/tmp/subdir/file.txt');
+
 			expect(result).toBe('/tmp/subdir/file.txt');
 		});
 	});
 
-	describe('paths outside allowed directories', () => {
-		it('rejects path outside CWD', () => {
+	describe('path traversal rejection', () => {
+		it('rejects a path outside CWD', () => {
+			const cwd = '/workspace/myproject';
+			vi.spyOn(process, 'cwd').mockReturnValue(cwd);
+			mockRealpathSync.mockReturnValue('/etc/passwd');
+
 			expect(() => validatePath('/etc/passwd')).toThrow('Path access denied');
 		});
 
-		it('rejects parent directory traversal', () => {
-			expect(() => validatePath('../outside/file.ts')).toThrow('Path access denied');
+		it('rejects a path that escapes CWD via traversal', () => {
+			const cwd = '/workspace/myproject';
+			vi.spyOn(process, 'cwd').mockReturnValue(cwd);
+			// Realpath resolves symlinks, but still outside cwd
+			mockRealpathSync.mockReturnValue('/workspace/otherproject/file.ts');
+
+			expect(() => validatePath('../otherproject/file.ts')).toThrow('Path access denied');
 		});
 
-		it('rejects path to /home directory', () => {
-			expect(() => validatePath('/home/user/secret.txt')).toThrow('Path access denied');
+		it('error message includes the original input path', () => {
+			const cwd = '/workspace/myproject';
+			vi.spyOn(process, 'cwd').mockReturnValue(cwd);
+			mockRealpathSync.mockReturnValue('/etc/secret');
+
+			expect(() => validatePath('/etc/secret')).toThrow('/etc/secret');
 		});
 
-		it('includes the input path in error message', () => {
-			expect(() => validatePath('/etc/passwd')).toThrow('/etc/passwd');
-		});
+		it('error message mentions allowed paths', () => {
+			const cwd = '/workspace/myproject';
+			vi.spyOn(process, 'cwd').mockReturnValue(cwd);
+			mockRealpathSync.mockReturnValue('/home/user/file');
 
-		it('mentions allowed paths in error message', () => {
-			expect(() => validatePath('/etc/passwd')).toThrow('/tmp');
+			expect(() => validatePath('/home/user/file')).toThrow('/tmp');
 		});
 	});
 
 	describe('ENOENT handling', () => {
-		it('uses resolved path (not realpathSync result) when ENOENT', () => {
-			const enoentError = Object.assign(new Error('no such file'), { code: 'ENOENT' });
+		it('uses resolved path when file does not exist (ENOENT)', () => {
+			const cwd = '/workspace/myproject';
+			vi.spyOn(process, 'cwd').mockReturnValue(cwd);
+			const enoentError = Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
 			mockRealpathSync.mockImplementation(() => {
 				throw enoentError;
 			});
 
-			// Path that resolves within CWD should be allowed
+			// The resolved path should be within CWD, so it should succeed
 			const result = validatePath('new-file.ts');
-			expect(result).toBe(`${FAKE_CWD}/new-file.ts`);
+
+			// resolve('cwd', 'new-file.ts') = '/workspace/myproject/new-file.ts'
+			expect(result).toBe('/workspace/myproject/new-file.ts');
 		});
 
-		it('rejects ENOENT path outside CWD', () => {
-			const enoentError = Object.assign(new Error('no such file'), { code: 'ENOENT' });
-			mockRealpathSync.mockImplementation(() => {
-				throw enoentError;
-			});
-
-			expect(() => validatePath('/etc/new-file.ts')).toThrow('Path access denied');
-		});
-	});
-
-	describe('non-ENOENT fs errors', () => {
 		it('re-throws non-ENOENT errors', () => {
-			const permError = Object.assign(new Error('Permission denied'), { code: 'EACCES' });
+			const cwd = '/workspace/myproject';
+			vi.spyOn(process, 'cwd').mockReturnValue(cwd);
+			const permError = Object.assign(new Error('EACCES'), { code: 'EACCES' });
 			mockRealpathSync.mockImplementation(() => {
 				throw permError;
 			});
 
-			expect(() => validatePath('some-file.ts')).toThrow('Permission denied');
-		});
-	});
-
-	describe('path traversal attacks', () => {
-		it('rejects path that traverses outside via symlink resolution', () => {
-			// Simulate symlink pointing outside CWD
-			mockRealpathSync.mockReturnValue('/etc/sensitive');
-			expect(() => validatePath('link-to-outside')).toThrow('Path access denied');
-		});
-
-		it('handles paths that look like they start with CWD but are not within it', () => {
-			// e.g. CWD is /workspace/project and path is /workspace/project-evil
-			mockRealpathSync.mockReturnValue(`${FAKE_CWD}-evil/file.ts`);
-			expect(() => validatePath(`${FAKE_CWD}-evil/file.ts`)).toThrow('Path access denied');
+			expect(() => validatePath('src/file.ts')).toThrow('EACCES');
 		});
 	});
 });

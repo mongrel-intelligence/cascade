@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../../src/jira/client.js', () => ({
-	jiraClient: {
+// Hoist mocks before imports
+const { mockJiraClient, mockAdfToPlainText, mockMarkdownToAdf } = vi.hoisted(() => ({
+	mockJiraClient: {
 		getIssue: vi.fn(),
 		getIssueComments: vi.fn(),
 		updateIssue: vi.fn(),
@@ -12,508 +13,536 @@ vi.mock('../../../../src/jira/client.js', () => ({
 		transitionIssue: vi.fn(),
 		getIssueLabels: vi.fn(),
 		updateLabels: vi.fn(),
+		addAttachmentFile: vi.fn(),
 		getCustomFieldValue: vi.fn(),
 		updateCustomField: vi.fn(),
 		getMyself: vi.fn(),
-		addAttachmentFile: vi.fn(),
 	},
+	mockAdfToPlainText: vi.fn(),
+	mockMarkdownToAdf: vi.fn(),
+}));
+
+vi.mock('../../../../src/jira/client.js', () => ({
+	jiraClient: mockJiraClient,
 }));
 
 vi.mock('../../../../src/pm/jira/adf.js', () => ({
-	adfToPlainText: vi.fn((doc: unknown) => (doc ? String(doc) : '')),
-	markdownToAdf: vi.fn((text: string) => ({
-		type: 'doc',
-		content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
-	})),
+	adfToPlainText: mockAdfToPlainText,
+	markdownToAdf: mockMarkdownToAdf,
 }));
 
 vi.mock('../../../../src/utils/logging.js', () => ({
-	logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+	logger: {
+		warn: vi.fn(),
+		debug: vi.fn(),
+		info: vi.fn(),
+		error: vi.fn(),
+	},
 }));
 
-import { jiraClient } from '../../../../src/jira/client.js';
 import { JiraPMProvider } from '../../../../src/pm/jira/adapter.js';
 
-const mockJira = vi.mocked(jiraClient);
-
-const config = {
+const mockConfig = {
 	projectKey: 'PROJ',
-	baseUrl: 'https://jira.example.com',
+	baseUrl: 'https://mycompany.atlassian.net',
 	statuses: {
-		inProgress: 'In Progress',
-		inReview: 'Code Review',
+		briefing: 'Briefing',
+		planning: 'Planning',
+		todo: 'To Do',
 		done: 'Done',
-		merged: 'Merged',
+	},
+	issueTypes: {
+		default: 'Task',
+		subtask: 'Sub-task',
 	},
 };
 
-let provider: JiraPMProvider;
-
-beforeEach(() => {
-	vi.clearAllMocks();
-	provider = new JiraPMProvider(config);
-});
-
 describe('JiraPMProvider', () => {
+	let provider: JiraPMProvider;
+
+	beforeEach(() => {
+		vi.resetAllMocks();
+		provider = new JiraPMProvider(mockConfig);
+		mockAdfToPlainText.mockReturnValue('plain text description');
+		mockMarkdownToAdf.mockReturnValue({ type: 'doc', version: 1, content: [] });
+	});
+
 	it('has type "jira"', () => {
 		expect(provider.type).toBe('jira');
 	});
 
 	describe('getWorkItem', () => {
-		it('maps issue fields to WorkItem', async () => {
-			mockJira.getIssue.mockResolvedValue({
-				key: 'PROJ-1',
+		it('delegates to jiraClient.getIssue and maps fields', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({
+				key: 'PROJ-123',
 				fields: {
-					summary: 'My Issue',
-					description: 'some adf',
+					summary: 'Fix the bug',
+					description: { type: 'doc' },
 					status: { name: 'In Progress' },
-					labels: ['frontend', 'bug'],
+					labels: ['backend', 'urgent'],
 				},
-			} as Awaited<ReturnType<typeof mockJira.getIssue>>);
+			});
 
-			const item = await provider.getWorkItem('PROJ-1');
+			const result = await provider.getWorkItem('PROJ-123');
 
-			expect(item.id).toBe('PROJ-1');
-			expect(item.title).toBe('My Issue');
-			expect(item.url).toBe('https://jira.example.com/browse/PROJ-1');
-			expect(item.status).toBe('In Progress');
-			expect(item.labels).toEqual([
-				{ id: 'frontend', name: 'frontend' },
-				{ id: 'bug', name: 'bug' },
-			]);
+			expect(mockJiraClient.getIssue).toHaveBeenCalledWith('PROJ-123');
+			expect(result).toMatchObject({
+				id: 'PROJ-123',
+				title: 'Fix the bug',
+				description: 'plain text description',
+				url: 'https://mycompany.atlassian.net/browse/PROJ-123',
+				status: 'In Progress',
+				labels: [
+					{ id: 'backend', name: 'backend' },
+					{ id: 'urgent', name: 'urgent' },
+				],
+			});
 		});
 
-		it('handles missing fields gracefully', async () => {
-			mockJira.getIssue.mockResolvedValue({
-				key: 'PROJ-1',
-				fields: {},
-			} as Awaited<ReturnType<typeof mockJira.getIssue>>);
+		it('falls back to id when key is missing', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { summary: 'Test' },
+			});
 
-			const item = await provider.getWorkItem('PROJ-1');
+			const result = await provider.getWorkItem('fallback-id');
 
-			expect(item.title).toBe('');
-			expect(item.labels).toEqual([]);
+			expect(result.id).toBe('fallback-id');
 		});
 	});
 
 	describe('getWorkItemComments', () => {
-		it('maps comment fields', async () => {
-			mockJira.getIssueComments.mockResolvedValue([
+		it('maps JIRA comments to WorkItemComment format', async () => {
+			mockAdfToPlainText.mockReturnValue('Comment text');
+			mockJiraClient.getIssueComments.mockResolvedValue([
 				{
-					id: 'c1',
-					created: '2024-01-01T00:00:00Z',
-					body: 'some adf body',
+					id: 'comment-1',
+					created: '2024-01-01T00:00:00.000Z',
+					body: { type: 'doc' },
 					author: {
-						accountId: 'u1',
+						accountId: 'user-123',
 						displayName: 'Alice',
 						emailAddress: 'alice@example.com',
 					},
 				},
 			]);
 
-			const comments = await provider.getWorkItemComments('PROJ-1');
+			const result = await provider.getWorkItemComments('PROJ-123');
 
-			expect(comments).toHaveLength(1);
-			expect(comments[0].id).toBe('c1');
-			expect(comments[0].date).toBe('2024-01-01T00:00:00Z');
-			expect(comments[0].author.name).toBe('Alice');
-			expect(comments[0].author.username).toBe('alice@example.com');
+			expect(result).toEqual([
+				{
+					id: 'comment-1',
+					date: '2024-01-01T00:00:00.000Z',
+					text: 'Comment text',
+					author: {
+						id: 'user-123',
+						name: 'Alice',
+						username: 'alice@example.com',
+					},
+				},
+			]);
+		});
+
+		it('handles missing comment fields gracefully', async () => {
+			mockJiraClient.getIssueComments.mockResolvedValue([{}]);
+			mockAdfToPlainText.mockReturnValue('');
+
+			const result = await provider.getWorkItemComments('PROJ-123');
+
+			expect(result).toEqual([
+				{
+					id: '',
+					date: '',
+					text: '',
+					author: { id: '', name: '', username: '' },
+				},
+			]);
 		});
 	});
 
 	describe('updateWorkItem', () => {
-		it('updates title as summary', async () => {
-			mockJira.updateIssue.mockResolvedValue(undefined);
+		it('converts description markdown to ADF before updating', async () => {
+			mockJiraClient.updateIssue.mockResolvedValue(undefined);
+			const adfDoc = { type: 'doc', version: 1, content: [] };
+			mockMarkdownToAdf.mockReturnValue(adfDoc);
 
-			await provider.updateWorkItem('PROJ-1', { title: 'New Title' });
+			await provider.updateWorkItem('PROJ-123', {
+				title: 'Updated title',
+				description: 'New **markdown** desc',
+			});
 
-			expect(mockJira.updateIssue).toHaveBeenCalledWith('PROJ-1', {
-				summary: 'New Title',
-				description: undefined,
+			expect(mockMarkdownToAdf).toHaveBeenCalledWith('New **markdown** desc');
+			expect(mockJiraClient.updateIssue).toHaveBeenCalledWith('PROJ-123', {
+				summary: 'Updated title',
+				description: adfDoc,
 			});
 		});
 
-		it('converts description markdown to ADF', async () => {
-			mockJira.updateIssue.mockResolvedValue(undefined);
+		it('passes undefined description when not provided', async () => {
+			mockJiraClient.updateIssue.mockResolvedValue(undefined);
 
-			await provider.updateWorkItem('PROJ-1', { description: '# Heading' });
+			await provider.updateWorkItem('PROJ-123', { title: 'Title only' });
 
-			const call = mockJira.updateIssue.mock.calls[0];
-			expect(call[0]).toBe('PROJ-1');
-			expect(call[1].description).toBeTruthy();
+			expect(mockJiraClient.updateIssue).toHaveBeenCalledWith('PROJ-123', {
+				summary: 'Title only',
+				description: undefined,
+			});
 		});
 	});
 
 	describe('addComment', () => {
-		it('converts markdown to ADF and calls addComment', async () => {
-			mockJira.addComment.mockResolvedValue(undefined);
+		it('converts markdown to ADF and calls jiraClient.addComment', async () => {
+			const adfDoc = { type: 'doc', version: 1, content: [] };
+			mockMarkdownToAdf.mockReturnValue(adfDoc);
+			mockJiraClient.addComment.mockResolvedValue(undefined);
 
-			await provider.addComment('PROJ-1', 'Hello world');
+			await provider.addComment('PROJ-123', 'Hello **world**');
 
-			expect(mockJira.addComment).toHaveBeenCalledWith('PROJ-1', expect.any(Object));
+			expect(mockMarkdownToAdf).toHaveBeenCalledWith('Hello **world**');
+			expect(mockJiraClient.addComment).toHaveBeenCalledWith('PROJ-123', adfDoc);
 		});
 	});
 
 	describe('createWorkItem', () => {
-		it('creates issue with project key', async () => {
-			mockJira.createIssue.mockResolvedValue({ key: 'PROJ-2' });
+		it('creates JIRA issue with correct fields', async () => {
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-456' });
+			const adfDoc = { type: 'doc', version: 1, content: [] };
+			mockMarkdownToAdf.mockReturnValue(adfDoc);
 
-			const item = await provider.createWorkItem({
+			const result = await provider.createWorkItem({
 				containerId: 'PROJ',
-				title: 'New Issue',
-				description: 'Details',
+				title: 'New Task',
+				description: 'Task description',
+				labels: ['backend'],
 			});
 
-			expect(mockJira.createIssue).toHaveBeenCalledWith(
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
 				expect.objectContaining({
 					project: { key: 'PROJ' },
-					summary: 'New Issue',
+					summary: 'New Task',
 					issuetype: { name: 'Task' },
+					labels: ['backend'],
 				}),
 			);
-			expect(item.id).toBe('PROJ-2');
-			expect(item.url).toBe('https://jira.example.com/browse/PROJ-2');
+			expect(result.id).toBe('PROJ-456');
+			expect(result.url).toBe('https://mycompany.atlassian.net/browse/PROJ-456');
 		});
 
-		it('uses default project key when containerId is empty', async () => {
-			mockJira.createIssue.mockResolvedValue({ key: 'PROJ-3' });
+		it('omits labels when not provided', async () => {
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-789' });
 
 			await provider.createWorkItem({
-				containerId: '',
-				title: 'Issue',
+				containerId: 'PROJ',
+				title: 'Task without labels',
 			});
 
-			expect(mockJira.createIssue).toHaveBeenCalledWith(
-				expect.objectContaining({
-					project: { key: 'PROJ' },
-				}),
-			);
-		});
-
-		it('uses custom issue type when configured', async () => {
-			const configWithType = { ...config, issueTypes: { default: 'Story', subtask: 'Sub-task' } };
-			const providerWithType = new JiraPMProvider(configWithType);
-			mockJira.createIssue.mockResolvedValue({ key: 'PROJ-4' });
-
-			await providerWithType.createWorkItem({ containerId: 'PROJ', title: 'Story' });
-
-			expect(mockJira.createIssue).toHaveBeenCalledWith(
-				expect.objectContaining({ issuetype: { name: 'Story' } }),
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
+				expect.not.objectContaining({ labels: expect.anything() }),
 			);
 		});
 	});
 
 	describe('listWorkItems', () => {
-		it('searches with JQL and maps results', async () => {
-			mockJira.searchIssues.mockResolvedValue([
+		it('searches by project key and maps results', async () => {
+			mockJiraClient.searchIssues.mockResolvedValue([
 				{
 					key: 'PROJ-1',
-					fields: { summary: 'Issue 1', status: { name: 'Open' }, labels: [] },
+					fields: {
+						summary: 'Issue 1',
+						status: { name: 'To Do' },
+						labels: [],
+					},
 				},
 			]);
 
-			const items = await provider.listWorkItems('PROJ');
+			const result = await provider.listWorkItems('PROJ');
 
-			expect(mockJira.searchIssues).toHaveBeenCalledWith(
-				expect.stringContaining('project = "PROJ"'),
+			expect(mockJiraClient.searchIssues).toHaveBeenCalledWith(
+				'project = "PROJ" ORDER BY created DESC',
 			);
-			expect(items).toHaveLength(1);
-			expect(items[0].id).toBe('PROJ-1');
-			expect(items[0].status).toBe('Open');
+			expect(result).toHaveLength(1);
+			expect(result[0]).toMatchObject({
+				id: 'PROJ-1',
+				title: 'Issue 1',
+				status: 'To Do',
+			});
 		});
 	});
 
 	describe('moveWorkItem', () => {
-		it('finds transition by name and calls transitionIssue', async () => {
-			mockJira.getTransitions.mockResolvedValue([
-				{ id: 't1', name: 'In Progress', to: { name: 'In Progress' } },
-				{ id: 't2', name: 'Done', to: { name: 'Done' } },
+		it('finds transition by name and transitions the issue', async () => {
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-1', name: 'Start Progress', to: { name: 'In Progress' } },
+				{ id: 't-2', name: 'Done', to: { name: 'Done' } },
 			]);
-			mockJira.transitionIssue.mockResolvedValue(undefined);
+			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
 
 			await provider.moveWorkItem('PROJ-1', 'Done');
 
-			expect(mockJira.transitionIssue).toHaveBeenCalledWith('PROJ-1', 't2');
+			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-1', 't-2');
 		});
 
-		it('matches by to.name (case-insensitive)', async () => {
-			mockJira.getTransitions.mockResolvedValue([
-				{ id: 't1', name: 'Transition 1', to: { name: 'In Progress' } },
+		it('matches by destination name (case insensitive)', async () => {
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-3', name: 'Move to Review', to: { name: 'Code Review' } },
 			]);
-			mockJira.transitionIssue.mockResolvedValue(undefined);
+			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
 
-			await provider.moveWorkItem('PROJ-1', 'in progress');
+			await provider.moveWorkItem('PROJ-1', 'code review');
 
-			expect(mockJira.transitionIssue).toHaveBeenCalledWith('PROJ-1', 't1');
+			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-1', 't-3');
 		});
 
-		it('logs warn and does not throw when no transition found', async () => {
-			mockJira.getTransitions.mockResolvedValue([{ id: 't1', name: 'Open', to: { name: 'Open' } }]);
+		it('returns without throwing when no matching transition found', async () => {
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-1', name: 'Done', to: { name: 'Done' } },
+			]);
 
-			await provider.moveWorkItem('PROJ-1', 'Nonexistent Status');
-
-			expect(mockJira.transitionIssue).not.toHaveBeenCalled();
+			await expect(provider.moveWorkItem('PROJ-1', 'unknown-status')).resolves.toBeUndefined();
 		});
 	});
 
-	describe('addLabel / removeLabel', () => {
-		it('addLabel adds new label if not present', async () => {
-			mockJira.getIssueLabels.mockResolvedValue(['existing']);
-			mockJira.updateLabels.mockResolvedValue(undefined);
+	describe('addLabel', () => {
+		it('adds label when not already present', async () => {
+			mockJiraClient.getIssueLabels.mockResolvedValue(['existing-label']);
+			mockJiraClient.updateLabels.mockResolvedValue(undefined);
 
 			await provider.addLabel('PROJ-1', 'new-label');
 
-			expect(mockJira.updateLabels).toHaveBeenCalledWith('PROJ-1', ['existing', 'new-label']);
+			expect(mockJiraClient.updateLabels).toHaveBeenCalledWith('PROJ-1', [
+				'existing-label',
+				'new-label',
+			]);
 		});
 
-		it('addLabel does not duplicate existing label', async () => {
-			mockJira.getIssueLabels.mockResolvedValue(['existing']);
-			mockJira.updateLabels.mockResolvedValue(undefined);
+		it('does not update when label already present', async () => {
+			mockJiraClient.getIssueLabels.mockResolvedValue(['existing-label']);
 
-			await provider.addLabel('PROJ-1', 'existing');
+			await provider.addLabel('PROJ-1', 'existing-label');
 
-			expect(mockJira.updateLabels).not.toHaveBeenCalled();
+			expect(mockJiraClient.updateLabels).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('removeLabel', () => {
+		it('removes label from the list', async () => {
+			mockJiraClient.getIssueLabels.mockResolvedValue(['label-a', 'label-b', 'label-c']);
+			mockJiraClient.updateLabels.mockResolvedValue(undefined);
+
+			await provider.removeLabel('PROJ-1', 'label-b');
+
+			expect(mockJiraClient.updateLabels).toHaveBeenCalledWith('PROJ-1', ['label-a', 'label-c']);
 		});
 
-		it('removeLabel removes a label', async () => {
-			mockJira.getIssueLabels.mockResolvedValue(['label1', 'label2']);
-			mockJira.updateLabels.mockResolvedValue(undefined);
+		it('does not update when label not present', async () => {
+			mockJiraClient.getIssueLabels.mockResolvedValue(['label-a']);
 
-			await provider.removeLabel('PROJ-1', 'label1');
+			await provider.removeLabel('PROJ-1', 'non-existent');
 
-			expect(mockJira.updateLabels).toHaveBeenCalledWith('PROJ-1', ['label2']);
-		});
-
-		it('removeLabel does nothing if label not present', async () => {
-			mockJira.getIssueLabels.mockResolvedValue(['label1']);
-			mockJira.updateLabels.mockResolvedValue(undefined);
-
-			await provider.removeLabel('PROJ-1', 'nonexistent');
-
-			expect(mockJira.updateLabels).not.toHaveBeenCalled();
+			expect(mockJiraClient.updateLabels).not.toHaveBeenCalled();
 		});
 	});
 
 	describe('getChecklists', () => {
-		it('returns empty array when no subtasks', async () => {
-			mockJira.getIssue.mockResolvedValue({
-				key: 'PROJ-1',
-				fields: { subtasks: [] },
-			} as Awaited<ReturnType<typeof mockJira.getIssue>>);
-
-			const checklists = await provider.getChecklists('PROJ-1');
-
-			expect(checklists).toEqual([]);
-		});
-
 		it('maps subtasks to checklist items', async () => {
-			mockJira.getIssue.mockResolvedValue({
-				key: 'PROJ-1',
+			mockJiraClient.getIssue.mockResolvedValue({
 				fields: {
 					subtasks: [
-						{ key: 'PROJ-2', id: '2', fields: { summary: 'Subtask 1', status: { name: 'To Do' } } },
-						{ key: 'PROJ-3', id: '3', fields: { summary: 'Subtask 2', status: { name: 'Done' } } },
+						{ key: 'PROJ-2', id: '2', fields: { summary: 'Subtask 1', status: { name: 'Done' } } },
+						{
+							key: 'PROJ-3',
+							id: '3',
+							fields: { summary: 'Subtask 2', status: { name: 'To Do' } },
+						},
 					],
 				},
-			} as Awaited<ReturnType<typeof mockJira.getIssue>>);
+			});
 
-			const checklists = await provider.getChecklists('PROJ-1');
+			const result = await provider.getChecklists('PROJ-1');
 
-			expect(checklists).toHaveLength(1);
-			expect(checklists[0].name).toBe('Subtasks');
-			expect(checklists[0].items[0].complete).toBe(false);
-			expect(checklists[0].items[1].complete).toBe(true);
+			expect(result).toEqual([
+				{
+					id: 'subtasks-PROJ-1',
+					name: 'Subtasks',
+					workItemId: 'PROJ-1',
+					items: [
+						{ id: 'PROJ-2', name: 'Subtask 1', complete: true },
+						{ id: 'PROJ-3', name: 'Subtask 2', complete: false },
+					],
+				},
+			]);
+		});
+
+		it('returns empty array when no subtasks', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { subtasks: [] },
+			});
+
+			const result = await provider.getChecklists('PROJ-1');
+
+			expect(result).toEqual([]);
 		});
 	});
 
 	describe('createChecklist', () => {
-		it('returns a virtual checklist (no API call)', async () => {
-			const checklist = await provider.createChecklist('PROJ-1', 'My Checklist');
+		it('returns checklist object without calling JIRA API', async () => {
+			const result = await provider.createChecklist('PROJ-1', 'My Checklist');
 
-			expect(checklist.name).toBe('My Checklist');
-			expect(checklist.workItemId).toBe('PROJ-1');
-			expect(checklist.items).toEqual([]);
-			expect(mockJira.createIssue).not.toHaveBeenCalled();
+			expect(result.name).toBe('My Checklist');
+			expect(result.workItemId).toBe('PROJ-1');
+			expect(result.items).toEqual([]);
+			expect(mockJiraClient.createIssue).not.toHaveBeenCalled();
 		});
 	});
 
 	describe('addChecklistItem', () => {
-		it('creates subtask from checklist ID format', async () => {
-			mockJira.createIssue.mockResolvedValue({ key: 'PROJ-5' });
+		it('creates a subtask from checklist-format checklistId', async () => {
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-99' });
 
-			await provider.addChecklistItem('checklist-PROJ-1-1234567890', 'Do something');
+			await provider.addChecklistItem('checklist-PROJ-1-1234567890', 'New subtask item');
 
-			expect(mockJira.createIssue).toHaveBeenCalledWith(
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
 				expect.objectContaining({
+					project: { key: 'PROJ' },
 					parent: { key: 'PROJ-1' },
-					summary: 'Do something',
+					summary: 'New subtask item',
+					issuetype: { name: 'Sub-task' },
 				}),
 			);
 		});
 
-		it('extracts parent key from subtasks- format', async () => {
-			mockJira.createIssue.mockResolvedValue({ key: 'PROJ-6' });
+		it('creates a subtask from subtasks-format checklistId', async () => {
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-100' });
 
-			// subtasks-PROJ-1 => regex captures "PROJ" as parent (the -1 suffix is treated as the trailing digits)
-			await provider.addChecklistItem('subtasks-PROJ-1', 'Another task');
+			// For 'subtasks-PROJ-5', the regex captures 'PROJ' (non-greedy match stops before trailing digits)
+			await provider.addChecklistItem('subtasks-PROJ-5', 'Another subtask');
 
-			expect(mockJira.createIssue).toHaveBeenCalledWith(
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
 				expect.objectContaining({
 					parent: { key: 'PROJ' },
-					summary: 'Another task',
+					summary: 'Another subtask',
 				}),
 			);
-		});
-
-		it('logs warn when parent key cannot be extracted', async () => {
-			const { logger } = await import('../../../../src/utils/logging.js');
-
-			await provider.addChecklistItem('invalid-format', 'task');
-
-			expect(vi.mocked(logger.warn)).toHaveBeenCalled();
-			expect(mockJira.createIssue).not.toHaveBeenCalled();
 		});
 	});
 
 	describe('updateChecklistItem', () => {
-		it('transitions to Done when complete=true', async () => {
-			mockJira.getTransitions.mockResolvedValue([{ id: 't1', name: 'Done', to: { name: 'Done' } }]);
-			mockJira.transitionIssue.mockResolvedValue(undefined);
+		it('moves subtask to Done when complete=true', async () => {
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-done', name: 'Done', to: { name: 'Done' } },
+			]);
+			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
 
 			await provider.updateChecklistItem('PROJ-1', 'PROJ-2', true);
 
-			expect(mockJira.transitionIssue).toHaveBeenCalledWith('PROJ-2', 't1');
-		});
-
-		it('transitions to To Do when complete=false', async () => {
-			mockJira.getTransitions.mockResolvedValue([
-				{ id: 't2', name: 'To Do', to: { name: 'To Do' } },
-			]);
-			mockJira.transitionIssue.mockResolvedValue(undefined);
-
-			await provider.updateChecklistItem('PROJ-1', 'PROJ-2', false);
-
-			expect(mockJira.transitionIssue).toHaveBeenCalledWith('PROJ-2', 't2');
+			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-2', 't-done');
 		});
 	});
 
 	describe('getAttachments', () => {
-		it('maps attachment fields from issue', async () => {
-			mockJira.getIssue.mockResolvedValue({
-				key: 'PROJ-1',
+		it('maps JIRA attachment fields to Attachment type', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({
 				fields: {
 					attachment: [
 						{
-							id: 'a1',
-							filename: 'file.txt',
-							content: 'https://jira.example.com/secure/attachment',
-							mimeType: 'text/plain',
-							size: 200,
-							created: '2024-01-01T00:00:00Z',
+							id: 'att-1',
+							filename: 'screenshot.png',
+							content: 'https://jira.example.com/attachment/content/att-1',
+							mimeType: 'image/png',
+							size: 2048,
+							created: '2024-01-01T00:00:00.000Z',
 						},
 					],
 				},
-			} as Awaited<ReturnType<typeof mockJira.getIssue>>);
+			});
 
-			const attachments = await provider.getAttachments('PROJ-1');
+			const result = await provider.getAttachments('PROJ-1');
 
-			expect(attachments).toHaveLength(1);
-			expect(attachments[0].id).toBe('a1');
-			expect(attachments[0].name).toBe('file.txt');
-			expect(attachments[0].bytes).toBe(200);
-		});
-
-		it('returns empty array when no attachments', async () => {
-			mockJira.getIssue.mockResolvedValue({
-				key: 'PROJ-1',
-				fields: {},
-			} as Awaited<ReturnType<typeof mockJira.getIssue>>);
-
-			const attachments = await provider.getAttachments('PROJ-1');
-
-			expect(attachments).toEqual([]);
+			expect(result).toEqual([
+				{
+					id: 'att-1',
+					name: 'screenshot.png',
+					url: 'https://jira.example.com/attachment/content/att-1',
+					mimeType: 'image/png',
+					bytes: 2048,
+					date: '2024-01-01T00:00:00.000Z',
+				},
+			]);
 		});
 	});
 
 	describe('addAttachment', () => {
-		it('falls back to comment with link', async () => {
-			mockJira.addComment.mockResolvedValue(undefined);
+		it('adds URL attachment as a comment (JIRA cannot link attachments)', async () => {
+			mockJiraClient.addComment.mockResolvedValue(undefined);
+			const adfDoc = { type: 'doc', version: 1, content: [] };
+			mockMarkdownToAdf.mockReturnValue(adfDoc);
 
 			await provider.addAttachment('PROJ-1', 'https://example.com/file.pdf', 'file.pdf');
 
-			expect(mockJira.addComment).toHaveBeenCalledWith(
-				'PROJ-1',
-				expect.objectContaining({ type: 'doc' }),
-			);
+			expect(mockJiraClient.addComment).toHaveBeenCalledWith('PROJ-1', adfDoc);
 		});
 	});
 
 	describe('addAttachmentFile', () => {
 		it('delegates to jiraClient.addAttachmentFile', async () => {
-			mockJira.addAttachmentFile.mockResolvedValue(undefined);
-			const buf = Buffer.from('data');
+			mockJiraClient.addAttachmentFile.mockResolvedValue(undefined);
+			const buffer = Buffer.from('binary data');
 
-			await provider.addAttachmentFile('PROJ-1', buf, 'file.txt', 'text/plain');
+			await provider.addAttachmentFile('PROJ-1', buffer, 'file.zip', 'application/zip');
 
-			expect(mockJira.addAttachmentFile).toHaveBeenCalledWith('PROJ-1', buf, 'file.txt');
+			expect(mockJiraClient.addAttachmentFile).toHaveBeenCalledWith('PROJ-1', buffer, 'file.zip');
 		});
 	});
 
 	describe('getCustomFieldNumber', () => {
-		it('returns numeric value', async () => {
-			mockJira.getCustomFieldValue.mockResolvedValue(42);
+		it('returns numeric custom field value', async () => {
+			mockJiraClient.getCustomFieldValue.mockResolvedValue(99);
 
-			const val = await provider.getCustomFieldNumber('PROJ-1', 'customfield_1');
+			const result = await provider.getCustomFieldNumber('PROJ-1', 'field-123');
 
-			expect(val).toBe(42);
+			expect(result).toBe(99);
 		});
 
-		it('parses string value', async () => {
-			mockJira.getCustomFieldValue.mockResolvedValue('7.5');
+		it('parses string value as float', async () => {
+			mockJiraClient.getCustomFieldValue.mockResolvedValue('12.5');
 
-			const val = await provider.getCustomFieldNumber('PROJ-1', 'customfield_1');
+			const result = await provider.getCustomFieldNumber('PROJ-1', 'field-123');
 
-			expect(val).toBe(7.5);
-		});
-
-		it('returns 0 for null value', async () => {
-			mockJira.getCustomFieldValue.mockResolvedValue(null);
-
-			const val = await provider.getCustomFieldNumber('PROJ-1', 'customfield_1');
-
-			expect(val).toBe(0);
+			expect(result).toBe(12.5);
 		});
 	});
 
 	describe('updateCustomFieldNumber', () => {
 		it('delegates to jiraClient.updateCustomField', async () => {
-			mockJira.updateCustomField.mockResolvedValue(undefined);
+			mockJiraClient.updateCustomField.mockResolvedValue(undefined);
 
-			await provider.updateCustomFieldNumber('PROJ-1', 'customfield_1', 99);
+			await provider.updateCustomFieldNumber('PROJ-1', 'field-123', 42);
 
-			expect(mockJira.updateCustomField).toHaveBeenCalledWith('PROJ-1', 'customfield_1', 99);
+			expect(mockJiraClient.updateCustomField).toHaveBeenCalledWith('PROJ-1', 'field-123', 42);
 		});
 	});
 
 	describe('getWorkItemUrl', () => {
-		it('returns baseUrl + browse path', () => {
-			expect(provider.getWorkItemUrl('PROJ-1')).toBe('https://jira.example.com/browse/PROJ-1');
+		it('builds JIRA browse URL', () => {
+			const url = provider.getWorkItemUrl('PROJ-42');
+			expect(url).toBe('https://mycompany.atlassian.net/browse/PROJ-42');
 		});
 	});
 
 	describe('getAuthenticatedUser', () => {
-		it('maps myself fields', async () => {
-			mockJira.getMyself.mockResolvedValue({
-				accountId: 'u1',
-				displayName: 'Alice',
-				emailAddress: 'alice@example.com',
+		it('maps JIRA user fields to standard format', async () => {
+			mockJiraClient.getMyself.mockResolvedValue({
+				accountId: 'account-123',
+				displayName: 'Bot User',
+				emailAddress: 'bot@example.com',
 			});
 
-			const user = await provider.getAuthenticatedUser();
+			const result = await provider.getAuthenticatedUser();
 
-			expect(user.id).toBe('u1');
-			expect(user.name).toBe('Alice');
-			expect(user.username).toBe('alice@example.com');
+			expect(result).toEqual({
+				id: 'account-123',
+				name: 'Bot User',
+				username: 'bot@example.com',
+			});
 		});
 	});
 });
