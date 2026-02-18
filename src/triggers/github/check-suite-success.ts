@@ -1,8 +1,46 @@
-import { githubClient } from '../../github/client.js';
+import { type CheckSuiteStatus, githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
 import { extractTrelloCardId, hasTrelloCardUrl } from './utils.js';
+
+const MAX_RETRIES = 5;
+const RETRY_DELAY_MS = 10_000;
+
+/**
+ * Wait for all check suites to complete, retrying when some are still in-progress.
+ * Returns immediately if all checks have completed (whether passing or failing).
+ */
+async function waitForChecks(
+	owner: string,
+	repo: string,
+	headSha: string,
+	prNumber: number,
+): Promise<CheckSuiteStatus> {
+	let checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
+	if (checkStatus.allPassing) return checkStatus;
+
+	const hasInProgress = checkStatus.checkRuns.some((c) => c.status !== 'completed');
+	if (!hasInProgress) return checkStatus;
+
+	for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+		logger.info('Some checks still in progress, retrying', {
+			prNumber,
+			attempt,
+			maxRetries: MAX_RETRIES,
+			pending: checkStatus.checkRuns.filter((c) => c.status !== 'completed').map((c) => c.name),
+		});
+		await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+		checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
+		if (checkStatus.allPassing) break;
+
+		// If all completed but some failed, no point retrying
+		const stillRunning = checkStatus.checkRuns.some((c) => c.status !== 'completed');
+		if (!stillRunning) break;
+	}
+
+	return checkStatus;
+}
 
 /**
  * Triggers review agent when all CI checks pass on a PR with Trello card URL.
@@ -100,7 +138,11 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		// Verify all checks are actually passing (double-check)
 		// Uses the implementer token already in scope (set by webhook-handler),
 		// which has actions:read permission. The reviewer's fine-grained PAT may not.
-		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
+		//
+		// GitHub fires a check_suite webhook per individual suite completion.
+		// When multiple suites exist, the first webhook arrives before other suites finish.
+		// waitForChecks retries when checks are still in-progress, but bails on genuine failures.
+		const checkStatus = await waitForChecks(owner, repo, headSha, prNumber);
 
 		if (!checkStatus.allPassing) {
 			logger.info('Not all checks passing, skipping review trigger', {
