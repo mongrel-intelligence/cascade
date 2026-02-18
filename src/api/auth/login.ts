@@ -28,12 +28,14 @@ export async function loginHandler(c: Context) {
 	await createSession(user.id, token, expiresAt);
 
 	const isProduction = process.env.NODE_ENV === 'production';
+	const cookieDomain = process.env.COOKIE_DOMAIN;
 	setCookie(c, 'cascade_session', token, {
 		httpOnly: true,
 		sameSite: 'Lax',
 		secure: isProduction,
 		path: '/',
 		maxAge: SESSION_EXPIRY_DAYS * 24 * 60 * 60,
+		...(cookieDomain && { domain: cookieDomain }),
 	});
 
 	return c.json({

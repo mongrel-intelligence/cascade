@@ -202,12 +202,18 @@ export function getActiveWorkers(): Array<{ jobId: string; startedAt: Date }> {
 
 // BullMQ Worker that processes jobs by spawning containers
 let bullWorker: Worker<CascadeJob> | null = null;
+let dashboardWorker: Worker | null = null;
 
 export function startWorkerProcessor(): void {
 	if (bullWorker) {
 		console.warn('[WorkerManager] Worker processor already started');
 		return;
 	}
+
+	const redisConnection = {
+		host: new URL(routerConfig.redisUrl).hostname,
+		port: Number(new URL(routerConfig.redisUrl).port) || 6379,
+	};
 
 	bullWorker = new Worker<CascadeJob>(
 		'cascade-jobs',
@@ -226,10 +232,7 @@ export function startWorkerProcessor(): void {
 			// Container exit is handled asynchronously.
 		},
 		{
-			connection: {
-				host: new URL(routerConfig.redisUrl).hostname,
-				port: Number(new URL(routerConfig.redisUrl).port) || 6379,
-			},
+			connection: redisConnection,
 			concurrency: routerConfig.maxWorkers,
 			// Lock jobs for the timeout duration plus buffer
 			lockDuration: routerConfig.workerTimeoutMs + 60000,
@@ -251,11 +254,49 @@ export function startWorkerProcessor(): void {
 		console.error('[WorkerManager] Worker error:', err);
 	});
 
+	// Dashboard jobs queue — manual runs, retries, debug analyses submitted
+	// from the dashboard API container
+	dashboardWorker = new Worker(
+		'cascade-dashboard-jobs',
+		async (job) => {
+			if (activeWorkers.size >= routerConfig.maxWorkers) {
+				throw new Error('No worker slots available');
+			}
+			// Dashboard jobs are forwarded as worker containers with the same
+			// JOB_TYPE / JOB_DATA protocol that worker-entry.ts understands.
+			await spawnWorker(job as Job<CascadeJob>);
+		},
+		{
+			connection: redisConnection,
+			concurrency: routerConfig.maxWorkers,
+			lockDuration: routerConfig.workerTimeoutMs + 60000,
+		},
+	);
+
+	dashboardWorker.on('completed', (job) => {
+		console.log('[WorkerManager] Dashboard job dispatched:', { jobId: job.id });
+	});
+
+	dashboardWorker.on('failed', (job, err) => {
+		console.error('[WorkerManager] Dashboard job failed to dispatch:', {
+			jobId: job?.id,
+			error: String(err),
+		});
+	});
+
+	dashboardWorker.on('error', (err) => {
+		console.error('[WorkerManager] Dashboard worker error:', err);
+	});
+
 	console.log('[WorkerManager] Started with max', routerConfig.maxWorkers, 'concurrent workers');
 }
 
 // Graceful shutdown — detach from workers, let them finish independently
 export async function stopWorkerProcessor(): Promise<void> {
+	if (dashboardWorker) {
+		await dashboardWorker.close();
+		dashboardWorker = null;
+	}
 	if (bullWorker) {
 		await bullWorker.close();
 		bullWorker = null;

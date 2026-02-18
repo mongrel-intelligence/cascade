@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge.js';
+import { API_URL } from '@/lib/api.js';
 import { useOrgContext } from '@/lib/org-context.js';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -19,7 +20,7 @@ export function Header({ user }: HeaderProps) {
 			: null;
 
 	async function handleLogout() {
-		await fetch('/api/auth/logout', { method: 'POST' });
+		await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' });
 		queryClient.clear();
 		navigate({ to: '/login' });
 	}
