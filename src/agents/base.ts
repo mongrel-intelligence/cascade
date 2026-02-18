@@ -125,7 +125,6 @@ function buildPromptContext(
 		cardId,
 		cardUrl: cardId ? pmProvider.getWorkItemUrl(cardId) : undefined,
 		projectId: project.id,
-		baseBranch: project.baseBranch,
 		storiesListId: project.trello?.lists?.stories,
 		processedLabelId: project.trello?.labels?.processed,
 		pmType: pmProvider.type,
@@ -369,6 +368,7 @@ function createAgentBuilderWithGadgets(
 	remainingBudgetUsd?: number,
 	llmCallAccumulator?: AccumulatedLlmCall[],
 	runId?: string,
+	baseBranch?: string,
 ): BuilderType {
 	return createConfiguredBuilder({
 		client,
@@ -386,6 +386,7 @@ function createAgentBuilderWithGadgets(
 		remainingBudgetUsd,
 		llmCallAccumulator,
 		runId,
+		baseBranch,
 		// Implementation agent uses sequential execution to ensure file operations
 		// are properly ordered (e.g., FileSearchAndReplace then ReadFile on same file)
 		postConfigure:
@@ -598,6 +599,7 @@ export async function executeAgent(
 				input.remainingBudgetUsd as number | undefined,
 				llmCallAccumulator,
 				runId,
+				project.baseBranch,
 			),
 
 		injectSyntheticCalls: ({ builder, ctx, trackingContext, repoDir }) =>

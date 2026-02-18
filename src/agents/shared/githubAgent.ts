@@ -161,6 +161,7 @@ export async function executeGitHubAgent<
 					remainingBudgetUsd: input.remainingBudgetUsd as number | undefined,
 					llmCallAccumulator,
 					runId,
+					baseBranch: project.baseBranch,
 					...definition.builderOptions,
 				}),
 

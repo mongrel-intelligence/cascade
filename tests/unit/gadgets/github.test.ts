@@ -6,6 +6,7 @@ import { runCommand } from '../../../src/utils/repo.js';
 // Mock session state
 vi.mock('../../../src/gadgets/sessionState.js', () => ({
 	recordPRCreation: vi.fn(),
+	getBaseBranch: vi.fn().mockReturnValue('main'),
 }));
 
 // Mock the github client
@@ -72,7 +73,6 @@ describe('GitHub Gadgets', () => {
 					title: 'Test PR',
 					body: 'Test body',
 					head: 'feature/test',
-					base: 'main',
 					commit: false,
 					push: false,
 				}),
@@ -99,7 +99,6 @@ describe('GitHub Gadgets', () => {
 				title: 'Test PR',
 				body: 'Test body',
 				head: 'feature/test',
-				base: 'main',
 				commit: false,
 				push: false,
 			});
@@ -133,7 +132,6 @@ describe('GitHub Gadgets', () => {
 				title: 'Draft PR',
 				body: 'Test body',
 				head: 'feature/draft',
-				base: 'main',
 				draft: true,
 				commit: false,
 				push: false,
@@ -163,7 +161,6 @@ describe('GitHub Gadgets', () => {
 				title: 'Test PR',
 				body: 'Test body',
 				head: 'feature/test',
-				base: 'main',
 			});
 
 			// Should stage tracked changes with -u (not git add .)
@@ -214,7 +211,6 @@ describe('GitHub Gadgets', () => {
 				title: 'Test PR',
 				body: 'Test body',
 				head: 'feature/test',
-				base: 'main',
 			});
 
 			// Should add specific untracked files
@@ -249,7 +245,6 @@ describe('GitHub Gadgets', () => {
 				title: 'Test PR',
 				body: 'Test body',
 				head: 'feature/test',
-				base: 'main',
 			});
 
 			// Should commit with PR title as message
@@ -284,7 +279,6 @@ describe('GitHub Gadgets', () => {
 				title: 'Test PR',
 				body: 'Test body',
 				head: 'feature/test',
-				base: 'main',
 				commitMessage: 'feat(test): custom commit message',
 			});
 
@@ -313,7 +307,6 @@ describe('GitHub Gadgets', () => {
 				title: 'Test PR',
 				body: 'Test body',
 				head: 'feature/test',
-				base: 'main',
 				commit: false,
 			});
 
@@ -350,7 +343,6 @@ describe('GitHub Gadgets', () => {
 					title: 'Test PR',
 					body: 'Test body',
 					head: 'feature/test',
-					base: 'main',
 				}),
 			).rejects.toThrow('COMMIT FAILED');
 
@@ -375,7 +367,6 @@ describe('GitHub Gadgets', () => {
 					title: 'Test PR',
 					body: 'Test body',
 					head: 'feature/test',
-					base: 'main',
 				}),
 			).rejects.toThrow('PUSH FAILED');
 
@@ -406,7 +397,6 @@ describe('GitHub Gadgets', () => {
 				title: 'Test PR',
 				body: 'Test body',
 				head: 'feature/test',
-				base: 'main',
 				commit: false,
 				push: false,
 			});
@@ -437,7 +427,6 @@ describe('GitHub Gadgets', () => {
 					title: 'Test PR',
 					body: 'Test body',
 					head: 'feature/test',
-					base: 'main',
 					commit: false,
 					push: false,
 				}),
@@ -459,7 +448,6 @@ describe('GitHub Gadgets', () => {
 					title: 'Test PR',
 					body: 'Test body',
 					head: 'feature/test',
-					base: 'main',
 					commit: false,
 					push: false,
 				}),
@@ -487,7 +475,6 @@ describe('GitHub Gadgets', () => {
 				title: 'Test PR',
 				body: 'Test body',
 				head: 'feature/test',
-				base: 'main',
 				commit: false,
 				push: false,
 			});
