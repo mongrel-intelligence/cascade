@@ -135,7 +135,7 @@ describe('acknowledgeWithReaction', () => {
 	// ── Trello ──────────────────────────────────────────────
 
 	describe('trello', () => {
-		it('adds thought balloon reaction to commentCard action', async () => {
+		it('adds eyes reaction to commentCard action', async () => {
 			const payload = {
 				model: { id: 'board-1', name: 'Board' },
 				action: {
@@ -150,9 +150,9 @@ describe('acknowledgeWithReaction', () => {
 			await acknowledgeWithReaction('trello', payload);
 
 			expect(trelloClient.addActionReaction).toHaveBeenCalledWith('action-1', {
-				shortName: 'thought_balloon',
-				native: '💭',
-				unified: '1f4ad',
+				shortName: 'eyes',
+				native: '👀',
+				unified: '1f440',
 			});
 		});
 
@@ -214,12 +214,12 @@ describe('acknowledgeWithReaction', () => {
 			expect(jiraClient.addCommentReaction).toHaveBeenCalledWith(
 				'10001',
 				'20001',
-				'atlassian-thought_balloon',
+				'atlassian-eyes',
 			);
 			expect(jiraClient.addComment).not.toHaveBeenCalled();
 		});
 
-		it('falls back to comment when reaction API fails', async () => {
+		it('does not fall back to comment when reaction API fails', async () => {
 			vi.mocked(jiraClient.addCommentReaction).mockRejectedValue(new Error('404'));
 
 			const payload = {
@@ -231,7 +231,7 @@ describe('acknowledgeWithReaction', () => {
 			await acknowledgeWithReaction('jira', payload);
 
 			expect(jiraClient.addCommentReaction).toHaveBeenCalled();
-			expect(jiraClient.addComment).toHaveBeenCalledWith('PROJ-1', '💭');
+			expect(jiraClient.addComment).not.toHaveBeenCalled();
 		});
 
 		it('does nothing when comment.id is missing', async () => {
@@ -260,9 +260,8 @@ describe('acknowledgeWithReaction', () => {
 			expect(jiraClient.addComment).not.toHaveBeenCalled();
 		});
 
-		it('does not throw when both reaction and fallback comment fail', async () => {
+		it('does not throw when reaction API fails', async () => {
 			vi.mocked(jiraClient.addCommentReaction).mockRejectedValue(new Error('404'));
-			vi.mocked(jiraClient.addComment).mockRejectedValue(new Error('500'));
 
 			const payload = {
 				webhookEvent: 'comment_created',

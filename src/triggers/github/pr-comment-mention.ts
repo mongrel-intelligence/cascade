@@ -123,6 +123,7 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 				triggerCommentBody: commentBody,
 				triggerCommentPath: commentPath,
 				triggerCommentUrl: commentUrl,
+				commentAuthor,
 			},
 			prNumber,
 			cardId: cardId || undefined,

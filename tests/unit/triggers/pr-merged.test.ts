@@ -12,6 +12,7 @@ vi.mock('../../../src/github/client.js', () => ({
 // Mock the Trello client
 vi.mock('../../../src/trello/client.js', () => ({
 	trelloClient: {
+		getCard: vi.fn(),
 		moveCardToList: vi.fn(),
 		addComment: vi.fn(),
 	},
@@ -108,6 +109,15 @@ describe('PRMergedTrigger', () => {
 				headSha: 'sha123',
 				baseRef: 'main',
 				merged: true,
+			});
+			vi.mocked(trelloClient.getCard).mockResolvedValue({
+				id: 'abc123',
+				name: 'Card',
+				desc: '',
+				url: '',
+				shortUrl: '',
+				idList: 'todo-list-id',
+				labels: [],
 			});
 
 			const ctx: TriggerContext = {
@@ -208,6 +218,56 @@ describe('PRMergedTrigger', () => {
 
 			expect(result).toBeNull();
 			expect(trelloClient.moveCardToList).not.toHaveBeenCalled();
+		});
+
+		it('skips move and comment when card is already in MERGED list', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 123,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'closed',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: true,
+			});
+			vi.mocked(trelloClient.getCard).mockResolvedValue({
+				id: 'abc123',
+				name: 'Card',
+				desc: '',
+				url: '',
+				shortUrl: '',
+				idList: 'merged-list-id',
+				labels: [],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'closed',
+					number: 123,
+					pull_request: {
+						number: 123,
+						body: 'https://trello.com/c/abc123/card-name',
+					},
+					repository: {
+						full_name: 'owner/repo',
+					},
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(trelloClient.getCard).toHaveBeenCalledWith('abc123');
+			expect(trelloClient.moveCardToList).not.toHaveBeenCalled();
+			expect(trelloClient.addComment).not.toHaveBeenCalled();
+			expect(result).toEqual({
+				agentType: '',
+				agentInput: {},
+				cardId: 'abc123',
+				prNumber: 123,
+			});
 		});
 
 		it('returns null when merged list is not configured', async () => {

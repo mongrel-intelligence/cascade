@@ -12,6 +12,7 @@ vi.mock('../../../src/github/client.js', () => ({
 
 vi.mock('../../../src/trello/client.js', () => ({
 	trelloClient: {
+		getCard: vi.fn(),
 		moveCardToList: vi.fn(),
 		addComment: vi.fn(),
 	},
@@ -234,6 +235,15 @@ describe('PRReadyToMergeTrigger', () => {
 					commitId: 'sha123',
 				},
 			]);
+			vi.mocked(trelloClient.getCard).mockResolvedValue({
+				id: 'abc123',
+				name: 'Card',
+				desc: '',
+				url: '',
+				shortUrl: '',
+				idList: 'todo-list-id',
+				labels: [],
+			});
 
 			const ctx: TriggerContext = {
 				project: mockProject,
@@ -286,6 +296,15 @@ describe('PRReadyToMergeTrigger', () => {
 					commitId: 'sha123',
 				},
 			]);
+			vi.mocked(trelloClient.getCard).mockResolvedValue({
+				id: 'abc123',
+				name: 'Card',
+				desc: '',
+				url: '',
+				shortUrl: '',
+				idList: 'todo-list-id',
+				labels: [],
+			});
 
 			const ctx: TriggerContext = {
 				project: mockProject,
@@ -500,6 +519,75 @@ describe('PRReadyToMergeTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toBeNull();
+		});
+
+		it('skips move and comment when card is already in DONE list', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+			});
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: true,
+				totalCount: 2,
+				checkRuns: [
+					{ name: 'lint', status: 'completed', conclusion: 'success' },
+					{ name: 'test', status: 'completed', conclusion: 'success' },
+				],
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
+				{
+					id: 1,
+					state: 'approved',
+					body: 'LGTM',
+					user: { login: 'reviewer' },
+					submitted_at: '2024-01-01',
+					commitId: 'sha123',
+				},
+			]);
+			vi.mocked(trelloClient.getCard).mockResolvedValue({
+				id: 'abc123',
+				name: 'Card',
+				desc: '',
+				url: '',
+				shortUrl: '',
+				idList: 'done-list-id',
+				labels: [],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'completed',
+					check_suite: {
+						id: 1,
+						status: 'completed',
+						conclusion: 'success',
+						head_sha: 'sha123',
+						pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'sha123' } }],
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'github-actions' },
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(trelloClient.getCard).toHaveBeenCalledWith('abc123');
+			expect(trelloClient.moveCardToList).not.toHaveBeenCalled();
+			expect(trelloClient.addComment).not.toHaveBeenCalled();
+			expect(result).toEqual({
+				agentType: '',
+				agentInput: {},
+				cardId: 'abc123',
+				prNumber: 42,
+			});
 		});
 
 		it('returns null when done list is not configured', async () => {
