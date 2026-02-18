@@ -25,6 +25,9 @@ RUN npm ci --omit=dev --ignore-scripts
 # Copy all built code (simplest — avoids chasing transitive imports)
 COPY --from=builder /app/dist ./dist
 
+# Copy .eta prompt templates (loaded at runtime by agents/prompts via readFileSync)
+COPY --from=builder /app/src/agents/prompts/templates ./dist/agents/prompts/templates
+
 ENV PORT=3001
 EXPOSE 3001
 CMD ["node", "dist/dashboard.js"]
