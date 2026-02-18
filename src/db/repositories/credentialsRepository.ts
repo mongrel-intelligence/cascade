@@ -1,5 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { getDb } from '../client.js';
+import { decryptCredential, encryptCredential } from '../crypto.js';
 import { credentials, projectCredentialOverrides } from '../schema/index.js';
 
 /**
@@ -28,7 +29,7 @@ export async function resolveCredential(
 				isNull(projectCredentialOverrides.agentType),
 			),
 		);
-	if (override) return override.value;
+	if (override) return decryptCredential(override.value, orgId);
 
 	// 2. Check org default
 	const [orgDefault] = await db
@@ -41,7 +42,7 @@ export async function resolveCredential(
 				eq(credentials.isDefault, true),
 			),
 		);
-	if (orgDefault) return orgDefault.value;
+	if (orgDefault) return decryptCredential(orgDefault.value, orgId);
 
 	return null;
 }
@@ -72,7 +73,7 @@ export async function resolveAgentCredential(
 				eq(projectCredentialOverrides.agentType, agentType),
 			),
 		);
-	if (agentOverride) return agentOverride.value;
+	if (agentOverride) return decryptCredential(agentOverride.value, orgId);
 
 	// 2. Fall through to project override → org default
 	return resolveCredential(projectId, orgId, envVarKey);
@@ -96,7 +97,7 @@ export async function resolveAllCredentials(
 		.where(and(eq(credentials.orgId, orgId), eq(credentials.isDefault, true)));
 
 	for (const row of orgDefaults) {
-		result[row.envVarKey] = row.value;
+		result[row.envVarKey] = decryptCredential(row.value, orgId);
 	}
 
 	// Load project-wide overrides (overwrite org defaults) — excludes agent-scoped overrides
@@ -115,7 +116,7 @@ export async function resolveAllCredentials(
 		);
 
 	for (const row of overrides) {
-		result[row.envVarKey] = row.value;
+		result[row.envVarKey] = decryptCredential(row.value, orgId);
 	}
 
 	return result;
@@ -137,7 +138,7 @@ export async function createCredential(params: {
 			orgId: params.orgId,
 			name: params.name,
 			envVarKey: params.envVarKey,
-			value: params.value,
+			value: encryptCredential(params.value, params.orgId),
 			isDefault: params.isDefault ?? false,
 		})
 		.returning({ id: credentials.id });
@@ -155,7 +156,18 @@ export async function updateCredential(
 	const db = getDb();
 	const setClause: Record<string, unknown> = { updatedAt: new Date() };
 	if (updates.name !== undefined) setClause.name = updates.name;
-	if (updates.value !== undefined) setClause.value = updates.value;
+	if (updates.value !== undefined) {
+		// Look up orgId for AAD binding
+		const [row] = await db
+			.select({ orgId: credentials.orgId })
+			.from(credentials)
+			.where(eq(credentials.id, id));
+		if (row) {
+			setClause.value = encryptCredential(updates.value, row.orgId);
+		} else {
+			setClause.value = updates.value;
+		}
+	}
 	if (updates.isDefault !== undefined) setClause.isDefault = updates.isDefault;
 
 	await db.update(credentials).set(setClause).where(eq(credentials.id, id));
@@ -170,7 +182,8 @@ export async function listOrgCredentials(
 	orgId: string,
 ): Promise<(typeof credentials.$inferSelect)[]> {
 	const db = getDb();
-	return db.select().from(credentials).where(eq(credentials.orgId, orgId));
+	const rows = await db.select().from(credentials).where(eq(credentials.orgId, orgId));
+	return rows.map((row) => ({ ...row, value: decryptCredential(row.value, orgId) }));
 }
 
 // --- Override management (project-wide) ---

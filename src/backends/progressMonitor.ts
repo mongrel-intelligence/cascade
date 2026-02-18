@@ -62,6 +62,7 @@ export class ProgressMonitor implements ProgressReporter {
 	private startTime = Date.now();
 	private timer: ReturnType<typeof setInterval> | null = null;
 	private isGenerating = false;
+	private progressCommentId: string | null = null;
 
 	constructor(private readonly config: ProgressMonitorConfig) {}
 
@@ -186,15 +187,45 @@ export class ProgressMonitor implements ProgressReporter {
 	}
 
 	private async postProgress(summary: string): Promise<void> {
-		// Post to PM provider (Trello/JIRA)
+		// Post to PM provider (Trello/JIRA) — create once, update in place
 		if (this.config.trello) {
 			try {
 				const provider = getPMProviderOrNull();
 				if (provider) {
-					await provider.addComment(this.config.trello.cardId, summary);
-					this.config.logWriter('INFO', 'Posted progress update to work item', {
-						cardId: this.config.trello.cardId,
-					});
+					if (this.progressCommentId) {
+						// Subsequent ticks: update the existing comment
+						try {
+							await provider.updateComment(
+								this.config.trello.cardId,
+								this.progressCommentId,
+								summary,
+							);
+							this.config.logWriter('INFO', 'Updated progress comment on work item', {
+								cardId: this.config.trello.cardId,
+								commentId: this.progressCommentId,
+							});
+						} catch (updateErr) {
+							// Comment may have been deleted — fall back to creating a new one
+							this.config.logWriter('WARN', 'Failed to update progress comment, creating new one', {
+								error: String(updateErr),
+							});
+							this.progressCommentId = await provider.addComment(
+								this.config.trello.cardId,
+								summary,
+							);
+							this.config.logWriter('INFO', 'Posted new progress comment to work item', {
+								cardId: this.config.trello.cardId,
+								commentId: this.progressCommentId,
+							});
+						}
+					} else {
+						// First tick: create the comment and store its ID
+						this.progressCommentId = await provider.addComment(this.config.trello.cardId, summary);
+						this.config.logWriter('INFO', 'Posted progress update to work item', {
+							cardId: this.config.trello.cardId,
+							commentId: this.progressCommentId,
+						});
+					}
 				}
 			} catch (err) {
 				this.config.logWriter('WARN', 'Failed to post progress to work item', {

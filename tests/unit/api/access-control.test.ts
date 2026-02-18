@@ -79,11 +79,29 @@ vi.mock('../../../src/db/client.js', () => ({
 }));
 
 vi.mock('../../../src/db/schema/index.js', () => ({
-	credentials: { id: 'id', orgId: 'org_id' },
+	credentials: { id: 'id', orgId: 'org_id', value: 'value' },
 	projects: { id: 'id', orgId: 'org_id' },
 	agentConfigs: { id: 'id', orgId: 'org_id', projectId: 'project_id' },
 	organizations: { id: 'id', name: 'name' },
 	cascadeDefaults: { orgId: 'org_id' },
+}));
+
+// Mocks required by runsRouter (dynamically imported in Section 4)
+vi.mock('../../../src/db/crypto.js', () => ({
+	decryptCredential: (v: string) => v,
+	encryptCredential: (v: string) => v,
+}));
+
+vi.mock('../../../src/triggers/shared/debug-status.js', () => ({
+	isAnalysisRunning: vi.fn().mockReturnValue(false),
+}));
+
+vi.mock('../../../src/config/provider.js', () => ({
+	loadProjectConfigById: vi.fn(),
+}));
+
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 // ==========================================================================

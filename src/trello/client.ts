@@ -144,12 +144,29 @@ export const trelloClient = {
 		});
 	},
 
-	async addComment(cardId: string, text: string): Promise<void> {
+	async addComment(cardId: string, text: string): Promise<string> {
 		logger.debug('Adding comment', { cardId, textLength: text.length });
-		await getClient().cards.addCardComment({
+		const result = (await getClient().cards.addCardComment({
 			id: cardId,
 			text,
-		});
+		})) as { id?: string };
+		return result?.id ?? '';
+	},
+
+	async updateComment(actionId: string, text: string): Promise<void> {
+		logger.debug('Updating comment', { actionId, textLength: text.length });
+		const { apiKey, token } = getTrelloCredentials();
+		const response = await fetch(
+			`https://api.trello.com/1/actions/${actionId}?key=${apiKey}&token=${token}`,
+			{
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ text }),
+			},
+		);
+		if (!response.ok) {
+			throw new Error(`Failed to update comment: ${response.status}`);
+		}
 	},
 
 	async addLabelToCard(cardId: string, labelId: string): Promise<void> {

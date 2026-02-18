@@ -8,22 +8,95 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
-// Mock trello.js client (for other methods, not needed for addActionReaction which uses raw fetch)
-vi.mock('trello.js', () => ({
-	TrelloClient: vi.fn().mockImplementation(() => ({})),
+const { mockAddCardComment } = vi.hoisted(() => ({
+	mockAddCardComment: vi.fn(),
 }));
 
+// Mock trello.js client
+vi.mock('trello.js', () => ({
+	TrelloClient: vi.fn().mockImplementation(() => ({
+		cards: {
+			addCardComment: mockAddCardComment,
+		},
+	})),
+}));
+
+import { TrelloClient } from 'trello.js';
 import { trelloClient, withTrelloCredentials } from '../../../src/trello/client.js';
+
+const MockedTrelloClient = vi.mocked(TrelloClient);
 
 describe('trelloClient', () => {
 	const creds = { apiKey: 'test-key', token: 'test-token' };
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		// Re-initialize the TrelloClient mock implementation after clearAllMocks
+		MockedTrelloClient.mockImplementation(
+			() => ({ cards: { addCardComment: mockAddCardComment } }) as unknown as TrelloClient,
+		);
 	});
 
 	afterEach(() => {
 		vi.restoreAllMocks();
+	});
+
+	describe('addComment', () => {
+		it('returns the comment action ID from API response', async () => {
+			mockAddCardComment.mockResolvedValue({ id: 'action-abc123' });
+
+			const id = await withTrelloCredentials(creds, () =>
+				trelloClient.addComment('card-1', 'Hello world'),
+			);
+
+			expect(mockAddCardComment).toHaveBeenCalledWith({ id: 'card-1', text: 'Hello world' });
+			expect(id).toBe('action-abc123');
+		});
+
+		it('returns empty string when API response has no id', async () => {
+			mockAddCardComment.mockResolvedValue({});
+
+			const id = await withTrelloCredentials(creds, () =>
+				trelloClient.addComment('card-1', 'Hello'),
+			);
+
+			expect(id).toBe('');
+		});
+	});
+
+	describe('updateComment', () => {
+		it('PUTs text to the action endpoint with correct URL and body', async () => {
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify({ id: 'action-123' }), { status: 200 }));
+
+			await withTrelloCredentials(creds, () =>
+				trelloClient.updateComment('action-123', 'Updated text'),
+			);
+
+			expect(fetchSpy).toHaveBeenCalledOnce();
+			const [url, options] = fetchSpy.mock.calls[0];
+			expect(url).toBe('https://api.trello.com/1/actions/action-123?key=test-key&token=test-token');
+			expect(options).toEqual({
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ text: 'Updated text' }),
+			});
+		});
+
+		it('throws on non-OK response', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Not Found', { status: 404 }));
+
+			await expect(
+				withTrelloCredentials(creds, () => trelloClient.updateComment('action-123', 'text')),
+			).rejects.toThrow('Failed to update comment: 404');
+		});
+
+		it('throws when called outside withTrelloCredentials scope', async () => {
+			await expect(trelloClient.updateComment('action-123', 'text')).rejects.toThrow(
+				'No Trello credentials in scope',
+			);
+		});
 	});
 
 	describe('addActionReaction', () => {
