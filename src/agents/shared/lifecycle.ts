@@ -187,6 +187,7 @@ async function tryStoreLogsAndCalls(
 				cachedTokens: acc?.cachedTokens,
 				costUsd: acc?.costUsd,
 				durationMs: acc?.durationMs,
+				model: acc?.model,
 			});
 		}
 

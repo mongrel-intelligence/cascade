@@ -32,6 +32,7 @@ export interface AccumulatedLlmCall {
 	cachedTokens?: number;
 	costUsd?: number;
 	durationMs?: number;
+	model?: string;
 }
 
 /** Configuration for creating observer hooks */
@@ -145,6 +146,7 @@ export function createObserverHooks(config: ObserverHooksConfig) {
 						cachedTokens: context.usage.cachedInputTokens ?? 0,
 						costUsd: cost,
 						durationMs,
+						model,
 					});
 				}
 

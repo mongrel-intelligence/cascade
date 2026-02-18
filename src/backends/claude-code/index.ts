@@ -387,8 +387,6 @@ export class ClaudeCodeBackend implements AgentBackend {
 		let resultMessage: SDKResultMessage | undefined;
 		let turnCount = 0;
 		const stderrChunks: string[] = [];
-		// Track per-turn start times for duration calculation
-		const turnStartTimes = new Map<number, number>();
 
 		const stream = query({
 			prompt: taskPrompt,
@@ -416,7 +414,6 @@ export class ClaudeCodeBackend implements AgentBackend {
 			if (message.type === 'assistant') {
 				const assistantMsg = message as SDKAssistantMessage;
 				const thisTurn = turnCount + 1;
-				turnStartTimes.set(thisTurn, Date.now());
 				assistantMessages.push(assistantMsg);
 				turnCount++;
 				await input.progressReporter.onIteration(turnCount, input.maxIterations);
@@ -425,9 +422,6 @@ export class ClaudeCodeBackend implements AgentBackend {
 				// Real-time LLM call logging for Claude Code backend
 				if (input.runId && assistantMsg.message?.usage) {
 					const usage = assistantMsg.message.usage;
-					const turnStart = turnStartTimes.get(thisTurn) ?? startTime;
-					const durationMs = Date.now() - turnStart;
-					turnStartTimes.delete(thisTurn);
 
 					// Serialize response content blocks as the response payload
 					let response: string | undefined;
@@ -447,7 +441,8 @@ export class ClaudeCodeBackend implements AgentBackend {
 						outputTokens: usage.output_tokens,
 						cachedTokens: undefined,
 						costUsd: undefined,
-						durationMs,
+						// Claude Code SDK doesn't expose actual LLM call timing; omit to avoid misleading data
+						durationMs: undefined,
 						model,
 					}).catch((err) => {
 						logger.warn('Failed to store Claude Code LLM call in real-time', {

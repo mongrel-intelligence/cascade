@@ -791,7 +791,8 @@ describe('execute', () => {
 				callNumber: 1,
 				inputTokens: 200,
 				outputTokens: 80,
-				durationMs: expect.any(Number),
+				// Claude Code SDK doesn't expose actual LLM call timing; durationMs is omitted
+				durationMs: undefined,
 			}),
 		);
 	});
