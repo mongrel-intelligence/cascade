@@ -45,6 +45,7 @@ export interface LlmCallRecord {
 	cachedTokens?: number;
 	costUsd?: number;
 	durationMs?: number;
+	model?: string;
 }
 
 export interface CreateDebugAnalysisInput {
@@ -151,6 +152,22 @@ export async function getRunLogs(runId: string) {
 // LLM Call Storage
 // ============================================================================
 
+export async function storeLlmCall(call: LlmCallRecord): Promise<void> {
+	const db = getDb();
+	await db.insert(agentRunLlmCalls).values({
+		runId: call.runId,
+		callNumber: call.callNumber,
+		request: call.request,
+		response: call.response,
+		inputTokens: call.inputTokens,
+		outputTokens: call.outputTokens,
+		cachedTokens: call.cachedTokens,
+		costUsd: call.costUsd?.toString(),
+		durationMs: call.durationMs,
+		model: call.model,
+	});
+}
+
 export async function storeLlmCallsBulk(calls: LlmCallRecord[]): Promise<void> {
 	if (calls.length === 0) return;
 	const db = getDb();
@@ -165,6 +182,7 @@ export async function storeLlmCallsBulk(calls: LlmCallRecord[]): Promise<void> {
 			cachedTokens: c.cachedTokens,
 			costUsd: c.costUsd?.toString(),
 			durationMs: c.durationMs,
+			model: c.model,
 		})),
 	);
 }
@@ -330,6 +348,8 @@ export async function listLlmCallsMeta(runId: string) {
 			cachedTokens: agentRunLlmCalls.cachedTokens,
 			costUsd: agentRunLlmCalls.costUsd,
 			durationMs: agentRunLlmCalls.durationMs,
+			model: agentRunLlmCalls.model,
+			createdAt: agentRunLlmCalls.createdAt,
 		})
 		.from(agentRunLlmCalls)
 		.where(eq(agentRunLlmCalls.runId, runId))

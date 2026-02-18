@@ -78,6 +78,13 @@
 			"when": 1746000000000,
 			"tag": "0011_remove_credentials_description",
 			"breakpoints": false
+		},
+		{
+			"idx": 11,
+			"version": "7",
+			"when": 1747000000000,
+			"tag": "0012_llm_calls_realtime",
+			"breakpoints": false
 		}
 	]
 }
