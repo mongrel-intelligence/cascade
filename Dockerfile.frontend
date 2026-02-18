@@ -1,0 +1,27 @@
+# Build frontend for Cloudflare Pages deployment
+FROM node:22-slim
+WORKDIR /app
+
+# Install backend deps (needed for type imports from src/api)
+COPY package*.json .npmrc ./
+RUN npm ci --ignore-scripts
+
+# Install frontend deps
+COPY web/package*.json web/
+RUN cd web && npm ci
+
+# Copy source (backend types + frontend)
+COPY tsconfig.json ./
+COPY src ./src
+COPY web ./web
+
+# Build with API URL baked in
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+RUN cd web && npm run build
+
+# Install wrangler for deployment
+RUN npm install -g wrangler
+
+WORKDIR /app/web
+CMD ["wrangler", "pages", "deploy", "dist", "--project-name=cascade-dashboard", "--branch=main"]

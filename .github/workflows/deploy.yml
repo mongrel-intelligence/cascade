@@ -42,19 +42,14 @@ jobs:
           docker push ${{ env.DASHBOARD_IMAGE }}:${{ github.sha }}
 
       - name: Build and deploy frontend to Cloudflare Pages
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
+          docker build -f Dockerfile.frontend \
+            --build-arg VITE_API_URL=https://api.ca.sca.de.com \
+            -t cascade-frontend:build .
           docker run --rm \
-            -e VITE_API_URL=https://api.ca.sca.de.com \
-            -e CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN" \
-            -e CLOUDFLARE_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID" \
-            -v "$PWD":/app -w /app \
-            node:22-slim bash -c '
-              cd web && npm ci && npm run build &&
-              npx wrangler pages deploy dist --project-name=cascade-dashboard --branch=main
-            '
+            -e CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -e CLOUDFLARE_ACCOUNT_ID="${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" \
+            cascade-frontend:build
 
       - name: Restart cascade-router
         run: |
