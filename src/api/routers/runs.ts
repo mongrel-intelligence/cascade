@@ -13,11 +13,11 @@ import {
 	listRuns,
 } from '../../db/repositories/runsRepository.js';
 import { projects } from '../../db/schema/index.js';
-import { triggerDebugAnalysis } from '../../triggers/shared/debug-runner.js';
 import { isAnalysisRunning } from '../../triggers/shared/debug-status.js';
-import { triggerManualRun, triggerRetryRun } from '../../triggers/shared/manual-runner.js';
 import { logger } from '../../utils/logging.js';
 import { protectedProcedure, router } from '../trpc.js';
+
+const useQueue = !!process.env.REDIS_URL;
 
 export const runsRouter = router({
 	list: protectedProcedure
@@ -161,15 +161,25 @@ export const runsRouter = router({
 			// Delete existing analysis before re-running
 			await deleteDebugAnalysisByRunId(input.runId);
 
-			// Fire-and-forget
-			triggerDebugAnalysis(input.runId, pc.project, pc.config, run.cardId ?? undefined).catch(
-				(err) => {
-					logger.error('Manual debug analysis failed', {
-						runId: input.runId,
-						error: String(err),
-					});
-				},
-			);
+			if (useQueue) {
+				const { submitDashboardJob } = await import('../../queue/client.js');
+				await submitDashboardJob({
+					type: 'debug-analysis',
+					runId: input.runId,
+					projectId: run.projectId,
+					cardId: run.cardId ?? undefined,
+				});
+			} else {
+				const { triggerDebugAnalysis } = await import('../../triggers/shared/debug-runner.js');
+				triggerDebugAnalysis(input.runId, pc.project, pc.config, run.cardId ?? undefined).catch(
+					(err) => {
+						logger.error('Manual debug analysis failed', {
+							runId: input.runId,
+							error: String(err),
+						});
+					},
+				);
+			}
 
 			return { triggered: true };
 		}),
@@ -210,9 +220,10 @@ export const runsRouter = router({
 				});
 			}
 
-			// Fire-and-forget
-			triggerManualRun(
-				{
+			if (useQueue) {
+				const { submitDashboardJob } = await import('../../queue/client.js');
+				await submitDashboardJob({
+					type: 'manual-run',
 					projectId: input.projectId,
 					agentType: input.agentType,
 					cardId: input.cardId,
@@ -221,16 +232,30 @@ export const runsRouter = router({
 					repoFullName: input.repoFullName,
 					headSha: input.headSha,
 					modelOverride: input.model,
-				},
-				pc.project,
-				pc.config,
-			).catch((err) => {
-				logger.error('Manual trigger failed', {
-					projectId: input.projectId,
-					agentType: input.agentType,
-					error: String(err),
 				});
-			});
+			} else {
+				const { triggerManualRun } = await import('../../triggers/shared/manual-runner.js');
+				triggerManualRun(
+					{
+						projectId: input.projectId,
+						agentType: input.agentType,
+						cardId: input.cardId,
+						prNumber: input.prNumber,
+						prBranch: input.prBranch,
+						repoFullName: input.repoFullName,
+						headSha: input.headSha,
+						modelOverride: input.model,
+					},
+					pc.project,
+					pc.config,
+				).catch((err) => {
+					logger.error('Manual trigger failed', {
+						projectId: input.projectId,
+						agentType: input.agentType,
+						error: String(err),
+					});
+				});
+			}
 
 			return { triggered: true };
 		}),
@@ -273,13 +298,22 @@ export const runsRouter = router({
 				});
 			}
 
-			// Fire-and-forget
-			triggerRetryRun(input.runId, pc.project, pc.config, input.model).catch((err) => {
-				logger.error('Retry run failed', {
+			if (useQueue) {
+				const { submitDashboardJob } = await import('../../queue/client.js');
+				await submitDashboardJob({
+					type: 'retry-run',
 					runId: input.runId,
-					error: String(err),
+					modelOverride: input.model,
 				});
-			});
+			} else {
+				const { triggerRetryRun } = await import('../../triggers/shared/manual-runner.js');
+				triggerRetryRun(input.runId, pc.project, pc.config, input.model).catch((err) => {
+					logger.error('Retry run failed', {
+						runId: input.runId,
+						error: String(err),
+					});
+				});
+			}
 
 			return { triggered: true };
 		}),

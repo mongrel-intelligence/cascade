@@ -10,6 +10,7 @@ env:
   REGISTRY: ghcr.io
   ROUTER_IMAGE: ghcr.io/zbigniewsobiecki/cascade-router
   WORKER_IMAGE: ghcr.io/zbigniewsobiecki/cascade-worker
+  DASHBOARD_IMAGE: ghcr.io/zbigniewsobiecki/cascade-dashboard
 
 jobs:
   build-and-deploy:
@@ -34,6 +35,22 @@ jobs:
           docker push ${{ env.WORKER_IMAGE }}:latest
           docker push ${{ env.WORKER_IMAGE }}:${{ github.sha }}
 
+      - name: Build and push dashboard image
+        run: |
+          docker build -f Dockerfile.dashboard -t ${{ env.DASHBOARD_IMAGE }}:latest -t ${{ env.DASHBOARD_IMAGE }}:${{ github.sha }} .
+          docker push ${{ env.DASHBOARD_IMAGE }}:latest
+          docker push ${{ env.DASHBOARD_IMAGE }}:${{ github.sha }}
+
+      - name: Build and deploy frontend to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          cd web
+          npm ci
+          VITE_API_URL=https://api.ca.sca.de.com npm run build
+          npx wrangler pages deploy dist --project-name=cascade-dashboard --branch=main
+
       - name: Restart cascade-router
         run: |
           cd /opt/services
@@ -56,4 +73,28 @@ jobs:
           done
           echo "ERROR: cascade-router did not become healthy within 150s"
           docker logs cascade-router --tail 20
+          exit 1
+
+      - name: Restart cascade-dashboard
+        run: |
+          cd /opt/services
+          docker compose up -d --force-recreate cascade-dashboard
+
+      - name: Verify cascade-dashboard is healthy
+        run: |
+          echo "Waiting for cascade-dashboard to start..."
+          for i in $(seq 1 30); do
+            if docker inspect cascade-dashboard --format '{{.State.Health.Status}}' 2>/dev/null | grep -q healthy; then
+              echo "cascade-dashboard is healthy"
+              exit 0
+            fi
+            if docker inspect cascade-dashboard --format '{{.State.Status}}' 2>/dev/null | grep -q restarting; then
+              echo "ERROR: cascade-dashboard is crashlooping!"
+              docker logs cascade-dashboard --tail 20
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "ERROR: cascade-dashboard did not become healthy within 150s"
+          docker logs cascade-dashboard --tail 20
           exit 1

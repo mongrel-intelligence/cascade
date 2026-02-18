@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { API_URL } from '../lib/api.js';
 import { rootRoute } from './__root.js';
 
 function LoginPage() {
@@ -17,10 +18,11 @@ function LoginPage() {
 		setLoading(true);
 
 		try {
-			const res = await fetch('/api/auth/login', {
+			const res = await fetch(`${API_URL}/api/auth/login`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ email, password }),
+				credentials: 'include',
 			});
 
 			if (!res.ok) {
