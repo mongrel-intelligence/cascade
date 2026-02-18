@@ -46,10 +46,15 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          cd web
-          npm ci
-          VITE_API_URL=https://api.ca.sca.de.com npm run build
-          npx wrangler pages deploy dist --project-name=cascade-dashboard --branch=main
+          docker run --rm \
+            -e VITE_API_URL=https://api.ca.sca.de.com \
+            -e CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN" \
+            -e CLOUDFLARE_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID" \
+            -v "$PWD":/app -w /app \
+            node:22-slim bash -c '
+              cd web && npm ci && npm run build &&
+              npx wrangler pages deploy dist --project-name=cascade-dashboard --branch=main
+            '
 
       - name: Restart cascade-router
         run: |
