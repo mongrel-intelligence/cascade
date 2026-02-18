@@ -120,6 +120,22 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 			return null;
 		}
 
+		// Idempotency: skip if card is already in the DONE list
+		// (handles concurrent webhooks from multiple check_suite/review events)
+		const card = await trelloClient.getCard(cardId);
+		if (card.idList === doneListId) {
+			logger.info('Card already in DONE list, skipping duplicate move', {
+				cardId,
+				prNumber,
+			});
+			return {
+				agentType: '',
+				agentInput: {},
+				cardId,
+				prNumber,
+			};
+		}
+
 		logger.info('Moving card to DONE - PR approved and all checks passing', {
 			cardId,
 			prNumber,
