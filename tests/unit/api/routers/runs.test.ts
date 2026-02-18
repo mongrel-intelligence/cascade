@@ -275,6 +275,30 @@ describe('runsRouter', () => {
 
 			expect(result).toEqual(mockMeta);
 		});
+
+		it('includes request, model, and createdAt in returned metadata', async () => {
+			const createdAt = new Date('2026-02-18T10:00:00.000Z');
+			const mockMeta = [
+				{
+					callNumber: 1,
+					inputTokens: 100,
+					outputTokens: 50,
+					model: 'claude-sonnet-4-5',
+					createdAt,
+					request: '[{"role":"user","content":"hello"}]',
+				},
+			];
+			mockListLlmCallsMeta.mockResolvedValue(mockMeta);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.listLlmCalls({ runId: RUN_UUID });
+
+			expect(result[0]).toMatchObject({
+				model: 'claude-sonnet-4-5',
+				createdAt,
+				request: '[{"role":"user","content":"hello"}]',
+			});
+		});
 	});
 
 	describe('getLlmCall', () => {

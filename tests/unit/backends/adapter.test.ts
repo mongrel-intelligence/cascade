@@ -64,6 +64,15 @@ vi.mock('../../../src/backends/agent-profiles.js', () => ({
 
 vi.mock('../../../src/agents/prompts/index.js', () => ({}));
 
+const mockCreateRun = vi.fn();
+const mockCompleteRun = vi.fn();
+const mockStoreRunLogs = vi.fn();
+vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
+	createRun: (...args: unknown[]) => mockCreateRun(...args),
+	completeRun: (...args: unknown[]) => mockCompleteRun(...args),
+	storeRunLogs: (...args: unknown[]) => mockStoreRunLogs(...args),
+}));
+
 import { resolveModelConfig } from '../../../src/agents/shared/modelResolution.js';
 import { setupRepository } from '../../../src/agents/shared/repository.js';
 import { createAgentLogger } from '../../../src/agents/utils/logging.js';
@@ -189,6 +198,10 @@ function setupMocks() {
 beforeEach(() => {
 	vi.clearAllMocks();
 	process.env.CASCADE_LOCAL_MODE = '';
+	// Default runs repository mocks
+	mockCreateRun.mockResolvedValue('run-uuid-123');
+	mockCompleteRun.mockResolvedValue(undefined);
+	mockStoreRunLogs.mockResolvedValue(undefined);
 });
 
 describe('executeWithBackend', () => {
@@ -588,6 +601,30 @@ describe('executeWithBackend', () => {
 		expect(result.durationMs).toBeDefined();
 		expect(result.durationMs).toBeGreaterThanOrEqual(0);
 		expect(typeof result.durationMs).toBe('number');
+	});
+
+	it('forwards runId to backendInput after tryCreateBackendRun resolves', async () => {
+		setupMocks();
+		mockCreateRun.mockResolvedValue('test-run-id');
+		const backend = makeMockBackend();
+		const input = makeInput();
+
+		await executeWithBackend(backend, 'implementation', input);
+
+		const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
+		expect(backendInput.runId).toBe('test-run-id');
+	});
+
+	it('forwards undefined runId to backendInput when createRun fails', async () => {
+		setupMocks();
+		mockCreateRun.mockRejectedValue(new Error('DB unavailable'));
+		const backend = makeMockBackend();
+		const input = makeInput();
+
+		await executeWithBackend(backend, 'implementation', input);
+
+		const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
+		expect(backendInput.runId).toBeUndefined();
 	});
 
 	it('returns durationMs when backend returns error', async () => {

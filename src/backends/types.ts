@@ -61,6 +61,8 @@ export interface AgentBackendInput {
 	agentInput: AgentInput;
 	/** Per-project secrets to inject into subprocess environment */
 	projectSecrets?: Record<string, string>;
+	/** Database run ID for real-time LLM call logging */
+	runId?: string;
 	/** SDK tools to allow (defaults to all 6: Read, Write, Edit, Bash, Glob, Grep) */
 	sdkTools?: string[];
 	/** Whether to enable stop hooks that check for uncommitted/unpushed changes (defaults to true) */

@@ -67,6 +67,8 @@ export interface ExecuteAgentOptions<TContext extends BaseAgentContext> {
 		repoDir: string;
 		progressMonitor: ProgressMonitor | null;
 		llmCallAccumulator: AccumulatedLlmCall[];
+		/** Run ID for real-time LLM call logging (resolved before builder creation) */
+		runId: string | undefined;
 	}) => BuilderType;
 
 	/** Inject pre-fetched data as synthetic gadget calls */
@@ -129,6 +131,7 @@ async function tryStoreLogsAndCalls(
 	runId: string,
 	fileLogger: FileLogger,
 	llmCallAccumulator: AccumulatedLlmCall[],
+	realtimeLoggingActive?: boolean,
 ): Promise<void> {
 	try {
 		// Read log files from disk
@@ -187,7 +190,8 @@ async function tryStoreLogsAndCalls(
 			});
 		}
 
-		if (calls.length > 0) {
+		// Skip bulk insert if real-time logging was active (calls already stored per-turn)
+		if (calls.length > 0 && !realtimeLoggingActive) {
 			await storeLlmCallsBulk(calls);
 		}
 	} catch (err) {
@@ -212,9 +216,10 @@ async function finalizeRun(
 	fileLogger: FileLogger,
 	llmCallAccumulator: AccumulatedLlmCall[],
 	input: CompleteRunInput,
+	realtimeLoggingActive?: boolean,
 ): Promise<void> {
 	if (!runId) return;
-	await tryStoreLogsAndCalls(runId, fileLogger, llmCallAccumulator);
+	await tryStoreLogsAndCalls(runId, fileLogger, llmCallAccumulator, realtimeLoggingActive);
 	await tryCompleteRun(runId, input);
 }
 
@@ -289,12 +294,18 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 
 	setWatchdogCleanup(async () => {
 		fileLogger.close();
-		await finalizeRun(runId, fileLogger, llmCallAccumulator, {
-			status: 'timed_out',
-			durationMs: Date.now() - startTime,
-			success: false,
-			error: 'Watchdog timeout',
-		});
+		await finalizeRun(
+			runId,
+			fileLogger,
+			llmCallAccumulator,
+			{
+				status: 'timed_out',
+				durationMs: Date.now() - startTime,
+				success: false,
+				error: 'Watchdog timeout',
+			},
+			!!runId,
+		);
 		await options.onWatchdogTimeout(fileLogger, runId);
 	});
 
@@ -343,6 +354,7 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 				repoDir,
 				progressMonitor,
 				llmCallAccumulator,
+				runId,
 			});
 			builder = await options.injectSyntheticCalls({ builder, ctx, trackingContext, repoDir });
 
@@ -394,7 +406,7 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 						outputSummary: result.output.slice(0, 500),
 					};
 
-			await finalizeRun(runId, fileLogger, llmCallAccumulator, completionInput);
+			await finalizeRun(runId, fileLogger, llmCallAccumulator, completionInput, !!runId);
 
 			return buildAgentResult(
 				result,
@@ -423,12 +435,18 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 		}
 
 		const durationMs = Date.now() - startTime;
-		await finalizeRun(runId, fileLogger, llmCallAccumulator, {
-			status: 'failed',
-			durationMs,
-			success: false,
-			error: String(err),
-		});
+		await finalizeRun(
+			runId,
+			fileLogger,
+			llmCallAccumulator,
+			{
+				status: 'failed',
+				durationMs,
+				success: false,
+				error: String(err),
+			},
+			!!runId,
+		);
 
 		return { success: false, output: '', error: String(err), logBuffer, runId, durationMs };
 	} finally {

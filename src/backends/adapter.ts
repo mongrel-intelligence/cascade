@@ -607,6 +607,7 @@ export async function executeWithBackend(
 				onToolCall: () => {},
 				onText: () => {},
 			},
+			runId,
 		};
 
 		const originalCwd = process.cwd();

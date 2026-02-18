@@ -15,8 +15,10 @@ import type {
 } from 'llmist';
 
 import type { ProgressMonitor } from '../../backends/progressMonitor.js';
+import { storeLlmCall } from '../../db/repositories/runsRepository.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
 import { calculateCost } from '../../utils/llmMetrics.js';
+import { logger } from '../../utils/logging.js';
 import { type TrackingContext, checkForLoopAndAdvance, incrementLLMIteration } from './tracking.js';
 
 /** Function signature for writing to cascade log file */
@@ -46,6 +48,8 @@ export interface ObserverHooksConfig {
 	progressMonitor?: ProgressMonitor;
 	/** Accumulator for per-call metrics (populated during execution) */
 	llmCallAccumulator?: AccumulatedLlmCall[];
+	/** Run ID for real-time DB logging (resolved before builder creation) */
+	runId?: string;
 }
 
 /**
@@ -58,6 +62,8 @@ export function createObserverHooks(config: ObserverHooksConfig) {
 
 	// Track LLM call timing per iteration
 	const llmCallStartTimes = new Map<number, number>();
+	// Capture serialized request messages per iteration for real-time DB logging
+	const pendingRequests = new Map<number, string>();
 
 	return {
 		onLLMCallReady: async (context: ObserveLLMCallContext) => {
@@ -88,6 +94,18 @@ export function createObserverHooks(config: ObserverHooksConfig) {
 			incrementLLMIteration(trackingContext);
 			const callNumber = trackingContext.metrics.llmIterations;
 			llmCallLogger.logRequest(callNumber, context.options.messages);
+
+			// Capture serialized request for real-time DB logging
+			if (config.runId) {
+				try {
+					const serialized = JSON.stringify(context.options.messages);
+					// Truncate to 500KB to avoid excessive payload sizes
+					const truncated = serialized.length > 512000 ? serialized.slice(0, 512000) : serialized;
+					pendingRequests.set(context.iteration, truncated);
+				} catch {
+					// Ignore serialization errors
+				}
+			}
 
 			// Feed iteration state to progress monitor (no posting — timer handles that)
 			if (config.progressMonitor) {
@@ -127,6 +145,30 @@ export function createObserverHooks(config: ObserverHooksConfig) {
 						cachedTokens: context.usage.cachedInputTokens ?? 0,
 						costUsd: cost,
 						durationMs,
+					});
+				}
+
+				// Real-time DB logging: fire-and-forget insert
+				if (config.runId) {
+					const request = pendingRequests.get(context.iteration);
+					pendingRequests.delete(context.iteration);
+					storeLlmCall({
+						runId: config.runId,
+						callNumber,
+						request,
+						response: context.rawResponse as string | undefined,
+						inputTokens: context.usage.inputTokens,
+						outputTokens: context.usage.outputTokens,
+						cachedTokens: context.usage.cachedInputTokens ?? 0,
+						costUsd: cost,
+						durationMs,
+						model,
+					}).catch((err) => {
+						logger.warn('Failed to store LLM call in real-time', {
+							runId: config.runId,
+							callNumber,
+							error: String(err),
+						});
 					});
 				}
 			}
