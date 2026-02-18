@@ -1,5 +1,6 @@
 import { type Job, Worker } from 'bullmq';
 import Docker from 'dockerode';
+import { findProjectByRepo, getProjectSecrets } from '../config/provider.js';
 import { routerConfig } from './config.js';
 import { notifyTimeout } from './notifications.js';
 import type { CascadeJob } from './queue.js';
@@ -16,8 +17,38 @@ interface ActiveWorker {
 
 const activeWorkers = new Map<string, ActiveWorker>();
 
+/**
+ * Extract projectId from job data for credential resolution.
+ * Different job types have the projectId in different locations.
+ *
+ * Note: Dashboard jobs (manual-run, retry-run, debug-analysis) come through
+ * cascade-dashboard-jobs queue and are cast to CascadeJob for spawning.
+ */
+async function extractProjectIdFromJob(data: CascadeJob): Promise<string | null> {
+	// Use type assertion since dashboard jobs are cast to CascadeJob
+	const jobData = data as unknown as { type: string; projectId?: string; repoFullName?: string };
+
+	if (jobData.type === 'trello' || jobData.type === 'jira') {
+		return jobData.projectId ?? null;
+	}
+	if (jobData.type === 'github') {
+		if (!jobData.repoFullName) return null;
+		const project = await findProjectByRepo(jobData.repoFullName);
+		return project?.id ?? null;
+	}
+	if (jobData.type === 'manual-run' || jobData.type === 'debug-analysis') {
+		return jobData.projectId ?? null;
+	}
+	if (jobData.type === 'retry-run') {
+		// Retry jobs reference an existing run - projectId is resolved by worker
+		// since it requires the runs repository which is a worker-only dependency
+		return null;
+	}
+	return null;
+}
+
 // Build environment variables for worker container
-function buildWorkerEnv(job: Job<CascadeJob>): string[] {
+async function buildWorkerEnv(job: Job<CascadeJob>): Promise<string[]> {
 	const env: string[] = [
 		`JOB_ID=${job.id}`,
 		`JOB_TYPE=${job.data.type}`,
@@ -33,9 +64,22 @@ function buildWorkerEnv(job: Job<CascadeJob>): string[] {
 		`LOG_LEVEL=${process.env.LOG_LEVEL || 'info'}`,
 	];
 
-	// Workers resolve project secrets from the database, but need the master key to decrypt them.
-	if (process.env.CREDENTIAL_MASTER_KEY)
-		env.push(`CREDENTIAL_MASTER_KEY=${process.env.CREDENTIAL_MASTER_KEY}`);
+	// Resolve project credentials in the router and pass as JSON.
+	// Workers cache these on startup, then scrub from env.
+	// NOTE: CREDENTIAL_MASTER_KEY is intentionally NOT passed to workers.
+	const projectId = await extractProjectIdFromJob(job.data);
+	if (projectId) {
+		try {
+			const secrets = await getProjectSecrets(projectId);
+			env.push(`CASCADE_CREDENTIALS=${JSON.stringify(secrets)}`);
+			env.push(`CASCADE_CREDENTIALS_PROJECT_ID=${projectId}`);
+		} catch (err) {
+			console.warn('[WorkerManager] Failed to resolve credentials for project:', {
+				projectId,
+				error: String(err),
+			});
+		}
+	}
 
 	// CLAUDE_CODE_OAUTH_TOKEN is for the Claude Code backend (subscription auth).
 	if (process.env.CLAUDE_CODE_OAUTH_TOKEN)
@@ -49,17 +93,21 @@ async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 	const jobId = job.id ?? `unknown-${Date.now()}`;
 	const containerName = `cascade-worker-${jobId}`;
 
+	const workerEnv = await buildWorkerEnv(job);
+	const hasCredentials = workerEnv.some((e) => e.startsWith('CASCADE_CREDENTIALS='));
+
 	console.log('[WorkerManager] Spawning worker:', {
 		jobId,
 		type: job.data.type,
 		containerName,
+		hasCredentials,
 	});
 
 	try {
 		const container = await docker.createContainer({
 			Image: routerConfig.workerImage,
 			name: containerName,
-			Env: buildWorkerEnv(job),
+			Env: workerEnv,
 			HostConfig: {
 				Memory: routerConfig.workerMemoryMb * 1024 * 1024,
 				MemorySwap: routerConfig.workerMemoryMb * 1024 * 1024, // No swap
