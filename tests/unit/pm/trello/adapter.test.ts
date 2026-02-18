@@ -7,6 +7,7 @@ const { mockTrelloClient } = vi.hoisted(() => ({
 		getCardComments: vi.fn(),
 		updateCard: vi.fn(),
 		addComment: vi.fn(),
+		updateComment: vi.fn(),
 		createCard: vi.fn(),
 		getListCards: vi.fn(),
 		moveCardToList: vi.fn(),
@@ -119,12 +120,23 @@ describe('TrelloPMProvider', () => {
 	});
 
 	describe('addComment', () => {
-		it('delegates to trelloClient.addComment', async () => {
-			mockTrelloClient.addComment.mockResolvedValue(undefined);
+		it('delegates to trelloClient.addComment and returns the comment ID', async () => {
+			mockTrelloClient.addComment.mockResolvedValue('action-abc123');
 
-			await provider.addComment('card-1', 'Test comment');
+			const id = await provider.addComment('card-1', 'Test comment');
 
 			expect(mockTrelloClient.addComment).toHaveBeenCalledWith('card-1', 'Test comment');
+			expect(id).toBe('action-abc123');
+		});
+	});
+
+	describe('updateComment', () => {
+		it('delegates to trelloClient.updateComment with actionId', async () => {
+			mockTrelloClient.updateComment.mockResolvedValue(undefined);
+
+			await provider.updateComment('card-1', 'action-abc123', 'Updated text');
+
+			expect(mockTrelloClient.updateComment).toHaveBeenCalledWith('action-abc123', 'Updated text');
 		});
 	});
 

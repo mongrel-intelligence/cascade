@@ -117,9 +117,14 @@ export class JiraPMProvider implements PMProvider {
 		});
 	}
 
-	async addComment(id: string, text: string): Promise<void> {
+	async addComment(id: string, text: string): Promise<string> {
 		const adfBody = markdownToAdf(text);
-		await jiraClient.addComment(id, adfBody);
+		return jiraClient.addComment(id, adfBody);
+	}
+
+	async updateComment(id: string, commentId: string, text: string): Promise<void> {
+		const adfBody = markdownToAdf(text);
+		await jiraClient.updateComment(id, commentId, adfBody);
 	}
 
 	async createWorkItem(config: CreateWorkItemConfig): Promise<WorkItem> {

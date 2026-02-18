@@ -84,11 +84,21 @@ export const jiraClient = {
 		});
 	},
 
-	async addComment(issueKey: string, body: unknown) {
+	async addComment(issueKey: string, body: unknown): Promise<string> {
 		logger.debug('Adding JIRA comment', { issueKey });
-		await getClient().issueComments.addComment({
+		const result = await getClient().issueComments.addComment({
 			issueIdOrKey: issueKey,
 			comment: body as Parameters<Version3Client['issueComments']['addComment']>[0]['comment'],
+		});
+		return (result as { id?: string })?.id ?? '';
+	},
+
+	async updateComment(issueKey: string, commentId: string, body: unknown): Promise<void> {
+		logger.debug('Updating JIRA comment', { issueKey, commentId });
+		await getClient().issueComments.updateComment({
+			issueIdOrKey: issueKey,
+			id: commentId,
+			body: body as Parameters<Version3Client['issueComments']['updateComment']>[0]['body'],
 		});
 	},
 

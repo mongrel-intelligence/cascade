@@ -67,7 +67,8 @@ export interface PMProvider {
 	getWorkItem(id: string): Promise<WorkItem>;
 	getWorkItemComments(id: string): Promise<WorkItemComment[]>;
 	updateWorkItem(id: string, updates: { title?: string; description?: string }): Promise<void>;
-	addComment(id: string, text: string): Promise<void>;
+	addComment(id: string, text: string): Promise<string>;
+	updateComment(id: string, commentId: string, text: string): Promise<void>;
 	createWorkItem(config: CreateWorkItemConfig): Promise<WorkItem>;
 	listWorkItems(containerId: string): Promise<WorkItem[]>;
 
