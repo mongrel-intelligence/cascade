@@ -4,6 +4,7 @@ import { logWebhookCall } from '../utils/webhookLogger.js';
 import { type RouterProjectConfig, getProjectConfig, loadProjectConfig } from './config.js';
 import { addEyesReactionToPR } from './pre-actions.js';
 import { type CascadeJob, type GitHubJob, addJob, getQueueStats } from './queue.js';
+import { sendAcknowledgeReaction } from './reactions.js';
 import {
 	getActiveWorkerCount,
 	getActiveWorkers,
@@ -205,6 +206,11 @@ app.post('/trello/webhook', async (c) => {
 	if (shouldProcess && project && cardId) {
 		console.log('[Router] Queueing Trello job:', { actionType, cardId, projectId: project.id });
 
+		// Fire-and-forget acknowledgment reaction — don't block the 200 response
+		void sendAcknowledgeReaction('trello', project.id, payload).catch((err) =>
+			console.error('[Router] Trello reaction error:', err),
+		);
+
 		const job: CascadeJob = {
 			type: 'trello',
 			source: 'trello',
@@ -305,6 +311,12 @@ app.post('/github/webhook', async (c) => {
 	if (shouldProcess) {
 		console.log('[Router] Queueing GitHub job:', { eventType, repoFullName });
 
+		// Fire-and-forget acknowledgment reaction — pass repoFullName so the
+		// reaction module can resolve the project and credentials.
+		void sendAcknowledgeReaction('github', repoFullName, payload).catch((err) =>
+			console.error('[Router] GitHub reaction error:', err),
+		);
+
 		const job: CascadeJob = {
 			type: 'github',
 			source: 'github',
@@ -391,6 +403,11 @@ app.post('/jira/webhook', async (c) => {
 
 	if (shouldProcess && project) {
 		console.log('[Router] Queueing JIRA job:', { webhookEvent, issueKey, projectId: project.id });
+
+		// Fire-and-forget acknowledgment reaction — don't block the 200 response
+		void sendAcknowledgeReaction('jira', project.id, payload).catch((err) =>
+			console.error('[Router] JIRA reaction error:', err),
+		);
 
 		const job: CascadeJob = {
 			type: 'jira',
