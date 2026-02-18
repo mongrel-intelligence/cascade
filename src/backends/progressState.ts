@@ -11,8 +11,7 @@
  * File format: `<workItemId>:<commentId>`
  */
 
-import { existsSync, rmSync, writeFileSync } from 'node:fs';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const STATE_FILE_NAME = '.cascade-progress-comment-id';
@@ -34,14 +33,21 @@ export function writeProgressCommentId(
 }
 
 /**
- * Reads the progress comment state from the state file in the current
- * working directory (process.cwd()).
+ * Reads the progress comment state from the state file.
  *
+ * @param repoDir - Optional directory containing the state file. Defaults to
+ *                  `process.cwd()` if not provided. For cross-process usage
+ *                  (e.g., Claude Code subprocess), the caller should ensure
+ *                  `process.chdir(repoDir)` has been called, or pass `repoDir`
+ *                  explicitly.
  * @returns `{ workItemId, commentId }` if the state file exists and is valid,
  *          or `null` if not found or malformed.
  */
-export function readProgressCommentId(): { workItemId: string; commentId: string } | null {
-	const filePath = join(process.cwd(), STATE_FILE_NAME);
+export function readProgressCommentId(
+	repoDir?: string,
+): { workItemId: string; commentId: string } | null {
+	const dir = repoDir ?? process.cwd();
+	const filePath = join(dir, STATE_FILE_NAME);
 
 	if (!existsSync(filePath)) return null;
 

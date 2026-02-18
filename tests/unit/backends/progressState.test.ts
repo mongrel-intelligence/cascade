@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -34,7 +34,7 @@ describe('progressState utilities', () => {
 			const stateFile = join(tmpDir, STATE_FILE_NAME);
 			expect(existsSync(stateFile)).toBe(true);
 
-			const content = require('node:fs').readFileSync(stateFile, 'utf-8');
+			const content = readFileSync(stateFile, 'utf-8');
 			expect(content).toBe('card123:comment456');
 		});
 
@@ -61,17 +61,24 @@ describe('progressState utilities', () => {
 		});
 
 		it('returns null for malformed state file (no colon)', () => {
-			require('node:fs').writeFileSync(join(tmpDir, STATE_FILE_NAME), 'no-colon-here', 'utf-8');
+			writeFileSync(join(tmpDir, STATE_FILE_NAME), 'no-colon-here', 'utf-8');
 
 			const result = readProgressCommentId();
 			expect(result).toBeNull();
 		});
 
 		it('returns null for empty state file', () => {
-			require('node:fs').writeFileSync(join(tmpDir, STATE_FILE_NAME), '', 'utf-8');
+			writeFileSync(join(tmpDir, STATE_FILE_NAME), '', 'utf-8');
 
 			const result = readProgressCommentId();
 			expect(result).toBeNull();
+		});
+
+		it('reads from explicit repoDir when provided', () => {
+			writeProgressCommentId(tmpDir, 'my-card', 'my-comment');
+
+			const result = readProgressCommentId(tmpDir);
+			expect(result).toEqual({ workItemId: 'my-card', commentId: 'my-comment' });
 		});
 
 		it('handles commentId that contains colons (e.g. JIRA IDs)', () => {

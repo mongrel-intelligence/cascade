@@ -241,7 +241,9 @@ export class ProgressMonitor implements ProgressReporter {
 		if (!provider) return;
 
 		if (this.progressCommentId) {
-			// Subsequent ticks: update the existing comment
+			// Subsequent ticks: update the existing comment.
+			// On success, the state file written by postInitialComment() remains
+			// valid (same comment ID), so no need to rewrite it here.
 			try {
 				await provider.updateComment(cardId, this.progressCommentId, summary);
 				this.config.logWriter('INFO', 'Updated progress comment on work item', {
