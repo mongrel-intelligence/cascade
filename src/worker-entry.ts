@@ -13,6 +13,7 @@
  * - DATABASE_URL: PostgreSQL connection string for config
  */
 
+import { configCache } from './config/configCache.js';
 import { loadEnvConfigSafe } from './config/env.js';
 import { findProjectByRepo, getProjectSecrets, loadConfig } from './config/provider.js';
 import { getDb } from './db/client.js';
@@ -187,15 +188,37 @@ async function main(): Promise<void> {
 	const config = await loadConfig();
 	logger.info('[Worker] Loaded projects config', { projects: config.projects.map((p) => p.id) });
 
-	// Pre-warm credential cache for the project we're processing, then scrub sensitive env vars
-	// This ensures credentials are decrypted and cached before CREDENTIAL_MASTER_KEY is removed
-	const projectId = await extractProjectId(jobData);
-	if (projectId) {
-		await getProjectSecrets(projectId);
-		logger.info('[Worker] Pre-warmed credential cache', { projectId });
+	// Cache credentials from router (passed as JSON in CASCADE_CREDENTIALS).
+	// Router resolves and decrypts credentials before spawning workers, so workers
+	// never need the CREDENTIAL_MASTER_KEY.
+	const credentialsJson = process.env.CASCADE_CREDENTIALS;
+	const credentialsProjectId = process.env.CASCADE_CREDENTIALS_PROJECT_ID;
+	if (credentialsJson && credentialsProjectId) {
+		try {
+			const secrets = JSON.parse(credentialsJson) as Record<string, string>;
+			configCache.setSecrets(credentialsProjectId, secrets);
+			logger.info('[Worker] Cached credentials from router', { projectId: credentialsProjectId });
+		} catch (err) {
+			logger.warn('[Worker] Failed to parse CASCADE_CREDENTIALS', { error: String(err) });
+		}
+	} else {
+		// Fallback for retry-run jobs where projectId couldn't be resolved in router
+		// These jobs need to resolve credentials from DB (requires CREDENTIAL_MASTER_KEY)
+		const projectId = await extractProjectId(jobData);
+		if (projectId) {
+			try {
+				await getProjectSecrets(projectId);
+				logger.info('[Worker] Pre-warmed credential cache from DB', { projectId });
+			} catch (err) {
+				logger.warn('[Worker] Failed to pre-warm credentials from DB', {
+					projectId,
+					error: String(err),
+				});
+			}
+		}
 	}
 
-	// SECURITY: Scrub sensitive env vars (DATABASE_URL, CREDENTIAL_MASTER_KEY, etc.)
+	// SECURITY: Scrub sensitive env vars (DATABASE_URL, CASCADE_CREDENTIALS, etc.)
 	// before agent execution. Subprocesses (Tmux, etc.) will not inherit these secrets.
 	scrubSensitiveEnv();
 	logger.info('[Worker] Scrubbed sensitive env vars');
