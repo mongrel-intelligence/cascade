@@ -264,12 +264,16 @@ export class ProgressMonitor implements ProgressReporter {
 				this.maybeWriteStateFile(cardId, this.progressCommentId);
 			}
 		} else {
-			// First tick: create the comment and store its ID
+			// First tick: create the comment and store its ID.
+			// This branch is reached when postInitialComment() failed (transient API error)
+			// and the first tick creates the comment instead.
 			this.progressCommentId = await provider.addComment(cardId, summary);
 			this.config.logWriter('INFO', 'Posted progress update to work item', {
 				cardId,
 				commentId: this.progressCommentId,
 			});
+			// Write state file so PostComment gadget can find this comment
+			this.maybeWriteStateFile(cardId, this.progressCommentId);
 		}
 	}
 

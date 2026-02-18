@@ -725,6 +725,46 @@ describe('ProgressMonitor — state file integration', () => {
 		expect(mockClearProgressCommentId).toHaveBeenCalledWith(undefined);
 	});
 
+	it('writes state file from first tick when postInitialComment() failed', async () => {
+		const logWriter = vi.fn();
+		const monitor = new ProgressMonitor({
+			agentType: 'planning',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter,
+			repoDir: '/tmp/test-repo',
+			trello: { cardId: 'card1' },
+		});
+
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockCallProgressModel.mockResolvedValue('Progress update');
+		// Initial comment fails (transient API error)
+		mockPMProvider.addComment
+			.mockRejectedValueOnce(new Error('API error on initial'))
+			// First tick succeeds
+			.mockResolvedValueOnce('comment-id-from-tick');
+
+		monitor.start();
+		// Flush initial comment promise (it fails)
+		await vi.advanceTimersByTimeAsync(0);
+
+		// Reset mock to track only tick writes
+		mockWriteProgressCommentId.mockClear();
+
+		// First tick — enters else branch (progressCommentId is null)
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		monitor.stop();
+
+		// State file should be written from the else branch in postProgressToPM
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith(
+			'/tmp/test-repo',
+			'card1',
+			'comment-id-from-tick',
+		);
+	});
+
 	it('updates state file when new comment is created after update failure', async () => {
 		const logWriter = vi.fn();
 		const monitor = new ProgressMonitor({
