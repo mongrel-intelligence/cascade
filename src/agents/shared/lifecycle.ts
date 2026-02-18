@@ -5,17 +5,14 @@ import type { ProgressMonitor } from '../../backends/progressMonitor.js';
 import {
 	type CompleteRunInput,
 	type LlmCallRecord,
-	completeRun,
-	createRun,
 	storeLlmCallsBulk,
 	storeRunLogs,
 } from '../../db/repositories/runsRepository.js';
 import type { AgentResult } from '../../types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../../utils/cascadeEnv.js';
-import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../../utils/fileLogger.js';
-import { clearWatchdogCleanup, setWatchdogCleanup } from '../../utils/lifecycle.js';
+import { createFileLogger } from '../../utils/fileLogger.js';
+import { setWatchdogCleanup } from '../../utils/lifecycle.js';
 import { logger } from '../../utils/logging.js';
-import { cleanupTempDir } from '../../utils/repo.js';
 import { setupRemoteSquintDb } from '../../utils/squintDb.js';
 import { runAgentLoop } from '../utils/agentLoop.js';
 import type { AccumulatedLlmCall } from '../utils/hooks.js';
@@ -23,6 +20,8 @@ import { getLogLevel } from '../utils/index.js';
 import { createAgentLogger } from '../utils/logging.js';
 import { type TrackingContext, createTrackingContext } from '../utils/tracking.js';
 import type { BuilderType } from './builderFactory.js';
+import { cleanupAgentResources } from './cleanup.js';
+import { type RunTrackingInput, tryCompleteRun, tryCreateRun } from './runTracking.js';
 
 type FileLogger = ReturnType<typeof createFileLogger>;
 type AgentLogger = ReturnType<typeof createAgentLogger>;
@@ -35,14 +34,8 @@ export interface BaseAgentContext {
 	prompt: string;
 }
 
-export interface RunTrackingConfig {
-	projectId: string;
-	cardId?: string;
-	prNumber?: number;
-	agentType: string;
-	backendName: string;
-	triggerType?: string;
-}
+/** @deprecated Use RunTrackingInput from runTracking.ts */
+export type RunTrackingConfig = RunTrackingInput;
 
 export interface ExecuteAgentOptions<TContext extends BaseAgentContext> {
 	/** Identifier for log file naming (e.g., "review-42", "ci-42") */
@@ -104,28 +97,6 @@ export interface ExecuteAgentOptions<TContext extends BaseAgentContext> {
 // ============================================================================
 // Run Tracking Helpers
 // ============================================================================
-
-async function tryCreateRun(
-	config: RunTrackingConfig,
-	model?: string,
-	maxIterations?: number,
-): Promise<string | undefined> {
-	try {
-		return await createRun({
-			projectId: config.projectId,
-			cardId: config.cardId,
-			prNumber: config.prNumber,
-			agentType: config.agentType,
-			backend: config.backendName,
-			triggerType: config.triggerType,
-			model,
-			maxIterations,
-		});
-	} catch (err) {
-		logger.warn('Failed to create run record', { error: String(err) });
-		return undefined;
-	}
-}
 
 async function tryStoreLogsAndCalls(
 	runId: string,
@@ -200,14 +171,6 @@ async function tryStoreLogsAndCalls(
 	}
 }
 
-async function tryCompleteRun(runId: string, input: CompleteRunInput): Promise<void> {
-	try {
-		await completeRun(runId, input);
-	} catch (err) {
-		logger.warn('Failed to complete run record', { runId, error: String(err) });
-	}
-}
-
 // ============================================================================
 // Run Finalization Helper
 // ============================================================================
@@ -222,25 +185,6 @@ async function finalizeRun(
 	if (!runId) return;
 	await tryStoreLogsAndCalls(runId, fileLogger, llmCallAccumulator, realtimeLoggingActive);
 	await tryCompleteRun(runId, input);
-}
-
-function cleanupLifecycleResources(repoDir: string | null, fileLogger: FileLogger): void {
-	clearWatchdogCleanup();
-
-	const isLocalMode = process.env.CASCADE_LOCAL_MODE === 'true';
-
-	if (repoDir && !isLocalMode) {
-		try {
-			cleanupTempDir(repoDir);
-		} catch (err) {
-			logger.warn('Failed to cleanup temp directory', { repoDir, error: String(err) });
-		}
-	}
-	if (!isLocalMode) {
-		cleanupLogFile(fileLogger.logPath);
-		cleanupLogFile(fileLogger.llmistLogPath);
-		cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
-	}
 }
 
 function buildAgentResult(
@@ -451,6 +395,6 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 
 		return { success: false, output: '', error: String(err), logBuffer, runId, durationMs };
 	} finally {
-		cleanupLifecycleResources(repoDir, fileLogger);
+		cleanupAgentResources(repoDir, fileLogger);
 	}
 }

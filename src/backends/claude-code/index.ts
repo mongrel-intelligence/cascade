@@ -10,6 +10,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import { storeLlmCall } from '../../db/repositories/runsRepository.js';
 import { logger } from '../../utils/logging.js';
+import { extractPRUrl } from '../../utils/prUrl.js';
 import type {
 	AgentBackend,
 	AgentBackendInput,
@@ -168,14 +169,6 @@ export function buildEnv(projectSecrets?: Record<string, string>): {
 	ensureOnboardingFlag();
 
 	return { env };
-}
-
-/**
- * Extract a GitHub PR URL from text.
- */
-function extractPRUrl(text: string): string | undefined {
-	const match = text.match(/https:\/\/github\.com\/[^\s"')\]]+\/pull\/\d+/);
-	return match ? match[0] : undefined;
 }
 
 /**

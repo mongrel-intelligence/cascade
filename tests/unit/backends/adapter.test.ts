@@ -64,6 +64,33 @@ vi.mock('../../../src/backends/agent-profiles.js', () => ({
 
 vi.mock('../../../src/agents/prompts/index.js', () => ({}));
 
+vi.mock('../../../src/agents/shared/promptContext.js', () => ({
+	buildPromptContext: vi.fn().mockImplementation(
+		(
+			cardId: string | undefined,
+			project: { id: string },
+			triggerType?: string,
+			prContext?: {
+				prNumber?: number;
+				prBranch?: string;
+				repoFullName?: string;
+				headSha?: string;
+			},
+		) => ({
+			cardId,
+			projectId: project.id,
+			pmType: 'trello',
+			...(prContext && {
+				prNumber: prContext.prNumber,
+				prBranch: prContext.prBranch,
+				repoFullName: prContext.repoFullName,
+				headSha: prContext.headSha,
+				triggerType,
+			}),
+		}),
+	),
+}));
+
 const mockCreateRun = vi.fn();
 const mockCompleteRun = vi.fn();
 const mockStoreRunLogs = vi.fn();
@@ -165,6 +192,12 @@ function makeMockProfile(overrides?: Partial<AgentProfile>): AgentProfile {
 		needsGitHubToken: false,
 		fetchContext: vi.fn().mockResolvedValue([]),
 		buildTaskPrompt: () => 'Process the work item',
+		capabilities: {
+			canEditFiles: true,
+			canCreatePR: true,
+			canUpdateChecklists: true,
+			isReadOnly: false,
+		},
 		...overrides,
 	};
 }
