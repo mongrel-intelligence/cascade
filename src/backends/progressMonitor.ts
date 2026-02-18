@@ -63,6 +63,7 @@ export class ProgressMonitor implements ProgressReporter {
 	private timer: ReturnType<typeof setInterval> | null = null;
 	private isGenerating = false;
 	private progressCommentId: string | null = null;
+	private initialCommentPromise: Promise<void> | null = null;
 
 	constructor(private readonly config: ProgressMonitorConfig) {}
 
@@ -120,6 +121,13 @@ export class ProgressMonitor implements ProgressReporter {
 		this.timer = setInterval(() => {
 			void this.tick();
 		}, intervalMs);
+
+		// Post initial comment immediately (fire-and-forget)
+		this.initialCommentPromise = this.postInitialComment().catch((err) => {
+			this.config.logWriter('WARN', 'Failed to post initial progress comment', {
+				error: String(err),
+			});
+		});
 	}
 
 	stop(): void {
@@ -131,7 +139,30 @@ export class ProgressMonitor implements ProgressReporter {
 
 	// ── Internal ──
 
+	private formatInitialMessage(): string {
+		return `**🚀 Starting** (${this.config.agentType})\n\nWorking on this now. Progress updates will follow...`;
+	}
+
+	private async postInitialComment(): Promise<void> {
+		if (!this.config.trello) return;
+
+		const provider = getPMProviderOrNull();
+		if (!provider) return;
+
+		const message = this.formatInitialMessage();
+		this.progressCommentId = await provider.addComment(this.config.trello.cardId, message);
+		this.config.logWriter('INFO', 'Posted initial progress comment to work item', {
+			cardId: this.config.trello.cardId,
+			commentId: this.progressCommentId,
+		});
+	}
+
 	private async tick(): Promise<void> {
+		// Wait for initial comment to complete before proceeding so the first
+		// tick updates the same comment instead of creating a duplicate
+		if (this.initialCommentPromise) {
+			await this.initialCommentPromise;
+		}
 		if (this.isGenerating) return;
 		this.isGenerating = true;
 

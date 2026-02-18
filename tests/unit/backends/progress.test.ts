@@ -174,7 +174,38 @@ describe('ProgressMonitor — timer lifecycle', () => {
 });
 
 describe('ProgressMonitor — tick behavior', () => {
-	it('calls progress model and posts to Trello on first tick (creates comment)', async () => {
+	it('posts initial comment immediately on start()', async () => {
+		const logWriter = vi.fn();
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter,
+			trello: { cardId: 'card1' },
+		});
+
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockPMProvider.addComment.mockResolvedValue('comment-id-initial');
+
+		monitor.start();
+		// Flush the microtask queue so the initial comment promise resolves
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(mockPMProvider.addComment).toHaveBeenCalledWith(
+			'card1',
+			'**🚀 Starting** (implementation)\n\nWorking on this now. Progress updates will follow...',
+		);
+		expect(logWriter).toHaveBeenCalledWith(
+			'INFO',
+			'Posted initial progress comment to work item',
+			expect.objectContaining({ cardId: 'card1', commentId: 'comment-id-initial' }),
+		);
+		monitor.stop();
+	});
+
+	it('first tick updates initial comment (not creates new)', async () => {
 		const logWriter = vi.fn();
 		const monitor = new ProgressMonitor({
 			agentType: 'implementation',
@@ -189,14 +220,101 @@ describe('ProgressMonitor — tick behavior', () => {
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
 		mockCallProgressModel.mockResolvedValue('**Progress**: All good');
 		mockPMProvider.addComment.mockResolvedValue('comment-id-1');
+		mockPMProvider.updateComment.mockResolvedValue(undefined);
+
+		monitor.start();
+		// First tick — should update the comment created at start()
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		monitor.stop();
+
+		// addComment called once only (for initial comment at start())
+		expect(mockPMProvider.addComment).toHaveBeenCalledTimes(1);
+		// First tick updates the existing comment
+		expect(mockPMProvider.updateComment).toHaveBeenCalledTimes(1);
+		expect(mockPMProvider.updateComment).toHaveBeenCalledWith(
+			'card1',
+			'comment-id-1',
+			'**Progress**: All good',
+		);
+	});
+
+	it('handles failure of initial comment gracefully (does not crash)', async () => {
+		const logWriter = vi.fn();
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter,
+			trello: { cardId: 'card1' },
+		});
+
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockPMProvider.addComment.mockRejectedValue(new Error('API error on initial'));
+
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(logWriter).toHaveBeenCalledWith(
+			'WARN',
+			'Failed to post initial progress comment',
+			expect.any(Object),
+		);
+		monitor.stop();
+	});
+
+	it('no crash when PM provider is null on start()', async () => {
+		const logWriter = vi.fn();
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter,
+			trello: { cardId: 'card1' },
+		});
+
+		mockGetPMProvider.mockReturnValue(null);
+
+		// Should not throw
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(mockPMProvider.addComment).not.toHaveBeenCalled();
+		monitor.stop();
+	});
+
+	it('calls progress model and posts to Trello on first tick (updates existing comment)', async () => {
+		const logWriter = vi.fn();
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter,
+			trello: { cardId: 'card1' },
+		});
+
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockCallProgressModel.mockResolvedValue('**Progress**: All good');
+		mockPMProvider.addComment.mockResolvedValue('comment-id-1');
+		mockPMProvider.updateComment.mockResolvedValue(undefined);
 
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
 		monitor.stop();
 
 		expect(mockCallProgressModel).toHaveBeenCalled();
-		expect(mockPMProvider.addComment).toHaveBeenCalledWith('card1', '**Progress**: All good');
-		expect(mockPMProvider.updateComment).not.toHaveBeenCalled();
+		// addComment for initial comment at start(), then first tick updates
+		expect(mockPMProvider.addComment).toHaveBeenCalledTimes(1);
+		expect(mockPMProvider.updateComment).toHaveBeenCalledWith(
+			'card1',
+			'comment-id-1',
+			'**Progress**: All good',
+		);
 	});
 
 	it('updates existing comment on subsequent ticks (create-once-update pattern)', async () => {
@@ -223,8 +341,10 @@ describe('ProgressMonitor — tick behavior', () => {
 		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
 		monitor.stop();
 
+		// addComment called once only (at start())
 		expect(mockPMProvider.addComment).toHaveBeenCalledTimes(1);
-		expect(mockPMProvider.updateComment).toHaveBeenCalledTimes(1);
+		// Two ticks both update
+		expect(mockPMProvider.updateComment).toHaveBeenCalledTimes(2);
 		expect(mockPMProvider.updateComment).toHaveBeenCalledWith(
 			'card1',
 			'comment-id-1',
@@ -250,14 +370,16 @@ describe('ProgressMonitor — tick behavior', () => {
 		mockPMProvider.updateComment.mockRejectedValue(new Error('Comment not found'));
 
 		monitor.start();
-		// First tick — creates comment
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
-		// Second tick — update fails, falls back to new comment
+		// First tick — initial comment exists, update fails, falls back to new comment
 		mockPMProvider.addComment.mockResolvedValue('comment-id-2');
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		// Second tick — update fails, falls back to new comment again
+		mockPMProvider.addComment.mockResolvedValue('comment-id-3');
 		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
 		monitor.stop();
 
-		expect(mockPMProvider.addComment).toHaveBeenCalledTimes(2);
+		// addComment called: once at start() + twice for fallback on each failed update
+		expect(mockPMProvider.addComment).toHaveBeenCalledTimes(3);
 		expect(logWriter).toHaveBeenCalledWith(
 			'WARN',
 			'Failed to update progress comment, creating new one',
@@ -281,13 +403,19 @@ describe('ProgressMonitor — tick behavior', () => {
 		mockCallProgressModel.mockRejectedValue(new Error('Model error'));
 		mockFormatStatus.mockReturnValue('Fallback progress');
 		mockPMProvider.addComment.mockResolvedValue('comment-id-1');
+		mockPMProvider.updateComment.mockResolvedValue(undefined);
 
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
 		monitor.stop();
 
 		expect(mockFormatStatus).toHaveBeenCalled();
-		expect(mockPMProvider.addComment).toHaveBeenCalledWith('card1', 'Fallback progress');
+		// Initial comment was created at start(); tick updates it with fallback text
+		expect(mockPMProvider.updateComment).toHaveBeenCalledWith(
+			'card1',
+			'comment-id-1',
+			'Fallback progress',
+		);
 	});
 
 	it('syncs checklist for implementation agents', async () => {
@@ -407,12 +535,14 @@ describe('ProgressMonitor — tick behavior', () => {
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
 		mockCallProgressModel.mockResolvedValue('Progress');
+		// Both initial comment and tick addComment fail
 		mockPMProvider.addComment.mockRejectedValue(new Error('API error'));
 
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
 		monitor.stop();
 
+		// At least one WARN with 'Failed' should be logged (initial comment failure + tick failure)
 		expect(logWriter).toHaveBeenCalledWith(
 			'WARN',
 			expect.stringContaining('Failed'),
