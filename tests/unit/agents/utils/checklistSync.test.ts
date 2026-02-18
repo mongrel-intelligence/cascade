@@ -1,28 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockProvider = {
-	type: 'trello' as const,
-	getWorkItem: vi.fn(),
-	getChecklists: vi.fn(),
-	getAttachments: vi.fn(),
-	getWorkItemComments: vi.fn(),
-	updateWorkItem: vi.fn(),
-	addComment: vi.fn(),
-	createWorkItem: vi.fn(),
-	listWorkItems: vi.fn(),
-	moveWorkItem: vi.fn(),
-	addLabel: vi.fn(),
-	removeLabel: vi.fn(),
-	createChecklist: vi.fn(),
-	addChecklistItem: vi.fn(),
-	updateChecklistItem: vi.fn(),
-	addAttachment: vi.fn(),
-	addAttachmentFile: vi.fn(),
-	getCustomFieldNumber: vi.fn(),
-	updateCustomFieldNumber: vi.fn(),
-	getWorkItemUrl: vi.fn(),
-	getAuthenticatedUser: vi.fn(),
-};
+import { createMockPMProvider } from '../../../helpers/mockPMProvider.js';
+
+const mockProvider = createMockPMProvider();
 
 vi.mock('../../../../src/pm/index.js', () => ({
 	getPMProvider: vi.fn(() => mockProvider),

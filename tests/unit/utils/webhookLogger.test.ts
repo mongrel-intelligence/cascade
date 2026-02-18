@@ -127,37 +127,33 @@ describe('logWebhookCall', () => {
 	});
 
 	it('prunes webhook logs after every 100 inserts', async () => {
-		// The insertCount is module-level, but we can verify the pruning behavior:
-		// If we make 100 calls, pruneWebhookLogs should be called at least once.
-		// We track mock calls before and after.
+		// insertCount is module-level state that persists across tests, so we
+		// don't know its starting value. By sending 101 inserts we guarantee
+		// at least one multiple-of-100 boundary is crossed, triggering a prune.
 		const pruneCallsBefore = mockPruneWebhookLogs.mock.calls.length;
 
-		for (let i = 0; i < 100; i++) {
+		for (let i = 0; i < 101; i++) {
 			logWebhookCall(sampleInput);
 			await vi.runAllTimersAsync();
 		}
 
 		const pruneCallsAfter = mockPruneWebhookLogs.mock.calls.length;
+		const prunesDuringBatch = pruneCallsAfter - pruneCallsBefore;
 
-		// At least one prune should have happened across 100 inserts
-		// (exactly 1 if insertCount % 100 was < insertCount+100 during this run)
-		expect(pruneCallsAfter).toBeGreaterThanOrEqual(pruneCallsBefore);
-		// The total across all 100 calls should produce at least 0 and at most 1 prune
-		// (module state may cause exactly 1 prune in a batch of 100)
-		expect(pruneCallsAfter - pruneCallsBefore).toBeGreaterThanOrEqual(0);
-		expect(pruneCallsAfter - pruneCallsBefore).toBeLessThanOrEqual(2);
+		// 101 inserts must cross at least one multiple-of-100 boundary
+		expect(prunesDuringBatch).toBeGreaterThanOrEqual(1);
+		// At most 2 boundaries can be crossed in 101 consecutive inserts
+		expect(prunesDuringBatch).toBeLessThanOrEqual(2);
 	});
 
 	it('prune is called with DEFAULT_RETENTION=1000 when triggered', async () => {
-		// Send enough to trigger at least one prune (100 sends)
-		for (let i = 0; i < 100; i++) {
+		// Send enough to guarantee at least one prune (101 inserts)
+		for (let i = 0; i < 101; i++) {
 			logWebhookCall(sampleInput);
 			await vi.runAllTimersAsync();
 		}
 
-		// If pruneWebhookLogs was called, verify the argument
-		if (mockPruneWebhookLogs.mock.calls.length > 0) {
-			expect(mockPruneWebhookLogs).toHaveBeenCalledWith(1000);
-		}
+		// With 101 inserts we always cross at least one boundary
+		expect(mockPruneWebhookLogs).toHaveBeenCalledWith(1000);
 	});
 });
