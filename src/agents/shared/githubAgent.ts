@@ -197,7 +197,7 @@ export async function executeGitHubAgent<
 				});
 			},
 
-			createProgressMonitor: (fileLogger) =>
+			createProgressMonitor: (fileLogger, _repoDir) =>
 				createProgressMonitor({
 					logWriter: fileLogger.write.bind(fileLogger),
 					agentType: definition.agentType,

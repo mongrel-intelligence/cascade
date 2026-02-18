@@ -551,7 +551,7 @@ export async function executeAgent(
 				ctx.implementationSteps,
 			),
 
-		createProgressMonitor: (fileLogger) =>
+		createProgressMonitor: (fileLogger, repoDir) =>
 			createProgressMonitor({
 				logWriter: fileLogger.write.bind(fileLogger),
 				agentType,
@@ -559,6 +559,7 @@ export async function executeAgent(
 				progressModel: config.defaults.progressModel,
 				intervalMinutes: config.defaults.progressIntervalMinutes,
 				customModels: CUSTOM_MODELS as ModelSpec[],
+				repoDir,
 				trello: cardId ? { cardId } : undefined,
 			}),
 

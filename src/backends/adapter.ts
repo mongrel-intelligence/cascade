@@ -504,6 +504,7 @@ export async function executeWithBackend(
 			progressModel: input.config.defaults.progressModel,
 			intervalMinutes: input.config.defaults.progressIntervalMinutes,
 			customModels: CUSTOM_MODELS as ModelSpec[],
+			repoDir: repoDir ?? undefined,
 			trello: cardId ? { cardId } : undefined,
 		});
 

@@ -73,7 +73,7 @@ export interface ExecuteAgentOptions<TContext extends BaseAgentContext> {
 	}) => Promise<BuilderType>;
 
 	/** Create a ProgressMonitor for time-based progress reporting */
-	createProgressMonitor?: (fileLogger: FileLogger) => ProgressMonitor | null;
+	createProgressMonitor?: (fileLogger: FileLogger, repoDir: string) => ProgressMonitor | null;
 
 	/** Whether to run in interactive mode */
 	interactive?: boolean;
@@ -288,7 +288,7 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 				: new LLMist();
 			const llmistLogger = createLogger({ minLevel: getLogLevel() });
 			const trackingContext = createTrackingContext();
-			const progressMonitor = options.createProgressMonitor?.(fileLogger) ?? null;
+			const progressMonitor = options.createProgressMonitor?.(fileLogger, repoDir) ?? null;
 
 			let builder = options.createBuilder({
 				client,
