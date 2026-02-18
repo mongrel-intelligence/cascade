@@ -140,13 +140,20 @@ export async function getProjectSecrets(projectId: string): Promise<Record<strin
 
 /**
  * Resolve a credential for a specific agent type.
- * Resolution: agent+project override → project override → org default → null.
+ * Resolution: cache → agent+project override → project override → org default → null.
  */
 export async function getAgentCredential(
 	projectId: string,
 	agentType: string,
 	key: string,
 ): Promise<string | null> {
+	// Check cached secrets first (from CASCADE_CREDENTIALS env var in workers)
+	const cachedSecrets = configCache.getSecrets(projectId);
+	if (cachedSecrets && key in cachedSecrets) {
+		return cachedSecrets[key];
+	}
+
+	// Fall back to DB resolution (agent override → project override → org default)
 	const orgId = await getOrgIdForProject(projectId);
 	return resolveAgentCredential(projectId, orgId, agentType, key);
 }

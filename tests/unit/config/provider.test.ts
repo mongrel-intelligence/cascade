@@ -429,7 +429,49 @@ describe('config/provider', () => {
 	describe('getAgentCredential', () => {
 		beforeEach(() => {
 			vi.mocked(configCache.getOrgIdForProject).mockReturnValue(null);
+			vi.mocked(configCache.getSecrets).mockReturnValue(null);
 			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject);
+		});
+
+		it('returns cached credential when available (bypasses DB)', async () => {
+			vi.mocked(configCache.getSecrets).mockReturnValue({
+				GITHUB_TOKEN_REVIEWER: 'ghp_cached_reviewer',
+			});
+
+			const result = await getAgentCredential('proj1', 'review', 'GITHUB_TOKEN_REVIEWER');
+
+			expect(result).toBe('ghp_cached_reviewer');
+			expect(resolveAgentCredential).not.toHaveBeenCalled();
+			expect(findProjectByIdFromDb).not.toHaveBeenCalled();
+		});
+
+		it('falls back to DB when cache exists but key is missing', async () => {
+			vi.mocked(configCache.getSecrets).mockReturnValue({
+				OTHER_KEY: 'other_value',
+			});
+			vi.mocked(configCache.getOrgIdForProject).mockReturnValue('org1');
+			vi.mocked(resolveAgentCredential).mockResolvedValue('ghp_from_db');
+
+			const result = await getAgentCredential('proj1', 'review', 'GITHUB_TOKEN_REVIEWER');
+
+			expect(result).toBe('ghp_from_db');
+			expect(resolveAgentCredential).toHaveBeenCalledWith(
+				'proj1',
+				'org1',
+				'review',
+				'GITHUB_TOKEN_REVIEWER',
+			);
+		});
+
+		it('falls back to DB when cache is null', async () => {
+			vi.mocked(configCache.getSecrets).mockReturnValue(null);
+			vi.mocked(configCache.getOrgIdForProject).mockReturnValue('org1');
+			vi.mocked(resolveAgentCredential).mockResolvedValue('ghp_from_db');
+
+			const result = await getAgentCredential('proj1', 'review', 'GITHUB_TOKEN_REVIEWER');
+
+			expect(result).toBe('ghp_from_db');
+			expect(resolveAgentCredential).toHaveBeenCalled();
 		});
 
 		it('resolves agent-specific credential', async () => {
