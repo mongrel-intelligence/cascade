@@ -28,7 +28,6 @@ export interface PromptContext {
 	cardId?: string;
 	cardUrl?: string;
 	projectId?: string;
-	baseBranch?: string;
 
 	// PM vocabulary (computed from pmType)
 	pmType?: 'trello' | 'jira';
@@ -184,7 +183,6 @@ export function getTemplateVariables(): Array<{
 		{ name: 'cardId', group: 'Common', description: 'Work item ID' },
 		{ name: 'cardUrl', group: 'Common', description: 'Work item URL' },
 		{ name: 'projectId', group: 'Common', description: 'Project identifier' },
-		{ name: 'baseBranch', group: 'Common', description: 'Base branch name (e.g. main)' },
 		{ name: 'pmType', group: 'PM', description: 'PM type: trello or jira' },
 		{ name: 'workItemNoun', group: 'PM', description: 'card or issue' },
 		{ name: 'workItemNounPlural', group: 'PM', description: 'cards or issues' },
