@@ -7,6 +7,7 @@ const { mockJiraClient, mockAdfToPlainText, mockMarkdownToAdf } = vi.hoisted(() 
 		getIssueComments: vi.fn(),
 		updateIssue: vi.fn(),
 		addComment: vi.fn(),
+		updateComment: vi.fn(),
 		createIssue: vi.fn(),
 		searchIssues: vi.fn(),
 		getTransitions: vi.fn(),
@@ -190,15 +191,29 @@ describe('JiraPMProvider', () => {
 	});
 
 	describe('addComment', () => {
-		it('converts markdown to ADF and calls jiraClient.addComment', async () => {
+		it('converts markdown to ADF and calls jiraClient.addComment, returning the comment ID', async () => {
 			const adfDoc = { type: 'doc', version: 1, content: [] };
 			mockMarkdownToAdf.mockReturnValue(adfDoc);
-			mockJiraClient.addComment.mockResolvedValue(undefined);
+			mockJiraClient.addComment.mockResolvedValue('comment-456');
 
-			await provider.addComment('PROJ-123', 'Hello **world**');
+			const id = await provider.addComment('PROJ-123', 'Hello **world**');
 
 			expect(mockMarkdownToAdf).toHaveBeenCalledWith('Hello **world**');
 			expect(mockJiraClient.addComment).toHaveBeenCalledWith('PROJ-123', adfDoc);
+			expect(id).toBe('comment-456');
+		});
+	});
+
+	describe('updateComment', () => {
+		it('converts markdown to ADF and calls jiraClient.updateComment', async () => {
+			const adfDoc = { type: 'doc', version: 1, content: [] };
+			mockMarkdownToAdf.mockReturnValue(adfDoc);
+			mockJiraClient.updateComment.mockResolvedValue(undefined);
+
+			await provider.updateComment('PROJ-123', 'comment-456', 'Updated **text**');
+
+			expect(mockMarkdownToAdf).toHaveBeenCalledWith('Updated **text**');
+			expect(mockJiraClient.updateComment).toHaveBeenCalledWith('PROJ-123', 'comment-456', adfDoc);
 		});
 	});
 
@@ -472,7 +487,7 @@ describe('JiraPMProvider', () => {
 
 	describe('addAttachment', () => {
 		it('adds URL attachment as a comment (JIRA cannot link attachments)', async () => {
-			mockJiraClient.addComment.mockResolvedValue(undefined);
+			mockJiraClient.addComment.mockResolvedValue({ id: 'comment-123' });
 			const adfDoc = { type: 'doc', version: 1, content: [] };
 			mockMarkdownToAdf.mockReturnValue(adfDoc);
 

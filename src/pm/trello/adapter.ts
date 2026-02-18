@@ -62,8 +62,12 @@ export class TrelloPMProvider implements PMProvider {
 		});
 	}
 
-	async addComment(id: string, text: string): Promise<void> {
-		await trelloClient.addComment(id, text);
+	async addComment(id: string, text: string): Promise<string> {
+		return trelloClient.addComment(id, text);
+	}
+
+	async updateComment(_id: string, commentId: string, text: string): Promise<void> {
+		await trelloClient.updateComment(commentId, text);
 	}
 
 	async createWorkItem(config: CreateWorkItemConfig): Promise<WorkItem> {
