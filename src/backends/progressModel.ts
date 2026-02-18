@@ -21,7 +21,7 @@ export interface ProgressContext {
 	completedTasks?: { subject: string; summary: string; timestamp: number }[];
 }
 
-const PROGRESS_SYSTEM_PROMPT = `You are a progress reporter for an AI coding agent called CASCADE. Write a brief, informative progress update based on the agent's current state. Be concise (3-5 sentences max). Focus on what has been accomplished, what's currently in progress, and what remains. Synthesize the agent's own commentary, tool call details (file paths, commands), and completed task summaries into a coherent narrative — do not just list tool names. Use markdown formatting. Start with a bold header like "**implementation agent progress** (X min)". Do not include a progress bar — the system adds that separately.`;
+const PROGRESS_SYSTEM_PROMPT = `You are a progress reporter for an AI coding agent called CASCADE. Write a brief, informative progress update based on the agent's current state. Be concise (3-5 sentences max). Focus on what has been accomplished, what's currently in progress, and what remains. Synthesize the agent's own commentary, tool call details (file paths, commands), and completed task summaries into a coherent narrative — do not just list tool names. Use markdown formatting. Write in first person (e.g. "I'm implementing...", "I've completed...", "I'm currently working on..."). Start with a bold header like "**Progress update** (X min)". Do not include a progress bar — the system adds that separately.`;
 
 function formatProgressUserPrompt(context: ProgressContext): string {
 	const {
@@ -68,7 +68,7 @@ function formatProgressUserPrompt(context: ProgressContext): string {
 			.slice(-5)
 			.map((s) => s.text)
 			.join('\n---\n');
-		sections.push(`\n## Agent Commentary\n${commentaryLines}`);
+		sections.push(`\n## My Recent Commentary\n${commentaryLines}`);
 	}
 
 	// Completed tasks — subagent task summaries
