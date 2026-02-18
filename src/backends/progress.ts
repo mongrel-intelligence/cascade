@@ -11,6 +11,7 @@ export interface ProgressMonitorOptions {
 	progressModel: string;
 	intervalMinutes: number;
 	customModels: ModelSpec[];
+	repoDir?: string;
 	trello?: { cardId: string };
 	github?: { owner: string; repo: string; headerMessage: string };
 }
@@ -34,6 +35,7 @@ export function createProgressMonitor(options: ProgressMonitorOptions): Progress
 		progressModel: options.progressModel,
 		customModels: options.customModels,
 		logWriter: options.logWriter,
+		repoDir: options.repoDir,
 		trello: options.trello,
 		github: options.github,
 	};

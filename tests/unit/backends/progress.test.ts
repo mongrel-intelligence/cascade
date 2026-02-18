@@ -32,10 +32,19 @@ vi.mock('../../../src/config/statusUpdateConfig.js', () => ({
 	formatGitHubProgressComment: vi.fn(),
 }));
 
+vi.mock('../../../src/backends/progressState.js', () => ({
+	writeProgressCommentId: vi.fn(),
+	clearProgressCommentId: vi.fn(),
+}));
+
 import { syncCompletedTodosToChecklist } from '../../../src/agents/utils/checklistSync.js';
 import { createProgressMonitor } from '../../../src/backends/progress.js';
 import { callProgressModel } from '../../../src/backends/progressModel.js';
 import { ProgressMonitor } from '../../../src/backends/progressMonitor.js';
+import {
+	clearProgressCommentId,
+	writeProgressCommentId,
+} from '../../../src/backends/progressState.js';
 import {
 	formatGitHubProgressComment,
 	formatStatusMessage,
@@ -48,6 +57,8 @@ import type { PMProvider } from '../../../src/pm/index.js';
 import { getPMProviderOrNull } from '../../../src/pm/index.js';
 
 const mockGetPMProvider = vi.mocked(getPMProviderOrNull);
+const mockWriteProgressCommentId = vi.mocked(writeProgressCommentId);
+const mockClearProgressCommentId = vi.mocked(clearProgressCommentId);
 const mockPMProvider = { addComment: vi.fn(), updateComment: vi.fn() };
 const mockGithub = vi.mocked(githubClient);
 const mockGetStatusConfig = vi.mocked(getStatusUpdateConfig);
@@ -627,5 +638,165 @@ describe('createProgressMonitor', () => {
 		});
 
 		expect(monitor).toBeInstanceOf(ProgressMonitor);
+	});
+});
+
+describe('ProgressMonitor — state file integration', () => {
+	it('writes state file on initial comment when repoDir is provided', async () => {
+		const logWriter = vi.fn();
+		const monitor = new ProgressMonitor({
+			agentType: 'planning',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter,
+			repoDir: '/tmp/test-repo',
+			trello: { cardId: 'card1' },
+		});
+
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockPMProvider.addComment.mockResolvedValue('comment-id-initial');
+
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith(
+			'/tmp/test-repo',
+			'card1',
+			'comment-id-initial',
+		);
+		monitor.stop();
+	});
+
+	it('does not write state file when repoDir is not provided', async () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'planning',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			trello: { cardId: 'card1' },
+		});
+
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockPMProvider.addComment.mockResolvedValue('comment-id-initial');
+
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(mockWriteProgressCommentId).not.toHaveBeenCalled();
+		monitor.stop();
+	});
+
+	it('clears state file on stop()', () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'planning',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			repoDir: '/tmp/test-repo',
+			trello: { cardId: 'card1' },
+		});
+
+		monitor.start();
+		monitor.stop();
+
+		expect(mockClearProgressCommentId).toHaveBeenCalledWith('/tmp/test-repo');
+	});
+
+	it('clears state file on stop() even when repoDir not provided', () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'planning',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			trello: { cardId: 'card1' },
+		});
+
+		monitor.start();
+		monitor.stop();
+
+		expect(mockClearProgressCommentId).toHaveBeenCalledWith(undefined);
+	});
+
+	it('writes state file from first tick when postInitialComment() failed', async () => {
+		const logWriter = vi.fn();
+		const monitor = new ProgressMonitor({
+			agentType: 'planning',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter,
+			repoDir: '/tmp/test-repo',
+			trello: { cardId: 'card1' },
+		});
+
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockCallProgressModel.mockResolvedValue('Progress update');
+		// Initial comment fails (transient API error)
+		mockPMProvider.addComment
+			.mockRejectedValueOnce(new Error('API error on initial'))
+			// First tick succeeds
+			.mockResolvedValueOnce('comment-id-from-tick');
+
+		monitor.start();
+		// Flush initial comment promise (it fails)
+		await vi.advanceTimersByTimeAsync(0);
+
+		// Reset mock to track only tick writes
+		mockWriteProgressCommentId.mockClear();
+
+		// First tick — enters else branch (progressCommentId is null)
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		monitor.stop();
+
+		// State file should be written from the else branch in postProgressToPM
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith(
+			'/tmp/test-repo',
+			'card1',
+			'comment-id-from-tick',
+		);
+	});
+
+	it('updates state file when new comment is created after update failure', async () => {
+		const logWriter = vi.fn();
+		const monitor = new ProgressMonitor({
+			agentType: 'planning',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter,
+			repoDir: '/tmp/test-repo',
+			trello: { cardId: 'card1' },
+		});
+
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockCallProgressModel.mockResolvedValue('Progress update');
+		mockPMProvider.addComment
+			.mockResolvedValueOnce('comment-id-initial')
+			.mockResolvedValueOnce('comment-id-fallback');
+		mockPMProvider.updateComment.mockRejectedValue(new Error('Comment not found'));
+
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(0);
+		// First tick — update fails, new comment created
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		monitor.stop();
+
+		// writeProgressCommentId called for initial comment and for fallback comment
+		expect(mockWriteProgressCommentId).toHaveBeenCalledTimes(2);
+		expect(mockWriteProgressCommentId).toHaveBeenLastCalledWith(
+			'/tmp/test-repo',
+			'card1',
+			'comment-id-fallback',
+		);
 	});
 });

@@ -19,6 +19,7 @@ import { loadTodos } from '../gadgets/todo/storage.js';
 import { githubClient } from '../github/client.js';
 import { getPMProviderOrNull } from '../pm/index.js';
 import { type ProgressContext, callProgressModel } from './progressModel.js';
+import { clearProgressCommentId, writeProgressCommentId } from './progressState.js';
 import type { LogWriter, ProgressReporter } from './types.js';
 
 export interface ProgressMonitorConfig {
@@ -28,6 +29,7 @@ export interface ProgressMonitorConfig {
 	progressModel: string;
 	customModels: ModelSpec[];
 	logWriter: LogWriter;
+	repoDir?: string;
 	trello?: { cardId: string };
 	github?: { owner: string; repo: string; headerMessage: string };
 }
@@ -135,6 +137,13 @@ export class ProgressMonitor implements ProgressReporter {
 			clearInterval(this.timer);
 			this.timer = null;
 		}
+		// Clean up state file on stop (best-effort — stop() is called from finally
+		// blocks, so an rmSync failure must not mask the actual agent result)
+		try {
+			clearProgressCommentId(this.config.repoDir);
+		} catch {
+			// State file cleanup is best-effort
+		}
 	}
 
 	// ── Internal ──
@@ -155,6 +164,15 @@ export class ProgressMonitor implements ProgressReporter {
 			cardId: this.config.trello.cardId,
 			commentId: this.progressCommentId,
 		});
+
+		// Write state file so PostComment gadget can update this comment
+		if (this.config.repoDir && this.progressCommentId) {
+			writeProgressCommentId(
+				this.config.repoDir,
+				this.config.trello.cardId,
+				this.progressCommentId,
+			);
+		}
 	}
 
 	private async tick(): Promise<void> {
@@ -217,47 +235,58 @@ export class ProgressMonitor implements ProgressReporter {
 		}
 	}
 
+	private maybeWriteStateFile(cardId: string, commentId: string | null): void {
+		if (this.config.repoDir && commentId) {
+			writeProgressCommentId(this.config.repoDir, cardId, commentId);
+		}
+	}
+
+	private async postProgressToPM(summary: string, cardId: string): Promise<void> {
+		const provider = getPMProviderOrNull();
+		if (!provider) return;
+
+		if (this.progressCommentId) {
+			// Subsequent ticks: update the existing comment.
+			// On success, the state file written by postInitialComment() remains
+			// valid (same comment ID), so no need to rewrite it here.
+			try {
+				await provider.updateComment(cardId, this.progressCommentId, summary);
+				this.config.logWriter('INFO', 'Updated progress comment on work item', {
+					cardId,
+					commentId: this.progressCommentId,
+				});
+			} catch (updateErr) {
+				// Comment may have been deleted — fall back to creating a new one
+				this.config.logWriter('WARN', 'Failed to update progress comment, creating new one', {
+					error: String(updateErr),
+				});
+				this.progressCommentId = await provider.addComment(cardId, summary);
+				this.config.logWriter('INFO', 'Posted new progress comment to work item', {
+					cardId,
+					commentId: this.progressCommentId,
+				});
+				// Update state file with new comment ID
+				this.maybeWriteStateFile(cardId, this.progressCommentId);
+			}
+		} else {
+			// First tick: create the comment and store its ID.
+			// This branch is reached when postInitialComment() failed (transient API error)
+			// and the first tick creates the comment instead.
+			this.progressCommentId = await provider.addComment(cardId, summary);
+			this.config.logWriter('INFO', 'Posted progress update to work item', {
+				cardId,
+				commentId: this.progressCommentId,
+			});
+			// Write state file so PostComment gadget can find this comment
+			this.maybeWriteStateFile(cardId, this.progressCommentId);
+		}
+	}
+
 	private async postProgress(summary: string): Promise<void> {
 		// Post to PM provider (Trello/JIRA) — create once, update in place
 		if (this.config.trello) {
 			try {
-				const provider = getPMProviderOrNull();
-				if (provider) {
-					if (this.progressCommentId) {
-						// Subsequent ticks: update the existing comment
-						try {
-							await provider.updateComment(
-								this.config.trello.cardId,
-								this.progressCommentId,
-								summary,
-							);
-							this.config.logWriter('INFO', 'Updated progress comment on work item', {
-								cardId: this.config.trello.cardId,
-								commentId: this.progressCommentId,
-							});
-						} catch (updateErr) {
-							// Comment may have been deleted — fall back to creating a new one
-							this.config.logWriter('WARN', 'Failed to update progress comment, creating new one', {
-								error: String(updateErr),
-							});
-							this.progressCommentId = await provider.addComment(
-								this.config.trello.cardId,
-								summary,
-							);
-							this.config.logWriter('INFO', 'Posted new progress comment to work item', {
-								cardId: this.config.trello.cardId,
-								commentId: this.progressCommentId,
-							});
-						}
-					} else {
-						// First tick: create the comment and store its ID
-						this.progressCommentId = await provider.addComment(this.config.trello.cardId, summary);
-						this.config.logWriter('INFO', 'Posted progress update to work item', {
-							cardId: this.config.trello.cardId,
-							commentId: this.progressCommentId,
-						});
-					}
-				}
+				await this.postProgressToPM(summary, this.config.trello.cardId);
 			} catch (err) {
 				this.config.logWriter('WARN', 'Failed to post progress to work item', {
 					error: String(err),

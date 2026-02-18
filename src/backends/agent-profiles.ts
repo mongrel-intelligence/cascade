@@ -1,20 +1,20 @@
 import { execFileSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 
+import { type AgentCapabilities, getAgentCapabilities } from '../agents/shared/capabilities.js';
+export type { AgentCapabilities } from '../agents/shared/capabilities.js';
 import {
 	formatPRComments,
 	formatPRDetails,
 	formatPRDiff,
 	formatPRIssueComments,
 	formatPRReviews,
+	readPRFileContents,
 } from '../agents/shared/prFormatting.js';
 import type { ContextFile } from '../agents/utils/setup.js';
-import { REVIEW_FILE_CONTENT_TOKEN_LIMIT, estimateTokens } from '../config/reviewConfig.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { formatCheckStatus } from '../gadgets/github/core/getPRChecks.js';
 import { readWorkItem } from '../gadgets/pm/core/readWorkItem.js';
-import { type PRDiffFile, githubClient } from '../github/client.js';
+import { githubClient } from '../github/client.js';
 import type { AgentInput } from '../types/index.js';
 import { resolveSquintDbPath } from '../utils/squintDb.js';
 import type { ContextInjection, LogWriter, ToolManifest } from './types.js';
@@ -95,6 +95,8 @@ export interface AgentProfile {
 	buildTaskPrompt(input: AgentInput): string;
 	/** Optional pre-execute hook (e.g., post initial PR comment) */
 	preExecute?(params: PreExecuteParams): Promise<void>;
+	/** Capability summary — used by llmist backend to select gadgets */
+	capabilities: AgentCapabilities;
 }
 
 // ============================================================================
@@ -174,37 +176,6 @@ async function fetchWorkItemInjection(cardId: string): Promise<ContextInjection 
 	} catch {
 		return null;
 	}
-}
-
-/** Read full contents of changed PR files up to token limit (ported from review.ts:53-79) */
-async function readPRFileContents(
-	repoDir: string,
-	prDiff: PRDiffFile[],
-): Promise<{ included: Array<{ path: string; content: string }>; skipped: string[] }> {
-	const included: Array<{ path: string; content: string }> = [];
-	const skipped: string[] = [];
-	let totalTokens = 0;
-
-	for (const file of prDiff) {
-		if (file.status === 'removed' || !file.patch) continue;
-
-		const filePath = join(repoDir, file.filename);
-		try {
-			const content = await readFile(filePath, 'utf-8');
-			const tokens = estimateTokens(content);
-
-			if (totalTokens + tokens <= REVIEW_FILE_CONTENT_TOKEN_LIMIT) {
-				included.push({ path: file.filename, content });
-				totalTokens += tokens;
-			} else {
-				skipped.push(file.filename);
-			}
-		} catch {
-			// File might not exist (renamed from), skip
-		}
-	}
-
-	return { included, skipped };
 }
 
 /** Fetch PR context injections (ported from review.ts:93-144) */
@@ -491,6 +462,7 @@ const briefingProfile: AgentProfile = {
 	needsGitHubToken: false,
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildWorkItemTaskPrompt,
+	capabilities: getAgentCapabilities('briefing'),
 };
 
 const planningProfile: AgentProfile = {
@@ -500,6 +472,7 @@ const planningProfile: AgentProfile = {
 	needsGitHubToken: false,
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildWorkItemTaskPrompt,
+	capabilities: getAgentCapabilities('planning'),
 };
 
 const reviewProfile: AgentProfile = {
@@ -509,6 +482,7 @@ const reviewProfile: AgentProfile = {
 	needsGitHubToken: true,
 	fetchContext: fetchReviewContext,
 	buildTaskPrompt: buildReviewTaskPrompt,
+	capabilities: getAgentCapabilities('review'),
 
 	async preExecute({ input, logWriter }: PreExecuteParams): Promise<void> {
 		const repoFullName = input.repoFullName as string;
@@ -528,6 +502,7 @@ const respondToPlanningCommentProfile: AgentProfile = {
 	needsGitHubToken: false,
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildCommentResponseTaskPrompt,
+	capabilities: getAgentCapabilities('respond-to-planning-comment'),
 };
 
 const respondToCIProfile: AgentProfile = {
@@ -544,6 +519,7 @@ const respondToCIProfile: AgentProfile = {
 	blockGitPush: false,
 	fetchContext: fetchCIContext,
 	buildTaskPrompt: buildCITaskPrompt,
+	capabilities: getAgentCapabilities('respond-to-ci'),
 
 	async preExecute({ input, logWriter }: PreExecuteParams): Promise<void> {
 		const repoFullName = input.repoFullName as string;
@@ -568,6 +544,7 @@ const respondToPRCommentProfile: AgentProfile = {
 	blockGitPush: false,
 	fetchContext: fetchPRCommentResponseContext,
 	buildTaskPrompt: buildPRCommentResponseTaskPrompt,
+	capabilities: getAgentCapabilities('respond-to-pr-comment'),
 };
 
 const defaultProfile: AgentProfile = {
@@ -577,11 +554,13 @@ const defaultProfile: AgentProfile = {
 	needsGitHubToken: false,
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildWorkItemTaskPrompt,
+	capabilities: getAgentCapabilities('debug'),
 };
 
 const implementationProfile: AgentProfile = {
 	...defaultProfile,
 	needsGitHubToken: true,
+	capabilities: getAgentCapabilities('implementation'),
 };
 
 // ============================================================================

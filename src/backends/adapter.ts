@@ -1,27 +1,26 @@
-import fs from 'node:fs';
 import type { ModelSpec } from 'llmist';
 
 import type { PromptContext } from '../agents/prompts/index.js';
+import { cleanupAgentResources } from '../agents/shared/cleanup.js';
 import { resolveModelConfig } from '../agents/shared/modelResolution.js';
+import { buildPromptContext } from '../agents/shared/promptContext.js';
 import { setupRepository } from '../agents/shared/repository.js';
+import {
+	type RunTrackingInput,
+	finalizeBackendRun,
+	tryCreateRun,
+} from '../agents/shared/runTracking.js';
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
 import { getProjectSecrets } from '../config/provider.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
-import {
-	type CompleteRunInput,
-	completeRun,
-	createRun,
-	storeRunLogs,
-} from '../db/repositories/runsRepository.js';
 import { withGitHubToken } from '../github/client.js';
 import { getPersonaToken } from '../github/personas.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../utils/cascadeEnv.js';
-import { cleanupLogDirectory, cleanupLogFile, createFileLogger } from '../utils/fileLogger.js';
-import { clearWatchdogCleanup, setWatchdogCleanup } from '../utils/lifecycle.js';
+import { createFileLogger } from '../utils/fileLogger.js';
+import { setWatchdogCleanup } from '../utils/lifecycle.js';
 import { logger } from '../utils/logging.js';
-import { cleanupTempDir } from '../utils/repo.js';
 import { setupRemoteSquintDb } from '../utils/squintDb.js';
 import { getAgentProfile } from './agent-profiles.js';
 import { createProgressMonitor } from './progress.js';
@@ -264,26 +263,23 @@ async function buildBackendInput(
 ): Promise<Omit<AgentBackendInput, 'progressReporter'>> {
 	const { project, config, cardId } = input;
 
-	const pmType = project.pm?.type ?? 'trello';
-	const promptContext: PromptContext = {
+	// PR context from check-failure trigger
+	const prContext =
+		input.prNumber !== undefined
+			? {
+					prNumber: input.prNumber as number,
+					prBranch: input.prBranch as string,
+					repoFullName: input.repoFullName as string,
+					headSha: input.headSha as string,
+				}
+			: undefined;
+
+	const promptContext: PromptContext = buildPromptContext(
 		cardId,
-		cardUrl: cardId
-			? pmType === 'jira' && project.jira
-				? `${project.jira.baseUrl}/browse/${cardId}`
-				: `https://trello.com/c/${cardId}`
-			: undefined,
-		projectId: project.id,
-		baseBranch: project.baseBranch,
-		storiesListId: project.trello?.lists?.stories,
-		processedLabelId: project.trello?.labels?.processed,
-		pmType,
-		// PR context fields (from check-failure trigger)
-		prNumber: input.prNumber,
-		prBranch: input.prBranch,
-		repoFullName: input.repoFullName,
-		headSha: input.headSha,
-		triggerType: input.triggerType,
-	};
+		project,
+		input.triggerType,
+		prContext,
+	);
 
 	// Load DB partials for template include resolution
 	let dbPartials: Map<string, string> | undefined;
@@ -367,32 +363,6 @@ async function buildBackendInput(
 }
 
 /**
- * Clean up temporary resources after execution.
- */
-function cleanupResources(
-	repoDir: string | null,
-	fileLogger: ReturnType<typeof createFileLogger>,
-	hasLogDir: boolean,
-): void {
-	clearWatchdogCleanup();
-
-	const isLocalMode = process.env.CASCADE_LOCAL_MODE === 'true';
-
-	if (repoDir && !isLocalMode && !hasLogDir) {
-		try {
-			cleanupTempDir(repoDir);
-		} catch (err) {
-			logger.warn('Failed to cleanup temp directory', { repoDir, error: String(err) });
-		}
-	}
-	if (!isLocalMode) {
-		cleanupLogFile(fileLogger.logPath);
-		cleanupLogFile(fileLogger.llmistLogPath);
-		cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
-	}
-}
-
-/**
  * Post-process a backend result: validate PR creation for implementation agents
  * and zero out cost for subscription-backed Claude Code sessions.
  */
@@ -428,61 +398,6 @@ function postProcessResult(
 	}
 }
 
-/**
- * Execute an agent using the given backend with full lifecycle management.
- * This handles repository setup, context fetching, logging, and cleanup.
- *
- * Used by non-llmist backends. The llmist backend wraps existing code directly.
- */
-async function tryCreateBackendRun(
-	agentType: string,
-	backendName: string,
-	input: AgentInput & { project: ProjectConfig },
-	model?: string,
-	maxIterations?: number,
-): Promise<string | undefined> {
-	try {
-		return await createRun({
-			projectId: input.project.id,
-			cardId: input.cardId,
-			prNumber: input.prNumber,
-			agentType,
-			backend: backendName,
-			triggerType: input.triggerType,
-			model,
-			maxIterations,
-		});
-	} catch (err) {
-		logger.warn('Failed to create run record', { error: String(err) });
-		return undefined;
-	}
-}
-
-async function tryStoreBackendLogs(
-	runId: string,
-	fileLogger: ReturnType<typeof createFileLogger>,
-): Promise<void> {
-	try {
-		const cascadeLog = fs.existsSync(fileLogger.logPath)
-			? fs.readFileSync(fileLogger.logPath, 'utf-8')
-			: undefined;
-		const llmistLog = fs.existsSync(fileLogger.llmistLogPath)
-			? fs.readFileSync(fileLogger.llmistLogPath, 'utf-8')
-			: undefined;
-		await storeRunLogs(runId, cascadeLog, llmistLog);
-	} catch (err) {
-		logger.warn('Failed to store backend run logs', { runId, error: String(err) });
-	}
-}
-
-async function tryCompleteBackendRun(runId: string, input: CompleteRunInput): Promise<void> {
-	try {
-		await completeRun(runId, input);
-	} catch (err) {
-		logger.warn('Failed to complete backend run record', { runId, error: String(err) });
-	}
-}
-
 function warnIfSubscriptionCostMismatch(_backend: AgentBackend, _project: ProjectConfig): void {
 	// No-op: ANTHROPIC_API_KEY is no longer used. Claude Code uses OAuth only.
 }
@@ -505,16 +420,6 @@ async function resolveGitHubToken(
 		const secrets = await getProjectSecrets(projectId);
 		return secrets.GITHUB_TOKEN;
 	}
-}
-
-async function finalizeBackendRun(
-	runId: string | undefined,
-	fileLogger: ReturnType<typeof createFileLogger>,
-	input: CompleteRunInput,
-): Promise<void> {
-	if (!runId) return;
-	await tryStoreBackendLogs(runId, fileLogger);
-	await tryCompleteBackendRun(runId, input);
 }
 
 export async function executeWithBackend(
@@ -582,13 +487,15 @@ export async function executeWithBackend(
 			? await withGitHubToken(gitHubToken, buildAndPrepare)
 			: await buildAndPrepare();
 
-		runId = await tryCreateBackendRun(
+		const runTrackingInput: RunTrackingInput = {
+			projectId: input.project.id,
+			cardId: input.cardId,
+			prNumber: input.prNumber,
 			agentType,
-			backend.name,
-			input,
-			partialInput.model,
-			partialInput.maxIterations,
-		);
+			backendName: backend.name,
+			triggerType: input.triggerType,
+		};
+		runId = await tryCreateRun(runTrackingInput, partialInput.model, partialInput.maxIterations);
 
 		const monitor = createProgressMonitor({
 			logWriter,
@@ -597,6 +504,7 @@ export async function executeWithBackend(
 			progressModel: input.config.defaults.progressModel,
 			intervalMinutes: input.config.defaults.progressIntervalMinutes,
 			customModels: CUSTOM_MODELS as ModelSpec[],
+			repoDir: repoDir ?? undefined,
 			trello: cardId ? { cardId } : undefined,
 		});
 
@@ -674,6 +582,6 @@ export async function executeWithBackend(
 
 		return { success: false, output: '', error: String(err), logBuffer, runId, durationMs };
 	} finally {
-		cleanupResources(repoDir, fileLogger, Boolean(input.logDir));
+		cleanupAgentResources(repoDir, fileLogger, Boolean(input.logDir));
 	}
 }

@@ -30,10 +30,12 @@ import { type Todo, formatTodoList, initTodoSession, saveTodos } from '../gadget
 import { getPMProvider } from '../pm/index.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
-import type { PromptContext } from './prompts/index.js';
+import { extractPRUrl } from '../utils/prUrl.js';
 import { type BuilderType, createConfiguredBuilder } from './shared/builderFactory.js';
+import { getAgentCapabilities } from './shared/capabilities.js';
 import { type FileLogger, executeAgentLifecycle } from './shared/lifecycle.js';
 import { resolveModelConfig } from './shared/modelResolution.js';
+import { buildPromptContext } from './shared/promptContext.js';
 import { setupRepository as setupRepo } from './shared/repository.js';
 import {
 	injectContextFiles,
@@ -55,19 +57,6 @@ export interface AgentContext {
 export interface AgentRunner {
 	name: string;
 	run: (ctx: AgentContext) => Promise<AgentResult>;
-}
-
-// ============================================================================
-// Repository Setup
-// ============================================================================
-
-async function setupRepository(
-	project: ProjectConfig,
-	log: AgentLogger,
-	agentType: string,
-	prBranch?: string,
-): Promise<string> {
-	return setupRepo({ project, log, agentType, prBranch, warmTsCache: true });
 }
 
 // ============================================================================
@@ -104,51 +93,6 @@ async function loadDbPartials(orgId: string): Promise<Map<string, string> | unde
 		// DB not available — fall back to disk-only partials
 		return undefined;
 	}
-}
-
-function buildPromptContext(
-	cardId: string | undefined,
-	project: ProjectConfig,
-	triggerType?: string,
-	prContext?: { prNumber: number; prBranch: string; repoFullName: string; headSha: string },
-	debugContext?: {
-		logDir: string;
-		originalCardId: string;
-		originalCardName: string;
-		originalCardUrl: string;
-		detectedAgentType: string;
-	},
-): PromptContext {
-	const pmProvider = getPMProvider();
-	const isJira = pmProvider.type === 'jira';
-	return {
-		cardId,
-		cardUrl: cardId ? pmProvider.getWorkItemUrl(cardId) : undefined,
-		projectId: project.id,
-		storiesListId: project.trello?.lists?.stories,
-		processedLabelId: project.trello?.labels?.processed,
-		pmType: pmProvider.type,
-		workItemNoun: isJira ? 'issue' : 'card',
-		workItemNounPlural: isJira ? 'issues' : 'cards',
-		workItemNounCap: isJira ? 'Issue' : 'Card',
-		workItemNounPluralCap: isJira ? 'Issues' : 'Cards',
-		pmName: isJira ? 'JIRA' : 'Trello',
-		...(prContext && {
-			prNumber: prContext.prNumber,
-			prBranch: prContext.prBranch,
-			repoFullName: prContext.repoFullName,
-			headSha: prContext.headSha,
-			triggerType,
-		}),
-		...(debugContext && {
-			logDir: debugContext.logDir,
-			originalCardId: debugContext.originalCardId,
-			originalCardName: debugContext.originalCardName,
-			originalCardUrl: debugContext.originalCardUrl,
-			detectedAgentType: debugContext.detectedAgentType,
-			debugListId: project.trello?.lists?.debug,
-		}),
-	};
 }
 
 function selectPrompt(
@@ -319,18 +263,17 @@ Start by listing the contents of the log directory, then read and analyze the lo
 // ============================================================================
 
 function getBaseAgentGadgets(agentType: string) {
-	// Planning agents are read-only - no file editing capabilities
-	const isReadOnlyAgent = agentType === 'planning' || agentType === 'respond-to-planning-comment';
+	const caps = getAgentCapabilities(agentType);
 
 	return [
-		// Filesystem gadgets (read-only for planning)
+		// Filesystem gadgets (read-only when canEditFiles is false)
 		new ListDirectory(),
 		new ReadFile(),
 		new RipGrep(),
 		new AstGrep(),
-		...(isReadOnlyAgent
-			? []
-			: [new FileSearchAndReplace(), new FileMultiEdit(), new WriteFile(), new VerifyChanges()]),
+		...(caps.canEditFiles
+			? [new FileSearchAndReplace(), new FileMultiEdit(), new WriteFile(), new VerifyChanges()]
+			: []),
 		// Shell commands via tmux (no timeout issues)
 		new Tmux(),
 		new Sleep(),
@@ -338,8 +281,8 @@ function getBaseAgentGadgets(agentType: string) {
 		new TodoUpsert(),
 		new TodoUpdateStatus(),
 		new TodoDelete(),
-		// GitHub gadgets (no PR creation for planning)
-		...(isReadOnlyAgent ? [] : [new CreatePR()]),
+		// GitHub gadgets (PR creation gated by capability)
+		...(caps.canCreatePR ? [new CreatePR()] : []),
 		// PM gadgets (work items, comments, checklists — PM-agnostic)
 		new ReadWorkItem(),
 		new PostComment(),
@@ -347,9 +290,9 @@ function getBaseAgentGadgets(agentType: string) {
 		new CreateWorkItem(),
 		new ListWorkItems(),
 		new AddChecklist(),
-		// UpdateChecklistItem not available for planning - prevents marking items complete prematurely
-		// But respond-to-planning-comment CAN update checklist items (user may ask to check/uncheck steps)
-		...(agentType === 'planning' ? [] : [new PMUpdateChecklistItem()]),
+		// UpdateChecklistItem gated by capability — prevents planning from marking items complete
+		// prematurely, while respond-to-planning-comment CAN update them
+		...(caps.canUpdateChecklists ? [new PMUpdateChecklistItem()] : []),
 		// Session control
 		new Finish(),
 	];
@@ -511,12 +454,7 @@ async function setupWorkingDirectory(
 		return input.logDir;
 	}
 
-	return setupRepository(project, log, agentType, prBranch);
-}
-
-function extractPRUrl(output: string): string | undefined {
-	const match = output.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/);
-	return match ? match[0] : undefined;
+	return setupRepo({ project, log, agentType, prBranch, warmTsCache: true });
 }
 
 export async function executeAgent(
@@ -613,7 +551,7 @@ export async function executeAgent(
 				ctx.implementationSteps,
 			),
 
-		createProgressMonitor: (fileLogger) =>
+		createProgressMonitor: (fileLogger, repoDir) =>
 			createProgressMonitor({
 				logWriter: fileLogger.write.bind(fileLogger),
 				agentType,
@@ -621,6 +559,7 @@ export async function executeAgent(
 				progressModel: config.defaults.progressModel,
 				intervalMinutes: config.defaults.progressIntervalMinutes,
 				customModels: CUSTOM_MODELS as ModelSpec[],
+				repoDir,
 				trello: cardId ? { cardId } : undefined,
 			}),
 
