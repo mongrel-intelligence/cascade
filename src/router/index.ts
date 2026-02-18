@@ -2,7 +2,8 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { logWebhookCall } from '../utils/webhookLogger.js';
 import { type RouterProjectConfig, getProjectConfig, loadProjectConfig } from './config.js';
-import { type CascadeJob, addJob, getQueueStats } from './queue.js';
+import { addEyesReactionToPR } from './pre-actions.js';
+import { type CascadeJob, type GitHubJob, addJob, getQueueStats } from './queue.js';
 import {
 	getActiveWorkerCount,
 	getActiveWorkers,
@@ -129,6 +130,23 @@ function parseTrelloWebhook(payload: unknown): TrelloWebhookResult {
 		actionType === 'commentCard';
 
 	return { shouldProcess, project, actionType, cardId };
+}
+
+/**
+ * Fire non-blocking pre-actions for a GitHub job before it is queued.
+ * Currently adds a 👀 reaction for first-time check_suite success events.
+ */
+function firePreActions(job: GitHubJob, p: Record<string, unknown>): void {
+	if (job.eventType !== 'check_suite') return;
+	const suite = p.check_suite as Record<string, unknown> | undefined;
+	const action = p.action as string | undefined;
+	const conclusion = suite?.conclusion as string | undefined;
+	const prs = suite?.pull_requests as Array<unknown> | undefined;
+	if (action === 'completed' && conclusion === 'success' && prs && prs.length > 0) {
+		addEyesReactionToPR(job).catch((err) =>
+			console.warn('[Router] Pre-action error (eyes reaction):', String(err)),
+		);
+	}
 }
 
 const app = new Hono();
@@ -295,6 +313,9 @@ app.post('/github/webhook', async (c) => {
 			repoFullName,
 			receivedAt: new Date().toISOString(),
 		};
+
+		// Fire pre-actions (non-blocking) before queueing
+		firePreActions(job as GitHubJob, p);
 
 		try {
 			const jobId = await addJob(job);
