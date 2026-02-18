@@ -15,7 +15,7 @@
 
 import { configCache } from './config/configCache.js';
 import { loadEnvConfigSafe } from './config/env.js';
-import { findProjectByRepo, getProjectSecrets, loadConfig } from './config/provider.js';
+import { loadConfig } from './config/provider.js';
 import { getDb } from './db/client.js';
 import {
 	createTriggerRegistry,
@@ -71,6 +71,7 @@ interface ManualRunJobData {
 interface RetryRunJobData {
 	type: 'retry-run';
 	runId: string;
+	projectId: string;
 	modelOverride?: string;
 }
 
@@ -84,34 +85,6 @@ interface DebugAnalysisJobData {
 type DashboardJobData = ManualRunJobData | RetryRunJobData | DebugAnalysisJobData;
 
 type JobData = TrelloJobData | GitHubJobData | JiraJobData | DashboardJobData;
-
-/**
- * Extract projectId from job data for credential cache pre-warming.
- * Different job types have the projectId in different locations.
- */
-async function extractProjectId(jobData: JobData): Promise<string | null> {
-	if (jobData.type === 'trello' || jobData.type === 'jira') {
-		return jobData.projectId;
-	}
-	if (jobData.type === 'github') {
-		// GitHub jobs don't have projectId directly, need to resolve from repoFullName
-		const project = await findProjectByRepo(jobData.repoFullName);
-		return project?.id ?? null;
-	}
-	if (jobData.type === 'manual-run') {
-		return jobData.projectId;
-	}
-	if (jobData.type === 'retry-run') {
-		// Retry jobs reference an existing run, need to load it to get projectId
-		const { getRunById } = await import('./db/repositories/runsRepository.js');
-		const run = await getRunById(jobData.runId);
-		return run?.projectId ?? null;
-	}
-	if (jobData.type === 'debug-analysis') {
-		return jobData.projectId;
-	}
-	return null;
-}
 
 async function processDashboardJob(jobId: string, jobData: DashboardJobData): Promise<void> {
 	const { loadProjectConfigById } = await import('./config/provider.js');
@@ -202,20 +175,10 @@ async function main(): Promise<void> {
 			logger.warn('[Worker] Failed to parse CASCADE_CREDENTIALS', { error: String(err) });
 		}
 	} else {
-		// Fallback for retry-run jobs where projectId couldn't be resolved in router
-		// These jobs need to resolve credentials from DB (requires CREDENTIAL_MASTER_KEY)
-		const projectId = await extractProjectId(jobData);
-		if (projectId) {
-			try {
-				await getProjectSecrets(projectId);
-				logger.info('[Worker] Pre-warmed credential cache from DB', { projectId });
-			} catch (err) {
-				logger.warn('[Worker] Failed to pre-warm credentials from DB', {
-					projectId,
-					error: String(err),
-				});
-			}
-		}
+		// All jobs MUST have credentials passed from router
+		logger.error('[Worker] No credentials passed from router - job will likely fail', {
+			jobType: jobData.type,
+		});
 	}
 
 	// SECURITY: Scrub sensitive env vars (DATABASE_URL, CASCADE_CREDENTIALS, etc.)
