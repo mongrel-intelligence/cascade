@@ -106,7 +106,12 @@ async function runPostAgentLifecycle(
 		(!handleSuccessOnlyForAgentType || result.agentType === handleSuccessOnlyForAgentType);
 
 	if (shouldCallHandleSuccess) {
-		await lifecycle.handleSuccess(workItemId, result.agentType, agentResult.prUrl);
+		await lifecycle.handleSuccess(
+			workItemId,
+			result.agentType,
+			agentResult.prUrl,
+			agentResult.progressCommentId,
+		);
 	} else if (!agentResult.success && !skipHandleFailure) {
 		await lifecycle.handleFailure(workItemId, agentResult.error);
 	}

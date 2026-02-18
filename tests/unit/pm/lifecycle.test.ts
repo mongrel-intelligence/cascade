@@ -254,6 +254,7 @@ describe('pm/lifecycle', () => {
 				removeLabel: vi.fn().mockResolvedValue(undefined),
 				moveWorkItem: vi.fn().mockResolvedValue(undefined),
 				addComment: vi.fn().mockResolvedValue(undefined),
+				updateComment: vi.fn().mockResolvedValue(undefined),
 				// Other PMProvider methods (not used by lifecycle manager)
 				getWorkItem: vi.fn(),
 				getWorkItemComments: vi.fn(),
@@ -359,6 +360,53 @@ describe('pm/lifecycle', () => {
 				await manager.handleSuccess('work-item-1', 'briefing');
 
 				expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
+			});
+
+			it('updates existing progress comment when progressCommentId provided', async () => {
+				await manager.handleSuccess(
+					'work-item-1',
+					'implementation',
+					'https://github.com/pr/123',
+					'comment-abc',
+				);
+
+				expect(mockProvider.updateComment).toHaveBeenCalledWith(
+					'work-item-1',
+					'comment-abc',
+					'PR created: https://github.com/pr/123',
+				);
+				expect(mockProvider.addComment).not.toHaveBeenCalled();
+			});
+
+			it('falls back to addComment when updateComment fails', async () => {
+				vi.mocked(mockProvider.updateComment).mockRejectedValue(new Error('Comment not found'));
+
+				await manager.handleSuccess(
+					'work-item-1',
+					'implementation',
+					'https://github.com/pr/123',
+					'comment-abc',
+				);
+
+				expect(mockProvider.updateComment).toHaveBeenCalledWith(
+					'work-item-1',
+					'comment-abc',
+					'PR created: https://github.com/pr/123',
+				);
+				expect(mockProvider.addComment).toHaveBeenCalledWith(
+					'work-item-1',
+					'PR created: https://github.com/pr/123',
+				);
+			});
+
+			it('uses addComment when progressCommentId is not provided', async () => {
+				await manager.handleSuccess('work-item-1', 'implementation', 'https://github.com/pr/123');
+
+				expect(mockProvider.addComment).toHaveBeenCalledWith(
+					'work-item-1',
+					'PR created: https://github.com/pr/123',
+				);
+				expect(mockProvider.updateComment).not.toHaveBeenCalled();
 			});
 		});
 

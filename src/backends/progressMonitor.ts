@@ -88,6 +88,12 @@ export class ProgressMonitor implements ProgressReporter {
 
 	constructor(private readonly config: ProgressMonitorConfig) {}
 
+	// ── Public accessors ──
+
+	getProgressCommentId(): string | null {
+		return this.progressCommentId;
+	}
+
 	// ── ProgressReporter interface (accumulate only, no posting) ──
 
 	async onIteration(iteration: number, maxIterations: number): Promise<void> {
