@@ -26,7 +26,8 @@ export function createServer(deps: ServerDependencies): Hono {
 	const app = new Hono();
 
 	// Middleware
-	app.use('*', cors());
+	const corsOrigin = process.env.CORS_ORIGIN;
+	app.use('*', corsOrigin ? cors({ origin: corsOrigin, credentials: true }) : cors());
 	app.use('*', honoLogger());
 
 	// Health check

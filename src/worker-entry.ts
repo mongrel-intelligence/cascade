@@ -53,7 +53,78 @@ interface JiraJobData {
 	receivedAt: string;
 }
 
-type JobData = TrelloJobData | GitHubJobData | JiraJobData;
+interface ManualRunJobData {
+	type: 'manual-run';
+	projectId: string;
+	agentType: string;
+	cardId?: string;
+	prNumber?: number;
+	prBranch?: string;
+	repoFullName?: string;
+	headSha?: string;
+	modelOverride?: string;
+}
+
+interface RetryRunJobData {
+	type: 'retry-run';
+	runId: string;
+	modelOverride?: string;
+}
+
+interface DebugAnalysisJobData {
+	type: 'debug-analysis';
+	runId: string;
+	projectId: string;
+	cardId?: string;
+}
+
+type DashboardJobData = ManualRunJobData | RetryRunJobData | DebugAnalysisJobData;
+
+type JobData = TrelloJobData | GitHubJobData | JiraJobData | DashboardJobData;
+
+async function processDashboardJob(jobId: string, jobData: DashboardJobData): Promise<void> {
+	const { loadProjectConfigById } = await import('./config/provider.js');
+
+	if (jobData.type === 'manual-run') {
+		logger.info('[Worker] Processing manual-run job', {
+			jobId,
+			projectId: jobData.projectId,
+			agentType: jobData.agentType,
+		});
+		const { triggerManualRun } = await import('./triggers/shared/manual-runner.js');
+		const pc = await loadProjectConfigById(jobData.projectId);
+		if (!pc) throw new Error(`Project not found: ${jobData.projectId}`);
+		await triggerManualRun(
+			{
+				projectId: jobData.projectId,
+				agentType: jobData.agentType,
+				cardId: jobData.cardId,
+				prNumber: jobData.prNumber,
+				prBranch: jobData.prBranch,
+				repoFullName: jobData.repoFullName,
+				headSha: jobData.headSha,
+				modelOverride: jobData.modelOverride,
+			},
+			pc.project,
+			pc.config,
+		);
+	} else if (jobData.type === 'retry-run') {
+		logger.info('[Worker] Processing retry-run job', { jobId, runId: jobData.runId });
+		const { getRunById } = await import('./db/repositories/runsRepository.js');
+		const { triggerRetryRun } = await import('./triggers/shared/manual-runner.js');
+		const run = await getRunById(jobData.runId);
+		if (!run?.projectId) throw new Error(`Run not found or has no project: ${jobData.runId}`);
+		const pc = await loadProjectConfigById(run.projectId);
+		if (!pc) throw new Error(`Project not found: ${run.projectId}`);
+		await triggerRetryRun(jobData.runId, pc.project, pc.config, jobData.modelOverride);
+	} else {
+		logger.info('[Worker] Processing debug-analysis job', { jobId, runId: jobData.runId });
+		const { triggerDebugAnalysis } = await import('./triggers/shared/debug-runner.js');
+		const pc = await loadProjectConfigById(jobData.projectId);
+		if (!pc) throw new Error(`Project not found: ${jobData.projectId}`);
+		await triggerDebugAnalysis(jobData.runId, pc.project, pc.config, jobData.cardId);
+	}
+}
 
 async function main(): Promise<void> {
 	const jobId = process.env.JOB_ID;
@@ -109,6 +180,12 @@ async function main(): Promise<void> {
 				webhookEvent: jobData.webhookEvent,
 			});
 			await processJiraWebhook(jobData.payload, triggerRegistry);
+		} else if (
+			jobData.type === 'manual-run' ||
+			jobData.type === 'retry-run' ||
+			jobData.type === 'debug-analysis'
+		) {
+			await processDashboardJob(jobId, jobData);
 		} else {
 			logger.error('[Worker] Unknown job type', { jobType: (jobData as { type: string }).type });
 			process.exit(1);

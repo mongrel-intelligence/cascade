@@ -8,6 +8,10 @@ export async function logoutHandler(c: Context) {
 		await deleteSession(token);
 	}
 
-	deleteCookie(c, 'cascade_session', { path: '/' });
+	const cookieDomain = process.env.COOKIE_DOMAIN;
+	deleteCookie(c, 'cascade_session', {
+		path: '/',
+		...(cookieDomain && { domain: cookieDomain }),
+	});
 	return c.json({ ok: true });
 }
