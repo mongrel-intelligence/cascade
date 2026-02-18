@@ -30,10 +30,11 @@ import { type Todo, formatTodoList, initTodoSession, saveTodos } from '../gadget
 import { getPMProvider } from '../pm/index.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
-import type { PromptContext } from './prompts/index.js';
+import { extractPRUrl } from '../utils/prUrl.js';
 import { type BuilderType, createConfiguredBuilder } from './shared/builderFactory.js';
 import { type FileLogger, executeAgentLifecycle } from './shared/lifecycle.js';
 import { resolveModelConfig } from './shared/modelResolution.js';
+import { buildPromptContext } from './shared/promptContext.js';
 import { setupRepository as setupRepo } from './shared/repository.js';
 import {
 	injectContextFiles,
@@ -55,19 +56,6 @@ export interface AgentContext {
 export interface AgentRunner {
 	name: string;
 	run: (ctx: AgentContext) => Promise<AgentResult>;
-}
-
-// ============================================================================
-// Repository Setup
-// ============================================================================
-
-async function setupRepository(
-	project: ProjectConfig,
-	log: AgentLogger,
-	agentType: string,
-	prBranch?: string,
-): Promise<string> {
-	return setupRepo({ project, log, agentType, prBranch, warmTsCache: true });
 }
 
 // ============================================================================
@@ -104,51 +92,6 @@ async function loadDbPartials(orgId: string): Promise<Map<string, string> | unde
 		// DB not available — fall back to disk-only partials
 		return undefined;
 	}
-}
-
-function buildPromptContext(
-	cardId: string | undefined,
-	project: ProjectConfig,
-	triggerType?: string,
-	prContext?: { prNumber: number; prBranch: string; repoFullName: string; headSha: string },
-	debugContext?: {
-		logDir: string;
-		originalCardId: string;
-		originalCardName: string;
-		originalCardUrl: string;
-		detectedAgentType: string;
-	},
-): PromptContext {
-	const pmProvider = getPMProvider();
-	const isJira = pmProvider.type === 'jira';
-	return {
-		cardId,
-		cardUrl: cardId ? pmProvider.getWorkItemUrl(cardId) : undefined,
-		projectId: project.id,
-		storiesListId: project.trello?.lists?.stories,
-		processedLabelId: project.trello?.labels?.processed,
-		pmType: pmProvider.type,
-		workItemNoun: isJira ? 'issue' : 'card',
-		workItemNounPlural: isJira ? 'issues' : 'cards',
-		workItemNounCap: isJira ? 'Issue' : 'Card',
-		workItemNounPluralCap: isJira ? 'Issues' : 'Cards',
-		pmName: isJira ? 'JIRA' : 'Trello',
-		...(prContext && {
-			prNumber: prContext.prNumber,
-			prBranch: prContext.prBranch,
-			repoFullName: prContext.repoFullName,
-			headSha: prContext.headSha,
-			triggerType,
-		}),
-		...(debugContext && {
-			logDir: debugContext.logDir,
-			originalCardId: debugContext.originalCardId,
-			originalCardName: debugContext.originalCardName,
-			originalCardUrl: debugContext.originalCardUrl,
-			detectedAgentType: debugContext.detectedAgentType,
-			debugListId: project.trello?.lists?.debug,
-		}),
-	};
 }
 
 function selectPrompt(
@@ -511,12 +454,7 @@ async function setupWorkingDirectory(
 		return input.logDir;
 	}
 
-	return setupRepository(project, log, agentType, prBranch);
-}
-
-function extractPRUrl(output: string): string | undefined {
-	const match = output.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/);
-	return match ? match[0] : undefined;
+	return setupRepo({ project, log, agentType, prBranch, warmTsCache: true });
 }
 
 export async function executeAgent(

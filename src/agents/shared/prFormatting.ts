@@ -1,3 +1,7 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
+import { REVIEW_FILE_CONTENT_TOKEN_LIMIT, estimateTokens } from '../../config/reviewConfig.js';
 import type { githubClient } from '../../github/client.js';
 
 type PRDetails = Awaited<ReturnType<typeof githubClient.getPR>>;
@@ -98,4 +102,51 @@ export function formatPRIssueComments(prIssueComments: PRIssueComments): string 
 			].join('\n'),
 		)
 		.join('\n\n');
+}
+
+// ============================================================================
+// PR File Contents Reading
+// ============================================================================
+
+export interface PRFileContents {
+	included: Array<{ path: string; content: string }>;
+	skipped: string[];
+}
+
+/**
+ * Read the full contents of changed PR files up to a token limit.
+ *
+ * Shared between the llmist review agent (agents/review.ts) and the
+ * Claude Code backend (backends/agent-profiles.ts).
+ *
+ * @param repoDir - The local repository directory
+ * @param prDiff - The PR diff file list from GitHub
+ * @returns Files that fit within the token limit and those that were skipped
+ */
+export async function readPRFileContents(repoDir: string, prDiff: PRDiff): Promise<PRFileContents> {
+	const included: Array<{ path: string; content: string }> = [];
+	const skipped: string[] = [];
+	let totalTokens = 0;
+
+	for (const file of prDiff) {
+		// Skip deleted/binary files
+		if (file.status === 'removed' || !file.patch) continue;
+
+		const filePath = join(repoDir, file.filename);
+		try {
+			const content = await readFile(filePath, 'utf-8');
+			const tokens = estimateTokens(content);
+
+			if (totalTokens + tokens <= REVIEW_FILE_CONTENT_TOKEN_LIMIT) {
+				included.push({ path: file.filename, content });
+				totalTokens += tokens;
+			} else {
+				skipped.push(file.filename);
+			}
+		} catch {
+			// File might not exist (renamed from), skip
+		}
+	}
+
+	return { included, skipped };
 }

@@ -1,7 +1,3 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-
-import { REVIEW_FILE_CONTENT_TOKEN_LIMIT, estimateTokens } from '../config/reviewConfig.js';
 import { Finish } from '../gadgets/Finish.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { ReadFile } from '../gadgets/ReadFile.js';
@@ -26,7 +22,12 @@ import {
 	executeGitHubAgent,
 } from './shared/githubAgent.js';
 import { resolveModelConfig } from './shared/modelResolution.js';
-import { type PRDiff, formatPRDetails, formatPRDiff } from './shared/prFormatting.js';
+import {
+	type PRFileContents,
+	formatPRDetails,
+	formatPRDiff,
+	readPRFileContents,
+} from './shared/prFormatting.js';
 import {
 	injectContextFiles,
 	injectSquintContext,
@@ -39,43 +40,6 @@ interface ReviewAgentInput extends GitHubAgentInput {
 	repoFullName: string;
 	project: ProjectConfig;
 	config: CascadeConfig;
-}
-
-// ============================================================================
-// PR File Contents Reading
-// ============================================================================
-
-interface PRFileContents {
-	included: Array<{ path: string; content: string }>;
-	skipped: string[];
-}
-
-async function readPRFileContents(repoDir: string, prDiff: PRDiff): Promise<PRFileContents> {
-	const included: Array<{ path: string; content: string }> = [];
-	const skipped: string[] = [];
-	let totalTokens = 0;
-
-	for (const file of prDiff) {
-		// Skip deleted/binary files
-		if (file.status === 'removed' || !file.patch) continue;
-
-		const filePath = join(repoDir, file.filename);
-		try {
-			const content = await readFile(filePath, 'utf-8');
-			const tokens = estimateTokens(content);
-
-			if (totalTokens + tokens <= REVIEW_FILE_CONTENT_TOKEN_LIMIT) {
-				included.push({ path: file.filename, content });
-				totalTokens += tokens;
-			} else {
-				skipped.push(file.filename);
-			}
-		} catch {
-			// File might not exist (renamed from), skip
-		}
-	}
-
-	return { included, skipped };
 }
 
 // ============================================================================
