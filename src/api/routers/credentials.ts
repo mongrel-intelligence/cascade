@@ -3,6 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../../db/client.js';
+import { decryptCredential } from '../../db/crypto.js';
 import {
 	createCredential,
 	deleteCredential,
@@ -98,7 +99,8 @@ export const credentialsRouter = router({
 			}
 
 			try {
-				const octokit = new Octokit({ auth: cred.value });
+				const token = decryptCredential(cred.value, cred.orgId);
+				const octokit = new Octokit({ auth: token });
 				const { data } = await octokit.users.getAuthenticated();
 				return { login: data.login, avatarUrl: data.avatar_url };
 			} catch (err) {

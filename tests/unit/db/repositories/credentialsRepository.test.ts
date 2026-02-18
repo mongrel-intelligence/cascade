@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock the DB client
@@ -66,6 +67,7 @@ describe('credentialsRepository', () => {
 	});
 
 	afterEach(() => {
+		vi.unstubAllEnvs();
 		vi.clearAllMocks();
 	});
 
@@ -217,7 +219,7 @@ describe('credentialsRepository', () => {
 	});
 
 	describe('createCredential', () => {
-		it('inserts credential and returns id', async () => {
+		it('inserts credential and returns id (no encryption key)', async () => {
 			mockDb.chain.returning.mockResolvedValueOnce([{ id: 42 }]);
 
 			const result = await createCredential({
@@ -230,6 +232,7 @@ describe('credentialsRepository', () => {
 
 			expect(result).toEqual({ id: 42 });
 			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
+			// Without CREDENTIAL_MASTER_KEY, value passes through as plaintext
 			expect(mockDb.chain.values).toHaveBeenCalledWith({
 				orgId: 'org1',
 				name: 'GitHub Bot',
@@ -237,6 +240,23 @@ describe('credentialsRepository', () => {
 				value: 'ghp_abc123',
 				isDefault: true,
 			});
+		});
+
+		it('encrypts value when CREDENTIAL_MASTER_KEY is set', async () => {
+			vi.stubEnv('CREDENTIAL_MASTER_KEY', randomBytes(32).toString('hex'));
+			mockDb.chain.returning.mockResolvedValueOnce([{ id: 42 }]);
+
+			await createCredential({
+				orgId: 'org1',
+				name: 'GitHub Bot',
+				envVarKey: 'GITHUB_TOKEN',
+				value: 'ghp_abc123',
+				isDefault: true,
+			});
+
+			const insertedValues = mockDb.chain.values.mock.calls[0][0];
+			expect(insertedValues.value).toMatch(/^enc:v1:/);
+			expect(insertedValues.value).not.toContain('ghp_abc123');
 		});
 
 		it('defaults isDefault to false', async () => {
@@ -256,7 +276,10 @@ describe('credentialsRepository', () => {
 	});
 
 	describe('updateCredential', () => {
-		it('updates specified fields', async () => {
+		it('updates specified fields (no encryption key)', async () => {
+			// First call: orgId lookup for encryption
+			mockDb.chain.where.mockResolvedValueOnce([{ orgId: 'org1' }]);
+			// Second call: the actual update
 			mockDb.chain.where.mockResolvedValueOnce(undefined);
 
 			await updateCredential(42, { name: 'New Name', value: 'new-secret' });
@@ -268,6 +291,33 @@ describe('credentialsRepository', () => {
 					value: 'new-secret',
 				}),
 			);
+		});
+
+		it('encrypts value on update when CREDENTIAL_MASTER_KEY is set', async () => {
+			vi.stubEnv('CREDENTIAL_MASTER_KEY', randomBytes(32).toString('hex'));
+			// First call: orgId lookup
+			mockDb.chain.where.mockResolvedValueOnce([{ orgId: 'org1' }]);
+			// Second call: the actual update
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await updateCredential(42, { value: 'new-secret' });
+
+			const setArg = mockDb.chain.set.mock.calls[0][0];
+			expect(setArg.value).toMatch(/^enc:v1:/);
+			expect(setArg.value).not.toContain('new-secret');
+		});
+
+		it('looks up orgId before encrypting value', async () => {
+			// First call: orgId lookup
+			mockDb.chain.where.mockResolvedValueOnce([{ orgId: 'org1' }]);
+			// Second call: the actual update
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await updateCredential(42, { value: 'new-secret' });
+
+			// Should have done a select (orgId lookup) + update
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
+			expect(mockDb.db.update).toHaveBeenCalledTimes(1);
 		});
 
 		it('includes updatedAt timestamp', async () => {
@@ -303,7 +353,7 @@ describe('credentialsRepository', () => {
 	});
 
 	describe('listOrgCredentials', () => {
-		it('returns credentials for org', async () => {
+		it('returns credentials for org (decrypted)', async () => {
 			const mockCreds = [
 				{ id: 1, orgId: 'org1', name: 'Key 1', envVarKey: 'KEY1', value: 'v1', isDefault: true },
 				{ id: 2, orgId: 'org1', name: 'Key 2', envVarKey: 'KEY2', value: 'v2', isDefault: false },
@@ -313,6 +363,8 @@ describe('credentialsRepository', () => {
 			const result = await listOrgCredentials('org1');
 			expect(result).toHaveLength(2);
 			expect(result[0].name).toBe('Key 1');
+			// Plaintext values pass through decryptCredential unchanged
+			expect(result[0].value).toBe('v1');
 		});
 
 		it('returns empty array when no credentials', async () => {

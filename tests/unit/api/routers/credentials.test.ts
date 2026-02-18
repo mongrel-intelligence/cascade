@@ -14,6 +14,12 @@ vi.mock('../../../../src/db/repositories/credentialsRepository.js', () => ({
 	deleteCredential: (...args: unknown[]) => mockDeleteCredential(...args),
 }));
 
+const mockDecryptCredential = vi.fn((value: string) => value);
+
+vi.mock('../../../../src/db/crypto.js', () => ({
+	decryptCredential: (...args: unknown[]) => mockDecryptCredential(...args),
+}));
+
 // Mock getDb for ownership checks
 const mockDbSelect = vi.fn();
 const mockDbFrom = vi.fn();
@@ -26,8 +32,17 @@ vi.mock('../../../../src/db/client.js', () => ({
 }));
 
 vi.mock('../../../../src/db/schema/index.js', () => ({
-	credentials: { id: 'id', orgId: 'org_id' },
+	credentials: { id: 'id', orgId: 'org_id', value: 'value' },
 }));
+
+const mockGetAuthenticated = vi.fn();
+vi.mock('@octokit/rest', () => ({
+	Octokit: vi.fn().mockImplementation(() => ({
+		users: { getAuthenticated: mockGetAuthenticated },
+	})),
+}));
+
+import { Octokit } from '@octokit/rest';
 
 import { credentialsRouter } from '../../../../src/api/routers/credentials.js';
 
@@ -204,6 +219,46 @@ describe('credentialsRouter', () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.delete({ id: 42 })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
+			});
+		});
+	});
+
+	describe('verifyGithubIdentity', () => {
+		it('decrypts credential before calling GitHub API', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1', value: 'enc:v1:encrypted-token' }]);
+			mockDecryptCredential.mockReturnValue('ghp_decrypted_token');
+			mockGetAuthenticated.mockResolvedValue({
+				data: { login: 'cascade-bot', avatar_url: 'https://example.com/avatar.png' },
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.verifyGithubIdentity({ credentialId: 42 });
+
+			expect(mockDecryptCredential).toHaveBeenCalledWith('enc:v1:encrypted-token', 'org-1');
+			expect(Octokit).toHaveBeenCalledWith({ auth: 'ghp_decrypted_token' });
+			expect(result).toEqual({
+				login: 'cascade-bot',
+				avatarUrl: 'https://example.com/avatar.png',
+			});
+		});
+
+		it('throws NOT_FOUND when credential belongs to different org', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'different-org', value: 'token' }]);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(caller.verifyGithubIdentity({ credentialId: 42 })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws BAD_REQUEST when GitHub API fails', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1', value: 'bad-token' }]);
+			mockDecryptCredential.mockReturnValue('bad-token');
+			mockGetAuthenticated.mockRejectedValue(new Error('Bad credentials'));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.verifyGithubIdentity({ credentialId: 42 })).rejects.toMatchObject({
+				code: 'BAD_REQUEST',
 			});
 		});
 	});
