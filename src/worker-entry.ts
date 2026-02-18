@@ -13,9 +13,8 @@
  * - DATABASE_URL: PostgreSQL connection string for config
  */
 
-import { configCache } from './config/configCache.js';
 import { loadEnvConfigSafe } from './config/env.js';
-import { loadConfig } from './config/provider.js';
+import { loadConfig, setSecrets } from './config/provider.js';
 import { getDb } from './db/client.js';
 import {
 	createTriggerRegistry,
@@ -169,7 +168,7 @@ async function main(): Promise<void> {
 	if (credentialsJson && credentialsProjectId) {
 		try {
 			const secrets = JSON.parse(credentialsJson) as Record<string, string>;
-			configCache.setSecrets(credentialsProjectId, secrets);
+			setSecrets(credentialsProjectId, secrets);
 			logger.info('[Worker] Cached credentials from router', { projectId: credentialsProjectId });
 		} catch (err) {
 			logger.warn('[Worker] Failed to parse CASCADE_CREDENTIALS', { error: String(err) });
