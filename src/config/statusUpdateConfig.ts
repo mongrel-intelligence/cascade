@@ -71,7 +71,7 @@ export function formatStatusMessage(
 	const totalCount = todos.length;
 
 	const lines = [
-		`**${agentType} agent progress**`,
+		`**I'm making progress** (${agentType})`,
 		'',
 		`${progressBar} ${progress}% (iteration ${iteration}/${maxIterations})`,
 	];
@@ -118,7 +118,7 @@ export function formatGitHubProgressComment(
 		'',
 		todoSection,
 		'',
-		`<sub>Last updated: iteration ${iteration} · ${agentType} agent</sub>`,
+		`<sub>Last updated: iteration ${iteration} · ${agentType}</sub>`,
 	];
 
 	return lines.join('\n');
