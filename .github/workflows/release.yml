@@ -76,7 +76,7 @@ jobs:
             exit 1
           fi
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GHCR_PAT }}
 
       - name: Create release PR
         if: ${{ !inputs.dry_run }}
@@ -94,7 +94,7 @@ jobs:
           echo "PR_NUMBER=$PR_NUMBER" >> "$GITHUB_ENV"
           echo "PR_URL=$PR_URL" >> "$GITHUB_ENV"
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GHCR_PAT }}
 
       - name: Enable auto-merge
         if: ${{ !inputs.dry_run }}
@@ -102,7 +102,7 @@ jobs:
           gh pr merge "$PR_NUMBER" --auto --merge
           echo "Auto-merge enabled on PR #$PR_NUMBER. It will merge once required checks pass."
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GHCR_PAT }}
 
       - name: Write step summary (post-create)
         if: ${{ !inputs.dry_run }}
