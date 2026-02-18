@@ -40,9 +40,8 @@ async function extractProjectIdFromJob(data: CascadeJob): Promise<string | null>
 		return jobData.projectId ?? null;
 	}
 	if (jobData.type === 'retry-run') {
-		// Retry jobs reference an existing run - projectId is resolved by worker
-		// since it requires the runs repository which is a worker-only dependency
-		return null;
+		// Retry jobs now include projectId from the API
+		return jobData.projectId ?? null;
 	}
 	return null;
 }

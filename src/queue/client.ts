@@ -24,6 +24,7 @@ export interface ManualRunJob {
 export interface RetryRunJob {
 	type: 'retry-run';
 	runId: string;
+	projectId: string;
 	modelOverride?: string;
 }
 
