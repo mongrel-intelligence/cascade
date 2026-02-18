@@ -1,5 +1,6 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
 import * as readline from 'node:readline';
+import { filterProcessEnv } from '../../backends/claude-code/env.js';
 import {
 	CONTROL_SESSION,
 	EXIT_MARKER_PREFIX,
@@ -96,9 +97,12 @@ export class TmuxControlClient {
 		this.proc = null;
 		this.rl = null;
 
+		// Use filtered environment for all tmux execSync calls (defense-in-depth)
+		const filteredEnv = filterProcessEnv(process.env) as Record<string, string>;
+
 		// Kill any existing control session to start fresh
 		try {
-			execSync(`tmux kill-session -t ${CONTROL_SESSION} 2>/dev/null`);
+			execSync(`tmux kill-session -t ${CONTROL_SESSION} 2>/dev/null`, { env: filteredEnv });
 		} catch {
 			// Ignore - session may not exist
 		}
@@ -107,15 +111,20 @@ export class TmuxControlClient {
 		// When CASCADE chdirs to temp directories that are later deleted, the tmux
 		// session would inherit an invalid CWD causing "getcwd: cannot access parent directories" errors
 		try {
-			execSync(`tmux new-session -d -s ${CONTROL_SESSION} -x 200 -y 50 -c /tmp`);
+			execSync(`tmux new-session -d -s ${CONTROL_SESSION} -x 200 -y 50 -c /tmp`, {
+				env: filteredEnv,
+			});
 		} catch (err) {
 			throw new Error(`Failed to create control session: ${err}`);
 		}
 
-		// Attach in control mode with explicit CWD
+		// Attach in control mode with explicit CWD and filtered environment.
+		// Defense-in-depth: prevents DATABASE_URL, CREDENTIAL_MASTER_KEY, etc.
+		// from leaking to tmux sessions even if env scrubbing was missed.
 		this.proc = spawn('tmux', ['-C', 'attach-session', '-t', CONTROL_SESSION], {
 			stdio: ['pipe', 'pipe', 'pipe'],
 			cwd: '/tmp',
+			env: filterProcessEnv(process.env),
 		});
 
 		if (!this.proc.stdout) {
