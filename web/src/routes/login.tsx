@@ -1,3 +1,4 @@
+import { trpc } from '@/lib/trpc.js';
 import { useQueryClient } from '@tanstack/react-query';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -31,7 +32,7 @@ function LoginPage() {
 				return;
 			}
 
-			await queryClient.invalidateQueries();
+			await queryClient.refetchQueries({ queryKey: trpc.auth.me.queryOptions().queryKey });
 			navigate({ to: '/' });
 		} catch {
 			setError('Network error');
