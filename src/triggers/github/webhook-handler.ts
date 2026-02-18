@@ -51,14 +51,22 @@ async function postAcknowledgmentComment(result: TriggerResult): Promise<void> {
 	) {
 		return;
 	}
-	const input = result.agentInput as { repoFullName?: string; acknowledgmentCommentId?: number };
+	const input = result.agentInput as {
+		repoFullName?: string;
+		acknowledgmentCommentId?: number;
+		commentAuthor?: string;
+	};
 	if (!input.repoFullName) {
 		return;
 	}
 	const [owner, repo] = input.repoFullName.split('/');
 	const prNumber = result.prNumber;
+	const message =
+		result.agentType === 'respond-to-pr-comment'
+			? `💭 Thinking about your comment, @${input.commentAuthor ?? 'you'}...`
+			: '👀 Checking this out...';
 	const comment = await safeOperation(
-		() => githubClient.createPRComment(owner, repo, prNumber, '👀 Checking this out...'),
+		() => githubClient.createPRComment(owner, repo, prNumber, message),
 		{ action: 'post acknowledgment comment', prNumber },
 	);
 	if (comment) {
