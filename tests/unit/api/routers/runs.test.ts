@@ -276,7 +276,7 @@ describe('runsRouter', () => {
 			expect(result).toEqual(mockMeta);
 		});
 
-		it('includes request, model, and createdAt in returned metadata', async () => {
+		it('includes model and createdAt in returned metadata', async () => {
 			const createdAt = new Date('2026-02-18T10:00:00.000Z');
 			const mockMeta = [
 				{
@@ -285,7 +285,6 @@ describe('runsRouter', () => {
 					outputTokens: 50,
 					model: 'claude-sonnet-4-5',
 					createdAt,
-					request: '[{"role":"user","content":"hello"}]',
 				},
 			];
 			mockListLlmCallsMeta.mockResolvedValue(mockMeta);
@@ -296,7 +295,6 @@ describe('runsRouter', () => {
 			expect(result[0]).toMatchObject({
 				model: 'claude-sonnet-4-5',
 				createdAt,
-				request: '[{"role":"user","content":"hello"}]',
 			});
 		});
 	});

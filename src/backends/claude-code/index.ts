@@ -452,7 +452,7 @@ export class ClaudeCodeBackend implements AgentBackend {
 					}).catch((err) => {
 						logger.warn('Failed to store Claude Code LLM call in real-time', {
 							runId: input.runId,
-							turn: turnCount,
+							turn: thisTurn,
 							error: String(err),
 						});
 					});
