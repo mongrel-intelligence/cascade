@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process';
 
+import type { AgentCapabilities } from '../agents/shared/capabilities.js';
+export type { AgentCapabilities } from '../agents/shared/capabilities.js';
 import {
 	formatPRComments,
 	formatPRDetails,
@@ -59,28 +61,6 @@ const SESSION_TOOL = 'Finish';
 
 const ALL_SDK_TOOLS = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
 const READ_ONLY_SDK_TOOLS = ['Read', 'Bash', 'Glob', 'Grep'];
-
-// ============================================================================
-// AgentCapabilities
-// ============================================================================
-
-/**
- * Describes what a particular agent type is allowed to do.
- * Used to gate both llmist gadget inclusion (base.ts) and
- * Claude Code tool filtering (agent-profiles.ts) from a single source.
- */
-export interface AgentCapabilities {
-	/** Can the agent read and write files? (false = read-only) */
-	canEditFiles: boolean;
-	/** Can the agent create GitHub pull requests? */
-	canCreatePR: boolean;
-	/** Can the agent update PM checklist items? */
-	canUpdateChecklists: boolean;
-	/** Does the agent need a GitHub token for API calls? */
-	needsGitHubToken: boolean;
-	/** True for agents that only interact with the PM system (no repo changes) */
-	isReadOnly: boolean;
-}
 
 // ============================================================================
 // AgentProfile Interface
@@ -486,7 +466,6 @@ const briefingProfile: AgentProfile = {
 		canEditFiles: true,
 		canCreatePR: false,
 		canUpdateChecklists: true,
-		needsGitHubToken: false,
 		isReadOnly: false,
 	},
 };
@@ -502,7 +481,6 @@ const planningProfile: AgentProfile = {
 		canEditFiles: false,
 		canCreatePR: false,
 		canUpdateChecklists: false,
-		needsGitHubToken: false,
 		isReadOnly: true,
 	},
 };
@@ -518,7 +496,6 @@ const reviewProfile: AgentProfile = {
 		canEditFiles: false,
 		canCreatePR: false,
 		canUpdateChecklists: false,
-		needsGitHubToken: true,
 		isReadOnly: true,
 	},
 
@@ -544,7 +521,6 @@ const respondToPlanningCommentProfile: AgentProfile = {
 		canEditFiles: false,
 		canCreatePR: false,
 		canUpdateChecklists: true,
-		needsGitHubToken: false,
 		isReadOnly: true,
 	},
 };
@@ -567,7 +543,6 @@ const respondToCIProfile: AgentProfile = {
 		canEditFiles: true,
 		canCreatePR: false,
 		canUpdateChecklists: true,
-		needsGitHubToken: true,
 		isReadOnly: false,
 	},
 
@@ -598,7 +573,6 @@ const respondToPRCommentProfile: AgentProfile = {
 		canEditFiles: true,
 		canCreatePR: false,
 		canUpdateChecklists: false,
-		needsGitHubToken: true,
 		isReadOnly: false,
 	},
 };
@@ -614,7 +588,6 @@ const defaultProfile: AgentProfile = {
 		canEditFiles: true,
 		canCreatePR: true,
 		canUpdateChecklists: true,
-		needsGitHubToken: false,
 		isReadOnly: false,
 	},
 };
@@ -622,10 +595,6 @@ const defaultProfile: AgentProfile = {
 const implementationProfile: AgentProfile = {
 	...defaultProfile,
 	needsGitHubToken: true,
-	capabilities: {
-		...defaultProfile.capabilities,
-		needsGitHubToken: true,
-	},
 };
 
 // ============================================================================

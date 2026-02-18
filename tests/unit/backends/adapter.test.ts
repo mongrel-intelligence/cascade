@@ -196,7 +196,6 @@ function makeMockProfile(overrides?: Partial<AgentProfile>): AgentProfile {
 			canEditFiles: true,
 			canCreatePR: true,
 			canUpdateChecklists: true,
-			needsGitHubToken: false,
 			isReadOnly: false,
 		},
 		...overrides,

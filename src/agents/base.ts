@@ -32,6 +32,7 @@ import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../t
 import { logger } from '../utils/logging.js';
 import { extractPRUrl } from '../utils/prUrl.js';
 import { type BuilderType, createConfiguredBuilder } from './shared/builderFactory.js';
+import { getAgentCapabilities } from './shared/capabilities.js';
 import { type FileLogger, executeAgentLifecycle } from './shared/lifecycle.js';
 import { resolveModelConfig } from './shared/modelResolution.js';
 import { buildPromptContext } from './shared/promptContext.js';
@@ -262,18 +263,17 @@ Start by listing the contents of the log directory, then read and analyze the lo
 // ============================================================================
 
 function getBaseAgentGadgets(agentType: string) {
-	// Planning agents are read-only - no file editing capabilities
-	const isReadOnlyAgent = agentType === 'planning' || agentType === 'respond-to-planning-comment';
+	const caps = getAgentCapabilities(agentType);
 
 	return [
-		// Filesystem gadgets (read-only for planning)
+		// Filesystem gadgets (read-only when canEditFiles is false)
 		new ListDirectory(),
 		new ReadFile(),
 		new RipGrep(),
 		new AstGrep(),
-		...(isReadOnlyAgent
-			? []
-			: [new FileSearchAndReplace(), new FileMultiEdit(), new WriteFile(), new VerifyChanges()]),
+		...(caps.canEditFiles
+			? [new FileSearchAndReplace(), new FileMultiEdit(), new WriteFile(), new VerifyChanges()]
+			: []),
 		// Shell commands via tmux (no timeout issues)
 		new Tmux(),
 		new Sleep(),
@@ -281,8 +281,8 @@ function getBaseAgentGadgets(agentType: string) {
 		new TodoUpsert(),
 		new TodoUpdateStatus(),
 		new TodoDelete(),
-		// GitHub gadgets (no PR creation for planning)
-		...(isReadOnlyAgent ? [] : [new CreatePR()]),
+		// GitHub gadgets (PR creation gated by capability)
+		...(caps.canCreatePR ? [new CreatePR()] : []),
 		// PM gadgets (work items, comments, checklists — PM-agnostic)
 		new ReadWorkItem(),
 		new PostComment(),
@@ -290,9 +290,9 @@ function getBaseAgentGadgets(agentType: string) {
 		new CreateWorkItem(),
 		new ListWorkItems(),
 		new AddChecklist(),
-		// UpdateChecklistItem not available for planning - prevents marking items complete prematurely
-		// But respond-to-planning-comment CAN update checklist items (user may ask to check/uncheck steps)
-		...(agentType === 'planning' ? [] : [new PMUpdateChecklistItem()]),
+		// UpdateChecklistItem gated by capability — prevents planning from marking items complete
+		// prematurely, while respond-to-planning-comment CAN update them
+		...(caps.canUpdateChecklists ? [new PMUpdateChecklistItem()] : []),
 		// Session control
 		new Finish(),
 	];
