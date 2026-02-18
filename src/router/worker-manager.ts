@@ -33,7 +33,10 @@ function buildWorkerEnv(job: Job<CascadeJob>): string[] {
 		`LOG_LEVEL=${process.env.LOG_LEVEL || 'info'}`,
 	];
 
-	// Workers resolve project secrets from the database — no env var injection needed.
+	// Workers resolve project secrets from the database, but need the master key to decrypt them.
+	if (process.env.CREDENTIAL_MASTER_KEY)
+		env.push(`CREDENTIAL_MASTER_KEY=${process.env.CREDENTIAL_MASTER_KEY}`);
+
 	// CLAUDE_CODE_OAUTH_TOKEN is for the Claude Code backend (subscription auth).
 	if (process.env.CLAUDE_CODE_OAUTH_TOKEN)
 		env.push(`CLAUDE_CODE_OAUTH_TOKEN=${process.env.CLAUDE_CODE_OAUTH_TOKEN}`);
