@@ -1,5 +1,5 @@
 import { Gadget, z } from 'llmist';
-import { recordPRCreation } from '../sessionState.js';
+import { getBaseBranch, recordPRCreation } from '../sessionState.js';
 import { createPR } from './core/createPR.js';
 
 export class CreatePR extends Gadget({
@@ -32,11 +32,6 @@ If hooks fail or timeout, the full output will be shown.`,
 			.describe('The pull request title (also used as commit message if committing)'),
 		body: z.string().describe('The pull request description (supports GitHub markdown)'),
 		head: z.string().describe('The name of the branch where your changes are implemented'),
-		base: z
-			.string()
-			.describe(
-				'The name of the branch you want the changes pulled into (use the base branch specified in your system prompt)',
-			),
 		draft: z.boolean().optional().describe('Create as a draft pull request (default: false)'),
 		commit: z
 			.boolean()
@@ -55,9 +50,9 @@ If hooks fail or timeout, the full output will be shown.`,
 				title: 'feat: add user authentication',
 				body: '## Summary\n\nAdds OAuth2 authentication flow.\n\n## Changes\n\n- Added login page\n- Integrated with auth provider\n- Added session management',
 				head: 'feature/auth',
-				base: 'dev',
 			},
-			comment: 'Full workflow: commits all changes, pushes, and creates PR against dev branch',
+			comment:
+				'Full workflow: commits all changes, pushes, and creates PR (base branch is auto-resolved)',
 		},
 		{
 			params: {
@@ -65,7 +60,6 @@ If hooks fail or timeout, the full output will be shown.`,
 				title: 'fix: resolve null pointer in checkout',
 				body: 'Fixes #123\n\nAdded null check before accessing cart items.',
 				head: 'fix/checkout-null',
-				base: 'develop',
 				draft: true,
 				commitMessage: 'fix(checkout): add null check for cart items',
 			},
@@ -77,7 +71,6 @@ If hooks fail or timeout, the full output will be shown.`,
 				title: 'chore: update dependencies',
 				body: 'Updated all dependencies to latest versions.',
 				head: 'chore/deps',
-				base: 'main',
 				commit: false,
 				push: false,
 			},
@@ -90,7 +83,7 @@ If hooks fail or timeout, the full output will be shown.`,
 			title: params.title,
 			body: params.body,
 			head: params.head,
-			base: params.base,
+			base: getBaseBranch(),
 			draft: params.draft,
 			commit: params.commit,
 			commitMessage: params.commitMessage,

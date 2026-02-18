@@ -42,6 +42,8 @@ export interface CreateBuilderOptions {
 	llmCallAccumulator?: AccumulatedLlmCall[];
 	/** Run ID for real-time LLM call logging (resolved before builder creation) */
 	runId?: string;
+	/** Base branch for PR creation (e.g. 'main', 'dev'). Passed to session state. */
+	baseBranch?: string;
 }
 
 const MAX_GADGETS_PER_RESPONSE = 25;
@@ -70,7 +72,7 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 
 	// Initialize session state for gadgets (e.g., Finish checks PR requirement for implementation)
 	if (!skipSessionState) {
-		initSessionState(agentType);
+		initSessionState(agentType, options.baseBranch);
 	}
 
 	let builder = new AgentBuilder(client)

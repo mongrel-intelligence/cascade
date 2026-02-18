@@ -13,8 +13,6 @@ Use the CreatePR gadget to finalize your work. It handles the full workflow auto
 2. Push the branch to remote
 3. Create the pull request
 
-The target base branch is set automatically — do not specify the `base` parameter.
-
 Set `commit=false` or `push=false` if you've already done those steps manually.
 
 **GitHub CLI (`gh`) for other operations:**
