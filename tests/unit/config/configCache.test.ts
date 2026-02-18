@@ -49,24 +49,6 @@ describe('configCache', () => {
 		});
 	});
 
-	describe('secrets cache', () => {
-		it('returns null when no cached secrets', () => {
-			expect(configCache.getSecrets('project1')).toBeNull();
-		});
-
-		it('caches and retrieves secrets', () => {
-			const secrets = { GITHUB_TOKEN: 'ghp_abc', TRELLO_API_KEY: 'trello123' };
-			configCache.setSecrets('project1', secrets);
-			expect(configCache.getSecrets('project1')).toEqual(secrets);
-		});
-
-		it('is cleared by invalidate()', () => {
-			configCache.setSecrets('project1', { KEY: 'val' });
-			configCache.invalidate();
-			expect(configCache.getSecrets('project1')).toBeNull();
-		});
-	});
-
 	describe('config cache', () => {
 		it('returns null when no cached config', () => {
 			expect(configCache.getConfig()).toBeNull();
