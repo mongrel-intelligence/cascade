@@ -545,6 +545,7 @@ export async function executeWithBackend(
 				success: result.success,
 				output: result.output,
 				prUrl: result.prUrl,
+				progressCommentId: monitor?.getProgressCommentId() ?? undefined,
 				error: result.error,
 				cost: result.cost,
 				logBuffer: logBuffer ?? result.logBuffer,
