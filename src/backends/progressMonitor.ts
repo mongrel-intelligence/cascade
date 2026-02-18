@@ -137,8 +137,13 @@ export class ProgressMonitor implements ProgressReporter {
 			clearInterval(this.timer);
 			this.timer = null;
 		}
-		// Clean up state file on stop
-		clearProgressCommentId(this.config.repoDir);
+		// Clean up state file on stop (best-effort — stop() is called from finally
+		// blocks, so an rmSync failure must not mask the actual agent result)
+		try {
+			clearProgressCommentId(this.config.repoDir);
+		} catch {
+			// State file cleanup is best-effort
+		}
 	}
 
 	// ── Internal ──
