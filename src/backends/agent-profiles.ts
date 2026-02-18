@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-import type { AgentCapabilities } from '../agents/shared/capabilities.js';
+import { type AgentCapabilities, getAgentCapabilities } from '../agents/shared/capabilities.js';
 export type { AgentCapabilities } from '../agents/shared/capabilities.js';
 import {
 	formatPRComments,
@@ -462,12 +462,7 @@ const briefingProfile: AgentProfile = {
 	needsGitHubToken: false,
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildWorkItemTaskPrompt,
-	capabilities: {
-		canEditFiles: true,
-		canCreatePR: false,
-		canUpdateChecklists: true,
-		isReadOnly: false,
-	},
+	capabilities: getAgentCapabilities('briefing'),
 };
 
 const planningProfile: AgentProfile = {
@@ -477,12 +472,7 @@ const planningProfile: AgentProfile = {
 	needsGitHubToken: false,
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildWorkItemTaskPrompt,
-	capabilities: {
-		canEditFiles: false,
-		canCreatePR: false,
-		canUpdateChecklists: false,
-		isReadOnly: true,
-	},
+	capabilities: getAgentCapabilities('planning'),
 };
 
 const reviewProfile: AgentProfile = {
@@ -492,12 +482,7 @@ const reviewProfile: AgentProfile = {
 	needsGitHubToken: true,
 	fetchContext: fetchReviewContext,
 	buildTaskPrompt: buildReviewTaskPrompt,
-	capabilities: {
-		canEditFiles: false,
-		canCreatePR: false,
-		canUpdateChecklists: false,
-		isReadOnly: true,
-	},
+	capabilities: getAgentCapabilities('review'),
 
 	async preExecute({ input, logWriter }: PreExecuteParams): Promise<void> {
 		const repoFullName = input.repoFullName as string;
@@ -517,12 +502,7 @@ const respondToPlanningCommentProfile: AgentProfile = {
 	needsGitHubToken: false,
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildCommentResponseTaskPrompt,
-	capabilities: {
-		canEditFiles: false,
-		canCreatePR: false,
-		canUpdateChecklists: true,
-		isReadOnly: true,
-	},
+	capabilities: getAgentCapabilities('respond-to-planning-comment'),
 };
 
 const respondToCIProfile: AgentProfile = {
@@ -539,12 +519,7 @@ const respondToCIProfile: AgentProfile = {
 	blockGitPush: false,
 	fetchContext: fetchCIContext,
 	buildTaskPrompt: buildCITaskPrompt,
-	capabilities: {
-		canEditFiles: true,
-		canCreatePR: false,
-		canUpdateChecklists: true,
-		isReadOnly: false,
-	},
+	capabilities: getAgentCapabilities('respond-to-ci'),
 
 	async preExecute({ input, logWriter }: PreExecuteParams): Promise<void> {
 		const repoFullName = input.repoFullName as string;
@@ -569,12 +544,7 @@ const respondToPRCommentProfile: AgentProfile = {
 	blockGitPush: false,
 	fetchContext: fetchPRCommentResponseContext,
 	buildTaskPrompt: buildPRCommentResponseTaskPrompt,
-	capabilities: {
-		canEditFiles: true,
-		canCreatePR: false,
-		canUpdateChecklists: false,
-		isReadOnly: false,
-	},
+	capabilities: getAgentCapabilities('respond-to-pr-comment'),
 };
 
 const defaultProfile: AgentProfile = {
@@ -584,17 +554,13 @@ const defaultProfile: AgentProfile = {
 	needsGitHubToken: false,
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildWorkItemTaskPrompt,
-	capabilities: {
-		canEditFiles: true,
-		canCreatePR: true,
-		canUpdateChecklists: true,
-		isReadOnly: false,
-	},
+	capabilities: getAgentCapabilities('debug'),
 };
 
 const implementationProfile: AgentProfile = {
 	...defaultProfile,
 	needsGitHubToken: true,
+	capabilities: getAgentCapabilities('implementation'),
 };
 
 // ============================================================================

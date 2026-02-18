@@ -36,8 +36,8 @@ const DEFAULT_CAPABILITIES: AgentCapabilities = {
 };
 
 /**
- * Capabilities per agent type. Must stay in sync with the AgentProfile
- * definitions in backends/agent-profiles.ts.
+ * Capabilities per agent type — single source of truth.
+ * AgentProfile in backends/agent-profiles.ts consumes these via getAgentCapabilities().
  */
 const CAPABILITIES_REGISTRY: Record<string, AgentCapabilities> = {
 	briefing: {
