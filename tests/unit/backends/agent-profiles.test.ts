@@ -15,9 +15,61 @@ vi.mock('../../../src/config/reviewConfig.js', () => ({
 }));
 
 vi.mock('../../../src/gadgets/ListDirectory.js', () => ({
-	ListDirectory: vi.fn().mockImplementation(() => ({
-		execute: vi.fn(() => 'directory listing'),
-	})),
+	ListDirectory: vi.fn().mockImplementation(() => ({ execute: vi.fn(() => 'directory listing') })),
+}));
+vi.mock('../../../src/gadgets/ReadFile.js', () => ({
+	ReadFile: vi.fn().mockImplementation(() => ({})),
+}));
+vi.mock('../../../src/gadgets/RipGrep.js', () => ({
+	RipGrep: vi.fn().mockImplementation(() => ({})),
+}));
+vi.mock('../../../src/gadgets/AstGrep.js', () => ({
+	AstGrep: vi.fn().mockImplementation(() => ({})),
+}));
+vi.mock('../../../src/gadgets/FileSearchAndReplace.js', () => ({
+	FileSearchAndReplace: vi.fn().mockImplementation(() => ({})),
+}));
+vi.mock('../../../src/gadgets/FileMultiEdit.js', () => ({
+	FileMultiEdit: vi.fn().mockImplementation(() => ({})),
+}));
+vi.mock('../../../src/gadgets/WriteFile.js', () => ({
+	WriteFile: vi.fn().mockImplementation(() => ({})),
+}));
+vi.mock('../../../src/gadgets/VerifyChanges.js', () => ({
+	VerifyChanges: vi.fn().mockImplementation(() => ({})),
+}));
+vi.mock('../../../src/gadgets/tmux.js', () => ({
+	Tmux: vi.fn().mockImplementation(() => ({})),
+}));
+vi.mock('../../../src/gadgets/Sleep.js', () => ({
+	Sleep: vi.fn().mockImplementation(() => ({})),
+}));
+vi.mock('../../../src/gadgets/todo/index.js', () => ({
+	TodoUpsert: vi.fn().mockImplementation(() => ({})),
+	TodoUpdateStatus: vi.fn().mockImplementation(() => ({})),
+	TodoDelete: vi.fn().mockImplementation(() => ({})),
+}));
+vi.mock('../../../src/gadgets/Finish.js', () => ({
+	Finish: vi.fn().mockImplementation(() => ({})),
+}));
+vi.mock('../../../src/gadgets/github/index.js', () => ({
+	CreatePR: vi.fn().mockImplementation(() => ({})),
+	GetPRChecks: vi.fn().mockImplementation(() => ({})),
+	GetPRComments: vi.fn().mockImplementation(() => ({})),
+	GetPRDetails: vi.fn().mockImplementation(() => ({})),
+	GetPRDiff: vi.fn().mockImplementation(() => ({})),
+	PostPRComment: vi.fn().mockImplementation(() => ({})),
+	ReplyToReviewComment: vi.fn().mockImplementation(() => ({})),
+	UpdatePRComment: vi.fn().mockImplementation(() => ({})),
+}));
+vi.mock('../../../src/gadgets/pm/index.js', () => ({
+	AddChecklist: vi.fn().mockImplementation(() => ({})),
+	CreateWorkItem: vi.fn().mockImplementation(() => ({})),
+	ListWorkItems: vi.fn().mockImplementation(() => ({})),
+	PMUpdateChecklistItem: vi.fn().mockImplementation(() => ({})),
+	PostComment: vi.fn().mockImplementation(() => ({})),
+	ReadWorkItem: vi.fn().mockImplementation(() => ({})),
+	UpdateWorkItem: vi.fn().mockImplementation(() => ({})),
 }));
 
 vi.mock('../../../src/gadgets/github/core/getPRChecks.js', () => ({
@@ -229,5 +281,61 @@ describe('getAgentProfile', () => {
 		const tools = [{ name: 'Anything', description: '', cliCommand: '', parameters: {} }];
 		expect(profile.filterTools(tools)).toHaveLength(1);
 		expect(profile.needsGitHubToken).toBe(false);
+	});
+});
+
+describe('AgentProfile.getLlmistGadgets', () => {
+	it('returns non-empty gadget array for implementation', () => {
+		const profile = getAgentProfile('implementation');
+		const gadgets = profile.getLlmistGadgets('implementation');
+		expect(gadgets).toBeDefined();
+		expect(gadgets.length).toBeGreaterThan(0);
+	});
+
+	it('returns non-empty gadget array for planning (read-only)', () => {
+		const profile = getAgentProfile('planning');
+		const gadgets = profile.getLlmistGadgets('planning');
+		expect(gadgets).toBeDefined();
+		expect(gadgets.length).toBeGreaterThan(0);
+	});
+
+	it('returns non-empty gadget array for review', () => {
+		const profile = getAgentProfile('review');
+		const gadgets = profile.getLlmistGadgets('review');
+		expect(gadgets).toBeDefined();
+		expect(gadgets.length).toBeGreaterThan(0);
+	});
+
+	it('returns non-empty gadget array for respond-to-ci', () => {
+		const profile = getAgentProfile('respond-to-ci');
+		const gadgets = profile.getLlmistGadgets('respond-to-ci');
+		expect(gadgets).toBeDefined();
+		expect(gadgets.length).toBeGreaterThan(0);
+	});
+
+	it('returns non-empty gadget array for respond-to-pr-comment', () => {
+		const profile = getAgentProfile('respond-to-pr-comment');
+		const gadgets = profile.getLlmistGadgets('respond-to-pr-comment');
+		expect(gadgets).toBeDefined();
+		expect(gadgets.length).toBeGreaterThan(0);
+	});
+
+	it('each profile has a getLlmistGadgets method', () => {
+		const agentTypes = [
+			'briefing',
+			'planning',
+			'implementation',
+			'review',
+			'respond-to-planning-comment',
+			'respond-to-review',
+			'respond-to-pr-comment',
+			'respond-to-ci',
+			'debug',
+		];
+		for (const agentType of agentTypes) {
+			const profile = getAgentProfile(agentType);
+			expect(profile.getLlmistGadgets).toBeDefined();
+			expect(typeof profile.getLlmistGadgets).toBe('function');
+		}
 	});
 });

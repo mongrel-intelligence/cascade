@@ -11,9 +11,39 @@ import {
 	readPRFileContents,
 } from '../agents/shared/prFormatting.js';
 import type { ContextFile } from '../agents/utils/setup.js';
+import { AstGrep } from '../gadgets/AstGrep.js';
+import { FileMultiEdit } from '../gadgets/FileMultiEdit.js';
+import { FileSearchAndReplace } from '../gadgets/FileSearchAndReplace.js';
+import { Finish } from '../gadgets/Finish.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
+import { ReadFile } from '../gadgets/ReadFile.js';
+import { RipGrep } from '../gadgets/RipGrep.js';
+import { Sleep } from '../gadgets/Sleep.js';
+import { VerifyChanges } from '../gadgets/VerifyChanges.js';
+import { WriteFile } from '../gadgets/WriteFile.js';
 import { formatCheckStatus } from '../gadgets/github/core/getPRChecks.js';
+import {
+	CreatePR,
+	GetPRChecks,
+	GetPRComments,
+	GetPRDetails,
+	GetPRDiff,
+	PostPRComment,
+	ReplyToReviewComment,
+	UpdatePRComment,
+} from '../gadgets/github/index.js';
 import { readWorkItem } from '../gadgets/pm/core/readWorkItem.js';
+import {
+	AddChecklist,
+	CreateWorkItem,
+	ListWorkItems,
+	PMUpdateChecklistItem,
+	PostComment,
+	ReadWorkItem,
+	UpdateWorkItem,
+} from '../gadgets/pm/index.js';
+import { Tmux } from '../gadgets/tmux.js';
+import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
 import { githubClient } from '../github/client.js';
 import type { AgentInput } from '../types/index.js';
 import { resolveSquintDbPath } from '../utils/squintDb.js';
@@ -97,6 +127,102 @@ export interface AgentProfile {
 	preExecute?(params: PreExecuteParams): Promise<void>;
 	/** Capability summary — used by llmist backend to select gadgets */
 	capabilities: AgentCapabilities;
+	/**
+	 * Return the gadget instances for the llmist backend.
+	 * Each call creates fresh instances — caller must not reuse returned gadgets.
+	 */
+	getLlmistGadgets(agentType: string): unknown[];
+}
+
+// ============================================================================
+// Llmist Gadget Builders
+// ============================================================================
+
+/**
+ * Build the standard set of gadgets for work-item-based agents (briefing, planning,
+ * implementation, debug). Mirrors the logic in agents/base.ts getBaseAgentGadgets().
+ */
+function buildWorkItemLlmistGadgets(caps: AgentCapabilities): unknown[] {
+	return [
+		// Filesystem gadgets
+		new ListDirectory(),
+		new ReadFile(),
+		new RipGrep(),
+		new AstGrep(),
+		...(caps.canEditFiles
+			? [new FileSearchAndReplace(), new FileMultiEdit(), new WriteFile(), new VerifyChanges()]
+			: []),
+		// Shell commands
+		new Tmux(),
+		new Sleep(),
+		// Task tracking
+		new TodoUpsert(),
+		new TodoUpdateStatus(),
+		new TodoDelete(),
+		// GitHub PR creation (gated by capability)
+		...(caps.canCreatePR ? [new CreatePR()] : []),
+		// PM gadgets
+		new ReadWorkItem(),
+		new PostComment(),
+		new UpdateWorkItem(),
+		new CreateWorkItem(),
+		new ListWorkItems(),
+		new AddChecklist(),
+		...(caps.canUpdateChecklists ? [new PMUpdateChecklistItem()] : []),
+		// Session control
+		new Finish(),
+	];
+}
+
+/**
+ * Build gadgets for PR-based agents (review, respond-to-review, respond-to-pr-comment).
+ * Includes GitHub review tools, no file editing for pure review agents.
+ */
+function buildReviewLlmistGadgets(includeReviewComments = false): unknown[] {
+	return [
+		new ListDirectory(),
+		new ReadFile(),
+		new Tmux(),
+		new Sleep(),
+		new TodoUpsert(),
+		new TodoUpdateStatus(),
+		new TodoDelete(),
+		new GetPRDetails(),
+		new GetPRDiff(),
+		new GetPRChecks(),
+		new PostPRComment(),
+		new UpdatePRComment(),
+		...(includeReviewComments ? [new GetPRComments(), new ReplyToReviewComment()] : []),
+		new Finish(),
+	];
+}
+
+/**
+ * Build gadgets for PR-modifying agents (respond-to-ci, respond-to-pr-comment).
+ * Includes file editing + GitHub tools but NOT CreatePR (agents push to existing branches).
+ */
+function buildPRAgentLlmistGadgets(includeReviewComments = false): unknown[] {
+	return [
+		new ListDirectory(),
+		new ReadFile(),
+		new FileSearchAndReplace(),
+		new FileMultiEdit(),
+		new WriteFile(),
+		new AstGrep(),
+		new RipGrep(),
+		new Tmux(),
+		new Sleep(),
+		new TodoUpsert(),
+		new TodoUpdateStatus(),
+		new TodoDelete(),
+		new GetPRDetails(),
+		new GetPRDiff(),
+		new GetPRChecks(),
+		new PostPRComment(),
+		new UpdatePRComment(),
+		...(includeReviewComments ? [new GetPRComments(), new ReplyToReviewComment()] : []),
+		new Finish(),
+	];
 }
 
 // ============================================================================
@@ -463,6 +589,7 @@ const briefingProfile: AgentProfile = {
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildWorkItemTaskPrompt,
 	capabilities: getAgentCapabilities('briefing'),
+	getLlmistGadgets: (agentType) => buildWorkItemLlmistGadgets(getAgentCapabilities(agentType)),
 };
 
 const planningProfile: AgentProfile = {
@@ -473,6 +600,7 @@ const planningProfile: AgentProfile = {
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildWorkItemTaskPrompt,
 	capabilities: getAgentCapabilities('planning'),
+	getLlmistGadgets: (agentType) => buildWorkItemLlmistGadgets(getAgentCapabilities(agentType)),
 };
 
 const reviewProfile: AgentProfile = {
@@ -483,6 +611,7 @@ const reviewProfile: AgentProfile = {
 	fetchContext: fetchReviewContext,
 	buildTaskPrompt: buildReviewTaskPrompt,
 	capabilities: getAgentCapabilities('review'),
+	getLlmistGadgets: (_agentType) => buildReviewLlmistGadgets(true),
 
 	async preExecute({ input, logWriter }: PreExecuteParams): Promise<void> {
 		const repoFullName = input.repoFullName as string;
@@ -503,6 +632,7 @@ const respondToPlanningCommentProfile: AgentProfile = {
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildCommentResponseTaskPrompt,
 	capabilities: getAgentCapabilities('respond-to-planning-comment'),
+	getLlmistGadgets: (agentType) => buildWorkItemLlmistGadgets(getAgentCapabilities(agentType)),
 };
 
 const respondToCIProfile: AgentProfile = {
@@ -520,6 +650,7 @@ const respondToCIProfile: AgentProfile = {
 	fetchContext: fetchCIContext,
 	buildTaskPrompt: buildCITaskPrompt,
 	capabilities: getAgentCapabilities('respond-to-ci'),
+	getLlmistGadgets: (_agentType) => buildPRAgentLlmistGadgets(false),
 
 	async preExecute({ input, logWriter }: PreExecuteParams): Promise<void> {
 		const repoFullName = input.repoFullName as string;
@@ -545,6 +676,7 @@ const respondToPRCommentProfile: AgentProfile = {
 	fetchContext: fetchPRCommentResponseContext,
 	buildTaskPrompt: buildPRCommentResponseTaskPrompt,
 	capabilities: getAgentCapabilities('respond-to-pr-comment'),
+	getLlmistGadgets: (_agentType) => buildPRAgentLlmistGadgets(true),
 };
 
 const defaultProfile: AgentProfile = {
@@ -555,12 +687,14 @@ const defaultProfile: AgentProfile = {
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildWorkItemTaskPrompt,
 	capabilities: getAgentCapabilities('debug'),
+	getLlmistGadgets: (agentType) => buildWorkItemLlmistGadgets(getAgentCapabilities(agentType)),
 };
 
 const implementationProfile: AgentProfile = {
 	...defaultProfile,
 	needsGitHubToken: true,
 	capabilities: getAgentCapabilities('implementation'),
+	getLlmistGadgets: (agentType) => buildWorkItemLlmistGadgets(getAgentCapabilities(agentType)),
 };
 
 // ============================================================================
