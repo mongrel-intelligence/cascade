@@ -1,0 +1,95 @@
+name: Release (Merge dev to main)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run - validate only, do not merge'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  release:
+    name: Merge dev to main
+    runs-on: self-hosted
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch latest branches
+        run: |
+          git fetch origin main dev
+
+      - name: Validate dev is ahead of main
+        run: |
+          COMMITS=$(git log origin/main..origin/dev --oneline)
+          if [ -z "$COMMITS" ]; then
+            echo "::error::Nothing to release — dev has no commits ahead of main"
+            exit 1
+          fi
+          COMMIT_COUNT=$(echo "$COMMITS" | wc -l | tr -d ' ')
+          echo "Found $COMMIT_COUNT commit(s) to release:"
+          echo "$COMMITS"
+          echo "COMMITS<<EOF" >> "$GITHUB_ENV"
+          echo "$COMMITS" >> "$GITHUB_ENV"
+          echo "EOF" >> "$GITHUB_ENV"
+          echo "COMMIT_COUNT=$COMMIT_COUNT" >> "$GITHUB_ENV"
+
+      - name: Write step summary (pre-merge)
+        run: |
+          echo "## 🚀 Release Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Mode:** ${{ inputs.dry_run && 'Dry run (validation only)' || 'Live merge' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Commits to be released (${{ env.COMMIT_COUNT }}):" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ env.COMMITS }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dry run - show diff summary
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "=== DRY RUN MODE — No changes will be made ==="
+          echo ""
+          echo "Diff summary (dev vs main):"
+          git diff --stat origin/main..origin/dev
+          echo ""
+          echo "=== Dry run complete. Re-run without dry_run to perform the actual release. ==="
+
+      - name: Merge dev into main
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git checkout main
+          git merge origin/dev --no-edit -m "chore: release - merge dev into main"
+          git push origin main
+
+      - name: Write step summary (post-merge)
+        if: ${{ !inputs.dry_run }}
+        run: |
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### ✅ Release complete!" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "dev has been merged into main. The [deploy workflow](../actions/workflows/deploy.yml) will trigger automatically." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write step summary (dry run complete)
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### ✅ Dry run complete — validation passed!" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Re-run this workflow with **dry_run = false** to perform the actual release." >> "$GITHUB_STEP_SUMMARY"
