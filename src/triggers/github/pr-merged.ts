@@ -47,6 +47,22 @@ export class PRMergedTrigger implements TriggerHandler {
 			return null;
 		}
 
+		// Idempotency: skip if card is already in the MERGED list
+		// (handles concurrent webhooks from multiple PR close events)
+		const card = await trelloClient.getCard(cardId);
+		if (card.idList === mergedListId) {
+			logger.info('Card already in MERGED list, skipping duplicate move', {
+				cardId,
+				prNumber,
+			});
+			return {
+				agentType: '',
+				agentInput: {},
+				cardId,
+				prNumber,
+			};
+		}
+
 		// Move card to MERGED list
 		await trelloClient.moveCardToList(cardId, mergedListId);
 		await trelloClient.addComment(

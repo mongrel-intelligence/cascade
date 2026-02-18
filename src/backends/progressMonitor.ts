@@ -38,6 +38,25 @@ const RING_BUFFER_MAX = 20;
 const TEXT_SNIPPETS_MAX = 10;
 const COMPLETED_TASKS_MAX = 5;
 
+const INITIAL_MESSAGES: Record<string, string> = {
+	briefing:
+		'**📋 Analyzing brief** — Reading the card and gathering context to create a clear brief...',
+	planning:
+		'**🗺️ Planning implementation** — Studying the codebase and designing a step-by-step plan...',
+	implementation:
+		'**🚀 Implementing changes** — Writing code, running tests, and preparing a PR...',
+	review: '**🔍 Reviewing code** — Examining the PR changes for quality and correctness...',
+	'respond-to-planning-comment':
+		'**💬 Responding to feedback** — Reading your comment and updating the plan accordingly...',
+	'respond-to-review':
+		'**🔧 Addressing review feedback** — Making the requested changes from the code review...',
+	'respond-to-pr-comment':
+		'**💬 Responding to PR comment** — Reading your comment and taking action...',
+	'respond-to-ci':
+		'**🔧 Fixing CI failures** — Analyzing the failed checks and working on a fix...',
+	debug: '**🐛 Analyzing session logs** — Reviewing what happened and identifying issues...',
+};
+
 /**
  * Extract a meaningful detail string from tool call params.
  * Returns file paths, commands, or search patterns — the most useful
@@ -149,7 +168,10 @@ export class ProgressMonitor implements ProgressReporter {
 	// ── Internal ──
 
 	private formatInitialMessage(): string {
-		return `**🚀 Starting** (${this.config.agentType})\n\nWorking on this now. Progress updates will follow...`;
+		return (
+			INITIAL_MESSAGES[this.config.agentType] ??
+			`**🚀 Starting** (${this.config.agentType})\n\nWorking on this now. Progress updates will follow...`
+		);
 	}
 
 	private async postInitialComment(): Promise<void> {

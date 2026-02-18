@@ -206,7 +206,7 @@ describe('ProgressMonitor — tick behavior', () => {
 
 		expect(mockPMProvider.addComment).toHaveBeenCalledWith(
 			'card1',
-			'**🚀 Starting** (implementation)\n\nWorking on this now. Progress updates will follow...',
+			'**🚀 Implementing changes** — Writing code, running tests, and preparing a PR...',
 		);
 		expect(logWriter).toHaveBeenCalledWith(
 			'INFO',
@@ -638,6 +638,57 @@ describe('createProgressMonitor', () => {
 		});
 
 		expect(monitor).toBeInstanceOf(ProgressMonitor);
+	});
+});
+
+describe('ProgressMonitor — agent-specific initial messages', () => {
+	async function getInitialMessage(agentType: string): Promise<string> {
+		const monitor = new ProgressMonitor({
+			agentType,
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			trello: { cardId: 'card1' },
+		});
+
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockPMProvider.addComment.mockResolvedValue('comment-id');
+
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(0);
+		monitor.stop();
+
+		return mockPMProvider.addComment.mock.calls[0][1] as string;
+	}
+
+	it('posts briefing-specific message for briefing agent', async () => {
+		const message = await getInitialMessage('briefing');
+		expect(message).toBe(
+			'**📋 Analyzing brief** — Reading the card and gathering context to create a clear brief...',
+		);
+	});
+
+	it('posts planning-specific message for planning agent', async () => {
+		const message = await getInitialMessage('planning');
+		expect(message).toBe(
+			'**🗺️ Planning implementation** — Studying the codebase and designing a step-by-step plan...',
+		);
+	});
+
+	it('posts implementation-specific message for implementation agent', async () => {
+		const message = await getInitialMessage('implementation');
+		expect(message).toBe(
+			'**🚀 Implementing changes** — Writing code, running tests, and preparing a PR...',
+		);
+	});
+
+	it('falls back to generic message for unknown agent types', async () => {
+		const message = await getInitialMessage('future-agent');
+		expect(message).toBe(
+			'**🚀 Starting** (future-agent)\n\nWorking on this now. Progress updates will follow...',
+		);
 	});
 });
 
