@@ -303,6 +303,7 @@ export const runsRouter = router({
 				await submitDashboardJob({
 					type: 'retry-run',
 					runId: input.runId,
+					projectId: run.projectId,
 					modelOverride: input.model,
 				});
 			} else {
