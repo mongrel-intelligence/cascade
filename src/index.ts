@@ -10,11 +10,15 @@ import {
 } from './triggers/index.js';
 import { processTrelloWebhook } from './triggers/trello/webhook-handler.js';
 import { logger, setLogLevel } from './utils/index.js';
+import { flushSentry, initSentry } from './utils/sentry.js';
 
 async function main(): Promise<void> {
 	// Load environment config
 	const envConfig = loadEnvConfigSafe();
 	setLogLevel(envConfig.logLevel);
+
+	// Initialize Sentry (no-op if SENTRY_DSN is unset)
+	initSentry('cascade-server');
 
 	logger.info('Starting Cascade server', { port: envConfig.port });
 
@@ -49,14 +53,15 @@ async function main(): Promise<void> {
 	logger.info(`Cascade server listening on port ${envConfig.port || 3000}`);
 
 	// Graceful shutdown
-	const shutdown = () => {
+	const shutdown = async () => {
 		logger.info('Shutting down...');
 		server.close();
+		await flushSentry(2000);
 		process.exit(0);
 	};
 
-	process.on('SIGINT', shutdown);
-	process.on('SIGTERM', shutdown);
+	process.on('SIGINT', () => void shutdown());
+	process.on('SIGTERM', () => void shutdown());
 }
 
 main().catch((err) => {

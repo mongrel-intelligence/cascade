@@ -14,6 +14,7 @@
 
 import { serve } from '@hono/node-server';
 import { trpcServer } from '@hono/trpc-server';
+import * as Sentry from '@sentry/node';
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { cors } from 'hono/cors';
@@ -23,6 +24,10 @@ import { logoutHandler } from './api/auth/logout.js';
 import { resolveUserFromSession } from './api/auth/session.js';
 import { computeEffectiveOrgId } from './api/context.js';
 import { appRouter } from './api/router.js';
+import { initSentry } from './utils/sentry.js';
+
+// Initialize Sentry (no-op if SENTRY_DSN is unset)
+initSentry('cascade-dashboard');
 
 const app = new Hono();
 
@@ -65,6 +70,7 @@ app.notFound((c) => c.json({ error: 'Not Found' }, 404));
 // Error handler
 app.onError((err, c) => {
 	console.error('Unhandled error', { error: String(err), path: c.req.path });
+	Sentry.captureException(err);
 	return c.json({ error: 'Internal Server Error' }, 500);
 });
 

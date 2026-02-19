@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { flushSentry, initSentry } from '../utils/sentry.js';
 import { logWebhookCall } from '../utils/webhookLogger.js';
 import { type RouterProjectConfig, getProjectConfig, loadProjectConfig } from './config.js';
 import { addEyesReactionToPR } from './pre-actions.js';
@@ -436,6 +437,7 @@ app.post('/jira/webhook', async (c) => {
 async function shutdown(signal: string): Promise<void> {
 	console.log(`[Router] Received ${signal}, shutting down...`);
 	await stopWorkerProcessor();
+	await flushSentry(2000);
 	process.exit(0);
 }
 
@@ -444,6 +446,9 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 // Start server and worker processor
 async function startRouter(): Promise<void> {
+	// Initialize Sentry (no-op if SENTRY_DSN is unset)
+	initSentry('cascade-router');
+
 	await loadProjectConfig();
 
 	const port = Number(process.env.PORT) || 3000;

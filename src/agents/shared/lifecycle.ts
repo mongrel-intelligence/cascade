@@ -13,6 +13,7 @@ import { loadCascadeEnv, unloadCascadeEnv } from '../../utils/cascadeEnv.js';
 import { createFileLogger } from '../../utils/fileLogger.js';
 import { setWatchdogCleanup } from '../../utils/lifecycle.js';
 import { logger } from '../../utils/logging.js';
+import { captureRunFailure } from '../../utils/sentry.js';
 import { setupRemoteSquintDb } from '../../utils/squintDb.js';
 import { runAgentLoop } from '../utils/agentLoop.js';
 import type { AccumulatedLlmCall } from '../utils/hooks.js';
@@ -238,6 +239,16 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 	const log = createAgentLogger(fileLogger);
 
 	setWatchdogCleanup(async () => {
+		const durationMs = Date.now() - startTime;
+		captureRunFailure(new Error('Watchdog timeout'), {
+			runId,
+			agentType: options.runTracking?.agentType,
+			projectId: options.runTracking?.projectId,
+			cardId: options.runTracking?.cardId,
+			triggerType: options.runTracking?.triggerType,
+			backendName: options.runTracking?.backendName,
+			durationMs,
+		});
 		fileLogger.close();
 		await finalizeRun(
 			runId,
@@ -245,7 +256,7 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 			llmCallAccumulator,
 			{
 				status: 'timed_out',
-				durationMs: Date.now() - startTime,
+				durationMs,
 				success: false,
 				error: 'Watchdog timeout',
 			},
@@ -329,6 +340,18 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 			fileLogger.close();
 			const logBuffer = await fileLogger.getZippedBuffer();
 
+			if (result.loopTerminated) {
+				captureRunFailure(new Error('Agent terminated due to persistent loop'), {
+					runId,
+					agentType: options.runTracking?.agentType,
+					projectId: options.runTracking?.projectId,
+					cardId: options.runTracking?.cardId,
+					triggerType: options.runTracking?.triggerType,
+					backendName: options.runTracking?.backendName,
+					durationMs: Date.now() - startTime,
+				});
+			}
+
 			const completionInput: CompleteRunInput = result.loopTerminated
 				? {
 						status: 'failed',
@@ -371,6 +394,17 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 			error: String(err),
 		});
 
+		const durationMs = Date.now() - startTime;
+		captureRunFailure(err, {
+			runId,
+			agentType: options.runTracking?.agentType,
+			projectId: options.runTracking?.projectId,
+			cardId: options.runTracking?.cardId,
+			triggerType: options.runTracking?.triggerType,
+			backendName: options.runTracking?.backendName,
+			durationMs,
+		});
+
 		let logBuffer: Buffer | undefined;
 		try {
 			fileLogger.close();
@@ -379,7 +413,6 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 			// Ignore log buffer errors
 		}
 
-		const durationMs = Date.now() - startTime;
 		await finalizeRun(
 			runId,
 			fileLogger,

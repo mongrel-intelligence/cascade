@@ -21,6 +21,7 @@ import { loadCascadeEnv, unloadCascadeEnv } from '../utils/cascadeEnv.js';
 import { createFileLogger } from '../utils/fileLogger.js';
 import { setWatchdogCleanup } from '../utils/lifecycle.js';
 import { logger } from '../utils/logging.js';
+import { captureRunFailure } from '../utils/sentry.js';
 import { setupRemoteSquintDb } from '../utils/squintDb.js';
 import { getAgentProfile } from './agent-profiles.js';
 import { createProgressMonitor } from './progress.js';
@@ -437,10 +438,20 @@ export async function executeWithBackend(
 	const log = createAgentLogger(fileLogger);
 
 	setWatchdogCleanup(async () => {
+		const durationMs = Date.now() - startTime;
+		captureRunFailure(new Error('Watchdog timeout'), {
+			runId,
+			agentType,
+			projectId: input.project.id,
+			cardId: input.cardId,
+			triggerType: input.triggerType,
+			backendName: backend.name,
+			durationMs,
+		});
 		fileLogger.close();
 		await finalizeBackendRun(runId, fileLogger, {
 			status: 'timed_out',
-			durationMs: Date.now() - startTime,
+			durationMs,
 			success: false,
 			error: 'Watchdog timeout',
 		});
@@ -564,6 +575,17 @@ export async function executeWithBackend(
 			error: String(err),
 		});
 
+		const durationMs = Date.now() - startTime;
+		captureRunFailure(err, {
+			runId,
+			agentType,
+			projectId: input.project.id,
+			cardId: input.cardId,
+			triggerType: input.triggerType,
+			backendName: backend.name,
+			durationMs,
+		});
+
 		let logBuffer: Buffer | undefined;
 		try {
 			fileLogger.close();
@@ -572,7 +594,6 @@ export async function executeWithBackend(
 			// Ignore log buffer errors
 		}
 
-		const durationMs = Date.now() - startTime;
 		await finalizeBackendRun(runId, fileLogger, {
 			status: 'failed',
 			durationMs,

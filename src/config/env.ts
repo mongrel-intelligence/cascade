@@ -2,6 +2,7 @@ export interface EnvConfig {
 	port: number;
 	logLevel: string;
 	databaseUrl: string;
+	sentryDsn?: string;
 }
 
 function getEnvOrThrow(key: string): string {
@@ -21,6 +22,7 @@ export function loadEnvConfig(): EnvConfig {
 		port: Number.parseInt(getEnvOrDefault('PORT', '3000'), 10),
 		logLevel: getEnvOrDefault('LOG_LEVEL', 'info'),
 		databaseUrl: getEnvOrThrow('DATABASE_URL'),
+		sentryDsn: process.env.SENTRY_DSN,
 	};
 }
 
@@ -29,5 +31,6 @@ export function loadEnvConfigSafe(): Omit<EnvConfig, 'databaseUrl'> & { database
 		port: Number.parseInt(getEnvOrDefault('PORT', '3000'), 10),
 		logLevel: getEnvOrDefault('LOG_LEVEL', 'info'),
 		databaseUrl: process.env.DATABASE_URL,
+		sentryDsn: process.env.SENTRY_DSN,
 	};
 }

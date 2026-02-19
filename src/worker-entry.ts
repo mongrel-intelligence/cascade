@@ -25,6 +25,7 @@ import {
 import { processTrelloWebhook } from './triggers/trello/webhook-handler.js';
 import { scrubSensitiveEnv } from './utils/envScrub.js';
 import { logger, setLogLevel } from './utils/index.js';
+import { captureWorkerError, flushSentry, initSentry } from './utils/sentry.js';
 
 interface TrelloJobData {
 	type: 'trello';
@@ -151,6 +152,9 @@ async function main(): Promise<void> {
 	const envConfig = loadEnvConfigSafe();
 	setLogLevel(envConfig.logLevel);
 
+	// Initialize Sentry (no-op if SENTRY_DSN is unset)
+	initSentry('cascade-worker');
+
 	logger.info('[Worker] Starting job', { jobId, jobType });
 
 	// Initialize database pool (caches connection string before we scrub DATABASE_URL)
@@ -223,9 +227,12 @@ async function main(): Promise<void> {
 		}
 
 		logger.info('[Worker] Job completed successfully', { jobId });
+		await flushSentry(2000);
 		process.exit(0);
 	} catch (err) {
 		logger.error('[Worker] Job failed', { jobId, error: String(err) });
+		captureWorkerError(err, { jobId, jobType });
+		await flushSentry(2000);
 		process.exit(1);
 	}
 }

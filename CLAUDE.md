@@ -77,6 +77,7 @@ Optional (infrastructure):
 - `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled)
 - `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code backend (subscription auth)
 - `CREDENTIAL_MASTER_KEY` - 64-char hex string (32-byte AES-256 key) for encrypting credentials at rest. Generate with `npm run credentials:generate-key`. When set, all new/updated credentials are encrypted automatically; existing plaintext credentials continue to work.
+- `SENTRY_DSN` - Sentry Data Source Name for error reporting. When set, failed runs, worker errors, and unhandled exceptions are automatically reported to Sentry with structured context (runId, agentType, projectId, cardId). Zero behavior change when unset — the SDK is a no-op. **Not a secret** — safe to commit to environment configs.
 
 **Project credentials** (`GITHUB_TOKEN_IMPLEMENTER`, `GITHUB_TOKEN_REVIEWER`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored in the `credentials` table (org-scoped, encrypted at rest when `CREDENTIAL_MASTER_KEY` is set) with optional per-project overrides via `project_credential_overrides`. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
 

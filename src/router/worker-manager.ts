@@ -1,6 +1,7 @@
 import { type Job, Worker } from 'bullmq';
 import Docker from 'dockerode';
 import { findProjectByRepo, getProjectSecrets } from '../config/provider.js';
+import { captureWorkerError } from '../utils/sentry.js';
 import { routerConfig } from './config.js';
 import { notifyTimeout } from './notifications.js';
 import type { CascadeJob } from './queue.js';
@@ -83,6 +84,9 @@ async function buildWorkerEnv(job: Job<CascadeJob>): Promise<string[]> {
 	// CLAUDE_CODE_OAUTH_TOKEN is for the Claude Code backend (subscription auth).
 	if (process.env.CLAUDE_CODE_OAUTH_TOKEN)
 		env.push(`CLAUDE_CODE_OAUTH_TOKEN=${process.env.CLAUDE_CODE_OAUTH_TOKEN}`);
+
+	// SENTRY_DSN is a public identifier (not a secret); pass to workers for error reporting.
+	if (process.env.SENTRY_DSN) env.push(`SENTRY_DSN=${process.env.SENTRY_DSN}`);
 
 	return env;
 }
@@ -187,6 +191,7 @@ async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 			jobId,
 			error: String(err),
 		});
+		captureWorkerError(err, { jobId, jobType: job.data.type });
 		throw err;
 	}
 }
@@ -298,6 +303,7 @@ export function startWorkerProcessor(): void {
 			jobId: job?.id,
 			error: String(err),
 		});
+		captureWorkerError(err, { jobId: job?.id, jobType: job?.data?.type });
 	});
 
 	bullWorker.on('error', (err) => {
@@ -332,6 +338,7 @@ export function startWorkerProcessor(): void {
 			jobId: job?.id,
 			error: String(err),
 		});
+		captureWorkerError(err, { jobId: job?.id, jobType: (job?.data as { type?: string })?.type });
 	});
 
 	dashboardWorker.on('error', (err) => {
