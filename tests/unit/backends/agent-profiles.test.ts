@@ -14,62 +14,75 @@ vi.mock('../../../src/config/reviewConfig.js', () => ({
 	estimateTokens: vi.fn(() => 100),
 }));
 
+/** Create a mock class with the given name so constructor.name works in assertions */
+function mockClass(name: string) {
+	const cls = { [name]: class {} }[name];
+	return vi.fn().mockImplementation(() => new cls());
+}
+
+/** Create a mock class with the given name and extra properties */
+function mockClassWith(name: string, props: Record<string, unknown>) {
+	const cls = { [name]: class {} }[name];
+	return vi.fn().mockImplementation(() => Object.assign(new cls(), props));
+}
+
 vi.mock('../../../src/gadgets/ListDirectory.js', () => ({
-	ListDirectory: vi.fn().mockImplementation(() => ({ execute: vi.fn(() => 'directory listing') })),
+	ListDirectory: mockClassWith('ListDirectory', { execute: vi.fn(() => 'directory listing') }),
 }));
 vi.mock('../../../src/gadgets/ReadFile.js', () => ({
-	ReadFile: vi.fn().mockImplementation(() => ({})),
+	ReadFile: mockClass('ReadFile'),
 }));
 vi.mock('../../../src/gadgets/RipGrep.js', () => ({
-	RipGrep: vi.fn().mockImplementation(() => ({})),
+	RipGrep: mockClass('RipGrep'),
 }));
 vi.mock('../../../src/gadgets/AstGrep.js', () => ({
-	AstGrep: vi.fn().mockImplementation(() => ({})),
+	AstGrep: mockClass('AstGrep'),
 }));
 vi.mock('../../../src/gadgets/FileSearchAndReplace.js', () => ({
-	FileSearchAndReplace: vi.fn().mockImplementation(() => ({})),
+	FileSearchAndReplace: mockClass('FileSearchAndReplace'),
 }));
 vi.mock('../../../src/gadgets/FileMultiEdit.js', () => ({
-	FileMultiEdit: vi.fn().mockImplementation(() => ({})),
+	FileMultiEdit: mockClass('FileMultiEdit'),
 }));
 vi.mock('../../../src/gadgets/WriteFile.js', () => ({
-	WriteFile: vi.fn().mockImplementation(() => ({})),
+	WriteFile: mockClass('WriteFile'),
 }));
 vi.mock('../../../src/gadgets/VerifyChanges.js', () => ({
-	VerifyChanges: vi.fn().mockImplementation(() => ({})),
+	VerifyChanges: mockClass('VerifyChanges'),
 }));
 vi.mock('../../../src/gadgets/tmux.js', () => ({
-	Tmux: vi.fn().mockImplementation(() => ({})),
+	Tmux: mockClass('Tmux'),
 }));
 vi.mock('../../../src/gadgets/Sleep.js', () => ({
-	Sleep: vi.fn().mockImplementation(() => ({})),
+	Sleep: mockClass('Sleep'),
 }));
 vi.mock('../../../src/gadgets/todo/index.js', () => ({
-	TodoUpsert: vi.fn().mockImplementation(() => ({})),
-	TodoUpdateStatus: vi.fn().mockImplementation(() => ({})),
-	TodoDelete: vi.fn().mockImplementation(() => ({})),
+	TodoUpsert: mockClass('TodoUpsert'),
+	TodoUpdateStatus: mockClass('TodoUpdateStatus'),
+	TodoDelete: mockClass('TodoDelete'),
 }));
 vi.mock('../../../src/gadgets/Finish.js', () => ({
-	Finish: vi.fn().mockImplementation(() => ({})),
+	Finish: mockClass('Finish'),
 }));
 vi.mock('../../../src/gadgets/github/index.js', () => ({
-	CreatePR: vi.fn().mockImplementation(() => ({})),
-	GetPRChecks: vi.fn().mockImplementation(() => ({})),
-	GetPRComments: vi.fn().mockImplementation(() => ({})),
-	GetPRDetails: vi.fn().mockImplementation(() => ({})),
-	GetPRDiff: vi.fn().mockImplementation(() => ({})),
-	PostPRComment: vi.fn().mockImplementation(() => ({})),
-	ReplyToReviewComment: vi.fn().mockImplementation(() => ({})),
-	UpdatePRComment: vi.fn().mockImplementation(() => ({})),
+	CreatePR: mockClass('CreatePR'),
+	CreatePRReview: mockClass('CreatePRReview'),
+	GetPRChecks: mockClass('GetPRChecks'),
+	GetPRComments: mockClass('GetPRComments'),
+	GetPRDetails: mockClass('GetPRDetails'),
+	GetPRDiff: mockClass('GetPRDiff'),
+	PostPRComment: mockClass('PostPRComment'),
+	ReplyToReviewComment: mockClass('ReplyToReviewComment'),
+	UpdatePRComment: mockClass('UpdatePRComment'),
 }));
 vi.mock('../../../src/gadgets/pm/index.js', () => ({
-	AddChecklist: vi.fn().mockImplementation(() => ({})),
-	CreateWorkItem: vi.fn().mockImplementation(() => ({})),
-	ListWorkItems: vi.fn().mockImplementation(() => ({})),
-	PMUpdateChecklistItem: vi.fn().mockImplementation(() => ({})),
-	PostComment: vi.fn().mockImplementation(() => ({})),
-	ReadWorkItem: vi.fn().mockImplementation(() => ({})),
-	UpdateWorkItem: vi.fn().mockImplementation(() => ({})),
+	AddChecklist: mockClass('AddChecklist'),
+	CreateWorkItem: mockClass('CreateWorkItem'),
+	ListWorkItems: mockClass('ListWorkItems'),
+	PMUpdateChecklistItem: mockClass('PMUpdateChecklistItem'),
+	PostComment: mockClass('PostComment'),
+	ReadWorkItem: mockClass('ReadWorkItem'),
+	UpdateWorkItem: mockClass('UpdateWorkItem'),
 }));
 
 vi.mock('../../../src/gadgets/github/core/getPRChecks.js', () => ({
@@ -285,40 +298,10 @@ describe('getAgentProfile', () => {
 });
 
 describe('AgentProfile.getLlmistGadgets', () => {
-	it('returns non-empty gadget array for implementation', () => {
-		const profile = getAgentProfile('implementation');
-		const gadgets = profile.getLlmistGadgets('implementation');
-		expect(gadgets).toBeDefined();
-		expect(gadgets.length).toBeGreaterThan(0);
-	});
-
-	it('returns non-empty gadget array for planning (read-only)', () => {
-		const profile = getAgentProfile('planning');
-		const gadgets = profile.getLlmistGadgets('planning');
-		expect(gadgets).toBeDefined();
-		expect(gadgets.length).toBeGreaterThan(0);
-	});
-
-	it('returns non-empty gadget array for review', () => {
-		const profile = getAgentProfile('review');
-		const gadgets = profile.getLlmistGadgets('review');
-		expect(gadgets).toBeDefined();
-		expect(gadgets.length).toBeGreaterThan(0);
-	});
-
-	it('returns non-empty gadget array for respond-to-ci', () => {
-		const profile = getAgentProfile('respond-to-ci');
-		const gadgets = profile.getLlmistGadgets('respond-to-ci');
-		expect(gadgets).toBeDefined();
-		expect(gadgets.length).toBeGreaterThan(0);
-	});
-
-	it('returns non-empty gadget array for respond-to-pr-comment', () => {
-		const profile = getAgentProfile('respond-to-pr-comment');
-		const gadgets = profile.getLlmistGadgets('respond-to-pr-comment');
-		expect(gadgets).toBeDefined();
-		expect(gadgets.length).toBeGreaterThan(0);
-	});
+	/** Helper to extract constructor names from gadget instances */
+	function gadgetNames(gadgets: unknown[]): string[] {
+		return gadgets.map((g) => (g as object).constructor.name);
+	}
 
 	it('each profile has a getLlmistGadgets method', () => {
 		const agentTypes = [
@@ -337,5 +320,133 @@ describe('AgentProfile.getLlmistGadgets', () => {
 			expect(profile.getLlmistGadgets).toBeDefined();
 			expect(typeof profile.getLlmistGadgets).toBe('function');
 		}
+	});
+
+	it('implementation includes file editing, CreatePR, and PM gadgets', () => {
+		const profile = getAgentProfile('implementation');
+		const names = gadgetNames(profile.getLlmistGadgets('implementation'));
+
+		// File editing gadgets (canEditFiles: true)
+		expect(names).toContain('FileSearchAndReplace');
+		expect(names).toContain('FileMultiEdit');
+		expect(names).toContain('WriteFile');
+		expect(names).toContain('VerifyChanges');
+		// CreatePR (canCreatePR: true)
+		expect(names).toContain('CreatePR');
+		// PM gadgets
+		expect(names).toContain('ReadWorkItem');
+		expect(names).toContain('PMUpdateChecklistItem');
+		// Session control
+		expect(names).toContain('Finish');
+	});
+
+	it('planning excludes file editing, CreatePR, and checklist updates (read-only)', () => {
+		const profile = getAgentProfile('planning');
+		const names = gadgetNames(profile.getLlmistGadgets('planning'));
+
+		// Read-only: no file editing
+		expect(names).not.toContain('FileSearchAndReplace');
+		expect(names).not.toContain('FileMultiEdit');
+		expect(names).not.toContain('WriteFile');
+		expect(names).not.toContain('VerifyChanges');
+		// No CreatePR
+		expect(names).not.toContain('CreatePR');
+		// No checklist updates (canUpdateChecklists: false)
+		expect(names).not.toContain('PMUpdateChecklistItem');
+		// But still has read gadgets and PM read
+		expect(names).toContain('ListDirectory');
+		expect(names).toContain('ReadFile');
+		expect(names).toContain('ReadWorkItem');
+		expect(names).toContain('Finish');
+	});
+
+	it('review includes CreatePRReview and excludes file editing and PostPRComment', () => {
+		const profile = getAgentProfile('review');
+		const names = gadgetNames(profile.getLlmistGadgets('review'));
+
+		// Core action: submit PR review
+		expect(names).toContain('CreatePRReview');
+		// PR context
+		expect(names).toContain('GetPRDetails');
+		expect(names).toContain('GetPRDiff');
+		expect(names).toContain('GetPRChecks');
+		expect(names).toContain('UpdatePRComment');
+		// Read-only: no file editing
+		expect(names).not.toContain('FileSearchAndReplace');
+		expect(names).not.toContain('WriteFile');
+		expect(names).not.toContain('CreatePR');
+		// Review agent doesn't use PostPRComment (posts via CreatePRReview)
+		expect(names).not.toContain('PostPRComment');
+		expect(names).toContain('Finish');
+	});
+
+	it('respond-to-review includes file editing and review comment tools', () => {
+		const profile = getAgentProfile('respond-to-review');
+		const names = gadgetNames(profile.getLlmistGadgets('respond-to-review'));
+
+		// File editing (respond-to-review makes code changes)
+		expect(names).toContain('FileSearchAndReplace');
+		expect(names).toContain('WriteFile');
+		expect(names).toContain('VerifyChanges');
+		// Review comment tools (includeReviewComments: true)
+		expect(names).toContain('GetPRComments');
+		expect(names).toContain('ReplyToReviewComment');
+		// PR context
+		expect(names).toContain('GetPRDetails');
+		expect(names).toContain('GetPRDiff');
+		// No CreatePR (pushes to existing branch)
+		expect(names).not.toContain('CreatePR');
+		expect(names).toContain('Finish');
+	});
+
+	it('respond-to-ci includes file editing but no review comment tools', () => {
+		const profile = getAgentProfile('respond-to-ci');
+		const names = gadgetNames(profile.getLlmistGadgets('respond-to-ci'));
+
+		// File editing
+		expect(names).toContain('FileSearchAndReplace');
+		expect(names).toContain('WriteFile');
+		expect(names).toContain('VerifyChanges');
+		// PR context
+		expect(names).toContain('GetPRDetails');
+		expect(names).toContain('GetPRDiff');
+		expect(names).toContain('GetPRChecks');
+		// No review comment tools (includeReviewComments: false)
+		expect(names).not.toContain('GetPRComments');
+		expect(names).not.toContain('ReplyToReviewComment');
+		// No CreatePR (pushes to existing branch)
+		expect(names).not.toContain('CreatePR');
+		expect(names).toContain('Finish');
+	});
+
+	it('respond-to-pr-comment includes file editing and review comment tools', () => {
+		const profile = getAgentProfile('respond-to-pr-comment');
+		const names = gadgetNames(profile.getLlmistGadgets('respond-to-pr-comment'));
+
+		// File editing
+		expect(names).toContain('FileSearchAndReplace');
+		expect(names).toContain('WriteFile');
+		expect(names).toContain('VerifyChanges');
+		// Review comment tools (includeReviewComments: true)
+		expect(names).toContain('GetPRComments');
+		expect(names).toContain('ReplyToReviewComment');
+		// No CreatePR
+		expect(names).not.toContain('CreatePR');
+		expect(names).toContain('Finish');
+	});
+
+	it('briefing includes file editing but not CreatePR', () => {
+		const profile = getAgentProfile('briefing');
+		const names = gadgetNames(profile.getLlmistGadgets('briefing'));
+
+		// File editing (canEditFiles: true)
+		expect(names).toContain('FileSearchAndReplace');
+		expect(names).toContain('WriteFile');
+		// No CreatePR (canCreatePR: false)
+		expect(names).not.toContain('CreatePR');
+		// PM gadgets including checklist updates
+		expect(names).toContain('ReadWorkItem');
+		expect(names).toContain('PMUpdateChecklistItem');
+		expect(names).toContain('Finish');
 	});
 });

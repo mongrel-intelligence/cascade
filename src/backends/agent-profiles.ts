@@ -24,6 +24,7 @@ import { WriteFile } from '../gadgets/WriteFile.js';
 import { formatCheckStatus } from '../gadgets/github/core/getPRChecks.js';
 import {
 	CreatePR,
+	CreatePRReview,
 	GetPRChecks,
 	GetPRComments,
 	GetPRDetails,
@@ -175,10 +176,10 @@ function buildWorkItemLlmistGadgets(caps: AgentCapabilities): unknown[] {
 }
 
 /**
- * Build gadgets for PR-based agents (review, respond-to-review, respond-to-pr-comment).
- * Includes GitHub review tools, no file editing for pure review agents.
+ * Build gadgets for the review agent (read-only, PR-focused).
+ * Mirrors the authoritative gadget list in agents/review.ts getGadgets().
  */
-function buildReviewLlmistGadgets(includeReviewComments = false): unknown[] {
+function buildReviewLlmistGadgets(): unknown[] {
 	return [
 		new ListDirectory(),
 		new ReadFile(),
@@ -190,16 +191,16 @@ function buildReviewLlmistGadgets(includeReviewComments = false): unknown[] {
 		new GetPRDetails(),
 		new GetPRDiff(),
 		new GetPRChecks(),
-		new PostPRComment(),
+		new CreatePRReview(),
 		new UpdatePRComment(),
-		...(includeReviewComments ? [new GetPRComments(), new ReplyToReviewComment()] : []),
 		new Finish(),
 	];
 }
 
 /**
- * Build gadgets for PR-modifying agents (respond-to-ci, respond-to-pr-comment).
+ * Build gadgets for PR-modifying agents (respond-to-review, respond-to-ci, respond-to-pr-comment).
  * Includes file editing + GitHub tools but NOT CreatePR (agents push to existing branches).
+ * Mirrors the authoritative gadget list in agents/shared/gadgets.ts createPRAgentGadgets().
  */
 function buildPRAgentLlmistGadgets(includeReviewComments = false): unknown[] {
 	return [
@@ -208,6 +209,7 @@ function buildPRAgentLlmistGadgets(includeReviewComments = false): unknown[] {
 		new FileSearchAndReplace(),
 		new FileMultiEdit(),
 		new WriteFile(),
+		new VerifyChanges(),
 		new AstGrep(),
 		new RipGrep(),
 		new Tmux(),
@@ -611,7 +613,7 @@ const reviewProfile: AgentProfile = {
 	fetchContext: fetchReviewContext,
 	buildTaskPrompt: buildReviewTaskPrompt,
 	capabilities: getAgentCapabilities('review'),
-	getLlmistGadgets: (_agentType) => buildReviewLlmistGadgets(true),
+	getLlmistGadgets: (_agentType) => buildReviewLlmistGadgets(),
 
 	async preExecute({ input, logWriter }: PreExecuteParams): Promise<void> {
 		const repoFullName = input.repoFullName as string;
@@ -650,7 +652,7 @@ const respondToCIProfile: AgentProfile = {
 	fetchContext: fetchCIContext,
 	buildTaskPrompt: buildCITaskPrompt,
 	capabilities: getAgentCapabilities('respond-to-ci'),
-	getLlmistGadgets: (_agentType) => buildPRAgentLlmistGadgets(false),
+	getLlmistGadgets: (_agentType) => buildPRAgentLlmistGadgets(),
 
 	async preExecute({ input, logWriter }: PreExecuteParams): Promise<void> {
 		const repoFullName = input.repoFullName as string;
@@ -665,6 +667,18 @@ const respondToCIProfile: AgentProfile = {
 			'🤖 Working on fixing CI failures...',
 		);
 	},
+};
+
+const respondToReviewProfile: AgentProfile = {
+	filterTools: (allTools) => filterToolsByNames(allTools, [...GITHUB_REVIEW_TOOLS, SESSION_TOOL]),
+	sdkTools: ALL_SDK_TOOLS,
+	enableStopHooks: true,
+	needsGitHubToken: true,
+	blockGitPush: false,
+	fetchContext: fetchPRCommentResponseContext,
+	buildTaskPrompt: buildPRCommentResponseTaskPrompt,
+	capabilities: getAgentCapabilities('respond-to-review'),
+	getLlmistGadgets: (_agentType) => buildPRAgentLlmistGadgets(true),
 };
 
 const respondToPRCommentProfile: AgentProfile = {
@@ -707,7 +721,7 @@ const PROFILE_REGISTRY: Record<string, AgentProfile> = {
 	implementation: implementationProfile,
 	review: reviewProfile,
 	'respond-to-planning-comment': respondToPlanningCommentProfile,
-	'respond-to-review': reviewProfile,
+	'respond-to-review': respondToReviewProfile,
 	'respond-to-pr-comment': respondToPRCommentProfile,
 	'respond-to-ci': respondToCIProfile,
 	debug: defaultProfile,
