@@ -350,7 +350,7 @@ describe('sendAcknowledgeReaction', () => {
 			expect(tenantCalls).toHaveLength(1);
 		});
 
-		it('falls back to comment when reactions API fails', async () => {
+		it('skips gracefully when reactions API fails (no fallback comment)', async () => {
 			// tenant_info
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
@@ -358,30 +358,25 @@ describe('sendAcknowledgeReaction', () => {
 			});
 			// reactions API fails
 			mockFetch.mockResolvedValueOnce({ ok: false, status: 403 });
-			// fallback comment
-			mockFetch.mockResolvedValueOnce({ ok: true });
 
 			await sendAcknowledgeReaction('jira', PROJECT_ID, JIRA_COMMENT_PAYLOAD);
 
-			expect(mockFetch).toHaveBeenCalledTimes(3);
-			const [fallbackUrl, fallbackOptions] = mockFetch.mock.calls[2];
-			expect(fallbackUrl).toBe('https://test.atlassian.net/rest/api/2/issue/PROJ-42/comment');
-			expect(fallbackOptions.method).toBe('POST');
-			expect(JSON.parse(fallbackOptions.body)).toEqual({ body: '💭' });
+			// Only 2 calls: tenant_info + reactions API. No fallback comment.
+			expect(mockFetch).toHaveBeenCalledTimes(2);
+			const fallbackCall = mockFetch.mock.calls.find(([url]) =>
+				(url as string).includes('/rest/api/2/issue/'),
+			);
+			expect(fallbackCall).toBeUndefined();
 		});
 
-		it('falls back to comment when cloudId fetch fails', async () => {
+		it('skips gracefully when cloudId fetch fails (no fallback comment)', async () => {
 			// tenant_info fetch fails (network error)
 			mockFetch.mockRejectedValueOnce(new Error('Network error'));
-			// fallback comment succeeds
-			mockFetch.mockResolvedValueOnce({ ok: true });
 
 			await sendAcknowledgeReaction('jira', PROJECT_ID, JIRA_COMMENT_PAYLOAD);
 
-			const fallbackCall = mockFetch.mock.calls.find(([url]) =>
-				(url as string).includes('/rest/api/2/issue/PROJ-42/comment'),
-			);
-			expect(fallbackCall).toBeDefined();
+			// Only 1 call: tenant_info. No fallback comment posted.
+			expect(mockFetch).toHaveBeenCalledTimes(1);
 		});
 
 		it('skips reaction when issue.id or comment.id are missing', async () => {

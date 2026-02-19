@@ -163,7 +163,6 @@ async function sendJiraReaction(projectId: string, payload: unknown): Promise<vo
 
 	const issueId = issue?.id as string | undefined;
 	const commentId = comment?.id as string | undefined;
-	const issueKey = issue?.key as string | undefined;
 
 	if (!issueId || !commentId) return;
 
@@ -203,34 +202,8 @@ async function sendJiraReaction(projectId: string, payload: unknown): Promise<vo
 		console.warn(
 			'[Reactions] JIRA reactions API failed:',
 			reactionResponse.status,
-			'; falling back to comment',
+			'— skipping (no fallback to avoid webhook loops)',
 		);
-	}
-
-	// Fallback: post a comment
-	if (!issueKey) {
-		console.warn('[Reactions] JIRA fallback skipped: no issueKey in payload');
-		return;
-	}
-
-	const commentUrl = `${jiraBaseUrl}/rest/api/2/issue/${issueKey}/comment`;
-	const fallbackResponse = await fetch(commentUrl, {
-		method: 'POST',
-		headers: {
-			Authorization: `Basic ${auth}`,
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify({ body: '💭' }),
-	});
-
-	if (!fallbackResponse.ok) {
-		console.warn(
-			'[Reactions] JIRA fallback comment failed:',
-			fallbackResponse.status,
-			await fallbackResponse.text(),
-		);
-	} else {
-		console.log('[Reactions] JIRA fallback comment posted for issue:', issueKey);
 	}
 }
 
