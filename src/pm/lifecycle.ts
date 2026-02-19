@@ -84,13 +84,23 @@ export class PMLifecycleManager {
 		}
 	}
 
-	async handleSuccess(workItemId: string, agentType: string, prUrl?: string): Promise<void> {
+	async handleSuccess(
+		workItemId: string,
+		agentType: string,
+		prUrl?: string,
+		progressCommentId?: string,
+	): Promise<void> {
 		await this.safeAddLabel(workItemId, this.pmConfig.labels.processed);
 
 		if (agentType === 'implementation') {
 			await this.safeMove(workItemId, this.pmConfig.statuses.inReview);
 			if (prUrl) {
-				await this.safeAddComment(workItemId, `PR created: ${prUrl}`);
+				if (progressCommentId) {
+					// Replace the progress comment with the "PR created" message
+					await this.safeUpdateOrAddComment(workItemId, progressCommentId, `PR created: ${prUrl}`);
+				} else {
+					await this.safeAddComment(workItemId, `PR created: ${prUrl}`);
+				}
 			}
 		}
 	}
@@ -163,5 +173,22 @@ export class PMLifecycleManager {
 		await safeOperation(() => this.provider.addComment(workItemId, text), {
 			action: 'add comment',
 		});
+	}
+
+	/**
+	 * Try to update an existing comment; fall back to adding a new comment if the
+	 * update fails (e.g. the comment was deleted between when the progress monitor
+	 * recorded its ID and now).
+	 */
+	private async safeUpdateOrAddComment(
+		workItemId: string,
+		commentId: string,
+		text: string,
+	): Promise<void> {
+		try {
+			await this.provider.updateComment(workItemId, commentId, text);
+		} catch {
+			await this.safeAddComment(workItemId, text);
+		}
 	}
 }

@@ -692,6 +692,60 @@ describe('ProgressMonitor — agent-specific initial messages', () => {
 	});
 });
 
+describe('ProgressMonitor — getProgressCommentId()', () => {
+	it('returns null initially before any comment is posted', () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			trello: { cardId: 'card1' },
+		});
+
+		expect(monitor.getProgressCommentId()).toBeNull();
+	});
+
+	it('returns the comment ID after the initial comment is posted', async () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			trello: { cardId: 'card1' },
+		});
+
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockPMProvider.addComment.mockResolvedValue('comment-xyz');
+
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(monitor.getProgressCommentId()).toBe('comment-xyz');
+		monitor.stop();
+	});
+
+	it('returns null when trello config is absent (no comment posted)', () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			// No trello config — postInitialComment() returns early
+		});
+
+		monitor.start();
+		monitor.stop();
+
+		expect(monitor.getProgressCommentId()).toBeNull();
+	});
+});
+
 describe('ProgressMonitor — state file integration', () => {
 	it('writes state file on initial comment when repoDir is provided', async () => {
 		const logWriter = vi.fn();

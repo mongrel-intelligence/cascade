@@ -212,6 +212,26 @@ describe('runAgentExecutionPipeline', () => {
 				'card-123',
 				'implementation',
 				'https://github.com/pr/1',
+				undefined,
+			);
+		});
+
+		it('passes progressCommentId to handleSuccess when present in agentResult', async () => {
+			vi.mocked(runAgent).mockResolvedValue({
+				success: true,
+				prUrl: 'https://github.com/pr/1',
+				progressCommentId: 'comment-456',
+				runId: 'run-1',
+				output: '',
+			});
+
+			await runAgentExecutionPipeline(mockTriggerResult, mockProject, mockConfig);
+
+			expect(mockLifecycle.handleSuccess).toHaveBeenCalledWith(
+				'card-123',
+				'implementation',
+				'https://github.com/pr/1',
+				'comment-456',
 			);
 		});
 

@@ -41,6 +41,7 @@ export interface AgentResult {
 	success: boolean;
 	output: string;
 	prUrl?: string;
+	progressCommentId?: string;
 	error?: string;
 	logBuffer?: Buffer;
 	cost?: number;

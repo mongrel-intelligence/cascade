@@ -206,10 +206,12 @@ app.post('/trello/webhook', async (c) => {
 	if (shouldProcess && project && cardId) {
 		console.log('[Router] Queueing Trello job:', { actionType, cardId, projectId: project.id });
 
-		// Fire-and-forget acknowledgment reaction — don't block the 200 response
-		void sendAcknowledgeReaction('trello', project.id, payload).catch((err) =>
-			console.error('[Router] Trello reaction error:', err),
-		);
+		// Fire-and-forget acknowledgment reaction — only for comment actions
+		if (actionType === 'commentCard') {
+			void sendAcknowledgeReaction('trello', project.id, payload).catch((err) =>
+				console.error('[Router] Trello reaction error:', err),
+			);
+		}
 
 		const job: CascadeJob = {
 			type: 'trello',
@@ -311,11 +313,12 @@ app.post('/github/webhook', async (c) => {
 	if (shouldProcess) {
 		console.log('[Router] Queueing GitHub job:', { eventType, repoFullName });
 
-		// Fire-and-forget acknowledgment reaction — pass repoFullName so the
-		// reaction module can resolve the project and credentials.
-		void sendAcknowledgeReaction('github', repoFullName, payload).catch((err) =>
-			console.error('[Router] GitHub reaction error:', err),
-		);
+		// Fire-and-forget acknowledgment reaction — only for comment events
+		if (eventType === 'issue_comment' || eventType === 'pull_request_review_comment') {
+			void sendAcknowledgeReaction('github', repoFullName, payload).catch((err) =>
+				console.error('[Router] GitHub reaction error:', err),
+			);
+		}
 
 		const job: CascadeJob = {
 			type: 'github',
@@ -404,10 +407,12 @@ app.post('/jira/webhook', async (c) => {
 	if (shouldProcess && project) {
 		console.log('[Router] Queueing JIRA job:', { webhookEvent, issueKey, projectId: project.id });
 
-		// Fire-and-forget acknowledgment reaction — don't block the 200 response
-		void sendAcknowledgeReaction('jira', project.id, payload).catch((err) =>
-			console.error('[Router] JIRA reaction error:', err),
-		);
+		// Fire-and-forget acknowledgment reaction — only for comment events
+		if (webhookEvent.startsWith('comment_')) {
+			void sendAcknowledgeReaction('jira', project.id, payload).catch((err) =>
+				console.error('[Router] JIRA reaction error:', err),
+			);
+		}
 
 		const job: CascadeJob = {
 			type: 'jira',
