@@ -72,6 +72,24 @@ describe('system prompts content', () => {
 		expect(prompt).toContain('step-by-step');
 	});
 
+	it('planning prompt contains no-code-snippet directive', () => {
+		const prompt = getSystemPrompt('planning');
+		expect(prompt).toContain('DO NOT include code snippets');
+		expect(prompt).toContain(
+			'NEVER include code snippets, code blocks, or pseudo-code in the plan',
+		);
+	});
+
+	it('respond-to-planning-comment prompt contains no-code-snippet directive', () => {
+		const prompt = getSystemPrompt('respond-to-planning-comment');
+		expect(prompt).toContain(
+			'DO NOT include code snippets, code blocks, or pseudo-code in plan updates',
+		);
+		expect(prompt).toContain(
+			'NEVER include code snippets, code blocks, or pseudo-code in the plan',
+		);
+	});
+
 	it('implementation prompt includes git instructions', () => {
 		const prompt = getSystemPrompt('implementation');
 		expect(prompt).toContain('Tmux');
