@@ -11,6 +11,7 @@ import type {
 import { storeLlmCall } from '../../db/repositories/runsRepository.js';
 import { logger } from '../../utils/logging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
+import { getWorkspaceDir } from '../../utils/repo.js';
 import type {
 	AgentBackend,
 	AgentBackendInput,
@@ -387,6 +388,7 @@ export class ClaudeCodeBackend implements AgentBackend {
 				model,
 				systemPrompt,
 				cwd: input.repoDir,
+				additionalDirectories: [getWorkspaceDir()],
 				maxBudgetUsd: input.budgetUsd,
 				permissionMode: 'bypassPermissions',
 				allowDangerouslySkipPermissions: true,

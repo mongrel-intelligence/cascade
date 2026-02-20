@@ -58,6 +58,15 @@ jobs:
             cascade-frontend-dev:build \
             wrangler pages deploy dist/web --project-name=cascade-dashboard-dev --branch=main
 
+      - name: Run database migrations (dev)
+        run: |
+          docker build --target=builder -f Dockerfile.dashboard -t cascade-migrator:dev .
+          docker run --rm \
+            -e DATABASE_URL="${{ secrets.DEV_DATABASE_URL }}" \
+            -v "${{ github.workspace }}/drizzle.config.ts:/app/drizzle.config.ts" \
+            cascade-migrator:dev \
+            ./node_modules/.bin/drizzle-kit migrate
+
       - name: Pull and restart cascade-router-dev
         run: |
           cd /opt/services

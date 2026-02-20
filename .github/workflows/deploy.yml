@@ -51,6 +51,15 @@ jobs:
             -e CLOUDFLARE_ACCOUNT_ID="${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" \
             cascade-frontend:build
 
+      - name: Run database migrations
+        run: |
+          docker build --target=builder -f Dockerfile.dashboard -t cascade-migrator:latest .
+          docker run --rm \
+            -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            -v "${{ github.workspace }}/drizzle.config.ts:/app/drizzle.config.ts" \
+            cascade-migrator:latest \
+            ./node_modules/.bin/drizzle-kit migrate
+
       - name: Restart cascade-router
         run: |
           cd /opt/services
