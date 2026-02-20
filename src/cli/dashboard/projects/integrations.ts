@@ -31,8 +31,10 @@ export default class ProjectsIntegrations extends DashboardCommand {
 			}
 
 			for (const integration of integrations as unknown as Array<Record<string, unknown>>) {
-				this.log(`\nType: ${integration.type}`);
+				this.log(`\nCategory: ${integration.category}`);
+				this.log(`Provider: ${integration.provider}`);
 				this.log(`Config: ${JSON.stringify(integration.config, null, 2)}`);
+				this.log(`Triggers: ${JSON.stringify(integration.triggers, null, 2)}`);
 			}
 		} catch (err) {
 			this.handleError(err);

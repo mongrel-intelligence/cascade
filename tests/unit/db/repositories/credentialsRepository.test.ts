@@ -11,22 +11,17 @@ import {
 	createCredential,
 	deleteCredential,
 	listOrgCredentials,
-	listProjectOverrides,
-	removeAgentCredentialOverride,
-	removeProjectCredentialOverride,
-	resolveAgentCredential,
-	resolveAllCredentials,
-	resolveCredential,
-	setAgentCredentialOverride,
-	setProjectCredentialOverride,
+	resolveAllIntegrationCredentials,
+	resolveAllOrgCredentials,
+	resolveIntegrationCredential,
+	resolveOrgCredential,
 	updateCredential,
 } from '../../../../src/db/repositories/credentialsRepository.js';
 
 /**
  * Creates a mock Drizzle query chain that supports the common patterns:
- * select().from().where(), select().from().innerJoin().where(),
- * insert().values().returning(), insert().values().onConflictDoUpdate(),
- * update().set().where(), delete().from().where()
+ * select().from().innerJoin().where(), select().from().innerJoin().innerJoin().where(),
+ * insert().values().returning(), update().set().where(), delete().from().where()
  */
 function createMockDb() {
 	const chain: Record<string, ReturnType<typeof vi.fn>> = {};
@@ -34,10 +29,12 @@ function createMockDb() {
 	// Terminal methods that return results
 	chain.where = vi.fn().mockResolvedValue([]);
 	chain.returning = vi.fn().mockResolvedValue([]);
-	chain.onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
 
 	// Chain methods
-	chain.innerJoin = vi.fn().mockReturnValue({ where: chain.where });
+	chain.innerJoin = vi.fn().mockReturnValue({
+		where: chain.where,
+		innerJoin: vi.fn().mockReturnValue({ where: chain.where }),
+	});
 	chain.from = vi.fn().mockReturnValue({
 		where: chain.where,
 		innerJoin: chain.innerJoin,
@@ -45,7 +42,6 @@ function createMockDb() {
 	chain.set = vi.fn().mockReturnValue({ where: chain.where });
 	chain.values = vi.fn().mockReturnValue({
 		returning: chain.returning,
-		onConflictDoUpdate: chain.onConflictDoUpdate,
 	});
 
 	const db = {
@@ -71,150 +67,95 @@ describe('credentialsRepository', () => {
 		vi.clearAllMocks();
 	});
 
-	describe('resolveCredential', () => {
-		it('returns project override value when found', async () => {
-			// First query (project override) returns a result
-			mockDb.chain.where.mockResolvedValueOnce([{ value: 'project-override-secret' }]);
+	describe('resolveIntegrationCredential', () => {
+		it('returns decrypted value when found', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([{ value: 'trello-api-key', orgId: 'org1' }]);
 
-			const result = await resolveCredential('proj1', 'org1', 'GITHUB_TOKEN');
-			expect(result).toBe('project-override-secret');
-
-			// Should only call select once (found override, short-circuits)
-			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
+			const result = await resolveIntegrationCredential('proj1', 'pm', 'api_key');
+			expect(result).toBe('trello-api-key');
 		});
 
-		it('falls back to org default when no project override', async () => {
-			// First query (project override) returns empty
-			mockDb.chain.where.mockResolvedValueOnce([]);
-			// Second query (org default) returns a result
-			mockDb.chain.where.mockResolvedValueOnce([{ value: 'org-default-secret' }]);
-
-			const result = await resolveCredential('proj1', 'org1', 'GITHUB_TOKEN');
-			expect(result).toBe('org-default-secret');
-
-			// Two selects: override check + org default check
-			expect(mockDb.db.select).toHaveBeenCalledTimes(2);
-		});
-
-		it('returns null when neither override nor org default exists', async () => {
-			mockDb.chain.where.mockResolvedValueOnce([]);
+		it('returns null when not found', async () => {
 			mockDb.chain.where.mockResolvedValueOnce([]);
 
-			const result = await resolveCredential('proj1', 'org1', 'GITHUB_TOKEN');
+			const result = await resolveIntegrationCredential('proj1', 'pm', 'api_key');
 			expect(result).toBeNull();
 		});
 	});
 
-	describe('resolveAllCredentials', () => {
-		it('merges org defaults with project overrides', async () => {
-			// First query: org defaults
+	describe('resolveAllIntegrationCredentials', () => {
+		it('returns all integration credentials for a project', async () => {
 			mockDb.chain.where.mockResolvedValueOnce([
-				{ envVarKey: 'GITHUB_TOKEN', value: 'org-gh-token' },
-				{ envVarKey: 'TRELLO_API_KEY', value: 'org-trello-key' },
-			]);
-			// Second query: project overrides
-			mockDb.chain.where.mockResolvedValueOnce([
-				{ envVarKey: 'GITHUB_TOKEN', value: 'project-gh-token' },
+				{ category: 'pm', provider: 'trello', role: 'api_key', value: 'tkey', orgId: 'org1' },
+				{ category: 'pm', provider: 'trello', role: 'token', value: 'ttoken', orgId: 'org1' },
+				{
+					category: 'scm',
+					provider: 'github',
+					role: 'implementer_token',
+					value: 'ghp_impl',
+					orgId: 'org1',
+				},
 			]);
 
-			const result = await resolveAllCredentials('proj1', 'org1');
+			const result = await resolveAllIntegrationCredentials('proj1');
+			expect(result).toHaveLength(3);
+			expect(result[0]).toEqual({
+				category: 'pm',
+				provider: 'trello',
+				role: 'api_key',
+				value: 'tkey',
+			});
+			expect(result[2]).toEqual({
+				category: 'scm',
+				provider: 'github',
+				role: 'implementer_token',
+				value: 'ghp_impl',
+			});
+		});
+
+		it('returns empty array when no integration credentials exist', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			const result = await resolveAllIntegrationCredentials('proj1');
+			expect(result).toEqual([]);
+		});
+	});
+
+	describe('resolveOrgCredential', () => {
+		it('returns value when org default exists', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([{ value: 'or-api-key' }]);
+
+			const result = await resolveOrgCredential('org1', 'OPENROUTER_API_KEY');
+			expect(result).toBe('or-api-key');
+		});
+
+		it('returns null when no org default', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			const result = await resolveOrgCredential('org1', 'MISSING_KEY');
+			expect(result).toBeNull();
+		});
+	});
+
+	describe('resolveAllOrgCredentials', () => {
+		it('returns all org default credentials as key-value map', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([
+				{ envVarKey: 'OPENROUTER_API_KEY', value: 'or-key' },
+				{ envVarKey: 'ANTHROPIC_API_KEY', value: 'ant-key' },
+			]);
+
+			const result = await resolveAllOrgCredentials('org1');
 			expect(result).toEqual({
-				GITHUB_TOKEN: 'project-gh-token', // override wins
-				TRELLO_API_KEY: 'org-trello-key', // org default kept
+				OPENROUTER_API_KEY: 'or-key',
+				ANTHROPIC_API_KEY: 'ant-key',
 			});
 		});
 
-		it('returns only org defaults when no overrides', async () => {
-			mockDb.chain.where.mockResolvedValueOnce([{ envVarKey: 'KEY1', value: 'val1' }]);
-			mockDb.chain.where.mockResolvedValueOnce([]); // no overrides
-
-			const result = await resolveAllCredentials('proj1', 'org1');
-			expect(result).toEqual({ KEY1: 'val1' });
-		});
-
-		it('returns empty when no credentials exist', async () => {
-			mockDb.chain.where.mockResolvedValueOnce([]);
+		it('returns empty object when no credentials', async () => {
 			mockDb.chain.where.mockResolvedValueOnce([]);
 
-			const result = await resolveAllCredentials('proj1', 'org1');
+			const result = await resolveAllOrgCredentials('org1');
 			expect(result).toEqual({});
-		});
-	});
-
-	describe('resolveAgentCredential', () => {
-		it('returns agent-scoped override when found', async () => {
-			// First query (agent override) returns a result
-			mockDb.chain.where.mockResolvedValueOnce([{ value: 'agent-override-secret' }]);
-
-			const result = await resolveAgentCredential('proj1', 'org1', 'review', 'GITHUB_TOKEN');
-			expect(result).toBe('agent-override-secret');
-
-			// Should only call select once (found agent override, short-circuits)
-			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
-		});
-
-		it('falls through to project override when no agent override', async () => {
-			// First query (agent override) returns empty
-			mockDb.chain.where.mockResolvedValueOnce([]);
-			// Second query (project override via resolveCredential) returns a result
-			mockDb.chain.where.mockResolvedValueOnce([{ value: 'project-override-secret' }]);
-
-			const result = await resolveAgentCredential('proj1', 'org1', 'review', 'GITHUB_TOKEN');
-			expect(result).toBe('project-override-secret');
-
-			// Two selects: agent override check + project override check
-			expect(mockDb.db.select).toHaveBeenCalledTimes(2);
-		});
-
-		it('falls through to org default when no agent or project override', async () => {
-			// First query (agent override) returns empty
-			mockDb.chain.where.mockResolvedValueOnce([]);
-			// Second query (project override) returns empty
-			mockDb.chain.where.mockResolvedValueOnce([]);
-			// Third query (org default) returns a result
-			mockDb.chain.where.mockResolvedValueOnce([{ value: 'org-default-secret' }]);
-
-			const result = await resolveAgentCredential('proj1', 'org1', 'review', 'GITHUB_TOKEN');
-			expect(result).toBe('org-default-secret');
-
-			expect(mockDb.db.select).toHaveBeenCalledTimes(3);
-		});
-
-		it('returns null when no override at any level', async () => {
-			mockDb.chain.where.mockResolvedValueOnce([]);
-			mockDb.chain.where.mockResolvedValueOnce([]);
-			mockDb.chain.where.mockResolvedValueOnce([]);
-
-			const result = await resolveAgentCredential('proj1', 'org1', 'review', 'GITHUB_TOKEN');
-			expect(result).toBeNull();
-		});
-	});
-
-	describe('setAgentCredentialOverride', () => {
-		it('deletes then inserts agent-scoped override', async () => {
-			mockDb.chain.where.mockResolvedValueOnce(undefined); // delete
-			mockDb.chain.returning.mockResolvedValueOnce([]); // insert (no returning needed)
-
-			await setAgentCredentialOverride('proj1', 'GITHUB_TOKEN', 'review', 42);
-
-			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
-			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
-			expect(mockDb.chain.values).toHaveBeenCalledWith({
-				projectId: 'proj1',
-				envVarKey: 'GITHUB_TOKEN',
-				credentialId: 42,
-				agentType: 'review',
-			});
-		});
-	});
-
-	describe('removeAgentCredentialOverride', () => {
-		it('deletes agent-scoped override', async () => {
-			mockDb.chain.where.mockResolvedValueOnce(undefined);
-
-			await removeAgentCredentialOverride('proj1', 'GITHUB_TOKEN', 'review');
-
-			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
 		});
 	});
 
@@ -371,52 +312,6 @@ describe('credentialsRepository', () => {
 			mockDb.chain.where.mockResolvedValueOnce([]);
 
 			const result = await listOrgCredentials('empty-org');
-			expect(result).toEqual([]);
-		});
-	});
-
-	describe('setProjectCredentialOverride', () => {
-		it('deletes then inserts project-wide override', async () => {
-			mockDb.chain.where.mockResolvedValueOnce(undefined); // delete
-
-			await setProjectCredentialOverride('proj1', 'GITHUB_TOKEN', 42);
-
-			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
-			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
-			expect(mockDb.chain.values).toHaveBeenCalledWith({
-				projectId: 'proj1',
-				envVarKey: 'GITHUB_TOKEN',
-				credentialId: 42,
-				agentType: null,
-			});
-		});
-	});
-
-	describe('removeProjectCredentialOverride', () => {
-		it('deletes override for project and key', async () => {
-			mockDb.chain.where.mockResolvedValueOnce(undefined);
-
-			await removeProjectCredentialOverride('proj1', 'GITHUB_TOKEN');
-
-			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
-		});
-	});
-
-	describe('listProjectOverrides', () => {
-		it('returns overrides with credential names', async () => {
-			const mockOverrides = [
-				{ envVarKey: 'GITHUB_TOKEN', credentialId: 42, credentialName: 'Bot Token' },
-			];
-			mockDb.chain.where.mockResolvedValueOnce(mockOverrides);
-
-			const result = await listProjectOverrides('proj1');
-			expect(result).toEqual(mockOverrides);
-		});
-
-		it('returns empty array when no overrides', async () => {
-			mockDb.chain.where.mockResolvedValueOnce([]);
-
-			const result = await listProjectOverrides('proj1');
 			expect(result).toEqual([]);
 		});
 	});

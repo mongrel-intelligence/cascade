@@ -78,7 +78,7 @@ Optional (infrastructure):
 - `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code backend (subscription auth)
 - `CREDENTIAL_MASTER_KEY` - 64-char hex string (32-byte AES-256 key) for encrypting credentials at rest. Generate with `npm run credentials:generate-key`. When set, all new/updated credentials are encrypted automatically; existing plaintext credentials continue to work.
 
-**Project credentials** (`GITHUB_TOKEN_IMPLEMENTER`, `GITHUB_TOKEN_REVIEWER`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored in the `credentials` table (org-scoped, encrypted at rest when `CREDENTIAL_MASTER_KEY` is set) with optional per-project overrides via `project_credential_overrides`. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
+**Project credentials** (`GITHUB_TOKEN_IMPLEMENTER`, `GITHUB_TOKEN_REVIEWER`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored in the `credentials` table (org-scoped, encrypted at rest when `CREDENTIAL_MASTER_KEY` is set). Integration-specific credentials (GitHub tokens, Trello keys, JIRA tokens) are linked to integrations via the `integration_credentials` join table with provider-defined roles. Non-integration credentials (LLM API keys) remain org-scoped defaults. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
 
 ## Database Configuration
 
@@ -89,10 +89,10 @@ CASCADE stores all project configuration in PostgreSQL (Supabase). The `config/p
 - `organizations` - Organization definitions (multi-tenant support)
 - `cascade_defaults` - Global defaults per org (model, iterations, timeouts, budget)
 - `projects` - Per-project config (repo, base branch, budget, backend)
-- `project_integrations` - Integration configs per project (Trello boards/lists/labels as JSONB)
+- `project_integrations` - Integration configs per project with `category` (pm/scm), `provider` (trello/jira/github), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
+- `integration_credentials` - Links integration roles to org-scoped credential rows (e.g., `api_key` → credential #5). Roles are provider-specific: trello has `api_key`/`token`, jira has `email`/`api_token`, github has `implementer_token`/`reviewer_token`
 - `agent_configs` - Per-agent-type overrides (model, iterations, backend, prompt), scoped globally, per-org, or per-project
 - `credentials` - Org-scoped credentials (API keys, tokens)
-- `project_credential_overrides` - Per-project credential overrides (optional, falls back to org defaults)
 - `users` - Dashboard users (email, bcrypt password hash, org-scoped)
 - `sessions` - Session tokens for cookie-based auth (30-day expiry)
 
@@ -117,15 +117,13 @@ Migrations are hand-written SQL files in `src/db/migrations/` tracked by drizzle
 
 For databases initially set up with `drizzle-kit push` (no migration journal), run `npm run db:bootstrap-journal` once to register existing migrations in the `drizzle.__drizzle_migrations` tracking table.
 
-### Per-Project Secrets
+### Credentials
 
-Credentials are stored in the `credentials` table (org-scoped) with optional per-project overrides via `project_credential_overrides`.
+Org-scoped credentials are stored in the `credentials` table. Integration-specific credentials are linked via the `integration_credentials` join table with provider-defined roles.
 
 ```bash
 npx tsx tools/manage-secrets.ts create <org-id> <env-var-key> <value> [--name "..."] [--default]
 npx tsx tools/manage-secrets.ts list <org-id>
-npx tsx tools/manage-secrets.ts set-override <project-id> <env-var-key> <credential-id>
-npx tsx tools/manage-secrets.ts remove-override <project-id> <env-var-key>
 npx tsx tools/manage-secrets.ts resolve <project-id>
 ```
 
@@ -158,11 +156,13 @@ CASCADE uses two dedicated GitHub bot accounts per project to prevent feedback l
 - **Reviewer** (`GITHUB_TOKEN_REVIEWER`) — reviews PRs, can approve or request changes
   - Agents: `review`
 
-Both tokens are **required** for each project. Configure via the dashboard (Project Settings > Integrations > GitHub tab) or CLI:
+Both tokens are **required** for each project. Create org-scoped credentials, then link them to the project's SCM integration via the dashboard (Project Settings > Integrations > Source Control tab) or CLI:
 
 ```bash
 cascade credentials create --name "Implementer Bot" --key GITHUB_TOKEN_IMPLEMENTER --value ghp_aaa... --default
 cascade credentials create --name "Reviewer Bot" --key GITHUB_TOKEN_REVIEWER --value ghp_bbb... --default
+cascade projects integration-credential-set <project-id> --category scm --role implementer_token --credential-id 5
+cascade projects integration-credential-set <project-id> --category scm --role reviewer_token --credential-id 7
 ```
 
 **Bot detection**: Both persona usernames are resolved at first use and cached. Trigger handlers use `isCascadeBot(login)` to check if an event came from either persona, preventing self-triggered loops.
@@ -172,17 +172,22 @@ cascade credentials create --name "Reviewer Bot" --key GITHUB_TOKEN_REVIEWER --v
 - `respond-to-pr-comment` skips @mentions from **any** known persona
 - `check-suite-success` checks reviews from the **reviewer** persona specifically
 
-### Per-Agent Credential Overrides
+### Integration Credential Resolution
 
-Override any credential for a specific agent type. The dual-persona tokens are the primary use case:
+Integration credentials are resolved by `(projectId, category, role)`:
 
-```bash
-# Per-project overrides (auto-configured by the GitHub integration tab)
-cascade projects override-set <id> --key GITHUB_TOKEN_IMPLEMENTER --credential-id 5
-cascade projects override-set <id> --key GITHUB_TOKEN_REVIEWER --credential-id 7
+```typescript
+// Get a specific integration credential
+const trelloKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
+
+// Get all integration credentials + org defaults as flat env-var-key map (for worker environments)
+const allCreds = await getAllProjectCredentials(projectId);
+
+// Non-integration org-scoped credentials (LLM API keys)
+const openrouterKey = await getOrgCredential(projectId, 'OPENROUTER_API_KEY');
 ```
 
-Resolution order: agent+project override → project override → org default → null.
+Role definitions and env-var-key mappings are in `src/config/integrationRoles.ts`.
 
 ## Claude Code Backend
 
@@ -329,11 +334,9 @@ cascade projects create --id my-project --name "My Project" --repo owner/repo
 cascade projects update <id> --model claude-sonnet-4-5-20250929
 cascade projects delete <id> --yes
 cascade projects integrations <id>
-cascade projects integration-set <id> --type trello --config '{"boardId":"..."}'
-cascade projects overrides <id>
-cascade projects override-set <id> --key GITHUB_TOKEN_IMPLEMENTER --credential-id 5
-cascade projects override-set <id> --key GITHUB_TOKEN_REVIEWER --credential-id 7
-cascade projects override-rm <id> --key GITHUB_TOKEN_IMPLEMENTER
+cascade projects integration-set <id> --category pm --provider trello --config '{"boardId":"..."}'
+cascade projects integration-credential-set <id> --category scm --role implementer_token --credential-id 5
+cascade projects integration-credential-rm <id> --category scm --role implementer_token
 
 # Credentials
 cascade credentials list
@@ -378,7 +381,7 @@ src/cli/dashboard/
 ├── logout.ts
 ├── whoami.ts
 ├── runs/             # 6 commands
-├── projects/         # 10 commands
+├── projects/         # 8 commands
 ├── credentials/      # 4 commands
 ├── defaults/         # 2 commands
 ├── org/              # 2 commands

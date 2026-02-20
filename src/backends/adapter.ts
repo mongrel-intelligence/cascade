@@ -12,7 +12,7 @@ import {
 } from '../agents/shared/runTracking.js';
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
-import { getProjectSecrets } from '../config/provider.js';
+import { getAllProjectCredentials } from '../config/provider.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import { withGitHubToken } from '../github/client.js';
 import { getPersonaToken } from '../github/personas.js';
@@ -311,7 +311,7 @@ async function buildBackendInput(
 	const cliToolsDir = new URL('../../bin', import.meta.url).pathname;
 
 	// Resolve all per-project secrets for subprocess injection
-	const projectSecrets = await getProjectSecrets(project.id);
+	const projectSecrets = await getAllProjectCredentials(project.id);
 
 	// Inject base branch so cascade-tools create-pr uses the correct target automatically
 	if (project.baseBranch) {
@@ -417,7 +417,7 @@ async function resolveGitHubToken(
 		return await getPersonaToken(projectId, agentType);
 	} catch {
 		// Fall back to legacy GITHUB_TOKEN for projects not yet migrated
-		const secrets = await getProjectSecrets(projectId);
+		const secrets = await getAllProjectCredentials(projectId);
 		return secrets.GITHUB_TOKEN;
 	}
 }

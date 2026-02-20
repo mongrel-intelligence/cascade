@@ -10,12 +10,15 @@ import {
 	loadConfigFromDb,
 } from '../db/repositories/configRepository.js';
 import {
-	resolveAgentCredential,
-	resolveAllCredentials,
-	resolveCredential,
+	resolveAllIntegrationCredentials,
+	resolveAllOrgCredentials,
+	resolveIntegrationCredential,
+	resolveOrgCredential,
 } from '../db/repositories/credentialsRepository.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 import { configCache } from './configCache.js';
+import { PROVIDER_CREDENTIAL_ROLES } from './integrationRoles.js';
+import type { IntegrationProvider } from './integrationRoles.js';
 
 /**
  * Permanent secrets store — no TTL. Secrets set at worker startup persist
@@ -117,63 +120,137 @@ async function getOrgIdForProject(projectId: string): Promise<string> {
 	return orgId;
 }
 
-export async function getProjectSecret(projectId: string, key: string): Promise<string> {
+// ============================================================================
+// Integration credentials — direct by category + role
+// ============================================================================
+
+/**
+ * Resolve an integration credential for a project by category and role.
+ * Throws if the credential is not found.
+ */
+export async function getIntegrationCredential(
+	projectId: string,
+	category: string,
+	role: string,
+): Promise<string> {
 	// Check permanent secrets store first (populated at worker startup)
 	const cachedSecrets = secretsStore.get(projectId);
-	if (cachedSecrets && key in cachedSecrets) {
-		return cachedSecrets[key];
+	if (cachedSecrets) {
+		// Map role to env var key for cache lookup
+		const envKey = roleToEnvVarKey(category, role);
+		if (envKey && envKey in cachedSecrets) {
+			return cachedSecrets[envKey];
+		}
 	}
 
-	// Resolve via credentials system (project override → org default)
-	const orgId = await getOrgIdForProject(projectId);
-	const dbValue = await resolveCredential(projectId, orgId, key);
-	if (dbValue) return dbValue;
+	const value = await resolveIntegrationCredential(projectId, category, role);
+	if (value) return value;
 
-	throw new Error(`Secret '${key}' not found for project '${projectId}' in database`);
+	throw new Error(
+		`Integration credential '${category}/${role}' not found for project '${projectId}'`,
+	);
 }
 
-export async function getProjectSecretOrNull(
+/**
+ * Resolve an integration credential for a project, returning null if not found.
+ */
+export async function getIntegrationCredentialOrNull(
 	projectId: string,
-	key: string,
+	category: string,
+	role: string,
 ): Promise<string | null> {
-	try {
-		return await getProjectSecret(projectId, key);
-	} catch {
-		return null;
+	// Check permanent secrets store first
+	const cachedSecrets = secretsStore.get(projectId);
+	if (cachedSecrets) {
+		const envKey = roleToEnvVarKey(category, role);
+		if (envKey && envKey in cachedSecrets) {
+			return cachedSecrets[envKey];
+		}
 	}
+
+	return resolveIntegrationCredential(projectId, category, role);
 }
 
-export async function getProjectSecrets(projectId: string): Promise<Record<string, string>> {
+// ============================================================================
+// Non-integration (org-scoped) credentials
+// ============================================================================
+
+/**
+ * Resolve a non-integration org-scoped credential by env var key.
+ * Used for LLM API keys, etc.
+ */
+export async function getOrgCredential(
+	projectId: string,
+	envVarKey: string,
+): Promise<string | null> {
+	// Check permanent secrets store first
+	const cachedSecrets = secretsStore.get(projectId);
+	if (cachedSecrets && envVarKey in cachedSecrets) {
+		return cachedSecrets[envVarKey];
+	}
+
+	const orgId = await getOrgIdForProject(projectId);
+	return resolveOrgCredential(orgId, envVarKey);
+}
+
+// ============================================================================
+// All credentials as flat env-var-key map (for worker environments)
+// ============================================================================
+
+/**
+ * Build a flat env-var-key → value map of all credentials for a project.
+ * 1. Loads all integration credentials and maps role→envVarKey
+ * 2. Loads all org-default non-integration credentials
+ * 3. Merges integration credentials over org defaults
+ */
+export async function getAllProjectCredentials(projectId: string): Promise<Record<string, string>> {
 	const cached = secretsStore.get(projectId);
 	if (cached) return cached;
 
 	const orgId = await getOrgIdForProject(projectId);
-	const secrets = await resolveAllCredentials(projectId, orgId);
-	secretsStore.set(projectId, secrets);
-	return secrets;
-}
 
-/**
- * Resolve a credential for a specific agent type.
- * Resolution: cache → agent+project override → project override → org default → null.
- */
-export async function getAgentCredential(
-	projectId: string,
-	agentType: string,
-	key: string,
-): Promise<string | null> {
-	// Check permanent secrets store first (from CASCADE_CREDENTIALS env var in workers)
-	const cachedSecrets = secretsStore.get(projectId);
-	if (cachedSecrets && key in cachedSecrets) {
-		return cachedSecrets[key];
+	const [integrationCreds, orgCreds] = await Promise.all([
+		resolveAllIntegrationCredentials(projectId),
+		resolveAllOrgCredentials(orgId),
+	]);
+
+	// Start with org defaults
+	const result: Record<string, string> = { ...orgCreds };
+
+	// Overlay integration credentials (mapped by role→envVarKey)
+	for (const cred of integrationCreds) {
+		const roles = PROVIDER_CREDENTIAL_ROLES[cred.provider as IntegrationProvider];
+		if (!roles) continue;
+		const roleDef = roles.find((r) => r.role === cred.role);
+		if (roleDef) {
+			result[roleDef.envVarKey] = cred.value;
+		}
 	}
 
-	// Fall back to DB resolution (agent override → project override → org default)
-	const orgId = await getOrgIdForProject(projectId);
-	return resolveAgentCredential(projectId, orgId, agentType, key);
+	secretsStore.set(projectId, result);
+	return result;
 }
 
 export function invalidateConfigCache(): void {
 	configCache.invalidate();
 	secretsStore.clear();
+}
+
+// ============================================================================
+// Internal helpers
+// ============================================================================
+
+/**
+ * Map a category+role pair to the corresponding env var key.
+ * Used for cache lookups in the secrets store.
+ */
+function roleToEnvVarKey(category: string, role: string): string | undefined {
+	// Look through all providers in the category to find the role
+	for (const [provider, roles] of Object.entries(PROVIDER_CREDENTIAL_ROLES)) {
+		const providerCategory = provider === 'trello' || provider === 'jira' ? 'pm' : 'scm';
+		if (providerCategory !== category) continue;
+		const roleDef = roles.find((r) => r.role === role);
+		if (roleDef) return roleDef.envVarKey;
+	}
+	return undefined;
 }

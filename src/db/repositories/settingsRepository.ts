@@ -3,6 +3,8 @@ import { getDb } from '../client.js';
 import {
 	agentConfigs,
 	cascadeDefaults,
+	credentials,
+	integrationCredentials,
 	organizations,
 	projectIntegrations,
 	projects,
@@ -148,24 +150,93 @@ export async function listProjectIntegrations(projectId: string) {
 	return db.select().from(projectIntegrations).where(eq(projectIntegrations.projectId, projectId));
 }
 
+export async function getIntegrationByProjectAndCategory(projectId: string, category: string) {
+	const db = getDb();
+	const [row] = await db
+		.select()
+		.from(projectIntegrations)
+		.where(
+			and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.category, category)),
+		);
+	return row ?? null;
+}
+
 export async function upsertProjectIntegration(
 	projectId: string,
-	type: string,
+	category: string,
+	provider: string,
 	config: Record<string, unknown>,
+	triggers: Record<string, boolean> = {},
 ) {
 	const db = getDb();
 	// Delete then insert to handle the unique constraint
 	await db
 		.delete(projectIntegrations)
-		.where(and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.type, type)));
-	await db.insert(projectIntegrations).values({ projectId, type, config });
+		.where(
+			and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.category, category)),
+		);
+	const [row] = await db
+		.insert(projectIntegrations)
+		.values({ projectId, category, provider, config, triggers })
+		.returning();
+	return row;
 }
 
-export async function deleteProjectIntegration(projectId: string, type: string) {
+export async function deleteProjectIntegration(projectId: string, category: string) {
 	const db = getDb();
 	await db
 		.delete(projectIntegrations)
-		.where(and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.type, type)));
+		.where(
+			and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.category, category)),
+		);
+}
+
+// ============================================================================
+// Integration Credentials
+// ============================================================================
+
+export async function listIntegrationCredentials(integrationId: number) {
+	const db = getDb();
+	return db
+		.select({
+			id: integrationCredentials.id,
+			role: integrationCredentials.role,
+			credentialId: integrationCredentials.credentialId,
+			credentialName: credentials.name,
+		})
+		.from(integrationCredentials)
+		.innerJoin(credentials, eq(integrationCredentials.credentialId, credentials.id))
+		.where(eq(integrationCredentials.integrationId, integrationId));
+}
+
+export async function setIntegrationCredential(
+	integrationId: number,
+	role: string,
+	credentialId: number,
+) {
+	const db = getDb();
+	// Upsert: delete + insert to handle unique constraint
+	await db
+		.delete(integrationCredentials)
+		.where(
+			and(
+				eq(integrationCredentials.integrationId, integrationId),
+				eq(integrationCredentials.role, role),
+			),
+		);
+	await db.insert(integrationCredentials).values({ integrationId, role, credentialId });
+}
+
+export async function removeIntegrationCredential(integrationId: number, role: string) {
+	const db = getDb();
+	await db
+		.delete(integrationCredentials)
+		.where(
+			and(
+				eq(integrationCredentials.integrationId, integrationId),
+				eq(integrationCredentials.role, role),
+			),
+		);
 }
 
 // ============================================================================

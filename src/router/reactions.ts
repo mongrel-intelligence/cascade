@@ -9,7 +9,11 @@
  */
 
 import { getProjectGitHubToken } from '../config/projects.js';
-import { findProjectByRepo, getProjectSecret } from '../config/provider.js';
+import {
+	findProjectById,
+	findProjectByRepo,
+	getIntegrationCredential,
+} from '../config/provider.js';
 import { trelloClient, withTrelloCredentials } from '../trello/client.js';
 
 // In-memory JIRA CloudId cache keyed by baseUrl
@@ -74,8 +78,8 @@ async function sendTrelloReaction(projectId: string, payload: unknown): Promise<
 	let trelloApiKey: string;
 	let trelloToken: string;
 	try {
-		trelloApiKey = await getProjectSecret(projectId, 'TRELLO_API_KEY');
-		trelloToken = await getProjectSecret(projectId, 'TRELLO_TOKEN');
+		trelloApiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
+		trelloToken = await getIntegrationCredential(projectId, 'pm', 'token');
 	} catch {
 		console.warn('[Reactions] Missing Trello credentials, skipping reaction');
 		return;
@@ -168,9 +172,12 @@ async function sendJiraReaction(projectId: string, payload: unknown): Promise<vo
 	let jiraApiToken: string;
 	let jiraBaseUrl: string;
 	try {
-		jiraEmail = await getProjectSecret(projectId, 'JIRA_EMAIL');
-		jiraApiToken = await getProjectSecret(projectId, 'JIRA_API_TOKEN');
-		jiraBaseUrl = await getProjectSecret(projectId, 'JIRA_BASE_URL');
+		jiraEmail = await getIntegrationCredential(projectId, 'pm', 'email');
+		jiraApiToken = await getIntegrationCredential(projectId, 'pm', 'api_token');
+		// JIRA_BASE_URL is in the project config, not credentials.
+		const project = await findProjectById(projectId);
+		jiraBaseUrl = project?.jira?.baseUrl ?? '';
+		if (!jiraBaseUrl) throw new Error('Missing JIRA base URL');
 	} catch {
 		console.warn('[Reactions] Missing JIRA credentials, skipping reaction');
 		return;

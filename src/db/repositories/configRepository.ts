@@ -9,7 +9,6 @@ interface TrelloIntegrationConfig {
 	lists: Record<string, string>;
 	labels: Record<string, string>;
 	customFields?: { cost?: string };
-	triggers?: Record<string, boolean>;
 }
 
 interface JiraIntegrationConfig {
@@ -19,14 +18,10 @@ interface JiraIntegrationConfig {
 	issueTypes?: Record<string, string>;
 	customFields?: { cost?: string };
 	labels?: Record<string, string>;
-	triggers?: Record<string, boolean>;
 }
 
-interface GitHubIntegrationConfig {
-	implementerCredentialId?: number;
-	reviewerCredentialId?: number;
-	triggers?: Record<string, boolean>;
-}
+// biome-ignore lint/complexity/noBannedTypes: GitHub config has no fields (credentials are in integration_credentials)
+type GitHubIntegrationConfig = {};
 
 interface DefaultsRow {
 	model: string | null;
@@ -87,12 +82,23 @@ function mapDefaultsRow(row: DefaultsRow | undefined, globalAgentConfigs: AgentC
 
 type ProjectRow = typeof projects.$inferSelect;
 
+interface IntegrationRow {
+	category: string;
+	provider: string;
+	config: unknown;
+	triggers: unknown;
+}
+
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: inherently maps multiple integration types
 function mapProjectRow(
 	row: ProjectRow,
 	projectAgentConfigs: AgentConfigRow[],
 	trelloConfig?: TrelloIntegrationConfig,
+	trelloTriggers?: Record<string, boolean>,
 	jiraConfig?: JiraIntegrationConfig,
-	githubConfig?: GitHubIntegrationConfig,
+	jiraTriggers?: Record<string, boolean>,
+	_githubConfig?: GitHubIntegrationConfig,
+	githubTriggers?: Record<string, boolean>,
 ): Record<string, unknown> {
 	const { models, prompts, backends } = buildAgentMaps(projectAgentConfigs);
 
@@ -120,7 +126,9 @@ function mapProjectRow(
 			lists: trelloConfig.lists,
 			labels: trelloConfig.labels,
 			customFields: trelloConfig.customFields,
-			...(trelloConfig.triggers ? { triggers: trelloConfig.triggers } : {}),
+			...(trelloTriggers && Object.keys(trelloTriggers).length > 0
+				? { triggers: trelloTriggers }
+				: {}),
 		};
 	}
 
@@ -132,12 +140,12 @@ function mapProjectRow(
 			issueTypes: jiraConfig.issueTypes,
 			customFields: jiraConfig.customFields,
 			labels: jiraConfig.labels,
-			...(jiraConfig.triggers ? { triggers: jiraConfig.triggers } : {}),
+			...(jiraTriggers && Object.keys(jiraTriggers).length > 0 ? { triggers: jiraTriggers } : {}),
 		};
 	}
 
-	if (githubConfig?.triggers) {
-		project.github = { triggers: githubConfig.triggers };
+	if (githubTriggers && Object.keys(githubTriggers).length > 0) {
+		project.github = { triggers: githubTriggers };
 	}
 
 	if (row.agentBackend) {
@@ -149,6 +157,21 @@ function mapProjectRow(
 	}
 
 	return project;
+}
+
+function extractIntegrationConfigs(integrations: IntegrationRow[]) {
+	const trelloRow = integrations.find((i) => i.provider === 'trello');
+	const jiraRow = integrations.find((i) => i.provider === 'jira');
+	const githubRow = integrations.find((i) => i.provider === 'github');
+
+	return {
+		trelloConfig: trelloRow?.config as TrelloIntegrationConfig | undefined,
+		trelloTriggers: (trelloRow?.triggers ?? undefined) as Record<string, boolean> | undefined,
+		jiraConfig: jiraRow?.config as JiraIntegrationConfig | undefined,
+		jiraTriggers: (jiraRow?.triggers ?? undefined) as Record<string, boolean> | undefined,
+		githubConfig: githubRow?.config as GitHubIntegrationConfig | undefined,
+		githubTriggers: (githubRow?.triggers ?? undefined) as Record<string, boolean> | undefined,
+	};
 }
 
 async function loadAgentConfigs(): Promise<AgentConfigRow[]> {
@@ -206,22 +229,24 @@ export async function loadConfigFromDb(): Promise<CascadeConfig> {
 	const rawConfig = {
 		defaults: mapDefaultsRow(defaultsRow, mergedGlobalConfigs),
 		projects: projectRows.map((row) => {
-			const integrations = integrationsByProject.get(row.id) ?? [];
-			const trelloConfig = integrations.find((i) => i.type === 'trello')?.config as
-				| TrelloIntegrationConfig
-				| undefined;
-			const jiraConfig = integrations.find((i) => i.type === 'jira')?.config as
-				| JiraIntegrationConfig
-				| undefined;
-			const githubConfig = integrations.find((i) => i.type === 'github')?.config as
-				| GitHubIntegrationConfig
-				| undefined;
+			const integrations = (integrationsByProject.get(row.id) ?? []) as IntegrationRow[];
+			const {
+				trelloConfig,
+				trelloTriggers,
+				jiraConfig,
+				jiraTriggers,
+				githubConfig,
+				githubTriggers,
+			} = extractIntegrationConfigs(integrations);
 			return mapProjectRow(
 				row,
 				projectAgentConfigsMap.get(row.id) ?? [],
 				trelloConfig,
+				trelloTriggers,
 				jiraConfig,
+				jiraTriggers,
 				githubConfig,
+				githubTriggers,
 			);
 		}),
 	};
@@ -254,19 +279,24 @@ async function findProjectConfigFromDb(
 		db.select().from(projectIntegrations).where(eq(projectIntegrations.projectId, row.id)),
 	]);
 
-	const trelloConfig = integrations.find((i) => i.type === 'trello')?.config as
-		| TrelloIntegrationConfig
-		| undefined;
-	const jiraConfig = integrations.find((i) => i.type === 'jira')?.config as
-		| JiraIntegrationConfig
-		| undefined;
-	const githubConfig = integrations.find((i) => i.type === 'github')?.config as
-		| GitHubIntegrationConfig
-		| undefined;
+	const integrationRows = integrations as IntegrationRow[];
+	const { trelloConfig, trelloTriggers, jiraConfig, jiraTriggers, githubConfig, githubTriggers } =
+		extractIntegrationConfigs(integrationRows);
 
 	const rawConfig = {
 		defaults: mapDefaultsRow(defaultsRow, [...globalAcs, ...orgAcs]),
-		projects: [mapProjectRow(row, projectAcs, trelloConfig, jiraConfig, githubConfig)],
+		projects: [
+			mapProjectRow(
+				row,
+				projectAcs,
+				trelloConfig,
+				trelloTriggers,
+				jiraConfig,
+				jiraTriggers,
+				githubConfig,
+				githubTriggers,
+			),
+		],
 	};
 	const config = validateConfig(rawConfig);
 	return { project: config.projects[0], config };
@@ -282,14 +312,14 @@ type ProjectWithConfig = { project: ProjectConfig; config: CascadeConfig };
 const boardIdWhereClause = (boardId: string) =>
 	sql`${projects.id} IN (
 		SELECT ${projectIntegrations.projectId} FROM ${projectIntegrations}
-		WHERE ${projectIntegrations.type} = 'trello'
+		WHERE ${projectIntegrations.provider} = 'trello'
 		AND ${projectIntegrations.config}->>'boardId' = ${boardId}
 	)`;
 
 const jiraProjectKeyWhereClause = (projectKey: string) =>
 	sql`${projects.id} IN (
 		SELECT ${projectIntegrations.projectId} FROM ${projectIntegrations}
-		WHERE ${projectIntegrations.type} = 'jira'
+		WHERE ${projectIntegrations.provider} = 'jira'
 		AND ${projectIntegrations.config}->>'projectKey' = ${projectKey}
 	)`;
 

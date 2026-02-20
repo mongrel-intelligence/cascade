@@ -50,8 +50,7 @@ vi.mock('../../../src/utils/logging.js', () => ({
 }));
 
 vi.mock('../../../src/config/provider.js', () => ({
-	getProjectSecrets: vi.fn(),
-	getAgentCredential: vi.fn(),
+	getAllProjectCredentials: vi.fn(),
 }));
 
 vi.mock('../../../src/github/client.js', () => ({
@@ -107,7 +106,7 @@ import { executeWithBackend } from '../../../src/backends/adapter.js';
 import { type AgentProfile, getAgentProfile } from '../../../src/backends/agent-profiles.js';
 import { createProgressMonitor } from '../../../src/backends/progress.js';
 import type { AgentBackend } from '../../../src/backends/types.js';
-import { getProjectSecrets } from '../../../src/config/provider.js';
+import { getAllProjectCredentials } from '../../../src/config/provider.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../../../src/utils/cascadeEnv.js';
 import {
@@ -130,7 +129,7 @@ const mockCleanupLogFile = vi.mocked(cleanupLogFile);
 const mockCleanupLogDirectory = vi.mocked(cleanupLogDirectory);
 const mockClearWatchdogCleanup = vi.mocked(clearWatchdogCleanup);
 const mockCreateProgressMonitor = vi.mocked(createProgressMonitor);
-const mockGetProjectSecrets = vi.mocked(getProjectSecrets);
+const mockGetAllProjectCredentials = vi.mocked(getAllProjectCredentials);
 const mockGetAgentProfile = vi.mocked(getAgentProfile);
 
 function makeProject(): ProjectConfig {
@@ -223,7 +222,7 @@ function setupMocks() {
 		contextFiles: [],
 	} as never);
 	mockCreateProgressMonitor.mockReturnValue(null);
-	mockGetProjectSecrets.mockResolvedValue({});
+	mockGetAllProjectCredentials.mockResolvedValue({});
 	mockGetAgentProfile.mockReturnValue(makeMockProfile());
 	return mockLoggerInstance;
 }
@@ -541,7 +540,7 @@ describe('executeWithBackend', () => {
 
 	it('resolves per-project secrets and passes them to backend', async () => {
 		setupMocks();
-		mockGetProjectSecrets.mockResolvedValue({
+		mockGetAllProjectCredentials.mockResolvedValue({
 			GITHUB_TOKEN: 'proj-gh-token',
 			TRELLO_API_KEY: 'proj-trello-key',
 		});
@@ -551,7 +550,7 @@ describe('executeWithBackend', () => {
 
 		await executeWithBackend(backend, 'implementation', input);
 
-		expect(mockGetProjectSecrets).toHaveBeenCalledWith('test');
+		expect(mockGetAllProjectCredentials).toHaveBeenCalledWith('test');
 
 		const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
 		expect(backendInput.projectSecrets).toEqual({
@@ -592,7 +591,7 @@ describe('executeWithBackend', () => {
 
 	it('includes CASCADE_BASE_BRANCH even when no other per-project secrets exist', async () => {
 		setupMocks();
-		mockGetProjectSecrets.mockResolvedValue({});
+		mockGetAllProjectCredentials.mockResolvedValue({});
 
 		const backend = makeMockBackend();
 		const input = makeInput();

@@ -4,7 +4,8 @@ import type { TRPCContext } from '../../../../src/api/trpc.js';
 // --- Mock dependencies ---
 
 const mockFindProjectByIdFromDb = vi.fn();
-const mockResolveAllCredentials = vi.fn();
+const mockResolveAllIntegrationCredentials = vi.fn();
+const mockResolveAllOrgCredentials = vi.fn();
 
 const mockDbSelect = vi.fn();
 const mockDbFrom = vi.fn();
@@ -25,7 +26,9 @@ vi.mock('../../../../src/db/repositories/configRepository.js', () => ({
 }));
 
 vi.mock('../../../../src/db/repositories/credentialsRepository.js', () => ({
-	resolveAllCredentials: (...args: unknown[]) => mockResolveAllCredentials(...args),
+	resolveAllIntegrationCredentials: (...args: unknown[]) =>
+		mockResolveAllIntegrationCredentials(...args),
+	resolveAllOrgCredentials: (...args: unknown[]) => mockResolveAllOrgCredentials(...args),
 }));
 
 // Mock global fetch for Trello API calls
@@ -91,11 +94,12 @@ function setupJiraProjectContext() {
 	mockDbFrom.mockReturnValue({ where: mockDbWhere });
 	mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 	mockFindProjectByIdFromDb.mockResolvedValue(mockJiraProject);
-	mockResolveAllCredentials.mockResolvedValue({
-		JIRA_EMAIL: 'bot@example.com',
-		JIRA_API_TOKEN: 'jira-token-123',
-		GITHUB_TOKEN: 'ghp_test123',
-	});
+	mockResolveAllIntegrationCredentials.mockResolvedValue([
+		{ category: 'pm', provider: 'jira', role: 'email', value: 'bot@example.com' },
+		{ category: 'pm', provider: 'jira', role: 'api_token', value: 'jira-token-123' },
+		{ category: 'scm', provider: 'github', role: 'implementer_token', value: 'ghp_test123' },
+	]);
+	mockResolveAllOrgCredentials.mockResolvedValue({});
 }
 
 function setupProjectContext(opts?: { noTrello?: boolean; noGithub?: boolean }) {
@@ -103,11 +107,24 @@ function setupProjectContext(opts?: { noTrello?: boolean; noGithub?: boolean }) 
 	mockDbFrom.mockReturnValue({ where: mockDbWhere });
 	mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 	mockFindProjectByIdFromDb.mockResolvedValue(mockProject);
-	mockResolveAllCredentials.mockResolvedValue({
-		TRELLO_API_KEY: opts?.noTrello ? undefined : 'trello-key',
-		TRELLO_TOKEN: opts?.noTrello ? undefined : 'trello-token',
-		GITHUB_TOKEN: opts?.noGithub ? undefined : 'ghp_test123',
-	});
+	const integrationCreds: { category: string; provider: string; role: string; value: string }[] =
+		[];
+	if (!opts?.noTrello) {
+		integrationCreds.push(
+			{ category: 'pm', provider: 'trello', role: 'api_key', value: 'trello-key' },
+			{ category: 'pm', provider: 'trello', role: 'token', value: 'trello-token' },
+		);
+	}
+	if (!opts?.noGithub) {
+		integrationCreds.push({
+			category: 'scm',
+			provider: 'github',
+			role: 'implementer_token',
+			value: 'ghp_test123',
+		});
+	}
+	mockResolveAllIntegrationCredentials.mockResolvedValue(integrationCreds);
+	mockResolveAllOrgCredentials.mockResolvedValue({});
 }
 
 describe('webhooksRouter', () => {
@@ -195,6 +212,35 @@ describe('webhooksRouter', () => {
 			await expect(caller.list({ projectId: 'my-project' })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
+		});
+
+		it('does not use legacy GITHUB_TOKEN org default for github operations', async () => {
+			mockDbSelect.mockReturnValue({ from: mockDbFrom });
+			mockDbFrom.mockReturnValue({ where: mockDbWhere });
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockFindProjectByIdFromDb.mockResolvedValue(mockProject);
+
+			// No GitHub integration credential linked
+			mockResolveAllIntegrationCredentials.mockResolvedValue([
+				{ category: 'pm', provider: 'trello', role: 'api_key', value: 'trello-key' },
+				{ category: 'pm', provider: 'trello', role: 'token', value: 'trello-token' },
+			]);
+			// Org default has a legacy GITHUB_TOKEN — should be ignored
+			mockResolveAllOrgCredentials.mockResolvedValue({
+				GITHUB_TOKEN: 'ghp_legacy_should_not_be_used',
+			});
+
+			mockFetch.mockResolvedValue({
+				ok: true,
+				json: () => Promise.resolve([]),
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.list({ projectId: 'my-project' });
+
+			// GITHUB_TOKEN_IMPLEMENTER was not set, so GitHub webhooks should not be listed
+			expect(result.github).toEqual([]);
+			expect(mockListWebhooks).not.toHaveBeenCalled();
 		});
 	});
 
