@@ -90,7 +90,7 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 				prBranch: payload.pull_request.head.ref,
 				repoFullName: payload.repository.full_name,
 				headSha: payload.pull_request.head.sha,
-				triggerType: 'ci-success',
+				triggerType: 'review-requested',
 				cardId: workItemId,
 			},
 			prNumber,

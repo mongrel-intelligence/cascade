@@ -179,7 +179,7 @@ describe('ReviewRequestedTrigger', () => {
 			expect(result?.agentInput).toMatchObject({
 				prNumber: 42,
 				repoFullName: 'owner/repo',
-				triggerType: 'ci-success',
+				triggerType: 'review-requested',
 				cardId: 'abc123',
 			});
 		});

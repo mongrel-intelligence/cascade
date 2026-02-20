@@ -625,6 +625,65 @@ function GitHubForm({
 				</p>
 			)}
 
+			<TriggerToggles
+				title="Trigger Configuration"
+				items={[
+					{
+						key: 'checkSuiteSuccess',
+						label: 'Check Suite Success',
+						description: 'Trigger review agent when all CI checks pass.',
+						defaultValue: true,
+					},
+					{
+						key: 'checkSuiteFailure',
+						label: 'Check Suite Failure',
+						description: 'Trigger respond-to-ci agent when CI checks fail.',
+						defaultValue: true,
+					},
+					{
+						key: 'prReviewSubmitted',
+						label: 'PR Review Submitted',
+						description:
+							'Trigger respond-to-review when a review with changes requested is submitted.',
+						defaultValue: true,
+					},
+					{
+						key: 'prCommentMention',
+						label: 'PR Comment @mention',
+						description:
+							'Trigger respond-to-pr-comment when the implementer bot is @mentioned in a comment.',
+						defaultValue: true,
+					},
+					{
+						key: 'prReadyToMerge',
+						label: 'PR Ready to Merge',
+						description: 'Auto-move card to DONE when PR is approved and checks pass.',
+						defaultValue: true,
+					},
+					{
+						key: 'prMerged',
+						label: 'PR Merged',
+						description: 'Auto-move card to MERGED when PR is merged.',
+						defaultValue: true,
+					},
+					{
+						key: 'reviewRequested',
+						label: 'Review Requested (opt-in)',
+						description:
+							'Trigger review agent when review is requested from a CASCADE persona. Default disabled.',
+						defaultValue: false,
+					},
+					{
+						key: 'prOpened',
+						label: 'PR Opened (opt-in)',
+						description: 'Trigger respond-to-review when a new PR is opened. Default disabled.',
+						defaultValue: false,
+					},
+				]}
+				values={githubTriggers}
+				onChange={setGithubTriggers}
+			/>
+
 			<div className="flex items-center gap-2">
 				<button
 					type="button"
