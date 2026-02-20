@@ -46,6 +46,12 @@ jobs:
           docker build -f Dockerfile.frontend \
             --build-arg VITE_API_URL=https://dev.api.ca.sca.de.com \
             -t cascade-frontend-dev:build .
+          # Ensure the Cloudflare Pages project exists (idempotent)
+          docker run --rm \
+            -e CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -e CLOUDFLARE_ACCOUNT_ID="${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" \
+            cascade-frontend-dev:build \
+            wrangler pages project create cascade-dashboard-dev --production-branch=main || true
           docker run --rm \
             -e CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}" \
             -e CLOUDFLARE_ACCOUNT_ID="${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" \
