@@ -63,7 +63,6 @@ jobs:
           docker build --target=builder -f Dockerfile.dashboard -t cascade-migrator:dev .
           docker run --rm \
             -e DATABASE_URL="${{ secrets.DEV_DATABASE_URL }}" \
-            -v "${{ github.workspace }}/drizzle.config.ts:/app/drizzle.config.ts" \
             cascade-migrator:dev \
             ./node_modules/.bin/drizzle-kit migrate
 

@@ -7,7 +7,7 @@ COPY package*.json .npmrc ./
 RUN npm ci --ignore-scripts
 
 # Build
-COPY tsconfig.json ./
+COPY tsconfig.json drizzle.config.ts ./
 COPY src ./src
 RUN npm run build
 
