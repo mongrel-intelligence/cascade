@@ -6,7 +6,10 @@
  * and dispatches to the trigger registry.
  */
 
-import { getProjectSecret, loadProjectConfigByJiraProjectKey } from '../../config/provider.js';
+import {
+	getIntegrationCredential,
+	loadProjectConfigByJiraProjectKey,
+} from '../../config/provider.js';
 import { withGitHubToken } from '../../github/client.js';
 import { getPersonaToken } from '../../github/personas.js';
 import { withJiraCredentials } from '../../jira/client.js';
@@ -72,10 +75,9 @@ async function executeJiraAgent(
 	project: ProjectConfig,
 	config: CascadeConfig,
 ): Promise<void> {
-	const jiraEmail = await getProjectSecret(project.id, 'JIRA_EMAIL');
-	const jiraApiToken = await getProjectSecret(project.id, 'JIRA_API_TOKEN');
-	const jiraBaseUrl =
-		project.jira?.baseUrl ?? (await getProjectSecret(project.id, 'JIRA_BASE_URL'));
+	const jiraEmail = await getIntegrationCredential(project.id, 'pm', 'email');
+	const jiraApiToken = await getIntegrationCredential(project.id, 'pm', 'api_token');
+	const jiraBaseUrl = project.jira?.baseUrl ?? '';
 	const githubToken = await getPersonaToken(project.id, result.agentType);
 
 	const restoreLlmEnv = await injectLlmApiKeys(project.id);
@@ -143,10 +145,9 @@ export async function processJiraWebhook(
 	const { project, config } = projectConfig;
 
 	// Establish JIRA credential + PM provider scope
-	const jiraEmail = await getProjectSecret(project.id, 'JIRA_EMAIL');
-	const jiraApiToken = await getProjectSecret(project.id, 'JIRA_API_TOKEN');
-	const jiraBaseUrl =
-		project.jira?.baseUrl ?? (await getProjectSecret(project.id, 'JIRA_BASE_URL'));
+	const jiraEmail = await getIntegrationCredential(project.id, 'pm', 'email');
+	const jiraApiToken = await getIntegrationCredential(project.id, 'pm', 'api_token');
+	const jiraBaseUrl = project.jira?.baseUrl ?? '';
 	const pmProvider = createPMProvider(project);
 
 	await withJiraCredentials(

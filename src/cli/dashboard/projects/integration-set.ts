@@ -10,8 +10,17 @@ export default class ProjectsIntegrationSet extends DashboardCommand {
 
 	static override flags = {
 		...DashboardCommand.baseFlags,
-		type: Flags.string({ description: 'Integration type (e.g. trello)', required: true }),
+		category: Flags.string({
+			description: 'Integration category (pm or scm)',
+			required: true,
+			options: ['pm', 'scm'],
+		}),
+		provider: Flags.string({
+			description: 'Integration provider (trello, jira, github)',
+			required: true,
+		}),
 		config: Flags.string({ description: 'Config as JSON string', required: true }),
+		triggers: Flags.string({ description: 'Triggers as JSON string' }),
 	};
 
 	async run(): Promise<void> {
@@ -24,11 +33,22 @@ export default class ProjectsIntegrationSet extends DashboardCommand {
 			this.error('Invalid JSON in --config flag.');
 		}
 
+		let triggers: Record<string, boolean> | undefined;
+		if (flags.triggers) {
+			try {
+				triggers = JSON.parse(flags.triggers) as Record<string, boolean>;
+			} catch {
+				this.error('Invalid JSON in --triggers flag.');
+			}
+		}
+
 		try {
 			await this.client.projects.integrations.upsert.mutate({
 				projectId: args.id,
-				type: flags.type,
+				category: flags.category as 'pm' | 'scm',
+				provider: flags.provider,
 				config,
+				triggers,
 			});
 
 			if (flags.json) {
@@ -36,7 +56,7 @@ export default class ProjectsIntegrationSet extends DashboardCommand {
 				return;
 			}
 
-			this.log(`Set ${flags.type} integration for project: ${args.id}`);
+			this.log(`Set ${flags.category}/${flags.provider} integration for project: ${args.id}`);
 		} catch (err) {
 			this.handleError(err);
 		}

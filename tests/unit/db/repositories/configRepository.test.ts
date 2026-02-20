@@ -56,13 +56,15 @@ const projectRowWithBackend = {
 const trelloIntegration = {
 	id: 1,
 	projectId: 'proj1',
-	type: 'trello' as const,
+	category: 'pm' as const,
+	provider: 'trello' as const,
 	config: {
 		boardId: 'board123',
 		lists: { todo: 'list-todo', done: 'list-done' },
 		labels: { processing: 'label-proc' },
 		customFields: { cost: 'cf-cost' },
 	},
+	triggers: {},
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };
@@ -70,13 +72,15 @@ const trelloIntegration = {
 const jiraIntegration = {
 	id: 3,
 	projectId: 'proj1',
-	type: 'jira' as const,
+	category: 'pm' as const,
+	provider: 'jira' as const,
 	config: {
 		projectKey: 'PROJ',
 		baseUrl: 'https://test.atlassian.net',
 		statuses: { briefing: 'Briefing', planning: 'Planning', todo: 'To Do' },
 		labels: { processing: 'my-proc', readyToProcess: 'my-ready' },
 	},
+	triggers: {},
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };

@@ -2,9 +2,14 @@ import { Octokit } from '@octokit/rest';
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { PROVIDER_CREDENTIAL_ROLES } from '../../config/integrationRoles.js';
+import type { IntegrationProvider } from '../../config/integrationRoles.js';
 import { getDb } from '../../db/client.js';
 import { findProjectByIdFromDb } from '../../db/repositories/configRepository.js';
-import { resolveAllCredentials } from '../../db/repositories/credentialsRepository.js';
+import {
+	resolveAllIntegrationCredentials,
+	resolveAllOrgCredentials,
+} from '../../db/repositories/credentialsRepository.js';
 import { projects } from '../../db/schema/index.js';
 import { protectedProcedure, router } from '../trpc.js';
 
@@ -55,6 +60,27 @@ interface ProjectContext {
 	jiraApiToken?: string;
 }
 
+async function buildCredentialMap(
+	projectId: string,
+	orgId: string,
+): Promise<Record<string, string>> {
+	const [integrationCreds, orgCreds] = await Promise.all([
+		resolveAllIntegrationCredentials(projectId),
+		resolveAllOrgCredentials(orgId),
+	]);
+
+	const creds: Record<string, string> = { ...orgCreds };
+	for (const cred of integrationCreds) {
+		const roles = PROVIDER_CREDENTIAL_ROLES[cred.provider as IntegrationProvider];
+		if (!roles) continue;
+		const roleDef = roles.find((r) => r.role === cred.role);
+		if (roleDef) {
+			creds[roleDef.envVarKey] = cred.value;
+		}
+	}
+	return creds;
+}
+
 async function resolveProjectContext(
 	projectId: string,
 	userOrgId: string,
@@ -74,7 +100,7 @@ async function resolveProjectContext(
 		throw new TRPCError({ code: 'NOT_FOUND' });
 	}
 
-	const creds = await resolveAllCredentials(projectId, project.orgId);
+	const creds = await buildCredentialMap(projectId, project.orgId);
 
 	// Resolve JIRA label names from config (with defaults)
 	const jiraLabels = project.jira
@@ -97,7 +123,7 @@ async function resolveProjectContext(
 		jiraLabels,
 		trelloApiKey: creds.TRELLO_API_KEY ?? '',
 		trelloToken: creds.TRELLO_TOKEN ?? '',
-		githubToken: creds.GITHUB_TOKEN ?? '',
+		githubToken: creds.GITHUB_TOKEN_IMPLEMENTER ?? '',
 		jiraEmail: creds.JIRA_EMAIL ?? '',
 		jiraApiToken: creds.JIRA_API_TOKEN ?? '',
 	};
@@ -408,9 +434,12 @@ export const webhooksRouter = router({
 				pctx.trelloToken &&
 				pctx.boardId
 			) {
-				const trelloCallbackUrl = `${baseUrl}/webhook/trello`;
+				const trelloCallbackUrl = `${baseUrl}/trello/webhook`;
 				const existing = await trelloListWebhooks(pctx);
-				const duplicate = existing.find((w) => w.callbackURL === trelloCallbackUrl);
+				const duplicate = existing.find(
+					(w) =>
+						w.callbackURL === trelloCallbackUrl || w.callbackURL === `${baseUrl}/webhook/trello`,
+				);
 
 				if (duplicate) {
 					results.trello = `Already exists: ${duplicate.id}`;
@@ -427,9 +456,11 @@ export const webhooksRouter = router({
 				pctx.jiraApiToken &&
 				pctx.jiraBaseUrl
 			) {
-				const jiraCallbackUrl = `${baseUrl}/webhook/jira`;
+				const jiraCallbackUrl = `${baseUrl}/jira/webhook`;
 				const existing = await jiraListWebhooks(pctx);
-				const duplicate = existing.find((w) => w.url === jiraCallbackUrl);
+				const duplicate = existing.find(
+					(w) => w.url === jiraCallbackUrl || w.url === `${baseUrl}/webhook/jira`,
+				);
 
 				if (duplicate) {
 					results.jira = `Already exists: ${duplicate.id}`;
@@ -443,9 +474,11 @@ export const webhooksRouter = router({
 
 			// GitHub webhook
 			if (!input.trelloOnly && !input.jiraOnly && pctx.githubToken) {
-				const githubCallbackUrl = `${baseUrl}/webhook/github`;
+				const githubCallbackUrl = `${baseUrl}/github/webhook`;
 				const existing = await githubListWebhooks(pctx);
-				const duplicate = existing.find((w) => w.config.url === githubCallbackUrl);
+				const duplicate = existing.find(
+					(w) => w.config.url === githubCallbackUrl || w.config.url === `${baseUrl}/webhook/github`,
+				);
 
 				if (duplicate) {
 					results.github = `Already exists: ${duplicate.id}`;
@@ -478,9 +511,12 @@ export const webhooksRouter = router({
 
 			// Trello
 			if (!input.githubOnly && !input.jiraOnly && pctx.trelloApiKey && pctx.trelloToken) {
-				const trelloCallbackUrl = `${baseUrl}/webhook/trello`;
+				const trelloCallbackUrl = `${baseUrl}/trello/webhook`;
 				const existing = await trelloListWebhooks(pctx);
-				const matching = existing.filter((w) => w.callbackURL === trelloCallbackUrl);
+				const matching = existing.filter(
+					(w) =>
+						w.callbackURL === trelloCallbackUrl || w.callbackURL === `${baseUrl}/webhook/trello`,
+				);
 				for (const w of matching) {
 					await trelloDeleteWebhook(pctx, w.id);
 					deleted.trello.push(w.id);
@@ -489,9 +525,11 @@ export const webhooksRouter = router({
 
 			// JIRA
 			if (!input.trelloOnly && !input.githubOnly && pctx.jiraEmail && pctx.jiraApiToken) {
-				const jiraCallbackUrl = `${baseUrl}/webhook/jira`;
+				const jiraCallbackUrl = `${baseUrl}/jira/webhook`;
 				const existing = await jiraListWebhooks(pctx);
-				const matching = existing.filter((w) => w.url === jiraCallbackUrl);
+				const matching = existing.filter(
+					(w) => w.url === jiraCallbackUrl || w.url === `${baseUrl}/webhook/jira`,
+				);
 				for (const w of matching) {
 					await jiraDeleteWebhook(pctx, w.id);
 					deleted.jira.push(w.id);
@@ -500,9 +538,11 @@ export const webhooksRouter = router({
 
 			// GitHub
 			if (!input.trelloOnly && !input.jiraOnly && pctx.githubToken) {
-				const githubCallbackUrl = `${baseUrl}/webhook/github`;
+				const githubCallbackUrl = `${baseUrl}/github/webhook`;
 				const existing = await githubListWebhooks(pctx);
-				const matching = existing.filter((w) => w.config.url === githubCallbackUrl);
+				const matching = existing.filter(
+					(w) => w.config.url === githubCallbackUrl || w.config.url === `${baseUrl}/webhook/github`,
+				);
 				for (const w of matching) {
 					await githubDeleteWebhook(pctx, w.id);
 					deleted.github.push(w.id);

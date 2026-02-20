@@ -1,8 +1,10 @@
 import { Args, Flags } from '@oclif/core';
 import { DashboardCommand } from '../_shared/base.js';
 
-export default class ProjectsOverrideSet extends DashboardCommand {
-	static override description = 'Set a credential override for a project.';
+export default class ProjectsIntegrationCredentialSet extends DashboardCommand {
+	static override description = 'Link a credential to an integration role for a project.';
+
+	static override aliases = ['projects:integration-credential-set'];
 
 	static override args = {
 		id: Args.string({ description: 'Project ID', required: true }),
@@ -10,40 +12,35 @@ export default class ProjectsOverrideSet extends DashboardCommand {
 
 	static override flags = {
 		...DashboardCommand.baseFlags,
-		key: Flags.string({
-			description: 'Environment variable key (e.g. GITHUB_TOKEN_IMPLEMENTER)',
+		category: Flags.string({
+			description: 'Integration category (pm or scm)',
+			required: true,
+			options: ['pm', 'scm'],
+		}),
+		role: Flags.string({
+			description: 'Credential role (e.g. api_key, token, implementer_token)',
 			required: true,
 		}),
-		'credential-id': Flags.integer({ description: 'Credential ID to use', required: true }),
-		'agent-type': Flags.string({ description: 'Scope to specific agent type' }),
+		'credential-id': Flags.integer({ description: 'Credential ID to link', required: true }),
 	};
 
 	async run(): Promise<void> {
-		const { args, flags } = await this.parse(ProjectsOverrideSet);
+		const { args, flags } = await this.parse(ProjectsIntegrationCredentialSet);
 
 		try {
-			if (flags['agent-type']) {
-				await this.client.projects.credentialOverrides.setAgent.mutate({
-					projectId: args.id,
-					envVarKey: flags.key,
-					agentType: flags['agent-type'],
-					credentialId: flags['credential-id'],
-				});
-			} else {
-				await this.client.projects.credentialOverrides.set.mutate({
-					projectId: args.id,
-					envVarKey: flags.key,
-					credentialId: flags['credential-id'],
-				});
-			}
+			await this.client.projects.integrationCredentials.set.mutate({
+				projectId: args.id,
+				category: flags.category as 'pm' | 'scm',
+				role: flags.role,
+				credentialId: flags['credential-id'],
+			});
 
 			if (flags.json) {
 				this.outputJson({ ok: true });
 				return;
 			}
 
-			const scope = flags['agent-type'] ? ` (agent: ${flags['agent-type']})` : '';
-			this.log(`Set override ${flags.key} → credential #${flags['credential-id']}${scope}`);
+			this.log(`Set ${flags.category}/${flags.role} → credential #${flags['credential-id']}`);
 		} catch (err) {
 			this.handleError(err);
 		}

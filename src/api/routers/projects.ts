@@ -2,21 +2,18 @@ import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../../db/client.js';
-import {
-	listProjectOverrides,
-	removeAgentCredentialOverride,
-	removeProjectCredentialOverride,
-	setAgentCredentialOverride,
-	setProjectCredentialOverride,
-} from '../../db/repositories/credentialsRepository.js';
 import { listProjectsForOrg } from '../../db/repositories/runsRepository.js';
 import {
 	createProject,
 	deleteProject,
 	deleteProjectIntegration,
+	getIntegrationByProjectAndCategory,
 	getProjectFull,
+	listIntegrationCredentials,
 	listProjectIntegrations,
 	listProjectsFull,
+	removeIntegrationCredential,
+	setIntegrationCredential,
 	updateProject,
 	upsertProjectIntegration,
 } from '../../db/repositories/settingsRepository.js';
@@ -123,84 +120,91 @@ export const projectsRouter = router({
 			.input(
 				z.object({
 					projectId: z.string(),
-					type: z.string().min(1),
+					category: z.enum(['pm', 'scm']),
+					provider: z.string().min(1),
 					config: z.record(z.unknown()),
+					triggers: z.record(z.boolean()).optional(),
 				}),
 			)
 			.mutation(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
-				await upsertProjectIntegration(input.projectId, input.type, input.config);
+				return upsertProjectIntegration(
+					input.projectId,
+					input.category,
+					input.provider,
+					input.config,
+					input.triggers,
+				);
 			}),
 
 		delete: protectedProcedure
-			.input(z.object({ projectId: z.string(), type: z.string() }))
+			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm']) }))
 			.mutation(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
-				await deleteProjectIntegration(input.projectId, input.type);
+				await deleteProjectIntegration(input.projectId, input.category);
 			}),
 	}),
 
-	// Credential Overrides
-	credentialOverrides: router({
+	// Integration Credentials
+	integrationCredentials: router({
 		list: protectedProcedure
-			.input(z.object({ projectId: z.string() }))
+			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm']) }))
 			.query(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
-				return listProjectOverrides(input.projectId);
+				const integration = await getIntegrationByProjectAndCategory(
+					input.projectId,
+					input.category,
+				);
+				if (!integration) return [];
+				return listIntegrationCredentials(integration.id);
 			}),
 
 		set: protectedProcedure
 			.input(
 				z.object({
 					projectId: z.string(),
-					envVarKey: z.string(),
+					category: z.enum(['pm', 'scm']),
+					role: z.string().min(1),
 					credentialId: z.number(),
 				}),
 			)
 			.mutation(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				await verifyCredentialOwnership(input.credentialId, ctx.effectiveOrgId);
-				await setProjectCredentialOverride(input.projectId, input.envVarKey, input.credentialId);
+				const integration = await getIntegrationByProjectAndCategory(
+					input.projectId,
+					input.category,
+				);
+				if (!integration) {
+					throw new TRPCError({
+						code: 'NOT_FOUND',
+						message: `No ${input.category} integration found for project`,
+					});
+				}
+				await setIntegrationCredential(integration.id, input.role, input.credentialId);
 			}),
 
 		remove: protectedProcedure
-			.input(z.object({ projectId: z.string(), envVarKey: z.string() }))
-			.mutation(async ({ ctx, input }) => {
-				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
-				await removeProjectCredentialOverride(input.projectId, input.envVarKey);
-			}),
-
-		setAgent: protectedProcedure
 			.input(
 				z.object({
 					projectId: z.string(),
-					envVarKey: z.string(),
-					agentType: z.string(),
-					credentialId: z.number(),
+					category: z.enum(['pm', 'scm']),
+					role: z.string().min(1),
 				}),
 			)
 			.mutation(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
-				await verifyCredentialOwnership(input.credentialId, ctx.effectiveOrgId);
-				await setAgentCredentialOverride(
+				const integration = await getIntegrationByProjectAndCategory(
 					input.projectId,
-					input.envVarKey,
-					input.agentType,
-					input.credentialId,
+					input.category,
 				);
-			}),
-
-		removeAgent: protectedProcedure
-			.input(
-				z.object({
-					projectId: z.string(),
-					envVarKey: z.string(),
-					agentType: z.string(),
-				}),
-			)
-			.mutation(async ({ ctx, input }) => {
-				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
-				await removeAgentCredentialOverride(input.projectId, input.envVarKey, input.agentType);
+				if (!integration) {
+					throw new TRPCError({
+						code: 'NOT_FOUND',
+						message: `No ${input.category} integration found for project`,
+					});
+				}
+				await removeIntegrationCredential(integration.id, input.role);
 			}),
 	}),
 });

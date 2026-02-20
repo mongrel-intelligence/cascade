@@ -15,9 +15,14 @@
  */
 
 import { Octokit } from '@octokit/rest';
+import { PROVIDER_CREDENTIAL_ROLES } from '../src/config/integrationRoles.js';
+import type { IntegrationProvider } from '../src/config/integrationRoles.js';
 import { closeDb } from '../src/db/client.js';
 import { findProjectByIdFromDb } from '../src/db/repositories/configRepository.js';
-import { resolveAllCredentials } from '../src/db/repositories/credentialsRepository.js';
+import {
+	resolveAllIntegrationCredentials,
+	resolveAllOrgCredentials,
+} from '../src/db/repositories/credentialsRepository.js';
 
 const GITHUB_WEBHOOK_EVENTS = [
 	'pull_request',
@@ -66,11 +71,23 @@ async function resolveProjectContext(projectId: string): Promise<ProjectContext>
 		process.exit(1);
 	}
 
-	const creds = await resolveAllCredentials(projectId, project.orgId);
+	// Build credential map from integration credentials + org defaults
+	const integrationCreds = await resolveAllIntegrationCredentials(projectId);
+	const orgCreds = await resolveAllOrgCredentials(project.orgId);
 
-	const trelloApiKey = creds.TRELLO_API_KEY;
-	const trelloToken = creds.TRELLO_TOKEN;
-	const githubToken = creds.GITHUB_TOKEN;
+	const credMap: Record<string, string> = { ...orgCreds };
+	for (const cred of integrationCreds) {
+		const roles = PROVIDER_CREDENTIAL_ROLES[cred.provider as IntegrationProvider];
+		if (!roles) continue;
+		const roleDef = roles.find((r) => r.role === cred.role);
+		if (roleDef) {
+			credMap[roleDef.envVarKey] = cred.value;
+		}
+	}
+
+	const trelloApiKey = credMap.TRELLO_API_KEY;
+	const trelloToken = credMap.TRELLO_TOKEN;
+	const githubToken = credMap.GITHUB_TOKEN_IMPLEMENTER ?? credMap.GITHUB_TOKEN;
 
 	if (!trelloApiKey || !trelloToken) {
 		console.warn(

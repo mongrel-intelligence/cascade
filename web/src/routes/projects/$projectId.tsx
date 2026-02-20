@@ -1,4 +1,3 @@
-import { CredentialOverrides } from '@/components/projects/credential-overrides.js';
 import { IntegrationForm } from '@/components/projects/integration-form.js';
 import { ProjectAgentConfigs } from '@/components/projects/project-agent-configs.js';
 import { ProjectGeneralForm } from '@/components/projects/project-general-form.js';
@@ -10,7 +9,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { rootRoute } from '../__root.js';
 
-type Tab = 'general' | 'integrations' | 'credentials' | 'agent-configs';
+type Tab = 'general' | 'integrations' | 'agent-configs';
 
 function ProjectDetailPage() {
 	const { projectId } = projectDetailRoute.useParams();
@@ -31,7 +30,6 @@ function ProjectDetailPage() {
 	const tabs: { id: Tab; label: string }[] = [
 		{ id: 'general', label: 'General' },
 		{ id: 'integrations', label: 'Integrations' },
-		{ id: 'credentials', label: 'Credentials' },
 		{ id: 'agent-configs', label: 'Agent Configs' },
 	];
 
@@ -71,7 +69,6 @@ function ProjectDetailPage() {
 
 			{activeTab === 'general' && <ProjectGeneralForm project={project} />}
 			{activeTab === 'integrations' && <IntegrationForm projectId={projectId} />}
-			{activeTab === 'credentials' && <CredentialOverrides projectId={projectId} />}
 			{activeTab === 'agent-configs' && <ProjectAgentConfigs projectId={projectId} />}
 		</div>
 	);

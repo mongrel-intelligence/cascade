@@ -3,6 +3,11 @@ import { execFileSync } from 'node:child_process';
 import { type AgentCapabilities, getAgentCapabilities } from '../agents/shared/capabilities.js';
 export type { AgentCapabilities } from '../agents/shared/capabilities.js';
 import {
+	buildPRAgentGadgets,
+	buildReviewGadgets,
+	buildWorkItemGadgets,
+} from '../agents/shared/gadgets.js';
+import {
 	formatPRComments,
 	formatPRDetails,
 	formatPRDiff,
@@ -10,41 +15,17 @@ import {
 	formatPRReviews,
 	readPRFileContents,
 } from '../agents/shared/prFormatting.js';
+import {
+	buildCIResponsePrompt,
+	buildCommentResponsePrompt,
+	buildPRCommentResponsePrompt,
+	buildReviewPrompt,
+	buildWorkItemPrompt,
+} from '../agents/shared/taskPrompts.js';
 import type { ContextFile } from '../agents/utils/setup.js';
-import { AstGrep } from '../gadgets/AstGrep.js';
-import { FileMultiEdit } from '../gadgets/FileMultiEdit.js';
-import { FileSearchAndReplace } from '../gadgets/FileSearchAndReplace.js';
-import { Finish } from '../gadgets/Finish.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
-import { ReadFile } from '../gadgets/ReadFile.js';
-import { RipGrep } from '../gadgets/RipGrep.js';
-import { Sleep } from '../gadgets/Sleep.js';
-import { VerifyChanges } from '../gadgets/VerifyChanges.js';
-import { WriteFile } from '../gadgets/WriteFile.js';
 import { formatCheckStatus } from '../gadgets/github/core/getPRChecks.js';
-import {
-	CreatePR,
-	CreatePRReview,
-	GetPRChecks,
-	GetPRComments,
-	GetPRDetails,
-	GetPRDiff,
-	PostPRComment,
-	ReplyToReviewComment,
-	UpdatePRComment,
-} from '../gadgets/github/index.js';
 import { readWorkItem } from '../gadgets/pm/core/readWorkItem.js';
-import {
-	AddChecklist,
-	CreateWorkItem,
-	ListWorkItems,
-	PMUpdateChecklistItem,
-	PostComment,
-	ReadWorkItem,
-	UpdateWorkItem,
-} from '../gadgets/pm/index.js';
-import { Tmux } from '../gadgets/tmux.js';
-import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
 import { githubClient } from '../github/client.js';
 import type { AgentInput } from '../types/index.js';
 import { resolveSquintDbPath } from '../utils/squintDb.js';
@@ -138,94 +119,10 @@ export interface AgentProfile {
 // ============================================================================
 // Llmist Gadget Builders
 // ============================================================================
-
-/**
- * Build the standard set of gadgets for work-item-based agents (briefing, planning,
- * implementation, debug). Mirrors the logic in agents/base.ts getBaseAgentGadgets().
- */
-function buildWorkItemLlmistGadgets(caps: AgentCapabilities): unknown[] {
-	return [
-		// Filesystem gadgets
-		new ListDirectory(),
-		new ReadFile(),
-		new RipGrep(),
-		new AstGrep(),
-		...(caps.canEditFiles
-			? [new FileSearchAndReplace(), new FileMultiEdit(), new WriteFile(), new VerifyChanges()]
-			: []),
-		// Shell commands
-		new Tmux(),
-		new Sleep(),
-		// Task tracking
-		new TodoUpsert(),
-		new TodoUpdateStatus(),
-		new TodoDelete(),
-		// GitHub PR creation (gated by capability)
-		...(caps.canCreatePR ? [new CreatePR()] : []),
-		// PM gadgets
-		new ReadWorkItem(),
-		new PostComment(),
-		new UpdateWorkItem(),
-		new CreateWorkItem(),
-		new ListWorkItems(),
-		new AddChecklist(),
-		...(caps.canUpdateChecklists ? [new PMUpdateChecklistItem()] : []),
-		// Session control
-		new Finish(),
-	];
-}
-
-/**
- * Build gadgets for the review agent (read-only, PR-focused).
- * Mirrors the authoritative gadget list in agents/review.ts getGadgets().
- */
-function buildReviewLlmistGadgets(): unknown[] {
-	return [
-		new ListDirectory(),
-		new ReadFile(),
-		new Tmux(),
-		new Sleep(),
-		new TodoUpsert(),
-		new TodoUpdateStatus(),
-		new TodoDelete(),
-		new GetPRDetails(),
-		new GetPRDiff(),
-		new GetPRChecks(),
-		new CreatePRReview(),
-		new UpdatePRComment(),
-		new Finish(),
-	];
-}
-
-/**
- * Build gadgets for PR-modifying agents (respond-to-review, respond-to-ci, respond-to-pr-comment).
- * Includes file editing + GitHub tools but NOT CreatePR (agents push to existing branches).
- * Mirrors the authoritative gadget list in agents/shared/gadgets.ts createPRAgentGadgets().
- */
-function buildPRAgentLlmistGadgets(includeReviewComments = false): unknown[] {
-	return [
-		new ListDirectory(),
-		new ReadFile(),
-		new FileSearchAndReplace(),
-		new FileMultiEdit(),
-		new WriteFile(),
-		new VerifyChanges(),
-		new AstGrep(),
-		new RipGrep(),
-		new Tmux(),
-		new Sleep(),
-		new TodoUpsert(),
-		new TodoUpdateStatus(),
-		new TodoDelete(),
-		new GetPRDetails(),
-		new GetPRDiff(),
-		new GetPRChecks(),
-		new PostPRComment(),
-		new UpdatePRComment(),
-		...(includeReviewComments ? [new GetPRComments(), new ReplyToReviewComment()] : []),
-		new Finish(),
-	];
-}
+// All three builder functions below delegate to the shared gadget factories in
+// agents/shared/gadgets.ts, which serve as the single source of truth for tool
+// sets used by both the llmist backend and the Claude Code backend.
+// ============================================================================
 
 // ============================================================================
 // Context Fetching Helpers
@@ -238,27 +135,22 @@ function filterToolsByNames(allTools: ToolManifest[], names: string[]): ToolMani
 
 function fetchDirectoryListing(repoDir: string): ContextInjection {
 	const listDirGadget = new ListDirectory();
+	// Pass the absolute repoDir path so ListDirectory resolves correctly
+	// without requiring process.chdir(), which is a dangerous side effect.
 	const params = {
 		comment: 'Pre-fetching codebase structure for context',
-		directoryPath: '.',
+		directoryPath: repoDir,
 		maxDepth: 3,
 		includeGitIgnored: false,
 	};
 
-	// ListDirectory uses process.cwd() — we need to be in repoDir
-	const originalCwd = process.cwd();
-	try {
-		process.chdir(repoDir);
-		const result = listDirGadget.execute(params);
-		return {
-			toolName: 'ListDirectory',
-			params,
-			result,
-			description: 'Pre-fetched codebase structure',
-		};
-	} finally {
-		process.chdir(originalCwd);
-	}
+	const result = listDirGadget.execute(params);
+	return {
+		toolName: 'ListDirectory',
+		params,
+		result,
+		description: 'Pre-fetched codebase structure',
+	};
 }
 
 function fetchContextFileInjections(contextFiles: ContextFile[]): ContextInjection[] {
@@ -519,63 +411,34 @@ async function fetchPRCommentResponseContext(
 }
 
 // ============================================================================
-// Task Prompt Builders
+// Task Prompt Builders (thin wrappers around shared/taskPrompts.ts)
 // ============================================================================
 
 function buildWorkItemTaskPrompt(input: AgentInput): string {
-	return `Analyze and process the work item with ID: ${input.cardId || 'unknown'}. The work item data has been pre-loaded.`;
+	return buildWorkItemPrompt(input.cardId || 'unknown');
 }
 
 function buildCommentResponseTaskPrompt(input: AgentInput): string {
 	const commentText = input.triggerCommentText as string;
 	const commentAuthor = (input.triggerCommentAuthor as string) || 'unknown';
-	return `A user (@${commentAuthor}) mentioned you in a comment on work item ${input.cardId || 'unknown'}.
-
-Their comment:
----
-${commentText}
----
-
-The work item data (title, description, checklists, attachments, comments) has been pre-loaded above.
-Read the user's comment carefully and respond accordingly. Default to surgical, targeted updates unless they clearly ask for a full rewrite.`;
+	return buildCommentResponsePrompt(input.cardId || 'unknown', commentText, commentAuthor);
 }
 
 function buildReviewTaskPrompt(input: AgentInput): string {
-	const prNumber = input.prNumber as number;
-
-	return `Review PR #${prNumber}.
-
-Examine the code changes carefully and submit your review using CreatePRReview.`;
+	return buildReviewPrompt(input.prNumber as number);
 }
 
 function buildCITaskPrompt(input: AgentInput): string {
-	const prNumber = input.prNumber as number;
-	const prBranch = input.prBranch as string;
-
-	return `You are on the branch \`${prBranch}\` for PR #${prNumber}.
-
-CI checks have failed. Analyze the failures and fix them.`;
+	return buildCIResponsePrompt(input.prBranch as string, input.prNumber as number);
 }
 
 function buildPRCommentResponseTaskPrompt(input: AgentInput): string {
-	const prNumber = input.prNumber as number;
-	const prBranch = input.prBranch as string;
-	const commentBody = input.triggerCommentBody as string;
-	const commentPath = input.triggerCommentPath as string;
-
-	const pathContext = commentPath ? `\nFile: ${commentPath}` : '';
-
-	return `You are on the branch \`${prBranch}\` for PR #${prNumber}.
-
-A user commented on this PR and mentioned you. Respond to their comment.
-${pathContext}
-
-Their comment:
----
-${commentBody}
----
-
-Read the comment carefully and respond accordingly. If they ask for code changes, make the changes, commit, and push. If they ask a question, reply with a PR comment. Default to surgical, targeted changes unless they clearly ask for something broader.`;
+	return buildPRCommentResponsePrompt(
+		input.prBranch as string,
+		input.prNumber as number,
+		input.triggerCommentBody as string,
+		(input.triggerCommentPath as string) || undefined,
+	);
 }
 
 // ============================================================================
@@ -591,7 +454,7 @@ const briefingProfile: AgentProfile = {
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildWorkItemTaskPrompt,
 	capabilities: getAgentCapabilities('briefing'),
-	getLlmistGadgets: (agentType) => buildWorkItemLlmistGadgets(getAgentCapabilities(agentType)),
+	getLlmistGadgets: (agentType) => buildWorkItemGadgets(getAgentCapabilities(agentType)),
 };
 
 const planningProfile: AgentProfile = {
@@ -602,7 +465,7 @@ const planningProfile: AgentProfile = {
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildWorkItemTaskPrompt,
 	capabilities: getAgentCapabilities('planning'),
-	getLlmistGadgets: (agentType) => buildWorkItemLlmistGadgets(getAgentCapabilities(agentType)),
+	getLlmistGadgets: (agentType) => buildWorkItemGadgets(getAgentCapabilities(agentType)),
 };
 
 const reviewProfile: AgentProfile = {
@@ -613,7 +476,7 @@ const reviewProfile: AgentProfile = {
 	fetchContext: fetchReviewContext,
 	buildTaskPrompt: buildReviewTaskPrompt,
 	capabilities: getAgentCapabilities('review'),
-	getLlmistGadgets: (_agentType) => buildReviewLlmistGadgets(),
+	getLlmistGadgets: (_agentType) => buildReviewGadgets(),
 
 	async preExecute({ input, logWriter }: PreExecuteParams): Promise<void> {
 		const repoFullName = input.repoFullName as string;
@@ -634,7 +497,7 @@ const respondToPlanningCommentProfile: AgentProfile = {
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildCommentResponseTaskPrompt,
 	capabilities: getAgentCapabilities('respond-to-planning-comment'),
-	getLlmistGadgets: (agentType) => buildWorkItemLlmistGadgets(getAgentCapabilities(agentType)),
+	getLlmistGadgets: (agentType) => buildWorkItemGadgets(getAgentCapabilities(agentType)),
 };
 
 const respondToCIProfile: AgentProfile = {
@@ -652,7 +515,7 @@ const respondToCIProfile: AgentProfile = {
 	fetchContext: fetchCIContext,
 	buildTaskPrompt: buildCITaskPrompt,
 	capabilities: getAgentCapabilities('respond-to-ci'),
-	getLlmistGadgets: (_agentType) => buildPRAgentLlmistGadgets(),
+	getLlmistGadgets: (_agentType) => buildPRAgentGadgets(),
 
 	async preExecute({ input, logWriter }: PreExecuteParams): Promise<void> {
 		const repoFullName = input.repoFullName as string;
@@ -678,7 +541,7 @@ const respondToReviewProfile: AgentProfile = {
 	fetchContext: fetchPRCommentResponseContext,
 	buildTaskPrompt: buildPRCommentResponseTaskPrompt,
 	capabilities: getAgentCapabilities('respond-to-review'),
-	getLlmistGadgets: (_agentType) => buildPRAgentLlmistGadgets(true),
+	getLlmistGadgets: (_agentType) => buildPRAgentGadgets({ includeReviewComments: true }),
 };
 
 const respondToPRCommentProfile: AgentProfile = {
@@ -690,7 +553,7 @@ const respondToPRCommentProfile: AgentProfile = {
 	fetchContext: fetchPRCommentResponseContext,
 	buildTaskPrompt: buildPRCommentResponseTaskPrompt,
 	capabilities: getAgentCapabilities('respond-to-pr-comment'),
-	getLlmistGadgets: (_agentType) => buildPRAgentLlmistGadgets(true),
+	getLlmistGadgets: (_agentType) => buildPRAgentGadgets({ includeReviewComments: true }),
 };
 
 const defaultProfile: AgentProfile = {
@@ -701,14 +564,14 @@ const defaultProfile: AgentProfile = {
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildWorkItemTaskPrompt,
 	capabilities: getAgentCapabilities('debug'),
-	getLlmistGadgets: (agentType) => buildWorkItemLlmistGadgets(getAgentCapabilities(agentType)),
+	getLlmistGadgets: (agentType) => buildWorkItemGadgets(getAgentCapabilities(agentType)),
 };
 
 const implementationProfile: AgentProfile = {
 	...defaultProfile,
 	needsGitHubToken: true,
 	capabilities: getAgentCapabilities('implementation'),
-	getLlmistGadgets: (agentType) => buildWorkItemLlmistGadgets(getAgentCapabilities(agentType)),
+	getLlmistGadgets: (agentType) => buildWorkItemGadgets(getAgentCapabilities(agentType)),
 };
 
 // ============================================================================

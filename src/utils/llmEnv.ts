@@ -1,4 +1,4 @@
-import { getProjectSecretOrNull } from '../config/provider.js';
+import { getOrgCredential } from '../config/provider.js';
 import { logger } from './logging.js';
 
 // Keys that llmist reads from process.env for provider discovery
@@ -9,7 +9,7 @@ export async function injectLlmApiKeys(projectId: string): Promise<() => void> {
 
 	for (const key of LLM_ENV_KEYS) {
 		snapshot[key] = process.env[key];
-		const value = await getProjectSecretOrNull(projectId, key);
+		const value = await getOrgCredential(projectId, key);
 		if (value) {
 			process.env[key] = value;
 			logger.debug('Injected LLM API key from DB', { key, projectId });

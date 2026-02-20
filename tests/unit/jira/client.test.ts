@@ -8,12 +8,48 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
-// Mock jira.js Version3Client (for other methods, not needed for raw fetch methods)
+// Use vi.hoisted to create mock objects before vi.mock factories run
+const { mockIssues, mockIssueComments, mockIssueSearch, mockIssueAttachments, mockMyself } =
+	vi.hoisted(() => ({
+		mockIssues: {
+			getIssue: vi.fn(),
+			editIssue: vi.fn(),
+			createIssue: vi.fn(),
+			doTransition: vi.fn(),
+			getTransitions: vi.fn(),
+		},
+		mockIssueComments: {
+			getComments: vi.fn(),
+			addComment: vi.fn(),
+			updateComment: vi.fn(),
+		},
+		mockIssueSearch: {
+			searchForIssuesUsingJql: vi.fn(),
+		},
+		mockIssueAttachments: {
+			addAttachment: vi.fn(),
+		},
+		mockMyself: {
+			getCurrentUser: vi.fn(),
+		},
+	}));
+
 vi.mock('jira.js', () => ({
-	Version3Client: vi.fn().mockImplementation(() => ({})),
+	Version3Client: vi.fn().mockImplementation(() => ({
+		issues: mockIssues,
+		issueComments: mockIssueComments,
+		issueSearch: mockIssueSearch,
+		issueAttachments: mockIssueAttachments,
+		myself: mockMyself,
+	})),
 }));
 
-import { _resetCloudIdCache, jiraClient, withJiraCredentials } from '../../../src/jira/client.js';
+import {
+	_resetCloudIdCache,
+	getJiraCredentials,
+	jiraClient,
+	withJiraCredentials,
+} from '../../../src/jira/client.js';
 
 describe('jiraClient', () => {
 	const creds = {
@@ -24,12 +60,26 @@ describe('jiraClient', () => {
 	const expectedAuth = `Basic ${Buffer.from('bot@example.com:jira-token').toString('base64')}`;
 
 	beforeEach(() => {
-		vi.clearAllMocks();
+		// Reset only the call history of mock client methods, not their implementations
+		mockIssues.getIssue.mockReset();
+		mockIssues.editIssue.mockReset();
+		mockIssues.createIssue.mockReset();
+		mockIssues.doTransition.mockReset();
+		mockIssues.getTransitions.mockReset();
+		mockIssueComments.getComments.mockReset();
+		mockIssueComments.addComment.mockReset();
+		mockIssueComments.updateComment.mockReset();
+		mockIssueSearch.searchForIssuesUsingJql.mockReset();
+		mockIssueAttachments.addAttachment.mockReset();
+		mockMyself.getCurrentUser.mockReset();
 		_resetCloudIdCache();
 	});
 
 	afterEach(() => {
-		vi.restoreAllMocks();
+		// Note: We don't call vi.restoreAllMocks() here because it would reset
+		// the Version3Client mock implementation from vi.mock(), breaking subsequent tests.
+		// Instead we clear only the fetch spy manually.
+		vi.clearAllMocks();
 	});
 
 	describe('getCloudId', () => {
@@ -163,6 +213,250 @@ describe('jiraClient', () => {
 			await expect(
 				jiraClient.addCommentReaction('10001', '20001', 'atlassian-thought_balloon'),
 			).rejects.toThrow('No JIRA credentials in scope');
+		});
+	});
+
+	describe('getIssue', () => {
+		it('calls getIssue with the issue key and required fields', async () => {
+			const issueData = { key: 'TEST-1', fields: { summary: 'Test Issue' } };
+			mockIssues.getIssue.mockResolvedValue(issueData);
+
+			const result = await withJiraCredentials(creds, () => jiraClient.getIssue('TEST-1'));
+
+			expect(result).toEqual(issueData);
+			expect(mockIssues.getIssue).toHaveBeenCalledWith(
+				expect.objectContaining({ issueIdOrKey: 'TEST-1' }),
+			);
+		});
+
+		it('throws when called outside scope', async () => {
+			await expect(jiraClient.getIssue('TEST-1')).rejects.toThrow('No JIRA credentials in scope');
+		});
+	});
+
+	describe('updateIssue', () => {
+		it('calls editIssue with summary', async () => {
+			mockIssues.editIssue.mockResolvedValue(undefined);
+
+			await withJiraCredentials(creds, () =>
+				jiraClient.updateIssue('TEST-1', { summary: 'New Title' }),
+			);
+
+			expect(mockIssues.editIssue).toHaveBeenCalledWith(
+				expect.objectContaining({
+					issueIdOrKey: 'TEST-1',
+					fields: expect.objectContaining({ summary: 'New Title' }),
+				}),
+			);
+		});
+
+		it('calls editIssue with description', async () => {
+			mockIssues.editIssue.mockResolvedValue(undefined);
+			const desc = { type: 'doc', version: 1, content: [] };
+
+			await withJiraCredentials(creds, () =>
+				jiraClient.updateIssue('TEST-1', { description: desc }),
+			);
+
+			expect(mockIssues.editIssue).toHaveBeenCalledWith(
+				expect.objectContaining({
+					fields: expect.objectContaining({ description: desc }),
+				}),
+			);
+		});
+	});
+
+	describe('addComment', () => {
+		it('returns comment id', async () => {
+			mockIssueComments.addComment.mockResolvedValue({ id: 'comment-123' });
+
+			const id = await withJiraCredentials(creds, () =>
+				jiraClient.addComment('TEST-1', { type: 'doc' }),
+			);
+
+			expect(id).toBe('comment-123');
+			expect(mockIssueComments.addComment).toHaveBeenCalledWith(
+				expect.objectContaining({ issueIdOrKey: 'TEST-1' }),
+			);
+		});
+
+		it('returns empty string when id is missing', async () => {
+			mockIssueComments.addComment.mockResolvedValue({});
+
+			const id = await withJiraCredentials(creds, () =>
+				jiraClient.addComment('TEST-1', { type: 'doc' }),
+			);
+
+			expect(id).toBe('');
+		});
+	});
+
+	describe('createIssue', () => {
+		it('calls createIssue with the provided fields', async () => {
+			const newIssue = { id: '10001', key: 'TEST-2' };
+			mockIssues.createIssue.mockResolvedValue(newIssue);
+
+			const result = await withJiraCredentials(creds, () =>
+				jiraClient.createIssue({
+					project: { key: 'TEST' },
+					summary: 'New Issue',
+					issuetype: { name: 'Task' },
+				}),
+			);
+
+			expect(result).toEqual(newIssue);
+			expect(mockIssues.createIssue).toHaveBeenCalledWith(
+				expect.objectContaining({
+					fields: expect.objectContaining({ project: { key: 'TEST' } }),
+				}),
+			);
+		});
+	});
+
+	describe('transitionIssue', () => {
+		it('calls doTransition with issue key and transition id', async () => {
+			mockIssues.doTransition.mockResolvedValue(undefined);
+
+			await withJiraCredentials(creds, () => jiraClient.transitionIssue('TEST-1', 'transition-31'));
+
+			expect(mockIssues.doTransition).toHaveBeenCalledWith({
+				issueIdOrKey: 'TEST-1',
+				transition: { id: 'transition-31' },
+			});
+		});
+	});
+
+	describe('getTransitions', () => {
+		it('returns transitions array', async () => {
+			const transitions = [
+				{ id: '31', name: 'Done' },
+				{ id: '11', name: 'In Progress' },
+			];
+			mockIssues.getTransitions.mockResolvedValue({ transitions });
+
+			const result = await withJiraCredentials(creds, () => jiraClient.getTransitions('TEST-1'));
+
+			expect(result).toEqual(transitions);
+		});
+
+		it('returns empty array when transitions is missing', async () => {
+			mockIssues.getTransitions.mockResolvedValue({});
+
+			const result = await withJiraCredentials(creds, () => jiraClient.getTransitions('TEST-1'));
+
+			expect(result).toEqual([]);
+		});
+	});
+
+	describe('updateLabels', () => {
+		it('calls editIssue with labels array', async () => {
+			mockIssues.editIssue.mockResolvedValue(undefined);
+
+			await withJiraCredentials(creds, () => jiraClient.updateLabels('TEST-1', ['bug', 'urgent']));
+
+			expect(mockIssues.editIssue).toHaveBeenCalledWith({
+				issueIdOrKey: 'TEST-1',
+				fields: { labels: ['bug', 'urgent'] },
+			});
+		});
+	});
+
+	describe('searchIssues', () => {
+		it('returns issues from JQL search', async () => {
+			const issues = [
+				{ id: '1', key: 'TEST-1' },
+				{ id: '2', key: 'TEST-2' },
+			];
+			mockIssueSearch.searchForIssuesUsingJql.mockResolvedValue({ issues });
+
+			const result = await withJiraCredentials(creds, () =>
+				jiraClient.searchIssues('project = TEST AND status = "In Progress"'),
+			);
+
+			expect(result).toEqual(issues);
+			expect(mockIssueSearch.searchForIssuesUsingJql).toHaveBeenCalledWith(
+				expect.objectContaining({
+					jql: 'project = TEST AND status = "In Progress"',
+				}),
+			);
+		});
+
+		it('returns empty array when issues is missing', async () => {
+			mockIssueSearch.searchForIssuesUsingJql.mockResolvedValue({});
+
+			const result = await withJiraCredentials(creds, () =>
+				jiraClient.searchIssues('project = TEST'),
+			);
+
+			expect(result).toEqual([]);
+		});
+
+		it('uses custom fields when provided', async () => {
+			mockIssueSearch.searchForIssuesUsingJql.mockResolvedValue({ issues: [] });
+
+			await withJiraCredentials(creds, () =>
+				jiraClient.searchIssues('project = TEST', ['summary', 'status', 'priority']),
+			);
+
+			expect(mockIssueSearch.searchForIssuesUsingJql).toHaveBeenCalledWith(
+				expect.objectContaining({
+					fields: ['summary', 'status', 'priority'],
+				}),
+			);
+		});
+	});
+
+	describe('addAttachmentFile', () => {
+		it('calls addAttachment with buffer and filename', async () => {
+			mockIssueAttachments.addAttachment.mockResolvedValue(undefined);
+			const buf = Buffer.from('file content');
+
+			await withJiraCredentials(creds, () =>
+				jiraClient.addAttachmentFile('TEST-1', buf, 'session.zip'),
+			);
+
+			expect(mockIssueAttachments.addAttachment).toHaveBeenCalledWith(
+				expect.objectContaining({
+					issueIdOrKey: 'TEST-1',
+					attachment: expect.objectContaining({
+						filename: 'session.zip',
+						file: buf,
+					}),
+				}),
+			);
+		});
+	});
+
+	describe('getIssueComments', () => {
+		it('returns comments array', async () => {
+			const comments = [{ id: 'c1', body: 'First comment' }];
+			mockIssueComments.getComments.mockResolvedValue({ comments });
+
+			const result = await withJiraCredentials(creds, () => jiraClient.getIssueComments('TEST-1'));
+
+			expect(result).toEqual(comments);
+		});
+
+		it('returns empty array when comments is missing', async () => {
+			mockIssueComments.getComments.mockResolvedValue({});
+
+			const result = await withJiraCredentials(creds, () => jiraClient.getIssueComments('TEST-1'));
+
+			expect(result).toEqual([]);
+		});
+	});
+
+	describe('getJiraCredentials', () => {
+		it('throws when called outside scope', () => {
+			expect(() => getJiraCredentials()).toThrow('No JIRA credentials in scope');
+		});
+
+		it('returns credentials when inside withJiraCredentials scope', async () => {
+			let captured: ReturnType<typeof getJiraCredentials> | undefined;
+			await withJiraCredentials(creds, async () => {
+				captured = getJiraCredentials();
+			});
+			expect(captured).toEqual(creds);
 		});
 	});
 });

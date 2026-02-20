@@ -1,4 +1,4 @@
-import { getProjectSecret, loadProjectConfigByBoardId } from '../../config/provider.js';
+import { getIntegrationCredential, loadProjectConfigByBoardId } from '../../config/provider.js';
 import { withGitHubToken } from '../../github/client.js';
 import { getPersonaToken } from '../../github/personas.js';
 import {
@@ -37,8 +37,8 @@ async function executeAgent(
 	project: ProjectConfig,
 	config: CascadeConfig,
 ): Promise<void> {
-	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY');
-	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN');
+	const trelloApiKey = await getIntegrationCredential(project.id, 'pm', 'api_key');
+	const trelloToken = await getIntegrationCredential(project.id, 'pm', 'token');
 	const githubToken = await getPersonaToken(project.id, result.agentType);
 
 	const restoreLlmEnv = await injectLlmApiKeys(project.id);
@@ -154,8 +154,8 @@ export async function processTrelloWebhook(
 	const { project, config } = projectConfig;
 
 	// Establish Trello credential + PM provider scope for all downstream operations
-	const trelloApiKey = await getProjectSecret(project.id, 'TRELLO_API_KEY');
-	const trelloToken = await getProjectSecret(project.id, 'TRELLO_TOKEN');
+	const trelloApiKey = await getIntegrationCredential(project.id, 'pm', 'api_key');
+	const trelloToken = await getIntegrationCredential(project.id, 'pm', 'token');
 	const pmProvider = createPMProvider(project);
 
 	await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>

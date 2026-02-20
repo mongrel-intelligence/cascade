@@ -9,9 +9,10 @@ vi.mock('../../../src/db/repositories/configRepository.js', () => ({
 }));
 
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
-	resolveCredential: vi.fn(),
-	resolveAgentCredential: vi.fn(),
-	resolveAllCredentials: vi.fn(),
+	resolveIntegrationCredential: vi.fn(),
+	resolveAllIntegrationCredentials: vi.fn(),
+	resolveOrgCredential: vi.fn(),
+	resolveAllOrgCredentials: vi.fn(),
 }));
 
 import { getProjectGitHubToken } from '../../../src/config/projects.js';
@@ -19,9 +20,9 @@ import {
 	findProjectByBoardId,
 	findProjectById,
 	findProjectByRepo,
-	getProjectSecret,
-	getProjectSecretOrNull,
-	getProjectSecrets,
+	getAllProjectCredentials,
+	getIntegrationCredential,
+	getIntegrationCredentialOrNull,
 	invalidateConfigCache,
 	loadConfig,
 } from '../../../src/config/provider.js';
@@ -32,8 +33,9 @@ import {
 	loadConfigFromDb,
 } from '../../../src/db/repositories/configRepository.js';
 import {
-	resolveAllCredentials,
-	resolveCredential,
+	resolveAllIntegrationCredentials,
+	resolveAllOrgCredentials,
+	resolveIntegrationCredential,
 } from '../../../src/db/repositories/credentialsRepository.js';
 
 describe('config provider', () => {
@@ -167,158 +169,87 @@ describe('config provider', () => {
 		});
 	});
 
-	describe('getProjectSecret', () => {
-		it('returns DB credential when available', async () => {
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
-			vi.mocked(resolveCredential).mockResolvedValue('db-secret-value');
+	describe('getIntegrationCredential', () => {
+		it('resolves credential from DB', async () => {
+			vi.mocked(resolveIntegrationCredential).mockResolvedValue('db-secret-value');
 
-			const result = await getProjectSecret('project1', 'TRELLO_API_KEY');
+			const result = await getIntegrationCredential('project1', 'pm', 'api_key');
 			expect(result).toBe('db-secret-value');
 		});
 
-		it('throws when secret not found in DB', async () => {
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
-			vi.mocked(resolveCredential).mockResolvedValue(null);
+		it('throws when credential not found', async () => {
+			vi.mocked(resolveIntegrationCredential).mockResolvedValue(null);
 
-			await expect(getProjectSecret('project1', 'MISSING_KEY')).rejects.toThrow(
-				"Secret 'MISSING_KEY' not found for project 'project1' in database",
+			await expect(getIntegrationCredential('project1', 'pm', 'api_key')).rejects.toThrow(
+				"Integration credential 'pm/api_key' not found for project 'project1'",
 			);
 		});
 	});
 
-	describe('getProjectSecret - cached secrets path', () => {
-		it('returns from cached secrets without hitting resolveCredential', async () => {
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
-			vi.mocked(resolveAllCredentials).mockResolvedValue({
-				TRELLO_API_KEY: 'cached-value',
-				GITHUB_TOKEN: 'cached-gh-token',
-			});
-
-			// Populate the secrets cache via getProjectSecrets
-			await getProjectSecrets('project1');
-
-			vi.clearAllMocks();
-
-			// Now getProjectSecret should use the cached secrets
-			const result = await getProjectSecret('project1', 'TRELLO_API_KEY');
-			expect(result).toBe('cached-value');
-
-			// resolveCredential should NOT have been called (cache hit)
-			expect(resolveCredential).not.toHaveBeenCalled();
-		});
-	});
-
-	describe('getProjectSecretOrNull', () => {
+	describe('getIntegrationCredentialOrNull', () => {
 		it('returns credential value when found', async () => {
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
-			vi.mocked(resolveCredential).mockResolvedValue('secret-value');
+			vi.mocked(resolveIntegrationCredential).mockResolvedValue('secret-value');
 
-			const result = await getProjectSecretOrNull('project1', 'TRELLO_API_KEY');
+			const result = await getIntegrationCredentialOrNull('project1', 'scm', 'implementer_token');
 			expect(result).toBe('secret-value');
 		});
 
 		it('returns null when no credential found', async () => {
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
-			vi.mocked(resolveCredential).mockResolvedValue(null);
+			vi.mocked(resolveIntegrationCredential).mockResolvedValue(null);
 
-			const result = await getProjectSecretOrNull('project1', 'NO_SUCH_KEY');
+			const result = await getIntegrationCredentialOrNull('project1', 'scm', 'implementer_token');
 			expect(result).toBeNull();
 		});
 	});
 
-	describe('getProjectSecrets', () => {
-		it('resolves all credentials via org ID', async () => {
+	describe('getAllProjectCredentials', () => {
+		it('resolves all credentials via integration + org defaults', async () => {
 			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
-			vi.mocked(resolveAllCredentials).mockResolvedValue({
-				GITHUB_TOKEN: 'ghp_abc',
-				TRELLO_API_KEY: 'trello123',
-			});
+			vi.mocked(resolveAllIntegrationCredentials).mockResolvedValue([
+				{ category: 'pm', provider: 'trello', role: 'api_key', value: 'trello123' },
+			]);
+			vi.mocked(resolveAllOrgCredentials).mockResolvedValue({});
 
-			const result = await getProjectSecrets('project1');
+			const result = await getAllProjectCredentials('project1');
 			expect(result).toEqual({
-				GITHUB_TOKEN: 'ghp_abc',
 				TRELLO_API_KEY: 'trello123',
 			});
-			expect(resolveAllCredentials).toHaveBeenCalledWith('project1', 'default');
 		});
 
 		it('caches secrets after first call', async () => {
 			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
-			vi.mocked(resolveAllCredentials).mockResolvedValue({ KEY: 'val' });
+			vi.mocked(resolveAllIntegrationCredentials).mockResolvedValue([]);
+			vi.mocked(resolveAllOrgCredentials).mockResolvedValue({ KEY: 'val' });
 
-			await getProjectSecrets('project1');
-			await getProjectSecrets('project1');
+			await getAllProjectCredentials('project1');
+			await getAllProjectCredentials('project1');
 
-			// resolveAllCredentials called only once
-			expect(resolveAllCredentials).toHaveBeenCalledTimes(1);
+			expect(resolveAllIntegrationCredentials).toHaveBeenCalledTimes(1);
 		});
 
 		it('returns empty object when no credentials exist', async () => {
 			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject2);
-			vi.mocked(resolveAllCredentials).mockResolvedValue({});
+			vi.mocked(resolveAllIntegrationCredentials).mockResolvedValue([]);
+			vi.mocked(resolveAllOrgCredentials).mockResolvedValue({});
 
-			const result = await getProjectSecrets('project2');
+			const result = await getAllProjectCredentials('project2');
 			expect(result).toEqual({});
 		});
 	});
 
-	describe('orgId resolution', () => {
-		it('caches org ID after first lookup', async () => {
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
-			vi.mocked(resolveCredential).mockResolvedValue('value1');
-
-			// Two calls for the same project
-			await getProjectSecret('project1', 'KEY1');
-			await getProjectSecret('project1', 'KEY2');
-
-			// findProjectByIdFromDb called once (for orgId), not twice
-			expect(findProjectByIdFromDb).toHaveBeenCalledTimes(1);
-		});
-
-		it('throws when project not found', async () => {
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(undefined);
-
-			await expect(getProjectSecret('nonexistent', 'KEY')).rejects.toThrow(
-				'Project not found: nonexistent',
-			);
-		});
-
-		it('uses project-specific org ID', async () => {
-			const customOrgProject = { ...mockProject1, orgId: 'acme-corp' };
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(customOrgProject);
-			vi.mocked(resolveCredential).mockResolvedValue('value1');
-
-			await getProjectSecret('project1', 'KEY');
-
-			expect(resolveCredential).toHaveBeenCalledWith('project1', 'acme-corp', 'KEY');
-		});
-	});
-
 	describe('getProjectGitHubToken', () => {
-		it('returns GITHUB_TOKEN_IMPLEMENTER when available', async () => {
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
-			vi.mocked(resolveCredential).mockResolvedValue('implementer-token');
+		it('returns implementer token when available', async () => {
+			vi.mocked(resolveIntegrationCredential).mockResolvedValue('implementer-token');
 
 			const result = await getProjectGitHubToken(mockConfig.projects[0]);
 			expect(result).toBe('implementer-token');
 		});
 
-		it('falls back to legacy GITHUB_TOKEN when IMPLEMENTER token is missing', async () => {
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
-			vi.mocked(resolveCredential)
-				.mockResolvedValueOnce(null) // GITHUB_TOKEN_IMPLEMENTER not found
-				.mockResolvedValueOnce('legacy-token'); // GITHUB_TOKEN found
-
-			const result = await getProjectGitHubToken(mockConfig.projects[0]);
-			expect(result).toBe('legacy-token');
-		});
-
-		it('throws when neither IMPLEMENTER nor legacy token exists', async () => {
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
-			vi.mocked(resolveCredential).mockResolvedValue(null);
+		it('throws when implementer token is missing', async () => {
+			vi.mocked(resolveIntegrationCredential).mockResolvedValue(null);
 
 			await expect(getProjectGitHubToken(mockConfig.projects[0])).rejects.toThrow(
-				"Missing GITHUB_TOKEN_IMPLEMENTER (or legacy GITHUB_TOKEN) in database for project 'project1'",
+				"Missing implementer token (SCM integration) for project 'project1'",
 			);
 		});
 	});

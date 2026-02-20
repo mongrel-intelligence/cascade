@@ -1,6 +1,9 @@
 import { getProjectGitHubToken } from '../config/projects.js';
-import { getProjectSecret } from '../config/provider.js';
-import { findProjectByRepo } from '../config/provider.js';
+import {
+	findProjectById,
+	findProjectByRepo,
+	getIntegrationCredential,
+} from '../config/provider.js';
 import type { CascadeJob, GitHubJob, JiraJob, TrelloJob } from './queue.js';
 
 /**
@@ -76,8 +79,8 @@ async function notifyTrelloTimeout(job: TrelloJob, info: TimeoutInfo): Promise<v
 	let trelloApiKey: string;
 	let trelloToken: string;
 	try {
-		trelloApiKey = await getProjectSecret(job.projectId, 'TRELLO_API_KEY');
-		trelloToken = await getProjectSecret(job.projectId, 'TRELLO_TOKEN');
+		trelloApiKey = await getIntegrationCredential(job.projectId, 'pm', 'api_key');
+		trelloToken = await getIntegrationCredential(job.projectId, 'pm', 'token');
 	} catch {
 		console.warn('[Notifications] Missing Trello credentials in DB, skipping timeout notification');
 		return;
@@ -160,9 +163,11 @@ async function notifyJiraTimeout(job: JiraJob, info: TimeoutInfo): Promise<void>
 	let jiraApiToken: string;
 	let jiraBaseUrl: string;
 	try {
-		jiraEmail = await getProjectSecret(job.projectId, 'JIRA_EMAIL');
-		jiraApiToken = await getProjectSecret(job.projectId, 'JIRA_API_TOKEN');
-		jiraBaseUrl = await getProjectSecret(job.projectId, 'JIRA_BASE_URL');
+		jiraEmail = await getIntegrationCredential(job.projectId, 'pm', 'email');
+		jiraApiToken = await getIntegrationCredential(job.projectId, 'pm', 'api_token');
+		const project = await findProjectById(job.projectId);
+		jiraBaseUrl = project?.jira?.baseUrl ?? '';
+		if (!jiraBaseUrl) throw new Error('Missing JIRA base URL');
 	} catch {
 		console.warn('[Notifications] Missing JIRA credentials in DB, skipping timeout notification');
 		return;

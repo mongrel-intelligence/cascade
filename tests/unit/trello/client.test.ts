@@ -8,53 +8,74 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
-const { mockAddCardComment } = vi.hoisted(() => ({
-	mockAddCardComment: vi.fn(),
+// Use vi.hoisted to create all mock objects before factory functions run
+const { mockCards, mockChecklists, mockLists } = vi.hoisted(() => ({
+	mockCards: {
+		addCardComment: vi.fn(),
+		getCard: vi.fn(),
+		getCardActions: vi.fn(),
+		updateCard: vi.fn(),
+		addCardLabel: vi.fn(),
+		deleteCardLabel: vi.fn(),
+		createCardAttachment: vi.fn(),
+		createCardChecklist: vi.fn(),
+		getCardChecklists: vi.fn(),
+		updateCardCheckItem: vi.fn(),
+		createCard: vi.fn(),
+	},
+	mockChecklists: {
+		createChecklistCheckItems: vi.fn(),
+	},
+	mockLists: {
+		getListCards: vi.fn(),
+	},
 }));
 
 // Mock trello.js client
 vi.mock('trello.js', () => ({
 	TrelloClient: vi.fn().mockImplementation(() => ({
-		cards: {
-			addCardComment: mockAddCardComment,
-		},
+		cards: mockCards,
+		checklists: mockChecklists,
+		lists: mockLists,
 	})),
 }));
 
 import { TrelloClient } from 'trello.js';
-import { trelloClient, withTrelloCredentials } from '../../../src/trello/client.js';
-
-const MockedTrelloClient = vi.mocked(TrelloClient);
+import {
+	getTrelloCredentials,
+	trelloClient,
+	withTrelloCredentials,
+} from '../../../src/trello/client.js';
 
 describe('trelloClient', () => {
 	const creds = { apiKey: 'test-key', token: 'test-token' };
 
 	beforeEach(() => {
-		vi.clearAllMocks();
-		// Re-initialize the TrelloClient mock implementation after clearAllMocks
-		MockedTrelloClient.mockImplementation(
-			() => ({ cards: { addCardComment: mockAddCardComment } }) as unknown as TrelloClient,
-		);
+		// Reset individual mock functions without clearing implementations
+		for (const fn of Object.values(mockCards)) fn.mockReset();
+		for (const fn of Object.values(mockChecklists)) fn.mockReset();
+		for (const fn of Object.values(mockLists)) fn.mockReset();
 	});
 
 	afterEach(() => {
-		vi.restoreAllMocks();
+		// Don't call restoreAllMocks() as it would clear the Version3Client mock impl
+		vi.clearAllMocks();
 	});
 
 	describe('addComment', () => {
 		it('returns the comment action ID from API response', async () => {
-			mockAddCardComment.mockResolvedValue({ id: 'action-abc123' });
+			mockCards.addCardComment.mockResolvedValue({ id: 'action-abc123' });
 
 			const id = await withTrelloCredentials(creds, () =>
 				trelloClient.addComment('card-1', 'Hello world'),
 			);
 
-			expect(mockAddCardComment).toHaveBeenCalledWith({ id: 'card-1', text: 'Hello world' });
+			expect(mockCards.addCardComment).toHaveBeenCalledWith({ id: 'card-1', text: 'Hello world' });
 			expect(id).toBe('action-abc123');
 		});
 
 		it('returns empty string when API response has no id', async () => {
-			mockAddCardComment.mockResolvedValue({});
+			mockCards.addCardComment.mockResolvedValue({});
 
 			const id = await withTrelloCredentials(creds, () =>
 				trelloClient.addComment('card-1', 'Hello'),
@@ -137,6 +158,209 @@ describe('trelloClient', () => {
 			await expect(trelloClient.addActionReaction('action-123', emoji)).rejects.toThrow(
 				'No Trello credentials in scope',
 			);
+		});
+	});
+
+	describe('getTrelloCredentials', () => {
+		it('throws when called outside scope', () => {
+			expect(() => getTrelloCredentials()).toThrow('No Trello credentials in scope');
+		});
+
+		it('returns credentials when inside scope', async () => {
+			let captured: ReturnType<typeof getTrelloCredentials> | undefined;
+			await withTrelloCredentials(creds, async () => {
+				captured = getTrelloCredentials();
+			});
+			expect(captured).toEqual(creds);
+		});
+	});
+
+	describe('getCard', () => {
+		it('returns a card with normalized fields', async () => {
+			mockCards.getCard.mockResolvedValue({
+				id: 'card-1',
+				name: 'My Card',
+				desc: 'Card description',
+				url: 'https://trello.com/c/abc123',
+				shortUrl: 'https://trello.com/c/abc',
+				idList: 'list-1',
+				labels: [{ id: 'label-1', name: 'Bug', color: 'red' }],
+			});
+
+			const result = await withTrelloCredentials(creds, () => trelloClient.getCard('card-1'));
+
+			expect(result).toEqual({
+				id: 'card-1',
+				name: 'My Card',
+				desc: 'Card description',
+				url: 'https://trello.com/c/abc123',
+				shortUrl: 'https://trello.com/c/abc',
+				idList: 'list-1',
+				labels: [{ id: 'label-1', name: 'Bug', color: 'red' }],
+			});
+			expect(mockCards.getCard).toHaveBeenCalledWith({ id: 'card-1' });
+		});
+
+		it('normalizes missing optional fields to empty strings', async () => {
+			mockCards.getCard.mockResolvedValue({ id: 'card-2' });
+
+			const result = await withTrelloCredentials(creds, () => trelloClient.getCard('card-2'));
+
+			expect(result.name).toBe('');
+			expect(result.desc).toBe('');
+			expect(result.url).toBe('');
+			expect(result.idList).toBe('');
+			expect(result.labels).toEqual([]);
+		});
+
+		it('throws when called outside scope', async () => {
+			await expect(trelloClient.getCard('card-1')).rejects.toThrow(
+				'No Trello credentials in scope',
+			);
+		});
+	});
+
+	describe('getCardComments', () => {
+		it('returns comments with mapped fields', async () => {
+			mockCards.getCardActions.mockResolvedValue([
+				{
+					id: 'action-1',
+					date: '2026-01-01T00:00:00.000Z',
+					data: { text: 'Hello world' },
+					memberCreator: { id: 'member-1', fullName: 'Alice', username: 'alice' },
+				},
+			]);
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.getCardComments('card-1'),
+			);
+
+			expect(result).toHaveLength(1);
+			expect(result[0]).toEqual({
+				id: 'action-1',
+				date: '2026-01-01T00:00:00.000Z',
+				data: { text: 'Hello world' },
+				memberCreator: { id: 'member-1', fullName: 'Alice', username: 'alice' },
+			});
+		});
+
+		it('returns empty array when no comments', async () => {
+			mockCards.getCardActions.mockResolvedValue([]);
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.getCardComments('card-1'),
+			);
+
+			expect(result).toEqual([]);
+		});
+	});
+
+	describe('updateCard', () => {
+		it('calls updateCard with name and desc', async () => {
+			mockCards.updateCard.mockResolvedValue({});
+
+			await withTrelloCredentials(creds, () =>
+				trelloClient.updateCard('card-1', { name: 'New Title', desc: 'New desc' }),
+			);
+
+			expect(mockCards.updateCard).toHaveBeenCalledWith(
+				expect.objectContaining({ id: 'card-1', name: 'New Title', desc: 'New desc' }),
+			);
+		});
+	});
+
+	describe('createCard', () => {
+		it('returns a created card with normalized fields', async () => {
+			mockCards.createCard.mockResolvedValue({
+				id: 'new-card',
+				name: 'New Feature',
+				desc: 'Description',
+				url: 'https://trello.com/c/new',
+				shortUrl: 'https://trello.com/c/new-short',
+				idList: 'list-todo',
+				labels: [],
+			});
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.createCard('list-todo', { name: 'New Feature', desc: 'Description' }),
+			);
+
+			expect(result.id).toBe('new-card');
+			expect(result.name).toBe('New Feature');
+			expect(mockCards.createCard).toHaveBeenCalledWith(
+				expect.objectContaining({ idList: 'list-todo', name: 'New Feature' }),
+			);
+		});
+	});
+
+	describe('getCardChecklists', () => {
+		it('returns checklists with check items', async () => {
+			mockCards.getCardChecklists.mockResolvedValue([
+				{
+					id: 'cl-1',
+					name: 'Implementation Steps',
+					idCard: 'card-1',
+					checkItems: [
+						{ id: 'item-1', name: 'Step 1', state: 'complete' },
+						{ id: 'item-2', name: 'Step 2', state: 'incomplete' },
+					],
+				},
+			]);
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.getCardChecklists('card-1'),
+			);
+
+			expect(result).toHaveLength(1);
+			expect(result[0].name).toBe('Implementation Steps');
+			expect(result[0].checkItems[0].state).toBe('complete');
+			expect(result[0].checkItems[1].state).toBe('incomplete');
+		});
+	});
+
+	describe('getCardAttachments', () => {
+		it('returns attachments via fetch', async () => {
+			const attachments = [
+				{
+					id: 'att-1',
+					name: 'session.zip',
+					url: 'https://trello.com/attachments/att-1',
+					mimeType: 'application/zip',
+					bytes: 1024,
+					date: '2026-01-01T00:00:00.000Z',
+				},
+			];
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify(attachments), { status: 200 }));
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.getCardAttachments('card-1'),
+			);
+
+			expect(result).toHaveLength(1);
+			expect(result[0]).toEqual({
+				id: 'att-1',
+				name: 'session.zip',
+				url: 'https://trello.com/attachments/att-1',
+				mimeType: 'application/zip',
+				bytes: 1024,
+				date: '2026-01-01T00:00:00.000Z',
+			});
+			const [url] = fetchSpy.mock.calls[0];
+			expect(url).toContain('/1/cards/card-1/attachments');
+			expect(url).toContain('key=test-key');
+			expect(url).toContain('token=test-token');
+		});
+
+		it('throws on non-OK response', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response('Unauthorized', { status: 401 }),
+			);
+
+			await expect(
+				withTrelloCredentials(creds, () => trelloClient.getCardAttachments('card-1')),
+			).rejects.toThrow('Failed to get attachments: 401');
 		});
 	});
 });

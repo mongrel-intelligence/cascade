@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock config provider for DB secret resolution
 vi.mock('../../../src/config/provider.js', () => ({
-	getProjectSecret: vi.fn(),
+	getIntegrationCredential: vi.fn(),
 	findProjectByRepo: vi.fn(),
+	findProjectById: vi.fn(),
 }));
 
 // Mock getProjectGitHubToken (uses GITHUB_TOKEN_IMPLEMENTER with legacy fallback)
@@ -27,7 +28,11 @@ vi.mock('../../../src/config/configCache.js', () => ({
 }));
 
 import { getProjectGitHubToken } from '../../../src/config/projects.js';
-import { findProjectByRepo, getProjectSecret } from '../../../src/config/provider.js';
+import {
+	findProjectById,
+	findProjectByRepo,
+	getIntegrationCredential,
+} from '../../../src/config/provider.js';
 import {
 	extractPRNumber,
 	formatDuration,
@@ -35,9 +40,17 @@ import {
 } from '../../../src/router/notifications.js';
 import type { CascadeJob, GitHubJob, JiraJob, TrelloJob } from '../../../src/router/queue.js';
 
-const mockGetProjectSecret = vi.mocked(getProjectSecret);
+const mockGetIntegrationCredential = vi.mocked(getIntegrationCredential);
 const mockGetProjectGitHubToken = vi.mocked(getProjectGitHubToken);
 const mockFindProjectByRepo = vi.mocked(findProjectByRepo);
+const mockFindProjectById = vi.mocked(findProjectById);
+
+const MOCK_CREDENTIALS: Record<string, string> = {
+	'pm/api_key': 'test-trello-key',
+	'pm/token': 'test-trello-token',
+	'pm/email': 'bot@example.com',
+	'pm/api_token': 'test-jira-token',
+};
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -135,11 +148,11 @@ describe('notifyTimeout', () => {
 		vi.spyOn(console, 'warn').mockImplementation(() => {});
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		// Default: DB returns secrets
-		mockGetProjectSecret.mockImplementation(async (_projectId, key) => {
-			if (key === 'TRELLO_API_KEY') return 'test-trello-key';
-			if (key === 'TRELLO_TOKEN') return 'test-trello-token';
-			throw new Error(`Secret '${key}' not found`);
+		// Default: DB returns credentials
+		mockGetIntegrationCredential.mockImplementation(async (_projectId, category, role) => {
+			const value = MOCK_CREDENTIALS[`${category}/${role}`];
+			if (value) return value;
+			throw new Error(`Credential '${category}/${role}' not found`);
 		});
 		mockGetProjectGitHubToken.mockResolvedValue('test-github-token');
 		mockFindProjectByRepo.mockResolvedValue({
@@ -149,6 +162,15 @@ describe('notifyTimeout', () => {
 			baseBranch: 'main',
 			branchPrefix: 'feature/',
 			trello: { boardId: 'b1', lists: {}, labels: {} },
+		});
+		mockFindProjectById.mockResolvedValue({
+			id: 'test',
+			name: 'Test',
+			repo: 'owner/repo',
+			baseBranch: 'main',
+			branchPrefix: 'feature/',
+			trello: { boardId: 'b1', lists: {}, labels: {} },
+			jira: { baseUrl: 'https://test.atlassian.net', projectKey: 'DAM', statuses: {}, labels: {} },
 		});
 	});
 
@@ -185,7 +207,7 @@ describe('notifyTimeout', () => {
 		});
 
 		it('skips notification when Trello credentials are missing in DB', async () => {
-			mockGetProjectSecret.mockRejectedValue(new Error('Secret not found'));
+			mockGetIntegrationCredential.mockRejectedValue(new Error('Credential not found'));
 
 			await notifyTimeout(trelloJob, defaultInfo);
 
@@ -303,17 +325,6 @@ describe('notifyTimeout', () => {
 			receivedAt: '2026-02-14T10:00:00.000Z',
 		};
 
-		beforeEach(() => {
-			mockGetProjectSecret.mockImplementation(async (_projectId, key) => {
-				if (key === 'TRELLO_API_KEY') return 'test-trello-key';
-				if (key === 'TRELLO_TOKEN') return 'test-trello-token';
-				if (key === 'JIRA_EMAIL') return 'bot@example.com';
-				if (key === 'JIRA_API_TOKEN') return 'test-jira-token';
-				if (key === 'JIRA_BASE_URL') return 'https://test.atlassian.net';
-				throw new Error(`Secret '${key}' not found`);
-			});
-		});
-
 		it('posts a comment to the JIRA issue', async () => {
 			mockFetch.mockResolvedValueOnce({ ok: true });
 
@@ -328,7 +339,7 @@ describe('notifyTimeout', () => {
 		});
 
 		it('skips notification when JIRA credentials are missing in DB', async () => {
-			mockGetProjectSecret.mockRejectedValue(new Error('Secret not found'));
+			mockGetIntegrationCredential.mockRejectedValue(new Error('Credential not found'));
 
 			await notifyTimeout(jiraJob, defaultInfo);
 

@@ -16,6 +16,10 @@ const mockDeleteProject = vi.fn();
 const mockListProjectIntegrations = vi.fn();
 const mockUpsertProjectIntegration = vi.fn();
 const mockDeleteProjectIntegration = vi.fn();
+const mockGetIntegrationByProjectAndCategory = vi.fn();
+const mockListIntegrationCredentials = vi.fn();
+const mockSetIntegrationCredential = vi.fn();
+const mockRemoveIntegrationCredential = vi.fn();
 
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
 	listProjectsFull: (...args: unknown[]) => mockListProjectsFull(...args),
@@ -26,22 +30,14 @@ vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
 	listProjectIntegrations: (...args: unknown[]) => mockListProjectIntegrations(...args),
 	upsertProjectIntegration: (...args: unknown[]) => mockUpsertProjectIntegration(...args),
 	deleteProjectIntegration: (...args: unknown[]) => mockDeleteProjectIntegration(...args),
+	getIntegrationByProjectAndCategory: (...args: unknown[]) =>
+		mockGetIntegrationByProjectAndCategory(...args),
+	listIntegrationCredentials: (...args: unknown[]) => mockListIntegrationCredentials(...args),
+	setIntegrationCredential: (...args: unknown[]) => mockSetIntegrationCredential(...args),
+	removeIntegrationCredential: (...args: unknown[]) => mockRemoveIntegrationCredential(...args),
 }));
 
-const mockListProjectOverrides = vi.fn();
-const mockSetProjectCredentialOverride = vi.fn();
-const mockRemoveProjectCredentialOverride = vi.fn();
-const mockSetAgentCredentialOverride = vi.fn();
-const mockRemoveAgentCredentialOverride = vi.fn();
-
-vi.mock('../../../../src/db/repositories/credentialsRepository.js', () => ({
-	listProjectOverrides: (...args: unknown[]) => mockListProjectOverrides(...args),
-	setProjectCredentialOverride: (...args: unknown[]) => mockSetProjectCredentialOverride(...args),
-	removeProjectCredentialOverride: (...args: unknown[]) =>
-		mockRemoveProjectCredentialOverride(...args),
-	setAgentCredentialOverride: (...args: unknown[]) => mockSetAgentCredentialOverride(...args),
-	removeAgentCredentialOverride: (...args: unknown[]) => mockRemoveAgentCredentialOverride(...args),
-}));
+vi.mock('../../../../src/db/repositories/credentialsRepository.js', () => ({}));
 
 // Mock getDb for ownership checks
 const mockDbSelect = vi.fn();
@@ -253,7 +249,15 @@ describe('projectsRouter', () => {
 		describe('list', () => {
 			it('lists integrations after verifying ownership', async () => {
 				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-				const integrations = [{ id: 1, type: 'trello', config: { boardId: 'abc' } }];
+				const integrations = [
+					{
+						id: 1,
+						category: 'pm',
+						provider: 'trello',
+						config: { boardId: 'abc' },
+						triggers: {},
+					},
+				];
 				mockListProjectIntegrations.mockResolvedValue(integrations);
 				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
@@ -280,13 +284,18 @@ describe('projectsRouter', () => {
 
 				await caller.integrations.upsert({
 					projectId: 'p1',
-					type: 'trello',
+					category: 'pm',
+					provider: 'trello',
 					config: { boardId: 'abc123' },
 				});
 
-				expect(mockUpsertProjectIntegration).toHaveBeenCalledWith('p1', 'trello', {
-					boardId: 'abc123',
-				});
+				expect(mockUpsertProjectIntegration).toHaveBeenCalledWith(
+					'p1',
+					'pm',
+					'trello',
+					{ boardId: 'abc123' },
+					undefined,
+				);
 			});
 		});
 
@@ -296,48 +305,64 @@ describe('projectsRouter', () => {
 				mockDeleteProjectIntegration.mockResolvedValue(undefined);
 				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
-				await caller.integrations.delete({ projectId: 'p1', type: 'trello' });
+				await caller.integrations.delete({ projectId: 'p1', category: 'pm' });
 
-				expect(mockDeleteProjectIntegration).toHaveBeenCalledWith('p1', 'trello');
+				expect(mockDeleteProjectIntegration).toHaveBeenCalledWith('p1', 'pm');
 			});
 		});
 	});
 
 	// ============================================================================
-	// Credential Overrides sub-router
+	// Integration Credentials sub-router
 	// ============================================================================
 
-	describe('credentialOverrides', () => {
+	describe('integrationCredentials', () => {
 		describe('list', () => {
-			it('lists overrides after verifying ownership', async () => {
+			it('lists credentials after verifying ownership', async () => {
 				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-				const overrides = [
-					{ envVarKey: 'GITHUB_TOKEN', credentialId: 42, credentialName: 'Bot', agentType: null },
-				];
-				mockListProjectOverrides.mockResolvedValue(overrides);
+				mockGetIntegrationByProjectAndCategory.mockResolvedValue({ id: 10 });
+				const creds = [{ role: 'api_key', credentialId: 42, credentialName: 'Key' }];
+				mockListIntegrationCredentials.mockResolvedValue(creds);
 				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
-				const result = await caller.credentialOverrides.list({ projectId: 'p1' });
+				const result = await caller.integrationCredentials.list({
+					projectId: 'p1',
+					category: 'pm',
+				});
 
-				expect(result).toEqual(overrides);
+				expect(result).toEqual(creds);
+			});
+
+			it('returns empty when integration not found', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				mockGetIntegrationByProjectAndCategory.mockResolvedValue(null);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				const result = await caller.integrationCredentials.list({
+					projectId: 'p1',
+					category: 'scm',
+				});
+
+				expect(result).toEqual([]);
 			});
 		});
 
 		describe('set', () => {
-			it('sets override after verifying project and credential ownership', async () => {
-				// First call: verify project, second call: verify credential
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
-				mockSetProjectCredentialOverride.mockResolvedValue(undefined);
+			it('sets credential after verifying project and credential ownership', async () => {
+				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project
+				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // credential
+				mockGetIntegrationByProjectAndCategory.mockResolvedValue({ id: 10 });
+				mockSetIntegrationCredential.mockResolvedValue(undefined);
 				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
-				await caller.credentialOverrides.set({
+				await caller.integrationCredentials.set({
 					projectId: 'p1',
-					envVarKey: 'GITHUB_TOKEN',
+					category: 'pm',
+					role: 'api_key',
 					credentialId: 42,
 				});
 
-				expect(mockSetProjectCredentialOverride).toHaveBeenCalledWith('p1', 'GITHUB_TOKEN', 42);
+				expect(mockSetIntegrationCredential).toHaveBeenCalledWith(10, 'api_key', 42);
 			});
 
 			it('throws NOT_FOUND when credential belongs to different org', async () => {
@@ -346,9 +371,10 @@ describe('projectsRouter', () => {
 				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 				await expect(
-					caller.credentialOverrides.set({
+					caller.integrationCredentials.set({
 						projectId: 'p1',
-						envVarKey: 'KEY',
+						category: 'pm',
+						role: 'api_key',
 						credentialId: 99,
 					}),
 				).rejects.toMatchObject({ code: 'NOT_FOUND' });
@@ -356,60 +382,19 @@ describe('projectsRouter', () => {
 		});
 
 		describe('remove', () => {
-			it('removes override after verifying ownership', async () => {
+			it('removes credential after verifying ownership', async () => {
 				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-				mockRemoveProjectCredentialOverride.mockResolvedValue(undefined);
+				mockGetIntegrationByProjectAndCategory.mockResolvedValue({ id: 10 });
+				mockRemoveIntegrationCredential.mockResolvedValue(undefined);
 				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
-				await caller.credentialOverrides.remove({
+				await caller.integrationCredentials.remove({
 					projectId: 'p1',
-					envVarKey: 'GITHUB_TOKEN',
+					category: 'pm',
+					role: 'api_key',
 				});
 
-				expect(mockRemoveProjectCredentialOverride).toHaveBeenCalledWith('p1', 'GITHUB_TOKEN');
-			});
-		});
-
-		describe('setAgent', () => {
-			it('sets agent-scoped override after verifying both ownerships', async () => {
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // credential
-				mockSetAgentCredentialOverride.mockResolvedValue(undefined);
-				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-				await caller.credentialOverrides.setAgent({
-					projectId: 'p1',
-					envVarKey: 'GITHUB_TOKEN',
-					agentType: 'review',
-					credentialId: 42,
-				});
-
-				expect(mockSetAgentCredentialOverride).toHaveBeenCalledWith(
-					'p1',
-					'GITHUB_TOKEN',
-					'review',
-					42,
-				);
-			});
-		});
-
-		describe('removeAgent', () => {
-			it('removes agent-scoped override after verifying ownership', async () => {
-				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-				mockRemoveAgentCredentialOverride.mockResolvedValue(undefined);
-				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-				await caller.credentialOverrides.removeAgent({
-					projectId: 'p1',
-					envVarKey: 'GITHUB_TOKEN',
-					agentType: 'review',
-				});
-
-				expect(mockRemoveAgentCredentialOverride).toHaveBeenCalledWith(
-					'p1',
-					'GITHUB_TOKEN',
-					'review',
-				);
+				expect(mockRemoveIntegrationCredential).toHaveBeenCalledWith(10, 'api_key');
 			});
 		});
 	});
