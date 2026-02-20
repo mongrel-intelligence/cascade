@@ -1,3 +1,4 @@
+import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import { type CheckSuiteStatus, githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -60,6 +61,11 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'github') return false;
 		if (!isGitHubCheckSuitePayload(ctx.payload)) return false;
+
+		// Check trigger config — default enabled for backward compatibility
+		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'checkSuiteSuccess')) {
+			return false;
+		}
 
 		const payload = ctx.payload;
 

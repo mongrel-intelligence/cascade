@@ -1,3 +1,4 @@
+import { resolveTrelloTriggerEnabled } from '../../config/triggerConfig.js';
 import { trelloClient } from '../../trello/client.js';
 import { logger } from '../../utils/logging.js';
 import type {
@@ -15,6 +16,11 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'trello') return false;
 		if (!isTrelloWebhookPayload(ctx.payload)) return false;
+
+		// Check trigger config — default enabled for backward compatibility
+		if (!resolveTrelloTriggerEnabled(ctx.project.trello?.triggers, 'readyToProcessLabel')) {
+			return false;
+		}
 
 		const payload = ctx.payload;
 		const readyLabelId = ctx.project.trello?.labels.readyToProcess;

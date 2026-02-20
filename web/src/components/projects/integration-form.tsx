@@ -82,6 +82,51 @@ function fromKVPairs(pairs: KVPair[]): Record<string, string> {
 	return result;
 }
 
+interface TriggerToggleItem {
+	key: string;
+	label: string;
+	description: string;
+	defaultValue: boolean;
+}
+
+function TriggerToggles({
+	title,
+	items,
+	values,
+	onChange,
+}: {
+	title: string;
+	items: TriggerToggleItem[];
+	values: Record<string, boolean>;
+	onChange: (values: Record<string, boolean>) => void;
+}) {
+	return (
+		<div className="space-y-3">
+			<Label className="text-sm font-medium">{title}</Label>
+			{items.map((item) => {
+				const value = item.key in values ? values[item.key] : item.defaultValue;
+				return (
+					<div key={item.key} className="flex items-start gap-3">
+						<input
+							type="checkbox"
+							id={`trigger-${item.key}`}
+							checked={value}
+							onChange={(e) => onChange({ ...values, [item.key]: e.target.checked })}
+							className="mt-0.5 h-4 w-4 rounded border-input"
+						/>
+						<div>
+							<label htmlFor={`trigger-${item.key}`} className="text-sm font-medium cursor-pointer">
+								{item.label}
+							</label>
+							<p className="text-xs text-muted-foreground">{item.description}</p>
+						</div>
+					</div>
+				);
+			})}
+		</div>
+	);
+}
+
 type IntegrationType = 'trello' | 'jira' | 'github';
 
 function TrelloForm({
@@ -97,6 +142,7 @@ function TrelloForm({
 	const [lists, setLists] = useState<KVPair[]>([]);
 	const [labels, setLabels] = useState<KVPair[]>([]);
 	const [costField, setCostField] = useState('');
+	const [trelloTriggers, setTrelloTriggers] = useState<Record<string, boolean>>({});
 
 	useEffect(() => {
 		if (initialConfig) {
@@ -105,6 +151,7 @@ function TrelloForm({
 			setLabels(toKVPairs(initialConfig.labels as Record<string, string>));
 			const cf = initialConfig.customFields as Record<string, string> | undefined;
 			setCostField(cf?.cost ?? '');
+			setTrelloTriggers((initialConfig.triggers as Record<string, boolean>) ?? {});
 		}
 	}, [initialConfig]);
 
@@ -118,6 +165,7 @@ function TrelloForm({
 					lists: fromKVPairs(lists),
 					labels: fromKVPairs(labels),
 					...(costField ? { customFields: { cost: costField } } : {}),
+					...(Object.keys(trelloTriggers).length > 0 ? { triggers: trelloTriggers } : {}),
 				},
 			}),
 		onSuccess: () => {
@@ -151,6 +199,45 @@ function TrelloForm({
 					placeholder="Custom field ID for cost tracking"
 				/>
 			</div>
+
+			<TriggerToggles
+				title="Trigger Configuration"
+				items={[
+					{
+						key: 'cardMovedToBriefing',
+						label: 'Card moved to Briefing',
+						description: 'Trigger briefing agent when card is moved to the briefing list.',
+						defaultValue: true,
+					},
+					{
+						key: 'cardMovedToPlanning',
+						label: 'Card moved to Planning',
+						description: 'Trigger planning agent when card is moved to the planning list.',
+						defaultValue: true,
+					},
+					{
+						key: 'cardMovedToTodo',
+						label: 'Card moved to Todo',
+						description: 'Trigger implementation agent when card is moved to the todo list.',
+						defaultValue: true,
+					},
+					{
+						key: 'readyToProcessLabel',
+						label: 'Ready to Process label',
+						description: 'Trigger agent when the "Ready to Process" label is added.',
+						defaultValue: true,
+					},
+					{
+						key: 'commentMention',
+						label: 'Comment @mention',
+						description:
+							'Trigger respond-to-planning-comment when the bot is @mentioned in a comment.',
+						defaultValue: true,
+					},
+				]}
+				values={trelloTriggers}
+				onChange={setTrelloTriggers}
+			/>
 
 			<div className="flex items-center gap-2">
 				<button
@@ -190,6 +277,7 @@ function JiraForm({
 		{ key: 'readyToProcess', value: 'cascade-ready' },
 	]);
 	const [costField, setCostField] = useState('');
+	const [jiraTriggers, setJiraTriggers] = useState<Record<string, boolean>>({});
 
 	useEffect(() => {
 		if (initialConfig) {
@@ -203,6 +291,7 @@ function JiraForm({
 			}
 			const cf = initialConfig.customFields as Record<string, string> | undefined;
 			setCostField(cf?.cost ?? '');
+			setJiraTriggers((initialConfig.triggers as Record<string, boolean>) ?? {});
 		}
 	}, [initialConfig]);
 
@@ -218,6 +307,7 @@ function JiraForm({
 					...(issueTypes.length > 0 ? { issueTypes: fromKVPairs(issueTypes) } : {}),
 					...(jiraLabels.length > 0 ? { labels: fromKVPairs(jiraLabels) } : {}),
 					...(costField ? { customFields: { cost: costField } } : {}),
+					...(Object.keys(jiraTriggers).length > 0 ? { triggers: jiraTriggers } : {}),
 				},
 			}),
 		onSuccess: () => {
@@ -271,6 +361,33 @@ function JiraForm({
 					placeholder="e.g., customfield_10042"
 				/>
 			</div>
+
+			<TriggerToggles
+				title="Trigger Configuration"
+				items={[
+					{
+						key: 'issueTransitioned',
+						label: 'Issue transitioned',
+						description: 'Trigger agent when an issue transitions to a configured status.',
+						defaultValue: true,
+					},
+					{
+						key: 'readyToProcessLabel',
+						label: 'Ready to Process label',
+						description: 'Trigger agent when the ready-to-process label is added.',
+						defaultValue: true,
+					},
+					{
+						key: 'commentMention',
+						label: 'Comment @mention',
+						description:
+							'Trigger respond-to-planning-comment when the bot is @mentioned in a comment.',
+						defaultValue: true,
+					},
+				]}
+				values={jiraTriggers}
+				onChange={setJiraTriggers}
+			/>
 
 			<div className="flex items-center gap-2">
 				<button
@@ -381,10 +498,13 @@ function GitHubForm({
 	const [implementerError, setImplementerError] = useState<string | null>(null);
 	const [reviewerError, setReviewerError] = useState<string | null>(null);
 
+	const [githubTriggers, setGithubTriggers] = useState<Record<string, boolean>>({});
+
 	useEffect(() => {
 		if (initialConfig) {
 			setImplementerCredId((initialConfig.implementerCredentialId as number) ?? null);
 			setReviewerCredId((initialConfig.reviewerCredentialId as number) ?? null);
+			setGithubTriggers((initialConfig.triggers as Record<string, boolean>) ?? {});
 		}
 	}, [initialConfig]);
 
@@ -431,6 +551,7 @@ function GitHubForm({
 				config: {
 					implementerCredentialId: implementerCredId,
 					reviewerCredentialId: reviewerCredId,
+					...(Object.keys(githubTriggers).length > 0 ? { triggers: githubTriggers } : {}),
 				},
 			});
 
@@ -503,6 +624,65 @@ function GitHubForm({
 					accounts for loop prevention to work.
 				</p>
 			)}
+
+			<TriggerToggles
+				title="Trigger Configuration"
+				items={[
+					{
+						key: 'checkSuiteSuccess',
+						label: 'Check Suite Success',
+						description: 'Trigger review agent when all CI checks pass.',
+						defaultValue: true,
+					},
+					{
+						key: 'checkSuiteFailure',
+						label: 'Check Suite Failure',
+						description: 'Trigger respond-to-ci agent when CI checks fail.',
+						defaultValue: true,
+					},
+					{
+						key: 'prReviewSubmitted',
+						label: 'PR Review Submitted',
+						description:
+							'Trigger respond-to-review when a review with changes requested is submitted.',
+						defaultValue: true,
+					},
+					{
+						key: 'prCommentMention',
+						label: 'PR Comment @mention',
+						description:
+							'Trigger respond-to-pr-comment when the implementer bot is @mentioned in a comment.',
+						defaultValue: true,
+					},
+					{
+						key: 'prReadyToMerge',
+						label: 'PR Ready to Merge',
+						description: 'Auto-move card to DONE when PR is approved and checks pass.',
+						defaultValue: true,
+					},
+					{
+						key: 'prMerged',
+						label: 'PR Merged',
+						description: 'Auto-move card to MERGED when PR is merged.',
+						defaultValue: true,
+					},
+					{
+						key: 'reviewRequested',
+						label: 'Review Requested (opt-in)',
+						description:
+							'Trigger review agent when review is requested from a CASCADE persona. Default disabled.',
+						defaultValue: false,
+					},
+					{
+						key: 'prOpened',
+						label: 'PR Opened (opt-in)',
+						description: 'Trigger respond-to-review when a new PR is opened. Default disabled.',
+						defaultValue: false,
+					},
+				]}
+				values={githubTriggers}
+				onChange={setGithubTriggers}
+			/>
 
 			<div className="flex items-center gap-2">
 				<button

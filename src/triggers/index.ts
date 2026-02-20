@@ -1,10 +1,11 @@
 import { CheckSuiteFailureTrigger } from './github/check-suite-failure.js';
 import { CheckSuiteSuccessTrigger } from './github/check-suite-success.js';
 import { PRCommentMentionTrigger } from './github/pr-comment-mention.js';
-// import { PROpenedTrigger } from './github/pr-opened.js';
 import { PRMergedTrigger } from './github/pr-merged.js';
+import { PROpenedTrigger } from './github/pr-opened.js';
 import { PRReadyToMergeTrigger } from './github/pr-ready-to-merge.js';
 import { PRReviewSubmittedTrigger } from './github/pr-review-submitted.js';
+import { ReviewRequestedTrigger } from './github/review-requested.js';
 import { JiraCommentMentionTrigger } from './jira/comment-mention.js';
 import { JiraIssueTransitionedTrigger } from './jira/issue-transitioned.js';
 import { JiraReadyToProcessLabelTrigger } from './jira/label-added.js';
@@ -53,8 +54,8 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 	registry.register(new JiraReadyToProcessLabelTrigger());
 
 	// GitHub: PR opened trigger (initial review on new PRs)
-	// DISABLED: Triggers respond-to-review which has file editing gadgets - needs review
-	// registry.register(new PROpenedTrigger());
+	// Opt-in: disabled by default via trigger config (github.triggers.prOpened = false)
+	registry.register(new PROpenedTrigger());
 
 	// GitHub: PR comment @mention trigger (runs respond-to-pr-comment when reviewer is @mentioned)
 	// Must be registered before other comment triggers so it can intercept mentions and fall through otherwise
@@ -62,6 +63,11 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 
 	// GitHub: PR review submission trigger (when someone submits a review)
 	registry.register(new PRReviewSubmittedTrigger());
+
+	// GitHub: Review requested trigger (runs review agent when review is requested from CASCADE persona)
+	// Opt-in: disabled by default via trigger config (github.triggers.reviewRequested = false)
+	// Registered before CheckSuiteSuccessTrigger so both can independently trigger review
+	registry.register(new ReviewRequestedTrigger());
 
 	// GitHub: Check suite failure trigger (runs implementation agent to fix)
 	registry.register(new CheckSuiteFailureTrigger());

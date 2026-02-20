@@ -1,3 +1,4 @@
+import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import { githubClient } from '../../github/client.js';
 import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
@@ -17,6 +18,11 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'github') return false;
+
+		// Check trigger config — default enabled for backward compatibility
+		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'prCommentMention')) {
+			return false;
+		}
 
 		// Match issue_comment.created on PRs
 		if (isGitHubIssueCommentPayload(ctx.payload)) {

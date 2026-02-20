@@ -9,6 +9,7 @@ interface TrelloIntegrationConfig {
 	lists: Record<string, string>;
 	labels: Record<string, string>;
 	customFields?: { cost?: string };
+	triggers?: Record<string, boolean>;
 }
 
 interface JiraIntegrationConfig {
@@ -18,6 +19,13 @@ interface JiraIntegrationConfig {
 	issueTypes?: Record<string, string>;
 	customFields?: { cost?: string };
 	labels?: Record<string, string>;
+	triggers?: Record<string, boolean>;
+}
+
+interface GitHubIntegrationConfig {
+	implementerCredentialId?: number;
+	reviewerCredentialId?: number;
+	triggers?: Record<string, boolean>;
 }
 
 interface DefaultsRow {
@@ -84,6 +92,7 @@ function mapProjectRow(
 	projectAgentConfigs: AgentConfigRow[],
 	trelloConfig?: TrelloIntegrationConfig,
 	jiraConfig?: JiraIntegrationConfig,
+	githubConfig?: GitHubIntegrationConfig,
 ): Record<string, unknown> {
 	const { models, prompts, backends } = buildAgentMaps(projectAgentConfigs);
 
@@ -111,6 +120,7 @@ function mapProjectRow(
 			lists: trelloConfig.lists,
 			labels: trelloConfig.labels,
 			customFields: trelloConfig.customFields,
+			...(trelloConfig.triggers ? { triggers: trelloConfig.triggers } : {}),
 		};
 	}
 
@@ -122,7 +132,12 @@ function mapProjectRow(
 			issueTypes: jiraConfig.issueTypes,
 			customFields: jiraConfig.customFields,
 			labels: jiraConfig.labels,
+			...(jiraConfig.triggers ? { triggers: jiraConfig.triggers } : {}),
 		};
+	}
+
+	if (githubConfig?.triggers) {
+		project.github = { triggers: githubConfig.triggers };
 	}
 
 	if (row.agentBackend) {
@@ -198,7 +213,16 @@ export async function loadConfigFromDb(): Promise<CascadeConfig> {
 			const jiraConfig = integrations.find((i) => i.type === 'jira')?.config as
 				| JiraIntegrationConfig
 				| undefined;
-			return mapProjectRow(row, projectAgentConfigsMap.get(row.id) ?? [], trelloConfig, jiraConfig);
+			const githubConfig = integrations.find((i) => i.type === 'github')?.config as
+				| GitHubIntegrationConfig
+				| undefined;
+			return mapProjectRow(
+				row,
+				projectAgentConfigsMap.get(row.id) ?? [],
+				trelloConfig,
+				jiraConfig,
+				githubConfig,
+			);
 		}),
 	};
 
@@ -236,10 +260,13 @@ async function findProjectConfigFromDb(
 	const jiraConfig = integrations.find((i) => i.type === 'jira')?.config as
 		| JiraIntegrationConfig
 		| undefined;
+	const githubConfig = integrations.find((i) => i.type === 'github')?.config as
+		| GitHubIntegrationConfig
+		| undefined;
 
 	const rawConfig = {
 		defaults: mapDefaultsRow(defaultsRow, [...globalAcs, ...orgAcs]),
-		projects: [mapProjectRow(row, projectAcs, trelloConfig, jiraConfig)],
+		projects: [mapProjectRow(row, projectAcs, trelloConfig, jiraConfig, githubConfig)],
 	};
 	const config = validateConfig(rawConfig);
 	return { project: config.projects[0], config };
