@@ -9,6 +9,10 @@ vi.mock('node:fs', () => ({
 	realpathSync: mockRealpathSync,
 }));
 
+vi.mock('../../../../src/utils/repo.js', () => ({
+	getWorkspaceDir: () => '/workspace',
+}));
+
 import { validatePath } from '../../../../src/gadgets/shared/pathValidation.js';
 
 describe('validatePath', () => {
@@ -86,6 +90,26 @@ describe('validatePath', () => {
 		});
 	});
 
+	describe('workspace allowed paths', () => {
+		it('accepts a path under /workspace when CWD is elsewhere', () => {
+			vi.spyOn(process, 'cwd').mockReturnValue('/app');
+			mockRealpathSync.mockReturnValue('/workspace/cascade-damisa-123/src/file.ts');
+
+			const result = validatePath('/workspace/cascade-damisa-123/src/file.ts');
+
+			expect(result).toBe('/workspace/cascade-damisa-123/src/file.ts');
+		});
+
+		it('accepts the workspace root directory itself', () => {
+			vi.spyOn(process, 'cwd').mockReturnValue('/app');
+			mockRealpathSync.mockReturnValue('/workspace');
+
+			const result = validatePath('/workspace');
+
+			expect(result).toBe('/workspace');
+		});
+	});
+
 	describe('path traversal rejection', () => {
 		it('rejects a path outside CWD', () => {
 			const cwd = '/workspace/myproject';
@@ -98,10 +122,10 @@ describe('validatePath', () => {
 		it('rejects a path that escapes CWD via traversal', () => {
 			const cwd = '/workspace/myproject';
 			vi.spyOn(process, 'cwd').mockReturnValue(cwd);
-			// Realpath resolves symlinks, but still outside cwd
-			mockRealpathSync.mockReturnValue('/workspace/otherproject/file.ts');
+			// Realpath resolves symlinks, but still outside cwd and allowed paths
+			mockRealpathSync.mockReturnValue('/var/secrets/key.pem');
 
-			expect(() => validatePath('../otherproject/file.ts')).toThrow('Path access denied');
+			expect(() => validatePath('../../var/secrets/key.pem')).toThrow('Path access denied');
 		});
 
 		it('error message includes the original input path', () => {
@@ -117,7 +141,7 @@ describe('validatePath', () => {
 			vi.spyOn(process, 'cwd').mockReturnValue(cwd);
 			mockRealpathSync.mockReturnValue('/home/user/file');
 
-			expect(() => validatePath('/home/user/file')).toThrow('/tmp');
+			expect(() => validatePath('/home/user/file')).toThrow('/tmp, /workspace');
 		});
 	});
 

@@ -8,7 +8,9 @@
 import { realpathSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 
-const ALLOWED_PATHS = ['/tmp'];
+import { getWorkspaceDir } from '../../utils/repo.js';
+
+const ALLOWED_PATHS = ['/tmp', getWorkspaceDir()];
 
 /**
  * Validate and resolve a file path.
