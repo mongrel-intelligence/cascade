@@ -7,6 +7,7 @@ import {
 	TableHeader,
 	TableRow,
 } from '@/components/ui/table.js';
+import { getTriggerNamesForAgent } from '@/lib/trigger-agent-mapping.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -47,6 +48,7 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 							<TableHead>Max Iterations</TableHead>
 							<TableHead>Backend</TableHead>
 							<TableHead>Prompt</TableHead>
+							<TableHead>Triggers</TableHead>
 							<TableHead>Scope</TableHead>
 							<TableHead className="w-20" />
 						</TableRow>
@@ -54,53 +56,69 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 					<TableBody>
 						{configs.length === 0 && (
 							<TableRow>
-								<TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+								<TableCell colSpan={8} className="text-center text-muted-foreground py-8">
 									No agent configs yet
 								</TableCell>
 							</TableRow>
 						)}
-						{configs.map((config) => (
-							<TableRow key={config.id}>
-								<TableCell className="font-medium">{config.agentType}</TableCell>
-								<TableCell>{config.model ?? '-'}</TableCell>
-								<TableCell>{config.maxIterations ?? '-'}</TableCell>
-								<TableCell>{config.agentBackend ?? '-'}</TableCell>
-								<TableCell>
-									{config.prompt ? (
-										<Link to="/settings/prompts" className="text-primary hover:underline text-sm">
-											custom
-										</Link>
-									) : (
-										'-'
-									)}
-								</TableCell>
-								<TableCell>
-									{config.orgId ? (
-										<Badge variant="secondary">Org</Badge>
-									) : (
-										<Badge variant="outline">Global</Badge>
-									)}
-								</TableCell>
-								<TableCell>
-									<div className="flex gap-1">
-										<button
-											type="button"
-											onClick={() => setEditConfig(config)}
-											className="p-1 text-muted-foreground hover:text-foreground"
-										>
-											<Pencil className="h-4 w-4" />
-										</button>
-										<button
-											type="button"
-											onClick={() => deleteMutation.mutate(config.id)}
-											className="p-1 text-muted-foreground hover:text-destructive"
-										>
-											<Trash2 className="h-4 w-4" />
-										</button>
-									</div>
-								</TableCell>
-							</TableRow>
-						))}
+						{configs.map((config) => {
+							const triggerNames = getTriggerNamesForAgent(config.agentType);
+							return (
+								<TableRow key={config.id}>
+									<TableCell className="font-medium">{config.agentType}</TableCell>
+									<TableCell>{config.model ?? '-'}</TableCell>
+									<TableCell>{config.maxIterations ?? '-'}</TableCell>
+									<TableCell>{config.agentBackend ?? '-'}</TableCell>
+									<TableCell>
+										{config.prompt ? (
+											<Link to="/settings/prompts" className="text-primary hover:underline text-sm">
+												custom
+											</Link>
+										) : (
+											'-'
+										)}
+									</TableCell>
+									<TableCell>
+										{triggerNames.length > 0 ? (
+											<div className="flex flex-wrap gap-1">
+												{triggerNames.map((name) => (
+													<Badge key={name} variant="outline" className="text-xs">
+														{name}
+													</Badge>
+												))}
+											</div>
+										) : (
+											<span className="text-muted-foreground text-sm">-</span>
+										)}
+									</TableCell>
+									<TableCell>
+										{config.orgId ? (
+											<Badge variant="secondary">Org</Badge>
+										) : (
+											<Badge variant="outline">Global</Badge>
+										)}
+									</TableCell>
+									<TableCell>
+										<div className="flex gap-1">
+											<button
+												type="button"
+												onClick={() => setEditConfig(config)}
+												className="p-1 text-muted-foreground hover:text-foreground"
+											>
+												<Pencil className="h-4 w-4" />
+											</button>
+											<button
+												type="button"
+												onClick={() => deleteMutation.mutate(config.id)}
+												className="p-1 text-muted-foreground hover:text-destructive"
+											>
+												<Trash2 className="h-4 w-4" />
+											</button>
+										</div>
+									</TableCell>
+								</TableRow>
+							);
+						})}
 					</TableBody>
 				</Table>
 			</div>

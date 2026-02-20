@@ -2,85 +2,8 @@ import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, Loader2, Plus, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle, Info, Loader2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
-
-interface KVPair {
-	key: string;
-	value: string;
-}
-
-function KeyValueEditor({
-	label,
-	pairs,
-	onChange,
-}: {
-	label: string;
-	pairs: KVPair[];
-	onChange: (pairs: KVPair[]) => void;
-}) {
-	return (
-		<div className="space-y-2">
-			<div className="flex items-center justify-between">
-				<Label>{label}</Label>
-				<button
-					type="button"
-					onClick={() => onChange([...pairs, { key: '', value: '' }])}
-					className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-				>
-					<Plus className="h-3 w-3" /> Add
-				</button>
-			</div>
-			{pairs.map((pair, i) => (
-				<div key={`${pair.key}-${i}`} className="flex gap-2">
-					<Input
-						value={pair.key}
-						onChange={(e) => {
-							const next = [...pairs];
-							next[i] = { ...next[i], key: e.target.value };
-							onChange(next);
-						}}
-						placeholder="Key"
-						className="flex-1"
-					/>
-					<Input
-						value={pair.value}
-						onChange={(e) => {
-							const next = [...pairs];
-							next[i] = { ...next[i], value: e.target.value };
-							onChange(next);
-						}}
-						placeholder="Value"
-						className="flex-1"
-					/>
-					<button
-						type="button"
-						onClick={() => onChange(pairs.filter((_, j) => j !== i))}
-						className="p-2 text-muted-foreground hover:text-destructive"
-					>
-						<Trash2 className="h-4 w-4" />
-					</button>
-				</div>
-			))}
-			{pairs.length === 0 && <p className="text-xs text-muted-foreground">No entries</p>}
-		</div>
-	);
-}
-
-function toKVPairs(obj: Record<string, string> | undefined): KVPair[] {
-	if (!obj) return [];
-	return Object.entries(obj).map(([key, value]) => ({ key, value }));
-}
-
-function fromKVPairs(pairs: KVPair[]): Record<string, string> {
-	const result: Record<string, string> = {};
-	for (const pair of pairs) {
-		if (pair.key.trim()) {
-			result[pair.key.trim()] = pair.value;
-		}
-	}
-	return result;
-}
 
 type IntegrationType = 'trello' | 'jira' | 'github';
 
@@ -94,15 +17,11 @@ function TrelloForm({
 	const queryClient = useQueryClient();
 
 	const [boardId, setBoardId] = useState('');
-	const [lists, setLists] = useState<KVPair[]>([]);
-	const [labels, setLabels] = useState<KVPair[]>([]);
 	const [costField, setCostField] = useState('');
 
 	useEffect(() => {
 		if (initialConfig) {
 			setBoardId((initialConfig.boardId as string) ?? '');
-			setLists(toKVPairs(initialConfig.lists as Record<string, string>));
-			setLabels(toKVPairs(initialConfig.labels as Record<string, string>));
 			const cf = initialConfig.customFields as Record<string, string> | undefined;
 			setCostField(cf?.cost ?? '');
 		}
@@ -114,9 +33,10 @@ function TrelloForm({
 				projectId,
 				type: 'trello',
 				config: {
+					// Preserve existing lists/labels from the current config (managed via Agent Configs tab)
+					...(initialConfig?.lists ? { lists: initialConfig.lists } : {}),
+					...(initialConfig?.labels ? { labels: initialConfig.labels } : {}),
 					boardId,
-					lists: fromKVPairs(lists),
-					labels: fromKVPairs(labels),
 					...(costField ? { customFields: { cost: costField } } : {}),
 				},
 			}),
@@ -129,6 +49,14 @@ function TrelloForm({
 
 	return (
 		<div className="space-y-6">
+			<div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
+				<Info className="h-4 w-4 mt-0.5 shrink-0" />
+				<span>
+					Trigger-specific settings (list IDs) are configured in the <strong>Agent Configs</strong>{' '}
+					tab — expand each agent to set its Trello list.
+				</span>
+			</div>
+
 			<div className="space-y-2">
 				<Label htmlFor="boardId">Board ID</Label>
 				<Input
@@ -138,9 +66,6 @@ function TrelloForm({
 					placeholder="Trello board ID"
 				/>
 			</div>
-
-			<KeyValueEditor label="Lists" pairs={lists} onChange={setLists} />
-			<KeyValueEditor label="Labels" pairs={labels} onChange={setLabels} />
 
 			<div className="space-y-2">
 				<Label htmlFor="costField">Custom Field: Cost</Label>
@@ -181,26 +106,12 @@ function JiraForm({
 
 	const [jiraProjectKey, setJiraProjectKey] = useState('');
 	const [baseUrl, setBaseUrl] = useState('');
-	const [statuses, setStatuses] = useState<KVPair[]>([]);
-	const [issueTypes, setIssueTypes] = useState<KVPair[]>([]);
-	const [jiraLabels, setJiraLabels] = useState<KVPair[]>([
-		{ key: 'processing', value: 'cascade-processing' },
-		{ key: 'processed', value: 'cascade-processed' },
-		{ key: 'error', value: 'cascade-error' },
-		{ key: 'readyToProcess', value: 'cascade-ready' },
-	]);
 	const [costField, setCostField] = useState('');
 
 	useEffect(() => {
 		if (initialConfig) {
 			setJiraProjectKey((initialConfig.projectKey as string) ?? '');
 			setBaseUrl((initialConfig.baseUrl as string) ?? '');
-			setStatuses(toKVPairs(initialConfig.statuses as Record<string, string>));
-			setIssueTypes(toKVPairs(initialConfig.issueTypes as Record<string, string>));
-			const labels = initialConfig.labels as Record<string, string> | undefined;
-			if (labels) {
-				setJiraLabels(toKVPairs(labels));
-			}
 			const cf = initialConfig.customFields as Record<string, string> | undefined;
 			setCostField(cf?.cost ?? '');
 		}
@@ -212,11 +123,12 @@ function JiraForm({
 				projectId,
 				type: 'jira',
 				config: {
+					// Preserve existing statuses/issueTypes/labels from current config (managed via Agent Configs tab)
+					...(initialConfig?.statuses ? { statuses: initialConfig.statuses } : {}),
+					...(initialConfig?.issueTypes ? { issueTypes: initialConfig.issueTypes } : {}),
+					...(initialConfig?.labels ? { labels: initialConfig.labels } : {}),
 					projectKey: jiraProjectKey,
 					baseUrl,
-					statuses: fromKVPairs(statuses),
-					...(issueTypes.length > 0 ? { issueTypes: fromKVPairs(issueTypes) } : {}),
-					...(jiraLabels.length > 0 ? { labels: fromKVPairs(jiraLabels) } : {}),
 					...(costField ? { customFields: { cost: costField } } : {}),
 				},
 			}),
@@ -229,6 +141,14 @@ function JiraForm({
 
 	return (
 		<div className="space-y-6">
+			<div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
+				<Info className="h-4 w-4 mt-0.5 shrink-0" />
+				<span>
+					Trigger-specific settings (status mappings) are configured in the{' '}
+					<strong>Agent Configs</strong> tab — expand each agent to set its JIRA status.
+				</span>
+			</div>
+
 			<div className="space-y-2">
 				<Label htmlFor="jiraProjectKey">Project Key</Label>
 				<Input
@@ -248,19 +168,6 @@ function JiraForm({
 					placeholder="https://your-instance.atlassian.net"
 				/>
 			</div>
-
-			<KeyValueEditor label="Status Mappings" pairs={statuses} onChange={setStatuses} />
-			<p className="text-xs text-muted-foreground -mt-1">
-				Map CASCADE statuses (briefing, planning, todo, inProgress, inReview, done, merged) to JIRA
-				status names.
-			</p>
-
-			<KeyValueEditor label="Issue Types (optional)" pairs={issueTypes} onChange={setIssueTypes} />
-
-			<KeyValueEditor label="Labels" pairs={jiraLabels} onChange={setJiraLabels} />
-			<p className="text-xs text-muted-foreground -mt-1">
-				JIRA label names used by CASCADE. Keys: processing, processed, error, readyToProcess.
-			</p>
 
 			<div className="space-y-2">
 				<Label htmlFor="jiraCostField">Custom Field: Cost</Label>

@@ -9,6 +9,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select.js';
+import { KNOWN_AGENT_TYPES } from '@/lib/trigger-agent-mapping.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -29,30 +30,116 @@ interface AgentConfigFormDialogProps {
 	config?: AgentConfig;
 }
 
-export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfigFormDialogProps) {
+function BackendSelect({
+	value,
+	onChange,
+}: {
+	value: string;
+	onChange: (v: string) => void;
+}) {
+	return (
+		<div className="space-y-2">
+			<Label>Backend</Label>
+			<Select value={value || '_none'} onValueChange={(v) => onChange(v === '_none' ? '' : v)}>
+				<SelectTrigger className="w-full">
+					<SelectValue placeholder="Optional" />
+				</SelectTrigger>
+				<SelectContent>
+					<SelectItem value="_none">None (use default)</SelectItem>
+					<SelectItem value="llmist">llmist</SelectItem>
+					<SelectItem value="claude-code">claude-code</SelectItem>
+				</SelectContent>
+			</Select>
+		</div>
+	);
+}
+
+function AgentTypeSelect({
+	value,
+	customValue,
+	onValueChange,
+	onCustomChange,
+}: {
+	value: string;
+	customValue: string;
+	onValueChange: (v: string) => void;
+	onCustomChange: (v: string) => void;
+}) {
+	return (
+		<div className="space-y-2">
+			<Label htmlFor="gac-agentType">Agent Type</Label>
+			<Select value={value} onValueChange={onValueChange}>
+				<SelectTrigger id="gac-agentType" className="w-full">
+					<SelectValue placeholder="Select agent type..." />
+				</SelectTrigger>
+				<SelectContent>
+					{KNOWN_AGENT_TYPES.map((type) => (
+						<SelectItem key={type} value={type}>
+							{type}
+						</SelectItem>
+					))}
+					<SelectItem value="_custom">Other (custom type)</SelectItem>
+				</SelectContent>
+			</Select>
+			{value === '_custom' && (
+				<Input
+					value={customValue}
+					onChange={(e) => onCustomChange(e.target.value)}
+					placeholder="Custom agent type name"
+					required
+				/>
+			)}
+		</div>
+	);
+}
+
+function PromptInfo({ hasPrompt }: { hasPrompt?: boolean }) {
+	return (
+		<div className="space-y-2">
+			<Label>Prompt</Label>
+			{hasPrompt ? (
+				<p className="text-sm text-muted-foreground">
+					Custom prompt set.{' '}
+					<Link to="/settings/prompts" className="text-primary hover:underline">
+						Edit in Prompt Editor
+					</Link>
+				</p>
+			) : (
+				<p className="text-sm text-muted-foreground">
+					Using default.{' '}
+					<Link to="/settings/prompts" className="text-primary hover:underline">
+						Customize in Prompt Editor
+					</Link>
+				</p>
+			)}
+		</div>
+	);
+}
+
+function useGlobalConfigMutation(
+	config: AgentConfig | undefined,
+	resolvedAgentType: string,
+	model: string,
+	maxIterations: string,
+	agentBackend: string,
+	onSuccess: () => void,
+) {
 	const queryClient = useQueryClient();
-	const isEdit = !!config;
-
-	const [agentType, setAgentType] = useState(config?.agentType ?? '');
-	const [model, setModel] = useState(config?.model ?? '');
-	const [maxIterations, setMaxIterations] = useState(config?.maxIterations?.toString() ?? '');
-	const [agentBackend, setAgentBackend] = useState(config?.agentBackend ?? '');
-	const [prompt, setPrompt] = useState(config?.prompt ?? '');
-
 	const queryKey = trpc.agentConfigs.list.queryOptions().queryKey;
+	const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
 	const createMutation = useMutation({
 		mutationFn: () =>
 			trpcClient.agentConfigs.create.mutate({
-				agentType,
+				agentType: resolvedAgentType,
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentBackend: agentBackend || null,
-				prompt: prompt || null,
+				prompt: null,
 			}),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey });
-			onOpenChange(false);
+			invalidate();
+			onSuccess();
 		},
 	});
 
@@ -60,19 +147,49 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 		mutationFn: () =>
 			trpcClient.agentConfigs.update.mutate({
 				id: config?.id as number,
-				agentType,
+				agentType: resolvedAgentType,
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentBackend: agentBackend || null,
-				prompt: prompt || null,
+				prompt: config?.prompt ?? null,
 			}),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey });
-			onOpenChange(false);
+			invalidate();
+			onSuccess();
 		},
 	});
 
-	const activeMutation = isEdit ? updateMutation : createMutation;
+	return config ? updateMutation : createMutation;
+}
+
+function getInitialAgentType(config?: AgentConfig) {
+	if (!config) return { agentType: '', customAgentType: '' };
+	const isKnown = (KNOWN_AGENT_TYPES as readonly string[]).includes(config.agentType);
+	return {
+		agentType: isKnown ? config.agentType : '_custom',
+		customAgentType: isKnown ? '' : config.agentType,
+	};
+}
+
+export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfigFormDialogProps) {
+	const isEdit = !!config;
+	const initial = getInitialAgentType(config);
+
+	const [agentType, setAgentType] = useState(initial.agentType);
+	const [customAgentType, setCustomAgentType] = useState(initial.customAgentType);
+	const [model, setModel] = useState(config?.model ?? '');
+	const [maxIterations, setMaxIterations] = useState(config?.maxIterations?.toString() ?? '');
+	const [agentBackend, setAgentBackend] = useState(config?.agentBackend ?? '');
+
+	const resolvedAgentType = agentType === '_custom' ? customAgentType : agentType;
+	const activeMutation = useGlobalConfigMutation(
+		config,
+		resolvedAgentType,
+		model,
+		maxIterations,
+		agentBackend,
+		() => onOpenChange(false),
+	);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -87,16 +204,12 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 					}}
 					className="space-y-4"
 				>
-					<div className="space-y-2">
-						<Label htmlFor="gac-agentType">Agent Type</Label>
-						<Input
-							id="gac-agentType"
-							value={agentType}
-							onChange={(e) => setAgentType(e.target.value)}
-							placeholder="e.g. implementation, review, briefing"
-							required
-						/>
-					</div>
+					<AgentTypeSelect
+						value={agentType}
+						customValue={customAgentType}
+						onValueChange={setAgentType}
+						onCustomChange={setCustomAgentType}
+					/>
 					<div className="grid grid-cols-2 gap-4">
 						<div className="space-y-2">
 							<Label htmlFor="gac-model">Model</Label>
@@ -113,40 +226,8 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 							/>
 						</div>
 					</div>
-					<div className="space-y-2">
-						<Label>Backend</Label>
-						<Select
-							value={agentBackend || '_none'}
-							onValueChange={(v) => setAgentBackend(v === '_none' ? '' : v)}
-						>
-							<SelectTrigger className="w-full">
-								<SelectValue placeholder="Optional" />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="_none">None</SelectItem>
-								<SelectItem value="llmist">llmist</SelectItem>
-								<SelectItem value="claude-code">claude-code</SelectItem>
-							</SelectContent>
-						</Select>
-					</div>
-					<div className="space-y-2">
-						<Label>Prompt</Label>
-						{config?.prompt ? (
-							<p className="text-sm text-muted-foreground">
-								Custom prompt set.{' '}
-								<Link to="/settings/prompts" className="text-primary hover:underline">
-									Edit in Prompt Editor
-								</Link>
-							</p>
-						) : (
-							<p className="text-sm text-muted-foreground">
-								Using default.{' '}
-								<Link to="/settings/prompts" className="text-primary hover:underline">
-									Customize in Prompt Editor
-								</Link>
-							</p>
-						)}
-					</div>
+					<BackendSelect value={agentBackend} onChange={setAgentBackend} />
+					<PromptInfo hasPrompt={!!config?.prompt} />
 					<div className="flex justify-end gap-2">
 						<button
 							type="button"
@@ -157,7 +238,7 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 						</button>
 						<button
 							type="submit"
-							disabled={activeMutation.isPending}
+							disabled={activeMutation.isPending || !resolvedAgentType}
 							className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
 						>
 							{activeMutation.isPending ? 'Saving...' : isEdit ? 'Update' : 'Create'}
