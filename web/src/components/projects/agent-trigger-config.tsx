@@ -4,7 +4,7 @@ import type { TriggerAgentMapping } from '@/lib/trigger-agent-mapping.js';
 import { getMappingsForAgent } from '@/lib/trigger-agent-mapping.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 
 interface AgentTriggerConfigProps {
 	projectId: string;
@@ -73,15 +73,12 @@ export function AgentTriggerConfig({
 	const queryClient = useQueryClient();
 	const mappings = getMappingsForAgent(agentType);
 
-	// Separate configurable from read-only
-	const configurableMappings = useMemo(() => mappings.filter((m) => m.configurable), [mappings]);
-	const readOnlyMappings = useMemo(() => mappings.filter((m) => !m.configurable), [mappings]);
+	// Separate configurable from read-only (cheap filter, no memoization needed)
+	const configurableMappings = mappings.filter((m) => m.configurable);
+	const readOnlyMappings = mappings.filter((m) => !m.configurable);
 
-	// Build state for each configurable field (derived from configs)
-	const initialValues = useMemo(
-		() => buildInitialValues(configurableMappings, trelloConfig, jiraConfig),
-		[configurableMappings, trelloConfig, jiraConfig],
-	);
+	// Build initial values for configurable fields (derived from configs)
+	const initialValues = buildInitialValues(configurableMappings, trelloConfig, jiraConfig);
 
 	const [fieldValues, setFieldValues] = useState<Record<string, string>>(initialValues);
 	const [saved, setSaved] = useState(false);

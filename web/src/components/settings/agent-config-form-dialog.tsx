@@ -1,18 +1,15 @@
+import {
+	AgentTypeSelect,
+	BackendSelect,
+	PromptInfo,
+	resolveInitialAgentType,
+} from '@/components/settings/agent-config-shared.js';
 import { ModelField } from '@/components/settings/model-field.js';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from '@/components/ui/select.js';
-import { KNOWN_AGENT_TYPES } from '@/lib/trigger-agent-mapping.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 
 interface AgentConfig {
@@ -28,92 +25,6 @@ interface AgentConfigFormDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	config?: AgentConfig;
-}
-
-function BackendSelect({
-	value,
-	onChange,
-}: {
-	value: string;
-	onChange: (v: string) => void;
-}) {
-	return (
-		<div className="space-y-2">
-			<Label>Backend</Label>
-			<Select value={value || '_none'} onValueChange={(v) => onChange(v === '_none' ? '' : v)}>
-				<SelectTrigger className="w-full">
-					<SelectValue placeholder="Optional" />
-				</SelectTrigger>
-				<SelectContent>
-					<SelectItem value="_none">None (use default)</SelectItem>
-					<SelectItem value="llmist">llmist</SelectItem>
-					<SelectItem value="claude-code">claude-code</SelectItem>
-				</SelectContent>
-			</Select>
-		</div>
-	);
-}
-
-function AgentTypeSelect({
-	value,
-	customValue,
-	onValueChange,
-	onCustomChange,
-}: {
-	value: string;
-	customValue: string;
-	onValueChange: (v: string) => void;
-	onCustomChange: (v: string) => void;
-}) {
-	return (
-		<div className="space-y-2">
-			<Label htmlFor="gac-agentType">Agent Type</Label>
-			<Select value={value} onValueChange={onValueChange}>
-				<SelectTrigger id="gac-agentType" className="w-full">
-					<SelectValue placeholder="Select agent type..." />
-				</SelectTrigger>
-				<SelectContent>
-					{KNOWN_AGENT_TYPES.map((type) => (
-						<SelectItem key={type} value={type}>
-							{type}
-						</SelectItem>
-					))}
-					<SelectItem value="_custom">Other (custom type)</SelectItem>
-				</SelectContent>
-			</Select>
-			{value === '_custom' && (
-				<Input
-					value={customValue}
-					onChange={(e) => onCustomChange(e.target.value)}
-					placeholder="Custom agent type name"
-					required
-				/>
-			)}
-		</div>
-	);
-}
-
-function PromptInfo({ hasPrompt }: { hasPrompt?: boolean }) {
-	return (
-		<div className="space-y-2">
-			<Label>Prompt</Label>
-			{hasPrompt ? (
-				<p className="text-sm text-muted-foreground">
-					Custom prompt set.{' '}
-					<Link to="/settings/prompts" className="text-primary hover:underline">
-						Edit in Prompt Editor
-					</Link>
-				</p>
-			) : (
-				<p className="text-sm text-muted-foreground">
-					Using default.{' '}
-					<Link to="/settings/prompts" className="text-primary hover:underline">
-						Customize in Prompt Editor
-					</Link>
-				</p>
-			)}
-		</div>
-	);
 }
 
 function useGlobalConfigMutation(
@@ -162,18 +73,9 @@ function useGlobalConfigMutation(
 	return config ? updateMutation : createMutation;
 }
 
-function getInitialAgentType(config?: AgentConfig) {
-	if (!config) return { agentType: '', customAgentType: '' };
-	const isKnown = (KNOWN_AGENT_TYPES as readonly string[]).includes(config.agentType);
-	return {
-		agentType: isKnown ? config.agentType : '_custom',
-		customAgentType: isKnown ? '' : config.agentType,
-	};
-}
-
 export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfigFormDialogProps) {
 	const isEdit = !!config;
-	const initial = getInitialAgentType(config);
+	const initial = resolveInitialAgentType(config?.agentType);
 
 	const [agentType, setAgentType] = useState(initial.agentType);
 	const [customAgentType, setCustomAgentType] = useState(initial.customAgentType);
@@ -209,6 +111,7 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 						customValue={customAgentType}
 						onValueChange={setAgentType}
 						onCustomChange={setCustomAgentType}
+						id="gac-agentType"
 					/>
 					<div className="grid grid-cols-2 gap-4">
 						<div className="space-y-2">

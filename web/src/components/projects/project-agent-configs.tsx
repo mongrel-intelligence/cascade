@@ -1,16 +1,14 @@
 import { AgentTriggerConfig } from '@/components/projects/agent-trigger-config.js';
+import {
+	AgentTypeSelect,
+	BackendSelect,
+	PromptInfo,
+	resolveInitialAgentType,
+} from '@/components/settings/agent-config-shared.js';
 import { ModelField } from '@/components/settings/model-field.js';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from '@/components/ui/select.js';
-import { KNOWN_AGENT_TYPES } from '@/lib/trigger-agent-mapping.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -26,91 +24,7 @@ interface AgentConfig {
 	prompt: string | null;
 }
 
-// ---- Agent type select + custom input ----
-
-function AgentTypeSelect({
-	value,
-	customValue,
-	onValueChange,
-	onCustomChange,
-}: {
-	value: string;
-	customValue: string;
-	onValueChange: (v: string) => void;
-	onCustomChange: (v: string) => void;
-}) {
-	return (
-		<div className="space-y-2">
-			<Label htmlFor="ac-agentType">Agent Type</Label>
-			<Select value={value} onValueChange={onValueChange}>
-				<SelectTrigger id="ac-agentType" className="w-full">
-					<SelectValue placeholder="Select agent type..." />
-				</SelectTrigger>
-				<SelectContent>
-					{KNOWN_AGENT_TYPES.map((type) => (
-						<SelectItem key={type} value={type}>
-							{type}
-						</SelectItem>
-					))}
-					<SelectItem value="_custom">Other (custom type)</SelectItem>
-				</SelectContent>
-			</Select>
-			{value === '_custom' && (
-				<Input
-					value={customValue}
-					onChange={(e) => onCustomChange(e.target.value)}
-					placeholder="Custom agent type name"
-					required
-				/>
-			)}
-		</div>
-	);
-}
-
-// ---- Prompt field ----
-
-function PromptField({ hasPrompt }: { hasPrompt?: boolean }) {
-	return (
-		<div className="space-y-2">
-			<Label>Prompt</Label>
-			{hasPrompt ? (
-				<p className="text-sm text-muted-foreground">
-					Custom prompt set.{' '}
-					<Link to="/settings/prompts" className="text-primary hover:underline">
-						Edit in Prompt Editor
-					</Link>
-				</p>
-			) : (
-				<p className="text-sm text-muted-foreground">
-					Using default.{' '}
-					<Link to="/settings/prompts" className="text-primary hover:underline">
-						Customize in Prompt Editor
-					</Link>
-				</p>
-			)}
-		</div>
-	);
-}
-
 // ---- Shared form sub-components ----
-
-function BackendSelectField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-	return (
-		<div className="space-y-2">
-			<Label>Backend</Label>
-			<Select value={value || '_none'} onValueChange={(v) => onChange(v === '_none' ? '' : v)}>
-				<SelectTrigger className="w-full">
-					<SelectValue placeholder="Optional" />
-				</SelectTrigger>
-				<SelectContent>
-					<SelectItem value="_none">None (use default)</SelectItem>
-					<SelectItem value="llmist">llmist</SelectItem>
-					<SelectItem value="claude-code">claude-code</SelectItem>
-				</SelectContent>
-			</Select>
-		</div>
-	);
-}
 
 function AgentModelIterationsFields({
 	model,
@@ -233,17 +147,8 @@ function useAgentConfigMutations(
 	return editing ? updateMutation : createMutation;
 }
 
-function resolveInitialAgentType(editing: AgentConfig | null) {
-	if (!editing) return { agentType: '', customAgentType: '' };
-	const isKnown = (KNOWN_AGENT_TYPES as readonly string[]).includes(editing.agentType);
-	return {
-		agentType: isKnown ? editing.agentType : '_custom',
-		customAgentType: isKnown ? '' : editing.agentType,
-	};
-}
-
 function AgentConfigDialog({ open, onOpenChange, editing, projectId }: AgentConfigDialogProps) {
-	const initial = resolveInitialAgentType(editing);
+	const initial = resolveInitialAgentType(editing?.agentType);
 
 	const [agentType, setAgentType] = useState(initial.agentType);
 	const [customAgentType, setCustomAgentType] = useState(initial.customAgentType);
@@ -281,6 +186,7 @@ function AgentConfigDialog({ open, onOpenChange, editing, projectId }: AgentConf
 						customValue={customAgentType}
 						onValueChange={setAgentType}
 						onCustomChange={setCustomAgentType}
+						id="ac-agentType"
 					/>
 					<AgentModelIterationsFields
 						model={model}
@@ -289,8 +195,8 @@ function AgentConfigDialog({ open, onOpenChange, editing, projectId }: AgentConf
 						maxIterations={maxIterations}
 						onMaxIterationsChange={setMaxIterations}
 					/>
-					<BackendSelectField value={agentBackend} onChange={setAgentBackend} />
-					{editing && <PromptField hasPrompt={!!editing.prompt} />}
+					<BackendSelect value={agentBackend} onChange={setAgentBackend} />
+					{editing && <PromptInfo hasPrompt={!!editing.prompt} />}
 					<DialogActions
 						isPending={activeMutation.isPending}
 						isDisabled={!resolvedAgentType}
@@ -478,6 +384,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			)}
 
 			<AgentConfigDialog
+				key={editing?.id ?? 'new'}
 				open={dialogOpen}
 				onOpenChange={setDialogOpen}
 				editing={editing}
