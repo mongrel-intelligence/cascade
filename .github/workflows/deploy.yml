@@ -32,7 +32,7 @@ jobs:
 
       - name: Build and push worker image
         run: |
-          docker build -f Dockerfile.worker -t ${{ env.WORKER_IMAGE }}:latest -t ${{ env.WORKER_IMAGE }}:${{ github.sha }} .
+          docker build --no-cache -f Dockerfile.worker -t ${{ env.WORKER_IMAGE }}:latest -t ${{ env.WORKER_IMAGE }}:${{ github.sha }} .
           docker push ${{ env.WORKER_IMAGE }}:latest
           docker push ${{ env.WORKER_IMAGE }}:${{ github.sha }}
 
@@ -60,9 +60,10 @@ jobs:
             cascade-migrator:latest \
             ./node_modules/.bin/drizzle-kit migrate
 
-      - name: Restart cascade-router
+      - name: Pull and restart cascade-router
         run: |
           cd /opt/services
+          docker compose pull cascade-router
           docker compose up -d --force-recreate cascade-router
 
       - name: Verify cascade-router is healthy
@@ -84,9 +85,10 @@ jobs:
           docker logs cascade-router --tail 20
           exit 1
 
-      - name: Restart cascade-dashboard
+      - name: Pull and restart cascade-dashboard
         run: |
           cd /opt/services
+          docker compose pull cascade-dashboard
           docker compose up -d --force-recreate cascade-dashboard
 
       - name: Verify cascade-dashboard is healthy
