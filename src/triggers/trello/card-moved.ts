@@ -1,3 +1,4 @@
+import { resolveTrelloTriggerEnabled } from '../../config/triggerConfig.js';
 import type {
 	TrelloWebhookPayload,
 	TriggerContext,
@@ -15,6 +16,7 @@ interface CardMovedConfig {
 	description: string;
 	listKey: 'briefing' | 'planning' | 'todo';
 	agentType: string;
+	triggerConfigKey: 'cardMovedToBriefing' | 'cardMovedToPlanning' | 'cardMovedToTodo';
 }
 
 function createCardMovedTrigger(config: CardMovedConfig): TriggerHandler {
@@ -25,6 +27,11 @@ function createCardMovedTrigger(config: CardMovedConfig): TriggerHandler {
 		matches(ctx: TriggerContext): boolean {
 			if (ctx.source !== 'trello') return false;
 			if (!isTrelloWebhookPayload(ctx.payload)) return false;
+
+			// Check trigger config — default enabled for backward compatibility
+			if (!resolveTrelloTriggerEnabled(ctx.project.trello?.triggers, config.triggerConfigKey)) {
+				return false;
+			}
 
 			const payload = ctx.payload;
 			const targetListId = ctx.project.trello?.lists[config.listKey];
@@ -68,6 +75,7 @@ export const CardMovedToBriefingTrigger = createCardMovedTrigger({
 	description: 'Triggers briefing agent when card moved to briefing list',
 	listKey: 'briefing',
 	agentType: 'briefing',
+	triggerConfigKey: 'cardMovedToBriefing',
 });
 
 export const CardMovedToPlanningTrigger = createCardMovedTrigger({
@@ -75,6 +83,7 @@ export const CardMovedToPlanningTrigger = createCardMovedTrigger({
 	description: 'Triggers planning agent when card moved to planning list',
 	listKey: 'planning',
 	agentType: 'planning',
+	triggerConfigKey: 'cardMovedToPlanning',
 });
 
 export const CardMovedToTodoTrigger = createCardMovedTrigger({
@@ -82,4 +91,5 @@ export const CardMovedToTodoTrigger = createCardMovedTrigger({
 	description: 'Triggers implementation agent when card moved to TODO list',
 	listKey: 'todo',
 	agentType: 'implementation',
+	triggerConfigKey: 'cardMovedToTodo',
 });

@@ -1,3 +1,4 @@
+import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import { githubClient } from '../../github/client.js';
 import { trelloClient } from '../../trello/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
@@ -16,6 +17,11 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'github') return false;
+
+		// Check trigger config — default enabled for backward compatibility
+		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'prReadyToMerge')) {
+			return false;
+		}
 
 		// Trigger on either check_suite completion (success) or review submission (approved)
 		if (isGitHubCheckSuitePayload(ctx.payload)) {

@@ -1,3 +1,4 @@
+import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubPullRequestPayload } from './types.js';
@@ -14,6 +15,11 @@ export class PROpenedTrigger implements TriggerHandler {
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'github') return false;
 		if (!isGitHubPullRequestPayload(ctx.payload)) return false;
+
+		// Check trigger config — opt-in trigger, default disabled
+		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'prOpened')) {
+			return false;
+		}
 
 		// Only trigger on newly opened PRs
 		if (ctx.payload.action !== 'opened') return false;

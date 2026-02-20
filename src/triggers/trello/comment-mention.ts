@@ -1,3 +1,4 @@
+import { resolveTrelloTriggerEnabled } from '../../config/triggerConfig.js';
 import { trelloClient } from '../../trello/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -34,6 +35,11 @@ export class TrelloCommentMentionTrigger implements TriggerHandler {
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'trello') return false;
 		if (!isTrelloWebhookPayload(ctx.payload)) return false;
+
+		// Check trigger config — default enabled for backward compatibility
+		if (!resolveTrelloTriggerEnabled(ctx.project.trello?.triggers, 'commentMention')) {
+			return false;
+		}
 
 		return ctx.payload.action.type === 'commentCard';
 	}

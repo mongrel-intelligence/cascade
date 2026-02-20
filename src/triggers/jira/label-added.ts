@@ -10,6 +10,7 @@
  * explicitly excludes events that also contain a status change in the changelog.
  */
 
+import { resolveJiraTriggerEnabled } from '../../config/triggerConfig.js';
 import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -63,6 +64,11 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'jira') return false;
+
+		// Check trigger config — default enabled for backward compatibility
+		if (!resolveJiraTriggerEnabled(ctx.project.jira?.triggers, 'readyToProcessLabel')) {
+			return false;
+		}
 
 		const payload = ctx.payload as JiraLabelPayload;
 		if (!payload.webhookEvent?.startsWith('jira:issue_updated')) return false;
