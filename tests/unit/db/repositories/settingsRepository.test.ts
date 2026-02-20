@@ -236,7 +236,9 @@ describe('settingsRepository', () => {
 
 	describe('listProjectIntegrations', () => {
 		it('returns integrations for project', async () => {
-			const integrations = [{ id: 1, projectId: 'p1', type: 'trello', config: {} }];
+			const integrations = [
+				{ id: 1, projectId: 'p1', category: 'pm', provider: 'trello', config: {}, triggers: {} },
+			];
 			mockDb.chain.where.mockResolvedValueOnce(integrations);
 
 			const result = await listProjectIntegrations('p1');
@@ -248,14 +250,16 @@ describe('settingsRepository', () => {
 		it('deletes then inserts integration', async () => {
 			mockDb.chain.where.mockResolvedValueOnce(undefined); // delete
 
-			await upsertProjectIntegration('p1', 'trello', { boardId: 'abc' });
+			await upsertProjectIntegration('p1', 'pm', 'trello', { boardId: 'abc' });
 
 			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
 			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
 			expect(mockDb.chain.values).toHaveBeenCalledWith({
 				projectId: 'p1',
-				type: 'trello',
+				category: 'pm',
+				provider: 'trello',
 				config: { boardId: 'abc' },
+				triggers: {},
 			});
 		});
 	});

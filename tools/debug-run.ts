@@ -8,7 +8,7 @@
  * Requires DATABASE_URL to be set.
  */
 
-import { getProjectSecrets } from '../src/config/provider.js';
+import { getAllProjectCredentials } from '../src/config/provider.js';
 import { closeDb } from '../src/db/client.js';
 import {
 	findProjectByIdFromDb,
@@ -52,7 +52,7 @@ async function main() {
 	}
 
 	// Scope Trello credentials for the debug analysis
-	const secrets = await getProjectSecrets(run.projectId);
+	const secrets = await getAllProjectCredentials(run.projectId);
 	const trelloApiKey = secrets.TRELLO_API_KEY;
 	const trelloToken = secrets.TRELLO_TOKEN;
 

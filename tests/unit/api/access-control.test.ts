@@ -61,11 +61,6 @@ vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
 	createCredential: (...args: unknown[]) => mockCreateCredential(...args),
 	updateCredential: (...args: unknown[]) => mockUpdateCredential(...args),
 	deleteCredential: (...args: unknown[]) => mockDeleteCredential(...args),
-	listProjectOverrides: vi.fn(),
-	setProjectCredentialOverride: vi.fn(),
-	removeProjectCredentialOverride: vi.fn(),
-	setAgentCredentialOverride: vi.fn(),
-	removeAgentCredentialOverride: vi.fn(),
 }));
 
 const mockDbSelect = vi.fn();

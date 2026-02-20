@@ -1,4 +1,4 @@
-import { getAgentCredential } from '../config/provider.js';
+import { getIntegrationCredential } from '../config/provider.js';
 import { logger } from '../utils/logging.js';
 import { getGitHubUserForToken } from './client.js';
 
@@ -29,17 +29,8 @@ const AGENT_PERSONA_MAP: Record<string, GitHubPersona> = {
 	debug: 'implementer',
 };
 
-const PERSONA_TOKEN_KEYS: Record<GitHubPersona, string> = {
-	implementer: 'GITHUB_TOKEN_IMPLEMENTER',
-	reviewer: 'GITHUB_TOKEN_REVIEWER',
-};
-
 export function getPersonaForAgentType(agentType: string): GitHubPersona {
 	return AGENT_PERSONA_MAP[agentType] ?? 'implementer';
-}
-
-export function getTokenKeyForPersona(persona: GitHubPersona): string {
-	return PERSONA_TOKEN_KEYS[persona];
 }
 
 // ============================================================================
@@ -48,19 +39,14 @@ export function getTokenKeyForPersona(persona: GitHubPersona): string {
 
 /**
  * Resolve the correct GitHub token for a project + agent type based on persona.
- * Uses agent-scoped credential overrides for flexibility.
- * Throws if no token is found (no fallback to legacy GITHUB_TOKEN).
+ * Uses integration credentials linked to the SCM integration.
+ * Throws if no token is found.
  */
 export async function getPersonaToken(projectId: string, agentType: string): Promise<string> {
 	const persona = getPersonaForAgentType(agentType);
-	const tokenKey = PERSONA_TOKEN_KEYS[persona];
+	const role = persona === 'implementer' ? 'implementer_token' : 'reviewer_token';
 
-	const token = await getAgentCredential(projectId, agentType, tokenKey);
-	if (token) return token;
-
-	throw new Error(
-		`Missing ${tokenKey} for project '${projectId}' (agent: ${agentType}, persona: ${persona}). Configure credentials via the dashboard or CLI.`,
-	);
+	return getIntegrationCredential(projectId, 'scm', role);
 }
 
 // ============================================================================
@@ -72,24 +58,8 @@ export async function getPersonaToken(projectId: string, agentType: string): Pro
  * Always queries the database and GitHub API for fresh data.
  */
 export async function resolvePersonaIdentities(projectId: string): Promise<PersonaIdentities> {
-	// Resolve both tokens — use getAgentCredential with a representative agent type
-	const implementerToken = await getAgentCredential(
-		projectId,
-		'implementation',
-		PERSONA_TOKEN_KEYS.implementer,
-	);
-	const reviewerToken = await getAgentCredential(projectId, 'review', PERSONA_TOKEN_KEYS.reviewer);
-
-	if (!implementerToken) {
-		throw new Error(
-			`Missing GITHUB_TOKEN_IMPLEMENTER for project '${projectId}'. Both persona tokens are required.`,
-		);
-	}
-	if (!reviewerToken) {
-		throw new Error(
-			`Missing GITHUB_TOKEN_REVIEWER for project '${projectId}'. Both persona tokens are required.`,
-		);
-	}
+	const implementerToken = await getIntegrationCredential(projectId, 'scm', 'implementer_token');
+	const reviewerToken = await getIntegrationCredential(projectId, 'scm', 'reviewer_token');
 
 	const [implementerLogin, reviewerLogin] = await Promise.all([
 		getGitHubUserForToken(implementerToken),
@@ -98,12 +68,12 @@ export async function resolvePersonaIdentities(projectId: string): Promise<Perso
 
 	if (!implementerLogin) {
 		throw new Error(
-			`Failed to resolve GitHub identity for GITHUB_TOKEN_IMPLEMENTER in project '${projectId}'`,
+			`Failed to resolve GitHub identity for implementer token in project '${projectId}'`,
 		);
 	}
 	if (!reviewerLogin) {
 		throw new Error(
-			`Failed to resolve GitHub identity for GITHUB_TOKEN_REVIEWER in project '${projectId}'`,
+			`Failed to resolve GitHub identity for reviewer token in project '${projectId}'`,
 		);
 	}
 

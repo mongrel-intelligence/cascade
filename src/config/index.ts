@@ -5,10 +5,10 @@ export {
 	findProjectByBoardId,
 	findProjectByRepo,
 	findProjectById,
-	getAgentCredential,
-	getProjectSecret,
-	getProjectSecretOrNull,
-	getProjectSecrets,
+	getIntegrationCredential,
+	getIntegrationCredentialOrNull,
+	getOrgCredential,
+	getAllProjectCredentials,
 	invalidateConfigCache,
 } from './provider.js';
 export { validateConfig, ProjectConfigSchema, CascadeConfigSchema } from './schema.js';

@@ -39,7 +39,9 @@ export default class RunsList extends DashboardCommand {
 				return;
 			}
 
-			this.outputTable(runs as unknown as Record<string, unknown>[], [
+			const { data, total } = runs as { data: Record<string, unknown>[]; total: number };
+
+			this.outputTable(data, [
 				{ key: 'id', header: 'ID', format: (v) => String(v ?? '').slice(0, 8) },
 				{ key: 'projectId', header: 'Project' },
 				{ key: 'agentType', header: 'Agent' },
@@ -48,6 +50,10 @@ export default class RunsList extends DashboardCommand {
 				{ key: 'durationMs', header: 'Duration', format: formatDuration },
 				{ key: 'costUsd', header: 'Cost', format: formatCost },
 			]);
+
+			if (total > data.length) {
+				this.log(`\nShowing ${data.length} of ${total} runs.`);
+			}
 		} catch (err) {
 			this.handleError(err);
 		}

@@ -24,7 +24,7 @@ const SENSITIVE_ENV_KEYS = [
  *
  * Call this AFTER:
  * - Database connection pool is initialized (getDb())
- * - Project credentials are decrypted and cached (getProjectSecrets())
+ * - Project credentials are decrypted and cached (getAllProjectCredentials())
  *
  * After scrubbing:
  * - Database pool continues to work (uses cached connection string)

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock config provider for DB secret resolution
 vi.mock('../../../src/config/provider.js', () => ({
-	getProjectSecret: vi.fn(),
+	getIntegrationCredential: vi.fn(),
 	findProjectByRepo: vi.fn(),
 }));
 
@@ -21,14 +21,14 @@ vi.mock('../../../src/config/configCache.js', () => ({
 	},
 }));
 
-import { findProjectByRepo, getProjectSecret } from '../../../src/config/provider.js';
+import { findProjectByRepo, getIntegrationCredential } from '../../../src/config/provider.js';
 import {
 	_clearReviewerUsernameCache,
 	addEyesReactionToPR,
 } from '../../../src/router/pre-actions.js';
 import type { GitHubJob } from '../../../src/router/queue.js';
 
-const mockGetProjectSecret = vi.mocked(getProjectSecret);
+const mockGetIntegrationCredential = vi.mocked(getIntegrationCredential);
 const mockFindProjectByRepo = vi.mocked(findProjectByRepo);
 
 // Mock global fetch
@@ -73,7 +73,7 @@ describe('addEyesReactionToPR', () => {
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 
 		mockFindProjectByRepo.mockResolvedValue(mockProject);
-		mockGetProjectSecret.mockResolvedValue('test-reviewer-token');
+		mockGetIntegrationCredential.mockResolvedValue('test-reviewer-token');
 
 		// Default fetch responses:
 		// 1. GET /user -> reviewer username
@@ -248,7 +248,7 @@ describe('addEyesReactionToPR', () => {
 	});
 
 	it('skips when reviewer token is missing', async () => {
-		mockGetProjectSecret.mockRejectedValue(new Error('Secret not found'));
+		mockGetIntegrationCredential.mockRejectedValue(new Error('Credential not found'));
 
 		const job = makeCheckSuiteJob();
 		await addEyesReactionToPR(job);

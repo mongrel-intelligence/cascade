@@ -8,7 +8,7 @@
  *   3. Org-level agent_configs (org_id set, project_id IS NULL)
  *   4. Project-level agent_configs (project_id set)
  *   5. Project row overrides (model, cardBudgetUsd, agentBackend)
- *   6. Resolved credentials (org defaults + project overrides)
+ *   6. Resolved credentials (integration credentials + org defaults)
  *
  * Usage:
  *   npx tsx tools/resolve-config.ts <project-id> <agent-type>
@@ -18,10 +18,14 @@
  */
 
 import { and, eq, isNull } from 'drizzle-orm';
+import {
+	type IntegrationProvider,
+	PROVIDER_CREDENTIAL_ROLES,
+} from '../src/config/integrationRoles.js';
 import { closeDb, getDb } from '../src/db/client.js';
 import {
-	listProjectOverrides,
-	resolveAllCredentials,
+	resolveAllIntegrationCredentials,
+	resolveAllOrgCredentials,
 } from '../src/db/repositories/credentialsRepository.js';
 import {
 	agentConfigs,
@@ -68,7 +72,7 @@ interface EffectiveConfig {
 	};
 	trello: TrelloIntegrationConfig | null;
 	credentials: Record<string, string>;
-	credentialOverrides: { envVarKey: string; credentialId: number; credentialName: string }[];
+	integrationCredentials: { category: string; provider: string; role: string; value: string }[];
 }
 
 function toInfo(ac: typeof agentConfigs.$inferSelect | null | undefined): AgentConfigInfo | null {
@@ -98,6 +102,22 @@ function resolveBackend(
 	);
 }
 
+function buildCredentialMap(
+	integrationCreds: { provider: string; role: string; value: string }[],
+	orgCreds: Record<string, string>,
+): Record<string, string> {
+	const credentials: Record<string, string> = { ...orgCreds };
+	for (const cred of integrationCreds) {
+		const roles = PROVIDER_CREDENTIAL_ROLES[cred.provider as IntegrationProvider];
+		if (!roles) continue;
+		const roleDef = roles.find((r) => r.role === cred.role);
+		if (roleDef) {
+			credentials[roleDef.envVarKey] = cred.value;
+		}
+	}
+	return credentials;
+}
+
 async function resolveEffectiveConfig(
 	projectId: string,
 	agentType: string | null,
@@ -109,35 +129,30 @@ async function resolveEffectiveConfig(
 
 	const orgId = projectRow.orgId;
 
-	const [
-		defaultsRow,
-		globalAcs,
-		orgAcs,
-		projectAcs,
-		integrations,
-		credentials,
-		credentialOverrides,
-	] = await Promise.all([
-		db
-			.select()
-			.from(cascadeDefaults)
-			.where(eq(cascadeDefaults.orgId, orgId))
-			.then((r) => r[0]),
-		db
-			.select()
-			.from(agentConfigs)
-			.where(and(isNull(agentConfigs.projectId), isNull(agentConfigs.orgId))),
-		db
-			.select()
-			.from(agentConfigs)
-			.where(and(eq(agentConfigs.orgId, orgId), isNull(agentConfigs.projectId))),
-		db.select().from(agentConfigs).where(eq(agentConfigs.projectId, projectId)),
-		db.select().from(projectIntegrations).where(eq(projectIntegrations.projectId, projectId)),
-		resolveAllCredentials(projectId, orgId),
-		listProjectOverrides(projectId),
-	]);
+	const [defaultsRow, globalAcs, orgAcs, projectAcs, integrations, integrationCreds, orgCreds] =
+		await Promise.all([
+			db
+				.select()
+				.from(cascadeDefaults)
+				.where(eq(cascadeDefaults.orgId, orgId))
+				.then((r) => r[0]),
+			db
+				.select()
+				.from(agentConfigs)
+				.where(and(isNull(agentConfigs.projectId), isNull(agentConfigs.orgId))),
+			db
+				.select()
+				.from(agentConfigs)
+				.where(and(eq(agentConfigs.orgId, orgId), isNull(agentConfigs.projectId))),
+			db.select().from(agentConfigs).where(eq(agentConfigs.projectId, projectId)),
+			db.select().from(projectIntegrations).where(eq(projectIntegrations.projectId, projectId)),
+			resolveAllIntegrationCredentials(projectId),
+			resolveAllOrgCredentials(orgId),
+		]);
 
-	const trelloConfig = integrations.find((i) => i.type === 'trello')?.config as
+	const credentials = buildCredentialMap(integrationCreds, orgCreds);
+
+	const trelloConfig = integrations.find((i) => i.provider === 'trello')?.config as
 		| TrelloIntegrationConfig
 		| undefined;
 
@@ -180,9 +195,7 @@ async function resolveEffectiveConfig(
 			maxIterations: defaultsRow?.maxIterations ?? null,
 			agentBackend: defaultsRow?.agentBackend ?? null,
 			cardBudgetUsd: defaultsRow?.cardBudgetUsd ?? null,
-			freshMachineTimeoutMs: defaultsRow?.freshMachineTimeoutMs ?? null,
 			watchdogTimeoutMs: defaultsRow?.watchdogTimeoutMs ?? null,
-			postJobGracePeriodMs: defaultsRow?.postJobGracePeriodMs ?? null,
 			progressModel: defaultsRow?.progressModel ?? null,
 			progressIntervalMinutes: defaultsRow?.progressIntervalMinutes ?? null,
 		},
@@ -197,7 +210,7 @@ async function resolveEffectiveConfig(
 		agentConfigLayers: { global: globalAc, org: orgAc, project: projectAc },
 		trello: trelloConfig ?? null,
 		credentials,
-		credentialOverrides,
+		integrationCredentials: integrationCreds,
 	};
 }
 
@@ -255,21 +268,33 @@ function printTrello(trello: TrelloIntegrationConfig | null): void {
 }
 
 function printCredentials(config: EffectiveConfig): void {
-	console.log('\n--- Credentials ---');
-	const credEntries = Object.entries(config.credentials);
-	if (credEntries.length === 0) {
-		console.log('  (no credentials resolved)');
-		return;
+	console.log('\n--- Integration Credentials ---');
+	if (config.integrationCredentials.length === 0) {
+		console.log('  (no integration credentials configured)');
+	} else {
+		for (const ic of config.integrationCredentials) {
+			console.log(`  ${ic.category}/${ic.role} → ${maskValue(ic.value)} [${ic.provider}]`);
+		}
 	}
-	const overrideKeys = new Set(config.credentialOverrides.map((o) => o.envVarKey));
-	for (const [key, value] of credEntries) {
-		const source = overrideKeys.has(key) ? 'project-override' : 'org-default';
-		console.log(`  ${key}: ${maskValue(value)} [${source}]`);
-	}
-	if (config.credentialOverrides.length > 0) {
-		console.log('\n  Credential Overrides:');
-		for (const o of config.credentialOverrides) {
-			console.log(`    ${o.envVarKey} → credential #${o.credentialId} (${o.credentialName})`);
+
+	// Org-default credentials (non-integration secrets like LLM API keys)
+	const integrationEnvKeys = new Set(
+		config.integrationCredentials.flatMap((ic) => {
+			const roles = PROVIDER_CREDENTIAL_ROLES[ic.provider as IntegrationProvider];
+			if (!roles) return [];
+			const roleDef = roles.find((r) => r.role === ic.role);
+			return roleDef ? [roleDef.envVarKey] : [];
+		}),
+	);
+	const orgOnlyEntries = Object.entries(config.credentials).filter(
+		([key]) => !integrationEnvKeys.has(key),
+	);
+	console.log('\n--- Org-Default Credentials ---');
+	if (orgOnlyEntries.length === 0) {
+		console.log('  (no org-default credentials)');
+	} else {
+		for (const [key, value] of orgOnlyEntries) {
+			console.log(`  ${key}: ${maskValue(value)}`);
 		}
 	}
 }

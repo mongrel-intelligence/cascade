@@ -1,6 +1,6 @@
 import { type Job, Worker } from 'bullmq';
 import Docker from 'dockerode';
-import { findProjectByRepo, getProjectSecrets } from '../config/provider.js';
+import { findProjectByRepo, getAllProjectCredentials } from '../config/provider.js';
 import { routerConfig } from './config.js';
 import { notifyTimeout } from './notifications.js';
 import type { CascadeJob } from './queue.js';
@@ -69,7 +69,7 @@ async function buildWorkerEnv(job: Job<CascadeJob>): Promise<string[]> {
 	const projectId = await extractProjectIdFromJob(job.data);
 	if (projectId) {
 		try {
-			const secrets = await getProjectSecrets(projectId);
+			const secrets = await getAllProjectCredentials(projectId);
 			env.push(`CASCADE_CREDENTIALS=${JSON.stringify(secrets)}`);
 			env.push(`CASCADE_CREDENTIALS_PROJECT_ID=${projectId}`);
 		} catch (err) {

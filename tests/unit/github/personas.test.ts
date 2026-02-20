@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock dependencies before importing
 vi.mock('../../../src/config/provider.js', () => ({
-	getAgentCredential: vi.fn(),
+	getIntegrationCredential: vi.fn(),
 }));
 
 vi.mock('../../../src/github/client.js', () => ({
@@ -18,13 +18,12 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
-import { getAgentCredential } from '../../../src/config/provider.js';
+import { getIntegrationCredential } from '../../../src/config/provider.js';
 import { getGitHubUserForToken } from '../../../src/github/client.js';
 import {
 	getPersonaForAgentType,
 	getPersonaForLogin,
 	getPersonaToken,
-	getTokenKeyForPersona,
 	isCascadeBot,
 	resolvePersonaIdentities,
 } from '../../../src/github/personas.js';
@@ -62,89 +61,55 @@ describe('personas', () => {
 	});
 
 	// ========================================================================
-	// getTokenKeyForPersona
-	// ========================================================================
-
-	describe('getTokenKeyForPersona', () => {
-		it('returns GITHUB_TOKEN_IMPLEMENTER for implementer', () => {
-			expect(getTokenKeyForPersona('implementer')).toBe('GITHUB_TOKEN_IMPLEMENTER');
-		});
-
-		it('returns GITHUB_TOKEN_REVIEWER for reviewer', () => {
-			expect(getTokenKeyForPersona('reviewer')).toBe('GITHUB_TOKEN_REVIEWER');
-		});
-	});
-
-	// ========================================================================
 	// getPersonaToken
 	// ========================================================================
 
 	describe('getPersonaToken', () => {
 		it('resolves implementer token for implementation agent', async () => {
-			vi.mocked(getAgentCredential).mockResolvedValue('ghp_impl_token');
+			vi.mocked(getIntegrationCredential).mockResolvedValue('ghp_impl_token');
 
 			const token = await getPersonaToken('project1', 'implementation');
 
 			expect(token).toBe('ghp_impl_token');
-			expect(getAgentCredential).toHaveBeenCalledWith(
-				'project1',
-				'implementation',
-				'GITHUB_TOKEN_IMPLEMENTER',
-			);
+			expect(getIntegrationCredential).toHaveBeenCalledWith('project1', 'scm', 'implementer_token');
 		});
 
 		it('resolves reviewer token for review agent', async () => {
-			vi.mocked(getAgentCredential).mockResolvedValue('ghp_review_token');
+			vi.mocked(getIntegrationCredential).mockResolvedValue('ghp_review_token');
 
 			const token = await getPersonaToken('project1', 'review');
 
 			expect(token).toBe('ghp_review_token');
-			expect(getAgentCredential).toHaveBeenCalledWith(
-				'project1',
-				'review',
-				'GITHUB_TOKEN_REVIEWER',
-			);
+			expect(getIntegrationCredential).toHaveBeenCalledWith('project1', 'scm', 'reviewer_token');
 		});
 
 		it('resolves implementer token for respond-to-review agent', async () => {
-			vi.mocked(getAgentCredential).mockResolvedValue('ghp_impl_token');
+			vi.mocked(getIntegrationCredential).mockResolvedValue('ghp_impl_token');
 
 			const token = await getPersonaToken('project1', 'respond-to-review');
 
 			expect(token).toBe('ghp_impl_token');
-			expect(getAgentCredential).toHaveBeenCalledWith(
-				'project1',
-				'respond-to-review',
-				'GITHUB_TOKEN_IMPLEMENTER',
-			);
+			expect(getIntegrationCredential).toHaveBeenCalledWith('project1', 'scm', 'implementer_token');
 		});
 
 		it('throws when no token is found', async () => {
-			vi.mocked(getAgentCredential).mockResolvedValue(null);
+			vi.mocked(getIntegrationCredential).mockRejectedValue(
+				new Error(
+					"Integration credential 'scm/implementer_token' not found for project 'project1'",
+				),
+			);
 
 			await expect(getPersonaToken('project1', 'implementation')).rejects.toThrow(
-				'Missing GITHUB_TOKEN_IMPLEMENTER',
-			);
-		});
-
-		it('throws with descriptive error including project, agent, and persona', async () => {
-			vi.mocked(getAgentCredential).mockResolvedValue(null);
-
-			await expect(getPersonaToken('my-project', 'review')).rejects.toThrow(
-				"Missing GITHUB_TOKEN_REVIEWER for project 'my-project' (agent: review, persona: reviewer)",
+				"Integration credential 'scm/implementer_token' not found",
 			);
 		});
 
 		it('defaults unknown agent types to implementer persona', async () => {
-			vi.mocked(getAgentCredential).mockResolvedValue('ghp_token');
+			vi.mocked(getIntegrationCredential).mockResolvedValue('ghp_token');
 
 			await getPersonaToken('project1', 'some-new-agent');
 
-			expect(getAgentCredential).toHaveBeenCalledWith(
-				'project1',
-				'some-new-agent',
-				'GITHUB_TOKEN_IMPLEMENTER',
-			);
+			expect(getIntegrationCredential).toHaveBeenCalledWith('project1', 'scm', 'implementer_token');
 		});
 	});
 
@@ -154,7 +119,7 @@ describe('personas', () => {
 
 	describe('resolvePersonaIdentities', () => {
 		it('resolves both persona identities', async () => {
-			vi.mocked(getAgentCredential)
+			vi.mocked(getIntegrationCredential)
 				.mockResolvedValueOnce('ghp_impl') // implementer token
 				.mockResolvedValueOnce('ghp_review'); // reviewer token
 			vi.mocked(getGitHubUserForToken)
@@ -170,7 +135,7 @@ describe('personas', () => {
 		});
 
 		it('fetches fresh data on each call', async () => {
-			vi.mocked(getAgentCredential)
+			vi.mocked(getIntegrationCredential)
 				.mockResolvedValueOnce('ghp_impl')
 				.mockResolvedValueOnce('ghp_review')
 				.mockResolvedValueOnce('ghp_impl')
@@ -185,11 +150,11 @@ describe('personas', () => {
 			const second = await resolvePersonaIdentities('project1');
 
 			expect(first).toEqual(second);
-			expect(getAgentCredential).toHaveBeenCalledTimes(4); // Called on every invocation
+			expect(getIntegrationCredential).toHaveBeenCalledTimes(4);
 		});
 
 		it('resolves separately for different projects', async () => {
-			vi.mocked(getAgentCredential)
+			vi.mocked(getIntegrationCredential)
 				.mockResolvedValueOnce('ghp_impl_1')
 				.mockResolvedValueOnce('ghp_review_1')
 				.mockResolvedValueOnce('ghp_impl_2')
@@ -208,25 +173,31 @@ describe('personas', () => {
 		});
 
 		it('throws when implementer token is missing', async () => {
-			vi.mocked(getAgentCredential).mockResolvedValue(null);
+			vi.mocked(getIntegrationCredential).mockRejectedValue(
+				new Error(
+					"Integration credential 'scm/implementer_token' not found for project 'project1'",
+				),
+			);
 
 			await expect(resolvePersonaIdentities('project1')).rejects.toThrow(
-				"Missing GITHUB_TOKEN_IMPLEMENTER for project 'project1'",
+				"Integration credential 'scm/implementer_token' not found",
 			);
 		});
 
 		it('throws when reviewer token is missing', async () => {
-			vi.mocked(getAgentCredential)
+			vi.mocked(getIntegrationCredential)
 				.mockResolvedValueOnce('ghp_impl') // implementer OK
-				.mockResolvedValueOnce(null); // reviewer missing
+				.mockRejectedValueOnce(
+					new Error("Integration credential 'scm/reviewer_token' not found for project 'project1'"),
+				);
 
 			await expect(resolvePersonaIdentities('project1')).rejects.toThrow(
-				"Missing GITHUB_TOKEN_REVIEWER for project 'project1'",
+				"Integration credential 'scm/reviewer_token' not found",
 			);
 		});
 
 		it('throws when implementer identity cannot be resolved', async () => {
-			vi.mocked(getAgentCredential)
+			vi.mocked(getIntegrationCredential)
 				.mockResolvedValueOnce('ghp_impl')
 				.mockResolvedValueOnce('ghp_review');
 			vi.mocked(getGitHubUserForToken)
@@ -234,12 +205,12 @@ describe('personas', () => {
 				.mockResolvedValueOnce('review-bot');
 
 			await expect(resolvePersonaIdentities('project1')).rejects.toThrow(
-				'Failed to resolve GitHub identity for GITHUB_TOKEN_IMPLEMENTER',
+				'Failed to resolve GitHub identity for implementer token',
 			);
 		});
 
 		it('throws when reviewer identity cannot be resolved', async () => {
-			vi.mocked(getAgentCredential)
+			vi.mocked(getIntegrationCredential)
 				.mockResolvedValueOnce('ghp_impl')
 				.mockResolvedValueOnce('ghp_review');
 			vi.mocked(getGitHubUserForToken)
@@ -247,7 +218,7 @@ describe('personas', () => {
 				.mockResolvedValueOnce(null); // reviewer resolution fails
 
 			await expect(resolvePersonaIdentities('project1')).rejects.toThrow(
-				'Failed to resolve GitHub identity for GITHUB_TOKEN_REVIEWER',
+				'Failed to resolve GitHub identity for reviewer token',
 			);
 		});
 	});

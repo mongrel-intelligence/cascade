@@ -1,4 +1,4 @@
-import { findProjectByRepo, getProjectSecret } from '../config/provider.js';
+import { findProjectByRepo, getIntegrationCredential } from '../config/provider.js';
 import type { GitHubJob } from './queue.js';
 
 /**
@@ -79,7 +79,7 @@ export async function addEyesReactionToPR(job: GitHubJob): Promise<void> {
 	// Get reviewer token
 	let reviewerToken: string;
 	try {
-		reviewerToken = await getProjectSecret(project.id, 'GITHUB_TOKEN_REVIEWER');
+		reviewerToken = await getIntegrationCredential(project.id, 'scm', 'reviewer_token');
 	} catch {
 		console.warn('[PreActions] Missing GITHUB_TOKEN_REVIEWER, skipping eyes reaction');
 		return;
