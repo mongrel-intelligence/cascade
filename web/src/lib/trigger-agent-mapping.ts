@@ -92,16 +92,6 @@ export const TRIGGER_AGENT_MAPPINGS: TriggerAgentMapping[] = [
 		fieldType: 'jira-status',
 		fieldLabel: 'TODO Status',
 	},
-	{
-		agentType: 'implementation',
-		triggerName: 'Issue Transitioned to In Progress Status',
-		configKey: 'inProgress',
-		source: 'jira',
-		description: 'Fires when a JIRA issue transitions to the in-progress status',
-		configurable: true,
-		fieldType: 'jira-status',
-		fieldLabel: 'In Progress Status',
-	},
 
 	// GitHub triggers (not configurable — automatic)
 	{
