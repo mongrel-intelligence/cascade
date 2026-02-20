@@ -52,7 +52,6 @@ jobs:
             cascade-frontend:build
 
       - name: Run database migrations
-        if: ${{ secrets.DATABASE_URL != '' }}
         run: |
           docker build --target=builder -f Dockerfile.dashboard -t cascade-migrator:latest .
           docker run --rm \
