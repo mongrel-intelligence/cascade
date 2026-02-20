@@ -16,6 +16,7 @@ jobs:
   build-and-deploy:
     name: Build and Deploy (Dev)
     runs-on: self-hosted
+    environment: CI
     steps:
       - uses: actions/checkout@v4
 
