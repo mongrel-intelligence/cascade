@@ -1,16 +1,16 @@
 /**
  * Immediate acknowledgment reactions on webhook acceptance.
  *
- * Fires a platform-native reaction (💭 or 👀) on the source comment
+ * Fires a platform-native reaction (👀) on the source comment
  * to signal "message received, processing" before the worker container
- * even starts. Uses raw fetch() with no client library dependencies,
- * following the notifications.ts pattern.
+ * even starts.
  *
  * Errors are always caught and logged — never propagated.
  */
 
 import { getProjectGitHubToken } from '../config/projects.js';
 import { findProjectByRepo, getProjectSecret } from '../config/provider.js';
+import { trelloClient, withTrelloCredentials } from '../trello/client.js';
 
 // In-memory JIRA CloudId cache keyed by baseUrl
 const jiraCloudIdCache = new Map<string, string>();
@@ -81,17 +81,15 @@ async function sendTrelloReaction(projectId: string, payload: unknown): Promise<
 		return;
 	}
 
-	const url = `https://api.trello.com/1/actions/${actionId}/reactions?key=${trelloApiKey}&token=${trelloToken}`;
-	const response = await fetch(url, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ shortName: 'thought_balloon', native: '💭', unified: '1f4ad' }),
-	});
+	const emoji = { shortName: 'eyes', native: '👀', unified: '1f440' };
 
-	if (!response.ok) {
-		console.warn('[Reactions] Trello reaction failed:', response.status, await response.text());
-	} else {
+	try {
+		await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, async () => {
+			await trelloClient.addActionReaction(actionId, emoji);
+		});
 		console.log('[Reactions] Trello reaction sent for action:', actionId);
+	} catch (err) {
+		console.warn('[Reactions] Trello reaction failed:', String(err));
 	}
 }
 
@@ -213,7 +211,7 @@ async function sendJiraReaction(projectId: string, payload: unknown): Promise<vo
 
 /**
  * Send an acknowledgment reaction for an incoming webhook.
- * Dispatches to Trello (💭), GitHub (👀), or JIRA (💭) based on source.
+ * Dispatches to Trello (👀), GitHub (👀), or JIRA (💭) based on source.
  *
  * For GitHub, pass `repoFullName` as the `projectId` parameter — it will be
  * used to resolve the project via `findProjectByRepo`.
