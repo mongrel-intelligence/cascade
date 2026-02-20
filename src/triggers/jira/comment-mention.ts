@@ -5,6 +5,7 @@
  * Runs the respond-to-planning-comment agent.
  */
 
+import { resolveJiraTriggerEnabled } from '../../config/triggerConfig.js';
 import { jiraClient } from '../../jira/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -108,6 +109,11 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'jira') return false;
+
+		// Check trigger config — default enabled for backward compatibility
+		if (!resolveJiraTriggerEnabled(ctx.project.jira?.triggers, 'commentMention')) {
+			return false;
+		}
 
 		const payload = ctx.payload as JiraWebhookPayload;
 		return payload.webhookEvent === 'comment_created' || payload.webhookEvent === 'comment_updated';

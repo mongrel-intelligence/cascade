@@ -1,3 +1,4 @@
+import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import { githubClient } from '../../github/client.js';
 import { trelloClient } from '../../trello/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
@@ -12,6 +13,12 @@ export class PRMergedTrigger implements TriggerHandler {
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'github') return false;
 		if (!isGitHubPullRequestPayload(ctx.payload)) return false;
+
+		// Check trigger config — default enabled for backward compatibility
+		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'prMerged')) {
+			return false;
+		}
+
 		return ctx.payload.action === 'closed';
 	}
 

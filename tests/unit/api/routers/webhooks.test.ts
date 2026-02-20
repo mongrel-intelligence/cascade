@@ -214,7 +214,7 @@ describe('webhooksRouter', () => {
 					json: () =>
 						Promise.resolve({
 							id: 'tw-new',
-							callbackURL: 'http://example.com/webhook/trello',
+							callbackURL: 'http://example.com/trello/webhook',
 							idModel: 'board-123',
 							active: true,
 						}),
@@ -224,7 +224,7 @@ describe('webhooksRouter', () => {
 			mockCreateWebhook.mockResolvedValue({
 				data: {
 					id: 42,
-					config: { url: 'http://example.com/webhook/github' },
+					config: { url: 'http://example.com/github/webhook' },
 					events: ['pull_request'],
 					active: true,
 				},
@@ -249,7 +249,7 @@ describe('webhooksRouter', () => {
 					Promise.resolve([
 						{
 							id: 'tw-existing',
-							callbackURL: 'http://example.com/webhook/trello',
+							callbackURL: 'http://example.com/trello/webhook',
 							idModel: 'board-123',
 							active: true,
 						},
@@ -260,7 +260,7 @@ describe('webhooksRouter', () => {
 				data: [
 					{
 						id: 99,
-						config: { url: 'http://example.com/webhook/github' },
+						config: { url: 'http://example.com/github/webhook' },
 						events: ['push'],
 						active: true,
 					},
@@ -284,7 +284,7 @@ describe('webhooksRouter', () => {
 			mockCreateWebhook.mockResolvedValue({
 				data: {
 					id: 1,
-					config: { url: 'http://example.com/webhook/github' },
+					config: { url: 'http://example.com/github/webhook' },
 					events: [],
 					active: true,
 				},
@@ -299,7 +299,7 @@ describe('webhooksRouter', () => {
 			expect(mockCreateWebhook).toHaveBeenCalledWith(
 				expect.objectContaining({
 					config: expect.objectContaining({
-						url: 'http://example.com/webhook/github',
+						url: 'http://example.com/github/webhook',
 					}),
 				}),
 			);
@@ -315,7 +315,7 @@ describe('webhooksRouter', () => {
 					json: () =>
 						Promise.resolve({
 							id: 'tw-new',
-							callbackURL: 'http://example.com/webhook/trello',
+							callbackURL: 'http://example.com/trello/webhook',
 							idModel: 'board-123',
 							active: true,
 						}),
@@ -340,7 +340,7 @@ describe('webhooksRouter', () => {
 			mockCreateWebhook.mockResolvedValue({
 				data: {
 					id: 1,
-					config: { url: 'http://example.com/webhook/github' },
+					config: { url: 'http://example.com/github/webhook' },
 					events: [],
 					active: true,
 				},
@@ -379,7 +379,7 @@ describe('webhooksRouter', () => {
 						Promise.resolve({
 							id: 100,
 							name: 'cascade-webhook',
-							url: 'http://example.com/webhook/jira',
+							url: 'http://example.com/jira/webhook',
 							events: [],
 							enabled: true,
 						}),
@@ -403,7 +403,7 @@ describe('webhooksRouter', () => {
 			mockCreateWebhook.mockResolvedValue({
 				data: {
 					id: 1,
-					config: { url: 'http://example.com/webhook/github' },
+					config: { url: 'http://example.com/github/webhook' },
 					events: [],
 					active: true,
 				},
@@ -438,7 +438,7 @@ describe('webhooksRouter', () => {
 						Promise.resolve({
 							id: 101,
 							name: 'cascade-webhook',
-							url: 'http://example.com/webhook/jira',
+							url: 'http://example.com/jira/webhook',
 							events: [],
 							enabled: true,
 						}),
@@ -452,7 +452,7 @@ describe('webhooksRouter', () => {
 			mockCreateWebhook.mockResolvedValue({
 				data: {
 					id: 1,
-					config: { url: 'http://example.com/webhook/github' },
+					config: { url: 'http://example.com/github/webhook' },
 					events: [],
 					active: true,
 				},
@@ -481,7 +481,7 @@ describe('webhooksRouter', () => {
 						Promise.resolve([
 							{
 								id: 'tw-1',
-								callbackURL: 'http://example.com/webhook/trello',
+								callbackURL: 'http://example.com/trello/webhook',
 								idModel: 'board-123',
 								active: true,
 							},
@@ -494,7 +494,7 @@ describe('webhooksRouter', () => {
 				data: [
 					{
 						id: 10,
-						config: { url: 'http://example.com/webhook/github' },
+						config: { url: 'http://example.com/github/webhook' },
 						events: [],
 						active: true,
 					},
@@ -541,13 +541,13 @@ describe('webhooksRouter', () => {
 						Promise.resolve([
 							{
 								id: 'tw-1',
-								callbackURL: 'http://example.com/webhook/trello',
+								callbackURL: 'http://example.com/trello/webhook',
 								idModel: 'board-123',
 								active: true,
 							},
 							{
 								id: 'tw-2',
-								callbackURL: 'http://example.com/webhook/trello',
+								callbackURL: 'http://example.com/trello/webhook',
 								idModel: 'board-123',
 								active: true,
 							},

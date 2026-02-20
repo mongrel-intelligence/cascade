@@ -408,9 +408,12 @@ export const webhooksRouter = router({
 				pctx.trelloToken &&
 				pctx.boardId
 			) {
-				const trelloCallbackUrl = `${baseUrl}/webhook/trello`;
+				const trelloCallbackUrl = `${baseUrl}/trello/webhook`;
 				const existing = await trelloListWebhooks(pctx);
-				const duplicate = existing.find((w) => w.callbackURL === trelloCallbackUrl);
+				const duplicate = existing.find(
+					(w) =>
+						w.callbackURL === trelloCallbackUrl || w.callbackURL === `${baseUrl}/webhook/trello`,
+				);
 
 				if (duplicate) {
 					results.trello = `Already exists: ${duplicate.id}`;
@@ -427,9 +430,11 @@ export const webhooksRouter = router({
 				pctx.jiraApiToken &&
 				pctx.jiraBaseUrl
 			) {
-				const jiraCallbackUrl = `${baseUrl}/webhook/jira`;
+				const jiraCallbackUrl = `${baseUrl}/jira/webhook`;
 				const existing = await jiraListWebhooks(pctx);
-				const duplicate = existing.find((w) => w.url === jiraCallbackUrl);
+				const duplicate = existing.find(
+					(w) => w.url === jiraCallbackUrl || w.url === `${baseUrl}/webhook/jira`,
+				);
 
 				if (duplicate) {
 					results.jira = `Already exists: ${duplicate.id}`;
@@ -443,9 +448,11 @@ export const webhooksRouter = router({
 
 			// GitHub webhook
 			if (!input.trelloOnly && !input.jiraOnly && pctx.githubToken) {
-				const githubCallbackUrl = `${baseUrl}/webhook/github`;
+				const githubCallbackUrl = `${baseUrl}/github/webhook`;
 				const existing = await githubListWebhooks(pctx);
-				const duplicate = existing.find((w) => w.config.url === githubCallbackUrl);
+				const duplicate = existing.find(
+					(w) => w.config.url === githubCallbackUrl || w.config.url === `${baseUrl}/webhook/github`,
+				);
 
 				if (duplicate) {
 					results.github = `Already exists: ${duplicate.id}`;
@@ -478,9 +485,12 @@ export const webhooksRouter = router({
 
 			// Trello
 			if (!input.githubOnly && !input.jiraOnly && pctx.trelloApiKey && pctx.trelloToken) {
-				const trelloCallbackUrl = `${baseUrl}/webhook/trello`;
+				const trelloCallbackUrl = `${baseUrl}/trello/webhook`;
 				const existing = await trelloListWebhooks(pctx);
-				const matching = existing.filter((w) => w.callbackURL === trelloCallbackUrl);
+				const matching = existing.filter(
+					(w) =>
+						w.callbackURL === trelloCallbackUrl || w.callbackURL === `${baseUrl}/webhook/trello`,
+				);
 				for (const w of matching) {
 					await trelloDeleteWebhook(pctx, w.id);
 					deleted.trello.push(w.id);
@@ -489,9 +499,11 @@ export const webhooksRouter = router({
 
 			// JIRA
 			if (!input.trelloOnly && !input.githubOnly && pctx.jiraEmail && pctx.jiraApiToken) {
-				const jiraCallbackUrl = `${baseUrl}/webhook/jira`;
+				const jiraCallbackUrl = `${baseUrl}/jira/webhook`;
 				const existing = await jiraListWebhooks(pctx);
-				const matching = existing.filter((w) => w.url === jiraCallbackUrl);
+				const matching = existing.filter(
+					(w) => w.url === jiraCallbackUrl || w.url === `${baseUrl}/webhook/jira`,
+				);
 				for (const w of matching) {
 					await jiraDeleteWebhook(pctx, w.id);
 					deleted.jira.push(w.id);
@@ -500,9 +512,11 @@ export const webhooksRouter = router({
 
 			// GitHub
 			if (!input.trelloOnly && !input.jiraOnly && pctx.githubToken) {
-				const githubCallbackUrl = `${baseUrl}/webhook/github`;
+				const githubCallbackUrl = `${baseUrl}/github/webhook`;
 				const existing = await githubListWebhooks(pctx);
-				const matching = existing.filter((w) => w.config.url === githubCallbackUrl);
+				const matching = existing.filter(
+					(w) => w.config.url === githubCallbackUrl || w.config.url === `${baseUrl}/webhook/github`,
+				);
 				for (const w of matching) {
 					await githubDeleteWebhook(pctx, w.id);
 					deleted.github.push(w.id);

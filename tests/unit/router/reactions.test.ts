@@ -26,13 +26,24 @@ vi.mock('../../../src/config/configCache.js', () => ({
 	},
 }));
 
+// Mock trello client
+vi.mock('../../../src/trello/client.js', () => ({
+	withTrelloCredentials: vi.fn(async (_creds: unknown, fn: () => Promise<unknown>) => fn()),
+	trelloClient: {
+		addActionReaction: vi.fn(),
+	},
+}));
+
 import { getProjectGitHubToken } from '../../../src/config/projects.js';
 import { findProjectByRepo, getProjectSecret } from '../../../src/config/provider.js';
 import { _resetJiraCloudIdCache, sendAcknowledgeReaction } from '../../../src/router/reactions.js';
+import { trelloClient, withTrelloCredentials } from '../../../src/trello/client.js';
 
 const mockGetProjectSecret = vi.mocked(getProjectSecret);
 const mockGetProjectGitHubToken = vi.mocked(getProjectGitHubToken);
 const mockFindProjectByRepo = vi.mocked(findProjectByRepo);
+const mockAddActionReaction = vi.mocked(trelloClient.addActionReaction);
+const mockWithTrelloCredentials = vi.mocked(withTrelloCredentials);
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -93,6 +104,9 @@ const JIRA_COMMENT_PAYLOAD = {
 describe('sendAcknowledgeReaction', () => {
 	beforeEach(() => {
 		mockFetch.mockReset();
+		mockAddActionReaction.mockReset();
+		mockWithTrelloCredentials.mockReset();
+		mockWithTrelloCredentials.mockImplementation(async (_creds, fn) => fn());
 		_resetJiraCloudIdCache();
 		vi.spyOn(console, 'log').mockImplementation(() => {});
 		vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -129,20 +143,17 @@ describe('sendAcknowledgeReaction', () => {
 	// -------------------------------------------------------------------------
 
 	describe('Trello reactions', () => {
-		it('sends 💭 reaction for commentCard action', async () => {
-			mockFetch.mockResolvedValueOnce({ ok: true });
+		it('sends 👀 reaction for commentCard action', async () => {
+			mockAddActionReaction.mockResolvedValueOnce(undefined);
 
 			await sendAcknowledgeReaction('trello', PROJECT_ID, TRELLO_COMMENT_PAYLOAD);
 
-			expect(mockFetch).toHaveBeenCalledOnce();
-			const [url, options] = mockFetch.mock.calls[0];
-			expect(url).toContain('https://api.trello.com/1/actions/action123/reactions');
-			expect(url).toContain('key=test-trello-key');
-			expect(url).toContain('token=test-trello-token');
-			expect(options.method).toBe('POST');
-			const body = JSON.parse(options.body);
-			expect(body.shortName).toBe('thought_balloon');
-			expect(body.native).toBe('💭');
+			expect(mockAddActionReaction).toHaveBeenCalledOnce();
+			expect(mockAddActionReaction).toHaveBeenCalledWith('action123', {
+				shortName: 'eyes',
+				native: '👀',
+				unified: '1f440',
+			});
 		});
 
 		it('skips reaction for non-commentCard Trello action', async () => {
@@ -153,7 +164,7 @@ describe('sendAcknowledgeReaction', () => {
 
 			await sendAcknowledgeReaction('trello', PROJECT_ID, payload);
 
-			expect(mockFetch).not.toHaveBeenCalled();
+			expect(mockAddActionReaction).not.toHaveBeenCalled();
 		});
 
 		it('skips reaction when Trello credentials are missing', async () => {
@@ -161,18 +172,16 @@ describe('sendAcknowledgeReaction', () => {
 
 			await sendAcknowledgeReaction('trello', PROJECT_ID, TRELLO_COMMENT_PAYLOAD);
 
-			expect(mockFetch).not.toHaveBeenCalled();
+			expect(mockAddActionReaction).not.toHaveBeenCalled();
 			expect(console.warn).toHaveBeenCalledWith(
 				expect.stringContaining('Missing Trello credentials'),
 			);
 		});
 
 		it('logs warning on Trello API error but does not throw', async () => {
-			mockFetch.mockResolvedValueOnce({
-				ok: false,
-				status: 401,
-				text: async () => 'Unauthorized',
-			});
+			mockAddActionReaction.mockRejectedValueOnce(
+				new Error('Failed to add reaction to action: 401'),
+			);
 
 			await expect(
 				sendAcknowledgeReaction('trello', PROJECT_ID, TRELLO_COMMENT_PAYLOAD),
@@ -180,8 +189,7 @@ describe('sendAcknowledgeReaction', () => {
 
 			expect(console.warn).toHaveBeenCalledWith(
 				expect.stringContaining('Trello reaction failed'),
-				401,
-				'Unauthorized',
+				expect.stringContaining('401'),
 			);
 		});
 
@@ -193,7 +201,7 @@ describe('sendAcknowledgeReaction', () => {
 
 			await sendAcknowledgeReaction('trello', PROJECT_ID, payload);
 
-			expect(mockFetch).not.toHaveBeenCalled();
+			expect(mockAddActionReaction).not.toHaveBeenCalled();
 			expect(mockGetProjectSecret).not.toHaveBeenCalled();
 		});
 	});

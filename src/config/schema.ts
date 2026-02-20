@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+	GitHubTriggerConfigSchema,
+	JiraTriggerConfigSchema,
+	TrelloTriggerConfigSchema,
+} from './triggerConfig.js';
 
 const AgentBackendConfigSchema = z.object({
 	default: z.string().default('llmist'),
@@ -24,6 +29,7 @@ const JiraConfigSchema = z.object({
 			readyToProcess: z.string().default('cascade-ready'),
 		})
 		.optional(),
+	triggers: JiraTriggerConfigSchema.partial().optional(),
 });
 
 export const ProjectConfigSchema = z.object({
@@ -50,10 +56,21 @@ export const ProjectConfigSchema = z.object({
 					cost: z.string().optional(),
 				})
 				.optional(),
+			triggers: TrelloTriggerConfigSchema.partial().optional(),
 		})
 		.optional(),
 
 	jira: JiraConfigSchema.optional(),
+
+	/**
+	 * GitHub-specific configuration, including trigger toggles.
+	 * Separate from trello/jira because GitHub integration is always present for code operations.
+	 */
+	github: z
+		.object({
+			triggers: GitHubTriggerConfigSchema.partial().optional(),
+		})
+		.optional(),
 
 	prompts: z.record(z.string()).optional(),
 	model: z.string().optional(),

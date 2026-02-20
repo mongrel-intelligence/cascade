@@ -152,7 +152,8 @@ export interface GitHubPullRequestPayload {
 		| 'synchronize'
 		| 'edited'
 		| 'ready_for_review'
-		| 'converted_to_draft';
+		| 'converted_to_draft'
+		| 'review_requested';
 	number: number;
 	pull_request: {
 		number: number;
@@ -171,6 +172,13 @@ export interface GitHubPullRequestPayload {
 		user: {
 			login: string;
 		};
+		requested_reviewers?: Array<{
+			login: string;
+		}>;
+	};
+	/** Present on review_requested events — the reviewer just added */
+	requested_reviewer?: {
+		login: string;
 	};
 	repository: {
 		full_name: string; // owner/repo

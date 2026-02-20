@@ -14,7 +14,12 @@ export interface AgentInput {
 	prBranch?: string;
 	repoFullName?: string;
 	headSha?: string;
-	triggerType?: 'check-failure' | 'feature-implementation' | 'ci-success' | 'manual';
+	triggerType?:
+		| 'check-failure'
+		| 'feature-implementation'
+		| 'ci-success'
+		| 'review-requested'
+		| 'manual';
 
 	// Debug agent fields
 	logDir?: string;

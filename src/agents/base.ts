@@ -1,31 +1,9 @@
 import type { ModelSpec, createLogger } from 'llmist';
-import { WriteFile } from '../gadgets/WriteFile.js';
 
 import { type ProgressMonitor, createProgressMonitor } from '../backends/progress.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
-import { AstGrep } from '../gadgets/AstGrep.js';
-import { FileMultiEdit } from '../gadgets/FileMultiEdit.js';
-import { FileSearchAndReplace } from '../gadgets/FileSearchAndReplace.js';
-import { Finish } from '../gadgets/Finish.js';
-import { ListDirectory } from '../gadgets/ListDirectory.js';
-import { ReadFile } from '../gadgets/ReadFile.js';
-import { RipGrep } from '../gadgets/RipGrep.js';
-import { Sleep } from '../gadgets/Sleep.js';
-import { VerifyChanges } from '../gadgets/VerifyChanges.js';
-import { CreatePR } from '../gadgets/github/index.js';
-import {
-	AddChecklist,
-	CreateWorkItem,
-	ListWorkItems,
-	PMUpdateChecklistItem,
-	PostComment,
-	ReadWorkItem,
-	UpdateWorkItem,
-	formatWorkItemData,
-} from '../gadgets/pm/index.js';
-import { Tmux } from '../gadgets/tmux.js';
-import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../gadgets/todo/index.js';
+import { formatWorkItemData } from '../gadgets/pm/index.js';
 import { type Todo, formatTodoList, initTodoSession, saveTodos } from '../gadgets/todo/storage.js';
 import { getPMProvider } from '../pm/index.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
@@ -33,6 +11,7 @@ import { logger } from '../utils/logging.js';
 import { extractPRUrl } from '../utils/prUrl.js';
 import { type BuilderType, createConfiguredBuilder } from './shared/builderFactory.js';
 import { getAgentCapabilities } from './shared/capabilities.js';
+import { buildWorkItemGadgets } from './shared/gadgets.js';
 import { type FileLogger, executeAgentLifecycle } from './shared/lifecycle.js';
 import { resolveModelConfig } from './shared/modelResolution.js';
 import { buildPromptContext } from './shared/promptContext.js';
@@ -43,6 +22,12 @@ import {
 	injectSquintContext,
 	injectSyntheticCall,
 } from './shared/syntheticCalls.js';
+import {
+	buildCheckFailurePrompt,
+	buildCommentResponsePrompt,
+	buildDebugPrompt,
+	buildWorkItemPrompt,
+} from './shared/taskPrompts.js';
 import type { AccumulatedLlmCall } from './utils/hooks.js';
 import type { AgentLogger } from './utils/logging.js';
 import type { TrackingContext } from './utils/tracking.js';
@@ -111,7 +96,7 @@ function selectPrompt(
 	}
 	if (prContext) return buildCheckFailurePrompt(prContext);
 	if (debugContext) return buildDebugPrompt(debugContext);
-	return buildPrompt(cardId ?? '');
+	return buildWorkItemPrompt(cardId ?? '');
 }
 
 async function buildAgentContext(
@@ -178,124 +163,12 @@ async function buildAgentContext(
 	};
 }
 
-function buildCommentResponsePrompt(
-	cardId: string,
-	commentText: string,
-	commentAuthor: string,
-): string {
-	return `A user (@${commentAuthor}) mentioned you in a comment on work item ${cardId}.
-
-Their comment:
----
-${commentText}
----
-
-The work item data (title, description, checklists, attachments, comments) has been pre-loaded above.
-Read the user's comment carefully and respond accordingly. Default to surgical, targeted updates unless they clearly ask for a full rewrite.`;
-}
-
-function buildPrompt(cardId: string): string {
-	return `Analyze and process the work item with ID: ${cardId}. The work item data (title, description, checklists, attachments, comments) has been pre-loaded above. Review it and proceed with your task.`;
-}
-
-function buildCheckFailurePrompt(prContext: {
-	prNumber: number;
-	prBranch: string;
-	repoFullName: string;
-	headSha: string;
-}): string {
-	const [owner, repo] = prContext.repoFullName.split('/');
-
-	return `You are on branch \`${prContext.prBranch}\` for PR #${prContext.prNumber}.
-
-Your task is to fix the failing checks and push your changes.
-
-## Instructions
-
-1. **Investigate failures**: Use Tmux to run:
-   \`gh run list --branch ${prContext.prBranch} --limit 5 --json databaseId,conclusion,status,workflowName\`
-
-2. **Get failure details**: Find failed run ID and run:
-   \`gh run view <run-id> --log-failed\`
-
-3. **Analyze error types**:
-   - Lint errors: Run \`npm run lint\` or \`pnpm run lint\`
-   - Type errors: Run \`npm run typecheck\`
-   - Test failures: Run \`npm test\`
-   - Build errors: Run \`npm run build\`
-
-4. **Fix issues**: Make targeted fixes following existing codebase patterns
-
-5. **Verify locally**: Run the same checks that failed in CI before pushing
-
-6. **Commit and push**:
-   \`\`\`bash
-   git add .
-   git commit -m "fix: address failing checks"
-   git push
-   \`\`\`
-
-The push will re-trigger checks automatically.
-
-## GitHub Context
-Owner: ${owner}
-Repo: ${repo}
-PR: #${prContext.prNumber}
-Branch: ${prContext.prBranch}`;
-}
-
-function buildDebugPrompt(debugContext: {
-	logDir: string;
-	originalCardName: string;
-	originalCardUrl: string;
-	detectedAgentType: string;
-}): string {
-	return `Analyze the ${debugContext.detectedAgentType} agent session logs in directory: ${debugContext.logDir}
-
-Original card: "${debugContext.originalCardName}"
-Link: ${debugContext.originalCardUrl}
-
-Start by listing the contents of the log directory, then read and analyze the logs to identify issues.`;
-}
-
 // ============================================================================
 // Agent Builder Creation
 // ============================================================================
 
 function getBaseAgentGadgets(agentType: string) {
-	const caps = getAgentCapabilities(agentType);
-
-	return [
-		// Filesystem gadgets (read-only when canEditFiles is false)
-		new ListDirectory(),
-		new ReadFile(),
-		new RipGrep(),
-		new AstGrep(),
-		...(caps.canEditFiles
-			? [new FileSearchAndReplace(), new FileMultiEdit(), new WriteFile(), new VerifyChanges()]
-			: []),
-		// Shell commands via tmux (no timeout issues)
-		new Tmux(),
-		new Sleep(),
-		// Task tracking gadgets
-		new TodoUpsert(),
-		new TodoUpdateStatus(),
-		new TodoDelete(),
-		// GitHub gadgets (PR creation gated by capability)
-		...(caps.canCreatePR ? [new CreatePR()] : []),
-		// PM gadgets (work items, comments, checklists — PM-agnostic)
-		new ReadWorkItem(),
-		new PostComment(),
-		new UpdateWorkItem(),
-		new CreateWorkItem(),
-		new ListWorkItems(),
-		new AddChecklist(),
-		// UpdateChecklistItem gated by capability — prevents planning from marking items complete
-		// prematurely, while respond-to-planning-comment CAN update them
-		...(caps.canUpdateChecklists ? [new PMUpdateChecklistItem()] : []),
-		// Session control
-		new Finish(),
-	];
+	return buildWorkItemGadgets(getAgentCapabilities(agentType));
 }
 
 function createAgentBuilderWithGadgets(

@@ -5,6 +5,7 @@
  * a CASCADE agent type (briefing, planning, implementation).
  */
 
+import { resolveJiraTriggerEnabled } from '../../config/triggerConfig.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 
@@ -48,6 +49,11 @@ export class JiraIssueTransitionedTrigger implements TriggerHandler {
 
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'jira') return false;
+
+		// Check trigger config — default enabled for backward compatibility
+		if (!resolveJiraTriggerEnabled(ctx.project.jira?.triggers, 'issueTransitioned')) {
+			return false;
+		}
 
 		const payload = ctx.payload as JiraWebhookPayload;
 		if (!payload.webhookEvent?.startsWith('jira:issue_updated')) return false;

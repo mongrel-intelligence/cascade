@@ -1,3 +1,4 @@
+import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import { getPersonaForLogin } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -11,6 +12,11 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'github') return false;
 		if (!isGitHubPullRequestReviewPayload(ctx.payload)) return false;
+
+		// Check trigger config — default enabled for backward compatibility
+		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'prReviewSubmitted')) {
+			return false;
+		}
 
 		// Only trigger on submitted reviews, not edits or dismissals
 		if (ctx.payload.action !== 'submitted') return false;
