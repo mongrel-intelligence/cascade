@@ -60,6 +60,9 @@ jobs:
             cascade-migrator:latest \
             ./node_modules/.bin/drizzle-kit migrate
 
+      - name: Pull latest worker image
+        run: docker pull ${{ env.WORKER_IMAGE }}:latest
+
       - name: Pull and restart cascade-router
         run: |
           cd /opt/services
