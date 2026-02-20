@@ -5,49 +5,12 @@
  * - Current working directory and subdirectories
  * - /tmp directory (for test logs, build artifacts, etc.)
  */
-import { readFileSync, realpathSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 import { Gadget, z } from 'llmist';
 
 import { hasReadFile, markFileRead } from './readTracking.js';
-
-const ALLOWED_PATHS = ['/tmp'];
-
-function validatePath(inputPath: string): string {
-	const cwd = process.cwd();
-	const resolvedPath = resolve(cwd, inputPath);
-
-	let finalPath: string;
-	try {
-		finalPath = realpathSync(resolvedPath);
-	} catch (error) {
-		const nodeError = error as NodeJS.ErrnoException;
-		if (nodeError.code === 'ENOENT') {
-			finalPath = resolvedPath;
-		} else {
-			throw error;
-		}
-	}
-
-	// Check if within CWD
-	const cwdWithSep = cwd + sep;
-	if (finalPath.startsWith(cwdWithSep) || finalPath === cwd) {
-		return finalPath;
-	}
-
-	// Check if within allowed paths
-	for (const allowedPath of ALLOWED_PATHS) {
-		const allowedWithSep = allowedPath + sep;
-		if (finalPath.startsWith(allowedWithSep) || finalPath === allowedPath) {
-			return finalPath;
-		}
-	}
-
-	throw new Error(
-		`Path access denied: ${inputPath}. Path must be within working directory or allowed paths (${ALLOWED_PATHS.join(', ')})`,
-	);
-}
+import { validatePath } from './shared/pathValidation.js';
 
 export class ReadFile extends Gadget({
 	name: 'ReadFile',

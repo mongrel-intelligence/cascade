@@ -5,48 +5,13 @@
  * Use includeGitIgnored=true to include all files.
  */
 import { execSync } from 'node:child_process';
-import { type Stats, readdirSync, realpathSync, statSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { type Stats, readdirSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
 
 import { Gadget, z } from 'llmist';
 
 import { hasListedDirectory, markDirectoryListed } from './readTracking.js';
-
-const ALLOWED_PATHS = ['/tmp'];
-
-function validatePath(inputPath: string): string {
-	const cwd = process.cwd();
-	const resolvedPath = resolve(cwd, inputPath);
-
-	let finalPath: string;
-	try {
-		finalPath = realpathSync(resolvedPath);
-	} catch (error) {
-		const nodeError = error as NodeJS.ErrnoException;
-		if (nodeError.code === 'ENOENT') {
-			throw new Error(`Directory not found: ${inputPath}`);
-		}
-		throw error;
-	}
-
-	// Check if within CWD
-	const cwdWithSep = cwd + sep;
-	if (finalPath.startsWith(cwdWithSep) || finalPath === cwd) {
-		return finalPath;
-	}
-
-	// Check if within allowed paths
-	for (const allowedPath of ALLOWED_PATHS) {
-		const allowedWithSep = allowedPath + sep;
-		if (finalPath.startsWith(allowedWithSep) || finalPath === allowedPath) {
-			return finalPath;
-		}
-	}
-
-	throw new Error(
-		`Path access denied: ${inputPath}. Path must be within working directory or allowed paths (${ALLOWED_PATHS.join(', ')})`,
-	);
-}
+import { validatePath } from './shared/pathValidation.js';
 
 interface FileEntry {
 	relativePath: string;
