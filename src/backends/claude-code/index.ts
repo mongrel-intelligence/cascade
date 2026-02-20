@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import { constants, accessSync, existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type {
@@ -376,6 +376,38 @@ export class ClaudeCodeBackend implements AgentBackend {
 		});
 
 		const sdkTools = input.sdkTools ?? ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
+
+		// Debug: verify repo directory before launching Claude Code
+		const repoDir = input.repoDir;
+		const repoDirExists = existsSync(repoDir);
+		let repoDirReadable = false;
+		let repoDirEntries: string[] = [];
+		try {
+			accessSync(repoDir, constants.R_OK | constants.X_OK);
+			repoDirReadable = true;
+			repoDirEntries = readdirSync(repoDir).slice(0, 15);
+		} catch {}
+		const repoDirStat = repoDirExists ? statSync(repoDir) : null;
+		logger.info('Claude Code pre-launch directory check', {
+			repoDir,
+			exists: repoDirExists,
+			readable: repoDirReadable,
+			isDirectory: repoDirStat?.isDirectory() ?? false,
+			uid: repoDirStat?.uid,
+			gid: repoDirStat?.gid,
+			mode: repoDirStat ? `0${(repoDirStat.mode & 0o777).toString(8)}` : null,
+			entries: repoDirEntries,
+			processCwd: process.cwd(),
+			workspaceDir: getWorkspaceDir(),
+		});
+
+		if (!repoDirExists || !repoDirReadable) {
+			logger.error('Repo directory not accessible — Claude Code will likely fail', {
+				repoDir,
+				exists: repoDirExists,
+				readable: repoDirReadable,
+			});
+		}
 
 		const assistantMessages: SDKAssistantMessage[] = [];
 		let resultMessage: SDKResultMessage | undefined;
