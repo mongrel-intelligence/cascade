@@ -59,6 +59,7 @@ jobs:
             wrangler pages deploy dist/web --project-name=cascade-dashboard-dev --branch=main
 
       - name: Run database migrations (dev)
+        if: ${{ secrets.DEV_DATABASE_URL != '' }}
         run: |
           docker build --target=builder -f Dockerfile.dashboard -t cascade-migrator:dev .
           docker run --rm \
