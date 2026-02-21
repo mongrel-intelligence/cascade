@@ -41,6 +41,7 @@ import {
 	findProjectByRepo,
 	getIntegrationCredential,
 } from '../../../src/config/provider.js';
+import type { PersonaIdentities } from '../../../src/github/personas.js';
 import { _resetJiraCloudIdCache, sendAcknowledgeReaction } from '../../../src/router/reactions.js';
 import { trelloClient, withTrelloCredentials } from '../../../src/trello/client.js';
 
@@ -65,6 +66,11 @@ const MOCK_CREDENTIALS: Record<string, string> = {
 	'pm/api_token': 'test-jira-token',
 };
 
+const PERSONA_IDENTITIES: PersonaIdentities = {
+	implementer: 'implementer-bot',
+	reviewer: 'reviewer-bot',
+};
+
 const TRELLO_COMMENT_PAYLOAD = {
 	model: { id: 'board123', name: 'Test Board' },
 	action: {
@@ -79,7 +85,7 @@ const GITHUB_ISSUE_COMMENT_PAYLOAD = {
 	issue: { number: 42, title: 'Test Issue', html_url: 'https://github.com/owner/repo/issues/42' },
 	comment: {
 		id: 99,
-		body: 'Hello',
+		body: '@implementer-bot please help',
 		html_url: 'https://github.com/owner/repo/issues/42#issuecomment-99',
 		user: { login: 'user' },
 	},
@@ -98,14 +104,14 @@ const GITHUB_PR_REVIEW_COMMENT_PAYLOAD = {
 	},
 	comment: {
 		id: 55,
-		body: 'Review comment',
+		body: '@implementer-bot review this',
 		path: 'src/file.ts',
 		line: 10,
-		user: { login: 'reviewer' },
+		user: { login: 'external-user' },
 		html_url: 'https://github.com/owner/repo/pull/7#issuecomment-55',
 	},
 	repository: { full_name: REPO_FULL_NAME, html_url: 'https://github.com/owner/repo' },
-	sender: { login: 'reviewer' },
+	sender: { login: 'external-user' },
 };
 
 const JIRA_COMMENT_PAYLOAD = {
@@ -231,10 +237,15 @@ describe('sendAcknowledgeReaction', () => {
 	// -------------------------------------------------------------------------
 
 	describe('GitHub reactions', () => {
-		it('sends 👀 reaction on issue_comment payload', async () => {
+		it('sends 👀 reaction on issue_comment payload with @mention', async () => {
 			mockFetch.mockResolvedValueOnce({ ok: true });
 
-			await sendAcknowledgeReaction('github', REPO_FULL_NAME, GITHUB_ISSUE_COMMENT_PAYLOAD);
+			await sendAcknowledgeReaction(
+				'github',
+				REPO_FULL_NAME,
+				GITHUB_ISSUE_COMMENT_PAYLOAD,
+				PERSONA_IDENTITIES,
+			);
 
 			expect(mockFetch).toHaveBeenCalledOnce();
 			const [url, options] = mockFetch.mock.calls[0];
@@ -244,16 +255,89 @@ describe('sendAcknowledgeReaction', () => {
 			expect(JSON.parse(options.body)).toEqual({ content: 'eyes' });
 		});
 
-		it('sends 👀 reaction on pull_request_review_comment payload', async () => {
+		it('sends 👀 reaction on pull_request_review_comment payload with @mention', async () => {
 			mockFetch.mockResolvedValueOnce({ ok: true });
 
-			await sendAcknowledgeReaction('github', REPO_FULL_NAME, GITHUB_PR_REVIEW_COMMENT_PAYLOAD);
+			await sendAcknowledgeReaction(
+				'github',
+				REPO_FULL_NAME,
+				GITHUB_PR_REVIEW_COMMENT_PAYLOAD,
+				PERSONA_IDENTITIES,
+			);
 
 			expect(mockFetch).toHaveBeenCalledOnce();
 			const [url, options] = mockFetch.mock.calls[0];
 			expect(url).toBe('https://api.github.com/repos/owner/repo/pulls/comments/55/reactions');
 			expect(options.method).toBe('POST');
 			expect(JSON.parse(options.body)).toEqual({ content: 'eyes' });
+		});
+
+		it('skips reaction when no personaIdentities provided', async () => {
+			await sendAcknowledgeReaction('github', REPO_FULL_NAME, GITHUB_ISSUE_COMMENT_PAYLOAD);
+
+			expect(mockFetch).not.toHaveBeenCalled();
+			expect(console.log).toHaveBeenCalledWith(
+				expect.stringContaining('No persona identities provided'),
+			);
+		});
+
+		it('skips reaction when comment has no @implementer mention', async () => {
+			const payloadNoMention = {
+				...GITHUB_ISSUE_COMMENT_PAYLOAD,
+				comment: {
+					...GITHUB_ISSUE_COMMENT_PAYLOAD.comment,
+					body: 'Just a random comment without any mention',
+				},
+			};
+
+			await sendAcknowledgeReaction('github', REPO_FULL_NAME, payloadNoMention, PERSONA_IDENTITIES);
+
+			expect(mockFetch).not.toHaveBeenCalled();
+			expect(console.log).toHaveBeenCalledWith(expect.stringContaining('no @implementer mention'));
+		});
+
+		it('skips reaction when comment author is a CASCADE bot (bot self-comment)', async () => {
+			const botCommentPayload = {
+				...GITHUB_ISSUE_COMMENT_PAYLOAD,
+				comment: {
+					...GITHUB_ISSUE_COMMENT_PAYLOAD.comment,
+					body: '@implementer-bot please help',
+					user: { login: 'implementer-bot' }, // bot is the commenter
+				},
+			};
+
+			await sendAcknowledgeReaction(
+				'github',
+				REPO_FULL_NAME,
+				botCommentPayload,
+				PERSONA_IDENTITIES,
+			);
+
+			expect(mockFetch).not.toHaveBeenCalled();
+			expect(console.log).toHaveBeenCalledWith(
+				expect.stringContaining('comment is from a CASCADE bot'),
+				expect.objectContaining({ commenter: 'implementer-bot' }),
+			);
+		});
+
+		it('skips reaction when reviewer bot is the commenter', async () => {
+			const reviewerCommentPayload = {
+				...GITHUB_ISSUE_COMMENT_PAYLOAD,
+				comment: {
+					...GITHUB_ISSUE_COMMENT_PAYLOAD.comment,
+					body: '@implementer-bot please fix this',
+					user: { login: 'reviewer-bot' },
+				},
+			};
+
+			await sendAcknowledgeReaction(
+				'github',
+				REPO_FULL_NAME,
+				reviewerCommentPayload,
+				PERSONA_IDENTITIES,
+			);
+
+			expect(mockFetch).not.toHaveBeenCalled();
 		});
 
 		it('skips reaction for non-comment GitHub events (e.g. check_suite)', async () => {
@@ -263,7 +347,7 @@ describe('sendAcknowledgeReaction', () => {
 				repository: { full_name: REPO_FULL_NAME },
 			};
 
-			await sendAcknowledgeReaction('github', REPO_FULL_NAME, payload);
+			await sendAcknowledgeReaction('github', REPO_FULL_NAME, payload, PERSONA_IDENTITIES);
 
 			expect(mockFetch).not.toHaveBeenCalled();
 		});
@@ -281,7 +365,7 @@ describe('sendAcknowledgeReaction', () => {
 				repository: { full_name: REPO_FULL_NAME },
 			};
 
-			await sendAcknowledgeReaction('github', REPO_FULL_NAME, payload);
+			await sendAcknowledgeReaction('github', REPO_FULL_NAME, payload, PERSONA_IDENTITIES);
 
 			expect(mockFetch).not.toHaveBeenCalled();
 		});
@@ -289,7 +373,12 @@ describe('sendAcknowledgeReaction', () => {
 		it('skips reaction when project not found for repo', async () => {
 			mockFindProjectByRepo.mockResolvedValueOnce(undefined);
 
-			await sendAcknowledgeReaction('github', REPO_FULL_NAME, GITHUB_ISSUE_COMMENT_PAYLOAD);
+			await sendAcknowledgeReaction(
+				'github',
+				REPO_FULL_NAME,
+				GITHUB_ISSUE_COMMENT_PAYLOAD,
+				PERSONA_IDENTITIES,
+			);
 
 			expect(mockFetch).not.toHaveBeenCalled();
 			expect(console.warn).toHaveBeenCalledWith(
@@ -301,7 +390,12 @@ describe('sendAcknowledgeReaction', () => {
 		it('skips reaction when GitHub token is missing', async () => {
 			mockGetProjectGitHubToken.mockRejectedValueOnce(new Error('Missing GITHUB_TOKEN'));
 
-			await sendAcknowledgeReaction('github', REPO_FULL_NAME, GITHUB_ISSUE_COMMENT_PAYLOAD);
+			await sendAcknowledgeReaction(
+				'github',
+				REPO_FULL_NAME,
+				GITHUB_ISSUE_COMMENT_PAYLOAD,
+				PERSONA_IDENTITIES,
+			);
 
 			expect(mockFetch).not.toHaveBeenCalled();
 			expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('Missing GitHub token'));
@@ -315,7 +409,12 @@ describe('sendAcknowledgeReaction', () => {
 			});
 
 			await expect(
-				sendAcknowledgeReaction('github', REPO_FULL_NAME, GITHUB_ISSUE_COMMENT_PAYLOAD),
+				sendAcknowledgeReaction(
+					'github',
+					REPO_FULL_NAME,
+					GITHUB_ISSUE_COMMENT_PAYLOAD,
+					PERSONA_IDENTITIES,
+				),
 			).resolves.toBeUndefined();
 
 			expect(console.warn).toHaveBeenCalledWith(
@@ -323,6 +422,27 @@ describe('sendAcknowledgeReaction', () => {
 				403,
 				'Forbidden',
 			);
+		});
+
+		it('reacts to @mention with case-insensitive match', async () => {
+			mockFetch.mockResolvedValueOnce({ ok: true });
+
+			const caseInsensitivePayload = {
+				...GITHUB_ISSUE_COMMENT_PAYLOAD,
+				comment: {
+					...GITHUB_ISSUE_COMMENT_PAYLOAD.comment,
+					body: '@IMPLEMENTER-BOT can you look at this?',
+				},
+			};
+
+			await sendAcknowledgeReaction(
+				'github',
+				REPO_FULL_NAME,
+				caseInsensitivePayload,
+				PERSONA_IDENTITIES,
+			);
+
+			expect(mockFetch).toHaveBeenCalledOnce();
 		});
 	});
 

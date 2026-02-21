@@ -14,6 +14,7 @@ import {
 	findProjectByRepo,
 	getIntegrationCredential,
 } from '../config/provider.js';
+import { type PersonaIdentities, isCascadeBot } from '../github/personas.js';
 import { trelloClient, withTrelloCredentials } from '../trello/client.js';
 
 // In-memory JIRA CloudId cache keyed by baseUrl
@@ -100,14 +101,48 @@ async function sendTrelloReaction(projectId: string, payload: unknown): Promise<
 /**
  * Send a GitHub 👀 reaction on an issue comment or PR review comment.
  * `repoFullName` is used to look up the project and resolve credentials.
+ *
+ * Only reacts if:
+ * 1. `personaIdentities` is provided
+ * 2. The comment body contains `@implementer-username` (case-insensitive)
+ * 3. The comment author is not a CASCADE bot (prevents reaction loops)
  */
-async function sendGitHubReaction(repoFullName: string, payload: unknown): Promise<void> {
+async function sendGitHubReaction(
+	repoFullName: string,
+	payload: unknown,
+	personaIdentities?: PersonaIdentities,
+): Promise<void> {
 	const p = payload as Record<string, unknown>;
 
 	const comment = p.comment as Record<string, unknown> | undefined;
 	if (!comment) return;
 	const commentId = comment.id as number | undefined;
 	if (commentId === undefined) return;
+
+	// Only react if we have persona identities
+	if (!personaIdentities) {
+		console.log('[Reactions] No persona identities provided, skipping GitHub reaction');
+		return;
+	}
+
+	// Skip if comment author is a CASCADE bot (prevent reaction loops)
+	const commenter = (comment.user as Record<string, unknown> | undefined)?.login as
+		| string
+		| undefined;
+	if (commenter && isCascadeBot(commenter, personaIdentities)) {
+		console.log('[Reactions] Skipping GitHub reaction: comment is from a CASCADE bot', {
+			commenter,
+		});
+		return;
+	}
+
+	// Only react if the comment body contains @implementer mention
+	const body = comment.body as string | undefined;
+	const mentionRegex = new RegExp(`@${personaIdentities.implementer}\\b`, 'i');
+	if (!body || !mentionRegex.test(body)) {
+		console.log('[Reactions] Skipping GitHub reaction: no @implementer mention in comment body');
+		return;
+	}
 
 	// Distinguish issue_comment from pull_request_review_comment by the presence
 	// of p.issue (issue_comment) vs p.pull_request (pull_request_review_comment).
@@ -221,7 +256,9 @@ async function sendJiraReaction(projectId: string, payload: unknown): Promise<vo
  * Dispatches to Trello (👀), GitHub (👀), or JIRA (💭) based on source.
  *
  * For GitHub, pass `repoFullName` as the `projectId` parameter — it will be
- * used to resolve the project via `findProjectByRepo`.
+ * used to resolve the project via `findProjectByRepo`. Also pass
+ * `personaIdentities` so the reaction is only sent when the comment contains
+ * an @mention of the implementer bot (and is not from a bot itself).
  *
  * Fire-and-forget: errors are caught and logged, never propagated.
  */
@@ -229,12 +266,13 @@ export async function sendAcknowledgeReaction(
 	source: 'trello' | 'github' | 'jira',
 	projectId: string,
 	payload: unknown,
+	personaIdentities?: PersonaIdentities,
 ): Promise<void> {
 	try {
 		if (source === 'trello') {
 			await sendTrelloReaction(projectId, payload);
 		} else if (source === 'github') {
-			await sendGitHubReaction(projectId, payload);
+			await sendGitHubReaction(projectId, payload, personaIdentities);
 		} else if (source === 'jira') {
 			await sendJiraReaction(projectId, payload);
 		}
