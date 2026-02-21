@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server';
+import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { findProjectByRepo } from '../config/provider.js';
 import { resolvePersonaIdentities } from '../github/personas.js';
@@ -240,6 +241,27 @@ app.post('/trello/webhook', async (c) => {
 	return c.text('OK', 200);
 });
 
+type PayloadParseResult = { ok: true; payload: unknown } | { ok: false; error: string };
+
+async function parseGitHubWebhookPayload(
+	c: Context,
+	contentType: string,
+): Promise<PayloadParseResult> {
+	try {
+		if (contentType.includes('application/x-www-form-urlencoded')) {
+			const formData = await c.req.parseBody();
+			const payloadStr = formData.payload;
+			if (typeof payloadStr === 'string') {
+				return { ok: true, payload: JSON.parse(payloadStr) };
+			}
+			throw new Error('Missing payload field in form data');
+		}
+		return { ok: true, payload: await c.req.json() };
+	} catch (err) {
+		return { ok: false, error: String(err) };
+	}
+}
+
 // GitHub webhook verification
 app.get('/github/webhook', (c) => {
 	return c.text('OK', 200);
@@ -253,24 +275,10 @@ app.post('/github/webhook', async (c) => {
 		Object.entries(c.req.header()).map(([k, v]) => [k, String(v)]),
 	);
 
-	let payload: unknown;
-
-	try {
-		// GitHub can send webhooks as JSON or form-urlencoded
-		if (contentType.includes('application/x-www-form-urlencoded')) {
-			const formData = await c.req.parseBody();
-			const payloadStr = formData.payload;
-			if (typeof payloadStr === 'string') {
-				payload = JSON.parse(payloadStr);
-			} else {
-				throw new Error('Missing payload field in form data');
-			}
-		} else {
-			payload = await c.req.json();
-		}
-	} catch (err) {
+	const parseResult = await parseGitHubWebhookPayload(c, contentType);
+	if (!parseResult.ok) {
 		console.log('[Router] GitHub webhook parse error:', {
-			error: String(err),
+			error: parseResult.error,
 			contentType,
 			eventType,
 		});
@@ -279,13 +287,14 @@ app.post('/github/webhook', async (c) => {
 			method: c.req.method,
 			path: c.req.path,
 			headers: rawHeaders,
-			bodyRaw: String(err),
+			bodyRaw: parseResult.error,
 			statusCode: 400,
 			eventType,
 			processed: false,
 		});
 		return c.text('Bad Request', 400);
 	}
+	const payload = parseResult.payload;
 
 	// Extract repo info
 	const p = payload as Record<string, unknown>;

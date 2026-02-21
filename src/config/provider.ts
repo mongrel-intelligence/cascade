@@ -20,21 +20,6 @@ import { configCache } from './configCache.js';
 import { PROVIDER_CREDENTIAL_ROLES } from './integrationRoles.js';
 import type { IntegrationProvider } from './integrationRoles.js';
 
-/**
- * Permanent secrets store — no TTL. Secrets set at worker startup persist
- * for the entire process lifetime, avoiding re-decryption after env scrub.
- */
-const secretsStore = new Map<string, Record<string, string>>();
-
-/**
- * Store pre-decrypted secrets for a project. Unlike configCache entries these
- * never expire, so workers that scrub CREDENTIAL_MASTER_KEY from env can still
- * resolve credentials long after startup.
- */
-export function setSecrets(projectId: string, secrets: Record<string, string>): void {
-	secretsStore.set(projectId, secrets);
-}
-
 export async function loadConfig(): Promise<CascadeConfig> {
 	const cached = configCache.getConfig();
 	if (cached) return cached;
@@ -133,14 +118,10 @@ export async function getIntegrationCredential(
 	category: string,
 	role: string,
 ): Promise<string> {
-	// Check permanent secrets store first (populated at worker startup)
-	const cachedSecrets = secretsStore.get(projectId);
-	if (cachedSecrets) {
-		// Map role to env var key for cache lookup
-		const envKey = roleToEnvVarKey(category, role);
-		if (envKey && envKey in cachedSecrets) {
-			return cachedSecrets[envKey];
-		}
+	// Check process.env first (populated at worker startup from router-supplied credentials)
+	const envKey = roleToEnvVarKey(category, role);
+	if (envKey && process.env[envKey]) {
+		return process.env[envKey];
 	}
 
 	const value = await resolveIntegrationCredential(projectId, category, role);
@@ -159,13 +140,10 @@ export async function getIntegrationCredentialOrNull(
 	category: string,
 	role: string,
 ): Promise<string | null> {
-	// Check permanent secrets store first
-	const cachedSecrets = secretsStore.get(projectId);
-	if (cachedSecrets) {
-		const envKey = roleToEnvVarKey(category, role);
-		if (envKey && envKey in cachedSecrets) {
-			return cachedSecrets[envKey];
-		}
+	// Check process.env first (populated at worker startup from router-supplied credentials)
+	const envKey = roleToEnvVarKey(category, role);
+	if (envKey && process.env[envKey]) {
+		return process.env[envKey];
 	}
 
 	return resolveIntegrationCredential(projectId, category, role);
@@ -183,10 +161,9 @@ export async function getOrgCredential(
 	projectId: string,
 	envVarKey: string,
 ): Promise<string | null> {
-	// Check permanent secrets store first
-	const cachedSecrets = secretsStore.get(projectId);
-	if (cachedSecrets && envVarKey in cachedSecrets) {
-		return cachedSecrets[envVarKey];
+	// Check process.env first (populated at worker startup from router-supplied credentials)
+	if (process.env[envVarKey]) {
+		return process.env[envVarKey];
 	}
 
 	const orgId = await getOrgIdForProject(projectId);
@@ -204,9 +181,6 @@ export async function getOrgCredential(
  * 3. Merges integration credentials over org defaults
  */
 export async function getAllProjectCredentials(projectId: string): Promise<Record<string, string>> {
-	const cached = secretsStore.get(projectId);
-	if (cached) return cached;
-
 	const orgId = await getOrgIdForProject(projectId);
 
 	const [integrationCreds, orgCreds] = await Promise.all([
@@ -227,13 +201,11 @@ export async function getAllProjectCredentials(projectId: string): Promise<Recor
 		}
 	}
 
-	secretsStore.set(projectId, result);
 	return result;
 }
 
 export function invalidateConfigCache(): void {
 	configCache.invalidate();
-	secretsStore.clear();
 }
 
 // ============================================================================
@@ -242,7 +214,7 @@ export function invalidateConfigCache(): void {
 
 /**
  * Map a category+role pair to the corresponding env var key.
- * Used for cache lookups in the secrets store.
+ * Used for process.env lookups in worker environments.
  */
 function roleToEnvVarKey(category: string, role: string): string | undefined {
 	// Look through all providers in the category to find the role

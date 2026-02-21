@@ -216,17 +216,6 @@ describe('config provider', () => {
 			});
 		});
 
-		it('caches secrets after first call', async () => {
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
-			vi.mocked(resolveAllIntegrationCredentials).mockResolvedValue([]);
-			vi.mocked(resolveAllOrgCredentials).mockResolvedValue({ KEY: 'val' });
-
-			await getAllProjectCredentials('project1');
-			await getAllProjectCredentials('project1');
-
-			expect(resolveAllIntegrationCredentials).toHaveBeenCalledTimes(1);
-		});
-
 		it('returns empty object when no credentials exist', async () => {
 			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject2);
 			vi.mocked(resolveAllIntegrationCredentials).mockResolvedValue([]);
