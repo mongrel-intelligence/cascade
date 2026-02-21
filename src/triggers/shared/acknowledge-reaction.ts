@@ -9,6 +9,7 @@
 import { githubClient } from '../../github/client.js';
 import { jiraClient } from '../../jira/client.js';
 import { trelloClient } from '../../trello/client.js';
+import { parseRepoFullName } from '../../utils/repo.js';
 import { safeOperation } from '../../utils/safeOperation.js';
 import { isGitHubIssueCommentPayload, isGitHubPRReviewCommentPayload } from '../github/types.js';
 import { isTrelloWebhookPayload } from '../types.js';
@@ -38,7 +39,7 @@ export async function acknowledgeWithReaction(
 
 async function acknowledgeGitHub(payload: unknown): Promise<void> {
 	if (isGitHubIssueCommentPayload(payload)) {
-		const [owner, repo] = payload.repository.full_name.split('/');
+		const { owner, repo } = parseRepoFullName(payload.repository.full_name);
 		await safeOperation(
 			() => githubClient.addIssueCommentReaction(owner, repo, payload.comment.id, 'eyes'),
 			{ action: 'add issue comment reaction', commentId: payload.comment.id },
@@ -47,7 +48,7 @@ async function acknowledgeGitHub(payload: unknown): Promise<void> {
 	}
 
 	if (isGitHubPRReviewCommentPayload(payload)) {
-		const [owner, repo] = payload.repository.full_name.split('/');
+		const { owner, repo } = parseRepoFullName(payload.repository.full_name);
 		await safeOperation(
 			() => githubClient.addReviewCommentReaction(owner, repo, payload.comment.id, 'eyes'),
 			{ action: 'add review comment reaction', commentId: payload.comment.id },

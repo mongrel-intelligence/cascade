@@ -26,6 +26,10 @@ vi.mock('../../../src/utils/cascadeEnv.js', () => ({
 
 vi.mock('../../../src/utils/repo.js', () => ({
 	cleanupTempDir: vi.fn(),
+	parseRepoFullName: vi.fn((fullName: string) => {
+		const [owner, repo] = fullName.split('/');
+		return { owner, repo };
+	}),
 }));
 
 vi.mock('../../../src/utils/lifecycle.js', () => ({

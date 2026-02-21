@@ -4,8 +4,7 @@ import type { TRPCContext } from '../../../../src/api/trpc.js';
 // --- Mock dependencies ---
 
 const mockFindProjectByIdFromDb = vi.fn();
-const mockResolveAllIntegrationCredentials = vi.fn();
-const mockResolveAllOrgCredentials = vi.fn();
+const mockGetAllProjectCredentials = vi.fn();
 
 const mockDbSelect = vi.fn();
 const mockDbFrom = vi.fn();
@@ -25,10 +24,15 @@ vi.mock('../../../../src/db/repositories/configRepository.js', () => ({
 	findProjectByIdFromDb: (...args: unknown[]) => mockFindProjectByIdFromDb(...args),
 }));
 
-vi.mock('../../../../src/db/repositories/credentialsRepository.js', () => ({
-	resolveAllIntegrationCredentials: (...args: unknown[]) =>
-		mockResolveAllIntegrationCredentials(...args),
-	resolveAllOrgCredentials: (...args: unknown[]) => mockResolveAllOrgCredentials(...args),
+vi.mock('../../../../src/config/provider.js', () => ({
+	getAllProjectCredentials: (...args: unknown[]) => mockGetAllProjectCredentials(...args),
+}));
+
+vi.mock('../../../../src/utils/repo.js', () => ({
+	parseRepoFullName: (fullName: string) => {
+		const slashIdx = fullName.indexOf('/');
+		return { owner: fullName.slice(0, slashIdx), repo: fullName.slice(slashIdx + 1) };
+	},
 }));
 
 // Mock global fetch for Trello API calls
@@ -94,12 +98,11 @@ function setupJiraProjectContext() {
 	mockDbFrom.mockReturnValue({ where: mockDbWhere });
 	mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 	mockFindProjectByIdFromDb.mockResolvedValue(mockJiraProject);
-	mockResolveAllIntegrationCredentials.mockResolvedValue([
-		{ category: 'pm', provider: 'jira', role: 'email', value: 'bot@example.com' },
-		{ category: 'pm', provider: 'jira', role: 'api_token', value: 'jira-token-123' },
-		{ category: 'scm', provider: 'github', role: 'implementer_token', value: 'ghp_test123' },
-	]);
-	mockResolveAllOrgCredentials.mockResolvedValue({});
+	mockGetAllProjectCredentials.mockResolvedValue({
+		JIRA_EMAIL: 'bot@example.com',
+		JIRA_API_TOKEN: 'jira-token-123',
+		GITHUB_TOKEN_IMPLEMENTER: 'ghp_test123',
+	});
 }
 
 function setupProjectContext(opts?: { noTrello?: boolean; noGithub?: boolean }) {
@@ -107,24 +110,15 @@ function setupProjectContext(opts?: { noTrello?: boolean; noGithub?: boolean }) 
 	mockDbFrom.mockReturnValue({ where: mockDbWhere });
 	mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 	mockFindProjectByIdFromDb.mockResolvedValue(mockProject);
-	const integrationCreds: { category: string; provider: string; role: string; value: string }[] =
-		[];
+	const creds: Record<string, string> = {};
 	if (!opts?.noTrello) {
-		integrationCreds.push(
-			{ category: 'pm', provider: 'trello', role: 'api_key', value: 'trello-key' },
-			{ category: 'pm', provider: 'trello', role: 'token', value: 'trello-token' },
-		);
+		creds.TRELLO_API_KEY = 'trello-key';
+		creds.TRELLO_TOKEN = 'trello-token';
 	}
 	if (!opts?.noGithub) {
-		integrationCreds.push({
-			category: 'scm',
-			provider: 'github',
-			role: 'implementer_token',
-			value: 'ghp_test123',
-		});
+		creds.GITHUB_TOKEN_IMPLEMENTER = 'ghp_test123';
 	}
-	mockResolveAllIntegrationCredentials.mockResolvedValue(integrationCreds);
-	mockResolveAllOrgCredentials.mockResolvedValue({});
+	mockGetAllProjectCredentials.mockResolvedValue(creds);
 }
 
 describe('webhooksRouter', () => {
@@ -220,13 +214,10 @@ describe('webhooksRouter', () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockFindProjectByIdFromDb.mockResolvedValue(mockProject);
 
-			// No GitHub integration credential linked
-			mockResolveAllIntegrationCredentials.mockResolvedValue([
-				{ category: 'pm', provider: 'trello', role: 'api_key', value: 'trello-key' },
-				{ category: 'pm', provider: 'trello', role: 'token', value: 'trello-token' },
-			]);
-			// Org default has a legacy GITHUB_TOKEN — should be ignored
-			mockResolveAllOrgCredentials.mockResolvedValue({
+			// No GitHub integration credential linked, only legacy GITHUB_TOKEN org default
+			mockGetAllProjectCredentials.mockResolvedValue({
+				TRELLO_API_KEY: 'trello-key',
+				TRELLO_TOKEN: 'trello-token',
 				GITHUB_TOKEN: 'ghp_legacy_should_not_be_used',
 			});
 
