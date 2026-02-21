@@ -145,12 +145,9 @@ async function sendGitHubReaction(
 		return;
 	}
 
-	// Distinguish issue_comment from pull_request_review_comment by the presence
-	// of p.issue (issue_comment) vs p.pull_request (pull_request_review_comment).
-	const isIssueComment = typeof p.issue === 'object' && p.issue !== null;
-	const isPRReviewComment = typeof p.pull_request === 'object' && p.pull_request !== null;
-
-	if (!isIssueComment && !isPRReviewComment) return;
+	// Determine comment type from payload shape
+	const commentType = getGitHubCommentType(p);
+	if (!commentType) return;
 
 	if (!project) {
 		console.warn('[Reactions] No project provided, skipping GitHub reaction', {
@@ -168,12 +165,8 @@ async function sendGitHubReaction(
 	}
 
 	const { owner, repo } = parseRepoFullName(repoFullName);
-	let url: string;
-	if (isIssueComment) {
-		url = `https://api.github.com/repos/${owner}/${repo}/issues/comments/${commentId}/reactions`;
-	} else {
-		url = `https://api.github.com/repos/${owner}/${repo}/pulls/comments/${commentId}/reactions`;
-	}
+	const segment = commentType === 'issue' ? 'issues' : 'pulls';
+	const url = `https://api.github.com/repos/${owner}/${repo}/${segment}/comments/${commentId}/reactions`;
 
 	const response = await fetch(url, {
 		method: 'POST',
@@ -191,6 +184,12 @@ async function sendGitHubReaction(
 	} else {
 		console.log('[Reactions] GitHub reaction sent for comment:', commentId);
 	}
+}
+
+function getGitHubCommentType(p: Record<string, unknown>): 'issue' | 'pull_request' | null {
+	if (typeof p.issue === 'object' && p.issue !== null) return 'issue';
+	if (typeof p.pull_request === 'object' && p.pull_request !== null) return 'pull_request';
+	return null;
 }
 
 async function sendJiraReaction(projectId: string, payload: unknown): Promise<void> {

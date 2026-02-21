@@ -6,14 +6,12 @@ vi.mock('../../../src/config/provider.js', () => ({
 }));
 vi.mock('../../../src/config/configCache.js', () => ({
 	configCache: {
-		getSecrets: vi.fn().mockReturnValue(null),
 		getConfig: vi.fn().mockReturnValue(null),
 		getProjectByBoardId: vi.fn().mockReturnValue(null),
 		getProjectByRepo: vi.fn().mockReturnValue(null),
 		setConfig: vi.fn(),
 		setProjectByBoardId: vi.fn(),
 		setProjectByRepo: vi.fn(),
-		setSecrets: vi.fn(),
 		invalidate: vi.fn(),
 	},
 }));
@@ -53,7 +51,6 @@ describe('loadProjectConfig', () => {
 		}));
 		vi.doMock('../../../src/config/configCache.js', () => ({
 			configCache: {
-				getSecrets: vi.fn().mockReturnValue(null),
 				getConfig: vi.fn().mockReturnValue(null),
 				setConfig: vi.fn(),
 			},
@@ -171,7 +168,6 @@ describe('loadProjectConfig', () => {
 		}));
 		vi.doMock('../../../src/config/configCache.js', () => ({
 			configCache: {
-				getSecrets: vi.fn().mockReturnValue(null),
 				getConfig: vi.fn().mockReturnValue(null),
 				setConfig: vi.fn(),
 			},

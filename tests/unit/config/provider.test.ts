@@ -45,7 +45,6 @@ import {
 	getOrgCredential,
 	invalidateConfigCache,
 	loadConfig,
-	setSecrets,
 } from '../../../src/config/provider.js';
 import {
 	findProjectByBoardIdFromDb,
@@ -105,12 +104,23 @@ const mockProject: ProjectConfig = {
 };
 
 describe('config/provider', () => {
+	const envKeysToClean: string[] = [];
+
+	function setEnvCredential(key: string, value: string): void {
+		process.env[key] = value;
+		envKeysToClean.push(key);
+	}
+
 	beforeEach(() => {
-		invalidateConfigCache(); // clears secretsStore + configCache
-		vi.clearAllMocks(); // reset mock call counts after setup
+		invalidateConfigCache();
+		vi.clearAllMocks();
 	});
 
 	afterEach(() => {
+		for (const key of envKeysToClean) {
+			delete process.env[key];
+		}
+		envKeysToClean.length = 0;
 		invalidateConfigCache();
 		vi.clearAllMocks();
 	});
@@ -276,12 +286,12 @@ describe('config/provider', () => {
 	});
 
 	describe('getIntegrationCredential', () => {
-		it('returns cached credential from secrets store', async () => {
-			setSecrets('proj1', { TRELLO_API_KEY: 'cached-key' });
+		it('returns credential from process.env', async () => {
+			setEnvCredential('TRELLO_API_KEY', 'env-key');
 
 			const result = await getIntegrationCredential('proj1', 'pm', 'api_key');
 
-			expect(result).toBe('cached-key');
+			expect(result).toBe('env-key');
 			expect(resolveIntegrationCredential).not.toHaveBeenCalled();
 		});
 
@@ -304,12 +314,12 @@ describe('config/provider', () => {
 	});
 
 	describe('getIntegrationCredentialOrNull', () => {
-		it('returns cached credential from secrets store', async () => {
-			setSecrets('proj1', { GITHUB_TOKEN_IMPLEMENTER: 'cached-token' });
+		it('returns credential from process.env', async () => {
+			setEnvCredential('GITHUB_TOKEN_IMPLEMENTER', 'env-token');
 
 			const result = await getIntegrationCredentialOrNull('proj1', 'scm', 'implementer_token');
 
-			expect(result).toBe('cached-token');
+			expect(result).toBe('env-token');
 		});
 
 		it('returns null when credential not found', async () => {
@@ -335,12 +345,12 @@ describe('config/provider', () => {
 			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject);
 		});
 
-		it('returns cached credential from secrets store', async () => {
-			setSecrets('proj1', { OPENROUTER_API_KEY: 'cached-or-key' });
+		it('returns credential from process.env', async () => {
+			setEnvCredential('OPENROUTER_API_KEY', 'env-or-key');
 
 			const result = await getOrgCredential('proj1', 'OPENROUTER_API_KEY');
 
-			expect(result).toBe('cached-or-key');
+			expect(result).toBe('env-or-key');
 			expect(resolveOrgCredential).not.toHaveBeenCalled();
 		});
 
@@ -374,17 +384,7 @@ describe('config/provider', () => {
 			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject);
 		});
 
-		it('returns cached secrets when available', async () => {
-			const secrets = { GITHUB_TOKEN_IMPLEMENTER: 'ghp_123', TRELLO_API_KEY: 'trello_abc' };
-			setSecrets('proj1', secrets);
-
-			const result = await getAllProjectCredentials('proj1');
-
-			expect(result).toBe(secrets);
-			expect(resolveAllIntegrationCredentials).not.toHaveBeenCalled();
-		});
-
-		it('loads all credentials from repositories when not cached', async () => {
+		it('loads all credentials from repositories', async () => {
 			vi.mocked(resolveAllIntegrationCredentials).mockResolvedValue([
 				{ category: 'pm', provider: 'trello', role: 'api_key', value: 'trello-key' },
 				{ category: 'pm', provider: 'trello', role: 'token', value: 'trello-token' },
@@ -404,18 +404,6 @@ describe('config/provider', () => {
 			});
 		});
 
-		it('caches resolved secrets for future access', async () => {
-			vi.mocked(resolveAllIntegrationCredentials).mockResolvedValue([]);
-			vi.mocked(resolveAllOrgCredentials).mockResolvedValue({ KEY: 'value' });
-
-			await getAllProjectCredentials('proj1');
-			const result = await getAllProjectCredentials('proj1');
-
-			expect(result).toEqual({ KEY: 'value' });
-			// Called only once (second call uses secretsStore)
-			expect(resolveAllIntegrationCredentials).toHaveBeenCalledTimes(1);
-		});
-
 		it('returns empty object when no credentials exist', async () => {
 			vi.mocked(resolveAllIntegrationCredentials).mockResolvedValue([]);
 			vi.mocked(resolveAllOrgCredentials).mockResolvedValue({});
@@ -430,21 +418,6 @@ describe('config/provider', () => {
 			invalidateConfigCache();
 
 			expect(configCache.invalidate).toHaveBeenCalledTimes(1);
-		});
-
-		it('clears all cached data including secretsStore', async () => {
-			setSecrets('proj1', { KEY: 'val' });
-
-			invalidateConfigCache();
-
-			expect(configCache.invalidate).toHaveBeenCalled();
-			// Verify secretsStore was cleared — getAllProjectCredentials should hit DB
-			vi.mocked(configCache.getOrgIdForProject).mockReturnValue('org1');
-			vi.mocked(resolveAllIntegrationCredentials).mockResolvedValue([]);
-			vi.mocked(resolveAllOrgCredentials).mockResolvedValue({ KEY: 'from_db' });
-			const result = await getAllProjectCredentials('proj1');
-			expect(result).toEqual({ KEY: 'from_db' });
-			expect(resolveAllOrgCredentials).toHaveBeenCalled();
 		});
 	});
 });

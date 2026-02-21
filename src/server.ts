@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { trpcServer } from '@hono/trpc-server';
+import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { cors } from 'hono/cors';
@@ -23,6 +24,27 @@ export interface ServerDependencies {
 	onTrelloWebhook: (payload: unknown) => Promise<void>;
 	onGitHubWebhook: (payload: unknown, eventType: string) => Promise<void>;
 	onJiraWebhook: (payload: unknown) => Promise<void>;
+}
+
+type PayloadParseResult = { ok: true; payload: unknown } | { ok: false; error: string };
+
+async function parseGitHubWebhookPayload(
+	c: Context,
+	contentType: string,
+): Promise<PayloadParseResult> {
+	try {
+		if (contentType.includes('application/x-www-form-urlencoded')) {
+			const formData = await c.req.parseBody();
+			const payloadStr = formData.payload;
+			if (typeof payloadStr === 'string') {
+				return { ok: true, payload: JSON.parse(payloadStr) };
+			}
+			throw new Error('Missing payload field in form data');
+		}
+		return { ok: true, payload: await c.req.json() };
+	} catch (err) {
+		return { ok: false, error: String(err) };
+	}
 }
 
 export function createServer(deps: ServerDependencies): Hono {
@@ -160,87 +182,10 @@ export function createServer(deps: ServerDependencies): Hono {
 			Object.entries(c.req.header()).map(([k, v]) => [k, String(v)]),
 		);
 
-		let payload: unknown;
-
-		try {
-			// GitHub can send webhooks as JSON or form-urlencoded
-			if (contentType.includes('application/x-www-form-urlencoded')) {
-				// Form-urlencoded: payload is in the 'payload' field
-				const formData = await c.req.parseBody();
-				const payloadStr = formData.payload;
-				if (typeof payloadStr === 'string') {
-					payload = JSON.parse(payloadStr);
-				} else {
-					throw new Error('Missing payload field in form data');
-				}
-			} else {
-				// Assume JSON
-				payload = await c.req.json();
-			}
-
-			logger.info('Received GitHub webhook', {
-				event: eventType,
-				contentType,
-				action: (payload as Record<string, unknown>)?.action,
-				repository: ((payload as Record<string, unknown>)?.repository as Record<string, unknown>)
-					?.full_name,
-			});
-
-			logWebhookCall({
-				source: 'github',
-				method: c.req.method,
-				path: c.req.path,
-				headers: rawHeaders,
-				body: payload,
-				statusCode: 200,
-				eventType,
-				processed: true,
-			});
-
-			// Fire-and-forget acknowledgment reaction — only for comment events
-			if (eventType === 'issue_comment' || eventType === 'pull_request_review_comment') {
-				const repoFullName = (
-					(payload as Record<string, unknown>)?.repository as Record<string, unknown>
-				)?.full_name as string | undefined;
-				if (repoFullName) {
-					void (async () => {
-						try {
-							const project = await findProjectByRepo(repoFullName);
-							if (!project) {
-								logger.warn('[Server] No project found for repo, skipping GitHub reaction', {
-									repoFullName,
-								});
-								return;
-							}
-							const personaIdentities = await resolvePersonaIdentities(project.id);
-							await sendAcknowledgeReaction(
-								'github',
-								repoFullName,
-								payload,
-								personaIdentities,
-								project,
-							);
-						} catch (err) {
-							logger.error('[Server] GitHub reaction error:', { error: String(err) });
-						}
-					})();
-				}
-			}
-
-			// Process asynchronously - respond immediately
-			setImmediate(() => {
-				deps.onGitHubWebhook(payload, eventType).catch((err) => {
-					logger.error('Error processing GitHub webhook', {
-						error: String(err),
-						stack: err instanceof Error ? err.stack : undefined,
-					});
-				});
-			});
-
-			return c.text('OK', 200);
-		} catch (err) {
+		const parseResult = await parseGitHubWebhookPayload(c, contentType);
+		if (!parseResult.ok) {
 			logger.error('Failed to parse GitHub webhook', {
-				error: String(err),
+				error: parseResult.error,
 				contentType,
 				eventType,
 			});
@@ -249,13 +194,76 @@ export function createServer(deps: ServerDependencies): Hono {
 				method: c.req.method,
 				path: c.req.path,
 				headers: rawHeaders,
-				bodyRaw: String(err),
+				bodyRaw: parseResult.error,
 				statusCode: 400,
 				eventType,
 				processed: false,
 			});
 			return c.text('Bad Request', 400);
 		}
+
+		const payload = parseResult.payload;
+
+		logger.info('Received GitHub webhook', {
+			event: eventType,
+			contentType,
+			action: (payload as Record<string, unknown>)?.action,
+			repository: ((payload as Record<string, unknown>)?.repository as Record<string, unknown>)
+				?.full_name,
+		});
+
+		logWebhookCall({
+			source: 'github',
+			method: c.req.method,
+			path: c.req.path,
+			headers: rawHeaders,
+			body: payload,
+			statusCode: 200,
+			eventType,
+			processed: true,
+		});
+
+		// Fire-and-forget acknowledgment reaction — only for comment events
+		if (eventType === 'issue_comment' || eventType === 'pull_request_review_comment') {
+			const repoFullName = (
+				(payload as Record<string, unknown>)?.repository as Record<string, unknown>
+			)?.full_name as string | undefined;
+			if (repoFullName) {
+				void (async () => {
+					try {
+						const project = await findProjectByRepo(repoFullName);
+						if (!project) {
+							logger.warn('[Server] No project found for repo, skipping GitHub reaction', {
+								repoFullName,
+							});
+							return;
+						}
+						const personaIdentities = await resolvePersonaIdentities(project.id);
+						await sendAcknowledgeReaction(
+							'github',
+							repoFullName,
+							payload,
+							personaIdentities,
+							project,
+						);
+					} catch (err) {
+						logger.error('[Server] GitHub reaction error:', { error: String(err) });
+					}
+				})();
+			}
+		}
+
+		// Process asynchronously - respond immediately
+		setImmediate(() => {
+			deps.onGitHubWebhook(payload, eventType).catch((err) => {
+				logger.error('Error processing GitHub webhook', {
+					error: String(err),
+					stack: err instanceof Error ? err.stack : undefined,
+				});
+			});
+		});
+
+		return c.text('OK', 200);
 	});
 
 	// JIRA webhook - GET/HEAD for verification

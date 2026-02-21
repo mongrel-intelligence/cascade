@@ -342,6 +342,74 @@ function processTaskNotification(
 	});
 }
 
+function debugRepoDirectory(repoDir: string): void {
+	const repoDirExists = existsSync(repoDir);
+	let repoDirReadable = false;
+	let repoDirEntries: string[] = [];
+	try {
+		accessSync(repoDir, constants.R_OK | constants.X_OK);
+		repoDirReadable = true;
+		repoDirEntries = readdirSync(repoDir).slice(0, 15);
+	} catch {}
+	const repoDirStat = repoDirExists ? statSync(repoDir) : null;
+	logger.info('Claude Code pre-launch directory check', {
+		repoDir,
+		exists: repoDirExists,
+		readable: repoDirReadable,
+		isDirectory: repoDirStat?.isDirectory() ?? false,
+		uid: repoDirStat?.uid,
+		gid: repoDirStat?.gid,
+		mode: repoDirStat ? `0${(repoDirStat.mode & 0o777).toString(8)}` : null,
+		entries: repoDirEntries,
+		processCwd: process.cwd(),
+		workspaceDir: getWorkspaceDir(),
+	});
+
+	if (!repoDirExists || !repoDirReadable) {
+		logger.error('Repo directory not accessible — Claude Code will likely fail', {
+			repoDir,
+			exists: repoDirExists,
+			readable: repoDirReadable,
+		});
+	}
+}
+
+function logLlmCall(
+	input: AgentBackendInput,
+	assistantMsg: SDKAssistantMessage,
+	turnCount: number,
+	model: string,
+): void {
+	if (!input.runId || !assistantMsg.message?.usage) return;
+
+	const usage = assistantMsg.message.usage;
+	let response: string | undefined;
+	try {
+		response = JSON.stringify(assistantMsg.message.content ?? []);
+	} catch {
+		// Ignore serialization errors
+	}
+
+	storeLlmCall({
+		runId: input.runId,
+		callNumber: turnCount,
+		request: undefined,
+		response,
+		inputTokens: usage.input_tokens,
+		outputTokens: usage.output_tokens,
+		cachedTokens: undefined,
+		costUsd: undefined,
+		durationMs: undefined,
+		model,
+	}).catch((err) => {
+		logger.warn('Failed to store Claude Code LLM call in real-time', {
+			runId: input.runId,
+			turn: turnCount,
+			error: String(err),
+		});
+	});
+}
+
 /**
  * Claude Code SDK backend for CASCADE.
  *
@@ -377,37 +445,7 @@ export class ClaudeCodeBackend implements AgentBackend {
 
 		const sdkTools = input.sdkTools ?? ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
 
-		// Debug: verify repo directory before launching Claude Code
-		const repoDir = input.repoDir;
-		const repoDirExists = existsSync(repoDir);
-		let repoDirReadable = false;
-		let repoDirEntries: string[] = [];
-		try {
-			accessSync(repoDir, constants.R_OK | constants.X_OK);
-			repoDirReadable = true;
-			repoDirEntries = readdirSync(repoDir).slice(0, 15);
-		} catch {}
-		const repoDirStat = repoDirExists ? statSync(repoDir) : null;
-		logger.info('Claude Code pre-launch directory check', {
-			repoDir,
-			exists: repoDirExists,
-			readable: repoDirReadable,
-			isDirectory: repoDirStat?.isDirectory() ?? false,
-			uid: repoDirStat?.uid,
-			gid: repoDirStat?.gid,
-			mode: repoDirStat ? `0${(repoDirStat.mode & 0o777).toString(8)}` : null,
-			entries: repoDirEntries,
-			processCwd: process.cwd(),
-			workspaceDir: getWorkspaceDir(),
-		});
-
-		if (!repoDirExists || !repoDirReadable) {
-			logger.error('Repo directory not accessible — Claude Code will likely fail', {
-				repoDir,
-				exists: repoDirExists,
-				readable: repoDirReadable,
-			});
-		}
+		debugRepoDirectory(input.repoDir);
 
 		const assistantMessages: SDKAssistantMessage[] = [];
 		let resultMessage: SDKResultMessage | undefined;
@@ -440,45 +478,11 @@ export class ClaudeCodeBackend implements AgentBackend {
 		for await (const message of stream) {
 			if (message.type === 'assistant') {
 				const assistantMsg = message as SDKAssistantMessage;
-				const thisTurn = turnCount + 1;
 				assistantMessages.push(assistantMsg);
 				turnCount++;
 				await input.progressReporter.onIteration(turnCount, input.maxIterations);
 				processAssistantMessage(assistantMsg, turnCount, input);
-
-				// Real-time LLM call logging for Claude Code backend
-				if (input.runId && assistantMsg.message?.usage) {
-					const usage = assistantMsg.message.usage;
-
-					// Serialize response content blocks as the response payload
-					let response: string | undefined;
-					try {
-						response = JSON.stringify(assistantMsg.message.content ?? []);
-					} catch {
-						// Ignore serialization errors
-					}
-
-					storeLlmCall({
-						runId: input.runId,
-						callNumber: turnCount,
-						// Claude Code SDK doesn't expose per-turn request messages; request is null
-						request: undefined,
-						response,
-						inputTokens: usage.input_tokens,
-						outputTokens: usage.output_tokens,
-						cachedTokens: undefined,
-						costUsd: undefined,
-						// Claude Code SDK doesn't expose actual LLM call timing; omit to avoid misleading data
-						durationMs: undefined,
-						model,
-					}).catch((err) => {
-						logger.warn('Failed to store Claude Code LLM call in real-time', {
-							runId: input.runId,
-							turn: thisTurn,
-							error: String(err),
-						});
-					});
-				}
+				logLlmCall(input, assistantMsg, turnCount, model);
 			} else if (message.type === 'system') {
 				const sysMsg = message as { subtype: string; [key: string]: unknown };
 				if (sysMsg.subtype === 'task_notification') {

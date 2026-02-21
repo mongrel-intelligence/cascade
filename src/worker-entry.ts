@@ -14,7 +14,7 @@
  */
 
 import { loadEnvConfigSafe } from './config/env.js';
-import { loadConfig, setSecrets } from './config/provider.js';
+import { loadConfig } from './config/provider.js';
 import { getDb } from './db/client.js';
 import {
 	createTriggerRegistry,
@@ -84,6 +84,20 @@ interface DebugAnalysisJobData {
 type DashboardJobData = ManualRunJobData | RetryRunJobData | DebugAnalysisJobData;
 
 type JobData = TrelloJobData | GitHubJobData | JiraJobData | DashboardJobData;
+
+function loadRouterCredentials(): void {
+	const credentialsJson = process.env.CASCADE_CREDENTIALS;
+	if (!credentialsJson) return;
+	try {
+		const secrets = JSON.parse(credentialsJson) as Record<string, string>;
+		for (const [key, value] of Object.entries(secrets)) {
+			process.env[key] = value;
+		}
+		logger.info('[Worker] Set credentials as env vars from router');
+	} catch (err) {
+		logger.warn('[Worker] Failed to parse CASCADE_CREDENTIALS', { error: String(err) });
+	}
+}
 
 async function processDashboardJob(jobId: string, jobData: DashboardJobData): Promise<void> {
 	const { loadProjectConfigById } = await import('./config/provider.js');
@@ -160,21 +174,12 @@ async function main(): Promise<void> {
 	const config = await loadConfig();
 	logger.info('[Worker] Loaded projects config', { projects: config.projects.map((p) => p.id) });
 
-	// Cache credentials from router (passed as JSON in CASCADE_CREDENTIALS).
+	// Set credentials as individual env vars (passed as JSON in CASCADE_CREDENTIALS).
 	// Router resolves and decrypts credentials before spawning workers, so workers
 	// never need the CREDENTIAL_MASTER_KEY.
-	const credentialsJson = process.env.CASCADE_CREDENTIALS;
-	const credentialsProjectId = process.env.CASCADE_CREDENTIALS_PROJECT_ID;
-	if (credentialsJson && credentialsProjectId) {
-		try {
-			const secrets = JSON.parse(credentialsJson) as Record<string, string>;
-			setSecrets(credentialsProjectId, secrets);
-			logger.info('[Worker] Cached credentials from router', { projectId: credentialsProjectId });
-		} catch (err) {
-			logger.warn('[Worker] Failed to parse CASCADE_CREDENTIALS', { error: String(err) });
-		}
+	if (process.env.CASCADE_CREDENTIALS) {
+		loadRouterCredentials();
 	} else {
-		// All jobs MUST have credentials passed from router
 		logger.error('[Worker] No credentials passed from router - job will likely fail', {
 			jobType: jobData.type,
 		});
