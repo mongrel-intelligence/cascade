@@ -347,7 +347,11 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			category,
 			triggers,
 		}: { category: 'pm' | 'scm'; triggers: Record<string, unknown> }) =>
-			trpcClient.projects.integrations.updateTriggers.mutate({ projectId, category, triggers }),
+			trpcClient.projects.integrations.updateTriggers.mutate({
+				projectId,
+				category,
+				triggers: triggers as Record<string, boolean | Record<string, boolean>>,
+			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: integrationsQueryKey });
 		},
