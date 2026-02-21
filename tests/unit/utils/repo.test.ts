@@ -35,8 +35,38 @@ import {
 	cloneRepo,
 	createTempDir,
 	getWorkspaceDir,
+	parseRepoFullName,
 	runCommand,
 } from '../../../src/utils/repo.js';
+
+describe('parseRepoFullName', () => {
+	it('parses a valid owner/repo string', () => {
+		expect(parseRepoFullName('owner/repo')).toEqual({ owner: 'owner', repo: 'repo' });
+	});
+
+	it('parses owner with hyphens and numbers', () => {
+		expect(parseRepoFullName('my-org-123/my-repo-456')).toEqual({
+			owner: 'my-org-123',
+			repo: 'my-repo-456',
+		});
+	});
+
+	it('throws on string with no slash', () => {
+		expect(() => parseRepoFullName('noslash')).toThrow('Invalid repository full name');
+	});
+
+	it('throws on empty string', () => {
+		expect(() => parseRepoFullName('')).toThrow('Invalid repository full name');
+	});
+
+	it('throws when owner part is empty', () => {
+		expect(() => parseRepoFullName('/repo')).toThrow('Invalid repository full name');
+	});
+
+	it('throws when repo part is empty', () => {
+		expect(() => parseRepoFullName('owner/')).toThrow('Invalid repository full name');
+	});
+});
 
 describe('repo utils', () => {
 	const originalEnv = process.env;

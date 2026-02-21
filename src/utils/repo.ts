@@ -5,6 +5,20 @@ import type { ProjectConfig } from '../types/index.js';
 import { logger } from './logging.js';
 
 /**
+ * Parse a GitHub "owner/repo" full name string into its components.
+ * Throws if the format is malformed.
+ */
+export function parseRepoFullName(fullName: string): { owner: string; repo: string } {
+	const slashIdx = fullName.indexOf('/');
+	if (slashIdx <= 0 || slashIdx === fullName.length - 1) {
+		throw new Error(`Invalid repository full name: "${fullName}". Expected "owner/repo" format.`);
+	}
+	const owner = fullName.slice(0, slashIdx);
+	const repo = fullName.slice(slashIdx + 1);
+	return { owner, repo };
+}
+
+/**
  * Get the base directory for temporary files (repos, logs).
  * Uses CASCADE_WORKSPACE_DIR env var if set, otherwise /workspace.
  */

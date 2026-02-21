@@ -7,7 +7,14 @@ export {
 	setWatchdogCleanup,
 	clearWatchdogCleanup,
 } from './lifecycle.js';
-export { createTempDir, cloneRepo, cleanupTempDir, runCommand, getWorkspaceDir } from './repo.js';
+export {
+	createTempDir,
+	cloneRepo,
+	cleanupTempDir,
+	runCommand,
+	getWorkspaceDir,
+	parseRepoFullName,
+} from './repo.js';
 export {
 	enqueueWebhook,
 	dequeueWebhook,

@@ -14,6 +14,7 @@ import {
 	startWatchdog,
 } from '../../utils/index.js';
 import { injectLlmApiKeys } from '../../utils/llmEnv.js';
+import { parseRepoFullName } from '../../utils/repo.js';
 import { safeOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
 import { acknowledgeWithReaction } from '../shared/acknowledge-reaction.js';
@@ -29,8 +30,13 @@ async function updateInitialCommentWithError(
 	const input = result.agentInput as { repoFullName?: string };
 	if (!input.repoFullName || !result.prNumber) return;
 
-	const [owner, repo] = input.repoFullName.split('/');
-	if (!owner || !repo) return;
+	let owner: string;
+	let repo: string;
+	try {
+		({ owner, repo } = parseRepoFullName(input.repoFullName));
+	} catch {
+		return;
+	}
 
 	const { initialCommentId } = getSessionState();
 	if (!initialCommentId) return;
@@ -59,7 +65,7 @@ async function postAcknowledgmentComment(result: TriggerResult): Promise<void> {
 	if (!input.repoFullName) {
 		return;
 	}
-	const [owner, repo] = input.repoFullName.split('/');
+	const { owner, repo } = parseRepoFullName(input.repoFullName);
 	const prNumber = result.prNumber;
 	const message =
 		result.agentType === 'respond-to-pr-comment'

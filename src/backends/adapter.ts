@@ -21,6 +21,7 @@ import { loadCascadeEnv, unloadCascadeEnv } from '../utils/cascadeEnv.js';
 import { createFileLogger } from '../utils/fileLogger.js';
 import { setWatchdogCleanup } from '../utils/lifecycle.js';
 import { logger } from '../utils/logging.js';
+import { parseRepoFullName } from '../utils/repo.js';
 import { setupRemoteSquintDb } from '../utils/squintDb.js';
 import { getAgentProfile } from './agent-profiles.js';
 import { createProgressMonitor } from './progress.js';
@@ -328,7 +329,9 @@ async function buildBackendInput(
 	}
 
 	// Inject repo owner/name so cascade-tools auto-resolve without flags
-	const [repoOwner, repoName] = (project.repo || '').split('/');
+	const { owner: repoOwner, repo: repoName } = project.repo
+		? parseRepoFullName(project.repo)
+		: { owner: '', repo: '' };
 	if (repoOwner && repoName) {
 		projectSecrets.CASCADE_REPO_OWNER = repoOwner;
 		projectSecrets.CASCADE_REPO_NAME = repoName;

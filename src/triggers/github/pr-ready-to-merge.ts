@@ -3,6 +3,7 @@ import { githubClient } from '../../github/client.js';
 import { trelloClient } from '../../trello/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { parseRepoFullName } from '../../utils/repo.js';
 import {
 	type GitHubCheckSuitePayload,
 	type GitHubPullRequestReviewPayload,
@@ -59,7 +60,7 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 			repoFullName = payload.repository.full_name;
 
 			// Need to fetch PR to get body
-			const [owner, repo] = repoFullName.split('/');
+			const { owner, repo } = parseRepoFullName(repoFullName);
 			const prDetails = await githubClient.getPR(owner, repo, prNumber);
 			prBody = prDetails.body;
 		} else if (isGitHubPullRequestReviewPayload(ctx.payload)) {
@@ -72,7 +73,7 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const [owner, repo] = repoFullName.split('/');
+		const { owner, repo } = parseRepoFullName(repoFullName);
 
 		// Must have Trello card URL
 		if (!hasTrelloCardUrl(prBody)) {
