@@ -4,7 +4,8 @@ import { Hono } from 'hono';
 import { INITIAL_MESSAGES } from '../config/agentMessages.js';
 import { findProjectByRepo } from '../config/provider.js';
 import { type PersonaIdentities, resolvePersonaIdentities } from '../github/personas.js';
-import { createTriggerRegistry, registerBuiltInTriggers } from '../triggers/index.js';
+import { registerBuiltInTriggers } from '../triggers/builtins.js';
+import { createTriggerRegistry } from '../triggers/registry.js';
 import type { TriggerContext } from '../types/index.js';
 import { logWebhookCall } from '../utils/webhookLogger.js';
 import {
