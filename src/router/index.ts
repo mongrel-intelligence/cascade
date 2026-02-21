@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { findProjectByRepo } from '../config/provider.js';
 import { resolvePersonaIdentities } from '../github/personas.js';
 import { logWebhookCall } from '../utils/webhookLogger.js';
-import { type RouterProjectConfig, getProjectConfig, loadProjectConfig } from './config.js';
+import { type RouterProjectConfig, loadProjectConfig } from './config.js';
 import { addEyesReactionToPR } from './pre-actions.js';
 import { type CascadeJob, type GitHubJob, addJob, getQueueStats } from './queue.js';
 import { sendAcknowledgeReaction } from './reactions.js';
@@ -100,7 +100,7 @@ interface TrelloWebhookResult {
 	cardId?: string;
 }
 
-function parseTrelloWebhook(payload: unknown): TrelloWebhookResult {
+async function parseTrelloWebhook(payload: unknown): Promise<TrelloWebhookResult> {
 	if (!payload || typeof payload !== 'object') {
 		return { shouldProcess: false };
 	}
@@ -117,7 +117,8 @@ function parseTrelloWebhook(payload: unknown): TrelloWebhookResult {
 	const actionType = action.type as string;
 	const data = action.data as Record<string, unknown> | undefined;
 
-	const project = getProjectConfig().projects.find((proj) => proj.trello?.boardId === boardId);
+	const config = await loadProjectConfig();
+	const project = config.projects.find((proj) => proj.trello?.boardId === boardId);
 	if (!project) {
 		return { shouldProcess: false };
 	}
@@ -191,7 +192,7 @@ app.post('/trello/webhook', async (c) => {
 		return c.text('Bad Request', 400);
 	}
 
-	const { shouldProcess, project, actionType, cardId } = parseTrelloWebhook(payload);
+	const { shouldProcess, project, actionType, cardId } = await parseTrelloWebhook(payload);
 
 	logWebhookCall({
 		source: 'trello',
@@ -399,8 +400,9 @@ app.post('/jira/webhook', async (c) => {
 	const jiraProjectKey = (projectField?.key as string) || '';
 
 	// Match JIRA project key to a configured project
+	const config = await loadProjectConfig();
 	const project = jiraProjectKey
-		? getProjectConfig().projects.find((proj) => proj.jira?.projectKey === jiraProjectKey)
+		? config.projects.find((proj) => proj.jira?.projectKey === jiraProjectKey)
 		: undefined;
 
 	// Process issue transitions and comment events
@@ -469,8 +471,6 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 // Start server and worker processor
 async function startRouter(): Promise<void> {
-	await loadProjectConfig();
-
 	const port = Number(process.env.PORT) || 3000;
 	startWorkerProcessor();
 	console.log(`[Router] Starting on port ${port}`);

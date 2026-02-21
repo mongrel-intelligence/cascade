@@ -124,20 +124,22 @@ async function seedProject(p: ProjectConfig) {
 
 async function seedProjectIntegrations(p: ProjectConfig) {
 	const db = getDb();
-	const config = {
-		boardId: p.trello.boardId,
-		lists: p.trello.lists,
-		labels: p.trello.labels,
-		customFields: p.trello.customFields,
-	};
-	await db
-		.insert(projectIntegrations)
-		.values({ projectId: p.id, type: 'trello', config })
-		.onConflictDoUpdate({
-			target: [projectIntegrations.projectId, projectIntegrations.type],
-			set: { config: sql`EXCLUDED.config`, updatedAt: new Date() },
-		});
-	console.log('  Trello integration upserted.');
+	if (p.trello) {
+		const config = {
+			boardId: p.trello.boardId,
+			lists: p.trello.lists,
+			labels: p.trello.labels,
+			customFields: p.trello.customFields,
+		};
+		await db
+			.insert(projectIntegrations)
+			.values({ projectId: p.id, category: 'pm', provider: 'trello', config })
+			.onConflictDoUpdate({
+				target: [projectIntegrations.projectId, projectIntegrations.category],
+				set: { config: sql`EXCLUDED.config`, provider: 'trello', updatedAt: new Date() },
+			});
+		console.log('  Trello integration upserted.');
+	}
 }
 
 async function seedProjectAgentConfigs(p: ProjectConfig) {
