@@ -5,6 +5,14 @@ vi.mock('../../src/router/reactions.js', () => ({
 	sendAcknowledgeReaction: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../src/config/provider.js', () => ({
+	findProjectByRepo: vi.fn(),
+}));
+
+vi.mock('../../src/github/personas.js', () => ({
+	resolvePersonaIdentities: vi.fn(),
+}));
+
 vi.mock('../../src/utils/index.js', () => ({
 	canAcceptWebhook: vi.fn().mockReturnValue(true),
 	isCurrentlyProcessing: vi.fn().mockReturnValue(false),
@@ -41,11 +49,15 @@ vi.mock('../../src/api/context.js', () => ({
 	computeEffectiveOrgId: vi.fn().mockResolvedValue('org-1'),
 }));
 
+import { findProjectByRepo } from '../../src/config/provider.js';
+import { resolvePersonaIdentities } from '../../src/github/personas.js';
 import { sendAcknowledgeReaction } from '../../src/router/reactions.js';
 import { createServer } from '../../src/server.js';
 import type { ServerDependencies } from '../../src/server.js';
 
 const mockSendAcknowledgeReaction = vi.mocked(sendAcknowledgeReaction);
+const mockFindProjectByRepo = vi.mocked(findProjectByRepo);
+const mockResolvePersonaIdentities = vi.mocked(resolvePersonaIdentities);
 
 function buildDeps(overrides: Partial<ServerDependencies> = {}): ServerDependencies {
 	return {
@@ -183,6 +195,14 @@ describe('createServer', () => {
 			const deps = buildDeps();
 			const app = createServer(deps);
 
+			// Mock project resolution
+			const mockProject = deps.config.projects[0];
+			mockFindProjectByRepo.mockResolvedValue(mockProject);
+			mockResolvePersonaIdentities.mockResolvedValue({
+				implementer: 'bot-implementer',
+				reviewer: 'bot-reviewer',
+			});
+
 			const payload = {
 				action: 'created',
 				issue: { number: 1 },
@@ -197,7 +217,15 @@ describe('createServer', () => {
 
 			await vi.runAllTimersAsync();
 
-			expect(mockSendAcknowledgeReaction).toHaveBeenCalledWith('github', 'owner/repo', payload);
+			expect(mockFindProjectByRepo).toHaveBeenCalledWith('owner/repo');
+			expect(mockResolvePersonaIdentities).toHaveBeenCalledWith('project-1');
+			expect(mockSendAcknowledgeReaction).toHaveBeenCalledWith(
+				'github',
+				'owner/repo',
+				payload,
+				{ implementer: 'bot-implementer', reviewer: 'bot-reviewer' },
+				mockProject,
+			);
 			vi.useRealTimers();
 		});
 
@@ -205,6 +233,14 @@ describe('createServer', () => {
 			vi.useFakeTimers();
 			const deps = buildDeps();
 			const app = createServer(deps);
+
+			// Mock project resolution
+			const mockProject = deps.config.projects[0];
+			mockFindProjectByRepo.mockResolvedValue(mockProject);
+			mockResolvePersonaIdentities.mockResolvedValue({
+				implementer: 'bot-implementer',
+				reviewer: 'bot-reviewer',
+			});
 
 			const payload = {
 				action: 'created',
@@ -220,7 +256,15 @@ describe('createServer', () => {
 
 			await vi.runAllTimersAsync();
 
-			expect(mockSendAcknowledgeReaction).toHaveBeenCalledWith('github', 'owner/repo', payload);
+			expect(mockFindProjectByRepo).toHaveBeenCalledWith('owner/repo');
+			expect(mockResolvePersonaIdentities).toHaveBeenCalledWith('project-1');
+			expect(mockSendAcknowledgeReaction).toHaveBeenCalledWith(
+				'github',
+				'owner/repo',
+				payload,
+				{ implementer: 'bot-implementer', reviewer: 'bot-reviewer' },
+				mockProject,
+			);
 			vi.useRealTimers();
 		});
 

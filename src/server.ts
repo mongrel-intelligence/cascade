@@ -11,6 +11,8 @@ import { logoutHandler } from './api/auth/logout.js';
 import { resolveUserFromSession } from './api/auth/session.js';
 import { computeEffectiveOrgId } from './api/context.js';
 import { appRouter } from './api/router.js';
+import { findProjectByRepo } from './config/provider.js';
+import { resolvePersonaIdentities } from './github/personas.js';
 import { sendAcknowledgeReaction } from './router/reactions.js';
 import type { CascadeConfig } from './types/index.js';
 import { canAcceptWebhook, isCurrentlyProcessing, logger } from './utils/index.js';
@@ -201,9 +203,27 @@ export function createServer(deps: ServerDependencies): Hono {
 					(payload as Record<string, unknown>)?.repository as Record<string, unknown>
 				)?.full_name as string | undefined;
 				if (repoFullName) {
-					void sendAcknowledgeReaction('github', repoFullName, payload).catch((err) =>
-						logger.error('[Server] GitHub reaction error:', { error: String(err) }),
-					);
+					void (async () => {
+						try {
+							const project = await findProjectByRepo(repoFullName);
+							if (!project) {
+								logger.warn('[Server] No project found for repo, skipping GitHub reaction', {
+									repoFullName,
+								});
+								return;
+							}
+							const personaIdentities = await resolvePersonaIdentities(project.id);
+							await sendAcknowledgeReaction(
+								'github',
+								repoFullName,
+								payload,
+								personaIdentities,
+								project,
+							);
+						} catch (err) {
+							logger.error('[Server] GitHub reaction error:', { error: String(err) });
+						}
+					})();
 				}
 			}
 
