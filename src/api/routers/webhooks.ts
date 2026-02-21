@@ -2,15 +2,11 @@ import { Octokit } from '@octokit/rest';
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { PROVIDER_CREDENTIAL_ROLES } from '../../config/integrationRoles.js';
-import type { IntegrationProvider } from '../../config/integrationRoles.js';
+import { getAllProjectCredentials } from '../../config/provider.js';
 import { getDb } from '../../db/client.js';
 import { findProjectByIdFromDb } from '../../db/repositories/configRepository.js';
-import {
-	resolveAllIntegrationCredentials,
-	resolveAllOrgCredentials,
-} from '../../db/repositories/credentialsRepository.js';
 import { projects } from '../../db/schema/index.js';
+import { parseRepoFullName } from '../../utils/repo.js';
 import { protectedProcedure, router } from '../trpc.js';
 
 const GITHUB_WEBHOOK_EVENTS = [
@@ -60,27 +56,6 @@ interface ProjectContext {
 	jiraApiToken?: string;
 }
 
-async function buildCredentialMap(
-	projectId: string,
-	orgId: string,
-): Promise<Record<string, string>> {
-	const [integrationCreds, orgCreds] = await Promise.all([
-		resolveAllIntegrationCredentials(projectId),
-		resolveAllOrgCredentials(orgId),
-	]);
-
-	const creds: Record<string, string> = { ...orgCreds };
-	for (const cred of integrationCreds) {
-		const roles = PROVIDER_CREDENTIAL_ROLES[cred.provider as IntegrationProvider];
-		if (!roles) continue;
-		const roleDef = roles.find((r) => r.role === cred.role);
-		if (roleDef) {
-			creds[roleDef.envVarKey] = cred.value;
-		}
-	}
-	return creds;
-}
-
 async function resolveProjectContext(
 	projectId: string,
 	userOrgId: string,
@@ -100,7 +75,7 @@ async function resolveProjectContext(
 		throw new TRPCError({ code: 'NOT_FOUND' });
 	}
 
-	const creds = await buildCredentialMap(projectId, project.orgId);
+	const creds = await getAllProjectCredentials(projectId);
 
 	// Resolve JIRA label names from config (with defaults)
 	const jiraLabels = project.jira
@@ -271,15 +246,10 @@ async function jiraDeleteWebhook(ctx: ProjectContext, webhookId: number): Promis
 
 // --- GitHub helpers ---
 
-function parseRepo(repo: string): { owner: string; repo: string } {
-	const [owner, name] = repo.split('/');
-	return { owner, repo: name };
-}
-
 async function githubListWebhooks(ctx: ProjectContext): Promise<GitHubWebhook[]> {
 	if (!ctx.githubToken) return [];
 	const octokit = new Octokit({ auth: ctx.githubToken });
-	const { owner, repo } = parseRepo(ctx.repo);
+	const { owner, repo } = parseRepoFullName(ctx.repo);
 	const { data } = await octokit.repos.listWebhooks({ owner, repo });
 	return data as GitHubWebhook[];
 }
@@ -289,7 +259,7 @@ async function githubCreateWebhook(
 	callbackURL: string,
 ): Promise<GitHubWebhook> {
 	const octokit = new Octokit({ auth: ctx.githubToken });
-	const { owner, repo } = parseRepo(ctx.repo);
+	const { owner, repo } = parseRepoFullName(ctx.repo);
 	const { data } = await octokit.repos.createWebhook({
 		owner,
 		repo,
@@ -302,7 +272,7 @@ async function githubCreateWebhook(
 
 async function githubDeleteWebhook(ctx: ProjectContext, hookId: number): Promise<void> {
 	const octokit = new Octokit({ auth: ctx.githubToken });
-	const { owner, repo } = parseRepo(ctx.repo);
+	const { owner, repo } = parseRepoFullName(ctx.repo);
 	await octokit.repos.deleteWebhook({ owner, repo, hook_id: hookId });
 }
 

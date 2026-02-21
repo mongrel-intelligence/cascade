@@ -10,7 +10,10 @@
  * explicitly excludes events that also contain a status change in the changelog.
  */
 
-import { resolveJiraTriggerEnabled } from '../../config/triggerConfig.js';
+import {
+	resolveJiraTriggerEnabled,
+	resolveReadyToProcessEnabled,
+} from '../../config/triggerConfig.js';
 import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -129,6 +132,15 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 				issueKey,
 				currentStatus,
 				configuredStatuses: jiraConfig.statuses,
+			});
+			return null;
+		}
+
+		// Check per-agent ready-to-process toggle
+		if (!resolveReadyToProcessEnabled(ctx.project.jira?.triggers, agentType)) {
+			logger.info('JIRA ready-to-process disabled for agent type, skipping', {
+				issueKey,
+				agentType,
 			});
 			return null;
 		}

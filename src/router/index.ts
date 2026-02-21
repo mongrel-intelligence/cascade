@@ -1,5 +1,7 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { findProjectByRepo } from '../config/provider.js';
+import { resolvePersonaIdentities } from '../github/personas.js';
 import { logWebhookCall } from '../utils/webhookLogger.js';
 import { type RouterProjectConfig, getProjectConfig, loadProjectConfig } from './config.js';
 import { addEyesReactionToPR } from './pre-actions.js';
@@ -313,11 +315,29 @@ app.post('/github/webhook', async (c) => {
 	if (shouldProcess) {
 		console.log('[Router] Queueing GitHub job:', { eventType, repoFullName });
 
-		// Fire-and-forget acknowledgment reaction — only for comment events
+		// Fire-and-forget acknowledgment reaction — only for comment events that @mention the bot
 		if (eventType === 'issue_comment' || eventType === 'pull_request_review_comment') {
-			void sendAcknowledgeReaction('github', repoFullName, payload).catch((err) =>
-				console.error('[Router] GitHub reaction error:', err),
-			);
+			void (async () => {
+				try {
+					const project = await findProjectByRepo(repoFullName);
+					if (!project) {
+						console.warn('[Router] No project found for repo, skipping GitHub reaction', {
+							repoFullName,
+						});
+						return;
+					}
+					const personaIdentities = await resolvePersonaIdentities(project.id);
+					await sendAcknowledgeReaction(
+						'github',
+						repoFullName,
+						payload,
+						personaIdentities,
+						project,
+					);
+				} catch (err) {
+					console.warn('[Router] GitHub reaction error:', String(err));
+				}
+			})();
 		}
 
 		const job: CascadeJob = {

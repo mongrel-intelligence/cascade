@@ -3,6 +3,7 @@ import { githubClient } from '../../github/client.js';
 import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { parseRepoFullName } from '../../utils/repo.js';
 import { isGitHubIssueCommentPayload, isGitHubPRReviewCommentPayload } from './types.js';
 import { requireTrelloCardId } from './utils.js';
 
@@ -70,7 +71,7 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 			repoFullName = payload.repository.full_name;
 
 			// Need to fetch PR for branch info and body
-			const [owner, repo] = repoFullName.split('/');
+			const { owner, repo } = parseRepoFullName(repoFullName);
 			const prDetails = await githubClient.getPR(owner, repo, prNumber);
 			prBranch = prDetails.headRef;
 			prBody = prDetails.body;
@@ -86,7 +87,7 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 			repoFullName = payload.repository.full_name;
 
 			// Fetch PR for body (needed for Trello card check)
-			const [owner, repo] = repoFullName.split('/');
+			const { owner, repo } = parseRepoFullName(repoFullName);
 			const prDetails = await githubClient.getPR(owner, repo, prNumber);
 			prBody = prDetails.body;
 		} else {
