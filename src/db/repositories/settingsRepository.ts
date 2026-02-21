@@ -166,9 +166,15 @@ export async function upsertProjectIntegration(
 	category: string,
 	provider: string,
 	config: Record<string, unknown>,
-	triggers: Record<string, boolean> = {},
+	triggers?: Record<string, boolean>,
 ) {
 	const db = getDb();
+	// Preserve existing triggers if not provided (prevents data loss from Integration tab saves)
+	let triggersToSave = triggers;
+	if (triggersToSave === undefined) {
+		const existing = await getIntegrationByProjectAndCategory(projectId, category);
+		triggersToSave = (existing?.triggers as Record<string, boolean>) ?? {};
+	}
 	// Delete then insert to handle the unique constraint
 	await db
 		.delete(projectIntegrations)
@@ -177,7 +183,7 @@ export async function upsertProjectIntegration(
 		);
 	const [row] = await db
 		.insert(projectIntegrations)
-		.values({ projectId, category, provider, config, triggers })
+		.values({ projectId, category, provider, config, triggers: triggersToSave })
 		.returning();
 	return row;
 }

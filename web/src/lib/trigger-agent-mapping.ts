@@ -55,7 +55,8 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 		{
 			key: 'issueTransitioned',
 			label: 'Issue transitioned to Briefing status',
-			description: 'Trigger briefing agent when an issue transitions to the Briefing status.',
+			description:
+				'Trigger briefing agent when an issue transitions to the Briefing status. (Shared across briefing, planning, and implementation agents)',
 			defaultValue: true,
 			pmProvider: 'jira',
 			category: 'pm',
@@ -81,7 +82,8 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 		{
 			key: 'issueTransitioned',
 			label: 'Issue transitioned to Planning status',
-			description: 'Trigger planning agent when an issue transitions to the Planning status.',
+			description:
+				'Trigger planning agent when an issue transitions to the Planning status. (Shared across briefing, planning, and implementation agents)',
 			defaultValue: true,
 			pmProvider: 'jira',
 			category: 'pm',
@@ -97,7 +99,8 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 		{
 			key: 'commentMention',
 			label: 'Comment @mention',
-			description: 'Trigger respond-to-planning-comment when the bot is @mentioned in a comment.',
+			description:
+				'Trigger respond-to-planning-comment when the bot is @mentioned in a comment. (Shared across planning and respond-to-planning-comment agents)',
 			defaultValue: true,
 			category: 'pm',
 		},
@@ -114,7 +117,8 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 		{
 			key: 'issueTransitioned',
 			label: 'Issue transitioned to Todo status',
-			description: 'Trigger implementation agent when an issue transitions to the Todo status.',
+			description:
+				'Trigger implementation agent when an issue transitions to the Todo status. (Shared across briefing, planning, and implementation agents)',
 			defaultValue: true,
 			pmProvider: 'jira',
 			category: 'pm',
@@ -191,7 +195,7 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 			key: 'commentMention',
 			label: 'Comment @mention',
 			description:
-				'Trigger respond-to-planning-comment when the bot is @mentioned in a card comment.',
+				'Trigger respond-to-planning-comment when the bot is @mentioned in a card comment. (Shared across planning and respond-to-planning-comment agents)',
 			defaultValue: true,
 			category: 'pm',
 		},

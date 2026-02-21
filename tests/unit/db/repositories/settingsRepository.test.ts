@@ -250,7 +250,7 @@ describe('settingsRepository', () => {
 		it('deletes then inserts integration', async () => {
 			mockDb.chain.where.mockResolvedValueOnce(undefined); // delete
 
-			await upsertProjectIntegration('p1', 'pm', 'trello', { boardId: 'abc' });
+			await upsertProjectIntegration('p1', 'pm', 'trello', { boardId: 'abc' }, {});
 
 			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
 			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
@@ -260,6 +260,34 @@ describe('settingsRepository', () => {
 				provider: 'trello',
 				config: { boardId: 'abc' },
 				triggers: {},
+			});
+		});
+
+		it('preserves existing triggers when triggers not provided', async () => {
+			// Mock getIntegrationByProjectAndCategory to return existing integration with triggers
+			mockDb.chain.where.mockResolvedValueOnce([
+				{
+					id: 1,
+					projectId: 'p1',
+					category: 'pm',
+					provider: 'trello',
+					config: {},
+					triggers: { cardMovedToBriefing: true, cardMovedToPlanning: false },
+				},
+			]); // getIntegrationByProjectAndCategory
+			mockDb.chain.where.mockResolvedValueOnce(undefined); // delete
+
+			await upsertProjectIntegration('p1', 'pm', 'trello', { boardId: 'xyz' });
+
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1); // getIntegrationByProjectAndCategory
+			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
+			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
+			expect(mockDb.chain.values).toHaveBeenCalledWith({
+				projectId: 'p1',
+				category: 'pm',
+				provider: 'trello',
+				config: { boardId: 'xyz' },
+				triggers: { cardMovedToBriefing: true, cardMovedToPlanning: false },
 			});
 		});
 	});

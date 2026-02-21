@@ -19,7 +19,7 @@ import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface AgentConfig {
 	id: number;
@@ -118,6 +118,15 @@ function AgentSection({
 	const agentScmTriggers = getTriggersForAgent(agentType).filter((t) => t.category === 'scm');
 
 	const hasTriggers = agentPmTriggers.length > 0 || agentScmTriggers.length > 0;
+
+	// Sync local state when props change (e.g., after another agent section saves shared triggers)
+	useEffect(() => {
+		setLocalPmTriggers(pmTriggers);
+	}, [pmTriggers]);
+
+	useEffect(() => {
+		setLocalScmTriggers(scmTriggers);
+	}, [scmTriggers]);
 
 	const handleSavePm = async () => {
 		setPmSaving(true);
@@ -269,6 +278,9 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const [maxIterations, setMaxIterations] = useState('');
 	const [agentBackend, setAgentBackend] = useState('');
 	const [prompt, setPrompt] = useState('');
+	const [localLifecycleTriggers, setLocalLifecycleTriggers] = useState<Record<string, unknown>>({});
+	const [lifecycleSaving, setLifecycleSaving] = useState(false);
+	const [lifecycleSaved, setLifecycleSaved] = useState(false);
 
 	const configsQueryKey = trpc.agentConfigs.list.queryOptions({ projectId }).queryKey;
 	const integrationsQueryKey = trpc.projects.integrations.list.queryOptions({ projectId }).queryKey;
@@ -378,6 +390,28 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		await updateTriggersMutation.mutateAsync({ category, triggers });
 	};
 
+	const handleSaveLifecycle = async () => {
+		setLifecycleSaving(true);
+		try {
+			const changed: Record<string, unknown> = {};
+			for (const t of LIFECYCLE_TRIGGERS) {
+				if (t.key in localLifecycleTriggers) {
+					changed[t.key] = localLifecycleTriggers[t.key];
+				}
+			}
+			await updateTriggersMutation.mutateAsync({ category: 'scm', triggers: changed });
+			setLifecycleSaved(true);
+			setTimeout(() => setLifecycleSaved(false), 2000);
+		} finally {
+			setLifecycleSaving(false);
+		}
+	};
+
+	// Sync lifecycle triggers from props
+	useEffect(() => {
+		setLocalLifecycleTriggers(scmTriggers);
+	}, [scmTriggers]);
+
 	return (
 		<div className="space-y-4">
 			<p className="text-sm text-muted-foreground">
@@ -438,17 +472,21 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 					</div>
 					<TriggerToggles
 						items={LIFECYCLE_TRIGGERS}
-						values={scmTriggers}
-						onChange={async (updated) => {
-							// Find the changed keys and save them
-							const changed: Record<string, unknown> = {};
-							for (const t of LIFECYCLE_TRIGGERS) {
-								if (t.key in updated) changed[t.key] = updated[t.key];
-							}
-							await updateTriggersMutation.mutateAsync({ category: 'scm', triggers: changed });
-						}}
+						values={localLifecycleTriggers}
+						onChange={setLocalLifecycleTriggers}
 						idPrefix="lifecycle"
 					/>
+					<div className="flex items-center gap-2">
+						<button
+							type="button"
+							onClick={handleSaveLifecycle}
+							disabled={lifecycleSaving}
+							className="inline-flex h-7 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+						>
+							{lifecycleSaving ? 'Saving...' : 'Save'}
+						</button>
+						{lifecycleSaved && <span className="text-xs text-muted-foreground">Saved</span>}
+					</div>
 				</div>
 			)}
 
