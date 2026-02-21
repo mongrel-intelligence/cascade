@@ -16,6 +16,7 @@ import {
 	findProjectByRepo,
 	getIntegrationCredential,
 } from '../config/provider.js';
+import { markdownToAdf } from '../pm/jira/adf.js';
 import type { ProjectConfig } from '../types/index.js';
 
 // ---------------------------------------------------------------------------
@@ -154,14 +155,15 @@ export async function postJiraAck(
 	}
 
 	const auth = Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString('base64');
-	const url = `${jiraBaseUrl}/rest/api/2/issue/${issueKey}/comment`;
+	const adfBody = markdownToAdf(message);
+	const url = `${jiraBaseUrl}/rest/api/3/issue/${issueKey}/comment`;
 	const response = await fetch(url, {
 		method: 'POST',
 		headers: {
 			Authorization: `Basic ${auth}`,
 			'Content-Type': 'application/json',
 		},
-		body: JSON.stringify({ body: message }),
+		body: JSON.stringify({ body: adfBody }),
 	});
 
 	if (!response.ok) {

@@ -274,10 +274,43 @@ describe('postJiraAck', () => {
 		expect(result).toBe('jira-comment-456');
 		expect(mockFetch).toHaveBeenCalledOnce();
 		const [url, options] = mockFetch.mock.calls[0];
-		expect(url).toBe('https://test.atlassian.net/rest/api/2/issue/PROJ-42/comment');
+		expect(url).toBe('https://test.atlassian.net/rest/api/3/issue/PROJ-42/comment');
 		expect(options.method).toBe('POST');
 		expect(options.headers.Authorization).toMatch(/^Basic /);
-		expect(JSON.parse(options.body)).toEqual({ body: 'Working on it...' });
+		const parsed = JSON.parse(options.body);
+		expect(parsed.body).toEqual({
+			type: 'doc',
+			version: 1,
+			content: [
+				{
+					type: 'paragraph',
+					content: [{ type: 'text', text: 'Working on it...' }],
+				},
+			],
+		});
+	});
+
+	it('converts markdown bold to ADF strong marks', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({ id: 'jira-comment-789' }),
+		});
+
+		const message =
+			'**🗺️ Planning implementation** — Studying the codebase and designing a step-by-step plan...';
+		const result = await postJiraAck('test', 'PROJ-42', message);
+
+		expect(result).toBe('jira-comment-789');
+		const [, options] = mockFetch.mock.calls[0];
+		const parsed = JSON.parse(options.body);
+		const paragraph = parsed.body.content[0];
+		expect(paragraph.type).toBe('paragraph');
+		// Bold text should have a 'strong' mark, not raw asterisks
+		const boldNode = paragraph.content.find((n: { marks?: { type: string }[] }) =>
+			n.marks?.some((m: { type: string }) => m.type === 'strong'),
+		);
+		expect(boldNode).toBeDefined();
+		expect(boldNode.text).toBe('🗺️ Planning implementation');
 	});
 
 	it('returns null when credentials are missing', async () => {
