@@ -12,205 +12,20 @@ import {
 } from '../agents/shared/runTracking.js';
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
-import { getAllProjectCredentials } from '../config/provider.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import { withGitHubToken } from '../github/client.js';
-import { getPersonaToken } from '../github/personas.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../utils/cascadeEnv.js';
 import { createFileLogger } from '../utils/fileLogger.js';
 import { setWatchdogCleanup } from '../utils/lifecycle.js';
 import { logger } from '../utils/logging.js';
-import { parseRepoFullName } from '../utils/repo.js';
 import { setupRemoteSquintDb } from '../utils/squintDb.js';
 import { getAgentProfile } from './agent-profiles.js';
+import { postProcessResult } from './postProcess.js';
 import { createProgressMonitor } from './progress.js';
-import type { AgentBackend, AgentBackendInput, LogWriter, ToolManifest } from './types.js';
-
-/**
- * Get the CLI tool manifests for CASCADE-specific tools.
- * These describe the tools available via cascade-tools CLI.
- */
-function getToolManifests(): ToolManifest[] {
-	return [
-		{
-			name: 'ReadWorkItem',
-			description:
-				'Read a work item (card/issue) with title, description, comments, checklists, and attachments.',
-			cliCommand: 'cascade-tools pm read-work-item',
-			parameters: {
-				workItemId: { type: 'string', required: true },
-				'include-comments': { type: 'boolean', default: true },
-			},
-		},
-		{
-			name: 'PostComment',
-			description: 'Post a comment to a work item (card/issue).',
-			cliCommand: 'cascade-tools pm post-comment',
-			parameters: {
-				workItemId: { type: 'string', required: true },
-				text: { type: 'string', required: true },
-				'text-file': {
-					type: 'string',
-					description: 'Path to file with comment text (prefer over --text for long content)',
-				},
-			},
-		},
-		{
-			name: 'UpdateWorkItem',
-			description: 'Update a work item title, description, or labels.',
-			cliCommand: 'cascade-tools pm update-work-item',
-			parameters: {
-				workItemId: { type: 'string', required: true },
-				title: { type: 'string' },
-				description: { type: 'string' },
-				'description-file': {
-					type: 'string',
-					description: 'Path to file with description (prefer over --description for long content)',
-				},
-			},
-		},
-		{
-			name: 'CreateWorkItem',
-			description: 'Create a new work item (card/issue).',
-			cliCommand: 'cascade-tools pm create-work-item',
-			parameters: {
-				containerId: { type: 'string', required: true },
-				title: { type: 'string', required: true },
-				'description-file': {
-					type: 'string',
-					description: 'Path to file with description (prefer over --description for long content)',
-				},
-			},
-		},
-		{
-			name: 'ListWorkItems',
-			description: 'List all work items in a container.',
-			cliCommand: 'cascade-tools pm list-work-items',
-			parameters: { containerId: { type: 'string', required: true } },
-		},
-		{
-			name: 'AddChecklist',
-			description: 'Add a checklist with items to a work item.',
-			cliCommand: 'cascade-tools pm add-checklist',
-			parameters: {
-				workItemId: { type: 'string', required: true },
-				name: { type: 'string', required: true },
-				item: { type: 'array', required: true },
-			},
-		},
-		{
-			name: 'UpdateChecklistItem',
-			description: 'Update a checklist item state on a work item.',
-			cliCommand: 'cascade-tools pm update-checklist-item',
-			parameters: {
-				workItemId: { type: 'string', required: true },
-				'check-item-id': { type: 'string', required: true },
-				state: { type: 'string', required: true, description: 'complete or incomplete' },
-			},
-		},
-		{
-			name: 'CreatePR',
-			description:
-				'Create a GitHub pull request. Handles the full workflow: stages changes, commits, pushes branch to remote, and creates the PR. ALWAYS use this instead of gh pr create or manual git push. If you have already committed your changes, use --no-commit to skip the commit step. The target base branch is set automatically — do not specify --base.',
-			cliCommand: 'cascade-tools github create-pr',
-			parameters: {
-				title: { type: 'string', required: true },
-				body: { type: 'string', required: true },
-				'body-file': {
-					type: 'string',
-					description: 'Path to file with PR body (prefer over --body for long content)',
-				},
-				head: { type: 'string', required: true },
-				'no-commit': {
-					type: 'boolean',
-					description: 'Skip staging and committing (use when changes are already committed)',
-				},
-				draft: { type: 'boolean', description: 'Create as draft PR' },
-			},
-		},
-		{
-			name: 'GetPRDetails',
-			description: 'Get details about a GitHub pull request.',
-			cliCommand: 'cascade-tools github get-pr-details',
-			parameters: {
-				prNumber: { type: 'number', required: true },
-			},
-		},
-		{
-			name: 'GetPRDiff',
-			description: 'Get the unified diff of all file changes in a PR.',
-			cliCommand: 'cascade-tools github get-pr-diff',
-			parameters: {
-				prNumber: { type: 'number', required: true },
-			},
-		},
-		{
-			name: 'GetPRChecks',
-			description: 'Get CI check status for a PR.',
-			cliCommand: 'cascade-tools github get-pr-checks',
-			parameters: {
-				prNumber: { type: 'number', required: true },
-			},
-		},
-		{
-			name: 'GetPRComments',
-			description: 'Get all review comments on a PR.',
-			cliCommand: 'cascade-tools github get-pr-comments',
-			parameters: {
-				prNumber: { type: 'number', required: true },
-			},
-		},
-		{
-			name: 'PostPRComment',
-			description: 'Post a comment on a GitHub pull request.',
-			cliCommand: 'cascade-tools github post-pr-comment',
-			parameters: {
-				prNumber: { type: 'number', required: true },
-				body: { type: 'string', required: true },
-				'body-file': {
-					type: 'string',
-					description: 'Path to file with comment body (prefer over --body for long content)',
-				},
-			},
-		},
-		{
-			name: 'UpdatePRComment',
-			description: 'Update an existing PR comment.',
-			cliCommand: 'cascade-tools github update-pr-comment',
-			parameters: {
-				commentId: { type: 'number', required: true },
-				body: { type: 'string', required: true },
-			},
-		},
-		{
-			name: 'ReplyToReviewComment',
-			description: 'Reply to a review comment on a PR.',
-			cliCommand: 'cascade-tools github reply-to-review-comment',
-			parameters: {
-				prNumber: { type: 'number', required: true },
-				commentId: { type: 'number', required: true },
-				body: { type: 'string', required: true },
-			},
-		},
-		{
-			name: 'CreatePRReview',
-			description: 'Submit a code review on a PR.',
-			cliCommand: 'cascade-tools github create-pr-review',
-			parameters: {
-				prNumber: { type: 'number', required: true },
-				event: { type: 'string', required: true },
-				body: { type: 'string', required: true },
-			},
-		},
-		{
-			name: 'Finish',
-			description: 'Validate and signal session completion.',
-			cliCommand: 'cascade-tools session finish',
-			parameters: { comment: { type: 'string', required: true } },
-		},
-	];
-}
+import { augmentProjectSecrets, resolveGitHubToken } from './secretBuilder.js';
+import { getToolManifests } from './toolManifests.js';
+import type { AgentBackend, AgentBackendInput, LogWriter } from './types.js';
 
 /**
  * Resolve the working directory — either a pre-existing log dir or a fresh repo clone.
@@ -260,7 +75,7 @@ async function buildBackendInput(
 	repoDir: string,
 	logWriter: LogWriter,
 	_log: ReturnType<typeof createAgentLogger>,
-	_backendName?: string,
+	gitHubToken: string | undefined,
 ): Promise<Omit<AgentBackendInput, 'progressReporter'>> {
 	const { project, config, cardId } = input;
 
@@ -311,37 +126,18 @@ async function buildBackendInput(
 
 	const cliToolsDir = new URL('../../bin', import.meta.url).pathname;
 
-	// Resolve all per-project secrets for subprocess injection
-	const projectSecrets = await getAllProjectCredentials(project.id);
+	// Build per-project secrets with CASCADE env var injections
+	const projectSecrets = await augmentProjectSecrets(project, agentType, input);
 
-	// Inject base branch so cascade-tools create-pr uses the correct target automatically
-	if (project.baseBranch) {
-		projectSecrets.CASCADE_BASE_BRANCH = project.baseBranch;
+	// Override GITHUB_TOKEN in subprocess secrets with agent-scoped token
+	if (gitHubToken && profile.needsGitHubToken) {
+		projectSecrets.GITHUB_TOKEN = gitHubToken;
 	}
 
-	// Inject JIRA integration config so cascade-tools can construct JiraPMProvider
-	if (project.jira) {
-		projectSecrets.CASCADE_JIRA_PROJECT_KEY = project.jira.projectKey;
-		projectSecrets.CASCADE_JIRA_BASE_URL = project.jira.baseUrl;
-		if (project.jira.statuses) {
-			projectSecrets.CASCADE_JIRA_STATUSES = JSON.stringify(project.jira.statuses);
-		}
+	// Pre-execute hook (e.g., post initial PR comment for review)
+	if (profile.preExecute) {
+		await profile.preExecute({ input, logWriter });
 	}
-
-	// Inject repo owner/name so cascade-tools auto-resolve without flags
-	const { owner: repoOwner, repo: repoName } = project.repo
-		? parseRepoFullName(project.repo)
-		: { owner: '', repo: '' };
-	if (repoOwner && repoName) {
-		projectSecrets.CASCADE_REPO_OWNER = repoOwner;
-		projectSecrets.CASCADE_REPO_NAME = repoName;
-	}
-
-	// Inject agent type so Finish command can validate without flags
-	projectSecrets.CASCADE_AGENT_TYPE = agentType;
-
-	// Inject PM type so cascade-tools uses the correct provider
-	projectSecrets.CASCADE_PM_TYPE = project.pm?.type ?? 'trello';
 
 	return {
 		agentType,
@@ -363,66 +159,6 @@ async function buildBackendInput(
 		blockGitPush: profile.blockGitPush,
 		...(Object.keys(projectSecrets).length > 0 && { projectSecrets }),
 	};
-}
-
-/**
- * Post-process a backend result: validate PR creation for implementation agents
- * and zero out cost for subscription-backed Claude Code sessions.
- */
-function postProcessResult(
-	result: Awaited<ReturnType<AgentBackend['execute']>>,
-	agentType: string,
-	backend: AgentBackend,
-	input: AgentInput & { project: ProjectConfig },
-	identifier: string,
-): void {
-	// Validate PR creation for implementation agents
-	if (agentType === 'implementation' && result.success && !result.prUrl) {
-		logger.warn('Implementation agent completed without creating a PR', {
-			identifier,
-			backend: backend.name,
-		});
-		result.success = false;
-		result.error = 'Implementation completed but no PR was created';
-	}
-
-	// Zero out cost for subscription-backed Claude Code sessions
-	if (
-		backend.name === 'claude-code' &&
-		input.project.agentBackend?.subscriptionCostZero === true &&
-		result.cost !== undefined &&
-		result.cost > 0
-	) {
-		logger.info('Zeroing Claude Code cost (subscription mode)', {
-			originalCost: result.cost,
-			project: input.project.id,
-		});
-		result.cost = 0;
-	}
-}
-
-function warnIfSubscriptionCostMismatch(_backend: AgentBackend, _project: ProjectConfig): void {
-	// No-op: ANTHROPIC_API_KEY is no longer used. Claude Code uses OAuth only.
-}
-
-/**
- * Resolve the GitHub token for profiles that need GitHub client access.
- * Uses the persona token system (GITHUB_TOKEN_IMPLEMENTER / GITHUB_TOKEN_REVIEWER).
- */
-async function resolveGitHubToken(
-	profile: ReturnType<typeof getAgentProfile>,
-	projectId: string,
-	agentType: string,
-): Promise<string | undefined> {
-	if (!profile.needsGitHubToken) return undefined;
-
-	try {
-		return await getPersonaToken(projectId, agentType);
-	} catch {
-		// Fall back to legacy GITHUB_TOKEN for projects not yet migrated
-		const secrets = await getAllProjectCredentials(projectId);
-		return secrets.GITHUB_TOKEN;
-	}
 }
 
 export async function executeWithBackend(
@@ -458,37 +194,13 @@ export async function executeWithBackend(
 		const profile = getAgentProfile(agentType);
 		const gitHubToken = await resolveGitHubToken(profile, input.project.id, agentType);
 
-		// Build backend input and run pre-execute, wrapped in GitHub token scope if needed
-		const resolvedRepoDir = repoDir;
-		const buildAndPrepare = async () => {
-			const partial = await buildBackendInput(
-				agentType,
-				input,
-				resolvedRepoDir,
-				logWriter,
-				log,
-				backend.name,
-			);
-
-			// Override GITHUB_TOKEN in subprocess secrets with agent-scoped token
-			if (gitHubToken && profile.needsGitHubToken) {
-				partial.projectSecrets = {
-					...partial.projectSecrets,
-					GITHUB_TOKEN: gitHubToken,
-				};
-			}
-
-			// Pre-execute hook (e.g., post initial PR comment for review)
-			if (profile.preExecute) {
-				await profile.preExecute({ input, logWriter });
-			}
-
-			return partial;
-		};
+		// Build backend input wrapped in GitHub token scope if needed
+		const buildPartial = () =>
+			buildBackendInput(agentType, input, repoDir as string, logWriter, log, gitHubToken);
 
 		const partialInput = gitHubToken
-			? await withGitHubToken(gitHubToken, buildAndPrepare)
-			: await buildAndPrepare();
+			? await withGitHubToken(gitHubToken, buildPartial)
+			: await buildPartial();
 
 		const runTrackingInput: RunTrackingInput = {
 			projectId: input.project.id,
@@ -524,7 +236,6 @@ export async function executeWithBackend(
 		const originalCwd = process.cwd();
 		process.chdir(repoDir);
 		monitor?.start();
-		warnIfSubscriptionCostMismatch(backend, input.project);
 
 		try {
 			const result = await backend.execute(backendInput);
