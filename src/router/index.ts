@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { findProjectByRepo } from '../config/provider.js';
 import { resolvePersonaIdentities } from '../github/personas.js';
 import { logWebhookCall } from '../utils/webhookLogger.js';
 import { type RouterProjectConfig, getProjectConfig, loadProjectConfig } from './config.js';
@@ -318,8 +319,6 @@ app.post('/github/webhook', async (c) => {
 		if (eventType === 'issue_comment' || eventType === 'pull_request_review_comment') {
 			void (async () => {
 				try {
-					// Find the project to resolve persona identities
-					const { findProjectByRepo } = await import('../config/provider.js');
 					const project = await findProjectByRepo(repoFullName);
 					if (!project) {
 						console.warn('[Router] No project found for repo, skipping GitHub reaction', {
@@ -328,7 +327,13 @@ app.post('/github/webhook', async (c) => {
 						return;
 					}
 					const personaIdentities = await resolvePersonaIdentities(project.id);
-					await sendAcknowledgeReaction('github', repoFullName, payload, personaIdentities);
+					await sendAcknowledgeReaction(
+						'github',
+						repoFullName,
+						payload,
+						personaIdentities,
+						project,
+					);
 				} catch (err) {
 					console.warn('[Router] GitHub reaction error:', String(err));
 				}

@@ -44,6 +44,7 @@ import {
 import type { PersonaIdentities } from '../../../src/github/personas.js';
 import { _resetJiraCloudIdCache, sendAcknowledgeReaction } from '../../../src/router/reactions.js';
 import { trelloClient, withTrelloCredentials } from '../../../src/trello/client.js';
+import type { ProjectConfig } from '../../../src/types/index.js';
 
 const mockGetIntegrationCredential = vi.mocked(getIntegrationCredential);
 const mockGetProjectGitHubToken = vi.mocked(getProjectGitHubToken);
@@ -70,6 +71,15 @@ const PERSONA_IDENTITIES: PersonaIdentities = {
 	implementer: 'implementer-bot',
 	reviewer: 'reviewer-bot',
 };
+
+const MOCK_PROJECT = {
+	id: PROJECT_ID,
+	name: 'Test',
+	repo: REPO_FULL_NAME,
+	baseBranch: 'main',
+	branchPrefix: 'feature/',
+	trello: { boardId: 'b1', lists: {}, labels: {} },
+} as ProjectConfig;
 
 const TRELLO_COMMENT_PAYLOAD = {
 	model: { id: 'board123', name: 'Test Board' },
@@ -245,6 +255,7 @@ describe('sendAcknowledgeReaction', () => {
 				REPO_FULL_NAME,
 				GITHUB_ISSUE_COMMENT_PAYLOAD,
 				PERSONA_IDENTITIES,
+				MOCK_PROJECT,
 			);
 
 			expect(mockFetch).toHaveBeenCalledOnce();
@@ -263,6 +274,7 @@ describe('sendAcknowledgeReaction', () => {
 				REPO_FULL_NAME,
 				GITHUB_PR_REVIEW_COMMENT_PAYLOAD,
 				PERSONA_IDENTITIES,
+				MOCK_PROJECT,
 			);
 
 			expect(mockFetch).toHaveBeenCalledOnce();
@@ -290,7 +302,13 @@ describe('sendAcknowledgeReaction', () => {
 				},
 			};
 
-			await sendAcknowledgeReaction('github', REPO_FULL_NAME, payloadNoMention, PERSONA_IDENTITIES);
+			await sendAcknowledgeReaction(
+				'github',
+				REPO_FULL_NAME,
+				payloadNoMention,
+				PERSONA_IDENTITIES,
+				MOCK_PROJECT,
+			);
 
 			expect(mockFetch).not.toHaveBeenCalled();
 			expect(console.log).toHaveBeenCalledWith(expect.stringContaining('no @implementer mention'));
@@ -311,6 +329,7 @@ describe('sendAcknowledgeReaction', () => {
 				REPO_FULL_NAME,
 				botCommentPayload,
 				PERSONA_IDENTITIES,
+				MOCK_PROJECT,
 			);
 
 			expect(mockFetch).not.toHaveBeenCalled();
@@ -335,6 +354,7 @@ describe('sendAcknowledgeReaction', () => {
 				REPO_FULL_NAME,
 				reviewerCommentPayload,
 				PERSONA_IDENTITIES,
+				MOCK_PROJECT,
 			);
 
 			expect(mockFetch).not.toHaveBeenCalled();
@@ -347,7 +367,13 @@ describe('sendAcknowledgeReaction', () => {
 				repository: { full_name: REPO_FULL_NAME },
 			};
 
-			await sendAcknowledgeReaction('github', REPO_FULL_NAME, payload, PERSONA_IDENTITIES);
+			await sendAcknowledgeReaction(
+				'github',
+				REPO_FULL_NAME,
+				payload,
+				PERSONA_IDENTITIES,
+				MOCK_PROJECT,
+			);
 
 			expect(mockFetch).not.toHaveBeenCalled();
 		});
@@ -365,24 +391,29 @@ describe('sendAcknowledgeReaction', () => {
 				repository: { full_name: REPO_FULL_NAME },
 			};
 
-			await sendAcknowledgeReaction('github', REPO_FULL_NAME, payload, PERSONA_IDENTITIES);
+			await sendAcknowledgeReaction(
+				'github',
+				REPO_FULL_NAME,
+				payload,
+				PERSONA_IDENTITIES,
+				MOCK_PROJECT,
+			);
 
 			expect(mockFetch).not.toHaveBeenCalled();
 		});
 
-		it('skips reaction when project not found for repo', async () => {
-			mockFindProjectByRepo.mockResolvedValueOnce(undefined);
-
+		it('skips reaction when no project provided', async () => {
 			await sendAcknowledgeReaction(
 				'github',
 				REPO_FULL_NAME,
 				GITHUB_ISSUE_COMMENT_PAYLOAD,
 				PERSONA_IDENTITIES,
+				// no project passed
 			);
 
 			expect(mockFetch).not.toHaveBeenCalled();
 			expect(console.warn).toHaveBeenCalledWith(
-				expect.stringContaining('No project found for repo'),
+				expect.stringContaining('No project provided'),
 				expect.objectContaining({ repoFullName: REPO_FULL_NAME }),
 			);
 		});
@@ -395,6 +426,7 @@ describe('sendAcknowledgeReaction', () => {
 				REPO_FULL_NAME,
 				GITHUB_ISSUE_COMMENT_PAYLOAD,
 				PERSONA_IDENTITIES,
+				MOCK_PROJECT,
 			);
 
 			expect(mockFetch).not.toHaveBeenCalled();
@@ -414,6 +446,7 @@ describe('sendAcknowledgeReaction', () => {
 					REPO_FULL_NAME,
 					GITHUB_ISSUE_COMMENT_PAYLOAD,
 					PERSONA_IDENTITIES,
+					MOCK_PROJECT,
 				),
 			).resolves.toBeUndefined();
 
@@ -440,6 +473,7 @@ describe('sendAcknowledgeReaction', () => {
 				REPO_FULL_NAME,
 				caseInsensitivePayload,
 				PERSONA_IDENTITIES,
+				MOCK_PROJECT,
 			);
 
 			expect(mockFetch).toHaveBeenCalledOnce();
