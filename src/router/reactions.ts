@@ -13,6 +13,7 @@ import { findProjectById, getIntegrationCredential } from '../config/provider.js
 import { type PersonaIdentities, isCascadeBot } from '../github/personas.js';
 import { trelloClient, withTrelloCredentials } from '../trello/client.js';
 import type { ProjectConfig } from '../types/index.js';
+import { parseRepoFullName } from '../utils/repo.js';
 
 // In-memory JIRA CloudId cache keyed by baseUrl
 const jiraCloudIdCache = new Map<string, string>();
@@ -166,7 +167,7 @@ async function sendGitHubReaction(
 		return;
 	}
 
-	const [owner, repo] = repoFullName.split('/');
+	const { owner, repo } = parseRepoFullName(repoFullName);
 	let url: string;
 	if (isIssueComment) {
 		url = `https://api.github.com/repos/${owner}/${repo}/issues/comments/${commentId}/reactions`;

@@ -5,19 +5,21 @@ import {
 	TrelloTriggerConfigSchema,
 	resolveGitHubTriggerEnabled,
 	resolveJiraTriggerEnabled,
+	resolveReadyToProcessEnabled,
 	resolveTrelloTriggerEnabled,
 } from '../../../src/config/triggerConfig.js';
 
 describe('TrelloTriggerConfigSchema', () => {
-	it('defaults all fields to true', () => {
+	it('defaults boolean fields to true', () => {
 		const result = TrelloTriggerConfigSchema.parse({});
 		expect(result).toEqual({
 			cardMovedToBriefing: true,
 			cardMovedToPlanning: true,
 			cardMovedToTodo: true,
-			readyToProcessLabel: true,
+			// readyToProcessLabel is optional — not present in default parse
 			commentMention: true,
 		});
+		expect(result.readyToProcessLabel).toBeUndefined();
 	});
 
 	it('accepts explicit false values', () => {
@@ -29,16 +31,27 @@ describe('TrelloTriggerConfigSchema', () => {
 		expect(result.readyToProcessLabel).toBe(false);
 		expect(result.cardMovedToBriefing).toBe(true); // default still true
 	});
+
+	it('accepts per-agent readyToProcessLabel object', () => {
+		const result = TrelloTriggerConfigSchema.parse({
+			readyToProcessLabel: { briefing: true, planning: false, implementation: true },
+		});
+		expect(result.readyToProcessLabel).toEqual({
+			briefing: true,
+			planning: false,
+			implementation: true,
+		});
+	});
 });
 
 describe('JiraTriggerConfigSchema', () => {
-	it('defaults all fields to true', () => {
+	it('defaults boolean fields to true, readyToProcessLabel optional', () => {
 		const result = JiraTriggerConfigSchema.parse({});
 		expect(result).toEqual({
 			issueTransitioned: true,
-			readyToProcessLabel: true,
 			commentMention: true,
 		});
+		expect(result.readyToProcessLabel).toBeUndefined();
 	});
 });
 
@@ -81,6 +94,30 @@ describe('resolveTrelloTriggerEnabled', () => {
 		expect(resolveTrelloTriggerEnabled({ cardMovedToPlanning: true }, 'cardMovedToPlanning')).toBe(
 			true,
 		);
+	});
+
+	it('returns false for readyToProcessLabel when boolean false', () => {
+		expect(resolveTrelloTriggerEnabled({ readyToProcessLabel: false }, 'readyToProcessLabel')).toBe(
+			false,
+		);
+	});
+
+	it('returns true for readyToProcessLabel when any agent is enabled in object form', () => {
+		expect(
+			resolveTrelloTriggerEnabled(
+				{ readyToProcessLabel: { briefing: false, planning: true, implementation: false } },
+				'readyToProcessLabel',
+			),
+		).toBe(true);
+	});
+
+	it('returns false for readyToProcessLabel when all agents disabled in object form', () => {
+		expect(
+			resolveTrelloTriggerEnabled(
+				{ readyToProcessLabel: { briefing: false, planning: false, implementation: false } },
+				'readyToProcessLabel',
+			),
+		).toBe(false);
 	});
 });
 
@@ -131,5 +168,47 @@ describe('resolveGitHubTriggerEnabled', () => {
 		expect(resolveGitHubTriggerEnabled({ checkSuiteSuccess: false }, 'checkSuiteSuccess')).toBe(
 			false,
 		);
+	});
+});
+
+describe('resolveReadyToProcessEnabled', () => {
+	it('returns true when config is undefined (backward compatible)', () => {
+		expect(resolveReadyToProcessEnabled(undefined, 'briefing')).toBe(true);
+		expect(resolveReadyToProcessEnabled(undefined, 'planning')).toBe(true);
+		expect(resolveReadyToProcessEnabled(undefined, 'implementation')).toBe(true);
+	});
+
+	it('returns true when readyToProcessLabel is not set', () => {
+		expect(resolveReadyToProcessEnabled({}, 'briefing')).toBe(true);
+	});
+
+	it('applies legacy boolean true to all agents', () => {
+		const config = { readyToProcessLabel: true as const };
+		expect(resolveReadyToProcessEnabled(config, 'briefing')).toBe(true);
+		expect(resolveReadyToProcessEnabled(config, 'planning')).toBe(true);
+		expect(resolveReadyToProcessEnabled(config, 'implementation')).toBe(true);
+	});
+
+	it('applies legacy boolean false to all agents', () => {
+		const config = { readyToProcessLabel: false as const };
+		expect(resolveReadyToProcessEnabled(config, 'briefing')).toBe(false);
+		expect(resolveReadyToProcessEnabled(config, 'planning')).toBe(false);
+		expect(resolveReadyToProcessEnabled(config, 'implementation')).toBe(false);
+	});
+
+	it('returns per-agent value from nested object', () => {
+		const config = {
+			readyToProcessLabel: { briefing: true, planning: false, implementation: true },
+		};
+		expect(resolveReadyToProcessEnabled(config, 'briefing')).toBe(true);
+		expect(resolveReadyToProcessEnabled(config, 'planning')).toBe(false);
+		expect(resolveReadyToProcessEnabled(config, 'implementation')).toBe(true);
+	});
+
+	it('defaults to true for unknown agent types', () => {
+		const config = {
+			readyToProcessLabel: { briefing: false, planning: false, implementation: false },
+		};
+		expect(resolveReadyToProcessEnabled(config, 'unknown-agent')).toBe(true);
 	});
 });
