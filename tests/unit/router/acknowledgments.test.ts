@@ -32,6 +32,8 @@ import {
 	getIntegrationCredential,
 } from '../../../src/config/provider.js';
 import {
+	_resetJiraBotCache,
+	_resetTrelloBotCache,
 	deleteGitHubAck,
 	deleteJiraAck,
 	deleteTrelloAck,
@@ -39,6 +41,8 @@ import {
 	postJiraAck,
 	postTrelloAck,
 	resolveGitHubTokenForAck,
+	resolveJiraBotAccountId,
+	resolveTrelloBotMemberId,
 } from '../../../src/router/acknowledgments.js';
 
 const mockGetIntegrationCredential = vi.mocked(getIntegrationCredential);
@@ -93,6 +97,8 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.restoreAllMocks();
+	_resetJiraBotCache();
+	_resetTrelloBotCache();
 });
 
 describe('postTrelloAck', () => {
@@ -372,6 +378,140 @@ describe('resolveGitHubTokenForAck', () => {
 		mockGetProjectGitHubToken.mockRejectedValue(new Error('Missing token'));
 
 		const result = await resolveGitHubTokenForAck('owner/repo');
+
+		expect(result).toBeNull();
+	});
+});
+
+describe('resolveJiraBotAccountId', () => {
+	it('returns account ID from /rest/api/2/myself', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({ accountId: 'jira-bot-123' }),
+		});
+
+		const result = await resolveJiraBotAccountId('test');
+
+		expect(result).toBe('jira-bot-123');
+		expect(mockFetch).toHaveBeenCalledOnce();
+		const [url, options] = mockFetch.mock.calls[0];
+		expect(url).toBe('https://test.atlassian.net/rest/api/2/myself');
+		expect(options.headers.Authorization).toMatch(/^Basic /);
+	});
+
+	it('caches the result for subsequent calls', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({ accountId: 'jira-bot-123' }),
+		});
+
+		const result1 = await resolveJiraBotAccountId('test');
+		const result2 = await resolveJiraBotAccountId('test');
+
+		expect(result1).toBe('jira-bot-123');
+		expect(result2).toBe('jira-bot-123');
+		expect(mockFetch).toHaveBeenCalledOnce(); // Only one API call
+	});
+
+	it('returns null when credentials are missing', async () => {
+		mockGetIntegrationCredential.mockRejectedValue(new Error('not found'));
+
+		const result = await resolveJiraBotAccountId('test');
+
+		expect(result).toBeNull();
+		expect(mockFetch).not.toHaveBeenCalled();
+	});
+
+	it('returns null when JIRA base URL is missing', async () => {
+		mockFindProjectById.mockResolvedValue({
+			id: 'test',
+			name: 'Test',
+			repo: 'owner/repo',
+			baseBranch: 'main',
+			branchPrefix: 'feature/',
+		});
+
+		const result = await resolveJiraBotAccountId('test');
+
+		expect(result).toBeNull();
+		expect(mockFetch).not.toHaveBeenCalled();
+	});
+
+	it('returns null on API error', async () => {
+		mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
+
+		const result = await resolveJiraBotAccountId('test');
+
+		expect(result).toBeNull();
+	});
+
+	it('returns null when response has no accountId', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({}),
+		});
+
+		const result = await resolveJiraBotAccountId('test');
+
+		expect(result).toBeNull();
+	});
+});
+
+describe('resolveTrelloBotMemberId', () => {
+	it('returns member ID from /1/members/me', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({ id: 'trello-bot-456' }),
+		});
+
+		const result = await resolveTrelloBotMemberId('test');
+
+		expect(result).toBe('trello-bot-456');
+		expect(mockFetch).toHaveBeenCalledOnce();
+		const [url] = mockFetch.mock.calls[0];
+		expect(url).toContain('https://api.trello.com/1/members/me');
+		expect(url).toContain('key=test-trello-key');
+		expect(url).toContain('token=test-trello-token');
+	});
+
+	it('caches the result for subsequent calls', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({ id: 'trello-bot-456' }),
+		});
+
+		const result1 = await resolveTrelloBotMemberId('test');
+		const result2 = await resolveTrelloBotMemberId('test');
+
+		expect(result1).toBe('trello-bot-456');
+		expect(result2).toBe('trello-bot-456');
+		expect(mockFetch).toHaveBeenCalledOnce(); // Only one API call
+	});
+
+	it('returns null when credentials are missing', async () => {
+		mockGetIntegrationCredential.mockRejectedValue(new Error('not found'));
+
+		const result = await resolveTrelloBotMemberId('test');
+
+		expect(result).toBeNull();
+		expect(mockFetch).not.toHaveBeenCalled();
+	});
+
+	it('returns null on API error', async () => {
+		mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
+
+		const result = await resolveTrelloBotMemberId('test');
+
+		expect(result).toBeNull();
+	});
+
+	it('returns null when response has no id', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({}),
+		});
+
+		const result = await resolveTrelloBotMemberId('test');
 
 		expect(result).toBeNull();
 	});

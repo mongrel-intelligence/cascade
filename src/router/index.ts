@@ -3,7 +3,11 @@ import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { INITIAL_MESSAGES } from '../config/agentMessages.js';
 import { findProjectByRepo } from '../config/provider.js';
-import { type PersonaIdentities, resolvePersonaIdentities } from '../github/personas.js';
+import {
+	type PersonaIdentities,
+	isCascadeBot,
+	resolvePersonaIdentities,
+} from '../github/personas.js';
 import { registerBuiltInTriggers } from '../triggers/builtins.js';
 import { createTriggerRegistry } from '../triggers/registry.js';
 import type { TriggerContext } from '../types/index.js';
@@ -13,6 +17,8 @@ import {
 	postJiraAck,
 	postTrelloAck,
 	resolveGitHubTokenForAck,
+	resolveJiraBotAccountId,
+	resolveTrelloBotMemberId,
 } from './acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from './config.js';
 import { extractPRNumber } from './notifications.js';
@@ -358,6 +364,25 @@ app.post('/trello/webhook', async (c) => {
 	});
 
 	if (shouldProcess && project && cardId) {
+		// Skip self-authored Trello comments to prevent infinite loops
+		if (actionType === 'commentCard') {
+			const action = (payload as Record<string, unknown>).action as
+				| Record<string, unknown>
+				| undefined;
+			const commentAuthorId = action?.idMemberCreator as string | undefined;
+			if (commentAuthorId) {
+				try {
+					const botId = await resolveTrelloBotMemberId(project.id);
+					if (botId && commentAuthorId === botId) {
+						console.log('[Router] Ignoring self-authored Trello comment');
+						return c.text('OK', 200);
+					}
+				} catch {
+					// Identity resolution failed — proceed normally
+				}
+			}
+		}
+
 		console.log('[Router] Queueing Trello job:', { actionType, cardId, projectId: project.id });
 
 		// Fire-and-forget acknowledgment reaction — only for comment actions
@@ -482,6 +507,28 @@ app.post('/github/webhook', async (c) => {
 	});
 
 	if (shouldProcess) {
+		// Skip self-authored GitHub comments to prevent infinite loops
+		if (eventType === 'issue_comment' || eventType === 'pull_request_review_comment') {
+			const commentLogin = (p.comment as Record<string, unknown> | undefined)?.user as
+				| Record<string, unknown>
+				| undefined;
+			const login = commentLogin?.login as string | undefined;
+			if (login) {
+				try {
+					const project = await findProjectByRepo(repoFullName);
+					if (project) {
+						const personas = await resolvePersonaIdentities(project.id);
+						if (isCascadeBot(login, personas)) {
+							console.log('[Router] Ignoring self-authored GitHub comment');
+							return c.text('OK', 200);
+						}
+					}
+				} catch {
+					// Persona resolution failed — proceed normally
+				}
+			}
+		}
+
 		console.log('[Router] Queueing GitHub job:', { eventType, repoFullName });
 
 		// Fire-and-forget acknowledgment reaction — only for comment events that @mention the bot
@@ -604,6 +651,24 @@ app.post('/jira/webhook', async (c) => {
 	});
 
 	if (shouldProcess && project) {
+		// Skip self-authored JIRA comments to prevent infinite loops
+		if (webhookEvent.startsWith('comment_')) {
+			const comment = p.comment as Record<string, unknown> | undefined;
+			const author = comment?.author as Record<string, unknown> | undefined;
+			const commentAuthorId = author?.accountId as string | undefined;
+			if (commentAuthorId) {
+				try {
+					const botId = await resolveJiraBotAccountId(project.id);
+					if (botId && commentAuthorId === botId) {
+						console.log('[Router] Ignoring self-authored JIRA comment');
+						return c.text('OK', 200);
+					}
+				} catch {
+					// Identity resolution failed — proceed normally
+				}
+			}
+		}
+
 		await queueJiraJob(project, issueKey, webhookEvent, payload, config.fullProjects);
 	} else {
 		console.log(`[Router] Ignoring JIRA: ${webhookEvent}`);

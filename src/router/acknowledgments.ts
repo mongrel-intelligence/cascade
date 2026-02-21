@@ -209,6 +209,104 @@ export async function deleteJiraAck(
 }
 
 // ---------------------------------------------------------------------------
+// Bot identity resolution (cached, for self-authored comment detection)
+// ---------------------------------------------------------------------------
+
+const IDENTITY_CACHE_TTL_MS = 60_000; // 60 seconds
+
+const jiraBotCache = new Map<string, { accountId: string; expiresAt: number }>();
+
+/**
+ * Resolve the JIRA account ID for the bot credentials linked to a project.
+ * Cached per-project with 60s TTL. Returns null on any failure.
+ */
+export async function resolveJiraBotAccountId(projectId: string): Promise<string | null> {
+	const cached = jiraBotCache.get(projectId);
+	if (cached && Date.now() < cached.expiresAt) return cached.accountId;
+
+	let jiraEmail: string;
+	let jiraApiToken: string;
+	let jiraBaseUrl: string;
+	try {
+		jiraEmail = await getIntegrationCredential(projectId, 'pm', 'email');
+		jiraApiToken = await getIntegrationCredential(projectId, 'pm', 'api_token');
+		const project = await findProjectById(projectId);
+		jiraBaseUrl = project?.jira?.baseUrl ?? '';
+		if (!jiraBaseUrl) throw new Error('Missing JIRA base URL');
+	} catch {
+		return null;
+	}
+
+	const auth = Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString('base64');
+	try {
+		const response = await fetch(`${jiraBaseUrl}/rest/api/2/myself`, {
+			headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' },
+		});
+		if (!response.ok) return null;
+
+		const data = (await response.json()) as { accountId?: string };
+		if (!data.accountId) return null;
+
+		jiraBotCache.set(projectId, {
+			accountId: data.accountId,
+			expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS,
+		});
+		return data.accountId;
+	} catch {
+		return null;
+	}
+}
+
+/** @internal Visible for testing only */
+export function _resetJiraBotCache(): void {
+	jiraBotCache.clear();
+}
+
+const trelloBotCache = new Map<string, { memberId: string; expiresAt: number }>();
+
+/**
+ * Resolve the Trello member ID for the bot credentials linked to a project.
+ * Cached per-project with 60s TTL. Returns null on any failure.
+ */
+export async function resolveTrelloBotMemberId(projectId: string): Promise<string | null> {
+	const cached = trelloBotCache.get(projectId);
+	if (cached && Date.now() < cached.expiresAt) return cached.memberId;
+
+	let trelloApiKey: string;
+	let trelloToken: string;
+	try {
+		trelloApiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
+		trelloToken = await getIntegrationCredential(projectId, 'pm', 'token');
+	} catch {
+		return null;
+	}
+
+	try {
+		const response = await fetch(
+			`https://api.trello.com/1/members/me?key=${trelloApiKey}&token=${trelloToken}`,
+			{ headers: { Accept: 'application/json' } },
+		);
+		if (!response.ok) return null;
+
+		const data = (await response.json()) as { id?: string };
+		if (!data.id) return null;
+
+		trelloBotCache.set(projectId, {
+			memberId: data.id,
+			expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS,
+		});
+		return data.id;
+	} catch {
+		return null;
+	}
+}
+
+/** @internal Visible for testing only */
+export function _resetTrelloBotCache(): void {
+	trelloBotCache.clear();
+}
+
+// ---------------------------------------------------------------------------
 // Resolve GitHub token for router-side ack posting
 // ---------------------------------------------------------------------------
 
