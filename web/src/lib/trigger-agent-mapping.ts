@@ -40,6 +40,30 @@ export const LIFECYCLE_TRIGGERS: TriggerDef[] = [
 ];
 
 /**
+ * Shared PM triggers that affect multiple agent types.
+ * Displayed once in a dedicated section rather than duplicated per-agent.
+ */
+export const SHARED_PM_TRIGGERS: TriggerDef[] = [
+	{
+		key: 'issueTransitioned',
+		label: 'Issue Transitioned',
+		description:
+			'Trigger agent when a JIRA issue transitions to a configured status. Affects briefing, planning, and implementation agents.',
+		defaultValue: true,
+		pmProvider: 'jira',
+		category: 'pm',
+	},
+	{
+		key: 'commentMention',
+		label: 'Comment @mention',
+		description:
+			'Trigger agent when the bot is @mentioned in a card/issue comment. Affects planning and respond-to-planning-comment agents.',
+		defaultValue: true,
+		category: 'pm',
+	},
+];
+
+/**
  * Map from agent type to the trigger toggles relevant to it.
  */
 export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
@@ -50,15 +74,6 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 			description: 'Trigger briefing agent when a card is moved to the Briefing list.',
 			defaultValue: true,
 			pmProvider: 'trello',
-			category: 'pm',
-		},
-		{
-			key: 'issueTransitioned',
-			label: 'Issue transitioned to Briefing status',
-			description:
-				'Trigger briefing agent when an issue transitions to the Briefing status. (Shared across briefing, planning, and implementation agents)',
-			defaultValue: true,
-			pmProvider: 'jira',
 			category: 'pm',
 		},
 		{
@@ -80,27 +95,10 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 			category: 'pm',
 		},
 		{
-			key: 'issueTransitioned',
-			label: 'Issue transitioned to Planning status',
-			description:
-				'Trigger planning agent when an issue transitions to the Planning status. (Shared across briefing, planning, and implementation agents)',
-			defaultValue: true,
-			pmProvider: 'jira',
-			category: 'pm',
-		},
-		{
 			key: 'readyToProcessLabel.planning',
 			label: 'Ready to Process label',
 			description:
 				'Trigger planning agent when the "Ready to Process" label is added to a card in the Planning list.',
-			defaultValue: true,
-			category: 'pm',
-		},
-		{
-			key: 'commentMention',
-			label: 'Comment @mention',
-			description:
-				'Trigger respond-to-planning-comment when the bot is @mentioned in a comment. (Shared across planning and respond-to-planning-comment agents)',
 			defaultValue: true,
 			category: 'pm',
 		},
@@ -112,15 +110,6 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 			description: 'Trigger implementation agent when a card is moved to the Todo list.',
 			defaultValue: true,
 			pmProvider: 'trello',
-			category: 'pm',
-		},
-		{
-			key: 'issueTransitioned',
-			label: 'Issue transitioned to Todo status',
-			description:
-				'Trigger implementation agent when an issue transitions to the Todo status. (Shared across briefing, planning, and implementation agents)',
-			defaultValue: true,
-			pmProvider: 'jira',
 			category: 'pm',
 		},
 		{
@@ -190,16 +179,7 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 			category: 'scm',
 		},
 	],
-	'respond-to-planning-comment': [
-		{
-			key: 'commentMention',
-			label: 'Comment @mention',
-			description:
-				'Trigger respond-to-planning-comment when the bot is @mentioned in a card comment. (Shared across planning and respond-to-planning-comment agents)',
-			defaultValue: true,
-			category: 'pm',
-		},
-	],
+	'respond-to-planning-comment': [],
 };
 
 /**

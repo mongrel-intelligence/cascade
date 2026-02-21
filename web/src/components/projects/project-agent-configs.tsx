@@ -13,13 +13,14 @@ import {
 import {
 	ALL_AGENT_TYPES,
 	LIFECYCLE_TRIGGERS,
+	SHARED_PM_TRIGGERS,
 	getTriggersForAgent,
 } from '@/lib/trigger-agent-mapping.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 interface AgentConfig {
 	id: number;
@@ -281,6 +282,9 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const [localLifecycleTriggers, setLocalLifecycleTriggers] = useState<Record<string, unknown>>({});
 	const [lifecycleSaving, setLifecycleSaving] = useState(false);
 	const [lifecycleSaved, setLifecycleSaved] = useState(false);
+	const [localSharedPmTriggers, setLocalSharedPmTriggers] = useState<Record<string, unknown>>({});
+	const [sharedPmSaving, setSharedPmSaving] = useState(false);
+	const [sharedPmSaved, setSharedPmSaved] = useState(false);
 
 	const configsQueryKey = trpc.agentConfigs.list.queryOptions({ projectId }).queryKey;
 	const integrationsQueryKey = trpc.projects.integrations.list.queryOptions({ projectId }).queryKey;
@@ -357,24 +361,40 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		},
 	});
 
+	// Derive trigger values from query data (safe to compute even while loading — defaults to {})
+	const integrations = (integrationsQuery.data ?? []) as Array<Record<string, unknown>>;
+	const pmIntegration = integrations.find((i) => i.category === 'pm');
+	const scmIntegration = integrations.find((i) => i.category === 'scm');
+	const emptyTriggers = useMemo<Record<string, unknown>>(() => ({}), []);
+	const pmTriggers = (pmIntegration?.triggers as Record<string, unknown>) ?? emptyTriggers;
+	const scmTriggers = (scmIntegration?.triggers as Record<string, unknown>) ?? emptyTriggers;
+
+	// Sync lifecycle and shared PM trigger state from query data (must be before early return)
+	useEffect(() => {
+		setLocalLifecycleTriggers(scmTriggers);
+	}, [scmTriggers]);
+
+	useEffect(() => {
+		setLocalSharedPmTriggers(pmTriggers);
+	}, [pmTriggers]);
+
 	if (configsQuery.isLoading || integrationsQuery.isLoading) {
 		return <div className="py-4 text-muted-foreground">Loading agent configs...</div>;
 	}
 
 	const configs = (configsQuery.data ?? []) as AgentConfig[];
-	const integrations = (integrationsQuery.data ?? []) as Array<Record<string, unknown>>;
-
-	const pmIntegration = integrations.find((i) => i.category === 'pm');
-	const scmIntegration = integrations.find((i) => i.category === 'scm');
 	const pmProvider = (pmIntegration?.provider as string) ?? 'trello';
-	const pmTriggers = (pmIntegration?.triggers as Record<string, unknown>) ?? {};
-	const scmTriggers = (scmIntegration?.triggers as Record<string, unknown>) ?? {};
 
 	// Build a map of agentType → AgentConfig for quick lookup
 	const configByAgent = new Map<string, AgentConfig>();
 	for (const c of configs) {
 		configByAgent.set(c.agentType, c);
 	}
+
+	// Filter shared PM triggers by current PM provider
+	const filteredSharedPmTriggers = SHARED_PM_TRIGGERS.filter(
+		(t) => !t.pmProvider || t.pmProvider === pmProvider,
+	);
 
 	const activeMutation = editing ? updateMutation : createMutation;
 
@@ -411,10 +431,22 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		}
 	};
 
-	// Sync lifecycle triggers from props
-	useEffect(() => {
-		setLocalLifecycleTriggers(scmTriggers);
-	}, [scmTriggers]);
+	const handleSaveSharedPm = async () => {
+		setSharedPmSaving(true);
+		try {
+			const changed: Record<string, unknown> = {};
+			for (const t of filteredSharedPmTriggers) {
+				if (t.key in localSharedPmTriggers) {
+					changed[t.key] = localSharedPmTriggers[t.key];
+				}
+			}
+			await updateTriggersMutation.mutateAsync({ category: 'pm', triggers: changed });
+			setSharedPmSaved(true);
+			setTimeout(() => setSharedPmSaved(false), 2000);
+		} finally {
+			setSharedPmSaving(false);
+		}
+	};
 
 	return (
 		<div className="space-y-4">
@@ -464,6 +496,35 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			>
 				<Plus className="h-4 w-4" /> Add Custom Agent Config
 			</button>
+
+			{/* Shared PM triggers section */}
+			{filteredSharedPmTriggers.length > 0 && (
+				<div className="rounded-lg border border-border p-4 space-y-3">
+					<div>
+						<h3 className="text-sm font-medium">Shared PM Triggers</h3>
+						<p className="text-xs text-muted-foreground mt-0.5">
+							These triggers affect multiple agent types and are controlled globally.
+						</p>
+					</div>
+					<TriggerToggles
+						items={filteredSharedPmTriggers}
+						values={localSharedPmTriggers}
+						onChange={setLocalSharedPmTriggers}
+						idPrefix="shared-pm"
+					/>
+					<div className="flex items-center gap-2">
+						<button
+							type="button"
+							onClick={handleSaveSharedPm}
+							disabled={sharedPmSaving}
+							className="inline-flex h-7 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+						>
+							{sharedPmSaving ? 'Saving...' : 'Save'}
+						</button>
+						{sharedPmSaved && <span className="text-xs text-muted-foreground">Saved</span>}
+					</div>
+				</div>
+			)}
 
 			{/* Lifecycle triggers section */}
 			{LIFECYCLE_TRIGGERS.length > 0 && (
