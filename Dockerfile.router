@@ -29,6 +29,8 @@ COPY --from=builder /app/dist/types ./dist/types
 COPY --from=builder /app/dist/db ./dist/db
 COPY --from=builder /app/dist/utils ./dist/utils
 COPY --from=builder /app/dist/trello ./dist/trello
+COPY --from=builder /app/dist/github ./dist/github
+COPY --from=builder /app/dist/jira ./dist/jira
 
 # Copy config
 COPY config ./config
