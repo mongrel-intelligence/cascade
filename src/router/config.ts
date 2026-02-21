@@ -31,14 +31,9 @@ export interface RouterConfig {
 	dockerNetwork: string;
 }
 
-// Cached project config for fast webhook filtering
-let projectConfig: { projects: RouterProjectConfig[] } | null = null;
-
 export async function loadProjectConfig(): Promise<{ projects: RouterProjectConfig[] }> {
-	if (projectConfig) return projectConfig;
-
 	const config: CascadeConfig = await loadConfig();
-	projectConfig = {
+	return {
 		projects: config.projects.map((p) => ({
 			id: p.id,
 			repo: p.repo,
@@ -58,15 +53,6 @@ export async function loadProjectConfig(): Promise<{ projects: RouterProjectConf
 			}),
 		})),
 	};
-	console.log(`[Router] Loaded config with ${projectConfig.projects.length} projects`);
-	return projectConfig;
-}
-
-export function getProjectConfig(): { projects: RouterProjectConfig[] } {
-	if (!projectConfig) {
-		throw new Error('[Router] Config not loaded yet. Call loadProjectConfig() first.');
-	}
-	return projectConfig;
 }
 
 // Router runtime config from environment
