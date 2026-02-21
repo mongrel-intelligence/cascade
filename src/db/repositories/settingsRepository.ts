@@ -182,6 +182,43 @@ export async function upsertProjectIntegration(
 	return row;
 }
 
+/**
+ * Update only the triggers column for an existing integration.
+ * Merges the provided triggers with any existing ones (nested keys are merged).
+ */
+export async function updateProjectIntegrationTriggers(
+	projectId: string,
+	category: string,
+	triggers: Record<string, unknown>,
+) {
+	const db = getDb();
+	const existing = await getIntegrationByProjectAndCategory(projectId, category);
+	if (!existing) {
+		throw new Error(`No ${category} integration found for project ${projectId}`);
+	}
+	// Deep-merge triggers: preserve existing top-level keys, merge nested objects
+	const existingTriggers = (existing.triggers as Record<string, unknown>) ?? {};
+	const merged: Record<string, unknown> = { ...existingTriggers };
+	for (const [key, value] of Object.entries(triggers)) {
+		if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+			// Merge nested object
+			const existingChild =
+				typeof merged[key] === 'object' && merged[key] !== null
+					? (merged[key] as Record<string, unknown>)
+					: {};
+			merged[key] = { ...existingChild, ...(value as Record<string, unknown>) };
+		} else {
+			merged[key] = value;
+		}
+	}
+	await db
+		.update(projectIntegrations)
+		.set({ triggers: merged, updatedAt: new Date() })
+		.where(
+			and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.category, category)),
+		);
+}
+
 export async function deleteProjectIntegration(projectId: string, category: string) {
 	const db = getDb();
 	await db

@@ -82,51 +82,6 @@ function fromKVPairs(pairs: KVPair[]): Record<string, string> {
 	return result;
 }
 
-interface TriggerToggleItem {
-	key: string;
-	label: string;
-	description: string;
-	defaultValue: boolean;
-}
-
-function TriggerToggles({
-	title,
-	items,
-	values,
-	onChange,
-}: {
-	title: string;
-	items: TriggerToggleItem[];
-	values: Record<string, boolean>;
-	onChange: (values: Record<string, boolean>) => void;
-}) {
-	return (
-		<div className="space-y-3">
-			<Label className="text-sm font-medium">{title}</Label>
-			{items.map((item) => {
-				const value = item.key in values ? values[item.key] : item.defaultValue;
-				return (
-					<div key={item.key} className="flex items-start gap-3">
-						<input
-							type="checkbox"
-							id={`trigger-${item.key}`}
-							checked={value}
-							onChange={(e) => onChange({ ...values, [item.key]: e.target.checked })}
-							className="mt-0.5 h-4 w-4 rounded border-input"
-						/>
-						<div>
-							<label htmlFor={`trigger-${item.key}`} className="text-sm font-medium cursor-pointer">
-								{item.label}
-							</label>
-							<p className="text-xs text-muted-foreground">{item.description}</p>
-						</div>
-					</div>
-				);
-			})}
-		</div>
-	);
-}
-
 type IntegrationCategory = 'pm' | 'scm';
 
 interface CredentialOption {
@@ -318,71 +273,15 @@ function IntegrationCredentialSlots({
 // PM Tab (Trello / JIRA)
 // ============================================================================
 
-const TRELLO_TRIGGERS: TriggerToggleItem[] = [
-	{
-		key: 'cardMovedToBriefing',
-		label: 'Card moved to Briefing',
-		description: 'Trigger briefing agent when card is moved to the briefing list.',
-		defaultValue: true,
-	},
-	{
-		key: 'cardMovedToPlanning',
-		label: 'Card moved to Planning',
-		description: 'Trigger planning agent when card is moved to the planning list.',
-		defaultValue: true,
-	},
-	{
-		key: 'cardMovedToTodo',
-		label: 'Card moved to Todo',
-		description: 'Trigger implementation agent when card is moved to the todo list.',
-		defaultValue: true,
-	},
-	{
-		key: 'readyToProcessLabel',
-		label: 'Ready to Process label',
-		description: 'Trigger agent when the "Ready to Process" label is added.',
-		defaultValue: true,
-	},
-	{
-		key: 'commentMention',
-		label: 'Comment @mention',
-		description: 'Trigger respond-to-planning-comment when the bot is @mentioned in a comment.',
-		defaultValue: true,
-	},
-];
-
-const JIRA_TRIGGERS: TriggerToggleItem[] = [
-	{
-		key: 'issueTransitioned',
-		label: 'Issue transitioned',
-		description: 'Trigger agent when an issue transitions to a configured status.',
-		defaultValue: true,
-	},
-	{
-		key: 'readyToProcessLabel',
-		label: 'Ready to Process label',
-		description: 'Trigger agent when the ready-to-process label is added.',
-		defaultValue: true,
-	},
-	{
-		key: 'commentMention',
-		label: 'Comment @mention',
-		description: 'Trigger respond-to-planning-comment when the bot is @mentioned in a comment.',
-		defaultValue: true,
-	},
-];
-
 function PMTab({
 	projectId,
 	initialProvider,
 	initialConfig,
-	initialTriggers,
 	initialCredentials,
 }: {
 	projectId: string;
 	initialProvider: string;
 	initialConfig?: Record<string, unknown>;
-	initialTriggers?: Record<string, boolean>;
 	initialCredentials: Map<string, number>;
 }) {
 	const queryClient = useQueryClient();
@@ -391,7 +290,6 @@ function PMTab({
 	const orgCredentials = (credentialsQuery.data ?? []) as CredentialOption[];
 
 	const [provider, setProvider] = useState(initialProvider || 'trello');
-	const [triggers, setTriggers] = useState<Record<string, boolean>>(initialTriggers ?? {});
 	const [credentialMap, setCredentialMap] = useState<Map<string, number>>(initialCredentials);
 
 	// Trello fields
@@ -433,10 +331,6 @@ function PMTab({
 	}, [initialConfig, initialProvider]);
 
 	useEffect(() => {
-		setTriggers(initialTriggers ?? {});
-	}, [initialTriggers]);
-
-	useEffect(() => {
 		setCredentialMap(initialCredentials);
 	}, [initialCredentials]);
 
@@ -462,12 +356,12 @@ function PMTab({
 				};
 			}
 
+			// Note: triggers are intentionally omitted — they are managed via the Agent Configs tab
 			const result = await trpcClient.projects.integrations.upsert.mutate({
 				projectId,
 				category: 'pm',
 				provider,
 				config,
-				triggers,
 			});
 
 			// Set integration credentials
@@ -505,7 +399,6 @@ function PMTab({
 					value={provider}
 					onChange={(e) => {
 						setProvider(e.target.value);
-						setTriggers({});
 						setCredentialMap(new Map());
 					}}
 					className="flex h-9 w-full max-w-xs rounded-md border border-input bg-background px-3 text-sm"
@@ -537,12 +430,6 @@ function PMTab({
 							placeholder="Custom field ID for cost tracking"
 						/>
 					</div>
-					<TriggerToggles
-						title="Trigger Configuration"
-						items={TRELLO_TRIGGERS}
-						values={triggers}
-						onChange={setTriggers}
-					/>
 				</>
 			)}
 
@@ -589,14 +476,12 @@ function PMTab({
 							placeholder="e.g., customfield_10042"
 						/>
 					</div>
-					<TriggerToggles
-						title="Trigger Configuration"
-						items={JIRA_TRIGGERS}
-						values={triggers}
-						onChange={setTriggers}
-					/>
 				</>
 			)}
+
+			<p className="text-xs text-muted-foreground">
+				Trigger configuration has moved to the <strong>Agent Configs</strong> tab.
+			</p>
 
 			<IntegrationCredentialSlots
 				projectId={projectId}
@@ -639,68 +524,13 @@ function PMTab({
 // SCM Tab (GitHub)
 // ============================================================================
 
-const GITHUB_TRIGGERS: TriggerToggleItem[] = [
-	{
-		key: 'checkSuiteSuccess',
-		label: 'Check Suite Success',
-		description: 'Trigger review agent when all CI checks pass.',
-		defaultValue: true,
-	},
-	{
-		key: 'checkSuiteFailure',
-		label: 'Check Suite Failure',
-		description: 'Trigger respond-to-ci agent when CI checks fail.',
-		defaultValue: true,
-	},
-	{
-		key: 'prReviewSubmitted',
-		label: 'PR Review Submitted',
-		description: 'Trigger respond-to-review when a review with changes requested is submitted.',
-		defaultValue: true,
-	},
-	{
-		key: 'prCommentMention',
-		label: 'PR Comment @mention',
-		description:
-			'Trigger respond-to-pr-comment when the implementer bot is @mentioned in a comment.',
-		defaultValue: true,
-	},
-	{
-		key: 'prReadyToMerge',
-		label: 'PR Ready to Merge',
-		description: 'Auto-move card to DONE when PR is approved and checks pass.',
-		defaultValue: true,
-	},
-	{
-		key: 'prMerged',
-		label: 'PR Merged',
-		description: 'Auto-move card to MERGED when PR is merged.',
-		defaultValue: true,
-	},
-	{
-		key: 'reviewRequested',
-		label: 'Review Requested (opt-in)',
-		description:
-			'Trigger review agent when review is requested from a CASCADE persona. Default disabled.',
-		defaultValue: false,
-	},
-	{
-		key: 'prOpened',
-		label: 'PR Opened (opt-in)',
-		description: 'Trigger respond-to-review when a new PR is opened. Default disabled.',
-		defaultValue: false,
-	},
-];
-
 function SCMTab({
 	projectId,
 	initialProvider,
-	initialTriggers,
 	initialCredentials,
 }: {
 	projectId: string;
 	initialProvider: string;
-	initialTriggers?: Record<string, boolean>;
 	initialCredentials: Map<string, number>;
 }) {
 	const queryClient = useQueryClient();
@@ -709,12 +539,7 @@ function SCMTab({
 	const orgCredentials = (credentialsQuery.data ?? []) as CredentialOption[];
 
 	const [provider] = useState(initialProvider || 'github');
-	const [triggers, setTriggers] = useState<Record<string, boolean>>(initialTriggers ?? {});
 	const [credentialMap, setCredentialMap] = useState<Map<string, number>>(initialCredentials);
-
-	useEffect(() => {
-		setTriggers(initialTriggers ?? {});
-	}, [initialTriggers]);
 
 	useEffect(() => {
 		setCredentialMap(initialCredentials);
@@ -722,12 +547,12 @@ function SCMTab({
 
 	const saveMutation = useMutation({
 		mutationFn: async () => {
+			// Note: triggers are intentionally omitted — they are managed via the Agent Configs tab
 			const result = await trpcClient.projects.integrations.upsert.mutate({
 				projectId,
 				category: 'scm',
 				provider,
 				config: {},
-				triggers,
 			});
 
 			// Set integration credentials
@@ -784,12 +609,9 @@ function SCMTab({
 				}}
 			/>
 
-			<TriggerToggles
-				title="Trigger Configuration"
-				items={GITHUB_TRIGGERS}
-				values={triggers}
-				onChange={setTriggers}
-			/>
+			<p className="text-xs text-muted-foreground">
+				Trigger configuration has moved to the <strong>Agent Configs</strong> tab.
+			</p>
 
 			<div className="flex items-center gap-2">
 				<button
@@ -881,7 +703,6 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 					projectId={projectId}
 					initialProvider={pmProvider}
 					initialConfig={pmIntegration?.config as Record<string, unknown>}
-					initialTriggers={pmIntegration?.triggers as Record<string, boolean>}
 					initialCredentials={pmCredMap}
 				/>
 			)}
@@ -890,7 +711,6 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 				<SCMTab
 					projectId={projectId}
 					initialProvider={scmProvider}
-					initialTriggers={scmIntegration?.triggers as Record<string, boolean>}
 					initialCredentials={scmCredMap}
 				/>
 			)}

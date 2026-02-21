@@ -15,6 +15,7 @@ import {
 	removeIntegrationCredential,
 	setIntegrationCredential,
 	updateProject,
+	updateProjectIntegrationTriggers,
 	upsertProjectIntegration,
 } from '../../db/repositories/settingsRepository.js';
 import { credentials, projects } from '../../db/schema/index.js';
@@ -135,6 +136,19 @@ export const projectsRouter = router({
 					input.config,
 					input.triggers,
 				);
+			}),
+
+		updateTriggers: protectedProcedure
+			.input(
+				z.object({
+					projectId: z.string(),
+					category: z.enum(['pm', 'scm']),
+					triggers: z.record(z.unknown()),
+				}),
+			)
+			.mutation(async ({ ctx, input }) => {
+				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
+				await updateProjectIntegrationTriggers(input.projectId, input.category, input.triggers);
 			}),
 
 		delete: protectedProcedure
