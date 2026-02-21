@@ -122,6 +122,7 @@ async function runGitHubAgentJob(
 	config: CascadeConfig,
 	githubToken: string,
 	registry: TriggerRegistry,
+	routerAckCommentId?: number,
 ): Promise<void> {
 	// Use the persona token for the agent that will do the work (for ack comments)
 	let prCommentToken: string;
@@ -131,9 +132,12 @@ async function runGitHubAgentJob(
 		prCommentToken = githubToken;
 	}
 
-	await withGitHubToken(prCommentToken, async () => {
-		await postAcknowledgmentComment(result);
-	});
+	// Skip worker-side ack if the router already posted one
+	if (!routerAckCommentId) {
+		await withGitHubToken(prCommentToken, async () => {
+			await postAcknowledgmentComment(result);
+		});
+	}
 	setProcessing(true);
 	startWatchdog(config.defaults.watchdogTimeoutMs);
 
@@ -163,6 +167,7 @@ export async function processGitHubWebhook(
 	payload: unknown,
 	eventType: string,
 	registry: TriggerRegistry,
+	ackCommentId?: number,
 ): Promise<void> {
 	logger.info('Processing GitHub webhook', { eventType });
 
@@ -215,7 +220,18 @@ export async function processGitHubWebhook(
 
 	if (!result) {
 		logger.info('No trigger matched for GitHub webhook', { eventType, repoFullName });
+		// Clean up orphan ack if router posted one but no trigger matched
+		if (ackCommentId) {
+			logger.info('Cleaning up orphan ack comment', { ackCommentId, repoFullName });
+			const { deleteGitHubAck } = await import('../../router/acknowledgments.js');
+			await deleteGitHubAck(repoFullName, ackCommentId, githubToken).catch(() => {});
+		}
 		return;
+	}
+
+	// Pass ack comment ID into agent input for ProgressMonitor pre-seeding
+	if (ackCommentId) {
+		result.agentInput.ackCommentId = ackCommentId;
 	}
 
 	logger.info('GitHub trigger matched', {
@@ -224,7 +240,7 @@ export async function processGitHubWebhook(
 	});
 
 	if (result.agentType) {
-		await runGitHubAgentJob(result, project, config, githubToken, registry);
+		await runGitHubAgentJob(result, project, config, githubToken, registry, ackCommentId);
 	} else {
 		logger.info('Trigger completed without agent', { prNumber: result.prNumber });
 	}

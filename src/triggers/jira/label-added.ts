@@ -96,6 +96,22 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 		return addedLabels.has(readyLabel);
 	}
 
+	resolveAgentType(ctx: TriggerContext): string | null {
+		const payload = ctx.payload as JiraLabelPayload;
+		const currentStatus = payload.issue?.fields?.status?.name;
+		if (!currentStatus) return null;
+
+		const jiraConfig = ctx.project.jira;
+		if (!jiraConfig?.statuses) return null;
+
+		for (const [cascadeStatus, jiraStatus] of Object.entries(jiraConfig.statuses)) {
+			if (jiraStatus.toLowerCase() === currentStatus.toLowerCase()) {
+				return STATUS_TO_AGENT[cascadeStatus] ?? null;
+			}
+		}
+		return null;
+	}
+
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		const payload = ctx.payload as JiraLabelPayload;
 		const issueKey = payload.issue?.key;

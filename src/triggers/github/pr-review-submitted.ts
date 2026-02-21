@@ -27,6 +27,10 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 		return true;
 	}
 
+	resolveAgentType(): string {
+		return 'respond-to-review';
+	}
+
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		// Type assertion since we validated in matches()
 		const reviewPayload = ctx.payload as {

@@ -1,5 +1,5 @@
 import { loadConfig } from '../config/provider.js';
-import type { CascadeConfig } from '../types/index.js';
+import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 
 // Minimal config types - what router needs for quick filtering
 export interface RouterProjectConfig {
@@ -31,7 +31,10 @@ export interface RouterConfig {
 	dockerNetwork: string;
 }
 
-export async function loadProjectConfig(): Promise<{ projects: RouterProjectConfig[] }> {
+export async function loadProjectConfig(): Promise<{
+	projects: RouterProjectConfig[];
+	fullProjects: ProjectConfig[];
+}> {
 	const config: CascadeConfig = await loadConfig();
 	return {
 		projects: config.projects.map((p) => ({
@@ -52,6 +55,7 @@ export async function loadProjectConfig(): Promise<{ projects: RouterProjectConf
 				},
 			}),
 		})),
+		fullProjects: config.projects,
 	};
 }
 

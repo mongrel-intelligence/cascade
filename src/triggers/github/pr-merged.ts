@@ -23,6 +23,10 @@ export class PRMergedTrigger implements TriggerHandler {
 		return ctx.payload.action === 'closed';
 	}
 
+	resolveAgentType(): string | null {
+		return null; // No agent — performs card move directly
+	}
+
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		const payload = ctx.payload as GitHubPullRequestPayload;
 		const { owner, repo } = parseRepoFullName(payload.repository.full_name);

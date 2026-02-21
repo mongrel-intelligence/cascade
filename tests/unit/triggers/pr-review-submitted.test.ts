@@ -127,6 +127,17 @@ describe('PRReviewSubmittedTrigger', () => {
 		});
 	});
 
+	describe('resolveAgentType', () => {
+		it('returns respond-to-review', () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {},
+			};
+			expect(trigger.resolveAgentType(ctx)).toBe('respond-to-review');
+		});
+	});
+
 	describe('handle', () => {
 		it('returns respond-to-review result when reviewer persona posts changes_requested', async () => {
 			const ctx: TriggerContext = {

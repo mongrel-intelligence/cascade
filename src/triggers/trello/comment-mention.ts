@@ -44,6 +44,10 @@ export class TrelloCommentMentionTrigger implements TriggerHandler {
 		return ctx.payload.action.type === 'commentCard';
 	}
 
+	resolveAgentType(): string {
+		return 'respond-to-planning-comment';
+	}
+
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		const payload = ctx.payload as TrelloWebhookPayload;
 		const cardId = payload.action.data.card?.id;

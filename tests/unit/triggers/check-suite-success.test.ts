@@ -55,6 +55,17 @@ describe('CheckSuiteSuccessTrigger', () => {
 		vi.clearAllMocks();
 	});
 
+	describe('resolveAgentType', () => {
+		it('returns review', () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {},
+			};
+			expect(trigger.resolveAgentType(ctx)).toBe('review');
+		});
+	});
+
 	describe('matches', () => {
 		it('matches completed check suite with success conclusion and PRs', () => {
 			const ctx: TriggerContext = {

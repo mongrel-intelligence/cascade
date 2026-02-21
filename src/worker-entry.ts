@@ -34,6 +34,7 @@ interface TrelloJobData {
 	cardId: string;
 	actionType: string;
 	receivedAt: string;
+	ackCommentId?: string;
 }
 
 interface GitHubJobData {
@@ -43,6 +44,7 @@ interface GitHubJobData {
 	eventType: string;
 	repoFullName: string;
 	receivedAt: string;
+	ackCommentId?: number;
 }
 
 interface JiraJobData {
@@ -53,6 +55,7 @@ interface JiraJobData {
 	issueKey: string;
 	webhookEvent: string;
 	receivedAt: string;
+	ackCommentId?: string;
 }
 
 interface ManualRunJobData {
@@ -200,22 +203,30 @@ async function main(): Promise<void> {
 				jobId,
 				cardId: jobData.cardId,
 				actionType: jobData.actionType,
+				ackCommentId: jobData.ackCommentId,
 			});
-			await processTrelloWebhook(jobData.payload, triggerRegistry);
+			await processTrelloWebhook(jobData.payload, triggerRegistry, jobData.ackCommentId);
 		} else if (jobData.type === 'github') {
 			logger.info('[Worker] Processing GitHub job', {
 				jobId,
 				eventType: jobData.eventType,
 				repoFullName: jobData.repoFullName,
+				ackCommentId: jobData.ackCommentId,
 			});
-			await processGitHubWebhook(jobData.payload, jobData.eventType, triggerRegistry);
+			await processGitHubWebhook(
+				jobData.payload,
+				jobData.eventType,
+				triggerRegistry,
+				jobData.ackCommentId,
+			);
 		} else if (jobData.type === 'jira') {
 			logger.info('[Worker] Processing JIRA job', {
 				jobId,
 				issueKey: jobData.issueKey,
 				webhookEvent: jobData.webhookEvent,
+				ackCommentId: jobData.ackCommentId,
 			});
-			await processJiraWebhook(jobData.payload, triggerRegistry);
+			await processJiraWebhook(jobData.payload, triggerRegistry, jobData.ackCommentId);
 		} else if (
 			jobData.type === 'manual-run' ||
 			jobData.type === 'retry-run' ||

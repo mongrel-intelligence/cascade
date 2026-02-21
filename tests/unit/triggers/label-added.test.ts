@@ -114,6 +114,30 @@ describe('ReadyToProcessLabelTrigger', () => {
 		});
 	});
 
+	describe('resolveAgentType', () => {
+		it('returns null (requires API call to determine list)', () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'trello',
+				payload: {
+					model: { id: 'board123', name: 'Board' },
+					action: {
+						id: 'action1',
+						idMemberCreator: 'member1',
+						type: 'addLabelToCard',
+						date: '2024-01-01',
+						data: {
+							card: { id: 'card1', name: 'Test Card', idShort: 1, shortLink: 'abc' },
+							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
+						},
+					},
+				},
+			};
+
+			expect(trigger.resolveAgentType(ctx)).toBeNull();
+		});
+	});
+
 	describe('handle', () => {
 		it('returns briefing agent when card is in briefing list', async () => {
 			mockGetCard.mockResolvedValue({

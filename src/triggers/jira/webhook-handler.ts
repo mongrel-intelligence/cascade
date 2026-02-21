@@ -97,6 +97,63 @@ async function executeJiraAgent(
 	}
 }
 
+async function handleMatchedJiraTrigger(
+	registry: TriggerRegistry,
+	payload: JiraWebhookPayload,
+	project: ProjectConfig,
+	config: CascadeConfig,
+	pmProvider: ReturnType<typeof createPMProvider>,
+	ackCommentId?: string,
+): Promise<void> {
+	const ctx: TriggerContext = { project, source: 'jira', payload };
+	const result = await registry.dispatch(ctx);
+	if (!result) {
+		logger.info('No trigger matched for JIRA webhook', { event: payload.webhookEvent });
+		if (ackCommentId && payload.issue?.key) {
+			await cleanupOrphanJiraAck(project.id, payload.issue.key, ackCommentId);
+		}
+		return;
+	}
+
+	// Pass ack comment ID into agent input for ProgressMonitor pre-seeding
+	if (ackCommentId) {
+		result.agentInput.ackCommentId = ackCommentId;
+	}
+
+	logger.info('JIRA trigger matched', {
+		agentType: result.agentType,
+		workItemId: result.workItemId,
+	});
+
+	setProcessing(true);
+	startWatchdog(config.defaults.watchdogTimeoutMs);
+
+	const pmConfig = resolveProjectPMConfig(project);
+	const lifecycle = new PMLifecycleManager(pmProvider, pmConfig);
+
+	try {
+		await executeJiraAgent(result, project, config);
+	} catch (err) {
+		logger.error('Failed to process JIRA webhook', { error: String(err) });
+		if (result.workItemId) {
+			await lifecycle.handleError(result.workItemId, String(err));
+		}
+	} finally {
+		setProcessing(false);
+		processNextQueuedJiraWebhook(registry);
+	}
+}
+
+async function cleanupOrphanJiraAck(
+	projectId: string,
+	issueKey: string,
+	ackCommentId: string,
+): Promise<void> {
+	logger.info('Cleaning up orphan ack comment', { ackCommentId, issueKey });
+	const { deleteJiraAck } = await import('../../router/acknowledgments.js');
+	await deleteJiraAck(projectId, issueKey, ackCommentId).catch(() => {});
+}
+
 function processNextQueuedJiraWebhook(registry: TriggerRegistry): void {
 	processNextQueuedWebhook((payload) => processJiraWebhook(payload, registry), 'JIRA');
 }
@@ -104,6 +161,7 @@ function processNextQueuedJiraWebhook(registry: TriggerRegistry): void {
 export async function processJiraWebhook(
 	payload: unknown,
 	registry: TriggerRegistry,
+	ackCommentId?: string,
 ): Promise<void> {
 	logger.info('Processing JIRA webhook');
 
@@ -152,36 +210,8 @@ export async function processJiraWebhook(
 	await withJiraCredentials(
 		{ email: jiraEmail, apiToken: jiraApiToken, baseUrl: jiraBaseUrl },
 		() =>
-			withPMProvider(pmProvider, async () => {
-				const ctx: TriggerContext = { project, source: 'jira', payload };
-				const result = await registry.dispatch(ctx);
-				if (!result) {
-					logger.info('No trigger matched for JIRA webhook', { event: payload.webhookEvent });
-					return;
-				}
-
-				logger.info('JIRA trigger matched', {
-					agentType: result.agentType,
-					workItemId: result.workItemId,
-				});
-
-				setProcessing(true);
-				startWatchdog(config.defaults.watchdogTimeoutMs);
-
-				const pmConfig = resolveProjectPMConfig(project);
-				const lifecycle = new PMLifecycleManager(pmProvider, pmConfig);
-
-				try {
-					await executeJiraAgent(result, project, config);
-				} catch (err) {
-					logger.error('Failed to process JIRA webhook', { error: String(err) });
-					if (result.workItemId) {
-						await lifecycle.handleError(result.workItemId, String(err));
-					}
-				} finally {
-					setProcessing(false);
-					processNextQueuedJiraWebhook(registry);
-				}
-			}),
+			withPMProvider(pmProvider, () =>
+				handleMatchedJiraTrigger(registry, payload, project, config, pmProvider, ackCommentId),
+			),
 	);
 }
