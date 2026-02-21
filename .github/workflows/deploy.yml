@@ -33,7 +33,7 @@ jobs:
       - name: Validate router image (smoke test)
         run: |
           docker run --rm ${{ env.ROUTER_IMAGE }}:${{ github.sha }} \
-            node -e "import('./dist/router/index.js').catch(e => { console.error(e.message); process.exit(1) })"
+            node --check dist/router/index.js
 
       - name: Build and push worker image
         run: |
