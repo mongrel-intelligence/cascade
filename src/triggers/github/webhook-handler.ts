@@ -30,8 +30,13 @@ async function updateInitialCommentWithError(
 	const input = result.agentInput as { repoFullName?: string };
 	if (!input.repoFullName || !result.prNumber) return;
 
-	const { owner, repo } = parseRepoFullName(input.repoFullName);
-	if (!owner || !repo) return;
+	let owner: string;
+	let repo: string;
+	try {
+		({ owner, repo } = parseRepoFullName(input.repoFullName));
+	} catch {
+		return;
+	}
 
 	const { initialCommentId } = getSessionState();
 	if (!initialCommentId) return;

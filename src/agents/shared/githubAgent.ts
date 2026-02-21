@@ -110,8 +110,11 @@ export async function executeGitHubAgent<
 >(definition: GitHubAgentDefinition<TInput, TContext>, input: TInput): Promise<AgentResult> {
 	const { prNumber, prBranch, repoFullName, project, interactive, autoAccept } = input;
 
-	const { owner, repo } = parseRepoFullName(repoFullName);
-	if (!owner || !repo) {
+	let owner: string;
+	let repo: string;
+	try {
+		({ owner, repo } = parseRepoFullName(repoFullName));
+	} catch {
 		return { success: false, output: '', error: `Invalid repo format: ${repoFullName}` };
 	}
 	const id: RepoIdentifier = { owner, repo };
