@@ -40,6 +40,10 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		return true;
 	}
 
+	resolveAgentType(): string {
+		return 'respond-to-ci';
+	}
+
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		const payload = ctx.payload as GitHubCheckSuitePayload;
 		const { owner, repo } = parseRepoFullName(payload.repository.full_name);

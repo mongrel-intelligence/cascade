@@ -1,10 +1,20 @@
 import { serve } from '@hono/node-server';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
+import { INITIAL_MESSAGES } from '../config/agentMessages.js';
 import { findProjectByRepo } from '../config/provider.js';
-import { resolvePersonaIdentities } from '../github/personas.js';
+import { type PersonaIdentities, resolvePersonaIdentities } from '../github/personas.js';
+import { createTriggerRegistry, registerBuiltInTriggers } from '../triggers/index.js';
+import type { TriggerContext } from '../types/index.js';
 import { logWebhookCall } from '../utils/webhookLogger.js';
+import {
+	postGitHubAck,
+	postJiraAck,
+	postTrelloAck,
+	resolveGitHubTokenForAck,
+} from './acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from './config.js';
+import { extractPRNumber } from './notifications.js';
 import { addEyesReactionToPR } from './pre-actions.js';
 import { type CascadeJob, type GitHubJob, addJob, getQueueStats } from './queue.js';
 import { sendAcknowledgeReaction } from './reactions.js';
@@ -14,6 +24,10 @@ import {
 	startWorkerProcessor,
 	stopWorkerProcessor,
 } from './worker-manager.js';
+
+// Create trigger registry once at router startup for matchTrigger() calls
+const triggerRegistry = createTriggerRegistry();
+registerBuiltInTriggers(triggerRegistry);
 
 /**
  * Check if filename matches agent log pattern: {agent-type}-{timestamp}.zip
@@ -97,6 +111,7 @@ function isAgentLogAttachmentUploaded(
 interface TrelloWebhookResult {
 	shouldProcess: boolean;
 	project?: RouterProjectConfig;
+	projectId?: string;
 	actionType?: string;
 	cardId?: string;
 }
@@ -134,7 +149,98 @@ async function parseTrelloWebhook(payload: unknown): Promise<TrelloWebhookResult
 		isAgentLogAttachmentUploaded(actionType, data, project) ||
 		actionType === 'commentCard';
 
-	return { shouldProcess, project, actionType, cardId };
+	return { shouldProcess, project, projectId: project.id, actionType, cardId };
+}
+
+/**
+ * Try to match a trigger and post an ack comment for a Trello webhook.
+ * Returns the ack comment ID if posted, undefined otherwise.
+ */
+async function tryPostTrelloAck(
+	projectId: string,
+	cardId: string,
+	payload: unknown,
+): Promise<string | undefined> {
+	const config = await loadProjectConfig();
+	const fullProject = config.fullProjects.find((fp) => fp.id === projectId);
+	if (!fullProject) return undefined;
+
+	const ctx: TriggerContext = { project: fullProject, source: 'trello', payload };
+	const match = triggerRegistry.matchTrigger(ctx);
+	if (!match) return undefined;
+
+	const message = INITIAL_MESSAGES[match.agentType];
+	if (!message) return undefined;
+
+	const commentId = await postTrelloAck(projectId, cardId, message);
+	return commentId ?? undefined;
+}
+
+/**
+ * Try to match a trigger and post an ack comment for a GitHub webhook.
+ * Returns the ack comment ID if posted, undefined otherwise.
+ */
+async function tryPostGitHubAck(
+	eventType: string,
+	repoFullName: string,
+	payload: unknown,
+): Promise<number | undefined> {
+	const config = await loadProjectConfig();
+	const fullProject = config.fullProjects.find((fp) => fp.repo === repoFullName);
+	if (!fullProject) return undefined;
+
+	let personaIdentities: PersonaIdentities | undefined;
+	try {
+		personaIdentities = await resolvePersonaIdentities(fullProject.id);
+	} catch {
+		// Persona resolution may fail — proceed without ack
+	}
+
+	const ctx: TriggerContext = {
+		project: fullProject,
+		source: 'github',
+		payload,
+		personaIdentities,
+	};
+	const match = triggerRegistry.matchTrigger(ctx);
+	if (!match) return undefined;
+
+	const message = INITIAL_MESSAGES[match.agentType];
+	if (!message) return undefined;
+
+	const resolved = await resolveGitHubTokenForAck(repoFullName);
+	if (!resolved) return undefined;
+
+	const tempJob = { eventType, repoFullName, payload } as GitHubJob;
+	const prNumber = extractPRNumber(tempJob);
+	if (!prNumber) return undefined;
+
+	const commentId = await postGitHubAck(repoFullName, prNumber, message, resolved.token);
+	return commentId ?? undefined;
+}
+
+/**
+ * Try to match a trigger and post an ack comment for a JIRA webhook.
+ * Returns the ack comment ID if posted, undefined otherwise.
+ */
+async function tryPostJiraAck(
+	projectId: string,
+	issueKey: string,
+	payload: unknown,
+	fullProjects: import('../types/index.js').ProjectConfig[],
+): Promise<string | undefined> {
+	const fullProject = fullProjects.find((fp) => fp.id === projectId);
+	if (!fullProject || !issueKey) return undefined;
+
+	const ctx: TriggerContext = { project: fullProject, source: 'jira', payload };
+	const match = triggerRegistry.matchTrigger(ctx);
+	if (!match) return undefined;
+
+	const message = INITIAL_MESSAGES[match.agentType];
+	if (!message) return undefined;
+
+	const commentId = await postJiraAck(projectId, issueKey, message);
+	return commentId ?? undefined;
 }
 
 /**
@@ -151,6 +257,49 @@ function firePreActions(job: GitHubJob, p: Record<string, unknown>): void {
 		addEyesReactionToPR(job).catch((err) =>
 			console.warn('[Router] Pre-action error (eyes reaction):', String(err)),
 		);
+	}
+}
+
+async function queueJiraJob(
+	project: RouterProjectConfig,
+	issueKey: string,
+	webhookEvent: string,
+	payload: unknown,
+	fullProjects: import('../types/index.js').ProjectConfig[],
+): Promise<void> {
+	console.log('[Router] Queueing JIRA job:', { webhookEvent, issueKey, projectId: project.id });
+
+	// Fire-and-forget acknowledgment reaction — only for comment events
+	if (webhookEvent.startsWith('comment_')) {
+		void sendAcknowledgeReaction('jira', project.id, payload).catch((err) =>
+			console.error('[Router] JIRA reaction error:', err),
+		);
+	}
+
+	// Try to post an ack comment via trigger matching (non-blocking best-effort)
+	let ackCommentId: string | undefined;
+	try {
+		ackCommentId = await tryPostJiraAck(project.id, issueKey, payload, fullProjects);
+	} catch (err) {
+		console.warn('[Router] JIRA ack comment failed (non-fatal):', String(err));
+	}
+
+	const job: CascadeJob = {
+		type: 'jira',
+		source: 'jira',
+		payload,
+		projectId: project.id,
+		issueKey,
+		webhookEvent,
+		receivedAt: new Date().toISOString(),
+		ackCommentId,
+	};
+
+	try {
+		const jobId = await addJob(job);
+		console.log('[Router] JIRA job queued:', { jobId, webhookEvent, ackCommentId });
+	} catch (err) {
+		console.error('[Router] Failed to queue JIRA job:', err);
 	}
 }
 
@@ -217,6 +366,14 @@ app.post('/trello/webhook', async (c) => {
 			);
 		}
 
+		// Try to post an ack comment via trigger matching (non-blocking best-effort)
+		let ackCommentId: string | undefined;
+		try {
+			ackCommentId = await tryPostTrelloAck(project.id, cardId, payload);
+		} catch (err) {
+			console.warn('[Router] Trello ack comment failed (non-fatal):', String(err));
+		}
+
 		const job: CascadeJob = {
 			type: 'trello',
 			source: 'trello',
@@ -225,11 +382,12 @@ app.post('/trello/webhook', async (c) => {
 			cardId,
 			actionType: actionType || 'unknown',
 			receivedAt: new Date().toISOString(),
+			ackCommentId,
 		};
 
 		try {
 			const jobId = await addJob(job);
-			console.log('[Router] Trello job queued:', { jobId, actionType });
+			console.log('[Router] Trello job queued:', { jobId, actionType, ackCommentId });
 		} catch (err) {
 			console.error('[Router] Failed to queue Trello job:', err);
 			// Still return 200 to Trello to avoid retries
@@ -350,6 +508,14 @@ app.post('/github/webhook', async (c) => {
 			})();
 		}
 
+		// Try to post an ack comment via trigger matching (non-blocking best-effort)
+		let ackCommentId: number | undefined;
+		try {
+			ackCommentId = await tryPostGitHubAck(eventType, repoFullName, payload);
+		} catch (err) {
+			console.warn('[Router] GitHub ack comment failed (non-fatal):', String(err));
+		}
+
 		const job: CascadeJob = {
 			type: 'github',
 			source: 'github',
@@ -357,6 +523,7 @@ app.post('/github/webhook', async (c) => {
 			eventType,
 			repoFullName,
 			receivedAt: new Date().toISOString(),
+			ackCommentId,
 		};
 
 		// Fire pre-actions (non-blocking) before queueing
@@ -364,7 +531,7 @@ app.post('/github/webhook', async (c) => {
 
 		try {
 			const jobId = await addJob(job);
-			console.log('[Router] GitHub job queued:', { jobId, eventType });
+			console.log('[Router] GitHub job queued:', { jobId, eventType, ackCommentId });
 		} catch (err) {
 			console.error('[Router] Failed to queue GitHub job:', err);
 		}
@@ -436,31 +603,7 @@ app.post('/jira/webhook', async (c) => {
 	});
 
 	if (shouldProcess && project) {
-		console.log('[Router] Queueing JIRA job:', { webhookEvent, issueKey, projectId: project.id });
-
-		// Fire-and-forget acknowledgment reaction — only for comment events
-		if (webhookEvent.startsWith('comment_')) {
-			void sendAcknowledgeReaction('jira', project.id, payload).catch((err) =>
-				console.error('[Router] JIRA reaction error:', err),
-			);
-		}
-
-		const job: CascadeJob = {
-			type: 'jira',
-			source: 'jira',
-			payload,
-			projectId: project.id,
-			issueKey,
-			webhookEvent,
-			receivedAt: new Date().toISOString(),
-		};
-
-		try {
-			const jobId = await addJob(job);
-			console.log('[Router] JIRA job queued:', { jobId, webhookEvent });
-		} catch (err) {
-			console.error('[Router] Failed to queue JIRA job:', err);
-		}
+		await queueJiraJob(project, issueKey, webhookEvent, payload, config.fullProjects);
 	} else {
 		console.log(`[Router] Ignoring JIRA: ${webhookEvent}`);
 	}

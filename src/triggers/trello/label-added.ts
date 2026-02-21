@@ -34,6 +34,11 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 		);
 	}
 
+	resolveAgentType(): string | null {
+		// Cannot determine agent type without fetching the card to get its current list ID
+		return null;
+	}
+
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		const payload = ctx.payload as TrelloWebhookPayload;
 		const cardId = payload.action.data.card?.id;

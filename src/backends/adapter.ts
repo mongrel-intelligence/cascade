@@ -221,6 +221,7 @@ export async function executeWithBackend(
 			customModels: CUSTOM_MODELS as ModelSpec[],
 			repoDir: repoDir ?? undefined,
 			trello: cardId ? { cardId } : undefined,
+			preSeededCommentId: input.ackCommentId as string | undefined,
 		});
 
 		const backendInput: AgentBackendInput = {

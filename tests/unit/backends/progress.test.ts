@@ -746,6 +746,113 @@ describe('ProgressMonitor — getProgressCommentId()', () => {
 	});
 });
 
+describe('ProgressMonitor — preSeededCommentId', () => {
+	it('uses pre-seeded comment ID instead of posting initial comment', async () => {
+		const logWriter = vi.fn();
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter,
+			trello: { cardId: 'card1' },
+			repoDir: '/tmp/test-repo',
+			preSeededCommentId: 'router-ack-comment-42',
+		});
+
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(0);
+
+		// Should NOT post initial comment — ack was already posted by router
+		expect(mockPMProvider.addComment).not.toHaveBeenCalled();
+		// Should log that it's using the pre-seeded ID
+		expect(logWriter).toHaveBeenCalledWith('INFO', 'Using pre-seeded ack comment ID from router', {
+			commentId: 'router-ack-comment-42',
+		});
+		// Should return the pre-seeded ID
+		expect(monitor.getProgressCommentId()).toBe('router-ack-comment-42');
+		monitor.stop();
+	});
+
+	it('writes state file for pre-seeded comment ID', async () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			trello: { cardId: 'card1' },
+			repoDir: '/tmp/test-repo',
+			preSeededCommentId: 'router-ack-comment-42',
+		});
+
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith(
+			'/tmp/test-repo',
+			'card1',
+			'router-ack-comment-42',
+		);
+		monitor.stop();
+	});
+
+	it('does not write state file when repoDir is missing', async () => {
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			trello: { cardId: 'card1' },
+			preSeededCommentId: 'router-ack-comment-42',
+		});
+
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(mockWriteProgressCommentId).not.toHaveBeenCalled();
+		monitor.stop();
+	});
+
+	it('updates pre-seeded comment on first tick', async () => {
+		const logWriter = vi.fn();
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter,
+			trello: { cardId: 'card1' },
+			preSeededCommentId: 'router-ack-comment-42',
+		});
+
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockCallProgressModel.mockResolvedValue('**Progress**: Working on it');
+		mockPMProvider.updateComment.mockResolvedValue(undefined);
+
+		monitor.start();
+		// First tick — should update the pre-seeded comment
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		monitor.stop();
+
+		// addComment should NOT have been called (no initial comment posting)
+		expect(mockPMProvider.addComment).not.toHaveBeenCalled();
+		// updateComment should have been called with the pre-seeded ID
+		expect(mockPMProvider.updateComment).toHaveBeenCalledWith(
+			'card1',
+			'router-ack-comment-42',
+			'**Progress**: Working on it',
+		);
+	});
+});
+
 describe('ProgressMonitor — state file integration', () => {
 	it('writes state file on initial comment when repoDir is provided', async () => {
 		const logWriter = vi.fn();

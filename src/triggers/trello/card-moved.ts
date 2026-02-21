@@ -49,6 +49,10 @@ function createCardMovedTrigger(config: CardMovedConfig): TriggerHandler {
 			return isMove || isCreate;
 		},
 
+		resolveAgentType(): string {
+			return config.agentType;
+		},
+
 		async handle(ctx: TriggerContext): Promise<TriggerResult> {
 			const payload = ctx.payload as TrelloWebhookPayload;
 			const cardId = payload.action.data.card?.id;

@@ -45,6 +45,10 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 		return false;
 	}
 
+	resolveAgentType(): string | null {
+		return null; // No agent — performs card move directly
+	}
+
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		let prNumber: number;
 		let headSha: string;

@@ -14,6 +14,8 @@ export interface ProgressMonitorOptions {
 	repoDir?: string;
 	trello?: { cardId: string };
 	github?: { owner: string; repo: string; headerMessage: string };
+	/** Pre-seeded comment ID from router ack — skip initial comment posting */
+	preSeededCommentId?: string;
 }
 
 /**
@@ -38,6 +40,7 @@ export function createProgressMonitor(options: ProgressMonitorOptions): Progress
 		repoDir: options.repoDir,
 		trello: options.trello,
 		github: options.github,
+		preSeededCommentId: options.preSeededCommentId,
 	};
 
 	return new ProgressMonitor(config);

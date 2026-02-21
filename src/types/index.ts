@@ -39,6 +39,9 @@ export interface AgentInput {
 	// Override the model for this agent run
 	modelOverride?: string;
 
+	// Router-posted ack comment ID — used by ProgressMonitor to update in-place
+	ackCommentId?: string | number;
+
 	[key: string]: unknown;
 }
 
@@ -78,5 +81,12 @@ export interface TriggerHandler {
 	name: string;
 	description: string;
 	matches: (ctx: TriggerContext) => boolean;
+	/**
+	 * Resolve the agent type this trigger would run, without side effects.
+	 * Returns null when agent type cannot be determined without API calls
+	 * (e.g. Trello label-added needs card lookup) or when the trigger
+	 * doesn't run an agent (e.g. PR merged).
+	 */
+	resolveAgentType: (ctx: TriggerContext) => string | null;
 	handle: (ctx: TriggerContext) => Promise<TriggerResult | null>;
 }

@@ -22,6 +22,7 @@ export interface TrelloJob {
 	cardId: string;
 	actionType: string;
 	receivedAt: string;
+	ackCommentId?: string;
 }
 
 export interface GitHubJob {
@@ -31,6 +32,7 @@ export interface GitHubJob {
 	eventType: string;
 	repoFullName: string;
 	receivedAt: string;
+	ackCommentId?: number;
 }
 
 export interface JiraJob {
@@ -41,6 +43,7 @@ export interface JiraJob {
 	issueKey: string;
 	webhookEvent: string;
 	receivedAt: string;
+	ackCommentId?: string;
 }
 
 export type CascadeJob = TrelloJob | GitHubJob | JiraJob;

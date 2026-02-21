@@ -132,6 +132,13 @@ describe('TrelloCommentMentionTrigger', () => {
 		});
 	});
 
+	describe('resolveAgentType', () => {
+		it('returns respond-to-planning-comment', () => {
+			const ctx = buildCtx();
+			expect(trigger.resolveAgentType(ctx)).toBe('respond-to-planning-comment');
+		});
+	});
+
 	describe('handle', () => {
 		it('returns respond-to-planning-comment result when @mention is present on PLANNING card', async () => {
 			const result = await trigger.handle(buildCtx());

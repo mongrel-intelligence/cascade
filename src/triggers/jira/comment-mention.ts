@@ -119,6 +119,10 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 		return payload.webhookEvent === 'comment_created' || payload.webhookEvent === 'comment_updated';
 	}
 
+	resolveAgentType(): string {
+		return 'respond-to-planning-comment';
+	}
+
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		const payload = ctx.payload as JiraWebhookPayload;
 		const issueKey = payload.issue?.key;
