@@ -11,6 +11,9 @@ import { logoutHandler } from './api/auth/logout.js';
 import { resolveUserFromSession } from './api/auth/session.js';
 import { computeEffectiveOrgId } from './api/context.js';
 import { appRouter } from './api/router.js';
+import { findProjectByRepo } from './config/provider.js';
+import { resolvePersonaIdentities } from './github/personas.js';
+import { sendAcknowledgeReaction } from './router/reactions.js';
 import type { CascadeConfig } from './types/index.js';
 import { canAcceptWebhook, isCurrentlyProcessing, logger } from './utils/index.js';
 import { logWebhookCall } from './utils/webhookLogger.js';
@@ -101,6 +104,19 @@ export function createServer(deps: ServerDependencies): Hono {
 				processed: true,
 			});
 
+			// Fire-and-forget acknowledgment reaction — only for comment actions
+			if (eventType === 'commentCard') {
+				const boardId = (payload as Record<string, Record<string, unknown>>).model?.id as
+					| string
+					| undefined;
+				const project = deps.config.projects.find((p) => p.trello?.boardId === boardId);
+				if (project) {
+					void sendAcknowledgeReaction('trello', project.id, payload).catch((err) =>
+						logger.error('[Server] Trello reaction error:', { error: String(err) }),
+					);
+				}
+			}
+
 			// Process asynchronously - respond immediately
 			setImmediate(() => {
 				deps.onTrelloWebhook(payload).catch((err) => {
@@ -181,6 +197,36 @@ export function createServer(deps: ServerDependencies): Hono {
 				processed: true,
 			});
 
+			// Fire-and-forget acknowledgment reaction — only for comment events
+			if (eventType === 'issue_comment' || eventType === 'pull_request_review_comment') {
+				const repoFullName = (
+					(payload as Record<string, unknown>)?.repository as Record<string, unknown>
+				)?.full_name as string | undefined;
+				if (repoFullName) {
+					void (async () => {
+						try {
+							const project = await findProjectByRepo(repoFullName);
+							if (!project) {
+								logger.warn('[Server] No project found for repo, skipping GitHub reaction', {
+									repoFullName,
+								});
+								return;
+							}
+							const personaIdentities = await resolvePersonaIdentities(project.id);
+							await sendAcknowledgeReaction(
+								'github',
+								repoFullName,
+								payload,
+								personaIdentities,
+								project,
+							);
+						} catch (err) {
+							logger.error('[Server] GitHub reaction error:', { error: String(err) });
+						}
+					})();
+				}
+			}
+
 			// Process asynchronously - respond immediately
 			setImmediate(() => {
 				deps.onGitHubWebhook(payload, eventType).catch((err) => {
@@ -246,6 +292,23 @@ export function createServer(deps: ServerDependencies): Hono {
 				eventType,
 				processed: true,
 			});
+
+			// Fire-and-forget acknowledgment reaction — only for comment events
+			if (eventType?.startsWith('comment_')) {
+				const jiraProjectKey = (
+					((payload as Record<string, unknown>)?.issue as Record<string, unknown>)
+						?.fields as Record<string, unknown>
+				)?.project as Record<string, unknown> | undefined;
+				const projectKey = jiraProjectKey?.key as string | undefined;
+				const project = projectKey
+					? deps.config.projects.find((p) => p.jira?.projectKey === projectKey)
+					: undefined;
+				if (project) {
+					void sendAcknowledgeReaction('jira', project.id, payload).catch((err) =>
+						logger.error('[Server] JIRA reaction error:', { error: String(err) }),
+					);
+				}
+			}
 
 			// Process asynchronously - respond immediately
 			setImmediate(() => {

@@ -30,7 +30,6 @@ import {
 } from '../../utils/index.js';
 import { injectLlmApiKeys } from '../../utils/llmEnv.js';
 import type { TriggerRegistry } from '../registry.js';
-import { acknowledgeWithReaction } from '../shared/acknowledge-reaction.js';
 import { runAgentExecutionPipeline } from '../shared/agent-execution.js';
 import { processNextQueuedWebhook } from '../shared/webhook-queue.js';
 import type { TriggerResult } from '../types.js';
@@ -166,7 +165,6 @@ export async function processJiraWebhook(
 					workItemId: result.workItemId,
 				});
 
-				await acknowledgeWithReaction('jira', payload);
 				setProcessing(true);
 				startWatchdog(config.defaults.watchdogTimeoutMs);
 
