@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { trpcServer } from '@hono/trpc-server';
-import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { cors } from 'hono/cors';
@@ -15,6 +14,7 @@ import { appRouter } from './api/router.js';
 import { findProjectByRepo } from './config/provider.js';
 import { resolvePersonaIdentities } from './github/personas.js';
 import { sendAcknowledgeReaction } from './router/reactions.js';
+import { extractRawHeaders, parseGitHubWebhookPayload } from './router/webhookParsing.js';
 import type { CascadeConfig } from './types/index.js';
 import { canAcceptWebhook, isCurrentlyProcessing, logger } from './utils/index.js';
 import { logWebhookCall } from './utils/webhookLogger.js';
@@ -24,27 +24,6 @@ export interface ServerDependencies {
 	onTrelloWebhook: (payload: unknown) => Promise<void>;
 	onGitHubWebhook: (payload: unknown, eventType: string) => Promise<void>;
 	onJiraWebhook: (payload: unknown) => Promise<void>;
-}
-
-type PayloadParseResult = { ok: true; payload: unknown } | { ok: false; error: string };
-
-async function parseGitHubWebhookPayload(
-	c: Context,
-	contentType: string,
-): Promise<PayloadParseResult> {
-	try {
-		if (contentType.includes('application/x-www-form-urlencoded')) {
-			const formData = await c.req.parseBody();
-			const payloadStr = formData.payload;
-			if (typeof payloadStr === 'string') {
-				return { ok: true, payload: JSON.parse(payloadStr) };
-			}
-			throw new Error('Missing payload field in form data');
-		}
-		return { ok: true, payload: await c.req.json() };
-	} catch (err) {
-		return { ok: false, error: String(err) };
-	}
 }
 
 export function createServer(deps: ServerDependencies): Hono {
@@ -104,9 +83,7 @@ export function createServer(deps: ServerDependencies): Hono {
 			return c.text('Service Unavailable', 503);
 		}
 
-		const rawHeaders = Object.fromEntries(
-			Object.entries(c.req.header()).map(([k, v]) => [k, String(v)]),
-		);
+		const rawHeaders = extractRawHeaders(c);
 
 		try {
 			const payload = await c.req.json();
@@ -178,9 +155,7 @@ export function createServer(deps: ServerDependencies): Hono {
 
 		const eventType = c.req.header('X-GitHub-Event') || 'unknown';
 		const contentType = c.req.header('Content-Type') || '';
-		const rawHeaders = Object.fromEntries(
-			Object.entries(c.req.header()).map(([k, v]) => [k, String(v)]),
-		);
+		const rawHeaders = extractRawHeaders(c);
 
 		const parseResult = await parseGitHubWebhookPayload(c, contentType);
 		if (!parseResult.ok) {
@@ -278,9 +253,7 @@ export function createServer(deps: ServerDependencies): Hono {
 			return c.text('Service Unavailable', 503);
 		}
 
-		const rawHeaders = Object.fromEntries(
-			Object.entries(c.req.header()).map(([k, v]) => [k, String(v)]),
-		);
+		const rawHeaders = extractRawHeaders(c);
 
 		try {
 			const payload = await c.req.json();
