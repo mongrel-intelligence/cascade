@@ -65,9 +65,12 @@ describe('isAgentLogFilename', () => {
 		expect(isAgentLogFilename('briefing-timeout-2026-01-02T12-34-56-789Z.zip')).toBe(true);
 	});
 
-	it('does not match other filenames', () => {
+	it('does not match non-zip filenames', () => {
 		expect(isAgentLogFilename('screenshot.png')).toBe(false);
-		expect(isAgentLogFilename('debug-2026-01-02T16-30-24-339Z.zip')).toBe(true); // matches pattern even with debug prefix
+	});
+
+	it('matches debug-prefixed filenames (caller filters separately)', () => {
+		expect(isAgentLogFilename('debug-2026-01-02T16-30-24-339Z.zip')).toBe(true);
 	});
 });
 

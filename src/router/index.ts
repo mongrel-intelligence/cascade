@@ -7,7 +7,6 @@ import { handleGitHubWebhook } from './github.js';
 import { handleJiraWebhook } from './jira.js';
 import { getQueueStats } from './queue.js';
 import { handleTrelloWebhook } from './trello.js';
-import { parseTrelloWebhook } from './trello.js';
 import { extractRawHeaders, parseGitHubWebhookPayload } from './webhookParsing.js';
 import {
 	getActiveWorkerCount,
@@ -57,7 +56,10 @@ app.post('/trello/webhook', async (c) => {
 		return c.text('Bad Request', 400);
 	}
 
-	const { shouldProcess, project, actionType, cardId } = await parseTrelloWebhook(payload);
+	const { shouldProcess, project, actionType, cardId } = await handleTrelloWebhook(
+		payload,
+		triggerRegistry,
+	);
 
 	logWebhookCall({
 		source: 'trello',
@@ -70,8 +72,6 @@ app.post('/trello/webhook', async (c) => {
 		eventType: actionType,
 		processed: shouldProcess && !!project && !!cardId,
 	});
-
-	await handleTrelloWebhook(payload, triggerRegistry);
 
 	return c.text('OK', 200);
 });
