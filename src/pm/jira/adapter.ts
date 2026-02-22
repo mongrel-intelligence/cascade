@@ -242,7 +242,12 @@ export class JiraPMProvider implements PMProvider {
 		};
 	}
 
-	async addChecklistItem(_checklistId: string, name: string, _checked = false): Promise<void> {
+	async addChecklistItem(
+		_checklistId: string,
+		name: string,
+		_checked = false,
+		description?: string,
+	): Promise<void> {
 		// Extract parent issue key from checklistId format: "checklist-PROJ-123-timestamp"
 		// or "subtasks-PROJ-123"
 		// Use \d{10,} to only strip timestamps (10+ digits), not issue numbers like PROJ-5
@@ -258,6 +263,7 @@ export class JiraPMProvider implements PMProvider {
 			parent: { key: parentKey },
 			summary: name,
 			issuetype: { name: issueType },
+			...(description ? { description: markdownToAdf(description) } : {}),
 		});
 	}
 

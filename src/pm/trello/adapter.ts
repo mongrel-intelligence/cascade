@@ -146,7 +146,12 @@ export class TrelloPMProvider implements PMProvider {
 		};
 	}
 
-	async addChecklistItem(checklistId: string, name: string, checked = false): Promise<void> {
+	async addChecklistItem(
+		checklistId: string,
+		name: string,
+		checked = false,
+		_description?: string,
+	): Promise<void> {
 		await trelloClient.addChecklistItem(checklistId, name, checked);
 	}
 

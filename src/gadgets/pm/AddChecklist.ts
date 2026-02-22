@@ -11,20 +11,45 @@ export class AddChecklist extends Gadget({
 		checklistName: z
 			.string()
 			.describe('Name of the checklist (e.g., "Acceptance Criteria" or "Implementation Steps")'),
-		items: z.array(z.string()).min(1).describe('List of checklist items to add'),
+		items: z
+			.array(
+				z.union([
+					z.string(),
+					z.object({
+						name: z.string().describe('Checklist item name / subtask title'),
+						description: z
+							.string()
+							.optional()
+							.describe(
+								'Detailed description (used as JIRA subtask description, ignored for Trello)',
+							),
+					}),
+				]),
+			)
+			.min(1)
+			.describe(
+				'List of checklist items to add. Use objects with name+description for richer subtasks.',
+			),
 	}),
 	examples: [
 		{
 			params: {
-				workItemId: 'abc123',
+				workItemId: 'PROJ-42',
 				checklistName: 'Implementation Steps',
 				items: [
-					'Add reset password endpoint to API',
-					'Create email template for reset link',
-					'Add password validation logic',
+					{
+						name: 'Add reset password endpoint to API',
+						description:
+							'**Files:** `src/api/auth.ts`\n- Add POST /auth/reset-password route\n- Validate email format and lookup user\n- Generate time-limited reset token',
+					},
+					{
+						name: 'Create email template for reset link',
+						description:
+							'**Files:** `src/templates/reset-password.html`\n- Create responsive HTML email template\n- Include reset link with token parameter',
+					},
 				],
 			},
-			comment: 'Add implementation steps checklist to a work item',
+			comment: 'Add implementation steps with descriptions to a JIRA issue',
 		},
 	],
 }) {
