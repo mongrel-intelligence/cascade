@@ -279,7 +279,36 @@ export class JiraPMProvider implements PMProvider {
 
 	async deleteChecklistItem(_workItemId: string, checkItemId: string): Promise<void> {
 		// checkItemId is a JIRA issue key (subtask)
-		await jiraClient.deleteIssue(checkItemId);
+		try {
+			await jiraClient.deleteIssue(checkItemId);
+		} catch (error) {
+			const is403 =
+				error instanceof Error &&
+				(error.message.includes('403') || error.message.includes('Forbidden'));
+			if (!is403) throw error;
+
+			// Deletion not permitted — transition to a terminal status instead
+			logger.info('Delete not permitted, transitioning subtask to terminal status', {
+				issueKey: checkItemId,
+			});
+			const transitions = await jiraClient.getTransitions(checkItemId);
+			const terminalNames = ['cancelled', "won't do", 'rejected', 'closed', 'done'];
+			let match: JiraTransition | undefined;
+			for (const name of terminalNames) {
+				match = transitions.find((t: JiraTransition) => {
+					const toName = (t.to?.name ?? '').toLowerCase();
+					const tName = (t.name ?? '').toLowerCase();
+					return toName === name || tName === name;
+				});
+				if (match) break;
+			}
+			if (!match?.id) {
+				throw new Error(
+					`Cannot delete subtask ${checkItemId}: deletion returned 403 and no terminal transition found (available: ${transitions.map((t: JiraTransition) => t.name).join(', ')})`,
+				);
+			}
+			await jiraClient.transitionIssue(checkItemId, match.id);
+		}
 	}
 
 	async getAttachments(workItemId: string): Promise<Attachment[]> {
