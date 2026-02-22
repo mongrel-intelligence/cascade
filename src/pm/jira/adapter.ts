@@ -80,7 +80,7 @@ export class JiraPMProvider implements PMProvider {
 		if (this.config.issueTypes?.subtask) return this.config.issueTypes.subtask;
 		if (this.resolvedSubtaskType) return this.resolvedSubtaskType;
 
-		const types = await jiraClient.getIssueTypes();
+		const types = await jiraClient.getIssueTypesForProject(this.config.projectKey);
 		const subtaskType = types.find((t) => t.subtask);
 		this.resolvedSubtaskType = subtaskType?.name ?? 'Subtask';
 		logger.info('Resolved JIRA subtask issue type', { name: this.resolvedSubtaskType });

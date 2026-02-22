@@ -9,7 +9,7 @@ const { mockJiraClient, mockAdfToPlainText, mockMarkdownToAdf } = vi.hoisted(() 
 		addComment: vi.fn(),
 		updateComment: vi.fn(),
 		createIssue: vi.fn(),
-		getIssueTypes: vi.fn(),
+		getIssueTypesForProject: vi.fn(),
 		searchIssues: vi.fn(),
 		getTransitions: vi.fn(),
 		transitionIssue: vi.fn(),
@@ -462,7 +462,7 @@ describe('JiraPMProvider', () => {
 				...mockConfig,
 				issueTypes: undefined,
 			});
-			mockJiraClient.getIssueTypes.mockResolvedValue([
+			mockJiraClient.getIssueTypesForProject.mockResolvedValue([
 				{ name: 'Task', subtask: false },
 				{ name: 'Subtask', subtask: true },
 			]);
@@ -470,7 +470,7 @@ describe('JiraPMProvider', () => {
 
 			await providerNoConfig.addChecklistItem('subtasks-PROJ-10', 'Auto-detected subtask');
 
-			expect(mockJiraClient.getIssueTypes).toHaveBeenCalled();
+			expect(mockJiraClient.getIssueTypesForProject).toHaveBeenCalled();
 			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
 				expect.objectContaining({
 					issuetype: { name: 'Subtask' },
@@ -483,14 +483,16 @@ describe('JiraPMProvider', () => {
 				...mockConfig,
 				issueTypes: undefined,
 			});
-			mockJiraClient.getIssueTypes.mockResolvedValue([{ name: 'Sub-task', subtask: true }]);
+			mockJiraClient.getIssueTypesForProject.mockResolvedValue([
+				{ name: 'Sub-task', subtask: true },
+			]);
 			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-103' });
 
 			await providerNoConfig.addChecklistItem('subtasks-PROJ-10', 'First');
 			await providerNoConfig.addChecklistItem('subtasks-PROJ-10', 'Second');
 
 			// getIssueTypes should only be called once
-			expect(mockJiraClient.getIssueTypes).toHaveBeenCalledOnce();
+			expect(mockJiraClient.getIssueTypesForProject).toHaveBeenCalledOnce();
 		});
 
 		it('falls back to "Subtask" when no subtask type found', async () => {
@@ -498,7 +500,7 @@ describe('JiraPMProvider', () => {
 				...mockConfig,
 				issueTypes: undefined,
 			});
-			mockJiraClient.getIssueTypes.mockResolvedValue([
+			mockJiraClient.getIssueTypesForProject.mockResolvedValue([
 				{ name: 'Task', subtask: false },
 				{ name: 'Bug', subtask: false },
 			]);

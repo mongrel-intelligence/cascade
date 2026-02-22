@@ -16,7 +16,7 @@ const {
 	mockIssueSearch,
 	mockIssueAttachments,
 	mockMyself,
-	mockIssueTypes,
+	mockProjects,
 } = vi.hoisted(() => ({
 	mockIssues: {
 		getIssue: vi.fn(),
@@ -39,8 +39,8 @@ const {
 	mockMyself: {
 		getCurrentUser: vi.fn(),
 	},
-	mockIssueTypes: {
-		getIssueAllTypes: vi.fn(),
+	mockProjects: {
+		getProject: vi.fn(),
 	},
 }));
 
@@ -51,7 +51,7 @@ vi.mock('jira.js', () => ({
 		issueSearch: mockIssueSearch,
 		issueAttachments: mockIssueAttachments,
 		myself: mockMyself,
-		issueTypes: mockIssueTypes,
+		projects: mockProjects,
 	})),
 }));
 
@@ -83,7 +83,7 @@ describe('jiraClient', () => {
 		mockIssueSearch.searchForIssuesUsingJql.mockReset();
 		mockIssueAttachments.addAttachment.mockReset();
 		mockMyself.getCurrentUser.mockReset();
-		mockIssueTypes.getIssueAllTypes.mockReset();
+		mockProjects.getProject.mockReset();
 		_resetCloudIdCache();
 	});
 
@@ -303,32 +303,51 @@ describe('jiraClient', () => {
 		});
 	});
 
-	describe('getIssueTypes', () => {
-		it('returns mapped issue types from the API', async () => {
-			mockIssueTypes.getIssueAllTypes.mockResolvedValue([
-				{ name: 'Task', subtask: false },
-				{ name: 'Subtask', subtask: true },
-				{ name: 'Bug', subtask: false },
-			]);
+	describe('getIssueTypesForProject', () => {
+		it('returns project-scoped issue types', async () => {
+			mockProjects.getProject.mockResolvedValue({
+				issueTypes: [
+					{ name: 'Task', subtask: false },
+					{ name: 'Subtask', subtask: true },
+					{ name: 'Bug', subtask: false },
+				],
+			});
 
-			const result = await withJiraCredentials(creds, () => jiraClient.getIssueTypes());
+			const result = await withJiraCredentials(creds, () =>
+				jiraClient.getIssueTypesForProject('BTS'),
+			);
 
 			expect(result).toEqual([
 				{ name: 'Task', subtask: false },
 				{ name: 'Subtask', subtask: true },
 				{ name: 'Bug', subtask: false },
 			]);
+			expect(mockProjects.getProject).toHaveBeenCalledWith({ projectIdOrKey: 'BTS' });
 		});
 
 		it('handles missing fields gracefully', async () => {
-			mockIssueTypes.getIssueAllTypes.mockResolvedValue([{}, { name: 'Story' }]);
+			mockProjects.getProject.mockResolvedValue({
+				issueTypes: [{}, { name: 'Story' }],
+			});
 
-			const result = await withJiraCredentials(creds, () => jiraClient.getIssueTypes());
+			const result = await withJiraCredentials(creds, () =>
+				jiraClient.getIssueTypesForProject('TEST'),
+			);
 
 			expect(result).toEqual([
 				{ name: '', subtask: false },
 				{ name: 'Story', subtask: false },
 			]);
+		});
+
+		it('returns empty array when project has no issue types', async () => {
+			mockProjects.getProject.mockResolvedValue({});
+
+			const result = await withJiraCredentials(creds, () =>
+				jiraClient.getIssueTypesForProject('TEST'),
+			);
+
+			expect(result).toEqual([]);
 		});
 	});
 
