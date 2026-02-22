@@ -102,10 +102,13 @@ export const jiraClient = {
 		});
 	},
 
-	async getIssueTypes(): Promise<{ name: string; subtask: boolean }[]> {
-		logger.debug('Fetching JIRA issue types');
-		const types = await getClient().issueTypes.getIssueAllTypes();
-		return (types as { name?: string; subtask?: boolean }[]).map((t) => ({
+	async getIssueTypesForProject(projectKey: string): Promise<{ name: string; subtask: boolean }[]> {
+		logger.debug('Fetching JIRA issue types for project', { projectKey });
+		const project = await getClient().projects.getProject({
+			projectIdOrKey: projectKey,
+		});
+		const types = (project.issueTypes ?? []) as { name?: string; subtask?: boolean }[];
+		return types.map((t) => ({
 			name: t.name ?? '',
 			subtask: t.subtask ?? false,
 		}));
