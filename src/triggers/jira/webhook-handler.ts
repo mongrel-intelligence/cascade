@@ -155,7 +155,11 @@ async function cleanupOrphanJiraAck(
 }
 
 function processNextQueuedJiraWebhook(registry: TriggerRegistry): void {
-	processNextQueuedWebhook((payload) => processJiraWebhook(payload, registry), 'JIRA');
+	processNextQueuedWebhook(
+		(payload, _eventType, ackCommentId) =>
+			processJiraWebhook(payload, registry, ackCommentId as string | undefined),
+		'JIRA',
+	);
 }
 
 export async function processJiraWebhook(
@@ -173,7 +177,7 @@ export async function processJiraWebhook(
 	}
 
 	if (isCurrentlyProcessing()) {
-		const queued = enqueueWebhook(payload);
+		const queued = enqueueWebhook(payload, undefined, ackCommentId);
 		if (queued) {
 			logger.info('Currently processing, JIRA webhook queued', { queueLength: getQueueLength() });
 		} else {

@@ -156,8 +156,13 @@ async function runGitHubAgentJob(
 
 function processNextQueuedGitHubWebhook(registry: TriggerRegistry): void {
 	processNextQueuedWebhook(
-		(payload, eventType) =>
-			processGitHubWebhook(payload, eventType ?? 'pull_request_review_comment', registry),
+		(payload, eventType, ackCommentId) =>
+			processGitHubWebhook(
+				payload,
+				eventType ?? 'pull_request_review_comment',
+				registry,
+				ackCommentId as number | undefined,
+			),
 		'GitHub',
 		(entry) => entry.eventType ?? 'pull_request_review_comment',
 	);
@@ -181,7 +186,7 @@ export async function processGitHubWebhook(
 	}
 
 	if (isCurrentlyProcessing()) {
-		const queued = enqueueWebhook(payload, eventType);
+		const queued = enqueueWebhook(payload, eventType, ackCommentId);
 		if (queued) {
 			logger.info('Currently processing, GitHub webhook queued', {
 				queueLength: getQueueLength(),

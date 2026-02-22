@@ -128,6 +128,41 @@ describe('webhookQueue', () => {
 		});
 	});
 
+	describe('ackCommentId', () => {
+		it('preserves string ackCommentId through enqueue/dequeue', () => {
+			enqueueWebhook({ action: 'test' }, undefined, 'comment-42');
+
+			const item = dequeueWebhook();
+
+			expect(item?.ackCommentId).toBe('comment-42');
+		});
+
+		it('preserves numeric ackCommentId through enqueue/dequeue', () => {
+			enqueueWebhook({ action: 'test' }, undefined, 10646);
+
+			const item = dequeueWebhook();
+
+			expect(item?.ackCommentId).toBe(10646);
+		});
+
+		it('defaults ackCommentId to undefined when not provided', () => {
+			enqueueWebhook({ action: 'test' });
+
+			const item = dequeueWebhook();
+
+			expect(item?.ackCommentId).toBeUndefined();
+		});
+
+		it('preserves ackCommentId alongside eventType', () => {
+			enqueueWebhook({ action: 'test' }, 'issue_comment', 'ack-99');
+
+			const item = dequeueWebhook();
+
+			expect(item?.eventType).toBe('issue_comment');
+			expect(item?.ackCommentId).toBe('ack-99');
+		});
+	});
+
 	describe('getMaxQueueSize', () => {
 		it('returns the maximum queue size', () => {
 			const maxSize = getMaxQueueSize();
