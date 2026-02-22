@@ -166,14 +166,15 @@ export async function upsertProjectIntegration(
 	category: string,
 	provider: string,
 	config: Record<string, unknown>,
-	triggers?: Record<string, boolean>,
+	triggers?: Record<string, boolean | Record<string, boolean> | string[]>,
 ) {
 	const db = getDb();
 	// Preserve existing triggers if not provided (prevents data loss from Integration tab saves)
 	let triggersToSave = triggers;
 	if (triggersToSave === undefined) {
 		const existing = await getIntegrationByProjectAndCategory(projectId, category);
-		triggersToSave = (existing?.triggers as Record<string, boolean>) ?? {};
+		triggersToSave =
+			(existing?.triggers as Record<string, boolean | Record<string, boolean> | string[]>) ?? {};
 	}
 	const [row] = await db
 		.insert(projectIntegrations)

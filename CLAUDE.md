@@ -192,6 +192,8 @@ Examples:
 { "reviewScope": ["all"] }                        // auto-review all PRs after CI passes
 ```
 
+**Migration note**: The old `checkSuiteSuccess` boolean defaulted to `true`, meaning CI-success auto-review on implementer PRs was enabled by default. The new `reviewScope` defaults to `['reviewRequested']`, which does **not** include `'own'`. Existing projects that relied on the default auto-review-after-CI behavior will need to explicitly set `reviewScope: ['own', 'reviewRequested']` to restore that behavior. Projects that had `checkSuiteSuccess: true` stored in their triggers JSONB should be updated — the old key is ignored by the new code.
+
 ### Integration Credential Resolution
 
 Integration credentials are resolved by `(projectId, category, role)`:

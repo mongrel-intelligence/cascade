@@ -55,7 +55,7 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 	registry.register(new JiraReadyToProcessLabelTrigger());
 
 	// GitHub: PR opened trigger (initial review on new PRs)
-	// Opt-in: disabled by default via trigger config (github.triggers.prOpened = false)
+	// Fires when reviewScope includes 'all' (disabled by default — default reviewScope is ['reviewRequested'])
 	registry.register(new PROpenedTrigger());
 
 	// GitHub: PR comment @mention trigger (runs respond-to-pr-comment when reviewer is @mentioned)
@@ -66,7 +66,7 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 	registry.register(new PRReviewSubmittedTrigger());
 
 	// GitHub: Review requested trigger (runs review agent when review is requested from CASCADE persona)
-	// Opt-in: disabled by default via trigger config (github.triggers.reviewRequested = false)
+	// Fires when reviewScope includes 'reviewRequested' (enabled by default — default reviewScope is ['reviewRequested'])
 	// Registered before CheckSuiteSuccessTrigger so both can independently trigger review
 	registry.register(new ReviewRequestedTrigger());
 
