@@ -37,7 +37,7 @@ ${commentText}
 ---
 
 The work item data (title, description, checklists, attachments, comments) has been pre-loaded above.
-Read the user's comment carefully and respond accordingly. Default to surgical, targeted updates unless they clearly ask for a full rewrite.`;
+Read the user's comment carefully and classify it: if they ask a question or request clarification, reply with a thorough answer via PostComment (do not modify the plan). If they request plan changes, make surgical, targeted updates. If the comment contains both a question and a change request, do both. Default to plan updates when intent is ambiguous.`;
 }
 
 // ============================================================================

@@ -63,15 +63,16 @@ async function buildWorkerEnv(job: Job<CascadeJob>): Promise<string[]> {
 		`LOG_LEVEL=${process.env.LOG_LEVEL || 'info'}`,
 	];
 
-	// Resolve project credentials in the router and pass as JSON.
-	// Workers cache these on startup, then scrub from env.
+	// Resolve project credentials in the router and set as individual env vars.
 	// NOTE: CREDENTIAL_MASTER_KEY is intentionally NOT passed to workers.
 	const projectId = await extractProjectIdFromJob(job.data);
 	if (projectId) {
 		try {
 			const secrets = await getAllProjectCredentials(projectId);
-			env.push(`CASCADE_CREDENTIALS=${JSON.stringify(secrets)}`);
-			env.push(`CASCADE_CREDENTIALS_PROJECT_ID=${projectId}`);
+			for (const [key, value] of Object.entries(secrets)) {
+				env.push(`${key}=${value}`);
+			}
+			env.push(`CASCADE_CREDENTIAL_KEYS=${Object.keys(secrets).join(',')}`);
 		} catch (err) {
 			console.warn('[WorkerManager] Failed to resolve credentials for project:', {
 				projectId,
@@ -93,7 +94,7 @@ async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 	const containerName = `cascade-worker-${jobId}`;
 
 	const workerEnv = await buildWorkerEnv(job);
-	const hasCredentials = workerEnv.some((e) => e.startsWith('CASCADE_CREDENTIALS='));
+	const hasCredentials = workerEnv.some((e) => e.startsWith('CASCADE_CREDENTIAL_KEYS='));
 
 	console.log('[WorkerManager] Spawning worker:', {
 		jobId,

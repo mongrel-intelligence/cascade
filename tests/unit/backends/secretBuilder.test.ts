@@ -157,19 +157,11 @@ describe('resolveGitHubToken', () => {
 		expect(mockGetPersonaToken).toHaveBeenCalledWith('project-id', 'implementation');
 	});
 
-	it('falls back to GITHUB_TOKEN from credentials when getPersonaToken throws', async () => {
+	it('propagates error when getPersonaToken throws', async () => {
 		mockGetPersonaToken.mockRejectedValue(new Error('persona not found'));
-		mockGetAllProjectCredentials.mockResolvedValue({ GITHUB_TOKEN: 'fallback-token' });
 		const profile = makeProfile({ needsGitHubToken: true });
-		const token = await resolveGitHubToken(profile, 'project-id', 'implementation');
-		expect(token).toBe('fallback-token');
-	});
-
-	it('returns undefined from fallback when GITHUB_TOKEN credential is missing', async () => {
-		mockGetPersonaToken.mockRejectedValue(new Error('persona not found'));
-		mockGetAllProjectCredentials.mockResolvedValue({});
-		const profile = makeProfile({ needsGitHubToken: true });
-		const token = await resolveGitHubToken(profile, 'project-id', 'implementation');
-		expect(token).toBeUndefined();
+		await expect(resolveGitHubToken(profile, 'project-id', 'implementation')).rejects.toThrow(
+			'persona not found',
+		);
 	});
 });

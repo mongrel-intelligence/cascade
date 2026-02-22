@@ -77,6 +77,38 @@ describe('system prompts content', () => {
 		expect(prompt).toContain('Tmux');
 		expect(prompt).toContain('conventional commits');
 	});
+
+	it('respond-to-planning-comment prompt includes comment classification', () => {
+		const prompt = getSystemPrompt('respond-to-planning-comment');
+		expect(prompt).toContain('Comment Classification');
+		expect(prompt).toContain('Question / Clarification');
+		expect(prompt).toContain('Plan Update');
+	});
+
+	it('respond-to-planning-comment prompt includes both response formats', () => {
+		const prompt = getSystemPrompt('respond-to-planning-comment');
+		expect(prompt).toContain('Plan Updated');
+		expect(prompt).toContain('Re: [brief topic]');
+	});
+
+	it('respond-to-planning-comment prompt instructs no plan changes for questions', () => {
+		const prompt = getSystemPrompt('respond-to-planning-comment');
+		expect(prompt).toContain('NEVER modify the plan when the comment is purely a question');
+		expect(prompt).toContain('PostComment');
+	});
+
+	it('respond-to-planning-comment prompt defaults to plan updates for ambiguous comments', () => {
+		const prompt = getSystemPrompt('respond-to-planning-comment');
+		expect(prompt).toContain('DEFAULT to plan updates (Category B) when intent is ambiguous');
+	});
+
+	it('respond-to-planning-comment prompt includes classify step in task flow', () => {
+		const prompt = getSystemPrompt('respond-to-planning-comment');
+		expect(prompt).toContain('Classify the comment');
+		expect(prompt).toContain('Category A (Question)');
+		expect(prompt).toContain('Category B (Plan Update)');
+		expect(prompt).toContain('Category C (Both)');
+	});
 });
 
 describe('resolveIncludes', () => {

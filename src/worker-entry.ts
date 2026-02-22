@@ -88,20 +88,6 @@ type DashboardJobData = ManualRunJobData | RetryRunJobData | DebugAnalysisJobDat
 
 type JobData = TrelloJobData | GitHubJobData | JiraJobData | DashboardJobData;
 
-function loadRouterCredentials(): void {
-	const credentialsJson = process.env.CASCADE_CREDENTIALS;
-	if (!credentialsJson) return;
-	try {
-		const secrets = JSON.parse(credentialsJson) as Record<string, string>;
-		for (const [key, value] of Object.entries(secrets)) {
-			process.env[key] = value;
-		}
-		logger.info('[Worker] Set credentials as env vars from router');
-	} catch (err) {
-		logger.warn('[Worker] Failed to parse CASCADE_CREDENTIALS', { error: String(err) });
-	}
-}
-
 async function processDashboardJob(jobId: string, jobData: DashboardJobData): Promise<void> {
 	const { loadProjectConfigById } = await import('./config/provider.js');
 
@@ -177,18 +163,15 @@ async function main(): Promise<void> {
 	const config = await loadConfig();
 	logger.info('[Worker] Loaded projects config', { projects: config.projects.map((p) => p.id) });
 
-	// Set credentials as individual env vars (passed as JSON in CASCADE_CREDENTIALS).
-	// Router resolves and decrypts credentials before spawning workers, so workers
-	// never need the CREDENTIAL_MASTER_KEY.
-	if (process.env.CASCADE_CREDENTIALS) {
-		loadRouterCredentials();
-	} else {
+	// Credentials are set as individual env vars by the router (Docker env).
+	// CASCADE_CREDENTIAL_KEYS lists the key names for reconstruction.
+	if (!process.env.CASCADE_CREDENTIAL_KEYS) {
 		logger.error('[Worker] No credentials passed from router - job will likely fail', {
 			jobType: jobData.type,
 		});
 	}
 
-	// SECURITY: Scrub sensitive env vars (DATABASE_URL, CASCADE_CREDENTIALS, etc.)
+	// SECURITY: Scrub sensitive env vars (DATABASE_URL, etc.)
 	// before agent execution. Subprocesses (Tmux, etc.) will not inherit these secrets.
 	scrubSensitiveEnv();
 	logger.info('[Worker] Scrubbed sensitive env vars');

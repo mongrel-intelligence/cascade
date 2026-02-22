@@ -30,7 +30,7 @@ describe('buildCommentResponsePrompt', () => {
 		expect(prompt).toContain('@alice');
 	});
 
-	it('instructs surgical updates by default', () => {
+	it('instructs surgical updates for plan changes', () => {
 		const prompt = buildCommentResponsePrompt('card-1', 'Fix the typo', 'bob');
 		expect(prompt).toContain('surgical');
 	});
@@ -38,6 +38,23 @@ describe('buildCommentResponsePrompt', () => {
 	it('mentions that work item data is pre-loaded', () => {
 		const prompt = buildCommentResponsePrompt('card-1', 'Update docs', 'carol');
 		expect(prompt).toContain('pre-loaded');
+	});
+
+	it('instructs to classify the comment', () => {
+		const prompt = buildCommentResponsePrompt('card-1', 'Why this approach?', 'dave');
+		expect(prompt).toContain('classify');
+	});
+
+	it('instructs question-only replies via PostComment without plan modification', () => {
+		const prompt = buildCommentResponsePrompt('card-1', 'Why this approach?', 'dave');
+		expect(prompt).toContain('question');
+		expect(prompt).toContain('PostComment');
+		expect(prompt).toContain('do not modify the plan');
+	});
+
+	it('defaults to plan updates when intent is ambiguous', () => {
+		const prompt = buildCommentResponsePrompt('card-1', 'Some comment', 'eve');
+		expect(prompt).toContain('Default to plan updates when intent is ambiguous');
 	});
 });
 

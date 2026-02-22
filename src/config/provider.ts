@@ -124,6 +124,14 @@ export async function getIntegrationCredential(
 		return process.env[envKey];
 	}
 
+	// Worker context: all credentials set by router, this one doesn't exist
+	if (process.env.CASCADE_CREDENTIAL_KEYS) {
+		throw new Error(
+			`Integration credential '${category}/${role}' not found for project '${projectId}'`,
+		);
+	}
+
+	// Router/dashboard context: resolve from DB
 	const value = await resolveIntegrationCredential(projectId, category, role);
 	if (value) return value;
 
@@ -146,6 +154,12 @@ export async function getIntegrationCredentialOrNull(
 		return process.env[envKey];
 	}
 
+	// Worker context: all credentials set by router, this one doesn't exist
+	if (process.env.CASCADE_CREDENTIAL_KEYS) {
+		return null;
+	}
+
+	// Router/dashboard context: resolve from DB
 	return resolveIntegrationCredential(projectId, category, role);
 }
 
@@ -166,6 +180,12 @@ export async function getOrgCredential(
 		return process.env[envVarKey];
 	}
 
+	// Worker context: all credentials set by router, this one doesn't exist
+	if (process.env.CASCADE_CREDENTIAL_KEYS) {
+		return null;
+	}
+
+	// Router/dashboard context: resolve from DB
 	const orgId = await getOrgIdForProject(projectId);
 	return resolveOrgCredential(orgId, envVarKey);
 }
@@ -181,6 +201,19 @@ export async function getOrgCredential(
  * 3. Merges integration credentials over org defaults
  */
 export async function getAllProjectCredentials(projectId: string): Promise<Record<string, string>> {
+	// Worker context: reconstruct from individual env vars set by the router
+	const keyList = process.env.CASCADE_CREDENTIAL_KEYS;
+	if (keyList) {
+		const result: Record<string, string> = {};
+		for (const key of keyList.split(',')) {
+			if (key && process.env[key]) {
+				result[key] = process.env[key];
+			}
+		}
+		return result;
+	}
+
+	// Router/dashboard context: resolve from DB (has CREDENTIAL_MASTER_KEY)
 	const orgId = await getOrgIdForProject(projectId);
 
 	const [integrationCreds, orgCreds] = await Promise.all([
