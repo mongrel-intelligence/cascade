@@ -28,11 +28,21 @@ describe('ReviewRequestedTrigger', () => {
 		// Review-requested is opt-in, default disabled
 	};
 
-	/** Project with reviewRequested trigger explicitly enabled */
+	/** Project with reviewRequested trigger explicitly enabled (legacy style) */
 	const mockProjectWithReviewRequested = {
 		...mockProject,
 		github: {
 			triggers: { reviewRequested: true },
+		},
+	};
+
+	/** Project with new structured reviewTrigger.onReviewRequested enabled */
+	const mockProjectWithOnReviewRequested = {
+		...mockProject,
+		github: {
+			triggers: {
+				reviewTrigger: { ownPrsOnly: false, externalPrs: false, onReviewRequested: true },
+			},
 		},
 	};
 
@@ -211,6 +221,66 @@ describe('ReviewRequestedTrigger', () => {
 				project: mockProjectWithReviewRequested,
 				source: 'github',
 				payload: makeReviewRequestedPayload('cascade-impl'),
+				personaIdentities: mockPersonaIdentities,
+			};
+			const result = await trigger.handle(ctx);
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('review');
+		});
+	});
+
+	describe('new structured reviewTrigger config', () => {
+		it('matches when reviewTrigger.onReviewRequested=true', () => {
+			const ctx: TriggerContext = {
+				project: mockProjectWithOnReviewRequested,
+				source: 'github',
+				payload: makeReviewRequestedPayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+			expect(trigger.matches(ctx)).toBe(true);
+		});
+
+		it('does not match when reviewTrigger.onReviewRequested=false', () => {
+			const ctx: TriggerContext = {
+				project: {
+					...mockProject,
+					github: {
+						triggers: {
+							reviewTrigger: { ownPrsOnly: true, externalPrs: true, onReviewRequested: false },
+						},
+					},
+				},
+				source: 'github',
+				payload: makeReviewRequestedPayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+			expect(trigger.matches(ctx)).toBe(false);
+		});
+
+		it('new config takes precedence over legacy reviewRequested=false', () => {
+			// reviewTrigger.onReviewRequested=true wins even when legacy reviewRequested=false
+			const ctx: TriggerContext = {
+				project: {
+					...mockProject,
+					github: {
+						triggers: {
+							reviewRequested: false, // legacy says disabled
+							reviewTrigger: { ownPrsOnly: false, externalPrs: false, onReviewRequested: true },
+						},
+					},
+				},
+				source: 'github',
+				payload: makeReviewRequestedPayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+			expect(trigger.matches(ctx)).toBe(true);
+		});
+
+		it('triggers review agent using new config', async () => {
+			const ctx: TriggerContext = {
+				project: mockProjectWithOnReviewRequested,
+				source: 'github',
+				payload: makeReviewRequestedPayload('cascade-reviewer'),
 				personaIdentities: mockPersonaIdentities,
 			};
 			const result = await trigger.handle(ctx);
