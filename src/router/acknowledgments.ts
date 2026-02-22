@@ -11,14 +11,14 @@
  */
 
 import { getProjectGitHubToken } from '../config/projects.js';
-import {
-	findProjectById,
-	findProjectByRepo,
-	getIntegrationCredential,
-} from '../config/provider.js';
-import { getJiraConfig } from '../pm/config.js';
+import { findProjectByRepo } from '../config/provider.js';
 import { markdownToAdf } from '../pm/jira/adf.js';
 import type { ProjectConfig } from '../types/index.js';
+import {
+	resolveGitHubHeaders,
+	resolveJiraCredentials,
+	resolveTrelloCredentials,
+} from './platformClients.js';
 
 // ---------------------------------------------------------------------------
 // Trello
@@ -29,17 +29,13 @@ export async function postTrelloAck(
 	cardId: string,
 	message: string,
 ): Promise<string | null> {
-	let trelloApiKey: string;
-	let trelloToken: string;
-	try {
-		trelloApiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
-		trelloToken = await getIntegrationCredential(projectId, 'pm', 'token');
-	} catch {
+	const creds = await resolveTrelloCredentials(projectId);
+	if (!creds) {
 		console.warn('[Ack] Missing Trello credentials, skipping ack comment');
 		return null;
 	}
 
-	const url = `https://api.trello.com/1/cards/${cardId}/actions/comments?key=${trelloApiKey}&token=${trelloToken}`;
+	const url = `https://api.trello.com/1/cards/${cardId}/actions/comments?key=${creds.apiKey}&token=${creds.token}`;
 	const response = await fetch(url, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -61,16 +57,10 @@ export async function deleteTrelloAck(
 	cardId: string,
 	commentId: string,
 ): Promise<void> {
-	let trelloApiKey: string;
-	let trelloToken: string;
-	try {
-		trelloApiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
-		trelloToken = await getIntegrationCredential(projectId, 'pm', 'token');
-	} catch {
-		return;
-	}
+	const creds = await resolveTrelloCredentials(projectId);
+	if (!creds) return;
 
-	const url = `https://api.trello.com/1/cards/${cardId}/actions/${commentId}/comments?key=${trelloApiKey}&token=${trelloToken}`;
+	const url = `https://api.trello.com/1/cards/${cardId}/actions/${commentId}/comments?key=${creds.apiKey}&token=${creds.token}`;
 	try {
 		await fetch(url, { method: 'DELETE' });
 		console.log('[Ack] Trello orphan ack deleted:', commentId);
@@ -92,12 +82,7 @@ export async function postGitHubAck(
 	const url = `https://api.github.com/repos/${repoFullName}/issues/${prNumber}/comments`;
 	const response = await fetch(url, {
 		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${token}`,
-			Accept: 'application/vnd.github+json',
-			'X-GitHub-Api-Version': '2022-11-28',
-			'Content-Type': 'application/json',
-		},
+		headers: resolveGitHubHeaders(token, { 'Content-Type': 'application/json' }),
 		body: JSON.stringify({ body: message }),
 	});
 
@@ -120,11 +105,7 @@ export async function deleteGitHubAck(
 	try {
 		await fetch(url, {
 			method: 'DELETE',
-			headers: {
-				Authorization: `Bearer ${token}`,
-				Accept: 'application/vnd.github+json',
-				'X-GitHub-Api-Version': '2022-11-28',
-			},
+			headers: resolveGitHubHeaders(token),
 		});
 		console.log('[Ack] GitHub orphan ack deleted:', commentId);
 	} catch (err) {
@@ -141,27 +122,18 @@ export async function postJiraAck(
 	issueKey: string,
 	message: string,
 ): Promise<string | null> {
-	let jiraEmail: string;
-	let jiraApiToken: string;
-	let jiraBaseUrl: string;
-	try {
-		jiraEmail = await getIntegrationCredential(projectId, 'pm', 'email');
-		jiraApiToken = await getIntegrationCredential(projectId, 'pm', 'api_token');
-		const project = await findProjectById(projectId);
-		jiraBaseUrl = (project ? getJiraConfig(project)?.baseUrl : undefined) ?? '';
-		if (!jiraBaseUrl) throw new Error('Missing JIRA base URL');
-	} catch {
+	const creds = await resolveJiraCredentials(projectId);
+	if (!creds) {
 		console.warn('[Ack] Missing JIRA credentials, skipping ack comment');
 		return null;
 	}
 
-	const auth = Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString('base64');
 	const adfBody = markdownToAdf(message);
-	const url = `${jiraBaseUrl}/rest/api/3/issue/${issueKey}/comment`;
+	const url = `${creds.baseUrl}/rest/api/3/issue/${issueKey}/comment`;
 	const response = await fetch(url, {
 		method: 'POST',
 		headers: {
-			Authorization: `Basic ${auth}`,
+			Authorization: `Basic ${creds.auth}`,
 			'Content-Type': 'application/json',
 		},
 		body: JSON.stringify({ body: adfBody }),
@@ -182,26 +154,15 @@ export async function deleteJiraAck(
 	issueKey: string,
 	commentId: string,
 ): Promise<void> {
-	let jiraEmail: string;
-	let jiraApiToken: string;
-	let jiraBaseUrl: string;
-	try {
-		jiraEmail = await getIntegrationCredential(projectId, 'pm', 'email');
-		jiraApiToken = await getIntegrationCredential(projectId, 'pm', 'api_token');
-		const project = await findProjectById(projectId);
-		jiraBaseUrl = (project ? getJiraConfig(project)?.baseUrl : undefined) ?? '';
-		if (!jiraBaseUrl) throw new Error('Missing JIRA base URL');
-	} catch {
-		return;
-	}
+	const creds = await resolveJiraCredentials(projectId);
+	if (!creds) return;
 
-	const auth = Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString('base64');
-	const url = `${jiraBaseUrl}/rest/api/2/issue/${issueKey}/comment/${commentId}`;
+	const url = `${creds.baseUrl}/rest/api/2/issue/${issueKey}/comment/${commentId}`;
 	try {
 		await fetch(url, {
 			method: 'DELETE',
 			headers: {
-				Authorization: `Basic ${auth}`,
+				Authorization: `Basic ${creds.auth}`,
 				'Content-Type': 'application/json',
 			},
 		});
@@ -227,23 +188,12 @@ export async function resolveJiraBotAccountId(projectId: string): Promise<string
 	const cached = jiraBotCache.get(projectId);
 	if (cached && Date.now() < cached.expiresAt) return cached.accountId;
 
-	let jiraEmail: string;
-	let jiraApiToken: string;
-	let jiraBaseUrl: string;
-	try {
-		jiraEmail = await getIntegrationCredential(projectId, 'pm', 'email');
-		jiraApiToken = await getIntegrationCredential(projectId, 'pm', 'api_token');
-		const project = await findProjectById(projectId);
-		jiraBaseUrl = (project ? getJiraConfig(project)?.baseUrl : undefined) ?? '';
-		if (!jiraBaseUrl) throw new Error('Missing JIRA base URL');
-	} catch {
-		return null;
-	}
+	const creds = await resolveJiraCredentials(projectId);
+	if (!creds) return null;
 
-	const auth = Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString('base64');
 	try {
-		const response = await fetch(`${jiraBaseUrl}/rest/api/2/myself`, {
-			headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' },
+		const response = await fetch(`${creds.baseUrl}/rest/api/2/myself`, {
+			headers: { Authorization: `Basic ${creds.auth}`, Accept: 'application/json' },
 		});
 		if (!response.ok) return null;
 
@@ -275,18 +225,12 @@ export async function resolveTrelloBotMemberId(projectId: string): Promise<strin
 	const cached = trelloBotCache.get(projectId);
 	if (cached && Date.now() < cached.expiresAt) return cached.memberId;
 
-	let trelloApiKey: string;
-	let trelloToken: string;
-	try {
-		trelloApiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
-		trelloToken = await getIntegrationCredential(projectId, 'pm', 'token');
-	} catch {
-		return null;
-	}
+	const creds = await resolveTrelloCredentials(projectId);
+	if (!creds) return null;
 
 	try {
 		const response = await fetch(
-			`https://api.trello.com/1/members/me?key=${trelloApiKey}&token=${trelloToken}`,
+			`https://api.trello.com/1/members/me?key=${creds.apiKey}&token=${creds.token}`,
 			{ headers: { Accept: 'application/json' } },
 		);
 		if (!response.ok) return null;
