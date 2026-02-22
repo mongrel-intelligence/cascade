@@ -61,13 +61,17 @@ async function executeAgent(
 // ============================================================================
 
 function processNextQueued(registry: TriggerRegistry): void {
-	processNextQueuedWebhook((payload) => processTrelloWebhook(payload, registry), 'Trello');
+	processNextQueuedWebhook(
+		(payload, _eventType, ackCommentId) =>
+			processTrelloWebhook(payload, registry, ackCommentId as string | undefined),
+		'Trello',
+	);
 }
 
-function tryQueueWebhook(payload: TrelloWebhookPayload): boolean {
+function tryQueueWebhook(payload: TrelloWebhookPayload, ackCommentId?: string): boolean {
 	if (!isCurrentlyProcessing()) return false;
 
-	const queued = enqueueWebhook(payload);
+	const queued = enqueueWebhook(payload, undefined, ackCommentId);
 	if (queued) {
 		logger.info('Currently processing, webhook queued', { queueLength: getQueueLength() });
 	} else {
@@ -161,7 +165,7 @@ export async function processTrelloWebhook(
 		return;
 	}
 
-	if (tryQueueWebhook(payload)) {
+	if (tryQueueWebhook(payload, ackCommentId)) {
 		return;
 	}
 

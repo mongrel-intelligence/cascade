@@ -434,6 +434,7 @@ export async function executeAgent(
 				customModels: CUSTOM_MODELS as ModelSpec[],
 				repoDir,
 				trello: cardId ? { cardId } : undefined,
+				preSeededCommentId: input.ackCommentId as string | undefined,
 			}),
 
 		interactive,
