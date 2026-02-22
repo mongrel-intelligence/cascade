@@ -580,6 +580,54 @@ describe('JiraPMProvider', () => {
 
 			expect(mockJiraClient.deleteIssue).toHaveBeenCalledWith('PROJ-5');
 		});
+
+		it('falls back to transition when deleteIssue returns 403', async () => {
+			mockJiraClient.deleteIssue.mockRejectedValue(new Error('Request failed with status 403'));
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-1', name: 'In Progress', to: { name: 'In Progress' } },
+				{ id: 't-2', name: 'Cancelled', to: { name: 'Cancelled' } },
+			]);
+			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
+
+			await provider.deleteChecklistItem('PROJ-1', 'PROJ-5');
+
+			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-5', 't-2');
+		});
+
+		it('tries terminal statuses in priority order (cancelled preferred over done)', async () => {
+			mockJiraClient.deleteIssue.mockRejectedValue(new Error('403 Forbidden'));
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-done', name: 'Done', to: { name: 'Done' } },
+				{ id: 't-cancel', name: 'Cancel', to: { name: 'Cancelled' } },
+			]);
+			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
+
+			await provider.deleteChecklistItem('PROJ-1', 'PROJ-5');
+
+			// Should pick "Cancelled" (higher priority) over "Done"
+			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-5', 't-cancel');
+		});
+
+		it('throws when no terminal transition available after 403', async () => {
+			mockJiraClient.deleteIssue.mockRejectedValue(new Error('403 Forbidden'));
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-1', name: 'In Progress', to: { name: 'In Progress' } },
+				{ id: 't-2', name: 'In Review', to: { name: 'In Review' } },
+			]);
+
+			await expect(provider.deleteChecklistItem('PROJ-1', 'PROJ-5')).rejects.toThrow(
+				'Cannot delete subtask PROJ-5: deletion returned 403 and no terminal transition found',
+			);
+		});
+
+		it('re-throws non-403 errors without fallback', async () => {
+			mockJiraClient.deleteIssue.mockRejectedValue(new Error('500 Internal Server Error'));
+
+			await expect(provider.deleteChecklistItem('PROJ-1', 'PROJ-5')).rejects.toThrow(
+				'500 Internal Server Error',
+			);
+			expect(mockJiraClient.getTransitions).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('getAttachments', () => {

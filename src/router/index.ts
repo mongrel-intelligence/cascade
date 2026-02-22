@@ -183,6 +183,66 @@ async function tryPostTrelloAck(
 	return commentId ?? undefined;
 }
 
+async function isSelfAuthoredTrelloComment(payload: unknown, projectId: string): Promise<boolean> {
+	const action = (payload as Record<string, unknown>).action as Record<string, unknown> | undefined;
+	const commentAuthorId = action?.idMemberCreator as string | undefined;
+	if (!commentAuthorId) return false;
+	try {
+		const botId = await resolveTrelloBotMemberId(projectId);
+		return !!botId && commentAuthorId === botId;
+	} catch {
+		return false; // Identity resolution failed — proceed normally
+	}
+}
+
+async function processTrelloWebhookEvent(
+	project: RouterProjectConfig,
+	cardId: string,
+	actionType: string,
+	payload: unknown,
+): Promise<void> {
+	if (actionType === 'commentCard' && (await isSelfAuthoredTrelloComment(payload, project.id))) {
+		console.log('[Router] Ignoring self-authored Trello comment');
+		return;
+	}
+
+	console.log('[Router] Queueing Trello job:', { actionType, cardId, projectId: project.id });
+
+	// Fire-and-forget acknowledgment reaction — only for comment actions
+	if (actionType === 'commentCard') {
+		void sendAcknowledgeReaction('trello', project.id, payload).catch((err) =>
+			console.error('[Router] Trello reaction error:', err),
+		);
+	}
+
+	// Try to post an ack comment via trigger matching (non-blocking best-effort)
+	let ackCommentId: string | undefined;
+	try {
+		ackCommentId = await tryPostTrelloAck(project.id, cardId, payload);
+	} catch (err) {
+		console.warn('[Router] Trello ack comment failed (non-fatal):', String(err));
+	}
+
+	const job: CascadeJob = {
+		type: 'trello',
+		source: 'trello',
+		payload,
+		projectId: project.id,
+		cardId,
+		actionType: actionType || 'unknown',
+		receivedAt: new Date().toISOString(),
+		ackCommentId,
+	};
+
+	try {
+		const jobId = await addJob(job);
+		console.log('[Router] Trello job queued:', { jobId, actionType, ackCommentId });
+	} catch (err) {
+		console.error('[Router] Failed to queue Trello job:', err);
+		// Still return to caller — Trello gets 200 to avoid retries
+	}
+}
+
 /**
  * Try to match a trigger and post an ack comment for a GitHub webhook.
  * Returns the ack comment ID if posted, undefined otherwise.
@@ -226,6 +286,94 @@ async function tryPostGitHubAck(
 	return commentId ?? undefined;
 }
 
+async function isSelfAuthoredGitHubComment(
+	payload: unknown,
+	repoFullName: string,
+): Promise<boolean> {
+	const p = payload as Record<string, unknown>;
+	const commentUser = (p.comment as Record<string, unknown> | undefined)?.user as
+		| Record<string, unknown>
+		| undefined;
+	const login = commentUser?.login as string | undefined;
+	if (!login) return false;
+	try {
+		const project = await findProjectByRepo(repoFullName);
+		if (!project) return false;
+		const personas = await resolvePersonaIdentities(project.id);
+		return isCascadeBot(login, personas);
+	} catch {
+		return false; // Persona resolution failed — proceed normally
+	}
+}
+
+function fireGitHubAckReaction(repoFullName: string, payload: unknown): void {
+	void (async () => {
+		try {
+			const project = await findProjectByRepo(repoFullName);
+			if (!project) {
+				console.warn('[Router] No project found for repo, skipping GitHub reaction', {
+					repoFullName,
+				});
+				return;
+			}
+			const personaIdentities = await resolvePersonaIdentities(project.id);
+			await sendAcknowledgeReaction('github', repoFullName, payload, personaIdentities, project);
+		} catch (err) {
+			console.warn('[Router] GitHub reaction error:', String(err));
+		}
+	})();
+}
+
+async function processGitHubWebhookEvent(
+	eventType: string,
+	repoFullName: string,
+	payload: unknown,
+): Promise<void> {
+	const isCommentEvent =
+		eventType === 'issue_comment' || eventType === 'pull_request_review_comment';
+
+	if (isCommentEvent && (await isSelfAuthoredGitHubComment(payload, repoFullName))) {
+		console.log('[Router] Ignoring self-authored GitHub comment');
+		return;
+	}
+
+	console.log('[Router] Queueing GitHub job:', { eventType, repoFullName });
+
+	// Fire-and-forget acknowledgment reaction — only for comment events that @mention the bot
+	if (isCommentEvent) {
+		fireGitHubAckReaction(repoFullName, payload);
+	}
+
+	// Try to post an ack comment via trigger matching (non-blocking best-effort)
+	let ackCommentId: number | undefined;
+	try {
+		ackCommentId = await tryPostGitHubAck(eventType, repoFullName, payload);
+	} catch (err) {
+		console.warn('[Router] GitHub ack comment failed (non-fatal):', String(err));
+	}
+
+	const job: CascadeJob = {
+		type: 'github',
+		source: 'github',
+		payload,
+		eventType,
+		repoFullName,
+		receivedAt: new Date().toISOString(),
+		ackCommentId,
+	};
+
+	// Fire pre-actions (non-blocking) before queueing
+	const p = payload as Record<string, unknown>;
+	firePreActions(job as GitHubJob, p);
+
+	try {
+		const jobId = await addJob(job);
+		console.log('[Router] GitHub job queued:', { jobId, eventType, ackCommentId });
+	} catch (err) {
+		console.error('[Router] Failed to queue GitHub job:', err);
+	}
+}
+
 /**
  * Try to match a trigger and post an ack comment for a JIRA webhook.
  * Returns the ack comment ID if posted, undefined otherwise.
@@ -248,6 +396,25 @@ async function tryPostJiraAck(
 
 	const commentId = await postJiraAck(projectId, issueKey, message);
 	return commentId ?? undefined;
+}
+
+async function isSelfAuthoredJiraComment(
+	webhookEvent: string,
+	payload: unknown,
+	projectId: string,
+): Promise<boolean> {
+	if (!webhookEvent.startsWith('comment_')) return false;
+	const p = payload as Record<string, unknown>;
+	const comment = p.comment as Record<string, unknown> | undefined;
+	const author = comment?.author as Record<string, unknown> | undefined;
+	const commentAuthorId = author?.accountId as string | undefined;
+	if (!commentAuthorId) return false;
+	try {
+		const botId = await resolveJiraBotAccountId(projectId);
+		return !!botId && commentAuthorId === botId;
+	} catch {
+		return false; // Identity resolution failed — proceed normally
+	}
 }
 
 /**
@@ -364,60 +531,7 @@ app.post('/trello/webhook', async (c) => {
 	});
 
 	if (shouldProcess && project && cardId) {
-		// Skip self-authored Trello comments to prevent infinite loops
-		if (actionType === 'commentCard') {
-			const action = (payload as Record<string, unknown>).action as
-				| Record<string, unknown>
-				| undefined;
-			const commentAuthorId = action?.idMemberCreator as string | undefined;
-			if (commentAuthorId) {
-				try {
-					const botId = await resolveTrelloBotMemberId(project.id);
-					if (botId && commentAuthorId === botId) {
-						console.log('[Router] Ignoring self-authored Trello comment');
-						return c.text('OK', 200);
-					}
-				} catch {
-					// Identity resolution failed — proceed normally
-				}
-			}
-		}
-
-		console.log('[Router] Queueing Trello job:', { actionType, cardId, projectId: project.id });
-
-		// Fire-and-forget acknowledgment reaction — only for comment actions
-		if (actionType === 'commentCard') {
-			void sendAcknowledgeReaction('trello', project.id, payload).catch((err) =>
-				console.error('[Router] Trello reaction error:', err),
-			);
-		}
-
-		// Try to post an ack comment via trigger matching (non-blocking best-effort)
-		let ackCommentId: string | undefined;
-		try {
-			ackCommentId = await tryPostTrelloAck(project.id, cardId, payload);
-		} catch (err) {
-			console.warn('[Router] Trello ack comment failed (non-fatal):', String(err));
-		}
-
-		const job: CascadeJob = {
-			type: 'trello',
-			source: 'trello',
-			payload,
-			projectId: project.id,
-			cardId,
-			actionType: actionType || 'unknown',
-			receivedAt: new Date().toISOString(),
-			ackCommentId,
-		};
-
-		try {
-			const jobId = await addJob(job);
-			console.log('[Router] Trello job queued:', { jobId, actionType, ackCommentId });
-		} catch (err) {
-			console.error('[Router] Failed to queue Trello job:', err);
-			// Still return 200 to Trello to avoid retries
-		}
+		await processTrelloWebhookEvent(project, cardId, actionType || 'unknown', payload);
 	} else {
 		console.log(`[Router] Ignoring Trello: ${actionType || 'unknown'}`);
 	}
@@ -507,82 +621,7 @@ app.post('/github/webhook', async (c) => {
 	});
 
 	if (shouldProcess) {
-		// Skip self-authored GitHub comments to prevent infinite loops
-		if (eventType === 'issue_comment' || eventType === 'pull_request_review_comment') {
-			const commentLogin = (p.comment as Record<string, unknown> | undefined)?.user as
-				| Record<string, unknown>
-				| undefined;
-			const login = commentLogin?.login as string | undefined;
-			if (login) {
-				try {
-					const project = await findProjectByRepo(repoFullName);
-					if (project) {
-						const personas = await resolvePersonaIdentities(project.id);
-						if (isCascadeBot(login, personas)) {
-							console.log('[Router] Ignoring self-authored GitHub comment');
-							return c.text('OK', 200);
-						}
-					}
-				} catch {
-					// Persona resolution failed — proceed normally
-				}
-			}
-		}
-
-		console.log('[Router] Queueing GitHub job:', { eventType, repoFullName });
-
-		// Fire-and-forget acknowledgment reaction — only for comment events that @mention the bot
-		if (eventType === 'issue_comment' || eventType === 'pull_request_review_comment') {
-			void (async () => {
-				try {
-					const project = await findProjectByRepo(repoFullName);
-					if (!project) {
-						console.warn('[Router] No project found for repo, skipping GitHub reaction', {
-							repoFullName,
-						});
-						return;
-					}
-					const personaIdentities = await resolvePersonaIdentities(project.id);
-					await sendAcknowledgeReaction(
-						'github',
-						repoFullName,
-						payload,
-						personaIdentities,
-						project,
-					);
-				} catch (err) {
-					console.warn('[Router] GitHub reaction error:', String(err));
-				}
-			})();
-		}
-
-		// Try to post an ack comment via trigger matching (non-blocking best-effort)
-		let ackCommentId: number | undefined;
-		try {
-			ackCommentId = await tryPostGitHubAck(eventType, repoFullName, payload);
-		} catch (err) {
-			console.warn('[Router] GitHub ack comment failed (non-fatal):', String(err));
-		}
-
-		const job: CascadeJob = {
-			type: 'github',
-			source: 'github',
-			payload,
-			eventType,
-			repoFullName,
-			receivedAt: new Date().toISOString(),
-			ackCommentId,
-		};
-
-		// Fire pre-actions (non-blocking) before queueing
-		firePreActions(job as GitHubJob, p);
-
-		try {
-			const jobId = await addJob(job);
-			console.log('[Router] GitHub job queued:', { jobId, eventType, ackCommentId });
-		} catch (err) {
-			console.error('[Router] Failed to queue GitHub job:', err);
-		}
+		await processGitHubWebhookEvent(eventType, repoFullName, payload);
 	} else {
 		console.log('[Router] Ignoring GitHub event:', eventType);
 	}
@@ -651,25 +690,11 @@ app.post('/jira/webhook', async (c) => {
 	});
 
 	if (shouldProcess && project) {
-		// Skip self-authored JIRA comments to prevent infinite loops
-		if (webhookEvent.startsWith('comment_')) {
-			const comment = p.comment as Record<string, unknown> | undefined;
-			const author = comment?.author as Record<string, unknown> | undefined;
-			const commentAuthorId = author?.accountId as string | undefined;
-			if (commentAuthorId) {
-				try {
-					const botId = await resolveJiraBotAccountId(project.id);
-					if (botId && commentAuthorId === botId) {
-						console.log('[Router] Ignoring self-authored JIRA comment');
-						return c.text('OK', 200);
-					}
-				} catch {
-					// Identity resolution failed — proceed normally
-				}
-			}
+		if (await isSelfAuthoredJiraComment(webhookEvent, payload, project.id)) {
+			console.log('[Router] Ignoring self-authored JIRA comment');
+		} else {
+			await queueJiraJob(project, issueKey, webhookEvent, payload, config.fullProjects);
 		}
-
-		await queueJiraJob(project, issueKey, webhookEvent, payload, config.fullProjects);
 	} else {
 		console.log(`[Router] Ignoring JIRA: ${webhookEvent}`);
 	}
