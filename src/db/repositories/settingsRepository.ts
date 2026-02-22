@@ -175,15 +175,13 @@ export async function upsertProjectIntegration(
 		const existing = await getIntegrationByProjectAndCategory(projectId, category);
 		triggersToSave = (existing?.triggers as Record<string, boolean>) ?? {};
 	}
-	// Delete then insert to handle the unique constraint
-	await db
-		.delete(projectIntegrations)
-		.where(
-			and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.category, category)),
-		);
 	const [row] = await db
 		.insert(projectIntegrations)
 		.values({ projectId, category, provider, config, triggers: triggersToSave })
+		.onConflictDoUpdate({
+			target: [projectIntegrations.projectId, projectIntegrations.category],
+			set: { provider, config, triggers: triggersToSave, updatedAt: new Date() },
+		})
 		.returning();
 	return row;
 }
