@@ -165,8 +165,8 @@ async function notifyJiraTimeout(job: JiraJob, info: TimeoutInfo): Promise<void>
 		'Transition the issue back to the trigger status to retry.',
 	);
 
-	// Use v2 API which accepts plain text, avoiding the pm/jira/adf dependency
-	// (the router image doesn't include pm/ modules)
+	// Use v2 API which accepts plain text — no Markdown-to-ADF conversion needed
+	// for simple timeout messages
 	const url = `${creds.baseUrl}/rest/api/2/issue/${job.issueKey}/comment`;
 	const response = await fetch(url, {
 		method: 'POST',
