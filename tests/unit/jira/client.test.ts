@@ -5,6 +5,7 @@ vi.mock('../../../src/utils/logging.js', () => ({
 		debug: vi.fn(),
 		info: vi.fn(),
 		warn: vi.fn(),
+		error: vi.fn(),
 	},
 }));
 
@@ -308,6 +309,64 @@ describe('jiraClient', () => {
 			expect(mockIssues.createIssue).toHaveBeenCalledWith(
 				expect.objectContaining({
 					fields: expect.objectContaining({ project: { key: 'TEST' } }),
+				}),
+			);
+		});
+
+		it('logs error detail and re-throws on failure', async () => {
+			const apiError = Object.assign(new Error('Request failed with status code 400'), {
+				response: {
+					data: {
+						errorMessages: [],
+						errors: { issuetype: 'Valid issue type is required' },
+					},
+				},
+			});
+			mockIssues.createIssue.mockRejectedValue(apiError);
+
+			const { logger } = await import('../../../src/utils/logging.js');
+
+			await expect(
+				withJiraCredentials(creds, () =>
+					jiraClient.createIssue({
+						project: { key: 'BTS' },
+						summary: 'Subtask',
+						issuetype: { name: 'Sub-task' },
+					}),
+				),
+			).rejects.toThrow('Request failed with status code 400');
+
+			expect(logger.error).toHaveBeenCalledWith(
+				'JIRA createIssue failed',
+				expect.objectContaining({
+					project: 'BTS',
+					issueType: 'Sub-task',
+					detail: expect.stringContaining('Valid issue type is required'),
+				}),
+			);
+		});
+
+		it('logs without detail when error has no response', async () => {
+			mockIssues.createIssue.mockRejectedValue(new Error('Network error'));
+
+			const { logger } = await import('../../../src/utils/logging.js');
+
+			await expect(
+				withJiraCredentials(creds, () =>
+					jiraClient.createIssue({
+						project: { key: 'TEST' },
+						summary: 'Issue',
+						issuetype: { name: 'Task' },
+					}),
+				),
+			).rejects.toThrow('Network error');
+
+			expect(logger.error).toHaveBeenCalledWith(
+				'JIRA createIssue failed',
+				expect.objectContaining({
+					project: 'TEST',
+					issueType: 'Task',
+					detail: undefined,
 				}),
 			);
 		});

@@ -106,9 +106,22 @@ export const jiraClient = {
 		logger.debug('Creating JIRA issue', {
 			project: (fields.project as { key?: string })?.key,
 		});
-		return getClient().issues.createIssue({
-			fields: fields as Parameters<Version3Client['issues']['createIssue']>[0]['fields'],
-		});
+		try {
+			return await getClient().issues.createIssue({
+				fields: fields as Parameters<Version3Client['issues']['createIssue']>[0]['fields'],
+			});
+		} catch (error: unknown) {
+			const detail =
+				error instanceof Object && 'response' in error
+					? JSON.stringify((error as { response?: { data?: unknown } }).response?.data)
+					: undefined;
+			logger.error('JIRA createIssue failed', {
+				project: (fields.project as { key?: string })?.key,
+				issueType: (fields.issuetype as { name?: string })?.name,
+				detail,
+			});
+			throw error;
+		}
 	},
 
 	async transitionIssue(issueKey: string, transitionId: string) {
