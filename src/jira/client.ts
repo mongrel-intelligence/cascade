@@ -102,6 +102,15 @@ export const jiraClient = {
 		});
 	},
 
+	async getIssueTypes(): Promise<{ name: string; subtask: boolean }[]> {
+		logger.debug('Fetching JIRA issue types');
+		const types = await getClient().issueTypes.getIssueAllTypes();
+		return (types as { name?: string; subtask?: boolean }[]).map((t) => ({
+			name: t.name ?? '',
+			subtask: t.subtask ?? false,
+		}));
+	},
+
 	async createIssue(fields: Record<string, unknown>) {
 		logger.debug('Creating JIRA issue', {
 			project: (fields.project as { key?: string })?.key,
@@ -111,16 +120,20 @@ export const jiraClient = {
 				fields: fields as Parameters<Version3Client['issues']['createIssue']>[0]['fields'],
 			});
 		} catch (error: unknown) {
+			const project = (fields.project as { key?: string })?.key;
+			const issueType = (fields.issuetype as { name?: string })?.name;
 			const detail =
 				error instanceof Object && 'response' in error
-					? JSON.stringify((error as { response?: { data?: unknown } }).response?.data)
+					? (error as { response?: { data?: unknown } }).response?.data
 					: undefined;
-			logger.error('JIRA createIssue failed', {
-				project: (fields.project as { key?: string })?.key,
-				issueType: (fields.issuetype as { name?: string })?.name,
-				detail,
-			});
-			throw error;
+			const detailStr = detail ? ` — JIRA response: ${JSON.stringify(detail)}` : '';
+			const message = error instanceof Error ? error.message : String(error);
+
+			logger.error('JIRA createIssue failed', { project, issueType, detail });
+
+			throw new Error(
+				`JIRA createIssue failed (project=${project}, type=${issueType}): ${message}${detailStr}`,
+			);
 		}
 	},
 

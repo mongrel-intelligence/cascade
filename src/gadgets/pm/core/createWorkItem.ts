@@ -7,16 +7,11 @@ export interface CreateWorkItemParams {
 }
 
 export async function createWorkItem(params: CreateWorkItemParams): Promise<string> {
-	try {
-		const item = await getPMProvider().createWorkItem({
-			containerId: params.containerId,
-			title: params.title,
-			description: params.description,
-		});
+	const item = await getPMProvider().createWorkItem({
+		containerId: params.containerId,
+		title: params.title,
+		description: params.description,
+	});
 
-		return `Work item created successfully: "${item.title}" - ${item.url}`;
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		return `Error creating work item: ${message}`;
-	}
+	return `Work item created successfully: "${item.title}" - ${item.url}`;
 }

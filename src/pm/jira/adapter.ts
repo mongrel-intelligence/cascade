@@ -72,8 +72,20 @@ interface JiraTransition {
 
 export class JiraPMProvider implements PMProvider {
 	readonly type = 'jira' as const;
+	private resolvedSubtaskType: string | null = null;
 
 	constructor(private config: JiraConfig) {}
+
+	private async getSubtaskTypeName(): Promise<string> {
+		if (this.config.issueTypes?.subtask) return this.config.issueTypes.subtask;
+		if (this.resolvedSubtaskType) return this.resolvedSubtaskType;
+
+		const types = await jiraClient.getIssueTypes();
+		const subtaskType = types.find((t) => t.subtask);
+		this.resolvedSubtaskType = subtaskType?.name ?? 'Subtask';
+		logger.info('Resolved JIRA subtask issue type', { name: this.resolvedSubtaskType });
+		return this.resolvedSubtaskType;
+	}
 
 	async getWorkItem(id: string): Promise<WorkItem> {
 		const issue = await jiraClient.getIssue(id);
@@ -233,14 +245,14 @@ export class JiraPMProvider implements PMProvider {
 	async addChecklistItem(_checklistId: string, name: string, _checked = false): Promise<void> {
 		// Extract parent issue key from checklistId format: "checklist-PROJ-123-timestamp"
 		// or "subtasks-PROJ-123"
-		const match = _checklistId.match(/(?:checklist|subtasks)-(.+?)(?:-\d+)?$/);
+		// Use \d{10,} to only strip timestamps (10+ digits), not issue numbers like PROJ-5
+		const match = _checklistId.match(/(?:checklist|subtasks)-(.+?)(?:-\d{10,})?$/);
 		const parentKey = match?.[1];
 		if (!parentKey) {
-			logger.warn('Cannot extract parent issue from checklist ID', { checklistId: _checklistId });
-			return;
+			throw new Error(`Cannot extract parent issue key from checklist ID: ${_checklistId}`);
 		}
 
-		const issueType = this.config.issueTypes?.subtask ?? 'Sub-task';
+		const issueType = await this.getSubtaskTypeName();
 		await jiraClient.createIssue({
 			project: { key: this.config.projectKey },
 			parent: { key: parentKey },

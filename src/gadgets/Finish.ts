@@ -4,7 +4,7 @@ import { getSessionState } from './sessionState.js';
 
 export class Finish extends Gadget({
 	name: 'Finish',
-	maxConcurrent: 1,
+	exclusive: true,
 	description:
 		'Call this gadget when you have completed all tasks and want to end the session. This should be your final gadget call.',
 	schema: z.object({
