@@ -721,4 +721,214 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(result?.workItemId).toBe('db-work-item');
 		});
 	});
+
+	describe('reviewTrigger mode-aware behavior', () => {
+		/** Project with only externalPrs enabled */
+		const mockProjectExternalOnly = {
+			...mockProject,
+			github: {
+				triggers: {
+					reviewTrigger: { ownPrsOnly: false, externalPrs: true, onReviewRequested: false },
+				},
+			},
+		};
+
+		/** Project with both ownPrsOnly and externalPrs enabled */
+		const mockProjectBothModes = {
+			...mockProject,
+			github: {
+				triggers: {
+					reviewTrigger: { ownPrsOnly: true, externalPrs: true, onReviewRequested: false },
+				},
+			},
+		};
+
+		/** Project with all modes disabled */
+		const mockProjectNoModes = {
+			...mockProject,
+			github: {
+				triggers: {
+					reviewTrigger: { ownPrsOnly: false, externalPrs: false, onReviewRequested: false },
+				},
+			},
+		};
+
+		it('does not match when all modes are disabled', () => {
+			const ctx: TriggerContext = {
+				project: mockProjectNoModes,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+			expect(trigger.matches(ctx)).toBe(false);
+		});
+
+		it('matches when externalPrs is enabled', () => {
+			const ctx: TriggerContext = {
+				project: mockProjectExternalOnly,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+			expect(trigger.matches(ctx)).toBe(true);
+		});
+
+		it('matches when both modes are enabled', () => {
+			const ctx: TriggerContext = {
+				project: mockProjectBothModes,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+			expect(trigger.matches(ctx)).toBe(true);
+		});
+
+		it('triggers for external PR author when externalPrs=true', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'External PR',
+				body: 'https://trello.com/c/abc123',
+				state: 'open',
+				headRef: 'feature/external',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'external-contributor' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: true,
+				totalCount: 1,
+				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProjectExternalOnly,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('review');
+		});
+
+		it('skips implementer PR when only externalPrs=true', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Implementer PR',
+				body: 'https://trello.com/c/abc123',
+				state: 'open',
+				headRef: 'feature/impl',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProjectExternalOnly,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+		});
+
+		it('triggers for both authors when ownPrsOnly=true and externalPrs=true', async () => {
+			const setupMocks = (authorLogin: string) => {
+				vi.mocked(githubClient.getPR).mockResolvedValue({
+					number: 42,
+					title: 'Test PR',
+					body: null,
+					state: 'open',
+					headRef: 'feature/test',
+					headSha: 'sha123',
+					baseRef: 'main',
+					merged: false,
+					htmlUrl: 'https://github.com/owner/repo/pull/42',
+					user: { login: authorLogin },
+				});
+				vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+				vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+					allPassing: true,
+					totalCount: 1,
+					checkRuns: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+				});
+			};
+
+			// Implementer PR
+			setupMocks('cascade-impl');
+			const implCtx: TriggerContext = {
+				project: mockProjectBothModes,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+			const implResult = await trigger.handle(implCtx);
+			expect(implResult).not.toBeNull();
+
+			// External PR
+			vi.clearAllMocks();
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+			setupMocks('external-contributor');
+			const extCtx: TriggerContext = {
+				project: mockProjectBothModes,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+			const extResult = await trigger.handle(extCtx);
+			expect(extResult).not.toBeNull();
+		});
+
+		it('backward compat: legacy checkSuiteSuccess=true still triggers for implementer PRs', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: null,
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: true,
+				totalCount: 1,
+				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+			});
+
+			// mockProject has no github triggers — resolves to legacy defaults (ownPrsOnly=true)
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('review');
+		});
+
+		it('backward compat: legacy checkSuiteSuccess=false skips even implementer PRs', () => {
+			const ctx: TriggerContext = {
+				project: {
+					...mockProject,
+					github: { triggers: { checkSuiteSuccess: false } },
+				},
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+			expect(trigger.matches(ctx)).toBe(false);
+		});
+	});
 });

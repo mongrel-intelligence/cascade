@@ -123,18 +123,28 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 	],
 	review: [
 		{
-			key: 'checkSuiteSuccess',
-			label: 'Check Suite Success',
-			description: 'Trigger review agent when all CI checks pass.',
-			defaultValue: true,
+			key: 'reviewTrigger.ownPrsOnly',
+			label: 'Own PRs Only',
+			description:
+				'Trigger review agent when CI passes on PRs authored by the implementer persona.',
+			defaultValue: false,
 			scmProvider: 'github',
 			category: 'scm',
 		},
 		{
-			key: 'reviewRequested',
-			label: 'Review Requested (opt-in)',
+			key: 'reviewTrigger.externalPrs',
+			label: 'External PRs',
 			description:
-				'Trigger review agent when review is requested from a CASCADE persona. Default disabled.',
+				'Trigger review agent when CI passes on PRs authored by anyone (not just the implementer).',
+			defaultValue: false,
+			scmProvider: 'github',
+			category: 'scm',
+		},
+		{
+			key: 'reviewTrigger.onReviewRequested',
+			label: 'On Review Requested',
+			description:
+				'Trigger review agent when a CASCADE persona is explicitly requested as reviewer.',
 			defaultValue: false,
 			scmProvider: 'github',
 			category: 'scm',

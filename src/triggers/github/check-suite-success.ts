@@ -1,4 +1,4 @@
-import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
+import { resolveReviewTriggerConfig } from '../../config/triggerConfig.js';
 import { type CheckSuiteStatus, githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -66,8 +66,9 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		if (ctx.source !== 'github') return false;
 		if (!isGitHubCheckSuitePayload(ctx.payload)) return false;
 
-		// Check trigger config — default enabled for backward compatibility
-		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'checkSuiteSuccess')) {
+		// Check trigger config — at least one CI-based review mode must be active
+		const reviewConfig = resolveReviewTriggerConfig(ctx.project.github?.triggers);
+		if (!reviewConfig.ownPrsOnly && !reviewConfig.externalPrs) {
 			return false;
 		}
 
@@ -99,13 +100,24 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		// Fetch PR details
 		const prDetails = await githubClient.getPR(owner, repo, prNumber);
 
-		// Gate on PR author being the implementer persona
+		// Gate on PR author based on configured review trigger modes
 		if (!ctx.personaIdentities) return null;
 		const implLogin = ctx.personaIdentities.implementer;
-		if (prDetails.user.login !== implLogin && prDetails.user.login !== `${implLogin}[bot]`) {
-			logger.info('PR not authored by implementer persona, skipping', {
+		const isImplementerPR =
+			prDetails.user.login === implLogin || prDetails.user.login === `${implLogin}[bot]`;
+
+		const reviewConfig = resolveReviewTriggerConfig(ctx.project.github?.triggers);
+		const shouldTrigger =
+			(reviewConfig.ownPrsOnly && isImplementerPR) ||
+			(reviewConfig.externalPrs && !isImplementerPR);
+
+		if (!shouldTrigger) {
+			logger.info('PR author does not match any enabled review trigger mode, skipping', {
 				prNumber,
 				prAuthor: prDetails.user.login,
+				isImplementerPR,
+				ownPrsOnly: reviewConfig.ownPrsOnly,
+				externalPrs: reviewConfig.externalPrs,
 			});
 			return null;
 		}
@@ -177,7 +189,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			return null;
 		}
 
-		logger.info('All CI checks passed on implementer PR - triggering review', {
+		logger.info('All CI checks passed - triggering review', {
 			prNumber,
 			workItemId,
 			headSha,

@@ -189,6 +189,57 @@ const openrouterKey = await getOrgCredential(projectId, 'OPENROUTER_API_KEY');
 
 Role definitions and env-var-key mappings are in `src/config/integrationRoles.ts`.
 
+### Review Agent Trigger Modes
+
+The review agent supports three independent trigger modes via the `reviewTrigger` config in the SCM integration triggers. **All modes default to `false`** — existing behavior is preserved via a legacy fallback.
+
+| Mode | Description |
+|------|-------------|
+| `ownPrsOnly` | Trigger review when CI passes on PRs authored by the **implementer** persona |
+| `externalPrs` | Trigger review when CI passes on PRs authored by **anyone** (including external contributors) |
+| `onReviewRequested` | Trigger review when a CASCADE persona is **explicitly requested** as reviewer |
+
+#### Setting via CLI
+
+```bash
+# Enable review for implementer PRs only (most common)
+cascade projects review-trigger-set <project-id> --own-prs-only
+
+# Enable review for external contributor PRs
+cascade projects review-trigger-set <project-id> --external-prs
+
+# Enable both CI-triggered modes
+cascade projects review-trigger-set <project-id> --own-prs-only --external-prs
+
+# Enable review when explicitly requested
+cascade projects review-trigger-set <project-id> --on-review-requested
+
+# Disable a mode
+cascade projects review-trigger-set <project-id> --no-own-prs-only
+```
+
+#### Setting via Dashboard
+
+In the **Agent Configs** tab, the `review` agent section shows three toggles under the SCM integration:
+- **Own PRs Only** — CI-triggered review for implementer-authored PRs
+- **External PRs** — CI-triggered review for all other PR authors
+- **On Review Requested** — review triggered when a persona is explicitly requested
+
+#### Direct JSON Config
+
+```bash
+cascade projects integration-set <project-id> \
+  --category scm --provider github --config '{}' \
+  --triggers '{"reviewTrigger":{"ownPrsOnly":true,"externalPrs":false,"onReviewRequested":true}}'
+```
+
+#### Backward Compatibility
+
+When `reviewTrigger` is absent, the system falls back to legacy booleans:
+- `checkSuiteSuccess` → `ownPrsOnly` (default `true` for existing projects)
+- `reviewRequested` → `onReviewRequested` (default `false`)
+- `externalPrs` always `false` in legacy mode (no legacy equivalent)
+
 ## Claude Code Backend
 
 CASCADE supports using Claude Code SDK as an alternative agent backend. Configure per-project:

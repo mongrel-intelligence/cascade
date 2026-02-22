@@ -6,6 +6,7 @@ import {
 	resolveGitHubTriggerEnabled,
 	resolveJiraTriggerEnabled,
 	resolveReadyToProcessEnabled,
+	resolveReviewTriggerConfig,
 	resolveTrelloTriggerEnabled,
 } from '../../../src/config/triggerConfig.js';
 
@@ -70,6 +71,22 @@ describe('GitHubTriggerConfigSchema', () => {
 		const result = GitHubTriggerConfigSchema.parse({});
 		expect(result.reviewRequested).toBe(false);
 		expect(result.prOpened).toBe(false);
+	});
+
+	it('accepts reviewTrigger nested object', () => {
+		const result = GitHubTriggerConfigSchema.parse({
+			reviewTrigger: { ownPrsOnly: true, externalPrs: false, onReviewRequested: true },
+		});
+		expect(result.reviewTrigger).toEqual({
+			ownPrsOnly: true,
+			externalPrs: false,
+			onReviewRequested: true,
+		});
+	});
+
+	it('reviewTrigger optional — absent by default', () => {
+		const result = GitHubTriggerConfigSchema.parse({});
+		expect(result.reviewTrigger).toBeUndefined();
 	});
 });
 
@@ -210,5 +227,81 @@ describe('resolveReadyToProcessEnabled', () => {
 			readyToProcessLabel: { briefing: false, planning: false, implementation: false },
 		};
 		expect(resolveReadyToProcessEnabled(config, 'unknown-agent')).toBe(true);
+	});
+});
+
+describe('resolveReviewTriggerConfig', () => {
+	it('maps legacy defaults when config is undefined (backward compatible)', () => {
+		// No config → legacy fallback: checkSuiteSuccess defaults to true → ownPrsOnly=true
+		// This preserves the existing behavior for projects with no trigger config
+		const result = resolveReviewTriggerConfig(undefined);
+		expect(result).toEqual({ ownPrsOnly: true, externalPrs: false, onReviewRequested: false });
+	});
+
+	it('returns ownPrsOnly=true (legacy default) when config has no review-related keys', () => {
+		// checkSuiteSuccess is undefined → legacy default is true → ownPrsOnly=true
+		const result = resolveReviewTriggerConfig({ checkSuiteFailure: true });
+		expect(result).toEqual({ ownPrsOnly: true, externalPrs: false, onReviewRequested: false });
+	});
+
+	describe('new structured reviewTrigger config takes precedence', () => {
+		it('uses reviewTrigger object when present', () => {
+			const result = resolveReviewTriggerConfig({
+				reviewTrigger: { ownPrsOnly: true, externalPrs: true, onReviewRequested: true },
+				// Legacy booleans present but should be ignored
+				checkSuiteSuccess: false,
+				reviewRequested: false,
+			});
+			expect(result).toEqual({ ownPrsOnly: true, externalPrs: true, onReviewRequested: true });
+		});
+
+		it('uses reviewTrigger partial — missing fields default to false', () => {
+			const result = resolveReviewTriggerConfig({
+				reviewTrigger: { ownPrsOnly: true, externalPrs: false, onReviewRequested: false },
+			});
+			expect(result.ownPrsOnly).toBe(true);
+			expect(result.externalPrs).toBe(false);
+			expect(result.onReviewRequested).toBe(false);
+		});
+
+		it('externalPrs can be independently enabled', () => {
+			const result = resolveReviewTriggerConfig({
+				reviewTrigger: { ownPrsOnly: false, externalPrs: true, onReviewRequested: false },
+			});
+			expect(result.ownPrsOnly).toBe(false);
+			expect(result.externalPrs).toBe(true);
+			expect(result.onReviewRequested).toBe(false);
+		});
+	});
+
+	describe('legacy boolean fallback', () => {
+		it('maps checkSuiteSuccess=true to ownPrsOnly=true (legacy default)', () => {
+			const result = resolveReviewTriggerConfig({ checkSuiteSuccess: true });
+			expect(result.ownPrsOnly).toBe(true);
+			expect(result.externalPrs).toBe(false);
+		});
+
+		it('maps checkSuiteSuccess=false to ownPrsOnly=false', () => {
+			const result = resolveReviewTriggerConfig({ checkSuiteSuccess: false });
+			expect(result.ownPrsOnly).toBe(false);
+		});
+
+		it('maps reviewRequested=true to onReviewRequested=true', () => {
+			const result = resolveReviewTriggerConfig({ reviewRequested: true });
+			expect(result.onReviewRequested).toBe(true);
+		});
+
+		it('maps reviewRequested=false to onReviewRequested=false', () => {
+			const result = resolveReviewTriggerConfig({ reviewRequested: false });
+			expect(result.onReviewRequested).toBe(false);
+		});
+
+		it('externalPrs is always false in legacy mode (no legacy equivalent)', () => {
+			const result = resolveReviewTriggerConfig({
+				checkSuiteSuccess: true,
+				reviewRequested: true,
+			});
+			expect(result.externalPrs).toBe(false);
+		});
 	});
 });

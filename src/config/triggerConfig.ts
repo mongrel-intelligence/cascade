@@ -44,6 +44,21 @@ export const JiraTriggerConfigSchema = z.object({
 });
 
 /**
+ * Structured review trigger configuration with three independent modes.
+ * All modes default to `false` (safe default — users must explicitly opt in).
+ */
+export const ReviewTriggerConfigSchema = z.object({
+	/** Trigger review for PRs authored by the implementer persona. */
+	ownPrsOnly: z.boolean().default(false),
+	/** Trigger review for PRs authored by anyone (not just the implementer). */
+	externalPrs: z.boolean().default(false),
+	/** Trigger review when a CASCADE persona is explicitly requested as reviewer. */
+	onReviewRequested: z.boolean().default(false),
+});
+
+export type ReviewTriggerConfig = z.infer<typeof ReviewTriggerConfigSchema>;
+
+/**
  * Trigger configuration for GitHub integrations.
  * Existing triggers default to `true`; new triggers (`reviewRequested`, `prOpened`) default to `false`.
  */
@@ -54,15 +69,57 @@ export const GitHubTriggerConfigSchema = z.object({
 	prCommentMention: z.boolean().default(true),
 	prReadyToMerge: z.boolean().default(true),
 	prMerged: z.boolean().default(true),
-	/** New trigger: fires review agent when review is requested from a CASCADE persona. Default false (opt-in). */
+	/** Legacy trigger: fires review agent when review is requested from a CASCADE persona. Default false (opt-in). */
 	reviewRequested: z.boolean().default(false),
 	/** PR opened trigger. Default false (disabled until reviewed). */
 	prOpened: z.boolean().default(false),
+	/**
+	 * Structured review trigger config with three independent modes.
+	 * When present, takes precedence over the legacy `reviewRequested` / `checkSuiteSuccess` booleans.
+	 */
+	reviewTrigger: ReviewTriggerConfigSchema.optional(),
 });
 
 export type TrelloTriggerConfig = z.infer<typeof TrelloTriggerConfigSchema>;
 export type JiraTriggerConfig = z.infer<typeof JiraTriggerConfigSchema>;
 export type GitHubTriggerConfig = z.infer<typeof GitHubTriggerConfigSchema>;
+
+// ============================================================================
+// Review Trigger Resolution
+// ============================================================================
+
+/**
+ * Resolve the structured review trigger config from GitHub trigger config.
+ *
+ * Precedence:
+ * 1. `reviewTrigger` object (new structured config) — wins when present
+ * 2. Legacy booleans: `checkSuiteSuccess` → `ownPrsOnly`, `reviewRequested` → `onReviewRequested`
+ * 3. Bare defaults (no config) — all modes false
+ *
+ * This helper is the single source of truth for determining which review trigger modes are active.
+ */
+export function resolveReviewTriggerConfig(
+	config: Partial<GitHubTriggerConfig> | undefined,
+): ReviewTriggerConfig {
+	// New structured config wins when present
+	if (config?.reviewTrigger !== undefined) {
+		return {
+			ownPrsOnly: config.reviewTrigger.ownPrsOnly ?? false,
+			externalPrs: config.reviewTrigger.externalPrs ?? false,
+			onReviewRequested: config.reviewTrigger.onReviewRequested ?? false,
+		};
+	}
+
+	// Legacy fallback: map old boolean flags to structured modes
+	const legacyOwnPrsOnly = config?.checkSuiteSuccess ?? true; // existing default was true
+	const legacyOnReviewRequested = config?.reviewRequested ?? false;
+
+	return {
+		ownPrsOnly: legacyOwnPrsOnly,
+		externalPrs: false, // no legacy equivalent — always false
+		onReviewRequested: legacyOnReviewRequested,
+	};
+}
 
 // ============================================================================
 // Helpers
@@ -151,5 +208,7 @@ export function resolveGitHubTriggerEnabled(
 		if (key === 'reviewRequested' || key === 'prOpened') return false;
 		return true;
 	}
+	// reviewTrigger is an object, not a boolean — skip it in this function
+	if (typeof value !== 'boolean') return true;
 	return value;
 }
