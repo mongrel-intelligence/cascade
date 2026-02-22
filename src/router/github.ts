@@ -5,7 +5,6 @@
  * and job queuing for GitHub webhook events.
  */
 
-import { INITIAL_MESSAGES } from '../config/agentMessages.js';
 import { findProjectByRepo } from '../config/provider.js';
 import {
 	type PersonaIdentities,
@@ -14,6 +13,7 @@ import {
 } from '../github/personas.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
 import type { TriggerContext } from '../types/index.js';
+import { extractGitHubContext, generateAckMessage } from './ackMessageGenerator.js';
 import { postGitHubAck, resolveGitHubTokenForAck } from './acknowledgments.js';
 import { loadProjectConfig } from './config.js';
 import { extractPRNumber } from './notifications.js';
@@ -55,8 +55,8 @@ export async function tryPostGitHubAck(
 	const match = triggerRegistry.matchTrigger(ctx);
 	if (!match) return undefined;
 
-	const message = INITIAL_MESSAGES[match.agentType];
-	if (!message) return undefined;
+	const context = extractGitHubContext(payload, eventType);
+	const message = await generateAckMessage(match.agentType, context, fullProject.id);
 
 	const resolved = await resolveGitHubTokenForAck(repoFullName);
 	if (!resolved) return undefined;

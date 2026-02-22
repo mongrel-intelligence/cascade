@@ -5,9 +5,9 @@
  * for JIRA webhook events.
  */
 
-import { INITIAL_MESSAGES } from '../config/agentMessages.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
 import type { ProjectConfig, TriggerContext } from '../types/index.js';
+import { extractJiraContext, generateAckMessage } from './ackMessageGenerator.js';
 import { postJiraAck, resolveJiraBotAccountId } from './acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from './config.js';
 import { type CascadeJob, addJob } from './queue.js';
@@ -35,8 +35,8 @@ export async function tryPostJiraAck(
 	const match = triggerRegistry.matchTrigger(ctx);
 	if (!match) return undefined;
 
-	const message = INITIAL_MESSAGES[match.agentType];
-	if (!message) return undefined;
+	const context = extractJiraContext(payload);
+	const message = await generateAckMessage(match.agentType, context, projectId);
 
 	const commentId = await postJiraAck(projectId, issueKey, message);
 	return commentId ?? undefined;
