@@ -35,7 +35,18 @@ export interface ProgressMonitorConfig {
 	github?: { owner: string; repo: string; headerMessage: string };
 	/** Pre-seeded comment ID from router ack — skip initial comment posting */
 	preSeededCommentId?: string;
+	/**
+	 * Progressive schedule of delays (in minutes) before falling back to
+	 * `intervalMinutes` for steady-state ticks.
+	 * Example: [1, 3, 5] means first tick at 1min, second at 3min, third at 5min,
+	 * then every `intervalMinutes` thereafter.
+	 * Defaults to DEFAULT_SCHEDULE_MINUTES = [1, 3, 5].
+	 */
+	scheduleMinutes?: number[];
 }
+
+/** Default progressive schedule: 1min, 3min, 5min, then every intervalMinutes */
+const DEFAULT_SCHEDULE_MINUTES = [1, 3, 5];
 
 const RING_BUFFER_MAX = 20;
 const TEXT_SNIPPETS_MAX = 10;
@@ -65,12 +76,18 @@ export class ProgressMonitor implements ProgressReporter {
 	private currentIteration = 0;
 	private maxIterations = 0;
 	private startTime = Date.now();
-	private timer: ReturnType<typeof setInterval> | null = null;
+	private timer: ReturnType<typeof setTimeout> | null = null;
 	private isGenerating = false;
 	private progressCommentId: string | null = null;
 	private initialCommentPromise: Promise<void> | null = null;
+	private tickIndex = 0;
+	private stopped = false;
+	private started = false;
+	private readonly schedule: number[];
 
-	constructor(private readonly config: ProgressMonitorConfig) {}
+	constructor(private readonly config: ProgressMonitorConfig) {
+		this.schedule = config.scheduleMinutes ?? DEFAULT_SCHEDULE_MINUTES;
+	}
 
 	// ── Public accessors ──
 
@@ -126,12 +143,9 @@ export class ProgressMonitor implements ProgressReporter {
 	// ── Lifecycle ──
 
 	start(): void {
-		if (this.timer) return;
+		if (this.started) return;
+		this.started = true;
 		this.startTime = Date.now();
-		const intervalMs = this.config.intervalMinutes * 60 * 1000;
-		this.timer = setInterval(() => {
-			void this.tick();
-		}, intervalMs);
 
 		if (this.config.preSeededCommentId) {
 			// Router already posted the ack comment — reuse its ID
@@ -156,11 +170,15 @@ export class ProgressMonitor implements ProgressReporter {
 				});
 			});
 		}
+
+		// Start the progressive tick chain
+		this.scheduleNextTick();
 	}
 
 	stop(): void {
+		this.stopped = true;
 		if (this.timer) {
-			clearInterval(this.timer);
+			clearTimeout(this.timer);
 			this.timer = null;
 		}
 		// Clean up state file on stop (best-effort — stop() is called from finally
@@ -173,6 +191,31 @@ export class ProgressMonitor implements ProgressReporter {
 	}
 
 	// ── Internal ──
+
+	/**
+	 * Schedules the next tick using the progressive schedule.
+	 * Uses schedule[tickIndex] if available, otherwise falls back to intervalMinutes.
+	 */
+	private scheduleNextTick(): void {
+		const delayMinutes =
+			this.tickIndex < this.schedule.length
+				? this.schedule[this.tickIndex]
+				: this.config.intervalMinutes;
+		const delayMs = delayMinutes * 60 * 1000;
+		this.timer = setTimeout(() => {
+			void this.tickAndScheduleNext();
+		}, delayMs);
+	}
+
+	/** Fires a tick, increments the counter, then schedules the next one. */
+	private async tickAndScheduleNext(): Promise<void> {
+		await this.tick();
+		this.tickIndex++;
+		// Only schedule next tick if stop() hasn't been called
+		if (!this.stopped) {
+			this.scheduleNextTick();
+		}
+	}
 
 	private formatInitialMessage(): string {
 		return (

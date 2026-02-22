@@ -234,8 +234,8 @@ describe('ProgressMonitor — tick behavior', () => {
 		mockPMProvider.updateComment.mockResolvedValue(undefined);
 
 		monitor.start();
-		// First tick — should update the comment created at start()
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		// First tick fires at 1 minute (first entry of default schedule)
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 		monitor.stop();
 
 		// addComment called once only (for initial comment at start())
@@ -315,7 +315,8 @@ describe('ProgressMonitor — tick behavior', () => {
 		mockPMProvider.updateComment.mockResolvedValue(undefined);
 
 		monitor.start();
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		// First tick fires at 1 minute (first entry of default schedule)
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 		monitor.stop();
 
 		expect(mockCallProgressModel).toHaveBeenCalled();
@@ -346,10 +347,10 @@ describe('ProgressMonitor — tick behavior', () => {
 		mockPMProvider.updateComment.mockResolvedValue(undefined);
 
 		monitor.start();
-		// First tick
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
-		// Second tick
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		// First tick fires at 1 minute
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
+		// Second tick fires 3 more minutes later (at 4 min total)
+		await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
 		monitor.stop();
 
 		// addComment called once only (at start())
@@ -381,12 +382,12 @@ describe('ProgressMonitor — tick behavior', () => {
 		mockPMProvider.updateComment.mockRejectedValue(new Error('Comment not found'));
 
 		monitor.start();
-		// First tick — initial comment exists, update fails, falls back to new comment
+		// First tick fires at 1 minute — update fails, falls back to new comment
 		mockPMProvider.addComment.mockResolvedValue('comment-id-2');
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
-		// Second tick — update fails, falls back to new comment again
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
+		// Second tick fires 3 more minutes later — update fails, falls back to new comment
 		mockPMProvider.addComment.mockResolvedValue('comment-id-3');
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
 		monitor.stop();
 
 		// addComment called: once at start() + twice for fallback on each failed update
@@ -417,7 +418,8 @@ describe('ProgressMonitor — tick behavior', () => {
 		mockPMProvider.updateComment.mockResolvedValue(undefined);
 
 		monitor.start();
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		// First tick fires at 1 minute (first entry of default schedule)
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 		monitor.stop();
 
 		expect(mockFormatStatus).toHaveBeenCalled();
@@ -446,7 +448,8 @@ describe('ProgressMonitor — tick behavior', () => {
 		mockSyncChecklist.mockResolvedValue();
 
 		monitor.start();
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		// First tick fires at 1 minute
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 		monitor.stop();
 
 		expect(mockSyncChecklist).toHaveBeenCalledWith('card1');
@@ -468,7 +471,8 @@ describe('ProgressMonitor — tick behavior', () => {
 		mockPMProvider.addComment.mockResolvedValue('comment-id-1');
 
 		monitor.start();
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		// First tick fires at 1 minute
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 		monitor.stop();
 
 		expect(mockSyncChecklist).not.toHaveBeenCalled();
@@ -498,7 +502,8 @@ describe('ProgressMonitor — tick behavior', () => {
 		mockGithub.updatePRComment.mockResolvedValue(undefined as never);
 
 		monitor.start();
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		// First tick fires at 1 minute
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 		monitor.stop();
 
 		expect(mockGithub.updatePRComment).toHaveBeenCalledWith('o', 'r', 42, expect.any(String));
@@ -526,7 +531,8 @@ describe('ProgressMonitor — tick behavior', () => {
 		});
 
 		monitor.start();
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		// First tick fires at 1 minute
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 		monitor.stop();
 
 		expect(mockGithub.updatePRComment).not.toHaveBeenCalled();
@@ -550,7 +556,8 @@ describe('ProgressMonitor — tick behavior', () => {
 		mockPMProvider.addComment.mockRejectedValue(new Error('API error'));
 
 		monitor.start();
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		// First tick fires at 1 minute
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 		monitor.stop();
 
 		// At least one WARN with 'Failed' should be logged (initial comment failure + tick failure)
@@ -563,10 +570,12 @@ describe('ProgressMonitor — tick behavior', () => {
 
 	it('prevents concurrent ticks', async () => {
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		// Use a custom schedule so ticks fire at 1min and 2min to test the concurrent guard
 		const monitor = new ProgressMonitor({
 			agentType: 'implementation',
 			taskDescription: 'Test task',
 			intervalMinutes: 1,
+			scheduleMinutes: [1, 2],
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
@@ -583,13 +592,13 @@ describe('ProgressMonitor — tick behavior', () => {
 		);
 
 		monitor.start();
-		// Trigger first tick
+		// Trigger first tick at 1 minute
 		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 
-		// Trigger second tick while first is still running
-		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
-
-		// Only one call should have been made (second was skipped)
+		// With setTimeout chain, the second tick is NOT scheduled until the first
+		// tick completes — so isGenerating guard isn't needed for overlap prevention.
+		// However, we verify only one call was made while first is still running.
+		// Only one call should have been made (first tick in progress, next not yet scheduled)
 		expect(mockCallProgressModel).toHaveBeenCalledTimes(1);
 
 		// Resolve the first call
@@ -597,6 +606,145 @@ describe('ProgressMonitor — tick behavior', () => {
 		await vi.advanceTimersByTimeAsync(0);
 
 		monitor.stop();
+	});
+});
+
+describe('ProgressMonitor — progressive schedule', () => {
+	it('fires ticks according to progressive schedule then steady intervalMinutes', async () => {
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockPMProvider.addComment.mockResolvedValue('comment-id-1');
+		mockPMProvider.updateComment.mockResolvedValue(undefined);
+		mockCallProgressModel.mockResolvedValue('Progress');
+
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			scheduleMinutes: [1, 3, 5],
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			trello: { cardId: 'card1' },
+		});
+
+		monitor.start();
+
+		// 1st tick at 1 minute
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
+		expect(mockCallProgressModel).toHaveBeenCalledTimes(1);
+
+		// 2nd tick at 3 more minutes (4 min total)
+		await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+		expect(mockCallProgressModel).toHaveBeenCalledTimes(2);
+
+		// 3rd tick at 5 more minutes (9 min total)
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		expect(mockCallProgressModel).toHaveBeenCalledTimes(3);
+
+		// 4th tick at steady 5-min interval (14 min total)
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		expect(mockCallProgressModel).toHaveBeenCalledTimes(4);
+
+		// 5th tick at steady 5-min interval (19 min total)
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		expect(mockCallProgressModel).toHaveBeenCalledTimes(5);
+
+		monitor.stop();
+	});
+
+	it('falls back to intervalMinutes when schedule is exhausted', async () => {
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockPMProvider.addComment.mockResolvedValue('comment-id-1');
+		mockPMProvider.updateComment.mockResolvedValue(undefined);
+		mockCallProgressModel.mockResolvedValue('Progress');
+
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 2,
+			scheduleMinutes: [1],
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			trello: { cardId: 'card1' },
+		});
+
+		monitor.start();
+
+		// 1st tick from schedule at 1 minute
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
+		expect(mockCallProgressModel).toHaveBeenCalledTimes(1);
+
+		// 2nd tick at steady intervalMinutes (2 more minutes)
+		await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+		expect(mockCallProgressModel).toHaveBeenCalledTimes(2);
+
+		// 3rd tick still at steady intervalMinutes (2 more minutes)
+		await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+		expect(mockCallProgressModel).toHaveBeenCalledTimes(3);
+
+		monitor.stop();
+	});
+
+	it('uses default schedule when scheduleMinutes not provided (first tick at 1min)', async () => {
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockPMProvider.addComment.mockResolvedValue('comment-id-1');
+		mockPMProvider.updateComment.mockResolvedValue(undefined);
+		mockCallProgressModel.mockResolvedValue('Progress');
+
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			trello: { cardId: 'card1' },
+			// No scheduleMinutes — should use DEFAULT_SCHEDULE_MINUTES = [1, 3, 5]
+		});
+
+		monitor.start();
+
+		// Should NOT fire after 30 seconds
+		await vi.advanceTimersByTimeAsync(30 * 1000);
+		expect(mockCallProgressModel).toHaveBeenCalledTimes(0);
+
+		// Should fire at 1 minute
+		await vi.advanceTimersByTimeAsync(30 * 1000); // total: 60s = 1min
+		expect(mockCallProgressModel).toHaveBeenCalledTimes(1);
+
+		monitor.stop();
+	});
+
+	it('stop() prevents further ticks from scheduled chain', async () => {
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockPMProvider.addComment.mockResolvedValue('comment-id-1');
+		mockPMProvider.updateComment.mockResolvedValue(undefined);
+		mockCallProgressModel.mockResolvedValue('Progress');
+
+		const monitor = new ProgressMonitor({
+			agentType: 'implementation',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			scheduleMinutes: [1, 3, 5],
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter: vi.fn(),
+			trello: { cardId: 'card1' },
+		});
+
+		monitor.start();
+
+		// Fire first tick
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
+		expect(mockCallProgressModel).toHaveBeenCalledTimes(1);
+
+		// Stop the monitor
+		monitor.stop();
+
+		// Advance well past the next scheduled tick — should NOT fire
+		await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+		expect(mockCallProgressModel).toHaveBeenCalledTimes(1);
 	});
 });
 
@@ -838,8 +986,8 @@ describe('ProgressMonitor — preSeededCommentId', () => {
 		mockPMProvider.updateComment.mockResolvedValue(undefined);
 
 		monitor.start();
-		// First tick — should update the pre-seeded comment
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		// First tick fires at 1 minute (first entry of default schedule)
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 		monitor.stop();
 
 		// addComment should NOT have been called (no initial comment posting)
@@ -965,8 +1113,8 @@ describe('ProgressMonitor — state file integration', () => {
 		// Reset mock to track only tick writes
 		mockWriteProgressCommentId.mockClear();
 
-		// First tick — enters else branch (progressCommentId is null)
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		// First tick fires at 1 minute — enters else branch (progressCommentId is null)
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 		monitor.stop();
 
 		// State file should be written from the else branch in postProgressToPM
@@ -999,8 +1147,8 @@ describe('ProgressMonitor — state file integration', () => {
 
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(0);
-		// First tick — update fails, new comment created
-		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+		// First tick fires at 1 minute — update fails, new comment created
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 		monitor.stop();
 
 		// writeProgressCommentId called for initial comment and for fallback comment
