@@ -1,9 +1,10 @@
 import { getProjectGitHubToken } from '../config/projects.js';
+import { findProjectByRepo } from '../config/provider.js';
 import {
-	findProjectById,
-	findProjectByRepo,
-	getIntegrationCredential,
-} from '../config/provider.js';
+	resolveGitHubHeaders,
+	resolveJiraCredentials,
+	resolveTrelloCredentials,
+} from './platformClients.js';
 import type { CascadeJob, GitHubJob, JiraJob, TrelloJob } from './queue.js';
 
 /**
@@ -76,12 +77,8 @@ interface TimeoutInfo {
 }
 
 async function notifyTrelloTimeout(job: TrelloJob, info: TimeoutInfo): Promise<void> {
-	let trelloApiKey: string;
-	let trelloToken: string;
-	try {
-		trelloApiKey = await getIntegrationCredential(job.projectId, 'pm', 'api_key');
-		trelloToken = await getIntegrationCredential(job.projectId, 'pm', 'token');
-	} catch {
+	const creds = await resolveTrelloCredentials(job.projectId);
+	if (!creds) {
 		console.warn('[Notifications] Missing Trello credentials in DB, skipping timeout notification');
 		return;
 	}
@@ -93,7 +90,7 @@ async function notifyTrelloTimeout(job: TrelloJob, info: TimeoutInfo): Promise<v
 		'Move this card back to the trigger list to retry.',
 	);
 
-	const url = `https://api.trello.com/1/cards/${job.cardId}/actions/comments?key=${trelloApiKey}&token=${trelloToken}`;
+	const url = `https://api.trello.com/1/cards/${job.cardId}/actions/comments?key=${creds.apiKey}&token=${creds.token}`;
 	const response = await fetch(url, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -143,11 +140,7 @@ async function notifyGitHubTimeout(job: GitHubJob, info: TimeoutInfo): Promise<v
 	const url = `https://api.github.com/repos/${job.repoFullName}/issues/${prNumber}/comments`;
 	const response = await fetch(url, {
 		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${githubToken}`,
-			Accept: 'application/vnd.github+json',
-			'X-GitHub-Api-Version': '2022-11-28',
-		},
+		headers: resolveGitHubHeaders(githubToken),
 		body: JSON.stringify({ body: message }),
 	});
 
@@ -159,16 +152,8 @@ async function notifyGitHubTimeout(job: GitHubJob, info: TimeoutInfo): Promise<v
 }
 
 async function notifyJiraTimeout(job: JiraJob, info: TimeoutInfo): Promise<void> {
-	let jiraEmail: string;
-	let jiraApiToken: string;
-	let jiraBaseUrl: string;
-	try {
-		jiraEmail = await getIntegrationCredential(job.projectId, 'pm', 'email');
-		jiraApiToken = await getIntegrationCredential(job.projectId, 'pm', 'api_token');
-		const project = await findProjectById(job.projectId);
-		jiraBaseUrl = project?.jira?.baseUrl ?? '';
-		if (!jiraBaseUrl) throw new Error('Missing JIRA base URL');
-	} catch {
+	const creds = await resolveJiraCredentials(job.projectId);
+	if (!creds) {
 		console.warn('[Notifications] Missing JIRA credentials in DB, skipping timeout notification');
 		return;
 	}
@@ -182,12 +167,11 @@ async function notifyJiraTimeout(job: JiraJob, info: TimeoutInfo): Promise<void>
 
 	// Use v2 API which accepts plain text, avoiding the pm/jira/adf dependency
 	// (the router image doesn't include pm/ modules)
-	const url = `${jiraBaseUrl}/rest/api/2/issue/${job.issueKey}/comment`;
-	const auth = Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString('base64');
+	const url = `${creds.baseUrl}/rest/api/2/issue/${job.issueKey}/comment`;
 	const response = await fetch(url, {
 		method: 'POST',
 		headers: {
-			Authorization: `Basic ${auth}`,
+			Authorization: `Basic ${creds.auth}`,
 			'Content-Type': 'application/json',
 		},
 		body: JSON.stringify({ body: message }),
