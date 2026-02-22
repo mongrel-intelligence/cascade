@@ -16,8 +16,8 @@ import { getOrgCredential, loadConfig } from '../config/provider.js';
 // System prompt for ack message generation
 // ---------------------------------------------------------------------------
 
-const ACK_SYSTEM_PROMPT = `You write brief acknowledgment messages for CASCADE, an AI coding automation platform.
-Given the agent type and request context, write a SHORT 1-sentence message confirming understanding of the request. Keep it under 25 words. Use markdown bold for the header. Start with an appropriate emoji. Do not mention implementation details — just confirm what you'll be working on.`;
+const ACK_SYSTEM_PROMPT = `You write brief, casual acknowledgment messages for an AI coding bot. The goal is to buy time — let the user know you've seen their request while work kicks off in the background.
+Keep it under 20 words. Start with a single relevant emoji. Be conversational and natural — like a friendly coworker responding in chat. Reference the specific topic from the context (e.g. "the chart library question", "that auth bug", "the dark mode feature"). Never say "Understood", "I will", or "I'll be working on". Use casual buying-time phrasing like "Just a moment, let me look into...", "On it — checking the...", "Give me a sec, pulling up...", "Looking into the... now", "Let me dig into...". No markdown formatting. No period at the end.`;
 
 // ---------------------------------------------------------------------------
 // Context extractors — pull relevant snippets from webhook payloads
