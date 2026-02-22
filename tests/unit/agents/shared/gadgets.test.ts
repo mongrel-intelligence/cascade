@@ -39,6 +39,7 @@ vi.mock('../../../../src/gadgets/pm/index.js', () => ({
 	AddChecklist: mockClass('AddChecklist'),
 	CreateWorkItem: mockClass('CreateWorkItem'),
 	ListWorkItems: mockClass('ListWorkItems'),
+	PMDeleteChecklistItem: mockClass('PMDeleteChecklistItem'),
 	PMUpdateChecklistItem: mockClass('PMUpdateChecklistItem'),
 	PostComment: mockClass('PostComment'),
 	ReadWorkItem: mockClass('ReadWorkItem'),
@@ -124,14 +125,16 @@ describe('buildWorkItemGadgets', () => {
 		expect(gadgets).not.toContain('CreatePR');
 	});
 
-	it('includes PMUpdateChecklistItem when canUpdateChecklists is true', () => {
+	it('includes PMUpdateChecklistItem and PMDeleteChecklistItem when canUpdateChecklists is true', () => {
 		const gadgets = names(buildWorkItemGadgets(FULL_CAPS));
 		expect(gadgets).toContain('PMUpdateChecklistItem');
+		expect(gadgets).toContain('PMDeleteChecklistItem');
 	});
 
-	it('excludes PMUpdateChecklistItem when canUpdateChecklists is false', () => {
+	it('excludes PMUpdateChecklistItem and PMDeleteChecklistItem when canUpdateChecklists is false', () => {
 		const gadgets = names(buildWorkItemGadgets(READ_ONLY_CAPS));
 		expect(gadgets).not.toContain('PMUpdateChecklistItem');
+		expect(gadgets).not.toContain('PMDeleteChecklistItem');
 	});
 });
 

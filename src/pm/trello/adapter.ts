@@ -167,6 +167,18 @@ export class TrelloPMProvider implements PMProvider {
 		);
 	}
 
+	async deleteChecklistItem(workItemId: string, checkItemId: string): Promise<void> {
+		const checklists = await trelloClient.getCardChecklists(workItemId);
+		for (const cl of checklists) {
+			const item = cl.checkItems.find((i) => i.id === checkItemId);
+			if (item) {
+				await trelloClient.deleteChecklistItem(cl.id, checkItemId);
+				return;
+			}
+		}
+		throw new Error(`Checklist item ${checkItemId} not found on card ${workItemId}`);
+	}
+
 	async getAttachments(workItemId: string): Promise<Attachment[]> {
 		const attachments = await trelloClient.getCardAttachments(workItemId);
 		return attachments.map((a) => ({

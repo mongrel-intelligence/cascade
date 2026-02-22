@@ -17,6 +17,7 @@ const { mockTrelloClient } = vi.hoisted(() => ({
 		createChecklist: vi.fn(),
 		addChecklistItem: vi.fn(),
 		updateChecklistItem: vi.fn(),
+		deleteChecklistItem: vi.fn(),
 		getCardAttachments: vi.fn(),
 		addAttachment: vi.fn(),
 		addAttachmentFile: vi.fn(),
@@ -297,6 +298,65 @@ describe('TrelloPMProvider', () => {
 				'card-1',
 				'item-1',
 				'incomplete',
+			);
+		});
+	});
+
+	describe('deleteChecklistItem', () => {
+		it('finds the item in checklists and deletes it', async () => {
+			mockTrelloClient.getCardChecklists.mockResolvedValue([
+				{
+					id: 'cl-1',
+					name: 'Steps',
+					idCard: 'card-1',
+					checkItems: [
+						{ id: 'item-1', name: 'Step 1', state: 'incomplete' },
+						{ id: 'item-2', name: 'Step 2', state: 'incomplete' },
+					],
+				},
+			]);
+			mockTrelloClient.deleteChecklistItem.mockResolvedValue(undefined);
+
+			await provider.deleteChecklistItem('card-1', 'item-2');
+
+			expect(mockTrelloClient.getCardChecklists).toHaveBeenCalledWith('card-1');
+			expect(mockTrelloClient.deleteChecklistItem).toHaveBeenCalledWith('cl-1', 'item-2');
+		});
+
+		it('searches across multiple checklists', async () => {
+			mockTrelloClient.getCardChecklists.mockResolvedValue([
+				{
+					id: 'cl-1',
+					name: 'First',
+					idCard: 'card-1',
+					checkItems: [{ id: 'item-1', name: 'Step 1', state: 'incomplete' }],
+				},
+				{
+					id: 'cl-2',
+					name: 'Second',
+					idCard: 'card-1',
+					checkItems: [{ id: 'item-3', name: 'Step 3', state: 'complete' }],
+				},
+			]);
+			mockTrelloClient.deleteChecklistItem.mockResolvedValue(undefined);
+
+			await provider.deleteChecklistItem('card-1', 'item-3');
+
+			expect(mockTrelloClient.deleteChecklistItem).toHaveBeenCalledWith('cl-2', 'item-3');
+		});
+
+		it('throws when item is not found on any checklist', async () => {
+			mockTrelloClient.getCardChecklists.mockResolvedValue([
+				{
+					id: 'cl-1',
+					name: 'Steps',
+					idCard: 'card-1',
+					checkItems: [{ id: 'item-1', name: 'Step 1', state: 'incomplete' }],
+				},
+			]);
+
+			await expect(provider.deleteChecklistItem('card-1', 'nonexistent')).rejects.toThrow(
+				'Checklist item nonexistent not found on card card-1',
 			);
 		});
 	});

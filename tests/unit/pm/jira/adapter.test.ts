@@ -9,6 +9,7 @@ const { mockJiraClient, mockAdfToPlainText, mockMarkdownToAdf } = vi.hoisted(() 
 		addComment: vi.fn(),
 		updateComment: vi.fn(),
 		createIssue: vi.fn(),
+		deleteIssue: vi.fn(),
 		getIssueTypesForProject: vi.fn(),
 		searchIssues: vi.fn(),
 		getTransitions: vi.fn(),
@@ -560,6 +561,24 @@ describe('JiraPMProvider', () => {
 			await provider.updateChecklistItem('PROJ-1', 'PROJ-2', true);
 
 			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-2', 't-done');
+		});
+	});
+
+	describe('deleteChecklistItem', () => {
+		it('delegates to jiraClient.deleteIssue with the subtask key', async () => {
+			mockJiraClient.deleteIssue.mockResolvedValue(undefined);
+
+			await provider.deleteChecklistItem('PROJ-1', 'PROJ-5');
+
+			expect(mockJiraClient.deleteIssue).toHaveBeenCalledWith('PROJ-5');
+		});
+
+		it('ignores workItemId (not needed for JIRA subtask deletion)', async () => {
+			mockJiraClient.deleteIssue.mockResolvedValue(undefined);
+
+			await provider.deleteChecklistItem('PROJ-99', 'PROJ-5');
+
+			expect(mockJiraClient.deleteIssue).toHaveBeenCalledWith('PROJ-5');
 		});
 	});
 

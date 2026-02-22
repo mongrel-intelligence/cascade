@@ -277,6 +277,11 @@ export class JiraPMProvider implements PMProvider {
 		await this.moveWorkItem(checkItemId, targetStatus);
 	}
 
+	async deleteChecklistItem(_workItemId: string, checkItemId: string): Promise<void> {
+		// checkItemId is a JIRA issue key (subtask)
+		await jiraClient.deleteIssue(checkItemId);
+	}
+
 	async getAttachments(workItemId: string): Promise<Attachment[]> {
 		const issue = await jiraClient.getIssue(workItemId);
 		const attachments =

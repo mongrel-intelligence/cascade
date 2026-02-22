@@ -25,6 +25,7 @@ const { mockCards, mockChecklists, mockLists } = vi.hoisted(() => ({
 	},
 	mockChecklists: {
 		createChecklistCheckItems: vi.fn(),
+		deleteChecklistCheckItem: vi.fn(),
 	},
 	mockLists: {
 		getListCards: vi.fn(),
@@ -315,6 +316,25 @@ describe('trelloClient', () => {
 			expect(result[0].name).toBe('Implementation Steps');
 			expect(result[0].checkItems[0].state).toBe('complete');
 			expect(result[0].checkItems[1].state).toBe('incomplete');
+		});
+	});
+
+	describe('deleteChecklistItem', () => {
+		it('calls deleteChecklistCheckItem with correct params', async () => {
+			mockChecklists.deleteChecklistCheckItem.mockResolvedValue(undefined);
+
+			await withTrelloCredentials(creds, () => trelloClient.deleteChecklistItem('cl-1', 'item-5'));
+
+			expect(mockChecklists.deleteChecklistCheckItem).toHaveBeenCalledWith({
+				id: 'cl-1',
+				idCheckItem: 'item-5',
+			});
+		});
+
+		it('throws when called outside scope', async () => {
+			await expect(trelloClient.deleteChecklistItem('cl-1', 'item-5')).rejects.toThrow(
+				'No Trello credentials in scope',
+			);
 		});
 	});
 

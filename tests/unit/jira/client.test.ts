@@ -22,6 +22,7 @@ const {
 		getIssue: vi.fn(),
 		editIssue: vi.fn(),
 		createIssue: vi.fn(),
+		deleteIssue: vi.fn(),
 		doTransition: vi.fn(),
 		getTransitions: vi.fn(),
 	},
@@ -75,6 +76,7 @@ describe('jiraClient', () => {
 		mockIssues.getIssue.mockReset();
 		mockIssues.editIssue.mockReset();
 		mockIssues.createIssue.mockReset();
+		mockIssues.deleteIssue.mockReset();
 		mockIssues.doTransition.mockReset();
 		mockIssues.getTransitions.mockReset();
 		mockIssueComments.getComments.mockReset();
@@ -431,6 +433,22 @@ describe('jiraClient', () => {
 					issueType: 'Task',
 					detail: undefined,
 				}),
+			);
+		});
+	});
+
+	describe('deleteIssue', () => {
+		it('calls deleteIssue with the issue key', async () => {
+			mockIssues.deleteIssue.mockResolvedValue(undefined);
+
+			await withJiraCredentials(creds, () => jiraClient.deleteIssue('TEST-5'));
+
+			expect(mockIssues.deleteIssue).toHaveBeenCalledWith({ issueIdOrKey: 'TEST-5' });
+		});
+
+		it('throws when called outside scope', async () => {
+			await expect(jiraClient.deleteIssue('TEST-5')).rejects.toThrow(
+				'No JIRA credentials in scope',
 			);
 		});
 	});

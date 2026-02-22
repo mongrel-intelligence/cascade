@@ -23,6 +23,7 @@ import {
 	AddChecklist,
 	CreateWorkItem,
 	ListWorkItems,
+	PMDeleteChecklistItem,
 	PMUpdateChecklistItem,
 	PostComment,
 	ReadWorkItem,
@@ -73,7 +74,7 @@ export function buildWorkItemGadgets(caps: AgentCapabilities): CreateBuilderOpti
 		new AddChecklist(),
 		// UpdateChecklistItem gated by capability — prevents planning from marking items complete
 		// prematurely, while respond-to-planning-comment CAN update them
-		...(caps.canUpdateChecklists ? [new PMUpdateChecklistItem()] : []),
+		...(caps.canUpdateChecklists ? [new PMUpdateChecklistItem(), new PMDeleteChecklistItem()] : []),
 		// Session control
 		new Finish(),
 	];

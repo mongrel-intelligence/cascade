@@ -30,6 +30,7 @@ export function createMockPMProvider() {
 		createChecklist: vi.fn(),
 		addChecklistItem: vi.fn(),
 		updateChecklistItem: vi.fn(),
+		deleteChecklistItem: vi.fn(),
 		addAttachment: vi.fn(),
 		addAttachmentFile: vi.fn(),
 		getCustomFieldNumber: vi.fn(),
