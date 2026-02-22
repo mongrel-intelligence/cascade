@@ -20,8 +20,9 @@ vi.mock('../../../src/router/notifications.js', () => ({
 vi.mock('../../../src/router/pre-actions.js', () => ({
 	addEyesReactionToPR: vi.fn(),
 }));
-vi.mock('../../../src/config/agentMessages.js', () => ({
-	INITIAL_MESSAGES: { implementation: 'Starting implementation...' },
+vi.mock('../../../src/router/ackMessageGenerator.js', () => ({
+	extractGitHubContext: vi.fn().mockReturnValue('PR: Test PR'),
+	generateAckMessage: vi.fn().mockResolvedValue('Starting implementation...'),
 }));
 vi.mock('../../../src/config/provider.js', () => ({
 	findProjectByRepo: vi.fn(),

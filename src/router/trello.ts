@@ -5,9 +5,9 @@
  * for Trello webhook events.
  */
 
-import { INITIAL_MESSAGES } from '../config/agentMessages.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
 import type { TriggerContext } from '../types/index.js';
+import { extractTrelloContext, generateAckMessage } from './ackMessageGenerator.js';
 import { postTrelloAck, resolveTrelloBotMemberId } from './acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from './config.js';
 import { type CascadeJob, addJob } from './queue.js';
@@ -158,8 +158,8 @@ export async function tryPostTrelloAck(
 	const match = triggerRegistry.matchTrigger(ctx);
 	if (!match) return undefined;
 
-	const message = INITIAL_MESSAGES[match.agentType];
-	if (!message) return undefined;
+	const context = extractTrelloContext(payload);
+	const message = await generateAckMessage(match.agentType, context, projectId);
 
 	const commentId = await postTrelloAck(projectId, cardId, message);
 	return commentId ?? undefined;

@@ -14,8 +14,9 @@ vi.mock('../../../src/router/acknowledgments.js', () => ({
 	postTrelloAck: vi.fn(),
 	resolveTrelloBotMemberId: vi.fn(),
 }));
-vi.mock('../../../src/config/agentMessages.js', () => ({
-	INITIAL_MESSAGES: { implementation: 'Starting implementation...' },
+vi.mock('../../../src/router/ackMessageGenerator.js', () => ({
+	extractTrelloContext: vi.fn().mockReturnValue('Card: Test card'),
+	generateAckMessage: vi.fn().mockResolvedValue('Starting implementation...'),
 }));
 
 import { postTrelloAck, resolveTrelloBotMemberId } from '../../../src/router/acknowledgments.js';

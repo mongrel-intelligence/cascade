@@ -14,8 +14,9 @@ vi.mock('../../../src/router/acknowledgments.js', () => ({
 	postJiraAck: vi.fn(),
 	resolveJiraBotAccountId: vi.fn(),
 }));
-vi.mock('../../../src/config/agentMessages.js', () => ({
-	INITIAL_MESSAGES: { implementation: 'Starting implementation...' },
+vi.mock('../../../src/router/ackMessageGenerator.js', () => ({
+	extractJiraContext: vi.fn().mockReturnValue('Issue: Test issue'),
+	generateAckMessage: vi.fn().mockResolvedValue('Starting implementation...'),
 }));
 
 import { resolveJiraBotAccountId } from '../../../src/router/acknowledgments.js';
