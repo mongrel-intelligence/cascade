@@ -405,6 +405,14 @@ export const trelloClient = {
 		});
 	},
 
+	async deleteChecklistItem(checklistId: string, checkItemId: string): Promise<void> {
+		logger.debug('Deleting checklist item', { checklistId, checkItemId });
+		await getClient().checklists.deleteChecklistCheckItem({
+			id: checklistId,
+			idCheckItem: checkItemId,
+		});
+	},
+
 	async addActionReaction(
 		actionId: string,
 		emoji: { shortName: string; native: string; unified: string },

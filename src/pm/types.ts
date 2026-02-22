@@ -87,6 +87,7 @@ export interface PMProvider {
 		description?: string,
 	): Promise<void>;
 	updateChecklistItem(workItemId: string, checkItemId: string, complete: boolean): Promise<void>;
+	deleteChecklistItem(workItemId: string, checkItemId: string): Promise<void>;
 
 	// Attachments & custom fields
 	getAttachments(workItemId: string): Promise<Attachment[]>;

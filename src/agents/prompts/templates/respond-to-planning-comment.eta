@@ -78,6 +78,7 @@ Based on your comment, I've made the following changes:
 - `UpdateWorkItem` - Update <%= it.workItemNoun || 'card' %> title/description
 - `AddChecklist` - Add an interactive checklist to a <%= it.workItemNoun || 'card' %>
 - `UpdateChecklistItem` - Update checklist item state (complete/incomplete) or name
+- `DeleteChecklistItem` - Delete a checklist item / subtask (use to remove descoped steps — do NOT mark removed items as complete)
 - `PostComment` - Post a comment on a <%= it.workItemNoun || 'card' %>
 
 **Codebase exploration (READ-ONLY):**

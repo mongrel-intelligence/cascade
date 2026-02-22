@@ -238,6 +238,11 @@ export const jiraClient = {
 		}
 	},
 
+	async deleteIssue(issueKey: string) {
+		logger.debug('Deleting JIRA issue', { issueKey });
+		await getClient().issues.deleteIssue({ issueIdOrKey: issueKey });
+	},
+
 	async addAttachmentFile(issueKey: string, buffer: Buffer, filename: string) {
 		logger.debug('Adding JIRA attachment', { issueKey, filename });
 		await getClient().issueAttachments.addAttachment({
