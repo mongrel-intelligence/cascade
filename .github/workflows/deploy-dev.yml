@@ -97,6 +97,18 @@ jobs:
           docker logs cascade-router-dev --tail 20
           exit 1
 
+      - name: Verify cascade-router-dev image
+        run: |
+          EXPECTED=$(docker image inspect ${{ env.ROUTER_IMAGE }}:dev-${{ github.sha }} --format '{{.Id}}')
+          RUNNING=$(docker inspect cascade-router-dev --format '{{.Image}}')
+          if [ "$EXPECTED" != "$RUNNING" ]; then
+            echo "ERROR: cascade-router-dev is running a stale image!"
+            echo "  Expected (dev-${{ github.sha }}): $EXPECTED"
+            echo "  Running:                          $RUNNING"
+            exit 1
+          fi
+          echo "cascade-router-dev image verified (commit ${{ github.sha }})"
+
       - name: Pull and restart cascade-dashboard-dev
         run: |
           cd /opt/services
@@ -121,3 +133,27 @@ jobs:
           echo "ERROR: cascade-dashboard-dev did not become healthy within 150s"
           docker logs cascade-dashboard-dev --tail 20
           exit 1
+
+      - name: Verify cascade-dashboard-dev image
+        run: |
+          EXPECTED=$(docker image inspect ${{ env.DASHBOARD_IMAGE }}:dev-${{ github.sha }} --format '{{.Id}}')
+          RUNNING=$(docker inspect cascade-dashboard-dev --format '{{.Image}}')
+          if [ "$EXPECTED" != "$RUNNING" ]; then
+            echo "ERROR: cascade-dashboard-dev is running a stale image!"
+            echo "  Expected (dev-${{ github.sha }}): $EXPECTED"
+            echo "  Running:                          $RUNNING"
+            exit 1
+          fi
+          echo "cascade-dashboard-dev image verified (commit ${{ github.sha }})"
+
+      - name: Verify worker image tag
+        run: |
+          EXPECTED=$(docker image inspect ${{ env.WORKER_IMAGE }}:dev-${{ github.sha }} --format '{{.Id}}')
+          TAGGED=$(docker image inspect ${{ env.WORKER_IMAGE }}:dev --format '{{.Id}}')
+          if [ "$EXPECTED" != "$TAGGED" ]; then
+            echo "ERROR: worker :dev tag does not point to the expected build!"
+            echo "  Expected (dev-${{ github.sha }}): $EXPECTED"
+            echo "  :dev resolves to:                 $TAGGED"
+            exit 1
+          fi
+          echo "Worker image verified: :dev tag matches commit ${{ github.sha }}"

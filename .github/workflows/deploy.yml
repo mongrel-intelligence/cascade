@@ -93,6 +93,18 @@ jobs:
           docker logs cascade-router --tail 20
           exit 1
 
+      - name: Verify cascade-router image
+        run: |
+          EXPECTED=$(docker image inspect ${{ env.ROUTER_IMAGE }}:${{ github.sha }} --format '{{.Id}}')
+          RUNNING=$(docker inspect cascade-router --format '{{.Image}}')
+          if [ "$EXPECTED" != "$RUNNING" ]; then
+            echo "ERROR: cascade-router is running a stale image!"
+            echo "  Expected (${{ github.sha }}): $EXPECTED"
+            echo "  Running:                      $RUNNING"
+            exit 1
+          fi
+          echo "cascade-router image verified (commit ${{ github.sha }})"
+
       - name: Pull and restart cascade-dashboard
         run: |
           cd /opt/services
@@ -117,3 +129,27 @@ jobs:
           echo "ERROR: cascade-dashboard did not become healthy within 150s"
           docker logs cascade-dashboard --tail 20
           exit 1
+
+      - name: Verify cascade-dashboard image
+        run: |
+          EXPECTED=$(docker image inspect ${{ env.DASHBOARD_IMAGE }}:${{ github.sha }} --format '{{.Id}}')
+          RUNNING=$(docker inspect cascade-dashboard --format '{{.Image}}')
+          if [ "$EXPECTED" != "$RUNNING" ]; then
+            echo "ERROR: cascade-dashboard is running a stale image!"
+            echo "  Expected (${{ github.sha }}): $EXPECTED"
+            echo "  Running:                      $RUNNING"
+            exit 1
+          fi
+          echo "cascade-dashboard image verified (commit ${{ github.sha }})"
+
+      - name: Verify worker image tag
+        run: |
+          EXPECTED=$(docker image inspect ${{ env.WORKER_IMAGE }}:${{ github.sha }} --format '{{.Id}}')
+          TAGGED=$(docker image inspect ${{ env.WORKER_IMAGE }}:latest --format '{{.Id}}')
+          if [ "$EXPECTED" != "$TAGGED" ]; then
+            echo "ERROR: worker :latest tag does not point to the expected build!"
+            echo "  Expected (${{ github.sha }}): $EXPECTED"
+            echo "  :latest resolves to:          $TAGGED"
+            exit 1
+          fi
+          echo "Worker image verified: :latest tag matches commit ${{ github.sha }}"
