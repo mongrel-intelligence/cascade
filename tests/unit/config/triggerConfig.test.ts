@@ -3,9 +3,11 @@ import {
 	GitHubTriggerConfigSchema,
 	JiraTriggerConfigSchema,
 	TrelloTriggerConfigSchema,
+	isReviewScopeEnabled,
 	resolveGitHubTriggerEnabled,
 	resolveJiraTriggerEnabled,
 	resolveReadyToProcessEnabled,
+	resolveReviewScope,
 	resolveTrelloTriggerEnabled,
 } from '../../../src/config/triggerConfig.js';
 
@@ -58,7 +60,6 @@ describe('JiraTriggerConfigSchema', () => {
 describe('GitHubTriggerConfigSchema', () => {
 	it('defaults existing triggers to true', () => {
 		const result = GitHubTriggerConfigSchema.parse({});
-		expect(result.checkSuiteSuccess).toBe(true);
 		expect(result.checkSuiteFailure).toBe(true);
 		expect(result.prReviewSubmitted).toBe(true);
 		expect(result.prCommentMention).toBe(true);
@@ -66,10 +67,18 @@ describe('GitHubTriggerConfigSchema', () => {
 		expect(result.prMerged).toBe(true);
 	});
 
-	it('defaults new opt-in triggers to false', () => {
+	it('defaults reviewScope to ["reviewRequested"]', () => {
 		const result = GitHubTriggerConfigSchema.parse({});
-		expect(result.reviewRequested).toBe(false);
-		expect(result.prOpened).toBe(false);
+		expect(result.reviewScope).toEqual(['reviewRequested']);
+	});
+
+	it('accepts custom reviewScope', () => {
+		const result = GitHubTriggerConfigSchema.parse({ reviewScope: ['own', 'all'] });
+		expect(result.reviewScope).toEqual(['own', 'all']);
+	});
+
+	it('rejects invalid reviewScope values', () => {
+		expect(() => GitHubTriggerConfigSchema.parse({ reviewScope: ['invalid'] })).toThrow();
 	});
 });
 
@@ -141,7 +150,6 @@ describe('resolveJiraTriggerEnabled', () => {
 
 describe('resolveGitHubTriggerEnabled', () => {
 	it('returns true for existing triggers when config is undefined', () => {
-		expect(resolveGitHubTriggerEnabled(undefined, 'checkSuiteSuccess')).toBe(true);
 		expect(resolveGitHubTriggerEnabled(undefined, 'checkSuiteFailure')).toBe(true);
 		expect(resolveGitHubTriggerEnabled(undefined, 'prReviewSubmitted')).toBe(true);
 		expect(resolveGitHubTriggerEnabled(undefined, 'prCommentMention')).toBe(true);
@@ -149,25 +157,50 @@ describe('resolveGitHubTriggerEnabled', () => {
 		expect(resolveGitHubTriggerEnabled(undefined, 'prMerged')).toBe(true);
 	});
 
-	it('returns false for opt-in triggers when config is undefined', () => {
-		expect(resolveGitHubTriggerEnabled(undefined, 'reviewRequested')).toBe(false);
-		expect(resolveGitHubTriggerEnabled(undefined, 'prOpened')).toBe(false);
+	it('returns true when config is empty (backward compatible)', () => {
+		expect(resolveGitHubTriggerEnabled({}, 'checkSuiteFailure')).toBe(true);
 	});
 
-	it('returns false for opt-in triggers when config is empty', () => {
-		expect(resolveGitHubTriggerEnabled({}, 'reviewRequested')).toBe(false);
-		expect(resolveGitHubTriggerEnabled({}, 'prOpened')).toBe(false);
-	});
-
-	it('returns true for opt-in triggers when explicitly enabled', () => {
-		expect(resolveGitHubTriggerEnabled({ reviewRequested: true }, 'reviewRequested')).toBe(true);
-		expect(resolveGitHubTriggerEnabled({ prOpened: true }, 'prOpened')).toBe(true);
-	});
-
-	it('returns false when existing trigger is explicitly disabled', () => {
-		expect(resolveGitHubTriggerEnabled({ checkSuiteSuccess: false }, 'checkSuiteSuccess')).toBe(
+	it('returns false when trigger is explicitly disabled', () => {
+		expect(resolveGitHubTriggerEnabled({ checkSuiteFailure: false }, 'checkSuiteFailure')).toBe(
 			false,
 		);
+	});
+});
+
+describe('resolveReviewScope', () => {
+	it('returns default ["reviewRequested"] when config is undefined', () => {
+		expect(resolveReviewScope(undefined)).toEqual(['reviewRequested']);
+	});
+
+	it('returns default ["reviewRequested"] when config has no reviewScope', () => {
+		expect(resolveReviewScope({})).toEqual(['reviewRequested']);
+	});
+
+	it('returns the configured scope', () => {
+		expect(resolveReviewScope({ reviewScope: ['own', 'all'] })).toEqual(['own', 'all']);
+	});
+
+	it('returns empty array when reviewScope is explicitly set to []', () => {
+		expect(resolveReviewScope({ reviewScope: [] })).toEqual([]);
+	});
+});
+
+describe('isReviewScopeEnabled', () => {
+	it('returns true when mode is in scope', () => {
+		expect(isReviewScopeEnabled(['own', 'reviewRequested'], 'own')).toBe(true);
+		expect(isReviewScopeEnabled(['own', 'reviewRequested'], 'reviewRequested')).toBe(true);
+	});
+
+	it('returns false when mode is not in scope', () => {
+		expect(isReviewScopeEnabled(['reviewRequested'], 'own')).toBe(false);
+		expect(isReviewScopeEnabled(['own'], 'all')).toBe(false);
+	});
+
+	it('returns false for empty scope', () => {
+		expect(isReviewScopeEnabled([], 'own')).toBe(false);
+		expect(isReviewScopeEnabled([], 'all')).toBe(false);
+		expect(isReviewScopeEnabled([], 'reviewRequested')).toBe(false);
 	});
 });
 

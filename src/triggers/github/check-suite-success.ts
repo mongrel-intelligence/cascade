@@ -1,4 +1,4 @@
-import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
+import { resolveReviewScope } from '../../config/triggerConfig.js';
 import { type CheckSuiteStatus, githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -66,8 +66,9 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		if (ctx.source !== 'github') return false;
 		if (!isGitHubCheckSuitePayload(ctx.payload)) return false;
 
-		// Check trigger config — default enabled for backward compatibility
-		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'checkSuiteSuccess')) {
+		// Check trigger config — only fire when reviewScope includes 'own' or 'all'
+		const reviewScope = resolveReviewScope(ctx.project.github?.triggers);
+		if (!reviewScope.includes('own') && !reviewScope.includes('all')) {
 			return false;
 		}
 
@@ -99,15 +100,18 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		// Fetch PR details
 		const prDetails = await githubClient.getPR(owner, repo, prNumber);
 
-		// Gate on PR author being the implementer persona
-		if (!ctx.personaIdentities) return null;
-		const implLogin = ctx.personaIdentities.implementer;
-		if (prDetails.user.login !== implLogin && prDetails.user.login !== `${implLogin}[bot]`) {
-			logger.info('PR not authored by implementer persona, skipping', {
-				prNumber,
-				prAuthor: prDetails.user.login,
-			});
-			return null;
+		// Gate on PR author being the implementer persona — unless scope includes 'all'
+		const reviewScope = resolveReviewScope(ctx.project.github?.triggers);
+		if (!reviewScope.includes('all')) {
+			if (!ctx.personaIdentities) return null;
+			const implLogin = ctx.personaIdentities.implementer;
+			if (prDetails.user.login !== implLogin && prDetails.user.login !== `${implLogin}[bot]`) {
+				logger.info('PR not authored by implementer persona, skipping', {
+					prNumber,
+					prAuthor: prDetails.user.login,
+				});
+				return null;
+			}
 		}
 
 		// Only trigger for PRs targeting the project's base branch
@@ -132,7 +136,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		const reviews = await githubClient.getPRReviews(owner, repo, prNumber);
 
 		// Use persona identities to identify reviewer bot's reviews
-		const reviewerUsername = ctx.personaIdentities.reviewer;
+		const reviewerUsername = ctx.personaIdentities?.reviewer;
 
 		// Only consider actual reviews (approved/changes_requested), not COMMENTED
 		// which are reply acknowledgments posted by respond-to-review agent

@@ -15,6 +15,10 @@ export interface TriggerDef {
 	scmProvider?: 'github';
 	/** Integration category this trigger belongs to */
 	category: 'pm' | 'scm';
+	/** Input type: 'checkbox' (default) or 'multi-select' for array values */
+	inputType?: 'checkbox' | 'multi-select';
+	/** Available options for multi-select triggers */
+	options?: string[];
 }
 
 /**
@@ -123,19 +127,13 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 	],
 	review: [
 		{
-			key: 'checkSuiteSuccess',
-			label: 'Check Suite Success',
-			description: 'Trigger review agent when all CI checks pass.',
-			defaultValue: true,
-			scmProvider: 'github',
-			category: 'scm',
-		},
-		{
-			key: 'reviewRequested',
-			label: 'Review Requested (opt-in)',
+			key: 'reviewScope',
+			label: 'Review Scope',
 			description:
-				'Trigger review agent when review is requested from a CASCADE persona. Default disabled.',
+				'Controls which PRs trigger the review agent. Select one or more modes. "Own PRs" = CI passes on implementer-authored PRs. "All PRs" = CI passes on any PR (also enables PR Opened for respond-to-review). "Review Requested" = review explicitly requested from a CASCADE persona.',
 			defaultValue: false,
+			inputType: 'multi-select' as const,
+			options: ['own', 'all', 'reviewRequested'],
 			scmProvider: 'github',
 			category: 'scm',
 		},
@@ -146,14 +144,6 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 			label: 'PR Review Submitted',
 			description: 'Trigger respond-to-review when a review with changes requested is submitted.',
 			defaultValue: true,
-			scmProvider: 'github',
-			category: 'scm',
-		},
-		{
-			key: 'prOpened',
-			label: 'PR Opened (opt-in)',
-			description: 'Trigger respond-to-review when a new PR is opened. Default disabled.',
-			defaultValue: false,
 			scmProvider: 'github',
 			category: 'scm',
 		},
@@ -220,6 +210,32 @@ export function getTriggerValue(
 		if (typeof childVal === 'boolean') return childVal;
 	}
 	return defaultValue;
+}
+
+/**
+ * Get a multi-select (array) value from a triggers record.
+ * Returns the stored array, or an empty array if absent.
+ */
+export function getMultiSelectValue(triggers: Record<string, unknown>, key: string): string[] {
+	const val = triggers[key];
+	if (Array.isArray(val)) return val as string[];
+	return [];
+}
+
+/**
+ * Toggle an option in a multi-select array value and return a new triggers record.
+ */
+export function setMultiSelectValue(
+	triggers: Record<string, unknown>,
+	key: string,
+	option: string,
+	checked: boolean,
+): Record<string, unknown> {
+	const current = getMultiSelectValue(triggers, key);
+	const next = checked
+		? [...current.filter((v) => v !== option), option]
+		: current.filter((v) => v !== option);
+	return { ...triggers, [key]: next };
 }
 
 /**

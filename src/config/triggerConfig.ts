@@ -44,25 +44,46 @@ export const JiraTriggerConfigSchema = z.object({
 });
 
 /**
+ * Controls which PRs trigger the review agent.
+ * - `own`: CI passes on a PR authored by the implementer persona
+ * - `all`: CI passes on any PR (non-implementer PRs included)
+ * - `reviewRequested`: review is explicitly requested from a CASCADE persona
+ * Modes compose — e.g., `['own', 'reviewRequested']` enables both.
+ * Default: `['reviewRequested']` — review only fires when explicitly requested.
+ */
+export const ReviewScopeSchema = z
+	.array(z.enum(['own', 'all', 'reviewRequested']))
+	.default(['reviewRequested']);
+
+export type ReviewScope = z.infer<typeof ReviewScopeSchema>;
+
+/**
  * Trigger configuration for GitHub integrations.
- * Existing triggers default to `true`; new triggers (`reviewRequested`, `prOpened`) default to `false`.
  */
 export const GitHubTriggerConfigSchema = z.object({
-	checkSuiteSuccess: z.boolean().default(true),
 	checkSuiteFailure: z.boolean().default(true),
 	prReviewSubmitted: z.boolean().default(true),
 	prCommentMention: z.boolean().default(true),
 	prReadyToMerge: z.boolean().default(true),
 	prMerged: z.boolean().default(true),
-	/** New trigger: fires review agent when review is requested from a CASCADE persona. Default false (opt-in). */
-	reviewRequested: z.boolean().default(false),
-	/** PR opened trigger. Default false (disabled until reviewed). */
-	prOpened: z.boolean().default(false),
+	/** Controls which PRs trigger the review agent. See ReviewScopeSchema for options. */
+	reviewScope: ReviewScopeSchema,
 });
 
 export type TrelloTriggerConfig = z.infer<typeof TrelloTriggerConfigSchema>;
 export type JiraTriggerConfig = z.infer<typeof JiraTriggerConfigSchema>;
 export type GitHubTriggerConfig = z.infer<typeof GitHubTriggerConfigSchema>;
+
+// ============================================================================
+// Review Scope Helper
+// ============================================================================
+
+/**
+ * Returns whether the given reviewScope array includes the specified mode.
+ */
+export function isReviewScopeEnabled(scope: ReviewScope, mode: ReviewScope[number]): boolean {
+	return scope.includes(mode);
+}
 
 // ============================================================================
 // Helpers
@@ -134,22 +155,25 @@ export function resolveJiraTriggerEnabled(
 
 /**
  * Resolve whether a GitHub trigger is enabled based on project trigger config.
- * For new opt-in triggers (reviewRequested, prOpened), returns `false` when no config is present.
+ * Returns `true` (enabled) when no config is present (backward compatible).
  */
 export function resolveGitHubTriggerEnabled(
 	config: Partial<GitHubTriggerConfig> | undefined,
 	key: keyof GitHubTriggerConfig,
 ): boolean {
-	if (!config) {
-		// New triggers that are opt-in default to false even without config
-		if (key === 'reviewRequested' || key === 'prOpened') return false;
-		return true;
-	}
+	if (!config) return true;
 	const value = config[key];
-	if (value === undefined) {
-		// New triggers that are opt-in default to false
-		if (key === 'reviewRequested' || key === 'prOpened') return false;
-		return true;
+	if (value === undefined) return true;
+	return value as boolean;
+}
+
+/**
+ * Resolve the reviewScope from project GitHub trigger config.
+ * Returns the default scope when no config is present.
+ */
+export function resolveReviewScope(config: Partial<GitHubTriggerConfig> | undefined): ReviewScope {
+	if (!config || config.reviewScope === undefined) {
+		return ReviewScopeSchema.parse(undefined);
 	}
-	return value;
+	return config.reviewScope;
 }

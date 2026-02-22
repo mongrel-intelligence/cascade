@@ -172,6 +172,26 @@ cascade projects integration-credential-set <project-id> --category scm --role r
 - `respond-to-pr-comment` skips @mentions from **any** known persona
 - `check-suite-success` checks reviews from the **reviewer** persona specifically
 
+### Review Agent Scope (`reviewScope`)
+
+The `reviewScope` field in the SCM integration `triggers` JSONB controls which PRs trigger the `review` agent. It is an array of modes that compose:
+
+| Mode | Description |
+|------|-------------|
+| `own` | CI passes on a PR authored by the implementer persona |
+| `all` | CI passes on any PR (non-implementer PRs included); also enables PR Opened for respond-to-review |
+| `reviewRequested` | Review explicitly requested from a CASCADE persona |
+
+**Default: `["reviewRequested"]`** — review fires only when explicitly requested. Configure via the Dashboard (Agent Configs tab) or directly in the `triggers` JSONB column.
+
+Examples:
+```json
+{ "reviewScope": ["reviewRequested"] }           // default — review on explicit request only
+{ "reviewScope": ["own"] }                        // auto-review own PRs after CI passes
+{ "reviewScope": ["own", "reviewRequested"] }     // both: own PRs + explicit requests
+{ "reviewScope": ["all"] }                        // auto-review all PRs after CI passes
+```
+
 ### Integration Credential Resolution
 
 Integration credentials are resolved by `(projectId, category, role)`:

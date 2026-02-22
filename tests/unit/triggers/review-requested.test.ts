@@ -28,11 +28,11 @@ describe('ReviewRequestedTrigger', () => {
 		// Review-requested is opt-in, default disabled
 	};
 
-	/** Project with reviewRequested trigger explicitly enabled */
+	/** Project with reviewRequested trigger enabled via reviewScope */
 	const mockProjectWithReviewRequested = {
 		...mockProject,
 		github: {
-			triggers: { reviewRequested: true },
+			triggers: { reviewScope: ['reviewRequested'] as const },
 		},
 	};
 
@@ -77,9 +77,24 @@ describe('ReviewRequestedTrigger', () => {
 	});
 
 	describe('matches', () => {
-		it('does not match by default (opt-in trigger, disabled without config)', () => {
+		it('matches by default (default reviewScope includes reviewRequested)', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
+				source: 'github',
+				payload: makeReviewRequestedPayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+			expect(trigger.matches(ctx)).toBe(true);
+		});
+
+		it('does not match when reviewScope is ["own"] (reviewRequested not included)', () => {
+			const ctx: TriggerContext = {
+				project: {
+					...mockProject,
+					github: {
+						triggers: { reviewScope: ['own'] as const },
+					},
+				},
 				source: 'github',
 				payload: makeReviewRequestedPayload(),
 				personaIdentities: mockPersonaIdentities,

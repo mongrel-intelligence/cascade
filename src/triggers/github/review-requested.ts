@@ -1,4 +1,4 @@
-import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
+import { resolveReviewScope } from '../../config/triggerConfig.js';
 import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -31,8 +31,9 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 		// Only trigger on review_requested events
 		if (ctx.payload.action !== 'review_requested') return false;
 
-		// Check trigger config — opt-in trigger, default disabled
-		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'reviewRequested')) {
+		// Check trigger config — only fire when reviewScope includes 'reviewRequested'
+		const reviewScope = resolveReviewScope(ctx.project.github?.triggers);
+		if (!reviewScope.includes('reviewRequested')) {
 			return false;
 		}
 

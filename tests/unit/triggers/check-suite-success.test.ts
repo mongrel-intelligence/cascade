@@ -36,6 +36,9 @@ describe('CheckSuiteSuccessTrigger', () => {
 			},
 			labels: {},
 		},
+		github: {
+			triggers: { reviewScope: ['own'] as const },
+		},
 	};
 
 	const mockPersonaIdentities = {
@@ -146,6 +149,45 @@ describe('CheckSuiteSuccessTrigger', () => {
 			};
 
 			expect(trigger.matches(ctx)).toBe(false);
+		});
+
+		it('does not match when reviewScope does not include own or all', () => {
+			const ctx: TriggerContext = {
+				project: {
+					...mockProject,
+					github: { triggers: { reviewScope: ['reviewRequested'] as const } },
+				},
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+
+			expect(trigger.matches(ctx)).toBe(false);
+		});
+
+		it('matches when reviewScope includes all', () => {
+			const ctx: TriggerContext = {
+				project: {
+					...mockProject,
+					github: { triggers: { reviewScope: ['all'] as const } },
+				},
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+
+			expect(trigger.matches(ctx)).toBe(true);
+		});
+
+		it('does not match by default (default reviewScope is ["reviewRequested"])', () => {
+			const ctxNoConfig: TriggerContext = {
+				project: {
+					...mockProject,
+					github: undefined,
+				},
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+
+			expect(trigger.matches(ctxNoConfig)).toBe(false);
 		});
 	});
 
@@ -685,6 +727,69 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(result).not.toBeNull();
 			expect(result?.workItemId).toBeUndefined();
 			expect(result?.agentInput.cardId).toBeUndefined();
+		});
+
+		it('allows non-implementer PRs when reviewScope is ["all"]', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'some-human' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: true,
+				totalCount: 1,
+				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+			});
+
+			const ctx: TriggerContext = {
+				project: {
+					...mockProject,
+					github: { triggers: { reviewScope: ['all'] as const } },
+				},
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('review');
+		});
+
+		it('blocks non-implementer PRs when reviewScope is ["own"]', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'some-human' },
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject, // reviewScope: ['own']
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
 		it('uses DB lookup result over PR body extraction', async () => {

@@ -27,11 +27,11 @@ describe('PROpenedTrigger', () => {
 		},
 	};
 
-	/** Project with prOpened trigger explicitly enabled via github.triggers config */
+	/** Project with prOpened trigger enabled via reviewScope: ['all'] */
 	const mockProjectWithPrOpenedEnabled = {
 		...mockProject,
 		github: {
-			triggers: { prOpened: true },
+			triggers: { reviewScope: ['all'] as const },
 		},
 	};
 
@@ -41,7 +41,7 @@ describe('PROpenedTrigger', () => {
 	});
 
 	describe('matches', () => {
-		it('does not match by default (opt-in trigger, disabled without config)', () => {
+		it('does not match by default (default reviewScope does not include "all")', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -67,7 +67,7 @@ describe('PROpenedTrigger', () => {
 			expect(trigger.matches(ctx)).toBe(false);
 		});
 
-		it('matches when action is opened and not draft with prOpened enabled', () => {
+		it('matches when action is opened and not draft with reviewScope ["all"]', () => {
 			const ctx: TriggerContext = {
 				project: mockProjectWithPrOpenedEnabled,
 				source: 'github',

@@ -143,7 +143,7 @@ export const projectsRouter = router({
 				z.object({
 					projectId: z.string(),
 					category: z.enum(['pm', 'scm']),
-					triggers: z.record(z.union([z.boolean(), z.record(z.boolean())])),
+					triggers: z.record(z.union([z.boolean(), z.record(z.boolean()), z.array(z.string())])),
 				}),
 			)
 			.mutation(async ({ ctx, input }) => {

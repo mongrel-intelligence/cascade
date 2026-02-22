@@ -1,4 +1,4 @@
-import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
+import { resolveReviewScope } from '../../config/triggerConfig.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubPullRequestPayload } from './types.js';
@@ -16,8 +16,9 @@ export class PROpenedTrigger implements TriggerHandler {
 		if (ctx.source !== 'github') return false;
 		if (!isGitHubPullRequestPayload(ctx.payload)) return false;
 
-		// Check trigger config — opt-in trigger, default disabled
-		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'prOpened')) {
+		// Check trigger config — only fire when reviewScope includes 'all'
+		const reviewScope = resolveReviewScope(ctx.project.github?.triggers);
+		if (!reviewScope.includes('all')) {
 			return false;
 		}
 

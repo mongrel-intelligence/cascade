@@ -55,9 +55,26 @@ function AgentConfigBadge({ config }: { config: AgentConfig | null }) {
 	return <span className="text-xs text-muted-foreground">{parts.join(' · ')}</span>;
 }
 
+/** Extract a nested dot-notation key value from a triggers record. */
+function extractNestedTrigger(
+	relevant: Record<string, unknown>,
+	allTriggers: Record<string, unknown>,
+	key: string,
+	defaultValue: boolean,
+): void {
+	const [parent, child] = key.split('.');
+	if (!(parent in relevant)) relevant[parent] = {};
+	const parentObj =
+		typeof allTriggers[parent] === 'object' && allTriggers[parent] !== null
+			? allTriggers[parent]
+			: {};
+	(relevant[parent] as Record<string, unknown>)[child] =
+		((parentObj as Record<string, unknown>)[child] as boolean) ?? defaultValue;
+}
+
 /**
  * Extract only the trigger keys relevant to the given trigger definitions
- * from the full triggers record. Handles nested dot-notation keys.
+ * from the full triggers record. Handles nested dot-notation keys and multi-select arrays.
  */
 function extractRelevantTriggers(
 	triggerDefs: ReturnType<typeof getTriggersForAgent>,
@@ -65,18 +82,11 @@ function extractRelevantTriggers(
 ): Record<string, unknown> {
 	const relevant: Record<string, unknown> = {};
 	for (const t of triggerDefs) {
-		const parts = t.key.split('.');
-		if (parts.length > 1) {
-			const [parent, child] = parts;
-			if (!(parent in relevant)) {
-				relevant[parent] = {};
-			}
-			const parentObj =
-				typeof allTriggers[parent] === 'object' && allTriggers[parent] !== null
-					? allTriggers[parent]
-					: {};
-			(relevant[parent] as Record<string, unknown>)[child] =
-				((parentObj as Record<string, unknown>)[child] as boolean) ?? t.defaultValue;
+		if (t.inputType === 'multi-select') {
+			const val = allTriggers[t.key];
+			relevant[t.key] = Array.isArray(val) ? val : [];
+		} else if (t.key.includes('.')) {
+			extractNestedTrigger(relevant, allTriggers, t.key, t.defaultValue);
 		} else {
 			relevant[t.key] = allTriggers[t.key] ?? t.defaultValue;
 		}
@@ -146,7 +156,13 @@ function AgentSection({
 		try {
 			const relevant: Record<string, unknown> = {};
 			for (const t of agentScmTriggers) {
-				relevant[t.key] = localScmTriggers[t.key] ?? t.defaultValue;
+				if (t.inputType === 'multi-select') {
+					// Preserve array values for multi-select triggers
+					const val = localScmTriggers[t.key];
+					relevant[t.key] = Array.isArray(val) ? val : [];
+				} else {
+					relevant[t.key] = localScmTriggers[t.key] ?? t.defaultValue;
+				}
 			}
 			await onSaveTriggers('scm', relevant, agentType);
 			setScmSaved(true);
@@ -354,7 +370,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			trpcClient.projects.integrations.updateTriggers.mutate({
 				projectId,
 				category,
-				triggers: triggers as Record<string, boolean | Record<string, boolean>>,
+				triggers: triggers as Record<string, boolean | Record<string, boolean> | string[]>,
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: integrationsQueryKey });
