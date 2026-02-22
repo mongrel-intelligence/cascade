@@ -5,7 +5,7 @@ import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { isGitHubIssueCommentPayload, isGitHubPRReviewCommentPayload } from './types.js';
-import { requireTrelloCardId } from './utils.js';
+import { resolveWorkItemId } from './utils.js';
 
 /**
  * Trigger that fires when someone @mentions the reviewer bot in a PR comment.
@@ -90,7 +90,7 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 			prBranch = payload.pull_request.head.ref;
 			repoFullName = payload.repository.full_name;
 
-			// Fetch PR for body (needed for Trello card check)
+			// Fetch PR for body (needed for work item resolution)
 			const { owner, repo } = parseRepoFullName(repoFullName);
 			const prDetails = await githubClient.getPR(owner, repo, prNumber);
 			prBody = prDetails.body;
@@ -110,18 +110,14 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Require Trello card
-		const cardId = requireTrelloCardId(prBody, {
-			prNumber,
-			triggerName: 'PR comment mention trigger',
-		});
-		if (cardId === null) return null;
+		// Resolve work item from DB (with PR body fallback)
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber, prBody, ctx.project);
 
 		logger.info('PR comment @mention detected, triggering respond-to-pr-comment agent', {
 			prNumber,
 			commentAuthor,
 			mentionTarget,
-			cardId,
+			workItemId,
 		});
 
 		return {
@@ -137,7 +133,7 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 				commentAuthor,
 			},
 			prNumber,
-			cardId: cardId || undefined,
+			workItemId,
 		};
 	}
 }

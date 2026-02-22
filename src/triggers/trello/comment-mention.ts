@@ -1,4 +1,5 @@
 import { resolveTrelloTriggerEnabled } from '../../config/triggerConfig.js';
+import { getTrelloConfig } from '../../pm/config.js';
 import { trelloClient } from '../../trello/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -37,7 +38,7 @@ export class TrelloCommentMentionTrigger implements TriggerHandler {
 		if (!isTrelloWebhookPayload(ctx.payload)) return false;
 
 		// Check trigger config — default enabled for backward compatibility
-		if (!resolveTrelloTriggerEnabled(ctx.project.trello?.triggers, 'commentMention')) {
+		if (!resolveTrelloTriggerEnabled(getTrelloConfig(ctx.project)?.triggers, 'commentMention')) {
 			return false;
 		}
 
@@ -76,7 +77,7 @@ export class TrelloCommentMentionTrigger implements TriggerHandler {
 		}
 
 		// Fetch card to verify it's in the PLANNING list
-		const planningListId = ctx.project.trello?.lists.planning;
+		const planningListId = getTrelloConfig(ctx.project)?.lists.planning;
 		if (!planningListId) {
 			logger.debug('Planning list not configured, skipping comment mention trigger', {
 				projectId: ctx.project.id,
@@ -110,7 +111,7 @@ export class TrelloCommentMentionTrigger implements TriggerHandler {
 				triggerCommentText: commentText,
 				triggerCommentAuthor: commentAuthor,
 			},
-			cardId,
+			workItemId: cardId,
 		};
 	}
 }

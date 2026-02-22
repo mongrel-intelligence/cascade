@@ -1,4 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Mock dependencies before imports
+vi.mock('../../../src/config/provider.js', () => ({
+	getIntegrationCredential: vi.fn().mockResolvedValue('mock-cred'),
+	loadProjectConfigByBoardId: vi.fn().mockResolvedValue(null),
+	loadProjectConfigByJiraProjectKey: vi.fn().mockResolvedValue(null),
+	findProjectById: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock('../../../src/trello/client.js', () => ({
+	withTrelloCredentials: vi.fn((_creds, fn) => fn()),
+	trelloClient: {},
+}));
+
+vi.mock('../../../src/jira/client.js', () => ({
+	withJiraCredentials: vi.fn((_creds, fn) => fn()),
+	jiraClient: {},
+}));
+
+vi.mock('../../../src/utils/safeOperation.js', () => ({
+	safeOperation: vi.fn((fn) => fn()),
+	silentOperation: vi.fn((fn) => fn()),
+}));
+
+// Import after mocks — side-effect import registers integrations with pmRegistry
+import '../../../src/pm/index.js';
 import {
 	PMLifecycleManager,
 	type ProjectPMConfig,
@@ -6,12 +32,6 @@ import {
 } from '../../../src/pm/lifecycle.js';
 import type { PMProvider } from '../../../src/pm/types.js';
 import type { ProjectConfig } from '../../../src/types/index.js';
-
-// Mock safeOperation utilities
-vi.mock('../../../src/utils/safeOperation.js', () => ({
-	safeOperation: vi.fn((fn) => fn()),
-	silentOperation: vi.fn((fn) => fn()),
-}));
 
 describe('pm/lifecycle', () => {
 	describe('resolveProjectPMConfig', () => {

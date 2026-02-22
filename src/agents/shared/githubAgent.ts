@@ -166,6 +166,8 @@ export async function executeGitHubAgent<
 					llmCallAccumulator,
 					runId,
 					baseBranch: project.baseBranch,
+					projectId: project.id,
+					cardId: input.cardId,
 					...definition.builderOptions,
 				}),
 

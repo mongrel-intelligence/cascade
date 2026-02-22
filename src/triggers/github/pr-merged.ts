@@ -1,15 +1,16 @@
 import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import { githubClient } from '../../github/client.js';
-import { trelloClient } from '../../trello/client.js';
+import { getPMProvider } from '../../pm/context.js';
+import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
-import { extractTrelloCardId, hasTrelloCardUrl } from './utils.js';
+import { resolveWorkItemId } from './utils.js';
 
 export class PRMergedTrigger implements TriggerHandler {
 	name = 'pr-merged';
-	description = 'Moves Trello card to MERGED list when PR is merged';
+	description = 'Moves work item to MERGED status when PR is merged';
 
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'github') return false;
@@ -40,54 +41,55 @@ export class PRMergedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Check for Trello card URL
+		// Resolve work item from DB (with PR body fallback)
 		const prBody = payload.pull_request.body || '';
-		if (!hasTrelloCardUrl(prBody)) {
-			logger.info('Merged PR has no Trello card URL', { prNumber });
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber, prBody, ctx.project);
+		if (!workItemId) {
+			logger.info('No work item linked to PR, skipping pr-merged', { prNumber });
 			return null;
 		}
 
-		const cardId = extractTrelloCardId(prBody);
-		if (!cardId) return null;
+		const pmConfig = resolveProjectPMConfig(ctx.project);
+		const mergedStatus = pmConfig.statuses.merged;
 
-		const mergedListId = ctx.project.trello?.lists?.merged;
-
-		if (!mergedListId) {
-			logger.warn('No merged list configured for project', {
+		if (!mergedStatus) {
+			logger.warn('No merged status configured for project', {
 				projectId: ctx.project.id,
 			});
 			return null;
 		}
 
-		// Idempotency: skip if card is already in the MERGED list
+		const provider = getPMProvider();
+
+		// Idempotency: skip if work item is already in the MERGED status
 		// (handles concurrent webhooks from multiple PR close events)
-		const card = await trelloClient.getCard(cardId);
-		if (card.idList === mergedListId) {
-			logger.info('Card already in MERGED list, skipping duplicate move', {
-				cardId,
+		const workItem = await provider.getWorkItem(workItemId);
+		if (workItem.status === mergedStatus) {
+			logger.info('Work item already in MERGED status, skipping duplicate move', {
+				workItemId,
 				prNumber,
 			});
 			return {
-				agentType: '',
+				agentType: null,
 				agentInput: {},
-				cardId,
+				workItemId,
 				prNumber,
 			};
 		}
 
-		// Move card to MERGED list
-		await trelloClient.moveCardToList(cardId, mergedListId);
-		await trelloClient.addComment(
-			cardId,
+		// Move work item to MERGED status
+		await provider.moveWorkItem(workItemId, mergedStatus);
+		await provider.addComment(
+			workItemId,
 			`PR #${prNumber} has been merged to ${prDetails.baseRef}`,
 		);
 
-		logger.info('Moved card to merged list', { cardId, prNumber });
+		logger.info('Moved work item to merged status', { workItemId, prNumber });
 
 		return {
-			agentType: '', // No agent needed
+			agentType: null,
 			agentInput: {},
-			cardId,
+			workItemId,
 			prNumber,
 		};
 	}

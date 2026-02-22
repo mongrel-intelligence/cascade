@@ -4,7 +4,7 @@ import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
-import { extractTrelloCardId, hasTrelloCardUrl } from './utils.js';
+import { resolveWorkItemId } from './utils.js';
 
 // Track fix attempts per PR to prevent infinite loops
 const fixAttempts = new Map<number, number>();
@@ -17,7 +17,8 @@ export function resetFixAttempts(prNumber: number): void {
 
 export class CheckSuiteFailureTrigger implements TriggerHandler {
 	name = 'check-suite-failure';
-	description = 'Triggers review agent when check suite fails on a PR with Trello card';
+	description =
+		'Triggers respond-to-ci agent when check suite fails on a PR by the implementer persona';
 
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'github') return false;
@@ -53,12 +54,16 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		const prNumber = prRef.number;
 		const headSha = payload.check_suite.head_sha;
 
-		// Fetch PR to check for Trello card URL
+		// Fetch PR details
 		const prDetails = await githubClient.getPR(owner, repo, prNumber);
 
-		if (!hasTrelloCardUrl(prDetails.body)) {
-			logger.info('PR does not have Trello card URL, skipping check failure trigger', {
+		// Gate on PR author being the implementer persona
+		if (!ctx.personaIdentities) return null;
+		const implLogin = ctx.personaIdentities.implementer;
+		if (prDetails.user.login !== implLogin && prDetails.user.login !== `${implLogin}[bot]`) {
+			logger.info('PR not authored by implementer persona, skipping check failure trigger', {
 				prNumber,
+				prAuthor: prDetails.user.login,
 			});
 			return null;
 		}
@@ -73,7 +78,13 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const cardId = extractTrelloCardId(prDetails.body);
+		// Resolve work item from DB (with PR body fallback)
+		const workItemId = await resolveWorkItemId(
+			ctx.project.id,
+			prNumber,
+			prDetails.body,
+			ctx.project,
+		);
 
 		// Get ALL check runs for this commit to verify they're all complete
 		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
@@ -126,9 +137,9 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		// Increment attempt counter
 		fixAttempts.set(prNumber, attempts + 1);
 
-		logger.info('Check suite failure on PR with Trello card - all checks complete', {
+		logger.info('Check suite failure on implementer PR - all checks complete', {
 			prNumber,
-			cardId,
+			workItemId,
 			attempt: attempts + 1,
 			totalChecks: checkStatus.totalCount,
 			failedChecks: checkStatus.checkRuns
@@ -149,10 +160,10 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 				repoFullName: payload.repository.full_name,
 				headSha,
 				triggerType: 'check-failure',
-				cardId: cardId || undefined,
+				cardId: workItemId,
 			},
 			prNumber,
-			cardId: cardId || undefined,
+			workItemId,
 		};
 	}
 }

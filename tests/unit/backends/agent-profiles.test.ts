@@ -79,6 +79,7 @@ vi.mock('../../../src/gadgets/pm/index.js', () => ({
 	AddChecklist: mockClass('AddChecklist'),
 	CreateWorkItem: mockClass('CreateWorkItem'),
 	ListWorkItems: mockClass('ListWorkItems'),
+	PMDeleteChecklistItem: mockClass('PMDeleteChecklistItem'),
 	PMUpdateChecklistItem: mockClass('PMUpdateChecklistItem'),
 	PostComment: mockClass('PostComment'),
 	ReadWorkItem: mockClass('ReadWorkItem'),

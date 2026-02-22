@@ -28,6 +28,7 @@ export class TrelloPMProvider implements PMProvider {
 			title: card.name,
 			description: card.desc,
 			url: card.url,
+			status: card.idList,
 			labels: card.labels.map(
 				(l): WorkItemLabel => ({
 					id: l.id,
@@ -146,7 +147,12 @@ export class TrelloPMProvider implements PMProvider {
 		};
 	}
 
-	async addChecklistItem(checklistId: string, name: string, checked = false): Promise<void> {
+	async addChecklistItem(
+		checklistId: string,
+		name: string,
+		checked = false,
+		_description?: string,
+	): Promise<void> {
 		await trelloClient.addChecklistItem(checklistId, name, checked);
 	}
 
@@ -160,6 +166,18 @@ export class TrelloPMProvider implements PMProvider {
 			checkItemId,
 			complete ? 'complete' : 'incomplete',
 		);
+	}
+
+	async deleteChecklistItem(workItemId: string, checkItemId: string): Promise<void> {
+		const checklists = await trelloClient.getCardChecklists(workItemId);
+		for (const cl of checklists) {
+			const item = cl.checkItems.find((i) => i.id === checkItemId);
+			if (item) {
+				await trelloClient.deleteChecklistItem(cl.id, checkItemId);
+				return;
+			}
+		}
+		throw new Error(`Checklist item ${checkItemId} not found on card ${workItemId}`);
 	}
 
 	async getAttachments(workItemId: string): Promise<Attachment[]> {

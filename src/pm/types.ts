@@ -80,8 +80,14 @@ export interface PMProvider {
 	// Checklists
 	getChecklists(workItemId: string): Promise<Checklist[]>;
 	createChecklist(workItemId: string, name: string): Promise<Checklist>;
-	addChecklistItem(checklistId: string, name: string, checked?: boolean): Promise<void>;
+	addChecklistItem(
+		checklistId: string,
+		name: string,
+		checked?: boolean,
+		description?: string,
+	): Promise<void>;
 	updateChecklistItem(workItemId: string, checkItemId: string, complete: boolean): Promise<void>;
+	deleteChecklistItem(workItemId: string, checkItemId: string): Promise<void>;
 
 	// Attachments & custom fields
 	getAttachments(workItemId: string): Promise<Attachment[]>;

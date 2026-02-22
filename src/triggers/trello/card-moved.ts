@@ -1,4 +1,5 @@
 import { resolveTrelloTriggerEnabled } from '../../config/triggerConfig.js';
+import { getTrelloConfig } from '../../pm/config.js';
 import type {
 	TrelloWebhookPayload,
 	TriggerContext,
@@ -29,12 +30,13 @@ function createCardMovedTrigger(config: CardMovedConfig): TriggerHandler {
 			if (!isTrelloWebhookPayload(ctx.payload)) return false;
 
 			// Check trigger config — default enabled for backward compatibility
-			if (!resolveTrelloTriggerEnabled(ctx.project.trello?.triggers, config.triggerConfigKey)) {
+			const trelloConfig = getTrelloConfig(ctx.project);
+			if (!resolveTrelloTriggerEnabled(trelloConfig?.triggers, config.triggerConfigKey)) {
 				return false;
 			}
 
 			const payload = ctx.payload;
-			const targetListId = ctx.project.trello?.lists[config.listKey];
+			const targetListId = trelloConfig?.lists[config.listKey];
 
 			// Card moved into the target list
 			const isMove =
@@ -64,7 +66,7 @@ function createCardMovedTrigger(config: CardMovedConfig): TriggerHandler {
 			return {
 				agentType: config.agentType,
 				agentInput: { cardId },
-				cardId,
+				workItemId: cardId,
 			};
 		},
 	};

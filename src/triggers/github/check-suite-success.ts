@@ -4,7 +4,7 @@ import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
-import { extractTrelloCardId, hasTrelloCardUrl } from './utils.js';
+import { resolveWorkItemId } from './utils.js';
 
 const MAX_RETRIES = 5;
 const RETRY_DELAY_MS = 10_000;
@@ -45,19 +45,22 @@ async function waitForChecks(
 }
 
 /**
- * Triggers review agent when all CI checks pass on a PR with Trello card URL.
+ * Triggers review agent when all CI checks pass on a PR authored by the implementer persona.
  *
  * This trigger fires when:
  * 1. A check_suite completes with success conclusion
- * 2. The associated PR has a Trello card URL in its body
+ * 2. The PR author matches the implementer persona (or its [bot] variant)
  * 3. All checks are actually passing (verified via API)
+ *
+ * Work item resolution uses the pr_work_items DB table (with PR body extraction as fallback).
+ * The trigger fires even without a linked work item — agents run, PM updates are simply skipped.
  *
  * Registration order matters - this should be registered BEFORE PRReadyToMergeTrigger
  * so the review happens before the card is moved to DONE.
  */
 export class CheckSuiteSuccessTrigger implements TriggerHandler {
 	name = 'check-suite-success';
-	description = 'Triggers review agent when all CI checks pass on a PR with Trello card';
+	description = 'Triggers review agent when all CI checks pass on a PR by the implementer persona';
 
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'github') return false;
@@ -93,12 +96,16 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		const prNumber = prRef.number;
 		const headSha = payload.check_suite.head_sha;
 
-		// Fetch PR to check for Trello card URL
+		// Fetch PR details
 		const prDetails = await githubClient.getPR(owner, repo, prNumber);
 
-		if (!hasTrelloCardUrl(prDetails.body)) {
-			logger.info('PR does not have Trello card URL, skipping CI success trigger', {
+		// Gate on PR author being the implementer persona
+		if (!ctx.personaIdentities) return null;
+		const implLogin = ctx.personaIdentities.implementer;
+		if (prDetails.user.login !== implLogin && prDetails.user.login !== `${implLogin}[bot]`) {
+			logger.info('PR not authored by implementer persona, skipping', {
 				prNumber,
+				prAuthor: prDetails.user.login,
 			});
 			return null;
 		}
@@ -113,13 +120,19 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const cardId = extractTrelloCardId(prDetails.body);
+		// Resolve work item from DB (with PR body fallback)
+		const workItemId = await resolveWorkItemId(
+			ctx.project.id,
+			prNumber,
+			prDetails.body,
+			ctx.project,
+		);
 
 		// Skip if the reviewer persona's latest review already covers the current HEAD SHA
 		const reviews = await githubClient.getPRReviews(owner, repo, prNumber);
 
 		// Use persona identities to identify reviewer bot's reviews
-		const reviewerUsername = ctx.personaIdentities?.reviewer;
+		const reviewerUsername = ctx.personaIdentities.reviewer;
 
 		// Only consider actual reviews (approved/changes_requested), not COMMENTED
 		// which are reply acknowledgments posted by respond-to-review agent
@@ -164,9 +177,9 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			return null;
 		}
 
-		logger.info('All CI checks passed on PR with Trello card - triggering review', {
+		logger.info('All CI checks passed on implementer PR - triggering review', {
 			prNumber,
-			cardId,
+			workItemId,
 			headSha,
 			totalChecks: checkStatus.totalCount,
 		});
@@ -179,10 +192,10 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 				repoFullName: payload.repository.full_name,
 				headSha,
 				triggerType: 'ci-success',
-				cardId: cardId || undefined,
+				cardId: workItemId,
 			},
 			prNumber,
-			cardId: cardId || undefined,
+			workItemId,
 		};
 	}
 }

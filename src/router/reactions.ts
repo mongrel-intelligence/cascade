@@ -11,6 +11,7 @@
 import { getProjectGitHubToken } from '../config/projects.js';
 import { findProjectById, getIntegrationCredential } from '../config/provider.js';
 import { type PersonaIdentities, isCascadeBot } from '../github/personas.js';
+import { getJiraConfig } from '../pm/config.js';
 import { trelloClient, withTrelloCredentials } from '../trello/client.js';
 import type { ProjectConfig } from '../types/index.js';
 import { parseRepoFullName } from '../utils/repo.js';
@@ -210,7 +211,7 @@ async function sendJiraReaction(projectId: string, payload: unknown): Promise<vo
 		jiraApiToken = await getIntegrationCredential(projectId, 'pm', 'api_token');
 		// JIRA_BASE_URL is in the project config, not credentials.
 		const project = await findProjectById(projectId);
-		jiraBaseUrl = project?.jira?.baseUrl ?? '';
+		jiraBaseUrl = (project ? getJiraConfig(project)?.baseUrl : undefined) ?? '';
 		if (!jiraBaseUrl) throw new Error('Missing JIRA base URL');
 	} catch {
 		console.warn('[Reactions] Missing JIRA credentials, skipping reaction');

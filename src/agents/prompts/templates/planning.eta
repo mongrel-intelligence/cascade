@@ -101,7 +101,8 @@ Update the <%= it.workItemNoun || 'card' %> description with **emoji section hea
 
 **IMPORTANT:**
 - After updating the <%= it.workItemNoun || 'card' %>, ALWAYS call `AddChecklist` to create an interactive "📋 Implementation Steps" checklist with each step as an item.
-- When referencing other <%= it.workItemNounPlural || 'cards' %> (related stories, dependencies), ALWAYS use markdown links: `[<%= it.workItemNounCap || 'Card' %> Title](URL)`
+<% if (it.pmType === 'jira') { %>- When calling `AddChecklist`, pass items as objects with `name` and `description`. The description should include the files to modify, specific changes, and testing notes from the corresponding Implementation Step section. This becomes the JIRA subtask description.
+<% } %>- When referencing other <%= it.workItemNounPlural || 'cards' %> (related stories, dependencies), ALWAYS use markdown links: `[<%= it.workItemNounCap || 'Card' %> Title](URL)`
 
 ## Comment Format
 
@@ -124,7 +125,7 @@ Review the updated description and move to TODO when ready to implement!
 **<%= it.pmName || 'Trello' %> (for outputting your plan):**
 - `ReadWorkItem` - Read <%= it.workItemNoun || 'card' %> details (title, description, comments, labels)
 - `UpdateWorkItem` - Update <%= it.workItemNoun || 'card' %> title/description
-- `AddChecklist` - Add an interactive checklist to a <%= it.workItemNoun || 'card' %> (use for implementation steps)
+- `AddChecklist` - Add an interactive checklist to a <%= it.workItemNoun || 'card' %> (use for implementation steps)<% if (it.pmType === 'jira') { %>. Each item can include a `description` with files-to-modify, specific changes, and testing notes — these become subtask descriptions.<% } %>
 - `PostComment` - Post a comment on a <%= it.workItemNoun || 'card' %>
 
 **Codebase exploration (READ-ONLY):**

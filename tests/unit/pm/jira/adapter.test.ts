@@ -9,6 +9,7 @@ const { mockJiraClient, mockAdfToPlainText, mockMarkdownToAdf } = vi.hoisted(() 
 		addComment: vi.fn(),
 		updateComment: vi.fn(),
 		createIssue: vi.fn(),
+		deleteIssue: vi.fn(),
 		getIssueTypesForProject: vi.fn(),
 		searchIssues: vi.fn(),
 		getTransitions: vi.fn(),
@@ -495,6 +496,40 @@ describe('JiraPMProvider', () => {
 			expect(mockJiraClient.getIssueTypesForProject).toHaveBeenCalledOnce();
 		});
 
+		it('passes description as ADF to createIssue when provided', async () => {
+			const adfDoc = { type: 'doc', version: 1, content: [{ type: 'paragraph' }] };
+			mockMarkdownToAdf.mockReturnValue(adfDoc);
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-105' });
+
+			await provider.addChecklistItem(
+				'checklist-PROJ-1-1234567890',
+				'Subtask with description',
+				false,
+				'**Files:** `src/api.ts`\n- Add POST route',
+			);
+
+			expect(mockMarkdownToAdf).toHaveBeenCalledWith('**Files:** `src/api.ts`\n- Add POST route');
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
+				expect.objectContaining({
+					project: { key: 'PROJ' },
+					parent: { key: 'PROJ-1' },
+					summary: 'Subtask with description',
+					issuetype: { name: 'Sub-task' },
+					description: adfDoc,
+				}),
+			);
+		});
+
+		it('omits description from createIssue when not provided', async () => {
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-106' });
+
+			await provider.addChecklistItem('checklist-PROJ-1-1234567890', 'No description subtask');
+
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
+				expect.not.objectContaining({ description: expect.anything() }),
+			);
+		});
+
 		it('falls back to "Subtask" when no subtask type found', async () => {
 			const providerNoConfig = new JiraPMProvider({
 				...mockConfig,
@@ -526,6 +561,72 @@ describe('JiraPMProvider', () => {
 			await provider.updateChecklistItem('PROJ-1', 'PROJ-2', true);
 
 			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-2', 't-done');
+		});
+	});
+
+	describe('deleteChecklistItem', () => {
+		it('delegates to jiraClient.deleteIssue with the subtask key', async () => {
+			mockJiraClient.deleteIssue.mockResolvedValue(undefined);
+
+			await provider.deleteChecklistItem('PROJ-1', 'PROJ-5');
+
+			expect(mockJiraClient.deleteIssue).toHaveBeenCalledWith('PROJ-5');
+		});
+
+		it('ignores workItemId (not needed for JIRA subtask deletion)', async () => {
+			mockJiraClient.deleteIssue.mockResolvedValue(undefined);
+
+			await provider.deleteChecklistItem('PROJ-99', 'PROJ-5');
+
+			expect(mockJiraClient.deleteIssue).toHaveBeenCalledWith('PROJ-5');
+		});
+
+		it('falls back to transition when deleteIssue returns 403', async () => {
+			mockJiraClient.deleteIssue.mockRejectedValue(new Error('Request failed with status 403'));
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-1', name: 'In Progress', to: { name: 'In Progress' } },
+				{ id: 't-2', name: 'Cancelled', to: { name: 'Cancelled' } },
+			]);
+			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
+
+			await provider.deleteChecklistItem('PROJ-1', 'PROJ-5');
+
+			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-5', 't-2');
+		});
+
+		it('tries terminal statuses in priority order (cancelled preferred over done)', async () => {
+			mockJiraClient.deleteIssue.mockRejectedValue(new Error('403 Forbidden'));
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-done', name: 'Done', to: { name: 'Done' } },
+				{ id: 't-cancel', name: 'Cancel', to: { name: 'Cancelled' } },
+			]);
+			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
+
+			await provider.deleteChecklistItem('PROJ-1', 'PROJ-5');
+
+			// Should pick "Cancelled" (higher priority) over "Done"
+			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-5', 't-cancel');
+		});
+
+		it('throws when no terminal transition available after 403', async () => {
+			mockJiraClient.deleteIssue.mockRejectedValue(new Error('403 Forbidden'));
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-1', name: 'In Progress', to: { name: 'In Progress' } },
+				{ id: 't-2', name: 'In Review', to: { name: 'In Review' } },
+			]);
+
+			await expect(provider.deleteChecklistItem('PROJ-1', 'PROJ-5')).rejects.toThrow(
+				'Cannot delete subtask PROJ-5: deletion returned 403 and no terminal transition found',
+			);
+		});
+
+		it('re-throws non-403 errors without fallback', async () => {
+			mockJiraClient.deleteIssue.mockRejectedValue(new Error('500 Internal Server Error'));
+
+			await expect(provider.deleteChecklistItem('PROJ-1', 'PROJ-5')).rejects.toThrow(
+				'500 Internal Server Error',
+			);
+			expect(mockJiraClient.getTransitions).not.toHaveBeenCalled();
 		});
 	});
 

@@ -2,6 +2,8 @@
 let sessionState = {
 	agentType: null as string | null,
 	baseBranch: 'main' as string,
+	projectId: null as string | null,
+	cardId: null as string | null,
 	prCreated: false,
 	prUrl: null as string | null,
 	reviewSubmitted: false,
@@ -9,10 +11,17 @@ let sessionState = {
 	initialCommentId: null as number | null,
 };
 
-export function initSessionState(agentType: string, baseBranch?: string): void {
+export function initSessionState(
+	agentType: string,
+	baseBranch?: string,
+	projectId?: string,
+	cardId?: string,
+): void {
 	sessionState = {
 		agentType,
 		baseBranch: baseBranch ?? 'main',
+		projectId: projectId ?? null,
+		cardId: cardId ?? null,
 		prCreated: false,
 		prUrl: null,
 		reviewSubmitted: false,
@@ -23,6 +32,14 @@ export function initSessionState(agentType: string, baseBranch?: string): void {
 
 export function getBaseBranch(): string {
 	return sessionState.baseBranch;
+}
+
+export function getProjectId(): string | null {
+	return sessionState.projectId;
+}
+
+export function getCardId(): string | null {
+	return sessionState.cardId;
 }
 
 export function recordPRCreation(prUrl: string): void {

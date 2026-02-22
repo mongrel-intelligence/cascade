@@ -1,4 +1,35 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Mocks required for PM integration registration (pm/index.js side-effect)
+vi.mock('../../../src/config/provider.js', () => ({
+	getIntegrationCredential: vi.fn(),
+	loadProjectConfigByBoardId: vi.fn(),
+	loadProjectConfigByJiraProjectKey: vi.fn(),
+	findProjectById: vi.fn(),
+}));
+vi.mock('../../../src/trello/client.js', () => ({
+	withTrelloCredentials: vi.fn(),
+	trelloClient: { getCard: vi.fn() },
+}));
+vi.mock('../../../src/jira/client.js', () => ({
+	withJiraCredentials: vi.fn(),
+	jiraClient: {},
+}));
+vi.mock('../../../src/router/acknowledgments.js', () => ({
+	postTrelloAck: vi.fn(),
+	deleteTrelloAck: vi.fn(),
+	resolveTrelloBotMemberId: vi.fn(),
+	postJiraAck: vi.fn(),
+	deleteJiraAck: vi.fn(),
+	resolveJiraBotAccountId: vi.fn(),
+}));
+vi.mock('../../../src/router/reactions.js', () => ({
+	sendAcknowledgeReaction: vi.fn(),
+}));
+
+// Register PM integrations in the registry
+import '../../../src/pm/index.js';
+
 import {
 	CardMovedToBriefingTrigger,
 	CardMovedToPlanningTrigger,
@@ -159,7 +190,7 @@ describe('CardMovedToBriefingTrigger', () => {
 		const result = await trigger.handle(ctx);
 
 		expect(result.agentType).toBe('briefing');
-		expect(result.cardId).toBe('card123');
+		expect(result.workItemId).toBe('card123');
 		expect(result.agentInput.cardId).toBe('card123');
 	});
 });
@@ -240,6 +271,6 @@ describe('CardMovedToTodoTrigger', () => {
 		const result = await trigger.handle(ctx);
 
 		expect(result.agentType).toBe('implementation');
-		expect(result.cardId).toBe('card456');
+		expect(result.workItemId).toBe('card456');
 	});
 });

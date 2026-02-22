@@ -3,7 +3,7 @@ import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
-import { extractWorkItemId } from './utils.js';
+import { resolveWorkItemId } from './utils.js';
 
 /**
  * Trigger that fires the review agent when review is requested from a CASCADE persona account.
@@ -71,15 +71,9 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 			return null;
 		}
 
+		// Resolve work item from DB (with PR body fallback)
 		const prBody = payload.pull_request.body;
-		const workItemId = extractWorkItemId(prBody, ctx.project);
-
-		if (!workItemId) {
-			logger.info('PR does not have work item reference, skipping review-requested trigger', {
-				prNumber,
-			});
-			return null;
-		}
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber, prBody, ctx.project);
 
 		logger.info('Review requested from CASCADE persona, triggering review agent', {
 			prNumber,
@@ -98,7 +92,6 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 				cardId: workItemId,
 			},
 			prNumber,
-			cardId: workItemId,
 			workItemId,
 		};
 	}

@@ -9,7 +9,11 @@ import { logger } from '../../utils/logging.js';
  * @param getEventType - Optional function to extract event type from the queued entry.
  */
 export function processNextQueuedWebhook(
-	processWebhook: (payload: unknown, eventType?: string) => Promise<void>,
+	processWebhook: (
+		payload: unknown,
+		eventType?: string,
+		ackCommentId?: string | number,
+	) => Promise<void>,
 	label: string,
 	getEventType?: (entry: { payload: unknown; eventType?: string }) => string | undefined,
 ): void {
@@ -20,7 +24,7 @@ export function processNextQueuedWebhook(
 		if (eventType) logContext.eventType = eventType;
 		logger.info(`Processing queued ${label} webhook`, logContext);
 		setImmediate(() => {
-			processWebhook(next.payload, eventType).catch((err) => {
+			processWebhook(next.payload, eventType, next.ackCommentId).catch((err) => {
 				logger.error(`Failed to process queued ${label} webhook`, { error: String(err) });
 			});
 		});

@@ -12,6 +12,12 @@ vi.mock('../../../src/github/client.js', () => ({
 
 import { githubClient } from '../../../src/github/client.js';
 
+vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
+	lookupWorkItemForPR: vi.fn(),
+}));
+
+import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
+
 describe('CheckSuiteSuccessTrigger', () => {
 	const trigger = new CheckSuiteSuccessTrigger();
 
@@ -53,6 +59,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 	});
 
 	describe('resolveAgentType', () => {
@@ -154,6 +161,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 				baseRef: 'main',
 				merged: false,
 				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
 			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
@@ -187,7 +195,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 					cardId: 'abc123',
 				},
 				prNumber: 42,
-				cardId: 'abc123',
+				workItemId: 'abc123',
 			});
 		});
 
@@ -202,6 +210,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 				baseRef: 'develop',
 				merged: false,
 				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
 			});
 
 			const ctx: TriggerContext = {
@@ -218,17 +227,18 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
-		it('returns null when PR has no Trello URL', async () => {
+		it('returns null when PR not authored by implementer persona', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
-				body: 'No Trello link here',
+				body: 'https://trello.com/c/abc123/card-name',
 				state: 'open',
 				headRef: 'feature/test',
 				headSha: 'sha123',
 				baseRef: 'main',
 				merged: false,
 				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'some-human' },
 			});
 
 			const ctx: TriggerContext = {
@@ -236,6 +246,32 @@ describe('CheckSuiteSuccessTrigger', () => {
 				source: 'github',
 				payload: makeCheckSuitePayload(),
 				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
+		});
+
+		it('returns null when no personaIdentities available', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -255,6 +291,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 				baseRef: 'main',
 				merged: false,
 				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
 			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
@@ -293,6 +330,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 				baseRef: 'main',
 				merged: false,
 				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
 			vi.mocked(githubClient.getCheckSuiteStatus)
@@ -347,6 +385,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 				baseRef: 'main',
 				merged: false,
 				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
 			vi.mocked(githubClient.getCheckSuiteStatus)
@@ -399,6 +438,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 				baseRef: 'main',
 				merged: false,
 				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
 				{
@@ -435,6 +475,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 				baseRef: 'main',
 				merged: false,
 				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
 				{
@@ -477,6 +518,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 				baseRef: 'main',
 				merged: false,
 				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
 				{
@@ -521,6 +563,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 				baseRef: 'main',
 				merged: false,
 				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
 				{
@@ -579,6 +622,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 				baseRef: 'main',
 				merged: false,
 				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
 				{
@@ -607,6 +651,74 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('review');
+		});
+
+		it('fires without work item when PR body has no work item reference', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'No work item link',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: true,
+				totalCount: 1,
+				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.workItemId).toBeUndefined();
+			expect(result?.agentInput.cardId).toBeUndefined();
+		});
+
+		it('uses DB lookup result over PR body extraction', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue('db-work-item');
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: true,
+				totalCount: 1,
+				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.workItemId).toBe('db-work-item');
 		});
 	});
 });

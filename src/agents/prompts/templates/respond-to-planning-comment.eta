@@ -53,6 +53,17 @@ You are running in a cloned copy of the project repository. Before updating the 
 4. **Make surgical updates** to the <%= it.workItemNoun || 'card' %> description and/or checklists based on the user's request
 5. **Post a reply comment** via PostComment explaining what you changed and why
 
+## Updating the Plan and Checklists
+
+When modifying the plan, **update the existing checklists in place** — do NOT create duplicate checklists.
+
+- **Adding steps**: Use `AddChecklist` only when there is no existing checklist to add items to. Otherwise use `UpdateChecklistItem` to rename existing items or add to an existing checklist.
+- **Renaming/rewriting steps**: Use `UpdateChecklistItem` to change the text of existing checklist items.
+- **Removing steps**: Use `DeleteChecklistItem` to permanently remove checklist items / subtasks that are no longer needed. Do NOT mark removed items as "complete" — they were never done, so deleting is the correct action.
+- **Reordering**: Delete and re-add items as needed to achieve the desired order.
+
+When the user asks to narrow scope, focus on a subset, or drop items from the plan, **always delete** the out-of-scope items rather than leaving them in the checklist.
+
 ## Response Format
 
 When updating the <%= it.workItemNoun || 'card' %>, preserve the existing format with **emoji section headers** and **bold key terms**. Only modify the sections that need to change.
@@ -78,6 +89,7 @@ Based on your comment, I've made the following changes:
 - `UpdateWorkItem` - Update <%= it.workItemNoun || 'card' %> title/description
 - `AddChecklist` - Add an interactive checklist to a <%= it.workItemNoun || 'card' %>
 - `UpdateChecklistItem` - Update checklist item state (complete/incomplete) or name
+- `DeleteChecklistItem` - Delete a checklist item / subtask (use to remove descoped steps — do NOT mark removed items as complete)
 - `PostComment` - Post a comment on a <%= it.workItemNoun || 'card' %>
 
 **Codebase exploration (READ-ONLY):**

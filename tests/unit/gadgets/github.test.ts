@@ -7,6 +7,18 @@ import { runCommand } from '../../../src/utils/repo.js';
 vi.mock('../../../src/gadgets/sessionState.js', () => ({
 	recordPRCreation: vi.fn(),
 	getBaseBranch: vi.fn().mockReturnValue('main'),
+	getProjectId: vi.fn().mockReturnValue(null),
+	getCardId: vi.fn().mockReturnValue(null),
+}));
+
+// Mock DB repository (CreatePR gadget calls linkPRToWorkItem)
+vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
+	linkPRToWorkItem: vi.fn(),
+}));
+
+// Mock logger
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 // Mock the github client

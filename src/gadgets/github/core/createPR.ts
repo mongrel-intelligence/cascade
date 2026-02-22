@@ -15,6 +15,7 @@ export interface CreatePRParams {
 export interface CreatePRResult {
 	prNumber: number;
 	prUrl: string;
+	repoFullName: string;
 	alreadyExisted: boolean;
 }
 
@@ -108,7 +109,12 @@ export async function createPR(params: CreatePRParams): Promise<CreatePRResult> 
 			draft: params.draft,
 		});
 
-		return { prNumber: pr.number, prUrl: pr.htmlUrl, alreadyExisted: false };
+		return {
+			prNumber: pr.number,
+			prUrl: pr.htmlUrl,
+			repoFullName: `${owner}/${repo}`,
+			alreadyExisted: false,
+		};
 	} catch (error) {
 		if (
 			error instanceof Error &&
@@ -121,6 +127,7 @@ export async function createPR(params: CreatePRParams): Promise<CreatePRResult> 
 				return {
 					prNumber: existingPR.number,
 					prUrl: existingPR.htmlUrl,
+					repoFullName: `${owner}/${repo}`,
 					alreadyExisted: true,
 				};
 			}

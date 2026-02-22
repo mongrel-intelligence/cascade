@@ -1,18 +1,8 @@
+import { getCostFieldId } from '../../pm/config.js';
 import { getPMProvider } from '../../pm/index.js';
 import type { AgentResult, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { safeOperation } from '../../utils/safeOperation.js';
-
-/**
- * Resolve the cost custom field ID from the project config.
- * Supports both Trello and JIRA projects.
- */
-function getCostFieldId(project: ProjectConfig): string | undefined {
-	if (project.pm?.type === 'jira') {
-		return project.jira?.customFields?.cost;
-	}
-	return project.trello?.customFields?.cost;
-}
 
 /**
  * Update cost custom field on the work item (card/issue).

@@ -1,6 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { PRReadyToMergeTrigger } from '../../../src/triggers/github/pr-ready-to-merge.js';
-import type { TriggerContext } from '../../../src/triggers/types.js';
 
 vi.mock('../../../src/github/client.js', () => ({
 	githubClient: {
@@ -10,16 +8,54 @@ vi.mock('../../../src/github/client.js', () => ({
 	},
 }));
 
-vi.mock('../../../src/trello/client.js', () => ({
-	trelloClient: {
-		getCard: vi.fn(),
-		moveCardToList: vi.fn(),
-		addComment: vi.fn(),
-	},
+// Mock the PM provider context
+const mockProvider = {
+	getWorkItem: vi.fn(),
+	moveWorkItem: vi.fn(),
+	addComment: vi.fn(),
+};
+vi.mock('../../../src/pm/context.js', () => ({
+	getPMProvider: () => mockProvider,
 }));
 
+// Mocks required for PM integration registration (pm/index.js side-effect)
+vi.mock('../../../src/config/provider.js', () => ({
+	getIntegrationCredential: vi.fn(),
+	loadProjectConfigByBoardId: vi.fn(),
+	loadProjectConfigByJiraProjectKey: vi.fn(),
+	findProjectById: vi.fn(),
+}));
+vi.mock('../../../src/trello/client.js', () => ({
+	withTrelloCredentials: vi.fn(),
+	trelloClient: { getCard: vi.fn() },
+}));
+vi.mock('../../../src/jira/client.js', () => ({
+	withJiraCredentials: vi.fn(),
+	jiraClient: {},
+}));
+vi.mock('../../../src/router/acknowledgments.js', () => ({
+	postTrelloAck: vi.fn(),
+	deleteTrelloAck: vi.fn(),
+	resolveTrelloBotMemberId: vi.fn(),
+	postJiraAck: vi.fn(),
+	deleteJiraAck: vi.fn(),
+	resolveJiraBotAccountId: vi.fn(),
+}));
+vi.mock('../../../src/router/reactions.js', () => ({
+	sendAcknowledgeReaction: vi.fn(),
+}));
+vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
+	lookupWorkItemForPR: vi.fn(),
+}));
+
+// Register PM integrations in the registry
+import '../../../src/pm/index.js';
+
+import { PRReadyToMergeTrigger } from '../../../src/triggers/github/pr-ready-to-merge.js';
+import type { TriggerContext } from '../../../src/triggers/types.js';
+
+import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { githubClient } from '../../../src/github/client.js';
-import { trelloClient } from '../../../src/trello/client.js';
 
 describe('PRReadyToMergeTrigger', () => {
 	const trigger = new PRReadyToMergeTrigger();
@@ -44,6 +80,7 @@ describe('PRReadyToMergeTrigger', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 	});
 
 	describe('resolveAgentType', () => {
@@ -246,13 +283,12 @@ describe('PRReadyToMergeTrigger', () => {
 					commitId: 'sha123',
 				},
 			]);
-			vi.mocked(trelloClient.getCard).mockResolvedValue({
+			mockProvider.getWorkItem.mockResolvedValue({
 				id: 'abc123',
-				name: 'Card',
-				desc: '',
+				title: 'Card',
+				description: '',
 				url: '',
-				shortUrl: '',
-				idList: 'todo-list-id',
+				status: 'todo-list-id',
 				labels: [],
 			});
 
@@ -275,15 +311,15 @@ describe('PRReadyToMergeTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(trelloClient.moveCardToList).toHaveBeenCalledWith('abc123', 'done-list-id');
-			expect(trelloClient.addComment).toHaveBeenCalledWith(
+			expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('abc123', 'done-list-id');
+			expect(mockProvider.addComment).toHaveBeenCalledWith(
 				'abc123',
 				'PR #42 approved and all checks passing - moved to DONE',
 			);
 			expect(result).toEqual({
-				agentType: '',
+				agentType: null,
 				agentInput: {},
-				cardId: 'abc123',
+				workItemId: 'abc123',
 				prNumber: 42,
 			});
 		});
@@ -307,13 +343,12 @@ describe('PRReadyToMergeTrigger', () => {
 					commitId: 'sha123',
 				},
 			]);
-			vi.mocked(trelloClient.getCard).mockResolvedValue({
+			mockProvider.getWorkItem.mockResolvedValue({
 				id: 'abc123',
-				name: 'Card',
-				desc: '',
+				title: 'Card',
+				description: '',
 				url: '',
-				shortUrl: '',
-				idList: 'todo-list-id',
+				status: 'todo-list-id',
 				labels: [],
 			});
 
@@ -344,8 +379,8 @@ describe('PRReadyToMergeTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(trelloClient.moveCardToList).toHaveBeenCalledWith('abc123', 'done-list-id');
-			expect(result?.cardId).toBe('abc123');
+			expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('abc123', 'done-list-id');
+			expect(result?.workItemId).toBe('abc123');
 		});
 
 		it('returns null when PR has no Trello URL (check_suite path)', async () => {
@@ -380,7 +415,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toBeNull();
-			expect(trelloClient.moveCardToList).not.toHaveBeenCalled();
+			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 		});
 
 		it('returns null when checks are not all passing', async () => {
@@ -423,7 +458,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toBeNull();
-			expect(trelloClient.moveCardToList).not.toHaveBeenCalled();
+			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 		});
 
 		it('returns null when no approval exists', async () => {
@@ -561,13 +596,12 @@ describe('PRReadyToMergeTrigger', () => {
 					commitId: 'sha123',
 				},
 			]);
-			vi.mocked(trelloClient.getCard).mockResolvedValue({
+			mockProvider.getWorkItem.mockResolvedValue({
 				id: 'abc123',
-				name: 'Card',
-				desc: '',
+				title: 'Card',
+				description: '',
 				url: '',
-				shortUrl: '',
-				idList: 'done-list-id',
+				status: 'done-list-id',
 				labels: [],
 			});
 
@@ -590,13 +624,13 @@ describe('PRReadyToMergeTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(trelloClient.getCard).toHaveBeenCalledWith('abc123');
-			expect(trelloClient.moveCardToList).not.toHaveBeenCalled();
-			expect(trelloClient.addComment).not.toHaveBeenCalled();
+			expect(mockProvider.getWorkItem).toHaveBeenCalledWith('abc123');
+			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
+			expect(mockProvider.addComment).not.toHaveBeenCalled();
 			expect(result).toEqual({
-				agentType: '',
+				agentType: null,
 				agentInput: {},
-				cardId: 'abc123',
+				workItemId: 'abc123',
 				prNumber: 42,
 			});
 		});
@@ -661,7 +695,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toBeNull();
-			expect(trelloClient.moveCardToList).not.toHaveBeenCalled();
+			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 		});
 	});
 });

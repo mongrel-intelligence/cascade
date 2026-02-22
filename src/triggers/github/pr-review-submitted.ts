@@ -3,7 +3,7 @@ import { getPersonaForLogin } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubPullRequestReviewPayload } from './types.js';
-import { requireTrelloCardId } from './utils.js';
+import { resolveWorkItemId } from './utils.js';
 
 export class PRReviewSubmittedTrigger implements TriggerHandler {
 	name = 'pr-review-submitted';
@@ -64,18 +64,14 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Check if PR has Trello card URL in body
+		// Resolve work item from DB (with PR body fallback)
 		const prBody = reviewPayload.pull_request.body || '';
-		const cardId = requireTrelloCardId(prBody, {
-			prNumber,
-			triggerName: 'review submission trigger',
-		});
-		if (cardId === null) return null;
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber, prBody, ctx.project);
 
 		logger.info('PR review submitted, triggering review agent', {
 			prNumber,
 			reviewState: reviewPayload.review.state,
-			cardId,
+			workItemId,
 		});
 
 		return {
@@ -90,7 +86,7 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 				triggerCommentUrl: reviewPayload.review.html_url,
 			},
 			prNumber,
-			cardId: cardId || undefined,
+			workItemId,
 		};
 	}
 }

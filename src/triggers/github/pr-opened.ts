@@ -2,11 +2,11 @@ import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubPullRequestPayload } from './types.js';
-import { extractTrelloCardId, hasTrelloCardUrl } from './utils.js';
+import { resolveWorkItemId } from './utils.js';
 
 /**
  * Trigger that fires the review agent when a new PR is opened.
- * Only triggers for PRs that have a Trello card URL in the body.
+ * Resolves work item from DB (with PR body fallback); fires even without a linked work item.
  */
 export class PROpenedTrigger implements TriggerHandler {
 	name = 'pr-opened';
@@ -49,21 +49,13 @@ export class PROpenedTrigger implements TriggerHandler {
 		const prNumber = payload.pull_request.number;
 		const prBody = payload.pull_request.body || '';
 
-		// Require Trello card URL in PR body (consistent with other triggers)
-		if (!hasTrelloCardUrl(prBody)) {
-			logger.info('PR does not have Trello card URL, skipping PR opened trigger', {
-				prNumber,
-				prTitle: payload.pull_request.title,
-			});
-			return null;
-		}
+		// Resolve work item from DB (with PR body fallback)
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber, prBody, ctx.project);
 
-		const cardId = extractTrelloCardId(prBody);
-
-		logger.info('New PR opened with Trello card, triggering review agent', {
+		logger.info('New PR opened, triggering review agent', {
 			prNumber,
 			prTitle: payload.pull_request.title,
-			cardId,
+			workItemId,
 		});
 
 		return {
@@ -79,7 +71,7 @@ export class PROpenedTrigger implements TriggerHandler {
 				triggerCommentUrl: payload.pull_request.html_url,
 			},
 			prNumber,
-			cardId: cardId || undefined,
+			workItemId,
 		};
 	}
 }
