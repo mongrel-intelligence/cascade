@@ -11,7 +11,7 @@ import {
 	isGitHubCheckSuitePayload,
 	isGitHubPullRequestReviewPayload,
 } from './types.js';
-import { requireWorkItemId } from './utils.js';
+import { resolveWorkItemId } from './utils.js';
 
 export class PRReadyToMergeTrigger implements TriggerHandler {
 	name = 'pr-ready-to-merge';
@@ -80,12 +80,12 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 
 		const { owner, repo } = parseRepoFullName(repoFullName);
 
-		// Must have work item reference in PR body
-		const workItemId = requireWorkItemId(prBody, ctx.project, {
-			prNumber,
-			triggerName: 'pr-ready-to-merge',
-		});
-		if (!workItemId) return null;
+		// Resolve work item from DB (with PR body fallback)
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber, prBody, ctx.project);
+		if (!workItemId) {
+			logger.info('No work item linked to PR, skipping pr-ready-to-merge', { prNumber });
+			return null;
+		}
 
 		// Check 1: All checks must pass
 		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);

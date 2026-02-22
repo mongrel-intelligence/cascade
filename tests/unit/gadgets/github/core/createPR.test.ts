@@ -448,6 +448,7 @@ describe('createPR', () => {
 		expect(result).toEqual({
 			prNumber: 42,
 			prUrl: 'https://github.com/test-owner/test-repo/pull/42',
+			repoFullName: 'test-owner/test-repo',
 			alreadyExisted: false,
 		});
 	});
@@ -476,6 +477,7 @@ describe('createPR', () => {
 		expect(result).toEqual({
 			prNumber: 10,
 			prUrl: 'https://github.com/test-owner/test-repo/pull/10',
+			repoFullName: 'test-owner/test-repo',
 			alreadyExisted: true,
 		});
 	});

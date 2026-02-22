@@ -43,6 +43,9 @@ vi.mock('../../../src/router/acknowledgments.js', () => ({
 vi.mock('../../../src/router/reactions.js', () => ({
 	sendAcknowledgeReaction: vi.fn(),
 }));
+vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
+	lookupWorkItemForPR: vi.fn(),
+}));
 
 // Register PM integrations in the registry
 import '../../../src/pm/index.js';
@@ -50,6 +53,7 @@ import '../../../src/pm/index.js';
 import { PRMergedTrigger } from '../../../src/triggers/github/pr-merged.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 
+import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { githubClient } from '../../../src/github/client.js';
 
 describe('PRMergedTrigger', () => {
@@ -75,6 +79,7 @@ describe('PRMergedTrigger', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 	});
 
 	describe('resolveAgentType', () => {

@@ -1,9 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRReviewSubmittedTrigger } from '../../../src/triggers/github/pr-review-submitted.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 
+vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
+	lookupWorkItemForPR: vi.fn(),
+}));
+import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
+
 describe('PRReviewSubmittedTrigger', () => {
 	const trigger = new PRReviewSubmittedTrigger();
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+	});
 
 	const mockProject = {
 		id: 'test',
@@ -219,7 +229,7 @@ describe('PRReviewSubmittedTrigger', () => {
 			expect(result).toBeNull();
 		});
 
-		it('returns null when PR has no Trello URL', async () => {
+		it('fires without work item when PR has no work item reference', async () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -238,7 +248,8 @@ describe('PRReviewSubmittedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expect(result).not.toBeNull();
+			expect(result?.workItemId).toBeUndefined();
 		});
 
 		it('uses review state as fallback when review body is null', async () => {

@@ -1,10 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
+	lookupWorkItemForPR: vi.fn(),
+}));
+
+import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import {
 	extractJiraIssueKey,
 	extractTrelloCardId,
 	extractWorkItemId,
 	hasTrelloCardUrl,
 	requireWorkItemId,
+	resolveWorkItemId,
 } from '../../../src/triggers/github/utils.js';
 import type { ProjectConfig } from '../../../src/types/index.js';
 
@@ -169,5 +176,68 @@ describe('requireWorkItemId', () => {
 	it('returns null for null input', () => {
 		const result = requireWorkItemId(null, mockTrelloProject, context);
 		expect(result).toBeNull();
+	});
+});
+
+describe('resolveWorkItemId', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+	});
+
+	it('returns DB result when available', async () => {
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue('db-item-123');
+
+		const result = await resolveWorkItemId(
+			'proj',
+			42,
+			'https://trello.com/c/abc123',
+			mockTrelloProject,
+		);
+
+		expect(result).toBe('db-item-123');
+		expect(lookupWorkItemForPR).toHaveBeenCalledWith('proj', 42);
+	});
+
+	it('falls back to PR body extraction when DB returns null', async () => {
+		const result = await resolveWorkItemId(
+			'proj',
+			42,
+			'https://trello.com/c/abc123',
+			mockTrelloProject,
+		);
+
+		expect(result).toBe('abc123');
+	});
+
+	it('falls back to JIRA extraction for JIRA projects', async () => {
+		const result = await resolveWorkItemId('proj', 42, 'Fixes PROJ-456', mockJiraProject);
+
+		expect(result).toBe('PROJ-456');
+	});
+
+	it('returns undefined when neither DB nor body has work item', async () => {
+		const result = await resolveWorkItemId('proj', 42, 'No work item here', mockTrelloProject);
+
+		expect(result).toBeUndefined();
+	});
+
+	it('returns undefined for null body with no DB result', async () => {
+		const result = await resolveWorkItemId('proj', 42, null, mockTrelloProject);
+
+		expect(result).toBeUndefined();
+	});
+
+	it('falls back to body extraction when DB throws', async () => {
+		vi.mocked(lookupWorkItemForPR).mockRejectedValue(new Error('DB connection failed'));
+
+		const result = await resolveWorkItemId(
+			'proj',
+			42,
+			'https://trello.com/c/abc123',
+			mockTrelloProject,
+		);
+
+		expect(result).toBe('abc123');
 	});
 });

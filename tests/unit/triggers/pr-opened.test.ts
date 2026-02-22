@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PROpenedTrigger } from '../../../src/triggers/github/pr-opened.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 
+vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
+	lookupWorkItemForPR: vi.fn(),
+}));
+import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
+
 describe('PROpenedTrigger', () => {
 	const trigger = new PROpenedTrigger();
 
@@ -32,6 +37,7 @@ describe('PROpenedTrigger', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 	});
 
 	describe('matches', () => {
@@ -216,7 +222,7 @@ describe('PROpenedTrigger', () => {
 			});
 		});
 
-		it('returns null when PR body has no Trello URL', async () => {
+		it('fires without work item when PR has no work item reference', async () => {
 			const ctx: TriggerContext = {
 				project: mockProjectWithPrOpenedEnabled,
 				source: 'github',
@@ -241,10 +247,11 @@ describe('PROpenedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expect(result).not.toBeNull();
+			expect(result?.workItemId).toBeUndefined();
 		});
 
-		it('handles null PR body', async () => {
+		it('fires with undefined workItemId for null PR body', async () => {
 			const ctx: TriggerContext = {
 				project: mockProjectWithPrOpenedEnabled,
 				source: 'github',
@@ -269,7 +276,8 @@ describe('PROpenedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expect(result).not.toBeNull();
+			expect(result?.workItemId).toBeUndefined();
 		});
 	});
 });

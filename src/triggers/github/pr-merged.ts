@@ -6,7 +6,7 @@ import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
-import { requireWorkItemId } from './utils.js';
+import { resolveWorkItemId } from './utils.js';
 
 export class PRMergedTrigger implements TriggerHandler {
 	name = 'pr-merged';
@@ -41,13 +41,13 @@ export class PRMergedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Extract work item ID from PR body (works for both Trello and JIRA)
+		// Resolve work item from DB (with PR body fallback)
 		const prBody = payload.pull_request.body || '';
-		const workItemId = requireWorkItemId(prBody, ctx.project, {
-			prNumber,
-			triggerName: 'pr-merged',
-		});
-		if (!workItemId) return null;
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber, prBody, ctx.project);
+		if (!workItemId) {
+			logger.info('No work item linked to PR, skipping pr-merged', { prNumber });
+			return null;
+		}
 
 		const pmConfig = resolveProjectPMConfig(ctx.project);
 		const mergedStatus = pmConfig.statuses.merged;
