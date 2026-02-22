@@ -161,7 +161,7 @@ describe('PRReviewSubmittedTrigger', () => {
 					triggerCommentUrl: 'https://github.com/owner/repo/pull/42#pullrequestreview-100',
 				},
 				prNumber: 42,
-				cardId: 'abc123',
+				workItemId: 'abc123',
 			});
 		});
 

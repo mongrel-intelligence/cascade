@@ -1,6 +1,7 @@
 import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import { githubClient } from '../../github/client.js';
-import { trelloClient } from '../../trello/client.js';
+import { getPMProvider } from '../../pm/context.js';
+import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
@@ -10,11 +11,11 @@ import {
 	isGitHubCheckSuitePayload,
 	isGitHubPullRequestReviewPayload,
 } from './types.js';
-import { extractTrelloCardId, hasTrelloCardUrl } from './utils.js';
+import { requireWorkItemId } from './utils.js';
 
 export class PRReadyToMergeTrigger implements TriggerHandler {
 	name = 'pr-ready-to-merge';
-	description = 'Moves Trello card to DONE when PR is approved and all checks pass';
+	description = 'Moves work item to DONE when PR is approved and all checks pass';
 
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'github') return false;
@@ -79,14 +80,12 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 
 		const { owner, repo } = parseRepoFullName(repoFullName);
 
-		// Must have Trello card URL
-		if (!hasTrelloCardUrl(prBody)) {
-			logger.debug('PR does not have Trello card URL', { prNumber });
-			return null;
-		}
-
-		const cardId = extractTrelloCardId(prBody);
-		if (!cardId) return null;
+		// Must have work item reference in PR body
+		const workItemId = requireWorkItemId(prBody, ctx.project, {
+			prNumber,
+			triggerName: 'pr-ready-to-merge',
+		});
+		if (!workItemId) return null;
 
 		// Check 1: All checks must pass
 		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
@@ -124,46 +123,49 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// All conditions met - move card to DONE
-		const doneListId = ctx.project.trello?.lists?.done;
-		if (!doneListId) {
-			logger.warn('No done list configured for project', { projectId: ctx.project.id });
+		// All conditions met - move work item to DONE
+		const pmConfig = resolveProjectPMConfig(ctx.project);
+		const doneStatus = pmConfig.statuses.done;
+		if (!doneStatus) {
+			logger.warn('No done status configured for project', { projectId: ctx.project.id });
 			return null;
 		}
 
-		// Idempotency: skip if card is already in the DONE list
+		const provider = getPMProvider();
+
+		// Idempotency: skip if work item is already in the DONE status
 		// (handles concurrent webhooks from multiple check_suite/review events)
-		const card = await trelloClient.getCard(cardId);
-		if (card.idList === doneListId) {
-			logger.info('Card already in DONE list, skipping duplicate move', {
-				cardId,
+		const workItem = await provider.getWorkItem(workItemId);
+		if (workItem.status === doneStatus) {
+			logger.info('Work item already in DONE status, skipping duplicate move', {
+				workItemId,
 				prNumber,
 			});
 			return {
-				agentType: '',
+				agentType: null,
 				agentInput: {},
-				cardId,
+				workItemId,
 				prNumber,
 			};
 		}
 
-		logger.info('Moving card to DONE - PR approved and all checks passing', {
-			cardId,
+		logger.info('Moving work item to DONE - PR approved and all checks passing', {
+			workItemId,
 			prNumber,
 			repoFullName,
 		});
 
-		await trelloClient.moveCardToList(cardId, doneListId);
-		await trelloClient.addComment(
-			cardId,
+		await provider.moveWorkItem(workItemId, doneStatus);
+		await provider.addComment(
+			workItemId,
 			`PR #${prNumber} approved and all checks passing - moved to DONE`,
 		);
 
 		// Return result without agentType (no agent to run)
 		return {
-			agentType: '', // Empty string signals no agent needed
+			agentType: null,
 			agentInput: {},
-			cardId,
+			workItemId,
 			prNumber,
 		};
 	}

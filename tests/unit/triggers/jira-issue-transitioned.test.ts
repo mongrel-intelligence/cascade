@@ -158,7 +158,6 @@ describe('JiraIssueTransitionedTrigger', () => {
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('implementation');
 			expect(result?.workItemId).toBe('PROJ-42');
-			expect(result?.cardId).toBe('PROJ-42');
 			expect(result?.agentInput).toEqual({ cardId: 'PROJ-42' });
 		});
 

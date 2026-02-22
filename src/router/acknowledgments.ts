@@ -16,6 +16,7 @@ import {
 	findProjectByRepo,
 	getIntegrationCredential,
 } from '../config/provider.js';
+import { getJiraConfig } from '../pm/config.js';
 import { markdownToAdf } from '../pm/jira/adf.js';
 import type { ProjectConfig } from '../types/index.js';
 
@@ -147,7 +148,7 @@ export async function postJiraAck(
 		jiraEmail = await getIntegrationCredential(projectId, 'pm', 'email');
 		jiraApiToken = await getIntegrationCredential(projectId, 'pm', 'api_token');
 		const project = await findProjectById(projectId);
-		jiraBaseUrl = project?.jira?.baseUrl ?? '';
+		jiraBaseUrl = (project ? getJiraConfig(project)?.baseUrl : undefined) ?? '';
 		if (!jiraBaseUrl) throw new Error('Missing JIRA base URL');
 	} catch {
 		console.warn('[Ack] Missing JIRA credentials, skipping ack comment');
@@ -188,7 +189,7 @@ export async function deleteJiraAck(
 		jiraEmail = await getIntegrationCredential(projectId, 'pm', 'email');
 		jiraApiToken = await getIntegrationCredential(projectId, 'pm', 'api_token');
 		const project = await findProjectById(projectId);
-		jiraBaseUrl = project?.jira?.baseUrl ?? '';
+		jiraBaseUrl = (project ? getJiraConfig(project)?.baseUrl : undefined) ?? '';
 		if (!jiraBaseUrl) throw new Error('Missing JIRA base URL');
 	} catch {
 		return;
@@ -233,7 +234,7 @@ export async function resolveJiraBotAccountId(projectId: string): Promise<string
 		jiraEmail = await getIntegrationCredential(projectId, 'pm', 'email');
 		jiraApiToken = await getIntegrationCredential(projectId, 'pm', 'api_token');
 		const project = await findProjectById(projectId);
-		jiraBaseUrl = project?.jira?.baseUrl ?? '';
+		jiraBaseUrl = (project ? getJiraConfig(project)?.baseUrl : undefined) ?? '';
 		if (!jiraBaseUrl) throw new Error('Missing JIRA base URL');
 	} catch {
 		return null;

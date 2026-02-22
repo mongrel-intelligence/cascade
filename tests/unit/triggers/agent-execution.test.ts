@@ -81,7 +81,7 @@ const mockConfig: CascadeConfig = {
 
 const mockTriggerResult: TriggerResult = {
 	agentType: 'implementation',
-	cardId: 'card-123',
+	workItemId: 'card-123',
 	agentInput: { someInput: 'value' },
 };
 
@@ -304,7 +304,7 @@ describe('runAgentExecutionPipeline', () => {
 		it('uses cardId when present', async () => {
 			const result: TriggerResult = {
 				agentType: 'implementation',
-				cardId: 'card-456',
+				workItemId: 'card-456',
 				agentInput: {},
 			};
 
@@ -313,7 +313,7 @@ describe('runAgentExecutionPipeline', () => {
 			expect(mockLifecycle.prepareForAgent).toHaveBeenCalledWith('card-456', 'implementation');
 		});
 
-		it('falls back to workItemId when cardId is absent', async () => {
+		it('uses workItemId when present', async () => {
 			const result: TriggerResult = {
 				agentType: 'implementation',
 				workItemId: 'issue-789',

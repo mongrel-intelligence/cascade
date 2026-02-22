@@ -1,3 +1,4 @@
+import { getTrelloConfig } from '../../pm/config.js';
 import { getPMProvider } from '../../pm/index.js';
 import type { ProjectConfig } from '../../types/index.js';
 import type { PromptContext } from '../prompts/index.js';
@@ -29,8 +30,8 @@ export function buildPromptContext(
 		cardUrl: cardId ? pmProvider.getWorkItemUrl(cardId) : undefined,
 		projectId: project.id,
 		baseBranch: project.baseBranch,
-		storiesListId: project.trello?.lists?.stories,
-		processedLabelId: project.trello?.labels?.processed,
+		storiesListId: getTrelloConfig(project)?.lists?.stories,
+		processedLabelId: getTrelloConfig(project)?.labels?.processed,
 		pmType: pmProvider.type,
 		workItemNoun: isJira ? 'issue' : 'card',
 		workItemNounPlural: isJira ? 'issues' : 'cards',
@@ -50,7 +51,7 @@ export function buildPromptContext(
 			originalCardName: debugContext.originalCardName,
 			originalCardUrl: debugContext.originalCardUrl,
 			detectedAgentType: debugContext.detectedAgentType,
-			debugListId: project.trello?.lists?.debug,
+			debugListId: getTrelloConfig(project)?.lists?.debug,
 		}),
 	};
 }

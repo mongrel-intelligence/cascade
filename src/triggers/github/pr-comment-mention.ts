@@ -137,7 +137,7 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 				commentAuthor,
 			},
 			prNumber,
-			cardId: cardId || undefined,
+			workItemId: cardId || undefined,
 		};
 	}
 }

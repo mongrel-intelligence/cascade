@@ -1,4 +1,5 @@
 import { loadConfig } from '../config/provider.js';
+import { getJiraConfig, getTrelloConfig } from '../pm/config.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 
 // Minimal config types - what router needs for quick filtering
@@ -37,24 +38,28 @@ export async function loadProjectConfig(): Promise<{
 }> {
 	const config: CascadeConfig = await loadConfig();
 	return {
-		projects: config.projects.map((p) => ({
-			id: p.id,
-			repo: p.repo,
-			pmType: p.pm?.type ?? 'trello',
-			...(p.trello && {
-				trello: {
-					boardId: p.trello.boardId,
-					lists: p.trello.lists,
-					labels: p.trello.labels,
-				},
-			}),
-			...(p.jira && {
-				jira: {
-					projectKey: p.jira.projectKey,
-					baseUrl: p.jira.baseUrl,
-				},
-			}),
-		})),
+		projects: config.projects.map((p) => {
+			const trelloConfig = getTrelloConfig(p);
+			const jiraConfig = getJiraConfig(p);
+			return {
+				id: p.id,
+				repo: p.repo,
+				pmType: p.pm?.type ?? 'trello',
+				...(trelloConfig && {
+					trello: {
+						boardId: trelloConfig.boardId,
+						lists: trelloConfig.lists,
+						labels: trelloConfig.labels,
+					},
+				}),
+				...(jiraConfig && {
+					jira: {
+						projectKey: jiraConfig.projectKey,
+						baseUrl: jiraConfig.baseUrl,
+					},
+				}),
+			};
+		}),
 		fullProjects: config.projects,
 	};
 }

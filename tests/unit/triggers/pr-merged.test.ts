@@ -1,6 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { PRMergedTrigger } from '../../../src/triggers/github/pr-merged.js';
-import type { TriggerContext } from '../../../src/triggers/types.js';
 
 // Mock the GitHub client
 vi.mock('../../../src/github/client.js', () => ({
@@ -9,17 +7,50 @@ vi.mock('../../../src/github/client.js', () => ({
 	},
 }));
 
-// Mock the Trello client
-vi.mock('../../../src/trello/client.js', () => ({
-	trelloClient: {
-		getCard: vi.fn(),
-		moveCardToList: vi.fn(),
-		addComment: vi.fn(),
-	},
+// Mock the PM provider context
+const mockProvider = {
+	getWorkItem: vi.fn(),
+	moveWorkItem: vi.fn(),
+	addComment: vi.fn(),
+};
+vi.mock('../../../src/pm/context.js', () => ({
+	getPMProvider: () => mockProvider,
 }));
 
+// Mocks required for PM integration registration (pm/index.js side-effect)
+vi.mock('../../../src/config/provider.js', () => ({
+	getIntegrationCredential: vi.fn(),
+	loadProjectConfigByBoardId: vi.fn(),
+	loadProjectConfigByJiraProjectKey: vi.fn(),
+	findProjectById: vi.fn(),
+}));
+vi.mock('../../../src/trello/client.js', () => ({
+	withTrelloCredentials: vi.fn(),
+	trelloClient: { getCard: vi.fn() },
+}));
+vi.mock('../../../src/jira/client.js', () => ({
+	withJiraCredentials: vi.fn(),
+	jiraClient: {},
+}));
+vi.mock('../../../src/router/acknowledgments.js', () => ({
+	postTrelloAck: vi.fn(),
+	deleteTrelloAck: vi.fn(),
+	resolveTrelloBotMemberId: vi.fn(),
+	postJiraAck: vi.fn(),
+	deleteJiraAck: vi.fn(),
+	resolveJiraBotAccountId: vi.fn(),
+}));
+vi.mock('../../../src/router/reactions.js', () => ({
+	sendAcknowledgeReaction: vi.fn(),
+}));
+
+// Register PM integrations in the registry
+import '../../../src/pm/index.js';
+
+import { PRMergedTrigger } from '../../../src/triggers/github/pr-merged.js';
+import type { TriggerContext } from '../../../src/triggers/types.js';
+
 import { githubClient } from '../../../src/github/client.js';
-import { trelloClient } from '../../../src/trello/client.js';
 
 describe('PRMergedTrigger', () => {
 	const trigger = new PRMergedTrigger();
@@ -121,13 +152,12 @@ describe('PRMergedTrigger', () => {
 				baseRef: 'main',
 				merged: true,
 			});
-			vi.mocked(trelloClient.getCard).mockResolvedValue({
+			mockProvider.getWorkItem.mockResolvedValue({
 				id: 'abc123',
-				name: 'Card',
-				desc: '',
+				title: 'Card',
+				description: '',
 				url: '',
-				shortUrl: '',
-				idList: 'todo-list-id',
+				status: 'todo-list-id',
 				labels: [],
 			});
 
@@ -150,15 +180,15 @@ describe('PRMergedTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(githubClient.getPR).toHaveBeenCalledWith('owner', 'repo', 123);
-			expect(trelloClient.moveCardToList).toHaveBeenCalledWith('abc123', 'merged-list-id');
-			expect(trelloClient.addComment).toHaveBeenCalledWith(
+			expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('abc123', 'merged-list-id');
+			expect(mockProvider.addComment).toHaveBeenCalledWith(
 				'abc123',
 				'PR #123 has been merged to main',
 			);
 			expect(result).toEqual({
-				agentType: '',
+				agentType: null,
 				agentInput: {},
-				cardId: 'abc123',
+				workItemId: 'abc123',
 				prNumber: 123,
 			});
 		});
@@ -194,7 +224,7 @@ describe('PRMergedTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toBeNull();
-			expect(trelloClient.moveCardToList).not.toHaveBeenCalled();
+			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 		});
 
 		it('returns null when PR has no Trello card URL', async () => {
@@ -228,7 +258,7 @@ describe('PRMergedTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toBeNull();
-			expect(trelloClient.moveCardToList).not.toHaveBeenCalled();
+			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 		});
 
 		it('skips move and comment when card is already in MERGED list', async () => {
@@ -242,13 +272,12 @@ describe('PRMergedTrigger', () => {
 				baseRef: 'main',
 				merged: true,
 			});
-			vi.mocked(trelloClient.getCard).mockResolvedValue({
+			mockProvider.getWorkItem.mockResolvedValue({
 				id: 'abc123',
-				name: 'Card',
-				desc: '',
+				title: 'Card',
+				description: '',
 				url: '',
-				shortUrl: '',
-				idList: 'merged-list-id',
+				status: 'merged-list-id',
 				labels: [],
 			});
 
@@ -270,13 +299,13 @@ describe('PRMergedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(trelloClient.getCard).toHaveBeenCalledWith('abc123');
-			expect(trelloClient.moveCardToList).not.toHaveBeenCalled();
-			expect(trelloClient.addComment).not.toHaveBeenCalled();
+			expect(mockProvider.getWorkItem).toHaveBeenCalledWith('abc123');
+			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
+			expect(mockProvider.addComment).not.toHaveBeenCalled();
 			expect(result).toEqual({
-				agentType: '',
+				agentType: null,
 				agentInput: {},
-				cardId: 'abc123',
+				workItemId: 'abc123',
 				prNumber: 123,
 			});
 		});
@@ -325,7 +354,7 @@ describe('PRMergedTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toBeNull();
-			expect(trelloClient.moveCardToList).not.toHaveBeenCalled();
+			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 		});
 	});
 });

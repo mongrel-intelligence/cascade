@@ -1,13 +1,42 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 
-// Import the module first, then mock it
-import * as trelloClientModule from '../../../src/trello/client.js';
+// Mocks required for PM integration registration (pm/index.js side-effect)
+vi.mock('../../../src/config/provider.js', () => ({
+	getIntegrationCredential: vi.fn(),
+	loadProjectConfigByBoardId: vi.fn(),
+	loadProjectConfigByJiraProjectKey: vi.fn(),
+	findProjectById: vi.fn(),
+}));
+vi.mock('../../../src/trello/client.js', () => ({
+	withTrelloCredentials: vi.fn(),
+	trelloClient: { getCard: vi.fn() },
+}));
+vi.mock('../../../src/jira/client.js', () => ({
+	withJiraCredentials: vi.fn(),
+	jiraClient: {},
+}));
+vi.mock('../../../src/router/acknowledgments.js', () => ({
+	postTrelloAck: vi.fn(),
+	deleteTrelloAck: vi.fn(),
+	resolveTrelloBotMemberId: vi.fn(),
+	postJiraAck: vi.fn(),
+	deleteJiraAck: vi.fn(),
+	resolveJiraBotAccountId: vi.fn(),
+}));
+vi.mock('../../../src/router/reactions.js', () => ({
+	sendAcknowledgeReaction: vi.fn(),
+}));
+
+// Register PM integrations in the registry
+import '../../../src/pm/index.js';
+
+import { trelloClient } from '../../../src/trello/client.js';
 import { ReadyToProcessLabelTrigger } from '../../../src/triggers/trello/label-added.js';
 
 describe('ReadyToProcessLabelTrigger', () => {
 	const trigger = new ReadyToProcessLabelTrigger();
-	let mockGetCard: ReturnType<typeof vi.fn>;
+	const mockGetCard = vi.mocked(trelloClient.getCard);
 
 	const mockProject = {
 		id: 'test',
@@ -29,12 +58,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 	};
 
 	beforeEach(() => {
-		mockGetCard = vi.fn();
-		vi.spyOn(trelloClientModule.trelloClient, 'getCard').mockImplementation(mockGetCard);
-	});
-
-	afterEach(() => {
-		vi.restoreAllMocks();
+		vi.clearAllMocks();
 	});
 
 	describe('matches', () => {
@@ -171,7 +195,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result.agentType).toBe('briefing');
-			expect(result.cardId).toBe('card123');
+			expect(result.workItemId).toBe('card123');
 			expect(mockGetCard).toHaveBeenCalledWith('card123');
 		});
 
@@ -207,7 +231,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result.agentType).toBe('planning');
-			expect(result.cardId).toBe('card456');
+			expect(result.workItemId).toBe('card456');
 		});
 
 		it('returns implementation agent when card is in todo list', async () => {
@@ -242,7 +266,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result.agentType).toBe('implementation');
-			expect(result.cardId).toBe('card789');
+			expect(result.workItemId).toBe('card789');
 		});
 
 		it('defaults to briefing agent when card is in unknown list', async () => {

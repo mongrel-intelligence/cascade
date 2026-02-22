@@ -186,7 +186,7 @@ describe('ReviewRequestedTrigger', () => {
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('review');
 			expect(result?.prNumber).toBe(42);
-			expect(result?.cardId).toBe('abc123');
+			expect(result?.workItemId).toBe('abc123');
 			expect(result?.agentInput).toMatchObject({
 				prNumber: 42,
 				repoFullName: 'owner/repo',

@@ -73,7 +73,7 @@ async function checkPreRunBudget(
  */
 async function runPostAgentLifecycle(
 	workItemId: string,
-	result: TriggerResult,
+	agentType: string,
 	agentResult: AgentResult,
 	project: ProjectConfig,
 	config: CascadeConfig,
@@ -86,7 +86,7 @@ async function runPostAgentLifecycle(
 		handleSuccessOnlyForAgentType,
 	} = executionConfig;
 
-	await handleAgentResultArtifacts(workItemId, result.agentType, agentResult, project);
+	await handleAgentResultArtifacts(workItemId, agentType, agentResult, project);
 
 	const postBudgetCheck = await checkBudgetExceeded(workItemId, project, config);
 	if (postBudgetCheck?.exceeded) {
@@ -103,12 +103,12 @@ async function runPostAgentLifecycle(
 
 	const shouldCallHandleSuccess =
 		agentResult.success &&
-		(!handleSuccessOnlyForAgentType || result.agentType === handleSuccessOnlyForAgentType);
+		(!handleSuccessOnlyForAgentType || agentType === handleSuccessOnlyForAgentType);
 
 	if (shouldCallHandleSuccess) {
 		await lifecycle.handleSuccess(
 			workItemId,
-			result.agentType,
+			agentType,
 			agentResult.prUrl,
 			agentResult.progressCommentId,
 		);
@@ -143,9 +143,15 @@ export async function runAgentExecutionPipeline(
 	config: CascadeConfig,
 	executionConfig: AgentExecutionConfig = {},
 ): Promise<void> {
+	if (!result.agentType) {
+		logger.warn('No agent type in trigger result, skipping execution pipeline');
+		return;
+	}
+	const agentType = result.agentType;
+
 	const { skipPrepareForAgent = false, onFailure, logLabel = 'Agent' } = executionConfig;
 
-	const workItemId = result.cardId ?? result.workItemId;
+	const workItemId = result.workItemId;
 	const pmProvider = createPMProvider(project);
 	const pmConfig = resolveProjectPMConfig(project);
 	const lifecycle = new PMLifecycleManager(pmProvider, pmConfig);
@@ -158,10 +164,10 @@ export async function runAgentExecutionPipeline(
 	}
 
 	if (workItemId && !skipPrepareForAgent) {
-		await lifecycle.prepareForAgent(workItemId, result.agentType);
+		await lifecycle.prepareForAgent(workItemId, agentType);
 	}
 
-	const agentResult = await runAgent(result.agentType, {
+	const agentResult = await runAgent(agentType, {
 		...result.agentInput,
 		remainingBudgetUsd,
 		project,
@@ -171,7 +177,7 @@ export async function runAgentExecutionPipeline(
 	if (workItemId) {
 		await runPostAgentLifecycle(
 			workItemId,
-			result,
+			agentType,
 			agentResult,
 			project,
 			config,
@@ -181,7 +187,7 @@ export async function runAgentExecutionPipeline(
 	}
 
 	logger.info(`${logLabel} completed`, {
-		agentType: result.agentType,
+		agentType,
 		success: agentResult.success,
 		runId: agentResult.runId,
 	});

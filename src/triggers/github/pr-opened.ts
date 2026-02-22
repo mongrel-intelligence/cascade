@@ -79,7 +79,7 @@ export class PROpenedTrigger implements TriggerHandler {
 				triggerCommentUrl: payload.pull_request.html_url,
 			},
 			prNumber,
-			cardId: cardId || undefined,
+			workItemId: cardId || undefined,
 		};
 	}
 }

@@ -6,6 +6,7 @@
  */
 
 import { resolveJiraTriggerEnabled } from '../../config/triggerConfig.js';
+import { getJiraConfig } from '../../pm/config.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 
@@ -51,7 +52,7 @@ export class JiraIssueTransitionedTrigger implements TriggerHandler {
 		if (ctx.source !== 'jira') return false;
 
 		// Check trigger config — default enabled for backward compatibility
-		if (!resolveJiraTriggerEnabled(ctx.project.jira?.triggers, 'issueTransitioned')) {
+		if (!resolveJiraTriggerEnabled(getJiraConfig(ctx.project)?.triggers, 'issueTransitioned')) {
 			return false;
 		}
 
@@ -69,7 +70,7 @@ export class JiraIssueTransitionedTrigger implements TriggerHandler {
 		const newStatus = statusChange?.toString;
 		if (!newStatus) return null;
 
-		const jiraConfig = ctx.project.jira;
+		const jiraConfig = getJiraConfig(ctx.project);
 		if (!jiraConfig?.statuses) return null;
 
 		for (const [cascadeStatus, jiraStatus] of Object.entries(jiraConfig.statuses)) {
@@ -94,7 +95,7 @@ export class JiraIssueTransitionedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const jiraConfig = ctx.project.jira;
+		const jiraConfig = getJiraConfig(ctx.project);
 		if (!jiraConfig?.statuses) {
 			logger.debug('No JIRA status configuration, skipping issue transition trigger', {
 				projectId: ctx.project.id,
@@ -131,7 +132,6 @@ export class JiraIssueTransitionedTrigger implements TriggerHandler {
 			agentType,
 			agentInput: { cardId: issueKey },
 			workItemId: issueKey,
-			cardId: issueKey,
 		};
 	}
 }

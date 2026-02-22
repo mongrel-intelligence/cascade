@@ -68,11 +68,8 @@ export interface TriggerContext {
 }
 
 export interface TriggerResult {
-	agentType: string;
+	agentType: string | null;
 	agentInput: AgentInput;
-	/** @deprecated Use workItemId instead */
-	cardId?: string;
-	/** Alias for cardId — preferred name for PM-agnostic code */
 	workItemId?: string;
 	prNumber?: number;
 }

@@ -211,7 +211,7 @@ describe('PRCommentMentionTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('respond-to-pr-comment');
-			expect(result?.cardId).toBe(CARD_SHORT_ID);
+			expect(result?.workItemId).toBe(CARD_SHORT_ID);
 			expect(result?.agentInput.prNumber).toBe(42);
 			expect(result?.agentInput.repoFullName).toBe('owner/repo');
 			expect(result?.agentInput.triggerCommentBody).toContain(`@${IMPLEMENTER_USERNAME}`);

@@ -28,6 +28,7 @@ export class TrelloPMProvider implements PMProvider {
 			title: card.name,
 			description: card.desc,
 			url: card.url,
+			status: card.idList,
 			labels: card.labels.map(
 				(l): WorkItemLabel => ({
 					id: l.id,

@@ -1,9 +1,8 @@
-import { getIntegrationCredentialOrNull, loadProjectConfigByRepo } from '../../config/provider.js';
+import { loadProjectConfigByRepo } from '../../config/provider.js';
 import { getSessionState } from '../../gadgets/sessionState.js';
 import { githubClient, withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
-import { createPMProvider, withPMProvider } from '../../pm/index.js';
-import { withTrelloCredentials } from '../../trello/client.js';
+import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
 import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
 import {
 	enqueueWebhook,
@@ -79,19 +78,26 @@ async function postAcknowledgmentComment(result: TriggerResult): Promise<void> {
 	}
 }
 
+/**
+ * Establish PM credential scope for the project.
+ * Uses the integration's withCredentials() for the correct PM type.
+ * Falls through to running fn() directly if no PM type is configured.
+ */
+async function withPMCredentials<T>(project: ProjectConfig, fn: () => Promise<T>): Promise<T> {
+	const pmType = project.pm?.type;
+	if (!pmType) return fn();
+	const integration = pmRegistry.getOrNull(pmType);
+	if (!integration) return fn();
+	return integration.withCredentials(project.id, fn);
+}
+
 async function executeGitHubAgent(
 	result: TriggerResult,
 	project: ProjectConfig,
 	config: CascadeConfig,
 ): Promise<void> {
-	const trelloApiKey = await getIntegrationCredentialOrNull(project.id, 'pm', 'api_key').then(
-		(v) => v ?? '',
-	);
-	const trelloToken = await getIntegrationCredentialOrNull(project.id, 'pm', 'token').then(
-		(v) => v ?? '',
-	);
+	if (!result.agentType) return;
 	const githubToken = await getPersonaToken(project.id, result.agentType);
-
 	const restoreLlmEnv = await injectLlmApiKeys(project.id);
 
 	const executionConfig: AgentExecutionConfig = {
@@ -104,7 +110,7 @@ async function executeGitHubAgent(
 
 	try {
 		const pmProvider = createPMProvider(project);
-		await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
+		await withPMCredentials(project, () =>
 			withPMProvider(pmProvider, () =>
 				withGitHubToken(githubToken, () =>
 					runAgentExecutionPipeline(result, project, config, executionConfig),
@@ -124,6 +130,7 @@ async function runGitHubAgentJob(
 	registry: TriggerRegistry,
 	routerAckCommentId?: number,
 ): Promise<void> {
+	if (!result.agentType) return;
 	// Use the persona token for the agent that will do the work (for ack comments)
 	let prCommentToken: string;
 	try {
@@ -205,21 +212,14 @@ export async function processGitHubWebhook(
 	}
 	const { project, config } = projectConfig;
 
-	// Resolve credentials early — trigger handlers may call GitHub/Trello APIs
-	const trelloApiKey = await getIntegrationCredentialOrNull(project.id, 'pm', 'api_key').then(
-		(v) => v ?? '',
-	);
-	const trelloToken = await getIntegrationCredentialOrNull(project.id, 'pm', 'token').then(
-		(v) => v ?? '',
-	);
-
 	// Resolve persona identities and use implementer token for webhook processing
 	const personaIdentities = await resolvePersonaIdentities(project.id);
 	const githubToken = await getPersonaToken(project.id, 'implementation');
 	const pmProvider = createPMProvider(project);
 
+	// Establish PM credential + provider scope for trigger dispatch
 	const ctx: TriggerContext = { project, source: 'github', payload, personaIdentities };
-	const result = await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
+	const result = await withPMCredentials(project, () =>
 		withPMProvider(pmProvider, () => withGitHubToken(githubToken, () => registry.dispatch(ctx))),
 	);
 

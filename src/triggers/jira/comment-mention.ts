@@ -7,6 +7,7 @@
 
 import { resolveJiraTriggerEnabled } from '../../config/triggerConfig.js';
 import { jiraClient } from '../../jira/client.js';
+import { getJiraConfig } from '../../pm/config.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 
@@ -111,7 +112,7 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 		if (ctx.source !== 'jira') return false;
 
 		// Check trigger config — default enabled for backward compatibility
-		if (!resolveJiraTriggerEnabled(ctx.project.jira?.triggers, 'commentMention')) {
+		if (!resolveJiraTriggerEnabled(getJiraConfig(ctx.project)?.triggers, 'commentMention')) {
 			return false;
 		}
 
@@ -190,7 +191,6 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 				triggerCommentAuthor: authorName,
 			},
 			workItemId: issueKey,
-			cardId: issueKey,
 		};
 	}
 }

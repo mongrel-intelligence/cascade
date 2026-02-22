@@ -1,5 +1,6 @@
 import { getAllProjectCredentials } from '../config/provider.js';
 import { getPersonaToken } from '../github/personas.js';
+import { getJiraConfig } from '../pm/config.js';
 import type { AgentInput, ProjectConfig } from '../types/index.js';
 import { parseRepoFullName } from '../utils/repo.js';
 import type { AgentProfile } from './agent-profiles.js';
@@ -41,11 +42,12 @@ export async function augmentProjectSecrets(
 	}
 
 	// Inject JIRA integration config so cascade-tools can construct JiraPMProvider
-	if (project.jira) {
-		projectSecrets.CASCADE_JIRA_PROJECT_KEY = project.jira.projectKey;
-		projectSecrets.CASCADE_JIRA_BASE_URL = project.jira.baseUrl;
-		if (project.jira.statuses) {
-			projectSecrets.CASCADE_JIRA_STATUSES = JSON.stringify(project.jira.statuses);
+	const jiraConfig = getJiraConfig(project);
+	if (jiraConfig) {
+		projectSecrets.CASCADE_JIRA_PROJECT_KEY = jiraConfig.projectKey;
+		projectSecrets.CASCADE_JIRA_BASE_URL = jiraConfig.baseUrl;
+		if (jiraConfig.statuses) {
+			projectSecrets.CASCADE_JIRA_STATUSES = JSON.stringify(jiraConfig.statuses);
 		}
 	}
 

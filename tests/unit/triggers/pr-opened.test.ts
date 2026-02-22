@@ -212,7 +212,7 @@ describe('PROpenedTrigger', () => {
 					triggerCommentUrl: 'https://github.com/owner/repo/pull/42',
 				},
 				prNumber: 42,
-				cardId: 'abc123',
+				workItemId: 'abc123',
 			});
 		});
 
