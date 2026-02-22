@@ -292,7 +292,6 @@ Use these values when calling GitHub gadgets (GetPRDetails, PostPRComment, Updat
 
 const ciAgentDefinition: GitHubAgentDefinition<RespondToCIAgentInput, CIContextData> = {
 	agentType: 'respond-to-ci',
-	headerMessage: '🤖 Working on fixing CI failures...',
 	initialCommentDescription: 'Acknowledge CI failures',
 	timeoutMessage: '⚠️ CI fix agent timed out while attempting to fix failures.',
 	loggerPrefix: 'ci',

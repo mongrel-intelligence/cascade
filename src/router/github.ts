@@ -27,14 +27,14 @@ import { sendAcknowledgeReaction } from './reactions.js';
 
 /**
  * Try to match a trigger and post an ack comment for a GitHub webhook.
- * Returns the ack comment ID if posted, undefined otherwise.
+ * Returns the ack comment ID and message text if posted, undefined otherwise.
  */
 export async function tryPostGitHubAck(
 	eventType: string,
 	repoFullName: string,
 	payload: unknown,
 	triggerRegistry: TriggerRegistry,
-): Promise<number | undefined> {
+): Promise<{ commentId: number; message: string } | undefined> {
 	const config = await loadProjectConfig();
 	const fullProject = config.fullProjects.find((fp) => fp.repo === repoFullName);
 	if (!fullProject) return undefined;
@@ -66,7 +66,7 @@ export async function tryPostGitHubAck(
 	if (!prNumber) return undefined;
 
 	const commentId = await postGitHubAck(repoFullName, prNumber, message, resolved.token);
-	return commentId ?? undefined;
+	return commentId != null ? { commentId, message } : undefined;
 }
 
 export async function isSelfAuthoredGitHubComment(
@@ -147,8 +147,13 @@ export async function processGitHubWebhookEvent(
 
 	// Try to post an ack comment via trigger matching (non-blocking best-effort)
 	let ackCommentId: number | undefined;
+	let ackMessage: string | undefined;
 	try {
-		ackCommentId = await tryPostGitHubAck(eventType, repoFullName, payload, triggerRegistry);
+		const ackResult = await tryPostGitHubAck(eventType, repoFullName, payload, triggerRegistry);
+		if (ackResult) {
+			ackCommentId = ackResult.commentId;
+			ackMessage = ackResult.message;
+		}
 	} catch (err) {
 		console.warn('[Router] GitHub ack comment failed (non-fatal):', String(err));
 	}
@@ -161,6 +166,7 @@ export async function processGitHubWebhookEvent(
 		repoFullName,
 		receivedAt: new Date().toISOString(),
 		ackCommentId,
+		ackMessage,
 	};
 
 	// Fire pre-actions (non-blocking) before queueing

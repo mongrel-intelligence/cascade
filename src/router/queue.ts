@@ -33,6 +33,7 @@ export interface GitHubJob {
 	repoFullName: string;
 	receivedAt: string;
 	ackCommentId?: number;
+	ackMessage?: string;
 }
 
 export interface JiraJob {

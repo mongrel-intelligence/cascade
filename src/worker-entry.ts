@@ -45,6 +45,7 @@ interface GitHubJobData {
 	repoFullName: string;
 	receivedAt: string;
 	ackCommentId?: number;
+	ackMessage?: string;
 }
 
 interface JiraJobData {
@@ -201,6 +202,7 @@ async function main(): Promise<void> {
 				jobData.eventType,
 				triggerRegistry,
 				jobData.ackCommentId,
+				jobData.ackMessage,
 			);
 		} else if (jobData.type === 'jira') {
 			logger.info('[Worker] Processing JIRA job', {

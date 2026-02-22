@@ -1,6 +1,7 @@
 import type { ModelSpec } from 'llmist';
 
 import { createProgressMonitor } from '../../backends/progress.js';
+import { INITIAL_MESSAGES } from '../../config/agentMessages.js';
 import { CUSTOM_MODELS } from '../../config/customModels.js';
 import { recordInitialComment } from '../../gadgets/sessionState.js';
 import { githubClient, withGitHubToken } from '../../github/client.js';
@@ -51,7 +52,8 @@ export interface GitHubAgentDefinition<
 	TContext extends GitHubAgentContext,
 > {
 	agentType: string;
-	headerMessage: string;
+	/** Static header message — last-resort fallback when no ackMessage or INITIAL_MESSAGES entry. */
+	headerMessage?: string;
 	initialCommentDescription: string;
 	timeoutMessage: string;
 	loggerPrefix: string;
@@ -124,6 +126,16 @@ export async function executeGitHubAgent<
 		if (earlyResult) return earlyResult;
 	}
 
+	// Resolve effective header: ackMessage (LLM-generated) > INITIAL_MESSAGES > definition fallback
+	const effectiveHeader =
+		(input.ackMessage as string | undefined) ??
+		INITIAL_MESSAGES[definition.agentType] ??
+		definition.headerMessage ??
+		INITIAL_MESSAGES.implementation;
+
+	// Pre-existing ack comment from router or webhook handler
+	const preExistingAckId = input.ackCommentId as number | undefined;
+
 	const runLifecycle = () =>
 		executeAgentLifecycle<TContext>({
 			loggerIdentifier: `${definition.loggerPrefix}-${prNumber}`,
@@ -172,24 +184,37 @@ export async function executeGitHubAgent<
 				}),
 
 			injectSyntheticCalls: async ({ builder, ctx, trackingContext, repoDir }) => {
-				const initialComment = await definition.postInitialComment(
-					input,
-					id,
-					definition.headerMessage,
-				);
-				recordInitialComment(initialComment.id);
+				let initialCommentId: number;
+				let initialCommentHtmlUrl: string;
+				let gadgetName: string;
+
+				if (preExistingAckId) {
+					// Ack comment already posted by router/webhook-handler — reuse it
+					recordInitialComment(preExistingAckId);
+					initialCommentId = preExistingAckId;
+					initialCommentHtmlUrl = `https://github.com/${owner}/${repo}/pull/${prNumber}#issuecomment-${preExistingAckId}`;
+					gadgetName = 'PostPRComment';
+				} else {
+					// No pre-existing ack — post initial comment now
+					const initialComment = await definition.postInitialComment(input, id, effectiveHeader);
+					recordInitialComment(initialComment.id);
+					initialCommentId = initialComment.id;
+					initialCommentHtmlUrl = initialComment.htmlUrl;
+					gadgetName = initialComment.gadgetName;
+				}
+
 				const withComment = injectSyntheticCall(
 					builder,
 					trackingContext,
-					initialComment.gadgetName,
+					gadgetName,
 					{
 						comment: definition.initialCommentDescription,
 						owner,
 						repo,
 						prNumber,
-						body: definition.headerMessage,
+						body: effectiveHeader,
 					},
-					`Comment posted (id: ${initialComment.id}): ${initialComment.htmlUrl}`,
+					`Comment posted (id: ${initialCommentId}): ${initialCommentHtmlUrl}`,
 					'gc_initial_comment',
 				);
 
@@ -211,7 +236,7 @@ export async function executeGitHubAgent<
 					progressModel: input.config.defaults.progressModel,
 					intervalMinutes: input.config.defaults.progressIntervalMinutes,
 					customModels: CUSTOM_MODELS as ModelSpec[],
-					github: { owner, repo, headerMessage: definition.headerMessage },
+					github: { owner, repo, headerMessage: effectiveHeader },
 				}),
 
 			interactive,

@@ -23,6 +23,7 @@ import {
 	buildWorkItemPrompt,
 } from '../agents/shared/taskPrompts.js';
 import type { ContextFile } from '../agents/utils/setup.js';
+import { INITIAL_MESSAGES } from '../config/agentMessages.js';
 import { ListDirectory } from '../gadgets/ListDirectory.js';
 import { formatCheckStatus } from '../gadgets/github/core/getPRChecks.js';
 import { readWorkItem } from '../gadgets/pm/core/readWorkItem.js';
@@ -480,12 +481,16 @@ const reviewProfile: AgentProfile = {
 	getLlmistGadgets: (_agentType) => buildReviewGadgets(),
 
 	async preExecute({ input, logWriter }: PreExecuteParams): Promise<void> {
+		// Skip if ack comment already posted by router or webhook handler
+		if (input.ackCommentId) return;
+
 		const repoFullName = input.repoFullName as string;
 		const prNumber = input.prNumber as number;
 		const { owner, repo } = parseRepoFullName(repoFullName);
 
+		const message = (input.ackMessage as string | undefined) ?? INITIAL_MESSAGES.review;
 		logWriter('INFO', 'Posting initial review comment', { owner, repo, prNumber });
-		await githubClient.createPRComment(owner, repo, prNumber, '🔍 Reviewing PR...');
+		await githubClient.createPRComment(owner, repo, prNumber, message);
 	},
 };
 
@@ -519,17 +524,16 @@ const respondToCIProfile: AgentProfile = {
 	getLlmistGadgets: (_agentType) => buildPRAgentGadgets(),
 
 	async preExecute({ input, logWriter }: PreExecuteParams): Promise<void> {
+		// Skip if ack comment already posted by router or webhook handler
+		if (input.ackCommentId) return;
+
 		const repoFullName = input.repoFullName as string;
 		const prNumber = input.prNumber as number;
 		const { owner, repo } = parseRepoFullName(repoFullName);
 
+		const message = (input.ackMessage as string | undefined) ?? INITIAL_MESSAGES['respond-to-ci'];
 		logWriter('INFO', 'Posting initial CI fix comment', { owner, repo, prNumber });
-		await githubClient.createPRComment(
-			owner,
-			repo,
-			prNumber,
-			'🤖 Working on fixing CI failures...',
-		);
+		await githubClient.createPRComment(owner, repo, prNumber, message);
 	},
 };
 
