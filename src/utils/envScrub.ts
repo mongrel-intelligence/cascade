@@ -15,8 +15,6 @@ const SENSITIVE_ENV_KEYS = [
 	'DATABASE_URL',
 	'DATABASE_SSL',
 	'REDIS_URL',
-	'CASCADE_CREDENTIALS',
-	'CASCADE_CREDENTIALS_PROJECT_ID',
 ] as const;
 
 /**
@@ -24,7 +22,6 @@ const SENSITIVE_ENV_KEYS = [
  *
  * Call this AFTER:
  * - Database connection pool is initialized (getDb())
- * - Project credentials are set as individual env vars (loadRouterCredentials())
  *
  * After scrubbing:
  * - Database pool continues to work (uses cached connection string)

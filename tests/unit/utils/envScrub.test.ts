@@ -12,8 +12,6 @@ describe('scrubSensitiveEnv', () => {
 			DATABASE_URL: process.env.DATABASE_URL,
 			DATABASE_SSL: process.env.DATABASE_SSL,
 			REDIS_URL: process.env.REDIS_URL,
-			CASCADE_CREDENTIALS: process.env.CASCADE_CREDENTIALS,
-			CASCADE_CREDENTIALS_PROJECT_ID: process.env.CASCADE_CREDENTIALS_PROJECT_ID,
 		};
 	});
 
@@ -52,25 +50,11 @@ describe('scrubSensitiveEnv', () => {
 		expect(process.env.REDIS_URL).toBeUndefined();
 	});
 
-	it('removes CASCADE_CREDENTIALS from process.env', () => {
-		process.env.CASCADE_CREDENTIALS = 'eyJzb21lIjoianNvbiJ9';
-		scrubSensitiveEnv();
-		expect(process.env.CASCADE_CREDENTIALS).toBeUndefined();
-	});
-
-	it('removes CASCADE_CREDENTIALS_PROJECT_ID from process.env', () => {
-		process.env.CASCADE_CREDENTIALS_PROJECT_ID = 'my-project-id';
-		scrubSensitiveEnv();
-		expect(process.env.CASCADE_CREDENTIALS_PROJECT_ID).toBeUndefined();
-	});
-
 	it('removes all sensitive keys in a single call', () => {
 		process.env.CREDENTIAL_MASTER_KEY = 'key1';
 		process.env.DATABASE_URL = 'postgres://...';
 		process.env.DATABASE_SSL = 'true';
 		process.env.REDIS_URL = 'redis://...';
-		process.env.CASCADE_CREDENTIALS = 'creds';
-		process.env.CASCADE_CREDENTIALS_PROJECT_ID = 'proj-id';
 
 		scrubSensitiveEnv();
 
@@ -78,8 +62,6 @@ describe('scrubSensitiveEnv', () => {
 		expect(process.env.DATABASE_URL).toBeUndefined();
 		expect(process.env.DATABASE_SSL).toBeUndefined();
 		expect(process.env.REDIS_URL).toBeUndefined();
-		expect(process.env.CASCADE_CREDENTIALS).toBeUndefined();
-		expect(process.env.CASCADE_CREDENTIALS_PROJECT_ID).toBeUndefined();
 	});
 
 	it('does not remove non-sensitive environment variables', () => {

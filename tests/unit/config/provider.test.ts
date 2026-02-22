@@ -311,6 +311,15 @@ describe('config/provider', () => {
 				"Integration credential 'pm/api_key' not found for project 'proj1'",
 			);
 		});
+
+		it('throws without DB fallback when CASCADE_CREDENTIAL_KEYS is set (worker context)', async () => {
+			setEnvCredential('CASCADE_CREDENTIAL_KEYS', 'OTHER_KEY');
+
+			await expect(getIntegrationCredential('proj1', 'pm', 'api_key')).rejects.toThrow(
+				"Integration credential 'pm/api_key' not found for project 'proj1'",
+			);
+			expect(resolveIntegrationCredential).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('getIntegrationCredentialOrNull', () => {
@@ -336,6 +345,15 @@ describe('config/provider', () => {
 			const result = await getIntegrationCredentialOrNull('proj1', 'scm', 'implementer_token');
 
 			expect(result).toBe('db-token');
+		});
+
+		it('returns null without DB fallback when CASCADE_CREDENTIAL_KEYS is set (worker context)', async () => {
+			setEnvCredential('CASCADE_CREDENTIAL_KEYS', 'OTHER_KEY');
+
+			const result = await getIntegrationCredentialOrNull('proj1', 'scm', 'implementer_token');
+
+			expect(result).toBeNull();
+			expect(resolveIntegrationCredential).not.toHaveBeenCalled();
 		});
 	});
 
@@ -376,6 +394,15 @@ describe('config/provider', () => {
 
 			await expect(getOrgCredential('proj1', 'KEY')).rejects.toThrow('Project not found: proj1');
 		});
+
+		it('returns null without DB fallback when CASCADE_CREDENTIAL_KEYS is set (worker context)', async () => {
+			setEnvCredential('CASCADE_CREDENTIAL_KEYS', 'OTHER_KEY');
+
+			const result = await getOrgCredential('proj1', 'OPENROUTER_API_KEY');
+
+			expect(result).toBeNull();
+			expect(resolveOrgCredential).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('getAllProjectCredentials', () => {
@@ -410,6 +437,18 @@ describe('config/provider', () => {
 
 			const result = await getAllProjectCredentials('proj1');
 			expect(result).toEqual({});
+		});
+
+		it('reconstructs credentials from env vars when CASCADE_CREDENTIAL_KEYS is set (worker context)', async () => {
+			setEnvCredential('CASCADE_CREDENTIAL_KEYS', 'TRELLO_API_KEY,OPENROUTER_API_KEY');
+			setEnvCredential('TRELLO_API_KEY', 'env-key');
+			setEnvCredential('OPENROUTER_API_KEY', 'env-or');
+
+			const result = await getAllProjectCredentials('proj1');
+
+			expect(result).toEqual({ TRELLO_API_KEY: 'env-key', OPENROUTER_API_KEY: 'env-or' });
+			expect(resolveAllIntegrationCredentials).not.toHaveBeenCalled();
+			expect(resolveAllOrgCredentials).not.toHaveBeenCalled();
 		});
 	});
 
