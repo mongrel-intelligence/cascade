@@ -6,6 +6,7 @@ import { getAllProjectCredentials } from '../../config/provider.js';
 import { getDb } from '../../db/client.js';
 import { findProjectByIdFromDb } from '../../db/repositories/configRepository.js';
 import { projects } from '../../db/schema/index.js';
+import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { protectedProcedure, router } from '../trpc.js';
 
@@ -78,12 +79,14 @@ async function resolveProjectContext(
 	const creds = await getAllProjectCredentials(projectId);
 
 	// Resolve JIRA label names from config (with defaults)
-	const jiraLabels = project.jira
+	const jiraConfig = getJiraConfig(project);
+	const trelloConfig = getTrelloConfig(project);
+	const jiraLabels = jiraConfig
 		? [
-				project.jira.labels?.processing ?? 'cascade-processing',
-				project.jira.labels?.processed ?? 'cascade-processed',
-				project.jira.labels?.error ?? 'cascade-error',
-				project.jira.labels?.readyToProcess ?? 'cascade-ready',
+				jiraConfig.labels?.processing ?? 'cascade-processing',
+				jiraConfig.labels?.processed ?? 'cascade-processed',
+				jiraConfig.labels?.error ?? 'cascade-error',
+				jiraConfig.labels?.readyToProcess ?? 'cascade-ready',
 			]
 		: undefined;
 
@@ -92,9 +95,9 @@ async function resolveProjectContext(
 		orgId: project.orgId,
 		repo: project.repo,
 		pmType: project.pm?.type ?? 'trello',
-		boardId: project.trello?.boardId,
-		jiraBaseUrl: project.jira?.baseUrl,
-		jiraProjectKey: project.jira?.projectKey,
+		boardId: trelloConfig?.boardId,
+		jiraBaseUrl: jiraConfig?.baseUrl,
+		jiraProjectKey: jiraConfig?.projectKey,
 		jiraLabels,
 		trelloApiKey: creds.TRELLO_API_KEY ?? '',
 		trelloToken: creds.TRELLO_TOKEN ?? '',

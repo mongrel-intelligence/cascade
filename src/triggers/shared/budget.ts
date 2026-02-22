@@ -1,3 +1,4 @@
+import { getCostFieldId } from '../../pm/config.js';
 import { getPMProvider } from '../../pm/index.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
 
@@ -6,16 +7,6 @@ export interface BudgetCheckResult {
 	currentCost: number;
 	budget: number;
 	remaining: number;
-}
-
-/**
- * Resolve the cost custom field ID from the project config.
- */
-function getCostFieldId(project: ProjectConfig): string | undefined {
-	if (project.pm?.type === 'jira') {
-		return project.jira?.customFields?.cost;
-	}
-	return project.trello?.customFields?.cost;
 }
 
 /**

@@ -90,7 +90,7 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 				triggerCommentUrl: reviewPayload.review.html_url,
 			},
 			prNumber,
-			cardId: cardId || undefined,
+			workItemId: cardId || undefined,
 		};
 	}
 }

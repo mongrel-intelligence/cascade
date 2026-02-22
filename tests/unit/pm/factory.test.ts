@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createPMProvider } from '../../../src/pm/factory.js';
 import type { ProjectConfig } from '../../../src/types/index.js';
 
 // Mock the adapters
@@ -20,6 +19,27 @@ vi.mock('../../../src/pm/jira/adapter.js', () => ({
 	})),
 }));
 
+// Mock provider.ts to avoid DB calls from integration constructors
+vi.mock('../../../src/config/provider.js', () => ({
+	getIntegrationCredential: vi.fn().mockResolvedValue('mock-cred'),
+	loadProjectConfigByBoardId: vi.fn().mockResolvedValue(null),
+	loadProjectConfigByJiraProjectKey: vi.fn().mockResolvedValue(null),
+	findProjectById: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock('../../../src/trello/client.js', () => ({
+	withTrelloCredentials: vi.fn((_creds, fn) => fn()),
+	trelloClient: {},
+}));
+
+vi.mock('../../../src/jira/client.js', () => ({
+	withJiraCredentials: vi.fn((_creds, fn) => fn()),
+	jiraClient: {},
+}));
+
+// Import after mocks so the integrations register with mocked adapters
+// factory.ts was removed; createPMProvider is now an inline function in index.ts
+import { createPMProvider } from '../../../src/pm/index.js';
 import { JiraPMProvider } from '../../../src/pm/jira/adapter.js';
 import { TrelloPMProvider } from '../../../src/pm/trello/adapter.js';
 
@@ -107,7 +127,7 @@ describe('pm/factory', () => {
 			};
 
 			expect(() => createPMProvider(project)).toThrow(
-				"Project 'proj1' has pm.type=jira but no jira config",
+				'JIRA integration requires projectKey in config',
 			);
 		});
 
@@ -122,7 +142,7 @@ describe('pm/factory', () => {
 				pm: { type: 'unknown' },
 			} as ProjectConfig;
 
-			expect(() => createPMProvider(project)).toThrow('Unknown PM type: unknown');
+			expect(() => createPMProvider(project)).toThrow("Unknown PM integration type: 'unknown'");
 		});
 	});
 });

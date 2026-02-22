@@ -14,6 +14,7 @@ import {
 	resolveJiraTriggerEnabled,
 	resolveReadyToProcessEnabled,
 } from '../../config/triggerConfig.js';
+import { getJiraConfig } from '../../pm/config.js';
 import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -69,7 +70,7 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 		if (ctx.source !== 'jira') return false;
 
 		// Check trigger config — default enabled for backward compatibility
-		if (!resolveJiraTriggerEnabled(ctx.project.jira?.triggers, 'readyToProcessLabel')) {
+		if (!resolveJiraTriggerEnabled(getJiraConfig(ctx.project)?.triggers, 'readyToProcessLabel')) {
 			return false;
 		}
 
@@ -101,7 +102,7 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 		const currentStatus = payload.issue?.fields?.status?.name;
 		if (!currentStatus) return null;
 
-		const jiraConfig = ctx.project.jira;
+		const jiraConfig = getJiraConfig(ctx.project);
 		if (!jiraConfig?.statuses) return null;
 
 		for (const [cascadeStatus, jiraStatus] of Object.entries(jiraConfig.statuses)) {
@@ -126,7 +127,7 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const jiraConfig = ctx.project.jira;
+		const jiraConfig = getJiraConfig(ctx.project);
 		if (!jiraConfig?.statuses) {
 			logger.debug('No JIRA status configuration, skipping label trigger', {
 				projectId: ctx.project.id,
@@ -153,7 +154,7 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 		}
 
 		// Check per-agent ready-to-process toggle
-		if (!resolveReadyToProcessEnabled(ctx.project.jira?.triggers, agentType)) {
+		if (!resolveReadyToProcessEnabled(getJiraConfig(ctx.project)?.triggers, agentType)) {
 			logger.info('JIRA ready-to-process disabled for agent type, skipping', {
 				issueKey,
 				agentType,
@@ -171,7 +172,6 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 			agentType,
 			agentInput: { cardId: issueKey },
 			workItemId: issueKey,
-			cardId: issueKey,
 		};
 	}
 }

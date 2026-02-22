@@ -152,7 +152,7 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 				cardId: cardId || undefined,
 			},
 			prNumber,
-			cardId: cardId || undefined,
+			workItemId: cardId || undefined,
 		};
 	}
 }

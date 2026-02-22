@@ -8,6 +8,7 @@
 
 import type { ProjectConfig } from '../types/index.js';
 import { safeOperation, silentOperation } from '../utils/safeOperation.js';
+import { pmRegistry } from './registry.js';
 import type { PMProvider } from './types.js';
 
 /**
@@ -30,42 +31,10 @@ export interface ProjectPMConfig {
 
 /**
  * Resolve PM-specific config (labels, statuses) from project configuration.
+ * Delegates to the registered integration's resolveLifecycleConfig().
  */
 export function resolveProjectPMConfig(project: ProjectConfig): ProjectPMConfig {
-	if (project.pm?.type === 'jira' && project.jira) {
-		// JIRA uses label strings (not IDs) and status names from config
-		const jiraLabels = project.jira.labels;
-		return {
-			labels: {
-				processing: jiraLabels?.processing ?? 'cascade-processing',
-				processed: jiraLabels?.processed ?? 'cascade-processed',
-				error: jiraLabels?.error ?? 'cascade-error',
-				readyToProcess: jiraLabels?.readyToProcess ?? 'cascade-ready',
-			},
-			statuses: {
-				inProgress: project.jira.statuses.inProgress,
-				inReview: project.jira.statuses.inReview,
-				done: project.jira.statuses.done,
-				merged: project.jira.statuses.merged,
-			},
-		};
-	}
-
-	// Trello — labels are IDs from project config
-	return {
-		labels: {
-			processing: project.trello?.labels?.processing,
-			processed: project.trello?.labels?.processed,
-			error: project.trello?.labels?.error,
-			readyToProcess: project.trello?.labels?.readyToProcess,
-		},
-		statuses: {
-			inProgress: project.trello?.lists?.inProgress,
-			inReview: project.trello?.lists?.inReview,
-			done: project.trello?.lists?.done,
-			merged: project.trello?.lists?.merged,
-		},
-	};
+	return pmRegistry.resolveLifecycleConfig(project);
 }
 
 export class PMLifecycleManager {

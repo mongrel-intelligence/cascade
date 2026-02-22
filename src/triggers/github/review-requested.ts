@@ -98,7 +98,6 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 				cardId: workItemId,
 			},
 			prNumber,
-			cardId: workItemId,
 			workItemId,
 		};
 	}
