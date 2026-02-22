@@ -292,10 +292,20 @@ psql $DATABASE_URL -c "INSERT INTO users (org_id, email, password_hash, name, ro
 
 CASCADE includes a `cascade` CLI for managing the platform from the terminal. It consumes the same tRPC endpoints as the web dashboard — no business logic duplication, full type safety.
 
+### Running the CLI
+
+In production the `cascade` binary is available globally. In development, run it via:
+
+```bash
+npm run build                    # Compile TypeScript (required before first use)
+node bin/cascade.js <command>    # Run any CLI command
+```
+
+All examples below use the bare `cascade` name — substitute `node bin/cascade.js` when running locally.
+
 ### Setup
 
 ```bash
-npm run build                    # Compile TypeScript
 cascade login --server http://localhost:3000 --email you@example.com --password secret
 cascade whoami                   # Verify session
 ```
