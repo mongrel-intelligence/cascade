@@ -38,7 +38,11 @@ function createMockDb() {
 		limit: chain.limit,
 	});
 	chain.set = vi.fn().mockReturnValue({ where: chain.where });
+	chain.onConflictDoUpdate = vi.fn().mockReturnValue({
+		returning: chain.returning,
+	});
 	chain.values = vi.fn().mockReturnValue({
+		onConflictDoUpdate: chain.onConflictDoUpdate,
 		returning: chain.returning,
 	});
 
@@ -247,12 +251,10 @@ describe('settingsRepository', () => {
 	});
 
 	describe('upsertProjectIntegration', () => {
-		it('deletes then inserts integration', async () => {
-			mockDb.chain.where.mockResolvedValueOnce(undefined); // delete
+		it('upserts integration with onConflictDoUpdate', async () => {
+			await upsertProjectIntegration('p1', 'pm', 'trello', { boardId: 'abc' }, {});
 
-			await upsertProjectIntegration('p1', 'pm', 'trello', { boardId: 'abc' });
-
-			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
+			expect(mockDb.db.delete).not.toHaveBeenCalled();
 			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
 			expect(mockDb.chain.values).toHaveBeenCalledWith({
 				projectId: 'p1',
@@ -261,6 +263,42 @@ describe('settingsRepository', () => {
 				config: { boardId: 'abc' },
 				triggers: {},
 			});
+			expect(mockDb.chain.onConflictDoUpdate).toHaveBeenCalledTimes(1);
+		});
+
+		it('preserves existing triggers when triggers not provided', async () => {
+			// Mock getIntegrationByProjectAndCategory to return existing integration with triggers
+			mockDb.chain.where.mockResolvedValueOnce([
+				{
+					id: 1,
+					projectId: 'p1',
+					category: 'pm',
+					provider: 'trello',
+					config: {},
+					triggers: { cardMovedToBriefing: true, cardMovedToPlanning: false },
+				},
+			]); // getIntegrationByProjectAndCategory
+
+			await upsertProjectIntegration('p1', 'pm', 'trello', { boardId: 'xyz' });
+
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1); // getIntegrationByProjectAndCategory
+			expect(mockDb.db.delete).not.toHaveBeenCalled();
+			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
+			expect(mockDb.chain.values).toHaveBeenCalledWith({
+				projectId: 'p1',
+				category: 'pm',
+				provider: 'trello',
+				config: { boardId: 'xyz' },
+				triggers: { cardMovedToBriefing: true, cardMovedToPlanning: false },
+			});
+			expect(mockDb.chain.onConflictDoUpdate).toHaveBeenCalledTimes(1);
+		});
+
+		it('preserves integration id on update (no delete)', async () => {
+			await upsertProjectIntegration('p1', 'scm', 'github', { repo: 'owner/repo' }, {});
+
+			expect(mockDb.db.delete).not.toHaveBeenCalled();
+			expect(mockDb.chain.onConflictDoUpdate).toHaveBeenCalledTimes(1);
 		});
 	});
 

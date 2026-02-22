@@ -22,7 +22,6 @@ import {
 } from '../../utils/index.js';
 import { injectLlmApiKeys } from '../../utils/llmEnv.js';
 import type { TriggerRegistry } from '../registry.js';
-import { acknowledgeWithReaction } from '../shared/acknowledge-reaction.js';
 import { runAgentExecutionPipeline } from '../shared/agent-execution.js';
 import { processNextQueuedWebhook } from '../shared/webhook-queue.js';
 import type { TrelloWebhookPayload, TriggerResult } from '../types.js';
@@ -77,6 +76,21 @@ function tryQueueWebhook(payload: TrelloWebhookPayload): boolean {
 	return true;
 }
 
+async function cleanupOrphanTrelloAck(
+	projectId: string,
+	payload: TrelloWebhookPayload,
+	ackCommentId: string,
+): Promise<void> {
+	const cardId = (payload.action?.data?.card as Record<string, unknown> | undefined)?.id as
+		| string
+		| undefined;
+	if (cardId) {
+		logger.info('Cleaning up orphan ack comment', { ackCommentId, cardId });
+		const { deleteTrelloAck } = await import('../../router/acknowledgments.js');
+		await deleteTrelloAck(projectId, cardId, ackCommentId).catch(() => {});
+	}
+}
+
 async function handleMatchedTrigger(
 	registry: TriggerRegistry,
 	payload: TrelloWebhookPayload,
@@ -84,12 +98,21 @@ async function handleMatchedTrigger(
 	project: ProjectConfig,
 	config: CascadeConfig,
 	pmProvider: ReturnType<typeof createPMProvider>,
+	ackCommentId?: string,
 ): Promise<void> {
 	const ctx: TriggerContext = { project, source: 'trello', payload };
 	const result = await registry.dispatch(ctx);
 	if (!result) {
 		logger.info('No trigger matched for webhook', { actionType });
+		if (ackCommentId) {
+			await cleanupOrphanTrelloAck(project.id, payload, ackCommentId);
+		}
 		return;
+	}
+
+	// Pass ack comment ID into agent input for ProgressMonitor pre-seeding
+	if (ackCommentId) {
+		result.agentInput.ackCommentId = ackCommentId;
 	}
 
 	const cardId = result.cardId ?? result.workItemId;
@@ -99,7 +122,6 @@ async function handleMatchedTrigger(
 	}
 
 	logger.info('Trigger matched', { agentType: result.agentType, cardId });
-	await acknowledgeWithReaction('trello', payload);
 	setProcessing(true);
 	startWatchdog(config.defaults.watchdogTimeoutMs);
 
@@ -128,6 +150,7 @@ async function handleMatchedTrigger(
 export async function processTrelloWebhook(
 	payload: unknown,
 	registry: TriggerRegistry,
+	ackCommentId?: string,
 ): Promise<void> {
 	logger.info('Processing Trello webhook');
 
@@ -160,7 +183,15 @@ export async function processTrelloWebhook(
 
 	await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, () =>
 		withPMProvider(pmProvider, () =>
-			handleMatchedTrigger(registry, payload, actionType, project, config, pmProvider),
+			handleMatchedTrigger(
+				registry,
+				payload,
+				actionType,
+				project,
+				config,
+				pmProvider,
+				ackCommentId,
+			),
 		),
 	);
 }

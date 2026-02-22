@@ -13,6 +13,7 @@
 import type { ModelSpec } from 'llmist';
 
 import { syncCompletedTodosToChecklist } from '../agents/utils/checklistSync.js';
+import { INITIAL_MESSAGES } from '../config/agentMessages.js';
 import { formatGitHubProgressComment, formatStatusMessage } from '../config/statusUpdateConfig.js';
 import { getSessionState } from '../gadgets/sessionState.js';
 import { loadTodos } from '../gadgets/todo/storage.js';
@@ -32,30 +33,13 @@ export interface ProgressMonitorConfig {
 	repoDir?: string;
 	trello?: { cardId: string };
 	github?: { owner: string; repo: string; headerMessage: string };
+	/** Pre-seeded comment ID from router ack — skip initial comment posting */
+	preSeededCommentId?: string;
 }
 
 const RING_BUFFER_MAX = 20;
 const TEXT_SNIPPETS_MAX = 10;
 const COMPLETED_TASKS_MAX = 5;
-
-const INITIAL_MESSAGES: Record<string, string> = {
-	briefing:
-		'**📋 Analyzing brief** — Reading the card and gathering context to create a clear brief...',
-	planning:
-		'**🗺️ Planning implementation** — Studying the codebase and designing a step-by-step plan...',
-	implementation:
-		'**🚀 Implementing changes** — Writing code, running tests, and preparing a PR...',
-	review: '**🔍 Reviewing code** — Examining the PR changes for quality and correctness...',
-	'respond-to-planning-comment':
-		'**💬 Responding to feedback** — Reading your comment and updating the plan accordingly...',
-	'respond-to-review':
-		'**🔧 Addressing review feedback** — Making the requested changes from the code review...',
-	'respond-to-pr-comment':
-		'**💬 Responding to PR comment** — Reading your comment and taking action...',
-	'respond-to-ci':
-		'**🔧 Fixing CI failures** — Analyzing the failed checks and working on a fix...',
-	debug: '**🐛 Analyzing session logs** — Reviewing what happened and identifying issues...',
-};
 
 /**
  * Extract a meaningful detail string from tool call params.
@@ -149,12 +133,29 @@ export class ProgressMonitor implements ProgressReporter {
 			void this.tick();
 		}, intervalMs);
 
-		// Post initial comment immediately (fire-and-forget)
-		this.initialCommentPromise = this.postInitialComment().catch((err) => {
-			this.config.logWriter('WARN', 'Failed to post initial progress comment', {
-				error: String(err),
+		if (this.config.preSeededCommentId) {
+			// Router already posted the ack comment — reuse its ID
+			this.progressCommentId = this.config.preSeededCommentId;
+			this.config.logWriter('INFO', 'Using pre-seeded ack comment ID from router', {
+				commentId: this.progressCommentId,
 			});
-		});
+
+			// Write state file so PostComment gadget can find it
+			if (this.config.repoDir && this.config.trello) {
+				writeProgressCommentId(
+					this.config.repoDir,
+					this.config.trello.cardId,
+					this.progressCommentId,
+				);
+			}
+		} else {
+			// Post initial comment immediately (fire-and-forget)
+			this.initialCommentPromise = this.postInitialComment().catch((err) => {
+				this.config.logWriter('WARN', 'Failed to post initial progress comment', {
+					error: String(err),
+				});
+			});
+		}
 	}
 
 	stop(): void {

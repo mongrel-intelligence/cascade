@@ -63,6 +63,23 @@ export class JiraIssueTransitionedTrigger implements TriggerHandler {
 		return !!statusChange;
 	}
 
+	resolveAgentType(ctx: TriggerContext): string | null {
+		const payload = ctx.payload as JiraWebhookPayload;
+		const statusChange = payload.changelog?.items?.find((item) => item.field === 'status');
+		const newStatus = statusChange?.toString;
+		if (!newStatus) return null;
+
+		const jiraConfig = ctx.project.jira;
+		if (!jiraConfig?.statuses) return null;
+
+		for (const [cascadeStatus, jiraStatus] of Object.entries(jiraConfig.statuses)) {
+			if (jiraStatus.toLowerCase() === newStatus.toLowerCase()) {
+				return STATUS_TO_AGENT[cascadeStatus] ?? null;
+			}
+		}
+		return null;
+	}
+
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		const payload = ctx.payload as JiraWebhookPayload;
 		const issueKey = payload.issue?.key;

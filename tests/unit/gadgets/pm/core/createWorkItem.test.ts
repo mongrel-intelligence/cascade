@@ -59,25 +59,14 @@ describe('createWorkItem', () => {
 		);
 	});
 
-	it('returns error message on failure', async () => {
+	it('throws on failure instead of swallowing errors', async () => {
 		mockProvider.createWorkItem.mockRejectedValue(new Error('API error'));
 
-		const result = await createWorkItem({
-			containerId: 'list1',
-			title: 'Fail',
-		});
-
-		expect(result).toBe('Error creating work item: API error');
-	});
-
-	it('handles non-Error thrown value', async () => {
-		mockProvider.createWorkItem.mockRejectedValue('string failure');
-
-		const result = await createWorkItem({
-			containerId: 'list1',
-			title: 'Fail',
-		});
-
-		expect(result).toBe('Error creating work item: string failure');
+		await expect(
+			createWorkItem({
+				containerId: 'list1',
+				title: 'Fail',
+			}),
+		).rejects.toThrow('API error');
 	});
 });

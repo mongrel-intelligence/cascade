@@ -5,6 +5,23 @@ import { z } from 'zod';
 // ============================================================================
 
 /**
+ * Per-agent ready-to-process label configuration.
+ * Each agent type can independently toggle whether the label trigger fires for it.
+ */
+export const ReadyToProcessLabelSchema = z
+	.union([
+		z.boolean(),
+		z.object({
+			briefing: z.boolean().default(true),
+			planning: z.boolean().default(true),
+			implementation: z.boolean().default(true),
+		}),
+	])
+	.optional();
+
+export type ReadyToProcessLabelConfig = z.infer<typeof ReadyToProcessLabelSchema>;
+
+/**
  * Trigger configuration for Trello integrations.
  * All triggers default to `true` for backward compatibility.
  */
@@ -12,7 +29,7 @@ export const TrelloTriggerConfigSchema = z.object({
 	cardMovedToBriefing: z.boolean().default(true),
 	cardMovedToPlanning: z.boolean().default(true),
 	cardMovedToTodo: z.boolean().default(true),
-	readyToProcessLabel: z.boolean().default(true),
+	readyToProcessLabel: ReadyToProcessLabelSchema,
 	commentMention: z.boolean().default(true),
 });
 
@@ -22,7 +39,7 @@ export const TrelloTriggerConfigSchema = z.object({
  */
 export const JiraTriggerConfigSchema = z.object({
 	issueTransitioned: z.boolean().default(true),
-	readyToProcessLabel: z.boolean().default(true),
+	readyToProcessLabel: ReadyToProcessLabelSchema,
 	commentMention: z.boolean().default(true),
 });
 
@@ -61,7 +78,39 @@ export function resolveTrelloTriggerEnabled(
 ): boolean {
 	if (!config) return true;
 	const value = config[key];
-	return value === undefined ? true : value;
+	if (key === 'readyToProcessLabel') {
+		// For the readyToProcessLabel key, check if it's enabled at all (any agent)
+		// This is only used for the outer "does anything use this?" check
+		const rtp = value as ReadyToProcessLabelConfig;
+		if (rtp === undefined) return true;
+		if (typeof rtp === 'boolean') return rtp;
+		return rtp.briefing || rtp.planning || rtp.implementation;
+	}
+	return value === undefined ? true : (value as boolean);
+}
+
+/**
+ * Resolve whether the ready-to-process trigger is enabled for a specific agent type.
+ * Supports both the new nested object format and the legacy boolean format.
+ * Returns `true` when no config is present (backward compatible).
+ */
+export function resolveReadyToProcessEnabled(
+	config: Partial<TrelloTriggerConfig> | Partial<JiraTriggerConfig> | undefined,
+	agentType: string,
+): boolean {
+	if (!config) return true;
+	const rtp = config.readyToProcessLabel as ReadyToProcessLabelConfig;
+	if (rtp === undefined) return true;
+	if (typeof rtp === 'boolean') {
+		// Legacy: boolean applies to all agents
+		return rtp;
+	}
+	// Nested object: check per-agent toggle
+	if (agentType === 'briefing') return rtp.briefing ?? true;
+	if (agentType === 'planning') return rtp.planning ?? true;
+	if (agentType === 'implementation') return rtp.implementation ?? true;
+	// Unknown agent type — default to enabled
+	return true;
 }
 
 /**
@@ -74,7 +123,13 @@ export function resolveJiraTriggerEnabled(
 ): boolean {
 	if (!config) return true;
 	const value = config[key];
-	return value === undefined ? true : value;
+	if (key === 'readyToProcessLabel') {
+		const rtp = value as ReadyToProcessLabelConfig;
+		if (rtp === undefined) return true;
+		if (typeof rtp === 'boolean') return rtp;
+		return rtp.briefing || rtp.planning || rtp.implementation;
+	}
+	return value === undefined ? true : (value as boolean);
 }
 
 /**

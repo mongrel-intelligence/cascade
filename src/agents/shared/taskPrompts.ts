@@ -7,6 +7,8 @@
  * identical instructions for each agent type.
  */
 
+import { parseRepoFullName } from '../../utils/repo.js';
+
 // ============================================================================
 // Work-item agents
 // ============================================================================
@@ -94,7 +96,7 @@ export function buildCheckFailurePrompt(prContext: {
 	repoFullName: string;
 	headSha: string;
 }): string {
-	const [owner, repo] = prContext.repoFullName.split('/');
+	const { owner, repo } = parseRepoFullName(prContext.repoFullName);
 
 	return `You are on branch \`${prContext.prBranch}\` for PR #${prContext.prNumber}.
 

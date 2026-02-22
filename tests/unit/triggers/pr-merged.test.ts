@@ -46,6 +46,17 @@ describe('PRMergedTrigger', () => {
 		vi.clearAllMocks();
 	});
 
+	describe('resolveAgentType', () => {
+		it('returns null (no agent)', () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {},
+			};
+			expect(trigger.resolveAgentType(ctx)).toBeNull();
+		});
+	});
+
 	describe('matches', () => {
 		it('matches when PR is closed', () => {
 			const ctx: TriggerContext = {

@@ -126,6 +126,16 @@ describe('CardMovedToBriefingTrigger', () => {
 		expect(trigger.matches(ctx)).toBe(false);
 	});
 
+	it('resolveAgentType returns briefing', () => {
+		const ctx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: {},
+		};
+
+		expect(trigger.resolveAgentType(ctx)).toBe('briefing');
+	});
+
 	it('handles and returns briefing agent', async () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
@@ -195,6 +205,16 @@ describe('CardMovedToTodoTrigger', () => {
 		};
 
 		expect(trigger.matches(ctx)).toBe(true);
+	});
+
+	it('resolveAgentType returns implementation', () => {
+		const ctx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: {},
+		};
+
+		expect(trigger.resolveAgentType(ctx)).toBe('implementation');
 	});
 
 	it('handles and returns implementation agent', async () => {

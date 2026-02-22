@@ -5,34 +5,44 @@ vi.mock('../../../src/utils/logging.js', () => ({
 		debug: vi.fn(),
 		info: vi.fn(),
 		warn: vi.fn(),
+		error: vi.fn(),
 	},
 }));
 
 // Use vi.hoisted to create mock objects before vi.mock factories run
-const { mockIssues, mockIssueComments, mockIssueSearch, mockIssueAttachments, mockMyself } =
-	vi.hoisted(() => ({
-		mockIssues: {
-			getIssue: vi.fn(),
-			editIssue: vi.fn(),
-			createIssue: vi.fn(),
-			doTransition: vi.fn(),
-			getTransitions: vi.fn(),
-		},
-		mockIssueComments: {
-			getComments: vi.fn(),
-			addComment: vi.fn(),
-			updateComment: vi.fn(),
-		},
-		mockIssueSearch: {
-			searchForIssuesUsingJql: vi.fn(),
-		},
-		mockIssueAttachments: {
-			addAttachment: vi.fn(),
-		},
-		mockMyself: {
-			getCurrentUser: vi.fn(),
-		},
-	}));
+const {
+	mockIssues,
+	mockIssueComments,
+	mockIssueSearch,
+	mockIssueAttachments,
+	mockMyself,
+	mockIssueTypes,
+} = vi.hoisted(() => ({
+	mockIssues: {
+		getIssue: vi.fn(),
+		editIssue: vi.fn(),
+		createIssue: vi.fn(),
+		doTransition: vi.fn(),
+		getTransitions: vi.fn(),
+	},
+	mockIssueComments: {
+		getComments: vi.fn(),
+		addComment: vi.fn(),
+		updateComment: vi.fn(),
+	},
+	mockIssueSearch: {
+		searchForIssuesUsingJql: vi.fn(),
+	},
+	mockIssueAttachments: {
+		addAttachment: vi.fn(),
+	},
+	mockMyself: {
+		getCurrentUser: vi.fn(),
+	},
+	mockIssueTypes: {
+		getIssueAllTypes: vi.fn(),
+	},
+}));
 
 vi.mock('jira.js', () => ({
 	Version3Client: vi.fn().mockImplementation(() => ({
@@ -41,6 +51,7 @@ vi.mock('jira.js', () => ({
 		issueSearch: mockIssueSearch,
 		issueAttachments: mockIssueAttachments,
 		myself: mockMyself,
+		issueTypes: mockIssueTypes,
 	})),
 }));
 
@@ -72,6 +83,7 @@ describe('jiraClient', () => {
 		mockIssueSearch.searchForIssuesUsingJql.mockReset();
 		mockIssueAttachments.addAttachment.mockReset();
 		mockMyself.getCurrentUser.mockReset();
+		mockIssueTypes.getIssueAllTypes.mockReset();
 		_resetCloudIdCache();
 	});
 
@@ -291,6 +303,35 @@ describe('jiraClient', () => {
 		});
 	});
 
+	describe('getIssueTypes', () => {
+		it('returns mapped issue types from the API', async () => {
+			mockIssueTypes.getIssueAllTypes.mockResolvedValue([
+				{ name: 'Task', subtask: false },
+				{ name: 'Subtask', subtask: true },
+				{ name: 'Bug', subtask: false },
+			]);
+
+			const result = await withJiraCredentials(creds, () => jiraClient.getIssueTypes());
+
+			expect(result).toEqual([
+				{ name: 'Task', subtask: false },
+				{ name: 'Subtask', subtask: true },
+				{ name: 'Bug', subtask: false },
+			]);
+		});
+
+		it('handles missing fields gracefully', async () => {
+			mockIssueTypes.getIssueAllTypes.mockResolvedValue([{}, { name: 'Story' }]);
+
+			const result = await withJiraCredentials(creds, () => jiraClient.getIssueTypes());
+
+			expect(result).toEqual([
+				{ name: '', subtask: false },
+				{ name: 'Story', subtask: false },
+			]);
+		});
+	});
+
 	describe('createIssue', () => {
 		it('calls createIssue with the provided fields', async () => {
 			const newIssue = { id: '10001', key: 'TEST-2' };
@@ -308,6 +349,68 @@ describe('jiraClient', () => {
 			expect(mockIssues.createIssue).toHaveBeenCalledWith(
 				expect.objectContaining({
 					fields: expect.objectContaining({ project: { key: 'TEST' } }),
+				}),
+			);
+		});
+
+		it('throws enriched error with JIRA response detail on failure', async () => {
+			const apiError = Object.assign(new Error('Request failed with status code 400'), {
+				response: {
+					data: {
+						errorMessages: [],
+						errors: { issuetype: 'Valid issue type is required' },
+					},
+				},
+			});
+			mockIssues.createIssue.mockRejectedValue(apiError);
+
+			const { logger } = await import('../../../src/utils/logging.js');
+
+			await expect(
+				withJiraCredentials(creds, () =>
+					jiraClient.createIssue({
+						project: { key: 'BTS' },
+						summary: 'Subtask',
+						issuetype: { name: 'Sub-task' },
+					}),
+				),
+			).rejects.toThrow(
+				/JIRA createIssue failed \(project=BTS, type=Sub-task\):.*Request failed.*Valid issue type is required/,
+			);
+
+			expect(logger.error).toHaveBeenCalledWith(
+				'JIRA createIssue failed',
+				expect.objectContaining({
+					project: 'BTS',
+					issueType: 'Sub-task',
+					detail: expect.objectContaining({
+						errors: { issuetype: 'Valid issue type is required' },
+					}),
+				}),
+			);
+		});
+
+		it('throws enriched error without detail when error has no response', async () => {
+			mockIssues.createIssue.mockRejectedValue(new Error('Network error'));
+
+			const { logger } = await import('../../../src/utils/logging.js');
+
+			await expect(
+				withJiraCredentials(creds, () =>
+					jiraClient.createIssue({
+						project: { key: 'TEST' },
+						summary: 'Issue',
+						issuetype: { name: 'Task' },
+					}),
+				),
+			).rejects.toThrow('JIRA createIssue failed (project=TEST, type=Task): Network error');
+
+			expect(logger.error).toHaveBeenCalledWith(
+				'JIRA createIssue failed',
+				expect.objectContaining({
+					project: 'TEST',
+					issueType: 'Task',
+					detail: undefined,
 				}),
 			);
 		});

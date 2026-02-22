@@ -63,6 +63,34 @@ function buildCtx(overrides: {
 }
 
 describe('JiraReadyToProcessLabelTrigger', () => {
+	describe('resolveAgentType()', () => {
+		it('returns briefing when issue is in Briefing status', () => {
+			expect(trigger.resolveAgentType(buildCtx({ statusName: 'Briefing' }))).toBe('briefing');
+		});
+
+		it('returns planning when issue is in Planning status', () => {
+			expect(trigger.resolveAgentType(buildCtx({ statusName: 'Planning' }))).toBe('planning');
+		});
+
+		it('returns implementation when issue is in To Do status', () => {
+			expect(trigger.resolveAgentType(buildCtx({ statusName: 'To Do' }))).toBe('implementation');
+		});
+
+		it('returns null when issue is in unmapped status', () => {
+			expect(trigger.resolveAgentType(buildCtx({ statusName: 'Done' }))).toBeNull();
+		});
+
+		it('returns null when issue has no status', () => {
+			const ctx = buildCtx({ statusName: undefined });
+			// Override payload to have no status field
+			const payload = ctx.payload as Record<string, unknown>;
+			const issue = payload.issue as Record<string, unknown>;
+			const fields = issue.fields as Record<string, unknown>;
+			fields.status = undefined;
+			expect(trigger.resolveAgentType(ctx)).toBeNull();
+		});
+	});
+
 	describe('matches()', () => {
 		it('matches when cascade-ready label is added', () => {
 			expect(trigger.matches(buildCtx({}))).toBe(true);

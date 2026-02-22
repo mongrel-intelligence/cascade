@@ -6,28 +6,20 @@ vi.mock('../../../src/config/provider.js', () => ({
 }));
 vi.mock('../../../src/config/configCache.js', () => ({
 	configCache: {
-		getSecrets: vi.fn().mockReturnValue(null),
 		getConfig: vi.fn().mockReturnValue(null),
 		getProjectByBoardId: vi.fn().mockReturnValue(null),
 		getProjectByRepo: vi.fn().mockReturnValue(null),
 		setConfig: vi.fn(),
 		setProjectByBoardId: vi.fn(),
 		setProjectByRepo: vi.fn(),
-		setSecrets: vi.fn(),
 		invalidate: vi.fn(),
 	},
 }));
 
 import { loadConfig } from '../../../src/config/provider.js';
-import { getProjectConfig, loadProjectConfig, routerConfig } from '../../../src/router/config.js';
+import { loadProjectConfig, routerConfig } from '../../../src/router/config.js';
 
 const mockLoadConfig = vi.mocked(loadConfig);
-
-// Helper to reset the module-level cache between tests
-async function resetProjectConfig(): Promise<void> {
-	// Re-import the module fresh to reset its state
-	vi.resetModules();
-}
 
 describe('routerConfig', () => {
 	it('has default Redis URL', () => {
@@ -51,35 +43,6 @@ describe('routerConfig', () => {
 	});
 });
 
-describe('getProjectConfig', () => {
-	it('throws when config has not been loaded yet', async () => {
-		// We need a fresh module state without cached config
-		// Use a dynamic import with a reset module
-		vi.resetModules();
-
-		// Re-mock after resetModules
-		vi.doMock('../../../src/config/provider.js', () => ({
-			loadConfig: vi.fn(),
-		}));
-		vi.doMock('../../../src/config/configCache.js', () => ({
-			configCache: {
-				getSecrets: vi.fn().mockReturnValue(null),
-				getConfig: vi.fn().mockReturnValue(null),
-				setConfig: vi.fn(),
-			},
-		}));
-
-		const { getProjectConfig: freshGetProjectConfig } = await import(
-			'../../../src/router/config.js'
-		);
-		expect(() => freshGetProjectConfig()).toThrow(
-			'[Router] Config not loaded yet. Call loadProjectConfig() first.',
-		);
-
-		vi.resetModules();
-	});
-});
-
 describe('loadProjectConfig', () => {
 	beforeEach(() => {
 		vi.resetModules();
@@ -88,7 +51,6 @@ describe('loadProjectConfig', () => {
 		}));
 		vi.doMock('../../../src/config/configCache.js', () => ({
 			configCache: {
-				getSecrets: vi.fn().mockReturnValue(null),
 				getConfig: vi.fn().mockReturnValue(null),
 				setConfig: vi.fn(),
 			},
@@ -186,13 +148,13 @@ describe('loadProjectConfig', () => {
 		expect(result.projects[0].pmType).toBe('trello');
 	});
 
-	it('returns cached result on subsequent calls', async () => {
+	it('always fetches fresh config from DB', async () => {
 		const innerMock = vi.fn().mockResolvedValue({
 			projects: [
 				{
 					id: 'p4',
-					name: 'Cached',
-					repo: 'owner/cached',
+					name: 'Fresh',
+					repo: 'owner/fresh',
 					orgId: 'org1',
 					baseBranch: 'main',
 					branchPrefix: 'cascade/',
@@ -206,7 +168,6 @@ describe('loadProjectConfig', () => {
 		}));
 		vi.doMock('../../../src/config/configCache.js', () => ({
 			configCache: {
-				getSecrets: vi.fn().mockReturnValue(null),
 				getConfig: vi.fn().mockReturnValue(null),
 				setConfig: vi.fn(),
 			},
@@ -214,8 +175,8 @@ describe('loadProjectConfig', () => {
 
 		const { loadProjectConfig: freshLoad } = await import('../../../src/router/config.js');
 		await freshLoad();
-		await freshLoad(); // Second call — should use cache
+		await freshLoad();
 
-		expect(innerMock).toHaveBeenCalledTimes(1);
+		expect(innerMock).toHaveBeenCalledTimes(2);
 	});
 });

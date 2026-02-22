@@ -1,5 +1,5 @@
 import { loadConfig } from '../config/provider.js';
-import type { CascadeConfig } from '../types/index.js';
+import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 
 // Minimal config types - what router needs for quick filtering
 export interface RouterProjectConfig {
@@ -31,14 +31,12 @@ export interface RouterConfig {
 	dockerNetwork: string;
 }
 
-// Cached project config for fast webhook filtering
-let projectConfig: { projects: RouterProjectConfig[] } | null = null;
-
-export async function loadProjectConfig(): Promise<{ projects: RouterProjectConfig[] }> {
-	if (projectConfig) return projectConfig;
-
+export async function loadProjectConfig(): Promise<{
+	projects: RouterProjectConfig[];
+	fullProjects: ProjectConfig[];
+}> {
 	const config: CascadeConfig = await loadConfig();
-	projectConfig = {
+	return {
 		projects: config.projects.map((p) => ({
 			id: p.id,
 			repo: p.repo,
@@ -57,16 +55,8 @@ export async function loadProjectConfig(): Promise<{ projects: RouterProjectConf
 				},
 			}),
 		})),
+		fullProjects: config.projects,
 	};
-	console.log(`[Router] Loaded config with ${projectConfig.projects.length} projects`);
-	return projectConfig;
-}
-
-export function getProjectConfig(): { projects: RouterProjectConfig[] } {
-	if (!projectConfig) {
-		throw new Error('[Router] Config not loaded yet. Call loadProjectConfig() first.');
-	}
-	return projectConfig;
 }
 
 // Router runtime config from environment

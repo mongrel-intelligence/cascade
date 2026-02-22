@@ -55,6 +55,17 @@ describe('ReviewRequestedTrigger', () => {
 		sender: { login: 'author' },
 	});
 
+	describe('resolveAgentType', () => {
+		it('returns review', () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {},
+			};
+			expect(trigger.resolveAgentType(ctx)).toBe('review');
+		});
+	});
+
 	describe('matches', () => {
 		it('does not match by default (opt-in trigger, disabled without config)', () => {
 			const ctx: TriggerContext = {

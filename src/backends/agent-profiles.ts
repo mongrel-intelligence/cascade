@@ -28,6 +28,7 @@ import { formatCheckStatus } from '../gadgets/github/core/getPRChecks.js';
 import { readWorkItem } from '../gadgets/pm/core/readWorkItem.js';
 import { githubClient } from '../github/client.js';
 import type { AgentInput } from '../types/index.js';
+import { parseRepoFullName } from '../utils/repo.js';
 import { resolveSquintDbPath } from '../utils/squintDb.js';
 import type { ContextInjection, LogWriter, ToolManifest } from './types.js';
 
@@ -287,7 +288,7 @@ async function fetchReviewContext(params: FetchContextParams): Promise<ContextIn
 
 	const repoFullName = params.input.repoFullName as string;
 	const prNumber = params.input.prNumber as number;
-	const [owner, repo] = repoFullName.split('/');
+	const { owner, repo } = parseRepoFullName(repoFullName);
 
 	// PR context first (most relevant for review)
 	const { injections: prInjections } = await fetchPRContextInjections(
@@ -313,7 +314,7 @@ async function fetchCIContext(params: FetchContextParams): Promise<ContextInject
 	const injections: ContextInjection[] = [];
 	const repoFullName = params.input.repoFullName as string;
 	const prNumber = params.input.prNumber as number;
-	const [owner, repo] = repoFullName.split('/');
+	const { owner, repo } = parseRepoFullName(repoFullName);
 
 	// PR context (details, diff, checks) — most relevant for CI fixing
 	const { injections: prInjections } = await fetchPRContextInjections(
@@ -348,7 +349,7 @@ async function fetchPRCommentResponseContext(
 	const injections: ContextInjection[] = [];
 	const repoFullName = params.input.repoFullName as string;
 	const prNumber = params.input.prNumber as number;
-	const [owner, repo] = repoFullName.split('/');
+	const { owner, repo } = parseRepoFullName(repoFullName);
 
 	// PR context (details, diff, checks)
 	const { injections: prInjections } = await fetchPRContextInjections(
@@ -481,7 +482,7 @@ const reviewProfile: AgentProfile = {
 	async preExecute({ input, logWriter }: PreExecuteParams): Promise<void> {
 		const repoFullName = input.repoFullName as string;
 		const prNumber = input.prNumber as number;
-		const [owner, repo] = repoFullName.split('/');
+		const { owner, repo } = parseRepoFullName(repoFullName);
 
 		logWriter('INFO', 'Posting initial review comment', { owner, repo, prNumber });
 		await githubClient.createPRComment(owner, repo, prNumber, '🔍 Reviewing PR...');
@@ -520,7 +521,7 @@ const respondToCIProfile: AgentProfile = {
 	async preExecute({ input, logWriter }: PreExecuteParams): Promise<void> {
 		const repoFullName = input.repoFullName as string;
 		const prNumber = input.prNumber as number;
-		const [owner, repo] = repoFullName.split('/');
+		const { owner, repo } = parseRepoFullName(repoFullName);
 
 		logWriter('INFO', 'Posting initial CI fix comment', { owner, repo, prNumber });
 		await githubClient.createPRComment(

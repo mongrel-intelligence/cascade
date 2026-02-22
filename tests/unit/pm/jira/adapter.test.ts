@@ -9,6 +9,7 @@ const { mockJiraClient, mockAdfToPlainText, mockMarkdownToAdf } = vi.hoisted(() 
 		addComment: vi.fn(),
 		updateComment: vi.fn(),
 		createIssue: vi.fn(),
+		getIssueTypes: vi.fn(),
 		searchIssues: vi.fn(),
 		getTransitions: vi.fn(),
 		transitionIssue: vi.fn(),
@@ -428,13 +429,86 @@ describe('JiraPMProvider', () => {
 		it('creates a subtask from subtasks-format checklistId', async () => {
 			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-100' });
 
-			// For 'subtasks-PROJ-5', the regex captures 'PROJ' (non-greedy match stops before trailing digits)
 			await provider.addChecklistItem('subtasks-PROJ-5', 'Another subtask');
 
 			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
 				expect.objectContaining({
-					parent: { key: 'PROJ' },
+					parent: { key: 'PROJ-5' },
 					summary: 'Another subtask',
+				}),
+			);
+		});
+
+		it('strips timestamp from checklist-format ID', async () => {
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-101' });
+
+			await provider.addChecklistItem('checklist-BTS-15-1234567890123', 'Subtask with ts');
+
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
+				expect.objectContaining({
+					parent: { key: 'BTS-15' },
+				}),
+			);
+		});
+
+		it('throws when parent key cannot be extracted', async () => {
+			await expect(provider.addChecklistItem('invalid-format', 'Subtask')).rejects.toThrow(
+				'Cannot extract parent issue key from checklist ID: invalid-format',
+			);
+		});
+
+		it('auto-detects subtask type when not configured', async () => {
+			const providerNoConfig = new JiraPMProvider({
+				...mockConfig,
+				issueTypes: undefined,
+			});
+			mockJiraClient.getIssueTypes.mockResolvedValue([
+				{ name: 'Task', subtask: false },
+				{ name: 'Subtask', subtask: true },
+			]);
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-102' });
+
+			await providerNoConfig.addChecklistItem('subtasks-PROJ-10', 'Auto-detected subtask');
+
+			expect(mockJiraClient.getIssueTypes).toHaveBeenCalled();
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
+				expect.objectContaining({
+					issuetype: { name: 'Subtask' },
+				}),
+			);
+		});
+
+		it('caches resolved subtask type across calls', async () => {
+			const providerNoConfig = new JiraPMProvider({
+				...mockConfig,
+				issueTypes: undefined,
+			});
+			mockJiraClient.getIssueTypes.mockResolvedValue([{ name: 'Sub-task', subtask: true }]);
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-103' });
+
+			await providerNoConfig.addChecklistItem('subtasks-PROJ-10', 'First');
+			await providerNoConfig.addChecklistItem('subtasks-PROJ-10', 'Second');
+
+			// getIssueTypes should only be called once
+			expect(mockJiraClient.getIssueTypes).toHaveBeenCalledOnce();
+		});
+
+		it('falls back to "Subtask" when no subtask type found', async () => {
+			const providerNoConfig = new JiraPMProvider({
+				...mockConfig,
+				issueTypes: undefined,
+			});
+			mockJiraClient.getIssueTypes.mockResolvedValue([
+				{ name: 'Task', subtask: false },
+				{ name: 'Bug', subtask: false },
+			]);
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-104' });
+
+			await providerNoConfig.addChecklistItem('subtasks-PROJ-10', 'Fallback subtask');
+
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
+				expect.objectContaining({
+					issuetype: { name: 'Subtask' },
 				}),
 			);
 		});

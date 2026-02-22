@@ -39,6 +39,10 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 		return true;
 	}
 
+	resolveAgentType(): string {
+		return 'review';
+	}
+
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		const payload = ctx.payload as GitHubPullRequestPayload;
 		const prNumber = payload.pull_request.number;

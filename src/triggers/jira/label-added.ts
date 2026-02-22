@@ -10,7 +10,10 @@
  * explicitly excludes events that also contain a status change in the changelog.
  */
 
-import { resolveJiraTriggerEnabled } from '../../config/triggerConfig.js';
+import {
+	resolveJiraTriggerEnabled,
+	resolveReadyToProcessEnabled,
+} from '../../config/triggerConfig.js';
 import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -93,6 +96,22 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 		return addedLabels.has(readyLabel);
 	}
 
+	resolveAgentType(ctx: TriggerContext): string | null {
+		const payload = ctx.payload as JiraLabelPayload;
+		const currentStatus = payload.issue?.fields?.status?.name;
+		if (!currentStatus) return null;
+
+		const jiraConfig = ctx.project.jira;
+		if (!jiraConfig?.statuses) return null;
+
+		for (const [cascadeStatus, jiraStatus] of Object.entries(jiraConfig.statuses)) {
+			if (jiraStatus.toLowerCase() === currentStatus.toLowerCase()) {
+				return STATUS_TO_AGENT[cascadeStatus] ?? null;
+			}
+		}
+		return null;
+	}
+
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		const payload = ctx.payload as JiraLabelPayload;
 		const issueKey = payload.issue?.key;
@@ -129,6 +148,15 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 				issueKey,
 				currentStatus,
 				configuredStatuses: jiraConfig.statuses,
+			});
+			return null;
+		}
+
+		// Check per-agent ready-to-process toggle
+		if (!resolveReadyToProcessEnabled(ctx.project.jira?.triggers, agentType)) {
+			logger.info('JIRA ready-to-process disabled for agent type, skipping', {
+				issueKey,
+				agentType,
 			});
 			return null;
 		}

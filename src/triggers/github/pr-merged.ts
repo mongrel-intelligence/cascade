@@ -3,6 +3,7 @@ import { githubClient } from '../../github/client.js';
 import { trelloClient } from '../../trello/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { parseRepoFullName } from '../../utils/repo.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
 import { extractTrelloCardId, hasTrelloCardUrl } from './utils.js';
 
@@ -22,9 +23,13 @@ export class PRMergedTrigger implements TriggerHandler {
 		return ctx.payload.action === 'closed';
 	}
 
+	resolveAgentType(): string | null {
+		return null; // No agent — performs card move directly
+	}
+
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		const payload = ctx.payload as GitHubPullRequestPayload;
-		const [owner, repo] = payload.repository.full_name.split('/');
+		const { owner, repo } = parseRepoFullName(payload.repository.full_name);
 		const prNumber = payload.pull_request.number;
 
 		// Fetch full PR details to check merged status

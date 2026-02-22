@@ -166,20 +166,61 @@ export async function upsertProjectIntegration(
 	category: string,
 	provider: string,
 	config: Record<string, unknown>,
-	triggers: Record<string, boolean> = {},
+	triggers?: Record<string, boolean>,
 ) {
 	const db = getDb();
-	// Delete then insert to handle the unique constraint
+	// Preserve existing triggers if not provided (prevents data loss from Integration tab saves)
+	let triggersToSave = triggers;
+	if (triggersToSave === undefined) {
+		const existing = await getIntegrationByProjectAndCategory(projectId, category);
+		triggersToSave = (existing?.triggers as Record<string, boolean>) ?? {};
+	}
+	const [row] = await db
+		.insert(projectIntegrations)
+		.values({ projectId, category, provider, config, triggers: triggersToSave })
+		.onConflictDoUpdate({
+			target: [projectIntegrations.projectId, projectIntegrations.category],
+			set: { provider, config, triggers: triggersToSave, updatedAt: new Date() },
+		})
+		.returning();
+	return row;
+}
+
+/**
+ * Update only the triggers column for an existing integration.
+ * Merges the provided triggers with any existing ones (nested keys are merged).
+ */
+export async function updateProjectIntegrationTriggers(
+	projectId: string,
+	category: string,
+	triggers: Record<string, unknown>,
+) {
+	const db = getDb();
+	const existing = await getIntegrationByProjectAndCategory(projectId, category);
+	if (!existing) {
+		throw new Error(`No ${category} integration found for project ${projectId}`);
+	}
+	// Deep-merge triggers: preserve existing top-level keys, merge nested objects
+	const existingTriggers = (existing.triggers as Record<string, unknown>) ?? {};
+	const merged: Record<string, unknown> = { ...existingTriggers };
+	for (const [key, value] of Object.entries(triggers)) {
+		if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+			// Merge nested object
+			const existingChild =
+				typeof merged[key] === 'object' && merged[key] !== null
+					? (merged[key] as Record<string, unknown>)
+					: {};
+			merged[key] = { ...existingChild, ...(value as Record<string, unknown>) };
+		} else {
+			merged[key] = value;
+		}
+	}
 	await db
-		.delete(projectIntegrations)
+		.update(projectIntegrations)
+		.set({ triggers: merged, updatedAt: new Date() })
 		.where(
 			and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.category, category)),
 		);
-	const [row] = await db
-		.insert(projectIntegrations)
-		.values({ projectId, category, provider, config, triggers })
-		.returning();
-	return row;
 }
 
 export async function deleteProjectIntegration(projectId: string, category: string) {

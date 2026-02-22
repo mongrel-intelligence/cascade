@@ -1,4 +1,5 @@
 import { findProjectByRepo, getIntegrationCredential } from '../config/provider.js';
+import { parseRepoFullName } from '../utils/repo.js';
 import type { GitHubJob } from './queue.js';
 
 /**
@@ -93,7 +94,7 @@ export async function addEyesReactionToPR(job: GitHubJob): Promise<void> {
 	}
 
 	// Fetch existing reviews to check for prior reviews from the reviewer
-	const [owner, repo] = repoFullName.split('/');
+	const { owner, repo } = parseRepoFullName(repoFullName);
 	const reviewsUrl = `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/reviews`;
 	const reviewsResponse = await fetch(reviewsUrl, {
 		headers: {

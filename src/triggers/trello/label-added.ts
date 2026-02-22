@@ -1,4 +1,7 @@
-import { resolveTrelloTriggerEnabled } from '../../config/triggerConfig.js';
+import {
+	resolveReadyToProcessEnabled,
+	resolveTrelloTriggerEnabled,
+} from '../../config/triggerConfig.js';
 import { trelloClient } from '../../trello/client.js';
 import { logger } from '../../utils/logging.js';
 import type {
@@ -18,6 +21,7 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 		if (!isTrelloWebhookPayload(ctx.payload)) return false;
 
 		// Check trigger config — default enabled for backward compatibility
+		// (checks if any agent has readyToProcessLabel enabled)
 		if (!resolveTrelloTriggerEnabled(ctx.project.trello?.triggers, 'readyToProcessLabel')) {
 			return false;
 		}
@@ -30,7 +34,12 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 		);
 	}
 
-	async handle(ctx: TriggerContext): Promise<TriggerResult> {
+	resolveAgentType(): string | null {
+		// Cannot determine agent type without fetching the card to get its current list ID
+		return null;
+	}
+
+	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		const payload = ctx.payload as TrelloWebhookPayload;
 		const cardId = payload.action.data.card?.id;
 
@@ -61,6 +70,12 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 		}
 
 		logger.info('Agent type determined', { agentType, cardId, listId: currentListId });
+
+		// Check per-agent ready-to-process toggle
+		if (!resolveReadyToProcessEnabled(ctx.project.trello?.triggers, agentType)) {
+			logger.info('Ready-to-process disabled for agent type, skipping', { agentType, cardId });
+			return null;
+		}
 
 		return {
 			agentType,

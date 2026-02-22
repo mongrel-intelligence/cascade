@@ -9,12 +9,11 @@
  */
 
 import { getProjectGitHubToken } from '../config/projects.js';
-import {
-	findProjectById,
-	findProjectByRepo,
-	getIntegrationCredential,
-} from '../config/provider.js';
+import { findProjectById, getIntegrationCredential } from '../config/provider.js';
+import { type PersonaIdentities, isCascadeBot } from '../github/personas.js';
 import { trelloClient, withTrelloCredentials } from '../trello/client.js';
+import type { ProjectConfig } from '../types/index.js';
+import { parseRepoFullName } from '../utils/repo.js';
 
 // In-memory JIRA CloudId cache keyed by baseUrl
 const jiraCloudIdCache = new Map<string, string>();
@@ -99,9 +98,21 @@ async function sendTrelloReaction(projectId: string, payload: unknown): Promise<
 
 /**
  * Send a GitHub 👀 reaction on an issue comment or PR review comment.
- * `repoFullName` is used to look up the project and resolve credentials.
+ *
+ * Only reacts if:
+ * 1. `personaIdentities` is provided
+ * 2. The comment body contains `@implementer-username` (case-insensitive)
+ * 3. The comment author is not a CASCADE bot (prevents reaction loops)
+ *
+ * The caller must resolve and pass the `project` — this avoids a redundant
+ * `findProjectByRepo` lookup since the router already resolves it.
  */
-async function sendGitHubReaction(repoFullName: string, payload: unknown): Promise<void> {
+async function sendGitHubReaction(
+	repoFullName: string,
+	payload: unknown,
+	personaIdentities?: PersonaIdentities,
+	project?: ProjectConfig,
+): Promise<void> {
 	const p = payload as Record<string, unknown>;
 
 	const comment = p.comment as Record<string, unknown> | undefined;
@@ -109,16 +120,37 @@ async function sendGitHubReaction(repoFullName: string, payload: unknown): Promi
 	const commentId = comment.id as number | undefined;
 	if (commentId === undefined) return;
 
-	// Distinguish issue_comment from pull_request_review_comment by the presence
-	// of p.issue (issue_comment) vs p.pull_request (pull_request_review_comment).
-	const isIssueComment = typeof p.issue === 'object' && p.issue !== null;
-	const isPRReviewComment = typeof p.pull_request === 'object' && p.pull_request !== null;
+	// Only react if we have persona identities
+	if (!personaIdentities) {
+		console.log('[Reactions] No persona identities provided, skipping GitHub reaction');
+		return;
+	}
 
-	if (!isIssueComment && !isPRReviewComment) return;
+	// Skip if comment author is a CASCADE bot (prevent reaction loops)
+	const commenter = (comment.user as Record<string, unknown> | undefined)?.login as
+		| string
+		| undefined;
+	if (commenter && isCascadeBot(commenter, personaIdentities)) {
+		console.log('[Reactions] Skipping GitHub reaction: comment is from a CASCADE bot', {
+			commenter,
+		});
+		return;
+	}
 
-	const project = await findProjectByRepo(repoFullName);
+	// Only react if the comment body contains @implementer mention
+	const body = comment.body as string | undefined;
+	const mentionRegex = new RegExp(`@${personaIdentities.implementer}\\b`, 'i');
+	if (!body || !mentionRegex.test(body)) {
+		console.log('[Reactions] Skipping GitHub reaction: no @implementer mention in comment body');
+		return;
+	}
+
+	// Determine comment type from payload shape
+	const commentType = getGitHubCommentType(p);
+	if (!commentType) return;
+
 	if (!project) {
-		console.warn('[Reactions] No project found for repo, skipping GitHub reaction', {
+		console.warn('[Reactions] No project provided, skipping GitHub reaction', {
 			repoFullName,
 		});
 		return;
@@ -132,13 +164,9 @@ async function sendGitHubReaction(repoFullName: string, payload: unknown): Promi
 		return;
 	}
 
-	const [owner, repo] = repoFullName.split('/');
-	let url: string;
-	if (isIssueComment) {
-		url = `https://api.github.com/repos/${owner}/${repo}/issues/comments/${commentId}/reactions`;
-	} else {
-		url = `https://api.github.com/repos/${owner}/${repo}/pulls/comments/${commentId}/reactions`;
-	}
+	const { owner, repo } = parseRepoFullName(repoFullName);
+	const segment = commentType === 'issue' ? 'issues' : 'pulls';
+	const url = `https://api.github.com/repos/${owner}/${repo}/${segment}/comments/${commentId}/reactions`;
 
 	const response = await fetch(url, {
 		method: 'POST',
@@ -156,6 +184,12 @@ async function sendGitHubReaction(repoFullName: string, payload: unknown): Promi
 	} else {
 		console.log('[Reactions] GitHub reaction sent for comment:', commentId);
 	}
+}
+
+function getGitHubCommentType(p: Record<string, unknown>): 'issue' | 'pull_request' | null {
+	if (typeof p.issue === 'object' && p.issue !== null) return 'issue';
+	if (typeof p.pull_request === 'object' && p.pull_request !== null) return 'pull_request';
+	return null;
 }
 
 async function sendJiraReaction(projectId: string, payload: unknown): Promise<void> {
@@ -220,8 +254,10 @@ async function sendJiraReaction(projectId: string, payload: unknown): Promise<vo
  * Send an acknowledgment reaction for an incoming webhook.
  * Dispatches to Trello (👀), GitHub (👀), or JIRA (💭) based on source.
  *
- * For GitHub, pass `repoFullName` as the `projectId` parameter — it will be
- * used to resolve the project via `findProjectByRepo`.
+ * For GitHub, pass `repoFullName` as the `projectId` parameter, along with
+ * `personaIdentities` and the already-resolved `project`. The reaction is
+ * only sent when the comment contains an @mention of the implementer bot
+ * (and is not from a bot itself).
  *
  * Fire-and-forget: errors are caught and logged, never propagated.
  */
@@ -229,12 +265,14 @@ export async function sendAcknowledgeReaction(
 	source: 'trello' | 'github' | 'jira',
 	projectId: string,
 	payload: unknown,
+	personaIdentities?: PersonaIdentities,
+	project?: ProjectConfig,
 ): Promise<void> {
 	try {
 		if (source === 'trello') {
 			await sendTrelloReaction(projectId, payload);
 		} else if (source === 'github') {
-			await sendGitHubReaction(projectId, payload);
+			await sendGitHubReaction(projectId, payload, personaIdentities, project);
 		} else if (source === 'jira') {
 			await sendJiraReaction(projectId, payload);
 		}

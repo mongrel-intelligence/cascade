@@ -25,18 +25,13 @@ vi.mock('../../../src/router/pre-actions.js', () => ({
 }));
 vi.mock('../../../src/router/config.js', () => ({
 	loadProjectConfig: vi.fn().mockResolvedValue({ projects: [] }),
-	getProjectConfig: vi.fn().mockReturnValue({ projects: [] }),
 }));
 
-// Import the functions we want to test - they are module-private so we test through exports
-// We'll use a re-export approach by importing the raw module
-// Since these functions aren't exported, we test them via the Hono app behavior instead
-
-import { getProjectConfig } from '../../../src/router/config.js';
+import { loadProjectConfig } from '../../../src/router/config.js';
 
 describe('router config integration', () => {
-	it('getProjectConfig returns cached projects', () => {
-		vi.mocked(getProjectConfig).mockReturnValue({
+	it('loadProjectConfig returns projects', async () => {
+		vi.mocked(loadProjectConfig).mockResolvedValue({
 			projects: [
 				{
 					id: 'p1',
@@ -50,7 +45,7 @@ describe('router config integration', () => {
 				},
 			],
 		});
-		const config = getProjectConfig();
+		const config = await loadProjectConfig();
 		expect(config.projects).toHaveLength(1);
 		expect(config.projects[0].id).toBe('p1');
 	});

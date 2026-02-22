@@ -14,9 +14,9 @@ import {
 	startWatchdog,
 } from '../../utils/index.js';
 import { injectLlmApiKeys } from '../../utils/llmEnv.js';
+import { parseRepoFullName } from '../../utils/repo.js';
 import { safeOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
-import { acknowledgeWithReaction } from '../shared/acknowledge-reaction.js';
 import type { AgentExecutionConfig } from '../shared/agent-execution.js';
 import { runAgentExecutionPipeline } from '../shared/agent-execution.js';
 import { processNextQueuedWebhook } from '../shared/webhook-queue.js';
@@ -29,8 +29,13 @@ async function updateInitialCommentWithError(
 	const input = result.agentInput as { repoFullName?: string };
 	if (!input.repoFullName || !result.prNumber) return;
 
-	const [owner, repo] = input.repoFullName.split('/');
-	if (!owner || !repo) return;
+	let owner: string;
+	let repo: string;
+	try {
+		({ owner, repo } = parseRepoFullName(input.repoFullName));
+	} catch {
+		return;
+	}
 
 	const { initialCommentId } = getSessionState();
 	if (!initialCommentId) return;
@@ -59,7 +64,7 @@ async function postAcknowledgmentComment(result: TriggerResult): Promise<void> {
 	if (!input.repoFullName) {
 		return;
 	}
-	const [owner, repo] = input.repoFullName.split('/');
+	const { owner, repo } = parseRepoFullName(input.repoFullName);
 	const prNumber = result.prNumber;
 	const message =
 		result.agentType === 'respond-to-pr-comment'
@@ -117,7 +122,7 @@ async function runGitHubAgentJob(
 	config: CascadeConfig,
 	githubToken: string,
 	registry: TriggerRegistry,
-	payload: unknown,
+	routerAckCommentId?: number,
 ): Promise<void> {
 	// Use the persona token for the agent that will do the work (for ack comments)
 	let prCommentToken: string;
@@ -127,10 +132,12 @@ async function runGitHubAgentJob(
 		prCommentToken = githubToken;
 	}
 
-	await withGitHubToken(prCommentToken, async () => {
-		await acknowledgeWithReaction('github', payload);
-		await postAcknowledgmentComment(result);
-	});
+	// Skip worker-side ack if the router already posted one
+	if (!routerAckCommentId) {
+		await withGitHubToken(prCommentToken, async () => {
+			await postAcknowledgmentComment(result);
+		});
+	}
 	setProcessing(true);
 	startWatchdog(config.defaults.watchdogTimeoutMs);
 
@@ -160,6 +167,7 @@ export async function processGitHubWebhook(
 	payload: unknown,
 	eventType: string,
 	registry: TriggerRegistry,
+	ackCommentId?: number,
 ): Promise<void> {
 	logger.info('Processing GitHub webhook', { eventType });
 
@@ -212,7 +220,18 @@ export async function processGitHubWebhook(
 
 	if (!result) {
 		logger.info('No trigger matched for GitHub webhook', { eventType, repoFullName });
+		// Clean up orphan ack if router posted one but no trigger matched
+		if (ackCommentId) {
+			logger.info('Cleaning up orphan ack comment', { ackCommentId, repoFullName });
+			const { deleteGitHubAck } = await import('../../router/acknowledgments.js');
+			await deleteGitHubAck(repoFullName, ackCommentId, githubToken).catch(() => {});
+		}
 		return;
+	}
+
+	// Pass ack comment ID into agent input for ProgressMonitor pre-seeding
+	if (ackCommentId) {
+		result.agentInput.ackCommentId = ackCommentId;
 	}
 
 	logger.info('GitHub trigger matched', {
@@ -221,7 +240,7 @@ export async function processGitHubWebhook(
 	});
 
 	if (result.agentType) {
-		await runGitHubAgentJob(result, project, config, githubToken, registry, payload);
+		await runGitHubAgentJob(result, project, config, githubToken, registry, ackCommentId);
 	} else {
 		logger.info('Trigger completed without agent', { prNumber: result.prNumber });
 	}

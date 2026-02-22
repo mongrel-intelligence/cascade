@@ -26,6 +26,12 @@ describe('Finish gadget', () => {
 		vi.clearAllMocks();
 	});
 
+	it('has exclusive set to prevent parallel execution with other gadgets', () => {
+		initSessionState('unknown');
+		const gadget = new Finish();
+		expect(gadget.exclusive).toBe(true);
+	});
+
 	it('throws TaskCompletionSignal when no agent type is set', async () => {
 		initSessionState('unknown');
 		const gadget = new Finish();

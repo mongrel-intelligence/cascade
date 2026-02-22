@@ -2,6 +2,7 @@ import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import { githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { parseRepoFullName } from '../../utils/repo.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
 import { extractTrelloCardId, hasTrelloCardUrl } from './utils.js';
 
@@ -39,9 +40,13 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		return true;
 	}
 
+	resolveAgentType(): string {
+		return 'respond-to-ci';
+	}
+
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		const payload = ctx.payload as GitHubCheckSuitePayload;
-		const [owner, repo] = payload.repository.full_name.split('/');
+		const { owner, repo } = parseRepoFullName(payload.repository.full_name);
 
 		// Get the first associated PR (usually there's only one)
 		const prRef = payload.check_suite.pull_requests[0];

@@ -22,13 +22,8 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 COPY package*.json .npmrc ./
 RUN npm ci --omit=dev --ignore-scripts
 
-# Copy built code — router and its transitive dependencies
-COPY --from=builder /app/dist/router ./dist/router
-COPY --from=builder /app/dist/config ./dist/config
-COPY --from=builder /app/dist/types ./dist/types
-COPY --from=builder /app/dist/db ./dist/db
-COPY --from=builder /app/dist/utils ./dist/utils
-COPY --from=builder /app/dist/trello ./dist/trello
+# Copy entire built output — avoids missing-module breaks when router gains new imports
+COPY --from=builder /app/dist ./dist
 
 # Copy config
 COPY config ./config

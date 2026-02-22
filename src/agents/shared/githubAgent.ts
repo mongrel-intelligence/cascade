@@ -7,6 +7,7 @@ import { githubClient, withGitHubToken } from '../../github/client.js';
 import { getPersonaToken } from '../../github/personas.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { parseRepoFullName } from '../../utils/repo.js';
 import type { AgentLogger } from '../utils/logging.js';
 import type { TrackingContext } from '../utils/tracking.js';
 import {
@@ -109,8 +110,11 @@ export async function executeGitHubAgent<
 >(definition: GitHubAgentDefinition<TInput, TContext>, input: TInput): Promise<AgentResult> {
 	const { prNumber, prBranch, repoFullName, project, interactive, autoAccept } = input;
 
-	const [owner, repo] = repoFullName.split('/');
-	if (!owner || !repo) {
+	let owner: string;
+	let repo: string;
+	try {
+		({ owner, repo } = parseRepoFullName(repoFullName));
+	} catch {
 		return { success: false, output: '', error: `Invalid repo format: ${repoFullName}` };
 	}
 	const id: RepoIdentifier = { owner, repo };
