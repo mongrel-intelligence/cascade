@@ -16,13 +16,7 @@ export async function resolveGitHubToken(
 ): Promise<string | undefined> {
 	if (!profile.needsGitHubToken) return undefined;
 
-	try {
-		return await getPersonaToken(projectId, agentType);
-	} catch {
-		// Fall back to legacy GITHUB_TOKEN for projects not yet migrated
-		const secrets = await getAllProjectCredentials(projectId);
-		return secrets.GITHUB_TOKEN;
-	}
+	return getPersonaToken(projectId, agentType);
 }
 
 /**
