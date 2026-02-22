@@ -109,6 +109,9 @@ vi.mock('../../../src/github/client.js', () => ({
 vi.mock('../../../src/agents/utils/setup.js', () => ({}));
 
 import { type AgentProfile, getAgentProfile } from '../../../src/backends/agent-profiles.js';
+import { githubClient } from '../../../src/github/client.js';
+
+const mockGithub = vi.mocked(githubClient);
 
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -192,6 +195,127 @@ describe('getAgentProfile', () => {
 
 		it('has a preExecute hook', () => {
 			expect(profile.preExecute).toBeDefined();
+		});
+
+		it('preExecute skips posting when ackCommentId exists', async () => {
+			const logWriter = vi.fn();
+			await profile.preExecute?.({
+				input: {
+					prNumber: 42,
+					prBranch: 'fix/ci',
+					repoFullName: 'acme/widgets',
+					ackCommentId: 12345,
+				},
+				logWriter,
+			});
+
+			expect(mockGithub.createPRComment).not.toHaveBeenCalled();
+		});
+
+		it('preExecute posts with ackMessage when no ackCommentId', async () => {
+			const logWriter = vi.fn();
+			mockGithub.createPRComment.mockResolvedValue(undefined as never);
+
+			await profile.preExecute?.({
+				input: {
+					prNumber: 42,
+					prBranch: 'fix/ci',
+					repoFullName: 'acme/widgets',
+					ackMessage: 'On it — checking the CI failures...',
+				},
+				logWriter,
+			});
+
+			expect(mockGithub.createPRComment).toHaveBeenCalledWith(
+				'acme',
+				'widgets',
+				42,
+				'On it — checking the CI failures...',
+			);
+		});
+
+		it('preExecute falls back to INITIAL_MESSAGES when no ackCommentId or ackMessage', async () => {
+			const logWriter = vi.fn();
+			mockGithub.createPRComment.mockResolvedValue(undefined as never);
+
+			await profile.preExecute?.({
+				input: {
+					prNumber: 42,
+					prBranch: 'fix/ci',
+					repoFullName: 'acme/widgets',
+				},
+				logWriter,
+			});
+
+			expect(mockGithub.createPRComment).toHaveBeenCalledWith(
+				'acme',
+				'widgets',
+				42,
+				expect.stringContaining('Fixing CI failures'),
+			);
+		});
+	});
+
+	describe('review profile preExecute', () => {
+		let profile: AgentProfile;
+
+		beforeEach(() => {
+			profile = getAgentProfile('review');
+		});
+
+		it('skips posting when ackCommentId exists', async () => {
+			const logWriter = vi.fn();
+			await profile.preExecute?.({
+				input: {
+					prNumber: 10,
+					repoFullName: 'org/repo',
+					ackCommentId: 999,
+				},
+				logWriter,
+			});
+
+			expect(mockGithub.createPRComment).not.toHaveBeenCalled();
+		});
+
+		it('posts with ackMessage when no ackCommentId', async () => {
+			const logWriter = vi.fn();
+			mockGithub.createPRComment.mockResolvedValue(undefined as never);
+
+			await profile.preExecute?.({
+				input: {
+					prNumber: 10,
+					repoFullName: 'org/repo',
+					ackMessage: 'Looking into the PR changes now...',
+				},
+				logWriter,
+			});
+
+			expect(mockGithub.createPRComment).toHaveBeenCalledWith(
+				'org',
+				'repo',
+				10,
+				'Looking into the PR changes now...',
+			);
+		});
+
+		it('falls back to INITIAL_MESSAGES when no ackCommentId or ackMessage', async () => {
+			const logWriter = vi.fn();
+			mockGithub.createPRComment.mockResolvedValue(undefined as never);
+
+			await profile.preExecute?.({
+				input: {
+					prNumber: 10,
+					repoFullName: 'org/repo',
+				},
+				logWriter,
+			});
+
+			expect(mockGithub.createPRComment).toHaveBeenCalledWith(
+				'org',
+				'repo',
+				10,
+				expect.stringContaining('Reviewing code'),
+			);
 		});
 	});
 

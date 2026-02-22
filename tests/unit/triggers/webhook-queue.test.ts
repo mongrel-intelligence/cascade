@@ -28,6 +28,7 @@ describe('processNextQueuedWebhook', () => {
 			{ action: 'test' },
 			undefined, // eventType comes from getEventType, not the queued entry
 			undefined, // no ackCommentId
+			undefined, // no ackMessage
 		);
 	});
 
@@ -39,7 +40,12 @@ describe('processNextQueuedWebhook', () => {
 
 		await new Promise((resolve) => setImmediate(resolve));
 
-		expect(processWebhook).toHaveBeenCalledWith({ action: 'test' }, 'pull_request', undefined);
+		expect(processWebhook).toHaveBeenCalledWith(
+			{ action: 'test' },
+			'pull_request',
+			undefined,
+			undefined,
+		);
 	});
 
 	it('forwards ackCommentId through the queue', async () => {
@@ -50,7 +56,12 @@ describe('processNextQueuedWebhook', () => {
 
 		await new Promise((resolve) => setImmediate(resolve));
 
-		expect(processWebhook).toHaveBeenCalledWith({ action: 'test' }, 'issue_comment', 'ack-123');
+		expect(processWebhook).toHaveBeenCalledWith(
+			{ action: 'test' },
+			'issue_comment',
+			'ack-123',
+			undefined,
+		);
 	});
 
 	it('forwards numeric ackCommentId through the queue', async () => {
@@ -61,7 +72,23 @@ describe('processNextQueuedWebhook', () => {
 
 		await new Promise((resolve) => setImmediate(resolve));
 
-		expect(processWebhook).toHaveBeenCalledWith({ action: 'test' }, undefined, 10646);
+		expect(processWebhook).toHaveBeenCalledWith({ action: 'test' }, undefined, 10646, undefined);
+	});
+
+	it('forwards ackMessage through the queue', async () => {
+		const processWebhook = vi.fn().mockResolvedValue(undefined);
+		enqueueWebhook({ action: 'test' }, 'issue_comment', 'ack-123', 'Looking into it...');
+
+		processNextQueuedWebhook(processWebhook, 'Test', (entry) => entry.eventType);
+
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(processWebhook).toHaveBeenCalledWith(
+			{ action: 'test' },
+			'issue_comment',
+			'ack-123',
+			'Looking into it...',
+		);
 	});
 
 	it('processes items in FIFO order preserving ackCommentId', async () => {
@@ -73,12 +100,12 @@ describe('processNextQueuedWebhook', () => {
 		processNextQueuedWebhook(processWebhook, 'Test');
 		await new Promise((resolve) => setImmediate(resolve));
 
-		expect(processWebhook).toHaveBeenCalledWith({ order: 1 }, undefined, 'first-ack');
+		expect(processWebhook).toHaveBeenCalledWith({ order: 1 }, undefined, 'first-ack', undefined);
 
 		// Process second item
 		processNextQueuedWebhook(processWebhook, 'Test');
 		await new Promise((resolve) => setImmediate(resolve));
 
-		expect(processWebhook).toHaveBeenCalledWith({ order: 2 }, undefined, 'second-ack');
+		expect(processWebhook).toHaveBeenCalledWith({ order: 2 }, undefined, 'second-ack', undefined);
 	});
 });

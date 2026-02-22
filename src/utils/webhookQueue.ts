@@ -6,6 +6,7 @@ interface QueuedWebhook {
 	payload: unknown;
 	eventType?: string; // Optional for backward compatibility (Trello doesn't need it)
 	ackCommentId?: string | number;
+	ackMessage?: string;
 	receivedAt: Date;
 }
 
@@ -15,6 +16,7 @@ export function enqueueWebhook(
 	payload: unknown,
 	eventType?: string,
 	ackCommentId?: string | number,
+	ackMessage?: string,
 ): boolean {
 	if (queue.length >= MAX_QUEUE_SIZE) {
 		logger.warn('Webhook queue full, rejecting', {
@@ -28,6 +30,7 @@ export function enqueueWebhook(
 		payload,
 		eventType,
 		ackCommentId,
+		ackMessage,
 		receivedAt: new Date(),
 	});
 

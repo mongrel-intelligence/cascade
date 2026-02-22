@@ -13,6 +13,7 @@ export function processNextQueuedWebhook(
 		payload: unknown,
 		eventType?: string,
 		ackCommentId?: string | number,
+		ackMessage?: string,
 	) => Promise<void>,
 	label: string,
 	getEventType?: (entry: { payload: unknown; eventType?: string }) => string | undefined,
@@ -24,8 +25,10 @@ export function processNextQueuedWebhook(
 		if (eventType) logContext.eventType = eventType;
 		logger.info(`Processing queued ${label} webhook`, logContext);
 		setImmediate(() => {
-			processWebhook(next.payload, eventType, next.ackCommentId).catch((err) => {
-				logger.error(`Failed to process queued ${label} webhook`, { error: String(err) });
+			processWebhook(next.payload, eventType, next.ackCommentId, next.ackMessage).catch((err) => {
+				logger.error(`Failed to process queued ${label} webhook`, {
+					error: String(err),
+				});
 			});
 		});
 	}

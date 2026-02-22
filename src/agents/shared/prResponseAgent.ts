@@ -2,13 +2,8 @@ import { githubClient } from '../../github/client.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
 import type { TrackingContext } from '../utils/tracking.js';
 import type { BuilderType } from './builderFactory.js';
-import type {
-	GitHubAgentContext,
-	GitHubAgentInput,
-	InitialCommentResult,
-	RepoIdentifier,
-} from './githubAgent.js';
-import { createInitialPRComment } from './githubAgent.js';
+import type { GitHubAgentContext, GitHubAgentInput, RepoIdentifier } from './githubAgent.js';
+import { type InitialCommentResult, createInitialPRComment } from './githubAgent.js';
 import { resolveModelConfig } from './modelResolution.js';
 import {
 	formatPRComments,
@@ -33,7 +28,6 @@ export interface PRResponseAgentInput extends GitHubAgentInput {
 	triggerCommentBody: string;
 	triggerCommentPath: string;
 	triggerCommentUrl: string;
-	acknowledgmentCommentId?: number;
 }
 
 export interface PRResponseContextData extends GitHubAgentContext {
@@ -138,15 +132,6 @@ export async function postInitialPRResponseComment(
 	id: RepoIdentifier,
 	headerMessage: string,
 ): Promise<InitialCommentResult> {
-	if (input.acknowledgmentCommentId) {
-		const comment = await githubClient.updatePRComment(
-			id.owner,
-			id.repo,
-			input.acknowledgmentCommentId,
-			headerMessage,
-		);
-		return { id: comment.id, htmlUrl: comment.htmlUrl, gadgetName: 'UpdatePRComment' };
-	}
 	return createInitialPRComment(input.prNumber, id, headerMessage);
 }
 
