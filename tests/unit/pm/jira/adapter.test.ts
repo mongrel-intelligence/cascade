@@ -495,6 +495,40 @@ describe('JiraPMProvider', () => {
 			expect(mockJiraClient.getIssueTypesForProject).toHaveBeenCalledOnce();
 		});
 
+		it('passes description as ADF to createIssue when provided', async () => {
+			const adfDoc = { type: 'doc', version: 1, content: [{ type: 'paragraph' }] };
+			mockMarkdownToAdf.mockReturnValue(adfDoc);
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-105' });
+
+			await provider.addChecklistItem(
+				'checklist-PROJ-1-1234567890',
+				'Subtask with description',
+				false,
+				'**Files:** `src/api.ts`\n- Add POST route',
+			);
+
+			expect(mockMarkdownToAdf).toHaveBeenCalledWith('**Files:** `src/api.ts`\n- Add POST route');
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
+				expect.objectContaining({
+					project: { key: 'PROJ' },
+					parent: { key: 'PROJ-1' },
+					summary: 'Subtask with description',
+					issuetype: { name: 'Sub-task' },
+					description: adfDoc,
+				}),
+			);
+		});
+
+		it('omits description from createIssue when not provided', async () => {
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-106' });
+
+			await provider.addChecklistItem('checklist-PROJ-1-1234567890', 'No description subtask');
+
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
+				expect.not.objectContaining({ description: expect.anything() }),
+			);
+		});
+
 		it('falls back to "Subtask" when no subtask type found', async () => {
 			const providerNoConfig = new JiraPMProvider({
 				...mockConfig,
