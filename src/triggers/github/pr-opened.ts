@@ -1,4 +1,4 @@
-import { resolveReviewScope } from '../../config/triggerConfig.js';
+import { isReviewScopeEnabled, resolveReviewScope } from '../../config/triggerConfig.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubPullRequestPayload } from './types.js';
@@ -18,7 +18,7 @@ export class PROpenedTrigger implements TriggerHandler {
 
 		// Check trigger config — only fire when reviewScope includes 'all'
 		const reviewScope = resolveReviewScope(ctx.project.github?.triggers);
-		if (!reviewScope.includes('all')) {
+		if (!isReviewScopeEnabled(reviewScope, 'all')) {
 			return false;
 		}
 

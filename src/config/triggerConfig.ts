@@ -153,18 +153,24 @@ export function resolveJiraTriggerEnabled(
 	return value === undefined ? true : (value as boolean);
 }
 
+/** Boolean-only keys from GitHubTriggerConfig (excludes array fields like reviewScope). */
+type GitHubBooleanTriggerKey = {
+	[K in keyof GitHubTriggerConfig]: GitHubTriggerConfig[K] extends boolean ? K : never;
+}[keyof GitHubTriggerConfig];
+
 /**
  * Resolve whether a GitHub trigger is enabled based on project trigger config.
  * Returns `true` (enabled) when no config is present (backward compatible).
+ * Only accepts boolean trigger keys — use `resolveReviewScope` for array-typed fields.
  */
 export function resolveGitHubTriggerEnabled(
 	config: Partial<GitHubTriggerConfig> | undefined,
-	key: keyof GitHubTriggerConfig,
+	key: GitHubBooleanTriggerKey,
 ): boolean {
 	if (!config) return true;
 	const value = config[key];
 	if (value === undefined) return true;
-	return value as boolean;
+	return value;
 }
 
 /**

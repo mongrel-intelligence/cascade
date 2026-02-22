@@ -1,4 +1,4 @@
-import { resolveReviewScope } from '../../config/triggerConfig.js';
+import { isReviewScopeEnabled, resolveReviewScope } from '../../config/triggerConfig.js';
 import { type CheckSuiteStatus, githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -68,7 +68,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 
 		// Check trigger config — only fire when reviewScope includes 'own' or 'all'
 		const reviewScope = resolveReviewScope(ctx.project.github?.triggers);
-		if (!reviewScope.includes('own') && !reviewScope.includes('all')) {
+		if (!isReviewScopeEnabled(reviewScope, 'own') && !isReviewScopeEnabled(reviewScope, 'all')) {
 			return false;
 		}
 
@@ -102,7 +102,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 
 		// Gate on PR author being the implementer persona — unless scope includes 'all'
 		const reviewScope = resolveReviewScope(ctx.project.github?.triggers);
-		if (!reviewScope.includes('all')) {
+		if (!isReviewScopeEnabled(reviewScope, 'all')) {
 			if (!ctx.personaIdentities) return null;
 			const implLogin = ctx.personaIdentities.implementer;
 			if (prDetails.user.login !== implLogin && prDetails.user.login !== `${implLogin}[bot]`) {

@@ -46,7 +46,7 @@ export function TriggerToggles({
 
 				if (item.inputType === 'multi-select' && item.options) {
 					// Multi-select: render one checkbox per option
-					const selected = getMultiSelectValue(values, item.key);
+					const selected = getMultiSelectValue(values, item.key, item.defaultArrayValue);
 					return (
 						<div key={item.key} className="space-y-2">
 							<div>

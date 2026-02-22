@@ -19,6 +19,8 @@ export interface TriggerDef {
 	inputType?: 'checkbox' | 'multi-select';
 	/** Available options for multi-select triggers */
 	options?: string[];
+	/** Default array value for multi-select triggers (used when no value is stored) */
+	defaultArrayValue?: string[];
 }
 
 /**
@@ -134,6 +136,7 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 			defaultValue: false,
 			inputType: 'multi-select' as const,
 			options: ['own', 'all', 'reviewRequested'],
+			defaultArrayValue: ['reviewRequested'],
 			scmProvider: 'github',
 			category: 'scm',
 		},
@@ -214,12 +217,16 @@ export function getTriggerValue(
 
 /**
  * Get a multi-select (array) value from a triggers record.
- * Returns the stored array, or an empty array if absent.
+ * Returns the stored array, the provided defaultValue, or an empty array if absent.
  */
-export function getMultiSelectValue(triggers: Record<string, unknown>, key: string): string[] {
+export function getMultiSelectValue(
+	triggers: Record<string, unknown>,
+	key: string,
+	defaultValue?: string[],
+): string[] {
 	const val = triggers[key];
 	if (Array.isArray(val)) return val as string[];
-	return [];
+	return defaultValue ?? [];
 }
 
 /**

@@ -1,4 +1,4 @@
-import { resolveReviewScope } from '../../config/triggerConfig.js';
+import { isReviewScopeEnabled, resolveReviewScope } from '../../config/triggerConfig.js';
 import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -13,8 +13,9 @@ import { resolveWorkItemId } from './utils.js';
  * 2. Checks if the requested reviewer is a CASCADE persona (implementer OR reviewer)
  * 3. Fires the `review` agent with PR number and work item ID from PR body
  *
- * Default: **disabled** (opt-in via trigger config). Enable by setting
- * `github.triggers.reviewRequested = true` in integration config.
+ * Default: **enabled** — the default `reviewScope` of `['reviewRequested']` includes
+ * this trigger. Disable by setting `reviewScope` to a value that excludes
+ * `'reviewRequested'` (e.g., `['own']`).
  *
  * Registration: should be registered BEFORE CheckSuiteSuccessTrigger so that
  * both triggers can independently fire review. The HEAD-SHA dedup in
@@ -33,7 +34,7 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 
 		// Check trigger config — only fire when reviewScope includes 'reviewRequested'
 		const reviewScope = resolveReviewScope(ctx.project.github?.triggers);
-		if (!reviewScope.includes('reviewRequested')) {
+		if (!isReviewScopeEnabled(reviewScope, 'reviewRequested')) {
 			return false;
 		}
 

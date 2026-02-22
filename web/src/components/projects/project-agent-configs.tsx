@@ -84,7 +84,7 @@ function extractRelevantTriggers(
 	for (const t of triggerDefs) {
 		if (t.inputType === 'multi-select') {
 			const val = allTriggers[t.key];
-			relevant[t.key] = Array.isArray(val) ? val : [];
+			relevant[t.key] = Array.isArray(val) ? val : (t.defaultArrayValue ?? []);
 		} else if (t.key.includes('.')) {
 			extractNestedTrigger(relevant, allTriggers, t.key, t.defaultValue);
 		} else {
@@ -159,7 +159,7 @@ function AgentSection({
 				if (t.inputType === 'multi-select') {
 					// Preserve array values for multi-select triggers
 					const val = localScmTriggers[t.key];
-					relevant[t.key] = Array.isArray(val) ? val : [];
+					relevant[t.key] = Array.isArray(val) ? val : (t.defaultArrayValue ?? []);
 				} else {
 					relevant[t.key] = localScmTriggers[t.key] ?? t.defaultValue;
 				}
