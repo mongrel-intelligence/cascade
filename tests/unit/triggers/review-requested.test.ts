@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReviewRequestedTrigger } from '../../../src/triggers/github/review-requested.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
+
+vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
+	lookupWorkItemForPR: vi.fn(),
+}));
+import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 
 describe('ReviewRequestedTrigger', () => {
 	const trigger = new ReviewRequestedTrigger();
@@ -35,6 +40,11 @@ describe('ReviewRequestedTrigger', () => {
 		implementer: 'cascade-impl',
 		reviewer: 'cascade-reviewer',
 	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+	});
 
 	const makeReviewRequestedPayload = (reviewerLogin = 'cascade-reviewer') => ({
 		action: 'review_requested',
@@ -158,7 +168,7 @@ describe('ReviewRequestedTrigger', () => {
 			expect(result).toBeNull();
 		});
 
-		it('returns null when PR body has no Trello card URL', async () => {
+		it('fires without work item when PR has no work item reference', async () => {
 			const ctx: TriggerContext = {
 				project: mockProjectWithReviewRequested,
 				source: 'github',
@@ -172,7 +182,8 @@ describe('ReviewRequestedTrigger', () => {
 				personaIdentities: mockPersonaIdentities,
 			};
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expect(result).not.toBeNull();
+			expect(result?.workItemId).toBeUndefined();
 		});
 
 		it('triggers review agent when reviewer persona is requested', async () => {

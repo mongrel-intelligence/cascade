@@ -15,6 +15,11 @@ vi.mock('../../../src/github/client.js', () => ({
 
 import { githubClient } from '../../../src/github/client.js';
 
+vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
+	lookupWorkItemForPR: vi.fn(),
+}));
+import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
+
 describe('CheckSuiteFailureTrigger', () => {
 	const trigger = new CheckSuiteFailureTrigger();
 
@@ -52,6 +57,7 @@ describe('CheckSuiteFailureTrigger', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		resetFixAttempts(42);
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 	});
 
 	describe('resolveAgentType', () => {
@@ -150,6 +156,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				headSha: 'sha123',
 				baseRef: 'main',
 				merged: false,
+				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
 				allPassing: false,
@@ -164,6 +171,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				project: mockProject,
 				source: 'github',
 				payload: makeFailurePayload(),
+				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
 			};
 
 			const result = await trigger.handle(ctx);
@@ -193,12 +201,14 @@ describe('CheckSuiteFailureTrigger', () => {
 				headSha: 'sha123',
 				baseRef: 'develop',
 				merged: false,
+				user: { login: 'cascade-impl' },
 			});
 
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
 				payload: makeFailurePayload(),
+				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
 			};
 
 			const result = await trigger.handle(ctx);
@@ -207,16 +217,42 @@ describe('CheckSuiteFailureTrigger', () => {
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
-		it('returns null when PR has no Trello URL', async () => {
+		it('returns null when PR not authored by implementer persona', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
-				body: 'No Trello link',
+				body: 'https://trello.com/c/abc123/card-name',
 				state: 'open',
 				headRef: 'feature/test',
 				headSha: 'sha123',
 				baseRef: 'main',
 				merged: false,
+				user: { login: 'some-human' },
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeFailurePayload(),
+				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+		});
+
+		it('returns null when no personaIdentities available', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				user: { login: 'cascade-impl' },
 			});
 
 			const ctx: TriggerContext = {
@@ -228,6 +264,38 @@ describe('CheckSuiteFailureTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toBeNull();
+		});
+
+		it('fires without work item when PR body has no reference', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'No work item link',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: false,
+				totalCount: 1,
+				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'failure' }],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeFailurePayload(),
+				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.workItemId).toBeUndefined();
+			expect(result?.agentInput.cardId).toBeUndefined();
 		});
 
 		it('returns null when not all checks are complete', async () => {
@@ -240,6 +308,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				headSha: 'sha123',
 				baseRef: 'main',
 				merged: false,
+				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
 				allPassing: false,
@@ -254,6 +323,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				project: mockProject,
 				source: 'github',
 				payload: makeFailurePayload(),
+				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
 			};
 
 			const result = await trigger.handle(ctx);
@@ -271,6 +341,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				headSha: 'sha123',
 				baseRef: 'main',
 				merged: false,
+				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
 				allPassing: true,
@@ -285,6 +356,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				project: mockProject,
 				source: 'github',
 				payload: makeFailurePayload(),
+				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
 			};
 
 			const result = await trigger.handle(ctx);
@@ -302,6 +374,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				headSha: 'sha123',
 				baseRef: 'main',
 				merged: false,
+				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
 				allPassing: false,
@@ -313,6 +386,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				project: mockProject,
 				source: 'github',
 				payload: makeFailurePayload(),
+				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
 			};
 
 			// First 3 attempts should succeed
@@ -342,6 +416,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				headSha: 'sha123',
 				baseRef: 'main',
 				merged: false,
+				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
 				allPassing: false,
@@ -353,6 +428,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				project: mockProject,
 				source: 'github',
 				payload: makeFailurePayload(),
+				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
 			};
 
 			// Use up 3 attempts

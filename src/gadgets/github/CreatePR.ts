@@ -1,5 +1,7 @@
 import { Gadget, z } from 'llmist';
-import { getBaseBranch, recordPRCreation } from '../sessionState.js';
+import { linkPRToWorkItem } from '../../db/repositories/prWorkItemsRepository.js';
+import { logger } from '../../utils/logging.js';
+import { getBaseBranch, getCardId, getProjectId, recordPRCreation } from '../sessionState.js';
 import { createPR } from './core/createPR.js';
 
 export class CreatePR extends Gadget({
@@ -91,6 +93,22 @@ If hooks fail or timeout, the full output will be shown.`,
 		});
 
 		recordPRCreation(result.prUrl);
+
+		// Persist PR ↔ work item link (best-effort, don't fail PR creation)
+		const projectId = getProjectId();
+		const cardId = getCardId();
+		if (projectId && cardId) {
+			try {
+				await linkPRToWorkItem(projectId, result.repoFullName, result.prNumber, cardId);
+			} catch (err) {
+				logger.warn('Failed to persist PR-work-item link', {
+					projectId,
+					prNumber: result.prNumber,
+					cardId,
+					error: String(err),
+				});
+			}
+		}
 
 		if (result.alreadyExisted) {
 			return `PR already exists for this branch: #${result.prNumber} — ${result.prUrl}`;

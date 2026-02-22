@@ -185,6 +185,8 @@ function createAgentBuilderWithGadgets(
 	llmCallAccumulator?: AccumulatedLlmCall[],
 	runId?: string,
 	baseBranch?: string,
+	projectId?: string,
+	cardId?: string,
 ): BuilderType {
 	return createConfiguredBuilder({
 		client,
@@ -203,6 +205,8 @@ function createAgentBuilderWithGadgets(
 		llmCallAccumulator,
 		runId,
 		baseBranch,
+		projectId,
+		cardId,
 		// Implementation agent uses sequential execution to ensure file operations
 		// are properly ordered (e.g., FileSearchAndReplace then ReadFile on same file)
 		postConfigure:
@@ -411,6 +415,8 @@ export async function executeAgent(
 				llmCallAccumulator,
 				runId,
 				project.baseBranch,
+				project.id,
+				cardId,
 			),
 
 		injectSyntheticCalls: ({ builder, ctx, trackingContext, repoDir }) =>

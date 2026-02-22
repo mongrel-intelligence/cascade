@@ -44,6 +44,10 @@ export interface CreateBuilderOptions {
 	runId?: string;
 	/** Base branch for PR creation (e.g. 'main', 'dev'). Passed to session state. */
 	baseBranch?: string;
+	/** Project ID for PR ↔ work item linking. Passed to session state. */
+	projectId?: string;
+	/** Work item (card) ID for PR ↔ work item linking. Passed to session state. */
+	cardId?: string;
 }
 
 const MAX_GADGETS_PER_RESPONSE = 25;
@@ -72,7 +76,7 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 
 	// Initialize session state for gadgets (e.g., Finish checks PR requirement for implementation)
 	if (!skipSessionState) {
-		initSessionState(agentType, options.baseBranch);
+		initSessionState(agentType, options.baseBranch, options.projectId, options.cardId);
 	}
 
 	let builder = new AgentBuilder(client)

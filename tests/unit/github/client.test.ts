@@ -95,6 +95,7 @@ describe('githubClient', () => {
 					head: { ref: 'feature/test', sha: 'sha123' },
 					base: { ref: 'main' },
 					merged: false,
+					user: { login: 'test-user' },
 				},
 			});
 
@@ -112,6 +113,7 @@ describe('githubClient', () => {
 				headSha: 'sha123',
 				baseRef: 'main',
 				merged: false,
+				user: { login: 'test-user' },
 			});
 			expect(mockPulls.get).toHaveBeenCalledWith({
 				owner: 'owner',
@@ -120,7 +122,7 @@ describe('githubClient', () => {
 			});
 		});
 
-		it('handles null merged field', async () => {
+		it('handles null merged field and missing user', async () => {
 			mockPulls.get.mockResolvedValue({
 				data: {
 					number: 42,
@@ -131,6 +133,7 @@ describe('githubClient', () => {
 					head: { ref: 'feat', sha: 'abc' },
 					base: { ref: 'main' },
 					merged: null,
+					user: null,
 				},
 			});
 
@@ -139,6 +142,7 @@ describe('githubClient', () => {
 			);
 
 			expect(result.merged).toBe(false);
+			expect(result.user).toEqual({ login: 'unknown' });
 		});
 	});
 
