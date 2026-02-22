@@ -26,6 +26,12 @@ describe('Finish gadget', () => {
 		vi.clearAllMocks();
 	});
 
+	it('has maxConcurrent set to 1 to prevent parallel execution with other gadgets', () => {
+		initSessionState('unknown');
+		const gadget = new Finish();
+		expect(gadget.maxConcurrent).toBe(1);
+	});
+
 	it('throws TaskCompletionSignal when no agent type is set', async () => {
 		initSessionState('unknown');
 		const gadget = new Finish();

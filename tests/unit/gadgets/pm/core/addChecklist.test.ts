@@ -55,19 +55,19 @@ describe('addChecklist', () => {
 		expect(result).toBe('Checklist "Empty" created with 0 items on work item item1');
 	});
 
-	it('returns error message on failure', async () => {
+	it('throws on createChecklist failure', async () => {
 		mockProvider.createChecklist.mockRejectedValue(new Error('API error'));
 
-		const result = await addChecklist({
-			workItemId: 'item1',
-			checklistName: 'Tasks',
-			items: ['A'],
-		});
-
-		expect(result).toBe('Error adding checklist: API error');
+		await expect(
+			addChecklist({
+				workItemId: 'item1',
+				checklistName: 'Tasks',
+				items: ['A'],
+			}),
+		).rejects.toThrow('API error');
 	});
 
-	it('returns error if addChecklistItem fails', async () => {
+	it('throws if addChecklistItem fails', async () => {
 		mockProvider.createChecklist.mockResolvedValue({
 			id: 'cl1',
 			name: 'Tasks',
@@ -76,12 +76,12 @@ describe('addChecklist', () => {
 		});
 		mockProvider.addChecklistItem.mockRejectedValue(new Error('Add item failed'));
 
-		const result = await addChecklist({
-			workItemId: 'item1',
-			checklistName: 'Tasks',
-			items: ['A'],
-		});
-
-		expect(result).toBe('Error adding checklist: Add item failed');
+		await expect(
+			addChecklist({
+				workItemId: 'item1',
+				checklistName: 'Tasks',
+				items: ['A'],
+			}),
+		).rejects.toThrow('Add item failed');
 	});
 });
