@@ -211,12 +211,16 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 };
 
 /**
- * Get trigger definitions for a specific agent type, filtered by PM provider.
+ * Get trigger definitions for a specific agent type, filtered by PM provider and/or category.
  */
-export function getTriggersForAgent(agentType: string, pmProvider?: string): TriggerDef[] {
+export function getTriggersForAgent(
+	agentType: string,
+	opts?: { pmProvider?: string; category?: 'pm' | 'scm' },
+): TriggerDef[] {
 	const triggers = AGENT_TRIGGER_MAP[agentType] ?? [];
 	return triggers.filter((t) => {
-		if (t.pmProvider && pmProvider && t.pmProvider !== pmProvider) return false;
+		if (opts?.category && t.category !== opts.category) return false;
+		if (t.pmProvider && opts?.pmProvider && t.pmProvider !== opts.pmProvider) return false;
 		return true;
 	});
 }
