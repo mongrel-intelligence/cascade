@@ -169,17 +169,6 @@ describe('PROpenedTrigger', () => {
 		});
 	});
 
-	describe('resolveAgentType', () => {
-		it('returns respond-to-review', () => {
-			const ctx: TriggerContext = {
-				project: mockProject,
-				source: 'github',
-				payload: {},
-			};
-			expect(trigger.resolveAgentType(ctx)).toBe('respond-to-review');
-		});
-	});
-
 	describe('handle', () => {
 		it('returns result when PR body has Trello URL', async () => {
 			const ctx: TriggerContext = {

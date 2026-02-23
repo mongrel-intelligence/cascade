@@ -10,23 +10,7 @@ import { jiraClient } from '../../jira/client.js';
 import { getJiraConfig } from '../../pm/config.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
-
-interface JiraWebhookPayload {
-	webhookEvent: string;
-	issue?: {
-		id?: string;
-		key: string;
-		fields?: {
-			project?: { key?: string };
-			status?: { name?: string };
-		};
-	};
-	comment?: {
-		id?: string;
-		body?: unknown;
-		author?: { displayName?: string; accountId?: string };
-	};
-}
+import type { JiraWebhookPayload } from './types.js';
 
 // Cache authenticated user info to avoid repeated API calls
 let cachedUserInfo: { accountId: string; displayName: string } | null = null;
@@ -118,10 +102,6 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 
 		const payload = ctx.payload as JiraWebhookPayload;
 		return payload.webhookEvent === 'comment_created' || payload.webhookEvent === 'comment_updated';
-	}
-
-	resolveAgentType(): string {
-		return 'respond-to-planning-comment';
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {

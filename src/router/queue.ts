@@ -1,5 +1,7 @@
 import { type ConnectionOptions, Queue } from 'bullmq';
 import { captureException } from '../sentry.js';
+import type { TriggerResult } from '../types/index.js';
+import { logger } from '../utils/logging.js';
 import { routerConfig } from './config.js';
 
 // Parse Redis URL to connection options
@@ -15,6 +17,9 @@ function parseRedisUrl(url: string): ConnectionOptions {
 const connection = parseRedisUrl(routerConfig.redisUrl);
 
 // Job types
+// Note: ackCommentId is `string` for Trello/JIRA (string IDs from their APIs)
+// and `number` for GitHub (numeric IDs from GitHub API). Downstream consumers
+// (ProgressMonitor) normalize to string via the adapter layer.
 export interface TrelloJob {
 	type: 'trello';
 	source: 'trello';
@@ -24,6 +29,7 @@ export interface TrelloJob {
 	actionType: string;
 	receivedAt: string;
 	ackCommentId?: string;
+	triggerResult?: TriggerResult;
 }
 
 export interface GitHubJob {
@@ -35,6 +41,7 @@ export interface GitHubJob {
 	receivedAt: string;
 	ackCommentId?: number;
 	ackMessage?: string;
+	triggerResult?: TriggerResult;
 }
 
 export interface JiraJob {
@@ -46,6 +53,7 @@ export interface JiraJob {
 	webhookEvent: string;
 	receivedAt: string;
 	ackCommentId?: string;
+	triggerResult?: TriggerResult;
 }
 
 export type CascadeJob = TrelloJob | GitHubJob | JiraJob;
@@ -67,17 +75,17 @@ export const jobQueue = new Queue<CascadeJob>('cascade-jobs', {
 
 // Queue event logging
 jobQueue.on('error', (err) => {
-	console.error('[Queue] Error:', err);
+	logger.error('Queue error', { error: String(err) });
 	captureException(err, { tags: { source: 'job_queue' } });
 });
 
-console.log('[Queue] Initialized with Redis at', routerConfig.redisUrl);
+logger.info('Queue initialized', { redisUrl: routerConfig.redisUrl });
 
 // Helper to add a job
 export async function addJob(job: CascadeJob): Promise<string> {
 	const jobId = `${job.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 	const result = await jobQueue.add(job.type, job, { jobId });
-	console.log('[Queue] Job added:', { id: result.id, type: job.type });
+	logger.info('Job added to queue', { id: result.id, type: job.type });
 	return result.id ?? jobId;
 }
 
