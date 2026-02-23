@@ -1,6 +1,10 @@
 import { getProjectGitHubToken } from '../config/projects.js';
 import { findProjectByRepo } from '../config/provider.js';
-import { getJiraAuthForProject, getTrelloCredentialsForProject } from './platformClients.js';
+import {
+	resolveGitHubHeaders,
+	resolveJiraCredentials,
+	resolveTrelloCredentials,
+} from './platformClients.js';
 import type { CascadeJob, GitHubJob, JiraJob, TrelloJob } from './queue.js';
 
 /**
@@ -73,7 +77,7 @@ interface TimeoutInfo {
 }
 
 async function notifyTrelloTimeout(job: TrelloJob, info: TimeoutInfo): Promise<void> {
-	const creds = await getTrelloCredentialsForProject(job.projectId);
+	const creds = await resolveTrelloCredentials(job.projectId);
 	if (!creds) {
 		console.warn('[Notifications] Missing Trello credentials in DB, skipping timeout notification');
 		return;
@@ -136,11 +140,7 @@ async function notifyGitHubTimeout(job: GitHubJob, info: TimeoutInfo): Promise<v
 	const url = `https://api.github.com/repos/${job.repoFullName}/issues/${prNumber}/comments`;
 	const response = await fetch(url, {
 		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${githubToken}`,
-			Accept: 'application/vnd.github+json',
-			'X-GitHub-Api-Version': '2022-11-28',
-		},
+		headers: resolveGitHubHeaders(githubToken),
 		body: JSON.stringify({ body: message }),
 	});
 
@@ -152,8 +152,8 @@ async function notifyGitHubTimeout(job: GitHubJob, info: TimeoutInfo): Promise<v
 }
 
 async function notifyJiraTimeout(job: JiraJob, info: TimeoutInfo): Promise<void> {
-	const auth = await getJiraAuthForProject(job.projectId);
-	if (!auth) {
+	const creds = await resolveJiraCredentials(job.projectId);
+	if (!creds) {
 		console.warn('[Notifications] Missing JIRA credentials in DB, skipping timeout notification');
 		return;
 	}
@@ -165,13 +165,13 @@ async function notifyJiraTimeout(job: JiraJob, info: TimeoutInfo): Promise<void>
 		'Transition the issue back to the trigger status to retry.',
 	);
 
-	// Use v2 API which accepts plain text, avoiding the pm/jira/adf dependency
-	// (the router image doesn't include pm/ modules)
-	const url = `${auth.baseUrl}/rest/api/2/issue/${job.issueKey}/comment`;
+	// Use v2 API which accepts plain text — no Markdown-to-ADF conversion needed
+	// for simple timeout messages
+	const url = `${creds.baseUrl}/rest/api/2/issue/${job.issueKey}/comment`;
 	const response = await fetch(url, {
 		method: 'POST',
 		headers: {
-			Authorization: `Basic ${auth.basicAuth}`,
+			Authorization: `Basic ${creds.auth}`,
 			'Content-Type': 'application/json',
 		},
 		body: JSON.stringify({ body: message }),

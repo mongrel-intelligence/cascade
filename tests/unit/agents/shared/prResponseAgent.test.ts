@@ -122,24 +122,7 @@ describe('prResponseAgent shared module', () => {
 			triggerCommentUrl: 'url',
 		} as PRResponseAgentInput;
 
-		it('updates existing comment when acknowledgmentCommentId is set', async () => {
-			const input = { ...baseInput, acknowledgmentCommentId: 555 };
-			mockGithub.updatePRComment.mockResolvedValue({
-				id: 555,
-				htmlUrl: 'https://example.com/555',
-			} as ReturnType<typeof mockGithub.updatePRComment> extends Promise<infer R> ? R : never);
-
-			const result = await postInitialPRResponseComment(input, id, 'header');
-
-			expect(mockGithub.updatePRComment).toHaveBeenCalledWith('org', 'repo', 555, 'header');
-			expect(result).toEqual({
-				id: 555,
-				htmlUrl: 'https://example.com/555',
-				gadgetName: 'UpdatePRComment',
-			});
-		});
-
-		it('creates a new comment when no acknowledgmentCommentId', async () => {
+		it('creates a new comment via createInitialPRComment', async () => {
 			mockCreateInitialPRComment.mockResolvedValue({
 				id: 999,
 				htmlUrl: 'https://example.com/999',

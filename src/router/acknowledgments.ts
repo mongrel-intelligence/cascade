@@ -14,11 +14,12 @@ import { markdownToAdf } from '../pm/jira/adf.js';
 import {
 	_resetJiraBotCache,
 	_resetTrelloBotCache,
-	getJiraAuthForProject,
-	getTrelloCredentialsForProject,
+	resolveGitHubHeaders,
 	resolveGitHubTokenForAck,
 	resolveJiraBotAccountId,
+	resolveJiraCredentials,
 	resolveTrelloBotMemberId,
+	resolveTrelloCredentials,
 } from './platformClients.js';
 
 // Re-export bot-identity helpers so callers that import from acknowledgments
@@ -40,7 +41,7 @@ export async function postTrelloAck(
 	cardId: string,
 	message: string,
 ): Promise<string | null> {
-	const creds = await getTrelloCredentialsForProject(projectId);
+	const creds = await resolveTrelloCredentials(projectId);
 	if (!creds) {
 		console.warn('[Ack] Missing Trello credentials, skipping ack comment');
 		return null;
@@ -68,7 +69,7 @@ export async function deleteTrelloAck(
 	cardId: string,
 	commentId: string,
 ): Promise<void> {
-	const creds = await getTrelloCredentialsForProject(projectId);
+	const creds = await resolveTrelloCredentials(projectId);
 	if (!creds) return;
 
 	const url = `https://api.trello.com/1/cards/${cardId}/actions/${commentId}/comments?key=${creds.apiKey}&token=${creds.token}`;
@@ -93,12 +94,7 @@ export async function postGitHubAck(
 	const url = `https://api.github.com/repos/${repoFullName}/issues/${prNumber}/comments`;
 	const response = await fetch(url, {
 		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${token}`,
-			Accept: 'application/vnd.github+json',
-			'X-GitHub-Api-Version': '2022-11-28',
-			'Content-Type': 'application/json',
-		},
+		headers: resolveGitHubHeaders(token, { 'Content-Type': 'application/json' }),
 		body: JSON.stringify({ body: message }),
 	});
 
@@ -121,11 +117,7 @@ export async function deleteGitHubAck(
 	try {
 		await fetch(url, {
 			method: 'DELETE',
-			headers: {
-				Authorization: `Bearer ${token}`,
-				Accept: 'application/vnd.github+json',
-				'X-GitHub-Api-Version': '2022-11-28',
-			},
+			headers: resolveGitHubHeaders(token),
 		});
 		console.log('[Ack] GitHub orphan ack deleted:', commentId);
 	} catch (err) {
@@ -142,18 +134,18 @@ export async function postJiraAck(
 	issueKey: string,
 	message: string,
 ): Promise<string | null> {
-	const auth = await getJiraAuthForProject(projectId);
-	if (!auth) {
+	const creds = await resolveJiraCredentials(projectId);
+	if (!creds) {
 		console.warn('[Ack] Missing JIRA credentials, skipping ack comment');
 		return null;
 	}
 
 	const adfBody = markdownToAdf(message);
-	const url = `${auth.baseUrl}/rest/api/3/issue/${issueKey}/comment`;
+	const url = `${creds.baseUrl}/rest/api/3/issue/${issueKey}/comment`;
 	const response = await fetch(url, {
 		method: 'POST',
 		headers: {
-			Authorization: `Basic ${auth.basicAuth}`,
+			Authorization: `Basic ${creds.auth}`,
 			'Content-Type': 'application/json',
 		},
 		body: JSON.stringify({ body: adfBody }),
@@ -174,15 +166,15 @@ export async function deleteJiraAck(
 	issueKey: string,
 	commentId: string,
 ): Promise<void> {
-	const auth = await getJiraAuthForProject(projectId);
-	if (!auth) return;
+	const creds = await resolveJiraCredentials(projectId);
+	if (!creds) return;
 
-	const url = `${auth.baseUrl}/rest/api/2/issue/${issueKey}/comment/${commentId}`;
+	const url = `${creds.baseUrl}/rest/api/2/issue/${issueKey}/comment/${commentId}`;
 	try {
 		await fetch(url, {
 			method: 'DELETE',
 			headers: {
-				Authorization: `Basic ${auth.basicAuth}`,
+				Authorization: `Basic ${creds.auth}`,
 				'Content-Type': 'application/json',
 			},
 		});

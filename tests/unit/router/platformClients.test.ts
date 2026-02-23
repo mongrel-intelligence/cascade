@@ -36,12 +36,13 @@ import {
 	_resetJiraCloudIdCache,
 	_resetTrelloBotCache,
 	getGitHubTokenForProject,
-	getJiraAuthForProject,
 	getJiraCloudId,
-	getTrelloCredentialsForProject,
+	resolveGitHubHeaders,
 	resolveGitHubTokenForAck,
 	resolveJiraBotAccountId,
+	resolveJiraCredentials,
 	resolveTrelloBotMemberId,
+	resolveTrelloCredentials,
 } from '../../../src/router/platformClients.js';
 
 const mockGetIntegrationCredential = vi.mocked(getIntegrationCredential);
@@ -50,18 +51,18 @@ const mockFindProjectByRepo = vi.mocked(findProjectByRepo);
 const mockFindProjectById = vi.mocked(findProjectById);
 
 const MOCK_CREDENTIALS: Record<string, string> = {
-	'pm/api_key': 'test-trello-key',
-	'pm/token': 'test-trello-token',
+	'pm/api_key': 'trello-key',
+	'pm/token': 'trello-token',
 	'pm/email': 'bot@example.com',
-	'pm/api_token': 'test-jira-token',
+	'pm/api_token': 'jira-api-token',
 };
 
 // Mock global fetch
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
-const MOCK_PROJECT = {
-	id: 'test',
+const MOCK_PROJECT_WITH_JIRA = {
+	id: 'proj1',
 	name: 'Test',
 	repo: 'owner/repo',
 	baseBranch: 'main',
@@ -86,13 +87,13 @@ beforeEach(() => {
 	});
 	mockGetProjectGitHubToken.mockResolvedValue('test-github-token');
 	mockFindProjectByRepo.mockResolvedValue({
-		id: 'test',
+		id: 'proj1',
 		name: 'Test',
 		repo: 'owner/repo',
 		baseBranch: 'main',
 		branchPrefix: 'feature/',
 	});
-	mockFindProjectById.mockResolvedValue(MOCK_PROJECT);
+	mockFindProjectById.mockResolvedValue(MOCK_PROJECT_WITH_JIRA);
 });
 
 afterEach(() => {
@@ -103,69 +104,101 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// getTrelloCredentialsForProject
+// resolveTrelloCredentials
 // ---------------------------------------------------------------------------
 
-describe('getTrelloCredentialsForProject', () => {
-	it('returns credentials when both are present', async () => {
-		const result = await getTrelloCredentialsForProject('test');
+describe('resolveTrelloCredentials', () => {
+	it('returns apiKey and token on success', async () => {
+		const result = await resolveTrelloCredentials('proj1');
 
 		expect(result).not.toBeNull();
-		expect(result?.apiKey).toBe('test-trello-key');
-		expect(result?.token).toBe('test-trello-token');
+		expect(result?.apiKey).toBe('trello-key');
+		expect(result?.token).toBe('trello-token');
 	});
 
 	it('returns null when credentials are missing', async () => {
 		mockGetIntegrationCredential.mockRejectedValue(new Error('not found'));
 
-		const result = await getTrelloCredentialsForProject('test');
+		const result = await resolveTrelloCredentials('proj1');
 
 		expect(result).toBeNull();
 	});
 });
 
 // ---------------------------------------------------------------------------
-// getJiraAuthForProject
+// resolveJiraCredentials
 // ---------------------------------------------------------------------------
 
-describe('getJiraAuthForProject', () => {
-	it('returns auth object with basicAuth when all fields present', async () => {
-		const result = await getJiraAuthForProject('test');
+describe('resolveJiraCredentials', () => {
+	it('returns email, apiToken, baseUrl, and pre-computed auth on success', async () => {
+		const result = await resolveJiraCredentials('proj1');
 
 		expect(result).not.toBeNull();
 		expect(result?.email).toBe('bot@example.com');
-		expect(result?.apiToken).toBe('test-jira-token');
+		expect(result?.apiToken).toBe('jira-api-token');
 		expect(result?.baseUrl).toBe('https://test.atlassian.net');
-		expect(result?.basicAuth).toMatch(/^[A-Za-z0-9+/]+=*$/); // base64
+		// auth is base64 of email:apiToken
+		const expected = Buffer.from('bot@example.com:jira-api-token').toString('base64');
+		expect(result?.auth).toBe(expected);
 	});
 
 	it('returns null when credentials are missing', async () => {
 		mockGetIntegrationCredential.mockRejectedValue(new Error('not found'));
 
-		const result = await getJiraAuthForProject('test');
+		const result = await resolveJiraCredentials('proj1');
 
 		expect(result).toBeNull();
 	});
 
-	it('returns null when JIRA base URL is missing', async () => {
+	it('returns null when project has no JIRA base URL', async () => {
 		mockFindProjectById.mockResolvedValue({
-			id: 'test',
+			id: 'proj1',
 			name: 'Test',
 			repo: 'owner/repo',
 			baseBranch: 'main',
 			branchPrefix: 'feature/',
 		});
 
-		const result = await getJiraAuthForProject('test');
+		const result = await resolveJiraCredentials('proj1');
 
 		expect(result).toBeNull();
 	});
 
-	it('computes correct basicAuth value', async () => {
-		const result = await getJiraAuthForProject('test');
+	it('returns null when project is not found', async () => {
+		mockFindProjectById.mockResolvedValue(undefined);
 
-		const expected = Buffer.from('bot@example.com:test-jira-token').toString('base64');
-		expect(result?.basicAuth).toBe(expected);
+		const result = await resolveJiraCredentials('proj1');
+
+		expect(result).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// resolveGitHubHeaders
+// ---------------------------------------------------------------------------
+
+describe('resolveGitHubHeaders', () => {
+	it('returns standard GitHub API headers', () => {
+		const headers = resolveGitHubHeaders('ghp_token');
+
+		expect(headers).toEqual({
+			Authorization: 'Bearer ghp_token',
+			Accept: 'application/vnd.github+json',
+			'X-GitHub-Api-Version': '2022-11-28',
+		});
+	});
+
+	it('merges extra headers without overwriting standard ones', () => {
+		const headers = resolveGitHubHeaders('ghp_token', { 'Content-Type': 'application/json' });
+
+		expect(headers['Content-Type']).toBe('application/json');
+		expect(headers.Authorization).toBe('Bearer ghp_token');
+	});
+
+	it('allows overriding standard headers with extra', () => {
+		const headers = resolveGitHubHeaders('ghp_token', { Accept: 'text/plain' });
+
+		expect(headers.Accept).toBe('text/plain');
 	});
 });
 
@@ -179,7 +212,7 @@ describe('getGitHubTokenForProject', () => {
 
 		expect(result).not.toBeNull();
 		expect(result?.token).toBe('test-github-token');
-		expect(result?.project.id).toBe('test');
+		expect(result?.project.id).toBe('proj1');
 	});
 
 	it('returns null when project is not found', async () => {
@@ -209,7 +242,7 @@ describe('resolveGitHubTokenForAck', () => {
 
 		expect(result).not.toBeNull();
 		expect(result?.token).toBe('test-github-token');
-		expect(result?.project.id).toBe('test');
+		expect(result?.project.id).toBe('proj1');
 	});
 
 	it('returns null when project is not found', async () => {
@@ -232,14 +265,14 @@ describe('resolveTrelloBotMemberId', () => {
 			json: async () => ({ id: 'trello-bot-456' }),
 		});
 
-		const result = await resolveTrelloBotMemberId('test');
+		const result = await resolveTrelloBotMemberId('proj1');
 
 		expect(result).toBe('trello-bot-456');
 		expect(mockFetch).toHaveBeenCalledOnce();
 		const [url] = mockFetch.mock.calls[0];
 		expect(url).toContain('https://api.trello.com/1/members/me');
-		expect(url).toContain('key=test-trello-key');
-		expect(url).toContain('token=test-trello-token');
+		expect(url).toContain('key=trello-key');
+		expect(url).toContain('token=trello-token');
 	});
 
 	it('caches the result for subsequent calls', async () => {
@@ -248,8 +281,8 @@ describe('resolveTrelloBotMemberId', () => {
 			json: async () => ({ id: 'trello-bot-456' }),
 		});
 
-		const result1 = await resolveTrelloBotMemberId('test');
-		const result2 = await resolveTrelloBotMemberId('test');
+		const result1 = await resolveTrelloBotMemberId('proj1');
+		const result2 = await resolveTrelloBotMemberId('proj1');
 
 		expect(result1).toBe('trello-bot-456');
 		expect(result2).toBe('trello-bot-456');
@@ -259,7 +292,7 @@ describe('resolveTrelloBotMemberId', () => {
 	it('returns null when credentials are missing', async () => {
 		mockGetIntegrationCredential.mockRejectedValue(new Error('not found'));
 
-		const result = await resolveTrelloBotMemberId('test');
+		const result = await resolveTrelloBotMemberId('proj1');
 
 		expect(result).toBeNull();
 		expect(mockFetch).not.toHaveBeenCalled();
@@ -268,7 +301,7 @@ describe('resolveTrelloBotMemberId', () => {
 	it('returns null on API error', async () => {
 		mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
 
-		const result = await resolveTrelloBotMemberId('test');
+		const result = await resolveTrelloBotMemberId('proj1');
 
 		expect(result).toBeNull();
 	});
@@ -279,7 +312,7 @@ describe('resolveTrelloBotMemberId', () => {
 			json: async () => ({}),
 		});
 
-		const result = await resolveTrelloBotMemberId('test');
+		const result = await resolveTrelloBotMemberId('proj1');
 
 		expect(result).toBeNull();
 	});
@@ -289,12 +322,12 @@ describe('resolveTrelloBotMemberId', () => {
 			.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'bot-1' }) })
 			.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'bot-2' }) });
 
-		const result1 = await resolveTrelloBotMemberId('test');
+		const result1 = await resolveTrelloBotMemberId('proj1');
 
 		// Manually manipulate cache TTL by clearing and re-calling
 		_resetTrelloBotCache();
 
-		const result2 = await resolveTrelloBotMemberId('test');
+		const result2 = await resolveTrelloBotMemberId('proj1');
 
 		expect(result1).toBe('bot-1');
 		expect(result2).toBe('bot-2');
@@ -313,7 +346,7 @@ describe('resolveJiraBotAccountId', () => {
 			json: async () => ({ accountId: 'jira-bot-123' }),
 		});
 
-		const result = await resolveJiraBotAccountId('test');
+		const result = await resolveJiraBotAccountId('proj1');
 
 		expect(result).toBe('jira-bot-123');
 		expect(mockFetch).toHaveBeenCalledOnce();
@@ -328,8 +361,8 @@ describe('resolveJiraBotAccountId', () => {
 			json: async () => ({ accountId: 'jira-bot-123' }),
 		});
 
-		const result1 = await resolveJiraBotAccountId('test');
-		const result2 = await resolveJiraBotAccountId('test');
+		const result1 = await resolveJiraBotAccountId('proj1');
+		const result2 = await resolveJiraBotAccountId('proj1');
 
 		expect(result1).toBe('jira-bot-123');
 		expect(result2).toBe('jira-bot-123');
@@ -339,7 +372,7 @@ describe('resolveJiraBotAccountId', () => {
 	it('returns null when credentials are missing', async () => {
 		mockGetIntegrationCredential.mockRejectedValue(new Error('not found'));
 
-		const result = await resolveJiraBotAccountId('test');
+		const result = await resolveJiraBotAccountId('proj1');
 
 		expect(result).toBeNull();
 		expect(mockFetch).not.toHaveBeenCalled();
@@ -347,14 +380,14 @@ describe('resolveJiraBotAccountId', () => {
 
 	it('returns null when JIRA base URL is missing', async () => {
 		mockFindProjectById.mockResolvedValue({
-			id: 'test',
+			id: 'proj1',
 			name: 'Test',
 			repo: 'owner/repo',
 			baseBranch: 'main',
 			branchPrefix: 'feature/',
 		});
 
-		const result = await resolveJiraBotAccountId('test');
+		const result = await resolveJiraBotAccountId('proj1');
 
 		expect(result).toBeNull();
 		expect(mockFetch).not.toHaveBeenCalled();
@@ -363,7 +396,7 @@ describe('resolveJiraBotAccountId', () => {
 	it('returns null on API error', async () => {
 		mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
 
-		const result = await resolveJiraBotAccountId('test');
+		const result = await resolveJiraBotAccountId('proj1');
 
 		expect(result).toBeNull();
 	});
@@ -374,7 +407,7 @@ describe('resolveJiraBotAccountId', () => {
 			json: async () => ({}),
 		});
 
-		const result = await resolveJiraBotAccountId('test');
+		const result = await resolveJiraBotAccountId('proj1');
 
 		expect(result).toBeNull();
 	});
@@ -384,9 +417,9 @@ describe('resolveJiraBotAccountId', () => {
 			.mockResolvedValueOnce({ ok: true, json: async () => ({ accountId: 'acct-1' }) })
 			.mockResolvedValueOnce({ ok: true, json: async () => ({ accountId: 'acct-2' }) });
 
-		const result1 = await resolveJiraBotAccountId('test');
+		const result1 = await resolveJiraBotAccountId('proj1');
 		_resetJiraBotCache();
-		const result2 = await resolveJiraBotAccountId('test');
+		const result2 = await resolveJiraBotAccountId('proj1');
 
 		expect(result1).toBe('acct-1');
 		expect(result2).toBe('acct-2');
@@ -399,11 +432,11 @@ describe('resolveJiraBotAccountId', () => {
 // ---------------------------------------------------------------------------
 
 describe('getJiraCloudId', () => {
-	const mockAuth = {
+	const mockCreds = {
 		email: 'bot@example.com',
-		apiToken: 'test-jira-token',
+		apiToken: 'jira-api-token',
 		baseUrl: 'https://test.atlassian.net',
-		basicAuth: Buffer.from('bot@example.com:test-jira-token').toString('base64'),
+		auth: Buffer.from('bot@example.com:jira-api-token').toString('base64'),
 	};
 
 	it('returns cloudId from tenant_info endpoint', async () => {
@@ -412,7 +445,7 @@ describe('getJiraCloudId', () => {
 			json: async () => ({ cloudId: 'cloud-abc-123' }),
 		});
 
-		const result = await getJiraCloudId(mockAuth);
+		const result = await getJiraCloudId(mockCreds);
 
 		expect(result).toBe('cloud-abc-123');
 		expect(mockFetch).toHaveBeenCalledOnce();
@@ -427,8 +460,8 @@ describe('getJiraCloudId', () => {
 			json: async () => ({ cloudId: 'cloud-abc-123' }),
 		});
 
-		const result1 = await getJiraCloudId(mockAuth);
-		const result2 = await getJiraCloudId(mockAuth);
+		const result1 = await getJiraCloudId(mockCreds);
+		const result2 = await getJiraCloudId(mockCreds);
 
 		expect(result1).toBe('cloud-abc-123');
 		expect(result2).toBe('cloud-abc-123');
@@ -438,7 +471,7 @@ describe('getJiraCloudId', () => {
 	it('returns null on network error', async () => {
 		mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
-		const result = await getJiraCloudId(mockAuth);
+		const result = await getJiraCloudId(mockCreds);
 
 		expect(result).toBeNull();
 		expect(console.warn).toHaveBeenCalledWith(
@@ -450,7 +483,7 @@ describe('getJiraCloudId', () => {
 	it('returns null on HTTP error', async () => {
 		mockFetch.mockResolvedValueOnce({ ok: false, status: 403 });
 
-		const result = await getJiraCloudId(mockAuth);
+		const result = await getJiraCloudId(mockCreds);
 
 		expect(result).toBeNull();
 		expect(console.warn).toHaveBeenCalledWith(
@@ -465,7 +498,7 @@ describe('getJiraCloudId', () => {
 			json: async () => ({}),
 		});
 
-		const result = await getJiraCloudId(mockAuth);
+		const result = await getJiraCloudId(mockCreds);
 
 		expect(result).toBeNull();
 		expect(console.warn).toHaveBeenCalledWith(
@@ -478,9 +511,9 @@ describe('getJiraCloudId', () => {
 			.mockResolvedValueOnce({ ok: true, json: async () => ({ cloudId: 'cloud-1' }) })
 			.mockResolvedValueOnce({ ok: true, json: async () => ({ cloudId: 'cloud-2' }) });
 
-		const result1 = await getJiraCloudId(mockAuth);
+		const result1 = await getJiraCloudId(mockCreds);
 		_resetJiraCloudIdCache();
-		const result2 = await getJiraCloudId(mockAuth);
+		const result2 = await getJiraCloudId(mockCreds);
 
 		expect(result1).toBe('cloud-1');
 		expect(result2).toBe('cloud-2');

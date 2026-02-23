@@ -1,10 +1,10 @@
 /**
- * Centralized platform credential resolution for router-side modules.
+ * Shared credential resolution and platform API header helpers for router modules.
  *
- * Provides lightweight helpers that encapsulate credential resolution per
- * platform (Trello, GitHub, JIRA) and cached bot identity lookups.
- * All callers (acknowledgments, reactions, notifications) use these instead
- * of duplicating the resolve-try/catch pattern themselves.
+ * Resolves credentials once per call and returns typed objects.
+ * Also provides cached bot identity lookups and JIRA cloudId resolution.
+ * Callers use raw `fetch()` — the router Docker image does not bundle
+ * `src/trello/client.ts` or `src/github/client.ts`.
  */
 
 import { getProjectGitHubToken } from '../config/projects.js';
@@ -17,7 +17,7 @@ import { getJiraConfig } from '../pm/config.js';
 import type { ProjectConfig } from '../types/index.js';
 
 // ---------------------------------------------------------------------------
-// Trello
+// Credential resolution helpers
 // ---------------------------------------------------------------------------
 
 export interface TrelloCredentials {
@@ -25,11 +25,19 @@ export interface TrelloCredentials {
 	token: string;
 }
 
+export interface JiraCredentials {
+	email: string;
+	apiToken: string;
+	baseUrl: string;
+	/** Pre-computed Base64 Basic auth value: `email:apiToken` */
+	auth: string;
+}
+
 /**
- * Resolve Trello credentials (api_key + token) for a project.
- * Returns null if either credential is missing.
+ * Resolve Trello credentials for a project.
+ * Returns `{ apiKey, token }` or `null` if credentials are missing.
  */
-export async function getTrelloCredentialsForProject(
+export async function resolveTrelloCredentials(
 	projectId: string,
 ): Promise<TrelloCredentials | null> {
 	try {
@@ -41,38 +49,43 @@ export async function getTrelloCredentialsForProject(
 	}
 }
 
-// ---------------------------------------------------------------------------
-// JIRA
-// ---------------------------------------------------------------------------
-
-export interface JiraAuth {
-	email: string;
-	apiToken: string;
-	baseUrl: string;
-	/** Pre-computed Base64 Basic auth string */
-	basicAuth: string;
-}
-
 /**
- * Resolve JIRA credentials (email + api_token + baseUrl) for a project.
- * Returns null if any piece is missing or the JIRA base URL is unavailable.
+ * Resolve JIRA credentials for a project.
+ * Returns `{ email, apiToken, baseUrl, auth }` or `null` if credentials/config are missing.
+ * The `auth` field is the pre-computed Base64 Basic auth string.
  */
-export async function getJiraAuthForProject(projectId: string): Promise<JiraAuth | null> {
+export async function resolveJiraCredentials(projectId: string): Promise<JiraCredentials | null> {
 	try {
 		const email = await getIntegrationCredential(projectId, 'pm', 'email');
 		const apiToken = await getIntegrationCredential(projectId, 'pm', 'api_token');
 		const project = await findProjectById(projectId);
 		const baseUrl = (project ? getJiraConfig(project)?.baseUrl : undefined) ?? '';
 		if (!baseUrl) throw new Error('Missing JIRA base URL');
-		const basicAuth = Buffer.from(`${email}:${apiToken}`).toString('base64');
-		return { email, apiToken, baseUrl, basicAuth };
+		const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
+		return { email, apiToken, baseUrl, auth };
 	} catch {
 		return null;
 	}
 }
 
+/**
+ * Build standard GitHub API request headers for a given token.
+ * Used in place of the 6+ inline header objects scattered across router files.
+ */
+export function resolveGitHubHeaders(
+	token: string,
+	extra?: Record<string, string>,
+): Record<string, string> {
+	return {
+		Authorization: `Bearer ${token}`,
+		Accept: 'application/vnd.github+json',
+		'X-GitHub-Api-Version': '2022-11-28',
+		...extra,
+	};
+}
+
 // ---------------------------------------------------------------------------
-// GitHub
+// GitHub token resolution
 // ---------------------------------------------------------------------------
 
 /**
@@ -93,6 +106,16 @@ export async function getGitHubTokenForProject(
 	}
 }
 
+/**
+ * Resolve a GitHub implementer token for acknowledgment posting.
+ * Alias of getGitHubTokenForProject for backward compatibility.
+ */
+export async function resolveGitHubTokenForAck(
+	repoFullName: string,
+): Promise<{ token: string; project: ProjectConfig } | null> {
+	return getGitHubTokenForProject(repoFullName);
+}
+
 // ---------------------------------------------------------------------------
 // Bot identity caches
 // ---------------------------------------------------------------------------
@@ -110,7 +133,7 @@ export async function resolveTrelloBotMemberId(projectId: string): Promise<strin
 	const cached = trelloBotCache.get(projectId);
 	if (cached && Date.now() < cached.expiresAt) return cached.memberId;
 
-	const creds = await getTrelloCredentialsForProject(projectId);
+	const creds = await resolveTrelloCredentials(projectId);
 	if (!creds) return null;
 
 	try {
@@ -149,12 +172,12 @@ export async function resolveJiraBotAccountId(projectId: string): Promise<string
 	const cached = jiraBotCache.get(projectId);
 	if (cached && Date.now() < cached.expiresAt) return cached.accountId;
 
-	const auth = await getJiraAuthForProject(projectId);
-	if (!auth) return null;
+	const creds = await resolveJiraCredentials(projectId);
+	if (!creds) return null;
 
 	try {
-		const response = await fetch(`${auth.baseUrl}/rest/api/2/myself`, {
-			headers: { Authorization: `Basic ${auth.basicAuth}`, Accept: 'application/json' },
+		const response = await fetch(`${creds.baseUrl}/rest/api/2/myself`, {
+			headers: { Authorization: `Basic ${creds.auth}`, Accept: 'application/json' },
 		});
 		if (!response.ok) return null;
 
@@ -183,14 +206,14 @@ const jiraCloudIdCache = new Map<string, string>();
  * Lightweight JIRA cloudId resolver with in-memory cache.
  * Keyed by baseUrl. Returns null on any failure.
  */
-export async function getJiraCloudId(auth: JiraAuth): Promise<string | null> {
-	const cached = jiraCloudIdCache.get(auth.baseUrl);
+export async function getJiraCloudId(creds: JiraCredentials): Promise<string | null> {
+	const cached = jiraCloudIdCache.get(creds.baseUrl);
 	if (cached) return cached;
 
 	let response: Response;
 	try {
-		response = await fetch(`${auth.baseUrl}/_edge/tenant_info`, {
-			headers: { Authorization: `Basic ${auth.basicAuth}` },
+		response = await fetch(`${creds.baseUrl}/_edge/tenant_info`, {
+			headers: { Authorization: `Basic ${creds.auth}` },
 		});
 	} catch (err) {
 		console.warn('[PlatformClients] Failed to fetch JIRA cloudId:', String(err));
@@ -208,21 +231,11 @@ export async function getJiraCloudId(auth: JiraAuth): Promise<string | null> {
 		return null;
 	}
 
-	jiraCloudIdCache.set(auth.baseUrl, data.cloudId);
+	jiraCloudIdCache.set(creds.baseUrl, data.cloudId);
 	return data.cloudId;
 }
 
 /** @internal Visible for testing only */
 export function _resetJiraCloudIdCache(): void {
 	jiraCloudIdCache.clear();
-}
-
-/**
- * Resolve a GitHub implementer token for acknowledgment posting.
- * Alias of getGitHubTokenForProject for backward compatibility.
- */
-export async function resolveGitHubTokenForAck(
-	repoFullName: string,
-): Promise<{ token: string; project: ProjectConfig } | null> {
-	return getGitHubTokenForProject(repoFullName);
 }

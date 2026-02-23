@@ -41,6 +41,8 @@ export interface AgentInput {
 
 	// Router-posted ack comment ID — used by ProgressMonitor to update in-place
 	ackCommentId?: string | number;
+	// Router/webhook-handler-posted ack message text — reused as initial comment header
+	ackMessage?: string;
 
 	[key: string]: unknown;
 }

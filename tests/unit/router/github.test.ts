@@ -34,12 +34,15 @@ vi.mock('../../../src/github/personas.js', () => ({
 
 import { findProjectByRepo } from '../../../src/config/provider.js';
 import { isCascadeBot, resolvePersonaIdentities } from '../../../src/github/personas.js';
-import { resolveGitHubTokenForAck } from '../../../src/router/acknowledgments.js';
+import { generateAckMessage } from '../../../src/router/ackMessageGenerator.js';
+import { postGitHubAck, resolveGitHubTokenForAck } from '../../../src/router/acknowledgments.js';
+import { loadProjectConfig } from '../../../src/router/config.js';
 import {
 	firePreActions,
 	handleGitHubWebhook,
 	isSelfAuthoredGitHubComment,
 	processGitHubWebhookEvent,
+	tryPostGitHubAck,
 } from '../../../src/router/github.js';
 import { extractPRNumber } from '../../../src/router/notifications.js';
 import { addEyesReactionToPR } from '../../../src/router/pre-actions.js';
@@ -226,5 +229,129 @@ describe('processGitHubWebhookEvent', () => {
 		await processGitHubWebhookEvent('pull_request', 'owner/repo', {}, mockTriggerRegistry);
 
 		expect(sendAcknowledgeReaction).not.toHaveBeenCalled();
+	});
+
+	it('stores ackCommentId and ackMessage on the job when ack succeeds', async () => {
+		// Setup: make tryPostGitHubAck succeed by mocking its dependencies
+		vi.mocked(loadProjectConfig).mockResolvedValue({
+			projects: [],
+			fullProjects: [{ id: 'proj-1', repo: 'owner/repo' }],
+		} as never);
+		vi.mocked(resolvePersonaIdentities).mockResolvedValue({} as never);
+		(mockTriggerRegistry.matchTrigger as ReturnType<typeof vi.fn>).mockReturnValue({
+			agentType: 'review',
+		});
+		vi.mocked(generateAckMessage).mockResolvedValue('Looking into the PR now...');
+		vi.mocked(resolveGitHubTokenForAck).mockResolvedValue({
+			token: 'ghp_test',
+			project: { id: 'proj-1' },
+		} as never);
+		vi.mocked(extractPRNumber).mockReturnValue(42);
+		vi.mocked(postGitHubAck).mockResolvedValue(12345);
+		vi.mocked(addJob).mockResolvedValue('job-1');
+
+		await processGitHubWebhookEvent(
+			'pull_request',
+			'owner/repo',
+			{ repository: { full_name: 'owner/repo' } },
+			mockTriggerRegistry,
+		);
+
+		expect(addJob).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: 'github',
+				ackCommentId: 12345,
+				ackMessage: 'Looking into the PR now...',
+			}),
+		);
+	});
+
+	it('leaves ackMessage undefined when ack fails', async () => {
+		vi.mocked(resolveGitHubTokenForAck).mockResolvedValue(null);
+		vi.mocked(addJob).mockResolvedValue('job-1');
+
+		await processGitHubWebhookEvent(
+			'pull_request',
+			'owner/repo',
+			{ repository: { full_name: 'owner/repo' } },
+			mockTriggerRegistry,
+		);
+
+		expect(addJob).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: 'github',
+				ackCommentId: undefined,
+				ackMessage: undefined,
+			}),
+		);
+	});
+});
+
+describe('tryPostGitHubAck', () => {
+	it('returns commentId and message on success', async () => {
+		vi.mocked(loadProjectConfig).mockResolvedValue({
+			projects: [],
+			fullProjects: [{ id: 'proj-1', repo: 'owner/repo' }],
+		} as never);
+		vi.mocked(resolvePersonaIdentities).mockResolvedValue({} as never);
+		(mockTriggerRegistry.matchTrigger as ReturnType<typeof vi.fn>).mockReturnValue({
+			agentType: 'review',
+		});
+		vi.mocked(generateAckMessage).mockResolvedValue('Checking it out...');
+		vi.mocked(resolveGitHubTokenForAck).mockResolvedValue({
+			token: 'ghp_test',
+			project: { id: 'proj-1' },
+		} as never);
+		vi.mocked(extractPRNumber).mockReturnValue(5);
+		vi.mocked(postGitHubAck).mockResolvedValue(777);
+
+		const result = await tryPostGitHubAck(
+			'pull_request_review',
+			'owner/repo',
+			{},
+			mockTriggerRegistry,
+		);
+
+		expect(result).toEqual({ commentId: 777, message: 'Checking it out...' });
+	});
+
+	it('returns undefined when no trigger matches', async () => {
+		vi.mocked(loadProjectConfig).mockResolvedValue({
+			projects: [],
+			fullProjects: [{ id: 'proj-1', repo: 'owner/repo' }],
+		} as never);
+		vi.mocked(resolvePersonaIdentities).mockResolvedValue({} as never);
+		(mockTriggerRegistry.matchTrigger as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+		const result = await tryPostGitHubAck('pull_request', 'owner/repo', {}, mockTriggerRegistry);
+
+		expect(result).toBeUndefined();
+	});
+
+	it('returns undefined when postGitHubAck returns null', async () => {
+		vi.mocked(loadProjectConfig).mockResolvedValue({
+			projects: [],
+			fullProjects: [{ id: 'proj-1', repo: 'owner/repo' }],
+		} as never);
+		vi.mocked(resolvePersonaIdentities).mockResolvedValue({} as never);
+		(mockTriggerRegistry.matchTrigger as ReturnType<typeof vi.fn>).mockReturnValue({
+			agentType: 'review',
+		});
+		vi.mocked(generateAckMessage).mockResolvedValue('Msg');
+		vi.mocked(resolveGitHubTokenForAck).mockResolvedValue({
+			token: 'ghp_test',
+			project: { id: 'proj-1' },
+		} as never);
+		vi.mocked(extractPRNumber).mockReturnValue(5);
+		vi.mocked(postGitHubAck).mockResolvedValue(null);
+
+		const result = await tryPostGitHubAck(
+			'pull_request_review',
+			'owner/repo',
+			{},
+			mockTriggerRegistry,
+		);
+
+		expect(result).toBeUndefined();
 	});
 });

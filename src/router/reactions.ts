@@ -15,9 +15,10 @@ import type { ProjectConfig } from '../types/index.js';
 import { parseRepoFullName } from '../utils/repo.js';
 import {
 	_resetJiraCloudIdCache,
-	getJiraAuthForProject,
 	getJiraCloudId,
-	getTrelloCredentialsForProject,
+	resolveGitHubHeaders,
+	resolveJiraCredentials,
+	resolveTrelloCredentials,
 } from './platformClients.js';
 
 // Re-export cache reset for test compatibility
@@ -36,7 +37,7 @@ async function sendTrelloReaction(projectId: string, payload: unknown): Promise<
 	const actionId = action.id as string | undefined;
 	if (!actionId) return;
 
-	const creds = await getTrelloCredentialsForProject(projectId);
+	const creds = await resolveTrelloCredentials(projectId);
 	if (!creds) {
 		console.warn('[Reactions] Missing Trello credentials, skipping reaction');
 		return;
@@ -128,12 +129,7 @@ async function sendGitHubReaction(
 
 	const response = await fetch(url, {
 		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${githubToken}`,
-			Accept: 'application/vnd.github+json',
-			'X-GitHub-Api-Version': '2022-11-28',
-			'Content-Type': 'application/json',
-		},
+		headers: resolveGitHubHeaders(githubToken, { 'Content-Type': 'application/json' }),
 		body: JSON.stringify({ content: 'eyes' }),
 	});
 
@@ -160,22 +156,22 @@ async function sendJiraReaction(projectId: string, payload: unknown): Promise<vo
 
 	if (!issueId || !commentId) return;
 
-	const auth = await getJiraAuthForProject(projectId);
-	if (!auth) {
+	const creds = await resolveJiraCredentials(projectId);
+	if (!creds) {
 		console.warn('[Reactions] Missing JIRA credentials, skipping reaction');
 		return;
 	}
 
 	// Try the reactions API first
-	const cloudId = await getJiraCloudId(auth);
+	const cloudId = await getJiraCloudId(creds);
 	if (cloudId) {
 		const emojiId = 'atlassian-thought_balloon';
 		const ari = `ari%3Acloud%3Ajira%3A${cloudId}%3Acomment%2F${issueId}%2F${commentId}`;
-		const reactionsUrl = `${auth.baseUrl}/rest/reactions/1.0/reactions/${ari}/${emojiId}`;
+		const reactionsUrl = `${creds.baseUrl}/rest/reactions/1.0/reactions/${ari}/${emojiId}`;
 		const reactionResponse = await fetch(reactionsUrl, {
 			method: 'PUT',
 			headers: {
-				Authorization: `Basic ${auth.basicAuth}`,
+				Authorization: `Basic ${creds.auth}`,
 				'Content-Type': 'application/json',
 			},
 		});

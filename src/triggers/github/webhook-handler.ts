@@ -1,8 +1,10 @@
+import { INITIAL_MESSAGES } from '../../config/agentMessages.js';
 import { loadProjectConfigByRepo } from '../../config/provider.js';
 import { getSessionState } from '../../gadgets/sessionState.js';
 import { githubClient, withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
+import { extractGitHubContext, generateAckMessage } from '../../router/ackMessageGenerator.js';
 import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
 import {
 	enqueueWebhook,
@@ -48,33 +50,43 @@ async function updateInitialCommentWithError(
 	});
 }
 
-async function postAcknowledgmentComment(result: TriggerResult): Promise<void> {
-	if (
-		(result.agentType !== 'respond-to-review' && result.agentType !== 'respond-to-pr-comment') ||
-		!result.prNumber
-	) {
+async function postAcknowledgmentComment(
+	result: TriggerResult,
+	payload: unknown,
+	eventType: string,
+): Promise<void> {
+	if (!result.agentType || !result.prNumber) {
 		return;
 	}
 	const input = result.agentInput as {
 		repoFullName?: string;
-		acknowledgmentCommentId?: number;
-		commentAuthor?: string;
+		project?: ProjectConfig;
 	};
 	if (!input.repoFullName) {
 		return;
 	}
 	const { owner, repo } = parseRepoFullName(input.repoFullName);
 	const prNumber = result.prNumber;
-	const message =
-		result.agentType === 'respond-to-pr-comment'
-			? `💭 Thinking about your comment, @${input.commentAuthor ?? 'you'}...`
-			: '👀 Checking this out...';
+
+	// Generate LLM ack message, falling back to static INITIAL_MESSAGES
+	let message: string;
+	try {
+		const context = extractGitHubContext(payload, eventType);
+		const projectId = input.project?.id;
+		message = projectId
+			? await generateAckMessage(result.agentType, context, projectId)
+			: (INITIAL_MESSAGES[result.agentType] ?? INITIAL_MESSAGES.implementation);
+	} catch {
+		message = INITIAL_MESSAGES[result.agentType] ?? INITIAL_MESSAGES.implementation;
+	}
+
 	const comment = await safeOperation(
 		() => githubClient.createPRComment(owner, repo, prNumber, message),
 		{ action: 'post acknowledgment comment', prNumber },
 	);
 	if (comment) {
-		input.acknowledgmentCommentId = comment.id;
+		result.agentInput.ackCommentId = comment.id;
+		result.agentInput.ackMessage = message;
 	}
 }
 
@@ -128,7 +140,10 @@ async function runGitHubAgentJob(
 	config: CascadeConfig,
 	githubToken: string,
 	registry: TriggerRegistry,
+	payload: unknown,
+	eventType: string,
 	routerAckCommentId?: number,
+	routerAckMessage?: string,
 ): Promise<void> {
 	if (!result.agentType) return;
 	// Use the persona token for the agent that will do the work (for ack comments)
@@ -139,10 +154,15 @@ async function runGitHubAgentJob(
 		prCommentToken = githubToken;
 	}
 
-	// Skip worker-side ack if the router already posted one
-	if (!routerAckCommentId) {
+	// Skip worker-side ack if the router already posted one; otherwise generate one for all agents
+	if (routerAckCommentId) {
+		// Router already posted — just propagate the message text
+		if (routerAckMessage) {
+			result.agentInput.ackMessage = routerAckMessage;
+		}
+	} else {
 		await withGitHubToken(prCommentToken, async () => {
-			await postAcknowledgmentComment(result);
+			await postAcknowledgmentComment(result, payload, eventType);
 		});
 	}
 	setProcessing(true);
@@ -163,12 +183,13 @@ async function runGitHubAgentJob(
 
 function processNextQueuedGitHubWebhook(registry: TriggerRegistry): void {
 	processNextQueuedWebhook(
-		(payload, eventType, ackCommentId) =>
+		(payload, eventType, ackCommentId, ackMsg) =>
 			processGitHubWebhook(
 				payload,
 				eventType ?? 'pull_request_review_comment',
 				registry,
 				ackCommentId as number | undefined,
+				ackMsg,
 			),
 		'GitHub',
 		(entry) => entry.eventType ?? 'pull_request_review_comment',
@@ -180,6 +201,7 @@ export async function processGitHubWebhook(
 	eventType: string,
 	registry: TriggerRegistry,
 	ackCommentId?: number,
+	ackMessage?: string,
 ): Promise<void> {
 	logger.info('Processing GitHub webhook', { eventType });
 
@@ -193,7 +215,7 @@ export async function processGitHubWebhook(
 	}
 
 	if (isCurrentlyProcessing()) {
-		const queued = enqueueWebhook(payload, eventType, ackCommentId);
+		const queued = enqueueWebhook(payload, eventType, ackCommentId, ackMessage);
 		if (queued) {
 			logger.info('Currently processing, GitHub webhook queued', {
 				queueLength: getQueueLength(),
@@ -234,9 +256,12 @@ export async function processGitHubWebhook(
 		return;
 	}
 
-	// Pass ack comment ID into agent input for ProgressMonitor pre-seeding
+	// Pass ack comment ID + message into agent input for ProgressMonitor pre-seeding
 	if (ackCommentId) {
 		result.agentInput.ackCommentId = ackCommentId;
+	}
+	if (ackMessage) {
+		result.agentInput.ackMessage = ackMessage;
 	}
 
 	logger.info('GitHub trigger matched', {
@@ -245,7 +270,17 @@ export async function processGitHubWebhook(
 	});
 
 	if (result.agentType) {
-		await runGitHubAgentJob(result, project, config, githubToken, registry, ackCommentId);
+		await runGitHubAgentJob(
+			result,
+			project,
+			config,
+			githubToken,
+			registry,
+			payload,
+			eventType,
+			ackCommentId,
+			ackMessage,
+		);
 	} else {
 		logger.info('Trigger completed without agent', { prNumber: result.prNumber });
 	}
