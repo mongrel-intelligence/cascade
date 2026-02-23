@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { captureException, flush, setTag } from '../sentry.js';
 import {
 	createWebhookHandler,
 	parseGitHubPayload,
@@ -19,11 +20,21 @@ import {
 	stopWorkerProcessor,
 } from './worker-manager.js';
 
+setTag('role', 'router');
+
 // Create trigger registry once at router startup for matchTrigger() calls
 const triggerRegistry = createTriggerRegistry();
 registerBuiltInTriggers(triggerRegistry);
 
 const app = new Hono();
+
+app.onError((err, c) => {
+	captureException(err, {
+		tags: { source: 'hono_error' },
+		extra: { path: c.req.path, method: c.req.method },
+	});
+	return c.text('Internal Server Error', 500);
+});
 
 // Health check with queue stats
 app.get('/health', async (c) => {
@@ -114,11 +125,23 @@ app.post(
 async function shutdown(signal: string): Promise<void> {
 	console.log(`[Router] Received ${signal}, shutting down...`);
 	await stopWorkerProcessor();
+	await flush(3000);
 	process.exit(0);
 }
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+process.on('uncaughtException', (err) => {
+	captureException(err, { tags: { source: 'uncaughtException' }, level: 'fatal' });
+});
+
+process.on('unhandledRejection', (reason) => {
+	captureException(reason instanceof Error ? reason : new Error(String(reason)), {
+		tags: { source: 'unhandledRejection' },
+		level: 'error',
+	});
+});
 
 // Start server and worker processor
 async function startRouter(): Promise<void> {
@@ -128,7 +151,9 @@ async function startRouter(): Promise<void> {
 	serve({ fetch: app.fetch, port });
 }
 
-startRouter().catch((err) => {
+startRouter().catch(async (err) => {
 	console.error('[Router] Failed to start:', err);
+	captureException(err, { tags: { source: 'router_startup' }, level: 'fatal' });
+	await flush(3000);
 	process.exit(1);
 });

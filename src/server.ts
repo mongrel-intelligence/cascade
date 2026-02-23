@@ -11,6 +11,7 @@ import { logoutHandler } from './api/auth/logout.js';
 import { resolveUserFromSession } from './api/auth/session.js';
 import { computeEffectiveOrgId } from './api/context.js';
 import { appRouter } from './api/router.js';
+import { captureException } from './sentry.js';
 import {
 	buildGitHubReactionSender,
 	buildJiraReactionSender,
@@ -153,6 +154,10 @@ export function createServer(deps: ServerDependencies): Hono {
 	// Error handler
 	app.onError((err, c) => {
 		logger.error('Unhandled error', { error: String(err), path: c.req.path });
+		captureException(err, {
+			tags: { source: 'hono_error' },
+			extra: { path: c.req.path, method: c.req.method },
+		});
 		return c.json({ error: 'Internal Server Error' }, 500);
 	});
 

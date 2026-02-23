@@ -29,9 +29,14 @@ vi.mock('../../../src/utils/webhookLogger.js', () => ({
 	logWebhookCall: vi.fn(),
 }));
 
+vi.mock('../../../src/sentry.js', () => ({
+	captureException: vi.fn(),
+}));
+
 import { findProjectByRepo } from '../../../src/config/provider.js';
 import { resolvePersonaIdentities } from '../../../src/github/personas.js';
 import { sendAcknowledgeReaction } from '../../../src/router/reactions.js';
+import { captureException } from '../../../src/sentry.js';
 import {
 	buildGitHubReactionSender,
 	buildJiraReactionSender,
@@ -44,6 +49,7 @@ import {
 import { canAcceptWebhook, isCurrentlyProcessing } from '../../../src/utils/index.js';
 import { logWebhookCall } from '../../../src/utils/webhookLogger.js';
 
+const mockCaptureException = vi.mocked(captureException);
 const mockLogWebhookCall = vi.mocked(logWebhookCall);
 const mockIsCurrentlyProcessing = vi.mocked(isCurrentlyProcessing);
 const mockCanAcceptWebhook = vi.mocked(canAcceptWebhook);
@@ -309,6 +315,31 @@ describe('createWebhookHandler', () => {
 				projectId: 'proj-789',
 			}),
 		);
+	});
+
+	it('captures processWebhook errors to Sentry in fire-and-forget mode', async () => {
+		vi.useFakeTimers();
+		const processError = new Error('redis connection failed');
+		const handler = createWebhookHandler({
+			source: 'trello',
+			fireAndForget: true,
+			parsePayload: async () => ({ ok: true, payload: {}, eventType: 'commentCard' }),
+			processWebhook: vi.fn().mockRejectedValue(processError),
+		});
+
+		const app = buildApp(handler);
+		const res = await postJson(app, {});
+		// Fire-and-forget always returns 200
+		expect(res.status).toBe(200);
+
+		// Let setImmediate fire and the rejection be caught
+		await vi.runAllTimersAsync();
+
+		expect(mockCaptureException).toHaveBeenCalledWith(
+			expect.objectContaining({ message: 'redis connection failed' }),
+			expect.objectContaining({ tags: { source: 'trello_webhook' } }),
+		);
+		vi.useRealTimers();
 	});
 
 	it('lets processWebhook errors propagate when fireAndForget=false', async () => {

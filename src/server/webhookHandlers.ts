@@ -23,6 +23,7 @@ import { findProjectByRepo } from '../config/provider.js';
 import { resolvePersonaIdentities } from '../github/personas.js';
 import { sendAcknowledgeReaction } from '../router/reactions.js';
 import { extractRawHeaders, parseGitHubWebhookPayload } from '../router/webhookParsing.js';
+import { captureException } from '../sentry.js';
 import type { CascadeConfig } from '../types/index.js';
 import { canAcceptWebhook, isCurrentlyProcessing, logger } from '../utils/index.js';
 import { logWebhookCall } from '../utils/webhookLogger.js';
@@ -141,6 +142,9 @@ function handleProcessingError(source: WebhookHandlerConfig['source'], err: unkn
 	logger.error(`Error processing ${source} webhook`, {
 		error: String(err),
 		stack: err instanceof Error ? err.stack : undefined,
+	});
+	captureException(err instanceof Error ? err : new Error(String(err)), {
+		tags: { source: `${source}_webhook` },
 	});
 }
 

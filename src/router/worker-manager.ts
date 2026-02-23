@@ -1,6 +1,7 @@
 import { type Job, Worker } from 'bullmq';
 import Docker from 'dockerode';
 import { findProjectByRepo, getAllProjectCredentials } from '../config/provider.js';
+import { captureException } from '../sentry.js';
 import { routerConfig } from './config.js';
 import { notifyTimeout } from './notifications.js';
 import type { CascadeJob } from './queue.js';
@@ -78,12 +79,23 @@ async function buildWorkerEnv(job: Job<CascadeJob>): Promise<string[]> {
 				projectId,
 				error: String(err),
 			});
+			captureException(err, {
+				tags: { source: 'credential_resolution' },
+				extra: { projectId },
+				level: 'warning',
+			});
 		}
 	}
 
 	// CLAUDE_CODE_OAUTH_TOKEN is for the Claude Code backend (subscription auth).
 	if (process.env.CLAUDE_CODE_OAUTH_TOKEN)
 		env.push(`CLAUDE_CODE_OAUTH_TOKEN=${process.env.CLAUDE_CODE_OAUTH_TOKEN}`);
+
+	// Forward Sentry env vars so worker containers report to the same project.
+	if (process.env.SENTRY_DSN) env.push(`SENTRY_DSN=${process.env.SENTRY_DSN}`);
+	if (process.env.SENTRY_ENVIRONMENT)
+		env.push(`SENTRY_ENVIRONMENT=${process.env.SENTRY_ENVIRONMENT}`);
+	if (process.env.SENTRY_RELEASE) env.push(`SENTRY_RELEASE=${process.env.SENTRY_RELEASE}`);
 
 	return env;
 }
@@ -131,6 +143,11 @@ async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 				jobId,
 				durationMs,
 			});
+			captureException(new Error(`Worker timeout after ${durationMs}ms`), {
+				tags: { source: 'worker_timeout', jobType: job.data.type },
+				extra: { jobId, durationMs },
+				level: 'warning',
+			});
 			killWorker(jobId).catch((err) => {
 				console.error('[WorkerManager] Failed to kill timed-out worker:', err);
 			});
@@ -173,6 +190,12 @@ async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 					// Container may already be removed — expected with AutoRemove
 				}
 
+				if (result.StatusCode !== 0) {
+					captureException(new Error(`Worker exited with status ${result.StatusCode}`), {
+						tags: { source: 'worker_exit', jobType: job.data.type },
+						extra: { jobId, statusCode: result.StatusCode },
+					});
+				}
 				console.log('[WorkerManager] Worker exited:', {
 					jobId,
 					statusCode: result.StatusCode,
@@ -181,12 +204,20 @@ async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 			})
 			.catch((err) => {
 				console.error('[WorkerManager] Error waiting for container:', err);
+				captureException(err, {
+					tags: { source: 'worker_wait', jobType: job.data.type },
+					extra: { jobId },
+				});
 				cleanupWorker(jobId);
 			});
 	} catch (err) {
 		console.error('[WorkerManager] Failed to spawn worker:', {
 			jobId,
 			error: String(err),
+		});
+		captureException(err, {
+			tags: { source: 'worker_spawn', jobType: job.data.type },
+			extra: { jobId },
 		});
 		throw err;
 	}
@@ -299,10 +330,17 @@ export function startWorkerProcessor(): void {
 			jobId: job?.id,
 			error: String(err),
 		});
+		captureException(err, {
+			tags: { source: 'bullmq_dispatch', queue: 'cascade-jobs' },
+			extra: { jobId: job?.id },
+		});
 	});
 
 	bullWorker.on('error', (err) => {
 		console.error('[WorkerManager] Worker error:', err);
+		captureException(err, {
+			tags: { source: 'bullmq_error', queue: 'cascade-jobs' },
+		});
 	});
 
 	// Dashboard jobs queue — manual runs, retries, debug analyses submitted
@@ -333,10 +371,17 @@ export function startWorkerProcessor(): void {
 			jobId: job?.id,
 			error: String(err),
 		});
+		captureException(err, {
+			tags: { source: 'bullmq_dispatch', queue: 'cascade-dashboard-jobs' },
+			extra: { jobId: job?.id },
+		});
 	});
 
 	dashboardWorker.on('error', (err) => {
 		console.error('[WorkerManager] Dashboard worker error:', err);
+		captureException(err, {
+			tags: { source: 'bullmq_error', queue: 'cascade-dashboard-jobs' },
+		});
 	});
 
 	console.log('[WorkerManager] Started with max', routerConfig.maxWorkers, 'concurrent workers');

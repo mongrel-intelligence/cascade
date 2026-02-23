@@ -1,4 +1,5 @@
 import { type ConnectionOptions, Queue } from 'bullmq';
+import { captureException } from '../sentry.js';
 import { routerConfig } from './config.js';
 
 // Parse Redis URL to connection options
@@ -67,6 +68,7 @@ export const jobQueue = new Queue<CascadeJob>('cascade-jobs', {
 // Queue event logging
 jobQueue.on('error', (err) => {
 	console.error('[Queue] Error:', err);
+	captureException(err, { tags: { source: 'job_queue' } });
 });
 
 console.log('[Queue] Initialized with Redis at', routerConfig.redisUrl);
