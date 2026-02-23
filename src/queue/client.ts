@@ -5,7 +5,8 @@
  * Only loaded when REDIS_URL is set (production dashboard container).
  */
 
-import { type ConnectionOptions, Queue } from 'bullmq';
+import { Queue } from 'bullmq';
+import { parseRedisUrl } from '../utils/redis.js';
 
 // ── Job types ────────────────────────────────────────────────────────────────
 
@@ -40,15 +41,6 @@ export type DashboardJob = ManualRunJob | RetryRunJob | DebugAnalysisJob;
 // ── Queue ────────────────────────────────────────────────────────────────────
 
 const QUEUE_NAME = 'cascade-dashboard-jobs';
-
-function parseRedisUrl(url: string): ConnectionOptions {
-	const parsed = new URL(url);
-	return {
-		host: parsed.hostname,
-		port: Number(parsed.port) || 6379,
-		password: parsed.password || undefined,
-	};
-}
 
 let queue: Queue<DashboardJob> | null = null;
 
