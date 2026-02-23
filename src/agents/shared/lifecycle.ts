@@ -8,6 +8,7 @@ import {
 	storeLlmCallsBulk,
 	storeRunLogs,
 } from '../../db/repositories/runsRepository.js';
+import { addBreadcrumb, captureException } from '../../sentry.js';
 import type { AgentResult } from '../../types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../../utils/cascadeEnv.js';
 import { createFileLogger } from '../../utils/fileLogger.js';
@@ -238,6 +239,11 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 	const log = createAgentLogger(fileLogger);
 
 	setWatchdogCleanup(async () => {
+		const durationMs = Date.now() - startTime;
+		captureException(new Error('Agent watchdog timeout'), {
+			tags: { source: 'watchdog_timeout', agent: options.loggerIdentifier },
+			extra: { runId, durationMs },
+		});
 		fileLogger.close();
 		await finalizeRun(
 			runId,
@@ -245,7 +251,7 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 			llmCallAccumulator,
 			{
 				status: 'timed_out',
-				durationMs: Date.now() - startTime,
+				durationMs,
 				success: false,
 				error: 'Watchdog timeout',
 			},
@@ -277,6 +283,12 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 			maxIterations: ctx.maxIterations,
 			promptLength: ctx.prompt.length,
 			runId,
+		});
+
+		addBreadcrumb({
+			category: 'agent',
+			message: `Starting ${options.loggerIdentifier}`,
+			data: { model: ctx.model, maxIterations: ctx.maxIterations, runId },
 		});
 
 		try {
@@ -369,6 +381,10 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 		logger.error('Agent execution failed', {
 			identifier: options.loggerIdentifier,
 			error: String(err),
+		});
+		captureException(err, {
+			tags: { source: 'agent_lifecycle', agent: options.loggerIdentifier },
+			extra: { runId, durationMs: Date.now() - startTime },
 		});
 
 		let logBuffer: Buffer | undefined;

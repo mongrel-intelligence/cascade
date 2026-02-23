@@ -8,6 +8,11 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
+vi.mock('../../../src/sentry.js', () => ({
+	flush: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { flush } from '../../../src/sentry.js';
 import {
 	clearWatchdog,
 	clearWatchdogCleanup,
@@ -16,6 +21,8 @@ import {
 	setWatchdogCleanup,
 	startWatchdog,
 } from '../../../src/utils/lifecycle.js';
+
+const mockFlush = vi.mocked(flush);
 
 describe('lifecycle', () => {
 	beforeEach(() => {
@@ -51,11 +58,20 @@ describe('lifecycle', () => {
 	});
 
 	describe('watchdog', () => {
-		it('force exits after timeout', () => {
+		it('force exits after timeout', async () => {
 			startWatchdog(30000);
 
-			vi.advanceTimersByTime(30000);
+			await vi.advanceTimersByTimeAsync(30000);
 
+			expect(process.exit).toHaveBeenCalledWith(1);
+		});
+
+		it('flushes Sentry before force exit', async () => {
+			startWatchdog(30000);
+
+			await vi.advanceTimersByTimeAsync(30000);
+
+			expect(mockFlush).toHaveBeenCalledWith(3000);
 			expect(process.exit).toHaveBeenCalledWith(1);
 		});
 
@@ -68,14 +84,14 @@ describe('lifecycle', () => {
 			expect(process.exit).not.toHaveBeenCalled();
 		});
 
-		it('clears previous watchdog when starting new one', () => {
+		it('clears previous watchdog when starting new one', async () => {
 			startWatchdog(5000);
 			startWatchdog(10000);
 
-			vi.advanceTimersByTime(5000);
+			await vi.advanceTimersByTimeAsync(5000);
 			expect(process.exit).not.toHaveBeenCalled();
 
-			vi.advanceTimersByTime(5000);
+			await vi.advanceTimersByTimeAsync(5000);
 			expect(process.exit).toHaveBeenCalledWith(1);
 		});
 	});

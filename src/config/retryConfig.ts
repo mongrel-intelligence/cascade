@@ -1,5 +1,6 @@
 import { type RetryConfig, isRetryableError } from 'llmist';
 import type { ILogObj, Logger } from 'llmist';
+import { addBreadcrumb, captureException } from '../sentry.js';
 
 /**
  * Check if an error is a transient stream/connection error from undici/fetch.
@@ -59,6 +60,12 @@ export function getRetryConfig(logger: Logger<ILogObj>): RetryConfig {
 				isStreamError,
 				nextRetryDelayMs: baseDelay,
 			});
+			addBreadcrumb({
+				category: 'llm',
+				message: `LLM retry attempt ${attempt}/5`,
+				level: 'warning',
+				data: { attempt, error: error.message, isStreamError, nextRetryDelayMs: baseDelay },
+			});
 		},
 
 		onRetriesExhausted: (error: Error, attempts: number) => {
@@ -66,6 +73,10 @@ export function getRetryConfig(logger: Logger<ILogObj>): RetryConfig {
 				attempts,
 				error: error.message,
 				totalWaitTimeMs: `~${1000 + 2000 + 4000 + 8000 + 16000}`, // Approximate total
+			});
+			captureException(error, {
+				tags: { source: 'llm_retries_exhausted' },
+				extra: { attempts },
 			});
 		},
 	};

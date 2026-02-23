@@ -48,6 +48,7 @@
 		"@llmist/cli": "^15.2.1",
 		"@oclif/core": "^4.8.0",
 		"@octokit/rest": "^22.0.1",
+		"@sentry/node": "^10.39.0",
 		"@trpc/client": "^11.10.0",
 		"@trpc/server": "^11.10.0",
 		"@types/archiver": "^7.0.0",

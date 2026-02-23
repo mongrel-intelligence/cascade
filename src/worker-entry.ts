@@ -16,7 +16,9 @@
 import { loadEnvConfigSafe } from './config/env.js';
 import { loadConfig } from './config/provider.js';
 import { getDb } from './db/client.js';
+import { captureException, flush, setTag } from './sentry.js';
 import {
+	type TriggerRegistry,
 	createTriggerRegistry,
 	processGitHubWebhook,
 	processJiraWebhook,
@@ -133,13 +135,76 @@ async function processDashboardJob(jobId: string, jobData: DashboardJobData): Pr
 	}
 }
 
+async function dispatchJob(
+	jobId: string,
+	jobData: JobData,
+	triggerRegistry: TriggerRegistry,
+): Promise<void> {
+	switch (jobData.type) {
+		case 'trello':
+			logger.info('[Worker] Processing Trello job', {
+				jobId,
+				cardId: jobData.cardId,
+				actionType: jobData.actionType,
+				ackCommentId: jobData.ackCommentId,
+			});
+			await processTrelloWebhook(jobData.payload, triggerRegistry, jobData.ackCommentId);
+			break;
+		case 'github':
+			logger.info('[Worker] Processing GitHub job', {
+				jobId,
+				eventType: jobData.eventType,
+				repoFullName: jobData.repoFullName,
+				ackCommentId: jobData.ackCommentId,
+			});
+			await processGitHubWebhook(
+				jobData.payload,
+				jobData.eventType,
+				triggerRegistry,
+				jobData.ackCommentId,
+				jobData.ackMessage,
+			);
+			break;
+		case 'jira':
+			logger.info('[Worker] Processing JIRA job', {
+				jobId,
+				issueKey: jobData.issueKey,
+				webhookEvent: jobData.webhookEvent,
+				ackCommentId: jobData.ackCommentId,
+			});
+			await processJiraWebhook(jobData.payload, triggerRegistry, jobData.ackCommentId);
+			break;
+		case 'manual-run':
+		case 'retry-run':
+		case 'debug-analysis':
+			await processDashboardJob(jobId, jobData);
+			break;
+		default: {
+			const unknownType = (jobData as { type: string }).type;
+			logger.error('[Worker] Unknown job type', { jobType: unknownType });
+			captureException(new Error(`Unknown job type: ${unknownType}`), {
+				tags: { source: 'worker_unknown_job' },
+			});
+			await flush();
+			process.exit(1);
+		}
+	}
+}
+
 async function main(): Promise<void> {
 	const jobId = process.env.JOB_ID;
 	const jobType = process.env.JOB_TYPE;
 	const jobDataRaw = process.env.JOB_DATA;
 
+	setTag('role', 'worker');
+	if (jobId) setTag('jobId', jobId);
+	if (jobType) setTag('jobType', jobType);
+
 	if (!jobId || !jobType || !jobDataRaw) {
-		console.error('[Worker] Missing required environment variables: JOB_ID, JOB_TYPE, JOB_DATA');
+		const err = new Error('Missing required environment variables: JOB_ID, JOB_TYPE, JOB_DATA');
+		console.error(`[Worker] ${err.message}`);
+		captureException(err, { tags: { source: 'worker_env' } });
+		await flush();
 		process.exit(1);
 	}
 
@@ -148,8 +213,14 @@ async function main(): Promise<void> {
 		jobData = JSON.parse(jobDataRaw);
 	} catch (err) {
 		console.error('[Worker] Failed to parse JOB_DATA:', err);
+		captureException(err, { tags: { source: 'worker_job_parse' } });
+		await flush();
 		process.exit(1);
 	}
+
+	// Set Sentry tags from parsed job data
+	if ('projectId' in jobData && jobData.projectId) setTag('projectId', jobData.projectId);
+	if ('agentType' in jobData && jobData.agentType) setTag('agentType', jobData.agentType);
 
 	// Load environment config
 	const envConfig = loadEnvConfigSafe();
@@ -182,56 +253,21 @@ async function main(): Promise<void> {
 	registerBuiltInTriggers(triggerRegistry);
 
 	try {
-		if (jobData.type === 'trello') {
-			logger.info('[Worker] Processing Trello job', {
-				jobId,
-				cardId: jobData.cardId,
-				actionType: jobData.actionType,
-				ackCommentId: jobData.ackCommentId,
-			});
-			await processTrelloWebhook(jobData.payload, triggerRegistry, jobData.ackCommentId);
-		} else if (jobData.type === 'github') {
-			logger.info('[Worker] Processing GitHub job', {
-				jobId,
-				eventType: jobData.eventType,
-				repoFullName: jobData.repoFullName,
-				ackCommentId: jobData.ackCommentId,
-			});
-			await processGitHubWebhook(
-				jobData.payload,
-				jobData.eventType,
-				triggerRegistry,
-				jobData.ackCommentId,
-				jobData.ackMessage,
-			);
-		} else if (jobData.type === 'jira') {
-			logger.info('[Worker] Processing JIRA job', {
-				jobId,
-				issueKey: jobData.issueKey,
-				webhookEvent: jobData.webhookEvent,
-				ackCommentId: jobData.ackCommentId,
-			});
-			await processJiraWebhook(jobData.payload, triggerRegistry, jobData.ackCommentId);
-		} else if (
-			jobData.type === 'manual-run' ||
-			jobData.type === 'retry-run' ||
-			jobData.type === 'debug-analysis'
-		) {
-			await processDashboardJob(jobId, jobData);
-		} else {
-			logger.error('[Worker] Unknown job type', { jobType: (jobData as { type: string }).type });
-			process.exit(1);
-		}
-
+		await dispatchJob(jobId, jobData, triggerRegistry);
 		logger.info('[Worker] Job completed successfully', { jobId });
+		await flush();
 		process.exit(0);
 	} catch (err) {
 		logger.error('[Worker] Job failed', { jobId, error: String(err) });
+		captureException(err, { tags: { source: 'worker_job_failure' } });
+		await flush();
 		process.exit(1);
 	}
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
 	console.error('[Worker] Unhandled error:', err);
+	captureException(err, { tags: { source: 'worker_unhandled' }, level: 'fatal' });
+	await flush();
 	process.exit(1);
 });

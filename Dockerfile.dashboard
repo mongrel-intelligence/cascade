@@ -30,4 +30,4 @@ COPY --from=builder /app/src/agents/prompts/templates ./dist/agents/prompts/temp
 
 ENV PORT=3001
 EXPOSE 3001
-CMD ["node", "dist/dashboard.js"]
+CMD ["node", "--import", "./dist/instrument.js", "dist/dashboard.js"]

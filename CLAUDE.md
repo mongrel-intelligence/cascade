@@ -77,6 +77,10 @@ Optional (infrastructure):
 - `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled)
 - `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code backend (subscription auth)
 - `CREDENTIAL_MASTER_KEY` - 64-char hex string (32-byte AES-256 key) for encrypting credentials at rest. Generate with `npm run credentials:generate-key`. When set, all new/updated credentials are encrypted automatically; existing plaintext credentials continue to work.
+- `SENTRY_DSN` - Sentry DSN for error monitoring (router + worker)
+- `SENTRY_ENVIRONMENT` - Sentry environment tag (default: NODE_ENV or 'production')
+- `SENTRY_RELEASE` - Release identifier for source maps (e.g., git SHA)
+- `SENTRY_TRACES_SAMPLE_RATE` - Trace sampling rate 0.0-1.0 (default: 0.1)
 
 **Project credentials** (`GITHUB_TOKEN_IMPLEMENTER`, `GITHUB_TOKEN_REVIEWER`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored in the `credentials` table (org-scoped, encrypted at rest when `CREDENTIAL_MASTER_KEY` is set). Integration-specific credentials (GitHub tokens, Trello keys, JIRA tokens) are linked to integrations via the `integration_credentials` join table with provider-defined roles. Non-integration credentials (LLM API keys) remain org-scoped defaults. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
 
