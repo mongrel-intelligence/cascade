@@ -41,9 +41,10 @@ export async function cloneRepo(
 	const cloneToken = token ?? (await getProjectGitHubToken(project));
 	const cloneUrl = `https://${cloneToken}@github.com/${project.repo}.git`;
 
-	logger.info('Cloning repository', { repo: project.repo, targetDir });
+	const branch = project.baseBranch ?? 'main';
+	logger.info('Cloning repository', { repo: project.repo, targetDir, branch });
 
-	execSync(`git clone ${cloneUrl} ${targetDir}`, {
+	execSync(`git clone --branch ${branch} ${cloneUrl} ${targetDir}`, {
 		stdio: 'pipe',
 		env: { ...process.env },
 	});

@@ -46,9 +46,9 @@ import {
 	generateAckMessage,
 } from '../../../src/router/ackMessageGenerator.js';
 
-// Access llmist mocks — biome-ignore lint/suspicious/noExplicitAny: accessing test-only mock internals
-const llmistModule = (await import('llmist')) as Record<string, any>;
-const mockRun = llmistModule.__mockRun;
+// Access llmist mocks — test-only mock internals
+const llmistModule = (await import('llmist')) as Record<string, unknown>;
+const mockRun = llmistModule.__mockRun as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
 	vi.clearAllMocks();
