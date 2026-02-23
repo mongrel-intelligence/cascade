@@ -4,7 +4,14 @@
  * Eliminates the three near-identical 50-60 line POST handler blocks that
  * previously existed in both `src/server.ts` and `src/router/index.ts` by
  * extracting the shared flow (capacity check, header extraction, parse,
- * log, react, fire-and-forget process) into a single parameterized factory.
+ * log, react, process) into a single parameterized factory.
+ *
+ * Supports two processing modes via `fireAndForget`:
+ * - `true` (default, server mode): respond 200 immediately, process later.
+ * - `false` (router mode): await processing so 200 means "job queued."
+ *
+ * Supports log enrichment via `resolveLogFields` so callers can override
+ * the `processed` and `projectId` fields based on actual processing outcome.
  */
 
 import type { Context, Handler } from 'hono';
@@ -24,6 +31,12 @@ import { logWebhookCall } from '../utils/webhookLogger.js';
 export type ParseResult =
 	| { ok: true; payload: unknown; eventType?: string }
 	| { ok: false; error: string; eventType?: string };
+
+/** Fields that `resolveLogFields` may override in the webhook log entry. */
+export interface WebhookLogOverrides {
+	processed?: boolean;
+	projectId?: string;
+}
 
 /**
  * Configuration object that drives a platform-specific webhook handler.
@@ -48,8 +61,10 @@ export interface WebhookHandlerConfig {
 	sendReaction?: (payload: unknown, eventType: string | undefined) => void;
 
 	/**
-	 * Asynchronous processing callback.
-	 * Invoked via `setImmediate` after a 200 is returned to the caller.
+	 * Processing callback. By default invoked via `setImmediate` (fire-and-forget)
+	 * after a 200 is returned to the caller. When `fireAndForget` is `false`, the
+	 * handler awaits this callback before responding — useful when processing must
+	 * complete (e.g. job queuing) before acknowledging the webhook.
 	 */
 	processWebhook: (payload: unknown, eventType: string | undefined) => Promise<void>;
 
@@ -60,11 +75,65 @@ export interface WebhookHandlerConfig {
 	 * Defaults to `true`.
 	 */
 	checkCapacity?: boolean;
+
+	/**
+	 * Whether to schedule `processWebhook` asynchronously via `setImmediate`
+	 * (fire-and-forget) or await it before responding.
+	 *
+	 * - `true` (default) — server mode: respond 200 immediately, process later.
+	 * - `false` — router mode: await processing so 200 means "job queued."
+	 */
+	fireAndForget?: boolean;
+
+	/**
+	 * Optional callback to enrich the webhook log entry after a successful parse.
+	 * Called with the parsed payload and event type; returns fields to override in
+	 * the log (e.g. `processed`, `projectId`).
+	 *
+	 * When `fireAndForget` is `false`, this is called after `processWebhook`
+	 * completes, allowing log fields to reflect actual processing outcome.
+	 * When `fireAndForget` is `true`, it is called before processing starts.
+	 */
+	resolveLogFields?: (
+		payload: unknown,
+		eventType: string | undefined,
+	) => WebhookLogOverrides | Promise<WebhookLogOverrides>;
 }
 
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
+
+/** Log a successful webhook call, optionally enriched by resolveLogFields. */
+async function logSuccessfulWebhook(
+	source: WebhookHandlerConfig['source'],
+	c: Context,
+	rawHeaders: Record<string, string>,
+	payload: unknown,
+	eventType: string | undefined,
+	resolveLogFields: WebhookHandlerConfig['resolveLogFields'],
+): Promise<void> {
+	const logOverrides = resolveLogFields ? await resolveLogFields(payload, eventType) : undefined;
+	logWebhookCall({
+		source,
+		method: c.req.method,
+		path: c.req.path,
+		headers: rawHeaders,
+		body: payload,
+		statusCode: 200,
+		eventType,
+		processed: logOverrides?.processed ?? true,
+		projectId: logOverrides?.projectId,
+	});
+}
+
+/** Wrap processWebhook with standard error logging. */
+function handleProcessingError(source: WebhookHandlerConfig['source'], err: unknown): void {
+	logger.error(`Error processing ${source} webhook`, {
+		error: String(err),
+		stack: err instanceof Error ? err.stack : undefined,
+	});
+}
 
 /**
  * Build a Hono POST handler for a webhook endpoint.
@@ -74,11 +143,19 @@ export interface WebhookHandlerConfig {
  * 2. Parses the request payload via `config.parsePayload`.
  * 3. Logs the webhook call to the database (both success and failure paths).
  * 4. Fires a fire-and-forget acknowledgment reaction on success.
- * 5. Schedules asynchronous processing via `setImmediate`.
+ * 5. Processes the webhook (fire-and-forget or awaited, per `fireAndForget`).
  * 6. Returns 200 immediately (or 400/503 on failure).
  */
 export function createWebhookHandler(config: WebhookHandlerConfig): Handler {
-	const { source, parsePayload, sendReaction, processWebhook, checkCapacity = true } = config;
+	const {
+		source,
+		parsePayload,
+		sendReaction,
+		processWebhook,
+		checkCapacity = true,
+		fireAndForget = true,
+		resolveLogFields,
+	} = config;
 
 	return async (c: Context) => {
 		// --- Capacity gate (server mode only) ---
@@ -109,32 +186,23 @@ export function createWebhookHandler(config: WebhookHandlerConfig): Handler {
 
 		const { payload, eventType } = parseResult;
 
-		// --- Log success ---
-		logWebhookCall({
-			source,
-			method: c.req.method,
-			path: c.req.path,
-			headers: rawHeaders,
-			body: payload,
-			statusCode: 200,
-			eventType,
-			processed: true,
-		});
-
 		// --- Reaction (fire-and-forget) ---
 		if (sendReaction) {
 			sendReaction(payload, eventType);
 		}
 
-		// --- Async processing ---
-		setImmediate(() => {
-			processWebhook(payload, eventType).catch((err) => {
-				logger.error(`Error processing ${source} webhook`, {
-					error: String(err),
-					stack: err instanceof Error ? err.stack : undefined,
-				});
+		if (fireAndForget) {
+			// --- Log then process asynchronously (server mode) ---
+			await logSuccessfulWebhook(source, c, rawHeaders, payload, eventType, resolveLogFields);
+			setImmediate(() => {
+				processWebhook(payload, eventType).catch((err) => handleProcessingError(source, err));
 			});
-		});
+		} else {
+			// --- Await processing then log (router mode) ---
+			// Process synchronously so 200 means "job queued."
+			await processWebhook(payload, eventType).catch((err) => handleProcessingError(source, err));
+			await logSuccessfulWebhook(source, c, rawHeaders, payload, eventType, resolveLogFields);
+		}
 
 		return c.text('OK', 200);
 	};

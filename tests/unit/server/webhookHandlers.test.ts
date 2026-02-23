@@ -206,6 +206,114 @@ describe('createWebhookHandler', () => {
 
 		expect(sendReaction).not.toHaveBeenCalled();
 	});
+
+	it('awaits processWebhook when fireAndForget=false', async () => {
+		const callOrder: string[] = [];
+		const processWebhook = vi.fn().mockImplementation(async () => {
+			callOrder.push('process');
+		});
+		const handler = createWebhookHandler({
+			source: 'trello',
+			fireAndForget: false,
+			parsePayload: async () => ({ ok: true, payload: { x: 1 }, eventType: 'commentCard' }),
+			processWebhook,
+		});
+
+		const app = buildApp(handler);
+		const res = await postJson(app, { x: 1 });
+
+		// processWebhook was called synchronously before response
+		expect(res.status).toBe(200);
+		expect(processWebhook).toHaveBeenCalledWith({ x: 1 }, 'commentCard');
+		expect(callOrder).toEqual(['process']);
+	});
+
+	it('uses resolveLogFields to enrich log when fireAndForget=false', async () => {
+		const handler = createWebhookHandler({
+			source: 'trello',
+			fireAndForget: false,
+			parsePayload: async () => ({ ok: true, payload: { x: 1 }, eventType: 'commentCard' }),
+			processWebhook: vi.fn().mockResolvedValue(undefined),
+			resolveLogFields: () => ({ processed: false, projectId: 'proj-123' }),
+		});
+
+		const app = buildApp(handler);
+		await postJson(app, { x: 1 });
+
+		expect(mockLogWebhookCall).toHaveBeenCalledWith(
+			expect.objectContaining({
+				statusCode: 200,
+				processed: false,
+				projectId: 'proj-123',
+			}),
+		);
+	});
+
+	it('uses resolveLogFields to enrich log when fireAndForget=true', async () => {
+		vi.useFakeTimers();
+		const handler = createWebhookHandler({
+			source: 'github',
+			fireAndForget: true,
+			parsePayload: async () => ({ ok: true, payload: { y: 2 }, eventType: 'push' }),
+			processWebhook: vi.fn().mockResolvedValue(undefined),
+			resolveLogFields: () => ({ processed: false, projectId: 'proj-456' }),
+		});
+
+		const app = buildApp(handler);
+		await postJson(app, { y: 2 });
+
+		expect(mockLogWebhookCall).toHaveBeenCalledWith(
+			expect.objectContaining({
+				statusCode: 200,
+				processed: false,
+				projectId: 'proj-456',
+			}),
+		);
+		vi.useRealTimers();
+	});
+
+	it('logs processed:true by default when no resolveLogFields provided', async () => {
+		const handler = createWebhookHandler({
+			source: 'jira',
+			fireAndForget: false,
+			parsePayload: async () => ({ ok: true, payload: {}, eventType: 'issue_updated' }),
+			processWebhook: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const app = buildApp(handler);
+		await postJson(app, {});
+
+		expect(mockLogWebhookCall).toHaveBeenCalledWith(
+			expect.objectContaining({
+				statusCode: 200,
+				processed: true,
+			}),
+		);
+	});
+
+	it('resolveLogFields receives processing outcome when fireAndForget=false', async () => {
+		let processingDone = false;
+		const resolveLogFields = vi.fn().mockImplementation(() => {
+			// Verify processing completed before resolveLogFields is called
+			return { processed: processingDone };
+		});
+		const handler = createWebhookHandler({
+			source: 'trello',
+			fireAndForget: false,
+			parsePayload: async () => ({ ok: true, payload: {}, eventType: 'commentCard' }),
+			processWebhook: async () => {
+				processingDone = true;
+			},
+			resolveLogFields,
+		});
+
+		const app = buildApp(handler);
+		await postJson(app, {});
+
+		expect(resolveLogFields).toHaveBeenCalled();
+		// resolveLogFields ran after processWebhook, so processingDone was true
+		expect(mockLogWebhookCall).toHaveBeenCalledWith(expect.objectContaining({ processed: true }));
+	});
 });
 
 // ---------------------------------------------------------------------------

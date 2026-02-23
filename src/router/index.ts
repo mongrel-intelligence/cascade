@@ -45,14 +45,33 @@ app.on(['HEAD', 'GET'], '/trello/webhook', (c) => {
 // Trello webhook handler
 app.post(
 	'/trello/webhook',
-	createWebhookHandler({
-		source: 'trello',
-		checkCapacity: false,
-		parsePayload: parseTrelloPayload,
-		processWebhook: async (payload) => {
-			await handleTrelloWebhook(payload, triggerRegistry);
-		},
-	}),
+	(() => {
+		let lastResult: { shouldProcess: boolean; projectId?: string } | undefined;
+		return createWebhookHandler({
+			source: 'trello',
+			checkCapacity: false,
+			fireAndForget: false,
+			parsePayload: parseTrelloPayload,
+			processWebhook: async (payload) => {
+				const { shouldProcess, project, cardId } = await handleTrelloWebhook(
+					payload,
+					triggerRegistry,
+				);
+				lastResult = {
+					shouldProcess: shouldProcess && !!project && !!cardId,
+					projectId: project?.id,
+				};
+			},
+			resolveLogFields: () => {
+				const result = lastResult;
+				lastResult = undefined;
+				return {
+					processed: result?.shouldProcess ?? false,
+					projectId: result?.projectId,
+				};
+			},
+		});
+	})(),
 );
 
 // GitHub webhook verification
@@ -63,14 +82,28 @@ app.get('/github/webhook', (c) => {
 // GitHub webhook handler
 app.post(
 	'/github/webhook',
-	createWebhookHandler({
-		source: 'github',
-		checkCapacity: false,
-		parsePayload: parseGitHubPayload,
-		processWebhook: async (payload, eventType) => {
-			await handleGitHubWebhook(eventType ?? 'unknown', payload, triggerRegistry);
-		},
-	}),
+	(() => {
+		let lastResult: { shouldProcess: boolean } | undefined;
+		return createWebhookHandler({
+			source: 'github',
+			checkCapacity: false,
+			fireAndForget: false,
+			parsePayload: parseGitHubPayload,
+			processWebhook: async (payload, eventType) => {
+				const { shouldProcess } = await handleGitHubWebhook(
+					eventType ?? 'unknown',
+					payload,
+					triggerRegistry,
+				);
+				lastResult = { shouldProcess };
+			},
+			resolveLogFields: () => {
+				const result = lastResult;
+				lastResult = undefined;
+				return { processed: result?.shouldProcess ?? false };
+			},
+		});
+	})(),
 );
 
 // JIRA webhook verification
@@ -81,14 +114,30 @@ app.get('/jira/webhook', (c) => {
 // JIRA webhook handler
 app.post(
 	'/jira/webhook',
-	createWebhookHandler({
-		source: 'jira',
-		checkCapacity: false,
-		parsePayload: parseJiraPayload,
-		processWebhook: async (payload) => {
-			await handleJiraWebhook(payload, triggerRegistry);
-		},
-	}),
+	(() => {
+		let lastResult: { shouldProcess: boolean; projectId?: string } | undefined;
+		return createWebhookHandler({
+			source: 'jira',
+			checkCapacity: false,
+			fireAndForget: false,
+			parsePayload: parseJiraPayload,
+			processWebhook: async (payload) => {
+				const { shouldProcess, project } = await handleJiraWebhook(payload, triggerRegistry);
+				lastResult = {
+					shouldProcess: !!shouldProcess,
+					projectId: project?.id,
+				};
+			},
+			resolveLogFields: () => {
+				const result = lastResult;
+				lastResult = undefined;
+				return {
+					processed: result?.shouldProcess ?? false,
+					projectId: result?.projectId,
+				};
+			},
+		});
+	})(),
 );
 
 // Graceful shutdown
