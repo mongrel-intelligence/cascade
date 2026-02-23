@@ -41,6 +41,8 @@ export interface AgentInput {
 
 	// Router-posted ack comment ID — used by ProgressMonitor to update in-place
 	ackCommentId?: string | number;
+	// Router/webhook-handler-posted ack message text — reused as initial comment header
+	ackMessage?: string;
 
 	[key: string]: unknown;
 }
@@ -72,18 +74,13 @@ export interface TriggerResult {
 	agentInput: AgentInput;
 	workItemId?: string;
 	prNumber?: number;
+	/** When true, the worker must poll for all CI checks to pass before starting the agent. */
+	waitForChecks?: boolean;
 }
 
 export interface TriggerHandler {
 	name: string;
 	description: string;
 	matches: (ctx: TriggerContext) => boolean;
-	/**
-	 * Resolve the agent type this trigger would run, without side effects.
-	 * Returns null when agent type cannot be determined without API calls
-	 * (e.g. Trello label-added needs card lookup) or when the trigger
-	 * doesn't run an agent (e.g. PR merged).
-	 */
-	resolveAgentType: (ctx: TriggerContext) => string | null;
 	handle: (ctx: TriggerContext) => Promise<TriggerResult | null>;
 }

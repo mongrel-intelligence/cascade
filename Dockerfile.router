@@ -30,4 +30,4 @@ COPY config ./config
 
 ENV PORT=3000
 EXPOSE 3000
-CMD ["node", "dist/router/index.js"]
+CMD ["node", "--import", "./dist/instrument.js", "dist/router/index.js"]

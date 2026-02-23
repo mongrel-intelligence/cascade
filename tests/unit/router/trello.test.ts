@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+	},
+}));
+
 // Mock heavy imports
 vi.mock('../../../src/router/config.js', () => ({
 	loadProjectConfig: vi.fn(),
@@ -17,6 +26,12 @@ vi.mock('../../../src/router/acknowledgments.js', () => ({
 vi.mock('../../../src/router/ackMessageGenerator.js', () => ({
 	extractTrelloContext: vi.fn().mockReturnValue('Card: Test card'),
 	generateAckMessage: vi.fn().mockResolvedValue('Starting implementation...'),
+}));
+vi.mock('../../../src/router/platformClients.js', () => ({
+	resolveTrelloCredentials: vi.fn().mockResolvedValue({ apiKey: 'key', token: 'tok' }),
+}));
+vi.mock('../../../src/trello/client.js', () => ({
+	withTrelloCredentials: vi.fn().mockImplementation((_creds: unknown, fn: () => unknown) => fn()),
 }));
 
 import { postTrelloAck, resolveTrelloBotMemberId } from '../../../src/router/acknowledgments.js';
@@ -53,7 +68,7 @@ const mockProject: RouterProjectConfig = {
 };
 
 const mockTriggerRegistry = {
-	matchTrigger: vi.fn(),
+	dispatch: vi.fn().mockResolvedValue(null),
 } as unknown as TriggerRegistry;
 
 beforeEach(() => {
@@ -66,8 +81,17 @@ describe('isAgentLogFilename', () => {
 		expect(isAgentLogFilename('briefing-timeout-2026-01-02T12-34-56-789Z.zip')).toBe(true);
 	});
 
+	it('matches multi-hyphen agent names (e.g. respond-to-review)', () => {
+		expect(isAgentLogFilename('respond-to-review-2026-01-02T16-30-24-339Z.zip')).toBe(true);
+		expect(isAgentLogFilename('respond-to-pr-comment-2026-01-02T16-30-24-339Z.zip')).toBe(true);
+	});
+
 	it('does not match non-zip filenames', () => {
 		expect(isAgentLogFilename('screenshot.png')).toBe(false);
+	});
+
+	it('does not match filenames without a timestamp', () => {
+		expect(isAgentLogFilename('implementation.zip')).toBe(false);
 	});
 
 	it('matches debug-prefixed filenames (caller filters separately)', () => {
@@ -249,9 +273,36 @@ describe('processTrelloWebhookEvent', () => {
 		expect(addJob).not.toHaveBeenCalled();
 	});
 
-	it('queues a job for non-self-authored comment', async () => {
+	it('does not queue a job when dispatch returns null', async () => {
 		vi.mocked(resolveTrelloBotMemberId).mockResolvedValue('bot-id');
+		vi.mocked(loadProjectConfig).mockResolvedValue({
+			projects: [mockProject],
+			fullProjects: [{ id: 'p1' }],
+		} as never);
+		(mockTriggerRegistry.dispatch as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+		await processTrelloWebhookEvent(
+			mockProject,
+			'card1',
+			'commentCard',
+			{ action: { idMemberCreator: 'user-id' } },
+			mockTriggerRegistry,
+		);
+		expect(addJob).not.toHaveBeenCalled();
+	});
+
+	it('queues a job when dispatch returns a result', async () => {
+		vi.mocked(resolveTrelloBotMemberId).mockResolvedValue('bot-id');
+		vi.mocked(loadProjectConfig).mockResolvedValue({
+			projects: [mockProject],
+			fullProjects: [{ id: 'p1' }],
+		} as never);
 		vi.mocked(addJob).mockResolvedValue('job-1');
+		(mockTriggerRegistry.dispatch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			agentType: 'implementation',
+			agentInput: { cardId: 'card1' },
+		});
+
 		await processTrelloWebhookEvent(
 			mockProject,
 			'card1',
@@ -265,14 +316,24 @@ describe('processTrelloWebhookEvent', () => {
 				projectId: 'p1',
 				cardId: 'card1',
 				actionType: 'commentCard',
+				triggerResult: expect.objectContaining({ agentType: 'implementation' }),
 			}),
 		);
 	});
 
 	it('sends ack reaction for comment actions', async () => {
 		vi.mocked(resolveTrelloBotMemberId).mockResolvedValue('bot-id');
+		vi.mocked(loadProjectConfig).mockResolvedValue({
+			projects: [mockProject],
+			fullProjects: [{ id: 'p1' }],
+		} as never);
 		vi.mocked(addJob).mockResolvedValue('job-1');
 		vi.mocked(sendAcknowledgeReaction).mockResolvedValue(undefined);
+		(mockTriggerRegistry.dispatch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			agentType: 'implementation',
+			agentInput: { cardId: 'card1' },
+		});
+
 		await processTrelloWebhookEvent(
 			mockProject,
 			'card1',

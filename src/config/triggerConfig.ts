@@ -34,14 +34,46 @@ export const TrelloTriggerConfigSchema = z.object({
 });
 
 /**
+ * Per-agent issue-transitioned configuration for JIRA.
+ * Each agent type can independently toggle whether the issue-transitioned trigger fires for it.
+ */
+export const IssueTransitionedSchema = z
+	.union([
+		z.boolean(),
+		z.object({
+			briefing: z.boolean().default(true),
+			planning: z.boolean().default(true),
+			implementation: z.boolean().default(true),
+		}),
+	])
+	.optional();
+
+export type IssueTransitionedConfig = z.infer<typeof IssueTransitionedSchema>;
+
+/**
  * Trigger configuration for JIRA integrations.
  * All triggers default to `true` for backward compatibility.
  */
 export const JiraTriggerConfigSchema = z.object({
-	issueTransitioned: z.boolean().default(true),
+	issueTransitioned: IssueTransitionedSchema,
 	readyToProcessLabel: ReadyToProcessLabelSchema,
 	commentMention: z.boolean().default(true),
 });
+
+/**
+ * Structured review trigger configuration with three independent modes.
+ * All modes default to `false` (safe default — users must explicitly opt in).
+ */
+export const ReviewTriggerConfigSchema = z.object({
+	/** Trigger review for PRs authored by the implementer persona. */
+	ownPrsOnly: z.boolean().default(false),
+	/** Trigger review for PRs authored by anyone (not just the implementer). */
+	externalPrs: z.boolean().default(false),
+	/** Trigger review when a CASCADE persona is explicitly requested as reviewer. */
+	onReviewRequested: z.boolean().default(false),
+});
+
+export type ReviewTriggerConfig = z.infer<typeof ReviewTriggerConfigSchema>;
 
 /**
  * Trigger configuration for GitHub integrations.
@@ -54,15 +86,57 @@ export const GitHubTriggerConfigSchema = z.object({
 	prCommentMention: z.boolean().default(true),
 	prReadyToMerge: z.boolean().default(true),
 	prMerged: z.boolean().default(true),
-	/** New trigger: fires review agent when review is requested from a CASCADE persona. Default false (opt-in). */
+	/** Legacy trigger: fires review agent when review is requested from a CASCADE persona. Default false (opt-in). */
 	reviewRequested: z.boolean().default(false),
 	/** PR opened trigger. Default false (disabled until reviewed). */
 	prOpened: z.boolean().default(false),
+	/**
+	 * Structured review trigger config with three independent modes.
+	 * When present, takes precedence over the legacy `reviewRequested` / `checkSuiteSuccess` booleans.
+	 */
+	reviewTrigger: ReviewTriggerConfigSchema.optional(),
 });
 
 export type TrelloTriggerConfig = z.infer<typeof TrelloTriggerConfigSchema>;
 export type JiraTriggerConfig = z.infer<typeof JiraTriggerConfigSchema>;
 export type GitHubTriggerConfig = z.infer<typeof GitHubTriggerConfigSchema>;
+
+// ============================================================================
+// Review Trigger Resolution
+// ============================================================================
+
+/**
+ * Resolve the structured review trigger config from GitHub trigger config.
+ *
+ * Precedence:
+ * 1. `reviewTrigger` object (new structured config) — wins when present
+ * 2. Legacy booleans: `checkSuiteSuccess` → `ownPrsOnly`, `reviewRequested` → `onReviewRequested`
+ * 3. Bare defaults (no config) — all modes false
+ *
+ * This helper is the single source of truth for determining which review trigger modes are active.
+ */
+export function resolveReviewTriggerConfig(
+	config: Partial<GitHubTriggerConfig> | undefined,
+): ReviewTriggerConfig {
+	// New structured config wins when present
+	if (config?.reviewTrigger !== undefined) {
+		return {
+			ownPrsOnly: config.reviewTrigger.ownPrsOnly ?? false,
+			externalPrs: config.reviewTrigger.externalPrs ?? false,
+			onReviewRequested: config.reviewTrigger.onReviewRequested ?? false,
+		};
+	}
+
+	// Legacy fallback: map old boolean flags to structured modes
+	const legacyOwnPrsOnly = config?.checkSuiteSuccess ?? true; // existing default was true
+	const legacyOnReviewRequested = config?.reviewRequested ?? false;
+
+	return {
+		ownPrsOnly: legacyOwnPrsOnly,
+		externalPrs: false, // no legacy equivalent — always false
+		onReviewRequested: legacyOnReviewRequested,
+	};
+}
 
 // ============================================================================
 // Helpers
@@ -114,6 +188,30 @@ export function resolveReadyToProcessEnabled(
 }
 
 /**
+ * Resolve whether the issue-transitioned trigger is enabled for a specific agent type.
+ * Supports both the new nested object format and the legacy boolean format.
+ * Returns `true` when no config is present (backward compatible).
+ */
+export function resolveIssueTransitionedEnabled(
+	config: Partial<JiraTriggerConfig> | undefined,
+	agentType: string,
+): boolean {
+	if (!config) return true;
+	const it = config.issueTransitioned as IssueTransitionedConfig;
+	if (it === undefined) return true;
+	if (typeof it === 'boolean') {
+		// Legacy: boolean applies to all agents
+		return it;
+	}
+	// Nested object: check per-agent toggle
+	if (agentType === 'briefing') return it.briefing ?? true;
+	if (agentType === 'planning') return it.planning ?? true;
+	if (agentType === 'implementation') return it.implementation ?? true;
+	// Unknown agent type — default to enabled
+	return true;
+}
+
+/**
  * Resolve whether a JIRA trigger is enabled based on project trigger config.
  * Returns `true` (enabled) when no config is present (backward compatible).
  */
@@ -128,6 +226,13 @@ export function resolveJiraTriggerEnabled(
 		if (rtp === undefined) return true;
 		if (typeof rtp === 'boolean') return rtp;
 		return rtp.briefing || rtp.planning || rtp.implementation;
+	}
+	if (key === 'issueTransitioned') {
+		const it = value as IssueTransitionedConfig;
+		if (it === undefined) return true;
+		if (typeof it === 'boolean') return it;
+		// Object form: enabled if any agent is enabled
+		return it.briefing || it.planning || it.implementation;
 	}
 	return value === undefined ? true : (value as boolean);
 }
@@ -151,5 +256,7 @@ export function resolveGitHubTriggerEnabled(
 		if (key === 'reviewRequested' || key === 'prOpened') return false;
 		return true;
 	}
+	// reviewTrigger is an object, not a boolean — skip it in this function
+	if (typeof value !== 'boolean') return true;
 	return value;
 }

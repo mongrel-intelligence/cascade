@@ -60,17 +60,6 @@ describe('CheckSuiteFailureTrigger', () => {
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 	});
 
-	describe('resolveAgentType', () => {
-		it('returns respond-to-ci', () => {
-			const ctx: TriggerContext = {
-				project: mockProject,
-				source: 'github',
-				payload: {},
-			};
-			expect(trigger.resolveAgentType(ctx)).toBe('respond-to-ci');
-		});
-	});
-
 	describe('matches', () => {
 		it('matches completed check suite with failure conclusion and PRs', () => {
 			const ctx: TriggerContext = {

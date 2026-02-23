@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+	},
+}));
+
 // Mocks required for PM integration registration (pm/index.js side-effect)
 vi.mock('../../../src/config/provider.js', () => ({
 	getIntegrationCredential: vi.fn(),
@@ -157,16 +166,6 @@ describe('CardMovedToBriefingTrigger', () => {
 		expect(trigger.matches(ctx)).toBe(false);
 	});
 
-	it('resolveAgentType returns briefing', () => {
-		const ctx: TriggerContext = {
-			project: mockProject,
-			source: 'trello',
-			payload: {},
-		};
-
-		expect(trigger.resolveAgentType(ctx)).toBe('briefing');
-	});
-
 	it('handles and returns briefing agent', async () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
@@ -189,9 +188,9 @@ describe('CardMovedToBriefingTrigger', () => {
 
 		const result = await trigger.handle(ctx);
 
-		expect(result.agentType).toBe('briefing');
-		expect(result.workItemId).toBe('card123');
-		expect(result.agentInput.cardId).toBe('card123');
+		expect(result?.agentType).toBe('briefing');
+		expect(result?.workItemId).toBe('card123');
+		expect(result?.agentInput.cardId).toBe('card123');
 	});
 });
 
@@ -238,16 +237,6 @@ describe('CardMovedToTodoTrigger', () => {
 		expect(trigger.matches(ctx)).toBe(true);
 	});
 
-	it('resolveAgentType returns implementation', () => {
-		const ctx: TriggerContext = {
-			project: mockProject,
-			source: 'trello',
-			payload: {},
-		};
-
-		expect(trigger.resolveAgentType(ctx)).toBe('implementation');
-	});
-
 	it('handles and returns implementation agent', async () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
@@ -270,7 +259,31 @@ describe('CardMovedToTodoTrigger', () => {
 
 		const result = await trigger.handle(ctx);
 
-		expect(result.agentType).toBe('implementation');
-		expect(result.workItemId).toBe('card456');
+		expect(result?.agentType).toBe('implementation');
+		expect(result?.workItemId).toBe('card456');
+	});
+
+	it('returns null when card ID is missing from payload', async () => {
+		const ctx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: {
+				model: { id: 'board123', name: 'Board' },
+				action: {
+					id: 'action1',
+					idMemberCreator: 'member1',
+					type: 'updateCard',
+					date: '2024-01-01',
+					data: {
+						// No card field
+						listBefore: { id: 'planning-list-id', name: 'Planning' },
+						listAfter: { id: 'todo-list-id', name: 'TODO' },
+					},
+				},
+			},
+		};
+
+		const result = await trigger.handle(ctx);
+		expect(result).toBeNull();
 	});
 });

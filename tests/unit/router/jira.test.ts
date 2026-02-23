@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+	},
+}));
+
 // Mock heavy imports
 vi.mock('../../../src/router/config.js', () => ({
 	loadProjectConfig: vi.fn(),
@@ -18,6 +27,14 @@ vi.mock('../../../src/router/ackMessageGenerator.js', () => ({
 	extractJiraContext: vi.fn().mockReturnValue('Issue: Test issue'),
 	generateAckMessage: vi.fn().mockResolvedValue('Starting implementation...'),
 }));
+vi.mock('../../../src/router/platformClients.js', () => ({
+	resolveJiraCredentials: vi
+		.fn()
+		.mockResolvedValue({ email: 'e@x.com', apiToken: 'tok', baseUrl: 'https://x.atlassian.net' }),
+}));
+vi.mock('../../../src/jira/client.js', () => ({
+	withJiraCredentials: vi.fn().mockImplementation((_c: unknown, fn: () => unknown) => fn()),
+}));
 
 import { resolveJiraBotAccountId } from '../../../src/router/acknowledgments.js';
 import { loadProjectConfig } from '../../../src/router/config.js';
@@ -25,7 +42,7 @@ import type { RouterProjectConfig } from '../../../src/router/config.js';
 import {
 	handleJiraWebhook,
 	isSelfAuthoredJiraComment,
-	queueJiraJob,
+	processJiraWebhookEvent,
 } from '../../../src/router/jira.js';
 import { addJob } from '../../../src/router/queue.js';
 import { sendAcknowledgeReaction } from '../../../src/router/reactions.js';
@@ -42,7 +59,7 @@ const mockProject: RouterProjectConfig = {
 };
 
 const mockTriggerRegistry = {
-	matchTrigger: vi.fn(),
+	dispatch: vi.fn().mockResolvedValue(null),
 } as unknown as TriggerRegistry;
 
 beforeEach(() => {
@@ -91,15 +108,22 @@ describe('isSelfAuthoredJiraComment', () => {
 	});
 });
 
-describe('queueJiraJob', () => {
-	it('queues a jira job', async () => {
+describe('processJiraWebhookEvent', () => {
+	const fullProject = { id: 'p1', repo: 'owner/repo' };
+
+	it('queues a jira job when dispatch matches', async () => {
 		vi.mocked(addJob).mockResolvedValue('job-1');
-		await queueJiraJob(
+		(mockTriggerRegistry.dispatch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			agentType: 'implementation',
+			agentInput: { issueKey: 'MYPROJ-123' },
+		});
+
+		await processJiraWebhookEvent(
 			mockProject,
 			'MYPROJ-123',
 			'jira:issue_updated',
 			{ issue: { key: 'MYPROJ-123' } },
-			[],
+			[fullProject] as never,
 			mockTriggerRegistry,
 		);
 		expect(addJob).toHaveBeenCalledWith(
@@ -108,20 +132,39 @@ describe('queueJiraJob', () => {
 				projectId: 'p1',
 				issueKey: 'MYPROJ-123',
 				webhookEvent: 'jira:issue_updated',
+				triggerResult: expect.objectContaining({ agentType: 'implementation' }),
 			}),
 		);
+	});
+
+	it('does not queue when dispatch returns null', async () => {
+		(mockTriggerRegistry.dispatch as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+		await processJiraWebhookEvent(
+			mockProject,
+			'MYPROJ-123',
+			'jira:issue_updated',
+			{ issue: { key: 'MYPROJ-123' } },
+			[fullProject] as never,
+			mockTriggerRegistry,
+		);
+		expect(addJob).not.toHaveBeenCalled();
 	});
 
 	it('sends ack reaction for comment events', async () => {
 		vi.mocked(addJob).mockResolvedValue('job-1');
 		vi.mocked(sendAcknowledgeReaction).mockResolvedValue(undefined);
+		(mockTriggerRegistry.dispatch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			agentType: 'implementation',
+			agentInput: {},
+		});
 
-		await queueJiraJob(
+		await processJiraWebhookEvent(
 			mockProject,
 			'MYPROJ-123',
 			'comment_created',
 			{ comment: {} },
-			[],
+			[fullProject] as never,
 			mockTriggerRegistry,
 		);
 
@@ -132,12 +175,17 @@ describe('queueJiraJob', () => {
 
 	it('does not send reaction for non-comment events', async () => {
 		vi.mocked(addJob).mockResolvedValue('job-1');
-		await queueJiraJob(
+		(mockTriggerRegistry.dispatch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			agentType: 'implementation',
+			agentInput: {},
+		});
+
+		await processJiraWebhookEvent(
 			mockProject,
 			'MYPROJ-123',
 			'jira:issue_updated',
 			{},
-			[],
+			[fullProject] as never,
 			mockTriggerRegistry,
 		);
 		expect(sendAcknowledgeReaction).not.toHaveBeenCalled();
@@ -177,12 +225,16 @@ describe('handleJiraWebhook', () => {
 		expect(addJob).not.toHaveBeenCalled();
 	});
 
-	it('processes jira:issue_updated events for known projects', async () => {
+	it('processes jira:issue_updated events for known projects when dispatch matches', async () => {
 		vi.mocked(loadProjectConfig).mockResolvedValue({
 			projects: [mockProject],
-			fullProjects: [],
-		});
+			fullProjects: [{ id: 'p1' }],
+		} as never);
 		vi.mocked(addJob).mockResolvedValue('job-1');
+		(mockTriggerRegistry.dispatch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			agentType: 'implementation',
+			agentInput: {},
+		});
 
 		const result = await handleJiraWebhook(
 			{
@@ -194,7 +246,12 @@ describe('handleJiraWebhook', () => {
 
 		expect(result.shouldProcess).toBe(true);
 		expect(addJob).toHaveBeenCalledWith(
-			expect.objectContaining({ type: 'jira', projectId: 'p1', issueKey: 'MYPROJ-1' }),
+			expect.objectContaining({
+				type: 'jira',
+				projectId: 'p1',
+				issueKey: 'MYPROJ-1',
+				triggerResult: expect.objectContaining({ agentType: 'implementation' }),
+			}),
 		);
 	});
 

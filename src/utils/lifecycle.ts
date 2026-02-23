@@ -1,3 +1,4 @@
+import { flush } from '../sentry.js';
 import { logger } from './logging.js';
 
 let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
@@ -43,6 +44,7 @@ export function startWatchdog(timeoutMs: number): void {
 			}
 		}
 
+		await flush(3000);
 		logger.error('Force exiting');
 		process.exit(1);
 	}, timeoutMs);

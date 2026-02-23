@@ -5,44 +5,14 @@
  * a CASCADE agent type (briefing, planning, implementation).
  */
 
-import { resolveJiraTriggerEnabled } from '../../config/triggerConfig.js';
+import {
+	resolveIssueTransitionedEnabled,
+	resolveJiraTriggerEnabled,
+} from '../../config/triggerConfig.js';
 import { getJiraConfig } from '../../pm/config.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
-
-interface JiraWebhookPayload {
-	webhookEvent: string;
-	issue?: {
-		key: string;
-		fields?: {
-			project?: { key?: string };
-			status?: { name?: string };
-			summary?: string;
-		};
-	};
-	changelog?: {
-		items?: Array<{
-			field?: string;
-			fromString?: string;
-			toString?: string;
-		}>;
-	};
-}
-
-/**
- * Maps a JIRA status name to the CASCADE agent type based on project config.
- *
- * project.jira.statuses maps CASCADE status names to JIRA status names, e.g.:
- *   { briefing: "Briefing", planning: "Planning", todo: "To Do" }
- *
- * We invert this mapping: if the issue transitioned to "Briefing", we fire
- * the briefing agent.
- */
-const STATUS_TO_AGENT: Record<string, string> = {
-	briefing: 'briefing',
-	planning: 'planning',
-	todo: 'implementation',
-};
+import { type JiraWebhookPayload, STATUS_TO_AGENT } from './types.js';
 
 export class JiraIssueTransitionedTrigger implements TriggerHandler {
 	name = 'jira-issue-transitioned';
@@ -62,23 +32,6 @@ export class JiraIssueTransitionedTrigger implements TriggerHandler {
 		// Must have a status change in changelog
 		const statusChange = payload.changelog?.items?.find((item) => item.field === 'status');
 		return !!statusChange;
-	}
-
-	resolveAgentType(ctx: TriggerContext): string | null {
-		const payload = ctx.payload as JiraWebhookPayload;
-		const statusChange = payload.changelog?.items?.find((item) => item.field === 'status');
-		const newStatus = statusChange?.toString;
-		if (!newStatus) return null;
-
-		const jiraConfig = getJiraConfig(ctx.project);
-		if (!jiraConfig?.statuses) return null;
-
-		for (const [cascadeStatus, jiraStatus] of Object.entries(jiraConfig.statuses)) {
-			if (jiraStatus.toLowerCase() === newStatus.toLowerCase()) {
-				return STATUS_TO_AGENT[cascadeStatus] ?? null;
-			}
-		}
-		return null;
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
@@ -117,6 +70,15 @@ export class JiraIssueTransitionedTrigger implements TriggerHandler {
 				issueKey,
 				newStatus,
 				configuredStatuses: jiraConfig.statuses,
+			});
+			return null;
+		}
+
+		// Check per-agent toggle for issueTransitioned
+		if (!resolveIssueTransitionedEnabled(jiraConfig?.triggers, agentType)) {
+			logger.debug('JIRA issue-transitioned trigger disabled for agent', {
+				issueKey,
+				agentType,
 			});
 			return null;
 		}

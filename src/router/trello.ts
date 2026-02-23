@@ -1,15 +1,18 @@
 /**
  * Trello webhook handler for the router (multi-container) deployment mode.
  *
- * Handles webhook parsing, self-comment filtering, ack posting, and job queuing
- * for Trello webhook events.
+ * Runs full trigger dispatch() to determine if a job should be queued.
+ * Only posts ack comments and queues jobs when dispatch confirms a match.
  */
 
+import { withTrelloCredentials } from '../trello/client.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
-import type { TriggerContext } from '../types/index.js';
+import type { TriggerContext, TriggerResult } from '../types/index.js';
+import { logger } from '../utils/logging.js';
 import { extractTrelloContext, generateAckMessage } from './ackMessageGenerator.js';
 import { postTrelloAck, resolveTrelloBotMemberId } from './acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from './config.js';
+import { resolveTrelloCredentials } from './platformClients.js';
 import { type CascadeJob, addJob } from './queue.js';
 import { sendAcknowledgeReaction } from './reactions.js';
 
@@ -20,9 +23,10 @@ import { sendAcknowledgeReaction } from './reactions.js';
 /**
  * Check if filename matches agent log pattern: {agent-type}-{timestamp}.zip
  * Examples: implementation-2026-01-02T16-30-24-339Z.zip, briefing-timeout-2026-01-02T12-34-56-789Z.zip
+ * The timestamp follows ISO 8601 format with colons replaced by hyphens: YYYY-MM-DDTHH-MM-SS-mmmZ
  */
 export function isAgentLogFilename(filename: string): boolean {
-	return /^[a-z]+(?:-timeout)?-[\d-TZ]+\.zip$/i.test(filename);
+	return /^.+-\d{4}-\d{2}-\d{2}T[\d-]+Z\.zip$/.test(filename);
 }
 
 export function isCardInTriggerList(
@@ -42,7 +46,7 @@ export function isCardInTriggerList(
 		const listAfter = data.listAfter as Record<string, unknown>;
 		const listId = listAfter.id as string;
 		if (triggerLists.includes(listId)) {
-			console.log(`[Router] Card moved to trigger list: ${listId}`);
+			logger.info('Card moved to trigger list', { listId });
 			return true;
 		}
 	}
@@ -52,7 +56,7 @@ export function isCardInTriggerList(
 		const list = data.list as Record<string, unknown>;
 		const listId = list.id as string;
 		if (triggerLists.includes(listId)) {
-			console.log(`[Router] Card created in trigger list: ${listId}`);
+			logger.info('Card created in trigger list', { listId });
 			return true;
 		}
 	}
@@ -72,7 +76,7 @@ export function isReadyToProcessLabelAdded(
 	const labelId = label.id as string;
 
 	if (labelId === project.trello.labels.readyToProcess) {
-		console.log('[Router] Ready-to-process label added');
+		logger.info('Ready-to-process label added', { labelId });
 		return true;
 	}
 	return false;
@@ -90,7 +94,7 @@ export function isAgentLogAttachmentUploaded(
 	const name = attachment.name as string | undefined;
 
 	if (name && isAgentLogFilename(name) && !name.startsWith('debug-')) {
-		console.log(`[Router] Agent log attachment uploaded: ${name}`);
+		logger.info('Agent log attachment uploaded', { name });
 		return true;
 	}
 	return false;
@@ -140,31 +144,6 @@ export async function parseTrelloWebhook(payload: unknown): Promise<TrelloWebhoo
 	return { shouldProcess, project, projectId: project.id, actionType, cardId };
 }
 
-/**
- * Try to match a trigger and post an ack comment for a Trello webhook.
- * Returns the ack comment ID if posted, undefined otherwise.
- */
-export async function tryPostTrelloAck(
-	projectId: string,
-	cardId: string,
-	payload: unknown,
-	triggerRegistry: TriggerRegistry,
-): Promise<string | undefined> {
-	const config = await loadProjectConfig();
-	const fullProject = config.fullProjects.find((fp) => fp.id === projectId);
-	if (!fullProject) return undefined;
-
-	const ctx: TriggerContext = { project: fullProject, source: 'trello', payload };
-	const match = triggerRegistry.matchTrigger(ctx);
-	if (!match) return undefined;
-
-	const context = extractTrelloContext(payload);
-	const message = await generateAckMessage(match.agentType, context, projectId);
-
-	const commentId = await postTrelloAck(projectId, cardId, message);
-	return commentId ?? undefined;
-}
-
 export async function isSelfAuthoredTrelloComment(
 	payload: unknown,
 	projectId: string,
@@ -180,6 +159,9 @@ export async function isSelfAuthoredTrelloComment(
 	}
 }
 
+/**
+ * Run authoritative dispatch and, if matched, post ack + queue job.
+ */
 export async function processTrelloWebhookEvent(
 	project: RouterProjectConfig,
 	cardId: string,
@@ -188,27 +170,68 @@ export async function processTrelloWebhookEvent(
 	triggerRegistry: TriggerRegistry,
 ): Promise<void> {
 	if (actionType === 'commentCard' && (await isSelfAuthoredTrelloComment(payload, project.id))) {
-		console.log('[Router] Ignoring self-authored Trello comment');
+		logger.info('Ignoring self-authored Trello comment', { projectId: project.id });
 		return;
 	}
-
-	console.log('[Router] Queueing Trello job:', { actionType, cardId, projectId: project.id });
 
 	// Fire-and-forget acknowledgment reaction — only for comment actions
 	if (actionType === 'commentCard') {
 		void sendAcknowledgeReaction('trello', project.id, payload).catch((err) =>
-			console.error('[Router] Trello reaction error:', err),
+			logger.error('Trello reaction error', { error: String(err) }),
 		);
 	}
 
-	// Try to post an ack comment via trigger matching (non-blocking best-effort)
-	let ackCommentId: string | undefined;
-	try {
-		ackCommentId = await tryPostTrelloAck(project.id, cardId, payload, triggerRegistry);
-	} catch (err) {
-		console.warn('[Router] Trello ack comment failed (non-fatal):', String(err));
+	// Run authoritative trigger dispatch with credentials in scope
+	const config = await loadProjectConfig();
+	const fullProject = config.fullProjects.find((fp) => fp.id === project.id);
+	if (!fullProject) {
+		logger.info('No full project config for Trello webhook, skipping', { projectId: project.id });
+		return;
 	}
 
+	let result: TriggerResult | null = null;
+	try {
+		const trelloCreds = await resolveTrelloCredentials(project.id);
+		if (!trelloCreds) {
+			logger.warn('Missing Trello credentials, cannot dispatch triggers', {
+				projectId: project.id,
+			});
+		} else {
+			const ctx: TriggerContext = { project: fullProject, source: 'trello', payload };
+			result = await withTrelloCredentials(trelloCreds, () => triggerRegistry.dispatch(ctx));
+		}
+	} catch (err) {
+		logger.warn('Trello trigger dispatch failed (non-fatal)', {
+			error: String(err),
+			projectId: project.id,
+		});
+	}
+
+	if (!result) {
+		logger.info('No trigger matched for Trello event', { actionType, cardId });
+		return;
+	}
+
+	logger.info('Trello trigger matched', {
+		agentType: result.agentType,
+		cardId,
+		projectId: project.id,
+	});
+
+	// Post ack comment — we KNOW the trigger matched
+	let ackCommentId: string | undefined;
+	if (result.agentType) {
+		try {
+			const context = extractTrelloContext(payload);
+			const message = await generateAckMessage(result.agentType, context, project.id);
+			const commentId = await postTrelloAck(project.id, cardId, message);
+			ackCommentId = commentId ?? undefined;
+		} catch (err) {
+			logger.warn('Trello ack comment failed (non-fatal)', { error: String(err), cardId });
+		}
+	}
+
+	// Queue job with confirmed trigger result
 	const job: CascadeJob = {
 		type: 'trello',
 		source: 'trello',
@@ -218,13 +241,14 @@ export async function processTrelloWebhookEvent(
 		actionType: actionType || 'unknown',
 		receivedAt: new Date().toISOString(),
 		ackCommentId,
+		triggerResult: result,
 	};
 
 	try {
 		const jobId = await addJob(job);
-		console.log('[Router] Trello job queued:', { jobId, actionType, ackCommentId });
+		logger.info('Trello job queued', { jobId, actionType, ackCommentId });
 	} catch (err) {
-		console.error('[Router] Failed to queue Trello job:', err);
+		logger.error('Failed to queue Trello job', { error: String(err), actionType, cardId });
 		// Still return to caller — Trello gets 200 to avoid retries
 	}
 }
@@ -235,7 +259,8 @@ export async function processTrelloWebhookEvent(
 
 /**
  * Handle a POST /trello/webhook request.
- * Parses the payload, filters irrelevant events, and queues a job.
+ * Parses the payload, filters irrelevant events, dispatches triggers,
+ * and queues a job only when a trigger confirms a match.
  */
 export async function handleTrelloWebhook(
 	payload: unknown,
@@ -257,7 +282,7 @@ export async function handleTrelloWebhook(
 			triggerRegistry,
 		);
 	} else {
-		console.log(`[Router] Ignoring Trello: ${actionType || 'unknown'}`);
+		logger.debug('Ignoring Trello event', { actionType: actionType || 'unknown' });
 	}
 
 	return { shouldProcess, project, actionType, cardId };

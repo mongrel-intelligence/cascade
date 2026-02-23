@@ -101,6 +101,9 @@ export interface PMProvider {
 	getCustomFieldNumber(workItemId: string, fieldId: string): Promise<number>;
 	updateCustomFieldNumber(workItemId: string, fieldId: string, value: number): Promise<void>;
 
+	// PR linking
+	linkPR(workItemId: string, prUrl: string, prTitle: string): Promise<void>;
+
 	// Utility
 	getWorkItemUrl(id: string): string;
 	getAuthenticatedUser(): Promise<{ id: string; name: string; username: string }>;

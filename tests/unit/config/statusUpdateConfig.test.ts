@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { getAgentLabel } from '../../../src/config/agentMessages.js';
 import {
 	formatGitHubProgressComment,
 	formatStatusMessage,
@@ -54,13 +55,65 @@ describe('config/statusUpdateConfig', () => {
 		});
 	});
 
+	describe('getAgentLabel', () => {
+		it('returns correct emoji and label for implementation', () => {
+			const result = getAgentLabel('implementation');
+			expect(result).toEqual({ emoji: '🧑‍💻', label: 'Implementation Update' });
+		});
+
+		it('returns correct emoji and label for review', () => {
+			const result = getAgentLabel('review');
+			expect(result).toEqual({ emoji: '🔍', label: 'Code Review Update' });
+		});
+
+		it('returns correct emoji and label for briefing', () => {
+			const result = getAgentLabel('briefing');
+			expect(result).toEqual({ emoji: '📋', label: 'Briefing Update' });
+		});
+
+		it('returns correct emoji and label for planning', () => {
+			const result = getAgentLabel('planning');
+			expect(result).toEqual({ emoji: '🗺️', label: 'Planning Update' });
+		});
+
+		it('returns correct emoji and label for respond-to-review', () => {
+			const result = getAgentLabel('respond-to-review');
+			expect(result).toEqual({ emoji: '🔧', label: 'Review Response Update' });
+		});
+
+		it('returns correct emoji and label for respond-to-ci', () => {
+			const result = getAgentLabel('respond-to-ci');
+			expect(result).toEqual({ emoji: '🔧', label: 'CI Fix Update' });
+		});
+
+		it('returns correct emoji and label for respond-to-pr-comment', () => {
+			const result = getAgentLabel('respond-to-pr-comment');
+			expect(result).toEqual({ emoji: '💬', label: 'PR Comment Response Update' });
+		});
+
+		it('returns correct emoji and label for respond-to-planning-comment', () => {
+			const result = getAgentLabel('respond-to-planning-comment');
+			expect(result).toEqual({ emoji: '💬', label: 'Planning Response Update' });
+		});
+
+		it('returns correct emoji and label for debug', () => {
+			const result = getAgentLabel('debug');
+			expect(result).toEqual({ emoji: '🐛', label: 'Debug Update' });
+		});
+
+		it('returns default fallback for unknown agent types', () => {
+			const result = getAgentLabel('future-unknown-agent');
+			expect(result).toEqual({ emoji: '⚙️', label: 'Progress Update' });
+		});
+	});
+
 	describe('formatStatusMessage', () => {
-		it('includes agent type and progress bar', () => {
+		it('includes agent-specific emoji/label and progress bar', () => {
 			vi.mocked(loadTodos).mockReturnValue([]);
 
 			const message = formatStatusMessage(5, 20, 'implementation');
 
-			expect(message).toContain("**I'm making progress**");
+			expect(message).toContain('**🧑‍💻 Implementation Update**');
 			expect(message).toContain('implementation');
 			expect(message).toContain('25%'); // (5/20) * 100
 			expect(message).toContain('iteration 5/20');
@@ -151,7 +204,7 @@ describe('config/statusUpdateConfig', () => {
 			const message = formatStatusMessage(10, 20, 'implementation');
 
 			const lines = message.split('\n');
-			expect(lines[0]).toBe("**I'm making progress** (implementation)");
+			expect(lines[0]).toBe('**🧑‍💻 Implementation Update** (implementation)');
 			expect(lines[1]).toBe('');
 			expect(lines[2]).toContain('[█████░░░░░]');
 		});

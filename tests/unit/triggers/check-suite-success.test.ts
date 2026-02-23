@@ -62,17 +62,6 @@ describe('CheckSuiteSuccessTrigger', () => {
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 	});
 
-	describe('resolveAgentType', () => {
-		it('returns review', () => {
-			const ctx: TriggerContext = {
-				project: mockProject,
-				source: 'github',
-				payload: {},
-			};
-			expect(trigger.resolveAgentType(ctx)).toBe('review');
-		});
-	});
-
 	describe('matches', () => {
 		it('matches completed check suite with success conclusion and PRs', () => {
 			const ctx: TriggerContext = {
@@ -150,7 +139,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 	});
 
 	describe('handle', () => {
-		it('returns review result when PR has Trello URL and all checks pass', async () => {
+		it('returns review result with waitForChecks flag when PR matches', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
@@ -164,14 +153,6 @@ describe('CheckSuiteSuccessTrigger', () => {
 				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
-			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
-				allPassing: true,
-				totalCount: 2,
-				checkRuns: [
-					{ name: 'lint', status: 'completed', conclusion: 'success' },
-					{ name: 'test', status: 'completed', conclusion: 'success' },
-				],
-			});
 
 			const ctx: TriggerContext = {
 				project: mockProject,
@@ -183,7 +164,8 @@ describe('CheckSuiteSuccessTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(githubClient.getPR).toHaveBeenCalledWith('owner', 'repo', 42);
-			expect(githubClient.getCheckSuiteStatus).toHaveBeenCalledWith('owner', 'repo', 'sha123');
+			// handle() no longer polls checks — it defers to worker via waitForChecks flag
+			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 			expect(result).toEqual({
 				agentType: 'review',
 				agentInput: {
@@ -196,6 +178,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 				},
 				prNumber: 42,
 				workItemId: 'abc123',
+				waitForChecks: true,
 			});
 		});
 
@@ -280,153 +263,6 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
-		it('returns null immediately when checks have genuine failures (no retry)', async () => {
-			vi.mocked(githubClient.getPR).mockResolvedValue({
-				number: 42,
-				title: 'Test PR',
-				body: 'https://trello.com/c/abc123',
-				state: 'open',
-				headRef: 'feature/test',
-				headSha: 'sha123',
-				baseRef: 'main',
-				merged: false,
-				htmlUrl: 'https://github.com/owner/repo/pull/42',
-				user: { login: 'cascade-impl' },
-			});
-			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
-			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
-				allPassing: false,
-				totalCount: 2,
-				checkRuns: [
-					{ name: 'lint', status: 'completed', conclusion: 'success' },
-					{ name: 'test', status: 'completed', conclusion: 'failure' },
-				],
-			});
-
-			const ctx: TriggerContext = {
-				project: mockProject,
-				source: 'github',
-				payload: makeCheckSuitePayload(),
-				personaIdentities: mockPersonaIdentities,
-			};
-
-			const result = await trigger.handle(ctx);
-
-			expect(result).toBeNull();
-			// Should NOT retry — all checks completed, one genuinely failed
-			expect(githubClient.getCheckSuiteStatus).toHaveBeenCalledTimes(1);
-		});
-
-		it('retries when checks are still in-progress, then succeeds', async () => {
-			vi.useFakeTimers();
-
-			vi.mocked(githubClient.getPR).mockResolvedValue({
-				number: 42,
-				title: 'Test PR',
-				body: 'https://trello.com/c/abc123',
-				state: 'open',
-				headRef: 'feature/test',
-				headSha: 'sha123',
-				baseRef: 'main',
-				merged: false,
-				htmlUrl: 'https://github.com/owner/repo/pull/42',
-				user: { login: 'cascade-impl' },
-			});
-			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
-			vi.mocked(githubClient.getCheckSuiteStatus)
-				.mockResolvedValueOnce({
-					allPassing: false,
-					totalCount: 2,
-					checkRuns: [
-						{ name: 'lint', status: 'completed', conclusion: 'success' },
-						{ name: 'test', status: 'in_progress', conclusion: null },
-					],
-				})
-				.mockResolvedValueOnce({
-					allPassing: true,
-					totalCount: 2,
-					checkRuns: [
-						{ name: 'lint', status: 'completed', conclusion: 'success' },
-						{ name: 'test', status: 'completed', conclusion: 'success' },
-					],
-				});
-
-			const ctx: TriggerContext = {
-				project: mockProject,
-				source: 'github',
-				payload: makeCheckSuitePayload(),
-				personaIdentities: mockPersonaIdentities,
-			};
-
-			const handlePromise = trigger.handle(ctx);
-
-			// Advance past the retry delay
-			await vi.advanceTimersByTimeAsync(10_000);
-
-			const result = await handlePromise;
-
-			expect(result).not.toBeNull();
-			expect(result?.agentType).toBe('review');
-			expect(githubClient.getCheckSuiteStatus).toHaveBeenCalledTimes(2);
-
-			vi.useRealTimers();
-		});
-
-		it('retries when checks are in-progress but eventually all fail', async () => {
-			vi.useFakeTimers();
-
-			vi.mocked(githubClient.getPR).mockResolvedValue({
-				number: 42,
-				title: 'Test PR',
-				body: 'https://trello.com/c/abc123',
-				state: 'open',
-				headRef: 'feature/test',
-				headSha: 'sha123',
-				baseRef: 'main',
-				merged: false,
-				htmlUrl: 'https://github.com/owner/repo/pull/42',
-				user: { login: 'cascade-impl' },
-			});
-			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
-			vi.mocked(githubClient.getCheckSuiteStatus)
-				.mockResolvedValueOnce({
-					allPassing: false,
-					totalCount: 2,
-					checkRuns: [
-						{ name: 'lint', status: 'completed', conclusion: 'success' },
-						{ name: 'test', status: 'in_progress', conclusion: null },
-					],
-				})
-				.mockResolvedValueOnce({
-					allPassing: false,
-					totalCount: 2,
-					checkRuns: [
-						{ name: 'lint', status: 'completed', conclusion: 'success' },
-						{ name: 'test', status: 'completed', conclusion: 'failure' },
-					],
-				});
-
-			const ctx: TriggerContext = {
-				project: mockProject,
-				source: 'github',
-				payload: makeCheckSuitePayload(),
-				personaIdentities: mockPersonaIdentities,
-			};
-
-			const handlePromise = trigger.handle(ctx);
-
-			// Advance past the retry delay
-			await vi.advanceTimersByTimeAsync(10_000);
-
-			const result = await handlePromise;
-
-			expect(result).toBeNull();
-			// 1 initial + 1 retry (then stops because all completed)
-			expect(githubClient.getCheckSuiteStatus).toHaveBeenCalledTimes(2);
-
-			vi.useRealTimers();
-		});
-
 		it('returns null when PR was already reviewed by reviewer persona at current HEAD', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
@@ -487,11 +323,6 @@ describe('CheckSuiteSuccessTrigger', () => {
 					commitId: 'old-sha',
 				},
 			]);
-			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
-				allPassing: true,
-				totalCount: 1,
-				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'success' }],
-			});
 
 			const ctx: TriggerContext = {
 				project: mockProject,
@@ -504,7 +335,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('review');
-			expect(githubClient.getCheckSuiteStatus).toHaveBeenCalled();
+			expect(result?.waitForChecks).toBe(true);
 		});
 
 		it('skips when latest of multiple reviews covers current HEAD', async () => {
@@ -591,11 +422,6 @@ describe('CheckSuiteSuccessTrigger', () => {
 					commitId: 'sha123',
 				},
 			]);
-			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
-				allPassing: true,
-				totalCount: 1,
-				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'success' }],
-			});
 
 			const ctx: TriggerContext = {
 				project: mockProject,
@@ -608,7 +434,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('review');
-			expect(githubClient.getCheckSuiteStatus).toHaveBeenCalled();
+			expect(result?.waitForChecks).toBe(true);
 		});
 
 		it('proceeds when PR has reviews from other users only', async () => {
@@ -634,11 +460,6 @@ describe('CheckSuiteSuccessTrigger', () => {
 					commitId: 'sha123',
 				},
 			]);
-			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
-				allPassing: true,
-				totalCount: 1,
-				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'success' }],
-			});
 
 			const ctx: TriggerContext = {
 				project: mockProject,
@@ -651,6 +472,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('review');
+			expect(result?.waitForChecks).toBe(true);
 		});
 
 		it('fires without work item when PR body has no work item reference', async () => {
@@ -667,11 +489,6 @@ describe('CheckSuiteSuccessTrigger', () => {
 				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
-			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
-				allPassing: true,
-				totalCount: 1,
-				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'success' }],
-			});
 
 			const ctx: TriggerContext = {
 				project: mockProject,
@@ -685,6 +502,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(result).not.toBeNull();
 			expect(result?.workItemId).toBeUndefined();
 			expect(result?.agentInput.cardId).toBeUndefined();
+			expect(result?.waitForChecks).toBe(true);
 		});
 
 		it('uses DB lookup result over PR body extraction', async () => {
@@ -702,11 +520,6 @@ describe('CheckSuiteSuccessTrigger', () => {
 				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
-			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
-				allPassing: true,
-				totalCount: 1,
-				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'success' }],
-			});
 
 			const ctx: TriggerContext = {
 				project: mockProject,
@@ -719,6 +532,202 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.workItemId).toBe('db-work-item');
+			expect(result?.waitForChecks).toBe(true);
+		});
+	});
+
+	describe('reviewTrigger mode-aware behavior', () => {
+		/** Project with only externalPrs enabled */
+		const mockProjectExternalOnly = {
+			...mockProject,
+			github: {
+				triggers: {
+					reviewTrigger: { ownPrsOnly: false, externalPrs: true, onReviewRequested: false },
+				},
+			},
+		};
+
+		/** Project with both ownPrsOnly and externalPrs enabled */
+		const mockProjectBothModes = {
+			...mockProject,
+			github: {
+				triggers: {
+					reviewTrigger: { ownPrsOnly: true, externalPrs: true, onReviewRequested: false },
+				},
+			},
+		};
+
+		/** Project with all modes disabled */
+		const mockProjectNoModes = {
+			...mockProject,
+			github: {
+				triggers: {
+					reviewTrigger: { ownPrsOnly: false, externalPrs: false, onReviewRequested: false },
+				},
+			},
+		};
+
+		it('does not match when all modes are disabled', () => {
+			const ctx: TriggerContext = {
+				project: mockProjectNoModes,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+			expect(trigger.matches(ctx)).toBe(false);
+		});
+
+		it('matches when externalPrs is enabled', () => {
+			const ctx: TriggerContext = {
+				project: mockProjectExternalOnly,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+			expect(trigger.matches(ctx)).toBe(true);
+		});
+
+		it('matches when both modes are enabled', () => {
+			const ctx: TriggerContext = {
+				project: mockProjectBothModes,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+			expect(trigger.matches(ctx)).toBe(true);
+		});
+
+		it('triggers for external PR author when externalPrs=true', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'External PR',
+				body: 'https://trello.com/c/abc123',
+				state: 'open',
+				headRef: 'feature/external',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'external-contributor' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+
+			const ctx: TriggerContext = {
+				project: mockProjectExternalOnly,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('review');
+		});
+
+		it('skips implementer PR when only externalPrs=true', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Implementer PR',
+				body: 'https://trello.com/c/abc123',
+				state: 'open',
+				headRef: 'feature/impl',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProjectExternalOnly,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+		});
+
+		it('triggers for both authors when ownPrsOnly=true and externalPrs=true', async () => {
+			const setupMocks = (authorLogin: string) => {
+				vi.mocked(githubClient.getPR).mockResolvedValue({
+					number: 42,
+					title: 'Test PR',
+					body: null,
+					state: 'open',
+					headRef: 'feature/test',
+					headSha: 'sha123',
+					baseRef: 'main',
+					merged: false,
+					htmlUrl: 'https://github.com/owner/repo/pull/42',
+					user: { login: authorLogin },
+				});
+				vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+			};
+
+			// Implementer PR
+			setupMocks('cascade-impl');
+			const implCtx: TriggerContext = {
+				project: mockProjectBothModes,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+			const implResult = await trigger.handle(implCtx);
+			expect(implResult).not.toBeNull();
+
+			// External PR
+			vi.clearAllMocks();
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+			setupMocks('external-contributor');
+			const extCtx: TriggerContext = {
+				project: mockProjectBothModes,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+			const extResult = await trigger.handle(extCtx);
+			expect(extResult).not.toBeNull();
+		});
+
+		it('backward compat: legacy checkSuiteSuccess=true still triggers for implementer PRs', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: null,
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+
+			// mockProject has no github triggers — resolves to legacy defaults (ownPrsOnly=true)
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('review');
+		});
+
+		it('backward compat: legacy checkSuiteSuccess=false skips even implementer PRs', () => {
+			const ctx: TriggerContext = {
+				project: {
+					...mockProject,
+					github: { triggers: { checkSuiteSuccess: false } },
+				},
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+			};
+			expect(trigger.matches(ctx)).toBe(false);
 		});
 	});
 });

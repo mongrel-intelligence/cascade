@@ -23,6 +23,9 @@ import { logoutHandler } from './api/auth/logout.js';
 import { resolveUserFromSession } from './api/auth/session.js';
 import { computeEffectiveOrgId } from './api/context.js';
 import { appRouter } from './api/router.js';
+import { captureException, setTag } from './sentry.js';
+
+setTag('role', 'dashboard');
 
 const app = new Hono();
 
@@ -65,6 +68,10 @@ app.notFound((c) => c.json({ error: 'Not Found' }, 404));
 // Error handler
 app.onError((err, c) => {
 	console.error('Unhandled error', { error: String(err), path: c.req.path });
+	captureException(err, {
+		tags: { source: 'hono_error' },
+		extra: { path: c.req.path, method: c.req.method },
+	});
 	return c.json({ error: 'Internal Server Error' }, 500);
 });
 

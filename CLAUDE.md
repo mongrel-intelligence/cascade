@@ -77,6 +77,10 @@ Optional (infrastructure):
 - `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled)
 - `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code backend (subscription auth)
 - `CREDENTIAL_MASTER_KEY` - 64-char hex string (32-byte AES-256 key) for encrypting credentials at rest. Generate with `npm run credentials:generate-key`. When set, all new/updated credentials are encrypted automatically; existing plaintext credentials continue to work.
+- `SENTRY_DSN` - Sentry DSN for error monitoring (router + worker)
+- `SENTRY_ENVIRONMENT` - Sentry environment tag (default: NODE_ENV or 'production')
+- `SENTRY_RELEASE` - Release identifier for source maps (e.g., git SHA)
+- `SENTRY_TRACES_SAMPLE_RATE` - Trace sampling rate 0.0-1.0 (default: 0.1)
 
 **Project credentials** (`GITHUB_TOKEN_IMPLEMENTER`, `GITHUB_TOKEN_REVIEWER`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored in the `credentials` table (org-scoped, encrypted at rest when `CREDENTIAL_MASTER_KEY` is set). Integration-specific credentials (GitHub tokens, Trello keys, JIRA tokens) are linked to integrations via the `integration_credentials` join table with provider-defined roles. Non-integration credentials (LLM API keys) remain org-scoped defaults. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
 
@@ -188,6 +192,121 @@ const openrouterKey = await getOrgCredential(projectId, 'OPENROUTER_API_KEY');
 ```
 
 Role definitions and env-var-key mappings are in `src/config/integrationRoles.ts`.
+
+### Review Agent Trigger Modes
+
+The review agent supports three independent trigger modes via the `reviewTrigger` config in the SCM integration triggers. **All modes default to `false`** — existing behavior is preserved via a legacy fallback.
+
+| Mode | Description |
+|------|-------------|
+| `ownPrsOnly` | Trigger review when CI passes on PRs authored by the **implementer** persona |
+| `externalPrs` | Trigger review when CI passes on PRs authored by **anyone** (including external contributors) |
+| `onReviewRequested` | Trigger review when a CASCADE persona is **explicitly requested** as reviewer |
+
+#### Setting via CLI
+
+```bash
+# Enable review for implementer PRs only (most common)
+cascade projects review-trigger-set <project-id> --own-prs-only
+
+# Enable review for external contributor PRs
+cascade projects review-trigger-set <project-id> --external-prs
+
+# Enable both CI-triggered modes
+cascade projects review-trigger-set <project-id> --own-prs-only --external-prs
+
+# Enable review when explicitly requested
+cascade projects review-trigger-set <project-id> --on-review-requested
+
+# Disable a mode
+cascade projects review-trigger-set <project-id> --no-own-prs-only
+```
+
+#### Setting via Dashboard
+
+In the **Agent Configs** tab, the `review` agent section shows three toggles under the SCM integration:
+- **Own PRs Only** — CI-triggered review for implementer-authored PRs
+- **External PRs** — CI-triggered review for all other PR authors
+- **On Review Requested** — review triggered when a persona is explicitly requested
+
+#### Direct JSON Config
+
+```bash
+cascade projects integration-set <project-id> \
+  --category scm --provider github --config '{}' \
+  --triggers '{"reviewTrigger":{"ownPrsOnly":true,"externalPrs":false,"onReviewRequested":true}}'
+```
+
+#### Backward Compatibility
+
+When `reviewTrigger` is absent, the system falls back to legacy booleans:
+- `checkSuiteSuccess` → `ownPrsOnly` (default `true` for existing projects)
+- `reviewRequested` → `onReviewRequested` (default `false`)
+- `externalPrs` always `false` in legacy mode (no legacy equivalent)
+
+### PM Agent Trigger Modes
+
+Briefing, planning, and implementation agents each have independent toggles for their PM triggers. **All modes default to `true`** for backward compatibility.
+
+#### Trello card-moved triggers
+
+| Flag | Description |
+|------|-------------|
+| `cardMovedToBriefing` | Trigger briefing agent when a card is moved to the Briefing list |
+| `cardMovedToPlanning` | Trigger planning agent when a card is moved to the Planning list |
+| `cardMovedToTodo` | Trigger implementation agent when a card is moved to the Todo list |
+
+#### JIRA issue-transitioned triggers (per-agent)
+
+The `issueTransitioned` field supports both a legacy boolean (applies to all agents) and a nested per-agent object:
+
+| Agent | Field | Description |
+|-------|-------|-------------|
+| briefing | `issueTransitioned.briefing` | Trigger briefing when issue transitions to Briefing status |
+| planning | `issueTransitioned.planning` | Trigger planning when issue transitions to Planning status |
+| implementation | `issueTransitioned.implementation` | Trigger implementation when issue transitions to Todo status |
+
+#### Setting via CLI
+
+```bash
+# Disable Trello card-moved trigger for briefing agent
+cascade projects pm-trigger-set <project-id> --no-card-moved-to-briefing
+
+# Disable JIRA issue-transitioned for implementation agent only
+cascade projects pm-trigger-set <project-id> --no-issue-transitioned-implementation
+
+# Enable JIRA triggers for briefing and planning, disable for implementation
+cascade projects pm-trigger-set <project-id> \
+  --issue-transitioned-briefing \
+  --issue-transitioned-planning \
+  --no-issue-transitioned-implementation
+
+# Disable all Trello card-moved triggers
+cascade projects pm-trigger-set <project-id> \
+  --no-card-moved-to-briefing \
+  --no-card-moved-to-planning \
+  --no-card-moved-to-todo
+```
+
+#### Setting via Dashboard
+
+In the **Agent Configs** tab, the briefing, planning, and implementation agent sections each show:
+- **Card moved to [list]** — Trello card-moved toggle (Trello projects only)
+- **Issue Transitioned** — JIRA per-agent transition toggle (JIRA projects only)
+- **Ready to Process label** — label-based trigger toggle
+
+#### Direct JSON Config
+
+```bash
+# Disable JIRA issue-transitioned for implementation only
+cascade projects integration-set <project-id> \
+  --category pm --provider jira --config '{"projectKey":"PROJ","statuses":{...}}' \
+  --triggers '{"issueTransitioned":{"briefing":true,"planning":true,"implementation":false}}'
+```
+
+#### Backward Compatibility
+
+The legacy `issueTransitioned: true/false` boolean is still supported — it applies to all agents uniformly.
 
 ## Claude Code Backend
 

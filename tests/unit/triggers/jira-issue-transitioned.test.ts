@@ -36,9 +36,15 @@ function buildCtx(
 		issueKey?: string;
 		statusChangeItems?: Array<{ field?: string; fromString?: string; toString?: string }>;
 		noJiraConfig?: boolean;
+		triggers?: Record<string, unknown>;
 	} = {},
 ): TriggerContext {
-	const project = overrides.noJiraConfig ? { ...mockProject, jira: undefined } : mockProject;
+	const baseJira = overrides.triggers
+		? { ...mockProject.jira, triggers: overrides.triggers }
+		: mockProject.jira;
+	const project = overrides.noJiraConfig
+		? { ...mockProject, jira: undefined }
+		: { ...mockProject, jira: baseJira };
 
 	return {
 		project: project as TriggerContext['project'],
@@ -95,55 +101,6 @@ describe('JiraIssueTransitionedTrigger', () => {
 			expect(trigger.matches(buildCtx({ webhookEvent: 'jira:issue_updated:something' }))).toBe(
 				true,
 			);
-		});
-	});
-
-	describe('resolveAgentType', () => {
-		it('returns implementation for "To Do" transition', () => {
-			const ctx = buildCtx({
-				statusChangeItems: [{ field: 'status', fromString: 'Planning', toString: 'To Do' }],
-			});
-			expect(trigger.resolveAgentType(ctx)).toBe('implementation');
-		});
-
-		it('returns briefing for "Briefing" transition', () => {
-			const ctx = buildCtx({
-				statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Briefing' }],
-			});
-			expect(trigger.resolveAgentType(ctx)).toBe('briefing');
-		});
-
-		it('returns planning for "Planning" transition', () => {
-			const ctx = buildCtx({
-				statusChangeItems: [{ field: 'status', fromString: 'Briefing', toString: 'Planning' }],
-			});
-			expect(trigger.resolveAgentType(ctx)).toBe('planning');
-		});
-
-		it('returns null for unmapped status', () => {
-			const ctx = buildCtx({
-				statusChangeItems: [{ field: 'status', fromString: 'To Do', toString: 'Done' }],
-			});
-			expect(trigger.resolveAgentType(ctx)).toBeNull();
-		});
-
-		it('returns null when no status change in changelog', () => {
-			const ctx = buildCtx({
-				statusChangeItems: [{ field: 'assignee' }],
-			});
-			expect(trigger.resolveAgentType(ctx)).toBeNull();
-		});
-
-		it('returns null when JIRA config is missing', () => {
-			const ctx = buildCtx({ noJiraConfig: true });
-			expect(trigger.resolveAgentType(ctx)).toBeNull();
-		});
-
-		it('is case insensitive', () => {
-			const ctx = buildCtx({
-				statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'briefing' }],
-			});
-			expect(trigger.resolveAgentType(ctx)).toBe('briefing');
 		});
 	});
 
@@ -237,6 +194,82 @@ describe('JiraIssueTransitionedTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toBeNull();
+		});
+
+		describe('per-agent issueTransitioned toggle', () => {
+			it('fires when issueTransitioned toggle is true for agent (legacy boolean)', async () => {
+				const ctx = buildCtx({
+					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Briefing' }],
+					triggers: { issueTransitioned: true },
+				});
+
+				const result = await trigger.handle(ctx);
+
+				expect(result?.agentType).toBe('briefing');
+			});
+
+			it('returns null when issueTransitioned disabled globally (legacy boolean false)', async () => {
+				const ctx = buildCtx({
+					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Briefing' }],
+					triggers: { issueTransitioned: false },
+				});
+
+				const result = await trigger.handle(ctx);
+
+				expect(result).toBeNull();
+			});
+
+			it('fires when per-agent issueTransitioned.briefing is enabled', async () => {
+				const ctx = buildCtx({
+					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Briefing' }],
+					triggers: {
+						issueTransitioned: { briefing: true, planning: false, implementation: false },
+					},
+				});
+
+				const result = await trigger.handle(ctx);
+
+				expect(result?.agentType).toBe('briefing');
+			});
+
+			it('returns null when per-agent issueTransitioned.briefing is disabled', async () => {
+				const ctx = buildCtx({
+					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Briefing' }],
+					triggers: {
+						issueTransitioned: { briefing: false, planning: true, implementation: true },
+					},
+				});
+
+				const result = await trigger.handle(ctx);
+
+				expect(result).toBeNull();
+			});
+
+			it('fires planning agent when issueTransitioned.planning is enabled', async () => {
+				const ctx = buildCtx({
+					statusChangeItems: [{ field: 'status', fromString: 'Briefing', toString: 'Planning' }],
+					triggers: {
+						issueTransitioned: { briefing: false, planning: true, implementation: false },
+					},
+				});
+
+				const result = await trigger.handle(ctx);
+
+				expect(result?.agentType).toBe('planning');
+			});
+
+			it('returns null when per-agent issueTransitioned.implementation is disabled', async () => {
+				const ctx = buildCtx({
+					statusChangeItems: [{ field: 'status', fromString: 'Planning', toString: 'To Do' }],
+					triggers: {
+						issueTransitioned: { briefing: true, planning: true, implementation: false },
+					},
+				});
+
+				const result = await trigger.handle(ctx);
+
+				expect(result).toBeNull();
+			});
 		});
 	});
 });

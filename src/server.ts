@@ -11,13 +11,18 @@ import { logoutHandler } from './api/auth/logout.js';
 import { resolveUserFromSession } from './api/auth/session.js';
 import { computeEffectiveOrgId } from './api/context.js';
 import { appRouter } from './api/router.js';
-import { findProjectByRepo } from './config/provider.js';
-import { resolvePersonaIdentities } from './github/personas.js';
-import { sendAcknowledgeReaction } from './router/reactions.js';
-import { extractRawHeaders, parseGitHubWebhookPayload } from './router/webhookParsing.js';
+import { captureException } from './sentry.js';
+import {
+	buildGitHubReactionSender,
+	buildJiraReactionSender,
+	buildTrelloReactionSender,
+	createWebhookHandler,
+	parseGitHubPayload,
+	parseJiraPayload,
+	parseTrelloPayload,
+} from './server/webhookHandlers.js';
 import type { CascadeConfig } from './types/index.js';
-import { canAcceptWebhook, isCurrentlyProcessing, logger } from './utils/index.js';
-import { logWebhookCall } from './utils/webhookLogger.js';
+import { logger } from './utils/index.js';
 
 export interface ServerDependencies {
 	config: CascadeConfig;
@@ -77,169 +82,31 @@ export function createServer(deps: ServerDependencies): Hono {
 	});
 
 	// Trello webhook - POST for events
-	app.post('/trello/webhook', async (c) => {
-		if (isCurrentlyProcessing() && !canAcceptWebhook()) {
-			logger.warn('Machine at capacity, returning 503');
-			return c.text('Service Unavailable', 503);
-		}
+	app.post(
+		'/trello/webhook',
+		createWebhookHandler({
+			source: 'trello',
+			parsePayload: parseTrelloPayload,
+			sendReaction: buildTrelloReactionSender(deps.config),
+			processWebhook: (payload) => deps.onTrelloWebhook(payload),
+		}),
+	);
 
-		const rawHeaders = extractRawHeaders(c);
-
-		try {
-			const payload = await c.req.json();
-			const eventType = (payload as Record<string, unknown>)?.action
-				? ((payload as Record<string, Record<string, unknown>>).action.type as string | undefined)
-				: undefined;
-			logger.debug('Received Trello webhook', { action: eventType });
-
-			logWebhookCall({
-				source: 'trello',
-				method: c.req.method,
-				path: c.req.path,
-				headers: rawHeaders,
-				body: payload,
-				statusCode: 200,
-				eventType,
-				processed: true,
-			});
-
-			// Fire-and-forget acknowledgment reaction — only for comment actions
-			if (eventType === 'commentCard') {
-				const boardId = (payload as Record<string, Record<string, unknown>>).model?.id as
-					| string
-					| undefined;
-				const project = deps.config.projects.find((p) => p.trello?.boardId === boardId);
-				if (project) {
-					void sendAcknowledgeReaction('trello', project.id, payload).catch((err) =>
-						logger.error('[Server] Trello reaction error:', { error: String(err) }),
-					);
-				}
-			}
-
-			// Process asynchronously - respond immediately
-			setImmediate(() => {
-				deps.onTrelloWebhook(payload).catch((err) => {
-					logger.error('Error processing Trello webhook', {
-						error: String(err),
-						stack: err instanceof Error ? err.stack : undefined,
-					});
-				});
-			});
-
-			return c.text('OK', 200);
-		} catch (err) {
-			logger.error('Failed to parse Trello webhook', { error: String(err) });
-			logWebhookCall({
-				source: 'trello',
-				method: c.req.method,
-				path: c.req.path,
-				headers: rawHeaders,
-				bodyRaw: String(err),
-				statusCode: 400,
-				processed: false,
-			});
-			return c.text('Bad Request', 400);
-		}
-	});
-
-	// Future: GitHub webhook - GET/HEAD for verification
+	// GitHub webhook - GET/HEAD for verification
 	app.get('/github/webhook', (c) => {
 		return c.text('OK', 200);
 	});
 
-	app.post('/github/webhook', async (c) => {
-		if (isCurrentlyProcessing() && !canAcceptWebhook()) {
-			logger.warn('Machine at capacity, returning 503');
-			return c.text('Service Unavailable', 503);
-		}
-
-		const eventType = c.req.header('X-GitHub-Event') || 'unknown';
-		const contentType = c.req.header('Content-Type') || '';
-		const rawHeaders = extractRawHeaders(c);
-
-		const parseResult = await parseGitHubWebhookPayload(c, contentType);
-		if (!parseResult.ok) {
-			logger.error('Failed to parse GitHub webhook', {
-				error: parseResult.error,
-				contentType,
-				eventType,
-			});
-			logWebhookCall({
-				source: 'github',
-				method: c.req.method,
-				path: c.req.path,
-				headers: rawHeaders,
-				bodyRaw: parseResult.error,
-				statusCode: 400,
-				eventType,
-				processed: false,
-			});
-			return c.text('Bad Request', 400);
-		}
-
-		const payload = parseResult.payload;
-
-		logger.info('Received GitHub webhook', {
-			event: eventType,
-			contentType,
-			action: (payload as Record<string, unknown>)?.action,
-			repository: ((payload as Record<string, unknown>)?.repository as Record<string, unknown>)
-				?.full_name,
-		});
-
-		logWebhookCall({
+	// GitHub webhook - POST for events
+	app.post(
+		'/github/webhook',
+		createWebhookHandler({
 			source: 'github',
-			method: c.req.method,
-			path: c.req.path,
-			headers: rawHeaders,
-			body: payload,
-			statusCode: 200,
-			eventType,
-			processed: true,
-		});
-
-		// Fire-and-forget acknowledgment reaction — only for comment events
-		if (eventType === 'issue_comment' || eventType === 'pull_request_review_comment') {
-			const repoFullName = (
-				(payload as Record<string, unknown>)?.repository as Record<string, unknown>
-			)?.full_name as string | undefined;
-			if (repoFullName) {
-				void (async () => {
-					try {
-						const project = await findProjectByRepo(repoFullName);
-						if (!project) {
-							logger.warn('[Server] No project found for repo, skipping GitHub reaction', {
-								repoFullName,
-							});
-							return;
-						}
-						const personaIdentities = await resolvePersonaIdentities(project.id);
-						await sendAcknowledgeReaction(
-							'github',
-							repoFullName,
-							payload,
-							personaIdentities,
-							project,
-						);
-					} catch (err) {
-						logger.error('[Server] GitHub reaction error:', { error: String(err) });
-					}
-				})();
-			}
-		}
-
-		// Process asynchronously - respond immediately
-		setImmediate(() => {
-			deps.onGitHubWebhook(payload, eventType).catch((err) => {
-				logger.error('Error processing GitHub webhook', {
-					error: String(err),
-					stack: err instanceof Error ? err.stack : undefined,
-				});
-			});
-		});
-
-		return c.text('OK', 200);
-	});
+			parsePayload: parseGitHubPayload,
+			sendReaction: buildGitHubReactionSender(),
+			processWebhook: (payload, eventType) => deps.onGitHubWebhook(payload, eventType ?? 'unknown'),
+		}),
+	);
 
 	// JIRA webhook - GET/HEAD for verification
 	app.get('/jira/webhook', (c) => {
@@ -247,75 +114,15 @@ export function createServer(deps: ServerDependencies): Hono {
 	});
 
 	// JIRA webhook - POST for events
-	app.post('/jira/webhook', async (c) => {
-		if (isCurrentlyProcessing() && !canAcceptWebhook()) {
-			logger.warn('Machine at capacity, returning 503');
-			return c.text('Service Unavailable', 503);
-		}
-
-		const rawHeaders = extractRawHeaders(c);
-
-		try {
-			const payload = await c.req.json();
-			const eventType = (payload as Record<string, unknown>)?.webhookEvent as string | undefined;
-			logger.info('Received JIRA webhook', {
-				event: eventType,
-				issueKey: ((payload as Record<string, unknown>)?.issue as Record<string, unknown>)?.key,
-			});
-
-			logWebhookCall({
-				source: 'jira',
-				method: c.req.method,
-				path: c.req.path,
-				headers: rawHeaders,
-				body: payload,
-				statusCode: 200,
-				eventType,
-				processed: true,
-			});
-
-			// Fire-and-forget acknowledgment reaction — only for comment events
-			if (eventType?.startsWith('comment_')) {
-				const jiraProjectKey = (
-					((payload as Record<string, unknown>)?.issue as Record<string, unknown>)
-						?.fields as Record<string, unknown>
-				)?.project as Record<string, unknown> | undefined;
-				const projectKey = jiraProjectKey?.key as string | undefined;
-				const project = projectKey
-					? deps.config.projects.find((p) => p.jira?.projectKey === projectKey)
-					: undefined;
-				if (project) {
-					void sendAcknowledgeReaction('jira', project.id, payload).catch((err) =>
-						logger.error('[Server] JIRA reaction error:', { error: String(err) }),
-					);
-				}
-			}
-
-			// Process asynchronously - respond immediately
-			setImmediate(() => {
-				deps.onJiraWebhook(payload).catch((err) => {
-					logger.error('Error processing JIRA webhook', {
-						error: String(err),
-						stack: err instanceof Error ? err.stack : undefined,
-					});
-				});
-			});
-
-			return c.text('OK', 200);
-		} catch (err) {
-			logger.error('Failed to parse JIRA webhook', { error: String(err) });
-			logWebhookCall({
-				source: 'jira',
-				method: c.req.method,
-				path: c.req.path,
-				headers: rawHeaders,
-				bodyRaw: String(err),
-				statusCode: 400,
-				processed: false,
-			});
-			return c.text('Bad Request', 400);
-		}
-	});
+	app.post(
+		'/jira/webhook',
+		createWebhookHandler({
+			source: 'jira',
+			parsePayload: parseJiraPayload,
+			sendReaction: buildJiraReactionSender(deps.config),
+			processWebhook: (payload) => deps.onJiraWebhook(payload),
+		}),
+	);
 
 	// =========================================================================
 	// Static file serving (production — built frontend)
@@ -347,6 +154,10 @@ export function createServer(deps: ServerDependencies): Hono {
 	// Error handler
 	app.onError((err, c) => {
 		logger.error('Unhandled error', { error: String(err), path: c.req.path });
+		captureException(err, {
+			tags: { source: 'hono_error' },
+			extra: { path: c.req.path, method: c.req.method },
+		});
 		return c.json({ error: 'Internal Server Error' }, 500);
 	});
 

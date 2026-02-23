@@ -124,13 +124,6 @@ describe('JiraCommentMentionTrigger', () => {
 		vi.restoreAllMocks();
 	});
 
-	describe('resolveAgentType', () => {
-		it('returns respond-to-planning-comment', () => {
-			const ctx = buildCtx();
-			expect(trigger.resolveAgentType(ctx)).toBe('respond-to-planning-comment');
-		});
-	});
-
 	describe('matches', () => {
 		it('matches comment_created from jira source', () => {
 			expect(trigger.matches(buildCtx({ webhookEvent: 'comment_created' }))).toBe(true);

@@ -1,4 +1,4 @@
-import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
+import { resolveReviewTriggerConfig } from '../../config/triggerConfig.js';
 import { type CheckSuiteStatus, githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -12,8 +12,10 @@ const RETRY_DELAY_MS = 10_000;
 /**
  * Wait for all check suites to complete, retrying when some are still in-progress.
  * Returns immediately if all checks have completed (whether passing or failing).
+ *
+ * Called by the worker before starting the review agent (not in the trigger handler).
  */
-async function waitForChecks(
+export async function waitForChecks(
 	owner: string,
 	repo: string,
 	headSha: string,
@@ -66,8 +68,9 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		if (ctx.source !== 'github') return false;
 		if (!isGitHubCheckSuitePayload(ctx.payload)) return false;
 
-		// Check trigger config — default enabled for backward compatibility
-		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'checkSuiteSuccess')) {
+		// Check trigger config — at least one CI-based review mode must be active
+		const reviewConfig = resolveReviewTriggerConfig(ctx.project.github?.triggers);
+		if (!reviewConfig.ownPrsOnly && !reviewConfig.externalPrs) {
 			return false;
 		}
 
@@ -83,10 +86,6 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		return true;
 	}
 
-	resolveAgentType(): string {
-		return 'review';
-	}
-
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		const payload = ctx.payload as GitHubCheckSuitePayload;
 		const { owner, repo } = parseRepoFullName(payload.repository.full_name);
@@ -99,13 +98,24 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		// Fetch PR details
 		const prDetails = await githubClient.getPR(owner, repo, prNumber);
 
-		// Gate on PR author being the implementer persona
+		// Gate on PR author based on configured review trigger modes
 		if (!ctx.personaIdentities) return null;
 		const implLogin = ctx.personaIdentities.implementer;
-		if (prDetails.user.login !== implLogin && prDetails.user.login !== `${implLogin}[bot]`) {
-			logger.info('PR not authored by implementer persona, skipping', {
+		const isImplementerPR =
+			prDetails.user.login === implLogin || prDetails.user.login === `${implLogin}[bot]`;
+
+		const reviewConfig = resolveReviewTriggerConfig(ctx.project.github?.triggers);
+		const shouldTrigger =
+			(reviewConfig.ownPrsOnly && isImplementerPR) ||
+			(reviewConfig.externalPrs && !isImplementerPR);
+
+		if (!shouldTrigger) {
+			logger.info('PR author does not match any enabled review trigger mode, skipping', {
 				prNumber,
 				prAuthor: prDetails.user.login,
+				isImplementerPR,
+				ownPrsOnly: reviewConfig.ownPrsOnly,
+				externalPrs: reviewConfig.externalPrs,
 			});
 			return null;
 		}
@@ -159,29 +169,15 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			});
 		}
 
-		// Verify all checks are actually passing (double-check)
-		// Uses the implementer token already in scope (set by webhook-handler),
-		// which has actions:read permission. The reviewer's fine-grained PAT may not.
-		//
+		// The trigger decision is made — the review agent should run.
+		// Actual check polling (waitForChecks) is deferred to the worker via the flag.
 		// GitHub fires a check_suite webhook per individual suite completion.
 		// When multiple suites exist, the first webhook arrives before other suites finish.
-		// waitForChecks retries when checks are still in-progress, but bails on genuine failures.
-		const checkStatus = await waitForChecks(owner, repo, headSha, prNumber);
-
-		if (!checkStatus.allPassing) {
-			logger.info('Not all checks passing, skipping review trigger', {
-				prNumber,
-				totalChecks: checkStatus.totalCount,
-				failing: checkStatus.checkRuns.filter((c) => c.conclusion !== 'success').map((c) => c.name),
-			});
-			return null;
-		}
-
-		logger.info('All CI checks passed on implementer PR - triggering review', {
+		// The worker will poll until all checks pass before starting the agent.
+		logger.info('Check-suite success trigger matched — deferring check polling to worker', {
 			prNumber,
 			workItemId,
 			headSha,
-			totalChecks: checkStatus.totalCount,
 		});
 
 		return {
@@ -196,6 +192,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			},
 			prNumber,
 			workItemId,
+			waitForChecks: true,
 		};
 	}
 }

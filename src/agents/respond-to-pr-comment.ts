@@ -16,7 +16,6 @@ const respondToPRCommentDefinition: GitHubAgentDefinition<
 	PRResponseContextData
 > = {
 	agentType: 'respond-to-pr-comment',
-	headerMessage: '🤖 Working on your request...',
 	initialCommentDescription: 'Acknowledge PR comment request',
 	timeoutMessage: '⚠️ PR comment agent timed out while working on the request.',
 	loggerPrefix: 'pr-comment',

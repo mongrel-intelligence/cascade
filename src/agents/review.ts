@@ -141,7 +141,6 @@ ${skippedFiles.map((f) => `- ${f}`).join('\n')}`;
 
 const reviewAgentDefinition: GitHubAgentDefinition<ReviewAgentInput, ReviewContextData> = {
 	agentType: 'review',
-	headerMessage: '🔍 Reviewing PR...',
 	initialCommentDescription: 'Post initial review status comment',
 	timeoutMessage: '⚠️ Review agent timed out while reviewing the PR.',
 	loggerPrefix: 'review',

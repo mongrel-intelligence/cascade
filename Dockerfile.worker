@@ -102,4 +102,4 @@ COPY --chown=node:node src/agents/prompts/templates ./dist/agents/prompts/templa
 COPY --chown=node:node config ./config
 
 # Worker entry point - processes a single job and exits
-CMD ["node", "dist/worker-entry.js"]
+CMD ["node", "--import", "./dist/instrument.js", "dist/worker-entry.js"]

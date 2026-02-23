@@ -45,15 +45,6 @@ export const LIFECYCLE_TRIGGERS: TriggerDef[] = [
  */
 export const SHARED_PM_TRIGGERS: TriggerDef[] = [
 	{
-		key: 'issueTransitioned',
-		label: 'Issue Transitioned',
-		description:
-			'Trigger agent when a JIRA issue transitions to a configured status. Affects briefing, planning, and implementation agents.',
-		defaultValue: true,
-		pmProvider: 'jira',
-		category: 'pm',
-	},
-	{
 		key: 'commentMention',
 		label: 'Comment @mention',
 		description:
@@ -77,6 +68,15 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 			category: 'pm',
 		},
 		{
+			key: 'issueTransitioned.briefing',
+			label: 'Issue Transitioned',
+			description:
+				'Trigger briefing agent when a JIRA issue transitions to the configured Briefing status.',
+			defaultValue: true,
+			pmProvider: 'jira',
+			category: 'pm',
+		},
+		{
 			key: 'readyToProcessLabel.briefing',
 			label: 'Ready to Process label',
 			description:
@@ -92,6 +92,15 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 			description: 'Trigger planning agent when a card is moved to the Planning list.',
 			defaultValue: true,
 			pmProvider: 'trello',
+			category: 'pm',
+		},
+		{
+			key: 'issueTransitioned.planning',
+			label: 'Issue Transitioned',
+			description:
+				'Trigger planning agent when a JIRA issue transitions to the configured Planning status.',
+			defaultValue: true,
+			pmProvider: 'jira',
 			category: 'pm',
 		},
 		{
@@ -113,6 +122,15 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 			category: 'pm',
 		},
 		{
+			key: 'issueTransitioned.implementation',
+			label: 'Issue Transitioned',
+			description:
+				'Trigger implementation agent when a JIRA issue transitions to the configured Todo status.',
+			defaultValue: true,
+			pmProvider: 'jira',
+			category: 'pm',
+		},
+		{
 			key: 'readyToProcessLabel.implementation',
 			label: 'Ready to Process label',
 			description:
@@ -123,18 +141,28 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 	],
 	review: [
 		{
-			key: 'checkSuiteSuccess',
-			label: 'Check Suite Success',
-			description: 'Trigger review agent when all CI checks pass.',
-			defaultValue: true,
+			key: 'reviewTrigger.ownPrsOnly',
+			label: 'Own PRs Only',
+			description:
+				'Trigger review agent when CI passes on PRs authored by the implementer persona.',
+			defaultValue: false,
 			scmProvider: 'github',
 			category: 'scm',
 		},
 		{
-			key: 'reviewRequested',
-			label: 'Review Requested (opt-in)',
+			key: 'reviewTrigger.externalPrs',
+			label: 'External PRs',
 			description:
-				'Trigger review agent when review is requested from a CASCADE persona. Default disabled.',
+				'Trigger review agent when CI passes on PRs authored by anyone (not just the implementer).',
+			defaultValue: false,
+			scmProvider: 'github',
+			category: 'scm',
+		},
+		{
+			key: 'reviewTrigger.onReviewRequested',
+			label: 'On Review Requested',
+			description:
+				'Trigger review agent when a CASCADE persona is explicitly requested as reviewer.',
 			defaultValue: false,
 			scmProvider: 'github',
 			category: 'scm',
@@ -183,12 +211,16 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 };
 
 /**
- * Get trigger definitions for a specific agent type, filtered by PM provider.
+ * Get trigger definitions for a specific agent type, filtered by PM provider and/or category.
  */
-export function getTriggersForAgent(agentType: string, pmProvider?: string): TriggerDef[] {
+export function getTriggersForAgent(
+	agentType: string,
+	opts?: { pmProvider?: string; category?: 'pm' | 'scm' },
+): TriggerDef[] {
 	const triggers = AGENT_TRIGGER_MAP[agentType] ?? [];
 	return triggers.filter((t) => {
-		if (t.pmProvider && pmProvider && t.pmProvider !== pmProvider) return false;
+		if (opts?.category && t.category !== opts.category) return false;
+		if (t.pmProvider && opts?.pmProvider && t.pmProvider !== opts.pmProvider) return false;
 		return true;
 	});
 }

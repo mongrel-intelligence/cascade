@@ -15,7 +15,6 @@ const respondToReviewDefinition: GitHubAgentDefinition<
 	PRResponseContextData
 > = {
 	agentType: 'respond-to-review',
-	headerMessage: '🤖 Working on addressing the review feedback...',
 	initialCommentDescription: 'Acknowledge review feedback',
 	timeoutMessage: '⚠️ Review agent timed out while addressing feedback.',
 	loggerPrefix: 'review',

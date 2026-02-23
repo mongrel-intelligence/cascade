@@ -1,22 +1,15 @@
 import { Header } from '@/components/layout/header.js';
 import { Sidebar } from '@/components/layout/sidebar.js';
 import { OrgProvider } from '@/lib/org-context.js';
+import { queryClient } from '@/lib/query-client.js';
 import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
-import { Outlet, createRootRoute, useNavigate } from '@tanstack/react-router';
-import { useEffect } from 'react';
+import { Outlet, createRootRoute, redirect, useRouterState } from '@tanstack/react-router';
 
 function RootLayout() {
-	const navigate = useNavigate();
-	const meQuery = useQuery(trpc.auth.me.queryOptions());
-
-	const isLoginPage = window.location.pathname === '/login';
-
-	useEffect(() => {
-		if (meQuery.isError && !isLoginPage) {
-			navigate({ to: '/login' });
-		}
-	}, [meQuery.isError, isLoginPage, navigate]);
+	const routerState = useRouterState();
+	const isLoginPage = routerState.location.pathname === '/login';
+	const meQuery = useQuery({ ...trpc.auth.me.queryOptions(), retry: false });
 
 	if (isLoginPage) {
 		return <Outlet />;
@@ -28,10 +21,6 @@ function RootLayout() {
 				<div className="text-muted-foreground">Loading...</div>
 			</div>
 		);
-	}
-
-	if (meQuery.isError) {
-		return null;
 	}
 
 	return (
@@ -49,6 +38,26 @@ function RootLayout() {
 	);
 }
 
+function PendingComponent() {
+	return (
+		<div className="flex h-screen items-center justify-center">
+			<div className="text-muted-foreground">Loading...</div>
+		</div>
+	);
+}
+
 export const rootRoute = createRootRoute({
 	component: RootLayout,
+	pendingComponent: PendingComponent,
+	beforeLoad: async ({ location }) => {
+		if (location.pathname === '/login') return;
+		try {
+			await queryClient.ensureQueryData({
+				...trpc.auth.me.queryOptions(),
+				retry: false,
+			});
+		} catch {
+			throw redirect({ to: '/login' });
+		}
+	},
 });

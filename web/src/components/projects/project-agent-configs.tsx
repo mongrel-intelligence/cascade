@@ -115,8 +115,8 @@ function AgentSection({
 	const [pmSaved, setPmSaved] = useState(false);
 	const [scmSaved, setScmSaved] = useState(false);
 
-	const agentPmTriggers = getTriggersForAgent(agentType, pmProvider);
-	const agentScmTriggers = getTriggersForAgent(agentType).filter((t) => t.category === 'scm');
+	const agentPmTriggers = getTriggersForAgent(agentType, { pmProvider, category: 'pm' });
+	const agentScmTriggers = getTriggersForAgent(agentType, { category: 'scm' });
 
 	const hasTriggers = agentPmTriggers.length > 0 || agentScmTriggers.length > 0;
 
@@ -144,10 +144,7 @@ function AgentSection({
 	const handleSaveScm = async () => {
 		setScmSaving(true);
 		try {
-			const relevant: Record<string, unknown> = {};
-			for (const t of agentScmTriggers) {
-				relevant[t.key] = localScmTriggers[t.key] ?? t.defaultValue;
-			}
+			const relevant = extractRelevantTriggers(agentScmTriggers, localScmTriggers);
 			await onSaveTriggers('scm', relevant, agentType);
 			setScmSaved(true);
 			setTimeout(() => setScmSaved(false), 2000);
