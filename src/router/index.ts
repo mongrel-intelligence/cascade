@@ -1,13 +1,17 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import {
+	createWebhookHandler,
+	parseGitHubPayload,
+	parseJiraPayload,
+	parseTrelloPayload,
+} from '../server/webhookHandlers.js';
 import { registerBuiltInTriggers } from '../triggers/builtins.js';
 import { createTriggerRegistry } from '../triggers/registry.js';
-import { logWebhookCall } from '../utils/webhookLogger.js';
 import { handleGitHubWebhook } from './github.js';
 import { handleJiraWebhook } from './jira.js';
 import { getQueueStats } from './queue.js';
 import { handleTrelloWebhook } from './trello.js';
-import { extractRawHeaders, parseGitHubWebhookPayload } from './webhookParsing.js';
 import {
 	getActiveWorkerCount,
 	getActiveWorkers,
@@ -39,42 +43,25 @@ app.on(['HEAD', 'GET'], '/trello/webhook', (c) => {
 });
 
 // Trello webhook handler
-app.post('/trello/webhook', async (c) => {
-	const rawHeaders = extractRawHeaders(c);
-	let payload: unknown;
-	try {
-		payload = await c.req.json();
-	} catch {
-		logWebhookCall({
-			source: 'trello',
-			method: c.req.method,
-			path: c.req.path,
-			headers: rawHeaders,
-			statusCode: 400,
-			processed: false,
-		});
-		return c.text('Bad Request', 400);
-	}
-
-	const { shouldProcess, project, actionType, cardId } = await handleTrelloWebhook(
-		payload,
-		triggerRegistry,
-	);
-
-	logWebhookCall({
+app.post(
+	'/trello/webhook',
+	createWebhookHandler({
 		source: 'trello',
-		method: c.req.method,
-		path: c.req.path,
-		headers: rawHeaders,
-		body: payload,
-		statusCode: 200,
-		projectId: project?.id,
-		eventType: actionType,
-		processed: shouldProcess && !!project && !!cardId,
-	});
-
-	return c.text('OK', 200);
-});
+		checkCapacity: false,
+		fireAndForget: false,
+		parsePayload: parseTrelloPayload,
+		processWebhook: async (payload) => {
+			const { shouldProcess, project, cardId } = await handleTrelloWebhook(
+				payload,
+				triggerRegistry,
+			);
+			return {
+				processed: shouldProcess && !!project && !!cardId,
+				projectId: project?.id,
+			};
+		},
+	}),
+);
 
 // GitHub webhook verification
 app.get('/github/webhook', (c) => {
@@ -82,47 +69,23 @@ app.get('/github/webhook', (c) => {
 });
 
 // GitHub webhook handler
-app.post('/github/webhook', async (c) => {
-	const eventType = c.req.header('X-GitHub-Event') || 'unknown';
-	const contentType = c.req.header('Content-Type') || '';
-	const rawHeaders = extractRawHeaders(c);
-
-	const parseResult = await parseGitHubWebhookPayload(c, contentType);
-	if (!parseResult.ok) {
-		console.log('[Router] GitHub webhook parse error:', {
-			error: parseResult.error,
-			contentType,
-			eventType,
-		});
-		logWebhookCall({
-			source: 'github',
-			method: c.req.method,
-			path: c.req.path,
-			headers: rawHeaders,
-			bodyRaw: parseResult.error,
-			statusCode: 400,
-			eventType,
-			processed: false,
-		});
-		return c.text('Bad Request', 400);
-	}
-	const payload = parseResult.payload;
-
-	const { shouldProcess } = await handleGitHubWebhook(eventType, payload, triggerRegistry);
-
-	logWebhookCall({
+app.post(
+	'/github/webhook',
+	createWebhookHandler({
 		source: 'github',
-		method: c.req.method,
-		path: c.req.path,
-		headers: rawHeaders,
-		body: payload,
-		statusCode: 200,
-		eventType,
-		processed: shouldProcess,
-	});
-
-	return c.text('OK', 200);
-});
+		checkCapacity: false,
+		fireAndForget: false,
+		parsePayload: parseGitHubPayload,
+		processWebhook: async (payload, eventType) => {
+			const { shouldProcess } = await handleGitHubWebhook(
+				eventType ?? 'unknown',
+				payload,
+				triggerRegistry,
+			);
+			return { processed: shouldProcess };
+		},
+	}),
+);
 
 // JIRA webhook verification
 app.get('/jira/webhook', (c) => {
@@ -130,42 +93,22 @@ app.get('/jira/webhook', (c) => {
 });
 
 // JIRA webhook handler
-app.post('/jira/webhook', async (c) => {
-	const rawHeaders = extractRawHeaders(c);
-	let payload: unknown;
-	try {
-		payload = await c.req.json();
-	} catch {
-		logWebhookCall({
-			source: 'jira',
-			method: c.req.method,
-			path: c.req.path,
-			headers: rawHeaders,
-			statusCode: 400,
-			processed: false,
-		});
-		return c.text('Bad Request', 400);
-	}
-
-	const { shouldProcess, project, webhookEvent } = await handleJiraWebhook(
-		payload,
-		triggerRegistry,
-	);
-
-	logWebhookCall({
+app.post(
+	'/jira/webhook',
+	createWebhookHandler({
 		source: 'jira',
-		method: c.req.method,
-		path: c.req.path,
-		headers: rawHeaders,
-		body: payload,
-		statusCode: 200,
-		projectId: project?.id,
-		eventType: webhookEvent || undefined,
-		processed: !!shouldProcess,
-	});
-
-	return c.text('OK', 200);
-});
+		checkCapacity: false,
+		fireAndForget: false,
+		parsePayload: parseJiraPayload,
+		processWebhook: async (payload) => {
+			const { shouldProcess, project } = await handleJiraWebhook(payload, triggerRegistry);
+			return {
+				processed: !!shouldProcess,
+				projectId: project?.id,
+			};
+		},
+	}),
+);
 
 // Graceful shutdown
 async function shutdown(signal: string): Promise<void> {
