@@ -338,6 +338,151 @@ describe('trelloClient', () => {
 		});
 	});
 
+	describe('getBoards', () => {
+		it('returns boards for authenticated member', async () => {
+			const boards = [
+				{ id: 'board-1', name: 'Board One', url: 'https://trello.com/b/board1' },
+				{ id: 'board-2', name: 'Board Two', url: 'https://trello.com/b/board2' },
+			];
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify(boards), { status: 200 }));
+
+			const result = await withTrelloCredentials(creds, () => trelloClient.getBoards());
+
+			expect(result).toEqual(boards);
+			expect(fetchSpy).toHaveBeenCalledOnce();
+			const [url] = fetchSpy.mock.calls[0];
+			expect(url).toContain('/1/members/me/boards');
+			expect(url).toContain('filter=open');
+			expect(url).toContain('key=test-key');
+			expect(url).toContain('token=test-token');
+		});
+
+		it('throws on non-OK response', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response('Unauthorized', { status: 401 }),
+			);
+
+			await expect(withTrelloCredentials(creds, () => trelloClient.getBoards())).rejects.toThrow(
+				'Failed to fetch boards: 401',
+			);
+		});
+
+		it('handles missing fields gracefully', async () => {
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify([{}, { id: 'b1' }]), { status: 200 }));
+
+			const result = await withTrelloCredentials(creds, () => trelloClient.getBoards());
+
+			expect(result).toEqual([
+				{ id: '', name: '', url: '' },
+				{ id: 'b1', name: '', url: '' },
+			]);
+		});
+	});
+
+	describe('getBoardLists', () => {
+		it('returns lists for a board', async () => {
+			const lists = [
+				{ id: 'list-1', name: 'Backlog' },
+				{ id: 'list-2', name: 'In Progress' },
+			];
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify(lists), { status: 200 }));
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.getBoardLists('board-1'),
+			);
+
+			expect(result).toEqual(lists);
+			const [url] = fetchSpy.mock.calls[0];
+			expect(url).toContain('/1/boards/board-1/lists');
+			expect(url).toContain('filter=open');
+		});
+
+		it('throws on non-OK response', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Not Found', { status: 404 }));
+
+			await expect(
+				withTrelloCredentials(creds, () => trelloClient.getBoardLists('board-1')),
+			).rejects.toThrow('Failed to fetch board lists: 404');
+		});
+	});
+
+	describe('getBoardLabels', () => {
+		it('returns labels for a board', async () => {
+			const labels = [
+				{ id: 'label-1', name: 'Bug', color: 'red' },
+				{ id: 'label-2', name: 'Feature', color: 'green' },
+			];
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify(labels), { status: 200 }));
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.getBoardLabels('board-1'),
+			);
+
+			expect(result).toEqual(labels);
+			const [url] = fetchSpy.mock.calls[0];
+			expect(url).toContain('/1/boards/board-1/labels');
+		});
+
+		it('throws on non-OK response', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Error', { status: 500 }));
+
+			await expect(
+				withTrelloCredentials(creds, () => trelloClient.getBoardLabels('board-1')),
+			).rejects.toThrow('Failed to fetch board labels: 500');
+		});
+	});
+
+	describe('getBoardCustomFields', () => {
+		it('returns custom fields for a board', async () => {
+			const fields = [
+				{ id: 'cf-1', name: 'Priority', type: 'list' },
+				{ id: 'cf-2', name: 'Cost', type: 'number' },
+			];
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify(fields), { status: 200 }));
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.getBoardCustomFields('board-1'),
+			);
+
+			expect(result).toEqual(fields);
+			const [url] = fetchSpy.mock.calls[0];
+			expect(url).toContain('/1/boards/board-1/customFields');
+		});
+
+		it('throws on non-OK response', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Error', { status: 403 }));
+
+			await expect(
+				withTrelloCredentials(creds, () => trelloClient.getBoardCustomFields('board-1')),
+			).rejects.toThrow('Failed to fetch board custom fields: 403');
+		});
+
+		it('handles missing fields gracefully', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response(JSON.stringify([{}, { id: 'cf-1', type: 'text' }]), { status: 200 }),
+			);
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.getBoardCustomFields('board-1'),
+			);
+
+			expect(result).toEqual([
+				{ id: '', name: '', type: '' },
+				{ id: 'cf-1', name: '', type: 'text' },
+			]);
+		});
+	});
+
 	describe('getCardAttachments', () => {
 		it('returns attachments via fetch', async () => {
 			const attachments = [

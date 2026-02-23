@@ -480,6 +480,92 @@ export const trelloClient = {
 		}));
 	},
 
+	async getBoards(): Promise<Array<{ id: string; name: string; url: string }>> {
+		logger.debug('Fetching boards for authenticated member');
+		const { apiKey, token } = getTrelloCredentials();
+		const response = await fetch(
+			`https://api.trello.com/1/members/me/boards?filter=open&fields=id,name,url&key=${apiKey}&token=${token}`,
+		);
+		if (!response.ok) {
+			throw new Error(`Failed to fetch boards: ${response.status}`);
+		}
+		const boards = (await response.json()) as Array<{
+			id?: string;
+			name?: string;
+			url?: string;
+		}>;
+		return boards.map((b) => ({
+			id: b.id || '',
+			name: b.name || '',
+			url: b.url || '',
+		}));
+	},
+
+	async getBoardLists(boardId: string): Promise<Array<{ id: string; name: string }>> {
+		logger.debug('Fetching board lists', { boardId });
+		const { apiKey, token } = getTrelloCredentials();
+		const response = await fetch(
+			`https://api.trello.com/1/boards/${boardId}/lists?filter=open&key=${apiKey}&token=${token}`,
+		);
+		if (!response.ok) {
+			throw new Error(`Failed to fetch board lists: ${response.status}`);
+		}
+		const lists = (await response.json()) as Array<{
+			id?: string;
+			name?: string;
+		}>;
+		return lists.map((l) => ({
+			id: l.id || '',
+			name: l.name || '',
+		}));
+	},
+
+	async getBoardLabels(
+		boardId: string,
+	): Promise<Array<{ id: string; name: string; color: string }>> {
+		logger.debug('Fetching board labels', { boardId });
+		const { apiKey, token } = getTrelloCredentials();
+		const response = await fetch(
+			`https://api.trello.com/1/boards/${boardId}/labels?key=${apiKey}&token=${token}`,
+		);
+		if (!response.ok) {
+			throw new Error(`Failed to fetch board labels: ${response.status}`);
+		}
+		const labels = (await response.json()) as Array<{
+			id?: string;
+			name?: string;
+			color?: string;
+		}>;
+		return labels.map((l) => ({
+			id: l.id || '',
+			name: l.name || '',
+			color: l.color || '',
+		}));
+	},
+
+	async getBoardCustomFields(
+		boardId: string,
+	): Promise<Array<{ id: string; name: string; type: string }>> {
+		logger.debug('Fetching board custom fields', { boardId });
+		const { apiKey, token } = getTrelloCredentials();
+		const response = await fetch(
+			`https://api.trello.com/1/boards/${boardId}/customFields?key=${apiKey}&token=${token}`,
+		);
+		if (!response.ok) {
+			throw new Error(`Failed to fetch board custom fields: ${response.status}`);
+		}
+		const fields = (await response.json()) as Array<{
+			id?: string;
+			name?: string;
+			type?: string;
+		}>;
+		return fields.map((f) => ({
+			id: f.id || '',
+			name: f.name || '',
+			type: f.type || '',
+		}));
+	},
+
 	async updateCardCustomFieldNumber(
 		cardId: string,
 		customFieldId: string,

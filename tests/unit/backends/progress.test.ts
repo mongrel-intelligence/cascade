@@ -35,6 +35,7 @@ vi.mock('../../../src/config/statusUpdateConfig.js', () => ({
 vi.mock('../../../src/backends/progressState.js', () => ({
 	writeProgressCommentId: vi.fn(),
 	clearProgressCommentId: vi.fn(),
+	readProgressCommentId: vi.fn(),
 }));
 
 import { syncCompletedTodosToChecklist } from '../../../src/agents/utils/checklistSync.js';
@@ -43,6 +44,7 @@ import { callProgressModel } from '../../../src/backends/progressModel.js';
 import { ProgressMonitor } from '../../../src/backends/progressMonitor.js';
 import {
 	clearProgressCommentId,
+	readProgressCommentId,
 	writeProgressCommentId,
 } from '../../../src/backends/progressState.js';
 import {
@@ -59,6 +61,7 @@ import { getPMProviderOrNull } from '../../../src/pm/index.js';
 const mockGetPMProvider = vi.mocked(getPMProviderOrNull);
 const mockWriteProgressCommentId = vi.mocked(writeProgressCommentId);
 const mockClearProgressCommentId = vi.mocked(clearProgressCommentId);
+const mockReadProgressCommentId = vi.mocked(readProgressCommentId);
 const mockPMProvider = { addComment: vi.fn(), updateComment: vi.fn() };
 const mockGithub = vi.mocked(githubClient);
 const mockGetStatusConfig = vi.mocked(getStatusUpdateConfig);
@@ -74,6 +77,8 @@ beforeEach(() => {
 	vi.useFakeTimers();
 	mockLoadTodos.mockReturnValue([]);
 	mockGetPMProvider.mockReturnValue(null);
+	// Default: state file exists (not cleared by agent subprocess)
+	mockReadProgressCommentId.mockReturnValue({ workItemId: 'card1', commentId: 'comment-id-1' });
 });
 
 afterEach(() => {
@@ -1123,6 +1128,46 @@ describe('ProgressMonitor — state file integration', () => {
 			'card1',
 			'comment-id-from-tick',
 		);
+	});
+
+	it('skips progress update when state file is cleared by agent subprocess', async () => {
+		const logWriter = vi.fn();
+		const monitor = new ProgressMonitor({
+			agentType: 'respond-to-planning-comment',
+			taskDescription: 'Test task',
+			intervalMinutes: 5,
+			progressModel: 'test-model',
+			customModels: [],
+			logWriter,
+			repoDir: '/tmp/test-repo',
+			trello: { cardId: 'card1' },
+		});
+
+		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
+		mockCallProgressModel.mockResolvedValue('Progress update');
+		mockPMProvider.addComment.mockResolvedValue('comment-id-initial');
+		mockPMProvider.updateComment.mockResolvedValue(undefined);
+
+		monitor.start();
+		await vi.advanceTimersByTimeAsync(0);
+
+		// Simulate the PostComment gadget clearing the state file
+		mockReadProgressCommentId.mockReturnValue(null);
+
+		// First tick fires at 1 minute — should detect cleared state file and skip
+		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
+		monitor.stop();
+
+		// updateComment should NOT have been called (state file was cleared)
+		expect(mockPMProvider.updateComment).not.toHaveBeenCalled();
+		// Should log the skip
+		expect(logWriter).toHaveBeenCalledWith(
+			'DEBUG',
+			'State file cleared by agent — skipping progress update',
+			expect.objectContaining({ commentId: 'comment-id-initial' }),
+		);
+		// progressCommentId should be cleared
+		expect(monitor.getProgressCommentId()).toBeNull();
 	});
 
 	it('updates state file when new comment is created after update failure', async () => {
