@@ -489,9 +489,9 @@ cascade agents update <id> --max-iterations 30
 cascade agents delete <id> --yes
 
 # Webhooks
-cascade webhooks list <project-id>
-cascade webhooks create <project-id> --callback-url https://cascade.example.com
-cascade webhooks delete <project-id> --callback-url https://cascade.example.com
+cascade webhooks list <project-id> [--github-token ghp_xxx]
+cascade webhooks create <project-id> [--callback-url URL] [--github-token ghp_xxx]
+cascade webhooks delete <project-id> [--callback-url URL] [--github-token ghp_xxx]
 ```
 
 ### Global Flags
