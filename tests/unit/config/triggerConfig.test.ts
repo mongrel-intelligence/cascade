@@ -261,6 +261,21 @@ describe('resolveReadyToProcessEnabled', () => {
 		};
 		expect(resolveReadyToProcessEnabled(config, 'unknown-agent')).toBe(true);
 	});
+
+	it('defaults to true for known non-toggle agents like respond-to-review', () => {
+		const config = {
+			readyToProcessLabel: { briefing: false, planning: false, implementation: false },
+		};
+		expect(resolveReadyToProcessEnabled(config, 'respond-to-review')).toBe(true);
+		expect(resolveReadyToProcessEnabled(config, 'debug')).toBe(true);
+	});
+
+	it('defaults all agents to true when nested object is empty (Zod fills defaults)', () => {
+		const parsed = TrelloTriggerConfigSchema.parse({ readyToProcessLabel: {} });
+		expect(resolveReadyToProcessEnabled(parsed, 'briefing')).toBe(true);
+		expect(resolveReadyToProcessEnabled(parsed, 'planning')).toBe(true);
+		expect(resolveReadyToProcessEnabled(parsed, 'implementation')).toBe(true);
+	});
 });
 
 describe('resolveIssueTransitionedEnabled', () => {
@@ -302,6 +317,21 @@ describe('resolveIssueTransitionedEnabled', () => {
 			issueTransitioned: { briefing: false, planning: false, implementation: false },
 		};
 		expect(resolveIssueTransitionedEnabled(config, 'unknown-agent')).toBe(true);
+	});
+
+	it('defaults to true for known non-toggle agents like respond-to-review', () => {
+		const config = {
+			issueTransitioned: { briefing: false, planning: false, implementation: false },
+		};
+		expect(resolveIssueTransitionedEnabled(config, 'respond-to-review')).toBe(true);
+		expect(resolveIssueTransitionedEnabled(config, 'debug')).toBe(true);
+	});
+
+	it('defaults all agents to true when nested object is empty (Zod fills defaults)', () => {
+		const parsed = JiraTriggerConfigSchema.parse({ issueTransitioned: {} });
+		expect(resolveIssueTransitionedEnabled(parsed, 'briefing')).toBe(true);
+		expect(resolveIssueTransitionedEnabled(parsed, 'planning')).toBe(true);
+		expect(resolveIssueTransitionedEnabled(parsed, 'implementation')).toBe(true);
 	});
 });
 

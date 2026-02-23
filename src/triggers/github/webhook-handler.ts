@@ -3,6 +3,7 @@ import { loadProjectConfigByRepo } from '../../config/provider.js';
 import { getSessionState } from '../../gadgets/sessionState.js';
 import { githubClient, withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
+import { withPMCredentials } from '../../pm/context.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
 import { extractGitHubContext, generateAckMessage } from '../../router/ackMessageGenerator.js';
 import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
@@ -90,19 +91,6 @@ async function postAcknowledgmentComment(
 	}
 }
 
-/**
- * Establish PM credential scope for the project.
- * Uses the integration's withCredentials() for the correct PM type.
- * Falls through to running fn() directly if no PM type is configured.
- */
-async function withPMCredentials<T>(project: ProjectConfig, fn: () => Promise<T>): Promise<T> {
-	const pmType = project.pm?.type;
-	if (!pmType) return fn();
-	const integration = pmRegistry.getOrNull(pmType);
-	if (!integration) return fn();
-	return integration.withCredentials(project.id, fn);
-}
-
 async function executeGitHubAgent(
 	result: TriggerResult,
 	project: ProjectConfig,
@@ -122,12 +110,16 @@ async function executeGitHubAgent(
 
 	try {
 		const pmProvider = createPMProvider(project);
-		await withPMCredentials(project, () =>
-			withPMProvider(pmProvider, () =>
-				withGitHubToken(githubToken, () =>
-					runAgentExecutionPipeline(result, project, config, executionConfig),
+		await withPMCredentials(
+			project.id,
+			project.pm?.type,
+			(t) => pmRegistry.getOrNull(t),
+			() =>
+				withPMProvider(pmProvider, () =>
+					withGitHubToken(githubToken, () =>
+						runAgentExecutionPipeline(result, project, config, executionConfig),
+					),
 				),
-			),
 		);
 	} finally {
 		restoreLlmEnv();
@@ -196,14 +188,98 @@ function processNextQueuedGitHubWebhook(registry: TriggerRegistry): void {
 	);
 }
 
+/**
+ * Poll until all CI checks pass before starting the agent.
+ * Returns false if checks don't pass after polling (agent should be skipped).
+ */
+async function pollWaitForChecks(
+	result: TriggerResult,
+	repoFullName: string,
+	githubToken: string,
+): Promise<boolean> {
+	const { waitForChecks } = await import('./check-suite-success.js');
+	const { owner, repo } = parseRepoFullName(repoFullName);
+	const headSha = result.agentInput.headSha as string;
+	const prNumber = result.prNumber ?? 0;
+
+	logger.info('Waiting for all checks to pass before starting agent', { prNumber, headSha });
+
+	const checkStatus = await withGitHubToken(githubToken, () =>
+		waitForChecks(owner, repo, headSha, prNumber),
+	);
+
+	if (!checkStatus.allPassing) {
+		logger.info('Not all checks passing after polling, skipping agent', {
+			prNumber,
+			headSha,
+			failedChecks: checkStatus.checkRuns
+				.filter((c) => c.conclusion !== 'success')
+				.map((c) => c.name),
+		});
+		return false;
+	}
+
+	logger.info('All checks passing, proceeding with agent', { prNumber });
+	return true;
+}
+
+/** Try to enqueue the webhook if another job is already processing. Returns true if enqueued (caller should return). */
+function tryEnqueueIfBusy(
+	payload: unknown,
+	eventType: string,
+	ackCommentId?: number,
+	ackMessage?: string,
+): boolean {
+	if (!isCurrentlyProcessing()) return false;
+
+	const queued = enqueueWebhook(payload, eventType, ackCommentId, ackMessage);
+	if (queued) {
+		logger.info('Currently processing, GitHub webhook queued', {
+			queueLength: getQueueLength(),
+			eventType,
+		});
+	} else {
+		logger.warn('Queue full, GitHub webhook rejected', { queueLength: getQueueLength() });
+	}
+	return true;
+}
+
+/** Resolve trigger result — use pre-resolved from router or dispatch via registry. */
+async function resolveTriggerResult(
+	existing: TriggerResult | undefined,
+	project: ProjectConfig,
+	payload: unknown,
+	personaIdentities: Awaited<ReturnType<typeof resolvePersonaIdentities>>,
+	githubToken: string,
+	registry: TriggerRegistry,
+): Promise<TriggerResult | null> {
+	if (existing) {
+		logger.info('Using pre-resolved trigger result for GitHub webhook', {
+			agentType: existing.agentType,
+		});
+		return existing;
+	}
+
+	const ctx: TriggerContext = { project, source: 'github', payload, personaIdentities };
+	const pmProvider = createPMProvider(project);
+	return withPMCredentials(
+		project.id,
+		project.pm?.type,
+		(t) => pmRegistry.getOrNull(t),
+		() =>
+			withPMProvider(pmProvider, () => withGitHubToken(githubToken, () => registry.dispatch(ctx))),
+	);
+}
+
 export async function processGitHubWebhook(
 	payload: unknown,
 	eventType: string,
 	registry: TriggerRegistry,
 	ackCommentId?: number,
 	ackMessage?: string,
+	triggerResult?: TriggerResult,
 ): Promise<void> {
-	logger.info('Processing GitHub webhook', { eventType });
+	logger.info('Processing GitHub webhook', { eventType, hasTriggerResult: !!triggerResult });
 
 	const p = payload as Record<string, unknown>;
 	const repository = p.repository as Record<string, unknown> | undefined;
@@ -214,18 +290,7 @@ export async function processGitHubWebhook(
 		return;
 	}
 
-	if (isCurrentlyProcessing()) {
-		const queued = enqueueWebhook(payload, eventType, ackCommentId, ackMessage);
-		if (queued) {
-			logger.info('Currently processing, GitHub webhook queued', {
-				queueLength: getQueueLength(),
-				eventType,
-			});
-		} else {
-			logger.warn('Queue full, GitHub webhook rejected', { queueLength: getQueueLength() });
-		}
-		return;
-	}
+	if (tryEnqueueIfBusy(payload, eventType, ackCommentId, ackMessage)) return;
 
 	const projectConfig = await loadProjectConfigByRepo(repoFullName);
 	if (!projectConfig) {
@@ -234,25 +299,20 @@ export async function processGitHubWebhook(
 	}
 	const { project, config } = projectConfig;
 
-	// Resolve persona identities and use implementer token for webhook processing
 	const personaIdentities = await resolvePersonaIdentities(project.id);
 	const githubToken = await getPersonaToken(project.id, 'implementation');
-	const pmProvider = createPMProvider(project);
 
-	// Establish PM credential + provider scope for trigger dispatch
-	const ctx: TriggerContext = { project, source: 'github', payload, personaIdentities };
-	const result = await withPMCredentials(project, () =>
-		withPMProvider(pmProvider, () => withGitHubToken(githubToken, () => registry.dispatch(ctx))),
+	const result = await resolveTriggerResult(
+		triggerResult,
+		project,
+		payload,
+		personaIdentities,
+		githubToken,
+		registry,
 	);
 
 	if (!result) {
 		logger.info('No trigger matched for GitHub webhook', { eventType, repoFullName });
-		// Clean up orphan ack if router posted one but no trigger matched
-		if (ackCommentId) {
-			logger.info('Cleaning up orphan ack comment', { ackCommentId, repoFullName });
-			const { deleteGitHubAck } = await import('../../router/acknowledgments.js');
-			await deleteGitHubAck(repoFullName, ackCommentId, githubToken).catch(() => {});
-		}
 		return;
 	}
 
@@ -262,6 +322,12 @@ export async function processGitHubWebhook(
 	}
 	if (ackMessage) {
 		result.agentInput.ackMessage = ackMessage;
+	}
+
+	// Poll until all CI checks pass before starting agent (deferred from trigger)
+	if (result.waitForChecks) {
+		const checksOk = await pollWaitForChecks(result, repoFullName, githubToken);
+		if (!checksOk) return;
 	}
 
 	logger.info('GitHub trigger matched', {

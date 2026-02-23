@@ -162,13 +162,6 @@ describe('PRCommentMentionTrigger', () => {
 		});
 	});
 
-	describe('resolveAgentType', () => {
-		it('returns respond-to-pr-comment', () => {
-			const ctx = buildCtx();
-			expect(trigger.resolveAgentType(ctx)).toBe('respond-to-pr-comment');
-		});
-	});
-
 	describe('matches', () => {
 		it('matches issue_comment.created on a PR', () => {
 			expect(trigger.matches(buildCtx())).toBe(true);

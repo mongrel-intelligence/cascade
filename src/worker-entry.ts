@@ -25,6 +25,7 @@ import {
 	registerBuiltInTriggers,
 } from './triggers/index.js';
 import { processTrelloWebhook } from './triggers/trello/webhook-handler.js';
+import type { TriggerResult } from './types/index.js';
 import { scrubSensitiveEnv } from './utils/envScrub.js';
 import { logger, setLogLevel } from './utils/index.js';
 
@@ -37,6 +38,7 @@ interface TrelloJobData {
 	actionType: string;
 	receivedAt: string;
 	ackCommentId?: string;
+	triggerResult?: TriggerResult;
 }
 
 interface GitHubJobData {
@@ -48,6 +50,7 @@ interface GitHubJobData {
 	receivedAt: string;
 	ackCommentId?: number;
 	ackMessage?: string;
+	triggerResult?: TriggerResult;
 }
 
 interface JiraJobData {
@@ -59,6 +62,7 @@ interface JiraJobData {
 	webhookEvent: string;
 	receivedAt: string;
 	ackCommentId?: string;
+	triggerResult?: TriggerResult;
 }
 
 interface ManualRunJobData {
@@ -147,8 +151,14 @@ async function dispatchJob(
 				cardId: jobData.cardId,
 				actionType: jobData.actionType,
 				ackCommentId: jobData.ackCommentId,
+				hasTriggerResult: !!jobData.triggerResult,
 			});
-			await processTrelloWebhook(jobData.payload, triggerRegistry, jobData.ackCommentId);
+			await processTrelloWebhook(
+				jobData.payload,
+				triggerRegistry,
+				jobData.ackCommentId,
+				jobData.triggerResult,
+			);
 			break;
 		case 'github':
 			logger.info('[Worker] Processing GitHub job', {
@@ -156,6 +166,7 @@ async function dispatchJob(
 				eventType: jobData.eventType,
 				repoFullName: jobData.repoFullName,
 				ackCommentId: jobData.ackCommentId,
+				hasTriggerResult: !!jobData.triggerResult,
 			});
 			await processGitHubWebhook(
 				jobData.payload,
@@ -163,6 +174,7 @@ async function dispatchJob(
 				triggerRegistry,
 				jobData.ackCommentId,
 				jobData.ackMessage,
+				jobData.triggerResult,
 			);
 			break;
 		case 'jira':
@@ -171,8 +183,14 @@ async function dispatchJob(
 				issueKey: jobData.issueKey,
 				webhookEvent: jobData.webhookEvent,
 				ackCommentId: jobData.ackCommentId,
+				hasTriggerResult: !!jobData.triggerResult,
 			});
-			await processJiraWebhook(jobData.payload, triggerRegistry, jobData.ackCommentId);
+			await processJiraWebhook(
+				jobData.payload,
+				triggerRegistry,
+				jobData.ackCommentId,
+				jobData.triggerResult,
+			);
 			break;
 		case 'manual-run':
 		case 'retry-run':

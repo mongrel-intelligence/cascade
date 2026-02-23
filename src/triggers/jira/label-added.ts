@@ -18,34 +18,7 @@ import { getJiraConfig } from '../../pm/config.js';
 import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
-
-interface JiraChangelogItem {
-	field?: string;
-	fromString?: string;
-	toString?: string;
-}
-
-interface JiraLabelPayload {
-	webhookEvent: string;
-	issue?: {
-		key: string;
-		fields?: {
-			project?: { key?: string };
-			status?: { name?: string };
-			summary?: string;
-		};
-	};
-	changelog?: {
-		items?: JiraChangelogItem[];
-	};
-}
-
-/** Same status→agent mapping as issue-transitioned.ts */
-const STATUS_TO_AGENT: Record<string, string> = {
-	briefing: 'briefing',
-	planning: 'planning',
-	todo: 'implementation',
-};
+import { type JiraWebhookPayload, STATUS_TO_AGENT } from './types.js';
 
 /**
  * Parse which labels were added from a JIRA label changelog item.
@@ -56,7 +29,7 @@ const STATUS_TO_AGENT: Record<string, string> = {
  *
  * Returns the set of labels present in `toString` but not in `fromString`.
  */
-function parseAddedLabels(item: JiraChangelogItem): Set<string> {
+function parseAddedLabels(item: { fromString?: string; toString?: string }): Set<string> {
 	const before = new Set((item.fromString ?? '').split(/\s+/).filter(Boolean));
 	const after = (item.toString ?? '').split(/\s+/).filter(Boolean);
 	return new Set(after.filter((label) => !before.has(label)));
@@ -74,7 +47,7 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 			return false;
 		}
 
-		const payload = ctx.payload as JiraLabelPayload;
+		const payload = ctx.payload as JiraWebhookPayload;
 		if (!payload.webhookEvent?.startsWith('jira:issue_updated')) return false;
 
 		const items = payload.changelog?.items;
@@ -97,24 +70,8 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 		return addedLabels.has(readyLabel);
 	}
 
-	resolveAgentType(ctx: TriggerContext): string | null {
-		const payload = ctx.payload as JiraLabelPayload;
-		const currentStatus = payload.issue?.fields?.status?.name;
-		if (!currentStatus) return null;
-
-		const jiraConfig = getJiraConfig(ctx.project);
-		if (!jiraConfig?.statuses) return null;
-
-		for (const [cascadeStatus, jiraStatus] of Object.entries(jiraConfig.statuses)) {
-			if (jiraStatus.toLowerCase() === currentStatus.toLowerCase()) {
-				return STATUS_TO_AGENT[cascadeStatus] ?? null;
-			}
-		}
-		return null;
-	}
-
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
-		const payload = ctx.payload as JiraLabelPayload;
+		const payload = ctx.payload as JiraWebhookPayload;
 		const issueKey = payload.issue?.key;
 
 		if (!issueKey) {

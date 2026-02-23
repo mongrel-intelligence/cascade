@@ -1,46 +1,24 @@
 /**
  * JIRA webhook handler for the router (multi-container) deployment mode.
  *
- * Handles webhook parsing, self-comment filtering, ack posting, and job queuing
- * for JIRA webhook events.
+ * Runs full trigger dispatch() to determine if a job should be queued.
+ * Only posts ack comments and queues jobs when dispatch confirms a match.
  */
 
+import { withJiraCredentials } from '../jira/client.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
-import type { ProjectConfig, TriggerContext } from '../types/index.js';
+import type { ProjectConfig, TriggerContext, TriggerResult } from '../types/index.js';
+import { logger } from '../utils/logging.js';
 import { extractJiraContext, generateAckMessage } from './ackMessageGenerator.js';
 import { postJiraAck, resolveJiraBotAccountId } from './acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from './config.js';
+import { resolveJiraCredentials } from './platformClients.js';
 import { type CascadeJob, addJob } from './queue.js';
 import { sendAcknowledgeReaction } from './reactions.js';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Try to match a trigger and post an ack comment for a JIRA webhook.
- * Returns the ack comment ID if posted, undefined otherwise.
- */
-export async function tryPostJiraAck(
-	projectId: string,
-	issueKey: string,
-	payload: unknown,
-	fullProjects: ProjectConfig[],
-	triggerRegistry: TriggerRegistry,
-): Promise<string | undefined> {
-	const fullProject = fullProjects.find((fp) => fp.id === projectId);
-	if (!fullProject || !issueKey) return undefined;
-
-	const ctx: TriggerContext = { project: fullProject, source: 'jira', payload };
-	const match = triggerRegistry.matchTrigger(ctx);
-	if (!match) return undefined;
-
-	const context = extractJiraContext(payload);
-	const message = await generateAckMessage(match.agentType, context, projectId);
-
-	const commentId = await postJiraAck(projectId, issueKey, message);
-	return commentId ?? undefined;
-}
 
 export async function isSelfAuthoredJiraComment(
 	webhookEvent: string,
@@ -61,7 +39,10 @@ export async function isSelfAuthoredJiraComment(
 	}
 }
 
-export async function queueJiraJob(
+/**
+ * Run authoritative dispatch and, if matched, post ack + queue job.
+ */
+export async function processJiraWebhookEvent(
 	project: RouterProjectConfig,
 	issueKey: string,
 	webhookEvent: string,
@@ -69,29 +50,64 @@ export async function queueJiraJob(
 	fullProjects: ProjectConfig[],
 	triggerRegistry: TriggerRegistry,
 ): Promise<void> {
-	console.log('[Router] Queueing JIRA job:', { webhookEvent, issueKey, projectId: project.id });
-
 	// Fire-and-forget acknowledgment reaction — only for comment events
 	if (webhookEvent.startsWith('comment_')) {
 		void sendAcknowledgeReaction('jira', project.id, payload).catch((err) =>
-			console.error('[Router] JIRA reaction error:', err),
+			logger.error('JIRA reaction error', { error: String(err) }),
 		);
 	}
 
-	// Try to post an ack comment via trigger matching (non-blocking best-effort)
-	let ackCommentId: string | undefined;
+	// Run authoritative trigger dispatch with credentials in scope
+	const fullProject = fullProjects.find((fp) => fp.id === project.id);
+	if (!fullProject) {
+		logger.info('No full project config for JIRA webhook, skipping', { projectId: project.id });
+		return;
+	}
+
+	let result: TriggerResult | null = null;
 	try {
-		ackCommentId = await tryPostJiraAck(
-			project.id,
-			issueKey,
-			payload,
-			fullProjects,
-			triggerRegistry,
-		);
+		const jiraCreds = await resolveJiraCredentials(project.id);
+		if (!jiraCreds) {
+			logger.warn('Missing JIRA credentials, cannot dispatch triggers', { projectId: project.id });
+		} else {
+			const ctx: TriggerContext = { project: fullProject, source: 'jira', payload };
+			result = await withJiraCredentials(
+				{ email: jiraCreds.email, apiToken: jiraCreds.apiToken, baseUrl: jiraCreds.baseUrl },
+				() => triggerRegistry.dispatch(ctx),
+			);
+		}
 	} catch (err) {
-		console.warn('[Router] JIRA ack comment failed (non-fatal):', String(err));
+		logger.warn('JIRA trigger dispatch failed (non-fatal)', {
+			error: String(err),
+			projectId: project.id,
+		});
 	}
 
+	if (!result) {
+		logger.info('No trigger matched for JIRA event', { webhookEvent, issueKey });
+		return;
+	}
+
+	logger.info('JIRA trigger matched', {
+		agentType: result.agentType,
+		issueKey,
+		projectId: project.id,
+	});
+
+	// Post ack comment — we KNOW the trigger matched
+	let ackCommentId: string | undefined;
+	if (result.agentType) {
+		try {
+			const context = extractJiraContext(payload);
+			const message = await generateAckMessage(result.agentType, context, project.id);
+			const commentId = await postJiraAck(project.id, issueKey, message);
+			ackCommentId = commentId ?? undefined;
+		} catch (err) {
+			logger.warn('JIRA ack comment failed (non-fatal)', { error: String(err), issueKey });
+		}
+	}
+
+	// Queue job with confirmed trigger result
 	const job: CascadeJob = {
 		type: 'jira',
 		source: 'jira',
@@ -101,13 +117,14 @@ export async function queueJiraJob(
 		webhookEvent,
 		receivedAt: new Date().toISOString(),
 		ackCommentId,
+		triggerResult: result,
 	};
 
 	try {
 		const jobId = await addJob(job);
-		console.log('[Router] JIRA job queued:', { jobId, webhookEvent, ackCommentId });
+		logger.info('JIRA job queued', { jobId, webhookEvent, ackCommentId });
 	} catch (err) {
-		console.error('[Router] Failed to queue JIRA job:', err);
+		logger.error('Failed to queue JIRA job', { error: String(err), webhookEvent, issueKey });
 	}
 }
 
@@ -124,7 +141,8 @@ const PROCESSABLE_EVENTS = [
 
 /**
  * Handle a POST /jira/webhook request.
- * Parses the payload, filters irrelevant events, and queues a job.
+ * Parses the payload, filters irrelevant events, dispatches triggers,
+ * and queues a job only when a trigger confirms a match.
  */
 export async function handleJiraWebhook(
 	payload: unknown,
@@ -148,9 +166,9 @@ export async function handleJiraWebhook(
 
 	if (shouldProcess && project) {
 		if (await isSelfAuthoredJiraComment(webhookEvent, payload, project.id)) {
-			console.log('[Router] Ignoring self-authored JIRA comment');
+			logger.info('Ignoring self-authored JIRA comment', { webhookEvent });
 		} else {
-			await queueJiraJob(
+			await processJiraWebhookEvent(
 				project,
 				issueKey,
 				webhookEvent,
@@ -160,7 +178,7 @@ export async function handleJiraWebhook(
 			);
 		}
 	} else {
-		console.log(`[Router] Ignoring JIRA: ${webhookEvent}`);
+		logger.debug('Ignoring JIRA event', { webhookEvent });
 	}
 
 	return { shouldProcess, project, webhookEvent };

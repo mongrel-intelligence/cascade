@@ -88,14 +88,20 @@ async function cleanupOrphanAck(
 	}
 }
 
-async function handleMatchedTrigger(
+async function resolveTriggerResult(
 	integration: PMIntegration,
 	registry: TriggerRegistry,
 	payload: unknown,
 	project: ProjectConfig,
-	config: CascadeConfig,
-	ackCommentId?: string,
-): Promise<void> {
+	ackCommentId: string | undefined,
+	preResolvedResult: TriggerResult | undefined,
+): Promise<TriggerResult | null> {
+	if (preResolvedResult) {
+		logger.info(`Using pre-resolved trigger result for ${integration.type} webhook`, {
+			agentType: preResolvedResult.agentType,
+		});
+		return preResolvedResult;
+	}
 	const ctx: TriggerContext = { project, source: integration.type as TriggerSource, payload };
 	const result = await registry.dispatch(ctx);
 	if (!result) {
@@ -103,8 +109,28 @@ async function handleMatchedTrigger(
 		if (ackCommentId) {
 			await cleanupOrphanAck(integration, project.id, payload, ackCommentId);
 		}
-		return;
 	}
+	return result;
+}
+
+async function handleMatchedTrigger(
+	integration: PMIntegration,
+	registry: TriggerRegistry,
+	payload: unknown,
+	project: ProjectConfig,
+	config: CascadeConfig,
+	ackCommentId?: string,
+	preResolvedResult?: TriggerResult,
+): Promise<void> {
+	const result = await resolveTriggerResult(
+		integration,
+		registry,
+		payload,
+		project,
+		ackCommentId,
+		preResolvedResult,
+	);
+	if (!result) return;
 
 	// Pass ack comment ID into agent input for ProgressMonitor pre-seeding
 	if (ackCommentId) {
@@ -152,7 +178,8 @@ async function handleMatchedTrigger(
  *
  * Validates the payload via the integration's `parseWebhookPayload()`,
  * looks up the project, establishes credential + PM provider scope,
- * dispatches to the trigger registry, and runs the matched agent.
+ * dispatches to the trigger registry (or uses pre-resolved result),
+ * and runs the matched agent.
  *
  * Used by both Trello and JIRA webhook handlers.
  */
@@ -161,8 +188,11 @@ export async function processPMWebhook(
 	payload: unknown,
 	registry: TriggerRegistry,
 	ackCommentId?: string,
+	triggerResult?: TriggerResult,
 ): Promise<void> {
-	logger.info(`Processing ${integration.type} webhook`);
+	logger.info(`Processing ${integration.type} webhook`, {
+		hasTriggerResult: !!triggerResult,
+	});
 
 	const event = integration.parseWebhookPayload(payload);
 	if (!event) {
@@ -201,11 +231,19 @@ export async function processPMWebhook(
 	}
 	const { project, config } = projectConfig;
 
-	// Establish credential + PM provider scope for trigger dispatch
+	// Establish credential + PM provider scope for agent execution
 	const pmProvider = pmRegistry.createProvider(project);
 	await integration.withCredentials(project.id, () =>
 		withPMProvider(pmProvider, () =>
-			handleMatchedTrigger(integration, registry, payload, project, config, ackCommentId),
+			handleMatchedTrigger(
+				integration,
+				registry,
+				payload,
+				project,
+				config,
+				ackCommentId,
+				triggerResult,
+			),
 		),
 	);
 }

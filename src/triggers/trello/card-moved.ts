@@ -1,5 +1,6 @@
 import { resolveTrelloTriggerEnabled } from '../../config/triggerConfig.js';
 import { getTrelloConfig } from '../../pm/config.js';
+import { logger } from '../../utils/logging.js';
 import type {
 	TrelloWebhookPayload,
 	TriggerContext,
@@ -51,16 +52,13 @@ function createCardMovedTrigger(config: CardMovedConfig): TriggerHandler {
 			return isMove || isCreate;
 		},
 
-		resolveAgentType(): string {
-			return config.agentType;
-		},
-
-		async handle(ctx: TriggerContext): Promise<TriggerResult> {
+		async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 			const payload = ctx.payload as TrelloWebhookPayload;
 			const cardId = payload.action.data.card?.id;
 
 			if (!cardId) {
-				throw new Error('No card ID in payload');
+				logger.warn('No card ID in Trello card-moved payload', { trigger: config.name });
+				return null;
 			}
 
 			return {

@@ -9,6 +9,7 @@ import {
 } from '../server/webhookHandlers.js';
 import { registerBuiltInTriggers } from '../triggers/builtins.js';
 import { createTriggerRegistry } from '../triggers/registry.js';
+import { logger } from '../utils/logging.js';
 import { handleGitHubWebhook } from './github.js';
 import { handleJiraWebhook } from './jira.js';
 import { getQueueStats } from './queue.js';
@@ -22,7 +23,7 @@ import {
 
 setTag('role', 'router');
 
-// Create trigger registry once at router startup for matchTrigger() calls
+// Create trigger registry once at router startup for dispatch() calls
 const triggerRegistry = createTriggerRegistry();
 registerBuiltInTriggers(triggerRegistry);
 
@@ -123,7 +124,7 @@ app.post(
 
 // Graceful shutdown
 async function shutdown(signal: string): Promise<void> {
-	console.log(`[Router] Received ${signal}, shutting down...`);
+	logger.info('Received shutdown signal', { signal });
 	await stopWorkerProcessor();
 	await flush(3000);
 	process.exit(0);
@@ -147,12 +148,12 @@ process.on('unhandledRejection', (reason) => {
 async function startRouter(): Promise<void> {
 	const port = Number(process.env.PORT) || 3000;
 	startWorkerProcessor();
-	console.log(`[Router] Starting on port ${port}`);
+	logger.info('Starting router', { port });
 	serve({ fetch: app.fetch, port });
 }
 
 startRouter().catch(async (err) => {
-	console.error('[Router] Failed to start:', err);
+	logger.error('Failed to start router', { error: String(err) });
 	captureException(err, { tags: { source: 'router_startup' }, level: 'fatal' });
 	await flush(3000);
 	process.exit(1);

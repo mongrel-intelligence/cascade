@@ -39,10 +39,6 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 		return false;
 	}
 
-	resolveAgentType(): string {
-		return 'respond-to-pr-comment';
-	}
-
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		// Require persona identities for @mention detection
 		if (!ctx.personaIdentities) {

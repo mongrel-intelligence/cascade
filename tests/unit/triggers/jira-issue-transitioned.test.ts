@@ -104,55 +104,6 @@ describe('JiraIssueTransitionedTrigger', () => {
 		});
 	});
 
-	describe('resolveAgentType', () => {
-		it('returns implementation for "To Do" transition', () => {
-			const ctx = buildCtx({
-				statusChangeItems: [{ field: 'status', fromString: 'Planning', toString: 'To Do' }],
-			});
-			expect(trigger.resolveAgentType(ctx)).toBe('implementation');
-		});
-
-		it('returns briefing for "Briefing" transition', () => {
-			const ctx = buildCtx({
-				statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Briefing' }],
-			});
-			expect(trigger.resolveAgentType(ctx)).toBe('briefing');
-		});
-
-		it('returns planning for "Planning" transition', () => {
-			const ctx = buildCtx({
-				statusChangeItems: [{ field: 'status', fromString: 'Briefing', toString: 'Planning' }],
-			});
-			expect(trigger.resolveAgentType(ctx)).toBe('planning');
-		});
-
-		it('returns null for unmapped status', () => {
-			const ctx = buildCtx({
-				statusChangeItems: [{ field: 'status', fromString: 'To Do', toString: 'Done' }],
-			});
-			expect(trigger.resolveAgentType(ctx)).toBeNull();
-		});
-
-		it('returns null when no status change in changelog', () => {
-			const ctx = buildCtx({
-				statusChangeItems: [{ field: 'assignee' }],
-			});
-			expect(trigger.resolveAgentType(ctx)).toBeNull();
-		});
-
-		it('returns null when JIRA config is missing', () => {
-			const ctx = buildCtx({ noJiraConfig: true });
-			expect(trigger.resolveAgentType(ctx)).toBeNull();
-		});
-
-		it('is case insensitive', () => {
-			const ctx = buildCtx({
-				statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'briefing' }],
-			});
-			expect(trigger.resolveAgentType(ctx)).toBe('briefing');
-		});
-	});
-
 	describe('handle', () => {
 		it('returns implementation agent for "To Do" transition', async () => {
 			const ctx = buildCtx({

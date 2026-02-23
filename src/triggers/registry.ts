@@ -41,20 +41,6 @@ export class TriggerRegistry {
 		return null;
 	}
 
-	/**
-	 * Find the first handler that matches the context and can resolve an agent type.
-	 * Pure logic — no API calls, no side effects. Safe to call in the router.
-	 */
-	matchTrigger(ctx: TriggerContext): { name: string; agentType: string } | null {
-		for (const handler of this.handlers) {
-			if (handler.matches(ctx)) {
-				const agentType = handler.resolveAgentType(ctx);
-				if (agentType) return { name: handler.name, agentType };
-			}
-		}
-		return null;
-	}
-
 	getHandlers(): TriggerHandler[] {
 		return [...this.handlers];
 	}

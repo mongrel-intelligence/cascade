@@ -12,8 +12,10 @@ const RETRY_DELAY_MS = 10_000;
 /**
  * Wait for all check suites to complete, retrying when some are still in-progress.
  * Returns immediately if all checks have completed (whether passing or failing).
+ *
+ * Called by the worker before starting the review agent (not in the trigger handler).
  */
-async function waitForChecks(
+export async function waitForChecks(
 	owner: string,
 	repo: string,
 	headSha: string,
@@ -82,10 +84,6 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		if (payload.check_suite.pull_requests.length === 0) return false;
 
 		return true;
-	}
-
-	resolveAgentType(): string {
-		return 'review';
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
@@ -171,29 +169,15 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			});
 		}
 
-		// Verify all checks are actually passing (double-check)
-		// Uses the implementer token already in scope (set by webhook-handler),
-		// which has actions:read permission. The reviewer's fine-grained PAT may not.
-		//
+		// The trigger decision is made — the review agent should run.
+		// Actual check polling (waitForChecks) is deferred to the worker via the flag.
 		// GitHub fires a check_suite webhook per individual suite completion.
 		// When multiple suites exist, the first webhook arrives before other suites finish.
-		// waitForChecks retries when checks are still in-progress, but bails on genuine failures.
-		const checkStatus = await waitForChecks(owner, repo, headSha, prNumber);
-
-		if (!checkStatus.allPassing) {
-			logger.info('Not all checks passing, skipping review trigger', {
-				prNumber,
-				totalChecks: checkStatus.totalCount,
-				failing: checkStatus.checkRuns.filter((c) => c.conclusion !== 'success').map((c) => c.name),
-			});
-			return null;
-		}
-
-		logger.info('All CI checks passed - triggering review', {
+		// The worker will poll until all checks pass before starting the agent.
+		logger.info('Check-suite success trigger matched — deferring check polling to worker', {
 			prNumber,
 			workItemId,
 			headSha,
-			totalChecks: checkStatus.totalCount,
 		});
 
 		return {
@@ -208,6 +192,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			},
 			prNumber,
 			workItemId,
+			waitForChecks: true,
 		};
 	}
 }

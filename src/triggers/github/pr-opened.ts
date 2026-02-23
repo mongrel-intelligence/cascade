@@ -30,10 +30,6 @@ export class PROpenedTrigger implements TriggerHandler {
 		return true;
 	}
 
-	resolveAgentType(): string {
-		return 'respond-to-review';
-	}
-
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		const payload = ctx.payload as {
 			pull_request: {
