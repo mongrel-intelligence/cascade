@@ -32,8 +32,8 @@ function LoginPage() {
 				return;
 			}
 
-			await queryClient.refetchQueries({ queryKey: trpc.auth.me.queryOptions().queryKey });
-			navigate({ to: '/' });
+			await queryClient.invalidateQueries({ queryKey: trpc.auth.me.queryOptions().queryKey });
+			navigate({ to: '/', replace: true });
 		} catch {
 			setError('Network error');
 		} finally {
