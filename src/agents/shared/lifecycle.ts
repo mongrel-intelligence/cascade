@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+
 import { LLMist, type ModelSpec, createLogger } from 'llmist';
 
 import type { ProgressMonitor } from '../../backends/progressMonitor.js';
@@ -8,24 +9,24 @@ import {
 	storeLlmCallsBulk,
 	storeRunLogs,
 } from '../../db/repositories/runsRepository.js';
-import { addBreadcrumb, captureException } from '../../sentry.js';
+import { addBreadcrumb } from '../../sentry.js';
 import type { AgentResult } from '../../types/index.js';
-import { loadCascadeEnv, unloadCascadeEnv } from '../../utils/cascadeEnv.js';
-import { createFileLogger } from '../../utils/fileLogger.js';
-import { setWatchdogCleanup } from '../../utils/lifecycle.js';
 import { logger } from '../../utils/logging.js';
-import { setupRemoteSquintDb } from '../../utils/squintDb.js';
 import { runAgentLoop } from '../utils/agentLoop.js';
 import type { AccumulatedLlmCall } from '../utils/hooks.js';
 import { getLogLevel } from '../utils/index.js';
 import { createAgentLogger } from '../utils/logging.js';
-import { type TrackingContext, createTrackingContext } from '../utils/tracking.js';
+import { createTrackingContext } from '../utils/tracking.js';
 import type { BuilderType } from './builderFactory.js';
-import { cleanupAgentResources } from './cleanup.js';
-import { type RunTrackingInput, tryCompleteRun, tryCreateRun } from './runTracking.js';
-
-type FileLogger = ReturnType<typeof createFileLogger>;
-type AgentLogger = ReturnType<typeof createAgentLogger>;
+import {
+	type AgentLogger,
+	type FileLogger,
+	type FinalizeRunOutcome,
+	type PipelineContext,
+	executeAgentPipeline,
+} from './executionPipeline.js';
+import type { RunTrackingInput } from './runTracking.js';
+import { tryCompleteRun, tryCreateRun } from './runTracking.js';
 
 export type { FileLogger, AgentLogger };
 
@@ -56,7 +57,7 @@ export interface ExecuteAgentOptions<TContext extends BaseAgentContext> {
 		client: LLMist;
 		ctx: TContext;
 		llmistLogger: ReturnType<typeof createLogger>;
-		trackingContext: TrackingContext;
+		trackingContext: ReturnType<typeof createTrackingContext>;
 		fileLogger: FileLogger;
 		repoDir: string;
 		progressMonitor: ProgressMonitor | null;
@@ -69,7 +70,7 @@ export interface ExecuteAgentOptions<TContext extends BaseAgentContext> {
 	injectSyntheticCalls: (params: {
 		builder: BuilderType;
 		ctx: TContext;
-		trackingContext: TrackingContext;
+		trackingContext: ReturnType<typeof createTrackingContext>;
 		repoDir: string;
 	}) => Promise<BuilderType>;
 
@@ -172,11 +173,7 @@ async function tryStoreLogsAndCalls(
 	}
 }
 
-// ============================================================================
-// Run Finalization Helper
-// ============================================================================
-
-async function finalizeRun(
+async function finalizeRunWithLlmCalls(
 	runId: string | undefined,
 	fileLogger: FileLogger,
 	llmCallAccumulator: AccumulatedLlmCall[],
@@ -186,37 +183,6 @@ async function finalizeRun(
 	if (!runId) return;
 	await tryStoreLogsAndCalls(runId, fileLogger, llmCallAccumulator, realtimeLoggingActive);
 	await tryCompleteRun(runId, input);
-}
-
-function buildAgentResult(
-	result: Awaited<ReturnType<typeof runAgentLoop>>,
-	logBuffer: Buffer,
-	runId: string | undefined,
-	durationMs: number,
-	postProcess?: (output: string) => Partial<AgentResult>,
-): AgentResult {
-	if (result.loopTerminated) {
-		return {
-			success: false,
-			output: result.output,
-			error: 'Agent terminated due to persistent loop',
-			logBuffer,
-			cost: result.cost,
-			runId,
-			durationMs,
-		};
-	}
-
-	const postProcessed = postProcess?.(result.output) ?? {};
-	return {
-		success: true,
-		output: result.output,
-		logBuffer,
-		cost: result.cost,
-		runId,
-		durationMs,
-		...postProcessed,
-	};
 }
 
 // ============================================================================
@@ -230,68 +196,69 @@ function buildAgentResult(
 export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 	options: ExecuteAgentOptions<TContext>,
 ): Promise<AgentResult> {
-	let repoDir: string | null = null;
-	let runId: string | undefined;
-	const startTime = Date.now();
 	const llmCallAccumulator: AccumulatedLlmCall[] = [];
 
-	const fileLogger = createFileLogger(`cascade-${options.loggerIdentifier}`);
-	const log = createAgentLogger(fileLogger);
+	// Build the finalizeRun callback with access to llmCallAccumulator
+	const buildFinalizeRun =
+		(finalizeRunFn: typeof finalizeRunWithLlmCalls) =>
+		async (
+			runId: string | undefined,
+			fileLogger: FileLogger,
+			outcome: FinalizeRunOutcome,
+		): Promise<void> => {
+			const meta = outcome.metadata as { llmIterations?: number; gadgetCalls?: number } | undefined;
 
-	setWatchdogCleanup(async () => {
-		const durationMs = Date.now() - startTime;
-		captureException(new Error('Agent watchdog timeout'), {
-			tags: { source: 'watchdog_timeout', agent: options.loggerIdentifier },
-			extra: { runId, durationMs },
-		});
-		fileLogger.close();
-		await finalizeRun(
-			runId,
-			fileLogger,
-			llmCallAccumulator,
-			{
-				status: 'timed_out',
-				durationMs,
-				success: false,
-				error: 'Watchdog timeout',
-			},
-			!!runId,
-		);
-		await options.onWatchdogTimeout(fileLogger, runId);
-	});
+			const completeInput: CompleteRunInput = {
+				status: outcome.status,
+				durationMs: outcome.durationMs,
+				success: outcome.success,
+				error: outcome.error,
+				costUsd: outcome.costUsd,
+				prUrl: outcome.prUrl,
+				outputSummary: outcome.outputSummary,
+				llmIterations: meta?.llmIterations,
+				gadgetCalls: meta?.gadgetCalls,
+			};
+			await finalizeRunFn(runId, fileLogger, llmCallAccumulator, completeInput, !!runId);
+		};
 
-	try {
-		repoDir = await options.setupRepoDir(log);
-		const envSnapshot = loadCascadeEnv(repoDir, log);
-		const squintCleanup = await setupRemoteSquintDb(
-			repoDir,
-			{ squintDbUrl: options.squintDbUrl },
-			log,
-		);
+	return executeAgentPipeline({
+		loggerIdentifier: options.loggerIdentifier,
+		setupRepoDir: options.setupRepoDir,
+		squintDbUrl: options.squintDbUrl,
 
-		const ctx = await options.buildContext(repoDir, log);
+		onWatchdogTimeout: async (fileLogger, runId) => {
+			await options.onWatchdogTimeout(fileLogger, runId);
+		},
 
-		if (options.runTracking) {
-			runId = await tryCreateRun(options.runTracking, ctx.model, ctx.maxIterations);
-		}
+		finalizeRun: buildFinalizeRun(finalizeRunWithLlmCalls),
 
-		const originalCwd = process.cwd();
-		process.chdir(repoDir);
+		execute: async (ctx: PipelineContext) => {
+			const { repoDir, fileLogger, setRunId } = ctx;
 
-		log.info('Starting llmist agent', {
-			model: ctx.model,
-			maxIterations: ctx.maxIterations,
-			promptLength: ctx.prompt.length,
-			runId,
-		});
+			const log = createAgentLogger(fileLogger);
+			const ctx_ = await options.buildContext(repoDir, log);
 
-		addBreadcrumb({
-			category: 'agent',
-			message: `Starting ${options.loggerIdentifier}`,
-			data: { model: ctx.model, maxIterations: ctx.maxIterations, runId },
-		});
+			// Create run record now that we have model and maxIterations
+			let runId: string | undefined;
+			if (options.runTracking) {
+				runId = await tryCreateRun(options.runTracking, ctx_.model, ctx_.maxIterations);
+				if (runId) setRunId(runId);
+			}
 
-		try {
+			log.info('Starting llmist agent', {
+				model: ctx_.model,
+				maxIterations: ctx_.maxIterations,
+				promptLength: ctx_.prompt.length,
+				runId,
+			});
+
+			addBreadcrumb({
+				category: 'agent',
+				message: `Starting ${options.loggerIdentifier}`,
+				data: { model: ctx_.model, maxIterations: ctx_.maxIterations, runId },
+			});
+
 			process.env.LLMIST_LOG_FILE = fileLogger.llmistLogPath;
 			process.env.LLMIST_LOG_TEE = 'true';
 
@@ -304,7 +271,7 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 
 			let builder = options.createBuilder({
 				client,
-				ctx,
+				ctx: ctx_,
 				llmistLogger,
 				trackingContext,
 				fileLogger,
@@ -313,9 +280,14 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 				llmCallAccumulator,
 				runId,
 			});
-			builder = await options.injectSyntheticCalls({ builder, ctx, trackingContext, repoDir });
+			builder = await options.injectSyntheticCalls({
+				builder,
+				ctx: ctx_,
+				trackingContext,
+				repoDir,
+			});
 
-			const agent = builder.ask(ctx.prompt);
+			const agent = builder.ask(ctx_.prompt);
 
 			progressMonitor?.start();
 			let result: Awaited<ReturnType<typeof runAgentLoop>>;
@@ -338,79 +310,17 @@ export async function executeAgentLifecycle<TContext extends BaseAgentContext>(
 				loopTerminated: result.loopTerminated ?? false,
 			});
 
-			fileLogger.close();
-			const logBuffer = await fileLogger.getZippedBuffer();
-
-			const completionInput: CompleteRunInput = result.loopTerminated
-				? {
-						status: 'failed',
-						durationMs: Date.now() - startTime,
-						llmIterations: result.iterations,
-						gadgetCalls: result.gadgetCalls,
-						costUsd: result.cost,
-						success: false,
-						error: 'Agent terminated due to persistent loop',
-						outputSummary: result.output.slice(0, 500),
-					}
-				: {
-						status: 'completed',
-						durationMs: Date.now() - startTime,
-						llmIterations: result.iterations,
-						gadgetCalls: result.gadgetCalls,
-						costUsd: result.cost,
-						success: true,
-						prUrl: options.postProcess?.(result.output)?.prUrl,
-						outputSummary: result.output.slice(0, 500),
-					};
-
-			await finalizeRun(runId, fileLogger, llmCallAccumulator, completionInput, !!runId);
-
-			return buildAgentResult(
-				result,
-				logBuffer,
-				runId,
-				Date.now() - startTime,
-				options.postProcess,
-			);
-		} finally {
-			process.chdir(originalCwd);
-			squintCleanup?.();
-			unloadCascadeEnv(envSnapshot);
-		}
-	} catch (err) {
-		logger.error('Agent execution failed', {
-			identifier: options.loggerIdentifier,
-			error: String(err),
-		});
-		captureException(err, {
-			tags: { source: 'agent_lifecycle', agent: options.loggerIdentifier },
-			extra: { runId, durationMs: Date.now() - startTime },
-		});
-
-		let logBuffer: Buffer | undefined;
-		try {
-			fileLogger.close();
-			logBuffer = await fileLogger.getZippedBuffer();
-		} catch {
-			// Ignore log buffer errors
-		}
-
-		const durationMs = Date.now() - startTime;
-		await finalizeRun(
-			runId,
-			fileLogger,
-			llmCallAccumulator,
-			{
-				status: 'failed',
-				durationMs,
-				success: false,
-				error: String(err),
-			},
-			!!runId,
-		);
-
-		return { success: false, output: '', error: String(err), logBuffer, runId, durationMs };
-	} finally {
-		cleanupAgentResources(repoDir, fileLogger);
-	}
+			return {
+				success: !result.loopTerminated,
+				output: result.output,
+				error: result.loopTerminated ? 'Agent terminated due to persistent loop' : undefined,
+				cost: result.cost,
+				prUrl: options.postProcess?.(result.output)?.prUrl,
+				finalizeMetadata: {
+					llmIterations: result.iterations,
+					gadgetCalls: result.gadgetCalls,
+				},
+			};
+		},
+	});
 }

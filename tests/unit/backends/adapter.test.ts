@@ -293,8 +293,7 @@ describe('executeWithBackend', () => {
 
 		expect(mockCaptureException).toHaveBeenCalledWith(error, {
 			tags: {
-				source: 'backend_execution',
-				backend: 'test-backend',
+				source: 'agent_execution',
 				agent: expect.stringContaining('review'),
 			},
 			extra: {
