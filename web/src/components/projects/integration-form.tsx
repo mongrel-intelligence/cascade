@@ -157,6 +157,141 @@ function CredentialSelector({
 }
 
 // ============================================================================
+// Known key constants for constrained editors
+// ============================================================================
+
+interface KeyOption {
+	value: string;
+	label: string;
+}
+
+const TRELLO_LIST_KEYS: KeyOption[] = [
+	{ value: 'briefing', label: 'briefing' },
+	{ value: 'stories', label: 'stories' },
+	{ value: 'planning', label: 'planning' },
+	{ value: 'todo', label: 'todo' },
+	{ value: 'inProgress', label: 'inProgress' },
+	{ value: 'inReview', label: 'inReview' },
+	{ value: 'done', label: 'done' },
+	{ value: 'merged', label: 'merged' },
+	{ value: 'debug', label: 'debug' },
+];
+
+const TRELLO_LABEL_KEYS: KeyOption[] = [
+	{ value: 'readyToProcess', label: 'readyToProcess' },
+	{ value: 'processing', label: 'processing' },
+	{ value: 'processed', label: 'processed' },
+	{ value: 'error', label: 'error' },
+];
+
+const JIRA_STATUS_KEYS: KeyOption[] = [
+	{ value: 'briefing', label: 'briefing' },
+	{ value: 'planning', label: 'planning' },
+	{ value: 'todo', label: 'todo' },
+	{ value: 'inProgress', label: 'inProgress' },
+	{ value: 'inReview', label: 'inReview' },
+	{ value: 'done', label: 'done' },
+	{ value: 'merged', label: 'merged' },
+];
+
+const JIRA_LABEL_KEYS: KeyOption[] = [
+	{ value: 'processing', label: 'processing' },
+	{ value: 'processed', label: 'processed' },
+	{ value: 'error', label: 'error' },
+	{ value: 'readyToProcess', label: 'readyToProcess' },
+];
+
+// ============================================================================
+// ConstrainedKeyValueEditor — key column is a dropdown of allowed keys
+// ============================================================================
+
+function ConstrainedKeyValueEditor({
+	label,
+	pairs,
+	onChange,
+	allowedKeys,
+	valuePlaceholder,
+}: {
+	label: string;
+	pairs: KVPair[];
+	onChange: (pairs: KVPair[]) => void;
+	allowedKeys: KeyOption[];
+	valuePlaceholder?: string;
+}) {
+	const usedKeys = new Set(pairs.map((p) => p.key));
+	const availableKeys = allowedKeys.filter((k) => !usedKeys.has(k.value));
+	const allUsed = availableKeys.length === 0;
+
+	const handleAdd = () => {
+		// Pick the first unused allowed key, or empty string if all used
+		const firstAvailable = availableKeys[0]?.value ?? '';
+		onChange([...pairs, { key: firstAvailable, value: '' }]);
+	};
+
+	return (
+		<div className="space-y-2">
+			<div className="flex items-center justify-between">
+				<Label>{label}</Label>
+				<button
+					type="button"
+					onClick={handleAdd}
+					disabled={allUsed}
+					className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+				>
+					<Plus className="h-3 w-3" /> Add
+				</button>
+			</div>
+			{pairs.map((pair, i) => {
+				// Keys available for this row: allowed keys not used by OTHER rows
+				const otherUsedKeys = new Set(pairs.filter((_, j) => j !== i).map((p) => p.key));
+				// Build options: all allowed keys not used elsewhere + current key if it's custom
+				const rowOptions = allowedKeys.filter((k) => !otherUsedKeys.has(k.value));
+				const isCustomKey = pair.key !== '' && !allowedKeys.some((k) => k.value === pair.key);
+
+				return (
+					<div key={`${pair.key}-${i}`} className="flex gap-2">
+						<select
+							value={pair.key}
+							onChange={(e) => {
+								const next = [...pairs];
+								next[i] = { ...next[i], key: e.target.value };
+								onChange(next);
+							}}
+							className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
+						>
+							{isCustomKey && <option value={pair.key}>{pair.key} (custom)</option>}
+							{rowOptions.map((k) => (
+								<option key={k.value} value={k.value}>
+									{k.label}
+								</option>
+							))}
+						</select>
+						<Input
+							value={pair.value}
+							onChange={(e) => {
+								const next = [...pairs];
+								next[i] = { ...next[i], value: e.target.value };
+								onChange(next);
+							}}
+							placeholder={valuePlaceholder ?? 'Value'}
+							className="flex-1"
+						/>
+						<button
+							type="button"
+							onClick={() => onChange(pairs.filter((_, j) => j !== i))}
+							className="p-2 text-muted-foreground hover:text-destructive"
+						>
+							<Trash2 className="h-4 w-4" />
+						</button>
+					</div>
+				);
+			})}
+			{pairs.length === 0 && <p className="text-xs text-muted-foreground">No entries</p>}
+		</div>
+	);
+}
+
+// ============================================================================
 // Provider-specific credential role definitions
 // ============================================================================
 
@@ -419,8 +554,20 @@ function PMTab({
 							placeholder="Trello board ID"
 						/>
 					</div>
-					<KeyValueEditor label="Lists" pairs={lists} onChange={setLists} />
-					<KeyValueEditor label="Labels" pairs={labels} onChange={setLabels} />
+					<ConstrainedKeyValueEditor
+						label="Lists"
+						pairs={lists}
+						onChange={setLists}
+						allowedKeys={TRELLO_LIST_KEYS}
+						valuePlaceholder="Trello List ID"
+					/>
+					<ConstrainedKeyValueEditor
+						label="Labels"
+						pairs={labels}
+						onChange={setLabels}
+						allowedKeys={TRELLO_LABEL_KEYS}
+						valuePlaceholder="Trello Label ID"
+					/>
 					<div className="space-y-2">
 						<Label htmlFor="costField">Custom Field: Cost</Label>
 						<Input
@@ -453,19 +600,30 @@ function PMTab({
 							placeholder="https://your-instance.atlassian.net"
 						/>
 					</div>
-					<KeyValueEditor label="Status Mappings" pairs={statuses} onChange={setStatuses} />
+					<ConstrainedKeyValueEditor
+						label="Status Mappings"
+						pairs={statuses}
+						onChange={setStatuses}
+						allowedKeys={JIRA_STATUS_KEYS}
+						valuePlaceholder="JIRA Status Name"
+					/>
 					<p className="text-xs text-muted-foreground -mt-1">
-						Map CASCADE statuses (briefing, planning, todo, inProgress, inReview, done, merged) to
-						JIRA status names.
+						Map each CASCADE status key to the corresponding JIRA status name.
 					</p>
 					<KeyValueEditor
 						label="Issue Types (optional)"
 						pairs={issueTypes}
 						onChange={setIssueTypes}
 					/>
-					<KeyValueEditor label="Labels" pairs={jiraLabels} onChange={setJiraLabels} />
+					<ConstrainedKeyValueEditor
+						label="Labels"
+						pairs={jiraLabels}
+						onChange={setJiraLabels}
+						allowedKeys={JIRA_LABEL_KEYS}
+						valuePlaceholder="JIRA Label Name"
+					/>
 					<p className="text-xs text-muted-foreground -mt-1">
-						JIRA label names used by CASCADE. Keys: processing, processed, error, readyToProcess.
+						Map each CASCADE label key to the corresponding JIRA label name.
 					</p>
 					<div className="space-y-2">
 						<Label htmlFor="jiraCostField">Custom Field: Cost</Label>
