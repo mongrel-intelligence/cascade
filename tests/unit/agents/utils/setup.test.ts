@@ -5,11 +5,6 @@ vi.mock('node:fs', () => ({
 	readFileSync: vi.fn(),
 }));
 
-vi.mock('../../src/utils/repo.js', () => ({
-	runCommand: vi.fn(),
-}));
-
-// We need to mock at the path the module actually imports from
 vi.mock('../../../../src/utils/repo.js', () => ({
 	runCommand: vi.fn(),
 }));
