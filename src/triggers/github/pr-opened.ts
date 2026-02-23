@@ -1,4 +1,5 @@
 import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
+import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubPullRequestPayload } from './types.js';
@@ -38,11 +39,20 @@ export class PROpenedTrigger implements TriggerHandler {
 				body: string | null;
 				html_url: string;
 				head: { ref: string };
+				user: { login: string };
 			};
 			repository: { full_name: string };
 		};
 
 		const prNumber = payload.pull_request.number;
+		const prAuthor = payload.pull_request.user.login;
+
+		// Skip PRs authored by CASCADE bots — nothing to "respond to" on our own PRs
+		if (ctx.personaIdentities && isCascadeBot(prAuthor, ctx.personaIdentities)) {
+			logger.info('Skipping PR opened by CASCADE bot', { prNumber, prAuthor });
+			return null;
+		}
+
 		const prBody = payload.pull_request.body || '';
 
 		// Resolve work item from DB (with PR body fallback)

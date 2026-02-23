@@ -240,6 +240,145 @@ describe('PROpenedTrigger', () => {
 			expect(result?.workItemId).toBeUndefined();
 		});
 
+		it('returns null for PRs by implementer persona', async () => {
+			const ctx: TriggerContext = {
+				project: mockProjectWithPrOpenedEnabled,
+				source: 'github',
+				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
+				payload: {
+					action: 'opened',
+					number: 42,
+					pull_request: {
+						number: 42,
+						title: 'feat: add login',
+						body: 'Implements feature',
+						html_url: 'https://github.com/owner/repo/pull/42',
+						state: 'open',
+						draft: false,
+						head: { ref: 'feature/login', sha: 'abc' },
+						base: { ref: 'main' },
+						user: { login: 'cascade-impl' },
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'cascade-impl' },
+				},
+			};
+
+			expect(await trigger.handle(ctx)).toBeNull();
+		});
+
+		it('returns null for PRs by reviewer persona', async () => {
+			const ctx: TriggerContext = {
+				project: mockProjectWithPrOpenedEnabled,
+				source: 'github',
+				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
+				payload: {
+					action: 'opened',
+					number: 42,
+					pull_request: {
+						number: 42,
+						title: 'feat: add login',
+						body: 'Implements feature',
+						html_url: 'https://github.com/owner/repo/pull/42',
+						state: 'open',
+						draft: false,
+						head: { ref: 'feature/login', sha: 'abc' },
+						base: { ref: 'main' },
+						user: { login: 'cascade-review' },
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'cascade-review' },
+				},
+			};
+
+			expect(await trigger.handle(ctx)).toBeNull();
+		});
+
+		it('returns null for [bot] variant', async () => {
+			const ctx: TriggerContext = {
+				project: mockProjectWithPrOpenedEnabled,
+				source: 'github',
+				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
+				payload: {
+					action: 'opened',
+					number: 42,
+					pull_request: {
+						number: 42,
+						title: 'feat: add login',
+						body: 'Implements feature',
+						html_url: 'https://github.com/owner/repo/pull/42',
+						state: 'open',
+						draft: false,
+						head: { ref: 'feature/login', sha: 'abc' },
+						base: { ref: 'main' },
+						user: { login: 'cascade-impl[bot]' },
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'cascade-impl[bot]' },
+				},
+			};
+
+			expect(await trigger.handle(ctx)).toBeNull();
+		});
+
+		it('fires normally for external PRs with personaIdentities present', async () => {
+			const ctx: TriggerContext = {
+				project: mockProjectWithPrOpenedEnabled,
+				source: 'github',
+				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
+				payload: {
+					action: 'opened',
+					number: 42,
+					pull_request: {
+						number: 42,
+						title: 'Test PR',
+						body: 'Just a regular PR',
+						html_url: 'https://github.com/owner/repo/pull/42',
+						state: 'open',
+						draft: false,
+						head: { ref: 'feature/test', sha: 'abc' },
+						base: { ref: 'main' },
+						user: { login: 'external-dev' },
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'external-dev' },
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('respond-to-review');
+		});
+
+		it('fires normally without personaIdentities (graceful degradation)', async () => {
+			const ctx: TriggerContext = {
+				project: mockProjectWithPrOpenedEnabled,
+				source: 'github',
+				// no personaIdentities — credential resolution failed
+				payload: {
+					action: 'opened',
+					number: 42,
+					pull_request: {
+						number: 42,
+						title: 'Test PR',
+						body: 'Just a regular PR',
+						html_url: 'https://github.com/owner/repo/pull/42',
+						state: 'open',
+						draft: false,
+						head: { ref: 'feature/test', sha: 'abc' },
+						base: { ref: 'main' },
+						user: { login: 'cascade-impl' },
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'cascade-impl' },
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('respond-to-review');
+		});
+
 		it('fires with undefined workItemId for null PR body', async () => {
 			const ctx: TriggerContext = {
 				project: mockProjectWithPrOpenedEnabled,
