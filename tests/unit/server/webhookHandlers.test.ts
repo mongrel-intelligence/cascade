@@ -228,13 +228,12 @@ describe('createWebhookHandler', () => {
 		expect(callOrder).toEqual(['process']);
 	});
 
-	it('uses resolveLogFields to enrich log when fireAndForget=false', async () => {
+	it('uses processWebhook return value to enrich log when fireAndForget=false', async () => {
 		const handler = createWebhookHandler({
 			source: 'trello',
 			fireAndForget: false,
 			parsePayload: async () => ({ ok: true, payload: { x: 1 }, eventType: 'commentCard' }),
-			processWebhook: vi.fn().mockResolvedValue(undefined),
-			resolveLogFields: () => ({ processed: false, projectId: 'proj-123' }),
+			processWebhook: vi.fn().mockResolvedValue({ processed: false, projectId: 'proj-123' }),
 		});
 
 		const app = buildApp(handler);
@@ -249,30 +248,29 @@ describe('createWebhookHandler', () => {
 		);
 	});
 
-	it('uses resolveLogFields to enrich log when fireAndForget=true', async () => {
+	it('ignores processWebhook return value when fireAndForget=true (logs before processing)', async () => {
 		vi.useFakeTimers();
 		const handler = createWebhookHandler({
 			source: 'github',
 			fireAndForget: true,
 			parsePayload: async () => ({ ok: true, payload: { y: 2 }, eventType: 'push' }),
-			processWebhook: vi.fn().mockResolvedValue(undefined),
-			resolveLogFields: () => ({ processed: false, projectId: 'proj-456' }),
+			processWebhook: vi.fn().mockResolvedValue({ processed: false, projectId: 'proj-456' }),
 		});
 
 		const app = buildApp(handler);
 		await postJson(app, { y: 2 });
 
+		// In fire-and-forget mode, log happens before processing, so overrides are not available
 		expect(mockLogWebhookCall).toHaveBeenCalledWith(
 			expect.objectContaining({
 				statusCode: 200,
-				processed: false,
-				projectId: 'proj-456',
+				processed: true, // default, not the override
 			}),
 		);
 		vi.useRealTimers();
 	});
 
-	it('logs processed:true by default when no resolveLogFields provided', async () => {
+	it('logs processed:true by default when processWebhook returns void', async () => {
 		const handler = createWebhookHandler({
 			source: 'jira',
 			fireAndForget: false,
@@ -291,28 +289,47 @@ describe('createWebhookHandler', () => {
 		);
 	});
 
-	it('resolveLogFields receives processing outcome when fireAndForget=false', async () => {
-		let processingDone = false;
-		const resolveLogFields = vi.fn().mockImplementation(() => {
-			// Verify processing completed before resolveLogFields is called
-			return { processed: processingDone };
-		});
+	it('log overrides reflect actual processing outcome when fireAndForget=false', async () => {
 		const handler = createWebhookHandler({
 			source: 'trello',
 			fireAndForget: false,
 			parsePayload: async () => ({ ok: true, payload: {}, eventType: 'commentCard' }),
 			processWebhook: async () => {
-				processingDone = true;
+				// Simulate actual processing that determines outcome
+				return { processed: true, projectId: 'proj-789' };
 			},
-			resolveLogFields,
 		});
 
 		const app = buildApp(handler);
 		await postJson(app, {});
 
-		expect(resolveLogFields).toHaveBeenCalled();
-		// resolveLogFields ran after processWebhook, so processingDone was true
-		expect(mockLogWebhookCall).toHaveBeenCalledWith(expect.objectContaining({ processed: true }));
+		expect(mockLogWebhookCall).toHaveBeenCalledWith(
+			expect.objectContaining({
+				processed: true,
+				projectId: 'proj-789',
+			}),
+		);
+	});
+
+	it('lets processWebhook errors propagate when fireAndForget=false', async () => {
+		const handler = createWebhookHandler({
+			source: 'jira',
+			fireAndForget: false,
+			parsePayload: async () => ({ ok: true, payload: {}, eventType: 'issue_updated' }),
+			processWebhook: vi.fn().mockRejectedValue(new Error('queue connection failed')),
+		});
+
+		const app = new Hono();
+		// Register an error handler to capture the propagated error
+		app.post('/webhook', handler);
+		app.onError((err, c) => {
+			return c.text(`Error: ${err.message}`, 500);
+		});
+
+		const res = await postJson(app, {});
+		expect(res.status).toBe(500);
+		const body = await res.text();
+		expect(body).toContain('queue connection failed');
 	});
 });
 

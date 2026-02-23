@@ -9,9 +9,13 @@
  * Supports two processing modes via `fireAndForget`:
  * - `true` (default, server mode): respond 200 immediately, process later.
  * - `false` (router mode): await processing so 200 means "job queued."
+ *   Errors propagate to Hono's error handler (500), preserving the old
+ *   router behavior.
  *
- * Supports log enrichment via `resolveLogFields` so callers can override
- * the `processed` and `projectId` fields based on actual processing outcome.
+ * Supports log enrichment via the return value of `processWebhook`. When
+ * the callback returns `WebhookLogOverrides`, those fields override the
+ * defaults in the webhook log entry. This is request-scoped and safe under
+ * concurrent requests (no shared mutable state).
  */
 
 import type { Context, Handler } from 'hono';
@@ -32,7 +36,10 @@ export type ParseResult =
 	| { ok: true; payload: unknown; eventType?: string }
 	| { ok: false; error: string; eventType?: string };
 
-/** Fields that `resolveLogFields` may override in the webhook log entry. */
+/**
+ * Fields that can enrich the webhook log entry.
+ * Returned from `processWebhook` to override default log values.
+ */
 export interface WebhookLogOverrides {
 	processed?: boolean;
 	projectId?: string;
@@ -65,8 +72,21 @@ export interface WebhookHandlerConfig {
 	 * after a 200 is returned to the caller. When `fireAndForget` is `false`, the
 	 * handler awaits this callback before responding — useful when processing must
 	 * complete (e.g. job queuing) before acknowledging the webhook.
+	 *
+	 * May optionally return `WebhookLogOverrides` to enrich the webhook log entry
+	 * (e.g. `processed`, `projectId`). This is the recommended way to communicate
+	 * processing outcome to the log — it avoids shared mutable state and is
+	 * inherently safe under concurrent requests.
+	 *
+	 * When `fireAndForget` is `true`, returned overrides are ignored (logging
+	 * happens before processing starts). When `fireAndForget` is `false`, they
+	 * are used to enrich the log after processing completes.
 	 */
-	processWebhook: (payload: unknown, eventType: string | undefined) => Promise<void>;
+	processWebhook: (
+		payload: unknown,
+		eventType: string | undefined,
+		// biome-ignore lint/suspicious/noConfusingVoidType: void needed for Promise<void> compat
+	) => Promise<WebhookLogOverrides | void>;
 
 	/**
 	 * Whether to apply the global capacity gate (isCurrentlyProcessing &&
@@ -82,38 +102,27 @@ export interface WebhookHandlerConfig {
 	 *
 	 * - `true` (default) — server mode: respond 200 immediately, process later.
 	 * - `false` — router mode: await processing so 200 means "job queued."
+	 *   Errors from `processWebhook` propagate to Hono's error handler (500),
+	 *   matching the old router behavior where a failure was not acknowledged
+	 *   with 200.
 	 */
 	fireAndForget?: boolean;
-
-	/**
-	 * Optional callback to enrich the webhook log entry after a successful parse.
-	 * Called with the parsed payload and event type; returns fields to override in
-	 * the log (e.g. `processed`, `projectId`).
-	 *
-	 * When `fireAndForget` is `false`, this is called after `processWebhook`
-	 * completes, allowing log fields to reflect actual processing outcome.
-	 * When `fireAndForget` is `true`, it is called before processing starts.
-	 */
-	resolveLogFields?: (
-		payload: unknown,
-		eventType: string | undefined,
-	) => WebhookLogOverrides | Promise<WebhookLogOverrides>;
 }
 
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
-/** Log a successful webhook call, optionally enriched by resolveLogFields. */
-async function logSuccessfulWebhook(
+/** Log a successful webhook call, optionally enriched by log overrides. */
+function logSuccessfulWebhook(
 	source: WebhookHandlerConfig['source'],
 	c: Context,
 	rawHeaders: Record<string, string>,
 	payload: unknown,
 	eventType: string | undefined,
-	resolveLogFields: WebhookHandlerConfig['resolveLogFields'],
-): Promise<void> {
-	const logOverrides = resolveLogFields ? await resolveLogFields(payload, eventType) : undefined;
+	// biome-ignore lint/suspicious/noConfusingVoidType: matches processWebhook return type
+	logOverrides?: WebhookLogOverrides | void,
+): void {
 	logWebhookCall({
 		source,
 		method: c.req.method,
@@ -154,7 +163,6 @@ export function createWebhookHandler(config: WebhookHandlerConfig): Handler {
 		processWebhook,
 		checkCapacity = true,
 		fireAndForget = true,
-		resolveLogFields,
 	} = config;
 
 	return async (c: Context) => {
@@ -193,15 +201,19 @@ export function createWebhookHandler(config: WebhookHandlerConfig): Handler {
 
 		if (fireAndForget) {
 			// --- Log then process asynchronously (server mode) ---
-			await logSuccessfulWebhook(source, c, rawHeaders, payload, eventType, resolveLogFields);
+			// Log overrides from processWebhook are not available in this mode
+			// because processing hasn't started yet.
+			logSuccessfulWebhook(source, c, rawHeaders, payload, eventType);
 			setImmediate(() => {
 				processWebhook(payload, eventType).catch((err) => handleProcessingError(source, err));
 			});
 		} else {
 			// --- Await processing then log (router mode) ---
 			// Process synchronously so 200 means "job queued."
-			await processWebhook(payload, eventType).catch((err) => handleProcessingError(source, err));
-			await logSuccessfulWebhook(source, c, rawHeaders, payload, eventType, resolveLogFields);
+			// Errors propagate to Hono's error handler (500), matching old router
+			// behavior where a processing failure was not acknowledged with 200.
+			const logOverrides = await processWebhook(payload, eventType);
+			logSuccessfulWebhook(source, c, rawHeaders, payload, eventType, logOverrides);
 		}
 
 		return c.text('OK', 200);
