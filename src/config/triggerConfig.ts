@@ -34,11 +34,28 @@ export const TrelloTriggerConfigSchema = z.object({
 });
 
 /**
+ * Per-agent issue-transitioned configuration for JIRA.
+ * Each agent type can independently toggle whether the issue-transitioned trigger fires for it.
+ */
+export const IssueTransitionedSchema = z
+	.union([
+		z.boolean(),
+		z.object({
+			briefing: z.boolean().default(true),
+			planning: z.boolean().default(true),
+			implementation: z.boolean().default(true),
+		}),
+	])
+	.optional();
+
+export type IssueTransitionedConfig = z.infer<typeof IssueTransitionedSchema>;
+
+/**
  * Trigger configuration for JIRA integrations.
  * All triggers default to `true` for backward compatibility.
  */
 export const JiraTriggerConfigSchema = z.object({
-	issueTransitioned: z.boolean().default(true),
+	issueTransitioned: IssueTransitionedSchema,
 	readyToProcessLabel: ReadyToProcessLabelSchema,
 	commentMention: z.boolean().default(true),
 });
@@ -171,6 +188,30 @@ export function resolveReadyToProcessEnabled(
 }
 
 /**
+ * Resolve whether the issue-transitioned trigger is enabled for a specific agent type.
+ * Supports both the new nested object format and the legacy boolean format.
+ * Returns `true` when no config is present (backward compatible).
+ */
+export function resolveIssueTransitionedEnabled(
+	config: Partial<JiraTriggerConfig> | undefined,
+	agentType: string,
+): boolean {
+	if (!config) return true;
+	const it = config.issueTransitioned as IssueTransitionedConfig;
+	if (it === undefined) return true;
+	if (typeof it === 'boolean') {
+		// Legacy: boolean applies to all agents
+		return it;
+	}
+	// Nested object: check per-agent toggle
+	if (agentType === 'briefing') return it.briefing ?? true;
+	if (agentType === 'planning') return it.planning ?? true;
+	if (agentType === 'implementation') return it.implementation ?? true;
+	// Unknown agent type — default to enabled
+	return true;
+}
+
+/**
  * Resolve whether a JIRA trigger is enabled based on project trigger config.
  * Returns `true` (enabled) when no config is present (backward compatible).
  */
@@ -185,6 +226,13 @@ export function resolveJiraTriggerEnabled(
 		if (rtp === undefined) return true;
 		if (typeof rtp === 'boolean') return rtp;
 		return rtp.briefing || rtp.planning || rtp.implementation;
+	}
+	if (key === 'issueTransitioned') {
+		const it = value as IssueTransitionedConfig;
+		if (it === undefined) return true;
+		if (typeof it === 'boolean') return it;
+		// Object form: enabled if any agent is enabled
+		return it.briefing || it.planning || it.implementation;
 	}
 	return value === undefined ? true : (value as boolean);
 }

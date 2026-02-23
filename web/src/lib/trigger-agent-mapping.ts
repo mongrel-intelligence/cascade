@@ -45,15 +45,6 @@ export const LIFECYCLE_TRIGGERS: TriggerDef[] = [
  */
 export const SHARED_PM_TRIGGERS: TriggerDef[] = [
 	{
-		key: 'issueTransitioned',
-		label: 'Issue Transitioned',
-		description:
-			'Trigger agent when a JIRA issue transitions to a configured status. Affects briefing, planning, and implementation agents.',
-		defaultValue: true,
-		pmProvider: 'jira',
-		category: 'pm',
-	},
-	{
 		key: 'commentMention',
 		label: 'Comment @mention',
 		description:
@@ -77,6 +68,15 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 			category: 'pm',
 		},
 		{
+			key: 'issueTransitioned.briefing',
+			label: 'Issue Transitioned',
+			description:
+				'Trigger briefing agent when a JIRA issue transitions to the configured Briefing status.',
+			defaultValue: true,
+			pmProvider: 'jira',
+			category: 'pm',
+		},
+		{
 			key: 'readyToProcessLabel.briefing',
 			label: 'Ready to Process label',
 			description:
@@ -95,6 +95,15 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 			category: 'pm',
 		},
 		{
+			key: 'issueTransitioned.planning',
+			label: 'Issue Transitioned',
+			description:
+				'Trigger planning agent when a JIRA issue transitions to the configured Planning status.',
+			defaultValue: true,
+			pmProvider: 'jira',
+			category: 'pm',
+		},
+		{
 			key: 'readyToProcessLabel.planning',
 			label: 'Ready to Process label',
 			description:
@@ -110,6 +119,15 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 			description: 'Trigger implementation agent when a card is moved to the Todo list.',
 			defaultValue: true,
 			pmProvider: 'trello',
+			category: 'pm',
+		},
+		{
+			key: 'issueTransitioned.implementation',
+			label: 'Issue Transitioned',
+			description:
+				'Trigger implementation agent when a JIRA issue transitions to the configured Todo status.',
+			defaultValue: true,
+			pmProvider: 'jira',
 			category: 'pm',
 		},
 		{

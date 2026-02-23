@@ -170,6 +170,15 @@ describe('config provider', () => {
 	});
 
 	describe('getIntegrationCredential', () => {
+		// These tests go through getIntegrationCredentialOrNull which checks process.env first.
+		// Use vi.stubEnv to prevent any env vars from shadowing the DB mock.
+		beforeEach(() => {
+			vi.stubEnv('TRELLO_API_KEY', '');
+		});
+		afterEach(() => {
+			vi.unstubAllEnvs();
+		});
+
 		it('resolves credential from DB', async () => {
 			vi.mocked(resolveIntegrationCredential).mockResolvedValue('db-secret-value');
 
@@ -187,6 +196,14 @@ describe('config provider', () => {
 	});
 
 	describe('getIntegrationCredentialOrNull', () => {
+		// Clear any env vars that might shadow the mock (implementer_token maps to GITHUB_TOKEN_IMPLEMENTER).
+		beforeEach(() => {
+			vi.stubEnv('GITHUB_TOKEN_IMPLEMENTER', '');
+		});
+		afterEach(() => {
+			vi.unstubAllEnvs();
+		});
+
 		it('returns credential value when found', async () => {
 			vi.mocked(resolveIntegrationCredential).mockResolvedValue('secret-value');
 
@@ -227,6 +244,15 @@ describe('config provider', () => {
 	});
 
 	describe('getProjectGitHubToken', () => {
+		// getProjectGitHubToken calls getIntegrationCredentialOrNull which checks process.env first.
+		// Use vi.stubEnv to prevent the env var from shadowing the mock.
+		beforeEach(() => {
+			vi.stubEnv('GITHUB_TOKEN_IMPLEMENTER', '');
+		});
+		afterEach(() => {
+			vi.unstubAllEnvs();
+		});
+
 		it('returns implementer token when available', async () => {
 			vi.mocked(resolveIntegrationCredential).mockResolvedValue('implementer-token');
 

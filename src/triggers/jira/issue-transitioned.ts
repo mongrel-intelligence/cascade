@@ -5,7 +5,10 @@
  * a CASCADE agent type (briefing, planning, implementation).
  */
 
-import { resolveJiraTriggerEnabled } from '../../config/triggerConfig.js';
+import {
+	resolveIssueTransitionedEnabled,
+	resolveJiraTriggerEnabled,
+} from '../../config/triggerConfig.js';
 import { getJiraConfig } from '../../pm/config.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -117,6 +120,15 @@ export class JiraIssueTransitionedTrigger implements TriggerHandler {
 				issueKey,
 				newStatus,
 				configuredStatuses: jiraConfig.statuses,
+			});
+			return null;
+		}
+
+		// Check per-agent toggle for issueTransitioned
+		if (!resolveIssueTransitionedEnabled(jiraConfig?.triggers, agentType)) {
+			logger.debug('JIRA issue-transitioned trigger disabled for agent', {
+				issueKey,
+				agentType,
 			});
 			return null;
 		}
