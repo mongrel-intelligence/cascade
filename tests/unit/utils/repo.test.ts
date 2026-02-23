@@ -102,7 +102,7 @@ describe('repo utils', () => {
 	});
 
 	describe('cloneRepo', () => {
-		it('clones repo and configures git user', async () => {
+		it('clones repo on baseBranch and configures git user', async () => {
 			const project = {
 				id: 'test',
 				name: 'Test',
@@ -115,7 +115,7 @@ describe('repo utils', () => {
 			await cloneRepo(project, '/tmp/repo');
 
 			expect(execSync).toHaveBeenCalledWith(
-				expect.stringContaining('git clone'),
+				expect.stringContaining('git clone --branch main'),
 				expect.objectContaining({ stdio: 'pipe' }),
 			);
 			expect(execSync).toHaveBeenCalledWith(
@@ -125,6 +125,24 @@ describe('repo utils', () => {
 			expect(execSync).toHaveBeenCalledWith(
 				expect.stringContaining('git config user.email'),
 				expect.objectContaining({ cwd: '/tmp/repo' }),
+			);
+		});
+
+		it('clones repo on non-default baseBranch', async () => {
+			const project = {
+				id: 'test',
+				name: 'Test',
+				repo: 'owner/repo',
+				baseBranch: 'develop',
+				branchPrefix: 'feature/',
+				trello: { boardId: 'board', lists: {}, labels: {} },
+			};
+
+			await cloneRepo(project, '/tmp/repo');
+
+			expect(execSync).toHaveBeenCalledWith(
+				expect.stringContaining('git clone --branch develop'),
+				expect.objectContaining({ stdio: 'pipe' }),
 			);
 		});
 	});
