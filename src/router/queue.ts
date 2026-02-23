@@ -1,18 +1,9 @@
-import { type ConnectionOptions, Queue } from 'bullmq';
+import { Queue } from 'bullmq';
 import { captureException } from '../sentry.js';
 import type { TriggerResult } from '../types/index.js';
 import { logger } from '../utils/logging.js';
+import { parseRedisUrl } from '../utils/redis.js';
 import { routerConfig } from './config.js';
-
-// Parse Redis URL to connection options
-function parseRedisUrl(url: string): ConnectionOptions {
-	const parsed = new URL(url);
-	return {
-		host: parsed.hostname,
-		port: Number(parsed.port) || 6379,
-		password: parsed.password || undefined,
-	};
-}
 
 const connection = parseRedisUrl(routerConfig.redisUrl);
 

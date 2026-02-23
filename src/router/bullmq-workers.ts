@@ -8,6 +8,10 @@
 
 import { type ConnectionOptions, type Job, Worker } from 'bullmq';
 import { captureException } from '../sentry.js';
+import { parseRedisUrl } from '../utils/redis.js';
+
+// Re-export so existing callers (worker-manager.ts) don't need to change imports.
+export { parseRedisUrl };
 
 export interface QueueWorkerConfig<T = unknown> {
 	queueName: string;
@@ -17,18 +21,6 @@ export interface QueueWorkerConfig<T = unknown> {
 	concurrency: number;
 	lockDuration: number;
 	processFn: (job: Job<T>) => Promise<void>;
-}
-
-/**
- * Parse a Redis URL string into BullMQ ConnectionOptions.
- */
-export function parseRedisConnection(redisUrl: string): ConnectionOptions {
-	const parsed = new URL(redisUrl);
-	return {
-		host: parsed.hostname,
-		port: Number(parsed.port) || 6379,
-		password: parsed.password || undefined,
-	};
 }
 
 /**

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/router/bullmq-workers.js', () => ({
 	createQueueWorker: vi.fn(),
-	parseRedisConnection: vi.fn().mockReturnValue({ host: 'localhost', port: 6379 }),
+	parseRedisUrl: vi.fn().mockReturnValue({ host: 'localhost', port: 6379 }),
 }));
 
 vi.mock('../../../src/router/container-manager.js', () => ({
@@ -31,7 +31,7 @@ vi.mock('../../../src/router/config.js', () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import { createQueueWorker, parseRedisConnection } from '../../../src/router/bullmq-workers.js';
+import { createQueueWorker, parseRedisUrl } from '../../../src/router/bullmq-workers.js';
 import {
 	detachAll,
 	getActiveWorkerCount,
@@ -46,7 +46,7 @@ import {
 } from '../../../src/router/worker-manager.js';
 
 const mockCreateQueueWorker = vi.mocked(createQueueWorker);
-const mockParseRedisConnection = vi.mocked(parseRedisConnection);
+const mockParseRedisUrl = vi.mocked(parseRedisUrl);
 const mockSpawnWorker = vi.mocked(spawnWorker);
 const mockGetActiveWorkerCount = vi.mocked(getActiveWorkerCount);
 const mockGetActiveWorkers = vi.mocked(getActiveWorkers);
@@ -89,7 +89,7 @@ describe('startWorkerProcessor', () => {
 		// Ensure clean state
 		await stopWorkerProcessor();
 		mockCreateQueueWorker.mockClear();
-		mockParseRedisConnection.mockClear();
+		mockParseRedisUrl.mockClear();
 	});
 
 	afterEach(async () => {
@@ -108,7 +108,7 @@ describe('startWorkerProcessor', () => {
 
 	it('passes parsed Redis connection to both workers', () => {
 		const connection = { host: 'redis-host', port: 6380 };
-		mockParseRedisConnection.mockReturnValue(connection);
+		mockParseRedisUrl.mockReturnValue(connection);
 
 		startWorkerProcessor();
 

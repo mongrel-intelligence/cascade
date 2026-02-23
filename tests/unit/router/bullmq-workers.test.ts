@@ -19,7 +19,7 @@ vi.mock('../../../src/sentry.js', () => ({
 // ---------------------------------------------------------------------------
 
 import { Worker } from 'bullmq';
-import { createQueueWorker, parseRedisConnection } from '../../../src/router/bullmq-workers.js';
+import { createQueueWorker, parseRedisUrl } from '../../../src/router/bullmq-workers.js';
 import { captureException } from '../../../src/sentry.js';
 
 const MockWorker = vi.mocked(Worker);
@@ -38,22 +38,22 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// parseRedisConnection
+// parseRedisUrl (re-exported from utils/redis.ts)
 // ---------------------------------------------------------------------------
 
-describe('parseRedisConnection', () => {
+describe('parseRedisUrl', () => {
 	it('parses a simple redis URL', () => {
-		const conn = parseRedisConnection('redis://localhost:6379');
+		const conn = parseRedisUrl('redis://localhost:6379');
 		expect(conn).toEqual({ host: 'localhost', port: 6379, password: undefined });
 	});
 
 	it('defaults to port 6379 when no port specified', () => {
-		const conn = parseRedisConnection('redis://localhost');
+		const conn = parseRedisUrl('redis://localhost');
 		expect(conn).toEqual({ host: 'localhost', port: 6379, password: undefined });
 	});
 
 	it('extracts password from URL', () => {
-		const conn = parseRedisConnection('redis://:secret@localhost:6379');
+		const conn = parseRedisUrl('redis://:secret@localhost:6379');
 		expect(conn.password).toBe('secret');
 		expect(conn.host).toBe('localhost');
 		expect(conn.port).toBe(6379);

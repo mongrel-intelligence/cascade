@@ -8,7 +8,7 @@
  */
 
 import type { Job, Worker } from 'bullmq';
-import { createQueueWorker, parseRedisConnection } from './bullmq-workers.js';
+import { createQueueWorker, parseRedisUrl } from './bullmq-workers.js';
 import { routerConfig } from './config.js';
 import {
 	detachAll,
@@ -45,7 +45,7 @@ export function startWorkerProcessor(): void {
 		return;
 	}
 
-	const connection = parseRedisConnection(routerConfig.redisUrl);
+	const connection = parseRedisUrl(routerConfig.redisUrl);
 
 	bullWorker = createQueueWorker<CascadeJob>({
 		queueName: 'cascade-jobs',
