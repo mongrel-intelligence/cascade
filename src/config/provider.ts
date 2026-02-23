@@ -106,6 +106,35 @@ async function getOrgIdForProject(projectId: string): Promise<string> {
 }
 
 // ============================================================================
+// Internal: 3-step env/worker/DB resolution helper
+// ============================================================================
+
+/**
+ * Resolve a credential value using the standard 3-step pattern:
+ * 1. Check process.env (populated at worker startup from router-supplied credentials)
+ * 2. If in worker context (CASCADE_CREDENTIAL_KEYS set), credential is absent → return notFoundValue
+ * 3. Otherwise resolve from DB via the provided async lookup
+ */
+async function resolveFromEnvOrDb<T>(
+	envKey: string | undefined,
+	notFoundValue: T,
+	dbLookup: () => Promise<T>,
+): Promise<T> {
+	// Check process.env first (populated at worker startup from router-supplied credentials)
+	if (envKey && process.env[envKey]) {
+		return process.env[envKey] as T;
+	}
+
+	// Worker context: all credentials set by router, this one doesn't exist
+	if (process.env.CASCADE_CREDENTIAL_KEYS) {
+		return notFoundValue;
+	}
+
+	// Router/dashboard context: resolve from DB
+	return dbLookup();
+}
+
+// ============================================================================
 // Integration credentials — direct by category + role
 // ============================================================================
 
@@ -118,21 +147,10 @@ export async function getIntegrationCredential(
 	category: string,
 	role: string,
 ): Promise<string> {
-	// Check process.env first (populated at worker startup from router-supplied credentials)
 	const envKey = roleToEnvVarKey(category, role);
-	if (envKey && process.env[envKey]) {
-		return process.env[envKey];
-	}
-
-	// Worker context: all credentials set by router, this one doesn't exist
-	if (process.env.CASCADE_CREDENTIAL_KEYS) {
-		throw new Error(
-			`Integration credential '${category}/${role}' not found for project '${projectId}'`,
-		);
-	}
-
-	// Router/dashboard context: resolve from DB
-	const value = await resolveIntegrationCredential(projectId, category, role);
+	const value = await resolveFromEnvOrDb<string | null>(envKey, null, () =>
+		resolveIntegrationCredential(projectId, category, role),
+	);
 	if (value) return value;
 
 	throw new Error(
@@ -148,19 +166,10 @@ export async function getIntegrationCredentialOrNull(
 	category: string,
 	role: string,
 ): Promise<string | null> {
-	// Check process.env first (populated at worker startup from router-supplied credentials)
 	const envKey = roleToEnvVarKey(category, role);
-	if (envKey && process.env[envKey]) {
-		return process.env[envKey];
-	}
-
-	// Worker context: all credentials set by router, this one doesn't exist
-	if (process.env.CASCADE_CREDENTIAL_KEYS) {
-		return null;
-	}
-
-	// Router/dashboard context: resolve from DB
-	return resolveIntegrationCredential(projectId, category, role);
+	return resolveFromEnvOrDb<string | null>(envKey, null, () =>
+		resolveIntegrationCredential(projectId, category, role),
+	);
 }
 
 // ============================================================================
@@ -175,19 +184,10 @@ export async function getOrgCredential(
 	projectId: string,
 	envVarKey: string,
 ): Promise<string | null> {
-	// Check process.env first (populated at worker startup from router-supplied credentials)
-	if (process.env[envVarKey]) {
-		return process.env[envVarKey];
-	}
-
-	// Worker context: all credentials set by router, this one doesn't exist
-	if (process.env.CASCADE_CREDENTIAL_KEYS) {
-		return null;
-	}
-
-	// Router/dashboard context: resolve from DB
-	const orgId = await getOrgIdForProject(projectId);
-	return resolveOrgCredential(orgId, envVarKey);
+	return resolveFromEnvOrDb<string | null>(envVarKey, null, async () => {
+		const orgId = await getOrgIdForProject(projectId);
+		return resolveOrgCredential(orgId, envVarKey);
+	});
 }
 
 // ============================================================================
