@@ -4,6 +4,7 @@ import {
 	JiraTriggerConfigSchema,
 	TrelloTriggerConfigSchema,
 	resolveGitHubTriggerEnabled,
+	resolveIssueTransitionedEnabled,
 	resolveJiraTriggerEnabled,
 	resolveReadyToProcessEnabled,
 	resolveReviewTriggerConfig,
@@ -46,13 +47,27 @@ describe('TrelloTriggerConfigSchema', () => {
 });
 
 describe('JiraTriggerConfigSchema', () => {
-	it('defaults boolean fields to true, readyToProcessLabel optional', () => {
+	it('defaults commentMention to true, issueTransitioned and readyToProcessLabel optional', () => {
 		const result = JiraTriggerConfigSchema.parse({});
-		expect(result).toEqual({
-			issueTransitioned: true,
-			commentMention: true,
-		});
+		expect(result.commentMention).toBe(true);
+		expect(result.issueTransitioned).toBeUndefined();
 		expect(result.readyToProcessLabel).toBeUndefined();
+	});
+
+	it('accepts legacy boolean issueTransitioned', () => {
+		const result = JiraTriggerConfigSchema.parse({ issueTransitioned: false });
+		expect(result.issueTransitioned).toBe(false);
+	});
+
+	it('accepts per-agent issueTransitioned object', () => {
+		const result = JiraTriggerConfigSchema.parse({
+			issueTransitioned: { briefing: true, planning: false, implementation: true },
+		});
+		expect(result.issueTransitioned).toEqual({
+			briefing: true,
+			planning: false,
+			implementation: true,
+		});
 	});
 });
 
@@ -145,7 +160,7 @@ describe('resolveJiraTriggerEnabled', () => {
 		expect(resolveJiraTriggerEnabled(undefined, 'commentMention')).toBe(true);
 	});
 
-	it('returns false when key is explicitly disabled', () => {
+	it('returns false when issueTransitioned is explicitly false (legacy boolean)', () => {
 		expect(resolveJiraTriggerEnabled({ issueTransitioned: false }, 'issueTransitioned')).toBe(
 			false,
 		);
@@ -153,6 +168,24 @@ describe('resolveJiraTriggerEnabled', () => {
 
 	it('returns true when config is empty (no explicit settings)', () => {
 		expect(resolveJiraTriggerEnabled({}, 'issueTransitioned')).toBe(true);
+	});
+
+	it('returns true for issueTransitioned object when any agent is enabled', () => {
+		expect(
+			resolveJiraTriggerEnabled(
+				{ issueTransitioned: { briefing: false, planning: true, implementation: false } },
+				'issueTransitioned',
+			),
+		).toBe(true);
+	});
+
+	it('returns false for issueTransitioned object when all agents disabled', () => {
+		expect(
+			resolveJiraTriggerEnabled(
+				{ issueTransitioned: { briefing: false, planning: false, implementation: false } },
+				'issueTransitioned',
+			),
+		).toBe(false);
 	});
 });
 
@@ -227,6 +260,48 @@ describe('resolveReadyToProcessEnabled', () => {
 			readyToProcessLabel: { briefing: false, planning: false, implementation: false },
 		};
 		expect(resolveReadyToProcessEnabled(config, 'unknown-agent')).toBe(true);
+	});
+});
+
+describe('resolveIssueTransitionedEnabled', () => {
+	it('returns true when config is undefined (backward compatible)', () => {
+		expect(resolveIssueTransitionedEnabled(undefined, 'briefing')).toBe(true);
+		expect(resolveIssueTransitionedEnabled(undefined, 'planning')).toBe(true);
+		expect(resolveIssueTransitionedEnabled(undefined, 'implementation')).toBe(true);
+	});
+
+	it('returns true when issueTransitioned is not set', () => {
+		expect(resolveIssueTransitionedEnabled({}, 'briefing')).toBe(true);
+	});
+
+	it('applies legacy boolean true to all agents', () => {
+		const config = { issueTransitioned: true as const };
+		expect(resolveIssueTransitionedEnabled(config, 'briefing')).toBe(true);
+		expect(resolveIssueTransitionedEnabled(config, 'planning')).toBe(true);
+		expect(resolveIssueTransitionedEnabled(config, 'implementation')).toBe(true);
+	});
+
+	it('applies legacy boolean false to all agents', () => {
+		const config = { issueTransitioned: false as const };
+		expect(resolveIssueTransitionedEnabled(config, 'briefing')).toBe(false);
+		expect(resolveIssueTransitionedEnabled(config, 'planning')).toBe(false);
+		expect(resolveIssueTransitionedEnabled(config, 'implementation')).toBe(false);
+	});
+
+	it('returns per-agent value from nested object', () => {
+		const config = {
+			issueTransitioned: { briefing: true, planning: false, implementation: true },
+		};
+		expect(resolveIssueTransitionedEnabled(config, 'briefing')).toBe(true);
+		expect(resolveIssueTransitionedEnabled(config, 'planning')).toBe(false);
+		expect(resolveIssueTransitionedEnabled(config, 'implementation')).toBe(true);
+	});
+
+	it('defaults to true for unknown agent types', () => {
+		const config = {
+			issueTransitioned: { briefing: false, planning: false, implementation: false },
+		};
+		expect(resolveIssueTransitionedEnabled(config, 'unknown-agent')).toBe(true);
 	});
 });
 

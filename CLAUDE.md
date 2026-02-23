@@ -240,6 +240,70 @@ When `reviewTrigger` is absent, the system falls back to legacy booleans:
 - `reviewRequested` → `onReviewRequested` (default `false`)
 - `externalPrs` always `false` in legacy mode (no legacy equivalent)
 
+### PM Agent Trigger Modes
+
+Briefing, planning, and implementation agents each have independent toggles for their PM triggers. **All modes default to `true`** for backward compatibility.
+
+#### Trello card-moved triggers
+
+| Flag | Description |
+|------|-------------|
+| `cardMovedToBriefing` | Trigger briefing agent when a card is moved to the Briefing list |
+| `cardMovedToPlanning` | Trigger planning agent when a card is moved to the Planning list |
+| `cardMovedToTodo` | Trigger implementation agent when a card is moved to the Todo list |
+
+#### JIRA issue-transitioned triggers (per-agent)
+
+The `issueTransitioned` field supports both a legacy boolean (applies to all agents) and a nested per-agent object:
+
+| Agent | Field | Description |
+|-------|-------|-------------|
+| briefing | `issueTransitioned.briefing` | Trigger briefing when issue transitions to Briefing status |
+| planning | `issueTransitioned.planning` | Trigger planning when issue transitions to Planning status |
+| implementation | `issueTransitioned.implementation` | Trigger implementation when issue transitions to Todo status |
+
+#### Setting via CLI
+
+```bash
+# Disable Trello card-moved trigger for briefing agent
+cascade projects pm-trigger-set <project-id> --no-card-moved-to-briefing
+
+# Disable JIRA issue-transitioned for implementation agent only
+cascade projects pm-trigger-set <project-id> --no-issue-transitioned-implementation
+
+# Enable JIRA triggers for briefing and planning, disable for implementation
+cascade projects pm-trigger-set <project-id> \
+  --issue-transitioned-briefing \
+  --issue-transitioned-planning \
+  --no-issue-transitioned-implementation
+
+# Disable all Trello card-moved triggers
+cascade projects pm-trigger-set <project-id> \
+  --no-card-moved-to-briefing \
+  --no-card-moved-to-planning \
+  --no-card-moved-to-todo
+```
+
+#### Setting via Dashboard
+
+In the **Agent Configs** tab, the briefing, planning, and implementation agent sections each show:
+- **Card moved to [list]** — Trello card-moved toggle (Trello projects only)
+- **Issue Transitioned** — JIRA per-agent transition toggle (JIRA projects only)
+- **Ready to Process label** — label-based trigger toggle
+
+#### Direct JSON Config
+
+```bash
+# Disable JIRA issue-transitioned for implementation only
+cascade projects integration-set <project-id> \
+  --category pm --provider jira --config '{"projectKey":"PROJ","statuses":{...}}' \
+  --triggers '{"issueTransitioned":{"briefing":true,"planning":true,"implementation":false}}'
+```
+
+#### Backward Compatibility
+
+The legacy `issueTransitioned: true/false` boolean is still supported — it applies to all agents uniformly.
+
 ## Claude Code Backend
 
 CASCADE supports using Claude Code SDK as an alternative agent backend. Configure per-project:
