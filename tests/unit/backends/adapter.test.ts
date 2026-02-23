@@ -65,6 +65,11 @@ vi.mock('../../../src/backends/agent-profiles.js', () => ({
 	getAgentProfile: vi.fn(),
 }));
 
+const mockCaptureException = vi.fn();
+vi.mock('../../../src/sentry.js', () => ({
+	captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 vi.mock('../../../src/agents/prompts/index.js', () => ({}));
 
 vi.mock('../../../src/agents/shared/promptContext.js', () => ({
@@ -275,6 +280,28 @@ describe('executeWithBackend', () => {
 
 		expect(result.success).toBe(false);
 		expect(result.error).toContain('Backend crashed');
+	});
+
+	it('reports backend errors to Sentry via captureException', async () => {
+		setupMocks();
+		const backend = makeMockBackend();
+		const error = new Error('HttpError: Not Found');
+		vi.mocked(backend.execute).mockRejectedValue(error);
+		const input = makeInput();
+
+		await executeWithBackend(backend, 'review', input);
+
+		expect(mockCaptureException).toHaveBeenCalledWith(error, {
+			tags: {
+				source: 'backend_execution',
+				backend: 'test-backend',
+				agent: expect.stringContaining('review'),
+			},
+			extra: {
+				runId: 'run-uuid-123',
+				durationMs: expect.any(Number),
+			},
+		});
 	});
 
 	it('includes log buffer in result', async () => {
