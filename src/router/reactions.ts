@@ -9,58 +9,19 @@
  */
 
 import { getProjectGitHubToken } from '../config/projects.js';
-import { findProjectById, getIntegrationCredential } from '../config/provider.js';
 import { type PersonaIdentities, isCascadeBot } from '../github/personas.js';
-import { getJiraConfig } from '../pm/config.js';
 import { trelloClient, withTrelloCredentials } from '../trello/client.js';
 import type { ProjectConfig } from '../types/index.js';
 import { parseRepoFullName } from '../utils/repo.js';
+import {
+	_resetJiraCloudIdCache,
+	getJiraAuthForProject,
+	getJiraCloudId,
+	getTrelloCredentialsForProject,
+} from './platformClients.js';
 
-// In-memory JIRA CloudId cache keyed by baseUrl
-const jiraCloudIdCache = new Map<string, string>();
-
-/**
- * Lightweight JIRA cloudId resolver with in-memory cache.
- * Mirrors jiraClient.getCloudId() but uses standalone fetch() with explicit credentials.
- */
-async function getJiraCloudId(
-	baseUrl: string,
-	email: string,
-	apiToken: string,
-): Promise<string | null> {
-	const cached = jiraCloudIdCache.get(baseUrl);
-	if (cached) return cached;
-
-	const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
-	let response: Response;
-	try {
-		response = await fetch(`${baseUrl}/_edge/tenant_info`, {
-			headers: { Authorization: `Basic ${auth}` },
-		});
-	} catch (err) {
-		console.warn('[Reactions] Failed to fetch JIRA cloudId:', String(err));
-		return null;
-	}
-
-	if (!response.ok) {
-		console.warn('[Reactions] JIRA tenant_info returned', response.status);
-		return null;
-	}
-
-	const data = (await response.json()) as { cloudId?: string };
-	if (!data.cloudId) {
-		console.warn('[Reactions] JIRA tenant_info missing cloudId');
-		return null;
-	}
-
-	jiraCloudIdCache.set(baseUrl, data.cloudId);
-	return data.cloudId;
-}
-
-/** @internal Visible for testing only */
-export function _resetJiraCloudIdCache(): void {
-	jiraCloudIdCache.clear();
-}
+// Re-export cache reset for test compatibility
+export { _resetJiraCloudIdCache };
 
 // ---------------------------------------------------------------------------
 // Platform-specific reaction senders
@@ -75,12 +36,8 @@ async function sendTrelloReaction(projectId: string, payload: unknown): Promise<
 	const actionId = action.id as string | undefined;
 	if (!actionId) return;
 
-	let trelloApiKey: string;
-	let trelloToken: string;
-	try {
-		trelloApiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
-		trelloToken = await getIntegrationCredential(projectId, 'pm', 'token');
-	} catch {
+	const creds = await getTrelloCredentialsForProject(projectId);
+	if (!creds) {
 		console.warn('[Reactions] Missing Trello credentials, skipping reaction');
 		return;
 	}
@@ -88,7 +45,7 @@ async function sendTrelloReaction(projectId: string, payload: unknown): Promise<
 	const emoji = { shortName: 'eyes', native: '👀', unified: '1f440' };
 
 	try {
-		await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, async () => {
+		await withTrelloCredentials({ apiKey: creds.apiKey, token: creds.token }, async () => {
 			await trelloClient.addActionReaction(actionId, emoji);
 		});
 		console.log('[Reactions] Trello reaction sent for action:', actionId);
@@ -203,33 +160,22 @@ async function sendJiraReaction(projectId: string, payload: unknown): Promise<vo
 
 	if (!issueId || !commentId) return;
 
-	let jiraEmail: string;
-	let jiraApiToken: string;
-	let jiraBaseUrl: string;
-	try {
-		jiraEmail = await getIntegrationCredential(projectId, 'pm', 'email');
-		jiraApiToken = await getIntegrationCredential(projectId, 'pm', 'api_token');
-		// JIRA_BASE_URL is in the project config, not credentials.
-		const project = await findProjectById(projectId);
-		jiraBaseUrl = (project ? getJiraConfig(project)?.baseUrl : undefined) ?? '';
-		if (!jiraBaseUrl) throw new Error('Missing JIRA base URL');
-	} catch {
+	const auth = await getJiraAuthForProject(projectId);
+	if (!auth) {
 		console.warn('[Reactions] Missing JIRA credentials, skipping reaction');
 		return;
 	}
 
-	const auth = Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString('base64');
-
 	// Try the reactions API first
-	const cloudId = await getJiraCloudId(jiraBaseUrl, jiraEmail, jiraApiToken);
+	const cloudId = await getJiraCloudId(auth);
 	if (cloudId) {
 		const emojiId = 'atlassian-thought_balloon';
 		const ari = `ari%3Acloud%3Ajira%3A${cloudId}%3Acomment%2F${issueId}%2F${commentId}`;
-		const reactionsUrl = `${jiraBaseUrl}/rest/reactions/1.0/reactions/${ari}/${emojiId}`;
+		const reactionsUrl = `${auth.baseUrl}/rest/reactions/1.0/reactions/${ari}/${emojiId}`;
 		const reactionResponse = await fetch(reactionsUrl, {
 			method: 'PUT',
 			headers: {
-				Authorization: `Basic ${auth}`,
+				Authorization: `Basic ${auth.basicAuth}`,
 				'Content-Type': 'application/json',
 			},
 		});
