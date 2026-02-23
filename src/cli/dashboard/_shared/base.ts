@@ -4,6 +4,26 @@ import { type DashboardClient, createDashboardClient } from './client.js';
 import { type CliConfig, loadConfig } from './config.js';
 import { printDetail, printTable } from './format.js';
 
+export function extractBaseFlags(argv: string[]): { server?: string; org?: string } | undefined {
+	let server: string | undefined;
+	let org: string | undefined;
+	for (let i = 0; i < argv.length; i++) {
+		const arg = argv[i];
+		if (arg === '--') break;
+		if (arg === '--server' && i + 1 < argv.length) {
+			server = argv[++i];
+		} else if (arg.startsWith('--server=')) {
+			server = arg.slice('--server='.length);
+		} else if (arg === '--org' && i + 1 < argv.length) {
+			org = argv[++i];
+		} else if (arg.startsWith('--org=')) {
+			org = arg.slice('--org='.length);
+		}
+	}
+	if (!server && !org) return undefined;
+	return { server, org };
+}
+
 export abstract class DashboardCommand extends Command {
 	static override baseFlags = {
 		json: Flags.boolean({ description: 'Output as JSON', default: false }),
@@ -41,9 +61,8 @@ export abstract class DashboardCommand extends Command {
 		return this._client;
 	}
 
-	private parseBaseFlags(): { server?: string; json?: boolean; org?: string } | undefined {
-		// Base flags are parsed in run() — this is a fallback for the getter
-		return undefined;
+	private parseBaseFlags(): { server?: string; org?: string } | undefined {
+		return extractBaseFlags(this.argv);
 	}
 
 	protected outputJson(data: unknown): void {

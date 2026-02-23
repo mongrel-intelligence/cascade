@@ -14,6 +14,7 @@ import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import { withGitHubToken } from '../github/client.js';
+import { captureException } from '../sentry.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../utils/cascadeEnv.js';
 import { createFileLogger } from '../utils/fileLogger.js';
@@ -278,6 +279,10 @@ export async function executeWithBackend(
 			identifier,
 			backend: backend.name,
 			error: String(err),
+		});
+		captureException(err, {
+			tags: { source: 'backend_execution', backend: backend.name, agent: identifier },
+			extra: { runId, durationMs: Date.now() - startTime },
 		});
 
 		let logBuffer: Buffer | undefined;
