@@ -17,6 +17,7 @@ const { mockJiraClient, mockAdfToPlainText, mockMarkdownToAdf } = vi.hoisted(() 
 		getIssueLabels: vi.fn(),
 		updateLabels: vi.fn(),
 		addAttachmentFile: vi.fn(),
+		addRemoteLink: vi.fn(),
 		getCustomFieldValue: vi.fn(),
 		updateCustomField: vi.fn(),
 		getMyself: vi.fn(),
@@ -682,6 +683,20 @@ describe('JiraPMProvider', () => {
 			await provider.addAttachmentFile('PROJ-1', buffer, 'file.zip', 'application/zip');
 
 			expect(mockJiraClient.addAttachmentFile).toHaveBeenCalledWith('PROJ-1', buffer, 'file.zip');
+		});
+	});
+
+	describe('linkPR', () => {
+		it('delegates to jiraClient.addRemoteLink with workItemId, prUrl, and prTitle', async () => {
+			mockJiraClient.addRemoteLink.mockResolvedValue(undefined);
+
+			await provider.linkPR('PROJ-1', 'https://github.com/owner/repo/pull/42', 'Pull Request #42');
+
+			expect(mockJiraClient.addRemoteLink).toHaveBeenCalledWith(
+				'PROJ-1',
+				'https://github.com/owner/repo/pull/42',
+				'Pull Request #42',
+			);
 		});
 	});
 

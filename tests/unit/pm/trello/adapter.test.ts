@@ -419,6 +419,20 @@ describe('TrelloPMProvider', () => {
 		});
 	});
 
+	describe('linkPR', () => {
+		it('delegates to trelloClient.addAttachment with prUrl and prTitle', async () => {
+			mockTrelloClient.addAttachment.mockResolvedValue(undefined);
+
+			await provider.linkPR('card-1', 'https://github.com/owner/repo/pull/42', 'Pull Request #42');
+
+			expect(mockTrelloClient.addAttachment).toHaveBeenCalledWith(
+				'card-1',
+				'https://github.com/owner/repo/pull/42',
+				'Pull Request #42',
+			);
+		});
+	});
+
 	describe('getCustomFieldNumber', () => {
 		it('returns the parsed number from custom field items', async () => {
 			mockTrelloClient.getCardCustomFieldItems.mockResolvedValue([

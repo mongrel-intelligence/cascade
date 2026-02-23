@@ -30,6 +30,15 @@ export interface ProjectPMConfig {
 }
 
 /**
+ * Extract a human-readable PR title from a GitHub PR URL.
+ * E.g. "https://github.com/owner/repo/pull/123" → "Pull Request #123"
+ */
+export function extractPRTitle(prUrl: string): string {
+	const match = prUrl.match(/\/pull\/(\d+)/);
+	return match ? `Pull Request #${match[1]}` : 'Pull Request';
+}
+
+/**
  * Resolve PM-specific config (labels, statuses) from project configuration.
  * Delegates to the registered integration's resolveLifecycleConfig().
  */
@@ -64,11 +73,22 @@ export class PMLifecycleManager {
 		if (agentType === 'implementation') {
 			await this.safeMove(workItemId, this.pmConfig.statuses.inReview);
 			if (prUrl) {
-				if (progressCommentId) {
-					// Replace the progress comment with the "PR created" message
-					await this.safeUpdateOrAddComment(workItemId, progressCommentId, `PR created: ${prUrl}`);
-				} else {
-					await this.safeAddComment(workItemId, `PR created: ${prUrl}`);
+				const prTitle = extractPRTitle(prUrl);
+				let linked = false;
+				try {
+					await this.provider.linkPR(workItemId, prUrl, prTitle);
+					linked = true;
+				} catch {
+					// linkPR failed — fall through to comment fallback
+				}
+				if (!linked) {
+					const message = `PR created: ${prUrl}`;
+					if (progressCommentId) {
+						// Replace the progress comment with the "PR created" message
+						await this.safeUpdateOrAddComment(workItemId, progressCommentId, message);
+					} else {
+						await this.safeAddComment(workItemId, message);
+					}
 				}
 			}
 		}
