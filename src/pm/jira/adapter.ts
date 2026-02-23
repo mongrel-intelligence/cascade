@@ -331,6 +331,10 @@ export class JiraPMProvider implements PMProvider {
 		await this.addComment(_workItemId, `Attachment: [${name}](${url})`);
 	}
 
+	async linkPR(workItemId: string, prUrl: string, prTitle: string): Promise<void> {
+		await jiraClient.addRemoteLink(workItemId, prUrl, prTitle);
+	}
+
 	async addAttachmentFile(
 		workItemId: string,
 		buffer: Buffer,

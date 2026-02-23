@@ -253,4 +253,21 @@ export const jiraClient = {
 			},
 		});
 	},
+
+	async addRemoteLink(issueKey: string, url: string, title: string): Promise<void> {
+		logger.debug('Adding JIRA remote link', { issueKey, url, title });
+		await getClient().issueRemoteLinks.createOrUpdateRemoteIssueLink({
+			issueIdOrKey: issueKey,
+			globalId: url,
+			relationship: 'Pull Request',
+			object: {
+				url,
+				title,
+				icon: {
+					url16x16: 'https://github.com/favicon.ico',
+					title: 'GitHub',
+				},
+			},
+		});
+	},
 };

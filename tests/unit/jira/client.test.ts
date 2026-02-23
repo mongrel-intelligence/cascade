@@ -15,6 +15,7 @@ const {
 	mockIssueComments,
 	mockIssueSearch,
 	mockIssueAttachments,
+	mockIssueRemoteLinks,
 	mockMyself,
 	mockProjects,
 } = vi.hoisted(() => ({
@@ -37,6 +38,9 @@ const {
 	mockIssueAttachments: {
 		addAttachment: vi.fn(),
 	},
+	mockIssueRemoteLinks: {
+		createOrUpdateRemoteIssueLink: vi.fn(),
+	},
 	mockMyself: {
 		getCurrentUser: vi.fn(),
 	},
@@ -51,6 +55,7 @@ vi.mock('jira.js', () => ({
 		issueComments: mockIssueComments,
 		issueSearch: mockIssueSearch,
 		issueAttachments: mockIssueAttachments,
+		issueRemoteLinks: mockIssueRemoteLinks,
 		myself: mockMyself,
 		projects: mockProjects,
 	})),
@@ -84,6 +89,7 @@ describe('jiraClient', () => {
 		mockIssueComments.updateComment.mockReset();
 		mockIssueSearch.searchForIssuesUsingJql.mockReset();
 		mockIssueAttachments.addAttachment.mockReset();
+		mockIssueRemoteLinks.createOrUpdateRemoteIssueLink.mockReset();
 		mockMyself.getCurrentUser.mockReset();
 		mockProjects.getProject.mockReset();
 		_resetCloudIdCache();
@@ -564,6 +570,71 @@ describe('jiraClient', () => {
 					}),
 				}),
 			);
+		});
+	});
+
+	describe('addRemoteLink', () => {
+		it('calls createOrUpdateRemoteIssueLink with correct params', async () => {
+			mockIssueRemoteLinks.createOrUpdateRemoteIssueLink.mockResolvedValue({ id: 'link-1' });
+
+			await withJiraCredentials(creds, () =>
+				jiraClient.addRemoteLink(
+					'TEST-1',
+					'https://github.com/owner/repo/pull/42',
+					'Pull Request #42',
+				),
+			);
+
+			expect(mockIssueRemoteLinks.createOrUpdateRemoteIssueLink).toHaveBeenCalledWith(
+				expect.objectContaining({
+					issueIdOrKey: 'TEST-1',
+					globalId: 'https://github.com/owner/repo/pull/42',
+					relationship: 'Pull Request',
+					object: expect.objectContaining({
+						url: 'https://github.com/owner/repo/pull/42',
+						title: 'Pull Request #42',
+					}),
+				}),
+			);
+		});
+
+		it('uses PR URL as globalId for idempotency', async () => {
+			mockIssueRemoteLinks.createOrUpdateRemoteIssueLink.mockResolvedValue({ id: 'link-2' });
+			const prUrl = 'https://github.com/owner/repo/pull/99';
+
+			await withJiraCredentials(creds, () =>
+				jiraClient.addRemoteLink('PROJ-5', prUrl, 'Pull Request #99'),
+			);
+
+			expect(mockIssueRemoteLinks.createOrUpdateRemoteIssueLink).toHaveBeenCalledWith(
+				expect.objectContaining({
+					globalId: prUrl,
+				}),
+			);
+		});
+
+		it('sets GitHub favicon icon on the remote link object', async () => {
+			mockIssueRemoteLinks.createOrUpdateRemoteIssueLink.mockResolvedValue({});
+
+			await withJiraCredentials(creds, () =>
+				jiraClient.addRemoteLink('TEST-1', 'https://github.com/owner/repo/pull/1', 'PR #1'),
+			);
+
+			expect(mockIssueRemoteLinks.createOrUpdateRemoteIssueLink).toHaveBeenCalledWith(
+				expect.objectContaining({
+					object: expect.objectContaining({
+						icon: expect.objectContaining({
+							url16x16: 'https://github.com/favicon.ico',
+						}),
+					}),
+				}),
+			);
+		});
+
+		it('throws when called outside withJiraCredentials scope', async () => {
+			await expect(
+				jiraClient.addRemoteLink('TEST-1', 'https://github.com/pr/1', 'PR #1'),
+			).rejects.toThrow('No JIRA credentials in scope');
 		});
 	});
 

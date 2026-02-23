@@ -28,12 +28,33 @@ import '../../../src/pm/index.js';
 import {
 	PMLifecycleManager,
 	type ProjectPMConfig,
+	extractPRTitle,
 	resolveProjectPMConfig,
 } from '../../../src/pm/lifecycle.js';
 import type { PMProvider } from '../../../src/pm/types.js';
 import type { ProjectConfig } from '../../../src/types/index.js';
 
 describe('pm/lifecycle', () => {
+	describe('extractPRTitle', () => {
+		it('extracts PR number from a standard GitHub PR URL', () => {
+			expect(extractPRTitle('https://github.com/owner/repo/pull/123')).toBe('Pull Request #123');
+		});
+
+		it('extracts PR number from a PR URL with trailing path', () => {
+			expect(extractPRTitle('https://github.com/owner/repo/pull/42/files')).toBe(
+				'Pull Request #42',
+			);
+		});
+
+		it('returns generic title when URL does not contain /pull/', () => {
+			expect(extractPRTitle('https://example.com/no-pull-here')).toBe('Pull Request');
+		});
+
+		it('returns generic title for empty string', () => {
+			expect(extractPRTitle('')).toBe('Pull Request');
+		});
+	});
+
 	describe('resolveProjectPMConfig', () => {
 		it('returns JIRA config when project type is jira', () => {
 			const project: ProjectConfig = {
@@ -275,6 +296,7 @@ describe('pm/lifecycle', () => {
 				moveWorkItem: vi.fn().mockResolvedValue(undefined),
 				addComment: vi.fn().mockResolvedValue(undefined),
 				updateComment: vi.fn().mockResolvedValue(undefined),
+				linkPR: vi.fn().mockResolvedValue(undefined),
 				// Other PMProvider methods (not used by lifecycle manager)
 				getWorkItem: vi.fn(),
 				getWorkItemComments: vi.fn(),
@@ -361,18 +383,31 @@ describe('pm/lifecycle', () => {
 				expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('work-item-1', 'list-review');
 			});
 
-			it('adds PR comment when prUrl is provided for implementation agent', async () => {
-				await manager.handleSuccess('work-item-1', 'implementation', 'https://github.com/pr/123');
-
-				expect(mockProvider.addComment).toHaveBeenCalledWith(
+			it('calls linkPR when prUrl is provided for implementation agent', async () => {
+				await manager.handleSuccess(
 					'work-item-1',
-					'PR created: https://github.com/pr/123',
+					'implementation',
+					'https://github.com/owner/repo/pull/123',
+				);
+
+				expect(mockProvider.linkPR).toHaveBeenCalledWith(
+					'work-item-1',
+					'https://github.com/owner/repo/pull/123',
+					'Pull Request #123',
 				);
 			});
 
-			it('does not add PR comment when prUrl is not provided', async () => {
+			it('does not post comment when linkPR succeeds', async () => {
+				await manager.handleSuccess('work-item-1', 'implementation', 'https://github.com/pr/123');
+
+				expect(mockProvider.addComment).not.toHaveBeenCalled();
+				expect(mockProvider.updateComment).not.toHaveBeenCalled();
+			});
+
+			it('does not call linkPR when prUrl is not provided', async () => {
 				await manager.handleSuccess('work-item-1', 'implementation');
 
+				expect(mockProvider.linkPR).not.toHaveBeenCalled();
 				expect(mockProvider.addComment).not.toHaveBeenCalled();
 			});
 
@@ -382,7 +417,35 @@ describe('pm/lifecycle', () => {
 				expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 			});
 
-			it('updates existing progress comment when progressCommentId provided', async () => {
+			it('does not call linkPR for non-implementation agents even with prUrl', async () => {
+				await manager.handleSuccess('work-item-1', 'briefing', 'https://github.com/pr/123');
+
+				expect(mockProvider.linkPR).not.toHaveBeenCalled();
+			});
+
+			it('falls back to addComment when linkPR fails and no progressCommentId', async () => {
+				vi.mocked(mockProvider.linkPR).mockRejectedValue(new Error('Permission denied'));
+
+				await manager.handleSuccess(
+					'work-item-1',
+					'implementation',
+					'https://github.com/owner/repo/pull/123',
+				);
+
+				expect(mockProvider.linkPR).toHaveBeenCalledWith(
+					'work-item-1',
+					'https://github.com/owner/repo/pull/123',
+					'Pull Request #123',
+				);
+				expect(mockProvider.addComment).toHaveBeenCalledWith(
+					'work-item-1',
+					'PR created: https://github.com/owner/repo/pull/123',
+				);
+			});
+
+			it('falls back to updateComment when linkPR fails and progressCommentId provided', async () => {
+				vi.mocked(mockProvider.linkPR).mockRejectedValue(new Error('Permission denied'));
+
 				await manager.handleSuccess(
 					'work-item-1',
 					'implementation',
@@ -390,6 +453,7 @@ describe('pm/lifecycle', () => {
 					'comment-abc',
 				);
 
+				expect(mockProvider.linkPR).toHaveBeenCalled();
 				expect(mockProvider.updateComment).toHaveBeenCalledWith(
 					'work-item-1',
 					'comment-abc',
@@ -398,7 +462,8 @@ describe('pm/lifecycle', () => {
 				expect(mockProvider.addComment).not.toHaveBeenCalled();
 			});
 
-			it('falls back to addComment when updateComment fails', async () => {
+			it('falls back to addComment when linkPR fails and updateComment also fails', async () => {
+				vi.mocked(mockProvider.linkPR).mockRejectedValue(new Error('Permission denied'));
 				vi.mocked(mockProvider.updateComment).mockRejectedValue(new Error('Comment not found'));
 
 				await manager.handleSuccess(
@@ -408,25 +473,10 @@ describe('pm/lifecycle', () => {
 					'comment-abc',
 				);
 
-				expect(mockProvider.updateComment).toHaveBeenCalledWith(
-					'work-item-1',
-					'comment-abc',
-					'PR created: https://github.com/pr/123',
-				);
 				expect(mockProvider.addComment).toHaveBeenCalledWith(
 					'work-item-1',
 					'PR created: https://github.com/pr/123',
 				);
-			});
-
-			it('uses addComment when progressCommentId is not provided', async () => {
-				await manager.handleSuccess('work-item-1', 'implementation', 'https://github.com/pr/123');
-
-				expect(mockProvider.addComment).toHaveBeenCalledWith(
-					'work-item-1',
-					'PR created: https://github.com/pr/123',
-				);
-				expect(mockProvider.updateComment).not.toHaveBeenCalled();
 			});
 		});
 

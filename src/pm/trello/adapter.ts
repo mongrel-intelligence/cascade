@@ -196,6 +196,10 @@ export class TrelloPMProvider implements PMProvider {
 		await trelloClient.addAttachment(workItemId, url, name);
 	}
 
+	async linkPR(workItemId: string, prUrl: string, prTitle: string): Promise<void> {
+		await trelloClient.addAttachment(workItemId, prUrl, prTitle);
+	}
+
 	async addAttachmentFile(
 		workItemId: string,
 		buffer: Buffer,

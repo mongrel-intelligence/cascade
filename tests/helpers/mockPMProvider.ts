@@ -33,6 +33,7 @@ export function createMockPMProvider() {
 		deleteChecklistItem: vi.fn(),
 		addAttachment: vi.fn(),
 		addAttachmentFile: vi.fn(),
+		linkPR: vi.fn().mockResolvedValue(undefined),
 		getCustomFieldNumber: vi.fn(),
 		updateCustomFieldNumber: vi.fn(),
 		getWorkItemUrl: vi.fn(),
