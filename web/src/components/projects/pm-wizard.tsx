@@ -1,15 +1,18 @@
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
+import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
 	AlertCircle,
+	AlertTriangle,
 	Check,
 	CheckCircle,
 	ChevronDown,
 	ChevronRight,
 	ExternalLink,
 	Globe,
+	KeyRound,
 	Loader2,
 	Plus,
 	RefreshCw,
@@ -915,21 +918,46 @@ export function PMWizard({
 	};
 
 	// ---- Webhook management ----
-	const [webhookUrl, setWebhookUrl] = useState(() => {
-		const origin = typeof window !== 'undefined' ? window.location.origin : '';
-		// Dev: replace frontend port with backend port
-		return origin.replace(':5173', ':3000');
-	});
+	const callbackBaseUrl =
+		API_URL ||
+		(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
+
+	const [adminTokensOpen, setAdminTokensOpen] = useState(false);
+	const [oneTimeGithubToken, setOneTimeGithubToken] = useState('');
+	const [oneTimeTrelloApiKey, setOneTimeTrelloApiKey] = useState('');
+	const [oneTimeTrelloToken, setOneTimeTrelloToken] = useState('');
+	const [oneTimeJiraEmail, setOneTimeJiraEmail] = useState('');
+	const [oneTimeJiraApiToken, setOneTimeJiraApiToken] = useState('');
+
+	const buildOneTimeTokens = () => {
+		const tokens: Record<string, string> = {};
+		if (oneTimeGithubToken) tokens.github = oneTimeGithubToken;
+		if (oneTimeTrelloApiKey) tokens.trelloApiKey = oneTimeTrelloApiKey;
+		if (oneTimeTrelloToken) tokens.trelloToken = oneTimeTrelloToken;
+		if (oneTimeJiraEmail) tokens.jiraEmail = oneTimeJiraEmail;
+		if (oneTimeJiraApiToken) tokens.jiraApiToken = oneTimeJiraApiToken;
+		return Object.keys(tokens).length > 0 ? tokens : undefined;
+	};
+
+	const clearOneTimeTokens = () => {
+		setOneTimeGithubToken('');
+		setOneTimeTrelloApiKey('');
+		setOneTimeTrelloToken('');
+		setOneTimeJiraEmail('');
+		setOneTimeJiraApiToken('');
+	};
 
 	const createWebhookMutation = useMutation({
 		mutationFn: () =>
 			trpcClient.webhooks.create.mutate({
 				projectId,
-				callbackBaseUrl: webhookUrl,
+				callbackBaseUrl,
 				trelloOnly: state.provider === 'trello' ? true : undefined,
 				jiraOnly: state.provider === 'jira' ? true : undefined,
+				oneTimeTokens: buildOneTimeTokens(),
 			}),
 		onSuccess: () => {
+			clearOneTimeTokens();
 			queryClient.invalidateQueries({
 				queryKey: trpc.webhooks.list.queryOptions({ projectId }).queryKey,
 			});
@@ -937,12 +965,13 @@ export function PMWizard({
 	});
 
 	const deleteWebhookMutation = useMutation({
-		mutationFn: (callbackBaseUrl: string) =>
+		mutationFn: (deleteCallbackBaseUrl: string) =>
 			trpcClient.webhooks.delete.mutate({
 				projectId,
-				callbackBaseUrl,
+				callbackBaseUrl: deleteCallbackBaseUrl,
 				trelloOnly: state.provider === 'trello' ? true : undefined,
 				jiraOnly: state.provider === 'jira' ? true : undefined,
+				oneTimeTokens: buildOneTimeTokens(),
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({
@@ -1548,6 +1577,32 @@ export function PMWizard({
 				onToggle={() => toggleStep(5)}
 			>
 				<div className="space-y-4">
+					{/* Per-provider errors */}
+					{webhooksQuery.data?.errors &&
+						Object.entries(webhooksQuery.data.errors)
+							.filter(([, err]) => err != null)
+							.map(([provider, err]) => (
+								<div
+									key={provider}
+									className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-900/20"
+								>
+									<AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+									<div className="flex-1 text-sm">
+										<span className="font-medium capitalize text-amber-700 dark:text-amber-400">
+											{provider}
+										</span>
+										<span className="text-amber-600 dark:text-amber-500">: {String(err)}</span>
+									</div>
+									<button
+										type="button"
+										onClick={() => webhooksQuery.refetch()}
+										className="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-800 shrink-0"
+									>
+										<RefreshCw className="h-3 w-3" /> Retry
+									</button>
+								</div>
+							))}
+
 					{webhooksQuery.isLoading ? (
 						<div className="flex items-center gap-2 text-sm text-muted-foreground">
 							<Loader2 className="h-4 w-4 animate-spin" /> Loading webhooks...
@@ -1590,22 +1645,11 @@ export function PMWizard({
 					)}
 
 					<div className="space-y-2">
-						<Label>Callback Base URL</Label>
-						<p className="text-xs text-muted-foreground">
-							The base URL where CASCADE receives webhooks. The{' '}
-							{state.provider === 'trello' ? '/trello/webhook' : '/jira/webhook'} path is appended
-							automatically.
-						</p>
-						<div className="flex gap-2">
-							<Input
-								value={webhookUrl}
-								onChange={(e) => setWebhookUrl(e.target.value)}
-								placeholder="https://cascade.example.com"
-							/>
+						<div className="flex items-center gap-2">
 							<button
 								type="button"
 								onClick={() => createWebhookMutation.mutate()}
-								disabled={!webhookUrl || createWebhookMutation.isPending}
+								disabled={!callbackBaseUrl || createWebhookMutation.isPending}
 								className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 shrink-0"
 							>
 								{createWebhookMutation.isPending ? (
@@ -1616,11 +1660,110 @@ export function PMWizard({
 								Create Webhook
 							</button>
 						</div>
+						<p className="text-xs text-muted-foreground">
+							Callback URL:{' '}
+							<span className="font-mono">
+								{callbackBaseUrl}/{state.provider === 'trello' ? 'trello' : 'jira'}/webhook
+							</span>
+						</p>
 						{createWebhookMutation.isError && (
 							<p className="text-sm text-destructive">{createWebhookMutation.error.message}</p>
 						)}
 						{createWebhookMutation.isSuccess && (
-							<p className="text-sm text-green-600">Webhook created successfully.</p>
+							<p className="text-sm text-green-600">
+								{webhooksQuery.data?.errors &&
+								Object.values(webhooksQuery.data.errors).some((e) => e != null)
+									? 'Webhook created, but some providers failed to load — see warnings above.'
+									: 'Webhook created successfully.'}
+							</p>
+						)}
+					</div>
+
+					{/* One-time admin credentials */}
+					<div className="border rounded-md">
+						<button
+							type="button"
+							onClick={() => setAdminTokensOpen((prev) => !prev)}
+							className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:text-foreground transition-colors"
+						>
+							<KeyRound className="h-4 w-4" />
+							<span className="flex-1">Use admin credentials (one-time)</span>
+							{adminTokensOpen ? (
+								<ChevronDown className="h-4 w-4" />
+							) : (
+								<ChevronRight className="h-4 w-4" />
+							)}
+						</button>
+						{adminTokensOpen && (
+							<div className="border-t px-3 py-3 space-y-3">
+								<p className="text-xs text-muted-foreground">
+									Provide tokens with elevated permissions for webhook management. These are used
+									once and never saved.
+								</p>
+								{/* GitHub — always shown */}
+								<div className="space-y-1">
+									<Label className="text-xs">
+										GitHub PAT{' '}
+										<span className="text-muted-foreground font-normal">
+											(admin:repo_hook scope)
+										</span>
+									</Label>
+									<Input
+										value={oneTimeGithubToken}
+										onChange={(e) => setOneTimeGithubToken(e.target.value)}
+										placeholder="ghp_... — used once, not saved"
+										type="password"
+										className="h-8 text-sm"
+									/>
+								</div>
+								{/* PM-provider-specific fields */}
+								{state.provider === 'trello' ? (
+									<>
+										<div className="space-y-1">
+											<Label className="text-xs">Trello API Key</Label>
+											<Input
+												value={oneTimeTrelloApiKey}
+												onChange={(e) => setOneTimeTrelloApiKey(e.target.value)}
+												placeholder="One-time API key"
+												type="password"
+												className="h-8 text-sm"
+											/>
+										</div>
+										<div className="space-y-1">
+											<Label className="text-xs">Trello Token</Label>
+											<Input
+												value={oneTimeTrelloToken}
+												onChange={(e) => setOneTimeTrelloToken(e.target.value)}
+												placeholder="One-time token"
+												type="password"
+												className="h-8 text-sm"
+											/>
+										</div>
+									</>
+								) : (
+									<>
+										<div className="space-y-1">
+											<Label className="text-xs">JIRA Email</Label>
+											<Input
+												value={oneTimeJiraEmail}
+												onChange={(e) => setOneTimeJiraEmail(e.target.value)}
+												placeholder="user@example.com"
+												className="h-8 text-sm"
+											/>
+										</div>
+										<div className="space-y-1">
+											<Label className="text-xs">JIRA API Token</Label>
+											<Input
+												value={oneTimeJiraApiToken}
+												onChange={(e) => setOneTimeJiraApiToken(e.target.value)}
+												placeholder="One-time API token"
+												type="password"
+												className="h-8 text-sm"
+											/>
+										</div>
+									</>
+								)}
+							</div>
 						)}
 					</div>
 				</div>
