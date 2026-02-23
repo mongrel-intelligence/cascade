@@ -6,6 +6,7 @@
  */
 
 import { formatTodoList, loadTodos } from '../gadgets/todo/storage.js';
+import { getAgentLabel } from './agentMessages.js';
 
 /**
  * Configuration for periodic status updates.
@@ -70,8 +71,10 @@ export function formatStatusMessage(
 	const doneCount = todos.filter((t) => t.status === 'done').length;
 	const totalCount = todos.length;
 
+	const { emoji, label } = getAgentLabel(agentType);
+
 	const lines = [
-		`**I'm making progress** (${agentType})`,
+		`**${emoji} ${label}** (${agentType})`,
 		'',
 		`${progressBar} ${progress}% (iteration ${iteration}/${maxIterations})`,
 	];

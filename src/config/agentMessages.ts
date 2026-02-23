@@ -1,4 +1,31 @@
 /**
+ * Agent-specific emoji and label for progress update headers.
+ *
+ * Used by:
+ * - progressModel.ts — LLM prompt to produce correct header
+ * - statusUpdateConfig.ts — template fallback header
+ */
+export const AGENT_LABELS: Record<string, { emoji: string; label: string }> = {
+	briefing: { emoji: '📋', label: 'Briefing Update' },
+	planning: { emoji: '🗺️', label: 'Planning Update' },
+	implementation: { emoji: '🧑‍💻', label: 'Implementation Update' },
+	review: { emoji: '🔍', label: 'Code Review Update' },
+	'respond-to-planning-comment': { emoji: '💬', label: 'Planning Response Update' },
+	'respond-to-review': { emoji: '🔧', label: 'Review Response Update' },
+	'respond-to-pr-comment': { emoji: '💬', label: 'PR Comment Response Update' },
+	'respond-to-ci': { emoji: '🔧', label: 'CI Fix Update' },
+	debug: { emoji: '🐛', label: 'Debug Update' },
+};
+
+/**
+ * Get the emoji and label for a given agent type.
+ * Falls back to a generic label for unknown agent types.
+ */
+export function getAgentLabel(agentType: string): { emoji: string; label: string } {
+	return AGENT_LABELS[agentType] ?? { emoji: '⚙️', label: 'Progress Update' };
+}
+
+/**
  * Human-readable initial messages per agent type.
  *
  * Used by:
