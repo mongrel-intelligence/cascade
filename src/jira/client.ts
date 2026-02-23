@@ -114,6 +114,48 @@ export const jiraClient = {
 		}));
 	},
 
+	async searchProjects(): Promise<Array<{ key: string; name: string }>> {
+		logger.debug('Searching JIRA projects');
+		const result = await getClient().projects.searchProjects({ maxResults: 100 });
+		const values = (result.values ?? []) as Array<{ key?: string; name?: string }>;
+		return values.map((p) => ({
+			key: p.key ?? '',
+			name: p.name ?? '',
+		}));
+	},
+
+	async getProjectStatuses(projectKey: string): Promise<Array<{ name: string; id: string }>> {
+		logger.debug('Fetching JIRA project statuses', { projectKey });
+		const result = await getClient().projects.getAllStatuses({
+			projectIdOrKey: projectKey,
+		});
+		// getAllStatuses returns issueType-grouped statuses; flatten and deduplicate
+		const seen = new Set<string>();
+		const statuses: Array<{ name: string; id: string }> = [];
+		for (const issueType of result as Array<{
+			statuses?: Array<{ name?: string; id?: string }>;
+		}>) {
+			for (const status of issueType.statuses ?? []) {
+				const name = status.name ?? '';
+				if (name && !seen.has(name)) {
+					seen.add(name);
+					statuses.push({ name, id: status.id ?? '' });
+				}
+			}
+		}
+		return statuses;
+	},
+
+	async getFields(): Promise<Array<{ id: string; name: string; custom: boolean }>> {
+		logger.debug('Fetching JIRA fields');
+		const fields = await getClient().issueFields.getFields();
+		return (fields as Array<{ id?: string; name?: string; custom?: boolean }>).map((f) => ({
+			id: f.id ?? '',
+			name: f.name ?? '',
+			custom: f.custom ?? false,
+		}));
+	},
+
 	async createIssue(fields: Record<string, unknown>) {
 		logger.debug('Creating JIRA issue', {
 			project: (fields.project as { key?: string })?.key,
