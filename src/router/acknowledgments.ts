@@ -21,7 +21,7 @@ import {
 	TrelloPlatformClient,
 	resolveJiraCredentials,
 	resolveTrelloCredentials,
-} from './platformClients.js';
+} from './platformClients/index.js';
 
 // ---------------------------------------------------------------------------
 // Trello

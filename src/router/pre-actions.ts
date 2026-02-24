@@ -1,7 +1,7 @@
 import { findProjectByRepo, getIntegrationCredential } from '../config/provider.js';
 import { logger } from '../utils/logging.js';
 import { parseRepoFullName } from '../utils/repo.js';
-import { resolveGitHubHeaders } from './platformClients.js';
+import { resolveGitHubHeaders } from './platformClients/index.js';
 import type { GitHubJob } from './queue.js';
 
 /**
