@@ -36,9 +36,6 @@ export interface BaseAgentContext {
 	prompt: string;
 }
 
-/** @deprecated Use RunTrackingInput from runTracking.ts */
-export type RunTrackingConfig = RunTrackingInput;
-
 export interface ExecuteAgentOptions<TContext extends BaseAgentContext> {
 	/** Identifier for log file naming (e.g., "review-42", "ci-42") */
 	loggerIdentifier: string;
@@ -90,7 +87,7 @@ export interface ExecuteAgentOptions<TContext extends BaseAgentContext> {
 	postProcess?: (output: string) => Partial<AgentResult>;
 
 	/** Run tracking configuration (if set, creates DB records) */
-	runTracking?: RunTrackingConfig;
+	runTracking?: RunTrackingInput;
 
 	/** Remote Squint DB URL for projects that don't commit .squint.db */
 	squintDbUrl?: string;

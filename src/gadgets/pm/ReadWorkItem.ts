@@ -25,6 +25,3 @@ export class ReadWorkItem extends Gadget({
 		return readWorkItem(params.workItemId, params.includeComments);
 	}
 }
-
-/** @deprecated Use readWorkItem from './core/readWorkItem.js' instead */
-export { readWorkItem as formatWorkItemData } from './core/readWorkItem.js';

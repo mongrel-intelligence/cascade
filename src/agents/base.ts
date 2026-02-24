@@ -1,36 +1,19 @@
-import type { ModelSpec, createLogger } from 'llmist';
+import type { ModelSpec } from 'llmist';
 
-import { type ProgressMonitor, createProgressMonitor } from '../backends/progress.js';
+import { createProgressMonitor } from '../backends/progress.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
-import { loadPartials } from '../db/repositories/partialsRepository.js';
-import { formatWorkItemData } from '../gadgets/pm/index.js';
-import { type Todo, formatTodoList, initTodoSession, saveTodos } from '../gadgets/todo/storage.js';
 import { getPMProvider } from '../pm/index.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import { extractPRUrl } from '../utils/prUrl.js';
-import { type BuilderType, createConfiguredBuilder } from './shared/builderFactory.js';
-import { getAgentCapabilities } from './shared/capabilities.js';
-import { buildWorkItemGadgets } from './shared/gadgets.js';
 import { type FileLogger, executeAgentLifecycle } from './shared/lifecycle.js';
-import { resolveModelConfig } from './shared/modelResolution.js';
-import { buildPromptContext } from './shared/promptContext.js';
 import { setupRepository as setupRepo } from './shared/repository.js';
 import {
-	injectContextFiles,
-	injectDirectoryListing,
-	injectSquintContext,
-	injectSyntheticCall,
-} from './shared/syntheticCalls.js';
-import {
-	buildCheckFailurePrompt,
-	buildCommentResponsePrompt,
-	buildDebugPrompt,
-	buildWorkItemPrompt,
-} from './shared/taskPrompts.js';
-import type { AccumulatedLlmCall } from './utils/hooks.js';
+	createWorkItemAgentBuilder,
+	injectWorkItemSyntheticCalls,
+} from './shared/workItemBuilder.js';
+import { buildAgentContext } from './shared/workItemContext.js';
 import type { AgentLogger } from './utils/logging.js';
-import type { TrackingContext } from './utils/tracking.js';
 
 export interface AgentContext {
 	project: ProjectConfig;
@@ -44,238 +27,8 @@ export interface AgentRunner {
 	run: (ctx: AgentContext) => Promise<AgentResult>;
 }
 
-// ============================================================================
-// Agent Context Building
-// ============================================================================
-
-interface AgentContextData {
-	systemPrompt: string;
-	model: string;
-	maxIterations: number;
-	contextFiles: Awaited<ReturnType<typeof resolveModelConfig>>['contextFiles'];
-	cardData: string;
-	prompt: string;
-	implementationSteps?: string[];
-}
-
-export async function fetchImplementationSteps(cardId: string): Promise<string[] | undefined> {
-	try {
-		const provider = getPMProvider();
-		const checklists = await provider.getChecklists(cardId);
-		const implChecklist = checklists.find((cl) => cl.name.includes('Implementation Steps'));
-		if (!implChecklist || implChecklist.items.length === 0) return undefined;
-		const incompleteItems = implChecklist.items.filter((item) => !item.complete);
-		return incompleteItems.length > 0 ? incompleteItems.map((item) => item.name) : undefined;
-	} catch {
-		return undefined;
-	}
-}
-
-async function loadDbPartials(orgId: string): Promise<Map<string, string> | undefined> {
-	try {
-		return await loadPartials(orgId);
-	} catch {
-		// DB not available — fall back to disk-only partials
-		return undefined;
-	}
-}
-
-function selectPrompt(
-	cardId: string | undefined,
-	commentContext?: { text: string; author: string },
-	prContext?: { prNumber: number; prBranch: string; repoFullName: string; headSha: string },
-	debugContext?: {
-		logDir: string;
-		originalCardName: string;
-		originalCardUrl: string;
-		detectedAgentType: string;
-	},
-): string {
-	if (commentContext) {
-		return buildCommentResponsePrompt(cardId ?? '', commentContext.text, commentContext.author);
-	}
-	if (prContext) return buildCheckFailurePrompt(prContext);
-	if (debugContext) return buildDebugPrompt(debugContext);
-	return buildWorkItemPrompt(cardId ?? '');
-}
-
-async function buildAgentContext(
-	agentType: string,
-	cardId: string | undefined,
-	repoDir: string,
-	project: ProjectConfig,
-	config: CascadeConfig,
-	log: { info: (msg: string, ctx?: Record<string, unknown>) => void },
-	triggerType?: string,
-	prContext?: { prNumber: number; prBranch: string; repoFullName: string; headSha: string },
-	debugContext?: {
-		logDir: string;
-		originalCardId: string;
-		originalCardName: string;
-		originalCardUrl: string;
-		detectedAgentType: string;
-	},
-	modelOverride?: string,
-	commentContext?: { text: string; author: string },
-): Promise<AgentContextData> {
-	const promptContext = buildPromptContext(cardId, project, triggerType, prContext, debugContext);
-	const dbPartials = await loadDbPartials(project.orgId);
-
-	// Some agents share model/iteration config with another agent type
-	const configKeyOverrides: Record<string, string> = {
-		'respond-to-planning-comment': 'planning',
-	};
-
-	const { systemPrompt, model, maxIterations, contextFiles } = await resolveModelConfig({
-		agentType,
-		project,
-		config,
-		repoDir,
-		modelOverride,
-		promptContext,
-		configKey: configKeyOverrides[agentType],
-		dbPartials,
-	});
-
-	// Pre-fetch work item data for synthetic gadget call (only if cardId exists and not debug flow)
-	let cardData = '';
-	if (cardId && !debugContext) {
-		log.info('Fetching work item data for context', { cardId });
-		cardData = await formatWorkItemData(cardId, true);
-	}
-
-	// Pre-fetch implementation steps for synthetic todo injection
-	let implementationSteps: string[] | undefined;
-	if (agentType === 'implementation' && cardId && !debugContext) {
-		implementationSteps = await fetchImplementationSteps(cardId);
-	}
-
-	const prompt = selectPrompt(cardId, commentContext, prContext, debugContext);
-
-	return {
-		systemPrompt,
-		model,
-		maxIterations,
-		contextFiles,
-		cardData,
-		prompt,
-		implementationSteps,
-	};
-}
-
-// ============================================================================
-// Agent Builder Creation
-// ============================================================================
-
-function getBaseAgentGadgets(agentType: string) {
-	return buildWorkItemGadgets(getAgentCapabilities(agentType));
-}
-
-function createAgentBuilderWithGadgets(
-	client: import('llmist').LLMist,
-	ctx: AgentContextData,
-	llmistLogger: ReturnType<typeof createLogger>,
-	trackingContext: TrackingContext,
-	agentType: string,
-	logWriter: (level: string, message: string, context?: Record<string, unknown>) => void,
-	llmCallLogger: import('../utils/llmLogging.js').LLMCallLogger,
-	repoDir: string,
-	progressMonitor?: ProgressMonitor,
-	remainingBudgetUsd?: number,
-	llmCallAccumulator?: AccumulatedLlmCall[],
-	runId?: string,
-	baseBranch?: string,
-	projectId?: string,
-	cardId?: string,
-): BuilderType {
-	return createConfiguredBuilder({
-		client,
-		agentType,
-		model: ctx.model,
-		systemPrompt: ctx.systemPrompt,
-		maxIterations: ctx.maxIterations,
-		llmistLogger,
-		trackingContext,
-		logWriter,
-		llmCallLogger,
-		repoDir,
-		gadgets: getBaseAgentGadgets(agentType),
-		progressMonitor,
-		remainingBudgetUsd,
-		llmCallAccumulator,
-		runId,
-		baseBranch,
-		projectId,
-		cardId,
-		// Implementation agent uses sequential execution to ensure file operations
-		// are properly ordered (e.g., FileSearchAndReplace then ReadFile on same file)
-		postConfigure:
-			agentType === 'implementation'
-				? (builder) => builder.withGadgetExecutionMode('sequential')
-				: undefined,
-	});
-}
-
-async function injectSyntheticCalls(
-	initialBuilder: BuilderType,
-	cardId: string | undefined,
-	cardData: string,
-	contextFiles: AgentContextData['contextFiles'],
-	trackingContext: TrackingContext,
-	repoDir: string,
-	implementationSteps?: string[],
-): Promise<BuilderType> {
-	// Use maxDepth=5 to give agents better visibility into nested structures
-	let builder = injectDirectoryListing(initialBuilder, trackingContext, 5);
-
-	// Inject context files (CLAUDE.md, AGENTS.md) — conventions first
-	builder = injectContextFiles(builder, trackingContext, contextFiles);
-
-	// Inject Squint overview BEFORE card data — agent sees architectural map
-	// before encountering specific file paths from the card
-	builder = injectSquintContext(builder, trackingContext, repoDir);
-
-	// Inject work item data as synthetic ReadWorkItem call (only if cardId exists)
-	if (cardId && cardData) {
-		builder = injectSyntheticCall(
-			builder,
-			trackingContext,
-			'ReadWorkItem',
-			{ workItemId: cardId, includeComments: true },
-			cardData,
-			'gc_card',
-		);
-	}
-
-	// Inject pre-populated todos LAST — strongest "start coding" signal
-	if (implementationSteps && implementationSteps.length > 0) {
-		initTodoSession(`impl-${Date.now()}`);
-
-		const now = new Date().toISOString();
-		const todos: Todo[] = implementationSteps.map((step, i) => ({
-			id: String(i + 1),
-			content: step,
-			status: 'pending' as const,
-			createdAt: now,
-			updatedAt: now,
-		}));
-		saveTodos(todos);
-
-		builder = injectSyntheticCall(
-			builder,
-			trackingContext,
-			'TodoUpsert',
-			{
-				items: implementationSteps.map((step) => ({ content: step })),
-				comment: 'Pre-populated from Implementation Steps checklist',
-			},
-			`➕ Created ${todos.length} todos.\n\n${formatTodoList(todos)}`,
-			'gc_todos',
-		);
-	}
-
-	return builder;
-}
+// Re-export for backwards compatibility and test access
+export { fetchImplementationSteps } from './shared/workItemContext.js';
 
 // ============================================================================
 // Agent Execution
@@ -349,7 +102,7 @@ export async function executeAgent(
 	const debugCardId = isDebugAgent ? (input.originalCardId as string) : undefined;
 	const identifier = getLoggerIdentifier(agentType, cardId, prContext, debugCardId);
 
-	return executeAgentLifecycle<AgentContextData>({
+	return executeAgentLifecycle({
 		loggerIdentifier: identifier,
 
 		onWatchdogTimeout: async (_fileLogger: FileLogger, runId?: string) => {
@@ -401,26 +154,26 @@ export async function executeAgent(
 			llmCallAccumulator,
 			runId,
 		}) =>
-			createAgentBuilderWithGadgets(
+			createWorkItemAgentBuilder({
 				client,
 				ctx,
 				llmistLogger,
 				trackingContext,
 				agentType,
-				fileLogger.write.bind(fileLogger),
-				fileLogger.llmCallLogger,
+				logWriter: fileLogger.write.bind(fileLogger),
+				llmCallLogger: fileLogger.llmCallLogger,
 				repoDir,
-				progressMonitor ?? undefined,
-				input.remainingBudgetUsd as number | undefined,
+				progressMonitor: progressMonitor ?? undefined,
+				remainingBudgetUsd: input.remainingBudgetUsd as number | undefined,
 				llmCallAccumulator,
 				runId,
-				project.baseBranch,
-				project.id,
+				baseBranch: project.baseBranch,
+				projectId: project.id,
 				cardId,
-			),
+			}),
 
 		injectSyntheticCalls: ({ builder, ctx, trackingContext, repoDir }) =>
-			injectSyntheticCalls(
+			injectWorkItemSyntheticCalls(
 				builder,
 				cardId,
 				ctx.cardData,
