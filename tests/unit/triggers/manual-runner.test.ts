@@ -15,8 +15,27 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
+vi.mock('../../../src/pm/index.js', () => ({
+	createPMProvider: vi.fn(() => ({ type: 'mock-pm' })),
+	pmRegistry: { getOrNull: vi.fn(() => null) },
+	withPMProvider: vi.fn((_provider: unknown, fn: () => unknown) => fn()),
+}));
+
+vi.mock('../../../src/pm/context.js', () => ({
+	withPMCredentials: vi.fn(
+		(
+			_projectId: string,
+			_pmType: string | undefined,
+			_getIntegration: unknown,
+			fn: () => unknown,
+		) => fn(),
+	),
+}));
+
 import { runAgent } from '../../../src/agents/registry.js';
 import { getRunById } from '../../../src/db/repositories/runsRepository.js';
+import { withPMCredentials } from '../../../src/pm/context.js';
+import { createPMProvider, withPMProvider } from '../../../src/pm/index.js';
 import {
 	clearTriggerTracking,
 	isTriggerRunning,
@@ -139,6 +158,34 @@ describe('triggerManualRun', () => {
 				triggerType: 'manual',
 			}),
 		);
+	});
+
+	it('wraps runAgent with PM credential and provider context', async () => {
+		vi.mocked(runAgent).mockResolvedValue({
+			success: true,
+			output: 'Done',
+			runId: 'run-pm',
+		});
+
+		await triggerManualRun(
+			{ projectId: 'test-project', agentType: 'review', prNumber: 42 },
+			mockProject,
+			mockConfig,
+		);
+
+		// createPMProvider called with the project
+		expect(createPMProvider).toHaveBeenCalledWith(mockProject);
+
+		// withPMCredentials called with project.id, pm type, registry lookup, and inner fn
+		expect(withPMCredentials).toHaveBeenCalledWith(
+			'test-project',
+			undefined, // mockProject has no pm.type
+			expect.any(Function),
+			expect.any(Function),
+		);
+
+		// withPMProvider called with the created provider and inner fn
+		expect(withPMProvider).toHaveBeenCalledWith({ type: 'mock-pm' }, expect.any(Function));
 	});
 
 	it('marks trigger as complete after runAgent finishes', async () => {
