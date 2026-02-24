@@ -307,15 +307,14 @@ describe('PROpenedTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result).toEqual({
-				agentType: 'respond-to-review',
+				agentType: 'review',
 				agentInput: {
 					prNumber: 42,
 					prBranch: 'feature/test',
 					repoFullName: 'owner/repo',
-					triggerCommentId: 0,
-					triggerCommentBody: 'New PR: Test PR\n\nImplements https://trello.com/c/abc123/card-name',
-					triggerCommentPath: '',
-					triggerCommentUrl: 'https://github.com/owner/repo/pull/42',
+					headSha: 'abc',
+					triggerType: 'pr-opened',
+					cardId: 'abc123',
 				},
 				prNumber: 42,
 				workItemId: 'abc123',
@@ -405,7 +404,7 @@ describe('PROpenedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 			expect(result).not.toBeNull();
-			expect(result?.agentType).toBe('respond-to-review');
+			expect(result?.agentType).toBe('review');
 		});
 
 		it('returns null for external PR when only ownPrsOnly is enabled', async () => {
@@ -488,7 +487,7 @@ describe('PROpenedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 			expect(result).not.toBeNull();
-			expect(result?.agentType).toBe('respond-to-review');
+			expect(result?.agentType).toBe('review');
 		});
 
 		it('fires for reviewer persona PR when externalPrs is enabled (reviewer is not implementer)', async () => {
@@ -517,7 +516,7 @@ describe('PROpenedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 			expect(result).not.toBeNull();
-			expect(result?.agentType).toBe('respond-to-review');
+			expect(result?.agentType).toBe('review');
 		});
 
 		it('fires for both implementer and external PRs when both modes enabled', async () => {

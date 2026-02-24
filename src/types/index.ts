@@ -19,6 +19,7 @@ export interface AgentInput {
 		| 'feature-implementation'
 		| 'ci-success'
 		| 'review-requested'
+		| 'pr-opened'
 		| 'manual';
 
 	// Debug agent fields
