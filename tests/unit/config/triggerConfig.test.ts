@@ -6,9 +6,11 @@ import {
 	resolveGitHubTriggerEnabled,
 	resolveIssueTransitionedEnabled,
 	resolveJiraTriggerEnabled,
+	resolvePerAgentToggle,
 	resolveReadyToProcessEnabled,
 	resolveReviewTriggerConfig,
 	resolveTrelloTriggerEnabled,
+	resolveTriggerEnabled,
 } from '../../../src/config/triggerConfig.js';
 
 describe('TrelloTriggerConfigSchema', () => {
@@ -219,6 +221,15 @@ describe('resolveGitHubTriggerEnabled', () => {
 			false,
 		);
 	});
+
+	it('returns true for reviewTrigger when config contains the object', () => {
+		expect(
+			resolveGitHubTriggerEnabled(
+				{ reviewTrigger: { ownPrsOnly: true, externalPrs: false, onReviewRequested: false } },
+				'reviewTrigger',
+			),
+		).toBe(true);
+	});
 });
 
 describe('resolveReadyToProcessEnabled', () => {
@@ -407,6 +418,195 @@ describe('resolveReviewTriggerConfig', () => {
 				reviewRequested: true,
 			});
 			expect(result.externalPrs).toBe(false);
+		});
+	});
+});
+
+// ============================================================================
+// Tests for new generic helpers
+// ============================================================================
+
+describe('resolvePerAgentToggle', () => {
+	describe('undefined value', () => {
+		it('returns true for all known agent types', () => {
+			expect(resolvePerAgentToggle(undefined, 'briefing')).toBe(true);
+			expect(resolvePerAgentToggle(undefined, 'planning')).toBe(true);
+			expect(resolvePerAgentToggle(undefined, 'implementation')).toBe(true);
+		});
+
+		it('returns true for unknown agent types', () => {
+			expect(resolvePerAgentToggle(undefined, 'review')).toBe(true);
+			expect(resolvePerAgentToggle(undefined, 'debug')).toBe(true);
+		});
+	});
+
+	describe('boolean value', () => {
+		it('returns true when value is true, for all agent types', () => {
+			expect(resolvePerAgentToggle(true, 'briefing')).toBe(true);
+			expect(resolvePerAgentToggle(true, 'planning')).toBe(true);
+			expect(resolvePerAgentToggle(true, 'implementation')).toBe(true);
+			expect(resolvePerAgentToggle(true, 'unknown')).toBe(true);
+		});
+
+		it('returns false when value is false, for all agent types', () => {
+			expect(resolvePerAgentToggle(false, 'briefing')).toBe(false);
+			expect(resolvePerAgentToggle(false, 'planning')).toBe(false);
+			expect(resolvePerAgentToggle(false, 'implementation')).toBe(false);
+			expect(resolvePerAgentToggle(false, 'unknown')).toBe(false);
+		});
+	});
+
+	describe('per-agent object', () => {
+		it('returns the correct value for each known agent type', () => {
+			const obj = { briefing: true, planning: false, implementation: true };
+			expect(resolvePerAgentToggle(obj, 'briefing')).toBe(true);
+			expect(resolvePerAgentToggle(obj, 'planning')).toBe(false);
+			expect(resolvePerAgentToggle(obj, 'implementation')).toBe(true);
+		});
+
+		it('defaults to true for unknown agent types', () => {
+			const obj = { briefing: false, planning: false, implementation: false };
+			expect(resolvePerAgentToggle(obj, 'respond-to-review')).toBe(true);
+			expect(resolvePerAgentToggle(obj, 'debug')).toBe(true);
+			expect(resolvePerAgentToggle(obj, 'anything-else')).toBe(true);
+		});
+
+		it('defaults missing fields to true', () => {
+			const obj = { briefing: false }; // planning and implementation are undefined
+			expect(resolvePerAgentToggle(obj, 'planning')).toBe(true);
+			expect(resolvePerAgentToggle(obj, 'implementation')).toBe(true);
+		});
+	});
+});
+
+describe('resolveTriggerEnabled', () => {
+	describe('no config (undefined)', () => {
+		it('returns true for standard keys', () => {
+			expect(resolveTriggerEnabled(undefined, 'someKey')).toBe(true);
+		});
+
+		it('returns false for opt-in keys', () => {
+			expect(resolveTriggerEnabled(undefined, 'optInKey', { optInKeys: ['optInKey'] })).toBe(false);
+		});
+	});
+
+	describe('config present but key missing', () => {
+		it('returns true for standard keys', () => {
+			expect(resolveTriggerEnabled({}, 'someKey')).toBe(true);
+		});
+
+		it('returns false for opt-in keys', () => {
+			expect(resolveTriggerEnabled({}, 'optInKey', { optInKeys: ['optInKey'] })).toBe(false);
+		});
+	});
+
+	describe('boolean values', () => {
+		it('returns the boolean value directly', () => {
+			expect(resolveTriggerEnabled({ foo: true }, 'foo')).toBe(true);
+			expect(resolveTriggerEnabled({ foo: false }, 'foo')).toBe(false);
+		});
+
+		it('respects opt-in keys when value is explicitly set', () => {
+			expect(resolveTriggerEnabled({ optKey: true }, 'optKey', { optInKeys: ['optKey'] })).toBe(
+				true,
+			);
+			expect(resolveTriggerEnabled({ optKey: false }, 'optKey', { optInKeys: ['optKey'] })).toBe(
+				false,
+			);
+		});
+	});
+
+	describe('nested keys (per-agent objects)', () => {
+		it('returns true for boolean true nested key', () => {
+			expect(resolveTriggerEnabled({ rtp: true }, 'rtp', { nestedKeys: ['rtp'] })).toBe(true);
+		});
+
+		it('returns false for boolean false nested key', () => {
+			expect(resolveTriggerEnabled({ rtp: false }, 'rtp', { nestedKeys: ['rtp'] })).toBe(false);
+		});
+
+		it('returns true if any agent in the object is enabled', () => {
+			expect(
+				resolveTriggerEnabled(
+					{ rtp: { briefing: false, planning: true, implementation: false } },
+					'rtp',
+					{ nestedKeys: ['rtp'] },
+				),
+			).toBe(true);
+		});
+
+		it('returns false if all agents in the object are disabled', () => {
+			expect(
+				resolveTriggerEnabled(
+					{ rtp: { briefing: false, planning: false, implementation: false } },
+					'rtp',
+					{ nestedKeys: ['rtp'] },
+				),
+			).toBe(false);
+		});
+	});
+
+	describe('object keys (non-boolean objects)', () => {
+		it('returns true when value is an object (non-boolean)', () => {
+			expect(
+				resolveTriggerEnabled({ rt: { ownPrsOnly: true } }, 'rt', { objectKeys: ['rt'] }),
+			).toBe(true);
+		});
+
+		it('returns the boolean value when the key stores a boolean', () => {
+			expect(resolveTriggerEnabled({ rt: true }, 'rt', { objectKeys: ['rt'] })).toBe(true);
+			expect(resolveTriggerEnabled({ rt: false }, 'rt', { objectKeys: ['rt'] })).toBe(false);
+		});
+	});
+
+	describe('backward-compat verification — wrapper behavior matches generic', () => {
+		it('resolveTrelloTriggerEnabled matches resolveTriggerEnabled for all Trello cases', () => {
+			const cases: [Record<string, unknown>, string, boolean][] = [
+				[{}, 'cardMovedToBriefing', true],
+				[{ cardMovedToBriefing: false }, 'cardMovedToBriefing', false],
+				[{ readyToProcessLabel: false }, 'readyToProcessLabel', false],
+				[{ readyToProcessLabel: true }, 'readyToProcessLabel', true],
+				[
+					{ readyToProcessLabel: { briefing: false, planning: true, implementation: false } },
+					'readyToProcessLabel',
+					true,
+				],
+				[
+					{ readyToProcessLabel: { briefing: false, planning: false, implementation: false } },
+					'readyToProcessLabel',
+					false,
+				],
+			];
+			for (const [config, key, expected] of cases) {
+				expect(resolveTriggerEnabled(config, key, { nestedKeys: ['readyToProcessLabel'] })).toBe(
+					expected,
+				);
+			}
+		});
+
+		it('resolveGitHubTriggerEnabled matches resolveTriggerEnabled for opt-in and object keys', () => {
+			const optInKeys = ['reviewRequested', 'prOpened'];
+			const objectKeys = ['reviewTrigger'];
+
+			// opt-in absent
+			expect(resolveTriggerEnabled(undefined, 'reviewRequested', { optInKeys, objectKeys })).toBe(
+				false,
+			);
+			// opt-in enabled
+			expect(
+				resolveTriggerEnabled({ reviewRequested: true }, 'reviewRequested', {
+					optInKeys,
+					objectKeys,
+				}),
+			).toBe(true);
+			// object key present
+			expect(
+				resolveTriggerEnabled(
+					{ reviewTrigger: { ownPrsOnly: true, externalPrs: false, onReviewRequested: false } },
+					'reviewTrigger',
+					{ optInKeys, objectKeys },
+				),
+			).toBe(true);
 		});
 	});
 });
