@@ -1,8 +1,6 @@
 import { TRPCError } from '@trpc/server';
-import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { loadProjectConfigById } from '../../config/provider.js';
-import { getDb } from '../../db/client.js';
 import {
 	deleteDebugAnalysisByRunId,
 	getDebugAnalysisByRunId,
@@ -12,10 +10,10 @@ import {
 	listLlmCallsMeta,
 	listRuns,
 } from '../../db/repositories/runsRepository.js';
-import { projects } from '../../db/schema/index.js';
 import { isAnalysisRunning } from '../../triggers/shared/debug-status.js';
 import { logger } from '../../utils/logging.js';
 import { protectedProcedure, router } from '../trpc.js';
+import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
 const useQueue = !!process.env.REDIS_URL;
 
@@ -57,14 +55,7 @@ export const runsRouter = router({
 
 			// Verify org access
 			if (run.projectId) {
-				const db = getDb();
-				const [project] = await db
-					.select({ orgId: projects.orgId })
-					.from(projects)
-					.where(eq(projects.id, run.projectId));
-				if (!project || project.orgId !== ctx.effectiveOrgId) {
-					throw new TRPCError({ code: 'NOT_FOUND' });
-				}
+				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
 			}
 
 			return run;
@@ -119,14 +110,7 @@ export const runsRouter = router({
 
 			// Verify org access
 			if (run.projectId) {
-				const db = getDb();
-				const [project] = await db
-					.select({ orgId: projects.orgId })
-					.from(projects)
-					.where(eq(projects.id, run.projectId));
-				if (!project || project.orgId !== ctx.effectiveOrgId) {
-					throw new TRPCError({ code: 'NOT_FOUND' });
-				}
+				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
 			}
 
 			if (run.agentType === 'debug') {
@@ -199,18 +183,7 @@ export const runsRouter = router({
 		)
 		.mutation(async ({ ctx, input }) => {
 			// Verify org ownership of project
-			const db = getDb();
-			const [project] = await db
-				.select({ orgId: projects.orgId })
-				.from(projects)
-				.where(eq(projects.id, input.projectId));
-
-			if (!project || project.orgId !== ctx.effectiveOrgId) {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: 'Project not found',
-				});
-			}
+			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
 
 			const pc = await loadProjectConfigById(input.projectId);
 			if (!pc) {
@@ -273,14 +246,7 @@ export const runsRouter = router({
 
 			// Verify org access
 			if (run.projectId) {
-				const db = getDb();
-				const [project] = await db
-					.select({ orgId: projects.orgId })
-					.from(projects)
-					.where(eq(projects.id, run.projectId));
-				if (!project || project.orgId !== ctx.effectiveOrgId) {
-					throw new TRPCError({ code: 'NOT_FOUND' });
-				}
+				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
 			}
 
 			if (!run.projectId) {

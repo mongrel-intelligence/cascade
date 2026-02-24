@@ -1,11 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { TrelloClient as TrelloJsClient } from 'trello.js';
 import { logger } from '../utils/logging.js';
-
-interface TrelloCredentials {
-	apiKey: string;
-	token: string;
-}
+import type { TrelloCredentials } from './types.js';
 
 const trelloCredentialStore = new AsyncLocalStorage<TrelloCredentials>();
 

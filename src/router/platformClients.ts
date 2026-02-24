@@ -11,22 +11,19 @@
  */
 
 import { findProjectById, getIntegrationCredential } from '../config/provider.js';
+import type { JiraCredentials } from '../jira/types.js';
 import { getJiraConfig } from '../pm/config.js';
+import type { TrelloCredentials } from '../trello/types.js';
 import { logger } from '../utils/logging.js';
 
 // ---------------------------------------------------------------------------
 // Credential resolution helpers
 // ---------------------------------------------------------------------------
 
-export interface TrelloCredentials {
-	apiKey: string;
-	token: string;
-}
+export type { TrelloCredentials };
 
-export interface JiraCredentials {
-	email: string;
-	apiToken: string;
-	baseUrl: string;
+/** Extends JiraCredentials with a pre-computed Base64 Basic auth header value. */
+export interface JiraCredentialsWithAuth extends JiraCredentials {
 	/** Pre-computed Base64 Basic auth value: `email:apiToken` */
 	auth: string;
 }
@@ -52,7 +49,9 @@ export async function resolveTrelloCredentials(
  * Returns `{ email, apiToken, baseUrl, auth }` or `null` if credentials/config are missing.
  * The `auth` field is the pre-computed Base64 Basic auth string.
  */
-export async function resolveJiraCredentials(projectId: string): Promise<JiraCredentials | null> {
+export async function resolveJiraCredentials(
+	projectId: string,
+): Promise<JiraCredentialsWithAuth | null> {
 	try {
 		const email = await getIntegrationCredential(projectId, 'pm', 'email');
 		const apiToken = await getIntegrationCredential(projectId, 'pm', 'api_token');
