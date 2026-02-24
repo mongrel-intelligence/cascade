@@ -7,6 +7,7 @@ vi.mock('../../../src/agents/shared/prFormatting.js', () => ({
 	formatPRComments: vi.fn(() => 'formatted-pr-comments'),
 	formatPRReviews: vi.fn(() => 'formatted-pr-reviews'),
 	formatPRIssueComments: vi.fn(() => 'formatted-pr-issue-comments'),
+	readPRFileContents: vi.fn(() => Promise.resolve({ included: [], skipped: [] })),
 }));
 
 vi.mock('../../../src/config/reviewConfig.js', () => ({
@@ -108,8 +109,31 @@ vi.mock('../../../src/github/client.js', () => ({
 
 vi.mock('../../../src/agents/utils/setup.js', () => ({}));
 
+vi.mock('../../../src/utils/squintDb.js', () => ({
+	resolveSquintDbPath: vi.fn(() => null),
+}));
+
+vi.mock('node:child_process', () => ({
+	execFileSync: vi.fn(() => 'squint overview output'),
+}));
+
+import { execFileSync } from 'node:child_process';
+import {
+	formatPRComments,
+	formatPRDetails,
+	formatPRDiff,
+	formatPRIssueComments,
+	formatPRReviews,
+	readPRFileContents,
+} from '../../../src/agents/shared/prFormatting.js';
 import { type AgentProfile, getAgentProfile } from '../../../src/backends/agent-profiles.js';
+import { readWorkItem } from '../../../src/gadgets/pm/core/readWorkItem.js';
 import { githubClient } from '../../../src/github/client.js';
+import { resolveSquintDbPath } from '../../../src/utils/squintDb.js';
+
+const mockExecFileSync = vi.mocked(execFileSync);
+const mockResolveSquintDbPath = vi.mocked(resolveSquintDbPath);
+const mockReadWorkItem = vi.mocked(readWorkItem);
 
 const mockGithub = vi.mocked(githubClient);
 
@@ -573,5 +597,476 @@ describe('AgentProfile.getLlmistGadgets', () => {
 		expect(names).toContain('ReadWorkItem');
 		expect(names).toContain('PMUpdateChecklistItem');
 		expect(names).toContain('Finish');
+	});
+});
+
+// ============================================================================
+// Context Fetching Tests
+// ============================================================================
+
+/**
+ * Helper params for fetchContext calls.
+ */
+function makeContextParams(overrides: {
+	cardId?: string;
+	repoFullName?: string;
+	prNumber?: number;
+	contextFiles?: Array<{ path: string; content: string }>;
+}): {
+	input: Record<string, unknown>;
+	repoDir: string;
+	contextFiles: Array<{ path: string; content: string }>;
+	logWriter: ReturnType<typeof vi.fn>;
+} {
+	return {
+		input: {
+			cardId: overrides.cardId,
+			repoFullName: overrides.repoFullName ?? 'acme/widgets',
+			prNumber: overrides.prNumber ?? 42,
+			...overrides,
+		},
+		repoDir: '/repo',
+		contextFiles: overrides.contextFiles ?? [],
+		logWriter: vi.fn(),
+	};
+}
+
+describe('fetchDirectoryListing', () => {
+	it('briefing fetchContext returns a ListDirectory injection with maxDepth:3', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = getAgentProfile('briefing');
+		const params = makeContextParams({ cardId: undefined });
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const dirInjection = injections.find((i) => i.toolName === 'ListDirectory');
+		expect(dirInjection).toBeDefined();
+		expect(dirInjection?.params).toMatchObject({
+			directoryPath: '/repo',
+			maxDepth: 3,
+			includeGitIgnored: false,
+		});
+		expect(dirInjection?.result).toBe('directory listing');
+	});
+});
+
+describe('fetchContextFileInjections', () => {
+	it('returns ReadFile injections for each context file', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = getAgentProfile('briefing');
+		const params = makeContextParams({
+			contextFiles: [
+				{ path: 'CLAUDE.md', content: 'project guidelines' },
+				{ path: 'README.md', content: 'readme text' },
+			],
+		});
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const readFileInjections = injections.filter((i) => i.toolName === 'ReadFile');
+		expect(readFileInjections).toHaveLength(2);
+		expect(readFileInjections[0].params).toMatchObject({ filePath: 'CLAUDE.md' });
+		expect(readFileInjections[0].result).toBe('project guidelines');
+		expect(readFileInjections[1].params).toMatchObject({ filePath: 'README.md' });
+		expect(readFileInjections[1].result).toBe('readme text');
+	});
+
+	it('returns no ReadFile injections when contextFiles is empty', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = getAgentProfile('briefing');
+		const params = makeContextParams({ contextFiles: [] });
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const readFileInjections = injections.filter((i) => i.toolName === 'ReadFile');
+		expect(readFileInjections).toHaveLength(0);
+	});
+});
+
+describe('fetchSquintOverview', () => {
+	it('returns SquintOverview injection when squint db is present', async () => {
+		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
+		mockExecFileSync.mockReturnValue('squint overview output\n');
+		const profile = getAgentProfile('briefing');
+		const params = makeContextParams({});
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const squintInjection = injections.find((i) => i.toolName === 'SquintOverview');
+		expect(squintInjection).toBeDefined();
+		expect(squintInjection?.result).toBe('squint overview output\n');
+		expect(squintInjection?.params).toMatchObject({ database: '/repo/.squint.db' });
+	});
+
+	it('returns no SquintOverview injection when squint db is absent', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = getAgentProfile('briefing');
+		const params = makeContextParams({});
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const squintInjection = injections.find((i) => i.toolName === 'SquintOverview');
+		expect(squintInjection).toBeUndefined();
+	});
+
+	it('returns no SquintOverview injection when squint command throws', async () => {
+		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
+		mockExecFileSync.mockImplementation(() => {
+			throw new Error('squint not found');
+		});
+		const profile = getAgentProfile('briefing');
+		const params = makeContextParams({});
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const squintInjection = injections.find((i) => i.toolName === 'SquintOverview');
+		expect(squintInjection).toBeUndefined();
+	});
+
+	it('returns no SquintOverview injection when squint output is empty', async () => {
+		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
+		mockExecFileSync.mockReturnValue('   ');
+		const profile = getAgentProfile('briefing');
+		const params = makeContextParams({});
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const squintInjection = injections.find((i) => i.toolName === 'SquintOverview');
+		expect(squintInjection).toBeUndefined();
+	});
+});
+
+describe('fetchWorkItemInjection', () => {
+	it('returns ReadWorkItem injection when readWorkItem resolves', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		mockReadWorkItem.mockResolvedValue('# card title\n\ncard body');
+		const profile = getAgentProfile('briefing');
+		const params = makeContextParams({ cardId: 'card-123' });
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const workItemInjection = injections.find((i) => i.toolName === 'ReadWorkItem');
+		expect(workItemInjection).toBeDefined();
+		expect(workItemInjection?.result).toBe('# card title\n\ncard body');
+		expect(workItemInjection?.params).toMatchObject({
+			workItemId: 'card-123',
+			includeComments: true,
+		});
+		expect(mockReadWorkItem).toHaveBeenCalledWith('card-123', true);
+	});
+
+	it('skips injection when readWorkItem throws', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		mockReadWorkItem.mockRejectedValue(new Error('card not found'));
+		const profile = getAgentProfile('briefing');
+		const params = makeContextParams({ cardId: 'missing-card' });
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const workItemInjection = injections.find((i) => i.toolName === 'ReadWorkItem');
+		expect(workItemInjection).toBeUndefined();
+	});
+
+	it('never calls readWorkItem when cardId is absent', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = getAgentProfile('briefing');
+		const params = makeContextParams({ cardId: undefined });
+
+		await profile.fetchContext(params as Parameters<typeof profile.fetchContext>[0]);
+
+		expect(mockReadWorkItem).not.toHaveBeenCalled();
+	});
+});
+
+describe('fetchWorkItemContext orchestration', () => {
+	it('includes dirListing, contextFiles, squint, and workItem in order', async () => {
+		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
+		mockExecFileSync.mockReturnValue('squint output\n');
+		mockReadWorkItem.mockResolvedValue('card content');
+		const profile = getAgentProfile('briefing');
+		const params = makeContextParams({
+			cardId: 'card-abc',
+			contextFiles: [{ path: 'CLAUDE.md', content: 'guidelines' }],
+		});
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const toolNames = injections.map((i) => i.toolName);
+		expect(toolNames).toContain('ListDirectory');
+		expect(toolNames).toContain('ReadFile');
+		expect(toolNames).toContain('SquintOverview');
+		expect(toolNames).toContain('ReadWorkItem');
+
+		// Ordering: dirListing first
+		const dirIdx = toolNames.indexOf('ListDirectory');
+		const readFileIdx = toolNames.indexOf('ReadFile');
+		const squintIdx = toolNames.indexOf('SquintOverview');
+		const workItemIdx = toolNames.indexOf('ReadWorkItem');
+		expect(dirIdx).toBeLessThan(readFileIdx);
+		expect(readFileIdx).toBeLessThan(squintIdx);
+		expect(squintIdx).toBeLessThan(workItemIdx);
+	});
+
+	it('gracefully omits squint and workItem when unavailable', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		mockReadWorkItem.mockRejectedValue(new Error('unavailable'));
+		const profile = getAgentProfile('briefing');
+		const params = makeContextParams({ cardId: 'card-xyz' });
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		expect(injections.some((i) => i.toolName === 'SquintOverview')).toBe(false);
+		expect(injections.some((i) => i.toolName === 'ReadWorkItem')).toBe(false);
+		expect(injections.some((i) => i.toolName === 'ListDirectory')).toBe(true);
+	});
+});
+
+describe('fetchReviewContext', () => {
+	beforeEach(() => {
+		mockGithub.getPR.mockResolvedValue({ headSha: 'sha123' } as never);
+		mockGithub.getPRDiff.mockResolvedValue([]);
+		mockGithub.getCheckSuiteStatus.mockResolvedValue({ checks: [] } as never);
+		vi.mocked(readPRFileContents).mockResolvedValue({ included: [], skipped: [] });
+	});
+
+	it('includes PR injections (Details, Diff, Checks)', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = getAgentProfile('review');
+		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 42 });
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const toolNames = injections.map((i) => i.toolName);
+		expect(toolNames).toContain('GetPRDetails');
+		expect(toolNames).toContain('GetPRDiff');
+		expect(toolNames).toContain('GetPRChecks');
+	});
+
+	it('includes context file injections', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = getAgentProfile('review');
+		const params = makeContextParams({
+			repoFullName: 'acme/widgets',
+			prNumber: 42,
+			contextFiles: [{ path: 'CLAUDE.md', content: 'project info' }],
+		});
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const readFileInjections = injections.filter((i) => i.toolName === 'ReadFile');
+		expect(readFileInjections).toHaveLength(1);
+		expect(readFileInjections[0].params).toMatchObject({ filePath: 'CLAUDE.md' });
+	});
+
+	it('includes squint injection when squint db is present', async () => {
+		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
+		mockExecFileSync.mockReturnValue('squint content\n');
+		const profile = getAgentProfile('review');
+		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 42 });
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		expect(injections.some((i) => i.toolName === 'SquintOverview')).toBe(true);
+	});
+
+	it('does NOT include a work item injection (review has no cardId)', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = getAgentProfile('review');
+		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 42 });
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		expect(injections.some((i) => i.toolName === 'ReadWorkItem')).toBe(false);
+		expect(mockReadWorkItem).not.toHaveBeenCalled();
+	});
+
+	it('includes file content injections for included PR files', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		vi.mocked(readPRFileContents).mockResolvedValue({
+			included: [{ path: 'src/index.ts', content: 'file content' }],
+			skipped: [],
+		});
+		const profile = getAgentProfile('review');
+		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 42 });
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const fileInjections = injections.filter(
+			(i) =>
+				i.toolName === 'ReadFile' &&
+				typeof i.result === 'string' &&
+				i.result.includes('src/index.ts'),
+		);
+		expect(fileInjections).toHaveLength(1);
+	});
+
+	it('calls formatting functions', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = getAgentProfile('review');
+		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 42 });
+
+		await profile.fetchContext(params as Parameters<typeof profile.fetchContext>[0]);
+
+		expect(vi.mocked(formatPRDetails)).toHaveBeenCalled();
+		expect(vi.mocked(formatPRDiff)).toHaveBeenCalled();
+	});
+});
+
+describe('fetchCIContext', () => {
+	beforeEach(() => {
+		mockGithub.getPR.mockResolvedValue({ headSha: 'sha456' } as never);
+		mockGithub.getPRDiff.mockResolvedValue([]);
+		mockGithub.getCheckSuiteStatus.mockResolvedValue({ checks: [] } as never);
+		vi.mocked(readPRFileContents).mockResolvedValue({ included: [], skipped: [] });
+	});
+
+	it('includes PR injections, dirListing, contextFiles, squint, and workItem', async () => {
+		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
+		mockExecFileSync.mockReturnValue('squint ci output\n');
+		mockReadWorkItem.mockResolvedValue('ci card content');
+		const profile = getAgentProfile('respond-to-ci');
+		const params = makeContextParams({
+			repoFullName: 'acme/widgets',
+			prNumber: 5,
+			cardId: 'ci-card',
+			contextFiles: [{ path: 'CLAUDE.md', content: 'info' }],
+		});
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const toolNames = injections.map((i) => i.toolName);
+		expect(toolNames).toContain('GetPRDetails');
+		expect(toolNames).toContain('GetPRDiff');
+		expect(toolNames).toContain('GetPRChecks');
+		expect(toolNames).toContain('ListDirectory');
+		expect(toolNames).toContain('ReadFile');
+		expect(toolNames).toContain('SquintOverview');
+		expect(toolNames).toContain('ReadWorkItem');
+	});
+
+	it('skips workItem injection when cardId is absent', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = getAgentProfile('respond-to-ci');
+		const params = makeContextParams({
+			repoFullName: 'acme/widgets',
+			prNumber: 5,
+			cardId: undefined,
+		});
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		expect(injections.some((i) => i.toolName === 'ReadWorkItem')).toBe(false);
+		expect(mockReadWorkItem).not.toHaveBeenCalled();
+	});
+});
+
+describe('fetchPRCommentResponseContext', () => {
+	beforeEach(() => {
+		mockGithub.getPR.mockResolvedValue({ headSha: 'sha789' } as never);
+		mockGithub.getPRDiff.mockResolvedValue([]);
+		mockGithub.getCheckSuiteStatus.mockResolvedValue({ checks: [] } as never);
+		mockGithub.getPRReviewComments.mockResolvedValue([] as never);
+		mockGithub.getPRReviews.mockResolvedValue([] as never);
+		mockGithub.getPRIssueComments.mockResolvedValue([] as never);
+		vi.mocked(readPRFileContents).mockResolvedValue({ included: [], skipped: [] });
+	});
+
+	it('includes PR injections and 3 conversation injections', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = getAgentProfile('respond-to-pr-comment');
+		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 7 });
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const toolNames = injections.map((i) => i.toolName);
+		expect(toolNames).toContain('GetPRDetails');
+		expect(toolNames).toContain('GetPRDiff');
+		expect(toolNames).toContain('GetPRChecks');
+
+		// 3 conversation injections (all tagged as GetPRComments)
+		const conversationInjections = injections.filter((i) => i.toolName === 'GetPRComments');
+		expect(conversationInjections).toHaveLength(3);
+	});
+
+	it('includes dirListing, contextFiles, and squint', async () => {
+		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
+		mockExecFileSync.mockReturnValue('squint pr comment output\n');
+		const profile = getAgentProfile('respond-to-pr-comment');
+		const params = makeContextParams({
+			repoFullName: 'acme/widgets',
+			prNumber: 7,
+			contextFiles: [{ path: 'AGENTS.md', content: 'agents doc' }],
+		});
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		const toolNames = injections.map((i) => i.toolName);
+		expect(toolNames).toContain('ListDirectory');
+		expect(toolNames).toContain('ReadFile');
+		expect(toolNames).toContain('SquintOverview');
+	});
+
+	it('calls all 3 formatting functions for conversation context', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = getAgentProfile('respond-to-pr-comment');
+		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 7 });
+
+		await profile.fetchContext(params as Parameters<typeof profile.fetchContext>[0]);
+
+		expect(vi.mocked(formatPRComments)).toHaveBeenCalled();
+		expect(vi.mocked(formatPRReviews)).toHaveBeenCalled();
+		expect(vi.mocked(formatPRIssueComments)).toHaveBeenCalled();
+	});
+
+	it('calls getPRReviewComments, getPRReviews, getPRIssueComments', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = getAgentProfile('respond-to-pr-comment');
+		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 7 });
+
+		await profile.fetchContext(params as Parameters<typeof profile.fetchContext>[0]);
+
+		expect(mockGithub.getPRReviewComments).toHaveBeenCalledWith('acme', 'widgets', 7);
+		expect(mockGithub.getPRReviews).toHaveBeenCalledWith('acme', 'widgets', 7);
+		expect(mockGithub.getPRIssueComments).toHaveBeenCalledWith('acme', 'widgets', 7);
 	});
 });
