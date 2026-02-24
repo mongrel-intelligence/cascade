@@ -176,59 +176,44 @@ export async function deleteJiraAck(
 // Bot identity resolution (cached, for self-authored comment detection)
 // ---------------------------------------------------------------------------
 
-const IDENTITY_CACHE_TTL_MS = 60_000; // 60 seconds
+import { BotIdentityCache } from './bot-identity.js';
 
-const jiraBotCache = new Map<string, { accountId: string; expiresAt: number }>();
+const jiraBotIdentityCache = new BotIdentityCache<string>('accountId');
+const trelloBotIdentityCache = new BotIdentityCache<string>('memberId');
 
 /**
  * Resolve the JIRA account ID for the bot credentials linked to a project.
  * Cached per-project with 60s TTL. Returns null on any failure.
  */
 export async function resolveJiraBotAccountId(projectId: string): Promise<string | null> {
-	const cached = jiraBotCache.get(projectId);
-	if (cached && Date.now() < cached.expiresAt) return cached.accountId;
+	return jiraBotIdentityCache.resolve(projectId, async () => {
+		const creds = await resolveJiraCredentials(projectId);
+		if (!creds) return null;
 
-	const creds = await resolveJiraCredentials(projectId);
-	if (!creds) return null;
-
-	try {
 		const response = await fetch(`${creds.baseUrl}/rest/api/2/myself`, {
 			headers: { Authorization: `Basic ${creds.auth}`, Accept: 'application/json' },
 		});
 		if (!response.ok) return null;
 
 		const data = (await response.json()) as { accountId?: string };
-		if (!data.accountId) return null;
-
-		jiraBotCache.set(projectId, {
-			accountId: data.accountId,
-			expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS,
-		});
-		return data.accountId;
-	} catch {
-		return null;
-	}
+		return data.accountId ?? null;
+	});
 }
 
 /** @internal Visible for testing only */
 export function _resetJiraBotCache(): void {
-	jiraBotCache.clear();
+	jiraBotIdentityCache._reset();
 }
-
-const trelloBotCache = new Map<string, { memberId: string; expiresAt: number }>();
 
 /**
  * Resolve the Trello member ID for the bot credentials linked to a project.
  * Cached per-project with 60s TTL. Returns null on any failure.
  */
 export async function resolveTrelloBotMemberId(projectId: string): Promise<string | null> {
-	const cached = trelloBotCache.get(projectId);
-	if (cached && Date.now() < cached.expiresAt) return cached.memberId;
+	return trelloBotIdentityCache.resolve(projectId, async () => {
+		const creds = await resolveTrelloCredentials(projectId);
+		if (!creds) return null;
 
-	const creds = await resolveTrelloCredentials(projectId);
-	if (!creds) return null;
-
-	try {
 		const response = await fetch(
 			`https://api.trello.com/1/members/me?key=${creds.apiKey}&token=${creds.token}`,
 			{ headers: { Accept: 'application/json' } },
@@ -236,21 +221,13 @@ export async function resolveTrelloBotMemberId(projectId: string): Promise<strin
 		if (!response.ok) return null;
 
 		const data = (await response.json()) as { id?: string };
-		if (!data.id) return null;
-
-		trelloBotCache.set(projectId, {
-			memberId: data.id,
-			expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS,
-		});
-		return data.id;
-	} catch {
-		return null;
-	}
+		return data.id ?? null;
+	});
 }
 
 /** @internal Visible for testing only */
 export function _resetTrelloBotCache(): void {
-	trelloBotCache.clear();
+	trelloBotIdentityCache._reset();
 }
 
 // ---------------------------------------------------------------------------

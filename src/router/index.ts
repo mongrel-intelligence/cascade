@@ -10,10 +10,11 @@ import {
 import { registerBuiltInTriggers } from '../triggers/builtins.js';
 import { createTriggerRegistry } from '../triggers/registry.js';
 import { logger } from '../utils/logging.js';
-import { handleGitHubWebhook } from './github.js';
-import { handleJiraWebhook } from './jira.js';
+import { GitHubRouterAdapter, injectEventType } from './adapters/github.js';
+import { JiraRouterAdapter } from './adapters/jira.js';
+import { TrelloRouterAdapter } from './adapters/trello.js';
 import { getQueueStats } from './queue.js';
-import { handleTrelloWebhook } from './trello.js';
+import { processRouterWebhook } from './webhook-processor.js';
 import {
 	getActiveWorkerCount,
 	getActiveWorkers,
@@ -63,13 +64,11 @@ app.post(
 		fireAndForget: false,
 		parsePayload: parseTrelloPayload,
 		processWebhook: async (payload) => {
-			const { shouldProcess, project, cardId } = await handleTrelloWebhook(
-				payload,
-				triggerRegistry,
-			);
+			const adapter = new TrelloRouterAdapter();
+			const result = await processRouterWebhook(adapter, payload, triggerRegistry);
 			return {
-				processed: shouldProcess && !!project && !!cardId,
-				projectId: project?.id,
+				processed: result.shouldProcess,
+				projectId: result.projectId,
 			};
 		},
 	}),
@@ -89,12 +88,10 @@ app.post(
 		fireAndForget: false,
 		parsePayload: parseGitHubPayload,
 		processWebhook: async (payload, eventType) => {
-			const { shouldProcess } = await handleGitHubWebhook(
-				eventType ?? 'unknown',
-				payload,
-				triggerRegistry,
-			);
-			return { processed: shouldProcess };
+			const adapter = new GitHubRouterAdapter();
+			const augmented = injectEventType(payload, eventType ?? 'unknown');
+			const result = await processRouterWebhook(adapter, augmented, triggerRegistry);
+			return { processed: result.shouldProcess };
 		},
 	}),
 );
@@ -113,10 +110,11 @@ app.post(
 		fireAndForget: false,
 		parsePayload: parseJiraPayload,
 		processWebhook: async (payload) => {
-			const { shouldProcess, project } = await handleJiraWebhook(payload, triggerRegistry);
+			const adapter = new JiraRouterAdapter();
+			const result = await processRouterWebhook(adapter, payload, triggerRegistry);
 			return {
-				processed: !!shouldProcess,
-				projectId: project?.id,
+				processed: result.shouldProcess,
+				projectId: result.projectId,
 			};
 		},
 	}),
