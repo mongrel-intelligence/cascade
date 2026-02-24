@@ -41,6 +41,10 @@ vi.mock('../../../src/backends/progress.js', () => ({
 	createProgressMonitor: vi.fn(),
 }));
 
+vi.mock('../../../src/gadgets/sessionState.js', () => ({
+	recordInitialComment: vi.fn(),
+}));
+
 vi.mock('../../../src/config/customModels.js', () => ({
 	CUSTOM_MODELS: [],
 }));
@@ -116,6 +120,7 @@ import { type AgentProfile, getAgentProfile } from '../../../src/backends/agent-
 import { createProgressMonitor } from '../../../src/backends/progress.js';
 import type { AgentBackend } from '../../../src/backends/types.js';
 import { getAllProjectCredentials } from '../../../src/config/provider.js';
+import { recordInitialComment } from '../../../src/gadgets/sessionState.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../../../src/utils/cascadeEnv.js';
 import {
@@ -138,6 +143,7 @@ const mockCleanupLogFile = vi.mocked(cleanupLogFile);
 const mockCleanupLogDirectory = vi.mocked(cleanupLogDirectory);
 const mockClearWatchdogCleanup = vi.mocked(clearWatchdogCleanup);
 const mockCreateProgressMonitor = vi.mocked(createProgressMonitor);
+const mockRecordInitialComment = vi.mocked(recordInitialComment);
 const mockGetAllProjectCredentials = vi.mocked(getAllProjectCredentials);
 const mockGetAgentProfile = vi.mocked(getAgentProfile);
 
@@ -706,5 +712,122 @@ describe('executeWithBackend', () => {
 		expect(result.durationMs).toBeDefined();
 		expect(result.durationMs).toBeGreaterThanOrEqual(0);
 		expect(typeof result.durationMs).toBe('number');
+	});
+
+	describe('GitHub ack comment routing', () => {
+		it('calls recordInitialComment and passes github config when ack is a GitHub PR comment', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			const input = makeInput({
+				prNumber: 42,
+				repoFullName: 'acme/widgets',
+				ackCommentId: 12345,
+				ackMessage: 'Reviewing code...',
+			});
+
+			await executeWithBackend(backend, 'review', input);
+
+			expect(mockRecordInitialComment).toHaveBeenCalledWith(12345);
+			expect(mockCreateProgressMonitor).toHaveBeenCalledWith(
+				expect.objectContaining({
+					preSeededCommentId: undefined,
+					github: {
+						owner: 'acme',
+						repo: 'widgets',
+						headerMessage: 'Reviewing code...',
+					},
+				}),
+			);
+		});
+
+		it('does not call recordInitialComment for PM (string) ack comment IDs', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			const input = makeInput({
+				ackCommentId: 'trello-comment-abc',
+			});
+
+			await executeWithBackend(backend, 'implementation', input);
+
+			expect(mockRecordInitialComment).not.toHaveBeenCalled();
+			expect(mockCreateProgressMonitor).toHaveBeenCalledWith(
+				expect.objectContaining({
+					preSeededCommentId: 'trello-comment-abc',
+				}),
+			);
+		});
+
+		it('passes preSeededCommentId for PM ack even when PR context is absent', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			const input = makeInput({
+				ackCommentId: 'pm-comment-id',
+			});
+
+			await executeWithBackend(backend, 'implementation', input);
+
+			expect(mockCreateProgressMonitor).toHaveBeenCalledWith(
+				expect.objectContaining({
+					preSeededCommentId: 'pm-comment-id',
+				}),
+			);
+			// No github config when no PR context
+			const callArgs = mockCreateProgressMonitor.mock.calls[0][0];
+			expect(callArgs).not.toHaveProperty('github');
+		});
+
+		it('does not pass preSeededCommentId when ack is a GitHub comment (numeric)', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			const input = makeInput({
+				prNumber: 10,
+				repoFullName: 'org/repo',
+				ackCommentId: 999,
+			});
+
+			await executeWithBackend(backend, 'review', input);
+
+			expect(mockCreateProgressMonitor).toHaveBeenCalledWith(
+				expect.objectContaining({
+					preSeededCommentId: undefined,
+				}),
+			);
+		});
+
+		it('passes github config with empty headerMessage when ackMessage is undefined', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			const input = makeInput({
+				prNumber: 7,
+				repoFullName: 'org/repo',
+				ackCommentId: 555,
+			});
+
+			await executeWithBackend(backend, 'review', input);
+
+			expect(mockCreateProgressMonitor).toHaveBeenCalledWith(
+				expect.objectContaining({
+					github: {
+						owner: 'org',
+						repo: 'repo',
+						headerMessage: '',
+					},
+				}),
+			);
+		});
+
+		it('does not call recordInitialComment when ackCommentId is absent', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			const input = makeInput({
+				prNumber: 42,
+				repoFullName: 'acme/widgets',
+				// no ackCommentId
+			});
+
+			await executeWithBackend(backend, 'review', input);
+
+			expect(mockRecordInitialComment).not.toHaveBeenCalled();
+		});
 	});
 });
