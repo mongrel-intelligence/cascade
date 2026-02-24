@@ -7,7 +7,7 @@ import {
 	storeRunLogs,
 } from '../../db/repositories/runsRepository.js';
 import { logger } from '../../utils/logging.js';
-import type { FileLogger } from './lifecycle.js';
+import type { FileLogger } from './executionPipeline.js';
 
 // ============================================================================
 // Run Tracking Configuration
