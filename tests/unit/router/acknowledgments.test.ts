@@ -25,6 +25,16 @@ vi.mock('../../../src/config/configCache.js', () => ({
 	},
 }));
 
+// Mock logger
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+	},
+}));
+
 import { getProjectGitHubToken } from '../../../src/config/projects.js';
 import {
 	findProjectById,
@@ -44,11 +54,13 @@ import {
 	resolveJiraBotAccountId,
 	resolveTrelloBotMemberId,
 } from '../../../src/router/acknowledgments.js';
+import { logger } from '../../../src/utils/logging.js';
 
 const mockGetIntegrationCredential = vi.mocked(getIntegrationCredential);
 const mockGetProjectGitHubToken = vi.mocked(getProjectGitHubToken);
 const mockFindProjectByRepo = vi.mocked(findProjectByRepo);
 const mockFindProjectById = vi.mocked(findProjectById);
+const mockLogger = vi.mocked(logger);
 
 const MOCK_CREDENTIALS: Record<string, string> = {
 	'pm/api_key': 'test-trello-key',
@@ -63,8 +75,9 @@ vi.stubGlobal('fetch', mockFetch);
 
 beforeEach(() => {
 	mockFetch.mockReset();
-	vi.spyOn(console, 'log').mockImplementation(() => {});
-	vi.spyOn(console, 'warn').mockImplementation(() => {});
+	mockLogger.info.mockReset();
+	mockLogger.warn.mockReset();
+	mockLogger.error.mockReset();
 
 	mockGetIntegrationCredential.mockImplementation(async (_projectId, category, role) => {
 		const value = MOCK_CREDENTIALS[`${category}/${role}`];
@@ -139,8 +152,8 @@ describe('postTrelloAck', () => {
 		const result = await postTrelloAck('test', 'card1', 'Hello');
 
 		expect(result).toBeNull();
-		expect(console.warn).toHaveBeenCalledWith(
-			expect.stringContaining('Trello comment failed'),
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('[PlatformClient] Trello comment failed'),
 			401,
 			'Unauthorized',
 		);
@@ -183,8 +196,8 @@ describe('deleteTrelloAck', () => {
 
 		await deleteTrelloAck('test', 'card1', 'comment-123');
 
-		expect(console.warn).toHaveBeenCalledWith(
-			expect.stringContaining('Failed to delete Trello orphan ack'),
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('Failed to delete Trello comment'),
 			expect.any(String),
 		);
 	});
@@ -218,7 +231,7 @@ describe('postGitHubAck', () => {
 		const result = await postGitHubAck('owner/repo', 5, 'Hello', 'ghp_token');
 
 		expect(result).toBeNull();
-		expect(console.warn).toHaveBeenCalledWith(
+		expect(mockLogger.warn).toHaveBeenCalledWith(
 			expect.stringContaining('GitHub comment failed'),
 			403,
 			'Forbidden',
@@ -255,8 +268,8 @@ describe('deleteGitHubAck', () => {
 
 		await deleteGitHubAck('owner/repo', 42, 'ghp_token');
 
-		expect(console.warn).toHaveBeenCalledWith(
-			expect.stringContaining('Failed to delete GitHub orphan ack'),
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('Failed to delete GitHub comment'),
 			expect.any(String),
 		);
 	});
@@ -347,7 +360,7 @@ describe('postJiraAck', () => {
 		const result = await postJiraAck('test', 'PROJ-42', 'Hello');
 
 		expect(result).toBeNull();
-		expect(console.warn).toHaveBeenCalledWith(
+		expect(mockLogger.warn).toHaveBeenCalledWith(
 			expect.stringContaining('JIRA comment failed'),
 			401,
 			'Unauthorized',
@@ -383,7 +396,7 @@ describe('deleteJiraAck', () => {
 
 		await deleteJiraAck('test', 'PROJ-42', 'jira-comment-456');
 
-		expect(console.warn).toHaveBeenCalledWith(
+		expect(mockLogger.warn).toHaveBeenCalledWith(
 			expect.stringContaining('Failed to delete JIRA orphan ack'),
 			expect.any(String),
 		);

@@ -1,5 +1,6 @@
 import { getProjectGitHubToken } from '../config/projects.js';
 import { findProjectByRepo } from '../config/provider.js';
+import { logger } from '../utils/logging.js';
 import {
 	resolveGitHubHeaders,
 	resolveJiraCredentials,
@@ -79,7 +80,7 @@ interface TimeoutInfo {
 async function notifyTrelloTimeout(job: TrelloJob, info: TimeoutInfo): Promise<void> {
 	const creds = await resolveTrelloCredentials(job.projectId);
 	if (!creds) {
-		console.warn('[Notifications] Missing Trello credentials in DB, skipping timeout notification');
+		logger.warn('[Notifications] Missing Trello credentials in DB, skipping timeout notification');
 		return;
 	}
 
@@ -98,9 +99,9 @@ async function notifyTrelloTimeout(job: TrelloJob, info: TimeoutInfo): Promise<v
 	});
 
 	if (!response.ok) {
-		console.warn('[Notifications] Trello comment failed:', response.status, await response.text());
+		logger.warn('[Notifications] Trello comment failed:', response.status, await response.text());
 	} else {
-		console.log('[Notifications] Trello timeout comment posted for card:', job.cardId);
+		logger.info('[Notifications] Trello timeout comment posted for card:', job.cardId);
 	}
 }
 
@@ -108,7 +109,7 @@ async function notifyGitHubTimeout(job: GitHubJob, info: TimeoutInfo): Promise<v
 	// Resolve project from repo name, then get GitHub token from DB
 	const project = await findProjectByRepo(job.repoFullName);
 	if (!project) {
-		console.warn('[Notifications] No project found for repo, skipping notification', {
+		logger.warn('[Notifications] No project found for repo, skipping notification', {
 			repoFullName: job.repoFullName,
 		});
 		return;
@@ -118,13 +119,13 @@ async function notifyGitHubTimeout(job: GitHubJob, info: TimeoutInfo): Promise<v
 	try {
 		githubToken = await getProjectGitHubToken(project);
 	} catch {
-		console.warn('[Notifications] Missing GitHub token in DB, skipping timeout notification');
+		logger.warn('[Notifications] Missing GitHub token in DB, skipping timeout notification');
 		return;
 	}
 
 	const prNumber = extractPRNumber(job);
 	if (!prNumber) {
-		console.warn(
+		logger.warn(
 			'[Notifications] Could not extract PR number from GitHub job, skipping notification',
 		);
 		return;
@@ -145,16 +146,16 @@ async function notifyGitHubTimeout(job: GitHubJob, info: TimeoutInfo): Promise<v
 	});
 
 	if (!response.ok) {
-		console.warn('[Notifications] GitHub comment failed:', response.status, await response.text());
+		logger.warn('[Notifications] GitHub comment failed:', response.status, await response.text());
 	} else {
-		console.log('[Notifications] GitHub timeout comment posted for PR:', prNumber);
+		logger.info('[Notifications] GitHub timeout comment posted for PR:', prNumber);
 	}
 }
 
 async function notifyJiraTimeout(job: JiraJob, info: TimeoutInfo): Promise<void> {
 	const creds = await resolveJiraCredentials(job.projectId);
 	if (!creds) {
-		console.warn('[Notifications] Missing JIRA credentials in DB, skipping timeout notification');
+		logger.warn('[Notifications] Missing JIRA credentials in DB, skipping timeout notification');
 		return;
 	}
 
@@ -178,9 +179,9 @@ async function notifyJiraTimeout(job: JiraJob, info: TimeoutInfo): Promise<void>
 	});
 
 	if (!response.ok) {
-		console.warn('[Notifications] JIRA comment failed:', response.status, await response.text());
+		logger.warn('[Notifications] JIRA comment failed:', response.status, await response.text());
 	} else {
-		console.log('[Notifications] JIRA timeout comment posted for issue:', job.issueKey);
+		logger.info('[Notifications] JIRA timeout comment posted for issue:', job.issueKey);
 	}
 }
 
@@ -197,9 +198,9 @@ export async function notifyTimeout(job: CascadeJob, info: TimeoutInfo): Promise
 		} else if (job.type === 'jira') {
 			await notifyJiraTimeout(job, info);
 		} else {
-			console.warn('[Notifications] Unknown job type, skipping notification');
+			logger.warn('[Notifications] Unknown job type, skipping notification');
 		}
 	} catch (err) {
-		console.error('[Notifications] Failed to send timeout notification:', String(err));
+		logger.error('[Notifications] Failed to send timeout notification:', String(err));
 	}
 }

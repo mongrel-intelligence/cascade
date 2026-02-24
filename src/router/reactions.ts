@@ -12,58 +12,17 @@ import { getProjectGitHubToken } from '../config/projects.js';
 import { type PersonaIdentities, isCascadeBot } from '../github/personas.js';
 import { trelloClient, withTrelloCredentials } from '../trello/client.js';
 import type { ProjectConfig } from '../types/index.js';
+import { logger } from '../utils/logging.js';
 import { parseRepoFullName } from '../utils/repo.js';
 import {
+	JiraPlatformClient,
+	_resetJiraCloudIdCache,
 	resolveGitHubHeaders,
-	resolveJiraCredentials,
 	resolveTrelloCredentials,
 } from './platformClients.js';
 
-// In-memory JIRA CloudId cache keyed by baseUrl
-const jiraCloudIdCache = new Map<string, string>();
-
-/**
- * Lightweight JIRA cloudId resolver with in-memory cache.
- * Mirrors jiraClient.getCloudId() but uses standalone fetch() with explicit credentials.
- */
-async function getJiraCloudId(
-	baseUrl: string,
-	email: string,
-	apiToken: string,
-): Promise<string | null> {
-	const cached = jiraCloudIdCache.get(baseUrl);
-	if (cached) return cached;
-
-	const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
-	let response: Response;
-	try {
-		response = await fetch(`${baseUrl}/_edge/tenant_info`, {
-			headers: { Authorization: `Basic ${auth}` },
-		});
-	} catch (err) {
-		console.warn('[Reactions] Failed to fetch JIRA cloudId:', String(err));
-		return null;
-	}
-
-	if (!response.ok) {
-		console.warn('[Reactions] JIRA tenant_info returned', response.status);
-		return null;
-	}
-
-	const data = (await response.json()) as { cloudId?: string };
-	if (!data.cloudId) {
-		console.warn('[Reactions] JIRA tenant_info missing cloudId');
-		return null;
-	}
-
-	jiraCloudIdCache.set(baseUrl, data.cloudId);
-	return data.cloudId;
-}
-
-/** @internal Visible for testing only */
-export function _resetJiraCloudIdCache(): void {
-	jiraCloudIdCache.clear();
-}
+/** @internal Visible for testing only — re-exported from JiraPlatformClient */
+export { _resetJiraCloudIdCache };
 
 // ---------------------------------------------------------------------------
 // Platform-specific reaction senders
@@ -80,7 +39,7 @@ async function sendTrelloReaction(projectId: string, payload: unknown): Promise<
 
 	const creds = await resolveTrelloCredentials(projectId);
 	if (!creds) {
-		console.warn('[Reactions] Missing Trello credentials, skipping reaction');
+		logger.warn('[Reactions] Missing Trello credentials, skipping reaction');
 		return;
 	}
 
@@ -90,9 +49,9 @@ async function sendTrelloReaction(projectId: string, payload: unknown): Promise<
 		await withTrelloCredentials({ apiKey: creds.apiKey, token: creds.token }, async () => {
 			await trelloClient.addActionReaction(actionId, emoji);
 		});
-		console.log('[Reactions] Trello reaction sent for action:', actionId);
+		logger.info('[Reactions] Trello reaction sent for action:', actionId);
 	} catch (err) {
-		console.warn('[Reactions] Trello reaction failed:', String(err));
+		logger.warn('[Reactions] Trello reaction failed:', String(err));
 	}
 }
 
@@ -122,7 +81,7 @@ async function sendGitHubReaction(
 
 	// Only react if we have persona identities
 	if (!personaIdentities) {
-		console.log('[Reactions] No persona identities provided, skipping GitHub reaction');
+		logger.info('[Reactions] No persona identities provided, skipping GitHub reaction');
 		return;
 	}
 
@@ -131,7 +90,7 @@ async function sendGitHubReaction(
 		| string
 		| undefined;
 	if (commenter && isCascadeBot(commenter, personaIdentities)) {
-		console.log('[Reactions] Skipping GitHub reaction: comment is from a CASCADE bot', {
+		logger.info('[Reactions] Skipping GitHub reaction: comment is from a CASCADE bot', {
 			commenter,
 		});
 		return;
@@ -141,7 +100,7 @@ async function sendGitHubReaction(
 	const body = comment.body as string | undefined;
 	const mentionRegex = new RegExp(`@${personaIdentities.implementer}\\b`, 'i');
 	if (!body || !mentionRegex.test(body)) {
-		console.log('[Reactions] Skipping GitHub reaction: no @implementer mention in comment body');
+		logger.info('[Reactions] Skipping GitHub reaction: no @implementer mention in comment body');
 		return;
 	}
 
@@ -150,7 +109,7 @@ async function sendGitHubReaction(
 	if (!commentType) return;
 
 	if (!project) {
-		console.warn('[Reactions] No project provided, skipping GitHub reaction', {
+		logger.warn('[Reactions] No project provided, skipping GitHub reaction', {
 			repoFullName,
 		});
 		return;
@@ -160,7 +119,7 @@ async function sendGitHubReaction(
 	try {
 		githubToken = await getProjectGitHubToken(project);
 	} catch {
-		console.warn('[Reactions] Missing GitHub token, skipping reaction');
+		logger.warn('[Reactions] Missing GitHub token, skipping reaction');
 		return;
 	}
 
@@ -175,9 +134,9 @@ async function sendGitHubReaction(
 	});
 
 	if (!response.ok) {
-		console.warn('[Reactions] GitHub reaction failed:', response.status, await response.text());
+		logger.warn('[Reactions] GitHub reaction failed:', response.status, await response.text());
 	} else {
-		console.log('[Reactions] GitHub reaction sent for comment:', commentId);
+		logger.info('[Reactions] GitHub reaction sent for comment:', commentId);
 	}
 }
 
@@ -197,37 +156,8 @@ async function sendJiraReaction(projectId: string, payload: unknown): Promise<vo
 
 	if (!issueId || !commentId) return;
 
-	const creds = await resolveJiraCredentials(projectId);
-	if (!creds) {
-		console.warn('[Reactions] Missing JIRA credentials, skipping reaction');
-		return;
-	}
-
-	// Try the reactions API first
-	const cloudId = await getJiraCloudId(creds.baseUrl, creds.email, creds.apiToken);
-	if (cloudId) {
-		const emojiId = 'atlassian-thought_balloon';
-		const ari = `ari%3Acloud%3Ajira%3A${cloudId}%3Acomment%2F${issueId}%2F${commentId}`;
-		const reactionsUrl = `${creds.baseUrl}/rest/reactions/1.0/reactions/${ari}/${emojiId}`;
-		const reactionResponse = await fetch(reactionsUrl, {
-			method: 'PUT',
-			headers: {
-				Authorization: `Basic ${creds.auth}`,
-				'Content-Type': 'application/json',
-			},
-		});
-
-		if (reactionResponse.ok) {
-			console.log('[Reactions] JIRA reaction sent for comment:', commentId);
-			return;
-		}
-
-		console.warn(
-			'[Reactions] JIRA reactions API failed:',
-			reactionResponse.status,
-			'— skipping (no fallback to avoid webhook loops)',
-		);
-	}
+	const client = new JiraPlatformClient(projectId);
+	await client.postReaction('', { issueId, commentId });
 }
 
 // ---------------------------------------------------------------------------
@@ -261,6 +191,6 @@ export async function sendAcknowledgeReaction(
 			await sendJiraReaction(projectId, payload);
 		}
 	} catch (err) {
-		console.error('[Reactions] Unexpected error sending reaction:', String(err));
+		logger.error('[Reactions] Unexpected error sending reaction:', String(err));
 	}
 }

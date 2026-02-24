@@ -24,6 +24,15 @@ vi.mock('../../../src/config/provider.js', () => ({
 	getOrgCredential: vi.fn(),
 }));
 
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+	},
+}));
+
 vi.mock('../../../src/config/customModels.js', () => ({
 	CUSTOM_MODELS: [],
 }));

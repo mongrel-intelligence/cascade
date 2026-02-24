@@ -14,6 +14,16 @@ vi.mock('../../../src/sentry.js', () => ({
 	captureException: vi.fn(),
 }));
 
+// Mock logger
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+	},
+}));
+
 // ---------------------------------------------------------------------------
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
@@ -21,9 +31,11 @@ vi.mock('../../../src/sentry.js', () => ({
 import { Worker } from 'bullmq';
 import { createQueueWorker, parseRedisUrl } from '../../../src/router/bullmq-workers.js';
 import { captureException } from '../../../src/sentry.js';
+import { logger } from '../../../src/utils/logging.js';
 
 const MockWorker = vi.mocked(Worker);
 const mockCaptureException = vi.mocked(captureException);
+const mockLogger = vi.mocked(logger);
 
 beforeEach(() => {
 	MockWorker.mockClear();
@@ -106,7 +118,7 @@ describe('createQueueWorker', () => {
 	});
 
 	it('completed handler logs with label', () => {
-		const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+		mockLogger.info.mockReset();
 		const worker = createQueueWorker(baseConfig);
 		const mockOn = vi.mocked(worker.on);
 
@@ -116,15 +128,14 @@ describe('createQueueWorker', () => {
 		const completedHandler = completedCall?.[1] as (job: { id: string }) => void;
 		completedHandler({ id: 'job-42' });
 
-		expect(logSpy).toHaveBeenCalledWith(
+		expect(mockLogger.info).toHaveBeenCalledWith(
 			expect.stringContaining('Test job'),
 			expect.objectContaining({ jobId: 'job-42' }),
 		);
-		logSpy.mockRestore();
 	});
 
 	it('failed handler logs error and calls captureException', () => {
-		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		mockLogger.error.mockReset();
 		const worker = createQueueWorker(baseConfig);
 		const mockOn = vi.mocked(worker.on);
 
@@ -134,7 +145,7 @@ describe('createQueueWorker', () => {
 		const err = new Error('dispatch failed');
 		failedHandler({ id: 'job-7' }, err);
 
-		expect(errorSpy).toHaveBeenCalledWith(
+		expect(mockLogger.error).toHaveBeenCalledWith(
 			expect.stringContaining('Test job'),
 			expect.objectContaining({ jobId: 'job-7' }),
 		);
@@ -144,11 +155,10 @@ describe('createQueueWorker', () => {
 				tags: expect.objectContaining({ queue: 'test-queue' }),
 			}),
 		);
-		errorSpy.mockRestore();
 	});
 
 	it('error handler logs and calls captureException', () => {
-		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		mockLogger.error.mockReset();
 		const worker = createQueueWorker(baseConfig);
 		const mockOn = vi.mocked(worker.on);
 
@@ -158,14 +168,13 @@ describe('createQueueWorker', () => {
 		const err = new Error('worker crashed');
 		errorHandler(err);
 
-		expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Test job'), err);
+		expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('Test job'), err);
 		expect(mockCaptureException).toHaveBeenCalledWith(
 			err,
 			expect.objectContaining({
 				tags: expect.objectContaining({ source: 'bullmq_error', queue: 'test-queue' }),
 			}),
 		);
-		errorSpy.mockRestore();
 	});
 
 	it('uses queue name in Sentry tags for failed handler', () => {

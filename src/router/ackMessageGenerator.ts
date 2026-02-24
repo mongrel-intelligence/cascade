@@ -11,6 +11,7 @@ import { AgentBuilder, LLMist, type ModelSpec } from 'llmist';
 import { INITIAL_MESSAGES } from '../config/agentMessages.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
 import { getOrgCredential, loadConfig } from '../config/provider.js';
+import { logger } from '../utils/logging.js';
 
 // ---------------------------------------------------------------------------
 // System prompt for ack message generation
@@ -196,7 +197,7 @@ export async function generateAckMessage(
 
 		return result.trim();
 	} catch (err) {
-		console.warn('[Router] Ack message generation failed (using static fallback):', String(err));
+		logger.warn('[Router] Ack message generation failed (using static fallback):', String(err));
 		return fallback;
 	} finally {
 		restoreEnv?.();

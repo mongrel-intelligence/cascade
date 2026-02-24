@@ -9,6 +9,7 @@ import type { Job } from 'bullmq';
 import Docker from 'dockerode';
 import { findProjectByRepo, getAllProjectCredentials } from '../config/provider.js';
 import { captureException } from '../sentry.js';
+import { logger } from '../utils/logging.js';
 import { routerConfig } from './config.js';
 import { notifyTimeout } from './notifications.js';
 import type { CascadeJob } from './queue.js';
@@ -85,7 +86,7 @@ export async function buildWorkerEnv(job: Job<CascadeJob>): Promise<string[]> {
 			}
 			env.push(`CASCADE_CREDENTIAL_KEYS=${Object.keys(secrets).join(',')}`);
 		} catch (err) {
-			console.warn('[WorkerManager] Failed to resolve credentials for project:', {
+			logger.warn('[WorkerManager] Failed to resolve credentials for project:', {
 				projectId,
 				error: String(err),
 			});
@@ -121,7 +122,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 	const workerEnv = await buildWorkerEnv(job);
 	const hasCredentials = workerEnv.some((e) => e.startsWith('CASCADE_CREDENTIAL_KEYS='));
 
-	console.log('[WorkerManager] Spawning worker:', {
+	logger.info('[WorkerManager] Spawning worker:', {
 		jobId,
 		type: job.data.type,
 		containerName,
@@ -152,7 +153,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 		const startedAt = new Date();
 		const timeoutHandle = setTimeout(() => {
 			const durationMs = Date.now() - startedAt.getTime();
-			console.warn('[WorkerManager] Worker timeout, killing:', {
+			logger.warn('[WorkerManager] Worker timeout, killing:', {
 				jobId,
 				durationMs,
 			});
@@ -162,7 +163,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 				level: 'warning',
 			});
 			killWorker(jobId).catch((err) => {
-				console.error('[WorkerManager] Failed to kill timed-out worker:', err);
+				logger.error('[WorkerManager] Failed to kill timed-out worker:', err);
 			});
 		}, routerConfig.workerTimeoutMs);
 
@@ -175,7 +176,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 			job: job.data,
 		});
 
-		console.log('[WorkerManager] Worker started:', {
+		logger.info('[WorkerManager] Worker started:', {
 			jobId,
 			containerId: container.id.slice(0, 12),
 		});
@@ -195,7 +196,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 					if (logText.trim()) {
 						const lines = logText.trim().split('\n');
 						const tail = lines.slice(-50).join('\n');
-						console.log(
+						logger.info(
 							`[WorkerManager] Worker logs (last ${Math.min(lines.length, 50)} of ${lines.length} lines):\n${tail}`,
 						);
 					}
@@ -209,14 +210,14 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 						extra: { jobId, statusCode: result.StatusCode },
 					});
 				}
-				console.log('[WorkerManager] Worker exited:', {
+				logger.info('[WorkerManager] Worker exited:', {
 					jobId,
 					statusCode: result.StatusCode,
 				});
 				cleanupWorker(jobId);
 			})
 			.catch((err) => {
-				console.error('[WorkerManager] Error waiting for container:', err);
+				logger.error('[WorkerManager] Error waiting for container:', err);
 				captureException(err, {
 					tags: { source: 'worker_wait', jobType: job.data.type },
 					extra: { jobId },
@@ -224,7 +225,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 				cleanupWorker(jobId);
 			});
 	} catch (err) {
-		console.error('[WorkerManager] Failed to spawn worker:', {
+		logger.error('[WorkerManager] Failed to spawn worker:', {
 			jobId,
 			error: String(err),
 		});
@@ -249,10 +250,10 @@ export async function killWorker(jobId: string): Promise<void> {
 	try {
 		const container = docker.getContainer(worker.containerId);
 		await container.stop({ t: 15 });
-		console.log('[WorkerManager] Worker stopped:', { jobId });
+		logger.info('[WorkerManager] Worker stopped:', { jobId });
 	} catch (err) {
 		// Container might already be stopped
-		console.warn('[WorkerManager] Error stopping worker (may already be stopped):', {
+		logger.warn('[WorkerManager] Error stopping worker (may already be stopped):', {
 			jobId,
 			error: String(err),
 		});
@@ -265,7 +266,7 @@ export async function killWorker(jobId: string): Promise<void> {
 		startedAt: worker.startedAt,
 		durationMs,
 	}).catch((err) => {
-		console.error('[WorkerManager] Timeout notification error:', String(err));
+		logger.error('[WorkerManager] Timeout notification error:', String(err));
 	});
 
 	cleanupWorker(jobId);
@@ -279,7 +280,7 @@ export function cleanupWorker(jobId: string): void {
 	if (worker) {
 		clearTimeout(worker.timeoutHandle);
 		activeWorkers.delete(jobId);
-		console.log('[WorkerManager] Worker cleaned up:', {
+		logger.info('[WorkerManager] Worker cleaned up:', {
 			jobId,
 			activeWorkers: activeWorkers.size,
 		});
@@ -310,7 +311,7 @@ export function getActiveWorkers(): Array<{ jobId: string; startedAt: Date }> {
  */
 export function detachAll(): void {
 	if (activeWorkers.size > 0) {
-		console.log('[WorkerManager] Detaching from active workers (will continue running):', {
+		logger.info('[WorkerManager] Detaching from active workers (will continue running):', {
 			count: activeWorkers.size,
 			workers: Array.from(activeWorkers.keys()),
 		});

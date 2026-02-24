@@ -19,15 +19,27 @@ vi.mock('../../../src/config/configCache.js', () => ({
 	},
 }));
 
+// Mock logger
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+	},
+}));
+
 import { findProjectByRepo, getIntegrationCredential } from '../../../src/config/provider.js';
 import {
 	_clearReviewerUsernameCache,
 	addEyesReactionToPR,
 } from '../../../src/router/pre-actions.js';
 import type { GitHubJob } from '../../../src/router/queue.js';
+import { logger } from '../../../src/utils/logging.js';
 
 const mockGetIntegrationCredential = vi.mocked(getIntegrationCredential);
 const mockFindProjectByRepo = vi.mocked(findProjectByRepo);
+const mockLogger = vi.mocked(logger);
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -66,9 +78,9 @@ describe('addEyesReactionToPR', () => {
 		// Reset username cache between tests
 		_clearReviewerUsernameCache();
 		mockFetch.mockReset();
-		vi.spyOn(console, 'log').mockImplementation(() => {});
-		vi.spyOn(console, 'warn').mockImplementation(() => {});
-		vi.spyOn(console, 'error').mockImplementation(() => {});
+		mockLogger.info.mockReset();
+		mockLogger.warn.mockReset();
+		mockLogger.error.mockReset();
 
 		mockFindProjectByRepo.mockResolvedValue(mockProject);
 		mockGetIntegrationCredential.mockResolvedValue('test-reviewer-token');
@@ -119,7 +131,7 @@ describe('addEyesReactionToPR', () => {
 		const body = JSON.parse(reactOptions.body);
 		expect(body.content).toBe('eyes');
 
-		expect(console.log).toHaveBeenCalledWith(
+		expect(mockLogger.info).toHaveBeenCalledWith(
 			expect.stringContaining('Added eyes reaction to PR:'),
 			42,
 		);
@@ -148,7 +160,7 @@ describe('addEyesReactionToPR', () => {
 
 		// Only 2 calls: /user and /reviews — no /reactions
 		expect(mockFetch).toHaveBeenCalledTimes(2);
-		expect(console.log).toHaveBeenCalledWith(
+		expect(mockLogger.info).toHaveBeenCalledWith(
 			expect.stringContaining('Reviewer has prior reviews on PR, skipping eyes reaction'),
 			42,
 		);
@@ -176,7 +188,7 @@ describe('addEyesReactionToPR', () => {
 		await addEyesReactionToPR(job);
 
 		expect(mockFetch).toHaveBeenCalledTimes(2);
-		expect(console.log).toHaveBeenCalledWith(
+		expect(mockLogger.info).toHaveBeenCalledWith(
 			expect.stringContaining('Reviewer has prior reviews on PR, skipping eyes reaction'),
 			42,
 		);
@@ -239,7 +251,7 @@ describe('addEyesReactionToPR', () => {
 
 		// No fetch calls since project not found
 		expect(mockFetch).not.toHaveBeenCalled();
-		expect(console.warn).toHaveBeenCalledWith(
+		expect(mockLogger.warn).toHaveBeenCalledWith(
 			expect.stringContaining('No project found for repo, skipping eyes reaction'),
 			expect.objectContaining({ repoFullName: 'owner/repo' }),
 		);
@@ -252,7 +264,7 @@ describe('addEyesReactionToPR', () => {
 		await addEyesReactionToPR(job);
 
 		expect(mockFetch).not.toHaveBeenCalled();
-		expect(console.warn).toHaveBeenCalledWith(
+		expect(mockLogger.warn).toHaveBeenCalledWith(
 			expect.stringContaining('Missing GITHUB_TOKEN_REVIEWER, skipping eyes reaction'),
 		);
 	});
@@ -267,7 +279,7 @@ describe('addEyesReactionToPR', () => {
 		await addEyesReactionToPR(job);
 
 		expect(mockFetch).toHaveBeenCalledTimes(1);
-		expect(console.warn).toHaveBeenCalledWith(
+		expect(mockLogger.warn).toHaveBeenCalledWith(
 			expect.stringContaining('Failed to resolve reviewer username:'),
 			401,
 		);
@@ -290,7 +302,7 @@ describe('addEyesReactionToPR', () => {
 		await addEyesReactionToPR(job);
 
 		expect(mockFetch).toHaveBeenCalledTimes(2);
-		expect(console.warn).toHaveBeenCalledWith(
+		expect(mockLogger.warn).toHaveBeenCalledWith(
 			expect.stringContaining('Failed to fetch PR reviews:'),
 			403,
 			'Forbidden',
@@ -318,7 +330,7 @@ describe('addEyesReactionToPR', () => {
 		await addEyesReactionToPR(job);
 
 		expect(mockFetch).toHaveBeenCalledTimes(3);
-		expect(console.warn).toHaveBeenCalledWith(
+		expect(mockLogger.warn).toHaveBeenCalledWith(
 			expect.stringContaining('Failed to add eyes reaction:'),
 			422,
 			'Validation Failed',

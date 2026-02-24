@@ -27,6 +27,16 @@ vi.mock('../../../src/router/config.js', () => ({
 	},
 }));
 
+// Mock logger
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+	},
+}));
+
 // ---------------------------------------------------------------------------
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
@@ -44,6 +54,7 @@ import {
 	getActiveWorkerCount as wmGetActiveWorkerCount,
 	getActiveWorkers as wmGetActiveWorkers,
 } from '../../../src/router/worker-manager.js';
+import { logger } from '../../../src/utils/logging.js';
 
 const mockCreateQueueWorker = vi.mocked(createQueueWorker);
 const mockParseRedisUrl = vi.mocked(parseRedisUrl);
@@ -51,6 +62,7 @@ const mockSpawnWorker = vi.mocked(spawnWorker);
 const mockGetActiveWorkerCount = vi.mocked(getActiveWorkerCount);
 const mockGetActiveWorkers = vi.mocked(getActiveWorkers);
 const mockDetachAll = vi.mocked(detachAll);
+const mockLogger = vi.mocked(logger);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -83,8 +95,8 @@ describe('re-exports', () => {
 
 describe('startWorkerProcessor', () => {
 	beforeEach(async () => {
-		vi.spyOn(console, 'log').mockImplementation(() => {});
-		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		mockLogger.info.mockReset();
+		mockLogger.warn.mockReset();
 		mockCreateQueueWorker.mockReturnValue(makeMockWorker() as never);
 		// Ensure clean state
 		await stopWorkerProcessor();
@@ -130,7 +142,7 @@ describe('startWorkerProcessor', () => {
 		startWorkerProcessor(); // second call should warn and return early
 
 		expect(mockCreateQueueWorker).toHaveBeenCalledTimes(2); // still only 2 workers total
-		expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('already started'));
+		expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('already started'));
 	});
 
 	it('passes a processFn that checks capacity before spawning', async () => {
@@ -172,8 +184,8 @@ describe('startWorkerProcessor', () => {
 
 describe('stopWorkerProcessor', () => {
 	beforeEach(async () => {
-		vi.spyOn(console, 'log').mockImplementation(() => {});
-		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		mockLogger.info.mockReset();
+		mockLogger.warn.mockReset();
 		mockCreateQueueWorker.mockReturnValue(makeMockWorker() as never);
 		await stopWorkerProcessor(); // ensure clean state
 		mockCreateQueueWorker.mockClear();
@@ -218,6 +230,6 @@ describe('stopWorkerProcessor', () => {
 		startWorkerProcessor();
 		await stopWorkerProcessor();
 
-		expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Stopped'));
+		expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Stopped'));
 	});
 });

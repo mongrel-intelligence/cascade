@@ -33,6 +33,16 @@ vi.mock('../../../src/trello/client.js', () => ({
 	},
 }));
 
+// Mock logger
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+	},
+}));
+
 import { getProjectGitHubToken } from '../../../src/config/projects.js';
 import {
 	findProjectById,
@@ -43,6 +53,7 @@ import type { PersonaIdentities } from '../../../src/github/personas.js';
 import { _resetJiraCloudIdCache, sendAcknowledgeReaction } from '../../../src/router/reactions.js';
 import { trelloClient, withTrelloCredentials } from '../../../src/trello/client.js';
 import type { ProjectConfig } from '../../../src/types/index.js';
+import { logger } from '../../../src/utils/logging.js';
 
 const mockGetIntegrationCredential = vi.mocked(getIntegrationCredential);
 const mockGetProjectGitHubToken = vi.mocked(getProjectGitHubToken);
@@ -50,6 +61,7 @@ const mockFindProjectByRepo = vi.mocked(findProjectByRepo);
 const mockFindProjectById = vi.mocked(findProjectById);
 const mockAddActionReaction = vi.mocked(trelloClient.addActionReaction);
 const mockWithTrelloCredentials = vi.mocked(withTrelloCredentials);
+const mockLogger = vi.mocked(logger);
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -135,9 +147,9 @@ describe('sendAcknowledgeReaction', () => {
 		mockWithTrelloCredentials.mockReset();
 		mockWithTrelloCredentials.mockImplementation(async (_creds, fn) => fn());
 		_resetJiraCloudIdCache();
-		vi.spyOn(console, 'log').mockImplementation(() => {});
-		vi.spyOn(console, 'warn').mockImplementation(() => {});
-		vi.spyOn(console, 'error').mockImplementation(() => {});
+		mockLogger.info.mockReset();
+		mockLogger.warn.mockReset();
+		mockLogger.error.mockReset();
 
 		// Default credential mocks
 		mockGetIntegrationCredential.mockImplementation(async (_projectId, category, role) => {
@@ -207,7 +219,7 @@ describe('sendAcknowledgeReaction', () => {
 			await sendAcknowledgeReaction('trello', PROJECT_ID, TRELLO_COMMENT_PAYLOAD);
 
 			expect(mockAddActionReaction).not.toHaveBeenCalled();
-			expect(console.warn).toHaveBeenCalledWith(
+			expect(mockLogger.warn).toHaveBeenCalledWith(
 				expect.stringContaining('Missing Trello credentials'),
 			);
 		});
@@ -221,7 +233,7 @@ describe('sendAcknowledgeReaction', () => {
 				sendAcknowledgeReaction('trello', PROJECT_ID, TRELLO_COMMENT_PAYLOAD),
 			).resolves.toBeUndefined();
 
-			expect(console.warn).toHaveBeenCalledWith(
+			expect(mockLogger.warn).toHaveBeenCalledWith(
 				expect.stringContaining('Trello reaction failed'),
 				expect.stringContaining('401'),
 			);
@@ -286,7 +298,7 @@ describe('sendAcknowledgeReaction', () => {
 			await sendAcknowledgeReaction('github', REPO_FULL_NAME, GITHUB_ISSUE_COMMENT_PAYLOAD);
 
 			expect(mockFetch).not.toHaveBeenCalled();
-			expect(console.log).toHaveBeenCalledWith(
+			expect(mockLogger.info).toHaveBeenCalledWith(
 				expect.stringContaining('No persona identities provided'),
 			);
 		});
@@ -309,7 +321,9 @@ describe('sendAcknowledgeReaction', () => {
 			);
 
 			expect(mockFetch).not.toHaveBeenCalled();
-			expect(console.log).toHaveBeenCalledWith(expect.stringContaining('no @implementer mention'));
+			expect(mockLogger.info).toHaveBeenCalledWith(
+				expect.stringContaining('no @implementer mention'),
+			);
 		});
 
 		it('skips reaction when comment author is a CASCADE bot (bot self-comment)', async () => {
@@ -331,7 +345,7 @@ describe('sendAcknowledgeReaction', () => {
 			);
 
 			expect(mockFetch).not.toHaveBeenCalled();
-			expect(console.log).toHaveBeenCalledWith(
+			expect(mockLogger.info).toHaveBeenCalledWith(
 				expect.stringContaining('comment is from a CASCADE bot'),
 				expect.objectContaining({ commenter: 'implementer-bot' }),
 			);
@@ -410,7 +424,7 @@ describe('sendAcknowledgeReaction', () => {
 			);
 
 			expect(mockFetch).not.toHaveBeenCalled();
-			expect(console.warn).toHaveBeenCalledWith(
+			expect(mockLogger.warn).toHaveBeenCalledWith(
 				expect.stringContaining('No project provided'),
 				expect.objectContaining({ repoFullName: REPO_FULL_NAME }),
 			);
@@ -428,7 +442,7 @@ describe('sendAcknowledgeReaction', () => {
 			);
 
 			expect(mockFetch).not.toHaveBeenCalled();
-			expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('Missing GitHub token'));
+			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Missing GitHub token'));
 		});
 
 		it('logs warning on GitHub API error but does not throw', async () => {
@@ -448,7 +462,7 @@ describe('sendAcknowledgeReaction', () => {
 				),
 			).resolves.toBeUndefined();
 
-			expect(console.warn).toHaveBeenCalledWith(
+			expect(mockLogger.warn).toHaveBeenCalledWith(
 				expect.stringContaining('GitHub reaction failed'),
 				403,
 				'Forbidden',
@@ -573,7 +587,7 @@ describe('sendAcknowledgeReaction', () => {
 			await sendAcknowledgeReaction('jira', PROJECT_ID, JIRA_COMMENT_PAYLOAD);
 
 			expect(mockFetch).not.toHaveBeenCalled();
-			expect(console.warn).toHaveBeenCalledWith(
+			expect(mockLogger.warn).toHaveBeenCalledWith(
 				expect.stringContaining('Missing JIRA credentials'),
 			);
 		});
