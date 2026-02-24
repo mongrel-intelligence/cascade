@@ -24,7 +24,7 @@ import type { TriggerRegistry } from '../../triggers/registry.js';
 import type { TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { extractGitHubContext, generateAckMessage } from '../ackMessageGenerator.js';
-import { postGitHubAck, resolveGitHubTokenForAck } from '../acknowledgments.js';
+import { postGitHubAck, resolveGitHubTokenForAckByAgent } from '../acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from '../config.js';
 import { extractPRNumber } from '../notifications.js';
 import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
@@ -189,7 +189,10 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 		try {
 			const context = extractGitHubContext(payload, event.eventType);
 			const message = await generateAckMessage(agentType, context, project.id);
-			const resolved = await resolveGitHubTokenForAck((event as GitHubParsedEvent).repoFullName);
+			const resolved = await resolveGitHubTokenForAckByAgent(
+				(event as GitHubParsedEvent).repoFullName,
+				agentType,
+			);
 			if (resolved) {
 				const tempJob = {
 					eventType: event.eventType,

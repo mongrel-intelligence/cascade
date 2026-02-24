@@ -169,6 +169,46 @@ describe('extractGitHubContext', () => {
 		expect(extractGitHubContext({}, 'check_suite')).toBe('');
 	});
 
+	it('extracts PR number and branch from check_suite event', () => {
+		const payload = {
+			check_suite: {
+				head_branch: 'feat/dark-mode',
+				pull_requests: [
+					{
+						number: 42,
+						head: { ref: 'feat/dark-mode' },
+					},
+				],
+			},
+		};
+		const result = extractGitHubContext(payload, 'check_suite');
+		expect(result).toContain('PR: #42');
+		expect(result).toContain('Branch: feat/dark-mode');
+	});
+
+	it('falls back to suite head_branch when check_suite has no pull_requests', () => {
+		const payload = {
+			check_suite: {
+				head_branch: 'feat/new-feature',
+				pull_requests: [],
+			},
+		};
+		const result = extractGitHubContext(payload, 'check_suite');
+		expect(result).toBe('Branch: feat/new-feature');
+	});
+
+	it('does not use check_suite fallback when pull_request is present at top level', () => {
+		const payload = {
+			pull_request: { title: 'feat: top-level PR' },
+			check_suite: {
+				pull_requests: [{ number: 99, head: { ref: 'other-branch' } }],
+			},
+		};
+		const result = extractGitHubContext(payload, 'check_suite');
+		expect(result).toBe('PR: feat: top-level PR');
+		expect(result).not.toContain('#99');
+	});
+
 	it('truncates long context', () => {
 		const longTitle = 'B'.repeat(600);
 		const payload = { pull_request: { title: longTitle } };

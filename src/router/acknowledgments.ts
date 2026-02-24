@@ -11,7 +11,7 @@
  */
 
 import { getProjectGitHubToken } from '../config/projects.js';
-import { findProjectByRepo } from '../config/provider.js';
+import { findProjectByRepo, getIntegrationCredential } from '../config/provider.js';
 import { markdownToAdf } from '../pm/jira/adf.js';
 import type { ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
@@ -205,6 +205,33 @@ export async function resolveGitHubTokenForAck(
 	if (!project) return null;
 
 	try {
+		const token = await getProjectGitHubToken(project);
+		return { token, project };
+	} catch {
+		logger.warn('[Ack] Missing GitHub token for repo:', repoFullName);
+		return null;
+	}
+}
+
+/**
+ * Resolve a persona-appropriate GitHub token for ack comments.
+ * Returns the reviewer token for `review` agents so the ack comment
+ * is posted by the same persona that will run the agent (and can
+ * later update it via ProgressMonitor). All other agents use the
+ * implementer token.
+ */
+export async function resolveGitHubTokenForAckByAgent(
+	repoFullName: string,
+	agentType: string,
+): Promise<{ token: string; project: ProjectConfig } | null> {
+	const project = await findProjectByRepo(repoFullName);
+	if (!project) return null;
+
+	try {
+		if (agentType === 'review') {
+			const token = await getIntegrationCredential(project.id, 'scm', 'reviewer_token');
+			return { token, project };
+		}
 		const token = await getProjectGitHubToken(project);
 		return { token, project };
 	} catch {
