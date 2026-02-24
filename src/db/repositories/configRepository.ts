@@ -148,9 +148,9 @@ function mapProjectRow(
 		project.github = { triggers: githubTriggers };
 	}
 
-	if (row.agentBackend) {
+	if (row.agentBackend || Object.keys(backends).length > 0) {
 		project.agentBackend = {
-			default: row.agentBackend,
+			default: row.agentBackend ?? undefined,
 			overrides: backends,
 			subscriptionCostZero: row.subscriptionCostZero ?? false,
 		};

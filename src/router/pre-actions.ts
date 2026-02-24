@@ -1,4 +1,5 @@
 import { findProjectByRepo, getIntegrationCredential } from '../config/provider.js';
+import { logger } from '../utils/logging.js';
 import { parseRepoFullName } from '../utils/repo.js';
 import { resolveGitHubHeaders } from './platformClients.js';
 import type { GitHubJob } from './queue.js';
@@ -30,7 +31,7 @@ async function getReviewerUsername(projectId: string, token: string): Promise<st
 	});
 
 	if (!response.ok) {
-		console.warn('[PreActions] Failed to resolve reviewer username:', response.status);
+		logger.warn('[PreActions] Failed to resolve reviewer username:', response.status);
 		return null;
 	}
 
@@ -68,7 +69,7 @@ export async function addEyesReactionToPR(job: GitHubJob): Promise<void> {
 	// Resolve project
 	const project = await findProjectByRepo(repoFullName);
 	if (!project) {
-		console.warn('[PreActions] No project found for repo, skipping eyes reaction', {
+		logger.warn('[PreActions] No project found for repo, skipping eyes reaction', {
 			repoFullName,
 		});
 		return;
@@ -79,14 +80,14 @@ export async function addEyesReactionToPR(job: GitHubJob): Promise<void> {
 	try {
 		reviewerToken = await getIntegrationCredential(project.id, 'scm', 'reviewer_token');
 	} catch {
-		console.warn('[PreActions] Missing GITHUB_TOKEN_REVIEWER, skipping eyes reaction');
+		logger.warn('[PreActions] Missing GITHUB_TOKEN_REVIEWER, skipping eyes reaction');
 		return;
 	}
 
 	// Resolve reviewer username (cached)
 	const reviewerUsername = await getReviewerUsername(project.id, reviewerToken);
 	if (!reviewerUsername) {
-		console.warn('[PreActions] Could not resolve reviewer username, skipping eyes reaction');
+		logger.warn('[PreActions] Could not resolve reviewer username, skipping eyes reaction');
 		return;
 	}
 
@@ -98,7 +99,7 @@ export async function addEyesReactionToPR(job: GitHubJob): Promise<void> {
 	});
 
 	if (!reviewsResponse.ok) {
-		console.warn(
+		logger.warn(
 			'[PreActions] Failed to fetch PR reviews:',
 			reviewsResponse.status,
 			await reviewsResponse.text(),
@@ -118,7 +119,7 @@ export async function addEyesReactionToPR(job: GitHubJob): Promise<void> {
 	});
 
 	if (priorReviews.length > 0) {
-		console.log('[PreActions] Reviewer has prior reviews on PR, skipping eyes reaction', prNumber);
+		logger.info('[PreActions] Reviewer has prior reviews on PR, skipping eyes reaction', prNumber);
 		return;
 	}
 
@@ -131,12 +132,12 @@ export async function addEyesReactionToPR(job: GitHubJob): Promise<void> {
 	});
 
 	if (!reactionResponse.ok) {
-		console.warn(
+		logger.warn(
 			'[PreActions] Failed to add eyes reaction:',
 			reactionResponse.status,
 			await reactionResponse.text(),
 		);
 	} else {
-		console.log('[PreActions] Added eyes reaction to PR:', prNumber);
+		logger.info('[PreActions] Added eyes reaction to PR:', prNumber);
 	}
 }

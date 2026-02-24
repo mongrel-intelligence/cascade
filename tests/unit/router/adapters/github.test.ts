@@ -20,7 +20,7 @@ vi.mock('../../../../src/router/reactions.js', () => ({
 }));
 vi.mock('../../../../src/router/acknowledgments.js', () => ({
 	postGitHubAck: vi.fn(),
-	resolveGitHubTokenForAck: vi.fn(),
+	resolveGitHubTokenForAckByAgent: vi.fn(),
 }));
 vi.mock('../../../../src/router/notifications.js', () => ({
 	extractPRNumber: vi.fn(),
@@ -70,7 +70,10 @@ vi.mock('../../../../src/sentry.js', () => ({
 
 import { findProjectByRepo } from '../../../../src/config/provider.js';
 import { isCascadeBot, resolvePersonaIdentities } from '../../../../src/github/personas.js';
-import { postGitHubAck, resolveGitHubTokenForAck } from '../../../../src/router/acknowledgments.js';
+import {
+	postGitHubAck,
+	resolveGitHubTokenForAckByAgent,
+} from '../../../../src/router/acknowledgments.js';
 import { GitHubRouterAdapter, injectEventType } from '../../../../src/router/adapters/github.js';
 import { loadProjectConfig } from '../../../../src/router/config.js';
 import type { RouterProjectConfig } from '../../../../src/router/config.js';
@@ -313,7 +316,7 @@ describe('GitHubRouterAdapter', () => {
 
 	describe('postAck', () => {
 		it('posts ack and returns AckResult with commentId and message', async () => {
-			vi.mocked(resolveGitHubTokenForAck).mockResolvedValue({
+			vi.mocked(resolveGitHubTokenForAckByAgent).mockResolvedValue({
 				token: 'ghp_test',
 				project: { id: 'p1' },
 			} as never);

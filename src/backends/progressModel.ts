@@ -5,7 +5,7 @@
  * to produce a concise progress update based on accumulated agent state.
  */
 
-import { AgentBuilder, LLMist, type ModelSpec } from 'llmist';
+import { LLMist, type ModelSpec } from 'llmist';
 
 import { getAgentLabel } from '../config/agentMessages.js';
 import type { Todo } from '../gadgets/todo/storage.js';
@@ -141,24 +141,14 @@ async function callProgressModelOnce(
 	for (let attempt = 0; attempt < 2; attempt++) {
 		const client = new LLMist({ customModels });
 
-		const builder = new AgentBuilder(client)
-			.withModel(model)
-			.withTemperature(0)
-			.withSystem(PROGRESS_SYSTEM_PROMPT)
-			.withMaxIterations(1);
+		const output = await client.text.complete(formatProgressUserPrompt(context), {
+			model,
+			temperature: 0,
+			systemPrompt: PROGRESS_SYSTEM_PROMPT,
+		});
 
-		const agent = builder.ask(formatProgressUserPrompt(context));
-
-		const outputLines: string[] = [];
-		for await (const event of agent.run()) {
-			if (event.type === 'text' && event.content) {
-				outputLines.push(event.content);
-			}
-		}
-
-		const output = outputLines.join('\n').trim();
-		if (output) {
-			return output;
+		if (output.trim()) {
+			return output.trim();
 		}
 
 		// First attempt returned empty — retry after brief delay

@@ -167,6 +167,15 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 			scmProvider: 'github',
 			category: 'scm',
 		},
+		{
+			key: 'prOpened',
+			label: 'PR Opened',
+			description:
+				'Trigger review agent when a new PR is opened (without waiting for CI). Respects Own PRs / External PRs author modes.',
+			defaultValue: false,
+			scmProvider: 'github',
+			category: 'scm',
+		},
 	],
 	'respond-to-review': [
 		{
@@ -174,14 +183,6 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 			label: 'PR Review Submitted',
 			description: 'Trigger respond-to-review when a review with changes requested is submitted.',
 			defaultValue: true,
-			scmProvider: 'github',
-			category: 'scm',
-		},
-		{
-			key: 'prOpened',
-			label: 'PR Opened (opt-in)',
-			description: 'Trigger respond-to-review when a new PR is opened. Default disabled.',
-			defaultValue: false,
 			scmProvider: 'github',
 			category: 'scm',
 		},

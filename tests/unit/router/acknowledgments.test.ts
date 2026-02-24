@@ -25,6 +25,16 @@ vi.mock('../../../src/config/configCache.js', () => ({
 	},
 }));
 
+// Mock logger
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+	},
+}));
+
 import { getProjectGitHubToken } from '../../../src/config/projects.js';
 import {
 	findProjectById,
@@ -41,14 +51,17 @@ import {
 	postJiraAck,
 	postTrelloAck,
 	resolveGitHubTokenForAck,
+	resolveGitHubTokenForAckByAgent,
 	resolveJiraBotAccountId,
 	resolveTrelloBotMemberId,
 } from '../../../src/router/acknowledgments.js';
+import { logger } from '../../../src/utils/logging.js';
 
 const mockGetIntegrationCredential = vi.mocked(getIntegrationCredential);
 const mockGetProjectGitHubToken = vi.mocked(getProjectGitHubToken);
 const mockFindProjectByRepo = vi.mocked(findProjectByRepo);
 const mockFindProjectById = vi.mocked(findProjectById);
+const mockLogger = vi.mocked(logger);
 
 const MOCK_CREDENTIALS: Record<string, string> = {
 	'pm/api_key': 'test-trello-key',
@@ -63,8 +76,9 @@ vi.stubGlobal('fetch', mockFetch);
 
 beforeEach(() => {
 	mockFetch.mockReset();
-	vi.spyOn(console, 'log').mockImplementation(() => {});
-	vi.spyOn(console, 'warn').mockImplementation(() => {});
+	mockLogger.info.mockReset();
+	mockLogger.warn.mockReset();
+	mockLogger.error.mockReset();
 
 	mockGetIntegrationCredential.mockImplementation(async (_projectId, category, role) => {
 		const value = MOCK_CREDENTIALS[`${category}/${role}`];
@@ -139,8 +153,8 @@ describe('postTrelloAck', () => {
 		const result = await postTrelloAck('test', 'card1', 'Hello');
 
 		expect(result).toBeNull();
-		expect(console.warn).toHaveBeenCalledWith(
-			expect.stringContaining('Trello comment failed'),
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('[PlatformClient] Trello comment failed'),
 			401,
 			'Unauthorized',
 		);
@@ -183,8 +197,8 @@ describe('deleteTrelloAck', () => {
 
 		await deleteTrelloAck('test', 'card1', 'comment-123');
 
-		expect(console.warn).toHaveBeenCalledWith(
-			expect.stringContaining('Failed to delete Trello orphan ack'),
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('Failed to delete Trello comment'),
 			expect.any(String),
 		);
 	});
@@ -218,7 +232,7 @@ describe('postGitHubAck', () => {
 		const result = await postGitHubAck('owner/repo', 5, 'Hello', 'ghp_token');
 
 		expect(result).toBeNull();
-		expect(console.warn).toHaveBeenCalledWith(
+		expect(mockLogger.warn).toHaveBeenCalledWith(
 			expect.stringContaining('GitHub comment failed'),
 			403,
 			'Forbidden',
@@ -255,8 +269,8 @@ describe('deleteGitHubAck', () => {
 
 		await deleteGitHubAck('owner/repo', 42, 'ghp_token');
 
-		expect(console.warn).toHaveBeenCalledWith(
-			expect.stringContaining('Failed to delete GitHub orphan ack'),
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('Failed to delete GitHub comment'),
 			expect.any(String),
 		);
 	});
@@ -347,7 +361,7 @@ describe('postJiraAck', () => {
 		const result = await postJiraAck('test', 'PROJ-42', 'Hello');
 
 		expect(result).toBeNull();
-		expect(console.warn).toHaveBeenCalledWith(
+		expect(mockLogger.warn).toHaveBeenCalledWith(
 			expect.stringContaining('JIRA comment failed'),
 			401,
 			'Unauthorized',
@@ -383,7 +397,7 @@ describe('deleteJiraAck', () => {
 
 		await deleteJiraAck('test', 'PROJ-42', 'jira-comment-456');
 
-		expect(console.warn).toHaveBeenCalledWith(
+		expect(mockLogger.warn).toHaveBeenCalledWith(
 			expect.stringContaining('Failed to delete JIRA orphan ack'),
 			expect.any(String),
 		);
@@ -411,6 +425,49 @@ describe('resolveGitHubTokenForAck', () => {
 		mockGetProjectGitHubToken.mockRejectedValue(new Error('Missing token'));
 
 		const result = await resolveGitHubTokenForAck('owner/repo');
+
+		expect(result).toBeNull();
+	});
+});
+
+describe('resolveGitHubTokenForAckByAgent', () => {
+	it('returns reviewer token for review agent type', async () => {
+		mockGetIntegrationCredential.mockImplementation(async (_projectId, category, role) => {
+			if (category === 'scm' && role === 'reviewer_token') return 'test-reviewer-token';
+			const value = MOCK_CREDENTIALS[`${category}/${role}`];
+			if (value) return value;
+			throw new Error(`Credential '${category}/${role}' not found`);
+		});
+
+		const result = await resolveGitHubTokenForAckByAgent('owner/repo', 'review');
+
+		expect(result).not.toBeNull();
+		expect(result?.token).toBe('test-reviewer-token');
+		expect(result?.project.id).toBe('test');
+		expect(mockGetProjectGitHubToken).not.toHaveBeenCalled();
+	});
+
+	it('returns implementer token for non-review agent types', async () => {
+		const result = await resolveGitHubTokenForAckByAgent('owner/repo', 'implementation');
+
+		expect(result).not.toBeNull();
+		expect(result?.token).toBe('test-github-token');
+		expect(result?.project.id).toBe('test');
+		expect(mockGetProjectGitHubToken).toHaveBeenCalled();
+	});
+
+	it('returns null when project is not found', async () => {
+		mockFindProjectByRepo.mockResolvedValue(undefined);
+
+		const result = await resolveGitHubTokenForAckByAgent('unknown/repo', 'review');
+
+		expect(result).toBeNull();
+	});
+
+	it('returns null when reviewer token is missing', async () => {
+		mockGetIntegrationCredential.mockRejectedValue(new Error('not found'));
+
+		const result = await resolveGitHubTokenForAckByAgent('owner/repo', 'review');
 
 		expect(result).toBeNull();
 	});

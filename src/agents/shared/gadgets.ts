@@ -145,13 +145,3 @@ export function buildPRAgentGadgets(options?: {
 
 	return gadgets;
 }
-
-/**
- * @deprecated Use buildPRAgentGadgets() instead.
- * Kept for backwards compatibility with existing callers.
- */
-export function createPRAgentGadgets(options?: {
-	includeReviewComments?: boolean;
-}): CreateBuilderOptions['gadgets'] {
-	return buildPRAgentGadgets(options);
-}

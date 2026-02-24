@@ -4,11 +4,12 @@ import { getTriggersForAgent } from '../../../web/src/lib/trigger-agent-mapping.
 describe('getTriggersForAgent', () => {
 	it('returns all triggers when no opts given (backward compatibility)', () => {
 		const triggers = getTriggersForAgent('review');
-		expect(triggers).toHaveLength(3);
+		expect(triggers).toHaveLength(4);
 		expect(triggers.map((t) => t.key)).toEqual([
 			'reviewTrigger.ownPrsOnly',
 			'reviewTrigger.externalPrs',
 			'reviewTrigger.onReviewRequested',
+			'prOpened',
 		]);
 	});
 
@@ -17,9 +18,9 @@ describe('getTriggersForAgent', () => {
 		expect(triggers).toHaveLength(0);
 	});
 
-	it('returns 3 review triggers for review agent with category: scm', () => {
+	it('returns 4 review triggers for review agent with category: scm', () => {
 		const triggers = getTriggersForAgent('review', { category: 'scm' });
-		expect(triggers).toHaveLength(3);
+		expect(triggers).toHaveLength(4);
 		for (const t of triggers) {
 			expect(t.category).toBe('scm');
 		}
@@ -70,6 +71,7 @@ describe('getTriggersForAgent — review trigger dot-notation keys and defaults'
 			'reviewTrigger.ownPrsOnly',
 			'reviewTrigger.externalPrs',
 			'reviewTrigger.onReviewRequested',
+			'prOpened',
 		]);
 
 		// Verify each trigger has the correct category
@@ -84,5 +86,6 @@ describe('getTriggersForAgent — review trigger dot-notation keys and defaults'
 		expect(defaults['reviewTrigger.ownPrsOnly']).toBe(false);
 		expect(defaults['reviewTrigger.externalPrs']).toBe(false);
 		expect(defaults['reviewTrigger.onReviewRequested']).toBe(false);
+		expect(defaults.prOpened).toBe(false);
 	});
 });

@@ -1,27 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock heavy imports before importing the module under test
+const mockTextComplete = vi.fn();
 vi.mock('llmist', () => {
-	const mockRun = vi.fn();
-	const mockBuilder = {
-		withModel: vi.fn().mockReturnThis(),
-		withTemperature: vi.fn().mockReturnThis(),
-		withSystem: vi.fn().mockReturnThis(),
-		withMaxIterations: vi.fn().mockReturnThis(),
-		withGadgets: vi.fn().mockReturnThis(),
-		ask: vi.fn().mockReturnValue({ run: mockRun }),
-	};
 	return {
-		LLMist: vi.fn().mockImplementation(() => ({})),
-		AgentBuilder: vi.fn().mockImplementation(() => mockBuilder),
-		__mockBuilder: mockBuilder,
-		__mockRun: mockRun,
+		LLMist: vi.fn().mockImplementation(() => ({
+			text: { complete: mockTextComplete },
+		})),
 	};
 });
 
 vi.mock('../../../src/config/provider.js', () => ({
 	loadConfig: vi.fn(),
 	getOrgCredential: vi.fn(),
+}));
+
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+	},
 }));
 
 vi.mock('../../../src/config/customModels.js', () => ({
@@ -45,10 +45,6 @@ import {
 	extractTrelloContext,
 	generateAckMessage,
 } from '../../../src/router/ackMessageGenerator.js';
-
-// Access llmist mocks — test-only mock internals
-const llmistModule = (await import('llmist')) as Record<string, unknown>;
-const mockRun = llmistModule.__mockRun as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -160,6 +156,46 @@ describe('extractGitHubContext', () => {
 		expect(extractGitHubContext({}, 'check_suite')).toBe('');
 	});
 
+	it('extracts PR number and branch from check_suite event', () => {
+		const payload = {
+			check_suite: {
+				head_branch: 'feat/dark-mode',
+				pull_requests: [
+					{
+						number: 42,
+						head: { ref: 'feat/dark-mode' },
+					},
+				],
+			},
+		};
+		const result = extractGitHubContext(payload, 'check_suite');
+		expect(result).toContain('PR: #42');
+		expect(result).toContain('Branch: feat/dark-mode');
+	});
+
+	it('falls back to suite head_branch when check_suite has no pull_requests', () => {
+		const payload = {
+			check_suite: {
+				head_branch: 'feat/new-feature',
+				pull_requests: [],
+			},
+		};
+		const result = extractGitHubContext(payload, 'check_suite');
+		expect(result).toBe('Branch: feat/new-feature');
+	});
+
+	it('does not use check_suite fallback when pull_request is present at top level', () => {
+		const payload = {
+			pull_request: { title: 'feat: top-level PR' },
+			check_suite: {
+				pull_requests: [{ number: 99, head: { ref: 'other-branch' } }],
+			},
+		};
+		const result = extractGitHubContext(payload, 'check_suite');
+		expect(result).toBe('PR: feat: top-level PR');
+		expect(result).not.toContain('#99');
+	});
+
 	it('truncates long context', () => {
 		const longTitle = 'B'.repeat(600);
 		const payload = { pull_request: { title: longTitle } };
@@ -232,11 +268,7 @@ describe('generateAckMessage', () => {
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
 
-		// Mock the async iterator returned by agent.run()
-		async function* fakeRun() {
-			yield { type: 'text' as const, content: llmResponse };
-		}
-		mockRun.mockReturnValue(fakeRun());
+		mockTextComplete.mockResolvedValue(llmResponse);
 	}
 
 	it('returns LLM-generated message on happy path', async () => {
@@ -299,9 +331,7 @@ describe('generateAckMessage', () => {
 			defaults: { progressModel: 'openrouter:google/gemini-2.5-flash-lite' },
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
-		mockRun.mockImplementation(() => {
-			throw new Error('Network error');
-		});
+		mockTextComplete.mockRejectedValue(new Error('Network error'));
 
 		const result = await generateAckMessage('implementation', 'Card: Test', 'p1');
 
@@ -316,10 +346,7 @@ describe('generateAckMessage', () => {
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
 
-		async function* emptyRun() {
-			// Yields nothing
-		}
-		mockRun.mockReturnValue(emptyRun());
+		mockTextComplete.mockResolvedValue('');
 
 		const result = await generateAckMessage('implementation', 'Card: Test', 'p1');
 
@@ -349,9 +376,7 @@ describe('generateAckMessage', () => {
 			defaults: { progressModel: 'openrouter:google/gemini-2.5-flash-lite' },
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
-		mockRun.mockImplementation(() => {
-			throw new Error('LLM error');
-		});
+		mockTextComplete.mockRejectedValue(new Error('LLM error'));
 
 		await generateAckMessage('implementation', 'Card: Test', 'p1');
 
@@ -359,29 +384,34 @@ describe('generateAckMessage', () => {
 	});
 
 	it('falls back to static message on timeout', async () => {
+		vi.useFakeTimers();
+
 		vi.mocked(loadConfig).mockResolvedValue({
 			defaults: { progressModel: 'openrouter:google/gemini-2.5-flash-lite' },
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
 
-		// Simulate a call that never resolves (will be beaten by the 5s timeout)
-		let resolveHang: () => void;
-		const hangForever = new Promise<void>((r) => {
+		// Simulate a call that never resolves (will be beaten by the 30s timeout)
+		let resolveHang: (v: string) => void;
+		const hangForever = new Promise<string>((r) => {
 			resolveHang = r;
 		});
-		async function* slowRun() {
-			await hangForever;
-			yield { type: 'text' as const, content: 'too late' };
-		}
-		mockRun.mockReturnValue(slowRun());
+		mockTextComplete.mockReturnValue(hangForever);
 
-		const result = await generateAckMessage('implementation', 'Card: Test', 'p1');
+		const resultPromise = generateAckMessage('implementation', 'Card: Test', 'p1');
+
+		// Advance past the 30s timeout
+		await vi.advanceTimersByTimeAsync(30_000);
+
+		const result = await resultPromise;
 
 		// Clean up the hanging promise so it doesn't leak
-		resolveHang?.();
+		resolveHang?.('too late');
 
 		expect(result).toBe(
 			'**🚀 Implementing changes** — Writing code, running tests, and preparing a PR...',
 		);
-	}, 10_000);
+
+		vi.useRealTimers();
+	});
 });

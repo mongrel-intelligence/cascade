@@ -1,5 +1,7 @@
-import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
-import { isCascadeBot } from '../../github/personas.js';
+import {
+	resolveGitHubTriggerEnabled,
+	resolveReviewTriggerConfig,
+} from '../../config/triggerConfig.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubPullRequestPayload } from './types.js';
@@ -22,6 +24,12 @@ export class PROpenedTrigger implements TriggerHandler {
 			return false;
 		}
 
+		// Respect reviewTrigger config — at least one author mode must be active
+		const reviewConfig = resolveReviewTriggerConfig(ctx.project.github?.triggers);
+		if (!reviewConfig.ownPrsOnly && !reviewConfig.externalPrs) {
+			return false;
+		}
+
 		// Only trigger on newly opened PRs
 		if (ctx.payload.action !== 'opened') return false;
 
@@ -38,7 +46,7 @@ export class PROpenedTrigger implements TriggerHandler {
 				title: string;
 				body: string | null;
 				html_url: string;
-				head: { ref: string };
+				head: { ref: string; sha: string };
 				user: { login: string };
 			};
 			repository: { full_name: string };
@@ -47,9 +55,24 @@ export class PROpenedTrigger implements TriggerHandler {
 		const prNumber = payload.pull_request.number;
 		const prAuthor = payload.pull_request.user.login;
 
-		// Skip PRs authored by CASCADE bots — nothing to "respond to" on our own PRs
-		if (ctx.personaIdentities && isCascadeBot(prAuthor, ctx.personaIdentities)) {
-			logger.info('Skipping PR opened by CASCADE bot', { prNumber, prAuthor });
+		// Gate on PR author based on configured review trigger modes
+		if (!ctx.personaIdentities) return null;
+		const implLogin = ctx.personaIdentities.implementer;
+		const isImplementerPR = prAuthor === implLogin || prAuthor === `${implLogin}[bot]`;
+
+		const reviewConfig = resolveReviewTriggerConfig(ctx.project.github?.triggers);
+		const shouldTrigger =
+			(reviewConfig.ownPrsOnly && isImplementerPR) ||
+			(reviewConfig.externalPrs && !isImplementerPR);
+
+		if (!shouldTrigger) {
+			logger.info('PR author does not match any enabled review trigger mode, skipping', {
+				prNumber,
+				prAuthor,
+				isImplementerPR,
+				ownPrsOnly: reviewConfig.ownPrsOnly,
+				externalPrs: reviewConfig.externalPrs,
+			});
 			return null;
 		}
 
@@ -65,16 +88,14 @@ export class PROpenedTrigger implements TriggerHandler {
 		});
 
 		return {
-			agentType: 'respond-to-review',
+			agentType: 'review',
 			agentInput: {
 				prNumber,
 				prBranch: payload.pull_request.head.ref,
 				repoFullName: payload.repository.full_name,
-				// For opened PRs, use PR URL and title/body as the "trigger"
-				triggerCommentId: 0, // No comment, use 0 as sentinel
-				triggerCommentBody: `New PR: ${payload.pull_request.title}\n\n${prBody}`,
-				triggerCommentPath: '', // No specific file
-				triggerCommentUrl: payload.pull_request.html_url,
+				headSha: payload.pull_request.head.sha,
+				triggerType: 'pr-opened',
+				cardId: workItemId,
 			},
 			prNumber,
 			workItemId,

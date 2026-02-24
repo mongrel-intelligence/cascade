@@ -54,7 +54,7 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 	// JIRA: Label trigger (runs agent based on current status when cascade-ready label is added)
 	registry.register(new JiraReadyToProcessLabelTrigger());
 
-	// GitHub: PR opened trigger (initial review on new PRs)
+	// GitHub: PR opened trigger (review on newly opened PRs, without waiting for CI)
 	// Opt-in: disabled by default via trigger config (github.triggers.prOpened = false)
 	registry.register(new PROpenedTrigger());
 

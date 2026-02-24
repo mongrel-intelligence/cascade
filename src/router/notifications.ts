@@ -1,9 +1,10 @@
 import { getProjectGitHubToken } from '../config/projects.js';
 import { findProjectByRepo } from '../config/provider.js';
+import { logger } from '../utils/logging.js';
 import {
-	resolveGitHubHeaders,
-	resolveJiraCredentials,
-	resolveTrelloCredentials,
+	GitHubPlatformClient,
+	JiraPlatformClient,
+	TrelloPlatformClient,
 } from './platformClients.js';
 import type { CascadeJob, GitHubJob, JiraJob, TrelloJob } from './queue.js';
 
@@ -77,12 +78,6 @@ interface TimeoutInfo {
 }
 
 async function notifyTrelloTimeout(job: TrelloJob, info: TimeoutInfo): Promise<void> {
-	const creds = await resolveTrelloCredentials(job.projectId);
-	if (!creds) {
-		console.warn('[Notifications] Missing Trello credentials in DB, skipping timeout notification');
-		return;
-	}
-
 	const message = buildTimeoutMessage(
 		info.jobId,
 		info.startedAt,
@@ -90,25 +85,14 @@ async function notifyTrelloTimeout(job: TrelloJob, info: TimeoutInfo): Promise<v
 		'Move this card back to the trigger list to retry.',
 	);
 
-	const url = `https://api.trello.com/1/cards/${job.cardId}/actions/comments?key=${creds.apiKey}&token=${creds.token}`;
-	const response = await fetch(url, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ text: message }),
-	});
-
-	if (!response.ok) {
-		console.warn('[Notifications] Trello comment failed:', response.status, await response.text());
-	} else {
-		console.log('[Notifications] Trello timeout comment posted for card:', job.cardId);
-	}
+	await new TrelloPlatformClient(job.projectId).postComment(job.cardId, message);
 }
 
 async function notifyGitHubTimeout(job: GitHubJob, info: TimeoutInfo): Promise<void> {
 	// Resolve project from repo name, then get GitHub token from DB
 	const project = await findProjectByRepo(job.repoFullName);
 	if (!project) {
-		console.warn('[Notifications] No project found for repo, skipping notification', {
+		logger.warn('[Notifications] No project found for repo, skipping notification', {
 			repoFullName: job.repoFullName,
 		});
 		return;
@@ -118,13 +102,13 @@ async function notifyGitHubTimeout(job: GitHubJob, info: TimeoutInfo): Promise<v
 	try {
 		githubToken = await getProjectGitHubToken(project);
 	} catch {
-		console.warn('[Notifications] Missing GitHub token in DB, skipping timeout notification');
+		logger.warn('[Notifications] Missing GitHub token in DB, skipping timeout notification');
 		return;
 	}
 
 	const prNumber = extractPRNumber(job);
 	if (!prNumber) {
-		console.warn(
+		logger.warn(
 			'[Notifications] Could not extract PR number from GitHub job, skipping notification',
 		);
 		return;
@@ -137,27 +121,10 @@ async function notifyGitHubTimeout(job: GitHubJob, info: TimeoutInfo): Promise<v
 		'Re-trigger by pushing a new commit or re-requesting the check suite.',
 	);
 
-	const url = `https://api.github.com/repos/${job.repoFullName}/issues/${prNumber}/comments`;
-	const response = await fetch(url, {
-		method: 'POST',
-		headers: resolveGitHubHeaders(githubToken),
-		body: JSON.stringify({ body: message }),
-	});
-
-	if (!response.ok) {
-		console.warn('[Notifications] GitHub comment failed:', response.status, await response.text());
-	} else {
-		console.log('[Notifications] GitHub timeout comment posted for PR:', prNumber);
-	}
+	await new GitHubPlatformClient(job.repoFullName, githubToken).postComment(prNumber, message);
 }
 
 async function notifyJiraTimeout(job: JiraJob, info: TimeoutInfo): Promise<void> {
-	const creds = await resolveJiraCredentials(job.projectId);
-	if (!creds) {
-		console.warn('[Notifications] Missing JIRA credentials in DB, skipping timeout notification');
-		return;
-	}
-
 	const message = buildTimeoutMessage(
 		info.jobId,
 		info.startedAt,
@@ -165,23 +132,7 @@ async function notifyJiraTimeout(job: JiraJob, info: TimeoutInfo): Promise<void>
 		'Transition the issue back to the trigger status to retry.',
 	);
 
-	// Use v2 API which accepts plain text — no Markdown-to-ADF conversion needed
-	// for simple timeout messages
-	const url = `${creds.baseUrl}/rest/api/2/issue/${job.issueKey}/comment`;
-	const response = await fetch(url, {
-		method: 'POST',
-		headers: {
-			Authorization: `Basic ${creds.auth}`,
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify({ body: message }),
-	});
-
-	if (!response.ok) {
-		console.warn('[Notifications] JIRA comment failed:', response.status, await response.text());
-	} else {
-		console.log('[Notifications] JIRA timeout comment posted for issue:', job.issueKey);
-	}
+	await new JiraPlatformClient(job.projectId).postComment(job.issueKey, message);
 }
 
 /**
@@ -197,9 +148,9 @@ export async function notifyTimeout(job: CascadeJob, info: TimeoutInfo): Promise
 		} else if (job.type === 'jira') {
 			await notifyJiraTimeout(job, info);
 		} else {
-			console.warn('[Notifications] Unknown job type, skipping notification');
+			logger.warn('[Notifications] Unknown job type, skipping notification');
 		}
 	} catch (err) {
-		console.error('[Notifications] Failed to send timeout notification:', String(err));
+		logger.error('[Notifications] Failed to send timeout notification:', String(err));
 	}
 }
