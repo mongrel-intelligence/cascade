@@ -408,12 +408,14 @@ describe('generateAckMessage', () => {
 	});
 
 	it('falls back to static message on timeout', async () => {
+		vi.useFakeTimers();
+
 		vi.mocked(loadConfig).mockResolvedValue({
 			defaults: { progressModel: 'openrouter:google/gemini-2.5-flash-lite' },
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
 
-		// Simulate a call that never resolves (will be beaten by the 5s timeout)
+		// Simulate a call that never resolves (will be beaten by the 20s timeout)
 		let resolveHang: () => void;
 		const hangForever = new Promise<void>((r) => {
 			resolveHang = r;
@@ -424,7 +426,12 @@ describe('generateAckMessage', () => {
 		}
 		mockRun.mockReturnValue(slowRun());
 
-		const result = await generateAckMessage('implementation', 'Card: Test', 'p1');
+		const resultPromise = generateAckMessage('implementation', 'Card: Test', 'p1');
+
+		// Advance past the 20s timeout
+		await vi.advanceTimersByTimeAsync(20_000);
+
+		const result = await resultPromise;
 
 		// Clean up the hanging promise so it doesn't leak
 		resolveHang?.();
@@ -432,5 +439,7 @@ describe('generateAckMessage', () => {
 		expect(result).toBe(
 			'**🚀 Implementing changes** — Writing code, running tests, and preparing a PR...',
 		);
-	}, 10_000);
+
+		vi.useRealTimers();
+	});
 });
