@@ -46,7 +46,7 @@ export class PROpenedTrigger implements TriggerHandler {
 				title: string;
 				body: string | null;
 				html_url: string;
-				head: { ref: string };
+				head: { ref: string; sha: string };
 				user: { login: string };
 			};
 			repository: { full_name: string };
@@ -88,16 +88,14 @@ export class PROpenedTrigger implements TriggerHandler {
 		});
 
 		return {
-			agentType: 'respond-to-review',
+			agentType: 'review',
 			agentInput: {
 				prNumber,
 				prBranch: payload.pull_request.head.ref,
 				repoFullName: payload.repository.full_name,
-				// For opened PRs, use PR URL and title/body as the "trigger"
-				triggerCommentId: 0, // No comment, use 0 as sentinel
-				triggerCommentBody: `New PR: ${payload.pull_request.title}\n\n${prBody}`,
-				triggerCommentPath: '', // No specific file
-				triggerCommentUrl: payload.pull_request.html_url,
+				headSha: payload.pull_request.head.sha,
+				triggerType: 'pr-opened',
+				cardId: workItemId,
 			},
 			prNumber,
 			workItemId,
