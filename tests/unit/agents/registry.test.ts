@@ -87,6 +87,7 @@ describe('runAgent', () => {
 		const backend = makeMockBackend('llmist');
 		mockResolveBackendName.mockReturnValue('llmist');
 		mockGetBackend.mockReturnValue(backend);
+		mockExecuteWithBackend.mockResolvedValue({ success: true, output: 'Done' });
 
 		await runAgent('implementation', makeInput());
 
@@ -120,26 +121,25 @@ describe('runAgent', () => {
 		expect(result.error).toContain('does not support agent type "implementation"');
 	});
 
-	it('for llmist: calls backend.execute with minimal input + agentInput', async () => {
+	it('for llmist: calls executeWithBackend (unified adapter path)', async () => {
 		const backend = makeMockBackend('llmist');
 		mockResolveBackendName.mockReturnValue('llmist');
 		mockGetBackend.mockReturnValue(backend);
+		mockExecuteWithBackend.mockResolvedValue({
+			success: true,
+			output: 'Done via adapter',
+		});
 
-		await runAgent('implementation', makeInput());
+		const input = makeInput();
+		const result = await runAgent('implementation', input);
 
-		expect(backend.execute).toHaveBeenCalledWith(
-			expect.objectContaining({
-				agentType: 'implementation',
-				repoDir: '',
-				systemPrompt: '',
-				availableTools: [],
-				contextInjections: [],
-			}),
-		);
-		expect(mockExecuteWithBackend).not.toHaveBeenCalled();
+		// llmist now goes through executeWithBackend like all other backends
+		expect(mockExecuteWithBackend).toHaveBeenCalledWith(backend, 'implementation', input);
+		expect(backend.execute).not.toHaveBeenCalled();
+		expect(result.output).toBe('Done via adapter');
 	});
 
-	it('for non-llmist: calls executeWithBackend with full lifecycle', async () => {
+	it('for claude-code: calls executeWithBackend with full lifecycle', async () => {
 		const backend = makeMockBackend('claude-code');
 		mockResolveBackendName.mockReturnValue('claude-code');
 		mockGetBackend.mockReturnValue(backend);

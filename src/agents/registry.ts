@@ -22,6 +22,10 @@ registerBackend(new ClaudeCodeBackend());
  * 2. Project-level default backend
  * 3. Cascade-level default backend
  * 4. Fallback: 'llmist'
+ *
+ * All backends — including llmist — go through the shared adapter
+ * (executeWithBackend), which handles repo setup, lifecycle, progress
+ * monitoring, run tracking, and log finalization in one place.
  */
 export async function runAgent(
 	agentType: string,
@@ -48,34 +52,10 @@ export async function runAgent(
 
 	logger.info('Running agent via backend', { agentType, backend: backendName });
 
-	// For the llmist backend, delegate directly (it wraps existing executors)
-	// For other backends, use the shared adapter which handles lifecycle
-	if (backendName === 'llmist') {
-		// The llmist backend needs the full AgentBackendInput, but since it
-		// delegates to the existing executors which handle their own lifecycle,
-		// we pass a minimal input and let it reconstruct what it needs.
-		return backend.execute({
-			agentType,
-			project: input.project,
-			config: input.config,
-			repoDir: '',
-			systemPrompt: '',
-			taskPrompt: '',
-			cliToolsDir: '',
-			availableTools: [],
-			contextInjections: [],
-			maxIterations: 0,
-			model: '',
-			progressReporter: {
-				onIteration: async () => {},
-				onToolCall: () => {},
-				onText: () => {},
-			},
-			logWriter: () => {},
-			agentInput: input,
-		});
-	}
-
+	// All backends (including llmist) use the shared adapter which handles:
+	// - Repo setup, CWD change/restore, env var loading
+	// - Run record creation, log finalization
+	// - Progress monitor, watchdog
 	return executeWithBackend(backend, agentType, input);
 }
 
