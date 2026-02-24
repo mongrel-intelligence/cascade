@@ -1,3 +1,4 @@
+import { formatCheckStatus } from '../gadgets/github/core/getPRChecks.js';
 import type { CheckSuiteStatus } from '../github/client.js';
 import { githubClient } from '../github/client.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
@@ -23,53 +24,6 @@ import {
 
 interface RespondToCIAgentInput extends GitHubAgentInput {
 	headSha: string;
-}
-
-// ============================================================================
-// CI Data Formatting
-// ============================================================================
-
-function formatCheckStatus(checkStatus: CheckSuiteStatus): string {
-	const lines = ['## Check Suite Status', `Total checks: ${checkStatus.totalCount}`, ''];
-
-	// Group by status/conclusion
-	const passed = checkStatus.checkRuns.filter(
-		(cr) =>
-			cr.conclusion === 'success' || cr.conclusion === 'skipped' || cr.conclusion === 'neutral',
-	);
-	const failed = checkStatus.checkRuns.filter(
-		(cr) =>
-			cr.conclusion === 'failure' ||
-			cr.conclusion === 'timed_out' ||
-			cr.conclusion === 'action_required',
-	);
-	const pending = checkStatus.checkRuns.filter((cr) => cr.status !== 'completed');
-
-	if (failed.length > 0) {
-		lines.push('### Failed Checks');
-		for (const cr of failed) {
-			lines.push(`- **${cr.name}**: ${cr.conclusion}`);
-		}
-		lines.push('');
-	}
-
-	if (passed.length > 0) {
-		lines.push('### Passed Checks');
-		for (const cr of passed) {
-			lines.push(`- ${cr.name}: ${cr.conclusion}`);
-		}
-		lines.push('');
-	}
-
-	if (pending.length > 0) {
-		lines.push('### Pending Checks');
-		for (const cr of pending) {
-			lines.push(`- ${cr.name}: ${cr.status}`);
-		}
-		lines.push('');
-	}
-
-	return lines.join('\n');
 }
 
 // ============================================================================
@@ -254,7 +208,7 @@ async function buildCIContext(
 	// Format data
 	const prDetailsFormatted = formatPRDetails(prDetails);
 	const diffFormatted = formatPRDiff(prDiff);
-	const checkStatusFormatted = formatCheckStatus(checkStatus);
+	const checkStatusFormatted = formatCheckStatus(prNumber, checkStatus);
 
 	// Build prompt
 	const prompt = buildCIPrompt(prBranch, prNumber, owner, repo);
