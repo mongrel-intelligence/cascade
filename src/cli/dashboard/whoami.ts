@@ -18,12 +18,20 @@ export default class Whoami extends DashboardCommand {
 				return;
 			}
 
-			this.outputDetail(user as unknown as Record<string, unknown>, {
+			const detail: Record<string, { label: string }> = {
 				name: { label: 'Name' },
 				email: { label: 'Email' },
 				role: { label: 'Role' },
 				orgId: { label: 'Org' },
-			});
+			};
+
+			const data = user as unknown as Record<string, unknown>;
+
+			if (data.effectiveOrgId && data.effectiveOrgId !== data.orgId) {
+				detail.effectiveOrgId = { label: 'Effective Org' };
+			}
+
+			this.outputDetail(data, detail);
 		} catch (err) {
 			this.handleError(err);
 		}

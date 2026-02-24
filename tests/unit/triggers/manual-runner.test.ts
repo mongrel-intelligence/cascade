@@ -49,8 +49,8 @@ describe('triggerManualRun', () => {
 	it('throws when trigger is already running for same project+agent+card', async () => {
 		vi.mocked(runAgent).mockImplementation(() => new Promise(() => {})); // Never resolves
 
-		// Start first trigger (fire-and-forget, so no await)
-		triggerManualRun(
+		// Start first trigger (don't await — runAgent never resolves)
+		const firstRun = triggerManualRun(
 			{
 				projectId: 'test-project',
 				agentType: 'implementation',
@@ -60,10 +60,9 @@ describe('triggerManualRun', () => {
 			mockConfig,
 		);
 
-		// Wait a tick for the trigger to mark itself as running
-		await new Promise((resolve) => setImmediate(resolve));
+		// markTriggerRunning happens synchronously before runAgent, so no tick needed
 
-		// Try to trigger again
+		// Try to trigger again — should throw duplicate check
 		await expect(
 			triggerManualRun(
 				{
@@ -75,6 +74,9 @@ describe('triggerManualRun', () => {
 				mockConfig,
 			),
 		).rejects.toThrow('Manual trigger already running');
+
+		// Clean up: avoid unhandled promise (firstRun will never resolve, but that's fine for test)
+		void firstRun;
 	});
 
 	it('calls runAgent with correct input including triggerType: manual', async () => {
@@ -94,9 +96,6 @@ describe('triggerManualRun', () => {
 			mockProject,
 			mockConfig,
 		);
-
-		// Wait for async execution
-		await new Promise((resolve) => setImmediate(resolve));
 
 		expect(runAgent).toHaveBeenCalledWith(
 			'implementation',
@@ -130,8 +129,6 @@ describe('triggerManualRun', () => {
 			mockConfig,
 		);
 
-		await new Promise((resolve) => setImmediate(resolve));
-
 		expect(runAgent).toHaveBeenCalledWith(
 			'review',
 			expect.objectContaining({
@@ -157,14 +154,8 @@ describe('triggerManualRun', () => {
 
 		await triggerManualRun({ projectId, agentType, cardId }, mockProject, mockConfig);
 
-		// Immediately after triggering, should be running
+		// After awaiting triggerManualRun, trigger should already be complete
 		const key = `${projectId}:${agentType}:${cardId}:no-pr`;
-		expect(isTriggerRunning(key)).toBe(true);
-
-		// Wait for completion
-		await new Promise((resolve) => setTimeout(resolve, 50));
-
-		// Should be marked complete
 		expect(isTriggerRunning(key)).toBe(false);
 	});
 
@@ -177,14 +168,8 @@ describe('triggerManualRun', () => {
 
 		await triggerManualRun({ projectId, agentType, cardId }, mockProject, mockConfig);
 
-		// Should be running
+		// After awaiting triggerManualRun (error caught internally), trigger should be complete
 		const key = `${projectId}:${agentType}:${cardId}:no-pr`;
-		expect(isTriggerRunning(key)).toBe(true);
-
-		// Wait for failure
-		await new Promise((resolve) => setTimeout(resolve, 50));
-
-		// Should be marked complete
 		expect(isTriggerRunning(key)).toBe(false);
 	});
 });
@@ -233,9 +218,6 @@ describe('triggerRetryRun', () => {
 
 		await triggerRetryRun('run-1', mockProject, mockConfig);
 
-		// Wait for async execution
-		await new Promise((resolve) => setImmediate(resolve));
-
 		expect(runAgent).toHaveBeenCalledWith(
 			'implementation',
 			expect.objectContaining({
@@ -263,8 +245,6 @@ describe('triggerRetryRun', () => {
 		});
 
 		await triggerRetryRun('run-1', mockProject, mockConfig, 'claude-3-5-sonnet-20241022');
-
-		await new Promise((resolve) => setImmediate(resolve));
 
 		expect(runAgent).toHaveBeenCalledWith(
 			'review',
