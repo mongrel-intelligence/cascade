@@ -8,6 +8,7 @@
 
 import { type ConnectionOptions, type Job, Worker } from 'bullmq';
 import { captureException } from '../sentry.js';
+import { logger } from '../utils/logging.js';
 import { parseRedisUrl } from '../utils/redis.js';
 
 // Re-export so existing callers (worker-manager.ts) don't need to change imports.
@@ -40,11 +41,11 @@ export function createQueueWorker<T = unknown>(config: QueueWorkerConfig<T>): Wo
 	});
 
 	worker.on('completed', (job) => {
-		console.log(`[WorkerManager] ${label} dispatched:`, { jobId: job.id });
+		logger.info(`[WorkerManager] ${label} dispatched:`, { jobId: job.id });
 	});
 
 	worker.on('failed', (job, err) => {
-		console.error(`[WorkerManager] ${label} failed to dispatch:`, {
+		logger.error(`[WorkerManager] ${label} failed to dispatch:`, {
 			jobId: job?.id,
 			error: String(err),
 		});
@@ -55,7 +56,7 @@ export function createQueueWorker<T = unknown>(config: QueueWorkerConfig<T>): Wo
 	});
 
 	worker.on('error', (err) => {
-		console.error(`[WorkerManager] ${label} worker error:`, err);
+		logger.error(`[WorkerManager] ${label} worker error:`, err);
 		captureException(err, {
 			tags: { source: 'bullmq_error', queue: queueName },
 		});

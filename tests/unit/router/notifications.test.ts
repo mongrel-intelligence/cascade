@@ -25,6 +25,16 @@ vi.mock('../../../src/config/configCache.js', () => ({
 	},
 }));
 
+// Mock logger
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+	},
+}));
+
 import { getProjectGitHubToken } from '../../../src/config/projects.js';
 import {
 	findProjectById,
@@ -37,11 +47,13 @@ import {
 	notifyTimeout,
 } from '../../../src/router/notifications.js';
 import type { CascadeJob, GitHubJob, JiraJob, TrelloJob } from '../../../src/router/queue.js';
+import { logger } from '../../../src/utils/logging.js';
 
 const mockGetIntegrationCredential = vi.mocked(getIntegrationCredential);
 const mockGetProjectGitHubToken = vi.mocked(getProjectGitHubToken);
 const mockFindProjectByRepo = vi.mocked(findProjectByRepo);
 const mockFindProjectById = vi.mocked(findProjectById);
+const mockLogger = vi.mocked(logger);
 
 const MOCK_CREDENTIALS: Record<string, string> = {
 	'pm/api_key': 'test-trello-key',
@@ -142,9 +154,9 @@ describe('notifyTimeout', () => {
 
 	beforeEach(() => {
 		mockFetch.mockReset();
-		vi.spyOn(console, 'log').mockImplementation(() => {});
-		vi.spyOn(console, 'warn').mockImplementation(() => {});
-		vi.spyOn(console, 'error').mockImplementation(() => {});
+		mockLogger.info.mockReset();
+		mockLogger.warn.mockReset();
+		mockLogger.error.mockReset();
 
 		// Default: DB returns credentials
 		mockGetIntegrationCredential.mockImplementation(async (_projectId, category, role) => {
@@ -210,7 +222,7 @@ describe('notifyTimeout', () => {
 			await notifyTimeout(trelloJob, defaultInfo);
 
 			expect(mockFetch).not.toHaveBeenCalled();
-			expect(console.warn).toHaveBeenCalledWith(
+			expect(mockLogger.warn).toHaveBeenCalledWith(
 				expect.stringContaining('Missing Trello credentials in DB'),
 			);
 		});
@@ -224,7 +236,7 @@ describe('notifyTimeout', () => {
 
 			await notifyTimeout(trelloJob, defaultInfo);
 
-			expect(console.warn).toHaveBeenCalledWith(
+			expect(mockLogger.warn).toHaveBeenCalledWith(
 				expect.stringContaining('Trello comment failed'),
 				401,
 				'Unauthorized',
@@ -263,7 +275,7 @@ describe('notifyTimeout', () => {
 			await notifyTimeout(githubJob, defaultInfo);
 
 			expect(mockFetch).not.toHaveBeenCalled();
-			expect(console.warn).toHaveBeenCalledWith(
+			expect(mockLogger.warn).toHaveBeenCalledWith(
 				expect.stringContaining('Missing GitHub token in DB'),
 			);
 		});
@@ -274,7 +286,7 @@ describe('notifyTimeout', () => {
 			await notifyTimeout(githubJob, defaultInfo);
 
 			expect(mockFetch).not.toHaveBeenCalled();
-			expect(console.warn).toHaveBeenCalledWith(
+			expect(mockLogger.warn).toHaveBeenCalledWith(
 				expect.stringContaining('No project found for repo'),
 				expect.objectContaining({ repoFullName: 'owner/repo' }),
 			);
@@ -290,7 +302,7 @@ describe('notifyTimeout', () => {
 			await notifyTimeout(job, defaultInfo);
 
 			expect(mockFetch).not.toHaveBeenCalled();
-			expect(console.warn).toHaveBeenCalledWith(
+			expect(mockLogger.warn).toHaveBeenCalledWith(
 				expect.stringContaining('Could not extract PR number'),
 			);
 		});
@@ -304,7 +316,7 @@ describe('notifyTimeout', () => {
 
 			await notifyTimeout(githubJob, defaultInfo);
 
-			expect(console.warn).toHaveBeenCalledWith(
+			expect(mockLogger.warn).toHaveBeenCalledWith(
 				expect.stringContaining('GitHub comment failed'),
 				403,
 				'Forbidden',
@@ -342,7 +354,7 @@ describe('notifyTimeout', () => {
 			await notifyTimeout(jiraJob, defaultInfo);
 
 			expect(mockFetch).not.toHaveBeenCalled();
-			expect(console.warn).toHaveBeenCalledWith(
+			expect(mockLogger.warn).toHaveBeenCalledWith(
 				expect.stringContaining('Missing JIRA credentials in DB'),
 			);
 		});
@@ -356,7 +368,7 @@ describe('notifyTimeout', () => {
 
 			await notifyTimeout(jiraJob, defaultInfo);
 
-			expect(console.warn).toHaveBeenCalledWith(
+			expect(mockLogger.warn).toHaveBeenCalledWith(
 				expect.stringContaining('JIRA comment failed'),
 				401,
 				'Unauthorized',
@@ -381,7 +393,7 @@ describe('notifyTimeout', () => {
 			// Should not throw
 			await expect(notifyTimeout(trelloJob, defaultInfo)).resolves.toBeUndefined();
 
-			expect(console.error).toHaveBeenCalledWith(
+			expect(mockLogger.error).toHaveBeenCalledWith(
 				expect.stringContaining('Failed to send timeout notification'),
 				expect.stringContaining('Network failure'),
 			);
@@ -392,7 +404,7 @@ describe('notifyTimeout', () => {
 
 			await expect(notifyTimeout(unknownJob, defaultInfo)).resolves.toBeUndefined();
 
-			expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('Unknown job type'));
+			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Unknown job type'));
 		});
 	});
 });

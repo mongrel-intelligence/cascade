@@ -8,6 +8,7 @@
  */
 
 import type { Job, Worker } from 'bullmq';
+import { logger } from '../utils/logging.js';
 import { createQueueWorker, parseRedisUrl } from './bullmq-workers.js';
 import { routerConfig } from './config.js';
 import {
@@ -41,7 +42,7 @@ async function guardedSpawn(job: Job<CascadeJob>): Promise<void> {
 
 export function startWorkerProcessor(): void {
 	if (bullWorker) {
-		console.warn('[WorkerManager] Worker processor already started');
+		logger.warn('[WorkerManager] Worker processor already started');
 		return;
 	}
 
@@ -67,7 +68,7 @@ export function startWorkerProcessor(): void {
 		processFn: (job) => guardedSpawn(job as Job<CascadeJob>),
 	});
 
-	console.log('[WorkerManager] Started with max', routerConfig.maxWorkers, 'concurrent workers');
+	logger.info('[WorkerManager] Started with max', routerConfig.maxWorkers, 'concurrent workers');
 }
 
 // Graceful shutdown — detach from workers, let them finish independently
@@ -86,5 +87,5 @@ export async function stopWorkerProcessor(): Promise<void> {
 	// watchdog (src/utils/lifecycle.ts) for timeout enforcement.
 	detachAll();
 
-	console.log('[WorkerManager] Stopped');
+	logger.info('[WorkerManager] Stopped');
 }
