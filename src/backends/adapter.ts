@@ -238,6 +238,7 @@ export async function executeWithBackend(
 					onText: () => {},
 				},
 				runId,
+				llmistLogPath: fileLogger.llmistLogPath,
 			};
 
 			monitor?.start();

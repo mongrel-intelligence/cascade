@@ -1,5 +1,4 @@
 import os from 'node:os';
-import path from 'node:path';
 
 import { LLMist, type ModelSpec, createLogger } from 'llmist';
 
@@ -53,6 +52,8 @@ export class LlmistBackend implements AgentBackend {
 			logWriter,
 			runId,
 			agentInput,
+			llmistLogPath,
+			progressReporter,
 		} = input;
 
 		const profile = getAgentProfile(agentType);
@@ -70,10 +71,13 @@ export class LlmistBackend implements AgentBackend {
 		// (which handles cascade.log / llmist.log).
 		const llmCallLogger = createLLMCallLogger(os.tmpdir(), `llmist-${agentType}-${Date.now()}`);
 
-		// Point llmist at a temp log file for its internal structured log
-		const llmistLogPath = path.join(os.tmpdir(), `llmist-${agentType}-${Date.now()}.log`);
-		process.env.LLMIST_LOG_FILE = llmistLogPath;
-		process.env.LLMIST_LOG_TEE = 'true';
+		// Point llmist SDK at the workspace directory llmist log path (provided by the outer
+		// pipeline's fileLogger). This ensures the structured llmist log is included in run
+		// records and log bundles (read from fileLogger.llmistLogPath during finalization).
+		if (llmistLogPath) {
+			process.env.LLMIST_LOG_FILE = llmistLogPath;
+			process.env.LLMIST_LOG_TEE = 'true';
+		}
 
 		// Get gadget instances from the agent profile (single source of truth for tool sets)
 		const gadgets = profile.getLlmistGadgets(agentType);
@@ -98,6 +102,11 @@ export class LlmistBackend implements AgentBackend {
 			baseBranch: input.project.baseBranch,
 			projectId: input.project.id,
 			cardId: agentInput.cardId,
+			// Pass the progress monitor from the adapter so createObserverHooks can call
+			// onIteration/onToolCall/onText — enables progress updates to Trello/GitHub
+			progressMonitor: progressReporter as Parameters<
+				typeof createConfiguredBuilder
+			>[0]['progressMonitor'],
 			// Implementation agent uses sequential execution to ensure file operations
 			// are properly ordered (e.g., FileSearchAndReplace then ReadFile on same file)
 			postConfigure:

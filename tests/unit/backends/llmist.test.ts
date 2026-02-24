@@ -106,6 +106,7 @@ function makeInput(agentType = 'implementation'): AgentBackendInput {
 		logWriter: () => {},
 		agentInput: { cardId: 'c1' } as AgentBackendInput['agentInput'],
 		runId: 'run-123',
+		llmistLogPath: '/workspace/llmist-implementation-12345.log',
 	};
 }
 
@@ -279,5 +280,57 @@ describe('LlmistBackend.execute', () => {
 
 		expect(mockGetAgentProfile).toHaveBeenCalledWith('review');
 		expect(mockGetLlmistGadgets).toHaveBeenCalledWith('review');
+	});
+
+	it('sets LLMIST_LOG_FILE to the provided llmistLogPath', async () => {
+		mockRunAgentLoop.mockResolvedValue({
+			output: 'Done',
+			iterations: 1,
+			gadgetCalls: 0,
+			cost: 0.01,
+			loopTerminated: false,
+		});
+
+		const input = makeInput();
+		input.llmistLogPath = '/workspace/test-llmist.log';
+
+		const backend = new LlmistBackend();
+		await backend.execute(input);
+
+		expect(process.env.LLMIST_LOG_FILE).toBe('/workspace/test-llmist.log');
+		expect(process.env.LLMIST_LOG_TEE).toBe('true');
+	});
+
+	it('passes progressReporter to createConfiguredBuilder as progressMonitor', async () => {
+		mockRunAgentLoop.mockResolvedValue({
+			output: 'Done',
+			iterations: 5,
+			gadgetCalls: 8,
+			cost: 0.1,
+			loopTerminated: false,
+		});
+
+		const { createConfiguredBuilder } = await import(
+			'../../../src/agents/shared/builderFactory.js'
+		);
+		const mockCreateConfiguredBuilder = vi.mocked(createConfiguredBuilder);
+
+		const mockProgressReporter = {
+			onIteration: vi.fn().mockResolvedValue(undefined),
+			onToolCall: vi.fn(),
+			onText: vi.fn(),
+		};
+
+		const input = makeInput();
+		input.progressReporter = mockProgressReporter;
+
+		const backend = new LlmistBackend();
+		await backend.execute(input);
+
+		expect(mockCreateConfiguredBuilder).toHaveBeenCalledWith(
+			expect.objectContaining({
+				progressMonitor: mockProgressReporter,
+			}),
+		);
 	});
 });
