@@ -4,6 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../../src/config/provider.js', () => ({
 	getIntegrationCredential: vi.fn(),
 	findProjectById: vi.fn(),
+	findProjectByRepo: vi.fn(),
+}));
+
+// Mock getProjectGitHubToken
+vi.mock('../../../src/config/projects.js', () => ({
+	getProjectGitHubToken: vi.fn(),
 }));
 
 // Mock config cache (imported transitively)
@@ -29,8 +35,14 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
-import { findProjectById, getIntegrationCredential } from '../../../src/config/provider.js';
+import { getProjectGitHubToken } from '../../../src/config/projects.js';
 import {
+	findProjectById,
+	findProjectByRepo,
+	getIntegrationCredential,
+} from '../../../src/config/provider.js';
+import {
+	GitHubPlatformClient,
 	TrelloPlatformClient,
 	resolveGitHubHeaders,
 	resolveJiraCredentials,
@@ -42,6 +54,16 @@ const mockLogger = vi.mocked(logger);
 
 const mockGetIntegrationCredential = vi.mocked(getIntegrationCredential);
 const mockFindProjectById = vi.mocked(findProjectById);
+const mockFindProjectByRepo = vi.mocked(findProjectByRepo);
+const mockGetProjectGitHubToken = vi.mocked(getProjectGitHubToken);
+
+const MOCK_PROJECT = {
+	id: 'proj1',
+	name: 'Test',
+	repo: 'owner/repo',
+	baseBranch: 'main',
+	branchPrefix: 'feature/',
+};
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -298,5 +320,64 @@ describe('TrelloPlatformClient', () => {
 				expect.any(String),
 			);
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// GitHubPlatformClient.fromRepo
+// ---------------------------------------------------------------------------
+
+describe('GitHubPlatformClient.fromRepo', () => {
+	beforeEach(() => {
+		mockLogger.warn.mockReset();
+		mockFindProjectByRepo.mockResolvedValue(MOCK_PROJECT);
+		mockGetProjectGitHubToken.mockResolvedValue('ghp_test_token');
+	});
+
+	it('returns a client when project and token are resolved', async () => {
+		const client = await GitHubPlatformClient.fromRepo('owner/repo');
+
+		expect(client).not.toBeNull();
+		expect(mockFindProjectByRepo).toHaveBeenCalledWith('owner/repo');
+		expect(mockGetProjectGitHubToken).toHaveBeenCalledWith(MOCK_PROJECT);
+	});
+
+	it('returns null when no project is found for the repo', async () => {
+		mockFindProjectByRepo.mockResolvedValue(undefined);
+
+		const client = await GitHubPlatformClient.fromRepo('unknown/repo');
+
+		expect(client).toBeNull();
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('No project found for repo'),
+			expect.objectContaining({ repoFullName: 'unknown/repo' }),
+		);
+	});
+
+	it('returns null when GitHub token is missing', async () => {
+		mockGetProjectGitHubToken.mockRejectedValue(new Error('Missing implementer token'));
+
+		const client = await GitHubPlatformClient.fromRepo('owner/repo');
+
+		expect(client).toBeNull();
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('Missing GitHub token in DB'),
+		);
+	});
+
+	it('returned client posts comments correctly', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({ id: 42 }),
+		});
+
+		const client = await GitHubPlatformClient.fromRepo('owner/repo');
+		expect(client).not.toBeNull();
+		const result = await client?.postComment(7, 'Test comment');
+
+		expect(result).toBe(42);
+		const [url, options] = mockFetch.mock.calls[0];
+		expect(url).toBe('https://api.github.com/repos/owner/repo/issues/7/comments');
+		expect(options.headers.Authorization).toBe('Bearer ghp_test_token');
 	});
 });

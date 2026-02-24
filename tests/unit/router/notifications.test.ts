@@ -7,7 +7,7 @@ vi.mock('../../../src/config/provider.js', () => ({
 	findProjectById: vi.fn(),
 }));
 
-// Mock getProjectGitHubToken (uses GITHUB_TOKEN_IMPLEMENTER with legacy fallback)
+// Mock getProjectGitHubToken (used inside GitHubPlatformClient.fromRepo)
 vi.mock('../../../src/config/projects.js', () => ({
 	getProjectGitHubToken: vi.fn(),
 }));
@@ -199,8 +199,11 @@ describe('notifyTimeout', () => {
 			receivedAt: '2026-02-14T10:00:00.000Z',
 		};
 
-		it('posts a comment to the Trello card', async () => {
-			mockFetch.mockResolvedValueOnce({ ok: true });
+		it('posts a comment to the Trello card via TrelloPlatformClient', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ id: 'comment-1' }),
+			});
 
 			await notifyTimeout(trelloJob, defaultInfo);
 
@@ -216,14 +219,15 @@ describe('notifyTimeout', () => {
 			expect(body.text).toContain('trello-1707900000000-abc123');
 		});
 
-		it('skips notification when Trello credentials are missing in DB', async () => {
+		it('skips fetch when Trello credentials are missing in DB', async () => {
 			mockGetIntegrationCredential.mockRejectedValue(new Error('Credential not found'));
 
 			await notifyTimeout(trelloJob, defaultInfo);
 
 			expect(mockFetch).not.toHaveBeenCalled();
+			// PlatformClient logs the credential warning
 			expect(mockLogger.warn).toHaveBeenCalledWith(
-				expect.stringContaining('Missing Trello credentials in DB'),
+				expect.stringContaining('Missing Trello credentials'),
 			);
 		});
 
@@ -254,8 +258,11 @@ describe('notifyTimeout', () => {
 			receivedAt: '2026-02-14T10:00:00.000Z',
 		};
 
-		it('posts a comment to the GitHub PR', async () => {
-			mockFetch.mockResolvedValueOnce({ ok: true });
+		it('posts a comment to the GitHub PR via GitHubPlatformClient', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ id: 999 }),
+			});
 
 			await notifyTimeout(githubJob, defaultInfo);
 
@@ -335,8 +342,11 @@ describe('notifyTimeout', () => {
 			receivedAt: '2026-02-14T10:00:00.000Z',
 		};
 
-		it('posts a comment to the JIRA issue', async () => {
-			mockFetch.mockResolvedValueOnce({ ok: true });
+		it('posts a comment to the JIRA issue via JiraPlatformClient', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ id: 'jira-comment-1' }),
+			});
 
 			await notifyTimeout(jiraJob, defaultInfo);
 
@@ -345,17 +355,18 @@ describe('notifyTimeout', () => {
 			expect(url).toBe('https://test.atlassian.net/rest/api/2/issue/DAM-1/comment');
 			expect(options.method).toBe('POST');
 			expect(options.headers.Authorization).toMatch(/^Basic /);
-			expect(JSON.parse(options.body)).toHaveProperty('body'); // ADF document
+			expect(JSON.parse(options.body)).toHaveProperty('body');
 		});
 
-		it('skips notification when JIRA credentials are missing in DB', async () => {
+		it('skips fetch when JIRA credentials are missing in DB', async () => {
 			mockGetIntegrationCredential.mockRejectedValue(new Error('Credential not found'));
 
 			await notifyTimeout(jiraJob, defaultInfo);
 
 			expect(mockFetch).not.toHaveBeenCalled();
+			// PlatformClient logs the credential warning
 			expect(mockLogger.warn).toHaveBeenCalledWith(
-				expect.stringContaining('Missing JIRA credentials in DB'),
+				expect.stringContaining('Missing JIRA credentials'),
 			);
 		});
 
@@ -377,7 +388,7 @@ describe('notifyTimeout', () => {
 	});
 
 	describe('error handling', () => {
-		it('catches and logs errors without throwing', async () => {
+		it('handles Trello network error gracefully without throwing', async () => {
 			mockFetch.mockRejectedValueOnce(new Error('Network failure'));
 
 			const trelloJob: TrelloJob = {
@@ -390,11 +401,12 @@ describe('notifyTimeout', () => {
 				receivedAt: '2026-02-14T10:00:00.000Z',
 			};
 
-			// Should not throw
+			// Should not throw — TrelloPlatformClient catches network errors internally
 			await expect(notifyTimeout(trelloJob, defaultInfo)).resolves.toBeUndefined();
 
-			expect(mockLogger.error).toHaveBeenCalledWith(
-				expect.stringContaining('Failed to send timeout notification'),
+			// PlatformClient catches the network error and logs a warn
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				expect.stringContaining('Failed to post Trello comment'),
 				expect.stringContaining('Network failure'),
 			);
 		});

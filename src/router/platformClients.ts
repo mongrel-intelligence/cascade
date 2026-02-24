@@ -10,7 +10,12 @@
  * acknowledgments.ts, notifications.ts, and reactions.ts.
  */
 
-import { findProjectById, getIntegrationCredential } from '../config/provider.js';
+import { getProjectGitHubToken } from '../config/projects.js';
+import {
+	findProjectById,
+	findProjectByRepo,
+	getIntegrationCredential,
+} from '../config/provider.js';
 import { getJiraConfig } from '../pm/config.js';
 import { logger } from '../utils/logging.js';
 
@@ -174,6 +179,30 @@ export class GitHubPlatformClient implements PlatformCommentClient {
 		private readonly repoFullName: string,
 		private readonly token: string,
 	) {}
+
+	/**
+	 * Factory that resolves the project and implementer token from a repo full name.
+	 * Returns a ready-to-use client, or `null` if the project or token cannot be resolved.
+	 */
+	static async fromRepo(repoFullName: string): Promise<GitHubPlatformClient | null> {
+		const project = await findProjectByRepo(repoFullName);
+		if (!project) {
+			logger.warn('[PlatformClient] No project found for repo, cannot create GitHub client', {
+				repoFullName,
+			});
+			return null;
+		}
+
+		let token: string;
+		try {
+			token = await getProjectGitHubToken(project);
+		} catch {
+			logger.warn('[PlatformClient] Missing GitHub token in DB, cannot create GitHub client');
+			return null;
+		}
+
+		return new GitHubPlatformClient(repoFullName, token);
+	}
 
 	async postComment(prNumber: string | number, message: string): Promise<number | null> {
 		try {
