@@ -1,37 +1,36 @@
-import { executeAgent } from '../../agents/base.js';
-import { executeRespondToCIAgent } from '../../agents/respond-to-ci.js';
-import { executeRespondToPRCommentAgent } from '../../agents/respond-to-pr-comment.js';
-import { executeRespondToReviewAgent } from '../../agents/respond-to-review.js';
-import { executeReviewAgent } from '../../agents/review.js';
-import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
+import os from 'node:os';
+
+import { LLMist, type ModelSpec, createLogger } from 'llmist';
+
+import { type BuilderType, createConfiguredBuilder } from '../../agents/shared/builderFactory.js';
+import { injectSyntheticCall } from '../../agents/shared/syntheticCalls.js';
+import { runAgentLoop } from '../../agents/utils/agentLoop.js';
+import type { AccumulatedLlmCall } from '../../agents/utils/hooks.js';
+import { getLogLevel } from '../../agents/utils/index.js';
+import { createAgentLogger } from '../../agents/utils/logging.js';
+import { createTrackingContext } from '../../agents/utils/tracking.js';
+import { CUSTOM_MODELS } from '../../config/customModels.js';
+import { createLLMCallLogger } from '../../utils/llmLogging.js';
+import { extractPRUrl } from '../../utils/prUrl.js';
+import { getAgentProfile } from '../agent-profiles.js';
 import type { AgentBackend, AgentBackendInput, AgentBackendResult } from '../types.js';
 
 /**
- * Mapping from agent type to its specialized executor function.
- * Agents not listed here fall through to the base `executeAgent()`.
- */
-const specializedExecutors: Record<
-	string,
-	(input: AgentInput & { project: ProjectConfig; config: CascadeConfig }) => Promise<AgentResult>
-> = {
-	'respond-to-review': (input) =>
-		executeRespondToReviewAgent(input as Parameters<typeof executeRespondToReviewAgent>[0]),
-	'respond-to-ci': (input) =>
-		executeRespondToCIAgent(input as Parameters<typeof executeRespondToCIAgent>[0]),
-	'respond-to-pr-comment': (input) =>
-		executeRespondToPRCommentAgent(input as Parameters<typeof executeRespondToPRCommentAgent>[0]),
-	review: (input) => executeReviewAgent(input as Parameters<typeof executeReviewAgent>[0]),
-};
-
-/**
- * llmist backend - wraps the existing llmist-based agent execution.
+ * llmist backend — executes agents using the llmist SDK.
  *
- * This is the "Option A" approach: the llmist backend delegates to the existing
- * executeAgent()/executeGitHubAgent() functions as-is. The shared adapter from
- * adapter.ts handles lifecycle only for non-llmist backends.
+ * Receives a fully pre-resolved AgentBackendInput from the shared adapter
+ * (adapter.ts → executeWithBackend → buildBackendInput), which provides:
+ *   - systemPrompt, taskPrompt, model, maxIterations
+ *   - contextInjections (pre-fetched PR/work-item/directory data)
+ *   - repoDir (already set up by the outer executeAgentPipeline)
+ *   - logWriter (shared file logger from the outer pipeline)
  *
- * In a follow-up, the llmist code can be refactored to also use the shared adapter,
- * but that's not needed for this PR.
+ * Llmist-specific features preserved:
+ *   - AccumulatedLlmCall metrics (via createObserverHooks inside createConfiguredBuilder)
+ *   - Loop detection and hard-stop (via createObserverHooks + runAgentLoop)
+ *   - Iteration hints / trailing messages (via createConfiguredBuilder)
+ *   - Context compaction (via createConfiguredBuilder)
+ *   - Synthetic gadget call injection from ContextInjection[]
  */
 export class LlmistBackend implements AgentBackend {
 	readonly name = 'llmist';
@@ -41,25 +40,129 @@ export class LlmistBackend implements AgentBackend {
 	}
 
 	async execute(input: AgentBackendInput): Promise<AgentBackendResult> {
-		const fullInput: AgentInput & { project: ProjectConfig; config: CascadeConfig } = {
-			...input.agentInput,
-			project: input.project,
-			config: input.config,
-		};
+		const {
+			agentType,
+			systemPrompt,
+			taskPrompt,
+			model,
+			maxIterations,
+			contextInjections,
+			budgetUsd,
+			repoDir,
+			logWriter,
+			runId,
+			agentInput,
+			llmistLogPath,
+			progressReporter,
+		} = input;
 
-		const executor = specializedExecutors[input.agentType];
-		const result = executor
-			? await executor(fullInput)
-			: await executeAgent(input.agentType, fullInput);
+		const profile = getAgentProfile(agentType);
+
+		// Create LLMist client with custom model definitions
+		const client = new LLMist({ customModels: CUSTOM_MODELS as ModelSpec[] });
+
+		// Create per-execution llmist logger and tracking state
+		const llmistLogger = createLogger({ minLevel: getLogLevel() });
+		const trackingContext = createTrackingContext();
+		const llmCallAccumulator: AccumulatedLlmCall[] = [];
+
+		// Create a LLM call logger for raw request/response file logging.
+		// Lives in the system tmp dir, independent from the outer fileLogger
+		// (which handles cascade.log / llmist.log).
+		const llmCallLogger = createLLMCallLogger(os.tmpdir(), `llmist-${agentType}-${Date.now()}`);
+
+		// Point llmist SDK at the workspace directory llmist log path (provided by the outer
+		// pipeline's fileLogger). This ensures the structured llmist log is included in run
+		// records and log bundles (read from fileLogger.llmistLogPath during finalization).
+		if (llmistLogPath) {
+			process.env.LLMIST_LOG_FILE = llmistLogPath;
+			process.env.LLMIST_LOG_TEE = 'true';
+		}
+
+		// Get gadget instances from the agent profile (single source of truth for tool sets)
+		const gadgets = profile.getLlmistGadgets(agentType);
+
+		// Build the configured agent builder with all llmist-specific features:
+		// rate limiting, retry, compaction, iteration hints, observer hooks
+		let builder: BuilderType = createConfiguredBuilder({
+			client,
+			agentType,
+			model,
+			systemPrompt,
+			maxIterations,
+			llmistLogger,
+			trackingContext,
+			logWriter,
+			llmCallLogger,
+			repoDir,
+			gadgets: gadgets as Parameters<typeof createConfiguredBuilder>[0]['gadgets'],
+			remainingBudgetUsd: budgetUsd,
+			llmCallAccumulator,
+			runId,
+			baseBranch: input.project.baseBranch,
+			projectId: input.project.id,
+			cardId: agentInput.cardId,
+			// Pass the progress monitor from the adapter so createObserverHooks can call
+			// onIteration/onToolCall/onText — enables progress updates to Trello/GitHub
+			progressMonitor: progressReporter as Parameters<
+				typeof createConfiguredBuilder
+			>[0]['progressMonitor'],
+			// Implementation agent uses sequential execution to ensure file operations
+			// are properly ordered (e.g., FileSearchAndReplace then ReadFile on same file)
+			postConfigure:
+				agentType === 'implementation' ? (b) => b.withGadgetExecutionMode('sequential') : undefined,
+		});
+
+		// Convert ContextInjection[] from the unified adapter into synthetic gadget calls.
+		// This is the llmist-native way to inject pre-fetched context: each injection
+		// appears in the conversation as if the agent called the gadget itself.
+		for (let idx = 0; idx < contextInjections.length; idx++) {
+			const injection = contextInjections[idx];
+			const invocationId = `gc_${injection.toolName.toLowerCase()}_${idx}`;
+			builder = injectSyntheticCall(
+				builder,
+				trackingContext,
+				injection.toolName,
+				injection.params,
+				injection.result,
+				invocationId,
+			);
+		}
+
+		// Create agent logger that writes to the shared logWriter from the outer pipeline
+		const log = createAgentLogger({ write: logWriter } as Parameters<typeof createAgentLogger>[0]);
+
+		log.info('Starting llmist agent', {
+			model,
+			maxIterations,
+			promptLength: taskPrompt.length,
+			contextInjections: contextInjections.length,
+			runId,
+		});
+
+		// Run the agent event loop (includes loop detection, session notices, etc.)
+		const agent = builder.ask(taskPrompt);
+		const result = await runAgentLoop(
+			agent,
+			log,
+			trackingContext,
+			agentInput.interactive === true,
+			agentInput.autoAccept === true,
+		);
+
+		log.info('Agent completed', {
+			iterations: result.iterations,
+			gadgetCalls: result.gadgetCalls,
+			cost: result.cost,
+			loopTerminated: result.loopTerminated ?? false,
+		});
 
 		return {
-			success: result.success,
+			success: !result.loopTerminated,
 			output: result.output,
-			prUrl: result.prUrl,
-			error: result.error,
+			prUrl: extractPRUrl(result.output) ?? undefined,
+			error: result.loopTerminated ? 'Agent terminated due to persistent loop' : undefined,
 			cost: result.cost,
-			logBuffer: result.logBuffer,
-			runId: result.runId,
 		};
 	}
 }

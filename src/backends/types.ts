@@ -69,6 +69,8 @@ export interface AgentBackendInput {
 	enableStopHooks?: boolean;
 	/** Whether to block git push in hooks (defaults to true) */
 	blockGitPush?: boolean;
+	/** Path where the llmist SDK should write its structured log (workspace dir, not temp) */
+	llmistLogPath?: string;
 }
 
 export type LogWriter = (level: string, message: string, context?: Record<string, unknown>) => void;
