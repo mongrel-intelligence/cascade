@@ -101,40 +101,106 @@ describe('callProgressModel', () => {
 		expect(result).toBe('Valid text output.');
 	});
 
-	it('throws when LLM returns empty output', async () => {
+	it('throws when LLM returns empty output on both attempts', async () => {
 		async function* fakeRun() {
 			yield { type: 'text', content: '' };
 		}
 
-		MockAgentBuilder.mockImplementationOnce(() => ({
-			withModel: vi.fn().mockReturnThis(),
-			withTemperature: vi.fn().mockReturnThis(),
-			withSystem: vi.fn().mockReturnThis(),
-			withMaxIterations: vi.fn().mockReturnThis(),
-			ask: vi.fn().mockReturnValue({ run: fakeRun }),
-		}));
+		// Both attempts return empty
+		for (let i = 0; i < 2; i++) {
+			MockAgentBuilder.mockImplementationOnce(() => ({
+				withModel: vi.fn().mockReturnThis(),
+				withTemperature: vi.fn().mockReturnThis(),
+				withSystem: vi.fn().mockReturnThis(),
+				withMaxIterations: vi.fn().mockReturnThis(),
+				ask: vi.fn().mockReturnValue({ run: fakeRun }),
+			}));
+		}
 
 		await expect(callProgressModel('test-model', makeContext(), [])).rejects.toThrow(
 			'Progress model returned empty output',
 		);
 	});
 
-	it('throws when LLM returns no events', async () => {
+	it('throws when LLM returns no events on both attempts', async () => {
 		async function* fakeRun() {
 			// yields nothing
 		}
 
+		// Both attempts yield nothing
+		for (let i = 0; i < 2; i++) {
+			MockAgentBuilder.mockImplementationOnce(() => ({
+				withModel: vi.fn().mockReturnThis(),
+				withTemperature: vi.fn().mockReturnThis(),
+				withSystem: vi.fn().mockReturnThis(),
+				withMaxIterations: vi.fn().mockReturnThis(),
+				ask: vi.fn().mockReturnValue({ run: fakeRun }),
+			}));
+		}
+
+		await expect(callProgressModel('test-model', makeContext(), [])).rejects.toThrow(
+			'Progress model returned empty output',
+		);
+	});
+
+	it('retries once on empty output and succeeds', async () => {
+		async function* emptyRun() {
+			yield { type: 'text', content: '' };
+		}
+		async function* successRun() {
+			yield { type: 'text', content: 'Recovered progress update.' };
+		}
+
+		// First attempt: empty output
 		MockAgentBuilder.mockImplementationOnce(() => ({
 			withModel: vi.fn().mockReturnThis(),
 			withTemperature: vi.fn().mockReturnThis(),
 			withSystem: vi.fn().mockReturnThis(),
 			withMaxIterations: vi.fn().mockReturnThis(),
-			ask: vi.fn().mockReturnValue({ run: fakeRun }),
+			ask: vi.fn().mockReturnValue({ run: emptyRun }),
+		}));
+		// Second attempt: success
+		MockAgentBuilder.mockImplementationOnce(() => ({
+			withModel: vi.fn().mockReturnThis(),
+			withTemperature: vi.fn().mockReturnThis(),
+			withSystem: vi.fn().mockReturnThis(),
+			withMaxIterations: vi.fn().mockReturnThis(),
+			ask: vi.fn().mockReturnValue({ run: successRun }),
 		}));
 
-		await expect(callProgressModel('test-model', makeContext(), [])).rejects.toThrow(
-			'Progress model returned empty output',
-		);
+		const result = await callProgressModel('test-model', makeContext(), []);
+		expect(result).toBe('Recovered progress update.');
+		expect(MockAgentBuilder).toHaveBeenCalledTimes(2);
+	});
+
+	it('retries once on no events and succeeds', async () => {
+		async function* noEventsRun() {
+			// yields nothing
+		}
+		async function* successRun() {
+			yield { type: 'text', content: 'Recovered after no events.' };
+		}
+
+		// First attempt: no events
+		MockAgentBuilder.mockImplementationOnce(() => ({
+			withModel: vi.fn().mockReturnThis(),
+			withTemperature: vi.fn().mockReturnThis(),
+			withSystem: vi.fn().mockReturnThis(),
+			withMaxIterations: vi.fn().mockReturnThis(),
+			ask: vi.fn().mockReturnValue({ run: noEventsRun }),
+		}));
+		// Second attempt: success
+		MockAgentBuilder.mockImplementationOnce(() => ({
+			withModel: vi.fn().mockReturnThis(),
+			withTemperature: vi.fn().mockReturnThis(),
+			withSystem: vi.fn().mockReturnThis(),
+			withMaxIterations: vi.fn().mockReturnThis(),
+			ask: vi.fn().mockReturnValue({ run: successRun }),
+		}));
+
+		const result = await callProgressModel('test-model', makeContext(), []);
+		expect(result).toBe('Recovered after no events.');
+		expect(MockAgentBuilder).toHaveBeenCalledTimes(2);
 	});
 
 	it('throws when LLM call times out (races against a slow call)', async () => {
