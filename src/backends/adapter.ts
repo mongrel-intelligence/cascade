@@ -13,6 +13,7 @@ import { finalizeBackendRun, tryCreateRun } from '../agents/shared/runTracking.j
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
+import { recordInitialComment } from '../gadgets/sessionState.js';
 import { withGitHubToken } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { getAgentProfile } from './agent-profiles.js';
@@ -196,6 +197,16 @@ export async function executeWithBackend(
 			);
 			if (runId) setRunId(runId);
 
+			// Determine if the ack comment is a GitHub PR comment (numeric ID) vs PM comment (string ID)
+			const isGitHubAck = Boolean(
+				input.prNumber && input.repoFullName && typeof input.ackCommentId === 'number',
+			);
+
+			// Seed session state so GitHub progress updates target the existing ack comment
+			if (isGitHubAck) {
+				recordInitialComment(input.ackCommentId as number);
+			}
+
 			const monitor = createProgressMonitor({
 				logWriter,
 				agentType,
@@ -205,7 +216,18 @@ export async function executeWithBackend(
 				customModels: CUSTOM_MODELS as ModelSpec[],
 				repoDir: repoDir ?? undefined,
 				trello: cardId ? { cardId } : undefined,
-				preSeededCommentId: input.ackCommentId as string | undefined,
+				// Only use preSeededCommentId for PM (Trello/JIRA) ack comments, not GitHub
+				preSeededCommentId: isGitHubAck ? undefined : (input.ackCommentId as string | undefined),
+				// Pass GitHub config so progress monitor can update the PR comment
+				...(input.prNumber && input.repoFullName
+					? {
+							github: {
+								owner: input.repoFullName.split('/')[0],
+								repo: input.repoFullName.split('/')[1],
+								headerMessage: input.ackMessage ?? '',
+							},
+						}
+					: {}),
 			});
 
 			const backendInput: AgentBackendInput = {
