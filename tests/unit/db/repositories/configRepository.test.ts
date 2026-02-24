@@ -346,6 +346,25 @@ describe('configRepository', () => {
 
 			expect(config.projects[0].agentBackend).toBeUndefined();
 		});
+
+		it('preserves agent_config backend overrides even when project agentBackend is null', async () => {
+			const mockDb = createSequentialMockDb([
+				[defaultsRow],
+				[projectRow], // agentBackend is null
+				[projectAgentConfig], // has agentBackend: 'claude-code' for implementation
+				[trelloIntegration],
+			]);
+			vi.mocked(getDb).mockReturnValue(mockDb as never);
+
+			const config = await loadConfigFromDb();
+			const proj = config.projects[0];
+
+			expect(proj.agentBackend).toBeDefined();
+			expect(proj.agentBackend?.default).toBe('llmist'); // Zod default
+			expect(proj.agentBackend?.overrides).toEqual({
+				implementation: 'claude-code',
+			});
+		});
 	});
 
 	describe('findProjectByIdFromDb', () => {
