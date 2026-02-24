@@ -2,7 +2,7 @@
  * JIRA issue-transitioned trigger.
  *
  * Fires when a JIRA issue transitions to a configured status that maps to
- * a CASCADE agent type (briefing, planning, implementation).
+ * a CASCADE agent type (splitting, planning, implementation).
  */
 
 import {

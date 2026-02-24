@@ -69,7 +69,7 @@ describe('PRReadyToMergeTrigger', () => {
 		trello: {
 			boardId: 'board123',
 			lists: {
-				briefing: 'briefing-list-id',
+				splitting: 'splitting-list-id',
 				planning: 'planning-list-id',
 				todo: 'todo-list-id',
 				done: 'done-list-id',
@@ -656,7 +656,7 @@ describe('PRReadyToMergeTrigger', () => {
 				trello: {
 					...mockProject.trello,
 					lists: {
-						briefing: 'briefing-list-id',
+						splitting: 'splitting-list-id',
 						planning: 'planning-list-id',
 						todo: 'todo-list-id',
 						// no done list

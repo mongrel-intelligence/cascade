@@ -40,14 +40,14 @@ vi.mock('../../../src/router/reactions.js', () => ({
 import '../../../src/pm/index.js';
 
 import {
-	CardMovedToBriefingTrigger,
 	CardMovedToPlanningTrigger,
+	CardMovedToSplittingTrigger,
 	CardMovedToTodoTrigger,
 } from '../../../src/triggers/trello/card-moved.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 
-describe('CardMovedToBriefingTrigger', () => {
-	const trigger = CardMovedToBriefingTrigger;
+describe('CardMovedToSplittingTrigger', () => {
+	const trigger = CardMovedToSplittingTrigger;
 
 	const mockProject = {
 		id: 'test',
@@ -58,7 +58,7 @@ describe('CardMovedToBriefingTrigger', () => {
 		trello: {
 			boardId: 'board123',
 			lists: {
-				briefing: 'briefing-list-id',
+				splitting: 'splitting-list-id',
 				planning: 'planning-list-id',
 				todo: 'todo-list-id',
 			},
@@ -66,7 +66,7 @@ describe('CardMovedToBriefingTrigger', () => {
 		},
 	};
 
-	it('matches when card moved to briefing list', () => {
+	it('matches when card moved to splitting list', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
@@ -80,7 +80,7 @@ describe('CardMovedToBriefingTrigger', () => {
 					data: {
 						card: { id: 'card1', name: 'Test Card', idShort: 1, shortLink: 'abc' },
 						listBefore: { id: 'other-list', name: 'Other' },
-						listAfter: { id: 'briefing-list-id', name: 'Briefing' },
+						listAfter: { id: 'splitting-list-id', name: 'Splitting' },
 					},
 				},
 			},
@@ -89,7 +89,7 @@ describe('CardMovedToBriefingTrigger', () => {
 		expect(trigger.matches(ctx)).toBe(true);
 	});
 
-	it('does not match when card moved from briefing to briefing', () => {
+	it('does not match when card moved from splitting to splitting', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
@@ -102,8 +102,8 @@ describe('CardMovedToBriefingTrigger', () => {
 					date: '2024-01-01',
 					data: {
 						card: { id: 'card1', name: 'Test Card', idShort: 1, shortLink: 'abc' },
-						listBefore: { id: 'briefing-list-id', name: 'Briefing' },
-						listAfter: { id: 'briefing-list-id', name: 'Briefing' },
+						listBefore: { id: 'splitting-list-id', name: 'Splitting' },
+						listAfter: { id: 'splitting-list-id', name: 'Splitting' },
 					},
 				},
 			},
@@ -112,7 +112,7 @@ describe('CardMovedToBriefingTrigger', () => {
 		expect(trigger.matches(ctx)).toBe(false);
 	});
 
-	it('matches when card created directly in briefing list', () => {
+	it('matches when card created directly in splitting list', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
@@ -125,7 +125,7 @@ describe('CardMovedToBriefingTrigger', () => {
 					date: '2024-01-01',
 					data: {
 						card: { id: 'card1', name: 'Test Card', idShort: 1, shortLink: 'abc' },
-						list: { id: 'briefing-list-id', name: 'Briefing' },
+						list: { id: 'splitting-list-id', name: 'Splitting' },
 					},
 				},
 			},
@@ -166,7 +166,7 @@ describe('CardMovedToBriefingTrigger', () => {
 		expect(trigger.matches(ctx)).toBe(false);
 	});
 
-	it('handles and returns briefing agent', async () => {
+	it('handles and returns splitting agent', async () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
@@ -180,7 +180,7 @@ describe('CardMovedToBriefingTrigger', () => {
 					data: {
 						card: { id: 'card123', name: 'Test Card', idShort: 1, shortLink: 'abc' },
 						listBefore: { id: 'other-list', name: 'Other' },
-						listAfter: { id: 'briefing-list-id', name: 'Briefing' },
+						listAfter: { id: 'splitting-list-id', name: 'Splitting' },
 					},
 				},
 			},
@@ -188,7 +188,7 @@ describe('CardMovedToBriefingTrigger', () => {
 
 		const result = await trigger.handle(ctx);
 
-		expect(result?.agentType).toBe('briefing');
+		expect(result?.agentType).toBe('splitting');
 		expect(result?.workItemId).toBe('card123');
 		expect(result?.agentInput.cardId).toBe('card123');
 	});
@@ -206,7 +206,7 @@ describe('CardMovedToTodoTrigger', () => {
 		trello: {
 			boardId: 'board123',
 			lists: {
-				briefing: 'briefing-list-id',
+				splitting: 'splitting-list-id',
 				planning: 'planning-list-id',
 				todo: 'todo-list-id',
 			},

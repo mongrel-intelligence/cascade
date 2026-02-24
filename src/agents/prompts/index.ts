@@ -11,7 +11,7 @@ const eta = new Eta({ views: templatesDir, autoEscape: false });
 
 // Valid agent types
 const validTypes = [
-	'briefing',
+	'splitting',
 	'planning',
 	'implementation',
 	'debug',
@@ -37,7 +37,7 @@ export interface PromptContext {
 	workItemNounPluralCap?: string; // "Cards" or "Issues"
 	pmName?: string; // "Trello" or "JIRA"
 
-	// Briefing-specific
+	// Splitting-specific
 	storiesListId?: string;
 	processedLabelId?: string;
 
@@ -189,8 +189,8 @@ export function getTemplateVariables(): Array<{
 		{ name: 'workItemNounCap', group: 'PM', description: 'Card or Issue' },
 		{ name: 'workItemNounPluralCap', group: 'PM', description: 'Cards or Issues' },
 		{ name: 'pmName', group: 'PM', description: 'Trello or JIRA' },
-		{ name: 'storiesListId', group: 'Briefing', description: 'Trello stories list ID' },
-		{ name: 'processedLabelId', group: 'Briefing', description: 'Trello processed label ID' },
+		{ name: 'storiesListId', group: 'Splitting', description: 'Trello stories list ID' },
+		{ name: 'processedLabelId', group: 'Splitting', description: 'Trello processed label ID' },
 		{ name: 'prNumber', group: 'CI', description: 'Pull request number' },
 		{ name: 'prBranch', group: 'CI', description: 'Pull request branch name' },
 		{ name: 'repoFullName', group: 'CI', description: 'Repository full name (owner/repo)' },
@@ -206,7 +206,7 @@ export function getTemplateVariables(): Array<{
 }
 
 // Export individual prompts for backwards compatibility (rendered without context)
-export const BRIEFING_SYSTEM_PROMPT = loadTemplate('briefing');
+export const SPLITTING_SYSTEM_PROMPT = loadTemplate('splitting');
 export const PLANNING_SYSTEM_PROMPT = loadTemplate('planning');
 export const IMPLEMENTATION_SYSTEM_PROMPT = loadTemplate('implementation');
 export const DEBUG_SYSTEM_PROMPT = loadTemplate('debug');

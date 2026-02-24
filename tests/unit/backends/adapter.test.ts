@@ -453,7 +453,7 @@ describe('executeWithBackend', () => {
 		});
 		const input = makeInput();
 
-		const result = await executeWithBackend(backend, 'briefing', input);
+		const result = await executeWithBackend(backend, 'splitting', input);
 
 		expect(result.success).toBe(true);
 	});

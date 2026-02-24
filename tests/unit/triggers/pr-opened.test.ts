@@ -19,7 +19,7 @@ describe('PROpenedTrigger', () => {
 		trello: {
 			boardId: 'board123',
 			lists: {
-				briefing: 'briefing-list-id',
+				splitting: 'splitting-list-id',
 				planning: 'planning-list-id',
 				todo: 'todo-list-id',
 			},

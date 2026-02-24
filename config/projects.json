@@ -9,7 +9,7 @@
 		},
 		"agentIterations": {
 			"planning": 50,
-			"briefing": 50
+			"splitting": 50
 		},
 		"watchdogTimeoutMs": 2700000,
 		"selfDestructTimeoutMs": 1800000,
@@ -27,7 +27,7 @@
 			"trello": {
 				"boardId": "694ec393370da080b52eb64c",
 				"lists": {
-					"briefing": "694fc5e57256ac0717c3dfea",
+					"splitting": "694fc5e57256ac0717c3dfea",
 					"stories": "69541b4151734a3cebab38c4",
 					"planning": "694ec39e91e3487c1351a491",
 					"todo": "694ec3a365a4c75df2493504",
@@ -72,7 +72,7 @@
 			"trello": {
 				"boardId": "698db5df2b873930c7c38bc0",
 				"lists": {
-					"briefing": "698db5df2b873930c7c38bbb",
+					"splitting": "698db5df2b873930c7c38bbb",
 					"stories": "698db5df2b873930c7c38bbd",
 					"planning": "698db5df2b873930c7c38bb6",
 					"todo": "698db5df2b873930c7c38bb7",
@@ -102,7 +102,7 @@
 			"trello": {
 				"boardId": "6970fa9aab0e56304a15fbac",
 				"lists": {
-					"briefing": "6970faa01757ddb3286e7bae",
+					"splitting": "6970faa01757ddb3286e7bae",
 					"planning": "6970fa9d48b639dad13dc8f7"
 				},
 				"labels": {

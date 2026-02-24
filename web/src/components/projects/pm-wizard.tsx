@@ -575,7 +575,7 @@ function FieldMappingRow({
 // ============================================================================
 
 const TRELLO_LIST_SLOTS = [
-	'briefing',
+	'splitting',
 	'stories',
 	'planning',
 	'todo',
@@ -589,7 +589,7 @@ const TRELLO_LIST_SLOTS = [
 const TRELLO_LABEL_SLOTS = ['readyToProcess', 'processing', 'processed', 'error'];
 
 const JIRA_STATUS_SLOTS = [
-	'briefing',
+	'splitting',
 	'planning',
 	'todo',
 	'inProgress',

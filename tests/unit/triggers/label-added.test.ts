@@ -47,7 +47,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 		trello: {
 			boardId: 'board123',
 			lists: {
-				briefing: 'briefing-list-id',
+				splitting: 'splitting-list-id',
 				planning: 'planning-list-id',
 				todo: 'todo-list-id',
 			},
@@ -139,14 +139,14 @@ describe('ReadyToProcessLabelTrigger', () => {
 	});
 
 	describe('handle', () => {
-		it('returns briefing agent when card is in briefing list', async () => {
+		it('returns splitting agent when card is in splitting list', async () => {
 			mockGetCard.mockResolvedValue({
 				id: 'card123',
 				name: 'Test Card',
 				desc: '',
 				url: 'https://trello.com/c/abc',
 				shortUrl: 'https://trello.com/c/abc',
-				idList: 'briefing-list-id',
+				idList: 'splitting-list-id',
 				labels: [],
 			});
 
@@ -170,7 +170,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result.agentType).toBe('briefing');
+			expect(result.agentType).toBe('splitting');
 			expect(result.workItemId).toBe('card123');
 			expect(mockGetCard).toHaveBeenCalledWith('card123');
 		});
@@ -245,7 +245,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 			expect(result.workItemId).toBe('card789');
 		});
 
-		it('defaults to briefing agent when card is in unknown list', async () => {
+		it('defaults to splitting agent when card is in unknown list', async () => {
 			mockGetCard.mockResolvedValue({
 				id: 'card999',
 				name: 'Unknown List Card',
@@ -276,7 +276,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result.agentType).toBe('briefing');
+			expect(result.agentType).toBe('splitting');
 		});
 
 		it('returns null when card ID is missing', async () => {

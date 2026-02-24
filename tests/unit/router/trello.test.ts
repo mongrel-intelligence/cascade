@@ -30,7 +30,7 @@ const mockProject: RouterProjectConfig = {
 	trello: {
 		boardId: 'board1',
 		lists: {
-			briefing: 'list-briefing',
+			splitting: 'list-splitting',
 			planning: 'list-planning',
 			todo: 'list-todo',
 			debug: 'list-debug',
@@ -46,7 +46,7 @@ beforeEach(() => {
 describe('isAgentLogFilename', () => {
 	it('matches valid agent log filenames', () => {
 		expect(isAgentLogFilename('implementation-2026-01-02T16-30-24-339Z.zip')).toBe(true);
-		expect(isAgentLogFilename('briefing-timeout-2026-01-02T12-34-56-789Z.zip')).toBe(true);
+		expect(isAgentLogFilename('splitting-timeout-2026-01-02T12-34-56-789Z.zip')).toBe(true);
 	});
 
 	it('matches multi-hyphen agent names (e.g. respond-to-review)', () => {
@@ -89,7 +89,7 @@ describe('isCardInTriggerList', () => {
 	it('returns true when card created in trigger list', () => {
 		const result = isCardInTriggerList(
 			'createCard',
-			{ list: { id: 'list-briefing' } },
+			{ list: { id: 'list-splitting' } },
 			mockProject,
 		);
 		expect(result).toBe(true);

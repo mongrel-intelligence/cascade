@@ -816,10 +816,10 @@ describe('ProgressMonitor — agent-specific initial messages', () => {
 		return mockPMProvider.addComment.mock.calls[0][1] as string;
 	}
 
-	it('posts briefing-specific message for briefing agent', async () => {
-		const message = await getInitialMessage('briefing');
+	it('posts splitting-specific message for splitting agent', async () => {
+		const message = await getInitialMessage('splitting');
 		expect(message).toBe(
-			'**📋 Analyzing brief** — Reading the card and gathering context to create a clear brief...',
+			'**📋 Splitting plan** — Reading the plan and splitting it into ordered work items...',
 		);
 	});
 

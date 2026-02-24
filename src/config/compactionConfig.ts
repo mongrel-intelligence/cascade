@@ -33,7 +33,7 @@ Previous conversation:`,
 };
 
 /**
- * Base compaction settings for other agents (briefing, planning, debug, respond-to-review, review).
+ * Base compaction settings for other agents (splitting, planning, debug, respond-to-review, review).
  *
  * These agents typically have shorter sessions, so we use:
  * - Standard trigger threshold (80%)
@@ -90,7 +90,7 @@ function handleCompaction(event: CompactionEvent): void {
 /**
  * Get compaction configuration for a given agent type.
  *
- * @param agentType - Type of agent (e.g., "implementation", "briefing", "planning")
+ * @param agentType - Type of agent (e.g., "implementation", "splitting", "planning")
  * @returns Compaction configuration
  */
 export function getCompactionConfig(agentType: string): CompactionConfig {

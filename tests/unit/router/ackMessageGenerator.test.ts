@@ -32,7 +32,7 @@ vi.mock('../../../src/config/agentMessages.js', () => ({
 	INITIAL_MESSAGES: {
 		implementation:
 			'**🚀 Implementing changes** — Writing code, running tests, and preparing a PR...',
-		briefing:
+		splitting:
 			'**📋 Analyzing brief** — Reading the card and gathering context to create a clear brief...',
 		review: '**🔍 Reviewing code** — Examining the PR changes for quality and correctness...',
 	},
@@ -319,7 +319,7 @@ describe('generateAckMessage', () => {
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue(null);
 
-		const result = await generateAckMessage('briefing', 'Card: Test', 'p1');
+		const result = await generateAckMessage('splitting', 'Card: Test', 'p1');
 
 		expect(result).toBe(
 			'**📋 Analyzing brief** — Reading the card and gathering context to create a clear brief...',

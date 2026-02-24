@@ -59,7 +59,7 @@ const mockProject = {
 	branchPrefix: 'feature/',
 	trello: {
 		boardId: 'board-1',
-		lists: { briefing: 'l1', planning: 'l2', todo: 'l3' },
+		lists: { splitting: 'l1', planning: 'l2', todo: 'l3' },
 		labels: {},
 	},
 } as unknown as ProjectConfig;
@@ -259,7 +259,7 @@ describe('triggerDebugAnalysis', () => {
 	it('writes LLM call files to temp dir', async () => {
 		vi.mocked(getRunById).mockResolvedValue({
 			id: 'run-1',
-			agentType: 'briefing',
+			agentType: 'splitting',
 			status: 'failed',
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
 

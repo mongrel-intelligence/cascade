@@ -12,7 +12,7 @@ export const ReadyToProcessLabelSchema = z
 	.union([
 		z.boolean(),
 		z.object({
-			briefing: z.boolean().default(true),
+			splitting: z.boolean().default(true),
 			planning: z.boolean().default(true),
 			implementation: z.boolean().default(true),
 		}),
@@ -26,7 +26,7 @@ export type ReadyToProcessLabelConfig = z.infer<typeof ReadyToProcessLabelSchema
  * All triggers default to `true` for backward compatibility.
  */
 export const TrelloTriggerConfigSchema = z.object({
-	cardMovedToBriefing: z.boolean().default(true),
+	cardMovedToSplitting: z.boolean().default(true),
 	cardMovedToPlanning: z.boolean().default(true),
 	cardMovedToTodo: z.boolean().default(true),
 	readyToProcessLabel: ReadyToProcessLabelSchema,
@@ -41,7 +41,7 @@ export const IssueTransitionedSchema = z
 	.union([
 		z.boolean(),
 		z.object({
-			briefing: z.boolean().default(true),
+			splitting: z.boolean().default(true),
 			planning: z.boolean().default(true),
 			implementation: z.boolean().default(true),
 		}),
@@ -142,14 +142,14 @@ export function resolveReviewTriggerConfig(
 // Generic Helpers
 // ============================================================================
 
-/** Shape of a per-agent toggle object (briefing / planning / implementation). */
-type PerAgentObject = { briefing?: boolean; planning?: boolean; implementation?: boolean };
+/** Shape of a per-agent toggle object (splitting / planning / implementation). */
+type PerAgentObject = { splitting?: boolean; planning?: boolean; implementation?: boolean };
 
 /**
  * Generic resolver for per-agent toggles that can be:
  * - `undefined` → returns `true` (backward compatible, always enabled)
  * - `boolean` → applies uniformly to all agents
- * - `{ briefing, planning, implementation }` → per-agent lookup
+ * - `{ splitting, planning, implementation }` → per-agent lookup
  *
  * This replaces the duplicated logic in `resolveReadyToProcessEnabled` and
  * `resolveIssueTransitionedEnabled`.
@@ -161,7 +161,7 @@ export function resolvePerAgentToggle(
 	if (value === undefined) return true;
 	if (typeof value === 'boolean') return value;
 	// Nested object: check per-agent toggle
-	if (agentType === 'briefing') return value.briefing ?? true;
+	if (agentType === 'splitting') return value.splitting ?? true;
 	if (agentType === 'planning') return value.planning ?? true;
 	if (agentType === 'implementation') return value.implementation ?? true;
 	// Unknown agent type — default to enabled
@@ -220,7 +220,7 @@ export function resolveTriggerEnabled(
 	if (nestedKeys.includes(key)) {
 		if (typeof value === 'boolean') return value;
 		const obj = value as PerAgentObject;
-		return !!(obj.briefing || obj.planning || obj.implementation);
+		return !!(obj.splitting || obj.planning || obj.implementation);
 	}
 
 	// Object key (e.g. reviewTrigger) — non-boolean means the object is present/active

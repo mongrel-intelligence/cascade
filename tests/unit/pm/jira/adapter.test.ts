@@ -50,7 +50,7 @@ const mockConfig = {
 	projectKey: 'PROJ',
 	baseUrl: 'https://mycompany.atlassian.net',
 	statuses: {
-		briefing: 'Briefing',
+		splitting: 'Briefing',
 		planning: 'Planning',
 		todo: 'To Do',
 		done: 'Done',

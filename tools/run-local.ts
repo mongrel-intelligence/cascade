@@ -17,7 +17,7 @@ import { resolve } from 'node:path';
 import { program } from 'commander';
 
 const VALID_AGENTS = [
-	'briefing',
+	'splitting',
 	'planning',
 	'implementation',
 	'debug',

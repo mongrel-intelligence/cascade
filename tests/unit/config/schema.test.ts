@@ -11,7 +11,7 @@ describe('ProjectConfigSchema', () => {
 			trello: {
 				boardId: 'board123',
 				lists: {
-					briefing: 'list1',
+					splitting: 'list1',
 					planning: 'list2',
 					todo: 'list3',
 				},
@@ -149,7 +149,7 @@ describe('ProjectConfigSchema', () => {
 			jira: {
 				projectKey: 'TEST',
 				baseUrl: 'https://test.atlassian.net',
-				statuses: { briefing: 'Briefing' },
+				statuses: { splitting: 'Briefing' },
 				labels: {
 					processing: 'my-processing',
 					processed: 'my-processed',
@@ -173,7 +173,7 @@ describe('ProjectConfigSchema', () => {
 			jira: {
 				projectKey: 'TEST',
 				baseUrl: 'https://test.atlassian.net',
-				statuses: { briefing: 'Briefing' },
+				statuses: { splitting: 'Briefing' },
 				labels: {},
 			},
 		};
@@ -194,7 +194,7 @@ describe('ProjectConfigSchema', () => {
 			jira: {
 				projectKey: 'TEST',
 				baseUrl: 'https://test.atlassian.net',
-				statuses: { briefing: 'Briefing' },
+				statuses: { splitting: 'Briefing' },
 			},
 		};
 

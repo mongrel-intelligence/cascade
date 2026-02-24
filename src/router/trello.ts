@@ -15,7 +15,7 @@ import type { RouterProjectConfig } from './config.js';
 
 /**
  * Check if filename matches agent log pattern: {agent-type}-{timestamp}.zip
- * Examples: implementation-2026-01-02T16-30-24-339Z.zip, briefing-timeout-2026-01-02T12-34-56-789Z.zip
+ * Examples: implementation-2026-01-02T16-30-24-339Z.zip, splitting-timeout-2026-01-02T12-34-56-789Z.zip
  * The timestamp follows ISO 8601 format with colons replaced by hyphens: YYYY-MM-DDTHH-MM-SS-mmmZ
  */
 export function isAgentLogFilename(filename: string): boolean {
@@ -29,7 +29,7 @@ export function isCardInTriggerList(
 ): boolean {
 	if (!project.trello) return false;
 	const triggerLists = [
-		project.trello.lists.briefing,
+		project.trello.lists.splitting,
 		project.trello.lists.planning,
 		project.trello.lists.todo,
 	];

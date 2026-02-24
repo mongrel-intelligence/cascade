@@ -22,7 +22,7 @@ function makeProject(overrides: Record<string, unknown> = {}) {
 		trello: {
 			boardId: 'board1',
 			lists: {
-				briefing: 'list1',
+				splitting: 'list1',
 				planning: 'list2',
 				todo: 'list3',
 				stories: 'list-stories',

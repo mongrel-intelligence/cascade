@@ -230,7 +230,7 @@ export function buildStopHooks(
  * Build all SDK hooks for the Claude Code backend.
  *
  * @param enableStopHooks - Whether to include Stop hooks that check for uncommitted/unpushed changes.
- *   Should be true for implementation agents, false for briefing/planning/review agents.
+ *   Should be true for implementation agents, false for splitting/planning/review agents.
  * @param options.blockGitPush - Whether to block git push in hooks (defaults to true).
  *   Set false for agents on existing PR branches (respond-to-pr-comment, respond-to-ci).
  */

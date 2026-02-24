@@ -106,7 +106,7 @@ describe('postProcessResult', () => {
 			const backend = makeBackend();
 			const input = makeInput();
 
-			postProcessResult(result, 'briefing', backend, input, 'briefing-id');
+			postProcessResult(result, 'splitting', backend, input, 'splitting-id');
 
 			expect(result.success).toBe(true);
 			expect(logger.warn).not.toHaveBeenCalled();

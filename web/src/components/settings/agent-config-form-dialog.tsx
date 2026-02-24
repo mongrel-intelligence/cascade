@@ -93,7 +93,7 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 							id="gac-agentType"
 							value={agentType}
 							onChange={(e) => setAgentType(e.target.value)}
-							placeholder="e.g. implementation, review, briefing"
+							placeholder="e.g. implementation, review, splitting"
 							required
 						/>
 					</div>

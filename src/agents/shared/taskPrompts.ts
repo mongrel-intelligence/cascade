@@ -15,7 +15,7 @@ import { parseRepoFullName } from '../../utils/repo.js';
 
 /**
  * Standard prompt for agents whose primary task is processing a work item
- * (briefing, planning, implementation, debug).
+ * (splitting, planning, implementation, debug).
  */
 export function buildWorkItemPrompt(cardId: string): string {
 	return `Analyze and process the work item with ID: ${cardId}. The work item data has been pre-loaded.`;

@@ -16,9 +16,9 @@ import { isTrelloWebhookPayload } from '../types.js';
 interface CardMovedConfig {
 	name: string;
 	description: string;
-	listKey: 'briefing' | 'planning' | 'todo';
+	listKey: 'splitting' | 'planning' | 'todo';
 	agentType: string;
-	triggerConfigKey: 'cardMovedToBriefing' | 'cardMovedToPlanning' | 'cardMovedToTodo';
+	triggerConfigKey: 'cardMovedToSplitting' | 'cardMovedToPlanning' | 'cardMovedToTodo';
 }
 
 function createCardMovedTrigger(config: CardMovedConfig): TriggerHandler {
@@ -74,12 +74,12 @@ function createCardMovedTrigger(config: CardMovedConfig): TriggerHandler {
 // Trigger Instances
 // ============================================================================
 
-export const CardMovedToBriefingTrigger = createCardMovedTrigger({
-	name: 'card-moved-to-briefing',
-	description: 'Triggers briefing agent when card moved to briefing list',
-	listKey: 'briefing',
-	agentType: 'briefing',
-	triggerConfigKey: 'cardMovedToBriefing',
+export const CardMovedToSplittingTrigger = createCardMovedTrigger({
+	name: 'card-moved-to-splitting',
+	description: 'Triggers splitting agent when card moved to splitting list',
+	listKey: 'splitting',
+	agentType: 'splitting',
+	triggerConfigKey: 'cardMovedToSplitting',
 });
 
 export const CardMovedToPlanningTrigger = createCardMovedTrigger({

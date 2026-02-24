@@ -312,7 +312,7 @@ describe('ClaudeCodeBackend', () => {
 		const backend = new ClaudeCodeBackend();
 		expect(backend.supportsAgentType('implementation')).toBe(true);
 		expect(backend.supportsAgentType('review')).toBe(true);
-		expect(backend.supportsAgentType('briefing')).toBe(true);
+		expect(backend.supportsAgentType('splitting')).toBe(true);
 		expect(backend.supportsAgentType('anything')).toBe(true);
 	});
 });

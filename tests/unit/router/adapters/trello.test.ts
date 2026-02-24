@@ -55,7 +55,7 @@ const mockProject: RouterProjectConfig = {
 	trello: {
 		boardId: 'board1',
 		lists: {
-			briefing: 'list-briefing',
+			splitting: 'list-splitting',
 			planning: 'list-planning',
 			todo: 'list-todo',
 			debug: 'list-debug',

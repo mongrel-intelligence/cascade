@@ -38,7 +38,7 @@ describe('config/compactionConfig', () => {
 		});
 
 		it('returns default config for other agents with higher threshold', () => {
-			const agentTypes = ['briefing', 'planning', 'debug', 'respond-to-review', 'review'];
+			const agentTypes = ['splitting', 'planning', 'debug', 'respond-to-review', 'review'];
 
 			for (const agentType of agentTypes) {
 				const config = getCompactionConfig(agentType);
@@ -53,7 +53,7 @@ describe('config/compactionConfig', () => {
 
 		it('implementation agent has more aggressive reduction targets', () => {
 			const implConfig = getCompactionConfig('implementation');
-			const otherConfig = getCompactionConfig('briefing');
+			const otherConfig = getCompactionConfig('splitting');
 
 			expect(implConfig.triggerThresholdPercent).toBeLessThan(otherConfig.triggerThresholdPercent);
 			expect(implConfig.targetPercent).toBeLessThan(otherConfig.targetPercent);
@@ -84,7 +84,7 @@ describe('config/compactionConfig', () => {
 		});
 
 		it('default prompt preserves key decisions and progress', () => {
-			const config = getCompactionConfig('briefing');
+			const config = getCompactionConfig('splitting');
 
 			expect(config.summarizationPrompt).toContain('Key decisions made');
 			expect(config.summarizationPrompt).toContain('Current progress');
@@ -200,7 +200,7 @@ describe('config/compactionConfig', () => {
 		it('all agent types return valid config structure', () => {
 			const agentTypes = [
 				'implementation',
-				'briefing',
+				'splitting',
 				'planning',
 				'debug',
 				'review',
@@ -222,7 +222,7 @@ describe('config/compactionConfig', () => {
 		});
 
 		it('target percent is less than trigger threshold', () => {
-			const agentTypes = ['implementation', 'briefing', 'planning'];
+			const agentTypes = ['implementation', 'splitting', 'planning'];
 
 			for (const agentType of agentTypes) {
 				const config = getCompactionConfig(agentType);
@@ -233,7 +233,7 @@ describe('config/compactionConfig', () => {
 
 		it('thresholds are reasonable percentages', () => {
 			const implConfig = getCompactionConfig('implementation');
-			const otherConfig = getCompactionConfig('briefing');
+			const otherConfig = getCompactionConfig('splitting');
 
 			expect(implConfig.triggerThresholdPercent).toBeGreaterThanOrEqual(50);
 			expect(implConfig.triggerThresholdPercent).toBeLessThanOrEqual(100);

@@ -111,7 +111,7 @@ describe('shouldTriggerDebug', () => {
 	it('returns debug target for timed_out run', async () => {
 		vi.mocked(getRunById).mockResolvedValue({
 			id: 'run-2',
-			agentType: 'briefing',
+			agentType: 'splitting',
 			status: 'timed_out',
 			cardId: 'card-2',
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
@@ -120,7 +120,7 @@ describe('shouldTriggerDebug', () => {
 		const result = await shouldTriggerDebug('run-2');
 		expect(result).toEqual({
 			runId: 'run-2',
-			agentType: 'briefing',
+			agentType: 'splitting',
 			cardId: 'card-2',
 		});
 	});

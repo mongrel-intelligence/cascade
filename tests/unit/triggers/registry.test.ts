@@ -24,7 +24,7 @@ describe('TriggerRegistry', () => {
 			description: 'Test handler',
 			matches: (ctx) => ctx.source === 'trello',
 			handle: vi.fn().mockResolvedValue({
-				agentType: 'briefing',
+				agentType: 'splitting',
 				agentInput: { cardId: 'card123' },
 			}),
 		};
@@ -40,7 +40,7 @@ describe('TriggerRegistry', () => {
 		const result = await registry.dispatch(ctx);
 
 		expect(result).not.toBeNull();
-		expect(result?.agentType).toBe('briefing');
+		expect(result?.agentType).toBe('splitting');
 		expect(handler.handle).toHaveBeenCalledWith(ctx);
 	});
 
@@ -94,7 +94,7 @@ describe('TriggerRegistry', () => {
 			description: 'First',
 			matches: () => true,
 			handle: vi.fn().mockResolvedValue({
-				agentType: 'briefing',
+				agentType: 'splitting',
 				agentInput: {},
 			}),
 		};
@@ -117,7 +117,7 @@ describe('TriggerRegistry', () => {
 
 		const result = await registry.dispatch(ctx);
 
-		expect(result?.agentType).toBe('briefing');
+		expect(result?.agentType).toBe('splitting');
 		expect(handler1.handle).toHaveBeenCalledWith(ctx);
 		expect(handler2.handle).not.toHaveBeenCalled();
 	});

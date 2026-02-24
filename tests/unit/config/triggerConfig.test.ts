@@ -17,7 +17,7 @@ describe('TrelloTriggerConfigSchema', () => {
 	it('defaults boolean fields to true', () => {
 		const result = TrelloTriggerConfigSchema.parse({});
 		expect(result).toEqual({
-			cardMovedToBriefing: true,
+			cardMovedToSplitting: true,
 			cardMovedToPlanning: true,
 			cardMovedToTodo: true,
 			// readyToProcessLabel is optional — not present in default parse
@@ -33,15 +33,15 @@ describe('TrelloTriggerConfigSchema', () => {
 		});
 		expect(result.cardMovedToPlanning).toBe(false);
 		expect(result.readyToProcessLabel).toBe(false);
-		expect(result.cardMovedToBriefing).toBe(true); // default still true
+		expect(result.cardMovedToSplitting).toBe(true); // default still true
 	});
 
 	it('accepts per-agent readyToProcessLabel object', () => {
 		const result = TrelloTriggerConfigSchema.parse({
-			readyToProcessLabel: { briefing: true, planning: false, implementation: true },
+			readyToProcessLabel: { splitting: true, planning: false, implementation: true },
 		});
 		expect(result.readyToProcessLabel).toEqual({
-			briefing: true,
+			splitting: true,
 			planning: false,
 			implementation: true,
 		});
@@ -63,10 +63,10 @@ describe('JiraTriggerConfigSchema', () => {
 
 	it('accepts per-agent issueTransitioned object', () => {
 		const result = JiraTriggerConfigSchema.parse({
-			issueTransitioned: { briefing: true, planning: false, implementation: true },
+			issueTransitioned: { splitting: true, planning: false, implementation: true },
 		});
 		expect(result.issueTransitioned).toEqual({
-			briefing: true,
+			splitting: true,
 			planning: false,
 			implementation: true,
 		});
@@ -109,19 +109,19 @@ describe('GitHubTriggerConfigSchema', () => {
 
 describe('resolveTrelloTriggerEnabled', () => {
 	it('returns true when config is undefined (backward compatible)', () => {
-		expect(resolveTrelloTriggerEnabled(undefined, 'cardMovedToBriefing')).toBe(true);
+		expect(resolveTrelloTriggerEnabled(undefined, 'cardMovedToSplitting')).toBe(true);
 		expect(resolveTrelloTriggerEnabled(undefined, 'readyToProcessLabel')).toBe(true);
 		expect(resolveTrelloTriggerEnabled(undefined, 'commentMention')).toBe(true);
 	});
 
 	it('returns true when key is not present in config', () => {
-		expect(resolveTrelloTriggerEnabled({}, 'cardMovedToBriefing')).toBe(true);
+		expect(resolveTrelloTriggerEnabled({}, 'cardMovedToSplitting')).toBe(true);
 	});
 
 	it('returns false when key is explicitly disabled', () => {
-		expect(resolveTrelloTriggerEnabled({ cardMovedToBriefing: false }, 'cardMovedToBriefing')).toBe(
-			false,
-		);
+		expect(
+			resolveTrelloTriggerEnabled({ cardMovedToSplitting: false }, 'cardMovedToSplitting'),
+		).toBe(false);
 	});
 
 	it('returns true when key is explicitly enabled', () => {
@@ -139,7 +139,7 @@ describe('resolveTrelloTriggerEnabled', () => {
 	it('returns true for readyToProcessLabel when any agent is enabled in object form', () => {
 		expect(
 			resolveTrelloTriggerEnabled(
-				{ readyToProcessLabel: { briefing: false, planning: true, implementation: false } },
+				{ readyToProcessLabel: { splitting: false, planning: true, implementation: false } },
 				'readyToProcessLabel',
 			),
 		).toBe(true);
@@ -148,7 +148,7 @@ describe('resolveTrelloTriggerEnabled', () => {
 	it('returns false for readyToProcessLabel when all agents disabled in object form', () => {
 		expect(
 			resolveTrelloTriggerEnabled(
-				{ readyToProcessLabel: { briefing: false, planning: false, implementation: false } },
+				{ readyToProcessLabel: { splitting: false, planning: false, implementation: false } },
 				'readyToProcessLabel',
 			),
 		).toBe(false);
@@ -175,7 +175,7 @@ describe('resolveJiraTriggerEnabled', () => {
 	it('returns true for issueTransitioned object when any agent is enabled', () => {
 		expect(
 			resolveJiraTriggerEnabled(
-				{ issueTransitioned: { briefing: false, planning: true, implementation: false } },
+				{ issueTransitioned: { splitting: false, planning: true, implementation: false } },
 				'issueTransitioned',
 			),
 		).toBe(true);
@@ -184,7 +184,7 @@ describe('resolveJiraTriggerEnabled', () => {
 	it('returns false for issueTransitioned object when all agents disabled', () => {
 		expect(
 			resolveJiraTriggerEnabled(
-				{ issueTransitioned: { briefing: false, planning: false, implementation: false } },
+				{ issueTransitioned: { splitting: false, planning: false, implementation: false } },
 				'issueTransitioned',
 			),
 		).toBe(false);
@@ -234,48 +234,48 @@ describe('resolveGitHubTriggerEnabled', () => {
 
 describe('resolveReadyToProcessEnabled', () => {
 	it('returns true when config is undefined (backward compatible)', () => {
-		expect(resolveReadyToProcessEnabled(undefined, 'briefing')).toBe(true);
+		expect(resolveReadyToProcessEnabled(undefined, 'splitting')).toBe(true);
 		expect(resolveReadyToProcessEnabled(undefined, 'planning')).toBe(true);
 		expect(resolveReadyToProcessEnabled(undefined, 'implementation')).toBe(true);
 	});
 
 	it('returns true when readyToProcessLabel is not set', () => {
-		expect(resolveReadyToProcessEnabled({}, 'briefing')).toBe(true);
+		expect(resolveReadyToProcessEnabled({}, 'splitting')).toBe(true);
 	});
 
 	it('applies legacy boolean true to all agents', () => {
 		const config = { readyToProcessLabel: true as const };
-		expect(resolveReadyToProcessEnabled(config, 'briefing')).toBe(true);
+		expect(resolveReadyToProcessEnabled(config, 'splitting')).toBe(true);
 		expect(resolveReadyToProcessEnabled(config, 'planning')).toBe(true);
 		expect(resolveReadyToProcessEnabled(config, 'implementation')).toBe(true);
 	});
 
 	it('applies legacy boolean false to all agents', () => {
 		const config = { readyToProcessLabel: false as const };
-		expect(resolveReadyToProcessEnabled(config, 'briefing')).toBe(false);
+		expect(resolveReadyToProcessEnabled(config, 'splitting')).toBe(false);
 		expect(resolveReadyToProcessEnabled(config, 'planning')).toBe(false);
 		expect(resolveReadyToProcessEnabled(config, 'implementation')).toBe(false);
 	});
 
 	it('returns per-agent value from nested object', () => {
 		const config = {
-			readyToProcessLabel: { briefing: true, planning: false, implementation: true },
+			readyToProcessLabel: { splitting: true, planning: false, implementation: true },
 		};
-		expect(resolveReadyToProcessEnabled(config, 'briefing')).toBe(true);
+		expect(resolveReadyToProcessEnabled(config, 'splitting')).toBe(true);
 		expect(resolveReadyToProcessEnabled(config, 'planning')).toBe(false);
 		expect(resolveReadyToProcessEnabled(config, 'implementation')).toBe(true);
 	});
 
 	it('defaults to true for unknown agent types', () => {
 		const config = {
-			readyToProcessLabel: { briefing: false, planning: false, implementation: false },
+			readyToProcessLabel: { splitting: false, planning: false, implementation: false },
 		};
 		expect(resolveReadyToProcessEnabled(config, 'unknown-agent')).toBe(true);
 	});
 
 	it('defaults to true for known non-toggle agents like respond-to-review', () => {
 		const config = {
-			readyToProcessLabel: { briefing: false, planning: false, implementation: false },
+			readyToProcessLabel: { splitting: false, planning: false, implementation: false },
 		};
 		expect(resolveReadyToProcessEnabled(config, 'respond-to-review')).toBe(true);
 		expect(resolveReadyToProcessEnabled(config, 'debug')).toBe(true);
@@ -283,7 +283,7 @@ describe('resolveReadyToProcessEnabled', () => {
 
 	it('defaults all agents to true when nested object is empty (Zod fills defaults)', () => {
 		const parsed = TrelloTriggerConfigSchema.parse({ readyToProcessLabel: {} });
-		expect(resolveReadyToProcessEnabled(parsed, 'briefing')).toBe(true);
+		expect(resolveReadyToProcessEnabled(parsed, 'splitting')).toBe(true);
 		expect(resolveReadyToProcessEnabled(parsed, 'planning')).toBe(true);
 		expect(resolveReadyToProcessEnabled(parsed, 'implementation')).toBe(true);
 	});
@@ -291,48 +291,48 @@ describe('resolveReadyToProcessEnabled', () => {
 
 describe('resolveIssueTransitionedEnabled', () => {
 	it('returns true when config is undefined (backward compatible)', () => {
-		expect(resolveIssueTransitionedEnabled(undefined, 'briefing')).toBe(true);
+		expect(resolveIssueTransitionedEnabled(undefined, 'splitting')).toBe(true);
 		expect(resolveIssueTransitionedEnabled(undefined, 'planning')).toBe(true);
 		expect(resolveIssueTransitionedEnabled(undefined, 'implementation')).toBe(true);
 	});
 
 	it('returns true when issueTransitioned is not set', () => {
-		expect(resolveIssueTransitionedEnabled({}, 'briefing')).toBe(true);
+		expect(resolveIssueTransitionedEnabled({}, 'splitting')).toBe(true);
 	});
 
 	it('applies legacy boolean true to all agents', () => {
 		const config = { issueTransitioned: true as const };
-		expect(resolveIssueTransitionedEnabled(config, 'briefing')).toBe(true);
+		expect(resolveIssueTransitionedEnabled(config, 'splitting')).toBe(true);
 		expect(resolveIssueTransitionedEnabled(config, 'planning')).toBe(true);
 		expect(resolveIssueTransitionedEnabled(config, 'implementation')).toBe(true);
 	});
 
 	it('applies legacy boolean false to all agents', () => {
 		const config = { issueTransitioned: false as const };
-		expect(resolveIssueTransitionedEnabled(config, 'briefing')).toBe(false);
+		expect(resolveIssueTransitionedEnabled(config, 'splitting')).toBe(false);
 		expect(resolveIssueTransitionedEnabled(config, 'planning')).toBe(false);
 		expect(resolveIssueTransitionedEnabled(config, 'implementation')).toBe(false);
 	});
 
 	it('returns per-agent value from nested object', () => {
 		const config = {
-			issueTransitioned: { briefing: true, planning: false, implementation: true },
+			issueTransitioned: { splitting: true, planning: false, implementation: true },
 		};
-		expect(resolveIssueTransitionedEnabled(config, 'briefing')).toBe(true);
+		expect(resolveIssueTransitionedEnabled(config, 'splitting')).toBe(true);
 		expect(resolveIssueTransitionedEnabled(config, 'planning')).toBe(false);
 		expect(resolveIssueTransitionedEnabled(config, 'implementation')).toBe(true);
 	});
 
 	it('defaults to true for unknown agent types', () => {
 		const config = {
-			issueTransitioned: { briefing: false, planning: false, implementation: false },
+			issueTransitioned: { splitting: false, planning: false, implementation: false },
 		};
 		expect(resolveIssueTransitionedEnabled(config, 'unknown-agent')).toBe(true);
 	});
 
 	it('defaults to true for known non-toggle agents like respond-to-review', () => {
 		const config = {
-			issueTransitioned: { briefing: false, planning: false, implementation: false },
+			issueTransitioned: { splitting: false, planning: false, implementation: false },
 		};
 		expect(resolveIssueTransitionedEnabled(config, 'respond-to-review')).toBe(true);
 		expect(resolveIssueTransitionedEnabled(config, 'debug')).toBe(true);
@@ -340,7 +340,7 @@ describe('resolveIssueTransitionedEnabled', () => {
 
 	it('defaults all agents to true when nested object is empty (Zod fills defaults)', () => {
 		const parsed = JiraTriggerConfigSchema.parse({ issueTransitioned: {} });
-		expect(resolveIssueTransitionedEnabled(parsed, 'briefing')).toBe(true);
+		expect(resolveIssueTransitionedEnabled(parsed, 'splitting')).toBe(true);
 		expect(resolveIssueTransitionedEnabled(parsed, 'planning')).toBe(true);
 		expect(resolveIssueTransitionedEnabled(parsed, 'implementation')).toBe(true);
 	});
@@ -429,7 +429,7 @@ describe('resolveReviewTriggerConfig', () => {
 describe('resolvePerAgentToggle', () => {
 	describe('undefined value', () => {
 		it('returns true for all known agent types', () => {
-			expect(resolvePerAgentToggle(undefined, 'briefing')).toBe(true);
+			expect(resolvePerAgentToggle(undefined, 'splitting')).toBe(true);
 			expect(resolvePerAgentToggle(undefined, 'planning')).toBe(true);
 			expect(resolvePerAgentToggle(undefined, 'implementation')).toBe(true);
 		});
@@ -442,14 +442,14 @@ describe('resolvePerAgentToggle', () => {
 
 	describe('boolean value', () => {
 		it('returns true when value is true, for all agent types', () => {
-			expect(resolvePerAgentToggle(true, 'briefing')).toBe(true);
+			expect(resolvePerAgentToggle(true, 'splitting')).toBe(true);
 			expect(resolvePerAgentToggle(true, 'planning')).toBe(true);
 			expect(resolvePerAgentToggle(true, 'implementation')).toBe(true);
 			expect(resolvePerAgentToggle(true, 'unknown')).toBe(true);
 		});
 
 		it('returns false when value is false, for all agent types', () => {
-			expect(resolvePerAgentToggle(false, 'briefing')).toBe(false);
+			expect(resolvePerAgentToggle(false, 'splitting')).toBe(false);
 			expect(resolvePerAgentToggle(false, 'planning')).toBe(false);
 			expect(resolvePerAgentToggle(false, 'implementation')).toBe(false);
 			expect(resolvePerAgentToggle(false, 'unknown')).toBe(false);
@@ -458,21 +458,21 @@ describe('resolvePerAgentToggle', () => {
 
 	describe('per-agent object', () => {
 		it('returns the correct value for each known agent type', () => {
-			const obj = { briefing: true, planning: false, implementation: true };
-			expect(resolvePerAgentToggle(obj, 'briefing')).toBe(true);
+			const obj = { splitting: true, planning: false, implementation: true };
+			expect(resolvePerAgentToggle(obj, 'splitting')).toBe(true);
 			expect(resolvePerAgentToggle(obj, 'planning')).toBe(false);
 			expect(resolvePerAgentToggle(obj, 'implementation')).toBe(true);
 		});
 
 		it('defaults to true for unknown agent types', () => {
-			const obj = { briefing: false, planning: false, implementation: false };
+			const obj = { splitting: false, planning: false, implementation: false };
 			expect(resolvePerAgentToggle(obj, 'respond-to-review')).toBe(true);
 			expect(resolvePerAgentToggle(obj, 'debug')).toBe(true);
 			expect(resolvePerAgentToggle(obj, 'anything-else')).toBe(true);
 		});
 
 		it('defaults missing fields to true', () => {
-			const obj = { briefing: false }; // planning and implementation are undefined
+			const obj = { splitting: false }; // planning and implementation are undefined
 			expect(resolvePerAgentToggle(obj, 'planning')).toBe(true);
 			expect(resolvePerAgentToggle(obj, 'implementation')).toBe(true);
 		});
@@ -528,7 +528,7 @@ describe('resolveTriggerEnabled', () => {
 		it('returns true if any agent in the object is enabled', () => {
 			expect(
 				resolveTriggerEnabled(
-					{ rtp: { briefing: false, planning: true, implementation: false } },
+					{ rtp: { splitting: false, planning: true, implementation: false } },
 					'rtp',
 					{ nestedKeys: ['rtp'] },
 				),
@@ -538,7 +538,7 @@ describe('resolveTriggerEnabled', () => {
 		it('returns false if all agents in the object are disabled', () => {
 			expect(
 				resolveTriggerEnabled(
-					{ rtp: { briefing: false, planning: false, implementation: false } },
+					{ rtp: { splitting: false, planning: false, implementation: false } },
 					'rtp',
 					{ nestedKeys: ['rtp'] },
 				),
@@ -562,17 +562,17 @@ describe('resolveTriggerEnabled', () => {
 	describe('backward-compat verification — wrapper behavior matches generic', () => {
 		it('resolveTrelloTriggerEnabled matches resolveTriggerEnabled for all Trello cases', () => {
 			const cases: [Record<string, unknown>, string, boolean][] = [
-				[{}, 'cardMovedToBriefing', true],
-				[{ cardMovedToBriefing: false }, 'cardMovedToBriefing', false],
+				[{}, 'cardMovedToSplitting', true],
+				[{ cardMovedToSplitting: false }, 'cardMovedToSplitting', false],
 				[{ readyToProcessLabel: false }, 'readyToProcessLabel', false],
 				[{ readyToProcessLabel: true }, 'readyToProcessLabel', true],
 				[
-					{ readyToProcessLabel: { briefing: false, planning: true, implementation: false } },
+					{ readyToProcessLabel: { splitting: false, planning: true, implementation: false } },
 					'readyToProcessLabel',
 					true,
 				],
 				[
-					{ readyToProcessLabel: { briefing: false, planning: false, implementation: false } },
+					{ readyToProcessLabel: { splitting: false, planning: false, implementation: false } },
 					'readyToProcessLabel',
 					false,
 				],

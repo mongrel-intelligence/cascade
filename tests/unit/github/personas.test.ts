@@ -41,7 +41,7 @@ describe('personas', () => {
 	describe('getPersonaForAgentType', () => {
 		it('maps implementation agents to implementer', () => {
 			expect(getPersonaForAgentType('implementation')).toBe('implementer');
-			expect(getPersonaForAgentType('briefing')).toBe('implementer');
+			expect(getPersonaForAgentType('splitting')).toBe('implementer');
 			expect(getPersonaForAgentType('planning')).toBe('implementer');
 			expect(getPersonaForAgentType('respond-to-review')).toBe('implementer');
 			expect(getPersonaForAgentType('respond-to-ci')).toBe('implementer');
