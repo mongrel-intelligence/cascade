@@ -200,7 +200,10 @@ describe('notifyTimeout', () => {
 		};
 
 		it('posts a comment to the Trello card', async () => {
-			mockFetch.mockResolvedValueOnce({ ok: true });
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ id: 'comment-id' }),
+			});
 
 			await notifyTimeout(trelloJob, defaultInfo);
 
@@ -223,7 +226,7 @@ describe('notifyTimeout', () => {
 
 			expect(mockFetch).not.toHaveBeenCalled();
 			expect(mockLogger.warn).toHaveBeenCalledWith(
-				expect.stringContaining('Missing Trello credentials in DB'),
+				expect.stringContaining('Missing Trello credentials, skipping comment'),
 			);
 		});
 
@@ -255,7 +258,10 @@ describe('notifyTimeout', () => {
 		};
 
 		it('posts a comment to the GitHub PR', async () => {
-			mockFetch.mockResolvedValueOnce({ ok: true });
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ id: 101 }),
+			});
 
 			await notifyTimeout(githubJob, defaultInfo);
 
@@ -336,7 +342,10 @@ describe('notifyTimeout', () => {
 		};
 
 		it('posts a comment to the JIRA issue', async () => {
-			mockFetch.mockResolvedValueOnce({ ok: true });
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ id: 'jira-comment-id' }),
+			});
 
 			await notifyTimeout(jiraJob, defaultInfo);
 
@@ -355,7 +364,7 @@ describe('notifyTimeout', () => {
 
 			expect(mockFetch).not.toHaveBeenCalled();
 			expect(mockLogger.warn).toHaveBeenCalledWith(
-				expect.stringContaining('Missing JIRA credentials in DB'),
+				expect.stringContaining('Missing JIRA credentials, skipping comment'),
 			);
 		});
 
@@ -390,11 +399,11 @@ describe('notifyTimeout', () => {
 				receivedAt: '2026-02-14T10:00:00.000Z',
 			};
 
-			// Should not throw
+			// Should not throw — PlatformClient catches fetch errors internally
 			await expect(notifyTimeout(trelloJob, defaultInfo)).resolves.toBeUndefined();
 
-			expect(mockLogger.error).toHaveBeenCalledWith(
-				expect.stringContaining('Failed to send timeout notification'),
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				expect.stringContaining('Failed to post Trello comment'),
 				expect.stringContaining('Network failure'),
 			);
 		});
