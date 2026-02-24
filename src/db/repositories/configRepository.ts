@@ -3,174 +3,67 @@ import { validateConfig } from '../../config/schema.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { getDb } from '../client.js';
 import { agentConfigs, cascadeDefaults, projectIntegrations, projects } from '../schema/index.js';
+import {
+	type AgentConfigRow,
+	type DefaultsRow,
+	type IntegrationRow,
+	extractIntegrationConfigs,
+	mapDefaultsRow,
+	mapProjectRow,
+} from './configMapper.js';
 
-interface TrelloIntegrationConfig {
-	boardId: string;
-	lists: Record<string, string>;
-	labels: Record<string, string>;
-	customFields?: { cost?: string };
+// ---------------------------------------------------------------------------
+// Shared config builder — eliminates duplicated extract→split→map→validate
+// ---------------------------------------------------------------------------
+
+interface BuildRawConfigOpts {
+	defaultsRow: DefaultsRow | undefined;
+	globalAgentConfigs: AgentConfigRow[];
+	projectRows: Array<typeof projects.$inferSelect>;
+	/** All integration rows for all projects in projectRows */
+	integrationRows: IntegrationRow[];
+	/** Per-project agent configs, keyed by project ID */
+	projectAgentConfigsMap: Map<string, AgentConfigRow[]>;
 }
 
-interface JiraIntegrationConfig {
-	projectKey: string;
-	baseUrl: string;
-	statuses: Record<string, string>;
-	issueTypes?: Record<string, string>;
-	customFields?: { cost?: string };
-	labels?: Record<string, string>;
-}
-
-// biome-ignore lint/complexity/noBannedTypes: GitHub config has no fields (credentials are in integration_credentials)
-type GitHubIntegrationConfig = {};
-
-interface DefaultsRow {
-	model: string | null;
-	maxIterations: number | null;
-	watchdogTimeoutMs: number | null;
-	cardBudgetUsd: string | null;
-	agentBackend: string | null;
-	progressModel: string | null;
-	progressIntervalMinutes: string | null;
-}
-
-interface AgentConfigRow {
-	orgId: string | null;
-	projectId: string | null;
-	agentType: string;
-	model: string | null;
-	maxIterations: number | null;
-	agentBackend: string | null;
-	prompt: string | null;
-}
-
-function buildAgentMaps(configs: AgentConfigRow[]) {
-	const models: Record<string, string> = {};
-	const iterations: Record<string, number> = {};
-	const prompts: Record<string, string> = {};
-	const backends: Record<string, string> = {};
-	for (const ac of configs) {
-		if (ac.model) models[ac.agentType] = ac.model;
-		if (ac.maxIterations != null) iterations[ac.agentType] = ac.maxIterations;
-		if (ac.prompt) prompts[ac.agentType] = ac.prompt;
-		if (ac.agentBackend) backends[ac.agentType] = ac.agentBackend;
+function buildRawConfig({
+	defaultsRow,
+	globalAgentConfigs,
+	projectRows,
+	integrationRows,
+	projectAgentConfigsMap,
+}: BuildRawConfigOpts) {
+	// Index integrations by project ID
+	const integrationsByProject = new Map<string, IntegrationRow[]>();
+	for (const row of integrationRows) {
+		const existing = integrationsByProject.get(row.projectId as string) ?? [];
+		existing.push(row);
+		integrationsByProject.set(row.projectId as string, existing);
 	}
-	return { models, iterations, prompts, backends };
-}
-
-function orUndefined<T extends Record<string, unknown>>(obj: T): T | undefined {
-	return Object.keys(obj).length > 0 ? obj : undefined;
-}
-
-function mapDefaultsRow(row: DefaultsRow | undefined, globalAgentConfigs: AgentConfigRow[]) {
-	const { models, iterations, prompts } = buildAgentMaps(globalAgentConfigs);
 
 	return {
-		model: row?.model ?? undefined,
-		agentModels: orUndefined(models),
-		maxIterations: row?.maxIterations ?? undefined,
-		agentIterations: orUndefined(iterations),
-		watchdogTimeoutMs: row?.watchdogTimeoutMs ?? undefined,
-		cardBudgetUsd: row?.cardBudgetUsd ? Number(row.cardBudgetUsd) : undefined,
-		agentBackend: row?.agentBackend ?? undefined,
-		progressModel: row?.progressModel ?? undefined,
-		progressIntervalMinutes: row?.progressIntervalMinutes
-			? Number(row.progressIntervalMinutes)
-			: undefined,
-		prompts: orUndefined(prompts),
-	};
-}
-
-type ProjectRow = typeof projects.$inferSelect;
-
-interface IntegrationRow {
-	category: string;
-	provider: string;
-	config: unknown;
-	triggers: unknown;
-}
-
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: inherently maps multiple integration types
-function mapProjectRow(
-	row: ProjectRow,
-	projectAgentConfigs: AgentConfigRow[],
-	trelloConfig?: TrelloIntegrationConfig,
-	trelloTriggers?: Record<string, boolean>,
-	jiraConfig?: JiraIntegrationConfig,
-	jiraTriggers?: Record<string, boolean>,
-	_githubConfig?: GitHubIntegrationConfig,
-	githubTriggers?: Record<string, boolean>,
-): Record<string, unknown> {
-	const { models, prompts, backends } = buildAgentMaps(projectAgentConfigs);
-
-	// Derive PM type from integration config
-	const pmType = jiraConfig ? 'jira' : 'trello';
-
-	const project: Record<string, unknown> = {
-		id: row.id,
-		orgId: row.orgId,
-		name: row.name,
-		repo: row.repo,
-		baseBranch: row.baseBranch ?? 'main',
-		branchPrefix: row.branchPrefix ?? 'feature/',
-		pm: { type: pmType },
-		prompts: orUndefined(prompts),
-		model: row.model ?? undefined,
-		agentModels: orUndefined(models),
-		cardBudgetUsd: row.cardBudgetUsd ? Number(row.cardBudgetUsd) : undefined,
-		squintDbUrl: row.squintDbUrl ?? undefined,
-	};
-
-	if (trelloConfig) {
-		project.trello = {
-			boardId: trelloConfig.boardId,
-			lists: trelloConfig.lists,
-			labels: trelloConfig.labels,
-			customFields: trelloConfig.customFields,
-			...(trelloTriggers && Object.keys(trelloTriggers).length > 0
-				? { triggers: trelloTriggers }
-				: {}),
-		};
-	}
-
-	if (jiraConfig) {
-		project.jira = {
-			projectKey: jiraConfig.projectKey,
-			baseUrl: jiraConfig.baseUrl,
-			statuses: jiraConfig.statuses,
-			issueTypes: jiraConfig.issueTypes,
-			customFields: jiraConfig.customFields,
-			labels: jiraConfig.labels,
-			...(jiraTriggers && Object.keys(jiraTriggers).length > 0 ? { triggers: jiraTriggers } : {}),
-		};
-	}
-
-	if (githubTriggers && Object.keys(githubTriggers).length > 0) {
-		project.github = { triggers: githubTriggers };
-	}
-
-	if (row.agentBackend || Object.keys(backends).length > 0) {
-		project.agentBackend = {
-			default: row.agentBackend ?? undefined,
-			overrides: backends,
-			subscriptionCostZero: row.subscriptionCostZero ?? false,
-		};
-	}
-
-	return project;
-}
-
-function extractIntegrationConfigs(integrations: IntegrationRow[]) {
-	const trelloRow = integrations.find((i) => i.provider === 'trello');
-	const jiraRow = integrations.find((i) => i.provider === 'jira');
-	const githubRow = integrations.find((i) => i.provider === 'github');
-
-	return {
-		trelloConfig: trelloRow?.config as TrelloIntegrationConfig | undefined,
-		trelloTriggers: (trelloRow?.triggers ?? undefined) as Record<string, boolean> | undefined,
-		jiraConfig: jiraRow?.config as JiraIntegrationConfig | undefined,
-		jiraTriggers: (jiraRow?.triggers ?? undefined) as Record<string, boolean> | undefined,
-		githubConfig: githubRow?.config as GitHubIntegrationConfig | undefined,
-		githubTriggers: (githubRow?.triggers ?? undefined) as Record<string, boolean> | undefined,
+		defaults: mapDefaultsRow(defaultsRow, globalAgentConfigs),
+		projects: projectRows.map((row) => {
+			const integrations = integrationsByProject.get(row.id) ?? [];
+			const {
+				trelloConfig,
+				trelloTriggers,
+				jiraConfig,
+				jiraTriggers,
+				githubConfig,
+				githubTriggers,
+			} = extractIntegrationConfigs(integrations);
+			return mapProjectRow({
+				row,
+				projectAgentConfigs: projectAgentConfigsMap.get(row.id) ?? [],
+				trelloConfig,
+				trelloTriggers,
+				jiraConfig,
+				jiraTriggers,
+				githubConfig,
+				githubTriggers,
+			});
+		}),
 	};
 }
 
@@ -192,14 +85,6 @@ export async function loadConfigFromDb(): Promise<CascadeConfig> {
 		loadAgentConfigs(),
 		db.select().from(projectIntegrations),
 	]);
-
-	// Index integrations by project ID
-	const integrationsByProject = new Map<string, typeof integrationRows>();
-	for (const row of integrationRows) {
-		const existing = integrationsByProject.get(row.projectId) ?? [];
-		existing.push(row);
-		integrationsByProject.set(row.projectId, existing);
-	}
 
 	// Split agent configs: global (project_id IS NULL, org_id IS NULL) and per-project
 	// Also collect org-level configs (org_id set, project_id IS NULL) as fallback globals
@@ -226,30 +111,13 @@ export async function loadConfigFromDb(): Promise<CascadeConfig> {
 		...(defaultsRow ? (orgAgentConfigsMap.get(defaultsRow.orgId) ?? []) : []),
 	];
 
-	const rawConfig = {
-		defaults: mapDefaultsRow(defaultsRow, mergedGlobalConfigs),
-		projects: projectRows.map((row) => {
-			const integrations = (integrationsByProject.get(row.id) ?? []) as IntegrationRow[];
-			const {
-				trelloConfig,
-				trelloTriggers,
-				jiraConfig,
-				jiraTriggers,
-				githubConfig,
-				githubTriggers,
-			} = extractIntegrationConfigs(integrations);
-			return mapProjectRow(
-				row,
-				projectAgentConfigsMap.get(row.id) ?? [],
-				trelloConfig,
-				trelloTriggers,
-				jiraConfig,
-				jiraTriggers,
-				githubConfig,
-				githubTriggers,
-			);
-		}),
-	};
+	const rawConfig = buildRawConfig({
+		defaultsRow,
+		globalAgentConfigs: mergedGlobalConfigs,
+		projectRows,
+		integrationRows: integrationRows as IntegrationRow[],
+		projectAgentConfigsMap,
+	});
 
 	return validateConfig(rawConfig);
 }
@@ -279,25 +147,16 @@ async function findProjectConfigFromDb(
 		db.select().from(projectIntegrations).where(eq(projectIntegrations.projectId, row.id)),
 	]);
 
-	const integrationRows = integrations as IntegrationRow[];
-	const { trelloConfig, trelloTriggers, jiraConfig, jiraTriggers, githubConfig, githubTriggers } =
-		extractIntegrationConfigs(integrationRows);
+	const projectAgentConfigsMap = new Map<string, AgentConfigRow[]>([[row.id, projectAcs]]);
 
-	const rawConfig = {
-		defaults: mapDefaultsRow(defaultsRow, [...globalAcs, ...orgAcs]),
-		projects: [
-			mapProjectRow(
-				row,
-				projectAcs,
-				trelloConfig,
-				trelloTriggers,
-				jiraConfig,
-				jiraTriggers,
-				githubConfig,
-				githubTriggers,
-			),
-		],
-	};
+	const rawConfig = buildRawConfig({
+		defaultsRow,
+		globalAgentConfigs: [...globalAcs, ...orgAcs],
+		projectRows: [row],
+		integrationRows: integrations as IntegrationRow[],
+		projectAgentConfigsMap,
+	});
+
 	const config = validateConfig(rawConfig);
 	return { project: config.projects[0], config };
 }
