@@ -1,5 +1,7 @@
 import { runAgent } from '../../agents/registry.js';
 import { getRunById } from '../../db/repositories/runsRepository.js';
+import { withPMCredentials } from '../../pm/context.js';
+import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 
@@ -99,7 +101,13 @@ export async function triggerManualRun(
 	};
 
 	try {
-		const result = await runAgent(input.agentType, agentInput);
+		const pmProvider = createPMProvider(project);
+		const result = await withPMCredentials(
+			project.id,
+			project.pm?.type,
+			(t) => pmRegistry.getOrNull(t),
+			() => withPMProvider(pmProvider, () => runAgent(input.agentType, agentInput)),
+		);
 		logger.info('Manual agent run completed', {
 			projectId: input.projectId,
 			agentType: input.agentType,
