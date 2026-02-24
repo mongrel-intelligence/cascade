@@ -129,34 +129,43 @@ export async function callProgressModel(
 }
 
 /**
- * Make the actual single-shot LLM call to generate a progress summary.
+ * Make the LLM call to generate a progress summary.
+ * Retries once on empty output — Gemini Flash Lite intermittently returns
+ * streaming responses with zero text content.
  */
 async function callProgressModelOnce(
 	model: string,
 	context: ProgressContext,
 	customModels: ModelSpec[],
 ): Promise<string> {
-	const client = new LLMist({ customModels });
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const client = new LLMist({ customModels });
 
-	const builder = new AgentBuilder(client)
-		.withModel(model)
-		.withTemperature(0)
-		.withSystem(PROGRESS_SYSTEM_PROMPT)
-		.withMaxIterations(1);
+		const builder = new AgentBuilder(client)
+			.withModel(model)
+			.withTemperature(0)
+			.withSystem(PROGRESS_SYSTEM_PROMPT)
+			.withMaxIterations(1);
 
-	const agent = builder.ask(formatProgressUserPrompt(context));
+		const agent = builder.ask(formatProgressUserPrompt(context));
 
-	const outputLines: string[] = [];
-	for await (const event of agent.run()) {
-		if (event.type === 'text' && event.content) {
-			outputLines.push(event.content);
+		const outputLines: string[] = [];
+		for await (const event of agent.run()) {
+			if (event.type === 'text' && event.content) {
+				outputLines.push(event.content);
+			}
+		}
+
+		const output = outputLines.join('\n').trim();
+		if (output) {
+			return output;
+		}
+
+		// First attempt returned empty — retry after brief delay
+		if (attempt === 0) {
+			await new Promise((resolve) => setTimeout(resolve, 1_000));
 		}
 	}
 
-	const output = outputLines.join('\n').trim();
-	if (!output) {
-		throw new Error('Progress model returned empty output');
-	}
-
-	return output;
+	throw new Error('Progress model returned empty output');
 }
