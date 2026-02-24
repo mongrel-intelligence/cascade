@@ -1,5 +1,7 @@
-import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
-import { isCascadeBot } from '../../github/personas.js';
+import {
+	resolveGitHubTriggerEnabled,
+	resolveReviewTriggerConfig,
+} from '../../config/triggerConfig.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { isGitHubPullRequestPayload } from './types.js';
@@ -19,6 +21,12 @@ export class PROpenedTrigger implements TriggerHandler {
 
 		// Check trigger config — opt-in trigger, default disabled
 		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'prOpened')) {
+			return false;
+		}
+
+		// Respect reviewTrigger config — at least one author mode must be active
+		const reviewConfig = resolveReviewTriggerConfig(ctx.project.github?.triggers);
+		if (!reviewConfig.ownPrsOnly && !reviewConfig.externalPrs) {
 			return false;
 		}
 
@@ -47,9 +55,24 @@ export class PROpenedTrigger implements TriggerHandler {
 		const prNumber = payload.pull_request.number;
 		const prAuthor = payload.pull_request.user.login;
 
-		// Skip PRs authored by CASCADE bots — nothing to "respond to" on our own PRs
-		if (ctx.personaIdentities && isCascadeBot(prAuthor, ctx.personaIdentities)) {
-			logger.info('Skipping PR opened by CASCADE bot', { prNumber, prAuthor });
+		// Gate on PR author based on configured review trigger modes
+		if (!ctx.personaIdentities) return null;
+		const implLogin = ctx.personaIdentities.implementer;
+		const isImplementerPR = prAuthor === implLogin || prAuthor === `${implLogin}[bot]`;
+
+		const reviewConfig = resolveReviewTriggerConfig(ctx.project.github?.triggers);
+		const shouldTrigger =
+			(reviewConfig.ownPrsOnly && isImplementerPR) ||
+			(reviewConfig.externalPrs && !isImplementerPR);
+
+		if (!shouldTrigger) {
+			logger.info('PR author does not match any enabled review trigger mode, skipping', {
+				prNumber,
+				prAuthor,
+				isImplementerPR,
+				ownPrsOnly: reviewConfig.ownPrsOnly,
+				externalPrs: reviewConfig.externalPrs,
+			});
 			return null;
 		}
 

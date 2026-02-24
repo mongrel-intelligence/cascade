@@ -179,8 +179,9 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 		},
 		{
 			key: 'prOpened',
-			label: 'PR Opened (opt-in)',
-			description: 'Trigger respond-to-review when a new PR is opened. Default disabled.',
+			label: 'PR Opened',
+			description:
+				'Trigger respond-to-review when a new PR is opened. Respects Own PRs / External PRs modes from the review agent.',
 			defaultValue: false,
 			scmProvider: 'github',
 			category: 'scm',

@@ -41,6 +41,12 @@ export default class ProjectsReviewTriggerSet extends DashboardCommand {
 			allowNo: true,
 			default: undefined,
 		}),
+		'pr-opened': Flags.boolean({
+			description:
+				'Enable respond-to-review on newly opened PRs (filtered by own-prs-only / external-prs).',
+			allowNo: true,
+			default: undefined,
+		}),
 	};
 
 	async run(): Promise<void> {
@@ -49,10 +55,16 @@ export default class ProjectsReviewTriggerSet extends DashboardCommand {
 		const ownPrsOnly = flags['own-prs-only'];
 		const externalPrs = flags['external-prs'];
 		const onReviewRequested = flags['on-review-requested'];
+		const prOpened = flags['pr-opened'];
 
-		if (ownPrsOnly === undefined && externalPrs === undefined && onReviewRequested === undefined) {
+		if (
+			ownPrsOnly === undefined &&
+			externalPrs === undefined &&
+			onReviewRequested === undefined &&
+			prOpened === undefined
+		) {
 			this.error(
-				'At least one flag must be provided: --own-prs-only, --external-prs, --on-review-requested (use --no-<flag> to disable).',
+				'At least one flag must be provided: --own-prs-only, --external-prs, --on-review-requested, --pr-opened (use --no-<flag> to disable).',
 			);
 		}
 
@@ -62,15 +74,20 @@ export default class ProjectsReviewTriggerSet extends DashboardCommand {
 		if (externalPrs !== undefined) reviewTrigger.externalPrs = externalPrs;
 		if (onReviewRequested !== undefined) reviewTrigger.onReviewRequested = onReviewRequested;
 
+		// Build the top-level triggers payload
+		const triggers: Record<string, boolean | Record<string, boolean>> = {};
+		if (Object.keys(reviewTrigger).length > 0) triggers.reviewTrigger = reviewTrigger;
+		if (prOpened !== undefined) triggers.prOpened = prOpened;
+
 		try {
 			await this.client.projects.integrations.updateTriggers.mutate({
 				projectId: args.id,
 				category: 'scm',
-				triggers: { reviewTrigger },
+				triggers,
 			});
 
 			if (flags.json) {
-				this.outputJson({ ok: true, reviewTrigger });
+				this.outputJson({ ok: true, ...triggers });
 				return;
 			}
 
@@ -78,6 +95,7 @@ export default class ProjectsReviewTriggerSet extends DashboardCommand {
 			if (ownPrsOnly !== undefined) lines.push(`  ownPrsOnly: ${ownPrsOnly}`);
 			if (externalPrs !== undefined) lines.push(`  externalPrs: ${externalPrs}`);
 			if (onReviewRequested !== undefined) lines.push(`  onReviewRequested: ${onReviewRequested}`);
+			if (prOpened !== undefined) lines.push(`  prOpened: ${prOpened}`);
 			this.log(lines.join('\n'));
 		} catch (err) {
 			this.handleError(err);
