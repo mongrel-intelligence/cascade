@@ -258,7 +258,7 @@ After deployment, set up the Trello webhook:
 
 ```bash
 # Get your Trello callback URL
-CALLBACK_URL="https://cascade.fly.dev/trello/webhooks"
+CALLBACK_URL="https://api.ca.sca.de.com/trello/webhooks"
 
 # Create webhook for each board
 curl -X POST "https://api.trello.com/1/webhooks" \
@@ -276,7 +276,7 @@ Set up GitHub webhooks for your repository to enable PR review triggers:
 1. Go to your repository settings: `https://github.com/owner/repo/settings/hooks`
 2. Click "Add webhook"
 3. Configure:
-   - **Payload URL**: `https://cascade.fly.dev/github/webhook`
+   - **Payload URL**: `https://api.ca.sca.de.com/github/webhook`
    - **Content type**: `application/json`
    - **Secret**: (optional, not currently validated)
    - **Events**: Select individual events:

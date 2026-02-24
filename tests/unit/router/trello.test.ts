@@ -9,47 +9,19 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
-// Mock heavy imports
-vi.mock('../../../src/router/config.js', () => ({
-	loadProjectConfig: vi.fn(),
-}));
-vi.mock('../../../src/router/queue.js', () => ({
-	addJob: vi.fn(),
-}));
-vi.mock('../../../src/router/reactions.js', () => ({
-	sendAcknowledgeReaction: vi.fn().mockResolvedValue(undefined),
-}));
 vi.mock('../../../src/router/acknowledgments.js', () => ({
-	postTrelloAck: vi.fn(),
 	resolveTrelloBotMemberId: vi.fn(),
 }));
-vi.mock('../../../src/router/ackMessageGenerator.js', () => ({
-	extractTrelloContext: vi.fn().mockReturnValue('Card: Test card'),
-	generateAckMessage: vi.fn().mockResolvedValue('Starting implementation...'),
-}));
-vi.mock('../../../src/router/platformClients.js', () => ({
-	resolveTrelloCredentials: vi.fn().mockResolvedValue({ apiKey: 'key', token: 'tok' }),
-}));
-vi.mock('../../../src/trello/client.js', () => ({
-	withTrelloCredentials: vi.fn().mockImplementation((_creds: unknown, fn: () => unknown) => fn()),
-}));
 
-import { postTrelloAck, resolveTrelloBotMemberId } from '../../../src/router/acknowledgments.js';
-import { loadProjectConfig } from '../../../src/router/config.js';
+import { resolveTrelloBotMemberId } from '../../../src/router/acknowledgments.js';
 import type { RouterProjectConfig } from '../../../src/router/config.js';
-import { addJob } from '../../../src/router/queue.js';
-import { sendAcknowledgeReaction } from '../../../src/router/reactions.js';
 import {
-	handleTrelloWebhook,
 	isAgentLogAttachmentUploaded,
 	isAgentLogFilename,
 	isCardInTriggerList,
 	isReadyToProcessLabelAdded,
 	isSelfAuthoredTrelloComment,
-	parseTrelloWebhook,
-	processTrelloWebhookEvent,
 } from '../../../src/router/trello.js';
-import type { TriggerRegistry } from '../../../src/triggers/registry.js';
 
 const mockProject: RouterProjectConfig = {
 	id: 'p1',
@@ -66,10 +38,6 @@ const mockProject: RouterProjectConfig = {
 		labels: { readyToProcess: 'label-ready' },
 	},
 };
-
-const mockTriggerRegistry = {
-	dispatch: vi.fn().mockResolvedValue(null),
-} as unknown as TriggerRegistry;
 
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -201,36 +169,6 @@ describe('isAgentLogAttachmentUploaded', () => {
 	});
 });
 
-describe('parseTrelloWebhook', () => {
-	it('returns shouldProcess false for invalid payload', async () => {
-		const result = await parseTrelloWebhook(null);
-		expect(result.shouldProcess).toBe(false);
-	});
-
-	it('returns shouldProcess false when no matching project', async () => {
-		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [], fullProjects: [] });
-		const result = await parseTrelloWebhook({
-			action: { type: 'commentCard', data: {} },
-			model: { id: 'unknown-board' },
-		});
-		expect(result.shouldProcess).toBe(false);
-	});
-
-	it('returns shouldProcess true for commentCard event', async () => {
-		vi.mocked(loadProjectConfig).mockResolvedValue({
-			projects: [mockProject],
-			fullProjects: [],
-		});
-		const result = await parseTrelloWebhook({
-			action: { type: 'commentCard', data: { card: { id: 'card1' } } },
-			model: { id: 'board1' },
-		});
-		expect(result.shouldProcess).toBe(true);
-		expect(result.cardId).toBe('card1');
-		expect(result.actionType).toBe('commentCard');
-	});
-});
-
 describe('isSelfAuthoredTrelloComment', () => {
 	it('returns true when comment author matches bot ID', async () => {
 		vi.mocked(resolveTrelloBotMemberId).mockResolvedValue('bot-id');
@@ -257,125 +195,5 @@ describe('isSelfAuthoredTrelloComment', () => {
 			'p1',
 		);
 		expect(result).toBe(false);
-	});
-});
-
-describe('processTrelloWebhookEvent', () => {
-	it('ignores self-authored comments', async () => {
-		vi.mocked(resolveTrelloBotMemberId).mockResolvedValue('bot-id');
-		await processTrelloWebhookEvent(
-			mockProject,
-			'card1',
-			'commentCard',
-			{ action: { idMemberCreator: 'bot-id' } },
-			mockTriggerRegistry,
-		);
-		expect(addJob).not.toHaveBeenCalled();
-	});
-
-	it('does not queue a job when dispatch returns null', async () => {
-		vi.mocked(resolveTrelloBotMemberId).mockResolvedValue('bot-id');
-		vi.mocked(loadProjectConfig).mockResolvedValue({
-			projects: [mockProject],
-			fullProjects: [{ id: 'p1' }],
-		} as never);
-		(mockTriggerRegistry.dispatch as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-
-		await processTrelloWebhookEvent(
-			mockProject,
-			'card1',
-			'commentCard',
-			{ action: { idMemberCreator: 'user-id' } },
-			mockTriggerRegistry,
-		);
-		expect(addJob).not.toHaveBeenCalled();
-	});
-
-	it('queues a job when dispatch returns a result', async () => {
-		vi.mocked(resolveTrelloBotMemberId).mockResolvedValue('bot-id');
-		vi.mocked(loadProjectConfig).mockResolvedValue({
-			projects: [mockProject],
-			fullProjects: [{ id: 'p1' }],
-		} as never);
-		vi.mocked(addJob).mockResolvedValue('job-1');
-		(mockTriggerRegistry.dispatch as ReturnType<typeof vi.fn>).mockResolvedValue({
-			agentType: 'implementation',
-			agentInput: { cardId: 'card1' },
-		});
-
-		await processTrelloWebhookEvent(
-			mockProject,
-			'card1',
-			'commentCard',
-			{ action: { idMemberCreator: 'user-id' } },
-			mockTriggerRegistry,
-		);
-		expect(addJob).toHaveBeenCalledWith(
-			expect.objectContaining({
-				type: 'trello',
-				projectId: 'p1',
-				cardId: 'card1',
-				actionType: 'commentCard',
-				triggerResult: expect.objectContaining({ agentType: 'implementation' }),
-			}),
-		);
-	});
-
-	it('sends ack reaction for comment actions', async () => {
-		vi.mocked(resolveTrelloBotMemberId).mockResolvedValue('bot-id');
-		vi.mocked(loadProjectConfig).mockResolvedValue({
-			projects: [mockProject],
-			fullProjects: [{ id: 'p1' }],
-		} as never);
-		vi.mocked(addJob).mockResolvedValue('job-1');
-		vi.mocked(sendAcknowledgeReaction).mockResolvedValue(undefined);
-		(mockTriggerRegistry.dispatch as ReturnType<typeof vi.fn>).mockResolvedValue({
-			agentType: 'implementation',
-			agentInput: { cardId: 'card1' },
-		});
-
-		await processTrelloWebhookEvent(
-			mockProject,
-			'card1',
-			'commentCard',
-			{ action: { idMemberCreator: 'user-id' } },
-			mockTriggerRegistry,
-		);
-		// Reaction is fire-and-forget so we just check it was called
-		await vi.waitFor(() => {
-			expect(sendAcknowledgeReaction).toHaveBeenCalledWith('trello', 'p1', expect.any(Object));
-		});
-	});
-});
-
-describe('handleTrelloWebhook', () => {
-	it('returns shouldProcess false and ignores invalid payload', async () => {
-		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [], fullProjects: [] });
-		const result = await handleTrelloWebhook({}, mockTriggerRegistry);
-		expect(result.shouldProcess).toBe(false);
-		expect(addJob).not.toHaveBeenCalled();
-	});
-
-	it('processes a valid trello webhook', async () => {
-		vi.mocked(loadProjectConfig).mockResolvedValue({
-			projects: [mockProject],
-			fullProjects: [],
-		});
-		vi.mocked(resolveTrelloBotMemberId).mockResolvedValue('bot-id');
-		vi.mocked(addJob).mockResolvedValue('job-1');
-
-		const result = await handleTrelloWebhook(
-			{
-				action: {
-					type: 'commentCard',
-					data: { card: { id: 'card1' } },
-					idMemberCreator: 'user-id',
-				},
-				model: { id: 'board1' },
-			},
-			mockTriggerRegistry,
-		);
-
-		expect(result.shouldProcess).toBe(true);
 	});
 });

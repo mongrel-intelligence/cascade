@@ -1,6 +1,6 @@
 import { runAgent } from '../../agents/registry.js';
 import { getRunById } from '../../db/repositories/runsRepository.js';
-import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
+import type { AgentInput, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 
 /**
@@ -53,7 +53,9 @@ export interface ManualTriggerInput {
 /**
  * Trigger a manual agent run.
  *
- * This runs fire-and-forget (does not await runAgent completion).
+ * Awaits runAgent completion so callers (e.g. worker containers) can
+ * block until the agent finishes. The API router caller already does not
+ * await the outer promise, so API response behavior is unchanged.
  * Status tracking is handled via in-memory map to prevent duplicates.
  */
 export async function triggerManualRun(
@@ -96,26 +98,23 @@ export async function triggerManualRun(
 		config,
 	};
 
-	// Fire-and-forget execution
-	runAgent(input.agentType, agentInput)
-		.then((result: AgentResult) => {
-			logger.info('Manual agent run completed', {
-				projectId: input.projectId,
-				agentType: input.agentType,
-				success: result.success,
-				runId: result.runId,
-			});
-		})
-		.catch((err) => {
-			logger.error('Manual agent run failed', {
-				projectId: input.projectId,
-				agentType: input.agentType,
-				error: String(err),
-			});
-		})
-		.finally(() => {
-			markTriggerComplete(triggerKey);
+	try {
+		const result = await runAgent(input.agentType, agentInput);
+		logger.info('Manual agent run completed', {
+			projectId: input.projectId,
+			agentType: input.agentType,
+			success: result.success,
+			runId: result.runId,
 		});
+	} catch (err) {
+		logger.error('Manual agent run failed', {
+			projectId: input.projectId,
+			agentType: input.agentType,
+			error: String(err),
+		});
+	} finally {
+		markTriggerComplete(triggerKey);
+	}
 }
 
 /**
