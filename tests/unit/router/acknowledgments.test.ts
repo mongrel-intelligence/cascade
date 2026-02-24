@@ -51,6 +51,7 @@ import {
 	postJiraAck,
 	postTrelloAck,
 	resolveGitHubTokenForAck,
+	resolveGitHubTokenForAckByAgent,
 	resolveJiraBotAccountId,
 	resolveTrelloBotMemberId,
 } from '../../../src/router/acknowledgments.js';
@@ -424,6 +425,49 @@ describe('resolveGitHubTokenForAck', () => {
 		mockGetProjectGitHubToken.mockRejectedValue(new Error('Missing token'));
 
 		const result = await resolveGitHubTokenForAck('owner/repo');
+
+		expect(result).toBeNull();
+	});
+});
+
+describe('resolveGitHubTokenForAckByAgent', () => {
+	it('returns reviewer token for review agent type', async () => {
+		mockGetIntegrationCredential.mockImplementation(async (_projectId, category, role) => {
+			if (category === 'scm' && role === 'reviewer_token') return 'test-reviewer-token';
+			const value = MOCK_CREDENTIALS[`${category}/${role}`];
+			if (value) return value;
+			throw new Error(`Credential '${category}/${role}' not found`);
+		});
+
+		const result = await resolveGitHubTokenForAckByAgent('owner/repo', 'review');
+
+		expect(result).not.toBeNull();
+		expect(result?.token).toBe('test-reviewer-token');
+		expect(result?.project.id).toBe('test');
+		expect(mockGetProjectGitHubToken).not.toHaveBeenCalled();
+	});
+
+	it('returns implementer token for non-review agent types', async () => {
+		const result = await resolveGitHubTokenForAckByAgent('owner/repo', 'implementation');
+
+		expect(result).not.toBeNull();
+		expect(result?.token).toBe('test-github-token');
+		expect(result?.project.id).toBe('test');
+		expect(mockGetProjectGitHubToken).toHaveBeenCalled();
+	});
+
+	it('returns null when project is not found', async () => {
+		mockFindProjectByRepo.mockResolvedValue(undefined);
+
+		const result = await resolveGitHubTokenForAckByAgent('unknown/repo', 'review');
+
+		expect(result).toBeNull();
+	});
+
+	it('returns null when reviewer token is missing', async () => {
+		mockGetIntegrationCredential.mockRejectedValue(new Error('not found'));
+
+		const result = await resolveGitHubTokenForAckByAgent('owner/repo', 'review');
 
 		expect(result).toBeNull();
 	});

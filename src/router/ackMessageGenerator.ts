@@ -62,6 +62,28 @@ export function extractTrelloContext(payload: unknown): string {
 }
 
 /**
+ * Extract PR context from a check_suite payload.
+ * PR info lives under check_suite.pull_requests[] (not at the top level).
+ */
+function extractCheckSuiteContext(p: Record<string, unknown>): string[] {
+	const parts: string[] = [];
+	const suite = p.check_suite as Record<string, unknown> | undefined;
+	const prs = suite?.pull_requests as Array<Record<string, unknown>> | undefined;
+	if (prs?.[0]) {
+		const prNum = prs[0].number;
+		const headBranch = (prs[0].head as Record<string, unknown> | undefined)?.ref;
+		if (prNum) parts.push(`PR: #${prNum}`);
+		if (headBranch) parts.push(`Branch: ${headBranch as string}`);
+	}
+	// Fall back to head_branch on the suite itself
+	const headBranch = suite?.head_branch as string | undefined;
+	if (headBranch && parts.length === 0) {
+		parts.push(`Branch: ${headBranch}`);
+	}
+	return parts;
+}
+
+/**
  * Extract context from a GitHub webhook payload.
  * Pulls PR title and optional comment/review body.
  */
@@ -74,6 +96,11 @@ export function extractGitHubContext(payload: unknown, eventType: string): strin
 	const pr = p.pull_request as Record<string, unknown> | undefined;
 	if (pr?.title) {
 		parts.push(`PR: ${pr.title as string}`);
+	}
+
+	// Fallback for check_suite events — PR info is nested differently
+	if (!pr && eventType === 'check_suite') {
+		parts.push(...extractCheckSuiteContext(p));
 	}
 
 	// Comment body (issue_comment or pull_request_review_comment)
