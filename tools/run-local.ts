@@ -3,7 +3,7 @@
  * Run a CASCADE agent locally in Docker against a Trello card or GitHub PR.
  *
  * Usage:
- *   npm run tool:run-local -- briefing https://trello.com/c/abc123/card-name
+ *   npm run tool:run-local -- splitting https://trello.com/c/abc123/card-name
  *   npm run tool:run-local -- implementation abc123
  *   npm run tool:run-local -- respond-to-review https://github.com/owner/repo/pull/123
  *   npm run tool:run-local -- planning abc123 --rebuild
