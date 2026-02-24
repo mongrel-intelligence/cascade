@@ -152,7 +152,7 @@ export function extractJiraContext(payload: unknown): string {
 // Core generator
 // ---------------------------------------------------------------------------
 
-const ACK_TIMEOUT_MS = 5_000;
+const ACK_TIMEOUT_MS = 20_000;
 
 const GENERIC_FALLBACK = '**⚙️ Working on it** — Processing your request...';
 
