@@ -39,7 +39,7 @@ const baseJiraConfig = {
 	projectKey: 'TEST',
 	baseUrl: 'https://test.atlassian.net',
 	statuses: {
-		briefing: 'Briefing',
+		splitting: 'Splitting',
 		planning: 'Planning',
 		todo: 'To Do',
 		inProgress: 'In Progress',
@@ -76,7 +76,7 @@ function buildCtx(overrides: {
 				key: overrides.issueKey ?? 'TEST-42',
 				fields: {
 					project: { key: 'TEST' },
-					status: { name: overrides.statusName ?? 'Briefing' },
+					status: { name: overrides.statusName ?? 'Splitting' },
 					summary: 'Test issue',
 				},
 			},
@@ -123,7 +123,7 @@ describe('JiraReadyToProcessLabelTrigger', () => {
 					buildCtx({
 						changelogItems: [
 							{ field: 'labels', fromString: '', toString: 'cascade-ready' },
-							{ field: 'status', fromString: 'Backlog', toString: 'Briefing' },
+							{ field: 'status', fromString: 'Backlog', toString: 'Splitting' },
 						],
 					}),
 				),
@@ -202,7 +202,7 @@ describe('JiraReadyToProcessLabelTrigger', () => {
 				source: 'jira',
 				payload: {
 					webhookEvent: 'jira:issue_updated',
-					issue: { key: 'TEST-1', fields: { status: { name: 'Briefing' } } },
+					issue: { key: 'TEST-1', fields: { status: { name: 'Splitting' } } },
 				},
 			};
 			expect(trigger.matches(ctx)).toBe(false);
@@ -210,10 +210,10 @@ describe('JiraReadyToProcessLabelTrigger', () => {
 	});
 
 	describe('handle()', () => {
-		it('returns briefing agent for issue in Briefing status', async () => {
-			const result = await trigger.handle(buildCtx({ statusName: 'Briefing' }));
+		it('returns splitting agent for issue in Briefing status', async () => {
+			const result = await trigger.handle(buildCtx({ statusName: 'Splitting' }));
 			expect(result).not.toBeNull();
-			expect(result?.agentType).toBe('briefing');
+			expect(result?.agentType).toBe('splitting');
 			expect(result?.workItemId).toBe('TEST-42');
 			expect(result?.agentInput.cardId).toBe('TEST-42');
 		});
@@ -257,9 +257,9 @@ describe('JiraReadyToProcessLabelTrigger', () => {
 		});
 
 		it('performs case-insensitive status matching', async () => {
-			const result = await trigger.handle(buildCtx({ statusName: 'briefing' }));
+			const result = await trigger.handle(buildCtx({ statusName: 'splitting' }));
 			expect(result).not.toBeNull();
-			expect(result?.agentType).toBe('briefing');
+			expect(result?.agentType).toBe('splitting');
 		});
 
 		it('returns null when status field is missing from issue', async () => {

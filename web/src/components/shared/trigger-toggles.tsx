@@ -5,8 +5,8 @@ export type { TriggerDef };
 
 /**
  * Renders a list of trigger toggle checkboxes.
- * Supports both flat keys (e.g., "cardMovedToBriefing") and nested dot-notation
- * keys (e.g., "readyToProcessLabel.briefing").
+ * Supports both flat keys (e.g., "cardMovedToSplitting") and nested dot-notation
+ * keys (e.g., "readyToProcessLabel.splitting").
  */
 export function TriggerToggles({
 	title,

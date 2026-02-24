@@ -454,7 +454,7 @@ describe('AgentProfile.getLlmistGadgets', () => {
 
 	it('each profile has a getLlmistGadgets method', () => {
 		const agentTypes = [
-			'briefing',
+			'splitting',
 			'planning',
 			'implementation',
 			'review',
@@ -584,9 +584,9 @@ describe('AgentProfile.getLlmistGadgets', () => {
 		expect(names).toContain('Finish');
 	});
 
-	it('briefing includes file editing but not CreatePR', () => {
-		const profile = getAgentProfile('briefing');
-		const names = gadgetNames(profile.getLlmistGadgets('briefing'));
+	it('splitting includes file editing but not CreatePR', () => {
+		const profile = getAgentProfile('splitting');
+		const names = gadgetNames(profile.getLlmistGadgets('splitting'));
 
 		// File editing (canEditFiles: true)
 		expect(names).toContain('FileSearchAndReplace');
@@ -632,9 +632,9 @@ function makeContextParams(overrides: {
 }
 
 describe('fetchDirectoryListing', () => {
-	it('briefing fetchContext returns a ListDirectory injection with maxDepth:3', async () => {
+	it('splitting fetchContext returns a ListDirectory injection with maxDepth:3', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('briefing');
+		const profile = getAgentProfile('splitting');
 		const params = makeContextParams({ cardId: undefined });
 
 		const injections = await profile.fetchContext(
@@ -655,7 +655,7 @@ describe('fetchDirectoryListing', () => {
 describe('fetchContextFileInjections', () => {
 	it('returns ReadFile injections for each context file', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('briefing');
+		const profile = getAgentProfile('splitting');
 		const params = makeContextParams({
 			contextFiles: [
 				{ path: 'CLAUDE.md', content: 'project guidelines' },
@@ -677,7 +677,7 @@ describe('fetchContextFileInjections', () => {
 
 	it('returns no ReadFile injections when contextFiles is empty', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('briefing');
+		const profile = getAgentProfile('splitting');
 		const params = makeContextParams({ contextFiles: [] });
 
 		const injections = await profile.fetchContext(
@@ -693,7 +693,7 @@ describe('fetchSquintOverview', () => {
 	it('returns SquintOverview injection when squint db is present', async () => {
 		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
 		mockExecFileSync.mockReturnValue('squint overview output\n');
-		const profile = getAgentProfile('briefing');
+		const profile = getAgentProfile('splitting');
 		const params = makeContextParams({});
 
 		const injections = await profile.fetchContext(
@@ -708,7 +708,7 @@ describe('fetchSquintOverview', () => {
 
 	it('returns no SquintOverview injection when squint db is absent', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('briefing');
+		const profile = getAgentProfile('splitting');
 		const params = makeContextParams({});
 
 		const injections = await profile.fetchContext(
@@ -724,7 +724,7 @@ describe('fetchSquintOverview', () => {
 		mockExecFileSync.mockImplementation(() => {
 			throw new Error('squint not found');
 		});
-		const profile = getAgentProfile('briefing');
+		const profile = getAgentProfile('splitting');
 		const params = makeContextParams({});
 
 		const injections = await profile.fetchContext(
@@ -738,7 +738,7 @@ describe('fetchSquintOverview', () => {
 	it('returns no SquintOverview injection when squint output is empty', async () => {
 		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
 		mockExecFileSync.mockReturnValue('   ');
-		const profile = getAgentProfile('briefing');
+		const profile = getAgentProfile('splitting');
 		const params = makeContextParams({});
 
 		const injections = await profile.fetchContext(
@@ -754,7 +754,7 @@ describe('fetchWorkItemInjection', () => {
 	it('returns ReadWorkItem injection when readWorkItem resolves', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		mockReadWorkItem.mockResolvedValue('# card title\n\ncard body');
-		const profile = getAgentProfile('briefing');
+		const profile = getAgentProfile('splitting');
 		const params = makeContextParams({ cardId: 'card-123' });
 
 		const injections = await profile.fetchContext(
@@ -774,7 +774,7 @@ describe('fetchWorkItemInjection', () => {
 	it('skips injection when readWorkItem throws', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		mockReadWorkItem.mockRejectedValue(new Error('card not found'));
-		const profile = getAgentProfile('briefing');
+		const profile = getAgentProfile('splitting');
 		const params = makeContextParams({ cardId: 'missing-card' });
 
 		const injections = await profile.fetchContext(
@@ -787,7 +787,7 @@ describe('fetchWorkItemInjection', () => {
 
 	it('never calls readWorkItem when cardId is absent', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('briefing');
+		const profile = getAgentProfile('splitting');
 		const params = makeContextParams({ cardId: undefined });
 
 		await profile.fetchContext(params as Parameters<typeof profile.fetchContext>[0]);
@@ -801,7 +801,7 @@ describe('fetchWorkItemContext orchestration', () => {
 		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
 		mockExecFileSync.mockReturnValue('squint output\n');
 		mockReadWorkItem.mockResolvedValue('card content');
-		const profile = getAgentProfile('briefing');
+		const profile = getAgentProfile('splitting');
 		const params = makeContextParams({
 			cardId: 'card-abc',
 			contextFiles: [{ path: 'CLAUDE.md', content: 'guidelines' }],
@@ -830,7 +830,7 @@ describe('fetchWorkItemContext orchestration', () => {
 	it('gracefully omits squint and workItem when unavailable', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		mockReadWorkItem.mockRejectedValue(new Error('unavailable'));
-		const profile = getAgentProfile('briefing');
+		const profile = getAgentProfile('splitting');
 		const params = makeContextParams({ cardId: 'card-xyz' });
 
 		const injections = await profile.fetchContext(

@@ -6,7 +6,7 @@
  * - statusUpdateConfig.ts — template fallback header
  */
 export const AGENT_LABELS: Record<string, { emoji: string; label: string }> = {
-	briefing: { emoji: '📋', label: 'Briefing Update' },
+	splitting: { emoji: '📋', label: 'Splitting Update' },
 	planning: { emoji: '🗺️', label: 'Planning Update' },
 	implementation: { emoji: '🧑‍💻', label: 'Implementation Update' },
 	review: { emoji: '🔍', label: 'Code Review Update' },
@@ -33,8 +33,7 @@ export function getAgentLabel(agentType: string): { emoji: string; label: string
  * - Router acknowledgments — immediate ack before worker starts
  */
 export const INITIAL_MESSAGES: Record<string, string> = {
-	briefing:
-		'**📋 Analyzing brief** — Reading the card and gathering context to create a clear brief...',
+	splitting: '**📋 Splitting plan** — Reading the plan and splitting it into ordered work items...',
 	planning:
 		'**🗺️ Planning implementation** — Studying the codebase and designing a step-by-step plan...',
 	implementation:

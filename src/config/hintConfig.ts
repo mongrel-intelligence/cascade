@@ -23,7 +23,7 @@ const AGENT_HINTS: Record<string, string> = {
 	// Read-only agents
 	review:
 		'Focus on the current aspect of review before moving to the next. Read related files together.',
-	briefing: 'Gather all context needed for the current step before proceeding.',
+	splitting: 'Gather all context needed for the current step before proceeding.',
 	planning: 'Complete the current planning step efficiently before moving to the next.',
 	debug: 'Analyze the current issue fully before moving to the next.',
 

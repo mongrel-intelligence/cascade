@@ -15,7 +15,7 @@ import { useCallback, useState } from 'react';
 
 // Keep in sync with AgentType in src/types/index.ts
 const agentTypes = [
-	'briefing',
+	'splitting',
 	'planning',
 	'implementation',
 	'review',

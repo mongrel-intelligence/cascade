@@ -70,7 +70,7 @@ describe('loadProjectConfig', () => {
 					pm: { type: 'trello' },
 					trello: {
 						boardId: 'board1',
-						lists: { briefing: 'list1', planning: 'list2', todo: 'list3' },
+						lists: { splitting: 'list1', planning: 'list2', todo: 'list3' },
 						labels: { readyToProcess: 'label1', processed: 'label2' },
 					},
 				},
@@ -87,7 +87,7 @@ describe('loadProjectConfig', () => {
 			pmType: 'trello',
 			trello: {
 				boardId: 'board1',
-				lists: { briefing: 'list1', planning: 'list2', todo: 'list3' },
+				lists: { splitting: 'list1', planning: 'list2', todo: 'list3' },
 				labels: { readyToProcess: 'label1', processed: 'label2' },
 			},
 		});

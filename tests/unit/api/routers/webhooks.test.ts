@@ -83,7 +83,7 @@ const mockJiraProject = {
 	jira: {
 		projectKey: 'PROJ',
 		baseUrl: 'https://test.atlassian.net',
-		statuses: { briefing: 'Briefing' },
+		statuses: { splitting: 'Briefing' },
 		labels: {
 			processing: 'my-processing',
 			processed: 'my-processed',

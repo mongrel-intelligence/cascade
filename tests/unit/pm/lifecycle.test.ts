@@ -336,7 +336,7 @@ describe('pm/lifecycle', () => {
 
 		describe('prepareForAgent', () => {
 			it('adds processing label and removes ready/processed labels', async () => {
-				await manager.prepareForAgent('work-item-1', 'briefing');
+				await manager.prepareForAgent('work-item-1', 'splitting');
 
 				expect(mockProvider.addLabel).toHaveBeenCalledWith('work-item-1', 'label-proc');
 				expect(mockProvider.removeLabel).toHaveBeenCalledWith('work-item-1', 'label-ready');
@@ -351,7 +351,7 @@ describe('pm/lifecycle', () => {
 			});
 
 			it('does not move work item for non-implementation agents', async () => {
-				await manager.prepareForAgent('work-item-1', 'briefing');
+				await manager.prepareForAgent('work-item-1', 'splitting');
 
 				expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 			});
@@ -362,7 +362,7 @@ describe('pm/lifecycle', () => {
 					statuses: {},
 				});
 
-				await managerNoLabels.prepareForAgent('work-item-1', 'briefing');
+				await managerNoLabels.prepareForAgent('work-item-1', 'splitting');
 
 				expect(mockProvider.addLabel).not.toHaveBeenCalled();
 				expect(mockProvider.removeLabel).not.toHaveBeenCalled();
@@ -371,7 +371,7 @@ describe('pm/lifecycle', () => {
 
 		describe('handleSuccess', () => {
 			it('adds processed label', async () => {
-				await manager.handleSuccess('work-item-1', 'briefing');
+				await manager.handleSuccess('work-item-1', 'splitting');
 
 				expect(mockProvider.addLabel).toHaveBeenCalledWith('work-item-1', 'label-done');
 			});
@@ -412,13 +412,13 @@ describe('pm/lifecycle', () => {
 			});
 
 			it('does not move work item for non-implementation agents', async () => {
-				await manager.handleSuccess('work-item-1', 'briefing');
+				await manager.handleSuccess('work-item-1', 'splitting');
 
 				expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 			});
 
 			it('does not call linkPR for non-implementation agents even with prUrl', async () => {
-				await manager.handleSuccess('work-item-1', 'briefing', 'https://github.com/pr/123');
+				await manager.handleSuccess('work-item-1', 'splitting', 'https://github.com/pr/123');
 
 				expect(mockProvider.linkPR).not.toHaveBeenCalled();
 			});

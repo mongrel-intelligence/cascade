@@ -39,7 +39,7 @@ const trelloConfig = {
 const jiraConfig = {
 	projectKey: 'PROJ',
 	baseUrl: 'https://test.atlassian.net',
-	statuses: { briefing: 'Briefing', todo: 'To Do' },
+	statuses: { splitting: 'Briefing', todo: 'To Do' },
 };
 
 const trelloIntegrationRow: IntegrationRow = {
@@ -127,7 +127,7 @@ describe('buildAgentMaps', () => {
 			{
 				orgId: null,
 				projectId: null,
-				agentType: 'briefing',
+				agentType: 'splitting',
 				model: null,
 				maxIterations: null,
 				agentBackend: null,
@@ -316,7 +316,7 @@ describe('mapProjectRow', () => {
 		const result = mapProjectRow(makeInput({ trelloConfig: undefined, jiraConfig }));
 		expect(result.jira?.projectKey).toBe('PROJ');
 		expect(result.jira?.baseUrl).toBe('https://test.atlassian.net');
-		expect(result.jira?.statuses).toEqual({ briefing: 'Briefing', todo: 'To Do' });
+		expect(result.jira?.statuses).toEqual({ splitting: 'Briefing', todo: 'To Do' });
 	});
 
 	it('includes jira triggers when non-empty', () => {

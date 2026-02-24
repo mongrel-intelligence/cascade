@@ -447,7 +447,7 @@ function buildPRCommentResponseTaskPrompt(input: AgentInput): string {
 // Agent Profiles
 // ============================================================================
 
-const briefingProfile: AgentProfile = {
+const splittingProfile: AgentProfile = {
 	filterTools: (allTools) =>
 		filterToolsByNames(allTools, [...PM_TOOLS, PM_CHECKLIST_TOOL, SESSION_TOOL]),
 	sdkTools: ALL_SDK_TOOLS,
@@ -455,7 +455,7 @@ const briefingProfile: AgentProfile = {
 	needsGitHubToken: false,
 	fetchContext: fetchWorkItemContext,
 	buildTaskPrompt: buildWorkItemTaskPrompt,
-	capabilities: getAgentCapabilities('briefing'),
+	capabilities: getAgentCapabilities('splitting'),
 	getLlmistGadgets: (agentType) => buildWorkItemGadgets(getAgentCapabilities(agentType)),
 };
 
@@ -584,7 +584,7 @@ const implementationProfile: AgentProfile = {
 // ============================================================================
 
 const PROFILE_REGISTRY: Record<string, AgentProfile> = {
-	briefing: briefingProfile,
+	splitting: splittingProfile,
 	planning: planningProfile,
 	implementation: implementationProfile,
 	review: reviewProfile,

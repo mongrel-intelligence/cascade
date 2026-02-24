@@ -26,8 +26,8 @@ describe('getTriggersForAgent', () => {
 		}
 	});
 
-	it('returns PM-only triggers for briefing with category: pm and pmProvider: trello', () => {
-		const triggers = getTriggersForAgent('briefing', { category: 'pm', pmProvider: 'trello' });
+	it('returns PM-only triggers for splitting with category: pm and pmProvider: trello', () => {
+		const triggers = getTriggersForAgent('splitting', { category: 'pm', pmProvider: 'trello' });
 		expect(triggers.length).toBeGreaterThan(0);
 		for (const t of triggers) {
 			expect(t.category).toBe('pm');
@@ -37,23 +37,23 @@ describe('getTriggersForAgent', () => {
 			}
 		}
 		const keys = triggers.map((t) => t.key);
-		expect(keys).toContain('cardMovedToBriefing');
-		expect(keys).toContain('readyToProcessLabel.briefing');
-		expect(keys).not.toContain('issueTransitioned.briefing');
+		expect(keys).toContain('cardMovedToSplitting');
+		expect(keys).toContain('readyToProcessLabel.splitting');
+		expect(keys).not.toContain('issueTransitioned.splitting');
 	});
 
-	it('returns empty array for briefing with category: scm', () => {
-		const triggers = getTriggersForAgent('briefing', { category: 'scm' });
+	it('returns empty array for splitting with category: scm', () => {
+		const triggers = getTriggersForAgent('splitting', { category: 'scm' });
 		expect(triggers).toHaveLength(0);
 	});
 
 	it('filters by pmProvider without category', () => {
-		const jiraTriggers = getTriggersForAgent('briefing', { pmProvider: 'jira' });
-		const trelloTriggers = getTriggersForAgent('briefing', { pmProvider: 'trello' });
-		// JIRA provider should exclude cardMovedToBriefing (trello-only)
-		expect(jiraTriggers.map((t) => t.key)).not.toContain('cardMovedToBriefing');
-		// Trello provider should exclude issueTransitioned.briefing (jira-only)
-		expect(trelloTriggers.map((t) => t.key)).not.toContain('issueTransitioned.briefing');
+		const jiraTriggers = getTriggersForAgent('splitting', { pmProvider: 'jira' });
+		const trelloTriggers = getTriggersForAgent('splitting', { pmProvider: 'trello' });
+		// JIRA provider should exclude cardMovedToSplitting (trello-only)
+		expect(jiraTriggers.map((t) => t.key)).not.toContain('cardMovedToSplitting');
+		// Trello provider should exclude issueTransitioned.splitting (jira-only)
+		expect(trelloTriggers.map((t) => t.key)).not.toContain('issueTransitioned.splitting');
 	});
 
 	it('returns empty array for unknown agent type', () => {

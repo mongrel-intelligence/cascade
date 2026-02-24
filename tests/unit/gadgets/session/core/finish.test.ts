@@ -276,7 +276,7 @@ describe('validateFinish', () => {
 
 	it('other agent types → valid', async () => {
 		const result = await validateFinish({
-			agentType: 'briefing',
+			agentType: 'splitting',
 			prCreated: false,
 			reviewSubmitted: false,
 		});

@@ -99,6 +99,13 @@
 			"when": 1749000000000,
 			"tag": "0014_pr_work_items",
 			"breakpoints": false
+		},
+		{
+			"idx": 14,
+			"version": "7",
+			"when": 1750000000000,
+			"tag": "0015_rename_briefing_to_splitting",
+			"breakpoints": false
 		}
 	]
 }

@@ -97,7 +97,7 @@ describe('runsRepository', () => {
 
 			const result = await createRun({
 				projectId: 'proj-1',
-				agentType: 'briefing',
+				agentType: 'splitting',
 				backend: 'claude-code',
 			});
 
@@ -105,7 +105,7 @@ describe('runsRepository', () => {
 			expect(mockValues).toHaveBeenCalledWith(
 				expect.objectContaining({
 					projectId: 'proj-1',
-					agentType: 'briefing',
+					agentType: 'splitting',
 					backend: 'claude-code',
 					status: 'running',
 					cardId: undefined,

@@ -40,7 +40,7 @@ const DEFAULT_CAPABILITIES: AgentCapabilities = {
  * AgentProfile in backends/agent-profiles.ts consumes these via getAgentCapabilities().
  */
 const CAPABILITIES_REGISTRY: Record<string, AgentCapabilities> = {
-	briefing: {
+	splitting: {
 		canEditFiles: true,
 		canCreatePR: false,
 		canUpdateChecklists: true,

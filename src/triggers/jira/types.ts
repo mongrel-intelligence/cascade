@@ -39,13 +39,13 @@ export interface JiraWebhookPayload {
  * Maps CASCADE status keys to agent types.
  *
  * Project config maps CASCADE status names to JIRA status names, e.g.:
- *   { briefing: "Briefing", planning: "Planning", todo: "To Do" }
+ *   { splitting: "Splitting", planning: "Planning", todo: "To Do" }
  *
- * We invert that mapping at runtime: if the issue transitioned to "Briefing",
- * we look up `briefing` → `briefing` agent.
+ * We invert that mapping at runtime: if the issue transitioned to "Splitting",
+ * we look up `splitting` → `splitting` agent.
  */
 export const STATUS_TO_AGENT: Record<string, string> = {
-	briefing: 'briefing',
+	splitting: 'splitting',
 	planning: 'planning',
 	todo: 'implementation',
 };

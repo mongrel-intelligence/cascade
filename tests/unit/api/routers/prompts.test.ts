@@ -54,7 +54,7 @@ describe('promptsRouter', () => {
 
 	describe('agentTypes', () => {
 		it('returns list of agent types', async () => {
-			const types = ['briefing', 'planning', 'implementation'];
+			const types = ['splitting', 'planning', 'implementation'];
 			mockGetValidAgentTypes.mockReturnValue(types);
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
@@ -75,10 +75,10 @@ describe('promptsRouter', () => {
 			mockGetRawTemplate.mockReturnValue('Template content: <%= it.baseBranch %>');
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
-			const result = await caller.getDefault({ agentType: 'briefing' });
+			const result = await caller.getDefault({ agentType: 'splitting' });
 
 			expect(result).toEqual({ content: 'Template content: <%= it.baseBranch %>' });
-			expect(mockGetRawTemplate).toHaveBeenCalledWith('briefing');
+			expect(mockGetRawTemplate).toHaveBeenCalledWith('splitting');
 		});
 
 		it('throws NOT_FOUND for unknown agent type', async () => {
@@ -94,7 +94,7 @@ describe('promptsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.getDefault({ agentType: 'briefing' })).rejects.toMatchObject({
+			await expect(caller.getDefault({ agentType: 'splitting' })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
 		});

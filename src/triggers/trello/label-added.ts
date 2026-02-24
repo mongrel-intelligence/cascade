@@ -55,16 +55,16 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 		const lists = getTrelloConfig(ctx.project)?.lists ?? {};
 		let agentType: string;
 
-		if (currentListId === lists.briefing) {
-			agentType = 'briefing';
+		if (currentListId === lists.splitting) {
+			agentType = 'splitting';
 		} else if (currentListId === lists.planning) {
 			agentType = 'planning';
 		} else if (currentListId === lists.todo) {
 			agentType = 'implementation';
 		} else {
-			// Default to briefing if list not recognized
-			logger.warn('Card in unrecognized list, defaulting to briefing', { currentListId, lists });
-			agentType = 'briefing';
+			// Default to splitting if list not recognized
+			logger.warn('Card in unrecognized list, defaulting to splitting', { currentListId, lists });
+			agentType = 'splitting';
 		}
 
 		logger.info('Agent type determined', { agentType, cardId, listId: currentListId });

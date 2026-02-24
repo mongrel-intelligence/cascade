@@ -48,7 +48,7 @@ const mockProject = {
 	branchPrefix: 'feature/',
 	trello: {
 		boardId: 'board-123',
-		lists: { briefing: 'b', planning: 'p', todo: 't' },
+		lists: { splitting: 'b', planning: 'p', todo: 't' },
 		labels: {},
 	},
 } as TriggerContext['project'];

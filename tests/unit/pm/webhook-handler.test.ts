@@ -247,7 +247,7 @@ describe('processPMWebhook', () => {
 		const integration = createMockIntegration();
 		const registry = createMockRegistry(null); // registry would return null
 		const preResolvedResult = {
-			agentType: 'briefing',
+			agentType: 'splitting',
 			workItemId: 'card-pre',
 			agentInput: { cardId: 'card-pre' },
 		};
