@@ -11,8 +11,9 @@ import {
 	listAgentConfigs,
 	updateAgentConfig,
 } from '../../db/repositories/settingsRepository.js';
-import { agentConfigs, projects } from '../../db/schema/index.js';
+import { agentConfigs } from '../../db/schema/index.js';
 import { protectedProcedure, publicProcedure, router } from '../trpc.js';
+import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
 async function validatePromptIfPresent(prompt: string | null | undefined) {
 	if (!prompt) return;
@@ -36,14 +37,7 @@ export const agentConfigsRouter = router({
 		.query(async ({ ctx, input }) => {
 			if (input?.projectId) {
 				// Verify project belongs to org
-				const db = getDb();
-				const [project] = await db
-					.select({ orgId: projects.orgId })
-					.from(projects)
-					.where(eq(projects.id, input.projectId));
-				if (!project || project.orgId !== ctx.effectiveOrgId) {
-					throw new TRPCError({ code: 'NOT_FOUND' });
-				}
+				await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
 				return listAgentConfigs({ projectId: input.projectId });
 			}
 			return listAgentConfigs({ orgId: ctx.effectiveOrgId });
@@ -64,14 +58,7 @@ export const agentConfigsRouter = router({
 		.mutation(async ({ ctx, input }) => {
 			// If projectId given, verify ownership
 			if (input.projectId) {
-				const db = getDb();
-				const [project] = await db
-					.select({ orgId: projects.orgId })
-					.from(projects)
-					.where(eq(projects.id, input.projectId));
-				if (!project || project.orgId !== ctx.effectiveOrgId) {
-					throw new TRPCError({ code: 'NOT_FOUND' });
-				}
+				await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
 			}
 			await validatePromptIfPresent(input.prompt);
 			return createAgentConfig({
@@ -112,13 +99,7 @@ export const agentConfigsRouter = router({
 			}
 			// Check project-scoped configs belong to user's org
 			if (config.projectId) {
-				const [project] = await db
-					.select({ orgId: projects.orgId })
-					.from(projects)
-					.where(eq(projects.id, config.projectId));
-				if (!project || project.orgId !== ctx.effectiveOrgId) {
-					throw new TRPCError({ code: 'NOT_FOUND' });
-				}
+				await verifyProjectOrgAccess(config.projectId, ctx.effectiveOrgId);
 			}
 
 			const { id, ...updates } = input;
@@ -141,13 +122,7 @@ export const agentConfigsRouter = router({
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 			if (config.projectId) {
-				const [project] = await db
-					.select({ orgId: projects.orgId })
-					.from(projects)
-					.where(eq(projects.id, config.projectId));
-				if (!project || project.orgId !== ctx.effectiveOrgId) {
-					throw new TRPCError({ code: 'NOT_FOUND' });
-				}
+				await verifyProjectOrgAccess(config.projectId, ctx.effectiveOrgId);
 			}
 
 			await deleteAgentConfig(input.id);
