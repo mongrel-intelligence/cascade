@@ -1,21 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock heavy imports before importing the module under test
+const mockTextComplete = vi.fn();
 vi.mock('llmist', () => {
-	const mockRun = vi.fn();
-	const mockBuilder = {
-		withModel: vi.fn().mockReturnThis(),
-		withTemperature: vi.fn().mockReturnThis(),
-		withSystem: vi.fn().mockReturnThis(),
-		withMaxIterations: vi.fn().mockReturnThis(),
-		withGadgets: vi.fn().mockReturnThis(),
-		ask: vi.fn().mockReturnValue({ run: mockRun }),
-	};
 	return {
-		LLMist: vi.fn().mockImplementation(() => ({})),
-		AgentBuilder: vi.fn().mockImplementation(() => mockBuilder),
-		__mockBuilder: mockBuilder,
-		__mockRun: mockRun,
+		LLMist: vi.fn().mockImplementation(() => ({
+			text: { complete: mockTextComplete },
+		})),
 	};
 });
 
@@ -54,10 +45,6 @@ import {
 	extractTrelloContext,
 	generateAckMessage,
 } from '../../../src/router/ackMessageGenerator.js';
-
-// Access llmist mocks — test-only mock internals
-const llmistModule = (await import('llmist')) as Record<string, unknown>;
-const mockRun = llmistModule.__mockRun as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -281,11 +268,7 @@ describe('generateAckMessage', () => {
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
 
-		// Mock the async iterator returned by agent.run()
-		async function* fakeRun() {
-			yield { type: 'text' as const, content: llmResponse };
-		}
-		mockRun.mockReturnValue(fakeRun());
+		mockTextComplete.mockResolvedValue(llmResponse);
 	}
 
 	it('returns LLM-generated message on happy path', async () => {
@@ -348,9 +331,7 @@ describe('generateAckMessage', () => {
 			defaults: { progressModel: 'openrouter:google/gemini-2.5-flash-lite' },
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
-		mockRun.mockImplementation(() => {
-			throw new Error('Network error');
-		});
+		mockTextComplete.mockRejectedValue(new Error('Network error'));
 
 		const result = await generateAckMessage('implementation', 'Card: Test', 'p1');
 
@@ -365,10 +346,7 @@ describe('generateAckMessage', () => {
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
 
-		async function* emptyRun() {
-			// Yields nothing
-		}
-		mockRun.mockReturnValue(emptyRun());
+		mockTextComplete.mockResolvedValue('');
 
 		const result = await generateAckMessage('implementation', 'Card: Test', 'p1');
 
@@ -398,9 +376,7 @@ describe('generateAckMessage', () => {
 			defaults: { progressModel: 'openrouter:google/gemini-2.5-flash-lite' },
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
-		mockRun.mockImplementation(() => {
-			throw new Error('LLM error');
-		});
+		mockTextComplete.mockRejectedValue(new Error('LLM error'));
 
 		await generateAckMessage('implementation', 'Card: Test', 'p1');
 
@@ -415,26 +391,22 @@ describe('generateAckMessage', () => {
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
 
-		// Simulate a call that never resolves (will be beaten by the 20s timeout)
-		let resolveHang: () => void;
-		const hangForever = new Promise<void>((r) => {
+		// Simulate a call that never resolves (will be beaten by the 30s timeout)
+		let resolveHang: (v: string) => void;
+		const hangForever = new Promise<string>((r) => {
 			resolveHang = r;
 		});
-		async function* slowRun() {
-			await hangForever;
-			yield { type: 'text' as const, content: 'too late' };
-		}
-		mockRun.mockReturnValue(slowRun());
+		mockTextComplete.mockReturnValue(hangForever);
 
 		const resultPromise = generateAckMessage('implementation', 'Card: Test', 'p1');
 
-		// Advance past the 20s timeout
-		await vi.advanceTimersByTimeAsync(20_000);
+		// Advance past the 30s timeout
+		await vi.advanceTimersByTimeAsync(30_000);
 
 		const result = await resultPromise;
 
 		// Clean up the hanging promise so it doesn't leak
-		resolveHang?.();
+		resolveHang?.('too late');
 
 		expect(result).toBe(
 			'**🚀 Implementing changes** — Writing code, running tests, and preparing a PR...',

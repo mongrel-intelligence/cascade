@@ -6,7 +6,7 @@
  * Gracefully falls back to static INITIAL_MESSAGES on any failure.
  */
 
-import { AgentBuilder, LLMist, type ModelSpec } from 'llmist';
+import { LLMist, type ModelSpec } from 'llmist';
 
 import { INITIAL_MESSAGES } from '../config/agentMessages.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
@@ -152,7 +152,7 @@ export function extractJiraContext(payload: unknown): string {
 // Core generator
 // ---------------------------------------------------------------------------
 
-const ACK_TIMEOUT_MS = 20_000;
+const ACK_TIMEOUT_MS = 30_000;
 
 const GENERIC_FALLBACK = '**⚙️ Working on it** — Processing your request...';
 
@@ -168,7 +168,7 @@ function getStaticFallback(agentType: string): string {
  * - No OPENROUTER_API_KEY credential
  * - Empty context snippet
  * - LLM call failure (network, auth, etc.)
- * - LLM call exceeds 5s timeout
+ * - LLM call exceeds 30s timeout
  * - LLM returns empty output
  */
 export async function generateAckMessage(
@@ -240,23 +240,13 @@ async function callAckModel(
 	contextSnippet: string,
 ): Promise<string> {
 	const client = new LLMist({ customModels: CUSTOM_MODELS as ModelSpec[] });
-
-	const builder = new AgentBuilder(client)
-		.withModel(model)
-		.withTemperature(0)
-		.withSystem(ACK_SYSTEM_PROMPT)
-		.withMaxIterations(1)
-		.withGadgets();
-
 	const userPrompt = `Agent type: ${agentType}\n\nRequest context:\n${contextSnippet}`;
-	const agent = builder.ask(userPrompt);
 
-	const outputLines: string[] = [];
-	for await (const event of agent.run()) {
-		if (event.type === 'text' && event.content) {
-			outputLines.push(event.content);
-		}
-	}
+	const result = await client.text.complete(userPrompt, {
+		model,
+		temperature: 0,
+		systemPrompt: ACK_SYSTEM_PROMPT,
+	});
 
-	return outputLines.join('\n').trim();
+	return result.trim();
 }
