@@ -10,6 +10,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { Gadget, z } from 'llmist';
 
 import { assertFileRead, markFileRead } from './readTracking.js';
+import { withEscalationHint } from './shared/editEscalation.js';
 import {
 	adjustIndentation,
 	applyReplacement,
@@ -17,21 +18,10 @@ import {
 	findAllMatches,
 	formatContext,
 	getMatchFailure,
-	recordEditFailure,
 	runPostEditChecks,
 	validatePath,
 } from './shared/index.js';
 import type { MatchResult } from './shared/types.js';
-
-const ESCALATION_HINT =
-	'\n\nTIP: This file has failed multiple edit attempts. For files with repetitive structure ' +
-	'(CRUD methods, similar function signatures), use ReadFile to get the current content, ' +
-	'then WriteFile to rewrite the entire file or section.';
-
-function withEscalationHint(message: string, filePath: string): string {
-	const failCount = recordEditFailure(filePath);
-	return failCount >= 2 ? message + ESCALATION_HINT : message;
-}
 
 export class FileSearchAndReplace extends Gadget({
 	name: 'FileSearchAndReplace',
