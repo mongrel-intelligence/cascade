@@ -19,7 +19,7 @@ import {
 	_resetJiraCloudIdCache,
 	resolveGitHubHeaders,
 	resolveTrelloCredentials,
-} from './platformClients.js';
+} from './platformClients/index.js';
 
 /** @internal Visible for testing only — re-exported from JiraPlatformClient */
 export { _resetJiraCloudIdCache };

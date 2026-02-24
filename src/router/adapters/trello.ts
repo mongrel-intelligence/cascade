@@ -15,7 +15,7 @@ import { extractTrelloContext, generateAckMessage } from '../ackMessageGenerator
 import { postTrelloAck } from '../acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from '../config.js';
 import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
-import { resolveTrelloCredentials } from '../platformClients.js';
+import { resolveTrelloCredentials } from '../platformClients/index.js';
 import type { CascadeJob, TrelloJob } from '../queue.js';
 import { sendAcknowledgeReaction } from '../reactions.js';
 import {

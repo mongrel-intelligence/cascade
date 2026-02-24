@@ -5,7 +5,7 @@ import {
 	GitHubPlatformClient,
 	JiraPlatformClient,
 	TrelloPlatformClient,
-} from './platformClients.js';
+} from './platformClients/index.js';
 import type { CascadeJob, GitHubJob, JiraJob, TrelloJob } from './queue.js';
 
 /**

@@ -35,7 +35,7 @@ import {
 	resolveGitHubHeaders,
 	resolveJiraCredentials,
 	resolveTrelloCredentials,
-} from '../../../src/router/platformClients.js';
+} from '../../../src/router/platformClients/index.js';
 import { logger } from '../../../src/utils/logging.js';
 
 const mockLogger = vi.mocked(logger);
