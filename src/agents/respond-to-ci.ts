@@ -3,7 +3,7 @@ import { githubClient } from '../github/client.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import { runCommand as execCommand } from '../utils/repo.js';
-import { createPRAgentGadgets } from './shared/gadgets.js';
+import { buildPRAgentGadgets } from './shared/gadgets.js';
 import {
 	type GitHubAgentContext,
 	type GitHubAgentDefinition,
@@ -296,7 +296,7 @@ const ciAgentDefinition: GitHubAgentDefinition<RespondToCIAgentInput, CIContextD
 	timeoutMessage: '⚠️ CI fix agent timed out while attempting to fix failures.',
 	loggerPrefix: 'ci',
 
-	getGadgets: () => createPRAgentGadgets(),
+	getGadgets: () => buildPRAgentGadgets(),
 
 	async preExecute(input: RespondToCIAgentInput, id: RepoIdentifier) {
 		const checkStatus = await githubClient.getCheckSuiteStatus(id.owner, id.repo, input.headSha);

@@ -1,5 +1,5 @@
 import type { AgentResult } from '../types/index.js';
-import { createPRAgentGadgets } from './shared/gadgets.js';
+import { buildPRAgentGadgets } from './shared/gadgets.js';
 import { type GitHubAgentDefinition, executeGitHubAgent } from './shared/githubAgent.js';
 import {
 	type PRResponseAgentInput,
@@ -20,7 +20,7 @@ const respondToPRCommentDefinition: GitHubAgentDefinition<
 	timeoutMessage: '⚠️ PR comment agent timed out while working on the request.',
 	loggerPrefix: 'pr-comment',
 
-	getGadgets: () => createPRAgentGadgets({ includeReviewComments: true }),
+	getGadgets: () => buildPRAgentGadgets({ includeReviewComments: true }),
 
 	postInitialComment: postInitialPRResponseComment,
 

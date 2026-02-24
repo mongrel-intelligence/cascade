@@ -57,7 +57,6 @@ import {
 	buildPRAgentGadgets,
 	buildReviewGadgets,
 	buildWorkItemGadgets,
-	createPRAgentGadgets,
 } from '../../../../src/agents/shared/gadgets.js';
 
 beforeEach(() => {
@@ -191,19 +190,5 @@ describe('buildPRAgentGadgets', () => {
 		const gadgets = names(buildPRAgentGadgets({ includeReviewComments: true }));
 		expect(gadgets).toContain('GetPRComments');
 		expect(gadgets).toContain('ReplyToReviewComment');
-	});
-});
-
-describe('createPRAgentGadgets (deprecated alias)', () => {
-	it('delegates to buildPRAgentGadgets', () => {
-		const via_new = names(buildPRAgentGadgets());
-		const via_old = names(createPRAgentGadgets());
-		expect(via_old).toEqual(via_new);
-	});
-
-	it('passes includeReviewComments through', () => {
-		const with_reviews = names(createPRAgentGadgets({ includeReviewComments: true }));
-		expect(with_reviews).toContain('GetPRComments');
-		expect(with_reviews).toContain('ReplyToReviewComment');
 	});
 });

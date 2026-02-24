@@ -1,4 +1,4 @@
-export { ReadWorkItem, formatWorkItemData } from './ReadWorkItem.js';
+export { ReadWorkItem } from './ReadWorkItem.js';
 export { PostComment } from './PostComment.js';
 export { UpdateWorkItem } from './UpdateWorkItem.js';
 export { CreateWorkItem } from './CreateWorkItem.js';
