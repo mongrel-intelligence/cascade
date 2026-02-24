@@ -26,7 +26,7 @@ vi.mock('../../../../src/router/ackMessageGenerator.js', () => ({
 	extractTrelloContext: vi.fn().mockReturnValue('Card: Test card'),
 	generateAckMessage: vi.fn().mockResolvedValue('Starting implementation...'),
 }));
-vi.mock('../../../../src/router/platformClients.js', () => ({
+vi.mock('../../../../src/router/platformClients/index.js', () => ({
 	resolveTrelloCredentials: vi.fn().mockResolvedValue({ apiKey: 'key', token: 'tok' }),
 }));
 vi.mock('../../../../src/trello/client.js', () => ({
