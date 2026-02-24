@@ -16,11 +16,10 @@ import { postTrelloAck } from '../acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from '../config.js';
 import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
 import { resolveTrelloCredentials } from '../platformClients.js';
-import { type CascadeJob, type TrelloJob, addJob } from '../queue.js';
+import type { CascadeJob, TrelloJob } from '../queue.js';
 import { sendAcknowledgeReaction } from '../reactions.js';
 import {
 	isAgentLogAttachmentUploaded,
-	isAgentLogFilename,
 	isCardInTriggerList,
 	isReadyToProcessLabelAdded,
 	isSelfAuthoredTrelloComment,
@@ -168,84 +167,4 @@ export class TrelloRouterAdapter implements RouterPlatformAdapter {
 		};
 		return job;
 	}
-}
-
-// Re-export named functions that are part of the public API surface for existing importers
-export { isAgentLogFilename };
-
-/**
- * Legacy entry-point wrapper kept for backward compatibility.
- * New code should use `processRouterWebhook()` with the adapter.
- */
-export async function handleTrelloWebhookViaAdapter(
-	payload: unknown,
-	triggerRegistry: TriggerRegistry,
-): Promise<{
-	shouldProcess: boolean;
-	project?: RouterProjectConfig;
-	actionType?: string;
-	cardId?: string;
-}> {
-	const adapter = new TrelloRouterAdapter();
-	const event = await adapter.parseWebhook(payload);
-	if (!event) {
-		logger.debug('Ignoring Trello event (no parsed event)');
-		return { shouldProcess: false };
-	}
-
-	const project = await adapter.resolveProject(event);
-	if (!project) {
-		return { shouldProcess: false };
-	}
-
-	if (await adapter.isSelfAuthored(event, payload)) {
-		logger.info('Ignoring self-authored Trello comment', { projectId: project.id });
-		return { shouldProcess: true, project, actionType: event.eventType, cardId: event.workItemId };
-	}
-
-	adapter.sendReaction(event, payload);
-
-	let result: TriggerResult | null = null;
-	try {
-		result = await adapter.dispatchWithCredentials(event, payload, project, triggerRegistry);
-	} catch (err) {
-		logger.warn('Trello trigger dispatch failed (non-fatal)', {
-			error: String(err),
-			projectId: project.id,
-		});
-	}
-
-	if (!result) {
-		logger.info('No trigger matched for Trello event', {
-			actionType: event.eventType,
-			cardId: event.workItemId,
-		});
-		return { shouldProcess: true, project, actionType: event.eventType, cardId: event.workItemId };
-	}
-
-	logger.info('Trello trigger matched', {
-		agentType: result.agentType,
-		cardId: event.workItemId,
-		projectId: project.id,
-	});
-
-	let ackCommentId: string | undefined;
-	if (result.agentType) {
-		const ackResult = await adapter.postAck(event, payload, project, result.agentType);
-		ackCommentId = ackResult?.commentId as string | undefined;
-	}
-
-	const job = adapter.buildJob(event, payload, project, result, ackCommentId);
-	try {
-		const jobId = await addJob(job);
-		logger.info('Trello job queued', { jobId, actionType: event.eventType, ackCommentId });
-	} catch (err) {
-		logger.error('Failed to queue Trello job', {
-			error: String(err),
-			actionType: event.eventType,
-			cardId: event.workItemId,
-		});
-	}
-
-	return { shouldProcess: true, project, actionType: event.eventType, cardId: event.workItemId };
 }

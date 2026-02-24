@@ -16,7 +16,7 @@ import { postJiraAck, resolveJiraBotAccountId } from '../acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from '../config.js';
 import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
 import { resolveJiraCredentials } from '../platformClients.js';
-import { type CascadeJob, type JiraJob, addJob } from '../queue.js';
+import type { CascadeJob, JiraJob } from '../queue.js';
 import { sendAcknowledgeReaction } from '../reactions.js';
 
 const PROCESSABLE_EVENTS = [
@@ -174,81 +174,4 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 		};
 		return job;
 	}
-}
-
-/**
- * Legacy entry-point wrapper kept for backward compatibility.
- * New code should use `processRouterWebhook()` with the adapter.
- */
-export async function handleJiraWebhookViaAdapter(
-	payload: unknown,
-	triggerRegistry: TriggerRegistry,
-): Promise<{ shouldProcess: boolean; project?: RouterProjectConfig; webhookEvent: string }> {
-	const p = payload as Record<string, unknown>;
-	const webhookEvent = (p.webhookEvent as string) || '';
-
-	const adapter = new JiraRouterAdapter();
-	const event = await adapter.parseWebhook(payload);
-
-	if (!event) {
-		logger.debug('Ignoring JIRA event', { webhookEvent });
-		return { shouldProcess: false, webhookEvent };
-	}
-
-	const project = await adapter.resolveProject(event);
-	if (!project) {
-		logger.debug('Ignoring JIRA event', { webhookEvent });
-		return { shouldProcess: false, webhookEvent };
-	}
-
-	if (await adapter.isSelfAuthored(event, payload)) {
-		logger.info('Ignoring self-authored JIRA comment', { webhookEvent });
-		return { shouldProcess: true, project, webhookEvent };
-	}
-
-	adapter.sendReaction(event, payload);
-
-	let result: TriggerResult | null = null;
-	try {
-		result = await adapter.dispatchWithCredentials(event, payload, project, triggerRegistry);
-	} catch (err) {
-		logger.warn('JIRA trigger dispatch failed (non-fatal)', {
-			error: String(err),
-			projectId: project.id,
-		});
-	}
-
-	if (!result) {
-		logger.info('No trigger matched for JIRA event', {
-			webhookEvent,
-			issueKey: (event as { issueKey?: string }).issueKey,
-		});
-		return { shouldProcess: true, project, webhookEvent };
-	}
-
-	logger.info('JIRA trigger matched', {
-		agentType: result.agentType,
-		issueKey: (event as { issueKey?: string }).issueKey,
-		projectId: project.id,
-	});
-
-	let ackCommentId: string | undefined;
-	if (result.agentType) {
-		const ackResult = await adapter.postAck(event, payload, project, result.agentType);
-		ackCommentId = ackResult?.commentId as string | undefined;
-	}
-
-	const job = adapter.buildJob(event, payload, project, result, ackCommentId);
-	try {
-		const jobId = await addJob(job);
-		logger.info('JIRA job queued', { jobId, webhookEvent, ackCommentId });
-	} catch (err) {
-		logger.error('Failed to queue JIRA job', {
-			error: String(err),
-			webhookEvent,
-			issueKey: (event as { issueKey?: string }).issueKey,
-		});
-	}
-
-	return { shouldProcess: true, project, webhookEvent };
 }

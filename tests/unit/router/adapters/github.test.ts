@@ -76,7 +76,6 @@ import { loadProjectConfig } from '../../../../src/router/config.js';
 import type { RouterProjectConfig } from '../../../../src/router/config.js';
 import { extractPRNumber } from '../../../../src/router/notifications.js';
 import { addEyesReactionToPR } from '../../../../src/router/pre-actions.js';
-import { addJob } from '../../../../src/router/queue.js';
 import type { GitHubJob } from '../../../../src/router/queue.js';
 import { sendAcknowledgeReaction } from '../../../../src/router/reactions.js';
 import type { TriggerRegistry } from '../../../../src/triggers/registry.js';
@@ -386,36 +385,5 @@ describe('GitHubRouterAdapter', () => {
 			});
 			expect(addEyesReactionToPR).not.toHaveBeenCalled();
 		});
-	});
-});
-
-describe('handleGitHubWebhookViaAdapter', () => {
-	it('returns shouldProcess false for non-processable events', async () => {
-		const { handleGitHubWebhookViaAdapter } = await import(
-			'../../../../src/router/adapters/github.js'
-		);
-		const result = await handleGitHubWebhookViaAdapter('push', {}, mockTriggerRegistry);
-		expect(result.shouldProcess).toBe(false);
-	});
-
-	it('queues job when dispatch returns a trigger result', async () => {
-		const { handleGitHubWebhookViaAdapter } = await import(
-			'../../../../src/router/adapters/github.js'
-		);
-		vi.mocked(mockTriggerRegistry.dispatch).mockResolvedValue({
-			agentType: 'implementation',
-			agentInput: { prNumber: 1 },
-			prNumber: 1,
-		} as never);
-		vi.mocked(resolveGitHubTokenForAck).mockResolvedValue(null);
-		vi.mocked(addJob).mockResolvedValue('job-1');
-
-		const result = await handleGitHubWebhookViaAdapter(
-			'pull_request',
-			{ repository: { full_name: 'owner/repo' }, action: 'opened' },
-			mockTriggerRegistry,
-		);
-		expect(result.shouldProcess).toBe(true);
-		expect(addJob).toHaveBeenCalled();
 	});
 });

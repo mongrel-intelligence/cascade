@@ -42,7 +42,6 @@ import { postJiraAck, resolveJiraBotAccountId } from '../../../../src/router/ack
 import { JiraRouterAdapter } from '../../../../src/router/adapters/jira.js';
 import { loadProjectConfig } from '../../../../src/router/config.js';
 import type { RouterProjectConfig } from '../../../../src/router/config.js';
-import { addJob } from '../../../../src/router/queue.js';
 import { sendAcknowledgeReaction } from '../../../../src/router/reactions.js';
 import type { TriggerRegistry } from '../../../../src/triggers/registry.js';
 
@@ -267,41 +266,5 @@ describe('JiraRouterAdapter', () => {
 			expect((job as { issueKey: string }).issueKey).toBe('PROJ-1');
 			expect((job as { ackCommentId: string }).ackCommentId).toBe('jira-comment-789');
 		});
-	});
-});
-
-describe('handleJiraWebhookViaAdapter', () => {
-	it('queues a job when dispatch returns a result', async () => {
-		const { handleJiraWebhookViaAdapter } = await import('../../../../src/router/adapters/jira.js');
-		vi.mocked(addJob).mockResolvedValue('job-1');
-		vi.mocked(postJiraAck).mockResolvedValue('comment-123');
-		vi.mocked(mockTriggerRegistry.dispatch).mockResolvedValue({
-			agentType: 'implementation',
-			agentInput: { issueKey: 'PROJ-1' },
-		} as never);
-
-		const result = await handleJiraWebhookViaAdapter(
-			{
-				webhookEvent: 'jira:issue_updated',
-				issue: { key: 'PROJ-1', fields: { project: { key: 'PROJ' } } },
-			},
-			mockTriggerRegistry,
-		);
-		expect(result.shouldProcess).toBe(true);
-		expect(addJob).toHaveBeenCalled();
-	});
-
-	it('returns shouldProcess false for non-processable events', async () => {
-		const { handleJiraWebhookViaAdapter } = await import('../../../../src/router/adapters/jira.js');
-
-		const result = await handleJiraWebhookViaAdapter(
-			{
-				webhookEvent: 'jira:sprint_updated',
-				issue: { key: 'PROJ-1', fields: { project: { key: 'PROJ' } } },
-			},
-			mockTriggerRegistry,
-		);
-		expect(result.shouldProcess).toBe(false);
-		expect(addJob).not.toHaveBeenCalled();
 	});
 });

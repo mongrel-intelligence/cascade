@@ -44,7 +44,6 @@ import { postTrelloAck } from '../../../../src/router/acknowledgments.js';
 import { TrelloRouterAdapter } from '../../../../src/router/adapters/trello.js';
 import { loadProjectConfig } from '../../../../src/router/config.js';
 import type { RouterProjectConfig } from '../../../../src/router/config.js';
-import { addJob } from '../../../../src/router/queue.js';
 import { sendAcknowledgeReaction } from '../../../../src/router/reactions.js';
 import { isCardInTriggerList, isSelfAuthoredTrelloComment } from '../../../../src/router/trello.js';
 import type { TriggerRegistry } from '../../../../src/triggers/registry.js';
@@ -277,35 +276,5 @@ describe('TrelloRouterAdapter', () => {
 			expect((job as { cardId: string }).cardId).toBe('card1');
 			expect((job as { ackCommentId: string }).ackCommentId).toBe('comment-abc');
 		});
-	});
-});
-
-describe('handleTrelloWebhookViaAdapter', () => {
-	it('queues a job when dispatch returns a result', async () => {
-		const { handleTrelloWebhookViaAdapter } = await import(
-			'../../../../src/router/adapters/trello.js'
-		);
-		vi.mocked(isSelfAuthoredTrelloComment).mockResolvedValue(false);
-		vi.mocked(isCardInTriggerList).mockReturnValue(false);
-		vi.mocked(addJob).mockResolvedValue('job-1');
-		vi.mocked(postTrelloAck).mockResolvedValue('comment-123');
-		vi.mocked(mockTriggerRegistry.dispatch).mockResolvedValue({
-			agentType: 'implementation',
-			agentInput: { cardId: 'card1' },
-		} as never);
-
-		const result = await handleTrelloWebhookViaAdapter(
-			{
-				action: {
-					type: 'commentCard',
-					data: { card: { id: 'card1' } },
-					idMemberCreator: 'user-id',
-				},
-				model: { id: 'board1' },
-			},
-			mockTriggerRegistry,
-		);
-		expect(result.shouldProcess).toBe(true);
-		expect(addJob).toHaveBeenCalled();
 	});
 });
