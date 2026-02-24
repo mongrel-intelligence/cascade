@@ -18,6 +18,7 @@ const {
 	mockIssueRemoteLinks,
 	mockMyself,
 	mockProjects,
+	mockIssueFields,
 } = vi.hoisted(() => ({
 	mockIssues: {
 		getIssue: vi.fn(),
@@ -46,6 +47,11 @@ const {
 	},
 	mockProjects: {
 		getProject: vi.fn(),
+		searchProjects: vi.fn(),
+		getAllStatuses: vi.fn(),
+	},
+	mockIssueFields: {
+		getFields: vi.fn(),
 	},
 }));
 
@@ -58,6 +64,7 @@ vi.mock('jira.js', () => ({
 		issueRemoteLinks: mockIssueRemoteLinks,
 		myself: mockMyself,
 		projects: mockProjects,
+		issueFields: mockIssueFields,
 	})),
 }));
 
@@ -92,6 +99,9 @@ describe('jiraClient', () => {
 		mockIssueRemoteLinks.createOrUpdateRemoteIssueLink.mockReset();
 		mockMyself.getCurrentUser.mockReset();
 		mockProjects.getProject.mockReset();
+		mockProjects.searchProjects.mockReset();
+		mockProjects.getAllStatuses.mockReset();
+		mockIssueFields.getFields.mockReset();
 		_resetCloudIdCache();
 	});
 
@@ -654,6 +664,129 @@ describe('jiraClient', () => {
 			const result = await withJiraCredentials(creds, () => jiraClient.getIssueComments('TEST-1'));
 
 			expect(result).toEqual([]);
+		});
+	});
+
+	describe('searchProjects', () => {
+		it('returns project keys and names', async () => {
+			mockProjects.searchProjects.mockResolvedValue({
+				values: [
+					{ key: 'PROJ', name: 'My Project' },
+					{ key: 'TEST', name: 'Test Project' },
+				],
+			});
+
+			const result = await withJiraCredentials(creds, () => jiraClient.searchProjects());
+
+			expect(result).toEqual([
+				{ key: 'PROJ', name: 'My Project' },
+				{ key: 'TEST', name: 'Test Project' },
+			]);
+			expect(mockProjects.searchProjects).toHaveBeenCalledWith({ maxResults: 100 });
+		});
+
+		it('handles missing fields gracefully', async () => {
+			mockProjects.searchProjects.mockResolvedValue({
+				values: [{}, { key: 'X' }],
+			});
+
+			const result = await withJiraCredentials(creds, () => jiraClient.searchProjects());
+
+			expect(result).toEqual([
+				{ key: '', name: '' },
+				{ key: 'X', name: '' },
+			]);
+		});
+
+		it('returns empty array when values is missing', async () => {
+			mockProjects.searchProjects.mockResolvedValue({});
+
+			const result = await withJiraCredentials(creds, () => jiraClient.searchProjects());
+
+			expect(result).toEqual([]);
+		});
+	});
+
+	describe('getProjectStatuses', () => {
+		it('flattens and deduplicates statuses across issue types', async () => {
+			mockProjects.getAllStatuses.mockResolvedValue([
+				{
+					statuses: [
+						{ name: 'To Do', id: '1' },
+						{ name: 'In Progress', id: '2' },
+					],
+				},
+				{
+					statuses: [
+						{ name: 'In Progress', id: '2' },
+						{ name: 'Done', id: '3' },
+					],
+				},
+			]);
+
+			const result = await withJiraCredentials(creds, () => jiraClient.getProjectStatuses('PROJ'));
+
+			expect(result).toEqual([
+				{ name: 'To Do', id: '1' },
+				{ name: 'In Progress', id: '2' },
+				{ name: 'Done', id: '3' },
+			]);
+			expect(mockProjects.getAllStatuses).toHaveBeenCalledWith({
+				projectIdOrKey: 'PROJ',
+			});
+		});
+
+		it('skips statuses with empty names', async () => {
+			mockProjects.getAllStatuses.mockResolvedValue([
+				{
+					statuses: [
+						{ name: '', id: '0' },
+						{ name: 'Open', id: '1' },
+					],
+				},
+			]);
+
+			const result = await withJiraCredentials(creds, () => jiraClient.getProjectStatuses('PROJ'));
+
+			expect(result).toEqual([{ name: 'Open', id: '1' }]);
+		});
+
+		it('handles missing statuses array in issue type', async () => {
+			mockProjects.getAllStatuses.mockResolvedValue([
+				{},
+				{ statuses: [{ name: 'Open', id: '1' }] },
+			]);
+
+			const result = await withJiraCredentials(creds, () => jiraClient.getProjectStatuses('PROJ'));
+
+			expect(result).toEqual([{ name: 'Open', id: '1' }]);
+		});
+	});
+
+	describe('getFields', () => {
+		it('returns all fields with custom flag', async () => {
+			mockIssueFields.getFields.mockResolvedValue([
+				{ id: 'summary', name: 'Summary', custom: false },
+				{ id: 'customfield_10001', name: 'Story Points', custom: true },
+			]);
+
+			const result = await withJiraCredentials(creds, () => jiraClient.getFields());
+
+			expect(result).toEqual([
+				{ id: 'summary', name: 'Summary', custom: false },
+				{ id: 'customfield_10001', name: 'Story Points', custom: true },
+			]);
+		});
+
+		it('handles missing fields gracefully', async () => {
+			mockIssueFields.getFields.mockResolvedValue([{}, { id: 'x' }]);
+
+			const result = await withJiraCredentials(creds, () => jiraClient.getFields());
+
+			expect(result).toEqual([
+				{ id: '', name: '', custom: false },
+				{ id: 'x', name: '', custom: false },
+			]);
 		});
 	});
 

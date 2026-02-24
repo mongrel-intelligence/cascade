@@ -31,6 +31,52 @@ function getClient(): TrelloJsClient {
 	return new TrelloJsClient({ key: creds.apiKey, token: creds.token });
 }
 
+/**
+ * Make an authenticated request to the Trello REST API.
+ * Handles credential injection, URL construction, error checking, and JSON parsing.
+ *
+ * @param path - The API path, e.g. `/cards/${cardId}/attachments`. Query params may be
+ *   included in the path itself (e.g. `?filter=open`).
+ * @param opts - Optional method, headers, and body for non-GET requests.
+ */
+async function trelloFetch<T>(
+	path: string,
+	opts?: { method?: string; headers?: Record<string, string>; body?: unknown },
+): Promise<T> {
+	const { apiKey, token } = getTrelloCredentials();
+	const separator = path.includes('?') ? '&' : '?';
+	const url = `https://api.trello.com/1${path}${separator}key=${apiKey}&token=${token}`;
+
+	const fetchOpts: RequestInit = {};
+	if (opts?.method) fetchOpts.method = opts.method;
+	if (opts?.headers) fetchOpts.headers = opts.headers;
+	if (opts?.body !== undefined) fetchOpts.body = JSON.stringify(opts.body);
+
+	const response = await fetch(url, fetchOpts);
+	if (!response.ok) {
+		throw new Error(`Trello API error ${response.status} for ${path.split('?')[0]}`);
+	}
+	return response.json() as Promise<T>;
+}
+
+// ============================================================================
+// Shared utilities
+// ============================================================================
+
+function mapLabels(
+	labels: Array<{ id?: string; name?: string; color?: string }> | undefined,
+): Array<{ id: string; name: string; color: string }> {
+	return (labels || []).map((l) => ({
+		id: l.id || '',
+		name: l.name || '',
+		color: l.color || '',
+	}));
+}
+
+// ============================================================================
+// Types
+// ============================================================================
+
 export interface TrelloCard {
 	id: string;
 	name: string;
@@ -94,7 +140,13 @@ export interface TrelloAttachment {
 	date: string;
 }
 
+// ============================================================================
+// Trello client
+// ============================================================================
+
 export const trelloClient = {
+	// ===== Card Ops =====
+
 	async getCard(cardId: string): Promise<TrelloCard> {
 		logger.debug('Fetching Trello card', { cardId });
 		const card = await getClient().cards.getCard({ id: cardId });
@@ -106,13 +158,71 @@ export const trelloClient = {
 			url: card.url || '',
 			shortUrl: card.shortUrl || '',
 			idList: card.idList || '',
-			labels: (labels || []).map((l) => ({
-				id: l.id || '',
-				name: l.name || '',
-				color: l.color || '',
-			})),
+			labels: mapLabels(labels),
 		};
 	},
+
+	async updateCard(cardId: string, updates: { name?: string; desc?: string }): Promise<void> {
+		logger.debug('Updating card', { cardId, hasName: !!updates.name, hasDesc: !!updates.desc });
+		await getClient().cards.updateCard({
+			id: cardId,
+			name: updates.name,
+			desc: updates.desc,
+		});
+	},
+
+	async moveCardToList(cardId: string, listId: string): Promise<void> {
+		logger.debug('Moving card to list', { cardId, listId });
+		await getClient().cards.updateCard({
+			id: cardId,
+			idList: listId,
+		});
+	},
+
+	async createCard(
+		listId: string,
+		data: { name: string; desc?: string; idLabels?: string[] },
+	): Promise<TrelloCard> {
+		logger.debug('Creating card', { listId, name: data.name });
+		const card = await getClient().cards.createCard({
+			idList: listId,
+			name: data.name,
+			desc: data.desc,
+			idLabels: data.idLabels,
+			pos: 'bottom',
+		});
+		const labels = card.labels as Array<{ id?: string; name?: string; color?: string }> | undefined;
+		return {
+			id: card.id,
+			name: card.name || '',
+			desc: card.desc || '',
+			url: card.url || '',
+			shortUrl: card.shortUrl || '',
+			idList: card.idList || '',
+			labels: mapLabels(labels),
+		};
+	},
+
+	async getListCards(listId: string): Promise<TrelloCard[]> {
+		logger.debug('Fetching cards from list', { listId });
+		const cards = await getClient().lists.getListCards({ id: listId });
+		return cards.map((card) => {
+			const labels = card.labels as
+				| Array<{ id?: string; name?: string; color?: string }>
+				| undefined;
+			return {
+				id: card.id,
+				name: card.name || '',
+				desc: card.desc || '',
+				url: card.url || '',
+				shortUrl: card.shortUrl || '',
+				idList: card.idList || '',
+				labels: mapLabels(labels),
+			};
+		});
+	},
+
+	// ===== Comments =====
 
 	async getCardComments(cardId: string): Promise<TrelloComment[]> {
 		logger.debug('Fetching card comments', { cardId });
@@ -135,15 +245,6 @@ export const trelloClient = {
 		}));
 	},
 
-	async updateCard(cardId: string, updates: { name?: string; desc?: string }): Promise<void> {
-		logger.debug('Updating card', { cardId, hasName: !!updates.name, hasDesc: !!updates.desc });
-		await getClient().cards.updateCard({
-			id: cardId,
-			name: updates.name,
-			desc: updates.desc,
-		});
-	},
-
 	async addComment(cardId: string, text: string): Promise<string> {
 		logger.debug('Adding comment', { cardId, textLength: text.length });
 		const result = (await getClient().cards.addCardComment({
@@ -155,19 +256,14 @@ export const trelloClient = {
 
 	async updateComment(actionId: string, text: string): Promise<void> {
 		logger.debug('Updating comment', { actionId, textLength: text.length });
-		const { apiKey, token } = getTrelloCredentials();
-		const response = await fetch(
-			`https://api.trello.com/1/actions/${actionId}?key=${apiKey}&token=${token}`,
-			{
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ text }),
-			},
-		);
-		if (!response.ok) {
-			throw new Error(`Failed to update comment: ${response.status}`);
-		}
+		await trelloFetch(`/actions/${actionId}`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: { text },
+		});
 	},
+
+	// ===== Labels =====
 
 	async addLabelToCard(cardId: string, labelId: string): Promise<void> {
 		logger.debug('Adding label to card', { cardId, labelId });
@@ -185,13 +281,7 @@ export const trelloClient = {
 		});
 	},
 
-	async moveCardToList(cardId: string, listId: string): Promise<void> {
-		logger.debug('Moving card to list', { cardId, listId });
-		await getClient().cards.updateCard({
-			id: cardId,
-			idList: listId,
-		});
-	},
+	// ===== Attachments =====
 
 	async addAttachment(cardId: string, url: string, name: string): Promise<void> {
 		logger.debug('Adding attachment', { cardId, name });
@@ -218,127 +308,29 @@ export const trelloClient = {
 		});
 	},
 
-	async getMyActions(limit = 20): Promise<TrelloAction[]> {
-		logger.debug('Fetching my recent actions', { limit });
-		// Use raw fetch since trello.js types don't expose 'limit' parameter
-		const { apiKey, token } = getTrelloCredentials();
-		const response = await fetch(
-			`https://api.trello.com/1/members/me/actions?key=${apiKey}&token=${token}&limit=${limit}`,
-		);
-		if (!response.ok) {
-			throw new Error(`Failed to fetch actions: ${response.status}`);
-		}
-		const actions = (await response.json()) as Array<{
-			id?: string;
-			type?: string;
-			date?: string;
-			data?: {
-				card?: { id?: string; name?: string; shortLink?: string };
-				list?: { id?: string; name?: string };
-				board?: { id?: string; name?: string };
-				text?: string;
-			};
-		}>;
-		return actions.map((a) => ({
+	async getCardAttachments(cardId: string): Promise<TrelloAttachment[]> {
+		logger.debug('Fetching card attachments', { cardId });
+		const attachments = await trelloFetch<
+			Array<{
+				id?: string;
+				name?: string;
+				url?: string;
+				mimeType?: string;
+				bytes?: number;
+				date?: string;
+			}>
+		>(`/cards/${cardId}/attachments`);
+		return attachments.map((a) => ({
 			id: a.id || '',
-			type: a.type || '',
+			name: a.name || '',
+			url: a.url || '',
+			mimeType: a.mimeType || '',
+			bytes: a.bytes || 0,
 			date: a.date || '',
-			data: {
-				card: a.data?.card
-					? {
-							id: a.data.card.id || '',
-							name: a.data.card.name || '',
-							shortLink: a.data.card.shortLink,
-						}
-					: undefined,
-				list: a.data?.list
-					? {
-							id: a.data.list.id || '',
-							name: a.data.list.name || '',
-						}
-					: undefined,
-				board: a.data?.board
-					? {
-							id: a.data.board.id || '',
-							name: a.data.board.name || '',
-						}
-					: undefined,
-				text: a.data?.text,
-			},
 		}));
 	},
 
-	async getMe(): Promise<{ id: string; fullName: string; username: string }> {
-		logger.debug('Fetching authenticated member info');
-		const { apiKey, token } = getTrelloCredentials();
-		const response = await fetch(
-			`https://api.trello.com/1/members/me?key=${apiKey}&token=${token}`,
-		);
-		if (!response.ok) {
-			throw new Error(`Failed to fetch member: ${response.status}`);
-		}
-		const member = (await response.json()) as {
-			id?: string;
-			fullName?: string;
-			username?: string;
-		};
-		return {
-			id: member.id || '',
-			fullName: member.fullName || '',
-			username: member.username || '',
-		};
-	},
-
-	async getListCards(listId: string): Promise<TrelloCard[]> {
-		logger.debug('Fetching cards from list', { listId });
-		const cards = await getClient().lists.getListCards({ id: listId });
-		return cards.map((card) => {
-			const labels = card.labels as
-				| Array<{ id?: string; name?: string; color?: string }>
-				| undefined;
-			return {
-				id: card.id,
-				name: card.name || '',
-				desc: card.desc || '',
-				url: card.url || '',
-				shortUrl: card.shortUrl || '',
-				idList: card.idList || '',
-				labels: (labels || []).map((l) => ({
-					id: l.id || '',
-					name: l.name || '',
-					color: l.color || '',
-				})),
-			};
-		});
-	},
-
-	async createCard(
-		listId: string,
-		data: { name: string; desc?: string; idLabels?: string[] },
-	): Promise<TrelloCard> {
-		logger.debug('Creating card', { listId, name: data.name });
-		const card = await getClient().cards.createCard({
-			idList: listId,
-			name: data.name,
-			desc: data.desc,
-			idLabels: data.idLabels,
-			pos: 'bottom',
-		});
-		const labels = card.labels as Array<{ id?: string; name?: string; color?: string }> | undefined;
-		return {
-			id: card.id,
-			name: card.name || '',
-			desc: card.desc || '',
-			url: card.url || '',
-			shortUrl: card.shortUrl || '',
-			idList: card.idList || '',
-			labels: (labels || []).map((l) => ({
-				id: l.id || '',
-				name: l.name || '',
-				color: l.color || '',
-			})),
-		};
-	},
+	// ===== Checklists =====
 
 	async createChecklist(cardId: string, name: string): Promise<TrelloChecklist> {
 		logger.debug('Creating checklist', { cardId, name });
@@ -413,70 +405,21 @@ export const trelloClient = {
 		});
 	},
 
-	async addActionReaction(
-		actionId: string,
-		emoji: { shortName: string; native: string; unified: string },
-	): Promise<void> {
-		logger.debug('Adding reaction to Trello action', { actionId, emoji: emoji.shortName });
-		const { apiKey, token } = getTrelloCredentials();
-		const response = await fetch(
-			`https://api.trello.com/1/actions/${actionId}/reactions?key=${apiKey}&token=${token}`,
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ emoji }),
-			},
-		);
-		if (!response.ok) {
-			throw new Error(`Failed to add reaction to action: ${response.status}`);
-		}
-	},
+	// ===== Custom Fields =====
 
 	async getCardCustomFieldItems(cardId: string): Promise<CustomFieldItem[]> {
 		logger.debug('Fetching card custom field items', { cardId });
-		const { apiKey, token } = getTrelloCredentials();
-		const response = await fetch(
-			`https://api.trello.com/1/cards/${cardId}/customFieldItems?key=${apiKey}&token=${token}`,
-		);
-		if (!response.ok) {
-			throw new Error(`Failed to get custom fields: ${response.status}`);
-		}
-		const items = (await response.json()) as Array<{
-			id?: string;
-			idCustomField?: string;
-			value?: { number?: string; text?: string; checked?: string };
-		}>;
+		const items = await trelloFetch<
+			Array<{
+				id?: string;
+				idCustomField?: string;
+				value?: { number?: string; text?: string; checked?: string };
+			}>
+		>(`/cards/${cardId}/customFieldItems`);
 		return items.map((item) => ({
 			id: item.id || '',
 			idCustomField: item.idCustomField || '',
 			value: item.value,
-		}));
-	},
-
-	async getCardAttachments(cardId: string): Promise<TrelloAttachment[]> {
-		logger.debug('Fetching card attachments', { cardId });
-		const { apiKey, token } = getTrelloCredentials();
-		const response = await fetch(
-			`https://api.trello.com/1/cards/${cardId}/attachments?key=${apiKey}&token=${token}`,
-		);
-		if (!response.ok) {
-			throw new Error(`Failed to get attachments: ${response.status}`);
-		}
-		const attachments = (await response.json()) as Array<{
-			id?: string;
-			name?: string;
-			url?: string;
-			mimeType?: string;
-			bytes?: number;
-			date?: string;
-		}>;
-		return attachments.map((a) => ({
-			id: a.id || '',
-			name: a.name || '',
-			url: a.url || '',
-			mimeType: a.mimeType || '',
-			bytes: a.bytes || 0,
-			date: a.date || '',
 		}));
 	},
 
@@ -486,17 +429,134 @@ export const trelloClient = {
 		value: number,
 	): Promise<void> {
 		logger.debug('Updating card custom field', { cardId, customFieldId, value });
-		const { apiKey, token } = getTrelloCredentials();
-		const response = await fetch(
-			`https://api.trello.com/1/cards/${cardId}/customField/${customFieldId}/item?key=${apiKey}&token=${token}`,
-			{
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ value: { number: value.toString() } }),
-			},
+		await trelloFetch(`/cards/${cardId}/customField/${customFieldId}/item`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: { value: { number: value.toString() } },
+		});
+	},
+
+	// ===== Board Ops =====
+
+	async getBoards(): Promise<Array<{ id: string; name: string; url: string }>> {
+		logger.debug('Fetching boards for authenticated member');
+		const boards = await trelloFetch<Array<{ id?: string; name?: string; url?: string }>>(
+			'/members/me/boards?filter=open&fields=id,name,url',
 		);
-		if (!response.ok) {
-			throw new Error(`Failed to update custom field: ${response.status}`);
-		}
+		return boards.map((b) => ({
+			id: b.id || '',
+			name: b.name || '',
+			url: b.url || '',
+		}));
+	},
+
+	async getBoardLists(boardId: string): Promise<Array<{ id: string; name: string }>> {
+		logger.debug('Fetching board lists', { boardId });
+		const lists = await trelloFetch<Array<{ id?: string; name?: string }>>(
+			`/boards/${boardId}/lists?filter=open`,
+		);
+		return lists.map((l) => ({
+			id: l.id || '',
+			name: l.name || '',
+		}));
+	},
+
+	async getBoardLabels(
+		boardId: string,
+	): Promise<Array<{ id: string; name: string; color: string }>> {
+		logger.debug('Fetching board labels', { boardId });
+		const labels = await trelloFetch<Array<{ id?: string; name?: string; color?: string }>>(
+			`/boards/${boardId}/labels`,
+		);
+		return labels.map((l) => ({
+			id: l.id || '',
+			name: l.name || '',
+			color: l.color || '',
+		}));
+	},
+
+	async getBoardCustomFields(
+		boardId: string,
+	): Promise<Array<{ id: string; name: string; type: string }>> {
+		logger.debug('Fetching board custom fields', { boardId });
+		const fields = await trelloFetch<Array<{ id?: string; name?: string; type?: string }>>(
+			`/boards/${boardId}/customFields`,
+		);
+		return fields.map((f) => ({
+			id: f.id || '',
+			name: f.name || '',
+			type: f.type || '',
+		}));
+	},
+
+	// ===== Member / Actions =====
+
+	async getMyActions(limit = 20): Promise<TrelloAction[]> {
+		logger.debug('Fetching my recent actions', { limit });
+		// Use raw fetch since trello.js types don't expose 'limit' parameter
+		const actions = await trelloFetch<
+			Array<{
+				id?: string;
+				type?: string;
+				date?: string;
+				data?: {
+					card?: { id?: string; name?: string; shortLink?: string };
+					list?: { id?: string; name?: string };
+					board?: { id?: string; name?: string };
+					text?: string;
+				};
+			}>
+		>(`/members/me/actions?limit=${limit}`);
+		return actions.map((a) => ({
+			id: a.id || '',
+			type: a.type || '',
+			date: a.date || '',
+			data: {
+				card: a.data?.card
+					? {
+							id: a.data.card.id || '',
+							name: a.data.card.name || '',
+							shortLink: a.data.card.shortLink,
+						}
+					: undefined,
+				list: a.data?.list
+					? {
+							id: a.data.list.id || '',
+							name: a.data.list.name || '',
+						}
+					: undefined,
+				board: a.data?.board
+					? {
+							id: a.data.board.id || '',
+							name: a.data.board.name || '',
+						}
+					: undefined,
+				text: a.data?.text,
+			},
+		}));
+	},
+
+	async getMe(): Promise<{ id: string; fullName: string; username: string }> {
+		logger.debug('Fetching authenticated member info');
+		const member = await trelloFetch<{ id?: string; fullName?: string; username?: string }>(
+			'/members/me',
+		);
+		return {
+			id: member.id || '',
+			fullName: member.fullName || '',
+			username: member.username || '',
+		};
+	},
+
+	async addActionReaction(
+		actionId: string,
+		emoji: { shortName: string; native: string; unified: string },
+	): Promise<void> {
+		logger.debug('Adding reaction to Trello action', { actionId, emoji: emoji.shortName });
+		await trelloFetch(`/actions/${actionId}/reactions`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: { emoji },
+		});
 	},
 };

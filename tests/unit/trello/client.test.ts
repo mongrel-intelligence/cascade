@@ -63,6 +63,135 @@ describe('trelloClient', () => {
 		vi.clearAllMocks();
 	});
 
+	// ===== trelloFetch helper =====
+
+	describe('trelloFetch (via public methods)', () => {
+		it('appends key and token to a path without existing query params', async () => {
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+			await withTrelloCredentials(creds, () => trelloClient.getMe());
+
+			const [url] = fetchSpy.mock.calls[0];
+			expect(url).toContain('key=test-key');
+			expect(url).toContain('token=test-token');
+			// Uses ? separator when no existing query params
+			expect(url).toMatch(/\/members\/me\?/);
+		});
+
+		it('appends key and token with & when path already has query params', async () => {
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+
+			await withTrelloCredentials(creds, () => trelloClient.getBoards());
+
+			const [url] = fetchSpy.mock.calls[0];
+			// Path already has ?filter=open, so credentials should be appended with &
+			expect(url).toMatch(/filter=open.*key=test-key.*token=test-token/);
+		});
+
+		it('throws a Trello API error with status code on non-OK response', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Not Found', { status: 404 }));
+
+			await expect(withTrelloCredentials(creds, () => trelloClient.getMe())).rejects.toThrow(
+				'Trello API error 404',
+			);
+		});
+
+		it('throws when called outside withTrelloCredentials scope', async () => {
+			await expect(trelloClient.getMe()).rejects.toThrow('No Trello credentials in scope');
+		});
+
+		it('sends PUT request with JSON body for write operations', async () => {
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+			await withTrelloCredentials(creds, () =>
+				trelloClient.updateComment('action-123', 'Updated text'),
+			);
+
+			const [, options] = fetchSpy.mock.calls[0];
+			expect(options?.method).toBe('PUT');
+			expect(options?.headers).toEqual({ 'Content-Type': 'application/json' });
+			expect(options?.body).toBe(JSON.stringify({ text: 'Updated text' }));
+		});
+	});
+
+	// ===== mapLabels utility (tested via card methods) =====
+
+	describe('mapLabels (via getCard / createCard / getListCards)', () => {
+		it('maps labels with all fields present', async () => {
+			mockCards.getCard.mockResolvedValue({
+				id: 'card-1',
+				labels: [{ id: 'lbl-1', name: 'Bug', color: 'red' }],
+			});
+
+			const result = await withTrelloCredentials(creds, () => trelloClient.getCard('card-1'));
+
+			expect(result.labels).toEqual([{ id: 'lbl-1', name: 'Bug', color: 'red' }]);
+		});
+
+		it('returns empty array when labels is undefined', async () => {
+			mockCards.getCard.mockResolvedValue({ id: 'card-1' });
+
+			const result = await withTrelloCredentials(creds, () => trelloClient.getCard('card-1'));
+
+			expect(result.labels).toEqual([]);
+		});
+
+		it('defaults missing label fields to empty strings', async () => {
+			mockCards.getCard.mockResolvedValue({
+				id: 'card-1',
+				labels: [{}],
+			});
+
+			const result = await withTrelloCredentials(creds, () => trelloClient.getCard('card-1'));
+
+			expect(result.labels).toEqual([{ id: '', name: '', color: '' }]);
+		});
+
+		it('applies mapLabels consistently across createCard', async () => {
+			mockCards.createCard.mockResolvedValue({
+				id: 'new-card',
+				name: 'New',
+				desc: '',
+				url: '',
+				shortUrl: '',
+				idList: 'list-1',
+				labels: [{ id: 'lbl-2', name: 'Feature', color: 'green' }],
+			});
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.createCard('list-1', { name: 'New' }),
+			);
+
+			expect(result.labels).toEqual([{ id: 'lbl-2', name: 'Feature', color: 'green' }]);
+		});
+
+		it('applies mapLabels consistently across getListCards', async () => {
+			mockLists.getListCards.mockResolvedValue([
+				{
+					id: 'card-1',
+					name: 'Card',
+					desc: '',
+					url: '',
+					shortUrl: '',
+					idList: 'list-1',
+					labels: [{ id: 'lbl-3', name: 'High Priority', color: 'orange' }],
+				},
+			]);
+
+			const results = await withTrelloCredentials(creds, () => trelloClient.getListCards('list-1'));
+
+			expect(results[0].labels).toEqual([{ id: 'lbl-3', name: 'High Priority', color: 'orange' }]);
+		});
+	});
+
+	// ===== Existing tests (unchanged behavior) =====
+
 	describe('addComment', () => {
 		it('returns the comment action ID from API response', async () => {
 			mockCards.addCardComment.mockResolvedValue({ id: 'action-abc123' });
@@ -111,7 +240,7 @@ describe('trelloClient', () => {
 
 			await expect(
 				withTrelloCredentials(creds, () => trelloClient.updateComment('action-123', 'text')),
-			).rejects.toThrow('Failed to update comment: 404');
+			).rejects.toThrow('Trello API error 404');
 		});
 
 		it('throws when called outside withTrelloCredentials scope', async () => {
@@ -150,7 +279,7 @@ describe('trelloClient', () => {
 
 			await expect(
 				withTrelloCredentials(creds, () => trelloClient.addActionReaction('action-123', emoji)),
-			).rejects.toThrow('Failed to add reaction to action: 400');
+			).rejects.toThrow('Trello API error 400');
 		});
 
 		it('throws when called outside withTrelloCredentials scope', async () => {
@@ -338,6 +467,151 @@ describe('trelloClient', () => {
 		});
 	});
 
+	describe('getBoards', () => {
+		it('returns boards for authenticated member', async () => {
+			const boards = [
+				{ id: 'board-1', name: 'Board One', url: 'https://trello.com/b/board1' },
+				{ id: 'board-2', name: 'Board Two', url: 'https://trello.com/b/board2' },
+			];
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify(boards), { status: 200 }));
+
+			const result = await withTrelloCredentials(creds, () => trelloClient.getBoards());
+
+			expect(result).toEqual(boards);
+			expect(fetchSpy).toHaveBeenCalledOnce();
+			const [url] = fetchSpy.mock.calls[0];
+			expect(url).toContain('/1/members/me/boards');
+			expect(url).toContain('filter=open');
+			expect(url).toContain('key=test-key');
+			expect(url).toContain('token=test-token');
+		});
+
+		it('throws on non-OK response', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response('Unauthorized', { status: 401 }),
+			);
+
+			await expect(withTrelloCredentials(creds, () => trelloClient.getBoards())).rejects.toThrow(
+				'Trello API error 401',
+			);
+		});
+
+		it('handles missing fields gracefully', async () => {
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify([{}, { id: 'b1' }]), { status: 200 }));
+
+			const result = await withTrelloCredentials(creds, () => trelloClient.getBoards());
+
+			expect(result).toEqual([
+				{ id: '', name: '', url: '' },
+				{ id: 'b1', name: '', url: '' },
+			]);
+		});
+	});
+
+	describe('getBoardLists', () => {
+		it('returns lists for a board', async () => {
+			const lists = [
+				{ id: 'list-1', name: 'Backlog' },
+				{ id: 'list-2', name: 'In Progress' },
+			];
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify(lists), { status: 200 }));
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.getBoardLists('board-1'),
+			);
+
+			expect(result).toEqual(lists);
+			const [url] = fetchSpy.mock.calls[0];
+			expect(url).toContain('/1/boards/board-1/lists');
+			expect(url).toContain('filter=open');
+		});
+
+		it('throws on non-OK response', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Not Found', { status: 404 }));
+
+			await expect(
+				withTrelloCredentials(creds, () => trelloClient.getBoardLists('board-1')),
+			).rejects.toThrow('Trello API error 404');
+		});
+	});
+
+	describe('getBoardLabels', () => {
+		it('returns labels for a board', async () => {
+			const labels = [
+				{ id: 'label-1', name: 'Bug', color: 'red' },
+				{ id: 'label-2', name: 'Feature', color: 'green' },
+			];
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify(labels), { status: 200 }));
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.getBoardLabels('board-1'),
+			);
+
+			expect(result).toEqual(labels);
+			const [url] = fetchSpy.mock.calls[0];
+			expect(url).toContain('/1/boards/board-1/labels');
+		});
+
+		it('throws on non-OK response', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Error', { status: 500 }));
+
+			await expect(
+				withTrelloCredentials(creds, () => trelloClient.getBoardLabels('board-1')),
+			).rejects.toThrow('Trello API error 500');
+		});
+	});
+
+	describe('getBoardCustomFields', () => {
+		it('returns custom fields for a board', async () => {
+			const fields = [
+				{ id: 'cf-1', name: 'Priority', type: 'list' },
+				{ id: 'cf-2', name: 'Cost', type: 'number' },
+			];
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify(fields), { status: 200 }));
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.getBoardCustomFields('board-1'),
+			);
+
+			expect(result).toEqual(fields);
+			const [url] = fetchSpy.mock.calls[0];
+			expect(url).toContain('/1/boards/board-1/customFields');
+		});
+
+		it('throws on non-OK response', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Error', { status: 403 }));
+
+			await expect(
+				withTrelloCredentials(creds, () => trelloClient.getBoardCustomFields('board-1')),
+			).rejects.toThrow('Trello API error 403');
+		});
+
+		it('handles missing fields gracefully', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response(JSON.stringify([{}, { id: 'cf-1', type: 'text' }]), { status: 200 }),
+			);
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.getBoardCustomFields('board-1'),
+			);
+
+			expect(result).toEqual([
+				{ id: '', name: '', type: '' },
+				{ id: 'cf-1', name: '', type: 'text' },
+			]);
+		});
+	});
+
 	describe('getCardAttachments', () => {
 		it('returns attachments via fetch', async () => {
 			const attachments = [
@@ -380,7 +654,7 @@ describe('trelloClient', () => {
 
 			await expect(
 				withTrelloCredentials(creds, () => trelloClient.getCardAttachments('card-1')),
-			).rejects.toThrow('Failed to get attachments: 401');
+			).rejects.toThrow('Trello API error 401');
 		});
 	});
 });

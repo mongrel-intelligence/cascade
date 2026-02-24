@@ -604,5 +604,193 @@ describe('webhooksRouter', () => {
 
 			expect(result.trello).toEqual(['tw-1', 'tw-2']);
 		});
+
+		it('uses oneTimeTokens to override credentials', async () => {
+			setupProjectContext({ noGithub: true });
+
+			// The DB has no GitHub token, but we provide one via oneTimeTokens
+			mockListWebhooks.mockResolvedValue({ data: [] });
+
+			// Trello list call (project has Trello creds from DB)
+			mockFetch.mockResolvedValue({
+				ok: true,
+				json: () => Promise.resolve([]),
+			});
+
+			// Provide a one-time GitHub token; delete should use it and call GitHub
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.delete({
+				projectId: 'my-project',
+				callbackBaseUrl: 'http://example.com',
+				oneTimeTokens: { github: 'ghp_one_time_admin' },
+			});
+
+			// GitHub was called because oneTimeTokens overrode the missing credential
+			expect(mockListWebhooks).toHaveBeenCalled();
+			expect(result.github).toEqual([]);
+		});
+	});
+
+	describe('per-provider errors', () => {
+		it('list returns errors object with null values when all providers succeed', async () => {
+			setupProjectContext();
+
+			mockFetch.mockResolvedValue({
+				ok: true,
+				json: () => Promise.resolve([]),
+			});
+			mockListWebhooks.mockResolvedValue({ data: [] });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.list({ projectId: 'my-project' });
+
+			expect(result.errors).toEqual({
+				trello: null,
+				github: null,
+				jira: null,
+			});
+		});
+
+		it('list captures github error while trello still succeeds', async () => {
+			setupProjectContext();
+
+			// Trello succeeds
+			mockFetch.mockResolvedValue({
+				ok: true,
+				json: () =>
+					Promise.resolve([
+						{
+							id: 'tw-1',
+							idModel: 'board-123',
+							callbackURL: 'http://x',
+							active: true,
+						},
+					]),
+			});
+
+			// GitHub fails with 404
+			mockListWebhooks.mockRejectedValue(new Error('Not Found'));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.list({ projectId: 'my-project' });
+
+			expect(result.trello).toHaveLength(1);
+			expect(result.github).toEqual([]);
+			expect(result.errors.trello).toBeNull();
+			expect(result.errors.github).toContain('Not Found');
+			expect(result.errors.jira).toBeNull();
+		});
+
+		it('list captures trello error while github still succeeds', async () => {
+			setupProjectContext();
+
+			// Trello fails
+			mockFetch.mockResolvedValue({
+				ok: false,
+				status: 401,
+				json: () => Promise.resolve({}),
+			});
+
+			// GitHub succeeds
+			mockListWebhooks.mockResolvedValue({
+				data: [{ id: 1, name: 'web', active: true, events: [], config: { url: 'http://y' } }],
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.list({ projectId: 'my-project' });
+
+			expect(result.trello).toEqual([]);
+			expect(result.github).toHaveLength(1);
+			expect(result.errors.trello).toBeTruthy();
+			expect(result.errors.github).toBeNull();
+		});
+	});
+
+	describe('oneTimeTokens', () => {
+		it('list uses oneTimeTokens to override github credential', async () => {
+			setupProjectContext({ noGithub: true });
+
+			// Trello succeeds with DB creds
+			mockFetch.mockResolvedValue({
+				ok: true,
+				json: () => Promise.resolve([]),
+			});
+
+			// GitHub should now be called because we provide oneTimeTokens
+			const ghWebhooks = [
+				{ id: 5, name: 'web', active: true, events: ['push'], config: { url: 'http://z' } },
+			];
+			mockListWebhooks.mockResolvedValue({ data: ghWebhooks });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.list({
+				projectId: 'my-project',
+				oneTimeTokens: { github: 'ghp_admin_token' },
+			});
+
+			// GitHub was called because oneTimeTokens overrode the missing DB credential
+			expect(mockListWebhooks).toHaveBeenCalled();
+			expect(result.github).toHaveLength(1);
+			expect(result.github[0].id).toBe(5);
+		});
+
+		it('create uses oneTimeTokens for github', async () => {
+			setupProjectContext({ noGithub: true });
+
+			// Trello: skip (no Trello flag), but we have creds from DB so it'll try
+			mockFetch
+				.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([]) })
+				.mockResolvedValueOnce({
+					ok: true,
+					json: () =>
+						Promise.resolve({
+							id: 'tw-new',
+							callbackURL: 'http://example.com/trello/webhook',
+							idModel: 'board-123',
+							active: true,
+						}),
+				});
+
+			mockListWebhooks.mockResolvedValue({ data: [] });
+			mockCreateWebhook.mockResolvedValue({
+				data: {
+					id: 77,
+					config: { url: 'http://example.com/github/webhook' },
+					events: ['push'],
+					active: true,
+				},
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.create({
+				projectId: 'my-project',
+				callbackBaseUrl: 'http://example.com',
+				oneTimeTokens: { github: 'ghp_one_time' },
+			});
+
+			expect(mockCreateWebhook).toHaveBeenCalled();
+			expect(result.github).toMatchObject({ id: 77 });
+		});
+
+		it('list passes oneTimeTokens without affecting DB credentials', async () => {
+			setupProjectContext();
+
+			// Both Trello and GitHub succeed with DB creds
+			mockFetch.mockResolvedValue({
+				ok: true,
+				json: () => Promise.resolve([]),
+			});
+			mockListWebhooks.mockResolvedValue({ data: [] });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.list({
+				projectId: 'my-project',
+				oneTimeTokens: { github: 'ghp_override' },
+			});
+
+			expect(result.errors.trello).toBeNull();
+			expect(result.errors.github).toBeNull();
+			expect(result.errors.jira).toBeNull();
+		});
 	});
 });

@@ -362,21 +362,60 @@ async function jiraEnsureLabels(ctx: ProjectContext): Promise<string[]> {
 	return labelsToSeed;
 }
 
+// --- One-time token schema (shared by list/create/delete) ---
+
+const oneTimeTokensSchema = z
+	.object({
+		github: z.string().optional(),
+		trelloApiKey: z.string().optional(),
+		trelloToken: z.string().optional(),
+		jiraEmail: z.string().optional(),
+		jiraApiToken: z.string().optional(),
+	})
+	.optional();
+
+function applyOneTimeTokens(
+	pctx: ProjectContext,
+	tokens: z.infer<typeof oneTimeTokensSchema>,
+): void {
+	if (!tokens) return;
+	if (tokens.github) pctx.githubToken = tokens.github;
+	if (tokens.trelloApiKey) pctx.trelloApiKey = tokens.trelloApiKey;
+	if (tokens.trelloToken) pctx.trelloToken = tokens.trelloToken;
+	if (tokens.jiraEmail) pctx.jiraEmail = tokens.jiraEmail;
+	if (tokens.jiraApiToken) pctx.jiraApiToken = tokens.jiraApiToken;
+}
+
 // --- Router ---
 
 export const webhooksRouter = router({
 	list: protectedProcedure
-		.input(z.object({ projectId: z.string() }))
+		.input(
+			z.object({
+				projectId: z.string(),
+				oneTimeTokens: oneTimeTokensSchema,
+			}),
+		)
 		.query(async ({ ctx, input }) => {
 			const pctx = await resolveProjectContext(input.projectId, ctx.effectiveOrgId);
+			applyOneTimeTokens(pctx, input.oneTimeTokens);
 
-			const [trello, github, jira] = await Promise.all([
+			const [trelloResult, githubResult, jiraResult] = await Promise.allSettled([
 				trelloListWebhooks(pctx),
 				githubListWebhooks(pctx),
 				jiraListWebhooks(pctx),
 			]);
 
-			return { trello, github, jira };
+			return {
+				trello: trelloResult.status === 'fulfilled' ? trelloResult.value : [],
+				github: githubResult.status === 'fulfilled' ? githubResult.value : [],
+				jira: jiraResult.status === 'fulfilled' ? jiraResult.value : [],
+				errors: {
+					trello: trelloResult.status === 'rejected' ? String(trelloResult.reason) : null,
+					github: githubResult.status === 'rejected' ? String(githubResult.reason) : null,
+					jira: jiraResult.status === 'rejected' ? String(jiraResult.reason) : null,
+				},
+			};
 		}),
 
 	create: protectedProcedure
@@ -387,10 +426,12 @@ export const webhooksRouter = router({
 				trelloOnly: z.boolean().optional(),
 				githubOnly: z.boolean().optional(),
 				jiraOnly: z.boolean().optional(),
+				oneTimeTokens: oneTimeTokensSchema,
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
 			const pctx = await resolveProjectContext(input.projectId, ctx.effectiveOrgId);
+			applyOneTimeTokens(pctx, input.oneTimeTokens);
 			const baseUrl = input.callbackBaseUrl.replace(/\/$/, '');
 			const results: {
 				trello?: TrelloWebhook | string;
@@ -471,10 +512,12 @@ export const webhooksRouter = router({
 				trelloOnly: z.boolean().optional(),
 				githubOnly: z.boolean().optional(),
 				jiraOnly: z.boolean().optional(),
+				oneTimeTokens: oneTimeTokensSchema,
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
 			const pctx = await resolveProjectContext(input.projectId, ctx.effectiveOrgId);
+			applyOneTimeTokens(pctx, input.oneTimeTokens);
 			const baseUrl = input.callbackBaseUrl.replace(/\/$/, '');
 			const deleted: { trello: string[]; github: number[]; jira: number[] } = {
 				trello: [],

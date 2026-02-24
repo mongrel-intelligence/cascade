@@ -22,7 +22,7 @@ vi.mock('chalk', () => ({
 	},
 }));
 
-import { DashboardCommand } from '../../../../src/cli/dashboard/_shared/base.js';
+import { DashboardCommand, extractBaseFlags } from '../../../../src/cli/dashboard/_shared/base.js';
 
 // Concrete subclass for testing
 class TestCommand extends DashboardCommand {
@@ -45,6 +45,53 @@ class TestErrorCommand extends DashboardCommand {
 		this.handleError(this.errorToThrow as Error);
 	}
 }
+
+describe('extractBaseFlags', () => {
+	it('returns undefined when no overrides present', () => {
+		expect(extractBaseFlags([])).toBeUndefined();
+		expect(extractBaseFlags(['--json', 'list'])).toBeUndefined();
+	});
+
+	it('extracts --org value', () => {
+		expect(extractBaseFlags(['--org', 'test-org'])).toEqual({ org: 'test-org' });
+	});
+
+	it('extracts --server value', () => {
+		expect(extractBaseFlags(['--server', 'http://localhost:4000'])).toEqual({
+			server: 'http://localhost:4000',
+		});
+	});
+
+	it('extracts both flags together', () => {
+		expect(extractBaseFlags(['--org', 'my-org', '--server', 'http://x'])).toEqual({
+			org: 'my-org',
+			server: 'http://x',
+		});
+	});
+
+	it('handles --org=value equals syntax', () => {
+		expect(extractBaseFlags(['--org=my-org'])).toEqual({ org: 'my-org' });
+	});
+
+	it('handles --server=value equals syntax', () => {
+		expect(extractBaseFlags(['--server=http://x'])).toEqual({ server: 'http://x' });
+	});
+
+	it('ignores flag at end without value', () => {
+		expect(extractBaseFlags(['--org'])).toBeUndefined();
+		expect(extractBaseFlags(['--server'])).toBeUndefined();
+	});
+
+	it('stops parsing at --', () => {
+		expect(extractBaseFlags(['--', '--org', 'test-org'])).toBeUndefined();
+	});
+
+	it('extracts base flags mixed with other flags', () => {
+		expect(extractBaseFlags(['--json', '--org', 'my-org', '--limit', '20'])).toEqual({
+			org: 'my-org',
+		});
+	});
+});
 
 describe('DashboardCommand', () => {
 	beforeEach(() => {
@@ -81,6 +128,50 @@ describe('DashboardCommand', () => {
 
 			expect(consoleSpy).toHaveBeenCalledWith(JSON.stringify({ hello: 'world' }, null, 2));
 			consoleSpy.mockRestore();
+		});
+	});
+
+	describe('--org flag integration', () => {
+		it('passes orgId override to createDashboardClient', async () => {
+			const config = { serverUrl: 'http://localhost:3000', sessionToken: 'tok' };
+			mockLoadConfig.mockReturnValue(config);
+			mockCreateDashboardClient.mockReturnValue({});
+
+			const cmd = new TestCommand(['--org', 'my-org'], {} as never);
+			await cmd.run();
+
+			expect(mockCreateDashboardClient).toHaveBeenCalledWith(
+				expect.objectContaining({ orgId: 'my-org' }),
+			);
+		});
+
+		it('passes server override to createDashboardClient', async () => {
+			const config = { serverUrl: 'http://localhost:3000', sessionToken: 'tok' };
+			mockLoadConfig.mockReturnValue(config);
+			mockCreateDashboardClient.mockReturnValue({});
+
+			const cmd = new TestCommand(['--server', 'http://other:4000'], {} as never);
+			await cmd.run();
+
+			expect(mockCreateDashboardClient).toHaveBeenCalledWith(
+				expect.objectContaining({ serverUrl: 'http://other:4000' }),
+			);
+		});
+
+		it('passes both --org and --server overrides', async () => {
+			const config = { serverUrl: 'http://localhost:3000', sessionToken: 'tok' };
+			mockLoadConfig.mockReturnValue(config);
+			mockCreateDashboardClient.mockReturnValue({});
+
+			const cmd = new TestCommand(
+				['--org', 'my-org', '--server', 'http://other:4000'],
+				{} as never,
+			);
+			await cmd.run();
+
+			expect(mockCreateDashboardClient).toHaveBeenCalledWith(
+				expect.objectContaining({ serverUrl: 'http://other:4000', orgId: 'my-org' }),
+			);
 		});
 	});
 

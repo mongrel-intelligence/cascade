@@ -89,6 +89,8 @@ function formatProgressUserPrompt(context: ProgressContext): string {
 	return sections.join('\n');
 }
 
+const PROGRESS_TIMEOUT_MS = 10_000;
+
 /**
  * Call a lightweight LLM to generate a natural-language progress summary.
  *
@@ -103,14 +105,44 @@ export async function callProgressModel(
 	context: ProgressContext,
 	customModels: ModelSpec[],
 ): Promise<string> {
+	let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
+	const timeoutPromise = new Promise<never>((_resolve, reject) => {
+		timeoutHandle = setTimeout(
+			() => reject(new Error('Progress model call timed out')),
+			PROGRESS_TIMEOUT_MS,
+		);
+	});
+
+	// Suppress unhandled rejection on the timeout promise — it may fire after
+	// the LLM promise wins the race, and its rejection would otherwise be unhandled.
+	timeoutPromise.catch(() => {});
+
+	try {
+		return await Promise.race([
+			callProgressModelOnce(model, context, customModels),
+			timeoutPromise,
+		]);
+	} finally {
+		clearTimeout(timeoutHandle);
+	}
+}
+
+/**
+ * Make the actual single-shot LLM call to generate a progress summary.
+ */
+async function callProgressModelOnce(
+	model: string,
+	context: ProgressContext,
+	customModels: ModelSpec[],
+): Promise<string> {
 	const client = new LLMist({ customModels });
 
 	const builder = new AgentBuilder(client)
 		.withModel(model)
 		.withTemperature(0)
 		.withSystem(PROGRESS_SYSTEM_PROMPT)
-		.withMaxIterations(1)
-		.withGadgets();
+		.withMaxIterations(1);
 
 	const agent = builder.ask(formatProgressUserPrompt(context));
 

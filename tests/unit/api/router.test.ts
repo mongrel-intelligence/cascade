@@ -76,6 +76,32 @@ vi.mock('../../../src/db/repositories/configRepository.js', () => ({
 	findProjectByIdFromDb: vi.fn(),
 }));
 
+vi.mock('../../../src/db/crypto.js', () => ({
+	decryptCredential: vi.fn((v: string) => v),
+}));
+
+vi.mock('../../../src/trello/client.js', () => ({
+	withTrelloCredentials: vi.fn(),
+	trelloClient: {
+		getMe: vi.fn(),
+		getBoards: vi.fn(),
+		getBoardLists: vi.fn(),
+		getBoardLabels: vi.fn(),
+		getBoardCustomFields: vi.fn(),
+	},
+}));
+
+vi.mock('../../../src/jira/client.js', () => ({
+	withJiraCredentials: vi.fn(),
+	jiraClient: {
+		getMyself: vi.fn(),
+		searchProjects: vi.fn(),
+		getProjectStatuses: vi.fn(),
+		getIssueTypesForProject: vi.fn(),
+		getFields: vi.fn(),
+	},
+}));
+
 vi.mock('@octokit/rest', () => ({
 	Octokit: vi.fn(() => ({
 		repos: {
@@ -156,5 +182,15 @@ describe('appRouter', () => {
 		expect(procedures).toContain('webhooks.list');
 		expect(procedures).toContain('webhooks.create');
 		expect(procedures).toContain('webhooks.delete');
+	});
+
+	it('has integrationsDiscovery sub-router with all procedures', () => {
+		const procedures = Object.keys(appRouter._def.procedures);
+		expect(procedures).toContain('integrationsDiscovery.verifyTrello');
+		expect(procedures).toContain('integrationsDiscovery.verifyJira');
+		expect(procedures).toContain('integrationsDiscovery.trelloBoards');
+		expect(procedures).toContain('integrationsDiscovery.trelloBoardDetails');
+		expect(procedures).toContain('integrationsDiscovery.jiraProjects');
+		expect(procedures).toContain('integrationsDiscovery.jiraProjectDetails');
 	});
 });

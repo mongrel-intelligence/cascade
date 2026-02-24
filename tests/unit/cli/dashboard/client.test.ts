@@ -49,6 +49,21 @@ describe('createDashboardClient', () => {
 		});
 	});
 
+	it('includes x-org-context header when orgId is set', () => {
+		const config = { serverUrl: 'http://localhost:3000', sessionToken: 'tok', orgId: 'my-org' };
+
+		createDashboardClient(config);
+
+		const linkOpts = vi.mocked(httpBatchLink).mock.calls[0][0] as {
+			headers: () => Record<string, string>;
+		};
+		const headers = linkOpts.headers();
+		expect(headers).toEqual({
+			Cookie: 'cascade_session=tok',
+			'x-org-context': 'my-org',
+		});
+	});
+
 	it('returns the created client', () => {
 		const config = { serverUrl: 'http://localhost:3000', sessionToken: 'tok' };
 

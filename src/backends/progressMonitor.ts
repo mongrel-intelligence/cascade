@@ -19,8 +19,13 @@ import { getSessionState } from '../gadgets/sessionState.js';
 import { loadTodos } from '../gadgets/todo/storage.js';
 import { githubClient } from '../github/client.js';
 import { getPMProviderOrNull } from '../pm/index.js';
+import { captureException } from '../sentry.js';
 import { type ProgressContext, callProgressModel } from './progressModel.js';
-import { clearProgressCommentId, writeProgressCommentId } from './progressState.js';
+import {
+	clearProgressCommentId,
+	readProgressCommentId,
+	writeProgressCommentId,
+} from './progressState.js';
 import type { LogWriter, ProgressReporter } from './types.js';
 
 export interface ProgressMonitorConfig {
@@ -48,6 +53,7 @@ export interface ProgressMonitorConfig {
 /** Default progressive schedule: 1min, 3min, 5min, then every intervalMinutes */
 const DEFAULT_SCHEDULE_MINUTES = [1, 3, 5];
 
+const PROGRESS_MODEL_TIMEOUT_MS = 20_000;
 const RING_BUFFER_MAX = 20;
 const TEXT_SNIPPETS_MAX = 10;
 const COMPLETED_TASKS_MAX = 5;
@@ -274,11 +280,15 @@ export class ProgressMonitor implements ProgressReporter {
 
 			let summary: string;
 			try {
-				summary = await callProgressModel(
-					this.config.progressModel,
-					progressContext,
-					this.config.customModels,
-				);
+				summary = await Promise.race([
+					callProgressModel(this.config.progressModel, progressContext, this.config.customModels),
+					new Promise<never>((_, reject) =>
+						setTimeout(
+							() => reject(new Error('Progress model timed out')),
+							PROGRESS_MODEL_TIMEOUT_MS,
+						),
+					),
+				]);
 				this.config.logWriter('INFO', 'Progress model generated summary', {
 					elapsedMinutes: Math.round(elapsedMinutes),
 					summaryLength: summary.length,
@@ -286,6 +296,9 @@ export class ProgressMonitor implements ProgressReporter {
 			} catch (err) {
 				this.config.logWriter('WARN', 'Progress model failed, falling back to template', {
 					error: String(err),
+				});
+				captureException(err instanceof Error ? err : new Error(String(err)), {
+					tags: { source: 'progress_model', agentType: this.config.agentType },
 				});
 				summary = formatStatusMessage(
 					this.currentIteration,
@@ -318,6 +331,17 @@ export class ProgressMonitor implements ProgressReporter {
 		if (!provider) return;
 
 		if (this.progressCommentId) {
+			// If the PostComment gadget (subprocess) cleared the state file,
+			// the agent has posted its final comment to this ID — do not overwrite.
+			const stateFile = readProgressCommentId(this.config.repoDir);
+			if (!stateFile) {
+				this.config.logWriter('DEBUG', 'State file cleared by agent — skipping progress update', {
+					commentId: this.progressCommentId,
+				});
+				this.progressCommentId = null;
+				return;
+			}
+
 			// Subsequent ticks: update the existing comment.
 			// On success, the state file written by postInitialComment() remains
 			// valid (same comment ID), so no need to rewrite it here.
