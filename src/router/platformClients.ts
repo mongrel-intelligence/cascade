@@ -88,8 +88,8 @@ export function resolveGitHubHeaders(
 
 /**
  * Unified interface for posting and deleting comments and reactions across
- * Trello, GitHub, and JIRA.  Implementations are fire-and-forget safe —
- * they never throw; all errors are caught and logged internally.
+ * GitHub and JIRA.  Implementations are fire-and-forget safe — they never
+ * throw; all errors (including network failures) are caught and logged internally.
  */
 export interface PlatformCommentClient {
 	/**
@@ -112,55 +112,6 @@ export interface PlatformCommentClient {
 }
 
 // ---------------------------------------------------------------------------
-// TrelloPlatformClient
-// ---------------------------------------------------------------------------
-
-export class TrelloPlatformClient implements PlatformCommentClient {
-	constructor(private readonly projectId: string) {}
-
-	async postComment(cardId: string, message: string): Promise<string | null> {
-		const creds = await resolveTrelloCredentials(this.projectId);
-		if (!creds) {
-			logger.warn('[PlatformClient] Missing Trello credentials, skipping comment');
-			return null;
-		}
-
-		const url = `https://api.trello.com/1/cards/${cardId}/actions/comments?key=${creds.apiKey}&token=${creds.token}`;
-		const response = await fetch(url, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ text: message }),
-		});
-
-		if (!response.ok) {
-			logger.warn(
-				'[PlatformClient] Trello comment failed:',
-				response.status,
-				await response.text(),
-			);
-			return null;
-		}
-
-		const data = (await response.json()) as { id?: string };
-		logger.info('[PlatformClient] Trello comment posted for card:', cardId);
-		return data.id ?? null;
-	}
-
-	async deleteComment(cardId: string, commentId: string): Promise<void> {
-		const creds = await resolveTrelloCredentials(this.projectId);
-		if (!creds) return;
-
-		const url = `https://api.trello.com/1/cards/${cardId}/actions/${commentId}/comments?key=${creds.apiKey}&token=${creds.token}`;
-		try {
-			await fetch(url, { method: 'DELETE' });
-			logger.info('[PlatformClient] Trello comment deleted:', commentId);
-		} catch (err) {
-			logger.warn('[PlatformClient] Failed to delete Trello comment:', String(err));
-		}
-	}
-}
-
-// ---------------------------------------------------------------------------
 // GitHubPlatformClient
 // ---------------------------------------------------------------------------
 
@@ -171,25 +122,30 @@ export class GitHubPlatformClient implements PlatformCommentClient {
 	) {}
 
 	async postComment(prNumber: string | number, message: string): Promise<number | null> {
-		const url = `https://api.github.com/repos/${this.repoFullName}/issues/${prNumber}/comments`;
-		const response = await fetch(url, {
-			method: 'POST',
-			headers: resolveGitHubHeaders(this.token, { 'Content-Type': 'application/json' }),
-			body: JSON.stringify({ body: message }),
-		});
+		try {
+			const url = `https://api.github.com/repos/${this.repoFullName}/issues/${prNumber}/comments`;
+			const response = await fetch(url, {
+				method: 'POST',
+				headers: resolveGitHubHeaders(this.token, { 'Content-Type': 'application/json' }),
+				body: JSON.stringify({ body: message }),
+			});
 
-		if (!response.ok) {
-			logger.warn(
-				'[PlatformClient] GitHub comment failed:',
-				response.status,
-				await response.text(),
-			);
+			if (!response.ok) {
+				logger.warn(
+					'[PlatformClient] GitHub comment failed:',
+					response.status,
+					await response.text(),
+				);
+				return null;
+			}
+
+			const data = (await response.json()) as { id?: number };
+			logger.info('[PlatformClient] GitHub comment posted for PR:', prNumber);
+			return data.id ?? null;
+		} catch (err) {
+			logger.warn('[PlatformClient] Failed to post GitHub comment:', String(err));
 			return null;
 		}
-
-		const data = (await response.json()) as { id?: number };
-		logger.info('[PlatformClient] GitHub comment posted for PR:', prNumber);
-		return data.id ?? null;
 	}
 
 	async deleteComment(_target: string, commentId: number): Promise<void> {
@@ -228,24 +184,33 @@ export class JiraPlatformClient implements PlatformCommentClient {
 			return null;
 		}
 
-		const url = `${creds.baseUrl}/rest/api/2/issue/${issueKey}/comment`;
-		const response = await fetch(url, {
-			method: 'POST',
-			headers: {
-				Authorization: `Basic ${creds.auth}`,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ body: message }),
-		});
+		try {
+			const url = `${creds.baseUrl}/rest/api/2/issue/${issueKey}/comment`;
+			const response = await fetch(url, {
+				method: 'POST',
+				headers: {
+					Authorization: `Basic ${creds.auth}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ body: message }),
+			});
 
-		if (!response.ok) {
-			logger.warn('[PlatformClient] JIRA comment failed:', response.status, await response.text());
+			if (!response.ok) {
+				logger.warn(
+					'[PlatformClient] JIRA comment failed:',
+					response.status,
+					await response.text(),
+				);
+				return null;
+			}
+
+			const data = (await response.json()) as { id?: string };
+			logger.info('[PlatformClient] JIRA comment posted for issue:', issueKey);
+			return data.id ?? null;
+		} catch (err) {
+			logger.warn('[PlatformClient] Failed to post JIRA comment:', String(err));
 			return null;
 		}
-
-		const data = (await response.json()) as { id?: string };
-		logger.info('[PlatformClient] JIRA comment posted for issue:', issueKey);
-		return data.id ?? null;
 	}
 
 	async deleteComment(issueKey: string, commentId: string): Promise<void> {
@@ -282,39 +247,38 @@ export class JiraPlatformClient implements PlatformCommentClient {
 			return;
 		}
 
-		const cloudId = await this._getCloudId(creds.baseUrl, creds.email, creds.apiToken, creds.auth);
+		const cloudId = await this._getCloudId(creds.baseUrl, creds.auth);
 		if (!cloudId) return;
 
-		const { issueId, commentId } = reactionPayload;
-		const emojiId = 'atlassian-thought_balloon';
-		const ari = `ari%3Acloud%3Ajira%3A${cloudId}%3Acomment%2F${issueId}%2F${commentId}`;
-		const reactionsUrl = `${creds.baseUrl}/rest/reactions/1.0/reactions/${ari}/${emojiId}`;
+		try {
+			const { issueId, commentId } = reactionPayload;
+			const emojiId = 'atlassian-thought_balloon';
+			const ari = `ari%3Acloud%3Ajira%3A${cloudId}%3Acomment%2F${issueId}%2F${commentId}`;
+			const reactionsUrl = `${creds.baseUrl}/rest/reactions/1.0/reactions/${ari}/${emojiId}`;
 
-		const reactionResponse = await fetch(reactionsUrl, {
-			method: 'PUT',
-			headers: {
-				Authorization: `Basic ${creds.auth}`,
-				'Content-Type': 'application/json',
-			},
-		});
+			const reactionResponse = await fetch(reactionsUrl, {
+				method: 'PUT',
+				headers: {
+					Authorization: `Basic ${creds.auth}`,
+					'Content-Type': 'application/json',
+				},
+			});
 
-		if (reactionResponse.ok) {
-			logger.info('[PlatformClient] JIRA reaction sent for comment:', commentId);
-		} else {
-			logger.warn(
-				'[PlatformClient] JIRA reactions API failed:',
-				reactionResponse.status,
-				'— skipping (no fallback to avoid webhook loops)',
-			);
+			if (reactionResponse.ok) {
+				logger.info('[PlatformClient] JIRA reaction sent for comment:', commentId);
+			} else {
+				logger.warn(
+					'[PlatformClient] JIRA reactions API failed:',
+					reactionResponse.status,
+					'— skipping (no fallback to avoid webhook loops)',
+				);
+			}
+		} catch (err) {
+			logger.warn('[PlatformClient] Failed to post JIRA reaction:', String(err));
 		}
 	}
 
-	private async _getCloudId(
-		baseUrl: string,
-		email: string,
-		apiToken: string,
-		auth: string,
-	): Promise<string | null> {
+	private async _getCloudId(baseUrl: string, auth: string): Promise<string | null> {
 		const cached = _jiraCloudIdCache.get(baseUrl);
 		if (cached) return cached;
 
@@ -340,12 +304,6 @@ export class JiraPlatformClient implements PlatformCommentClient {
 		}
 
 		_jiraCloudIdCache.set(baseUrl, data.cloudId);
-
-		// Suppress unused-variable warnings from TS — email/apiToken retained for
-		// signature clarity (callers pass raw credentials).
-		void email;
-		void apiToken;
-
 		return data.cloudId;
 	}
 

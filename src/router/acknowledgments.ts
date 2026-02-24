@@ -85,12 +85,10 @@ export async function postGitHubAck(
 	const client = new GitHubPlatformClient(repoFullName, token);
 	const result = await client.postComment(prNumber, message);
 
-	// Log with [Ack] prefix for consistency with existing log patterns
+	// GitHubPlatformClient already logs success/failure internally
 	if (result === null) {
-		// GitHubPlatformClient already logged the error; nothing to add
 		return null;
 	}
-	logger.info('[Ack] GitHub ack comment posted for PR:', prNumber);
 	return typeof result === 'number' ? result : null;
 }
 

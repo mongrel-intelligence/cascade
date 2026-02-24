@@ -19,6 +19,16 @@ vi.mock('../../../src/config/configCache.js', () => ({
 	},
 }));
 
+// Mock logger
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+	},
+}));
+
 import { findProjectById, getIntegrationCredential } from '../../../src/config/provider.js';
 import {
 	resolveGitHubHeaders,
@@ -56,8 +66,6 @@ const MOCK_PROJECT_WITH_JIRA = {
 
 beforeEach(() => {
 	mockFetch.mockReset();
-	vi.spyOn(console, 'log').mockImplementation(() => {});
-	vi.spyOn(console, 'warn').mockImplementation(() => {});
 
 	mockGetIntegrationCredential.mockImplementation(async (_projectId, category, role) => {
 		const value = MOCK_CREDENTIALS[`${category}/${role}`];
