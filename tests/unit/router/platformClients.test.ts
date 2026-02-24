@@ -31,10 +31,14 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 import { findProjectById, getIntegrationCredential } from '../../../src/config/provider.js';
 import {
+	TrelloPlatformClient,
 	resolveGitHubHeaders,
 	resolveJiraCredentials,
 	resolveTrelloCredentials,
 } from '../../../src/router/platformClients.js';
+import { logger } from '../../../src/utils/logging.js';
+
+const mockLogger = vi.mocked(logger);
 
 const mockGetIntegrationCredential = vi.mocked(getIntegrationCredential);
 const mockFindProjectById = vi.mocked(findProjectById);
@@ -171,5 +175,128 @@ describe('resolveGitHubHeaders', () => {
 		const headers = resolveGitHubHeaders('ghp_token', { Accept: 'text/plain' });
 
 		expect(headers.Accept).toBe('text/plain');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// TrelloPlatformClient
+// ---------------------------------------------------------------------------
+
+describe('TrelloPlatformClient', () => {
+	beforeEach(() => {
+		mockLogger.info.mockReset();
+		mockLogger.warn.mockReset();
+	});
+
+	describe('postComment', () => {
+		it('posts a comment and returns the comment ID', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ id: 'comment-abc' }),
+			});
+
+			const client = new TrelloPlatformClient('proj1');
+			const result = await client.postComment('card1', 'Hello');
+
+			expect(result).toBe('comment-abc');
+			expect(mockFetch).toHaveBeenCalledOnce();
+			const [url, options] = mockFetch.mock.calls[0];
+			expect(url).toContain('https://api.trello.com/1/cards/card1/actions/comments');
+			expect(url).toContain('key=trello-key');
+			expect(url).toContain('token=trello-token');
+			expect(options.method).toBe('POST');
+			expect(JSON.parse(options.body)).toEqual({ text: 'Hello' });
+		});
+
+		it('returns null when credentials are missing', async () => {
+			mockGetIntegrationCredential.mockRejectedValue(new Error('not found'));
+
+			const client = new TrelloPlatformClient('proj1');
+			const result = await client.postComment('card1', 'Hello');
+
+			expect(result).toBeNull();
+			expect(mockFetch).not.toHaveBeenCalled();
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				expect.stringContaining('Missing Trello credentials'),
+			);
+		});
+
+		it('returns null on API error', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: false,
+				status: 401,
+				text: async () => 'Unauthorized',
+			});
+
+			const client = new TrelloPlatformClient('proj1');
+			const result = await client.postComment('card1', 'Hello');
+
+			expect(result).toBeNull();
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				expect.stringContaining('Trello comment failed'),
+				401,
+				'Unauthorized',
+			);
+		});
+
+		it('returns null on network error', async () => {
+			mockFetch.mockRejectedValueOnce(new Error('Network failure'));
+
+			const client = new TrelloPlatformClient('proj1');
+			const result = await client.postComment('card1', 'Hello');
+
+			expect(result).toBeNull();
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				expect.stringContaining('Failed to post Trello comment'),
+				expect.stringContaining('Network failure'),
+			);
+		});
+
+		it('returns null when response has no id', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({}),
+			});
+
+			const client = new TrelloPlatformClient('proj1');
+			const result = await client.postComment('card1', 'Hello');
+
+			expect(result).toBeNull();
+		});
+	});
+
+	describe('deleteComment', () => {
+		it('sends DELETE request to remove comment', async () => {
+			mockFetch.mockResolvedValueOnce({ ok: true });
+
+			const client = new TrelloPlatformClient('proj1');
+			await client.deleteComment('card1', 'comment-abc');
+
+			expect(mockFetch).toHaveBeenCalledOnce();
+			const [url, options] = mockFetch.mock.calls[0];
+			expect(url).toContain('https://api.trello.com/1/cards/card1/actions/comment-abc/comments');
+			expect(options.method).toBe('DELETE');
+		});
+
+		it('silently returns when credentials are missing', async () => {
+			mockGetIntegrationCredential.mockRejectedValue(new Error('not found'));
+
+			const client = new TrelloPlatformClient('proj1');
+			await client.deleteComment('card1', 'comment-abc');
+
+			expect(mockFetch).not.toHaveBeenCalled();
+		});
+
+		it('catches fetch errors gracefully', async () => {
+			mockFetch.mockRejectedValueOnce(new Error('Network error'));
+
+			const client = new TrelloPlatformClient('proj1');
+			await client.deleteComment('card1', 'comment-abc');
+
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				expect.stringContaining('Failed to delete Trello comment'),
+				expect.any(String),
+			);
+		});
 	});
 });

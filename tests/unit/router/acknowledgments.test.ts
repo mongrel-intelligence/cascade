@@ -153,7 +153,7 @@ describe('postTrelloAck', () => {
 
 		expect(result).toBeNull();
 		expect(mockLogger.warn).toHaveBeenCalledWith(
-			expect.stringContaining('Trello comment failed'),
+			expect.stringContaining('[PlatformClient] Trello comment failed'),
 			401,
 			'Unauthorized',
 		);
@@ -197,7 +197,7 @@ describe('deleteTrelloAck', () => {
 		await deleteTrelloAck('test', 'card1', 'comment-123');
 
 		expect(mockLogger.warn).toHaveBeenCalledWith(
-			expect.stringContaining('Failed to delete Trello orphan ack'),
+			expect.stringContaining('Failed to delete Trello comment'),
 			expect.any(String),
 		);
 	});
@@ -269,7 +269,7 @@ describe('deleteGitHubAck', () => {
 		await deleteGitHubAck('owner/repo', 42, 'ghp_token');
 
 		expect(mockLogger.warn).toHaveBeenCalledWith(
-			expect.stringContaining('Failed to delete GitHub orphan ack'),
+			expect.stringContaining('Failed to delete GitHub comment'),
 			expect.any(String),
 		);
 	});

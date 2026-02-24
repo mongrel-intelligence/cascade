@@ -18,7 +18,7 @@ import { logger } from '../utils/logging.js';
 import { BotIdentityCache } from './bot-identity.js';
 import {
 	GitHubPlatformClient,
-	resolveGitHubHeaders,
+	TrelloPlatformClient,
 	resolveJiraCredentials,
 	resolveTrelloCredentials,
 } from './platformClients.js';
@@ -32,27 +32,9 @@ export async function postTrelloAck(
 	cardId: string,
 	message: string,
 ): Promise<string | null> {
-	const creds = await resolveTrelloCredentials(projectId);
-	if (!creds) {
-		logger.warn('[Ack] Missing Trello credentials, skipping ack comment');
-		return null;
-	}
-
-	const url = `https://api.trello.com/1/cards/${cardId}/actions/comments?key=${creds.apiKey}&token=${creds.token}`;
-	const response = await fetch(url, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ text: message }),
-	});
-
-	if (!response.ok) {
-		logger.warn('[Ack] Trello comment failed:', response.status, await response.text());
-		return null;
-	}
-
-	const data = (await response.json()) as { id?: string };
-	logger.info('[Ack] Trello ack comment posted for card:', cardId);
-	return data.id ?? null;
+	const client = new TrelloPlatformClient(projectId);
+	const result = await client.postComment(cardId, message);
+	return typeof result === 'string' ? result : null;
 }
 
 export async function deleteTrelloAck(
@@ -60,16 +42,8 @@ export async function deleteTrelloAck(
 	cardId: string,
 	commentId: string,
 ): Promise<void> {
-	const creds = await resolveTrelloCredentials(projectId);
-	if (!creds) return;
-
-	const url = `https://api.trello.com/1/cards/${cardId}/actions/${commentId}/comments?key=${creds.apiKey}&token=${creds.token}`;
-	try {
-		await fetch(url, { method: 'DELETE' });
-		logger.info('[Ack] Trello orphan ack deleted:', commentId);
-	} catch (err) {
-		logger.warn('[Ack] Failed to delete Trello orphan ack:', String(err));
-	}
+	const client = new TrelloPlatformClient(projectId);
+	await client.deleteComment(cardId, commentId);
 }
 
 // ---------------------------------------------------------------------------
@@ -97,16 +71,8 @@ export async function deleteGitHubAck(
 	commentId: number,
 	token: string,
 ): Promise<void> {
-	const url = `https://api.github.com/repos/${repoFullName}/issues/comments/${commentId}`;
-	try {
-		await fetch(url, {
-			method: 'DELETE',
-			headers: resolveGitHubHeaders(token),
-		});
-		logger.info('[Ack] GitHub orphan ack deleted:', commentId);
-	} catch (err) {
-		logger.warn('[Ack] Failed to delete GitHub orphan ack:', String(err));
-	}
+	const client = new GitHubPlatformClient(repoFullName, token);
+	await client.deleteComment('', commentId);
 }
 
 // ---------------------------------------------------------------------------
