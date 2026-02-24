@@ -119,7 +119,7 @@ describe('processRouterWebhook', () => {
 		vi.mocked(addJob).mockResolvedValue('job-1');
 		const adapter = makeMockAdapter({
 			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
-			postAck: vi.fn().mockResolvedValue('comment-abc'),
+			postAck: vi.fn().mockResolvedValue({ commentId: 'comment-abc', message: 'Starting...' }),
 		});
 
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
@@ -137,6 +137,7 @@ describe('processRouterWebhook', () => {
 			mockProject,
 			triggerResult,
 			'comment-abc',
+			'Starting...',
 		);
 		expect(addJob).toHaveBeenCalled();
 	});

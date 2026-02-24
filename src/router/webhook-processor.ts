@@ -107,11 +107,12 @@ export async function processRouterWebhook(
 	}
 
 	// Step 7: Post acknowledgment comment
-	let ackCommentId: string | number | undefined;
-	ackCommentId = await adapter.postAck(event, payload, project, result.agentType);
+	const ackResult = await adapter.postAck(event, payload, project, result.agentType);
+	const ackCommentId = ackResult?.commentId;
+	const ackMessage = ackResult?.message;
 
 	// Step 8: Build job
-	const job = adapter.buildJob(event, payload, project, result, ackCommentId);
+	const job = adapter.buildJob(event, payload, project, result, ackCommentId, ackMessage);
 
 	// Step 9: Fire optional pre-actions (fire-and-forget)
 	adapter.firePreActions?.(job, payload);

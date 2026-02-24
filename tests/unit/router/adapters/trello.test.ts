@@ -226,9 +226,9 @@ describe('TrelloRouterAdapter', () => {
 	});
 
 	describe('postAck', () => {
-		it('posts ack and returns comment ID', async () => {
+		it('posts ack and returns AckResult with commentId and message', async () => {
 			vi.mocked(postTrelloAck).mockResolvedValue('comment-123');
-			const id = await adapter.postAck(
+			const ackResult = await adapter.postAck(
 				{
 					projectIdentifier: 'board1',
 					eventType: 'commentCard',
@@ -239,17 +239,18 @@ describe('TrelloRouterAdapter', () => {
 				mockProject,
 				'implementation',
 			);
-			expect(id).toBe('comment-123');
+			expect(ackResult?.commentId).toBe('comment-123');
+			expect(ackResult?.message).toBe('Starting implementation...');
 		});
 
 		it('returns undefined when no workItemId', async () => {
-			const id = await adapter.postAck(
+			const ackResult = await adapter.postAck(
 				{ projectIdentifier: 'board1', eventType: 'commentCard', isCommentEvent: true },
 				{},
 				mockProject,
 				'implementation',
 			);
-			expect(id).toBeUndefined();
+			expect(ackResult).toBeUndefined();
 		});
 	});
 

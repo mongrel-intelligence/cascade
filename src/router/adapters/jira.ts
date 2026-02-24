@@ -14,7 +14,7 @@ import { logger } from '../../utils/logging.js';
 import { extractJiraContext, generateAckMessage } from '../ackMessageGenerator.js';
 import { postJiraAck, resolveJiraBotAccountId } from '../acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from '../config.js';
-import type { ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
+import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
 import { resolveJiraCredentials } from '../platformClients.js';
 import { type CascadeJob, type JiraJob, addJob } from '../queue.js';
 import { sendAcknowledgeReaction } from '../reactions.js';
@@ -135,14 +135,15 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 		payload: unknown,
 		project: RouterProjectConfig,
 		agentType: string,
-	): Promise<string | undefined> {
+	): Promise<AckResult | undefined> {
 		const issueKey = (event as JiraParsedEvent).issueKey;
 		if (!issueKey) return undefined;
 		try {
 			const context = extractJiraContext(payload);
 			const message = await generateAckMessage(agentType, context, project.id);
 			const commentId = await postJiraAck(project.id, issueKey, message);
-			return commentId ?? undefined;
+			if (commentId) return { commentId, message };
+			return undefined;
 		} catch (err) {
 			logger.warn('JIRA ack comment failed (non-fatal)', {
 				error: String(err),
@@ -233,9 +234,8 @@ export async function handleJiraWebhookViaAdapter(
 
 	let ackCommentId: string | undefined;
 	if (result.agentType) {
-		ackCommentId = (await adapter.postAck(event, payload, project, result.agentType)) as
-			| string
-			| undefined;
+		const ackResult = await adapter.postAck(event, payload, project, result.agentType);
+		ackCommentId = ackResult?.commentId as string | undefined;
 	}
 
 	const job = adapter.buildJob(event, payload, project, result, ackCommentId);

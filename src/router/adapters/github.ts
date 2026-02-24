@@ -27,7 +27,7 @@ import { extractGitHubContext, generateAckMessage } from '../ackMessageGenerator
 import { postGitHubAck, resolveGitHubTokenForAck } from '../acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from '../config.js';
 import { extractPRNumber } from '../notifications.js';
-import type { ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
+import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
 import { addEyesReactionToPR } from '../pre-actions.js';
 import { type CascadeJob, type GitHubJob, addJob } from '../queue.js';
 import { sendAcknowledgeReaction } from '../reactions.js';
@@ -185,7 +185,7 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 		payload: unknown,
 		project: RouterProjectConfig,
 		agentType: string,
-	): Promise<number | undefined> {
+	): Promise<AckResult | undefined> {
 		try {
 			const context = extractGitHubContext(payload, event.eventType);
 			const message = await generateAckMessage(agentType, context, project.id);
@@ -204,7 +204,7 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 						message,
 						resolved.token,
 					);
-					if (commentId != null) return commentId;
+					if (commentId != null) return { commentId, message };
 				}
 			}
 		} catch (err) {

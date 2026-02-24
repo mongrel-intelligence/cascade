@@ -313,7 +313,7 @@ describe('GitHubRouterAdapter', () => {
 	});
 
 	describe('postAck', () => {
-		it('posts ack and returns comment ID', async () => {
+		it('posts ack and returns AckResult with commentId and message', async () => {
 			vi.mocked(resolveGitHubTokenForAck).mockResolvedValue({
 				token: 'ghp_test',
 				project: { id: 'p1' },
@@ -321,7 +321,7 @@ describe('GitHubRouterAdapter', () => {
 			vi.mocked(extractPRNumber).mockReturnValue(42);
 			vi.mocked(postGitHubAck).mockResolvedValue(999);
 
-			const id = await adapter.postAck(
+			const ackResult = await adapter.postAck(
 				{
 					projectIdentifier: 'owner/repo',
 					eventType: 'pull_request',
@@ -334,7 +334,8 @@ describe('GitHubRouterAdapter', () => {
 				mockProject,
 				'review',
 			);
-			expect(id).toBe(999);
+			expect(ackResult?.commentId).toBe(999);
+			expect(ackResult?.message).toBe('Starting implementation...');
 		});
 	});
 

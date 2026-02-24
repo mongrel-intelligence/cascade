@@ -208,9 +208,9 @@ describe('JiraRouterAdapter', () => {
 	});
 
 	describe('postAck', () => {
-		it('posts ack and returns comment ID', async () => {
+		it('posts ack and returns AckResult with commentId and message', async () => {
 			vi.mocked(postJiraAck).mockResolvedValue('jira-comment-456');
-			const id = await adapter.postAck(
+			const ackResult = await adapter.postAck(
 				{
 					projectIdentifier: 'PROJ',
 					eventType: 'jira:issue_updated',
@@ -223,11 +223,12 @@ describe('JiraRouterAdapter', () => {
 				mockProject,
 				'implementation',
 			);
-			expect(id).toBe('jira-comment-456');
+			expect(ackResult?.commentId).toBe('jira-comment-456');
+			expect(ackResult?.message).toBe('Working on it...');
 		});
 
 		it('returns undefined when no issueKey', async () => {
-			const id = await adapter.postAck(
+			const ackResult = await adapter.postAck(
 				{
 					projectIdentifier: 'PROJ',
 					eventType: 'jira:issue_updated',
@@ -239,7 +240,7 @@ describe('JiraRouterAdapter', () => {
 				mockProject,
 				'implementation',
 			);
-			expect(id).toBeUndefined();
+			expect(ackResult).toBeUndefined();
 		});
 	});
 

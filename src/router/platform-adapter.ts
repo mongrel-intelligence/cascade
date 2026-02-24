@@ -13,6 +13,20 @@ import type { RouterProjectConfig } from './config.js';
 import type { CascadeJob } from './queue.js';
 
 // ---------------------------------------------------------------------------
+// Ack result — returned from postAck, threaded through to buildJob
+// ---------------------------------------------------------------------------
+
+/**
+ * Result of posting an acknowledgment comment. Carries both the comment ID
+ * (for ProgressMonitor to update in-place) and the message text (for agents
+ * that need the ack content, e.g. GitHub's ackMessage in worker-entry).
+ */
+export interface AckResult {
+	commentId?: string | number;
+	message?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Parsed webhook event — normalized across platforms
 // ---------------------------------------------------------------------------
 
@@ -86,14 +100,15 @@ export interface RouterPlatformAdapter {
 
 	/**
 	 * Post an acknowledgment comment on the work item.
-	 * Returns the comment ID (platform-specific type) or `undefined` on failure.
+	 * Returns an `AckResult` with the comment ID and message text,
+	 * or `undefined` on failure.
 	 */
 	postAck(
 		event: ParsedWebhookEvent,
 		payload: unknown,
 		project: RouterProjectConfig,
 		agentType: string,
-	): Promise<string | number | undefined>;
+	): Promise<AckResult | undefined>;
 
 	/**
 	 * Build the `CascadeJob` to be enqueued.
@@ -104,6 +119,7 @@ export interface RouterPlatformAdapter {
 		project: RouterProjectConfig,
 		result: TriggerResult,
 		ackCommentId: string | number | undefined,
+		ackMessage?: string,
 	): CascadeJob;
 
 	/**

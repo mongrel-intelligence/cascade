@@ -14,7 +14,7 @@ import { logger } from '../../utils/logging.js';
 import { extractTrelloContext, generateAckMessage } from '../ackMessageGenerator.js';
 import { postTrelloAck } from '../acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from '../config.js';
-import type { ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
+import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
 import { resolveTrelloCredentials } from '../platformClients.js';
 import { type CascadeJob, type TrelloJob, addJob } from '../queue.js';
 import { sendAcknowledgeReaction } from '../reactions.js';
@@ -131,13 +131,14 @@ export class TrelloRouterAdapter implements RouterPlatformAdapter {
 		payload: unknown,
 		project: RouterProjectConfig,
 		agentType: string,
-	): Promise<string | undefined> {
+	): Promise<AckResult | undefined> {
 		if (!event.workItemId) return undefined;
 		try {
 			const context = extractTrelloContext(payload);
 			const message = await generateAckMessage(agentType, context, project.id);
 			const commentId = await postTrelloAck(project.id, event.workItemId, message);
-			return commentId ?? undefined;
+			if (commentId) return { commentId, message };
+			return undefined;
 		} catch (err) {
 			logger.warn('Trello ack comment failed (non-fatal)', {
 				error: String(err),
@@ -230,9 +231,8 @@ export async function handleTrelloWebhookViaAdapter(
 
 	let ackCommentId: string | undefined;
 	if (result.agentType) {
-		ackCommentId = (await adapter.postAck(event, payload, project, result.agentType)) as
-			| string
-			| undefined;
+		const ackResult = await adapter.postAck(event, payload, project, result.agentType);
+		ackCommentId = ackResult?.commentId as string | undefined;
 	}
 
 	const job = adapter.buildJob(event, payload, project, result, ackCommentId);
