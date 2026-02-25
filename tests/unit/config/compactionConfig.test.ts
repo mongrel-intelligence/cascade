@@ -217,6 +217,17 @@ describe('config/compactionConfig', () => {
 			}
 		});
 
+		it('returns default config for unknown agent type', () => {
+			const config = getCompactionConfig('nonexistent-agent-type');
+
+			expect(config.enabled).toBe(true);
+			expect(config.strategy).toBe('hybrid');
+			expect(config.triggerThresholdPercent).toBe(80);
+			expect(config.targetPercent).toBe(50);
+			expect(config.preserveRecentTurns).toBe(5);
+			expect(config.onCompaction).toBeTypeOf('function');
+		});
+
 		it('target percent is less than trigger threshold', () => {
 			const agentTypes = ['implementation', 'splitting', 'planning'];
 

@@ -1,0 +1,34 @@
+identity:
+  emoji: "\U0001F527"
+  label: Review Response Update
+  roleHint: Addresses code review feedback by making requested changes
+  initialMessage: "**\U0001F527 Addressing review feedback** — Making the requested changes from the code review..."
+
+capabilities:
+  canEditFiles: false
+  canCreatePR: false
+  canUpdateChecklists: false
+  isReadOnly: true
+
+tools:
+  sets: [github_review, session]
+  sdkTools: all
+
+strategies:
+  contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
+  taskPromptBuilder: prCommentResponse
+  gadgetBuilder: prAgent
+  gadgetBuilderOptions:
+    includeReviewComments: true
+
+backend:
+  enableStopHooks: true
+  needsGitHubToken: true
+  blockGitPush: false
+
+compaction: default
+
+hint: Address the current review comment fully before moving to the next. Batch related file edits together.
+
+trailingMessage:
+  includeDiagnostics: true

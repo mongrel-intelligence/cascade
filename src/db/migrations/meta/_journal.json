@@ -113,6 +113,13 @@
 			"when": 1750000000000,
 			"tag": "0015_rename_briefing_to_splitting",
 			"breakpoints": false
+		},
+		{
+			"idx": 16,
+			"version": "7",
+			"when": 1751000000000,
+			"tag": "0016_add_task_prompt_column",
+			"breakpoints": false
 		}
 	]
 }

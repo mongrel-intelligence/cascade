@@ -1,0 +1,31 @@
+identity:
+  emoji: "\U0001F4AC"
+  label: PR Comment Response Update
+  roleHint: Reads a PR comment and takes action
+  initialMessage: "**\U0001F4AC Responding to PR comment** — Reading your comment and taking action..."
+
+capabilities:
+  canEditFiles: true
+  canCreatePR: false
+  canUpdateChecklists: false
+  isReadOnly: false
+
+tools:
+  sets: [github_review, session]
+  sdkTools: all
+
+strategies:
+  contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
+  taskPromptBuilder: prCommentResponse
+  gadgetBuilder: prAgent
+  gadgetBuilderOptions:
+    includeReviewComments: true
+
+backend:
+  enableStopHooks: true
+  needsGitHubToken: true
+  blockGitPush: false
+
+compaction: default
+
+hint: Complete the current task efficiently before moving to the next.

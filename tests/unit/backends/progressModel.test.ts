@@ -1,13 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockTextComplete = vi.fn();
-vi.mock('llmist', () => {
-	return {
-		LLMist: vi.fn().mockImplementation(() => ({
-			text: { complete: mockTextComplete },
-		})),
-	};
-});
+vi.mock('llmist', async (importOriginal) => ({
+	...(await importOriginal<typeof import('llmist')>()),
+	LLMist: vi.fn().mockImplementation(() => ({
+		text: { complete: mockTextComplete },
+	})),
+}));
 
 import { LLMist } from 'llmist';
 import { type ProgressContext, callProgressModel } from '../../../src/backends/progressModel.js';

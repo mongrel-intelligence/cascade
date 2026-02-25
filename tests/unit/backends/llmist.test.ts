@@ -4,7 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('llmist', () => ({
 	LLMist: vi.fn().mockImplementation(() => ({})),
 	createLogger: vi.fn(() => ({})),
-	type: undefined,
+}));
+
+// Mock agents/definitions to break the circular dependency chain:
+// backends/llmist → definitions → strategies → gadgets → pm/ → webhook-handler
+// → triggers/agent-execution → agents/registry → new LlmistBackend() (still loading)
+vi.mock('../../../src/agents/definitions/index.js', () => ({
+	loadAgentDefinition: vi.fn(() => ({ backend: {} })),
 }));
 
 vi.mock('../../../src/backends/agent-profiles.js', () => ({

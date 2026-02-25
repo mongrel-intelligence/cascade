@@ -1,0 +1,33 @@
+identity:
+  emoji: "\U0001F527"
+  label: CI Fix Update
+  roleHint: Analyzes failed CI checks and works on a fix
+  initialMessage: "**\U0001F527 Fixing CI failures** — Analyzing the failed checks and working on a fix..."
+
+capabilities:
+  canEditFiles: true
+  canCreatePR: false
+  canUpdateChecklists: true
+  isReadOnly: false
+
+tools:
+  sets: [github_ci, pm, pm_checklist, session]
+  sdkTools: all
+
+strategies:
+  contextPipeline: [prContext, directoryListing, contextFiles, squint, workItem]
+  taskPromptBuilder: ci
+  gadgetBuilder: prAgent
+
+backend:
+  enableStopHooks: true
+  needsGitHubToken: true
+  blockGitPush: false
+  preExecute: postInitialPRComment
+
+compaction: default
+
+hint: Fix CI failures with minimal, focused changes. Batch related file edits together.
+
+trailingMessage:
+  includeDiagnostics: true

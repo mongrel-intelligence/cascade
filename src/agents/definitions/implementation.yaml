@@ -1,0 +1,40 @@
+identity:
+  emoji: "\U0001F9D1\u200D\U0001F4BB"
+  label: Implementation Update
+  roleHint: Writes code, runs tests, and prepares a pull request
+  initialMessage: "**\U0001F680 Implementing changes** — Writing code, running tests, and preparing a PR..."
+
+capabilities:
+  canEditFiles: true
+  canCreatePR: true
+  canUpdateChecklists: true
+  isReadOnly: false
+
+tools:
+  sets: [pm, pm_checklist, session]
+  sdkTools: all
+
+strategies:
+  contextPipeline: [directoryListing, contextFiles, squint, workItem]
+  taskPromptBuilder: workItem
+  gadgetBuilder: workItem
+
+backend:
+  enableStopHooks: true
+  needsGitHubToken: true
+  requiresPR: true
+  postConfigure: sequentialGadgetExecution
+
+compaction: implementation
+
+hint: >-
+  Complete the current todo in as few iterations as possible. Batch related
+  edits together. Verify with Tmux after edits. NEVER mark acceptance criteria
+  complete without passing verification.
+
+trailingMessage:
+  includeDiagnostics: true
+  includeTodoProgress: true
+  includeGitStatus: true
+  includePRStatus: true
+  includeReminder: true

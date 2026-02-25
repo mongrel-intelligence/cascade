@@ -424,6 +424,7 @@ describe('executeWithBackend', () => {
 
 	it('marks implementation agent as failed when no PR was created', async () => {
 		setupMocks();
+		mockGetAgentProfile.mockReturnValue(makeMockProfile({ requiresPR: true }));
 		const backend = makeMockBackend();
 		vi.mocked(backend.execute).mockResolvedValue({
 			success: true,
@@ -435,9 +436,9 @@ describe('executeWithBackend', () => {
 		const result = await executeWithBackend(backend, 'implementation', input);
 
 		expect(result.success).toBe(false);
-		expect(result.error).toBe('Implementation completed but no PR was created');
+		expect(result.error).toBe('Agent completed but no PR was created');
 		expect(logger.warn).toHaveBeenCalledWith(
-			'Implementation agent completed without creating a PR',
+			'implementation agent completed without creating a PR',
 			expect.objectContaining({ backend: 'test-backend' }),
 		);
 	});

@@ -424,7 +424,7 @@ describe('getAgentProfile', () => {
 
 	it('throws for unknown agent types', () => {
 		expect(() => getAgentProfile('nonexistent-agent')).toThrow(
-			"Unknown agent type 'nonexistent-agent'",
+			"Failed to load agent profile for 'nonexistent-agent'",
 		);
 	});
 

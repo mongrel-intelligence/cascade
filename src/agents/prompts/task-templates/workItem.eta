@@ -1,0 +1,1 @@
+Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.

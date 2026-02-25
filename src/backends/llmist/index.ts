@@ -2,6 +2,7 @@ import os from 'node:os';
 
 import { LLMist, type ModelSpec, createLogger } from 'llmist';
 
+import { loadAgentDefinition } from '../../agents/definitions/index.js';
 import { type BuilderType, createConfiguredBuilder } from '../../agents/shared/builderFactory.js';
 import { injectSyntheticCall } from '../../agents/shared/syntheticCalls.js';
 import { runAgentLoop } from '../../agents/utils/agentLoop.js';
@@ -14,6 +15,11 @@ import { createLLMCallLogger } from '../../utils/llmLogging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { getAgentProfile } from '../agent-profiles.js';
 import type { AgentBackend, AgentBackendInput, AgentBackendResult } from '../types.js';
+
+/** Post-configure registry: maps YAML string references to builder transform functions */
+const POST_CONFIGURE_REGISTRY: Record<string, (builder: BuilderType) => BuilderType> = {
+	sequentialGadgetExecution: (b) => b.withGadgetExecutionMode('sequential'),
+};
 
 /**
  * llmist backend — executes agents using the llmist SDK.
@@ -107,10 +113,16 @@ export class LlmistBackend implements AgentBackend {
 			progressMonitor: progressReporter as Parameters<
 				typeof createConfiguredBuilder
 			>[0]['progressMonitor'],
-			// Implementation agent uses sequential execution to ensure file operations
-			// are properly ordered (e.g., FileSearchAndReplace then ReadFile on same file)
-			postConfigure:
-				agentType === 'implementation' ? (b) => b.withGadgetExecutionMode('sequential') : undefined,
+			// Post-configure hook from YAML definition (e.g., sequentialGadgetExecution for implementation)
+			postConfigure: (() => {
+				try {
+					const def = loadAgentDefinition(agentType);
+					const hookName = def.backend.postConfigure;
+					return hookName ? POST_CONFIGURE_REGISTRY[hookName] : undefined;
+				} catch {
+					return undefined;
+				}
+			})(),
 		});
 
 		// Convert ContextInjection[] from the unified adapter into synthetic gadget calls.
