@@ -25,10 +25,6 @@ describe('createObserverHooks - llmCallAccumulator', () => {
 		getLogFiles: vi.fn().mockReturnValue([]),
 	};
 
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('accumulates LLM call metrics when accumulator is provided', async () => {
 		const accumulator: AccumulatedLlmCall[] = [];
 		const trackingContext = createTrackingContext();
@@ -170,10 +166,6 @@ describe('createObserverHooks - real-time DB logging', () => {
 		logResponse: vi.fn(),
 		getLogFiles: vi.fn().mockReturnValue([]),
 	};
-
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
 
 	it('calls storeLlmCall fire-and-forget when runId is set', async () => {
 		const trackingContext = createTrackingContext();

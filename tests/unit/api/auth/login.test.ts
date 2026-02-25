@@ -42,10 +42,6 @@ const mockUser = {
 };
 
 describe('loginHandler', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('returns 400 when email is missing', async () => {
 		const app = createTestApp();
 		const res = await postLogin(app, { password: 'pass' });

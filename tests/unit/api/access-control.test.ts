@@ -116,36 +116,26 @@ import {
 	protectedProcedure,
 	router,
 } from '../../../src/api/trpc.js';
+import { createMockUser } from '../../helpers/factories.js';
 
 // ==========================================================================
 // Shared test users
 // ==========================================================================
 
-const adminUser: TRPCUser = {
-	id: 'user-1',
-	orgId: 'org-1',
-	email: 'admin@example.com',
-	name: 'Admin',
-	role: 'admin',
-};
+const adminUser = createMockUser({ email: 'admin@example.com', name: 'Admin' });
 
-const memberUser: TRPCUser = {
+const memberUser = createMockUser({
 	id: 'user-2',
-	orgId: 'org-1',
 	email: 'member@example.com',
 	name: 'Member',
 	role: 'member',
-};
+});
 
 // ==========================================================================
 // Section 1: computeEffectiveOrgId
 // ==========================================================================
 
 describe('computeEffectiveOrgId', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('returns null when user is null', async () => {
 		const result = await computeEffectiveOrgId(null, undefined);
 		expect(result).toBeNull();
@@ -251,10 +241,6 @@ describe('Middleware edge cases', () => {
 // ==========================================================================
 
 describe('Auth router — role-based data exposure', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('member user gets no availableOrgs', async () => {
 		const caller = authRouter.createCaller({ user: memberUser, effectiveOrgId: 'org-1' });
 		const result = await caller.me();
@@ -293,7 +279,6 @@ describe('Auth router — role-based data exposure', () => {
 
 describe('Router org-isolation with admin org-switching', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockDbSelect.mockReturnValue({ from: mockDbFrom });
 		mockDbFrom.mockReturnValue({ where: mockDbWhere });
 	});
@@ -392,7 +377,6 @@ describe('Router org-isolation with admin org-switching', () => {
 
 describe('Cross-org ownership checks', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockDbSelect.mockReturnValue({ from: mockDbFrom });
 		mockDbFrom.mockReturnValue({ where: mockDbWhere });
 	});

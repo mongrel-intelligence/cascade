@@ -1,0 +1,17 @@
+services:
+  postgres-test:
+    container_name: cascade-postgres-test
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: cascade_test
+      POSTGRES_PASSWORD: cascade_test
+      POSTGRES_DB: cascade_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cascade_test -d cascade_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 10

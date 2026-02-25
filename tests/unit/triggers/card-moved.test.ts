@@ -45,26 +45,12 @@ import {
 	CardMovedToTodoTrigger,
 } from '../../../src/triggers/trello/card-moved.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
+import { createMockProject } from '../../helpers/factories.js';
 
 describe('CardMovedToSplittingTrigger', () => {
 	const trigger = CardMovedToSplittingTrigger;
 
-	const mockProject = {
-		id: 'test',
-		name: 'Test',
-		repo: 'owner/repo',
-		baseBranch: 'main',
-		branchPrefix: 'feature/',
-		trello: {
-			boardId: 'board123',
-			lists: {
-				splitting: 'splitting-list-id',
-				planning: 'planning-list-id',
-				todo: 'todo-list-id',
-			},
-			labels: {},
-		},
-	};
+	const mockProject = createMockProject();
 
 	it('matches when card moved to splitting list', () => {
 		const ctx: TriggerContext = {
@@ -197,22 +183,7 @@ describe('CardMovedToSplittingTrigger', () => {
 describe('CardMovedToTodoTrigger', () => {
 	const trigger = CardMovedToTodoTrigger;
 
-	const mockProject = {
-		id: 'test',
-		name: 'Test',
-		repo: 'owner/repo',
-		baseBranch: 'main',
-		branchPrefix: 'feature/',
-		trello: {
-			boardId: 'board123',
-			lists: {
-				splitting: 'splitting-list-id',
-				planning: 'planning-list-id',
-				todo: 'todo-list-id',
-			},
-			labels: {},
-		},
-	};
+	const mockProject = createMockProject();
 
 	it('matches when card moved to todo list', () => {
 		const ctx: TriggerContext = {

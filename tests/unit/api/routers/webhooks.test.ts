@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
+import { createMockUser } from '../../../helpers/factories.js';
 
 // --- Mock dependencies ---
 
@@ -60,13 +61,7 @@ function createCaller(ctx: TRPCContext) {
 	return webhooksRouter.createCaller(ctx);
 }
 
-const mockUser = {
-	id: 'user-1',
-	orgId: 'org-1',
-	email: 'test@example.com',
-	name: 'Test',
-	role: 'admin',
-};
+const mockUser = createMockUser();
 
 const mockProject = {
 	id: 'my-project',
@@ -122,10 +117,6 @@ function setupProjectContext(opts?: { noTrello?: boolean; noGithub?: boolean }) 
 }
 
 describe('webhooksRouter', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('list', () => {
 		it('returns trello and github webhooks', async () => {
 			setupProjectContext();

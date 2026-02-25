@@ -72,7 +72,6 @@ describe('repo utils', () => {
 	const originalEnv = process.env;
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		process.env = { ...originalEnv };
 	});
 

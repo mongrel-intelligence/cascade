@@ -110,10 +110,6 @@ function makeInput(agentType = 'implementation'): AgentBackendInput {
 	};
 }
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('LlmistBackend', () => {
 	it('has name "llmist"', () => {
 		const backend = new LlmistBackend();

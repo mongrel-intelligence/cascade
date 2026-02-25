@@ -82,15 +82,6 @@ describe('config provider', () => {
 		projects: [mockProject1, mockProject2],
 	};
 
-	beforeEach(() => {
-		vi.clearAllMocks();
-		invalidateConfigCache();
-	});
-
-	afterEach(() => {
-		invalidateConfigCache();
-	});
-
 	describe('loadConfig', () => {
 		it('loads config from database', async () => {
 			vi.mocked(loadConfigFromDb).mockResolvedValue(mockConfig);
@@ -175,10 +166,6 @@ describe('config provider', () => {
 		beforeEach(() => {
 			vi.stubEnv('TRELLO_API_KEY', '');
 		});
-		afterEach(() => {
-			vi.unstubAllEnvs();
-		});
-
 		it('resolves credential from DB', async () => {
 			vi.mocked(resolveIntegrationCredential).mockResolvedValue('db-secret-value');
 
@@ -200,10 +187,6 @@ describe('config provider', () => {
 		beforeEach(() => {
 			vi.stubEnv('GITHUB_TOKEN_IMPLEMENTER', '');
 		});
-		afterEach(() => {
-			vi.unstubAllEnvs();
-		});
-
 		it('returns credential value when found', async () => {
 			vi.mocked(resolveIntegrationCredential).mockResolvedValue('secret-value');
 
@@ -249,10 +232,6 @@ describe('config provider', () => {
 		beforeEach(() => {
 			vi.stubEnv('GITHUB_TOKEN_IMPLEMENTER', '');
 		});
-		afterEach(() => {
-			vi.unstubAllEnvs();
-		});
-
 		it('returns implementer token when available', async () => {
 			vi.mocked(resolveIntegrationCredential).mockResolvedValue('implementer-token');
 

@@ -23,10 +23,6 @@ const mockGithubClient = vi.mocked(githubClient);
 const mockGetSessionState = vi.mocked(getSessionState);
 const mockFormatGitHubProgressComment = vi.mocked(formatGitHubProgressComment);
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 function makePoster() {
 	return new GitHubProgressPoster({
 		owner: 'myorg',

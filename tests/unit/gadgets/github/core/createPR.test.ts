@@ -37,10 +37,6 @@ function mockGitCommands(
 	});
 }
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('detectOwnerRepo (tested through createPR)', () => {
 	it('parses HTTPS URL', async () => {
 		mockRunCommand.mockImplementation(async (_cmd, args) => {

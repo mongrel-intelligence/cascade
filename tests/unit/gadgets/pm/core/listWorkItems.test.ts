@@ -10,10 +10,6 @@ vi.mock('../../../../../src/pm/index.js', () => ({
 
 import { listWorkItems } from '../../../../../src/gadgets/pm/core/listWorkItems.js';
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('listWorkItems', () => {
 	it('returns "No work items found." when list is empty', async () => {
 		mockProvider.listWorkItems.mockResolvedValue([]);

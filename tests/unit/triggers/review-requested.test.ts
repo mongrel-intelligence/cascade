@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReviewRequestedTrigger } from '../../../src/triggers/github/review-requested.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
+import { createMockProject } from '../../helpers/factories.js';
+import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
 
 vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
@@ -10,49 +12,25 @@ import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRep
 describe('ReviewRequestedTrigger', () => {
 	const trigger = new ReviewRequestedTrigger();
 
-	const mockProject = {
-		id: 'test',
-		name: 'Test',
-		repo: 'owner/repo',
-		baseBranch: 'main',
-		branchPrefix: 'feature/',
-		trello: {
-			boardId: 'board123',
-			lists: {
-				splitting: 'splitting-list-id',
-				planning: 'planning-list-id',
-				todo: 'todo-list-id',
-			},
-			labels: {},
-		},
-		// Review-requested is opt-in, default disabled
-	};
+	const mockProject = createMockProject();
 
 	/** Project with reviewRequested trigger explicitly enabled (legacy style) */
-	const mockProjectWithReviewRequested = {
-		...mockProject,
+	const mockProjectWithReviewRequested = createMockProject({
 		github: {
 			triggers: { reviewRequested: true },
 		},
-	};
+	});
 
 	/** Project with new structured reviewTrigger.onReviewRequested enabled */
-	const mockProjectWithOnReviewRequested = {
-		...mockProject,
+	const mockProjectWithOnReviewRequested = createMockProject({
 		github: {
 			triggers: {
 				reviewTrigger: { ownPrsOnly: false, externalPrs: false, onReviewRequested: true },
 			},
 		},
-	};
-
-	const mockPersonaIdentities = {
-		implementer: 'cascade-impl',
-		reviewer: 'cascade-reviewer',
-	};
+	});
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 	});
 

@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
+import { createMockUser } from '../../../helpers/factories.js';
 
 const mockListAllOrganizations = vi.fn();
 
@@ -15,19 +16,9 @@ function createCaller(ctx: TRPCContext) {
 }
 
 describe('authRouter', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('me', () => {
 		it('returns user data from context', async () => {
-			const mockUser = {
-				id: 'user-1',
-				orgId: 'org-1',
-				email: 'test@example.com',
-				name: 'Test User',
-				role: 'admin',
-			};
+			const mockUser = createMockUser();
 			mockListAllOrganizations.mockResolvedValue([{ id: 'org-1', name: 'Org One' }]);
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 

@@ -27,7 +27,6 @@ const mockPMProvider = {
 };
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	// Default: state file exists
 	mockReadProgressCommentId.mockReturnValue({ workItemId: 'card1', commentId: 'comment1' });
 });

@@ -47,22 +47,20 @@ import { triggerDebugAnalysis } from '../../../src/triggers/shared/debug-runner.
 import { shouldTriggerDebug } from '../../../src/triggers/shared/debug-trigger.js';
 import type { TriggerResult } from '../../../src/triggers/types.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
+import { createMockProject } from '../../helpers/factories.js';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-const mockProject: ProjectConfig = {
+const mockProject: ProjectConfig = createMockProject({
 	id: 'test-project',
 	name: 'Test Project',
-	repo: 'owner/repo',
-	baseBranch: 'main',
-	branchPrefix: 'feature/',
 	trello: {
 		boardId: 'board123',
 		lists: {},
 		labels: {},
 		customFields: { cost: 'cf-cost-123' },
 	},
-};
+});
 
 const mockConfig: CascadeConfig = {
 	defaults: {
@@ -98,7 +96,6 @@ const mockLifecycle = {
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	vi.mocked(createPMProvider).mockReturnValue({} as ReturnType<typeof createPMProvider>);
 	vi.mocked(resolveProjectPMConfig).mockReturnValue({ labels: {}, statuses: {} });
 	vi.mocked(PMLifecycleManager).mockImplementation(() => mockLifecycle as never);

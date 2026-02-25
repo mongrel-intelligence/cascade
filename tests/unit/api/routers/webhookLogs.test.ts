@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
+import { createMockUser } from '../../../helpers/factories.js';
 
 // Mock repository functions
 const mockListWebhookLogs = vi.fn();
@@ -19,21 +20,11 @@ function createCaller(ctx: TRPCContext) {
 	return webhookLogsRouter.createCaller(ctx);
 }
 
-const mockUser = {
-	id: 'user-1',
-	orgId: 'org-1',
-	email: 'test@example.com',
-	name: 'Test',
-	role: 'admin',
-};
+const mockUser = createMockUser();
 
 const LOG_UUID = 'aaaaaaaa-1111-2222-3333-444444444444';
 
 describe('webhookLogsRouter', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('list', () => {
 		it('returns paginated webhook logs', async () => {
 			const mockData = {

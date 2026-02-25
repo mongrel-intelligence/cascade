@@ -27,10 +27,6 @@ function makeContext(overrides: Partial<ProgressContext> = {}): ProgressContext 
 	};
 }
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('callProgressModel', () => {
 	it('returns text output from LLM on success', async () => {
 		mockTextComplete.mockResolvedValue(

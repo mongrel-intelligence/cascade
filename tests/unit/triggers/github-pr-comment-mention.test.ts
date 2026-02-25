@@ -32,31 +32,27 @@ vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { PRCommentMentionTrigger } from '../../../src/triggers/github/pr-comment-mention.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
+import { createMockProject } from '../../helpers/factories.js';
+import {
+	IMPLEMENTER_USERNAME,
+	REVIEWER_USERNAME,
+	mockPersonaIdentities,
+} from '../../helpers/mockPersonas.js';
 
-const IMPLEMENTER_USERNAME = 'cascade-impl';
-const REVIEWER_USERNAME = 'cascade-reviewer';
 const HUMAN_USERNAME = 'alice-human';
 const CARD_SHORT_ID = 'abc123card';
 const PR_BODY_WITH_CARD = `Fixes https://trello.com/c/${CARD_SHORT_ID}/my-card`;
 const PR_BODY_NO_CARD = 'This PR has no Trello card link';
 
-const mockProject = {
+const mockProject = createMockProject({
 	id: 'test-project',
 	name: 'Test Project',
-	repo: 'owner/repo',
-	baseBranch: 'main',
-	branchPrefix: 'feature/',
 	trello: {
 		boardId: 'board-123',
 		lists: { splitting: 'b', planning: 'p', todo: 't' },
 		labels: {},
 	},
-} as TriggerContext['project'];
-
-const mockPersonaIdentities = {
-	implementer: IMPLEMENTER_USERNAME,
-	reviewer: REVIEWER_USERNAME,
-};
+});
 
 /** Build an issue_comment.created payload (PR conversation comment) */
 function buildIssueCommentPayload(

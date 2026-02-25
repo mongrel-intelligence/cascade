@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { TriggerContext } from '../../../src/triggers/types.js';
+import { createMockProject } from '../../helpers/factories.js';
 
 // Mocks required for PM integration registration (pm/index.js side-effect)
 vi.mock('../../../src/config/provider.js', () => ({
@@ -38,12 +39,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 	const trigger = new ReadyToProcessLabelTrigger();
 	const mockGetCard = vi.mocked(trelloClient.getCard);
 
-	const mockProject = {
-		id: 'test',
-		name: 'Test',
-		repo: 'owner/repo',
-		baseBranch: 'main',
-		branchPrefix: 'feature/',
+	const mockProject = createMockProject({
 		trello: {
 			boardId: 'board123',
 			lists: {
@@ -55,10 +51,6 @@ describe('ReadyToProcessLabelTrigger', () => {
 				readyToProcess: 'ready-label-id',
 			},
 		},
-	};
-
-	beforeEach(() => {
-		vi.clearAllMocks();
 	});
 
 	describe('matches', () => {

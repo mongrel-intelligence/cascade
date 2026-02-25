@@ -22,7 +22,6 @@ const mockShouldRunDiagnostics = vi.mocked(shouldRunDiagnostics);
 
 afterEach(() => {
 	clearDiagnosticState();
-	vi.clearAllMocks();
 });
 
 describe('updateDiagnosticState', () => {

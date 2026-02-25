@@ -20,10 +20,6 @@ import { clearReadTracking } from '../../../src/gadgets/readTracking.js';
 import { logger } from '../../../src/utils/logging.js';
 
 describe('config/compactionConfig', () => {
-	afterEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('getCompactionConfig', () => {
 		it('returns implementation agent config with lower threshold', () => {
 			const config = getCompactionConfig('implementation');

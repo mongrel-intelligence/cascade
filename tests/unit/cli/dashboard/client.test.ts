@@ -9,10 +9,6 @@ import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import { createDashboardClient } from '../../../../src/cli/dashboard/_shared/client.js';
 
 describe('createDashboardClient', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('creates a tRPC client with links', () => {
 		const config = { serverUrl: 'http://localhost:3000', sessionToken: 'my-token' };
 

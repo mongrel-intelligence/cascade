@@ -48,8 +48,6 @@ import {
 
 describe('webhookLogsRepository', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
-
 		// Set up chained mock returns
 		mockInsert.mockReturnValue({ values: mockValues });
 		mockValues.mockReturnValue({ returning: mockReturning });

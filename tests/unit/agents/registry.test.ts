@@ -78,10 +78,6 @@ function makeMockBackend(name: string, supportsAll = true): AgentBackend {
 	};
 }
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('runAgent', () => {
 	it('resolves backend name from config', async () => {
 		const backend = makeMockBackend('llmist');

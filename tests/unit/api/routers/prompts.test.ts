@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
+import { createMockUser } from '../../../helpers/factories.js';
 
 // Mock prompt functions
 const mockGetValidAgentTypes = vi.fn();
@@ -39,19 +40,9 @@ function createCaller(ctx: TRPCContext) {
 	return promptsRouter.createCaller(ctx);
 }
 
-const mockUser = {
-	id: 'user-1',
-	orgId: 'org-1',
-	email: 'test@example.com',
-	name: 'Test',
-	role: 'admin',
-};
+const mockUser = createMockUser();
 
 describe('promptsRouter', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('agentTypes', () => {
 		it('returns list of agent types', async () => {
 			const types = ['splitting', 'planning', 'implementation'];

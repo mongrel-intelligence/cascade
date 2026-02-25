@@ -16,7 +16,6 @@ import { loadTodos } from '../../../src/gadgets/todo/storage.js';
 const mockLoadTodos = vi.mocked(loadTodos);
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	mockLoadTodos.mockReturnValue([]);
 });
 

@@ -16,10 +16,6 @@ function createTestApp() {
 }
 
 describe('logoutHandler', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('deletes session and clears cookie when session cookie is present', async () => {
 		mockDeleteSession.mockResolvedValue(undefined);
 		const app = createTestApp();

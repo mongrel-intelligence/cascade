@@ -22,10 +22,6 @@ import { githubClient } from '../../../../../src/github/client.js';
 
 const mockGithub = vi.mocked(githubClient);
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('hasUncommittedChanges', () => {
 	it('returns true when git status has output', () => {
 		mockExecSync.mockReturnValue('M src/file.ts');

@@ -39,10 +39,6 @@ const mockProject: RouterProjectConfig = {
 	},
 };
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('isAgentLogFilename', () => {
 	it('matches valid agent log filenames', () => {
 		expect(isAgentLogFilename('implementation-2026-01-02T16-30-24-339Z.zip')).toBe(true);

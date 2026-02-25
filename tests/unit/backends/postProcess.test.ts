@@ -48,10 +48,6 @@ function makeInput(overrides?: Partial<ProjectConfig>): AgentInput & { project: 
 	} as AgentInput & { project: ProjectConfig };
 }
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('postProcessResult', () => {
 	describe('PR validation for implementation agents', () => {
 		it('marks as failed when implementation agent succeeds without prUrl', () => {

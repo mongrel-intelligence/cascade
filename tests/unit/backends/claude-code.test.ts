@@ -86,10 +86,6 @@ function makeInput(overrides: Partial<AgentBackendInput> = {}): AgentBackendInpu
 	};
 }
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('buildToolGuidance', () => {
 	it('returns empty string for empty tools', () => {
 		expect(buildToolGuidance([])).toBe('');

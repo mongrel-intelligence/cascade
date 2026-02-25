@@ -30,10 +30,6 @@ import {
 import type { PersonaIdentities } from '../../../src/github/personas.js';
 
 describe('personas', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	// ========================================================================
 	// getPersonaForAgentType
 	// ========================================================================

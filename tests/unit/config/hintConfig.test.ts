@@ -37,7 +37,6 @@ function getMessage(agentType: string | undefined, iteration = 3, maxIterations 
 describe('getIterationTrailingMessage', () => {
 	afterEach(() => {
 		clearDiagnosticState();
-		vi.clearAllMocks();
 		mockLoadTodos.mockReturnValue([]);
 		mockFormatTodoList.mockReturnValue('');
 		mockExecSync.mockReturnValue('');

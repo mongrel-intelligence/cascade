@@ -72,10 +72,6 @@ function createMockRegistry(): { register: ReturnType<typeof vi.fn>; handlers: o
 	};
 }
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('registerBuiltInTriggers', () => {
 	it('registers all expected trigger handlers', () => {
 		const registry = createMockRegistry();

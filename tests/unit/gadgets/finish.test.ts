@@ -22,10 +22,6 @@ vi.mock('../../../src/github/client.js', () => ({
 }));
 
 describe('Finish gadget', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('has exclusive set to prevent parallel execution with other gadgets', () => {
 		initSessionState('unknown');
 		const gadget = new Finish();

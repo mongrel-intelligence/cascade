@@ -58,7 +58,6 @@ let tmpDir: string;
 const mockConfig = { runHook: vi.fn().mockResolvedValue({ successes: [], failures: [] }) };
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	tmpDir = mkdtempSync(join(tmpdir(), 'cascade-cli-test-'));
 });
 

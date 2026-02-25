@@ -10,10 +10,6 @@ vi.mock('../../../../../src/pm/index.js', () => ({
 
 import { addChecklist } from '../../../../../src/gadgets/pm/core/addChecklist.js';
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('addChecklist', () => {
 	it('creates checklist and adds string items', async () => {
 		mockProvider.createChecklist.mockResolvedValue({

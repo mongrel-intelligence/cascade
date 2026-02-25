@@ -22,7 +22,6 @@ describe('cascadeEnv', () => {
 	const originalEnv = process.env;
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		process.env = { ...originalEnv };
 	});
 

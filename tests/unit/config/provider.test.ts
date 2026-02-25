@@ -111,18 +111,11 @@ describe('config/provider', () => {
 		envKeysToClean.push(key);
 	}
 
-	beforeEach(() => {
-		invalidateConfigCache();
-		vi.clearAllMocks();
-	});
-
 	afterEach(() => {
 		for (const key of envKeysToClean) {
 			delete process.env[key];
 		}
 		envKeysToClean.length = 0;
-		invalidateConfigCache();
-		vi.clearAllMocks();
 	});
 
 	describe('loadConfig', () => {

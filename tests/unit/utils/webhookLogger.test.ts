@@ -29,7 +29,6 @@ const sampleInput: WebhookLogInput = {
 };
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	vi.useFakeTimers();
 	mockInsertWebhookLog.mockResolvedValue(undefined);
 	mockPruneWebhookLogs.mockResolvedValue(undefined);

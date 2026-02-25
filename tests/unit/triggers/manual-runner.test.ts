@@ -61,7 +61,6 @@ const mockConfig = {} as CascadeConfig;
 
 describe('triggerManualRun', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		clearTriggerTracking();
 	});
 
@@ -223,7 +222,6 @@ describe('triggerManualRun', () => {
 
 describe('triggerRetryRun', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		clearTriggerTracking();
 	});
 

@@ -71,10 +71,6 @@ import {
 import { Octokit } from '@octokit/rest';
 
 describe('githubClient', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('getClient throws without scope', () => {
 		it('throws when no withGitHubToken scope is active', async () => {
 			await expect(githubClient.getPR('owner', 'repo', 1)).rejects.toThrow(

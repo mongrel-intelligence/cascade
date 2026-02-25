@@ -10,10 +10,6 @@ vi.mock('../../../src/utils/logging.js', () => ({
 import { logger } from '../../../src/utils/logging.js';
 
 describe('safeOperation', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('safeOperation', () => {
 		it('returns result on success', async () => {
 			const result = await safeOperation(() => Promise.resolve('hello'), {

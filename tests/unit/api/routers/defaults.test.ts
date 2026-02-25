@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
+import { createMockUser } from '../../../helpers/factories.js';
 
 const mockGetCascadeDefaults = vi.fn();
 const mockUpsertCascadeDefaults = vi.fn();
@@ -16,19 +17,9 @@ function createCaller(ctx: TRPCContext) {
 	return defaultsRouter.createCaller(ctx);
 }
 
-const mockUser = {
-	id: 'user-1',
-	orgId: 'org-1',
-	email: 'test@example.com',
-	name: 'Test',
-	role: 'admin',
-};
+const mockUser = createMockUser();
 
 describe('defaultsRouter', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('get', () => {
 		it('returns cascade defaults for user orgId', async () => {
 			const mockDefaults = {

@@ -10,10 +10,6 @@ vi.mock('../../../../../src/pm/index.js', () => ({
 
 import { deleteChecklistItem } from '../../../../../src/gadgets/pm/core/deleteChecklistItem.js';
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('deleteChecklistItem', () => {
 	it('deletes a checklist item and returns success message', async () => {
 		mockProvider.deleteChecklistItem.mockResolvedValue(undefined);

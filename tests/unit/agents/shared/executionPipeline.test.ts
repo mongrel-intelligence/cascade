@@ -93,7 +93,6 @@ function setupMocks() {
 }
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	process.env.CASCADE_LOCAL_MODE = '';
 });
 

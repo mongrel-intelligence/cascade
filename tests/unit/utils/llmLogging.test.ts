@@ -23,10 +23,6 @@ import {
 } from '../../../src/utils/llmLogging.js';
 
 describe('llmLogging', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('formatCallNumber', () => {
 		it('pads single digit', () => {
 			expect(formatCallNumber(1)).toBe('0001');

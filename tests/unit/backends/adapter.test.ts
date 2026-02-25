@@ -243,7 +243,6 @@ function setupMocks() {
 }
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	process.env.CASCADE_LOCAL_MODE = '';
 	// Default runs repository mocks
 	mockCreateRun.mockResolvedValue('run-uuid-123');
