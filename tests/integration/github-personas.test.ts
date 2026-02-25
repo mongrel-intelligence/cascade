@@ -295,12 +295,11 @@ describe('GitHub Dual-Persona System (integration)', () => {
 				personaIdentities: TEST_PERSONAS,
 			};
 
-			// matches() returns true (reviews checks are in handle()), but handle() returns null
+			// matches() returns true (persona checks are in handle()), but handle() returns null
 			// because the implementer is not the reviewer persona
-			if (trigger.matches(ctxFromImpl)) {
-				const result = await trigger.handle(ctxFromImpl);
-				expect(result).toBeNull();
-			}
+			expect(trigger.matches(ctxFromImpl)).toBe(true);
+			const result = await trigger.handle(ctxFromImpl);
+			expect(result).toBeNull();
 		});
 
 		it('skips approved reviews (only changes_requested triggers respond-to-review)', async () => {
@@ -403,13 +402,11 @@ describe('GitHub Dual-Persona System (integration)', () => {
 				personaIdentities: TEST_PERSONAS,
 			};
 
-			// external-reviewer is not a known persona
-			if (trigger.matches(ctx)) {
-				const result = await trigger.handle(ctx);
-				expect(result).toBeNull();
-			} else {
-				expect(trigger.matches(ctx)).toBe(false);
-			}
+			// external-reviewer is not a known persona — matches() passes (persona check is in handle())
+			// but handle() returns null because the requested reviewer isn't a CASCADE bot
+			expect(trigger.matches(ctx)).toBe(true);
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
 		});
 	});
 });

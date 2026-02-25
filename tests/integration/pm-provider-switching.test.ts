@@ -135,7 +135,7 @@ describe('PM Provider Switching (integration)', () => {
 		});
 
 		it('defaults to Trello when pm.type is not set', () => {
-			// A project config without a pm.type field defaults to 'trello'
+			// A project config without a pm.type field should default to 'trello'
 			// via pmRegistry.createProvider() → pm.type ?? 'trello'
 			const projectConfig = {
 				id: 'test-project',
@@ -146,14 +146,11 @@ describe('PM Provider Switching (integration)', () => {
 				branchPrefix: 'feature/',
 				agentModels: {},
 				agentIterations: {},
-				// No pm.type — the registry defaults to 'trello'
+				// No pm field at all — the registry defaults to 'trello'
 			};
 
-			// The registry uses pm.type ?? 'trello' as the default
-			const type = (projectConfig as Record<string, unknown>).pm
-				? ((projectConfig as Record<string, unknown>).pm as Record<string, unknown>).type
-				: 'trello';
-			expect(type).toBe('trello');
+			const provider = createPMProvider(projectConfig as Parameters<typeof createPMProvider>[0]);
+			expect(provider.type).toBe('trello');
 		});
 	});
 
@@ -315,14 +312,12 @@ describe('PM Provider Switching (integration)', () => {
 				payload: makeJiraIssueTransitionedPayload('Done', 'NOMATCH-1'),
 			};
 
-			// 'Done' doesn't match any configured status
-			if (trigger.matches(ctx)) {
-				const result = await trigger.handle(ctx);
-				expect(result).toBeNull();
-			} else {
-				// It's fine if it doesn't match at all
-				expect(trigger.matches(ctx)).toBe(false);
-			}
+			// 'Done' doesn't match any configured status — matches() passes (it only checks
+			// for a status change in the changelog), but handle() returns null because
+			// 'Done' doesn't map to any agent type
+			expect(trigger.matches(ctx)).toBe(true);
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
 		});
 	});
 
