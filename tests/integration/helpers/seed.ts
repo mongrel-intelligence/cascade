@@ -1,13 +1,11 @@
 import { getDb } from '../../../src/db/client.js';
 import {
 	agentConfigs,
-	agentRunLogs,
 	agentRuns,
 	cascadeDefaults,
 	credentials,
 	integrationCredentials,
 	organizations,
-	prWorkItems,
 	projectIntegrations,
 	projects,
 	promptPartials,
@@ -282,30 +280,6 @@ export async function seedPromptPartial(
 }
 
 /**
- * Seeds a PR work item link.
- */
-export async function seedPrWorkItem(
-	overrides: {
-		projectId?: string;
-		repoFullName?: string;
-		prNumber?: number;
-		workItemId?: string;
-	} = {},
-) {
-	const db = getDb();
-	const [row] = await db
-		.insert(prWorkItems)
-		.values({
-			projectId: overrides.projectId ?? 'test-project',
-			repoFullName: overrides.repoFullName ?? 'owner/repo',
-			prNumber: overrides.prNumber ?? 1,
-			workItemId: overrides.workItemId ?? 'card-abc123',
-		})
-		.returning();
-	return row;
-}
-
-/**
  * Seeds a session for a user.
  */
 export async function seedSession(overrides: {
@@ -322,26 +296,6 @@ export async function seedSession(overrides: {
 			userId: overrides.userId,
 			token: overrides.token ?? 'test-session-token',
 			expiresAt: overrides.expiresAt ?? futureDate,
-		})
-		.returning();
-	return row;
-}
-
-/**
- * Seeds run logs for an agent run.
- */
-export async function seedRunLogs(overrides: {
-	runId: string;
-	cascadeLog?: string;
-	llmistLog?: string;
-}) {
-	const db = getDb();
-	const [row] = await db
-		.insert(agentRunLogs)
-		.values({
-			runId: overrides.runId,
-			cascadeLog: overrides.cascadeLog ?? 'Test cascade log',
-			llmistLog: overrides.llmistLog ?? null,
 		})
 		.returning();
 	return row;

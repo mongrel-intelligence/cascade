@@ -19,7 +19,7 @@ import {
 	storeRunLogs,
 } from '../../../src/db/repositories/runsRepository.js';
 import { truncateAll } from '../helpers/db.js';
-import { seedOrg, seedProject, seedRun } from '../helpers/seed.js';
+import { seedOrg, seedProject } from '../helpers/seed.js';
 
 describe('runsRepository (integration)', () => {
 	beforeEach(async () => {
