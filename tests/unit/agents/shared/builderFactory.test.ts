@@ -100,7 +100,6 @@ function createBaseOptions(overrides?: object) {
 }
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	mockResolveSquintDbPath.mockReturnValue(null);
 
 	// Reset all mock builder methods to return the builder instance

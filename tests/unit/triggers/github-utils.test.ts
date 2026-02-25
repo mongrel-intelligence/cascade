@@ -181,7 +181,6 @@ describe('requireWorkItemId', () => {
 
 describe('resolveWorkItemId', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 	});
 

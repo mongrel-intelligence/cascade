@@ -19,10 +19,6 @@ import {
 import { shouldTriggerDebug } from '../../../src/triggers/shared/debug-trigger.js';
 
 describe('shouldTriggerDebug', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('returns null when runId is undefined', async () => {
 		const result = await shouldTriggerDebug(undefined);
 		expect(result).toBeNull();

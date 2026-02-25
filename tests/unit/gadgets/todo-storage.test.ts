@@ -24,7 +24,6 @@ import {
 
 describe('todo storage', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		// Reset session state by re-initializing
 		vi.mocked(existsSync).mockReturnValue(true);
 	});

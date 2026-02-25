@@ -51,10 +51,6 @@ import {
 	generateAckMessage,
 } from '../../../src/router/ackMessageGenerator.js';
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 // ---------------------------------------------------------------------------
 // Context extractors
 // ---------------------------------------------------------------------------

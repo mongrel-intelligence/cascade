@@ -131,7 +131,6 @@ function createMockRegistry(result?: object | null) {
 }
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	mockIsCurrentlyProcessing.mockReturnValue(false);
 	mockIsCardActive.mockReturnValue(false);
 	mockEnqueueWebhook.mockReturnValue(true);

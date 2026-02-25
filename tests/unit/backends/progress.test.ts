@@ -73,7 +73,6 @@ const mockCallProgressModel = vi.mocked(callProgressModel);
 const mockSyncChecklist = vi.mocked(syncCompletedTodosToChecklist);
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	vi.useFakeTimers();
 	mockLoadTodos.mockReturnValue([]);
 	mockGetPMProvider.mockReturnValue(null);

@@ -63,10 +63,6 @@ const baseInput: RunTrackingInput = {
 };
 
 describe('tryCreateRun', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('creates a run and returns the run ID', async () => {
 		mockCreateRun.mockResolvedValue('run-abc');
 
@@ -97,10 +93,6 @@ describe('tryCreateRun', () => {
 });
 
 describe('tryCompleteRun', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('calls completeRun with the given input', async () => {
 		mockCompleteRun.mockResolvedValue(undefined);
 
@@ -123,7 +115,6 @@ describe('tryCompleteRun', () => {
 
 describe('tryStoreRunLogs', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockExistsSync.mockReturnValue(false);
 	});
 
@@ -159,7 +150,6 @@ describe('tryStoreRunLogs', () => {
 
 describe('finalizeBackendRun', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockExistsSync.mockReturnValue(false);
 	});
 

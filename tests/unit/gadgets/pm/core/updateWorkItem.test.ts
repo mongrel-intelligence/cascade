@@ -10,10 +10,6 @@ vi.mock('../../../../../src/pm/index.js', () => ({
 
 import { updateWorkItem } from '../../../../../src/gadgets/pm/core/updateWorkItem.js';
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('updateWorkItem', () => {
 	it('returns early message when nothing to update', async () => {
 		const result = await updateWorkItem({ workItemId: 'item1' });

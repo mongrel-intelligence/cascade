@@ -90,7 +90,6 @@ function createMockAgent(events: object[]) {
 }
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	mockConsumePendingSessionNotices.mockReturnValue(new Map());
 	mockConsumeLoopWarning.mockReturnValue(null);
 	mockConsumeLoopAction.mockReturnValue(null);

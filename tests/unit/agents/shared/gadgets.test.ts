@@ -59,10 +59,6 @@ import {
 	buildWorkItemGadgets,
 } from '../../../../src/agents/shared/gadgets.js';
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 function names(gadgets: unknown[]): string[] {
 	return gadgets.map((g) => (g as object).constructor.name);
 }

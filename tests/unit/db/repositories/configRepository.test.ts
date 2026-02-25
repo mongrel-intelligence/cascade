@@ -163,10 +163,6 @@ function createSequentialMockDb(results: QueryResult[]) {
 }
 
 describe('configRepository', () => {
-	afterEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('loadConfigFromDb', () => {
 		it('loads config with Trello integration from project_integrations', async () => {
 			// loadConfigFromDb Promise.all order: defaults, projects, agentConfigs, integrations

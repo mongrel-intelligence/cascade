@@ -10,10 +10,6 @@ vi.mock('../../../../../src/pm/index.js', () => ({
 
 import { createWorkItem } from '../../../../../src/gadgets/pm/core/createWorkItem.js';
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('createWorkItem', () => {
 	it('creates a work item and returns success message', async () => {
 		mockProvider.createWorkItem.mockResolvedValue({

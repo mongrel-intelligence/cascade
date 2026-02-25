@@ -8,23 +8,19 @@ import type { PMProvider } from '../../../src/pm/index.js';
 import { getPMProvider } from '../../../src/pm/index.js';
 import { checkBudgetExceeded, resolveCardBudget } from '../../../src/triggers/shared/budget.js';
 import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
+import { createMockProject } from '../../helpers/factories.js';
 
 const mockPMProvider = { getCustomFieldNumber: vi.fn() };
 vi.mocked(getPMProvider).mockReturnValue(mockPMProvider as unknown as PMProvider);
 
-const baseProject: ProjectConfig = {
-	id: 'test',
-	name: 'Test',
-	repo: 'owner/repo',
-	baseBranch: 'main',
-	branchPrefix: 'feature/',
+const baseProject: ProjectConfig = createMockProject({
 	trello: {
 		boardId: 'board123',
 		lists: {},
 		labels: {},
 		customFields: { cost: 'cf-cost-123' },
 	},
-};
+});
 
 const baseConfig: CascadeConfig = {
 	defaults: {
@@ -69,10 +65,6 @@ describe('resolveCardBudget', () => {
 });
 
 describe('checkBudgetExceeded', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('returns null when no cost field configured', async () => {
 		const project = {
 			...baseProject,

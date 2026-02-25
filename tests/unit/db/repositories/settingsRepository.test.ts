@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMockDb } from '../../../helpers/mockDb.js';
 
 vi.mock('../../../../src/db/client.js', () => ({
 	getDb: vi.fn(),
@@ -24,52 +25,12 @@ import {
 	upsertProjectIntegration,
 } from '../../../../src/db/repositories/settingsRepository.js';
 
-function createMockDb() {
-	const chain: Record<string, ReturnType<typeof vi.fn>> = {};
-
-	chain.where = vi.fn().mockResolvedValue([]);
-	chain.returning = vi.fn().mockResolvedValue([]);
-	chain.limit = vi.fn().mockReturnValue(chain);
-
-	chain.innerJoin = vi.fn().mockReturnValue({ where: chain.where });
-	chain.from = vi.fn().mockReturnValue({
-		where: chain.where,
-		innerJoin: chain.innerJoin,
-		limit: chain.limit,
-	});
-	chain.set = vi.fn().mockReturnValue({ where: chain.where });
-	chain.onConflictDoUpdate = vi.fn().mockReturnValue({
-		returning: chain.returning,
-	});
-	chain.values = vi.fn().mockReturnValue({
-		onConflictDoUpdate: chain.onConflictDoUpdate,
-		returning: chain.returning,
-	});
-
-	// Make chain itself thenable for queries without .where() terminal
-	// biome-ignore lint/suspicious/noThenProperty: intentional thenable mock for Drizzle query chains
-	chain.then = (resolve: (v: unknown) => unknown) => Promise.resolve([]).then(resolve);
-
-	const db = {
-		select: vi.fn().mockReturnValue({ from: chain.from }),
-		insert: vi.fn().mockReturnValue({ values: chain.values }),
-		update: vi.fn().mockReturnValue({ set: chain.set }),
-		delete: vi.fn().mockReturnValue({ where: chain.where }),
-	};
-
-	return { db, chain };
-}
-
 describe('settingsRepository', () => {
 	let mockDb: ReturnType<typeof createMockDb>;
 
 	beforeEach(() => {
-		mockDb = createMockDb();
+		mockDb = createMockDb({ withUpsert: true, withThenable: true });
 		vi.mocked(getDb).mockReturnValue(mockDb.db as never);
-	});
-
-	afterEach(() => {
-		vi.clearAllMocks();
 	});
 
 	// ============================================================================

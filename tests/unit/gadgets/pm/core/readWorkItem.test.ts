@@ -10,10 +10,6 @@ vi.mock('../../../../../src/pm/index.js', () => ({
 
 import { readWorkItem } from '../../../../../src/gadgets/pm/core/readWorkItem.js';
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('readWorkItem', () => {
 	const baseItem = {
 		id: 'item1',

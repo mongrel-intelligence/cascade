@@ -26,7 +26,6 @@ const mockFlush = vi.mocked(flush);
 
 describe('lifecycle', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		vi.useFakeTimers();
 		vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
 	});

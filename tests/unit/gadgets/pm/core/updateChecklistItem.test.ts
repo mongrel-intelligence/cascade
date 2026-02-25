@@ -10,10 +10,6 @@ vi.mock('../../../../../src/pm/index.js', () => ({
 
 import { updateChecklistItem } from '../../../../../src/gadgets/pm/core/updateChecklistItem.js';
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('updateChecklistItem', () => {
 	it('marks a checklist item as complete', async () => {
 		mockProvider.updateChecklistItem.mockResolvedValue(undefined);

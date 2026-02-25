@@ -83,7 +83,6 @@ async function postJson(
 
 describe('createWebhookHandler', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockIsCurrentlyProcessing.mockReturnValue(false);
 		mockCanAcceptWebhook.mockReturnValue(true);
 	});
@@ -460,10 +459,6 @@ describe('buildTrelloReactionSender', () => {
 		],
 	};
 
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('sends reaction for commentCard events', async () => {
 		vi.useFakeTimers();
 		const sender = buildTrelloReactionSender(config);
@@ -491,10 +486,6 @@ describe('buildTrelloReactionSender', () => {
 });
 
 describe('buildGitHubReactionSender', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('sends reaction for issue_comment events', async () => {
 		vi.useFakeTimers();
 		const mockProject = { id: 'proj-1' } as never;
@@ -549,10 +540,6 @@ describe('buildJiraReactionSender', () => {
 			} as never,
 		],
 	};
-
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
 
 	it('sends reaction for comment_created events', async () => {
 		vi.useFakeTimers();

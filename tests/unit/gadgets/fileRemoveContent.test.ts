@@ -52,7 +52,6 @@ beforeEach(() => {
 
 afterEach(() => {
 	rmSync(tmpDir, { recursive: true, force: true });
-	vi.clearAllMocks();
 });
 
 function createFile(name: string, content: string): string {

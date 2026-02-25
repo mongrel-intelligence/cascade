@@ -113,10 +113,6 @@ async function postJson(
 }
 
 describe('createServer', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('Trello webhook', () => {
 		it('calls sendAcknowledgeReaction for commentCard events', async () => {
 			vi.useFakeTimers();

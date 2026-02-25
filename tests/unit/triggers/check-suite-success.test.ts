@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CheckSuiteSuccessTrigger } from '../../../src/triggers/github/check-suite-success.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
+import { createMockProject } from '../../helpers/factories.js';
+import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
 
 vi.mock('../../../src/github/client.js', () => ({
 	githubClient: {
@@ -21,27 +23,7 @@ import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRep
 describe('CheckSuiteSuccessTrigger', () => {
 	const trigger = new CheckSuiteSuccessTrigger();
 
-	const mockProject = {
-		id: 'test',
-		name: 'Test',
-		repo: 'owner/repo',
-		baseBranch: 'main',
-		branchPrefix: 'feature/',
-		trello: {
-			boardId: 'board123',
-			lists: {
-				splitting: 'splitting-list-id',
-				planning: 'planning-list-id',
-				todo: 'todo-list-id',
-			},
-			labels: {},
-		},
-	};
-
-	const mockPersonaIdentities = {
-		implementer: 'cascade-impl',
-		reviewer: 'cascade-reviewer',
-	};
+	const mockProject = createMockProject();
 
 	const makeCheckSuitePayload = (overrides: Record<string, unknown> = {}) => ({
 		action: 'completed',
@@ -58,7 +40,6 @@ describe('CheckSuiteSuccessTrigger', () => {
 	});
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 	});
 
@@ -538,34 +519,31 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 	describe('reviewTrigger mode-aware behavior', () => {
 		/** Project with only externalPrs enabled */
-		const mockProjectExternalOnly = {
-			...mockProject,
+		const mockProjectExternalOnly = createMockProject({
 			github: {
 				triggers: {
 					reviewTrigger: { ownPrsOnly: false, externalPrs: true, onReviewRequested: false },
 				},
 			},
-		};
+		});
 
 		/** Project with both ownPrsOnly and externalPrs enabled */
-		const mockProjectBothModes = {
-			...mockProject,
+		const mockProjectBothModes = createMockProject({
 			github: {
 				triggers: {
 					reviewTrigger: { ownPrsOnly: true, externalPrs: true, onReviewRequested: false },
 				},
 			},
-		};
+		});
 
 		/** Project with all modes disabled */
-		const mockProjectNoModes = {
-			...mockProject,
+		const mockProjectNoModes = createMockProject({
 			github: {
 				triggers: {
 					reviewTrigger: { ownPrsOnly: false, externalPrs: false, onReviewRequested: false },
 				},
 			},
-		};
+		});
 
 		it('does not match when all modes are disabled', () => {
 			const ctx: TriggerContext = {
@@ -677,7 +655,6 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(implResult).not.toBeNull();
 
 			// External PR
-			vi.clearAllMocks();
 			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			setupMocks('external-contributor');
 			const extCtx: TriggerContext = {

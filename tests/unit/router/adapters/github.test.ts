@@ -94,7 +94,6 @@ const mockTriggerRegistry = {
 } as unknown as TriggerRegistry;
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	vi.mocked(loadProjectConfig).mockResolvedValue({
 		projects: [mockProject],
 		fullProjects: [{ id: 'p1', repo: 'owner/repo' } as never],

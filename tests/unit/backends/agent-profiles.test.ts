@@ -137,10 +137,6 @@ const mockReadWorkItem = vi.mocked(readWorkItem);
 
 const mockGithub = vi.mocked(githubClient);
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('getAgentProfile', () => {
 	describe('respond-to-ci profile', () => {
 		let profile: AgentProfile;

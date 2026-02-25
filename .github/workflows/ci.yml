@@ -64,6 +64,45 @@ jobs:
       - name: Validate PR commits
         run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
 
+  integration-tests:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cascade_test
+          POSTGRES_PASSWORD: cascade_test
+          POSTGRES_DB: cascade_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U cascade_test -d cascade_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build backend
+        run: npm run build
+
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          TEST_DATABASE_URL: postgresql://cascade_test:cascade_test@localhost:5433/cascade_test
+
   docker-build-check:
     name: Validate Docker builds
     runs-on: ubuntu-latest

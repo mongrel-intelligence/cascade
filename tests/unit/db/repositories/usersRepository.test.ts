@@ -44,8 +44,6 @@ import {
 
 describe('usersRepository', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
-
 		mockInsert.mockReturnValue({ values: mockValues });
 		mockValues.mockReturnValue({ returning: mockReturning });
 		mockSelect.mockReturnValue({ from: mockFrom });

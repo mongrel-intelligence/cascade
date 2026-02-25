@@ -14,10 +14,6 @@ import { logger } from '../../../../src/utils/logging.js';
 
 const mockLogger = vi.mocked(logger);
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('createAgentLogger', () => {
 	it('debug writes to both console logger and file logger', () => {
 		const fileLogger = { write: vi.fn() };

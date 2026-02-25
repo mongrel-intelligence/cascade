@@ -41,10 +41,6 @@ function makeConfig(overrides: Partial<CascadeConfig['defaults']> = {}): Cascade
 }
 
 describe('resolveModelConfig', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('prompt resolution chain', () => {
 		it('uses .eta file when no custom prompts configured', async () => {
 			const result = await resolveModelConfig({

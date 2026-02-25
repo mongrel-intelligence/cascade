@@ -66,4 +66,29 @@ else
   fi
 fi
 
+# Verify test database exists (needed for integration tests)
+if pg_isready -q 2>/dev/null; then
+  # OS-aware psql command (macOS uses peer auth, Linux uses -U postgres)
+  case "$(uname -s)" in
+    Linux*)  PSQL_CMD="psql -U postgres" ;;
+    *)       PSQL_CMD="psql" ;;
+  esac
+
+  if $PSQL_CMD -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw cascade_test; then
+    echo "Test database (cascade_test): exists"
+  else
+    echo "Test database (cascade_test): missing - creating..."
+    if [ "$(uname -s)" = "Linux" ]; then
+      $PSQL_CMD -c "CREATE DATABASE cascade_test;" 2>/dev/null || true
+    else
+      createdb cascade_test 2>/dev/null || true
+    fi
+    if $PSQL_CMD -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw cascade_test; then
+      echo "Test database (cascade_test): created"
+    else
+      echo "Test database (cascade_test): FAILED TO CREATE (integration tests will not work)"
+    fi
+  fi
+fi
+
 echo "=== All services running ==="

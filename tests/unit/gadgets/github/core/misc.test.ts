@@ -28,10 +28,6 @@ import { githubClient } from '../../../../../src/github/client.js';
 
 const mockGithub = vi.mocked(githubClient);
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('getPRDetails', () => {
 	it('formats PR with number, title, state, branches, URL', async () => {
 		mockGithub.getPR.mockResolvedValue({

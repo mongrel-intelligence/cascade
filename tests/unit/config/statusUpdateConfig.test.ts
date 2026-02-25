@@ -16,10 +16,6 @@ vi.mock('../../../src/gadgets/todo/storage.js', () => ({
 import { formatTodoList, loadTodos } from '../../../src/gadgets/todo/storage.js';
 
 describe('config/statusUpdateConfig', () => {
-	afterEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('getStatusUpdateConfig', () => {
 		it('returns enabled config for non-debug agents', () => {
 			const agentTypes = ['implementation', 'splitting', 'planning', 'review'];

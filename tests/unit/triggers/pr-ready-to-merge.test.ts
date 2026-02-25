@@ -53,6 +53,7 @@ import '../../../src/pm/index.js';
 
 import { PRReadyToMergeTrigger } from '../../../src/triggers/github/pr-ready-to-merge.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
+import { createMockProject } from '../../helpers/factories.js';
 
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { githubClient } from '../../../src/github/client.js';
@@ -60,12 +61,7 @@ import { githubClient } from '../../../src/github/client.js';
 describe('PRReadyToMergeTrigger', () => {
 	const trigger = new PRReadyToMergeTrigger();
 
-	const mockProject = {
-		id: 'test',
-		name: 'Test',
-		repo: 'owner/repo',
-		baseBranch: 'main',
-		branchPrefix: 'feature/',
+	const mockProject = createMockProject({
 		trello: {
 			boardId: 'board123',
 			lists: {
@@ -76,10 +72,9 @@ describe('PRReadyToMergeTrigger', () => {
 			},
 			labels: {},
 		},
-	};
+	});
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 	});
 

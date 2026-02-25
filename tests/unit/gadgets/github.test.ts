@@ -54,10 +54,6 @@ function mockRunCommand(
 
 describe('GitHub Gadgets', () => {
 	describe('CreatePR', () => {
-		beforeEach(() => {
-			vi.clearAllMocks();
-		});
-
 		it('is a valid llmist Gadget class', () => {
 			const gadget = new CreatePR();
 			expect(gadget).toBeDefined();

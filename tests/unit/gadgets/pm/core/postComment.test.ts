@@ -23,7 +23,6 @@ const mockReadProgressCommentId = vi.mocked(readProgressCommentId);
 const mockClearProgressCommentId = vi.mocked(clearProgressCommentId);
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	mockReadProgressCommentId.mockReturnValue(null);
 });
 

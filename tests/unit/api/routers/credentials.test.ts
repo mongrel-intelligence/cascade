@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
+import { createMockUser } from '../../../helpers/factories.js';
 
 const mockListOrgCredentials = vi.fn();
 const mockCreateCredential = vi.fn();
@@ -50,17 +51,10 @@ function createCaller(ctx: TRPCContext) {
 	return credentialsRouter.createCaller(ctx);
 }
 
-const mockUser = {
-	id: 'user-1',
-	orgId: 'org-1',
-	email: 'test@example.com',
-	name: 'Test',
-	role: 'admin',
-};
+const mockUser = createMockUser();
 
 describe('credentialsRouter', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockDbSelect.mockReturnValue({ from: mockDbFrom });
 		mockDbFrom.mockReturnValue({ where: mockDbWhere });
 	});
