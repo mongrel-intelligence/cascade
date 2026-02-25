@@ -5,103 +5,110 @@
 		{
 			"idx": 0,
 			"version": "7",
+			"when": 1735000000000,
+			"tag": "0000_base_schema",
+			"breakpoints": false
+		},
+		{
+			"idx": 1,
+			"version": "7",
 			"when": 1736000000000,
 			"tag": "0001_three_tier_normalization",
 			"breakpoints": false
 		},
 		{
-			"idx": 1,
+			"idx": 2,
 			"version": "7",
 			"when": 1737000000000,
 			"tag": "0002_agent_run_tracking",
 			"breakpoints": false
 		},
 		{
-			"idx": 2,
+			"idx": 3,
 			"version": "7",
 			"when": 1738000000000,
 			"tag": "0003_organizations_and_credentials",
 			"breakpoints": false
 		},
 		{
-			"idx": 3,
+			"idx": 4,
 			"version": "7",
 			"when": 1739000000000,
 			"tag": "0004_agent_credential_overrides",
 			"breakpoints": false
 		},
 		{
-			"idx": 4,
+			"idx": 5,
 			"version": "7",
 			"when": 1740000000000,
 			"tag": "0005_config_schema_cleanup",
 			"breakpoints": false
 		},
 		{
-			"idx": 5,
+			"idx": 6,
 			"version": "7",
 			"when": 1741000000000,
 			"tag": "0006_users_and_sessions",
 			"breakpoints": false
 		},
 		{
-			"idx": 6,
+			"idx": 7,
 			"version": "7",
 			"when": 1742000000000,
 			"tag": "0007_remove_flyio_columns",
 			"breakpoints": false
 		},
 		{
-			"idx": 7,
+			"idx": 8,
 			"version": "7",
 			"when": 1743000000000,
 			"tag": "0008_prompt_partials",
 			"breakpoints": false
 		},
 		{
-			"idx": 8,
+			"idx": 9,
 			"version": "7",
 			"when": 1744000000000,
 			"tag": "0009_add_squint_db_url",
 			"breakpoints": false
 		},
 		{
-			"idx": 9,
+			"idx": 10,
 			"version": "7",
 			"when": 1745000000000,
 			"tag": "0010_webhook_logs",
 			"breakpoints": false
 		},
 		{
-			"idx": 10,
+			"idx": 11,
 			"version": "7",
 			"when": 1746000000000,
 			"tag": "0011_remove_credentials_description",
 			"breakpoints": false
 		},
 		{
-			"idx": 11,
+			"idx": 12,
 			"version": "7",
 			"when": 1747000000000,
 			"tag": "0012_llm_calls_realtime",
 			"breakpoints": false
 		},
 		{
-			"idx": 12,
+			"idx": 13,
 			"version": "7",
 			"when": 1748000000000,
 			"tag": "0013_integration_model_refactor",
 			"breakpoints": false
 		},
 		{
-			"idx": 13,
+			"idx": 14,
 			"version": "7",
 			"when": 1749000000000,
 			"tag": "0014_pr_work_items",
 			"breakpoints": false
 		},
 		{
-			"idx": 14,
+			"idx": 15,
 			"version": "7",
 			"when": 1750000000000,
 			"tag": "0015_rename_briefing_to_splitting",
