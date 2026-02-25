@@ -103,4 +103,26 @@ describe('callProgressModel', () => {
 		expect(mockTextComplete).toHaveBeenCalledTimes(1);
 		expect(MockLLMist).toHaveBeenCalledTimes(1);
 	});
+
+	it('includes agent role hint in the user prompt', async () => {
+		mockTextComplete.mockResolvedValue('Progress update.');
+
+		await callProgressModel('test-model', makeContext({ agentType: 'splitting' }), []);
+
+		const userPrompt = mockTextComplete.mock.calls[0][0] as string;
+		expect(userPrompt).toContain('Agent: splitting');
+		expect(userPrompt).toContain(
+			'Agent role: Breaks down a feature plan into smaller, ordered work items (subtasks)',
+		);
+	});
+
+	it('uses fallback role hint for unknown agent types', async () => {
+		mockTextComplete.mockResolvedValue('Progress update.');
+
+		await callProgressModel('test-model', makeContext({ agentType: 'unknown-agent' }), []);
+
+		const userPrompt = mockTextComplete.mock.calls[0][0] as string;
+		expect(userPrompt).toContain('Agent: unknown-agent');
+		expect(userPrompt).toContain('Agent role: Processes the request');
+	});
 });

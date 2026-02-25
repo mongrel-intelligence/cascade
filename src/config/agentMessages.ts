@@ -26,6 +26,25 @@ export function getAgentLabel(agentType: string): { emoji: string; label: string
 }
 
 /**
+ * Agent role hints — give LLMs context about what each agent type does.
+ *
+ * Used by:
+ * - ackMessageGenerator.ts — contextual acknowledgment messages
+ * - progressModel.ts — progress update generation
+ */
+export const AGENT_ROLE_HINTS: Record<string, string> = {
+	splitting: 'Breaks down a feature plan into smaller, ordered work items (subtasks)',
+	planning: 'Studies the codebase and designs a step-by-step implementation plan',
+	implementation: 'Writes code, runs tests, and prepares a pull request',
+	review: 'Reviews pull request changes for quality and correctness',
+	'respond-to-planning-comment': 'Reads user feedback and updates the plan accordingly',
+	'respond-to-review': 'Addresses code review feedback by making requested changes',
+	'respond-to-pr-comment': 'Reads a PR comment and takes action',
+	'respond-to-ci': 'Analyzes failed CI checks and works on a fix',
+	debug: 'Analyzes session logs to identify what went wrong',
+};
+
+/**
  * Human-readable initial messages per agent type.
  *
  * Used by:

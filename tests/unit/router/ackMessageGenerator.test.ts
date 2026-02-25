@@ -36,6 +36,11 @@ vi.mock('../../../src/config/agentMessages.js', () => ({
 			'**📋 Splitting plan** — Reading the plan and splitting it into ordered work items...',
 		review: '**🔍 Reviewing code** — Examining the PR changes for quality and correctness...',
 	},
+	AGENT_ROLE_HINTS: {
+		splitting: 'Breaks down a feature plan into smaller, ordered work items (subtasks)',
+		implementation: 'Writes code, runs tests, and prepares a pull request',
+		review: 'Reviews pull request changes for quality and correctness',
+	},
 }));
 
 import { getOrgCredential, loadConfig } from '../../../src/config/provider.js';
