@@ -10,12 +10,6 @@ import {
 	findProjectByBoardIdFromDb,
 	findProjectByRepoFromDb,
 } from '../../src/db/repositories/configRepository.js';
-
-/** Assert that a value is defined (not null/undefined), throwing if not. */
-function assertFound<T>(value: T | null | undefined, msg = 'Expected value to be defined'): T {
-	if (value == null) throw new Error(msg);
-	return value;
-}
 import { createTriggerRegistry } from '../../src/triggers/registry.js';
 import {
 	CardMovedToPlanningTrigger,
@@ -24,6 +18,7 @@ import {
 } from '../../src/triggers/trello/card-moved.js';
 import { ReadyToProcessLabelTrigger } from '../../src/triggers/trello/label-added.js';
 import type { TriggerContext } from '../../src/types/index.js';
+import { assertFound } from './helpers/assert.js';
 import { truncateAll } from './helpers/db.js';
 import { seedIntegration, seedOrg, seedProject } from './helpers/seed.js';
 

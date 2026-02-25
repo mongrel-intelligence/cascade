@@ -19,14 +19,9 @@ import { pmRegistry } from '../../src/pm/registry.js';
 import { JiraIssueTransitionedTrigger } from '../../src/triggers/jira/issue-transitioned.js';
 import { CardMovedToTodoTrigger } from '../../src/triggers/trello/card-moved.js';
 import type { TriggerContext } from '../../src/types/index.js';
+import { assertFound } from './helpers/assert.js';
 import { truncateAll } from './helpers/db.js';
 import { seedIntegration, seedOrg, seedProject } from './helpers/seed.js';
-
-/** Assert that a value is defined (not null/undefined), throwing if not. */
-function assertFound<T>(value: T | null | undefined, msg = 'Expected value to be defined'): T {
-	if (value == null) throw new Error(msg);
-	return value;
-}
 
 // ============================================================================
 // Helpers

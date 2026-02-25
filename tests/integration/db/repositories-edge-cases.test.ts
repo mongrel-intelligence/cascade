@@ -5,9 +5,7 @@
  * deletes. Covers the 4-level agent config resolution and FK constraints.
  */
 
-import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { getDb } from '../../../src/db/client.js';
 import { loadConfigFromDb } from '../../../src/db/repositories/configRepository.js';
 import {
 	deleteCredential,
@@ -28,7 +26,6 @@ import {
 	upsertCascadeDefaults,
 	upsertProjectIntegration,
 } from '../../../src/db/repositories/settingsRepository.js';
-import { organizations } from '../../../src/db/schema/index.js';
 import { truncateAll } from '../helpers/db.js';
 import {
 	seedAgentConfig,

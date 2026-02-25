@@ -17,6 +17,7 @@ import {
 import { PRReviewSubmittedTrigger } from '../../src/triggers/github/pr-review-submitted.js';
 import { ReviewRequestedTrigger } from '../../src/triggers/github/review-requested.js';
 import type { TriggerContext } from '../../src/types/index.js';
+import { assertFound } from './helpers/assert.js';
 import { truncateAll } from './helpers/db.js';
 import {
 	seedCredential,
@@ -25,12 +26,6 @@ import {
 	seedOrg,
 	seedProject,
 } from './helpers/seed.js';
-
-/** Assert that a value is defined (not null/undefined), throwing if not. */
-function assertFound<T>(value: T | null | undefined, msg = 'Expected value to be defined'): T {
-	if (value == null) throw new Error(msg);
-	return value;
-}
 
 // ============================================================================
 // Helpers
