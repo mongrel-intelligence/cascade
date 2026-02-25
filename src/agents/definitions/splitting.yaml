@@ -1,0 +1,28 @@
+identity:
+  emoji: "\U0001F4CB"
+  label: Splitting Update
+  roleHint: Breaks down a feature plan into smaller, ordered work items (subtasks)
+  initialMessage: "**\U0001F4CB Splitting plan** — Reading the plan and splitting it into ordered work items..."
+
+capabilities:
+  canEditFiles: true
+  canCreatePR: false
+  canUpdateChecklists: true
+  isReadOnly: false
+
+tools:
+  sets: [pm, pm_checklist, session]
+  sdkTools: all
+
+strategies:
+  contextPipeline: [directoryListing, contextFiles, squint, workItem]
+  taskPromptBuilder: workItem
+  gadgetBuilder: workItem
+
+backend:
+  enableStopHooks: false
+  needsGitHubToken: false
+
+compaction: default
+
+hint: Gather all context needed for the current step before proceeding.

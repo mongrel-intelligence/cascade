@@ -83,13 +83,20 @@ async function buildBackendInput(
 		// DB not available — fall back to disk-only partials
 	}
 
-	const { systemPrompt, model, maxIterations, contextFiles } = await resolveModelConfig({
+	const {
+		systemPrompt,
+		taskPrompt: taskPromptOverride,
+		model,
+		maxIterations,
+		contextFiles,
+	} = await resolveModelConfig({
 		agentType,
 		project,
 		config,
 		repoDir,
 		promptContext,
 		dbPartials,
+		agentInput: input,
 	});
 
 	const profile = getAgentProfile(agentType);
@@ -123,7 +130,7 @@ async function buildBackendInput(
 		config,
 		repoDir,
 		systemPrompt,
-		taskPrompt: profile.buildTaskPrompt(input),
+		taskPrompt: taskPromptOverride ?? profile.buildTaskPrompt(input),
 		cliToolsDir,
 		availableTools: profile.filterTools(getToolManifests()),
 		contextInjections,
@@ -263,7 +270,9 @@ export async function executeWithBackend(
 				monitor?.stop();
 			}
 
-			postProcessResult(result, agentType, backend, input, identifier);
+			postProcessResult(result, agentType, backend, input, identifier, {
+				requiresPR: profile.requiresPR,
+			});
 
 			return {
 				success: result.success,

@@ -1,0 +1,29 @@
+identity:
+  emoji: "\U0001F50D"
+  label: Code Review Update
+  roleHint: Reviews pull request changes for quality and correctness
+  initialMessage: "**\U0001F50D Reviewing code** — Examining the PR changes for quality and correctness..."
+
+capabilities:
+  canEditFiles: false
+  canCreatePR: false
+  canUpdateChecklists: false
+  isReadOnly: true
+
+tools:
+  sets: [github_review, session]
+  sdkTools: readOnly
+
+strategies:
+  contextPipeline: [prContext, contextFiles, squint]
+  taskPromptBuilder: review
+  gadgetBuilder: review
+
+backend:
+  enableStopHooks: false
+  needsGitHubToken: true
+  preExecute: postInitialPRComment
+
+compaction: default
+
+hint: Focus on the current aspect of review before moving to the next. Read related files together.

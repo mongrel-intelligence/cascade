@@ -1,0 +1,1 @@
+ALTER TABLE "agent_configs" ADD COLUMN IF NOT EXISTS "task_prompt" TEXT;

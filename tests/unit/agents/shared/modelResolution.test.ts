@@ -210,6 +210,117 @@ describe('resolveModelConfig', () => {
 		});
 	});
 
+	describe('task prompt override resolution', () => {
+		it('returns undefined taskPrompt when no override configured', async () => {
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project: makeProject(),
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+			});
+
+			expect(result.taskPrompt).toBeUndefined();
+		});
+
+		it('renders project-level task prompt override', async () => {
+			const project = makeProject({
+				taskPrompts: { splitting: 'Custom task for <%= it.cardId %>.' },
+			});
+
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project,
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+				agentInput: { cardId: 'card-42' },
+			});
+
+			expect(result.taskPrompt).toBe('Custom task for card-42.');
+		});
+
+		it('renders task-specific variables from agentInput', async () => {
+			const project = makeProject({
+				taskPrompts: {
+					'respond-to-planning-comment':
+						'Comment by @<%= it.commentAuthor %>: <%= it.commentText %>',
+				},
+			});
+
+			const result = await resolveModelConfig({
+				agentType: 'respond-to-planning-comment',
+				project,
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+				agentInput: {
+					triggerCommentText: 'Add more tests',
+					triggerCommentAuthor: 'alice',
+				},
+			});
+
+			expect(result.taskPrompt).toBe('Comment by @alice: Add more tests');
+		});
+
+		it('renders PR-specific variables from agentInput in task prompt override', async () => {
+			const project = makeProject({
+				taskPrompts: {
+					'respond-to-pr-comment':
+						'PR #<%= it.prNumber %>, file: <%= it.commentPath %>, body: <%= it.commentBody %>',
+				},
+			});
+
+			const result = await resolveModelConfig({
+				agentType: 'respond-to-pr-comment',
+				project,
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+				agentInput: {
+					prNumber: 55,
+					triggerCommentBody: 'Fix this line',
+					triggerCommentPath: 'src/utils.ts',
+				},
+				promptContext: { prNumber: 55 },
+			});
+
+			expect(result.taskPrompt).toContain('PR #55');
+			expect(result.taskPrompt).toContain('src/utils.ts');
+			expect(result.taskPrompt).toContain('Fix this line');
+		});
+
+		it('uses defaults-level task prompt when no project override', async () => {
+			const config = makeConfig({
+				taskPrompts: { splitting: 'Default task prompt for <%= it.cardId %>.' },
+			});
+
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project: makeProject(),
+				config,
+				repoDir: '/tmp/test',
+				agentInput: { cardId: 'card-99' },
+			});
+
+			expect(result.taskPrompt).toBe('Default task prompt for card-99.');
+		});
+
+		it('prefers project task prompt over defaults', async () => {
+			const project = makeProject({
+				taskPrompts: { splitting: 'Project task prompt.' },
+			});
+			const config = makeConfig({
+				taskPrompts: { splitting: 'Defaults task prompt.' },
+			});
+
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project,
+				config,
+				repoDir: '/tmp/test',
+			});
+
+			expect(result.taskPrompt).toBe('Project task prompt.');
+		});
+	});
+
 	describe('iterations resolution', () => {
 		it('uses default maxIterations', async () => {
 			const result = await resolveModelConfig({

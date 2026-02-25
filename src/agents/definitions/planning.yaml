@@ -1,0 +1,28 @@
+identity:
+  emoji: "\U0001F5FA\uFE0F"
+  label: Planning Update
+  roleHint: Studies the codebase and designs a step-by-step implementation plan
+  initialMessage: "**\U0001F5FA\uFE0F Planning implementation** — Studying the codebase and designing a step-by-step plan..."
+
+capabilities:
+  canEditFiles: false
+  canCreatePR: false
+  canUpdateChecklists: false
+  isReadOnly: true
+
+tools:
+  sets: [pm, session]
+  sdkTools: readOnly
+
+strategies:
+  contextPipeline: [directoryListing, contextFiles, squint, workItem]
+  taskPromptBuilder: workItem
+  gadgetBuilder: workItem
+
+backend:
+  enableStopHooks: false
+  needsGitHubToken: false
+
+compaction: default
+
+hint: Complete the current planning step efficiently before moving to the next.
