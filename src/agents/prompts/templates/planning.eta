@@ -101,6 +101,7 @@ Update the <%= it.workItemNoun || 'card' %> description with **emoji section hea
 
 **IMPORTANT:**
 - After updating the <%= it.workItemNoun || 'card' %>, ALWAYS call `AddChecklist` to create an interactive "📋 Implementation Steps" checklist with each step as an item.
+- When calling `AddChecklist`, use only the task name as each item — do NOT include "Step N:" prefixes. For example, use "Add helper function" instead of "Step 1: Add helper function". The checklist order already implies sequence.
 <% if (it.pmType === 'jira') { %>- When calling `AddChecklist`, pass items as objects with `name` and `description`. The description should include the files to modify, specific changes, and testing notes from the corresponding Implementation Step section. This becomes the JIRA subtask description.
 <% } %>- When referencing other <%= it.workItemNounPlural || 'cards' %> (related stories, dependencies), ALWAYS use markdown links: `[<%= it.workItemNounCap || 'Card' %> Title](URL)`
 
@@ -141,6 +142,7 @@ Review the updated description and move to TODO when ready to implement!
 - ALWAYS explore the codebase before creating the plan
 - ALWAYS use `UpdateWorkItem` to save your plan - DON'T JUST OUTPUT TEXT
 - ALWAYS call `AddChecklist` after updating the <%= it.workItemNoun || 'card' %> to create interactive checklists
+- NEVER include "Step N:" prefixes in `AddChecklist` items — use clean task names like "Add helper function", not "Step 1: Add helper function"
 - ALWAYS use emoji section headers (🎯, 📋, 🧪, ⚠️, 🔗) and **bold key terms** in descriptions
 - ALWAYS include a 🎯 TLDR section at the top of the <%= it.workItemNoun || 'card' %> description
 - ALWAYS use markdown link syntax `[title](url)` when referencing other <%= it.workItemNounPlural || 'cards' %>
