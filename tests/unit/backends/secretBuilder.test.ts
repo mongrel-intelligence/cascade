@@ -48,7 +48,6 @@ function makeProfile(overrides?: Partial<AgentProfile>): AgentProfile {
 }
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	mockGetAllProjectCredentials.mockResolvedValue({});
 });
 

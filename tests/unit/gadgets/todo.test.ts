@@ -63,10 +63,6 @@ describe('TodoUpsert', () => {
 		(storage as unknown as { _resetTodos: () => void })._resetTodos();
 	});
 
-	afterEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('gadget metadata', () => {
 		it('has correct name', () => {
 			expect(gadget.name).toBe('TodoUpsert');
@@ -201,10 +197,6 @@ describe('TodoUpdateStatus', () => {
 		gadget = new TodoUpdateStatus();
 		// Reset todos before each test
 		(storage as unknown as { _resetTodos: () => void })._resetTodos();
-	});
-
-	afterEach(() => {
-		vi.clearAllMocks();
 	});
 
 	describe('gadget metadata', () => {

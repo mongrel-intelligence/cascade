@@ -39,7 +39,7 @@ describe('router config integration', () => {
 					pmType: 'trello',
 					trello: {
 						boardId: 'board1',
-						lists: { briefing: 'list1', planning: 'list2', todo: 'list3', debug: 'list4' },
+						lists: { splitting: 'list1', planning: 'list2', todo: 'list3', debug: 'list4' },
 						labels: { readyToProcess: 'label1' },
 					},
 				},

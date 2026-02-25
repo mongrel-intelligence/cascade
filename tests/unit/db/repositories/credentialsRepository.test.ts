@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMockDb } from '../../../helpers/mockDb.js';
 
 // Mock the DB client
 vi.mock('../../../../src/db/client.js', () => ({
@@ -18,53 +19,12 @@ import {
 	updateCredential,
 } from '../../../../src/db/repositories/credentialsRepository.js';
 
-/**
- * Creates a mock Drizzle query chain that supports the common patterns:
- * select().from().innerJoin().where(), select().from().innerJoin().innerJoin().where(),
- * insert().values().returning(), update().set().where(), delete().from().where()
- */
-function createMockDb() {
-	const chain: Record<string, ReturnType<typeof vi.fn>> = {};
-
-	// Terminal methods that return results
-	chain.where = vi.fn().mockResolvedValue([]);
-	chain.returning = vi.fn().mockResolvedValue([]);
-
-	// Chain methods
-	chain.innerJoin = vi.fn().mockReturnValue({
-		where: chain.where,
-		innerJoin: vi.fn().mockReturnValue({ where: chain.where }),
-	});
-	chain.from = vi.fn().mockReturnValue({
-		where: chain.where,
-		innerJoin: chain.innerJoin,
-	});
-	chain.set = vi.fn().mockReturnValue({ where: chain.where });
-	chain.values = vi.fn().mockReturnValue({
-		returning: chain.returning,
-	});
-
-	const db = {
-		select: vi.fn().mockReturnValue({ from: chain.from }),
-		insert: vi.fn().mockReturnValue({ values: chain.values }),
-		update: vi.fn().mockReturnValue({ set: chain.set }),
-		delete: vi.fn().mockReturnValue({ where: chain.where }),
-	};
-
-	return { db, chain };
-}
-
 describe('credentialsRepository', () => {
 	let mockDb: ReturnType<typeof createMockDb>;
 
 	beforeEach(() => {
-		mockDb = createMockDb();
+		mockDb = createMockDb({ withDoubleJoin: true });
 		vi.mocked(getDb).mockReturnValue(mockDb.db as never);
-	});
-
-	afterEach(() => {
-		vi.unstubAllEnvs();
-		vi.clearAllMocks();
 	});
 
 	describe('resolveIntegrationCredential', () => {

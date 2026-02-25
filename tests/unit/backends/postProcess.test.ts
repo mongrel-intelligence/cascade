@@ -48,65 +48,69 @@ function makeInput(overrides?: Partial<ProjectConfig>): AgentInput & { project: 
 	} as AgentInput & { project: ProjectConfig };
 }
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('postProcessResult', () => {
-	describe('PR validation for implementation agents', () => {
-		it('marks as failed when implementation agent succeeds without prUrl', () => {
+	describe('PR validation for agents with requiresPR', () => {
+		it('marks as failed when requiresPR agent succeeds without prUrl', () => {
 			const result = makeResult({ success: true, prUrl: undefined });
 			const backend = makeBackend();
 			const input = makeInput();
 
-			postProcessResult(result, 'implementation', backend, input, 'implementation-card-123');
+			postProcessResult(result, 'implementation', backend, input, 'implementation-card-123', {
+				requiresPR: true,
+			});
 
 			expect(result.success).toBe(false);
-			expect(result.error).toBe('Implementation completed but no PR was created');
+			expect(result.error).toBe('Agent completed but no PR was created');
 		});
 
-		it('logs warning when implementation agent succeeds without prUrl', () => {
+		it('logs warning when requiresPR agent succeeds without prUrl', () => {
 			const result = makeResult({ success: true, prUrl: undefined });
 			const backend = makeBackend('my-backend');
 			const input = makeInput();
 
-			postProcessResult(result, 'implementation', backend, input, 'impl-id');
+			postProcessResult(result, 'implementation', backend, input, 'impl-id', {
+				requiresPR: true,
+			});
 
 			expect(logger.warn).toHaveBeenCalledWith(
-				'Implementation agent completed without creating a PR',
+				'implementation agent completed without creating a PR',
 				{ identifier: 'impl-id', backend: 'my-backend' },
 			);
 		});
 
-		it('passes through when implementation agent succeeds with prUrl', () => {
+		it('passes through when requiresPR agent succeeds with prUrl', () => {
 			const result = makeResult({ success: true, prUrl: 'https://github.com/o/r/pull/1' });
 			const backend = makeBackend();
 			const input = makeInput();
 
-			postProcessResult(result, 'implementation', backend, input, 'impl-id');
+			postProcessResult(result, 'implementation', backend, input, 'impl-id', {
+				requiresPR: true,
+			});
 
 			expect(result.success).toBe(true);
 			expect(result.error).toBeUndefined();
 		});
 
-		it('passes through when implementation agent already failed', () => {
+		it('passes through when requiresPR agent already failed', () => {
 			const result = makeResult({ success: false, error: 'Budget exceeded' });
 			const backend = makeBackend();
 			const input = makeInput();
 
-			postProcessResult(result, 'implementation', backend, input, 'impl-id');
+			postProcessResult(result, 'implementation', backend, input, 'impl-id', {
+				requiresPR: true,
+			});
 
 			expect(result.success).toBe(false);
 			expect(result.error).toBe('Budget exceeded');
 			expect(logger.warn).not.toHaveBeenCalled();
 		});
 
-		it('does not validate PR creation for non-implementation agents', () => {
+		it('does not validate PR creation when requiresPR is not set', () => {
 			const result = makeResult({ success: true, prUrl: undefined });
 			const backend = makeBackend();
 			const input = makeInput();
 
-			postProcessResult(result, 'briefing', backend, input, 'briefing-id');
+			postProcessResult(result, 'splitting', backend, input, 'splitting-id');
 
 			expect(result.success).toBe(true);
 			expect(logger.warn).not.toHaveBeenCalled();

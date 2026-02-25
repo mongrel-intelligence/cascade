@@ -86,10 +86,6 @@ function makeInput(overrides: Partial<AgentBackendInput> = {}): AgentBackendInpu
 	};
 }
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('buildToolGuidance', () => {
 	it('returns empty string for empty tools', () => {
 		expect(buildToolGuidance([])).toBe('');
@@ -312,7 +308,7 @@ describe('ClaudeCodeBackend', () => {
 		const backend = new ClaudeCodeBackend();
 		expect(backend.supportsAgentType('implementation')).toBe(true);
 		expect(backend.supportsAgentType('review')).toBe(true);
-		expect(backend.supportsAgentType('briefing')).toBe(true);
+		expect(backend.supportsAgentType('splitting')).toBe(true);
 		expect(backend.supportsAgentType('anything')).toBe(true);
 	});
 });

@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMockDb } from '../../../helpers/mockDb.js';
 
 vi.mock('../../../../src/db/client.js', () => ({
 	getDb: vi.fn(),
@@ -19,36 +20,12 @@ import {
 	lookupWorkItemForPR,
 } from '../../../../src/db/repositories/prWorkItemsRepository.js';
 
-function createMockDb() {
-	const chain: Record<string, ReturnType<typeof vi.fn>> = {};
-
-	chain.limit = vi.fn().mockResolvedValue([]);
-	chain.where = vi.fn().mockReturnValue({ limit: chain.limit });
-	chain.from = vi.fn().mockReturnValue({ where: chain.where });
-
-	chain.onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
-	chain.values = vi.fn().mockReturnValue({
-		onConflictDoUpdate: chain.onConflictDoUpdate,
-	});
-
-	const db = {
-		select: vi.fn().mockReturnValue({ from: chain.from }),
-		insert: vi.fn().mockReturnValue({ values: chain.values }),
-	};
-
-	return { db, chain };
-}
-
 describe('prWorkItemsRepository', () => {
 	let mockDb: ReturnType<typeof createMockDb>;
 
 	beforeEach(() => {
-		mockDb = createMockDb();
+		mockDb = createMockDb({ withLimit: true, withUpsert: true });
 		vi.mocked(getDb).mockReturnValue(mockDb.db as never);
-	});
-
-	afterEach(() => {
-		vi.clearAllMocks();
 	});
 
 	// ==========================================================================

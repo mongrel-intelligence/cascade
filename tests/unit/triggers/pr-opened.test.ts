@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PROpenedTrigger } from '../../../src/triggers/github/pr-opened.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
+import { createMockProject } from '../../helpers/factories.js';
 
 vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
@@ -10,49 +11,30 @@ import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRep
 describe('PROpenedTrigger', () => {
 	const trigger = new PROpenedTrigger();
 
-	const mockProject = {
-		id: 'test',
-		name: 'Test',
-		repo: 'owner/repo',
-		baseBranch: 'main',
-		branchPrefix: 'feature/',
-		trello: {
-			boardId: 'board123',
-			lists: {
-				briefing: 'briefing-list-id',
-				planning: 'planning-list-id',
-				todo: 'todo-list-id',
-			},
-			labels: {},
-		},
-	};
+	const mockProject = createMockProject();
 
 	/** Project with prOpened + externalPrs enabled (most common config for external PR review) */
-	const mockProjectWithPrOpenedEnabled = {
-		...mockProject,
+	const mockProjectWithPrOpenedEnabled = createMockProject({
 		github: {
 			triggers: { prOpened: true, reviewTrigger: { externalPrs: true } },
 		},
-	};
+	});
 
 	/** Project with prOpened + ownPrsOnly (fires on implementer-authored PRs) */
-	const mockProjectWithOwnPrsOnly = {
-		...mockProject,
+	const mockProjectWithOwnPrsOnly = createMockProject({
 		github: {
 			triggers: { prOpened: true, reviewTrigger: { ownPrsOnly: true } },
 		},
-	};
+	});
 
 	/** Project with prOpened + both modes (fires on all PRs) */
-	const mockProjectWithBothModes = {
-		...mockProject,
+	const mockProjectWithBothModes = createMockProject({
 		github: {
 			triggers: { prOpened: true, reviewTrigger: { ownPrsOnly: true, externalPrs: true } },
 		},
-	};
+	});
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 	});
 

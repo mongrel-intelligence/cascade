@@ -79,7 +79,6 @@ const RUN_UUID = 'aaaaaaaa-1111-2222-3333-444444444444';
 
 describe('retry-run job submission with projectId', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockDbSelect.mockReturnValue({ from: mockDbFrom });
 		mockDbFrom.mockReturnValue({ where: mockDbWhere });
 	});

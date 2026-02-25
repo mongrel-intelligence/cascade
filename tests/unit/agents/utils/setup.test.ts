@@ -24,7 +24,6 @@ const mockReadFileSync = vi.mocked(readFileSync);
 const mockRunCommand = vi.mocked(runCommand);
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	Reflect.deleteProperty(process.env, 'LLMIST_LOG_LEVEL');
 	Reflect.deleteProperty(process.env, 'LOG_LEVEL');
 });

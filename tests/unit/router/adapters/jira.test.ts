@@ -26,7 +26,7 @@ vi.mock('../../../../src/router/ackMessageGenerator.js', () => ({
 	extractJiraContext: vi.fn().mockReturnValue('Issue: PROJ-1'),
 	generateAckMessage: vi.fn().mockResolvedValue('Working on it...'),
 }));
-vi.mock('../../../../src/router/platformClients.js', () => ({
+vi.mock('../../../../src/router/platformClients/index.js', () => ({
 	resolveJiraCredentials: vi.fn().mockResolvedValue({
 		email: 'bot@example.com',
 		apiToken: 'tok',
@@ -60,7 +60,6 @@ const mockTriggerRegistry = {
 } as unknown as TriggerRegistry;
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	vi.mocked(loadProjectConfig).mockResolvedValue({
 		projects: [mockProject],
 		fullProjects: [{ id: 'p1' } as never],

@@ -69,10 +69,6 @@ function createChain(resolveValue: unknown = []) {
 }
 
 describe('runsRepository - dashboard queries', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('listRuns', () => {
 		it('returns data and total count', async () => {
 			const dataChain = createChain([{ id: 'run-1', agentType: 'impl' }]);

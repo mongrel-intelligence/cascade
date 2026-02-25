@@ -4,7 +4,7 @@
  */
 
 export interface TriggerDef {
-	/** Dot-notation path into the triggers config, e.g. "cardMovedToBriefing" or "readyToProcessLabel.briefing" */
+	/** Dot-notation path into the triggers config, e.g. "cardMovedToSplitting" or "readyToProcessLabel.splitting" */
 	key: string;
 	label: string;
 	description: string;
@@ -58,29 +58,29 @@ export const SHARED_PM_TRIGGERS: TriggerDef[] = [
  * Map from agent type to the trigger toggles relevant to it.
  */
 export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
-	briefing: [
+	splitting: [
 		{
-			key: 'cardMovedToBriefing',
-			label: 'Card moved to Briefing',
-			description: 'Trigger briefing agent when a card is moved to the Briefing list.',
+			key: 'cardMovedToSplitting',
+			label: 'Card moved to Splitting',
+			description: 'Trigger splitting agent when a card is moved to the Splitting list.',
 			defaultValue: true,
 			pmProvider: 'trello',
 			category: 'pm',
 		},
 		{
-			key: 'issueTransitioned.briefing',
+			key: 'issueTransitioned.splitting',
 			label: 'Issue Transitioned',
 			description:
-				'Trigger briefing agent when a JIRA issue transitions to the configured Briefing status.',
+				'Trigger splitting agent when a JIRA issue transitions to the configured Splitting status.',
 			defaultValue: true,
 			pmProvider: 'jira',
 			category: 'pm',
 		},
 		{
-			key: 'readyToProcessLabel.briefing',
+			key: 'readyToProcessLabel.splitting',
 			label: 'Ready to Process label',
 			description:
-				'Trigger briefing agent when the "Ready to Process" label is added to a card in the Briefing list.',
+				'Trigger splitting agent when the "Ready to Process" label is added to a card in the Splitting list.',
 			defaultValue: true,
 			category: 'pm',
 		},
@@ -228,7 +228,7 @@ export function getTriggersForAgent(
 
 /**
  * Get the trigger value from a flat triggers record using dot-notation path.
- * e.g. "readyToProcessLabel.briefing" reads triggers.readyToProcessLabel.briefing
+ * e.g. "readyToProcessLabel.splitting" reads triggers.readyToProcessLabel.splitting
  */
 export function getTriggerValue(
 	triggers: Record<string, unknown>,
@@ -241,7 +241,7 @@ export function getTriggerValue(
 		if (typeof val === 'boolean') return val;
 		return defaultValue;
 	}
-	// Nested path (e.g., readyToProcessLabel.briefing)
+	// Nested path (e.g., readyToProcessLabel.splitting)
 	const [parent, child] = parts;
 	const parentVal = triggers[parent];
 	if (typeof parentVal === 'boolean') {
@@ -267,14 +267,14 @@ export function setTriggerValue(
 	if (parts.length === 1) {
 		return { ...triggers, [key]: value };
 	}
-	// Nested path (e.g., readyToProcessLabel.briefing)
+	// Nested path (e.g., readyToProcessLabel.splitting)
 	const [parent, child] = parts;
 	const parentVal = triggers[parent];
 	let parentObj: Record<string, unknown> = {};
 	if (typeof parentVal === 'boolean') {
 		// Expand legacy boolean into object — apply the boolean value to all agents
 		parentObj = {
-			briefing: parentVal,
+			splitting: parentVal,
 			planning: parentVal,
 			implementation: parentVal,
 		};
@@ -291,7 +291,7 @@ export function setTriggerValue(
  * All known agent types in display order.
  */
 export const ALL_AGENT_TYPES = [
-	'briefing',
+	'splitting',
 	'planning',
 	'implementation',
 	'review',

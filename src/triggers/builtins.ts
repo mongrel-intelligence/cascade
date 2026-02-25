@@ -24,8 +24,8 @@ import { JiraIssueTransitionedTrigger } from './jira/issue-transitioned.js';
 import { JiraReadyToProcessLabelTrigger } from './jira/label-added.js';
 import type { TriggerRegistry } from './registry.js';
 import {
-	CardMovedToBriefingTrigger,
 	CardMovedToPlanningTrigger,
+	CardMovedToSplittingTrigger,
 	CardMovedToTodoTrigger,
 } from './trello/card-moved.js';
 import { TrelloCommentMentionTrigger } from './trello/comment-mention.js';
@@ -37,7 +37,7 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 	registry.register(new TrelloCommentMentionTrigger());
 
 	// Trello: Card moved triggers (factory-created objects)
-	registry.register(CardMovedToBriefingTrigger);
+	registry.register(CardMovedToSplittingTrigger);
 	registry.register(CardMovedToPlanningTrigger);
 	registry.register(CardMovedToTodoTrigger);
 
@@ -48,7 +48,7 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 	// Must be registered before issue transition trigger so it gets first crack at comment events
 	registry.register(new JiraCommentMentionTrigger());
 
-	// JIRA: Issue transitioned trigger (runs briefing/planning/implementation based on status)
+	// JIRA: Issue transitioned trigger (runs splitting/planning/implementation based on status)
 	registry.register(new JiraIssueTransitionedTrigger());
 
 	// JIRA: Label trigger (runs agent based on current status when cascade-ready label is added)

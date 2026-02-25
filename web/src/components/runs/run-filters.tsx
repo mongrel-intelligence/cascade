@@ -12,7 +12,7 @@ interface RunFiltersProps {
 
 const statuses = ['running', 'completed', 'failed', 'timed_out'];
 const agentTypes = [
-	'briefing',
+	'splitting',
 	'planning',
 	'implementation',
 	'review',

@@ -37,7 +37,7 @@ vi.mock('../../../src/triggers/jira/label-added.js', () => ({
 	JiraReadyToProcessLabelTrigger: vi.fn().mockImplementation(() => ({ name: 'jira-label-added' })),
 }));
 vi.mock('../../../src/triggers/trello/card-moved.js', () => ({
-	CardMovedToBriefingTrigger: { name: 'card-moved-to-briefing' },
+	CardMovedToSplittingTrigger: { name: 'card-moved-to-splitting' },
 	CardMovedToPlanningTrigger: { name: 'card-moved-to-planning' },
 	CardMovedToTodoTrigger: { name: 'card-moved-to-todo' },
 }));
@@ -72,10 +72,6 @@ function createMockRegistry(): { register: ReturnType<typeof vi.fn>; handlers: o
 	};
 }
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('registerBuiltInTriggers', () => {
 	it('registers all expected trigger handlers', () => {
 		const registry = createMockRegistry();
@@ -101,7 +97,7 @@ describe('registerBuiltInTriggers', () => {
 		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
 
 		const registeredNames = registry.handlers.map((h: object) => (h as { name: string }).name);
-		expect(registeredNames).toContain('card-moved-to-briefing');
+		expect(registeredNames).toContain('card-moved-to-splitting');
 		expect(registeredNames).toContain('card-moved-to-planning');
 		expect(registeredNames).toContain('card-moved-to-todo');
 	});
@@ -140,7 +136,7 @@ describe('registerBuiltInTriggers', () => {
 
 		const names = registry.handlers.map((h: object) => (h as { name: string }).name);
 		const commentMentionIdx = names.indexOf('trello-comment-mention');
-		const cardMovedIdx = names.indexOf('card-moved-to-briefing');
+		const cardMovedIdx = names.indexOf('card-moved-to-splitting');
 		expect(commentMentionIdx).toBeLessThan(cardMovedIdx);
 	});
 

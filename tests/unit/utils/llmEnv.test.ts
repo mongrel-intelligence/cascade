@@ -19,7 +19,6 @@ import { injectLlmApiKeys } from '../../../src/utils/llmEnv.js';
 const mockGetOrgCredential = vi.mocked(getOrgCredential);
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	// Clean up the env var before each test
 	Reflect.deleteProperty(process.env, 'OPENROUTER_API_KEY');
 });

@@ -47,10 +47,6 @@ function makeStopInput(): StopHookInput {
 	};
 }
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('buildPreToolUseHooks', () => {
 	it('blocks gh pr create commands', async () => {
 		const logWriter = makeLogWriter();

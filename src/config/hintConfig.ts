@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process';
 import type { TrailingMessage } from 'llmist';
+import { loadAgentDefinition } from '../agents/definitions/index.js';
 import {
 	formatDiagnosticStatus,
 	getDiagnosticLoopFiles,
@@ -8,37 +9,19 @@ import {
 import { formatTodoList, loadTodos } from '../gadgets/todo/storage.js';
 
 /**
- * Agent-specific batch hints.
- * Each agent type gets guidance relevant to its available gadgets.
- */
-const AGENT_HINTS: Record<string, string> = {
-	// Agents with file editing capabilities
-	implementation:
-		'Complete the current todo in as few iterations as possible. Batch related edits together. Verify with Tmux after edits. NEVER mark acceptance criteria complete without passing verification.',
-	'respond-to-review':
-		'Address the current review comment fully before moving to the next. Batch related file edits together.',
-	'respond-to-ci':
-		'Fix CI failures with minimal, focused changes. Batch related file edits together.',
-
-	// Read-only agents
-	review:
-		'Focus on the current aspect of review before moving to the next. Read related files together.',
-	briefing: 'Gather all context needed for the current step before proceeding.',
-	planning: 'Complete the current planning step efficiently before moving to the next.',
-	debug: 'Analyze the current issue fully before moving to the next.',
-
-	// Default fallback
-	default: 'Complete the current task efficiently before moving to the next.',
-};
-
-/**
  * Get the agent-specific hint for batch processing.
+ * Reads from YAML definition; falls back to a default for unknown types.
  */
 function getAgentHint(agentType?: string): string {
-	if (agentType && agentType in AGENT_HINTS) {
-		return AGENT_HINTS[agentType];
+	if (agentType) {
+		try {
+			const def = loadAgentDefinition(agentType);
+			return def.hint;
+		} catch {
+			// Unknown agent type — fall through to default
+		}
 	}
-	return AGENT_HINTS.default;
+	return 'Complete the current task efficiently before moving to the next.';
 }
 
 /**
@@ -99,59 +82,58 @@ function formatIterationStatus(
 }
 
 /**
- * Get trailing message function for iteration tracking.
- *
- * Injects iteration budget awareness into each LLM call:
- * - Always shows current iteration, remaining count, and percentage
- * - Adds urgency indicator when running low on iterations
- * - Includes agent-specific batch processing hints
- * - For implementation agent: includes current todo list for visibility
- *
- * Note: Loop detection warnings are injected as separate user messages
- * (see agentLoop.ts) rather than in trailing messages for higher visibility.
- *
- * Trailing messages are ephemeral - they appear in each request but don't
- * persist to conversation history, keeping context clean.
- *
- * @param agentType - The type of agent (e.g., 'implementation', 'review')
- * @returns Trailing message function
+ * Build the full trailing message with all optional sections.
  */
-/**
- * Build the trailing message for the implementation agent.
- * Includes diagnostics, todo progress, git status, PR status, and reminders.
- */
-function buildImplementationTrailingMessage(timestamp: string, iterationStatus: string): string {
+function buildFullTrailingMessage(
+	timestamp: string,
+	iterationStatus: string,
+	flags: {
+		includeDiagnostics?: boolean;
+		includeTodoProgress?: boolean;
+		includeGitStatus?: boolean;
+		includePRStatus?: boolean;
+		includeReminder?: boolean;
+	},
+): string {
 	const sections: string[] = [timestamp, iterationStatus];
 
-	if (hasAnyDiagnosticErrors()) {
+	if (flags.includeDiagnostics && hasAnyDiagnosticErrors()) {
 		sections.push(formatDiagnosticStatus());
 		const loopWarning = formatDiagnosticLoopWarning();
 		if (loopWarning) sections.push(loopWarning);
 	}
 
-	const todos = loadTodos();
-	if (todos.length > 0) {
-		sections.push(`## Current Progress\n\n${formatTodoList(todos)}`);
+	if (flags.includeTodoProgress) {
+		const todos = loadTodos();
+		if (todos.length > 0) {
+			sections.push(`## Current Progress\n\n${formatTodoList(todos)}`);
+		}
 	}
 
-	const gitStatus = getGitStatus();
-	sections.push(
-		gitStatus
-			? `## Git Status\n\n\`\`\`\n${gitStatus}\n\`\`\``
-			: '## Git Status\n\nNo uncommitted changes.',
-	);
+	if (flags.includeGitStatus) {
+		const gitStatus = getGitStatus();
+		sections.push(
+			gitStatus
+				? `## Git Status\n\n\`\`\`\n${gitStatus}\n\`\`\``
+				: '## Git Status\n\nNo uncommitted changes.',
+		);
+	}
 
-	const prView = getPRView();
-	sections.push(
-		prView
-			? `## PR Status\n\n\`\`\`\n${prView}\n\`\`\``
-			: '## PR Status\n\nNo PR exists for current branch.',
-	);
+	if (flags.includePRStatus) {
+		const prView = getPRView();
+		sections.push(
+			prView
+				? `## PR Status\n\n\`\`\`\n${prView}\n\`\`\``
+				: '## PR Status\n\nNo PR exists for current branch.',
+		);
+	}
 
-	sections.push(
-		'## Reminder\n\nCall multiple gadgets in a single response when you know which ones you need. ' +
-			'For example, read multiple related files at once, or make multiple independent edits together.',
-	);
+	if (flags.includeReminder) {
+		sections.push(
+			'## Reminder\n\nCall multiple gadgets in a single response when you know which ones you need. ' +
+				'For example, read multiple related files at once, or make multiple independent edits together.',
+		);
+	}
 
 	return sections.join('\n\n');
 }
@@ -185,25 +167,53 @@ function formatDiagnosticLoopWarning(): string | null {
 	return lines.join('\n');
 }
 
+/**
+ * Get trailing message function for iteration tracking.
+ *
+ * Injects iteration budget awareness into each LLM call:
+ * - Always shows current iteration, remaining count, and percentage
+ * - Adds urgency indicator when running low on iterations
+ * - Includes agent-specific batch processing hints
+ * - Uses YAML trailingMessage flags to decide which extra sections to include
+ *
+ * Note: Loop detection warnings are injected as separate user messages
+ * (see agentLoop.ts) rather than in trailing messages for higher visibility.
+ *
+ * Trailing messages are ephemeral - they appear in each request but don't
+ * persist to conversation history, keeping context clean.
+ *
+ * @param agentType - The type of agent (e.g., 'implementation', 'review')
+ * @returns Trailing message function
+ */
 export function getIterationTrailingMessage(agentType?: string): TrailingMessage {
 	const batchHint = getAgentHint(agentType);
+
+	// Resolve trailing message flags from YAML definition
+	let flags: {
+		includeDiagnostics?: boolean;
+		includeTodoProgress?: boolean;
+		includeGitStatus?: boolean;
+		includePRStatus?: boolean;
+		includeReminder?: boolean;
+	} = {};
+
+	if (agentType) {
+		try {
+			const def = loadAgentDefinition(agentType);
+			flags = def.trailingMessage ?? {};
+		} catch {
+			// Unknown agent type — use empty flags (basic message only)
+		}
+	}
+
+	const hasAnyFlag = Object.values(flags).some(Boolean);
 
 	return (ctx) => {
 		const timestamp = `**Timestamp:** ${getCurrentTimestamp()}`;
 		const iterationStatus = formatIterationStatus(ctx.iteration, ctx.maxIterations, batchHint);
 
-		if (agentType === 'implementation') {
-			return buildImplementationTrailingMessage(timestamp, iterationStatus);
-		}
-
-		if (
-			(agentType === 'respond-to-review' || agentType === 'respond-to-ci') &&
-			hasAnyDiagnosticErrors()
-		) {
-			const sections = [timestamp, iterationStatus, formatDiagnosticStatus()];
-			const loopWarning = formatDiagnosticLoopWarning();
-			if (loopWarning) sections.push(loopWarning);
-			return sections.join('\n\n');
+		if (hasAnyFlag) {
+			return buildFullTrailingMessage(timestamp, iterationStatus, flags);
 		}
 
 		return `${timestamp}\n\n${iterationStatus}`;

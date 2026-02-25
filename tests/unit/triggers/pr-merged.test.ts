@@ -52,6 +52,7 @@ import '../../../src/pm/index.js';
 
 import { PRMergedTrigger } from '../../../src/triggers/github/pr-merged.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
+import { createMockProject } from '../../helpers/factories.js';
 
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { githubClient } from '../../../src/github/client.js';
@@ -59,26 +60,20 @@ import { githubClient } from '../../../src/github/client.js';
 describe('PRMergedTrigger', () => {
 	const trigger = new PRMergedTrigger();
 
-	const mockProject = {
-		id: 'test',
-		name: 'Test',
-		repo: 'owner/repo',
-		baseBranch: 'main',
-		branchPrefix: 'feature/',
+	const mockProject = createMockProject({
 		trello: {
 			boardId: 'board123',
 			lists: {
-				briefing: 'briefing-list-id',
+				splitting: 'splitting-list-id',
 				planning: 'planning-list-id',
 				todo: 'todo-list-id',
 				merged: 'merged-list-id',
 			},
 			labels: {},
 		},
-	};
+	});
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 	});
 
@@ -321,7 +316,7 @@ describe('PRMergedTrigger', () => {
 				trello: {
 					...mockProject.trello,
 					lists: {
-						briefing: 'briefing-list-id',
+						splitting: 'splitting-list-id',
 						planning: 'planning-list-id',
 						todo: 'todo-list-id',
 						// merged list not configured

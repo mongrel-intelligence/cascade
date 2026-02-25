@@ -1,12 +1,12 @@
 # CASCADE
 
-Multi-project Trello-to-code automation platform. CASCADE reacts to Trello card movements and triggers AI agents to handle briefing, planning, and implementation tasks.
+Multi-project Trello-to-code automation platform. CASCADE reacts to Trello card movements and triggers AI agents to handle splitting, planning, and implementation tasks.
 
 ## Features
 
 - **Multi-project support** - Single deployment handles multiple repos/Trello boards
 - **Extensible trigger system** - Easy to add new triggers (card moved, label added, PR ready, etc.)
-- **AI-powered agents** - Briefing, planning, implementation, review, and debug agents using llmist
+- **AI-powered agents** - Splitting, planning, implementation, review, and debug agents using llmist
 - **Git workflow** - Automatic branch creation, commits, and PR creation
 - **Trello integration** - Full card management (labels, comments, attachments)
 - **GitHub integration** - PR review webhooks, automatic card movement, CI check monitoring
@@ -102,7 +102,7 @@ Edit `config/projects.json` to add your projects:
       "trello": {
         "boardId": "your_board_id",
         "lists": {
-          "briefing": "list_id_for_briefing",
+          "splitting": "list_id_for_splitting",
           "planning": "list_id_for_planning",
           "todo": "list_id_for_todo",
           "inProgress": "list_id_for_in_progress",
@@ -124,7 +124,7 @@ Edit `config/projects.json` to add your projects:
 
 | List | Purpose |
 |------|---------|
-| `briefing` | Cards here trigger the briefing agent (refines requirements) |
+| `splitting` | Cards here trigger the splitting agent (splits plan into work items) |
 | `planning` | Cards here trigger the planning agent (creates implementation plan) |
 | `todo` | Cards here trigger the implementation agent (writes code, creates PR) |
 | `inProgress` | Cards being actively worked on |
@@ -215,7 +215,7 @@ export class MyCustomTrigger implements TriggerHandler {
 
   async handle(ctx: TriggerContext): Promise<TriggerResult> {
     return {
-      agentType: 'implementation', // or 'briefing', 'planning'
+      agentType: 'implementation', // or 'splitting', 'planning'
       agentInput: { /* data for the agent */ },
       cardId: 'optional-card-id',
     };

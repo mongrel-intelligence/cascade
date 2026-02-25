@@ -83,13 +83,20 @@ async function buildBackendInput(
 		// DB not available — fall back to disk-only partials
 	}
 
-	const { systemPrompt, model, maxIterations, contextFiles } = await resolveModelConfig({
+	const {
+		systemPrompt,
+		taskPrompt: taskPromptOverride,
+		model,
+		maxIterations,
+		contextFiles,
+	} = await resolveModelConfig({
 		agentType,
 		project,
 		config,
 		repoDir,
 		promptContext,
 		dbPartials,
+		agentInput: input,
 	});
 
 	const profile = getAgentProfile(agentType);
@@ -123,7 +130,7 @@ async function buildBackendInput(
 		config,
 		repoDir,
 		systemPrompt,
-		taskPrompt: profile.buildTaskPrompt(input),
+		taskPrompt: taskPromptOverride ?? profile.buildTaskPrompt(input),
 		cliToolsDir,
 		availableTools: profile.filterTools(getToolManifests()),
 		contextInjections,
@@ -136,6 +143,39 @@ async function buildBackendInput(
 		enableStopHooks: profile.enableStopHooks,
 		blockGitPush: profile.blockGitPush,
 		...(Object.keys(projectSecrets).length > 0 && { projectSecrets }),
+	};
+}
+
+/**
+ * Build progress-monitor config from pipeline inputs.
+ */
+function buildProgressMonitorConfig(
+	input: AgentInput & { config: CascadeConfig },
+	agentType: string,
+	logWriter: LogWriter,
+	repoDir: string | null,
+	isGitHubAck: boolean,
+) {
+	const { cardId } = input;
+	return {
+		logWriter,
+		agentType,
+		taskDescription: cardId ? `Work item ${cardId}` : 'Unknown task',
+		progressModel: input.config.defaults.progressModel,
+		intervalMinutes: input.config.defaults.progressIntervalMinutes,
+		customModels: CUSTOM_MODELS as ModelSpec[],
+		repoDir: repoDir ?? undefined,
+		trello: cardId ? { cardId } : undefined,
+		preSeededCommentId: isGitHubAck ? undefined : (input.ackCommentId as string | undefined),
+		...(input.prNumber && input.repoFullName
+			? {
+					github: {
+						owner: input.repoFullName.split('/')[0],
+						repo: input.repoFullName.split('/')[1],
+						headerMessage: input.ackMessage ?? '',
+					},
+				}
+			: {}),
 	};
 }
 
@@ -207,28 +247,9 @@ export async function executeWithBackend(
 				recordInitialComment(input.ackCommentId as number);
 			}
 
-			const monitor = createProgressMonitor({
-				logWriter,
-				agentType,
-				taskDescription: cardId ? `Work item ${cardId}` : 'Unknown task',
-				progressModel: input.config.defaults.progressModel,
-				intervalMinutes: input.config.defaults.progressIntervalMinutes,
-				customModels: CUSTOM_MODELS as ModelSpec[],
-				repoDir: repoDir ?? undefined,
-				trello: cardId ? { cardId } : undefined,
-				// Only use preSeededCommentId for PM (Trello/JIRA) ack comments, not GitHub
-				preSeededCommentId: isGitHubAck ? undefined : (input.ackCommentId as string | undefined),
-				// Pass GitHub config so progress monitor can update the PR comment
-				...(input.prNumber && input.repoFullName
-					? {
-							github: {
-								owner: input.repoFullName.split('/')[0],
-								repo: input.repoFullName.split('/')[1],
-								headerMessage: input.ackMessage ?? '',
-							},
-						}
-					: {}),
-			});
+			const monitor = createProgressMonitor(
+				buildProgressMonitorConfig(input, agentType, logWriter, repoDir, isGitHubAck),
+			);
 
 			const backendInput: AgentBackendInput = {
 				...partialInput,
@@ -238,6 +259,7 @@ export async function executeWithBackend(
 					onText: () => {},
 				},
 				runId,
+				llmistLogPath: fileLogger.llmistLogPath,
 			};
 
 			monitor?.start();
@@ -248,7 +270,9 @@ export async function executeWithBackend(
 				monitor?.stop();
 			}
 
-			postProcessResult(result, agentType, backend, input, identifier);
+			postProcessResult(result, agentType, backend, input, identifier, {
+				requiresPR: profile.requiresPR,
+			});
 
 			return {
 				success: result.success,

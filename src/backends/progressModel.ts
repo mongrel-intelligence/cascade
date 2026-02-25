@@ -7,7 +7,7 @@
 
 import { LLMist, type ModelSpec } from 'llmist';
 
-import { getAgentLabel } from '../config/agentMessages.js';
+import { AGENT_ROLE_HINTS, getAgentLabel } from '../config/agentMessages.js';
 import type { Todo } from '../gadgets/todo/storage.js';
 
 export interface ProgressContext {
@@ -40,6 +40,7 @@ function formatProgressUserPrompt(context: ProgressContext): string {
 
 	const sections: string[] = [
 		`Agent: ${agentType}`,
+		`Agent role: ${AGENT_ROLE_HINTS[agentType] ?? 'Processes the request'}`,
 		`Progress header: **${emoji} ${label}** (${Math.round(elapsedMinutes)} min)`,
 		`Task: ${taskDescription.slice(0, 500)}`,
 		`Time elapsed: ${Math.round(elapsedMinutes)} minutes`,

@@ -15,10 +15,6 @@ describe('crypto', () => {
 		vi.stubEnv('CREDENTIAL_MASTER_KEY', TEST_KEY);
 	});
 
-	afterEach(() => {
-		vi.unstubAllEnvs();
-	});
-
 	describe('isEncryptionEnabled', () => {
 		it('returns true when CREDENTIAL_MASTER_KEY is set', () => {
 			expect(isEncryptionEnabled()).toBe(true);

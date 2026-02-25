@@ -1,90 +1,15 @@
 /**
- * Shared task prompt builders used by both backends.
+ * Shared task prompt builders for prompts NOT managed via the YAML profile system.
  *
- * The llmist backend (agents/base.ts) and the Claude Code backend
- * (backends/agent-profiles.ts) both need task-level prompts for each agent type.
- * This module is the single source of truth so the two backends produce
- * identical instructions for each agent type.
+ * Task prompts managed through YAML profiles (workItem, commentResponse, review,
+ * ci, prCommentResponse) are now .eta templates in `src/agents/prompts/task-templates/`
+ * rendered via `renderTaskPrompt()` in the profile builder.
+ *
+ * This module retains only the two prompts called directly by trigger handlers/agents,
+ * not through the profile system: `buildCheckFailurePrompt` and `buildDebugPrompt`.
  */
 
 import { parseRepoFullName } from '../../utils/repo.js';
-
-// ============================================================================
-// Work-item agents
-// ============================================================================
-
-/**
- * Standard prompt for agents whose primary task is processing a work item
- * (briefing, planning, implementation, debug).
- */
-export function buildWorkItemPrompt(cardId: string): string {
-	return `Analyze and process the work item with ID: ${cardId}. The work item data has been pre-loaded.`;
-}
-
-/**
- * Prompt for agents responding to a PM comment mentioning them.
- */
-export function buildCommentResponsePrompt(
-	cardId: string,
-	commentText: string,
-	commentAuthor: string,
-): string {
-	return `A user (@${commentAuthor}) mentioned you in a comment on work item ${cardId}.
-
-Their comment:
----
-${commentText}
----
-
-The work item data (title, description, checklists, attachments, comments) has been pre-loaded above.
-Read the user's comment carefully and classify it: if they ask a question or request clarification, reply with a thorough answer via PostComment (do not modify the plan). If they request plan changes, make surgical, targeted updates. If the comment contains both a question and a change request, do both. Default to plan updates when intent is ambiguous.`;
-}
-
-// ============================================================================
-// PR agents
-// ============================================================================
-
-/**
- * Prompt for the review agent.
- */
-export function buildReviewPrompt(prNumber: number): string {
-	return `Review PR #${prNumber}.
-
-Examine the code changes carefully and submit your review using CreatePRReview.`;
-}
-
-/**
- * Prompt for the respond-to-ci agent.
- */
-export function buildCIResponsePrompt(prBranch: string, prNumber: number): string {
-	return `You are on the branch \`${prBranch}\` for PR #${prNumber}.
-
-CI checks have failed. Analyze the failures and fix them.`;
-}
-
-/**
- * Prompt for PR-comment-response agents (respond-to-review, respond-to-pr-comment).
- */
-export function buildPRCommentResponsePrompt(
-	prBranch: string,
-	prNumber: number,
-	commentBody: string,
-	commentPath?: string,
-): string {
-	const pathContext = commentPath ? `\nFile: ${commentPath}` : '';
-
-	return `You are on the branch \`${prBranch}\` for PR #${prNumber}.
-
-A user commented on this PR and mentioned you. Respond to their comment.
-${pathContext}
-
-Their comment:
----
-${commentBody}
----
-
-Read the comment carefully and respond accordingly. If they ask for code changes, make the changes, commit, and push. If they ask a question, reply with a PR comment. Default to surgical, targeted changes unless they clearly ask for something broader.`;
-}
 
 /**
  * Prompt for the respond-to-ci agent (llmist backend format — includes GitHub context).

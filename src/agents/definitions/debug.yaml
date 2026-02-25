@@ -1,0 +1,28 @@
+identity:
+  emoji: "\U0001F41B"
+  label: Debug Update
+  roleHint: Analyzes session logs to identify what went wrong
+  initialMessage: "**\U0001F41B Analyzing session logs** — Reviewing what happened and identifying issues..."
+
+capabilities:
+  canEditFiles: true
+  canCreatePR: true
+  canUpdateChecklists: true
+  isReadOnly: false
+
+tools:
+  sets: [all]
+  sdkTools: all
+
+strategies:
+  contextPipeline: [directoryListing, contextFiles, squint, workItem]
+  taskPromptBuilder: workItem
+  gadgetBuilder: workItem
+
+backend:
+  enableStopHooks: true
+  needsGitHubToken: false
+
+compaction: default
+
+hint: Analyze the current issue fully before moving to the next.

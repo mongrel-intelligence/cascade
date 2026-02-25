@@ -43,7 +43,7 @@ const mockProject = {
 	trello: {
 		boardId: 'board-123',
 		lists: {
-			briefing: 'briefing-list-id',
+			splitting: 'splitting-list-id',
 			planning: PLANNING_LIST_ID,
 			todo: 'todo-list-id',
 		},

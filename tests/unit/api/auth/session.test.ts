@@ -11,10 +11,6 @@ vi.mock('../../../../src/db/repositories/usersRepository.js', () => ({
 import { resolveUserFromSession } from '../../../../src/api/auth/session.js';
 
 describe('resolveUserFromSession', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('returns DashboardUser when token maps to valid session and user', async () => {
 		const mockUser = {
 			id: 'user-1',

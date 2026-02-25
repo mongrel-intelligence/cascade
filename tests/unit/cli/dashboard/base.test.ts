@@ -94,10 +94,6 @@ describe('extractBaseFlags', () => {
 });
 
 describe('DashboardCommand', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('config loading', () => {
 		it('errors when not logged in (no config)', async () => {
 			mockLoadConfig.mockReturnValue(null);

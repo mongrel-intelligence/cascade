@@ -1,0 +1,28 @@
+identity:
+  emoji: "\U0001F4AC"
+  label: Planning Response Update
+  roleHint: Reads user feedback and updates the plan accordingly
+  initialMessage: "**\U0001F4AC Responding to feedback** — Reading your comment and updating the plan accordingly..."
+
+capabilities:
+  canEditFiles: false
+  canCreatePR: false
+  canUpdateChecklists: true
+  isReadOnly: true
+
+tools:
+  sets: [pm, pm_checklist, session]
+  sdkTools: readOnly
+
+strategies:
+  contextPipeline: [directoryListing, contextFiles, squint, workItem]
+  taskPromptBuilder: commentResponse
+  gadgetBuilder: workItem
+
+backend:
+  enableStopHooks: false
+  needsGitHubToken: false
+
+compaction: default
+
+hint: Complete the current task efficiently before moving to the next.

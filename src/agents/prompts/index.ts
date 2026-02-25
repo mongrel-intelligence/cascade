@@ -3,24 +3,18 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Eta } from 'eta';
 
+import { getKnownAgentTypes } from '../definitions/index.js';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const templatesDir = join(__dirname, 'templates');
+const taskTemplatesDir = join(__dirname, 'task-templates');
 
 // Initialize Eta with the templates directory
 const eta = new Eta({ views: templatesDir, autoEscape: false });
+const taskEta = new Eta({ views: taskTemplatesDir, autoEscape: false });
 
-// Valid agent types
-const validTypes = [
-	'briefing',
-	'planning',
-	'implementation',
-	'debug',
-	'respond-to-review',
-	'respond-to-ci',
-	'respond-to-pr-comment',
-	'respond-to-planning-comment',
-	'review',
-];
+// Valid agent types — derived from YAML definition files
+const validTypes = getKnownAgentTypes();
 
 // Template context interface
 export interface PromptContext {
@@ -37,7 +31,7 @@ export interface PromptContext {
 	workItemNounPluralCap?: string; // "Cards" or "Issues"
 	pmName?: string; // "Trello" or "JIRA"
 
-	// Briefing-specific
+	// Splitting-specific
 	storiesListId?: string;
 	processedLabelId?: string;
 
@@ -141,6 +135,51 @@ export function getSystemPrompt(
 	return eta.renderString(template, context);
 }
 
+// ============================================================================
+// Task Prompt Templates
+// ============================================================================
+
+/** Context for task prompt Eta rendering */
+export interface TaskPromptContext {
+	cardId?: string;
+	commentText?: string;
+	commentAuthor?: string;
+	prNumber?: number;
+	prBranch?: string;
+	commentBody?: string;
+	commentPath?: string;
+	[key: string]: unknown;
+}
+
+const taskTemplateCache = new Map<string, string>();
+
+function loadTaskTemplate(templateName: string): string {
+	const cached = taskTemplateCache.get(templateName);
+	if (cached) return cached;
+
+	const templatePath = join(taskTemplatesDir, `${templateName}.eta`);
+	const template = readFileSync(templatePath, 'utf-8');
+	taskTemplateCache.set(templateName, template);
+	return template;
+}
+
+/**
+ * Render a task prompt from a named `.eta` template in `task-templates/`.
+ * Supports DB partials via `include()` directives (same pattern as system prompts).
+ */
+export function renderTaskPrompt(
+	templateName: string,
+	context: TaskPromptContext = {},
+	dbPartials?: Map<string, string>,
+): string {
+	const template = loadTaskTemplate(templateName);
+	if (dbPartials && dbPartials.size > 0) {
+		const expanded = resolveIncludes(template, dbPartials);
+		return taskEta.renderString(expanded, context);
+	}
+	return taskEta.renderString(template, context);
+}
+
 /** Returns the raw .eta template source from disk (before rendering). */
 export function getRawTemplate(agentType: string): string {
 	if (!validTypes.includes(agentType)) {
@@ -189,8 +228,8 @@ export function getTemplateVariables(): Array<{
 		{ name: 'workItemNounCap', group: 'PM', description: 'Card or Issue' },
 		{ name: 'workItemNounPluralCap', group: 'PM', description: 'Cards or Issues' },
 		{ name: 'pmName', group: 'PM', description: 'Trello or JIRA' },
-		{ name: 'storiesListId', group: 'Briefing', description: 'Trello stories list ID' },
-		{ name: 'processedLabelId', group: 'Briefing', description: 'Trello processed label ID' },
+		{ name: 'storiesListId', group: 'Splitting', description: 'Trello stories list ID' },
+		{ name: 'processedLabelId', group: 'Splitting', description: 'Trello processed label ID' },
 		{ name: 'prNumber', group: 'CI', description: 'Pull request number' },
 		{ name: 'prBranch', group: 'CI', description: 'Pull request branch name' },
 		{ name: 'repoFullName', group: 'CI', description: 'Repository full name (owner/repo)' },
@@ -204,16 +243,3 @@ export function getTemplateVariables(): Array<{
 		{ name: 'debugListId', group: 'Debug', description: 'Debug list ID for output cards' },
 	];
 }
-
-// Export individual prompts for backwards compatibility (rendered without context)
-export const BRIEFING_SYSTEM_PROMPT = loadTemplate('briefing');
-export const PLANNING_SYSTEM_PROMPT = loadTemplate('planning');
-export const IMPLEMENTATION_SYSTEM_PROMPT = loadTemplate('implementation');
-export const DEBUG_SYSTEM_PROMPT = loadTemplate('debug');
-export const RESPOND_TO_REVIEW_SYSTEM_PROMPT = loadTemplate('respond-to-review');
-export const RESPOND_TO_CI_SYSTEM_PROMPT = loadTemplate('respond-to-ci');
-export const RESPOND_TO_PR_COMMENT_SYSTEM_PROMPT = loadTemplate('respond-to-pr-comment');
-export const RESPOND_TO_PLANNING_COMMENT_SYSTEM_PROMPT = loadTemplate(
-	'respond-to-planning-comment',
-);
-export const REVIEW_SYSTEM_PROMPT = loadTemplate('review');

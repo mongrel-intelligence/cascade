@@ -16,13 +16,9 @@ vi.mock('../../../src/gadgets/todo/storage.js', () => ({
 import { formatTodoList, loadTodos } from '../../../src/gadgets/todo/storage.js';
 
 describe('config/statusUpdateConfig', () => {
-	afterEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('getStatusUpdateConfig', () => {
 		it('returns enabled config for non-debug agents', () => {
-			const agentTypes = ['implementation', 'briefing', 'planning', 'review'];
+			const agentTypes = ['implementation', 'splitting', 'planning', 'review'];
 
 			for (const agentType of agentTypes) {
 				const config = getStatusUpdateConfig(agentType);
@@ -66,9 +62,9 @@ describe('config/statusUpdateConfig', () => {
 			expect(result).toEqual({ emoji: '🔍', label: 'Code Review Update' });
 		});
 
-		it('returns correct emoji and label for briefing', () => {
-			const result = getAgentLabel('briefing');
-			expect(result).toEqual({ emoji: '📋', label: 'Briefing Update' });
+		it('returns correct emoji and label for splitting', () => {
+			const result = getAgentLabel('splitting');
+			expect(result).toEqual({ emoji: '📋', label: 'Splitting Update' });
 		});
 
 		it('returns correct emoji and label for planning', () => {

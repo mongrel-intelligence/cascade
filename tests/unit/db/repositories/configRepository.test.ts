@@ -77,7 +77,7 @@ const jiraIntegration = {
 	config: {
 		projectKey: 'PROJ',
 		baseUrl: 'https://test.atlassian.net',
-		statuses: { briefing: 'Briefing', planning: 'Planning', todo: 'To Do' },
+		statuses: { splitting: 'Splitting', planning: 'Planning', todo: 'To Do' },
 		labels: { processing: 'my-proc', readyToProcess: 'my-ready' },
 	},
 	triggers: {},
@@ -115,8 +115,8 @@ const orgAgentConfig = {
 	id: 3,
 	orgId: 'default',
 	projectId: null,
-	agentType: 'briefing',
-	model: 'org-briefing-model',
+	agentType: 'splitting',
+	model: 'org-splitting-model',
 	maxIterations: 20,
 	agentBackend: null,
 	prompt: null,
@@ -163,10 +163,6 @@ function createSequentialMockDb(results: QueryResult[]) {
 }
 
 describe('configRepository', () => {
-	afterEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('loadConfigFromDb', () => {
 		it('loads config with Trello integration from project_integrations', async () => {
 			// loadConfigFromDb Promise.all order: defaults, projects, agentConfigs, integrations
@@ -201,7 +197,7 @@ describe('configRepository', () => {
 			expect(proj.jira?.projectKey).toBe('PROJ');
 			expect(proj.jira?.baseUrl).toBe('https://test.atlassian.net');
 			expect(proj.jira?.statuses).toEqual({
-				briefing: 'Briefing',
+				splitting: 'Splitting',
 				planning: 'Planning',
 				todo: 'To Do',
 			});
@@ -215,7 +211,7 @@ describe('configRepository', () => {
 				config: {
 					projectKey: 'PROJ',
 					baseUrl: 'https://test.atlassian.net',
-					statuses: { briefing: 'Briefing' },
+					statuses: { splitting: 'Splitting' },
 				},
 			};
 			const mockDb = createSequentialMockDb([[defaultsRow], [projectRow], [], [jiraNoLabels]]);
@@ -288,11 +284,11 @@ describe('configRepository', () => {
 
 			expect(config.defaults.agentModels).toEqual({
 				review: 'global-review-model',
-				briefing: 'org-briefing-model',
+				splitting: 'org-splitting-model',
 			});
 			expect(config.defaults.agentIterations).toEqual({
 				review: 30,
-				briefing: 20,
+				splitting: 20,
 			});
 		});
 

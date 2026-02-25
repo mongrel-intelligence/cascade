@@ -4,6 +4,8 @@ import {
 	resetFixAttempts,
 } from '../../../src/triggers/github/check-suite-failure.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
+import { createMockProject } from '../../helpers/factories.js';
+import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
 
 vi.mock('../../../src/github/client.js', () => ({
 	githubClient: {
@@ -23,22 +25,7 @@ import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRep
 describe('CheckSuiteFailureTrigger', () => {
 	const trigger = new CheckSuiteFailureTrigger();
 
-	const mockProject = {
-		id: 'test',
-		name: 'Test',
-		repo: 'owner/repo',
-		baseBranch: 'main',
-		branchPrefix: 'feature/',
-		trello: {
-			boardId: 'board123',
-			lists: {
-				briefing: 'briefing-list-id',
-				planning: 'planning-list-id',
-				todo: 'todo-list-id',
-			},
-			labels: {},
-		},
-	};
+	const mockProject = createMockProject();
 
 	const makeFailurePayload = (overrides: Record<string, unknown> = {}) => ({
 		action: 'completed',
@@ -55,7 +42,6 @@ describe('CheckSuiteFailureTrigger', () => {
 	});
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		resetFixAttempts(42);
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 	});
@@ -160,7 +146,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				project: mockProject,
 				source: 'github',
 				payload: makeFailurePayload(),
-				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
+				personaIdentities: mockPersonaIdentities,
 			};
 
 			const result = await trigger.handle(ctx);
@@ -197,7 +183,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				project: mockProject,
 				source: 'github',
 				payload: makeFailurePayload(),
-				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
+				personaIdentities: mockPersonaIdentities,
 			};
 
 			const result = await trigger.handle(ctx);
@@ -223,7 +209,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				project: mockProject,
 				source: 'github',
 				payload: makeFailurePayload(),
-				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
+				personaIdentities: mockPersonaIdentities,
 			};
 
 			const result = await trigger.handle(ctx);
@@ -277,7 +263,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				project: mockProject,
 				source: 'github',
 				payload: makeFailurePayload(),
-				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
+				personaIdentities: mockPersonaIdentities,
 			};
 
 			const result = await trigger.handle(ctx);
@@ -312,7 +298,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				project: mockProject,
 				source: 'github',
 				payload: makeFailurePayload(),
-				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
+				personaIdentities: mockPersonaIdentities,
 			};
 
 			const result = await trigger.handle(ctx);
@@ -345,7 +331,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				project: mockProject,
 				source: 'github',
 				payload: makeFailurePayload(),
-				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
+				personaIdentities: mockPersonaIdentities,
 			};
 
 			const result = await trigger.handle(ctx);
@@ -375,7 +361,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				project: mockProject,
 				source: 'github',
 				payload: makeFailurePayload(),
-				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
+				personaIdentities: mockPersonaIdentities,
 			};
 
 			// First 3 attempts should succeed
@@ -417,7 +403,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				project: mockProject,
 				source: 'github',
 				payload: makeFailurePayload(),
-				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-reviewer' },
+				personaIdentities: mockPersonaIdentities,
 			};
 
 			// Use up 3 attempts

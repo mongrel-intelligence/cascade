@@ -1,3 +1,38 @@
+import { getKnownAgentTypes, loadAgentDefinition } from '../agents/definitions/index.js';
+
+// ============================================================================
+// Agent Labels, Role Hints, and Initial Messages — derived from YAML definitions
+// ============================================================================
+
+function buildRecords(): {
+	labels: Record<string, { emoji: string; label: string }>;
+	roleHints: Record<string, string>;
+	initialMessages: Record<string, string>;
+} {
+	const labels: Record<string, { emoji: string; label: string }> = {};
+	const roleHints: Record<string, string> = {};
+	const initialMessages: Record<string, string> = {};
+
+	for (const agentType of getKnownAgentTypes()) {
+		const def = loadAgentDefinition(agentType);
+		labels[agentType] = { emoji: def.identity.emoji, label: def.identity.label };
+		roleHints[agentType] = def.identity.roleHint;
+		initialMessages[agentType] = def.identity.initialMessage;
+	}
+
+	return { labels, roleHints, initialMessages };
+}
+
+// Eager-load at module init (YAML files are on disk, read is fast)
+let labels: Record<string, { emoji: string; label: string }>;
+let roleHints: Record<string, string>;
+let initialMessages: Record<string, string>;
+try {
+	({ labels, roleHints, initialMessages } = buildRecords());
+} catch (err) {
+	throw new Error('Failed to load agent identity records from YAML definitions', { cause: err });
+}
+
 /**
  * Agent-specific emoji and label for progress update headers.
  *
@@ -5,17 +40,7 @@
  * - progressModel.ts — LLM prompt to produce correct header
  * - statusUpdateConfig.ts — template fallback header
  */
-export const AGENT_LABELS: Record<string, { emoji: string; label: string }> = {
-	briefing: { emoji: '📋', label: 'Briefing Update' },
-	planning: { emoji: '🗺️', label: 'Planning Update' },
-	implementation: { emoji: '🧑‍💻', label: 'Implementation Update' },
-	review: { emoji: '🔍', label: 'Code Review Update' },
-	'respond-to-planning-comment': { emoji: '💬', label: 'Planning Response Update' },
-	'respond-to-review': { emoji: '🔧', label: 'Review Response Update' },
-	'respond-to-pr-comment': { emoji: '💬', label: 'PR Comment Response Update' },
-	'respond-to-ci': { emoji: '🔧', label: 'CI Fix Update' },
-	debug: { emoji: '🐛', label: 'Debug Update' },
-};
+export const AGENT_LABELS: Record<string, { emoji: string; label: string }> = labels;
 
 /**
  * Get the emoji and label for a given agent type.
@@ -26,27 +51,19 @@ export function getAgentLabel(agentType: string): { emoji: string; label: string
 }
 
 /**
+ * Agent role hints — give LLMs context about what each agent type does.
+ *
+ * Used by:
+ * - ackMessageGenerator.ts — contextual acknowledgment messages
+ * - progressModel.ts — progress update generation
+ */
+export const AGENT_ROLE_HINTS: Record<string, string> = roleHints;
+
+/**
  * Human-readable initial messages per agent type.
  *
  * Used by:
  * - ProgressMonitor (worker-side) — initial comment on work item
  * - Router acknowledgments — immediate ack before worker starts
  */
-export const INITIAL_MESSAGES: Record<string, string> = {
-	briefing:
-		'**📋 Analyzing brief** — Reading the card and gathering context to create a clear brief...',
-	planning:
-		'**🗺️ Planning implementation** — Studying the codebase and designing a step-by-step plan...',
-	implementation:
-		'**🚀 Implementing changes** — Writing code, running tests, and preparing a PR...',
-	review: '**🔍 Reviewing code** — Examining the PR changes for quality and correctness...',
-	'respond-to-planning-comment':
-		'**💬 Responding to feedback** — Reading your comment and updating the plan accordingly...',
-	'respond-to-review':
-		'**🔧 Addressing review feedback** — Making the requested changes from the code review...',
-	'respond-to-pr-comment':
-		'**💬 Responding to PR comment** — Reading your comment and taking action...',
-	'respond-to-ci':
-		'**🔧 Fixing CI failures** — Analyzing the failed checks and working on a fix...',
-	debug: '**🐛 Analyzing session logs** — Reviewing what happened and identifying issues...',
-};
+export const INITIAL_MESSAGES: Record<string, string> = initialMessages;

@@ -12,8 +12,8 @@ import {
 } from '../../../src/agents/prompts/index.js';
 
 describe('getSystemPrompt', () => {
-	it('returns briefing prompt for briefing agent', () => {
-		const prompt = getSystemPrompt('briefing');
+	it('returns splitting prompt for splitting agent', () => {
+		const prompt = getSystemPrompt('splitting');
 		expect(prompt).toContain('product manager');
 		expect(prompt).toContain('DO NOT IMPLEMENT');
 	});
@@ -34,8 +34,8 @@ describe('getSystemPrompt', () => {
 		expect(() => getSystemPrompt('unknown')).toThrow('Unknown agent type: unknown');
 	});
 
-	it('renders context variables in briefing prompt', () => {
-		const prompt = getSystemPrompt('briefing', {
+	it('renders context variables in splitting prompt', () => {
+		const prompt = getSystemPrompt('splitting', {
 			storiesListId: 'stories-123',
 			processedLabelId: 'label-456',
 		});
@@ -44,7 +44,7 @@ describe('getSystemPrompt', () => {
 	});
 
 	it('uses default values when context is not provided', () => {
-		const prompt = getSystemPrompt('briefing');
+		const prompt = getSystemPrompt('splitting');
 		expect(prompt).toContain('STORIES_LIST_ID: NOT_CONFIGURED');
 		expect(prompt).toContain('PROCESSED_LABEL_ID: NOT_CONFIGURED');
 	});
@@ -59,8 +59,8 @@ describe('getSystemPrompt', () => {
 });
 
 describe('system prompts content', () => {
-	it('briefing prompt includes key instructions', () => {
-		const prompt = getSystemPrompt('briefing');
+	it('splitting prompt includes key instructions', () => {
+		const prompt = getSystemPrompt('splitting');
 		expect(prompt).toContain('ReadWorkItem');
 		expect(prompt).toContain('CreateWorkItem');
 		expect(prompt).toContain('INVEST');
@@ -108,6 +108,18 @@ describe('system prompts content', () => {
 		expect(prompt).toContain('Category A (Question)');
 		expect(prompt).toContain('Category B (Plan Update)');
 		expect(prompt).toContain('Category C (Both)');
+	});
+
+	it('planning prompt instructs AddChecklist items to not use Step N prefixes', () => {
+		const prompt = getSystemPrompt('planning');
+		expect(prompt).toContain('do NOT include "Step N:" prefixes');
+		expect(prompt).toContain('Add helper function');
+	});
+
+	it('respond-to-planning-comment prompt instructs checklist items to not use Step N prefixes', () => {
+		const prompt = getSystemPrompt('respond-to-planning-comment');
+		expect(prompt).toContain('Step N:');
+		expect(prompt).toContain('clean task names without');
 	});
 });
 
@@ -213,7 +225,7 @@ describe('validateTemplate', () => {
 
 describe('getRawTemplate', () => {
 	it('returns raw .eta template content', () => {
-		const raw = getRawTemplate('briefing');
+		const raw = getRawTemplate('splitting');
 		expect(raw).toContain('<%');
 		expect(raw).toBeTruthy();
 	});
@@ -240,7 +252,7 @@ describe('getValidAgentTypes', () => {
 		const types = getValidAgentTypes();
 		expect(Array.isArray(types)).toBe(true);
 		expect(types.length).toBeGreaterThan(0);
-		expect(types).toContain('briefing');
+		expect(types).toContain('splitting');
 		expect(types).toContain('implementation');
 		expect(types).toContain('review');
 	});

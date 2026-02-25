@@ -23,7 +23,6 @@ describe('sentry wrappers', () => {
 		let sentry: typeof import('../../src/sentry.js');
 
 		beforeEach(async () => {
-			vi.clearAllMocks();
 			vi.resetModules();
 			// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
 			delete process.env.SENTRY_DSN;
@@ -59,7 +58,6 @@ describe('sentry wrappers', () => {
 		let sentry: typeof import('../../src/sentry.js');
 
 		beforeEach(async () => {
-			vi.clearAllMocks();
 			vi.resetModules();
 			for (const k of Object.keys(mockScope)) mockScope[k as keyof typeof mockScope].mockClear();
 			process.env.SENTRY_DSN = 'https://fake@sentry.io/123';

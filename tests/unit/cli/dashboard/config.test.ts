@@ -22,7 +22,6 @@ describe('config', () => {
 	const originalEnv = process.env;
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		process.env = { ...originalEnv };
 		process.env.CASCADE_SERVER_URL = undefined;
 		process.env.CASCADE_SESSION_TOKEN = undefined;

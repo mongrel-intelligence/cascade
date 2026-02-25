@@ -1,4 +1,5 @@
 import type { CompactionConfig, CompactionEvent } from 'llmist';
+import { loadAgentDefinition } from '../agents/definitions/index.js';
 import { clearReadTracking } from '../gadgets/readTracking.js';
 import { logger } from '../utils/logging.js';
 
@@ -33,7 +34,7 @@ Previous conversation:`,
 };
 
 /**
- * Base compaction settings for other agents (briefing, planning, debug, respond-to-review, review).
+ * Base compaction settings for other agents (splitting, planning, debug, respond-to-review, review).
  *
  * These agents typically have shorter sessions, so we use:
  * - Standard trigger threshold (80%)
@@ -60,6 +61,11 @@ CRITICAL — Preserve a "Failed Approaches" section listing:
 
 Format as a brief narrative, with the failed approaches as a bullet list at the end.
 Previous conversation:`,
+};
+
+const COMPACTION_PRESET_REGISTRY: Record<string, typeof IMPLEMENTATION_COMPACTION_BASE> = {
+	implementation: IMPLEMENTATION_COMPACTION_BASE,
+	default: DEFAULT_COMPACTION_BASE,
 };
 
 /**
@@ -89,13 +95,21 @@ function handleCompaction(event: CompactionEvent): void {
 
 /**
  * Get compaction configuration for a given agent type.
+ * Reads the compaction preset name from the YAML definition.
  *
- * @param agentType - Type of agent (e.g., "implementation", "briefing", "planning")
+ * @param agentType - Type of agent (e.g., "implementation", "splitting", "planning")
  * @returns Compaction configuration
  */
 export function getCompactionConfig(agentType: string): CompactionConfig {
-	const baseConfig =
-		agentType === 'implementation' ? IMPLEMENTATION_COMPACTION_BASE : DEFAULT_COMPACTION_BASE;
+	let presetName = 'default';
+	try {
+		const def = loadAgentDefinition(agentType);
+		presetName = def.compaction;
+	} catch {
+		// Unknown agent type — use default preset
+	}
+
+	const baseConfig = COMPACTION_PRESET_REGISTRY[presetName] ?? DEFAULT_COMPACTION_BASE;
 	return {
 		...baseConfig,
 		onCompaction: handleCompaction,

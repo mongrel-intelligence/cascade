@@ -2,7 +2,7 @@ import { cleanupLogDirectory, cleanupLogFile } from '../../utils/fileLogger.js';
 import { clearWatchdogCleanup } from '../../utils/lifecycle.js';
 import { logger } from '../../utils/logging.js';
 import { cleanupTempDir } from '../../utils/repo.js';
-import type { FileLogger } from './lifecycle.js';
+import type { FileLogger } from './executionPipeline.js';
 
 /**
  * Clean up temporary resources after agent execution.

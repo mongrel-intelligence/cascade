@@ -224,7 +224,7 @@ if pg_isready -q 2>/dev/null; then
     PSQL_CMD="sudo -u postgres psql"
   fi
 
-  # Create cascade database
+  # Create cascade database (development)
   if ! $PSQL_CMD -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw cascade; then
     log_info "Creating cascade database..."
     if [ "$OS" = "linux" ]; then
@@ -234,6 +234,18 @@ if pg_isready -q 2>/dev/null; then
     fi
   else
     log_info "Database cascade already exists"
+  fi
+
+  # Create cascade_test database (integration tests)
+  if ! $PSQL_CMD -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw cascade_test; then
+    log_info "Creating cascade_test database..."
+    if [ "$OS" = "linux" ]; then
+      $PSQL_CMD -c "CREATE DATABASE cascade_test;" 2>/dev/null || true
+    else
+      createdb cascade_test 2>/dev/null || true
+    fi
+  else
+    log_info "Database cascade_test already exists"
   fi
 
   # On Linux, ensure postgres user has a known password for app connections
@@ -266,9 +278,21 @@ echo ""
 echo "--- Database Migrations ---"
 
 if pg_isready -q 2>/dev/null; then
-  log_info "Running migrations..."
-  DATABASE_SSL=false npm run db:migrate 2>&1 || \
-    log_warn "Migration failed - may need manual intervention"
+  if [ "$OS" = "linux" ]; then
+    DEV_DB_URL="postgresql://postgres:postgres@localhost:5432/cascade"
+    TEST_DB_URL="postgresql://postgres:postgres@localhost:5432/cascade_test"
+  else
+    DEV_DB_URL="postgresql://localhost:5432/cascade"
+    TEST_DB_URL="postgresql://localhost:5432/cascade_test"
+  fi
+
+  log_info "Running migrations on cascade (dev)..."
+  DATABASE_URL="$DEV_DB_URL" DATABASE_SSL=false npm run db:migrate 2>&1 || \
+    log_warn "Migration failed on cascade - may need manual intervention"
+
+  log_info "Running migrations on cascade_test..."
+  DATABASE_URL="$TEST_DB_URL" DATABASE_SSL=false npm run db:migrate 2>&1 || \
+    log_warn "Migration failed on cascade_test - may need manual intervention"
 else
   log_warn "PostgreSQL not ready, skipping migrations"
 fi

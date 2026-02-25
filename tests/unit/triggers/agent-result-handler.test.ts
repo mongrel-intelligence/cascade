@@ -12,6 +12,7 @@ import type { PMProvider } from '../../../src/pm/index.js';
 import { getPMProvider } from '../../../src/pm/index.js';
 import { handleAgentResultArtifacts } from '../../../src/triggers/shared/agent-result-handler.js';
 import type { AgentResult, ProjectConfig } from '../../../src/types/index.js';
+import { createMockJiraProject, createMockProject } from '../../helpers/factories.js';
 
 const mockPMProvider = {
 	getCustomFieldNumber: vi.fn(),
@@ -20,39 +21,28 @@ const mockPMProvider = {
 
 vi.mocked(getPMProvider).mockReturnValue(mockPMProvider as unknown as PMProvider);
 
-const mockTrelloProject: ProjectConfig = {
-	id: 'test',
-	name: 'Test',
-	repo: 'owner/repo',
-	baseBranch: 'main',
-	branchPrefix: 'feature/',
+const mockTrelloProject: ProjectConfig = createMockProject({
 	trello: {
 		boardId: 'board123',
 		lists: {},
 		labels: {},
 		customFields: { cost: 'cf-cost-123' },
 	},
-};
+});
 
-const mockJiraProject: ProjectConfig = {
+const mockJiraProject: ProjectConfig = createMockJiraProject({
 	id: 'test',
 	name: 'Test',
 	repo: 'owner/repo',
-	baseBranch: 'main',
-	branchPrefix: 'feature/',
 	pm: { type: 'jira' },
 	jira: {
 		host: 'example.atlassian.net',
 		projectKey: 'TEST',
 		customFields: { cost: 'cf-jira-cost-456' },
 	},
-};
+});
 
 describe('handleAgentResultArtifacts', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('updates cost custom field with accumulation', async () => {
 		mockPMProvider.getCustomFieldNumber.mockResolvedValue(2.5);
 

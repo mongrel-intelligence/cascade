@@ -33,7 +33,7 @@ interface AgentConfig {
 
 /** Friendly labels for known agent types */
 const AGENT_LABELS: Record<string, string> = {
-	briefing: 'Briefing',
+	splitting: 'Splitting',
 	planning: 'Planning',
 	implementation: 'Implementation',
 	review: 'Review',

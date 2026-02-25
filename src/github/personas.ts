@@ -18,7 +18,7 @@ export interface PersonaIdentities {
 // ============================================================================
 
 const AGENT_PERSONA_MAP: Record<string, GitHubPersona> = {
-	briefing: 'implementer',
+	splitting: 'implementer',
 	planning: 'implementer',
 	implementation: 'implementer',
 	'respond-to-review': 'implementer',

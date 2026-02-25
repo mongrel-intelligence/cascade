@@ -19,7 +19,6 @@ import { verifyProjectOrgAccess } from '../../../../../src/api/routers/_shared/p
 
 describe('verifyProjectOrgAccess', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockDbSelect.mockReturnValue({ from: mockDbFrom });
 		mockDbFrom.mockReturnValue({ where: mockDbWhere });
 	});

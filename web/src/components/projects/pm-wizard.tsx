@@ -575,7 +575,7 @@ function FieldMappingRow({
 // ============================================================================
 
 const TRELLO_LIST_SLOTS = [
-	'briefing',
+	'splitting',
 	'stories',
 	'planning',
 	'todo',
@@ -589,7 +589,8 @@ const TRELLO_LIST_SLOTS = [
 const TRELLO_LABEL_SLOTS = ['readyToProcess', 'processing', 'processed', 'error'];
 
 const JIRA_STATUS_SLOTS = [
-	'briefing',
+	'splitting',
+	'stories',
 	'planning',
 	'todo',
 	'inProgress',
@@ -1660,12 +1661,6 @@ export function PMWizard({
 								Create Webhook
 							</button>
 						</div>
-						<p className="text-xs text-muted-foreground">
-							Callback URL:{' '}
-							<span className="font-mono">
-								{callbackBaseUrl}/{state.provider === 'trello' ? 'trello' : 'jira'}/webhook
-							</span>
-						</p>
 						{createWebhookMutation.isError && (
 							<p className="text-sm text-destructive">{createWebhookMutation.error.message}</p>
 						)}

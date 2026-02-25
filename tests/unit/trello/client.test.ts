@@ -51,18 +51,6 @@ import {
 describe('trelloClient', () => {
 	const creds = { apiKey: 'test-key', token: 'test-token' };
 
-	beforeEach(() => {
-		// Reset individual mock functions without clearing implementations
-		for (const fn of Object.values(mockCards)) fn.mockReset();
-		for (const fn of Object.values(mockChecklists)) fn.mockReset();
-		for (const fn of Object.values(mockLists)) fn.mockReset();
-	});
-
-	afterEach(() => {
-		// Don't call restoreAllMocks() as it would clear the Version3Client mock impl
-		vi.clearAllMocks();
-	});
-
 	// ===== trelloFetch helper =====
 
 	describe('trelloFetch (via public methods)', () => {

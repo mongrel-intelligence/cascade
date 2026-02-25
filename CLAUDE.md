@@ -22,7 +22,7 @@ Trello/GitHub Webhook → TriggerRegistry → Agent → Code Changes → PR
 ```
 
 - `src/triggers/` - Event handlers (Trello card moves, labels, GitHub PRs, attachments)
-- `src/agents/` - AI agents (briefing, planning, implementation, review, debug)
+- `src/agents/` - AI agents (splitting, planning, implementation, review, debug)
 - `src/gadgets/` - Tools agents can use (Trello API, Git operations, file system)
 
 ### Multi-Project Support
@@ -156,7 +156,7 @@ npm run credentials:rotate-key              # Re-encrypt with CREDENTIAL_MASTER_
 CASCADE uses two dedicated GitHub bot accounts per project to prevent feedback loops:
 
 - **Implementer** (`GITHUB_TOKEN_IMPLEMENTER`) — writes code, creates PRs, responds to review comments
-  - Agents: `implementation`, `respond-to-review`, `respond-to-ci`, `respond-to-pr-comment`, `briefing`, `planning`, `respond-to-planning-comment`
+  - Agents: `implementation`, `respond-to-review`, `respond-to-ci`, `respond-to-pr-comment`, `splitting`, `planning`, `respond-to-planning-comment`
 - **Reviewer** (`GITHUB_TOKEN_REVIEWER`) — reviews PRs, can approve or request changes
   - Agents: `review`
 
@@ -246,13 +246,13 @@ When `reviewTrigger` is absent, the system falls back to legacy booleans:
 
 ### PM Agent Trigger Modes
 
-Briefing, planning, and implementation agents each have independent toggles for their PM triggers. **All modes default to `true`** for backward compatibility.
+Splitting, planning, and implementation agents each have independent toggles for their PM triggers. **All modes default to `true`** for backward compatibility.
 
 #### Trello card-moved triggers
 
 | Flag | Description |
 |------|-------------|
-| `cardMovedToBriefing` | Trigger briefing agent when a card is moved to the Briefing list |
+| `cardMovedToSplitting` | Trigger splitting agent when a card is moved to the Splitting list |
 | `cardMovedToPlanning` | Trigger planning agent when a card is moved to the Planning list |
 | `cardMovedToTodo` | Trigger implementation agent when a card is moved to the Todo list |
 
@@ -262,35 +262,35 @@ The `issueTransitioned` field supports both a legacy boolean (applies to all age
 
 | Agent | Field | Description |
 |-------|-------|-------------|
-| briefing | `issueTransitioned.briefing` | Trigger briefing when issue transitions to Briefing status |
+| splitting | `issueTransitioned.splitting` | Trigger splitting when issue transitions to Splitting status |
 | planning | `issueTransitioned.planning` | Trigger planning when issue transitions to Planning status |
 | implementation | `issueTransitioned.implementation` | Trigger implementation when issue transitions to Todo status |
 
 #### Setting via CLI
 
 ```bash
-# Disable Trello card-moved trigger for briefing agent
-cascade projects pm-trigger-set <project-id> --no-card-moved-to-briefing
+# Disable Trello card-moved trigger for splitting agent
+cascade projects pm-trigger-set <project-id> --no-card-moved-to-splitting
 
 # Disable JIRA issue-transitioned for implementation agent only
 cascade projects pm-trigger-set <project-id> --no-issue-transitioned-implementation
 
-# Enable JIRA triggers for briefing and planning, disable for implementation
+# Enable JIRA triggers for splitting and planning, disable for implementation
 cascade projects pm-trigger-set <project-id> \
-  --issue-transitioned-briefing \
+  --issue-transitioned-splitting \
   --issue-transitioned-planning \
   --no-issue-transitioned-implementation
 
 # Disable all Trello card-moved triggers
 cascade projects pm-trigger-set <project-id> \
-  --no-card-moved-to-briefing \
+  --no-card-moved-to-splitting \
   --no-card-moved-to-planning \
   --no-card-moved-to-todo
 ```
 
 #### Setting via Dashboard
 
-In the **Agent Configs** tab, the briefing, planning, and implementation agent sections each show:
+In the **Agent Configs** tab, the splitting, planning, and implementation agent sections each show:
 - **Card moved to [list]** — Trello card-moved toggle (Trello projects only)
 - **Issue Transitioned** — JIRA per-agent transition toggle (JIRA projects only)
 - **Ready to Process label** — label-based trigger toggle
@@ -301,7 +301,7 @@ In the **Agent Configs** tab, the briefing, planning, and implementation agent s
 # Disable JIRA issue-transitioned for implementation only
 cascade projects integration-set <project-id> \
   --category pm --provider jira --config '{"projectKey":"PROJ","statuses":{...}}' \
-  --triggers '{"issueTransitioned":{"briefing":true,"planning":true,"implementation":false}}'
+  --triggers '{"issueTransitioned":{"splitting":true,"planning":true,"implementation":false}}'
 ```
 
 #### Backward Compatibility
@@ -603,7 +603,7 @@ CASCADE includes a debug agent that automatically analyzes agent session logs:
 {
   "trello": {
     "lists": {
-      "briefing": "...",
+      "splitting": "...",
       "planning": "...",
       "todo": "...",
       "debug": "YOUR_DEBUG_LIST_ID"

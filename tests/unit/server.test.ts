@@ -85,7 +85,7 @@ function buildDeps(overrides: Partial<ServerDependencies> = {}): ServerDependenc
 					pm: { type: 'trello' },
 					trello: {
 						boardId: 'board-123',
-						lists: { briefing: 'l1', planning: 'l2', todo: 'l3' },
+						lists: { splitting: 'l1', planning: 'l2', todo: 'l3' },
 						labels: {},
 					},
 				},
@@ -113,10 +113,6 @@ async function postJson(
 }
 
 describe('createServer', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('Trello webhook', () => {
 		it('calls sendAcknowledgeReaction for commentCard events', async () => {
 			vi.useFakeTimers();

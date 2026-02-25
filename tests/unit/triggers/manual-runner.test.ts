@@ -52,7 +52,7 @@ const mockProject: ProjectConfig = {
 	branchPrefix: 'feature/',
 	trello: {
 		boardId: 'board-1',
-		lists: { briefing: 'l1', planning: 'l2', todo: 'l3' },
+		lists: { splitting: 'l1', planning: 'l2', todo: 'l3' },
 		labels: {},
 	},
 } as unknown as ProjectConfig;
@@ -61,7 +61,6 @@ const mockConfig = {} as CascadeConfig;
 
 describe('triggerManualRun', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		clearTriggerTracking();
 	});
 
@@ -223,7 +222,6 @@ describe('triggerManualRun', () => {
 
 describe('triggerRetryRun', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		clearTriggerTracking();
 	});
 

@@ -49,26 +49,15 @@ import {
 } from '../../../src/triggers/shared/debug-status.js';
 
 const mockPMProvider = { addComment: vi.fn() };
-import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
+import type { CascadeConfig } from '../../../src/types/index.js';
+import { createMockProject } from '../../helpers/factories.js';
 
-const mockProject = {
-	id: 'test-project',
-	name: 'Test',
-	repo: 'owner/repo',
-	baseBranch: 'main',
-	branchPrefix: 'feature/',
-	trello: {
-		boardId: 'board-1',
-		lists: { briefing: 'l1', planning: 'l2', todo: 'l3' },
-		labels: {},
-	},
-} as unknown as ProjectConfig;
+const mockProject = createMockProject({ id: 'test-project' });
 
 const mockConfig = {} as CascadeConfig;
 
 describe('triggerDebugAnalysis', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		vi.mocked(getPMProvider).mockReturnValue(mockPMProvider as unknown as PMProvider);
 	});
 
@@ -259,7 +248,7 @@ describe('triggerDebugAnalysis', () => {
 	it('writes LLM call files to temp dir', async () => {
 		vi.mocked(getRunById).mockResolvedValue({
 			id: 'run-1',
-			agentType: 'briefing',
+			agentType: 'splitting',
 			status: 'failed',
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
 
@@ -315,10 +304,6 @@ describe('triggerDebugAnalysis', () => {
 });
 
 describe('parseDebugOutput (via triggerDebugAnalysis)', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('parses all structured sections from markdown', async () => {
 		vi.mocked(getRunById).mockResolvedValue({
 			id: 'run-1',

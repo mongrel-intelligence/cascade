@@ -8,7 +8,7 @@
 
 import { LLMist, type ModelSpec } from 'llmist';
 
-import { INITIAL_MESSAGES } from '../config/agentMessages.js';
+import { AGENT_ROLE_HINTS, INITIAL_MESSAGES } from '../config/agentMessages.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
 import { getOrgCredential, loadConfig } from '../config/provider.js';
 import { logger } from '../utils/logging.js';
@@ -240,7 +240,8 @@ async function callAckModel(
 	contextSnippet: string,
 ): Promise<string> {
 	const client = new LLMist({ customModels: CUSTOM_MODELS as ModelSpec[] });
-	const userPrompt = `Agent type: ${agentType}\n\nRequest context:\n${contextSnippet}`;
+	const roleHint = AGENT_ROLE_HINTS[agentType] ?? 'Processes the request';
+	const userPrompt = `Agent type: ${agentType}\nAgent role: ${roleHint}\n\nRequest context:\n${contextSnippet}`;
 
 	const result = await client.text.complete(userPrompt, {
 		model,

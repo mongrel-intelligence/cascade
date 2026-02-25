@@ -47,7 +47,6 @@ describe('cleanupAgentResources', () => {
 	const originalEnv = process.env.CASCADE_LOCAL_MODE;
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		process.env.CASCADE_LOCAL_MODE = undefined;
 	});
 

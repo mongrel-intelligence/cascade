@@ -26,7 +26,7 @@ vi.mock('../../../../src/router/ackMessageGenerator.js', () => ({
 	extractTrelloContext: vi.fn().mockReturnValue('Card: Test card'),
 	generateAckMessage: vi.fn().mockResolvedValue('Starting implementation...'),
 }));
-vi.mock('../../../../src/router/platformClients.js', () => ({
+vi.mock('../../../../src/router/platformClients/index.js', () => ({
 	resolveTrelloCredentials: vi.fn().mockResolvedValue({ apiKey: 'key', token: 'tok' }),
 }));
 vi.mock('../../../../src/trello/client.js', () => ({
@@ -55,7 +55,7 @@ const mockProject: RouterProjectConfig = {
 	trello: {
 		boardId: 'board1',
 		lists: {
-			briefing: 'list-briefing',
+			splitting: 'list-splitting',
 			planning: 'list-planning',
 			todo: 'list-todo',
 			debug: 'list-debug',
@@ -69,7 +69,6 @@ const mockTriggerRegistry = {
 } as unknown as TriggerRegistry;
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	vi.mocked(loadProjectConfig).mockResolvedValue({
 		projects: [mockProject],
 		fullProjects: [{ id: 'p1' } as never],

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
+import { createMockUser } from '../../../helpers/factories.js';
 
 // Mock prompt functions
 const mockGetValidAgentTypes = vi.fn();
@@ -39,22 +40,12 @@ function createCaller(ctx: TRPCContext) {
 	return promptsRouter.createCaller(ctx);
 }
 
-const mockUser = {
-	id: 'user-1',
-	orgId: 'org-1',
-	email: 'test@example.com',
-	name: 'Test',
-	role: 'admin',
-};
+const mockUser = createMockUser();
 
 describe('promptsRouter', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('agentTypes', () => {
 		it('returns list of agent types', async () => {
-			const types = ['briefing', 'planning', 'implementation'];
+			const types = ['splitting', 'planning', 'implementation'];
 			mockGetValidAgentTypes.mockReturnValue(types);
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
@@ -75,10 +66,10 @@ describe('promptsRouter', () => {
 			mockGetRawTemplate.mockReturnValue('Template content: <%= it.baseBranch %>');
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
-			const result = await caller.getDefault({ agentType: 'briefing' });
+			const result = await caller.getDefault({ agentType: 'splitting' });
 
 			expect(result).toEqual({ content: 'Template content: <%= it.baseBranch %>' });
-			expect(mockGetRawTemplate).toHaveBeenCalledWith('briefing');
+			expect(mockGetRawTemplate).toHaveBeenCalledWith('splitting');
 		});
 
 		it('throws NOT_FOUND for unknown agent type', async () => {
@@ -94,7 +85,7 @@ describe('promptsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.getDefault({ agentType: 'briefing' })).rejects.toMatchObject({
+			await expect(caller.getDefault({ agentType: 'splitting' })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
 		});

@@ -5,7 +5,8 @@ export default defineConfig({
 	test: {
 		globals: true,
 		environment: 'node',
-		include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+		clearMocks: true,
+		unstubEnvs: true,
 		coverage: {
 			provider: 'v8',
 			reporter: ['text', 'lcov', 'html'],

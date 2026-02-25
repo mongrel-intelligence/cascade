@@ -109,7 +109,6 @@ describe('jiraClient', () => {
 		// Note: We don't call vi.restoreAllMocks() here because it would reset
 		// the Version3Client mock implementation from vi.mock(), breaking subsequent tests.
 		// Instead we clear only the fetch spy manually.
-		vi.clearAllMocks();
 	});
 
 	describe('getCloudId', () => {
