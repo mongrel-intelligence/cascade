@@ -6,10 +6,13 @@ UPDATE agent_configs
 SET agent_type = 'splitting'
 WHERE agent_type = 'briefing';
 
--- 2. Update runs table
-UPDATE runs
-SET agent_type = 'splitting'
-WHERE agent_type = 'briefing';
+-- 2. Update runs table (if it exists — some environments use external run storage)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'runs') THEN
+        UPDATE runs SET agent_type = 'splitting' WHERE agent_type = 'briefing';
+    END IF;
+END $$;
 
 -- 3. Update project_integrations JSONB fields
 
