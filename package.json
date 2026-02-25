@@ -72,6 +72,7 @@
 		"jira.js": "^5.3.0",
 		"js-yaml": "^4.1.1",
 		"llmist": "^15.19.0",
+		"marklassian": "^1.1.0",
 		"pg": "^8.18.0",
 		"trello.js": "^1.2.8",
 		"zangief": "latest",
