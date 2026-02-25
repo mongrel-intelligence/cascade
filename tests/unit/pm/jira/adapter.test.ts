@@ -257,6 +257,53 @@ describe('JiraPMProvider', () => {
 				expect.not.objectContaining({ labels: expect.anything() }),
 			);
 		});
+
+		it('transitions new issue to stories status when configured', async () => {
+			const storiesProvider = new JiraPMProvider({
+				...mockConfig,
+				statuses: { ...mockConfig.statuses, stories: 'Stories' },
+			});
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-100' });
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: '31', name: 'Stories', to: { name: 'Stories' } },
+			]);
+			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
+
+			await storiesProvider.createWorkItem({
+				containerId: 'PROJ',
+				title: 'Story task',
+			});
+
+			expect(mockJiraClient.getTransitions).toHaveBeenCalledWith('PROJ-100');
+			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-100', '31');
+		});
+
+		it('does not transition when stories status is not configured', async () => {
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-101' });
+
+			await provider.createWorkItem({
+				containerId: 'PROJ',
+				title: 'Regular task',
+			});
+
+			expect(mockJiraClient.getTransitions).not.toHaveBeenCalled();
+		});
+
+		it('logs warning and continues when stories transition fails', async () => {
+			const storiesProvider = new JiraPMProvider({
+				...mockConfig,
+				statuses: { ...mockConfig.statuses, stories: 'Stories' },
+			});
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-102' });
+			mockJiraClient.getTransitions.mockRejectedValue(new Error('API error'));
+
+			const result = await storiesProvider.createWorkItem({
+				containerId: 'PROJ',
+				title: 'Task with failing transition',
+			});
+
+			expect(result.id).toBe('PROJ-102');
+		});
 	});
 
 	describe('listWorkItems', () => {

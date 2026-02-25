@@ -133,6 +133,20 @@ describe('buildPromptContext', () => {
 			const ctx = buildPromptContext('PROJ-123', makeProject() as never);
 			expect(ctx.pmType).toBe('jira');
 		});
+
+		it('sets storiesListId to JIRA project key when no Trello config', () => {
+			const jiraProject = makeProject({
+				trello: undefined,
+				pm: { type: 'jira' },
+				jira: {
+					projectKey: 'BTS',
+					baseUrl: 'https://company.atlassian.net',
+					statuses: { todo: 'To Do' },
+				},
+			});
+			const ctx = buildPromptContext('BTS-148', jiraProject as never);
+			expect(ctx.storiesListId).toBe('BTS');
+		});
 	});
 
 	describe('with prContext', () => {

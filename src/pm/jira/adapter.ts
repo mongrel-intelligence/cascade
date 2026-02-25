@@ -149,6 +149,21 @@ export class JiraPMProvider implements PMProvider {
 			...(config.labels?.length ? { labels: config.labels } : {}),
 		});
 		const key = result.key ?? '';
+
+		// Transition to stories status if configured (mirrors Trello's stories list)
+		const storiesStatus = this.config.statuses?.stories;
+		if (storiesStatus) {
+			try {
+				await this.moveWorkItem(key, storiesStatus);
+			} catch (err) {
+				logger.warn('[JIRA] Failed to transition new issue to stories status', {
+					issueKey: key,
+					targetStatus: storiesStatus,
+					error: String(err),
+				});
+			}
+		}
+
 		return {
 			id: key,
 			title: config.title,

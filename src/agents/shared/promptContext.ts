@@ -1,4 +1,4 @@
-import { getTrelloConfig } from '../../pm/config.js';
+import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
 import { getPMProvider } from '../../pm/index.js';
 import type { ProjectConfig } from '../../types/index.js';
 import type { PromptContext } from '../prompts/index.js';
@@ -30,7 +30,7 @@ export function buildPromptContext(
 		cardUrl: cardId ? pmProvider.getWorkItemUrl(cardId) : undefined,
 		projectId: project.id,
 		baseBranch: project.baseBranch,
-		storiesListId: getTrelloConfig(project)?.lists?.stories,
+		storiesListId: getTrelloConfig(project)?.lists?.stories ?? getJiraConfig(project)?.projectKey,
 		processedLabelId: getTrelloConfig(project)?.labels?.processed,
 		pmType: pmProvider.type,
 		workItemNoun: isJira ? 'issue' : 'card',
