@@ -74,6 +74,7 @@ When modifying the plan, **update the existing checklists in place** — do NOT 
 - **Renaming/rewriting steps**: Use `UpdateChecklistItem` to change the text of existing checklist items.
 - **Removing steps**: Use `DeleteChecklistItem` to permanently remove checklist items / subtasks that are no longer needed. Do NOT mark removed items as "complete" — they were never done, so deleting is the correct action.
 - **Reordering**: Delete and re-add items as needed to achieve the desired order.
+- **Checklist item names**: Use clean task names without "Step N:" prefixes — for example "Add helper function", NOT "Step 1: Add helper function". The checklist order already implies sequence.
 
 When the user asks to narrow scope, focus on a subset, or drop items from the plan, **always delete** the out-of-scope items rather than leaving them in the checklist.
 

@@ -109,6 +109,18 @@ describe('system prompts content', () => {
 		expect(prompt).toContain('Category B (Plan Update)');
 		expect(prompt).toContain('Category C (Both)');
 	});
+
+	it('planning prompt instructs AddChecklist items to not use Step N prefixes', () => {
+		const prompt = getSystemPrompt('planning');
+		expect(prompt).toContain('do NOT include "Step N:" prefixes');
+		expect(prompt).toContain('Add helper function');
+	});
+
+	it('respond-to-planning-comment prompt instructs checklist items to not use Step N prefixes', () => {
+		const prompt = getSystemPrompt('respond-to-planning-comment');
+		expect(prompt).toContain('Step N:');
+		expect(prompt).toContain('clean task names without');
+	});
 });
 
 describe('resolveIncludes', () => {
