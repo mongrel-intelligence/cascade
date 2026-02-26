@@ -104,50 +104,23 @@ describe('config/statusUpdateConfig', () => {
 	});
 
 	describe('formatStatusMessage', () => {
-		it('includes agent-specific emoji/label and progress bar', () => {
+		it('includes agent-specific emoji/label', () => {
 			vi.mocked(loadTodos).mockReturnValue([]);
 
-			const message = formatStatusMessage(5, 20, 'implementation');
+			const message = formatStatusMessage('implementation');
 
 			expect(message).toContain('**🧑‍💻 Implementation Update**');
 			expect(message).toContain('implementation');
-			expect(message).toContain('25%'); // (5/20) * 100
-			expect(message).toContain('iteration 5/20');
 		});
 
-		it('renders progress bar correctly at 0%', () => {
+		it('does not include progress bar or iteration counters', () => {
 			vi.mocked(loadTodos).mockReturnValue([]);
 
-			const message = formatStatusMessage(0, 20, 'planning');
+			const message = formatStatusMessage('implementation');
 
-			expect(message).toContain('[░░░░░░░░░░]');
-			expect(message).toContain('0%');
-		});
-
-		it('renders progress bar correctly at 50%', () => {
-			vi.mocked(loadTodos).mockReturnValue([]);
-
-			const message = formatStatusMessage(10, 20, 'implementation');
-
-			expect(message).toContain('[█████░░░░░]');
-			expect(message).toContain('50%');
-		});
-
-		it('renders progress bar correctly at 100%', () => {
-			vi.mocked(loadTodos).mockReturnValue([]);
-
-			const message = formatStatusMessage(20, 20, 'implementation');
-
-			expect(message).toContain('[██████████]');
-			expect(message).toContain('100%');
-		});
-
-		it('rounds progress percentage', () => {
-			vi.mocked(loadTodos).mockReturnValue([]);
-
-			const message = formatStatusMessage(7, 20, 'planning');
-
-			expect(message).toContain('35%'); // 7/20 = 0.35 -> 35%
+			expect(message).not.toMatch(/\[█/);
+			expect(message).not.toMatch(/iteration \d+\/\d+/);
+			expect(message).not.toMatch(/\d+%/);
 		});
 
 		it('includes task counts when todos exist', () => {
@@ -157,7 +130,7 @@ describe('config/statusUpdateConfig', () => {
 				{ id: '3', content: 'Task 3', status: 'pending' },
 			]);
 
-			const message = formatStatusMessage(10, 20, 'implementation');
+			const message = formatStatusMessage('implementation');
 
 			expect(message).toContain('**Tasks:** 2/3 complete');
 		});
@@ -168,7 +141,7 @@ describe('config/statusUpdateConfig', () => {
 				{ id: '2', content: 'Fix linting', status: 'pending' },
 			]);
 
-			const message = formatStatusMessage(5, 20, 'implementation');
+			const message = formatStatusMessage('implementation');
 
 			expect(message).toContain('**Working on:** Write tests');
 		});
@@ -176,7 +149,7 @@ describe('config/statusUpdateConfig', () => {
 		it('does not include task section when no todos', () => {
 			vi.mocked(loadTodos).mockReturnValue([]);
 
-			const message = formatStatusMessage(5, 20, 'implementation');
+			const message = formatStatusMessage('implementation');
 
 			expect(message).not.toContain('**Tasks:**');
 			expect(message).not.toContain('**Working on:**');
@@ -188,7 +161,7 @@ describe('config/statusUpdateConfig', () => {
 				{ id: '2', content: 'Task 2', status: 'pending' },
 			]);
 
-			const message = formatStatusMessage(8, 20, 'planning');
+			const message = formatStatusMessage('planning');
 
 			expect(message).toContain('**Tasks:**');
 			expect(message).not.toContain('**Working on:**');
@@ -197,57 +170,59 @@ describe('config/statusUpdateConfig', () => {
 		it('formats message with proper markdown structure', () => {
 			vi.mocked(loadTodos).mockReturnValue([]);
 
-			const message = formatStatusMessage(10, 20, 'implementation');
+			const message = formatStatusMessage('implementation');
 
 			const lines = message.split('\n');
 			expect(lines[0]).toBe('**🧑‍💻 Implementation Update** (implementation)');
-			expect(lines[1]).toBe('');
-			expect(lines[2]).toContain('[█████░░░░░]');
 		});
 	});
 
 	describe('formatGitHubProgressComment', () => {
-		it('includes header message and progress bar', () => {
+		it('includes header message', () => {
 			vi.mocked(loadTodos).mockReturnValue([]);
 			vi.mocked(formatTodoList).mockReturnValue('- [ ] Task 1');
 
-			const comment = formatGitHubProgressComment('🔍 Reviewing PR...', 8, 20, 'review');
+			const comment = formatGitHubProgressComment('🔍 Reviewing PR...', 'review');
 
 			expect(comment).toContain('🔍 Reviewing PR...');
-			expect(comment).toContain('**Progress:**');
-			expect(comment).toContain('40%'); // (8/20) * 100
-			expect(comment).toContain('iteration 8/20');
+		});
+
+		it('does not include progress bar or iteration counters', () => {
+			vi.mocked(loadTodos).mockReturnValue([]);
+			vi.mocked(formatTodoList).mockReturnValue('');
+
+			const comment = formatGitHubProgressComment('Header', 'review');
+
+			expect(comment).not.toMatch(/\[█/);
+			expect(comment).not.toMatch(/iteration \d+/);
+			expect(comment).not.toMatch(/\d+%/);
+			expect(comment).not.toContain('**Progress:**');
 		});
 
 		it('includes formatted todo list', () => {
 			vi.mocked(loadTodos).mockReturnValue([{ id: '1', content: 'Task 1', status: 'pending' }]);
 			vi.mocked(formatTodoList).mockReturnValue('- [ ] Task 1\n- [x] Task 2');
 
-			const comment = formatGitHubProgressComment('🔍 Reviewing PR...', 5, 20, 'review');
+			const comment = formatGitHubProgressComment('🔍 Reviewing PR...', 'review');
 
 			expect(comment).toContain('- [ ] Task 1');
 			expect(comment).toContain('- [x] Task 2');
 		});
 
-		it('includes metadata footer with iteration and agent type', () => {
+		it('includes metadata footer with agent type', () => {
 			vi.mocked(loadTodos).mockReturnValue([]);
 			vi.mocked(formatTodoList).mockReturnValue('');
 
-			const comment = formatGitHubProgressComment(
-				'🚀 Implementing feature...',
-				12,
-				25,
-				'implementation',
-			);
+			const comment = formatGitHubProgressComment('🚀 Implementing feature...', 'implementation');
 
-			expect(comment).toContain('<sub>Last updated: iteration 12 · implementation</sub>');
+			expect(comment).toContain('<sub>implementation</sub>');
 		});
 
 		it('separates sections with horizontal rule', () => {
 			vi.mocked(loadTodos).mockReturnValue([]);
 			vi.mocked(formatTodoList).mockReturnValue('');
 
-			const comment = formatGitHubProgressComment('Header text', 5, 20, 'review');
+			const comment = formatGitHubProgressComment('Header text', 'review');
 
 			const lines = comment.split('\n');
 			expect(lines).toContain('---');
@@ -258,7 +233,7 @@ describe('config/statusUpdateConfig', () => {
 			vi.mocked(formatTodoList).mockReturnValue('');
 
 			const headerWithMarkdown = '🔍 **Reviewing PR** #123\n\nThis is a test.';
-			const comment = formatGitHubProgressComment(headerWithMarkdown, 5, 20, 'review');
+			const comment = formatGitHubProgressComment(headerWithMarkdown, 'review');
 
 			expect(comment.startsWith(headerWithMarkdown)).toBe(true);
 		});
@@ -271,55 +246,11 @@ describe('config/statusUpdateConfig', () => {
 			vi.mocked(loadTodos).mockReturnValue(todos);
 			vi.mocked(formatTodoList).mockReturnValue('formatted todos');
 
-			const comment = formatGitHubProgressComment('Header', 10, 20, 'implementation');
+			const comment = formatGitHubProgressComment('Header', 'implementation');
 
 			expect(loadTodos).toHaveBeenCalled();
 			expect(formatTodoList).toHaveBeenCalledWith(todos);
 			expect(comment).toContain('formatted todos');
-		});
-
-		it('renders progress bar at different percentages', () => {
-			vi.mocked(loadTodos).mockReturnValue([]);
-			vi.mocked(formatTodoList).mockReturnValue('');
-
-			const comment25 = formatGitHubProgressComment('Header', 5, 20, 'review');
-			expect(comment25).toContain('[███░░░░░░░]'); // 25% -> rounds to 3 blocks
-
-			const comment75 = formatGitHubProgressComment('Header', 15, 20, 'review');
-			expect(comment75).toContain('[████████░░]'); // 75% -> rounds to 8 blocks
-		});
-	});
-
-	describe('progress bar rendering', () => {
-		it('progress bar has exactly 10 blocks', () => {
-			vi.mocked(loadTodos).mockReturnValue([]);
-
-			const message = formatStatusMessage(7, 20, 'implementation');
-
-			const progressBarMatch = message.match(/\[([█░]+)\]/);
-			expect(progressBarMatch).toBeTruthy();
-			expect(progressBarMatch?.[1].length).toBe(10);
-		});
-
-		it('progress bar uses filled and empty blocks', () => {
-			vi.mocked(loadTodos).mockReturnValue([]);
-
-			const message = formatStatusMessage(6, 20, 'planning'); // 30%
-
-			// 30% -> 3 filled, 7 empty
-			expect(message).toContain('[███░░░░░░░]');
-		});
-
-		it('handles edge case percentages', () => {
-			vi.mocked(loadTodos).mockReturnValue([]);
-
-			// 1/20 = 5% -> 0.5 rounds to 1
-			const message1 = formatStatusMessage(1, 20, 'planning');
-			expect(message1).toContain('[█░░░░░░░░░]');
-
-			// 19/20 = 95% -> 9.5 rounds to 10
-			const message19 = formatStatusMessage(19, 20, 'planning');
-			expect(message19).toContain('[██████████]');
 		});
 	});
 });
