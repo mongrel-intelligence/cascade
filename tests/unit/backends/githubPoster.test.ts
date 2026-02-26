@@ -44,7 +44,7 @@ describe('GitHubProgressPoster — update()', () => {
 		});
 
 		const poster = makePoster();
-		await poster.update('summary', 3, 20, 'implementation');
+		await poster.update('summary', 'implementation');
 
 		expect(mockGithubClient.updatePRComment).not.toHaveBeenCalled();
 	});
@@ -62,12 +62,10 @@ describe('GitHubProgressPoster — update()', () => {
 		mockGithubClient.updatePRComment.mockResolvedValue(undefined as never);
 
 		const poster = makePoster();
-		await poster.update('AI-generated summary', 5, 20, 'implementation');
+		await poster.update('AI-generated summary', 'implementation');
 
 		expect(mockFormatGitHubProgressComment).toHaveBeenCalledWith(
 			'**🧑‍💻 Implementation Update**',
-			5,
-			20,
 			'implementation',
 		);
 		expect(mockGithubClient.updatePRComment).toHaveBeenCalledWith(
@@ -94,7 +92,7 @@ describe('GitHubProgressPoster — update()', () => {
 		mockGithubClient.updatePRComment.mockResolvedValue(undefined as never);
 
 		const poster = makePoster();
-		await poster.update('My AI summary', 2, 10, 'review');
+		await poster.update('My AI summary', 'review');
 
 		const callArg = mockGithubClient.updatePRComment.mock.calls[0][3];
 		expect(callArg).toContain('My AI summary');
@@ -120,7 +118,7 @@ describe('GitHubProgressPoster — update()', () => {
 			headerMessage: 'Header',
 			logWriter,
 		});
-		await poster.update('summary', 1, 5, 'review');
+		await poster.update('summary', 'review');
 
 		expect(logWriter).toHaveBeenCalledWith(
 			'INFO',

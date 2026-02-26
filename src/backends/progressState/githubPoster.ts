@@ -21,21 +21,11 @@ export interface GitHubProgressPosterConfig {
 export class GitHubProgressPoster {
 	constructor(private readonly config: GitHubProgressPosterConfig) {}
 
-	async update(
-		summary: string,
-		iteration: number,
-		maxIterations: number,
-		agentType: string,
-	): Promise<void> {
+	async update(summary: string, agentType: string): Promise<void> {
 		const { initialCommentId } = getSessionState();
 		if (!initialCommentId) return;
 
-		const body = formatGitHubProgressComment(
-			this.config.headerMessage,
-			iteration,
-			maxIterations,
-			agentType,
-		);
+		const body = formatGitHubProgressComment(this.config.headerMessage, agentType);
 		// Replace the todo section with the AI-generated summary
 		const bodyWithSummary = body.replace(/\n\n📋[\s\S]*?\n\n/, `\n\n${summary}\n\n`);
 		await githubClient.updatePRComment(

@@ -52,19 +52,10 @@ export function getStatusUpdateConfig(agentType: string): StatusUpdateConfig {
 /**
  * Format a status update message for posting to Trello.
  *
- * @param iteration - Current iteration number
- * @param maxIterations - Maximum allowed iterations
  * @param agentType - Type of agent posting the update
  * @returns Formatted markdown message
  */
-export function formatStatusMessage(
-	iteration: number,
-	maxIterations: number,
-	agentType: string,
-): string {
-	const progress = Math.round((iteration / maxIterations) * 100);
-	const progressBar = createProgressBar(progress);
-
+export function formatStatusMessage(agentType: string): string {
 	// Get current todo status
 	const todos = loadTodos();
 	const inProgressTodo = todos.find((t) => t.status === 'in_progress');
@@ -73,11 +64,7 @@ export function formatStatusMessage(
 
 	const { emoji, label } = getAgentLabel(agentType);
 
-	const lines = [
-		`**${emoji} ${label}** (${agentType})`,
-		'',
-		`${progressBar} ${progress}% (iteration ${iteration}/${maxIterations})`,
-	];
+	const lines = [`**${emoji} ${label}** (${agentType})`];
 
 	if (totalCount > 0) {
 		lines.push('', `**Tasks:** ${doneCount}/${totalCount} complete`);
@@ -92,46 +79,17 @@ export function formatStatusMessage(
 /**
  * Format a GitHub progress comment that updates the initial PR comment.
  *
- * Renders a progress bar, todo list, and metadata footer.
+ * Renders a todo list and metadata footer.
  *
  * @param headerMessage - Original comment text preserved as header (e.g., "🔍 Reviewing PR...")
- * @param iteration - Current iteration number
- * @param maxIterations - Maximum allowed iterations
  * @param agentType - Type of agent posting the update
  * @returns Formatted markdown comment body
  */
-export function formatGitHubProgressComment(
-	headerMessage: string,
-	iteration: number,
-	maxIterations: number,
-	agentType: string,
-): string {
-	const progress = Math.round((iteration / maxIterations) * 100);
-	const progressBar = createProgressBar(progress);
-
+export function formatGitHubProgressComment(headerMessage: string, agentType: string): string {
 	const todos = loadTodos();
 	const todoSection = formatTodoList(todos);
 
-	const lines = [
-		headerMessage,
-		'',
-		'---',
-		'',
-		`**Progress:** ${progressBar} ${progress}% (iteration ${iteration}/${maxIterations})`,
-		'',
-		todoSection,
-		'',
-		`<sub>Last updated: iteration ${iteration} · ${agentType}</sub>`,
-	];
+	const lines = [headerMessage, '', '---', '', todoSection, '', `<sub>${agentType}</sub>`];
 
 	return lines.join('\n');
-}
-
-/**
- * Create a text-based progress bar.
- */
-function createProgressBar(percent: number): string {
-	const filled = Math.round(percent / 10);
-	const empty = 10 - filled;
-	return `[${'█'.repeat(filled)}${'░'.repeat(empty)}]`;
 }
