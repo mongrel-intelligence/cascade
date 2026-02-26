@@ -27,3 +27,7 @@ backend:
 compaction: default
 
 hint: Focus on the current aspect of review before moving to the next. Read related files together.
+
+integrations:
+  required: [scm]
+  optional: [pm]

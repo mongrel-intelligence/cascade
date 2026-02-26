@@ -7,6 +7,7 @@ import { handleAgentResultArtifacts } from './agent-result-handler.js';
 import { checkBudgetExceeded } from './budget.js';
 import { triggerDebugAnalysis } from './debug-runner.js';
 import { shouldTriggerDebug } from './debug-trigger.js';
+import { formatValidationErrors, validateIntegrations } from './integration-validation.js';
 
 /**
  * Configuration for source-specific behavior in the agent execution pipeline.
@@ -149,12 +150,37 @@ export async function runAgentExecutionPipeline(
 	}
 	const agentType = result.agentType;
 
-	const { skipPrepareForAgent = false, onFailure, logLabel = 'Agent' } = executionConfig;
-
-	const workItemId = result.workItemId;
+	// Create lifecycle manager once (reused for validation failure and normal flow)
 	const pmProvider = createPMProvider(project);
 	const pmConfig = resolveProjectPMConfig(project);
 	const lifecycle = new PMLifecycleManager(pmProvider, pmConfig);
+
+	// Pre-flight integration validation
+	const validation = await validateIntegrations(project.id, agentType);
+	if (!validation.valid) {
+		const errorMessage = formatValidationErrors(validation);
+		logger.error('Integration validation failed', {
+			agentType,
+			projectId: project.id,
+			errors: validation.errors,
+		});
+
+		// Only notify via PM if PM validation passed (otherwise PM isn't configured)
+		const pmFailed = validation.errors.some((e) => e.category === 'pm');
+		if (result.workItemId && !pmFailed) {
+			await lifecycle.handleFailure(result.workItemId, errorMessage);
+		}
+
+		// Call onFailure callback (for GitHub PR updates)
+		if (executionConfig.onFailure) {
+			await executionConfig.onFailure(result, { success: false, output: '', error: errorMessage });
+		}
+		return;
+	}
+
+	const { skipPrepareForAgent = false, onFailure, logLabel = 'Agent' } = executionConfig;
+
+	const workItemId = result.workItemId;
 
 	let remainingBudgetUsd: number | undefined;
 	if (workItemId) {

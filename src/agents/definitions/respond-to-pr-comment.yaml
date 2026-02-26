@@ -29,3 +29,7 @@ backend:
 compaction: default
 
 hint: Complete the current task efficiently before moving to the next.
+
+integrations:
+  required: [scm]
+  optional: [pm]

@@ -31,3 +31,7 @@ hint: Fix CI failures with minimal, focused changes. Batch related file edits to
 
 trailingMessage:
   includeDiagnostics: true
+
+integrations:
+  required: [scm]
+  optional: [pm]

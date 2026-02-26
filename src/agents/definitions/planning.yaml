@@ -26,3 +26,7 @@ backend:
 compaction: default
 
 hint: Complete the current planning step efficiently before moving to the next.
+
+integrations:
+  required: [scm, pm]
+  optional: []

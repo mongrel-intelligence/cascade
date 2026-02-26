@@ -26,3 +26,7 @@ backend:
 compaction: default
 
 hint: Gather all context needed for the current step before proceeding.
+
+integrations:
+  required: [scm, pm]
+  optional: []

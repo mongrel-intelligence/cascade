@@ -4,6 +4,29 @@ import { z } from 'zod';
 // Agent Definition Schema
 // ============================================================================
 
+// Integration categories (aligned with integrationRoles.ts)
+export const IntegrationCategorySchema = z.enum(['pm', 'scm', 'email']);
+
+// Integration requirements schema (REQUIRED field)
+const IntegrationsSchema = z
+	.object({
+		/** Integrations that MUST be configured for the agent to run */
+		required: z.array(IntegrationCategorySchema),
+		/**
+		 * Integrations the agent CAN use if available (for future use).
+		 * Currently not validated - reserved for dashboard filtering and
+		 * conditional agent behavior based on available integrations.
+		 */
+		optional: z.array(IntegrationCategorySchema),
+	})
+	.refine(
+		(data) => {
+			const requiredSet = new Set(data.required);
+			return !data.optional.some((cat) => requiredSet.has(cat));
+		},
+		{ message: 'A category cannot be both required and optional' },
+	);
+
 const IdentitySchema = z.object({
 	emoji: z.string(),
 	label: z.string(),
@@ -85,6 +108,11 @@ export const AgentDefinitionSchema = z.object({
 	compaction: z.enum(['implementation', 'default']),
 	hint: z.string(),
 	trailingMessage: TrailingMessageSchema,
+	integrations: IntegrationsSchema,
 });
 
 export type AgentDefinition = z.infer<typeof AgentDefinitionSchema>;
+
+export type IntegrationCategory = z.infer<typeof IntegrationCategorySchema>;
+
+export type AgentIntegrations = z.infer<typeof IntegrationsSchema>;

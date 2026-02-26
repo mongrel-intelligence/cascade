@@ -18,6 +18,7 @@ export type { ProjectPMConfig } from './lifecycle.js';
 
 // PMIntegration interface + registry
 export type { PMIntegration, PMWebhookEvent } from './integration.js';
+export { hasPmIntegration } from './integration.js';
 export { pmRegistry } from './registry.js';
 export { processPMWebhook } from './webhook-handler.js';
 
