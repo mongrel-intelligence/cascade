@@ -1,5 +1,7 @@
 import { runAgent } from '../../agents/registry.js';
+import { parseEmailJokeTriggers } from '../../config/triggerConfig.js';
 import { getRunById } from '../../db/repositories/runsRepository.js';
+import { getIntegrationByProjectAndCategory } from '../../db/repositories/settingsRepository.js';
 import { withEmailIntegration } from '../../email/integration.js';
 import { withPMCredentials } from '../../pm/context.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
@@ -100,6 +102,21 @@ export async function triggerManualRun(
 		project,
 		config,
 	};
+
+	// For email-joke agent, fetch senderEmail from email integration triggers
+	if (input.agentType === 'email-joke') {
+		const emailIntegration = await getIntegrationByProjectAndCategory(input.projectId, 'email');
+		if (emailIntegration) {
+			const triggers = parseEmailJokeTriggers(emailIntegration.triggers);
+			if (triggers.senderEmail) {
+				agentInput.senderEmail = triggers.senderEmail;
+			}
+		} else {
+			logger.debug('No email integration found, skipping senderEmail injection', {
+				projectId: input.projectId,
+			});
+		}
+	}
 
 	try {
 		const pmProvider = createPMProvider(project);

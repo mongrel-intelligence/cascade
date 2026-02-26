@@ -8,7 +8,13 @@ import { RipGrep } from '../../gadgets/RipGrep.js';
 import { Sleep } from '../../gadgets/Sleep.js';
 import { VerifyChanges } from '../../gadgets/VerifyChanges.js';
 import { WriteFile } from '../../gadgets/WriteFile.js';
-import { ReadEmail, ReplyToEmail, SearchEmails, SendEmail } from '../../gadgets/email/index.js';
+import {
+	MarkEmailAsSeen,
+	ReadEmail,
+	ReplyToEmail,
+	SearchEmails,
+	SendEmail,
+} from '../../gadgets/email/index.js';
 import {
 	CreatePR,
 	CreatePRReview,
@@ -78,7 +84,13 @@ export function buildWorkItemGadgets(caps: AgentCapabilities): CreateBuilderOpti
 		...(caps.canUpdateChecklists ? [new PMUpdateChecklistItem(), new PMDeleteChecklistItem()] : []),
 		// Email gadgets (gated by capability — disabled by default)
 		...(caps.canAccessEmail
-			? [new SendEmail(), new SearchEmails(), new ReadEmail(), new ReplyToEmail()]
+			? [
+					new SendEmail(),
+					new SearchEmails(),
+					new ReadEmail(),
+					new ReplyToEmail(),
+					new MarkEmailAsSeen(),
+				]
 			: []),
 		// Session control
 		new Finish(),
@@ -105,6 +117,22 @@ export function buildReviewGadgets(): CreateBuilderOptions['gadgets'] {
 		new GetPRChecks(),
 		new CreatePRReview(),
 		new UpdatePRComment(),
+		new Finish(),
+	];
+}
+
+/**
+ * Build gadgets for email-focused agents (email-joke).
+ *
+ * Minimal set: email operations + session control only.
+ * No file editing, no GitHub, no PM tools.
+ */
+export function buildEmailJokeGadgets(): CreateBuilderOptions['gadgets'] {
+	return [
+		new SearchEmails(),
+		new ReadEmail(),
+		new ReplyToEmail(),
+		new MarkEmailAsSeen(),
 		new Finish(),
 	];
 }

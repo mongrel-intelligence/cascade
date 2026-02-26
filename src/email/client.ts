@@ -44,18 +44,37 @@ export function getEmailCredentials(): EmailCredentials {
 }
 
 /**
+ * Get the email address from credentials, regardless of auth method.
+ */
+export function getEmailAddress(): string {
+	const creds = getEmailCredentials();
+	return creds.authMethod === 'oauth' ? creds.email : creds.username;
+}
+
+/**
  * Create an ImapFlow client configured with scoped credentials.
+ * Supports both password and OAuth (XOAUTH2) authentication.
  */
 function createImapClient(): ImapFlow {
 	const creds = getEmailCredentials();
+
+	// Build auth config based on authentication method
+	const auth =
+		creds.authMethod === 'oauth'
+			? {
+					user: creds.email,
+					accessToken: creds.accessToken,
+				}
+			: {
+					user: creds.username,
+					pass: creds.password,
+				};
+
 	return new ImapFlow({
 		host: creds.imapHost,
 		port: creds.imapPort,
 		secure: true, // Use TLS
-		auth: {
-			user: creds.username,
-			pass: creds.password,
-		},
+		auth,
 		logger: false, // Suppress imapflow's built-in logging
 		connectionTimeout: 30000, // 30s to establish connection
 		greetingTimeout: 15000, // 15s to receive server greeting
@@ -65,17 +84,29 @@ function createImapClient(): ImapFlow {
 
 /**
  * Create a nodemailer transporter configured with scoped credentials.
+ * Supports both password and OAuth (XOAUTH2) authentication.
  */
 function createSmtpTransport(): Transporter {
 	const creds = getEmailCredentials();
+
+	// Build auth config based on authentication method
+	const auth =
+		creds.authMethod === 'oauth'
+			? {
+					type: 'OAuth2' as const,
+					user: creds.email,
+					accessToken: creds.accessToken,
+				}
+			: {
+					user: creds.username,
+					pass: creds.password,
+				};
+
 	return nodemailer.createTransport({
 		host: creds.smtpHost,
 		port: creds.smtpPort,
 		secure: creds.smtpPort === 465, // Use TLS for port 465, STARTTLS for 587
-		auth: {
-			user: creds.username,
-			pass: creds.password,
-		},
+		auth,
 	});
 }
 
@@ -346,7 +377,7 @@ export async function readEmail(folder: string, uid: number): Promise<EmailMessa
  * Send an email via SMTP.
  */
 export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
-	const creds = getEmailCredentials();
+	const fromEmail = getEmailAddress();
 	const transport = createSmtpTransport();
 
 	try {
@@ -356,7 +387,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
 		});
 
 		const result = await transport.sendMail({
-			from: creds.username,
+			from: fromEmail,
 			to: options.to,
 			cc: options.cc,
 			bcc: options.bcc,
@@ -372,8 +403,12 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
 
 		return {
 			messageId: result.messageId,
-			accepted: result.accepted as string[],
-			rejected: result.rejected as string[],
+			accepted: Array.isArray(result.accepted)
+				? result.accepted.filter((a: unknown): a is string => typeof a === 'string')
+				: [],
+			rejected: Array.isArray(result.rejected)
+				? result.rejected.filter((r: unknown): r is string => typeof r === 'string')
+				: [],
 		};
 	} finally {
 		await transport.close();
@@ -381,21 +416,49 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
 }
 
 /**
- * Reply to an existing email thread.
+ * Mark an email as seen (read) in the mailbox.
  */
+export async function markEmailAsSeen(folder: string, uid: number): Promise<void> {
+	const client = createImapClient();
+
+	try {
+		await client.connect();
+		logger.debug('Connected to IMAP server for mark-as-seen', { folder, uid });
+
+		const lock = await client.getMailboxLock(folder);
+		try {
+			await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
+			logger.debug('Email marked as seen', { folder, uid });
+		} catch (error) {
+			logger.error('Failed to mark email as seen', {
+				folder,
+				uid,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			throw error;
+		} finally {
+			lock.release();
+		}
+	} finally {
+		await client.logout();
+	}
+}
+
 export async function replyToEmail(options: ReplyEmailOptions): Promise<SendEmailResult> {
 	// First, fetch the original message to get threading info
 	const original = await readEmail(options.folder, options.uid);
+
+	// Get our email address for filtering and from field
+	const fromEmail = getEmailAddress();
+	const selfEmailLower = fromEmail.toLowerCase();
 
 	// Build recipient list
 	const recipients: string[] = [];
 	if (options.replyAll) {
 		// Reply to sender + all original recipients (excluding ourselves)
-		const creds = getEmailCredentials();
-		const selfEmail = creds.username.toLowerCase();
 		recipients.push(original.from);
-		recipients.push(...original.to.filter((addr) => !addr.toLowerCase().includes(selfEmail)));
-		recipients.push(...original.cc.filter((addr) => !addr.toLowerCase().includes(selfEmail)));
+		recipients.push(...original.to.filter((addr) => !addr.toLowerCase().includes(selfEmailLower)));
+		recipients.push(...original.cc.filter((addr) => !addr.toLowerCase().includes(selfEmailLower)));
 	} else {
 		// Reply only to sender
 		recipients.push(original.from);
@@ -411,7 +474,6 @@ export async function replyToEmail(options: ReplyEmailOptions): Promise<SendEmai
 	}
 
 	// Send the reply
-	const creds = getEmailCredentials();
 	const transport = createSmtpTransport();
 
 	try {
@@ -422,7 +484,7 @@ export async function replyToEmail(options: ReplyEmailOptions): Promise<SendEmai
 		});
 
 		const result = await transport.sendMail({
-			from: creds.username,
+			from: fromEmail,
 			to: recipients,
 			subject,
 			text: options.body,
@@ -437,8 +499,12 @@ export async function replyToEmail(options: ReplyEmailOptions): Promise<SendEmai
 
 		return {
 			messageId: result.messageId,
-			accepted: result.accepted as string[],
-			rejected: result.rejected as string[],
+			accepted: Array.isArray(result.accepted)
+				? result.accepted.filter((a: unknown): a is string => typeof a === 'string')
+				: [],
+			rejected: Array.isArray(result.rejected)
+				? result.rejected.filter((r: unknown): r is string => typeof r === 'string')
+				: [],
 		};
 	} finally {
 		await transport.close();

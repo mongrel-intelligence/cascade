@@ -85,7 +85,7 @@ export interface ProjectConfigRaw {
 	id: string;
 	orgId: string;
 	name: string;
-	repo: string;
+	repo?: string;
 	baseBranch: string;
 	branchPrefix: string;
 	pm: { type: string };
@@ -127,7 +127,7 @@ type ProjectRow = {
 	id: string;
 	orgId: string;
 	name: string;
-	repo: string;
+	repo: string | null;
 	baseBranch: string | null;
 	branchPrefix: string | null;
 	model: string | null;
@@ -270,7 +270,7 @@ export function mapProjectRow({
 		id: row.id,
 		orgId: row.orgId,
 		name: row.name,
-		repo: row.repo,
+		repo: row.repo ?? undefined,
 		baseBranch: row.baseBranch ?? 'main',
 		branchPrefix: row.branchPrefix ?? 'feature/',
 		pm: { type: pmType },

@@ -1,7 +1,42 @@
 /**
- * Email credentials for IMAP/SMTP connections.
+ * Base email credentials for IMAP/SMTP connections.
  */
-export interface EmailCredentials {
+export interface BaseEmailCredentials {
+	imapHost: string;
+	imapPort: number;
+	smtpHost: string;
+	smtpPort: number;
+}
+
+/**
+ * Email credentials using password authentication.
+ */
+export interface PasswordEmailCredentials extends BaseEmailCredentials {
+	authMethod: 'password';
+	username: string;
+	password: string;
+}
+
+/**
+ * Email credentials using OAuth 2.0 (XOAUTH2).
+ */
+export interface OAuthEmailCredentials extends BaseEmailCredentials {
+	authMethod: 'oauth';
+	email: string;
+	accessToken: string;
+}
+
+/**
+ * Email credentials for IMAP/SMTP connections.
+ * Supports both password and OAuth authentication.
+ */
+export type EmailCredentials = PasswordEmailCredentials | OAuthEmailCredentials;
+
+/**
+ * Legacy email credentials (password auth only).
+ * Used for backward compatibility with existing code.
+ */
+export interface LegacyEmailCredentials {
 	imapHost: string;
 	imapPort: number;
 	smtpHost: string;

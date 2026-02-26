@@ -15,6 +15,7 @@ import { getAgentCapabilities } from '../../../../src/agents/shared/capabilities
 
 const ALL_AGENT_TYPES = [
 	'debug',
+	'email-joke',
 	'implementation',
 	'planning',
 	'respond-to-ci',
@@ -31,7 +32,7 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('getKnownAgentTypes', () => {
-		it('discovers all 9 agent types from YAML files', () => {
+		it('discovers all 10 agent types from YAML files', () => {
 			const types = getKnownAgentTypes();
 			expect(types).toEqual(ALL_AGENT_TYPES);
 		});
@@ -64,9 +65,9 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('loadAllAgentDefinitions', () => {
-		it('returns a map with all 9 agent types', () => {
+		it('returns a map with all 10 agent types', () => {
 			const all = loadAllAgentDefinitions();
-			expect(all.size).toBe(9);
+			expect(all.size).toBe(10);
 			for (const agentType of ALL_AGENT_TYPES) {
 				expect(all.has(agentType)).toBe(true);
 			}

@@ -1,0 +1,21 @@
+## Your Task
+
+1. Use **SearchEmails** to find unread emails<% if (it.senderEmail) { %> from: **<%= it.senderEmail %>**<% } %>
+   - Search criteria: `{ unseen: true<% if (it.senderEmail) { %>, from: "<%= it.senderEmail %>"<% } %> }`
+   - Limit results to prevent overwhelming responses
+
+2. For each email found:
+   - Use **ReadEmail** to read the full content
+   - Compose a friendly, funny response that relates to the email content
+   - Use **ReplyToEmail** to send your joke response
+   - Use **MarkEmailAsSeen** to mark the email as read
+
+3. Call **Finish** when you've processed all emails (or if none were found)
+
+<% if (it.senderEmail) { %>
+## Sender Filter
+Only respond to emails from: **<%= it.senderEmail %>**
+<% } else { %>
+## Note
+No sender filter configured. Processing all unread emails.
+<% } %>

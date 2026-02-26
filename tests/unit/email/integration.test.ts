@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/config/provider.js', () => ({
-	getIntegrationCredential: vi.fn(),
+	getIntegrationCredentialOrNull: vi.fn(),
+	getOrgCredential: vi.fn(),
+}));
+
+vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
+	getIntegrationProvider: vi.fn(),
 }));
 
 vi.mock('../../../src/utils/logging.js', () => ({
@@ -13,7 +18,8 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
-import { getIntegrationCredential } from '../../../src/config/provider.js';
+import { getIntegrationCredentialOrNull } from '../../../src/config/provider.js';
+import { getIntegrationProvider } from '../../../src/db/repositories/credentialsRepository.js';
 import {
 	hasEmailIntegration,
 	resolveEmailCredentials,
@@ -28,7 +34,8 @@ describe('email integration', () => {
 
 	describe('resolveEmailCredentials', () => {
 		it('returns credentials when all fields are present', async () => {
-			vi.mocked(getIntegrationCredential).mockImplementation(
+			vi.mocked(getIntegrationProvider).mockResolvedValue('imap');
+			vi.mocked(getIntegrationCredentialOrNull).mockImplementation(
 				async (_projectId, _category, role) => {
 					const creds: Record<string, string> = {
 						imap_host: 'imap.example.com',
@@ -45,6 +52,7 @@ describe('email integration', () => {
 			const result = await resolveEmailCredentials('project-1');
 
 			expect(result).toEqual({
+				authMethod: 'password',
 				imapHost: 'imap.example.com',
 				imapPort: 993,
 				smtpHost: 'smtp.example.com',
@@ -55,7 +63,8 @@ describe('email integration', () => {
 		});
 
 		it('returns null when a credential is missing', async () => {
-			vi.mocked(getIntegrationCredential).mockImplementation(
+			vi.mocked(getIntegrationProvider).mockResolvedValue('imap');
+			vi.mocked(getIntegrationCredentialOrNull).mockImplementation(
 				async (_projectId, _category, role) => {
 					if (role === 'password') return null; // Missing password
 					const creds: Record<string, string> = {
@@ -74,7 +83,8 @@ describe('email integration', () => {
 		});
 
 		it('returns null when port is not a valid number', async () => {
-			vi.mocked(getIntegrationCredential).mockImplementation(
+			vi.mocked(getIntegrationProvider).mockResolvedValue('imap');
+			vi.mocked(getIntegrationCredentialOrNull).mockImplementation(
 				async (_projectId, _category, role) => {
 					const creds: Record<string, string> = {
 						imap_host: 'imap.example.com',
@@ -93,7 +103,7 @@ describe('email integration', () => {
 		});
 
 		it('logs warning and returns null on error', async () => {
-			vi.mocked(getIntegrationCredential).mockRejectedValue(new Error('DB error'));
+			vi.mocked(getIntegrationProvider).mockRejectedValue(new Error('DB error'));
 
 			const result = await resolveEmailCredentials('project-1');
 
@@ -106,11 +116,19 @@ describe('email integration', () => {
 				}),
 			);
 		});
+
+		it('returns null when no email integration is configured', async () => {
+			vi.mocked(getIntegrationProvider).mockResolvedValue(null);
+
+			const result = await resolveEmailCredentials('project-1');
+			expect(result).toBeNull();
+		});
 	});
 
 	describe('withEmailIntegration', () => {
 		it('runs function with credentials when available', async () => {
-			vi.mocked(getIntegrationCredential).mockImplementation(
+			vi.mocked(getIntegrationProvider).mockResolvedValue('imap');
+			vi.mocked(getIntegrationCredentialOrNull).mockImplementation(
 				async (_projectId, _category, role) => {
 					const creds: Record<string, string> = {
 						imap_host: 'imap.example.com',
@@ -132,7 +150,7 @@ describe('email integration', () => {
 		});
 
 		it('runs function without credentials when not configured', async () => {
-			vi.mocked(getIntegrationCredential).mockResolvedValue(null);
+			vi.mocked(getIntegrationProvider).mockResolvedValue(null);
 
 			const fn = vi.fn().mockResolvedValue('result');
 			const result = await withEmailIntegration('project-1', fn);
@@ -144,7 +162,8 @@ describe('email integration', () => {
 
 	describe('hasEmailIntegration', () => {
 		it('returns true when credentials are configured', async () => {
-			vi.mocked(getIntegrationCredential).mockImplementation(
+			vi.mocked(getIntegrationProvider).mockResolvedValue('imap');
+			vi.mocked(getIntegrationCredentialOrNull).mockImplementation(
 				async (_projectId, _category, role) => {
 					const creds: Record<string, string> = {
 						imap_host: 'imap.example.com',
@@ -163,7 +182,7 @@ describe('email integration', () => {
 		});
 
 		it('returns false when credentials are not configured', async () => {
-			vi.mocked(getIntegrationCredential).mockResolvedValue(null);
+			vi.mocked(getIntegrationProvider).mockResolvedValue(null);
 
 			const result = await hasEmailIntegration('project-1');
 			expect(result).toBe(false);

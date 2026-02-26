@@ -38,6 +38,9 @@ export async function cloneRepo(
 	targetDir: string,
 	token?: string,
 ): Promise<void> {
+	if (!project.repo) {
+		throw new Error(`Cannot clone repository: project '${project.id}' has no repo configured`);
+	}
 	const cloneToken = token ?? (await getProjectGitHubToken(project));
 	const cloneUrl = `https://${cloneToken}@github.com/${project.repo}.git`;
 
