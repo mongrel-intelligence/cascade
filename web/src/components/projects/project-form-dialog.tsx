@@ -26,7 +26,7 @@ export function ProjectFormDialog({ open, onOpenChange }: ProjectFormDialogProps
 	const [baseBranch, setBaseBranch] = useState('main');
 
 	const createMutation = useMutation({
-		mutationFn: (data: { id: string; name: string; repo: string; baseBranch: string }) =>
+		mutationFn: (data: { id: string; name: string; repo?: string; baseBranch: string }) =>
 			trpcClient.projects.create.mutate(data),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: trpc.projects.listFull.queryOptions().queryKey });
@@ -53,7 +53,7 @@ export function ProjectFormDialog({ open, onOpenChange }: ProjectFormDialogProps
 
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
-		createMutation.mutate({ id, name, repo, baseBranch });
+		createMutation.mutate({ id, name, repo: repo || undefined, baseBranch });
 	}
 
 	return (
@@ -97,14 +97,14 @@ export function ProjectFormDialog({ open, onOpenChange }: ProjectFormDialogProps
 						</p>
 					</div>
 					<div className="space-y-2">
-						<Label htmlFor="project-repo">Repository</Label>
+						<Label htmlFor="project-repo">Repository (optional)</Label>
 						<Input
 							id="project-repo"
 							value={repo}
 							onChange={(e) => setRepo(e.target.value)}
 							placeholder="owner/repo"
-							required
 						/>
+						<p className="text-xs text-muted-foreground">Leave empty for email-only projects.</p>
 					</div>
 					<div className="space-y-2">
 						<Label htmlFor="project-branch">Base Branch</Label>

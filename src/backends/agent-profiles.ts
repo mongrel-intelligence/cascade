@@ -74,6 +74,8 @@ function buildTaskPromptContext(input: AgentInput): TaskPromptContext {
 		prBranch: input.prBranch,
 		commentBody: input.triggerCommentBody as string | undefined,
 		commentPath: (input.triggerCommentPath as string) || undefined,
+		// Email-joke agent fields
+		senderEmail: input.senderEmail as string | undefined,
 	};
 }
 

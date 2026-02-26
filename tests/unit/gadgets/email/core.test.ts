@@ -5,6 +5,7 @@ vi.mock('../../../../src/email/client.js', () => ({
 	searchEmails: vi.fn(),
 	readEmail: vi.fn(),
 	replyToEmail: vi.fn(),
+	markEmailAsSeen: vi.fn(),
 }));
 
 vi.mock('../../../../src/utils/logging.js', () => ({
@@ -17,11 +18,13 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 }));
 
 import {
+	markEmailAsSeen as markEmailAsSeenClient,
 	readEmail as readEmailClient,
 	replyToEmail as replyToEmailClient,
 	searchEmails as searchEmailsClient,
 	sendEmail as sendEmailClient,
 } from '../../../../src/email/client.js';
+import { markEmailAsSeen } from '../../../../src/gadgets/email/core/markEmailAsSeen.js';
 import { readEmail } from '../../../../src/gadgets/email/core/readEmail.js';
 import { replyToEmail } from '../../../../src/gadgets/email/core/replyToEmail.js';
 import { searchEmails } from '../../../../src/gadgets/email/core/searchEmails.js';
@@ -285,6 +288,33 @@ describe('email gadget core functions', () => {
 					uid: 123,
 					replyAll: false,
 					error: 'Connection refused',
+				}),
+			);
+		});
+	});
+
+	describe('markEmailAsSeen', () => {
+		it('returns success message when email is marked as seen', async () => {
+			vi.mocked(markEmailAsSeenClient).mockResolvedValue(undefined);
+
+			const result = await markEmailAsSeen('INBOX', 456);
+
+			expect(result).toBe('Email (UID: 456) in folder "INBOX" has been marked as seen/read.');
+			expect(markEmailAsSeenClient).toHaveBeenCalledWith('INBOX', 456);
+		});
+
+		it('returns error message and logs on failure', async () => {
+			vi.mocked(markEmailAsSeenClient).mockRejectedValue(new Error('IMAP flag error'));
+
+			const result = await markEmailAsSeen('INBOX', 789);
+
+			expect(result).toBe('Error marking email as seen: IMAP flag error');
+			expect(logger.error).toHaveBeenCalledWith(
+				'Mark email as seen failed',
+				expect.objectContaining({
+					folder: 'INBOX',
+					uid: 789,
+					error: 'IMAP flag error',
 				}),
 			);
 		});

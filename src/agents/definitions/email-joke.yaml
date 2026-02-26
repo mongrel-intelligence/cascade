@@ -1,0 +1,33 @@
+identity:
+  emoji: "\U0001F602"
+  label: Email Joke Responder
+  roleHint: Reads emails from a specific sender and responds with jokes
+  initialMessage: "**\U0001F602 Checking for emails to respond to with jokes**"
+
+capabilities:
+  canEditFiles: false
+  canCreatePR: false
+  canUpdateChecklists: false
+  isReadOnly: true
+  canAccessEmail: true
+
+tools:
+  sets: [email, session]
+  sdkTools: readOnly
+
+strategies:
+  contextPipeline: []
+  taskPromptBuilder: emailJoke
+  gadgetBuilder: emailJoke
+
+backend:
+  enableStopHooks: false
+  needsGitHubToken: false
+
+compaction: default
+
+trailingMessage: {}
+
+hint: >-
+  Search for emails, read them, and send funny responses. Mark processed emails
+  as seen to prevent re-processing.

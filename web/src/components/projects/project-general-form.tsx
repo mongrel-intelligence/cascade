@@ -14,7 +14,7 @@ import { useState } from 'react';
 interface Project {
 	id: string;
 	name: string;
-	repo: string;
+	repo?: string | null;
 	baseBranch: string | null;
 	branchPrefix: string | null;
 	model: string | null;
@@ -26,7 +26,7 @@ interface Project {
 export function ProjectGeneralForm({ project }: { project: Project }) {
 	const queryClient = useQueryClient();
 	const [name, setName] = useState(project.name);
-	const [repo, setRepo] = useState(project.repo);
+	const [repo, setRepo] = useState(project.repo ?? '');
 	const [baseBranch, setBaseBranch] = useState(project.baseBranch ?? 'main');
 	const [branchPrefix, setBranchPrefix] = useState(project.branchPrefix ?? 'feature/');
 	const [model, setModel] = useState(project.model ?? '');
@@ -53,7 +53,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 		e.preventDefault();
 		updateMutation.mutate({
 			name,
-			repo,
+			repo: repo || undefined,
 			baseBranch,
 			branchPrefix,
 			model: model || null,
@@ -71,8 +71,13 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 					<Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
 				</div>
 				<div className="space-y-2">
-					<Label htmlFor="repo">Repository</Label>
-					<Input id="repo" value={repo} onChange={(e) => setRepo(e.target.value)} required />
+					<Label htmlFor="repo">Repository (optional)</Label>
+					<Input
+						id="repo"
+						value={repo}
+						onChange={(e) => setRepo(e.target.value)}
+						placeholder="owner/repo"
+					/>
 				</div>
 			</div>
 			<div className="grid grid-cols-2 gap-4">

@@ -37,7 +37,8 @@
 		"credentials:generate-key": "node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
 		"credentials:encrypt": "node --env-file=.env --import tsx tools/migrate-credentials-encrypt.ts",
 		"credentials:decrypt": "node --env-file=.env --import tsx tools/migrate-credentials-decrypt.ts",
-		"credentials:rotate-key": "node --env-file=.env --import tsx tools/rotate-credential-key.ts"
+		"credentials:rotate-key": "node --env-file=.env --import tsx tools/rotate-credential-key.ts",
+		"tool:test-email": "npx tsx tools/test-email-integration.ts"
 	},
 	"keywords": [
 		"trello",
@@ -75,6 +76,7 @@
 		"llmist": "^15.19.0",
 		"marklassian": "^1.1.0",
 		"nodemailer": "^8.0.1",
+		"open": "^11.0.0",
 		"pg": "^8.18.0",
 		"trello.js": "^1.2.8",
 		"zangief": "latest",

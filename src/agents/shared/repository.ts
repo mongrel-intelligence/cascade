@@ -17,8 +17,16 @@ export interface SetupRepositoryOptions {
 export async function setupRepository(options: SetupRepositoryOptions): Promise<string> {
 	const { project, log, agentType, prBranch, warmTsCache } = options;
 
-	// Clone repo to temp directory
+	// Create temp directory for all agents
 	const repoDir = createTempDir(project.id);
+
+	// Skip cloning if no repo is configured (email-only agents)
+	if (!project.repo) {
+		log.info('No repo configured, skipping clone', { projectId: project.id, agentType });
+		return repoDir;
+	}
+
+	// Clone repo to temp directory
 	await cloneRepo(project, repoDir);
 
 	// Checkout PR branch if provided

@@ -45,8 +45,15 @@ const StrategiesSchema = z.object({
 			'prConversation',
 		]),
 	),
-	taskPromptBuilder: z.enum(['workItem', 'commentResponse', 'review', 'ci', 'prCommentResponse']),
-	gadgetBuilder: z.enum(['workItem', 'review', 'prAgent']),
+	taskPromptBuilder: z.enum([
+		'workItem',
+		'commentResponse',
+		'review',
+		'ci',
+		'prCommentResponse',
+		'emailJoke',
+	]),
+	gadgetBuilder: z.enum(['workItem', 'review', 'prAgent', 'emailJoke']),
 	gadgetBuilderOptions: GadgetBuilderOptionsSchema,
 });
 

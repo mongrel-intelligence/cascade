@@ -119,6 +119,28 @@ export async function resolveAllOrgCredentials(orgId: string): Promise<Record<st
 }
 
 // ============================================================================
+// Integration metadata queries
+// ============================================================================
+
+/**
+ * Get the provider for a project's integration in a specific category.
+ */
+export async function getIntegrationProvider(
+	projectId: string,
+	category: string,
+): Promise<string | null> {
+	const db = getDb();
+	const [row] = await db
+		.select({ provider: projectIntegrations.provider })
+		.from(projectIntegrations)
+		.where(
+			and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.category, category)),
+		);
+
+	return row?.provider ?? null;
+}
+
+// ============================================================================
 // CRUD for credentials (org-scoped pool)
 // ============================================================================
 
