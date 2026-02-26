@@ -30,6 +30,10 @@ describe('AgentDefinitionSchema', () => {
 		},
 		compaction: 'default',
 		hint: 'Do the thing efficiently.',
+		integrations: {
+			required: ['pm'],
+			optional: [],
+		},
 	};
 
 	it('parses a valid minimal definition', () => {
@@ -176,5 +180,20 @@ describe('AgentDefinitionSchema', () => {
 		};
 		const result = AgentDefinitionSchema.safeParse(good);
 		expect(result.success).toBe(true);
+	});
+
+	it('rejects overlapping required and optional categories', () => {
+		const bad = {
+			...validDefinition,
+			integrations: {
+				required: ['pm', 'scm'],
+				optional: ['pm'], // pm is in both
+			},
+		};
+		const result = AgentDefinitionSchema.safeParse(bad);
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues[0].message).toContain('cannot be both required and optional');
+		}
 	});
 });

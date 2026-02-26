@@ -360,4 +360,94 @@ describe('YAML agent definitions loader', () => {
 			});
 		});
 	});
+
+	describe('integration requirements', () => {
+		it('all agents have integrations field with required and optional arrays', () => {
+			for (const agentType of ALL_AGENT_TYPES) {
+				const def = loadAgentDefinition(agentType);
+				expect(def.integrations).toBeDefined();
+				expect(Array.isArray(def.integrations.required)).toBe(true);
+				expect(Array.isArray(def.integrations.optional)).toBe(true);
+			}
+		});
+
+		it('implementation agent requires scm and pm', () => {
+			const def = loadAgentDefinition('implementation');
+			expect(def.integrations.required).toEqual(['scm', 'pm']);
+			expect(def.integrations.optional).toEqual([]);
+		});
+
+		it('splitting agent requires scm and pm', () => {
+			const def = loadAgentDefinition('splitting');
+			expect(def.integrations.required).toEqual(['scm', 'pm']);
+			expect(def.integrations.optional).toEqual([]);
+		});
+
+		it('planning agent requires scm and pm', () => {
+			const def = loadAgentDefinition('planning');
+			expect(def.integrations.required).toEqual(['scm', 'pm']);
+			expect(def.integrations.optional).toEqual([]);
+		});
+
+		it('review agent requires scm, pm is optional', () => {
+			const def = loadAgentDefinition('review');
+			expect(def.integrations.required).toEqual(['scm']);
+			expect(def.integrations.optional).toEqual(['pm']);
+		});
+
+		it('respond-to-review agent requires scm, pm is optional', () => {
+			const def = loadAgentDefinition('respond-to-review');
+			expect(def.integrations.required).toEqual(['scm']);
+			expect(def.integrations.optional).toEqual(['pm']);
+		});
+
+		it('respond-to-ci agent requires scm, pm is optional', () => {
+			const def = loadAgentDefinition('respond-to-ci');
+			expect(def.integrations.required).toEqual(['scm']);
+			expect(def.integrations.optional).toEqual(['pm']);
+		});
+
+		it('respond-to-pr-comment agent requires scm, pm is optional', () => {
+			const def = loadAgentDefinition('respond-to-pr-comment');
+			expect(def.integrations.required).toEqual(['scm']);
+			expect(def.integrations.optional).toEqual(['pm']);
+		});
+
+		it('respond-to-planning-comment agent requires scm and pm', () => {
+			const def = loadAgentDefinition('respond-to-planning-comment');
+			expect(def.integrations.required).toEqual(['scm', 'pm']);
+			expect(def.integrations.optional).toEqual([]);
+		});
+
+		it('debug agent requires pm only', () => {
+			const def = loadAgentDefinition('debug');
+			expect(def.integrations.required).toEqual(['pm']);
+			expect(def.integrations.optional).toEqual([]);
+		});
+
+		it('email-joke agent requires email only', () => {
+			const def = loadAgentDefinition('email-joke');
+			expect(def.integrations.required).toEqual(['email']);
+			expect(def.integrations.optional).toEqual([]);
+		});
+
+		it('all integration categories are valid', () => {
+			const validCategories = ['pm', 'scm', 'email'];
+			for (const agentType of ALL_AGENT_TYPES) {
+				const def = loadAgentDefinition(agentType);
+				for (const cat of def.integrations.required) {
+					expect(
+						validCategories.includes(cat),
+						`${agentType}: invalid required category '${cat}'`,
+					).toBe(true);
+				}
+				for (const cat of def.integrations.optional) {
+					expect(
+						validCategories.includes(cat),
+						`${agentType}: invalid optional category '${cat}'`,
+					).toBe(true);
+				}
+			}
+		});
+	});
 });

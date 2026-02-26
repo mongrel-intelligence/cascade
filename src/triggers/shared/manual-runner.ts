@@ -7,6 +7,7 @@ import { withPMCredentials } from '../../pm/context.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { formatValidationErrors, validateIntegrations } from './integration-validation.js';
 
 /**
  * In-memory tracking to prevent duplicate concurrent manual triggers.
@@ -79,6 +80,12 @@ export async function triggerManualRun(
 		throw new Error(
 			`Manual trigger already running for project=${input.projectId}, agent=${input.agentType}, card=${input.cardId ?? 'N/A'}, pr=${input.prNumber ?? 'N/A'}`,
 		);
+	}
+
+	// Pre-flight integration validation
+	const validation = await validateIntegrations(input.projectId, input.agentType);
+	if (!validation.valid) {
+		throw new Error(formatValidationErrors(validation));
 	}
 
 	logger.info('Triggering manual agent run', {
