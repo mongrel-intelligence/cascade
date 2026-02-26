@@ -3,6 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Mock pathValidation to allow temp directory paths in tests
+vi.mock('../../../src/gadgets/shared/pathValidation.js', () => ({
+	validatePath: vi.fn((path: string) => path),
+}));
+
 // Mock readTracking so we don't have to pre-mark files
 vi.mock('../../../src/gadgets/readTracking.js', () => ({
 	assertFileRead: vi.fn(), // No-op — skip read guard

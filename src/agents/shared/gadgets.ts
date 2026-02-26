@@ -8,6 +8,7 @@ import { RipGrep } from '../../gadgets/RipGrep.js';
 import { Sleep } from '../../gadgets/Sleep.js';
 import { VerifyChanges } from '../../gadgets/VerifyChanges.js';
 import { WriteFile } from '../../gadgets/WriteFile.js';
+import { ReadEmail, ReplyToEmail, SearchEmails, SendEmail } from '../../gadgets/email/index.js';
 import {
 	CreatePR,
 	CreatePRReview,
@@ -75,6 +76,10 @@ export function buildWorkItemGadgets(caps: AgentCapabilities): CreateBuilderOpti
 		// UpdateChecklistItem gated by capability — prevents planning from marking items complete
 		// prematurely, while respond-to-planning-comment CAN update them
 		...(caps.canUpdateChecklists ? [new PMUpdateChecklistItem(), new PMDeleteChecklistItem()] : []),
+		// Email gadgets (gated by capability — disabled by default)
+		...(caps.canAccessEmail
+			? [new SendEmail(), new SearchEmails(), new ReadEmail(), new ReplyToEmail()]
+			: []),
 		// Session control
 		new Finish(),
 	];

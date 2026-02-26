@@ -120,6 +120,13 @@
 			"when": 1751000000000,
 			"tag": "0016_add_task_prompt_column",
 			"breakpoints": false
+		},
+		{
+			"idx": 17,
+			"version": "7",
+			"when": 1752000000000,
+			"tag": "0017_email_integration",
+			"breakpoints": false
 		}
 	]
 }

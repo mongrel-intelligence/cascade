@@ -32,6 +32,10 @@ vi.mock('../../../src/pm/context.js', () => ({
 	),
 }));
 
+vi.mock('../../../src/email/integration.js', () => ({
+	withEmailIntegration: vi.fn((_projectId: string, fn: () => unknown) => fn()),
+}));
+
 import { runAgent } from '../../../src/agents/registry.js';
 import { getRunById } from '../../../src/db/repositories/runsRepository.js';
 import { withPMCredentials } from '../../../src/pm/context.js';
