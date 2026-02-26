@@ -33,6 +33,12 @@ export interface AgentExecutionConfig {
 	handleSuccessOnlyForAgentType?: string;
 
 	/**
+	 * Optional callback invoked when the agent succeeds (after pipeline completes).
+	 * Used by GitHub to delete the progress comment for non-implementation agents.
+	 */
+	onSuccess?: (result: TriggerResult, agentResult: AgentResult) => Promise<void>;
+
+	/**
 	 * Optional callback invoked when the agent fails (after pipeline completes).
 	 * Used by GitHub to update the PR comment with an error message.
 	 */
@@ -149,7 +155,7 @@ export async function runAgentExecutionPipeline(
 	}
 	const agentType = result.agentType;
 
-	const { skipPrepareForAgent = false, onFailure, logLabel = 'Agent' } = executionConfig;
+	const { skipPrepareForAgent = false, onSuccess, onFailure, logLabel = 'Agent' } = executionConfig;
 
 	const workItemId = result.workItemId;
 	const pmProvider = createPMProvider(project);
@@ -191,6 +197,10 @@ export async function runAgentExecutionPipeline(
 		success: agentResult.success,
 		runId: agentResult.runId,
 	});
+
+	if (onSuccess && agentResult.success) {
+		await onSuccess(result, agentResult);
+	}
 
 	if (onFailure && !agentResult.success) {
 		await onFailure(result, agentResult);

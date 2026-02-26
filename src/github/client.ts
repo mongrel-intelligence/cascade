@@ -226,6 +226,15 @@ export const githubClient = {
 		};
 	},
 
+	async deletePRComment(owner: string, repo: string, commentId: number): Promise<void> {
+		logger.debug('Deleting PR comment', { owner, repo, commentId });
+		await getClient().issues.deleteComment({
+			owner,
+			repo,
+			comment_id: commentId,
+		});
+	},
+
 	async getPRReviews(owner: string, repo: string, prNumber: number): Promise<PRReview[]> {
 		logger.debug('Fetching PR reviews', { owner, repo, prNumber });
 		const { data } = await getClient().pulls.listReviews({
