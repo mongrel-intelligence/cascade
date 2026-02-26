@@ -16,11 +16,14 @@ const CapabilitiesSchema = z.object({
 	canCreatePR: z.boolean(),
 	canUpdateChecklists: z.boolean(),
 	isReadOnly: z.boolean(),
+	canAccessEmail: z.boolean().optional(),
 });
 
 const ToolsSchema = z.object({
 	/** Named tool set references resolved via TOOL_SET_REGISTRY */
-	sets: z.array(z.enum(['pm', 'pm_checklist', 'session', 'github_review', 'github_ci', 'all'])),
+	sets: z.array(
+		z.enum(['pm', 'pm_checklist', 'session', 'github_review', 'github_ci', 'email', 'all']),
+	),
 	/** SDK tools preset: "all" or "readOnly" */
 	sdkTools: z.enum(['all', 'readOnly']),
 });

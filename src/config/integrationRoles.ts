@@ -1,10 +1,11 @@
-export type IntegrationCategory = 'pm' | 'scm';
-export type IntegrationProvider = 'trello' | 'jira' | 'github';
+export type IntegrationCategory = 'pm' | 'scm' | 'email';
+export type IntegrationProvider = 'trello' | 'jira' | 'github' | 'imap';
 
 export const PROVIDER_CATEGORY: Record<IntegrationProvider, IntegrationCategory> = {
 	trello: 'pm',
 	jira: 'pm',
 	github: 'scm',
+	imap: 'email',
 };
 
 export interface CredentialRoleDef {
@@ -29,5 +30,13 @@ export const PROVIDER_CREDENTIAL_ROLES: Record<IntegrationProvider, CredentialRo
 			envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
 		},
 		{ role: 'reviewer_token', label: 'Reviewer Token', envVarKey: 'GITHUB_TOKEN_REVIEWER' },
+	],
+	imap: [
+		{ role: 'imap_host', label: 'IMAP Host', envVarKey: 'EMAIL_IMAP_HOST' },
+		{ role: 'imap_port', label: 'IMAP Port', envVarKey: 'EMAIL_IMAP_PORT' },
+		{ role: 'smtp_host', label: 'SMTP Host', envVarKey: 'EMAIL_SMTP_HOST' },
+		{ role: 'smtp_port', label: 'SMTP Port', envVarKey: 'EMAIL_SMTP_PORT' },
+		{ role: 'username', label: 'Username/Email', envVarKey: 'EMAIL_USERNAME' },
+		{ role: 'password', label: 'Password/App Password', envVarKey: 'EMAIL_PASSWORD' },
 	],
 };

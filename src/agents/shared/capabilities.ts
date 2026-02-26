@@ -21,6 +21,8 @@ export interface AgentCapabilities {
 	canUpdateChecklists: boolean;
 	/** True for agents that only interact with the PM system (no repo changes) */
 	isReadOnly: boolean;
+	/** Can the agent send/search/read emails? (default: false) */
+	canAccessEmail?: boolean;
 }
 
 /**
