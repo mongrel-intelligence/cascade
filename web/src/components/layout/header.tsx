@@ -9,7 +9,9 @@ import { API_URL } from '@/lib/api.js';
 import { useOrgContext } from '@/lib/org-context.js';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Building2, LogOut } from 'lucide-react';
+import { Building2, LogOut, Moon, Sun } from 'lucide-react';
+import { useTheme } from 'next-themes';
+import { useEffect, useState } from 'react';
 
 interface HeaderProps {
 	user: { name: string; role: string } | undefined;
@@ -19,6 +21,12 @@ export function Header({ user }: HeaderProps) {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const { effectiveOrgId, availableOrgs, isAdmin, switchOrg } = useOrgContext();
+	const { theme, setTheme } = useTheme();
+	const [mounted, setMounted] = useState(false);
+
+	useEffect(() => {
+		setMounted(true);
+	}, []);
 
 	const orgName =
 		isAdmin && availableOrgs
@@ -29,6 +37,10 @@ export function Header({ user }: HeaderProps) {
 		await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' });
 		queryClient.clear();
 		navigate({ to: '/login' });
+	}
+
+	function toggleTheme() {
+		setTheme(theme === 'dark' ? 'light' : 'dark');
 	}
 
 	return (
@@ -54,6 +66,16 @@ export function Header({ user }: HeaderProps) {
 			</div>
 			<div className="flex items-center gap-4">
 				{user && <span className="text-sm text-muted-foreground">{user.name}</span>}
+				{mounted && (
+					<button
+						type="button"
+						onClick={toggleTheme}
+						className="inline-flex items-center justify-center rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground"
+						aria-label="Toggle theme"
+					>
+						{theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+					</button>
+				)}
 				<button
 					type="button"
 					onClick={handleLogout}

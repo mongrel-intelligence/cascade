@@ -301,7 +301,7 @@ function GmailConnectContent({
 		return (
 			<div className="rounded-md border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-900/20">
 				<div className="flex items-start gap-2">
-					<AlertCircle className="h-4 w-4 text-amber-600 mt-0.5" />
+					<AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5" />
 					<div className="space-y-1">
 						<p className="text-sm font-medium text-amber-700 dark:text-amber-400">
 							Google OAuth not configured
@@ -325,7 +325,7 @@ function GmailConnectContent({
 
 	if (oauthComplete) {
 		return (
-			<div className="flex items-center gap-2 text-sm text-green-600">
+			<div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
 				<CheckCircle className="h-4 w-4" />
 				Connected as <span className="font-medium">{gmailEmail}</span>
 			</div>
@@ -434,7 +434,7 @@ function GmailVerifyContent({
 
 	return (
 		<>
-			<div className="flex items-center gap-2 text-sm text-green-600">
+			<div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
 				<CheckCircle className="h-4 w-4" />
 				Gmail connection verified for <span className="font-medium">{gmailEmail}</span>
 			</div>
@@ -468,7 +468,7 @@ function ImapVerifyContent({
 	return (
 		<div className="space-y-4">
 			{verificationEmail ? (
-				<div className="flex items-center gap-2 text-sm text-green-600">
+				<div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
 					<CheckCircle className="h-4 w-4" />
 					IMAP connection verified for <span className="font-medium">{verificationEmail}</span>
 				</div>
@@ -923,7 +923,9 @@ function SaveStep({
 							: 'Save Integration'}
 				</button>
 				{saveMutation.isSuccess && (
-					<span className="text-sm text-green-600">Integration saved successfully.</span>
+					<span className="text-sm text-green-600 dark:text-green-400">
+						Integration saved successfully.
+					</span>
 				)}
 				{saveMutation.isError && (
 					<span className="text-sm text-destructive">{saveMutation.error.message}</span>
@@ -1067,7 +1069,9 @@ export function EmailJokeConfig({ projectId }: { projectId: string }) {
 						: 'No filter set. The agent will process all unread emails.'}
 				</p>
 			</div>
-			{updateMutation.isSuccess && <p className="text-sm text-green-600">Configuration saved.</p>}
+			{updateMutation.isSuccess && (
+				<p className="text-sm text-green-600 dark:text-green-400">Configuration saved.</p>
+			)}
 			{updateMutation.isError && (
 				<p className="text-sm text-destructive">{updateMutation.error.message}</p>
 			)}

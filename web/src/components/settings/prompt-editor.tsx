@@ -169,7 +169,9 @@ function TemplateEditor({ agentType, onClose }: { agentType: string; onClose: ()
 						{validationStatus && (
 							<span
 								className={`text-sm ${
-									validationStatus.startsWith('Invalid') ? 'text-destructive' : 'text-green-600'
+									validationStatus.startsWith('Invalid')
+										? 'text-destructive'
+										: 'text-green-600 dark:text-green-400'
 								}`}
 							>
 								{validationStatus}
@@ -290,7 +292,9 @@ function PartialEditor({ name, onClose }: { name: string; onClose: () => void })
 				{validationStatus && (
 					<span
 						className={`text-sm ${
-							validationStatus.startsWith('Invalid') ? 'text-destructive' : 'text-green-600'
+							validationStatus.startsWith('Invalid')
+								? 'text-destructive'
+								: 'text-green-600 dark:text-green-400'
 						}`}
 					>
 						{validationStatus}
