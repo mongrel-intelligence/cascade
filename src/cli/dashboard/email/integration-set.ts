@@ -50,7 +50,7 @@ export default class EmailIntegrationSet extends DashboardCommand {
 				this.log('Note: Run "cascade email oauth" to authenticate Gmail.');
 			} else {
 				this.log(
-					'Note: Link IMAP credentials using "cascade projects integration-credential-set".',
+					'Note: Link IMAP credentials using "cascade projects integration-credential-set --category email".',
 				);
 			}
 		} catch (err) {

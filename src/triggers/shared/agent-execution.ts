@@ -7,7 +7,11 @@ import { handleAgentResultArtifacts } from './agent-result-handler.js';
 import { checkBudgetExceeded } from './budget.js';
 import { triggerDebugAnalysis } from './debug-runner.js';
 import { shouldTriggerDebug } from './debug-trigger.js';
-import { formatValidationErrors, validateIntegrations } from './integration-validation.js';
+import {
+	type ValidationResult,
+	formatValidationErrors,
+	validateIntegrations,
+} from './integration-validation.js';
 
 /**
  * Configuration for source-specific behavior in the agent execution pipeline.
@@ -125,6 +129,36 @@ async function runPostAgentLifecycle(
 }
 
 /**
+ * Notify PM and GitHub when integration validation fails before the agent runs.
+ */
+async function notifyValidationFailure(
+	result: TriggerResult,
+	validation: ValidationResult,
+	lifecycle: PMLifecycleManager,
+	executionConfig: AgentExecutionConfig,
+	agentType: string,
+	projectId: string,
+): Promise<void> {
+	const errorMessage = formatValidationErrors(validation);
+	logger.error('Integration validation failed', {
+		agentType,
+		projectId,
+		errors: validation.errors,
+	});
+
+	// Only notify via PM if PM validation passed (otherwise PM isn't configured)
+	const pmFailed = validation.errors.some((e) => e.category === 'pm');
+	if (result.workItemId && !pmFailed) {
+		await lifecycle.handleFailure(result.workItemId, errorMessage);
+	}
+
+	// Call onFailure callback (for GitHub PR updates)
+	if (executionConfig.onFailure) {
+		await executionConfig.onFailure(result, { success: false, output: '', error: errorMessage });
+	}
+}
+
+/**
  * Shared agent execution pipeline.
  *
  * Handles the common steps across all webhook handlers:
@@ -164,23 +198,14 @@ export async function runAgentExecutionPipeline(
 	// Pre-flight integration validation
 	const validation = await validateIntegrations(project.id, agentType);
 	if (!validation.valid) {
-		const errorMessage = formatValidationErrors(validation);
-		logger.error('Integration validation failed', {
+		await notifyValidationFailure(
+			result,
+			validation,
+			lifecycle,
+			executionConfig,
 			agentType,
-			projectId: project.id,
-			errors: validation.errors,
-		});
-
-		// Only notify via PM if PM validation passed (otherwise PM isn't configured)
-		const pmFailed = validation.errors.some((e) => e.category === 'pm');
-		if (result.workItemId && !pmFailed) {
-			await lifecycle.handleFailure(result.workItemId, errorMessage);
-		}
-
-		// Call onFailure callback (for GitHub PR updates)
-		if (executionConfig.onFailure) {
-			await executionConfig.onFailure(result, { success: false, output: '', error: errorMessage });
-		}
+			project.id,
+		);
 		return;
 	}
 
