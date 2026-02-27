@@ -239,6 +239,35 @@ export async function fetchPRConversationStep(
 	return injections;
 }
 
+export function fetchEmailsFromInputStep(params: FetchContextParams): ContextInjection[] {
+	const emails = params.input.preFoundEmails;
+	if (!emails || emails.length === 0) return [];
+
+	const lines = [`Found ${emails.length} email(s):`, ''];
+	emails.forEach((email, i) => {
+		const dateStr = email.date.toISOString().split('T')[0];
+		lines.push(`${i + 1}. [UID:${email.uid}] ${dateStr} - "${email.subject}" from ${email.from}`);
+	});
+
+	const senderEmail = params.input.senderEmail;
+	const criteria: Record<string, unknown> = { unseen: true };
+	if (senderEmail) criteria.from = senderEmail;
+
+	return [
+		{
+			toolName: 'SearchEmails',
+			params: {
+				comment: 'Pre-fetched unread emails before agent start',
+				folder: 'INBOX',
+				criteria,
+				maxResults: 10,
+			},
+			result: lines.join('\n'),
+			description: `Pre-fetched ${emails.length} unread email(s)`,
+		},
+	];
+}
+
 // ============================================================================
 // Pre-execute hooks
 // ============================================================================
