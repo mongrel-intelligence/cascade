@@ -3,7 +3,7 @@ import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle, Loader2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { EmailJokeConfig, EmailWizard } from './email-wizard.js';
+import { EmailWizard } from './email-wizard.js';
 import { PMWizard } from './pm-wizard.js';
 
 type IntegrationCategory = 'pm' | 'scm' | 'email';
@@ -425,14 +425,11 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 			)}
 
 			{activeTab === 'email' && (
-				<div className="space-y-6">
-					<EmailWizard
-						projectId={projectId}
-						initialProvider={emailProvider}
-						initialCredentials={emailCredMap}
-					/>
-					<EmailJokeConfig projectId={projectId} />
-				</div>
+				<EmailWizard
+					projectId={projectId}
+					initialProvider={emailProvider}
+					initialCredentials={emailCredMap}
+				/>
 			)}
 		</div>
 	);

@@ -532,6 +532,7 @@ export function EmailWizard({
 	// Initialize from existing integration.
 	// For Gmail: wait until orgCredentials has loaded so we can resolve the email
 	// address from the credential name and pre-confirm the verify step.
+	// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-provider initialization requires coordinating several async conditions and credential lookups in a single effect
 	useEffect(() => {
 		if (initDoneRef.current || !initialProvider || !initialCredentials) return;
 		if (initialProvider === 'gmail' && orgCredentials.length === 0) return;

@@ -11,7 +11,10 @@ import {
 	SelectValue,
 } from '@/components/ui/select.js';
 import {
+	AGENT_LABELS,
 	ALL_AGENT_TYPES,
+	EMAIL_TRIGGER_AGENTS,
+	type KnownAgentType,
 	LIFECYCLE_TRIGGERS,
 	SHARED_PM_TRIGGERS,
 	getTriggersForAgent,
@@ -19,8 +22,9 @@ import {
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { EmailJokeConfig } from './email-wizard.js';
 
 interface AgentConfig {
 	id: number;
@@ -30,18 +34,6 @@ interface AgentConfig {
 	agentBackend: string | null;
 	prompt: string | null;
 }
-
-/** Friendly labels for known agent types */
-const AGENT_LABELS: Record<string, string> = {
-	splitting: 'Splitting',
-	planning: 'Planning',
-	implementation: 'Implementation',
-	review: 'Review',
-	'respond-to-review': 'Respond to Review',
-	'respond-to-ci': 'Respond to CI',
-	'respond-to-pr-comment': 'Respond to PR Comment',
-	'respond-to-planning-comment': 'Respond to Planning Comment',
-};
 
 function AgentConfigBadge({ config }: { config: AgentConfig | null }) {
 	if (!config) {
@@ -86,6 +78,7 @@ function extractRelevantTriggers(
 
 function AgentSection({
 	agentType,
+	projectId,
 	config,
 	pmTriggers,
 	scmTriggers,
@@ -95,6 +88,8 @@ function AgentSection({
 	onSaveTriggers,
 }: {
 	agentType: string;
+	/** Only required for agents in EMAIL_TRIGGER_AGENTS */
+	projectId?: string;
 	config: AgentConfig | null;
 	pmTriggers: Record<string, unknown>;
 	scmTriggers: Record<string, unknown>;
@@ -117,8 +112,9 @@ function AgentSection({
 
 	const agentPmTriggers = getTriggersForAgent(agentType, { pmProvider, category: 'pm' });
 	const agentScmTriggers = getTriggersForAgent(agentType, { category: 'scm' });
+	const hasEmailTriggers = EMAIL_TRIGGER_AGENTS.has(agentType as KnownAgentType);
 
-	const hasTriggers = agentPmTriggers.length > 0 || agentScmTriggers.length > 0;
+	const hasTriggers = agentPmTriggers.length > 0 || agentScmTriggers.length > 0 || hasEmailTriggers;
 
 	// Sync local state when props change (e.g., after another agent section saves shared triggers)
 	useEffect(() => {
@@ -167,7 +163,9 @@ function AgentSection({
 					) : (
 						<ChevronRight className="h-4 w-4 text-muted-foreground" />
 					)}
-					<span className="font-medium text-sm">{AGENT_LABELS[agentType] ?? agentType}</span>
+					<span className="font-medium text-sm">
+						{(AGENT_LABELS as Record<string, string | undefined>)[agentType] ?? agentType}
+					</span>
 					<AgentConfigBadge config={config} />
 				</div>
 				<div className="flex items-center gap-1">
@@ -252,6 +250,16 @@ function AgentSection({
 						</div>
 					)}
 
+					{/* Email Triggers */}
+					{hasEmailTriggers && projectId && (
+						<div className="space-y-3">
+							<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+								Email Triggers
+							</p>
+							<EmailJokeConfig projectId={projectId} />
+						</div>
+					)}
+
 					{!hasTriggers && (
 						<p className="text-xs text-muted-foreground">
 							No trigger configuration for this agent.
@@ -286,7 +294,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const configsQueryKey = trpc.agentConfigs.list.queryOptions({ projectId }).queryKey;
 	const integrationsQueryKey = trpc.projects.integrations.list.queryOptions({ projectId }).queryKey;
 
-	function openCreate(defaultAgentType = '') {
+	function openCreate(defaultAgentType: string) {
 		setEditing(null);
 		setAgentType(defaultAgentType);
 		setModel('');
@@ -457,6 +465,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 					<AgentSection
 						key={type}
 						agentType={type}
+						projectId={projectId}
 						config={configByAgent.get(type) ?? null}
 						pmTriggers={pmTriggers}
 						scmTriggers={scmTriggers}
@@ -474,6 +483,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 						<AgentSection
 							key={c.agentType}
 							agentType={c.agentType}
+							projectId={projectId}
 							config={c}
 							pmTriggers={pmTriggers}
 							scmTriggers={scmTriggers}
@@ -484,15 +494,6 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 						/>
 					))}
 			</div>
-
-			{/* Add config for custom agent type */}
-			<button
-				type="button"
-				onClick={() => openCreate()}
-				className="inline-flex h-8 items-center gap-1 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-			>
-				<Plus className="h-4 w-4" /> Add Custom Agent Config
-			</button>
 
 			{/* Shared PM triggers section */}
 			{filteredSharedPmTriggers.length > 0 && (
@@ -569,10 +570,9 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 							<Label htmlFor="ac-agentType">Agent Type</Label>
 							<Input
 								id="ac-agentType"
-								value={agentType}
-								onChange={(e) => setAgentType(e.target.value)}
-								placeholder="e.g. implementation, review"
-								required
+								value={(AGENT_LABELS as Record<string, string | undefined>)[agentType] ?? agentType}
+								readOnly
+								className="bg-muted"
 							/>
 						</div>
 						<div className="grid grid-cols-2 gap-4">

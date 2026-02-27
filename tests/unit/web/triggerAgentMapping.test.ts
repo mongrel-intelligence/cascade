@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { getTriggersForAgent } from '../../../web/src/lib/trigger-agent-mapping.js';
+import {
+	AGENT_LABELS,
+	ALL_AGENT_TYPES,
+	EMAIL_TRIGGER_AGENTS,
+	getTriggersForAgent,
+} from '../../../web/src/lib/trigger-agent-mapping.js';
 
 describe('getTriggersForAgent', () => {
 	it('returns all triggers when no opts given (backward compatibility)', () => {
@@ -87,5 +92,79 @@ describe('getTriggersForAgent — review trigger dot-notation keys and defaults'
 		expect(defaults['reviewTrigger.externalPrs']).toBe(false);
 		expect(defaults['reviewTrigger.onReviewRequested']).toBe(false);
 		expect(defaults.prOpened).toBe(false);
+	});
+});
+
+describe('ALL_AGENT_TYPES', () => {
+	it('includes email-joke', () => {
+		expect(ALL_AGENT_TYPES).toContain('email-joke');
+	});
+
+	it('contains all expected agent types in order', () => {
+		expect(ALL_AGENT_TYPES).toEqual([
+			'splitting',
+			'planning',
+			'implementation',
+			'review',
+			'respond-to-review',
+			'respond-to-ci',
+			'respond-to-pr-comment',
+			'respond-to-planning-comment',
+			'email-joke',
+		]);
+	});
+});
+
+describe('AGENT_LABELS', () => {
+	it('has a label for every entry in ALL_AGENT_TYPES', () => {
+		for (const type of ALL_AGENT_TYPES) {
+			expect(AGENT_LABELS).toHaveProperty(type);
+			expect(typeof AGENT_LABELS[type]).toBe('string');
+			expect(AGENT_LABELS[type].length).toBeGreaterThan(0);
+		}
+	});
+
+	it('maps email-joke to a friendly label', () => {
+		expect(AGENT_LABELS['email-joke']).toBe('Email Joke');
+	});
+
+	it('has no entries beyond ALL_AGENT_TYPES', () => {
+		const knownTypes = new Set<string>(ALL_AGENT_TYPES);
+		for (const key of Object.keys(AGENT_LABELS)) {
+			expect(knownTypes).toContain(key);
+		}
+	});
+});
+
+describe('EMAIL_TRIGGER_AGENTS', () => {
+	it('contains email-joke', () => {
+		expect(EMAIL_TRIGGER_AGENTS.has('email-joke')).toBe(true);
+	});
+
+	it('does not contain non-email agents', () => {
+		expect(EMAIL_TRIGGER_AGENTS.has('implementation')).toBe(false);
+		expect(EMAIL_TRIGGER_AGENTS.has('review')).toBe(false);
+		expect(EMAIL_TRIGGER_AGENTS.has('splitting')).toBe(false);
+	});
+
+	it('every entry is a known agent type', () => {
+		const knownTypes = new Set<string>(ALL_AGENT_TYPES);
+		for (const agentType of EMAIL_TRIGGER_AGENTS) {
+			expect(knownTypes).toContain(agentType);
+		}
+	});
+});
+
+describe('getTriggersForAgent — email-joke', () => {
+	it('returns empty array for email-joke (triggers are handled by a custom widget, not toggles)', () => {
+		expect(getTriggersForAgent('email-joke')).toHaveLength(0);
+	});
+
+	it('returns empty array for email-joke with category: pm', () => {
+		expect(getTriggersForAgent('email-joke', { category: 'pm' })).toHaveLength(0);
+	});
+
+	it('returns empty array for email-joke with category: scm', () => {
+		expect(getTriggersForAgent('email-joke', { category: 'scm' })).toHaveLength(0);
 	});
 });
