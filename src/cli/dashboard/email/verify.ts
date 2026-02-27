@@ -32,15 +32,11 @@ export default class EmailVerify extends DashboardCommand {
 			this.error('Gmail credentials not linked to project. Run "cascade email oauth" first.');
 		}
 
-		const gmailCreds = orgCredentials.find((c: { id: number }) => c.id === gmailEmailCredId) as
-			| { value: string }
-			| undefined;
-
 		const result = await this.client.integrationsDiscovery.verifyGmail.mutate({
 			clientIdCredentialId: clientIdCred.id,
 			clientSecretCredentialId: clientSecretCred.id,
 			refreshTokenCredentialId: refreshTokenCredId,
-			email: gmailCreds?.value ?? '',
+			gmailEmailCredentialId: gmailEmailCredId,
 		});
 
 		if (jsonOutput) {
