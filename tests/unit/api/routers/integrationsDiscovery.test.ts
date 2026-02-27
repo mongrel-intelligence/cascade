@@ -23,6 +23,30 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 	credentials: { id: 'id', orgId: 'org_id', value: 'value' },
 }));
 
+const { mockImapConnect, mockImapLogout, MockImapFlow, mockRefreshGmailAccessToken } = vi.hoisted(
+	() => {
+		const mockImapConnect = vi.fn();
+		const mockImapLogout = vi.fn();
+		const MockImapFlow = vi.fn().mockImplementation(() => ({
+			connect: mockImapConnect,
+			logout: mockImapLogout,
+		}));
+		const mockRefreshGmailAccessToken = vi.fn();
+		return { mockImapConnect, mockImapLogout, MockImapFlow, mockRefreshGmailAccessToken };
+	},
+);
+
+vi.mock('imapflow', () => ({
+	ImapFlow: MockImapFlow,
+}));
+
+vi.mock('../../../../src/email/gmail/oauth.js', () => ({
+	getGmailAuthUrl: vi.fn(),
+	exchangeGmailCode: vi.fn(),
+	getGmailUserInfo: vi.fn(),
+	refreshGmailAccessToken: (...args: unknown[]) => mockRefreshGmailAccessToken(...args),
+}));
+
 const mockTrelloGetMe = vi.fn();
 const mockTrelloGetBoards = vi.fn();
 const mockTrelloGetBoardLists = vi.fn();
@@ -98,6 +122,9 @@ describe('integrationsDiscoveryRouter', () => {
 	beforeEach(() => {
 		mockDbSelect.mockReturnValue({ from: mockDbFrom });
 		mockDbFrom.mockReturnValue({ where: mockDbWhere });
+		mockImapConnect.mockResolvedValue(undefined);
+		mockImapLogout.mockResolvedValue(undefined);
+		mockRefreshGmailAccessToken.mockResolvedValue({ accessToken: 'access-token-123' });
 	});
 
 	// ── Auth ─────────────────────────────────────────────────────────────
@@ -142,6 +169,30 @@ describe('integrationsDiscoveryRouter', () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(
 				caller.jiraProjectDetails({ ...jiraCredsInput, projectKey: 'PROJ' }),
+			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+		});
+
+		it('verifyGmail throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(
+				caller.verifyGmail({
+					clientIdCredentialId: 10,
+					clientSecretCredentialId: 11,
+					refreshTokenCredentialId: 12,
+					gmailEmailCredentialId: 13,
+				}),
+			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+		});
+
+		it('verifyImap throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(
+				caller.verifyImap({
+					hostCredentialId: 20,
+					portCredentialId: 21,
+					usernameCredentialId: 22,
+					passwordCredentialId: 23,
+				}),
 			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 		});
 	});
@@ -480,6 +531,146 @@ describe('integrationsDiscoveryRouter', () => {
 			await expect(
 				caller.jiraProjectDetails({ ...jiraCredsInput, projectKey: 'PROJ' }),
 			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+		});
+	});
+
+	// ── verifyGmail ───────────────────────────────────────────────────────
+
+	const gmailInput = {
+		clientIdCredentialId: 10,
+		clientSecretCredentialId: 11,
+		refreshTokenCredentialId: 12,
+		gmailEmailCredentialId: 13,
+	};
+
+	describe('verifyGmail', () => {
+		it('resolves all four credentials server-side and returns email', async () => {
+			setupDbCredentials([
+				{ orgId: 'org-1', value: 'client-id' },
+				{ orgId: 'org-1', value: 'client-secret' },
+				{ orgId: 'org-1', value: 'refresh-token' },
+				{ orgId: 'org-1', value: 'user@gmail.com' },
+			]);
+			mockRefreshGmailAccessToken.mockResolvedValue({ accessToken: 'access-token-123' });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.verifyGmail(gmailInput);
+
+			expect(result).toEqual({ success: true, email: 'user@gmail.com' });
+			expect(mockRefreshGmailAccessToken).toHaveBeenCalledWith(
+				'client-id',
+				'client-secret',
+				'refresh-token',
+			);
+		});
+
+		it('passes resolved email as IMAP user (not a credential ID or masked value)', async () => {
+			setupDbCredentials([
+				{ orgId: 'org-1', value: 'client-id' },
+				{ orgId: 'org-1', value: 'client-secret' },
+				{ orgId: 'org-1', value: 'refresh-token' },
+				{ orgId: 'org-1', value: 'user@gmail.com' },
+			]);
+			mockRefreshGmailAccessToken.mockResolvedValue({ accessToken: 'tok' });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.verifyGmail(gmailInput);
+
+			const imapArgs = MockImapFlow.mock.calls[0][0] as { auth: { user: string } };
+			expect(imapArgs.auth.user).toBe('user@gmail.com');
+		});
+
+		it('wraps token refresh failure in BAD_REQUEST', async () => {
+			setupDbCredentials([
+				{ orgId: 'org-1', value: 'client-id' },
+				{ orgId: 'org-1', value: 'client-secret' },
+				{ orgId: 'org-1', value: 'bad-refresh-token' },
+				{ orgId: 'org-1', value: 'user@gmail.com' },
+			]);
+			mockRefreshGmailAccessToken.mockRejectedValue(new Error('invalid_grant'));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.verifyGmail(gmailInput)).rejects.toMatchObject({
+				code: 'BAD_REQUEST',
+			});
+		});
+
+		it('wraps IMAP connection failure in BAD_REQUEST', async () => {
+			setupDbCredentials([
+				{ orgId: 'org-1', value: 'client-id' },
+				{ orgId: 'org-1', value: 'client-secret' },
+				{ orgId: 'org-1', value: 'refresh-token' },
+				{ orgId: 'org-1', value: 'user@gmail.com' },
+			]);
+			mockRefreshGmailAccessToken.mockResolvedValue({ accessToken: 'tok' });
+			mockImapConnect.mockRejectedValue(new Error('Connection refused'));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.verifyGmail(gmailInput)).rejects.toMatchObject({
+				code: 'BAD_REQUEST',
+			});
+		});
+
+		it('rejects input containing a plain email string (schema change guard)', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				// biome-ignore lint/suspicious/noExplicitAny: testing schema rejection of old API shape
+				caller.verifyGmail({ ...gmailInput, email: 'user@gmail.com' } as any),
+			).rejects.toThrow();
+		});
+	});
+
+	// ── verifyImap ────────────────────────────────────────────────────────
+
+	const imapInput = {
+		hostCredentialId: 20,
+		portCredentialId: 21,
+		usernameCredentialId: 22,
+		passwordCredentialId: 23,
+	};
+
+	describe('verifyImap', () => {
+		it('resolves all four credentials server-side and returns email', async () => {
+			setupDbCredentials([
+				{ orgId: 'org-1', value: 'imap.example.com' },
+				{ orgId: 'org-1', value: '993' },
+				{ orgId: 'org-1', value: 'user@example.com' },
+				{ orgId: 'org-1', value: 'secret' },
+			]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.verifyImap(imapInput);
+
+			expect(result).toEqual({ success: true, email: 'user@example.com' });
+		});
+
+		it('rejects non-numeric port with BAD_REQUEST', async () => {
+			setupDbCredentials([
+				{ orgId: 'org-1', value: 'imap.example.com' },
+				{ orgId: 'org-1', value: 'not-a-port' },
+				{ orgId: 'org-1', value: 'user@example.com' },
+				{ orgId: 'org-1', value: 'secret' },
+			]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.verifyImap(imapInput)).rejects.toMatchObject({
+				code: 'BAD_REQUEST',
+			});
+		});
+
+		it('wraps IMAP connection failure in BAD_REQUEST', async () => {
+			setupDbCredentials([
+				{ orgId: 'org-1', value: 'imap.example.com' },
+				{ orgId: 'org-1', value: '993' },
+				{ orgId: 'org-1', value: 'user@example.com' },
+				{ orgId: 'org-1', value: 'wrong-password' },
+			]);
+			mockImapConnect.mockRejectedValue(new Error('Authentication failed'));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.verifyImap(imapInput)).rejects.toMatchObject({
+				code: 'BAD_REQUEST',
+			});
 		});
 	});
 });

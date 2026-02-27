@@ -426,16 +426,17 @@ export const integrationsDiscoveryRouter = router({
 				clientIdCredentialId: z.number(),
 				clientSecretCredentialId: z.number(),
 				refreshTokenCredentialId: z.number(),
-				email: z.string().email(),
+				gmailEmailCredentialId: z.number(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
 			logger.debug('integrationsDiscovery.verifyGmail called', { orgId: ctx.effectiveOrgId });
 
-			const [clientId, clientSecret, refreshToken] = await Promise.all([
+			const [clientId, clientSecret, refreshToken, email] = await Promise.all([
 				resolveCredentialValue(input.clientIdCredentialId, ctx.effectiveOrgId),
 				resolveCredentialValue(input.clientSecretCredentialId, ctx.effectiveOrgId),
 				resolveCredentialValue(input.refreshTokenCredentialId, ctx.effectiveOrgId),
+				resolveCredentialValue(input.gmailEmailCredentialId, ctx.effectiveOrgId),
 			]);
 
 			try {
@@ -451,7 +452,7 @@ export const integrationsDiscoveryRouter = router({
 					port: 993,
 					secure: true,
 					auth: {
-						user: input.email,
+						user: email,
 						accessToken,
 					},
 					logger: false,
@@ -462,7 +463,7 @@ export const integrationsDiscoveryRouter = router({
 				await client.connect();
 				await client.logout();
 
-				return { success: true, email: input.email };
+				return { success: true, email };
 			} catch (err) {
 				throw new TRPCError({
 					code: 'BAD_REQUEST',
