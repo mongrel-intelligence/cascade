@@ -26,3 +26,7 @@ backend:
 compaction: default
 
 hint: Analyze the current issue fully before moving to the next.
+
+integrations:
+  required: [pm]
+  optional: []

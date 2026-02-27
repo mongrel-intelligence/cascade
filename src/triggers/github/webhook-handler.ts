@@ -1,12 +1,18 @@
 import { INITIAL_MESSAGES } from '../../config/agentMessages.js';
 import { loadProjectConfigByRepo } from '../../config/provider.js';
+import { withEmailIntegration } from '../../email/integration.js';
 import { getSessionState } from '../../gadgets/sessionState.js';
 import { githubClient, withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
 import { withPMCredentials } from '../../pm/context.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
 import { extractGitHubContext, generateAckMessage } from '../../router/ackMessageGenerator.js';
-import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
+import type {
+	AgentResult,
+	CascadeConfig,
+	ProjectConfig,
+	TriggerContext,
+} from '../../types/index.js';
 import {
 	enqueueWebhook,
 	getQueueLength,
@@ -24,7 +30,10 @@ import { runAgentExecutionPipeline } from '../shared/agent-execution.js';
 import { processNextQueuedWebhook } from '../shared/webhook-queue.js';
 import type { TriggerResult } from '../types.js';
 
-async function deleteProgressCommentOnSuccess(result: TriggerResult): Promise<void> {
+async function deleteProgressCommentOnSuccess(
+	result: TriggerResult,
+	_agentResult: AgentResult,
+): Promise<void> {
 	// Only delete the progress comment for non-implementation agents.
 	// The implementation agent's success is handled via lifecycle (handleSuccess),
 	// which manages the PR comment separately.
@@ -143,8 +152,10 @@ async function executeGitHubAgent(
 			(t) => pmRegistry.getOrNull(t),
 			() =>
 				withPMProvider(pmProvider, () =>
-					withGitHubToken(githubToken, () =>
-						runAgentExecutionPipeline(result, project, config, executionConfig),
+					withEmailIntegration(project.id, () =>
+						withGitHubToken(githubToken, () =>
+							runAgentExecutionPipeline(result, project, config, executionConfig),
+						),
 					),
 				),
 		);

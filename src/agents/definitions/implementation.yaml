@@ -38,3 +38,7 @@ trailingMessage:
   includeGitStatus: true
   includePRStatus: true
   includeReminder: true
+
+integrations:
+  required: [scm, pm]
+  optional: []

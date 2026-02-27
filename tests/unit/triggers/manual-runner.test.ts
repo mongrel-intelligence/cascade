@@ -32,6 +32,15 @@ vi.mock('../../../src/pm/context.js', () => ({
 	),
 }));
 
+vi.mock('../../../src/email/integration.js', () => ({
+	withEmailIntegration: vi.fn((_projectId: string, fn: () => unknown) => fn()),
+}));
+
+vi.mock('../../../src/triggers/shared/integration-validation.js', () => ({
+	validateIntegrations: vi.fn().mockResolvedValue({ valid: true, errors: [] }),
+	formatValidationErrors: vi.fn().mockReturnValue(''),
+}));
+
 import { runAgent } from '../../../src/agents/registry.js';
 import { getRunById } from '../../../src/db/repositories/runsRepository.js';
 import { withPMCredentials } from '../../../src/pm/context.js';
@@ -78,7 +87,8 @@ describe('triggerManualRun', () => {
 			mockConfig,
 		);
 
-		// markTriggerRunning happens synchronously before runAgent, so no tick needed
+		// Wait for async validation to complete and trigger to be marked as running
+		await new Promise((resolve) => setTimeout(resolve, 10));
 
 		// Try to trigger again — should throw duplicate check
 		await expect(

@@ -57,7 +57,7 @@ function hasFlag(args: string[], flag: string): boolean {
 interface ProjectContext {
 	projectId: string;
 	orgId: string;
-	repo: string;
+	repo: string | null;
 	boardId: string;
 	trelloApiKey: string;
 	trelloToken: string;
@@ -101,7 +101,7 @@ async function resolveProjectContext(projectId: string): Promise<ProjectContext>
 	return {
 		projectId,
 		orgId: project.orgId,
-		repo: project.repo,
+		repo: project.repo ?? null,
 		boardId: project.trello.boardId,
 		trelloApiKey: trelloApiKey ?? '',
 		trelloToken: trelloToken ?? '',
@@ -176,6 +176,10 @@ interface GitHubWebhook {
 }
 
 async function githubListWebhooks(ctx: ProjectContext): Promise<GitHubWebhook[]> {
+	if (!ctx.repo) {
+		console.warn('Skipping GitHub listWebhooks: no repo configured for this project');
+		return [];
+	}
 	const octokit = getOctokit(ctx.githubToken);
 	const { owner, repo } = parseRepo(ctx.repo);
 	const { data } = await octokit.repos.listWebhooks({ owner, repo });
@@ -185,7 +189,11 @@ async function githubListWebhooks(ctx: ProjectContext): Promise<GitHubWebhook[]>
 async function githubCreateWebhook(
 	ctx: ProjectContext,
 	callbackURL: string,
-): Promise<GitHubWebhook> {
+): Promise<GitHubWebhook | null> {
+	if (!ctx.repo) {
+		console.warn('Skipping GitHub createWebhook: no repo configured for this project');
+		return null;
+	}
 	const octokit = getOctokit(ctx.githubToken);
 	const { owner, repo } = parseRepo(ctx.repo);
 	const { data } = await octokit.repos.createWebhook({
@@ -202,6 +210,10 @@ async function githubCreateWebhook(
 }
 
 async function githubDeleteWebhook(ctx: ProjectContext, hookId: number): Promise<void> {
+	if (!ctx.repo) {
+		console.warn('Skipping GitHub deleteWebhook: no repo configured for this project');
+		return;
+	}
 	const octokit = getOctokit(ctx.githubToken);
 	const { owner, repo } = parseRepo(ctx.repo);
 	await octokit.repos.deleteWebhook({ owner, repo, hook_id: hookId });
@@ -251,7 +263,7 @@ async function handleList(args: string[]): Promise<void> {
 	const ctx = await resolveProjectContext(projectId);
 
 	console.log(`Project: ${ctx.projectId} (org: ${ctx.orgId})`);
-	console.log(`Repo: ${ctx.repo}`);
+	console.log(`Repo: ${ctx.repo ?? '(none - email-only project)'}`);
 	console.log(`Trello board: ${ctx.boardId}`);
 	console.log('');
 
@@ -259,8 +271,45 @@ async function handleList(args: string[]): Promise<void> {
 		printTrelloWebhooks(await trelloListWebhooks(ctx));
 	}
 
-	if (!trelloOnly && ctx.githubToken) {
+	if (!trelloOnly && ctx.githubToken && ctx.repo) {
 		printGitHubWebhooks(await githubListWebhooks(ctx));
+	} else if (!trelloOnly && !ctx.repo) {
+		console.log('GitHub webhooks: (skipped - no repo configured)');
+		console.log('');
+	}
+}
+
+async function createTrelloWebhookIfNeeded(
+	ctx: ProjectContext,
+	callbackUrl: string,
+): Promise<void> {
+	const existing = await trelloListWebhooks(ctx);
+	const duplicate = existing.find((w) => w.callbackURL === callbackUrl);
+
+	if (duplicate) {
+		console.log(`Trello webhook already exists: [${duplicate.id}] ${duplicate.callbackURL}`);
+	} else {
+		const created = await trelloCreateWebhook(ctx, callbackUrl);
+		console.log(`Created Trello webhook: [${created.id}] ${created.callbackURL}`);
+	}
+}
+
+async function createGitHubWebhookIfNeeded(
+	ctx: ProjectContext,
+	callbackUrl: string,
+): Promise<void> {
+	const existing = await githubListWebhooks(ctx);
+	const duplicate = existing.find((w) => w.config.url === callbackUrl);
+
+	if (duplicate) {
+		console.log(`GitHub webhook already exists: [${duplicate.id}] ${duplicate.config.url}`);
+	} else {
+		const created = await githubCreateWebhook(ctx, callbackUrl);
+		if (created) {
+			console.log(
+				`Created GitHub webhook: [${created.id}] ${created.config.url} (events: ${created.events.join(', ')})`,
+			);
+		}
 	}
 }
 
@@ -279,32 +328,14 @@ async function handleCreate(args: string[]): Promise<void> {
 
 	// Trello webhook
 	if (!githubOnly && ctx.trelloApiKey && ctx.trelloToken) {
-		const trelloCallbackUrl = `${baseUrl}/webhook/trello`;
-		const existing = await trelloListWebhooks(ctx);
-		const duplicate = existing.find((w) => w.callbackURL === trelloCallbackUrl);
-
-		if (duplicate) {
-			console.log(`Trello webhook already exists: [${duplicate.id}] ${duplicate.callbackURL}`);
-		} else {
-			const created = await trelloCreateWebhook(ctx, trelloCallbackUrl);
-			console.log(`Created Trello webhook: [${created.id}] ${created.callbackURL}`);
-		}
+		await createTrelloWebhookIfNeeded(ctx, `${baseUrl}/webhook/trello`);
 	}
 
 	// GitHub webhook
-	if (!trelloOnly && ctx.githubToken) {
-		const githubCallbackUrl = `${baseUrl}/webhook/github`;
-		const existing = await githubListWebhooks(ctx);
-		const duplicate = existing.find((w) => w.config.url === githubCallbackUrl);
-
-		if (duplicate) {
-			console.log(`GitHub webhook already exists: [${duplicate.id}] ${duplicate.config.url}`);
-		} else {
-			const created = await githubCreateWebhook(ctx, githubCallbackUrl);
-			console.log(
-				`Created GitHub webhook: [${created.id}] ${created.config.url} (events: ${created.events.join(', ')})`,
-			);
-		}
+	if (!trelloOnly && ctx.githubToken && ctx.repo) {
+		await createGitHubWebhookIfNeeded(ctx, `${baseUrl}/webhook/github`);
+	} else if (!trelloOnly && !ctx.repo) {
+		console.log('Skipping GitHub webhook: no repo configured for this project');
 	}
 }
 
@@ -353,8 +384,10 @@ async function handleDelete(args: string[]): Promise<void> {
 		await deleteTrelloWebhooksForUrl(ctx, `${baseUrl}/webhook/trello`);
 	}
 
-	if (!trelloOnly && ctx.githubToken) {
+	if (!trelloOnly && ctx.githubToken && ctx.repo) {
 		await deleteGitHubWebhooksForUrl(ctx, `${baseUrl}/webhook/github`);
+	} else if (!trelloOnly && !ctx.repo) {
+		console.log('Skipping GitHub webhook deletion: no repo configured for this project');
 	}
 }
 

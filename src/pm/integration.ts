@@ -9,6 +9,8 @@
  * provider-specific branching.
  */
 
+import { getIntegrationCredentialOrNull } from '../config/provider.js';
+import { getIntegrationProvider } from '../db/repositories/credentialsRepository.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 import type { ProjectPMConfig } from './lifecycle.js';
 import type { PMProvider } from './types.js';
@@ -69,4 +71,34 @@ export interface PMIntegration {
 	// --- Work item ID extraction ---
 	/** Extract a work item ID from text (e.g. PR body). Returns null if not found. */
 	extractWorkItemId(text: string): string | null;
+}
+
+// ============================================================================
+// Integration check helpers
+// ============================================================================
+
+/**
+ * Check if PM integration is configured for a project.
+ * Returns true if a PM integration (Trello/JIRA) exists with required credentials.
+ */
+export async function hasPmIntegration(projectId: string): Promise<boolean> {
+	const provider = await getIntegrationProvider(projectId, 'pm');
+	if (!provider) return false;
+
+	// Check provider-specific required credentials
+	if (provider === 'trello') {
+		const [key, token] = await Promise.all([
+			getIntegrationCredentialOrNull(projectId, 'pm', 'api_key'),
+			getIntegrationCredentialOrNull(projectId, 'pm', 'token'),
+		]);
+		return key !== null && token !== null;
+	}
+	if (provider === 'jira') {
+		const [email, apiToken] = await Promise.all([
+			getIntegrationCredentialOrNull(projectId, 'pm', 'email'),
+			getIntegrationCredentialOrNull(projectId, 'pm', 'api_token'),
+		]);
+		return email !== null && apiToken !== null;
+	}
+	return false;
 }

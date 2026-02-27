@@ -1,6 +1,7 @@
 import type { ContextInjection } from '../../backends/types.js';
 import type { AgentCapabilities } from '../shared/capabilities.js';
 import {
+	buildEmailJokeGadgets,
 	buildPRAgentGadgets,
 	buildReviewGadgets,
 	buildWorkItemGadgets,
@@ -55,6 +56,15 @@ export const GITHUB_CI_TOOLS = [
 	'UpdatePRComment',
 ];
 
+/** Email tools for agents that need email access */
+export const EMAIL_TOOLS = [
+	'SendEmail',
+	'SearchEmails',
+	'ReadEmail',
+	'ReplyToEmail',
+	'MarkEmailAsSeen',
+];
+
 export const SESSION_TOOL = 'Finish';
 
 export const ALL_SDK_TOOLS = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
@@ -69,6 +79,7 @@ export const TOOL_SET_REGISTRY: Record<string, string[]> = {
 	session: [SESSION_TOOL],
 	github_review: GITHUB_REVIEW_TOOLS,
 	github_ci: GITHUB_CI_TOOLS,
+	email: EMAIL_TOOLS,
 	// 'all' is a sentinel — handled by returning allTools unfiltered
 };
 
@@ -118,4 +129,5 @@ export const GADGET_BUILDER_REGISTRY: Record<
 	workItem: (caps) => buildWorkItemGadgets(caps),
 	review: () => buildReviewGadgets(),
 	prAgent: (_caps, options) => buildPRAgentGadgets(options),
+	emailJoke: () => buildEmailJokeGadgets(),
 };

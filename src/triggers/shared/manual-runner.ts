@@ -1,9 +1,13 @@
 import { runAgent } from '../../agents/registry.js';
+import { parseEmailJokeTriggers } from '../../config/triggerConfig.js';
 import { getRunById } from '../../db/repositories/runsRepository.js';
+import { getIntegrationByProjectAndCategory } from '../../db/repositories/settingsRepository.js';
+import { withEmailIntegration } from '../../email/integration.js';
 import { withPMCredentials } from '../../pm/context.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { formatValidationErrors, validateIntegrations } from './integration-validation.js';
 
 /**
  * In-memory tracking to prevent duplicate concurrent manual triggers.
@@ -78,6 +82,12 @@ export async function triggerManualRun(
 		);
 	}
 
+	// Pre-flight integration validation
+	const validation = await validateIntegrations(input.projectId, input.agentType);
+	if (!validation.valid) {
+		throw new Error(formatValidationErrors(validation));
+	}
+
 	logger.info('Triggering manual agent run', {
 		projectId: input.projectId,
 		agentType: input.agentType,
@@ -100,13 +110,31 @@ export async function triggerManualRun(
 		config,
 	};
 
+	// For email-joke agent, fetch senderEmail from email integration triggers
+	if (input.agentType === 'email-joke') {
+		const emailIntegration = await getIntegrationByProjectAndCategory(input.projectId, 'email');
+		if (emailIntegration) {
+			const triggers = parseEmailJokeTriggers(emailIntegration.triggers);
+			if (triggers.senderEmail) {
+				agentInput.senderEmail = triggers.senderEmail;
+			}
+		} else {
+			logger.debug('No email integration found, skipping senderEmail injection', {
+				projectId: input.projectId,
+			});
+		}
+	}
+
 	try {
 		const pmProvider = createPMProvider(project);
 		const result = await withPMCredentials(
 			project.id,
 			project.pm?.type,
 			(t) => pmRegistry.getOrNull(t),
-			() => withPMProvider(pmProvider, () => runAgent(input.agentType, agentInput)),
+			() =>
+				withPMProvider(pmProvider, () =>
+					withEmailIntegration(project.id, () => runAgent(input.agentType, agentInput)),
+				),
 		);
 		logger.info('Manual agent run completed', {
 			projectId: input.projectId,

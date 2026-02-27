@@ -36,7 +36,10 @@ export const ProjectConfigSchema = z.object({
 	id: z.string().min(1),
 	orgId: z.string().min(1),
 	name: z.string().min(1),
-	repo: z.string().regex(/^[^/]+\/[^/]+$/, 'Must be in format "owner/repo"'),
+	repo: z
+		.string()
+		.regex(/^[^/]+\/[^/]+$/, 'Must be in format "owner/repo"')
+		.optional(),
 	baseBranch: z.string().default('main'),
 	branchPrefix: z.string().default('feature/'),
 

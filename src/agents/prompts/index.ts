@@ -148,6 +148,8 @@ export interface TaskPromptContext {
 	prBranch?: string;
 	commentBody?: string;
 	commentPath?: string;
+	// Email-joke agent fields
+	senderEmail?: string;
 	[key: string]: unknown;
 }
 

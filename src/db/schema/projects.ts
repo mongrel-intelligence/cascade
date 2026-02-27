@@ -1,4 +1,4 @@
-import { boolean, numeric, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { boolean, numeric, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 import { organizations } from './organizations.js';
 
 export const projects = pgTable(
@@ -9,7 +9,7 @@ export const projects = pgTable(
 			.notNull()
 			.references(() => organizations.id, { onDelete: 'cascade' }),
 		name: text('name').notNull(),
-		repo: text('repo').notNull().unique(),
+		repo: text('repo').unique(),
 		baseBranch: text('base_branch').default('main'),
 		branchPrefix: text('branch_prefix').default('feature/'),
 
@@ -24,5 +24,6 @@ export const projects = pgTable(
 			.defaultNow()
 			.$onUpdate(() => new Date()),
 	},
-	(table) => [uniqueIndex('uq_projects_repo').on(table.repo)],
+	// Partial unique index (only for non-null values) defined in migration 0019
+	() => [],
 );

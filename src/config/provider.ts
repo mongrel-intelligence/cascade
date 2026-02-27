@@ -252,7 +252,16 @@ export function invalidateConfigCache(): void {
 function roleToEnvVarKey(category: string, role: string): string | undefined {
 	// Look through all providers in the category to find the role
 	for (const [provider, roles] of Object.entries(PROVIDER_CREDENTIAL_ROLES)) {
-		const providerCategory = provider === 'trello' || provider === 'jira' ? 'pm' : 'scm';
+		let providerCategory: string;
+		if (provider === 'trello' || provider === 'jira') {
+			providerCategory = 'pm';
+		} else if (provider === 'github') {
+			providerCategory = 'scm';
+		} else if (provider === 'imap' || provider === 'gmail') {
+			providerCategory = 'email';
+		} else {
+			continue;
+		}
 		if (providerCategory !== category) continue;
 		const roleDef = roles.find((r) => r.role === role);
 		if (roleDef) return roleDef.envVarKey;

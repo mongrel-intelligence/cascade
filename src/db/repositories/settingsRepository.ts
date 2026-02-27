@@ -87,7 +87,7 @@ export async function createProject(
 	data: {
 		id: string;
 		name: string;
-		repo: string;
+		repo?: string;
 		baseBranch?: string;
 		branchPrefix?: string;
 		model?: string | null;
@@ -103,7 +103,7 @@ export async function createProject(
 			id: data.id,
 			orgId,
 			name: data.name,
-			repo: data.repo,
+			repo: data.repo ?? null,
 			baseBranch: data.baseBranch ?? 'main',
 			branchPrefix: data.branchPrefix ?? 'feature/',
 			model: data.model,

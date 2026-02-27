@@ -33,6 +33,9 @@ export interface AgentInput {
 	triggerCommentText?: string;
 	triggerCommentAuthor?: string;
 
+	// Email-joke agent fields
+	senderEmail?: string;
+
 	// Interactive mode (local development)
 	interactive?: boolean;
 	// Auto-accept prompts in interactive mode

@@ -7,6 +7,7 @@
  * ack comment management) is delegated to the PMIntegration interface.
  */
 
+import { withEmailIntegration } from '../email/integration.js';
 import { withGitHubToken } from '../github/client.js';
 import { getPersonaToken } from '../github/personas.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
@@ -52,10 +53,12 @@ async function executeAgent(
 
 	try {
 		await integration.withCredentials(project.id, () =>
-			withGitHubToken(githubToken, () =>
-				runAgentExecutionPipeline(result, project, config, {
-					logLabel: `${integration.type} agent`,
-				}),
+			withEmailIntegration(project.id, () =>
+				withGitHubToken(githubToken, () =>
+					runAgentExecutionPipeline(result, project, config, {
+						logLabel: `${integration.type} agent`,
+					}),
+				),
 			),
 		);
 	} finally {
