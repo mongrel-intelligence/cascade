@@ -7,7 +7,12 @@ import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas
 import { withPMCredentials } from '../../pm/context.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
 import { extractGitHubContext, generateAckMessage } from '../../router/ackMessageGenerator.js';
-import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
+import type {
+	AgentResult,
+	CascadeConfig,
+	ProjectConfig,
+	TriggerContext,
+} from '../../types/index.js';
 import {
 	enqueueWebhook,
 	getQueueLength,
@@ -24,6 +29,35 @@ import type { AgentExecutionConfig } from '../shared/agent-execution.js';
 import { runAgentExecutionPipeline } from '../shared/agent-execution.js';
 import { processNextQueuedWebhook } from '../shared/webhook-queue.js';
 import type { TriggerResult } from '../types.js';
+
+async function deleteProgressCommentOnSuccess(
+	result: TriggerResult,
+	_agentResult: AgentResult,
+): Promise<void> {
+	// Only delete the progress comment for non-implementation agents.
+	// The implementation agent's success is handled via lifecycle (handleSuccess),
+	// which manages the PR comment separately.
+	if (result.agentType === 'implementation') return;
+
+	const input = result.agentInput as { repoFullName?: string };
+	if (!input.repoFullName || !result.prNumber) return;
+
+	let owner: string;
+	let repo: string;
+	try {
+		({ owner, repo } = parseRepoFullName(input.repoFullName));
+	} catch {
+		return;
+	}
+
+	const { initialCommentId } = getSessionState();
+	if (!initialCommentId) return;
+
+	await safeOperation(() => githubClient.deletePRComment(owner, repo, initialCommentId), {
+		action: 'delete progress comment after agent success',
+		prNumber: result.prNumber,
+	});
+}
 
 async function updateInitialCommentWithError(
 	result: TriggerResult,
@@ -105,6 +139,7 @@ async function executeGitHubAgent(
 		skipPrepareForAgent: true,
 		skipHandleFailure: true,
 		handleSuccessOnlyForAgentType: 'implementation',
+		onSuccess: deleteProgressCommentOnSuccess,
 		onFailure: updateInitialCommentWithError,
 		logLabel: 'GitHub agent',
 	};
