@@ -1,17 +1,17 @@
-import { markEmailAsSeen as markEmailAsSeenClient } from '../../../email/client.js';
+import { getEmailProvider } from '../../../email/context.js';
 import { logger } from '../../../utils/logging.js';
 
 export async function markEmailAsSeen(folder: string, uid: number): Promise<string> {
 	try {
-		await markEmailAsSeenClient(folder, uid);
+		await getEmailProvider().markEmailAsSeen(folder, uid);
 		return `Email (UID: ${uid}) in folder "${folder}" has been marked as seen/read.`;
 	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
 		logger.error('Mark email as seen failed', {
 			folder,
 			uid,
-			error: error instanceof Error ? error.message : String(error),
+			error: message,
 		});
-		const message = error instanceof Error ? error.message : String(error);
 		return `Error marking email as seen: ${message}`;
 	}
 }

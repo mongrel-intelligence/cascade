@@ -1,4 +1,4 @@
-import { replyToEmail as replyToEmailClient } from '../../../email/client.js';
+import { getEmailProvider } from '../../../email/context.js';
 import { logger } from '../../../utils/logging.js';
 
 export async function replyToEmail(
@@ -8,20 +8,23 @@ export async function replyToEmail(
 	replyAll: boolean,
 ): Promise<string> {
 	try {
-		const result = await replyToEmailClient({ folder, uid, body, replyAll });
+		const result = await getEmailProvider().replyToEmail({ folder, uid, body, replyAll });
 
 		const accepted = result.accepted.join(', ');
 		const rejected = result.rejected.length > 0 ? ` (rejected: ${result.rejected.join(', ')})` : '';
 
+		if (!accepted) {
+			return `Email delivery failed — all recipients rejected${rejected} (Message-ID: ${result.messageId})`;
+		}
 		return `Reply sent to ${accepted}${rejected} (Message-ID: ${result.messageId})`;
 	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
 		logger.error('Email reply failed', {
 			folder,
 			uid,
 			replyAll,
-			error: error instanceof Error ? error.message : String(error),
+			error: message,
 		});
-		const message = error instanceof Error ? error.message : String(error);
 		return `Error sending reply: ${message}`;
 	}
 }

@@ -13,7 +13,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { hasEmailIntegration } from '../../src/email/integration.js';
+import { hasEmailIntegration } from '../../src/email/index.js';
 import { hasScmIntegration, hasScmPersonaToken } from '../../src/github/integration.js';
 import { hasPmIntegration } from '../../src/pm/integration.js';
 import {

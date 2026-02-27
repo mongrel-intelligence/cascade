@@ -2,7 +2,7 @@ import { runAgent } from '../../agents/registry.js';
 import { parseEmailJokeTriggers } from '../../config/triggerConfig.js';
 import { getRunById } from '../../db/repositories/runsRepository.js';
 import { getIntegrationByProjectAndCategory } from '../../db/repositories/settingsRepository.js';
-import { withEmailIntegration } from '../../email/integration.js';
+import { withEmailIntegration } from '../../email/index.js';
 import { withPMCredentials } from '../../pm/context.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../types/index.js';

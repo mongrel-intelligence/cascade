@@ -1,6 +1,6 @@
 import { INITIAL_MESSAGES } from '../../config/agentMessages.js';
 import { loadProjectConfigByRepo } from '../../config/provider.js';
-import { withEmailIntegration } from '../../email/integration.js';
+import { withEmailIntegration } from '../../email/index.js';
 import { getSessionState } from '../../gadgets/sessionState.js';
 import { githubClient, withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';

@@ -7,7 +7,7 @@
  * ack comment management) is delegated to the PMIntegration interface.
  */
 
-import { withEmailIntegration } from '../email/integration.js';
+import { withEmailIntegration } from '../email/index.js';
 import { withGitHubToken } from '../github/client.js';
 import { getPersonaToken } from '../github/personas.js';
 import type { TriggerRegistry } from '../triggers/registry.js';

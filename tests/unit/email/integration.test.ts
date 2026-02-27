@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../src/config/provider.js', () => ({
-	getIntegrationCredentialOrNull: vi.fn(),
-	getOrgCredential: vi.fn(),
-}));
-
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
 	getIntegrationProvider: vi.fn(),
+}));
+
+vi.mock('../../../src/email/registry.js', () => ({
+	emailRegistry: {
+		getOrNull: vi.fn(),
+	},
 }));
 
 vi.mock('../../../src/utils/logging.js', () => ({
@@ -18,13 +19,9 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
-import { getIntegrationCredentialOrNull } from '../../../src/config/provider.js';
 import { getIntegrationProvider } from '../../../src/db/repositories/credentialsRepository.js';
-import {
-	hasEmailIntegration,
-	resolveEmailCredentials,
-	withEmailIntegration,
-} from '../../../src/email/integration.js';
+import { hasEmailIntegration, withEmailIntegration } from '../../../src/email/integration.js';
+import { emailRegistry } from '../../../src/email/registry.js';
 import { logger } from '../../../src/utils/logging.js';
 
 describe('email integration', () => {
@@ -32,157 +29,110 @@ describe('email integration', () => {
 		vi.clearAllMocks();
 	});
 
-	describe('resolveEmailCredentials', () => {
-		it('returns credentials when all fields are present', async () => {
-			vi.mocked(getIntegrationProvider).mockResolvedValue('imap');
-			vi.mocked(getIntegrationCredentialOrNull).mockImplementation(
-				async (_projectId, _category, role) => {
-					const creds: Record<string, string> = {
-						imap_host: 'imap.example.com',
-						imap_port: '993',
-						smtp_host: 'smtp.example.com',
-						smtp_port: '587',
-						username: 'user@example.com',
-						password: 'secret',
-					};
-					return creds[role] ?? null;
-				},
-			);
+	describe('withEmailIntegration', () => {
+		it('runs fn directly when no provider is configured', async () => {
+			vi.mocked(getIntegrationProvider).mockResolvedValue(null);
 
-			const result = await resolveEmailCredentials('project-1');
+			const fn = vi.fn().mockResolvedValue('result');
+			const result = await withEmailIntegration('project-1', fn);
 
-			expect(result).toEqual({
-				authMethod: 'password',
-				imapHost: 'imap.example.com',
-				imapPort: 993,
-				smtpHost: 'smtp.example.com',
-				smtpPort: 587,
-				username: 'user@example.com',
-				password: 'secret',
-			});
+			expect(fn).toHaveBeenCalled();
+			expect(result).toBe('result');
 		});
 
-		it('returns null when a credential is missing', async () => {
-			vi.mocked(getIntegrationProvider).mockResolvedValue('imap');
-			vi.mocked(getIntegrationCredentialOrNull).mockImplementation(
-				async (_projectId, _category, role) => {
-					if (role === 'password') return null; // Missing password
-					const creds: Record<string, string> = {
-						imap_host: 'imap.example.com',
-						imap_port: '993',
-						smtp_host: 'smtp.example.com',
-						smtp_port: '587',
-						username: 'user@example.com',
-					};
-					return creds[role] ?? null;
-				},
-			);
+		it('runs fn directly when provider is unknown in registry', async () => {
+			vi.mocked(getIntegrationProvider).mockResolvedValue('unknown-provider');
+			vi.mocked(emailRegistry.getOrNull).mockReturnValue(null);
 
-			const result = await resolveEmailCredentials('project-1');
-			expect(result).toBeNull();
+			const fn = vi.fn().mockResolvedValue('result');
+			const result = await withEmailIntegration('project-1', fn);
+
+			expect(fn).toHaveBeenCalled();
+			expect(result).toBe('result');
 		});
 
-		it('returns null when port is not a valid number', async () => {
-			vi.mocked(getIntegrationProvider).mockResolvedValue('imap');
-			vi.mocked(getIntegrationCredentialOrNull).mockImplementation(
-				async (_projectId, _category, role) => {
-					const creds: Record<string, string> = {
-						imap_host: 'imap.example.com',
-						imap_port: 'invalid',
-						smtp_host: 'smtp.example.com',
-						smtp_port: '587',
-						username: 'user@example.com',
-						password: 'secret',
-					};
-					return creds[role] ?? null;
-				},
-			);
+		it('delegates to the registered integration when provider is known', async () => {
+			const mockIntegration = {
+				type: 'imap',
+				withCredentials: vi
+					.fn()
+					.mockImplementation((_projectId: string, fn: () => Promise<unknown>) => fn()),
+				hasCredentials: vi.fn(),
+			};
 
-			const result = await resolveEmailCredentials('project-1');
-			expect(result).toBeNull();
+			vi.mocked(getIntegrationProvider).mockResolvedValue('imap');
+			vi.mocked(emailRegistry.getOrNull).mockReturnValue(mockIntegration);
+
+			const fn = vi.fn().mockResolvedValue('scoped-result');
+			const result = await withEmailIntegration('project-1', fn);
+
+			expect(mockIntegration.withCredentials).toHaveBeenCalledWith('project-1', fn);
+			expect(result).toBe('scoped-result');
 		});
 
-		it('logs warning and returns null on error', async () => {
+		it('falls back to fn() and warns when getIntegrationProvider throws', async () => {
 			vi.mocked(getIntegrationProvider).mockRejectedValue(new Error('DB error'));
 
-			const result = await resolveEmailCredentials('project-1');
+			const fn = vi.fn().mockResolvedValue('fallback-result');
+			const result = await withEmailIntegration('project-1', fn);
 
-			expect(result).toBeNull();
+			expect(fn).toHaveBeenCalled();
+			expect(result).toBe('fallback-result');
 			expect(logger.warn).toHaveBeenCalledWith(
-				'Failed to resolve email credentials',
-				expect.objectContaining({
-					projectId: 'project-1',
-					error: 'DB error',
-				}),
+				'Failed to resolve email integration, running without email credentials',
+				expect.objectContaining({ projectId: 'project-1', error: 'DB error' }),
 			);
-		});
-
-		it('returns null when no email integration is configured', async () => {
-			vi.mocked(getIntegrationProvider).mockResolvedValue(null);
-
-			const result = await resolveEmailCredentials('project-1');
-			expect(result).toBeNull();
-		});
-	});
-
-	describe('withEmailIntegration', () => {
-		it('runs function with credentials when available', async () => {
-			vi.mocked(getIntegrationProvider).mockResolvedValue('imap');
-			vi.mocked(getIntegrationCredentialOrNull).mockImplementation(
-				async (_projectId, _category, role) => {
-					const creds: Record<string, string> = {
-						imap_host: 'imap.example.com',
-						imap_port: '993',
-						smtp_host: 'smtp.example.com',
-						smtp_port: '587',
-						username: 'user@example.com',
-						password: 'secret',
-					};
-					return creds[role] ?? null;
-				},
-			);
-
-			const fn = vi.fn().mockResolvedValue('result');
-			const result = await withEmailIntegration('project-1', fn);
-
-			expect(fn).toHaveBeenCalled();
-			expect(result).toBe('result');
-		});
-
-		it('runs function without credentials when not configured', async () => {
-			vi.mocked(getIntegrationProvider).mockResolvedValue(null);
-
-			const fn = vi.fn().mockResolvedValue('result');
-			const result = await withEmailIntegration('project-1', fn);
-
-			expect(fn).toHaveBeenCalled();
-			expect(result).toBe('result');
 		});
 	});
 
 	describe('hasEmailIntegration', () => {
-		it('returns true when credentials are configured', async () => {
-			vi.mocked(getIntegrationProvider).mockResolvedValue('imap');
-			vi.mocked(getIntegrationCredentialOrNull).mockImplementation(
-				async (_projectId, _category, role) => {
-					const creds: Record<string, string> = {
-						imap_host: 'imap.example.com',
-						imap_port: '993',
-						smtp_host: 'smtp.example.com',
-						smtp_port: '587',
-						username: 'user@example.com',
-						password: 'secret',
-					};
-					return creds[role] ?? null;
-				},
-			);
+		it('returns false when no provider is configured', async () => {
+			vi.mocked(getIntegrationProvider).mockResolvedValue(null);
 
 			const result = await hasEmailIntegration('project-1');
+			expect(result).toBe(false);
+		});
+
+		it('returns false when provider is unknown in registry', async () => {
+			vi.mocked(getIntegrationProvider).mockResolvedValue('unknown-provider');
+			vi.mocked(emailRegistry.getOrNull).mockReturnValue(null);
+
+			const result = await hasEmailIntegration('project-1');
+			expect(result).toBe(false);
+		});
+
+		it('delegates to registered integration hasCredentials', async () => {
+			const mockIntegration = {
+				type: 'imap',
+				withCredentials: vi.fn(),
+				hasCredentials: vi.fn().mockResolvedValue(true),
+			};
+
+			vi.mocked(getIntegrationProvider).mockResolvedValue('imap');
+			vi.mocked(emailRegistry.getOrNull).mockReturnValue(mockIntegration);
+
+			const result = await hasEmailIntegration('project-1');
+
+			expect(mockIntegration.hasCredentials).toHaveBeenCalledWith('project-1');
 			expect(result).toBe(true);
 		});
 
-		it('returns false when credentials are not configured', async () => {
-			vi.mocked(getIntegrationProvider).mockResolvedValue(null);
+		it('returns false when registered integration has no credentials', async () => {
+			const mockIntegration = {
+				type: 'imap',
+				withCredentials: vi.fn(),
+				hasCredentials: vi.fn().mockResolvedValue(false),
+			};
+
+			vi.mocked(getIntegrationProvider).mockResolvedValue('imap');
+			vi.mocked(emailRegistry.getOrNull).mockReturnValue(mockIntegration);
+
+			const result = await hasEmailIntegration('project-1');
+			expect(result).toBe(false);
+		});
+
+		it('returns false when getIntegrationProvider throws', async () => {
+			vi.mocked(getIntegrationProvider).mockRejectedValue(new Error('DB error'));
 
 			const result = await hasEmailIntegration('project-1');
 			expect(result).toBe(false);
