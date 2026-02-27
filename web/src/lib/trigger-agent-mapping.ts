@@ -209,6 +209,7 @@ export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
 		},
 	],
 	'respond-to-planning-comment': [],
+	'email-joke': [],
 };
 
 /**
@@ -299,6 +300,23 @@ export const ALL_AGENT_TYPES = [
 	'respond-to-ci',
 	'respond-to-pr-comment',
 	'respond-to-planning-comment',
+	'email-joke',
 ] as const;
 
 export type KnownAgentType = (typeof ALL_AGENT_TYPES)[number];
+
+/** Friendly display labels for all known agent types */
+export const AGENT_LABELS: Record<KnownAgentType, string> = {
+	splitting: 'Splitting',
+	planning: 'Planning',
+	implementation: 'Implementation',
+	review: 'Review',
+	'respond-to-review': 'Respond to Review',
+	'respond-to-ci': 'Respond to CI',
+	'respond-to-pr-comment': 'Respond to PR Comment',
+	'respond-to-planning-comment': 'Respond to Planning Comment',
+	'email-joke': 'Email Joke',
+};
+
+/** Agent types that use email-based trigger configuration (custom widget, not toggle-based) */
+export const EMAIL_TRIGGER_AGENTS = new Set<KnownAgentType>(['email-joke']);
