@@ -41,6 +41,8 @@ describe('config', () => {
 			expect(config).toEqual({
 				serverUrl: 'http://env-server:3000',
 				sessionToken: 'env-token',
+				cookieName: 'cascade_session',
+				orgId: undefined,
 			});
 			expect(existsSync).not.toHaveBeenCalled();
 		});
@@ -62,6 +64,8 @@ describe('config', () => {
 			expect(config).toEqual({
 				serverUrl: 'http://localhost:3000',
 				sessionToken: 'file-token',
+				cookieName: 'cascade_session',
+				orgId: undefined,
 			});
 			expect(readFileSync).toHaveBeenCalledWith(expect.stringContaining('cli.json'), 'utf-8');
 		});
@@ -92,6 +96,8 @@ describe('config', () => {
 			expect(config).toEqual({
 				serverUrl: 'http://env-override:3000',
 				sessionToken: 'file-token',
+				cookieName: 'cascade_session',
+				orgId: undefined,
 			});
 		});
 
@@ -107,6 +113,28 @@ describe('config', () => {
 			expect(config).toEqual({
 				serverUrl: 'http://file:3000',
 				sessionToken: 'env-token-override',
+				cookieName: 'cascade_session',
+				orgId: undefined,
+			});
+		});
+
+		it('loads custom cookie name from file', () => {
+			vi.mocked(existsSync).mockReturnValue(true);
+			vi.mocked(readFileSync).mockReturnValue(
+				JSON.stringify({
+					serverUrl: 'http://localhost:3000',
+					sessionToken: 'file-token',
+					cookieName: 'cascade_session_development',
+				}),
+			);
+
+			const config = loadConfig();
+
+			expect(config).toEqual({
+				serverUrl: 'http://localhost:3000',
+				sessionToken: 'file-token',
+				cookieName: 'cascade_session_development',
+				orgId: undefined,
 			});
 		});
 	});

@@ -1,5 +1,4 @@
 import { Command, Flags } from '@oclif/core';
-import { SESSION_COOKIE_NAME } from '../../api/auth/cookie.js';
 import { saveConfig } from './_shared/config.js';
 
 export default class Login extends Command {
@@ -30,14 +29,17 @@ export default class Login extends Command {
 			this.error(body.error ?? `Login failed (${response.status})`);
 		}
 
-		// Extract session token from Set-Cookie header
+		// Extract session token and cookie name from Set-Cookie header
+		// Parse the cookie name dynamically from the server's response to handle
+		// environment-specific cookie names (e.g., cascade_session_development)
 		const setCookie = response.headers.get('set-cookie') ?? '';
-		const match = setCookie.match(new RegExp(`${SESSION_COOKIE_NAME}=([^;]+)`));
+		const match = setCookie.match(/(cascade_session[^=]*)=([^;]+)/);
 		if (!match) {
 			this.error('Login succeeded but no session cookie received.');
 		}
 
-		saveConfig({ serverUrl, sessionToken: match[1], orgId: flags.org });
+		const [, cookieName, sessionToken] = match;
+		saveConfig({ serverUrl, sessionToken, cookieName, orgId: flags.org });
 
 		const user = (await response.json()) as { email: string; name: string };
 		const orgSuffix = flags.org ? ` [org: ${flags.org}]` : '';

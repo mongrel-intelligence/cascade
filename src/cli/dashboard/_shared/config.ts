@@ -5,6 +5,7 @@ import { join } from 'node:path';
 export interface CliConfig {
 	serverUrl: string;
 	sessionToken: string;
+	cookieName?: string; // Cookie name from server (e.g., cascade_session or cascade_session_development)
 	orgId?: string;
 }
 
@@ -17,7 +18,12 @@ export function loadConfig(): CliConfig | null {
 	const envToken = process.env.CASCADE_SESSION_TOKEN;
 	const envOrgId = process.env.CASCADE_ORG_ID;
 	if (envUrl && envToken) {
-		return { serverUrl: envUrl, sessionToken: envToken, orgId: envOrgId };
+		return {
+			serverUrl: envUrl,
+			sessionToken: envToken,
+			cookieName: 'cascade_session',
+			orgId: envOrgId,
+		};
 	}
 
 	if (!existsSync(CONFIG_FILE)) return null;
@@ -30,6 +36,7 @@ export function loadConfig(): CliConfig | null {
 		return {
 			serverUrl: envUrl ?? parsed.serverUrl,
 			sessionToken: envToken ?? parsed.sessionToken,
+			cookieName: parsed.cookieName ?? 'cascade_session', // Default to production cookie name
 			orgId: envOrgId ?? parsed.orgId,
 		};
 	} catch {

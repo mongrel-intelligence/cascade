@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { SESSION_COOKIE_NAME } from '../../../../src/api/auth/cookie.js';
 
 describe('SESSION_COOKIE_NAME', () => {
 	it('defaults to cascade_session when NODE_ENV is not set', async () => {

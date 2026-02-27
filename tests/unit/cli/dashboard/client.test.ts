@@ -6,7 +6,6 @@ vi.mock('@trpc/client', () => ({
 }));
 
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
-import { SESSION_COOKIE_NAME } from '../../../../src/api/auth/cookie.js';
 import { createDashboardClient } from '../../../../src/cli/dashboard/_shared/client.js';
 
 describe('createDashboardClient', () => {
@@ -42,7 +41,7 @@ describe('createDashboardClient', () => {
 		};
 		const headers = linkOpts.headers();
 		expect(headers).toEqual({
-			Cookie: `${SESSION_COOKIE_NAME}=secret-token`,
+			Cookie: 'cascade_session=secret-token',
 		});
 	});
 
@@ -56,8 +55,26 @@ describe('createDashboardClient', () => {
 		};
 		const headers = linkOpts.headers();
 		expect(headers).toEqual({
-			Cookie: `${SESSION_COOKIE_NAME}=tok`,
+			Cookie: 'cascade_session=tok',
 			'x-org-context': 'my-org',
+		});
+	});
+
+	it('uses custom cookie name when provided in config', () => {
+		const config = {
+			serverUrl: 'http://localhost:3000',
+			sessionToken: 'tok',
+			cookieName: 'cascade_session_development',
+		};
+
+		createDashboardClient(config);
+
+		const linkOpts = vi.mocked(httpBatchLink).mock.calls[0][0] as {
+			headers: () => Record<string, string>;
+		};
+		const headers = linkOpts.headers();
+		expect(headers).toEqual({
+			Cookie: 'cascade_session_development=tok',
 		});
 	});
 
