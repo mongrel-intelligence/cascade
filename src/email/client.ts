@@ -10,6 +10,7 @@ import { ImapFlow } from 'imapflow';
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { logger } from '../utils/logging.js';
+import { replyViaGmailApi, sendViaGmailApi } from './gmail/send.js';
 import type {
 	EmailCredentials,
 	EmailMessage,
@@ -374,9 +375,17 @@ export async function readEmail(folder: string, uid: number): Promise<EmailMessa
 // ============================================================================
 
 /**
- * Send an email via SMTP.
+ * Send an email. Uses Gmail REST API for OAuth accounts (avoids SMTP port 465
+ * being blocked in container environments); falls back to SMTP for password accounts.
  */
 export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
+	const creds = getEmailCredentials();
+
+	if (creds.authMethod === 'oauth') {
+		logger.debug('Sending email via Gmail API', { to: options.to, subject: options.subject });
+		return sendViaGmailApi(options, creds.accessToken, creds.email);
+	}
+
 	const fromEmail = getEmailAddress();
 	const transport = createSmtpTransport();
 
@@ -445,8 +454,15 @@ export async function markEmailAsSeen(folder: string, uid: number): Promise<void
 }
 
 export async function replyToEmail(options: ReplyEmailOptions): Promise<SendEmailResult> {
-	// First, fetch the original message to get threading info
+	// First, fetch the original message to get threading info (IMAP — unchanged)
 	const original = await readEmail(options.folder, options.uid);
+
+	const creds = getEmailCredentials();
+
+	if (creds.authMethod === 'oauth') {
+		logger.debug('Sending reply via Gmail API', { uid: options.uid, replyAll: options.replyAll });
+		return replyViaGmailApi(options, original, creds.accessToken, creds.email);
+	}
 
 	// Get our email address for filtering and from field
 	const fromEmail = getEmailAddress();
@@ -473,7 +489,7 @@ export async function replyToEmail(options: ReplyEmailOptions): Promise<SendEmai
 		references.push(original.messageId);
 	}
 
-	// Send the reply
+	// Send the reply via SMTP
 	const transport = createSmtpTransport();
 
 	try {
