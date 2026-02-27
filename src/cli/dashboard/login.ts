@@ -1,4 +1,5 @@
 import { Command, Flags } from '@oclif/core';
+import { SESSION_COOKIE_NAME } from '../../api/auth/cookie.js';
 import { saveConfig } from './_shared/config.js';
 
 export default class Login extends Command {
@@ -31,7 +32,7 @@ export default class Login extends Command {
 
 		// Extract session token from Set-Cookie header
 		const setCookie = response.headers.get('set-cookie') ?? '';
-		const match = setCookie.match(/cascade_session=([^;]+)/);
+		const match = setCookie.match(new RegExp(`${SESSION_COOKIE_NAME}=([^;]+)`));
 		if (!match) {
 			this.error('Login succeeded but no session cookie received.');
 		}

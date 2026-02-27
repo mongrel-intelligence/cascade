@@ -1,4 +1,5 @@
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
+import { SESSION_COOKIE_NAME } from '../../../api/auth/cookie.js';
 import type { AppRouter } from '../../../api/router.js';
 import type { CliConfig } from './config.js';
 
@@ -11,7 +12,7 @@ export function createDashboardClient(config: CliConfig) {
 				url: `${config.serverUrl}/trpc`,
 				headers() {
 					const headers: Record<string, string> = {
-						Cookie: `cascade_session=${config.sessionToken}`,
+						Cookie: `${SESSION_COOKIE_NAME}=${config.sessionToken}`,
 					};
 					if (config.orgId) {
 						headers['x-org-context'] = config.orgId;

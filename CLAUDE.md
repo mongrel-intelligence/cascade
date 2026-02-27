@@ -75,6 +75,7 @@ Optional (infrastructure):
 - `PORT` - Server port (default: 3000)
 - `LOG_LEVEL` - Logging level (default: info)
 - `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled)
+- `COOKIE_NAME_SUFFIX` - Suffix appended to the session cookie name (e.g. `dev` → `cascade_session_dev`). Use per-environment to prevent cookie collisions when dev and prod share a parent domain (default: unset → `cascade_session`)
 - `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code backend (subscription auth)
 - `CREDENTIAL_MASTER_KEY` - 64-char hex string (32-byte AES-256 key) for encrypting credentials at rest. Generate with `npm run credentials:generate-key`. When set, all new/updated credentials are encrypted automatically; existing plaintext credentials continue to work.
 - `SENTRY_DSN` - Sentry DSN for error monitoring (router + worker)

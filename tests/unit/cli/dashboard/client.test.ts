@@ -6,6 +6,7 @@ vi.mock('@trpc/client', () => ({
 }));
 
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
+import { SESSION_COOKIE_NAME } from '../../../../src/api/auth/cookie.js';
 import { createDashboardClient } from '../../../../src/cli/dashboard/_shared/client.js';
 
 describe('createDashboardClient', () => {
@@ -41,7 +42,7 @@ describe('createDashboardClient', () => {
 		};
 		const headers = linkOpts.headers();
 		expect(headers).toEqual({
-			Cookie: 'cascade_session=secret-token',
+			Cookie: `${SESSION_COOKIE_NAME}=secret-token`,
 		});
 	});
 
@@ -55,7 +56,7 @@ describe('createDashboardClient', () => {
 		};
 		const headers = linkOpts.headers();
 		expect(headers).toEqual({
-			Cookie: 'cascade_session=tok',
+			Cookie: `${SESSION_COOKIE_NAME}=tok`,
 			'x-org-context': 'my-org',
 		});
 	});

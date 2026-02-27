@@ -18,6 +18,7 @@ import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
+import { SESSION_COOKIE_NAME } from './api/auth/cookie.js';
 import { loginHandler } from './api/auth/login.js';
 import { logoutHandler } from './api/auth/logout.js';
 import { resolveUserFromSession } from './api/auth/session.js';
@@ -54,7 +55,7 @@ app.use(
 		endpoint: '/trpc',
 		router: appRouter,
 		createContext: async (_opts, c) => {
-			const token = getCookie(c, 'cascade_session');
+			const token = getCookie(c, SESSION_COOKIE_NAME);
 			const user = token ? await resolveUserFromSession(token) : null;
 			const effectiveOrgId = await computeEffectiveOrgId(user, c.req.header('x-org-context'));
 			return { user, effectiveOrgId };
