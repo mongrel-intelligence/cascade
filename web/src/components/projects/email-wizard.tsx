@@ -13,7 +13,7 @@ import {
 	Plus,
 	XCircle,
 } from 'lucide-react';
-import { useCallback, useEffect, useReducer, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
 // ============================================================================
 // Types
@@ -521,6 +521,7 @@ export function EmailWizard({
 
 	const [state, dispatch] = useReducer(wizardReducer, undefined, createInitialState);
 	const [openSteps, setOpenSteps] = useState<Set<number>>(new Set([1]));
+	const initDoneRef = useRef(false);
 
 	const googleClientIdCred = orgCredentials.find((c) => c.envVarKey === 'GOOGLE_OAUTH_CLIENT_ID');
 	const googleClientSecretCred = orgCredentials.find(
@@ -528,12 +529,28 @@ export function EmailWizard({
 	);
 	const hasGoogleOAuthCreds = !!(googleClientIdCred && googleClientSecretCred);
 
-	// Initialize from existing integration
+	// Initialize from existing integration.
+	// For Gmail: wait until orgCredentials has loaded so we can resolve the email
+	// address from the credential name and pre-confirm the verify step.
 	useEffect(() => {
-		if (!initialProvider || !initialCredentials) return;
+		if (initDoneRef.current || !initialProvider || !initialCredentials) return;
+		if (initialProvider === 'gmail' && orgCredentials.length === 0) return;
+
+		initDoneRef.current = true;
 		const editState: Partial<WizardState> = { provider: initialProvider as Provider };
+
 		if (initialProvider === 'gmail') {
 			editState.oauthComplete = true;
+			const gmailEmailCredId = initialCredentials.get('gmail_email');
+			if (gmailEmailCredId) {
+				const emailCred = orgCredentials.find((c) => c.id === gmailEmailCredId);
+				if (emailCred) {
+					// Credential name is stored as "Gmail: user@example.com"
+					const email = emailCred.name.replace(/^Gmail:\s*/, '');
+					editState.gmailEmail = email;
+					editState.verificationEmail = email;
+				}
+			}
 		} else if (initialProvider === 'imap') {
 			editState.imapHostCredentialId = initialCredentials.get('imap_host') ?? null;
 			editState.imapPortCredentialId = initialCredentials.get('imap_port') ?? null;
@@ -542,9 +559,10 @@ export function EmailWizard({
 			editState.usernameCredentialId = initialCredentials.get('username') ?? null;
 			editState.passwordCredentialId = initialCredentials.get('password') ?? null;
 		}
+
 		dispatch({ type: 'INIT_EDIT', state: editState });
 		setOpenSteps(new Set([1, 2, 3, 4]));
-	}, [initialProvider, initialCredentials]);
+	}, [initialProvider, initialCredentials, orgCredentials]);
 
 	const toggleStep = (step: number) => {
 		setOpenSteps((prev) => {
