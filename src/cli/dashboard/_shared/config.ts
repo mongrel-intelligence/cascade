@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { SESSION_COOKIE_NAME } from '../../../api/auth/cookie.js';
+
 export interface CliConfig {
 	serverUrl: string;
 	sessionToken: string;
@@ -21,7 +23,7 @@ export function loadConfig(): CliConfig | null {
 		return {
 			serverUrl: envUrl,
 			sessionToken: envToken,
-			cookieName: 'cascade_session',
+			cookieName: SESSION_COOKIE_NAME,
 			orgId: envOrgId,
 		};
 	}
@@ -36,7 +38,7 @@ export function loadConfig(): CliConfig | null {
 		return {
 			serverUrl: envUrl ?? parsed.serverUrl,
 			sessionToken: envToken ?? parsed.sessionToken,
-			cookieName: parsed.cookieName ?? 'cascade_session', // Default to production cookie name
+			cookieName: parsed.cookieName ?? SESSION_COOKIE_NAME, // Default to environment-aware cookie name
 			orgId: envOrgId ?? parsed.orgId,
 		};
 	} catch {

@@ -12,6 +12,7 @@ vi.mock('node:os', () => ({
 	homedir: () => '/mock-home',
 }));
 
+import { SESSION_COOKIE_NAME } from '../../../../src/api/auth/cookie.js';
 import {
 	clearConfig,
 	loadConfig,
@@ -41,7 +42,7 @@ describe('config', () => {
 			expect(config).toEqual({
 				serverUrl: 'http://env-server:3000',
 				sessionToken: 'env-token',
-				cookieName: 'cascade_session',
+				cookieName: SESSION_COOKIE_NAME,
 				orgId: undefined,
 			});
 			expect(existsSync).not.toHaveBeenCalled();
@@ -64,7 +65,7 @@ describe('config', () => {
 			expect(config).toEqual({
 				serverUrl: 'http://localhost:3000',
 				sessionToken: 'file-token',
-				cookieName: 'cascade_session',
+				cookieName: SESSION_COOKIE_NAME,
 				orgId: undefined,
 			});
 			expect(readFileSync).toHaveBeenCalledWith(expect.stringContaining('cli.json'), 'utf-8');
@@ -96,7 +97,7 @@ describe('config', () => {
 			expect(config).toEqual({
 				serverUrl: 'http://env-override:3000',
 				sessionToken: 'file-token',
-				cookieName: 'cascade_session',
+				cookieName: SESSION_COOKIE_NAME,
 				orgId: undefined,
 			});
 		});
@@ -113,7 +114,7 @@ describe('config', () => {
 			expect(config).toEqual({
 				serverUrl: 'http://file:3000',
 				sessionToken: 'env-token-override',
-				cookieName: 'cascade_session',
+				cookieName: SESSION_COOKIE_NAME,
 				orgId: undefined,
 			});
 		});
