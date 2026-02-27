@@ -1,14 +1,16 @@
 /**
- * Session cookie name, optionally suffixed with COOKIE_NAME_SUFFIX env var.
+ * Session cookie name, automatically suffixed with the environment name
+ * when not running in production.
  *
- * Set COOKIE_NAME_SUFFIX=dev in the dev environment to avoid cookie conflicts
- * when both dev and prod dashboards share a parent domain
+ * In non-production environments (e.g. NODE_ENV=development) the cookie is
+ * named `cascade_session_development`, which avoids cookie collisions when
+ * dev and prod dashboards share a parent domain
  * (e.g. dev.ca.sca.de.com and ca.sca.de.com).
  *
- * Without the env var the name is `cascade_session` — identical to the
- * previous hard-coded value, so existing production deployments are unaffected.
+ * In production (or when NODE_ENV is unset) the name is `cascade_session` —
+ * identical to the previous hard-coded value, so existing deployments are
+ * unaffected.
  */
-const COOKIE_SUFFIX = process.env.COOKIE_NAME_SUFFIX;
-export const SESSION_COOKIE_NAME = COOKIE_SUFFIX
-	? `cascade_session_${COOKIE_SUFFIX}`
-	: 'cascade_session';
+const nodeEnv = process.env.NODE_ENV;
+export const SESSION_COOKIE_NAME =
+	nodeEnv && nodeEnv !== 'production' ? `cascade_session_${nodeEnv}` : 'cascade_session';
