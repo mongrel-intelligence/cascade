@@ -41,6 +41,10 @@ describe('routerConfig', () => {
 	it('has default workerTimeoutMs of 30 minutes', () => {
 		expect(routerConfig.workerTimeoutMs).toBe(30 * 60 * 1000);
 	});
+
+	it('has default emailScheduleIntervalMs of 5 minutes', () => {
+		expect(routerConfig.emailScheduleIntervalMs).toBe(5 * 60 * 1000);
+	});
 });
 
 describe('loadProjectConfig', () => {

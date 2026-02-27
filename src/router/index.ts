@@ -13,6 +13,7 @@ import { logger } from '../utils/logging.js';
 import { GitHubRouterAdapter, injectEventType } from './adapters/github.js';
 import { JiraRouterAdapter } from './adapters/jira.js';
 import { TrelloRouterAdapter } from './adapters/trello.js';
+import { startEmailScheduler, stopEmailScheduler } from './email-scheduler.js';
 import { getQueueStats } from './queue.js';
 import { processRouterWebhook } from './webhook-processor.js';
 import {
@@ -124,6 +125,7 @@ app.post(
 async function shutdown(signal: string): Promise<void> {
 	logger.info('Received shutdown signal', { signal });
 	await stopWorkerProcessor();
+	stopEmailScheduler();
 	await flush(3000);
 	process.exit(0);
 }
@@ -146,6 +148,7 @@ process.on('unhandledRejection', (reason) => {
 async function startRouter(): Promise<void> {
 	const port = Number(process.env.PORT) || 3000;
 	startWorkerProcessor();
+	startEmailScheduler();
 	logger.info('Starting router', { port });
 	serve({ fetch: app.fetch, port });
 }

@@ -30,6 +30,9 @@ export interface RouterConfig {
 
 	// Network settings
 	dockerNetwork: string;
+
+	// Email scheduler
+	emailScheduleIntervalMs: number;
 }
 
 export async function loadProjectConfig(): Promise<{
@@ -72,4 +75,5 @@ export const routerConfig: RouterConfig = {
 	workerMemoryMb: Number(process.env.WORKER_MEMORY_MB) || 4096,
 	workerTimeoutMs: Number(process.env.WORKER_TIMEOUT_MS) || 30 * 60 * 1000, // 30 minutes
 	dockerNetwork: process.env.DOCKER_NETWORK || 'services_default',
+	emailScheduleIntervalMs: Number(process.env.EMAIL_SCHEDULE_INTERVAL_MS) || 5 * 60 * 1000,
 };

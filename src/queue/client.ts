@@ -62,8 +62,8 @@ function getQueue(): Queue<DashboardJob> {
 	return queue;
 }
 
-export async function submitDashboardJob(job: DashboardJob): Promise<string> {
-	const jobId = `${job.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-	const result = await getQueue().add(job.type, job, { jobId });
-	return result.id ?? jobId;
+export async function submitDashboardJob(job: DashboardJob, jobId?: string): Promise<string> {
+	const id = jobId ?? `${job.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+	const result = await getQueue().add(job.type, job, { jobId: id });
+	return result.id ?? id;
 }
