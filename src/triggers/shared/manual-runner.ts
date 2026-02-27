@@ -6,6 +6,7 @@ import { getEmailProviderOrNull, withEmailIntegration } from '../../email/index.
 import type { EmailSearchCriteria } from '../../email/index.js';
 import { withPMCredentials } from '../../pm/context.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
+import { withSmsIntegration } from '../../sms/index.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { formatValidationErrors, validateIntegrations } from './integration-validation.js';
@@ -165,13 +166,15 @@ export async function triggerManualRun(
 			(t) => pmRegistry.getOrNull(t),
 			() =>
 				withPMProvider(pmProvider, () =>
-					withEmailIntegration(project.id, async () => {
-						if (input.agentType === 'email-joke') {
-							const shouldRun = await prefetchEmailsForJokeAgent(agentInput, input.projectId);
-							if (!shouldRun) return undefined;
-						}
-						return runAgent(input.agentType, agentInput);
-					}),
+					withEmailIntegration(project.id, () =>
+						withSmsIntegration(project.id, async () => {
+							if (input.agentType === 'email-joke') {
+								const shouldRun = await prefetchEmailsForJokeAgent(agentInput, input.projectId);
+								if (!shouldRun) return undefined;
+							}
+							return runAgent(input.agentType, agentInput);
+						}),
+					),
 				),
 		);
 		if (result !== undefined) {

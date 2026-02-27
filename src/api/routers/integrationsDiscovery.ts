@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { and, eq } from 'drizzle-orm';
 import { ImapFlow } from 'imapflow';
+import twilio from 'twilio';
 import { z } from 'zod';
 import { getDb } from '../../db/client.js';
 import { decryptCredential, encryptCredential } from '../../db/crypto.js';
@@ -468,6 +469,36 @@ export const integrationsDiscoveryRouter = router({
 				throw new TRPCError({
 					code: 'BAD_REQUEST',
 					message: `Gmail verification failed: ${err instanceof Error ? err.message : String(err)}`,
+				});
+			}
+		}),
+
+	/**
+	 * Verify Twilio credentials by fetching the account details.
+	 */
+	verifyTwilio: protectedProcedure
+		.input(
+			z.object({
+				accountSidCredentialId: z.number(),
+				authTokenCredentialId: z.number(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.verifyTwilio called', { orgId: ctx.effectiveOrgId });
+
+			const [accountSid, authToken] = await Promise.all([
+				resolveCredentialValue(input.accountSidCredentialId, ctx.effectiveOrgId),
+				resolveCredentialValue(input.authTokenCredentialId, ctx.effectiveOrgId),
+			]);
+
+			try {
+				const client = twilio(accountSid, authToken);
+				const account = await client.api.accounts(accountSid).fetch();
+				return { friendlyName: account.friendlyName, status: account.status };
+			} catch (err) {
+				throw new TRPCError({
+					code: 'BAD_REQUEST',
+					message: `Failed to verify Twilio credentials: ${err instanceof Error ? err.message : String(err)}`,
 				});
 			}
 		}),

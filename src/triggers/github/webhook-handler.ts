@@ -7,6 +7,7 @@ import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas
 import { withPMCredentials } from '../../pm/context.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
 import { extractGitHubContext, generateAckMessage } from '../../router/ackMessageGenerator.js';
+import { withSmsIntegration } from '../../sms/index.js';
 import type {
 	AgentResult,
 	CascadeConfig,
@@ -153,8 +154,10 @@ async function executeGitHubAgent(
 			() =>
 				withPMProvider(pmProvider, () =>
 					withEmailIntegration(project.id, () =>
-						withGitHubToken(githubToken, () =>
-							runAgentExecutionPipeline(result, project, config, executionConfig),
+						withSmsIntegration(project.id, () =>
+							withGitHubToken(githubToken, () =>
+								runAgentExecutionPipeline(result, project, config, executionConfig),
+							),
 						),
 					),
 				),

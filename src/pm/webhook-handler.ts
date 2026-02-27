@@ -10,6 +10,7 @@
 import { withEmailIntegration } from '../email/index.js';
 import { withGitHubToken } from '../github/client.js';
 import { getPersonaToken } from '../github/personas.js';
+import { withSmsIntegration } from '../sms/index.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
 import { runAgentExecutionPipeline } from '../triggers/shared/agent-execution.js';
 import { processNextQueuedWebhook } from '../triggers/shared/webhook-queue.js';
@@ -54,10 +55,12 @@ async function executeAgent(
 	try {
 		await integration.withCredentials(project.id, () =>
 			withEmailIntegration(project.id, () =>
-				withGitHubToken(githubToken, () =>
-					runAgentExecutionPipeline(result, project, config, {
-						logLabel: `${integration.type} agent`,
-					}),
+				withSmsIntegration(project.id, () =>
+					withGitHubToken(githubToken, () =>
+						runAgentExecutionPipeline(result, project, config, {
+							logLabel: `${integration.type} agent`,
+						}),
+					),
 				),
 			),
 		);
