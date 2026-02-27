@@ -5,8 +5,9 @@ import { CheckCircle, Loader2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { EmailWizard } from './email-wizard.js';
 import { PMWizard } from './pm-wizard.js';
+import { TwilioWizard } from './twilio-wizard.js';
 
-type IntegrationCategory = 'pm' | 'scm' | 'email';
+type IntegrationCategory = 'pm' | 'scm' | 'email' | 'sms';
 
 interface CredentialOption {
 	id: number;
@@ -358,6 +359,9 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 	const emailCredsQuery = useQuery(
 		trpc.projects.integrationCredentials.list.queryOptions({ projectId, category: 'email' }),
 	);
+	const smsCredsQuery = useQuery(
+		trpc.projects.integrationCredentials.list.queryOptions({ projectId, category: 'sms' }),
+	);
 
 	const [activeTab, setActiveTab] = useState<IntegrationCategory>('pm');
 
@@ -383,6 +387,9 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 	const emailCredMap = buildCredentialMap(
 		emailCredsQuery.data as Array<{ role: string; credentialId: number }>,
 	);
+	const smsCredMap = buildCredentialMap(
+		smsCredsQuery.data as Array<{ role: string; credentialId: number }>,
+	);
 
 	return (
 		<div className="max-w-2xl space-y-6">
@@ -404,6 +411,12 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 					tab="email"
 					activeTab={activeTab}
 					onClick={() => setActiveTab('email')}
+				/>
+				<TabButton
+					label="SMS"
+					tab="sms"
+					activeTab={activeTab}
+					onClick={() => setActiveTab('sms')}
 				/>
 			</div>
 
@@ -430,6 +443,10 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 					initialProvider={emailProvider}
 					initialCredentials={emailCredMap}
 				/>
+			)}
+
+			{activeTab === 'sms' && (
+				<TwilioWizard projectId={projectId} initialCredentials={smsCredMap} />
 			)}
 		</div>
 	);

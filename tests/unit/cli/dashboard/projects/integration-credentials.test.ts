@@ -51,14 +51,14 @@ describe('ProjectsIntegrationCredentials (overrides)', () => {
 		mockLoadConfig.mockReturnValue(baseConfig);
 	});
 
-	it('queries pm, scm, and email categories by default', async () => {
+	it('queries pm, scm, email, and sms categories by default', async () => {
 		const client = makeClient();
 		mockCreateDashboardClient.mockReturnValue(client);
 
 		const cmd = new ProjectsIntegrationCredentials(['my-project'], oclifConfig as never);
 		await cmd.run();
 
-		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledTimes(3);
+		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledTimes(4);
 		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledWith({
 			projectId: 'my-project',
 			category: 'pm',
@@ -70,6 +70,10 @@ describe('ProjectsIntegrationCredentials (overrides)', () => {
 		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledWith({
 			projectId: 'my-project',
 			category: 'email',
+		});
+		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledWith({
+			projectId: 'my-project',
+			category: 'sms',
 		});
 	});
 
@@ -140,7 +144,8 @@ describe('ProjectsIntegrationCredentials (overrides)', () => {
 		(client.projects.integrationCredentials.list.query as ReturnType<typeof vi.fn>)
 			.mockResolvedValueOnce([]) // pm
 			.mockResolvedValueOnce([]) // scm
-			.mockResolvedValueOnce(creds); // email
+			.mockResolvedValueOnce(creds) // email
+			.mockResolvedValueOnce([]); // sms
 		mockCreateDashboardClient.mockReturnValue(client);
 		const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 

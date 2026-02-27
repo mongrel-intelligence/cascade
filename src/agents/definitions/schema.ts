@@ -5,7 +5,7 @@ import { z } from 'zod';
 // ============================================================================
 
 // Integration categories (aligned with integrationRoles.ts)
-export const IntegrationCategorySchema = z.enum(['pm', 'scm', 'email']);
+export const IntegrationCategorySchema = z.enum(['pm', 'scm', 'email', 'sms']);
 
 // Integration requirements schema (REQUIRED field)
 const IntegrationsSchema = z

@@ -12,6 +12,7 @@ import { hasEmailIntegration } from '../../email/index.js';
 import { hasScmIntegration, hasScmPersonaToken } from '../../github/integration.js';
 import { getPersonaForAgentType } from '../../github/personas.js';
 import { hasPmIntegration } from '../../pm/integration.js';
+import { hasSmsIntegration } from '../../sms/index.js';
 import { logger } from '../../utils/logging.js';
 
 export interface ValidationError {
@@ -90,6 +91,20 @@ async function validateEmailIntegration(
 	return null;
 }
 
+async function validateSmsIntegration(
+	projectId: string,
+	agentType: string,
+): Promise<ValidationError | null> {
+	const hasSms = await hasSmsIntegration(projectId);
+	if (!hasSms) {
+		return {
+			category: 'sms',
+			message: `Agent '${agentType}' requires SMS integration (Twilio), but none is configured.`,
+		};
+	}
+	return null;
+}
+
 // ============================================================================
 // Main validation function
 // ============================================================================
@@ -112,6 +127,8 @@ export async function validateIntegrations(
 				return validateScmIntegration(projectId, agentType);
 			case 'email':
 				return validateEmailIntegration(projectId, agentType);
+			case 'sms':
+				return validateSmsIntegration(projectId, agentType);
 			default:
 				return null;
 		}

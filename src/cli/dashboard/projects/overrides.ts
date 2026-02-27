@@ -13,8 +13,8 @@ export default class ProjectsIntegrationCredentials extends DashboardCommand {
 	static override flags = {
 		...DashboardCommand.baseFlags,
 		category: Flags.string({
-			description: 'Filter by integration category (pm, scm, or email)',
-			options: ['pm', 'scm', 'email'],
+			description: 'Filter by integration category (pm, scm, email, or sms)',
+			options: ['pm', 'scm', 'email', 'sms'],
 		}),
 	};
 
@@ -23,8 +23,8 @@ export default class ProjectsIntegrationCredentials extends DashboardCommand {
 
 		try {
 			const categories = flags.category
-				? [flags.category as 'pm' | 'scm' | 'email']
-				: (['pm', 'scm', 'email'] as const);
+				? [flags.category as 'pm' | 'scm' | 'email' | 'sms']
+				: (['pm', 'scm', 'email', 'sms'] as const);
 
 			const allCreds: Array<Record<string, unknown>> = [];
 

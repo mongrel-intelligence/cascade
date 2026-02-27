@@ -241,6 +241,15 @@ export async function getAllProjectIdsWithEmailIntegration(): Promise<string[]> 
 	return rows.map((r) => r.projectId);
 }
 
+export async function getAllProjectIdsWithSmsIntegration(): Promise<string[]> {
+	const db = getDb();
+	const rows = await db
+		.select({ projectId: projectIntegrations.projectId })
+		.from(projectIntegrations)
+		.where(eq(projectIntegrations.category, 'sms'));
+	return rows.map((r) => r.projectId);
+}
+
 // ============================================================================
 // Integration Credentials
 // ============================================================================
