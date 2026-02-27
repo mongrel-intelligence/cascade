@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../../src/email/client.js', () => ({
+const mockProvider = {
+	type: 'imap',
 	sendEmail: vi.fn(),
 	searchEmails: vi.fn(),
 	readEmail: vi.fn(),
 	replyToEmail: vi.fn(),
 	markEmailAsSeen: vi.fn(),
+};
+
+vi.mock('../../../../src/email/context.js', () => ({
+	getEmailProvider: vi.fn(() => mockProvider),
 }));
 
 vi.mock('../../../../src/utils/logging.js', () => ({
@@ -17,13 +22,6 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 	},
 }));
 
-import {
-	markEmailAsSeen as markEmailAsSeenClient,
-	readEmail as readEmailClient,
-	replyToEmail as replyToEmailClient,
-	searchEmails as searchEmailsClient,
-	sendEmail as sendEmailClient,
-} from '../../../../src/email/client.js';
 import { markEmailAsSeen } from '../../../../src/gadgets/email/core/markEmailAsSeen.js';
 import { readEmail } from '../../../../src/gadgets/email/core/readEmail.js';
 import { replyToEmail } from '../../../../src/gadgets/email/core/replyToEmail.js';
@@ -38,7 +36,7 @@ describe('email gadget core functions', () => {
 
 	describe('sendEmail', () => {
 		it('returns success message when email is sent', async () => {
-			vi.mocked(sendEmailClient).mockResolvedValue({
+			mockProvider.sendEmail.mockResolvedValue({
 				messageId: '<abc123@example.com>',
 				accepted: ['user@example.com'],
 				rejected: [],
@@ -56,7 +54,7 @@ describe('email gadget core functions', () => {
 		});
 
 		it('includes rejected recipients in output', async () => {
-			vi.mocked(sendEmailClient).mockResolvedValue({
+			mockProvider.sendEmail.mockResolvedValue({
 				messageId: '<abc123@example.com>',
 				accepted: ['user@example.com'],
 				rejected: ['bad@example.com'],
@@ -72,7 +70,7 @@ describe('email gadget core functions', () => {
 		});
 
 		it('does not show empty rejected list', async () => {
-			vi.mocked(sendEmailClient).mockResolvedValue({
+			mockProvider.sendEmail.mockResolvedValue({
 				messageId: '<abc123@example.com>',
 				accepted: ['user@example.com'],
 				rejected: [],
@@ -88,7 +86,7 @@ describe('email gadget core functions', () => {
 		});
 
 		it('returns error message and logs on failure', async () => {
-			vi.mocked(sendEmailClient).mockRejectedValue(new Error('SMTP connection failed'));
+			mockProvider.sendEmail.mockRejectedValue(new Error('SMTP connection failed'));
 
 			const result = await sendEmail({
 				to: ['user@example.com'],
@@ -106,7 +104,7 @@ describe('email gadget core functions', () => {
 
 	describe('searchEmails', () => {
 		it('returns formatted results when emails found', async () => {
-			vi.mocked(searchEmailsClient).mockResolvedValue([
+			mockProvider.searchEmails.mockResolvedValue([
 				{
 					uid: 123,
 					date: new Date('2024-01-15'),
@@ -135,7 +133,7 @@ describe('email gadget core functions', () => {
 		});
 
 		it('returns message when no emails found', async () => {
-			vi.mocked(searchEmailsClient).mockResolvedValue([]);
+			mockProvider.searchEmails.mockResolvedValue([]);
 
 			const result = await searchEmails('INBOX', { from: 'nobody@example.com' }, 10);
 
@@ -143,7 +141,7 @@ describe('email gadget core functions', () => {
 		});
 
 		it('returns error message and logs on failure', async () => {
-			vi.mocked(searchEmailsClient).mockRejectedValue(new Error('IMAP timeout'));
+			mockProvider.searchEmails.mockRejectedValue(new Error('IMAP timeout'));
 
 			const result = await searchEmails('INBOX', {}, 10);
 
@@ -157,7 +155,7 @@ describe('email gadget core functions', () => {
 
 	describe('readEmail', () => {
 		it('returns formatted email content', async () => {
-			vi.mocked(readEmailClient).mockResolvedValue({
+			mockProvider.readEmail.mockResolvedValue({
 				uid: 123,
 				messageId: '<msg@example.com>',
 				date: new Date('2024-01-15T10:30:00Z'),
@@ -179,7 +177,7 @@ describe('email gadget core functions', () => {
 		});
 
 		it('shows CC when present', async () => {
-			vi.mocked(readEmailClient).mockResolvedValue({
+			mockProvider.readEmail.mockResolvedValue({
 				uid: 123,
 				messageId: '<msg@example.com>',
 				date: new Date('2024-01-15'),
@@ -198,7 +196,7 @@ describe('email gadget core functions', () => {
 		});
 
 		it('shows HTML body when text body is empty', async () => {
-			vi.mocked(readEmailClient).mockResolvedValue({
+			mockProvider.readEmail.mockResolvedValue({
 				uid: 123,
 				messageId: '<msg@example.com>',
 				date: new Date('2024-01-15'),
@@ -219,7 +217,7 @@ describe('email gadget core functions', () => {
 		});
 
 		it('shows attachments when present', async () => {
-			vi.mocked(readEmailClient).mockResolvedValue({
+			mockProvider.readEmail.mockResolvedValue({
 				uid: 123,
 				messageId: '<msg@example.com>',
 				date: new Date('2024-01-15'),
@@ -239,7 +237,7 @@ describe('email gadget core functions', () => {
 		});
 
 		it('returns error message and logs on failure', async () => {
-			vi.mocked(readEmailClient).mockRejectedValue(new Error('Email not found'));
+			mockProvider.readEmail.mockRejectedValue(new Error('Email not found'));
 
 			const result = await readEmail('INBOX', 999);
 
@@ -253,7 +251,7 @@ describe('email gadget core functions', () => {
 
 	describe('replyToEmail', () => {
 		it('returns success message when reply is sent', async () => {
-			vi.mocked(replyToEmailClient).mockResolvedValue({
+			mockProvider.replyToEmail.mockResolvedValue({
 				messageId: '<reply@example.com>',
 				accepted: ['sender@example.com'],
 				rejected: [],
@@ -265,7 +263,7 @@ describe('email gadget core functions', () => {
 		});
 
 		it('includes rejected recipients in output', async () => {
-			vi.mocked(replyToEmailClient).mockResolvedValue({
+			mockProvider.replyToEmail.mockResolvedValue({
 				messageId: '<reply@example.com>',
 				accepted: ['sender@example.com'],
 				rejected: ['bad@example.com'],
@@ -277,7 +275,7 @@ describe('email gadget core functions', () => {
 		});
 
 		it('returns error message and logs on failure', async () => {
-			vi.mocked(replyToEmailClient).mockRejectedValue(new Error('Connection refused'));
+			mockProvider.replyToEmail.mockRejectedValue(new Error('Connection refused'));
 
 			const result = await replyToEmail('INBOX', 123, 'Reply body', false);
 
@@ -295,16 +293,16 @@ describe('email gadget core functions', () => {
 
 	describe('markEmailAsSeen', () => {
 		it('returns success message when email is marked as seen', async () => {
-			vi.mocked(markEmailAsSeenClient).mockResolvedValue(undefined);
+			mockProvider.markEmailAsSeen.mockResolvedValue(undefined);
 
 			const result = await markEmailAsSeen('INBOX', 456);
 
 			expect(result).toBe('Email (UID: 456) in folder "INBOX" has been marked as seen/read.');
-			expect(markEmailAsSeenClient).toHaveBeenCalledWith('INBOX', 456);
+			expect(mockProvider.markEmailAsSeen).toHaveBeenCalledWith('INBOX', 456);
 		});
 
 		it('returns error message and logs on failure', async () => {
-			vi.mocked(markEmailAsSeenClient).mockRejectedValue(new Error('IMAP flag error'));
+			mockProvider.markEmailAsSeen.mockRejectedValue(new Error('IMAP flag error'));
 
 			const result = await markEmailAsSeen('INBOX', 789);
 

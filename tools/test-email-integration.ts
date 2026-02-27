@@ -19,15 +19,8 @@
  */
 
 import { parseArgs } from 'node:util';
-import {
-	type EmailCredentials,
-	readEmail,
-	replyToEmail,
-	searchEmails,
-	sendEmail,
-	withEmailCredentials,
-} from '../src/email/client.js';
-import type { EmailSummary } from '../src/email/types.js';
+import { ImapEmailProvider } from '../src/email/imap/adapter.js';
+import type { EmailSummary, PasswordEmailCredentials } from '../src/email/types.js';
 
 const { values } = parseArgs({
 	options: {
@@ -65,7 +58,7 @@ if (!values.username || !values.password) {
 	process.exit(1);
 }
 
-const credentials: EmailCredentials = {
+const credentials: PasswordEmailCredentials = {
 	authMethod: 'password',
 	imapHost: 'imap.gmail.com',
 	imapPort: 993,
@@ -96,8 +89,8 @@ async function runTest(name: string, fn: () => Promise<void>): Promise<void> {
 	console.log();
 }
 
-async function testSearchRecentEmails(): Promise<EmailSummary[]> {
-	const results = await searchEmails('INBOX', { since: getRecentDateString() }, 5);
+async function testSearchRecentEmails(provider: ImapEmailProvider): Promise<EmailSummary[]> {
+	const results = await provider.searchEmails('INBOX', { since: getRecentDateString() }, 5);
 	for (const email of results) {
 		console.log(
 			`[UID:${email.uid}] ${email.date.toISOString()} - ${email.from} - ${email.subject}`,
@@ -106,12 +99,12 @@ async function testSearchRecentEmails(): Promise<EmailSummary[]> {
 	return results;
 }
 
-async function testReadFirstEmail(): Promise<number | null> {
-	const results = await searchEmails('INBOX', { since: getRecentDateString() }, 1);
+async function testReadFirstEmail(provider: ImapEmailProvider): Promise<number | null> {
+	const results = await provider.searchEmails('INBOX', { since: getRecentDateString() }, 1);
 	const firstUid = extractUid(results);
 	if (firstUid) {
 		console.log(`Reading email UID: ${firstUid}`);
-		const email = await readEmail('INBOX', firstUid);
+		const email = await provider.readEmail('INBOX', firstUid);
 		console.log(email);
 	} else {
 		console.log('No emails found to read');
@@ -119,8 +112,8 @@ async function testReadFirstEmail(): Promise<number | null> {
 	return firstUid;
 }
 
-async function testSendEmail(toAddress: string): Promise<void> {
-	const result = await sendEmail({
+async function testSendEmail(provider: ImapEmailProvider, toAddress: string): Promise<void> {
+	const result = await provider.sendEmail({
 		to: [toAddress],
 		subject: `CASCADE Email Test - ${new Date().toISOString()}`,
 		body: `This is a test email from CASCADE email integration.
@@ -132,8 +125,8 @@ If you receive this, the SMTP integration is working correctly.`,
 	console.log(result);
 }
 
-async function testSearchSentEmail(): Promise<number | null> {
-	const results = await searchEmails('INBOX', { subject: 'CASCADE Email Test' }, 5);
+async function testSearchSentEmail(provider: ImapEmailProvider): Promise<number | null> {
+	const results = await provider.searchEmails('INBOX', { subject: 'CASCADE Email Test' }, 5);
 	for (const email of results) {
 		console.log(
 			`[UID:${email.uid}] ${email.date.toISOString()} - ${email.from} - ${email.subject}`,
@@ -142,8 +135,8 @@ async function testSearchSentEmail(): Promise<number | null> {
 	return extractUid(results);
 }
 
-async function testReplyToEmail(uid: number): Promise<void> {
-	const result = await replyToEmail({
+async function testReplyToEmail(provider: ImapEmailProvider, uid: number): Promise<void> {
+	const result = await provider.replyToEmail({
 		folder: 'INBOX',
 		uid,
 		body: `This is an automated reply from CASCADE.
@@ -156,11 +149,13 @@ Original email UID: ${uid}`,
 	console.log(result);
 }
 
-async function runAllTests(): Promise<void> {
-	await runTest('TEST 1: Search recent emails (INBOX, last 7 days)', testSearchRecentEmails);
+async function runAllTests(provider: ImapEmailProvider): Promise<void> {
+	await runTest('TEST 1: Search recent emails (INBOX, last 7 days)', () =>
+		testSearchRecentEmails(provider),
+	);
 
 	await runTest('TEST 2: Read first email from search', async () => {
-		await testReadFirstEmail();
+		await testReadFirstEmail(provider);
 	});
 
 	if (values['skip-send']) {
@@ -170,7 +165,7 @@ async function runAllTests(): Promise<void> {
 	}
 
 	await runTest('TEST 3: Send test email to yourself', async () => {
-		await testSendEmail(credentials.username);
+		await testSendEmail(provider, credentials.username);
 	});
 
 	console.log('Waiting 5 seconds for email to arrive...');
@@ -179,12 +174,12 @@ async function runAllTests(): Promise<void> {
 
 	let sentUid: number | null = null;
 	await runTest('TEST 4: Search for sent email', async () => {
-		sentUid = await testSearchSentEmail();
+		sentUid = await testSearchSentEmail(provider);
 	});
 
 	await runTest('TEST 5: Reply to the test email', async () => {
 		if (sentUid) {
-			await testReplyToEmail(sentUid);
+			await testReplyToEmail(provider, sentUid);
 		} else {
 			console.log('SKIPPED: No email UID available to reply to');
 		}
@@ -201,7 +196,8 @@ async function main(): Promise<void> {
 	console.log('='.repeat(60));
 	console.log();
 
-	await withEmailCredentials(credentials, runAllTests);
+	const provider = new ImapEmailProvider(credentials);
+	await runAllTests(provider);
 
 	console.log('='.repeat(60));
 	console.log('Test complete!');
