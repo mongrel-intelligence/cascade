@@ -16,7 +16,7 @@ tools:
   sdkTools: readOnly
 
 strategies:
-  contextPipeline: []
+  contextPipeline: [prefetchedEmails]
   taskPromptBuilder: emailJoke
   gadgetBuilder: emailJoke
 

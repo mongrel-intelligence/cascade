@@ -11,6 +11,7 @@ import {
 	type PreExecuteParams,
 	fetchContextFilesStep,
 	fetchDirectoryListingStep,
+	fetchEmailsFromInputStep,
 	fetchPRContextStep,
 	fetchPRConversationStep,
 	fetchSquintStep,
@@ -105,6 +106,7 @@ export const CONTEXT_STEP_REGISTRY: Record<
 	workItem: fetchWorkItemStep,
 	prContext: fetchPRContextStep,
 	prConversation: fetchPRConversationStep,
+	prefetchedEmails: fetchEmailsFromInputStep,
 };
 
 // ============================================================================

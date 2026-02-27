@@ -66,6 +66,7 @@ const StrategiesSchema = z.object({
 			'workItem',
 			'prContext',
 			'prConversation',
+			'prefetchedEmails',
 		]),
 	),
 	taskPromptBuilder: z.enum([
