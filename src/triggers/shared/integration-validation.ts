@@ -8,7 +8,7 @@
 
 import { loadAgentDefinition } from '../../agents/definitions/loader.js';
 import type { AgentIntegrations, IntegrationCategory } from '../../agents/definitions/schema.js';
-import { hasEmailIntegration } from '../../email/integration.js';
+import { hasEmailIntegration } from '../../email/index.js';
 import { hasScmIntegration, hasScmPersonaToken } from '../../github/integration.js';
 import { getPersonaForAgentType } from '../../github/personas.js';
 import { hasPmIntegration } from '../../pm/integration.js';
