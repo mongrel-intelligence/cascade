@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SESSION_COOKIE_NAME } from '../../../../src/api/auth/cookie.js';
 
 describe('SESSION_COOKIE_NAME', () => {
@@ -8,18 +8,19 @@ describe('SESSION_COOKIE_NAME', () => {
 		expect(SESSION_COOKIE_NAME).toBe('cascade_session');
 	});
 
-	it('appends suffix when COOKIE_NAME_SUFFIX is set', () => {
-		// Validate the cookie name derivation logic directly
-		const suffix = 'dev';
-		const expected = `cascade_session_${suffix}`;
-		const name = suffix ? `cascade_session_${suffix}` : 'cascade_session';
-		expect(name).toBe(expected);
+	it('appends suffix when COOKIE_NAME_SUFFIX is set', async () => {
+		vi.stubEnv('COOKIE_NAME_SUFFIX', 'dev');
+		vi.resetModules();
+
+		const { SESSION_COOKIE_NAME: name } = await import('../../../../src/api/auth/cookie.js');
+		expect(name).toBe('cascade_session_dev');
 	});
 
-	it('uses plain cascade_session when COOKIE_NAME_SUFFIX is empty string', () => {
-		// Validate the cookie name derivation logic with empty string
-		const suffix = '';
-		const name = suffix ? `cascade_session_${suffix}` : 'cascade_session';
+	it('uses plain cascade_session when COOKIE_NAME_SUFFIX is empty string', async () => {
+		vi.stubEnv('COOKIE_NAME_SUFFIX', '');
+		vi.resetModules();
+
+		const { SESSION_COOKIE_NAME: name } = await import('../../../../src/api/auth/cookie.js');
 		expect(name).toBe('cascade_session');
 	});
 });
