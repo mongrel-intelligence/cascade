@@ -24,7 +24,7 @@ import {
 	listAgentDefinitions,
 	upsertAgentDefinition,
 } from '../../db/repositories/agentDefinitionsRepository.js';
-import { protectedProcedure, publicProcedure, router } from '../trpc.js';
+import { protectedProcedure, publicProcedure, router, superAdminProcedure } from '../trpc.js';
 
 export const agentDefinitionsRouter = router({
 	/**
@@ -32,7 +32,10 @@ export const agentDefinitionsRouter = router({
 	 */
 	list: protectedProcedure.query(async () => {
 		const all = await resolveAllAgentDefinitions();
-		const dbRows = await listAgentDefinitions().catch(() => []);
+		const dbRows = await listAgentDefinitions().catch((err) => {
+			console.warn('Failed to fetch agent definitions from DB, falling back to YAML only', err);
+			return [];
+		});
 		const dbMap = new Map(dbRows.map((r) => [r.agentType, r]));
 
 		return [...all.entries()].map(([agentType, definition]) => {
@@ -61,7 +64,9 @@ export const agentDefinitionsRouter = router({
 					definition,
 					isBuiltin,
 				};
-			} catch {
+			} catch (err) {
+				// Log the original error so infrastructure issues are visible
+				console.error(`Failed to resolve agent definition: ${input.agentType}`, err);
 				throw new TRPCError({
 					code: 'NOT_FOUND',
 					message: `Agent definition not found: ${input.agentType}`,
@@ -73,17 +78,14 @@ export const agentDefinitionsRouter = router({
 	 * Create a new agent definition (superadmin only).
 	 * Validates the full definition via AgentDefinitionSchema. Invalidates cache.
 	 */
-	create: protectedProcedure
+	create: superAdminProcedure
 		.input(
 			z.object({
 				agentType: z.string().min(1),
 				definition: AgentDefinitionSchema,
 			}),
 		)
-		.mutation(async ({ ctx, input }) => {
-			if (ctx.user.role !== 'superadmin') {
-				throw new TRPCError({ code: 'FORBIDDEN', message: 'Superadmin access required' });
-			}
+		.mutation(async ({ input }) => {
 			// Validate agentType doesn't already exist in DB
 			const existing = await getAgentDefinition(input.agentType).catch(() => null);
 			if (existing !== null) {
@@ -102,18 +104,14 @@ export const agentDefinitionsRouter = router({
 	 * Partial update by agentType (superadmin only). Uses DefinitionPatchSchema.
 	 * Invalidates cache.
 	 */
-	update: protectedProcedure
+	update: superAdminProcedure
 		.input(
 			z.object({
 				agentType: z.string().min(1),
 				patch: DefinitionPatchSchema,
 			}),
 		)
-		.mutation(async ({ ctx, input }) => {
-			if (ctx.user.role !== 'superadmin') {
-				throw new TRPCError({ code: 'FORBIDDEN', message: 'Superadmin access required' });
-			}
-
+		.mutation(async ({ input }) => {
 			// Resolve the current definition (cache → DB → YAML)
 			let current: Awaited<ReturnType<typeof resolveAgentDefinition>>;
 			try {
@@ -139,13 +137,9 @@ export const agentDefinitionsRouter = router({
 	/**
 	 * Delete by agentType (superadmin only, non-builtin only). Invalidates cache.
 	 */
-	delete: protectedProcedure
+	delete: superAdminProcedure
 		.input(z.object({ agentType: z.string().min(1) }))
-		.mutation(async ({ ctx, input }) => {
-			if (ctx.user.role !== 'superadmin') {
-				throw new TRPCError({ code: 'FORBIDDEN', message: 'Superadmin access required' });
-			}
-
+		.mutation(async ({ input }) => {
 			const dbRow = await getAgentDefinition(input.agentType).catch(() => null);
 			if (dbRow === null) {
 				throw new TRPCError({
@@ -172,13 +166,9 @@ export const agentDefinitionsRouter = router({
 	 * Restore a builtin definition to its YAML default (superadmin only).
 	 * Re-reads YAML and upserts. Invalidates cache.
 	 */
-	reset: protectedProcedure
+	reset: superAdminProcedure
 		.input(z.object({ agentType: z.string().min(1) }))
-		.mutation(async ({ ctx, input }) => {
-			if (ctx.user.role !== 'superadmin') {
-				throw new TRPCError({ code: 'FORBIDDEN', message: 'Superadmin access required' });
-			}
-
+		.mutation(async ({ input }) => {
 			const isYamlBuiltin = getKnownAgentTypes().includes(input.agentType);
 			if (!isYamlBuiltin) {
 				throw new TRPCError({
