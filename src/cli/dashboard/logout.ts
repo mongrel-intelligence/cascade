@@ -8,10 +8,12 @@ export default class Logout extends Command {
 		const config = loadConfig();
 		if (config) {
 			// Best-effort server-side logout
+			// Use the cookie name from config to match the server's environment
+			const cookieName = config.cookieName ?? 'cascade_session';
 			try {
 				await fetch(`${config.serverUrl}/api/auth/logout`, {
 					method: 'POST',
-					headers: { Cookie: `cascade_session=${config.sessionToken}` },
+					headers: { Cookie: `${cookieName}=${config.sessionToken}` },
 				});
 			} catch {
 				// Ignore — server may be unreachable
