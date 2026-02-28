@@ -24,48 +24,36 @@ function TemplateEditor({ agentType, onClose }: { agentType: string; onClose: ()
 	const [validationStatus, setValidationStatus] = useState<string | null>(null);
 	const [isDirty, setIsDirty] = useState(false);
 
-	// Fetch current custom prompt (if any) from agent configs
-	const configsQuery = useQuery(trpc.agentConfigs.list.queryOptions());
+	// Fetch current prompt from agent definition
+	const definitionQuery = useQuery(trpc.agentDefinitions.get.queryOptions({ agentType }));
 	const defaultQuery = useQuery(trpc.prompts.getDefault.queryOptions({ agentType }));
 	const variablesQuery = useQuery(trpc.prompts.variables.queryOptions());
 	const partialsQuery = useQuery(trpc.prompts.listPartials.queryOptions());
 
-	const configs = (configsQuery.data ?? []) as Array<{
-		id: number;
-		agentType: string;
-		prompt: string | null;
-		orgId: string | null;
-		projectId: string | null;
-	}>;
-
-	const existingConfig = configs.find((c) => c.agentType === agentType && c.projectId === null);
-	const hasCustom = !!existingConfig?.prompt;
+	const definition = definitionQuery.data?.definition;
+	const hasCustom = !!definition?.prompts?.systemPrompt;
 
 	useEffect(() => {
-		if (existingConfig?.prompt) {
-			setContent(existingConfig.prompt);
+		if (definition?.prompts?.systemPrompt) {
+			setContent(definition.prompts.systemPrompt);
 		} else if (defaultQuery.data) {
 			setContent(defaultQuery.data.content);
 		}
-	}, [existingConfig?.prompt, defaultQuery.data]);
+	}, [definition?.prompts?.systemPrompt, defaultQuery.data]);
 
 	const saveMutation = useMutation({
 		mutationFn: async () => {
-			if (existingConfig) {
-				await trpcClient.agentConfigs.update.mutate({
-					id: existingConfig.id,
-					prompt: content,
-				});
-			} else {
-				await trpcClient.agentConfigs.create.mutate({
-					agentType,
-					prompt: content,
-				});
-			}
+			await trpcClient.agentDefinitions.updatePrompt.mutate({
+				agentType,
+				systemPrompt: content,
+			});
 		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({
-				queryKey: trpc.agentConfigs.list.queryOptions().queryKey,
+				queryKey: trpc.agentDefinitions.get.queryOptions({ agentType }).queryKey,
+			});
+			queryClient.invalidateQueries({
+				queryKey: trpc.agentDefinitions.list.queryOptions().queryKey,
 			});
 			setIsDirty(false);
 			setValidationStatus('Saved.');
@@ -74,16 +62,14 @@ function TemplateEditor({ agentType, onClose }: { agentType: string; onClose: ()
 
 	const resetMutation = useMutation({
 		mutationFn: async () => {
-			if (existingConfig) {
-				await trpcClient.agentConfigs.update.mutate({
-					id: existingConfig.id,
-					prompt: null,
-				});
-			}
+			await trpcClient.agentDefinitions.resetPrompt.mutate({ agentType });
 		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({
-				queryKey: trpc.agentConfigs.list.queryOptions().queryKey,
+				queryKey: trpc.agentDefinitions.get.queryOptions({ agentType }).queryKey,
+			});
+			queryClient.invalidateQueries({
+				queryKey: trpc.agentDefinitions.list.queryOptions().queryKey,
 			});
 			if (defaultQuery.data) {
 				setContent(defaultQuery.data.content);

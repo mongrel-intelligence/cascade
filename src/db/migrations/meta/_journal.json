@@ -162,6 +162,13 @@
 			"when": 1757000000000,
 			"tag": "0022_agent_definitions",
 			"breakpoints": false
+		},
+		{
+			"idx": 23,
+			"version": "7",
+			"when": 1758000000000,
+			"tag": "0023_move_prompts_to_definitions",
+			"breakpoints": false
 		}
 	]
 }

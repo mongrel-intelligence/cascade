@@ -116,6 +116,13 @@ const TrailingMessageSchema = z
 	})
 	.optional();
 
+const PromptsSchema = z
+	.object({
+		systemPrompt: z.string().optional(),
+		taskPrompt: z.string().optional(),
+	})
+	.optional();
+
 export const AgentDefinitionSchema = z.object({
 	identity: IdentitySchema,
 	capabilities: CapabilitiesSchema,
@@ -126,6 +133,7 @@ export const AgentDefinitionSchema = z.object({
 	hint: z.string(),
 	trailingMessage: TrailingMessageSchema,
 	integrations: IntegrationsSchema,
+	prompts: PromptsSchema,
 });
 
 /**
