@@ -43,6 +43,9 @@ export const agentConfigsRouter = router({
 			return listAgentConfigs({ orgId: ctx.effectiveOrgId });
 		}),
 
+	// No superadmin check needed: the `input.orgId ?? ctx.effectiveOrgId` fallback
+	// guarantees an orgId is always set, so a truly global config (no org, no project)
+	// cannot be created through this endpoint.
 	create: protectedProcedure
 		.input(
 			z.object({
