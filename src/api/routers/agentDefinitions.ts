@@ -5,10 +5,10 @@ import {
 	invalidateDefinitionCache,
 	loadAgentDefinition,
 	resolveAgentDefinition,
-	resolveAllAgentDefinitions,
 	resolveKnownAgentTypes,
 } from '../../agents/definitions/loader.js';
 import {
+	type AgentDefinition,
 	AgentDefinitionSchema,
 	COMPACTION_NAMES,
 	CONTEXT_STEP_NAMES,
@@ -29,23 +29,44 @@ import { protectedProcedure, publicProcedure, router, superAdminProcedure } from
 export const agentDefinitionsRouter = router({
 	/**
 	 * Returns all definitions (YAML + DB merged), with agentType, definition, and isBuiltin flag.
+	 *
+	 * Uses a single listAgentDefinitions() call + YAML fallback instead of going through
+	 * resolveAllAgentDefinitions() which would issue its own redundant listAgentDefinitions() call.
 	 */
 	list: protectedProcedure.query(async () => {
-		const all = await resolveAllAgentDefinitions();
+		const yamlTypes = getKnownAgentTypes();
+		const result: Array<{ agentType: string; definition: AgentDefinition; isBuiltin: boolean }> =
+			[];
+
+		// Fetch DB rows (includes isBuiltin flag)
 		const dbRows = await listAgentDefinitions().catch((err) => {
 			console.warn('Failed to fetch agent definitions from DB, falling back to YAML only', err);
-			return [];
+			return [] as Array<{ agentType: string; definition: AgentDefinition; isBuiltin: boolean }>;
 		});
-		const dbMap = new Map(dbRows.map((r) => [r.agentType, r]));
+		const seen = new Set<string>();
 
-		return [...all.entries()].map(([agentType, definition]) => {
-			const dbRow = dbMap.get(agentType);
-			return {
-				agentType,
-				definition,
-				isBuiltin: dbRow?.isBuiltin ?? true, // YAML-only types are builtin
-			};
-		});
+		// Start with all DB entries
+		for (const row of dbRows) {
+			result.push({
+				agentType: row.agentType,
+				definition: row.definition,
+				isBuiltin: row.isBuiltin,
+			});
+			seen.add(row.agentType);
+		}
+
+		// Fill in YAML-only types not present in DB
+		for (const agentType of yamlTypes) {
+			if (!seen.has(agentType)) {
+				result.push({
+					agentType,
+					definition: loadAgentDefinition(agentType),
+					isBuiltin: true, // YAML-only types are always builtin
+				});
+			}
+		}
+
+		return result;
 	}),
 
 	/**
