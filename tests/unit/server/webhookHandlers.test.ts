@@ -38,14 +38,12 @@ import { resolvePersonaIdentities } from '../../../src/github/personas.js';
 import { sendAcknowledgeReaction } from '../../../src/router/reactions.js';
 import { captureException } from '../../../src/sentry.js';
 import {
-	buildGitHubReactionSender,
-	buildJiraReactionSender,
-	buildTrelloReactionSender,
 	createWebhookHandler,
 	parseGitHubPayload,
 	parseJiraPayload,
 	parseTrelloPayload,
 } from '../../../src/server/webhookHandlers.js';
+import { buildReactionSender } from '../../../src/server/webhookReactionSender.js';
 import { canAcceptWebhook, isCurrentlyProcessing } from '../../../src/utils/index.js';
 import { logWebhookCall } from '../../../src/utils/webhookLogger.js';
 
@@ -445,10 +443,10 @@ describe('parseGitHubPayload', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Reaction senders
+// Unified reaction sender (buildReactionSender)
 // ---------------------------------------------------------------------------
 
-describe('buildTrelloReactionSender', () => {
+describe('buildReactionSender — trello', () => {
 	const config = {
 		defaults: {} as never,
 		projects: [
@@ -461,7 +459,7 @@ describe('buildTrelloReactionSender', () => {
 
 	it('sends reaction for commentCard events', async () => {
 		vi.useFakeTimers();
-		const sender = buildTrelloReactionSender(config);
+		const sender = buildReactionSender('trello', config);
 		const payload = { model: { id: 'board-abc' }, action: { type: 'commentCard' } };
 		sender(payload, 'commentCard');
 		await vi.runAllTimersAsync();
@@ -470,14 +468,14 @@ describe('buildTrelloReactionSender', () => {
 	});
 
 	it('does not send reaction for non-commentCard events', () => {
-		const sender = buildTrelloReactionSender(config);
+		const sender = buildReactionSender('trello', config);
 		sender({ model: { id: 'board-abc' } }, 'updateCard');
 		expect(mockSendAcknowledgeReaction).not.toHaveBeenCalled();
 	});
 
 	it('does not send reaction when board not found', async () => {
 		vi.useFakeTimers();
-		const sender = buildTrelloReactionSender(config);
+		const sender = buildReactionSender('trello', config);
 		sender({ model: { id: 'unknown-board' } }, 'commentCard');
 		await vi.runAllTimersAsync();
 		expect(mockSendAcknowledgeReaction).not.toHaveBeenCalled();
@@ -485,7 +483,7 @@ describe('buildTrelloReactionSender', () => {
 	});
 });
 
-describe('buildGitHubReactionSender', () => {
+describe('buildReactionSender — github', () => {
 	it('sends reaction for issue_comment events', async () => {
 		vi.useFakeTimers();
 		const mockProject = { id: 'proj-1' } as never;
@@ -495,7 +493,7 @@ describe('buildGitHubReactionSender', () => {
 			reviewer: 'bot-rev',
 		});
 
-		const sender = buildGitHubReactionSender();
+		const sender = buildReactionSender('github');
 		const payload = { repository: { full_name: 'owner/repo' }, comment: { id: 1 } };
 		sender(payload, 'issue_comment');
 		await vi.runAllTimersAsync();
@@ -513,7 +511,7 @@ describe('buildGitHubReactionSender', () => {
 
 	it('does not send reaction for push events', async () => {
 		vi.useFakeTimers();
-		const sender = buildGitHubReactionSender();
+		const sender = buildReactionSender('github');
 		sender({ repository: { full_name: 'owner/repo' } }, 'push');
 		await vi.runAllTimersAsync();
 		expect(mockSendAcknowledgeReaction).not.toHaveBeenCalled();
@@ -522,7 +520,7 @@ describe('buildGitHubReactionSender', () => {
 
 	it('does not send reaction when repo is missing', async () => {
 		vi.useFakeTimers();
-		const sender = buildGitHubReactionSender();
+		const sender = buildReactionSender('github');
 		sender({}, 'issue_comment');
 		await vi.runAllTimersAsync();
 		expect(mockSendAcknowledgeReaction).not.toHaveBeenCalled();
@@ -530,7 +528,7 @@ describe('buildGitHubReactionSender', () => {
 	});
 });
 
-describe('buildJiraReactionSender', () => {
+describe('buildReactionSender — jira', () => {
 	const config = {
 		defaults: {} as never,
 		projects: [
@@ -543,7 +541,7 @@ describe('buildJiraReactionSender', () => {
 
 	it('sends reaction for comment_created events', async () => {
 		vi.useFakeTimers();
-		const sender = buildJiraReactionSender(config);
+		const sender = buildReactionSender('jira', config);
 		const payload = {
 			webhookEvent: 'comment_created',
 			issue: { fields: { project: { key: 'PROJ' } } },
@@ -556,7 +554,7 @@ describe('buildJiraReactionSender', () => {
 
 	it('does not send reaction for non-comment_ events', async () => {
 		vi.useFakeTimers();
-		const sender = buildJiraReactionSender(config);
+		const sender = buildReactionSender('jira', config);
 		sender(
 			{ webhookEvent: 'jira:issue_updated', issue: { fields: { project: { key: 'PROJ' } } } },
 			'jira:issue_updated',
@@ -568,7 +566,7 @@ describe('buildJiraReactionSender', () => {
 
 	it('does not send reaction when project key not found', async () => {
 		vi.useFakeTimers();
-		const sender = buildJiraReactionSender(config);
+		const sender = buildReactionSender('jira', config);
 		sender(
 			{ webhookEvent: 'comment_created', issue: { fields: { project: { key: 'UNKNOWN' } } } },
 			'comment_created',
