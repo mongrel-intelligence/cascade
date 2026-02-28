@@ -16,6 +16,8 @@ export async function getUserByEmail(email: string) {
 	return row ?? null;
 }
 
+const VALID_ROLES = new Set<DashboardUser['role']>(['member', 'admin', 'superadmin']);
+
 export async function getUserById(id: string): Promise<DashboardUser | null> {
 	const db = getDb();
 	const [row] = await db
@@ -29,6 +31,9 @@ export async function getUserById(id: string): Promise<DashboardUser | null> {
 		.from(users)
 		.where(eq(users.id, id));
 	if (!row) return null;
+	if (!VALID_ROLES.has(row.role as DashboardUser['role'])) {
+		throw new Error(`Unexpected user role: ${row.role}`);
+	}
 	return row as DashboardUser;
 }
 

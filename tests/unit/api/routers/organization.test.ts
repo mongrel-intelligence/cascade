@@ -65,6 +65,16 @@ describe('organizationRouter', () => {
 			await expect(caller.update({ name: '' })).rejects.toThrow();
 		});
 
+		it('throws FORBIDDEN when user is a member (not admin)', async () => {
+			const memberUser = createMockUser({ role: 'member' });
+			const caller = createCaller({ user: memberUser, effectiveOrgId: memberUser.orgId });
+
+			await expect(caller.update({ name: 'New' })).rejects.toThrow(TRPCError);
+			await expect(caller.update({ name: 'New' })).rejects.toMatchObject({
+				code: 'FORBIDDEN',
+			});
+		});
+
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.update({ name: 'New' })).rejects.toMatchObject({
