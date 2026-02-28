@@ -15,6 +15,15 @@ const taskEta = new Eta({ views: taskTemplatesDir, autoEscape: false });
 
 // Valid agent types — lazily resolved from DB (with YAML fallback), populated by initPrompts()
 let validTypes: string[] = [];
+let initialized = false;
+
+function requireInitialized(name: string): void {
+	if (!initialized) {
+		throw new Error(
+			`prompts: '${name}' was accessed before initPrompts() completed. Call initPrompts() at startup before using getSystemPrompt() or getRawTemplate().`,
+		);
+	}
+}
 
 // Template context interface
 export interface PromptContext {
@@ -62,6 +71,7 @@ export interface PromptContext {
  */
 export async function initPrompts(): Promise<void> {
 	validTypes = await resolveKnownAgentTypes();
+	initialized = true;
 }
 
 // Cache for loaded templates
@@ -133,6 +143,7 @@ export function getSystemPrompt(
 	context: PromptContext = {},
 	dbPartials?: Map<string, string>,
 ): string {
+	requireInitialized('getSystemPrompt');
 	if (!validTypes.includes(agentType)) {
 		throw new Error(`Unknown agent type: ${agentType}`);
 	}
@@ -194,6 +205,7 @@ export function renderTaskPrompt(
 
 /** Returns the raw .eta template source from disk (before rendering). */
 export function getRawTemplate(agentType: string): string {
+	requireInitialized('getRawTemplate');
 	if (!validTypes.includes(agentType)) {
 		throw new Error(`Unknown agent type: ${agentType}`);
 	}

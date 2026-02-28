@@ -9,22 +9,6 @@ import {
 import { formatTodoList, loadTodos } from '../gadgets/todo/storage.js';
 
 /**
- * Get the agent-specific hint for batch processing.
- * Reads from agent definition (DB → YAML fallback); falls back to a default for unknown types.
- */
-async function getAgentHint(agentType?: string): Promise<string> {
-	if (agentType) {
-		try {
-			const def = await resolveAgentDefinition(agentType);
-			if (def) return def.hint;
-		} catch {
-			// Unknown agent type — fall through to default
-		}
-	}
-	return 'Complete the current task efficiently before moving to the next.';
-}
-
-/**
  * Run a shell command and return output, or null on error.
  */
 function runCommand(command: string): string | null {
@@ -186,9 +170,8 @@ function formatDiagnosticLoopWarning(): string | null {
  * @returns Promise resolving to trailing message function
  */
 export async function getIterationTrailingMessage(agentType?: string): Promise<TrailingMessage> {
-	const batchHint = await getAgentHint(agentType);
-
-	// Resolve trailing message flags from agent definition (DB → YAML fallback)
+	// Resolve agent definition once (DB → YAML fallback) for both hint and flags
+	let batchHint = 'Complete the current task efficiently before moving to the next.';
 	let flags: {
 		includeDiagnostics?: boolean;
 		includeTodoProgress?: boolean;
@@ -201,10 +184,11 @@ export async function getIterationTrailingMessage(agentType?: string): Promise<T
 		try {
 			const def = await resolveAgentDefinition(agentType);
 			if (def) {
+				batchHint = def.hint;
 				flags = def.trailingMessage ?? {};
 			}
 		} catch {
-			// Unknown agent type — use empty flags (basic message only)
+			// Unknown agent type — use defaults
 		}
 	}
 

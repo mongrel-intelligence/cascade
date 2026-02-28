@@ -253,6 +253,16 @@ async function main(): Promise<void> {
 	const config = await loadConfig();
 	logger.info('[Worker] Loaded projects config', { projects: config.projects.map((p) => p.id) });
 
+	// Seed built-in agent definitions to DB, then initialize in-memory caches
+	const { seedAgentDefinitions } = await import('./db/seeds/seedAgentDefinitions.js');
+	const { initAgentMessages } = await import('./config/agentMessages.js');
+	const { initPrompts } = await import('./agents/prompts/index.js');
+	logger.info('[Worker] Seeding agent definitions...');
+	await seedAgentDefinitions();
+	logger.info('[Worker] Initializing agent messages...');
+	await initAgentMessages();
+	await initPrompts();
+
 	// Credentials are set as individual env vars by the router (Docker env).
 	// CASCADE_CREDENTIAL_KEYS lists the key names for reconstruction.
 	if (!process.env.CASCADE_CREDENTIAL_KEYS) {
