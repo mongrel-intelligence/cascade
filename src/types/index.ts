@@ -65,7 +65,7 @@ export interface AgentResult {
 	durationMs?: number;
 }
 
-export type TriggerSource = 'trello' | 'github' | 'jira' | 'manual';
+export type TriggerSource = string;
 
 export interface TriggerContext {
 	project: ProjectConfig;

@@ -25,7 +25,7 @@ export interface WebhookLogOverrides {
  */
 export interface WebhookHandlerConfig {
 	/** Platform label used for logging and webhook log source field. */
-	source: 'trello' | 'github' | 'jira';
+	source: string;
 
 	/**
 	 * Parse the raw Hono request into a structured payload.

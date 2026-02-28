@@ -16,9 +16,7 @@ import {
 	resolvePersonaIdentities,
 } from '../../github/personas.js';
 import { withPMCredentials, withPMProvider } from '../../pm/context.js';
-import { JiraIntegration } from '../../pm/jira/integration.js';
 import { pmRegistry } from '../../pm/registry.js';
-import { TrelloIntegration } from '../../pm/trello/integration.js';
 import { captureException } from '../../sentry.js';
 import type { TriggerRegistry } from '../../triggers/registry.js';
 import type { TriggerContext, TriggerResult } from '../../types/index.js';
@@ -31,10 +29,6 @@ import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../pl
 import { addEyesReactionToPR } from '../pre-actions.js';
 import type { CascadeJob, GitHubJob } from '../queue.js';
 import { sendAcknowledgeReaction } from '../reactions.js';
-
-// Ensure PM integrations are registered (idempotent)
-if (!pmRegistry.getOrNull('trello')) pmRegistry.register(new TrelloIntegration());
-if (!pmRegistry.getOrNull('jira')) pmRegistry.register(new JiraIntegration());
 
 const PROCESSABLE_EVENTS = [
 	'pull_request',
