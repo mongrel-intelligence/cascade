@@ -14,9 +14,7 @@ import { computeEffectiveOrgId } from './api/context.js';
 import { appRouter } from './api/router.js';
 import { captureException } from './sentry.js';
 import {
-	buildGitHubReactionSender,
-	buildJiraReactionSender,
-	buildTrelloReactionSender,
+	buildReactionSender,
 	createWebhookHandler,
 	parseGitHubPayload,
 	parseJiraPayload,
@@ -88,7 +86,7 @@ export function createServer(deps: ServerDependencies): Hono {
 		createWebhookHandler({
 			source: 'trello',
 			parsePayload: parseTrelloPayload,
-			sendReaction: buildTrelloReactionSender(deps.config),
+			sendReaction: buildReactionSender('trello', deps.config),
 			processWebhook: (payload) => deps.onTrelloWebhook(payload),
 		}),
 	);
@@ -104,7 +102,7 @@ export function createServer(deps: ServerDependencies): Hono {
 		createWebhookHandler({
 			source: 'github',
 			parsePayload: parseGitHubPayload,
-			sendReaction: buildGitHubReactionSender(),
+			sendReaction: buildReactionSender('github'),
 			processWebhook: (payload, eventType) => deps.onGitHubWebhook(payload, eventType ?? 'unknown'),
 		}),
 	);
@@ -120,7 +118,7 @@ export function createServer(deps: ServerDependencies): Hono {
 		createWebhookHandler({
 			source: 'jira',
 			parsePayload: parseJiraPayload,
-			sendReaction: buildJiraReactionSender(deps.config),
+			sendReaction: buildReactionSender('jira', deps.config),
 			processWebhook: (payload) => deps.onJiraWebhook(payload),
 		}),
 	);
