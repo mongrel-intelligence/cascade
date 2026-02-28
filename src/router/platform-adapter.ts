@@ -54,7 +54,7 @@ export interface ParsedWebhookEvent {
 
 export interface RouterPlatformAdapter {
 	/** Platform identifier — used in log messages. */
-	readonly type: 'trello' | 'github' | 'jira';
+	readonly type: string;
 
 	/**
 	 * Parse the raw webhook body into a normalized `ParsedWebhookEvent`.

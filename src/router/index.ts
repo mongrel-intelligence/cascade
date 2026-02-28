@@ -1,6 +1,8 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { captureException, flush, setTag } from '../sentry.js';
+// Bootstrap PM integrations before any adapters are loaded
+import '../pm/bootstrap.js';
 import {
 	createWebhookHandler,
 	parseGitHubPayload,

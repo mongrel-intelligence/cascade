@@ -113,10 +113,7 @@ function jiraReactionSender(config: CascadeConfig): ReactionSender {
  * The returned function is safe to call fire-and-forget: all errors are caught
  * and logged internally.
  */
-export function buildReactionSender(
-	source: 'trello' | 'github' | 'jira',
-	config?: CascadeConfig,
-): ReactionSender {
+export function buildReactionSender(source: string, config?: CascadeConfig): ReactionSender {
 	switch (source) {
 		case 'trello': {
 			if (!config) throw new Error('buildReactionSender: config required for trello');
@@ -129,5 +126,8 @@ export function buildReactionSender(
 			if (!config) throw new Error('buildReactionSender: config required for jira');
 			return jiraReactionSender(config);
 		}
+		default:
+			// Unknown source — return a no-op reaction sender for forward compatibility
+			return () => {};
 	}
 }

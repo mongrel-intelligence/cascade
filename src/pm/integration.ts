@@ -9,6 +9,7 @@
  * provider-specific branching.
  */
 
+import { PROVIDER_CREDENTIAL_ROLES } from '../config/integrationRoles.js';
 import { getIntegrationCredentialOrNull } from '../config/provider.js';
 import { getIntegrationProvider } from '../db/repositories/credentialsRepository.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
@@ -79,26 +80,20 @@ export interface PMIntegration {
 
 /**
  * Check if PM integration is configured for a project.
- * Returns true if a PM integration (Trello/JIRA) exists with required credentials.
+ * Returns true if a PM integration exists with all required credentials present.
+ *
+ * Uses the data-driven PROVIDER_CREDENTIAL_ROLES table so this function
+ * does not need to be updated when a new PM provider is added.
  */
 export async function hasPmIntegration(projectId: string): Promise<boolean> {
 	const provider = await getIntegrationProvider(projectId, 'pm');
 	if (!provider) return false;
 
-	// Check provider-specific required credentials
-	if (provider === 'trello') {
-		const [key, token] = await Promise.all([
-			getIntegrationCredentialOrNull(projectId, 'pm', 'api_key'),
-			getIntegrationCredentialOrNull(projectId, 'pm', 'token'),
-		]);
-		return key !== null && token !== null;
-	}
-	if (provider === 'jira') {
-		const [email, apiToken] = await Promise.all([
-			getIntegrationCredentialOrNull(projectId, 'pm', 'email'),
-			getIntegrationCredentialOrNull(projectId, 'pm', 'api_token'),
-		]);
-		return email !== null && apiToken !== null;
-	}
-	return false;
+	const roles = PROVIDER_CREDENTIAL_ROLES[provider as keyof typeof PROVIDER_CREDENTIAL_ROLES];
+	if (!roles) return false;
+
+	const values = await Promise.all(
+		roles.map((roleDef) => getIntegrationCredentialOrNull(projectId, 'pm', roleDef.role)),
+	);
+	return values.every((v) => v !== null);
 }
