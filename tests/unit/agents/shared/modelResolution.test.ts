@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CascadeConfig, ProjectConfig } from '../../../../src/types/index.js';
 
 // Mock readContextFiles
@@ -6,7 +6,33 @@ vi.mock('../../../../src/agents/utils/setup.js', () => ({
 	readContextFiles: vi.fn().mockResolvedValue([]),
 }));
 
+// Mock resolveKnownAgentTypes so validTypes is populated without DB
+vi.mock('../../../../src/agents/definitions/index.js', () => ({
+	resolveKnownAgentTypes: vi
+		.fn()
+		.mockResolvedValue([
+			'splitting',
+			'planning',
+			'implementation',
+			'review',
+			'respond-to-review',
+			'respond-to-ci',
+			'respond-to-pr-comment',
+			'respond-to-planning-comment',
+			'debug',
+			'email-joke',
+		]),
+	resolveAgentDefinition: vi.fn().mockResolvedValue(null),
+	getKnownAgentTypes: vi.fn().mockReturnValue([]),
+}));
+
+import { initPrompts } from '../../../../src/agents/prompts/index.js';
 import { resolveModelConfig } from '../../../../src/agents/shared/modelResolution.js';
+
+// Initialize prompts before tests so validTypes is populated
+beforeAll(async () => {
+	await initPrompts();
+});
 
 function makeProject(overrides: Partial<ProjectConfig> = {}): ProjectConfig {
 	return {

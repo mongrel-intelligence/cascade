@@ -5,11 +5,11 @@ vi.mock('../../../../src/utils/squintDb.js', () => ({
 }));
 
 vi.mock('../../../../src/config/compactionConfig.js', () => ({
-	getCompactionConfig: vi.fn().mockReturnValue({ maxTokens: 100000, strategy: 'hybrid' }),
+	getCompactionConfig: vi.fn().mockResolvedValue({ maxTokens: 100000, strategy: 'hybrid' }),
 }));
 
 vi.mock('../../../../src/config/hintConfig.js', () => ({
-	getIterationTrailingMessage: vi.fn().mockReturnValue(null),
+	getIterationTrailingMessage: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../../../../src/config/rateLimits.js', () => ({
@@ -131,39 +131,39 @@ describe('isSquintEnabled', () => {
 // ============================================================================
 
 describe('createConfiguredBuilder', () => {
-	it('creates an AgentBuilder with the given client', () => {
+	it('creates an AgentBuilder with the given client', async () => {
 		const options = createBaseOptions();
-		createConfiguredBuilder(options);
+		await createConfiguredBuilder(options);
 		expect(MockAgentBuilder).toHaveBeenCalledWith(options.client);
 	});
 
-	it('configures the model', () => {
+	it('configures the model', async () => {
 		const options = createBaseOptions();
-		createConfiguredBuilder(options);
+		await createConfiguredBuilder(options);
 		expect(mockBuilderInstance.withModel).toHaveBeenCalledWith('claude-sonnet-4');
 	});
 
-	it('configures the system prompt', () => {
+	it('configures the system prompt', async () => {
 		const options = createBaseOptions();
-		createConfiguredBuilder(options);
+		await createConfiguredBuilder(options);
 		expect(mockBuilderInstance.withSystem).toHaveBeenCalledWith('You are a helpful assistant');
 	});
 
-	it('configures max iterations', () => {
+	it('configures max iterations', async () => {
 		const options = createBaseOptions();
-		createConfiguredBuilder(options);
+		await createConfiguredBuilder(options);
 		expect(mockBuilderInstance.withMaxIterations).toHaveBeenCalledWith(20);
 	});
 
-	it('sets temperature to 0', () => {
+	it('sets temperature to 0', async () => {
 		const options = createBaseOptions();
-		createConfiguredBuilder(options);
+		await createConfiguredBuilder(options);
 		expect(mockBuilderInstance.withTemperature).toHaveBeenCalledWith(0);
 	});
 
-	it('calls initSessionState when skipSessionState is not set', () => {
+	it('calls initSessionState when skipSessionState is not set', async () => {
 		const options = createBaseOptions();
-		createConfiguredBuilder(options);
+		await createConfiguredBuilder(options);
 		expect(mockInitSessionState).toHaveBeenCalledWith(
 			'implementation',
 			undefined,
@@ -172,19 +172,19 @@ describe('createConfiguredBuilder', () => {
 		);
 	});
 
-	it('skips initSessionState when skipSessionState is true', () => {
+	it('skips initSessionState when skipSessionState is true', async () => {
 		const options = createBaseOptions({ skipSessionState: true });
-		createConfiguredBuilder(options);
+		await createConfiguredBuilder(options);
 		expect(mockInitSessionState).not.toHaveBeenCalled();
 	});
 
-	it('passes baseBranch, projectId, cardId to initSessionState', () => {
+	it('passes baseBranch, projectId, cardId to initSessionState', async () => {
 		const options = createBaseOptions({
 			baseBranch: 'main',
 			projectId: 'project-1',
 			cardId: 'card-123',
 		});
-		createConfiguredBuilder(options);
+		await createConfiguredBuilder(options);
 		expect(mockInitSessionState).toHaveBeenCalledWith(
 			'implementation',
 			'main',
@@ -193,64 +193,64 @@ describe('createConfiguredBuilder', () => {
 		);
 	});
 
-	it('calls withBudget when remainingBudgetUsd is positive', () => {
+	it('calls withBudget when remainingBudgetUsd is positive', async () => {
 		const options = createBaseOptions({ remainingBudgetUsd: 5.0 });
-		createConfiguredBuilder(options);
+		await createConfiguredBuilder(options);
 		expect(mockBuilderInstance.withBudget).toHaveBeenCalledWith(5.0);
 	});
 
-	it('does not call withBudget when remainingBudgetUsd is undefined', () => {
+	it('does not call withBudget when remainingBudgetUsd is undefined', async () => {
 		const options = createBaseOptions({ remainingBudgetUsd: undefined });
-		createConfiguredBuilder(options);
+		await createConfiguredBuilder(options);
 		expect(mockBuilderInstance.withBudget).not.toHaveBeenCalled();
 	});
 
-	it('does not call withBudget when remainingBudgetUsd is 0', () => {
+	it('does not call withBudget when remainingBudgetUsd is 0', async () => {
 		const options = createBaseOptions({ remainingBudgetUsd: 0 });
-		createConfiguredBuilder(options);
+		await createConfiguredBuilder(options);
 		expect(mockBuilderInstance.withBudget).not.toHaveBeenCalled();
 	});
 
-	it('handles BudgetPricingUnavailableError gracefully', () => {
+	it('handles BudgetPricingUnavailableError gracefully', async () => {
 		mockBuilderInstance.withBudget.mockImplementationOnce(() => {
 			throw new BudgetPricingUnavailableError('Budget unavailable');
 		});
 		const options = createBaseOptions({ remainingBudgetUsd: 5.0 });
 
 		// Should not throw
-		expect(() => createConfiguredBuilder(options)).not.toThrow();
+		await expect(createConfiguredBuilder(options)).resolves.not.toThrow();
 	});
 
-	it('rethrows non-BudgetPricingUnavailableError errors from withBudget', () => {
+	it('rethrows non-BudgetPricingUnavailableError errors from withBudget', async () => {
 		mockBuilderInstance.withBudget.mockImplementationOnce(() => {
 			throw new Error('Unexpected budget error');
 		});
 		const options = createBaseOptions({ remainingBudgetUsd: 5.0 });
 
-		expect(() => createConfiguredBuilder(options)).toThrow('Unexpected budget error');
+		await expect(createConfiguredBuilder(options)).rejects.toThrow('Unexpected budget error');
 	});
 
-	it('calls postConfigure callback when provided', () => {
+	it('calls postConfigure callback when provided', async () => {
 		const customBuilder = { ...mockBuilderInstance, custom: true };
 		const postConfigure = vi.fn().mockReturnValue(customBuilder);
 		const options = createBaseOptions({ postConfigure });
 
-		const result = createConfiguredBuilder(options);
+		const result = await createConfiguredBuilder(options);
 
 		expect(postConfigure).toHaveBeenCalled();
 		expect(result).toBe(customBuilder);
 	});
 
-	it('does not call postConfigure when not provided', () => {
+	it('does not call postConfigure when not provided', async () => {
 		const options = createBaseOptions({ postConfigure: undefined });
 
 		// Should not throw and returns builder
-		expect(() => createConfiguredBuilder(options)).not.toThrow();
+		await expect(createConfiguredBuilder(options)).resolves.not.toThrow();
 	});
 
-	it('returns a builder with max gadgets per response set', () => {
+	it('returns a builder with max gadgets per response set', async () => {
 		const options = createBaseOptions();
-		createConfiguredBuilder(options);
+		await createConfiguredBuilder(options);
 		expect(mockBuilderInstance.withMaxGadgetsPerResponse).toHaveBeenCalledWith(25);
 	});
 });

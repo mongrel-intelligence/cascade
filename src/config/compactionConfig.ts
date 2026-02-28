@@ -1,5 +1,5 @@
 import type { CompactionConfig, CompactionEvent } from 'llmist';
-import { loadAgentDefinition } from '../agents/definitions/index.js';
+import { resolveAgentDefinition } from '../agents/definitions/index.js';
 import { clearReadTracking } from '../gadgets/readTracking.js';
 import { logger } from '../utils/logging.js';
 
@@ -95,16 +95,18 @@ function handleCompaction(event: CompactionEvent): void {
 
 /**
  * Get compaction configuration for a given agent type.
- * Reads the compaction preset name from the YAML definition.
+ * Reads the compaction preset name from the agent definition (DB → YAML fallback).
  *
  * @param agentType - Type of agent (e.g., "implementation", "splitting", "planning")
  * @returns Compaction configuration
  */
-export function getCompactionConfig(agentType: string): CompactionConfig {
+export async function getCompactionConfig(agentType: string): Promise<CompactionConfig> {
 	let presetName = 'default';
 	try {
-		const def = loadAgentDefinition(agentType);
-		presetName = def.compaction;
+		const def = await resolveAgentDefinition(agentType);
+		if (def) {
+			presetName = def.compaction;
+		}
 	} catch {
 		// Unknown agent type — use default preset
 	}

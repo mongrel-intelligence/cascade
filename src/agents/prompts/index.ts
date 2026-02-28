@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Eta } from 'eta';
 
-import { getKnownAgentTypes } from '../definitions/index.js';
+import { resolveKnownAgentTypes } from '../definitions/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const templatesDir = join(__dirname, 'templates');
@@ -13,8 +13,8 @@ const taskTemplatesDir = join(__dirname, 'task-templates');
 const eta = new Eta({ views: templatesDir, autoEscape: false });
 const taskEta = new Eta({ views: taskTemplatesDir, autoEscape: false });
 
-// Valid agent types — derived from YAML definition files
-const validTypes = getKnownAgentTypes();
+// Valid agent types — lazily resolved from DB (with YAML fallback), populated by initPrompts()
+let validTypes: string[] = [];
 
 // Template context interface
 export interface PromptContext {
@@ -52,6 +52,16 @@ export interface PromptContext {
 
 	// Future extensibility
 	[key: string]: unknown;
+}
+
+/**
+ * Initialize the valid agent types list from the database (with YAML fallback).
+ *
+ * Must be called at startup before getSystemPrompt() or getRawTemplate() are used.
+ * Safe to call multiple times (idempotent — overwrites with latest resolved list).
+ */
+export async function initPrompts(): Promise<void> {
+	validTypes = await resolveKnownAgentTypes();
 }
 
 // Cache for loaded templates
@@ -196,7 +206,12 @@ export function getRawPartial(name: string): string {
 	return readFileSync(diskPath, 'utf-8');
 }
 
-/** Returns the list of valid agent types. */
+/**
+ * Returns the list of valid agent types.
+ *
+ * Returns a snapshot of the current list; call initPrompts() at startup
+ * to ensure DB-backed definitions are included.
+ */
 export function getValidAgentTypes(): string[] {
 	return [...validTypes];
 }

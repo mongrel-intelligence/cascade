@@ -16,13 +16,32 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
+// Mock resolveAgentDefinition — compactionConfig now uses async resolver
+vi.mock('../../../src/agents/definitions/index.js', () => ({
+	resolveAgentDefinition: vi.fn(),
+}));
+
+import { resolveAgentDefinition } from '../../../src/agents/definitions/index.js';
 import { clearReadTracking } from '../../../src/gadgets/readTracking.js';
 import { logger } from '../../../src/utils/logging.js';
 
+const mockResolveAgentDefinition = vi.mocked(resolveAgentDefinition);
+
+/** Return a minimal definition object with a compaction preset name */
+function makeDefinition(compaction: string) {
+	return { compaction };
+}
+
+afterEach(() => {
+	vi.clearAllMocks();
+});
+
 describe('config/compactionConfig', () => {
 	describe('getCompactionConfig', () => {
-		it('returns implementation agent config with lower threshold', () => {
-			const config = getCompactionConfig('implementation');
+		it('returns implementation agent config with lower threshold', async () => {
+			mockResolveAgentDefinition.mockResolvedValue(makeDefinition('implementation') as never);
+
+			const config = await getCompactionConfig('implementation');
 
 			expect(config.enabled).toBe(true);
 			expect(config.strategy).toBe('hybrid');
@@ -33,11 +52,12 @@ describe('config/compactionConfig', () => {
 			expect(config.onCompaction).toBeTypeOf('function');
 		});
 
-		it('returns default config for other agents with higher threshold', () => {
+		it('returns default config for other agents with higher threshold', async () => {
 			const agentTypes = ['splitting', 'planning', 'debug', 'respond-to-review', 'review'];
 
 			for (const agentType of agentTypes) {
-				const config = getCompactionConfig(agentType);
+				mockResolveAgentDefinition.mockResolvedValue(makeDefinition('default') as never);
+				const config = await getCompactionConfig(agentType);
 
 				expect(config.enabled).toBe(true);
 				expect(config.strategy).toBe('hybrid');
@@ -47,40 +67,52 @@ describe('config/compactionConfig', () => {
 			}
 		});
 
-		it('implementation agent has more aggressive reduction targets', () => {
-			const implConfig = getCompactionConfig('implementation');
-			const otherConfig = getCompactionConfig('splitting');
+		it('implementation agent has more aggressive reduction targets', async () => {
+			mockResolveAgentDefinition.mockResolvedValueOnce(makeDefinition('implementation') as never);
+			const implConfig = await getCompactionConfig('implementation');
+
+			mockResolveAgentDefinition.mockResolvedValueOnce(makeDefinition('default') as never);
+			const otherConfig = await getCompactionConfig('splitting');
 
 			expect(implConfig.triggerThresholdPercent).toBeLessThan(otherConfig.triggerThresholdPercent);
 			expect(implConfig.targetPercent).toBeLessThan(otherConfig.targetPercent);
 			expect(implConfig.preserveRecentTurns).toBeGreaterThan(otherConfig.preserveRecentTurns);
 		});
 
-		it('implementation agent preserves more recent turns', () => {
-			const implConfig = getCompactionConfig('implementation');
-			const otherConfig = getCompactionConfig('planning');
+		it('implementation agent preserves more recent turns', async () => {
+			mockResolveAgentDefinition.mockResolvedValueOnce(makeDefinition('implementation') as never);
+			const implConfig = await getCompactionConfig('implementation');
+
+			mockResolveAgentDefinition.mockResolvedValueOnce(makeDefinition('default') as never);
+			const otherConfig = await getCompactionConfig('planning');
 
 			expect(implConfig.preserveRecentTurns).toBe(8);
 			expect(otherConfig.preserveRecentTurns).toBe(5);
 		});
 
-		it('includes failed approaches section in summarization prompt', () => {
-			const config = getCompactionConfig('implementation');
+		it('includes failed approaches section in summarization prompt', async () => {
+			mockResolveAgentDefinition.mockResolvedValue(makeDefinition('implementation') as never);
+
+			const config = await getCompactionConfig('implementation');
 
 			expect(config.summarizationPrompt).toContain('Failed Approaches');
 			expect(config.summarizationPrompt).toContain('tried and FAILED');
 		});
 
-		it('implementation prompt preserves task goals and files', () => {
-			const config = getCompactionConfig('implementation');
+		it('implementation prompt preserves task goals and files', async () => {
+			mockResolveAgentDefinition.mockResolvedValue(makeDefinition('implementation') as never);
+
+			const config = await getCompactionConfig('implementation');
 
 			expect(config.summarizationPrompt).toContain('task goals and acceptance criteria');
 			expect(config.summarizationPrompt).toContain('files that were created or modified');
 			expect(config.summarizationPrompt).toContain('todo list status');
 		});
 
-		it('default prompt preserves key decisions and progress', () => {
-			const config = getCompactionConfig('splitting');
+		it('default prompt preserves key decisions and progress', async () => {
+			mockResolveAgentDefinition.mockResolvedValue(makeDefinition('default') as never);
+
+			const config = await getCompactionConfig('splitting');
 
 			expect(config.summarizationPrompt).toContain('Key decisions made');
 			expect(config.summarizationPrompt).toContain('Current progress');
@@ -89,8 +121,10 @@ describe('config/compactionConfig', () => {
 	});
 
 	describe('onCompaction callback', () => {
-		it('logs compaction event with token savings', () => {
-			const config = getCompactionConfig('implementation');
+		it('logs compaction event with token savings', async () => {
+			mockResolveAgentDefinition.mockResolvedValue(makeDefinition('implementation') as never);
+
+			const config = await getCompactionConfig('implementation');
 
 			const event = {
 				strategy: 'hybrid' as const,
@@ -114,8 +148,10 @@ describe('config/compactionConfig', () => {
 			});
 		});
 
-		it('calculates reduction percentage correctly', () => {
-			const config = getCompactionConfig('planning');
+		it('calculates reduction percentage correctly', async () => {
+			mockResolveAgentDefinition.mockResolvedValue(makeDefinition('default') as never);
+
+			const config = await getCompactionConfig('planning');
 
 			const event = {
 				strategy: 'hybrid' as const,
@@ -135,8 +171,10 @@ describe('config/compactionConfig', () => {
 			});
 		});
 
-		it('clears read tracking after compaction', () => {
-			const config = getCompactionConfig('implementation');
+		it('clears read tracking after compaction', async () => {
+			mockResolveAgentDefinition.mockResolvedValue(makeDefinition('implementation') as never);
+
+			const config = await getCompactionConfig('implementation');
 
 			const event = {
 				strategy: 'hybrid' as const,
@@ -152,8 +190,10 @@ describe('config/compactionConfig', () => {
 			expect(clearReadTracking).toHaveBeenCalledTimes(1);
 		});
 
-		it('logs messages removed count', () => {
-			const config = getCompactionConfig('debug');
+		it('logs messages removed count', async () => {
+			mockResolveAgentDefinition.mockResolvedValue(makeDefinition('default') as never);
+
+			const config = await getCompactionConfig('debug');
 
 			const event = {
 				strategy: 'hybrid' as const,
@@ -172,8 +212,10 @@ describe('config/compactionConfig', () => {
 			});
 		});
 
-		it('rounds reduction percentage to integer', () => {
-			const config = getCompactionConfig('implementation');
+		it('rounds reduction percentage to integer', async () => {
+			mockResolveAgentDefinition.mockResolvedValue(makeDefinition('implementation') as never);
+
+			const config = await getCompactionConfig('implementation');
 
 			const event = {
 				strategy: 'hybrid' as const,
@@ -193,7 +235,7 @@ describe('config/compactionConfig', () => {
 	});
 
 	describe('config consistency', () => {
-		it('all agent types return valid config structure', () => {
+		it('all agent types return valid config structure', async () => {
 			const agentTypes = [
 				'implementation',
 				'splitting',
@@ -205,7 +247,10 @@ describe('config/compactionConfig', () => {
 			];
 
 			for (const agentType of agentTypes) {
-				const config = getCompactionConfig(agentType);
+				const preset = agentType === 'implementation' ? 'implementation' : 'default';
+				mockResolveAgentDefinition.mockResolvedValue(makeDefinition(preset) as never);
+
+				const config = await getCompactionConfig(agentType);
 
 				expect(config.enabled).toBe(true);
 				expect(config.strategy).toBe('hybrid');
@@ -217,8 +262,11 @@ describe('config/compactionConfig', () => {
 			}
 		});
 
-		it('returns default config for unknown agent type', () => {
-			const config = getCompactionConfig('nonexistent-agent-type');
+		it('returns default config for unknown agent type', async () => {
+			// resolveAgentDefinition returns null for unknown types
+			mockResolveAgentDefinition.mockResolvedValue(null as never);
+
+			const config = await getCompactionConfig('nonexistent-agent-type');
 
 			expect(config.enabled).toBe(true);
 			expect(config.strategy).toBe('hybrid');
@@ -228,19 +276,25 @@ describe('config/compactionConfig', () => {
 			expect(config.onCompaction).toBeTypeOf('function');
 		});
 
-		it('target percent is less than trigger threshold', () => {
+		it('target percent is less than trigger threshold', async () => {
 			const agentTypes = ['implementation', 'splitting', 'planning'];
 
 			for (const agentType of agentTypes) {
-				const config = getCompactionConfig(agentType);
+				const preset = agentType === 'implementation' ? 'implementation' : 'default';
+				mockResolveAgentDefinition.mockResolvedValue(makeDefinition(preset) as never);
+
+				const config = await getCompactionConfig(agentType);
 
 				expect(config.targetPercent).toBeLessThan(config.triggerThresholdPercent);
 			}
 		});
 
-		it('thresholds are reasonable percentages', () => {
-			const implConfig = getCompactionConfig('implementation');
-			const otherConfig = getCompactionConfig('splitting');
+		it('thresholds are reasonable percentages', async () => {
+			mockResolveAgentDefinition.mockResolvedValueOnce(makeDefinition('implementation') as never);
+			const implConfig = await getCompactionConfig('implementation');
+
+			mockResolveAgentDefinition.mockResolvedValueOnce(makeDefinition('default') as never);
+			const otherConfig = await getCompactionConfig('splitting');
 
 			expect(implConfig.triggerThresholdPercent).toBeGreaterThanOrEqual(50);
 			expect(implConfig.triggerThresholdPercent).toBeLessThanOrEqual(100);

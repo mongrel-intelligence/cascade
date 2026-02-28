@@ -17,24 +17,51 @@ vi.mock('../../../src/gadgets/todo/storage.js', () => ({
 	formatTodoList: vi.fn(() => ''),
 }));
 
+// Mock resolveAgentDefinition — hintConfig now uses async resolver
+vi.mock('../../../src/agents/definitions/index.js', () => ({
+	resolveAgentDefinition: vi.fn(),
+}));
+
 import { execSync } from 'node:child_process';
+import { resolveAgentDefinition } from '../../../src/agents/definitions/index.js';
 import { formatTodoList, loadTodos } from '../../../src/gadgets/todo/storage.js';
 
 const mockExecSync = vi.mocked(execSync);
 const mockLoadTodos = vi.mocked(loadTodos);
 const mockFormatTodoList = vi.mocked(formatTodoList);
+const mockResolveAgentDefinition = vi.mocked(resolveAgentDefinition);
 
 const ctx = { iteration: 3, maxIterations: 20 };
 
+/** Minimal agent definition shape for testing */
+function makeDefinition(overrides?: {
+	hint?: string;
+	trailingMessage?: Record<string, boolean>;
+}) {
+	return {
+		hint: overrides?.hint ?? 'Complete the current task efficiently.',
+		trailingMessage: overrides?.trailingMessage ?? {},
+	};
+}
+
 /** Helper to invoke the trailing message function */
-function getMessage(agentType: string | undefined, iteration = 3, maxIterations = 20): string {
-	const trailingFn = getIterationTrailingMessage(agentType);
+async function getMessage(
+	agentType: string | undefined,
+	iteration = 3,
+	maxIterations = 20,
+): Promise<string> {
+	const trailingFn = await getIterationTrailingMessage(agentType);
 	return typeof trailingFn === 'function'
 		? (trailingFn({ iteration, maxIterations }) as string)
 		: (trailingFn as string);
 }
 
 describe('getIterationTrailingMessage', () => {
+	beforeEach(() => {
+		// Default: unknown agent type returns null (no definition)
+		mockResolveAgentDefinition.mockResolvedValue(null as never);
+	});
+
 	afterEach(() => {
 		clearDiagnosticState();
 		mockLoadTodos.mockReturnValue([]);
@@ -43,7 +70,19 @@ describe('getIterationTrailingMessage', () => {
 	});
 
 	describe('respond-to-ci agent', () => {
-		it('includes diagnostic status when there are errors', () => {
+		beforeEach(() => {
+			mockResolveAgentDefinition.mockImplementation(async (agentType: string) => {
+				if (agentType === 'respond-to-ci') {
+					return makeDefinition({
+						hint: 'Fix CI failures with minimal, focused changes.',
+						trailingMessage: { includeDiagnostics: true },
+					}) as never;
+				}
+				return null as never;
+			});
+		});
+
+		it('includes diagnostic status when there are errors', async () => {
 			updateDiagnosticState('src/BaseApiService.ts', {
 				output: '',
 				hasTypeErrors: true,
@@ -51,22 +90,22 @@ describe('getIterationTrailingMessage', () => {
 				hasLintErrors: false,
 			});
 
-			const trailingFn = getIterationTrailingMessage('respond-to-ci');
+			const trailingFn = await getIterationTrailingMessage('respond-to-ci');
 			const message = typeof trailingFn === 'function' ? trailingFn(ctx) : trailingFn;
 
 			expect(message).toContain('Diagnostic Status');
 			expect(message).toContain('BaseApiService.ts');
 		});
 
-		it('does not include diagnostic status when no errors', () => {
-			const trailingFn = getIterationTrailingMessage('respond-to-ci');
+		it('does not include diagnostic status when no errors', async () => {
+			const trailingFn = await getIterationTrailingMessage('respond-to-ci');
 			const message = typeof trailingFn === 'function' ? trailingFn(ctx) : trailingFn;
 
 			expect(message).not.toContain('Diagnostic Status');
 			expect(message).toContain('Iteration');
 		});
 
-		it('includes diagnostic loop warning when file edited >= 2 times with errors', () => {
+		it('includes diagnostic loop warning when file edited >= 2 times with errors', async () => {
 			updateDiagnosticState('src/BaseApiService.ts', {
 				output: '',
 				hasTypeErrors: true,
@@ -76,7 +115,7 @@ describe('getIterationTrailingMessage', () => {
 			recordDiagnosticLoop('src/BaseApiService.ts');
 			recordDiagnosticLoop('src/BaseApiService.ts');
 
-			const trailingFn = getIterationTrailingMessage('respond-to-ci');
+			const trailingFn = await getIterationTrailingMessage('respond-to-ci');
 			const message = typeof trailingFn === 'function' ? trailingFn(ctx) : trailingFn;
 
 			expect(message).toContain('Diagnostic Loop Detected');
@@ -84,7 +123,7 @@ describe('getIterationTrailingMessage', () => {
 			expect(message).toContain('edited 2 times');
 		});
 
-		it('does not include loop warning below threshold', () => {
+		it('does not include loop warning below threshold', async () => {
 			updateDiagnosticState('src/BaseApiService.ts', {
 				output: '',
 				hasTypeErrors: true,
@@ -93,7 +132,7 @@ describe('getIterationTrailingMessage', () => {
 			});
 			recordDiagnosticLoop('src/BaseApiService.ts');
 
-			const trailingFn = getIterationTrailingMessage('respond-to-ci');
+			const trailingFn = await getIterationTrailingMessage('respond-to-ci');
 			const message = typeof trailingFn === 'function' ? trailingFn(ctx) : trailingFn;
 
 			expect(message).toContain('Diagnostic Status');
@@ -102,7 +141,18 @@ describe('getIterationTrailingMessage', () => {
 	});
 
 	describe('respond-to-review agent', () => {
-		it('still includes diagnostic status when there are errors', () => {
+		beforeEach(() => {
+			mockResolveAgentDefinition.mockImplementation(async (agentType: string) => {
+				if (agentType === 'respond-to-review') {
+					return makeDefinition({
+						trailingMessage: { includeDiagnostics: true },
+					}) as never;
+				}
+				return null as never;
+			});
+		});
+
+		it('still includes diagnostic status when there are errors', async () => {
 			updateDiagnosticState('src/file.ts', {
 				output: '',
 				hasTypeErrors: true,
@@ -110,7 +160,7 @@ describe('getIterationTrailingMessage', () => {
 				hasLintErrors: false,
 			});
 
-			const trailingFn = getIterationTrailingMessage('respond-to-review');
+			const trailingFn = await getIterationTrailingMessage('respond-to-review');
 			const message = typeof trailingFn === 'function' ? trailingFn(ctx) : trailingFn;
 
 			expect(message).toContain('Diagnostic Status');
@@ -118,7 +168,7 @@ describe('getIterationTrailingMessage', () => {
 	});
 
 	describe('other agents', () => {
-		it('does not include diagnostics for review agent', () => {
+		it('does not include diagnostics for review agent', async () => {
 			updateDiagnosticState('src/file.ts', {
 				output: '',
 				hasTypeErrors: true,
@@ -126,7 +176,12 @@ describe('getIterationTrailingMessage', () => {
 				hasLintErrors: false,
 			});
 
-			const trailingFn = getIterationTrailingMessage('review');
+			// review agent has no trailingMessage.includeDiagnostics
+			mockResolveAgentDefinition.mockResolvedValue(
+				makeDefinition({ trailingMessage: {} }) as never,
+			);
+
+			const trailingFn = await getIterationTrailingMessage('review');
 			const message = typeof trailingFn === 'function' ? trailingFn(ctx) : trailingFn;
 
 			expect(message).not.toContain('Diagnostic Status');
@@ -138,75 +193,93 @@ describe('getIterationTrailingMessage', () => {
 	// ============================================================================
 
 	describe('implementation agent trailing message', () => {
-		it('includes todos section when todos are present', () => {
+		beforeEach(() => {
+			mockResolveAgentDefinition.mockImplementation(async (agentType: string) => {
+				if (agentType === 'implementation') {
+					return makeDefinition({
+						hint: 'Batch related edits together.',
+						trailingMessage: {
+							includeDiagnostics: true,
+							includeTodoProgress: true,
+							includeGitStatus: true,
+							includePRStatus: true,
+							includeReminder: true,
+						},
+					}) as never;
+				}
+				return null as never;
+			});
+		});
+
+		it('includes todos section when todos are present', async () => {
 			mockLoadTodos.mockReturnValue([
 				{ id: '1', content: 'Write tests', status: 'in_progress', createdAt: '', updatedAt: '' },
 			]);
 			mockFormatTodoList.mockReturnValue('🔄 #1 [in_progress]: Write tests');
 
-			const message = getMessage('implementation');
+			const message = await getMessage('implementation');
 
 			expect(message).toContain('Current Progress');
 			expect(message).toContain('Write tests');
 		});
 
-		it('omits todos section when todos list is empty', () => {
+		it('omits todos section when todos list is empty', async () => {
 			mockLoadTodos.mockReturnValue([]);
 
-			const message = getMessage('implementation');
+			const message = await getMessage('implementation');
 
 			expect(message).not.toContain('Current Progress');
 		});
 
-		it('shows git status section with content when git status returns output', () => {
+		it('shows git status section with content when git status returns output', async () => {
 			mockExecSync.mockImplementation((cmd: string) => {
 				if ((cmd as string).includes('git status')) return 'M src/index.ts';
 				return '';
 			});
 
-			const message = getMessage('implementation');
+			const message = await getMessage('implementation');
 
 			expect(message).toContain('## Git Status');
 			expect(message).toContain('M src/index.ts');
 		});
 
-		it('shows "No uncommitted changes" when git status is empty', () => {
+		it('shows "No uncommitted changes" when git status is empty', async () => {
 			mockExecSync.mockReturnValue('');
 
-			const message = getMessage('implementation');
+			const message = await getMessage('implementation');
 
 			expect(message).toContain('## Git Status');
 			expect(message).toContain('No uncommitted changes');
 		});
 
-		it('shows PR status with content when gh pr view returns output', () => {
+		it('shows PR status with content when gh pr view returns output', async () => {
 			mockExecSync.mockImplementation((cmd: string) => {
 				if ((cmd as string).includes('gh pr view')) return 'title: My PR\nurl: http://...';
 				return '';
 			});
 
-			const message = getMessage('implementation');
+			const message = await getMessage('implementation');
 
 			expect(message).toContain('## PR Status');
 			expect(message).toContain('My PR');
 		});
 
-		it('shows "No PR exists" when gh pr view returns empty', () => {
+		it('shows "No PR exists" when gh pr view returns empty', async () => {
 			mockExecSync.mockReturnValue('');
 
-			const message = getMessage('implementation');
+			const message = await getMessage('implementation');
 
 			expect(message).toContain('## PR Status');
 			expect(message).toContain('No PR exists for current branch');
 		});
 
-		it('always includes reminder section', () => {
-			const message = getMessage('implementation');
+		it('always includes reminder section', async () => {
+			const message = await getMessage('implementation');
 
 			expect(message).toContain('## Reminder');
 		});
 
-		it('includes diagnostic status when implementation has errors', () => {
+		it('includes diagnostic status when implementation has errors', async () => {
 			updateDiagnosticState('src/broken.ts', {
 				output: '',
 				hasTypeErrors: true,
@@ -214,14 +287,14 @@ describe('getIterationTrailingMessage', () => {
 				hasLintErrors: false,
 			});
 
-			const message = getMessage('implementation');
+			const message = await getMessage('implementation');
 
 			expect(message).toContain('Diagnostic Status');
 			expect(message).toContain('broken.ts');
 		});
 
-		it('does not include diagnostic status when implementation has no errors', () => {
-			const message = getMessage('implementation');
+		it('does not include diagnostic status when implementation has no errors', async () => {
+			const message = await getMessage('implementation');
 
 			expect(message).not.toContain('Diagnostic Status');
 		});
@@ -232,60 +305,73 @@ describe('getIterationTrailingMessage', () => {
 	// ============================================================================
 
 	describe('formatIterationStatus urgency levels', () => {
-		it('uses no emoji at < 50% usage', () => {
+		beforeEach(() => {
+			mockResolveAgentDefinition.mockImplementation(async (agentType: string) => {
+				if (agentType === 'implementation') {
+					return makeDefinition({ hint: 'Batch related edits together.' }) as never;
+				}
+				if (agentType === 'review') {
+					return makeDefinition({ hint: 'Focus on the current aspect.' }) as never;
+				}
+				return null as never;
+			});
+		});
+
+		it('uses no emoji at < 50% usage', async () => {
 			// iteration=3, maxIterations=20 → 15% — no emoji
-			const message = getMessage('review', 3, 20);
+			const message = await getMessage('review', 3, 20);
 			expect(message).not.toContain('🚨');
 			expect(message).not.toContain('⚠️');
 			expect(message).toContain('Iteration 3/20');
 		});
 
-		it('uses ⚠️ at 50-79% usage', () => {
+		it('uses ⚠️ at 50-79% usage', async () => {
 			// iteration=12, maxIterations=20 → 60%
-			const message = getMessage('review', 12, 20);
+			const message = await getMessage('review', 12, 20);
 			expect(message).toContain('⚠️');
 			expect(message).not.toContain('🚨');
 		});
 
-		it('uses 🚨 at >= 80% usage', () => {
+		it('uses 🚨 at >= 80% usage', async () => {
 			// iteration=16, maxIterations=20 → 80%
-			const message = getMessage('review', 16, 20);
+			const message = await getMessage('review', 16, 20);
 			expect(message).toContain('🚨');
 		});
 
-		it('uses 🚨 above 80% usage', () => {
+		it('uses 🚨 above 80% usage', async () => {
 			// iteration=19, maxIterations=20 → 95%
-			const message = getMessage('review', 19, 20);
+			const message = await getMessage('review', 19, 20);
 			expect(message).toContain('🚨');
 		});
 
-		it('includes correct remaining count in message', () => {
-			const message = getMessage('review', 12, 20);
+		it('includes correct remaining count in message', async () => {
+			const message = await getMessage('review', 12, 20);
 			expect(message).toContain('8 remaining');
 		});
 
-		it('includes correct percentage in message', () => {
-			const message = getMessage('review', 10, 20);
+		it('includes correct percentage in message', async () => {
+			const message = await getMessage('review', 10, 20);
 			expect(message).toContain('50% used');
 		});
 
-		it('uses agent-specific hint for implementation', () => {
-			const message = getMessage('implementation');
+		it('uses agent-specific hint for implementation', async () => {
+			const message = await getMessage('implementation');
 			expect(message).toContain('Batch related edits');
 		});
 
-		it('uses agent-specific hint for review', () => {
-			const message = getMessage('review');
+		it('uses agent-specific hint for review', async () => {
+			const message = await getMessage('review');
 			expect(message).toContain('Focus on the current aspect');
 		});
 
-		it('uses default hint for unknown agent type', () => {
-			const message = getMessage('some-unknown-agent');
+		it('uses default hint for unknown agent type', async () => {
+			// mockResolveAgentDefinition returns null for unknown types (set in beforeEach)
+			const message = await getMessage('some-unknown-agent');
 			expect(message).toContain('Complete the current task efficiently');
 		});
 
-		it('uses default hint when agentType is undefined', () => {
-			const message = getMessage(undefined);
+		it('uses default hint when agentType is undefined', async () => {
+			const message = await getMessage(undefined);
 			expect(message).toContain('Complete the current task efficiently');
 		});
 	});
@@ -295,7 +381,18 @@ describe('getIterationTrailingMessage', () => {
 	// ============================================================================
 
 	describe('formatDiagnosticLoopWarning via implementation', () => {
-		it('no warning when no loops', () => {
+		beforeEach(() => {
+			mockResolveAgentDefinition.mockImplementation(async (agentType: string) => {
+				if (agentType === 'implementation') {
+					return makeDefinition({
+						trailingMessage: { includeDiagnostics: true },
+					}) as never;
+				}
+				return null as never;
+			});
+		});
+
+		it('no warning when no loops', async () => {
 			updateDiagnosticState('src/file.ts', {
 				output: '',
 				hasTypeErrors: true,
@@ -304,12 +401,12 @@ describe('getIterationTrailingMessage', () => {
 			});
 			// No recordDiagnosticLoop calls
 
-			const message = getMessage('implementation');
+			const message = await getMessage('implementation');
 
 			expect(message).not.toContain('Diagnostic Loop Detected');
 		});
 
-		it('no warning when loop count is 1 (below threshold of 2)', () => {
+		it('no warning when loop count is 1 (below threshold of 2)', async () => {
 			updateDiagnosticState('src/file.ts', {
 				output: '',
 				hasTypeErrors: true,
@@ -318,12 +415,12 @@ describe('getIterationTrailingMessage', () => {
 			});
 			recordDiagnosticLoop('src/file.ts'); // count = 1
 
-			const message = getMessage('implementation');
+			const message = await getMessage('implementation');
 
 			expect(message).not.toContain('Diagnostic Loop Detected');
 		});
 
-		it('includes warning with file path and count when loop count is 2', () => {
+		it('includes warning with file path and count when loop count is 2', async () => {
 			updateDiagnosticState('src/file.ts', {
 				output: '',
 				hasTypeErrors: true,
@@ -333,14 +430,14 @@ describe('getIterationTrailingMessage', () => {
 			recordDiagnosticLoop('src/file.ts'); // count = 1
 			recordDiagnosticLoop('src/file.ts'); // count = 2
 
-			const message = getMessage('implementation');
+			const message = await getMessage('implementation');
 
 			expect(message).toContain('Diagnostic Loop Detected');
 			expect(message).toContain('src/file.ts');
 			expect(message).toContain('edited 2 times');
 		});
 
-		it('includes warning with correct count when loop count is 3', () => {
+		it('includes warning with correct count when loop count is 3', async () => {
 			updateDiagnosticState('src/utils.ts', {
 				output: '',
 				hasTypeErrors: true,
@@ -351,7 +448,7 @@ describe('getIterationTrailingMessage', () => {
 			recordDiagnosticLoop('src/utils.ts');
 			recordDiagnosticLoop('src/utils.ts');
 
-			const message = getMessage('implementation');
+			const message = await getMessage('implementation');
 
 			expect(message).toContain('Diagnostic Loop Detected');
 			expect(message).toContain('src/utils.ts');

@@ -56,7 +56,7 @@ export function isSquintEnabled(repoDir: string): boolean {
 	return resolveSquintDbPath(repoDir) !== null;
 }
 
-export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderType {
+export async function createConfiguredBuilder(options: CreateBuilderOptions): Promise<BuilderType> {
 	const {
 		client,
 		agentType,
@@ -79,6 +79,12 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 		initSessionState(agentType, options.baseBranch, options.projectId, options.cardId);
 	}
 
+	// Resolve async config values before building
+	const [compactionConfig, trailingMessage] = await Promise.all([
+		getCompactionConfig(agentType),
+		getIterationTrailingMessage(agentType),
+	]);
+
 	let builder = new AgentBuilder(client)
 		.withModel(model)
 		.withTemperature(0)
@@ -87,8 +93,8 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 		.withLogger(llmistLogger)
 		.withRateLimits(getRateLimitForModel(model))
 		.withRetry(getRetryConfig(llmistLogger))
-		.withCompaction(getCompactionConfig(agentType))
-		.withTrailingMessage(getIterationTrailingMessage(agentType))
+		.withCompaction(compactionConfig)
+		.withTrailingMessage(trailingMessage)
 		.withTextOnlyHandler('acknowledge')
 		.withHooks({
 			observers: createObserverHooks({

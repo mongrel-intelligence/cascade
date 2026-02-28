@@ -8,6 +8,29 @@ vi.mock('llmist', async (importOriginal) => ({
 	})),
 }));
 
+// Mock agentMessages to avoid requiring initAgentMessages() in tests
+vi.mock('../../../src/config/agentMessages.js', () => ({
+	AGENT_LABELS: {
+		implementation: { emoji: '🧑‍💻', label: 'Implementation Update' },
+		review: { emoji: '🔍', label: 'Code Review Update' },
+		splitting: { emoji: '📋', label: 'Splitting Update' },
+	},
+	AGENT_ROLE_HINTS: {
+		implementation: 'Writes code, runs tests, and prepares a pull request',
+		review: 'Reviews pull request changes for quality and correctness',
+		splitting: 'Breaks down a feature plan into smaller, ordered work items (subtasks)',
+	},
+	INITIAL_MESSAGES: {},
+	getAgentLabel: vi.fn((agentType: string) => {
+		const labels: Record<string, { emoji: string; label: string }> = {
+			implementation: { emoji: '🧑‍💻', label: 'Implementation Update' },
+			review: { emoji: '🔍', label: 'Code Review Update' },
+			splitting: { emoji: '📋', label: 'Splitting Update' },
+		};
+		return labels[agentType] ?? { emoji: '⚙️', label: 'Progress Update' };
+	}),
+}));
+
 import { LLMist } from 'llmist';
 import { type ProgressContext, callProgressModel } from '../../../src/backends/progressModel.js';
 

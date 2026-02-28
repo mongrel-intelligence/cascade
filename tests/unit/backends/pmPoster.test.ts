@@ -1,5 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Mock agentMessages to avoid requiring initAgentMessages() in tests
+vi.mock('../../../src/config/agentMessages.js', () => ({
+	INITIAL_MESSAGES: new Proxy(
+		{
+			implementation:
+				'**🚀 Implementing changes** — Writing code, running tests, and preparing a PR...',
+			review: '**🔍 Reviewing code** — Examining the PR changes...',
+			splitting: '**📋 Splitting plan** — Breaking down the plan...',
+		},
+		{
+			get(target, prop) {
+				return (target as Record<string, string>)[prop as string] ?? undefined;
+			},
+		},
+	),
+	AGENT_LABELS: {},
+	AGENT_ROLE_HINTS: {},
+	getAgentLabel: vi.fn(() => ({ emoji: '⚙️', label: 'Progress Update' })),
+}));
+
 vi.mock('../../../src/pm/index.js', () => ({
 	getPMProviderOrNull: vi.fn(),
 }));
