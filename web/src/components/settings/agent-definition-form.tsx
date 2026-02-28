@@ -1,3 +1,4 @@
+import type { AppRouter } from '@/../../src/api/router.js';
 import { Badge } from '@/components/ui/badge.js';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
@@ -13,64 +14,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.j
 import { Textarea } from '@/components/ui/textarea.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { inferRouterOutputs } from '@trpc/server';
 import { useState } from 'react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface AgentDefinition {
-	identity: {
-		emoji: string;
-		label: string;
-		roleHint: string;
-		initialMessage: string;
-	};
-	capabilities: {
-		canEditFiles: boolean;
-		canCreatePR: boolean;
-		canUpdateChecklists: boolean;
-		isReadOnly: boolean;
-		canAccessEmail?: boolean;
-	};
-	tools: {
-		sets: string[];
-		sdkTools: string;
-	};
-	strategies: {
-		contextPipeline: string[];
-		taskPromptBuilder: string;
-		gadgetBuilder: string;
-		gadgetBuilderOptions?: { includeReviewComments?: boolean } | null;
-	};
-	backend: {
-		enableStopHooks: boolean;
-		needsGitHubToken: boolean;
-		blockGitPush?: boolean;
-		requiresPR?: boolean;
-		preExecute?: string;
-		postConfigure?: string;
-	};
-	compaction: string;
-	hint: string;
-	trailingMessage?: {
-		includeDiagnostics?: boolean;
-		includeTodoProgress?: boolean;
-		includeGitStatus?: boolean;
-		includePRStatus?: boolean;
-		includeReminder?: boolean;
-	} | null;
-	integrations: {
-		required: string[];
-		optional: string[];
-	};
-}
-
-interface DefinitionRow {
-	agentType: string;
-	definition: AgentDefinition;
-	isBuiltin: boolean;
-}
+type RouterOutput = inferRouterOutputs<AppRouter>;
+type DefinitionRow = RouterOutput['agentDefinitions']['list'][number];
+type AgentDefinition = DefinitionRow['definition'];
 
 interface AgentDefinitionFormDialogProps {
 	open: boolean;
@@ -594,17 +547,14 @@ export function AgentDefinitionFormDialog({
 	};
 
 	const createMutation = useMutation({
-		mutationFn: () =>
-			trpcClient.agentDefinitions.create.mutate({ agentType, definition: def as never }),
+		mutationFn: (params: { agentType: string; definition: AgentDefinition }) =>
+			trpcClient.agentDefinitions.create.mutate(params),
 		onSuccess,
 	});
 
 	const updateMutation = useMutation({
-		mutationFn: () =>
-			trpcClient.agentDefinitions.update.mutate({
-				agentType: existing?.agentType as string,
-				patch: def as never,
-			}),
+		mutationFn: (params: { agentType: string; patch: AgentDefinition }) =>
+			trpcClient.agentDefinitions.update.mutate(params),
 		onSuccess,
 	});
 
@@ -632,12 +582,23 @@ export function AgentDefinitionFormDialog({
 
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
+		let submission = def;
 		if (activeTab === 'json') {
-			if (!syncJsonToForm()) return;
-			setTimeout(() => activeMutation.mutate(), 0);
-			return;
+			try {
+				submission = JSON.parse(jsonText) as AgentDefinition;
+				setDef(submission); // sync form state for UI
+				setJsonError(null);
+			} catch (err) {
+				setJsonError((err as Error).message);
+				return;
+			}
 		}
-		activeMutation.mutate();
+		// Use submission directly instead of relying on def from closure
+		if (isEdit) {
+			updateMutation.mutate({ agentType: existing?.agentType as string, patch: submission });
+		} else {
+			createMutation.mutate({ agentType, definition: submission });
+		}
 	};
 
 	// ── field helpers ─────────────────────────────────────────────────────────
@@ -655,7 +616,7 @@ export function AgentDefinitionFormDialog({
 
 	// ─────────────────────────────────────────────────────────────────────────
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
+		<Dialog key={existing?.agentType ?? 'create'} open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
 				<DialogHeader>
 					<DialogTitle>

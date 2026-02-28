@@ -1,3 +1,4 @@
+import type { AppRouter } from '@/../../src/api/router.js';
 import { Badge } from '@/components/ui/badge.js';
 import {
 	Table,
@@ -9,62 +10,13 @@ import {
 } from '@/components/ui/table.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import type { inferRouterOutputs } from '@trpc/server';
 import { Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { AgentDefinitionFormDialog } from './agent-definition-form.js';
 
-interface AgentDefinition {
-	identity: {
-		emoji: string;
-		label: string;
-		roleHint: string;
-		initialMessage: string;
-	};
-	capabilities: {
-		canEditFiles: boolean;
-		canCreatePR: boolean;
-		canUpdateChecklists: boolean;
-		isReadOnly: boolean;
-		canAccessEmail?: boolean;
-	};
-	tools: {
-		sets: string[];
-		sdkTools: string;
-	};
-	strategies: {
-		contextPipeline: string[];
-		taskPromptBuilder: string;
-		gadgetBuilder: string;
-		gadgetBuilderOptions?: { includeReviewComments?: boolean } | null;
-	};
-	backend: {
-		enableStopHooks: boolean;
-		needsGitHubToken: boolean;
-		blockGitPush?: boolean;
-		requiresPR?: boolean;
-		preExecute?: string;
-		postConfigure?: string;
-	};
-	compaction: string;
-	hint: string;
-	trailingMessage?: {
-		includeDiagnostics?: boolean;
-		includeTodoProgress?: boolean;
-		includeGitStatus?: boolean;
-		includePRStatus?: boolean;
-		includeReminder?: boolean;
-	} | null;
-	integrations: {
-		required: string[];
-		optional: string[];
-	};
-}
-
-interface DefinitionRow {
-	agentType: string;
-	definition: AgentDefinition;
-	isBuiltin: boolean;
-}
+type RouterOutput = inferRouterOutputs<AppRouter>;
+type DefinitionRow = RouterOutput['agentDefinitions']['list'][number];
 
 export function AgentDefinitionsTable({ definitions }: { definitions: DefinitionRow[] }) {
 	const queryClient = useQueryClient();
