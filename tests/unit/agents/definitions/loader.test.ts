@@ -290,9 +290,9 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('roundtrip: YAML definition → profile properties', () => {
-		it('implementation agent has full capabilities and stop hooks', () => {
+		it('implementation agent has full capabilities and stop hooks', async () => {
 			const def = loadAgentDefinition('implementation');
-			const caps = getAgentCapabilities('implementation');
+			const caps = await getAgentCapabilities('implementation');
 
 			expect(caps.canEditFiles).toBe(true);
 			expect(caps.canCreatePR).toBe(true);
@@ -305,9 +305,9 @@ describe('YAML agent definitions loader', () => {
 			expect(SDK_TOOLS_REGISTRY[def.tools.sdkTools]).toBeDefined();
 		});
 
-		it('review agent is read-only with preExecute hook', () => {
+		it('review agent is read-only with preExecute hook', async () => {
 			const def = loadAgentDefinition('review');
-			const caps = getAgentCapabilities('review');
+			const caps = await getAgentCapabilities('review');
 
 			expect(caps.canEditFiles).toBe(false);
 			expect(caps.isReadOnly).toBe(true);
@@ -316,9 +316,9 @@ describe('YAML agent definitions loader', () => {
 			expect(def.backend.preExecute).toBe('postInitialPRComment');
 		});
 
-		it('respond-to-ci agent has preExecute and needsGitHubToken', () => {
+		it('respond-to-ci agent has preExecute and needsGitHubToken', async () => {
 			const def = loadAgentDefinition('respond-to-ci');
-			const caps = getAgentCapabilities('respond-to-ci');
+			const caps = await getAgentCapabilities('respond-to-ci');
 
 			expect(caps.canEditFiles).toBe(true);
 			expect(def.backend.needsGitHubToken).toBe(true);
@@ -336,10 +336,10 @@ describe('YAML agent definitions loader', () => {
 			}
 		});
 
-		it('capabilities from getAgentCapabilities match YAML definition for all agents', () => {
+		it('capabilities from getAgentCapabilities match YAML definition for all agents', async () => {
 			for (const agentType of ALL_AGENT_TYPES) {
 				const def = loadAgentDefinition(agentType);
-				const caps = getAgentCapabilities(agentType);
+				const caps = await getAgentCapabilities(agentType);
 
 				expect(caps.canEditFiles).toBe(def.capabilities.canEditFiles);
 				expect(caps.canCreatePR).toBe(def.capabilities.canCreatePR);
@@ -350,8 +350,8 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('unknown agent type fallbacks', () => {
-		it('getAgentCapabilities returns full-access defaults for unknown type', () => {
-			const caps = getAgentCapabilities('nonexistent-agent-type');
+		it('getAgentCapabilities returns full-access defaults for unknown type', async () => {
+			const caps = await getAgentCapabilities('nonexistent-agent-type');
 			expect(caps).toEqual({
 				canEditFiles: true,
 				canCreatePR: true,

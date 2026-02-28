@@ -2,7 +2,7 @@ import os from 'node:os';
 
 import { LLMist, type ModelSpec, createLogger } from 'llmist';
 
-import { loadAgentDefinition } from '../../agents/definitions/index.js';
+import { resolveAgentDefinition } from '../../agents/definitions/index.js';
 import { type BuilderType, createConfiguredBuilder } from '../../agents/shared/builderFactory.js';
 import { injectSyntheticCall } from '../../agents/shared/syntheticCalls.js';
 import { runAgentLoop } from '../../agents/utils/agentLoop.js';
@@ -62,7 +62,7 @@ export class LlmistBackend implements AgentBackend {
 			progressReporter,
 		} = input;
 
-		const profile = getAgentProfile(agentType);
+		const profile = await getAgentProfile(agentType);
 
 		// Create LLMist client with custom model definitions
 		const client = new LLMist({ customModels: CUSTOM_MODELS as ModelSpec[] });
@@ -86,7 +86,7 @@ export class LlmistBackend implements AgentBackend {
 		}
 
 		// Get gadget instances from the agent profile (single source of truth for tool sets)
-		const gadgets = profile.getLlmistGadgets(agentType);
+		const gadgets = await profile.getLlmistGadgets(agentType);
 
 		// Build the configured agent builder with all llmist-specific features:
 		// rate limiting, retry, compaction, iteration hints, observer hooks
@@ -114,9 +114,9 @@ export class LlmistBackend implements AgentBackend {
 				typeof createConfiguredBuilder
 			>[0]['progressMonitor'],
 			// Post-configure hook from YAML definition (e.g., sequentialGadgetExecution for implementation)
-			postConfigure: (() => {
+			postConfigure: await (async () => {
 				try {
-					const def = loadAgentDefinition(agentType);
+					const def = await resolveAgentDefinition(agentType);
 					const hookName = def.backend.postConfigure;
 					return hookName ? POST_CONFIGURE_REGISTRY[hookName] : undefined;
 				} catch {

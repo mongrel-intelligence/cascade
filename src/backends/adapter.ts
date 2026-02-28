@@ -99,7 +99,7 @@ async function buildBackendInput(
 		agentInput: input,
 	});
 
-	const profile = getAgentProfile(agentType);
+	const profile = await getAgentProfile(agentType);
 
 	// Use profile to fetch agent-specific context injections
 	const contextInjections = await profile.fetchContext({
@@ -211,7 +211,7 @@ export async function executeWithBackend(
 			const { repoDir, fileLogger, logWriter, setRunId } = ctx;
 			const log = createAgentLogger(fileLogger);
 
-			const profile = getAgentProfile(agentType);
+			const profile = await getAgentProfile(agentType);
 			const gitHubToken = await resolveGitHubToken(profile, input.project.id, agentType);
 
 			// Build backend input wrapped in GitHub token scope if needed

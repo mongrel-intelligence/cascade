@@ -43,32 +43,32 @@ describe('integration-validation', () => {
 	});
 
 	describe('getIntegrationRequirements', () => {
-		it('returns integration requirements for implementation agent', () => {
-			const reqs = getIntegrationRequirements('implementation');
+		it('returns integration requirements for implementation agent', async () => {
+			const reqs = await getIntegrationRequirements('implementation');
 			expect(reqs.required).toEqual(['scm', 'pm']);
 			expect(reqs.optional).toEqual([]);
 		});
 
-		it('returns integration requirements for review agent', () => {
-			const reqs = getIntegrationRequirements('review');
+		it('returns integration requirements for review agent', async () => {
+			const reqs = await getIntegrationRequirements('review');
 			expect(reqs.required).toEqual(['scm']);
 			expect(reqs.optional).toEqual(['pm']);
 		});
 
-		it('returns integration requirements for email-joke agent', () => {
-			const reqs = getIntegrationRequirements('email-joke');
+		it('returns integration requirements for email-joke agent', async () => {
+			const reqs = await getIntegrationRequirements('email-joke');
 			expect(reqs.required).toEqual(['email']);
 			expect(reqs.optional).toEqual([]);
 		});
 
-		it('returns integration requirements for debug agent', () => {
-			const reqs = getIntegrationRequirements('debug');
+		it('returns integration requirements for debug agent', async () => {
+			const reqs = await getIntegrationRequirements('debug');
 			expect(reqs.required).toEqual(['pm']);
 			expect(reqs.optional).toEqual([]);
 		});
 
-		it('throws for unknown agent type', () => {
-			expect(() => getIntegrationRequirements('nonexistent-agent')).toThrow(
+		it('rejects for unknown agent type', async () => {
+			await expect(getIntegrationRequirements('nonexistent-agent')).rejects.toThrow(
 				'Agent definition not found',
 			);
 		});
