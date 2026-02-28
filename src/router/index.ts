@@ -3,6 +3,9 @@ import { Hono } from 'hono';
 import { captureException, flush, setTag } from '../sentry.js';
 // Bootstrap PM integrations before any adapters are loaded
 import '../pm/bootstrap.js';
+import { initPrompts } from '../agents/prompts/index.js';
+import { initAgentMessages } from '../config/agentMessages.js';
+import { seedAgentDefinitions } from '../db/seeds/seedAgentDefinitions.js';
 import {
 	createWebhookHandler,
 	parseGitHubPayload,
@@ -153,6 +156,14 @@ process.on('unhandledRejection', (reason) => {
 // Start server and worker processor
 async function startRouter(): Promise<void> {
 	const port = Number(process.env.PORT) || 3000;
+
+	// Seed built-in agent definitions to DB, then initialize in-memory caches
+	logger.info('Seeding agent definitions...');
+	await seedAgentDefinitions();
+	logger.info('Initializing agent messages...');
+	await initAgentMessages();
+	await initPrompts();
+
 	startWorkerProcessor();
 	startEmailScheduler();
 	logger.info('Starting router', { port });

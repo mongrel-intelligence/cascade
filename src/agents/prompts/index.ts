@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Eta } from 'eta';
 
-import { getKnownAgentTypes } from '../definitions/index.js';
+import { resolveKnownAgentTypes } from '../definitions/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const templatesDir = join(__dirname, 'templates');
@@ -13,8 +13,17 @@ const taskTemplatesDir = join(__dirname, 'task-templates');
 const eta = new Eta({ views: templatesDir, autoEscape: false });
 const taskEta = new Eta({ views: taskTemplatesDir, autoEscape: false });
 
-// Valid agent types — derived from YAML definition files
-const validTypes = getKnownAgentTypes();
+// Valid agent types — lazily resolved from DB (with YAML fallback), populated by initPrompts()
+let validTypes: string[] = [];
+let initialized = false;
+
+function requireInitialized(name: string): void {
+	if (!initialized) {
+		throw new Error(
+			`prompts: '${name}' was accessed before initPrompts() completed. Call initPrompts() at startup before using getSystemPrompt() or getRawTemplate().`,
+		);
+	}
+}
 
 // Template context interface
 export interface PromptContext {
@@ -52,6 +61,17 @@ export interface PromptContext {
 
 	// Future extensibility
 	[key: string]: unknown;
+}
+
+/**
+ * Initialize the valid agent types list from the database (with YAML fallback).
+ *
+ * Must be called at startup before getSystemPrompt() or getRawTemplate() are used.
+ * Safe to call multiple times (idempotent — overwrites with latest resolved list).
+ */
+export async function initPrompts(): Promise<void> {
+	validTypes = await resolveKnownAgentTypes();
+	initialized = true;
 }
 
 // Cache for loaded templates
@@ -123,6 +143,7 @@ export function getSystemPrompt(
 	context: PromptContext = {},
 	dbPartials?: Map<string, string>,
 ): string {
+	requireInitialized('getSystemPrompt');
 	if (!validTypes.includes(agentType)) {
 		throw new Error(`Unknown agent type: ${agentType}`);
 	}
@@ -184,6 +205,7 @@ export function renderTaskPrompt(
 
 /** Returns the raw .eta template source from disk (before rendering). */
 export function getRawTemplate(agentType: string): string {
+	requireInitialized('getRawTemplate');
 	if (!validTypes.includes(agentType)) {
 		throw new Error(`Unknown agent type: ${agentType}`);
 	}
@@ -196,7 +218,12 @@ export function getRawPartial(name: string): string {
 	return readFileSync(diskPath, 'utf-8');
 }
 
-/** Returns the list of valid agent types. */
+/**
+ * Returns the list of valid agent types.
+ *
+ * Returns a snapshot of the current list; call initPrompts() at startup
+ * to ensure DB-backed definitions are included.
+ */
 export function getValidAgentTypes(): string[] {
 	return [...validTypes];
 }

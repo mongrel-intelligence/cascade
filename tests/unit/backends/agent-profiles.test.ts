@@ -113,6 +113,38 @@ vi.mock('../../../src/utils/squintDb.js', () => ({
 	resolveSquintDbPath: vi.fn(() => null),
 }));
 
+// Mock agentMessages to avoid requiring initAgentMessages() in tests
+vi.mock('../../../src/config/agentMessages.js', () => ({
+	INITIAL_MESSAGES: new Proxy(
+		{
+			implementation:
+				'**🚀 Implementing changes** — Writing code, running tests, and preparing a PR...',
+			review: '**🔍 Reviewing code** — Examining the PR changes...',
+			splitting: '**📋 Splitting plan** — Breaking down the plan...',
+			'respond-to-ci': '**🔧 Fixing CI failures** — Analyzing the failed checks...',
+			'respond-to-review': '**🔧 Responding to review** — Addressing feedback...',
+		},
+		{
+			get(target, prop) {
+				return (target as Record<string, string>)[prop as string] ?? '**⚙️ Working on it**...';
+			},
+		},
+	),
+	AGENT_LABELS: new Proxy(
+		{},
+		{
+			get: () => ({ emoji: '⚙️', label: 'Progress Update' }),
+		},
+	),
+	AGENT_ROLE_HINTS: new Proxy(
+		{},
+		{
+			get: () => 'Processes the request',
+		},
+	),
+	getAgentLabel: vi.fn(() => ({ emoji: '⚙️', label: 'Progress Update' })),
+}));
+
 vi.mock('node:child_process', () => ({
 	execFileSync: vi.fn(() => 'squint overview output'),
 }));

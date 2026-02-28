@@ -90,7 +90,7 @@ export class LlmistBackend implements AgentBackend {
 
 		// Build the configured agent builder with all llmist-specific features:
 		// rate limiting, retry, compaction, iteration hints, observer hooks
-		let builder: BuilderType = createConfiguredBuilder({
+		let builder: BuilderType = await createConfiguredBuilder({
 			client,
 			agentType,
 			model,

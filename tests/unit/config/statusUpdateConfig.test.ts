@@ -7,6 +7,24 @@ import {
 	getStatusUpdateConfig,
 } from '../../../src/config/statusUpdateConfig.js';
 
+// Mock agentMessages to avoid requiring initAgentMessages() in tests
+vi.mock('../../../src/config/agentMessages.js', () => ({
+	getAgentLabel: vi.fn((agentType: string) => {
+		const labels: Record<string, { emoji: string; label: string }> = {
+			implementation: { emoji: '🧑‍💻', label: 'Implementation Update' },
+			review: { emoji: '🔍', label: 'Code Review Update' },
+			splitting: { emoji: '📋', label: 'Splitting Update' },
+			planning: { emoji: '🗺️', label: 'Planning Update' },
+			'respond-to-review': { emoji: '🔧', label: 'Review Response Update' },
+			'respond-to-ci': { emoji: '🔧', label: 'CI Fix Update' },
+			'respond-to-pr-comment': { emoji: '💬', label: 'PR Comment Response Update' },
+			'respond-to-planning-comment': { emoji: '💬', label: 'Planning Response Update' },
+			debug: { emoji: '🐛', label: 'Debug Update' },
+		};
+		return labels[agentType] ?? { emoji: '⚙️', label: 'Progress Update' };
+	}),
+}));
+
 // Mock todo storage
 vi.mock('../../../src/gadgets/todo/storage.js', () => ({
 	loadTodos: vi.fn(() => []),

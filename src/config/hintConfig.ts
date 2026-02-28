@@ -1,28 +1,12 @@
 import { execSync } from 'node:child_process';
 import type { TrailingMessage } from 'llmist';
-import { loadAgentDefinition } from '../agents/definitions/index.js';
+import { resolveAgentDefinition } from '../agents/definitions/index.js';
 import {
 	formatDiagnosticStatus,
 	getDiagnosticLoopFiles,
 	hasAnyDiagnosticErrors,
 } from '../gadgets/shared/diagnosticState.js';
 import { formatTodoList, loadTodos } from '../gadgets/todo/storage.js';
-
-/**
- * Get the agent-specific hint for batch processing.
- * Reads from YAML definition; falls back to a default for unknown types.
- */
-function getAgentHint(agentType?: string): string {
-	if (agentType) {
-		try {
-			const def = loadAgentDefinition(agentType);
-			return def.hint;
-		} catch {
-			// Unknown agent type — fall through to default
-		}
-	}
-	return 'Complete the current task efficiently before moving to the next.';
-}
 
 /**
  * Run a shell command and return output, or null on error.
@@ -174,7 +158,7 @@ function formatDiagnosticLoopWarning(): string | null {
  * - Always shows current iteration, remaining count, and percentage
  * - Adds urgency indicator when running low on iterations
  * - Includes agent-specific batch processing hints
- * - Uses YAML trailingMessage flags to decide which extra sections to include
+ * - Uses agent definition trailingMessage flags to decide which extra sections to include
  *
  * Note: Loop detection warnings are injected as separate user messages
  * (see agentLoop.ts) rather than in trailing messages for higher visibility.
@@ -183,12 +167,11 @@ function formatDiagnosticLoopWarning(): string | null {
  * persist to conversation history, keeping context clean.
  *
  * @param agentType - The type of agent (e.g., 'implementation', 'review')
- * @returns Trailing message function
+ * @returns Promise resolving to trailing message function
  */
-export function getIterationTrailingMessage(agentType?: string): TrailingMessage {
-	const batchHint = getAgentHint(agentType);
-
-	// Resolve trailing message flags from YAML definition
+export async function getIterationTrailingMessage(agentType?: string): Promise<TrailingMessage> {
+	// Resolve agent definition once (DB → YAML fallback) for both hint and flags
+	let batchHint = 'Complete the current task efficiently before moving to the next.';
 	let flags: {
 		includeDiagnostics?: boolean;
 		includeTodoProgress?: boolean;
@@ -199,10 +182,13 @@ export function getIterationTrailingMessage(agentType?: string): TrailingMessage
 
 	if (agentType) {
 		try {
-			const def = loadAgentDefinition(agentType);
-			flags = def.trailingMessage ?? {};
+			const def = await resolveAgentDefinition(agentType);
+			if (def) {
+				batchHint = def.hint;
+				flags = def.trailingMessage ?? {};
+			}
 		} catch {
-			// Unknown agent type — use empty flags (basic message only)
+			// Unknown agent type — use defaults
 		}
 	}
 
