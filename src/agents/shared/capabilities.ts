@@ -1,4 +1,4 @@
-import { loadAgentDefinition } from '../definitions/loader.js';
+import { resolveAgentDefinition } from '../definitions/loader.js';
 
 // ============================================================================
 // AgentCapabilities
@@ -37,11 +37,11 @@ const DEFAULT_CAPABILITIES: AgentCapabilities = {
 
 /**
  * Look up capabilities for a given agent type.
- * Reads from YAML definition; falls back to full-access defaults for unknown types.
+ * Reads from the async resolver (cache → DB → YAML); falls back to full-access defaults for unknown types.
  */
-export function getAgentCapabilities(agentType: string): AgentCapabilities {
+export async function getAgentCapabilities(agentType: string): Promise<AgentCapabilities> {
 	try {
-		const def = loadAgentDefinition(agentType);
+		const def = await resolveAgentDefinition(agentType);
 		return def.capabilities;
 	} catch {
 		return DEFAULT_CAPABILITIES;

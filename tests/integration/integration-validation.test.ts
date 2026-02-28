@@ -514,25 +514,25 @@ describe('Integration Validation (integration)', () => {
 	// =========================================================================
 
 	describe('integration requirements', () => {
-		it('implementation requires both scm and pm', () => {
-			const reqs = getIntegrationRequirements('implementation');
+		it('implementation requires both scm and pm', async () => {
+			const reqs = await getIntegrationRequirements('implementation');
 			expect(reqs.required).toContain('scm');
 			expect(reqs.required).toContain('pm');
 		});
 
-		it('review requires only scm with optional pm', () => {
-			const reqs = getIntegrationRequirements('review');
+		it('review requires only scm with optional pm', async () => {
+			const reqs = await getIntegrationRequirements('review');
 			expect(reqs.required).toEqual(['scm']);
 			expect(reqs.optional).toContain('pm');
 		});
 
-		it('debug requires only pm', () => {
-			const reqs = getIntegrationRequirements('debug');
+		it('debug requires only pm', async () => {
+			const reqs = await getIntegrationRequirements('debug');
 			expect(reqs.required).toEqual(['pm']);
 		});
 
-		it('email-joke requires only email', () => {
-			const reqs = getIntegrationRequirements('email-joke');
+		it('email-joke requires only email', async () => {
+			const reqs = await getIntegrationRequirements('email-joke');
 			expect(reqs.required).toEqual(['email']);
 		});
 	});

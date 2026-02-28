@@ -6,7 +6,7 @@
  * missing configuration.
  */
 
-import { loadAgentDefinition } from '../../agents/definitions/loader.js';
+import { resolveAgentDefinition } from '../../agents/definitions/loader.js';
 import type { AgentIntegrations, IntegrationCategory } from '../../agents/definitions/schema.js';
 import { hasEmailIntegration } from '../../email/index.js';
 import { hasScmIntegration, hasScmPersonaToken } from '../../github/integration.js';
@@ -28,8 +28,8 @@ export interface ValidationResult {
 /**
  * Get integration requirements for an agent.
  */
-export function getIntegrationRequirements(agentType: string): AgentIntegrations {
-	const def = loadAgentDefinition(agentType);
+export async function getIntegrationRequirements(agentType: string): Promise<AgentIntegrations> {
+	const def = await resolveAgentDefinition(agentType);
 	return def.integrations;
 }
 
@@ -116,7 +116,7 @@ export async function validateIntegrations(
 	projectId: string,
 	agentType: string,
 ): Promise<ValidationResult> {
-	const { required } = getIntegrationRequirements(agentType);
+	const { required } = await getIntegrationRequirements(agentType);
 
 	// Run all validations in parallel
 	const validationPromises = required.map(async (category): Promise<ValidationError | null> => {

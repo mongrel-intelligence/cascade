@@ -4,7 +4,7 @@ import type { AgentInput } from '../../types/index.js';
 import type { ContextInjection, ToolManifest } from '../contracts/index.js';
 import { type TaskPromptContext, renderTaskPrompt } from '../prompts/index.js';
 import type { FetchContextParams, PreExecuteParams } from './contextSteps.js';
-import { loadAgentDefinition } from './loader.js';
+import { resolveAgentDefinition } from './loader.js';
 import type { AgentDefinition } from './schema.js';
 import {
 	CONTEXT_STEP_REGISTRY,
@@ -43,7 +43,7 @@ export interface AgentProfile {
 	 * Return the gadget instances for the llmist backend.
 	 * Each call creates fresh instances — caller must not reuse returned gadgets.
 	 */
-	getLlmistGadgets(agentType: string): unknown[];
+	getLlmistGadgets(agentType: string): Promise<unknown[]>;
 }
 
 // ============================================================================
@@ -83,7 +83,10 @@ function buildTaskPromptContext(input: AgentInput): TaskPromptContext {
 // Profile Builder (YAML-driven)
 // ============================================================================
 
-function buildProfileFromDefinition(agentType: string, def: AgentDefinition): AgentProfile {
+async function buildProfileFromDefinition(
+	agentType: string,
+	def: AgentDefinition,
+): Promise<AgentProfile> {
 	// Resolve tool names from YAML set references
 	const hasAllSet = def.tools.sets.includes('all');
 	const toolNames: string[] = [];
@@ -98,7 +101,7 @@ function buildProfileFromDefinition(agentType: string, def: AgentDefinition): Ag
 	// taskPromptBuilder YAML value maps directly to the .eta template filename
 	// (validated by the Zod schema in AgentDefinitionSchema)
 	const taskTemplateName = def.strategies.taskPromptBuilder;
-	const caps = getAgentCapabilities(agentType);
+	const caps = await getAgentCapabilities(agentType);
 	const gadgetBuilderFn = resolveRegistry(
 		GADGET_BUILDER_REGISTRY,
 		def.strategies.gadgetBuilder,
@@ -127,7 +130,8 @@ function buildProfileFromDefinition(agentType: string, def: AgentDefinition): Ag
 		},
 		buildTaskPrompt: (input) => renderTaskPrompt(taskTemplateName, buildTaskPromptContext(input)),
 		capabilities: caps,
-		getLlmistGadgets: (at) => gadgetBuilderFn(getAgentCapabilities(at), gadgetBuilderOptions),
+		getLlmistGadgets: async (at) =>
+			gadgetBuilderFn(await getAgentCapabilities(at), gadgetBuilderOptions),
 	};
 
 	if (def.backend.preExecute) {
@@ -142,10 +146,10 @@ function buildProfileFromDefinition(agentType: string, def: AgentDefinition): Ag
 // Public API
 // ============================================================================
 
-export function getAgentProfile(agentType: string): AgentProfile {
+export async function getAgentProfile(agentType: string): Promise<AgentProfile> {
 	let def: AgentDefinition;
 	try {
-		def = loadAgentDefinition(agentType);
+		def = await resolveAgentDefinition(agentType);
 	} catch (err) {
 		throw new Error(`Failed to load agent profile for '${agentType}'`, { cause: err });
 	}
