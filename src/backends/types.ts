@@ -1,44 +1,19 @@
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../types/index.js';
 
-/**
- * Describes a CASCADE-specific CLI tool available to the agent.
- */
-export interface ToolManifest {
-	/** Tool name, e.g., 'ReadTrelloCard' */
-	name: string;
-	/** Human-readable description */
-	description: string;
-	/** CLI command to invoke, e.g., 'cascade-tools trello read-card' */
-	cliCommand: string;
-	/** JSON Schema for the CLI flags/args */
-	parameters: Record<string, unknown>;
-}
+// Re-export shared contracts so downstream code that imports from here continues to work.
+export type {
+	ContextInjection,
+	LogWriter,
+	ProgressReporter,
+	ToolManifest,
+} from '../agents/contracts/index.js';
 
-/**
- * Pre-fetched data injected into agent context before execution.
- * Each backend decides how to present this (llmist: synthetic gadget calls,
- * Claude Code SDK: system prompt data, etc.)
- */
-export interface ContextInjection {
-	/** Gadget/tool name that produced this data, e.g., 'ReadTrelloCard' */
-	toolName: string;
-	/** Parameters used to fetch the data */
-	params: Record<string, unknown>;
-	/** The fetched result text */
-	result: string;
-	/** Human-readable description of this data */
-	description: string;
-}
-
-/**
- * Callbacks for reporting agent progress to external systems (Trello, GitHub).
- */
-export interface ProgressReporter {
-	onIteration(iteration: number, maxIterations: number): Promise<void>;
-	onToolCall(toolName: string, params?: Record<string, unknown>): void;
-	onText(content: string): void;
-	onTaskCompleted?(taskId: string, subject: string, summary: string): void;
-}
+import type {
+	ContextInjection,
+	LogWriter,
+	ProgressReporter,
+	ToolManifest,
+} from '../agents/contracts/index.js';
 
 /**
  * Input provided to an AgentBackend for execution.
@@ -72,8 +47,6 @@ export interface AgentBackendInput {
 	/** Path where the llmist SDK should write its structured log (workspace dir, not temp) */
 	llmistLogPath?: string;
 }
-
-export type LogWriter = (level: string, message: string, context?: Record<string, unknown>) => void;
 
 /**
  * Result returned by an AgentBackend after execution.

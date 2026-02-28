@@ -14,15 +14,15 @@ import type {
 	ObserveRetryAttemptContext,
 } from 'llmist';
 
-import type { ProgressMonitor } from '../../backends/progressMonitor.js';
 import { storeLlmCall } from '../../db/repositories/runsRepository.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
 import { calculateCost } from '../../utils/llmMetrics.js';
 import { logger } from '../../utils/logging.js';
+import type { IProgressMonitor, LogWriter } from '../contracts/index.js';
 import { type TrackingContext, checkForLoopAndAdvance, incrementLLMIteration } from './tracking.js';
 
-/** Function signature for writing to cascade log file */
-export type LogWriter = (level: string, message: string, context?: Record<string, unknown>) => void;
+// Re-export LogWriter for downstream consumers that imported it from here.
+export type { LogWriter } from '../contracts/index.js';
 
 /** Accumulated per-call metrics collected during agent execution */
 export interface AccumulatedLlmCall {
@@ -46,7 +46,7 @@ export interface ObserverHooksConfig {
 	/** Logger for raw LLM request/response logging */
 	llmCallLogger: LLMCallLogger;
 	/** Optional progress monitor for feeding iteration state */
-	progressMonitor?: ProgressMonitor;
+	progressMonitor?: IProgressMonitor;
 	/** Accumulator for per-call metrics (populated during execution) */
 	llmCallAccumulator?: AccumulatedLlmCall[];
 	/** Run ID for real-time DB logging (resolved before builder creation) */

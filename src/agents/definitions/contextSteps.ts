@@ -7,7 +7,6 @@
 
 import { execFileSync } from 'node:child_process';
 
-import type { ContextInjection, LogWriter } from '../../backends/types.js';
 import { INITIAL_MESSAGES } from '../../config/agentMessages.js';
 import { ListDirectory } from '../../gadgets/ListDirectory.js';
 import { formatCheckStatus } from '../../gadgets/github/core/getPRChecks.js';
@@ -16,6 +15,7 @@ import { githubClient } from '../../github/client.js';
 import type { AgentInput } from '../../types/index.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { resolveSquintDbPath } from '../../utils/squintDb.js';
+import type { ContextInjection, LogWriter } from '../contracts/index.js';
 import {
 	formatPRComments,
 	formatPRDetails,

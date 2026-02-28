@@ -20,3 +20,6 @@ export {
 	READ_ONLY_SDK_TOOLS,
 } from './strategies.js';
 export type { FetchContextParams, PreExecuteParams } from './contextSteps.js';
+export type { AgentProfile } from './profiles.js';
+export { getAgentProfile } from './profiles.js';
+export { getToolManifests } from './toolManifests.js';
