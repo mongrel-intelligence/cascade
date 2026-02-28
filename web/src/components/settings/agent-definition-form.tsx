@@ -234,7 +234,9 @@ function ToolsSection({
 					<MultiSelectBadges
 						available={schema.toolSetNames}
 						selected={def.tools.sets}
-						onChange={(sets) => setDef((d) => ({ ...d, tools: { ...d.tools, sets } }))}
+						onChange={(sets) =>
+							setDef((d) => ({ ...d, tools: { ...d.tools, sets } }) as AgentDefinition)
+						}
 					/>
 				) : (
 					<div className="text-sm text-muted-foreground">Loading...</div>
@@ -244,7 +246,9 @@ function ToolsSection({
 				<Label>SDK Tools</Label>
 				<Select
 					value={def.tools.sdkTools}
-					onValueChange={(v) => setDef((d) => ({ ...d, tools: { ...d.tools, sdkTools: v } }))}
+					onValueChange={(v) =>
+						setDef((d) => ({ ...d, tools: { ...d.tools, sdkTools: v } }) as AgentDefinition)
+					}
 				>
 					<SelectTrigger className="w-full">
 						<SelectValue />
@@ -283,7 +287,10 @@ function StrategiesSection({
 						available={schema.contextStepNames}
 						selected={def.strategies.contextPipeline}
 						onChange={(contextPipeline) =>
-							setDef((d) => ({ ...d, strategies: { ...d.strategies, contextPipeline } }))
+							setDef(
+								(d) =>
+									({ ...d, strategies: { ...d.strategies, contextPipeline } }) as AgentDefinition,
+							)
 						}
 					/>
 				) : (
@@ -296,7 +303,13 @@ function StrategiesSection({
 					<Select
 						value={def.strategies.taskPromptBuilder}
 						onValueChange={(v) =>
-							setDef((d) => ({ ...d, strategies: { ...d.strategies, taskPromptBuilder: v } }))
+							setDef(
+								(d) =>
+									({
+										...d,
+										strategies: { ...d.strategies, taskPromptBuilder: v },
+									}) as AgentDefinition,
+							)
 						}
 					>
 						<SelectTrigger className="w-full">
@@ -316,7 +329,10 @@ function StrategiesSection({
 					<Select
 						value={def.strategies.gadgetBuilder}
 						onValueChange={(v) =>
-							setDef((d) => ({ ...d, strategies: { ...d.strategies, gadgetBuilder: v } }))
+							setDef(
+								(d) =>
+									({ ...d, strategies: { ...d.strategies, gadgetBuilder: v } }) as AgentDefinition,
+							)
 						}
 					>
 						<SelectTrigger className="w-full">
@@ -468,7 +484,9 @@ function IntegrationsSection({
 					available={integrationOptions}
 					selected={def.integrations.required}
 					onChange={(required) =>
-						setDef((d) => ({ ...d, integrations: { ...d.integrations, required } }))
+						setDef(
+							(d) => ({ ...d, integrations: { ...d.integrations, required } }) as AgentDefinition,
+						)
 					}
 				/>
 			</div>
@@ -478,7 +496,9 @@ function IntegrationsSection({
 					available={integrationOptions}
 					selected={def.integrations.optional}
 					onChange={(optional) =>
-						setDef((d) => ({ ...d, integrations: { ...d.integrations, optional } }))
+						setDef(
+							(d) => ({ ...d, integrations: { ...d.integrations, optional } }) as AgentDefinition,
+						)
 					}
 				/>
 			</div>
@@ -508,7 +528,7 @@ const EMPTY_DEFINITION: AgentDefinition = {
 	backend: { enableStopHooks: false, needsGitHubToken: false },
 	compaction: 'default',
 	hint: '',
-	trailingMessage: null,
+	trailingMessage: undefined,
 	integrations: { required: ['pm'], optional: [] },
 };
 
@@ -659,7 +679,9 @@ export function AgentDefinitionFormDialog({
 									<Label>Compaction Strategy</Label>
 									<Select
 										value={def.compaction}
-										onValueChange={(v) => setDef((d) => ({ ...d, compaction: v }))}
+										onValueChange={(v) =>
+											setDef((d) => ({ ...d, compaction: v }) as AgentDefinition)
+										}
 									>
 										<SelectTrigger className="w-full">
 											<SelectValue />
