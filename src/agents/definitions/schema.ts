@@ -42,13 +42,23 @@ const CapabilitiesSchema = z.object({
 	canAccessEmail: z.boolean().optional(),
 });
 
+export const TOOL_SET_NAMES = [
+	'pm',
+	'pm_checklist',
+	'session',
+	'github_review',
+	'github_ci',
+	'email',
+	'all',
+] as const;
+
+export const SDK_TOOLS_NAMES = ['all', 'readOnly'] as const;
+
 const ToolsSchema = z.object({
 	/** Named tool set references resolved via TOOL_SET_REGISTRY */
-	sets: z.array(
-		z.enum(['pm', 'pm_checklist', 'session', 'github_review', 'github_ci', 'email', 'all']),
-	),
+	sets: z.array(z.enum(TOOL_SET_NAMES)),
 	/** SDK tools preset: "all" or "readOnly" */
-	sdkTools: z.enum(['all', 'readOnly']),
+	sdkTools: z.enum(SDK_TOOLS_NAMES),
 });
 
 const GadgetBuilderOptionsSchema = z
@@ -57,27 +67,33 @@ const GadgetBuilderOptionsSchema = z
 	})
 	.optional();
 
+export const CONTEXT_STEP_NAMES = [
+	'directoryListing',
+	'contextFiles',
+	'squint',
+	'workItem',
+	'prContext',
+	'prConversation',
+	'prefetchedEmails',
+] as const;
+
+export const TASK_PROMPT_BUILDER_NAMES = [
+	'workItem',
+	'commentResponse',
+	'review',
+	'ci',
+	'prCommentResponse',
+	'emailJoke',
+] as const;
+
+export const GADGET_BUILDER_NAMES = ['workItem', 'review', 'prAgent', 'emailJoke'] as const;
+
+export const COMPACTION_NAMES = ['implementation', 'default'] as const;
+
 const StrategiesSchema = z.object({
-	contextPipeline: z.array(
-		z.enum([
-			'directoryListing',
-			'contextFiles',
-			'squint',
-			'workItem',
-			'prContext',
-			'prConversation',
-			'prefetchedEmails',
-		]),
-	),
-	taskPromptBuilder: z.enum([
-		'workItem',
-		'commentResponse',
-		'review',
-		'ci',
-		'prCommentResponse',
-		'emailJoke',
-	]),
-	gadgetBuilder: z.enum(['workItem', 'review', 'prAgent', 'emailJoke']),
+	contextPipeline: z.array(z.enum(CONTEXT_STEP_NAMES)),
+	taskPromptBuilder: z.enum(TASK_PROMPT_BUILDER_NAMES),
+	gadgetBuilder: z.enum(GADGET_BUILDER_NAMES),
 	gadgetBuilderOptions: GadgetBuilderOptionsSchema,
 });
 
@@ -106,11 +122,17 @@ export const AgentDefinitionSchema = z.object({
 	tools: ToolsSchema,
 	strategies: StrategiesSchema,
 	backend: BackendSchema,
-	compaction: z.enum(['implementation', 'default']),
+	compaction: z.enum(COMPACTION_NAMES),
 	hint: z.string(),
 	trailingMessage: TrailingMessageSchema,
 	integrations: IntegrationsSchema,
 });
+
+/**
+ * Partial update schema for agent definitions.
+ * Allows updating individual top-level fields without requiring the full definition.
+ */
+export const DefinitionPatchSchema = AgentDefinitionSchema.partial();
 
 export type AgentDefinition = z.infer<typeof AgentDefinitionSchema>;
 

@@ -1,4 +1,5 @@
 import { agentConfigsRouter } from './routers/agentConfigs.js';
+import { agentDefinitionsRouter } from './routers/agentDefinitions.js';
 import { authRouter } from './routers/auth.js';
 import { credentialsRouter } from './routers/credentials.js';
 import { defaultsRouter } from './routers/defaults.js';
@@ -19,6 +20,7 @@ export const appRouter = router({
 	defaults: defaultsRouter,
 	credentials: credentialsRouter,
 	agentConfigs: agentConfigsRouter,
+	agentDefinitions: agentDefinitionsRouter,
 	prompts: promptsRouter,
 	webhooks: webhooksRouter,
 	webhookLogs: webhookLogsRouter,
