@@ -93,6 +93,10 @@ export const agentConfigsRouter = router({
 			if (!config) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
+			// Global config (no org, no project) requires superadmin
+			if (!config.orgId && !config.projectId && ctx.user.role !== 'superadmin') {
+				throw new TRPCError({ code: 'FORBIDDEN', message: 'Superadmin access required' });
+			}
 			// Check org-scoped configs belong to user's org
 			if (config.orgId && config.orgId !== ctx.effectiveOrgId) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
@@ -117,6 +121,10 @@ export const agentConfigsRouter = router({
 				.where(eq(agentConfigs.id, input.id));
 			if (!config) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
+			}
+			// Global config (no org, no project) requires superadmin
+			if (!config.orgId && !config.projectId && ctx.user.role !== 'superadmin') {
+				throw new TRPCError({ code: 'FORBIDDEN', message: 'Superadmin access required' });
 			}
 			if (config.orgId && config.orgId !== ctx.effectiveOrgId) {
 				throw new TRPCError({ code: 'NOT_FOUND' });

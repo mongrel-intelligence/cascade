@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
-import { createMockUser } from '../../../helpers/factories.js';
+import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
 
 // --- Mock dependencies ---
 
@@ -61,7 +61,7 @@ function createCaller(ctx: TRPCContext) {
 	return webhooksRouter.createCaller(ctx);
 }
 
-const mockUser = createMockUser();
+const mockUser = createMockSuperAdmin();
 
 const mockProject = {
 	id: 'my-project',
@@ -196,6 +196,14 @@ describe('webhooksRouter', () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.list({ projectId: 'my-project' })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
+			});
+		});
+
+		it('throws FORBIDDEN for admin role (not superadmin)', async () => {
+			const adminUser = createMockUser({ role: 'admin' });
+			const caller = createCaller({ user: adminUser, effectiveOrgId: adminUser.orgId });
+			await expect(caller.list({ projectId: 'my-project' })).rejects.toMatchObject({
+				code: 'FORBIDDEN',
 			});
 		});
 

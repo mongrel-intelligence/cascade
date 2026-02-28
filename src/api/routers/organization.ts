@@ -4,7 +4,7 @@ import {
 	listAllOrganizations,
 	updateOrganization,
 } from '../../db/repositories/settingsRepository.js';
-import { adminProcedure, protectedProcedure, router } from '../trpc.js';
+import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
 
 export const organizationRouter = router({
 	get: protectedProcedure.query(async ({ ctx }) => {
@@ -17,7 +17,7 @@ export const organizationRouter = router({
 			await updateOrganization(ctx.effectiveOrgId, { name: input.name });
 		}),
 
-	list: adminProcedure.query(async () => {
+	list: superAdminProcedure.query(async () => {
 		return listAllOrganizations();
 	}),
 });

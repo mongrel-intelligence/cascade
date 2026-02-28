@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
-import { createMockUser } from '../../../helpers/factories.js';
+import { createMockSuperAdmin } from '../../../helpers/factories.js';
 
 // Mock repository functions
 const mockListWebhookLogs = vi.fn();
@@ -20,7 +20,7 @@ function createCaller(ctx: TRPCContext) {
 	return webhookLogsRouter.createCaller(ctx);
 }
 
-const mockUser = createMockUser();
+const mockUser = createMockSuperAdmin();
 
 const LOG_UUID = 'aaaaaaaa-1111-2222-3333-444444444444';
 

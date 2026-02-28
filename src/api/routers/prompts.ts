@@ -15,7 +15,7 @@ import {
 	loadPartials,
 	upsertPartial,
 } from '../../db/repositories/partialsRepository.js';
-import { protectedProcedure, router } from '../trpc.js';
+import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
 
 export const promptsRouter = router({
 	// ========================================================================
@@ -138,7 +138,7 @@ export const promptsRouter = router({
 			}
 		}),
 
-	upsertPartial: protectedProcedure
+	upsertPartial: superAdminProcedure
 		.input(
 			z.object({
 				name: z.string().min(1),
@@ -161,7 +161,7 @@ export const promptsRouter = router({
 			return upsertPartial({ name: input.name, content: input.content });
 		}),
 
-	deletePartial: protectedProcedure
+	deletePartial: superAdminProcedure
 		.input(z.object({ id: z.number() }))
 		.mutation(async ({ input }) => {
 			await deletePartial(input.id);
