@@ -1,0 +1,39 @@
+/**
+ * Seed script: reads all 10 YAML agent definition files and upserts them into
+ * the `agent_definitions` table with `isBuiltin: true`.
+ *
+ * This script is idempotent — running it multiple times produces the same result.
+ *
+ * Usage:
+ *   npx tsx src/db/seeds/seedAgentDefinitions.ts
+ */
+
+import { getKnownAgentTypes, loadAgentDefinition } from '../../agents/definitions/loader.js';
+import { upsertAgentDefinition } from '../repositories/agentDefinitionsRepository.js';
+
+export async function seedAgentDefinitions(): Promise<void> {
+	const agentTypes = getKnownAgentTypes();
+
+	console.log(`Seeding ${agentTypes.length} agent definitions...`);
+
+	for (const agentType of agentTypes) {
+		const definition = loadAgentDefinition(agentType);
+		await upsertAgentDefinition(agentType, definition, /* isBuiltin */ true);
+		console.log(`  ✓ ${agentType}`);
+	}
+
+	console.log('Done.');
+}
+
+// Allow running directly
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'))) {
+	import('../../db/client.js').then(({ closeDb }) => {
+		seedAgentDefinitions()
+			.then(() => closeDb())
+			.then(() => process.exit(0))
+			.catch((err) => {
+				console.error(err);
+				process.exit(1);
+			});
+	});
+}
