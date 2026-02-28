@@ -4,6 +4,10 @@ export {
 	loadAllAgentDefinitions,
 	getKnownAgentTypes,
 	clearDefinitionCache,
+	resolveAgentDefinition,
+	resolveAllAgentDefinitions,
+	resolveKnownAgentTypes,
+	invalidateDefinitionCache,
 } from './loader.js';
 export {
 	TOOL_SET_REGISTRY,
