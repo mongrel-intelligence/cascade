@@ -66,7 +66,7 @@ function CredentialSelector({
 				)}
 			</div>
 			{verifiedLogin && (
-				<div className="flex items-center gap-1.5 text-sm text-green-600">
+				<div className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
 					<CheckCircle className="h-4 w-4" />
 					Resolved: <span className="font-medium">{verifiedLogin}</span>
 				</div>

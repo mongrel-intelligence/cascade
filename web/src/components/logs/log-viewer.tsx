@@ -55,7 +55,7 @@ export function LogViewer({ runId }: LogViewerProps) {
 			</div>
 			<div className="overflow-hidden rounded-lg border border-border">
 				{logContent ? (
-					<pre className="max-h-[600px] overflow-auto bg-black/90 p-4 font-mono text-xs text-gray-200 whitespace-pre-wrap">
+					<pre className="max-h-[600px] overflow-auto bg-black/90 p-4 font-mono text-xs text-neutral-300 whitespace-pre-wrap">
 						{logContent}
 					</pre>
 				) : (
