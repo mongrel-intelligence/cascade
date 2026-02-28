@@ -1,4 +1,4 @@
-import type { ContextInjection } from '../../backends/types.js';
+import type { ContextInjection } from '../contracts/index.js';
 import type { AgentCapabilities } from '../shared/capabilities.js';
 import {
 	buildEmailJokeGadgets,

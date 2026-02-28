@@ -5,7 +5,6 @@ import {
 	type createLogger,
 } from 'llmist';
 
-import type { ProgressMonitor } from '../../backends/progressMonitor.js';
 import { getCompactionConfig } from '../../config/compactionConfig.js';
 import { getIterationTrailingMessage } from '../../config/hintConfig.js';
 import { getRateLimitForModel } from '../../config/rateLimits.js';
@@ -13,6 +12,7 @@ import { getRetryConfig } from '../../config/retryConfig.js';
 import { initSessionState } from '../../gadgets/sessionState.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
 import { resolveSquintDbPath } from '../../utils/squintDb.js';
+import type { IProgressMonitor } from '../contracts/index.js';
 import { type AccumulatedLlmCall, createObserverHooks } from '../utils/hooks.js';
 import type { TrackingContext } from '../utils/tracking.js';
 
@@ -31,7 +31,7 @@ export interface CreateBuilderOptions {
 	repoDir: string;
 	gadgets: Parameters<typeof AgentBuilder.prototype.withGadgets>;
 	/** Optional progress monitor for time-based progress reporting */
-	progressMonitor?: ProgressMonitor;
+	progressMonitor?: IProgressMonitor;
 	/** Set to true to skip calling initSessionState (review agent doesn't use it) */
 	skipSessionState?: boolean;
 	/** Remaining card budget in USD — passed to llmist's withBudget() for in-flight enforcement */
