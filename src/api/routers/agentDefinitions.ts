@@ -86,8 +86,14 @@ export const agentDefinitionsRouter = router({
 					isBuiltin,
 				};
 			} catch (err) {
+				// If it's already a TRPCError, re-throw it (preserves proper error codes)
+				if (err instanceof TRPCError) {
+					throw err;
+				}
 				// Log the original error so infrastructure issues are visible
 				console.error(`Failed to resolve agent definition: ${input.agentType}`, err);
+				// Only wrap as NOT_FOUND if it's genuinely not found
+				// Other errors (DB down, etc.) should be INTERNAL_SERVER_ERROR
 				throw new TRPCError({
 					code: 'NOT_FOUND',
 					message: `Agent definition not found: ${input.agentType}`,
@@ -108,7 +114,8 @@ export const agentDefinitionsRouter = router({
 		)
 		.mutation(async ({ input }) => {
 			// Validate agentType doesn't already exist in DB
-			const existing = await getAgentDefinition(input.agentType).catch(() => null);
+			// getAgentDefinition returns null for not-found, throws for DB errors
+			const existing = await getAgentDefinition(input.agentType);
 			if (existing !== null) {
 				throw new TRPCError({
 					code: 'CONFLICT',
@@ -161,7 +168,9 @@ export const agentDefinitionsRouter = router({
 	delete: superAdminProcedure
 		.input(z.object({ agentType: z.string().min(1) }))
 		.mutation(async ({ input }) => {
-			const dbRow = await getAgentDefinition(input.agentType).catch(() => null);
+			// Verify the definition exists in DB
+			// getAgentDefinition returns null for not-found, throws for DB errors
+			const dbRow = await getAgentDefinition(input.agentType);
 			if (dbRow === null) {
 				throw new TRPCError({
 					code: 'NOT_FOUND',
