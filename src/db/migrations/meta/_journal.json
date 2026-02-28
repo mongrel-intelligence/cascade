@@ -155,6 +155,13 @@
 			"when": 1756000000000,
 			"tag": "0021_superadmin_role",
 			"breakpoints": false
+		},
+		{
+			"idx": 22,
+			"version": "7",
+			"when": 1757000000000,
+			"tag": "0022_agent_definitions",
+			"breakpoints": false
 		}
 	]
 }
