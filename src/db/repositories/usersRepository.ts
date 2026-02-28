@@ -7,7 +7,7 @@ export interface DashboardUser {
 	orgId: string;
 	email: string;
 	name: string;
-	role: string;
+	role: 'member' | 'admin' | 'superadmin';
 }
 
 export async function getUserByEmail(email: string) {
@@ -28,7 +28,8 @@ export async function getUserById(id: string): Promise<DashboardUser | null> {
 		})
 		.from(users)
 		.where(eq(users.id, id));
-	return row ?? null;
+	if (!row) return null;
+	return row as DashboardUser;
 }
 
 export async function createSession(

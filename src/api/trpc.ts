@@ -5,7 +5,7 @@ export interface TRPCUser {
 	orgId: string;
 	email: string;
 	name: string;
-	role: string;
+	role: 'member' | 'admin' | 'superadmin';
 }
 
 export interface TRPCContext {
