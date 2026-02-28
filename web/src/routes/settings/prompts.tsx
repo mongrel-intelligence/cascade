@@ -81,18 +81,19 @@ function PromptsPage() {
 
 function TemplatesTab({ onEdit }: { onEdit: (agentType: string) => void }) {
 	const agentTypesQuery = useQuery(trpc.prompts.agentTypes.queryOptions());
-	const configsQuery = useQuery(trpc.agentConfigs.list.queryOptions());
+	const definitionsQuery = useQuery(trpc.agentDefinitions.list.queryOptions());
 
 	if (agentTypesQuery.isLoading) {
 		return <div className="py-4 text-muted-foreground">Loading...</div>;
 	}
 
 	const agentTypes = agentTypesQuery.data ?? [];
-	const configs = (configsQuery.data ?? []) as Array<{
-		agentType: string;
-		prompt: string | null;
-	}>;
-	const customPrompts = new Set(configs.filter((c) => c.prompt).map((c) => c.agentType));
+	const definitions = definitionsQuery.data ?? [];
+	const customPrompts = new Set(
+		definitions
+			.filter((d) => d.definition.prompts?.systemPrompt || d.definition.prompts?.taskPrompt)
+			.map((d) => d.agentType),
+	);
 
 	return (
 		<div className="overflow-hidden rounded-lg border border-border">

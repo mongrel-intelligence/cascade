@@ -9,7 +9,6 @@ import {
 } from '@/components/ui/table.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
 import { Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { AgentConfigFormDialog } from './agent-config-form-dialog.js';
@@ -22,7 +21,6 @@ interface AgentConfig {
 	model: string | null;
 	maxIterations: number | null;
 	agentBackend: string | null;
-	prompt: string | null;
 }
 
 export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
@@ -46,7 +44,6 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 							<TableHead>Model</TableHead>
 							<TableHead>Max Iterations</TableHead>
 							<TableHead>Backend</TableHead>
-							<TableHead>Prompt</TableHead>
 							<TableHead>Scope</TableHead>
 							<TableHead className="w-20" />
 						</TableRow>
@@ -54,7 +51,7 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 					<TableBody>
 						{configs.length === 0 && (
 							<TableRow>
-								<TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+								<TableCell colSpan={6} className="text-center text-muted-foreground py-8">
 									No agent configs yet
 								</TableCell>
 							</TableRow>
@@ -65,15 +62,6 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 								<TableCell>{config.model ?? '-'}</TableCell>
 								<TableCell>{config.maxIterations ?? '-'}</TableCell>
 								<TableCell>{config.agentBackend ?? '-'}</TableCell>
-								<TableCell>
-									{config.prompt ? (
-										<Link to="/settings/prompts" className="text-primary hover:underline text-sm">
-											custom
-										</Link>
-									) : (
-										'-'
-									)}
-								</TableCell>
 								<TableCell>
 									{config.orgId ? (
 										<Badge variant="secondary">Org</Badge>
