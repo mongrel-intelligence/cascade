@@ -28,7 +28,7 @@ export abstract class DashboardCommand extends Command {
 	static override baseFlags = {
 		json: Flags.boolean({ description: 'Output as JSON', default: false }),
 		server: Flags.string({ description: 'Override server URL' }),
-		org: Flags.string({ description: 'Override organization context (admin only)' }),
+		org: Flags.string({ description: 'Override organization context (admin/superadmin only)' }),
 	};
 
 	private _client: DashboardClient | undefined;

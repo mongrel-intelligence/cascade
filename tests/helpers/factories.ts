@@ -77,6 +77,20 @@ export function createMockUser(overrides?: Partial<TRPCUser>): TRPCUser {
 }
 
 /**
+ * Creates a mock superadmin tRPC user.
+ */
+export function createMockSuperAdmin(overrides?: Partial<TRPCUser>): TRPCUser {
+	return {
+		id: 'superadmin-1',
+		orgId: 'org-1',
+		email: 'admin@cascade.dev',
+		name: 'Super Admin',
+		role: 'superadmin',
+		...overrides,
+	};
+}
+
+/**
  * Creates a mock tRPC context with an authenticated user.
  */
 export function createMockContext(userOverrides?: Partial<TRPCUser>): TRPCContext {

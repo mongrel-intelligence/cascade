@@ -11,7 +11,7 @@ export const authRouter = router({
 			orgId: ctx.user.orgId,
 			effectiveOrgId: ctx.effectiveOrgId,
 		};
-		if (ctx.user.role === 'admin') {
+		if (ctx.user.role === 'admin' || ctx.user.role === 'superadmin') {
 			const orgs = await listAllOrganizations();
 			return { ...base, availableOrgs: orgs };
 		}

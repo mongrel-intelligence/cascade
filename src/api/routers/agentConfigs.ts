@@ -12,8 +12,19 @@ import {
 	updateAgentConfig,
 } from '../../db/repositories/settingsRepository.js';
 import { agentConfigs } from '../../db/schema/index.js';
+import type { TRPCContext } from '../trpc.js';
 import { protectedProcedure, publicProcedure, router } from '../trpc.js';
 import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
+
+/** Throws FORBIDDEN when a global config (no org, no project) is modified by a non-superadmin. */
+function assertCanModifyConfig(
+	config: { orgId: string | null; projectId: string | null },
+	ctx: { user: TRPCContext['user'] & object },
+) {
+	if (!config.orgId && !config.projectId && ctx.user.role !== 'superadmin') {
+		throw new TRPCError({ code: 'FORBIDDEN', message: 'Superadmin access required' });
+	}
+}
 
 async function validatePromptIfPresent(prompt: string | null | undefined) {
 	if (!prompt) return;
@@ -43,6 +54,9 @@ export const agentConfigsRouter = router({
 			return listAgentConfigs({ orgId: ctx.effectiveOrgId });
 		}),
 
+	// No superadmin check needed: the `input.orgId ?? ctx.effectiveOrgId` fallback
+	// guarantees an orgId is always set, so a truly global config (no org, no project)
+	// cannot be created through this endpoint.
 	create: protectedProcedure
 		.input(
 			z.object({
@@ -93,6 +107,7 @@ export const agentConfigsRouter = router({
 			if (!config) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
+			assertCanModifyConfig(config, ctx);
 			// Check org-scoped configs belong to user's org
 			if (config.orgId && config.orgId !== ctx.effectiveOrgId) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
@@ -118,6 +133,7 @@ export const agentConfigsRouter = router({
 			if (!config) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
+			assertCanModifyConfig(config, ctx);
 			if (config.orgId && config.orgId !== ctx.effectiveOrgId) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
-import { createMockUser } from '../../../helpers/factories.js';
+import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
 
 // Mock prompt functions
 const mockGetValidAgentTypes = vi.fn();
@@ -40,7 +40,8 @@ function createCaller(ctx: TRPCContext) {
 	return promptsRouter.createCaller(ctx);
 }
 
-const mockUser = createMockUser();
+const mockUser = createMockSuperAdmin();
+const mockAdminUser = createMockUser({ role: 'admin' });
 
 describe('promptsRouter', () => {
 	describe('agentTypes', () => {
@@ -241,6 +242,13 @@ describe('promptsRouter', () => {
 				caller.upsertPartial({ name: 'git', content: '<% broken' }),
 			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 		});
+
+		it('throws FORBIDDEN for admin role (not superadmin)', async () => {
+			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
+			await expect(caller.upsertPartial({ name: 'git', content: 'content' })).rejects.toMatchObject(
+				{ code: 'FORBIDDEN' },
+			);
+		});
 	});
 
 	describe('deletePartial', () => {
@@ -257,6 +265,13 @@ describe('promptsRouter', () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.deletePartial({ id: 1 })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
+			});
+		});
+
+		it('throws FORBIDDEN for admin role (not superadmin)', async () => {
+			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
+			await expect(caller.deletePartial({ id: 1 })).rejects.toMatchObject({
+				code: 'FORBIDDEN',
 			});
 		});
 	});

@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
-import { createMockUser } from '../../../helpers/factories.js';
+import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
 
 // Mock repository functions
 const mockListWebhookLogs = vi.fn();
@@ -20,7 +20,7 @@ function createCaller(ctx: TRPCContext) {
 	return webhookLogsRouter.createCaller(ctx);
 }
 
-const mockUser = createMockUser();
+const mockUser = createMockSuperAdmin();
 
 const LOG_UUID = 'aaaaaaaa-1111-2222-3333-444444444444';
 
@@ -57,6 +57,14 @@ describe('webhookLogsRouter', () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.list({ limit: 50, offset: 0 })).rejects.toThrow(TRPCError);
 		});
+
+		it('throws FORBIDDEN for admin role (not superadmin)', async () => {
+			const adminUser = createMockUser({ role: 'admin' });
+			const caller = createCaller({ user: adminUser, effectiveOrgId: adminUser.orgId });
+			await expect(caller.list({ limit: 50, offset: 0 })).rejects.toMatchObject({
+				code: 'FORBIDDEN',
+			});
+		});
 	});
 
 	describe('getById', () => {
@@ -82,6 +90,14 @@ describe('webhookLogsRouter', () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.getById({ id: LOG_UUID })).rejects.toThrow(TRPCError);
 		});
+
+		it('throws FORBIDDEN for admin role (not superadmin)', async () => {
+			const adminUser = createMockUser({ role: 'admin' });
+			const caller = createCaller({ user: adminUser, effectiveOrgId: adminUser.orgId });
+			await expect(caller.getById({ id: LOG_UUID })).rejects.toMatchObject({
+				code: 'FORBIDDEN',
+			});
+		});
 	});
 
 	describe('getStats', () => {
@@ -101,6 +117,14 @@ describe('webhookLogsRouter', () => {
 		it('throws UNAUTHORIZED when no user', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.getStats()).rejects.toThrow(TRPCError);
+		});
+
+		it('throws FORBIDDEN for admin role (not superadmin)', async () => {
+			const adminUser = createMockUser({ role: 'admin' });
+			const caller = createCaller({ user: adminUser, effectiveOrgId: adminUser.orgId });
+			await expect(caller.getStats()).rejects.toMatchObject({
+				code: 'FORBIDDEN',
+			});
 		});
 	});
 });
