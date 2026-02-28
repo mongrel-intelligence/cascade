@@ -37,6 +37,7 @@ BEGIN
     ELSE
       -- No definition row yet — skip (prompts will be in definition when it's created)
       -- We cannot create a full definition from scratch here without all required fields
+      RAISE NOTICE 'Skipping prompts for agent_type=% (no definition row exists)', r.agent_type;
       NULL;
     END IF;
   END LOOP;

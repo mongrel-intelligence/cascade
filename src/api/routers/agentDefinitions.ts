@@ -277,8 +277,15 @@ export const agentDefinitionsRouter = router({
 			}
 
 			// Build updated prompts section
-			const systemPrompt = input.systemPrompt ?? undefined;
-			const taskPrompt = input.taskPrompt ?? undefined;
+			// Merge with existing prompts: omitting a field preserves it, passing null clears it, passing a string sets it
+			const systemPrompt =
+				input.systemPrompt !== undefined
+					? (input.systemPrompt ?? undefined)
+					: current.prompts?.systemPrompt;
+			const taskPrompt =
+				input.taskPrompt !== undefined
+					? (input.taskPrompt ?? undefined)
+					: current.prompts?.taskPrompt;
 			const prompts =
 				systemPrompt !== undefined || taskPrompt !== undefined
 					? { systemPrompt, taskPrompt }

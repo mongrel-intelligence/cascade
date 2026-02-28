@@ -1,4 +1,5 @@
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../types/index.js';
+import { logger } from '../../utils/logging.js';
 import { resolveAgentDefinition } from '../definitions/loader.js';
 import {
 	type PromptContext,
@@ -66,8 +67,9 @@ export async function resolveModelConfig(options: ResolveModelConfigOptions): Pr
 		const definition = await resolveAgentDefinition(agentType);
 		definitionSystemPrompt = definition.prompts?.systemPrompt;
 		definitionTaskPrompt = definition.prompts?.taskPrompt;
-	} catch {
+	} catch (err) {
 		// Definition not found or DB unavailable — fall through to defaults
+		logger.warn(`Failed to resolve agent definition for ${agentType}:`, err);
 	}
 
 	// Resolution chain: definition prompt → .eta file
