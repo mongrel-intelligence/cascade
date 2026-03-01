@@ -2,7 +2,7 @@
  * Pre-flight integration validation for agents.
  *
  * Validates that all required integrations are configured before an agent runs.
- * Integrations are derived from agent capabilities - no separate declaration needed.
+ * Integrations can be explicitly declared in the agent definition, or derived from capabilities.
  */
 
 import { deriveIntegrations } from '../../agents/capabilities/index.js';
@@ -34,10 +34,23 @@ export interface DerivedIntegrations {
 }
 
 /**
- * Get integration requirements for an agent, derived from capabilities.
+ * Get integration requirements for an agent.
+ *
+ * Uses explicit integrations from the definition if available,
+ * otherwise falls back to deriving from capabilities.
  */
 export async function getIntegrationRequirements(agentType: string): Promise<DerivedIntegrations> {
 	const def = await resolveAgentDefinition(agentType);
+
+	// Prefer explicit integrations if defined
+	if (def.integrations) {
+		return {
+			required: def.integrations.required ?? [],
+			optional: def.integrations.optional ?? [],
+		};
+	}
+
+	// Fall back to deriving from capabilities (backward compatibility)
 	return deriveIntegrations(def.capabilities.required, def.capabilities.optional);
 }
 

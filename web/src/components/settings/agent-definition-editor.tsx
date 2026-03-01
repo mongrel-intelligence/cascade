@@ -803,6 +803,7 @@ const EMPTY_DEFINITION: AgentDefinition = {
 		required: ['fs:read', 'session:ctrl'],
 		optional: [],
 	},
+	triggers: [],
 	strategies: {
 		contextPipeline: [],
 	},

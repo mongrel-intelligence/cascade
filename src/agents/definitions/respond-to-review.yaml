@@ -4,6 +4,11 @@ identity:
   roleHint: Addresses code review feedback by making requested changes
   initialMessage: "**\U0001F527 Addressing review feedback** — Making the requested changes from the code review..."
 
+# Explicit integration requirements.
+integrations:
+  required: [scm]
+  optional: [pm]
+
 # Can edit files to address review feedback, interact with PR comments.
 # Optional PM for status updates if configured.
 capabilities:
@@ -17,6 +22,14 @@ capabilities:
   optional:
     - pm:read
     - pm:write
+
+# Supported triggers for this agent
+triggers:
+  - event: scm:pr-review-submitted
+    label: PR Review Submitted
+    description: Trigger when a review with changes requested is submitted
+    defaultEnabled: true
+    providers: [github]
 
 strategies:
   contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]

@@ -67,6 +67,7 @@ function createMockDefinition(overrides?: Partial<AgentDefinition>): AgentDefini
 			required: ['fs:read', 'fs:write', 'shell:exec', 'session:ctrl', 'scm:pr'],
 			optional: [],
 		},
+		triggers: [],
 		strategies: {
 			contextPipeline: ['directoryListing'],
 		},

@@ -4,6 +4,11 @@ identity:
   roleHint: Analyzes failed CI checks and works on a fix
   initialMessage: "**\U0001F527 Fixing CI failures** — Analyzing the failed checks and working on a fix..."
 
+# Explicit integration requirements.
+integrations:
+  required: [scm]
+  optional: [pm]
+
 # Can edit files and read SCM, optional PM for status updates.
 capabilities:
   required:
@@ -17,6 +22,14 @@ capabilities:
     - pm:read
     - pm:write
     - pm:checklist
+
+# Supported triggers for this agent
+triggers:
+  - event: scm:check-suite-failure
+    label: Check Suite Failure
+    description: Trigger when CI checks fail
+    defaultEnabled: true
+    providers: [github]
 
 strategies:
   contextPipeline: [prContext, directoryListing, contextFiles, squint, workItem]

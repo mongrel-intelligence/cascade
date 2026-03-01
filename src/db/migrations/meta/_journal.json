@@ -169,6 +169,13 @@
 			"when": 1758000000000,
 			"tag": "0023_move_prompts_to_definitions",
 			"breakpoints": false
+		},
+		{
+			"idx": 24,
+			"version": "7",
+			"when": 1759000000000,
+			"tag": "0024_agent_trigger_configs",
+			"breakpoints": false
 		}
 	]
 }
