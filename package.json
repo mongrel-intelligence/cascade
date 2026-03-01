@@ -7,8 +7,9 @@
 	"scripts": {
 		"dev": "node --env-file=.env --import tsx/esm --watch src/index.ts",
 		"dev:web": "cd web && npx vite",
-		"build": "tsc && npm run build:copy-yaml && npm run build:copy-task-templates",
+		"build": "tsc && npm run build:copy-yaml && npm run build:copy-system-prompts && npm run build:copy-task-templates",
 		"build:copy-yaml": "mkdir -p dist/agents/definitions && cp src/agents/definitions/*.yaml dist/agents/definitions/",
+		"build:copy-system-prompts": "mkdir -p dist/agents/prompts && cp -r src/agents/prompts/templates dist/agents/prompts/",
 		"build:copy-task-templates": "mkdir -p dist/agents/prompts/task-templates && cp src/agents/prompts/task-templates/*.eta dist/agents/prompts/task-templates/",
 		"build:web": "cd web && npm run build",
 		"start": "node dist/index.js",

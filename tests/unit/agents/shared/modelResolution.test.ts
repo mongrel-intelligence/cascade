@@ -1,5 +1,34 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AgentDefinition } from '../../../../src/agents/definitions/schema.js';
 import type { CascadeConfig, ProjectConfig } from '../../../../src/types/index.js';
+
+/**
+ * Creates a valid mock AgentDefinition with optional prompt overrides.
+ * Uses minimal valid values for all required fields.
+ */
+function mockAgentDefinition(prompts?: AgentDefinition['prompts']): AgentDefinition {
+	return {
+		identity: { emoji: '🤖', label: 'Test', roleHint: 'test', initialMessage: 'Hi' },
+		capabilities: {
+			canEditFiles: false,
+			canCreatePR: false,
+			canUpdateChecklists: false,
+			isReadOnly: true,
+		},
+		tools: { sets: [], sdkTools: 'readOnly' },
+		strategies: {
+			contextPipeline: [],
+			taskPromptBuilder: 'workItem',
+			gadgetBuilder: 'workItem',
+		},
+		backend: { enableStopHooks: false, needsGitHubToken: false },
+		compaction: 'default',
+		hint: 'test',
+		trailingMessage: undefined,
+		integrations: { required: [], optional: [] },
+		prompts,
+	};
+}
 
 // Mock readContextFiles
 vi.mock('../../../../src/agents/utils/setup.js', () => ({
@@ -57,7 +86,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
 	// Reset to default (no custom prompt)
-	vi.mocked(resolveAgentDefinition).mockResolvedValue({ prompts: undefined } as any);
+	vi.mocked(resolveAgentDefinition).mockResolvedValue(mockAgentDefinition(undefined));
 });
 
 function makeProject(overrides: Partial<ProjectConfig> = {}): ProjectConfig {
@@ -94,7 +123,7 @@ function makeConfig(overrides: Partial<CascadeConfig['defaults']> = {}): Cascade
 describe('resolveModelConfig', () => {
 	describe('prompt resolution chain', () => {
 		it('uses .eta file when no custom prompts in definition', async () => {
-			vi.mocked(resolveAgentDefinition).mockResolvedValue({ prompts: undefined } as any);
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(mockAgentDefinition(undefined));
 
 			const result = await resolveModelConfig({
 				agentType: 'splitting',
@@ -108,9 +137,11 @@ describe('resolveModelConfig', () => {
 		});
 
 		it('uses definition systemPrompt when configured', async () => {
-			vi.mocked(resolveAgentDefinition).mockResolvedValue({
-				prompts: { systemPrompt: 'You are a custom splitting agent for <%= it.baseBranch %>.' },
-			} as any);
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(
+				mockAgentDefinition({
+					systemPrompt: 'You are a custom splitting agent for <%= it.baseBranch %>.',
+				}),
+			);
 
 			const result = await resolveModelConfig({
 				agentType: 'splitting',
@@ -124,9 +155,9 @@ describe('resolveModelConfig', () => {
 		});
 
 		it('falls back to .eta when definition has no systemPrompt', async () => {
-			vi.mocked(resolveAgentDefinition).mockResolvedValue({
-				prompts: { taskPrompt: 'Only task prompt configured.' },
-			} as any);
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(
+				mockAgentDefinition({ taskPrompt: 'Only task prompt configured.' }),
+			);
 
 			const result = await resolveModelConfig({
 				agentType: 'splitting',
@@ -154,9 +185,9 @@ describe('resolveModelConfig', () => {
 		});
 
 		it('resolves includes in custom prompts via dbPartials', async () => {
-			vi.mocked(resolveAgentDefinition).mockResolvedValue({
-				prompts: { systemPrompt: 'Custom: <%~ include("partials/custom") %>' },
-			} as any);
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(
+				mockAgentDefinition({ systemPrompt: 'Custom: <%~ include("partials/custom") %>' }),
+			);
 			const dbPartials = new Map([['custom', 'Injected partial content']]);
 
 			const result = await resolveModelConfig({
@@ -256,9 +287,9 @@ describe('resolveModelConfig', () => {
 		});
 
 		it('renders task prompt from definition', async () => {
-			vi.mocked(resolveAgentDefinition).mockResolvedValue({
-				prompts: { taskPrompt: 'Custom task for <%= it.cardId %>.' },
-			} as any);
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(
+				mockAgentDefinition({ taskPrompt: 'Custom task for <%= it.cardId %>.' }),
+			);
 
 			const result = await resolveModelConfig({
 				agentType: 'splitting',
@@ -272,11 +303,11 @@ describe('resolveModelConfig', () => {
 		});
 
 		it('renders task-specific variables from agentInput', async () => {
-			vi.mocked(resolveAgentDefinition).mockResolvedValue({
-				prompts: {
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(
+				mockAgentDefinition({
 					taskPrompt: 'Comment by @<%= it.commentAuthor %>: <%= it.commentText %>',
-				},
-			} as any);
+				}),
+			);
 
 			const result = await resolveModelConfig({
 				agentType: 'respond-to-planning-comment',
@@ -293,12 +324,12 @@ describe('resolveModelConfig', () => {
 		});
 
 		it('renders PR-specific variables from agentInput in task prompt override', async () => {
-			vi.mocked(resolveAgentDefinition).mockResolvedValue({
-				prompts: {
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(
+				mockAgentDefinition({
 					taskPrompt:
 						'PR #<%= it.prNumber %>, file: <%= it.commentPath %>, body: <%= it.commentBody %>',
-				},
-			} as any);
+				}),
+			);
 
 			const result = await resolveModelConfig({
 				agentType: 'respond-to-pr-comment',
@@ -319,9 +350,9 @@ describe('resolveModelConfig', () => {
 		});
 
 		it('returns undefined taskPrompt when definition has no taskPrompt', async () => {
-			vi.mocked(resolveAgentDefinition).mockResolvedValue({
-				prompts: { systemPrompt: 'Only system prompt configured.' },
-			} as any);
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(
+				mockAgentDefinition({ systemPrompt: 'Only system prompt configured.' }),
+			);
 
 			const result = await resolveModelConfig({
 				agentType: 'splitting',
