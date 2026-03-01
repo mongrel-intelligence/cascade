@@ -205,23 +205,70 @@ describe('buildToolGuidance', () => {
 });
 
 describe('buildTaskPrompt', () => {
-	it('returns task prompt without injections', () => {
-		expect(buildTaskPrompt('Do the thing.', [])).toBe('Do the thing.');
+	let fakeRepoDir: string;
+
+	beforeEach(() => {
+		fakeRepoDir = mkdtempSync(join(tmpdir(), 'cascade-test-repo-'));
 	});
 
-	it('appends context injections', () => {
-		const prompt = buildTaskPrompt('Do the thing.', [
-			{
-				toolName: 'ReadWorkItem',
-				params: { workItemId: 'abc' },
-				result: '{"title":"My card"}',
-				description: 'Pre-fetched work item data',
-			},
-		]);
-		expect(prompt).toContain('## Pre-loaded Context');
-		expect(prompt).toContain('### Pre-fetched work item data (ReadWorkItem)');
-		expect(prompt).toContain('"workItemId":"abc"');
-		expect(prompt).toContain('{"title":"My card"}');
+	afterEach(async () => {
+		await rm(fakeRepoDir, { recursive: true, force: true });
+	});
+
+	it('returns task prompt without injections', async () => {
+		const result = await buildTaskPrompt('Do the thing.', [], fakeRepoDir);
+		expect(result.prompt).toBe('Do the thing.');
+		expect(result.hasOffloadedContext).toBe(false);
+	});
+
+	it('appends context injections inline when small', async () => {
+		const result = await buildTaskPrompt(
+			'Do the thing.',
+			[
+				{
+					toolName: 'ReadWorkItem',
+					params: { workItemId: 'abc' },
+					result: '{"title":"My card"}',
+					description: 'Pre-fetched work item data',
+				},
+			],
+			fakeRepoDir,
+		);
+		expect(result.prompt).toContain('## Pre-loaded Context');
+		expect(result.prompt).toContain('### Pre-fetched work item data (ReadWorkItem)');
+		expect(result.prompt).toContain('"workItemId":"abc"');
+		expect(result.prompt).toContain('{"title":"My card"}');
+		expect(result.hasOffloadedContext).toBe(false);
+	});
+
+	it('offloads large context to files and generates instructions', async () => {
+		// Create content larger than 8000 token threshold (~32000 chars)
+		const largeContent = 'X'.repeat(40_000);
+		const result = await buildTaskPrompt(
+			'Review the PR.',
+			[
+				{
+					toolName: 'GetPRDiff',
+					params: { prNumber: 123 },
+					result: largeContent,
+					description: 'PR Diff',
+				},
+			],
+			fakeRepoDir,
+		);
+		// Should not have inline content for the large injection
+		expect(result.prompt).not.toContain('## Pre-loaded Context');
+		expect(result.prompt).not.toContain(largeContent);
+
+		// Should have instructions for reading offloaded files
+		expect(result.prompt).toContain('## Context Files');
+		expect(result.prompt).toContain('.cascade/context/');
+		expect(result.prompt).toContain('Read tool');
+		expect(result.hasOffloadedContext).toBe(true);
+
+		// Verify file was written
+		const contextDir = join(fakeRepoDir, '.cascade/context');
+		expect(existsSync(contextDir)).toBe(true);
 	});
 });
 
