@@ -514,7 +514,6 @@ function SystemPromptPanel({ agentType }: { agentType: string }) {
 	const queryClient = useQueryClient();
 	const [content, setContent] = useState('');
 	const [validationStatus, setValidationStatus] = useState<string | null>(null);
-	const [isDirty, setIsDirty] = useState(false);
 
 	const definitionQuery = useQuery(trpc.agentDefinitions.get.queryOptions({ agentType }));
 	const defaultQuery = useQuery(trpc.prompts.getDefault.queryOptions({ agentType }));
@@ -546,7 +545,6 @@ function SystemPromptPanel({ agentType }: { agentType: string }) {
 			queryClient.invalidateQueries({
 				queryKey: trpc.agentDefinitions.list.queryOptions().queryKey,
 			});
-			setIsDirty(false);
 			setValidationStatus('Saved.');
 		},
 	});
@@ -565,7 +563,6 @@ function SystemPromptPanel({ agentType }: { agentType: string }) {
 			if (defaultQuery.data) {
 				setContent(defaultQuery.data.content);
 			}
-			setIsDirty(false);
 			setValidationStatus('Reset to default.');
 		},
 	});
@@ -584,7 +581,6 @@ function SystemPromptPanel({ agentType }: { agentType: string }) {
 	function loadDefault() {
 		if (defaultQuery.data) {
 			setContent(defaultQuery.data.content);
-			setIsDirty(true);
 			setValidationStatus(null);
 		}
 	}
@@ -624,7 +620,6 @@ function SystemPromptPanel({ agentType }: { agentType: string }) {
 						value={content}
 						onChange={(e) => {
 							setContent(e.target.value);
-							setIsDirty(true);
 							setValidationStatus(null);
 						}}
 						className="w-full h-[500px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-ring"
@@ -741,14 +736,17 @@ function useDefinitionEditor(existing: DefinitionRow | undefined, onClose: () =>
 			try {
 				setDef(JSON.parse(jsonText) as AgentDefinition);
 				setJsonError(null);
-			} catch {
-				// leave form as-is if JSON is invalid
+			} catch (err) {
+				setJsonError((err as Error).message);
+				return; // keep user on JSON tab so they can fix the error
 			}
 		}
 		setActiveTab(tab);
 	};
 
 	const handleSave = () => {
+		if (!isEdit && !agentType.trim()) return;
+
 		let submission = def;
 		if (activeTab === 'json') {
 			try {
@@ -878,7 +876,6 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 						value={agentType}
 						onChange={(e) => setAgentType(e.target.value)}
 						placeholder="e.g. implementation, review, debug"
-						required
 					/>
 				</div>
 			)}
