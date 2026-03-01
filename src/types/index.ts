@@ -34,6 +34,10 @@ export interface AgentInput {
 	triggerCommentText?: string;
 	triggerCommentAuthor?: string;
 
+	// PR comment trigger fields (for respond-to-pr-comment and similar agents)
+	triggerCommentBody?: string;
+	triggerCommentPath?: string;
+
 	// Email-joke agent fields
 	senderEmail?: string;
 	preFoundEmails?: EmailSummary[]; // pre-fetched before agent start to skip if empty

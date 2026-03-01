@@ -1,30 +1,72 @@
 import { describe, expect, it } from 'vitest';
 
-import { renderCustomPrompt, renderTaskPrompt } from '../../../../src/agents/prompts/index.js';
+import {
+	renderCustomPrompt,
+	renderInlineTaskPrompt,
+} from '../../../../src/agents/prompts/index.js';
 import {
 	buildCheckFailurePrompt,
 	buildDebugPrompt,
 } from '../../../../src/agents/shared/taskPrompts.js';
 
 // ============================================================================
-// .eta task prompt template tests (replaces the old TS function tests)
+// Inline task prompt template tests (task prompts are now in YAML definitions)
 // ============================================================================
+
+// Task prompts that were previously in .eta files are now inline in agent definitions.
+// These tests verify renderInlineTaskPrompt works correctly with the new inline format.
+
+// Sample task prompt templates (matching what's in the YAML files)
+const WORK_ITEM_TEMPLATE =
+	'Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.';
+
+const COMMENT_RESPONSE_TEMPLATE = `A user (@<%= it.commentAuthor %>) mentioned you in a comment on work item <%= it.cardId %>.
+
+Their comment:
+---
+<%= it.commentText %>
+---
+
+The work item data (title, description, checklists, attachments, comments) has been pre-loaded above.
+Read the user's comment carefully and classify it: if they ask a question or request clarification, reply with a thorough answer via PostComment (do not modify the plan). If they request plan changes, make surgical, targeted updates. If the comment contains both a question and a change request, do both. Default to plan updates when intent is ambiguous.`;
+
+const REVIEW_TEMPLATE = `Review PR #<%= it.prNumber %>.
+
+Examine the code changes carefully and submit your review using CreatePRReview.`;
+
+const CI_TEMPLATE = `You are on the branch \`<%= it.prBranch %>\` for PR #<%= it.prNumber %>.
+
+CI checks have failed. Analyze the failures and fix them.`;
+
+const PR_COMMENT_RESPONSE_TEMPLATE = `You are on the branch \`<%= it.prBranch %>\` for PR #<%= it.prNumber %>.
+
+A user commented on this PR and mentioned you. Respond to their comment.
+<% if (it.commentPath) { -%>
+File: <%= it.commentPath %>
+<% } -%>
+
+Their comment:
+---
+<%= it.commentBody %>
+---
+
+Read the comment carefully and respond accordingly. If they ask for code changes, make the changes, commit, and push. If they ask a question, reply with a PR comment. Default to surgical, targeted changes unless they clearly ask for something broader.`;
 
 describe('workItem task template', () => {
 	it('includes the card ID', () => {
-		const prompt = renderTaskPrompt('workItem', { cardId: 'abc123' });
+		const prompt = renderInlineTaskPrompt(WORK_ITEM_TEMPLATE, { cardId: 'abc123' });
 		expect(prompt).toContain('abc123');
 	});
 
 	it('asks the agent to process the work item', () => {
-		const prompt = renderTaskPrompt('workItem', { cardId: 'card-99' });
+		const prompt = renderInlineTaskPrompt(WORK_ITEM_TEMPLATE, { cardId: 'card-99' });
 		expect(prompt).toContain('work item');
 	});
 });
 
 describe('commentResponse task template', () => {
 	it('includes card ID, comment text, and author', () => {
-		const prompt = renderTaskPrompt('commentResponse', {
+		const prompt = renderInlineTaskPrompt(COMMENT_RESPONSE_TEMPLATE, {
 			cardId: 'card-42',
 			commentText: 'Please add tests',
 			commentAuthor: 'alice',
@@ -35,7 +77,7 @@ describe('commentResponse task template', () => {
 	});
 
 	it('instructs surgical updates for plan changes', () => {
-		const prompt = renderTaskPrompt('commentResponse', {
+		const prompt = renderInlineTaskPrompt(COMMENT_RESPONSE_TEMPLATE, {
 			cardId: 'card-1',
 			commentText: 'Fix the typo',
 			commentAuthor: 'bob',
@@ -44,7 +86,7 @@ describe('commentResponse task template', () => {
 	});
 
 	it('mentions that work item data is pre-loaded', () => {
-		const prompt = renderTaskPrompt('commentResponse', {
+		const prompt = renderInlineTaskPrompt(COMMENT_RESPONSE_TEMPLATE, {
 			cardId: 'card-1',
 			commentText: 'Update docs',
 			commentAuthor: 'carol',
@@ -53,7 +95,7 @@ describe('commentResponse task template', () => {
 	});
 
 	it('instructs to classify the comment', () => {
-		const prompt = renderTaskPrompt('commentResponse', {
+		const prompt = renderInlineTaskPrompt(COMMENT_RESPONSE_TEMPLATE, {
 			cardId: 'card-1',
 			commentText: 'Why this approach?',
 			commentAuthor: 'dave',
@@ -62,7 +104,7 @@ describe('commentResponse task template', () => {
 	});
 
 	it('instructs question-only replies via PostComment without plan modification', () => {
-		const prompt = renderTaskPrompt('commentResponse', {
+		const prompt = renderInlineTaskPrompt(COMMENT_RESPONSE_TEMPLATE, {
 			cardId: 'card-1',
 			commentText: 'Why this approach?',
 			commentAuthor: 'dave',
@@ -73,7 +115,7 @@ describe('commentResponse task template', () => {
 	});
 
 	it('defaults to plan updates when intent is ambiguous', () => {
-		const prompt = renderTaskPrompt('commentResponse', {
+		const prompt = renderInlineTaskPrompt(COMMENT_RESPONSE_TEMPLATE, {
 			cardId: 'card-1',
 			commentText: 'Some comment',
 			commentAuthor: 'eve',
@@ -84,32 +126,32 @@ describe('commentResponse task template', () => {
 
 describe('review task template', () => {
 	it('includes the PR number', () => {
-		const prompt = renderTaskPrompt('review', { prNumber: 42 });
+		const prompt = renderInlineTaskPrompt(REVIEW_TEMPLATE, { prNumber: 42 });
 		expect(prompt).toContain('PR #42');
 	});
 
 	it('instructs to use CreatePRReview', () => {
-		const prompt = renderTaskPrompt('review', { prNumber: 7 });
+		const prompt = renderInlineTaskPrompt(REVIEW_TEMPLATE, { prNumber: 7 });
 		expect(prompt).toContain('CreatePRReview');
 	});
 });
 
 describe('ci task template', () => {
 	it('includes branch and PR number', () => {
-		const prompt = renderTaskPrompt('ci', { prBranch: 'fix/ci-errors', prNumber: 99 });
+		const prompt = renderInlineTaskPrompt(CI_TEMPLATE, { prBranch: 'fix/ci-errors', prNumber: 99 });
 		expect(prompt).toContain('fix/ci-errors');
 		expect(prompt).toContain('PR #99');
 	});
 
 	it('mentions CI checks have failed', () => {
-		const prompt = renderTaskPrompt('ci', { prBranch: 'main', prNumber: 1 });
+		const prompt = renderInlineTaskPrompt(CI_TEMPLATE, { prBranch: 'main', prNumber: 1 });
 		expect(prompt).toContain('CI checks have failed');
 	});
 });
 
 describe('prCommentResponse task template', () => {
 	it('includes PR number, branch, and comment body', () => {
-		const prompt = renderTaskPrompt('prCommentResponse', {
+		const prompt = renderInlineTaskPrompt(PR_COMMENT_RESPONSE_TEMPLATE, {
 			prBranch: 'feat/new',
 			prNumber: 55,
 			commentBody: 'Can you fix the typo?',
@@ -120,7 +162,7 @@ describe('prCommentResponse task template', () => {
 	});
 
 	it('includes file path when provided', () => {
-		const prompt = renderTaskPrompt('prCommentResponse', {
+		const prompt = renderInlineTaskPrompt(PR_COMMENT_RESPONSE_TEMPLATE, {
 			prBranch: 'feat/new',
 			prNumber: 55,
 			commentBody: 'Fix this line',
@@ -130,7 +172,7 @@ describe('prCommentResponse task template', () => {
 	});
 
 	it('omits file path when not provided', () => {
-		const prompt = renderTaskPrompt('prCommentResponse', {
+		const prompt = renderInlineTaskPrompt(PR_COMMENT_RESPONSE_TEMPLATE, {
 			prBranch: 'feat/new',
 			prNumber: 55,
 			commentBody: 'Looks good overall!',
@@ -139,7 +181,7 @@ describe('prCommentResponse task template', () => {
 	});
 
 	it('omits file path when empty string provided', () => {
-		const prompt = renderTaskPrompt('prCommentResponse', {
+		const prompt = renderInlineTaskPrompt(PR_COMMENT_RESPONSE_TEMPLATE, {
 			prBranch: 'feat/new',
 			prNumber: 55,
 			commentBody: 'LGTM',
@@ -149,7 +191,7 @@ describe('prCommentResponse task template', () => {
 	});
 
 	it('instructs surgical changes by default', () => {
-		const prompt = renderTaskPrompt('prCommentResponse', {
+		const prompt = renderInlineTaskPrompt(PR_COMMENT_RESPONSE_TEMPLATE, {
 			prBranch: 'main',
 			prNumber: 1,
 			commentBody: 'Please refactor',
@@ -162,15 +204,17 @@ describe('prCommentResponse task template', () => {
 // Edge cases: DB partials and error handling
 // ============================================================================
 
-describe('renderTaskPrompt edge cases', () => {
+describe('renderInlineTaskPrompt edge cases', () => {
 	it('renders DB task prompt override with partials via renderCustomPrompt', () => {
 		const dbPartials = new Map([['custom', 'DB partial content']]);
 		const result = renderCustomPrompt('Task: <%~ include("partials/custom") %>', {}, dbPartials);
 		expect(result).toContain('DB partial content');
 	});
 
-	it('throws for nonexistent template name', () => {
-		expect(() => renderTaskPrompt('nonexistent-template', {})).toThrow();
+	it('renders basic template without partials', () => {
+		const template = 'Process card <%= it.cardId %>';
+		const prompt = renderInlineTaskPrompt(template, { cardId: 'test-123' });
+		expect(prompt).toBe('Process card test-123');
 	});
 });
 

@@ -10,22 +10,16 @@ function mockAgentDefinition(prompts?: AgentDefinition['prompts']): AgentDefinit
 	return {
 		identity: { emoji: '🤖', label: 'Test', roleHint: 'test', initialMessage: 'Hi' },
 		capabilities: {
-			canEditFiles: false,
-			canCreatePR: false,
-			canUpdateChecklists: false,
-			isReadOnly: true,
+			required: ['fs:read', 'session:ctrl'],
+			optional: [],
 		},
-		tools: { sets: [], sdkTools: 'readOnly' },
 		strategies: {
 			contextPipeline: [],
-			taskPromptBuilder: 'workItem',
-			gadgetBuilder: 'workItem',
 		},
 		backend: { enableStopHooks: false, needsGitHubToken: false },
 		compaction: 'default',
 		hint: 'test',
 		trailingMessage: undefined,
-		integrations: { required: [], optional: [] },
 		prompts,
 	};
 }

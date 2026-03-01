@@ -13,7 +13,11 @@ import {
 	resolveEffectiveCapabilities,
 } from '../capabilities/resolver.js';
 import type { ContextInjection, ToolManifest } from '../contracts/index.js';
-import { type TaskPromptContext, renderTaskPrompt } from '../prompts/index.js';
+import {
+	buildTaskPromptContext,
+	renderInlineTaskPrompt,
+	validateTemplate,
+} from '../prompts/index.js';
 import { buildGadgetsForAgent } from '../shared/gadgets.js';
 import type { FetchContextParams, PreExecuteParams } from './contextSteps.js';
 import { resolveAgentDefinition } from './loader.js';
@@ -70,24 +74,6 @@ function resolveRegistry<T>(registry: Record<string, T>, key: string, label: str
 }
 
 /**
- * Extract all relevant fields from AgentInput into a flat context object
- * for Eta task prompt template rendering.
- */
-function buildTaskPromptContext(input: AgentInput): TaskPromptContext {
-	return {
-		cardId: input.cardId || 'unknown',
-		commentText: input.triggerCommentText as string | undefined,
-		commentAuthor: (input.triggerCommentAuthor as string) || 'unknown',
-		prNumber: input.prNumber,
-		prBranch: input.prBranch,
-		commentBody: input.triggerCommentBody as string | undefined,
-		commentPath: (input.triggerCommentPath as string) || undefined,
-		// Email-joke agent fields
-		senderEmail: input.senderEmail as string | undefined,
-	};
-}
-
-/**
  * Merge required and optional capabilities into a single list.
  * In runtime, we use all declared capabilities (validation happens separately).
  */
@@ -114,8 +100,14 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 	// Get context pipeline from strategies
 	const contextPipeline = def.strategies.contextPipeline;
 
-	// Task prompt template name (maps to .eta file)
-	const taskTemplateName = def.strategies.taskPromptBuilder;
+	// Get task prompt template from prompts (required by schema)
+	const taskPromptTemplate = def.prompts.taskPrompt;
+
+	// Validate Eta syntax early to catch errors at profile build time
+	const validationResult = validateTemplate(taskPromptTemplate);
+	if (!validationResult.valid) {
+		throw new Error(`Agent '${agentType}' has invalid taskPrompt: ${validationResult.error}`);
+	}
 
 	const profile: AgentProfile = {
 		filterTools: (allTools: ToolManifest[]) => {
@@ -137,7 +129,8 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 			}
 			return injections;
 		},
-		buildTaskPrompt: (input) => renderTaskPrompt(taskTemplateName, buildTaskPromptContext(input)),
+		buildTaskPrompt: (input) =>
+			renderInlineTaskPrompt(taskPromptTemplate, buildTaskPromptContext(input)),
 		capabilities: def.capabilities,
 		getLlmistGadgets: (integrationChecker?: IntegrationChecker) => {
 			// Resolve effective capabilities based on integration availability

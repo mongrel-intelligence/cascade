@@ -7,11 +7,12 @@ import { resolveKnownAgentTypes } from '../definitions/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const templatesDir = join(__dirname, 'templates');
-const taskTemplatesDir = join(__dirname, 'task-templates');
 
 // Initialize Eta with the templates directory
 const eta = new Eta({ views: templatesDir, autoEscape: false });
-const taskEta = new Eta({ views: taskTemplatesDir, autoEscape: false });
+
+// Standalone Eta instance for inline task prompts (no views directory needed)
+const taskEta = new Eta({ autoEscape: false });
 
 // Valid agent types — lazily resolved from DB (with YAML fallback), populated by initPrompts()
 let validTypes: string[] = [];
@@ -149,11 +150,9 @@ export function getSystemPrompt(
 	}
 
 	const template = loadTemplate(agentType);
-	if (dbPartials && dbPartials.size > 0) {
-		const expanded = resolveIncludes(template, dbPartials);
-		return eta.renderString(expanded, context);
-	}
-	return eta.renderString(template, context);
+	// Always resolve includes - resolveIncludes handles empty maps gracefully
+	const expanded = resolveIncludes(template, dbPartials ?? new Map());
+	return eta.renderString(expanded, context);
 }
 
 // ============================================================================
@@ -174,33 +173,58 @@ export interface TaskPromptContext {
 	[key: string]: unknown;
 }
 
-const taskTemplateCache = new Map<string, string>();
-
-function loadTaskTemplate(templateName: string): string {
-	const cached = taskTemplateCache.get(templateName);
-	if (cached) return cached;
-
-	const templatePath = join(taskTemplatesDir, `${templateName}.eta`);
-	const template = readFileSync(templatePath, 'utf-8');
-	taskTemplateCache.set(templateName, template);
-	return template;
+/**
+ * Input interface for buildTaskPromptContext - accepts both AgentInput fields
+ * and PromptContext fields for maximum flexibility.
+ */
+export interface TaskPromptInput {
+	// Common fields
+	cardId?: string;
+	prNumber?: number;
+	prBranch?: string;
+	// PM comment trigger fields
+	triggerCommentText?: string;
+	triggerCommentAuthor?: string;
+	// PR comment trigger fields
+	triggerCommentBody?: string;
+	triggerCommentPath?: string;
+	// Email agent fields
+	senderEmail?: string;
+	// Allow extra fields for future extensibility
+	[key: string]: unknown;
 }
 
 /**
- * Render a task prompt from a named `.eta` template in `task-templates/`.
- * Supports DB partials via `include()` directives (same pattern as system prompts).
+ * Build a TaskPromptContext from AgentInput or combined PromptContext + AgentInput.
+ * This is the canonical builder used by both profile.buildTaskPrompt() and resolveModelConfig().
+ *
+ * Null handling: all optional fields remain undefined when not present (no 'unknown' defaults).
  */
-export function renderTaskPrompt(
-	templateName: string,
+export function buildTaskPromptContext(input: TaskPromptInput): TaskPromptContext {
+	return {
+		cardId: input.cardId,
+		prNumber: input.prNumber,
+		prBranch: input.prBranch,
+		commentText: input.triggerCommentText,
+		commentAuthor: input.triggerCommentAuthor,
+		commentBody: input.triggerCommentBody,
+		commentPath: input.triggerCommentPath,
+		senderEmail: input.senderEmail,
+	};
+}
+
+/**
+ * Render an inline task prompt template with Eta variable interpolation.
+ * Used for task prompts stored directly in agent definitions (prompts.taskPrompt).
+ */
+export function renderInlineTaskPrompt(
+	template: string,
 	context: TaskPromptContext = {},
 	dbPartials?: Map<string, string>,
 ): string {
-	const template = loadTaskTemplate(templateName);
-	if (dbPartials && dbPartials.size > 0) {
-		const expanded = resolveIncludes(template, dbPartials);
-		return taskEta.renderString(expanded, context);
-	}
-	return taskEta.renderString(template, context);
+	// Always resolve includes - resolveIncludes handles empty maps gracefully
+	const expanded = resolveIncludes(template, dbPartials ?? new Map());
+	return taskEta.renderString(expanded, context);
 }
 
 /** Returns the raw .eta template source from disk (before rendering). */
@@ -241,7 +265,7 @@ export function getAvailablePartialNames(): string[] {
 	}
 }
 
-/** Returns template variable info for documentation/reference. */
+/** Returns template variable info for system prompts documentation/reference. */
 export function getTemplateVariables(): Array<{
 	name: string;
 	group: string;
@@ -270,5 +294,23 @@ export function getTemplateVariables(): Array<{
 		{ name: 'originalCardUrl', group: 'Debug', description: 'Original card URL' },
 		{ name: 'detectedAgentType', group: 'Debug', description: 'Agent type from session log' },
 		{ name: 'debugListId', group: 'Debug', description: 'Debug list ID for output cards' },
+	];
+}
+
+/** Returns task prompt variable info for documentation/reference. */
+export function getTaskTemplateVariables(): Array<{
+	name: string;
+	group: string;
+	description: string;
+}> {
+	return [
+		{ name: 'cardId', group: 'Work Item', description: 'Work item ID (card or issue)' },
+		{ name: 'commentText', group: 'Comment', description: 'Comment text content (PM comments)' },
+		{ name: 'commentAuthor', group: 'Comment', description: 'Comment author username' },
+		{ name: 'prNumber', group: 'PR', description: 'Pull request number' },
+		{ name: 'prBranch', group: 'PR', description: 'Pull request branch name' },
+		{ name: 'commentBody', group: 'PR Comment', description: 'PR comment body text' },
+		{ name: 'commentPath', group: 'PR Comment', description: 'File path for inline PR comments' },
+		{ name: 'senderEmail', group: 'Email', description: 'Email sender address (email-joke agent)' },
 	];
 }

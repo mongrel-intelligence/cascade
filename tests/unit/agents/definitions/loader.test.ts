@@ -117,25 +117,12 @@ describe('YAML agent definitions loader', () => {
 			}
 		});
 
-		it('all taskPromptBuilder values correspond to .eta template files', () => {
-			const { readdirSync } = require('node:fs');
-			const { join, dirname } = require('node:path');
-			const { fileURLToPath } = require('node:url');
-			const taskTemplatesDir = join(
-				dirname(fileURLToPath(import.meta.url)),
-				'../../../../src/agents/prompts/task-templates',
-			);
-			const templateFiles = new Set(
-				readdirSync(taskTemplatesDir)
-					.filter((f: string) => f.endsWith('.eta'))
-					.map((f: string) => f.replace(/\.eta$/, '')),
-			);
-
+		it('all agents have prompts.taskPrompt defined', () => {
 			for (const agentType of ALL_AGENT_TYPES) {
 				const def = loadAgentDefinition(agentType);
 				expect(
-					templateFiles.has(def.strategies.taskPromptBuilder),
-					`${agentType}: taskPromptBuilder '${def.strategies.taskPromptBuilder}' has no matching .eta template file`,
+					typeof def.prompts?.taskPrompt === 'string' && def.prompts.taskPrompt.length > 0,
+					`${agentType}: prompts.taskPrompt is missing or empty`,
 				).toBe(true);
 			}
 		});

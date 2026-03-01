@@ -28,7 +28,6 @@ const mockDefinition: AgentDefinition = {
 	},
 	strategies: {
 		contextPipeline: ['workItem'],
-		taskPromptBuilder: 'workItem',
 	},
 	backend: {
 		enableStopHooks: false,
@@ -38,6 +37,10 @@ const mockDefinition: AgentDefinition = {
 	compaction: 'default',
 	hint: 'test hint',
 	trailingMessage: undefined,
+	prompts: {
+		taskPrompt:
+			'Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.',
+	},
 };
 
 describe('agentDefinitionsRepository', () => {
