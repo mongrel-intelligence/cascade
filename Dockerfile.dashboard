@@ -9,6 +9,7 @@ RUN npm ci --ignore-scripts
 # Build
 COPY tsconfig.json drizzle.config.ts ./
 COPY src ./src
+COPY tools ./tools
 RUN npm run build
 
 # Production image
