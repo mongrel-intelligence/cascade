@@ -294,7 +294,7 @@ function PartialEditor({ name, onClose }: { name: string; onClose: () => void })
 	);
 }
 
-function ReferencePanel({
+export function ReferencePanel({
 	variables,
 	partials,
 }: {
