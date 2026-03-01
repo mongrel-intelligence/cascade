@@ -1,4 +1,8 @@
 import type { AppRouter } from '@/../../src/api/router.js';
+import {
+	type KnownTriggerEvent,
+	TRIGGER_CATEGORY_LABELS,
+} from '@/../../src/api/routers/_shared/triggerTypes.js';
 import { Badge } from '@/components/ui/badge.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
@@ -36,6 +40,7 @@ interface SchemaData {
 	capabilities: readonly string[];
 	contextStepNames: readonly string[];
 	compactionNames: readonly string[];
+	triggerRegistry: Record<string, KnownTriggerEvent[]>;
 }
 
 // All available capabilities organized by integration
@@ -471,6 +476,150 @@ function TrailingMessageSection({
 					label="Include Reminder"
 				/>
 			</div>
+		</section>
+	);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Triggers Section
+// ─────────────────────────────────────────────────────────────────────────────
+
+function TriggersSection({
+	def,
+	setDef,
+	schema,
+}: {
+	def: AgentDefinition;
+	setDef: React.Dispatch<React.SetStateAction<AgentDefinition>>;
+	schema: SchemaData | undefined;
+}) {
+	const enabledEvents = new Set(def.triggers.map((t) => t.event));
+
+	const toggleTrigger = (known: KnownTriggerEvent, enabled: boolean) => {
+		setDef((d) => {
+			if (enabled) {
+				// Add the trigger with minimal configuration
+				// Type assertions needed because schema returns string[] but definition expects literal types
+				const newTrigger: AgentDefinition['triggers'][number] = {
+					event: known.event,
+					label: known.label,
+					description: known.description,
+					defaultEnabled: true,
+					parameters: [],
+					...(known.providers
+						? { providers: known.providers as AgentDefinition['triggers'][number]['providers'] }
+						: {}),
+					...(known.contextPipeline.length > 0
+						? {
+								contextPipeline:
+									known.contextPipeline as AgentDefinition['triggers'][number]['contextPipeline'],
+							}
+						: {}),
+				};
+				return { ...d, triggers: [...d.triggers, newTrigger] };
+			}
+			// Remove the trigger
+			return {
+				...d,
+				triggers: d.triggers.filter((t) => t.event !== known.event),
+			};
+		});
+	};
+
+	if (!schema?.triggerRegistry) {
+		return (
+			<section className="space-y-3">
+				<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+					Triggers
+				</h3>
+				<div className="text-sm text-muted-foreground">Loading trigger registry...</div>
+			</section>
+		);
+	}
+
+	const categories = ['pm', 'scm', 'email', 'sms'] as const;
+
+	return (
+		<section className="space-y-4">
+			<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+				Triggers
+			</h3>
+			<p className="text-sm text-muted-foreground">
+				Select which events can activate this agent. Each trigger defines what event fires the agent
+				and what context it provides.
+			</p>
+
+			{categories.map((category) => {
+				const triggers = schema.triggerRegistry[category] ?? [];
+				if (triggers.length === 0) return null;
+
+				return (
+					<div key={category} className="space-y-2 rounded-md border border-border p-3">
+						<div className="text-sm font-medium">{TRIGGER_CATEGORY_LABELS[category]}</div>
+						<div className="space-y-2">
+							{triggers.map((known) => {
+								const isEnabled = enabledEvents.has(known.event);
+								return (
+									<div
+										key={known.event}
+										className="flex items-start gap-3 rounded-md p-2 hover:bg-muted/50"
+									>
+										<input
+											type="checkbox"
+											id={`trigger-${known.event}`}
+											checked={isEnabled}
+											onChange={(e) => toggleTrigger(known, e.target.checked)}
+											className="mt-0.5 h-4 w-4 rounded border-input"
+										/>
+										<div className="flex-1 space-y-1">
+											<div className="flex items-center gap-2">
+												<label
+													htmlFor={`trigger-${known.event}`}
+													className="text-sm font-medium cursor-pointer"
+												>
+													{known.label}
+												</label>
+												<span className="text-xs text-muted-foreground font-mono">
+													({known.event})
+												</span>
+												{known.providers && known.providers.length > 0 && (
+													<div className="flex gap-1">
+														{known.providers.map((p) => (
+															<Badge key={p} variant="secondary" className="text-xs">
+																{p}
+															</Badge>
+														))}
+													</div>
+												)}
+											</div>
+											<div className="text-xs text-muted-foreground">{known.description}</div>
+											{known.contextPipeline.length > 0 && (
+												<div className="flex items-center gap-1 text-xs text-muted-foreground">
+													<span className="text-primary/60">&rarr;</span>
+													{known.contextPipeline.join(', ')}
+												</div>
+											)}
+										</div>
+									</div>
+								);
+							})}
+						</div>
+					</div>
+				);
+			})}
+
+			{def.triggers.length > 0 && (
+				<div className="rounded-md bg-muted/50 p-3 text-sm">
+					<div className="font-medium">Selected Triggers ({def.triggers.length})</div>
+					<div className="mt-1 flex flex-wrap gap-1">
+						{def.triggers.map((t) => (
+							<Badge key={t.event} variant="outline" className="text-xs">
+								{t.event}
+							</Badge>
+						))}
+					</div>
+				</div>
+			)}
 		</section>
 	);
 }
@@ -1031,6 +1180,7 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 				<TabsContent value="definition" className="space-y-6 pt-4">
 					<IdentitySection def={def} setIdentity={setIdentity} />
 					<CapabilitiesSection def={def} setDef={setDef} />
+					<TriggersSection def={def} setDef={setDef} schema={schema} />
 					<StrategiesSection def={def} setDef={setDef} schema={schema} />
 					<BackendSection def={def} setBackend={setBackend} />
 

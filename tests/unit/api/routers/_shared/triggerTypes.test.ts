@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { CONTEXT_STEP_NAMES } from '../../../../../src/agents/definitions/schema.js';
 import {
+	type KnownTriggerEvent,
 	type ProjectTriggersView,
 	type ResolvedTrigger,
 	TRIGGER_CATEGORY_LABELS,
+	TRIGGER_REGISTRY,
 	type TriggerCategory,
 	type TriggerParameterDef,
 	type TriggerParameterValue,
@@ -94,6 +97,105 @@ describe('triggerTypes', () => {
 			expect(view.agents).toHaveLength(1);
 			expect(view.integrations.pm).toBe('trello');
 			expect(view.integrations.scm).toBe('github');
+		});
+	});
+
+	describe('TRIGGER_REGISTRY', () => {
+		it('has all four categories', () => {
+			expect(Object.keys(TRIGGER_REGISTRY)).toEqual(['pm', 'scm', 'email', 'sms']);
+		});
+
+		it('pm category has expected triggers', () => {
+			const pmEvents = TRIGGER_REGISTRY.pm.map((t) => t.event);
+			expect(pmEvents).toContain('pm:card-moved');
+			expect(pmEvents).toContain('pm:issue-transitioned');
+			expect(pmEvents).toContain('pm:label-added');
+			expect(pmEvents).toContain('pm:comment-mention');
+		});
+
+		it('scm category has all GitHub triggers including pr-merged and pr-ready-to-merge', () => {
+			const scmEvents = TRIGGER_REGISTRY.scm.map((t) => t.event);
+			expect(scmEvents).toContain('scm:check-suite-success');
+			expect(scmEvents).toContain('scm:check-suite-failure');
+			expect(scmEvents).toContain('scm:pr-review-submitted');
+			expect(scmEvents).toContain('scm:review-requested');
+			expect(scmEvents).toContain('scm:pr-opened');
+			expect(scmEvents).toContain('scm:pr-comment');
+			expect(scmEvents).toContain('scm:pr-merged');
+			expect(scmEvents).toContain('scm:pr-ready-to-merge');
+		});
+
+		it('email category has expected triggers', () => {
+			const emailEvents = TRIGGER_REGISTRY.email.map((t) => t.event);
+			expect(emailEvents).toContain('email:received');
+		});
+
+		it('sms category has expected triggers', () => {
+			const smsEvents = TRIGGER_REGISTRY.sms.map((t) => t.event);
+			expect(smsEvents).toContain('sms:received');
+		});
+
+		it('all triggers have required KnownTriggerEvent fields', () => {
+			for (const [category, triggers] of Object.entries(TRIGGER_REGISTRY)) {
+				for (const trigger of triggers) {
+					expect(trigger.event).toBeTruthy();
+					expect(trigger.label).toBeTruthy();
+					expect(trigger.description).toBeTruthy();
+					expect(Array.isArray(trigger.contextPipeline)).toBe(true);
+				}
+			}
+		});
+
+		it('all context pipeline values are valid ContextStepNames', () => {
+			const validSteps = new Set(CONTEXT_STEP_NAMES);
+			for (const triggers of Object.values(TRIGGER_REGISTRY)) {
+				for (const trigger of triggers) {
+					for (const step of trigger.contextPipeline) {
+						expect(validSteps.has(step)).toBe(true);
+					}
+				}
+			}
+		});
+
+		it('all provider values are valid KnownProviders', () => {
+			const validProviders = new Set(['trello', 'jira', 'github', 'imap', 'gmail', 'twilio']);
+			const allProviders = Object.values(TRIGGER_REGISTRY)
+				.flat()
+				.flatMap((t) => t.providers ?? []);
+			for (const provider of allProviders) {
+				expect(validProviders.has(provider)).toBe(true);
+			}
+		});
+
+		it('scm triggers specify github as provider', () => {
+			for (const trigger of TRIGGER_REGISTRY.scm) {
+				expect(trigger.providers).toContain('github');
+			}
+		});
+
+		it('pm:card-moved specifies trello provider', () => {
+			const cardMoved = TRIGGER_REGISTRY.pm.find((t) => t.event === 'pm:card-moved');
+			expect(cardMoved?.providers).toContain('trello');
+		});
+
+		it('pm:issue-transitioned specifies jira provider', () => {
+			const issueTransitioned = TRIGGER_REGISTRY.pm.find(
+				(t) => t.event === 'pm:issue-transitioned',
+			);
+			expect(issueTransitioned?.providers).toContain('jira');
+		});
+
+		it('KnownTriggerEvent type has correct shape', () => {
+			const trigger: KnownTriggerEvent = {
+				event: 'test:event',
+				label: 'Test Event',
+				description: 'A test event',
+				contextPipeline: ['workItem'],
+				providers: ['trello'],
+			};
+
+			expect(trigger.event).toBe('test:event');
+			expect(trigger.contextPipeline).toEqual(['workItem']);
 		});
 	});
 });

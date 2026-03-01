@@ -24,6 +24,7 @@ import {
 } from '../../db/repositories/agentDefinitionsRepository.js';
 import { loadPartials } from '../../db/repositories/partialsRepository.js';
 import { protectedProcedure, publicProcedure, router, superAdminProcedure } from '../trpc.js';
+import { TRIGGER_REGISTRY } from './_shared/triggerTypes.js';
 
 async function validatePromptIfPresent(prompt: string | null | undefined) {
 	if (!prompt) return;
@@ -352,6 +353,7 @@ export const agentDefinitionsRouter = router({
 			capabilities: [...CAPABILITIES],
 			contextStepNames: [...CONTEXT_STEP_NAMES],
 			compactionNames: [...COMPACTION_NAMES],
+			triggerRegistry: TRIGGER_REGISTRY,
 		};
 	}),
 });
