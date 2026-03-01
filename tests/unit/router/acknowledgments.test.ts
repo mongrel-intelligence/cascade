@@ -398,7 +398,7 @@ describe('deleteJiraAck', () => {
 		await deleteJiraAck('test', 'PROJ-42', 'jira-comment-456');
 
 		expect(mockLogger.warn).toHaveBeenCalledWith(
-			expect.stringContaining('Failed to delete JIRA orphan ack'),
+			expect.stringContaining('Failed to delete JIRA comment'),
 			expect.any(String),
 		);
 	});

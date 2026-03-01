@@ -351,7 +351,7 @@ describe('notifyTimeout', () => {
 
 			expect(mockFetch).toHaveBeenCalledOnce();
 			const [url, options] = mockFetch.mock.calls[0];
-			expect(url).toBe('https://test.atlassian.net/rest/api/2/issue/DAM-1/comment');
+			expect(url).toBe('https://test.atlassian.net/rest/api/3/issue/DAM-1/comment');
 			expect(options.method).toBe('POST');
 			expect(options.headers.Authorization).toMatch(/^Basic /);
 			expect(JSON.parse(options.body)).toHaveProperty('body'); // ADF document

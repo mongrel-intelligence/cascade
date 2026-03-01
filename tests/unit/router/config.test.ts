@@ -17,7 +17,11 @@ vi.mock('../../../src/config/configCache.js', () => ({
 }));
 
 import { loadConfig } from '../../../src/config/provider.js';
-import { loadProjectConfig, routerConfig } from '../../../src/router/config.js';
+import {
+	_resetProjectConfigCache,
+	loadProjectConfig,
+	routerConfig,
+} from '../../../src/router/config.js';
 
 const mockLoadConfig = vi.mocked(loadConfig);
 
@@ -152,7 +156,7 @@ describe('loadProjectConfig', () => {
 		expect(result.projects[0].pmType).toBe('trello');
 	});
 
-	it('always fetches fresh config from DB', async () => {
+	it('caches config for subsequent calls within the TTL window', async () => {
 		const innerMock = vi.fn().mockResolvedValue({
 			projects: [
 				{
@@ -177,10 +181,19 @@ describe('loadProjectConfig', () => {
 			},
 		}));
 
-		const { loadProjectConfig: freshLoad } = await import('../../../src/router/config.js');
-		await freshLoad();
-		await freshLoad();
+		const { loadProjectConfig: freshLoad, _resetProjectConfigCache: resetCache } = await import(
+			'../../../src/router/config.js'
+		);
 
+		// First call fetches from DB
+		await freshLoad();
+		// Second call within TTL should use cache
+		await freshLoad();
+		expect(innerMock).toHaveBeenCalledTimes(1);
+
+		// After cache reset, next call fetches from DB again
+		resetCache();
+		await freshLoad();
 		expect(innerMock).toHaveBeenCalledTimes(2);
 	});
 });
