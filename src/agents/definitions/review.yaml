@@ -4,6 +4,11 @@ identity:
   roleHint: Reviews pull request changes for quality and correctness
   initialMessage: "**\U0001F50D Reviewing code** — Examining the PR changes for quality and correctness..."
 
+# Explicit integration requirements.
+integrations:
+  required: [scm]
+  optional: [pm]
+
 # Read-only agent that reviews PRs. Can submit reviews and update comments.
 # Optional PM for reading linked work item context.
 capabilities:
@@ -16,6 +21,31 @@ capabilities:
     - scm:comment
   optional:
     - pm:read
+
+# Supported triggers for this agent
+triggers:
+  - event: scm:check-suite-success
+    label: CI Passed
+    description: Trigger review when CI checks pass on a PR
+    defaultEnabled: false
+    providers: [github]
+    parameters:
+      - name: authorMode
+        type: select
+        label: Author Filter
+        description: Filter PRs by author type
+        options: [own, external, all]
+        defaultValue: own
+  - event: scm:review-requested
+    label: On Review Requested
+    description: Trigger review when a CASCADE persona is explicitly requested as reviewer
+    defaultEnabled: false
+    providers: [github]
+  - event: scm:pr-opened
+    label: PR Opened
+    description: Trigger review when a new PR is opened (without waiting for CI)
+    defaultEnabled: false
+    providers: [github]
 
 strategies:
   contextPipeline: [prContext, contextFiles, squint]

@@ -4,6 +4,11 @@ identity:
   roleHint: Breaks down a feature plan into smaller, ordered work items (subtasks)
   initialMessage: "**\U0001F4CB Splitting plan** — Reading the plan and splitting it into ordered work items..."
 
+# Explicit integration requirements.
+integrations:
+  required: [pm]
+  optional: []
+
 # Can read files and edit PM checklists, but no PR creation.
 capabilities:
   required:
@@ -15,6 +20,41 @@ capabilities:
     - pm:write
     - pm:checklist
   optional: []
+
+# Supported triggers for this agent
+triggers:
+  - event: pm:card-moved
+    label: Card Moved to Splitting
+    description: Trigger when card moved to Splitting list
+    defaultEnabled: true
+    providers: [trello]
+    parameters:
+      - name: targetList
+        type: select
+        label: Target List
+        options: [splitting]
+        defaultValue: splitting
+  - event: pm:issue-transitioned
+    label: Issue Transitioned
+    description: Trigger when issue transitions to Splitting status
+    defaultEnabled: true
+    providers: [jira]
+    parameters:
+      - name: targetStatus
+        type: select
+        label: Target Status
+        options: [splitting]
+        defaultValue: splitting
+  - event: pm:label-added
+    label: Ready to Process Label
+    description: Trigger when Ready to Process label added to a card in Splitting list
+    defaultEnabled: true
+    parameters:
+      - name: listKey
+        type: select
+        label: Target List
+        options: [splitting]
+        defaultValue: splitting
 
 strategies:
   contextPipeline: [directoryListing, contextFiles, squint, workItem]

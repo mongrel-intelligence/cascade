@@ -4,6 +4,12 @@ identity:
   roleHint: Reads emails from a specific sender and responds with jokes
   initialMessage: "**\U0001F602 Checking for emails to respond to with jokes**"
 
+# Explicit integration requirements.
+# Email-joke agent demonstrates an agent that ONLY needs email integration.
+integrations:
+  required: [email]
+  optional: []
+
 # Minimal agent with email access only.
 # No file editing, no GitHub, no PM tools.
 capabilities:
@@ -12,6 +18,19 @@ capabilities:
     - email:read
     - email:write
   optional: []
+
+# Supported triggers for this agent
+triggers:
+  - event: email:received
+    label: Email Received
+    description: Trigger when new emails are received (polled periodically)
+    defaultEnabled: true
+    parameters:
+      - name: senderEmail
+        type: email
+        label: Sender Email Filter
+        description: Only process emails from this sender (leave empty for all)
+        required: false
 
 strategies:
   contextPipeline: [prefetchedEmails]

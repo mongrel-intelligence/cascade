@@ -4,6 +4,11 @@ identity:
   roleHint: Reads a PR comment and takes action
   initialMessage: "**\U0001F4AC Responding to PR comment** — Reading your comment and taking action..."
 
+# Explicit integration requirements.
+integrations:
+  required: [scm]
+  optional: [pm]
+
 # Can edit files and interact with PR comments, optional PM for status updates.
 capabilities:
   required:
@@ -16,6 +21,14 @@ capabilities:
   optional:
     - pm:read
     - pm:write
+
+# Supported triggers for this agent
+triggers:
+  - event: scm:pr-comment-mention
+    label: PR Comment @mention
+    description: Trigger when the implementer bot is @mentioned in a PR comment
+    defaultEnabled: true
+    providers: [github]
 
 strategies:
   contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]

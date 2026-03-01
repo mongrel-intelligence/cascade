@@ -4,6 +4,11 @@ identity:
   roleHint: Studies the codebase and designs a step-by-step implementation plan
   initialMessage: "**\U0001F5FA\uFE0F Planning implementation** — Studying the codebase and designing a step-by-step plan..."
 
+# Explicit integration requirements.
+integrations:
+  required: [pm]
+  optional: []
+
 # Read-only agent that explores code and writes plans to PM system.
 # No file editing, no PR creation, no checklist updates.
 capabilities:
@@ -14,6 +19,45 @@ capabilities:
     - pm:read
     - pm:write
   optional: []
+
+# Supported triggers for this agent
+triggers:
+  - event: pm:card-moved
+    label: Card Moved to Planning
+    description: Trigger when card moved to Planning list
+    defaultEnabled: true
+    providers: [trello]
+    parameters:
+      - name: targetList
+        type: select
+        label: Target List
+        options: [planning]
+        defaultValue: planning
+  - event: pm:issue-transitioned
+    label: Issue Transitioned
+    description: Trigger when issue transitions to Planning status
+    defaultEnabled: true
+    providers: [jira]
+    parameters:
+      - name: targetStatus
+        type: select
+        label: Target Status
+        options: [planning]
+        defaultValue: planning
+  - event: pm:label-added
+    label: Ready to Process Label
+    description: Trigger when Ready to Process label added to a card in Planning list
+    defaultEnabled: true
+    parameters:
+      - name: listKey
+        type: select
+        label: Target List
+        options: [planning]
+        defaultValue: planning
+  - event: pm:comment-mention
+    label: Comment @mention
+    description: Trigger when bot is @mentioned in a card/issue comment
+    defaultEnabled: true
 
 strategies:
   contextPipeline: [directoryListing, contextFiles, squint, workItem]

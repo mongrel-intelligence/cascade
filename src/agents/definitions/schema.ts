@@ -8,6 +8,117 @@ import { CAPABILITIES } from '../capabilities/registry.js';
 // Integration categories (aligned with integrationRoles.ts)
 export const IntegrationCategorySchema = z.enum(['pm', 'scm', 'email', 'sms']);
 
+// Known providers for validation
+export const KnownProviderSchema = z.enum(['trello', 'jira', 'github', 'imap', 'gmail', 'twilio']);
+
+// Trigger event format validation: {category}:{event-name}
+const TriggerEventSchema = z
+	.string()
+	.regex(
+		/^(pm|scm|email|sms):[a-z][a-z0-9-]*$/,
+		'Event must be in format {category}:{event-name} (e.g., pm:card-moved, scm:check-suite-success)',
+	);
+
+// ============================================================================
+// Trigger Parameter Schema
+// ============================================================================
+
+/**
+ * Parameter definition for agent triggers.
+ * Supports string, email, boolean, and select types.
+ */
+export const TriggerParameterSchema = z
+	.object({
+		/** Parameter name (used as key in configuration) */
+		name: z.string(),
+		/** Parameter type - determines input widget */
+		type: z.enum(['string', 'email', 'boolean', 'select']),
+		/** Human-readable label for the parameter */
+		label: z.string(),
+		/** Optional description for help text */
+		description: z.string().optional(),
+		/** Whether the parameter is required (cannot be true if defaultValue is set) */
+		required: z.boolean().default(false),
+		/** Default value for the parameter (type must match parameter type) */
+		defaultValue: z.union([z.string(), z.boolean(), z.number()]).optional(),
+		/** Options for 'select' type parameters */
+		options: z.array(z.string()).optional(),
+	})
+	.refine(
+		(p) => {
+			// Validate defaultValue type matches parameter type
+			if (p.defaultValue === undefined) return true;
+			if (p.type === 'boolean') return typeof p.defaultValue === 'boolean';
+			if (p.type === 'string' || p.type === 'email' || p.type === 'select') {
+				return typeof p.defaultValue === 'string';
+			}
+			return true;
+		},
+		{ message: 'defaultValue type must match parameter type' },
+	)
+	.refine(
+		(p) => {
+			// If defaultValue is set, required should be false
+			if (p.defaultValue !== undefined && p.required === true) {
+				return false;
+			}
+			return true;
+		},
+		{ message: 'Parameter with defaultValue cannot be required' },
+	);
+
+// ============================================================================
+// Supported Trigger Schema
+// ============================================================================
+
+/**
+ * Trigger that an agent can be activated by.
+ * Uses category-prefixed naming: {category}:{event}
+ *
+ * Examples:
+ * - pm:card-moved (card moved to a list)
+ * - pm:issue-transitioned (JIRA issue status change)
+ * - scm:check-suite-success (CI passed)
+ * - email:received (new email received)
+ */
+export const SupportedTriggerSchema = z.object({
+	/** Event identifier, e.g., 'pm:card-moved', 'scm:check-suite-success' */
+	event: TriggerEventSchema,
+	/** Human-readable label for the trigger */
+	label: z.string(),
+	/** Optional description for help text */
+	description: z.string().optional(),
+	/** Whether the trigger is enabled by default */
+	defaultEnabled: z.boolean().default(true),
+	/** Configurable parameters for this trigger */
+	parameters: z.array(TriggerParameterSchema).default([]),
+	/** Provider filter - only applies to these providers (e.g., ['trello']) */
+	providers: z.array(KnownProviderSchema).optional(),
+});
+
+// ============================================================================
+// Integration Requirements Schema
+// ============================================================================
+
+/**
+ * Explicit integration requirements for an agent.
+ * Replaces the implicit derivation from capabilities.
+ */
+export const IntegrationRequirementsSchema = z
+	.object({
+		/** Integration categories the agent REQUIRES */
+		required: z.array(IntegrationCategorySchema).default([]),
+		/** Integration categories the agent CAN USE if available */
+		optional: z.array(IntegrationCategorySchema).default([]),
+	})
+	.refine(
+		(data) => {
+			const overlap = data.required.filter((c) => data.optional.includes(c));
+			return overlap.length === 0;
+		},
+		{ message: 'Integration cannot be both required and optional' },
+	);
+
 const IdentitySchema = z.object({
 	emoji: z.string(),
 	label: z.string(),
@@ -114,15 +225,29 @@ const PromptsSchema = z.object({
  * - Which integrations are required (derived from capability prefixes)
  * - Which gadgets are available (from capability registry)
  * - Which SDK tools are enabled (from capability registry)
+ *
+ * NEW: Explicit integrations and triggers can be defined independently of capabilities.
+ * - integrations: Explicit required/optional integration categories
+ * - triggers: Supported trigger events with configurable parameters
  */
 export const AgentDefinitionSchema = z.object({
 	/** Agent identity for UI display */
 	identity: IdentitySchema,
 	/**
+	 * Explicit integration requirements.
+	 * If not specified, integrations are derived from capabilities.
+	 */
+	integrations: IntegrationRequirementsSchema.optional(),
+	/**
 	 * Capabilities define what the agent can do.
 	 * Integrations and tools are DERIVED from capabilities.
 	 */
 	capabilities: CapabilitiesSchema,
+	/**
+	 * Supported triggers that can activate this agent.
+	 * Declares what events the agent can respond to, with configurable parameters.
+	 */
+	triggers: z.array(SupportedTriggerSchema).default([]),
 	/** Strategy configuration (context pipeline, prompts) */
 	strategies: StrategiesSchema,
 	/** Backend execution configuration */
@@ -152,3 +277,15 @@ export type { Capability } from '../capabilities/registry.js';
 
 /** Agent capabilities (required + optional) */
 export type AgentCapabilities = z.infer<typeof CapabilitiesSchema>;
+
+/** Trigger parameter definition */
+export type TriggerParameter = z.infer<typeof TriggerParameterSchema>;
+
+/** Supported trigger definition */
+export type SupportedTrigger = z.infer<typeof SupportedTriggerSchema>;
+
+/** Integration requirements (explicit required/optional) */
+export type IntegrationRequirements = z.infer<typeof IntegrationRequirementsSchema>;
+
+/** Known provider (trello, jira, github, etc.) */
+export type KnownProvider = z.infer<typeof KnownProviderSchema>;

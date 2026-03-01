@@ -320,3 +320,48 @@ export const AGENT_LABELS: Record<KnownAgentType, string> = {
 
 /** Agent types that use email-based trigger configuration (custom widget, not toggle-based) */
 export const EMAIL_TRIGGER_AGENTS = new Set<KnownAgentType>(['email-joke']);
+
+// ============================================================================
+// Dynamic Trigger Resolution Helpers
+// ============================================================================
+
+/**
+ * Convert a definition-based trigger to the legacy TriggerDef format.
+ * This allows gradual migration from hardcoded AGENT_TRIGGER_MAP to definition-based triggers.
+ *
+ * @param trigger - Trigger from agent definition
+ * @returns TriggerDef compatible with existing dashboard components
+ */
+export function definitionTriggerToTriggerDef(trigger: {
+	event: string;
+	label: string;
+	description?: string;
+	defaultEnabled: boolean;
+	providers?: string[];
+}): TriggerDef {
+	// Map event category prefix to integration category
+	const [category] = trigger.event.split(':') as ['pm' | 'scm' | 'email' | 'sms'];
+
+	return {
+		key: trigger.event, // Use event as key for new triggers
+		label: trigger.label,
+		description: trigger.description ?? '',
+		defaultValue: trigger.defaultEnabled,
+		category: category === 'email' || category === 'sms' ? 'pm' : category, // Map email/sms to pm for UI
+		pmProvider: trigger.providers?.find((p) => p === 'trello' || p === 'jira') as
+			| 'trello'
+			| 'jira'
+			| undefined,
+		scmProvider: trigger.providers?.find((p) => p === 'github') as 'github' | undefined,
+	};
+}
+
+/**
+ * Check if an agent has definition-based triggers.
+ * Used to determine whether to use dynamic or hardcoded triggers.
+ */
+export function hasDefinitionTriggers(agentType: string): boolean {
+	// For now, always return false to keep using hardcoded mapping
+	// This will be updated when the dashboard is ready to consume definition triggers
+	return false && agentType !== ''; // Placeholder - suppress unused warning
+}

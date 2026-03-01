@@ -4,6 +4,11 @@ identity:
   roleHint: Reads user feedback and updates the plan accordingly
   initialMessage: "**\U0001F4AC Responding to feedback** — Reading your comment and updating the plan accordingly..."
 
+# Explicit integration requirements.
+integrations:
+  required: [pm]
+  optional: []
+
 # Can update PM checklists to respond to feedback, but no file editing.
 capabilities:
   required:
@@ -14,6 +19,14 @@ capabilities:
     - pm:write
     - pm:checklist
   optional: []
+
+# Supported triggers for this agent
+# Note: This agent is triggered via pm:comment-mention shared with planning agent
+triggers:
+  - event: pm:comment-mention
+    label: Comment @mention
+    description: Trigger when bot is @mentioned in a card/issue comment
+    defaultEnabled: true
 
 strategies:
   contextPipeline: [directoryListing, contextFiles, squint, workItem]
