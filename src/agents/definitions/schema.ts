@@ -68,6 +68,23 @@ export const TriggerParameterSchema = z
 	);
 
 // ============================================================================
+// Context Step Names (used by triggers and strategies)
+// ============================================================================
+
+export const CONTEXT_STEP_NAMES = [
+	'directoryListing',
+	'contextFiles',
+	'squint',
+	'workItem',
+	'prContext',
+	'prConversation',
+	'prefetchedEmails',
+] as const;
+
+/** Context step name schema for use in triggers */
+const ContextStepNameSchema = z.enum(CONTEXT_STEP_NAMES);
+
+// ============================================================================
 // Supported Trigger Schema
 // ============================================================================
 
@@ -94,6 +111,13 @@ export const SupportedTriggerSchema = z.object({
 	parameters: z.array(TriggerParameterSchema).default([]),
 	/** Provider filter - only applies to these providers (e.g., ['trello']) */
 	providers: z.array(KnownProviderSchema).optional(),
+	/**
+	 * Optional custom context pipeline for this trigger.
+	 * When specified, overrides the agent's default strategies.contextPipeline.
+	 * Useful when different triggers require different context (e.g., PM triggers
+	 * need workItem, SCM triggers need prContext).
+	 */
+	contextPipeline: z.array(ContextStepNameSchema).optional(),
 });
 
 // ============================================================================
@@ -169,16 +193,6 @@ const GadgetOptionsSchema = z
 		includeReviewComments: z.boolean().optional(),
 	})
 	.optional();
-
-export const CONTEXT_STEP_NAMES = [
-	'directoryListing',
-	'contextFiles',
-	'squint',
-	'workItem',
-	'prContext',
-	'prConversation',
-	'prefetchedEmails',
-] as const;
 
 export const COMPACTION_NAMES = ['implementation', 'default'] as const;
 
@@ -283,6 +297,9 @@ export type TriggerParameter = z.infer<typeof TriggerParameterSchema>;
 
 /** Supported trigger definition */
 export type SupportedTrigger = z.infer<typeof SupportedTriggerSchema>;
+
+/** Context step name */
+export type ContextStepName = (typeof CONTEXT_STEP_NAMES)[number];
 
 /** Integration requirements (explicit required/optional) */
 export type IntegrationRequirements = z.infer<typeof IntegrationRequirementsSchema>;

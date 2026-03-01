@@ -72,6 +72,13 @@ jobs:
             cascade-migrator:dev \
             ./node_modules/.bin/drizzle-kit migrate
 
+      - name: Run trigger config migration (dev)
+        run: |
+          docker run --rm \
+            -e DATABASE_URL="${{ secrets.DEV_DATABASE_URL }}" \
+            cascade-migrator:dev \
+            npx tsx tools/migrate-triggers.ts
+
       - name: Pull and restart cascade-router-dev
         run: |
           cd /opt/services

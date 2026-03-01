@@ -1,6 +1,39 @@
 /**
- * Trigger configuration resolver.
- * Merges agent definition defaults with project-specific overrides from the database.
+ * Trigger Configuration Resolver
+ *
+ * This module resolves trigger configurations by merging multiple sources:
+ *
+ * 1. **Definition defaults** - From YAML agent definitions (e.g., `implementation.yaml`)
+ *    - Each agent declares supported triggers in `triggers[]`
+ *    - Each trigger has `defaultEnabled` and default `parameters`
+ *
+ * 2. **Project-level overrides** - From `agent_trigger_configs` table
+ *    - Per-project, per-agent, per-trigger customization
+ *    - Can override `enabled` and `parameters`
+ *
+ * 3. **Legacy fallback** - From `project_integrations.triggers` JSONB
+ *    - For backward compatibility during migration
+ *    - Uses `LEGACY_TRIGGER_KEY_MAP` for key translation
+ *
+ * ## Resolution Order
+ *
+ * 1. If config exists in `agent_trigger_configs` → use it
+ * 2. Else → use definition default
+ *
+ * ## Usage
+ *
+ * Trigger handlers should use:
+ * - `isTriggerEnabled(projectId, agentType, event)` - Check if trigger should fire
+ * - `getTriggerParameters(projectId, agentType, event)` - Get merged parameters
+ *
+ * Dashboard should use:
+ * - `resolveTriggerConfigs(projectId, agentType)` - Get all triggers with their configs
+ *
+ * ## Note on contextPipeline
+ *
+ * The `contextPipeline` field in trigger definitions is read-only from YAML.
+ * It cannot be overridden per-project via the database. If different triggers
+ * need different context, declare `contextPipeline` per-trigger in the YAML.
  */
 
 import { resolveAgentDefinition } from '../agents/definitions/index.js';
@@ -185,72 +218,4 @@ function mergeTriggerConfig(
 		providers: trigger.providers,
 		isCustomized: !!override,
 	};
-}
-
-// ============================================================================
-// Legacy Fallback Support
-// ============================================================================
-
-/**
- * Check if a trigger is enabled using the legacy project_integrations.triggers config.
- * This is a fallback for projects that haven't migrated to the new system.
- *
- * @param legacyTriggers - The triggers JSONB from project_integrations
- * @param triggerEvent - The new-style event name (e.g., 'pm:card-moved')
- * @param legacyKey - The legacy trigger config key (e.g., 'cardMovedToTodo')
- * @param defaultValue - Default value if not found
- */
-export function resolveLegacyTriggerEnabled(
-	legacyTriggers: Record<string, unknown> | null | undefined,
-	_triggerEvent: string,
-	legacyKey: string,
-	defaultValue: boolean,
-): boolean {
-	if (!legacyTriggers) {
-		return defaultValue;
-	}
-
-	const value = legacyTriggers[legacyKey];
-	if (typeof value === 'boolean') {
-		return value;
-	}
-
-	return defaultValue;
-}
-
-/**
- * Map from new trigger event names to legacy trigger config keys.
- * Used for backward compatibility during migration.
- */
-export const LEGACY_TRIGGER_KEY_MAP: Record<string, string> = {
-	// PM triggers
-	'pm:card-moved': 'cardMovedToTodo', // varies by agent
-	'pm:issue-transitioned': 'issueTransitioned',
-	'pm:label-added': 'readyToProcessLabel',
-	'pm:comment-mention': 'commentMention',
-	// SCM triggers
-	'scm:check-suite-success': 'checkSuiteSuccess',
-	'scm:check-suite-failure': 'checkSuiteFailure',
-	'scm:pr-review-submitted': 'prReviewSubmitted',
-	'scm:pr-comment-mention': 'prCommentMention',
-	'scm:review-requested': 'reviewRequested',
-	'scm:pr-opened': 'prOpened',
-	// Email triggers
-	'email:received': 'emailReceived',
-};
-
-/**
- * Get the legacy trigger key for an agent-specific card-moved trigger.
- */
-export function getLegacyCardMovedKey(agentType: string): string {
-	switch (agentType) {
-		case 'splitting':
-			return 'cardMovedToSplitting';
-		case 'planning':
-			return 'cardMovedToPlanning';
-		case 'implementation':
-			return 'cardMovedToTodo';
-		default:
-			return 'cardMovedToTodo';
-	}
 }

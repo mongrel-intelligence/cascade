@@ -36,6 +36,8 @@ triggers:
         label: Target List
         options: [todo]
         defaultValue: todo
+    # contextPipeline can be specified per-trigger to override strategies.contextPipeline
+    # Currently using strategy default: [directoryListing, contextFiles, squint, workItem]
   - event: pm:issue-transitioned
     label: Issue Transitioned
     description: Trigger when issue transitions to Todo status

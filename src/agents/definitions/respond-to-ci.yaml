@@ -30,6 +30,8 @@ triggers:
     description: Trigger when CI checks fail
     defaultEnabled: true
     providers: [github]
+    # contextPipeline can be specified per-trigger to override strategies.contextPipeline
+    # Currently using strategy default: [prContext, directoryListing, contextFiles, squint, workItem]
 
 strategies:
   contextPipeline: [prContext, directoryListing, contextFiles, squint, workItem]

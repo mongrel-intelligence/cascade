@@ -21,7 +21,12 @@ import {
 import { buildGadgetsForAgent } from '../shared/gadgets.js';
 import type { FetchContextParams, PreExecuteParams } from './contextSteps.js';
 import { resolveAgentDefinition } from './loader.js';
-import type { AgentCapabilities, AgentDefinition } from './schema.js';
+import type {
+	AgentCapabilities,
+	AgentDefinition,
+	ContextStepName,
+	SupportedTrigger,
+} from './schema.js';
 import { CONTEXT_STEP_REGISTRY, PRE_EXECUTE_REGISTRY } from './strategies.js';
 
 // Re-export for backward compatibility
@@ -81,6 +86,32 @@ function getAllCapabilities(caps: AgentCapabilities): Capability[] {
 	return [...caps.required, ...caps.optional];
 }
 
+/**
+ * Resolve the context pipeline for a given trigger event.
+ * Uses the trigger-specific pipeline if defined, otherwise falls back to the default.
+ *
+ * @param triggers - Array of supported triggers from the agent definition
+ * @param defaultPipeline - Default pipeline from strategies.contextPipeline
+ * @param triggerEvent - Optional trigger event (e.g., 'pm:card-moved', 'scm:check-suite-success')
+ * @returns The context pipeline to use
+ */
+function resolveContextPipeline(
+	triggers: SupportedTrigger[],
+	defaultPipeline: ContextStepName[],
+	triggerEvent?: string,
+): ContextStepName[] {
+	if (!triggerEvent) {
+		return defaultPipeline;
+	}
+
+	const trigger = triggers.find((t) => t.event === triggerEvent);
+	if (trigger?.contextPipeline && trigger.contextPipeline.length > 0) {
+		return trigger.contextPipeline;
+	}
+
+	return defaultPipeline;
+}
+
 // ============================================================================
 // Profile Builder (Capability-driven)
 // ============================================================================
@@ -97,8 +128,11 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 	// Get gadget options from strategies
 	const gadgetOptions = def.strategies.gadgetOptions;
 
-	// Get context pipeline from strategies
-	const contextPipeline = def.strategies.contextPipeline;
+	// Get default context pipeline from strategies
+	const defaultContextPipeline = def.strategies.contextPipeline;
+
+	// Get triggers for dynamic context pipeline resolution
+	const triggers = def.triggers ?? [];
 
 	// Get task prompt template from prompts (required by schema)
 	const taskPromptTemplate = def.prompts.taskPrompt;
@@ -121,6 +155,14 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 		...(def.backend.blockGitPush !== undefined && { blockGitPush: def.backend.blockGitPush }),
 		...(def.backend.requiresPR && { requiresPR: true }),
 		fetchContext: async (params) => {
+			// Resolve context pipeline: use trigger-specific pipeline if available,
+			// otherwise fall back to the default from strategies.contextPipeline
+			const contextPipeline = resolveContextPipeline(
+				triggers,
+				defaultContextPipeline,
+				params.input.triggerType,
+			);
+
 			const injections: ContextInjection[] = [];
 			for (const step of contextPipeline) {
 				const stepFn = resolveRegistry(CONTEXT_STEP_REGISTRY, step, 'contextPipeline step');
