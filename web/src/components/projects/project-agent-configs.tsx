@@ -32,7 +32,6 @@ interface AgentConfig {
 	model: string | null;
 	maxIterations: number | null;
 	agentBackend: string | null;
-	prompt: string | null;
 }
 
 function AgentConfigBadge({ config }: { config: AgentConfig | null }) {
@@ -283,7 +282,6 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const [model, setModel] = useState('');
 	const [maxIterations, setMaxIterations] = useState('');
 	const [agentBackend, setAgentBackend] = useState('');
-	const [prompt, setPrompt] = useState('');
 	const [localLifecycleTriggers, setLocalLifecycleTriggers] = useState<Record<string, unknown>>({});
 	const [lifecycleSaving, setLifecycleSaving] = useState(false);
 	const [lifecycleSaved, setLifecycleSaved] = useState(false);
@@ -300,7 +298,6 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		setModel('');
 		setMaxIterations('');
 		setAgentBackend('');
-		setPrompt('');
 		setDialogOpen(true);
 	}
 
@@ -310,7 +307,6 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		setModel(config.model ?? '');
 		setMaxIterations(config.maxIterations?.toString() ?? '');
 		setAgentBackend(config.agentBackend ?? '');
-		setPrompt(config.prompt ?? '');
 		setDialogOpen(true);
 	}
 
@@ -322,7 +318,6 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentBackend: agentBackend || null,
-				prompt: prompt || null,
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: configsQueryKey });
@@ -338,7 +333,6 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentBackend: agentBackend || null,
-				prompt: prompt || null,
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: configsQueryKey });
@@ -614,21 +608,12 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 						</div>
 						<div className="space-y-2">
 							<Label>Prompt</Label>
-							{editing?.prompt ? (
-								<p className="text-sm text-muted-foreground">
-									Custom prompt set.{' '}
-									<Link to="/settings/prompts" className="text-primary hover:underline">
-										Edit in Prompt Editor
-									</Link>
-								</p>
-							) : (
-								<p className="text-sm text-muted-foreground">
-									Using default.{' '}
-									<Link to="/settings/prompts" className="text-primary hover:underline">
-										Customize in Prompt Editor
-									</Link>
-								</p>
-							)}
+							<p className="text-sm text-muted-foreground">
+								Prompts are managed in{' '}
+								<Link to="/settings/definitions" className="text-primary hover:underline">
+									Agent Definitions
+								</Link>
+							</p>
 						</div>
 						<div className="flex justify-end gap-2">
 							<button

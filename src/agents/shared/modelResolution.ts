@@ -1,12 +1,13 @@
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../types/index.js';
-import { type ContextFile, readContextFiles } from '../utils/setup.js';
-
+import { logger } from '../../utils/logging.js';
+import { resolveAgentDefinition } from '../definitions/loader.js';
 import {
 	type PromptContext,
 	type TaskPromptContext,
 	getSystemPrompt,
 	renderCustomPrompt,
 } from '../prompts/index.js';
+import { type ContextFile, readContextFiles } from '../utils/setup.js';
 
 export interface ModelConfig {
 	systemPrompt: string;
@@ -59,12 +60,22 @@ export async function resolveModelConfig(options: ResolveModelConfigOptions): Pr
 	const { agentType, project, config, repoDir, modelOverride, promptContext, dbPartials } = options;
 	const configKey = options.configKey ?? agentType;
 
-	// Resolution chain: project prompt → defaults prompt → .eta file
-	const customPromptSource = project.prompts?.[agentType] ?? config.defaults.prompts?.[agentType];
+	// Resolve prompts from agent definition (cache → DB → YAML)
+	let definitionSystemPrompt: string | undefined;
+	let definitionTaskPrompt: string | undefined;
+	try {
+		const definition = await resolveAgentDefinition(agentType);
+		definitionSystemPrompt = definition.prompts?.systemPrompt;
+		definitionTaskPrompt = definition.prompts?.taskPrompt;
+	} catch (err) {
+		// Definition not found or DB unavailable — fall through to defaults
+		logger.warn(`Failed to resolve agent definition for ${agentType}:`, err);
+	}
 
+	// Resolution chain: definition prompt → .eta file
 	let systemPrompt: string;
-	if (customPromptSource) {
-		systemPrompt = renderCustomPrompt(customPromptSource, promptContext ?? {}, dbPartials);
+	if (definitionSystemPrompt) {
+		systemPrompt = renderCustomPrompt(definitionSystemPrompt, promptContext ?? {}, dbPartials);
 	} else {
 		systemPrompt = getSystemPrompt(agentType, promptContext ?? {}, dbPartials);
 	}
@@ -79,14 +90,11 @@ export async function resolveModelConfig(options: ResolveModelConfigOptions): Pr
 	const maxIterations =
 		config.defaults.agentIterations?.[configKey] || config.defaults.maxIterations;
 
-	// Resolve task prompt override: project → defaults → undefined (use .eta default)
-	const customTaskPromptSource =
-		project.taskPrompts?.[agentType] ?? config.defaults.taskPrompts?.[agentType];
-
+	// Resolve task prompt override from definition → undefined (use .eta default)
 	let taskPrompt: string | undefined;
-	if (customTaskPromptSource) {
+	if (definitionTaskPrompt) {
 		const taskContext = buildTaskOverrideContext(promptContext, options.agentInput);
-		taskPrompt = renderCustomPrompt(customTaskPromptSource, taskContext, dbPartials);
+		taskPrompt = renderCustomPrompt(definitionTaskPrompt, taskContext, dbPartials);
 	}
 
 	const contextFiles = await readContextFiles(repoDir);

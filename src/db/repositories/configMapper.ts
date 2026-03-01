@@ -50,8 +50,6 @@ export interface AgentConfigRow {
 	model: string | null;
 	maxIterations: number | null;
 	agentBackend: string | null;
-	prompt: string | null;
-	taskPrompt: string | null;
 }
 
 export interface IntegrationRow {
@@ -89,8 +87,6 @@ export interface ProjectConfigRaw {
 	baseBranch: string;
 	branchPrefix: string;
 	pm: { type: string };
-	prompts?: Record<string, string>;
-	taskPrompts?: Record<string, string>;
 	model?: string;
 	agentModels?: Record<string, string>;
 	cardBudgetUsd?: number;
@@ -140,23 +136,17 @@ type ProjectRow = {
 export function buildAgentMaps(configs: AgentConfigRow[]): {
 	models: Record<string, string>;
 	iterations: Record<string, number>;
-	prompts: Record<string, string>;
-	taskPrompts: Record<string, string>;
 	backends: Record<string, string>;
 } {
 	const models: Record<string, string> = {};
 	const iterations: Record<string, number> = {};
-	const prompts: Record<string, string> = {};
-	const taskPrompts: Record<string, string> = {};
 	const backends: Record<string, string> = {};
 	for (const ac of configs) {
 		if (ac.model) models[ac.agentType] = ac.model;
 		if (ac.maxIterations != null) iterations[ac.agentType] = ac.maxIterations;
-		if (ac.prompt) prompts[ac.agentType] = ac.prompt;
-		if (ac.taskPrompt) taskPrompts[ac.agentType] = ac.taskPrompt;
 		if (ac.agentBackend) backends[ac.agentType] = ac.agentBackend;
 	}
-	return { models, iterations, prompts, taskPrompts, backends };
+	return { models, iterations, backends };
 }
 
 export function orUndefined<T extends Record<string, unknown>>(obj: T): T | undefined {
@@ -211,7 +201,7 @@ export function mapDefaultsRow(
 	row: DefaultsRow | undefined,
 	globalAgentConfigs: AgentConfigRow[],
 ): Record<string, unknown> {
-	const { models, iterations, prompts, taskPrompts } = buildAgentMaps(globalAgentConfigs);
+	const { models, iterations } = buildAgentMaps(globalAgentConfigs);
 
 	return {
 		model: row?.model ?? undefined,
@@ -225,8 +215,6 @@ export function mapDefaultsRow(
 		progressIntervalMinutes: row?.progressIntervalMinutes
 			? Number(row.progressIntervalMinutes)
 			: undefined,
-		prompts: orUndefined(prompts),
-		taskPrompts: orUndefined(taskPrompts),
 	};
 }
 
@@ -261,7 +249,7 @@ export function mapProjectRow({
 	jiraTriggers,
 	githubTriggers,
 }: MapProjectInput): ProjectConfigRaw {
-	const { models, prompts, taskPrompts, backends } = buildAgentMaps(projectAgentConfigs);
+	const { models, backends } = buildAgentMaps(projectAgentConfigs);
 
 	// Derive PM type from integration config
 	const pmType = jiraConfig ? 'jira' : 'trello';
@@ -274,8 +262,6 @@ export function mapProjectRow({
 		baseBranch: row.baseBranch ?? 'main',
 		branchPrefix: row.branchPrefix ?? 'feature/',
 		pm: { type: pmType },
-		prompts: orUndefined(prompts),
-		taskPrompts: orUndefined(taskPrompts),
 		model: row.model ?? undefined,
 		agentModels: orUndefined(models),
 		cardBudgetUsd: row.cardBudgetUsd ? Number(row.cardBudgetUsd) : undefined,

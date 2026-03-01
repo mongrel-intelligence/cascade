@@ -329,7 +329,6 @@ export async function createAgentConfig(data: {
 	model?: string | null;
 	maxIterations?: number | null;
 	agentBackend?: string | null;
-	prompt?: string | null;
 }) {
 	const db = getDb();
 	const [row] = await db
@@ -341,7 +340,6 @@ export async function createAgentConfig(data: {
 			model: data.model,
 			maxIterations: data.maxIterations,
 			agentBackend: data.agentBackend,
-			prompt: data.prompt,
 		})
 		.returning({ id: agentConfigs.id });
 	return row;
@@ -354,7 +352,6 @@ export async function updateAgentConfig(
 		model?: string | null;
 		maxIterations?: number | null;
 		agentBackend?: string | null;
-		prompt?: string | null;
 	},
 ) {
 	const db = getDb();

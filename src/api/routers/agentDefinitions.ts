@@ -18,13 +18,27 @@ import {
 	TASK_PROMPT_BUILDER_NAMES,
 	TOOL_SET_NAMES,
 } from '../../agents/definitions/schema.js';
+import { validateTemplate } from '../../agents/prompts/index.js';
 import {
 	deleteAgentDefinition,
 	getAgentDefinition,
 	listAgentDefinitions,
 	upsertAgentDefinition,
 } from '../../db/repositories/agentDefinitionsRepository.js';
+import { loadPartials } from '../../db/repositories/partialsRepository.js';
 import { protectedProcedure, publicProcedure, router, superAdminProcedure } from '../trpc.js';
+
+async function validatePromptIfPresent(prompt: string | null | undefined) {
+	if (!prompt) return;
+	const dbPartials = await loadPartials();
+	const result = validateTemplate(prompt, dbPartials);
+	if (!result.valid) {
+		throw new TRPCError({
+			code: 'BAD_REQUEST',
+			message: `Invalid prompt template: ${result.error}`,
+		});
+	}
+}
 
 export const agentDefinitionsRouter = router({
 	/**
@@ -211,6 +225,104 @@ export const agentDefinitionsRouter = router({
 			invalidateDefinitionCache();
 			const yamlDefinition = loadAgentDefinition(input.agentType);
 			await upsertAgentDefinition(input.agentType, yamlDefinition, true);
+			invalidateDefinitionCache();
+			return { agentType: input.agentType };
+		}),
+
+	/**
+	 * Get the prompt overrides for a specific agent type (superadmin only).
+	 */
+	getPrompt: superAdminProcedure
+		.input(z.object({ agentType: z.string().min(1) }))
+		.query(async ({ input }) => {
+			let current: AgentDefinition;
+			try {
+				current = await resolveAgentDefinition(input.agentType);
+			} catch {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: `Agent definition not found: ${input.agentType}`,
+				});
+			}
+			return {
+				agentType: input.agentType,
+				systemPrompt: current.prompts?.systemPrompt ?? null,
+				taskPrompt: current.prompts?.taskPrompt ?? null,
+			};
+		}),
+
+	/**
+	 * Update (or clear) prompt overrides for an agent type (superadmin only).
+	 */
+	updatePrompt: superAdminProcedure
+		.input(
+			z.object({
+				agentType: z.string().min(1),
+				systemPrompt: z.string().nullish(),
+				taskPrompt: z.string().nullish(),
+			}),
+		)
+		.mutation(async ({ input }) => {
+			await validatePromptIfPresent(input.systemPrompt);
+			await validatePromptIfPresent(input.taskPrompt);
+
+			let current: AgentDefinition;
+			try {
+				current = await resolveAgentDefinition(input.agentType);
+			} catch {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: `Agent definition not found: ${input.agentType}`,
+				});
+			}
+
+			// Build updated prompts section
+			// Merge with existing prompts: omitting a field preserves it, passing null clears it, passing a string sets it
+			const systemPrompt =
+				input.systemPrompt !== undefined
+					? (input.systemPrompt ?? undefined)
+					: current.prompts?.systemPrompt;
+			const taskPrompt =
+				input.taskPrompt !== undefined
+					? (input.taskPrompt ?? undefined)
+					: current.prompts?.taskPrompt;
+			const prompts =
+				systemPrompt !== undefined || taskPrompt !== undefined
+					? { systemPrompt, taskPrompt }
+					: undefined;
+
+			const updated: AgentDefinition = { ...current, prompts };
+			const validated = AgentDefinitionSchema.parse(updated);
+
+			const isBuiltin = getKnownAgentTypes().includes(input.agentType);
+			await upsertAgentDefinition(input.agentType, validated, isBuiltin);
+			invalidateDefinitionCache();
+			return { agentType: input.agentType };
+		}),
+
+	/**
+	 * Reset prompt overrides to YAML defaults for an agent type (superadmin only).
+	 * Removes the prompts section from the stored definition.
+	 */
+	resetPrompt: superAdminProcedure
+		.input(z.object({ agentType: z.string().min(1) }))
+		.mutation(async ({ input }) => {
+			let current: AgentDefinition;
+			try {
+				current = await resolveAgentDefinition(input.agentType);
+			} catch {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: `Agent definition not found: ${input.agentType}`,
+				});
+			}
+
+			// Remove the prompts section
+			const { prompts: _removed, ...withoutPrompts } = current;
+			const validated = AgentDefinitionSchema.parse({ ...withoutPrompts, prompts: undefined });
+
+			const isBuiltin = getKnownAgentTypes().includes(input.agentType);
+			await upsertAgentDefinition(input.agentType, validated, isBuiltin);
 			invalidateDefinitionCache();
 			return { agentType: input.agentType };
 		}),

@@ -1,10 +1,8 @@
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { validateTemplate } from '../../agents/prompts/index.js';
 import { CLAUDE_CODE_MODELS } from '../../backends/claude-code/models.js';
 import { getDb } from '../../db/client.js';
-import { loadPartials } from '../../db/repositories/partialsRepository.js';
 import {
 	createAgentConfig,
 	deleteAgentConfig,
@@ -23,18 +21,6 @@ function assertCanModifyConfig(
 ) {
 	if (!config.orgId && !config.projectId && ctx.user.role !== 'superadmin') {
 		throw new TRPCError({ code: 'FORBIDDEN', message: 'Superadmin access required' });
-	}
-}
-
-async function validatePromptIfPresent(prompt: string | null | undefined) {
-	if (!prompt) return;
-	const dbPartials = await loadPartials();
-	const result = validateTemplate(prompt, dbPartials);
-	if (!result.valid) {
-		throw new TRPCError({
-			code: 'BAD_REQUEST',
-			message: `Invalid prompt template: ${result.error}`,
-		});
 	}
 }
 
@@ -66,7 +52,6 @@ export const agentConfigsRouter = router({
 				model: z.string().nullish(),
 				maxIterations: z.number().int().positive().nullish(),
 				agentBackend: z.string().nullish(),
-				prompt: z.string().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -74,7 +59,6 @@ export const agentConfigsRouter = router({
 			if (input.projectId) {
 				await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
 			}
-			await validatePromptIfPresent(input.prompt);
 			return createAgentConfig({
 				orgId: input.orgId ?? ctx.effectiveOrgId,
 				projectId: input.projectId,
@@ -82,7 +66,6 @@ export const agentConfigsRouter = router({
 				model: input.model,
 				maxIterations: input.maxIterations,
 				agentBackend: input.agentBackend,
-				prompt: input.prompt,
 			});
 		}),
 
@@ -94,7 +77,6 @@ export const agentConfigsRouter = router({
 				model: z.string().nullish(),
 				maxIterations: z.number().int().positive().nullish(),
 				agentBackend: z.string().nullish(),
-				prompt: z.string().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -118,7 +100,6 @@ export const agentConfigsRouter = router({
 			}
 
 			const { id, ...updates } = input;
-			await validatePromptIfPresent(updates.prompt);
 			await updateAgentConfig(id, updates);
 		}),
 

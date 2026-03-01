@@ -9,7 +9,6 @@ import { settingsAgentsRoute } from './settings/agents.js';
 import { settingsCredentialsRoute } from './settings/credentials.js';
 import { settingsDefinitionsRoute } from './settings/definitions.js';
 import { settingsGeneralRoute } from './settings/general.js';
-import { settingsPromptsRoute } from './settings/prompts.js';
 import { webhookLogsRoute } from './webhooklogs.js';
 
 export const routeTree = rootRoute.addChildren([
@@ -22,7 +21,6 @@ export const routeTree = rootRoute.addChildren([
 	settingsCredentialsRoute,
 	settingsAgentsRoute,
 	settingsDefinitionsRoute,
-	settingsPromptsRoute,
 	webhookLogsRoute,
 	gmailCallbackRoute,
 ]);

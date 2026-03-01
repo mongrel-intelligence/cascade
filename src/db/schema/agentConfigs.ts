@@ -12,8 +12,6 @@ export const agentConfigs = pgTable(
 		model: text('model'),
 		maxIterations: integer('max_iterations'),
 		agentBackend: text('agent_backend'),
-		prompt: text('prompt'),
-		taskPrompt: text('task_prompt'),
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')
 			.defaultNow()

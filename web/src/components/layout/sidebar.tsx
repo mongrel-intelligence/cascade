@@ -7,7 +7,6 @@ import {
 	Activity,
 	BookOpen,
 	Bot,
-	FileText,
 	FolderGit2,
 	KeyRound,
 	LayoutDashboard,
@@ -29,7 +28,6 @@ const settingsNav = [
 	{ to: '/settings/credentials' as const, label: 'Credentials', icon: KeyRound },
 	{ to: '/settings/agents' as const, label: 'Agent Configs', icon: Bot },
 	{ to: '/settings/definitions' as const, label: 'Agent Definitions', icon: BookOpen },
-	{ to: '/settings/prompts' as const, label: 'Prompts', icon: FileText },
 ];
 
 function NavLink({

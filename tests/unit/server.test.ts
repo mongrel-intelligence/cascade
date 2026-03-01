@@ -72,7 +72,6 @@ function buildDeps(overrides: Partial<ServerDependencies> = {}): ServerDependenc
 				agentBackend: 'llmist',
 				progressModel: 'test-model',
 				progressIntervalMinutes: 5,
-				prompts: {},
 			},
 			projects: [
 				{

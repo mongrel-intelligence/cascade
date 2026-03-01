@@ -111,7 +111,6 @@ describe('agentConfigsRouter', () => {
 				model: 'claude-sonnet-4-5-20250929',
 				maxIterations: 25,
 				agentBackend: undefined,
-				prompt: undefined,
 			});
 			expect(result).toEqual({ id: 10 });
 		});
