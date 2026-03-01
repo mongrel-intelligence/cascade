@@ -691,17 +691,14 @@ const EMPTY_DEFINITION: AgentDefinition = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main full-screen editor component
+// Hook — encapsulates all editor state and mutations
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEditorProps) {
+function useDefinitionEditor(existing: DefinitionRow | undefined, onClose: () => void) {
 	const queryClient = useQueryClient();
 	const isEdit = !!existing;
+	const queryKey = trpc.agentDefinitions.list.queryOptions().queryKey;
 
-	const schemaQuery = useQuery(trpc.agentDefinitions.schema.queryOptions());
-	const schema = schemaQuery.data;
-
-	// ── local state ──────────────────────────────────────────────────────────
 	const [agentType, setAgentType] = useState(existing?.agentType ?? '');
 	const [def, setDef] = useState<AgentDefinition>(existing?.definition ?? EMPTY_DEFINITION);
 	const [jsonText, setJsonText] = useState(
@@ -711,9 +708,6 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 	);
 	const [jsonError, setJsonError] = useState<string | null>(null);
 	const [activeTab, setActiveTab] = useState('definition');
-
-	// ── helpers ───────────────────────────────────────────────────────────────
-	const queryKey = trpc.agentDefinitions.list.queryOptions().queryKey;
 
 	const onSuccess = () => {
 		queryClient.invalidateQueries({ queryKey });
@@ -738,12 +732,9 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 		if (tab === 'json' && activeTab === 'definition') {
 			setJsonText(JSON.stringify(def, null, 2));
 			setJsonError(null);
-		}
-		if (tab === 'definition' && activeTab === 'json') {
-			// sync json -> form silently
+		} else if (tab === 'definition' && activeTab === 'json') {
 			try {
-				const parsed = JSON.parse(jsonText) as AgentDefinition;
-				setDef(parsed);
+				setDef(JSON.parse(jsonText) as AgentDefinition);
 				setJsonError(null);
 			} catch {
 				// leave form as-is if JSON is invalid
@@ -752,8 +743,7 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 		setActiveTab(tab);
 	};
 
-	const handleSubmit = (e: React.FormEvent) => {
-		e.preventDefault();
+	const handleSave = () => {
 		let submission = def;
 		if (activeTab === 'json') {
 			try {
@@ -765,25 +755,72 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 				return;
 			}
 		}
-		if (isEdit) {
+		if (isEdit && existing) {
 			updateMutation.mutate({ agentType: existing.agentType, patch: submission });
 		} else {
 			createMutation.mutate({ agentType, definition: submission });
 		}
 	};
 
-	// ── field helpers ─────────────────────────────────────────────────────────
 	const setIdentity = (k: keyof AgentDefinition['identity'], v: string) =>
 		setDef((d) => ({ ...d, identity: { ...d.identity, [k]: v } }));
-
 	const setCap = (k: keyof AgentDefinition['capabilities'], v: boolean) =>
 		setDef((d) => ({ ...d, capabilities: { ...d.capabilities, [k]: v } }));
-
 	const setBackend = (k: keyof AgentDefinition['backend'], v: unknown) =>
 		setDef((d) => ({ ...d, backend: { ...d.backend, [k]: v } }));
-
 	const setTrailing = (k: string, v: boolean) =>
 		setDef((d) => ({ ...d, trailingMessage: { ...(d.trailingMessage ?? {}), [k]: v } }));
+
+	const clearJsonError = () => setJsonError(null);
+
+	return {
+		isEdit,
+		agentType,
+		setAgentType,
+		def,
+		setDef,
+		jsonText,
+		setJsonText,
+		jsonError,
+		clearJsonError,
+		activeTab,
+		activeMutation,
+		handleTabChange,
+		handleSave,
+		setIdentity,
+		setCap,
+		setBackend,
+		setTrailing,
+	};
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main full-screen editor component
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEditorProps) {
+	const schemaQuery = useQuery(trpc.agentDefinitions.schema.queryOptions());
+	const schema = schemaQuery.data;
+
+	const {
+		isEdit,
+		agentType,
+		setAgentType,
+		def,
+		setDef,
+		jsonText,
+		setJsonText,
+		jsonError,
+		clearJsonError,
+		activeTab,
+		activeMutation,
+		handleTabChange,
+		handleSave,
+		setIdentity,
+		setCap,
+		setBackend,
+		setTrailing,
+	} = useDefinitionEditor(existing, onClose);
 
 	// ─────────────────────────────────────────────────────────────────────────
 	return (
@@ -794,15 +831,15 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 					<h2 className="text-xl font-bold">
 						{isEdit ? (
 							<>
-								{existing.definition.identity.emoji}{' '}
-								<span className="font-mono">{existing.agentType}</span>
+								{existing?.definition.identity.emoji}{' '}
+								<span className="font-mono">{existing?.agentType}</span>
 							</>
 						) : (
 							'New Agent Definition'
 						)}
 					</h2>
 					{isEdit && (
-						<p className="text-sm text-muted-foreground">{existing.definition.identity.label}</p>
+						<p className="text-sm text-muted-foreground">{existing?.definition.identity.label}</p>
 					)}
 				</div>
 				<div className="flex gap-2">
@@ -817,7 +854,7 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 					{activeTab !== 'prompt' && (
 						<button
 							type="button"
-							onClick={(e) => handleSubmit(e as unknown as React.FormEvent)}
+							onClick={handleSave}
 							disabled={activeMutation.isPending}
 							className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
 						>
@@ -906,7 +943,7 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 
 				{isEdit && (
 					<TabsContent value="prompt" className="pt-4">
-						<SystemPromptPanel agentType={existing.agentType} />
+						<SystemPromptPanel agentType={existing?.agentType ?? ''} />
 					</TabsContent>
 				)}
 
@@ -918,7 +955,7 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 						value={jsonText}
 						onChange={(e) => {
 							setJsonText(e.target.value);
-							setJsonError(null);
+							clearJsonError();
 						}}
 						rows={30}
 						className="font-mono text-xs"
