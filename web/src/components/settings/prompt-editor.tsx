@@ -4,175 +4,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-type EditTarget = { type: 'template'; agentType: string } | { type: 'partial'; name: string };
-
 interface PromptEditorProps {
-	target: EditTarget;
+	target: { name: string };
 	onClose: () => void;
 }
 
 export function PromptEditor({ target, onClose }: PromptEditorProps) {
-	if (target.type === 'template') {
-		return <TemplateEditor agentType={target.agentType} onClose={onClose} />;
-	}
 	return <PartialEditor name={target.name} onClose={onClose} />;
-}
-
-function TemplateEditor({ agentType, onClose }: { agentType: string; onClose: () => void }) {
-	const queryClient = useQueryClient();
-	const [content, setContent] = useState('');
-	const [validationStatus, setValidationStatus] = useState<string | null>(null);
-	const [isDirty, setIsDirty] = useState(false);
-
-	// Fetch current prompt from agent definition
-	const definitionQuery = useQuery(trpc.agentDefinitions.get.queryOptions({ agentType }));
-	const defaultQuery = useQuery(trpc.prompts.getDefault.queryOptions({ agentType }));
-	const variablesQuery = useQuery(trpc.prompts.variables.queryOptions());
-	const partialsQuery = useQuery(trpc.prompts.listPartials.queryOptions());
-
-	const definition = definitionQuery.data?.definition;
-	const hasCustom = !!definition?.prompts?.systemPrompt;
-
-	useEffect(() => {
-		if (definition?.prompts?.systemPrompt) {
-			setContent(definition.prompts.systemPrompt);
-		} else if (defaultQuery.data) {
-			setContent(defaultQuery.data.content);
-		}
-	}, [definition?.prompts?.systemPrompt, defaultQuery.data]);
-
-	const saveMutation = useMutation({
-		mutationFn: async () => {
-			await trpcClient.agentDefinitions.updatePrompt.mutate({
-				agentType,
-				systemPrompt: content,
-			});
-		},
-		onSuccess: () => {
-			queryClient.invalidateQueries({
-				queryKey: trpc.agentDefinitions.get.queryOptions({ agentType }).queryKey,
-			});
-			queryClient.invalidateQueries({
-				queryKey: trpc.agentDefinitions.list.queryOptions().queryKey,
-			});
-			setIsDirty(false);
-			setValidationStatus('Saved.');
-		},
-	});
-
-	const resetMutation = useMutation({
-		mutationFn: async () => {
-			await trpcClient.agentDefinitions.resetPrompt.mutate({ agentType });
-		},
-		onSuccess: () => {
-			queryClient.invalidateQueries({
-				queryKey: trpc.agentDefinitions.get.queryOptions({ agentType }).queryKey,
-			});
-			queryClient.invalidateQueries({
-				queryKey: trpc.agentDefinitions.list.queryOptions().queryKey,
-			});
-			if (defaultQuery.data) {
-				setContent(defaultQuery.data.content);
-			}
-			setIsDirty(false);
-			setValidationStatus('Reset to default.');
-		},
-	});
-
-	const validateMutation = useMutation({
-		mutationFn: () => trpcClient.prompts.validate.mutate({ template: content }),
-		onSuccess: (result) => {
-			if (result.valid) {
-				setValidationStatus('Valid.');
-			} else {
-				setValidationStatus(`Invalid: ${result.error}`);
-			}
-		},
-	});
-
-	function loadDefault() {
-		if (defaultQuery.data) {
-			setContent(defaultQuery.data.content);
-			setIsDirty(true);
-		}
-	}
-
-	return (
-		<div className="space-y-4">
-			<div className="flex items-center justify-between">
-				<h2 className="text-xl font-bold">
-					Prompt: {agentType}
-					{hasCustom && <Badge className="ml-2">custom</Badge>}
-				</h2>
-				<div className="flex gap-2">
-					<button
-						type="button"
-						onClick={() => resetMutation.mutate()}
-						disabled={!hasCustom || resetMutation.isPending}
-						className="inline-flex h-9 items-center rounded-md border border-input px-4 text-sm hover:bg-accent disabled:opacity-50"
-					>
-						Reset to Default
-					</button>
-					<button
-						type="button"
-						onClick={() => saveMutation.mutate()}
-						disabled={saveMutation.isPending}
-						className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-					>
-						{saveMutation.isPending ? 'Saving...' : 'Save'}
-					</button>
-				</div>
-			</div>
-
-			<div className="grid grid-cols-3 gap-4">
-				<div className="col-span-2 space-y-2">
-					<textarea
-						value={content}
-						onChange={(e) => {
-							setContent(e.target.value);
-							setIsDirty(true);
-							setValidationStatus(null);
-						}}
-						className="w-full h-[600px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-ring"
-						spellCheck={false}
-					/>
-					<div className="flex items-center gap-4">
-						<button
-							type="button"
-							onClick={loadDefault}
-							className="text-sm text-muted-foreground hover:text-foreground"
-						>
-							Load Default
-						</button>
-						<button
-							type="button"
-							onClick={() => validateMutation.mutate()}
-							disabled={validateMutation.isPending}
-							className="text-sm text-muted-foreground hover:text-foreground"
-						>
-							Validate
-						</button>
-						{validationStatus && (
-							<span
-								className={`text-sm ${
-									validationStatus.startsWith('Invalid')
-										? 'text-destructive'
-										: 'text-green-600 dark:text-green-400'
-								}`}
-							>
-								{validationStatus}
-							</span>
-						)}
-						{saveMutation.isError && (
-							<span className="text-sm text-destructive">{saveMutation.error.message}</span>
-						)}
-					</div>
-				</div>
-
-				<ReferencePanel variables={variablesQuery.data} partials={partialsQuery.data} />
-			</div>
-		</div>
-	);
 }
 
 function PartialEditor({ name, onClose }: { name: string; onClose: () => void }) {
@@ -294,7 +132,7 @@ function PartialEditor({ name, onClose }: { name: string; onClose: () => void })
 	);
 }
 
-function ReferencePanel({
+export function ReferencePanel({
 	variables,
 	partials,
 }: {

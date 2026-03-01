@@ -1,5 +1,6 @@
-import { AgentDefinitionFormDialog } from '@/components/settings/agent-definition-form.js';
+import { AgentDefinitionEditor } from '@/components/settings/agent-definition-editor.js';
 import { AgentDefinitionsTable } from '@/components/settings/agent-definition-table.js';
+import type { DefinitionRow } from '@/components/settings/agent-definition-table.js';
 import { PromptEditor } from '@/components/settings/prompt-editor.js';
 import { Badge } from '@/components/ui/badge.js';
 import {
@@ -17,18 +18,38 @@ import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { rootRoute } from '../__root.js';
 
-type Tab = 'definitions' | 'prompts' | 'partials';
-type EditTarget = { type: 'template'; agentType: string } | { type: 'partial'; name: string };
+type Tab = 'definitions' | 'partials';
+type EditTarget =
+	| { type: 'definition'; existing?: DefinitionRow }
+	| { type: 'partial'; name: string };
 
 function AgentDefinitionsPage() {
 	const [tab, setTab] = useState<Tab>('definitions');
-	const [createOpen, setCreateOpen] = useState(false);
 	const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
 
 	const definitionsQuery = useQuery(trpc.agentDefinitions.list.queryOptions());
 
-	// When editing a prompt or partial, show the editor full-width
+	// When editing a definition or partial, show the editor full-width
 	if (editTarget) {
+		if (editTarget.type === 'definition') {
+			return (
+				<div className="space-y-4">
+					<button
+						type="button"
+						onClick={() => setEditTarget(null)}
+						className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+					>
+						<ArrowLeft className="h-4 w-4" /> Back
+					</button>
+					<AgentDefinitionEditor
+						existing={editTarget.existing}
+						onClose={() => setEditTarget(null)}
+					/>
+				</div>
+			);
+		}
+
+		// type === 'partial'
 		return (
 			<div className="space-y-4">
 				<button
@@ -38,7 +59,7 @@ function AgentDefinitionsPage() {
 				>
 					<ArrowLeft className="h-4 w-4" /> Back
 				</button>
-				<PromptEditor target={editTarget} onClose={() => setEditTarget(null)} />
+				<PromptEditor target={{ name: editTarget.name }} onClose={() => setEditTarget(null)} />
 			</div>
 		);
 	}
@@ -55,7 +76,7 @@ function AgentDefinitionsPage() {
 				{tab === 'definitions' && (
 					<button
 						type="button"
-						onClick={() => setCreateOpen(true)}
+						onClick={() => setEditTarget({ type: 'definition' })}
 						className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
 					>
 						New Definition
@@ -65,7 +86,7 @@ function AgentDefinitionsPage() {
 
 			{/* Tab bar */}
 			<div className="flex gap-2 border-b border-border">
-				{(['definitions', 'prompts', 'partials'] as Tab[]).map((t) => (
+				{(['definitions', 'partials'] as Tab[]).map((t) => (
 					<button
 						key={t}
 						type="button"
@@ -76,7 +97,7 @@ function AgentDefinitionsPage() {
 								: 'border-transparent text-muted-foreground hover:text-foreground'
 						}`}
 					>
-						{t === 'definitions' ? 'Definitions' : t === 'prompts' ? 'Prompts' : 'Partials'}
+						{t === 'definitions' ? 'Definitions' : 'Partials'}
 					</button>
 				))}
 			</div>
@@ -95,14 +116,13 @@ function AgentDefinitionsPage() {
 						</div>
 					)}
 
-					{definitionsQuery.data && <AgentDefinitionsTable definitions={definitionsQuery.data} />}
-
-					<AgentDefinitionFormDialog open={createOpen} onOpenChange={setCreateOpen} />
+					{definitionsQuery.data && (
+						<AgentDefinitionsTable
+							definitions={definitionsQuery.data}
+							onEdit={(def) => setEditTarget({ type: 'definition', existing: def })}
+						/>
+					)}
 				</>
-			)}
-
-			{tab === 'prompts' && (
-				<TemplatesTab onEdit={(agentType) => setEditTarget({ type: 'template', agentType })} />
 			)}
 
 			{tab === 'partials' && (
@@ -112,59 +132,9 @@ function AgentDefinitionsPage() {
 	);
 }
 
-function TemplatesTab({ onEdit }: { onEdit: (agentType: string) => void }) {
-	const agentTypesQuery = useQuery(trpc.agentDefinitions.knownTypes.queryOptions());
-	const definitionsQuery = useQuery(trpc.agentDefinitions.list.queryOptions());
-
-	if (agentTypesQuery.isLoading) {
-		return <div className="py-4 text-muted-foreground">Loading...</div>;
-	}
-
-	const agentTypes = agentTypesQuery.data ?? [];
-	const definitions = definitionsQuery.data ?? [];
-	const customPrompts = new Set(
-		definitions
-			.filter((d) => d.definition.prompts?.systemPrompt || d.definition.prompts?.taskPrompt)
-			.map((d) => d.agentType),
-	);
-
-	return (
-		<div className="overflow-hidden rounded-lg border border-border">
-			<Table>
-				<TableHeader>
-					<TableRow>
-						<TableHead>Agent Type</TableHead>
-						<TableHead>Status</TableHead>
-						<TableHead className="w-20" />
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{agentTypes.map((type) => (
-						<TableRow key={type}>
-							<TableCell className="font-medium">{type}</TableCell>
-							<TableCell>
-								{customPrompts.has(type) ? (
-									<Badge>custom</Badge>
-								) : (
-									<Badge variant="outline">default</Badge>
-								)}
-							</TableCell>
-							<TableCell>
-								<button
-									type="button"
-									onClick={() => onEdit(type)}
-									className="p-1 text-muted-foreground hover:text-foreground"
-								>
-									<Pencil className="h-4 w-4" />
-								</button>
-							</TableCell>
-						</TableRow>
-					))}
-				</TableBody>
-			</Table>
-		</div>
-	);
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Partials tab
+// ─────────────────────────────────────────────────────────────────────────────
 
 function PartialsTab({ onEdit }: { onEdit: (name: string) => void }) {
 	const queryClient = useQueryClient();

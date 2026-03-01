@@ -1,6 +1,5 @@
 import type { AppRouter } from '@/../../src/api/router.js';
 import { Badge } from '@/components/ui/badge.js';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import {
@@ -15,7 +14,8 @@ import { Textarea } from '@/components/ui/textarea.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { inferRouterOutputs } from '@trpc/server';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { ReferencePanel } from './prompt-editor.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -25,10 +25,10 @@ type RouterOutput = inferRouterOutputs<AppRouter>;
 type DefinitionRow = RouterOutput['agentDefinitions']['list'][number];
 type AgentDefinition = DefinitionRow['definition'];
 
-interface AgentDefinitionFormDialogProps {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
+export interface AgentDefinitionEditorProps {
+	/** When provided, we are editing an existing definition. When undefined, we are creating a new one. */
 	existing?: DefinitionRow;
+	onClose: () => void;
 }
 
 interface SchemaData {
@@ -41,7 +41,7 @@ interface SchemaData {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helper components
+// Helper components (shared with form dialog)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function Toggle({
@@ -507,6 +507,164 @@ function IntegrationsSection({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// System Prompt panel (edit mode only)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SystemPromptPanel({ agentType }: { agentType: string }) {
+	const queryClient = useQueryClient();
+	const [content, setContent] = useState('');
+	const [validationStatus, setValidationStatus] = useState<string | null>(null);
+
+	const definitionQuery = useQuery(trpc.agentDefinitions.get.queryOptions({ agentType }));
+	const defaultQuery = useQuery(trpc.prompts.getDefault.queryOptions({ agentType }));
+	const variablesQuery = useQuery(trpc.prompts.variables.queryOptions());
+	const partialsQuery = useQuery(trpc.prompts.listPartials.queryOptions());
+
+	const definition = definitionQuery.data?.definition;
+	const hasCustom = !!definition?.prompts?.systemPrompt;
+
+	useEffect(() => {
+		if (definition?.prompts?.systemPrompt) {
+			setContent(definition.prompts.systemPrompt);
+		} else if (defaultQuery.data) {
+			setContent(defaultQuery.data.content);
+		}
+	}, [definition?.prompts?.systemPrompt, defaultQuery.data]);
+
+	const saveMutation = useMutation({
+		mutationFn: async () => {
+			await trpcClient.agentDefinitions.updatePrompt.mutate({
+				agentType,
+				systemPrompt: content,
+			});
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({
+				queryKey: trpc.agentDefinitions.get.queryOptions({ agentType }).queryKey,
+			});
+			queryClient.invalidateQueries({
+				queryKey: trpc.agentDefinitions.list.queryOptions().queryKey,
+			});
+			setValidationStatus('Saved.');
+		},
+	});
+
+	const resetMutation = useMutation({
+		mutationFn: async () => {
+			await trpcClient.agentDefinitions.resetPrompt.mutate({ agentType });
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({
+				queryKey: trpc.agentDefinitions.get.queryOptions({ agentType }).queryKey,
+			});
+			queryClient.invalidateQueries({
+				queryKey: trpc.agentDefinitions.list.queryOptions().queryKey,
+			});
+			if (defaultQuery.data) {
+				setContent(defaultQuery.data.content);
+			}
+			setValidationStatus('Reset to default.');
+		},
+	});
+
+	const validateMutation = useMutation({
+		mutationFn: () => trpcClient.prompts.validate.mutate({ template: content }),
+		onSuccess: (result) => {
+			if (result.valid) {
+				setValidationStatus('Valid.');
+			} else {
+				setValidationStatus(`Invalid: ${result.error}`);
+			}
+		},
+	});
+
+	function loadDefault() {
+		if (defaultQuery.data) {
+			setContent(defaultQuery.data.content);
+			setValidationStatus(null);
+		}
+	}
+
+	return (
+		<div className="space-y-4">
+			<div className="flex items-center justify-between">
+				<div className="flex items-center gap-2">
+					<span className="text-sm text-muted-foreground">
+						System prompt for <span className="font-mono font-medium">{agentType}</span>
+					</span>
+					{hasCustom && <Badge>custom</Badge>}
+				</div>
+				<div className="flex gap-2">
+					<button
+						type="button"
+						onClick={() => resetMutation.mutate()}
+						disabled={!hasCustom || resetMutation.isPending}
+						className="inline-flex h-9 items-center rounded-md border border-input px-4 text-sm hover:bg-accent disabled:opacity-50"
+					>
+						Reset to Default
+					</button>
+					<button
+						type="button"
+						onClick={() => saveMutation.mutate()}
+						disabled={saveMutation.isPending}
+						className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+					>
+						{saveMutation.isPending ? 'Saving...' : 'Save Prompt'}
+					</button>
+				</div>
+			</div>
+
+			<div className="grid grid-cols-3 gap-4">
+				<div className="col-span-2 space-y-2">
+					<textarea
+						value={content}
+						onChange={(e) => {
+							setContent(e.target.value);
+							setValidationStatus(null);
+						}}
+						className="w-full h-[500px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+						spellCheck={false}
+					/>
+					<div className="flex items-center gap-4">
+						<button
+							type="button"
+							onClick={loadDefault}
+							className="text-sm text-muted-foreground hover:text-foreground"
+						>
+							Load Default
+						</button>
+						<button
+							type="button"
+							onClick={() => validateMutation.mutate()}
+							disabled={validateMutation.isPending}
+							className="text-sm text-muted-foreground hover:text-foreground"
+						>
+							Validate
+						</button>
+						{validationStatus && (
+							<span
+								className={`text-sm ${
+									validationStatus.startsWith('Invalid')
+										? 'text-destructive'
+										: 'text-green-600 dark:text-green-400'
+								}`}
+							>
+								{validationStatus}
+							</span>
+						)}
+						{saveMutation.isError && (
+							<span className="text-sm text-destructive">{saveMutation.error.message}</span>
+						)}
+					</div>
+				</div>
+
+				<ReferencePanel variables={variablesQuery.data} partials={partialsQuery.data} />
+			</div>
+		</div>
+	);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Default empty definition for "create" mode
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -533,21 +691,14 @@ const EMPTY_DEFINITION: AgentDefinition = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main component
+// Hook — encapsulates all editor state and mutations
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function AgentDefinitionFormDialog({
-	open,
-	onOpenChange,
-	existing,
-}: AgentDefinitionFormDialogProps) {
+function useDefinitionEditor(existing: DefinitionRow | undefined, onClose: () => void) {
 	const queryClient = useQueryClient();
 	const isEdit = !!existing;
+	const queryKey = trpc.agentDefinitions.list.queryOptions().queryKey;
 
-	const schemaQuery = useQuery(trpc.agentDefinitions.schema.queryOptions());
-	const schema = schemaQuery.data;
-
-	// ── local state ──────────────────────────────────────────────────────────
 	const [agentType, setAgentType] = useState(existing?.agentType ?? '');
 	const [def, setDef] = useState<AgentDefinition>(existing?.definition ?? EMPTY_DEFINITION);
 	const [jsonText, setJsonText] = useState(
@@ -556,14 +707,12 @@ export function AgentDefinitionFormDialog({
 			: JSON.stringify(EMPTY_DEFINITION, null, 2),
 	);
 	const [jsonError, setJsonError] = useState<string | null>(null);
-	const [activeTab, setActiveTab] = useState('form');
-
-	// ── helpers ───────────────────────────────────────────────────────────────
-	const queryKey = trpc.agentDefinitions.list.queryOptions().queryKey;
+	const [agentTypeError, setAgentTypeError] = useState<string | null>(null);
+	const [activeTab, setActiveTab] = useState('definition');
 
 	const onSuccess = () => {
 		queryClient.invalidateQueries({ queryKey });
-		onOpenChange(false);
+		onClose();
 	};
 
 	const createMutation = useMutation({
@@ -581,187 +730,255 @@ export function AgentDefinitionFormDialog({
 	const activeMutation = isEdit ? updateMutation : createMutation;
 
 	const handleTabChange = (tab: string) => {
-		if (tab === 'json' && activeTab === 'form') {
+		if (tab === 'json' && activeTab === 'definition') {
 			setJsonText(JSON.stringify(def, null, 2));
 			setJsonError(null);
+		} else if (tab === 'definition' && activeTab === 'json') {
+			try {
+				setDef(JSON.parse(jsonText) as AgentDefinition);
+				setJsonError(null);
+			} catch (err) {
+				setJsonError((err as Error).message);
+				return; // keep user on JSON tab so they can fix the error
+			}
 		}
 		setActiveTab(tab);
 	};
 
-	const syncJsonToForm = () => {
-		try {
-			const parsed = JSON.parse(jsonText) as AgentDefinition;
-			setDef(parsed);
-			setJsonError(null);
-			return true;
-		} catch (e) {
-			setJsonError((e as Error).message);
-			return false;
+	const handleSave = () => {
+		if (!isEdit && !agentType.trim()) {
+			setAgentTypeError('Agent type is required.');
+			return;
 		}
-	};
 
-	const handleSubmit = (e: React.FormEvent) => {
-		e.preventDefault();
 		let submission = def;
 		if (activeTab === 'json') {
 			try {
 				submission = JSON.parse(jsonText) as AgentDefinition;
-				setDef(submission); // sync form state for UI
+				setDef(submission);
 				setJsonError(null);
 			} catch (err) {
 				setJsonError((err as Error).message);
 				return;
 			}
 		}
-		// Use submission directly instead of relying on def from closure
-		if (isEdit) {
-			updateMutation.mutate({ agentType: existing?.agentType as string, patch: submission });
+		if (isEdit && existing) {
+			updateMutation.mutate({ agentType: existing.agentType, patch: submission });
 		} else {
 			createMutation.mutate({ agentType, definition: submission });
 		}
 	};
 
-	// ── field helpers ─────────────────────────────────────────────────────────
 	const setIdentity = (k: keyof AgentDefinition['identity'], v: string) =>
 		setDef((d) => ({ ...d, identity: { ...d.identity, [k]: v } }));
-
 	const setCap = (k: keyof AgentDefinition['capabilities'], v: boolean) =>
 		setDef((d) => ({ ...d, capabilities: { ...d.capabilities, [k]: v } }));
-
 	const setBackend = (k: keyof AgentDefinition['backend'], v: unknown) =>
 		setDef((d) => ({ ...d, backend: { ...d.backend, [k]: v } }));
-
 	const setTrailing = (k: string, v: boolean) =>
 		setDef((d) => ({ ...d, trailingMessage: { ...(d.trailingMessage ?? {}), [k]: v } }));
 
+	const clearJsonError = () => setJsonError(null);
+
+	const updateAgentType = (value: string) => {
+		setAgentType(value);
+		if (agentTypeError) setAgentTypeError(null);
+	};
+
+	return {
+		isEdit,
+		agentType,
+		setAgentType: updateAgentType,
+		def,
+		setDef,
+		jsonText,
+		setJsonText,
+		jsonError,
+		clearJsonError,
+		agentTypeError,
+		activeTab,
+		activeMutation,
+		handleTabChange,
+		handleSave,
+		setIdentity,
+		setCap,
+		setBackend,
+		setTrailing,
+	};
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main full-screen editor component
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEditorProps) {
+	const schemaQuery = useQuery(trpc.agentDefinitions.schema.queryOptions());
+	const schema = schemaQuery.data;
+
+	const {
+		isEdit,
+		agentType,
+		setAgentType,
+		def,
+		setDef,
+		jsonText,
+		setJsonText,
+		jsonError,
+		clearJsonError,
+		agentTypeError,
+		activeTab,
+		activeMutation,
+		handleTabChange,
+		handleSave,
+		setIdentity,
+		setCap,
+		setBackend,
+		setTrailing,
+	} = useDefinitionEditor(existing, onClose);
+
 	// ─────────────────────────────────────────────────────────────────────────
 	return (
-		<Dialog key={existing?.agentType ?? 'create'} open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
-				<DialogHeader>
-					<DialogTitle>
-						{isEdit ? `Edit Definition: ${existing.agentType}` : 'New Agent Definition'}
-					</DialogTitle>
-				</DialogHeader>
-
-				<form onSubmit={handleSubmit} className="space-y-4">
-					{!isEdit && (
-						<div className="space-y-2">
-							<Label htmlFor="ad-agentType">Agent Type</Label>
-							<Input
-								id="ad-agentType"
-								value={agentType}
-								onChange={(e) => setAgentType(e.target.value)}
-								placeholder="e.g. implementation, review, debug"
-								required
-							/>
-						</div>
+		<div className="space-y-6">
+			{/* Header */}
+			<div className="flex items-center justify-between">
+				<div>
+					<h2 className="text-xl font-bold">
+						{isEdit ? (
+							<>
+								{existing?.definition.identity.emoji}{' '}
+								<span className="font-mono">{existing?.agentType}</span>
+							</>
+						) : (
+							'New Agent Definition'
+						)}
+					</h2>
+					{isEdit && (
+						<p className="text-sm text-muted-foreground">{existing?.definition.identity.label}</p>
 					)}
-
-					<Tabs value={activeTab} onValueChange={handleTabChange}>
-						<TabsList>
-							<TabsTrigger value="form">Form</TabsTrigger>
-							<TabsTrigger value="json">Raw JSON</TabsTrigger>
-						</TabsList>
-
-						<TabsContent value="form" className="space-y-6 pt-2">
-							<IdentitySection def={def} setIdentity={setIdentity} />
-							<CapabilitiesSection def={def} setCap={setCap} />
-							<ToolsSection def={def} setDef={setDef} schema={schema} />
-							<StrategiesSection def={def} setDef={setDef} schema={schema} />
-							<BackendSection def={def} setBackend={setBackend} />
-
-							<section className="space-y-3">
-								<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-									Compaction
-								</h3>
-								<div className="space-y-1">
-									<Label>Compaction Strategy</Label>
-									<Select
-										value={def.compaction}
-										onValueChange={(v) =>
-											setDef((d) => ({ ...d, compaction: v }) as AgentDefinition)
-										}
-									>
-										<SelectTrigger className="w-full">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{(schema?.compactionNames ?? ['implementation', 'default']).map((n) => (
-												<SelectItem key={n} value={n}>
-													{n}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								</div>
-							</section>
-
-							<section className="space-y-3">
-								<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-									Hint
-								</h3>
-								<div className="space-y-1">
-									<Label htmlFor="ad-hint">Hint Text</Label>
-									<Textarea
-										id="ad-hint"
-										value={def.hint}
-										onChange={(e) => setDef((d) => ({ ...d, hint: e.target.value }))}
-										rows={2}
-										placeholder="Optional hint shown in iteration messages..."
-									/>
-								</div>
-							</section>
-
-							<TrailingMessageSection def={def} setTrailing={setTrailing} />
-							<IntegrationsSection def={def} setDef={setDef} />
-						</TabsContent>
-
-						<TabsContent value="json" className="space-y-2 pt-2">
-							<p className="text-sm text-muted-foreground">
-								Edit the raw JSON. Changes here are applied when you save.
-							</p>
-							<Textarea
-								value={jsonText}
-								onChange={(e) => {
-									setJsonText(e.target.value);
-									setJsonError(null);
-								}}
-								rows={20}
-								className="font-mono text-xs"
-								spellCheck={false}
-							/>
-							{jsonError && (
-								<p className="text-sm text-destructive">JSON parse error: {jsonError}</p>
-							)}
-						</TabsContent>
-					</Tabs>
-
-					<div className="flex justify-end gap-2 pt-2">
+				</div>
+				<div className="flex gap-2">
+					<button
+						type="button"
+						onClick={onClose}
+						className="inline-flex h-9 items-center rounded-md border border-input px-4 text-sm hover:bg-accent"
+					>
+						Cancel
+					</button>
+					{/* Save is only shown for Definition / Raw JSON tabs (not System Prompt which has its own save) */}
+					{activeTab !== 'prompt' && (
 						<button
 							type="button"
-							onClick={() => onOpenChange(false)}
-							className="inline-flex h-9 items-center rounded-md border border-input px-4 text-sm hover:bg-accent"
-						>
-							Cancel
-						</button>
-						<button
-							type="submit"
+							onClick={handleSave}
 							disabled={activeMutation.isPending}
 							className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
 						>
 							{activeMutation.isPending ? 'Saving...' : isEdit ? 'Update' : 'Create'}
 						</button>
-					</div>
+					)}
+				</div>
+			</div>
 
-					{activeMutation.isError && (
-						<p className="text-sm text-destructive">{activeMutation.error.message}</p>
-					)}
-					{activeMutation.isSuccess && (
-						<p className="text-sm text-green-600">Saved successfully.</p>
-					)}
-				</form>
-			</DialogContent>
-		</Dialog>
+			{/* Agent Type input for create mode */}
+			{!isEdit && (
+				<div className="space-y-2">
+					<Label htmlFor="ad-agentType">Agent Type</Label>
+					<Input
+						id="ad-agentType"
+						value={agentType}
+						onChange={(e) => setAgentType(e.target.value)}
+						placeholder="e.g. implementation, review, debug"
+						className={agentTypeError ? 'border-destructive' : ''}
+					/>
+					{agentTypeError && <p className="text-sm text-destructive">{agentTypeError}</p>}
+				</div>
+			)}
+
+			{activeMutation.isError && (
+				<p className="text-sm text-destructive">{activeMutation.error.message}</p>
+			)}
+
+			{/* Tabs */}
+			<Tabs value={activeTab} onValueChange={handleTabChange}>
+				<TabsList>
+					<TabsTrigger value="definition">Definition</TabsTrigger>
+					{isEdit && <TabsTrigger value="prompt">System Prompt</TabsTrigger>}
+					<TabsTrigger value="json">Raw JSON</TabsTrigger>
+				</TabsList>
+
+				<TabsContent value="definition" className="space-y-6 pt-4">
+					<IdentitySection def={def} setIdentity={setIdentity} />
+					<CapabilitiesSection def={def} setCap={setCap} />
+					<ToolsSection def={def} setDef={setDef} schema={schema} />
+					<StrategiesSection def={def} setDef={setDef} schema={schema} />
+					<BackendSection def={def} setBackend={setBackend} />
+
+					<section className="space-y-3">
+						<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+							Compaction
+						</h3>
+						<div className="space-y-1">
+							<Label>Compaction Strategy</Label>
+							<Select
+								value={def.compaction}
+								onValueChange={(v) => setDef((d) => ({ ...d, compaction: v }) as AgentDefinition)}
+							>
+								<SelectTrigger className="w-full">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									{(schema?.compactionNames ?? ['implementation', 'default']).map((n) => (
+										<SelectItem key={n} value={n}>
+											{n}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+					</section>
+
+					<section className="space-y-3">
+						<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+							Hint
+						</h3>
+						<div className="space-y-1">
+							<Label htmlFor="ad-hint">Hint Text</Label>
+							<Textarea
+								id="ad-hint"
+								value={def.hint}
+								onChange={(e) => setDef((d) => ({ ...d, hint: e.target.value }))}
+								rows={2}
+								placeholder="Optional hint shown in iteration messages..."
+							/>
+						</div>
+					</section>
+
+					<TrailingMessageSection def={def} setTrailing={setTrailing} />
+					<IntegrationsSection def={def} setDef={setDef} />
+				</TabsContent>
+
+				{isEdit && (
+					<TabsContent value="prompt" className="pt-4">
+						<SystemPromptPanel agentType={existing?.agentType ?? ''} />
+					</TabsContent>
+				)}
+
+				<TabsContent value="json" className="space-y-2 pt-4">
+					<p className="text-sm text-muted-foreground">
+						Edit the raw JSON. Changes here are applied when you save.
+					</p>
+					<Textarea
+						value={jsonText}
+						onChange={(e) => {
+							setJsonText(e.target.value);
+							clearJsonError();
+						}}
+						rows={30}
+						className="font-mono text-xs"
+						spellCheck={false}
+					/>
+					{jsonError && <p className="text-sm text-destructive">JSON parse error: {jsonError}</p>}
+				</TabsContent>
+			</Tabs>
+		</div>
 	);
 }
