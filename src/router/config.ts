@@ -35,12 +35,34 @@ export interface RouterConfig {
 	emailScheduleIntervalMs: number;
 }
 
+// ---------------------------------------------------------------------------
+// Cached project config — 5s TTL to eliminate ~10 redundant DB queries per
+// webhook event across parseWebhook / isSelfAuthored / resolveProject /
+// dispatchWithCredentials calls in the adapter chain.
+// ---------------------------------------------------------------------------
+
+const PROJECT_CONFIG_TTL_MS = 5_000;
+
+let _projectConfigCache: { projects: RouterProjectConfig[]; fullProjects: ProjectConfig[] } | null =
+	null;
+let _projectConfigExpiresAt = 0;
+
+/** @internal Visible for testing only */
+export function _resetProjectConfigCache(): void {
+	_projectConfigCache = null;
+	_projectConfigExpiresAt = 0;
+}
+
 export async function loadProjectConfig(): Promise<{
 	projects: RouterProjectConfig[];
 	fullProjects: ProjectConfig[];
 }> {
+	if (_projectConfigCache && Date.now() < _projectConfigExpiresAt) {
+		return _projectConfigCache;
+	}
+
 	const config: CascadeConfig = await loadConfig();
-	return {
+	const result = {
 		projects: config.projects.map((p) => {
 			const trelloConfig = getTrelloConfig(p);
 			const jiraConfig = getJiraConfig(p);
@@ -65,6 +87,11 @@ export async function loadProjectConfig(): Promise<{
 		}),
 		fullProjects: config.projects,
 	};
+
+	_projectConfigCache = result;
+	_projectConfigExpiresAt = Date.now() + PROJECT_CONFIG_TTL_MS;
+
+	return result;
 }
 
 // Router runtime config from environment
