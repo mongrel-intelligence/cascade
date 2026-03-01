@@ -49,7 +49,7 @@ function AgentDefinitionsPage() {
 			);
 		}
 
-		// type === 'partial' — keep existing PromptEditor flow
+		// type === 'partial'
 		return (
 			<div className="space-y-4">
 				<button
@@ -59,8 +59,10 @@ function AgentDefinitionsPage() {
 				>
 					<ArrowLeft className="h-4 w-4" /> Back
 				</button>
-				{/* Lazy import to avoid circular dep — PromptEditor is still used for partials */}
-				<PartialEditorWrapper name={editTarget.name} onClose={() => setEditTarget(null)} />
+				<PromptEditor
+					target={{ type: 'partial', name: editTarget.name }}
+					onClose={() => setEditTarget(null)}
+				/>
 			</div>
 		);
 	}
@@ -131,14 +133,6 @@ function AgentDefinitionsPage() {
 			)}
 		</div>
 	);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Partial editor wrapper — renders the PromptEditor for partials inline
-// ─────────────────────────────────────────────────────────────────────────────
-
-function PartialEditorWrapper({ name, onClose }: { name: string; onClose: () => void }) {
-	return <PromptEditor target={{ type: 'partial', name }} onClose={onClose} />;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
