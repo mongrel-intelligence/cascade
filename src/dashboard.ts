@@ -18,13 +18,14 @@ import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
+import { initPrompts } from './agents/prompts/index.js';
 import { SESSION_COOKIE_NAME } from './api/auth/cookie.js';
 import { loginHandler } from './api/auth/login.js';
 import { logoutHandler } from './api/auth/logout.js';
 import { resolveUserFromSession } from './api/auth/session.js';
 import { computeEffectiveOrgId } from './api/context.js';
 import { appRouter } from './api/router.js';
-import { captureException, setTag } from './sentry.js';
+import { captureException, flush, setTag } from './sentry.js';
 
 setTag('role', 'dashboard');
 
@@ -78,5 +79,16 @@ app.onError((err, c) => {
 
 // Start
 const port = Number(process.env.PORT) || 3001;
-console.log(`[Dashboard] Starting on port ${port}`);
-serve({ fetch: app.fetch, port });
+
+async function startDashboard(): Promise<void> {
+	await initPrompts();
+	console.log(`[Dashboard] Starting on port ${port}`);
+	serve({ fetch: app.fetch, port });
+}
+
+startDashboard().catch(async (err) => {
+	console.error('[Dashboard] Failed to start', { error: String(err) });
+	captureException(err, { tags: { source: 'dashboard_startup' }, level: 'fatal' });
+	await flush(3000);
+	process.exit(1);
+});
