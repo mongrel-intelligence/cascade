@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CAPABILITIES } from '../capabilities/registry.js';
 
 // ============================================================================
 // Agent Definition Schema
@@ -7,26 +8,6 @@ import { z } from 'zod';
 // Integration categories (aligned with integrationRoles.ts)
 export const IntegrationCategorySchema = z.enum(['pm', 'scm', 'email', 'sms']);
 
-// Integration requirements schema (REQUIRED field)
-const IntegrationsSchema = z
-	.object({
-		/** Integrations that MUST be configured for the agent to run */
-		required: z.array(IntegrationCategorySchema),
-		/**
-		 * Integrations the agent CAN use if available (for future use).
-		 * Currently not validated - reserved for dashboard filtering and
-		 * conditional agent behavior based on available integrations.
-		 */
-		optional: z.array(IntegrationCategorySchema),
-	})
-	.refine(
-		(data) => {
-			const requiredSet = new Set(data.required);
-			return !data.optional.some((cat) => requiredSet.has(cat));
-		},
-		{ message: 'A category cannot be both required and optional' },
-	);
-
 const IdentitySchema = z.object({
 	emoji: z.string(),
 	label: z.string(),
@@ -34,35 +15,46 @@ const IdentitySchema = z.object({
 	initialMessage: z.string(),
 });
 
-const CapabilitiesSchema = z.object({
-	canEditFiles: z.boolean(),
-	canCreatePR: z.boolean(),
-	canUpdateChecklists: z.boolean(),
-	isReadOnly: z.boolean(),
-	canAccessEmail: z.boolean().optional(),
-});
+// ============================================================================
+// Capability-Centric Schema
+// ============================================================================
 
-export const TOOL_SET_NAMES = [
-	'pm',
-	'pm_checklist',
-	'session',
-	'github_review',
-	'github_ci',
-	'email',
-	'all',
-] as const;
+/**
+ * Capability names validated against the registry.
+ * Format: {source}:{action} (e.g., 'fs:read', 'pm:write', 'scm:pr')
+ */
+const CapabilitySchema = z.enum(CAPABILITIES);
 
-export const SDK_TOOLS_NAMES = ['all', 'readOnly'] as const;
-
-const ToolsSchema = z.object({
-	/** Named tool set references resolved via TOOL_SET_REGISTRY */
-	sets: z.array(z.enum(TOOL_SET_NAMES)),
-	/** SDK tools preset: "all" or "readOnly" */
-	sdkTools: z.enum(SDK_TOOLS_NAMES),
-});
-
-const GadgetBuilderOptionsSchema = z
+/**
+ * Capabilities schema with required and optional arrays.
+ *
+ * Required capabilities: Agent fails validation if integration not configured
+ * Optional capabilities: Enabled if integration available, gracefully skipped if not
+ *
+ * Integrations are DERIVED from capability prefixes - no separate declaration needed.
+ */
+const CapabilitiesSchema = z
 	.object({
+		/** Capabilities the agent MUST have - fails if integration not configured */
+		required: z.array(CapabilitySchema),
+		/** Capabilities the agent CAN use if available */
+		optional: z.array(CapabilitySchema).default([]),
+	})
+	.refine(
+		(data) => {
+			const requiredSet = new Set(data.required);
+			return !data.optional.some((cap) => requiredSet.has(cap));
+		},
+		{ message: 'A capability cannot be both required and optional' },
+	);
+
+/**
+ * Optional gadget builder options for special cases.
+ * Most agents won't need this - capabilities determine tools automatically.
+ */
+const GadgetOptionsSchema = z
+	.object({
+		/** Include GetPRComments and ReplyToReviewComment gadgets (for PR comment response agents) */
 		includeReviewComments: z.boolean().optional(),
 	})
 	.optional();
@@ -86,15 +78,19 @@ export const TASK_PROMPT_BUILDER_NAMES = [
 	'emailJoke',
 ] as const;
 
-export const GADGET_BUILDER_NAMES = ['workItem', 'review', 'prAgent', 'emailJoke'] as const;
-
 export const COMPACTION_NAMES = ['implementation', 'default'] as const;
 
+/**
+ * Strategies schema - context and prompt configuration.
+ * Note: gadgetBuilder removed - gadgets are now derived from capabilities.
+ */
 const StrategiesSchema = z.object({
+	/** Pipeline of context fetching steps */
 	contextPipeline: z.array(z.enum(CONTEXT_STEP_NAMES)),
+	/** Task prompt template name (maps to .eta file) */
 	taskPromptBuilder: z.enum(TASK_PROMPT_BUILDER_NAMES),
-	gadgetBuilder: z.enum(GADGET_BUILDER_NAMES),
-	gadgetBuilderOptions: GadgetBuilderOptionsSchema,
+	/** Optional gadget configuration for special cases */
+	gadgetOptions: GadgetOptionsSchema,
 });
 
 const BackendSchema = z.object({
@@ -123,16 +119,33 @@ const PromptsSchema = z
 	})
 	.optional();
 
+/**
+ * Complete agent definition schema.
+ *
+ * Key design: capabilities.required/optional determine everything:
+ * - Which integrations are required (derived from capability prefixes)
+ * - Which gadgets are available (from capability registry)
+ * - Which SDK tools are enabled (from capability registry)
+ */
 export const AgentDefinitionSchema = z.object({
+	/** Agent identity for UI display */
 	identity: IdentitySchema,
+	/**
+	 * Capabilities define what the agent can do.
+	 * Integrations and tools are DERIVED from capabilities.
+	 */
 	capabilities: CapabilitiesSchema,
-	tools: ToolsSchema,
+	/** Strategy configuration (context pipeline, prompts) */
 	strategies: StrategiesSchema,
+	/** Backend execution configuration */
 	backend: BackendSchema,
+	/** Context compaction strategy */
 	compaction: z.enum(COMPACTION_NAMES),
+	/** Iteration guidance hint for the agent */
 	hint: z.string(),
+	/** Trailing message configuration */
 	trailingMessage: TrailingMessageSchema,
-	integrations: IntegrationsSchema,
+	/** Custom prompts (optional) */
 	prompts: PromptsSchema,
 });
 
@@ -146,4 +159,8 @@ export type AgentDefinition = z.infer<typeof AgentDefinitionSchema>;
 
 export type IntegrationCategory = z.infer<typeof IntegrationCategorySchema>;
 
-export type AgentIntegrations = z.infer<typeof IntegrationsSchema>;
+/** Capability type re-export for convenience */
+export type { Capability } from '../capabilities/registry.js';
+
+/** Agent capabilities (required + optional) */
+export type AgentCapabilities = z.infer<typeof CapabilitiesSchema>;

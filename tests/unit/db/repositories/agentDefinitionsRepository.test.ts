@@ -23,21 +23,12 @@ const mockDefinition: AgentDefinition = {
 		initialMessage: 'Hello',
 	},
 	capabilities: {
-		canEditFiles: true,
-		canCreatePR: true,
-		canUpdateChecklists: true,
-		isReadOnly: false,
-		canAccessEmail: false,
-	},
-	tools: {
-		sets: ['pm'],
-		sdkTools: 'all',
+		required: ['fs:read', 'fs:write', 'shell:exec', 'session:ctrl', 'pm:read', 'pm:write'],
+		optional: [],
 	},
 	strategies: {
 		contextPipeline: ['workItem'],
 		taskPromptBuilder: 'workItem',
-		gadgetBuilder: 'workItem',
-		gadgetBuilderOptions: undefined,
 	},
 	backend: {
 		enableStopHooks: false,
@@ -47,10 +38,6 @@ const mockDefinition: AgentDefinition = {
 	compaction: 'default',
 	hint: 'test hint',
 	trailingMessage: undefined,
-	integrations: {
-		required: ['pm'],
-		optional: [],
-	},
 };
 
 describe('agentDefinitionsRepository', () => {

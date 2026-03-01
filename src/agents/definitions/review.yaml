@@ -4,20 +4,22 @@ identity:
   roleHint: Reviews pull request changes for quality and correctness
   initialMessage: "**\U0001F50D Reviewing code** — Examining the PR changes for quality and correctness..."
 
+# Read-only agent that reviews PRs. Can submit reviews and update comments.
+# Optional PM for reading linked work item context.
 capabilities:
-  canEditFiles: false
-  canCreatePR: false
-  canUpdateChecklists: false
-  isReadOnly: true
-
-tools:
-  sets: [github_review, session]
-  sdkTools: readOnly
+  required:
+    - fs:read
+    - shell:exec
+    - session:ctrl
+    - scm:read
+    - scm:review
+    - scm:comment
+  optional:
+    - pm:read
 
 strategies:
   contextPipeline: [prContext, contextFiles, squint]
   taskPromptBuilder: review
-  gadgetBuilder: review
 
 backend:
   enableStopHooks: false
@@ -27,7 +29,3 @@ backend:
 compaction: default
 
 hint: Focus on the current aspect of review before moving to the next. Read related files together.
-
-integrations:
-  required: [scm]
-  optional: [pm]

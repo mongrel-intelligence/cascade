@@ -10,19 +10,12 @@ describe('AgentDefinitionSchema', () => {
 			initialMessage: '**🔧 Testing** — Running tests...',
 		},
 		capabilities: {
-			canEditFiles: true,
-			canCreatePR: false,
-			canUpdateChecklists: true,
-			isReadOnly: false,
-		},
-		tools: {
-			sets: ['pm', 'session'],
-			sdkTools: 'all',
+			required: ['fs:read', 'fs:write', 'shell:exec', 'session:ctrl', 'pm:read', 'pm:write'],
+			optional: [],
 		},
 		strategies: {
 			contextPipeline: ['directoryListing', 'contextFiles', 'squint', 'workItem'],
 			taskPromptBuilder: 'workItem',
-			gadgetBuilder: 'workItem',
 		},
 		backend: {
 			enableStopHooks: false,
@@ -30,10 +23,6 @@ describe('AgentDefinitionSchema', () => {
 		},
 		compaction: 'default',
 		hint: 'Do the thing efficiently.',
-		integrations: {
-			required: ['pm'],
-			optional: [],
-		},
 	};
 
 	it('parses a valid minimal definition', () => {
@@ -46,7 +35,7 @@ describe('AgentDefinitionSchema', () => {
 			...validDefinition,
 			strategies: {
 				...validDefinition.strategies,
-				gadgetBuilderOptions: { includeReviewComments: true },
+				gadgetOptions: { includeReviewComments: true },
 			},
 			backend: {
 				...validDefinition.backend,
@@ -73,19 +62,10 @@ describe('AgentDefinitionSchema', () => {
 		expect(result.success).toBe(false);
 	});
 
-	it('rejects invalid tool set names', () => {
+	it('rejects invalid capability names', () => {
 		const bad = {
 			...validDefinition,
-			tools: { sets: ['invalid_set'], sdkTools: 'all' },
-		};
-		const result = AgentDefinitionSchema.safeParse(bad);
-		expect(result.success).toBe(false);
-	});
-
-	it('rejects invalid sdkTools values', () => {
-		const bad = {
-			...validDefinition,
-			tools: { sets: ['pm'], sdkTools: 'invalid' },
+			capabilities: { required: ['invalid:cap'], optional: [] },
 		};
 		const result = AgentDefinitionSchema.safeParse(bad);
 		expect(result.success).toBe(false);
@@ -182,18 +162,47 @@ describe('AgentDefinitionSchema', () => {
 		expect(result.success).toBe(true);
 	});
 
-	it('rejects overlapping required and optional categories', () => {
+	it('rejects overlapping required and optional capabilities', () => {
 		const bad = {
 			...validDefinition,
-			integrations: {
-				required: ['pm', 'scm'],
-				optional: ['pm'], // pm is in both
+			capabilities: {
+				required: ['fs:read', 'pm:read'],
+				optional: ['fs:read'], // fs:read is in both
 			},
 		};
 		const result = AgentDefinitionSchema.safeParse(bad);
 		expect(result.success).toBe(false);
 		if (!result.success) {
 			expect(result.error.issues[0].message).toContain('cannot be both required and optional');
+		}
+	});
+
+	it('allows optional capabilities to be omitted', () => {
+		const withoutOptional = {
+			...validDefinition,
+			capabilities: {
+				required: ['fs:read', 'session:ctrl'],
+			},
+		};
+		const result = AgentDefinitionSchema.safeParse(withoutOptional);
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.capabilities.optional).toEqual([]);
+		}
+	});
+
+	it('accepts valid optional capabilities', () => {
+		const withOptional = {
+			...validDefinition,
+			capabilities: {
+				required: ['fs:read', 'session:ctrl', 'scm:read'],
+				optional: ['pm:read', 'pm:write'],
+			},
+		};
+		const result = AgentDefinitionSchema.safeParse(withOptional);
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.capabilities.optional).toEqual(['pm:read', 'pm:write']);
 		}
 	});
 });

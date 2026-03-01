@@ -4,20 +4,23 @@ identity:
   roleHint: Analyzes failed CI checks and works on a fix
   initialMessage: "**\U0001F527 Fixing CI failures** — Analyzing the failed checks and working on a fix..."
 
+# Can edit files and read SCM, optional PM for status updates.
 capabilities:
-  canEditFiles: true
-  canCreatePR: false
-  canUpdateChecklists: true
-  isReadOnly: false
-
-tools:
-  sets: [github_ci, pm, pm_checklist, session]
-  sdkTools: all
+  required:
+    - fs:read
+    - fs:write
+    - shell:exec
+    - session:ctrl
+    - scm:read
+    - scm:comment
+  optional:
+    - pm:read
+    - pm:write
+    - pm:checklist
 
 strategies:
   contextPipeline: [prContext, directoryListing, contextFiles, squint, workItem]
   taskPromptBuilder: ci
-  gadgetBuilder: prAgent
 
 backend:
   enableStopHooks: true
@@ -31,7 +34,3 @@ hint: Fix CI failures with minimal, focused changes. Batch related file edits to
 
 trailingMessage:
   includeDiagnostics: true
-
-integrations:
-  required: [scm]
-  optional: [pm]

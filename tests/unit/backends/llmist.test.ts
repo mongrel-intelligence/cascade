@@ -6,11 +6,17 @@ vi.mock('llmist', () => ({
 	createLogger: vi.fn(() => ({})),
 }));
 
+// Mock capabilities module to avoid gadget imports
+vi.mock('../../../src/agents/capabilities/index.js', () => ({
+	createIntegrationChecker: vi.fn(async () => () => true),
+}));
+
 // Mock agents/definitions to break the circular dependency chain:
 // backends/llmist → definitions → strategies → gadgets → pm/ → webhook-handler
 // → triggers/agent-execution → agents/registry → new LlmistBackend() (still loading)
 vi.mock('../../../src/agents/definitions/index.js', () => ({
 	loadAgentDefinition: vi.fn(() => ({ backend: {} })),
+	resolveAgentDefinition: vi.fn(async () => ({ backend: {} })),
 }));
 
 vi.mock('../../../src/backends/agent-profiles.js', () => ({
@@ -281,7 +287,8 @@ describe('LlmistBackend.execute', () => {
 		await backend.execute(makeInput('review'));
 
 		expect(mockGetAgentProfile).toHaveBeenCalledWith('review');
-		expect(mockGetLlmistGadgets).toHaveBeenCalledWith('review');
+		// getLlmistGadgets no longer takes an argument - gadgets are pre-built in profile
+		expect(mockGetLlmistGadgets).toHaveBeenCalled();
 	});
 
 	it('sets LLMIST_LOG_FILE to the provided llmistLogPath', async () => {

@@ -45,7 +45,8 @@ describe('integration-validation', () => {
 	describe('getIntegrationRequirements', () => {
 		it('returns integration requirements for implementation agent', async () => {
 			const reqs = await getIntegrationRequirements('implementation');
-			expect(reqs.required).toEqual(['scm', 'pm']);
+			// Order may vary - check using set comparison
+			expect(new Set(reqs.required)).toEqual(new Set(['pm', 'scm']));
 			expect(reqs.optional).toEqual([]);
 		});
 

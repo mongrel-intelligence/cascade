@@ -64,20 +64,12 @@ function createMockDefinition(overrides?: Partial<AgentDefinition>): AgentDefini
 			initialMessage: 'Hello',
 		},
 		capabilities: {
-			canEditFiles: true,
-			canCreatePR: true,
-			canUpdateChecklists: true,
-			isReadOnly: false,
-		},
-		tools: {
-			sets: ['all'],
-			sdkTools: 'all',
+			required: ['fs:read', 'fs:write', 'shell:exec', 'session:ctrl', 'scm:pr'],
+			optional: [],
 		},
 		strategies: {
 			contextPipeline: ['directoryListing'],
 			taskPromptBuilder: 'workItem',
-			gadgetBuilder: 'workItem',
-			gadgetBuilderOptions: undefined,
 		},
 		backend: {
 			enableStopHooks: true,
@@ -86,10 +78,6 @@ function createMockDefinition(overrides?: Partial<AgentDefinition>): AgentDefini
 		compaction: 'default',
 		hint: 'A test agent',
 		trailingMessage: undefined,
-		integrations: {
-			required: ['scm'],
-			optional: [],
-		},
 		...overrides,
 	} as AgentDefinition;
 }
@@ -444,14 +432,12 @@ describe('agentDefinitionsRouter', () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
 			const result = await caller.schema();
 
-			expect(result).toHaveProperty('toolSetNames');
-			expect(result).toHaveProperty('sdkToolsNames');
+			expect(result).toHaveProperty('capabilities');
 			expect(result).toHaveProperty('contextStepNames');
 			expect(result).toHaveProperty('taskPromptBuilderNames');
-			expect(result).toHaveProperty('gadgetBuilderNames');
 			expect(result).toHaveProperty('compactionNames');
 			// Verify they're arrays
-			expect(Array.isArray(result.toolSetNames)).toBe(true);
+			expect(Array.isArray(result.capabilities)).toBe(true);
 			expect(Array.isArray(result.compactionNames)).toBe(true);
 		});
 	});

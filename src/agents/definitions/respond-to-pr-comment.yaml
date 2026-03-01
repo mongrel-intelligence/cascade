@@ -4,21 +4,23 @@ identity:
   roleHint: Reads a PR comment and takes action
   initialMessage: "**\U0001F4AC Responding to PR comment** — Reading your comment and taking action..."
 
+# Can edit files and interact with PR comments, optional PM for status updates.
 capabilities:
-  canEditFiles: true
-  canCreatePR: false
-  canUpdateChecklists: false
-  isReadOnly: false
-
-tools:
-  sets: [github_review, session]
-  sdkTools: all
+  required:
+    - fs:read
+    - fs:write
+    - shell:exec
+    - session:ctrl
+    - scm:read
+    - scm:comment
+  optional:
+    - pm:read
+    - pm:write
 
 strategies:
   contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
   taskPromptBuilder: prCommentResponse
-  gadgetBuilder: prAgent
-  gadgetBuilderOptions:
+  gadgetOptions:
     includeReviewComments: true
 
 backend:
@@ -29,7 +31,3 @@ backend:
 compaction: default
 
 hint: Complete the current task efficiently before moving to the next.
-
-integrations:
-  required: [scm]
-  optional: [pm]

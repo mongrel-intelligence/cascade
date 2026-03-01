@@ -239,15 +239,9 @@ describe('Integration Validation (integration)', () => {
 				expect(result.errors[0].message).toContain('Implementer token');
 			});
 
-			// Use it.each() for the remaining implementer agents to reduce duplication
-			const implementerAgents = [
-				'splitting',
-				'planning',
-				'respond-to-review',
-				'respond-to-ci',
-				'respond-to-pr-comment',
-				'respond-to-planning-comment',
-			];
+			// Use it.each() for the remaining implementer agents that require SCM
+			// Note: splitting, planning, respond-to-planning-comment only need PM, not SCM
+			const implementerAgents = ['respond-to-review', 'respond-to-ci', 'respond-to-pr-comment'];
 
 			it.each(implementerAgents)('%s agent needs implementer token', async (agentType) => {
 				await seedTrelloIntegration();
