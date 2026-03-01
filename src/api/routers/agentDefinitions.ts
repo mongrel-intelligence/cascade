@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { CAPABILITIES } from '../../agents/capabilities/index.js';
 import {
 	getKnownAgentTypes,
 	invalidateDefinitionCache,
@@ -13,10 +14,7 @@ import {
 	COMPACTION_NAMES,
 	CONTEXT_STEP_NAMES,
 	DefinitionPatchSchema,
-	GADGET_BUILDER_NAMES,
-	SDK_TOOLS_NAMES,
 	TASK_PROMPT_BUILDER_NAMES,
-	TOOL_SET_NAMES,
 } from '../../agents/definitions/schema.js';
 import { validateTemplate } from '../../agents/prompts/index.js';
 import {
@@ -339,11 +337,9 @@ export const agentDefinitionsRouter = router({
 	 */
 	schema: publicProcedure.query(() => {
 		return {
-			toolSetNames: [...TOOL_SET_NAMES],
-			sdkToolsNames: [...SDK_TOOLS_NAMES],
+			capabilities: [...CAPABILITIES],
 			contextStepNames: [...CONTEXT_STEP_NAMES],
 			taskPromptBuilderNames: [...TASK_PROMPT_BUILDER_NAMES],
-			gadgetBuilderNames: [...GADGET_BUILDER_NAMES],
 			compactionNames: [...COMPACTION_NAMES],
 		};
 	}),

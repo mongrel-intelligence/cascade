@@ -4,21 +4,18 @@ identity:
   roleHint: Reads emails from a specific sender and responds with jokes
   initialMessage: "**\U0001F602 Checking for emails to respond to with jokes**"
 
+# Minimal agent with email access only.
+# No file editing, no GitHub, no PM tools.
 capabilities:
-  canEditFiles: false
-  canCreatePR: false
-  canUpdateChecklists: false
-  isReadOnly: true
-  canAccessEmail: true
-
-tools:
-  sets: [email, session]
-  sdkTools: readOnly
+  required:
+    - session:ctrl
+    - email:read
+    - email:write
+  optional: []
 
 strategies:
   contextPipeline: [prefetchedEmails]
   taskPromptBuilder: emailJoke
-  gadgetBuilder: emailJoke
 
 backend:
   enableStopHooks: false
@@ -31,7 +28,3 @@ trailingMessage: {}
 hint: >-
   Search for emails, read them, and send funny responses. Mark processed emails
   as seen to prevent re-processing.
-
-integrations:
-  required: [email]
-  optional: []

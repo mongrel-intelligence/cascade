@@ -2,12 +2,12 @@
  * Pre-flight integration validation for agents.
  *
  * Validates that all required integrations are configured before an agent runs.
- * This prevents confusing runtime errors and provides clear feedback about
- * missing configuration.
+ * Integrations are derived from agent capabilities - no separate declaration needed.
  */
 
+import { deriveIntegrations } from '../../agents/capabilities/index.js';
 import { resolveAgentDefinition } from '../../agents/definitions/loader.js';
-import type { AgentIntegrations, IntegrationCategory } from '../../agents/definitions/schema.js';
+import type { IntegrationCategory } from '../../agents/definitions/schema.js';
 import { hasEmailIntegration } from '../../email/index.js';
 import { hasScmIntegration, hasScmPersonaToken } from '../../github/integration.js';
 import { getPersonaForAgentType } from '../../github/personas.js';
@@ -26,11 +26,19 @@ export interface ValidationResult {
 }
 
 /**
- * Get integration requirements for an agent.
+ * Derived integration requirements from agent capabilities.
  */
-export async function getIntegrationRequirements(agentType: string): Promise<AgentIntegrations> {
+export interface DerivedIntegrations {
+	required: IntegrationCategory[];
+	optional: IntegrationCategory[];
+}
+
+/**
+ * Get integration requirements for an agent, derived from capabilities.
+ */
+export async function getIntegrationRequirements(agentType: string): Promise<DerivedIntegrations> {
 	const def = await resolveAgentDefinition(agentType);
-	return def.integrations;
+	return deriveIntegrations(def.capabilities.required, def.capabilities.optional);
 }
 
 // ============================================================================
@@ -111,6 +119,7 @@ async function validateSmsIntegration(
 
 /**
  * Validate all required integrations are configured before agent runs.
+ * Integrations are derived from the agent's required capabilities.
  */
 export async function validateIntegrations(
 	projectId: string,

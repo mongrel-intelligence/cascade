@@ -24,6 +24,7 @@ import { ReferencePanel } from './prompt-editor.js';
 type RouterOutput = inferRouterOutputs<AppRouter>;
 type DefinitionRow = RouterOutput['agentDefinitions']['list'][number];
 type AgentDefinition = DefinitionRow['definition'];
+type Capability = AgentDefinition['capabilities']['required'][number];
 
 export interface AgentDefinitionEditorProps {
 	/** When provided, we are editing an existing definition. When undefined, we are creating a new one. */
@@ -32,13 +33,35 @@ export interface AgentDefinitionEditorProps {
 }
 
 interface SchemaData {
-	toolSetNames: readonly string[];
-	sdkToolsNames: readonly string[];
+	capabilities: readonly string[];
 	contextStepNames: readonly string[];
 	taskPromptBuilderNames: readonly string[];
-	gadgetBuilderNames: readonly string[];
 	compactionNames: readonly string[];
 }
+
+// All available capabilities organized by integration
+const CAPABILITY_GROUPS: Record<string, { label: string; caps: Capability[] }> = {
+	'built-in': {
+		label: 'Built-in (always available)',
+		caps: ['fs:read', 'fs:write', 'shell:exec', 'session:ctrl'],
+	},
+	pm: {
+		label: 'PM Integration (Trello/JIRA)',
+		caps: ['pm:read', 'pm:write', 'pm:checklist'],
+	},
+	scm: {
+		label: 'SCM Integration (GitHub)',
+		caps: ['scm:read', 'scm:comment', 'scm:review', 'scm:pr'],
+	},
+	email: {
+		label: 'Email Integration',
+		caps: ['email:read', 'email:write'],
+	},
+	sms: {
+		label: 'SMS Integration (Twilio)',
+		caps: ['sms:send'],
+	},
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper components (shared with form dialog)
@@ -175,92 +198,110 @@ function IdentitySection({
 
 function CapabilitiesSection({
 	def,
-	setCap,
-}: {
-	def: AgentDefinition;
-	setCap: (k: keyof AgentDefinition['capabilities'], v: boolean) => void;
-}) {
-	return (
-		<section className="space-y-3">
-			<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-				Capabilities
-			</h3>
-			<div className="grid grid-cols-2 gap-2">
-				<Toggle
-					checked={def.capabilities.canEditFiles}
-					onChange={(v) => setCap('canEditFiles', v)}
-					label="Can Edit Files"
-				/>
-				<Toggle
-					checked={def.capabilities.canCreatePR}
-					onChange={(v) => setCap('canCreatePR', v)}
-					label="Can Create PR"
-				/>
-				<Toggle
-					checked={def.capabilities.canUpdateChecklists}
-					onChange={(v) => setCap('canUpdateChecklists', v)}
-					label="Can Update Checklists"
-				/>
-				<Toggle
-					checked={def.capabilities.isReadOnly}
-					onChange={(v) => setCap('isReadOnly', v)}
-					label="Is Read Only"
-				/>
-				<Toggle
-					checked={def.capabilities.canAccessEmail ?? false}
-					onChange={(v) => setCap('canAccessEmail', v)}
-					label="Can Access Email"
-				/>
-			</div>
-		</section>
-	);
-}
-
-function ToolsSection({
-	def,
 	setDef,
-	schema,
 }: {
 	def: AgentDefinition;
 	setDef: React.Dispatch<React.SetStateAction<AgentDefinition>>;
-	schema: SchemaData | undefined;
 }) {
+	const toggleCapability = (cap: Capability, inRequired: boolean) => {
+		setDef((d) => {
+			const required = [...d.capabilities.required];
+			const optional = [...d.capabilities.optional];
+
+			// Remove from both arrays first
+			const reqIdx = required.indexOf(cap);
+			const optIdx = optional.indexOf(cap);
+			if (reqIdx !== -1) required.splice(reqIdx, 1);
+			if (optIdx !== -1) optional.splice(optIdx, 1);
+
+			// Add to the appropriate array
+			if (inRequired) {
+				required.push(cap);
+			} else {
+				optional.push(cap);
+			}
+
+			return { ...d, capabilities: { required, optional } };
+		});
+	};
+
+	const removeCapability = (cap: Capability) => {
+		setDef((d) => ({
+			...d,
+			capabilities: {
+				required: d.capabilities.required.filter((c) => c !== cap),
+				optional: d.capabilities.optional.filter((c) => c !== cap),
+			},
+		}));
+	};
+
+	const isRequired = (cap: Capability) => def.capabilities.required.includes(cap);
+	const isOptional = (cap: Capability) => def.capabilities.optional.includes(cap);
+	const isEnabled = (cap: Capability) => isRequired(cap) || isOptional(cap);
+
 	return (
-		<section className="space-y-3">
-			<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Tools</h3>
-			<div className="space-y-2">
-				<Label>Tool Sets</Label>
-				{schema ? (
-					<MultiSelectBadges
-						available={schema.toolSetNames}
-						selected={def.tools.sets}
-						onChange={(sets) =>
-							setDef((d) => ({ ...d, tools: { ...d.tools, sets } }) as AgentDefinition)
-						}
-					/>
-				) : (
-					<div className="text-sm text-muted-foreground">Loading...</div>
-				)}
-			</div>
-			<div className="space-y-1">
-				<Label>SDK Tools</Label>
-				<Select
-					value={def.tools.sdkTools}
-					onValueChange={(v) =>
-						setDef((d) => ({ ...d, tools: { ...d.tools, sdkTools: v } }) as AgentDefinition)
-					}
-				>
-					<SelectTrigger className="w-full">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent>
-						{(schema?.sdkToolsNames ?? ['all', 'readOnly']).map((n) => (
-							<SelectItem key={n} value={n}>
-								{n}
-							</SelectItem>
+		<section className="space-y-4">
+			<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+				Capabilities
+			</h3>
+			<p className="text-sm text-muted-foreground">
+				Select capabilities this agent needs. Required capabilities must be available; optional
+				capabilities are used when their integration is configured.
+			</p>
+
+			{Object.entries(CAPABILITY_GROUPS).map(([groupKey, { label, caps }]) => (
+				<div key={groupKey} className="space-y-2 rounded-md border border-border p-3">
+					<div className="text-sm font-medium">{label}</div>
+					<div className="grid grid-cols-2 gap-2">
+						{caps.map((cap) => (
+							<div key={cap} className="flex items-center gap-2">
+								<input
+									type="checkbox"
+									id={`cap-${cap}`}
+									checked={isEnabled(cap)}
+									onChange={(e) => {
+										if (e.target.checked) {
+											toggleCapability(cap, true);
+										} else {
+											removeCapability(cap);
+										}
+									}}
+									className="h-4 w-4 rounded border-input"
+								/>
+								<label htmlFor={`cap-${cap}`} className="flex-1 text-sm">
+									{cap}
+								</label>
+								{isEnabled(cap) && (
+									<select
+										value={isRequired(cap) ? 'required' : 'optional'}
+										onChange={(e) => toggleCapability(cap, e.target.value === 'required')}
+										className="h-6 rounded border border-input bg-background px-1 text-xs"
+									>
+										<option value="required">required</option>
+										<option value="optional">optional</option>
+									</select>
+								)}
+							</div>
 						))}
-					</SelectContent>
-				</Select>
+					</div>
+				</div>
+			))}
+
+			<div className="rounded-md bg-muted/50 p-3 text-sm">
+				<div className="font-medium">Derived Configuration</div>
+				<div className="mt-1 text-muted-foreground">
+					Required integrations:{' '}
+					{[
+						...new Set(
+							def.capabilities.required
+								.filter(
+									(c) =>
+										!c.startsWith('fs:') && !c.startsWith('shell:') && !c.startsWith('session:'),
+								)
+								.map((c) => c.split(':')[0]),
+						),
+					].join(', ') || 'none'}
+				</div>
 			</div>
 		</section>
 	);
@@ -297,57 +338,53 @@ function StrategiesSection({
 					<div className="text-sm text-muted-foreground">Loading...</div>
 				)}
 			</div>
-			<div className="grid grid-cols-2 gap-3">
-				<div className="space-y-1">
-					<Label>Task Prompt Builder</Label>
-					<Select
-						value={def.strategies.taskPromptBuilder}
-						onValueChange={(v) =>
+			<div className="space-y-1">
+				<Label>Task Prompt Builder</Label>
+				<Select
+					value={def.strategies.taskPromptBuilder}
+					onValueChange={(v) =>
+						setDef(
+							(d) =>
+								({
+									...d,
+									strategies: { ...d.strategies, taskPromptBuilder: v },
+								}) as AgentDefinition,
+						)
+					}
+				>
+					<SelectTrigger className="w-full">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						{(schema?.taskPromptBuilderNames ?? []).map((n) => (
+							<SelectItem key={n} value={n}>
+								{n}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+			</div>
+			{def.strategies.gadgetOptions && (
+				<div className="space-y-2">
+					<Label>Gadget Options</Label>
+					<Toggle
+						checked={def.strategies.gadgetOptions.includeReviewComments ?? false}
+						onChange={(v) =>
 							setDef(
 								(d) =>
 									({
 										...d,
-										strategies: { ...d.strategies, taskPromptBuilder: v },
+										strategies: {
+											...d.strategies,
+											gadgetOptions: { ...d.strategies.gadgetOptions, includeReviewComments: v },
+										},
 									}) as AgentDefinition,
 							)
 						}
-					>
-						<SelectTrigger className="w-full">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							{(schema?.taskPromptBuilderNames ?? []).map((n) => (
-								<SelectItem key={n} value={n}>
-									{n}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
+						label="Include Review Comments"
+					/>
 				</div>
-				<div className="space-y-1">
-					<Label>Gadget Builder</Label>
-					<Select
-						value={def.strategies.gadgetBuilder}
-						onValueChange={(v) =>
-							setDef(
-								(d) =>
-									({ ...d, strategies: { ...d.strategies, gadgetBuilder: v } }) as AgentDefinition,
-							)
-						}
-					>
-						<SelectTrigger className="w-full">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							{(schema?.gadgetBuilderNames ?? []).map((n) => (
-								<SelectItem key={n} value={n}>
-									{n}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-				</div>
-			</div>
+			)}
 		</section>
 	);
 }
@@ -459,47 +496,6 @@ function TrailingMessageSection({
 					checked={def.trailingMessage?.includeReminder ?? false}
 					onChange={(v) => setTrailing('includeReminder', v)}
 					label="Include Reminder"
-				/>
-			</div>
-		</section>
-	);
-}
-
-function IntegrationsSection({
-	def,
-	setDef,
-}: {
-	def: AgentDefinition;
-	setDef: React.Dispatch<React.SetStateAction<AgentDefinition>>;
-}) {
-	const integrationOptions = ['pm', 'scm', 'email', 'sms'] as const;
-	return (
-		<section className="space-y-3">
-			<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-				Integrations
-			</h3>
-			<div className="space-y-2">
-				<Label>Required</Label>
-				<MultiSelectBadges
-					available={integrationOptions}
-					selected={def.integrations.required}
-					onChange={(required) =>
-						setDef(
-							(d) => ({ ...d, integrations: { ...d.integrations, required } }) as AgentDefinition,
-						)
-					}
-				/>
-			</div>
-			<div className="space-y-2">
-				<Label>Optional</Label>
-				<MultiSelectBadges
-					available={integrationOptions}
-					selected={def.integrations.optional}
-					onChange={(optional) =>
-						setDef(
-							(d) => ({ ...d, integrations: { ...d.integrations, optional } }) as AgentDefinition,
-						)
-					}
 				/>
 			</div>
 		</section>
@@ -671,23 +667,17 @@ function SystemPromptPanel({ agentType }: { agentType: string }) {
 const EMPTY_DEFINITION: AgentDefinition = {
 	identity: { emoji: '🤖', label: '', roleHint: '', initialMessage: '' },
 	capabilities: {
-		canEditFiles: false,
-		canCreatePR: false,
-		canUpdateChecklists: false,
-		isReadOnly: true,
-		canAccessEmail: false,
+		required: ['fs:read', 'session:ctrl'],
+		optional: [],
 	},
-	tools: { sets: [], sdkTools: 'readOnly' },
 	strategies: {
 		contextPipeline: [],
 		taskPromptBuilder: 'workItem',
-		gadgetBuilder: 'workItem',
 	},
 	backend: { enableStopHooks: false, needsGitHubToken: false },
 	compaction: 'default',
 	hint: '',
 	trailingMessage: undefined,
-	integrations: { required: ['pm'], optional: [] },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -771,8 +761,6 @@ function useDefinitionEditor(existing: DefinitionRow | undefined, onClose: () =>
 
 	const setIdentity = (k: keyof AgentDefinition['identity'], v: string) =>
 		setDef((d) => ({ ...d, identity: { ...d.identity, [k]: v } }));
-	const setCap = (k: keyof AgentDefinition['capabilities'], v: boolean) =>
-		setDef((d) => ({ ...d, capabilities: { ...d.capabilities, [k]: v } }));
 	const setBackend = (k: keyof AgentDefinition['backend'], v: unknown) =>
 		setDef((d) => ({ ...d, backend: { ...d.backend, [k]: v } }));
 	const setTrailing = (k: string, v: boolean) =>
@@ -801,7 +789,6 @@ function useDefinitionEditor(existing: DefinitionRow | undefined, onClose: () =>
 		handleTabChange,
 		handleSave,
 		setIdentity,
-		setCap,
 		setBackend,
 		setTrailing,
 	};
@@ -831,7 +818,6 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 		handleTabChange,
 		handleSave,
 		setIdentity,
-		setCap,
 		setBackend,
 		setTrailing,
 	} = useDefinitionEditor(existing, onClose);
@@ -907,8 +893,7 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 
 				<TabsContent value="definition" className="space-y-6 pt-4">
 					<IdentitySection def={def} setIdentity={setIdentity} />
-					<CapabilitiesSection def={def} setCap={setCap} />
-					<ToolsSection def={def} setDef={setDef} schema={schema} />
+					<CapabilitiesSection def={def} setDef={setDef} />
 					<StrategiesSection def={def} setDef={setDef} schema={schema} />
 					<BackendSection def={def} setBackend={setBackend} />
 
@@ -953,7 +938,6 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 					</section>
 
 					<TrailingMessageSection def={def} setTrailing={setTrailing} />
-					<IntegrationsSection def={def} setDef={setDef} />
 				</TabsContent>
 
 				{isEdit && (

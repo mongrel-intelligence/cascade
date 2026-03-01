@@ -4,21 +4,24 @@ identity:
   roleHint: Addresses code review feedback by making requested changes
   initialMessage: "**\U0001F527 Addressing review feedback** — Making the requested changes from the code review..."
 
+# Can edit files to address review feedback, interact with PR comments.
+# Optional PM for status updates if configured.
 capabilities:
-  canEditFiles: false
-  canCreatePR: false
-  canUpdateChecklists: false
-  isReadOnly: true
-
-tools:
-  sets: [github_review, session]
-  sdkTools: all
+  required:
+    - fs:read
+    - fs:write
+    - shell:exec
+    - session:ctrl
+    - scm:read
+    - scm:comment
+  optional:
+    - pm:read
+    - pm:write
 
 strategies:
   contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
   taskPromptBuilder: prCommentResponse
-  gadgetBuilder: prAgent
-  gadgetBuilderOptions:
+  gadgetOptions:
     includeReviewComments: true
 
 backend:
@@ -32,7 +35,3 @@ hint: Address the current review comment fully before moving to the next. Batch 
 
 trailingMessage:
   includeDiagnostics: true
-
-integrations:
-  required: [scm]
-  optional: [pm]

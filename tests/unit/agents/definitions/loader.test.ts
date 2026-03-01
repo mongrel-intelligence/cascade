@@ -1,16 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+	deriveIntegrations,
+	getSdkToolsFromCapabilities,
+} from '../../../../src/agents/capabilities/resolver.js';
+import {
 	clearDefinitionCache,
 	getKnownAgentTypes,
 	loadAgentDefinition,
 	loadAllAgentDefinitions,
 } from '../../../../src/agents/definitions/loader.js';
-import {
-	CONTEXT_STEP_REGISTRY,
-	GADGET_BUILDER_REGISTRY,
-	SDK_TOOLS_REGISTRY,
-	TOOL_SET_REGISTRY,
-} from '../../../../src/agents/definitions/strategies.js';
+import { CONTEXT_STEP_REGISTRY } from '../../../../src/agents/definitions/strategies.js';
 import { getAgentCapabilities } from '../../../../src/agents/shared/capabilities.js';
 
 const ALL_AGENT_TYPES = [
@@ -75,35 +74,34 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('strategy references resolve correctly', () => {
-		it('all tool set references exist in TOOL_SET_REGISTRY', () => {
+		it('all agents have valid capabilities', () => {
 			for (const agentType of ALL_AGENT_TYPES) {
 				const def = loadAgentDefinition(agentType);
-				for (const setName of def.tools.sets) {
+				expect(Array.isArray(def.capabilities.required)).toBe(true);
+				expect(Array.isArray(def.capabilities.optional)).toBe(true);
+				expect(def.capabilities.required.length).toBeGreaterThan(0);
+			}
+		});
+
+		it('agents with fs or shell capabilities derive to non-empty SDK tools', () => {
+			// Only agents with fs:* or shell:exec capabilities need SDK tools.
+			// Email-only agents (e.g., email-joke) use llmist gadgets exclusively.
+			for (const agentType of ALL_AGENT_TYPES) {
+				const def = loadAgentDefinition(agentType);
+				const allCaps = [...def.capabilities.required, ...def.capabilities.optional];
+
+				// Check if agent has any capabilities that provide SDK tools
+				const hasSdkCapabilities = allCaps.some(
+					(cap) => cap.startsWith('fs:') || cap === 'shell:exec',
+				);
+
+				if (hasSdkCapabilities) {
+					const sdkTools = getSdkToolsFromCapabilities(allCaps);
 					expect(
-						setName === 'all' || setName in TOOL_SET_REGISTRY,
-						`${agentType}: tool set '${setName}' not in TOOL_SET_REGISTRY`,
+						sdkTools.length > 0,
+						`${agentType}: has SDK-capable capabilities but no SDK tools`,
 					).toBe(true);
 				}
-			}
-		});
-
-		it('all sdkTools references exist in SDK_TOOLS_REGISTRY', () => {
-			for (const agentType of ALL_AGENT_TYPES) {
-				const def = loadAgentDefinition(agentType);
-				expect(
-					def.tools.sdkTools in SDK_TOOLS_REGISTRY,
-					`${agentType}: sdkTools '${def.tools.sdkTools}' not in SDK_TOOLS_REGISTRY`,
-				).toBe(true);
-			}
-		});
-
-		it('all gadgetBuilder references exist in GADGET_BUILDER_REGISTRY', () => {
-			for (const agentType of ALL_AGENT_TYPES) {
-				const def = loadAgentDefinition(agentType);
-				expect(
-					def.strategies.gadgetBuilder in GADGET_BUILDER_REGISTRY,
-					`${agentType}: gadgetBuilder '${def.strategies.gadgetBuilder}' not in GADGET_BUILDER_REGISTRY`,
-				).toBe(true);
 			}
 		});
 
@@ -219,11 +217,10 @@ describe('YAML agent definitions loader', () => {
 			expect(def.backend.preExecute).toBe('postInitialPRComment');
 		});
 
-		it('planning is readOnly', () => {
+		it('planning has read-only capabilities (no fs:write)', () => {
 			const def = loadAgentDefinition('planning');
-			expect(def.capabilities.isReadOnly).toBe(true);
-			expect(def.capabilities.canEditFiles).toBe(false);
-			expect(def.tools.sdkTools).toBe('readOnly');
+			expect(def.capabilities.required).toContain('fs:read');
+			expect(def.capabilities.required).not.toContain('fs:write');
 		});
 
 		it('implementation has trailingMessage with all flags', () => {
@@ -258,17 +255,12 @@ describe('YAML agent definitions loader', () => {
 
 		it('respond-to-review includes review comment gadget options', () => {
 			const def = loadAgentDefinition('respond-to-review');
-			expect(def.strategies.gadgetBuilderOptions).toEqual({ includeReviewComments: true });
+			expect(def.strategies.gadgetOptions).toEqual({ includeReviewComments: true });
 		});
 
 		it('respond-to-pr-comment includes review comment gadget options', () => {
 			const def = loadAgentDefinition('respond-to-pr-comment');
-			expect(def.strategies.gadgetBuilderOptions).toEqual({ includeReviewComments: true });
-		});
-
-		it('debug uses "all" tool set', () => {
-			const def = loadAgentDefinition('debug');
-			expect(def.tools.sets).toContain('all');
+			expect(def.strategies.gadgetOptions).toEqual({ includeReviewComments: true });
 		});
 
 		it('all agents have non-empty identity fields', () => {
@@ -302,7 +294,6 @@ describe('YAML agent definitions loader', () => {
 			expect(def.backend.needsGitHubToken).toBe(true);
 			expect(def.backend.preExecute).toBeUndefined();
 			expect(def.backend.postConfigure).toBe('sequentialGadgetExecution');
-			expect(SDK_TOOLS_REGISTRY[def.tools.sdkTools]).toBeDefined();
 		});
 
 		it('review agent is read-only with preExecute hook', async () => {
@@ -325,26 +316,23 @@ describe('YAML agent definitions loader', () => {
 			expect(def.backend.preExecute).toBe('postInitialPRComment');
 		});
 
-		it('all agent sdkTools references resolve to non-empty arrays', () => {
-			for (const agentType of ALL_AGENT_TYPES) {
-				const def = loadAgentDefinition(agentType);
-				const sdkTools = SDK_TOOLS_REGISTRY[def.tools.sdkTools];
-				expect(
-					Array.isArray(sdkTools) && sdkTools.length > 0,
-					`${agentType}: sdkTools '${def.tools.sdkTools}' resolved to empty or non-array`,
-				).toBe(true);
-			}
-		});
-
-		it('capabilities from getAgentCapabilities match YAML definition for all agents', async () => {
+		it('capabilities from getAgentCapabilities are derived correctly for all agents', async () => {
 			for (const agentType of ALL_AGENT_TYPES) {
 				const def = loadAgentDefinition(agentType);
 				const caps = await getAgentCapabilities(agentType);
+				const allCaps = [...def.capabilities.required, ...def.capabilities.optional];
 
-				expect(caps.canEditFiles).toBe(def.capabilities.canEditFiles);
-				expect(caps.canCreatePR).toBe(def.capabilities.canCreatePR);
-				expect(caps.canUpdateChecklists).toBe(def.capabilities.canUpdateChecklists);
-				expect(caps.isReadOnly).toBe(def.capabilities.isReadOnly);
+				// canEditFiles = has fs:write
+				expect(caps.canEditFiles).toBe(allCaps.includes('fs:write'));
+
+				// canCreatePR = has scm:pr
+				expect(caps.canCreatePR).toBe(allCaps.includes('scm:pr'));
+
+				// canUpdateChecklists = has pm:checklist
+				expect(caps.canUpdateChecklists).toBe(allCaps.includes('pm:checklist'));
+
+				// isReadOnly = no fs:write
+				expect(caps.isReadOnly).toBe(!allCaps.includes('fs:write'));
 			}
 		});
 	});
@@ -361,87 +349,101 @@ describe('YAML agent definitions loader', () => {
 		});
 	});
 
-	describe('integration requirements', () => {
-		it('all agents have integrations field with required and optional arrays', () => {
+	describe('integration requirements (derived from capabilities)', () => {
+		it('all agents have valid capabilities with required array', () => {
 			for (const agentType of ALL_AGENT_TYPES) {
 				const def = loadAgentDefinition(agentType);
-				expect(def.integrations).toBeDefined();
-				expect(Array.isArray(def.integrations.required)).toBe(true);
-				expect(Array.isArray(def.integrations.optional)).toBe(true);
+				expect(Array.isArray(def.capabilities.required)).toBe(true);
+				expect(Array.isArray(def.capabilities.optional)).toBe(true);
 			}
 		});
 
-		it('implementation agent requires scm and pm', () => {
+		it('implementation agent requires scm and pm (derived from capabilities)', () => {
 			const def = loadAgentDefinition('implementation');
-			expect(def.integrations.required).toEqual(['scm', 'pm']);
-			expect(def.integrations.optional).toEqual([]);
+			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
+			// Order may vary - use set comparison
+			expect(new Set(integrations.required)).toEqual(new Set(['scm', 'pm']));
+			expect(integrations.optional).toEqual([]);
 		});
 
-		it('splitting agent requires scm and pm', () => {
+		it('splitting agent requires pm only', () => {
 			const def = loadAgentDefinition('splitting');
-			expect(def.integrations.required).toEqual(['scm', 'pm']);
-			expect(def.integrations.optional).toEqual([]);
+			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
+			expect(integrations.required).toEqual(['pm']);
+			expect(integrations.optional).toEqual([]);
 		});
 
-		it('planning agent requires scm and pm', () => {
+		it('planning agent requires pm only', () => {
 			const def = loadAgentDefinition('planning');
-			expect(def.integrations.required).toEqual(['scm', 'pm']);
-			expect(def.integrations.optional).toEqual([]);
+			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
+			expect(integrations.required).toEqual(['pm']);
+			expect(integrations.optional).toEqual([]);
 		});
 
 		it('review agent requires scm, pm is optional', () => {
 			const def = loadAgentDefinition('review');
-			expect(def.integrations.required).toEqual(['scm']);
-			expect(def.integrations.optional).toEqual(['pm']);
+			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
+			expect(integrations.required).toEqual(['scm']);
+			expect(integrations.optional).toEqual(['pm']);
 		});
 
 		it('respond-to-review agent requires scm, pm is optional', () => {
 			const def = loadAgentDefinition('respond-to-review');
-			expect(def.integrations.required).toEqual(['scm']);
-			expect(def.integrations.optional).toEqual(['pm']);
+			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
+			expect(integrations.required).toEqual(['scm']);
+			expect(integrations.optional).toEqual(['pm']);
 		});
 
 		it('respond-to-ci agent requires scm, pm is optional', () => {
 			const def = loadAgentDefinition('respond-to-ci');
-			expect(def.integrations.required).toEqual(['scm']);
-			expect(def.integrations.optional).toEqual(['pm']);
+			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
+			expect(integrations.required).toEqual(['scm']);
+			expect(integrations.optional).toEqual(['pm']);
 		});
 
 		it('respond-to-pr-comment agent requires scm, pm is optional', () => {
 			const def = loadAgentDefinition('respond-to-pr-comment');
-			expect(def.integrations.required).toEqual(['scm']);
-			expect(def.integrations.optional).toEqual(['pm']);
+			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
+			expect(integrations.required).toEqual(['scm']);
+			expect(integrations.optional).toEqual(['pm']);
 		});
 
-		it('respond-to-planning-comment agent requires scm and pm', () => {
+		it('respond-to-planning-comment agent requires pm only', () => {
 			const def = loadAgentDefinition('respond-to-planning-comment');
-			expect(def.integrations.required).toEqual(['scm', 'pm']);
-			expect(def.integrations.optional).toEqual([]);
+			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
+			expect(integrations.required).toEqual(['pm']);
+			expect(integrations.optional).toEqual([]);
 		});
 
 		it('debug agent requires pm only', () => {
 			const def = loadAgentDefinition('debug');
-			expect(def.integrations.required).toEqual(['pm']);
-			expect(def.integrations.optional).toEqual([]);
+			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
+			expect(integrations.required).toEqual(['pm']);
+			expect(integrations.optional).toEqual([]);
 		});
 
 		it('email-joke agent requires email only', () => {
 			const def = loadAgentDefinition('email-joke');
-			expect(def.integrations.required).toEqual(['email']);
-			expect(def.integrations.optional).toEqual([]);
+			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
+			expect(integrations.required).toEqual(['email']);
+			expect(integrations.optional).toEqual([]);
 		});
 
-		it('all integration categories are valid', () => {
-			const validCategories = ['pm', 'scm', 'email'];
+		it('all derived integration categories are valid', () => {
+			const validCategories = ['pm', 'scm', 'email', 'sms'];
 			for (const agentType of ALL_AGENT_TYPES) {
 				const def = loadAgentDefinition(agentType);
-				for (const cat of def.integrations.required) {
+				const integrations = deriveIntegrations(
+					def.capabilities.required,
+					def.capabilities.optional,
+				);
+				for (const cat of integrations.required) {
 					expect(
 						validCategories.includes(cat),
 						`${agentType}: invalid required category '${cat}'`,
 					).toBe(true);
 				}
-				for (const cat of def.integrations.optional) {
+				for (const cat of integrations.optional) {
 					expect(
 						validCategories.includes(cat),
 						`${agentType}: invalid optional category '${cat}'`,

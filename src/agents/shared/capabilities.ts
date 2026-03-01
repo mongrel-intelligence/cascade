@@ -1,49 +1,87 @@
-import { resolveAgentDefinition } from '../definitions/loader.js';
+/**
+ * Agent Capabilities
+ *
+ * Re-exports capability types and functions from the new capability registry.
+ *
+ * This file is kept for backward compatibility. New code should import from:
+ * - '../capabilities/index.js' for full capability system
+ * - '../definitions/schema.js' for AgentCapabilities type
+ */
 
-// ============================================================================
-// AgentCapabilities
-// ============================================================================
+// Re-export capability types
+export type { Capability, AgentCapabilities } from '../definitions/schema.js';
+
+// Re-export capability functions
+export {
+	CAPABILITIES,
+	CAPABILITY_REGISTRY,
+	getCapabilitiesByIntegration,
+	getCapabilityIntegration,
+	isBuiltInCapability,
+	isValidCapability,
+} from '../capabilities/index.js';
+
+export {
+	buildGadgetsFromCapabilities,
+	deriveIntegrations,
+	deriveRequiredIntegrations,
+	filterToolManifests,
+	generateUnavailableCapabilitiesNote,
+	getGadgetNamesFromCapabilities,
+	getSdkToolsFromCapabilities,
+	getUnavailableOptionalCapabilities,
+	resolveEffectiveCapabilities,
+} from '../capabilities/index.js';
+
+import { resolveAgentDefinition } from '../definitions/index.js';
 
 /**
- * Describes what a particular agent type is allowed to do.
- *
- * Consumed by the llmist backend (agents/base.ts) to gate gadget inclusion
- * and by the Claude Code backend (backends/agent-profiles.ts) for tool filtering.
- *
- * Keeping this in agents/shared/ avoids circular imports between agents/ and backends/.
+ * Legacy interface for derived capability flags.
+ * Used by code that needs boolean capability checks.
  */
-export interface AgentCapabilities {
-	/** Can the agent read and write files? (false = read-only) */
+export interface LegacyCapabilities {
 	canEditFiles: boolean;
-	/** Can the agent create GitHub pull requests? */
 	canCreatePR: boolean;
-	/** Can the agent update PM checklist items? */
 	canUpdateChecklists: boolean;
-	/** True for agents that only interact with the PM system (no repo changes) */
 	isReadOnly: boolean;
-	/** Can the agent send/search/read emails? (default: false) */
-	canAccessEmail?: boolean;
 }
 
 /**
- * Default capabilities for unknown agent types — full access.
+ * Get legacy capability flags for an agent type.
+ *
+ * Derives boolean capability flags from the new capability array format:
+ * - canEditFiles = has 'fs:write'
+ * - canCreatePR = has 'scm:pr'
+ * - canUpdateChecklists = has 'pm:checklist'
+ * - isReadOnly = does not have 'fs:write'
+ *
+ * For unknown agent types, returns full-access defaults to maintain
+ * backward compatibility.
  */
-const DEFAULT_CAPABILITIES: AgentCapabilities = {
-	canEditFiles: true,
-	canCreatePR: true,
-	canUpdateChecklists: true,
-	isReadOnly: false,
-};
-
-/**
- * Look up capabilities for a given agent type.
- * Reads from the async resolver (cache → DB → YAML); falls back to full-access defaults for unknown types.
- */
-export async function getAgentCapabilities(agentType: string): Promise<AgentCapabilities> {
+export async function getAgentCapabilities(agentType: string): Promise<LegacyCapabilities> {
 	try {
 		const def = await resolveAgentDefinition(agentType);
-		return def.capabilities;
-	} catch {
-		return DEFAULT_CAPABILITIES;
+		const allCaps = [...def.capabilities.required, ...def.capabilities.optional];
+
+		return {
+			canEditFiles: allCaps.includes('fs:write'),
+			canCreatePR: allCaps.includes('scm:pr'),
+			canUpdateChecklists: allCaps.includes('pm:checklist'),
+			isReadOnly: !allCaps.includes('fs:write'),
+		};
+	} catch (error) {
+		// Only fall back to full access for "agent not found" errors.
+		// Re-throw unexpected errors to avoid masking bugs with elevated privileges.
+		const message = error instanceof Error ? error.message : String(error);
+		if (message.includes('not found')) {
+			// Unknown agent type - return full-access defaults for backward compatibility
+			return {
+				canEditFiles: true,
+				canCreatePR: true,
+				canUpdateChecklists: true,
+				isReadOnly: false,
+			};
+		}
+		throw error;
 	}
 }

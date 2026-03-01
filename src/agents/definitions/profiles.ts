@@ -1,18 +1,27 @@
-import { type AgentCapabilities, getAgentCapabilities } from '../shared/capabilities.js';
-export type { AgentCapabilities } from '../shared/capabilities.js';
+/**
+ * Agent Profiles
+ *
+ * Builds runtime profiles from agent definitions using the capability-centric architecture.
+ * Capabilities determine tools, gadgets, and integration requirements.
+ */
+
 import type { AgentInput } from '../../types/index.js';
+import type { Capability, IntegrationChecker } from '../capabilities/index.js';
+import {
+	getGadgetNamesFromCapabilities,
+	getSdkToolsFromCapabilities,
+	resolveEffectiveCapabilities,
+} from '../capabilities/resolver.js';
 import type { ContextInjection, ToolManifest } from '../contracts/index.js';
 import { type TaskPromptContext, renderTaskPrompt } from '../prompts/index.js';
+import { buildGadgetsForAgent } from '../shared/gadgets.js';
 import type { FetchContextParams, PreExecuteParams } from './contextSteps.js';
 import { resolveAgentDefinition } from './loader.js';
-import type { AgentDefinition } from './schema.js';
-import {
-	CONTEXT_STEP_REGISTRY,
-	GADGET_BUILDER_REGISTRY,
-	PRE_EXECUTE_REGISTRY,
-	SDK_TOOLS_REGISTRY,
-	TOOL_SET_REGISTRY,
-} from './strategies.js';
+import type { AgentCapabilities, AgentDefinition } from './schema.js';
+import { CONTEXT_STEP_REGISTRY, PRE_EXECUTE_REGISTRY } from './strategies.js';
+
+// Re-export for backward compatibility
+export type { AgentCapabilities } from './schema.js';
 
 // ============================================================================
 // AgentProfile Interface
@@ -37,23 +46,22 @@ export interface AgentProfile {
 	buildTaskPrompt(input: AgentInput): string;
 	/** Optional pre-execute hook (e.g., post initial PR comment) */
 	preExecute?(params: PreExecuteParams): Promise<void>;
-	/** Capability summary — used by llmist backend to select gadgets */
+	/** Agent capabilities (required + optional) */
 	capabilities: AgentCapabilities;
 	/**
 	 * Return the gadget instances for the llmist backend.
 	 * Each call creates fresh instances — caller must not reuse returned gadgets.
+	 *
+	 * @param integrationChecker Optional callback to check integration availability.
+	 *   When provided, optional capabilities are filtered to only those with
+	 *   available integrations. When not provided, all capabilities are used.
 	 */
-	getLlmistGadgets(agentType: string): Promise<unknown[]>;
+	getLlmistGadgets(integrationChecker?: IntegrationChecker): unknown[];
 }
 
 // ============================================================================
 // Helpers
 // ============================================================================
-
-function filterToolsByNames(allTools: ToolManifest[], names: string[]): ToolManifest[] {
-	const nameSet = new Set(names);
-	return allTools.filter((t) => nameSet.has(t.name));
-}
 
 function resolveRegistry<T>(registry: Record<string, T>, key: string, label: string): T {
 	const value = registry[key];
@@ -79,41 +87,42 @@ function buildTaskPromptContext(input: AgentInput): TaskPromptContext {
 	};
 }
 
+/**
+ * Merge required and optional capabilities into a single list.
+ * In runtime, we use all declared capabilities (validation happens separately).
+ */
+function getAllCapabilities(caps: AgentCapabilities): Capability[] {
+	return [...caps.required, ...caps.optional];
+}
+
 // ============================================================================
-// Profile Builder (YAML-driven)
+// Profile Builder (Capability-driven)
 // ============================================================================
 
-async function buildProfileFromDefinition(
-	agentType: string,
-	def: AgentDefinition,
-): Promise<AgentProfile> {
-	// Resolve tool names from YAML set references
-	const hasAllSet = def.tools.sets.includes('all');
-	const toolNames: string[] = [];
-	if (!hasAllSet) {
-		for (const setName of def.tools.sets) {
-			const tools = TOOL_SET_REGISTRY[setName];
-			if (tools) toolNames.push(...tools);
-		}
-	}
+function buildProfileFromDefinition(def: AgentDefinition, agentType: string): AgentProfile {
+	const allCapabilities = getAllCapabilities(def.capabilities);
 
-	const sdkTools = SDK_TOOLS_REGISTRY[def.tools.sdkTools];
-	// taskPromptBuilder YAML value maps directly to the .eta template filename
-	// (validated by the Zod schema in AgentDefinitionSchema)
-	const taskTemplateName = def.strategies.taskPromptBuilder;
-	const caps = await getAgentCapabilities(agentType);
-	const gadgetBuilderFn = resolveRegistry(
-		GADGET_BUILDER_REGISTRY,
-		def.strategies.gadgetBuilder,
-		'gadgetBuilder',
-	);
-	const gadgetBuilderOptions = def.strategies.gadgetBuilderOptions;
+	// Derive tool names from capabilities for filtering
+	const gadgetNames = getGadgetNamesFromCapabilities(allCapabilities);
+
+	// Derive SDK tools from capabilities
+	const sdkTools = getSdkToolsFromCapabilities(allCapabilities);
+
+	// Get gadget options from strategies
+	const gadgetOptions = def.strategies.gadgetOptions;
+
+	// Get context pipeline from strategies
 	const contextPipeline = def.strategies.contextPipeline;
 
+	// Task prompt template name (maps to .eta file)
+	const taskTemplateName = def.strategies.taskPromptBuilder;
+
 	const profile: AgentProfile = {
-		filterTools: hasAllSet
-			? (allTools) => allTools
-			: (allTools) => filterToolsByNames(allTools, toolNames),
+		filterTools: (allTools: ToolManifest[]) => {
+			// Filter tools by the gadget names derived from capabilities
+			const nameSet = new Set(gadgetNames);
+			return allTools.filter((t) => nameSet.has(t.name));
+		},
 		sdkTools,
 		enableStopHooks: def.backend.enableStopHooks,
 		needsGitHubToken: def.backend.needsGitHubToken,
@@ -129,13 +138,23 @@ async function buildProfileFromDefinition(
 			return injections;
 		},
 		buildTaskPrompt: (input) => renderTaskPrompt(taskTemplateName, buildTaskPromptContext(input)),
-		capabilities: caps,
-		getLlmistGadgets: async (at) =>
-			gadgetBuilderFn(await getAgentCapabilities(at), gadgetBuilderOptions),
+		capabilities: def.capabilities,
+		getLlmistGadgets: (integrationChecker?: IntegrationChecker) => {
+			// Resolve effective capabilities based on integration availability
+			const effectiveCaps = integrationChecker
+				? resolveEffectiveCapabilities(
+						def.capabilities.required,
+						def.capabilities.optional,
+						integrationChecker,
+					)
+				: allCapabilities;
+			return buildGadgetsForAgent(effectiveCaps, gadgetOptions);
+		},
 	};
 
 	if (def.backend.preExecute) {
 		const preExecFn = resolveRegistry(PRE_EXECUTE_REGISTRY, def.backend.preExecute, 'preExecute');
+		// Pass agentType so the hook can look up initial messages
 		profile.preExecute = (params) => preExecFn(agentType, params);
 	}
 
@@ -153,5 +172,14 @@ export async function getAgentProfile(agentType: string): Promise<AgentProfile> 
 	} catch (err) {
 		throw new Error(`Failed to load agent profile for '${agentType}'`, { cause: err });
 	}
-	return buildProfileFromDefinition(agentType, def);
+	return buildProfileFromDefinition(def, agentType);
+}
+
+/**
+ * Get agent capabilities from a definition.
+ * Used for backward compatibility with code that expects the old format.
+ */
+export async function getAgentCapabilities(agentType: string): Promise<AgentCapabilities> {
+	const def = await resolveAgentDefinition(agentType);
+	return def.capabilities;
 }

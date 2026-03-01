@@ -2,6 +2,7 @@ import os from 'node:os';
 
 import { LLMist, type ModelSpec, createLogger } from 'llmist';
 
+import { createIntegrationChecker } from '../../agents/capabilities/index.js';
 import { resolveAgentDefinition } from '../../agents/definitions/index.js';
 import { type BuilderType, createConfiguredBuilder } from '../../agents/shared/builderFactory.js';
 import { injectSyntheticCall } from '../../agents/shared/syntheticCalls.js';
@@ -85,8 +86,10 @@ export class LlmistBackend implements AgentBackend {
 			process.env.LLMIST_LOG_TEE = 'true';
 		}
 
-		// Get gadget instances from the agent profile (single source of truth for tool sets)
-		const gadgets = await profile.getLlmistGadgets(agentType);
+		// Get gadget instances from the agent profile, filtered by integration availability.
+		// This ensures optional capabilities only provide gadgets if the integration is configured.
+		const integrationChecker = await createIntegrationChecker(input.project.id);
+		const gadgets = profile.getLlmistGadgets(integrationChecker);
 
 		// Build the configured agent builder with all llmist-specific features:
 		// rate limiting, retry, compaction, iteration hints, observer hooks

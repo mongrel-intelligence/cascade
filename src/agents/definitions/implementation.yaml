@@ -4,20 +4,23 @@ identity:
   roleHint: Writes code, runs tests, and prepares a pull request
   initialMessage: "**\U0001F680 Implementing changes** — Writing code, running tests, and preparing a PR..."
 
+# Capabilities define what the agent can do.
+# Integrations and tools are DERIVED from these capabilities.
 capabilities:
-  canEditFiles: true
-  canCreatePR: true
-  canUpdateChecklists: true
-  isReadOnly: false
-
-tools:
-  sets: [pm, pm_checklist, session]
-  sdkTools: all
+  required:
+    - fs:read
+    - fs:write
+    - shell:exec
+    - session:ctrl
+    - pm:read
+    - pm:write
+    - pm:checklist
+    - scm:pr
+  optional: []
 
 strategies:
   contextPipeline: [directoryListing, contextFiles, squint, workItem]
   taskPromptBuilder: workItem
-  gadgetBuilder: workItem
 
 backend:
   enableStopHooks: true
@@ -38,7 +41,3 @@ trailingMessage:
   includeGitStatus: true
   includePRStatus: true
   includeReminder: true
-
-integrations:
-  required: [scm, pm]
-  optional: []
