@@ -2,98 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
 	AGENT_LABELS,
 	ALL_AGENT_TYPES,
+	CATEGORY_LABELS,
 	EMAIL_TRIGGER_AGENTS,
-	getTriggersForAgent,
+	LIFECYCLE_TRIGGERS,
+	getTriggerValue,
+	setTriggerValue,
 } from '../../../web/src/lib/trigger-agent-mapping.js';
-
-describe('getTriggersForAgent', () => {
-	it('returns all triggers when no opts given (backward compatibility)', () => {
-		const triggers = getTriggersForAgent('review');
-		expect(triggers).toHaveLength(4);
-		expect(triggers.map((t) => t.key)).toEqual([
-			'reviewTrigger.ownPrsOnly',
-			'reviewTrigger.externalPrs',
-			'reviewTrigger.onReviewRequested',
-			'prOpened',
-		]);
-	});
-
-	it('returns empty array for review agent with category: pm', () => {
-		const triggers = getTriggersForAgent('review', { category: 'pm' });
-		expect(triggers).toHaveLength(0);
-	});
-
-	it('returns 4 review triggers for review agent with category: scm', () => {
-		const triggers = getTriggersForAgent('review', { category: 'scm' });
-		expect(triggers).toHaveLength(4);
-		for (const t of triggers) {
-			expect(t.category).toBe('scm');
-		}
-	});
-
-	it('returns PM-only triggers for splitting with category: pm and pmProvider: trello', () => {
-		const triggers = getTriggersForAgent('splitting', { category: 'pm', pmProvider: 'trello' });
-		expect(triggers.length).toBeGreaterThan(0);
-		for (const t of triggers) {
-			expect(t.category).toBe('pm');
-			// Should not include JIRA-only triggers
-			if (t.pmProvider) {
-				expect(t.pmProvider).toBe('trello');
-			}
-		}
-		const keys = triggers.map((t) => t.key);
-		expect(keys).toContain('cardMovedToSplitting');
-		expect(keys).toContain('readyToProcessLabel.splitting');
-		expect(keys).not.toContain('issueTransitioned.splitting');
-	});
-
-	it('returns empty array for splitting with category: scm', () => {
-		const triggers = getTriggersForAgent('splitting', { category: 'scm' });
-		expect(triggers).toHaveLength(0);
-	});
-
-	it('filters by pmProvider without category', () => {
-		const jiraTriggers = getTriggersForAgent('splitting', { pmProvider: 'jira' });
-		const trelloTriggers = getTriggersForAgent('splitting', { pmProvider: 'trello' });
-		// JIRA provider should exclude cardMovedToSplitting (trello-only)
-		expect(jiraTriggers.map((t) => t.key)).not.toContain('cardMovedToSplitting');
-		// Trello provider should exclude issueTransitioned.splitting (jira-only)
-		expect(trelloTriggers.map((t) => t.key)).not.toContain('issueTransitioned.splitting');
-	});
-
-	it('returns empty array for unknown agent type', () => {
-		const triggers = getTriggersForAgent('unknown-agent', { category: 'pm' });
-		expect(triggers).toHaveLength(0);
-	});
-});
-
-describe('getTriggersForAgent — review trigger dot-notation keys and defaults', () => {
-	it('returns dot-notation keys for review SCM triggers', () => {
-		const triggerDefs = getTriggersForAgent('review', { category: 'scm' });
-
-		// Verify that the trigger definitions have the expected dot-notation keys
-		expect(triggerDefs.map((t) => t.key)).toEqual([
-			'reviewTrigger.ownPrsOnly',
-			'reviewTrigger.externalPrs',
-			'reviewTrigger.onReviewRequested',
-			'prOpened',
-		]);
-
-		// Verify each trigger has the correct category
-		for (const t of triggerDefs) {
-			expect(t.category).toBe('scm');
-		}
-	});
-
-	it('returns correct defaultValues for review triggers', () => {
-		const triggers = getTriggersForAgent('review', { category: 'scm' });
-		const defaults = Object.fromEntries(triggers.map((t) => [t.key, t.defaultValue]));
-		expect(defaults['reviewTrigger.ownPrsOnly']).toBe(false);
-		expect(defaults['reviewTrigger.externalPrs']).toBe(false);
-		expect(defaults['reviewTrigger.onReviewRequested']).toBe(false);
-		expect(defaults.prOpened).toBe(false);
-	});
-});
 
 describe('ALL_AGENT_TYPES', () => {
 	it('includes email-joke', () => {
@@ -155,16 +69,113 @@ describe('EMAIL_TRIGGER_AGENTS', () => {
 	});
 });
 
-describe('getTriggersForAgent — email-joke', () => {
-	it('returns empty array for email-joke (triggers are handled by a custom widget, not toggles)', () => {
-		expect(getTriggersForAgent('email-joke')).toHaveLength(0);
+describe('CATEGORY_LABELS', () => {
+	it('exports category labels from shared types', () => {
+		expect(CATEGORY_LABELS.pm).toBe('Project Management');
+		expect(CATEGORY_LABELS.scm).toBe('Source Control');
+	});
+});
+
+describe('LIFECYCLE_TRIGGERS', () => {
+	it('contains prReadyToMerge and prMerged triggers', () => {
+		const keys = LIFECYCLE_TRIGGERS.map((t) => t.key);
+		expect(keys).toContain('prReadyToMerge');
+		expect(keys).toContain('prMerged');
 	});
 
-	it('returns empty array for email-joke with category: pm', () => {
-		expect(getTriggersForAgent('email-joke', { category: 'pm' })).toHaveLength(0);
+	it('all triggers have required fields', () => {
+		for (const trigger of LIFECYCLE_TRIGGERS) {
+			expect(trigger.key).toBeDefined();
+			expect(trigger.label).toBeDefined();
+			expect(trigger.description).toBeDefined();
+			expect(typeof trigger.defaultValue).toBe('boolean');
+			expect(trigger.category).toBe('scm');
+		}
+	});
+});
+
+describe('getTriggerValue', () => {
+	it('returns default value when key is not present', () => {
+		expect(getTriggerValue({}, 'cardMovedToSplitting', true)).toBe(true);
+		expect(getTriggerValue({}, 'cardMovedToSplitting', false)).toBe(false);
 	});
 
-	it('returns empty array for email-joke with category: scm', () => {
-		expect(getTriggersForAgent('email-joke', { category: 'scm' })).toHaveLength(0);
+	it('returns boolean value for simple key', () => {
+		expect(getTriggerValue({ cardMovedToSplitting: true }, 'cardMovedToSplitting', false)).toBe(
+			true,
+		);
+		expect(getTriggerValue({ cardMovedToSplitting: false }, 'cardMovedToSplitting', true)).toBe(
+			false,
+		);
+	});
+
+	it('handles nested keys (dot notation)', () => {
+		const triggers = {
+			readyToProcessLabel: {
+				splitting: true,
+				planning: false,
+			},
+		};
+		expect(getTriggerValue(triggers, 'readyToProcessLabel.splitting', false)).toBe(true);
+		expect(getTriggerValue(triggers, 'readyToProcessLabel.planning', true)).toBe(false);
+	});
+
+	it('handles legacy boolean for nested keys', () => {
+		const triggers = { readyToProcessLabel: true };
+		expect(getTriggerValue(triggers, 'readyToProcessLabel.splitting', false)).toBe(true);
+		expect(getTriggerValue(triggers, 'readyToProcessLabel.planning', false)).toBe(true);
+
+		const triggersFalse = { readyToProcessLabel: false };
+		expect(getTriggerValue(triggersFalse, 'readyToProcessLabel.splitting', true)).toBe(false);
+	});
+
+	it('returns default when nested key is missing from object', () => {
+		const triggers = {
+			readyToProcessLabel: { splitting: true },
+		};
+		expect(getTriggerValue(triggers, 'readyToProcessLabel.implementation', true)).toBe(true);
+	});
+});
+
+describe('setTriggerValue', () => {
+	it('sets simple key', () => {
+		const result = setTriggerValue({}, 'cardMovedToSplitting', true);
+		expect(result.cardMovedToSplitting).toBe(true);
+	});
+
+	it('preserves existing keys', () => {
+		const result = setTriggerValue({ existingKey: 'value' }, 'newKey', true);
+		expect(result.existingKey).toBe('value');
+		expect(result.newKey).toBe(true);
+	});
+
+	it('sets nested key creating object structure', () => {
+		const result = setTriggerValue({}, 'readyToProcessLabel.splitting', true);
+		expect(result.readyToProcessLabel).toEqual({ splitting: true });
+	});
+
+	it('expands legacy boolean to object when setting nested key', () => {
+		const result = setTriggerValue(
+			{ readyToProcessLabel: true },
+			'readyToProcessLabel.splitting',
+			false,
+		);
+		expect(result.readyToProcessLabel).toEqual({
+			splitting: false,
+			planning: true,
+			implementation: true,
+		});
+	});
+
+	it('merges into existing nested object', () => {
+		const triggers = {
+			readyToProcessLabel: { splitting: true, planning: false },
+		};
+		const result = setTriggerValue(triggers, 'readyToProcessLabel.implementation', true);
+		expect(result.readyToProcessLabel).toEqual({
+			splitting: true,
+			planning: false,
+			implementation: true,
+		});
 	});
 });

@@ -36,6 +36,8 @@ triggers:
         description: Filter PRs by author type
         options: [own, external, all]
         defaultValue: own
+    # contextPipeline can be specified per-trigger to override strategies.contextPipeline
+    # Currently using strategy default: [prContext, contextFiles, squint]
   - event: scm:review-requested
     label: On Review Requested
     description: Trigger review when a CASCADE persona is explicitly requested as reviewer
