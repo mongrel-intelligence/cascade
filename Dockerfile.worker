@@ -97,7 +97,6 @@ RUN sudo ln -sf /app/bin/cascade-tools.js /usr/local/bin/cascade-tools
 
 # Copy Eta template files (not handled by TypeScript compiler)
 COPY --chown=node:node src/agents/prompts/templates ./dist/agents/prompts/templates
-COPY --chown=node:node src/agents/prompts/task-templates ./dist/agents/prompts/task-templates
 
 # Copy config
 COPY --chown=node:node config ./config
