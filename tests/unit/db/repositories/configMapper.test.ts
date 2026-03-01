@@ -383,6 +383,6 @@ describe('mapProjectRow', () => {
 			},
 		];
 		const result = mapProjectRow(makeInput({ projectAgentConfigs: agentConfigs }));
-		expect((result as any).prompts).toBeUndefined();
+		expect(Object.hasOwn(result, 'prompts')).toBe(false);
 	});
 });

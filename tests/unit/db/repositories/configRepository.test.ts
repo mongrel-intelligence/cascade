@@ -430,7 +430,7 @@ describe('configRepository', () => {
 			expect(result).toBeDefined();
 			expect(result?.agentBackend?.overrides).toEqual({ implementation: 'claude-code' });
 			// prompts are no longer stored in agent_configs (moved to agent_definitions)
-			expect((result as any)?.prompts).toBeUndefined();
+			expect(result && Object.hasOwn(result, 'prompts')).toBe(false);
 		});
 
 		it('runs 5 sub-queries in parallel after initial project lookup', async () => {
