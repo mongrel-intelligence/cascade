@@ -59,10 +59,7 @@ function AgentDefinitionsPage() {
 				>
 					<ArrowLeft className="h-4 w-4" /> Back
 				</button>
-				<PromptEditor
-					target={{ type: 'partial', name: editTarget.name }}
-					onClose={() => setEditTarget(null)}
-				/>
+				<PromptEditor target={{ name: editTarget.name }} onClose={() => setEditTarget(null)} />
 			</div>
 		);
 	}

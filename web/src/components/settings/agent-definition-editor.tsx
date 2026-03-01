@@ -707,6 +707,7 @@ function useDefinitionEditor(existing: DefinitionRow | undefined, onClose: () =>
 			: JSON.stringify(EMPTY_DEFINITION, null, 2),
 	);
 	const [jsonError, setJsonError] = useState<string | null>(null);
+	const [agentTypeError, setAgentTypeError] = useState<string | null>(null);
 	const [activeTab, setActiveTab] = useState('definition');
 
 	const onSuccess = () => {
@@ -745,7 +746,10 @@ function useDefinitionEditor(existing: DefinitionRow | undefined, onClose: () =>
 	};
 
 	const handleSave = () => {
-		if (!isEdit && !agentType.trim()) return;
+		if (!isEdit && !agentType.trim()) {
+			setAgentTypeError('Agent type is required.');
+			return;
+		}
 
 		let submission = def;
 		if (activeTab === 'json') {
@@ -776,16 +780,22 @@ function useDefinitionEditor(existing: DefinitionRow | undefined, onClose: () =>
 
 	const clearJsonError = () => setJsonError(null);
 
+	const updateAgentType = (value: string) => {
+		setAgentType(value);
+		if (agentTypeError) setAgentTypeError(null);
+	};
+
 	return {
 		isEdit,
 		agentType,
-		setAgentType,
+		setAgentType: updateAgentType,
 		def,
 		setDef,
 		jsonText,
 		setJsonText,
 		jsonError,
 		clearJsonError,
+		agentTypeError,
 		activeTab,
 		activeMutation,
 		handleTabChange,
@@ -815,6 +825,7 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 		setJsonText,
 		jsonError,
 		clearJsonError,
+		agentTypeError,
 		activeTab,
 		activeMutation,
 		handleTabChange,
@@ -876,7 +887,9 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 						value={agentType}
 						onChange={(e) => setAgentType(e.target.value)}
 						placeholder="e.g. implementation, review, debug"
+						className={agentTypeError ? 'border-destructive' : ''}
 					/>
+					{agentTypeError && <p className="text-sm text-destructive">{agentTypeError}</p>}
 				</div>
 			)}
 

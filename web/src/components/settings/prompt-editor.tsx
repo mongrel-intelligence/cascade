@@ -4,10 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-type EditTarget = { type: 'partial'; name: string };
-
 interface PromptEditorProps {
-	target: EditTarget;
+	target: { name: string };
 	onClose: () => void;
 }
 
