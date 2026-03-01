@@ -19,7 +19,12 @@ capabilities:
 
 strategies:
   contextPipeline: [prContext, contextFiles, squint]
-  taskPromptBuilder: review
+
+prompts:
+  taskPrompt: |
+    Review PR #<%= it.prNumber %>.
+
+    Examine the code changes carefully and submit your review using CreatePRReview.
 
 backend:
   enableStopHooks: false

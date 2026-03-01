@@ -20,7 +20,12 @@ capabilities:
 
 strategies:
   contextPipeline: [prContext, directoryListing, contextFiles, squint, workItem]
-  taskPromptBuilder: ci
+
+prompts:
+  taskPrompt: |
+    You are on the branch `<%= it.prBranch %>` for PR #<%= it.prNumber %>.
+
+    CI checks have failed. Analyze the failures and fix them.
 
 backend:
   enableStopHooks: true

@@ -176,8 +176,9 @@ export function ReferencePanel({
 									{group}
 								</div>
 								{vars?.map((v) => (
-									<div key={v.name} className="flex justify-between gap-2 py-0.5">
+									<div key={v.name} className="py-1">
 										<code className="text-xs bg-muted px-1 rounded">{`<%= it.${v.name} %>`}</code>
+										<p className="text-xs text-muted-foreground mt-0.5">{v.description}</p>
 									</div>
 								))}
 							</div>

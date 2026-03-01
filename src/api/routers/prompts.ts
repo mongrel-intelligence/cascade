@@ -4,6 +4,7 @@ import {
 	getAvailablePartialNames,
 	getRawPartial,
 	getRawTemplate,
+	getTaskTemplateVariables,
 	getTemplateVariables,
 	getValidAgentTypes,
 	validateTemplate,
@@ -41,6 +42,10 @@ export const promptsRouter = router({
 
 	variables: protectedProcedure.query(() => {
 		return getTemplateVariables();
+	}),
+
+	taskVariables: protectedProcedure.query(() => {
+		return getTaskTemplateVariables();
 	}),
 
 	validate: protectedProcedure

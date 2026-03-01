@@ -69,26 +69,16 @@ export const CONTEXT_STEP_NAMES = [
 	'prefetchedEmails',
 ] as const;
 
-export const TASK_PROMPT_BUILDER_NAMES = [
-	'workItem',
-	'commentResponse',
-	'review',
-	'ci',
-	'prCommentResponse',
-	'emailJoke',
-] as const;
-
 export const COMPACTION_NAMES = ['implementation', 'default'] as const;
 
 /**
  * Strategies schema - context and prompt configuration.
  * Note: gadgetBuilder removed - gadgets are now derived from capabilities.
+ * Note: taskPromptBuilder removed - task prompts are now stored in prompts.taskPrompt.
  */
 const StrategiesSchema = z.object({
 	/** Pipeline of context fetching steps */
 	contextPipeline: z.array(z.enum(CONTEXT_STEP_NAMES)),
-	/** Task prompt template name (maps to .eta file) */
-	taskPromptBuilder: z.enum(TASK_PROMPT_BUILDER_NAMES),
 	/** Optional gadget configuration for special cases */
 	gadgetOptions: GadgetOptionsSchema,
 });
@@ -112,12 +102,10 @@ const TrailingMessageSchema = z
 	})
 	.optional();
 
-const PromptsSchema = z
-	.object({
-		systemPrompt: z.string().optional(),
-		taskPrompt: z.string().optional(),
-	})
-	.optional();
+const PromptsSchema = z.object({
+	systemPrompt: z.string().optional(),
+	taskPrompt: z.string().min(1, 'taskPrompt is required and must be non-empty'),
+});
 
 /**
  * Complete agent definition schema.
@@ -145,7 +133,7 @@ export const AgentDefinitionSchema = z.object({
 	hint: z.string(),
 	/** Trailing message configuration */
 	trailingMessage: TrailingMessageSchema,
-	/** Custom prompts (optional) */
+	/** Custom prompts (taskPrompt required, systemPrompt optional) */
 	prompts: PromptsSchema,
 });
 

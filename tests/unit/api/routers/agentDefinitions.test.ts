@@ -69,7 +69,6 @@ function createMockDefinition(overrides?: Partial<AgentDefinition>): AgentDefini
 		},
 		strategies: {
 			contextPipeline: ['directoryListing'],
-			taskPromptBuilder: 'workItem',
 		},
 		backend: {
 			enableStopHooks: true,
@@ -78,6 +77,10 @@ function createMockDefinition(overrides?: Partial<AgentDefinition>): AgentDefini
 		compaction: 'default',
 		hint: 'A test agent',
 		trailingMessage: undefined,
+		prompts: {
+			taskPrompt:
+				'Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.',
+		},
 		...overrides,
 	} as AgentDefinition;
 }
@@ -434,7 +437,6 @@ describe('agentDefinitionsRouter', () => {
 
 			expect(result).toHaveProperty('capabilities');
 			expect(result).toHaveProperty('contextStepNames');
-			expect(result).toHaveProperty('taskPromptBuilderNames');
 			expect(result).toHaveProperty('compactionNames');
 			// Verify they're arrays
 			expect(Array.isArray(result.capabilities)).toBe(true);

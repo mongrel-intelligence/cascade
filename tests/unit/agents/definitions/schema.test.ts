@@ -15,7 +15,6 @@ describe('AgentDefinitionSchema', () => {
 		},
 		strategies: {
 			contextPipeline: ['directoryListing', 'contextFiles', 'squint', 'workItem'],
-			taskPromptBuilder: 'workItem',
 		},
 		backend: {
 			enableStopHooks: false,
@@ -23,6 +22,9 @@ describe('AgentDefinitionSchema', () => {
 		},
 		compaction: 'default',
 		hint: 'Do the thing efficiently.',
+		prompts: {
+			taskPrompt: 'Analyze and process the work item with ID: <%= it.cardId %>.',
+		},
 	};
 
 	it('parses a valid minimal definition', () => {

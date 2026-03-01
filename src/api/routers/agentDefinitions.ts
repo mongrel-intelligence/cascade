@@ -14,7 +14,6 @@ import {
 	COMPACTION_NAMES,
 	CONTEXT_STEP_NAMES,
 	DefinitionPatchSchema,
-	TASK_PROMPT_BUILDER_NAMES,
 } from '../../agents/definitions/schema.js';
 import { validateTemplate } from '../../agents/prompts/index.js';
 import {
@@ -275,21 +274,23 @@ export const agentDefinitionsRouter = router({
 			}
 
 			// Build updated prompts section
-			// Merge with existing prompts: omitting a field preserves it, passing null clears it, passing a string sets it
-			const systemPrompt =
-				input.systemPrompt !== undefined
-					? (input.systemPrompt ?? undefined)
-					: current.prompts?.systemPrompt;
-			const taskPrompt =
-				input.taskPrompt !== undefined
-					? (input.taskPrompt ?? undefined)
-					: current.prompts?.taskPrompt;
-			const prompts =
-				systemPrompt !== undefined || taskPrompt !== undefined
-					? { systemPrompt, taskPrompt }
-					: undefined;
+			// Merge with existing prompts: undefined preserves current, null clears (for systemPrompt only), string sets
+			// Note: taskPrompt is required by schema, so null is treated as "keep current" rather than "clear"
+			const systemPrompt: string | undefined =
+				input.systemPrompt === null
+					? undefined
+					: input.systemPrompt !== undefined
+						? input.systemPrompt
+						: current.prompts.systemPrompt;
+			const taskPrompt: string =
+				input.taskPrompt && input.taskPrompt !== null
+					? input.taskPrompt
+					: current.prompts.taskPrompt;
 
-			const updated: AgentDefinition = { ...current, prompts };
+			const updated: AgentDefinition = {
+				...current,
+				prompts: { systemPrompt, taskPrompt },
+			};
 			const validated = AgentDefinitionSchema.parse(updated);
 
 			const isBuiltin = getKnownAgentTypes().includes(input.agentType);
@@ -300,7 +301,7 @@ export const agentDefinitionsRouter = router({
 
 	/**
 	 * Reset prompt overrides to YAML defaults for an agent type (superadmin only).
-	 * Removes the prompts section from the stored definition.
+	 * Restores the prompts section from the YAML definition.
 	 */
 	resetPrompt: superAdminProcedure
 		.input(z.object({ agentType: z.string().min(1) }))
@@ -315,9 +316,20 @@ export const agentDefinitionsRouter = router({
 				});
 			}
 
-			// Remove the prompts section
-			const { prompts: _removed, ...withoutPrompts } = current;
-			const validated = AgentDefinitionSchema.parse({ ...withoutPrompts, prompts: undefined });
+			// Load YAML defaults and use its prompts section
+			let yamlDefault: AgentDefinition;
+			try {
+				yamlDefault = loadAgentDefinition(input.agentType);
+			} catch {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: `YAML default not found for agent: ${input.agentType}`,
+				});
+			}
+
+			// Replace prompts with YAML defaults
+			const updated: AgentDefinition = { ...current, prompts: yamlDefault.prompts };
+			const validated = AgentDefinitionSchema.parse(updated);
 
 			const isBuiltin = getKnownAgentTypes().includes(input.agentType);
 			await upsertAgentDefinition(input.agentType, validated, isBuiltin);
@@ -339,7 +351,6 @@ export const agentDefinitionsRouter = router({
 		return {
 			capabilities: [...CAPABILITIES],
 			contextStepNames: [...CONTEXT_STEP_NAMES],
-			taskPromptBuilderNames: [...TASK_PROMPT_BUILDER_NAMES],
 			compactionNames: [...COMPACTION_NAMES],
 		};
 	}),

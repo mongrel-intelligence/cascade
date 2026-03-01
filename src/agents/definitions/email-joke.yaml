@@ -15,7 +15,25 @@ capabilities:
 
 strategies:
   contextPipeline: [prefetchedEmails]
-  taskPromptBuilder: emailJoke
+
+prompts:
+  taskPrompt: |
+    ## Your Task
+
+    Your initial email search has already been completed — see the **SearchEmails** result above.
+
+    For each email found:
+    1. Use **ReadEmail** to read the full content
+    2. Compose a friendly, funny response that relates to the email content
+    3. Use **ReplyToEmail** to send your joke response
+    4. Use **MarkEmailAsSeen** to mark the email as read (prevents re-processing)
+
+    Once all emails have been processed, call **Finish**.
+
+    <% if (it.senderEmail) { %>
+    ## Sender Filter
+    Only emails from **<%= it.senderEmail %>** were included in the search.
+    <% } %>
 
 backend:
   enableStopHooks: false
