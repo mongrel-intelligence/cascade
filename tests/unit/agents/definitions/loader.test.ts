@@ -190,16 +190,6 @@ describe('YAML agent definitions loader', () => {
 			]);
 		});
 
-		it('review has preExecute hook', () => {
-			const def = loadAgentDefinition('review');
-			expect(def.backend.preExecute).toBe('postInitialPRComment');
-		});
-
-		it('respond-to-ci has preExecute hook', () => {
-			const def = loadAgentDefinition('respond-to-ci');
-			expect(def.backend.preExecute).toBe('postInitialPRComment');
-		});
-
 		it('planning has read-only capabilities (no fs:write)', () => {
 			const def = loadAgentDefinition('planning');
 			expect(def.capabilities.required).toContain('fs:read');
@@ -279,7 +269,7 @@ describe('YAML agent definitions loader', () => {
 			expect(def.backend.postConfigure).toBe('sequentialGadgetExecution');
 		});
 
-		it('review agent is read-only with preExecute hook', async () => {
+		it('review agent is read-only', async () => {
 			const def = loadAgentDefinition('review');
 			const caps = await getAgentCapabilities('review');
 
@@ -287,16 +277,14 @@ describe('YAML agent definitions loader', () => {
 			expect(caps.isReadOnly).toBe(true);
 			expect(def.backend.hooks?.scm?.enableStopHooks).toBe(false);
 			expect(def.backend.needsGitHubToken).toBe(true);
-			expect(def.backend.preExecute).toBe('postInitialPRComment');
 		});
 
-		it('respond-to-ci agent has preExecute and needsGitHubToken', async () => {
+		it('respond-to-ci agent has needsGitHubToken', async () => {
 			const def = loadAgentDefinition('respond-to-ci');
 			const caps = await getAgentCapabilities('respond-to-ci');
 
 			expect(caps.canEditFiles).toBe(true);
 			expect(def.backend.needsGitHubToken).toBe(true);
-			expect(def.backend.preExecute).toBe('postInitialPRComment');
 		});
 
 		it('capabilities from getAgentCapabilities are derived correctly for all agents', async () => {

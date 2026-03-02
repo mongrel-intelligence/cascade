@@ -350,7 +350,6 @@ describe('AgentDefinitionSchema', () => {
 			backend: {
 				...validDefinition.backend,
 				blockGitPush: false,
-				preExecute: 'postInitialPRComment',
 				postConfigure: 'sequentialGadgetExecution',
 			},
 			trailingMessage: {
@@ -387,24 +386,6 @@ describe('AgentDefinitionSchema', () => {
 		if (result.success) {
 			expect(result.data.trailingMessage).toBeUndefined();
 		}
-	});
-
-	it('rejects invalid preExecute hook names', () => {
-		const bad = {
-			...validDefinition,
-			backend: { ...validDefinition.backend, preExecute: 'typoInHookName' },
-		};
-		const result = AgentDefinitionSchema.safeParse(bad);
-		expect(result.success).toBe(false);
-	});
-
-	it('accepts valid preExecute hook name', () => {
-		const good = {
-			...validDefinition,
-			backend: { ...validDefinition.backend, preExecute: 'postInitialPRComment' },
-		};
-		const result = AgentDefinitionSchema.safeParse(good);
-		expect(result.success).toBe(true);
 	});
 
 	it('rejects invalid postConfigure hook names', () => {

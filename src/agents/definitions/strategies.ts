@@ -1,7 +1,7 @@
 /**
  * Strategy Registries
  *
- * Contains registries for context pipeline steps and pre-execute hooks.
+ * Contains registries for context pipeline steps.
  *
  * Note: Tool set and gadget builder registries have been removed.
  * Tools and gadgets are now derived from capabilities via the capability registry.
@@ -11,7 +11,6 @@
 import type { ContextInjection } from '../contracts/index.js';
 import {
 	type FetchContextParams,
-	type PreExecuteParams,
 	fetchContextFilesStep,
 	fetchDirectoryListingStep,
 	fetchEmailsFromInputStep,
@@ -19,7 +18,6 @@ import {
 	fetchPRConversationStep,
 	fetchSquintStep,
 	fetchWorkItemStep,
-	postInitialPRCommentHook,
 } from './contextSteps.js';
 
 // ============================================================================
@@ -37,15 +35,4 @@ export const CONTEXT_STEP_REGISTRY: Record<
 	prContext: fetchPRContextStep,
 	prConversation: fetchPRConversationStep,
 	prefetchedEmails: fetchEmailsFromInputStep,
-};
-
-// ============================================================================
-// Pre-Execute Hook Registry
-// ============================================================================
-
-export const PRE_EXECUTE_REGISTRY: Record<
-	string,
-	(agentType: string, params: PreExecuteParams) => Promise<void>
-> = {
-	postInitialPRComment: postInitialPRCommentHook,
 };

@@ -119,11 +119,6 @@ async function buildBackendInput(
 		projectSecrets.GITHUB_TOKEN = gitHubToken;
 	}
 
-	// Pre-execute hook (e.g., post initial PR comment for review)
-	if (profile.preExecute) {
-		await profile.preExecute({ input, logWriter });
-	}
-
 	return {
 		agentType,
 		project,

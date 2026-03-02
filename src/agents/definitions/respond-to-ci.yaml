@@ -47,7 +47,6 @@ backend:
       enableStopHooks: true
       blockGitPush: false
       requiresPushedChanges: true
-  preExecute: postInitialPRComment
 
 
 hint: Fix CI failures with minimal, focused changes. Batch related file edits together.
