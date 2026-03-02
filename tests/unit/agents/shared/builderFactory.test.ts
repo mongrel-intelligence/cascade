@@ -5,7 +5,7 @@ vi.mock('../../../../src/utils/squintDb.js', () => ({
 }));
 
 vi.mock('../../../../src/config/compactionConfig.js', () => ({
-	getCompactionConfig: vi.fn().mockResolvedValue({ maxTokens: 100000, strategy: 'hybrid' }),
+	getCompactionConfig: vi.fn().mockReturnValue({ maxTokens: 100000, strategy: 'hybrid' }),
 }));
 
 vi.mock('../../../../src/config/hintConfig.js', () => ({

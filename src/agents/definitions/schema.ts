@@ -195,8 +195,6 @@ const GadgetOptionsSchema = z
 	})
 	.optional();
 
-export const COMPACTION_NAMES = ['implementation', 'default'] as const;
-
 /**
  * Strategies schema - gadget configuration only.
  * Note: gadgetBuilder removed - gadgets are now derived from capabilities.
@@ -266,8 +264,6 @@ export const AgentDefinitionSchema = z.object({
 	strategies: StrategiesSchema,
 	/** Backend execution configuration */
 	backend: BackendSchema,
-	/** Context compaction strategy */
-	compaction: z.enum(COMPACTION_NAMES),
 	/** Iteration guidance hint for the agent */
 	hint: z.string(),
 	/** Trailing message configuration */

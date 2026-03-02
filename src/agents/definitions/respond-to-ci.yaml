@@ -46,7 +46,6 @@ backend:
   blockGitPush: false
   preExecute: postInitialPRComment
 
-compaction: default
 
 hint: Fix CI failures with minimal, focused changes. Batch related file edits together.
 

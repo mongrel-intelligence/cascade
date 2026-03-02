@@ -54,7 +54,6 @@ backend:
   needsGitHubToken: true
   blockGitPush: false
 
-compaction: default
 
 hint: Address the current review comment fully before moving to the next. Batch related file edits together.
 

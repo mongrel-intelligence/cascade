@@ -1,47 +1,16 @@
 import type { CompactionConfig, CompactionEvent } from 'llmist';
-import { resolveAgentDefinition } from '../agents/definitions/index.js';
 import { clearReadTracking } from '../gadgets/readTracking.js';
 import { logger } from '../utils/logging.js';
 
 /**
- * Base compaction settings for implementation agent (long sessions).
+ * Standard compaction settings for all agents.
  *
- * Implementation agents often run for many iterations, so we use:
- * - Lower trigger threshold (70%) to compact earlier
- * - Lower target (40%) for more aggressive reduction
- * - More recent turns preserved (8) to maintain context
+ * All agents use a single compaction configuration:
+ * - Trigger threshold (80%) to compact when context is near full
+ * - Target (50%) for moderate reduction
+ * - Recent turns preserved (5) to maintain immediate context
  */
-const IMPLEMENTATION_COMPACTION_BASE = {
-	enabled: true,
-	strategy: 'hybrid' as const,
-	triggerThresholdPercent: 70,
-	targetPercent: 40,
-	preserveRecentTurns: 8,
-	summarizationPrompt: `Summarize this conversation history concisely, preserving:
-1. The current task goals and acceptance criteria
-2. Key decisions made and their rationale
-3. Important facts and data discovered about the codebase
-4. ALL files that were created or modified, and their current state
-5. Current todo list status (what's done, what's in progress, what's pending)
-
-CRITICAL — Preserve a "Failed Approaches" section listing:
-- Each distinct approach that was tried and FAILED (tool/technique, why it failed)
-- Specific error messages that were encountered
-- This information prevents re-trying the same failed approaches after compaction
-
-Format as a brief narrative, with the failed approaches as a bullet list at the end.
-Previous conversation:`,
-};
-
-/**
- * Base compaction settings for other agents (splitting, planning, debug, respond-to-review, review).
- *
- * These agents typically have shorter sessions, so we use:
- * - Standard trigger threshold (80%)
- * - Standard target (50%)
- * - Fewer recent turns (5) since sessions are shorter
- */
-const DEFAULT_COMPACTION_BASE = {
+const COMPACTION_CONFIG = {
 	enabled: true,
 	strategy: 'hybrid' as const,
 	triggerThresholdPercent: 80,
@@ -61,11 +30,6 @@ CRITICAL — Preserve a "Failed Approaches" section listing:
 
 Format as a brief narrative, with the failed approaches as a bullet list at the end.
 Previous conversation:`,
-};
-
-const COMPACTION_PRESET_REGISTRY: Record<string, typeof IMPLEMENTATION_COMPACTION_BASE> = {
-	implementation: IMPLEMENTATION_COMPACTION_BASE,
-	default: DEFAULT_COMPACTION_BASE,
 };
 
 /**
@@ -94,26 +58,14 @@ function handleCompaction(event: CompactionEvent): void {
 }
 
 /**
- * Get compaction configuration for a given agent type.
- * Reads the compaction preset name from the agent definition (DB → YAML fallback).
+ * Get compaction configuration.
+ * Returns a fixed standard configuration used by all agents.
  *
- * @param agentType - Type of agent (e.g., "implementation", "splitting", "planning")
  * @returns Compaction configuration
  */
-export async function getCompactionConfig(agentType: string): Promise<CompactionConfig> {
-	let presetName = 'default';
-	try {
-		const def = await resolveAgentDefinition(agentType);
-		if (def) {
-			presetName = def.compaction;
-		}
-	} catch {
-		// Unknown agent type — use default preset
-	}
-
-	const baseConfig = COMPACTION_PRESET_REGISTRY[presetName] ?? DEFAULT_COMPACTION_BASE;
+export function getCompactionConfig(): CompactionConfig {
 	return {
-		...baseConfig,
+		...COMPACTION_CONFIG,
 		onCompaction: handleCompaction,
 	};
 }

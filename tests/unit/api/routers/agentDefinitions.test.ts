@@ -73,7 +73,6 @@ function createMockDefinition(overrides?: Partial<AgentDefinition>): AgentDefini
 			enableStopHooks: true,
 			needsGitHubToken: true,
 		},
-		compaction: 'default',
 		hint: 'A test agent',
 		trailingMessage: undefined,
 		prompts: {
@@ -435,10 +434,10 @@ describe('agentDefinitionsRouter', () => {
 			const result = await caller.schema();
 
 			expect(result).toHaveProperty('capabilities');
-			expect(result).toHaveProperty('compactionNames');
-			// Verify they're arrays
+			expect(result).toHaveProperty('triggerRegistry');
+			// Verify they're arrays/objects
 			expect(Array.isArray(result.capabilities)).toBe(true);
-			expect(Array.isArray(result.compactionNames)).toBe(true);
+			expect(typeof result.triggerRegistry).toBe('object');
 		});
 	});
 });

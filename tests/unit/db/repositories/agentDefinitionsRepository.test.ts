@@ -34,7 +34,6 @@ const mockDefinition: AgentDefinition = {
 		needsGitHubToken: true,
 		blockGitPush: false,
 	},
-	compaction: 'default',
 	hint: 'test hint',
 	trailingMessage: undefined,
 	prompts: {

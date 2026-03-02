@@ -73,7 +73,6 @@ backend:
   requiresPR: true
   postConfigure: sequentialGadgetExecution
 
-compaction: implementation
 
 hint: >-
   Complete the current todo in as few iterations as possible. Batch related

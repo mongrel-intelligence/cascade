@@ -58,7 +58,6 @@ backend:
   enableStopHooks: false
   needsGitHubToken: false
 
-compaction: default
 
 trailingMessage: {}
 
