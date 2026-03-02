@@ -64,7 +64,6 @@ backend:
     scm:
       enableStopHooks: false
       requiresReview: true
-  preExecute: postInitialPRComment
 
 
 hint: Focus on the current aspect of review before moving to the next. Read related files together.

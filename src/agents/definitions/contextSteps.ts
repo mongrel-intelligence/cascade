@@ -7,7 +7,6 @@
 
 import { execFileSync } from 'node:child_process';
 
-import { INITIAL_MESSAGES } from '../../config/agentMessages.js';
 import { ListDirectory } from '../../gadgets/ListDirectory.js';
 import { formatCheckStatus } from '../../gadgets/github/core/getPRChecks.js';
 import { readWorkItem } from '../../gadgets/pm/core/readWorkItem.js';
@@ -34,11 +33,6 @@ export interface FetchContextParams {
 	input: AgentInput;
 	repoDir: string;
 	contextFiles: ContextFile[];
-	logWriter: LogWriter;
-}
-
-export interface PreExecuteParams {
-	input: AgentInput;
 	logWriter: LogWriter;
 }
 
@@ -266,26 +260,4 @@ export function fetchEmailsFromInputStep(params: FetchContextParams): ContextInj
 			description: `Pre-fetched ${emails.length} unread email(s)`,
 		},
 	];
-}
-
-// ============================================================================
-// Pre-execute hooks
-// ============================================================================
-
-export async function postInitialPRCommentHook(
-	agentType: string,
-	{ input, logWriter }: PreExecuteParams,
-): Promise<void> {
-	// Skip if ack comment already posted by router or webhook handler
-	if (input.ackCommentId) return;
-
-	const { repoFullName, prNumber } = input;
-	if (!repoFullName || !prNumber) {
-		throw new Error('postInitialPRCommentHook requires repoFullName and prNumber in input');
-	}
-	const { owner, repo } = parseRepoFullName(repoFullName);
-
-	const message = (input.ackMessage as string | undefined) ?? INITIAL_MESSAGES[agentType];
-	logWriter('INFO', `Posting initial ${agentType} comment`, { owner, repo, prNumber });
-	await githubClient.createPRComment(owner, repo, prNumber, message);
 }

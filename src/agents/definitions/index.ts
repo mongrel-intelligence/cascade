@@ -9,8 +9,8 @@ export {
 	resolveKnownAgentTypes,
 	invalidateDefinitionCache,
 } from './loader.js';
-export { CONTEXT_STEP_REGISTRY, PRE_EXECUTE_REGISTRY } from './strategies.js';
-export type { FetchContextParams, PreExecuteParams } from './contextSteps.js';
+export { CONTEXT_STEP_REGISTRY } from './strategies.js';
+export type { FetchContextParams } from './contextSteps.js';
 export type { AgentProfile } from './profiles.js';
 export { getAgentProfile, getAgentCapabilities } from './profiles.js';
 export { getToolManifests } from './toolManifests.js';

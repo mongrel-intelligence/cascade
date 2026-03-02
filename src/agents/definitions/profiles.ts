@@ -19,7 +19,7 @@ import {
 	validateTemplate,
 } from '../prompts/index.js';
 import { buildGadgetsForAgent } from '../shared/gadgets.js';
-import type { FetchContextParams, PreExecuteParams } from './contextSteps.js';
+import type { FetchContextParams } from './contextSteps.js';
 import { resolveAgentDefinition } from './loader.js';
 import type {
 	AgentCapabilities,
@@ -28,7 +28,7 @@ import type {
 	ScmHooks,
 	SupportedTrigger,
 } from './schema.js';
-import { CONTEXT_STEP_REGISTRY, PRE_EXECUTE_REGISTRY } from './strategies.js';
+import { CONTEXT_STEP_REGISTRY } from './strategies.js';
 
 // Re-export for backward compatibility
 export type { AgentCapabilities } from './schema.js';
@@ -58,8 +58,6 @@ export interface AgentProfile {
 	fetchContext(params: FetchContextParams): Promise<ContextInjection[]>;
 	/** Build the task prompt for this agent type */
 	buildTaskPrompt(input: AgentInput): string;
-	/** Optional pre-execute hook (e.g., post initial PR comment) */
-	preExecute?(params: PreExecuteParams): Promise<void>;
 	/** Agent capabilities (required + optional) */
 	capabilities: AgentCapabilities;
 	/**
@@ -220,12 +218,6 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 			return buildGadgetsForAgent(effectiveCaps, gadgetOptions);
 		},
 	};
-
-	if (def.backend.preExecute) {
-		const preExecFn = resolveRegistry(PRE_EXECUTE_REGISTRY, def.backend.preExecute, 'preExecute');
-		// Pass agentType so the hook can look up initial messages
-		profile.preExecute = (params) => preExecFn(agentType, params);
-	}
 
 	return profile;
 }
