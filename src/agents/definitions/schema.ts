@@ -237,7 +237,12 @@ const BackendSchema = z.object({
 	 * Kept for backward compatibility — new format wins when both are present.
 	 */
 	enableStopHooks: z.boolean().optional(),
-	needsGitHubToken: z.boolean(),
+	/**
+	 * @deprecated No longer read from agent definitions.
+	 * GitHub token access is now derived from `integrations.required` containing 'scm'.
+	 * Kept optional for backward compatibility — ignored during parsing.
+	 */
+	needsGitHubToken: z.boolean().optional(),
 	/**
 	 * @deprecated Use hooks.scm.blockGitPush instead.
 	 * Kept for backward compatibility — new format wins when both are present.

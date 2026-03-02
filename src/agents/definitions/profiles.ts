@@ -8,6 +8,7 @@
 import type { AgentInput } from '../../types/index.js';
 import type { Capability, IntegrationChecker } from '../capabilities/index.js';
 import {
+	deriveRequiredIntegrations,
 	getGadgetNamesFromCapabilities,
 	getSdkToolsFromCapabilities,
 	resolveEffectiveCapabilities,
@@ -116,6 +117,20 @@ function getAllCapabilities(caps: AgentCapabilities): Capability[] {
 }
 
 /**
+ * Derive whether an agent requires GitHub token access.
+ *
+ * Checks explicit integrations first (def.integrations.required contains 'scm'),
+ * then falls back to capability-derived integrations when explicit integrations
+ * are not declared.
+ */
+function requiresScmIntegration(def: AgentDefinition): boolean {
+	if (def.integrations?.required) {
+		return def.integrations.required.includes('scm');
+	}
+	return deriveRequiredIntegrations(def.capabilities.required).includes('scm');
+}
+
+/**
  * Resolve the context pipeline for a given trigger event.
  *
  * Returns the trigger-specific pipeline if defined, otherwise returns an empty array.
@@ -186,7 +201,7 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 		},
 		sdkTools,
 		enableStopHooks: scmHooks.enableStopHooks ?? false,
-		needsGitHubToken: def.backend.needsGitHubToken,
+		needsGitHubToken: requiresScmIntegration(def),
 		...(scmHooks.blockGitPush !== undefined && { blockGitPush: scmHooks.blockGitPush }),
 		...(scmHooks.requiresPR && { requiresPR: true }),
 		...(scmHooks.requiresReview && { requiresReview: true }),

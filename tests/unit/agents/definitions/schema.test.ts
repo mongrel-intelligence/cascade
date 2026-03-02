@@ -328,7 +328,6 @@ describe('AgentDefinitionSchema', () => {
 		strategies: {},
 		backend: {
 			enableStopHooks: false,
-			needsGitHubToken: false,
 		},
 		hint: 'Do the thing efficiently.',
 		prompts: {

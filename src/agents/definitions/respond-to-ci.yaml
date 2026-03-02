@@ -41,7 +41,6 @@ prompts:
     CI checks have failed. Analyze the failures and fix them.
 
 backend:
-  needsGitHubToken: true
   hooks:
     scm:
       enableStopHooks: true

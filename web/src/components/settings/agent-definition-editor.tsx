@@ -431,17 +431,6 @@ function BackendSection({
 					/>
 				</div>
 			</div>
-
-			{/* Backend Settings */}
-			<div className="rounded-md border border-border p-3 space-y-2">
-				<div className="text-sm font-medium">Backend Settings</div>
-				<Toggle
-					checked={def.backend.needsGitHubToken}
-					onChange={(v) => setBackend('needsGitHubToken', v)}
-					label="Needs GitHub Token"
-					description="Agent receives GitHub token for API access. Required for PR creation and code reviews."
-				/>
-			</div>
 		</section>
 	);
 }
@@ -968,7 +957,7 @@ const EMPTY_DEFINITION: AgentDefinition = {
 	},
 	triggers: [],
 	strategies: {},
-	backend: { needsGitHubToken: false },
+	backend: {},
 	hint: '',
 	trailingMessage: undefined,
 	prompts: {

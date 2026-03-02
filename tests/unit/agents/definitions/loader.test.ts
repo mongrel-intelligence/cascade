@@ -259,7 +259,7 @@ describe('YAML agent definitions loader', () => {
 			expect(caps.canUpdateChecklists).toBe(true);
 			expect(caps.isReadOnly).toBe(false);
 			expect(def.backend.hooks?.scm?.enableStopHooks).toBe(true);
-			expect(def.backend.needsGitHubToken).toBe(true);
+			expect(def.integrations?.required).toContain('scm');
 		});
 
 		it('review agent is read-only', async () => {
@@ -269,15 +269,15 @@ describe('YAML agent definitions loader', () => {
 			expect(caps.canEditFiles).toBe(false);
 			expect(caps.isReadOnly).toBe(true);
 			expect(def.backend.hooks?.scm?.enableStopHooks).toBe(false);
-			expect(def.backend.needsGitHubToken).toBe(true);
+			expect(def.integrations?.required).toContain('scm');
 		});
 
-		it('respond-to-ci agent has needsGitHubToken', async () => {
+		it('respond-to-ci agent requires scm integration', async () => {
 			const def = loadAgentDefinition('respond-to-ci');
 			const caps = await getAgentCapabilities('respond-to-ci');
 
 			expect(caps.canEditFiles).toBe(true);
-			expect(def.backend.needsGitHubToken).toBe(true);
+			expect(def.integrations?.required).toContain('scm');
 		});
 
 		it('capabilities from getAgentCapabilities are derived correctly for all agents', async () => {
