@@ -33,6 +33,7 @@ triggers:
         label: Target List
         options: [planning]
         defaultValue: planning
+    contextPipeline: [directoryListing, contextFiles, squint, workItem]
   - event: pm:issue-transitioned
     label: Issue Transitioned
     description: Trigger when issue transitions to Planning status
@@ -44,6 +45,7 @@ triggers:
         label: Target Status
         options: [planning]
         defaultValue: planning
+    contextPipeline: [directoryListing, contextFiles, squint, workItem]
   - event: pm:label-added
     label: Ready to Process Label
     description: Trigger when Ready to Process label added to a card in Planning list
@@ -54,13 +56,14 @@ triggers:
         label: Target List
         options: [planning]
         defaultValue: planning
+    contextPipeline: [directoryListing, contextFiles, squint, workItem]
   - event: pm:comment-mention
     label: Comment @mention
     description: Trigger when bot is @mentioned in a card/issue comment
     defaultEnabled: true
+    contextPipeline: [directoryListing, contextFiles, squint, workItem]
 
-strategies:
-  contextPipeline: [directoryListing, contextFiles, squint, workItem]
+strategies: {}
 
 prompts:
   taskPrompt: |

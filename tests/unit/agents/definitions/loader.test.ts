@@ -105,14 +105,16 @@ describe('YAML agent definitions loader', () => {
 			}
 		});
 
-		it('all contextPipeline step references exist in CONTEXT_STEP_REGISTRY', () => {
+		it('all trigger contextPipeline step references exist in CONTEXT_STEP_REGISTRY', () => {
 			for (const agentType of ALL_AGENT_TYPES) {
 				const def = loadAgentDefinition(agentType);
-				for (const step of def.strategies.contextPipeline) {
-					expect(
-						step in CONTEXT_STEP_REGISTRY,
-						`${agentType}: contextPipeline step '${step}' not in CONTEXT_STEP_REGISTRY`,
-					).toBe(true);
+				for (const trigger of def.triggers ?? []) {
+					for (const step of trigger.contextPipeline ?? []) {
+						expect(
+							step in CONTEXT_STEP_REGISTRY,
+							`${agentType}/${trigger.event}: contextPipeline step '${step}' not in CONTEXT_STEP_REGISTRY`,
+						).toBe(true);
+					}
 				}
 			}
 		});
@@ -151,27 +153,28 @@ describe('YAML agent definitions loader', () => {
 			}
 		});
 
-		it('work-item agents use standard context pipeline', () => {
-			const workItemAgents = ['implementation', 'splitting', 'planning', 'debug'];
-			for (const agentType of workItemAgents) {
-				const def = loadAgentDefinition(agentType);
-				expect(def.strategies.contextPipeline).toEqual([
-					'directoryListing',
-					'contextFiles',
-					'squint',
-					'workItem',
-				]);
-			}
+		it('work-item agents have triggers with standard context pipeline', () => {
+			// implementation, splitting, planning triggers include workItem context
+			const def = loadAgentDefinition('implementation');
+			const cardMovedTrigger = def.triggers.find((t) => t.event === 'pm:card-moved');
+			expect(cardMovedTrigger?.contextPipeline).toEqual([
+				'directoryListing',
+				'contextFiles',
+				'squint',
+				'workItem',
+			]);
 		});
 
-		it('review agent uses PR context pipeline without directoryListing', () => {
+		it('review agent triggers use PR context pipeline', () => {
 			const def = loadAgentDefinition('review');
-			expect(def.strategies.contextPipeline).toEqual(['prContext', 'contextFiles', 'squint']);
+			const ciPassedTrigger = def.triggers.find((t) => t.event === 'scm:check-suite-success');
+			expect(ciPassedTrigger?.contextPipeline).toEqual(['prContext', 'contextFiles', 'squint']);
 		});
 
-		it('respond-to-ci uses combined PR + work-item pipeline', () => {
+		it('respond-to-ci trigger uses combined PR + work-item pipeline', () => {
 			const def = loadAgentDefinition('respond-to-ci');
-			expect(def.strategies.contextPipeline).toEqual([
+			const ciFailureTrigger = def.triggers.find((t) => t.event === 'scm:check-suite-failure');
+			expect(ciFailureTrigger?.contextPipeline).toEqual([
 				'prContext',
 				'directoryListing',
 				'contextFiles',
@@ -180,18 +183,16 @@ describe('YAML agent definitions loader', () => {
 			]);
 		});
 
-		it('PR comment agents use conversation pipeline', () => {
-			const prCommentAgents = ['respond-to-review', 'respond-to-pr-comment'];
-			for (const agentType of prCommentAgents) {
-				const def = loadAgentDefinition(agentType);
-				expect(def.strategies.contextPipeline).toEqual([
-					'prContext',
-					'prConversation',
-					'directoryListing',
-					'contextFiles',
-					'squint',
-				]);
-			}
+		it('PR comment agents have triggers with conversation pipeline', () => {
+			const def = loadAgentDefinition('respond-to-pr-comment');
+			const prCommentTrigger = def.triggers.find((t) => t.event === 'scm:pr-comment-mention');
+			expect(prCommentTrigger?.contextPipeline).toEqual([
+				'prContext',
+				'prConversation',
+				'directoryListing',
+				'contextFiles',
+				'squint',
+			]);
 		});
 
 		it('review has preExecute hook', () => {

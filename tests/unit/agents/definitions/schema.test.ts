@@ -325,9 +325,7 @@ describe('AgentDefinitionSchema', () => {
 			required: ['fs:read', 'fs:write', 'shell:exec', 'session:ctrl', 'pm:read', 'pm:write'],
 			optional: [],
 		},
-		strategies: {
-			contextPipeline: ['directoryListing', 'contextFiles', 'squint', 'workItem'],
-		},
+		strategies: {},
 		backend: {
 			enableStopHooks: false,
 			needsGitHubToken: false,
@@ -348,7 +346,6 @@ describe('AgentDefinitionSchema', () => {
 		const full = {
 			...validDefinition,
 			strategies: {
-				...validDefinition.strategies,
 				gadgetOptions: { includeReviewComments: true },
 			},
 			backend: {
@@ -380,15 +377,6 @@ describe('AgentDefinitionSchema', () => {
 		const bad = {
 			...validDefinition,
 			capabilities: { required: ['invalid:cap'], optional: [] },
-		};
-		const result = AgentDefinitionSchema.safeParse(bad);
-		expect(result.success).toBe(false);
-	});
-
-	it('rejects invalid strategy names', () => {
-		const bad = {
-			...validDefinition,
-			strategies: { ...validDefinition.strategies, contextPipeline: ['nonexistentStep'] },
 		};
 		const result = AgentDefinitionSchema.safeParse(bad);
 		expect(result.success).toBe(false);
@@ -462,18 +450,6 @@ describe('AgentDefinitionSchema', () => {
 		if (result.success) {
 			expect(result.data.backend.requiresPR).toBeUndefined();
 		}
-	});
-
-	it('validates contextPipeline step names', () => {
-		const good = {
-			...validDefinition,
-			strategies: {
-				...validDefinition.strategies,
-				contextPipeline: ['prContext', 'prConversation', 'directoryListing'],
-			},
-		};
-		const result = AgentDefinitionSchema.safeParse(good);
-		expect(result.success).toBe(true);
 	});
 
 	it('rejects overlapping required and optional capabilities', () => {

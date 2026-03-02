@@ -68,9 +68,7 @@ function createMockDefinition(overrides?: Partial<AgentDefinition>): AgentDefini
 			optional: [],
 		},
 		triggers: [],
-		strategies: {
-			contextPipeline: ['directoryListing'],
-		},
+		strategies: {},
 		backend: {
 			enableStopHooks: true,
 			needsGitHubToken: true,
@@ -437,7 +435,6 @@ describe('agentDefinitionsRouter', () => {
 			const result = await caller.schema();
 
 			expect(result).toHaveProperty('capabilities');
-			expect(result).toHaveProperty('contextStepNames');
 			expect(result).toHaveProperty('compactionNames');
 			// Verify they're arrays
 			expect(Array.isArray(result.capabilities)).toBe(true);

@@ -38,7 +38,6 @@ export interface AgentDefinitionEditorProps {
 
 interface SchemaData {
 	capabilities: readonly string[];
-	contextStepNames: readonly string[];
 	compactionNames: readonly string[];
 	triggerRegistry: Record<string, KnownTriggerEvent[]>;
 }
@@ -314,55 +313,39 @@ function CapabilitiesSection({
 function StrategiesSection({
 	def,
 	setDef,
-	schema,
 }: {
 	def: AgentDefinition;
 	setDef: React.Dispatch<React.SetStateAction<AgentDefinition>>;
-	schema: SchemaData | undefined;
 }) {
+	// Only show strategies section if gadgetOptions is set
+	if (!def.strategies.gadgetOptions) {
+		return null;
+	}
+
 	return (
 		<section className="space-y-3">
 			<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
 				Strategies
 			</h3>
 			<div className="space-y-2">
-				<Label>Context Pipeline</Label>
-				{schema ? (
-					<MultiSelectBadges
-						available={schema.contextStepNames}
-						selected={def.strategies.contextPipeline}
-						onChange={(contextPipeline) =>
-							setDef(
-								(d) =>
-									({ ...d, strategies: { ...d.strategies, contextPipeline } }) as AgentDefinition,
-							)
-						}
-					/>
-				) : (
-					<div className="text-sm text-muted-foreground">Loading...</div>
-				)}
+				<Label>Gadget Options</Label>
+				<Toggle
+					checked={def.strategies.gadgetOptions.includeReviewComments ?? false}
+					onChange={(v) =>
+						setDef(
+							(d) =>
+								({
+									...d,
+									strategies: {
+										...d.strategies,
+										gadgetOptions: { ...d.strategies.gadgetOptions, includeReviewComments: v },
+									},
+								}) as AgentDefinition,
+						)
+					}
+					label="Include Review Comments"
+				/>
 			</div>
-			{def.strategies.gadgetOptions && (
-				<div className="space-y-2">
-					<Label>Gadget Options</Label>
-					<Toggle
-						checked={def.strategies.gadgetOptions.includeReviewComments ?? false}
-						onChange={(v) =>
-							setDef(
-								(d) =>
-									({
-										...d,
-										strategies: {
-											...d.strategies,
-											gadgetOptions: { ...d.strategies.gadgetOptions, includeReviewComments: v },
-										},
-									}) as AgentDefinition,
-							)
-						}
-						label="Include Review Comments"
-					/>
-				</div>
-			)}
 		</section>
 	);
 }
@@ -953,9 +936,7 @@ const EMPTY_DEFINITION: AgentDefinition = {
 		optional: [],
 	},
 	triggers: [],
-	strategies: {
-		contextPipeline: [],
-	},
+	strategies: {},
 	backend: { enableStopHooks: false, needsGitHubToken: false },
 	compaction: 'default',
 	hint: '',
@@ -1181,7 +1162,7 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 					<IdentitySection def={def} setIdentity={setIdentity} />
 					<CapabilitiesSection def={def} setDef={setDef} />
 					<TriggersSection def={def} setDef={setDef} schema={schema} />
-					<StrategiesSection def={def} setDef={setDef} schema={schema} />
+					<StrategiesSection def={def} setDef={setDef} />
 					<BackendSection def={def} setBackend={setBackend} />
 
 					<section className="space-y-3">

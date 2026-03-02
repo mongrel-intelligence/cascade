@@ -31,9 +31,9 @@ triggers:
         label: Sender Email Filter
         description: Only process emails from this sender (leave empty for all)
         required: false
+    contextPipeline: [prefetchedEmails]
 
-strategies:
-  contextPipeline: [prefetchedEmails]
+strategies: {}
 
 prompts:
   taskPrompt: |
