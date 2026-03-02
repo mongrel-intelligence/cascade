@@ -380,37 +380,76 @@ function BackendSection({
 	def: AgentDefinition;
 	setBackend: (k: keyof AgentDefinition['backend'], v: unknown) => void;
 }) {
+	// Helper to update a specific SCM hook field
+	const setHook = (
+		k: keyof NonNullable<NonNullable<AgentDefinition['backend']['hooks']>['scm']>,
+		v: unknown,
+	) => {
+		setBackend('hooks', {
+			...def.backend.hooks,
+			scm: {
+				...def.backend.hooks?.scm,
+				[k]: v,
+			},
+		});
+	};
+
+	const scm = def.backend.hooks?.scm;
+
 	return (
 		<section className="space-y-3">
 			<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
 				Backend
 			</h3>
-			<div className="grid grid-cols-2 gap-2">
-				<Toggle
-					checked={def.backend.enableStopHooks}
-					onChange={(v) => setBackend('enableStopHooks', v)}
-					label="Enable Stop Hooks"
-					description="Checks for uncommitted/unpushed changes before agent finishes. Enable for implementation; disable for planning/review."
-				/>
+
+			{/* SCM Hooks */}
+			<div className="rounded-md border border-border p-3 space-y-2">
+				<div className="text-sm font-medium">SCM Hooks</div>
+				<div className="grid grid-cols-2 gap-2">
+					<Toggle
+						checked={scm?.enableStopHooks ?? false}
+						onChange={(v) => setHook('enableStopHooks', v)}
+						label="Enable Stop Hooks"
+						description="Checks for uncommitted/unpushed changes before agent finishes. Enable for implementation; disable for planning/review."
+					/>
+					<Toggle
+						checked={scm?.blockGitPush ?? false}
+						onChange={(v) => setHook('blockGitPush', v)}
+						label="Block Git Push"
+						description="Prevents direct pushes, requiring cascade-tools for PRs. Disable for existing PR branches."
+					/>
+					<Toggle
+						checked={scm?.requiresPR ?? false}
+						onChange={(v) => setHook('requiresPR', v)}
+						label="Requires PR"
+						description="Agent must create a PR before the session can finish."
+					/>
+					<Toggle
+						checked={scm?.requiresReview ?? false}
+						onChange={(v) => setHook('requiresReview', v)}
+						label="Requires Review"
+						description="Agent must submit a code review before the session can finish."
+					/>
+					<Toggle
+						checked={scm?.requiresPushedChanges ?? false}
+						onChange={(v) => setHook('requiresPushedChanges', v)}
+						label="Requires Pushed Changes"
+						description="Agent must commit and push changes before the session can finish."
+					/>
+				</div>
+			</div>
+
+			{/* Backend Settings */}
+			<div className="rounded-md border border-border p-3 space-y-2">
+				<div className="text-sm font-medium">Backend Settings</div>
 				<Toggle
 					checked={def.backend.needsGitHubToken}
 					onChange={(v) => setBackend('needsGitHubToken', v)}
 					label="Needs GitHub Token"
 					description="Agent receives GitHub token for API access. Required for PR creation and code reviews."
 				/>
-				<Toggle
-					checked={def.backend.blockGitPush ?? false}
-					onChange={(v) => setBackend('blockGitPush', v)}
-					label="Block Git Push"
-					description="Prevents direct pushes, requiring cascade-tools for PRs. Disable for existing PR branches."
-				/>
-				<Toggle
-					checked={def.backend.requiresPR ?? false}
-					onChange={(v) => setBackend('requiresPR', v)}
-					label="Requires PR"
-					description="Agent must create a PR for the session to be considered successful."
-				/>
 			</div>
+
 			<div className="grid grid-cols-2 gap-3">
 				<div className="space-y-1">
 					<div className="flex items-center gap-1.5">
@@ -975,7 +1014,7 @@ const EMPTY_DEFINITION: AgentDefinition = {
 	},
 	triggers: [],
 	strategies: {},
-	backend: { enableStopHooks: false, needsGitHubToken: false },
+	backend: { needsGitHubToken: false },
 	hint: '',
 	trailingMessage: undefined,
 	prompts: {

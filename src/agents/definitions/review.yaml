@@ -59,8 +59,11 @@ prompts:
     Examine the code changes carefully and submit your review using CreatePRReview.
 
 backend:
-  enableStopHooks: false
   needsGitHubToken: true
+  hooks:
+    scm:
+      enableStopHooks: false
+      requiresReview: true
   preExecute: postInitialPRComment
 
 

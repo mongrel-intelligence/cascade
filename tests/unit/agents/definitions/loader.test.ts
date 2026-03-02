@@ -136,15 +136,15 @@ describe('YAML agent definitions loader', () => {
 			expect(def.backend.postConfigure).toBe('sequentialGadgetExecution');
 		});
 
-		it('implementation has requiresPR flag', () => {
+		it('implementation has requiresPR flag in hooks.scm', () => {
 			const def = loadAgentDefinition('implementation');
-			expect(def.backend.requiresPR).toBe(true);
+			expect(def.backend.hooks?.scm?.requiresPR).toBe(true);
 		});
 
-		it('non-implementation agents do not have requiresPR', () => {
+		it('non-implementation agents do not have hooks.scm.requiresPR', () => {
 			for (const agentType of ALL_AGENT_TYPES.filter((t) => t !== 'implementation')) {
 				const def = loadAgentDefinition(agentType);
-				expect(def.backend.requiresPR).toBeUndefined();
+				expect(def.backend.hooks?.scm?.requiresPR).toBeUndefined();
 			}
 		});
 
@@ -273,7 +273,7 @@ describe('YAML agent definitions loader', () => {
 			expect(caps.canCreatePR).toBe(true);
 			expect(caps.canUpdateChecklists).toBe(true);
 			expect(caps.isReadOnly).toBe(false);
-			expect(def.backend.enableStopHooks).toBe(true);
+			expect(def.backend.hooks?.scm?.enableStopHooks).toBe(true);
 			expect(def.backend.needsGitHubToken).toBe(true);
 			expect(def.backend.preExecute).toBeUndefined();
 			expect(def.backend.postConfigure).toBe('sequentialGadgetExecution');
@@ -285,7 +285,7 @@ describe('YAML agent definitions loader', () => {
 
 			expect(caps.canEditFiles).toBe(false);
 			expect(caps.isReadOnly).toBe(true);
-			expect(def.backend.enableStopHooks).toBe(false);
+			expect(def.backend.hooks?.scm?.enableStopHooks).toBe(false);
 			expect(def.backend.needsGitHubToken).toBe(true);
 			expect(def.backend.preExecute).toBe('postInitialPRComment');
 		});

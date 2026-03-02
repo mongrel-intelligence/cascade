@@ -126,7 +126,8 @@ describe('hasUnpushedCommits', () => {
 });
 
 describe('validateFinish', () => {
-	it('implementation + !prCreated + no PR on branch → error', async () => {
+	// Hook-driven tests: hooks.requiresPR
+	it('requiresPR + !prCreated + no PR on branch → error', async () => {
 		// findPRForCurrentBranch returns null
 		mockExecSync.mockImplementation(() => {
 			throw new Error('fail');
@@ -136,26 +137,28 @@ describe('validateFinish', () => {
 			agentType: 'implementation',
 			prCreated: false,
 			reviewSubmitted: false,
+			hooks: { requiresPR: true },
 		});
 
 		expect(result.valid).toBe(false);
 		if (!result.valid) {
-			expect(result.error).toContain('Cannot finish implementation session');
+			expect(result.error).toContain('Cannot finish session without creating a PR');
 			expect(result.error).toContain('CreatePR');
 		}
 	});
 
-	it('implementation + prCreated → valid', async () => {
+	it('requiresPR + prCreated → valid', async () => {
 		const result = await validateFinish({
 			agentType: 'implementation',
 			prCreated: true,
 			reviewSubmitted: false,
+			hooks: { requiresPR: true },
 		});
 
 		expect(result.valid).toBe(true);
 	});
 
-	it('implementation + PR found on branch → valid', async () => {
+	it('requiresPR + PR found on branch → valid', async () => {
 		mockExecSync.mockReturnValueOnce('feat\n').mockReturnValueOnce('https://github.com/o/r.git\n');
 
 		mockGithub.getOpenPRByBranch.mockResolvedValue({
@@ -166,42 +169,48 @@ describe('validateFinish', () => {
 			agentType: 'implementation',
 			prCreated: false,
 			reviewSubmitted: false,
+			hooks: { requiresPR: true },
 		});
 
 		expect(result.valid).toBe(true);
 	});
 
-	it('review + !reviewSubmitted → error', async () => {
+	// Hook-driven tests: hooks.requiresReview
+	it('requiresReview + !reviewSubmitted → error', async () => {
 		const result = await validateFinish({
 			agentType: 'review',
 			prCreated: false,
 			reviewSubmitted: false,
+			hooks: { requiresReview: true },
 		});
 
 		expect(result.valid).toBe(false);
 		if (!result.valid) {
-			expect(result.error).toContain('Cannot finish review session');
+			expect(result.error).toContain('Cannot finish session without submitting a review');
 			expect(result.error).toContain('CreatePRReview');
 		}
 	});
 
-	it('review + reviewSubmitted → valid', async () => {
+	it('requiresReview + reviewSubmitted → valid', async () => {
 		const result = await validateFinish({
 			agentType: 'review',
 			prCreated: false,
 			reviewSubmitted: true,
+			hooks: { requiresReview: true },
 		});
 
 		expect(result.valid).toBe(true);
 	});
 
-	it('respond-to-review + uncommitted → error', async () => {
+	// Hook-driven tests: hooks.requiresPushedChanges
+	it('requiresPushedChanges + uncommitted → error', async () => {
 		mockExecSync.mockReturnValue('M dirty.ts'); // has uncommitted changes
 
 		const result = await validateFinish({
 			agentType: 'respond-to-review',
 			prCreated: false,
 			reviewSubmitted: false,
+			hooks: { requiresPushedChanges: true },
 		});
 
 		expect(result.valid).toBe(false);
@@ -210,7 +219,7 @@ describe('validateFinish', () => {
 		}
 	});
 
-	it('respond-to-review + unpushed → error', async () => {
+	it('requiresPushedChanges + unpushed → error', async () => {
 		mockExecSync
 			.mockReturnValueOnce('') // no uncommitted (git status)
 			.mockReturnValueOnce('2\n'); // unpushed commits
@@ -219,6 +228,7 @@ describe('validateFinish', () => {
 			agentType: 'respond-to-review',
 			prCreated: false,
 			reviewSubmitted: false,
+			hooks: { requiresPushedChanges: true },
 		});
 
 		expect(result.valid).toBe(false);
@@ -227,7 +237,7 @@ describe('validateFinish', () => {
 		}
 	});
 
-	it('respond-to-review + clean → valid', async () => {
+	it('requiresPushedChanges + clean → valid', async () => {
 		mockExecSync
 			.mockReturnValueOnce('') // no uncommitted
 			.mockReturnValueOnce('0\n'); // no unpushed
@@ -236,18 +246,44 @@ describe('validateFinish', () => {
 			agentType: 'respond-to-review',
 			prCreated: false,
 			reviewSubmitted: false,
+			hooks: { requiresPushedChanges: true },
 		});
 
 		expect(result.valid).toBe(true);
 	});
 
-	it('respond-to-ci + uncommitted → error', async () => {
+	// No hooks set → always valid
+	it('no hooks → valid for any agent type', async () => {
+		const result = await validateFinish({
+			agentType: 'splitting',
+			prCreated: false,
+			reviewSubmitted: false,
+			hooks: {},
+		});
+
+		expect(result.valid).toBe(true);
+	});
+
+	it('empty hooks → valid even with incomplete state', async () => {
+		const result = await validateFinish({
+			agentType: 'planning',
+			prCreated: false,
+			reviewSubmitted: false,
+			hooks: {},
+		});
+
+		expect(result.valid).toBe(true);
+	});
+
+	// requiresPushedChanges + clean for ci agent (mirrors respond-to-ci)
+	it('requiresPushedChanges + uncommitted for ci-style agent → error', async () => {
 		mockExecSync.mockReturnValue('M file.ts');
 
 		const result = await validateFinish({
 			agentType: 'respond-to-ci',
 			prCreated: false,
 			reviewSubmitted: false,
+			hooks: { requiresPushedChanges: true },
 		});
 
 		expect(result.valid).toBe(false);
@@ -256,7 +292,7 @@ describe('validateFinish', () => {
 		}
 	});
 
-	it('respond-to-ci + clean → valid', async () => {
+	it('requiresPushedChanges + clean for ci-style agent → valid', async () => {
 		mockExecSync
 			.mockReturnValueOnce('') // no uncommitted
 			.mockReturnValueOnce('0\n'); // no unpushed
@@ -265,16 +301,7 @@ describe('validateFinish', () => {
 			agentType: 'respond-to-ci',
 			prCreated: false,
 			reviewSubmitted: false,
-		});
-
-		expect(result.valid).toBe(true);
-	});
-
-	it('other agent types → valid', async () => {
-		const result = await validateFinish({
-			agentType: 'splitting',
-			prCreated: false,
-			reviewSubmitted: false,
+			hooks: { requiresPushedChanges: true },
 		});
 
 		expect(result.valid).toBe(true);

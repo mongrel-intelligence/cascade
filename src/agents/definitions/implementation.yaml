@@ -68,9 +68,11 @@ prompts:
     Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.
 
 backend:
-  enableStopHooks: true
   needsGitHubToken: true
-  requiresPR: true
+  hooks:
+    scm:
+      enableStopHooks: true
+      requiresPR: true
   postConfigure: sequentialGadgetExecution
 
 

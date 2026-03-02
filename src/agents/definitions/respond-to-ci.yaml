@@ -41,9 +41,12 @@ prompts:
     CI checks have failed. Analyze the failures and fix them.
 
 backend:
-  enableStopHooks: true
   needsGitHubToken: true
-  blockGitPush: false
+  hooks:
+    scm:
+      enableStopHooks: true
+      blockGitPush: false
+      requiresPushedChanges: true
   preExecute: postInitialPRComment
 
 

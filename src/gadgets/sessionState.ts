@@ -1,3 +1,16 @@
+/**
+ * SCM hook flags resolved from the agent definition's hooks.scm configuration.
+ * These drive finish validation logic.
+ */
+export interface SessionHooks {
+	/** Whether the agent must create a PR before finishing */
+	requiresPR?: boolean;
+	/** Whether the agent must submit a review before finishing */
+	requiresReview?: boolean;
+	/** Whether the agent must have pushed changes before finishing */
+	requiresPushedChanges?: boolean;
+}
+
 // Session-level state accessible to all gadgets
 let sessionState = {
 	agentType: null as string | null,
@@ -9,6 +22,7 @@ let sessionState = {
 	reviewSubmitted: false,
 	reviewUrl: null as string | null,
 	initialCommentId: null as number | null,
+	hooks: {} as SessionHooks,
 };
 
 export function initSessionState(
@@ -16,6 +30,7 @@ export function initSessionState(
 	baseBranch?: string,
 	projectId?: string,
 	cardId?: string,
+	hooks?: SessionHooks,
 ): void {
 	sessionState = {
 		agentType,
@@ -27,6 +42,7 @@ export function initSessionState(
 		reviewSubmitted: false,
 		reviewUrl: null,
 		initialCommentId: null,
+		hooks: hooks ?? {},
 	};
 }
 

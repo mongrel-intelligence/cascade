@@ -9,7 +9,7 @@ import { getCompactionConfig } from '../../config/compactionConfig.js';
 import { getIterationTrailingMessage } from '../../config/hintConfig.js';
 import { getRateLimitForModel } from '../../config/rateLimits.js';
 import { getRetryConfig } from '../../config/retryConfig.js';
-import { initSessionState } from '../../gadgets/sessionState.js';
+import { type SessionHooks, initSessionState } from '../../gadgets/sessionState.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
 import { resolveSquintDbPath } from '../../utils/squintDb.js';
 import type { IProgressMonitor } from '../contracts/index.js';
@@ -48,6 +48,8 @@ export interface CreateBuilderOptions {
 	projectId?: string;
 	/** Work item (card) ID for PR ↔ work item linking. Passed to session state. */
 	cardId?: string;
+	/** Resolved SCM hook flags for finish validation (requiresPR, requiresReview, etc.) */
+	hooks?: SessionHooks;
 }
 
 const MAX_GADGETS_PER_RESPONSE = 25;
@@ -76,7 +78,13 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 
 	// Initialize session state for gadgets (e.g., Finish checks PR requirement for implementation)
 	if (!skipSessionState) {
-		initSessionState(agentType, options.baseBranch, options.projectId, options.cardId);
+		initSessionState(
+			agentType,
+			options.baseBranch,
+			options.projectId,
+			options.cardId,
+			options.hooks,
+		);
 	}
 
 	// Resolve config values before building
