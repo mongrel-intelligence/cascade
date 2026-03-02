@@ -114,10 +114,10 @@ describe('TriggerParameterSchema', () => {
 // ============================================================================
 
 describe('SupportedTriggerSchema', () => {
-	it('parses a valid trigger with event format pm:card-moved', () => {
+	it('parses a valid trigger with event format pm:status-changed', () => {
 		const trigger = {
-			event: 'pm:card-moved',
-			label: 'Card Moved',
+			event: 'pm:status-changed',
+			label: 'Status Changed',
 		};
 		const result = SupportedTriggerSchema.safeParse(trigger);
 		expect(result.success).toBe(true);
@@ -183,7 +183,7 @@ describe('SupportedTriggerSchema', () => {
 
 	it('rejects invalid provider', () => {
 		const trigger = {
-			event: 'pm:card-moved',
+			event: 'pm:status-changed',
 			label: 'Card Moved',
 			providers: ['invalid-provider'], // Unknown provider
 		};
@@ -193,7 +193,7 @@ describe('SupportedTriggerSchema', () => {
 
 	it('accepts all valid providers', () => {
 		const trigger = {
-			event: 'pm:card-moved',
+			event: 'pm:status-changed',
 			label: 'Card Moved',
 			providers: ['trello', 'jira', 'github', 'imap', 'gmail', 'twilio'],
 		};
@@ -203,7 +203,7 @@ describe('SupportedTriggerSchema', () => {
 
 	it('parses trigger with parameters', () => {
 		const trigger = {
-			event: 'pm:card-moved',
+			event: 'pm:status-changed',
 			label: 'Card Moved to Todo',
 			parameters: [
 				{
@@ -494,7 +494,7 @@ describe('AgentDefinitionSchema', () => {
 			...validDefinition,
 			triggers: [
 				{
-					event: 'pm:card-moved',
+					event: 'pm:status-changed',
 					label: 'Card Moved to Todo',
 					defaultEnabled: true,
 					providers: ['trello'],

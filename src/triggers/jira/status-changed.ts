@@ -1,28 +1,28 @@
 /**
- * JIRA issue-transitioned trigger.
+ * JIRA status-changed trigger.
  *
  * Fires when a JIRA issue transitions to a configured status that maps to
  * a CASCADE agent type (splitting, planning, implementation).
  */
 
 import {
-	resolveIssueTransitionedEnabled,
 	resolveJiraTriggerEnabled,
+	resolveStatusChangedEnabled,
 } from '../../config/triggerConfig.js';
 import { getJiraConfig } from '../../pm/config.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { type JiraWebhookPayload, STATUS_TO_AGENT } from './types.js';
 
-export class JiraIssueTransitionedTrigger implements TriggerHandler {
-	name = 'jira-issue-transitioned';
+export class JiraStatusChangedTrigger implements TriggerHandler {
+	name = 'jira-status-changed';
 	description = 'Triggers agent when a JIRA issue transitions to a configured status';
 
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'jira') return false;
 
 		// Check trigger config — default enabled for backward compatibility
-		if (!resolveJiraTriggerEnabled(getJiraConfig(ctx.project)?.triggers, 'issueTransitioned')) {
+		if (!resolveJiraTriggerEnabled(getJiraConfig(ctx.project)?.triggers, 'statusChanged')) {
 			return false;
 		}
 
@@ -50,7 +50,7 @@ export class JiraIssueTransitionedTrigger implements TriggerHandler {
 
 		const jiraConfig = getJiraConfig(ctx.project);
 		if (!jiraConfig?.statuses) {
-			logger.debug('No JIRA status configuration, skipping issue transition trigger', {
+			logger.debug('No JIRA status configuration, skipping status-changed trigger', {
 				projectId: ctx.project.id,
 			});
 			return null;
@@ -74,9 +74,9 @@ export class JiraIssueTransitionedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Check per-agent toggle for issueTransitioned
-		if (!resolveIssueTransitionedEnabled(jiraConfig?.triggers, agentType)) {
-			logger.debug('JIRA issue-transitioned trigger disabled for agent', {
+		// Check per-agent toggle for statusChanged
+		if (!resolveStatusChangedEnabled(jiraConfig?.triggers, agentType)) {
+			logger.debug('JIRA status-changed trigger disabled for agent', {
 				issueKey,
 				agentType,
 			});

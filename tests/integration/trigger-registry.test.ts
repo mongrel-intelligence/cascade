@@ -11,12 +11,12 @@ import {
 	findProjectByRepoFromDb,
 } from '../../src/db/repositories/configRepository.js';
 import { createTriggerRegistry } from '../../src/triggers/registry.js';
-import {
-	CardMovedToPlanningTrigger,
-	CardMovedToSplittingTrigger,
-	CardMovedToTodoTrigger,
-} from '../../src/triggers/trello/card-moved.js';
 import { ReadyToProcessLabelTrigger } from '../../src/triggers/trello/label-added.js';
+import {
+	TrelloStatusChangedPlanningTrigger,
+	TrelloStatusChangedSplittingTrigger,
+	TrelloStatusChangedTodoTrigger,
+} from '../../src/triggers/trello/status-changed.js';
 import type { TriggerContext } from '../../src/types/index.js';
 import { assertFound } from './helpers/assert.js';
 import { truncateAll } from './helpers/db.js';
@@ -201,7 +201,7 @@ describe('Trigger Registry (integration)', () => {
 	// Trello Card-Moved Triggers with Real DB Config
 	// =========================================================================
 
-	describe('CardMovedToTodoTrigger with real project config', () => {
+	describe('TrelloStatusChangedTodoTrigger with real project config', () => {
 		it('matches when card is moved into the todo list', async () => {
 			await seedIntegration({
 				category: 'pm',
@@ -225,7 +225,7 @@ describe('Trigger Registry (integration)', () => {
 				}),
 			};
 
-			expect(CardMovedToTodoTrigger.matches(ctx)).toBe(true);
+			expect(TrelloStatusChangedTodoTrigger.matches(ctx)).toBe(true);
 		});
 
 		it('does not match when card moved to a different list', async () => {
@@ -251,7 +251,7 @@ describe('Trigger Registry (integration)', () => {
 				}),
 			};
 
-			expect(CardMovedToTodoTrigger.matches(ctx)).toBe(false);
+			expect(TrelloStatusChangedTodoTrigger.matches(ctx)).toBe(false);
 		});
 
 		it('does not match when source is not trello', async () => {
@@ -274,7 +274,7 @@ describe('Trigger Registry (integration)', () => {
 				payload: makeTrelloCardMovedPayload({ listAfterId: 'list-todo-123' }),
 			};
 
-			expect(CardMovedToTodoTrigger.matches(ctx)).toBe(false);
+			expect(TrelloStatusChangedTodoTrigger.matches(ctx)).toBe(false);
 		});
 
 		it('returns correct agent type from handle', async () => {
@@ -301,14 +301,14 @@ describe('Trigger Registry (integration)', () => {
 				}),
 			};
 
-			const result = await CardMovedToTodoTrigger.handle(ctx);
+			const result = await TrelloStatusChangedTodoTrigger.handle(ctx);
 			expect(result?.agentType).toBe('implementation');
 			expect(result?.agentInput.cardId).toBe('card-xyz');
 			expect(result?.workItemId).toBe('card-xyz');
 		});
 	});
 
-	describe('CardMovedToSplittingTrigger', () => {
+	describe('TrelloStatusChangedSplittingTrigger', () => {
 		it('matches when card moves to splitting list', async () => {
 			await seedIntegration({
 				category: 'pm',
@@ -332,13 +332,13 @@ describe('Trigger Registry (integration)', () => {
 				}),
 			};
 
-			expect(CardMovedToSplittingTrigger.matches(ctx)).toBe(true);
-			const result = await CardMovedToSplittingTrigger.handle(ctx);
+			expect(TrelloStatusChangedSplittingTrigger.matches(ctx)).toBe(true);
+			const result = await TrelloStatusChangedSplittingTrigger.handle(ctx);
 			expect(result?.agentType).toBe('splitting');
 		});
 	});
 
-	describe('CardMovedToPlanningTrigger', () => {
+	describe('TrelloStatusChangedPlanningTrigger', () => {
 		it('matches when card moves to planning list', async () => {
 			await seedIntegration({
 				category: 'pm',
@@ -362,8 +362,8 @@ describe('Trigger Registry (integration)', () => {
 				}),
 			};
 
-			expect(CardMovedToPlanningTrigger.matches(ctx)).toBe(true);
-			const result = await CardMovedToPlanningTrigger.handle(ctx);
+			expect(TrelloStatusChangedPlanningTrigger.matches(ctx)).toBe(true);
+			const result = await TrelloStatusChangedPlanningTrigger.handle(ctx);
 			expect(result?.agentType).toBe('planning');
 		});
 	});
@@ -373,7 +373,7 @@ describe('Trigger Registry (integration)', () => {
 	// =========================================================================
 
 	describe('config toggles', () => {
-		it('does not fire card-moved-to-todo when cardMovedToTodo is disabled', async () => {
+		it('does not fire status-changed-todo when statusChanged is disabled', async () => {
 			await seedIntegration({
 				category: 'pm',
 				provider: 'trello',
@@ -382,7 +382,7 @@ describe('Trigger Registry (integration)', () => {
 					lists: { todo: 'list-todo-123' },
 					labels: {},
 				},
-				triggers: { cardMovedToTodo: false },
+				triggers: { statusChanged: false },
 			});
 
 			const project = await findProjectByBoardIdFromDb('board-123');
@@ -397,10 +397,10 @@ describe('Trigger Registry (integration)', () => {
 				}),
 			};
 
-			expect(CardMovedToTodoTrigger.matches(ctx)).toBe(false);
+			expect(TrelloStatusChangedTodoTrigger.matches(ctx)).toBe(false);
 		});
 
-		it('does not fire card-moved-to-splitting when cardMovedToSplitting is disabled', async () => {
+		it('does not fire status-changed-splitting when statusChanged is disabled', async () => {
 			await seedIntegration({
 				category: 'pm',
 				provider: 'trello',
@@ -409,7 +409,7 @@ describe('Trigger Registry (integration)', () => {
 					lists: { splitting: 'list-split-789' },
 					labels: {},
 				},
-				triggers: { cardMovedToSplitting: false },
+				triggers: { statusChanged: false },
 			});
 
 			const project = await findProjectByBoardIdFromDb('board-123');
@@ -424,7 +424,7 @@ describe('Trigger Registry (integration)', () => {
 				}),
 			};
 
-			expect(CardMovedToSplittingTrigger.matches(ctx)).toBe(false);
+			expect(TrelloStatusChangedSplittingTrigger.matches(ctx)).toBe(false);
 		});
 	});
 
@@ -510,9 +510,9 @@ describe('Trigger Registry (integration)', () => {
 			});
 
 			const registry = createTriggerRegistry();
-			registry.register(CardMovedToSplittingTrigger);
-			registry.register(CardMovedToPlanningTrigger);
-			registry.register(CardMovedToTodoTrigger);
+			registry.register(TrelloStatusChangedSplittingTrigger);
+			registry.register(TrelloStatusChangedPlanningTrigger);
+			registry.register(TrelloStatusChangedTodoTrigger);
 
 			const project = await findProjectByBoardIdFromDb('board-123');
 
@@ -554,7 +554,7 @@ describe('Trigger Registry (integration)', () => {
 			});
 
 			const registry = createTriggerRegistry();
-			registry.register(CardMovedToTodoTrigger);
+			registry.register(TrelloStatusChangedTodoTrigger);
 
 			const project = await findProjectByBoardIdFromDb('board-123');
 

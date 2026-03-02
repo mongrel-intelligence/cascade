@@ -45,7 +45,7 @@ export interface TriggerParameterDef {
  * Returned by getProjectTriggersView for dashboard rendering.
  */
 export interface ResolvedTrigger {
-	/** Event identifier (e.g., "pm:card-moved", "scm:check-suite-success") */
+	/** Event identifier (e.g., "pm:status-changed", "scm:check-suite-success") */
 	event: string;
 	/** Human-readable label */
 	label: string;
@@ -118,7 +118,7 @@ export type TriggerCategory = 'pm' | 'scm' | 'email' | 'sms';
  * Used for populating the definition editor's trigger selection UI.
  */
 export interface KnownTriggerEvent {
-	/** Event identifier (e.g., "pm:card-moved", "scm:check-suite-success") */
+	/** Event identifier (e.g., "pm:status-changed", "scm:check-suite-success") */
 	event: string;
 	/** Human-readable label */
 	label: string;
@@ -137,18 +137,10 @@ export interface KnownTriggerEvent {
 export const TRIGGER_REGISTRY: Record<TriggerCategory, KnownTriggerEvent[]> = {
 	pm: [
 		{
-			event: 'pm:card-moved',
-			label: 'Card Moved',
-			description: 'Card moved to a list',
+			event: 'pm:status-changed',
+			label: 'Status Changed',
+			description: 'Work item moved to a new status/list',
 			contextPipeline: ['workItem'],
-			providers: ['trello'],
-		},
-		{
-			event: 'pm:issue-transitioned',
-			label: 'Issue Transitioned',
-			description: 'Issue status changed',
-			contextPipeline: ['workItem'],
-			providers: ['jira'],
 		},
 		{
 			event: 'pm:label-added',

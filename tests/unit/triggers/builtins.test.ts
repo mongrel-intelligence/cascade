@@ -28,18 +28,16 @@ vi.mock('../../../src/triggers/github/review-requested.js', () => ({
 vi.mock('../../../src/triggers/jira/comment-mention.js', () => ({
 	JiraCommentMentionTrigger: vi.fn().mockImplementation(() => ({ name: 'jira-comment-mention' })),
 }));
-vi.mock('../../../src/triggers/jira/issue-transitioned.js', () => ({
-	JiraIssueTransitionedTrigger: vi
-		.fn()
-		.mockImplementation(() => ({ name: 'jira-issue-transitioned' })),
+vi.mock('../../../src/triggers/jira/status-changed.js', () => ({
+	JiraStatusChangedTrigger: vi.fn().mockImplementation(() => ({ name: 'jira-status-changed' })),
 }));
 vi.mock('../../../src/triggers/jira/label-added.js', () => ({
 	JiraReadyToProcessLabelTrigger: vi.fn().mockImplementation(() => ({ name: 'jira-label-added' })),
 }));
-vi.mock('../../../src/triggers/trello/card-moved.js', () => ({
-	CardMovedToSplittingTrigger: { name: 'card-moved-to-splitting' },
-	CardMovedToPlanningTrigger: { name: 'card-moved-to-planning' },
-	CardMovedToTodoTrigger: { name: 'card-moved-to-todo' },
+vi.mock('../../../src/triggers/trello/status-changed.js', () => ({
+	TrelloStatusChangedSplittingTrigger: { name: 'trello-status-changed-splitting' },
+	TrelloStatusChangedPlanningTrigger: { name: 'trello-status-changed-planning' },
+	TrelloStatusChangedTodoTrigger: { name: 'trello-status-changed-todo' },
 }));
 vi.mock('../../../src/triggers/trello/comment-mention.js', () => ({
 	TrelloCommentMentionTrigger: vi
@@ -91,15 +89,15 @@ describe('registerBuiltInTriggers', () => {
 		expect(firstCall.name).toBe('trello-comment-mention');
 	});
 
-	it('registers all three card-moved triggers', () => {
+	it('registers all three status-changed triggers (Trello)', () => {
 		const registry = createMockRegistry();
 
 		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
 
 		const registeredNames = registry.handlers.map((h: object) => (h as { name: string }).name);
-		expect(registeredNames).toContain('card-moved-to-splitting');
-		expect(registeredNames).toContain('card-moved-to-planning');
-		expect(registeredNames).toContain('card-moved-to-todo');
+		expect(registeredNames).toContain('trello-status-changed-splitting');
+		expect(registeredNames).toContain('trello-status-changed-planning');
+		expect(registeredNames).toContain('trello-status-changed-todo');
 	});
 
 	it('registers GitHub triggers', () => {
@@ -125,30 +123,30 @@ describe('registerBuiltInTriggers', () => {
 
 		const registeredNames = registry.handlers.map((h: object) => (h as { name: string }).name);
 		expect(registeredNames).toContain('jira-comment-mention');
-		expect(registeredNames).toContain('jira-issue-transitioned');
+		expect(registeredNames).toContain('jira-status-changed');
 		expect(registeredNames).toContain('jira-label-added');
 	});
 
-	it('registers TrelloCommentMentionTrigger before card-moved triggers', () => {
+	it('registers TrelloCommentMentionTrigger before status-changed triggers', () => {
 		const registry = createMockRegistry();
 
 		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
 
 		const names = registry.handlers.map((h: object) => (h as { name: string }).name);
 		const commentMentionIdx = names.indexOf('trello-comment-mention');
-		const cardMovedIdx = names.indexOf('card-moved-to-splitting');
-		expect(commentMentionIdx).toBeLessThan(cardMovedIdx);
+		const statusChangedIdx = names.indexOf('trello-status-changed-splitting');
+		expect(commentMentionIdx).toBeLessThan(statusChangedIdx);
 	});
 
-	it('registers JiraCommentMentionTrigger before JiraIssueTransitionedTrigger', () => {
+	it('registers JiraCommentMentionTrigger before JiraStatusChangedTrigger', () => {
 		const registry = createMockRegistry();
 
 		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
 
 		const names = registry.handlers.map((h: object) => (h as { name: string }).name);
 		const jiraCommentIdx = names.indexOf('jira-comment-mention');
-		const jiraTransitionIdx = names.indexOf('jira-issue-transitioned');
-		expect(jiraCommentIdx).toBeLessThan(jiraTransitionIdx);
+		const jiraStatusIdx = names.indexOf('jira-status-changed');
+		expect(jiraCommentIdx).toBeLessThan(jiraStatusIdx);
 	});
 
 	it('registers PRCommentMentionTrigger before other GitHub triggers', () => {

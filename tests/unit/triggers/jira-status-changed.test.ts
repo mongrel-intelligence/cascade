@@ -9,7 +9,7 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
-import { JiraIssueTransitionedTrigger } from '../../../src/triggers/jira/issue-transitioned.js';
+import { JiraStatusChangedTrigger } from '../../../src/triggers/jira/status-changed.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 
 const mockProject = {
@@ -64,12 +64,12 @@ function buildCtx(
 	};
 }
 
-describe('JiraIssueTransitionedTrigger', () => {
-	let trigger: JiraIssueTransitionedTrigger;
+describe('JiraStatusChangedTrigger', () => {
+	let trigger: JiraStatusChangedTrigger;
 
 	beforeEach(() => {
 		vi.resetAllMocks();
-		trigger = new JiraIssueTransitionedTrigger();
+		trigger = new JiraStatusChangedTrigger();
 	});
 
 	describe('matches', () => {
@@ -118,7 +118,7 @@ describe('JiraIssueTransitionedTrigger', () => {
 			expect(result?.agentInput).toEqual({ cardId: 'PROJ-42' });
 		});
 
-		it('returns splitting agent for "Briefing" transition', async () => {
+		it('returns splitting agent for "Splitting" transition', async () => {
 			const ctx = buildCtx({
 				statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
 			});
@@ -196,11 +196,11 @@ describe('JiraIssueTransitionedTrigger', () => {
 			expect(result).toBeNull();
 		});
 
-		describe('per-agent issueTransitioned toggle', () => {
-			it('fires when issueTransitioned toggle is true for agent (legacy boolean)', async () => {
+		describe('per-agent statusChanged toggle', () => {
+			it('fires when statusChanged toggle is true for agent (legacy boolean)', async () => {
 				const ctx = buildCtx({
 					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
-					triggers: { issueTransitioned: true },
+					triggers: { statusChanged: true },
 				});
 
 				const result = await trigger.handle(ctx);
@@ -208,10 +208,10 @@ describe('JiraIssueTransitionedTrigger', () => {
 				expect(result?.agentType).toBe('splitting');
 			});
 
-			it('returns null when issueTransitioned disabled globally (legacy boolean false)', async () => {
+			it('returns null when statusChanged disabled globally (legacy boolean false)', async () => {
 				const ctx = buildCtx({
 					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
-					triggers: { issueTransitioned: false },
+					triggers: { statusChanged: false },
 				});
 
 				const result = await trigger.handle(ctx);
@@ -219,11 +219,11 @@ describe('JiraIssueTransitionedTrigger', () => {
 				expect(result).toBeNull();
 			});
 
-			it('fires when per-agent issueTransitioned.splitting is enabled', async () => {
+			it('fires when per-agent statusChanged.splitting is enabled', async () => {
 				const ctx = buildCtx({
 					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
 					triggers: {
-						issueTransitioned: { splitting: true, planning: false, implementation: false },
+						statusChanged: { splitting: true, planning: false, implementation: false },
 					},
 				});
 
@@ -232,11 +232,11 @@ describe('JiraIssueTransitionedTrigger', () => {
 				expect(result?.agentType).toBe('splitting');
 			});
 
-			it('returns null when per-agent issueTransitioned.splitting is disabled', async () => {
+			it('returns null when per-agent statusChanged.splitting is disabled', async () => {
 				const ctx = buildCtx({
 					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
 					triggers: {
-						issueTransitioned: { splitting: false, planning: true, implementation: true },
+						statusChanged: { splitting: false, planning: true, implementation: true },
 					},
 				});
 
@@ -245,11 +245,11 @@ describe('JiraIssueTransitionedTrigger', () => {
 				expect(result).toBeNull();
 			});
 
-			it('fires planning agent when issueTransitioned.planning is enabled', async () => {
+			it('fires planning agent when statusChanged.planning is enabled', async () => {
 				const ctx = buildCtx({
 					statusChangeItems: [{ field: 'status', fromString: 'Splitting', toString: 'Planning' }],
 					triggers: {
-						issueTransitioned: { splitting: false, planning: true, implementation: false },
+						statusChanged: { splitting: false, planning: true, implementation: false },
 					},
 				});
 
@@ -258,12 +258,23 @@ describe('JiraIssueTransitionedTrigger', () => {
 				expect(result?.agentType).toBe('planning');
 			});
 
-			it('returns null when per-agent issueTransitioned.implementation is disabled', async () => {
+			it('returns null when per-agent statusChanged.implementation is disabled', async () => {
 				const ctx = buildCtx({
 					statusChangeItems: [{ field: 'status', fromString: 'Planning', toString: 'To Do' }],
 					triggers: {
-						issueTransitioned: { splitting: true, planning: true, implementation: false },
+						statusChanged: { splitting: true, planning: true, implementation: false },
 					},
+				});
+
+				const result = await trigger.handle(ctx);
+
+				expect(result).toBeNull();
+			});
+
+			it('backward compat: respects legacy issueTransitioned boolean toggle', async () => {
+				const ctx = buildCtx({
+					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
+					triggers: { issueTransitioned: false },
 				});
 
 				const result = await trigger.handle(ctx);

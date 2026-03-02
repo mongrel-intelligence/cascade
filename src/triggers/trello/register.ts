@@ -10,27 +10,27 @@
  */
 
 import type { TriggerRegistry } from '../registry.js';
-import {
-	CardMovedToPlanningTrigger,
-	CardMovedToSplittingTrigger,
-	CardMovedToTodoTrigger,
-} from './card-moved.js';
 import { TrelloCommentMentionTrigger } from './comment-mention.js';
 import { ReadyToProcessLabelTrigger } from './label-added.js';
+import {
+	TrelloStatusChangedPlanningTrigger,
+	TrelloStatusChangedSplittingTrigger,
+	TrelloStatusChangedTodoTrigger,
+} from './status-changed.js';
 
 /**
  * Register all built-in Trello triggers into the given registry.
  *
  * Order matters: TrelloCommentMentionTrigger must be registered before
- * card-moved triggers so it gets first crack at comment events.
+ * status-changed triggers so it gets first crack at comment events.
  */
 export function registerTrelloTriggers(registry: TriggerRegistry): void {
-	// Must be registered before card-moved triggers
+	// Must be registered before status-changed triggers
 	registry.register(new TrelloCommentMentionTrigger());
 
-	registry.register(CardMovedToSplittingTrigger);
-	registry.register(CardMovedToPlanningTrigger);
-	registry.register(CardMovedToTodoTrigger);
+	registry.register(TrelloStatusChangedSplittingTrigger);
+	registry.register(TrelloStatusChangedPlanningTrigger);
+	registry.register(TrelloStatusChangedTodoTrigger);
 
 	registry.register(new ReadyToProcessLabelTrigger());
 }

@@ -151,8 +151,8 @@ describe('YAML agent definitions loader', () => {
 		it('work-item agents have triggers with standard context pipeline', () => {
 			// implementation, splitting, planning triggers include workItem context
 			const def = loadAgentDefinition('implementation');
-			const cardMovedTrigger = def.triggers.find((t) => t.event === 'pm:card-moved');
-			expect(cardMovedTrigger?.contextPipeline).toEqual([
+			const statusChangedTrigger = def.triggers.find((t) => t.event === 'pm:status-changed');
+			expect(statusChangedTrigger?.contextPipeline).toEqual([
 				'directoryListing',
 				'contextFiles',
 				'squint',

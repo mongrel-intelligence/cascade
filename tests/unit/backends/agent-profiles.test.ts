@@ -679,7 +679,7 @@ describe('fetchDirectoryListing', () => {
 	it('splitting fetchContext returns a ListDirectory injection with maxDepth:3', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ cardId: undefined, triggerType: 'pm:card-moved' });
+		const params = makeContextParams({ cardId: undefined, triggerType: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -701,7 +701,7 @@ describe('fetchContextFileInjections', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('splitting');
 		const params = makeContextParams({
-			triggerType: 'pm:card-moved',
+			triggerType: 'pm:status-changed',
 			contextFiles: [
 				{ path: 'CLAUDE.md', content: 'project guidelines' },
 				{ path: 'README.md', content: 'readme text' },
@@ -723,7 +723,7 @@ describe('fetchContextFileInjections', () => {
 	it('returns no ReadFile injections when contextFiles is empty', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:card-moved', contextFiles: [] });
+		const params = makeContextParams({ triggerType: 'pm:status-changed', contextFiles: [] });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -739,7 +739,7 @@ describe('fetchSquintOverview', () => {
 		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
 		mockExecFileSync.mockReturnValue('squint overview output\n');
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:card-moved' });
+		const params = makeContextParams({ triggerType: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -754,7 +754,7 @@ describe('fetchSquintOverview', () => {
 	it('returns no SquintOverview injection when squint db is absent', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:card-moved' });
+		const params = makeContextParams({ triggerType: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -770,7 +770,7 @@ describe('fetchSquintOverview', () => {
 			throw new Error('squint not found');
 		});
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:card-moved' });
+		const params = makeContextParams({ triggerType: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -784,7 +784,7 @@ describe('fetchSquintOverview', () => {
 		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
 		mockExecFileSync.mockReturnValue('   ');
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:card-moved' });
+		const params = makeContextParams({ triggerType: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -800,7 +800,7 @@ describe('fetchWorkItemInjection', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		mockReadWorkItem.mockResolvedValue('# card title\n\ncard body');
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:card-moved', cardId: 'card-123' });
+		const params = makeContextParams({ triggerType: 'pm:status-changed', cardId: 'card-123' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -820,7 +820,7 @@ describe('fetchWorkItemInjection', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		mockReadWorkItem.mockRejectedValue(new Error('card not found'));
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:card-moved', cardId: 'missing-card' });
+		const params = makeContextParams({ triggerType: 'pm:status-changed', cardId: 'missing-card' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -833,7 +833,7 @@ describe('fetchWorkItemInjection', () => {
 	it('never calls readWorkItem when cardId is absent', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:card-moved', cardId: undefined });
+		const params = makeContextParams({ triggerType: 'pm:status-changed', cardId: undefined });
 
 		await profile.fetchContext(params as Parameters<typeof profile.fetchContext>[0]);
 
@@ -848,7 +848,7 @@ describe('fetchWorkItemContext orchestration', () => {
 		mockReadWorkItem.mockResolvedValue('card content');
 		const profile = await getAgentProfile('splitting');
 		const params = makeContextParams({
-			triggerType: 'pm:card-moved',
+			triggerType: 'pm:status-changed',
 			cardId: 'card-abc',
 			contextFiles: [{ path: 'CLAUDE.md', content: 'guidelines' }],
 		});
@@ -877,7 +877,7 @@ describe('fetchWorkItemContext orchestration', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		mockReadWorkItem.mockRejectedValue(new Error('unavailable'));
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:card-moved', cardId: 'card-xyz' });
+		const params = makeContextParams({ triggerType: 'pm:status-changed', cardId: 'card-xyz' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],

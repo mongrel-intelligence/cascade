@@ -11,19 +11,19 @@
 
 import type { TriggerRegistry } from '../registry.js';
 import { JiraCommentMentionTrigger } from './comment-mention.js';
-import { JiraIssueTransitionedTrigger } from './issue-transitioned.js';
 import { JiraReadyToProcessLabelTrigger } from './label-added.js';
+import { JiraStatusChangedTrigger } from './status-changed.js';
 
 /**
  * Register all built-in JIRA triggers into the given registry.
  *
  * Order matters: JiraCommentMentionTrigger must be registered before
- * the transition trigger so it gets first crack at comment events.
+ * the status-changed trigger so it gets first crack at comment events.
  */
 export function registerJiraTriggers(registry: TriggerRegistry): void {
-	// Must be registered before issue-transitioned trigger
+	// Must be registered before status-changed trigger
 	registry.register(new JiraCommentMentionTrigger());
 
-	registry.register(new JiraIssueTransitionedTrigger());
+	registry.register(new JiraStatusChangedTrigger());
 	registry.register(new JiraReadyToProcessLabelTrigger());
 }

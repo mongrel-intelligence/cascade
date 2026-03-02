@@ -25,23 +25,10 @@ capabilities:
 
 # Supported triggers for this agent
 triggers:
-  - event: pm:card-moved
-    label: Card Moved to Todo
-    description: Trigger when card moved to Todo list
+  - event: pm:status-changed
+    label: Status Changed to Todo
+    description: Trigger when work item status changes to Todo
     defaultEnabled: true
-    providers: [trello]
-    parameters:
-      - name: targetList
-        type: select
-        label: Target List
-        options: [todo]
-        defaultValue: todo
-    contextPipeline: [directoryListing, contextFiles, squint, workItem]
-  - event: pm:issue-transitioned
-    label: Issue Transitioned
-    description: Trigger when issue transitions to Todo status
-    defaultEnabled: true
-    providers: [jira]
     parameters:
       - name: targetStatus
         type: select

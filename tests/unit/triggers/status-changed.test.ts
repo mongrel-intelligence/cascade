@@ -40,15 +40,15 @@ vi.mock('../../../src/router/reactions.js', () => ({
 import '../../../src/pm/index.js';
 
 import {
-	CardMovedToPlanningTrigger,
-	CardMovedToSplittingTrigger,
-	CardMovedToTodoTrigger,
-} from '../../../src/triggers/trello/card-moved.js';
+	TrelloStatusChangedPlanningTrigger,
+	TrelloStatusChangedSplittingTrigger,
+	TrelloStatusChangedTodoTrigger,
+} from '../../../src/triggers/trello/status-changed.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
 
-describe('CardMovedToSplittingTrigger', () => {
-	const trigger = CardMovedToSplittingTrigger;
+describe('TrelloStatusChangedSplittingTrigger', () => {
+	const trigger = TrelloStatusChangedSplittingTrigger;
 
 	const mockProject = createMockProject();
 
@@ -180,8 +180,8 @@ describe('CardMovedToSplittingTrigger', () => {
 	});
 });
 
-describe('CardMovedToTodoTrigger', () => {
-	const trigger = CardMovedToTodoTrigger;
+describe('TrelloStatusChangedTodoTrigger', () => {
+	const trigger = TrelloStatusChangedTodoTrigger;
 
 	const mockProject = createMockProject();
 

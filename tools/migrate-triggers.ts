@@ -30,14 +30,14 @@ interface TriggerMapping {
 	parameters?: Record<string, unknown>;
 }
 
-// PM triggers (Trello card-moved)
+// PM triggers (Trello status-changed, formerly card-moved)
 const PM_CARD_MOVED_MAPPINGS: Record<string, TriggerMapping> = {
-	cardMovedToSplitting: { agentType: 'splitting', event: 'pm:card-moved' },
-	cardMovedToPlanning: { agentType: 'planning', event: 'pm:card-moved' },
-	cardMovedToTodo: { agentType: 'implementation', event: 'pm:card-moved' },
+	cardMovedToSplitting: { agentType: 'splitting', event: 'pm:status-changed' },
+	cardMovedToPlanning: { agentType: 'planning', event: 'pm:status-changed' },
+	cardMovedToTodo: { agentType: 'implementation', event: 'pm:status-changed' },
 };
 
-// PM triggers (JIRA issue-transitioned, nested under issueTransitioned object)
+// PM triggers (JIRA status-changed, formerly issue-transitioned, nested under issueTransitioned object)
 const PM_ISSUE_TRANSITIONED_AGENTS = ['splitting', 'planning', 'implementation'] as const;
 
 // PM triggers (label-added, nested under readyToProcessLabel object)
@@ -151,7 +151,7 @@ async function migrateIntegration(
 				for (const agentType of PM_ISSUE_TRANSITIONED_AGENTS) {
 					configsToCreate.push({
 						agentType,
-						event: 'pm:issue-transitioned',
+						event: 'pm:status-changed',
 						enabled: issueTransitioned,
 						parameters: {},
 					});
@@ -163,7 +163,7 @@ async function migrateIntegration(
 					if (typeof value === 'boolean') {
 						configsToCreate.push({
 							agentType,
-							event: 'pm:issue-transitioned',
+							event: 'pm:status-changed',
 							enabled: value,
 							parameters: {},
 						});

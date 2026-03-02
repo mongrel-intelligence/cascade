@@ -40,7 +40,7 @@ const TriggerEventSchema = z
 	.string()
 	.regex(
 		/^(pm|scm|email|sms):[a-z][a-z0-9-]*$/,
-		'Event must be in format {category}:{event-name} (e.g., pm:card-moved, scm:check-suite-success)',
+		'Event must be in format {category}:{event-name} (e.g., pm:status-changed, scm:check-suite-success)',
 	);
 
 /**

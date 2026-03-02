@@ -1,27 +1,21 @@
-import { resolveTrelloTriggerEnabled } from '../../config/triggerConfig.js';
+import { resolveTrelloStatusChangedEnabled } from '../../config/triggerConfig.js';
 import { getTrelloConfig } from '../../pm/config.js';
 import { logger } from '../../utils/logging.js';
-import type {
-	TrelloWebhookPayload,
-	TriggerContext,
-	TriggerHandler,
-	TriggerResult,
-} from '../types.js';
-import { isTrelloWebhookPayload } from '../types.js';
+import type { TriggerContext, TriggerHandler, TriggerResult } from '../types.js';
+import { type TrelloWebhookPayload, isTrelloWebhookPayload } from './types.js';
 
 // ============================================================================
-// Card Moved/Created Trigger Factory
+// Status Changed Trigger Factory (Trello)
 // ============================================================================
 
-interface CardMovedConfig {
+interface StatusChangedConfig {
 	name: string;
 	description: string;
 	listKey: 'splitting' | 'planning' | 'todo';
-	agentType: string;
-	triggerConfigKey: 'cardMovedToSplitting' | 'cardMovedToPlanning' | 'cardMovedToTodo';
+	agentType: 'splitting' | 'planning' | 'implementation';
 }
 
-function createCardMovedTrigger(config: CardMovedConfig): TriggerHandler {
+function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler {
 	return {
 		name: config.name,
 		description: config.description,
@@ -30,9 +24,9 @@ function createCardMovedTrigger(config: CardMovedConfig): TriggerHandler {
 			if (ctx.source !== 'trello') return false;
 			if (!isTrelloWebhookPayload(ctx.payload)) return false;
 
-			// Check trigger config — default enabled for backward compatibility
+			// Check trigger config with per-agent fallback to legacy keys
 			const trelloConfig = getTrelloConfig(ctx.project);
-			if (!resolveTrelloTriggerEnabled(trelloConfig?.triggers, config.triggerConfigKey)) {
+			if (!resolveTrelloStatusChangedEnabled(trelloConfig?.triggers, config.agentType)) {
 				return false;
 			}
 
@@ -57,7 +51,7 @@ function createCardMovedTrigger(config: CardMovedConfig): TriggerHandler {
 			const cardId = payload.action.data.card?.id;
 
 			if (!cardId) {
-				logger.warn('No card ID in Trello card-moved payload', { trigger: config.name });
+				logger.warn('No card ID in Trello status-changed payload', { trigger: config.name });
 				return null;
 			}
 
@@ -74,26 +68,23 @@ function createCardMovedTrigger(config: CardMovedConfig): TriggerHandler {
 // Trigger Instances
 // ============================================================================
 
-export const CardMovedToSplittingTrigger = createCardMovedTrigger({
-	name: 'card-moved-to-splitting',
+export const TrelloStatusChangedSplittingTrigger = createStatusChangedTrigger({
+	name: 'trello-status-changed-splitting',
 	description: 'Triggers splitting agent when card moved to splitting list',
 	listKey: 'splitting',
 	agentType: 'splitting',
-	triggerConfigKey: 'cardMovedToSplitting',
 });
 
-export const CardMovedToPlanningTrigger = createCardMovedTrigger({
-	name: 'card-moved-to-planning',
+export const TrelloStatusChangedPlanningTrigger = createStatusChangedTrigger({
+	name: 'trello-status-changed-planning',
 	description: 'Triggers planning agent when card moved to planning list',
 	listKey: 'planning',
 	agentType: 'planning',
-	triggerConfigKey: 'cardMovedToPlanning',
 });
 
-export const CardMovedToTodoTrigger = createCardMovedTrigger({
-	name: 'card-moved-to-todo',
+export const TrelloStatusChangedTodoTrigger = createStatusChangedTrigger({
+	name: 'trello-status-changed-todo',
 	description: 'Triggers implementation agent when card moved to TODO list',
 	listKey: 'todo',
 	agentType: 'implementation',
-	triggerConfigKey: 'cardMovedToTodo',
 });

@@ -14,7 +14,7 @@ export const agentTriggerConfigs = pgTable(
 			.references(() => projects.id, { onDelete: 'cascade' }),
 		/** Agent type (e.g., 'implementation', 'review', 'email-joke') */
 		agentType: text('agent_type').notNull(),
-		/** Trigger event identifier (e.g., 'pm:card-moved', 'scm:check-suite-success') */
+		/** Trigger event identifier (e.g., 'pm:status-changed', 'scm:check-suite-success') */
 		triggerEvent: text('trigger_event').notNull(),
 		/** Whether this trigger is enabled for this project/agent */
 		enabled: boolean('enabled').notNull().default(true),
