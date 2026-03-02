@@ -987,10 +987,14 @@ function useDefinitionEditor(existing: DefinitionRow | undefined, onClose: () =>
 	const activeMutation = isEdit ? updateMutation : createMutation;
 
 	const handleTabChange = (tab: string) => {
-		if (tab === 'json' && activeTab === 'definition') {
+		const structuredTabs = ['definition', 'capabilities', 'triggers'];
+		const isLeavingStructured = structuredTabs.includes(activeTab);
+		const isEnteringStructured = structuredTabs.includes(tab);
+
+		if (tab === 'json' && isLeavingStructured) {
 			setJsonText(JSON.stringify(def, null, 2));
 			setJsonError(null);
-		} else if (tab === 'definition' && activeTab === 'json') {
+		} else if (isEnteringStructured && activeTab === 'json') {
 			try {
 				setDef(JSON.parse(jsonText) as AgentDefinition);
 				setJsonError(null);
@@ -1154,14 +1158,14 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 			<Tabs value={activeTab} onValueChange={handleTabChange}>
 				<TabsList>
 					<TabsTrigger value="definition">Definition</TabsTrigger>
+					<TabsTrigger value="capabilities">Capabilities</TabsTrigger>
+					<TabsTrigger value="triggers">Triggers</TabsTrigger>
 					{isEdit && <TabsTrigger value="prompts">Prompts</TabsTrigger>}
 					<TabsTrigger value="json">Raw JSON</TabsTrigger>
 				</TabsList>
 
 				<TabsContent value="definition" className="space-y-6 pt-4">
 					<IdentitySection def={def} setIdentity={setIdentity} />
-					<CapabilitiesSection def={def} setDef={setDef} />
-					<TriggersSection def={def} setDef={setDef} schema={schema} />
 					<StrategiesSection def={def} setDef={setDef} />
 					<BackendSection def={def} setBackend={setBackend} />
 
@@ -1206,6 +1210,14 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 					</section>
 
 					<TrailingMessageSection def={def} setTrailing={setTrailing} />
+				</TabsContent>
+
+				<TabsContent value="capabilities" className="space-y-6 pt-4">
+					<CapabilitiesSection def={def} setDef={setDef} />
+				</TabsContent>
+
+				<TabsContent value="triggers" className="space-y-6 pt-4">
+					<TriggersSection def={def} setDef={setDef} schema={schema} />
 				</TabsContent>
 
 				{isEdit && (
