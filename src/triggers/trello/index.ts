@@ -5,10 +5,10 @@
  */
 
 export {
-	CardMovedToPlanningTrigger,
-	CardMovedToSplittingTrigger,
-	CardMovedToTodoTrigger,
-} from './card-moved.js';
+	TrelloStatusChangedPlanningTrigger,
+	TrelloStatusChangedSplittingTrigger,
+	TrelloStatusChangedTodoTrigger,
+} from './status-changed.js';
 export { TrelloCommentMentionTrigger } from './comment-mention.js';
 export { ReadyToProcessLabelTrigger } from './label-added.js';
 export { processTrelloWebhook } from './webhook-handler.js';

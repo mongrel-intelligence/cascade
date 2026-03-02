@@ -103,7 +103,7 @@ function getAllCapabilities(caps: AgentCapabilities): Capability[] {
  *   agent which is only invoked internally).
  *
  * @param triggers - Array of supported triggers from the agent definition
- * @param triggerEvent - Optional trigger event (e.g., 'pm:card-moved', 'scm:check-suite-success')
+ * @param triggerEvent - Optional trigger event (e.g., 'pm:status-changed', 'scm:check-suite-success')
  * @returns The context pipeline to use (empty array for any edge case)
  */
 function resolveContextPipeline(

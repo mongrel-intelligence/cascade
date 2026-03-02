@@ -24,20 +24,28 @@ export type ReadyToProcessLabelConfig = z.infer<typeof ReadyToProcessLabelSchema
 /**
  * Trigger configuration for Trello integrations.
  * All triggers default to `true` for backward compatibility.
+ *
+ * `statusChanged` is the unified key replacing the legacy `cardMovedToSplitting`,
+ * `cardMovedToPlanning`, and `cardMovedToTodo` keys.
  */
 export const TrelloTriggerConfigSchema = z.object({
+	/** Unified status-changed toggle (replaces legacy cardMovedTo* keys). */
+	statusChanged: z.boolean().default(true),
+	/** @deprecated Use `statusChanged` instead. */
 	cardMovedToSplitting: z.boolean().default(true),
+	/** @deprecated Use `statusChanged` instead. */
 	cardMovedToPlanning: z.boolean().default(true),
+	/** @deprecated Use `statusChanged` instead. */
 	cardMovedToTodo: z.boolean().default(true),
 	readyToProcessLabel: ReadyToProcessLabelSchema,
 	commentMention: z.boolean().default(true),
 });
 
 /**
- * Per-agent issue-transitioned configuration for JIRA.
- * Each agent type can independently toggle whether the issue-transitioned trigger fires for it.
+ * Per-agent status-changed configuration.
+ * Each agent type can independently toggle whether the status-changed trigger fires for it.
  */
-export const IssueTransitionedSchema = z
+export const StatusChangedSchema = z
 	.union([
 		z.boolean(),
 		z.object({
@@ -48,14 +56,25 @@ export const IssueTransitionedSchema = z
 	])
 	.optional();
 
-export type IssueTransitionedConfig = z.infer<typeof IssueTransitionedSchema>;
+export type StatusChangedConfig = z.infer<typeof StatusChangedSchema>;
+
+/**
+ * @deprecated Use `StatusChangedSchema` instead.
+ */
+export const IssueTransitionedSchema = StatusChangedSchema;
+export type IssueTransitionedConfig = StatusChangedConfig;
 
 /**
  * Trigger configuration for JIRA integrations.
  * All triggers default to `true` for backward compatibility.
+ *
+ * `statusChanged` is the unified key replacing the legacy `issueTransitioned` key.
  */
 export const JiraTriggerConfigSchema = z.object({
-	issueTransitioned: IssueTransitionedSchema,
+	/** Unified status-changed toggle (replaces legacy issueTransitioned key). */
+	statusChanged: StatusChangedSchema,
+	/** @deprecated Use `statusChanged` instead. */
+	issueTransitioned: StatusChangedSchema,
 	readyToProcessLabel: ReadyToProcessLabelSchema,
 	commentMention: z.boolean().default(true),
 });
@@ -279,7 +298,7 @@ export function resolveTriggerEnabled(
 const TRELLO_NESTED_KEYS: string[] = ['readyToProcessLabel'];
 
 /** Keys whose values are per-agent nested objects in the JIRA trigger config. */
-const JIRA_NESTED_KEYS: string[] = ['readyToProcessLabel', 'issueTransitioned'];
+const JIRA_NESTED_KEYS: string[] = ['readyToProcessLabel', 'statusChanged', 'issueTransitioned'];
 
 /** Keys that are opt-in (default false) in the GitHub trigger config. */
 const GITHUB_OPT_IN_KEYS: string[] = ['reviewRequested', 'prOpened'];
@@ -351,6 +370,23 @@ export function resolveReadyToProcessEnabled(
 }
 
 /**
+ * Resolve whether the status-changed trigger is enabled for a specific agent type.
+ * Reads from the `statusChanged` key first, falling back to the legacy `issueTransitioned` key.
+ * Supports both the new nested object format and the legacy boolean format.
+ * Returns `true` when no config is present (backward compatible).
+ */
+export function resolveStatusChangedEnabled(
+	config: Partial<JiraTriggerConfig> | undefined,
+	agentType: string,
+): boolean {
+	// Prefer new `statusChanged` key, fall back to legacy `issueTransitioned`
+	const value =
+		config?.statusChanged !== undefined ? config.statusChanged : config?.issueTransitioned;
+	return resolvePerAgentToggle(value as boolean | PerAgentObject | undefined, agentType);
+}
+
+/**
+ * @deprecated Use `resolveStatusChangedEnabled` instead.
  * Resolve whether the issue-transitioned trigger is enabled for a specific agent type.
  * Supports both the new nested object format and the legacy boolean format.
  * Returns `true` when no config is present (backward compatible).
@@ -359,8 +395,5 @@ export function resolveIssueTransitionedEnabled(
 	config: Partial<JiraTriggerConfig> | undefined,
 	agentType: string,
 ): boolean {
-	return resolvePerAgentToggle(
-		config?.issueTransitioned as boolean | PerAgentObject | undefined,
-		agentType,
-	);
+	return resolveStatusChangedEnabled(config, agentType);
 }

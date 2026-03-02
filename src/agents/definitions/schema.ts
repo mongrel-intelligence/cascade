@@ -16,7 +16,7 @@ const TriggerEventSchema = z
 	.string()
 	.regex(
 		/^(pm|scm|email|sms):[a-z][a-z0-9-]*$/,
-		'Event must be in format {category}:{event-name} (e.g., pm:card-moved, scm:check-suite-success)',
+		'Event must be in format {category}:{event-name} (e.g., pm:status-changed, scm:check-suite-success)',
 	);
 
 // ============================================================================
@@ -93,13 +93,12 @@ const ContextStepNameSchema = z.enum(CONTEXT_STEP_NAMES);
  * Uses category-prefixed naming: {category}:{event}
  *
  * Examples:
- * - pm:card-moved (card moved to a list)
- * - pm:issue-transitioned (JIRA issue status change)
+ * - pm:status-changed (work item status changed, replaces pm:card-moved and pm:issue-transitioned)
  * - scm:check-suite-success (CI passed)
  * - email:received (new email received)
  */
 export const SupportedTriggerSchema = z.object({
-	/** Event identifier, e.g., 'pm:card-moved', 'scm:check-suite-success' */
+	/** Event identifier, e.g., 'pm:status-changed', 'scm:check-suite-success' */
 	event: TriggerEventSchema,
 	/** Human-readable label for the trigger */
 	label: z.string(),

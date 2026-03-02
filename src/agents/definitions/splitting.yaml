@@ -23,23 +23,10 @@ capabilities:
 
 # Supported triggers for this agent
 triggers:
-  - event: pm:card-moved
-    label: Card Moved to Splitting
-    description: Trigger when card moved to Splitting list
+  - event: pm:status-changed
+    label: Status Changed to Splitting
+    description: Trigger when work item status changes to Splitting
     defaultEnabled: true
-    providers: [trello]
-    parameters:
-      - name: targetList
-        type: select
-        label: Target List
-        options: [splitting]
-        defaultValue: splitting
-    contextPipeline: [directoryListing, contextFiles, squint, workItem]
-  - event: pm:issue-transitioned
-    label: Issue Transitioned
-    description: Trigger when issue transitions to Splitting status
-    defaultEnabled: true
-    providers: [jira]
     parameters:
       - name: targetStatus
         type: select

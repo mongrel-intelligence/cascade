@@ -48,7 +48,7 @@ function createMockConfig(overrides?: Record<string, unknown>) {
 		id: 1,
 		projectId: 'test-project',
 		agentType: 'implementation',
-		triggerEvent: 'pm:card-moved',
+		triggerEvent: 'pm:status-changed',
 		enabled: true,
 		parameters: {},
 		createdAt: new Date(),
@@ -136,7 +136,7 @@ describe('agentTriggerConfigsRouter', () => {
 			const result = await caller.get({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				triggerEvent: 'pm:card-moved',
+				triggerEvent: 'pm:status-changed',
 			});
 
 			expect(result).toEqual(config);
@@ -149,7 +149,7 @@ describe('agentTriggerConfigsRouter', () => {
 			const result = await caller.get({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				triggerEvent: 'pm:card-moved',
+				triggerEvent: 'pm:status-changed',
 			});
 
 			expect(result).toBeNull();
@@ -168,7 +168,7 @@ describe('agentTriggerConfigsRouter', () => {
 			const result = await caller.upsert({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				triggerEvent: 'pm:card-moved',
+				triggerEvent: 'pm:status-changed',
 				enabled: true,
 				parameters: { targetList: 'todo' },
 			});
@@ -177,7 +177,7 @@ describe('agentTriggerConfigsRouter', () => {
 			expect(mockUpsertTriggerConfig).toHaveBeenCalledWith({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				triggerEvent: 'pm:card-moved',
+				triggerEvent: 'pm:status-changed',
 				enabled: true,
 				parameters: { targetList: 'todo' },
 			});
@@ -189,7 +189,7 @@ describe('agentTriggerConfigsRouter', () => {
 				caller.upsert({
 					projectId: 'test-project',
 					agentType: 'implementation',
-					triggerEvent: 'pm:card-moved',
+					triggerEvent: 'pm:status-changed',
 				}),
 			).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
@@ -292,7 +292,7 @@ describe('agentTriggerConfigsRouter', () => {
 			const result = await caller.bulkUpsert({
 				projectId: 'test-project',
 				configs: [
-					{ agentType: 'implementation', triggerEvent: 'pm:card-moved', enabled: true },
+					{ agentType: 'implementation', triggerEvent: 'pm:status-changed', enabled: true },
 					{ agentType: 'implementation', triggerEvent: 'pm:label-added', enabled: false },
 				],
 			});

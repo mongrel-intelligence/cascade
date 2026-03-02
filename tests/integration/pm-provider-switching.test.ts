@@ -16,8 +16,8 @@ import {
 } from '../../src/db/repositories/settingsRepository.js';
 import { createPMProvider } from '../../src/pm/index.js';
 import { pmRegistry } from '../../src/pm/registry.js';
-import { JiraIssueTransitionedTrigger } from '../../src/triggers/jira/issue-transitioned.js';
-import { CardMovedToTodoTrigger } from '../../src/triggers/trello/card-moved.js';
+import { JiraStatusChangedTrigger } from '../../src/triggers/jira/status-changed.js';
+import { TrelloStatusChangedTodoTrigger } from '../../src/triggers/trello/status-changed.js';
 import type { TriggerContext } from '../../src/types/index.js';
 import { assertFound } from './helpers/assert.js';
 import { truncateAll } from './helpers/db.js';
@@ -45,7 +45,7 @@ function makeTrelloCardMovedPayload(listAfterId: string) {
 	};
 }
 
-function makeJiraIssueTransitionedPayload(statusName: string, issueKey: string) {
+function makeJiraStatusChangedPayload(statusName: string, issueKey: string) {
 	return {
 		webhookEvent: 'jira:issue_updated',
 		issue_event_type_name: 'issue_updated',
@@ -231,8 +231,8 @@ describe('PM Provider Switching (integration)', () => {
 				payload: makeTrelloCardMovedPayload('list-todo-123'),
 			};
 
-			expect(CardMovedToTodoTrigger.matches(ctx)).toBe(true);
-			const result = await CardMovedToTodoTrigger.handle(ctx);
+			expect(TrelloStatusChangedTodoTrigger.matches(ctx)).toBe(true);
+			const result = await TrelloStatusChangedTodoTrigger.handle(ctx);
 			expect(result?.agentType).toBe('implementation');
 		});
 	});
@@ -252,11 +252,11 @@ describe('PM Provider Switching (integration)', () => {
 			const project = await findProjectByJiraProjectKeyFromDb('IMPL');
 			expect(project).toBeDefined();
 
-			const trigger = new JiraIssueTransitionedTrigger();
+			const trigger = new JiraStatusChangedTrigger();
 			const ctx: TriggerContext = {
 				project: assertFound(project),
 				source: 'jira',
-				payload: makeJiraIssueTransitionedPayload('To Do', 'IMPL-1'),
+				payload: makeJiraStatusChangedPayload('To Do', 'IMPL-1'),
 			};
 
 			expect(trigger.matches(ctx)).toBe(true);
@@ -278,12 +278,12 @@ describe('PM Provider Switching (integration)', () => {
 
 			const project = await findProjectByJiraProjectKeyFromDb('PLAN');
 			expect(project).toBeDefined();
-			const trigger = new JiraIssueTransitionedTrigger();
+			const trigger = new JiraStatusChangedTrigger();
 
 			const ctx: TriggerContext = {
 				project: assertFound(project),
 				source: 'jira',
-				payload: makeJiraIssueTransitionedPayload('In Planning', 'PLAN-1'),
+				payload: makeJiraStatusChangedPayload('In Planning', 'PLAN-1'),
 			};
 
 			expect(trigger.matches(ctx)).toBe(true);
@@ -304,12 +304,12 @@ describe('PM Provider Switching (integration)', () => {
 
 			const project = await findProjectByJiraProjectKeyFromDb('NOMATCH');
 			expect(project).toBeDefined();
-			const trigger = new JiraIssueTransitionedTrigger();
+			const trigger = new JiraStatusChangedTrigger();
 
 			const ctx: TriggerContext = {
 				project: assertFound(project),
 				source: 'jira',
-				payload: makeJiraIssueTransitionedPayload('Done', 'NOMATCH-1'),
+				payload: makeJiraStatusChangedPayload('Done', 'NOMATCH-1'),
 			};
 
 			// 'Done' doesn't match any configured status — matches() passes (it only checks

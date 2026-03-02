@@ -22,23 +22,10 @@ capabilities:
 
 # Supported triggers for this agent
 triggers:
-  - event: pm:card-moved
-    label: Card Moved to Planning
-    description: Trigger when card moved to Planning list
+  - event: pm:status-changed
+    label: Status Changed to Planning
+    description: Trigger when work item status changes to Planning
     defaultEnabled: true
-    providers: [trello]
-    parameters:
-      - name: targetList
-        type: select
-        label: Target List
-        options: [planning]
-        defaultValue: planning
-    contextPipeline: [directoryListing, contextFiles, squint, workItem]
-  - event: pm:issue-transitioned
-    label: Issue Transitioned
-    description: Trigger when issue transitions to Planning status
-    defaultEnabled: true
-    providers: [jira]
     parameters:
       - name: targetStatus
         type: select

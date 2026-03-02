@@ -54,17 +54,17 @@ describe('triggerTypes', () => {
 
 		it('ResolvedTrigger has required fields', () => {
 			const trigger: ResolvedTrigger = {
-				event: 'pm:card-moved',
-				label: 'Card Moved',
+				event: 'pm:status-changed',
+				label: 'Status Changed',
 				description: null,
-				providers: ['trello'],
+				providers: null,
 				enabled: true,
 				parameters: {},
 				parameterDefs: [],
 				isCustomized: false,
 			};
 
-			expect(trigger.event).toBe('pm:card-moved');
+			expect(trigger.event).toBe('pm:status-changed');
 			expect(trigger.enabled).toBe(true);
 			expect(trigger.isCustomized).toBe(false);
 		});
@@ -107,10 +107,12 @@ describe('triggerTypes', () => {
 
 		it('pm category has expected triggers', () => {
 			const pmEvents = TRIGGER_REGISTRY.pm.map((t) => t.event);
-			expect(pmEvents).toContain('pm:card-moved');
-			expect(pmEvents).toContain('pm:issue-transitioned');
+			expect(pmEvents).toContain('pm:status-changed');
 			expect(pmEvents).toContain('pm:label-added');
 			expect(pmEvents).toContain('pm:comment-mention');
+			// Old provider-specific events should no longer exist
+			expect(pmEvents).not.toContain('pm:card-moved');
+			expect(pmEvents).not.toContain('pm:issue-transitioned');
 		});
 
 		it('scm category has all GitHub triggers including pr-merged and pr-ready-to-merge', () => {
@@ -173,16 +175,11 @@ describe('triggerTypes', () => {
 			}
 		});
 
-		it('pm:card-moved specifies trello provider', () => {
-			const cardMoved = TRIGGER_REGISTRY.pm.find((t) => t.event === 'pm:card-moved');
-			expect(cardMoved?.providers).toContain('trello');
-		});
-
-		it('pm:issue-transitioned specifies jira provider', () => {
-			const issueTransitioned = TRIGGER_REGISTRY.pm.find(
-				(t) => t.event === 'pm:issue-transitioned',
-			);
-			expect(issueTransitioned?.providers).toContain('jira');
+		it('pm:status-changed has no provider restriction (works for all PM providers)', () => {
+			const statusChanged = TRIGGER_REGISTRY.pm.find((t) => t.event === 'pm:status-changed');
+			expect(statusChanged).toBeDefined();
+			// No providers restriction — works with trello and jira alike
+			expect(statusChanged?.providers).toBeUndefined();
 		});
 
 		it('KnownTriggerEvent type has correct shape', () => {

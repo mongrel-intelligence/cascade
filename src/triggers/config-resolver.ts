@@ -49,7 +49,7 @@ import {
 // ============================================================================
 
 export interface ResolvedTriggerConfig {
-	/** Trigger event identifier (e.g., 'pm:card-moved') */
+	/** Trigger event identifier (e.g., 'pm:status-changed') */
 	event: string;
 	/** Human-readable label */
 	label: string;

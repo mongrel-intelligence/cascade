@@ -5,7 +5,7 @@ import { DashboardCommand } from '../_shared/base.js';
  * CLI command for configuring agent triggers.
  *
  * Usage:
- *   cascade projects trigger-set <project-id> --agent implementation --event pm:card-moved --enable
+ *   cascade projects trigger-set <project-id> --agent implementation --event pm:status-changed --enable
  *   cascade projects trigger-set <project-id> --agent review --event scm:check-suite-success --disable
  *   cascade projects trigger-set <project-id> --agent review --event scm:check-suite-success --params '{"authorMode":"own"}'
  *
@@ -30,7 +30,7 @@ export default class ProjectsTriggerSet extends DashboardCommand {
 			char: 'a',
 		}),
 		event: Flags.string({
-			description: 'Trigger event (e.g., pm:card-moved, scm:check-suite-success)',
+			description: 'Trigger event (e.g., pm:status-changed, scm:check-suite-success)',
 			required: true,
 			char: 'e',
 		}),
@@ -72,7 +72,7 @@ export default class ProjectsTriggerSet extends DashboardCommand {
 		const eventPattern = /^(pm|scm|email|sms):[a-z][a-z0-9-]*$/;
 		if (!eventPattern.test(event)) {
 			this.error(
-				`Invalid event format: "${event}". Events must be in format {category}:{event-name} (e.g., pm:card-moved, scm:check-suite-success).`,
+				`Invalid event format: "${event}". Events must be in format {category}:{event-name} (e.g., pm:status-changed, scm:check-suite-success).`,
 			);
 		}
 
