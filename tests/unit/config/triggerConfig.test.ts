@@ -13,6 +13,7 @@ import {
 	resolveReadyToProcessEnabled,
 	resolveReviewTriggerConfig,
 	resolveStatusChangedEnabled,
+	resolveTrelloStatusChangedEnabled,
 	resolveTrelloTriggerEnabled,
 	resolveTriggerEnabled,
 } from '../../../src/config/triggerConfig.js';
@@ -415,6 +416,109 @@ describe('resolveIssueTransitionedEnabled (deprecated alias)', () => {
 		expect(resolveIssueTransitionedEnabled(parsed, 'splitting')).toBe(true);
 		expect(resolveIssueTransitionedEnabled(parsed, 'planning')).toBe(true);
 		expect(resolveIssueTransitionedEnabled(parsed, 'implementation')).toBe(true);
+	});
+});
+
+describe('resolveTrelloStatusChangedEnabled', () => {
+	it('returns true when config is undefined (backward compatible)', () => {
+		expect(resolveTrelloStatusChangedEnabled(undefined, 'splitting')).toBe(true);
+		expect(resolveTrelloStatusChangedEnabled(undefined, 'planning')).toBe(true);
+		expect(resolveTrelloStatusChangedEnabled(undefined, 'implementation')).toBe(true);
+	});
+
+	it('returns true when no statusChanged or legacy keys are set', () => {
+		expect(resolveTrelloStatusChangedEnabled({}, 'splitting')).toBe(true);
+		expect(resolveTrelloStatusChangedEnabled({}, 'planning')).toBe(true);
+		expect(resolveTrelloStatusChangedEnabled({}, 'implementation')).toBe(true);
+	});
+
+	it('applies new statusChanged boolean true to all agents', () => {
+		const config = { statusChanged: true as const };
+		expect(resolveTrelloStatusChangedEnabled(config, 'splitting')).toBe(true);
+		expect(resolveTrelloStatusChangedEnabled(config, 'planning')).toBe(true);
+		expect(resolveTrelloStatusChangedEnabled(config, 'implementation')).toBe(true);
+	});
+
+	it('applies new statusChanged boolean false to all agents', () => {
+		const config = { statusChanged: false as const };
+		expect(resolveTrelloStatusChangedEnabled(config, 'splitting')).toBe(false);
+		expect(resolveTrelloStatusChangedEnabled(config, 'planning')).toBe(false);
+		expect(resolveTrelloStatusChangedEnabled(config, 'implementation')).toBe(false);
+	});
+
+	it('returns per-agent value from statusChanged nested object', () => {
+		const config = {
+			statusChanged: { splitting: true, planning: false, implementation: true },
+		};
+		expect(resolveTrelloStatusChangedEnabled(config, 'splitting')).toBe(true);
+		expect(resolveTrelloStatusChangedEnabled(config, 'planning')).toBe(false);
+		expect(resolveTrelloStatusChangedEnabled(config, 'implementation')).toBe(true);
+	});
+
+	it('falls back to cardMovedToSplitting when statusChanged is not set', () => {
+		const config = { cardMovedToSplitting: false };
+		expect(resolveTrelloStatusChangedEnabled(config, 'splitting')).toBe(false);
+	});
+
+	it('falls back to cardMovedToPlanning when statusChanged is not set', () => {
+		const config = { cardMovedToPlanning: false };
+		expect(resolveTrelloStatusChangedEnabled(config, 'planning')).toBe(false);
+	});
+
+	it('falls back to cardMovedToTodo when statusChanged is not set', () => {
+		const config = { cardMovedToTodo: false };
+		expect(resolveTrelloStatusChangedEnabled(config, 'implementation')).toBe(false);
+	});
+
+	it('prefers statusChanged over legacy keys when both are set (boolean)', () => {
+		const config = {
+			statusChanged: true as const,
+			cardMovedToSplitting: false,
+			cardMovedToPlanning: false,
+			cardMovedToTodo: false,
+		};
+		expect(resolveTrelloStatusChangedEnabled(config, 'splitting')).toBe(true);
+		expect(resolveTrelloStatusChangedEnabled(config, 'planning')).toBe(true);
+		expect(resolveTrelloStatusChangedEnabled(config, 'implementation')).toBe(true);
+	});
+
+	it('prefers statusChanged over legacy keys when both are set (per-agent object)', () => {
+		const config = {
+			statusChanged: { splitting: false, planning: true, implementation: false },
+			cardMovedToSplitting: true,
+			cardMovedToPlanning: false,
+			cardMovedToTodo: true,
+		};
+		expect(resolveTrelloStatusChangedEnabled(config, 'splitting')).toBe(false);
+		expect(resolveTrelloStatusChangedEnabled(config, 'planning')).toBe(true);
+		expect(resolveTrelloStatusChangedEnabled(config, 'implementation')).toBe(false);
+	});
+
+	it('allows per-agent control via legacy keys when statusChanged is not set', () => {
+		const config = {
+			cardMovedToSplitting: true,
+			cardMovedToPlanning: false,
+			cardMovedToTodo: true,
+		};
+		expect(resolveTrelloStatusChangedEnabled(config, 'splitting')).toBe(true);
+		expect(resolveTrelloStatusChangedEnabled(config, 'planning')).toBe(false);
+		expect(resolveTrelloStatusChangedEnabled(config, 'implementation')).toBe(true);
+	});
+
+	it('defaults all agents to true when nested object is empty (Zod fills defaults)', () => {
+		const parsed = TrelloTriggerConfigSchema.parse({ statusChanged: {} });
+		expect(resolveTrelloStatusChangedEnabled(parsed, 'splitting')).toBe(true);
+		expect(resolveTrelloStatusChangedEnabled(parsed, 'planning')).toBe(true);
+		expect(resolveTrelloStatusChangedEnabled(parsed, 'implementation')).toBe(true);
+	});
+
+	it('accepts per-agent statusChanged object in schema', () => {
+		const parsed = TrelloTriggerConfigSchema.parse({
+			statusChanged: { splitting: true, planning: false, implementation: true },
+		});
+		expect(resolveTrelloStatusChangedEnabled(parsed, 'splitting')).toBe(true);
+		expect(resolveTrelloStatusChangedEnabled(parsed, 'planning')).toBe(false);
+		expect(resolveTrelloStatusChangedEnabled(parsed, 'implementation')).toBe(true);
 	});
 });
 

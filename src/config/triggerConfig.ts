@@ -22,26 +22,6 @@ export const ReadyToProcessLabelSchema = z
 export type ReadyToProcessLabelConfig = z.infer<typeof ReadyToProcessLabelSchema>;
 
 /**
- * Trigger configuration for Trello integrations.
- * All triggers default to `true` for backward compatibility.
- *
- * `statusChanged` is the unified key replacing the legacy `cardMovedToSplitting`,
- * `cardMovedToPlanning`, and `cardMovedToTodo` keys.
- */
-export const TrelloTriggerConfigSchema = z.object({
-	/** Unified status-changed toggle (replaces legacy cardMovedTo* keys). */
-	statusChanged: z.boolean().default(true),
-	/** @deprecated Use `statusChanged` instead. */
-	cardMovedToSplitting: z.boolean().default(true),
-	/** @deprecated Use `statusChanged` instead. */
-	cardMovedToPlanning: z.boolean().default(true),
-	/** @deprecated Use `statusChanged` instead. */
-	cardMovedToTodo: z.boolean().default(true),
-	readyToProcessLabel: ReadyToProcessLabelSchema,
-	commentMention: z.boolean().default(true),
-});
-
-/**
  * Per-agent status-changed configuration.
  * Each agent type can independently toggle whether the status-changed trigger fires for it.
  */
@@ -57,6 +37,26 @@ export const StatusChangedSchema = z
 	.optional();
 
 export type StatusChangedConfig = z.infer<typeof StatusChangedSchema>;
+
+/**
+ * Trigger configuration for Trello integrations.
+ * All triggers default to `true` for backward compatibility.
+ *
+ * `statusChanged` is the unified key replacing the legacy `cardMovedToSplitting`,
+ * `cardMovedToPlanning`, and `cardMovedToTodo` keys.
+ */
+export const TrelloTriggerConfigSchema = z.object({
+	/** Unified status-changed toggle (replaces legacy cardMovedTo* keys). */
+	statusChanged: StatusChangedSchema.default(true),
+	/** @deprecated Use `statusChanged` instead. */
+	cardMovedToSplitting: z.boolean().default(true),
+	/** @deprecated Use `statusChanged` instead. */
+	cardMovedToPlanning: z.boolean().default(true),
+	/** @deprecated Use `statusChanged` instead. */
+	cardMovedToTodo: z.boolean().default(true),
+	readyToProcessLabel: ReadyToProcessLabelSchema,
+	commentMention: z.boolean().default(true),
+});
 
 /**
  * @deprecated Use `StatusChangedSchema` instead.
@@ -295,7 +295,7 @@ export function resolveTriggerEnabled(
 // ============================================================================
 
 /** Keys whose values are per-agent nested objects in the Trello trigger config. */
-const TRELLO_NESTED_KEYS: string[] = ['readyToProcessLabel'];
+const TRELLO_NESTED_KEYS: string[] = ['readyToProcessLabel', 'statusChanged'];
 
 /** Keys whose values are per-agent nested objects in the JIRA trigger config. */
 const JIRA_NESTED_KEYS: string[] = ['readyToProcessLabel', 'statusChanged', 'issueTransitioned'];
@@ -370,7 +370,7 @@ export function resolveReadyToProcessEnabled(
 }
 
 /**
- * Resolve whether the status-changed trigger is enabled for a specific agent type.
+ * Resolve whether the status-changed trigger is enabled for a specific agent type (Jira).
  * Reads from the `statusChanged` key first, falling back to the legacy `issueTransitioned` key.
  * Supports both the new nested object format and the legacy boolean format.
  * Returns `true` when no config is present (backward compatible).
@@ -383,6 +383,43 @@ export function resolveStatusChangedEnabled(
 	const value =
 		config?.statusChanged !== undefined ? config.statusChanged : config?.issueTransitioned;
 	return resolvePerAgentToggle(value as boolean | PerAgentObject | undefined, agentType);
+}
+
+/**
+ * Resolve whether the status-changed trigger is enabled for a specific agent type (Trello).
+ * Reads from the `statusChanged` key first, falling back to the legacy per-agent keys:
+ * - splitting → cardMovedToSplitting
+ * - planning → cardMovedToPlanning
+ * - implementation → cardMovedToTodo
+ *
+ * Supports both the new nested object format and the legacy boolean format.
+ * Returns `true` when no config is present (backward compatible).
+ */
+export function resolveTrelloStatusChangedEnabled(
+	config: Partial<TrelloTriggerConfig> | undefined,
+	agentType: string,
+): boolean {
+	// Prefer new `statusChanged` key
+	if (config?.statusChanged !== undefined) {
+		return resolvePerAgentToggle(
+			config.statusChanged as boolean | PerAgentObject | undefined,
+			agentType,
+		);
+	}
+
+	// Fall back to legacy per-agent keys
+	if (agentType === 'splitting' && config?.cardMovedToSplitting !== undefined) {
+		return config.cardMovedToSplitting;
+	}
+	if (agentType === 'planning' && config?.cardMovedToPlanning !== undefined) {
+		return config.cardMovedToPlanning;
+	}
+	if (agentType === 'implementation' && config?.cardMovedToTodo !== undefined) {
+		return config.cardMovedToTodo;
+	}
+
+	// No config present — default enabled for backward compatibility
+	return true;
 }
 
 /**

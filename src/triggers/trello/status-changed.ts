@@ -1,4 +1,4 @@
-import { resolveTrelloTriggerEnabled } from '../../config/triggerConfig.js';
+import { resolveTrelloStatusChangedEnabled } from '../../config/triggerConfig.js';
 import { getTrelloConfig } from '../../pm/config.js';
 import { logger } from '../../utils/logging.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../types.js';
@@ -12,8 +12,7 @@ interface StatusChangedConfig {
 	name: string;
 	description: string;
 	listKey: 'splitting' | 'planning' | 'todo';
-	agentType: string;
-	triggerConfigKey: 'statusChanged';
+	agentType: 'splitting' | 'planning' | 'implementation';
 }
 
 function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler {
@@ -25,9 +24,9 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 			if (ctx.source !== 'trello') return false;
 			if (!isTrelloWebhookPayload(ctx.payload)) return false;
 
-			// Check trigger config — default enabled for backward compatibility
+			// Check trigger config with per-agent fallback to legacy keys
 			const trelloConfig = getTrelloConfig(ctx.project);
-			if (!resolveTrelloTriggerEnabled(trelloConfig?.triggers, config.triggerConfigKey)) {
+			if (!resolveTrelloStatusChangedEnabled(trelloConfig?.triggers, config.agentType)) {
 				return false;
 			}
 
@@ -74,7 +73,6 @@ export const TrelloStatusChangedSplittingTrigger = createStatusChangedTrigger({
 	description: 'Triggers splitting agent when card moved to splitting list',
 	listKey: 'splitting',
 	agentType: 'splitting',
-	triggerConfigKey: 'statusChanged',
 });
 
 export const TrelloStatusChangedPlanningTrigger = createStatusChangedTrigger({
@@ -82,7 +80,6 @@ export const TrelloStatusChangedPlanningTrigger = createStatusChangedTrigger({
 	description: 'Triggers planning agent when card moved to planning list',
 	listKey: 'planning',
 	agentType: 'planning',
-	triggerConfigKey: 'statusChanged',
 });
 
 export const TrelloStatusChangedTodoTrigger = createStatusChangedTrigger({
@@ -90,5 +87,4 @@ export const TrelloStatusChangedTodoTrigger = createStatusChangedTrigger({
 	description: 'Triggers implementation agent when card moved to TODO list',
 	listKey: 'todo',
 	agentType: 'implementation',
-	triggerConfigKey: 'statusChanged',
 });
