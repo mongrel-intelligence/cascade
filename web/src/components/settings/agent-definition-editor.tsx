@@ -15,9 +15,16 @@ import {
 } from '@/components/ui/select.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.js';
 import { Textarea } from '@/components/ui/textarea.js';
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from '@/components/ui/tooltip.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { inferRouterOutputs } from '@trpc/server';
+import { Info } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ReferencePanel } from './prompt-editor.js';
 
@@ -69,14 +76,29 @@ const CAPABILITY_GROUPS: Record<string, { label: string; caps: Capability[] }> =
 // Helper components (shared with form dialog)
 // ─────────────────────────────────────────────────────────────────────────────
 
+function InfoTooltip({ text }: { text: string }) {
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<span className="inline-flex cursor-help text-muted-foreground hover:text-foreground">
+					<Info className="h-3.5 w-3.5" />
+				</span>
+			</TooltipTrigger>
+			<TooltipContent className="max-w-xs">{text}</TooltipContent>
+		</Tooltip>
+	);
+}
+
 function Toggle({
 	checked,
 	onChange,
 	label,
+	description,
 }: {
 	checked: boolean;
 	onChange: (v: boolean) => void;
 	label: string;
+	description?: string;
 }) {
 	return (
 		<div className="flex cursor-pointer select-none items-center gap-2">
@@ -97,6 +119,7 @@ function Toggle({
 				/>
 			</button>
 			<span className="text-sm">{label}</span>
+			{description && <InfoTooltip text={description} />}
 		</div>
 	);
 }
@@ -343,6 +366,7 @@ function StrategiesSection({
 						)
 					}
 					label="Include Review Comments"
+					description="Adds GetPRComments and ReplyToReviewComment gadgets for PR review interaction."
 				/>
 			</div>
 		</section>
@@ -366,26 +390,33 @@ function BackendSection({
 					checked={def.backend.enableStopHooks}
 					onChange={(v) => setBackend('enableStopHooks', v)}
 					label="Enable Stop Hooks"
+					description="Checks for uncommitted/unpushed changes before agent finishes. Enable for implementation; disable for planning/review."
 				/>
 				<Toggle
 					checked={def.backend.needsGitHubToken}
 					onChange={(v) => setBackend('needsGitHubToken', v)}
 					label="Needs GitHub Token"
+					description="Agent receives GitHub token for API access. Required for PR creation and code reviews."
 				/>
 				<Toggle
 					checked={def.backend.blockGitPush ?? false}
 					onChange={(v) => setBackend('blockGitPush', v)}
 					label="Block Git Push"
+					description="Prevents direct pushes, requiring cascade-tools for PRs. Disable for existing PR branches."
 				/>
 				<Toggle
 					checked={def.backend.requiresPR ?? false}
 					onChange={(v) => setBackend('requiresPR', v)}
 					label="Requires PR"
+					description="Agent must create a PR for the session to be considered successful."
 				/>
 			</div>
 			<div className="grid grid-cols-2 gap-3">
 				<div className="space-y-1">
-					<Label>Pre-Execute Hook</Label>
+					<div className="flex items-center gap-1.5">
+						<Label>Pre-Execute Hook</Label>
+						<InfoTooltip text="Hook run before agent execution. 'postInitialPRComment' posts an initial PR comment." />
+					</div>
 					<Select
 						value={def.backend.preExecute ?? '_none'}
 						onValueChange={(v) => setBackend('preExecute', v === '_none' ? undefined : v)}
@@ -400,7 +431,10 @@ function BackendSection({
 					</Select>
 				</div>
 				<div className="space-y-1">
-					<Label>Post-Configure Hook</Label>
+					<div className="flex items-center gap-1.5">
+						<Label>Post-Configure Hook</Label>
+						<InfoTooltip text="Hook run after builder configuration. 'sequentialGadgetExecution' forces serial gadget execution." />
+					</div>
 					<Select
 						value={def.backend.postConfigure ?? '_none'}
 						onValueChange={(v) => setBackend('postConfigure', v === '_none' ? undefined : v)}
@@ -436,26 +470,31 @@ function TrailingMessageSection({
 					checked={def.trailingMessage?.includeDiagnostics ?? false}
 					onChange={(v) => setTrailing('includeDiagnostics', v)}
 					label="Include Diagnostics"
+					description="Appends lint/type-check errors and loop detection warnings to each iteration message."
 				/>
 				<Toggle
 					checked={def.trailingMessage?.includeTodoProgress ?? false}
 					onChange={(v) => setTrailing('includeTodoProgress', v)}
 					label="Include Todo Progress"
+					description="Appends the current todo checklist progress to each iteration message."
 				/>
 				<Toggle
 					checked={def.trailingMessage?.includeGitStatus ?? false}
 					onChange={(v) => setTrailing('includeGitStatus', v)}
 					label="Include Git Status"
+					description="Appends git status showing uncommitted changes to each iteration message."
 				/>
 				<Toggle
 					checked={def.trailingMessage?.includePRStatus ?? false}
 					onChange={(v) => setTrailing('includePRStatus', v)}
 					label="Include PR Status"
+					description="Appends PR view showing current state and checks to each iteration message."
 				/>
 				<Toggle
 					checked={def.trailingMessage?.includeReminder ?? false}
 					onChange={(v) => setTrailing('includeReminder', v)}
 					label="Include Reminder"
+					description="Appends an efficiency reminder to batch gadget calls in each iteration message."
 				/>
 			</div>
 		</section>
@@ -1093,130 +1132,132 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 
 	// ─────────────────────────────────────────────────────────────────────────
 	return (
-		<div className="space-y-6">
-			{/* Header */}
-			<div className="flex items-center justify-between">
-				<div>
-					<h2 className="text-xl font-bold">
-						{isEdit ? (
-							<>
-								{existing?.definition.identity.emoji}{' '}
-								<span className="font-mono">{existing?.agentType}</span>
-							</>
-						) : (
-							'New Agent Definition'
+		<TooltipProvider delayDuration={200}>
+			<div className="space-y-6">
+				{/* Header */}
+				<div className="flex items-center justify-between">
+					<div>
+						<h2 className="text-xl font-bold">
+							{isEdit ? (
+								<>
+									{existing?.definition.identity.emoji}{' '}
+									<span className="font-mono">{existing?.agentType}</span>
+								</>
+							) : (
+								'New Agent Definition'
+							)}
+						</h2>
+						{isEdit && (
+							<p className="text-sm text-muted-foreground">{existing?.definition.identity.label}</p>
 						)}
-					</h2>
-					{isEdit && (
-						<p className="text-sm text-muted-foreground">{existing?.definition.identity.label}</p>
-					)}
-				</div>
-				<div className="flex gap-2">
-					<button
-						type="button"
-						onClick={onClose}
-						className="inline-flex h-9 items-center rounded-md border border-input px-4 text-sm hover:bg-accent"
-					>
-						Cancel
-					</button>
-					{/* Save is only shown for Definition / Raw JSON tabs (not Prompts which has its own save) */}
-					{activeTab !== 'prompts' && (
+					</div>
+					<div className="flex gap-2">
 						<button
 							type="button"
-							onClick={handleSave}
-							disabled={activeMutation.isPending}
-							className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+							onClick={onClose}
+							className="inline-flex h-9 items-center rounded-md border border-input px-4 text-sm hover:bg-accent"
 						>
-							{activeMutation.isPending ? 'Saving...' : isEdit ? 'Update' : 'Create'}
+							Cancel
 						</button>
-					)}
+						{/* Save is only shown for Definition / Raw JSON tabs (not Prompts which has its own save) */}
+						{activeTab !== 'prompts' && (
+							<button
+								type="button"
+								onClick={handleSave}
+								disabled={activeMutation.isPending}
+								className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+							>
+								{activeMutation.isPending ? 'Saving...' : isEdit ? 'Update' : 'Create'}
+							</button>
+						)}
+					</div>
 				</div>
-			</div>
 
-			{/* Agent Type input for create mode */}
-			{!isEdit && (
-				<div className="space-y-2">
-					<Label htmlFor="ad-agentType">Agent Type</Label>
-					<Input
-						id="ad-agentType"
-						value={agentType}
-						onChange={(e) => setAgentType(e.target.value)}
-						placeholder="e.g. implementation, review, debug"
-						className={agentTypeError ? 'border-destructive' : ''}
-					/>
-					{agentTypeError && <p className="text-sm text-destructive">{agentTypeError}</p>}
-				</div>
-			)}
-
-			{activeMutation.isError && (
-				<p className="text-sm text-destructive">{activeMutation.error.message}</p>
-			)}
-
-			{/* Tabs */}
-			<Tabs value={activeTab} onValueChange={handleTabChange}>
-				<TabsList>
-					<TabsTrigger value="definition">Definition</TabsTrigger>
-					<TabsTrigger value="capabilities">Capabilities</TabsTrigger>
-					<TabsTrigger value="triggers">Triggers</TabsTrigger>
-					{isEdit && <TabsTrigger value="prompts">Prompts</TabsTrigger>}
-					<TabsTrigger value="json">Raw JSON</TabsTrigger>
-				</TabsList>
-
-				<TabsContent value="definition" className="space-y-6 pt-4">
-					<IdentitySection def={def} setIdentity={setIdentity} />
-					<StrategiesSection def={def} setDef={setDef} />
-					<BackendSection def={def} setBackend={setBackend} />
-
-					<section className="space-y-3">
-						<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-							Hint
-						</h3>
-						<div className="space-y-1">
-							<Label htmlFor="ad-hint">Hint Text</Label>
-							<Textarea
-								id="ad-hint"
-								value={def.hint}
-								onChange={(e) => setDef((d) => ({ ...d, hint: e.target.value }))}
-								rows={2}
-								placeholder="Optional hint shown in iteration messages..."
-							/>
-						</div>
-					</section>
-
-					<TrailingMessageSection def={def} setTrailing={setTrailing} />
-				</TabsContent>
-
-				<TabsContent value="capabilities" className="space-y-6 pt-4">
-					<CapabilitiesSection def={def} setDef={setDef} />
-				</TabsContent>
-
-				<TabsContent value="triggers" className="space-y-6 pt-4">
-					<TriggersSection def={def} setDef={setDef} schema={schema} />
-				</TabsContent>
-
-				{isEdit && (
-					<TabsContent value="prompts" className="pt-4">
-						<PromptsPanel agentType={existing?.agentType ?? ''} />
-					</TabsContent>
+				{/* Agent Type input for create mode */}
+				{!isEdit && (
+					<div className="space-y-2">
+						<Label htmlFor="ad-agentType">Agent Type</Label>
+						<Input
+							id="ad-agentType"
+							value={agentType}
+							onChange={(e) => setAgentType(e.target.value)}
+							placeholder="e.g. implementation, review, debug"
+							className={agentTypeError ? 'border-destructive' : ''}
+						/>
+						{agentTypeError && <p className="text-sm text-destructive">{agentTypeError}</p>}
+					</div>
 				)}
 
-				<TabsContent value="json" className="space-y-2 pt-4">
-					<p className="text-sm text-muted-foreground">
-						Edit the raw JSON. Changes here are applied when you save.
-					</p>
-					<Textarea
-						value={jsonText}
-						onChange={(e) => {
-							setJsonText(e.target.value);
-							clearJsonError();
-						}}
-						rows={30}
-						className="font-mono text-xs"
-						spellCheck={false}
-					/>
-					{jsonError && <p className="text-sm text-destructive">JSON parse error: {jsonError}</p>}
-				</TabsContent>
-			</Tabs>
-		</div>
+				{activeMutation.isError && (
+					<p className="text-sm text-destructive">{activeMutation.error.message}</p>
+				)}
+
+				{/* Tabs */}
+				<Tabs value={activeTab} onValueChange={handleTabChange}>
+					<TabsList>
+						<TabsTrigger value="definition">Definition</TabsTrigger>
+						<TabsTrigger value="capabilities">Capabilities</TabsTrigger>
+						<TabsTrigger value="triggers">Triggers</TabsTrigger>
+						{isEdit && <TabsTrigger value="prompts">Prompts</TabsTrigger>}
+						<TabsTrigger value="json">Raw JSON</TabsTrigger>
+					</TabsList>
+
+					<TabsContent value="definition" className="space-y-6 pt-4">
+						<IdentitySection def={def} setIdentity={setIdentity} />
+						<StrategiesSection def={def} setDef={setDef} />
+						<BackendSection def={def} setBackend={setBackend} />
+
+						<section className="space-y-3">
+							<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+								Hint
+							</h3>
+							<div className="space-y-1">
+								<Label htmlFor="ad-hint">Hint Text</Label>
+								<Textarea
+									id="ad-hint"
+									value={def.hint}
+									onChange={(e) => setDef((d) => ({ ...d, hint: e.target.value }))}
+									rows={2}
+									placeholder="Optional hint shown in iteration messages..."
+								/>
+							</div>
+						</section>
+
+						<TrailingMessageSection def={def} setTrailing={setTrailing} />
+					</TabsContent>
+
+					<TabsContent value="capabilities" className="space-y-6 pt-4">
+						<CapabilitiesSection def={def} setDef={setDef} />
+					</TabsContent>
+
+					<TabsContent value="triggers" className="space-y-6 pt-4">
+						<TriggersSection def={def} setDef={setDef} schema={schema} />
+					</TabsContent>
+
+					{isEdit && (
+						<TabsContent value="prompts" className="pt-4">
+							<PromptsPanel agentType={existing?.agentType ?? ''} />
+						</TabsContent>
+					)}
+
+					<TabsContent value="json" className="space-y-2 pt-4">
+						<p className="text-sm text-muted-foreground">
+							Edit the raw JSON. Changes here are applied when you save.
+						</p>
+						<Textarea
+							value={jsonText}
+							onChange={(e) => {
+								setJsonText(e.target.value);
+								clearJsonError();
+							}}
+							rows={30}
+							className="font-mono text-xs"
+							spellCheck={false}
+						/>
+						{jsonError && <p className="text-sm text-destructive">JSON parse error: {jsonError}</p>}
+					</TabsContent>
+				</Tabs>
+			</div>
+		</TooltipProvider>
 	);
 }
