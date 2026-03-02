@@ -24,8 +24,7 @@ capabilities:
 # No external event-based triggers are configured.
 triggers: []
 
-strategies:
-  contextPipeline: [directoryListing, contextFiles, squint, workItem]
+strategies: {}
 
 prompts:
   taskPrompt: |

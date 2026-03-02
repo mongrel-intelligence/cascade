@@ -68,7 +68,7 @@ export const TriggerParameterSchema = z
 	);
 
 // ============================================================================
-// Context Step Names (used by triggers and strategies)
+// Context Step Names (used by trigger contextPipeline definitions)
 // ============================================================================
 
 export const CONTEXT_STEP_NAMES = [
@@ -112,10 +112,11 @@ export const SupportedTriggerSchema = z.object({
 	/** Provider filter - only applies to these providers (e.g., ['trello']) */
 	providers: z.array(KnownProviderSchema).optional(),
 	/**
-	 * Optional custom context pipeline for this trigger.
-	 * When specified, overrides the agent's default strategies.contextPipeline.
-	 * Useful when different triggers require different context (e.g., PM triggers
+	 * Context pipeline for this trigger.
+	 * Defines what context to fetch when this trigger fires.
+	 * Different triggers typically need different context (e.g., PM triggers
 	 * need workItem, SCM triggers need prContext).
+	 * When not specified, an empty pipeline is used.
 	 */
 	contextPipeline: z.array(ContextStepNameSchema).optional(),
 });
@@ -197,13 +198,12 @@ const GadgetOptionsSchema = z
 export const COMPACTION_NAMES = ['implementation', 'default'] as const;
 
 /**
- * Strategies schema - context and prompt configuration.
+ * Strategies schema - gadget configuration only.
  * Note: gadgetBuilder removed - gadgets are now derived from capabilities.
  * Note: taskPromptBuilder removed - task prompts are now stored in prompts.taskPrompt.
+ * Note: contextPipeline removed - context is now derived from triggers only.
  */
 const StrategiesSchema = z.object({
-	/** Pipeline of context fetching steps */
-	contextPipeline: z.array(z.enum(CONTEXT_STEP_NAMES)),
 	/** Optional gadget configuration for special cases */
 	gadgetOptions: GadgetOptionsSchema,
 });
@@ -262,7 +262,7 @@ export const AgentDefinitionSchema = z.object({
 	 * Declares what events the agent can respond to, with configurable parameters.
 	 */
 	triggers: z.array(SupportedTriggerSchema).default([]),
-	/** Strategy configuration (context pipeline, prompts) */
+	/** Strategy configuration (gadget options) */
 	strategies: StrategiesSchema,
 	/** Backend execution configuration */
 	backend: BackendSchema,

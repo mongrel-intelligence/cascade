@@ -29,9 +29,9 @@ triggers:
     description: Trigger when the implementer bot is @mentioned in a PR comment
     defaultEnabled: true
     providers: [github]
+    contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
 
 strategies:
-  contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
   gadgetOptions:
     includeReviewComments: true
 
@@ -59,3 +59,6 @@ backend:
 compaction: default
 
 hint: Complete the current task efficiently before moving to the next.
+
+trailingMessage:
+  includeDiagnostics: true

@@ -36,21 +36,21 @@ triggers:
         description: Filter PRs by author type
         options: [own, external, all]
         defaultValue: own
-    # contextPipeline can be specified per-trigger to override strategies.contextPipeline
-    # Currently using strategy default: [prContext, contextFiles, squint]
+    contextPipeline: [prContext, contextFiles, squint]
   - event: scm:review-requested
     label: On Review Requested
     description: Trigger review when a CASCADE persona is explicitly requested as reviewer
     defaultEnabled: false
     providers: [github]
+    contextPipeline: [prContext, contextFiles, squint]
   - event: scm:pr-opened
     label: PR Opened
     description: Trigger review when a new PR is opened (without waiting for CI)
     defaultEnabled: false
     providers: [github]
+    contextPipeline: [prContext, contextFiles, squint]
 
-strategies:
-  contextPipeline: [prContext, contextFiles, squint]
+strategies: {}
 
 prompts:
   taskPrompt: |

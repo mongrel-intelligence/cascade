@@ -12,7 +12,6 @@ import {
 	type AgentDefinition,
 	AgentDefinitionSchema,
 	COMPACTION_NAMES,
-	CONTEXT_STEP_NAMES,
 	DefinitionPatchSchema,
 } from '../../agents/definitions/schema.js';
 import { validateTemplate } from '../../agents/prompts/index.js';
@@ -351,7 +350,6 @@ export const agentDefinitionsRouter = router({
 	schema: publicProcedure.query(() => {
 		return {
 			capabilities: [...CAPABILITIES],
-			contextStepNames: [...CONTEXT_STEP_NAMES],
 			compactionNames: [...COMPACTION_NAMES],
 			triggerRegistry: TRIGGER_REGISTRY,
 		};

@@ -30,9 +30,9 @@ triggers:
     description: Trigger when a review with changes requested is submitted
     defaultEnabled: true
     providers: [github]
+    contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
 
 strategies:
-  contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
   gadgetOptions:
     includeReviewComments: true
 
@@ -40,17 +40,14 @@ prompts:
   taskPrompt: |
     You are on the branch `<%= it.prBranch %>` for PR #<%= it.prNumber %>.
 
-    A user commented on this PR and mentioned you. Respond to their comment.
-    <% if (it.commentPath) { -%>
-    File: <%= it.commentPath %>
-    <% } -%>
+    A reviewer has submitted feedback requesting changes. Address the review comments by making the necessary code changes.
 
-    Their comment:
+    Review feedback:
     ---
     <%= it.commentBody %>
     ---
 
-    Read the comment carefully and respond accordingly. If they ask for code changes, make the changes, commit, and push. If they ask a question, reply with a PR comment. Default to surgical, targeted changes unless they clearly ask for something broader.
+    Carefully read each review comment and make the requested changes. Commit and push your changes when done. Use the ReplyToReviewComment tool to respond to individual review comments as you address them. Focus on surgical, targeted fixes unless the reviewer clearly asks for broader changes.
 
 backend:
   enableStopHooks: true

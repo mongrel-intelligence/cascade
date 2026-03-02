@@ -88,28 +88,34 @@ function getAllCapabilities(caps: AgentCapabilities): Capability[] {
 
 /**
  * Resolve the context pipeline for a given trigger event.
- * Uses the trigger-specific pipeline if defined, otherwise falls back to the default.
+ *
+ * Returns the trigger-specific pipeline if defined, otherwise returns an empty array.
+ * This function handles several edge cases gracefully:
+ *
+ * - **No triggerEvent**: Returns `[]` when triggerEvent is undefined or empty string.
+ *   This happens when an agent is invoked manually without a trigger.
+ * - **No matching trigger**: Returns `[]` when the triggerEvent doesn't match any
+ *   trigger in the agent's triggers array. This could happen if a trigger is
+ *   misconfigured or the agent doesn't support the given event.
+ * - **Trigger without contextPipeline**: Returns `[]` when the matching trigger
+ *   exists but has no contextPipeline defined (contextPipeline is optional).
+ * - **Empty triggers array**: Returns `[]` for agents with no triggers (e.g., debug
+ *   agent which is only invoked internally).
  *
  * @param triggers - Array of supported triggers from the agent definition
- * @param defaultPipeline - Default pipeline from strategies.contextPipeline
  * @param triggerEvent - Optional trigger event (e.g., 'pm:card-moved', 'scm:check-suite-success')
- * @returns The context pipeline to use
+ * @returns The context pipeline to use (empty array for any edge case)
  */
 function resolveContextPipeline(
 	triggers: SupportedTrigger[],
-	defaultPipeline: ContextStepName[],
 	triggerEvent?: string,
 ): ContextStepName[] {
 	if (!triggerEvent) {
-		return defaultPipeline;
+		return [];
 	}
 
 	const trigger = triggers.find((t) => t.event === triggerEvent);
-	if (trigger?.contextPipeline && trigger.contextPipeline.length > 0) {
-		return trigger.contextPipeline;
-	}
-
-	return defaultPipeline;
+	return trigger?.contextPipeline ?? [];
 }
 
 // ============================================================================
@@ -127,9 +133,6 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 
 	// Get gadget options from strategies
 	const gadgetOptions = def.strategies.gadgetOptions;
-
-	// Get default context pipeline from strategies
-	const defaultContextPipeline = def.strategies.contextPipeline;
 
 	// Get triggers for dynamic context pipeline resolution
 	const triggers = def.triggers ?? [];
@@ -155,13 +158,8 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 		...(def.backend.blockGitPush !== undefined && { blockGitPush: def.backend.blockGitPush }),
 		...(def.backend.requiresPR && { requiresPR: true }),
 		fetchContext: async (params) => {
-			// Resolve context pipeline: use trigger-specific pipeline if available,
-			// otherwise fall back to the default from strategies.contextPipeline
-			const contextPipeline = resolveContextPipeline(
-				triggers,
-				defaultContextPipeline,
-				params.input.triggerType,
-			);
+			// Resolve context pipeline from the trigger (empty array if no trigger or trigger has no pipeline)
+			const contextPipeline = resolveContextPipeline(triggers, params.input.triggerType);
 
 			const injections: ContextInjection[] = [];
 			for (const step of contextPipeline) {

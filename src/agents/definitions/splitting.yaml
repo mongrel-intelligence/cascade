@@ -34,6 +34,7 @@ triggers:
         label: Target List
         options: [splitting]
         defaultValue: splitting
+    contextPipeline: [directoryListing, contextFiles, squint, workItem]
   - event: pm:issue-transitioned
     label: Issue Transitioned
     description: Trigger when issue transitions to Splitting status
@@ -45,6 +46,7 @@ triggers:
         label: Target Status
         options: [splitting]
         defaultValue: splitting
+    contextPipeline: [directoryListing, contextFiles, squint, workItem]
   - event: pm:label-added
     label: Ready to Process Label
     description: Trigger when Ready to Process label added to a card in Splitting list
@@ -55,9 +57,9 @@ triggers:
         label: Target List
         options: [splitting]
         defaultValue: splitting
+    contextPipeline: [directoryListing, contextFiles, squint, workItem]
 
-strategies:
-  contextPipeline: [directoryListing, contextFiles, squint, workItem]
+strategies: {}
 
 prompts:
   taskPrompt: |

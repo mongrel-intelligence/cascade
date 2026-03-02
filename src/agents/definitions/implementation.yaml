@@ -36,8 +36,7 @@ triggers:
         label: Target List
         options: [todo]
         defaultValue: todo
-    # contextPipeline can be specified per-trigger to override strategies.contextPipeline
-    # Currently using strategy default: [directoryListing, contextFiles, squint, workItem]
+    contextPipeline: [directoryListing, contextFiles, squint, workItem]
   - event: pm:issue-transitioned
     label: Issue Transitioned
     description: Trigger when issue transitions to Todo status
@@ -49,6 +48,7 @@ triggers:
         label: Target Status
         options: [todo]
         defaultValue: todo
+    contextPipeline: [directoryListing, contextFiles, squint, workItem]
   - event: pm:label-added
     label: Ready to Process Label
     description: Trigger when Ready to Process label added to a card in the Todo list
@@ -59,9 +59,9 @@ triggers:
         label: Target List
         options: [todo]
         defaultValue: todo
+    contextPipeline: [directoryListing, contextFiles, squint, workItem]
 
-strategies:
-  contextPipeline: [directoryListing, contextFiles, squint, workItem]
+strategies: {}
 
 prompts:
   taskPrompt: |
