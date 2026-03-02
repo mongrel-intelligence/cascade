@@ -131,11 +131,6 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('definition content spot checks', () => {
-		it('implementation has implementation compaction preset', () => {
-			const def = loadAgentDefinition('implementation');
-			expect(def.compaction).toBe('implementation');
-		});
-
 		it('implementation has postConfigure hook', () => {
 			const def = loadAgentDefinition('implementation');
 			expect(def.backend.postConfigure).toBe('sequentialGadgetExecution');

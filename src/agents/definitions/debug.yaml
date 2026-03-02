@@ -34,6 +34,5 @@ backend:
   enableStopHooks: true
   needsGitHubToken: false
 
-compaction: default
 
 hint: Analyze the current issue fully before moving to the next.

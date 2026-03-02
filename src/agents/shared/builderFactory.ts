@@ -79,11 +79,9 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 		initSessionState(agentType, options.baseBranch, options.projectId, options.cardId);
 	}
 
-	// Resolve async config values before building
-	const [compactionConfig, trailingMessage] = await Promise.all([
-		getCompactionConfig(agentType),
-		getIterationTrailingMessage(agentType),
-	]);
+	// Resolve config values before building
+	const compactionConfig = getCompactionConfig();
+	const trailingMessage = await getIterationTrailingMessage(agentType);
 
 	let builder = new AgentBuilder(client)
 		.withModel(model)

@@ -11,7 +11,6 @@ import {
 import {
 	type AgentDefinition,
 	AgentDefinitionSchema,
-	COMPACTION_NAMES,
 	DefinitionPatchSchema,
 } from '../../agents/definitions/schema.js';
 import { validateTemplate } from '../../agents/prompts/index.js';
@@ -350,7 +349,6 @@ export const agentDefinitionsRouter = router({
 	schema: publicProcedure.query(() => {
 		return {
 			capabilities: [...CAPABILITIES],
-			compactionNames: [...COMPACTION_NAMES],
 			triggerRegistry: TRIGGER_REGISTRY,
 		};
 	}),

@@ -17,7 +17,6 @@ function mockAgentDefinition(prompts?: AgentDefinition['prompts']): AgentDefinit
 			contextPipeline: [],
 		},
 		backend: { enableStopHooks: false, needsGitHubToken: false },
-		compaction: 'default',
 		hint: 'test',
 		trailingMessage: undefined,
 		prompts,

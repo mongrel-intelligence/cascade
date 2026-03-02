@@ -330,7 +330,6 @@ describe('AgentDefinitionSchema', () => {
 			enableStopHooks: false,
 			needsGitHubToken: false,
 		},
-		compaction: 'default',
 		hint: 'Do the thing efficiently.',
 		prompts: {
 			taskPrompt: 'Analyze and process the work item with ID: <%= it.cardId %>.',
@@ -378,12 +377,6 @@ describe('AgentDefinitionSchema', () => {
 			...validDefinition,
 			capabilities: { required: ['invalid:cap'], optional: [] },
 		};
-		const result = AgentDefinitionSchema.safeParse(bad);
-		expect(result.success).toBe(false);
-	});
-
-	it('rejects invalid compaction preset names', () => {
-		const bad = { ...validDefinition, compaction: 'aggressive' };
 		const result = AgentDefinitionSchema.safeParse(bad);
 		expect(result.success).toBe(false);
 	});

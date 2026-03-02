@@ -56,7 +56,6 @@ backend:
   needsGitHubToken: true
   blockGitPush: false
 
-compaction: default
 
 hint: Complete the current task efficiently before moving to the next.
 

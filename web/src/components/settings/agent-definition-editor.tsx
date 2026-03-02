@@ -38,7 +38,6 @@ export interface AgentDefinitionEditorProps {
 
 interface SchemaData {
 	capabilities: readonly string[];
-	compactionNames: readonly string[];
 	triggerRegistry: Record<string, KnownTriggerEvent[]>;
 }
 
@@ -938,7 +937,6 @@ const EMPTY_DEFINITION: AgentDefinition = {
 	triggers: [],
 	strategies: {},
 	backend: { enableStopHooks: false, needsGitHubToken: false },
-	compaction: 'default',
 	hint: '',
 	trailingMessage: undefined,
 	prompts: {
@@ -1168,30 +1166,6 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 					<IdentitySection def={def} setIdentity={setIdentity} />
 					<StrategiesSection def={def} setDef={setDef} />
 					<BackendSection def={def} setBackend={setBackend} />
-
-					<section className="space-y-3">
-						<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-							Compaction
-						</h3>
-						<div className="space-y-1">
-							<Label>Compaction Strategy</Label>
-							<Select
-								value={def.compaction}
-								onValueChange={(v) => setDef((d) => ({ ...d, compaction: v }) as AgentDefinition)}
-							>
-								<SelectTrigger className="w-full">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{(schema?.compactionNames ?? ['implementation', 'default']).map((n) => (
-										<SelectItem key={n} value={n}>
-											{n}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						</div>
-					</section>
 
 					<section className="space-y-3">
 						<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">

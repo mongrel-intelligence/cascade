@@ -47,6 +47,5 @@ backend:
   enableStopHooks: false
   needsGitHubToken: false
 
-compaction: default
 
 hint: Complete the current task efficiently before moving to the next.
