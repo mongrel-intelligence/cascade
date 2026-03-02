@@ -28,7 +28,7 @@ import type { TriggerRegistry } from '../registry.js';
 import { runAgentWithCredentials } from '../shared/webhook-execution.js';
 import { processNextQueuedWebhook } from '../shared/webhook-queue.js';
 import type { TriggerResult } from '../types.js';
-import { postAcknowledgmentComment } from './ack-comments.js';
+import { postAcknowledgmentComment, updateInitialCommentWithError } from './ack-comments.js';
 import { pollWaitForChecks } from './check-polling.js';
 import { GitHubWebhookIntegration } from './integration.js';
 
@@ -76,13 +76,15 @@ async function dispatchTrigger(
 	project: ProjectConfig,
 ): Promise<TriggerResult | null> {
 	const personaIdentities = await resolvePersonaIdentities(project.id);
+	const githubToken = await getPersonaToken(project.id, 'implementation');
 	const ctx: TriggerContext = { project, source: 'github', payload, personaIdentities };
 	const pmProvider = createPMProvider(project);
 	return withPMCredentials(
 		project.id,
 		project.pm?.type,
 		(t) => pmRegistry.getOrNull(t),
-		() => withPMProvider(pmProvider, () => registry.dispatch(ctx)),
+		() =>
+			withPMProvider(pmProvider, () => withGitHubToken(githubToken, () => registry.dispatch(ctx))),
 	);
 }
 
@@ -108,7 +110,7 @@ async function maybePostAckComment(
 async function runGitHubAgent(
 	result: TriggerResult,
 	project: ProjectConfig,
-	config: { defaults: { watchdogTimeoutMs: number } },
+	config: import('../../types/index.js').CascadeConfig,
 	registry: TriggerRegistry,
 ): Promise<void> {
 	const workItemId = result.workItemId;
@@ -126,11 +128,21 @@ async function runGitHubAgent(
 			integration,
 			result,
 			project,
-			config as import('../../types/index.js').CascadeConfig,
+			config,
 			integration.resolveExecutionConfig(),
 		);
 	} catch (err) {
 		logger.error('Failed to process GitHub webhook', { error: String(err) });
+		// Update the PR comment with the error (outside credential scope, so requires token)
+		let prCommentToken: string;
+		try {
+			prCommentToken = await getPersonaToken(project.id, result.agentType ?? 'implementation');
+		} catch {
+			prCommentToken = await getPersonaToken(project.id, 'implementation').catch(() => '');
+		}
+		await withGitHubToken(prCommentToken, () =>
+			updateInitialCommentWithError(result, { success: false, error: String(err) }),
+		);
 	} finally {
 		if (workItemId) clearCardActive(workItemId);
 		setProcessing(false);

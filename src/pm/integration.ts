@@ -12,6 +12,7 @@
 import { PROVIDER_CREDENTIAL_ROLES } from '../config/integrationRoles.js';
 import { getIntegrationCredentialOrNull } from '../config/provider.js';
 import { getIntegrationProvider } from '../db/repositories/credentialsRepository.js';
+import type { AgentExecutionConfig } from '../triggers/shared/agent-execution.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 import type { ProjectPMConfig } from './lifecycle.js';
 import type { PMProvider } from './types.js';
@@ -45,6 +46,12 @@ export interface PMIntegration {
 	// --- Config ---
 	/** Extract normalized lifecycle config (labels, statuses) from provider-specific config */
 	resolveLifecycleConfig(project: ProjectConfig): ProjectPMConfig;
+
+	/**
+	 * Optional: Provide source-specific AgentExecutionConfig overrides.
+	 * Used by GitHub to skip PM lifecycle steps (since GitHub agents are PR-based, not card-based).
+	 */
+	resolveExecutionConfig?(): AgentExecutionConfig;
 
 	// --- Webhook processing ---
 	/** Parse a raw webhook body into a normalized event, or null if irrelevant */

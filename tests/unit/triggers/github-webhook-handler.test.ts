@@ -56,6 +56,7 @@ vi.mock('../../../src/triggers/shared/webhook-queue.js', () => ({
 
 vi.mock('../../../src/triggers/github/ack-comments.js', () => ({
 	postAcknowledgmentComment: vi.fn().mockResolvedValue(undefined),
+	updateInitialCommentWithError: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../../src/triggers/github/check-polling.js', () => ({

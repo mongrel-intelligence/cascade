@@ -9,7 +9,6 @@ import { INITIAL_MESSAGES } from '../../config/agentMessages.js';
 import { githubClient } from '../../github/client.js';
 import { extractGitHubContext, generateAckMessage } from '../../router/ackMessageGenerator.js';
 import type { AgentResult, ProjectConfig } from '../../types/index.js';
-import { logger } from '../../utils/index.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { safeOperation } from '../../utils/safeOperation.js';
 import type { TriggerResult } from '../types.js';
@@ -119,11 +118,4 @@ export async function postAcknowledgmentComment(
 		result.agentInput.ackCommentId = comment.id;
 		result.agentInput.ackMessage = message;
 	}
-}
-
-/**
- * Log a warning when no ack comment was found to log.
- */
-export function logMissingAckComment(): void {
-	logger.warn('No ack comment ID available for GitHub webhook');
 }

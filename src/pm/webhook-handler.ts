@@ -8,7 +8,6 @@
  */
 
 import type { TriggerRegistry } from '../triggers/registry.js';
-import type { AgentExecutionConfig } from '../triggers/shared/agent-execution.js';
 import { runAgentWithCredentials } from '../triggers/shared/webhook-execution.js';
 import { processNextQueuedWebhook } from '../triggers/shared/webhook-queue.js';
 import type { TriggerResult } from '../triggers/types.js';
@@ -46,15 +45,7 @@ async function executeAgent(
 ): Promise<void> {
 	// Allow integrations to provide source-specific AgentExecutionConfig overrides
 	// (e.g. GitHubWebhookIntegration skips PM lifecycle steps).
-	const executionConfig =
-		'resolveExecutionConfig' in integration &&
-		typeof integration.resolveExecutionConfig === 'function'
-			? (
-					integration as {
-						resolveExecutionConfig(): AgentExecutionConfig;
-					}
-				).resolveExecutionConfig()
-			: undefined;
+	const executionConfig = integration.resolveExecutionConfig?.();
 	await runAgentWithCredentials(integration, result, project, config, executionConfig);
 }
 
