@@ -44,6 +44,7 @@ const mockBuilderInstance = {
 	withGadgets: vi.fn(),
 	withMaxGadgetsPerResponse: vi.fn(),
 	withBudget: vi.fn(),
+	withGadgetExecutionMode: vi.fn(),
 };
 
 // Each method returns the builder for chaining
@@ -232,22 +233,10 @@ describe('createConfiguredBuilder', () => {
 		await expect(createConfiguredBuilder(options)).rejects.toThrow('Unexpected budget error');
 	});
 
-	it('calls postConfigure callback when provided', async () => {
-		const customBuilder = { ...mockBuilderInstance, custom: true };
-		const postConfigure = vi.fn().mockReturnValue(customBuilder);
-		const options = createBaseOptions({ postConfigure });
-
-		const result = await createConfiguredBuilder(options);
-
-		expect(postConfigure).toHaveBeenCalled();
-		expect(result).toBe(customBuilder);
-	});
-
-	it('does not call postConfigure when not provided', async () => {
-		const options = createBaseOptions({ postConfigure: undefined });
-
-		// Should not throw and returns builder
-		await expect(createConfiguredBuilder(options)).resolves.not.toThrow();
+	it('calls withGadgetExecutionMode with sequential unconditionally', async () => {
+		const options = createBaseOptions();
+		await createConfiguredBuilder(options);
+		expect(mockBuilderInstance.withGadgetExecutionMode).toHaveBeenCalledWith('sequential');
 	});
 
 	it('returns a builder with max gadgets per response set', async () => {

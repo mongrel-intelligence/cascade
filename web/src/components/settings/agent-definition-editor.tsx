@@ -6,13 +6,6 @@ import {
 import { Badge } from '@/components/ui/badge.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from '@/components/ui/select.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.js';
 import { Textarea } from '@/components/ui/textarea.js';
 import {
@@ -448,27 +441,6 @@ function BackendSection({
 					label="Needs GitHub Token"
 					description="Agent receives GitHub token for API access. Required for PR creation and code reviews."
 				/>
-			</div>
-
-			<div className="grid grid-cols-1 gap-3">
-				<div className="space-y-1">
-					<div className="flex items-center gap-1.5">
-						<Label>Post-Configure Hook</Label>
-						<InfoTooltip text="Hook run after builder configuration. 'sequentialGadgetExecution' forces serial gadget execution." />
-					</div>
-					<Select
-						value={def.backend.postConfigure ?? '_none'}
-						onValueChange={(v) => setBackend('postConfigure', v === '_none' ? undefined : v)}
-					>
-						<SelectTrigger className="w-full">
-							<SelectValue placeholder="None" />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectItem value="_none">None</SelectItem>
-							<SelectItem value="sequentialGadgetExecution">sequentialGadgetExecution</SelectItem>
-						</SelectContent>
-					</Select>
-				</div>
 			</div>
 		</section>
 	);

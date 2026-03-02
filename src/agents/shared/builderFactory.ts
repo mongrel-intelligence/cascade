@@ -36,8 +36,6 @@ export interface CreateBuilderOptions {
 	skipSessionState?: boolean;
 	/** Remaining card budget in USD — passed to llmist's withBudget() for in-flight enforcement */
 	remainingBudgetUsd?: number;
-	/** Post-configuration callback for agent-specific builder tweaks */
-	postConfigure?: (builder: BuilderType) => BuilderType;
 	/** Accumulator for per-call LLM metrics (for run tracking) */
 	llmCallAccumulator?: AccumulatedLlmCall[];
 	/** Run ID for real-time LLM call logging (resolved before builder creation) */
@@ -73,7 +71,6 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 		progressMonitor,
 		skipSessionState,
 		remainingBudgetUsd,
-		postConfigure,
 	} = options;
 
 	// Initialize session state for gadgets (e.g., Finish checks PR requirement for implementation)
@@ -128,9 +125,7 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 		}
 	}
 
-	if (postConfigure) {
-		builder = postConfigure(builder);
-	}
+	builder = builder.withGadgetExecutionMode('sequential');
 
 	return builder;
 }
