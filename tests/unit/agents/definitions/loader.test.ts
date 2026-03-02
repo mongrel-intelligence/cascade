@@ -131,11 +131,6 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('definition content spot checks', () => {
-		it('implementation has postConfigure hook', () => {
-			const def = loadAgentDefinition('implementation');
-			expect(def.backend.postConfigure).toBe('sequentialGadgetExecution');
-		});
-
 		it('implementation has requiresPR flag in hooks.scm', () => {
 			const def = loadAgentDefinition('implementation');
 			expect(def.backend.hooks?.scm?.requiresPR).toBe(true);
@@ -265,7 +260,6 @@ describe('YAML agent definitions loader', () => {
 			expect(caps.isReadOnly).toBe(false);
 			expect(def.backend.hooks?.scm?.enableStopHooks).toBe(true);
 			expect(def.backend.needsGitHubToken).toBe(true);
-			expect(def.backend.postConfigure).toBe('sequentialGadgetExecution');
 		});
 
 		it('review agent is read-only', async () => {

@@ -350,7 +350,6 @@ describe('AgentDefinitionSchema', () => {
 			backend: {
 				...validDefinition.backend,
 				blockGitPush: false,
-				postConfigure: 'sequentialGadgetExecution',
 			},
 			trailingMessage: {
 				includeDiagnostics: true,
@@ -386,24 +385,6 @@ describe('AgentDefinitionSchema', () => {
 		if (result.success) {
 			expect(result.data.trailingMessage).toBeUndefined();
 		}
-	});
-
-	it('rejects invalid postConfigure hook names', () => {
-		const bad = {
-			...validDefinition,
-			backend: { ...validDefinition.backend, postConfigure: 'nonexistentHook' },
-		};
-		const result = AgentDefinitionSchema.safeParse(bad);
-		expect(result.success).toBe(false);
-	});
-
-	it('accepts valid postConfigure hook name', () => {
-		const good = {
-			...validDefinition,
-			backend: { ...validDefinition.backend, postConfigure: 'sequentialGadgetExecution' },
-		};
-		const result = AgentDefinitionSchema.safeParse(good);
-		expect(result.success).toBe(true);
 	});
 
 	it('accepts requiresPR boolean', () => {

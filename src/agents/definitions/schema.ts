@@ -250,7 +250,6 @@ const BackendSchema = z.object({
 	requiresPR: z.boolean().optional(),
 	/** Category-scoped hook configuration */
 	hooks: HooksSchema.optional(),
-	postConfigure: z.enum(['sequentialGadgetExecution']).optional(),
 });
 
 const TrailingMessageSchema = z

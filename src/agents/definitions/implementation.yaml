@@ -60,7 +60,6 @@ backend:
     scm:
       enableStopHooks: true
       requiresPR: true
-  postConfigure: sequentialGadgetExecution
 
 
 hint: >-
