@@ -217,7 +217,7 @@ Triggers define which events activate which agents. Configuration is stored in t
 #### Trigger Format
 
 Triggers use a category-prefixed event format: `{category}:{event-name}`
-- PM triggers: `pm:card-moved`, `pm:issue-transitioned`, `pm:label-added`
+- PM triggers: `pm:status-changed`, `pm:label-added`
 - SCM triggers: `scm:check-suite-success`, `scm:check-suite-failure`, `scm:pr-review-submitted`
 - Email triggers: `email:received`
 - SMS triggers: `sms:received`
@@ -238,11 +238,11 @@ cascade projects trigger-set <project-id> --agent review --event scm:check-suite
 cascade projects trigger-set <project-id> --agent review --event scm:check-suite-success --disable
 cascade projects trigger-set <project-id> --agent review --event scm:check-suite-success --params '{"authorMode":"own"}'
 
-# Enable implementation trigger for card moved to Todo
-cascade projects trigger-set <project-id> --agent implementation --event pm:card-moved --enable
+# Enable implementation trigger for PM status change
+cascade projects trigger-set <project-id> --agent implementation --event pm:status-changed --enable
 
-# Disable splitting trigger for JIRA issue transitions
-cascade projects trigger-set <project-id> --agent splitting --event pm:issue-transitioned --disable
+# Disable splitting trigger for PM status changes
+cascade projects trigger-set <project-id> --agent splitting --event pm:status-changed --disable
 ```
 
 #### Setting via Dashboard
@@ -280,16 +280,15 @@ Splitting, planning, and implementation agents each support PM triggers:
 
 | Event | Providers | Description |
 |-------|-----------|-------------|
-| `pm:card-moved` | Trello | Trigger when card moved to agent's target list |
-| `pm:issue-transitioned` | JIRA | Trigger when issue transitions to agent's target status |
+| `pm:status-changed` | Trello, JIRA | Trigger when card/issue moves to agent's target status |
 | `pm:label-added` | All | Trigger when Ready to Process label is added |
 
 ```bash
-# Enable card-moved trigger for implementation
-cascade projects trigger-set <project-id> --agent implementation --event pm:card-moved --enable
+# Enable status-changed trigger for implementation
+cascade projects trigger-set <project-id> --agent implementation --event pm:status-changed --enable
 
-# Disable JIRA issue-transitioned for planning
-cascade projects trigger-set <project-id> --agent planning --event pm:issue-transitioned --disable
+# Disable status-changed for planning
+cascade projects trigger-set <project-id> --agent planning --event pm:status-changed --disable
 
 # Enable label-added trigger for splitting
 cascade projects trigger-set <project-id> --agent splitting --event pm:label-added --enable
