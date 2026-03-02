@@ -52,7 +52,6 @@ prompts:
     Read the comment carefully and respond accordingly. If they ask for code changes, make the changes, commit, and push. If they ask a question, reply with a PR comment. Default to surgical, targeted changes unless they clearly ask for something broader.
 
 backend:
-  needsGitHubToken: true
   hooks:
     scm:
       enableStopHooks: true

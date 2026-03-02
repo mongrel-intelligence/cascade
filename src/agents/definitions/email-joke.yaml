@@ -54,8 +54,7 @@ prompts:
     Only emails from **<%= it.senderEmail %>** were included in the search.
     <% } %>
 
-backend:
-  needsGitHubToken: false
+backend: {}
 
 
 trailingMessage: {}

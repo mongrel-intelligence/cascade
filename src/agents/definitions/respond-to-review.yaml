@@ -50,7 +50,6 @@ prompts:
     Carefully read each review comment and make the requested changes. Commit and push your changes when done. Use the ReplyToReviewComment tool to respond to individual review comments as you address them. Focus on surgical, targeted fixes unless the reviewer clearly asks for broader changes.
 
 backend:
-  needsGitHubToken: true
   hooks:
     scm:
       enableStopHooks: true

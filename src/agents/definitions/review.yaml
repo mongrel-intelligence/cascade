@@ -59,7 +59,6 @@ prompts:
     Examine the code changes carefully and submit your review using CreatePRReview.
 
 backend:
-  needsGitHubToken: true
   hooks:
     scm:
       enableStopHooks: false

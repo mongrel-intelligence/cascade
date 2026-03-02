@@ -31,7 +31,6 @@ const mockDefinition: AgentDefinition = {
 	},
 	backend: {
 		enableStopHooks: false,
-		needsGitHubToken: true,
 		blockGitPush: false,
 	},
 	hint: 'test hint',

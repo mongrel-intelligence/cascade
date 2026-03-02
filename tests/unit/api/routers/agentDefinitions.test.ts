@@ -71,7 +71,6 @@ function createMockDefinition(overrides?: Partial<AgentDefinition>): AgentDefini
 		strategies: {},
 		backend: {
 			enableStopHooks: true,
-			needsGitHubToken: true,
 		},
 		hint: 'A test agent',
 		trailingMessage: undefined,
