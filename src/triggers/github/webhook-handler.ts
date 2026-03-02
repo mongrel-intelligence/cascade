@@ -12,7 +12,7 @@ import { withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
 import { withPMCredentials, withPMProvider } from '../../pm/context.js';
 import { createPMProvider, pmRegistry } from '../../pm/index.js';
-import type { ProjectConfig, TriggerContext } from '../../types/index.js';
+import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
 import {
 	clearCardActive,
 	enqueueWebhook,
@@ -110,7 +110,7 @@ async function maybePostAckComment(
 async function runGitHubAgent(
 	result: TriggerResult,
 	project: ProjectConfig,
-	config: import('../../types/index.js').CascadeConfig,
+	config: CascadeConfig,
 	registry: TriggerRegistry,
 ): Promise<void> {
 	const workItemId = result.workItemId;
@@ -124,12 +124,23 @@ async function runGitHubAgent(
 
 	try {
 		if (workItemId) setCardActive(workItemId);
-		await runAgentWithCredentials(
-			integration,
-			result,
-			project,
-			config,
-			integration.resolveExecutionConfig(),
+		// Establish PM credential + provider scope for agents with workItemId
+		// (needed for PM lifecycle operations: labels, status moves, PR links)
+		const pmProvider = createPMProvider(project);
+		await withPMCredentials(
+			project.id,
+			project.pm?.type,
+			(t) => pmRegistry.getOrNull(t),
+			() =>
+				withPMProvider(pmProvider, () =>
+					runAgentWithCredentials(
+						integration,
+						result,
+						project,
+						config,
+						integration.resolveExecutionConfig(),
+					),
+				),
 		);
 	} catch (err) {
 		logger.error('Failed to process GitHub webhook', { error: String(err) });
