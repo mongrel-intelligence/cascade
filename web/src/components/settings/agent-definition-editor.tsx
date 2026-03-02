@@ -450,25 +450,7 @@ function BackendSection({
 				/>
 			</div>
 
-			<div className="grid grid-cols-2 gap-3">
-				<div className="space-y-1">
-					<div className="flex items-center gap-1.5">
-						<Label>Pre-Execute Hook</Label>
-						<InfoTooltip text="Hook run before agent execution. 'postInitialPRComment' posts an initial PR comment." />
-					</div>
-					<Select
-						value={def.backend.preExecute ?? '_none'}
-						onValueChange={(v) => setBackend('preExecute', v === '_none' ? undefined : v)}
-					>
-						<SelectTrigger className="w-full">
-							<SelectValue placeholder="None" />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectItem value="_none">None</SelectItem>
-							<SelectItem value="postInitialPRComment">postInitialPRComment</SelectItem>
-						</SelectContent>
-					</Select>
-				</div>
+			<div className="grid grid-cols-1 gap-3">
 				<div className="space-y-1">
 					<div className="flex items-center gap-1.5">
 						<Label>Post-Configure Hook</Label>

@@ -265,7 +265,6 @@ describe('YAML agent definitions loader', () => {
 			expect(caps.isReadOnly).toBe(false);
 			expect(def.backend.hooks?.scm?.enableStopHooks).toBe(true);
 			expect(def.backend.needsGitHubToken).toBe(true);
-			expect(def.backend.preExecute).toBeUndefined();
 			expect(def.backend.postConfigure).toBe('sequentialGadgetExecution');
 		});
 
