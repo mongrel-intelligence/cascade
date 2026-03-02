@@ -55,7 +55,6 @@ prompts:
     <% } %>
 
 backend:
-  enableStopHooks: false
   needsGitHubToken: false
 
 

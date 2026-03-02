@@ -169,6 +169,7 @@ describe('createConfiguredBuilder', () => {
 			undefined,
 			undefined,
 			undefined,
+			undefined,
 		);
 	});
 
@@ -190,6 +191,7 @@ describe('createConfiguredBuilder', () => {
 			'main',
 			'project-1',
 			'card-123',
+			undefined,
 		);
 	});
 

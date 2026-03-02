@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process';
 import { githubClient } from '../../../github/client.js';
+import type { SessionHooks } from '../../sessionState.js';
 
 export function hasUncommittedChanges(): boolean {
 	try {
@@ -47,6 +48,7 @@ export interface SessionState {
 	agentType: string | null;
 	prCreated: boolean;
 	reviewSubmitted: boolean;
+	hooks: SessionHooks;
 }
 
 export interface FinishValidationError {
@@ -61,38 +63,42 @@ export interface FinishValidationSuccess {
 export type FinishValidationResult = FinishValidationError | FinishValidationSuccess;
 
 export async function validateFinish(state: SessionState): Promise<FinishValidationResult> {
-	if (state.agentType === 'implementation' && !state.prCreated) {
+	const hooks = state.hooks ?? {};
+
+	if (hooks.requiresPR && !state.prCreated) {
 		const prUrl = await findPRForCurrentBranch();
 		if (!prUrl) {
 			return {
 				valid: false,
 				error:
-					'Cannot finish implementation session without creating a PR. ' +
+					'Cannot finish session without creating a PR. ' +
 					'You must call CreatePR to submit your changes before calling Finish.',
 			};
 		}
 	}
 
-	if (state.agentType === 'review' && !state.reviewSubmitted) {
+	if (hooks.requiresReview && !state.reviewSubmitted) {
 		return {
 			valid: false,
 			error:
-				'Cannot finish review session without submitting a review. ' +
+				'Cannot finish session without submitting a review. ' +
 				'You must call CreatePRReview to submit your review before calling Finish.',
 		};
 	}
 
-	if (state.agentType === 'respond-to-review' || state.agentType === 'respond-to-ci') {
+	if (hooks.requiresPushedChanges) {
 		if (hasUncommittedChanges()) {
 			return {
 				valid: false,
-				error: `Cannot finish ${state.agentType} session with uncommitted changes. You must commit your changes (git add && git commit) before calling Finish.`,
+				error:
+					'Cannot finish session with uncommitted changes. You must commit your changes (git add && git commit) before calling Finish.',
 			};
 		}
 		if (hasUnpushedCommits()) {
 			return {
 				valid: false,
-				error: `Cannot finish ${state.agentType} session without pushing changes. You must push your commits (git push) before calling Finish.`,
+				error:
+					'Cannot finish session without pushing changes. You must push your commits (git push) before calling Finish.',
 			};
 		}
 	}

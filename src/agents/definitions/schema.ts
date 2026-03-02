@@ -206,11 +206,51 @@ const StrategiesSchema = z.object({
 	gadgetOptions: GadgetOptionsSchema,
 });
 
-const BackendSchema = z.object({
-	enableStopHooks: z.boolean(),
-	needsGitHubToken: z.boolean(),
+/**
+ * SCM-specific hook configuration.
+ * Controls stop-hook behavior and push/PR requirements for SCM-integrated agents.
+ */
+export const ScmHooksSchema = z.object({
+	/** Whether to enable stop hooks that check for uncommitted/unpushed changes */
+	enableStopHooks: z.boolean().optional(),
+	/** Whether to block git push in hooks (set false for agents working on existing PR branches) */
 	blockGitPush: z.boolean().optional(),
+	/** Whether the agent must create a PR before finishing */
 	requiresPR: z.boolean().optional(),
+	/** Whether the agent must submit a review before finishing */
+	requiresReview: z.boolean().optional(),
+	/** Whether the agent must have pushed changes before finishing */
+	requiresPushedChanges: z.boolean().optional(),
+});
+
+/**
+ * Category-scoped hook configuration.
+ * Extensible for future categories (e.g., hooks.email, hooks.pm).
+ */
+export const HooksSchema = z.object({
+	/** SCM (source control) hook configuration */
+	scm: ScmHooksSchema.optional(),
+});
+
+const BackendSchema = z.object({
+	/**
+	 * @deprecated Use hooks.scm.enableStopHooks instead.
+	 * Kept for backward compatibility — new format wins when both are present.
+	 */
+	enableStopHooks: z.boolean().optional(),
+	needsGitHubToken: z.boolean(),
+	/**
+	 * @deprecated Use hooks.scm.blockGitPush instead.
+	 * Kept for backward compatibility — new format wins when both are present.
+	 */
+	blockGitPush: z.boolean().optional(),
+	/**
+	 * @deprecated Use hooks.scm.requiresPR instead.
+	 * Kept for backward compatibility — new format wins when both are present.
+	 */
+	requiresPR: z.boolean().optional(),
+	/** Category-scoped hook configuration */
+	hooks: HooksSchema.optional(),
 	preExecute: z.enum(['postInitialPRComment']).optional(),
 	postConfigure: z.enum(['sequentialGadgetExecution']).optional(),
 });
@@ -302,3 +342,9 @@ export type IntegrationRequirements = z.infer<typeof IntegrationRequirementsSche
 
 /** Known provider (trello, jira, github, etc.) */
 export type KnownProvider = z.infer<typeof KnownProviderSchema>;
+
+/** SCM hook configuration */
+export type ScmHooks = z.infer<typeof ScmHooksSchema>;
+
+/** Category-scoped hook configuration */
+export type Hooks = z.infer<typeof HooksSchema>;
