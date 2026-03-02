@@ -46,6 +46,7 @@ vi.mock('../../../../src/agents/definitions/loader.js', () => ({
 			'debug',
 			'email-joke',
 		]),
+	getYamlAgentTypes: vi.fn().mockReturnValue([]),
 	getKnownAgentTypes: vi.fn().mockReturnValue([]),
 }));
 
@@ -66,6 +67,7 @@ vi.mock('../../../../src/agents/definitions/index.js', () => ({
 			'debug',
 			'email-joke',
 		]),
+	getYamlAgentTypes: vi.fn().mockReturnValue([]),
 	getKnownAgentTypes: vi.fn().mockReturnValue([]),
 }));
 

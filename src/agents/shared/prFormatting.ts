@@ -117,7 +117,7 @@ export interface PRFileContents {
  * Read the full contents of changed PR files up to a token limit.
  *
  * Shared between the llmist review agent (agents/review.ts) and the
- * Claude Code backend (backends/agent-profiles.ts).
+ * Claude Code backend (backends/adapter.ts).
  *
  * @param repoDir - The local repository directory
  * @param prDiff - The PR diff file list from GitHub

@@ -14,8 +14,10 @@ const mockResolveAgentDefinition = vi.fn<(agentType: string) => Promise<AgentDef
 const mockResolveKnownAgentTypes = vi.fn<() => Promise<string[]>>();
 
 vi.mock('../../../../src/agents/definitions/loader.js', () => ({
+	getYamlAgentTypes: (...args: unknown[]) => mockGetKnownAgentTypes(...(args as [])),
 	getKnownAgentTypes: (...args: unknown[]) => mockGetKnownAgentTypes(...(args as [])),
 	invalidateDefinitionCache: (...args: unknown[]) => mockInvalidateDefinitionCache(...(args as [])),
+	loadYamlAgentDefinition: (...args: unknown[]) => mockLoadAgentDefinition(...(args as [string])),
 	loadAgentDefinition: (...args: unknown[]) => mockLoadAgentDefinition(...(args as [string])),
 	resolveAgentDefinition: (...args: unknown[]) => mockResolveAgentDefinition(...(args as [string])),
 	resolveKnownAgentTypes: (...args: unknown[]) => mockResolveKnownAgentTypes(...(args as [])),

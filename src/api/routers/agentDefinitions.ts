@@ -2,9 +2,9 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { CAPABILITIES } from '../../agents/capabilities/index.js';
 import {
-	getKnownAgentTypes,
+	getYamlAgentTypes,
 	invalidateDefinitionCache,
-	loadAgentDefinition,
+	loadYamlAgentDefinition,
 	resolveAgentDefinition,
 	resolveKnownAgentTypes,
 } from '../../agents/definitions/loader.js';
@@ -46,7 +46,7 @@ export const agentDefinitionsRouter = router({
 	 * resolveAllAgentDefinitions() which would issue its own redundant listAgentDefinitions() call.
 	 */
 	list: protectedProcedure.query(async () => {
-		const yamlTypes = getKnownAgentTypes();
+		const yamlTypes = getYamlAgentTypes();
 		const result: Array<{ agentType: string; definition: AgentDefinition; isBuiltin: boolean }> =
 			[];
 
@@ -72,7 +72,7 @@ export const agentDefinitionsRouter = router({
 			if (!seen.has(agentType)) {
 				result.push({
 					agentType,
-					definition: loadAgentDefinition(agentType),
+					definition: loadYamlAgentDefinition(agentType),
 					isBuiltin: true, // YAML-only types are always builtin
 				});
 			}
@@ -91,7 +91,7 @@ export const agentDefinitionsRouter = router({
 			try {
 				const definition = await resolveAgentDefinition(input.agentType);
 				// isBuiltin = true if the agentType has a backing YAML file
-				const isBuiltin = getKnownAgentTypes().includes(input.agentType);
+				const isBuiltin = getYamlAgentTypes().includes(input.agentType);
 				return {
 					agentType: input.agentType,
 					definition,
@@ -134,7 +134,7 @@ export const agentDefinitionsRouter = router({
 					message: `Agent definition already exists: ${input.agentType}`,
 				});
 			}
-			const isBuiltin = getKnownAgentTypes().includes(input.agentType);
+			const isBuiltin = getYamlAgentTypes().includes(input.agentType);
 			await upsertAgentDefinition(input.agentType, input.definition, isBuiltin);
 			invalidateDefinitionCache();
 			return { agentType: input.agentType };
@@ -168,7 +168,7 @@ export const agentDefinitionsRouter = router({
 			// Full-schema validate the merged result
 			const validated = AgentDefinitionSchema.parse(merged);
 
-			const isBuiltin = getKnownAgentTypes().includes(input.agentType);
+			const isBuiltin = getYamlAgentTypes().includes(input.agentType);
 			await upsertAgentDefinition(input.agentType, validated, isBuiltin);
 			invalidateDefinitionCache();
 			return { agentType: input.agentType };
@@ -191,7 +191,7 @@ export const agentDefinitionsRouter = router({
 			}
 
 			// Check if it's a builtin (YAML-backed) type — those cannot be deleted
-			const isYamlBuiltin = getKnownAgentTypes().includes(input.agentType);
+			const isYamlBuiltin = getYamlAgentTypes().includes(input.agentType);
 			if (isYamlBuiltin) {
 				throw new TRPCError({
 					code: 'FORBIDDEN',
@@ -211,7 +211,7 @@ export const agentDefinitionsRouter = router({
 	reset: superAdminProcedure
 		.input(z.object({ agentType: z.string().min(1) }))
 		.mutation(async ({ input }) => {
-			const isYamlBuiltin = getKnownAgentTypes().includes(input.agentType);
+			const isYamlBuiltin = getYamlAgentTypes().includes(input.agentType);
 			if (!isYamlBuiltin) {
 				throw new TRPCError({
 					code: 'BAD_REQUEST',
@@ -221,7 +221,7 @@ export const agentDefinitionsRouter = router({
 
 			// Re-read the YAML (bypass cache)
 			invalidateDefinitionCache();
-			const yamlDefinition = loadAgentDefinition(input.agentType);
+			const yamlDefinition = loadYamlAgentDefinition(input.agentType);
 			await upsertAgentDefinition(input.agentType, yamlDefinition, true);
 			invalidateDefinitionCache();
 			return { agentType: input.agentType };
@@ -294,7 +294,7 @@ export const agentDefinitionsRouter = router({
 			};
 			const validated = AgentDefinitionSchema.parse(updated);
 
-			const isBuiltin = getKnownAgentTypes().includes(input.agentType);
+			const isBuiltin = getYamlAgentTypes().includes(input.agentType);
 			await upsertAgentDefinition(input.agentType, validated, isBuiltin);
 			invalidateDefinitionCache();
 			return { agentType: input.agentType };
@@ -320,7 +320,7 @@ export const agentDefinitionsRouter = router({
 			// Load YAML defaults and use its prompts section
 			let yamlDefault: AgentDefinition;
 			try {
-				yamlDefault = loadAgentDefinition(input.agentType);
+				yamlDefault = loadYamlAgentDefinition(input.agentType);
 			} catch {
 				throw new TRPCError({
 					code: 'NOT_FOUND',
@@ -332,7 +332,7 @@ export const agentDefinitionsRouter = router({
 			const updated: AgentDefinition = { ...current, prompts: yamlDefault.prompts };
 			const validated = AgentDefinitionSchema.parse(updated);
 
-			const isBuiltin = getKnownAgentTypes().includes(input.agentType);
+			const isBuiltin = getYamlAgentTypes().includes(input.agentType);
 			await upsertAgentDefinition(input.agentType, validated, isBuiltin);
 			invalidateDefinitionCache();
 			return { agentType: input.agentType };

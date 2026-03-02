@@ -5,7 +5,7 @@ import type { ModelSpec } from 'llmist';
  * These models are not built into llmist but can be used via OpenRouter.
  *
  * To use these models, set OPENROUTER_API_KEY in your environment
- * and configure the model in projects.json, e.g.:
+ * and configure the model in the project settings, e.g.:
  *   "model": "openrouter:x-ai/grok-code-fast-1"
  */
 export const CUSTOM_MODELS: ModelSpec[] = [

@@ -11,10 +11,6 @@
  *    - Per-project, per-agent, per-trigger customization
  *    - Can override `enabled` and `parameters`
  *
- * 3. **Legacy fallback** - From `project_integrations.triggers` JSONB
- *    - For backward compatibility during migration
- *    - Uses `LEGACY_TRIGGER_KEY_MAP` for key translation
- *
  * ## Resolution Order
  *
  * 1. If config exists in `agent_trigger_configs` → use it

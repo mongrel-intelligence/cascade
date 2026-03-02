@@ -1,7 +1,9 @@
 export { AgentDefinitionSchema, type AgentDefinition, type AgentCapabilities } from './schema.js';
 export {
+	loadYamlAgentDefinition,
+	loadAllYamlDefinitions,
+	getYamlAgentTypes,
 	loadAgentDefinition,
-	loadAllAgentDefinitions,
 	getKnownAgentTypes,
 	clearDefinitionCache,
 	resolveAgentDefinition,

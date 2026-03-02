@@ -5,10 +5,15 @@ import {
 } from '../../../../src/agents/capabilities/resolver.js';
 import {
 	clearDefinitionCache,
-	getKnownAgentTypes,
-	loadAgentDefinition,
-	loadAllAgentDefinitions,
+	getYamlAgentTypes,
+	loadAllYamlDefinitions,
+	loadYamlAgentDefinition,
 } from '../../../../src/agents/definitions/loader.js';
+
+// Deprecated aliases — kept for backward compat, still usable
+const getKnownAgentTypes = getYamlAgentTypes;
+const loadAgentDefinition = loadYamlAgentDefinition;
+const loadAllAgentDefinitions = loadAllYamlDefinitions;
 import { CONTEXT_STEP_REGISTRY } from '../../../../src/agents/definitions/strategies.js';
 import { getAgentCapabilities } from '../../../../src/agents/shared/capabilities.js';
 

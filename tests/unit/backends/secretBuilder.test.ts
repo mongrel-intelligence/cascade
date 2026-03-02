@@ -8,7 +8,7 @@ vi.mock('../../../src/github/personas.js', () => ({
 	getPersonaToken: vi.fn(),
 }));
 
-import type { AgentProfile } from '../../../src/backends/agent-profiles.js';
+import type { AgentProfile } from '../../../src/agents/definitions/profiles.js';
 import { augmentProjectSecrets, resolveGitHubToken } from '../../../src/backends/secretBuilder.js';
 import { getAllProjectCredentials } from '../../../src/config/provider.js';
 import { getPersonaToken } from '../../../src/github/personas.js';

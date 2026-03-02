@@ -1,9 +1,9 @@
+import type { AgentProfile } from '../agents/definitions/profiles.js';
 import { getAllProjectCredentials } from '../config/provider.js';
 import { getPersonaToken } from '../github/personas.js';
 import { getJiraConfig } from '../pm/config.js';
 import type { AgentInput, ProjectConfig } from '../types/index.js';
 import { parseRepoFullName } from '../utils/repo.js';
-import type { AgentProfile } from './agent-profiles.js';
 
 /**
  * Resolve the GitHub token for profiles that need GitHub client access.

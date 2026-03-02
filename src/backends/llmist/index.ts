@@ -4,6 +4,7 @@ import { LLMist, type ModelSpec, createLogger } from 'llmist';
 
 import { createIntegrationChecker } from '../../agents/capabilities/index.js';
 import { resolveAgentDefinition } from '../../agents/definitions/index.js';
+import { getAgentProfile } from '../../agents/definitions/profiles.js';
 import { type BuilderType, createConfiguredBuilder } from '../../agents/shared/builderFactory.js';
 import { injectSyntheticCall } from '../../agents/shared/syntheticCalls.js';
 import { runAgentLoop } from '../../agents/utils/agentLoop.js';
@@ -14,7 +15,6 @@ import { createTrackingContext } from '../../agents/utils/tracking.js';
 import { CUSTOM_MODELS } from '../../config/customModels.js';
 import { createLLMCallLogger } from '../../utils/llmLogging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
-import { getAgentProfile } from '../agent-profiles.js';
 import type { AgentBackend, AgentBackendInput, AgentBackendResult } from '../types.js';
 
 /** Post-configure registry: maps YAML string references to builder transform functions */

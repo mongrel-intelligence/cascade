@@ -8,16 +8,16 @@
  *   npx tsx src/db/seeds/seedAgentDefinitions.ts
  */
 
-import { getKnownAgentTypes, loadAgentDefinition } from '../../agents/definitions/loader.js';
+import { getYamlAgentTypes, loadYamlAgentDefinition } from '../../agents/definitions/loader.js';
 import { upsertAgentDefinition } from '../repositories/agentDefinitionsRepository.js';
 
 export async function seedAgentDefinitions(): Promise<void> {
-	const agentTypes = getKnownAgentTypes();
+	const agentTypes = getYamlAgentTypes();
 
 	console.log(`Seeding ${agentTypes.length} agent definitions...`);
 
 	for (const agentType of agentTypes) {
-		const definition = loadAgentDefinition(agentType);
+		const definition = loadYamlAgentDefinition(agentType);
 		await upsertAgentDefinition(agentType, definition, /* isBuiltin */ true);
 		console.log(`  ✓ ${agentType}`);
 	}
