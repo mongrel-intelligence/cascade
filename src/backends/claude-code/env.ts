@@ -1,70 +1,28 @@
 /**
  * Environment variable filtering for Claude Code agent subprocesses.
  *
- * Uses an allowlist approach: only explicitly approved variables pass through
- * from the host process. This prevents DATABASE_URL, REDIS_URL, and other
- * server-side secrets from leaking into agent environments.
+ * Extends the shared base allowlist with Claude Code-specific keys.
+ * Re-exports shared constants and filterProcessEnv for backward compatibility.
  */
 
-/** Exact variable names to pass through. */
-export const ALLOWED_ENV_EXACT = new Set([
-	// System
-	'HOME',
-	'PATH',
-	'SHELL',
-	'TERM',
-	'USER',
-	'LOGNAME',
-	'LANG',
-	'TZ',
-	'TMPDIR',
-	'HOSTNAME',
+import {
+	ALLOWED_ENV_PREFIXES,
+	BASE_ALLOWED_ENV_EXACT,
+	BLOCKED_ENV_EXACT,
+	filterProcessEnv as sharedFilterProcessEnv,
+} from '../shared/env.js';
 
-	// Claude auth
-	'CLAUDE_CODE_OAUTH_TOKEN',
-	'ANTHROPIC_API_KEY',
+/** Claude Code-specific exact variable names (on top of the shared base). */
+const CLAUDE_CODE_EXTRA_KEYS = ['CLAUDE_CODE_OAUTH_TOKEN'] as const;
 
-	// Squint
-	'SQUINT_DB_PATH',
+/** Full allowlist for Claude Code: base + Claude-specific keys. */
+export const ALLOWED_ENV_EXACT = new Set([...BASE_ALLOWED_ENV_EXACT, ...CLAUDE_CODE_EXTRA_KEYS]);
 
-	// Node
-	'NODE_PATH',
-	'NODE_EXTRA_CA_CERTS',
-	'NODE_TLS_REJECT_UNAUTHORIZED',
-
-	// Editor / color
-	'EDITOR',
-	'VISUAL',
-	'PAGER',
-	'FORCE_COLOR',
-	'NO_COLOR',
-	'TERM_PROGRAM',
-	'COLORTERM',
-]);
-
-/** Prefix patterns — any var starting with one of these passes through. */
-export const ALLOWED_ENV_PREFIXES = ['LC_', 'XDG_', 'GIT_', 'SSH_', 'GPG_', 'DOCKER_'] as const;
+// Re-export shared constants so existing imports continue to work
+export { ALLOWED_ENV_PREFIXES, BLOCKED_ENV_EXACT };
 
 /**
- * Defense-in-depth denylist. These are blocked even if a future allowlist
- * change accidentally matches them.
- */
-export const BLOCKED_ENV_EXACT = new Set([
-	'DATABASE_URL',
-	'DATABASE_SSL',
-	'REDIS_URL',
-	'CREDENTIAL_MASTER_KEY',
-	'JOB_ID',
-	'JOB_TYPE',
-	'JOB_DATA',
-	'CASCADE_POSTGRES_HOST',
-	'CASCADE_POSTGRES_PORT',
-	'NODE_OPTIONS',
-	'VSCODE_INSPECTOR_OPTIONS',
-]);
-
-/**
- * Filter process.env to only include safe variables for agent subprocesses.
+ * Filter process.env to only include safe variables for Claude Code agent subprocesses.
  *
  * Resolution order per key:
  * 1. If in BLOCKED_ENV_EXACT → skip
@@ -75,19 +33,5 @@ export const BLOCKED_ENV_EXACT = new Set([
 export function filterProcessEnv(
 	processEnv: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
-	const result: Record<string, string | undefined> = {};
-
-	for (const [key, value] of Object.entries(processEnv)) {
-		if (value === undefined) continue;
-		if (BLOCKED_ENV_EXACT.has(key)) continue;
-		if (ALLOWED_ENV_EXACT.has(key)) {
-			result[key] = value;
-			continue;
-		}
-		if (ALLOWED_ENV_PREFIXES.some((prefix) => key.startsWith(prefix))) {
-			result[key] = value;
-		}
-	}
-
-	return result;
+	return sharedFilterProcessEnv(processEnv, ALLOWED_ENV_EXACT);
 }
