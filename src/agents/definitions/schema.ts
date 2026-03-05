@@ -255,6 +255,13 @@ const BackendSchema = z.object({
 	requiresPR: z.boolean().optional(),
 	/** Category-scoped hook configuration */
 	hooks: HooksSchema.optional(),
+	/**
+	 * Optional list of MCP server names that this agent definition recommends using.
+	 * These are reference names — actual server configs live in the `mcp_servers` DB table.
+	 * The adapter resolves enabled servers from the DB and ignores this field at runtime;
+	 * it exists for documentation and tooling purposes.
+	 */
+	mcpServers: z.array(z.string()).optional(),
 });
 
 const TrailingMessageSchema = z

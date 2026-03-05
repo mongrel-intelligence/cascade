@@ -342,4 +342,53 @@ describe('LlmistBackend.execute', () => {
 			}),
 		);
 	});
+
+	it('logs a warning when mcpServers are configured', async () => {
+		mockRunAgentLoop.mockResolvedValue({
+			output: 'Done',
+			iterations: 1,
+			gadgetCalls: 0,
+			cost: 0.01,
+			loopTerminated: false,
+		});
+
+		const logWriter = vi.fn();
+		const input = makeInput();
+		input.logWriter = logWriter;
+		input.mcpServers = {
+			'my-server': { type: 'stdio', command: 'npx', args: ['my-mcp-server'] },
+		};
+
+		const backend = new LlmistBackend();
+		await backend.execute(input);
+
+		// Should have logged a WARN message about MCP servers not being supported
+		const warnCalls = logWriter.mock.calls.filter(
+			(call: unknown[]) => call[0] === 'WARN' && String(call[1]).includes('MCP servers'),
+		);
+		expect(warnCalls.length).toBeGreaterThan(0);
+	});
+
+	it('does not log mcp warning when no mcpServers configured', async () => {
+		mockRunAgentLoop.mockResolvedValue({
+			output: 'Done',
+			iterations: 1,
+			gadgetCalls: 0,
+			cost: 0.01,
+			loopTerminated: false,
+		});
+
+		const logWriter = vi.fn();
+		const input = makeInput();
+		input.logWriter = logWriter;
+		// No mcpServers set
+
+		const backend = new LlmistBackend();
+		await backend.execute(input);
+
+		const warnCalls = logWriter.mock.calls.filter(
+			(call: unknown[]) => call[0] === 'WARN' && String(call[1]).includes('MCP servers'),
+		);
+		expect(warnCalls.length).toBe(0);
+	});
 });

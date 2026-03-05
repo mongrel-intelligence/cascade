@@ -5,6 +5,7 @@ export { agentConfigs } from './agentConfigs.js';
 export { agentDefinitions } from './agentDefinitions.js';
 export { agentTriggerConfigs } from './agentTriggerConfigs.js';
 export { integrationCredentials, projectIntegrations } from './integrations.js';
+export { mcpServers } from './mcpServers.js';
 export { projects } from './projects.js';
 export { agentRunLlmCalls, agentRunLogs, agentRuns, debugAnalyses } from './runs.js';
 export { promptPartials } from './promptPartials.js';

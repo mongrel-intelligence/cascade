@@ -1083,3 +1083,109 @@ describe('buildEnv', () => {
 		expect(env.CUSTOM_VAR).toBe('custom-val');
 	});
 });
+
+// ============================================================================
+// MCP server pass-through tests
+// ============================================================================
+
+describe('execute — MCP server pass-through', () => {
+	function mockStream(messages: Array<{ type: string; [key: string]: unknown }>) {
+		const iterator = messages[Symbol.iterator]();
+		const asyncIterator = {
+			[Symbol.asyncIterator]() {
+				return {
+					next() {
+						const result = iterator.next();
+						return Promise.resolve(result);
+					},
+				};
+			},
+		};
+		mockQuery.mockReturnValue(asyncIterator as ReturnType<typeof query>);
+	}
+
+	const successStream = [
+		{
+			type: 'result',
+			subtype: 'success',
+			result: 'Done',
+			total_cost_usd: 0.01,
+			num_turns: 1,
+		},
+	];
+
+	it('passes mcpServers to query() options when configured', async () => {
+		mockStream(successStream);
+
+		const backend = new ClaudeCodeBackend();
+		await backend.execute(
+			makeInput({
+				mcpServers: {
+					'my-server': { type: 'stdio', command: 'npx', args: ['my-mcp-server'] },
+				},
+			}),
+		);
+
+		expect(mockQuery).toHaveBeenCalledWith(
+			expect.objectContaining({
+				options: expect.objectContaining({
+					mcpServers: {
+						'my-server': { type: 'stdio', command: 'npx', args: ['my-mcp-server'] },
+					},
+				}),
+			}),
+		);
+	});
+
+	it('does not set mcpServers in query() when not configured', async () => {
+		mockStream(successStream);
+
+		const backend = new ClaudeCodeBackend();
+		await backend.execute(makeInput({ mcpServers: undefined }));
+
+		expect(mockQuery).toHaveBeenCalledWith(
+			expect.objectContaining({
+				options: expect.objectContaining({
+					mcpServers: undefined,
+				}),
+			}),
+		);
+	});
+
+	it('does not set mcpServers in query() when empty object', async () => {
+		mockStream(successStream);
+
+		const backend = new ClaudeCodeBackend();
+		await backend.execute(makeInput({ mcpServers: {} }));
+
+		expect(mockQuery).toHaveBeenCalledWith(
+			expect.objectContaining({
+				options: expect.objectContaining({
+					mcpServers: undefined,
+				}),
+			}),
+		);
+	});
+
+	it('logs mcp server names on startup', async () => {
+		mockStream(successStream);
+
+		const input = makeInput({
+			mcpServers: {
+				'server-a': { type: 'sse', url: 'https://mcp.example.com/sse' },
+				'server-b': { type: 'http', url: 'https://mcp.example.com' },
+			},
+		});
+
+		const backend = new ClaudeCodeBackend();
+		await backend.execute(input);
+
+		expect(input.logWriter).toHaveBeenCalledWith(
+			'INFO',
+			'Starting Claude Code SDK execution',
+			expect.objectContaining({
+				mcpServers: expect.arrayContaining(['server-a', 'server-b']),
+			}),
+		);
+	});
+});

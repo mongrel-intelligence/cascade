@@ -5,6 +5,7 @@ import { authRouter } from './routers/auth.js';
 import { credentialsRouter } from './routers/credentials.js';
 import { defaultsRouter } from './routers/defaults.js';
 import { integrationsDiscoveryRouter } from './routers/integrationsDiscovery.js';
+import { mcpServersRouter } from './routers/mcpServers.js';
 import { organizationRouter } from './routers/organization.js';
 import { projectsRouter } from './routers/projects.js';
 import { promptsRouter } from './routers/prompts.js';
@@ -23,6 +24,7 @@ export const appRouter = router({
 	agentConfigs: agentConfigsRouter,
 	agentDefinitions: agentDefinitionsRouter,
 	agentTriggerConfigs: agentTriggerConfigsRouter,
+	mcpServers: mcpServersRouter,
 	prompts: promptsRouter,
 	webhooks: webhooksRouter,
 	webhookLogs: webhookLogsRouter,

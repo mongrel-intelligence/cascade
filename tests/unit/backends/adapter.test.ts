@@ -112,6 +112,11 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	storeRunLogs: (...args: unknown[]) => mockStoreRunLogs(...args),
 }));
 
+const mockGetMcpServersForAgent = vi.fn().mockResolvedValue({});
+vi.mock('../../../src/db/repositories/mcpServersRepository.js', () => ({
+	getMcpServersForAgent: (...args: unknown[]) => mockGetMcpServersForAgent(...args),
+}));
+
 import { resolveModelConfig } from '../../../src/agents/shared/modelResolution.js';
 import { setupRepository } from '../../../src/agents/shared/repository.js';
 import { createAgentLogger } from '../../../src/agents/utils/logging.js';
@@ -828,6 +833,112 @@ describe('executeWithBackend', () => {
 			await executeWithBackend(backend, 'review', input);
 
 			expect(mockRecordInitialComment).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('MCP server resolution', () => {
+		it('passes mcpServers to backend when servers are configured', async () => {
+			setupMocks();
+			mockGetMcpServersForAgent.mockResolvedValue({
+				'my-server': { type: 'stdio', command: 'npx', args: ['my-mcp-server'] },
+			});
+
+			const backend = makeMockBackend();
+			const input = makeInput();
+
+			await executeWithBackend(backend, 'implementation', input);
+
+			expect(backend.execute).toHaveBeenCalledWith(
+				expect.objectContaining({
+					mcpServers: expect.objectContaining({
+						'my-server': expect.objectContaining({
+							type: 'stdio',
+							command: 'npx',
+							args: ['my-mcp-server'],
+						}),
+					}),
+				}),
+			);
+		});
+
+		it('does not pass mcpServers to backend when none configured', async () => {
+			setupMocks();
+			mockGetMcpServersForAgent.mockResolvedValue({});
+
+			const backend = makeMockBackend();
+			const input = makeInput();
+
+			await executeWithBackend(backend, 'implementation', input);
+
+			expect(backend.execute).toHaveBeenCalledWith(
+				expect.not.objectContaining({
+					mcpServers: expect.anything(),
+				}),
+			);
+		});
+
+		it('injects project secrets into stdio server env', async () => {
+			setupMocks();
+			mockGetAllProjectCredentials.mockResolvedValue({ MY_API_KEY: 'secret-value' });
+			mockGetMcpServersForAgent.mockResolvedValue({
+				'my-server': { type: 'stdio', command: 'npx', args: ['my-mcp-server'], env: {} },
+			});
+
+			const backend = makeMockBackend();
+			const input = makeInput();
+
+			await executeWithBackend(backend, 'implementation', input);
+
+			expect(backend.execute).toHaveBeenCalledWith(
+				expect.objectContaining({
+					mcpServers: expect.objectContaining({
+						'my-server': expect.objectContaining({
+							type: 'stdio',
+							env: expect.objectContaining({ MY_API_KEY: 'secret-value' }),
+						}),
+					}),
+				}),
+			);
+		});
+
+		it('does not inject secrets into SSE/HTTP servers', async () => {
+			setupMocks();
+			mockGetAllProjectCredentials.mockResolvedValue({ MY_API_KEY: 'secret-value' });
+			mockGetMcpServersForAgent.mockResolvedValue({
+				'sse-server': { type: 'sse', url: 'https://mcp.example.com/sse' },
+			});
+
+			const backend = makeMockBackend();
+			const input = makeInput();
+
+			await executeWithBackend(backend, 'implementation', input);
+
+			// SSE server should not have env injected
+			expect(backend.execute).toHaveBeenCalledWith(
+				expect.objectContaining({
+					mcpServers: {
+						'sse-server': { type: 'sse', url: 'https://mcp.example.com/sse' },
+					},
+				}),
+			);
+		});
+
+		it('proceeds without mcpServers when DB query fails', async () => {
+			setupMocks();
+			mockGetMcpServersForAgent.mockRejectedValue(new Error('DB connection failed'));
+
+			const backend = makeMockBackend();
+			const input = makeInput();
+
+			// Should not throw
+			const result = await executeWithBackend(backend, 'implementation', input);
+			expect(result.success).toBe(true);
+
+			expect(backend.execute).toHaveBeenCalledWith(
+				expect.not.objectContaining({
+					mcpServers: expect.anything(),
+				}),
+			);
 		});
 	});
 });

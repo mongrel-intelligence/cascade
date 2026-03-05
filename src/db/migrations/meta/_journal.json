@@ -176,6 +176,13 @@
 			"when": 1759000000000,
 			"tag": "0024_agent_trigger_configs",
 			"breakpoints": false
+		},
+		{
+			"idx": 25,
+			"version": "7",
+			"when": 1760000000000,
+			"tag": "0025_mcp_servers",
+			"breakpoints": false
 		}
 	]
 }

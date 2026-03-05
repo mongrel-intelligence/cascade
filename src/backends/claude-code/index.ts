@@ -449,6 +449,16 @@ function logLlmCall(
 }
 
 /**
+ * Return the MCP servers map if non-empty, otherwise undefined.
+ * Extracted as a helper to avoid adding ternary complexity to the execute() method.
+ */
+function resolveMcpServers(input: AgentBackendInput): AgentBackendInput['mcpServers'] | undefined {
+	if (!input.mcpServers) return undefined;
+	const keys = Object.keys(input.mcpServers);
+	return keys.length > 0 ? input.mcpServers : undefined;
+}
+
+/**
  * Claude Code SDK backend for CASCADE.
  *
  * Uses the Claude Code SDK's query() function to run agents with built-in file tools
@@ -479,6 +489,7 @@ export class ClaudeCodeBackend implements AgentBackend {
 			repoDir: input.repoDir,
 			maxIterations: input.maxIterations,
 			hasOffloadedContext,
+			mcpServers: input.mcpServers ? Object.keys(input.mcpServers) : undefined,
 		});
 
 		const { env } = buildEnv(input.projectSecrets);
@@ -494,6 +505,8 @@ export class ClaudeCodeBackend implements AgentBackend {
 		let resultMessage: SDKResultMessage | undefined;
 		let turnCount = 0;
 		const stderrChunks: string[] = [];
+
+		const mcpServersOption = resolveMcpServers(input);
 
 		try {
 			const stream = query({
@@ -512,6 +525,7 @@ export class ClaudeCodeBackend implements AgentBackend {
 					hooks,
 					env,
 					debug: true,
+					mcpServers: mcpServersOption,
 					stderr: (data: string) => {
 						stderrChunks.push(data);
 						input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });

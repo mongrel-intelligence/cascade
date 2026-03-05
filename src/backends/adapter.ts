@@ -12,6 +12,7 @@ import { setupRepository } from '../agents/shared/repository.js';
 import { finalizeBackendRun, tryCreateRun } from '../agents/shared/runTracking.js';
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
+import { getMcpServersForAgent } from '../db/repositories/mcpServersRepository.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import { recordInitialComment } from '../gadgets/sessionState.js';
 import { withGitHubToken } from '../github/client.js';
@@ -21,7 +22,7 @@ import { postProcessResult } from './postProcess.js';
 import { createProgressMonitor } from './progress.js';
 import { augmentProjectSecrets, resolveGitHubToken } from './secretBuilder.js';
 import { getToolManifests } from './toolManifests.js';
-import type { AgentBackend, AgentBackendInput } from './types.js';
+import type { AgentBackend, AgentBackendInput, McpServerConfig, McpStdioConfig } from './types.js';
 
 /**
  * Resolve the working directory — either a pre-existing log dir or a fresh repo clone.
@@ -119,6 +120,18 @@ async function buildBackendInput(
 		projectSecrets.GITHUB_TOKEN = gitHubToken;
 	}
 
+	// Resolve enabled MCP servers for this project + agent type
+	let mcpServers: Record<string, McpServerConfig> | undefined;
+	try {
+		const resolved = await getMcpServersForAgent(project.id, agentType);
+		if (Object.keys(resolved).length > 0) {
+			// Inject project secrets into stdio server env fields
+			mcpServers = injectSecretsIntoMcpEnv(resolved, projectSecrets);
+		}
+	} catch {
+		// DB not available or query failed — proceed without MCP servers
+	}
+
 	return {
 		agentType,
 		project,
@@ -138,7 +151,42 @@ async function buildBackendInput(
 		enableStopHooks: profile.enableStopHooks,
 		blockGitPush: profile.blockGitPush,
 		...(Object.keys(projectSecrets).length > 0 && { projectSecrets }),
+		...(mcpServers && { mcpServers }),
 	};
+}
+
+/**
+ * Inject project secrets into stdio MCP server env fields.
+ *
+ * Stdio servers can reference project secrets in their env config by using
+ * `{{SECRET_NAME}}` placeholder syntax, or by the direct injection approach:
+ * the full projectSecrets map is merged into each stdio server's env.
+ *
+ * This ensures that MCP servers that need credentials (e.g., API keys)
+ * can access them without storing them redundantly in the MCP server config.
+ */
+function injectSecretsIntoMcpEnv(
+	servers: Record<string, McpServerConfig>,
+	projectSecrets: Record<string, string>,
+): Record<string, McpServerConfig> {
+	if (Object.keys(projectSecrets).length === 0) return servers;
+
+	const result: Record<string, McpServerConfig> = {};
+	for (const [name, config] of Object.entries(servers)) {
+		if (config.type === 'stdio') {
+			const stdioConfig = config as McpStdioConfig;
+			result[name] = {
+				...stdioConfig,
+				env: {
+					...projectSecrets,
+					...stdioConfig.env, // explicit env from config takes precedence
+				},
+			};
+		} else {
+			result[name] = config;
+		}
+	}
+	return result;
 }
 
 /**

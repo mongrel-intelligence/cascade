@@ -15,6 +15,45 @@ import type {
 	ToolManifest,
 } from '../agents/contracts/index.js';
 
+// ============================================================================
+// MCP Server Configuration Types
+// ============================================================================
+
+/**
+ * MCP server delivered as a stdio subprocess.
+ * The server is launched as a child process; Cascade can inject project secrets
+ * into its environment via the `env` field.
+ */
+export interface McpStdioConfig {
+	type: 'stdio';
+	command: string;
+	args?: string[];
+	env?: Record<string, string>;
+}
+
+/**
+ * MCP server delivered over SSE (HTTP streaming).
+ * Used for remote MCP servers running on a known URL.
+ */
+export interface McpSSEConfig {
+	type: 'sse';
+	url: string;
+	headers?: Record<string, string>;
+}
+
+/**
+ * MCP server delivered over streamable HTTP.
+ * Modern alternative to SSE for remote MCP servers.
+ */
+export interface McpHttpConfig {
+	type: 'http';
+	url: string;
+	headers?: Record<string, string>;
+}
+
+/** Union of all supported MCP server transport configurations. */
+export type McpServerConfig = McpStdioConfig | McpSSEConfig | McpHttpConfig;
+
 /**
  * Input provided to an AgentBackend for execution.
  */
@@ -46,6 +85,13 @@ export interface AgentBackendInput {
 	blockGitPush?: boolean;
 	/** Path where the llmist SDK should write its structured log (workspace dir, not temp) */
 	llmistLogPath?: string;
+	/**
+	 * MCP servers to connect to during agent execution.
+	 * Keys are server names; values are transport configs.
+	 * Currently supported by the Claude Code backend only.
+	 * The llmist backend will log a warning and skip MCP servers.
+	 */
+	mcpServers?: Record<string, McpServerConfig>;
 }
 
 /**

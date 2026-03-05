@@ -520,4 +520,33 @@ describe('AgentDefinitionSchema', () => {
 			expect(result.data.triggers).toEqual([]);
 		}
 	});
+
+	it('accepts backend.mcpServers as optional array of server name refs', () => {
+		const withMcp = {
+			...validDefinition,
+			backend: { ...validDefinition.backend, mcpServers: ['my-server', 'another-server'] },
+		};
+		const result = AgentDefinitionSchema.safeParse(withMcp);
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.backend.mcpServers).toEqual(['my-server', 'another-server']);
+		}
+	});
+
+	it('allows backend.mcpServers to be omitted', () => {
+		const result = AgentDefinitionSchema.safeParse(validDefinition);
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.backend.mcpServers).toBeUndefined();
+		}
+	});
+
+	it('rejects backend.mcpServers when not an array of strings', () => {
+		const bad = {
+			...validDefinition,
+			backend: { ...validDefinition.backend, mcpServers: 'not-an-array' },
+		};
+		const result = AgentDefinitionSchema.safeParse(bad);
+		expect(result.success).toBe(false);
+	});
 });

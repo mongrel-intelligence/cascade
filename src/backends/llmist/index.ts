@@ -59,6 +59,14 @@ export class LlmistBackend implements AgentBackend {
 
 		const profile = await getAgentProfile(agentType);
 
+		// MCP servers are not supported by the llmist backend — log a warning and proceed.
+		if (input.mcpServers && Object.keys(input.mcpServers).length > 0) {
+			const serverNames = Object.keys(input.mcpServers);
+			logWriter('WARN', 'MCP servers configured but not supported by llmist backend — skipping', {
+				servers: serverNames,
+			});
+		}
+
 		// Create LLMist client with custom model definitions
 		const client = new LLMist({ customModels: CUSTOM_MODELS as ModelSpec[] });
 
