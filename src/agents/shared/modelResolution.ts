@@ -72,16 +72,22 @@ export async function resolveModelConfig(options: ResolveModelConfigOptions): Pr
 	let taskPrompt: string | undefined;
 	if (definitionTaskPrompt) {
 		// Build task context from agentInput, falling back to promptContext for common fields
-		const taskContext = buildTaskPromptContext({
-			cardId: options.agentInput?.cardId ?? promptContext?.cardId,
-			prNumber: options.agentInput?.prNumber ?? (promptContext?.prNumber as number | undefined),
-			prBranch: options.agentInput?.prBranch ?? (promptContext?.prBranch as string | undefined),
-			triggerCommentText: options.agentInput?.triggerCommentText,
-			triggerCommentAuthor: options.agentInput?.triggerCommentAuthor,
-			triggerCommentBody: options.agentInput?.triggerCommentBody,
-			triggerCommentPath: options.agentInput?.triggerCommentPath,
-			senderEmail: options.agentInput?.senderEmail,
-		});
+		const taskContext = {
+			// Forward all prompt context (PM list IDs, vocabulary, etc.) so task
+			// prompts can reference any system-level variable via Eta.
+			...promptContext,
+			// Task-specific fields from agentInput override prompt context
+			...buildTaskPromptContext({
+				cardId: options.agentInput?.cardId ?? promptContext?.cardId,
+				prNumber: options.agentInput?.prNumber ?? (promptContext?.prNumber as number | undefined),
+				prBranch: options.agentInput?.prBranch ?? (promptContext?.prBranch as string | undefined),
+				triggerCommentText: options.agentInput?.triggerCommentText,
+				triggerCommentAuthor: options.agentInput?.triggerCommentAuthor,
+				triggerCommentBody: options.agentInput?.triggerCommentBody,
+				triggerCommentPath: options.agentInput?.triggerCommentPath,
+				senderEmail: options.agentInput?.senderEmail,
+			}),
+		};
 		taskPrompt = renderInlineTaskPrompt(definitionTaskPrompt, taskContext, dbPartials);
 	}
 
