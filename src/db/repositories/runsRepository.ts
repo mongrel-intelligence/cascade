@@ -245,7 +245,37 @@ export async function getDebugAnalysisByDebugRunId(debugRunId: string) {
 // Work-item concurrency
 // ============================================================================
 
-export async function hasActiveRunForWorkItem(projectId: string, cardId: string): Promise<boolean> {
+/** Safe fallback for non-router callers (dashboard API). 2 hours. */
+export const DEFAULT_STALE_RUN_THRESHOLD_MS = 2 * 60 * 60 * 1000;
+
+export async function hasActiveRunForWorkItem(
+	projectId: string,
+	cardId: string,
+	maxAgeMs?: number,
+): Promise<boolean> {
+	const db = getDb();
+	const conditions = [
+		eq(agentRuns.projectId, projectId),
+		eq(agentRuns.cardId, cardId),
+		eq(agentRuns.status, 'running'),
+	];
+	if (maxAgeMs !== undefined) {
+		const cutoff = new Date(Date.now() - maxAgeMs);
+		conditions.push(gte(agentRuns.startedAt, cutoff));
+	}
+	const [row] = await db
+		.select({ id: agentRuns.id })
+		.from(agentRuns)
+		.where(and(...conditions))
+		.limit(1);
+	return !!row;
+}
+
+export async function failOrphanedRun(
+	projectId: string,
+	workItemId: string,
+	reason: string,
+): Promise<string | null> {
 	const db = getDb();
 	const [row] = await db
 		.select({ id: agentRuns.id })
@@ -253,12 +283,38 @@ export async function hasActiveRunForWorkItem(projectId: string, cardId: string)
 		.where(
 			and(
 				eq(agentRuns.projectId, projectId),
-				eq(agentRuns.cardId, cardId),
+				eq(agentRuns.cardId, workItemId),
 				eq(agentRuns.status, 'running'),
 			),
 		)
+		.orderBy(desc(agentRuns.startedAt))
 		.limit(1);
-	return !!row;
+	if (!row) return null;
+
+	const [updated] = await db
+		.update(agentRuns)
+		.set({
+			status: 'failed',
+			completedAt: new Date(),
+			error: reason,
+		})
+		.where(and(eq(agentRuns.id, row.id), eq(agentRuns.status, 'running')))
+		.returning({ id: agentRuns.id });
+	return updated?.id ?? null;
+}
+
+export async function cancelRunById(runId: string, reason: string): Promise<boolean> {
+	const db = getDb();
+	const [updated] = await db
+		.update(agentRuns)
+		.set({
+			status: 'failed',
+			completedAt: new Date(),
+			error: reason,
+		})
+		.where(and(eq(agentRuns.id, runId), eq(agentRuns.status, 'running')))
+		.returning({ id: agentRuns.id });
+	return !!updated;
 }
 
 // ============================================================================

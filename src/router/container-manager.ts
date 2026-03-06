@@ -8,6 +8,7 @@
 import type { Job } from 'bullmq';
 import Docker from 'dockerode';
 import { findProjectByRepo, getAllProjectCredentials } from '../config/provider.js';
+import { failOrphanedRun } from '../db/repositories/runsRepository.js';
 import { captureException } from '../sentry.js';
 import { logger } from '../utils/logging.js';
 import { routerConfig } from './config.js';
@@ -251,7 +252,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 					jobId,
 					statusCode: result.StatusCode,
 				});
-				cleanupWorker(jobId);
+				cleanupWorker(jobId, result.StatusCode);
 			})
 			.catch((err) => {
 				logger.error('[WorkerManager] Error waiting for container:', err);
@@ -306,18 +307,41 @@ export async function killWorker(jobId: string): Promise<void> {
 		logger.error('[WorkerManager] Timeout notification error:', String(err));
 	});
 
-	cleanupWorker(jobId);
+	cleanupWorker(jobId, 137);
 }
 
 /**
  * Clean up worker tracking state (timeout handle + map entry).
+ * When exitCode is non-zero, marks the corresponding DB run as failed (fire-and-forget).
  */
-export function cleanupWorker(jobId: string): void {
+export function cleanupWorker(jobId: string, exitCode?: number): void {
 	const worker = activeWorkers.get(jobId);
 	if (worker) {
 		clearTimeout(worker.timeoutHandle);
 		if (worker.projectId && worker.workItemId) {
 			clearWorkItemEnqueued(worker.projectId, worker.workItemId);
+			if (exitCode !== undefined && exitCode !== 0) {
+				failOrphanedRun(
+					worker.projectId,
+					worker.workItemId,
+					`Worker crashed with exit code ${exitCode}`,
+				)
+					.then((runId) => {
+						if (runId) {
+							logger.info('[WorkerManager] Marked orphaned run as failed:', {
+								jobId,
+								runId,
+								exitCode,
+							});
+						}
+					})
+					.catch((err) => {
+						logger.error('[WorkerManager] Failed to mark orphaned run:', {
+							jobId,
+							error: String(err),
+						});
+					});
+			}
 		}
 		activeWorkers.delete(jobId);
 		logger.info('[WorkerManager] Worker cleaned up:', {

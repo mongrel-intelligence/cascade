@@ -29,6 +29,11 @@ vi.mock('../../../src/config/provider.js', () => ({
 	getAllProjectCredentials: vi.fn(),
 }));
 
+const mockFailOrphanedRun = vi.fn().mockResolvedValue(null);
+vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
+	failOrphanedRun: (...args: unknown[]) => mockFailOrphanedRun(...args),
+}));
+
 vi.mock('../../../src/config/configCache.js', () => ({
 	configCache: {
 		getConfig: vi.fn().mockReturnValue(null),
@@ -337,6 +342,7 @@ describe('killWorker', () => {
 describe('cleanupWorker', () => {
 	beforeEach(() => {
 		vi.spyOn(console, 'log').mockImplementation(() => {});
+		mockFailOrphanedRun.mockClear();
 		detachAll();
 	});
 
@@ -361,6 +367,59 @@ describe('cleanupWorker', () => {
 
 		cleanupWorker('job-wi');
 		expect(mockClearWorkItemEnqueued).toHaveBeenCalledWith('proj-1', 'card-1');
+
+		resolveWait();
+	});
+
+	it('calls failOrphanedRun on non-zero exit code', async () => {
+		const { resolveWait } = setupMockContainer();
+		mockFailOrphanedRun.mockResolvedValue('run-123');
+
+		await spawnWorker(
+			makeJob({
+				id: 'job-fail-orphan',
+				data: { type: 'trello', projectId: 'proj-1', cardId: 'card-1' } as CascadeJob,
+			}) as never,
+		);
+
+		cleanupWorker('job-fail-orphan', 1);
+		expect(mockFailOrphanedRun).toHaveBeenCalledWith(
+			'proj-1',
+			'card-1',
+			'Worker crashed with exit code 1',
+		);
+
+		resolveWait();
+	});
+
+	it('does NOT call failOrphanedRun on zero exit code', async () => {
+		const { resolveWait } = setupMockContainer();
+
+		await spawnWorker(
+			makeJob({
+				id: 'job-ok',
+				data: { type: 'trello', projectId: 'proj-1', cardId: 'card-1' } as CascadeJob,
+			}) as never,
+		);
+
+		cleanupWorker('job-ok', 0);
+		expect(mockFailOrphanedRun).not.toHaveBeenCalled();
+
+		resolveWait();
+	});
+
+	it('does NOT call failOrphanedRun when exitCode is undefined', async () => {
+		const { resolveWait } = setupMockContainer();
+
+		await spawnWorker(
+			makeJob({
+				id: 'job-undef',
+				data: { type: 'trello', projectId: 'proj-1', cardId: 'card-1' } as CascadeJob,
+			}) as never,
+		);
+
+		cleanupWorker('job-undef');
+		expect(mockFailOrphanedRun).not.toHaveBeenCalled();
 
 		resolveWait();
 	});
