@@ -61,12 +61,6 @@ export const TrelloTriggerConfigSchema = z.object({
 });
 
 /**
- * @deprecated Use `StatusChangedSchema` instead.
- */
-export const IssueTransitionedSchema = StatusChangedSchema;
-export type IssueTransitionedConfig = StatusChangedConfig;
-
-/**
  * Trigger configuration for JIRA integrations.
  * All triggers default to `true` for backward compatibility.
  *
@@ -433,17 +427,4 @@ export function resolveTrelloStatusChangedEnabled(
 
 	// No config present — default enabled for backward compatibility
 	return true;
-}
-
-/**
- * @deprecated Use `resolveStatusChangedEnabled` instead.
- * Resolve whether the issue-transitioned trigger is enabled for a specific agent type.
- * Supports both the new nested object format and the legacy boolean format.
- * Returns `true` when no config is present (backward compatible).
- */
-export function resolveIssueTransitionedEnabled(
-	config: Partial<JiraTriggerConfig> | undefined,
-	agentType: string,
-): boolean {
-	return resolveStatusChangedEnabled(config, agentType);
 }

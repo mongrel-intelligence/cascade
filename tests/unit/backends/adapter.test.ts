@@ -66,8 +66,10 @@ vi.mock('../../../src/github/client.js', () => ({
 	withGitHubToken: vi.fn((_token: string, fn: () => Promise<unknown>) => fn()),
 }));
 
-vi.mock('../../../src/backends/agent-profiles.js', () => ({
+vi.mock('../../../src/agents/definitions/profiles.js', () => ({
 	getAgentProfile: vi.fn(),
+	hasFinishValidation: vi.fn(() => false),
+	getAgentCapabilities: vi.fn(),
 }));
 
 const mockCaptureException = vi.fn();
@@ -113,11 +115,11 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	storeRunLogs: (...args: unknown[]) => mockStoreRunLogs(...args),
 }));
 
+import { type AgentProfile, getAgentProfile } from '../../../src/agents/definitions/profiles.js';
 import { resolveModelConfig } from '../../../src/agents/shared/modelResolution.js';
 import { setupRepository } from '../../../src/agents/shared/repository.js';
 import { createAgentLogger } from '../../../src/agents/utils/logging.js';
 import { executeWithBackend } from '../../../src/backends/adapter.js';
-import { type AgentProfile, getAgentProfile } from '../../../src/backends/agent-profiles.js';
 import { createProgressMonitor } from '../../../src/backends/progress.js';
 import type { AgentBackend } from '../../../src/backends/types.js';
 import { getAllProjectCredentials } from '../../../src/config/provider.js';

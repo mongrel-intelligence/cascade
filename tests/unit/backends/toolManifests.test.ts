@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getToolManifests } from '../../../src/backends/toolManifests.js';
+import { getToolManifests } from '../../../src/agents/definitions/toolManifests.js';
 
 describe('getToolManifests', () => {
 	it('returns an array of tool manifests', () => {

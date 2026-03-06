@@ -19,7 +19,7 @@ vi.mock('../../../src/agents/definitions/index.js', () => ({
 	resolveAgentDefinition: vi.fn(async () => ({ backend: {} })),
 }));
 
-vi.mock('../../../src/backends/agent-profiles.js', () => ({
+vi.mock('../../../src/agents/definitions/profiles.js', () => ({
 	getAgentProfile: vi.fn(() => ({
 		getLlmistGadgets: vi.fn(() => []),
 	})),
@@ -276,7 +276,7 @@ describe('LlmistBackend.execute', () => {
 			loopTerminated: false,
 		});
 
-		const { getAgentProfile } = await import('../../../src/backends/agent-profiles.js');
+		const { getAgentProfile } = await import('../../../src/agents/definitions/profiles.js');
 		const mockGetAgentProfile = vi.mocked(getAgentProfile);
 		const mockGetLlmistGadgets = vi.fn().mockReturnValue([]);
 		mockGetAgentProfile.mockReturnValue({

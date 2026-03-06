@@ -151,6 +151,7 @@ vi.mock('node:child_process', () => ({
 
 import { execFileSync } from 'node:child_process';
 import { hasFinishValidation } from '../../../src/agents/definitions/profiles.js';
+import { type AgentProfile, getAgentProfile } from '../../../src/agents/definitions/profiles.js';
 import {
 	formatPRComments,
 	formatPRDetails,
@@ -159,7 +160,6 @@ import {
 	formatPRReviews,
 	readPRFileContents,
 } from '../../../src/agents/shared/prFormatting.js';
-import { type AgentProfile, getAgentProfile } from '../../../src/backends/agent-profiles.js';
 import { readWorkItem } from '../../../src/gadgets/pm/core/readWorkItem.js';
 import { githubClient } from '../../../src/github/client.js';
 import { resolveSquintDbPath } from '../../../src/utils/squintDb.js';

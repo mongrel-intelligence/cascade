@@ -4,6 +4,110 @@ import { decryptCredential, encryptCredential } from '../crypto.js';
 import { credentials, integrationCredentials, projectIntegrations } from '../schema/index.js';
 
 // ============================================================================
+// Gmail-specific repository helpers
+// ============================================================================
+
+/**
+ * Find or create a credential by (orgId, envVarKey, name), then update its value.
+ * Returns the credential ID.
+ *
+ * Used in the Gmail OAuth callback to upsert gmail_email and gmail_refresh_token
+ * credentials without duplicating the find-or-create + update pattern inline.
+ */
+export async function upsertCredentialByEnvVarKey(params: {
+	orgId: string;
+	envVarKey: string;
+	name: string;
+	value: string;
+}): Promise<number> {
+	const db = getDb();
+	const { orgId, envVarKey, name, value } = params;
+	const encryptedValue = encryptCredential(value, orgId);
+
+	const [existing] = await db
+		.select({ id: credentials.id })
+		.from(credentials)
+		.where(
+			and(
+				eq(credentials.orgId, orgId),
+				eq(credentials.envVarKey, envVarKey),
+				eq(credentials.name, name),
+			),
+		);
+
+	if (existing) {
+		await db
+			.update(credentials)
+			.set({ value: encryptedValue, updatedAt: new Date() })
+			.where(eq(credentials.id, existing.id));
+		return existing.id;
+	}
+
+	const [created] = await db
+		.insert(credentials)
+		.values({
+			orgId,
+			name,
+			envVarKey,
+			value: encryptedValue,
+			isDefault: false,
+		})
+		.returning({ id: credentials.id });
+	return created.id;
+}
+
+/**
+ * Upsert a Gmail integration for a project (find/create the integration row),
+ * then replace all credential links with the provided ones.
+ *
+ * @param projectId - The project to upsert the integration for.
+ * @param credentialLinks - Array of { role, credentialId } pairs to link.
+ * @returns The integration ID.
+ */
+export async function upsertGmailIntegrationWithCredentials(params: {
+	projectId: string;
+	credentialLinks: Array<{ role: string; credentialId: number }>;
+}): Promise<number> {
+	const db = getDb();
+	const { projectId, credentialLinks } = params;
+
+	// Find or create the email integration row
+	const [existing] = await db
+		.select({ id: projectIntegrations.id })
+		.from(projectIntegrations)
+		.where(
+			and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.category, 'email')),
+		);
+
+	let integrationId: number;
+	if (existing) {
+		await db
+			.update(projectIntegrations)
+			.set({ provider: 'gmail', config: {}, updatedAt: new Date() })
+			.where(eq(projectIntegrations.id, existing.id));
+		integrationId = existing.id;
+	} else {
+		const [created] = await db
+			.insert(projectIntegrations)
+			.values({ projectId, category: 'email', provider: 'gmail', config: {} })
+			.returning({ id: projectIntegrations.id });
+		integrationId = created.id;
+	}
+
+	// Replace credential links
+	await db
+		.delete(integrationCredentials)
+		.where(eq(integrationCredentials.integrationId, integrationId));
+	await db
+		.insert(integrationCredentials)
+		.values(
+			credentialLinks.map(({ role, credentialId }) => ({ integrationId, role, credentialId })),
+		);
+
+	return integrationId;
+}
+
+// ============================================================================
 // Integration credential resolution
 // ============================================================================
 

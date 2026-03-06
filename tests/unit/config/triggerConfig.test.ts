@@ -7,7 +7,6 @@ import {
 	parseEmailJokeTriggers,
 	resolveEmailJokeTriggerConfig,
 	resolveGitHubTriggerEnabled,
-	resolveIssueTransitionedEnabled,
 	resolveJiraTriggerEnabled,
 	resolvePerAgentToggle,
 	resolveReadyToProcessEnabled,
@@ -437,39 +436,6 @@ describe('resolveStatusChangedEnabled', () => {
 		expect(resolveStatusChangedEnabled(parsed, 'splitting')).toBe(true);
 		expect(resolveStatusChangedEnabled(parsed, 'planning')).toBe(true);
 		expect(resolveStatusChangedEnabled(parsed, 'implementation')).toBe(true);
-	});
-});
-
-describe('resolveIssueTransitionedEnabled (deprecated alias)', () => {
-	it('returns true when config is undefined (backward compatible)', () => {
-		expect(resolveIssueTransitionedEnabled(undefined, 'splitting')).toBe(true);
-		expect(resolveIssueTransitionedEnabled(undefined, 'planning')).toBe(true);
-		expect(resolveIssueTransitionedEnabled(undefined, 'implementation')).toBe(true);
-	});
-
-	it('returns true when issueTransitioned is not set', () => {
-		expect(resolveIssueTransitionedEnabled({}, 'splitting')).toBe(true);
-	});
-
-	it('applies legacy boolean true to all agents', () => {
-		const config = { issueTransitioned: true as const };
-		expect(resolveIssueTransitionedEnabled(config, 'splitting')).toBe(true);
-		expect(resolveIssueTransitionedEnabled(config, 'planning')).toBe(true);
-		expect(resolveIssueTransitionedEnabled(config, 'implementation')).toBe(true);
-	});
-
-	it('applies legacy boolean false to all agents', () => {
-		const config = { issueTransitioned: false as const };
-		expect(resolveIssueTransitionedEnabled(config, 'splitting')).toBe(false);
-		expect(resolveIssueTransitionedEnabled(config, 'planning')).toBe(false);
-		expect(resolveIssueTransitionedEnabled(config, 'implementation')).toBe(false);
-	});
-
-	it('defaults all agents to true when nested object is empty (Zod fills defaults)', () => {
-		const parsed = JiraTriggerConfigSchema.parse({ issueTransitioned: {} });
-		expect(resolveIssueTransitionedEnabled(parsed, 'splitting')).toBe(true);
-		expect(resolveIssueTransitionedEnabled(parsed, 'planning')).toBe(true);
-		expect(resolveIssueTransitionedEnabled(parsed, 'implementation')).toBe(true);
 	});
 });
 
