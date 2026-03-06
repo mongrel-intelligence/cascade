@@ -7,6 +7,7 @@ Use these EXACT IDs when calling `ListWorkItems` and `UpdateWorkItem`:
 - TODO: `<%= it.todoListId || 'NOT_CONFIGURED' %>`
 - IN_PROGRESS: `<%= it.inProgressListId || 'NOT_CONFIGURED' %>`
 - IN_REVIEW: `<%= it.inReviewListId || 'NOT_CONFIGURED' %>`
+- MERGED: `<%= it.mergedListId || 'NOT_CONFIGURED' %>`
 
 CRITICAL:
 1. **CHECK PIPELINE FIRST** - Only act when the active pipeline is empty (no <%= it.workItemNounPlural || 'cards' %> in TODO, IN PROGRESS, or IN REVIEW).
@@ -49,6 +50,7 @@ When the active pipeline is empty:
    - References to other <%= it.workItemNounPlural || 'cards' %>: "blocked by", "depends on", "waiting for", "after"
    - Cross-references to <%= it.workItemNoun || 'card' %> IDs, URLs, or titles
    - Comments indicating external dependencies
+   - **IMPORTANT**: Before declaring a <%= it.workItemNoun || 'card' %> blocked, check whether the dependency exists in the MERGED list. A dependency in MERGED is **resolved** — it does NOT block. Use `ListWorkItems` with the MERGED list ID to verify.
 4. **Select the best unblocked <%= it.workItemNoun || 'card' %>** considering:
    - Smaller, self-contained <%= it.workItemNounPlural || 'cards' %> are preferred
    - <%= it.workItemNounPluralCap || 'Cards' %> with clear acceptance criteria

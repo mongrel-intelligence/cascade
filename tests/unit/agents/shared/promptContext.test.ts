@@ -29,6 +29,7 @@ function makeProject(overrides: Record<string, unknown> = {}) {
 				inProgress: 'list-in-progress',
 				inReview: 'list-in-review',
 				stories: 'list-stories',
+				merged: 'list-merged',
 				debug: 'list-debug',
 			},
 			labels: { readyToProcess: 'label1', processed: 'label2' },
@@ -115,6 +116,11 @@ describe('buildPromptContext', () => {
 			const ctx = buildPromptContext('card123', makeProject() as never);
 			expect(ctx.inReviewListId).toBe('list-in-review');
 		});
+
+		it('includes mergedListId from project trello config', () => {
+			const ctx = buildPromptContext('card123', makeProject() as never);
+			expect(ctx.mergedListId).toBe('list-merged');
+		});
 	});
 
 	describe('with JIRA provider', () => {
@@ -183,6 +189,7 @@ describe('buildPromptContext', () => {
 						todo: 'To Do',
 						inProgress: 'In Progress',
 						inReview: 'In Review',
+						merged: 'Merged',
 					},
 				},
 			});
@@ -191,6 +198,7 @@ describe('buildPromptContext', () => {
 			expect(ctx.todoListId).toBe('To Do');
 			expect(ctx.inProgressListId).toBe('In Progress');
 			expect(ctx.inReviewListId).toBe('In Review');
+			expect(ctx.mergedListId).toBe('Merged');
 		});
 
 		it('leaves pipeline list IDs undefined when JIRA statuses are missing', () => {
