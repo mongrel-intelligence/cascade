@@ -2,6 +2,8 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { loadProjectConfigById } from '../../config/provider.js';
 import {
+	DEFAULT_STALE_RUN_THRESHOLD_MS,
+	cancelRunById,
 	deleteDebugAnalysisByRunId,
 	getDebugAnalysisByRunId,
 	getLlmCallByNumber,
@@ -188,7 +190,11 @@ export const runsRouter = router({
 
 			// Block if a worker is already active on this work item
 			if (input.cardId && input.agentType !== 'debug') {
-				const active = await hasActiveRunForWorkItem(input.projectId, input.cardId);
+				const active = await hasActiveRunForWorkItem(
+					input.projectId,
+					input.cardId,
+					DEFAULT_STALE_RUN_THRESHOLD_MS,
+				);
 				if (active) {
 					throw new TRPCError({
 						code: 'CONFLICT',
@@ -270,7 +276,11 @@ export const runsRouter = router({
 
 			// Block if a worker is already active on this work item
 			if (run.cardId && run.agentType !== 'debug') {
-				const active = await hasActiveRunForWorkItem(run.projectId, run.cardId);
+				const active = await hasActiveRunForWorkItem(
+					run.projectId,
+					run.cardId,
+					DEFAULT_STALE_RUN_THRESHOLD_MS,
+				);
 				if (active) {
 					throw new TRPCError({
 						code: 'CONFLICT',
@@ -306,5 +316,39 @@ export const runsRouter = router({
 			}
 
 			return { triggered: true };
+		}),
+
+	cancel: protectedProcedure
+		.input(
+			z.object({
+				runId: z.string().uuid(),
+				reason: z.string().optional(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const run = await getRunById(input.runId);
+			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
+
+			if (run.projectId) {
+				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
+			}
+
+			if (run.status !== 'running') {
+				throw new TRPCError({
+					code: 'BAD_REQUEST',
+					message: `Run is not running (status: ${run.status})`,
+				});
+			}
+
+			const reason = input.reason ?? 'Manually cancelled via API';
+			const updated = await cancelRunById(input.runId, reason);
+			if (!updated) {
+				throw new TRPCError({
+					code: 'CONFLICT',
+					message: 'Run was already completed by the time cancel was processed',
+				});
+			}
+
+			return { cancelled: true };
 		}),
 });

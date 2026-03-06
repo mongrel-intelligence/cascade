@@ -8,6 +8,7 @@
 
 import { hasActiveRunForWorkItem } from '../db/repositories/runsRepository.js';
 import { logger } from '../utils/logging.js';
+import { routerConfig } from './config.js';
 
 const TTL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -48,8 +49,9 @@ export async function isWorkItemLocked(
 		}
 	}
 
-	// DB check
-	const hasActive = await hasActiveRunForWorkItem(projectId, workItemId);
+	// DB check — ignore runs older than 2× worker timeout (stale/orphaned)
+	const maxAgeMs = 2 * routerConfig.workerTimeoutMs;
+	const hasActive = await hasActiveRunForWorkItem(projectId, workItemId, maxAgeMs);
 	if (hasActive) {
 		return { locked: true, reason: 'db: active run exists' };
 	}

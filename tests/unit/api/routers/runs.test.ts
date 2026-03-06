@@ -12,8 +12,10 @@ const mockGetLlmCallByNumber = vi.fn();
 const mockGetDebugAnalysisByRunId = vi.fn();
 const mockDeleteDebugAnalysisByRunId = vi.fn();
 const mockHasActiveRunForWorkItem = vi.fn().mockResolvedValue(false);
+const mockCancelRunById = vi.fn().mockResolvedValue(true);
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
+	DEFAULT_STALE_RUN_THRESHOLD_MS: 2 * 60 * 60 * 1000,
 	listRuns: (...args: unknown[]) => mockListRuns(...args),
 	getRunById: (...args: unknown[]) => mockGetRunById(...args),
 	getRunLogs: (...args: unknown[]) => mockGetRunLogs(...args),
@@ -22,6 +24,7 @@ vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	getDebugAnalysisByRunId: (...args: unknown[]) => mockGetDebugAnalysisByRunId(...args),
 	deleteDebugAnalysisByRunId: (...args: unknown[]) => mockDeleteDebugAnalysisByRunId(...args),
 	hasActiveRunForWorkItem: (...args: unknown[]) => mockHasActiveRunForWorkItem(...args),
+	cancelRunById: (...args: unknown[]) => mockCancelRunById(...args),
 }));
 
 // Mock getDb for the inline org-access check in getById
@@ -629,6 +632,7 @@ describe('runsRouter', () => {
 			await expect(
 				caller.trigger({ projectId: 'p1', agentType: 'implementation', cardId: 'card-1' }),
 			).rejects.toMatchObject({ code: 'CONFLICT' });
+			expect(mockHasActiveRunForWorkItem).toHaveBeenCalledWith('p1', 'card-1', 2 * 60 * 60 * 1000);
 		});
 
 		it('succeeds when work item has no active run', async () => {
@@ -646,6 +650,7 @@ describe('runsRouter', () => {
 				cardId: 'card-1',
 			});
 			expect(result).toEqual({ triggered: true });
+			expect(mockHasActiveRunForWorkItem).toHaveBeenCalledWith('p1', 'card-1', 2 * 60 * 60 * 1000);
 		});
 
 		it('skips lock check when no cardId is provided', async () => {
@@ -799,6 +804,7 @@ describe('runsRouter', () => {
 			await expect(caller.retry({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'CONFLICT',
 			});
+			expect(mockHasActiveRunForWorkItem).toHaveBeenCalledWith('p1', 'card-1', 2 * 60 * 60 * 1000);
 		});
 
 		it('skips lock check for debug agent type on retry', async () => {
@@ -818,6 +824,83 @@ describe('runsRouter', () => {
 			const result = await caller.retry({ runId: RUN_UUID });
 			expect(result).toEqual({ triggered: true });
 			expect(mockHasActiveRunForWorkItem).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('cancel', () => {
+		it('cancels a running run and returns cancelled:true', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				status: 'running',
+			});
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCancelRunById.mockResolvedValue(true);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.cancel({ runId: RUN_UUID });
+
+			expect(result).toEqual({ cancelled: true });
+			expect(mockCancelRunById).toHaveBeenCalledWith(RUN_UUID, 'Manually cancelled via API');
+		});
+
+		it('uses custom reason when provided', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				status: 'running',
+			});
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCancelRunById.mockResolvedValue(true);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.cancel({ runId: RUN_UUID, reason: 'Orphaned worker' });
+
+			expect(mockCancelRunById).toHaveBeenCalledWith(RUN_UUID, 'Orphaned worker');
+		});
+
+		it('throws NOT_FOUND when run does not exist', async () => {
+			mockGetRunById.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.cancel({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws BAD_REQUEST when run is not running', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				status: 'completed',
+			});
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.cancel({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'BAD_REQUEST',
+			});
+		});
+
+		it('throws NOT_FOUND when org does not match', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				status: 'running',
+			});
+			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.cancel({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws UNAUTHORIZED when unauthenticated', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(caller.cancel({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'UNAUTHORIZED',
+			});
 		});
 	});
 });

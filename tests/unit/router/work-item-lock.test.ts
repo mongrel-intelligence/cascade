@@ -6,6 +6,9 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 vi.mock('../../../src/utils/logging.js', () => ({
 	logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
+vi.mock('../../../src/router/config.js', () => ({
+	routerConfig: { workerTimeoutMs: 30 * 60 * 1000 },
+}));
 
 import { hasActiveRunForWorkItem } from '../../../src/db/repositories/runsRepository.js';
 import {
@@ -28,7 +31,8 @@ describe('work-item-lock', () => {
 	it('returns locked: false when no active run and no in-memory mark', async () => {
 		const result = await isWorkItemLocked('proj1', 'card1');
 		expect(result).toEqual({ locked: false });
-		expect(hasActiveRunForWorkItem).toHaveBeenCalledWith('proj1', 'card1');
+		// maxAgeMs = 2 * workerTimeoutMs = 60 min
+		expect(hasActiveRunForWorkItem).toHaveBeenCalledWith('proj1', 'card1', 2 * 30 * 60 * 1000);
 	});
 
 	it('returns locked: true after markWorkItemEnqueued', async () => {
@@ -54,16 +58,17 @@ describe('work-item-lock', () => {
 		// Advance past 30 minutes
 		vi.advanceTimersByTime(30 * 60 * 1000 + 1);
 
+		const maxAgeMs = 2 * 30 * 60 * 1000;
 		const result = await isWorkItemLocked('proj1', 'card1');
 		// In-memory lock should have expired, falls through to DB check
 		expect(result.locked).toBe(false);
-		expect(hasActiveRunForWorkItem).toHaveBeenCalledWith('proj1', 'card1');
+		expect(hasActiveRunForWorkItem).toHaveBeenCalledWith('proj1', 'card1', maxAgeMs);
 		// Verify the expired entry was cleaned up by checking it's no longer locked in-memory
 		vi.mocked(hasActiveRunForWorkItem).mockClear();
 		const result2 = await isWorkItemLocked('proj1', 'card1');
 		expect(result2.locked).toBe(false);
 		// Should go straight to DB check (no in-memory entry left)
-		expect(hasActiveRunForWorkItem).toHaveBeenCalledWith('proj1', 'card1');
+		expect(hasActiveRunForWorkItem).toHaveBeenCalledWith('proj1', 'card1', maxAgeMs);
 	});
 
 	it('returns locked: true when DB has an active run', async () => {
