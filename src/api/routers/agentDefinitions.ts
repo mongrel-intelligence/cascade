@@ -13,7 +13,7 @@ import {
 	AgentDefinitionSchema,
 	DefinitionPatchSchema,
 } from '../../agents/definitions/schema.js';
-import { validateTemplate } from '../../agents/prompts/index.js';
+import { getRawTemplate, validateTemplate } from '../../agents/prompts/index.js';
 import {
 	deleteAgentDefinition,
 	getAgentDefinition,
@@ -326,8 +326,21 @@ export const agentDefinitionsRouter = router({
 				});
 			}
 
-			// Replace prompts with YAML defaults
-			const updated: AgentDefinition = { ...current, prompts: yamlDefault.prompts };
+			// Restore system prompt from .eta file — YAML definitions don't include systemPrompt
+			let systemPrompt: string | undefined = yamlDefault.prompts.systemPrompt;
+			if (!systemPrompt) {
+				try {
+					systemPrompt = getRawTemplate(input.agentType);
+				} catch {
+					// No .eta file for this agent type
+				}
+			}
+
+			// Replace prompts with YAML defaults + restored system prompt
+			const updated: AgentDefinition = {
+				...current,
+				prompts: { ...yamlDefault.prompts, systemPrompt },
+			};
 			const validated = AgentDefinitionSchema.parse(updated);
 
 			const isBuiltin = getKnownAgentTypes().includes(input.agentType);

@@ -64,8 +64,8 @@ describe('integration-validation', () => {
 
 		it('returns integration requirements for debug agent', async () => {
 			const reqs = await getIntegrationRequirements('debug');
-			expect(reqs.required).toEqual(['pm']);
-			expect(reqs.optional).toEqual([]);
+			expect(reqs.required).toEqual([]);
+			expect(reqs.optional).toEqual(['pm']);
 		});
 
 		it('rejects for unknown agent type', async () => {

@@ -26,6 +26,7 @@ import {
 	getTemplateVariables,
 	getValidAgentTypes,
 	initPrompts,
+	readTemplateFileSync,
 	renderCustomPrompt,
 	resolveIncludes,
 	validateTemplate,
@@ -257,6 +258,44 @@ describe('getRawTemplate', () => {
 
 	it('throws for unknown agent type', () => {
 		expect(() => getRawTemplate('unknown-type')).toThrow('Unknown agent type: unknown-type');
+	});
+});
+
+describe('readTemplateFileSync', () => {
+	it('returns raw .eta file content without requiring initPrompts()', () => {
+		const content = readTemplateFileSync('splitting');
+		expect(content).toBeTruthy();
+		expect(typeof content).toBe('string');
+		expect(content).toContain('<%');
+	});
+
+	it('returns content for all known builtin agent types', () => {
+		const builtinTypes = [
+			'splitting',
+			'planning',
+			'implementation',
+			'review',
+			'respond-to-review',
+			'respond-to-ci',
+			'respond-to-pr-comment',
+			'respond-to-planning-comment',
+			'debug',
+		];
+		for (const agentType of builtinTypes) {
+			const content = readTemplateFileSync(agentType);
+			expect(content, `expected ${agentType} to have a .eta file`).toBeTruthy();
+		}
+	});
+
+	it('returns undefined for non-existent agent type (does not throw)', () => {
+		const content = readTemplateFileSync('nonexistent-agent-xyz');
+		expect(content).toBeUndefined();
+	});
+
+	it('returns the same content as getRawTemplate for known types', () => {
+		const viaSync = readTemplateFileSync('implementation');
+		const viaGet = getRawTemplate('implementation');
+		expect(viaSync).toBe(viaGet);
 	});
 });
 

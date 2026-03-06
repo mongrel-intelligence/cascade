@@ -6,8 +6,8 @@ identity:
 
 # Explicit integration requirements.
 integrations:
-  required: [pm]
-  optional: []
+  required: []
+  optional: [pm]
 
 # Read-only FS access for log analysis, full PM access for creating debug cards.
 capabilities:

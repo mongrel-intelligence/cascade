@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
-// Mock getPMProvider to control the PM type
+// Mock getPMProviderOrNull to control the PM type
 vi.mock('../../../../src/pm/index.js', () => ({
-	getPMProvider: vi.fn(),
+	getPMProviderOrNull: vi.fn(),
 }));
 
 import { buildPromptContext } from '../../../../src/agents/shared/promptContext.js';
-import { getPMProvider } from '../../../../src/pm/index.js';
+import { getPMProviderOrNull } from '../../../../src/pm/index.js';
 import { createMockPMProvider } from '../../../helpers/mockPMProvider.js';
 
-const mockGetPMProvider = vi.mocked(getPMProvider);
+const mockGetPMProvider = vi.mocked(getPMProviderOrNull);
 
 function makeProject(overrides: Record<string, unknown> = {}) {
 	return {
@@ -291,6 +291,66 @@ describe('buildPromptContext', () => {
 		it('includes baseBranch from project', () => {
 			const ctx = buildPromptContext('card1', makeProject() as never);
 			expect(ctx.baseBranch).toBe('main');
+		});
+	});
+
+	describe('without PM provider (no PM context — e.g. debug agent from dashboard)', () => {
+		beforeEach(() => {
+			mockGetPMProvider.mockReturnValue(null);
+		});
+
+		it('does not throw when PM provider is null', () => {
+			expect(() => buildPromptContext('card1', makeProject() as never)).not.toThrow();
+		});
+
+		it('leaves pmType undefined', () => {
+			const ctx = buildPromptContext('card1', makeProject() as never);
+			expect(ctx.pmType).toBeUndefined();
+		});
+
+		it('leaves cardUrl undefined even when cardId is provided', () => {
+			const ctx = buildPromptContext('card123', makeProject() as never);
+			expect(ctx.cardUrl).toBeUndefined();
+		});
+
+		it('defaults workItemNoun to "card" (Trello vocabulary fallback)', () => {
+			const ctx = buildPromptContext('card1', makeProject() as never);
+			expect(ctx.workItemNoun).toBe('card');
+		});
+
+		it('defaults workItemNounPlural to "cards"', () => {
+			const ctx = buildPromptContext('card1', makeProject() as never);
+			expect(ctx.workItemNounPlural).toBe('cards');
+		});
+
+		it('defaults pmName to "Trello"', () => {
+			const ctx = buildPromptContext('card1', makeProject() as never);
+			expect(ctx.pmName).toBe('Trello');
+		});
+
+		it('still includes projectId and baseBranch from project config', () => {
+			const ctx = buildPromptContext('card1', makeProject() as never);
+			expect(ctx.projectId).toBe('test-project');
+			expect(ctx.baseBranch).toBe('main');
+		});
+
+		it('still includes debugContext fields when provided', () => {
+			const debugContext = {
+				logDir: '/tmp/logs',
+				originalCardId: 'orig-id',
+				originalCardName: 'Original Card',
+				originalCardUrl: 'https://trello.com/c/orig',
+				detectedAgentType: 'implementation',
+			};
+			const ctx = buildPromptContext(
+				undefined,
+				makeProject() as never,
+				undefined,
+				undefined,
+				debugContext,
+			);
+			expect(ctx.logDir).toBe('/tmp/logs');
+			expect(ctx.detectedAgentType).toBe('implementation');
 		});
 	});
 });

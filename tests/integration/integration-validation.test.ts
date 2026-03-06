@@ -64,8 +64,8 @@ describe('Integration Validation (integration)', () => {
 				const hasPM = await hasPmIntegration('test-project');
 				expect(hasPM).toBe(true);
 
-				// debug agent only requires PM
-				const result = await validateIntegrations('test-project', 'debug');
+				// splitting requires only PM
+				const result = await validateIntegrations('test-project', 'splitting');
 				expect(result.valid).toBe(true);
 				expect(result.errors).toEqual([]);
 			});
@@ -76,7 +76,7 @@ describe('Integration Validation (integration)', () => {
 				const hasPM = await hasPmIntegration('test-project');
 				expect(hasPM).toBe(false);
 
-				const result = await validateIntegrations('test-project', 'debug');
+				const result = await validateIntegrations('test-project', 'splitting');
 				expect(result.valid).toBe(false);
 				expect(result.errors).toHaveLength(1);
 				expect(result.errors[0].category).toBe('pm');
@@ -89,7 +89,7 @@ describe('Integration Validation (integration)', () => {
 				const hasPM = await hasPmIntegration('test-project');
 				expect(hasPM).toBe(false);
 
-				const result = await validateIntegrations('test-project', 'debug');
+				const result = await validateIntegrations('test-project', 'splitting');
 				expect(result.valid).toBe(false);
 				expect(result.errors).toHaveLength(1);
 				expect(result.errors[0].category).toBe('pm');
@@ -103,7 +103,7 @@ describe('Integration Validation (integration)', () => {
 				const hasPM = await hasPmIntegration('test-project');
 				expect(hasPM).toBe(true);
 
-				const result = await validateIntegrations('test-project', 'debug');
+				const result = await validateIntegrations('test-project', 'splitting');
 				expect(result.valid).toBe(true);
 			});
 
@@ -113,7 +113,7 @@ describe('Integration Validation (integration)', () => {
 				const hasPM = await hasPmIntegration('test-project');
 				expect(hasPM).toBe(false);
 
-				const result = await validateIntegrations('test-project', 'debug');
+				const result = await validateIntegrations('test-project', 'splitting');
 				expect(result.errors).toHaveLength(1);
 				expect(result.valid).toBe(false);
 				expect(result.errors[0].category).toBe('pm');
@@ -125,7 +125,7 @@ describe('Integration Validation (integration)', () => {
 				const hasPM = await hasPmIntegration('test-project');
 				expect(hasPM).toBe(false);
 
-				const result = await validateIntegrations('test-project', 'debug');
+				const result = await validateIntegrations('test-project', 'splitting');
 				expect(result.valid).toBe(false);
 				expect(result.errors[0].category).toBe('pm');
 				expect(result.errors).toHaveLength(1);
@@ -462,7 +462,7 @@ describe('Integration Validation (integration)', () => {
 
 	describe('error message format', () => {
 		it('PM errors contain provider reference', async () => {
-			const result = await validateIntegrations('test-project', 'debug');
+			const result = await validateIntegrations('test-project', 'splitting');
 			expect(result.valid).toBe(false);
 			expect(result.errors).toHaveLength(1);
 			expect(result.errors[0].message).toContain('PM integration (Trello/JIRA)');
@@ -476,7 +476,7 @@ describe('Integration Validation (integration)', () => {
 		});
 
 		it('formatValidationErrors includes dashboard link', async () => {
-			const result = await validateIntegrations('test-project', 'debug');
+			const result = await validateIntegrations('test-project', 'splitting');
 			const formatted = formatValidationErrors(result);
 			expect(formatted).toContain('Project Settings > Integrations');
 		});
@@ -520,9 +520,10 @@ describe('Integration Validation (integration)', () => {
 			expect(reqs.optional).toContain('pm');
 		});
 
-		it('debug requires only pm', async () => {
+		it('debug has pm as optional (no required integrations)', async () => {
 			const reqs = await getIntegrationRequirements('debug');
-			expect(reqs.required).toEqual(['pm']);
+			expect(reqs.required).toEqual([]);
+			expect(reqs.optional).toContain('pm');
 		});
 
 		it('email-joke requires only email', async () => {

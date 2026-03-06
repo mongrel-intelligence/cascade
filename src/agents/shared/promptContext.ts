@@ -1,5 +1,5 @@
 import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
-import { getPMProvider } from '../../pm/index.js';
+import { getPMProviderOrNull } from '../../pm/index.js';
 import type { ProjectConfig } from '../../types/index.js';
 import type { PromptContext } from '../prompts/index.js';
 
@@ -23,16 +23,16 @@ export function buildPromptContext(
 		detectedAgentType: string;
 	},
 ): PromptContext {
-	const pmProvider = getPMProvider();
-	const isJira = pmProvider.type === 'jira';
+	const pmProvider = getPMProviderOrNull();
+	const isJira = pmProvider?.type === 'jira';
 	return {
 		cardId,
-		cardUrl: cardId ? pmProvider.getWorkItemUrl(cardId) : undefined,
+		cardUrl: cardId && pmProvider ? pmProvider.getWorkItemUrl(cardId) : undefined,
 		projectId: project.id,
 		baseBranch: project.baseBranch,
 		storiesListId: getTrelloConfig(project)?.lists?.stories ?? getJiraConfig(project)?.projectKey,
 		processedLabelId: getTrelloConfig(project)?.labels?.processed,
-		pmType: pmProvider.type,
+		pmType: pmProvider?.type,
 		workItemNoun: isJira ? 'issue' : 'card',
 		workItemNounPlural: isJira ? 'issues' : 'cards',
 		workItemNounCap: isJira ? 'Issue' : 'Card',
