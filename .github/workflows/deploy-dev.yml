@@ -79,6 +79,13 @@ jobs:
             cascade-migrator:dev \
             npx tsx tools/migrate-triggers.ts
 
+      - name: Run hooks migration (dev)
+        run: |
+          docker run --rm \
+            -e DATABASE_URL="${{ secrets.DEV_DATABASE_URL }}" \
+            cascade-migrator:dev \
+            npx tsx tools/migrate-hooks.ts --apply
+
       - name: Pull and restart cascade-router-dev
         run: |
           cd /opt/services
