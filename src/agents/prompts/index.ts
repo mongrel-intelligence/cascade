@@ -236,6 +236,19 @@ export function getRawTemplate(agentType: string): string {
 	return loadTemplate(agentType);
 }
 
+/**
+ * Read the raw .eta template file for an agent type without requiring initPrompts().
+ * Safe to call during startup seeding or before the prompt system is initialized.
+ * Returns undefined if the file does not exist.
+ */
+export function readTemplateFileSync(agentType: string): string | undefined {
+	try {
+		return readFileSync(join(templatesDir, `${agentType}.eta`), 'utf-8');
+	} catch {
+		return undefined;
+	}
+}
+
 /** Returns the raw partial source from disk. */
 export function getRawPartial(name: string): string {
 	const diskPath = join(templatesDir, 'partials', `${name}.eta`);

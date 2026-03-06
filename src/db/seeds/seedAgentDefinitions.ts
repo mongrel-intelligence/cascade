@@ -9,6 +9,7 @@
  */
 
 import { getKnownAgentTypes, loadAgentDefinition } from '../../agents/definitions/loader.js';
+import { readTemplateFileSync } from '../../agents/prompts/index.js';
 import { upsertAgentDefinition } from '../repositories/agentDefinitionsRepository.js';
 
 export async function seedAgentDefinitions(): Promise<void> {
@@ -18,7 +19,11 @@ export async function seedAgentDefinitions(): Promise<void> {
 
 	for (const agentType of agentTypes) {
 		const definition = loadAgentDefinition(agentType);
-		await upsertAgentDefinition(agentType, definition, /* isBuiltin */ true);
+		const systemPrompt = readTemplateFileSync(agentType);
+		const enriched = systemPrompt
+			? { ...definition, prompts: { ...definition.prompts, systemPrompt } }
+			: definition;
+		await upsertAgentDefinition(agentType, enriched, /* isBuiltin */ true);
 		console.log(`  ✓ ${agentType}`);
 	}
 
