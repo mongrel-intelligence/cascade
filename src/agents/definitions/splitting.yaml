@@ -52,7 +52,4 @@ prompts:
   taskPrompt: |
     Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.
 
-backend: {}
-
-
 hint: Gather all context needed for the current step before proceeding.

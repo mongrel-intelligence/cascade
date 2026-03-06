@@ -131,15 +131,15 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('definition content spot checks', () => {
-		it('implementation has requiresPR flag in hooks.scm', () => {
+		it('implementation has requiresPR flag in hooks.finish.scm', () => {
 			const def = loadAgentDefinition('implementation');
-			expect(def.backend.hooks?.scm?.requiresPR).toBe(true);
+			expect(def.hooks?.finish?.scm?.requiresPR).toBe(true);
 		});
 
-		it('non-implementation agents do not have hooks.scm.requiresPR', () => {
+		it('non-implementation agents do not have hooks.finish.scm.requiresPR', () => {
 			for (const agentType of ALL_AGENT_TYPES.filter((t) => t !== 'implementation')) {
 				const def = loadAgentDefinition(agentType);
-				expect(def.backend.hooks?.scm?.requiresPR).toBeUndefined();
+				expect(def.hooks?.finish?.scm?.requiresPR).toBeUndefined();
 			}
 		});
 
@@ -191,34 +191,31 @@ describe('YAML agent definitions loader', () => {
 			expect(def.capabilities.required).not.toContain('fs:write');
 		});
 
-		it('implementation has trailingMessage with all flags', () => {
+		it('implementation has trailing hooks with all flags', () => {
 			const def = loadAgentDefinition('implementation');
-			expect(def.trailingMessage).toEqual({
-				includeDiagnostics: true,
-				includeTodoProgress: true,
-				includeGitStatus: true,
-				includePRStatus: true,
-				includeReminder: true,
+			expect(def.hooks?.trailing).toEqual({
+				scm: { gitStatus: true, prStatus: true },
+				builtin: { diagnostics: true, todoProgress: true, reminder: true },
 			});
 		});
 
-		it('respond-to-review has diagnostics-only trailingMessage', () => {
+		it('respond-to-review has diagnostics-only trailing hooks', () => {
 			const def = loadAgentDefinition('respond-to-review');
-			expect(def.trailingMessage).toEqual({
-				includeDiagnostics: true,
+			expect(def.hooks?.trailing).toEqual({
+				builtin: { diagnostics: true },
 			});
 		});
 
-		it('respond-to-ci has diagnostics-only trailingMessage', () => {
+		it('respond-to-ci has diagnostics-only trailing hooks', () => {
 			const def = loadAgentDefinition('respond-to-ci');
-			expect(def.trailingMessage).toEqual({
-				includeDiagnostics: true,
+			expect(def.hooks?.trailing).toEqual({
+				builtin: { diagnostics: true },
 			});
 		});
 
-		it('splitting has no trailingMessage', () => {
+		it('splitting has no hooks', () => {
 			const def = loadAgentDefinition('splitting');
-			expect(def.trailingMessage).toBeUndefined();
+			expect(def.hooks).toBeUndefined();
 		});
 
 		it('respond-to-review includes review comment gadget options', () => {
@@ -258,7 +255,7 @@ describe('YAML agent definitions loader', () => {
 			expect(caps.canCreatePR).toBe(true);
 			expect(caps.canUpdateChecklists).toBe(true);
 			expect(caps.isReadOnly).toBe(false);
-			expect(def.backend.hooks?.scm?.enableStopHooks).toBe(true);
+			expect(def.hooks?.finish?.scm?.requiresPR).toBe(true);
 			expect(def.integrations?.required).toContain('scm');
 		});
 
@@ -268,7 +265,7 @@ describe('YAML agent definitions loader', () => {
 
 			expect(caps.canEditFiles).toBe(false);
 			expect(caps.isReadOnly).toBe(true);
-			expect(def.backend.hooks?.scm?.enableStopHooks).toBe(false);
+			expect(def.hooks?.finish?.scm?.requiresReview).toBe(true);
 			expect(def.integrations?.required).toContain('scm');
 		});
 

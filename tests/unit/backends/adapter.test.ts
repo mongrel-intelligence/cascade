@@ -26,6 +26,7 @@ vi.mock('../../../src/utils/cascadeEnv.js', () => ({
 
 vi.mock('../../../src/utils/repo.js', () => ({
 	cleanupTempDir: vi.fn(),
+	getWorkspaceDir: vi.fn(() => '/tmp/cascade-test'),
 	parseRepoFullName: vi.fn((fullName: string) => {
 		const [owner, repo] = fullName.split('/');
 		return { owner, repo };
@@ -202,8 +203,8 @@ function makeMockProfile(overrides?: Partial<AgentProfile>): AgentProfile {
 	return {
 		filterTools: (tools) => tools,
 		sdkTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
-		enableStopHooks: true,
 		needsGitHubToken: false,
+		finishHooks: {},
 		fetchContext: vi.fn().mockResolvedValue([]),
 		buildTaskPrompt: () => 'Process the work item',
 		capabilities: {
@@ -406,7 +407,7 @@ describe('executeWithBackend', () => {
 			makeMockProfile({
 				filterTools,
 				sdkTools: ['Read', 'Bash', 'Glob', 'Grep'],
-				enableStopHooks: false,
+				finishHooks: {},
 			}),
 		);
 		const backend = makeMockBackend();
@@ -424,7 +425,7 @@ describe('executeWithBackend', () => {
 
 	it('marks implementation agent as failed when no PR was created', async () => {
 		setupMocks();
-		mockGetAgentProfile.mockReturnValue(makeMockProfile({ requiresPR: true }));
+		mockGetAgentProfile.mockReturnValue(makeMockProfile({ finishHooks: { requiresPR: true } }));
 		const backend = makeMockBackend();
 		vi.mocked(backend.execute).mockResolvedValue({
 			success: true,

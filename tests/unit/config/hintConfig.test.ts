@@ -36,11 +36,16 @@ const ctx = { iteration: 3, maxIterations: 20 };
 /** Minimal agent definition shape for testing */
 function makeDefinition(overrides?: {
 	hint?: string;
-	trailingMessage?: Record<string, boolean>;
+	hooks?: {
+		trailing?: {
+			scm?: { gitStatus?: boolean; prStatus?: boolean };
+			builtin?: { diagnostics?: boolean; todoProgress?: boolean; reminder?: boolean };
+		};
+	};
 }) {
 	return {
 		hint: overrides?.hint ?? 'Complete the current task efficiently.',
-		trailingMessage: overrides?.trailingMessage ?? {},
+		hooks: overrides?.hooks,
 	};
 }
 
@@ -75,7 +80,7 @@ describe('getIterationTrailingMessage', () => {
 				if (agentType === 'respond-to-ci') {
 					return makeDefinition({
 						hint: 'Fix CI failures with minimal, focused changes.',
-						trailingMessage: { includeDiagnostics: true },
+						hooks: { trailing: { builtin: { diagnostics: true } } },
 					}) as never;
 				}
 				return null as never;
@@ -145,7 +150,7 @@ describe('getIterationTrailingMessage', () => {
 			mockResolveAgentDefinition.mockImplementation(async (agentType: string) => {
 				if (agentType === 'respond-to-review') {
 					return makeDefinition({
-						trailingMessage: { includeDiagnostics: true },
+						hooks: { trailing: { builtin: { diagnostics: true } } },
 					}) as never;
 				}
 				return null as never;
@@ -177,9 +182,7 @@ describe('getIterationTrailingMessage', () => {
 			});
 
 			// review agent has no trailingMessage.includeDiagnostics
-			mockResolveAgentDefinition.mockResolvedValue(
-				makeDefinition({ trailingMessage: {} }) as never,
-			);
+			mockResolveAgentDefinition.mockResolvedValue(makeDefinition({}) as never);
 
 			const trailingFn = await getIterationTrailingMessage('review');
 			const message = typeof trailingFn === 'function' ? trailingFn(ctx) : trailingFn;
@@ -198,12 +201,11 @@ describe('getIterationTrailingMessage', () => {
 				if (agentType === 'implementation') {
 					return makeDefinition({
 						hint: 'Batch related edits together.',
-						trailingMessage: {
-							includeDiagnostics: true,
-							includeTodoProgress: true,
-							includeGitStatus: true,
-							includePRStatus: true,
-							includeReminder: true,
+						hooks: {
+							trailing: {
+								scm: { gitStatus: true, prStatus: true },
+								builtin: { diagnostics: true, todoProgress: true, reminder: true },
+							},
 						},
 					}) as never;
 				}
@@ -385,7 +387,7 @@ describe('getIterationTrailingMessage', () => {
 			mockResolveAgentDefinition.mockImplementation(async (agentType: string) => {
 				if (agentType === 'implementation') {
 					return makeDefinition({
-						trailingMessage: { includeDiagnostics: true },
+						hooks: { trailing: { builtin: { diagnostics: true } } },
 					}) as never;
 				}
 				return null as never;

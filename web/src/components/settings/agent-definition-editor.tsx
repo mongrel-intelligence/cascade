@@ -366,118 +366,121 @@ function StrategiesSection({
 	);
 }
 
-function BackendSection({
+/**
+ * Immutably set a deeply nested key in an object.
+ * e.g. deepSet({}, ['trailing', 'scm', 'gitStatus'], true)
+ */
+function deepSet(
+	obj: Record<string, unknown>,
+	path: string[],
+	value: unknown,
+): Record<string, unknown> {
+	if (path.length === 0) return obj;
+	const [head, ...rest] = path;
+	return {
+		...obj,
+		[head]:
+			rest.length === 0
+				? value
+				: deepSet((obj[head] ?? {}) as Record<string, unknown>, rest, value),
+	};
+}
+
+function HooksSection({
 	def,
-	setBackend,
+	setDef,
 }: {
 	def: AgentDefinition;
-	setBackend: (k: keyof AgentDefinition['backend'], v: unknown) => void;
+	setDef: React.Dispatch<React.SetStateAction<AgentDefinition>>;
 }) {
-	// Helper to update a specific SCM hook field
-	const setHook = (
-		k: keyof NonNullable<NonNullable<AgentDefinition['backend']['hooks']>['scm']>,
-		v: unknown,
-	) => {
-		setBackend('hooks', {
-			...def.backend.hooks,
-			scm: {
-				...def.backend.hooks?.scm,
-				[k]: v,
-			},
-		});
+	const setHookValue = (path: string[], v: boolean) => {
+		setDef((d) => ({ ...d, hooks: deepSet((d.hooks ?? {}) as Record<string, unknown>, path, v) }));
 	};
 
-	const scm = def.backend.hooks?.scm;
+	const trailing = def.hooks?.trailing;
+	const finish = def.hooks?.finish;
 
 	return (
 		<section className="space-y-3">
-			<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-				Backend
-			</h3>
+			<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Hooks</h3>
 
-			{/* SCM Hooks */}
+			{/* Trailing Messages */}
+			<div className="rounded-md border border-border p-3 space-y-3">
+				<div className="text-sm font-medium">Trailing Messages</div>
+
+				<div className="space-y-2">
+					<div className="text-xs font-medium text-muted-foreground uppercase">SCM</div>
+					<div className="grid grid-cols-2 gap-2">
+						<Toggle
+							checked={trailing?.scm?.gitStatus ?? false}
+							onChange={(v) => setHookValue(['trailing', 'scm', 'gitStatus'], v)}
+							label="Git Status"
+							description="Appends git status showing uncommitted changes to each iteration message."
+						/>
+						<Toggle
+							checked={trailing?.scm?.prStatus ?? false}
+							onChange={(v) => setHookValue(['trailing', 'scm', 'prStatus'], v)}
+							label="PR Status"
+							description="Appends PR view showing current state and checks to each iteration message."
+						/>
+					</div>
+				</div>
+
+				<div className="space-y-2">
+					<div className="text-xs font-medium text-muted-foreground uppercase">Built-in</div>
+					<div className="grid grid-cols-2 gap-2">
+						<Toggle
+							checked={trailing?.builtin?.diagnostics ?? false}
+							onChange={(v) => setHookValue(['trailing', 'builtin', 'diagnostics'], v)}
+							label="Diagnostics"
+							description="Appends lint/type-check errors and loop detection warnings to each iteration message."
+						/>
+						<Toggle
+							checked={trailing?.builtin?.todoProgress ?? false}
+							onChange={(v) => setHookValue(['trailing', 'builtin', 'todoProgress'], v)}
+							label="Todo Progress"
+							description="Appends the current todo checklist progress to each iteration message."
+						/>
+						<Toggle
+							checked={trailing?.builtin?.reminder ?? false}
+							onChange={(v) => setHookValue(['trailing', 'builtin', 'reminder'], v)}
+							label="Reminder"
+							description="Appends an efficiency reminder to batch gadget calls in each iteration message."
+						/>
+					</div>
+				</div>
+			</div>
+
+			{/* Finish Requirements */}
 			<div className="rounded-md border border-border p-3 space-y-2">
-				<div className="text-sm font-medium">SCM Hooks</div>
+				<div className="text-sm font-medium">Finish Requirements</div>
+				<div className="text-xs font-medium text-muted-foreground uppercase">SCM</div>
 				<div className="grid grid-cols-2 gap-2">
 					<Toggle
-						checked={scm?.enableStopHooks ?? false}
-						onChange={(v) => setHook('enableStopHooks', v)}
-						label="Enable Stop Hooks"
-						description="Checks for uncommitted/unpushed changes before agent finishes. Enable for implementation; disable for planning/review."
-					/>
-					<Toggle
-						checked={scm?.blockGitPush ?? false}
-						onChange={(v) => setHook('blockGitPush', v)}
-						label="Block Git Push"
-						description="Prevents direct pushes, requiring cascade-tools for PRs. Disable for existing PR branches."
-					/>
-					<Toggle
-						checked={scm?.requiresPR ?? false}
-						onChange={(v) => setHook('requiresPR', v)}
+						checked={finish?.scm?.requiresPR ?? false}
+						onChange={(v) => setHookValue(['finish', 'scm', 'requiresPR'], v)}
 						label="Requires PR"
 						description="Agent must create a PR before the session can finish."
 					/>
 					<Toggle
-						checked={scm?.requiresReview ?? false}
-						onChange={(v) => setHook('requiresReview', v)}
+						checked={finish?.scm?.requiresReview ?? false}
+						onChange={(v) => setHookValue(['finish', 'scm', 'requiresReview'], v)}
 						label="Requires Review"
 						description="Agent must submit a code review before the session can finish."
 					/>
 					<Toggle
-						checked={scm?.requiresPushedChanges ?? false}
-						onChange={(v) => setHook('requiresPushedChanges', v)}
+						checked={finish?.scm?.requiresPushedChanges ?? false}
+						onChange={(v) => setHookValue(['finish', 'scm', 'requiresPushedChanges'], v)}
 						label="Requires Pushed Changes"
 						description="Agent must commit and push changes before the session can finish."
 					/>
+					<Toggle
+						checked={finish?.scm?.blockGitPush ?? false}
+						onChange={(v) => setHookValue(['finish', 'scm', 'blockGitPush'], v)}
+						label="Block Git Push"
+						description="Prevents direct pushes, requiring cascade-tools for PRs. Disable for existing PR branches."
+					/>
 				</div>
-			</div>
-		</section>
-	);
-}
-
-function TrailingMessageSection({
-	def,
-	setTrailing,
-}: {
-	def: AgentDefinition;
-	setTrailing: (k: string, v: boolean) => void;
-}) {
-	return (
-		<section className="space-y-3">
-			<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-				Trailing Message
-			</h3>
-			<div className="grid grid-cols-2 gap-2">
-				<Toggle
-					checked={def.trailingMessage?.includeDiagnostics ?? false}
-					onChange={(v) => setTrailing('includeDiagnostics', v)}
-					label="Include Diagnostics"
-					description="Appends lint/type-check errors and loop detection warnings to each iteration message."
-				/>
-				<Toggle
-					checked={def.trailingMessage?.includeTodoProgress ?? false}
-					onChange={(v) => setTrailing('includeTodoProgress', v)}
-					label="Include Todo Progress"
-					description="Appends the current todo checklist progress to each iteration message."
-				/>
-				<Toggle
-					checked={def.trailingMessage?.includeGitStatus ?? false}
-					onChange={(v) => setTrailing('includeGitStatus', v)}
-					label="Include Git Status"
-					description="Appends git status showing uncommitted changes to each iteration message."
-				/>
-				<Toggle
-					checked={def.trailingMessage?.includePRStatus ?? false}
-					onChange={(v) => setTrailing('includePRStatus', v)}
-					label="Include PR Status"
-					description="Appends PR view showing current state and checks to each iteration message."
-				/>
-				<Toggle
-					checked={def.trailingMessage?.includeReminder ?? false}
-					onChange={(v) => setTrailing('includeReminder', v)}
-					label="Include Reminder"
-					description="Appends an efficiency reminder to batch gadget calls in each iteration message."
-				/>
 			</div>
 		</section>
 	);
@@ -957,9 +960,7 @@ const EMPTY_DEFINITION: AgentDefinition = {
 	},
 	triggers: [],
 	strategies: {},
-	backend: {},
 	hint: '',
-	trailingMessage: undefined,
 	prompts: {
 		taskPrompt:
 			'Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.',
@@ -1051,10 +1052,6 @@ function useDefinitionEditor(existing: DefinitionRow | undefined, onClose: () =>
 
 	const setIdentity = (k: keyof AgentDefinition['identity'], v: string) =>
 		setDef((d) => ({ ...d, identity: { ...d.identity, [k]: v } }));
-	const setBackend = (k: keyof AgentDefinition['backend'], v: unknown) =>
-		setDef((d) => ({ ...d, backend: { ...d.backend, [k]: v } }));
-	const setTrailing = (k: string, v: boolean) =>
-		setDef((d) => ({ ...d, trailingMessage: { ...(d.trailingMessage ?? {}), [k]: v } }));
 
 	const clearJsonError = () => setJsonError(null);
 
@@ -1079,8 +1076,6 @@ function useDefinitionEditor(existing: DefinitionRow | undefined, onClose: () =>
 		handleTabChange,
 		handleSave,
 		setIdentity,
-		setBackend,
-		setTrailing,
 	};
 }
 
@@ -1108,8 +1103,6 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 		handleTabChange,
 		handleSave,
 		setIdentity,
-		setBackend,
-		setTrailing,
 	} = useDefinitionEditor(existing, onClose);
 
 	// ─────────────────────────────────────────────────────────────────────────
@@ -1187,7 +1180,7 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 					<TabsContent value="definition" className="space-y-6 pt-4">
 						<IdentitySection def={def} setIdentity={setIdentity} />
 						<StrategiesSection def={def} setDef={setDef} />
-						<BackendSection def={def} setBackend={setBackend} />
+						<HooksSection def={def} setDef={setDef} />
 
 						<section className="space-y-3">
 							<h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -1204,8 +1197,6 @@ export function AgentDefinitionEditor({ existing, onClose }: AgentDefinitionEdit
 								/>
 							</div>
 						</section>
-
-						<TrailingMessageSection def={def} setTrailing={setTrailing} />
 					</TabsContent>
 
 					<TabsContent value="capabilities" className="space-y-6 pt-4">

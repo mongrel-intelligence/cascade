@@ -54,11 +54,6 @@ prompts:
     Only emails from **<%= it.senderEmail %>** were included in the search.
     <% } %>
 
-backend: {}
-
-
-trailingMessage: {}
-
 hint: >-
   Search for emails, read them, and send funny responses. Mark processed emails
   as seen to prevent re-processing.

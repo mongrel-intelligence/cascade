@@ -1,15 +1,6 @@
-/**
- * SCM hook flags resolved from the agent definition's hooks.scm configuration.
- * These drive finish validation logic.
- */
-export interface SessionHooks {
-	/** Whether the agent must create a PR before finishing */
-	requiresPR?: boolean;
-	/** Whether the agent must submit a review before finishing */
-	requiresReview?: boolean;
-	/** Whether the agent must have pushed changes before finishing */
-	requiresPushedChanges?: boolean;
-}
+import type { FinishHookFlags } from '../agents/definitions/schema.js';
+
+export type SessionHooks = FinishHookFlags;
 
 // Session-level state accessible to all gadgets
 let sessionState = {

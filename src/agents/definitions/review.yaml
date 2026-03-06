@@ -58,11 +58,9 @@ prompts:
 
     Examine the code changes carefully and submit your review using CreatePRReview.
 
-backend:
-  hooks:
+hooks:
+  finish:
     scm:
-      enableStopHooks: false
       requiresReview: true
-
 
 hint: Focus on the current aspect of review before moving to the next. Read related files together.
