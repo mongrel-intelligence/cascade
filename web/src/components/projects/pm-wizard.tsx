@@ -924,7 +924,6 @@ export function PMWizard({
 		(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
 
 	const [adminTokensOpen, setAdminTokensOpen] = useState(false);
-	const [oneTimeGithubToken, setOneTimeGithubToken] = useState('');
 	const [oneTimeTrelloApiKey, setOneTimeTrelloApiKey] = useState('');
 	const [oneTimeTrelloToken, setOneTimeTrelloToken] = useState('');
 	const [oneTimeJiraEmail, setOneTimeJiraEmail] = useState('');
@@ -932,7 +931,6 @@ export function PMWizard({
 
 	const buildOneTimeTokens = () => {
 		const tokens: Record<string, string> = {};
-		if (oneTimeGithubToken) tokens.github = oneTimeGithubToken;
 		if (oneTimeTrelloApiKey) tokens.trelloApiKey = oneTimeTrelloApiKey;
 		if (oneTimeTrelloToken) tokens.trelloToken = oneTimeTrelloToken;
 		if (oneTimeJiraEmail) tokens.jiraEmail = oneTimeJiraEmail;
@@ -941,7 +939,6 @@ export function PMWizard({
 	};
 
 	const clearOneTimeTokens = () => {
-		setOneTimeGithubToken('');
 		setOneTimeTrelloApiKey('');
 		setOneTimeTrelloToken('');
 		setOneTimeJiraEmail('');
@@ -1581,7 +1578,7 @@ export function PMWizard({
 					{/* Per-provider errors */}
 					{webhooksQuery.data?.errors &&
 						Object.entries(webhooksQuery.data.errors)
-							.filter(([, err]) => err != null)
+							.filter(([provider, err]) => err != null && provider !== 'github')
 							.map(([provider, err]) => (
 								<div
 									key={provider}
@@ -1626,7 +1623,7 @@ export function PMWizard({
 										type="button"
 										onClick={() => {
 											// Extract base URL from callback URL
-											const base = w.url.replace(/\/(trello|jira|github)\/webhook$/, '');
+											const base = w.url.replace(/\/(trello|jira)\/webhook$/, '');
 											deleteWebhookMutation.mutate(base);
 										}}
 										disabled={deleteWebhookMutation.isPending}
@@ -1667,7 +1664,9 @@ export function PMWizard({
 						{createWebhookMutation.isSuccess && (
 							<p className="text-sm text-green-600 dark:text-green-400">
 								{webhooksQuery.data?.errors &&
-								Object.values(webhooksQuery.data.errors).some((e) => e != null)
+								Object.entries(webhooksQuery.data.errors)
+									.filter(([provider]) => provider !== 'github')
+									.some(([, e]) => e != null)
 									? 'Webhook created, but some providers failed to load — see warnings above.'
 									: 'Webhook created successfully.'}
 							</p>
@@ -1695,22 +1694,6 @@ export function PMWizard({
 									Provide tokens with elevated permissions for webhook management. These are used
 									once and never saved.
 								</p>
-								{/* GitHub — always shown */}
-								<div className="space-y-1">
-									<Label className="text-xs">
-										GitHub PAT{' '}
-										<span className="text-muted-foreground font-normal">
-											(admin:repo_hook scope)
-										</span>
-									</Label>
-									<Input
-										value={oneTimeGithubToken}
-										onChange={(e) => setOneTimeGithubToken(e.target.value)}
-										placeholder="ghp_... — used once, not saved"
-										type="password"
-										className="h-8 text-sm"
-									/>
-								</div>
 								{/* PM-provider-specific fields */}
 								{state.provider === 'trello' ? (
 									<>
