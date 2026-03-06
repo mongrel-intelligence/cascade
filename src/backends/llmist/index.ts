@@ -106,11 +106,7 @@ export class LlmistBackend implements AgentBackend {
 			projectId: input.project.id,
 			cardId: agentInput.cardId,
 			// Pass resolved hook flags for finish validation (hook-driven instead of agent-type checks)
-			hooks: {
-				requiresPR: profile.requiresPR,
-				requiresReview: profile.requiresReview,
-				requiresPushedChanges: profile.requiresPushedChanges,
-			},
+			hooks: profile.finishHooks,
 			// Pass the progress monitor from the adapter so createObserverHooks can call
 			// onIteration/onToolCall/onText — enables progress updates to Trello/GitHub
 			progressMonitor: progressReporter as Parameters<

@@ -150,6 +150,7 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { execFileSync } from 'node:child_process';
+import { hasFinishValidation } from '../../../src/agents/definitions/profiles.js';
 import {
 	formatPRComments,
 	formatPRDetails,
@@ -226,8 +227,8 @@ describe('getAgentProfile', () => {
 			);
 		});
 
-		it('enables stop hooks', () => {
-			expect(profile.enableStopHooks).toBe(true);
+		it('has finish hooks requiring pushed changes', () => {
+			expect(profile.finishHooks.requiresPushedChanges).toBe(true);
 		});
 
 		it('needs GitHub token', () => {
@@ -296,8 +297,8 @@ describe('getAgentProfile', () => {
 			);
 		});
 
-		it('enables stop hooks', () => {
-			expect(profile.enableStopHooks).toBe(true);
+		it('has finish hooks requiring pushed changes', () => {
+			expect(profile.finishHooks.requiresPushedChanges).toBe(true);
 		});
 
 		it('needs GitHub token', () => {
@@ -1073,5 +1074,35 @@ describe('resolveContextPipeline edge cases', () => {
 		);
 
 		expect(injections).toHaveLength(0);
+	});
+});
+
+// ============================================================================
+// hasFinishValidation
+// ============================================================================
+
+describe('hasFinishValidation', () => {
+	it('returns true when requiresPR is set', () => {
+		expect(hasFinishValidation({ requiresPR: true })).toBe(true);
+	});
+
+	it('returns true when requiresReview is set', () => {
+		expect(hasFinishValidation({ requiresReview: true })).toBe(true);
+	});
+
+	it('returns true when requiresPushedChanges is set', () => {
+		expect(hasFinishValidation({ requiresPushedChanges: true })).toBe(true);
+	});
+
+	it('returns false when only blockGitPush is set', () => {
+		expect(hasFinishValidation({ blockGitPush: true })).toBe(false);
+	});
+
+	it('returns false for empty hooks', () => {
+		expect(hasFinishValidation({})).toBe(false);
+	});
+
+	it('returns true when multiple finish requirements are set', () => {
+		expect(hasFinishValidation({ requiresPR: true, requiresReview: true })).toBe(true);
 	});
 });

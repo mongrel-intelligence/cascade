@@ -82,11 +82,7 @@ function createMockDefinition(overrides?: Partial<AgentDefinition>): AgentDefini
 		},
 		triggers: [],
 		strategies: {},
-		backend: {
-			enableStopHooks: true,
-		},
 		hint: 'A test agent',
-		trailingMessage: undefined,
 		prompts: {
 			taskPrompt:
 				'Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.',

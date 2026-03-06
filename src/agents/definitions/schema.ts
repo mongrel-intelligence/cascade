@@ -205,67 +205,40 @@ const StrategiesSchema = z.object({
 	gadgetOptions: GadgetOptionsSchema,
 });
 
-/**
- * SCM-specific hook configuration.
- * Controls stop-hook behavior and push/PR requirements for SCM-integrated agents.
- */
-export const ScmHooksSchema = z.object({
-	/** Whether to enable stop hooks that check for uncommitted/unpushed changes */
-	enableStopHooks: z.boolean().optional(),
-	/** Whether to block git push in hooks (set false for agents working on existing PR branches) */
-	blockGitPush: z.boolean().optional(),
-	/** Whether the agent must create a PR before finishing */
+// --- Trailing hook schemas ---
+const ScmTrailingSchema = z.object({
+	gitStatus: z.boolean().optional(),
+	prStatus: z.boolean().optional(),
+});
+
+const BuiltinTrailingSchema = z.object({
+	diagnostics: z.boolean().optional(),
+	todoProgress: z.boolean().optional(),
+	reminder: z.boolean().optional(),
+});
+
+const TrailingHooksSchema = z.object({
+	scm: ScmTrailingSchema.optional(),
+	builtin: BuiltinTrailingSchema.optional(),
+});
+
+// --- Finish hook schemas ---
+const ScmFinishSchema = z.object({
 	requiresPR: z.boolean().optional(),
-	/** Whether the agent must submit a review before finishing */
 	requiresReview: z.boolean().optional(),
-	/** Whether the agent must have pushed changes before finishing */
 	requiresPushedChanges: z.boolean().optional(),
-});
-
-/**
- * Category-scoped hook configuration.
- * Extensible for future categories (e.g., hooks.email, hooks.pm).
- */
-export const HooksSchema = z.object({
-	/** SCM (source control) hook configuration */
-	scm: ScmHooksSchema.optional(),
-});
-
-const BackendSchema = z.object({
-	/**
-	 * @deprecated Use hooks.scm.enableStopHooks instead.
-	 * Kept for backward compatibility — new format wins when both are present.
-	 */
-	enableStopHooks: z.boolean().optional(),
-	/**
-	 * @deprecated No longer read from agent definitions.
-	 * GitHub token access is now derived from `integrations.required` containing 'scm'.
-	 * Kept optional for backward compatibility — ignored during parsing.
-	 */
-	needsGitHubToken: z.boolean().optional(),
-	/**
-	 * @deprecated Use hooks.scm.blockGitPush instead.
-	 * Kept for backward compatibility — new format wins when both are present.
-	 */
 	blockGitPush: z.boolean().optional(),
-	/**
-	 * @deprecated Use hooks.scm.requiresPR instead.
-	 * Kept for backward compatibility — new format wins when both are present.
-	 */
-	requiresPR: z.boolean().optional(),
-	/** Category-scoped hook configuration */
-	hooks: HooksSchema.optional(),
 });
 
-const TrailingMessageSchema = z
-	.object({
-		includeDiagnostics: z.boolean().optional(),
-		includeTodoProgress: z.boolean().optional(),
-		includeGitStatus: z.boolean().optional(),
-		includePRStatus: z.boolean().optional(),
-		includeReminder: z.boolean().optional(),
-	})
-	.optional();
+const FinishHooksSchema = z.object({
+	scm: ScmFinishSchema.optional(),
+});
+
+// --- Top-level integration hooks ---
+export const IntegrationHooksSchema = z.object({
+	trailing: TrailingHooksSchema.optional(),
+	finish: FinishHooksSchema.optional(),
+});
 
 const PromptsSchema = z.object({
 	systemPrompt: z.string().optional(),
@@ -304,12 +277,10 @@ export const AgentDefinitionSchema = z.object({
 	triggers: z.array(SupportedTriggerSchema).default([]),
 	/** Strategy configuration (gadget options) */
 	strategies: StrategiesSchema,
-	/** Backend execution configuration */
-	backend: BackendSchema,
+	/** Integration hooks configuration (trailing messages, finish requirements) */
+	hooks: IntegrationHooksSchema.optional(),
 	/** Iteration guidance hint for the agent */
 	hint: z.string(),
-	/** Trailing message configuration */
-	trailingMessage: TrailingMessageSchema,
 	/** Custom prompts (taskPrompt required, systemPrompt optional) */
 	prompts: PromptsSchema,
 });
@@ -345,8 +316,12 @@ export type IntegrationRequirements = z.infer<typeof IntegrationRequirementsSche
 /** Known provider (trello, jira, github, etc.) */
 export type KnownProvider = z.infer<typeof KnownProviderSchema>;
 
-/** SCM hook configuration */
-export type ScmHooks = z.infer<typeof ScmHooksSchema>;
+/** Integration hooks (trailing + finish) */
+export type IntegrationHooks = z.infer<typeof IntegrationHooksSchema>;
 
-/** Category-scoped hook configuration */
-export type Hooks = z.infer<typeof HooksSchema>;
+/** Flattened trailing hook flags for consumers */
+export type TrailingHookFlags = z.infer<typeof ScmTrailingSchema> &
+	z.infer<typeof BuiltinTrailingSchema>;
+
+/** Finish hook flags (SCM requirements) */
+export type FinishHookFlags = z.infer<typeof ScmFinishSchema>;

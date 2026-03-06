@@ -1,6 +1,7 @@
 import { execSync } from 'node:child_process';
 import type { TrailingMessage } from 'llmist';
 import { resolveAgentDefinition } from '../agents/definitions/index.js';
+import type { TrailingHookFlags } from '../agents/definitions/schema.js';
 import {
 	formatDiagnosticStatus,
 	getDiagnosticLoopFiles,
@@ -71,30 +72,24 @@ function formatIterationStatus(
 function buildFullTrailingMessage(
 	timestamp: string,
 	iterationStatus: string,
-	flags: {
-		includeDiagnostics?: boolean;
-		includeTodoProgress?: boolean;
-		includeGitStatus?: boolean;
-		includePRStatus?: boolean;
-		includeReminder?: boolean;
-	},
+	flags: TrailingHookFlags,
 ): string {
 	const sections: string[] = [timestamp, iterationStatus];
 
-	if (flags.includeDiagnostics && hasAnyDiagnosticErrors()) {
+	if (flags.diagnostics && hasAnyDiagnosticErrors()) {
 		sections.push(formatDiagnosticStatus());
 		const loopWarning = formatDiagnosticLoopWarning();
 		if (loopWarning) sections.push(loopWarning);
 	}
 
-	if (flags.includeTodoProgress) {
+	if (flags.todoProgress) {
 		const todos = loadTodos();
 		if (todos.length > 0) {
 			sections.push(`## Current Progress\n\n${formatTodoList(todos)}`);
 		}
 	}
 
-	if (flags.includeGitStatus) {
+	if (flags.gitStatus) {
 		const gitStatus = getGitStatus();
 		sections.push(
 			gitStatus
@@ -103,7 +98,7 @@ function buildFullTrailingMessage(
 		);
 	}
 
-	if (flags.includePRStatus) {
+	if (flags.prStatus) {
 		const prView = getPRView();
 		sections.push(
 			prView
@@ -112,7 +107,7 @@ function buildFullTrailingMessage(
 		);
 	}
 
-	if (flags.includeReminder) {
+	if (flags.reminder) {
 		sections.push(
 			'## Reminder\n\nCall multiple gadgets in a single response when you know which ones you need. ' +
 				'For example, read multiple related files at once, or make multiple independent edits together.',
@@ -158,7 +153,7 @@ function formatDiagnosticLoopWarning(): string | null {
  * - Always shows current iteration, remaining count, and percentage
  * - Adds urgency indicator when running low on iterations
  * - Includes agent-specific batch processing hints
- * - Uses agent definition trailingMessage flags to decide which extra sections to include
+ * - Uses agent definition hooks.trailing flags to decide which extra sections to include
  *
  * Note: Loop detection warnings are injected as separate user messages
  * (see agentLoop.ts) rather than in trailing messages for higher visibility.
@@ -172,20 +167,23 @@ function formatDiagnosticLoopWarning(): string | null {
 export async function getIterationTrailingMessage(agentType?: string): Promise<TrailingMessage> {
 	// Resolve agent definition once (DB → YAML fallback) for both hint and flags
 	let batchHint = 'Complete the current task efficiently before moving to the next.';
-	let flags: {
-		includeDiagnostics?: boolean;
-		includeTodoProgress?: boolean;
-		includeGitStatus?: boolean;
-		includePRStatus?: boolean;
-		includeReminder?: boolean;
-	} = {};
+	let flags: TrailingHookFlags = {};
 
 	if (agentType) {
 		try {
 			const def = await resolveAgentDefinition(agentType);
 			if (def) {
 				batchHint = def.hint;
-				flags = def.trailingMessage ?? {};
+				const trailing = def.hooks?.trailing;
+				const builtin = trailing?.builtin;
+				const scm = trailing?.scm;
+				flags = {
+					diagnostics: builtin?.diagnostics,
+					todoProgress: builtin?.todoProgress,
+					gitStatus: scm?.gitStatus,
+					prStatus: scm?.prStatus,
+					reminder: builtin?.reminder,
+				};
 			}
 		} catch {
 			// Unknown agent type — use defaults

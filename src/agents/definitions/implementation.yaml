@@ -54,21 +54,20 @@ prompts:
   taskPrompt: |
     Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.
 
-backend:
-  hooks:
+hooks:
+  trailing:
     scm:
-      enableStopHooks: true
+      gitStatus: true
+      prStatus: true
+    builtin:
+      diagnostics: true
+      todoProgress: true
+      reminder: true
+  finish:
+    scm:
       requiresPR: true
-
 
 hint: >-
   Complete the current todo in as few iterations as possible. Batch related
   edits together. Verify with Tmux after edits. NEVER mark acceptance criteria
   complete without passing verification.
-
-trailingMessage:
-  includeDiagnostics: true
-  includeTodoProgress: true
-  includeGitStatus: true
-  includePRStatus: true
-  includeReminder: true

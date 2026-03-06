@@ -326,9 +326,6 @@ describe('AgentDefinitionSchema', () => {
 			optional: [],
 		},
 		strategies: {},
-		backend: {
-			enableStopHooks: false,
-		},
 		hint: 'Do the thing efficiently.',
 		prompts: {
 			taskPrompt: 'Analyze and process the work item with ID: <%= it.cardId %>.',
@@ -346,16 +343,14 @@ describe('AgentDefinitionSchema', () => {
 			strategies: {
 				gadgetOptions: { includeReviewComments: true },
 			},
-			backend: {
-				...validDefinition.backend,
-				blockGitPush: false,
-			},
-			trailingMessage: {
-				includeDiagnostics: true,
-				includeTodoProgress: true,
-				includeGitStatus: true,
-				includePRStatus: true,
-				includeReminder: true,
+			hooks: {
+				trailing: {
+					scm: { gitStatus: true, prStatus: true },
+					builtin: { diagnostics: true, todoProgress: true, reminder: true },
+				},
+				finish: {
+					scm: { requiresPR: true, blockGitPush: false },
+				},
 			},
 		};
 
@@ -378,23 +373,23 @@ describe('AgentDefinitionSchema', () => {
 		expect(result.success).toBe(false);
 	});
 
-	it('allows trailingMessage to be omitted', () => {
+	it('allows hooks to be omitted', () => {
 		const result = AgentDefinitionSchema.safeParse(validDefinition);
 		expect(result.success).toBe(true);
 		if (result.success) {
-			expect(result.data.trailingMessage).toBeUndefined();
+			expect(result.data.hooks).toBeUndefined();
 		}
 	});
 
-	it('accepts requiresPR boolean', () => {
+	it('accepts requiresPR boolean in hooks.finish.scm', () => {
 		const good = {
 			...validDefinition,
-			backend: { ...validDefinition.backend, requiresPR: true },
+			hooks: { finish: { scm: { requiresPR: true } } },
 		};
 		const result = AgentDefinitionSchema.safeParse(good);
 		expect(result.success).toBe(true);
 		if (result.success) {
-			expect(result.data.backend.requiresPR).toBe(true);
+			expect(result.data.hooks?.finish?.scm?.requiresPR).toBe(true);
 		}
 	});
 
@@ -402,7 +397,7 @@ describe('AgentDefinitionSchema', () => {
 		const result = AgentDefinitionSchema.safeParse(validDefinition);
 		expect(result.success).toBe(true);
 		if (result.success) {
-			expect(result.data.backend.requiresPR).toBeUndefined();
+			expect(result.data.hooks?.finish?.scm?.requiresPR).toBeUndefined();
 		}
 	});
 

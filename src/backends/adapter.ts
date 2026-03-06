@@ -1,5 +1,6 @@
 import type { ModelSpec } from 'llmist';
 
+import { hasFinishValidation } from '../agents/definitions/index.js';
 import type { PromptContext } from '../agents/prompts/index.js';
 import {
 	type LogWriter,
@@ -135,8 +136,8 @@ async function buildBackendInput(
 		logWriter,
 		agentInput: input,
 		sdkTools: profile.sdkTools,
-		enableStopHooks: profile.enableStopHooks,
-		blockGitPush: profile.blockGitPush,
+		enableStopHooks: hasFinishValidation(profile.finishHooks),
+		blockGitPush: profile.finishHooks.blockGitPush,
 		...(Object.keys(projectSecrets).length > 0 && { projectSecrets }),
 	};
 }
@@ -266,7 +267,7 @@ export async function executeWithBackend(
 			}
 
 			postProcessResult(result, agentType, backend, input, identifier, {
-				requiresPR: profile.requiresPR,
+				requiresPR: profile.finishHooks.requiresPR,
 			});
 
 			return {
