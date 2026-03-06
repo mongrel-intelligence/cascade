@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { CheckSuiteSuccessTrigger } from '../../../src/triggers/github/check-suite-success.js';
+import {
+	CheckSuiteSuccessTrigger,
+	recentlyDispatched,
+} from '../../../src/triggers/github/check-suite-success.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
 import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
@@ -41,6 +44,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 	beforeEach(() => {
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		recentlyDispatched.clear();
 	});
 
 	describe('matches', () => {
@@ -486,6 +490,97 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(result?.waitForChecks).toBe(true);
 		});
 
+		it('skips duplicate check_suite events for the same PR+SHA', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			// First call should succeed
+			const result1 = await trigger.handle(ctx);
+			expect(result1).not.toBeNull();
+			expect(result1?.agentType).toBe('review');
+
+			// Second call with same PR+SHA should be deduped
+			const result2 = await trigger.handle(ctx);
+			expect(result2).toBeNull();
+		});
+
+		it('allows review for same PR with a new SHA after dedup', async () => {
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+
+			// First call with sha123
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: null,
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+
+			const ctx1: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+			const result1 = await trigger.handle(ctx1);
+			expect(result1).not.toBeNull();
+
+			// Second call with new SHA should trigger
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: null,
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'newsha456',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+
+			const ctx2: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload({
+					check_suite: {
+						id: 2,
+						status: 'completed',
+						conclusion: 'success',
+						head_sha: 'newsha456',
+						pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'newsha456' } }],
+					},
+				}),
+				personaIdentities: mockPersonaIdentities,
+			};
+			const result2 = await trigger.handle(ctx2);
+			expect(result2).not.toBeNull();
+			expect(result2?.agentInput.headSha).toBe('newsha456');
+		});
+
 		it('uses DB lookup result over PR body extraction', async () => {
 			vi.mocked(lookupWorkItemForPR).mockResolvedValue('db-work-item');
 			vi.mocked(githubClient.getPR).mockResolvedValue({
@@ -654,7 +749,8 @@ describe('CheckSuiteSuccessTrigger', () => {
 			const implResult = await trigger.handle(implCtx);
 			expect(implResult).not.toBeNull();
 
-			// External PR
+			// External PR — clear dedup since we're testing author mode, not dedup
+			recentlyDispatched.clear();
 			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			setupMocks('external-contributor');
 			const extCtx: TriggerContext = {

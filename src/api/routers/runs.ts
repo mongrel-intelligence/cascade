@@ -7,6 +7,7 @@ import {
 	getLlmCallByNumber,
 	getRunById,
 	getRunLogs,
+	hasActiveRunForWorkItem,
 	listLlmCallsMeta,
 	listRuns,
 } from '../../db/repositories/runsRepository.js';
@@ -185,6 +186,17 @@ export const runsRouter = router({
 			// Verify org ownership of project
 			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
 
+			// Block if a worker is already active on this work item
+			if (input.cardId && input.agentType !== 'debug') {
+				const active = await hasActiveRunForWorkItem(input.projectId, input.cardId);
+				if (active) {
+					throw new TRPCError({
+						code: 'CONFLICT',
+						message: 'A worker is already active on this work item',
+					});
+				}
+			}
+
 			const pc = await loadProjectConfigById(input.projectId);
 			if (!pc) {
 				throw new TRPCError({
@@ -254,6 +266,17 @@ export const runsRouter = router({
 					code: 'BAD_REQUEST',
 					message: 'Run has no associated project',
 				});
+			}
+
+			// Block if a worker is already active on this work item
+			if (run.cardId && run.agentType !== 'debug') {
+				const active = await hasActiveRunForWorkItem(run.projectId, run.cardId);
+				if (active) {
+					throw new TRPCError({
+						code: 'CONFLICT',
+						message: 'A worker is already active on this work item',
+					});
+				}
 			}
 
 			const pc = await loadProjectConfigById(run.projectId);

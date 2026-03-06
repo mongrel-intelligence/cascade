@@ -13,6 +13,7 @@ import { logger } from '../utils/logging.js';
 import { routerConfig } from './config.js';
 import { notifyTimeout } from './notifications.js';
 import type { CascadeJob } from './queue.js';
+import { clearAllWorkItemLocks, clearWorkItemEnqueued } from './work-item-lock.js';
 
 const docker = new Docker();
 
@@ -22,6 +23,10 @@ export interface ActiveWorker {
 	startedAt: Date;
 	timeoutHandle: NodeJS.Timeout;
 	job: CascadeJob;
+	/** Resolved at spawn time for work-item lock cleanup. */
+	projectId?: string;
+	/** Resolved at spawn time for work-item lock cleanup. */
+	workItemId?: string;
 }
 
 const activeWorkers = new Map<string, ActiveWorker>();
@@ -60,6 +65,14 @@ export async function extractProjectIdFromJob(data: CascadeJob): Promise<string 
  * Resolves project credentials and forwards required infrastructure env vars.
  */
 export async function buildWorkerEnv(job: Job<CascadeJob>): Promise<string[]> {
+	const projectId = await extractProjectIdFromJob(job.data);
+	return buildWorkerEnvWithProjectId(job, projectId);
+}
+
+async function buildWorkerEnvWithProjectId(
+	job: Job<CascadeJob>,
+	projectId: string | null,
+): Promise<string[]> {
 	const env: string[] = [
 		`JOB_ID=${job.id}`,
 		`JOB_TYPE=${job.data.type}`,
@@ -77,7 +90,6 @@ export async function buildWorkerEnv(job: Job<CascadeJob>): Promise<string[]> {
 
 	// Resolve project credentials in the router and set as individual env vars.
 	// NOTE: CREDENTIAL_MASTER_KEY is intentionally NOT passed to workers.
-	const projectId = await extractProjectIdFromJob(job.data);
 	if (projectId) {
 		try {
 			const secrets = await getAllProjectCredentials(projectId);
@@ -112,6 +124,26 @@ export async function buildWorkerEnv(job: Job<CascadeJob>): Promise<string[]> {
 }
 
 /**
+ * Extract work-item ID from job data for concurrency lock tracking.
+ * Returns the PM work item identifier (cardId, issueKey, or triggerResult.workItemId).
+ */
+function extractWorkItemId(data: CascadeJob): string | undefined {
+	const jobData = data as unknown as {
+		type: string;
+		cardId?: string;
+		issueKey?: string;
+		triggerResult?: { workItemId?: string };
+	};
+
+	if (jobData.type === 'trello' && jobData.cardId) return jobData.cardId;
+	if (jobData.type === 'jira' && jobData.issueKey) return jobData.issueKey;
+	if (jobData.type === 'github') return jobData.triggerResult?.workItemId;
+	// Dashboard jobs (manual-run, retry-run, debug-analysis)
+	if (jobData.cardId) return jobData.cardId;
+	return undefined;
+}
+
+/**
  * Spawn a worker container for a job.
  * Sets up timeout tracking and monitors container exit asynchronously.
  */
@@ -119,7 +151,9 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 	const jobId = job.id ?? `unknown-${Date.now()}`;
 	const containerName = `cascade-worker-${jobId}`;
 
-	const workerEnv = await buildWorkerEnv(job);
+	// Resolve projectId once — used for both credential env and work-item lock tracking
+	const projectId = await extractProjectIdFromJob(job.data);
+	const workerEnv = await buildWorkerEnvWithProjectId(job, projectId);
 	const hasCredentials = workerEnv.some((e) => e.startsWith('CASCADE_CREDENTIAL_KEYS='));
 
 	logger.info('[WorkerManager] Spawning worker:', {
@@ -168,12 +202,15 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 		}, routerConfig.workerTimeoutMs);
 
 		// Track the worker
+		const workItemId = extractWorkItemId(job.data);
 		activeWorkers.set(jobId, {
 			containerId: container.id,
 			jobId,
 			startedAt,
 			timeoutHandle,
 			job: job.data,
+			projectId: projectId ?? undefined,
+			workItemId,
 		});
 
 		logger.info('[WorkerManager] Worker started:', {
@@ -279,6 +316,9 @@ export function cleanupWorker(jobId: string): void {
 	const worker = activeWorkers.get(jobId);
 	if (worker) {
 		clearTimeout(worker.timeoutHandle);
+		if (worker.projectId && worker.workItemId) {
+			clearWorkItemEnqueued(worker.projectId, worker.workItemId);
+		}
 		activeWorkers.delete(jobId);
 		logger.info('[WorkerManager] Worker cleaned up:', {
 			jobId,
@@ -321,4 +361,5 @@ export function detachAll(): void {
 		clearTimeout(worker.timeoutHandle);
 	}
 	activeWorkers.clear();
+	clearAllWorkItemLocks();
 }
