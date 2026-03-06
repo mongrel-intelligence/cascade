@@ -11,6 +11,7 @@ const mockListLlmCallsMeta = vi.fn();
 const mockGetLlmCallByNumber = vi.fn();
 const mockGetDebugAnalysisByRunId = vi.fn();
 const mockDeleteDebugAnalysisByRunId = vi.fn();
+const mockHasActiveRunForWorkItem = vi.fn().mockResolvedValue(false);
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	listRuns: (...args: unknown[]) => mockListRuns(...args),
@@ -20,6 +21,7 @@ vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	getLlmCallByNumber: (...args: unknown[]) => mockGetLlmCallByNumber(...args),
 	getDebugAnalysisByRunId: (...args: unknown[]) => mockGetDebugAnalysisByRunId(...args),
 	deleteDebugAnalysisByRunId: (...args: unknown[]) => mockDeleteDebugAnalysisByRunId(...args),
+	hasActiveRunForWorkItem: (...args: unknown[]) => mockHasActiveRunForWorkItem(...args),
 }));
 
 // Mock getDb for the inline org-access check in getById
@@ -618,6 +620,63 @@ describe('runsRouter', () => {
 				caller.trigger({ projectId: 'p1', agentType: 'implementation' }),
 			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 		});
+
+		it('throws CONFLICT when work item has an active run', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockHasActiveRunForWorkItem.mockResolvedValueOnce(true);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.trigger({ projectId: 'p1', agentType: 'implementation', cardId: 'card-1' }),
+			).rejects.toMatchObject({ code: 'CONFLICT' });
+		});
+
+		it('succeeds when work item has no active run', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockHasActiveRunForWorkItem.mockResolvedValueOnce(false);
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test' },
+				config: {},
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.trigger({
+				projectId: 'p1',
+				agentType: 'implementation',
+				cardId: 'card-1',
+			});
+			expect(result).toEqual({ triggered: true });
+		});
+
+		it('skips lock check when no cardId is provided', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test' },
+				config: {},
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.trigger({ projectId: 'p1', agentType: 'implementation' });
+			expect(result).toEqual({ triggered: true });
+			expect(mockHasActiveRunForWorkItem).not.toHaveBeenCalled();
+		});
+
+		it('skips lock check for debug agent type', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test' },
+				config: {},
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.trigger({
+				projectId: 'p1',
+				agentType: 'debug',
+				cardId: 'card-1',
+			});
+			expect(result).toEqual({ triggered: true });
+			expect(mockHasActiveRunForWorkItem).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('retry', () => {
@@ -724,6 +783,41 @@ describe('runsRouter', () => {
 			await expect(caller.retry({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
+		});
+
+		it('throws CONFLICT when work item has an active run', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				agentType: 'implementation',
+				cardId: 'card-1',
+			});
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockHasActiveRunForWorkItem.mockResolvedValueOnce(true);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.retry({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'CONFLICT',
+			});
+		});
+
+		it('skips lock check for debug agent type on retry', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				agentType: 'debug',
+				cardId: 'card-1',
+			});
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test' },
+				config: {},
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.retry({ runId: RUN_UUID });
+			expect(result).toEqual({ triggered: true });
+			expect(mockHasActiveRunForWorkItem).not.toHaveBeenCalled();
 		});
 	});
 });

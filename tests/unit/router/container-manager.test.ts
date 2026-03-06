@@ -45,6 +45,13 @@ vi.mock('../../../src/router/notifications.js', () => ({
 	notifyTimeout: vi.fn().mockResolvedValue(undefined),
 }));
 
+const mockClearWorkItemEnqueued = vi.fn();
+const mockClearAllWorkItemLocks = vi.fn();
+vi.mock('../../../src/router/work-item-lock.js', () => ({
+	clearWorkItemEnqueued: (...args: unknown[]) => mockClearWorkItemEnqueued(...args),
+	clearAllWorkItemLocks: (...args: unknown[]) => mockClearAllWorkItemLocks(...args),
+}));
+
 vi.mock('../../../src/router/config.js', () => ({
 	routerConfig: {
 		redisUrl: 'redis://localhost:6379',
@@ -341,6 +348,22 @@ describe('cleanupWorker', () => {
 	it('is a no-op for an unknown jobId', () => {
 		expect(() => cleanupWorker('nonexistent')).not.toThrow();
 	});
+
+	it('calls clearWorkItemEnqueued when worker has projectId and workItemId', async () => {
+		const { resolveWait } = setupMockContainer();
+
+		await spawnWorker(
+			makeJob({
+				id: 'job-wi',
+				data: { type: 'trello', projectId: 'proj-1', cardId: 'card-1' } as CascadeJob,
+			}) as never,
+		);
+
+		cleanupWorker('job-wi');
+		expect(mockClearWorkItemEnqueued).toHaveBeenCalledWith('proj-1', 'card-1');
+
+		resolveWait();
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -366,5 +389,14 @@ describe('detachAll', () => {
 
 		detachAll();
 		expect(getActiveWorkerCount()).toBe(0);
+	});
+
+	it('calls clearAllWorkItemLocks on detach', async () => {
+		setupMockContainer();
+		await spawnWorker(makeJob({ id: 'job-d2' }) as never);
+
+		mockClearAllWorkItemLocks.mockClear();
+		detachAll();
+		expect(mockClearAllWorkItemLocks).toHaveBeenCalled();
 	});
 });

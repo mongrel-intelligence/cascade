@@ -11,12 +11,17 @@ vi.mock('../../../src/utils/logging.js', () => ({
 vi.mock('../../../src/router/queue.js', () => ({
 	addJob: vi.fn(),
 }));
+vi.mock('../../../src/router/work-item-lock.js', () => ({
+	isWorkItemLocked: vi.fn().mockResolvedValue({ locked: false }),
+	markWorkItemEnqueued: vi.fn(),
+}));
 
 import type { RouterProjectConfig } from '../../../src/router/config.js';
 import type { RouterPlatformAdapter } from '../../../src/router/platform-adapter.js';
 import { addJob } from '../../../src/router/queue.js';
 import type { CascadeJob } from '../../../src/router/queue.js';
 import { processRouterWebhook } from '../../../src/router/webhook-processor.js';
+import { isWorkItemLocked, markWorkItemEnqueued } from '../../../src/router/work-item-lock.js';
 import type { TriggerRegistry } from '../../../src/triggers/registry.js';
 
 const mockProject: RouterProjectConfig = {
@@ -195,5 +200,60 @@ describe('processRouterWebhook', () => {
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(result.shouldProcess).toBe(true);
 		expect(addJob).toHaveBeenCalled();
+	});
+
+	it('skips job when work item is locked', async () => {
+		const triggerResult = {
+			agentType: 'implementation',
+			agentInput: { cardId: 'card1' },
+			workItemId: 'card1',
+		};
+		vi.mocked(isWorkItemLocked).mockResolvedValueOnce({
+			locked: true,
+			reason: 'db: active run exists',
+		});
+		const adapter = makeMockAdapter({
+			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
+		});
+
+		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(result.shouldProcess).toBe(true);
+		expect(result.projectId).toBe('p1');
+		expect(addJob).not.toHaveBeenCalled();
+		expect(adapter.postAck).not.toHaveBeenCalled();
+	});
+
+	it('enqueues job and marks work item when not locked', async () => {
+		const triggerResult = {
+			agentType: 'implementation',
+			agentInput: { cardId: 'card1' },
+			workItemId: 'card1',
+		};
+		vi.mocked(addJob).mockResolvedValue('job-1');
+		vi.mocked(isWorkItemLocked).mockResolvedValueOnce({ locked: false });
+		const adapter = makeMockAdapter({
+			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
+		});
+
+		await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(addJob).toHaveBeenCalled();
+		expect(markWorkItemEnqueued).toHaveBeenCalledWith('p1', 'card1');
+	});
+
+	it('always enqueues job when trigger has no workItemId', async () => {
+		const triggerResult = {
+			agentType: 'debug',
+			agentInput: {},
+			// no workItemId
+		};
+		vi.mocked(addJob).mockResolvedValue('job-1');
+		const adapter = makeMockAdapter({
+			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
+		});
+
+		await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(isWorkItemLocked).not.toHaveBeenCalled();
+		expect(addJob).toHaveBeenCalled();
+		expect(markWorkItemEnqueued).not.toHaveBeenCalled();
 	});
 });

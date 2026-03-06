@@ -14,6 +14,7 @@ import type { TriggerRegistry } from '../triggers/registry.js';
 import { logger } from '../utils/logging.js';
 import type { RouterPlatformAdapter } from './platform-adapter.js';
 import { addJob } from './queue.js';
+import { isWorkItemLocked, markWorkItemEnqueued } from './work-item-lock.js';
 
 export interface ProcessRouterWebhookResult {
 	/** Whether the event was of a processable type for this platform. */
@@ -31,9 +32,10 @@ export interface ProcessRouterWebhookResult {
  * 4. Fire acknowledgment reaction (fire-and-forget)
  * 5. Resolve project config
  * 6. Dispatch triggers with platform credential scope
- * 7. Post acknowledgment comment
- * 8. Build and enqueue job
- * 9. Fire optional pre-actions (e.g. GitHub 👀 reaction)
+ * 7. Work-item concurrency lock check
+ * 8. Post acknowledgment comment
+ * 9. Build and enqueue job
+ * 10. Fire optional pre-actions (e.g. GitHub 👀 reaction)
  */
 export async function processRouterWebhook(
 	adapter: RouterPlatformAdapter,
@@ -106,20 +108,37 @@ export async function processRouterWebhook(
 		return { shouldProcess: true, projectId: project.id };
 	}
 
-	// Step 7: Post acknowledgment comment
+	// Step 7: Work-item concurrency lock
+	if (result.workItemId) {
+		const lockStatus = await isWorkItemLocked(project.id, result.workItemId);
+		if (lockStatus.locked) {
+			logger.info(`Skipping ${adapter.type} job — work item already locked`, {
+				projectId: project.id,
+				workItemId: result.workItemId,
+				agentType: result.agentType,
+				reason: lockStatus.reason,
+			});
+			return { shouldProcess: true, projectId: project.id };
+		}
+	}
+
+	// Step 8: Post acknowledgment comment
 	const ackResult = await adapter.postAck(event, payload, project, result.agentType);
 	const ackCommentId = ackResult?.commentId;
 	const ackMessage = ackResult?.message;
 
-	// Step 8: Build job
+	// Step 9: Build job
 	const job = adapter.buildJob(event, payload, project, result, ackCommentId, ackMessage);
 
-	// Step 9: Fire optional pre-actions (fire-and-forget)
+	// Step 10: Fire optional pre-actions (fire-and-forget)
 	adapter.firePreActions?.(job, payload);
 
 	// Enqueue
 	try {
 		const jobId = await addJob(job);
+		if (result.workItemId) {
+			markWorkItemEnqueued(project.id, result.workItemId);
+		}
 		logger.info(`${adapter.type} job queued`, {
 			jobId,
 			eventType: event.eventType,

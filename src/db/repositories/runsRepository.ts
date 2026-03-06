@@ -242,6 +242,26 @@ export async function getDebugAnalysisByDebugRunId(debugRunId: string) {
 }
 
 // ============================================================================
+// Work-item concurrency
+// ============================================================================
+
+export async function hasActiveRunForWorkItem(projectId: string, cardId: string): Promise<boolean> {
+	const db = getDb();
+	const [row] = await db
+		.select({ id: agentRuns.id })
+		.from(agentRuns)
+		.where(
+			and(
+				eq(agentRuns.projectId, projectId),
+				eq(agentRuns.cardId, cardId),
+				eq(agentRuns.status, 'running'),
+			),
+		)
+		.limit(1);
+	return !!row;
+}
+
+// ============================================================================
 // Dashboard queries
 // ============================================================================
 

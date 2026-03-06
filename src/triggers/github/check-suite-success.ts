@@ -9,6 +9,10 @@ import { resolveWorkItemId } from './utils.js';
 const MAX_RETRIES = 5;
 const RETRY_DELAY_MS = 10_000;
 
+/** In-memory dedup for review triggers on the same PR+SHA (prevents duplicate reviews from multiple check_suite webhooks) */
+export const recentlyDispatched = new Map<string, number>();
+const DEDUP_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
 /**
  * Wait for all check suites to complete, retrying when some are still in-progress.
  * Returns immediately if all checks have completed (whether passing or failing).
@@ -168,6 +172,18 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 				headSha,
 			});
 		}
+
+		// In-memory dedup: skip if we already dispatched a review for this PR+SHA
+		const dedupKey = `${owner}/${repo}:${prNumber}:${headSha}`;
+		const now = Date.now();
+		for (const [key, ts] of recentlyDispatched) {
+			if (now - ts > DEDUP_TTL_MS) recentlyDispatched.delete(key);
+		}
+		if (recentlyDispatched.has(dedupKey)) {
+			logger.info('Review already dispatched for this PR+SHA, skipping', { prNumber, headSha });
+			return null;
+		}
+		recentlyDispatched.set(dedupKey, now);
 
 		// The trigger decision is made — the review agent should run.
 		// Actual check polling (waitForChecks) is deferred to the worker via the flag.
