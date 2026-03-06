@@ -82,6 +82,22 @@ export class PRMergedTrigger implements TriggerHandler {
 
 		logger.info('Moved work item to merged status', { workItemId, prNumber });
 
+		// Optionally chain into the backlog-manager agent to pick the next card
+		const chainBacklogManager = resolveGitHubTriggerEnabled(
+			ctx.project.github?.triggers,
+			'prMergedBacklogManager',
+		);
+
+		if (chainBacklogManager) {
+			logger.info('Chaining to backlog-manager after PR merge', { workItemId, prNumber });
+			return {
+				agentType: 'backlog-manager',
+				agentInput: {},
+				workItemId,
+				prNumber,
+			};
+		}
+
 		return {
 			agentType: null,
 			agentInput: {},

@@ -1,0 +1,61 @@
+identity:
+  emoji: "\U0001F4E6"
+  label: Backlog Manager
+  roleHint: Scans the backlog, picks the next unblocked card, and moves it to TODO
+  initialMessage: "**\U0001F4E6 Managing backlog** — Scanning backlog cards to find the next unblocked item..."
+
+# Explicit integration requirements.
+integrations:
+  required: [pm]
+  optional: []
+
+# Read-write agent that reads PM system and moves cards.
+capabilities:
+  required:
+    - fs:read
+    - shell:exec
+    - session:ctrl
+    - pm:read
+    - pm:write
+  optional: []
+
+# Supported triggers for this agent
+triggers:
+  - event: scm:pr-merged
+    label: PR Merged
+    description: Trigger when a CASCADE-owned PR is merged, to pick the next backlog card
+    defaultEnabled: false
+    contextPipeline: []
+  - event: pm:status-changed
+    label: Status Changed to Backlog
+    description: Trigger when a work item is moved to the Backlog list/column
+    defaultEnabled: false
+    parameters:
+      - name: targetStatus
+        type: select
+        label: Target Status
+        options: [backlog]
+        defaultValue: backlog
+    contextPipeline: []
+
+strategies: {}
+
+prompts:
+  taskPrompt: |
+    You are the Backlog Manager agent. Your job is to scan all cards in the backlog and identify the next unblocked card to work on.
+
+    Steps:
+    1. Use ListWorkItems to fetch all cards currently in the backlog list/column.
+    2. For each card, use ReadWorkItem to read its description, checklists, and comments.
+    3. Identify which cards are **blocked** — a card is blocked if its description or comments reference another card that has not yet been completed (e.g., "blocked by #123", "depends on card XYZ", "waiting for ...").
+    4. Pick the first unblocked card (prefer smaller, self-contained cards over large ones).
+    5. Use UpdateWorkItem to move that card to the TODO status/list so the implementation agent can pick it up.
+    6. Add a brief comment to the moved card explaining why it was selected (e.g., "Selected as next task — no blocking dependencies found.").
+    7. If all backlog cards are blocked, leave them in place and add a comment to the most recently updated card explaining that all cards appear blocked.
+
+    Important:
+    - Do NOT move more than one card per run.
+    - Dependency detection is based on reading card descriptions and comments — look for keywords like "blocked by", "depends on", "waiting for", "after", and cross-references to other card IDs or titles.
+    - Be conservative: if unsure whether a card is blocked, treat it as blocked and skip it.
+
+hint: Pick exactly one unblocked backlog card and move it to TODO. Do not move multiple cards.

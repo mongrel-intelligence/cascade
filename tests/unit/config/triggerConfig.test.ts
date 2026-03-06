@@ -54,6 +54,24 @@ describe('TrelloTriggerConfigSchema', () => {
 			splitting: true,
 			planning: false,
 			implementation: true,
+			'backlog-manager': true,
+		});
+	});
+
+	it('accepts per-agent readyToProcessLabel object with backlog-manager disabled', () => {
+		const result = TrelloTriggerConfigSchema.parse({
+			readyToProcessLabel: {
+				splitting: true,
+				planning: false,
+				implementation: true,
+				'backlog-manager': false,
+			},
+		});
+		expect(result.readyToProcessLabel).toEqual({
+			splitting: true,
+			planning: false,
+			implementation: true,
+			'backlog-manager': false,
 		});
 	});
 });
@@ -72,7 +90,7 @@ describe('JiraTriggerConfigSchema', () => {
 		expect(result.statusChanged).toBe(false);
 	});
 
-	it('accepts per-agent statusChanged object', () => {
+	it('accepts per-agent statusChanged object (backlog-manager defaults to true)', () => {
 		const result = JiraTriggerConfigSchema.parse({
 			statusChanged: { splitting: true, planning: false, implementation: true },
 		});
@@ -80,6 +98,24 @@ describe('JiraTriggerConfigSchema', () => {
 			splitting: true,
 			planning: false,
 			implementation: true,
+			'backlog-manager': true,
+		});
+	});
+
+	it('accepts per-agent statusChanged object with backlog-manager explicitly disabled', () => {
+		const result = JiraTriggerConfigSchema.parse({
+			statusChanged: {
+				splitting: true,
+				planning: false,
+				implementation: true,
+				'backlog-manager': false,
+			},
+		});
+		expect(result.statusChanged).toEqual({
+			splitting: true,
+			planning: false,
+			implementation: true,
+			'backlog-manager': false,
 		});
 	});
 
@@ -96,7 +132,25 @@ describe('JiraTriggerConfigSchema', () => {
 			splitting: true,
 			planning: false,
 			implementation: true,
+			'backlog-manager': true,
 		});
+	});
+});
+
+describe('StatusChangedSchema preserves backlog-manager key', () => {
+	it('does not strip backlog-manager when set to false (Zod schema includes the key)', () => {
+		const parsed = TrelloTriggerConfigSchema.parse({
+			statusChanged: { 'backlog-manager': false },
+		});
+		const statusChanged = parsed.statusChanged as Record<string, boolean>;
+		expect(statusChanged['backlog-manager']).toBe(false);
+	});
+
+	it('allows disabling backlog-manager via nested object config format', () => {
+		const parsed = TrelloTriggerConfigSchema.parse({
+			statusChanged: { 'backlog-manager': false },
+		});
+		expect(resolveTrelloStatusChangedEnabled(parsed, 'backlog-manager')).toBe(false);
 	});
 });
 
@@ -608,6 +662,7 @@ describe('resolvePerAgentToggle', () => {
 			expect(resolvePerAgentToggle(undefined, 'splitting')).toBe(true);
 			expect(resolvePerAgentToggle(undefined, 'planning')).toBe(true);
 			expect(resolvePerAgentToggle(undefined, 'implementation')).toBe(true);
+			expect(resolvePerAgentToggle(undefined, 'backlog-manager')).toBe(true);
 		});
 
 		it('returns true for unknown agent types', () => {
@@ -634,10 +689,21 @@ describe('resolvePerAgentToggle', () => {
 
 	describe('per-agent object', () => {
 		it('returns the correct value for each known agent type', () => {
-			const obj = { splitting: true, planning: false, implementation: true };
+			const obj = {
+				splitting: true,
+				planning: false,
+				implementation: true,
+				'backlog-manager': false,
+			};
 			expect(resolvePerAgentToggle(obj, 'splitting')).toBe(true);
 			expect(resolvePerAgentToggle(obj, 'planning')).toBe(false);
 			expect(resolvePerAgentToggle(obj, 'implementation')).toBe(true);
+			expect(resolvePerAgentToggle(obj, 'backlog-manager')).toBe(false);
+		});
+
+		it('defaults backlog-manager to true when not present in object', () => {
+			const obj = { splitting: false, planning: false, implementation: false };
+			expect(resolvePerAgentToggle(obj, 'backlog-manager')).toBe(true);
 		});
 
 		it('defaults to true for unknown agent types', () => {

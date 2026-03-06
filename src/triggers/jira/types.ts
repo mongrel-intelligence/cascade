@@ -48,4 +48,5 @@ export const STATUS_TO_AGENT: Record<string, string> = {
 	splitting: 'splitting',
 	planning: 'planning',
 	todo: 'implementation',
+	backlog: 'backlog-manager',
 };
