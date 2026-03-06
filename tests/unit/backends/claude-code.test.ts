@@ -285,8 +285,8 @@ describe('buildSystemPrompt', () => {
 });
 
 describe('CLAUDE_CODE_MODELS constants', () => {
-	it('contains three models', () => {
-		expect(CLAUDE_CODE_MODELS).toHaveLength(3);
+	it('contains four models', () => {
+		expect(CLAUDE_CODE_MODELS).toHaveLength(4);
 	});
 
 	it('has value/label pairs', () => {
@@ -308,6 +308,7 @@ describe('CLAUDE_CODE_MODELS constants', () => {
 describe('resolveClaudeModel', () => {
 	it('passes through known Claude Code model IDs', () => {
 		expect(resolveClaudeModel('claude-opus-4-6')).toBe('claude-opus-4-6');
+		expect(resolveClaudeModel('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
 		expect(resolveClaudeModel('claude-sonnet-4-5-20250929')).toBe('claude-sonnet-4-5-20250929');
 		expect(resolveClaudeModel('claude-haiku-4-5-20251001')).toBe('claude-haiku-4-5-20251001');
 	});

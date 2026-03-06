@@ -17,6 +17,7 @@ interface SimpleLogger {
  */
 const MODEL_PRICING: Record<string, { input: number; output: number; cachedInput?: number }> = {
 	// Anthropic Claude 4 family
+	'anthropic:claude-sonnet-4-6': { input: 3.0, output: 15.0, cachedInput: 0.3 },
 	'anthropic:claude-sonnet-4-5': { input: 3.0, output: 15.0, cachedInput: 0.3 },
 	'anthropic:claude-opus-4-5': { input: 15.0, output: 75.0, cachedInput: 1.5 },
 	'anthropic:claude-haiku-3-5': { input: 0.8, output: 4.0, cachedInput: 0.08 },
