@@ -1,7 +1,21 @@
+import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
+import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, Loader2, XCircle } from 'lucide-react';
+import {
+	AlertCircle,
+	AlertTriangle,
+	CheckCircle,
+	ChevronDown,
+	ChevronRight,
+	ExternalLink,
+	KeyRound,
+	Loader2,
+	RefreshCw,
+	Trash2,
+	XCircle,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { EmailWizard } from './email-wizard.js';
 import { PMWizard } from './pm-wizard.js';
@@ -184,6 +198,198 @@ function IntegrationCredentialSlots({
 }
 
 // ============================================================================
+// GitHub Webhook Management
+// ============================================================================
+
+function GitHubWebhookSection({ projectId }: { projectId: string }) {
+	const queryClient = useQueryClient();
+
+	const callbackBaseUrl =
+		API_URL ||
+		(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
+
+	const [adminTokensOpen, setAdminTokensOpen] = useState(false);
+	const [oneTimeGithubToken, setOneTimeGithubToken] = useState('');
+
+	const buildOneTimeTokens = () => {
+		if (oneTimeGithubToken) return { github: oneTimeGithubToken };
+		return undefined;
+	};
+
+	const webhooksQuery = useQuery(trpc.webhooks.list.queryOptions({ projectId }));
+
+	const createGithubWebhookMutation = useMutation({
+		mutationFn: () =>
+			trpcClient.webhooks.create.mutate({
+				projectId,
+				callbackBaseUrl,
+				githubOnly: true,
+				oneTimeTokens: buildOneTimeTokens(),
+			}),
+		onSuccess: () => {
+			setOneTimeGithubToken('');
+			queryClient.invalidateQueries({
+				queryKey: trpc.webhooks.list.queryOptions({ projectId }).queryKey,
+			});
+		},
+	});
+
+	const deleteGithubWebhookMutation = useMutation({
+		mutationFn: (deleteCallbackBaseUrl: string) =>
+			trpcClient.webhooks.delete.mutate({
+				projectId,
+				callbackBaseUrl: deleteCallbackBaseUrl,
+				githubOnly: true,
+				oneTimeTokens: buildOneTimeTokens(),
+			}),
+		onSuccess: () => {
+			queryClient.invalidateQueries({
+				queryKey: trpc.webhooks.list.queryOptions({ projectId }).queryKey,
+			});
+		},
+	});
+
+	const activeGithubWebhooks = (webhooksQuery.data?.github ?? []).map((w) => ({
+		id: String(w.id),
+		url: w.config.url ?? '',
+		active: w.active,
+	}));
+
+	return (
+		<div className="space-y-4">
+			<div>
+				<Label>GitHub Webhooks</Label>
+				<p className="text-xs text-muted-foreground mt-1">
+					Manage GitHub webhooks for receiving push events, PR updates, and CI status notifications.
+				</p>
+			</div>
+
+			{/* GitHub-specific error */}
+			{webhooksQuery.data?.errors?.github && (
+				<div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-900/20">
+					<AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+					<div className="flex-1 text-sm">
+						<span className="font-medium text-amber-700 dark:text-amber-400">GitHub</span>
+						<span className="text-amber-600 dark:text-amber-500">
+							: {String(webhooksQuery.data.errors.github)}
+						</span>
+					</div>
+					<button
+						type="button"
+						onClick={() => webhooksQuery.refetch()}
+						className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 shrink-0"
+					>
+						<RefreshCw className="h-3 w-3" /> Retry
+					</button>
+				</div>
+			)}
+
+			{/* Active webhooks list */}
+			{webhooksQuery.isLoading ? (
+				<div className="flex items-center gap-2 text-sm text-muted-foreground">
+					<Loader2 className="h-4 w-4 animate-spin" /> Loading webhooks...
+				</div>
+			) : activeGithubWebhooks.length > 0 ? (
+				<div className="space-y-2">
+					{activeGithubWebhooks.map((w) => (
+						<div
+							key={w.id}
+							className="flex items-center justify-between rounded-md border px-3 py-2"
+						>
+							<div className="flex items-center gap-2 text-sm">
+								<span
+									className={`inline-block h-2 w-2 rounded-full ${w.active ? 'bg-green-500 dark:bg-green-400' : 'bg-amber-500 dark:bg-amber-400'}`}
+								/>
+								<span className="font-mono text-xs">{w.url}</span>
+							</div>
+							<button
+								type="button"
+								onClick={() => {
+									const base = w.url.replace(/\/github\/webhook$/, '');
+									deleteGithubWebhookMutation.mutate(base);
+								}}
+								disabled={deleteGithubWebhookMutation.isPending}
+								className="p-1 text-muted-foreground hover:text-destructive"
+							>
+								<Trash2 className="h-4 w-4" />
+							</button>
+						</div>
+					))}
+				</div>
+			) : (
+				<div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
+					<AlertCircle className="h-4 w-4" />
+					No GitHub webhooks configured for this project.
+				</div>
+			)}
+
+			{/* Create webhook button */}
+			<div className="space-y-2">
+				<button
+					type="button"
+					onClick={() => createGithubWebhookMutation.mutate()}
+					disabled={!callbackBaseUrl || createGithubWebhookMutation.isPending}
+					className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 shrink-0"
+				>
+					{createGithubWebhookMutation.isPending ? (
+						<Loader2 className="h-4 w-4 animate-spin" />
+					) : (
+						<ExternalLink className="h-4 w-4" />
+					)}
+					Create GitHub Webhook
+				</button>
+				{createGithubWebhookMutation.isError && (
+					<p className="text-sm text-destructive">{createGithubWebhookMutation.error.message}</p>
+				)}
+				{createGithubWebhookMutation.isSuccess && (
+					<p className="text-sm text-green-600 dark:text-green-400">
+						GitHub webhook created successfully.
+					</p>
+				)}
+			</div>
+
+			{/* One-time admin credentials */}
+			<div className="border rounded-md">
+				<button
+					type="button"
+					onClick={() => setAdminTokensOpen((prev) => !prev)}
+					className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:text-foreground transition-colors"
+				>
+					<KeyRound className="h-4 w-4" />
+					<span className="flex-1">Use admin credentials (one-time)</span>
+					{adminTokensOpen ? (
+						<ChevronDown className="h-4 w-4" />
+					) : (
+						<ChevronRight className="h-4 w-4" />
+					)}
+				</button>
+				{adminTokensOpen && (
+					<div className="border-t px-3 py-3 space-y-3">
+						<p className="text-xs text-muted-foreground">
+							Provide a token with elevated permissions for webhook management. This is used once
+							and never saved.
+						</p>
+						<div className="space-y-1">
+							<Label className="text-xs">
+								GitHub PAT{' '}
+								<span className="text-muted-foreground font-normal">(admin:repo_hook scope)</span>
+							</Label>
+							<Input
+								value={oneTimeGithubToken}
+								onChange={(e) => setOneTimeGithubToken(e.target.value)}
+								placeholder="ghp_... — used once, not saved"
+								type="password"
+								className="h-8 text-sm"
+							/>
+						</div>
+					</div>
+				)}
+			</div>
+		</div>
+	);
+}
+
+// ============================================================================
 // SCM Tab (GitHub)
 // ============================================================================
 
@@ -290,6 +496,10 @@ function SCMTab({
 					<span className="text-sm text-destructive">{saveMutation.error.message}</span>
 				)}
 			</div>
+
+			<hr className="border-border" />
+
+			<GitHubWebhookSection projectId={projectId} />
 		</div>
 	);
 }
