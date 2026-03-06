@@ -25,6 +25,9 @@ function makeProject(overrides: Record<string, unknown> = {}) {
 				splitting: 'list1',
 				planning: 'list2',
 				todo: 'list3',
+				backlog: 'list-backlog',
+				inProgress: 'list-in-progress',
+				inReview: 'list-in-review',
 				stories: 'list-stories',
 				debug: 'list-debug',
 			},
@@ -92,6 +95,26 @@ describe('buildPromptContext', () => {
 			const ctx = buildPromptContext('card123', makeProject() as never);
 			expect(ctx.processedLabelId).toBe('label2');
 		});
+
+		it('includes backlogListId from project trello config', () => {
+			const ctx = buildPromptContext('card123', makeProject() as never);
+			expect(ctx.backlogListId).toBe('list-backlog');
+		});
+
+		it('includes todoListId from project trello config', () => {
+			const ctx = buildPromptContext('card123', makeProject() as never);
+			expect(ctx.todoListId).toBe('list3');
+		});
+
+		it('includes inProgressListId from project trello config', () => {
+			const ctx = buildPromptContext('card123', makeProject() as never);
+			expect(ctx.inProgressListId).toBe('list-in-progress');
+		});
+
+		it('includes inReviewListId from project trello config', () => {
+			const ctx = buildPromptContext('card123', makeProject() as never);
+			expect(ctx.inReviewListId).toBe('list-in-review');
+		});
 	});
 
 	describe('with JIRA provider', () => {
@@ -146,6 +169,45 @@ describe('buildPromptContext', () => {
 			});
 			const ctx = buildPromptContext('BTS-148', jiraProject as never);
 			expect(ctx.storiesListId).toBe('BTS');
+		});
+
+		it('sets pipeline list IDs from JIRA statuses', () => {
+			const jiraProject = makeProject({
+				trello: undefined,
+				pm: { type: 'jira' },
+				jira: {
+					projectKey: 'PROJ',
+					baseUrl: 'https://company.atlassian.net',
+					statuses: {
+						backlog: 'Backlog',
+						todo: 'To Do',
+						inProgress: 'In Progress',
+						inReview: 'In Review',
+					},
+				},
+			});
+			const ctx = buildPromptContext('PROJ-1', jiraProject as never);
+			expect(ctx.backlogListId).toBe('Backlog');
+			expect(ctx.todoListId).toBe('To Do');
+			expect(ctx.inProgressListId).toBe('In Progress');
+			expect(ctx.inReviewListId).toBe('In Review');
+		});
+
+		it('leaves pipeline list IDs undefined when JIRA statuses are missing', () => {
+			const jiraProject = makeProject({
+				trello: undefined,
+				pm: { type: 'jira' },
+				jira: {
+					projectKey: 'PROJ',
+					baseUrl: 'https://company.atlassian.net',
+					statuses: {},
+				},
+			});
+			const ctx = buildPromptContext('PROJ-1', jiraProject as never);
+			expect(ctx.backlogListId).toBeUndefined();
+			expect(ctx.todoListId).toBeUndefined();
+			expect(ctx.inProgressListId).toBeUndefined();
+			expect(ctx.inReviewListId).toBeUndefined();
 		});
 	});
 

@@ -41,8 +41,12 @@ export interface PromptContext {
 	workItemNounPluralCap?: string; // "Cards" or "Issues"
 	pmName?: string; // "Trello" or "JIRA"
 
-	// Splitting-specific
+	// PM list/column IDs
 	storiesListId?: string;
+	backlogListId?: string;
+	todoListId?: string;
+	inProgressListId?: string;
+	inReviewListId?: string;
 	processedLabelId?: string;
 
 	// Check-failure specific
@@ -294,8 +298,12 @@ export function getTemplateVariables(): Array<{
 		{ name: 'workItemNounCap', group: 'PM', description: 'Card or Issue' },
 		{ name: 'workItemNounPluralCap', group: 'PM', description: 'Cards or Issues' },
 		{ name: 'pmName', group: 'PM', description: 'Trello or JIRA' },
-		{ name: 'storiesListId', group: 'Splitting', description: 'Trello stories list ID' },
-		{ name: 'processedLabelId', group: 'Splitting', description: 'Trello processed label ID' },
+		{ name: 'storiesListId', group: 'PM Lists', description: 'Stories list/column ID' },
+		{ name: 'backlogListId', group: 'PM Lists', description: 'Backlog list/column ID' },
+		{ name: 'todoListId', group: 'PM Lists', description: 'TODO list/column ID' },
+		{ name: 'inProgressListId', group: 'PM Lists', description: 'In Progress list/column ID' },
+		{ name: 'inReviewListId', group: 'PM Lists', description: 'In Review list/column ID' },
+		{ name: 'processedLabelId', group: 'PM Labels', description: 'Processed label ID' },
 		{ name: 'prNumber', group: 'CI', description: 'Pull request number' },
 		{ name: 'prBranch', group: 'CI', description: 'Pull request branch name' },
 		{ name: 'repoFullName', group: 'CI', description: 'Repository full name (owner/repo)' },

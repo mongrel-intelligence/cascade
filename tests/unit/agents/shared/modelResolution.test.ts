@@ -342,6 +342,29 @@ describe('resolveModelConfig', () => {
 			expect(result.taskPrompt).toContain('Fix this line');
 		});
 
+		it('forwards promptContext fields to task prompt rendering', async () => {
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(
+				mockAgentDefinition({
+					taskPrompt:
+						'Backlog: <%= it.backlogListId %>, TODO: <%= it.todoListId %>, PM: <%= it.pmName %>',
+				}),
+			);
+
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project: makeProject(),
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+				promptContext: {
+					backlogListId: 'list-abc',
+					todoListId: 'list-def',
+					pmName: 'Trello',
+				},
+			});
+
+			expect(result.taskPrompt).toBe('Backlog: list-abc, TODO: list-def, PM: Trello');
+		});
+
 		it('returns undefined taskPrompt when definition has no taskPrompt', async () => {
 			vi.mocked(resolveAgentDefinition).mockResolvedValue(
 				mockAgentDefinition({ systemPrompt: 'Only system prompt configured.' }),
