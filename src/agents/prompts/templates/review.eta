@@ -248,4 +248,3 @@ CreatePRReview({
 - Run tests/linting via Tmux when you need to verify functionality
 - One review submission per PR - include all feedback in a single review
 - If the PR is good, approve it. Don't manufacture issues to appear thorough.
-- After submitting your review, update the initial PR comment with your review summary using UpdatePRComment (the comment ID is available from the pre-loaded PostPRComment call)
