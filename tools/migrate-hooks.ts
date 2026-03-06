@@ -8,8 +8,7 @@
  *   npx tsx tools/migrate-hooks.ts --apply    # Apply changes
  */
 
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import pg from 'pg';
 
 const DATABASE_URL = process.env.DATABASE_URL ?? '';
 if (!DATABASE_URL) {
@@ -122,14 +121,18 @@ function migrateDefinition(
 }
 
 async function main() {
-	const sql = postgres(DATABASE_URL);
+	const pool = new pg.Pool({
+		connectionString: DATABASE_URL,
+		max: 2,
+		ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
+	});
 
 	try {
-		const rows = await sql<
-			{ id: number; agent_type: string; definition: Record<string, unknown> }[]
-		>`
-			SELECT id, agent_type, definition FROM agent_definitions
-		`;
+		const { rows } = await pool.query<{
+			id: number;
+			agent_type: string;
+			definition: Record<string, unknown>;
+		}>('SELECT id, agent_type, definition FROM agent_definitions');
 
 		console.log(`Found ${rows.length} agent definitions`);
 
@@ -152,12 +155,10 @@ async function main() {
 			}
 
 			if (!dryRun) {
-				await sql`
-					UPDATE agent_definitions
-					SET definition = ${JSON.stringify(updated)}::jsonb,
-					    updated_at = NOW()
-					WHERE id = ${row.id}
-				`;
+				await pool.query(
+					'UPDATE agent_definitions SET definition = $1::jsonb, updated_at = NOW() WHERE id = $2',
+					[JSON.stringify(updated), row.id],
+				);
 			}
 		}
 
@@ -168,7 +169,7 @@ async function main() {
 			console.log('Run with --apply to apply changes');
 		}
 	} finally {
-		await sql.end();
+		await pool.end();
 	}
 }
 
