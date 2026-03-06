@@ -14,7 +14,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const STATE_FILE_NAME = '.cascade-progress-comment-id';
+export const STATE_FILE_NAME = '.cascade-progress-comment-id';
 
 /**
  * Writes the progress comment ID to the state file in the given repo directory.

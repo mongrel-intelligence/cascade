@@ -8,6 +8,7 @@ import type {
 	PreToolUseHookInput,
 	SyncHookJSONOutput,
 } from '@anthropic-ai/claude-agent-sdk';
+import { STATE_FILE_NAME } from '../progressState.js';
 import type { LogWriter } from '../types.js';
 
 /**
@@ -131,7 +132,15 @@ function checkUncommittedChanges(logWriter: LogWriter, repoDir: string): SyncHoo
 	}).trim();
 	if (!status) return null;
 
-	logWriter('WARN', 'Stop hook blocked: uncommitted changes', { status });
+	// Filter out CASCADE internal state files that are not code changes
+	const meaningful = status
+		.split('\n')
+		.filter((line) => !line.endsWith(STATE_FILE_NAME))
+		.join('\n')
+		.trim();
+	if (!meaningful) return null;
+
+	logWriter('WARN', 'Stop hook blocked: uncommitted changes', { status: meaningful });
 	return {
 		decision: 'block',
 		reason: 'You have uncommitted changes. Stage, commit, then use cascade-tools github create-pr.',
