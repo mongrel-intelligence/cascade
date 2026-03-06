@@ -15,6 +15,16 @@ describe('config/rateLimits', () => {
 			});
 		});
 
+		it('returns exact match for Claude Sonnet 4.6', () => {
+			const result = getRateLimitForModel('anthropic:claude-sonnet-4-6');
+
+			expect(result).toEqual({
+				requestsPerMinute: 50,
+				tokensPerMinute: 40_000,
+				safetyMargin: 0.9,
+			});
+		});
+
 		it('returns exact match for Claude Sonnet 4.5', () => {
 			const result = getRateLimitForModel('anthropic:claude-sonnet-4-5');
 
@@ -105,6 +115,7 @@ describe('config/rateLimits', () => {
 		});
 
 		it('includes Claude Sonnet and Opus configs', () => {
+			expect(MODEL_RATE_LIMITS['anthropic:claude-sonnet-4-6']).toBeDefined();
 			expect(MODEL_RATE_LIMITS['anthropic:claude-sonnet-4-5']).toBeDefined();
 			expect(MODEL_RATE_LIMITS['anthropic:claude-opus-4-5']).toBeDefined();
 		});

@@ -19,6 +19,13 @@ export const MODEL_RATE_LIMITS: ModelRateLimits = {
 		safetyMargin: 0.8, // Conservative - start throttling at 80%
 	},
 
+	// Claude Sonnet 4.6 (Tier 1: 50 RPM, 40K TPM)
+	'anthropic:claude-sonnet-4-6': {
+		requestsPerMinute: 50,
+		tokensPerMinute: 40_000,
+		safetyMargin: 0.9,
+	},
+
 	// Claude Sonnet 4.5 (Tier 1: 50 RPM, 40K TPM)
 	'anthropic:claude-sonnet-4-5': {
 		requestsPerMinute: 50,
