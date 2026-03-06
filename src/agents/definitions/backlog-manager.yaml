@@ -1,8 +1,8 @@
 identity:
   emoji: "\U0001F4E6"
   label: Backlog Manager
-  roleHint: Scans the backlog, picks the next unblocked card, and moves it to TODO
-  initialMessage: "**\U0001F4E6 Managing backlog** — Scanning backlog cards to find the next unblocked item..."
+  roleHint: Checks if pipeline is empty, then picks and moves the next backlog card to TODO
+  initialMessage: "**\U0001F4E6 Managing backlog** — Checking pipeline status before selecting next item..."
 
 # Explicit integration requirements.
 integrations:
@@ -19,16 +19,18 @@ capabilities:
     - pm:write
   optional: []
 
-# Supported triggers for this agent
+# Supported triggers for this agent.
+# Note: The primary use case is scm:pr-merged — when a PR is merged, the pipeline
+# may be clearing out, so we check if backlog work should be pulled in.
 triggers:
   - event: scm:pr-merged
     label: PR Merged
-    description: Trigger when a CASCADE-owned PR is merged, to pick the next backlog card
+    description: When a CASCADE PR is merged, check if pipeline is empty and pull next backlog item
     defaultEnabled: false
     contextPipeline: []
   - event: pm:status-changed
-    label: Status Changed to Backlog
-    description: Trigger when a work item is moved to the Backlog list/column
+    label: Item Added to Backlog
+    description: When an item is moved to Backlog, check if pipeline is empty and it should be moved to TODO immediately
     defaultEnabled: false
     parameters:
       - name: targetStatus
@@ -41,21 +43,12 @@ triggers:
 strategies: {}
 
 prompts:
+  # The system prompt (.eta file) contains full instructions.
+  # This taskPrompt provides the per-run context and directive.
   taskPrompt: |
-    You are the Backlog Manager agent. Your job is to scan all cards in the backlog and identify the next unblocked card to work on.
+    Check if the active pipeline (TODO, IN PROGRESS, IN REVIEW) is empty.
 
-    Steps:
-    1. Use ListWorkItems to fetch all cards currently in the backlog list/column.
-    2. For each card, use ReadWorkItem to read its description, checklists, and comments.
-    3. Identify which cards are **blocked** — a card is blocked if its description or comments reference another card that has not yet been completed (e.g., "blocked by #123", "depends on card XYZ", "waiting for ...").
-    4. Pick the first unblocked card (prefer smaller, self-contained cards over large ones).
-    5. Use UpdateWorkItem to move that card to the TODO status/list so the implementation agent can pick it up.
-    6. Add a brief comment to the moved card explaining why it was selected (e.g., "Selected as next task — no blocking dependencies found.").
-    7. If all backlog cards are blocked, leave them in place and add a comment to the most recently updated card explaining that all cards appear blocked.
+    If empty: scan the BACKLOG, select the best unblocked item, and move it to TODO.
+    If not empty: exit immediately without taking action.
 
-    Important:
-    - Do NOT move more than one card per run.
-    - Dependency detection is based on reading card descriptions and comments — look for keywords like "blocked by", "depends on", "waiting for", "after", and cross-references to other card IDs or titles.
-    - Be conservative: if unsure whether a card is blocked, treat it as blocked and skip it.
-
-hint: Pick exactly one unblocked backlog card and move it to TODO. Do not move multiple cards.
+hint: Check pipeline first. Only act if TODO, IN PROGRESS, and IN REVIEW are all empty.

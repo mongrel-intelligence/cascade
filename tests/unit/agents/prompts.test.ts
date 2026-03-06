@@ -15,6 +15,7 @@ vi.mock('../../../src/agents/definitions/index.js', () => ({
 			'respond-to-planning-comment',
 			'debug',
 			'email-joke',
+			'backlog-manager',
 		]),
 }));
 
@@ -146,6 +147,56 @@ describe('system prompts content', () => {
 		const prompt = getSystemPrompt('respond-to-planning-comment');
 		expect(prompt).toContain('Step N:');
 		expect(prompt).toContain('clean task names without');
+	});
+
+	it('backlog-manager prompt includes pipeline check as first step', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		expect(prompt).toContain('CHECK PIPELINE FIRST');
+		expect(prompt).toContain('MANDATORY FIRST STEP');
+	});
+
+	it('backlog-manager prompt checks only active pipeline stages (not DONE)', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		expect(prompt).toContain('TODO');
+		expect(prompt).toContain('IN PROGRESS');
+		expect(prompt).toContain('IN REVIEW');
+		expect(prompt).toContain('DONE');
+		// Verify DONE is explicitly noted as not blocking
+		expect(prompt).toContain('do not block new work');
+	});
+
+	it('backlog-manager prompt instructs to exit silently when pipeline not empty', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		expect(prompt).toContain('Exit immediately');
+		expect(prompt).toContain('EXIT SILENTLY');
+	});
+
+	it('backlog-manager prompt includes PM gadgets only', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		expect(prompt).toContain('ListWorkItems');
+		expect(prompt).toContain('ReadWorkItem');
+		expect(prompt).toContain('UpdateWorkItem');
+		expect(prompt).toContain('PostComment');
+		// Should NOT include codebase exploration tools
+		expect(prompt).not.toContain('ListDirectory');
+		expect(prompt).not.toContain('ReadFile');
+		expect(prompt).not.toContain('RipGrep');
+	});
+
+	it('backlog-manager prompt uses template variables for PM terminology', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		// Default fallback values should be used
+		expect(prompt).toContain('cards');
+		expect(prompt).toContain('card');
+	});
+
+	it('backlog-manager prompt renders custom PM terminology', () => {
+		const prompt = getSystemPrompt('backlog-manager', {
+			workItemNoun: 'issue',
+			workItemNounPlural: 'issues',
+		});
+		expect(prompt).toContain('issues');
+		expect(prompt).toContain('issue');
 	});
 });
 
@@ -280,6 +331,7 @@ describe('readTemplateFileSync', () => {
 			'respond-to-pr-comment',
 			'respond-to-planning-comment',
 			'debug',
+			'backlog-manager',
 		];
 		for (const agentType of builtinTypes) {
 			const content = readTemplateFileSync(agentType);
