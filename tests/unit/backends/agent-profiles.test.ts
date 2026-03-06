@@ -113,6 +113,38 @@ vi.mock('../../../src/utils/squintDb.js', () => ({
 	resolveSquintDbPath: vi.fn(() => null),
 }));
 
+// Mock agentMessages to avoid requiring initAgentMessages() in tests
+vi.mock('../../../src/config/agentMessages.js', () => ({
+	INITIAL_MESSAGES: new Proxy(
+		{
+			implementation:
+				'**🚀 Implementing changes** — Writing code, running tests, and preparing a PR...',
+			review: '**🔍 Reviewing code** — Examining the PR changes...',
+			splitting: '**📋 Splitting plan** — Breaking down the plan...',
+			'respond-to-ci': '**🔧 Fixing CI failures** — Analyzing the failed checks...',
+			'respond-to-review': '**🔧 Responding to review** — Addressing feedback...',
+		},
+		{
+			get(target, prop) {
+				return (target as Record<string, string>)[prop as string] ?? '**⚙️ Working on it**...';
+			},
+		},
+	),
+	AGENT_LABELS: new Proxy(
+		{},
+		{
+			get: () => ({ emoji: '⚙️', label: 'Progress Update' }),
+		},
+	),
+	AGENT_ROLE_HINTS: new Proxy(
+		{},
+		{
+			get: () => 'Processes the request',
+		},
+	),
+	getAgentLabel: vi.fn(() => ({ emoji: '⚙️', label: 'Progress Update' })),
+}));
+
 vi.mock('node:child_process', () => ({
 	execFileSync: vi.fn(() => 'squint overview output'),
 }));
@@ -141,12 +173,12 @@ describe('getAgentProfile', () => {
 	describe('respond-to-ci profile', () => {
 		let profile: AgentProfile;
 
-		beforeEach(() => {
-			profile = getAgentProfile('respond-to-ci');
+		beforeEach(async () => {
+			profile = await getAgentProfile('respond-to-ci');
 		});
 
-		it('returns a dedicated profile (not defaultProfile)', () => {
-			const debugProfile = getAgentProfile('debug');
+		it('returns a dedicated profile (not defaultProfile)', async () => {
+			const debugProfile = await getAgentProfile('debug');
 			// The debug profile uses defaultProfile which returns all tools unfiltered; respond-to-ci filters them
 			expect(profile).not.toBe(debugProfile);
 		});
@@ -187,8 +219,11 @@ describe('getAgentProfile', () => {
 			expect(names).toContain('ReadWorkItem');
 		});
 
-		it('has ALL_SDK_TOOLS for code editing', () => {
-			expect(profile.sdkTools).toEqual(['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']);
+		it('has SDK tools for code editing', () => {
+			// SDK tools derived from capabilities - order may vary
+			expect(new Set(profile.sdkTools)).toEqual(
+				new Set(['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']),
+			);
 		});
 
 		it('enables stop hooks', () => {
@@ -212,143 +247,18 @@ describe('getAgentProfile', () => {
 			expect(prompt).toContain('fix/ci-errors');
 			expect(prompt).toContain('CI checks have failed');
 		});
-
-		it('has a preExecute hook', () => {
-			expect(profile.preExecute).toBeDefined();
-		});
-
-		it('preExecute skips posting when ackCommentId exists', async () => {
-			const logWriter = vi.fn();
-			await profile.preExecute?.({
-				input: {
-					prNumber: 42,
-					prBranch: 'fix/ci',
-					repoFullName: 'acme/widgets',
-					ackCommentId: 12345,
-				},
-				logWriter,
-			});
-
-			expect(mockGithub.createPRComment).not.toHaveBeenCalled();
-		});
-
-		it('preExecute posts with ackMessage when no ackCommentId', async () => {
-			const logWriter = vi.fn();
-			mockGithub.createPRComment.mockResolvedValue(undefined as never);
-
-			await profile.preExecute?.({
-				input: {
-					prNumber: 42,
-					prBranch: 'fix/ci',
-					repoFullName: 'acme/widgets',
-					ackMessage: 'On it — checking the CI failures...',
-				},
-				logWriter,
-			});
-
-			expect(mockGithub.createPRComment).toHaveBeenCalledWith(
-				'acme',
-				'widgets',
-				42,
-				'On it — checking the CI failures...',
-			);
-		});
-
-		it('preExecute falls back to INITIAL_MESSAGES when no ackCommentId or ackMessage', async () => {
-			const logWriter = vi.fn();
-			mockGithub.createPRComment.mockResolvedValue(undefined as never);
-
-			await profile.preExecute?.({
-				input: {
-					prNumber: 42,
-					prBranch: 'fix/ci',
-					repoFullName: 'acme/widgets',
-				},
-				logWriter,
-			});
-
-			expect(mockGithub.createPRComment).toHaveBeenCalledWith(
-				'acme',
-				'widgets',
-				42,
-				expect.stringContaining('Fixing CI failures'),
-			);
-		});
-	});
-
-	describe('review profile preExecute', () => {
-		let profile: AgentProfile;
-
-		beforeEach(() => {
-			profile = getAgentProfile('review');
-		});
-
-		it('skips posting when ackCommentId exists', async () => {
-			const logWriter = vi.fn();
-			await profile.preExecute?.({
-				input: {
-					prNumber: 10,
-					repoFullName: 'org/repo',
-					ackCommentId: 999,
-				},
-				logWriter,
-			});
-
-			expect(mockGithub.createPRComment).not.toHaveBeenCalled();
-		});
-
-		it('posts with ackMessage when no ackCommentId', async () => {
-			const logWriter = vi.fn();
-			mockGithub.createPRComment.mockResolvedValue(undefined as never);
-
-			await profile.preExecute?.({
-				input: {
-					prNumber: 10,
-					repoFullName: 'org/repo',
-					ackMessage: 'Looking into the PR changes now...',
-				},
-				logWriter,
-			});
-
-			expect(mockGithub.createPRComment).toHaveBeenCalledWith(
-				'org',
-				'repo',
-				10,
-				'Looking into the PR changes now...',
-			);
-		});
-
-		it('falls back to INITIAL_MESSAGES when no ackCommentId or ackMessage', async () => {
-			const logWriter = vi.fn();
-			mockGithub.createPRComment.mockResolvedValue(undefined as never);
-
-			await profile.preExecute?.({
-				input: {
-					prNumber: 10,
-					repoFullName: 'org/repo',
-				},
-				logWriter,
-			});
-
-			expect(mockGithub.createPRComment).toHaveBeenCalledWith(
-				'org',
-				'repo',
-				10,
-				expect.stringContaining('Reviewing code'),
-			);
-		});
 	});
 
 	describe('respond-to-pr-comment profile', () => {
 		let profile: AgentProfile;
 
-		beforeEach(() => {
-			profile = getAgentProfile('respond-to-pr-comment');
+		beforeEach(async () => {
+			profile = await getAgentProfile('respond-to-pr-comment');
 		});
 
-		it('returns a dedicated profile (not reviewProfile or defaultProfile)', () => {
-			const reviewProfile = getAgentProfile('review');
-			const debugProfile = getAgentProfile('debug');
+		it('returns a dedicated profile (not reviewProfile or defaultProfile)', async () => {
+			const reviewProfile = await getAgentProfile('review');
+			const debugProfile = await getAgentProfile('debug');
 			expect(profile).not.toBe(reviewProfile);
 			expect(profile).not.toBe(debugProfile);
 		});
@@ -373,13 +283,17 @@ describe('getAgentProfile', () => {
 			expect(names).toContain('GetPRDetails');
 			expect(names).toContain('PostPRComment');
 			expect(names).toContain('ReplyToReviewComment');
-			expect(names).toContain('CreatePRReview');
+			// respond-to-pr-comment has scm:comment but not scm:review
+			expect(names).not.toContain('CreatePRReview');
 			expect(names).toContain('Finish');
 			expect(names).not.toContain('CreatePR');
 		});
 
-		it('has ALL_SDK_TOOLS for code editing', () => {
-			expect(profile.sdkTools).toEqual(['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']);
+		it('has SDK tools for code editing', () => {
+			// SDK tools derived from capabilities - order may vary
+			expect(new Set(profile.sdkTools)).toEqual(
+				new Set(['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']),
+			);
 		});
 
 		it('enables stop hooks', () => {
@@ -388,10 +302,6 @@ describe('getAgentProfile', () => {
 
 		it('needs GitHub token', () => {
 			expect(profile.needsGitHubToken).toBe(true);
-		});
-
-		it('does NOT have a preExecute hook', () => {
-			expect(profile.preExecute).toBeUndefined();
 		});
 
 		it('buildTaskPrompt includes comment body, PR number, and branch', () => {
@@ -422,22 +332,27 @@ describe('getAgentProfile', () => {
 		});
 	});
 
-	it('throws for unknown agent types', () => {
-		expect(() => getAgentProfile('nonexistent-agent')).toThrow(
+	it('rejects for unknown agent types', async () => {
+		await expect(getAgentProfile('nonexistent-agent')).rejects.toThrow(
 			"Failed to load agent profile for 'nonexistent-agent'",
 		);
 	});
 
-	it('returns implementation profile with needsGitHubToken', () => {
-		const profile = getAgentProfile('implementation');
+	it('returns implementation profile with needsGitHubToken', async () => {
+		const profile = await getAgentProfile('implementation');
 		expect(profile.needsGitHubToken).toBe(true);
 	});
 
-	it('returns debug profile (defaultProfile)', () => {
-		const profile = getAgentProfile('debug');
-		// Debug uses defaultProfile — passes all tools through, no GitHub token
-		const tools = [{ name: 'Anything', description: '', cliCommand: '', parameters: {} }];
-		expect(profile.filterTools(tools)).toHaveLength(1);
+	it('returns debug profile', async () => {
+		const profile = await getAgentProfile('debug');
+		// Debug has PM capabilities but no SCM
+		const tools = [
+			{ name: 'ReadWorkItem', description: '', cliCommand: '', parameters: {} },
+			{ name: 'CreatePR', description: '', cliCommand: '', parameters: {} }, // Should be filtered out
+		];
+		const filtered = profile.filterTools(tools);
+		expect(filtered.map((t) => t.name)).toContain('ReadWorkItem');
+		expect(filtered.map((t) => t.name)).not.toContain('CreatePR');
 		expect(profile.needsGitHubToken).toBe(false);
 	});
 });
@@ -448,7 +363,7 @@ describe('AgentProfile.getLlmistGadgets', () => {
 		return gadgets.map((g) => (g as object).constructor.name);
 	}
 
-	it('each profile has a getLlmistGadgets method', () => {
+	it('each profile has a getLlmistGadgets method', async () => {
 		const agentTypes = [
 			'splitting',
 			'planning',
@@ -461,15 +376,15 @@ describe('AgentProfile.getLlmistGadgets', () => {
 			'debug',
 		];
 		for (const agentType of agentTypes) {
-			const profile = getAgentProfile(agentType);
+			const profile = await getAgentProfile(agentType);
 			expect(profile.getLlmistGadgets).toBeDefined();
 			expect(typeof profile.getLlmistGadgets).toBe('function');
 		}
 	});
 
-	it('implementation includes file editing, CreatePR, and PM gadgets', () => {
-		const profile = getAgentProfile('implementation');
-		const names = gadgetNames(profile.getLlmistGadgets('implementation'));
+	it('implementation includes file editing, CreatePR, and PM gadgets', async () => {
+		const profile = await getAgentProfile('implementation');
+		const names = gadgetNames(profile.getLlmistGadgets());
 
 		// File editing gadgets (canEditFiles: true)
 		expect(names).toContain('FileSearchAndReplace');
@@ -485,9 +400,9 @@ describe('AgentProfile.getLlmistGadgets', () => {
 		expect(names).toContain('Finish');
 	});
 
-	it('planning excludes file editing, CreatePR, and checklist updates (read-only)', () => {
-		const profile = getAgentProfile('planning');
-		const names = gadgetNames(profile.getLlmistGadgets('planning'));
+	it('planning excludes file editing, CreatePR, and checklist updates (read-only)', async () => {
+		const profile = await getAgentProfile('planning');
+		const names = gadgetNames(profile.getLlmistGadgets());
 
 		// Read-only: no file editing
 		expect(names).not.toContain('FileSearchAndReplace');
@@ -505,9 +420,9 @@ describe('AgentProfile.getLlmistGadgets', () => {
 		expect(names).toContain('Finish');
 	});
 
-	it('review includes CreatePRReview and excludes file editing and PostPRComment', () => {
-		const profile = getAgentProfile('review');
-		const names = gadgetNames(profile.getLlmistGadgets('review'));
+	it('review includes CreatePRReview and excludes file editing', async () => {
+		const profile = await getAgentProfile('review');
+		const names = gadgetNames(profile.getLlmistGadgets());
 
 		// Core action: submit PR review
 		expect(names).toContain('CreatePRReview');
@@ -515,19 +430,19 @@ describe('AgentProfile.getLlmistGadgets', () => {
 		expect(names).toContain('GetPRDetails');
 		expect(names).toContain('GetPRDiff');
 		expect(names).toContain('GetPRChecks');
+		// With scm:comment capability, review agent gets all comment tools
+		expect(names).toContain('PostPRComment');
 		expect(names).toContain('UpdatePRComment');
 		// Read-only: no file editing
 		expect(names).not.toContain('FileSearchAndReplace');
 		expect(names).not.toContain('WriteFile');
 		expect(names).not.toContain('CreatePR');
-		// Review agent doesn't use PostPRComment (posts via CreatePRReview)
-		expect(names).not.toContain('PostPRComment');
 		expect(names).toContain('Finish');
 	});
 
-	it('respond-to-review includes file editing and review comment tools', () => {
-		const profile = getAgentProfile('respond-to-review');
-		const names = gadgetNames(profile.getLlmistGadgets('respond-to-review'));
+	it('respond-to-review includes file editing and review comment tools', async () => {
+		const profile = await getAgentProfile('respond-to-review');
+		const names = gadgetNames(profile.getLlmistGadgets());
 
 		// File editing (respond-to-review makes code changes)
 		expect(names).toContain('FileSearchAndReplace');
@@ -544,9 +459,9 @@ describe('AgentProfile.getLlmistGadgets', () => {
 		expect(names).toContain('Finish');
 	});
 
-	it('respond-to-ci includes file editing but no review comment tools', () => {
-		const profile = getAgentProfile('respond-to-ci');
-		const names = gadgetNames(profile.getLlmistGadgets('respond-to-ci'));
+	it('respond-to-ci includes file editing and comment tools', async () => {
+		const profile = await getAgentProfile('respond-to-ci');
+		const names = gadgetNames(profile.getLlmistGadgets());
 
 		// File editing
 		expect(names).toContain('FileSearchAndReplace');
@@ -556,17 +471,17 @@ describe('AgentProfile.getLlmistGadgets', () => {
 		expect(names).toContain('GetPRDetails');
 		expect(names).toContain('GetPRDiff');
 		expect(names).toContain('GetPRChecks');
-		// No review comment tools (includeReviewComments: false)
-		expect(names).not.toContain('GetPRComments');
-		expect(names).not.toContain('ReplyToReviewComment');
+		// With scm:comment capability, gets all comment tools
+		expect(names).toContain('PostPRComment');
+		expect(names).toContain('GetPRComments');
 		// No CreatePR (pushes to existing branch)
 		expect(names).not.toContain('CreatePR');
 		expect(names).toContain('Finish');
 	});
 
-	it('respond-to-pr-comment includes file editing and review comment tools', () => {
-		const profile = getAgentProfile('respond-to-pr-comment');
-		const names = gadgetNames(profile.getLlmistGadgets('respond-to-pr-comment'));
+	it('respond-to-pr-comment includes file editing and review comment tools', async () => {
+		const profile = await getAgentProfile('respond-to-pr-comment');
+		const names = gadgetNames(profile.getLlmistGadgets());
 
 		// File editing
 		expect(names).toContain('FileSearchAndReplace');
@@ -580,9 +495,9 @@ describe('AgentProfile.getLlmistGadgets', () => {
 		expect(names).toContain('Finish');
 	});
 
-	it('splitting includes file editing but not CreatePR', () => {
-		const profile = getAgentProfile('splitting');
-		const names = gadgetNames(profile.getLlmistGadgets('splitting'));
+	it('splitting includes file editing but not CreatePR', async () => {
+		const profile = await getAgentProfile('splitting');
+		const names = gadgetNames(profile.getLlmistGadgets());
 
 		// File editing (canEditFiles: true)
 		expect(names).toContain('FileSearchAndReplace');
@@ -608,6 +523,7 @@ function makeContextParams(overrides: {
 	repoFullName?: string;
 	prNumber?: number;
 	contextFiles?: Array<{ path: string; content: string }>;
+	triggerType?: string;
 }): {
 	input: Record<string, unknown>;
 	repoDir: string;
@@ -619,6 +535,7 @@ function makeContextParams(overrides: {
 			cardId: overrides.cardId,
 			repoFullName: overrides.repoFullName ?? 'acme/widgets',
 			prNumber: overrides.prNumber ?? 42,
+			triggerType: overrides.triggerType,
 			...overrides,
 		},
 		repoDir: '/repo',
@@ -630,8 +547,8 @@ function makeContextParams(overrides: {
 describe('fetchDirectoryListing', () => {
 	it('splitting fetchContext returns a ListDirectory injection with maxDepth:3', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('splitting');
-		const params = makeContextParams({ cardId: undefined });
+		const profile = await getAgentProfile('splitting');
+		const params = makeContextParams({ cardId: undefined, triggerType: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -651,8 +568,9 @@ describe('fetchDirectoryListing', () => {
 describe('fetchContextFileInjections', () => {
 	it('returns ReadFile injections for each context file', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('splitting');
+		const profile = await getAgentProfile('splitting');
 		const params = makeContextParams({
+			triggerType: 'pm:status-changed',
 			contextFiles: [
 				{ path: 'CLAUDE.md', content: 'project guidelines' },
 				{ path: 'README.md', content: 'readme text' },
@@ -673,8 +591,8 @@ describe('fetchContextFileInjections', () => {
 
 	it('returns no ReadFile injections when contextFiles is empty', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('splitting');
-		const params = makeContextParams({ contextFiles: [] });
+		const profile = await getAgentProfile('splitting');
+		const params = makeContextParams({ triggerType: 'pm:status-changed', contextFiles: [] });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -689,8 +607,8 @@ describe('fetchSquintOverview', () => {
 	it('returns SquintOverview injection when squint db is present', async () => {
 		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
 		mockExecFileSync.mockReturnValue('squint overview output\n');
-		const profile = getAgentProfile('splitting');
-		const params = makeContextParams({});
+		const profile = await getAgentProfile('splitting');
+		const params = makeContextParams({ triggerType: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -704,8 +622,8 @@ describe('fetchSquintOverview', () => {
 
 	it('returns no SquintOverview injection when squint db is absent', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('splitting');
-		const params = makeContextParams({});
+		const profile = await getAgentProfile('splitting');
+		const params = makeContextParams({ triggerType: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -720,8 +638,8 @@ describe('fetchSquintOverview', () => {
 		mockExecFileSync.mockImplementation(() => {
 			throw new Error('squint not found');
 		});
-		const profile = getAgentProfile('splitting');
-		const params = makeContextParams({});
+		const profile = await getAgentProfile('splitting');
+		const params = makeContextParams({ triggerType: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -734,8 +652,8 @@ describe('fetchSquintOverview', () => {
 	it('returns no SquintOverview injection when squint output is empty', async () => {
 		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
 		mockExecFileSync.mockReturnValue('   ');
-		const profile = getAgentProfile('splitting');
-		const params = makeContextParams({});
+		const profile = await getAgentProfile('splitting');
+		const params = makeContextParams({ triggerType: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -750,8 +668,8 @@ describe('fetchWorkItemInjection', () => {
 	it('returns ReadWorkItem injection when readWorkItem resolves', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		mockReadWorkItem.mockResolvedValue('# card title\n\ncard body');
-		const profile = getAgentProfile('splitting');
-		const params = makeContextParams({ cardId: 'card-123' });
+		const profile = await getAgentProfile('splitting');
+		const params = makeContextParams({ triggerType: 'pm:status-changed', cardId: 'card-123' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -770,8 +688,8 @@ describe('fetchWorkItemInjection', () => {
 	it('skips injection when readWorkItem throws', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		mockReadWorkItem.mockRejectedValue(new Error('card not found'));
-		const profile = getAgentProfile('splitting');
-		const params = makeContextParams({ cardId: 'missing-card' });
+		const profile = await getAgentProfile('splitting');
+		const params = makeContextParams({ triggerType: 'pm:status-changed', cardId: 'missing-card' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -783,8 +701,8 @@ describe('fetchWorkItemInjection', () => {
 
 	it('never calls readWorkItem when cardId is absent', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('splitting');
-		const params = makeContextParams({ cardId: undefined });
+		const profile = await getAgentProfile('splitting');
+		const params = makeContextParams({ triggerType: 'pm:status-changed', cardId: undefined });
 
 		await profile.fetchContext(params as Parameters<typeof profile.fetchContext>[0]);
 
@@ -797,8 +715,9 @@ describe('fetchWorkItemContext orchestration', () => {
 		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
 		mockExecFileSync.mockReturnValue('squint output\n');
 		mockReadWorkItem.mockResolvedValue('card content');
-		const profile = getAgentProfile('splitting');
+		const profile = await getAgentProfile('splitting');
 		const params = makeContextParams({
+			triggerType: 'pm:status-changed',
 			cardId: 'card-abc',
 			contextFiles: [{ path: 'CLAUDE.md', content: 'guidelines' }],
 		});
@@ -826,8 +745,8 @@ describe('fetchWorkItemContext orchestration', () => {
 	it('gracefully omits squint and workItem when unavailable', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		mockReadWorkItem.mockRejectedValue(new Error('unavailable'));
-		const profile = getAgentProfile('splitting');
-		const params = makeContextParams({ cardId: 'card-xyz' });
+		const profile = await getAgentProfile('splitting');
+		const params = makeContextParams({ triggerType: 'pm:status-changed', cardId: 'card-xyz' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -849,8 +768,12 @@ describe('fetchReviewContext', () => {
 
 	it('includes PR injections (Details, Diff, Checks)', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('review');
-		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 42 });
+		const profile = await getAgentProfile('review');
+		const params = makeContextParams({
+			triggerType: 'scm:check-suite-success',
+			repoFullName: 'acme/widgets',
+			prNumber: 42,
+		});
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -864,8 +787,9 @@ describe('fetchReviewContext', () => {
 
 	it('includes context file injections', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('review');
+		const profile = await getAgentProfile('review');
 		const params = makeContextParams({
+			triggerType: 'scm:check-suite-success',
 			repoFullName: 'acme/widgets',
 			prNumber: 42,
 			contextFiles: [{ path: 'CLAUDE.md', content: 'project info' }],
@@ -883,8 +807,12 @@ describe('fetchReviewContext', () => {
 	it('includes squint injection when squint db is present', async () => {
 		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
 		mockExecFileSync.mockReturnValue('squint content\n');
-		const profile = getAgentProfile('review');
-		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 42 });
+		const profile = await getAgentProfile('review');
+		const params = makeContextParams({
+			triggerType: 'scm:check-suite-success',
+			repoFullName: 'acme/widgets',
+			prNumber: 42,
+		});
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -895,8 +823,12 @@ describe('fetchReviewContext', () => {
 
 	it('does NOT include a work item injection (review has no cardId)', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('review');
-		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 42 });
+		const profile = await getAgentProfile('review');
+		const params = makeContextParams({
+			triggerType: 'scm:check-suite-success',
+			repoFullName: 'acme/widgets',
+			prNumber: 42,
+		});
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -912,8 +844,12 @@ describe('fetchReviewContext', () => {
 			included: [{ path: 'src/index.ts', content: 'file content' }],
 			skipped: [],
 		});
-		const profile = getAgentProfile('review');
-		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 42 });
+		const profile = await getAgentProfile('review');
+		const params = makeContextParams({
+			triggerType: 'scm:check-suite-success',
+			repoFullName: 'acme/widgets',
+			prNumber: 42,
+		});
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -930,8 +866,12 @@ describe('fetchReviewContext', () => {
 
 	it('calls formatting functions', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('review');
-		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 42 });
+		const profile = await getAgentProfile('review');
+		const params = makeContextParams({
+			triggerType: 'scm:check-suite-success',
+			repoFullName: 'acme/widgets',
+			prNumber: 42,
+		});
 
 		await profile.fetchContext(params as Parameters<typeof profile.fetchContext>[0]);
 
@@ -952,8 +892,9 @@ describe('fetchCIContext', () => {
 		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
 		mockExecFileSync.mockReturnValue('squint ci output\n');
 		mockReadWorkItem.mockResolvedValue('ci card content');
-		const profile = getAgentProfile('respond-to-ci');
+		const profile = await getAgentProfile('respond-to-ci');
 		const params = makeContextParams({
+			triggerType: 'scm:check-suite-failure',
 			repoFullName: 'acme/widgets',
 			prNumber: 5,
 			cardId: 'ci-card',
@@ -976,8 +917,9 @@ describe('fetchCIContext', () => {
 
 	it('skips workItem injection when cardId is absent', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('respond-to-ci');
+		const profile = await getAgentProfile('respond-to-ci');
 		const params = makeContextParams({
+			triggerType: 'scm:check-suite-failure',
 			repoFullName: 'acme/widgets',
 			prNumber: 5,
 			cardId: undefined,
@@ -1005,8 +947,12 @@ describe('fetchPRCommentResponseContext', () => {
 
 	it('includes PR injections and 3 conversation injections', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('respond-to-pr-comment');
-		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 7 });
+		const profile = await getAgentProfile('respond-to-pr-comment');
+		const params = makeContextParams({
+			triggerType: 'scm:pr-comment-mention',
+			repoFullName: 'acme/widgets',
+			prNumber: 7,
+		});
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -1025,8 +971,9 @@ describe('fetchPRCommentResponseContext', () => {
 	it('includes dirListing, contextFiles, and squint', async () => {
 		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
 		mockExecFileSync.mockReturnValue('squint pr comment output\n');
-		const profile = getAgentProfile('respond-to-pr-comment');
+		const profile = await getAgentProfile('respond-to-pr-comment');
 		const params = makeContextParams({
+			triggerType: 'scm:pr-comment-mention',
 			repoFullName: 'acme/widgets',
 			prNumber: 7,
 			contextFiles: [{ path: 'AGENTS.md', content: 'agents doc' }],
@@ -1044,8 +991,12 @@ describe('fetchPRCommentResponseContext', () => {
 
 	it('calls all 3 formatting functions for conversation context', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('respond-to-pr-comment');
-		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 7 });
+		const profile = await getAgentProfile('respond-to-pr-comment');
+		const params = makeContextParams({
+			triggerType: 'scm:pr-comment-mention',
+			repoFullName: 'acme/widgets',
+			prNumber: 7,
+		});
 
 		await profile.fetchContext(params as Parameters<typeof profile.fetchContext>[0]);
 
@@ -1056,13 +1007,71 @@ describe('fetchPRCommentResponseContext', () => {
 
 	it('calls getPRReviewComments, getPRReviews, getPRIssueComments', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		const profile = getAgentProfile('respond-to-pr-comment');
-		const params = makeContextParams({ repoFullName: 'acme/widgets', prNumber: 7 });
+		const profile = await getAgentProfile('respond-to-pr-comment');
+		const params = makeContextParams({
+			triggerType: 'scm:pr-comment-mention',
+			repoFullName: 'acme/widgets',
+			prNumber: 7,
+		});
 
 		await profile.fetchContext(params as Parameters<typeof profile.fetchContext>[0]);
 
 		expect(mockGithub.getPRReviewComments).toHaveBeenCalledWith('acme', 'widgets', 7);
 		expect(mockGithub.getPRReviews).toHaveBeenCalledWith('acme', 'widgets', 7);
 		expect(mockGithub.getPRIssueComments).toHaveBeenCalledWith('acme', 'widgets', 7);
+	});
+});
+
+// ============================================================================
+// resolveContextPipeline Edge Cases
+// ============================================================================
+
+describe('resolveContextPipeline edge cases', () => {
+	it('returns empty array when triggerType is undefined', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = await getAgentProfile('implementation');
+		const params = makeContextParams({ triggerType: undefined });
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		expect(injections).toHaveLength(0);
+	});
+
+	it('returns empty array when triggerType matches no trigger', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = await getAgentProfile('implementation');
+		const params = makeContextParams({ triggerType: 'scm:unknown-event' });
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		expect(injections).toHaveLength(0);
+	});
+
+	it('handles agent with no triggers (debug)', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = await getAgentProfile('debug');
+		const params = makeContextParams({ triggerType: undefined });
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		expect(injections).toHaveLength(0);
+	});
+
+	it('returns empty array when triggerType is empty string', async () => {
+		mockResolveSquintDbPath.mockReturnValue(null);
+		const profile = await getAgentProfile('implementation');
+		const params = makeContextParams({ triggerType: '' });
+
+		const injections = await profile.fetchContext(
+			params as Parameters<typeof profile.fetchContext>[0],
+		);
+
+		expect(injections).toHaveLength(0);
 	});
 });

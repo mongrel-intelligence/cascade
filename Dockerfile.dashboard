@@ -9,6 +9,7 @@ RUN npm ci --ignore-scripts
 # Build
 COPY tsconfig.json drizzle.config.ts ./
 COPY src ./src
+COPY tools ./tools
 RUN npm run build
 
 # Production image
@@ -27,7 +28,6 @@ COPY --from=builder /app/dist ./dist
 
 # Copy .eta prompt templates (loaded at runtime by agents/prompts via readFileSync)
 COPY --from=builder /app/src/agents/prompts/templates ./dist/agents/prompts/templates
-COPY --from=builder /app/src/agents/prompts/task-templates ./dist/agents/prompts/task-templates
 
 ENV PORT=3001
 EXPOSE 3001

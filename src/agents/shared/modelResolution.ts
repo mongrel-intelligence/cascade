@@ -1,12 +1,14 @@
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../types/index.js';
-import { type ContextFile, readContextFiles } from '../utils/setup.js';
-
+import { logger } from '../../utils/logging.js';
+import { resolveAgentDefinition } from '../definitions/loader.js';
 import {
 	type PromptContext,
-	type TaskPromptContext,
+	buildTaskPromptContext,
 	getSystemPrompt,
 	renderCustomPrompt,
+	renderInlineTaskPrompt,
 } from '../prompts/index.js';
+import { type ContextFile, readContextFiles } from '../utils/setup.js';
 
 export interface ModelConfig {
 	systemPrompt: string;
@@ -32,39 +34,26 @@ export interface ResolveModelConfigOptions {
 	agentInput?: AgentInput;
 }
 
-/**
- * Build a merged context for DB task prompt overrides.
- * Combines PromptContext fields (cardId, prNumber, etc.) with task-specific
- * fields from AgentInput (commentText, commentAuthor, commentBody, commentPath).
- */
-function buildTaskOverrideContext(
-	promptContext: PromptContext | undefined,
-	agentInput: AgentInput | undefined,
-): TaskPromptContext {
-	return {
-		...(promptContext ?? {}),
-		// Common fields from AgentInput
-		cardId: agentInput?.cardId || (promptContext?.cardId as string | undefined),
-		prNumber: agentInput?.prNumber ?? (promptContext?.prNumber as number | undefined),
-		prBranch: agentInput?.prBranch ?? (promptContext?.prBranch as string | undefined),
-		// Task-specific fields from AgentInput
-		commentText: agentInput?.triggerCommentText as string | undefined,
-		commentAuthor: (agentInput?.triggerCommentAuthor as string) || undefined,
-		commentBody: agentInput?.triggerCommentBody as string | undefined,
-		commentPath: (agentInput?.triggerCommentPath as string) || undefined,
-	};
-}
-
 export async function resolveModelConfig(options: ResolveModelConfigOptions): Promise<ModelConfig> {
 	const { agentType, project, config, repoDir, modelOverride, promptContext, dbPartials } = options;
 	const configKey = options.configKey ?? agentType;
 
-	// Resolution chain: project prompt → defaults prompt → .eta file
-	const customPromptSource = project.prompts?.[agentType] ?? config.defaults.prompts?.[agentType];
+	// Resolve prompts from agent definition (cache → DB → YAML)
+	let definitionSystemPrompt: string | undefined;
+	let definitionTaskPrompt: string | undefined;
+	try {
+		const definition = await resolveAgentDefinition(agentType);
+		definitionSystemPrompt = definition.prompts?.systemPrompt;
+		definitionTaskPrompt = definition.prompts?.taskPrompt;
+	} catch (err) {
+		// Definition not found or DB unavailable — fall through to defaults
+		logger.warn(`Failed to resolve agent definition for ${agentType}:`, err);
+	}
 
+	// Resolution chain: definition prompt → .eta file
 	let systemPrompt: string;
-	if (customPromptSource) {
-		systemPrompt = renderCustomPrompt(customPromptSource, promptContext ?? {}, dbPartials);
+	if (definitionSystemPrompt) {
+		systemPrompt = renderCustomPrompt(definitionSystemPrompt, promptContext ?? {}, dbPartials);
 	} else {
 		systemPrompt = getSystemPrompt(agentType, promptContext ?? {}, dbPartials);
 	}
@@ -79,14 +68,21 @@ export async function resolveModelConfig(options: ResolveModelConfigOptions): Pr
 	const maxIterations =
 		config.defaults.agentIterations?.[configKey] || config.defaults.maxIterations;
 
-	// Resolve task prompt override: project → defaults → undefined (use .eta default)
-	const customTaskPromptSource =
-		project.taskPrompts?.[agentType] ?? config.defaults.taskPrompts?.[agentType];
-
+	// Resolve task prompt override from definition → undefined (use .eta default)
 	let taskPrompt: string | undefined;
-	if (customTaskPromptSource) {
-		const taskContext = buildTaskOverrideContext(promptContext, options.agentInput);
-		taskPrompt = renderCustomPrompt(customTaskPromptSource, taskContext, dbPartials);
+	if (definitionTaskPrompt) {
+		// Build task context from agentInput, falling back to promptContext for common fields
+		const taskContext = buildTaskPromptContext({
+			cardId: options.agentInput?.cardId ?? promptContext?.cardId,
+			prNumber: options.agentInput?.prNumber ?? (promptContext?.prNumber as number | undefined),
+			prBranch: options.agentInput?.prBranch ?? (promptContext?.prBranch as string | undefined),
+			triggerCommentText: options.agentInput?.triggerCommentText,
+			triggerCommentAuthor: options.agentInput?.triggerCommentAuthor,
+			triggerCommentBody: options.agentInput?.triggerCommentBody,
+			triggerCommentPath: options.agentInput?.triggerCommentPath,
+			senderEmail: options.agentInput?.senderEmail,
+		});
+		taskPrompt = renderInlineTaskPrompt(definitionTaskPrompt, taskContext, dbPartials);
 	}
 
 	const contextFiles = await readContextFiles(repoDir);

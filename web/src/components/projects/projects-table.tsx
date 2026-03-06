@@ -26,7 +26,7 @@ import { useState } from 'react';
 interface Project {
 	id: string;
 	name: string;
-	repo: string;
+	repo?: string | null;
 	baseBranch: string | null;
 	agentBackend: string | null;
 	cardBudgetUsd: string | null;
@@ -77,7 +77,7 @@ export function ProjectsTable({ projects }: { projects: Project[] }) {
 							>
 								<TableCell className="font-medium">{project.name}</TableCell>
 								<TableCell className="text-muted-foreground font-mono text-xs">
-									{project.repo}
+									{project.repo || '-'}
 								</TableCell>
 								<TableCell>
 									<Badge variant="outline">{project.baseBranch ?? 'main'}</Badge>

@@ -1,10 +1,8 @@
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { validateTemplate } from '../../agents/prompts/index.js';
 import { CLAUDE_CODE_MODELS } from '../../backends/claude-code/models.js';
 import { getDb } from '../../db/client.js';
-import { loadPartials } from '../../db/repositories/partialsRepository.js';
 import {
 	createAgentConfig,
 	deleteAgentConfig,
@@ -12,18 +10,17 @@ import {
 	updateAgentConfig,
 } from '../../db/repositories/settingsRepository.js';
 import { agentConfigs } from '../../db/schema/index.js';
+import type { TRPCContext } from '../trpc.js';
 import { protectedProcedure, publicProcedure, router } from '../trpc.js';
 import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
-async function validatePromptIfPresent(prompt: string | null | undefined) {
-	if (!prompt) return;
-	const dbPartials = await loadPartials();
-	const result = validateTemplate(prompt, dbPartials);
-	if (!result.valid) {
-		throw new TRPCError({
-			code: 'BAD_REQUEST',
-			message: `Invalid prompt template: ${result.error}`,
-		});
+/** Throws FORBIDDEN when a global config (no org, no project) is modified by a non-superadmin. */
+function assertCanModifyConfig(
+	config: { orgId: string | null; projectId: string | null },
+	ctx: { user: TRPCContext['user'] & object },
+) {
+	if (!config.orgId && !config.projectId && ctx.user.role !== 'superadmin') {
+		throw new TRPCError({ code: 'FORBIDDEN', message: 'Superadmin access required' });
 	}
 }
 
@@ -43,6 +40,9 @@ export const agentConfigsRouter = router({
 			return listAgentConfigs({ orgId: ctx.effectiveOrgId });
 		}),
 
+	// No superadmin check needed: the `input.orgId ?? ctx.effectiveOrgId` fallback
+	// guarantees an orgId is always set, so a truly global config (no org, no project)
+	// cannot be created through this endpoint.
 	create: protectedProcedure
 		.input(
 			z.object({
@@ -52,7 +52,6 @@ export const agentConfigsRouter = router({
 				model: z.string().nullish(),
 				maxIterations: z.number().int().positive().nullish(),
 				agentBackend: z.string().nullish(),
-				prompt: z.string().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -60,7 +59,6 @@ export const agentConfigsRouter = router({
 			if (input.projectId) {
 				await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
 			}
-			await validatePromptIfPresent(input.prompt);
 			return createAgentConfig({
 				orgId: input.orgId ?? ctx.effectiveOrgId,
 				projectId: input.projectId,
@@ -68,7 +66,6 @@ export const agentConfigsRouter = router({
 				model: input.model,
 				maxIterations: input.maxIterations,
 				agentBackend: input.agentBackend,
-				prompt: input.prompt,
 			});
 		}),
 
@@ -80,7 +77,6 @@ export const agentConfigsRouter = router({
 				model: z.string().nullish(),
 				maxIterations: z.number().int().positive().nullish(),
 				agentBackend: z.string().nullish(),
-				prompt: z.string().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -93,6 +89,7 @@ export const agentConfigsRouter = router({
 			if (!config) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
+			assertCanModifyConfig(config, ctx);
 			// Check org-scoped configs belong to user's org
 			if (config.orgId && config.orgId !== ctx.effectiveOrgId) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
@@ -103,7 +100,6 @@ export const agentConfigsRouter = router({
 			}
 
 			const { id, ...updates } = input;
-			await validatePromptIfPresent(updates.prompt);
 			await updateAgentConfig(id, updates);
 		}),
 
@@ -118,6 +114,7 @@ export const agentConfigsRouter = router({
 			if (!config) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
+			assertCanModifyConfig(config, ctx);
 			if (config.orgId && config.orgId !== ctx.effectiveOrgId) {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}

@@ -5,7 +5,7 @@ export interface TRPCUser {
 	orgId: string;
 	email: string;
 	name: string;
-	role: string;
+	role: 'member' | 'admin' | 'superadmin';
 }
 
 export interface TRPCContext {
@@ -31,8 +31,20 @@ export const adminProcedure = t.procedure.use(async (opts) => {
 	if (!opts.ctx.user || !opts.ctx.effectiveOrgId) {
 		throw new TRPCError({ code: 'UNAUTHORIZED' });
 	}
-	if (opts.ctx.user.role !== 'admin') {
+	if (!['admin', 'superadmin'].includes(opts.ctx.user.role)) {
 		throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
+	}
+	return opts.next({
+		ctx: { user: opts.ctx.user, effectiveOrgId: opts.ctx.effectiveOrgId },
+	});
+});
+
+export const superAdminProcedure = t.procedure.use(async (opts) => {
+	if (!opts.ctx.user || !opts.ctx.effectiveOrgId) {
+		throw new TRPCError({ code: 'UNAUTHORIZED' });
+	}
+	if (opts.ctx.user.role !== 'superadmin') {
+		throw new TRPCError({ code: 'FORBIDDEN', message: 'Superadmin access required' });
 	}
 	return opts.next({
 		ctx: { user: opts.ctx.user, effectiveOrgId: opts.ctx.effectiveOrgId },

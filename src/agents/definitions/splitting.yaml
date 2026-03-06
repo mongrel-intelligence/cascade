@@ -4,25 +4,55 @@ identity:
   roleHint: Breaks down a feature plan into smaller, ordered work items (subtasks)
   initialMessage: "**\U0001F4CB Splitting plan** — Reading the plan and splitting it into ordered work items..."
 
+# Explicit integration requirements.
+integrations:
+  required: [pm]
+  optional: []
+
+# Can read files and edit PM checklists, but no PR creation.
 capabilities:
-  canEditFiles: true
-  canCreatePR: false
-  canUpdateChecklists: true
-  isReadOnly: false
+  required:
+    - fs:read
+    - fs:write
+    - shell:exec
+    - session:ctrl
+    - pm:read
+    - pm:write
+    - pm:checklist
+  optional: []
 
-tools:
-  sets: [pm, pm_checklist, session]
-  sdkTools: all
+# Supported triggers for this agent
+triggers:
+  - event: pm:status-changed
+    label: Status Changed to Splitting
+    description: Trigger when work item status changes to Splitting
+    defaultEnabled: true
+    parameters:
+      - name: targetStatus
+        type: select
+        label: Target Status
+        options: [splitting]
+        defaultValue: splitting
+    contextPipeline: [directoryListing, contextFiles, squint, workItem]
+  - event: pm:label-added
+    label: Ready to Process Label
+    description: Trigger when Ready to Process label added to a card in Splitting list
+    defaultEnabled: true
+    parameters:
+      - name: listKey
+        type: select
+        label: Target List
+        options: [splitting]
+        defaultValue: splitting
+    contextPipeline: [directoryListing, contextFiles, squint, workItem]
 
-strategies:
-  contextPipeline: [directoryListing, contextFiles, squint, workItem]
-  taskPromptBuilder: workItem
-  gadgetBuilder: workItem
+strategies: {}
 
-backend:
-  enableStopHooks: false
-  needsGitHubToken: false
+prompts:
+  taskPrompt: |
+    Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.
 
-compaction: default
+backend: {}
+
 
 hint: Gather all context needed for the current step before proceeding.

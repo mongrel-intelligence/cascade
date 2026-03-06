@@ -339,6 +339,22 @@ describe('projectsRouter', () => {
 
 				expect(result).toEqual([]);
 			});
+
+			it('lists email credentials', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				mockGetIntegrationByProjectAndCategory.mockResolvedValue({ id: 20 });
+				const creds = [{ role: 'gmail_refresh_token', credentialId: 7, credentialName: 'Gmail' }];
+				mockListIntegrationCredentials.mockResolvedValue(creds);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				const result = await caller.integrationCredentials.list({
+					projectId: 'p1',
+					category: 'email',
+				});
+
+				expect(mockGetIntegrationByProjectAndCategory).toHaveBeenCalledWith('p1', 'email');
+				expect(result).toEqual(creds);
+			});
 		});
 
 		describe('set', () => {
@@ -357,6 +373,24 @@ describe('projectsRouter', () => {
 				});
 
 				expect(mockSetIntegrationCredential).toHaveBeenCalledWith(10, 'api_key', 42);
+			});
+
+			it('sets email credential role', async () => {
+				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project
+				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // credential
+				mockGetIntegrationByProjectAndCategory.mockResolvedValue({ id: 20 });
+				mockSetIntegrationCredential.mockResolvedValue(undefined);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await caller.integrationCredentials.set({
+					projectId: 'p1',
+					category: 'email',
+					role: 'imap_password',
+					credentialId: 7,
+				});
+
+				expect(mockGetIntegrationByProjectAndCategory).toHaveBeenCalledWith('p1', 'email');
+				expect(mockSetIntegrationCredential).toHaveBeenCalledWith(20, 'imap_password', 7);
 			});
 
 			it('throws NOT_FOUND when credential belongs to different org', async () => {
@@ -389,6 +423,22 @@ describe('projectsRouter', () => {
 				});
 
 				expect(mockRemoveIntegrationCredential).toHaveBeenCalledWith(10, 'api_key');
+			});
+
+			it('removes email credential role', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				mockGetIntegrationByProjectAndCategory.mockResolvedValue({ id: 20 });
+				mockRemoveIntegrationCredential.mockResolvedValue(undefined);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await caller.integrationCredentials.remove({
+					projectId: 'p1',
+					category: 'email',
+					role: 'imap_password',
+				});
+
+				expect(mockGetIntegrationByProjectAndCategory).toHaveBeenCalledWith('p1', 'email');
+				expect(mockRemoveIntegrationCredential).toHaveBeenCalledWith(20, 'imap_password');
 			});
 		});
 	});

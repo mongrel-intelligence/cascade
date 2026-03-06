@@ -99,7 +99,7 @@ async function buildBackendInput(
 		agentInput: input,
 	});
 
-	const profile = getAgentProfile(agentType);
+	const profile = await getAgentProfile(agentType);
 
 	// Use profile to fetch agent-specific context injections
 	const contextInjections = await profile.fetchContext({
@@ -117,11 +117,6 @@ async function buildBackendInput(
 	// Override GITHUB_TOKEN in subprocess secrets with agent-scoped token
 	if (gitHubToken && profile.needsGitHubToken) {
 		projectSecrets.GITHUB_TOKEN = gitHubToken;
-	}
-
-	// Pre-execute hook (e.g., post initial PR comment for review)
-	if (profile.preExecute) {
-		await profile.preExecute({ input, logWriter });
 	}
 
 	return {
@@ -211,7 +206,7 @@ export async function executeWithBackend(
 			const { repoDir, fileLogger, logWriter, setRunId } = ctx;
 			const log = createAgentLogger(fileLogger);
 
-			const profile = getAgentProfile(agentType);
+			const profile = await getAgentProfile(agentType);
 			const gitHubToken = await resolveGitHubToken(profile, input.project.id, agentType);
 
 			// Build backend input wrapped in GitHub token scope if needed

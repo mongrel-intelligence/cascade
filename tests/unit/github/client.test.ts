@@ -15,6 +15,7 @@ const mockPulls = {
 const mockIssues = {
 	createComment: vi.fn(),
 	updateComment: vi.fn(),
+	deleteComment: vi.fn(),
 	listComments: vi.fn(),
 };
 
@@ -299,6 +300,20 @@ describe('githubClient', () => {
 				repo: 'repo',
 				comment_id: 200,
 				body: 'Updated',
+			});
+		});
+	});
+
+	describe('deletePRComment', () => {
+		it('calls deleteComment with correct params', async () => {
+			mockIssues.deleteComment.mockResolvedValue({});
+
+			await withGitHubToken('test-token', () => githubClient.deletePRComment('owner', 'repo', 200));
+
+			expect(mockIssues.deleteComment).toHaveBeenCalledWith({
+				owner: 'owner',
+				repo: 'repo',
+				comment_id: 200,
 			});
 		});
 	});

@@ -60,6 +60,24 @@ describe('createDashboardClient', () => {
 		});
 	});
 
+	it('uses custom cookie name when provided in config', () => {
+		const config = {
+			serverUrl: 'http://localhost:3000',
+			sessionToken: 'tok',
+			cookieName: 'cascade_session_development',
+		};
+
+		createDashboardClient(config);
+
+		const linkOpts = vi.mocked(httpBatchLink).mock.calls[0][0] as {
+			headers: () => Record<string, string>;
+		};
+		const headers = linkOpts.headers();
+		expect(headers).toEqual({
+			Cookie: 'cascade_session_development=tok',
+		});
+	});
+
 	it('returns the created client', () => {
 		const config = { serverUrl: 'http://localhost:3000', sessionToken: 'tok' };
 

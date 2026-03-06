@@ -300,3 +300,229 @@ export async function seedSession(overrides: {
 		.returning();
 	return row;
 }
+
+// ============================================================================
+// Composite helpers for common integration setups
+// ============================================================================
+
+/**
+ * Seeds a complete Trello PM integration with both required credentials.
+ */
+export async function seedTrelloIntegration(
+	projectId = 'test-project',
+	options?: { skipApiKey?: boolean; skipToken?: boolean },
+) {
+	const integ = await seedIntegration({
+		projectId,
+		category: 'pm',
+		provider: 'trello',
+		config: { boardId: 'board-1', lists: {}, labels: {} },
+	});
+
+	if (!options?.skipApiKey) {
+		const apiKey = await seedCredential({
+			envVarKey: 'TRELLO_API_KEY',
+			value: 'test-api-key',
+			name: 'Trello API Key',
+		});
+		await seedIntegrationCredential({
+			integrationId: integ.id,
+			role: 'api_key',
+			credentialId: apiKey.id,
+		});
+	}
+
+	if (!options?.skipToken) {
+		const token = await seedCredential({
+			envVarKey: 'TRELLO_TOKEN',
+			value: 'test-token',
+			name: 'Trello Token',
+		});
+		await seedIntegrationCredential({
+			integrationId: integ.id,
+			role: 'token',
+			credentialId: token.id,
+		});
+	}
+
+	return integ;
+}
+
+/**
+ * Seeds a complete JIRA PM integration with both required credentials.
+ */
+export async function seedJiraIntegration(
+	projectId = 'test-project',
+	options?: { skipEmail?: boolean; skipApiToken?: boolean },
+) {
+	const integ = await seedIntegration({
+		projectId,
+		category: 'pm',
+		provider: 'jira',
+		config: { siteUrl: 'https://test.atlassian.net', projectKey: 'TEST', statuses: {} },
+	});
+
+	if (!options?.skipEmail) {
+		const email = await seedCredential({
+			envVarKey: 'JIRA_EMAIL',
+			value: 'test@example.com',
+			name: 'JIRA Email',
+		});
+		await seedIntegrationCredential({
+			integrationId: integ.id,
+			role: 'email',
+			credentialId: email.id,
+		});
+	}
+
+	if (!options?.skipApiToken) {
+		const apiToken = await seedCredential({
+			envVarKey: 'JIRA_API_TOKEN',
+			value: 'test-api-token',
+			name: 'JIRA API Token',
+		});
+		await seedIntegrationCredential({
+			integrationId: integ.id,
+			role: 'api_token',
+			credentialId: apiToken.id,
+		});
+	}
+
+	return integ;
+}
+
+/**
+ * Seeds a GitHub SCM integration with configurable persona tokens.
+ *
+ * By default, seeds both implementer and reviewer tokens.
+ * Use skipImplementer/skipReviewer to omit specific tokens.
+ */
+export async function seedGitHubIntegration(
+	projectId = 'test-project',
+	options?: { skipImplementer?: boolean; skipReviewer?: boolean },
+) {
+	const integ = await seedIntegration({
+		projectId,
+		category: 'scm',
+		provider: 'github',
+	});
+
+	if (!options?.skipImplementer) {
+		const implCred = await seedCredential({
+			envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
+			value: 'ghp-impl-test',
+			name: 'Implementer Token',
+		});
+		await seedIntegrationCredential({
+			integrationId: integ.id,
+			role: 'implementer_token',
+			credentialId: implCred.id,
+		});
+	}
+
+	if (!options?.skipReviewer) {
+		const revCred = await seedCredential({
+			envVarKey: 'GITHUB_TOKEN_REVIEWER',
+			value: 'ghp-rev-test',
+			name: 'Reviewer Token',
+		});
+		await seedIntegrationCredential({
+			integrationId: integ.id,
+			role: 'reviewer_token',
+			credentialId: revCred.id,
+		});
+	}
+
+	return integ;
+}
+
+/**
+ * Seeds a complete IMAP email integration with all 6 required credentials.
+ */
+export async function seedImapEmailIntegration(
+	projectId = 'test-project',
+	options?: { skipCredential?: string },
+) {
+	const integ = await seedIntegration({
+		projectId,
+		category: 'email',
+		provider: 'imap',
+	});
+
+	const roles = [
+		{ role: 'imap_host', envKey: 'EMAIL_IMAP_HOST', value: 'imap.example.com' },
+		{ role: 'imap_port', envKey: 'EMAIL_IMAP_PORT', value: '993' },
+		{ role: 'smtp_host', envKey: 'EMAIL_SMTP_HOST', value: 'smtp.example.com' },
+		{ role: 'smtp_port', envKey: 'EMAIL_SMTP_PORT', value: '465' },
+		{ role: 'username', envKey: 'EMAIL_USERNAME', value: 'user@example.com' },
+		{ role: 'password', envKey: 'EMAIL_PASSWORD', value: 'secret' },
+	];
+
+	for (const { role, envKey, value } of roles) {
+		if (options?.skipCredential === role) continue;
+		const cred = await seedCredential({ envVarKey: envKey, value, name: `Email ${role}` });
+		await seedIntegrationCredential({ integrationId: integ.id, role, credentialId: cred.id });
+	}
+
+	return integ;
+}
+
+/**
+ * Seeds a Gmail email integration with required credentials.
+ * Note: Does NOT seed the OAuth tokens needed for actual Gmail access,
+ * only the gmail_email and gmail_refresh_token integration credentials.
+ */
+export async function seedGmailEmailIntegration(
+	projectId = 'test-project',
+	options?: { skipEmail?: boolean; skipRefreshToken?: boolean; includeOrgOAuth?: boolean },
+) {
+	const integ = await seedIntegration({
+		projectId,
+		category: 'email',
+		provider: 'gmail',
+	});
+
+	if (!options?.skipEmail) {
+		const gmailEmail = await seedCredential({
+			envVarKey: 'GMAIL_EMAIL',
+			value: 'test@gmail.com',
+			name: 'Gmail Email',
+		});
+		await seedIntegrationCredential({
+			integrationId: integ.id,
+			role: 'gmail_email',
+			credentialId: gmailEmail.id,
+		});
+	}
+
+	if (!options?.skipRefreshToken) {
+		const refreshToken = await seedCredential({
+			envVarKey: 'GMAIL_REFRESH_TOKEN',
+			value: 'test-refresh-token',
+			name: 'Gmail Refresh Token',
+		});
+		await seedIntegrationCredential({
+			integrationId: integ.id,
+			role: 'gmail_refresh_token',
+			credentialId: refreshToken.id,
+		});
+	}
+
+	// Optionally seed org-level OAuth credentials
+	if (options?.includeOrgOAuth) {
+		await seedCredential({
+			envVarKey: 'GOOGLE_OAUTH_CLIENT_ID',
+			value: 'test-client-id',
+			name: 'Google OAuth Client ID',
+			isDefault: true,
+		});
+		await seedCredential({
+			envVarKey: 'GOOGLE_OAUTH_CLIENT_SECRET',
+			value: 'test-client-secret',
+			name: 'Google OAuth Client Secret',
+			isDefault: true,
+		});
+	}
+
+	return integ;
+}

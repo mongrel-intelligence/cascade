@@ -16,6 +16,7 @@ vi.mock('bcrypt', () => ({
 	},
 }));
 
+import { SESSION_COOKIE_NAME } from '../../../../src/api/auth/cookie.js';
 import { loginHandler } from '../../../../src/api/auth/login.js';
 
 function createTestApp() {
@@ -101,7 +102,7 @@ describe('loginHandler', () => {
 		// Check Set-Cookie header
 		const cookie = res.headers.get('set-cookie');
 		expect(cookie).toBeTruthy();
-		expect(cookie).toContain('cascade_session=');
+		expect(cookie).toContain(`${SESSION_COOKIE_NAME}=`);
 		expect(cookie).toContain('HttpOnly');
 		expect(cookie).toContain('Path=/');
 	});

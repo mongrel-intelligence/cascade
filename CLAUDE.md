@@ -93,8 +93,8 @@ CASCADE stores all project configuration in PostgreSQL (Supabase). The `config/p
 - `organizations` - Organization definitions (multi-tenant support)
 - `cascade_defaults` - Global defaults per org (model, iterations, timeouts, budget)
 - `projects` - Per-project config (repo, base branch, budget, backend)
-- `project_integrations` - Integration configs per project with `category` (pm/scm), `provider` (trello/jira/github), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
-- `integration_credentials` - Links integration roles to org-scoped credential rows (e.g., `api_key` → credential #5). Roles are provider-specific: trello has `api_key`/`token`, jira has `email`/`api_token`, github has `implementer_token`/`reviewer_token`
+- `project_integrations` - Integration configs per project with `category` (pm/scm/email/sms), `provider` (trello/jira/github/imap/gmail/twilio), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
+- `integration_credentials` - Links integration roles to org-scoped credential rows (e.g., `api_key` → credential #5). Roles are provider-specific: trello has `api_key`/`token`, jira has `email`/`api_token`, github has `implementer_token`/`reviewer_token`, twilio has `account_sid`/`auth_token`/`phone_number`
 - `agent_configs` - Per-agent-type overrides (model, iterations, backend, prompt), scoped globally, per-org, or per-project
 - `credentials` - Org-scoped credentials (API keys, tokens)
 - `users` - Dashboard users (email, bcrypt password hash, org-scoped)
@@ -193,120 +193,106 @@ const openrouterKey = await getOrgCredential(projectId, 'OPENROUTER_API_KEY');
 
 Role definitions and env-var-key mappings are in `src/config/integrationRoles.ts`.
 
+### Twilio SMS Integration
+
+CASCADE supports sending and receiving SMS via Twilio. Configure per-project in the dashboard (Project Settings > Integrations > SMS tab) or CLI:
+
+```bash
+cascade credentials create --name "Twilio Account SID" --key TWILIO_ACCOUNT_SID --value ACxxx... --default
+cascade credentials create --name "Twilio Auth Token" --key TWILIO_AUTH_TOKEN --value xxx... --default
+cascade credentials create --name "Twilio Phone Number" --key TWILIO_PHONE_NUMBER --value +15550000001 --default
+cascade projects integration-credential-set <project-id> --category sms --role account_sid --credential-id 5
+cascade projects integration-credential-set <project-id> --category sms --role auth_token --credential-id 6
+cascade projects integration-credential-set <project-id> --category sms --role phone_number --credential-id 7
+```
+
+**Inbound webhook**: `POST /twilio/webhook/:projectId` — configure this URL in the Twilio console under *Phone Numbers → Manage → Active Numbers → [your number] → Messaging → A Message Comes In*. The handler validates the Twilio signature and logs incoming messages (agent triggering will be added with a future `sms-responder` agent).
+
+**Outbound SMS**: Agents use the `SendSms` gadget. SMS credentials are scoped automatically during agent execution (mirrors email integration).
+
+### Agent Trigger Configuration
+
+Triggers define which events activate which agents. Configuration is stored in the `agent_trigger_configs` table and managed via the unified `trigger-set` command.
+
+#### Trigger Format
+
+Triggers use a category-prefixed event format: `{category}:{event-name}`
+- PM triggers: `pm:status-changed`, `pm:label-added`
+- SCM triggers: `scm:check-suite-success`, `scm:check-suite-failure`, `scm:pr-review-submitted`
+- Email triggers: `email:received`
+- SMS triggers: `sms:received`
+
+#### CLI Commands
+
+```bash
+# Discover available triggers for an agent
+cascade projects trigger-discover --agent review
+cascade projects trigger-discover --agent implementation
+
+# List configured triggers for a project
+cascade projects trigger-list <project-id>
+cascade projects trigger-list <project-id> --agent review
+
+# Configure a trigger (unified command)
+cascade projects trigger-set <project-id> --agent review --event scm:check-suite-success --enable
+cascade projects trigger-set <project-id> --agent review --event scm:check-suite-success --disable
+cascade projects trigger-set <project-id> --agent review --event scm:check-suite-success --params '{"authorMode":"own"}'
+
+# Enable implementation trigger for PM status change
+cascade projects trigger-set <project-id> --agent implementation --event pm:status-changed --enable
+
+# Disable splitting trigger for PM status changes
+cascade projects trigger-set <project-id> --agent splitting --event pm:status-changed --disable
+```
+
+#### Setting via Dashboard
+
+In the **Agent Configs** tab, each agent shows toggles for its supported triggers. Triggers with parameters (like `authorMode` for review) show additional input fields when enabled.
+
+#### Trigger Migration
+
+When merging to `dev` or `main`, legacy trigger configs from `project_integrations.triggers` are automatically migrated to the new `agent_trigger_configs` table. The migration is idempotent and preserves existing configurations.
+
 ### Review Agent Trigger Modes
 
-The review agent supports three independent trigger modes via the `reviewTrigger` config in the SCM integration triggers. **All modes default to `false`** — existing behavior is preserved via a legacy fallback.
+The review agent supports multiple trigger events:
 
-| Mode | Description |
-|------|-------------|
-| `ownPrsOnly` | Trigger review when CI passes on PRs authored by the **implementer** persona |
-| `externalPrs` | Trigger review when CI passes on PRs authored by **anyone** (including external contributors) |
-| `onReviewRequested` | Trigger review when a CASCADE persona is **explicitly requested** as reviewer |
-
-#### Setting via CLI
+| Event | Description |
+|-------|-------------|
+| `scm:check-suite-success` | Trigger review when CI passes (use `authorMode` parameter: `own` or `external`) |
+| `scm:review-requested` | Trigger review when a CASCADE persona is explicitly requested as reviewer |
+| `scm:pr-opened` | Trigger review when a PR is opened |
 
 ```bash
 # Enable review for implementer PRs only (most common)
-cascade projects review-trigger-set <project-id> --own-prs-only
+cascade projects trigger-set <project-id> --agent review --event scm:check-suite-success --enable --params '{"authorMode":"own"}'
 
 # Enable review for external contributor PRs
-cascade projects review-trigger-set <project-id> --external-prs
-
-# Enable both CI-triggered modes
-cascade projects review-trigger-set <project-id> --own-prs-only --external-prs
+cascade projects trigger-set <project-id> --agent review --event scm:check-suite-success --enable --params '{"authorMode":"external"}'
 
 # Enable review when explicitly requested
-cascade projects review-trigger-set <project-id> --on-review-requested
-
-# Disable a mode
-cascade projects review-trigger-set <project-id> --no-own-prs-only
+cascade projects trigger-set <project-id> --agent review --event scm:review-requested --enable
 ```
-
-#### Setting via Dashboard
-
-In the **Agent Configs** tab, the `review` agent section shows three toggles under the SCM integration:
-- **Own PRs Only** — CI-triggered review for implementer-authored PRs
-- **External PRs** — CI-triggered review for all other PR authors
-- **On Review Requested** — review triggered when a persona is explicitly requested
-
-#### Direct JSON Config
-
-```bash
-cascade projects integration-set <project-id> \
-  --category scm --provider github --config '{}' \
-  --triggers '{"reviewTrigger":{"ownPrsOnly":true,"externalPrs":false,"onReviewRequested":true}}'
-```
-
-#### Backward Compatibility
-
-When `reviewTrigger` is absent, the system falls back to legacy booleans:
-- `checkSuiteSuccess` → `ownPrsOnly` (default `true` for existing projects)
-- `reviewRequested` → `onReviewRequested` (default `false`)
-- `externalPrs` always `false` in legacy mode (no legacy equivalent)
 
 ### PM Agent Trigger Modes
 
-Splitting, planning, and implementation agents each have independent toggles for their PM triggers. **All modes default to `true`** for backward compatibility.
+Splitting, planning, and implementation agents each support PM triggers:
 
-#### Trello card-moved triggers
-
-| Flag | Description |
-|------|-------------|
-| `cardMovedToSplitting` | Trigger splitting agent when a card is moved to the Splitting list |
-| `cardMovedToPlanning` | Trigger planning agent when a card is moved to the Planning list |
-| `cardMovedToTodo` | Trigger implementation agent when a card is moved to the Todo list |
-
-#### JIRA issue-transitioned triggers (per-agent)
-
-The `issueTransitioned` field supports both a legacy boolean (applies to all agents) and a nested per-agent object:
-
-| Agent | Field | Description |
-|-------|-------|-------------|
-| splitting | `issueTransitioned.splitting` | Trigger splitting when issue transitions to Splitting status |
-| planning | `issueTransitioned.planning` | Trigger planning when issue transitions to Planning status |
-| implementation | `issueTransitioned.implementation` | Trigger implementation when issue transitions to Todo status |
-
-#### Setting via CLI
+| Event | Providers | Description |
+|-------|-----------|-------------|
+| `pm:status-changed` | Trello, JIRA | Trigger when card/issue moves to agent's target status |
+| `pm:label-added` | All | Trigger when Ready to Process label is added |
 
 ```bash
-# Disable Trello card-moved trigger for splitting agent
-cascade projects pm-trigger-set <project-id> --no-card-moved-to-splitting
+# Enable status-changed trigger for implementation
+cascade projects trigger-set <project-id> --agent implementation --event pm:status-changed --enable
 
-# Disable JIRA issue-transitioned for implementation agent only
-cascade projects pm-trigger-set <project-id> --no-issue-transitioned-implementation
+# Disable status-changed for planning
+cascade projects trigger-set <project-id> --agent planning --event pm:status-changed --disable
 
-# Enable JIRA triggers for splitting and planning, disable for implementation
-cascade projects pm-trigger-set <project-id> \
-  --issue-transitioned-splitting \
-  --issue-transitioned-planning \
-  --no-issue-transitioned-implementation
-
-# Disable all Trello card-moved triggers
-cascade projects pm-trigger-set <project-id> \
-  --no-card-moved-to-splitting \
-  --no-card-moved-to-planning \
-  --no-card-moved-to-todo
+# Enable label-added trigger for splitting
+cascade projects trigger-set <project-id> --agent splitting --event pm:label-added --enable
 ```
-
-#### Setting via Dashboard
-
-In the **Agent Configs** tab, the splitting, planning, and implementation agent sections each show:
-- **Card moved to [list]** — Trello card-moved toggle (Trello projects only)
-- **Issue Transitioned** — JIRA per-agent transition toggle (JIRA projects only)
-- **Ready to Process label** — label-based trigger toggle
-
-#### Direct JSON Config
-
-```bash
-# Disable JIRA issue-transitioned for implementation only
-cascade projects integration-set <project-id> \
-  --category pm --provider jira --config '{"projectKey":"PROJ","statuses":{...}}' \
-  --triggers '{"issueTransitioned":{"splitting":true,"planning":true,"implementation":false}}'
-```
-
-#### Backward Compatibility
-
-The legacy `issueTransitioned: true/false` boolean is still supported — it applies to all agents uniformly.
 
 ## Claude Code Backend
 
@@ -466,6 +452,9 @@ cascade projects integrations <id>
 cascade projects integration-set <id> --category pm --provider trello --config '{"boardId":"..."}'
 cascade projects integration-credential-set <id> --category scm --role implementer_token --credential-id 5
 cascade projects integration-credential-rm <id> --category scm --role implementer_token
+cascade projects trigger-discover --agent <agent-type>
+cascade projects trigger-list <id> [--agent <type>]
+cascade projects trigger-set <id> --agent <type> --event <event> [--enable|--disable] [--params JSON]
 
 # Credentials
 cascade credentials list
@@ -510,7 +499,7 @@ src/cli/dashboard/
 ├── logout.ts
 ├── whoami.ts
 ├── runs/             # 6 commands
-├── projects/         # 8 commands
+├── projects/         # 13 commands
 ├── credentials/      # 4 commands
 ├── defaults/         # 2 commands
 ├── org/              # 2 commands

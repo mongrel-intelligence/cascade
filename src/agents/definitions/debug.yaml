@@ -4,25 +4,33 @@ identity:
   roleHint: Analyzes session logs to identify what went wrong
   initialMessage: "**\U0001F41B Analyzing session logs** — Reviewing what happened and identifying issues..."
 
+# Explicit integration requirements.
+integrations:
+  required: [pm]
+  optional: []
+
+# Read-only FS access for log analysis, full PM access for creating debug cards.
 capabilities:
-  canEditFiles: true
-  canCreatePR: true
-  canUpdateChecklists: true
-  isReadOnly: false
+  required:
+    - fs:read
+    - shell:exec
+    - session:ctrl
+    - pm:read
+    - pm:write
+    - pm:checklist
+  optional: []
 
-tools:
-  sets: [all]
-  sdkTools: all
+# Debug agent is triggered manually or via internal attachment upload detection.
+# No external event-based triggers are configured.
+triggers: []
 
-strategies:
-  contextPipeline: [directoryListing, contextFiles, squint, workItem]
-  taskPromptBuilder: workItem
-  gadgetBuilder: workItem
+strategies: {}
 
-backend:
-  enableStopHooks: true
-  needsGitHubToken: false
+prompts:
+  taskPrompt: |
+    Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.
 
-compaction: default
+backend: {}
+
 
 hint: Analyze the current issue fully before moving to the next.

@@ -13,9 +13,9 @@ export default class ProjectsIntegrationCredentialRm extends DashboardCommand {
 	static override flags = {
 		...DashboardCommand.baseFlags,
 		category: Flags.string({
-			description: 'Integration category (pm or scm)',
+			description: 'Integration category (pm, scm, email, or sms)',
 			required: true,
-			options: ['pm', 'scm'],
+			options: ['pm', 'scm', 'email', 'sms'],
 		}),
 		role: Flags.string({
 			description: 'Credential role to unlink (e.g. api_key, token, implementer_token)',
@@ -29,7 +29,7 @@ export default class ProjectsIntegrationCredentialRm extends DashboardCommand {
 		try {
 			await this.client.projects.integrationCredentials.remove.mutate({
 				projectId: args.id,
-				category: flags.category as 'pm' | 'scm',
+				category: flags.category as 'pm' | 'scm' | 'email' | 'sms',
 				role: flags.role,
 			});
 

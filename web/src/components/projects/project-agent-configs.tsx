@@ -1,4 +1,8 @@
 import { ModelField } from '@/components/settings/model-field.js';
+import {
+	DefinitionTriggerToggles,
+	type ResolvedTrigger,
+} from '@/components/shared/definition-trigger-toggles.js';
 import { TriggerToggles } from '@/components/shared/trigger-toggles.js';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
@@ -11,16 +15,20 @@ import {
 	SelectValue,
 } from '@/components/ui/select.js';
 import {
-	ALL_AGENT_TYPES,
+	AGENT_LABELS,
+	CATEGORY_LABELS,
+	EMAIL_TRIGGER_AGENTS,
+	type KnownAgentType,
 	LIFECYCLE_TRIGGERS,
-	SHARED_PM_TRIGGERS,
-	getTriggersForAgent,
+	type TriggerParameterValue,
 } from '@/lib/trigger-agent-mapping.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
+import { EmailJokeConfig } from './email-wizard.js';
 
 interface AgentConfig {
 	id: number;
@@ -28,20 +36,7 @@ interface AgentConfig {
 	model: string | null;
 	maxIterations: number | null;
 	agentBackend: string | null;
-	prompt: string | null;
 }
-
-/** Friendly labels for known agent types */
-const AGENT_LABELS: Record<string, string> = {
-	splitting: 'Splitting',
-	planning: 'Planning',
-	implementation: 'Implementation',
-	review: 'Review',
-	'respond-to-review': 'Respond to Review',
-	'respond-to-ci': 'Respond to CI',
-	'respond-to-pr-comment': 'Respond to PR Comment',
-	'respond-to-planning-comment': 'Respond to Planning Comment',
-};
 
 function AgentConfigBadge({ config }: { config: AgentConfig | null }) {
 	if (!config) {
@@ -55,103 +50,73 @@ function AgentConfigBadge({ config }: { config: AgentConfig | null }) {
 	return <span className="text-xs text-muted-foreground">{parts.join(' · ')}</span>;
 }
 
-/**
- * Extract only the trigger keys relevant to the given trigger definitions
- * from the full triggers record. Handles nested dot-notation keys.
- */
-function extractRelevantTriggers(
-	triggerDefs: ReturnType<typeof getTriggersForAgent>,
-	allTriggers: Record<string, unknown>,
-): Record<string, unknown> {
-	const relevant: Record<string, unknown> = {};
-	for (const t of triggerDefs) {
-		const parts = t.key.split('.');
-		if (parts.length > 1) {
-			const [parent, child] = parts;
-			if (!(parent in relevant)) {
-				relevant[parent] = {};
-			}
-			const parentObj =
-				typeof allTriggers[parent] === 'object' && allTriggers[parent] !== null
-					? allTriggers[parent]
-					: {};
-			(relevant[parent] as Record<string, unknown>)[child] =
-				((parentObj as Record<string, unknown>)[child] as boolean) ?? t.defaultValue;
-		} else {
-			relevant[t.key] = allTriggers[t.key] ?? t.defaultValue;
-		}
-	}
-	return relevant;
-}
+// ============================================================================
+// Definition-Based Agent Section (New)
+// ============================================================================
 
-function AgentSection({
-	agentType,
-	config,
-	pmTriggers,
-	scmTriggers,
-	pmProvider,
-	onEditConfig,
-	onDeleteConfig,
-	onSaveTriggers,
-}: {
+interface DefinitionAgentSectionProps {
 	agentType: string;
+	projectId: string;
 	config: AgentConfig | null;
-	pmTriggers: Record<string, unknown>;
-	scmTriggers: Record<string, unknown>;
-	pmProvider: string;
+	triggers: ResolvedTrigger[];
+	integrations: {
+		pm: string | null;
+		scm: string | null;
+		email: string | null;
+		sms: string | null;
+	};
 	onEditConfig: (config: AgentConfig | null, agentType: string) => void;
 	onDeleteConfig: (id: number) => void;
-	onSaveTriggers: (
-		category: 'pm' | 'scm',
-		triggers: Record<string, unknown>,
+	onTriggerToggle: (agentType: string, event: string, enabled: boolean) => void;
+	onTriggerParamChange: (
 		agentType: string,
+		event: string,
+		parameters: Record<string, TriggerParameterValue>,
+		currentEnabled: boolean,
 	) => void;
-}) {
+}
+
+function DefinitionAgentSection({
+	agentType,
+	projectId,
+	config,
+	triggers,
+	integrations,
+	onEditConfig,
+	onDeleteConfig,
+	onTriggerToggle,
+	onTriggerParamChange,
+}: DefinitionAgentSectionProps) {
 	const [expanded, setExpanded] = useState(false);
-	const [localPmTriggers, setLocalPmTriggers] = useState<Record<string, unknown>>(pmTriggers);
-	const [localScmTriggers, setLocalScmTriggers] = useState<Record<string, unknown>>(scmTriggers);
-	const [pmSaving, setPmSaving] = useState(false);
-	const [scmSaving, setScmSaving] = useState(false);
-	const [pmSaved, setPmSaved] = useState(false);
-	const [scmSaved, setScmSaved] = useState(false);
+	const hasEmailTriggers = EMAIL_TRIGGER_AGENTS.has(agentType as KnownAgentType);
 
-	const agentPmTriggers = getTriggersForAgent(agentType, { pmProvider, category: 'pm' });
-	const agentScmTriggers = getTriggersForAgent(agentType, { category: 'scm' });
+	// Group triggers by category and filter by active integrations
+	const triggersByCategory = useMemo(() => {
+		const groups: Record<string, ResolvedTrigger[]> = { pm: [], scm: [], email: [], sms: [] };
 
-	const hasTriggers = agentPmTriggers.length > 0 || agentScmTriggers.length > 0;
-
-	// Sync local state when props change (e.g., after another agent section saves shared triggers)
-	useEffect(() => {
-		setLocalPmTriggers(pmTriggers);
-	}, [pmTriggers]);
-
-	useEffect(() => {
-		setLocalScmTriggers(scmTriggers);
-	}, [scmTriggers]);
-
-	const handleSavePm = async () => {
-		setPmSaving(true);
-		try {
-			const relevant = extractRelevantTriggers(agentPmTriggers, localPmTriggers);
-			await onSaveTriggers('pm', relevant, agentType);
-			setPmSaved(true);
-			setTimeout(() => setPmSaved(false), 2000);
-		} finally {
-			setPmSaving(false);
+		for (const trigger of triggers) {
+			// Extract category from event (e.g., "pm:card-moved" -> "pm")
+			const [category] = trigger.event.split(':');
+			if (category in groups) {
+				// Filter by provider if the trigger has provider restrictions
+				if (trigger.providers && trigger.providers.length > 0) {
+					const activeProvider = integrations[category as keyof typeof integrations];
+					const matchesProvider = trigger.providers.some((p) => p === activeProvider);
+					if (!matchesProvider) continue;
+				}
+				groups[category].push(trigger);
+			}
 		}
-	};
 
-	const handleSaveScm = async () => {
-		setScmSaving(true);
-		try {
-			const relevant = extractRelevantTriggers(agentScmTriggers, localScmTriggers);
-			await onSaveTriggers('scm', relevant, agentType);
-			setScmSaved(true);
-			setTimeout(() => setScmSaved(false), 2000);
-		} finally {
-			setScmSaving(false);
-		}
-	};
+		return groups;
+	}, [triggers, integrations]);
+
+	const hasTriggers =
+		triggersByCategory.pm.length > 0 ||
+		triggersByCategory.scm.length > 0 ||
+		triggersByCategory.email.length > 0 ||
+		triggersByCategory.sms.length > 0 ||
+		hasEmailTriggers;
 
 	return (
 		<div className="rounded-lg border border-border overflow-hidden">
@@ -167,7 +132,9 @@ function AgentSection({
 					) : (
 						<ChevronRight className="h-4 w-4 text-muted-foreground" />
 					)}
-					<span className="font-medium text-sm">{AGENT_LABELS[agentType] ?? agentType}</span>
+					<span className="font-medium text-sm">
+						{(AGENT_LABELS as Record<string, string | undefined>)[agentType] ?? agentType}
+					</span>
 					<AgentConfigBadge config={config} />
 				</div>
 				<div className="flex items-center gap-1">
@@ -200,55 +167,37 @@ function AgentSection({
 			{/* Expanded content */}
 			{expanded && (
 				<div className="border-t border-border px-4 py-4 space-y-6 bg-muted/20">
-					{/* PM Triggers */}
-					{agentPmTriggers.length > 0 && (
-						<div className="space-y-3">
-							<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-								Project Management Triggers
-							</p>
-							<TriggerToggles
-								items={agentPmTriggers}
-								values={localPmTriggers}
-								onChange={setLocalPmTriggers}
-								idPrefix={`${agentType}-pm`}
-							/>
-							<div className="flex items-center gap-2">
-								<button
-									type="button"
-									onClick={handleSavePm}
-									disabled={pmSaving}
-									className="inline-flex h-7 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-								>
-									{pmSaving ? 'Saving...' : 'Save'}
-								</button>
-								{pmSaved && <span className="text-xs text-muted-foreground">Saved</span>}
-							</div>
-						</div>
-					)}
+					{/* Render triggers by category */}
+					{(['pm', 'scm', 'email', 'sms'] as const).map((category) => {
+						const categoryTriggers = triggersByCategory[category];
+						if (categoryTriggers.length === 0) return null;
 
-					{/* SCM Triggers */}
-					{agentScmTriggers.length > 0 && (
+						return (
+							<div key={category} className="space-y-3">
+								<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+									{CATEGORY_LABELS[category] ?? category} Triggers
+								</p>
+								<DefinitionTriggerToggles
+									triggers={categoryTriggers}
+									onToggle={(event, enabled) => onTriggerToggle(agentType, event, enabled)}
+									onParamChange={(event, params) => {
+										// Find the current trigger to get its enabled state
+										const currentTrigger = categoryTriggers.find((t) => t.event === event);
+										onTriggerParamChange(agentType, event, params, currentTrigger?.enabled ?? true);
+									}}
+									idPrefix={`${agentType}-${category}`}
+								/>
+							</div>
+						);
+					})}
+
+					{/* Email Triggers (custom widget) */}
+					{hasEmailTriggers && (
 						<div className="space-y-3">
 							<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-								GitHub Triggers
+								Email Configuration
 							</p>
-							<TriggerToggles
-								items={agentScmTriggers}
-								values={localScmTriggers}
-								onChange={setLocalScmTriggers}
-								idPrefix={`${agentType}-scm`}
-							/>
-							<div className="flex items-center gap-2">
-								<button
-									type="button"
-									onClick={handleSaveScm}
-									disabled={scmSaving}
-									className="inline-flex h-7 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-								>
-									{scmSaving ? 'Saving...' : 'Save'}
-								</button>
-								{scmSaved && <span className="text-xs text-muted-foreground">Saved</span>}
-							</div>
+							<EmailJokeConfig projectId={projectId} />
 						</div>
 					)}
 
@@ -263,10 +212,23 @@ function AgentSection({
 	);
 }
 
+// ============================================================================
+// Main Component
+// ============================================================================
+
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: manages multiple mutations + state for agent configs and trigger updates
 export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const queryClient = useQueryClient();
+
+	// Agent configs query
 	const configsQuery = useQuery(trpc.agentConfigs.list.queryOptions({ projectId }));
+
+	// Definition-based triggers query
+	const triggersViewQuery = useQuery(
+		trpc.agentTriggerConfigs.getProjectTriggersView.queryOptions({ projectId }),
+	);
+
+	// Integrations query (for lifecycle triggers)
 	const integrationsQuery = useQuery(trpc.projects.integrations.list.queryOptions({ projectId }));
 
 	const [dialogOpen, setDialogOpen] = useState(false);
@@ -275,24 +237,22 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const [model, setModel] = useState('');
 	const [maxIterations, setMaxIterations] = useState('');
 	const [agentBackend, setAgentBackend] = useState('');
-	const [prompt, setPrompt] = useState('');
 	const [localLifecycleTriggers, setLocalLifecycleTriggers] = useState<Record<string, unknown>>({});
 	const [lifecycleSaving, setLifecycleSaving] = useState(false);
 	const [lifecycleSaved, setLifecycleSaved] = useState(false);
-	const [localSharedPmTriggers, setLocalSharedPmTriggers] = useState<Record<string, unknown>>({});
-	const [sharedPmSaving, setSharedPmSaving] = useState(false);
-	const [sharedPmSaved, setSharedPmSaved] = useState(false);
 
 	const configsQueryKey = trpc.agentConfigs.list.queryOptions({ projectId }).queryKey;
+	const triggersViewQueryKey = trpc.agentTriggerConfigs.getProjectTriggersView.queryOptions({
+		projectId,
+	}).queryKey;
 	const integrationsQueryKey = trpc.projects.integrations.list.queryOptions({ projectId }).queryKey;
 
-	function openCreate(defaultAgentType = '') {
+	function openCreate(defaultAgentType: string) {
 		setEditing(null);
 		setAgentType(defaultAgentType);
 		setModel('');
 		setMaxIterations('');
 		setAgentBackend('');
-		setPrompt('');
 		setDialogOpen(true);
 	}
 
@@ -302,10 +262,10 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		setModel(config.model ?? '');
 		setMaxIterations(config.maxIterations?.toString() ?? '');
 		setAgentBackend(config.agentBackend ?? '');
-		setPrompt(config.prompt ?? '');
 		setDialogOpen(true);
 	}
 
+	// Agent config mutations (shared)
 	const createMutation = useMutation({
 		mutationFn: () =>
 			trpcClient.agentConfigs.create.mutate({
@@ -314,7 +274,6 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentBackend: agentBackend || null,
-				prompt: prompt || null,
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: configsQueryKey });
@@ -330,7 +289,6 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentBackend: agentBackend || null,
-				prompt: prompt || null,
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: configsQueryKey });
@@ -343,6 +301,27 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		onSuccess: () => queryClient.invalidateQueries({ queryKey: configsQueryKey }),
 	});
 
+	// New trigger mutation (uses agentTriggerConfigs.upsert)
+	const upsertTriggerMutation = useMutation({
+		mutationFn: (input: {
+			agentType: string;
+			triggerEvent: string;
+			enabled?: boolean;
+			parameters?: Record<string, TriggerParameterValue>;
+		}) =>
+			trpcClient.agentTriggerConfigs.upsert.mutate({
+				projectId,
+				agentType: input.agentType,
+				triggerEvent: input.triggerEvent,
+				enabled: input.enabled,
+				parameters: input.parameters,
+			}),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: triggersViewQueryKey });
+		},
+	});
+
+	// Lifecycle trigger mutation (uses legacy save mechanism)
 	const updateTriggersMutation = useMutation({
 		mutationFn: ({
 			category,
@@ -358,43 +337,47 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		},
 	});
 
-	// Derive trigger values from query data (safe to compute even while loading — defaults to {})
+	// Derive trigger values for lifecycle triggers
 	const integrations = (integrationsQuery.data ?? []) as Array<Record<string, unknown>>;
-	const pmIntegration = integrations.find((i) => i.category === 'pm');
 	const scmIntegration = integrations.find((i) => i.category === 'scm');
 	const emptyTriggers = useMemo<Record<string, unknown>>(() => ({}), []);
-	const pmTriggers = (pmIntegration?.triggers as Record<string, unknown>) ?? emptyTriggers;
 	const scmTriggers = (scmIntegration?.triggers as Record<string, unknown>) ?? emptyTriggers;
 
-	// Sync lifecycle and shared PM trigger state from query data (must be before early return)
+	// Sync lifecycle trigger state
 	useEffect(() => {
 		setLocalLifecycleTriggers(scmTriggers);
 	}, [scmTriggers]);
 
-	useEffect(() => {
-		setLocalSharedPmTriggers(pmTriggers);
-	}, [pmTriggers]);
+	// Loading state
+	const isLoading = configsQuery.isLoading || triggersViewQuery.isLoading;
 
-	if (configsQuery.isLoading || integrationsQuery.isLoading) {
+	if (isLoading) {
 		return <div className="py-4 text-muted-foreground">Loading agent configs...</div>;
 	}
 
 	const configs = (configsQuery.data ?? []) as AgentConfig[];
-	const pmProvider = (pmIntegration?.provider as string) ?? 'trello';
 
-	// Build a map of agentType → AgentConfig for quick lookup
+	// Build agent config map
 	const configByAgent = new Map<string, AgentConfig>();
 	for (const c of configs) {
 		configByAgent.set(c.agentType, c);
 	}
 
-	// Filter shared PM triggers by current PM provider
-	const filteredSharedPmTriggers = SHARED_PM_TRIGGERS.filter(
-		(t) => !t.pmProvider || t.pmProvider === pmProvider,
-	);
+	// Build triggers map from API
+	const triggersByAgent = new Map<string, ResolvedTrigger[]>();
+	const triggersViewIntegrations = triggersViewQuery.data?.integrations ?? {
+		pm: null,
+		scm: null,
+		email: null,
+		sms: null,
+	};
+	if (triggersViewQuery.data) {
+		for (const agent of triggersViewQuery.data.agents) {
+			triggersByAgent.set(agent.agentType, agent.triggers as ResolvedTrigger[]);
+		}
+	}
 
-	const activeMutation = editing ? updateMutation : createMutation;
-
+	// Handlers
 	const handleEditConfig = (config: AgentConfig | null, type: string) => {
 		if (config) {
 			openEdit(config);
@@ -403,12 +386,36 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		}
 	};
 
-	const handleSaveTriggers = async (
-		category: 'pm' | 'scm',
-		triggers: Record<string, unknown>,
-		_agentType: string,
+	const handleTriggerToggle = (agentType: string, event: string, enabled: boolean) => {
+		upsertTriggerMutation.mutate(
+			{ agentType, triggerEvent: event, enabled },
+			{
+				onError: (err) => {
+					toast.error('Failed to update trigger', {
+						description: err.message,
+					});
+				},
+			},
+		);
+	};
+
+	const handleTriggerParamChange = (
+		agentType: string,
+		event: string,
+		parameters: Record<string, TriggerParameterValue>,
+		currentEnabled: boolean,
 	) => {
-		await updateTriggersMutation.mutateAsync({ category, triggers });
+		// Include the current enabled state to avoid overwriting it
+		upsertTriggerMutation.mutate(
+			{ agentType, triggerEvent: event, enabled: currentEnabled, parameters },
+			{
+				onError: (err) => {
+					toast.error('Failed to update trigger parameters', {
+						description: err.message,
+					});
+				},
+			},
+		);
 	};
 
 	const handleSaveLifecycle = async () => {
@@ -428,22 +435,10 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		}
 	};
 
-	const handleSaveSharedPm = async () => {
-		setSharedPmSaving(true);
-		try {
-			const changed: Record<string, unknown> = {};
-			for (const t of filteredSharedPmTriggers) {
-				if (t.key in localSharedPmTriggers) {
-					changed[t.key] = localSharedPmTriggers[t.key];
-				}
-			}
-			await updateTriggersMutation.mutateAsync({ category: 'pm', triggers: changed });
-			setSharedPmSaved(true);
-			setTimeout(() => setSharedPmSaved(false), 2000);
-		} finally {
-			setSharedPmSaving(false);
-		}
-	};
+	const activeMutation = editing ? updateMutation : createMutation;
+
+	// Get list of agent types to display
+	const agentTypes = Array.from(triggersByAgent.keys());
 
 	return (
 		<div className="space-y-4">
@@ -453,75 +448,21 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 
 			{/* Agent sections */}
 			<div className="space-y-2">
-				{ALL_AGENT_TYPES.map((type) => (
-					<AgentSection
+				{agentTypes.map((type) => (
+					<DefinitionAgentSection
 						key={type}
 						agentType={type}
+						projectId={projectId}
 						config={configByAgent.get(type) ?? null}
-						pmTriggers={pmTriggers}
-						scmTriggers={scmTriggers}
-						pmProvider={pmProvider}
+						triggers={triggersByAgent.get(type) ?? []}
+						integrations={triggersViewIntegrations}
 						onEditConfig={handleEditConfig}
 						onDeleteConfig={(id) => deleteMutation.mutate(id)}
-						onSaveTriggers={handleSaveTriggers}
+						onTriggerToggle={handleTriggerToggle}
+						onTriggerParamChange={handleTriggerParamChange}
 					/>
 				))}
-
-				{/* Custom agent types not in the known list */}
-				{configs
-					.filter((c) => !(ALL_AGENT_TYPES as readonly string[]).includes(c.agentType))
-					.map((c) => (
-						<AgentSection
-							key={c.agentType}
-							agentType={c.agentType}
-							config={c}
-							pmTriggers={pmTriggers}
-							scmTriggers={scmTriggers}
-							pmProvider={pmProvider}
-							onEditConfig={handleEditConfig}
-							onDeleteConfig={(id) => deleteMutation.mutate(id)}
-							onSaveTriggers={handleSaveTriggers}
-						/>
-					))}
 			</div>
-
-			{/* Add config for custom agent type */}
-			<button
-				type="button"
-				onClick={() => openCreate()}
-				className="inline-flex h-8 items-center gap-1 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-			>
-				<Plus className="h-4 w-4" /> Add Custom Agent Config
-			</button>
-
-			{/* Shared PM triggers section */}
-			{filteredSharedPmTriggers.length > 0 && (
-				<div className="rounded-lg border border-border p-4 space-y-3">
-					<div>
-						<h3 className="text-sm font-medium">Shared PM Triggers</h3>
-						<p className="text-xs text-muted-foreground mt-0.5">
-							These triggers affect multiple agent types and are controlled globally.
-						</p>
-					</div>
-					<TriggerToggles
-						items={filteredSharedPmTriggers}
-						values={localSharedPmTriggers}
-						onChange={setLocalSharedPmTriggers}
-						idPrefix="shared-pm"
-					/>
-					<div className="flex items-center gap-2">
-						<button
-							type="button"
-							onClick={handleSaveSharedPm}
-							disabled={sharedPmSaving}
-							className="inline-flex h-7 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-						>
-							{sharedPmSaving ? 'Saving...' : 'Save'}
-						</button>
-						{sharedPmSaved && <span className="text-xs text-muted-foreground">Saved</span>}
-					</div>
-				</div>
-			)}
 
 			{/* Lifecycle triggers section */}
 			{LIFECYCLE_TRIGGERS.length > 0 && (
@@ -569,10 +510,9 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 							<Label htmlFor="ac-agentType">Agent Type</Label>
 							<Input
 								id="ac-agentType"
-								value={agentType}
-								onChange={(e) => setAgentType(e.target.value)}
-								placeholder="e.g. implementation, review"
-								required
+								value={(AGENT_LABELS as Record<string, string | undefined>)[agentType] ?? agentType}
+								readOnly
+								className="bg-muted"
 							/>
 						</div>
 						<div className="grid grid-cols-2 gap-4">
@@ -614,21 +554,12 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 						</div>
 						<div className="space-y-2">
 							<Label>Prompt</Label>
-							{editing?.prompt ? (
-								<p className="text-sm text-muted-foreground">
-									Custom prompt set.{' '}
-									<Link to="/settings/prompts" className="text-primary hover:underline">
-										Edit in Prompt Editor
-									</Link>
-								</p>
-							) : (
-								<p className="text-sm text-muted-foreground">
-									Using default.{' '}
-									<Link to="/settings/prompts" className="text-primary hover:underline">
-										Customize in Prompt Editor
-									</Link>
-								</p>
-							)}
+							<p className="text-sm text-muted-foreground">
+								Prompts are managed in{' '}
+								<Link to="/settings/definitions" className="text-primary hover:underline">
+									Agent Definitions
+								</Link>
+							</p>
 						</div>
 						<div className="flex justify-end gap-2">
 							<button

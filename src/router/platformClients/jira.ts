@@ -1,7 +1,11 @@
 /**
  * JIRA platform client for posting/deleting comments and reactions via the JIRA REST API.
+ *
+ * Comments are posted using the JIRA REST API v3 with Atlassian Document Format (ADF) bodies
+ * so that rich text (bold, code, lists) renders correctly in JIRA Cloud.
  */
 
+import { markdownToAdf } from '../../pm/jira/adf.js';
 import { logger } from '../../utils/logging.js';
 import { resolveJiraCredentials } from './credentials.js';
 import type { PlatformCommentClient } from './types.js';
@@ -25,14 +29,15 @@ export class JiraPlatformClient implements PlatformCommentClient {
 		}
 
 		try {
-			const url = `${creds.baseUrl}/rest/api/2/issue/${issueKey}/comment`;
+			const adfBody = markdownToAdf(message);
+			const url = `${creds.baseUrl}/rest/api/3/issue/${issueKey}/comment`;
 			const response = await fetch(url, {
 				method: 'POST',
 				headers: {
 					Authorization: `Basic ${creds.auth}`,
 					'Content-Type': 'application/json',
 				},
-				body: JSON.stringify({ body: message }),
+				body: JSON.stringify({ body: adfBody }),
 			});
 
 			if (!response.ok) {

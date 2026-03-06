@@ -7,6 +7,11 @@ import { handleAgentResultArtifacts } from './agent-result-handler.js';
 import { checkBudgetExceeded } from './budget.js';
 import { triggerDebugAnalysis } from './debug-runner.js';
 import { shouldTriggerDebug } from './debug-trigger.js';
+import {
+	type ValidationResult,
+	formatValidationErrors,
+	validateIntegrations,
+} from './integration-validation.js';
 
 /**
  * Configuration for source-specific behavior in the agent execution pipeline.
@@ -31,6 +36,12 @@ export interface AgentExecutionConfig {
 	 * GitHub uses this to only call handleSuccess for 'implementation'.
 	 */
 	handleSuccessOnlyForAgentType?: string;
+
+	/**
+	 * Optional callback invoked when the agent succeeds (after pipeline completes).
+	 * Used by GitHub to delete the progress comment for non-implementation agents.
+	 */
+	onSuccess?: (result: TriggerResult, agentResult: AgentResult) => Promise<void>;
 
 	/**
 	 * Optional callback invoked when the agent fails (after pipeline completes).
@@ -118,6 +129,36 @@ async function runPostAgentLifecycle(
 }
 
 /**
+ * Notify PM and GitHub when integration validation fails before the agent runs.
+ */
+async function notifyValidationFailure(
+	result: TriggerResult,
+	validation: ValidationResult,
+	lifecycle: PMLifecycleManager,
+	executionConfig: AgentExecutionConfig,
+	agentType: string,
+	projectId: string,
+): Promise<void> {
+	const errorMessage = formatValidationErrors(validation);
+	logger.error('Integration validation failed', {
+		agentType,
+		projectId,
+		errors: validation.errors,
+	});
+
+	// Only notify via PM if PM validation passed (otherwise PM isn't configured)
+	const pmFailed = validation.errors.some((e) => e.category === 'pm');
+	if (result.workItemId && !pmFailed) {
+		await lifecycle.handleFailure(result.workItemId, errorMessage);
+	}
+
+	// Call onFailure callback (for GitHub PR updates)
+	if (executionConfig.onFailure) {
+		await executionConfig.onFailure(result, { success: false, output: '', error: errorMessage });
+	}
+}
+
+/**
  * Shared agent execution pipeline.
  *
  * Handles the common steps across all webhook handlers:
@@ -149,12 +190,28 @@ export async function runAgentExecutionPipeline(
 	}
 	const agentType = result.agentType;
 
-	const { skipPrepareForAgent = false, onFailure, logLabel = 'Agent' } = executionConfig;
-
-	const workItemId = result.workItemId;
+	// Create lifecycle manager once (reused for validation failure and normal flow)
 	const pmProvider = createPMProvider(project);
 	const pmConfig = resolveProjectPMConfig(project);
 	const lifecycle = new PMLifecycleManager(pmProvider, pmConfig);
+
+	// Pre-flight integration validation
+	const validation = await validateIntegrations(project.id, agentType);
+	if (!validation.valid) {
+		await notifyValidationFailure(
+			result,
+			validation,
+			lifecycle,
+			executionConfig,
+			agentType,
+			project.id,
+		);
+		return;
+	}
+
+	const { skipPrepareForAgent = false, onSuccess, onFailure, logLabel = 'Agent' } = executionConfig;
+
+	const workItemId = result.workItemId;
 
 	let remainingBudgetUsd: number | undefined;
 	if (workItemId) {
@@ -191,6 +248,10 @@ export async function runAgentExecutionPipeline(
 		success: agentResult.success,
 		runId: agentResult.runId,
 	});
+
+	if (onSuccess && agentResult.success) {
+		await onSuccess(result, agentResult);
+	}
 
 	if (onFailure && !agentResult.success) {
 		await onFailure(result, agentResult);

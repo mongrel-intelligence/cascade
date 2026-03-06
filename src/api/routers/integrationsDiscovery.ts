@@ -1,13 +1,17 @@
 import { TRPCError } from '@trpc/server';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { ImapFlow } from 'imapflow';
+import twilio from 'twilio';
 import { z } from 'zod';
 import { getDb } from '../../db/client.js';
-import { decryptCredential } from '../../db/crypto.js';
-import { credentials } from '../../db/schema/index.js';
+import { decryptCredential, encryptCredential } from '../../db/crypto.js';
+import { credentials, integrationCredentials, projectIntegrations } from '../../db/schema/index.js';
+import { exchangeGmailCode, getGmailAuthUrl, getGmailUserInfo } from '../../email/gmail/oauth.js';
 import { jiraClient, withJiraCredentials } from '../../jira/client.js';
 import { trelloClient, withTrelloCredentials } from '../../trello/client.js';
 import { logger } from '../../utils/logging.js';
 import { protectedProcedure, router } from '../trpc.js';
+import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
 async function resolveCredentialValue(credentialId: number, orgId: string): Promise<string> {
 	const db = getDb();
@@ -177,6 +181,377 @@ export const integrationsDiscoveryRouter = router({
 				throw new TRPCError({
 					code: 'BAD_REQUEST',
 					message: `Failed to fetch JIRA project details: ${err instanceof Error ? err.message : String(err)}`,
+				});
+			}
+		}),
+
+	// ============================================================================
+	// Gmail OAuth endpoints
+	// ============================================================================
+
+	/**
+	 * Generate a Gmail OAuth consent URL.
+	 * The state parameter includes projectId for callback routing.
+	 */
+	gmailOAuthUrl: protectedProcedure
+		.input(
+			z.object({
+				clientIdCredentialId: z.number(),
+				redirectUri: z.string().url(),
+				projectId: z.string(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.gmailOAuthUrl called', {
+				orgId: ctx.effectiveOrgId,
+				projectId: input.projectId,
+			});
+
+			// Verify project ownership
+			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+
+			const clientId = await resolveCredentialValue(input.clientIdCredentialId, ctx.effectiveOrgId);
+
+			// Encode projectId, orgId, and timestamp in state for CSRF protection
+			const state = Buffer.from(
+				JSON.stringify({
+					projectId: input.projectId,
+					orgId: ctx.effectiveOrgId,
+					timestamp: Date.now(),
+				}),
+			).toString('base64url');
+
+			const url = getGmailAuthUrl(clientId, input.redirectUri, state);
+			return { url, state };
+		}),
+
+	/**
+	 * Exchange Gmail OAuth code for tokens and store credentials.
+	 * Creates or updates gmail_email and gmail_refresh_token credentials.
+	 */
+	gmailOAuthCallback: protectedProcedure
+		.input(
+			z.object({
+				clientIdCredentialId: z.number(),
+				clientSecretCredentialId: z.number(),
+				code: z.string(),
+				redirectUri: z.string().url(),
+				state: z.string(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			// Decode and validate state parameter for CSRF protection
+			let stateData: { projectId: string; orgId: string; timestamp: number };
+			try {
+				stateData = JSON.parse(
+					Buffer.from(input.state.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString(),
+				);
+			} catch {
+				throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid state parameter' });
+			}
+
+			// Validate timestamp (within 10 minutes)
+			const STATE_EXPIRY_MS = 10 * 60 * 1000;
+			if (Date.now() - stateData.timestamp > STATE_EXPIRY_MS) {
+				throw new TRPCError({ code: 'BAD_REQUEST', message: 'OAuth state expired' });
+			}
+
+			// Validate orgId matches the current user's org
+			if (stateData.orgId !== ctx.effectiveOrgId) {
+				throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid state parameter' });
+			}
+
+			const projectId = stateData.projectId;
+
+			// Verify project ownership
+			await verifyProjectOrgAccess(projectId, ctx.effectiveOrgId);
+
+			logger.debug('integrationsDiscovery.gmailOAuthCallback called', {
+				orgId: ctx.effectiveOrgId,
+				projectId,
+			});
+
+			const [clientId, clientSecret] = await Promise.all([
+				resolveCredentialValue(input.clientIdCredentialId, ctx.effectiveOrgId),
+				resolveCredentialValue(input.clientSecretCredentialId, ctx.effectiveOrgId),
+			]);
+
+			// Exchange code for tokens
+			const tokens = await exchangeGmailCode(clientId, clientSecret, input.code, input.redirectUri);
+
+			if (!tokens.refresh_token) {
+				throw new TRPCError({
+					code: 'BAD_REQUEST',
+					message: 'No refresh token received. User may need to revoke access and re-authorize.',
+				});
+			}
+
+			// Get user email
+			const userInfo = await getGmailUserInfo(tokens.access_token);
+
+			const db = getDb();
+
+			// Ensure Gmail integration exists for the project
+			const [existingIntegration] = await db
+				.select({ id: projectIntegrations.id })
+				.from(projectIntegrations)
+				.where(
+					and(
+						eq(projectIntegrations.projectId, projectId),
+						eq(projectIntegrations.category, 'email'),
+					),
+				);
+
+			let integrationId: number;
+			if (existingIntegration) {
+				// Update to gmail provider
+				await db
+					.update(projectIntegrations)
+					.set({ provider: 'gmail', config: {}, updatedAt: new Date() })
+					.where(eq(projectIntegrations.id, existingIntegration.id));
+				integrationId = existingIntegration.id;
+			} else {
+				// Create new gmail integration
+				const [newIntegration] = await db
+					.insert(projectIntegrations)
+					.values({
+						projectId,
+						category: 'email',
+						provider: 'gmail',
+						config: {},
+					})
+					.returning({ id: projectIntegrations.id });
+				integrationId = newIntegration.id;
+			}
+
+			// Create or update gmail_email credential
+			const emailCredName = `Gmail: ${userInfo.email}`;
+			const [existingEmailCred] = await db
+				.select({ id: credentials.id })
+				.from(credentials)
+				.where(
+					and(
+						eq(credentials.orgId, ctx.effectiveOrgId),
+						eq(credentials.envVarKey, 'EMAIL_GMAIL_ADDRESS'),
+						eq(credentials.name, emailCredName),
+					),
+				);
+
+			let emailCredId: number;
+			if (existingEmailCred) {
+				await db
+					.update(credentials)
+					.set({
+						value: encryptCredential(userInfo.email, ctx.effectiveOrgId),
+						updatedAt: new Date(),
+					})
+					.where(eq(credentials.id, existingEmailCred.id));
+				emailCredId = existingEmailCred.id;
+			} else {
+				const [newCred] = await db
+					.insert(credentials)
+					.values({
+						orgId: ctx.effectiveOrgId,
+						name: emailCredName,
+						envVarKey: 'EMAIL_GMAIL_ADDRESS',
+						value: encryptCredential(userInfo.email, ctx.effectiveOrgId),
+						isDefault: false,
+					})
+					.returning({ id: credentials.id });
+				emailCredId = newCred.id;
+			}
+
+			// Create or update gmail_refresh_token credential
+			const refreshCredName = `Gmail Refresh Token: ${userInfo.email}`;
+			const [existingRefreshCred] = await db
+				.select({ id: credentials.id })
+				.from(credentials)
+				.where(
+					and(
+						eq(credentials.orgId, ctx.effectiveOrgId),
+						eq(credentials.envVarKey, 'EMAIL_GMAIL_REFRESH_TOKEN'),
+						eq(credentials.name, refreshCredName),
+					),
+				);
+
+			let refreshCredId: number;
+			if (existingRefreshCred) {
+				await db
+					.update(credentials)
+					.set({
+						value: encryptCredential(tokens.refresh_token, ctx.effectiveOrgId),
+						updatedAt: new Date(),
+					})
+					.where(eq(credentials.id, existingRefreshCred.id));
+				refreshCredId = existingRefreshCred.id;
+			} else {
+				const [newCred] = await db
+					.insert(credentials)
+					.values({
+						orgId: ctx.effectiveOrgId,
+						name: refreshCredName,
+						envVarKey: 'EMAIL_GMAIL_REFRESH_TOKEN',
+						value: encryptCredential(tokens.refresh_token, ctx.effectiveOrgId),
+						isDefault: false,
+					})
+					.returning({ id: credentials.id });
+				refreshCredId = newCred.id;
+			}
+
+			// Link credentials to integration
+			// Delete any existing credential links for this integration
+			await db
+				.delete(integrationCredentials)
+				.where(eq(integrationCredentials.integrationId, integrationId));
+
+			// Insert new credential links
+			await db.insert(integrationCredentials).values([
+				{ integrationId, role: 'gmail_email', credentialId: emailCredId },
+				{ integrationId, role: 'gmail_refresh_token', credentialId: refreshCredId },
+			]);
+
+			logger.info('Gmail OAuth credentials stored successfully', {
+				projectId,
+				email: userInfo.email,
+			});
+
+			return { email: userInfo.email };
+		}),
+
+	/**
+	 * Verify Gmail OAuth connection by testing IMAP login.
+	 */
+	verifyGmail: protectedProcedure
+		.input(
+			z.object({
+				clientIdCredentialId: z.number(),
+				clientSecretCredentialId: z.number(),
+				refreshTokenCredentialId: z.number(),
+				gmailEmailCredentialId: z.number(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.verifyGmail called', { orgId: ctx.effectiveOrgId });
+
+			const [clientId, clientSecret, refreshToken, email] = await Promise.all([
+				resolveCredentialValue(input.clientIdCredentialId, ctx.effectiveOrgId),
+				resolveCredentialValue(input.clientSecretCredentialId, ctx.effectiveOrgId),
+				resolveCredentialValue(input.refreshTokenCredentialId, ctx.effectiveOrgId),
+				resolveCredentialValue(input.gmailEmailCredentialId, ctx.effectiveOrgId),
+			]);
+
+			try {
+				// Exchange refresh token for access token
+				const { exchangeGmailCode: _, refreshGmailAccessToken } = await import(
+					'../../email/gmail/oauth.js'
+				);
+				const { accessToken } = await refreshGmailAccessToken(clientId, clientSecret, refreshToken);
+
+				// Test IMAP connection
+				const client = new ImapFlow({
+					host: 'imap.gmail.com',
+					port: 993,
+					secure: true,
+					auth: {
+						user: email,
+						accessToken,
+					},
+					logger: false,
+					connectionTimeout: 15000,
+					greetingTimeout: 10000,
+				});
+
+				await client.connect();
+				await client.logout();
+
+				return { success: true, email };
+			} catch (err) {
+				throw new TRPCError({
+					code: 'BAD_REQUEST',
+					message: `Gmail verification failed: ${err instanceof Error ? err.message : String(err)}`,
+				});
+			}
+		}),
+
+	/**
+	 * Verify Twilio credentials by fetching the account details.
+	 */
+	verifyTwilio: protectedProcedure
+		.input(
+			z.object({
+				accountSidCredentialId: z.number(),
+				authTokenCredentialId: z.number(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.verifyTwilio called', { orgId: ctx.effectiveOrgId });
+
+			const [accountSid, authToken] = await Promise.all([
+				resolveCredentialValue(input.accountSidCredentialId, ctx.effectiveOrgId),
+				resolveCredentialValue(input.authTokenCredentialId, ctx.effectiveOrgId),
+			]);
+
+			try {
+				const client = twilio(accountSid, authToken);
+				const account = await client.api.accounts(accountSid).fetch();
+				return { friendlyName: account.friendlyName, status: account.status };
+			} catch (err) {
+				throw new TRPCError({
+					code: 'BAD_REQUEST',
+					message: `Failed to verify Twilio credentials: ${err instanceof Error ? err.message : String(err)}`,
+				});
+			}
+		}),
+
+	/**
+	 * Verify IMAP connection with password auth.
+	 */
+	verifyImap: protectedProcedure
+		.input(
+			z.object({
+				hostCredentialId: z.number(),
+				portCredentialId: z.number(),
+				usernameCredentialId: z.number(),
+				passwordCredentialId: z.number(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.verifyImap called', { orgId: ctx.effectiveOrgId });
+
+			const [host, portStr, username, password] = await Promise.all([
+				resolveCredentialValue(input.hostCredentialId, ctx.effectiveOrgId),
+				resolveCredentialValue(input.portCredentialId, ctx.effectiveOrgId),
+				resolveCredentialValue(input.usernameCredentialId, ctx.effectiveOrgId),
+				resolveCredentialValue(input.passwordCredentialId, ctx.effectiveOrgId),
+			]);
+
+			const port = Number.parseInt(portStr, 10);
+			if (Number.isNaN(port)) {
+				throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid port number' });
+			}
+
+			try {
+				const client = new ImapFlow({
+					host,
+					port,
+					secure: true,
+					auth: {
+						user: username,
+						pass: password,
+					},
+					logger: false,
+					connectionTimeout: 15000,
+					greetingTimeout: 10000,
+				});
+
+				await client.connect();
+				await client.logout();
+
+				return { success: true, email: username };
+			} catch (err) {
+				throw new TRPCError({
+					code: 'BAD_REQUEST',
+					message: `IMAP verification failed: ${err instanceof Error ? err.message : String(err)}`,
 				});
 			}
 		}),

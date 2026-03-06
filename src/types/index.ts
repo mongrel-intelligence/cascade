@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type { CascadeConfigSchema, ProjectConfigSchema } from '../config/schema.js';
+import type { EmailSummary } from '../email/types.js';
 import type { PersonaIdentities } from '../github/personas.js';
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
@@ -33,6 +34,14 @@ export interface AgentInput {
 	triggerCommentText?: string;
 	triggerCommentAuthor?: string;
 
+	// PR comment trigger fields (for respond-to-pr-comment and similar agents)
+	triggerCommentBody?: string;
+	triggerCommentPath?: string;
+
+	// Email-joke agent fields
+	senderEmail?: string;
+	preFoundEmails?: EmailSummary[]; // pre-fetched before agent start to skip if empty
+
 	// Interactive mode (local development)
 	interactive?: boolean;
 	// Auto-accept prompts in interactive mode
@@ -60,7 +69,7 @@ export interface AgentResult {
 	durationMs?: number;
 }
 
-export type TriggerSource = 'trello' | 'github' | 'jira' | 'manual';
+export type TriggerSource = string;
 
 export interface TriggerContext {
 	project: ProjectConfig;

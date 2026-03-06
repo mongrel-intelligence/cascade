@@ -5,7 +5,7 @@ import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 // Minimal config types - what router needs for quick filtering
 export interface RouterProjectConfig {
 	id: string;
-	repo: string; // owner/repo format
+	repo?: string; // owner/repo format (optional for email-only projects)
 	pmType: 'trello' | 'jira';
 	trello?: {
 		boardId: string;
@@ -30,14 +30,39 @@ export interface RouterConfig {
 
 	// Network settings
 	dockerNetwork: string;
+
+	// Email scheduler
+	emailScheduleIntervalMs: number;
+}
+
+// ---------------------------------------------------------------------------
+// Cached project config — 5s TTL to eliminate ~10 redundant DB queries per
+// webhook event across parseWebhook / isSelfAuthored / resolveProject /
+// dispatchWithCredentials calls in the adapter chain.
+// ---------------------------------------------------------------------------
+
+const PROJECT_CONFIG_TTL_MS = 5_000;
+
+let _projectConfigCache: { projects: RouterProjectConfig[]; fullProjects: ProjectConfig[] } | null =
+	null;
+let _projectConfigExpiresAt = 0;
+
+/** @internal Visible for testing only */
+export function _resetProjectConfigCache(): void {
+	_projectConfigCache = null;
+	_projectConfigExpiresAt = 0;
 }
 
 export async function loadProjectConfig(): Promise<{
 	projects: RouterProjectConfig[];
 	fullProjects: ProjectConfig[];
 }> {
+	if (_projectConfigCache && Date.now() < _projectConfigExpiresAt) {
+		return _projectConfigCache;
+	}
+
 	const config: CascadeConfig = await loadConfig();
-	return {
+	const result = {
 		projects: config.projects.map((p) => {
 			const trelloConfig = getTrelloConfig(p);
 			const jiraConfig = getJiraConfig(p);
@@ -62,6 +87,11 @@ export async function loadProjectConfig(): Promise<{
 		}),
 		fullProjects: config.projects,
 	};
+
+	_projectConfigCache = result;
+	_projectConfigExpiresAt = Date.now() + PROJECT_CONFIG_TTL_MS;
+
+	return result;
 }
 
 // Router runtime config from environment
@@ -72,4 +102,5 @@ export const routerConfig: RouterConfig = {
 	workerMemoryMb: Number(process.env.WORKER_MEMORY_MB) || 4096,
 	workerTimeoutMs: Number(process.env.WORKER_TIMEOUT_MS) || 30 * 60 * 1000, // 30 minutes
 	dockerNetwork: process.env.DOCKER_NETWORK || 'services_default',
+	emailScheduleIntervalMs: Number(process.env.EMAIL_SCHEDULE_INTERVAL_MS) || 5 * 60 * 1000,
 };

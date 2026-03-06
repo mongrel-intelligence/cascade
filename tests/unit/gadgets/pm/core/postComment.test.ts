@@ -13,14 +13,22 @@ vi.mock('../../../../../src/backends/progressState.js', () => ({
 	clearProgressCommentId: vi.fn(),
 }));
 
+vi.mock('../../../../../src/utils/logging.js', () => ({
+	logger: {
+		warn: vi.fn(),
+	},
+}));
+
 import {
 	clearProgressCommentId,
 	readProgressCommentId,
 } from '../../../../../src/backends/progressState.js';
 import { postComment } from '../../../../../src/gadgets/pm/core/postComment.js';
+import { logger } from '../../../../../src/utils/logging.js';
 
 const mockReadProgressCommentId = vi.mocked(readProgressCommentId);
 const mockClearProgressCommentId = vi.mocked(clearProgressCommentId);
+const mockLogger = vi.mocked(logger);
 
 beforeEach(() => {
 	mockReadProgressCommentId.mockReturnValue(null);
@@ -102,6 +110,14 @@ describe('postComment', () => {
 				'item1',
 				'comment-42',
 				'Final summary',
+			);
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				'Failed to update progress comment, creating new one',
+				expect.objectContaining({
+					workItemId: 'item1',
+					commentId: 'comment-42',
+					error: 'Comment not found',
+				}),
 			);
 			expect(mockProvider.addComment).toHaveBeenCalledWith('item1', 'Final summary');
 			expect(mockClearProgressCommentId).toHaveBeenCalled();

@@ -5,10 +5,10 @@ import {
 	getWebhookLogStats,
 	listWebhookLogs,
 } from '../../db/repositories/webhookLogsRepository.js';
-import { protectedProcedure, router } from '../trpc.js';
+import { router, superAdminProcedure } from '../trpc.js';
 
 export const webhookLogsRouter = router({
-	list: protectedProcedure
+	list: superAdminProcedure
 		.input(
 			z.object({
 				source: z.string().optional(),
@@ -30,7 +30,7 @@ export const webhookLogsRouter = router({
 			});
 		}),
 
-	getById: protectedProcedure
+	getById: superAdminProcedure
 		.input(z.object({ id: z.string().uuid() }))
 		.query(async ({ input }) => {
 			const log = await getWebhookLogById(input.id);
@@ -38,7 +38,7 @@ export const webhookLogsRouter = router({
 			return log;
 		}),
 
-	getStats: protectedProcedure.query(async () => {
+	getStats: superAdminProcedure.query(async () => {
 		return getWebhookLogStats();
 	}),
 });

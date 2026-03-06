@@ -1,5 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createRouter } from '@tanstack/react-router';
+import { ThemeProvider } from 'next-themes';
+import { Toaster } from './components/ui/sonner.js';
 import { queryClient } from './lib/query-client.js';
 import { routeTree } from './routes/route-tree.js';
 
@@ -13,8 +15,11 @@ declare module '@tanstack/react-router' {
 
 export function App() {
 	return (
-		<QueryClientProvider client={queryClient}>
-			<RouterProvider router={router} />
-		</QueryClientProvider>
+		<ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+			<QueryClientProvider client={queryClient}>
+				<RouterProvider router={router} />
+				<Toaster />
+			</QueryClientProvider>
+		</ThemeProvider>
 	);
 }

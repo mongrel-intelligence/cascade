@@ -7,8 +7,6 @@
 
 import { execFileSync } from 'node:child_process';
 
-import type { ContextInjection, LogWriter } from '../../backends/types.js';
-import { INITIAL_MESSAGES } from '../../config/agentMessages.js';
 import { ListDirectory } from '../../gadgets/ListDirectory.js';
 import { formatCheckStatus } from '../../gadgets/github/core/getPRChecks.js';
 import { readWorkItem } from '../../gadgets/pm/core/readWorkItem.js';
@@ -16,6 +14,7 @@ import { githubClient } from '../../github/client.js';
 import type { AgentInput } from '../../types/index.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { resolveSquintDbPath } from '../../utils/squintDb.js';
+import type { ContextInjection, LogWriter } from '../contracts/index.js';
 import {
 	formatPRComments,
 	formatPRDetails,
@@ -34,11 +33,6 @@ export interface FetchContextParams {
 	input: AgentInput;
 	repoDir: string;
 	contextFiles: ContextFile[];
-	logWriter: LogWriter;
-}
-
-export interface PreExecuteParams {
-	input: AgentInput;
 	logWriter: LogWriter;
 }
 
@@ -239,24 +233,31 @@ export async function fetchPRConversationStep(
 	return injections;
 }
 
-// ============================================================================
-// Pre-execute hooks
-// ============================================================================
+export function fetchEmailsFromInputStep(params: FetchContextParams): ContextInjection[] {
+	const emails = params.input.preFoundEmails;
+	if (!emails || emails.length === 0) return [];
 
-export async function postInitialPRCommentHook(
-	agentType: string,
-	{ input, logWriter }: PreExecuteParams,
-): Promise<void> {
-	// Skip if ack comment already posted by router or webhook handler
-	if (input.ackCommentId) return;
+	const lines = [`Found ${emails.length} email(s):`, ''];
+	emails.forEach((email, i) => {
+		const dateStr = email.date.toISOString().split('T')[0];
+		lines.push(`${i + 1}. [UID:${email.uid}] ${dateStr} - "${email.subject}" from ${email.from}`);
+	});
 
-	const { repoFullName, prNumber } = input;
-	if (!repoFullName || !prNumber) {
-		throw new Error('postInitialPRCommentHook requires repoFullName and prNumber in input');
-	}
-	const { owner, repo } = parseRepoFullName(repoFullName);
+	const senderEmail = params.input.senderEmail;
+	const criteria: Record<string, unknown> = { unseen: true };
+	if (senderEmail) criteria.from = senderEmail;
 
-	const message = (input.ackMessage as string | undefined) ?? INITIAL_MESSAGES[agentType];
-	logWriter('INFO', `Posting initial ${agentType} comment`, { owner, repo, prNumber });
-	await githubClient.createPRComment(owner, repo, prNumber, message);
+	return [
+		{
+			toolName: 'SearchEmails',
+			params: {
+				comment: 'Pre-fetched unread emails before agent start',
+				folder: 'INBOX',
+				criteria,
+				maxResults: 10,
+			},
+			result: lines.join('\n'),
+			description: `Pre-fetched ${emails.length} unread email(s)`,
+		},
+	];
 }

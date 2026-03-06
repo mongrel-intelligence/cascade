@@ -7,9 +7,9 @@
 	"scripts": {
 		"dev": "node --env-file=.env --import tsx/esm --watch src/index.ts",
 		"dev:web": "cd web && npx vite",
-		"build": "tsc && npm run build:copy-yaml && npm run build:copy-task-templates",
+		"build": "tsc && npm run build:copy-yaml && npm run build:copy-system-prompts",
 		"build:copy-yaml": "mkdir -p dist/agents/definitions && cp src/agents/definitions/*.yaml dist/agents/definitions/",
-		"build:copy-task-templates": "mkdir -p dist/agents/prompts/task-templates && cp src/agents/prompts/task-templates/*.eta dist/agents/prompts/task-templates/",
+		"build:copy-system-prompts": "mkdir -p dist/agents/prompts && cp -r src/agents/prompts/templates dist/agents/prompts/",
 		"build:web": "cd web && npm run build",
 		"start": "node dist/index.js",
 		"test": "vitest run --project unit",
@@ -37,7 +37,9 @@
 		"credentials:generate-key": "node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
 		"credentials:encrypt": "node --env-file=.env --import tsx tools/migrate-credentials-encrypt.ts",
 		"credentials:decrypt": "node --env-file=.env --import tsx tools/migrate-credentials-decrypt.ts",
-		"credentials:rotate-key": "node --env-file=.env --import tsx tools/rotate-credential-key.ts"
+		"credentials:rotate-key": "node --env-file=.env --import tsx tools/rotate-credential-key.ts",
+		"tool:test-email": "npx tsx tools/test-email-integration.ts",
+		"tool:migrate-triggers": "node --env-file=.env --import tsx tools/migrate-triggers.ts"
 	},
 	"keywords": [
 		"trello",
@@ -50,6 +52,7 @@
 	"license": "MIT",
 	"dependencies": {
 		"@anthropic-ai/claude-agent-sdk": "^0.2.42",
+		"@googleapis/gmail": "^16.1.1",
 		"@hono/node-server": "^1.13.7",
 		"@hono/trpc-server": "^0.4.2",
 		"@llmist/cli": "^15.2.1",
@@ -69,11 +72,16 @@
 		"drizzle-orm": "^0.45.1",
 		"eta": "^4.5.0",
 		"hono": "^4.6.14",
+		"imapflow": "^1.2.10",
 		"jira.js": "^5.3.0",
 		"js-yaml": "^4.1.1",
 		"llmist": "^15.19.0",
+		"marklassian": "^1.1.0",
+		"nodemailer": "^8.0.1",
+		"open": "^11.0.0",
 		"pg": "^8.18.0",
 		"trello.js": "^1.2.8",
+		"twilio": "^5.12.2",
 		"zangief": "latest",
 		"zod": "^3.24.1"
 	},
@@ -89,6 +97,7 @@
 		"@types/dockerode": "^3.3.47",
 		"@types/js-yaml": "^4.0.9",
 		"@types/node": "^22.10.2",
+		"@types/nodemailer": "^7.0.11",
 		"@types/pg": "^8.16.0",
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",

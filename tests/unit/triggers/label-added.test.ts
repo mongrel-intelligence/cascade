@@ -237,14 +237,14 @@ describe('ReadyToProcessLabelTrigger', () => {
 			expect(result.workItemId).toBe('card789');
 		});
 
-		it('defaults to splitting agent when card is in unknown list', async () => {
+		it('returns null when card is in an unrecognized list (e.g. IN PROGRESS)', async () => {
 			mockGetCard.mockResolvedValue({
 				id: 'card999',
 				name: 'Unknown List Card',
 				desc: '',
 				url: 'https://trello.com/c/xyz',
 				shortUrl: 'https://trello.com/c/xyz',
-				idList: 'unknown-list-id',
+				idList: 'in-progress-list-id',
 				labels: [],
 			});
 
@@ -268,7 +268,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result.agentType).toBe('splitting');
+			expect(result).toBeNull();
 		});
 
 		it('returns null when card ID is missing', async () => {

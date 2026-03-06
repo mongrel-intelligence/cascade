@@ -11,6 +11,7 @@ const GITHUB_WEBHOOK_EVENTS = [
 
 export async function githubListWebhooks(ctx: ProjectContext): Promise<GitHubWebhook[]> {
 	if (!ctx.githubToken) return [];
+	if (!ctx.repo) return []; // No repo configured
 	const octokit = new Octokit({ auth: ctx.githubToken });
 	const { owner, repo } = parseRepoFullName(ctx.repo);
 	const { data } = await octokit.repos.listWebhooks({ owner, repo });
@@ -21,6 +22,9 @@ export async function githubCreateWebhook(
 	ctx: ProjectContext,
 	callbackURL: string,
 ): Promise<GitHubWebhook> {
+	if (!ctx.repo) {
+		throw new Error('Cannot create GitHub webhook: no repo configured for this project');
+	}
 	const octokit = new Octokit({ auth: ctx.githubToken });
 	const { owner, repo } = parseRepoFullName(ctx.repo);
 	const { data } = await octokit.repos.createWebhook({
@@ -34,6 +38,9 @@ export async function githubCreateWebhook(
 }
 
 export async function githubDeleteWebhook(ctx: ProjectContext, hookId: number): Promise<void> {
+	if (!ctx.repo) {
+		throw new Error('Cannot delete GitHub webhook: no repo configured for this project');
+	}
 	const octokit = new Octokit({ auth: ctx.githubToken });
 	const { owner, repo } = parseRepoFullName(ctx.repo);
 	await octokit.repos.deleteWebhook({ owner, repo, hook_id: hookId });

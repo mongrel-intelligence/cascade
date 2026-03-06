@@ -13,10 +13,9 @@ import { tryCreateRun } from './runTracking.js';
 export type FileLogger = ReturnType<typeof createFileLogger>;
 export type AgentLogger = ReturnType<typeof createAgentLogger>;
 
-/**
- * A LogWriter that writes to both the file logger and the structured logger.
- */
-export type LogWriter = (level: string, message: string, context?: Record<string, unknown>) => void;
+// Re-export from the canonical single definition in contracts.
+export type { LogWriter } from '../contracts/index.js';
+import type { LogWriter } from '../contracts/index.js';
 
 /**
  * Creates a LogWriter that forwards to both the file logger and the structured logger.

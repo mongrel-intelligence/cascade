@@ -19,6 +19,11 @@ import type {
 	ContextInjection,
 	ToolManifest,
 } from '../types.js';
+import {
+	buildInlineContextSection,
+	cleanupContextFiles,
+	offloadLargeContext,
+} from './contextFiles.js';
 import { filterProcessEnv } from './env.js';
 import { buildHooks } from './hooks.js';
 import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
@@ -85,21 +90,54 @@ export function buildToolGuidance(tools: ToolManifest[]): string {
 }
 
 /**
- * Build the task prompt with pre-fetched context injections.
+ * Result of building the task prompt with context offloading.
  */
-export function buildTaskPrompt(taskPrompt: string, contextInjections: ContextInjection[]): string {
+export interface BuildTaskPromptResult {
+	/** The assembled task prompt */
+	prompt: string;
+	/** Whether any context was offloaded to files */
+	hasOffloadedContext: boolean;
+}
+
+/**
+ * Build the task prompt with pre-fetched context injections.
+ *
+ * Large context is offloaded to files to avoid exceeding prompt limits.
+ * Claude is instructed to read the files on-demand using its Read tool.
+ *
+ * @param taskPrompt - The base task prompt
+ * @param contextInjections - Context data to include
+ * @param repoDir - Repository directory for writing context files
+ * @returns The assembled prompt and offload metadata
+ */
+export async function buildTaskPrompt(
+	taskPrompt: string,
+	contextInjections: ContextInjection[],
+	repoDir: string,
+): Promise<BuildTaskPromptResult> {
 	let prompt = taskPrompt;
 
-	if (contextInjections.length > 0) {
-		prompt += '\n\n## Pre-loaded Context\n';
-		for (const injection of contextInjections) {
-			prompt += `\n### ${injection.description} (${injection.toolName})\n`;
-			prompt += `Parameters: ${JSON.stringify(injection.params)}\n`;
-			prompt += `\`\`\`\n${injection.result}\n\`\`\`\n`;
-		}
+	if (contextInjections.length === 0) {
+		return { prompt, hasOffloadedContext: false };
 	}
 
-	return prompt;
+	const { inlineInjections, offloadedFiles, instructions } = await offloadLargeContext(
+		repoDir,
+		contextInjections,
+	);
+
+	// Add inline context
+	prompt += buildInlineContextSection(inlineInjections);
+
+	// Add instructions for offloaded files
+	if (instructions) {
+		prompt += `\n\n${instructions}`;
+	}
+
+	return {
+		prompt,
+		hasOffloadedContext: offloadedFiles.length > 0,
+	};
 }
 
 /**
@@ -428,7 +466,11 @@ export class ClaudeCodeBackend implements AgentBackend {
 	async execute(input: AgentBackendInput): Promise<AgentBackendResult> {
 		const startTime = Date.now();
 		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools);
-		const taskPrompt = buildTaskPrompt(input.taskPrompt, input.contextInjections);
+		const { prompt: taskPrompt, hasOffloadedContext } = await buildTaskPrompt(
+			input.taskPrompt,
+			input.contextInjections,
+			input.repoDir,
+		);
 		const model = resolveClaudeModel(input.model);
 
 		input.logWriter('INFO', 'Starting Claude Code SDK execution', {
@@ -436,6 +478,7 @@ export class ClaudeCodeBackend implements AgentBackend {
 			model,
 			repoDir: input.repoDir,
 			maxIterations: input.maxIterations,
+			hasOffloadedContext,
 		});
 
 		const { env } = buildEnv(input.projectSecrets);
@@ -452,49 +495,56 @@ export class ClaudeCodeBackend implements AgentBackend {
 		let turnCount = 0;
 		const stderrChunks: string[] = [];
 
-		const stream = query({
-			prompt: taskPrompt,
-			options: {
-				model,
-				systemPrompt,
-				cwd: input.repoDir,
-				additionalDirectories: [getWorkspaceDir()],
-				maxBudgetUsd: input.budgetUsd,
-				permissionMode: 'bypassPermissions',
-				allowDangerouslySkipPermissions: true,
-				tools: sdkTools,
-				allowedTools: sdkTools,
-				persistSession: false,
-				hooks,
-				env,
-				debug: true,
-				stderr: (data: string) => {
-					stderrChunks.push(data);
-					input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
+		try {
+			const stream = query({
+				prompt: taskPrompt,
+				options: {
+					model,
+					systemPrompt,
+					cwd: input.repoDir,
+					additionalDirectories: [getWorkspaceDir()],
+					maxBudgetUsd: input.budgetUsd,
+					permissionMode: 'bypassPermissions',
+					allowDangerouslySkipPermissions: true,
+					tools: sdkTools,
+					allowedTools: sdkTools,
+					persistSession: false,
+					hooks,
+					env,
+					debug: true,
+					stderr: (data: string) => {
+						stderrChunks.push(data);
+						input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
+					},
 				},
-			},
-		});
+			});
 
-		for await (const message of stream) {
-			if (message.type === 'assistant') {
-				const assistantMsg = message as SDKAssistantMessage;
-				assistantMessages.push(assistantMsg);
-				turnCount++;
-				await input.progressReporter.onIteration(turnCount, input.maxIterations);
-				processAssistantMessage(assistantMsg, turnCount, input);
-				logLlmCall(input, assistantMsg, turnCount, model);
-			} else if (message.type === 'system') {
-				const sysMsg = message as { subtype: string; [key: string]: unknown };
-				if (sysMsg.subtype === 'task_notification') {
-					processTaskNotification(sysMsg, input);
-				} else {
-					processSystemMessage(sysMsg, input.logWriter);
+			for await (const message of stream) {
+				if (message.type === 'assistant') {
+					const assistantMsg = message as SDKAssistantMessage;
+					assistantMessages.push(assistantMsg);
+					turnCount++;
+					await input.progressReporter.onIteration(turnCount, input.maxIterations);
+					processAssistantMessage(assistantMsg, turnCount, input);
+					logLlmCall(input, assistantMsg, turnCount, model);
+				} else if (message.type === 'system') {
+					const sysMsg = message as { subtype: string; [key: string]: unknown };
+					if (sysMsg.subtype === 'task_notification') {
+						processTaskNotification(sysMsg, input);
+					} else {
+						processSystemMessage(sysMsg, input.logWriter);
+					}
+				} else if (message.type === 'result') {
+					resultMessage = message as SDKResultMessage;
 				}
-			} else if (message.type === 'result') {
-				resultMessage = message as SDKResultMessage;
+			}
+
+			return buildResult(assistantMessages, resultMessage, stderrChunks, input, startTime);
+		} finally {
+			// Clean up offloaded context files after execution
+			if (hasOffloadedContext) {
+				await cleanupContextFiles(input.repoDir);
 			}
 		}
-
-		return buildResult(assistantMessages, resultMessage, stderrChunks, input, startTime);
 	}
 }

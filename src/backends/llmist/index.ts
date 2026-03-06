@@ -2,7 +2,7 @@ import os from 'node:os';
 
 import { LLMist, type ModelSpec, createLogger } from 'llmist';
 
-import { loadAgentDefinition } from '../../agents/definitions/index.js';
+import { createIntegrationChecker } from '../../agents/capabilities/index.js';
 import { type BuilderType, createConfiguredBuilder } from '../../agents/shared/builderFactory.js';
 import { injectSyntheticCall } from '../../agents/shared/syntheticCalls.js';
 import { runAgentLoop } from '../../agents/utils/agentLoop.js';
@@ -15,11 +15,6 @@ import { createLLMCallLogger } from '../../utils/llmLogging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { getAgentProfile } from '../agent-profiles.js';
 import type { AgentBackend, AgentBackendInput, AgentBackendResult } from '../types.js';
-
-/** Post-configure registry: maps YAML string references to builder transform functions */
-const POST_CONFIGURE_REGISTRY: Record<string, (builder: BuilderType) => BuilderType> = {
-	sequentialGadgetExecution: (b) => b.withGadgetExecutionMode('sequential'),
-};
 
 /**
  * llmist backend — executes agents using the llmist SDK.
@@ -62,7 +57,7 @@ export class LlmistBackend implements AgentBackend {
 			progressReporter,
 		} = input;
 
-		const profile = getAgentProfile(agentType);
+		const profile = await getAgentProfile(agentType);
 
 		// Create LLMist client with custom model definitions
 		const client = new LLMist({ customModels: CUSTOM_MODELS as ModelSpec[] });
@@ -85,12 +80,14 @@ export class LlmistBackend implements AgentBackend {
 			process.env.LLMIST_LOG_TEE = 'true';
 		}
 
-		// Get gadget instances from the agent profile (single source of truth for tool sets)
-		const gadgets = profile.getLlmistGadgets(agentType);
+		// Get gadget instances from the agent profile, filtered by integration availability.
+		// This ensures optional capabilities only provide gadgets if the integration is configured.
+		const integrationChecker = await createIntegrationChecker(input.project.id);
+		const gadgets = profile.getLlmistGadgets(integrationChecker);
 
 		// Build the configured agent builder with all llmist-specific features:
 		// rate limiting, retry, compaction, iteration hints, observer hooks
-		let builder: BuilderType = createConfiguredBuilder({
+		let builder: BuilderType = await createConfiguredBuilder({
 			client,
 			agentType,
 			model,
@@ -108,21 +105,17 @@ export class LlmistBackend implements AgentBackend {
 			baseBranch: input.project.baseBranch,
 			projectId: input.project.id,
 			cardId: agentInput.cardId,
+			// Pass resolved hook flags for finish validation (hook-driven instead of agent-type checks)
+			hooks: {
+				requiresPR: profile.requiresPR,
+				requiresReview: profile.requiresReview,
+				requiresPushedChanges: profile.requiresPushedChanges,
+			},
 			// Pass the progress monitor from the adapter so createObserverHooks can call
 			// onIteration/onToolCall/onText — enables progress updates to Trello/GitHub
 			progressMonitor: progressReporter as Parameters<
 				typeof createConfiguredBuilder
 			>[0]['progressMonitor'],
-			// Post-configure hook from YAML definition (e.g., sequentialGadgetExecution for implementation)
-			postConfigure: (() => {
-				try {
-					const def = loadAgentDefinition(agentType);
-					const hookName = def.backend.postConfigure;
-					return hookName ? POST_CONFIGURE_REGISTRY[hookName] : undefined;
-				} catch {
-					return undefined;
-				}
-			})(),
 		});
 
 		// Convert ContextInjection[] from the unified adapter into synthetic gadget calls.

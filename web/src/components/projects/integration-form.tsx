@@ -3,9 +3,11 @@ import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle, Loader2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { EmailWizard } from './email-wizard.js';
 import { PMWizard } from './pm-wizard.js';
+import { TwilioWizard } from './twilio-wizard.js';
 
-type IntegrationCategory = 'pm' | 'scm';
+type IntegrationCategory = 'pm' | 'scm' | 'email' | 'sms';
 
 interface CredentialOption {
 	id: number;
@@ -48,7 +50,7 @@ function CredentialSelector({
 					<option value="">Select a credential...</option>
 					{credentials.map((c) => (
 						<option key={c.id} value={c.id}>
-							{c.name} ({c.envVarKey}) — {c.value}
+							{c.name} ({c.envVarKey})
 						</option>
 					))}
 				</select>
@@ -64,7 +66,7 @@ function CredentialSelector({
 				)}
 			</div>
 			{verifiedLogin && (
-				<div className="flex items-center gap-1.5 text-sm text-green-600">
+				<div className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
 					<CheckCircle className="h-4 w-4" />
 					Resolved: <span className="font-medium">{verifiedLogin}</span>
 				</div>
@@ -293,6 +295,56 @@ function SCMTab({
 }
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+function buildCredentialMap(
+	data: Array<{ role: string; credentialId: number }> | undefined,
+): Map<string, number> {
+	const map = new Map<string, number>();
+	for (const c of data ?? []) {
+		map.set(c.role, c.credentialId);
+	}
+	return map;
+}
+
+function findIntegrationByCategory(
+	integrations: unknown[],
+	category: string,
+): Record<string, unknown> | undefined {
+	return integrations.find((i) => (i as Record<string, unknown>).category === category) as
+		| Record<string, unknown>
+		| undefined;
+}
+
+function TabButton({
+	label,
+	tab,
+	activeTab,
+	onClick,
+}: {
+	label: string;
+	tab: IntegrationCategory;
+	activeTab: IntegrationCategory;
+	onClick: () => void;
+}) {
+	const isActive = activeTab === tab;
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+				isActive
+					? 'bg-background text-foreground shadow-sm'
+					: 'text-muted-foreground hover:text-foreground'
+			}`}
+		>
+			{label}
+		</button>
+	);
+}
+
+// ============================================================================
 // Main Integration Form
 // ============================================================================
 
@@ -304,27 +356,12 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 	const scmCredsQuery = useQuery(
 		trpc.projects.integrationCredentials.list.queryOptions({ projectId, category: 'scm' }),
 	);
-
-	const integrations = integrationsQuery.data ?? [];
-	const pmIntegration = integrations.find(
-		(i) => (i as Record<string, unknown>).category === 'pm',
-	) as Record<string, unknown> | undefined;
-	const scmIntegration = integrations.find(
-		(i) => (i as Record<string, unknown>).category === 'scm',
-	) as Record<string, unknown> | undefined;
-
-	const pmProvider = (pmIntegration?.provider as string) ?? 'trello';
-	const scmProvider = (scmIntegration?.provider as string) ?? 'github';
-
-	const pmCredMap = new Map<string, number>();
-	for (const c of (pmCredsQuery.data ?? []) as Array<{ role: string; credentialId: number }>) {
-		pmCredMap.set(c.role, c.credentialId);
-	}
-
-	const scmCredMap = new Map<string, number>();
-	for (const c of (scmCredsQuery.data ?? []) as Array<{ role: string; credentialId: number }>) {
-		scmCredMap.set(c.role, c.credentialId);
-	}
+	const emailCredsQuery = useQuery(
+		trpc.projects.integrationCredentials.list.queryOptions({ projectId, category: 'email' }),
+	);
+	const smsCredsQuery = useQuery(
+		trpc.projects.integrationCredentials.list.queryOptions({ projectId, category: 'sms' }),
+	);
 
 	const [activeTab, setActiveTab] = useState<IntegrationCategory>('pm');
 
@@ -332,31 +369,55 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 		return <div className="py-4 text-muted-foreground">Loading integrations...</div>;
 	}
 
+	const integrations = integrationsQuery.data ?? [];
+	const pmIntegration = findIntegrationByCategory(integrations, 'pm');
+	const scmIntegration = findIntegrationByCategory(integrations, 'scm');
+	const emailIntegration = findIntegrationByCategory(integrations, 'email');
+
+	const pmProvider = (pmIntegration?.provider as string) ?? 'trello';
+	const scmProvider = (scmIntegration?.provider as string) ?? 'github';
+	const emailProvider = (emailIntegration?.provider as string) ?? '';
+
+	const pmCredMap = buildCredentialMap(
+		pmCredsQuery.data as Array<{ role: string; credentialId: number }>,
+	);
+	const scmCredMap = buildCredentialMap(
+		scmCredsQuery.data as Array<{ role: string; credentialId: number }>,
+	);
+	const emailCredMap = buildCredentialMap(
+		emailCredsQuery.data as Array<{ role: string; credentialId: number }>,
+	);
+	const smsCredMap = buildCredentialMap(
+		smsCredsQuery.data as Array<{ role: string; credentialId: number }>,
+	);
+
 	return (
 		<div className="max-w-2xl space-y-6">
 			<div className="flex gap-1 rounded-lg bg-muted p-1">
-				<button
-					type="button"
+				<TabButton
+					label="Project Management"
+					tab="pm"
+					activeTab={activeTab}
 					onClick={() => setActiveTab('pm')}
-					className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-						activeTab === 'pm'
-							? 'bg-background text-foreground shadow-sm'
-							: 'text-muted-foreground hover:text-foreground'
-					}`}
-				>
-					Project Management
-				</button>
-				<button
-					type="button"
+				/>
+				<TabButton
+					label="Source Control"
+					tab="scm"
+					activeTab={activeTab}
 					onClick={() => setActiveTab('scm')}
-					className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-						activeTab === 'scm'
-							? 'bg-background text-foreground shadow-sm'
-							: 'text-muted-foreground hover:text-foreground'
-					}`}
-				>
-					Source Control
-				</button>
+				/>
+				<TabButton
+					label="Email"
+					tab="email"
+					activeTab={activeTab}
+					onClick={() => setActiveTab('email')}
+				/>
+				<TabButton
+					label="SMS"
+					tab="sms"
+					activeTab={activeTab}
+					onClick={() => setActiveTab('sms')}
+				/>
 			</div>
 
 			{activeTab === 'pm' && (
@@ -374,6 +435,18 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 					initialProvider={scmProvider}
 					initialCredentials={scmCredMap}
 				/>
+			)}
+
+			{activeTab === 'email' && (
+				<EmailWizard
+					projectId={projectId}
+					initialProvider={emailProvider}
+					initialCredentials={emailCredMap}
+				/>
+			)}
+
+			{activeTab === 'sms' && (
+				<TwilioWizard projectId={projectId} initialCredentials={smsCredMap} />
 			)}
 		</div>
 	);

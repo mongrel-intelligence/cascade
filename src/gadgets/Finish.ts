@@ -25,6 +25,7 @@ export class Finish extends Gadget({
 			agentType: state.agentType,
 			prCreated: state.prCreated,
 			reviewSubmitted: state.reviewSubmitted,
+			hooks: state.hooks,
 		});
 
 		if (!result.valid) {

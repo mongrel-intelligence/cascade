@@ -34,6 +34,11 @@ vi.mock('../../../src/triggers/shared/debug-trigger.js', () => ({
 	shouldTriggerDebug: vi.fn(),
 }));
 
+vi.mock('../../../src/triggers/shared/integration-validation.js', () => ({
+	validateIntegrations: vi.fn().mockResolvedValue({ valid: true, errors: [] }),
+	formatValidationErrors: vi.fn().mockReturnValue(''),
+}));
+
 import { runAgent } from '../../../src/agents/registry.js';
 import {
 	PMLifecycleManager,
@@ -386,6 +391,36 @@ describe('runAgentExecutionPipeline', () => {
 			await runAgentExecutionPipeline(mockTriggerResult, mockProject, mockConfig);
 
 			expect(shouldTriggerDebug).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('onSuccess callback', () => {
+		it('calls onSuccess when agent succeeds', async () => {
+			const agentResult: AgentResult = {
+				success: true,
+				runId: 'run-1',
+				output: '',
+			};
+			vi.mocked(runAgent).mockResolvedValue(agentResult);
+			const onSuccess = vi.fn().mockResolvedValue(undefined);
+
+			await runAgentExecutionPipeline(mockTriggerResult, mockProject, mockConfig, { onSuccess });
+
+			expect(onSuccess).toHaveBeenCalledWith(mockTriggerResult, agentResult);
+		});
+
+		it('does not call onSuccess when agent fails', async () => {
+			vi.mocked(runAgent).mockResolvedValue({
+				success: false,
+				error: 'Agent error',
+				runId: 'run-1',
+				output: '',
+			});
+			const onSuccess = vi.fn().mockResolvedValue(undefined);
+
+			await runAgentExecutionPipeline(mockTriggerResult, mockProject, mockConfig, { onSuccess });
+
+			expect(onSuccess).not.toHaveBeenCalled();
 		});
 	});
 

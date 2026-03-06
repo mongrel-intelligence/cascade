@@ -20,7 +20,6 @@ interface AgentConfig {
 	model: string | null;
 	maxIterations: number | null;
 	agentBackend: string | null;
-	prompt: string | null;
 }
 
 interface AgentConfigFormDialogProps {
@@ -37,7 +36,6 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 	const [model, setModel] = useState(config?.model ?? '');
 	const [maxIterations, setMaxIterations] = useState(config?.maxIterations?.toString() ?? '');
 	const [agentBackend, setAgentBackend] = useState(config?.agentBackend ?? '');
-	const [prompt, setPrompt] = useState(config?.prompt ?? '');
 
 	const queryKey = trpc.agentConfigs.list.queryOptions().queryKey;
 
@@ -48,7 +46,6 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentBackend: agentBackend || null,
-				prompt: prompt || null,
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey });
@@ -64,7 +61,6 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentBackend: agentBackend || null,
-				prompt: prompt || null,
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey });
@@ -131,21 +127,12 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 					</div>
 					<div className="space-y-2">
 						<Label>Prompt</Label>
-						{config?.prompt ? (
-							<p className="text-sm text-muted-foreground">
-								Custom prompt set.{' '}
-								<Link to="/settings/prompts" className="text-primary hover:underline">
-									Edit in Prompt Editor
-								</Link>
-							</p>
-						) : (
-							<p className="text-sm text-muted-foreground">
-								Using default.{' '}
-								<Link to="/settings/prompts" className="text-primary hover:underline">
-									Customize in Prompt Editor
-								</Link>
-							</p>
-						)}
+						<p className="text-sm text-muted-foreground">
+							Prompts are managed in{' '}
+							<Link to="/settings/definitions" className="text-primary hover:underline">
+								Agent Definitions
+							</Link>
+						</p>
 					</div>
 					<div className="flex justify-end gap-2">
 						<button

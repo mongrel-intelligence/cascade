@@ -93,7 +93,6 @@ const globalAgentConfig = {
 	model: 'global-review-model',
 	maxIterations: 30,
 	agentBackend: null,
-	prompt: null,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };
@@ -106,7 +105,6 @@ const projectAgentConfig = {
 	model: 'impl-model',
 	maxIterations: null,
 	agentBackend: 'claude-code',
-	prompt: 'Write clean code',
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };
@@ -119,7 +117,6 @@ const orgAgentConfig = {
 	model: 'org-splitting-model',
 	maxIterations: 20,
 	agentBackend: null,
-	prompt: null,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };
@@ -417,10 +414,10 @@ describe('configRepository', () => {
 			});
 		});
 
-		it('includes prompts from agent configs', async () => {
+		it('maps agent configs with backend override for project', async () => {
 			const mockDb = createSequentialMockDb([
 				[projectRow],
-				[projectAgentConfig], // has prompt: 'Write clean code'
+				[projectAgentConfig], // has agentBackend: 'claude-code'
 				[],
 				[],
 				[defaultsRow],
@@ -431,7 +428,9 @@ describe('configRepository', () => {
 			const result = await findProjectByIdFromDb('proj1');
 
 			expect(result).toBeDefined();
-			expect(result?.prompts).toEqual({ implementation: 'Write clean code' });
+			expect(result?.agentBackend?.overrides).toEqual({ implementation: 'claude-code' });
+			// prompts are no longer stored in agent_configs (moved to agent_definitions)
+			expect(result && Object.hasOwn(result, 'prompts')).toBe(false);
 		});
 
 		it('runs 5 sub-queries in parallel after initial project lookup', async () => {

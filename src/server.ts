@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
+import { SESSION_COOKIE_NAME } from './api/auth/cookie.js';
 import { loginHandler } from './api/auth/login.js';
 import { logoutHandler } from './api/auth/logout.js';
 import { resolveUserFromSession } from './api/auth/session.js';
@@ -13,9 +14,7 @@ import { computeEffectiveOrgId } from './api/context.js';
 import { appRouter } from './api/router.js';
 import { captureException } from './sentry.js';
 import {
-	buildGitHubReactionSender,
-	buildJiraReactionSender,
-	buildTrelloReactionSender,
+	buildReactionSender,
 	createWebhookHandler,
 	parseGitHubPayload,
 	parseJiraPayload,
@@ -63,7 +62,7 @@ export function createServer(deps: ServerDependencies): Hono {
 			endpoint: '/trpc',
 			router: appRouter,
 			createContext: async (_opts, c) => {
-				const token = getCookie(c, 'cascade_session');
+				const token = getCookie(c, SESSION_COOKIE_NAME);
 				const user = token ? await resolveUserFromSession(token) : null;
 				const effectiveOrgId = await computeEffectiveOrgId(user, c.req.header('x-org-context'));
 
@@ -87,7 +86,7 @@ export function createServer(deps: ServerDependencies): Hono {
 		createWebhookHandler({
 			source: 'trello',
 			parsePayload: parseTrelloPayload,
-			sendReaction: buildTrelloReactionSender(deps.config),
+			sendReaction: buildReactionSender('trello', deps.config),
 			processWebhook: (payload) => deps.onTrelloWebhook(payload),
 		}),
 	);
@@ -103,7 +102,7 @@ export function createServer(deps: ServerDependencies): Hono {
 		createWebhookHandler({
 			source: 'github',
 			parsePayload: parseGitHubPayload,
-			sendReaction: buildGitHubReactionSender(),
+			sendReaction: buildReactionSender('github'),
 			processWebhook: (payload, eventType) => deps.onGitHubWebhook(payload, eventType ?? 'unknown'),
 		}),
 	);
@@ -119,7 +118,7 @@ export function createServer(deps: ServerDependencies): Hono {
 		createWebhookHandler({
 			source: 'jira',
 			parsePayload: parseJiraPayload,
-			sendReaction: buildJiraReactionSender(deps.config),
+			sendReaction: buildReactionSender('jira', deps.config),
 			processWebhook: (payload) => deps.onJiraWebhook(payload),
 		}),
 	);

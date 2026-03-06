@@ -36,7 +36,10 @@ export const ProjectConfigSchema = z.object({
 	id: z.string().min(1),
 	orgId: z.string().min(1),
 	name: z.string().min(1),
-	repo: z.string().regex(/^[^/]+\/[^/]+$/, 'Must be in format "owner/repo"'),
+	repo: z
+		.string()
+		.regex(/^[^/]+\/[^/]+$/, 'Must be in format "owner/repo"')
+		.optional(),
 	baseBranch: z.string().default('main'),
 	branchPrefix: z.string().default('feature/'),
 
@@ -72,8 +75,6 @@ export const ProjectConfigSchema = z.object({
 		})
 		.optional(),
 
-	prompts: z.record(z.string()).optional(),
-	taskPrompts: z.record(z.string()).optional(),
 	model: z.string().optional(),
 	agentModels: z.record(z.string()).optional(),
 	cardBudgetUsd: z.number().positive().optional(),
@@ -97,8 +98,6 @@ export const CascadeConfigSchema = z.object({
 			agentBackend: z.string().default('llmist'),
 			progressModel: z.string().default('openrouter:google/gemini-2.5-flash-lite'),
 			progressIntervalMinutes: z.number().positive().default(5),
-			prompts: z.record(z.string()).default({}),
-			taskPrompts: z.record(z.string()).default({}),
 		})
 		.default({}),
 	projects: z.array(ProjectConfigSchema).min(1),

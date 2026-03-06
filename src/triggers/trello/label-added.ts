@@ -62,9 +62,11 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 		} else if (currentListId === lists.todo) {
 			agentType = 'implementation';
 		} else {
-			// Default to splitting if list not recognized
-			logger.warn('Card in unrecognized list, defaulting to splitting', { currentListId, lists });
-			agentType = 'splitting';
+			logger.info('Card not in a trigger-eligible list, skipping ready-to-process label', {
+				currentListId,
+				lists,
+			});
+			return null;
 		}
 
 		logger.info('Agent type determined', { agentType, cardId, listId: currentListId });

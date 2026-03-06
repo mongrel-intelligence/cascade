@@ -1,7 +1,20 @@
 /**
- * Defines the mapping between agent types and their trigger toggles.
- * Used to render trigger configuration in the Agent Configs tab.
+ * Trigger mapping utilities for the Agent Configs tab.
+ * Uses definition-based triggers from the API via agentTriggerConfigs.getProjectTriggersView.
  */
+
+// Re-export shared types for convenience
+export { TRIGGER_CATEGORY_LABELS as CATEGORY_LABELS } from '../../../src/api/routers/_shared/triggerTypes.js';
+export type {
+	ResolvedTrigger,
+	TriggerParameterDef,
+	TriggerParameterValue,
+	ProjectTriggersView,
+} from '../../../src/api/routers/_shared/triggerTypes.js';
+
+// ============================================================================
+// Types
+// ============================================================================
 
 export interface TriggerDef {
 	/** Dot-notation path into the triggers config, e.g. "cardMovedToSplitting" or "readyToProcessLabel.splitting" */
@@ -38,193 +51,6 @@ export const LIFECYCLE_TRIGGERS: TriggerDef[] = [
 		category: 'scm',
 	},
 ];
-
-/**
- * Shared PM triggers that affect multiple agent types.
- * Displayed once in a dedicated section rather than duplicated per-agent.
- */
-export const SHARED_PM_TRIGGERS: TriggerDef[] = [
-	{
-		key: 'commentMention',
-		label: 'Comment @mention',
-		description:
-			'Trigger agent when the bot is @mentioned in a card/issue comment. Affects planning and respond-to-planning-comment agents.',
-		defaultValue: true,
-		category: 'pm',
-	},
-];
-
-/**
- * Map from agent type to the trigger toggles relevant to it.
- */
-export const AGENT_TRIGGER_MAP: Record<string, TriggerDef[]> = {
-	splitting: [
-		{
-			key: 'cardMovedToSplitting',
-			label: 'Card moved to Splitting',
-			description: 'Trigger splitting agent when a card is moved to the Splitting list.',
-			defaultValue: true,
-			pmProvider: 'trello',
-			category: 'pm',
-		},
-		{
-			key: 'issueTransitioned.splitting',
-			label: 'Issue Transitioned',
-			description:
-				'Trigger splitting agent when a JIRA issue transitions to the configured Splitting status.',
-			defaultValue: true,
-			pmProvider: 'jira',
-			category: 'pm',
-		},
-		{
-			key: 'readyToProcessLabel.splitting',
-			label: 'Ready to Process label',
-			description:
-				'Trigger splitting agent when the "Ready to Process" label is added to a card in the Splitting list.',
-			defaultValue: true,
-			category: 'pm',
-		},
-	],
-	planning: [
-		{
-			key: 'cardMovedToPlanning',
-			label: 'Card moved to Planning',
-			description: 'Trigger planning agent when a card is moved to the Planning list.',
-			defaultValue: true,
-			pmProvider: 'trello',
-			category: 'pm',
-		},
-		{
-			key: 'issueTransitioned.planning',
-			label: 'Issue Transitioned',
-			description:
-				'Trigger planning agent when a JIRA issue transitions to the configured Planning status.',
-			defaultValue: true,
-			pmProvider: 'jira',
-			category: 'pm',
-		},
-		{
-			key: 'readyToProcessLabel.planning',
-			label: 'Ready to Process label',
-			description:
-				'Trigger planning agent when the "Ready to Process" label is added to a card in the Planning list.',
-			defaultValue: true,
-			category: 'pm',
-		},
-	],
-	implementation: [
-		{
-			key: 'cardMovedToTodo',
-			label: 'Card moved to Todo',
-			description: 'Trigger implementation agent when a card is moved to the Todo list.',
-			defaultValue: true,
-			pmProvider: 'trello',
-			category: 'pm',
-		},
-		{
-			key: 'issueTransitioned.implementation',
-			label: 'Issue Transitioned',
-			description:
-				'Trigger implementation agent when a JIRA issue transitions to the configured Todo status.',
-			defaultValue: true,
-			pmProvider: 'jira',
-			category: 'pm',
-		},
-		{
-			key: 'readyToProcessLabel.implementation',
-			label: 'Ready to Process label',
-			description:
-				'Trigger implementation agent when the "Ready to Process" label is added to a card in the Todo list.',
-			defaultValue: true,
-			category: 'pm',
-		},
-	],
-	review: [
-		{
-			key: 'reviewTrigger.ownPrsOnly',
-			label: 'Own PRs Only',
-			description:
-				'Trigger review agent when CI passes on PRs authored by the implementer persona.',
-			defaultValue: false,
-			scmProvider: 'github',
-			category: 'scm',
-		},
-		{
-			key: 'reviewTrigger.externalPrs',
-			label: 'External PRs',
-			description:
-				'Trigger review agent when CI passes on PRs authored by anyone (not just the implementer).',
-			defaultValue: false,
-			scmProvider: 'github',
-			category: 'scm',
-		},
-		{
-			key: 'reviewTrigger.onReviewRequested',
-			label: 'On Review Requested',
-			description:
-				'Trigger review agent when a CASCADE persona is explicitly requested as reviewer.',
-			defaultValue: false,
-			scmProvider: 'github',
-			category: 'scm',
-		},
-		{
-			key: 'prOpened',
-			label: 'PR Opened',
-			description:
-				'Trigger review agent when a new PR is opened (without waiting for CI). Respects Own PRs / External PRs author modes.',
-			defaultValue: false,
-			scmProvider: 'github',
-			category: 'scm',
-		},
-	],
-	'respond-to-review': [
-		{
-			key: 'prReviewSubmitted',
-			label: 'PR Review Submitted',
-			description: 'Trigger respond-to-review when a review with changes requested is submitted.',
-			defaultValue: true,
-			scmProvider: 'github',
-			category: 'scm',
-		},
-	],
-	'respond-to-ci': [
-		{
-			key: 'checkSuiteFailure',
-			label: 'Check Suite Failure',
-			description: 'Trigger respond-to-ci agent when CI checks fail.',
-			defaultValue: true,
-			scmProvider: 'github',
-			category: 'scm',
-		},
-	],
-	'respond-to-pr-comment': [
-		{
-			key: 'prCommentMention',
-			label: 'PR Comment @mention',
-			description:
-				'Trigger respond-to-pr-comment when the implementer bot is @mentioned in a PR comment.',
-			defaultValue: true,
-			scmProvider: 'github',
-			category: 'scm',
-		},
-	],
-	'respond-to-planning-comment': [],
-};
-
-/**
- * Get trigger definitions for a specific agent type, filtered by PM provider and/or category.
- */
-export function getTriggersForAgent(
-	agentType: string,
-	opts?: { pmProvider?: string; category?: 'pm' | 'scm' },
-): TriggerDef[] {
-	const triggers = AGENT_TRIGGER_MAP[agentType] ?? [];
-	return triggers.filter((t) => {
-		if (opts?.category && t.category !== opts.category) return false;
-		if (t.pmProvider && opts?.pmProvider && t.pmProvider !== opts.pmProvider) return false;
-		return true;
-	});
-}
 
 /**
  * Get the trigger value from a flat triggers record using dot-notation path.
@@ -299,6 +125,23 @@ export const ALL_AGENT_TYPES = [
 	'respond-to-ci',
 	'respond-to-pr-comment',
 	'respond-to-planning-comment',
+	'email-joke',
 ] as const;
 
 export type KnownAgentType = (typeof ALL_AGENT_TYPES)[number];
+
+/** Friendly display labels for all known agent types */
+export const AGENT_LABELS: Record<KnownAgentType, string> = {
+	splitting: 'Splitting',
+	planning: 'Planning',
+	implementation: 'Implementation',
+	review: 'Review',
+	'respond-to-review': 'Respond to Review',
+	'respond-to-ci': 'Respond to CI',
+	'respond-to-pr-comment': 'Respond to PR Comment',
+	'respond-to-planning-comment': 'Respond to Planning Comment',
+	'email-joke': 'Email Joke',
+};
+
+/** Agent types that use email-based trigger configuration (custom widget, not toggle-based) */
+export const EMAIL_TRIGGER_AGENTS = new Set<KnownAgentType>(['email-joke']);

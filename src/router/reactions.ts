@@ -176,7 +176,7 @@ async function sendJiraReaction(projectId: string, payload: unknown): Promise<vo
  * Fire-and-forget: errors are caught and logged, never propagated.
  */
 export async function sendAcknowledgeReaction(
-	source: 'trello' | 'github' | 'jira',
+	source: string,
 	projectId: string,
 	payload: unknown,
 	personaIdentities?: PersonaIdentities,

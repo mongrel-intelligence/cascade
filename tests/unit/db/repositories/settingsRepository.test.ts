@@ -12,6 +12,8 @@ import {
 	deleteAgentConfig,
 	deleteProject,
 	deleteProjectIntegration,
+	getAllProjectIdsWithEmailIntegration,
+	getAllProjectIdsWithSmsIntegration,
 	getCascadeDefaults,
 	getOrganization,
 	getProjectFull,
@@ -270,6 +272,44 @@ describe('settingsRepository', () => {
 			await deleteProjectIntegration('p1', 'trello');
 
 			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('getAllProjectIdsWithEmailIntegration', () => {
+		it('returns projectIds for all email integrations', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([{ projectId: 'proj-1' }, { projectId: 'proj-2' }]);
+
+			const result = await getAllProjectIdsWithEmailIntegration();
+
+			expect(result).toEqual(['proj-1', 'proj-2']);
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
+		});
+
+		it('returns empty array when no email integrations exist', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			const result = await getAllProjectIdsWithEmailIntegration();
+
+			expect(result).toEqual([]);
+		});
+	});
+
+	describe('getAllProjectIdsWithSmsIntegration', () => {
+		it('returns projectIds for all SMS integrations', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([{ projectId: 'proj-3' }, { projectId: 'proj-4' }]);
+
+			const result = await getAllProjectIdsWithSmsIntegration();
+
+			expect(result).toEqual(['proj-3', 'proj-4']);
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
+		});
+
+		it('returns empty array when no SMS integrations exist', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			const result = await getAllProjectIdsWithSmsIntegration();
+
+			expect(result).toEqual([]);
 		});
 	});
 

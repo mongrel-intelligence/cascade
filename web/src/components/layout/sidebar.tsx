@@ -5,8 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useRouterState } from '@tanstack/react-router';
 import {
 	Activity,
+	BookOpen,
 	Bot,
-	FileText,
 	FolderGit2,
 	KeyRound,
 	LayoutDashboard,
@@ -27,7 +27,7 @@ const settingsNav = [
 	{ to: '/settings/general' as const, label: 'General', icon: Settings },
 	{ to: '/settings/credentials' as const, label: 'Credentials', icon: KeyRound },
 	{ to: '/settings/agents' as const, label: 'Agent Configs', icon: Bot },
-	{ to: '/settings/prompts' as const, label: 'Prompts', icon: FileText },
+	{ to: '/settings/definitions' as const, label: 'Agent Definitions', icon: BookOpen },
 ];
 
 function NavLink({

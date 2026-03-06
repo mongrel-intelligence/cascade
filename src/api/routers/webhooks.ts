@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { protectedProcedure, router } from '../trpc.js';
+import { router, superAdminProcedure } from '../trpc.js';
 import {
 	applyOneTimeTokens,
 	oneTimeTokensSchema,
@@ -18,7 +18,7 @@ import type { GitHubWebhook, JiraWebhookInfo, TrelloWebhook } from './webhooks/t
 export type { GitHubWebhook, JiraWebhookInfo, TrelloWebhook };
 
 export const webhooksRouter = router({
-	list: protectedProcedure
+	list: superAdminProcedure
 		.input(
 			z.object({
 				projectId: z.string(),
@@ -47,7 +47,7 @@ export const webhooksRouter = router({
 			};
 		}),
 
-	create: protectedProcedure
+	create: superAdminProcedure
 		.input(
 			z.object({
 				projectId: z.string(),
@@ -133,7 +133,7 @@ export const webhooksRouter = router({
 			return results;
 		}),
 
-	delete: protectedProcedure
+	delete: superAdminProcedure
 		.input(
 			z.object({
 				projectId: z.string(),

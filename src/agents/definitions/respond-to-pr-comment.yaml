@@ -4,28 +4,62 @@ identity:
   roleHint: Reads a PR comment and takes action
   initialMessage: "**\U0001F4AC Responding to PR comment** — Reading your comment and taking action..."
 
-capabilities:
-  canEditFiles: true
-  canCreatePR: false
-  canUpdateChecklists: false
-  isReadOnly: false
+# Explicit integration requirements.
+integrations:
+  required: [scm]
+  optional: [pm]
 
-tools:
-  sets: [github_review, session]
-  sdkTools: all
+# Can edit files and interact with PR comments, optional PM for status updates.
+capabilities:
+  required:
+    - fs:read
+    - fs:write
+    - shell:exec
+    - session:ctrl
+    - scm:read
+    - scm:comment
+  optional:
+    - pm:read
+    - pm:write
+
+# Supported triggers for this agent
+triggers:
+  - event: scm:pr-comment-mention
+    label: PR Comment @mention
+    description: Trigger when the implementer bot is @mentioned in a PR comment
+    defaultEnabled: true
+    providers: [github]
+    contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
 
 strategies:
-  contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
-  taskPromptBuilder: prCommentResponse
-  gadgetBuilder: prAgent
-  gadgetBuilderOptions:
+  gadgetOptions:
     includeReviewComments: true
 
-backend:
-  enableStopHooks: true
-  needsGitHubToken: true
-  blockGitPush: false
+prompts:
+  taskPrompt: |
+    You are on the branch `<%= it.prBranch %>` for PR #<%= it.prNumber %>.
 
-compaction: default
+    A user commented on this PR and mentioned you. Respond to their comment.
+    <% if (it.commentPath) { -%>
+    File: <%= it.commentPath %>
+    <% } -%>
+
+    Their comment:
+    ---
+    <%= it.commentBody %>
+    ---
+
+    Read the comment carefully and respond accordingly. If they ask for code changes, make the changes, commit, and push. If they ask a question, reply with a PR comment. Default to surgical, targeted changes unless they clearly ask for something broader.
+
+backend:
+  hooks:
+    scm:
+      enableStopHooks: true
+      blockGitPush: false
+      requiresPushedChanges: true
+
 
 hint: Complete the current task efficiently before moving to the next.
+
+trailingMessage:
+  includeDiagnostics: true

@@ -87,7 +87,7 @@ export async function createProject(
 	data: {
 		id: string;
 		name: string;
-		repo: string;
+		repo?: string;
 		baseBranch?: string;
 		branchPrefix?: string;
 		model?: string | null;
@@ -103,7 +103,7 @@ export async function createProject(
 			id: data.id,
 			orgId,
 			name: data.name,
-			repo: data.repo,
+			repo: data.repo ?? null,
 			baseBranch: data.baseBranch ?? 'main',
 			branchPrefix: data.branchPrefix ?? 'feature/',
 			model: data.model,
@@ -232,6 +232,24 @@ export async function deleteProjectIntegration(projectId: string, category: stri
 		);
 }
 
+export async function getAllProjectIdsWithEmailIntegration(): Promise<string[]> {
+	const db = getDb();
+	const rows = await db
+		.select({ projectId: projectIntegrations.projectId })
+		.from(projectIntegrations)
+		.where(eq(projectIntegrations.category, 'email'));
+	return rows.map((r) => r.projectId);
+}
+
+export async function getAllProjectIdsWithSmsIntegration(): Promise<string[]> {
+	const db = getDb();
+	const rows = await db
+		.select({ projectId: projectIntegrations.projectId })
+		.from(projectIntegrations)
+		.where(eq(projectIntegrations.category, 'sms'));
+	return rows.map((r) => r.projectId);
+}
+
 // ============================================================================
 // Integration Credentials
 // ============================================================================
@@ -311,7 +329,6 @@ export async function createAgentConfig(data: {
 	model?: string | null;
 	maxIterations?: number | null;
 	agentBackend?: string | null;
-	prompt?: string | null;
 }) {
 	const db = getDb();
 	const [row] = await db
@@ -323,7 +340,6 @@ export async function createAgentConfig(data: {
 			model: data.model,
 			maxIterations: data.maxIterations,
 			agentBackend: data.agentBackend,
-			prompt: data.prompt,
 		})
 		.returning({ id: agentConfigs.id });
 	return row;
@@ -336,7 +352,6 @@ export async function updateAgentConfig(
 		model?: string | null;
 		maxIterations?: number | null;
 		agentBackend?: string | null;
-		prompt?: string | null;
 	},
 ) {
 	const db = getDb();

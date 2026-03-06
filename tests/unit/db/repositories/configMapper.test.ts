@@ -89,11 +89,10 @@ describe('buildAgentMaps', () => {
 		const result = buildAgentMaps([]);
 		expect(result.models).toEqual({});
 		expect(result.iterations).toEqual({});
-		expect(result.prompts).toEqual({});
 		expect(result.backends).toEqual({});
 	});
 
-	it('maps model, iterations, prompt, and backend for each agent type', () => {
+	it('maps model, iterations, and backend for each agent type', () => {
 		const configs: AgentConfigRow[] = [
 			{
 				orgId: null,
@@ -102,7 +101,6 @@ describe('buildAgentMaps', () => {
 				model: 'claude-3-7-sonnet',
 				maxIterations: 30,
 				agentBackend: 'claude-code',
-				prompt: 'Write clean code',
 			},
 			{
 				orgId: null,
@@ -111,14 +109,12 @@ describe('buildAgentMaps', () => {
 				model: 'claude-3-opus',
 				maxIterations: null,
 				agentBackend: null,
-				prompt: null,
 			},
 		];
 
 		const result = buildAgentMaps(configs);
 		expect(result.models).toEqual({ implementation: 'claude-3-7-sonnet', review: 'claude-3-opus' });
 		expect(result.iterations).toEqual({ implementation: 30 });
-		expect(result.prompts).toEqual({ implementation: 'Write clean code' });
 		expect(result.backends).toEqual({ implementation: 'claude-code' });
 	});
 
@@ -131,14 +127,12 @@ describe('buildAgentMaps', () => {
 				model: null,
 				maxIterations: null,
 				agentBackend: null,
-				prompt: null,
 			},
 		];
 
 		const result = buildAgentMaps(configs);
 		expect(Object.keys(result.models)).toHaveLength(0);
 		expect(Object.keys(result.iterations)).toHaveLength(0);
-		expect(Object.keys(result.prompts)).toHaveLength(0);
 		expect(Object.keys(result.backends)).toHaveLength(0);
 	});
 });
@@ -194,7 +188,6 @@ describe('mapDefaultsRow', () => {
 				model: 'review-model',
 				maxIterations: 20,
 				agentBackend: null,
-				prompt: null,
 			},
 		];
 		const result = mapDefaultsRow(defaultsRow, agentConfigs);
@@ -360,7 +353,6 @@ describe('mapProjectRow', () => {
 				model: 'impl-model',
 				maxIterations: null,
 				agentBackend: 'claude-code',
-				prompt: null,
 			},
 		];
 		const result = mapProjectRow(makeInput({ projectAgentConfigs: agentConfigs }));
@@ -379,7 +371,7 @@ describe('mapProjectRow', () => {
 		expect(result.squintDbUrl).toBe('file://.squint.db');
 	});
 
-	it('includes prompts from agent configs', () => {
+	it('does not include prompts field (prompts are now in agent definitions)', () => {
 		const agentConfigs: AgentConfigRow[] = [
 			{
 				orgId: null,
@@ -388,10 +380,9 @@ describe('mapProjectRow', () => {
 				model: null,
 				maxIterations: null,
 				agentBackend: null,
-				prompt: 'Write clean code',
 			},
 		];
 		const result = mapProjectRow(makeInput({ projectAgentConfigs: agentConfigs }));
-		expect(result.prompts).toEqual({ implementation: 'Write clean code' });
+		expect(Object.hasOwn(result, 'prompts')).toBe(false);
 	});
 });

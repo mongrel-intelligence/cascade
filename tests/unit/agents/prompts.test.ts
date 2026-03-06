@@ -1,4 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+
+// Mock resolveKnownAgentTypes so validTypes is populated without DB
+vi.mock('../../../src/agents/definitions/index.js', () => ({
+	resolveKnownAgentTypes: vi
+		.fn()
+		.mockResolvedValue([
+			'splitting',
+			'planning',
+			'implementation',
+			'review',
+			'respond-to-review',
+			'respond-to-ci',
+			'respond-to-pr-comment',
+			'respond-to-planning-comment',
+			'debug',
+			'email-joke',
+		]),
+}));
+
 import {
 	getAvailablePartialNames,
 	getRawPartial,
@@ -6,10 +25,16 @@ import {
 	getSystemPrompt,
 	getTemplateVariables,
 	getValidAgentTypes,
+	initPrompts,
 	renderCustomPrompt,
 	resolveIncludes,
 	validateTemplate,
 } from '../../../src/agents/prompts/index.js';
+
+// Initialize prompts before tests so validTypes is populated
+beforeAll(async () => {
+	await initPrompts();
+});
 
 describe('getSystemPrompt', () => {
 	it('returns splitting prompt for splitting agent', () => {

@@ -196,11 +196,7 @@ export class ProgressMonitor implements ProgressReporter {
 				captureException(err instanceof Error ? err : new Error(String(err)), {
 					tags: { source: 'progress_model', agentType: this.config.agentType },
 				});
-				summary = formatStatusMessage(
-					progressContext.iteration,
-					progressContext.maxIterations,
-					this.config.agentType,
-				);
+				summary = formatStatusMessage(this.config.agentType);
 			}
 
 			// Post to PM provider (Trello/JIRA)
@@ -217,12 +213,7 @@ export class ProgressMonitor implements ProgressReporter {
 			// Post to GitHub
 			if (this.githubPoster) {
 				try {
-					await this.githubPoster.update(
-						summary,
-						progressContext.iteration,
-						progressContext.maxIterations,
-						this.config.agentType,
-					);
+					await this.githubPoster.update(summary, this.config.agentType);
 				} catch (err) {
 					this.config.logWriter('WARN', 'Failed to update GitHub PR comment', {
 						error: String(err),

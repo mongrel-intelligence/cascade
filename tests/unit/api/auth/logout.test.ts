@@ -7,6 +7,7 @@ vi.mock('../../../../src/db/repositories/usersRepository.js', () => ({
 	deleteSession: (...args: unknown[]) => mockDeleteSession(...args),
 }));
 
+import { SESSION_COOKIE_NAME } from '../../../../src/api/auth/cookie.js';
 import { logoutHandler } from '../../../../src/api/auth/logout.js';
 
 function createTestApp() {
@@ -22,7 +23,7 @@ describe('logoutHandler', () => {
 
 		const res = await app.request('/api/auth/logout', {
 			method: 'POST',
-			headers: { Cookie: 'cascade_session=abc123' },
+			headers: { Cookie: `${SESSION_COOKIE_NAME}=abc123` },
 		});
 
 		expect(res.status).toBe(200);
@@ -33,7 +34,7 @@ describe('logoutHandler', () => {
 
 		// Cookie should be cleared
 		const cookie = res.headers.get('set-cookie');
-		expect(cookie).toContain('cascade_session=');
+		expect(cookie).toContain(`${SESSION_COOKIE_NAME}=`);
 	});
 
 	it('returns ok even when no session cookie is present', async () => {

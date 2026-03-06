@@ -68,7 +68,7 @@ export const projectsRouter = router({
 					.min(1)
 					.regex(/^[a-z0-9-]+$/),
 				name: z.string().min(1),
-				repo: z.string().min(1),
+				repo: z.string().min(1).optional(),
 				baseBranch: z.string().optional(),
 				branchPrefix: z.string().optional(),
 				model: z.string().nullish(),
@@ -121,7 +121,7 @@ export const projectsRouter = router({
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm']),
+					category: z.enum(['pm', 'scm', 'email', 'sms']),
 					provider: z.string().min(1),
 					config: z.record(z.unknown()),
 					triggers: z.record(z.boolean()).optional(),
@@ -142,8 +142,8 @@ export const projectsRouter = router({
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm']),
-					triggers: z.record(z.union([z.boolean(), z.record(z.boolean())])),
+					category: z.enum(['pm', 'scm', 'email', 'sms']),
+					triggers: z.record(z.union([z.boolean(), z.string().nullable(), z.record(z.boolean())])),
 				}),
 			)
 			.mutation(async ({ ctx, input }) => {
@@ -152,7 +152,7 @@ export const projectsRouter = router({
 			}),
 
 		delete: protectedProcedure
-			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm']) }))
+			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm', 'email', 'sms']) }))
 			.mutation(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				await deleteProjectIntegration(input.projectId, input.category);
@@ -162,7 +162,7 @@ export const projectsRouter = router({
 	// Integration Credentials
 	integrationCredentials: router({
 		list: protectedProcedure
-			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm']) }))
+			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm', 'email', 'sms']) }))
 			.query(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				const integration = await getIntegrationByProjectAndCategory(
@@ -177,7 +177,7 @@ export const projectsRouter = router({
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm']),
+					category: z.enum(['pm', 'scm', 'email', 'sms']),
 					role: z.string().min(1),
 					credentialId: z.number(),
 				}),
@@ -202,7 +202,7 @@ export const projectsRouter = router({
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm']),
+					category: z.enum(['pm', 'scm', 'email', 'sms']),
 					role: z.string().min(1),
 				}),
 			)

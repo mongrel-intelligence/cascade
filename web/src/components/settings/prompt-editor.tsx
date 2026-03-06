@@ -4,187 +4,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-type EditTarget = { type: 'template'; agentType: string } | { type: 'partial'; name: string };
-
 interface PromptEditorProps {
-	target: EditTarget;
+	target: { name: string };
 	onClose: () => void;
 }
 
 export function PromptEditor({ target, onClose }: PromptEditorProps) {
-	if (target.type === 'template') {
-		return <TemplateEditor agentType={target.agentType} onClose={onClose} />;
-	}
 	return <PartialEditor name={target.name} onClose={onClose} />;
-}
-
-function TemplateEditor({ agentType, onClose }: { agentType: string; onClose: () => void }) {
-	const queryClient = useQueryClient();
-	const [content, setContent] = useState('');
-	const [validationStatus, setValidationStatus] = useState<string | null>(null);
-	const [isDirty, setIsDirty] = useState(false);
-
-	// Fetch current custom prompt (if any) from agent configs
-	const configsQuery = useQuery(trpc.agentConfigs.list.queryOptions());
-	const defaultQuery = useQuery(trpc.prompts.getDefault.queryOptions({ agentType }));
-	const variablesQuery = useQuery(trpc.prompts.variables.queryOptions());
-	const partialsQuery = useQuery(trpc.prompts.listPartials.queryOptions());
-
-	const configs = (configsQuery.data ?? []) as Array<{
-		id: number;
-		agentType: string;
-		prompt: string | null;
-		orgId: string | null;
-		projectId: string | null;
-	}>;
-
-	const existingConfig = configs.find((c) => c.agentType === agentType && c.projectId === null);
-	const hasCustom = !!existingConfig?.prompt;
-
-	useEffect(() => {
-		if (existingConfig?.prompt) {
-			setContent(existingConfig.prompt);
-		} else if (defaultQuery.data) {
-			setContent(defaultQuery.data.content);
-		}
-	}, [existingConfig?.prompt, defaultQuery.data]);
-
-	const saveMutation = useMutation({
-		mutationFn: async () => {
-			if (existingConfig) {
-				await trpcClient.agentConfigs.update.mutate({
-					id: existingConfig.id,
-					prompt: content,
-				});
-			} else {
-				await trpcClient.agentConfigs.create.mutate({
-					agentType,
-					prompt: content,
-				});
-			}
-		},
-		onSuccess: () => {
-			queryClient.invalidateQueries({
-				queryKey: trpc.agentConfigs.list.queryOptions().queryKey,
-			});
-			setIsDirty(false);
-			setValidationStatus('Saved.');
-		},
-	});
-
-	const resetMutation = useMutation({
-		mutationFn: async () => {
-			if (existingConfig) {
-				await trpcClient.agentConfigs.update.mutate({
-					id: existingConfig.id,
-					prompt: null,
-				});
-			}
-		},
-		onSuccess: () => {
-			queryClient.invalidateQueries({
-				queryKey: trpc.agentConfigs.list.queryOptions().queryKey,
-			});
-			if (defaultQuery.data) {
-				setContent(defaultQuery.data.content);
-			}
-			setIsDirty(false);
-			setValidationStatus('Reset to default.');
-		},
-	});
-
-	const validateMutation = useMutation({
-		mutationFn: () => trpcClient.prompts.validate.mutate({ template: content }),
-		onSuccess: (result) => {
-			if (result.valid) {
-				setValidationStatus('Valid.');
-			} else {
-				setValidationStatus(`Invalid: ${result.error}`);
-			}
-		},
-	});
-
-	function loadDefault() {
-		if (defaultQuery.data) {
-			setContent(defaultQuery.data.content);
-			setIsDirty(true);
-		}
-	}
-
-	return (
-		<div className="space-y-4">
-			<div className="flex items-center justify-between">
-				<h2 className="text-xl font-bold">
-					Prompt: {agentType}
-					{hasCustom && <Badge className="ml-2">custom</Badge>}
-				</h2>
-				<div className="flex gap-2">
-					<button
-						type="button"
-						onClick={() => resetMutation.mutate()}
-						disabled={!hasCustom || resetMutation.isPending}
-						className="inline-flex h-9 items-center rounded-md border border-input px-4 text-sm hover:bg-accent disabled:opacity-50"
-					>
-						Reset to Default
-					</button>
-					<button
-						type="button"
-						onClick={() => saveMutation.mutate()}
-						disabled={saveMutation.isPending}
-						className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-					>
-						{saveMutation.isPending ? 'Saving...' : 'Save'}
-					</button>
-				</div>
-			</div>
-
-			<div className="grid grid-cols-3 gap-4">
-				<div className="col-span-2 space-y-2">
-					<textarea
-						value={content}
-						onChange={(e) => {
-							setContent(e.target.value);
-							setIsDirty(true);
-							setValidationStatus(null);
-						}}
-						className="w-full h-[600px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-ring"
-						spellCheck={false}
-					/>
-					<div className="flex items-center gap-4">
-						<button
-							type="button"
-							onClick={loadDefault}
-							className="text-sm text-muted-foreground hover:text-foreground"
-						>
-							Load Default
-						</button>
-						<button
-							type="button"
-							onClick={() => validateMutation.mutate()}
-							disabled={validateMutation.isPending}
-							className="text-sm text-muted-foreground hover:text-foreground"
-						>
-							Validate
-						</button>
-						{validationStatus && (
-							<span
-								className={`text-sm ${
-									validationStatus.startsWith('Invalid') ? 'text-destructive' : 'text-green-600'
-								}`}
-							>
-								{validationStatus}
-							</span>
-						)}
-						{saveMutation.isError && (
-							<span className="text-sm text-destructive">{saveMutation.error.message}</span>
-						)}
-					</div>
-				</div>
-
-				<ReferencePanel variables={variablesQuery.data} partials={partialsQuery.data} />
-			</div>
-		</div>
-	);
 }
 
 function PartialEditor({ name, onClose }: { name: string; onClose: () => void }) {
@@ -290,7 +116,9 @@ function PartialEditor({ name, onClose }: { name: string; onClose: () => void })
 				{validationStatus && (
 					<span
 						className={`text-sm ${
-							validationStatus.startsWith('Invalid') ? 'text-destructive' : 'text-green-600'
+							validationStatus.startsWith('Invalid')
+								? 'text-destructive'
+								: 'text-green-600 dark:text-green-400'
 						}`}
 					>
 						{validationStatus}
@@ -304,7 +132,7 @@ function PartialEditor({ name, onClose }: { name: string; onClose: () => void })
 	);
 }
 
-function ReferencePanel({
+export function ReferencePanel({
 	variables,
 	partials,
 }: {
@@ -348,8 +176,9 @@ function ReferencePanel({
 									{group}
 								</div>
 								{vars?.map((v) => (
-									<div key={v.name} className="flex justify-between gap-2 py-0.5">
+									<div key={v.name} className="py-1">
 										<code className="text-xs bg-muted px-1 rounded">{`<%= it.${v.name} %>`}</code>
+										<p className="text-xs text-muted-foreground mt-0.5">{v.description}</p>
 									</div>
 								))}
 							</div>

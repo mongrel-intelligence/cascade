@@ -7,7 +7,7 @@ const PRUNE_EVERY_N_INSERTS = 100;
 let insertCount = 0;
 
 export interface WebhookLogInput {
-	source: 'trello' | 'github' | 'jira';
+	source: string;
 	method: string;
 	path: string;
 	headers?: Record<string, string>;

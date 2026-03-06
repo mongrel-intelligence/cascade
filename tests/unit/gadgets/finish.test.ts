@@ -28,15 +28,15 @@ describe('Finish gadget', () => {
 		expect(gadget.exclusive).toBe(true);
 	});
 
-	it('throws TaskCompletionSignal when no agent type is set', async () => {
+	it('throws TaskCompletionSignal when no hooks are set', async () => {
 		initSessionState('unknown');
 		const gadget = new Finish();
 		await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(TaskCompletionSignal);
 	});
 
-	describe('implementation agent', () => {
+	describe('implementation agent (hooks.requiresPR: true)', () => {
 		beforeEach(() => {
-			initSessionState('implementation');
+			initSessionState('implementation', undefined, undefined, undefined, { requiresPR: true });
 		});
 
 		it('rejects finish without PR creation and no PR on branch', async () => {
@@ -49,7 +49,7 @@ describe('Finish gadget', () => {
 
 			const gadget = new Finish();
 			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(
-				'Cannot finish implementation session without creating a PR',
+				'Cannot finish session without creating a PR',
 			);
 		});
 
@@ -82,14 +82,16 @@ describe('Finish gadget', () => {
 
 			const gadget = new Finish();
 			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(
-				'Cannot finish implementation session without creating a PR',
+				'Cannot finish session without creating a PR',
 			);
 		});
 	});
 
-	describe('respond-to-ci agent', () => {
+	describe('respond-to-ci agent (hooks.requiresPushedChanges: true)', () => {
 		beforeEach(() => {
-			initSessionState('respond-to-ci');
+			initSessionState('respond-to-ci', undefined, undefined, undefined, {
+				requiresPushedChanges: true,
+			});
 		});
 
 		it('rejects finish with uncommitted changes', async () => {
@@ -100,7 +102,7 @@ describe('Finish gadget', () => {
 
 			const gadget = new Finish();
 			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(
-				'Cannot finish respond-to-ci session with uncommitted changes',
+				'Cannot finish session with uncommitted changes',
 			);
 		});
 
@@ -113,7 +115,7 @@ describe('Finish gadget', () => {
 
 			const gadget = new Finish();
 			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(
-				'Cannot finish respond-to-ci session without pushing changes',
+				'Cannot finish session without pushing changes',
 			);
 		});
 
@@ -129,15 +131,15 @@ describe('Finish gadget', () => {
 		});
 	});
 
-	describe('review agent', () => {
+	describe('review agent (hooks.requiresReview: true)', () => {
 		beforeEach(() => {
-			initSessionState('review');
+			initSessionState('review', undefined, undefined, undefined, { requiresReview: true });
 		});
 
 		it('rejects finish without submitting a review', async () => {
 			const gadget = new Finish();
 			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(
-				'Cannot finish review session without submitting a review',
+				'Cannot finish session without submitting a review',
 			);
 		});
 

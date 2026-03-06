@@ -3,139 +3,14 @@
  *
  * JIRA Cloud's REST API v3 uses ADF for rich text fields.
  * These helpers convert between markdown and ADF.
+ *
+ * markdownToAdf: delegates to the `marklassian` library which handles
+ * tables, links, strikethrough, blockquotes, task lists, and more.
+ *
+ * adfToPlainText: custom reverse converter (ADF → plain text / markdown).
  */
 
-/**
- * Convert a simple markdown string to ADF document.
- * Handles paragraphs, headings, bullet lists, bold, inline code, and code blocks.
- */
-function parseCodeBlock(lines: string[], startIndex: number): { node: unknown; nextIndex: number } {
-	const lang = lines[startIndex].slice(3).trim();
-	const codeLines: string[] = [];
-	let i = startIndex + 1;
-	while (i < lines.length && !lines[i].startsWith('```')) {
-		codeLines.push(lines[i]);
-		i++;
-	}
-	return {
-		node: {
-			type: 'codeBlock',
-			attrs: lang ? { language: lang } : {},
-			content: [{ type: 'text', text: codeLines.join('\n') }],
-		},
-		nextIndex: i + 1, // skip closing ```
-	};
-}
-
-function parseBulletList(
-	lines: string[],
-	startIndex: number,
-): { node: unknown; nextIndex: number } {
-	const items: unknown[] = [];
-	let i = startIndex;
-	while (i < lines.length && lines[i].match(/^[-*]\s+/)) {
-		const itemText = lines[i].replace(/^[-*]\s+/, '');
-		items.push({
-			type: 'listItem',
-			content: [{ type: 'paragraph', content: inlineToAdf(itemText) }],
-		});
-		i++;
-	}
-	return { node: { type: 'bulletList', content: items }, nextIndex: i };
-}
-
-export function markdownToAdf(markdown: string): unknown {
-	const lines = markdown.split('\n');
-	const content: unknown[] = [];
-	let i = 0;
-
-	while (i < lines.length) {
-		const line = lines[i];
-
-		if (line.startsWith('```')) {
-			const result = parseCodeBlock(lines, i);
-			content.push(result.node);
-			i = result.nextIndex;
-			continue;
-		}
-
-		const headingMatch = line.match(/^(#{1,6})\s+(.+)/);
-		if (headingMatch) {
-			content.push({
-				type: 'heading',
-				attrs: { level: headingMatch[1].length },
-				content: inlineToAdf(headingMatch[2]),
-			});
-			i++;
-			continue;
-		}
-
-		if (line.match(/^[-*]\s+/)) {
-			const result = parseBulletList(lines, i);
-			content.push(result.node);
-			i = result.nextIndex;
-			continue;
-		}
-
-		if (line.trim() === '') {
-			i++;
-			continue;
-		}
-
-		content.push({
-			type: 'paragraph',
-			content: inlineToAdf(line),
-		});
-		i++;
-	}
-
-	return {
-		type: 'doc',
-		version: 1,
-		content: content.length > 0 ? content : [{ type: 'paragraph', content: [] }],
-	};
-}
-
-/**
- * Convert inline markdown to ADF inline nodes.
- */
-function inlineToAdf(text: string): unknown[] {
-	const nodes: unknown[] = [];
-	// Simple approach: handle **bold**, `code`, and plain text
-	const regex = /(\*\*(.+?)\*\*|`([^`]+)`)/g;
-	let lastIndex = 0;
-	let match: RegExpExecArray | null = regex.exec(text);
-
-	while (match !== null) {
-		// Add plain text before this match
-		if (match.index > lastIndex) {
-			nodes.push({ type: 'text', text: text.slice(lastIndex, match.index) });
-		}
-
-		if (match[2]) {
-			// Bold
-			nodes.push({ type: 'text', text: match[2], marks: [{ type: 'strong' }] });
-		} else if (match[3]) {
-			// Inline code
-			nodes.push({ type: 'text', text: match[3], marks: [{ type: 'code' }] });
-		}
-
-		lastIndex = match.index + match[0].length;
-		match = regex.exec(text);
-	}
-
-	// Add remaining plain text
-	if (lastIndex < text.length) {
-		nodes.push({ type: 'text', text: text.slice(lastIndex) });
-	}
-
-	// Fallback for empty
-	if (nodes.length === 0 && text) {
-		nodes.push({ type: 'text', text });
-	}
-
-	return nodes;
-}
+export { markdownToAdf } from 'marklassian';
 
 /**
  * Convert ADF document to plain text.
@@ -164,6 +39,27 @@ function convertAdfNode(n: AdfNode): string[] {
 			return ['```', adfToPlainText(n), '```', ''];
 		case 'text':
 			return [n.text ?? ''];
+		case 'table': {
+			const rows = (n.content ?? []) as AdfNode[];
+			const rowLines: string[] = [];
+			let headerSeparatorInserted = false;
+			for (const row of rows) {
+				const cells = (row.content ?? []) as AdfNode[];
+				const cellTexts = cells.map((cell) => adfToPlainText(cell).trim());
+				rowLines.push(`| ${cellTexts.join(' | ')} |`);
+				// Insert separator after the first row (header row)
+				if (!headerSeparatorInserted) {
+					rowLines.push(`| ${cells.map(() => '---').join(' | ')} |`);
+					headerSeparatorInserted = true;
+				}
+			}
+			return [...rowLines, ''];
+		}
+		case 'tableRow':
+			return [(n.content ?? []).map((cell) => adfToPlainText(cell)).join(' | ')];
+		case 'tableHeader':
+		case 'tableCell':
+			return [adfToPlainText(n)];
 		default:
 			return [adfToPlainText(n)];
 	}

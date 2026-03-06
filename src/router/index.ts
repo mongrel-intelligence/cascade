@@ -1,6 +1,11 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { captureException, flush, setTag } from '../sentry.js';
+// Bootstrap PM integrations before any adapters are loaded
+import '../pm/bootstrap.js';
+import { initPrompts } from '../agents/prompts/index.js';
+import { initAgentMessages } from '../config/agentMessages.js';
+import { seedAgentDefinitions } from '../db/seeds/seedAgentDefinitions.js';
 import {
 	createWebhookHandler,
 	parseGitHubPayload,
@@ -13,6 +18,8 @@ import { logger } from '../utils/logging.js';
 import { GitHubRouterAdapter, injectEventType } from './adapters/github.js';
 import { JiraRouterAdapter } from './adapters/jira.js';
 import { TrelloRouterAdapter } from './adapters/trello.js';
+import { handleTwilioWebhook } from './adapters/twilio.js';
+import { startEmailScheduler, stopEmailScheduler } from './email-scheduler.js';
 import { getQueueStats } from './queue.js';
 import { processRouterWebhook } from './webhook-processor.js';
 import {
@@ -120,10 +127,14 @@ app.post(
 	}),
 );
 
+// Twilio SMS webhook handler
+app.post('/twilio/webhook/:projectId', handleTwilioWebhook);
+
 // Graceful shutdown
 async function shutdown(signal: string): Promise<void> {
 	logger.info('Received shutdown signal', { signal });
 	await stopWorkerProcessor();
+	stopEmailScheduler();
 	await flush(3000);
 	process.exit(0);
 }
@@ -145,7 +156,16 @@ process.on('unhandledRejection', (reason) => {
 // Start server and worker processor
 async function startRouter(): Promise<void> {
 	const port = Number(process.env.PORT) || 3000;
+
+	// Seed built-in agent definitions to DB, then initialize in-memory caches
+	logger.info('Seeding agent definitions...');
+	await seedAgentDefinitions();
+	logger.info('Initializing agent messages...');
+	await initAgentMessages();
+	await initPrompts();
+
 	startWorkerProcessor();
+	startEmailScheduler();
 	logger.info('Starting router', { port });
 	serve({ fetch: app.fetch, port });
 }

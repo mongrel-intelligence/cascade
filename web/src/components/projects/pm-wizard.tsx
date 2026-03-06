@@ -1244,7 +1244,7 @@ export function PMWizard({
 						Verify Connection
 					</button>
 					{state.verificationResult && (
-						<div className="flex items-center gap-1.5 text-sm text-green-600">
+						<div className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
 							<CheckCircle className="h-4 w-4" />
 							Connected as <span className="font-medium">{state.verificationResult.display}</span>
 						</div>
@@ -1587,7 +1587,7 @@ export function PMWizard({
 									key={provider}
 									className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-900/20"
 								>
-									<AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+									<AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
 									<div className="flex-1 text-sm">
 										<span className="font-medium capitalize text-amber-700 dark:text-amber-400">
 											{provider}
@@ -1597,7 +1597,7 @@ export function PMWizard({
 									<button
 										type="button"
 										onClick={() => webhooksQuery.refetch()}
-										className="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-800 shrink-0"
+										className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 shrink-0"
 									>
 										<RefreshCw className="h-3 w-3" /> Retry
 									</button>
@@ -1618,7 +1618,7 @@ export function PMWizard({
 								>
 									<div className="flex items-center gap-2 text-sm">
 										<span
-											className={`inline-block h-2 w-2 rounded-full ${w.active ? 'bg-green-500' : 'bg-amber-500'}`}
+											className={`inline-block h-2 w-2 rounded-full ${w.active ? 'bg-green-500 dark:bg-green-400' : 'bg-amber-500 dark:bg-amber-400'}`}
 										/>
 										<span className="font-mono text-xs">{w.url}</span>
 									</div>
@@ -1638,7 +1638,7 @@ export function PMWizard({
 							))}
 						</div>
 					) : (
-						<div className="flex items-center gap-2 text-sm text-amber-600">
+						<div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
 							<AlertCircle className="h-4 w-4" />
 							No {state.provider === 'trello' ? 'Trello' : 'JIRA'} webhooks configured for this
 							project.
@@ -1665,7 +1665,7 @@ export function PMWizard({
 							<p className="text-sm text-destructive">{createWebhookMutation.error.message}</p>
 						)}
 						{createWebhookMutation.isSuccess && (
-							<p className="text-sm text-green-600">
+							<p className="text-sm text-green-600 dark:text-green-400">
 								{webhooksQuery.data?.errors &&
 								Object.values(webhooksQuery.data.errors).some((e) => e != null)
 									? 'Webhook created, but some providers failed to load — see warnings above.'
@@ -1829,7 +1829,9 @@ export function PMWizard({
 									: 'Save Integration'}
 						</button>
 						{saveMutation.isSuccess && (
-							<span className="text-sm text-green-600">Integration saved successfully.</span>
+							<span className="text-sm text-green-600 dark:text-green-400">
+								Integration saved successfully.
+							</span>
 						)}
 						{saveMutation.isError && (
 							<span className="text-sm text-destructive">{saveMutation.error.message}</span>

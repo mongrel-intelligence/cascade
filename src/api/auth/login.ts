@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import type { Context } from 'hono';
 import { setCookie } from 'hono/cookie';
 import { createSession, getUserByEmail } from '../../db/repositories/usersRepository.js';
+import { SESSION_COOKIE_NAME } from './cookie.js';
 
 const SESSION_EXPIRY_DAYS = 30;
 
@@ -29,7 +30,7 @@ export async function loginHandler(c: Context) {
 
 	const isProduction = process.env.NODE_ENV === 'production';
 	const cookieDomain = process.env.COOKIE_DOMAIN;
-	setCookie(c, 'cascade_session', token, {
+	setCookie(c, SESSION_COOKIE_NAME, token, {
 		httpOnly: true,
 		sameSite: 'Lax',
 		secure: isProduction,

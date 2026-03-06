@@ -1,3 +1,0 @@
-Review PR #<%= it.prNumber %>.
-
-Examine the code changes carefully and submit your review using CreatePRReview.

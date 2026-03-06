@@ -28,6 +28,7 @@ export default class Finish extends Command {
 			agentType: flags['agent-type'] ?? process.env.CASCADE_AGENT_TYPE ?? null,
 			prCreated: flags['pr-created'],
 			reviewSubmitted: flags['review-submitted'],
+			hooks: {},
 		});
 
 		if (!result.valid) {

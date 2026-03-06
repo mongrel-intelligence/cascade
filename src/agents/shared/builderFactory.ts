@@ -5,14 +5,14 @@ import {
 	type createLogger,
 } from 'llmist';
 
-import type { ProgressMonitor } from '../../backends/progressMonitor.js';
 import { getCompactionConfig } from '../../config/compactionConfig.js';
 import { getIterationTrailingMessage } from '../../config/hintConfig.js';
 import { getRateLimitForModel } from '../../config/rateLimits.js';
 import { getRetryConfig } from '../../config/retryConfig.js';
-import { initSessionState } from '../../gadgets/sessionState.js';
+import { type SessionHooks, initSessionState } from '../../gadgets/sessionState.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
 import { resolveSquintDbPath } from '../../utils/squintDb.js';
+import type { IProgressMonitor } from '../contracts/index.js';
 import { type AccumulatedLlmCall, createObserverHooks } from '../utils/hooks.js';
 import type { TrackingContext } from '../utils/tracking.js';
 
@@ -31,13 +31,11 @@ export interface CreateBuilderOptions {
 	repoDir: string;
 	gadgets: Parameters<typeof AgentBuilder.prototype.withGadgets>;
 	/** Optional progress monitor for time-based progress reporting */
-	progressMonitor?: ProgressMonitor;
+	progressMonitor?: IProgressMonitor;
 	/** Set to true to skip calling initSessionState (review agent doesn't use it) */
 	skipSessionState?: boolean;
 	/** Remaining card budget in USD — passed to llmist's withBudget() for in-flight enforcement */
 	remainingBudgetUsd?: number;
-	/** Post-configuration callback for agent-specific builder tweaks */
-	postConfigure?: (builder: BuilderType) => BuilderType;
 	/** Accumulator for per-call LLM metrics (for run tracking) */
 	llmCallAccumulator?: AccumulatedLlmCall[];
 	/** Run ID for real-time LLM call logging (resolved before builder creation) */
@@ -48,6 +46,8 @@ export interface CreateBuilderOptions {
 	projectId?: string;
 	/** Work item (card) ID for PR ↔ work item linking. Passed to session state. */
 	cardId?: string;
+	/** Resolved SCM hook flags for finish validation (requiresPR, requiresReview, etc.) */
+	hooks?: SessionHooks;
 }
 
 const MAX_GADGETS_PER_RESPONSE = 25;
@@ -56,7 +56,7 @@ export function isSquintEnabled(repoDir: string): boolean {
 	return resolveSquintDbPath(repoDir) !== null;
 }
 
-export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderType {
+export async function createConfiguredBuilder(options: CreateBuilderOptions): Promise<BuilderType> {
 	const {
 		client,
 		agentType,
@@ -71,13 +71,22 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 		progressMonitor,
 		skipSessionState,
 		remainingBudgetUsd,
-		postConfigure,
 	} = options;
 
 	// Initialize session state for gadgets (e.g., Finish checks PR requirement for implementation)
 	if (!skipSessionState) {
-		initSessionState(agentType, options.baseBranch, options.projectId, options.cardId);
+		initSessionState(
+			agentType,
+			options.baseBranch,
+			options.projectId,
+			options.cardId,
+			options.hooks,
+		);
 	}
+
+	// Resolve config values before building
+	const compactionConfig = getCompactionConfig();
+	const trailingMessage = await getIterationTrailingMessage(agentType);
 
 	let builder = new AgentBuilder(client)
 		.withModel(model)
@@ -87,8 +96,8 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 		.withLogger(llmistLogger)
 		.withRateLimits(getRateLimitForModel(model))
 		.withRetry(getRetryConfig(llmistLogger))
-		.withCompaction(getCompactionConfig(agentType))
-		.withTrailingMessage(getIterationTrailingMessage(agentType))
+		.withCompaction(compactionConfig)
+		.withTrailingMessage(trailingMessage)
 		.withTextOnlyHandler('acknowledge')
 		.withHooks({
 			observers: createObserverHooks({
@@ -116,9 +125,7 @@ export function createConfiguredBuilder(options: CreateBuilderOptions): BuilderT
 		}
 	}
 
-	if (postConfigure) {
-		builder = postConfigure(builder);
-	}
+	builder = builder.withGadgetExecutionMode('sequential');
 
 	return builder;
 }

@@ -7,10 +7,8 @@
  * ack comment management) is delegated to the PMIntegration interface.
  */
 
-import { withGitHubToken } from '../github/client.js';
-import { getPersonaToken } from '../github/personas.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
-import { runAgentExecutionPipeline } from '../triggers/shared/agent-execution.js';
+import { runAgentWithCredentials } from '../triggers/shared/webhook-execution.js';
 import { processNextQueuedWebhook } from '../triggers/shared/webhook-queue.js';
 import type { TriggerResult } from '../triggers/types.js';
 import type {
@@ -30,7 +28,6 @@ import {
 	setProcessing,
 	startWatchdog,
 } from '../utils/index.js';
-import { injectLlmApiKeys } from '../utils/llmEnv.js';
 import { getPMProvider, withPMProvider } from './context.js';
 import type { PMIntegration } from './integration.js';
 import { PMLifecycleManager, resolveProjectPMConfig } from './lifecycle.js';
@@ -46,21 +43,10 @@ async function executeAgent(
 	project: ProjectConfig,
 	config: CascadeConfig,
 ): Promise<void> {
-	if (!result.agentType) return;
-	const githubToken = await getPersonaToken(project.id, result.agentType);
-	const restoreLlmEnv = await injectLlmApiKeys(project.id);
-
-	try {
-		await integration.withCredentials(project.id, () =>
-			withGitHubToken(githubToken, () =>
-				runAgentExecutionPipeline(result, project, config, {
-					logLabel: `${integration.type} agent`,
-				}),
-			),
-		);
-	} finally {
-		restoreLlmEnv();
-	}
+	// Allow integrations to provide source-specific AgentExecutionConfig overrides
+	// (e.g. GitHubWebhookIntegration skips PM lifecycle steps).
+	const executionConfig = integration.resolveExecutionConfig?.();
+	await runAgentWithCredentials(integration, result, project, config, executionConfig);
 }
 
 // ============================================================================

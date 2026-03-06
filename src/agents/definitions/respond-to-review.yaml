@@ -4,29 +4,58 @@ identity:
   roleHint: Addresses code review feedback by making requested changes
   initialMessage: "**\U0001F527 Addressing review feedback** — Making the requested changes from the code review..."
 
-capabilities:
-  canEditFiles: false
-  canCreatePR: false
-  canUpdateChecklists: false
-  isReadOnly: true
+# Explicit integration requirements.
+integrations:
+  required: [scm]
+  optional: [pm]
 
-tools:
-  sets: [github_review, session]
-  sdkTools: all
+# Can edit files to address review feedback, interact with PR comments.
+# Optional PM for status updates if configured.
+capabilities:
+  required:
+    - fs:read
+    - fs:write
+    - shell:exec
+    - session:ctrl
+    - scm:read
+    - scm:comment
+  optional:
+    - pm:read
+    - pm:write
+
+# Supported triggers for this agent
+triggers:
+  - event: scm:pr-review-submitted
+    label: PR Review Submitted
+    description: Trigger when a review with changes requested is submitted
+    defaultEnabled: true
+    providers: [github]
+    contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
 
 strategies:
-  contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
-  taskPromptBuilder: prCommentResponse
-  gadgetBuilder: prAgent
-  gadgetBuilderOptions:
+  gadgetOptions:
     includeReviewComments: true
 
-backend:
-  enableStopHooks: true
-  needsGitHubToken: true
-  blockGitPush: false
+prompts:
+  taskPrompt: |
+    You are on the branch `<%= it.prBranch %>` for PR #<%= it.prNumber %>.
 
-compaction: default
+    A reviewer has submitted feedback requesting changes. Address the review comments by making the necessary code changes.
+
+    Review feedback:
+    ---
+    <%= it.commentBody %>
+    ---
+
+    Carefully read each review comment and make the requested changes. Commit and push your changes when done. Use the ReplyToReviewComment tool to respond to individual review comments as you address them. Focus on surgical, targeted fixes unless the reviewer clearly asks for broader changes.
+
+backend:
+  hooks:
+    scm:
+      enableStopHooks: true
+      blockGitPush: false
+      requiresPushedChanges: true
+
 
 hint: Address the current review comment fully before moving to the next. Batch related file edits together.
 

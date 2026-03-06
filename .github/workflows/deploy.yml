@@ -65,6 +65,13 @@ jobs:
             cascade-migrator:latest \
             ./node_modules/.bin/drizzle-kit migrate
 
+      - name: Run trigger config migration
+        run: |
+          docker run --rm \
+            -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            cascade-migrator:latest \
+            npx tsx tools/migrate-triggers.ts
+
       - name: Pull latest worker image
         run: docker pull ${{ env.WORKER_IMAGE }}:latest
 

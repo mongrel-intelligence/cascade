@@ -4,28 +4,49 @@ identity:
   roleHint: Analyzes failed CI checks and works on a fix
   initialMessage: "**\U0001F527 Fixing CI failures** — Analyzing the failed checks and working on a fix..."
 
+# Explicit integration requirements.
+integrations:
+  required: [scm]
+  optional: [pm]
+
+# Can edit files and read SCM, optional PM for status updates.
 capabilities:
-  canEditFiles: true
-  canCreatePR: false
-  canUpdateChecklists: true
-  isReadOnly: false
+  required:
+    - fs:read
+    - fs:write
+    - shell:exec
+    - session:ctrl
+    - scm:read
+    - scm:comment
+  optional:
+    - pm:read
+    - pm:write
+    - pm:checklist
 
-tools:
-  sets: [github_ci, pm, pm_checklist, session]
-  sdkTools: all
+# Supported triggers for this agent
+triggers:
+  - event: scm:check-suite-failure
+    label: Check Suite Failure
+    description: Trigger when CI checks fail
+    defaultEnabled: true
+    providers: [github]
+    contextPipeline: [prContext, directoryListing, contextFiles, squint, workItem]
 
-strategies:
-  contextPipeline: [prContext, directoryListing, contextFiles, squint, workItem]
-  taskPromptBuilder: ci
-  gadgetBuilder: prAgent
+strategies: {}
+
+prompts:
+  taskPrompt: |
+    You are on the branch `<%= it.prBranch %>` for PR #<%= it.prNumber %>.
+
+    CI checks have failed. Analyze the failures and fix them.
 
 backend:
-  enableStopHooks: true
-  needsGitHubToken: true
-  blockGitPush: false
-  preExecute: postInitialPRComment
+  hooks:
+    scm:
+      enableStopHooks: true
+      blockGitPush: false
+      requiresPushedChanges: true
 
-compaction: default
 
 hint: Fix CI failures with minimal, focused changes. Batch related file edits together.
 

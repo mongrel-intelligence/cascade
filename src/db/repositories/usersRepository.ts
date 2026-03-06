@@ -7,7 +7,7 @@ export interface DashboardUser {
 	orgId: string;
 	email: string;
 	name: string;
-	role: string;
+	role: 'member' | 'admin' | 'superadmin';
 }
 
 export async function getUserByEmail(email: string) {
@@ -15,6 +15,8 @@ export async function getUserByEmail(email: string) {
 	const [row] = await db.select().from(users).where(eq(users.email, email));
 	return row ?? null;
 }
+
+const VALID_ROLES = new Set<DashboardUser['role']>(['member', 'admin', 'superadmin']);
 
 export async function getUserById(id: string): Promise<DashboardUser | null> {
 	const db = getDb();
@@ -28,7 +30,11 @@ export async function getUserById(id: string): Promise<DashboardUser | null> {
 		})
 		.from(users)
 		.where(eq(users.id, id));
-	return row ?? null;
+	if (!row) return null;
+	if (!VALID_ROLES.has(row.role as DashboardUser['role'])) {
+		throw new Error(`Unexpected user role: ${row.role}`);
+	}
+	return row as DashboardUser;
 }
 
 export async function createSession(

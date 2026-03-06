@@ -4,28 +4,62 @@ identity:
   roleHint: Writes code, runs tests, and prepares a pull request
   initialMessage: "**\U0001F680 Implementing changes** — Writing code, running tests, and preparing a PR..."
 
+# Explicit integration requirements.
+integrations:
+  required: [pm, scm]
+  optional: []
+
+# Capabilities define what the agent can do.
+# Integrations and tools are DERIVED from these capabilities.
 capabilities:
-  canEditFiles: true
-  canCreatePR: true
-  canUpdateChecklists: true
-  isReadOnly: false
+  required:
+    - fs:read
+    - fs:write
+    - shell:exec
+    - session:ctrl
+    - pm:read
+    - pm:write
+    - pm:checklist
+    - scm:pr
+  optional: []
 
-tools:
-  sets: [pm, pm_checklist, session]
-  sdkTools: all
+# Supported triggers for this agent
+triggers:
+  - event: pm:status-changed
+    label: Status Changed to Todo
+    description: Trigger when work item status changes to Todo
+    defaultEnabled: true
+    parameters:
+      - name: targetStatus
+        type: select
+        label: Target Status
+        options: [todo]
+        defaultValue: todo
+    contextPipeline: [directoryListing, contextFiles, squint, workItem]
+  - event: pm:label-added
+    label: Ready to Process Label
+    description: Trigger when Ready to Process label added to a card in the Todo list
+    defaultEnabled: true
+    parameters:
+      - name: listKey
+        type: select
+        label: Target List
+        options: [todo]
+        defaultValue: todo
+    contextPipeline: [directoryListing, contextFiles, squint, workItem]
 
-strategies:
-  contextPipeline: [directoryListing, contextFiles, squint, workItem]
-  taskPromptBuilder: workItem
-  gadgetBuilder: workItem
+strategies: {}
+
+prompts:
+  taskPrompt: |
+    Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.
 
 backend:
-  enableStopHooks: true
-  needsGitHubToken: true
-  requiresPR: true
-  postConfigure: sequentialGadgetExecution
+  hooks:
+    scm:
+      enableStopHooks: true
+      requiresPR: true
 
-compaction: implementation
 
 hint: >-
   Complete the current todo in as few iterations as possible. Batch related

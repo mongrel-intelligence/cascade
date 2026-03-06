@@ -9,6 +9,10 @@
  * provider-specific branching.
  */
 
+import { PROVIDER_CREDENTIAL_ROLES } from '../config/integrationRoles.js';
+import { getIntegrationCredentialOrNull } from '../config/provider.js';
+import { getIntegrationProvider } from '../db/repositories/credentialsRepository.js';
+import type { AgentExecutionConfig } from '../triggers/shared/agent-execution.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 import type { ProjectPMConfig } from './lifecycle.js';
 import type { PMProvider } from './types.js';
@@ -43,6 +47,12 @@ export interface PMIntegration {
 	/** Extract normalized lifecycle config (labels, statuses) from provider-specific config */
 	resolveLifecycleConfig(project: ProjectConfig): ProjectPMConfig;
 
+	/**
+	 * Optional: Provide source-specific AgentExecutionConfig overrides.
+	 * Used by GitHub to skip PM lifecycle steps (since GitHub agents are PR-based, not card-based).
+	 */
+	resolveExecutionConfig?(): AgentExecutionConfig;
+
 	// --- Webhook processing ---
 	/** Parse a raw webhook body into a normalized event, or null if irrelevant */
 	parseWebhookPayload(raw: unknown): PMWebhookEvent | null;
@@ -69,4 +79,28 @@ export interface PMIntegration {
 	// --- Work item ID extraction ---
 	/** Extract a work item ID from text (e.g. PR body). Returns null if not found. */
 	extractWorkItemId(text: string): string | null;
+}
+
+// ============================================================================
+// Integration check helpers
+// ============================================================================
+
+/**
+ * Check if PM integration is configured for a project.
+ * Returns true if a PM integration exists with all required credentials present.
+ *
+ * Uses the data-driven PROVIDER_CREDENTIAL_ROLES table so this function
+ * does not need to be updated when a new PM provider is added.
+ */
+export async function hasPmIntegration(projectId: string): Promise<boolean> {
+	const provider = await getIntegrationProvider(projectId, 'pm');
+	if (!provider) return false;
+
+	const roles = PROVIDER_CREDENTIAL_ROLES[provider as keyof typeof PROVIDER_CREDENTIAL_ROLES];
+	if (!roles) return false;
+
+	const values = await Promise.all(
+		roles.map((roleDef) => getIntegrationCredentialOrNull(projectId, 'pm', roleDef.role)),
+	);
+	return values.every((v) => v !== null);
 }

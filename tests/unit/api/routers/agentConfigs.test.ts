@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
-import { createMockUser } from '../../../helpers/factories.js';
+import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
 
 const mockListAgentConfigs = vi.fn();
 const mockCreateAgentConfig = vi.fn();
@@ -111,7 +111,6 @@ describe('agentConfigsRouter', () => {
 				model: 'claude-sonnet-4-5-20250929',
 				maxIterations: 25,
 				agentBackend: undefined,
-				prompt: undefined,
 			});
 			expect(result).toEqual({ id: 10 });
 		});
@@ -212,6 +211,27 @@ describe('agentConfigsRouter', () => {
 				code: 'UNAUTHORIZED',
 			});
 		});
+
+		it('throws FORBIDDEN when non-superadmin updates a global config', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ orgId: null, projectId: null }]);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(caller.update({ id: 10, model: 'x' })).rejects.toMatchObject({
+				code: 'FORBIDDEN',
+				message: 'Superadmin access required',
+			});
+		});
+
+		it('allows superadmin to update a global config', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ orgId: null, projectId: null }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const superAdmin = createMockSuperAdmin();
+			const caller = createCaller({ user: superAdmin, effectiveOrgId: superAdmin.orgId });
+
+			await caller.update({ id: 10, model: 'global-model' });
+
+			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(10, { model: 'global-model' });
+		});
 	});
 
 	describe('delete', () => {
@@ -259,6 +279,27 @@ describe('agentConfigsRouter', () => {
 			await expect(caller.delete({ id: 10 })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
+		});
+
+		it('throws FORBIDDEN when non-superadmin deletes a global config', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ orgId: null, projectId: null }]);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(caller.delete({ id: 10 })).rejects.toMatchObject({
+				code: 'FORBIDDEN',
+				message: 'Superadmin access required',
+			});
+		});
+
+		it('allows superadmin to delete a global config', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ orgId: null, projectId: null }]);
+			mockDeleteAgentConfig.mockResolvedValue(undefined);
+			const superAdmin = createMockSuperAdmin();
+			const caller = createCaller({ user: superAdmin, effectiveOrgId: superAdmin.orgId });
+
+			await caller.delete({ id: 10 });
+
+			expect(mockDeleteAgentConfig).toHaveBeenCalledWith(10);
 		});
 	});
 });
