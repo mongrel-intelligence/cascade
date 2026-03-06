@@ -11,8 +11,8 @@ import { type TrelloWebhookPayload, isTrelloWebhookPayload } from './types.js';
 interface StatusChangedConfig {
 	name: string;
 	description: string;
-	listKey: 'splitting' | 'planning' | 'todo';
-	agentType: 'splitting' | 'planning' | 'implementation';
+	listKey: 'splitting' | 'planning' | 'todo' | 'backlog';
+	agentType: 'splitting' | 'planning' | 'implementation' | 'backlog-manager';
 }
 
 function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler {
@@ -87,4 +87,11 @@ export const TrelloStatusChangedTodoTrigger = createStatusChangedTrigger({
 	description: 'Triggers implementation agent when card moved to TODO list',
 	listKey: 'todo',
 	agentType: 'implementation',
+});
+
+export const TrelloStatusChangedBacklogTrigger = createStatusChangedTrigger({
+	name: 'trello-status-changed-backlog',
+	description: 'Triggers backlog-manager agent when card moved to backlog list',
+	listKey: 'backlog',
+	agentType: 'backlog-manager',
 });

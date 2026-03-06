@@ -13,6 +13,7 @@ import { CONTEXT_STEP_REGISTRY } from '../../../../src/agents/definitions/strate
 import { getAgentCapabilities } from '../../../../src/agents/shared/capabilities.js';
 
 const ALL_AGENT_TYPES = [
+	'backlog-manager',
 	'debug',
 	'email-joke',
 	'implementation',
@@ -31,7 +32,7 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('getKnownAgentTypes', () => {
-		it('discovers all 10 agent types from YAML files', () => {
+		it('discovers all 11 agent types from YAML files', () => {
 			const types = getKnownAgentTypes();
 			expect(types).toEqual(ALL_AGENT_TYPES);
 		});
@@ -64,9 +65,9 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('loadAllAgentDefinitions', () => {
-		it('returns a map with all 10 agent types', () => {
+		it('returns a map with all 11 agent types', () => {
 			const all = loadAllAgentDefinitions();
-			expect(all.size).toBe(10);
+			expect(all.size).toBe(ALL_AGENT_TYPES.length);
 			for (const agentType of ALL_AGENT_TYPES) {
 				expect(all.has(agentType)).toBe(true);
 			}
@@ -243,6 +244,27 @@ describe('YAML agent definitions loader', () => {
 				const def = loadAgentDefinition(agentType);
 				expect(def.hint.length).toBeGreaterThan(0);
 			}
+		});
+
+		it('backlog-manager has pm:status-changed and scm:pr-merged triggers', () => {
+			const def = loadAgentDefinition('backlog-manager');
+			const statusChangedTrigger = def.triggers.find((t) => t.event === 'pm:status-changed');
+			const prMergedTrigger = def.triggers.find((t) => t.event === 'scm:pr-merged');
+			expect(statusChangedTrigger).toBeDefined();
+			expect(prMergedTrigger).toBeDefined();
+		});
+
+		it('backlog-manager triggers are defaultEnabled: false (opt-in)', () => {
+			const def = loadAgentDefinition('backlog-manager');
+			for (const trigger of def.triggers) {
+				expect(trigger.defaultEnabled).toBe(false);
+			}
+		});
+
+		it('backlog-manager requires only pm integration', () => {
+			const def = loadAgentDefinition('backlog-manager');
+			expect(def.integrations?.required).toContain('pm');
+			expect(def.integrations?.optional ?? []).not.toContain('scm');
 		});
 	});
 

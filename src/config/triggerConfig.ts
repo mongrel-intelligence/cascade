@@ -110,6 +110,11 @@ export const GitHubTriggerConfigSchema = z.object({
 	/** PR opened trigger. Default false (disabled until reviewed). */
 	prOpened: z.boolean().default(false),
 	/**
+	 * After a PR is merged, chain into the backlog-manager agent to pick the next card.
+	 * Default false (opt-in) for backward compatibility.
+	 */
+	prMergedBacklogManager: z.boolean().default(false),
+	/**
 	 * Structured review trigger config with three independent modes.
 	 * When present, takes precedence over the legacy `reviewRequested` / `checkSuiteSuccess` booleans.
 	 */
@@ -200,8 +205,13 @@ export function resolveReviewTriggerConfig(
 // Generic Helpers
 // ============================================================================
 
-/** Shape of a per-agent toggle object (splitting / planning / implementation). */
-type PerAgentObject = { splitting?: boolean; planning?: boolean; implementation?: boolean };
+/** Shape of a per-agent toggle object (splitting / planning / implementation / backlog-manager). */
+type PerAgentObject = {
+	splitting?: boolean;
+	planning?: boolean;
+	implementation?: boolean;
+	'backlog-manager'?: boolean;
+};
 
 /**
  * Generic resolver for per-agent toggles that can be:
@@ -222,6 +232,7 @@ export function resolvePerAgentToggle(
 	if (agentType === 'splitting') return value.splitting ?? true;
 	if (agentType === 'planning') return value.planning ?? true;
 	if (agentType === 'implementation') return value.implementation ?? true;
+	if (agentType === 'backlog-manager') return value['backlog-manager'] ?? true;
 	// Unknown agent type — default to enabled
 	return true;
 }
@@ -301,7 +312,7 @@ const TRELLO_NESTED_KEYS: string[] = ['readyToProcessLabel', 'statusChanged'];
 const JIRA_NESTED_KEYS: string[] = ['readyToProcessLabel', 'statusChanged', 'issueTransitioned'];
 
 /** Keys that are opt-in (default false) in the GitHub trigger config. */
-const GITHUB_OPT_IN_KEYS: string[] = ['reviewRequested', 'prOpened'];
+const GITHUB_OPT_IN_KEYS: string[] = ['reviewRequested', 'prOpened', 'prMergedBacklogManager'];
 
 /** Keys whose values may be non-boolean objects in the GitHub trigger config. */
 const GITHUB_OBJECT_KEYS: string[] = ['reviewTrigger'];
