@@ -112,6 +112,7 @@ describe('pm/lifecycle', () => {
 						readyToProcess: 'label-ready-id',
 					},
 					lists: {
+						backlog: 'list-backlog-id',
 						todo: 'list-todo-id',
 						inProgress: 'list-progress-id',
 						inReview: 'list-review-id',
@@ -131,6 +132,7 @@ describe('pm/lifecycle', () => {
 					readyToProcess: 'label-ready-id',
 				},
 				statuses: {
+					backlog: 'list-backlog-id',
 					inProgress: 'list-progress-id',
 					inReview: 'list-review-id',
 					done: 'list-done-id',
@@ -273,12 +275,80 @@ describe('pm/lifecycle', () => {
 					readyToProcess: undefined,
 				},
 				statuses: {
+					backlog: undefined,
 					inProgress: undefined,
 					inReview: undefined,
 					done: undefined,
 					merged: undefined,
 				},
 			});
+		});
+		it('resolves backlog status for Trello projects', () => {
+			const project: ProjectConfig = {
+				id: 'proj1',
+				orgId: 'org1',
+				name: 'Trello Project',
+				repo: 'owner/repo',
+				baseBranch: 'main',
+				branchPrefix: 'feature/',
+				pm: { type: 'trello' },
+				trello: {
+					boardId: 'board123',
+					labels: {},
+					lists: {
+						backlog: 'list-backlog-id',
+						todo: 'list-todo-id',
+					},
+				},
+			};
+
+			const config = resolveProjectPMConfig(project);
+
+			expect(config.statuses.backlog).toBe('list-backlog-id');
+		});
+
+		it('resolves backlog status for JIRA projects', () => {
+			const project: ProjectConfig = {
+				id: 'proj1',
+				orgId: 'org1',
+				name: 'JIRA Project',
+				repo: 'owner/repo',
+				baseBranch: 'main',
+				branchPrefix: 'feature/',
+				pm: { type: 'jira' },
+				jira: {
+					projectKey: 'PROJ',
+					statuses: {
+						backlog: 'Backlog',
+						inProgress: 'In Progress',
+					},
+				},
+			};
+
+			const config = resolveProjectPMConfig(project);
+
+			expect(config.statuses.backlog).toBe('Backlog');
+		});
+
+		it('returns undefined backlog for Trello projects without backlog configured', () => {
+			const project: ProjectConfig = {
+				id: 'proj1',
+				orgId: 'org1',
+				name: 'Trello Project',
+				repo: 'owner/repo',
+				baseBranch: 'main',
+				branchPrefix: 'feature/',
+				pm: { type: 'trello' },
+				trello: {
+					boardId: 'board123',
+					labels: {},
+					lists: { todo: 'list-todo-id' },
+				},
+			};
+
+			const config = resolveProjectPMConfig(project);
+
+			expect(config.statuses.backlog).toBeUndefined();
 		});
 	});
 

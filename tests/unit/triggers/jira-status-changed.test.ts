@@ -21,6 +21,7 @@ const mockProject = {
 	jira: {
 		projectKey: 'PROJ',
 		statuses: {
+			backlog: 'Backlog',
 			splitting: 'Splitting',
 			planning: 'Planning',
 			todo: 'To Do',
@@ -146,6 +147,18 @@ describe('JiraStatusChangedTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result?.agentType).toBe('splitting');
+		});
+
+		it('returns backlog-manager agent for Backlog transition', async () => {
+			const ctx = buildCtx({
+				statusChangeItems: [{ field: 'status', fromString: 'Done', toString: 'Backlog' }],
+			});
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('backlog-manager');
+			expect(result?.workItemId).toBe('PROJ-42');
 		});
 
 		it('returns null for unmapped status transitions', async () => {

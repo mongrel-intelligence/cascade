@@ -22,6 +22,7 @@ export interface ProjectPMConfig {
 		readyToProcess?: string;
 	};
 	statuses: {
+		backlog?: string;
 		inProgress?: string;
 		inReview?: string;
 		done?: string;
