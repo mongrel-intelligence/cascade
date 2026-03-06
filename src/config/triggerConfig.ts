@@ -15,6 +15,7 @@ export const ReadyToProcessLabelSchema = z
 			splitting: z.boolean().default(true),
 			planning: z.boolean().default(true),
 			implementation: z.boolean().default(true),
+			'backlog-manager': z.boolean().default(true),
 		}),
 	])
 	.optional();
@@ -32,6 +33,7 @@ export const StatusChangedSchema = z
 			splitting: z.boolean().default(true),
 			planning: z.boolean().default(true),
 			implementation: z.boolean().default(true),
+			'backlog-manager': z.boolean().default(true),
 		}),
 	])
 	.optional();
@@ -289,7 +291,7 @@ export function resolveTriggerEnabled(
 	if (nestedKeys.includes(key)) {
 		if (typeof value === 'boolean') return value;
 		const obj = value as PerAgentObject;
-		return !!(obj.splitting || obj.planning || obj.implementation);
+		return !!(obj.splitting || obj.planning || obj.implementation || obj['backlog-manager']);
 	}
 
 	// Object key (e.g. reviewTrigger) — non-boolean means the object is present/active
