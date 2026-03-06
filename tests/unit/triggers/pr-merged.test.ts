@@ -299,6 +299,130 @@ describe('PRMergedTrigger', () => {
 			});
 		});
 
+		it('chains to backlog-manager when prMergedBacklogManager is enabled', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 123,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'closed',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: true,
+			});
+			mockProvider.getWorkItem.mockResolvedValue({
+				id: 'abc123',
+				title: 'Card',
+				description: '',
+				url: '',
+				status: 'todo-list-id',
+				labels: [],
+			});
+
+			const projectWithBacklogManager = createMockProject({
+				trello: {
+					boardId: 'board123',
+					lists: {
+						splitting: 'splitting-list-id',
+						planning: 'planning-list-id',
+						todo: 'todo-list-id',
+						merged: 'merged-list-id',
+					},
+					labels: {},
+				},
+				github: {
+					triggers: { prMergedBacklogManager: true },
+				},
+			});
+
+			const ctx: TriggerContext = {
+				project: projectWithBacklogManager,
+				source: 'github',
+				payload: {
+					action: 'closed',
+					number: 123,
+					pull_request: {
+						number: 123,
+						body: 'https://trello.com/c/abc123/card-name',
+					},
+					repository: {
+						full_name: 'owner/repo',
+					},
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toEqual({
+				agentType: 'backlog-manager',
+				agentInput: {},
+				workItemId: 'abc123',
+				prNumber: 123,
+			});
+		});
+
+		it('returns agentType null when prMergedBacklogManager is explicitly disabled', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 123,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'closed',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: true,
+			});
+			mockProvider.getWorkItem.mockResolvedValue({
+				id: 'abc123',
+				title: 'Card',
+				description: '',
+				url: '',
+				status: 'todo-list-id',
+				labels: [],
+			});
+
+			const projectWithBacklogManagerDisabled = createMockProject({
+				trello: {
+					boardId: 'board123',
+					lists: {
+						splitting: 'splitting-list-id',
+						planning: 'planning-list-id',
+						todo: 'todo-list-id',
+						merged: 'merged-list-id',
+					},
+					labels: {},
+				},
+				github: {
+					triggers: { prMergedBacklogManager: false },
+				},
+			});
+
+			const ctx: TriggerContext = {
+				project: projectWithBacklogManagerDisabled,
+				source: 'github',
+				payload: {
+					action: 'closed',
+					number: 123,
+					pull_request: {
+						number: 123,
+						body: 'https://trello.com/c/abc123/card-name',
+					},
+					repository: {
+						full_name: 'owner/repo',
+					},
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toEqual({
+				agentType: null,
+				agentInput: {},
+				workItemId: 'abc123',
+				prNumber: 123,
+			});
+		});
+
 		it('returns null when merged list is not configured', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 123,
