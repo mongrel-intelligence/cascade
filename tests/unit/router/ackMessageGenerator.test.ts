@@ -384,6 +384,69 @@ describe('generateAckMessage', () => {
 		expect(process.env.OPENROUTER_API_KEY).toBe(originalKey);
 	});
 
+	it('passes role hint in user prompt for implementation agent', async () => {
+		setupHappyPath('🚀 Starting work on the dark mode feature');
+
+		await generateAckMessage('implementation', 'Card: Add dark mode support', 'p1');
+
+		const callArgs = mockTextComplete.mock.calls[0];
+		const userPrompt: string = callArgs[0];
+		expect(userPrompt).toContain('Agent type: implementation');
+		expect(userPrompt).toContain(
+			'Agent role: Writes code, runs tests, and prepares a pull request',
+		);
+		expect(userPrompt).toContain(
+			'Your message MUST reflect the "implementation" agent\'s role: "Writes code, runs tests, and prepares a pull request"',
+		);
+	});
+
+	it('passes role hint in user prompt for review agent', async () => {
+		setupHappyPath('🔍 Reviewing the PR changes');
+
+		await generateAckMessage('review', 'PR: feat: add dark mode', 'p1');
+
+		const callArgs = mockTextComplete.mock.calls[0];
+		const userPrompt: string = callArgs[0];
+		expect(userPrompt).toContain('Agent type: review');
+		expect(userPrompt).toContain(
+			'Agent role: Reviews pull request changes for quality and correctness',
+		);
+		expect(userPrompt).toContain(
+			'Your message MUST reflect the "review" agent\'s role: "Reviews pull request changes for quality and correctness"',
+		);
+	});
+
+	it('passes role hint in user prompt for splitting agent', async () => {
+		setupHappyPath('📋 Breaking down the tasks');
+
+		await generateAckMessage('splitting', 'Card: Split auth feature', 'p1');
+
+		const callArgs = mockTextComplete.mock.calls[0];
+		const userPrompt: string = callArgs[0];
+		expect(userPrompt).toContain('Agent type: splitting');
+		expect(userPrompt).toContain(
+			'Agent role: Breaks down a feature plan into smaller, ordered work items (subtasks)',
+		);
+		expect(userPrompt).toContain(
+			'Your message MUST reflect the "splitting" agent\'s role: "Breaks down a feature plan into smaller, ordered work items (subtasks)"',
+		);
+	});
+
+	it('system prompt includes role-categorized example phrases', async () => {
+		setupHappyPath('🚀 Getting to work on this');
+
+		await generateAckMessage('implementation', 'Card: Add feature', 'p1');
+
+		const callArgs = mockTextComplete.mock.calls[0];
+		const options = callArgs[1];
+		const systemPrompt: string = options.systemPrompt;
+		// Verify system prompt has role-category examples
+		expect(systemPrompt).toContain('Implementation agent');
+		expect(systemPrompt).toContain('Planning agent');
+		expect(systemPrompt).toContain('Review agent');
+		expect(systemPrompt).toContain("CRITICAL: Match the action verb to the agent's role");
+	});
+
 	it('falls back to static message on timeout', async () => {
 		vi.useFakeTimers();
 

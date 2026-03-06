@@ -18,7 +18,15 @@ import { logger } from '../utils/logging.js';
 // ---------------------------------------------------------------------------
 
 const ACK_SYSTEM_PROMPT = `You write brief, casual acknowledgment messages for an AI coding bot. The goal is to buy time — let the user know you've seen their request while work kicks off in the background.
-Keep it under 20 words. Start with a single relevant emoji. Be conversational and natural — like a friendly coworker responding in chat. Reference the specific topic from the context (e.g. "the chart library question", "that auth bug", "the dark mode feature"). Never say "Understood", "I will", or "I'll be working on". Use casual buying-time phrasing like "Just a moment, let me look into...", "On it — checking the...", "Give me a sec, pulling up...", "Looking into the... now", "Let me dig into...". No markdown formatting. No period at the end.`;
+Keep it under 20 words. Start with a single relevant emoji. Be conversational and natural — like a friendly coworker responding in chat. Reference the specific topic from the context (e.g. "the chart library question", "that auth bug", "the dark mode feature"). Never say "Understood", "I will", or "I'll be working on". No markdown formatting. No period at the end.
+
+CRITICAL: Match the action verb to the agent's role. Use role-appropriate phrasing:
+- Implementation agent: "On it — starting work on...", "Getting to work on...", "Building the...", "Coding up the..."
+- Planning agent: "Mapping out...", "Designing the plan for...", "Sketching out the approach for...", "Planning the..."
+- Review agent: "On it — checking the...", "Examining the...", "Looking over the...", "Reviewing the..."
+- Splitting agent: "Breaking down...", "Splitting up...", "Carving out the tasks for..."
+- Debug agent: "Digging into the logs for...", "Tracing the issue in...", "Investigating the..."
+- Feedback/respond agent: "Reading through the feedback on...", "Going through the comments on..."`;
 
 // ---------------------------------------------------------------------------
 // Context extractors — pull relevant snippets from webhook payloads
@@ -241,7 +249,7 @@ async function callAckModel(
 ): Promise<string> {
 	const client = new LLMist({ customModels: CUSTOM_MODELS as ModelSpec[] });
 	const roleHint = AGENT_ROLE_HINTS[agentType] ?? 'Processes the request';
-	const userPrompt = `Agent type: ${agentType}\nAgent role: ${roleHint}\n\nRequest context:\n${contextSnippet}`;
+	const userPrompt = `Agent type: ${agentType}\nAgent role: ${roleHint}\n\nYour message MUST reflect the "${agentType}" agent's role: "${roleHint}". Use action language appropriate for this specific role.\n\nRequest context:\n${contextSnippet}`;
 
 	const result = await client.text.complete(userPrompt, {
 		model,
