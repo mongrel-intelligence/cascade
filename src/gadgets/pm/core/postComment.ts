@@ -1,5 +1,6 @@
 import { clearProgressCommentId, readProgressCommentId } from '../../../backends/progressState.js';
 import { getPMProvider } from '../../../pm/index.js';
+import { logger } from '../../../utils/logging.js';
 
 export async function postComment(workItemId: string, text: string): Promise<string> {
 	try {
@@ -12,8 +13,13 @@ export async function postComment(workItemId: string, text: string): Promise<str
 				await provider.updateComment(workItemId, progressState.commentId, text);
 				clearProgressCommentId();
 				return 'Comment posted successfully';
-			} catch {
+			} catch (error) {
 				// Fall back to creating a new comment if update fails
+				logger.warn('Failed to update progress comment, creating new one', {
+					workItemId,
+					commentId: progressState.commentId,
+					error: error instanceof Error ? error.message : String(error),
+				});
 				clearProgressCommentId();
 			}
 		}
