@@ -1,5 +1,5 @@
 import { Gadget, z } from 'llmist';
-import { recordReviewSubmission } from '../sessionState.js';
+import { deleteInitialComment, recordReviewSubmission } from '../sessionState.js';
 import { formatGadgetError } from '../utils.js';
 import { createPRReview } from './core/createPRReview.js';
 
@@ -71,6 +71,9 @@ export class CreatePRReview extends Gadget({
 				comments: params.comments,
 			});
 			recordReviewSubmission(result.reviewUrl);
+			// Delete the stale ack/progress comment immediately after review submission.
+			// Best-effort: wrapped in deleteInitialComment's own try-catch.
+			await deleteInitialComment(params.owner, params.repo);
 			return `Review submitted successfully (${result.event}): ${result.reviewUrl}`;
 		} catch (error) {
 			const baseError = formatGadgetError('submitting review', error);

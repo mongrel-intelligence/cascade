@@ -38,9 +38,14 @@ export async function deleteProgressCommentOnSuccess(
 
 	const { getSessionState } = await import('../../gadgets/sessionState.js');
 	const { initialCommentId } = getSessionState();
-	if (!initialCommentId) return;
 
-	await safeOperation(() => githubClient.deletePRComment(owner, repo, initialCommentId), {
+	// Fall back to ackCommentId stored in agentInput if sessionState wasn't populated
+	const ackCommentId =
+		initialCommentId ?? (result.agentInput as { ackCommentId?: number }).ackCommentId ?? null;
+
+	if (!ackCommentId) return;
+
+	await safeOperation(() => githubClient.deletePRComment(owner, repo, ackCommentId), {
 		action: 'delete progress comment after agent success',
 		prNumber: result.prNumber,
 	});

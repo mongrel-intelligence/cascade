@@ -72,6 +72,29 @@ export function recordInitialComment(commentId: number): void {
 	sessionState.initialCommentId = commentId;
 }
 
+/**
+ * Delete the initial ack comment from the PR and clear it from session state.
+ *
+ * Called by gadgets (e.g. CreatePRReview) immediately after a significant event
+ * to clean up the stale ack/progress comment as soon as possible.
+ * Wrapped in a try-catch so failures don't propagate to the caller.
+ */
+export async function deleteInitialComment(owner: string, repo: string): Promise<void> {
+	const commentId = sessionState.initialCommentId;
+	if (!commentId) return;
+
+	// Clear state first so the post-agent callback sees null and short-circuits
+	sessionState.initialCommentId = null;
+
+	try {
+		const { githubClient } = await import('../github/client.js');
+		await githubClient.deletePRComment(owner, repo, commentId);
+	} catch {
+		// Best-effort: restore the id so post-agent callback can retry
+		sessionState.initialCommentId = commentId;
+	}
+}
+
 export function getSessionState() {
 	return { ...sessionState };
 }
