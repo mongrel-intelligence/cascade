@@ -16,6 +16,7 @@ export type ParseResult =
 export interface WebhookLogOverrides {
 	processed?: boolean;
 	projectId?: string;
+	decisionReason?: string;
 }
 
 /**

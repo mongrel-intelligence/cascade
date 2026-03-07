@@ -35,6 +35,11 @@ export default class WebhookLogsList extends DashboardCommand {
 				{ key: 'eventType', header: 'Event' },
 				{ key: 'statusCode', header: 'Status' },
 				{ key: 'processed', header: 'Processed', format: (v) => (v ? 'yes' : 'no') },
+				{
+					key: 'decisionReason',
+					header: 'Reason',
+					format: (v) => (v ? String(v).slice(0, 50) : '-'),
+				},
 				{ key: 'receivedAt', header: 'Time', format: formatDate },
 			]);
 		} catch (err) {

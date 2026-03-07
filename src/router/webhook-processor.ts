@@ -26,6 +26,8 @@ export interface ProcessRouterWebhookResult {
 	shouldProcess: boolean;
 	/** The resolved project identifier, if any. */
 	projectId?: string;
+	/** Human-readable explanation of why the event was processed or skipped. */
+	decisionReason?: string;
 }
 
 /**
@@ -53,13 +55,16 @@ export async function processRouterWebhook(
 	const event = await adapter.parseWebhook(payload);
 	if (!event) {
 		logger.debug(`Ignoring ${adapter.type} event (unparseable or not processable)`);
-		return { shouldProcess: false };
+		return { shouldProcess: false, decisionReason: 'Event unparseable or not processable' };
 	}
 
 	// Step 2: Filter
 	if (!adapter.isProcessableEvent(event)) {
 		logger.debug(`Ignoring ${adapter.type} event`, { eventType: event.eventType });
-		return { shouldProcess: false };
+		return {
+			shouldProcess: false,
+			decisionReason: `Event type not processable: ${event.eventType}`,
+		};
 	}
 
 	// Step 3: Self-authored check
@@ -68,7 +73,7 @@ export async function processRouterWebhook(
 			eventType: event.eventType,
 			projectIdentifier: event.projectIdentifier,
 		});
-		return { shouldProcess: true };
+		return { shouldProcess: true, decisionReason: 'Self-authored event (loop prevention)' };
 	}
 
 	// Step 4: Fire acknowledgment reaction (fire-and-forget)
@@ -80,7 +85,10 @@ export async function processRouterWebhook(
 		logger.info(`No project config found for ${adapter.type} event`, {
 			projectIdentifier: event.projectIdentifier,
 		});
-		return { shouldProcess: true };
+		return {
+			shouldProcess: true,
+			decisionReason: `No project config for identifier ${event.projectIdentifier ?? '(unknown)'}`,
+		};
 	}
 
 	// Step 6: Dispatch triggers with credential scope
@@ -99,7 +107,11 @@ export async function processRouterWebhook(
 			eventType: event.eventType,
 			workItemId: event.workItemId,
 		});
-		return { shouldProcess: true, projectId: project.id };
+		return {
+			shouldProcess: true,
+			projectId: project.id,
+			decisionReason: 'No trigger matched for event',
+		};
 	}
 
 	logger.info(`${adapter.type} trigger matched`, {
@@ -112,7 +124,11 @@ export async function processRouterWebhook(
 	// dispatch already performed PM operations — no job queuing needed
 	if (!result.agentType) {
 		logger.info('Trigger completed without agent (PM operation done)');
-		return { shouldProcess: true, projectId: project.id };
+		return {
+			shouldProcess: true,
+			projectId: project.id,
+			decisionReason: 'Trigger completed without agent (PM operation)',
+		};
 	}
 
 	// Step 7: Work-item concurrency lock
@@ -125,7 +141,11 @@ export async function processRouterWebhook(
 				agentType: result.agentType,
 				reason: lockStatus.reason,
 			});
-			return { shouldProcess: true, projectId: project.id };
+			return {
+				shouldProcess: true,
+				projectId: project.id,
+				decisionReason: `Work item locked: ${lockStatus.reason ?? 'active run exists'}`,
+			};
 		}
 	}
 
@@ -139,7 +159,11 @@ export async function processRouterWebhook(
 		);
 		agentTypeMaxConcurrency = concurrencyCheck.maxConcurrency;
 		if (concurrencyCheck.blocked) {
-			return { shouldProcess: true, projectId: project.id };
+			return {
+				shouldProcess: true,
+				projectId: project.id,
+				decisionReason: 'Agent type concurrency limit reached',
+			};
 		}
 	}
 
@@ -170,7 +194,11 @@ export async function processRouterWebhook(
 			eventType: event.eventType,
 			workItemId: event.workItemId,
 		});
-		return { shouldProcess: true, projectId: project.id };
+		return {
+			shouldProcess: true,
+			projectId: project.id,
+			decisionReason: 'Failed to enqueue job to Redis',
+		};
 	}
 
 	// Step 11: Post acknowledgment comment and patch ack info onto the enqueued job.
@@ -199,5 +227,9 @@ export async function processRouterWebhook(
 		}
 	}
 
-	return { shouldProcess: true, projectId: project.id };
+	return {
+		shouldProcess: true,
+		projectId: project.id,
+		decisionReason: `Job queued: ${result.agentType} agent for work item ${event.workItemId ?? '(unknown)'}`,
+	};
 }
