@@ -42,6 +42,4 @@ test-results/
 # Claude Code — commit settings.json but exclude local settings (may contain secrets)
 .claude/settings.local.json
 
-# Progress comment state file (ephemeral, written by ProgressMonitor)
-.cascade-progress-comment-id
 

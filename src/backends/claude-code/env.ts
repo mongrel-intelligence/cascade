@@ -27,6 +27,9 @@ export const ALLOWED_ENV_EXACT = new Set([
 	// Squint
 	'SQUINT_DB_PATH',
 
+	// Progress comment state (pre-seeded ack comment ID)
+	'CASCADE_PROGRESS_COMMENT_ID',
+
 	// Node
 	'NODE_PATH',
 	'NODE_EXTRA_CA_CERTS',

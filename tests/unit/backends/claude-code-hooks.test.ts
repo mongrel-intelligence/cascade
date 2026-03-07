@@ -223,40 +223,6 @@ describe('buildStopHooks', () => {
 		);
 	});
 
-	it('ignores .cascade-progress-comment-id in uncommitted changes', async () => {
-		mockExecSync.mockReturnValueOnce('?? .cascade-progress-comment-id');
-		mockExecSync.mockReturnValueOnce(''); // git log (no unpushed)
-
-		const logWriter = makeLogWriter();
-		const [matcher] = buildStopHooks(logWriter, '/tmp/repo');
-		const [hook] = matcher.hooks;
-
-		const result = await hook(makeStopInput(), undefined, { signal: AbortSignal.timeout(5000) });
-
-		expect(result).toEqual({ decision: 'approve' });
-		expect(logWriter).not.toHaveBeenCalledWith('WARN', expect.anything(), expect.anything());
-	});
-
-	it('still blocks when real changes exist alongside .cascade-progress-comment-id', async () => {
-		mockExecSync.mockReturnValueOnce('?? .cascade-progress-comment-id\n M src/index.ts');
-
-		const logWriter = makeLogWriter();
-		const [matcher] = buildStopHooks(logWriter, '/tmp/repo');
-		const [hook] = matcher.hooks;
-
-		const result = await hook(makeStopInput(), undefined, { signal: AbortSignal.timeout(5000) });
-
-		expect(result).toEqual({
-			decision: 'block',
-			reason: expect.stringContaining('uncommitted changes'),
-		});
-		expect(logWriter).toHaveBeenCalledWith(
-			'WARN',
-			'Stop hook blocked: uncommitted changes',
-			expect.objectContaining({ status: 'M src/index.ts' }),
-		);
-	});
-
 	it('blocks when unpushed commits exist (no upstream tracking)', async () => {
 		// git status --porcelain returns clean
 		mockExecSync.mockReturnValueOnce('');

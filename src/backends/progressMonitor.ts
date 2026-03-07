@@ -73,7 +73,6 @@ export class ProgressMonitor implements ProgressReporter {
 			? new PMProgressPoster({
 					agentType: config.agentType,
 					cardId: config.trello.cardId,
-					repoDir: config.repoDir,
 					logWriter: config.logWriter,
 				})
 			: null;
@@ -125,13 +124,9 @@ export class ProgressMonitor implements ProgressReporter {
 				commentId: this.config.preSeededCommentId,
 			});
 
-			// Write state file so PostComment gadget can find it
-			if (this.config.repoDir && this.config.trello) {
-				writeProgressCommentId(
-					this.config.repoDir,
-					this.config.trello.cardId,
-					this.config.preSeededCommentId,
-				);
+			// Write env var so PostComment gadget can find it
+			if (this.config.trello) {
+				writeProgressCommentId(this.config.trello.cardId, this.config.preSeededCommentId);
 			}
 		} else if (this.pmPoster) {
 			// Post initial comment immediately (fire-and-forget)
@@ -148,12 +143,11 @@ export class ProgressMonitor implements ProgressReporter {
 
 	stop(): void {
 		this.scheduler.stop();
-		// Clean up state file on stop (best-effort — stop() is called from finally
-		// blocks, so an rmSync failure must not mask the actual agent result)
+		// Clean up env var on stop (best-effort — stop() is called from finally blocks)
 		try {
-			clearProgressCommentId(this.config.repoDir);
+			clearProgressCommentId();
 		} catch {
-			// State file cleanup is best-effort
+			// Env var cleanup is best-effort
 		}
 	}
 
