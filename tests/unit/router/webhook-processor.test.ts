@@ -82,6 +82,7 @@ describe('processRouterWebhook', () => {
 		});
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(result.shouldProcess).toBe(false);
+		expect(result.decisionReason).toBe('Event unparseable or not processable');
 		expect(addJob).not.toHaveBeenCalled();
 	});
 
@@ -91,6 +92,7 @@ describe('processRouterWebhook', () => {
 		});
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(result.shouldProcess).toBe(false);
+		expect(result.decisionReason).toBe('Event unparseable or not processable');
 		expect(addJob).not.toHaveBeenCalled();
 	});
 
@@ -100,6 +102,7 @@ describe('processRouterWebhook', () => {
 		});
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(result.shouldProcess).toBe(true);
+		expect(result.decisionReason).toBe('Self-authored event (loop prevention)');
 		expect(addJob).not.toHaveBeenCalled();
 	});
 
@@ -115,6 +118,7 @@ describe('processRouterWebhook', () => {
 		});
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(result.shouldProcess).toBe(true);
+		expect(result.decisionReason).toMatch(/No project config for identifier/);
 		expect(addJob).not.toHaveBeenCalled();
 	});
 
@@ -124,6 +128,7 @@ describe('processRouterWebhook', () => {
 		});
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(result.shouldProcess).toBe(true);
+		expect(result.decisionReason).toBe('No trigger matched for event');
 		expect(addJob).not.toHaveBeenCalled();
 	});
 
@@ -138,6 +143,7 @@ describe('processRouterWebhook', () => {
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(result.shouldProcess).toBe(true);
 		expect(result.projectId).toBe('p1');
+		expect(result.decisionReason).toMatch(/Job queued: implementation agent for work item/);
 		// buildJob is called without ack params (ack is patched after enqueue)
 		expect(adapter.buildJob).toHaveBeenCalledWith(
 			expect.objectContaining({ eventType: 'commentCard' }),
@@ -217,6 +223,7 @@ describe('processRouterWebhook', () => {
 
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(result.shouldProcess).toBe(true);
+		expect(result.decisionReason).toBe('Trigger completed without agent (PM operation)');
 		expect(addJob).not.toHaveBeenCalled();
 	});
 
@@ -240,6 +247,7 @@ describe('processRouterWebhook', () => {
 		// Should not throw
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(result.shouldProcess).toBe(true);
+		expect(result.decisionReason).toBe('Failed to enqueue job to Redis');
 	});
 
 	it('works with adapters that do not implement firePreActions', async () => {
@@ -273,6 +281,7 @@ describe('processRouterWebhook', () => {
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(result.shouldProcess).toBe(true);
 		expect(result.projectId).toBe('p1');
+		expect(result.decisionReason).toBe('Work item locked: db: active run exists');
 		expect(addJob).not.toHaveBeenCalled();
 		expect(adapter.postAck).not.toHaveBeenCalled();
 	});
@@ -309,6 +318,7 @@ describe('processRouterWebhook', () => {
 
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(result.shouldProcess).toBe(true);
+		expect(result.decisionReason).toBe('Agent type concurrency limit reached');
 		expect(addJob).not.toHaveBeenCalled();
 	});
 

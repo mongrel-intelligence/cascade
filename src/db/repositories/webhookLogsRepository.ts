@@ -17,6 +17,7 @@ export interface InsertWebhookLogInput {
 	projectId?: string;
 	eventType?: string;
 	processed?: boolean;
+	decisionReason?: string;
 }
 
 export interface ListWebhookLogsInput {
@@ -47,6 +48,7 @@ export async function insertWebhookLog(input: InsertWebhookLogInput): Promise<st
 			projectId: input.projectId,
 			eventType: input.eventType,
 			processed: input.processed ?? false,
+			decisionReason: input.decisionReason,
 		})
 		.returning({ id: webhookLogs.id });
 	return row.id;

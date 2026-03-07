@@ -74,6 +74,7 @@ app.post(
 			return {
 				processed: result.shouldProcess,
 				projectId: result.projectId,
+				decisionReason: result.decisionReason,
 			};
 		},
 	}),
@@ -94,7 +95,11 @@ app.post(
 			const adapter = new GitHubRouterAdapter();
 			const augmented = injectEventType(payload, eventType ?? 'unknown');
 			const result = await processRouterWebhook(adapter, augmented, triggerRegistry);
-			return { processed: result.shouldProcess };
+			return {
+				processed: result.shouldProcess,
+				projectId: result.projectId,
+				decisionReason: result.decisionReason,
+			};
 		},
 	}),
 );
@@ -116,6 +121,7 @@ app.post(
 			return {
 				processed: result.shouldProcess,
 				projectId: result.projectId,
+				decisionReason: result.decisionReason,
 			};
 		},
 	}),

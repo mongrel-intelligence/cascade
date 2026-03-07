@@ -63,6 +63,7 @@ export function createWebhookHandler(config: WebhookHandlerConfig): Handler {
 				statusCode: 400,
 				eventType: parseResult.eventType,
 				processed: false,
+				decisionReason: `Parse failed: ${parseResult.error}`,
 			});
 			return c.text('Bad Request', 400);
 		}

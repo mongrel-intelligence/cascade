@@ -84,6 +84,10 @@ export function WebhookLogDetailDialog({ logId, onClose }: WebhookLogDetailDialo
 								<div className="text-xs font-medium text-muted-foreground">Received At</div>
 								<div>{log.receivedAt ? new Date(log.receivedAt).toLocaleString() : '-'}</div>
 							</div>
+							<div>
+								<div className="text-xs font-medium text-muted-foreground">Decision Reason</div>
+								<div>{log.decisionReason ?? '-'}</div>
+							</div>
 						</div>
 
 						{!!log.headers && (
