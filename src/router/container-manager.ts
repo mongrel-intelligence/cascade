@@ -338,8 +338,10 @@ export function cleanupWorker(jobId: string, exitCode?: number): void {
 		if (worker.projectId && worker.agentType) {
 			clearAgentTypeEnqueued(worker.projectId, worker.agentType);
 		}
+		if (worker.projectId && worker.workItemId && worker.agentType) {
+			clearWorkItemEnqueued(worker.projectId, worker.workItemId, worker.agentType);
+		}
 		if (worker.projectId && worker.workItemId) {
-			clearWorkItemEnqueued(worker.projectId, worker.workItemId);
 			if (exitCode !== undefined && exitCode !== 0) {
 				failOrphanedRun(
 					worker.projectId,

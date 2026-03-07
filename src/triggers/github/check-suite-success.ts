@@ -214,6 +214,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			prNumber,
 			workItemId,
 			waitForChecks: true,
+			onBlocked: () => recentlyDispatched.delete(dedupKey),
 		};
 	}
 }
