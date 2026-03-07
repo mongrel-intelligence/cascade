@@ -543,7 +543,7 @@ function TabButton({
 		<button
 			type="button"
 			onClick={onClick}
-			className={`min-w-fit whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+			className={`flex-1 min-w-fit whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
 				isActive
 					? 'bg-background text-foreground shadow-sm'
 					: 'text-muted-foreground hover:text-foreground'
