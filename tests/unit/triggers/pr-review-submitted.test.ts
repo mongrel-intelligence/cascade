@@ -61,7 +61,7 @@ describe('PRReviewSubmittedTrigger', () => {
 			expect(trigger.matches(ctx)).toBe(true);
 		});
 
-		it('does not match submitted review with commented state', () => {
+		it('matches submitted review with commented state', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -70,6 +70,25 @@ describe('PRReviewSubmittedTrigger', () => {
 						id: 100,
 						state: 'commented',
 						body: 'Nice work',
+						html_url: 'https://github.com/...',
+						user: { login: 'cascade-reviewer' },
+					},
+				}),
+			};
+
+			expect(trigger.matches(ctx)).toBe(true);
+		});
+
+		it('does not match dismissed reviews (action is dismissed, not submitted)', () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeReviewPayload({
+					action: 'dismissed',
+					review: {
+						id: 100,
+						state: 'dismissed',
+						body: 'Dismissed',
 						html_url: 'https://github.com/...',
 						user: { login: 'cascade-reviewer' },
 					},
@@ -271,6 +290,61 @@ describe('PRReviewSubmittedTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result?.agentInput.triggerCommentBody).toBe('Review: changes_requested');
+		});
+
+		it('returns respond-to-review result when reviewer persona posts commented review', async () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeReviewPayload({
+					review: {
+						id: 200,
+						state: 'commented',
+						body: 'Left some inline comments',
+						html_url: 'https://github.com/owner/repo/pull/42#pullrequestreview-200',
+						user: { login: 'cascade-reviewer' },
+					},
+				}),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toEqual({
+				agentType: 'respond-to-review',
+				agentInput: {
+					prNumber: 42,
+					prBranch: 'feature/test',
+					repoFullName: 'owner/repo',
+					triggerCommentId: 200,
+					triggerCommentBody: 'Left some inline comments',
+					triggerCommentPath: '',
+					triggerCommentUrl: 'https://github.com/owner/repo/pull/42#pullrequestreview-200',
+				},
+				prNumber: 42,
+				workItemId: 'abc123',
+			});
+		});
+
+		it('uses Review: commented fallback when commented review has null body', async () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeReviewPayload({
+					review: {
+						id: 200,
+						state: 'commented',
+						body: null,
+						html_url: 'https://github.com/owner/repo/pull/42#pullrequestreview-200',
+						user: { login: 'cascade-reviewer' },
+					},
+				}),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result?.agentInput.triggerCommentBody).toBe('Review: commented');
 		});
 	});
 });

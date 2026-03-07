@@ -16,8 +16,8 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 		// Only trigger on submitted reviews, not edits or dismissals
 		if (ctx.payload.action !== 'submitted') return false;
 
-		// Only respond to changes_requested reviews — not approved or commented
-		if (ctx.payload.review.state !== 'changes_requested') return false;
+		// Respond to changes_requested and commented reviews — not approved
+		if (ctx.payload.review.state === 'approved') return false;
 
 		return true;
 	}
@@ -51,7 +51,7 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 		const prNumber = reviewPayload.pull_request.number;
 		const reviewAuthor = reviewPayload.review.user.login;
 
-		// Only respond to changes_requested from the reviewer persona
+		// Only respond to reviews from the reviewer persona
 		if (!ctx.personaIdentities) {
 			logger.warn('No persona identities available, skipping review trigger', { prNumber });
 			return null;
