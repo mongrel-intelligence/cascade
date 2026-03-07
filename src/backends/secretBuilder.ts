@@ -4,6 +4,7 @@ import { getPersonaToken } from '../github/personas.js';
 import { getJiraConfig } from '../pm/config.js';
 import type { AgentInput, ProjectConfig } from '../types/index.js';
 import { parseRepoFullName } from '../utils/repo.js';
+import { ENV_VAR_NAME } from './progressState.js';
 
 /**
  * Resolve the GitHub token for profiles that need GitHub client access.
@@ -61,4 +62,21 @@ export async function augmentProjectSecrets(
 	projectSecrets.CASCADE_PM_TYPE = project.pm?.type ?? 'trello';
 
 	return projectSecrets;
+}
+
+/**
+ * Inject the pre-seeded progress comment ID into project secrets so the
+ * Claude Code subprocess can find it via the CASCADE_PROGRESS_COMMENT_ID env var.
+ *
+ * Only injects when ackCommentId is a string (PM comment) and cardId is set.
+ * GitHub ack comments (numeric IDs) are handled separately via session state.
+ */
+export function injectProgressCommentId(
+	projectSecrets: Record<string, string>,
+	cardId: string | undefined,
+	ackCommentId: string | number | undefined,
+): void {
+	if (cardId && typeof ackCommentId === 'string' && ackCommentId) {
+		projectSecrets[ENV_VAR_NAME] = `${cardId}:${ackCommentId}`;
+	}
 }

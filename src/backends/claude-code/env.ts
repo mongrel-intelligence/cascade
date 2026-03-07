@@ -6,6 +6,8 @@
  * server-side secrets from leaking into agent environments.
  */
 
+import { ENV_VAR_NAME as PROGRESS_COMMENT_ENV_VAR } from '../progressState.js';
+
 /** Exact variable names to pass through. */
 export const ALLOWED_ENV_EXACT = new Set([
 	// System
@@ -26,6 +28,9 @@ export const ALLOWED_ENV_EXACT = new Set([
 
 	// Squint
 	'SQUINT_DB_PATH',
+
+	// Progress comment state (pre-seeded ack comment ID)
+	PROGRESS_COMMENT_ENV_VAR,
 
 	// Node
 	'NODE_PATH',

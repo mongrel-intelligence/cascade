@@ -2,7 +2,7 @@
  * PM (Project Management) progress comment poster.
  *
  * Manages the create-once/update-in-place/fallback-to-new lifecycle
- * for progress comments on Trello/JIRA work items. Handles state file
+ * for progress comments on Trello/JIRA work items. Handles env-var
  * coordination with the PostComment gadget subprocess.
  */
 
@@ -14,7 +14,6 @@ import type { LogWriter } from '../types.js';
 export interface PMProgressPosterConfig {
 	agentType: string;
 	cardId: string;
-	repoDir?: string;
 	logWriter: LogWriter;
 }
 
@@ -38,12 +37,6 @@ export class PMProgressPoster {
 		);
 	}
 
-	private maybeWriteStateFile(commentId: string | null): void {
-		if (this.config.repoDir && commentId) {
-			writeProgressCommentId(this.config.repoDir, this.config.cardId, commentId);
-		}
-	}
-
 	async postInitial(): Promise<void> {
 		const provider = getPMProviderOrNull();
 		if (!provider) return;
@@ -55,8 +48,8 @@ export class PMProgressPoster {
 			commentId: this.progressCommentId,
 		});
 
-		// Write state file so PostComment gadget can update this comment
-		this.maybeWriteStateFile(this.progressCommentId);
+		// Write env var so PostComment gadget can update this comment
+		writeProgressCommentId(this.config.cardId, this.progressCommentId);
 	}
 
 	async update(summary: string): Promise<void> {
@@ -66,11 +59,11 @@ export class PMProgressPoster {
 		const { cardId } = this.config;
 
 		if (this.progressCommentId) {
-			// If the PostComment gadget (subprocess) cleared the state file,
+			// If the PostComment gadget cleared the env var,
 			// the agent has posted its final comment to this ID — do not overwrite.
-			const stateFile = readProgressCommentId(this.config.repoDir);
-			if (!stateFile) {
-				this.config.logWriter('DEBUG', 'State file cleared by agent — skipping progress update', {
+			const envVarState = readProgressCommentId();
+			if (!envVarState) {
+				this.config.logWriter('DEBUG', 'Env var cleared by agent — skipping progress update', {
 					commentId: this.progressCommentId,
 				});
 				this.progressCommentId = null;
@@ -94,8 +87,8 @@ export class PMProgressPoster {
 					cardId,
 					commentId: this.progressCommentId,
 				});
-				// Update state file with new comment ID
-				this.maybeWriteStateFile(this.progressCommentId);
+				// Update env var with new comment ID
+				writeProgressCommentId(cardId, this.progressCommentId);
 			}
 		} else {
 			// First tick: create the comment and store its ID.
@@ -106,8 +99,8 @@ export class PMProgressPoster {
 				cardId,
 				commentId: this.progressCommentId,
 			});
-			// Write state file so PostComment gadget can find this comment
-			this.maybeWriteStateFile(this.progressCommentId);
+			// Write env var so PostComment gadget can find this comment
+			writeProgressCommentId(cardId, this.progressCommentId);
 		}
 	}
 }

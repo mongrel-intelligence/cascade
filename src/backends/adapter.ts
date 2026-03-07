@@ -21,7 +21,11 @@ import { withGitHubToken } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { postProcessResult } from './postProcess.js';
 import { createProgressMonitor } from './progress.js';
-import { augmentProjectSecrets, resolveGitHubToken } from './secretBuilder.js';
+import {
+	augmentProjectSecrets,
+	injectProgressCommentId,
+	resolveGitHubToken,
+} from './secretBuilder.js';
 import type { AgentBackend, AgentBackendInput } from './types.js';
 
 /**
@@ -114,6 +118,13 @@ async function buildBackendInput(
 
 	// Build per-project secrets with CASCADE env var injections
 	const projectSecrets = await augmentProjectSecrets(project, agentType, input);
+
+	// Inject pre-seeded progress comment ID so the subprocess finds it at startup
+	injectProgressCommentId(
+		projectSecrets,
+		cardId,
+		input.ackCommentId as string | number | undefined,
+	);
 
 	// Override GITHUB_TOKEN in subprocess secrets with agent-scoped token
 	if (gitHubToken && profile.needsGitHubToken) {

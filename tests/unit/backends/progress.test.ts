@@ -952,7 +952,7 @@ describe('ProgressMonitor — preSeededCommentId', () => {
 		monitor.stop();
 	});
 
-	it('writes state file for pre-seeded comment ID', async () => {
+	it('writes env var for pre-seeded comment ID', async () => {
 		const monitor = new ProgressMonitor({
 			agentType: 'implementation',
 			taskDescription: 'Test task',
@@ -961,22 +961,17 @@ describe('ProgressMonitor — preSeededCommentId', () => {
 			customModels: [],
 			logWriter: vi.fn(),
 			trello: { cardId: 'card1' },
-			repoDir: '/tmp/test-repo',
 			preSeededCommentId: 'router-ack-comment-42',
 		});
 
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(0);
 
-		expect(mockWriteProgressCommentId).toHaveBeenCalledWith(
-			'/tmp/test-repo',
-			'card1',
-			'router-ack-comment-42',
-		);
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('card1', 'router-ack-comment-42');
 		monitor.stop();
 	});
 
-	it('does not write state file when repoDir is missing', async () => {
+	it('writes env var for pre-seeded comment ID even without repoDir', async () => {
 		const monitor = new ProgressMonitor({
 			agentType: 'implementation',
 			taskDescription: 'Test task',
@@ -991,7 +986,7 @@ describe('ProgressMonitor — preSeededCommentId', () => {
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(0);
 
-		expect(mockWriteProgressCommentId).not.toHaveBeenCalled();
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('card1', 'router-ack-comment-42');
 		monitor.stop();
 	});
 
@@ -1028,8 +1023,8 @@ describe('ProgressMonitor — preSeededCommentId', () => {
 	});
 });
 
-describe('ProgressMonitor — state file integration', () => {
-	it('writes state file on initial comment when repoDir is provided', async () => {
+describe('ProgressMonitor — env var integration', () => {
+	it('writes env var on initial comment', async () => {
 		const logWriter = vi.fn();
 		const monitor = new ProgressMonitor({
 			agentType: 'planning',
@@ -1038,7 +1033,6 @@ describe('ProgressMonitor — state file integration', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			repoDir: '/tmp/test-repo',
 			trello: { cardId: 'card1' },
 		});
 
@@ -1048,54 +1042,11 @@ describe('ProgressMonitor — state file integration', () => {
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(0);
 
-		expect(mockWriteProgressCommentId).toHaveBeenCalledWith(
-			'/tmp/test-repo',
-			'card1',
-			'comment-id-initial',
-		);
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('card1', 'comment-id-initial');
 		monitor.stop();
 	});
 
-	it('does not write state file when repoDir is not provided', async () => {
-		const monitor = new ProgressMonitor({
-			agentType: 'planning',
-			taskDescription: 'Test task',
-			intervalMinutes: 5,
-			progressModel: 'test-model',
-			customModels: [],
-			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
-		});
-
-		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
-		mockPMProvider.addComment.mockResolvedValue('comment-id-initial');
-
-		monitor.start();
-		await vi.advanceTimersByTimeAsync(0);
-
-		expect(mockWriteProgressCommentId).not.toHaveBeenCalled();
-		monitor.stop();
-	});
-
-	it('clears state file on stop()', () => {
-		const monitor = new ProgressMonitor({
-			agentType: 'planning',
-			taskDescription: 'Test task',
-			intervalMinutes: 5,
-			progressModel: 'test-model',
-			customModels: [],
-			logWriter: vi.fn(),
-			repoDir: '/tmp/test-repo',
-			trello: { cardId: 'card1' },
-		});
-
-		monitor.start();
-		monitor.stop();
-
-		expect(mockClearProgressCommentId).toHaveBeenCalledWith('/tmp/test-repo');
-	});
-
-	it('clears state file on stop() even when repoDir not provided', () => {
+	it('clears env var on stop()', () => {
 		const monitor = new ProgressMonitor({
 			agentType: 'planning',
 			taskDescription: 'Test task',
@@ -1109,10 +1060,10 @@ describe('ProgressMonitor — state file integration', () => {
 		monitor.start();
 		monitor.stop();
 
-		expect(mockClearProgressCommentId).toHaveBeenCalledWith(undefined);
+		expect(mockClearProgressCommentId).toHaveBeenCalledWith();
 	});
 
-	it('writes state file from first tick when postInitialComment() failed', async () => {
+	it('writes env var from first tick when postInitialComment() failed', async () => {
 		const logWriter = vi.fn();
 		const monitor = new ProgressMonitor({
 			agentType: 'planning',
@@ -1121,7 +1072,6 @@ describe('ProgressMonitor — state file integration', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			repoDir: '/tmp/test-repo',
 			trello: { cardId: 'card1' },
 		});
 
@@ -1144,15 +1094,11 @@ describe('ProgressMonitor — state file integration', () => {
 		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 		monitor.stop();
 
-		// State file should be written from the else branch in postProgressToPM
-		expect(mockWriteProgressCommentId).toHaveBeenCalledWith(
-			'/tmp/test-repo',
-			'card1',
-			'comment-id-from-tick',
-		);
+		// Env var should be written from the else branch in postProgressToPM
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('card1', 'comment-id-from-tick');
 	});
 
-	it('skips progress update when state file is cleared by agent subprocess', async () => {
+	it('skips progress update when env var is cleared by agent subprocess', async () => {
 		const logWriter = vi.fn();
 		const monitor = new ProgressMonitor({
 			agentType: 'respond-to-planning-comment',
@@ -1161,7 +1107,6 @@ describe('ProgressMonitor — state file integration', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			repoDir: '/tmp/test-repo',
 			trello: { cardId: 'card1' },
 		});
 
@@ -1173,26 +1118,26 @@ describe('ProgressMonitor — state file integration', () => {
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(0);
 
-		// Simulate the PostComment gadget clearing the state file
+		// Simulate the PostComment gadget clearing the env var
 		mockReadProgressCommentId.mockReturnValue(null);
 
-		// First tick fires at 1 minute — should detect cleared state file and skip
+		// First tick fires at 1 minute — should detect cleared env var and skip
 		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 		monitor.stop();
 
-		// updateComment should NOT have been called (state file was cleared)
+		// updateComment should NOT have been called (env var was cleared)
 		expect(mockPMProvider.updateComment).not.toHaveBeenCalled();
 		// Should log the skip
 		expect(logWriter).toHaveBeenCalledWith(
 			'DEBUG',
-			'State file cleared by agent — skipping progress update',
+			'Env var cleared by agent — skipping progress update',
 			expect.objectContaining({ commentId: 'comment-id-initial' }),
 		);
 		// progressCommentId should be cleared
 		expect(monitor.getProgressCommentId()).toBeNull();
 	});
 
-	it('updates state file when new comment is created after update failure', async () => {
+	it('updates env var when new comment is created after update failure', async () => {
 		const logWriter = vi.fn();
 		const monitor = new ProgressMonitor({
 			agentType: 'planning',
@@ -1201,7 +1146,6 @@ describe('ProgressMonitor — state file integration', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			repoDir: '/tmp/test-repo',
 			trello: { cardId: 'card1' },
 		});
 
@@ -1220,10 +1164,6 @@ describe('ProgressMonitor — state file integration', () => {
 
 		// writeProgressCommentId called for initial comment and for fallback comment
 		expect(mockWriteProgressCommentId).toHaveBeenCalledTimes(2);
-		expect(mockWriteProgressCommentId).toHaveBeenLastCalledWith(
-			'/tmp/test-repo',
-			'card1',
-			'comment-id-fallback',
-		);
+		expect(mockWriteProgressCommentId).toHaveBeenLastCalledWith('card1', 'comment-id-fallback');
 	});
 });

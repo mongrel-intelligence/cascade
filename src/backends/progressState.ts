@@ -1,83 +1,55 @@
 /**
- * File-based state bridge for sharing the progress comment ID between
+ * Env-var-based state bridge for sharing the progress comment ID between
  * the ProgressMonitor (which creates the initial comment) and the
  * PostComment gadget (which posts the final summary).
  *
- * Uses a state file `.cascade-progress-comment-id` written to the repo
- * working directory. This approach works for both the llmist backend
- * (same process) and the Claude Code backend (subprocess), since both
- * share the same filesystem.
+ * Uses the `CASCADE_PROGRESS_COMMENT_ID` environment variable following
+ * the existing `CASCADE_*` naming pattern. The env var format is
+ * `<workItemId>:<commentId>`.
  *
- * File format: `<workItemId>:<commentId>`
+ * For the pre-seeded case (~90% of runs), the env var is injected into
+ * the Claude Code subprocess via `projectSecrets` before subprocess launch,
+ * so it is available from startup. For the dynamic case (ProgressMonitor
+ * `postInitial()`), `process.env` is updated in-process — same-process
+ * consumers see it immediately; cross-process visibility is an accepted gap.
  */
 
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-export const STATE_FILE_NAME = '.cascade-progress-comment-id';
+export const ENV_VAR_NAME = 'CASCADE_PROGRESS_COMMENT_ID';
 
 /**
- * Writes the progress comment ID to the state file in the given repo directory.
+ * Writes the progress comment ID to the env var.
  *
- * @param repoDir - The working directory where the state file will be written.
  * @param workItemId - The work item ID (Trello card ID or JIRA issue key).
  * @param commentId - The comment ID returned by addComment().
  */
-export function writeProgressCommentId(
-	repoDir: string,
-	workItemId: string,
-	commentId: string,
-): void {
-	const filePath = join(repoDir, STATE_FILE_NAME);
-	writeFileSync(filePath, `${workItemId}:${commentId}`, 'utf-8');
+export function writeProgressCommentId(workItemId: string, commentId: string): void {
+	process.env[ENV_VAR_NAME] = `${workItemId}:${commentId}`;
 }
 
 /**
- * Reads the progress comment state from the state file.
+ * Reads the progress comment state from the env var.
  *
- * @param repoDir - Optional directory containing the state file. Defaults to
- *                  `process.cwd()` if not provided. For cross-process usage
- *                  (e.g., Claude Code subprocess), the caller should ensure
- *                  `process.chdir(repoDir)` has been called, or pass `repoDir`
- *                  explicitly.
- * @returns `{ workItemId, commentId }` if the state file exists and is valid,
+ * @returns `{ workItemId, commentId }` if the env var is set and valid,
  *          or `null` if not found or malformed.
  */
-export function readProgressCommentId(
-	repoDir?: string,
-): { workItemId: string; commentId: string } | null {
-	const dir = repoDir ?? process.cwd();
-	const filePath = join(dir, STATE_FILE_NAME);
+export function readProgressCommentId(): { workItemId: string; commentId: string } | null {
+	const value = process.env[ENV_VAR_NAME];
+	if (!value) return null;
 
-	if (!existsSync(filePath)) return null;
+	const colonIndex = value.indexOf(':');
+	if (colonIndex === -1) return null;
 
-	try {
-		const content = readFileSync(filePath, 'utf-8').trim();
-		const colonIndex = content.indexOf(':');
-		if (colonIndex === -1) return null;
+	const workItemId = value.slice(0, colonIndex);
+	const commentId = value.slice(colonIndex + 1);
 
-		const workItemId = content.slice(0, colonIndex);
-		const commentId = content.slice(colonIndex + 1);
+	if (!workItemId || !commentId) return null;
 
-		if (!workItemId || !commentId) return null;
-
-		return { workItemId, commentId };
-	} catch {
-		return null;
-	}
+	return { workItemId, commentId };
 }
 
 /**
- * Deletes the progress comment state file.
- *
- * @param repoDir - Optional directory containing the state file. Defaults to
- *                  `process.cwd()` if not provided.
+ * Clears the progress comment state by deleting the env var.
  */
-export function clearProgressCommentId(repoDir?: string): void {
-	const dir = repoDir ?? process.cwd();
-	const filePath = join(dir, STATE_FILE_NAME);
-
-	if (existsSync(filePath)) {
-		rmSync(filePath);
-	}
+export function clearProgressCommentId(): void {
+	delete process.env[ENV_VAR_NAME];
 }

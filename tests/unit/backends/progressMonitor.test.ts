@@ -219,16 +219,15 @@ describe('ProgressMonitor - start()', () => {
 		expect(mockPMPosterPostInitial).not.toHaveBeenCalled();
 	});
 
-	it('writes progress comment ID to state file when preSeededCommentId + repoDir + trello', () => {
+	it('writes progress comment ID to env var when preSeededCommentId + trello', () => {
 		const config = makeConfig({
 			preSeededCommentId: 'seed-id',
-			repoDir: '/tmp/repo',
 			trello: { cardId: 'card-1' },
 		});
 		const monitor = new ProgressMonitor(config);
 		monitor.start();
 
-		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('/tmp/repo', 'card-1', 'seed-id');
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('card-1', 'seed-id');
 	});
 
 	it('posts initial comment when no preSeededCommentId and trello is configured', () => {
@@ -260,11 +259,10 @@ describe('ProgressMonitor - stop()', () => {
 	});
 
 	it('clears the progress comment ID state', () => {
-		const config = makeConfig({ repoDir: '/tmp/repo' });
-		const monitor = new ProgressMonitor(config);
+		const monitor = new ProgressMonitor(makeConfig());
 		monitor.stop();
 
-		expect(mockClearProgressCommentId).toHaveBeenCalledWith('/tmp/repo');
+		expect(mockClearProgressCommentId).toHaveBeenCalledWith();
 	});
 
 	it('does not throw when clearProgressCommentId fails', () => {
