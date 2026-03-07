@@ -950,5 +950,111 @@ describe('PRReadyToMergeTrigger', () => {
 			);
 			expect(result).toBeNull();
 		});
+
+		it('falls back to DONE when auto label present but no MERGED status configured', async () => {
+			const projectWithoutMerged = createMockProject({
+				trello: {
+					boardId: 'board123',
+					lists: {
+						todo: 'todo-list-id',
+						done: 'done-list-id',
+					},
+					labels: {
+						auto: 'auto-label-id',
+					},
+				},
+			});
+
+			mockProvider.getWorkItem.mockResolvedValue({
+				id: 'abc123',
+				title: 'Card',
+				description: '',
+				url: '',
+				status: 'todo-list-id',
+				labels: [{ id: 'auto-label-id', name: 'auto' }],
+			});
+
+			const ctx: TriggerContext = {
+				project: projectWithoutMerged,
+				source: 'github',
+				payload: {
+					action: 'completed',
+					check_suite: {
+						id: 1,
+						status: 'completed',
+						conclusion: 'success',
+						head_sha: 'sha123',
+						pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'sha123' } }],
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'github-actions' },
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(githubClient.mergePR).not.toHaveBeenCalled();
+			expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('abc123', 'done-list-id');
+			expect(mockProvider.addComment).toHaveBeenCalledWith(
+				'abc123',
+				expect.stringContaining('no MERGED status configured'),
+			);
+			expect(result).toEqual({
+				agentType: null,
+				agentInput: {},
+				workItemId: 'abc123',
+				prNumber: 42,
+			});
+		});
+
+		it('returns null and adds comment when auto label present but neither MERGED nor DONE configured', async () => {
+			const projectWithoutMergedOrDone = createMockProject({
+				trello: {
+					boardId: 'board123',
+					lists: {
+						todo: 'todo-list-id',
+					},
+					labels: {
+						auto: 'auto-label-id',
+					},
+				},
+			});
+
+			mockProvider.getWorkItem.mockResolvedValue({
+				id: 'abc123',
+				title: 'Card',
+				description: '',
+				url: '',
+				status: 'todo-list-id',
+				labels: [{ id: 'auto-label-id', name: 'auto' }],
+			});
+
+			const ctx: TriggerContext = {
+				project: projectWithoutMergedOrDone,
+				source: 'github',
+				payload: {
+					action: 'completed',
+					check_suite: {
+						id: 1,
+						status: 'completed',
+						conclusion: 'success',
+						head_sha: 'sha123',
+						pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'sha123' } }],
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'github-actions' },
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(githubClient.mergePR).not.toHaveBeenCalled();
+			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
+			expect(mockProvider.addComment).toHaveBeenCalledWith(
+				'abc123',
+				expect.stringContaining('no MERGED or DONE status configured'),
+			);
+			expect(result).toBeNull();
+		});
 	});
 });

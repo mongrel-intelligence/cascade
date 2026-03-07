@@ -26,10 +26,24 @@ async function handleAutoMerge(
 ): Promise<TriggerResult | null> {
 	const mergedStatus = pmConfig.statuses.merged;
 	if (!mergedStatus) {
-		logger.warn('No merged status configured for project (auto label present)', {
+		logger.warn(
+			'No merged status configured for project (auto label present), falling back to DONE',
+			{ workItemId },
+		);
+		const doneStatus = pmConfig.statuses.done;
+		if (!doneStatus) {
+			await provider.addComment(
+				workItemId,
+				'⚠️ Auto-merge requested (auto label present), but no MERGED or DONE status configured. Manual action required.',
+			);
+			return null;
+		}
+		await provider.moveWorkItem(workItemId, doneStatus);
+		await provider.addComment(
 			workItemId,
-		});
-		return null;
+			'⚠️ Auto-merge requested (auto label present), but no MERGED status configured. Moved to DONE instead.',
+		);
+		return { agentType: null, agentInput: {}, workItemId, prNumber };
 	}
 
 	logger.info('Auto-merging PR and moving work item to MERGED', {

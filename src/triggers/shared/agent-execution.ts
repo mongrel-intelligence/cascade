@@ -345,8 +345,14 @@ async function propagateAutoLabelAfterSplitting(
 			}
 			// Fetch all items from the project, then filter by status locally
 			// (JIRA adapter's listWorkItems expects project key, not status name)
+			// TODO: Add JQL-based filtering to JIRA adapter to avoid fetching all project issues
 			const allItems = await provider.listWorkItems(projectKey);
 			backlogItems = allItems.filter((item) => item.status === backlogStatus);
+			logger.info('JIRA backlog filtering for auto-label propagation', {
+				totalFetched: allItems.length,
+				backlogCount: backlogItems.length,
+				projectKey,
+			});
 		} else {
 			logger.warn('propagateAutoLabelAfterSplitting: unsupported PM provider type', {
 				providerType: provider.type,
