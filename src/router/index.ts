@@ -6,15 +6,15 @@ import '../pm/bootstrap.js';
 import { initPrompts } from '../agents/prompts/index.js';
 import { initAgentMessages } from '../config/agentMessages.js';
 import { seedAgentDefinitions } from '../db/seeds/seedAgentDefinitions.js';
+import { registerBuiltInTriggers } from '../triggers/builtins.js';
+import { createTriggerRegistry } from '../triggers/registry.js';
+import { logger } from '../utils/logging.js';
 import {
 	createWebhookHandler,
 	parseGitHubPayload,
 	parseJiraPayload,
 	parseTrelloPayload,
-} from '../server/webhookHandlers.js';
-import { registerBuiltInTriggers } from '../triggers/builtins.js';
-import { createTriggerRegistry } from '../triggers/registry.js';
-import { logger } from '../utils/logging.js';
+} from '../webhook/webhookHandlers.js';
 import { GitHubRouterAdapter, injectEventType } from './adapters/github.js';
 import { JiraRouterAdapter } from './adapters/jira.js';
 import { TrelloRouterAdapter } from './adapters/trello.js';
@@ -67,8 +67,6 @@ app.post(
 	'/trello/webhook',
 	createWebhookHandler({
 		source: 'trello',
-		checkCapacity: false,
-		fireAndForget: false,
 		parsePayload: parseTrelloPayload,
 		processWebhook: async (payload) => {
 			const adapter = new TrelloRouterAdapter();
@@ -91,8 +89,6 @@ app.post(
 	'/github/webhook',
 	createWebhookHandler({
 		source: 'github',
-		checkCapacity: false,
-		fireAndForget: false,
 		parsePayload: parseGitHubPayload,
 		processWebhook: async (payload, eventType) => {
 			const adapter = new GitHubRouterAdapter();
@@ -113,8 +109,6 @@ app.post(
 	'/jira/webhook',
 	createWebhookHandler({
 		source: 'jira',
-		checkCapacity: false,
-		fireAndForget: false,
 		parsePayload: parseJiraPayload,
 		processWebhook: async (payload) => {
 			const adapter = new JiraRouterAdapter();

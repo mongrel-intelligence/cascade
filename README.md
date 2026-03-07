@@ -19,6 +19,7 @@ Multi-project Trello-to-code automation platform. CASCADE reacts to Trello card 
 - npm
 - Git
 - GitHub CLI (`gh`) - for PR creation
+- Redis (required for router mode / BullMQ job queue)
 
 ### Installation
 
@@ -169,13 +170,23 @@ npm run build
 npm start
 ```
 
+### Architecture
+
+CASCADE runs as three services:
+
+1. **Router** (`src/router/index.ts`) — receives webhooks, enqueues jobs to Redis via BullMQ
+2. **Worker** (`src/worker-entry.ts`) — processes one job per container, exits when done
+3. **Dashboard** (`src/dashboard.ts`) — API + tRPC for web UI and CLI
+
 ### Project Structure
 
 ```
 cascade/
 ├── src/
-│   ├── index.ts              # Entry point
-│   ├── server.ts             # Hono HTTP server
+│   ├── router/               # Router entry point (webhook receiver)
+│   ├── worker-entry.ts       # Worker entry point (job processor)
+│   ├── dashboard.ts          # Dashboard entry point (API + tRPC)
+│   ├── webhook/              # Shared webhook handler factory + parsers
 │   ├── config/               # Configuration loading & validation
 │   ├── triggers/             # Extensible trigger system
 │   │   ├── registry.ts       # TriggerRegistry

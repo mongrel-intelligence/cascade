@@ -19,63 +19,17 @@ import {
 	markRecentlyDispatched,
 } from '../../router/agent-type-lock.js';
 import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
-import {
-	clearCardActive,
-	enqueueWebhook,
-	getQueueLength,
-	isCardActive,
-	isCurrentlyProcessing,
-	logger,
-	setCardActive,
-	setProcessing,
-	startWatchdog,
-} from '../../utils/index.js';
+import { logger, startWatchdog } from '../../utils/index.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { safeOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
 import { runAgentWithCredentials } from '../shared/webhook-execution.js';
-import { processNextQueuedWebhook } from '../shared/webhook-queue.js';
 import type { TriggerResult } from '../types.js';
 import { postAcknowledgmentComment, updateInitialCommentWithError } from './ack-comments.js';
 import { pollWaitForChecks } from './check-polling.js';
 import { GitHubWebhookIntegration } from './integration.js';
 
 const integration = new GitHubWebhookIntegration();
-
-function processNextQueuedGitHubWebhook(registry: TriggerRegistry): void {
-	processNextQueuedWebhook(
-		(payload, eventType, ackCommentId, ackMsg) =>
-			processGitHubWebhook(
-				payload,
-				eventType ?? 'pull_request_review_comment',
-				registry,
-				ackCommentId as number | undefined,
-				ackMsg,
-			),
-		'GitHub',
-		(entry) => entry.eventType ?? 'pull_request_review_comment',
-	);
-}
-
-/** Enqueue the webhook if another job is currently processing. Returns true if enqueued. */
-function tryEnqueueIfBusy(
-	payload: unknown,
-	eventType: string,
-	ackCommentId?: number,
-	ackMessage?: string,
-): boolean {
-	if (!isCurrentlyProcessing()) return false;
-	const queued = enqueueWebhook(payload, eventType, ackCommentId, ackMessage);
-	if (queued) {
-		logger.info('Currently processing, GitHub webhook queued', {
-			queueLength: getQueueLength(),
-			eventType,
-		});
-	} else {
-		logger.warn('Queue full, GitHub webhook rejected', { queueLength: getQueueLength() });
-	}
-	return true;
-}
 
 /** Dispatch to trigger registry within PM credential + provider scope. */
 async function dispatchTrigger(
@@ -114,20 +68,12 @@ async function maybePostAckComment(
 	);
 }
 
-/** Run the agent with GitHub-specific execution config, managing processing flags. */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: webhook orchestration with multiple guard checks
+/** Run the agent with GitHub-specific execution config. */
 async function runGitHubAgent(
 	result: TriggerResult,
 	project: ProjectConfig,
 	config: CascadeConfig,
-	registry: TriggerRegistry,
 ): Promise<void> {
-	const workItemId = result.workItemId;
-	if (workItemId && isCardActive(workItemId)) {
-		logger.info('Work item already being processed, skipping', { workItemId });
-		return;
-	}
-
 	// Agent-type concurrency limit
 	let agentTypeMaxConcurrency: number | null = null;
 	if (result.agentType) {
@@ -140,11 +86,9 @@ async function runGitHubAgent(
 		}
 	}
 
-	setProcessing(true);
 	startWatchdog(config.defaults.watchdogTimeoutMs);
 
 	try {
-		if (workItemId) setCardActive(workItemId);
 		// Establish PM credential + provider scope for agents with workItemId
 		// (needed for PM lifecycle operations: labels, status moves, PR links)
 		const pmProvider = createPMProvider(project);
@@ -176,12 +120,9 @@ async function runGitHubAgent(
 			updateInitialCommentWithError(result, { success: false, error: String(err) }),
 		);
 	} finally {
-		if (workItemId) clearCardActive(workItemId);
 		if (result.agentType && agentTypeMaxConcurrency !== null) {
 			clearAgentTypeEnqueued(project.id, result.agentType);
 		}
-		setProcessing(false);
-		processNextQueuedGitHubWebhook(registry);
 	}
 }
 
@@ -201,8 +142,6 @@ export async function processGitHubWebhook(
 		logger.warn('GitHub webhook missing repository info');
 		return;
 	}
-
-	if (tryEnqueueIfBusy(payload, eventType, ackCommentId, ackMessage)) return;
 
 	const projectConfig = await integration.lookupProject(event.projectIdentifier);
 	if (!projectConfig) {
@@ -272,5 +211,5 @@ export async function processGitHubWebhook(
 		await maybePostAckComment(result, payload, eventType, project);
 	}
 
-	await runGitHubAgent(result, project, config, registry);
+	await runGitHubAgent(result, project, config);
 }

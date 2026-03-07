@@ -22,7 +22,7 @@ import {
 	parseGitHubPayload,
 	parseJiraPayload,
 	parseTrelloPayload,
-} from '../../../src/server/webhookParsers.js';
+} from '../../../src/webhook/webhookParsers.js';
 
 function makeHonoContext(body: unknown, headers: Record<string, string> = {}) {
 	return {

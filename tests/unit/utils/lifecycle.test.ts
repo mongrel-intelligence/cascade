@@ -16,8 +16,6 @@ import { flush } from '../../../src/sentry.js';
 import {
 	clearWatchdog,
 	clearWatchdogCleanup,
-	isCurrentlyProcessing,
-	setProcessing,
 	setWatchdogCleanup,
 	startWatchdog,
 } from '../../../src/utils/lifecycle.js';
@@ -34,26 +32,8 @@ describe('lifecycle', () => {
 		// Clean up all timers
 		clearWatchdog();
 		clearWatchdogCleanup();
-		setProcessing(false);
 		vi.useRealTimers();
 		vi.restoreAllMocks();
-	});
-
-	describe('processing state', () => {
-		it('defaults to not processing', () => {
-			expect(isCurrentlyProcessing()).toBe(false);
-		});
-
-		it('can set processing to true', () => {
-			setProcessing(true);
-			expect(isCurrentlyProcessing()).toBe(true);
-		});
-
-		it('can set processing back to false', () => {
-			setProcessing(true);
-			setProcessing(false);
-			expect(isCurrentlyProcessing()).toBe(false);
-		});
 	});
 
 	describe('watchdog', () => {
