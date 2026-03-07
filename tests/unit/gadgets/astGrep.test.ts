@@ -185,21 +185,6 @@ describe('AstGrep', () => {
 
 			expect(mockSpawn).toHaveBeenCalledWith('sg', expect.any(Array));
 		});
-
-		it('calls validatePath on the search path', async () => {
-			mockSpawn.mockReturnValue(makeProcess({ stdout: '', exitCode: 0 }));
-
-			await gadget.execute({
-				comment: 'test',
-				pattern: 'foo($X)',
-				language: 'typescript',
-				path: 'src/foo.ts',
-			});
-
-			// validatePath is called during rewrite detection; for search mode it's not
-			// called directly, but the path is passed to sg as-is
-			expect(mockSpawn).toHaveBeenCalled();
-		});
 	});
 
 	describe('search mode — error handling', () => {
