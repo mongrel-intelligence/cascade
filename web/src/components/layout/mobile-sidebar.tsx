@@ -20,7 +20,12 @@ export function MobileSidebar({ user, open, onOpenChange }: MobileSidebarProps) 
 
 	return (
 		<Sheet open={open} onOpenChange={onOpenChange}>
-			<SheetContent side="left" className="p-0 w-56">
+			<SheetContent
+				side="left"
+				className="p-0 w-56"
+				showCloseButton={false}
+				aria-label="Navigation menu"
+			>
 				<Sidebar user={user} />
 			</SheetContent>
 		</Sheet>
