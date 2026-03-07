@@ -92,7 +92,7 @@ describe('processRouterWebhook', () => {
 		});
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(result.shouldProcess).toBe(false);
-		expect(result.decisionReason).toBe('Event unparseable or not processable');
+		expect(result.decisionReason).toBe('Event type not processable: commentCard');
 		expect(addJob).not.toHaveBeenCalled();
 	});
 

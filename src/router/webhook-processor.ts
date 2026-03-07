@@ -61,7 +61,10 @@ export async function processRouterWebhook(
 	// Step 2: Filter
 	if (!adapter.isProcessableEvent(event)) {
 		logger.debug(`Ignoring ${adapter.type} event`, { eventType: event.eventType });
-		return { shouldProcess: false, decisionReason: 'Event unparseable or not processable' };
+		return {
+			shouldProcess: false,
+			decisionReason: `Event type not processable: ${event.eventType}`,
+		};
 	}
 
 	// Step 3: Self-authored check
