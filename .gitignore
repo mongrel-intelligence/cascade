@@ -42,4 +42,5 @@ test-results/
 # Claude Code — commit settings.json but exclude local settings (may contain secrets)
 .claude/settings.local.json
 
-
+# Progress comment state file (legacy — kept to ignore stale files from older runs)
+.cascade-progress-comment-id
