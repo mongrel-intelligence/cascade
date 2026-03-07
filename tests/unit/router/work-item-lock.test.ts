@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
-	hasActiveRunForWorkItem: vi.fn().mockResolvedValue(false),
+	countActiveRunsForWorkItem: vi.fn().mockResolvedValue(0),
+	countActiveRunsForWorkItemAndType: vi.fn().mockResolvedValue(0),
 }));
 vi.mock('../../../src/utils/logging.js', () => ({
 	logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -10,8 +11,13 @@ vi.mock('../../../src/router/config.js', () => ({
 	routerConfig: { workerTimeoutMs: 30 * 60 * 1000 },
 }));
 
-import { hasActiveRunForWorkItem } from '../../../src/db/repositories/runsRepository.js';
 import {
+	countActiveRunsForWorkItem,
+	countActiveRunsForWorkItemAndType,
+} from '../../../src/db/repositories/runsRepository.js';
+import {
+	MAX_SAME_TYPE_PER_WORK_ITEM,
+	MAX_WORK_ITEM_CONCURRENCY,
 	clearAllWorkItemLocks,
 	clearWorkItemEnqueued,
 	isWorkItemLocked,
@@ -29,74 +35,136 @@ describe('work-item-lock', () => {
 	});
 
 	it('returns locked: false when no active run and no in-memory mark', async () => {
-		const result = await isWorkItemLocked('proj1', 'card1');
+		const result = await isWorkItemLocked('proj1', 'card1', 'implementation');
 		expect(result).toEqual({ locked: false });
-		// maxAgeMs = 2 * workerTimeoutMs = 60 min
-		expect(hasActiveRunForWorkItem).toHaveBeenCalledWith('proj1', 'card1', 2 * 30 * 60 * 1000);
+		const maxAgeMs = 2 * 30 * 60 * 1000;
+		expect(countActiveRunsForWorkItem).toHaveBeenCalledWith('proj1', 'card1', maxAgeMs);
+		expect(countActiveRunsForWorkItemAndType).toHaveBeenCalledWith(
+			'proj1',
+			'card1',
+			'implementation',
+			maxAgeMs,
+		);
 	});
 
-	it('returns locked: true after markWorkItemEnqueued', async () => {
-		markWorkItemEnqueued('proj1', 'card1');
-		const result = await isWorkItemLocked('proj1', 'card1');
+	it('1 enqueued agent does not lock (1 < MAX_WORK_ITEM_CONCURRENCY)', async () => {
+		markWorkItemEnqueued('proj1', 'card1', 'implementation');
+		const result = await isWorkItemLocked('proj1', 'card1', 'review');
+		expect(result.locked).toBe(false);
+	});
+
+	it('1 enqueued agent locks same type (same-type limit = 1)', async () => {
+		markWorkItemEnqueued('proj1', 'card1', 'implementation');
+		const result = await isWorkItemLocked('proj1', 'card1', 'implementation');
 		expect(result.locked).toBe(true);
-		expect(result.reason).toContain('in-memory');
-		// Should not hit DB when in-memory lock is present
-		expect(hasActiveRunForWorkItem).not.toHaveBeenCalled();
+		expect(result.reason).toContain('same-type');
 	});
 
-	it('clearWorkItemEnqueued releases the lock', async () => {
-		markWorkItemEnqueued('proj1', 'card1');
-		clearWorkItemEnqueued('proj1', 'card1');
-		const result = await isWorkItemLocked('proj1', 'card1');
+	it('2 enqueued agents of different types locks (total = MAX_WORK_ITEM_CONCURRENCY)', async () => {
+		markWorkItemEnqueued('proj1', 'card1', 'implementation');
+		markWorkItemEnqueued('proj1', 'card1', 'review');
+		const result = await isWorkItemLocked('proj1', 'card1', 'debug');
+		expect(result.locked).toBe(true);
+		expect(result.reason).toContain('total');
+	});
+
+	it('clearWorkItemEnqueued decrements count, does not immediately delete', async () => {
+		markWorkItemEnqueued('proj1', 'card1', 'implementation');
+		markWorkItemEnqueued('proj1', 'card1', 'implementation');
+		clearWorkItemEnqueued('proj1', 'card1', 'implementation');
+		// Should still be locked for same type (count went from 2 to 1)
+		const result = await isWorkItemLocked('proj1', 'card1', 'implementation');
+		expect(result.locked).toBe(true);
+	});
+
+	it('clearWorkItemEnqueued fully releases when count reaches 0', async () => {
+		markWorkItemEnqueued('proj1', 'card1', 'implementation');
+		clearWorkItemEnqueued('proj1', 'card1', 'implementation');
+		const result = await isWorkItemLocked('proj1', 'card1', 'implementation');
+		expect(result.locked).toBe(false);
+	});
+
+	it('DB count of 1 does not lock for different type', async () => {
+		vi.mocked(countActiveRunsForWorkItem).mockResolvedValueOnce(1);
+		vi.mocked(countActiveRunsForWorkItemAndType).mockResolvedValueOnce(0);
+		const result = await isWorkItemLocked('proj1', 'card1', 'review');
+		expect(result.locked).toBe(false);
+	});
+
+	it('DB total count of 2 locks', async () => {
+		vi.mocked(countActiveRunsForWorkItem).mockResolvedValueOnce(2);
+		vi.mocked(countActiveRunsForWorkItemAndType).mockResolvedValueOnce(0);
+		const result = await isWorkItemLocked('proj1', 'card1', 'review');
+		expect(result.locked).toBe(true);
+		expect(result.reason).toContain('total');
+	});
+
+	it('DB same-type count of 1 locks for same type', async () => {
+		vi.mocked(countActiveRunsForWorkItem).mockResolvedValueOnce(1);
+		vi.mocked(countActiveRunsForWorkItemAndType).mockResolvedValueOnce(1);
+		const result = await isWorkItemLocked('proj1', 'card1', 'implementation');
+		expect(result.locked).toBe(true);
+		expect(result.reason).toContain('same-type');
+	});
+
+	it('DB same-type count of 1 does not lock for different type when total < max', async () => {
+		vi.mocked(countActiveRunsForWorkItem).mockResolvedValueOnce(1);
+		vi.mocked(countActiveRunsForWorkItemAndType).mockResolvedValueOnce(0);
+		const result = await isWorkItemLocked('proj1', 'card1', 'review');
 		expect(result.locked).toBe(false);
 	});
 
 	it('TTL expiry releases the in-memory lock', async () => {
 		vi.useFakeTimers();
-		markWorkItemEnqueued('proj1', 'card1');
+		markWorkItemEnqueued('proj1', 'card1', 'implementation');
 
 		// Advance past 30 minutes
 		vi.advanceTimersByTime(30 * 60 * 1000 + 1);
 
-		const maxAgeMs = 2 * 30 * 60 * 1000;
-		const result = await isWorkItemLocked('proj1', 'card1');
-		// In-memory lock should have expired, falls through to DB check
+		const result = await isWorkItemLocked('proj1', 'card1', 'implementation');
 		expect(result.locked).toBe(false);
-		expect(hasActiveRunForWorkItem).toHaveBeenCalledWith('proj1', 'card1', maxAgeMs);
-		// Verify the expired entry was cleaned up by checking it's no longer locked in-memory
-		vi.mocked(hasActiveRunForWorkItem).mockClear();
-		const result2 = await isWorkItemLocked('proj1', 'card1');
-		expect(result2.locked).toBe(false);
-		// Should go straight to DB check (no in-memory entry left)
-		expect(hasActiveRunForWorkItem).toHaveBeenCalledWith('proj1', 'card1', maxAgeMs);
-	});
-
-	it('returns locked: true when DB has an active run', async () => {
-		vi.mocked(hasActiveRunForWorkItem).mockResolvedValueOnce(true);
-		const result = await isWorkItemLocked('proj1', 'card1');
-		expect(result).toEqual({ locked: true, reason: 'db: active run exists' });
+		expect(countActiveRunsForWorkItem).toHaveBeenCalled();
 	});
 
 	it('different projects with same workItemId are independent', async () => {
-		markWorkItemEnqueued('proj1', 'card1');
+		markWorkItemEnqueued('proj1', 'card1', 'implementation');
 
-		const result1 = await isWorkItemLocked('proj1', 'card1');
+		const result1 = await isWorkItemLocked('proj1', 'card1', 'implementation');
 		expect(result1.locked).toBe(true);
 
-		const result2 = await isWorkItemLocked('proj2', 'card1');
+		const result2 = await isWorkItemLocked('proj2', 'card1', 'implementation');
 		expect(result2.locked).toBe(false);
 	});
 
 	it('clearAllWorkItemLocks clears all entries', async () => {
-		markWorkItemEnqueued('proj1', 'card1');
-		markWorkItemEnqueued('proj2', 'card2');
+		markWorkItemEnqueued('proj1', 'card1', 'implementation');
+		markWorkItemEnqueued('proj2', 'card2', 'review');
 
 		clearAllWorkItemLocks();
 
-		// Both should now be unlocked (falls through to DB which returns false)
-		const result1 = await isWorkItemLocked('proj1', 'card1');
+		const result1 = await isWorkItemLocked('proj1', 'card1', 'implementation');
 		expect(result1.locked).toBe(false);
-		const result2 = await isWorkItemLocked('proj2', 'card2');
+		const result2 = await isWorkItemLocked('proj2', 'card2', 'review');
 		expect(result2.locked).toBe(false);
+	});
+
+	it('short-circuits on in-memory same-type without DB query', async () => {
+		markWorkItemEnqueued('proj1', 'card1', 'implementation');
+		const result = await isWorkItemLocked('proj1', 'card1', 'implementation');
+		expect(result.locked).toBe(true);
+		expect(result.reason).toContain('in-memory same-type');
+		// DB should not have been called
+		expect(countActiveRunsForWorkItem).not.toHaveBeenCalled();
+		expect(countActiveRunsForWorkItemAndType).not.toHaveBeenCalled();
+	});
+
+	it('short-circuits on in-memory total without DB query', async () => {
+		markWorkItemEnqueued('proj1', 'card1', 'implementation');
+		markWorkItemEnqueued('proj1', 'card1', 'review');
+		const result = await isWorkItemLocked('proj1', 'card1', 'debug');
+		expect(result.locked).toBe(true);
+		expect(result.reason).toContain('in-memory total');
+		expect(countActiveRunsForWorkItem).not.toHaveBeenCalled();
+		expect(countActiveRunsForWorkItemAndType).not.toHaveBeenCalled();
 	});
 });

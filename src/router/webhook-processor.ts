@@ -117,8 +117,9 @@ export async function processRouterWebhook(
 
 	// Step 7: Work-item concurrency lock
 	if (result.workItemId) {
-		const lockStatus = await isWorkItemLocked(project.id, result.workItemId);
+		const lockStatus = await isWorkItemLocked(project.id, result.workItemId, result.agentType);
 		if (lockStatus.locked) {
+			result.onBlocked?.();
 			logger.info(`Skipping ${adapter.type} job — work item already locked`, {
 				projectId: project.id,
 				workItemId: result.workItemId,
@@ -139,6 +140,7 @@ export async function processRouterWebhook(
 		);
 		agentTypeMaxConcurrency = concurrencyCheck.maxConcurrency;
 		if (concurrencyCheck.blocked) {
+			result.onBlocked?.();
 			return { shouldProcess: true, projectId: project.id };
 		}
 	}
@@ -154,7 +156,7 @@ export async function processRouterWebhook(
 	try {
 		jobId = await addJob(job);
 		if (result.workItemId) {
-			markWorkItemEnqueued(project.id, result.workItemId);
+			markWorkItemEnqueued(project.id, result.workItemId, result.agentType);
 		}
 		if (result.agentType && agentTypeMaxConcurrency !== null) {
 			markRecentlyDispatched(project.id, result.agentType);

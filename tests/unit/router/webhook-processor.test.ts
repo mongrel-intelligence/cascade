@@ -277,6 +277,47 @@ describe('processRouterWebhook', () => {
 		expect(adapter.postAck).not.toHaveBeenCalled();
 	});
 
+	it('calls onBlocked when work item is locked', async () => {
+		const onBlocked = vi.fn();
+		const triggerResult = {
+			agentType: 'review',
+			agentInput: { prNumber: 42 },
+			workItemId: 'card1',
+			onBlocked,
+		};
+		vi.mocked(isWorkItemLocked).mockResolvedValueOnce({
+			locked: true,
+			reason: 'db: active run exists',
+		});
+		const adapter = makeMockAdapter({
+			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
+		});
+
+		await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(onBlocked).toHaveBeenCalledOnce();
+		expect(addJob).not.toHaveBeenCalled();
+	});
+
+	it('calls onBlocked when agent-type concurrency is blocked', async () => {
+		const onBlocked = vi.fn();
+		vi.mocked(checkAgentTypeConcurrency).mockResolvedValueOnce({
+			maxConcurrency: 1,
+			blocked: true,
+		});
+		const triggerResult = {
+			agentType: 'review',
+			agentInput: { prNumber: 42 },
+			onBlocked,
+		};
+		const adapter = makeMockAdapter({
+			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
+		});
+
+		await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(onBlocked).toHaveBeenCalledOnce();
+		expect(addJob).not.toHaveBeenCalled();
+	});
+
 	it('enqueues job and marks work item when not locked', async () => {
 		const triggerResult = {
 			agentType: 'implementation',
@@ -291,7 +332,7 @@ describe('processRouterWebhook', () => {
 
 		await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(addJob).toHaveBeenCalled();
-		expect(markWorkItemEnqueued).toHaveBeenCalledWith('p1', 'card1');
+		expect(markWorkItemEnqueued).toHaveBeenCalledWith('p1', 'card1', 'implementation');
 	});
 
 	it('skips job when agent-type concurrency is blocked', async () => {

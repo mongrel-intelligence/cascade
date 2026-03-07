@@ -162,20 +162,23 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(githubClient.getPR).toHaveBeenCalledWith('owner', 'repo', 42);
 			// handle() no longer polls checks — it defers to worker via waitForChecks flag
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
-			expect(result).toEqual({
-				agentType: 'review',
-				agentInput: {
+			expect(result).toEqual(
+				expect.objectContaining({
+					agentType: 'review',
+					agentInput: {
+						prNumber: 42,
+						prBranch: 'feature/test',
+						repoFullName: 'owner/repo',
+						headSha: 'sha123',
+						triggerType: 'ci-success',
+						cardId: 'abc123',
+					},
 					prNumber: 42,
-					prBranch: 'feature/test',
-					repoFullName: 'owner/repo',
-					headSha: 'sha123',
-					triggerType: 'ci-success',
-					cardId: 'abc123',
-				},
-				prNumber: 42,
-				workItemId: 'abc123',
-				waitForChecks: true,
-			});
+					workItemId: 'abc123',
+					waitForChecks: true,
+				}),
+			);
+			expect(result?.onBlocked).toBeTypeOf('function');
 		});
 
 		it('returns null when PR targets non-base branch', async () => {
@@ -531,6 +534,43 @@ describe('CheckSuiteSuccessTrigger', () => {
 			// Second call with same PR+SHA should be deduped
 			const result2 = await trigger.handle(ctx);
 			expect(result2).toBeNull();
+		});
+
+		it('onBlocked callback clears the dedup entry', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result).not.toBeNull();
+			expect(result?.onBlocked).toBeTypeOf('function');
+			expect(recentlyDispatched.size).toBe(1);
+
+			// Simulate router calling onBlocked (work-item lock or concurrency block)
+			result?.onBlocked?.();
+			expect(recentlyDispatched.size).toBe(0);
+
+			// After onBlocked, a subsequent call should succeed (not be deduped)
+			const result2 = await trigger.handle(ctx);
+			expect(result2).not.toBeNull();
+			expect(result2?.agentType).toBe('review');
 		});
 
 		it('allows review for same PR with a new SHA after dedup', async () => {

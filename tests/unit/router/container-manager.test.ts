@@ -355,18 +355,23 @@ describe('cleanupWorker', () => {
 		expect(() => cleanupWorker('nonexistent')).not.toThrow();
 	});
 
-	it('calls clearWorkItemEnqueued when worker has projectId and workItemId', async () => {
+	it('calls clearWorkItemEnqueued when worker has projectId, workItemId, and agentType', async () => {
 		const { resolveWait } = setupMockContainer();
 
 		await spawnWorker(
 			makeJob({
 				id: 'job-wi',
-				data: { type: 'trello', projectId: 'proj-1', cardId: 'card-1' } as CascadeJob,
+				data: {
+					type: 'trello',
+					projectId: 'proj-1',
+					cardId: 'card-1',
+					agentType: 'implementation',
+				} as CascadeJob,
 			}) as never,
 		);
 
 		cleanupWorker('job-wi');
-		expect(mockClearWorkItemEnqueued).toHaveBeenCalledWith('proj-1', 'card-1');
+		expect(mockClearWorkItemEnqueued).toHaveBeenCalledWith('proj-1', 'card-1', 'implementation');
 
 		resolveWait();
 	});
@@ -378,7 +383,12 @@ describe('cleanupWorker', () => {
 		await spawnWorker(
 			makeJob({
 				id: 'job-fail-orphan',
-				data: { type: 'trello', projectId: 'proj-1', cardId: 'card-1' } as CascadeJob,
+				data: {
+					type: 'trello',
+					projectId: 'proj-1',
+					cardId: 'card-1',
+					agentType: 'implementation',
+				} as CascadeJob,
 			}) as never,
 		);
 
@@ -398,12 +408,43 @@ describe('cleanupWorker', () => {
 		await spawnWorker(
 			makeJob({
 				id: 'job-ok',
-				data: { type: 'trello', projectId: 'proj-1', cardId: 'card-1' } as CascadeJob,
+				data: {
+					type: 'trello',
+					projectId: 'proj-1',
+					cardId: 'card-1',
+					agentType: 'implementation',
+				} as CascadeJob,
 			}) as never,
 		);
 
 		cleanupWorker('job-ok', 0);
 		expect(mockFailOrphanedRun).not.toHaveBeenCalled();
+
+		resolveWait();
+	});
+
+	it('calls failOrphanedRun but NOT clearWorkItemEnqueued when agentType is missing', async () => {
+		const { resolveWait } = setupMockContainer();
+		mockFailOrphanedRun.mockResolvedValue('run-no-agent');
+
+		await spawnWorker(
+			makeJob({
+				id: 'job-no-agent',
+				data: {
+					type: 'trello',
+					projectId: 'proj-1',
+					cardId: 'card-1',
+				} as CascadeJob,
+			}) as never,
+		);
+
+		cleanupWorker('job-no-agent', 1);
+		expect(mockClearWorkItemEnqueued).not.toHaveBeenCalled();
+		expect(mockFailOrphanedRun).toHaveBeenCalledWith(
+			'proj-1',
+			'card-1',
+			'Worker crashed with exit code 1',
+		);
 
 		resolveWait();
 	});
