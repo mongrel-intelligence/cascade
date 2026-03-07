@@ -15,7 +15,13 @@ vi.mock('../../../src/router/work-item-lock.js', () => ({
 	isWorkItemLocked: vi.fn().mockResolvedValue({ locked: false }),
 	markWorkItemEnqueued: vi.fn(),
 }));
+vi.mock('../../../src/router/agent-type-lock.js', () => ({
+	checkAgentTypeConcurrency: vi.fn().mockResolvedValue({ maxConcurrency: null, blocked: false }),
+	markAgentTypeEnqueued: vi.fn(),
+	markRecentlyDispatched: vi.fn(),
+}));
 
+import { checkAgentTypeConcurrency } from '../../../src/router/agent-type-lock.js';
 import type { RouterProjectConfig } from '../../../src/router/config.js';
 import type { RouterPlatformAdapter } from '../../../src/router/platform-adapter.js';
 import { addJob } from '../../../src/router/queue.js';
@@ -238,6 +244,24 @@ describe('processRouterWebhook', () => {
 		await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(addJob).toHaveBeenCalled();
 		expect(markWorkItemEnqueued).toHaveBeenCalledWith('p1', 'card1');
+	});
+
+	it('skips job when agent-type concurrency is blocked', async () => {
+		vi.mocked(checkAgentTypeConcurrency).mockResolvedValueOnce({
+			maxConcurrency: 1,
+			blocked: true,
+		});
+		const triggerResult = {
+			agentType: 'implementation',
+			agentInput: { cardId: 'card1' },
+		};
+		const adapter = makeMockAdapter({
+			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
+		});
+
+		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(result.shouldProcess).toBe(true);
+		expect(addJob).not.toHaveBeenCalled();
 	});
 
 	it('always enqueues job when trigger has no workItemId', async () => {

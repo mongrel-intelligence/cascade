@@ -14,6 +14,7 @@ export default class AgentsUpdate extends DashboardCommand {
 		model: Flags.string({ description: 'Model override' }),
 		'max-iterations': Flags.integer({ description: 'Max iterations override' }),
 		backend: Flags.string({ description: 'Agent backend override' }),
+		'max-concurrency': Flags.integer({ description: 'Max concurrent runs per project' }),
 	};
 
 	async run(): Promise<void> {
@@ -26,6 +27,7 @@ export default class AgentsUpdate extends DashboardCommand {
 				model: flags.model,
 				maxIterations: flags['max-iterations'],
 				agentBackend: flags.backend,
+				maxConcurrency: flags['max-concurrency'],
 			});
 
 			if (flags.json) {

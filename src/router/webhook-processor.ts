@@ -12,6 +12,11 @@
 
 import type { TriggerRegistry } from '../triggers/registry.js';
 import { logger } from '../utils/logging.js';
+import {
+	checkAgentTypeConcurrency,
+	markAgentTypeEnqueued,
+	markRecentlyDispatched,
+} from './agent-type-lock.js';
 import type { RouterPlatformAdapter } from './platform-adapter.js';
 import { addJob } from './queue.js';
 import { isWorkItemLocked, markWorkItemEnqueued } from './work-item-lock.js';
@@ -37,6 +42,7 @@ export interface ProcessRouterWebhookResult {
  * 9. Build and enqueue job
  * 10. Fire optional pre-actions (e.g. GitHub 👀 reaction)
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: webhook pipeline with sequential guard checks
 export async function processRouterWebhook(
 	adapter: RouterPlatformAdapter,
 	payload: unknown,
@@ -122,6 +128,20 @@ export async function processRouterWebhook(
 		}
 	}
 
+	// Step 7b: Agent-type concurrency limit
+	let agentTypeMaxConcurrency: number | null = null;
+	if (result.agentType) {
+		const concurrencyCheck = await checkAgentTypeConcurrency(
+			project.id,
+			result.agentType,
+			adapter.type,
+		);
+		agentTypeMaxConcurrency = concurrencyCheck.maxConcurrency;
+		if (concurrencyCheck.blocked) {
+			return { shouldProcess: true, projectId: project.id };
+		}
+	}
+
 	// Step 8: Post acknowledgment comment
 	const ackResult = await adapter.postAck(event, payload, project, result.agentType);
 	const ackCommentId = ackResult?.commentId;
@@ -138,6 +158,10 @@ export async function processRouterWebhook(
 		const jobId = await addJob(job);
 		if (result.workItemId) {
 			markWorkItemEnqueued(project.id, result.workItemId);
+		}
+		if (result.agentType && agentTypeMaxConcurrency !== null) {
+			markRecentlyDispatched(project.id, result.agentType);
+			markAgentTypeEnqueued(project.id, result.agentType);
 		}
 		logger.info(`${adapter.type} job queued`, {
 			jobId,

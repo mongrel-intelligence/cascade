@@ -183,6 +183,13 @@
 			"when": 1760000000000,
 			"tag": "0025_integration_hooks",
 			"breakpoints": false
+		},
+		{
+			"idx": 26,
+			"version": "7",
+			"when": 1761000000000,
+			"tag": "0026_agent_type_concurrency",
+			"breakpoints": false
 		}
 	]
 }

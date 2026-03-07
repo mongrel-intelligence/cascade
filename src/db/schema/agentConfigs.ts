@@ -12,6 +12,7 @@ export const agentConfigs = pgTable(
 		model: text('model'),
 		maxIterations: integer('max_iterations'),
 		agentBackend: text('agent_backend'),
+		maxConcurrency: integer('max_concurrency'),
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')
 			.defaultNow()

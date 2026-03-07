@@ -55,7 +55,15 @@ vi.mock('../../../src/pm/registry.js', () => ({
 	},
 }));
 
+vi.mock('../../../src/router/agent-type-lock.js', () => ({
+	checkAgentTypeConcurrency: vi.fn().mockResolvedValue({ maxConcurrency: null, blocked: false }),
+	markAgentTypeEnqueued: vi.fn(),
+	clearAgentTypeEnqueued: vi.fn(),
+	markRecentlyDispatched: vi.fn(),
+}));
+
 import { processPMWebhook } from '../../../src/pm/webhook-handler.js';
+import { checkAgentTypeConcurrency } from '../../../src/router/agent-type-lock.js';
 import { runAgentExecutionPipeline } from '../../../src/triggers/shared/agent-execution.js';
 import {
 	clearCardActive,
@@ -292,6 +300,19 @@ describe('processPMWebhook', () => {
 		await processPMWebhook(integration as never, { type: 'card_moved' }, registry as never);
 
 		expect(mockSetCardActive).not.toHaveBeenCalled();
+	});
+
+	it('skips agent execution when agent-type concurrency is blocked', async () => {
+		vi.mocked(checkAgentTypeConcurrency).mockResolvedValueOnce({
+			maxConcurrency: 1,
+			blocked: true,
+		});
+		const integration = createMockIntegration();
+		const registry = createMockRegistry();
+
+		await processPMWebhook(integration as never, { type: 'card_moved' }, registry as never);
+
+		expect(mockRunAgentExecutionPipeline).not.toHaveBeenCalled();
 	});
 
 	it('calls withCredentials on integration during execution', async () => {

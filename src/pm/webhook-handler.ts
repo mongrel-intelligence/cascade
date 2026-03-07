@@ -7,6 +7,12 @@
  * ack comment management) is delegated to the PMIntegration interface.
  */
 
+import {
+	checkAgentTypeConcurrency,
+	clearAgentTypeEnqueued,
+	markAgentTypeEnqueued,
+	markRecentlyDispatched,
+} from '../router/agent-type-lock.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
 import { runAgentWithCredentials } from '../triggers/shared/webhook-execution.js';
 import { processNextQueuedWebhook } from '../triggers/shared/webhook-queue.js';
@@ -99,6 +105,7 @@ async function resolveTriggerResult(
 	return result;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: webhook orchestration with multiple guard checks
 async function handleMatchedTrigger(
 	integration: PMIntegration,
 	registry: TriggerRegistry,
@@ -129,6 +136,18 @@ async function handleMatchedTrigger(
 		return;
 	}
 
+	// Agent-type concurrency limit
+	let agentTypeMaxConcurrency: number | null = null;
+	if (result.agentType) {
+		const concurrencyCheck = await checkAgentTypeConcurrency(project.id, result.agentType);
+		agentTypeMaxConcurrency = concurrencyCheck.maxConcurrency;
+		if (concurrencyCheck.blocked) return;
+		if (agentTypeMaxConcurrency !== null) {
+			markRecentlyDispatched(project.id, result.agentType);
+			markAgentTypeEnqueued(project.id, result.agentType);
+		}
+	}
+
 	logger.info(`${integration.type} trigger matched`, {
 		agentType: result.agentType,
 		workItemId,
@@ -153,6 +172,9 @@ async function handleMatchedTrigger(
 	} finally {
 		if (workItemId) {
 			clearCardActive(workItemId);
+		}
+		if (result.agentType && agentTypeMaxConcurrency !== null) {
+			clearAgentTypeEnqueued(project.id, result.agentType);
 		}
 		setProcessing(false);
 		processNextQueued(integration, registry);

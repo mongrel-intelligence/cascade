@@ -11,6 +11,7 @@ import { findProjectByRepo, getAllProjectCredentials } from '../config/provider.
 import { failOrphanedRun } from '../db/repositories/runsRepository.js';
 import { captureException } from '../sentry.js';
 import { logger } from '../utils/logging.js';
+import { clearAgentTypeEnqueued, clearAllAgentTypeLocks } from './agent-type-lock.js';
 import { routerConfig } from './config.js';
 import { notifyTimeout } from './notifications.js';
 import type { CascadeJob } from './queue.js';
@@ -28,6 +29,8 @@ export interface ActiveWorker {
 	projectId?: string;
 	/** Resolved at spawn time for work-item lock cleanup. */
 	workItemId?: string;
+	/** Resolved at spawn time for agent-type lock cleanup. */
+	agentType?: string;
 }
 
 const activeWorkers = new Map<string, ActiveWorker>();
@@ -145,6 +148,18 @@ function extractWorkItemId(data: CascadeJob): string | undefined {
 }
 
 /**
+ * Extract agent type from job data for concurrency lock tracking.
+ * Checks triggerResult.agentType first, then top-level agentType (dashboard jobs).
+ */
+function extractAgentType(data: CascadeJob): string | undefined {
+	const jobData = data as unknown as {
+		triggerResult?: { agentType?: string };
+		agentType?: string;
+	};
+	return jobData.triggerResult?.agentType ?? jobData.agentType ?? undefined;
+}
+
+/**
  * Spawn a worker container for a job.
  * Sets up timeout tracking and monitors container exit asynchronously.
  */
@@ -204,6 +219,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 
 		// Track the worker
 		const workItemId = extractWorkItemId(job.data);
+		const agentType = extractAgentType(job.data);
 		activeWorkers.set(jobId, {
 			containerId: container.id,
 			jobId,
@@ -212,6 +228,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 			job: job.data,
 			projectId: projectId ?? undefined,
 			workItemId,
+			agentType,
 		});
 
 		logger.info('[WorkerManager] Worker started:', {
@@ -318,6 +335,9 @@ export function cleanupWorker(jobId: string, exitCode?: number): void {
 	const worker = activeWorkers.get(jobId);
 	if (worker) {
 		clearTimeout(worker.timeoutHandle);
+		if (worker.projectId && worker.agentType) {
+			clearAgentTypeEnqueued(worker.projectId, worker.agentType);
+		}
 		if (worker.projectId && worker.workItemId) {
 			clearWorkItemEnqueued(worker.projectId, worker.workItemId);
 			if (exitCode !== undefined && exitCode !== 0) {
@@ -386,4 +406,5 @@ export function detachAll(): void {
 	}
 	activeWorkers.clear();
 	clearAllWorkItemLocks();
+	clearAllAgentTypeLocks();
 }

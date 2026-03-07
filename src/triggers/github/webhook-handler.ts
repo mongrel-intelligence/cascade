@@ -12,6 +12,12 @@ import { withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
 import { withPMCredentials, withPMProvider } from '../../pm/context.js';
 import { createPMProvider, pmRegistry } from '../../pm/index.js';
+import {
+	checkAgentTypeConcurrency,
+	clearAgentTypeEnqueued,
+	markAgentTypeEnqueued,
+	markRecentlyDispatched,
+} from '../../router/agent-type-lock.js';
 import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
 import {
 	clearCardActive,
@@ -107,6 +113,7 @@ async function maybePostAckComment(
 }
 
 /** Run the agent with GitHub-specific execution config, managing processing flags. */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: webhook orchestration with multiple guard checks
 async function runGitHubAgent(
 	result: TriggerResult,
 	project: ProjectConfig,
@@ -117,6 +124,18 @@ async function runGitHubAgent(
 	if (workItemId && isCardActive(workItemId)) {
 		logger.info('Work item already being processed, skipping', { workItemId });
 		return;
+	}
+
+	// Agent-type concurrency limit
+	let agentTypeMaxConcurrency: number | null = null;
+	if (result.agentType) {
+		const concurrencyCheck = await checkAgentTypeConcurrency(project.id, result.agentType);
+		agentTypeMaxConcurrency = concurrencyCheck.maxConcurrency;
+		if (concurrencyCheck.blocked) return;
+		if (agentTypeMaxConcurrency !== null) {
+			markRecentlyDispatched(project.id, result.agentType);
+			markAgentTypeEnqueued(project.id, result.agentType);
+		}
 	}
 
 	setProcessing(true);
@@ -156,6 +175,9 @@ async function runGitHubAgent(
 		);
 	} finally {
 		if (workItemId) clearCardActive(workItemId);
+		if (result.agentType && agentTypeMaxConcurrency !== null) {
+			clearAgentTypeEnqueued(project.id, result.agentType);
+		}
 		setProcessing(false);
 		processNextQueuedGitHubWebhook(registry);
 	}

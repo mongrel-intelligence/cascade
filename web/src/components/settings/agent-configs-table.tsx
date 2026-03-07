@@ -21,6 +21,7 @@ interface AgentConfig {
 	model: string | null;
 	maxIterations: number | null;
 	agentBackend: string | null;
+	maxConcurrency: number | null;
 }
 
 export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
@@ -43,6 +44,7 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 							<TableHead>Agent Type</TableHead>
 							<TableHead>Model</TableHead>
 							<TableHead>Max Iterations</TableHead>
+							<TableHead>Max Concurrency</TableHead>
 							<TableHead>Backend</TableHead>
 							<TableHead>Scope</TableHead>
 							<TableHead className="w-20" />
@@ -51,7 +53,7 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 					<TableBody>
 						{configs.length === 0 && (
 							<TableRow>
-								<TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+								<TableCell colSpan={7} className="text-center text-muted-foreground py-8">
 									No agent configs yet
 								</TableCell>
 							</TableRow>
@@ -61,6 +63,7 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 								<TableCell className="font-medium">{config.agentType}</TableCell>
 								<TableCell>{config.model ?? '-'}</TableCell>
 								<TableCell>{config.maxIterations ?? '-'}</TableCell>
+								<TableCell>{config.maxConcurrency ?? '-'}</TableCell>
 								<TableCell>{config.agentBackend ?? '-'}</TableCell>
 								<TableCell>
 									{config.orgId ? (
