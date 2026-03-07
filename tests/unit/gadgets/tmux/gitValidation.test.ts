@@ -101,6 +101,10 @@ describe('validateGitCommand', () => {
 			expect(() => validateGitCommand('git commit -m "test message"')).not.toThrow();
 		});
 
+		it('allows git commit with -am (all flag)', () => {
+			expect(() => validateGitCommand('git commit -am "test message"')).not.toThrow();
+		});
+
 		it('allows git commit --amend without --no-verify', () => {
 			expect(() => validateGitCommand('git commit --amend -m "fix"')).not.toThrow();
 		});
@@ -150,6 +154,16 @@ describe('validateGitCommand', () => {
 
 		it('allows git log -n (limit, not no-verify)', () => {
 			expect(() => validateGitCommand('git log -n 10')).not.toThrow();
+		});
+	});
+
+	describe('allows non-commit/push git commands with -n', () => {
+		it('allows git add -n (dry-run, not no-verify)', () => {
+			expect(() => validateGitCommand('git add -n .')).not.toThrow();
+		});
+
+		it('allows git status', () => {
+			expect(() => validateGitCommand('git status')).not.toThrow();
 		});
 	});
 

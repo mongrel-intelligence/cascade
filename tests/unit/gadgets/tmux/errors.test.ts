@@ -46,6 +46,13 @@ describe('CommandFailedError', () => {
 			expect(err.message).toContain('my-session');
 		});
 
+		it('includes formatted Session and Exit code labels', () => {
+			const err = new CommandFailedError('my-cmd', 127, 'command not found');
+			expect(err.message).toContain('Session: my-cmd');
+			expect(err.message).toContain('Exit code: 127');
+			expect(err.message).toContain('command not found');
+		});
+
 		it('includes short output in full', () => {
 			const err = new CommandFailedError('session', 1, 'short output text');
 			expect(err.message).toContain('short output text');
