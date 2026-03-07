@@ -42,7 +42,7 @@ export function RunSummaryCard({ run }: RunSummaryProps) {
 
 	return (
 		<div className="space-y-6">
-			<div className="grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-3 lg:grid-cols-4">
+			<div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 				<Field label="Status">{run.status}</Field>
 				<Field label="Backend">{run.backend}</Field>
 				<Field label="Model">{run.model ?? '-'}</Field>
@@ -80,14 +80,14 @@ export function RunSummaryCard({ run }: RunSummaryProps) {
 			{run.error && (
 				<div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
 					<h3 className="mb-1 text-sm font-medium text-destructive">Error</h3>
-					<pre className="whitespace-pre-wrap text-sm">{run.error}</pre>
+					<pre className="overflow-x-auto whitespace-pre-wrap text-sm">{run.error}</pre>
 				</div>
 			)}
 
 			{run.outputSummary && (
 				<div className="rounded-lg border border-border p-4">
 					<h3 className="mb-1 text-sm font-medium">Output Summary</h3>
-					<pre className="whitespace-pre-wrap text-sm text-muted-foreground">
+					<pre className="overflow-x-auto whitespace-pre-wrap text-sm text-muted-foreground">
 						{run.outputSummary}
 					</pre>
 				</div>
