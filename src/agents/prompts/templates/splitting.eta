@@ -205,7 +205,7 @@ Each story is independent, valuable, and testable.
 ## Gadgets Available
 
 - `ReadWorkItem` - Read <%= it.workItemNoun || 'card' %> details (title, description, comments, labels)
-- `CreateWorkItem` - Create new <%= it.workItemNounPlural || 'cards' %> in the STORIES list
+- `CreateWorkItem` - Create new <%= it.workItemNounPlural || 'cards' %> in the BACKLOG list
 - `AddChecklist` - Add an interactive checklist to a <%= it.workItemNoun || 'card' %> (use for acceptance criteria)
 - `ListWorkItems` - List all <%= it.workItemNounPlural || 'cards' %> on a list (use to find <%= it.workItemNounPlural || 'cards' %> you created)
 - `UpdateWorkItem` - Update <%= it.workItemNoun || 'card' %> title/description, or add labels
