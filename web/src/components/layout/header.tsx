@@ -11,13 +11,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Building2, LogOut, Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 
 interface HeaderProps {
 	user: { name: string; role: string } | undefined;
+	mobileMenuTrigger?: ReactNode;
 }
 
-export function Header({ user }: HeaderProps) {
+export function Header({ user, mobileMenuTrigger }: HeaderProps) {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const { effectiveOrgId, availableOrgs, isAdmin, switchOrg } = useOrgContext();
@@ -44,11 +45,12 @@ export function Header({ user }: HeaderProps) {
 	}
 
 	return (
-		<header className="flex h-14 items-center justify-between border-b border-border px-6">
+		<header className="flex h-14 items-center justify-between border-b border-border px-4 md:px-6">
 			<div className="flex items-center gap-2">
+				{mobileMenuTrigger && <div className="md:hidden">{mobileMenuTrigger}</div>}
 				{isAdmin && availableOrgs && availableOrgs.length > 1 ? (
 					<Select value={effectiveOrgId ?? undefined} onValueChange={switchOrg}>
-						<SelectTrigger className="h-8 text-xs gap-1.5">
+						<SelectTrigger className="h-8 text-xs gap-1.5 max-w-[140px] sm:max-w-none">
 							<Building2 className="h-3.5 w-3.5" />
 							<SelectValue />
 						</SelectTrigger>
@@ -64,8 +66,10 @@ export function Header({ user }: HeaderProps) {
 					isAdmin && orgName && <span className="text-sm text-muted-foreground">{orgName}</span>
 				)}
 			</div>
-			<div className="flex items-center gap-4">
-				{user && <span className="text-sm text-muted-foreground">{user.name}</span>}
+			<div className="flex items-center gap-2 md:gap-4">
+				{user && (
+					<span className="hidden sm:inline text-sm text-muted-foreground">{user.name}</span>
+				)}
 				{mounted && (
 					<button
 						type="button"
