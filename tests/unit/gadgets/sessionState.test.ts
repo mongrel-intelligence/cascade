@@ -116,6 +116,39 @@ describe('recordReviewSubmission', () => {
 		expect(state.reviewSubmitted).toBe(true);
 		expect(state.reviewUrl).toBe('https://github.com/owner/repo/pull/42#pullrequestreview-1');
 	});
+
+	it('stores reviewBody and reviewEvent when provided', () => {
+		recordReviewSubmission(
+			'https://github.com/owner/repo/pull/42#pullrequestreview-1',
+			'LGTM! Well done.',
+			'APPROVE',
+		);
+		const state = getSessionState();
+
+		expect(state.reviewBody).toBe('LGTM! Well done.');
+		expect(state.reviewEvent).toBe('APPROVE');
+	});
+
+	it('sets reviewBody and reviewEvent to null when not provided', () => {
+		recordReviewSubmission('https://github.com/owner/repo/pull/42#pullrequestreview-1');
+		const state = getSessionState();
+
+		expect(state.reviewBody).toBeNull();
+		expect(state.reviewEvent).toBeNull();
+	});
+
+	it('resets reviewBody and reviewEvent on initSessionState', () => {
+		recordReviewSubmission(
+			'https://github.com/owner/repo/pull/42#pullrequestreview-1',
+			'LGTM!',
+			'APPROVE',
+		);
+		initSessionState('review');
+		const state = getSessionState();
+
+		expect(state.reviewBody).toBeNull();
+		expect(state.reviewEvent).toBeNull();
+	});
 });
 
 describe('recordInitialComment', () => {
