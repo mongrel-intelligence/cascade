@@ -51,16 +51,22 @@ export function WebhookLogsTable({
 
 	return (
 		<div className="space-y-4">
-			<div className="overflow-hidden rounded-lg border border-border">
+			<div className="overflow-x-auto rounded-lg border border-border">
 				<table className="w-full text-sm">
 					<thead>
 						<tr className="border-b border-border bg-muted/50">
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Source</th>
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Event Type</th>
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Method</th>
-							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Status</th>
+							<th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
+								Method
+							</th>
+							<th className="hidden px-4 py-3 text-right font-medium text-muted-foreground md:table-cell">
+								Status
+							</th>
 							<th className="px-4 py-3 text-center font-medium text-muted-foreground">Processed</th>
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Reason</th>
+							<th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
+								Reason
+							</th>
 							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Time</th>
 						</tr>
 					</thead>
@@ -85,8 +91,8 @@ export function WebhookLogsTable({
 									<SourceBadge source={log.source} />
 								</td>
 								<td className="px-4 py-3 text-muted-foreground">{log.eventType ?? '-'}</td>
-								<td className="px-4 py-3 font-mono text-xs">{log.method}</td>
-								<td className="px-4 py-3 text-right tabular-nums">
+								<td className="hidden px-4 py-3 font-mono text-xs md:table-cell">{log.method}</td>
+								<td className="hidden px-4 py-3 text-right tabular-nums md:table-cell">
 									{log.statusCode != null ? (
 										<span
 											className={
@@ -113,7 +119,7 @@ export function WebhookLogsTable({
 									)}
 								</td>
 								<td
-									className="px-4 py-3 text-muted-foreground max-w-[200px] truncate"
+									className="hidden px-4 py-3 text-muted-foreground max-w-[200px] truncate md:table-cell"
 									title={log.decisionReason ?? undefined}
 								>
 									{log.decisionReason ?? '-'}
@@ -128,7 +134,7 @@ export function WebhookLogsTable({
 			</div>
 
 			{total > limit && (
-				<div className="flex items-center justify-between">
+				<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 					<div className="text-sm text-muted-foreground">
 						Showing {offset + 1}-{Math.min(offset + limit, total)} of {total}
 					</div>
