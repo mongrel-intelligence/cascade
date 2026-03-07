@@ -20,6 +20,7 @@ interface AgentConfig {
 	model: string | null;
 	maxIterations: number | null;
 	agentBackend: string | null;
+	maxConcurrency: number | null;
 }
 
 interface AgentConfigFormDialogProps {
@@ -36,6 +37,7 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 	const [model, setModel] = useState(config?.model ?? '');
 	const [maxIterations, setMaxIterations] = useState(config?.maxIterations?.toString() ?? '');
 	const [agentBackend, setAgentBackend] = useState(config?.agentBackend ?? '');
+	const [maxConcurrency, setMaxConcurrency] = useState(config?.maxConcurrency?.toString() ?? '');
 
 	const queryKey = trpc.agentConfigs.list.queryOptions().queryKey;
 
@@ -46,6 +48,7 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentBackend: agentBackend || null,
+				maxConcurrency: maxConcurrency ? Number(maxConcurrency) : null,
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey });
@@ -61,6 +64,7 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentBackend: agentBackend || null,
+				maxConcurrency: maxConcurrency ? Number(maxConcurrency) : null,
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey });
@@ -108,6 +112,17 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 								placeholder="Optional"
 							/>
 						</div>
+					</div>
+					<div className="space-y-2">
+						<Label htmlFor="gac-concurrency">Max Concurrency</Label>
+						<Input
+							id="gac-concurrency"
+							type="number"
+							min={1}
+							value={maxConcurrency}
+							onChange={(e) => setMaxConcurrency(e.target.value)}
+							placeholder="Optional — limits concurrent runs per project"
+						/>
 					</div>
 					<div className="space-y-2">
 						<Label>Backend</Label>

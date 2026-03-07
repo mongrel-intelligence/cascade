@@ -271,6 +271,28 @@ export async function hasActiveRunForWorkItem(
 	return !!row;
 }
 
+export async function countActiveRunsForAgentType(
+	projectId: string,
+	agentType: string,
+	maxAgeMs?: number,
+): Promise<number> {
+	const db = getDb();
+	const conditions: SQL[] = [
+		eq(agentRuns.projectId, projectId),
+		eq(agentRuns.agentType, agentType),
+		eq(agentRuns.status, 'running'),
+	];
+	if (maxAgeMs !== undefined) {
+		const cutoff = new Date(Date.now() - maxAgeMs);
+		conditions.push(gte(agentRuns.startedAt, cutoff));
+	}
+	const [row] = await db
+		.select({ count: count() })
+		.from(agentRuns)
+		.where(and(...conditions));
+	return row?.count ?? 0;
+}
+
 export async function failOrphanedRun(
 	projectId: string,
 	workItemId: string,

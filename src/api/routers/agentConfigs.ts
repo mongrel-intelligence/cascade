@@ -52,6 +52,7 @@ export const agentConfigsRouter = router({
 				model: z.string().nullish(),
 				maxIterations: z.number().int().positive().nullish(),
 				agentBackend: z.string().nullish(),
+				maxConcurrency: z.number().int().positive().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -66,6 +67,7 @@ export const agentConfigsRouter = router({
 				model: input.model,
 				maxIterations: input.maxIterations,
 				agentBackend: input.agentBackend,
+				maxConcurrency: input.maxConcurrency,
 			});
 		}),
 
@@ -77,6 +79,7 @@ export const agentConfigsRouter = router({
 				model: z.string().nullish(),
 				maxIterations: z.number().int().positive().nullish(),
 				agentBackend: z.string().nullish(),
+				maxConcurrency: z.number().int().positive().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {

@@ -36,6 +36,7 @@ interface AgentConfig {
 	model: string | null;
 	maxIterations: number | null;
 	agentBackend: string | null;
+	maxConcurrency: number | null;
 }
 
 function AgentConfigBadge({ config }: { config: AgentConfig | null }) {
@@ -45,6 +46,7 @@ function AgentConfigBadge({ config }: { config: AgentConfig | null }) {
 	const parts: string[] = [];
 	if (config.model) parts.push(config.model);
 	if (config.maxIterations) parts.push(`${config.maxIterations} iterations`);
+	if (config.maxConcurrency) parts.push(`max ${config.maxConcurrency} concurrent`);
 	if (config.agentBackend) parts.push(config.agentBackend);
 	if (parts.length === 0) return <span className="text-xs text-muted-foreground">Configured</span>;
 	return <span className="text-xs text-muted-foreground">{parts.join(' · ')}</span>;
@@ -237,6 +239,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const [model, setModel] = useState('');
 	const [maxIterations, setMaxIterations] = useState('');
 	const [agentBackend, setAgentBackend] = useState('');
+	const [maxConcurrency, setMaxConcurrency] = useState('');
 	const [localLifecycleTriggers, setLocalLifecycleTriggers] = useState<Record<string, unknown>>({});
 	const [lifecycleSaving, setLifecycleSaving] = useState(false);
 	const [lifecycleSaved, setLifecycleSaved] = useState(false);
@@ -253,6 +256,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		setModel('');
 		setMaxIterations('');
 		setAgentBackend('');
+		setMaxConcurrency('');
 		setDialogOpen(true);
 	}
 
@@ -262,6 +266,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		setModel(config.model ?? '');
 		setMaxIterations(config.maxIterations?.toString() ?? '');
 		setAgentBackend(config.agentBackend ?? '');
+		setMaxConcurrency(config.maxConcurrency?.toString() ?? '');
 		setDialogOpen(true);
 	}
 
@@ -274,6 +279,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentBackend: agentBackend || null,
+				maxConcurrency: maxConcurrency ? Number(maxConcurrency) : null,
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: configsQueryKey });
@@ -289,6 +295,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentBackend: agentBackend || null,
+				maxConcurrency: maxConcurrency ? Number(maxConcurrency) : null,
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: configsQueryKey });
@@ -535,6 +542,17 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 									placeholder="Optional"
 								/>
 							</div>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="ac-concurrency">Max Concurrency</Label>
+							<Input
+								id="ac-concurrency"
+								type="number"
+								min={1}
+								value={maxConcurrency}
+								onChange={(e) => setMaxConcurrency(e.target.value)}
+								placeholder="Optional — limits concurrent runs per project"
+							/>
 						</div>
 						<div className="space-y-2">
 							<Label>Backend</Label>

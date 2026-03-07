@@ -63,6 +63,13 @@ vi.mock('../../../src/triggers/github/check-polling.js', () => ({
 	pollWaitForChecks: vi.fn().mockResolvedValue(true),
 }));
 
+vi.mock('../../../src/router/agent-type-lock.js', () => ({
+	checkAgentTypeConcurrency: vi.fn().mockResolvedValue({ maxConcurrency: null, blocked: false }),
+	markAgentTypeEnqueued: vi.fn(),
+	clearAgentTypeEnqueued: vi.fn(),
+	markRecentlyDispatched: vi.fn(),
+}));
+
 vi.mock('../../../src/utils/index.js', () => ({
 	clearCardActive: vi.fn(),
 	enqueueWebhook: vi.fn().mockReturnValue(true),
@@ -80,6 +87,7 @@ vi.mock('../../../src/utils/index.js', () => ({
 	startWatchdog: vi.fn(),
 }));
 
+import { checkAgentTypeConcurrency } from '../../../src/router/agent-type-lock.js';
 import { postAcknowledgmentComment } from '../../../src/triggers/github/ack-comments.js';
 import { processGitHubWebhook } from '../../../src/triggers/github/webhook-handler.js';
 import { runAgentWithCredentials } from '../../../src/triggers/shared/webhook-execution.js';
@@ -258,6 +266,16 @@ describe('processGitHubWebhook', () => {
 		const registry = createMockRegistry();
 		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
 		expect(mockSetProcessing).toHaveBeenCalledWith(false);
+	});
+
+	it('skips agent execution when agent-type concurrency is blocked', async () => {
+		vi.mocked(checkAgentTypeConcurrency).mockResolvedValueOnce({
+			maxConcurrency: 1,
+			blocked: true,
+		});
+		const registry = createMockRegistry();
+		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
+		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
 	});
 
 	it('skips execution when no agentType in result', async () => {
