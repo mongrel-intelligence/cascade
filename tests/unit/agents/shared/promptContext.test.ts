@@ -28,7 +28,6 @@ function makeProject(overrides: Record<string, unknown> = {}) {
 				backlog: 'list-backlog',
 				inProgress: 'list-in-progress',
 				inReview: 'list-in-review',
-				stories: 'list-stories',
 				merged: 'list-merged',
 				debug: 'list-debug',
 			},
@@ -85,11 +84,6 @@ describe('buildPromptContext', () => {
 		it('sets cardId from parameter', () => {
 			const ctx = buildPromptContext('card-abc', makeProject() as never);
 			expect(ctx.cardId).toBe('card-abc');
-		});
-
-		it('includes storiesListId from project trello config', () => {
-			const ctx = buildPromptContext('card123', makeProject() as never);
-			expect(ctx.storiesListId).toBe('list-stories');
 		});
 
 		it('includes processedLabelId from project trello config', () => {
@@ -161,20 +155,6 @@ describe('buildPromptContext', () => {
 		it('sets pmType to "jira"', () => {
 			const ctx = buildPromptContext('PROJ-123', makeProject() as never);
 			expect(ctx.pmType).toBe('jira');
-		});
-
-		it('sets storiesListId to JIRA project key when no Trello config', () => {
-			const jiraProject = makeProject({
-				trello: undefined,
-				pm: { type: 'jira' },
-				jira: {
-					projectKey: 'BTS',
-					baseUrl: 'https://company.atlassian.net',
-					statuses: { todo: 'To Do' },
-				},
-			});
-			const ctx = buildPromptContext('BTS-148', jiraProject as never);
-			expect(ctx.storiesListId).toBe('BTS');
 		});
 
 		it('sets pipeline list IDs from JIRA statuses', () => {

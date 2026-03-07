@@ -150,15 +150,15 @@ export class JiraPMProvider implements PMProvider {
 		});
 		const key = result.key ?? '';
 
-		// Transition to stories status if configured (mirrors Trello's stories list)
-		const storiesStatus = this.config.statuses?.stories;
-		if (storiesStatus) {
+		// Transition to backlog status if configured
+		const backlogStatus = this.config.statuses?.backlog;
+		if (backlogStatus) {
 			try {
-				await this.moveWorkItem(key, storiesStatus);
+				await this.moveWorkItem(key, backlogStatus);
 			} catch (err) {
-				logger.warn('[JIRA] Failed to transition new issue to stories status', {
+				logger.warn('[JIRA] Failed to transition new issue to backlog status', {
 					issueKey: key,
-					targetStatus: storiesStatus,
+					targetStatus: backlogStatus,
 					error: String(err),
 				});
 			}

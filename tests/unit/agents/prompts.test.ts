@@ -63,16 +63,16 @@ describe('getSystemPrompt', () => {
 
 	it('renders context variables in splitting prompt', () => {
 		const prompt = getSystemPrompt('splitting', {
-			storiesListId: 'stories-123',
+			backlogListId: 'backlog-123',
 			processedLabelId: 'label-456',
 		});
-		expect(prompt).toContain('STORIES_LIST_ID: stories-123');
+		expect(prompt).toContain('BACKLOG_LIST_ID: backlog-123');
 		expect(prompt).toContain('PROCESSED_LABEL_ID: label-456');
 	});
 
 	it('uses default values when context is not provided', () => {
 		const prompt = getSystemPrompt('splitting');
-		expect(prompt).toContain('STORIES_LIST_ID: NOT_CONFIGURED');
+		expect(prompt).toContain('BACKLOG_LIST_ID: NOT_CONFIGURED');
 		expect(prompt).toContain('PROCESSED_LABEL_ID: NOT_CONFIGURED');
 	});
 
