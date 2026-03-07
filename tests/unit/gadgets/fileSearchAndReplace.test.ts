@@ -240,26 +240,30 @@ describe('FileSearchAndReplace', () => {
 		});
 
 		it('provides suggestions when similar content exists', () => {
-			const filePath = createFile('test.txt', 'const timeout = 1000;\n');
+			const filePath = createFile(
+				'test.txt',
+				'function processOrder(orderId: string) {\n  return db.find(orderId);\n}\n',
+			);
 
-			// Search for something close but not exact
+			// Search for something that differs enough to fail matching (< 0.8 similarity)
+			// but is similar enough to trigger suggestion engine (>= 0.6 similarity)
 			let errorMessage = '';
 			try {
 				gadget.execute({
 					comment: 'test',
 					filePath,
-					search: 'const timeoutMs = 1000;',
-					replace: 'const timeoutMs = 5000;',
+					search: 'function handleRequest(requestId: string) {\n  return db.find(requestId);\n}',
+					replace: 'function handleRequest(requestId: string) {\n  return cache.get(requestId);\n}',
 				});
 			} catch (e) {
 				errorMessage = (e as Error).message;
 			}
 
-			// Should throw some error (either not found or success via fuzzy)
-			// The important thing is it doesn't silently do nothing
-			expect(errorMessage.length > 0 || readFileSync(filePath, 'utf-8').includes('5000')).toBe(
-				true,
-			);
+			// Must throw a NOT FOUND error (not silently succeed or return empty)
+			expect(errorMessage).toMatch(/NOT FOUND/i);
+			// Error must include a suggestion pointing to the similar content in the file
+			expect(errorMessage).toMatch(/SIMILAR CONTENT FOUND/i);
+			expect(errorMessage).toContain('processOrder');
 		});
 	});
 
