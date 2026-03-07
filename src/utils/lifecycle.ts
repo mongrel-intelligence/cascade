@@ -2,16 +2,7 @@ import { flush } from '../sentry.js';
 import { logger } from './logging.js';
 
 let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
-let isProcessing = false;
 let watchdogCleanup: (() => Promise<void>) | null = null;
-
-export function setProcessing(processing: boolean): void {
-	isProcessing = processing;
-}
-
-export function isCurrentlyProcessing(): boolean {
-	return isProcessing;
-}
 
 // Watchdog cleanup callback - called before force exit
 export function setWatchdogCleanup(cleanup: () => Promise<void>): void {

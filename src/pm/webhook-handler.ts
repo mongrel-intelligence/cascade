@@ -15,7 +15,6 @@ import {
 } from '../router/agent-type-lock.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
 import { runAgentWithCredentials } from '../triggers/shared/webhook-execution.js';
-import { processNextQueuedWebhook } from '../triggers/shared/webhook-queue.js';
 import type { TriggerResult } from '../triggers/types.js';
 import type {
 	CascadeConfig,
@@ -23,17 +22,7 @@ import type {
 	TriggerContext,
 	TriggerSource,
 } from '../types/index.js';
-import {
-	clearCardActive,
-	enqueueWebhook,
-	getQueueLength,
-	isCardActive,
-	isCurrentlyProcessing,
-	logger,
-	setCardActive,
-	setProcessing,
-	startWatchdog,
-} from '../utils/index.js';
+import { logger, startWatchdog } from '../utils/index.js';
 import { getPMProvider, withPMProvider } from './context.js';
 import type { PMIntegration } from './integration.js';
 import { PMLifecycleManager, resolveProjectPMConfig } from './lifecycle.js';
@@ -58,14 +47,6 @@ async function executeAgent(
 // ============================================================================
 // Webhook Processing
 // ============================================================================
-
-function processNextQueued(integration: PMIntegration, registry: TriggerRegistry): void {
-	processNextQueuedWebhook(
-		(payload, _eventType, ackCommentId) =>
-			processPMWebhook(integration, payload, registry, ackCommentId as string | undefined),
-		integration.type.charAt(0).toUpperCase() + integration.type.slice(1),
-	);
-}
 
 async function cleanupOrphanAck(
 	integration: PMIntegration,
@@ -105,7 +86,6 @@ async function resolveTriggerResult(
 	return result;
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: webhook orchestration with multiple guard checks
 async function handleMatchedTrigger(
 	integration: PMIntegration,
 	registry: TriggerRegistry,
@@ -130,12 +110,6 @@ async function handleMatchedTrigger(
 		result.agentInput.ackCommentId = ackCommentId;
 	}
 
-	const workItemId = result.workItemId;
-	if (workItemId && isCardActive(workItemId)) {
-		logger.info('Work item already being processed, skipping', { workItemId });
-		return;
-	}
-
 	// Agent-type concurrency limit
 	let agentTypeMaxConcurrency: number | null = null;
 	if (result.agentType) {
@@ -150,34 +124,25 @@ async function handleMatchedTrigger(
 
 	logger.info(`${integration.type} trigger matched`, {
 		agentType: result.agentType,
-		workItemId,
+		workItemId: result.workItemId,
 	});
 
-	setProcessing(true);
 	startWatchdog(config.defaults.watchdogTimeoutMs);
 
 	const pmConfig = resolveProjectPMConfig(project);
 	const lifecycle = new PMLifecycleManager(getPMProvider(), pmConfig);
 
 	try {
-		if (workItemId) {
-			setCardActive(workItemId);
-		}
 		await executeAgent(integration, result, project, config);
 	} catch (err) {
 		logger.error(`Failed to process ${integration.type} webhook`, { error: String(err) });
-		if (workItemId) {
-			await lifecycle.handleError(workItemId, String(err));
+		if (result.workItemId) {
+			await lifecycle.handleError(result.workItemId, String(err));
 		}
 	} finally {
-		if (workItemId) {
-			clearCardActive(workItemId);
-		}
 		if (result.agentType && agentTypeMaxConcurrency !== null) {
 			clearAgentTypeEnqueued(project.id, result.agentType);
 		}
-		setProcessing(false);
-		processNextQueued(integration, registry);
 	}
 }
 
@@ -207,20 +172,6 @@ export async function processPMWebhook(
 		logger.warn(`Invalid ${integration.type} webhook payload`, {
 			payload: JSON.stringify(payload).slice(0, 200),
 		});
-		return;
-	}
-
-	if (isCurrentlyProcessing()) {
-		const queued = enqueueWebhook(payload, undefined, ackCommentId);
-		if (queued) {
-			logger.info(`Currently processing, ${integration.type} webhook queued`, {
-				queueLength: getQueueLength(),
-			});
-		} else {
-			logger.warn(`Queue full, ${integration.type} webhook rejected`, {
-				queueLength: getQueueLength(),
-			});
-		}
 		return;
 	}
 

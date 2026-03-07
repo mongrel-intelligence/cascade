@@ -5,22 +5,32 @@
 ```bash
 npm install
 cd web && npm install && cd ..
-npm run dev          # Backend
+# Start Redis (required for router/BullMQ):
+#   macOS: brew install redis && brew services start redis
+#   Linux: apt-get install redis-server && service redis-server start
+# The .cascade/setup.sh script handles this automatically.
+npm run dev          # Router (webhook receiver, requires Redis)
 npm run dev:web      # Dashboard frontend (separate terminal)
 ```
 
 ## Architecture
 
-CASCADE reacts to Trello webhooks and runs AI agents to analyze, plan, and implement features.
+CASCADE runs as three services (no monolithic server mode):
+
+1. **Router** (`src/router/index.ts`) — receives webhooks, enqueues jobs to Redis via BullMQ
+2. **Worker** (`src/worker-entry.ts`) — processes one job per container, exits when done
+3. **Dashboard** (`src/dashboard.ts`) — API + tRPC for web UI and CLI
 
 ### Trigger System
 
 The extensible trigger system routes events to agents:
 
 ```
-Trello/GitHub Webhook → TriggerRegistry → Agent → Code Changes → PR
+Trello/GitHub Webhook → Router → Redis/BullMQ → Worker → TriggerRegistry → Agent → Code Changes → PR
 ```
 
+- `src/router/` - Webhook receiver (enqueues jobs to Redis)
+- `src/webhook/` - Shared webhook handler factory, parsers, and logging
 - `src/triggers/` - Event handlers (Trello card moves, labels, GitHub PRs, attachments)
 - `src/agents/` - AI agents (splitting, planning, implementation, review, debug)
 - `src/gadgets/` - Tools agents can use (Trello API, Git operations, file system)
@@ -53,6 +63,8 @@ Lefthook runs pre-commit (lint, typecheck) and pre-push (test) hooks automatical
 
 ## Key Directories
 
+- `src/router/` - Router entry point (webhook receiver, enqueues to Redis)
+- `src/webhook/` - Shared webhook handler factory, parsers, and logging helpers
 - `src/config/` - Configuration provider, caching, Zod schemas
 - `src/db/` - Database client, Drizzle schema, repositories
 - `src/triggers/` - Extensible trigger system (Trello, GitHub)
@@ -70,6 +82,7 @@ Lefthook runs pre-commit (lint, typecheck) and pre-push (test) hooks automatical
 
 Required:
 - `DATABASE_URL` - PostgreSQL connection string (Supabase transaction pooler, port 6543)
+- `REDIS_URL` - Redis connection string for BullMQ job queue (router + worker). Defaults to `redis://localhost:6379`. Run `.cascade/setup.sh` to install and start Redis locally.
 
 Optional (infrastructure):
 - `PORT` - Server port (default: 3000)

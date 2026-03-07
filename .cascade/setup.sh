@@ -298,11 +298,81 @@ else
 fi
 
 # =============================================================================
+# 6. Redis Setup (required for router mode / BullMQ job queue)
+# =============================================================================
+echo ""
+echo "--- Redis Setup ---"
+
+start_redis_macos() {
+  if command -v brew &> /dev/null; then
+    if ! brew list redis &> /dev/null; then
+      log_info "Redis not installed, installing..."
+      brew install redis
+    fi
+    log_info "Starting Redis..."
+    brew services start redis 2>/dev/null || true
+    # Wait for Redis to be ready
+    for i in {1..10}; do
+      if redis-cli ping 2>/dev/null | grep -q PONG; then
+        break
+      fi
+      log_info "Waiting for Redis... ($i/10)"
+      sleep 1
+    done
+  else
+    log_error "Homebrew not found on macOS. Please install Redis manually."
+    return 1
+  fi
+}
+
+start_redis_linux() {
+  if ! command -v redis-server &> /dev/null; then
+    log_info "Redis not installed, installing..."
+    if command -v apt-get &> /dev/null; then
+      sudo apt-get update && sudo apt-get install -y redis-server
+    else
+      log_error "Cannot install Redis - apt-get not available"
+      return 1
+    fi
+  fi
+
+  # Start Redis if not running
+  if ! redis-cli ping 2>/dev/null | grep -q PONG; then
+    log_info "Starting Redis..."
+    sudo service redis-server start 2>/dev/null || \
+      redis-server --daemonize yes 2>/dev/null || true
+    # Wait for Redis to be ready
+    for i in {1..10}; do
+      if redis-cli ping 2>/dev/null | grep -q PONG; then
+        break
+      fi
+      log_info "Waiting for Redis... ($i/10)"
+      sleep 1
+    done
+  fi
+}
+
+case "$OS" in
+  macos) start_redis_macos ;;
+  linux) start_redis_linux ;;
+  *) log_warn "Unknown OS, skipping Redis auto-start" ;;
+esac
+
+# Verify Redis is running
+if redis-cli ping 2>/dev/null | grep -q PONG; then
+  log_info "Redis is running"
+else
+  log_warn "Redis failed to start — router mode requires Redis for BullMQ job queue"
+  log_warn "Run 'redis-server' manually or install Redis before using 'npm run dev'"
+fi
+
+# =============================================================================
 # Summary
 # =============================================================================
 echo ""
 echo "=== CASCADE Setup Complete ==="
 echo "OS: $OS"
 echo "PostgreSQL: $(pg_isready 2>&1 || echo 'not running')"
+echo "Redis: $(redis-cli ping 2>/dev/null || echo 'not running')"
 echo "Node: $(node --version)"
 echo "npm: $(npm --version)"

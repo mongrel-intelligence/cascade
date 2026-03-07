@@ -61,10 +61,6 @@ vi.mock('../../../src/triggers/shared/webhook-execution.js', () => ({
 	runAgentWithCredentials: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../../src/triggers/shared/webhook-queue.js', () => ({
-	processNextQueuedWebhook: vi.fn(),
-}));
-
 vi.mock('../../../src/triggers/github/ack-comments.js', () => ({
 	postAcknowledgmentComment: vi.fn().mockResolvedValue(undefined),
 	updateInitialCommentWithError: vi.fn().mockResolvedValue(undefined),
@@ -82,19 +78,12 @@ vi.mock('../../../src/router/agent-type-lock.js', () => ({
 }));
 
 vi.mock('../../../src/utils/index.js', () => ({
-	clearCardActive: vi.fn(),
-	enqueueWebhook: vi.fn().mockReturnValue(true),
-	getQueueLength: vi.fn().mockReturnValue(0),
-	isCardActive: vi.fn().mockReturnValue(false),
-	isCurrentlyProcessing: vi.fn().mockReturnValue(false),
 	logger: {
 		debug: vi.fn(),
 		info: vi.fn(),
 		warn: vi.fn(),
 		error: vi.fn(),
 	},
-	setCardActive: vi.fn(),
-	setProcessing: vi.fn(),
 	startWatchdog: vi.fn(),
 }));
 
@@ -104,23 +93,9 @@ import { postAcknowledgmentComment } from '../../../src/triggers/github/ack-comm
 import { pollWaitForChecks } from '../../../src/triggers/github/check-polling.js';
 import { processGitHubWebhook } from '../../../src/triggers/github/webhook-handler.js';
 import { runAgentWithCredentials } from '../../../src/triggers/shared/webhook-execution.js';
-import {
-	clearCardActive,
-	enqueueWebhook,
-	isCardActive,
-	isCurrentlyProcessing,
-	setCardActive,
-	setProcessing,
-	startWatchdog,
-} from '../../../src/utils/index.js';
+import { startWatchdog } from '../../../src/utils/index.js';
 
-const mockIsCurrentlyProcessing = vi.mocked(isCurrentlyProcessing);
-const mockIsCardActive = vi.mocked(isCardActive);
-const mockEnqueueWebhook = vi.mocked(enqueueWebhook);
-const mockSetProcessing = vi.mocked(setProcessing);
 const mockStartWatchdog = vi.mocked(startWatchdog);
-const mockSetCardActive = vi.mocked(setCardActive);
-const mockClearCardActive = vi.mocked(clearCardActive);
 const mockRunAgentWithCredentials = vi.mocked(runAgentWithCredentials);
 const mockPostAckComment = vi.mocked(postAcknowledgmentComment);
 
@@ -143,9 +118,6 @@ const validPayload = {
 
 beforeEach(() => {
 	vi.clearAllMocks();
-	mockIsCurrentlyProcessing.mockReturnValue(false);
-	mockIsCardActive.mockReturnValue(false);
-	mockEnqueueWebhook.mockReturnValue(true);
 	mockRunAgentWithCredentials.mockResolvedValue(undefined);
 });
 
@@ -168,16 +140,6 @@ describe('processGitHubWebhook', () => {
 		// This test just verifies the handler doesn't crash on minimal payload.
 	});
 
-	it('enqueues webhook when currently processing', async () => {
-		mockIsCurrentlyProcessing.mockReturnValue(true);
-		const registry = createMockRegistry();
-
-		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
-
-		expect(mockEnqueueWebhook).toHaveBeenCalled();
-		expect(registry.dispatch).not.toHaveBeenCalled();
-	});
-
 	it('dispatches to trigger registry when project found', async () => {
 		const registry = createMockRegistry();
 		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
@@ -190,37 +152,10 @@ describe('processGitHubWebhook', () => {
 		expect(mockRunAgentWithCredentials).toHaveBeenCalled();
 	});
 
-	it('sets processing to true on start and false when done', async () => {
-		const registry = createMockRegistry();
-		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
-		expect(mockSetProcessing).toHaveBeenCalledWith(true);
-		expect(mockSetProcessing).toHaveBeenCalledWith(false);
-	});
-
 	it('starts watchdog on trigger match', async () => {
 		const registry = createMockRegistry();
 		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
 		expect(mockStartWatchdog).toHaveBeenCalledWith(120000);
-	});
-
-	it('sets and clears card active when workItemId is present', async () => {
-		const registry = createMockRegistry('implementation', 'card-abc');
-		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
-		expect(mockSetCardActive).toHaveBeenCalledWith('card-abc');
-		expect(mockClearCardActive).toHaveBeenCalledWith('card-abc');
-	});
-
-	it('does not set card active when workItemId is undefined', async () => {
-		const registry = createMockRegistry('implementation', undefined);
-		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
-		expect(mockSetCardActive).not.toHaveBeenCalled();
-	});
-
-	it('skips agent execution when work item is already active', async () => {
-		mockIsCardActive.mockReturnValue(true);
-		const registry = createMockRegistry('implementation', 'card-abc');
-		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
-		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
 	});
 
 	it('posts ack comment when no ackCommentId provided', async () => {
@@ -274,13 +209,6 @@ describe('processGitHubWebhook', () => {
 		expect(mockRunAgentWithCredentials).toHaveBeenCalled();
 	});
 
-	it('still clears processing when agent throws', async () => {
-		mockRunAgentWithCredentials.mockRejectedValue(new Error('Agent failed'));
-		const registry = createMockRegistry();
-		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
-		expect(mockSetProcessing).toHaveBeenCalledWith(false);
-	});
-
 	it('skips agent execution when agent-type concurrency is blocked', async () => {
 		vi.mocked(checkAgentTypeConcurrency).mockResolvedValueOnce({
 			maxConcurrency: 1,
@@ -301,7 +229,6 @@ describe('processGitHubWebhook', () => {
 		};
 		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
 		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
-		expect(mockSetProcessing).not.toHaveBeenCalled();
 	});
 
 	it('deletes ack comment when pollWaitForChecks returns false', async () => {
