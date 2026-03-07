@@ -33,7 +33,18 @@ vi.mock('../../../src/github/personas.js', () => ({
 }));
 
 vi.mock('../../../src/github/client.js', () => ({
+	githubClient: {
+		deletePRComment: vi.fn().mockResolvedValue(undefined),
+	},
 	withGitHubToken: vi.fn().mockImplementation((_token, fn) => fn()),
+}));
+
+vi.mock('../../../src/utils/repo.js', () => ({
+	parseRepoFullName: vi.fn().mockReturnValue({ owner: 'owner', repo: 'repo' }),
+}));
+
+vi.mock('../../../src/utils/safeOperation.js', () => ({
+	safeOperation: vi.fn().mockImplementation((fn) => fn()),
 }));
 
 vi.mock('../../../src/pm/context.js', () => ({
@@ -87,8 +98,10 @@ vi.mock('../../../src/utils/index.js', () => ({
 	startWatchdog: vi.fn(),
 }));
 
+import { githubClient } from '../../../src/github/client.js';
 import { checkAgentTypeConcurrency } from '../../../src/router/agent-type-lock.js';
 import { postAcknowledgmentComment } from '../../../src/triggers/github/ack-comments.js';
+import { pollWaitForChecks } from '../../../src/triggers/github/check-polling.js';
 import { processGitHubWebhook } from '../../../src/triggers/github/webhook-handler.js';
 import { runAgentWithCredentials } from '../../../src/triggers/shared/webhook-execution.js';
 import {
@@ -289,5 +302,45 @@ describe('processGitHubWebhook', () => {
 		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
 		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
 		expect(mockSetProcessing).not.toHaveBeenCalled();
+	});
+
+	it('deletes ack comment when pollWaitForChecks returns false', async () => {
+		vi.mocked(pollWaitForChecks).mockResolvedValueOnce(false);
+		const registry = {
+			dispatch: vi.fn().mockResolvedValue({
+				agentType: 'review',
+				agentInput: { repoFullName: 'owner/repo', headSha: 'abc123' },
+				prNumber: 42,
+				waitForChecks: true,
+			}),
+		};
+
+		await processGitHubWebhook(
+			validPayload,
+			'check_suite',
+			registry as never,
+			999, // ackCommentId from router
+			'👀 Reviewing',
+		);
+
+		expect(vi.mocked(githubClient.deletePRComment)).toHaveBeenCalledWith('owner', 'repo', 999);
+		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
+	});
+
+	it('does not attempt ack deletion when no ackCommentId on check timeout', async () => {
+		vi.mocked(pollWaitForChecks).mockResolvedValueOnce(false);
+		const registry = {
+			dispatch: vi.fn().mockResolvedValue({
+				agentType: 'review',
+				agentInput: { repoFullName: 'owner/repo', headSha: 'abc123' },
+				prNumber: 42,
+				waitForChecks: true,
+			}),
+		};
+
+		await processGitHubWebhook(validPayload, 'check_suite', registry as never);
+
+		expect(vi.mocked(githubClient.deletePRComment)).not.toHaveBeenCalled();
+		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
 	});
 });

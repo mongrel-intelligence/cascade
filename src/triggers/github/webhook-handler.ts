@@ -8,7 +8,7 @@
  * - GitHub-specific AgentExecutionConfig → ./integration.ts
  */
 
-import { withGitHubToken } from '../../github/client.js';
+import { githubClient, withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
 import { withPMCredentials, withPMProvider } from '../../pm/context.js';
 import { createPMProvider, pmRegistry } from '../../pm/index.js';
@@ -30,6 +30,8 @@ import {
 	setProcessing,
 	startWatchdog,
 } from '../../utils/index.js';
+import { parseRepoFullName } from '../../utils/repo.js';
+import { safeOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
 import { runAgentWithCredentials } from '../shared/webhook-execution.js';
 import { processNextQueuedWebhook } from '../shared/webhook-queue.js';
@@ -183,6 +185,7 @@ async function runGitHubAgent(
 	}
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: webhook orchestration with ack cleanup
 export async function processGitHubWebhook(
 	payload: unknown,
 	eventType: string,
@@ -237,7 +240,21 @@ export async function processGitHubWebhook(
 	if (result.waitForChecks) {
 		const githubToken = await getPersonaToken(project.id, 'implementation');
 		const checksOk = await pollWaitForChecks(result, event.projectIdentifier, githubToken);
-		if (!checksOk) return;
+		if (!checksOk) {
+			// Clean up orphaned ack comment so the PR doesn't show a misleading "Reviewing" message
+			const ackId = result.agentInput.ackCommentId as number | undefined;
+			if (ackId && event.projectIdentifier) {
+				const { owner, repo } = parseRepoFullName(event.projectIdentifier);
+				const deleteToken = await getPersonaToken(project.id, result.agentType ?? 'implementation');
+				await withGitHubToken(deleteToken, () =>
+					safeOperation(() => githubClient.deletePRComment(owner, repo, ackId), {
+						action: 'delete ack comment after check polling timeout',
+						prNumber: result.prNumber,
+					}),
+				);
+			}
+			return;
+		}
 	}
 
 	logger.info('GitHub trigger matched', {

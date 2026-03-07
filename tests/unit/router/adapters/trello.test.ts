@@ -268,12 +268,11 @@ describe('TrelloRouterAdapter', () => {
 				{ action: { type: 'commentCard' } },
 				mockProject,
 				result as never,
-				'comment-abc',
 			);
 			expect(job.type).toBe('trello');
 			expect(job.source).toBe('trello');
 			expect((job as { cardId: string }).cardId).toBe('card1');
-			expect((job as { ackCommentId: string }).ackCommentId).toBe('comment-abc');
+			expect((job as { ackCommentId?: string }).ackCommentId).toBeUndefined();
 		});
 	});
 });

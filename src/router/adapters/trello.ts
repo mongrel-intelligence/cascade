@@ -152,7 +152,6 @@ export class TrelloRouterAdapter implements RouterPlatformAdapter {
 		payload: unknown,
 		project: RouterProjectConfig,
 		result: TriggerResult,
-		ackCommentId: string | number | undefined,
 	): CascadeJob {
 		const job: TrelloJob = {
 			type: 'trello',
@@ -162,7 +161,6 @@ export class TrelloRouterAdapter implements RouterPlatformAdapter {
 			cardId: event.workItemId ?? '',
 			actionType: event.eventType,
 			receivedAt: new Date().toISOString(),
-			ackCommentId: ackCommentId as string | undefined,
 			triggerResult: result,
 		};
 		return job;

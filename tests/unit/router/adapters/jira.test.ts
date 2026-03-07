@@ -259,11 +259,10 @@ describe('JiraRouterAdapter', () => {
 				{},
 				mockProject,
 				result as never,
-				'jira-comment-789',
 			);
 			expect(job.type).toBe('jira');
 			expect((job as { issueKey: string }).issueKey).toBe('PROJ-1');
-			expect((job as { ackCommentId: string }).ackCommentId).toBe('jira-comment-789');
+			expect((job as { ackCommentId?: string }).ackCommentId).toBeUndefined();
 		});
 	});
 });

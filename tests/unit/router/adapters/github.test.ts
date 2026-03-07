@@ -354,11 +354,10 @@ describe('GitHubRouterAdapter', () => {
 				{},
 				mockProject,
 				result as never,
-				42,
 			);
 			expect(job.type).toBe('github');
 			expect((job as GitHubJob).repoFullName).toBe('owner/repo');
-			expect((job as GitHubJob).ackCommentId).toBe(42);
+			expect((job as GitHubJob).ackCommentId).toBeUndefined();
 		});
 	});
 

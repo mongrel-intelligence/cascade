@@ -10,6 +10,12 @@ vi.mock('../../../src/utils/logging.js', () => ({
 }));
 vi.mock('../../../src/router/queue.js', () => ({
 	addJob: vi.fn(),
+	jobQueue: {
+		getJob: vi.fn().mockResolvedValue({
+			data: {},
+			updateData: vi.fn().mockResolvedValue(undefined),
+		}),
+	},
 }));
 vi.mock('../../../src/router/work-item-lock.js', () => ({
 	isWorkItemLocked: vi.fn().mockResolvedValue({ locked: false }),
@@ -24,7 +30,7 @@ vi.mock('../../../src/router/agent-type-lock.js', () => ({
 import { checkAgentTypeConcurrency } from '../../../src/router/agent-type-lock.js';
 import type { RouterProjectConfig } from '../../../src/router/config.js';
 import type { RouterPlatformAdapter } from '../../../src/router/platform-adapter.js';
-import { addJob } from '../../../src/router/queue.js';
+import { addJob, jobQueue } from '../../../src/router/queue.js';
 import type { CascadeJob } from '../../../src/router/queue.js';
 import { processRouterWebhook } from '../../../src/router/webhook-processor.js';
 import { isWorkItemLocked, markWorkItemEnqueued } from '../../../src/router/work-item-lock.js';
@@ -132,21 +138,63 @@ describe('processRouterWebhook', () => {
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(result.shouldProcess).toBe(true);
 		expect(result.projectId).toBe('p1');
+		// buildJob is called without ack params (ack is patched after enqueue)
+		expect(adapter.buildJob).toHaveBeenCalledWith(
+			expect.objectContaining({ eventType: 'commentCard' }),
+			expect.anything(),
+			mockProject,
+			triggerResult,
+		);
+		expect(addJob).toHaveBeenCalled();
+		// postAck is called after enqueue
 		expect(adapter.postAck).toHaveBeenCalledWith(
 			expect.objectContaining({ eventType: 'commentCard' }),
 			expect.anything(),
 			mockProject,
 			'implementation',
 		);
-		expect(adapter.buildJob).toHaveBeenCalledWith(
-			expect.objectContaining({ eventType: 'commentCard' }),
-			expect.anything(),
-			mockProject,
-			triggerResult,
-			'comment-abc',
-			'Starting...',
+	});
+
+	it('enqueues job before posting ack comment', async () => {
+		const callOrder: string[] = [];
+		const triggerResult = { agentType: 'implementation', agentInput: {} };
+		vi.mocked(addJob).mockImplementation(async () => {
+			callOrder.push('addJob');
+			return 'job-1';
+		});
+		const adapter = makeMockAdapter({
+			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
+			postAck: vi.fn().mockImplementation(async () => {
+				callOrder.push('postAck');
+				return { commentId: 'c1', message: 'ack' };
+			}),
+		});
+
+		await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(callOrder).toEqual(['addJob', 'postAck']);
+	});
+
+	it('patches ack info onto enqueued job via updateData', async () => {
+		const triggerResult = { agentType: 'implementation', agentInput: {} };
+		vi.mocked(addJob).mockResolvedValue('job-1');
+		const mockUpdateData = vi.fn().mockResolvedValue(undefined);
+		vi.mocked(jobQueue.getJob).mockResolvedValue({
+			data: { type: 'trello', source: 'trello', payload: {} },
+			updateData: mockUpdateData,
+		} as never);
+		const adapter = makeMockAdapter({
+			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
+			postAck: vi.fn().mockResolvedValue({ commentId: 'comment-abc', message: 'Starting...' }),
+		});
+
+		await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(jobQueue.getJob).toHaveBeenCalledWith('job-1');
+		expect(mockUpdateData).toHaveBeenCalledWith(
+			expect.objectContaining({
+				ackCommentId: 'comment-abc',
+				ackMessage: 'Starting...',
+			}),
 		);
-		expect(addJob).toHaveBeenCalled();
 	});
 
 	it('fires pre-actions before queuing', async () => {
