@@ -47,15 +47,15 @@ export function ProjectsTable({ projects }: { projects: Project[] }) {
 
 	return (
 		<>
-			<div className="overflow-hidden rounded-lg border border-border">
+			<div className="overflow-x-auto rounded-lg border border-border">
 				<Table>
 					<TableHeader>
 						<TableRow>
 							<TableHead>Name</TableHead>
 							<TableHead>Repo</TableHead>
-							<TableHead>Base Branch</TableHead>
-							<TableHead>Backend</TableHead>
-							<TableHead className="text-right">Budget</TableHead>
+							<TableHead className="hidden md:table-cell">Base Branch</TableHead>
+							<TableHead className="hidden md:table-cell">Backend</TableHead>
+							<TableHead className="hidden md:table-cell text-right">Budget</TableHead>
 							<TableHead className="w-10" />
 						</TableRow>
 					</TableHeader>
@@ -79,11 +79,13 @@ export function ProjectsTable({ projects }: { projects: Project[] }) {
 								<TableCell className="text-muted-foreground font-mono text-xs">
 									{project.repo || '-'}
 								</TableCell>
-								<TableCell>
+								<TableCell className="hidden md:table-cell">
 									<Badge variant="outline">{project.baseBranch ?? 'main'}</Badge>
 								</TableCell>
-								<TableCell>{project.agentBackend ?? 'llmist'}</TableCell>
-								<TableCell className="text-right tabular-nums">
+								<TableCell className="hidden md:table-cell">
+									{project.agentBackend ?? 'llmist'}
+								</TableCell>
+								<TableCell className="hidden md:table-cell text-right tabular-nums">
 									{project.cardBudgetUsd ? `$${project.cardBudgetUsd}` : '-'}
 								</TableCell>
 								<TableCell>

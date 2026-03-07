@@ -156,7 +156,7 @@ function PartialsTab({ onEdit }: { onEdit: (name: string) => void }) {
 	const partials = partialsQuery.data ?? [];
 
 	return (
-		<div className="overflow-hidden rounded-lg border border-border">
+		<div className="overflow-x-auto rounded-lg border border-border">
 			<Table>
 				<TableHeader>
 					<TableRow>

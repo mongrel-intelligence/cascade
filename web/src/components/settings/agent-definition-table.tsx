@@ -57,14 +57,14 @@ export function AgentDefinitionsTable({
 	});
 
 	return (
-		<div className="overflow-hidden rounded-lg border border-border">
+		<div className="overflow-x-auto rounded-lg border border-border">
 			<Table>
 				<TableHeader>
 					<TableRow>
-						<TableHead>Emoji</TableHead>
+						<TableHead className="hidden md:table-cell">Emoji</TableHead>
 						<TableHead>Agent Type</TableHead>
 						<TableHead>Label</TableHead>
-						<TableHead>Capabilities</TableHead>
+						<TableHead className="hidden md:table-cell">Capabilities</TableHead>
 						<TableHead>Type</TableHead>
 						<TableHead className="w-24" />
 					</TableRow>
@@ -81,10 +81,12 @@ export function AgentDefinitionsTable({
 						const caps = getCapabilityIndicators(row.definition.capabilities);
 						return (
 							<TableRow key={row.agentType}>
-								<TableCell className="text-lg">{row.definition.identity.emoji}</TableCell>
+								<TableCell className="hidden md:table-cell text-lg">
+									{row.definition.identity.emoji}
+								</TableCell>
 								<TableCell className="font-medium font-mono text-sm">{row.agentType}</TableCell>
 								<TableCell>{row.definition.identity.label}</TableCell>
-								<TableCell>
+								<TableCell className="hidden md:table-cell">
 									<div className="flex flex-wrap gap-1">
 										{caps.canEditFiles && (
 											<Badge variant="secondary" className="text-xs">
