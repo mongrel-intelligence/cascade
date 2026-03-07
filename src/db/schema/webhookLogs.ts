@@ -24,6 +24,7 @@ export const webhookLogs = pgTable(
 		projectId: text('project_id'),
 		eventType: text('event_type'),
 		processed: boolean('processed').default(false),
+		decisionReason: text('decision_reason'),
 	},
 	(table) => [
 		index('idx_webhook_logs_received_at').on(table.receivedAt),

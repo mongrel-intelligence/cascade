@@ -10,6 +10,7 @@ interface WebhookLog {
 	receivedAt: string | null;
 	method: string;
 	path: string;
+	decisionReason: string | null;
 }
 
 interface WebhookLogsTableProps {
@@ -59,13 +60,14 @@ export function WebhookLogsTable({
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Method</th>
 							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Status</th>
 							<th className="px-4 py-3 text-center font-medium text-muted-foreground">Processed</th>
+							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Reason</th>
 							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Time</th>
 						</tr>
 					</thead>
 					<tbody>
 						{logs.length === 0 && (
 							<tr>
-								<td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+								<td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
 									No webhook logs found
 								</td>
 							</tr>
@@ -109,6 +111,12 @@ export function WebhookLogsTable({
 											No
 										</Badge>
 									)}
+								</td>
+								<td
+									className="px-4 py-3 text-muted-foreground max-w-[200px] truncate"
+									title={log.decisionReason ?? undefined}
+								>
+									{log.decisionReason ?? '-'}
 								</td>
 								<td className="px-4 py-3 text-right text-muted-foreground">
 									{formatRelativeTime(log.receivedAt)}

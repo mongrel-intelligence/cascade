@@ -33,6 +33,7 @@ export default class WebhookLogsShow extends DashboardCommand {
 				statusCode: { label: 'Status Code' },
 				processed: { label: 'Processed', format: (v) => (v ? 'yes' : 'no') },
 				projectId: { label: 'Project ID' },
+				decisionReason: { label: 'Decision Reason' },
 				receivedAt: { label: 'Received At', format: formatDate },
 			});
 

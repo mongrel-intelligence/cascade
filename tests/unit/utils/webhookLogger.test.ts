@@ -70,6 +70,7 @@ describe('logWebhookCall', () => {
 			projectId: undefined,
 			eventType: undefined,
 			processed: true,
+			decisionReason: undefined,
 		});
 	});
 
@@ -88,6 +89,21 @@ describe('logWebhookCall', () => {
 				bodyRaw: '{"raw":"json"}',
 				projectId: 'proj1',
 				eventType: 'card.create',
+			}),
+		);
+	});
+
+	it('passes decisionReason when provided', async () => {
+		logWebhookCall({
+			...sampleInput,
+			decisionReason: 'No trigger matched for event',
+		});
+
+		await vi.runAllTimersAsync();
+
+		expect(mockInsertWebhookLog).toHaveBeenCalledWith(
+			expect.objectContaining({
+				decisionReason: 'No trigger matched for event',
 			}),
 		);
 	});

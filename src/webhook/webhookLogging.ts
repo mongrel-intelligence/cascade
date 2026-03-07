@@ -34,6 +34,7 @@ export function logSuccessfulWebhook(
 		eventType,
 		processed: logOverrides?.processed ?? true,
 		projectId: logOverrides?.projectId,
+		decisionReason: logOverrides?.decisionReason,
 	});
 }
 

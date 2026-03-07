@@ -76,6 +76,7 @@ describe('createWebhookHandler', () => {
 				statusCode: 400,
 				processed: false,
 				bodyRaw: 'bad json',
+				decisionReason: 'Parse failed: bad json',
 			}),
 		);
 	});
@@ -206,6 +207,26 @@ describe('createWebhookHandler', () => {
 			expect.objectContaining({
 				processed: true,
 				projectId: 'proj-789',
+			}),
+		);
+	});
+
+	it('threads decisionReason from processWebhook return value to log', async () => {
+		const handler = createWebhookHandler({
+			source: 'github',
+			parsePayload: async () => ({ ok: true, payload: {}, eventType: 'push' }),
+			processWebhook: vi.fn().mockResolvedValue({
+				processed: false,
+				decisionReason: 'No trigger matched for event',
+			}),
+		});
+
+		const app = buildApp(handler);
+		await postJson(app, {});
+
+		expect(mockLogWebhookCall).toHaveBeenCalledWith(
+			expect.objectContaining({
+				decisionReason: 'No trigger matched for event',
 			}),
 		);
 	});
