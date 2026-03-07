@@ -85,7 +85,7 @@ function AgentDefinitionsPage() {
 			</div>
 
 			{/* Tab bar */}
-			<div className="flex gap-2 border-b border-border">
+			<div className="flex gap-2 overflow-x-auto border-b border-border">
 				{(['definitions', 'partials'] as Tab[]).map((t) => (
 					<button
 						key={t}

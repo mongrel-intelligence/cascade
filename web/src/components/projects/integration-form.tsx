@@ -543,7 +543,7 @@ function TabButton({
 		<button
 			type="button"
 			onClick={onClick}
-			className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+			className={`flex-1 min-w-fit whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
 				isActive
 					? 'bg-background text-foreground shadow-sm'
 					: 'text-muted-foreground hover:text-foreground'
@@ -603,7 +603,7 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 
 	return (
 		<div className="max-w-2xl space-y-6">
-			<div className="flex gap-1 rounded-lg bg-muted p-1">
+			<div className="flex gap-1 overflow-x-auto rounded-lg bg-muted p-1">
 				<TabButton
 					label="Project Management"
 					tab="pm"
