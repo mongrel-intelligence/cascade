@@ -55,7 +55,7 @@ function ProjectDetailPage() {
 							key={tab.id}
 							onClick={() => setActiveTab(tab.id)}
 							className={cn(
-								'border-b-2 px-1 pb-3 text-sm font-medium transition-colors',
+								'border-b-2 px-1 pb-3 text-sm font-medium transition-colors whitespace-nowrap',
 								activeTab === tab.id
 									? 'border-primary text-foreground'
 									: 'border-transparent text-muted-foreground hover:text-foreground',
