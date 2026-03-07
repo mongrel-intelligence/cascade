@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
 
 interface DebugAnalysisProps {
 	runId: string;
@@ -12,7 +13,9 @@ function Section({ title, content }: { title: string; content: string | null | u
 	return (
 		<div className="rounded-lg border border-border p-4">
 			<h3 className="mb-2 text-sm font-semibold">{title}</h3>
-			<pre className="whitespace-pre-wrap text-sm text-muted-foreground">{content}</pre>
+			<div className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground">
+				<ReactMarkdown>{content}</ReactMarkdown>
+			</div>
 		</div>
 	);
 }
