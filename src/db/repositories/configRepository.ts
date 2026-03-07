@@ -45,23 +45,13 @@ function buildRawConfig({
 		defaults: mapDefaultsRow(defaultsRow, globalAgentConfigs),
 		projects: projectRows.map((row) => {
 			const integrations = integrationsByProject.get(row.id) ?? [];
-			const {
-				trelloConfig,
-				trelloTriggers,
-				jiraConfig,
-				jiraTriggers,
-				githubConfig,
-				githubTriggers,
-			} = extractIntegrationConfigs(integrations);
+			const { trelloConfig, jiraConfig, githubConfig } = extractIntegrationConfigs(integrations);
 			return mapProjectRow({
 				row,
 				projectAgentConfigs: projectAgentConfigsMap.get(row.id) ?? [],
 				trelloConfig,
-				trelloTriggers,
 				jiraConfig,
-				jiraTriggers,
 				githubConfig,
-				githubTriggers,
 			});
 		}),
 	};

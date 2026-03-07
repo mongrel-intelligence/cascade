@@ -14,7 +14,6 @@ export interface TrelloConfig {
 	lists: Record<string, string>;
 	labels: Record<string, string>;
 	customFields?: { cost?: string };
-	triggers?: Record<string, unknown>;
 }
 
 /** JIRA-specific configuration (from project_integrations JSONB) */
@@ -30,7 +29,6 @@ export interface JiraConfig {
 		error?: string;
 		readyToProcess?: string;
 	};
-	triggers?: Record<string, unknown>;
 }
 
 /**
@@ -62,14 +60,4 @@ export function getCostFieldId(project: ProjectConfig): string | undefined {
 		return getJiraConfig(project)?.customFields?.cost;
 	}
 	return getTrelloConfig(project)?.customFields?.cost;
-}
-
-/**
- * Get PM-specific trigger config for a project.
- */
-export function getPMTriggerConfig(project: ProjectConfig): Record<string, unknown> | undefined {
-	if (project.pm?.type === 'jira') {
-		return getJiraConfig(project)?.triggers;
-	}
-	return getTrelloConfig(project)?.triggers;
 }

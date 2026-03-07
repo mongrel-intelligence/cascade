@@ -1,8 +1,8 @@
-import { resolveTrelloTriggerEnabled } from '../../config/triggerConfig.js';
 import { getTrelloConfig } from '../../pm/config.js';
 import { trelloClient } from '../../trello/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import type { TrelloWebhookPayload } from '../types.js';
 import { isTrelloWebhookPayload } from '../types.js';
 
@@ -37,15 +37,22 @@ export class TrelloCommentMentionTrigger implements TriggerHandler {
 		if (ctx.source !== 'trello') return false;
 		if (!isTrelloWebhookPayload(ctx.payload)) return false;
 
-		// Check trigger config — default enabled for backward compatibility
-		if (!resolveTrelloTriggerEnabled(getTrelloConfig(ctx.project)?.triggers, 'commentMention')) {
-			return false;
-		}
-
 		return ctx.payload.action.type === 'commentCard';
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+		// Check trigger config via new DB-driven system
+		if (
+			!(await checkTriggerEnabled(
+				ctx.project.id,
+				'respond-to-planning-comment',
+				'pm:comment-mention',
+				this.name,
+			))
+		) {
+			return null;
+		}
+
 		const payload = ctx.payload as TrelloWebhookPayload;
 		const cardId = payload.action.data.card?.id;
 		const commentText = payload.action.data.text;

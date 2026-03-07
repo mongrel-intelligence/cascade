@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TriggerContext } from '../../../src/types/index.js';
 
 const { mockGetMyself } = vi.hoisted(() => ({
 	mockGetMyself: vi.fn(),
@@ -11,8 +10,19 @@ vi.mock('../../../src/jira/client.js', () => ({
 	},
 }));
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
+import type { TriggerContext } from '../../../src/types/index.js';
+
 // Import after vi.mock is hoisted
 import { JiraCommentMentionTrigger } from '../../../src/triggers/jira/comment-mention.js';
+import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 
 const BOT_ACCOUNT_ID = 'bot-account-123';
 const BOT_DISPLAY_NAME = 'CASCADE Bot';
@@ -114,6 +124,7 @@ describe('JiraCommentMentionTrigger', () => {
 
 	beforeEach(() => {
 		trigger = new JiraCommentMentionTrigger();
+		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
 		mockGetMyself.mockResolvedValue({
 			accountId: BOT_ACCOUNT_ID,
 			displayName: BOT_DISPLAY_NAME,
@@ -143,6 +154,19 @@ describe('JiraCommentMentionTrigger', () => {
 	});
 
 	describe('handle', () => {
+		it('should return null when trigger is disabled', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
+			const result = await trigger.handle(buildCtx());
+			expect(result).toBeNull();
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test-project',
+				'respond-to-planning-comment',
+				'pm:comment-mention',
+				'jira-comment-mention',
+			);
+		});
+
 		it('triggers agent when bot is @mentioned in comment', async () => {
 			const ctx = buildCtx();
 			const result = await trigger.handle(ctx);

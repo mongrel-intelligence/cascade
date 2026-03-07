@@ -1,10 +1,10 @@
-import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import { githubClient } from '../../github/client.js';
 import { getPMProvider } from '../../pm/context.js';
 import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import {
 	type GitHubCheckSuitePayload,
 	type GitHubPullRequestReviewPayload,
@@ -19,11 +19,6 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'github') return false;
-
-		// Check trigger config — default enabled for backward compatibility
-		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'prReadyToMerge')) {
-			return false;
-		}
 
 		// Trigger on either check_suite completion (success) or review submission (approved)
 		if (isGitHubCheckSuitePayload(ctx.payload)) {
@@ -47,6 +42,13 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+		// Check trigger config via new DB-driven system
+		if (
+			!(await checkTriggerEnabled(ctx.project.id, 'review', 'scm:pr-ready-to-merge', this.name))
+		) {
+			return null;
+		}
+
 		let prNumber: number;
 		let headSha: string;
 		let repoFullName: string;

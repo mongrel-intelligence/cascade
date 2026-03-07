@@ -4,10 +4,20 @@ import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
 import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
 }));
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
+import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 
 describe('PRReviewSubmittedTrigger', () => {
 	const trigger = new PRReviewSubmittedTrigger();
@@ -119,6 +129,26 @@ describe('PRReviewSubmittedTrigger', () => {
 	});
 
 	describe('handle', () => {
+		it('should return null when trigger is disabled', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeReviewPayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test',
+				'respond-to-review',
+				'scm:pr-review-submitted',
+				'pr-review-submitted',
+			);
+		});
+
 		it('returns respond-to-review result when reviewer persona posts changes_requested', async () => {
 			const ctx: TriggerContext = {
 				project: mockProject,

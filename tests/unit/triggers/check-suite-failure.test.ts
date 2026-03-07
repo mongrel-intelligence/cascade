@@ -7,6 +7,15 @@ import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
 import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock('../../../src/github/client.js', () => ({
 	githubClient: {
 		getPR: vi.fn(),
@@ -21,6 +30,7 @@ vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
 }));
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
+import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 
 describe('CheckSuiteFailureTrigger', () => {
 	const trigger = new CheckSuiteFailureTrigger();
@@ -121,6 +131,26 @@ describe('CheckSuiteFailureTrigger', () => {
 	});
 
 	describe('handle', () => {
+		it('should return null when trigger is disabled', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeFailurePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test',
+				'respond-to-ci',
+				'scm:check-suite-failure',
+				'check-suite-failure',
+			);
+		});
+
 		it('returns respond-to-ci result when PR has Trello URL and checks failed', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,

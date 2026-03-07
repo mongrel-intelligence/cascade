@@ -6,6 +6,15 @@ const { mockGetPR, mockIsCascadeBot } = vi.hoisted(() => ({
 	mockIsCascadeBot: vi.fn(),
 }));
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock('../../../src/github/client.js', () => ({
 	githubClient: {
 		getPR: mockGetPR,
@@ -31,6 +40,7 @@ vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { PRCommentMentionTrigger } from '../../../src/triggers/github/pr-comment-mention.js';
+import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
 import {
@@ -150,6 +160,7 @@ describe('PRCommentMentionTrigger', () => {
 	beforeEach(() => {
 		vi.resetAllMocks();
 		trigger = new PRCommentMentionTrigger();
+		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
 		mockIsCascadeBot.mockReturnValue(false);
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 		mockGetPR.mockResolvedValue({
@@ -197,6 +208,21 @@ describe('PRCommentMentionTrigger', () => {
 		it('does not match unrelated payload structure', () => {
 			const ctx = buildCtx({ payload: { action: 'opened', number: 42 } });
 			expect(trigger.matches(ctx)).toBe(false);
+		});
+	});
+
+	describe('handle — disabled trigger', () => {
+		it('should return null when trigger is disabled', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
+			const result = await trigger.handle(buildCtx());
+			expect(result).toBeNull();
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test-project',
+				'respond-to-pr-comment',
+				'scm:pr-comment-mention',
+				'pr-comment-mention',
+			);
 		});
 	});
 

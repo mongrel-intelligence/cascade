@@ -57,7 +57,6 @@ export interface IntegrationRow {
 	category: string;
 	provider: string;
 	config: unknown;
-	triggers: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -68,11 +67,8 @@ export interface MapProjectInput {
 	row: ProjectRow;
 	projectAgentConfigs: AgentConfigRow[];
 	trelloConfig?: TrelloIntegrationConfig;
-	trelloTriggers?: Record<string, boolean>;
 	jiraConfig?: JiraIntegrationConfig;
-	jiraTriggers?: Record<string, boolean>;
 	githubConfig?: GitHubIntegrationConfig;
-	githubTriggers?: Record<string, boolean>;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +92,6 @@ export interface ProjectConfigRaw {
 		lists: Record<string, string>;
 		labels: Record<string, string>;
 		customFields?: { cost?: string };
-		triggers?: Record<string, boolean>;
 	};
 	jira?: {
 		projectKey: string;
@@ -105,9 +100,7 @@ export interface ProjectConfigRaw {
 		issueTypes?: Record<string, string>;
 		customFields?: { cost?: string };
 		labels?: Record<string, string>;
-		triggers?: Record<string, boolean>;
 	};
-	github?: { triggers: Record<string, boolean> };
 	agentBackend?: {
 		default?: string;
 		overrides: Record<string, string>;
@@ -153,23 +146,16 @@ export function orUndefined<T extends Record<string, unknown>>(obj: T): T | unde
 	return Object.keys(obj).length > 0 ? obj : undefined;
 }
 
-function buildTrelloConfig(
-	config: TrelloIntegrationConfig,
-	triggers?: Record<string, boolean>,
-): ProjectConfigRaw['trello'] {
+function buildTrelloConfig(config: TrelloIntegrationConfig): ProjectConfigRaw['trello'] {
 	return {
 		boardId: config.boardId,
 		lists: config.lists,
 		labels: config.labels,
 		customFields: config.customFields,
-		...(triggers && Object.keys(triggers).length > 0 ? { triggers } : {}),
 	};
 }
 
-function buildJiraConfig(
-	config: JiraIntegrationConfig,
-	triggers?: Record<string, boolean>,
-): ProjectConfigRaw['jira'] {
+function buildJiraConfig(config: JiraIntegrationConfig): ProjectConfigRaw['jira'] {
 	return {
 		projectKey: config.projectKey,
 		baseUrl: config.baseUrl,
@@ -177,7 +163,6 @@ function buildJiraConfig(
 		issueTypes: config.issueTypes,
 		customFields: config.customFields,
 		labels: config.labels,
-		...(triggers && Object.keys(triggers).length > 0 ? { triggers } : {}),
 	};
 }
 
@@ -220,11 +205,8 @@ export function mapDefaultsRow(
 
 export function extractIntegrationConfigs(integrations: IntegrationRow[]): {
 	trelloConfig?: TrelloIntegrationConfig;
-	trelloTriggers?: Record<string, boolean>;
 	jiraConfig?: JiraIntegrationConfig;
-	jiraTriggers?: Record<string, boolean>;
 	githubConfig?: GitHubIntegrationConfig;
-	githubTriggers?: Record<string, boolean>;
 } {
 	const trelloRow = integrations.find((i) => i.provider === 'trello');
 	const jiraRow = integrations.find((i) => i.provider === 'jira');
@@ -232,11 +214,8 @@ export function extractIntegrationConfigs(integrations: IntegrationRow[]): {
 
 	return {
 		trelloConfig: trelloRow?.config as TrelloIntegrationConfig | undefined,
-		trelloTriggers: (trelloRow?.triggers ?? undefined) as Record<string, boolean> | undefined,
 		jiraConfig: jiraRow?.config as JiraIntegrationConfig | undefined,
-		jiraTriggers: (jiraRow?.triggers ?? undefined) as Record<string, boolean> | undefined,
 		githubConfig: githubRow?.config as GitHubIntegrationConfig | undefined,
-		githubTriggers: (githubRow?.triggers ?? undefined) as Record<string, boolean> | undefined,
 	};
 }
 
@@ -244,10 +223,7 @@ export function mapProjectRow({
 	row,
 	projectAgentConfigs,
 	trelloConfig,
-	trelloTriggers,
 	jiraConfig,
-	jiraTriggers,
-	githubTriggers,
 }: MapProjectInput): ProjectConfigRaw {
 	const { models, backends } = buildAgentMaps(projectAgentConfigs);
 
@@ -269,15 +245,11 @@ export function mapProjectRow({
 	};
 
 	if (trelloConfig) {
-		project.trello = buildTrelloConfig(trelloConfig, trelloTriggers);
+		project.trello = buildTrelloConfig(trelloConfig);
 	}
 
 	if (jiraConfig) {
-		project.jira = buildJiraConfig(jiraConfig, jiraTriggers);
-	}
-
-	if (githubTriggers && Object.keys(githubTriggers).length > 0) {
-		project.github = { triggers: githubTriggers };
+		project.jira = buildJiraConfig(jiraConfig);
 	}
 
 	const agentBackend = buildAgentBackendConfig(row, backends);

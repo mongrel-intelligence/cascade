@@ -4,34 +4,29 @@ import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
 import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
 }));
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
+import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 
 describe('ReviewRequestedTrigger', () => {
 	const trigger = new ReviewRequestedTrigger();
 
 	const mockProject = createMockProject();
 
-	/** Project with reviewRequested trigger explicitly enabled (legacy style) */
-	const mockProjectWithReviewRequested = createMockProject({
-		github: {
-			triggers: { reviewRequested: true },
-		},
-	});
-
-	/** Project with new structured reviewTrigger.onReviewRequested enabled */
-	const mockProjectWithOnReviewRequested = createMockProject({
-		github: {
-			triggers: {
-				reviewTrigger: { ownPrsOnly: false, externalPrs: false, onReviewRequested: true },
-			},
-		},
-	});
-
 	beforeEach(() => {
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
 	});
 
 	const makeReviewRequestedPayload = (reviewerLogin = 'cascade-reviewer') => ({
@@ -54,19 +49,9 @@ describe('ReviewRequestedTrigger', () => {
 	});
 
 	describe('matches', () => {
-		it('does not match by default (opt-in trigger, disabled without config)', () => {
+		it('matches when review_requested action on a PR payload', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
-				source: 'github',
-				payload: makeReviewRequestedPayload(),
-				personaIdentities: mockPersonaIdentities,
-			};
-			expect(trigger.matches(ctx)).toBe(false);
-		});
-
-		it('matches when review_requested and trigger is enabled', () => {
-			const ctx: TriggerContext = {
-				project: mockProjectWithReviewRequested,
 				source: 'github',
 				payload: makeReviewRequestedPayload(),
 				personaIdentities: mockPersonaIdentities,
@@ -76,7 +61,7 @@ describe('ReviewRequestedTrigger', () => {
 
 		it('does not match when source is not github', () => {
 			const ctx: TriggerContext = {
-				project: mockProjectWithReviewRequested,
+				project: mockProject,
 				source: 'trello',
 				payload: makeReviewRequestedPayload(),
 				personaIdentities: mockPersonaIdentities,
@@ -86,7 +71,7 @@ describe('ReviewRequestedTrigger', () => {
 
 		it('does not match on non-review_requested actions', () => {
 			const ctx: TriggerContext = {
-				project: mockProjectWithReviewRequested,
+				project: mockProject,
 				source: 'github',
 				payload: {
 					...makeReviewRequestedPayload(),
@@ -99,7 +84,7 @@ describe('ReviewRequestedTrigger', () => {
 
 		it('does not match when payload is not a PR payload', () => {
 			const ctx: TriggerContext = {
-				project: mockProjectWithReviewRequested,
+				project: mockProject,
 				source: 'github',
 				payload: { action: 'review_requested', something: 'else' },
 				personaIdentities: mockPersonaIdentities,
@@ -111,7 +96,7 @@ describe('ReviewRequestedTrigger', () => {
 	describe('handle', () => {
 		it('returns null when no persona identities', async () => {
 			const ctx: TriggerContext = {
-				project: mockProjectWithReviewRequested,
+				project: mockProject,
 				source: 'github',
 				payload: makeReviewRequestedPayload(),
 				// no personaIdentities
@@ -122,7 +107,7 @@ describe('ReviewRequestedTrigger', () => {
 
 		it('returns null when requested reviewer is not a CASCADE persona', async () => {
 			const ctx: TriggerContext = {
-				project: mockProjectWithReviewRequested,
+				project: mockProject,
 				source: 'github',
 				payload: makeReviewRequestedPayload('human-reviewer'),
 				personaIdentities: mockPersonaIdentities,
@@ -133,7 +118,7 @@ describe('ReviewRequestedTrigger', () => {
 
 		it('returns null when no requested reviewer in payload', async () => {
 			const ctx: TriggerContext = {
-				project: mockProjectWithReviewRequested,
+				project: mockProject,
 				source: 'github',
 				payload: {
 					...makeReviewRequestedPayload(),
@@ -147,7 +132,7 @@ describe('ReviewRequestedTrigger', () => {
 
 		it('fires without work item when PR has no work item reference', async () => {
 			const ctx: TriggerContext = {
-				project: mockProjectWithReviewRequested,
+				project: mockProject,
 				source: 'github',
 				payload: {
 					...makeReviewRequestedPayload(),
@@ -165,7 +150,7 @@ describe('ReviewRequestedTrigger', () => {
 
 		it('triggers review agent when reviewer persona is requested', async () => {
 			const ctx: TriggerContext = {
-				project: mockProjectWithReviewRequested,
+				project: mockProject,
 				source: 'github',
 				payload: makeReviewRequestedPayload('cascade-reviewer'),
 				personaIdentities: mockPersonaIdentities,
@@ -185,7 +170,7 @@ describe('ReviewRequestedTrigger', () => {
 
 		it('triggers review agent when implementer persona is requested', async () => {
 			const ctx: TriggerContext = {
-				project: mockProjectWithReviewRequested,
+				project: mockProject,
 				source: 'github',
 				payload: makeReviewRequestedPayload('cascade-impl'),
 				personaIdentities: mockPersonaIdentities,
@@ -196,56 +181,31 @@ describe('ReviewRequestedTrigger', () => {
 		});
 	});
 
-	describe('new structured reviewTrigger config', () => {
-		it('matches when reviewTrigger.onReviewRequested=true', () => {
+	describe('trigger config via checkTriggerEnabled', () => {
+		it('handle returns null when trigger is disabled', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
 			const ctx: TriggerContext = {
-				project: mockProjectWithOnReviewRequested,
+				project: mockProject,
 				source: 'github',
-				payload: makeReviewRequestedPayload(),
+				payload: makeReviewRequestedPayload('cascade-reviewer'),
 				personaIdentities: mockPersonaIdentities,
 			};
-			expect(trigger.matches(ctx)).toBe(true);
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test',
+				'review',
+				'scm:review-requested',
+				'review-requested',
+			);
 		});
 
-		it('does not match when reviewTrigger.onReviewRequested=false', () => {
-			const ctx: TriggerContext = {
-				project: {
-					...mockProject,
-					github: {
-						triggers: {
-							reviewTrigger: { ownPrsOnly: true, externalPrs: true, onReviewRequested: false },
-						},
-					},
-				},
-				source: 'github',
-				payload: makeReviewRequestedPayload(),
-				personaIdentities: mockPersonaIdentities,
-			};
-			expect(trigger.matches(ctx)).toBe(false);
-		});
+		it('triggers review agent when trigger is enabled', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(true);
 
-		it('new config takes precedence over legacy reviewRequested=false', () => {
-			// reviewTrigger.onReviewRequested=true wins even when legacy reviewRequested=false
 			const ctx: TriggerContext = {
-				project: {
-					...mockProject,
-					github: {
-						triggers: {
-							reviewRequested: false, // legacy says disabled
-							reviewTrigger: { ownPrsOnly: false, externalPrs: false, onReviewRequested: true },
-						},
-					},
-				},
-				source: 'github',
-				payload: makeReviewRequestedPayload(),
-				personaIdentities: mockPersonaIdentities,
-			};
-			expect(trigger.matches(ctx)).toBe(true);
-		});
-
-		it('triggers review agent using new config', async () => {
-			const ctx: TriggerContext = {
-				project: mockProjectWithOnReviewRequested,
+				project: mockProject,
 				source: 'github',
 				payload: makeReviewRequestedPayload('cascade-reviewer'),
 				personaIdentities: mockPersonaIdentities,

@@ -1,10 +1,10 @@
-import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import { githubClient } from '../../github/client.js';
 import { getPMProvider } from '../../pm/context.js';
 import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
 
@@ -16,15 +16,15 @@ export class PRMergedTrigger implements TriggerHandler {
 		if (ctx.source !== 'github') return false;
 		if (!isGitHubPullRequestPayload(ctx.payload)) return false;
 
-		// Check trigger config — default enabled for backward compatibility
-		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'prMerged')) {
-			return false;
-		}
-
 		return ctx.payload.action === 'closed';
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+		// Check trigger config via new DB-driven system
+		if (!(await checkTriggerEnabled(ctx.project.id, 'review', 'scm:pr-merged', this.name))) {
+			return null;
+		}
+
 		const payload = ctx.payload as GitHubPullRequestPayload;
 		const { owner, repo } = parseRepoFullName(payload.repository.full_name);
 		const prNumber = payload.pull_request.number;
@@ -83,12 +83,7 @@ export class PRMergedTrigger implements TriggerHandler {
 		logger.info('Moved work item to merged status', { workItemId, prNumber });
 
 		// Optionally chain into the backlog-manager agent to pick the next card
-		const chainBacklogManager = resolveGitHubTriggerEnabled(
-			ctx.project.github?.triggers,
-			'prMergedBacklogManager',
-		);
-
-		if (chainBacklogManager) {
+		if (await checkTriggerEnabled(ctx.project.id, 'backlog-manager', 'scm:pr-merged', this.name)) {
 			logger.info('Chaining to backlog-manager after PR merge', { workItemId, prNumber });
 			return {
 				agentType: 'backlog-manager',

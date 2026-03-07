@@ -1,10 +1,7 @@
-import {
-	resolveReadyToProcessEnabled,
-	resolveTrelloTriggerEnabled,
-} from '../../config/triggerConfig.js';
 import { getTrelloConfig } from '../../pm/config.js';
 import { trelloClient } from '../../trello/client.js';
 import { logger } from '../../utils/logging.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import type {
 	TrelloWebhookPayload,
 	TriggerContext,
@@ -21,13 +18,7 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 		if (ctx.source !== 'trello') return false;
 		if (!isTrelloWebhookPayload(ctx.payload)) return false;
 
-		// Check trigger config — default enabled for backward compatibility
-		// (checks if any agent has readyToProcessLabel enabled)
 		const trelloConfig = getTrelloConfig(ctx.project);
-		if (!resolveTrelloTriggerEnabled(trelloConfig?.triggers, 'readyToProcessLabel')) {
-			return false;
-		}
-
 		const payload = ctx.payload;
 		const readyLabelId = trelloConfig?.labels.readyToProcess;
 
@@ -71,9 +62,8 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 
 		logger.info('Agent type determined', { agentType, cardId, listId: currentListId });
 
-		// Check per-agent ready-to-process toggle
-		if (!resolveReadyToProcessEnabled(getTrelloConfig(ctx.project)?.triggers, agentType)) {
-			logger.info('Ready-to-process disabled for agent type, skipping', { agentType, cardId });
+		// Check per-agent ready-to-process toggle via new DB-driven system
+		if (!(await checkTriggerEnabled(ctx.project.id, agentType, 'pm:label-added', this.name))) {
 			return null;
 		}
 

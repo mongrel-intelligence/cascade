@@ -1,7 +1,7 @@
-import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import { getPersonaForLogin } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { isGitHubPullRequestReviewPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
 
@@ -13,11 +13,6 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 		if (ctx.source !== 'github') return false;
 		if (!isGitHubPullRequestReviewPayload(ctx.payload)) return false;
 
-		// Check trigger config — default enabled for backward compatibility
-		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'prReviewSubmitted')) {
-			return false;
-		}
-
 		// Only trigger on submitted reviews, not edits or dismissals
 		if (ctx.payload.action !== 'submitted') return false;
 
@@ -28,6 +23,18 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+		// Check trigger config via new DB-driven system
+		if (
+			!(await checkTriggerEnabled(
+				ctx.project.id,
+				'respond-to-review',
+				'scm:pr-review-submitted',
+				this.name,
+			))
+		) {
+			return null;
+		}
+
 		// Type assertion since we validated in matches()
 		const reviewPayload = ctx.payload as {
 			pull_request: { number: number; body: string | null; head: { ref: string } };

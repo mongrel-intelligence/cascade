@@ -1,7 +1,7 @@
-import { resolveReviewTriggerConfig } from '../../config/triggerConfig.js';
 import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
 
@@ -13,8 +13,7 @@ import { resolveWorkItemId } from './utils.js';
  * 2. Checks if the requested reviewer is a CASCADE persona (implementer OR reviewer)
  * 3. Fires the `review` agent with PR number and work item ID from PR body
  *
- * Default: **disabled** (opt-in via trigger config). Enable by setting
- * `github.triggers.reviewRequested = true` in integration config.
+ * Default: **disabled** (opt-in via trigger config).
  *
  * Registration: should be registered BEFORE CheckSuiteSuccessTrigger so that
  * both triggers can independently fire review. The HEAD-SHA dedup in
@@ -31,16 +30,15 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 		// Only trigger on review_requested events
 		if (ctx.payload.action !== 'review_requested') return false;
 
-		// Check trigger config — opt-in trigger, default disabled
-		const reviewConfig = resolveReviewTriggerConfig(ctx.project.github?.triggers);
-		if (!reviewConfig.onReviewRequested) {
-			return false;
-		}
-
 		return true;
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+		// Check trigger config via new DB-driven system
+		if (!(await checkTriggerEnabled(ctx.project.id, 'review', 'scm:review-requested', this.name))) {
+			return null;
+		}
+
 		const payload = ctx.payload as GitHubPullRequestPayload;
 		const prNumber = payload.pull_request.number;
 

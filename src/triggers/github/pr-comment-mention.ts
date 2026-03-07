@@ -1,9 +1,9 @@
-import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import { githubClient } from '../../github/client.js';
 import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { isGitHubIssueCommentPayload, isGitHubPRReviewCommentPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
 
@@ -20,11 +20,6 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'github') return false;
 
-		// Check trigger config — default enabled for backward compatibility
-		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'prCommentMention')) {
-			return false;
-		}
-
 		// Match issue_comment.created on PRs
 		if (isGitHubIssueCommentPayload(ctx.payload)) {
 			if (ctx.payload.action !== 'created') return false;
@@ -40,6 +35,18 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+		// Check trigger config via new DB-driven system
+		if (
+			!(await checkTriggerEnabled(
+				ctx.project.id,
+				'respond-to-pr-comment',
+				'scm:pr-comment-mention',
+				this.name,
+			))
+		) {
+			return null;
+		}
+
 		// Require persona identities for @mention detection
 		if (!ctx.personaIdentities) {
 			logger.warn('No persona identities available, skipping @mention trigger');
@@ -97,6 +104,7 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 		// Check for @mention of the implementer persona (case-insensitive)
 		const mentionPattern = new RegExp(`@${mentionTarget}\\b`, 'i');
 		if (!mentionPattern.test(commentBody)) {
+			logger.debug('No @mention in comment, skipping', { prNumber, mentionTarget });
 			return null;
 		}
 

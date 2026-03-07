@@ -47,7 +47,6 @@ const trelloIntegrationRow: IntegrationRow = {
 	category: 'pm',
 	provider: 'trello',
 	config: trelloConfig,
-	triggers: {},
 };
 
 const jiraIntegrationRow: IntegrationRow = {
@@ -55,7 +54,6 @@ const jiraIntegrationRow: IntegrationRow = {
 	category: 'pm',
 	provider: 'jira',
 	config: jiraConfig,
-	triggers: {},
 };
 
 const githubIntegrationRow: IntegrationRow = {
@@ -63,7 +61,6 @@ const githubIntegrationRow: IntegrationRow = {
 	category: 'scm',
 	provider: 'github',
 	config: {},
-	triggers: { ownPrsOnly: true },
 };
 
 // ---------------------------------------------------------------------------
@@ -214,18 +211,9 @@ describe('extractIntegrationConfigs', () => {
 		expect(result.trelloConfig).toBeUndefined();
 	});
 
-	it('extracts github triggers from integration rows', () => {
+	it('extracts github config from integration rows', () => {
 		const result = extractIntegrationConfigs([githubIntegrationRow]);
-		expect(result.githubTriggers).toEqual({ ownPrsOnly: true });
-	});
-
-	it('extracts trello triggers', () => {
-		const withTriggers: IntegrationRow = {
-			...trelloIntegrationRow,
-			triggers: { cardMovedToTodo: true },
-		};
-		const result = extractIntegrationConfigs([withTriggers]);
-		expect(result.trelloTriggers).toEqual({ cardMovedToTodo: true });
+		expect(result.githubConfig).toEqual({});
 	});
 
 	it('handles empty integration list', () => {
@@ -239,7 +227,7 @@ describe('extractIntegrationConfigs', () => {
 		const rows = [trelloIntegrationRow, githubIntegrationRow];
 		const result = extractIntegrationConfigs(rows);
 		expect(result.trelloConfig).toEqual(trelloConfig);
-		expect(result.githubTriggers).toEqual({ ownPrsOnly: true });
+		expect(result.githubConfig).toEqual({});
 		expect(result.jiraConfig).toBeUndefined();
 	});
 });
@@ -295,38 +283,11 @@ describe('mapProjectRow', () => {
 		expect(result.trello?.labels).toEqual({ processing: 'label-proc' });
 	});
 
-	it('includes trello triggers when non-empty', () => {
-		const result = mapProjectRow(makeInput({ trelloTriggers: { cardMovedToTodo: true } }));
-		expect(result.trello?.triggers).toEqual({ cardMovedToTodo: true });
-	});
-
-	it('omits trello triggers when empty object', () => {
-		const result = mapProjectRow(makeInput({ trelloTriggers: {} }));
-		expect(result.trello?.triggers).toBeUndefined();
-	});
-
 	it('builds jira config', () => {
 		const result = mapProjectRow(makeInput({ trelloConfig: undefined, jiraConfig }));
 		expect(result.jira?.projectKey).toBe('PROJ');
 		expect(result.jira?.baseUrl).toBe('https://test.atlassian.net');
 		expect(result.jira?.statuses).toEqual({ splitting: 'Briefing', todo: 'To Do' });
-	});
-
-	it('includes jira triggers when non-empty', () => {
-		const result = mapProjectRow(
-			makeInput({ trelloConfig: undefined, jiraConfig, jiraTriggers: { issueTransitioned: true } }),
-		);
-		expect(result.jira?.triggers).toEqual({ issueTransitioned: true });
-	});
-
-	it('builds github section when githubTriggers is non-empty', () => {
-		const result = mapProjectRow(makeInput({ githubTriggers: { ownPrsOnly: true } }));
-		expect(result.github?.triggers).toEqual({ ownPrsOnly: true });
-	});
-
-	it('omits github section when githubTriggers is empty', () => {
-		const result = mapProjectRow(makeInput({ githubTriggers: {} }));
-		expect(result.github).toBeUndefined();
 	});
 
 	it('omits agentBackend when neither row.agentBackend nor agent overrides are set', () => {
