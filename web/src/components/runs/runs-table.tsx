@@ -31,18 +31,28 @@ export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTabl
 
 	return (
 		<div className="space-y-4">
-			<div className="overflow-hidden rounded-lg border border-border">
+			<div className="overflow-x-auto rounded-lg border border-border">
 				<table className="w-full text-sm">
 					<thead>
 						<tr className="border-b border-border bg-muted/50">
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Agent</th>
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Project</th>
+							<th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
+								Project
+							</th>
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Started</th>
-							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Duration</th>
-							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Cost</th>
-							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Iterations</th>
-							<th className="px-4 py-3 text-center font-medium text-muted-foreground">PR</th>
+							<th className="hidden px-4 py-3 text-right font-medium text-muted-foreground md:table-cell">
+								Duration
+							</th>
+							<th className="hidden px-4 py-3 text-right font-medium text-muted-foreground md:table-cell">
+								Cost
+							</th>
+							<th className="hidden px-4 py-3 text-right font-medium text-muted-foreground md:table-cell">
+								Iterations
+							</th>
+							<th className="hidden px-4 py-3 text-center font-medium text-muted-foreground md:table-cell">
+								PR
+							</th>
 							<th className="px-4 py-3 text-center font-medium text-muted-foreground">Actions</th>
 						</tr>
 					</thead>
@@ -68,23 +78,29 @@ export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTabl
 										{run.agentType}
 									</Link>
 								</td>
-								<td className="px-4 py-3 text-muted-foreground">{run.projectName ?? '-'}</td>
+								<td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
+									{run.projectName ?? '-'}
+								</td>
 								<td className="px-4 py-3">
 									<RunStatusBadge status={run.status} />
 								</td>
 								<td className="px-4 py-3 text-muted-foreground">
 									{formatRelativeTime(run.startedAt)}
 								</td>
-								<td className="px-4 py-3 text-right tabular-nums">
+								<td className="hidden px-4 py-3 text-right tabular-nums md:table-cell">
 									<LiveDuration
 										startedAt={run.startedAt}
 										durationMs={run.durationMs}
 										status={run.status}
 									/>
 								</td>
-								<td className="px-4 py-3 text-right tabular-nums">{formatCost(run.costUsd)}</td>
-								<td className="px-4 py-3 text-right tabular-nums">{run.llmIterations ?? '-'}</td>
-								<td className="px-4 py-3 text-center">
+								<td className="hidden px-4 py-3 text-right tabular-nums md:table-cell">
+									{formatCost(run.costUsd)}
+								</td>
+								<td className="hidden px-4 py-3 text-right tabular-nums md:table-cell">
+									{run.llmIterations ?? '-'}
+								</td>
+								<td className="hidden px-4 py-3 text-center md:table-cell">
 									{run.prUrl ? (
 										<a
 											href={run.prUrl}
@@ -108,7 +124,7 @@ export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTabl
 			</div>
 
 			{total > limit && (
-				<div className="flex items-center justify-between">
+				<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 					<div className="text-sm text-muted-foreground">
 						Showing {offset + 1}-{Math.min(offset + limit, total)} of {total}
 					</div>

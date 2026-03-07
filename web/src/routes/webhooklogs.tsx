@@ -56,7 +56,7 @@ function WebhookLogsPage() {
 				<select
 					value={source}
 					onChange={(e) => updateSearch({ source: e.target.value || undefined })}
-					className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+					className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm sm:w-auto"
 				>
 					<option value="">All sources</option>
 					<option value="trello">Trello</option>
@@ -69,7 +69,7 @@ function WebhookLogsPage() {
 					placeholder="Event type..."
 					value={eventType}
 					onChange={(e) => updateSearch({ eventType: e.target.value || undefined })}
-					className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+					className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm sm:w-auto"
 				/>
 			</div>
 
