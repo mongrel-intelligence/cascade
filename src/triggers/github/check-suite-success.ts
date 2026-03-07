@@ -6,7 +6,7 @@ import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
 import { evaluateAuthorMode, resolveWorkItemId } from './utils.js';
 
-const MAX_RETRIES = 5;
+const MAX_RETRIES = 12;
 const RETRY_DELAY_MS = 10_000;
 
 /** In-memory dedup for review triggers on the same PR+SHA (prevents duplicate reviews from multiple check_suite webhooks) */

@@ -18,7 +18,7 @@ import {
 	markRecentlyDispatched,
 } from './agent-type-lock.js';
 import type { RouterPlatformAdapter } from './platform-adapter.js';
-import { addJob } from './queue.js';
+import { type CascadeJob, addJob, jobQueue } from './queue.js';
 import { isWorkItemLocked, markWorkItemEnqueued } from './work-item-lock.js';
 
 export interface ProcessRouterWebhookResult {
@@ -38,9 +38,10 @@ export interface ProcessRouterWebhookResult {
  * 5. Resolve project config
  * 6. Dispatch triggers with platform credential scope
  * 7. Work-item concurrency lock check
- * 8. Post acknowledgment comment
- * 9. Build and enqueue job
- * 10. Fire optional pre-actions (e.g. GitHub 👀 reaction)
+ * 8. Build job (without ack info)
+ * 9. Fire optional pre-actions (e.g. GitHub 👀 reaction)
+ * 10. Enqueue job to Redis (durable)
+ * 11. Post acknowledgment comment and patch ack info onto enqueued job
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: webhook pipeline with sequential guard checks
 export async function processRouterWebhook(
@@ -142,20 +143,16 @@ export async function processRouterWebhook(
 		}
 	}
 
-	// Step 8: Post acknowledgment comment
-	const ackResult = await adapter.postAck(event, payload, project, result.agentType);
-	const ackCommentId = ackResult?.commentId;
-	const ackMessage = ackResult?.message;
+	// Step 8: Build job (without ack info — patched after ack is posted)
+	const job = adapter.buildJob(event, payload, project, result);
 
-	// Step 9: Build job
-	const job = adapter.buildJob(event, payload, project, result, ackCommentId, ackMessage);
-
-	// Step 10: Fire optional pre-actions (fire-and-forget)
+	// Step 9: Fire optional pre-actions (fire-and-forget)
 	adapter.firePreActions?.(job, payload);
 
-	// Enqueue
+	// Step 10: Enqueue — job is now durable in Redis
+	let jobId: string | undefined;
 	try {
-		const jobId = await addJob(job);
+		jobId = await addJob(job);
 		if (result.workItemId) {
 			markWorkItemEnqueued(project.id, result.workItemId);
 		}
@@ -166,7 +163,6 @@ export async function processRouterWebhook(
 		logger.info(`${adapter.type} job queued`, {
 			jobId,
 			eventType: event.eventType,
-			ackCommentId,
 		});
 	} catch (err) {
 		logger.error(`Failed to queue ${adapter.type} job`, {
@@ -174,6 +170,33 @@ export async function processRouterWebhook(
 			eventType: event.eventType,
 			workItemId: event.workItemId,
 		});
+		return { shouldProcess: true, projectId: project.id };
+	}
+
+	// Step 11: Post acknowledgment comment and patch ack info onto the enqueued job.
+	// If the router crashes between enqueue and ack, the worker runs without an ack
+	// comment (acceptable). If ack succeeds, we update the job data in Redis.
+	const ackResult = await adapter.postAck(event, payload, project, result.agentType);
+	if (ackResult?.commentId != null && jobId) {
+		try {
+			const enqueuedJob = await jobQueue.getJob(jobId);
+			if (enqueuedJob) {
+				const patched = {
+					...enqueuedJob.data,
+					ackCommentId: ackResult.commentId,
+					ackMessage: ackResult.message,
+				};
+				// BullMQ's updateData generic reduces union to never; safe cast
+				await (enqueuedJob.updateData as (data: CascadeJob) => Promise<void>)(
+					patched as CascadeJob,
+				);
+			}
+		} catch (err) {
+			logger.warn('Failed to update job with ack comment ID (non-fatal)', {
+				jobId,
+				error: String(err),
+			});
+		}
 	}
 
 	return { shouldProcess: true, projectId: project.id };

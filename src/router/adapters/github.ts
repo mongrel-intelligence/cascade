@@ -215,8 +215,6 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 		payload: unknown,
 		_project: RouterProjectConfig,
 		result: TriggerResult,
-		ackCommentId: string | number | undefined,
-		ackMessage?: string,
 	): CascadeJob {
 		const job: GitHubJob = {
 			type: 'github',
@@ -225,8 +223,6 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 			eventType: event.eventType,
 			repoFullName: (event as GitHubParsedEvent).repoFullName,
 			receivedAt: new Date().toISOString(),
-			ackCommentId: ackCommentId as number | undefined,
-			ackMessage,
 			triggerResult: result,
 		};
 		return job;
