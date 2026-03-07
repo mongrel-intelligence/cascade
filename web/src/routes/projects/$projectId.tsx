@@ -35,7 +35,7 @@ function ProjectDetailPage() {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex items-center gap-3">
+			<div className="flex flex-wrap items-center gap-2">
 				<Link
 					to="/projects"
 					className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -47,7 +47,7 @@ function ProjectDetailPage() {
 				<h1 className="text-xl font-bold">{project.name}</h1>
 			</div>
 
-			<div className="border-b border-border">
+			<div className="border-b border-border overflow-x-auto">
 				<nav className="flex gap-4">
 					{tabs.map((tab) => (
 						<button
