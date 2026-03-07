@@ -4,6 +4,7 @@ import { getPersonaToken } from '../github/personas.js';
 import { getJiraConfig } from '../pm/config.js';
 import type { AgentInput, ProjectConfig } from '../types/index.js';
 import { parseRepoFullName } from '../utils/repo.js';
+import { ENV_VAR_NAME } from './progressState.js';
 
 /**
  * Resolve the GitHub token for profiles that need GitHub client access.
@@ -76,6 +77,6 @@ export function injectProgressCommentId(
 	ackCommentId: string | number | undefined,
 ): void {
 	if (cardId && typeof ackCommentId === 'string' && ackCommentId) {
-		projectSecrets.CASCADE_PROGRESS_COMMENT_ID = `${cardId}:${ackCommentId}`;
+		projectSecrets[ENV_VAR_NAME] = `${cardId}:${ackCommentId}`;
 	}
 }

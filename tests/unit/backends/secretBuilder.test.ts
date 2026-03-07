@@ -9,7 +9,12 @@ vi.mock('../../../src/github/personas.js', () => ({
 }));
 
 import type { AgentProfile } from '../../../src/agents/definitions/profiles.js';
-import { augmentProjectSecrets, resolveGitHubToken } from '../../../src/backends/secretBuilder.js';
+import { ENV_VAR_NAME } from '../../../src/backends/progressState.js';
+import {
+	augmentProjectSecrets,
+	injectProgressCommentId,
+	resolveGitHubToken,
+} from '../../../src/backends/secretBuilder.js';
 import { getAllProjectCredentials } from '../../../src/config/provider.js';
 import { getPersonaToken } from '../../../src/github/personas.js';
 import type { AgentInput, ProjectConfig } from '../../../src/types/index.js';
@@ -162,5 +167,37 @@ describe('resolveGitHubToken', () => {
 		await expect(resolveGitHubToken(profile, 'project-id', 'implementation')).rejects.toThrow(
 			'persona not found',
 		);
+	});
+});
+
+describe('injectProgressCommentId', () => {
+	it('injects env var when cardId and string ackCommentId are provided', () => {
+		const secrets: Record<string, string> = {};
+		injectProgressCommentId(secrets, 'card-123', 'ack-comment-456');
+		expect(secrets[ENV_VAR_NAME]).toBe('card-123:ack-comment-456');
+	});
+
+	it('does not inject when ackCommentId is a number (GitHub ack comment)', () => {
+		const secrets: Record<string, string> = {};
+		injectProgressCommentId(secrets, 'card-123', 12345);
+		expect(secrets[ENV_VAR_NAME]).toBeUndefined();
+	});
+
+	it('does not inject when cardId is undefined', () => {
+		const secrets: Record<string, string> = {};
+		injectProgressCommentId(secrets, undefined, 'ack-comment-456');
+		expect(secrets[ENV_VAR_NAME]).toBeUndefined();
+	});
+
+	it('does not inject when ackCommentId is undefined', () => {
+		const secrets: Record<string, string> = {};
+		injectProgressCommentId(secrets, 'card-123', undefined);
+		expect(secrets[ENV_VAR_NAME]).toBeUndefined();
+	});
+
+	it('does not inject when ackCommentId is an empty string', () => {
+		const secrets: Record<string, string> = {};
+		injectProgressCommentId(secrets, 'card-123', '');
+		expect(secrets[ENV_VAR_NAME]).toBeUndefined();
 	});
 });
