@@ -6,7 +6,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
 	AlertCircle,
 	AlertTriangle,
-	Check,
 	CheckCircle,
 	ChevronDown,
 	ChevronRight,
@@ -14,23 +13,17 @@ import {
 	Globe,
 	KeyRound,
 	Loader2,
-	Plus,
 	RefreshCw,
 	Trash2,
 	XCircle,
 } from 'lucide-react';
 import { type Reducer, useEffect, useReducer, useState } from 'react';
+import { InlineCredentialCreator, WizardStep } from './wizard-shared.js';
+import type { CredentialOption } from './wizard-shared.js';
 
 // ============================================================================
 // Types
 // ============================================================================
-
-interface CredentialOption {
-	id: number;
-	name: string;
-	envVarKey: string;
-	value: string;
-}
 
 interface TrelloBoardOption {
 	id: string;
@@ -266,149 +259,6 @@ const STEP_TITLES = [
 	'Webhooks',
 	'Save',
 ] as const;
-
-function WizardStep({
-	stepNumber,
-	title,
-	status,
-	isOpen,
-	onToggle,
-	children,
-}: {
-	stepNumber: number;
-	title: string;
-	status: 'pending' | 'complete' | 'error' | 'active';
-	isOpen: boolean;
-	onToggle: () => void;
-	children: React.ReactNode;
-}) {
-	return (
-		<div className="border rounded-lg overflow-hidden">
-			<button
-				type="button"
-				onClick={onToggle}
-				className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/50 transition-colors"
-			>
-				<div
-					className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-medium ${
-						status === 'complete'
-							? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-							: status === 'error'
-								? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-								: status === 'active'
-									? 'bg-primary text-primary-foreground'
-									: 'bg-muted text-muted-foreground'
-					}`}
-				>
-					{status === 'complete' ? <Check className="h-4 w-4" /> : stepNumber}
-				</div>
-				<span className="flex-1 text-sm font-medium">{title}</span>
-				{isOpen ? (
-					<ChevronDown className="h-4 w-4 text-muted-foreground" />
-				) : (
-					<ChevronRight className="h-4 w-4 text-muted-foreground" />
-				)}
-			</button>
-			{isOpen && <div className="border-t px-4 py-4 space-y-4">{children}</div>}
-		</div>
-	);
-}
-
-// ============================================================================
-// Inline Credential Creator
-// ============================================================================
-
-function InlineCredentialCreator({
-	onCreated,
-}: {
-	onCreated: (id: number) => void;
-}) {
-	const [isOpen, setIsOpen] = useState(false);
-	const [name, setName] = useState('');
-	const [envVarKey, setEnvVarKey] = useState('');
-	const [value, setValue] = useState('');
-	const queryClient = useQueryClient();
-
-	const createMutation = useMutation({
-		mutationFn: async () => {
-			return trpcClient.credentials.create.mutate({
-				name,
-				envVarKey,
-				value,
-				isDefault: false,
-			});
-		},
-		onSuccess: async (result) => {
-			await queryClient.invalidateQueries({
-				queryKey: trpc.credentials.list.queryOptions().queryKey,
-			});
-			onCreated((result as { id: number }).id);
-			setIsOpen(false);
-			setName('');
-			setEnvVarKey('');
-			setValue('');
-		},
-	});
-
-	if (!isOpen) {
-		return (
-			<button
-				type="button"
-				onClick={() => setIsOpen(true)}
-				className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-			>
-				<Plus className="h-3 w-3" /> Create new
-			</button>
-		);
-	}
-
-	return (
-		<div className="rounded-md border border-dashed p-3 space-y-2">
-			<div className="flex gap-2">
-				<Input
-					value={name}
-					onChange={(e) => setName(e.target.value)}
-					placeholder="Name (e.g. My Trello Key)"
-					className="flex-1"
-				/>
-				<Input
-					value={envVarKey}
-					onChange={(e) => setEnvVarKey(e.target.value.toUpperCase())}
-					placeholder="ENV_VAR_KEY"
-					className="flex-1"
-				/>
-			</div>
-			<Input
-				value={value}
-				onChange={(e) => setValue(e.target.value)}
-				placeholder="Secret value"
-				type="password"
-			/>
-			<div className="flex gap-2">
-				<button
-					type="button"
-					onClick={() => createMutation.mutate()}
-					disabled={!name || !envVarKey || !value || createMutation.isPending}
-					className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-				>
-					{createMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Create'}
-				</button>
-				<button
-					type="button"
-					onClick={() => setIsOpen(false)}
-					className="inline-flex h-8 items-center rounded-md border px-3 text-xs hover:bg-accent"
-				>
-					Cancel
-				</button>
-				{createMutation.isError && (
-					<span className="text-xs text-destructive self-center">
-						{createMutation.error.message}
-					</span>
-				)}
-			</div>
-		</div>
-	);
-}
 
 // ============================================================================
 // Searchable Select

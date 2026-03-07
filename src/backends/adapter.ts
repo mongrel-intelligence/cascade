@@ -1,6 +1,8 @@
 import type { ModelSpec } from 'llmist';
 
 import { hasFinishValidation } from '../agents/definitions/index.js';
+import { getAgentProfile } from '../agents/definitions/profiles.js';
+import { getToolManifests } from '../agents/definitions/toolManifests.js';
 import type { PromptContext } from '../agents/prompts/index.js';
 import {
 	type LogWriter,
@@ -17,11 +19,9 @@ import { loadPartials } from '../db/repositories/partialsRepository.js';
 import { recordInitialComment } from '../gadgets/sessionState.js';
 import { withGitHubToken } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
-import { getAgentProfile } from './agent-profiles.js';
 import { postProcessResult } from './postProcess.js';
 import { createProgressMonitor } from './progress.js';
 import { augmentProjectSecrets, resolveGitHubToken } from './secretBuilder.js';
-import { getToolManifests } from './toolManifests.js';
 import type { AgentBackend, AgentBackendInput } from './types.js';
 
 /**

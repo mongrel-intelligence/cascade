@@ -1,11 +1,15 @@
 import { TRPCError } from '@trpc/server';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { ImapFlow } from 'imapflow';
 import twilio from 'twilio';
 import { z } from 'zod';
 import { getDb } from '../../db/client.js';
-import { decryptCredential, encryptCredential } from '../../db/crypto.js';
-import { credentials, integrationCredentials, projectIntegrations } from '../../db/schema/index.js';
+import { decryptCredential } from '../../db/crypto.js';
+import {
+	upsertCredentialByEnvVarKey,
+	upsertGmailIntegrationWithCredentials,
+} from '../../db/repositories/credentialsRepository.js';
+import { credentials } from '../../db/schema/index.js';
 import { exchangeGmailCode, getGmailAuthUrl, getGmailUserInfo } from '../../email/gmail/oauth.js';
 import { jiraClient, withJiraCredentials } from '../../jira/client.js';
 import { trelloClient, withTrelloCredentials } from '../../trello/client.js';
@@ -289,126 +293,30 @@ export const integrationsDiscoveryRouter = router({
 			// Get user email
 			const userInfo = await getGmailUserInfo(tokens.access_token);
 
-			const db = getDb();
-
-			// Ensure Gmail integration exists for the project
-			const [existingIntegration] = await db
-				.select({ id: projectIntegrations.id })
-				.from(projectIntegrations)
-				.where(
-					and(
-						eq(projectIntegrations.projectId, projectId),
-						eq(projectIntegrations.category, 'email'),
-					),
-				);
-
-			let integrationId: number;
-			if (existingIntegration) {
-				// Update to gmail provider
-				await db
-					.update(projectIntegrations)
-					.set({ provider: 'gmail', config: {}, updatedAt: new Date() })
-					.where(eq(projectIntegrations.id, existingIntegration.id));
-				integrationId = existingIntegration.id;
-			} else {
-				// Create new gmail integration
-				const [newIntegration] = await db
-					.insert(projectIntegrations)
-					.values({
-						projectId,
-						category: 'email',
-						provider: 'gmail',
-						config: {},
-					})
-					.returning({ id: projectIntegrations.id });
-				integrationId = newIntegration.id;
-			}
-
-			// Create or update gmail_email credential
-			const emailCredName = `Gmail: ${userInfo.email}`;
-			const [existingEmailCred] = await db
-				.select({ id: credentials.id })
-				.from(credentials)
-				.where(
-					and(
-						eq(credentials.orgId, ctx.effectiveOrgId),
-						eq(credentials.envVarKey, 'EMAIL_GMAIL_ADDRESS'),
-						eq(credentials.name, emailCredName),
-					),
-				);
-
-			let emailCredId: number;
-			if (existingEmailCred) {
-				await db
-					.update(credentials)
-					.set({
-						value: encryptCredential(userInfo.email, ctx.effectiveOrgId),
-						updatedAt: new Date(),
-					})
-					.where(eq(credentials.id, existingEmailCred.id));
-				emailCredId = existingEmailCred.id;
-			} else {
-				const [newCred] = await db
-					.insert(credentials)
-					.values({
-						orgId: ctx.effectiveOrgId,
-						name: emailCredName,
-						envVarKey: 'EMAIL_GMAIL_ADDRESS',
-						value: encryptCredential(userInfo.email, ctx.effectiveOrgId),
-						isDefault: false,
-					})
-					.returning({ id: credentials.id });
-				emailCredId = newCred.id;
-			}
-
-			// Create or update gmail_refresh_token credential
-			const refreshCredName = `Gmail Refresh Token: ${userInfo.email}`;
-			const [existingRefreshCred] = await db
-				.select({ id: credentials.id })
-				.from(credentials)
-				.where(
-					and(
-						eq(credentials.orgId, ctx.effectiveOrgId),
-						eq(credentials.envVarKey, 'EMAIL_GMAIL_REFRESH_TOKEN'),
-						eq(credentials.name, refreshCredName),
-					),
-				);
-
-			let refreshCredId: number;
-			if (existingRefreshCred) {
-				await db
-					.update(credentials)
-					.set({
-						value: encryptCredential(tokens.refresh_token, ctx.effectiveOrgId),
-						updatedAt: new Date(),
-					})
-					.where(eq(credentials.id, existingRefreshCred.id));
-				refreshCredId = existingRefreshCred.id;
-			} else {
-				const [newCred] = await db
-					.insert(credentials)
-					.values({
-						orgId: ctx.effectiveOrgId,
-						name: refreshCredName,
-						envVarKey: 'EMAIL_GMAIL_REFRESH_TOKEN',
-						value: encryptCredential(tokens.refresh_token, ctx.effectiveOrgId),
-						isDefault: false,
-					})
-					.returning({ id: credentials.id });
-				refreshCredId = newCred.id;
-			}
-
-			// Link credentials to integration
-			// Delete any existing credential links for this integration
-			await db
-				.delete(integrationCredentials)
-				.where(eq(integrationCredentials.integrationId, integrationId));
-
-			// Insert new credential links
-			await db.insert(integrationCredentials).values([
-				{ integrationId, role: 'gmail_email', credentialId: emailCredId },
-				{ integrationId, role: 'gmail_refresh_token', credentialId: refreshCredId },
+			// Upsert gmail_email and gmail_refresh_token credentials
+			const [emailCredId, refreshCredId] = await Promise.all([
+				upsertCredentialByEnvVarKey({
+					orgId: ctx.effectiveOrgId,
+					envVarKey: 'EMAIL_GMAIL_ADDRESS',
+					name: `Gmail: ${userInfo.email}`,
+					value: userInfo.email,
+				}),
+				upsertCredentialByEnvVarKey({
+					orgId: ctx.effectiveOrgId,
+					envVarKey: 'EMAIL_GMAIL_REFRESH_TOKEN',
+					name: `Gmail Refresh Token: ${userInfo.email}`,
+					value: tokens.refresh_token,
+				}),
 			]);
+
+			// Upsert the Gmail integration and link credentials
+			await upsertGmailIntegrationWithCredentials({
+				projectId,
+				credentialLinks: [
+					{ role: 'gmail_email', credentialId: emailCredId },
+					{ role: 'gmail_refresh_token', credentialId: refreshCredId },
+				],
+			});
 
 			logger.info('Gmail OAuth credentials stored successfully', {
 				projectId,
