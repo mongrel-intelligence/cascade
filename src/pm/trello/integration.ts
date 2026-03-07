@@ -45,6 +45,7 @@ export class TrelloIntegration implements PMIntegration {
 				processed: trelloConfig?.labels?.processed,
 				error: trelloConfig?.labels?.error,
 				readyToProcess: trelloConfig?.labels?.readyToProcess,
+				auto: trelloConfig?.labels?.auto,
 			},
 			statuses: {
 				backlog: trelloConfig?.lists?.backlog,

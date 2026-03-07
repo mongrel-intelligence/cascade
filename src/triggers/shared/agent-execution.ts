@@ -1,5 +1,13 @@
 import { runAgent } from '../../agents/registry.js';
-import { PMLifecycleManager, createPMProvider, resolveProjectPMConfig } from '../../pm/index.js';
+import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
+import { getPMProvider } from '../../pm/context.js';
+import {
+	PMLifecycleManager,
+	createPMProvider,
+	hasAutoLabel,
+	resolveProjectPMConfig,
+} from '../../pm/index.js';
+import { checkTriggerEnabled } from '../../triggers/shared/trigger-check.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import type { TriggerResult } from '../types.js';
@@ -178,6 +186,7 @@ async function notifyValidationFailure(
  * This function must be called inside credential/PM-provider context
  * (e.g. `withTrelloCredentials`, `withPMProvider`, `withGitHubToken`).
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: intentional — pipeline with multiple conditional branches + splitting auto-chain
 export async function runAgentExecutionPipeline(
 	result: TriggerResult,
 	project: ProjectConfig,
@@ -257,7 +266,120 @@ export async function runAgentExecutionPipeline(
 		await onFailure(result, agentResult);
 	}
 
+	// After a successful splitting run, propagate auto label and optionally chain backlog-manager
+	if (agentType === 'splitting' && agentResult.success && workItemId) {
+		const chainResult = await propagateAutoLabelAfterSplitting(workItemId, project);
+		if (chainResult) {
+			await runAgentExecutionPipeline(chainResult, project, config, {
+				...executionConfig,
+				skipPrepareForAgent: true,
+				skipHandleFailure: true,
+				logLabel: 'backlog-manager (auto-chain)',
+			});
+		}
+	}
+
 	await tryAutoDebug(agentResult, project, config);
+}
+
+/**
+ * After a successful splitting agent run, propagate the 'auto' label to all
+ * cards in the backlog list and immediately chain to the backlog-manager agent.
+ *
+ * Only runs if the parent work item has the 'auto' label configured.
+ */
+async function propagateAutoLabelAfterSplitting(
+	workItemId: string,
+	project: ProjectConfig,
+): Promise<TriggerResult | null> {
+	const pmConfig = resolveProjectPMConfig(project);
+	const provider = getPMProvider();
+
+	// Check if parent has the auto label
+	let parentWorkItem: Awaited<ReturnType<typeof provider.getWorkItem>>;
+	try {
+		parentWorkItem = await provider.getWorkItem(workItemId);
+	} catch (err) {
+		logger.warn('propagateAutoLabelAfterSplitting: failed to fetch parent work item', {
+			workItemId,
+			error: String(err),
+		});
+		return null;
+	}
+
+	if (!hasAutoLabel(parentWorkItem.labels, pmConfig)) {
+		return null;
+	}
+
+	const autoLabelId = pmConfig.labels.auto;
+	if (!autoLabelId) return null;
+
+	// Resolve the backlog list/status id
+	const backlogContainerId =
+		getTrelloConfig(project)?.lists?.backlog ?? getJiraConfig(project)?.statuses?.backlog;
+	if (!backlogContainerId) {
+		logger.warn(
+			'propagateAutoLabelAfterSplitting: no backlog list configured, skipping auto label propagation',
+			{ workItemId },
+		);
+		return null;
+	}
+
+	// List all backlog items and add auto label
+	let backlogItems: Awaited<ReturnType<typeof provider.listWorkItems>>;
+	try {
+		backlogItems = await provider.listWorkItems(backlogContainerId);
+	} catch (err) {
+		logger.warn('propagateAutoLabelAfterSplitting: failed to list backlog items', {
+			workItemId,
+			error: String(err),
+		});
+		return null;
+	}
+
+	logger.info('Propagating auto label to backlog items after splitting', {
+		parentWorkItemId: workItemId,
+		backlogItemCount: backlogItems.length,
+	});
+
+	// Label all backlog items that don't already have the auto label
+	await Promise.all(
+		backlogItems
+			.filter((item) => !hasAutoLabel(item.labels, pmConfig))
+			.map((item) =>
+				provider.addLabel(item.id, autoLabelId).catch((err) =>
+					logger.warn('Failed to add auto label to backlog item', {
+						itemId: item.id,
+						error: String(err),
+					}),
+				),
+			),
+	);
+
+	// Check if backlog-manager trigger is enabled, then chain to it
+	const backlogManagerEnabled = await checkTriggerEnabled(
+		project.id,
+		'backlog-manager',
+		'splitting:auto-chain',
+		'splitting-auto-propagate',
+	);
+	if (!backlogManagerEnabled) {
+		logger.info(
+			'propagateAutoLabelAfterSplitting: backlog-manager trigger not enabled, skipping chain',
+			{ workItemId },
+		);
+		return null;
+	}
+
+	logger.info('Chaining to backlog-manager after splitting with auto label', {
+		parentWorkItemId: workItemId,
+	});
+
+	return {
+		agentType: 'backlog-manager',
+		agentInput: {},
+		workItemId,
+	};
 }
 
 /**

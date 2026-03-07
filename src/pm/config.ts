@@ -28,6 +28,7 @@ export interface JiraConfig {
 		processed?: string;
 		error?: string;
 		readyToProcess?: string;
+		auto?: string;
 	};
 }
 
