@@ -42,7 +42,6 @@ export interface PromptContext {
 	pmName?: string; // "Trello" or "JIRA"
 
 	// PM list/column IDs
-	storiesListId?: string;
 	backlogListId?: string;
 	todoListId?: string;
 	inProgressListId?: string;
@@ -299,7 +298,6 @@ export function getTemplateVariables(): Array<{
 		{ name: 'workItemNounCap', group: 'PM', description: 'Card or Issue' },
 		{ name: 'workItemNounPluralCap', group: 'PM', description: 'Cards or Issues' },
 		{ name: 'pmName', group: 'PM', description: 'Trello or JIRA' },
-		{ name: 'storiesListId', group: 'PM Lists', description: 'Stories list/column ID' },
 		{ name: 'backlogListId', group: 'PM Lists', description: 'Backlog list/column ID' },
 		{ name: 'todoListId', group: 'PM Lists', description: 'TODO list/column ID' },
 		{ name: 'inProgressListId', group: 'PM Lists', description: 'In Progress list/column ID' },

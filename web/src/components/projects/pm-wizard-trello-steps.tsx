@@ -16,7 +16,6 @@ import type { CredentialOption } from './wizard-shared.js';
 const TRELLO_LIST_SLOTS = [
 	'backlog',
 	'splitting',
-	'stories',
 	'planning',
 	'todo',
 	'inProgress',

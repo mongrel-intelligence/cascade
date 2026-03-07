@@ -30,7 +30,6 @@ export function buildPromptContext(
 		cardUrl: cardId && pmProvider ? pmProvider.getWorkItemUrl(cardId) : undefined,
 		projectId: project.id,
 		baseBranch: project.baseBranch,
-		storiesListId: getTrelloConfig(project)?.lists?.stories ?? getJiraConfig(project)?.projectKey,
 		backlogListId:
 			getTrelloConfig(project)?.lists?.backlog ?? getJiraConfig(project)?.statuses?.backlog,
 		todoListId: getTrelloConfig(project)?.lists?.todo ?? getJiraConfig(project)?.statuses?.todo,
