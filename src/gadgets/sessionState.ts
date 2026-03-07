@@ -12,6 +12,8 @@ let sessionState = {
 	prUrl: null as string | null,
 	reviewSubmitted: false,
 	reviewUrl: null as string | null,
+	reviewBody: null as string | null,
+	reviewEvent: null as string | null,
 	initialCommentId: null as number | null,
 	hooks: {} as SessionHooks,
 };
@@ -32,6 +34,8 @@ export function initSessionState(
 		prUrl: null,
 		reviewSubmitted: false,
 		reviewUrl: null,
+		reviewBody: null,
+		reviewEvent: null,
 		initialCommentId: null,
 		hooks: hooks ?? {},
 	};
@@ -54,9 +58,15 @@ export function recordPRCreation(prUrl: string): void {
 	sessionState.prUrl = prUrl;
 }
 
-export function recordReviewSubmission(reviewUrl: string): void {
+export function recordReviewSubmission(
+	reviewUrl: string,
+	body?: string | null,
+	event?: string | null,
+): void {
 	sessionState.reviewSubmitted = true;
 	sessionState.reviewUrl = reviewUrl;
+	sessionState.reviewBody = body ?? null;
+	sessionState.reviewEvent = event ?? null;
 }
 
 export function recordInitialComment(commentId: number): void {

@@ -55,6 +55,8 @@ describe('CreatePRReview', () => {
 		});
 		expect(mockRecordReviewSubmission).toHaveBeenCalledWith(
 			'https://github.com/acme/myapp/pull/42#pullrequestreview-1',
+			'LGTM!',
+			'APPROVE',
 		);
 		expect(mockDeleteInitialComment).toHaveBeenCalledWith('acme', 'myapp');
 		expect(result).toContain('Review submitted successfully');

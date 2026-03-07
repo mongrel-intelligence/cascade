@@ -37,7 +37,8 @@ export async function deleteProgressCommentOnSuccess(
 	}
 
 	const { getSessionState } = await import('../../gadgets/sessionState.js');
-	const { initialCommentId } = getSessionState();
+	const sessionState = getSessionState();
+	const { initialCommentId } = sessionState;
 
 	// Fall back to ackCommentId stored in agentInput if sessionState wasn't populated
 	const ackCommentId =
@@ -49,6 +50,16 @@ export async function deleteProgressCommentOnSuccess(
 		action: 'delete progress comment after agent success',
 		prNumber: result.prNumber,
 	});
+
+	// Post review summary to PM work item if review was submitted and a work item is linked
+	if (result.workItemId && sessionState.reviewBody) {
+		const { postReviewToPM } = await import('../shared/review-pm-poster.js');
+		await postReviewToPM(result.workItemId, {
+			reviewBody: sessionState.reviewBody,
+			reviewEvent: sessionState.reviewEvent,
+			reviewUrl: sessionState.reviewUrl,
+		});
+	}
 }
 
 /**

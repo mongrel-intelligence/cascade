@@ -70,7 +70,7 @@ export class CreatePRReview extends Gadget({
 				body: params.body,
 				comments: params.comments,
 			});
-			recordReviewSubmission(result.reviewUrl);
+			recordReviewSubmission(result.reviewUrl, params.body, result.event);
 			// Delete the stale ack/progress comment immediately after review submission.
 			// Best-effort: wrapped in deleteInitialComment's own try-catch.
 			await deleteInitialComment(params.owner, params.repo);
