@@ -65,7 +65,7 @@ export function DefaultsForm() {
 			}}
 			className="max-w-2xl space-y-4"
 		>
-			<div className="grid grid-cols-2 gap-4">
+			<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 				<div className="space-y-2">
 					<Label htmlFor="d-model">Model</Label>
 					<ModelField id="d-model" value={model} onChange={setModel} backend={agentBackend} />
@@ -81,7 +81,7 @@ export function DefaultsForm() {
 					/>
 				</div>
 			</div>
-			<div className="grid grid-cols-2 gap-4">
+			<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 				<div className="space-y-2">
 					<Label htmlFor="d-watchdog">Watchdog Timeout (ms)</Label>
 					<Input
@@ -117,7 +117,7 @@ export function DefaultsForm() {
 					</Select>
 				</div>
 			</div>
-			<div className="grid grid-cols-2 gap-4">
+			<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 				<div className="space-y-2">
 					<Label htmlFor="d-progressModel">Progress Model</Label>
 					<Input
