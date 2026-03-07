@@ -8,11 +8,12 @@ vi.mock('../../../../src/db/client.js', () => ({
 import { getDb } from '../../../../src/db/client.js';
 import {
 	bulkUpsertTriggerConfigs,
-	createTriggerConfig,
 	deleteTriggerConfig,
+	deleteTriggerConfigsByProject,
 	getTriggerConfig,
 	getTriggerConfigById,
 	getTriggerConfigsByProject,
+	getTriggerConfigsByProjectAndAgent,
 	updateTriggerConfig,
 	upsertTriggerConfig,
 } from '../../../../src/db/repositories/agentTriggerConfigsRepository.js';
@@ -140,10 +141,45 @@ describe('agentTriggerConfigsRepository', () => {
 	});
 
 	// -------------------------------------------------------------------------
-	// createTriggerConfig (via upsertTriggerConfig with no conflict)
+	// getTriggerConfigsByProjectAndAgent
 	// -------------------------------------------------------------------------
 
-	describe('createTriggerConfig', () => {
+	describe('getTriggerConfigsByProjectAndAgent', () => {
+		it('returns all configs for a specific agent in a project', async () => {
+			const row2 = {
+				...dbRow,
+				id: 2,
+				triggerEvent: 'scm:check-suite-success',
+			};
+			mockDb.chain.where.mockResolvedValueOnce([dbRow, row2]);
+
+			const result = await getTriggerConfigsByProjectAndAgent('proj-1', 'implementation');
+
+			expect(result).toHaveLength(2);
+			expect(result[0]).toEqual(expectedConfig);
+			expect(result[1]).toEqual(
+				expect.objectContaining({
+					id: 2,
+					agentType: 'implementation',
+					triggerEvent: 'scm:check-suite-success',
+				}),
+			);
+		});
+
+		it('returns empty array when no configs exist for the agent type', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			const result = await getTriggerConfigsByProjectAndAgent('proj-1', 'nonexistent');
+
+			expect(result).toEqual([]);
+		});
+	});
+
+	// -------------------------------------------------------------------------
+	// upsertTriggerConfig - create path (no conflict)
+	// -------------------------------------------------------------------------
+
+	describe('upsertTriggerConfig - create path', () => {
 		it('inserts and returns mapped config with default enabled=true and parameters={}', async () => {
 			const insertedRow = {
 				id: 5,
@@ -345,6 +381,29 @@ describe('agentTriggerConfigsRepository', () => {
 			const result = await deleteTriggerConfig(999);
 
 			expect(result).toBe(false);
+		});
+	});
+
+	// -------------------------------------------------------------------------
+	// deleteTriggerConfigsByProject
+	// -------------------------------------------------------------------------
+
+	describe('deleteTriggerConfigsByProject', () => {
+		it('returns count of deleted rows when configs are deleted', async () => {
+			mockDb.chain.where.mockResolvedValueOnce({ rowCount: 3 });
+
+			const result = await deleteTriggerConfigsByProject('proj-1');
+
+			expect(result).toBe(3);
+			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
+		});
+
+		it('returns 0 when no configs exist for the project', async () => {
+			mockDb.chain.where.mockResolvedValueOnce({ rowCount: 0 });
+
+			const result = await deleteTriggerConfigsByProject('proj-none');
+
+			expect(result).toBe(0);
 		});
 	});
 
