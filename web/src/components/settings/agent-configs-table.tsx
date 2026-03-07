@@ -37,15 +37,15 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 
 	return (
 		<>
-			<div className="overflow-hidden rounded-lg border border-border">
+			<div className="overflow-x-auto rounded-lg border border-border">
 				<Table>
 					<TableHeader>
 						<TableRow>
 							<TableHead>Agent Type</TableHead>
 							<TableHead>Model</TableHead>
-							<TableHead>Max Iterations</TableHead>
-							<TableHead>Max Concurrency</TableHead>
-							<TableHead>Backend</TableHead>
+							<TableHead className="hidden md:table-cell">Max Iterations</TableHead>
+							<TableHead className="hidden md:table-cell">Max Concurrency</TableHead>
+							<TableHead className="hidden md:table-cell">Backend</TableHead>
 							<TableHead>Scope</TableHead>
 							<TableHead className="w-20" />
 						</TableRow>
@@ -62,9 +62,13 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 							<TableRow key={config.id}>
 								<TableCell className="font-medium">{config.agentType}</TableCell>
 								<TableCell>{config.model ?? '-'}</TableCell>
-								<TableCell>{config.maxIterations ?? '-'}</TableCell>
-								<TableCell>{config.maxConcurrency ?? '-'}</TableCell>
-								<TableCell>{config.agentBackend ?? '-'}</TableCell>
+								<TableCell className="hidden md:table-cell">
+									{config.maxIterations ?? '-'}
+								</TableCell>
+								<TableCell className="hidden md:table-cell">
+									{config.maxConcurrency ?? '-'}
+								</TableCell>
+								<TableCell className="hidden md:table-cell">{config.agentBackend ?? '-'}</TableCell>
 								<TableCell>
 									{config.orgId ? (
 										<Badge variant="secondary">Org</Badge>

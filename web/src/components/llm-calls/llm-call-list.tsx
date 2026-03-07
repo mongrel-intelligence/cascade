@@ -52,7 +52,7 @@ export function LlmCallList({ runId }: LlmCallListProps) {
 				</div>
 			</div>
 
-			<div className="overflow-hidden rounded-lg border border-border">
+			<div className="overflow-x-auto rounded-lg border border-border">
 				<table className="w-full text-sm">
 					<thead>
 						<tr className="border-b border-border bg-muted/50">
@@ -63,9 +63,13 @@ export function LlmCallList({ runId }: LlmCallListProps) {
 							<th className="px-4 py-2 text-right font-medium text-muted-foreground">
 								Output Tokens
 							</th>
-							<th className="px-4 py-2 text-right font-medium text-muted-foreground">Cached</th>
+							<th className="hidden md:table-cell px-4 py-2 text-right font-medium text-muted-foreground">
+								Cached
+							</th>
 							<th className="px-4 py-2 text-right font-medium text-muted-foreground">Cost</th>
-							<th className="px-4 py-2 text-right font-medium text-muted-foreground">Duration</th>
+							<th className="hidden md:table-cell px-4 py-2 text-right font-medium text-muted-foreground">
+								Duration
+							</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -89,11 +93,11 @@ export function LlmCallList({ runId }: LlmCallListProps) {
 									<td className="px-4 py-2 text-right tabular-nums">
 										{call.outputTokens?.toLocaleString() ?? '-'}
 									</td>
-									<td className="px-4 py-2 text-right tabular-nums">
+									<td className="hidden md:table-cell px-4 py-2 text-right tabular-nums">
 										{call.cachedTokens?.toLocaleString() ?? '-'}
 									</td>
 									<td className="px-4 py-2 text-right tabular-nums">{formatCost(call.costUsd)}</td>
-									<td className="px-4 py-2 text-right tabular-nums">
+									<td className="hidden md:table-cell px-4 py-2 text-right tabular-nums">
 										{formatDuration(call.durationMs)}
 									</td>
 								</tr>
