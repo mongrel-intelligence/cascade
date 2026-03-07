@@ -287,6 +287,9 @@ export async function runAgentExecutionPipeline(
  * cards in the backlog list and immediately chain to the backlog-manager agent.
  *
  * Only runs if the parent work item has the 'auto' label configured.
+ *
+ * NOTE: This propagates the label to ALL items currently in the backlog, not just
+ * those created by the splitting agent. This is intentional to enable batch auto-processing.
  */
 async function propagateAutoLabelAfterSplitting(
 	workItemId: string,
@@ -314,21 +317,42 @@ async function propagateAutoLabelAfterSplitting(
 	const autoLabelId = pmConfig.labels.auto;
 	if (!autoLabelId) return null;
 
-	// Resolve the backlog list/status id
-	const backlogContainerId =
-		getTrelloConfig(project)?.lists?.backlog ?? getJiraConfig(project)?.statuses?.backlog;
-	if (!backlogContainerId) {
-		logger.warn(
-			'propagateAutoLabelAfterSplitting: no backlog list configured, skipping auto label propagation',
-			{ workItemId },
-		);
-		return null;
-	}
-
 	// List all backlog items and add auto label
 	let backlogItems: Awaited<ReturnType<typeof provider.listWorkItems>>;
 	try {
-		backlogItems = await provider.listWorkItems(backlogContainerId);
+		if (provider.type === 'trello') {
+			// Trello: containerId is the list ID
+			const backlogListId = getTrelloConfig(project)?.lists?.backlog;
+			if (!backlogListId) {
+				logger.warn(
+					'propagateAutoLabelAfterSplitting: no backlog list configured for Trello, skipping',
+					{ workItemId },
+				);
+				return null;
+			}
+			backlogItems = await provider.listWorkItems(backlogListId);
+		} else if (provider.type === 'jira') {
+			// JIRA: cannot use listWorkItems with status name — must use JQL to filter by status
+			const jiraConfig = getJiraConfig(project);
+			const backlogStatus = jiraConfig?.statuses?.backlog;
+			const projectKey = jiraConfig?.projectKey;
+			if (!backlogStatus || !projectKey) {
+				logger.warn(
+					'propagateAutoLabelAfterSplitting: no backlog status or projectKey configured for JIRA, skipping',
+					{ workItemId },
+				);
+				return null;
+			}
+			// Fetch all items from the project, then filter by status locally
+			// (JIRA adapter's listWorkItems expects project key, not status name)
+			const allItems = await provider.listWorkItems(projectKey);
+			backlogItems = allItems.filter((item) => item.status === backlogStatus);
+		} else {
+			logger.warn('propagateAutoLabelAfterSplitting: unsupported PM provider type', {
+				providerType: provider.type,
+			});
+			return null;
+		}
 	} catch (err) {
 		logger.warn('propagateAutoLabelAfterSplitting: failed to list backlog items', {
 			workItemId,
