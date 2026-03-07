@@ -112,14 +112,15 @@ export interface RouterPlatformAdapter {
 
 	/**
 	 * Build the `CascadeJob` to be enqueued.
-	 * The job is built without ack info — `ackCommentId` and `ackMessage`
-	 * are patched onto the job via `updateData()` after the ack is posted.
+	 * The `ackResult` is available at build time (ack is posted before enqueue),
+	 * so `ackCommentId` and `ackMessage` can be embedded directly in the job.
 	 */
 	buildJob(
 		event: ParsedWebhookEvent,
 		payload: unknown,
 		project: RouterProjectConfig,
 		result: TriggerResult,
+		ackResult?: AckResult,
 	): CascadeJob;
 
 	/**

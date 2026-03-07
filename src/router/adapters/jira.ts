@@ -158,6 +158,7 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 		payload: unknown,
 		project: RouterProjectConfig,
 		result: TriggerResult,
+		ackResult?: AckResult,
 	): CascadeJob {
 		const jiraEvent = event as JiraParsedEvent;
 		const job: JiraJob = {
@@ -169,6 +170,7 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 			webhookEvent: jiraEvent.webhookEvent,
 			receivedAt: new Date().toISOString(),
 			triggerResult: result,
+			ackCommentId: ackResult?.commentId as string | undefined,
 		};
 		return job;
 	}
