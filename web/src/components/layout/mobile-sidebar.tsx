@@ -1,4 +1,4 @@
-import { Sheet, SheetContent } from '@/components/ui/sheet.js';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet.js';
 import { useRouterState } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { Sidebar } from './sidebar.js';
@@ -26,6 +26,7 @@ export function MobileSidebar({ user, open, onOpenChange }: MobileSidebarProps) 
 				showCloseButton={false}
 				aria-label="Navigation menu"
 			>
+				<SheetTitle className="sr-only">Navigation menu</SheetTitle>
 				<Sidebar user={user} />
 			</SheetContent>
 		</Sheet>
