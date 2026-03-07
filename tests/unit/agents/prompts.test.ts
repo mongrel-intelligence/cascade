@@ -190,6 +190,17 @@ describe('system prompts content', () => {
 		expect(prompt).toContain('card');
 	});
 
+	it('backlog-manager prompt posts comment before moving card', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		const commentStepIdx = prompt.indexOf('5. **Post a comment**');
+		const moveStepIdx = prompt.indexOf('6. **Move the selected');
+		expect(commentStepIdx).toBeGreaterThan(-1);
+		expect(moveStepIdx).toBeGreaterThan(-1);
+		expect(commentStepIdx).toBeLessThan(moveStepIdx);
+		// Rule reinforces the ordering
+		expect(prompt).toContain('comment BEFORE moving');
+	});
+
 	it('backlog-manager prompt renders custom PM terminology', () => {
 		const prompt = getSystemPrompt('backlog-manager', {
 			workItemNoun: 'issue',

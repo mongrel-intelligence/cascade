@@ -55,8 +55,8 @@ When the active pipeline is empty:
    - Smaller, self-contained <%= it.workItemNounPlural || 'cards' %> are preferred
    - <%= it.workItemNounPluralCap || 'Cards' %> with clear acceptance criteria
    - <%= it.workItemNounPluralCap || 'Cards' %> that don't reference incomplete work
-5. **Move the selected <%= it.workItemNoun || 'card' %>** using `UpdateWorkItem` to change its status to TODO
-6. **Post a comment** on the moved <%= it.workItemNoun || 'card' %> explaining the selection
+5. **Post a comment** on the selected <%= it.workItemNoun || 'card' %> explaining the selection
+6. **Move the selected <%= it.workItemNoun || 'card' %>** using `UpdateWorkItem` to change its status to TODO
 
 ## Comment Format
 
@@ -97,6 +97,6 @@ Manual intervention may be needed to unblock the backlog.
 - EXIT SILENTLY if pipeline is not empty - do not post comments
 - ALWAYS read <%= it.workItemNoun || 'card' %> contents before making a selection decision
 - ALWAYS move exactly ONE <%= it.workItemNoun || 'card' %> per run
-- ALWAYS post a comment on the moved <%= it.workItemNoun || 'card' %> explaining why it was selected
+- ALWAYS post a comment BEFORE moving the <%= it.workItemNoun || 'card' %> — comment first, then move to TODO
 - BE CONSERVATIVE with dependency detection - when unsure, treat as blocked
 - LOOK FOR dependency keywords: "blocked by", "depends on", "waiting for", "after", "requires"
