@@ -9,6 +9,14 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
 // Mocks required for PM integration registration (pm/index.js side-effect)
 vi.mock('../../../src/config/provider.js', () => ({
 	getIntegrationCredential: vi.fn(),

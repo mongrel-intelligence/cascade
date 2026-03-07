@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
 // Mock the GitHub client
 vi.mock('../../../src/github/client.js', () => ({
 	githubClient: {
@@ -56,6 +65,7 @@ import { createMockProject } from '../../helpers/factories.js';
 
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { githubClient } from '../../../src/github/client.js';
+import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 
 describe('PRMergedTrigger', () => {
 	const trigger = new PRMergedTrigger();
@@ -130,7 +140,34 @@ describe('PRMergedTrigger', () => {
 	});
 
 	describe('handle', () => {
+		it('should return null when trigger is disabled', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'closed',
+					number: 123,
+					pull_request: { number: 123, body: 'https://trello.com/c/abc123' },
+					repository: { full_name: 'owner/repo' },
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test',
+				'review',
+				'scm:pr-merged',
+				'pr-merged',
+			);
+		});
+
 		it('moves card to merged list when PR is merged', async () => {
+			// First call: scm:pr-merged = true; second call: backlog-manager = false
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 123,
 				title: 'Test PR',
@@ -299,7 +336,8 @@ describe('PRMergedTrigger', () => {
 			});
 		});
 
-		it('chains to backlog-manager when prMergedBacklogManager is enabled', async () => {
+		it('chains to backlog-manager when backlog-manager trigger is enabled', async () => {
+			// checkTriggerEnabled defaults to true from the mock, so backlog-manager will chain
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 123,
 				title: 'Test PR',
@@ -319,24 +357,8 @@ describe('PRMergedTrigger', () => {
 				labels: [],
 			});
 
-			const projectWithBacklogManager = createMockProject({
-				trello: {
-					boardId: 'board123',
-					lists: {
-						splitting: 'splitting-list-id',
-						planning: 'planning-list-id',
-						todo: 'todo-list-id',
-						merged: 'merged-list-id',
-					},
-					labels: {},
-				},
-				github: {
-					triggers: { prMergedBacklogManager: true },
-				},
-			});
-
 			const ctx: TriggerContext = {
-				project: projectWithBacklogManager,
+				project: mockProject,
 				source: 'github',
 				payload: {
 					action: 'closed',
@@ -361,7 +383,10 @@ describe('PRMergedTrigger', () => {
 			});
 		});
 
-		it('returns agentType null when prMergedBacklogManager is explicitly disabled', async () => {
+		it('returns agentType null when backlog-manager trigger is disabled', async () => {
+			// First call: scm:pr-merged = true; second call: backlog-manager = false
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 123,
 				title: 'Test PR',
@@ -381,24 +406,8 @@ describe('PRMergedTrigger', () => {
 				labels: [],
 			});
 
-			const projectWithBacklogManagerDisabled = createMockProject({
-				trello: {
-					boardId: 'board123',
-					lists: {
-						splitting: 'splitting-list-id',
-						planning: 'planning-list-id',
-						todo: 'todo-list-id',
-						merged: 'merged-list-id',
-					},
-					labels: {},
-				},
-				github: {
-					triggers: { prMergedBacklogManager: false },
-				},
-			});
-
 			const ctx: TriggerContext = {
-				project: projectWithBacklogManagerDisabled,
+				project: mockProject,
 				source: 'github',
 				payload: {
 					action: 'closed',

@@ -2,6 +2,7 @@ import { getDb } from '../../../src/db/client.js';
 import {
 	agentConfigs,
 	agentRuns,
+	agentTriggerConfigs,
 	cascadeDefaults,
 	credentials,
 	integrationCredentials,
@@ -170,6 +171,30 @@ export async function seedAgentConfig(
 			model: overrides.model ?? null,
 			maxIterations: overrides.maxIterations ?? null,
 			agentBackend: overrides.agentBackend ?? null,
+		})
+		.returning();
+	return row;
+}
+
+/**
+ * Seeds an agent trigger config row (DB-driven trigger enable/disable).
+ */
+export async function seedTriggerConfig(overrides: {
+	projectId?: string;
+	agentType: string;
+	triggerEvent: string;
+	enabled?: boolean;
+	parameters?: Record<string, unknown>;
+}) {
+	const db = getDb();
+	const [row] = await db
+		.insert(agentTriggerConfigs)
+		.values({
+			projectId: overrides.projectId ?? 'test-project',
+			agentType: overrides.agentType,
+			triggerEvent: overrides.triggerEvent,
+			enabled: overrides.enabled ?? true,
+			parameters: overrides.parameters ?? {},
 		})
 		.returning();
 	return row;

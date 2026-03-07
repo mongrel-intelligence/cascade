@@ -48,7 +48,26 @@ triggers:
     description: Trigger review when a new PR is opened (without waiting for CI)
     defaultEnabled: false
     providers: [github]
+    parameters:
+      - name: authorMode
+        type: select
+        label: Author Filter
+        description: Filter PRs by author type
+        options: [own, external, all]
+        defaultValue: own
     contextPipeline: [prContext, contextFiles, squint]
+  - event: scm:pr-ready-to-merge
+    label: PR Ready to Merge
+    description: Move work item to DONE when PR is approved and all checks pass
+    defaultEnabled: true
+    providers: [github]
+    contextPipeline: []
+  - event: scm:pr-merged
+    label: PR Merged
+    description: Move work item to MERGED status when PR is merged
+    defaultEnabled: true
+    providers: [github]
+    contextPipeline: []
 
 strategies: {}
 

@@ -2,6 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
 // Mocks required for PM integration registration (pm/index.js side-effect)
 vi.mock('../../../src/config/provider.js', () => ({
 	getIntegrationCredential: vi.fn(),
@@ -33,6 +41,7 @@ vi.mock('../../../src/router/reactions.js', () => ({
 import '../../../src/pm/index.js';
 
 import { trelloClient } from '../../../src/trello/client.js';
+import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 import { ReadyToProcessLabelTrigger } from '../../../src/triggers/trello/label-added.js';
 
 describe('ReadyToProcessLabelTrigger', () => {
@@ -131,6 +140,46 @@ describe('ReadyToProcessLabelTrigger', () => {
 	});
 
 	describe('handle', () => {
+		it('should return null when trigger is disabled for the resolved agent', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+			mockGetCard.mockResolvedValue({
+				id: 'card123',
+				name: 'Test Card',
+				desc: '',
+				url: 'https://trello.com/c/abc',
+				shortUrl: 'https://trello.com/c/abc',
+				idList: 'splitting-list-id',
+				labels: [],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'trello',
+				payload: {
+					model: { id: 'board123', name: 'Board' },
+					action: {
+						id: 'action1',
+						idMemberCreator: 'member1',
+						type: 'addLabelToCard',
+						date: '2024-01-01',
+						data: {
+							card: { id: 'card123', name: 'Test Card', idShort: 1, shortLink: 'abc' },
+							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
+						},
+					},
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test',
+				'splitting',
+				'pm:label-added',
+				'ready-to-process-label-added',
+			);
+		});
+
 		it('returns splitting agent when card is in splitting list', async () => {
 			mockGetCard.mockResolvedValue({
 				id: 'card123',

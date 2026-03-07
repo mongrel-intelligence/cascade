@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock('../../../src/github/client.js', () => ({
 	githubClient: {
 		getPR: vi.fn(),
@@ -57,6 +66,7 @@ import { createMockProject } from '../../helpers/factories.js';
 
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { githubClient } from '../../../src/github/client.js';
+import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 
 describe('PRReadyToMergeTrigger', () => {
 	const trigger = new PRReadyToMergeTrigger();
@@ -238,6 +248,36 @@ describe('PRReadyToMergeTrigger', () => {
 	});
 
 	describe('handle', () => {
+		it('should return null when trigger is disabled', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'completed',
+					check_suite: {
+						id: 1,
+						status: 'completed',
+						conclusion: 'success',
+						head_sha: 'sha123',
+						pull_requests: [{ number: 42, head: { ref: 'feat', sha: 'sha123' } }],
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'github-actions' },
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test',
+				'review',
+				'scm:pr-ready-to-merge',
+				'pr-ready-to-merge',
+			);
+		});
+
 		it('moves card to DONE when check_suite triggers and all conditions met', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,

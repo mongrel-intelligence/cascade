@@ -5,11 +5,10 @@
  * Runs the respond-to-planning-comment agent.
  */
 
-import { resolveJiraTriggerEnabled } from '../../config/triggerConfig.js';
 import { jiraClient } from '../../jira/client.js';
-import { getJiraConfig } from '../../pm/config.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import type { JiraWebhookPayload } from './types.js';
 
 // Cache authenticated user info to avoid repeated API calls
@@ -95,16 +94,23 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'jira') return false;
 
-		// Check trigger config — default enabled for backward compatibility
-		if (!resolveJiraTriggerEnabled(getJiraConfig(ctx.project)?.triggers, 'commentMention')) {
-			return false;
-		}
-
 		const payload = ctx.payload as JiraWebhookPayload;
 		return payload.webhookEvent === 'comment_created' || payload.webhookEvent === 'comment_updated';
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+		// Check trigger config via new DB-driven system
+		if (
+			!(await checkTriggerEnabled(
+				ctx.project.id,
+				'respond-to-planning-comment',
+				'pm:comment-mention',
+				this.name,
+			))
+		) {
+			return null;
+		}
+
 		const payload = ctx.payload as JiraWebhookPayload;
 		const issueKey = payload.issue?.key;
 		const commentBody = payload.comment?.body;

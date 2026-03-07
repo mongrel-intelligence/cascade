@@ -2,6 +2,51 @@ import { lookupWorkItemForPR } from '../../db/repositories/prWorkItemsRepository
 import type { ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 
+export interface AuthorModeResult {
+	shouldTrigger: boolean;
+	authorMode: string;
+	isImplementerPR: boolean;
+}
+
+/**
+ * Evaluate whether a trigger should fire based on the PR author and the
+ * configured `authorMode` parameter.
+ *
+ * Returns `null` when personaIdentities is missing (caller should return null).
+ * Validates authorMode against known values and falls back to 'own'.
+ */
+export function evaluateAuthorMode(
+	prAuthorLogin: string,
+	personaIdentities: { implementer: string } | undefined,
+	parameters: Record<string, unknown>,
+	handlerName: string,
+): AuthorModeResult | null {
+	if (!personaIdentities) {
+		logger.info('No persona identities available, skipping', { handler: handlerName });
+		return null;
+	}
+	const implLogin = personaIdentities.implementer;
+	const isImplementerPR = prAuthorLogin === implLogin || prAuthorLogin === `${implLogin}[bot]`;
+
+	const rawMode = parameters.authorMode;
+	const authorMode =
+		typeof rawMode === 'string' && ['own', 'external', 'all'].includes(rawMode) ? rawMode : 'own';
+
+	if (typeof rawMode === 'string' && authorMode !== rawMode) {
+		logger.warn('Invalid authorMode value, falling back to "own"', {
+			handler: handlerName,
+			configuredValue: rawMode,
+		});
+	}
+
+	const shouldTrigger =
+		authorMode === 'all' ||
+		(authorMode === 'own' && isImplementerPR) ||
+		(authorMode === 'external' && !isImplementerPR);
+
+	return { shouldTrigger, authorMode, isImplementerPR };
+}
+
 // Trello card URL pattern: https://trello.com/c/SHORT_ID/optional-slug
 const TRELLO_CARD_URL_REGEX = /https:\/\/trello\.com\/c\/([a-zA-Z0-9]+)/;
 

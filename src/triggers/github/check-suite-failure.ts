@@ -1,8 +1,8 @@
-import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import { githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
 
@@ -24,11 +24,6 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		if (ctx.source !== 'github') return false;
 		if (!isGitHubCheckSuitePayload(ctx.payload)) return false;
 
-		// Check trigger config — default enabled for backward compatibility
-		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'checkSuiteFailure')) {
-			return false;
-		}
-
 		const payload = ctx.payload;
 
 		// Only trigger on completed check suites with failure conclusion
@@ -42,6 +37,18 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+		// Check trigger config via new DB-driven system
+		if (
+			!(await checkTriggerEnabled(
+				ctx.project.id,
+				'respond-to-ci',
+				'scm:check-suite-failure',
+				this.name,
+			))
+		) {
+			return null;
+		}
+
 		const payload = ctx.payload as GitHubCheckSuitePayload;
 		const { owner, repo } = parseRepoFullName(payload.repository.full_name);
 
@@ -54,7 +61,10 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		const prDetails = await githubClient.getPR(owner, repo, prNumber);
 
 		// Gate on PR author being the implementer persona
-		if (!ctx.personaIdentities) return null;
+		if (!ctx.personaIdentities) {
+			logger.info('No persona identities available, skipping', { handler: this.name, prNumber });
+			return null;
+		}
 		const implLogin = ctx.personaIdentities.implementer;
 		if (prDetails.user.login !== implLogin && prDetails.user.login !== `${implLogin}[bot]`) {
 			logger.info('PR not authored by implementer persona, skipping check failure trigger', {

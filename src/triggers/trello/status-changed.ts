@@ -1,6 +1,6 @@
-import { resolveTrelloStatusChangedEnabled } from '../../config/triggerConfig.js';
 import { getTrelloConfig } from '../../pm/config.js';
 import { logger } from '../../utils/logging.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../types.js';
 import { type TrelloWebhookPayload, isTrelloWebhookPayload } from './types.js';
 
@@ -24,12 +24,7 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 			if (ctx.source !== 'trello') return false;
 			if (!isTrelloWebhookPayload(ctx.payload)) return false;
 
-			// Check trigger config with per-agent fallback to legacy keys
 			const trelloConfig = getTrelloConfig(ctx.project);
-			if (!resolveTrelloStatusChangedEnabled(trelloConfig?.triggers, config.agentType)) {
-				return false;
-			}
-
 			const payload = ctx.payload;
 			const targetListId = trelloConfig?.lists[config.listKey];
 
@@ -47,6 +42,18 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 		},
 
 		async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+			// Check trigger config via new DB-driven system
+			if (
+				!(await checkTriggerEnabled(
+					ctx.project.id,
+					config.agentType,
+					'pm:status-changed',
+					config.name,
+				))
+			) {
+				return null;
+			}
+
 			const payload = ctx.payload as TrelloWebhookPayload;
 			const cardId = payload.action.data.card?.id;
 

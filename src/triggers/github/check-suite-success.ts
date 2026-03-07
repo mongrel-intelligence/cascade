@@ -1,10 +1,10 @@
-import { resolveReviewTriggerConfig } from '../../config/triggerConfig.js';
 import { type CheckSuiteStatus, githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
+import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
-import { resolveWorkItemId } from './utils.js';
+import { evaluateAuthorMode, resolveWorkItemId } from './utils.js';
 
 const MAX_RETRIES = 5;
 const RETRY_DELAY_MS = 10_000;
@@ -55,7 +55,7 @@ export async function waitForChecks(
  *
  * This trigger fires when:
  * 1. A check_suite completes with success conclusion
- * 2. The PR author matches the implementer persona (or its [bot] variant)
+ * 2. The PR author matches the configured author mode (own/external/all)
  * 3. All checks are actually passing (verified via API)
  *
  * Work item resolution uses the pr_work_items DB table (with PR body extraction as fallback).
@@ -72,12 +72,6 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		if (ctx.source !== 'github') return false;
 		if (!isGitHubCheckSuitePayload(ctx.payload)) return false;
 
-		// Check trigger config — at least one CI-based review mode must be active
-		const reviewConfig = resolveReviewTriggerConfig(ctx.project.github?.triggers);
-		if (!reviewConfig.ownPrsOnly && !reviewConfig.externalPrs) {
-			return false;
-		}
-
 		const payload = ctx.payload;
 
 		// Only trigger on completed check suites with success conclusion
@@ -91,6 +85,17 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+		// Check trigger config + get parameters in a single DB call
+		const triggerConfig = await checkTriggerEnabledWithParams(
+			ctx.project.id,
+			'review',
+			'scm:check-suite-success',
+			this.name,
+		);
+		if (!triggerConfig.enabled) {
+			return null;
+		}
+
 		const payload = ctx.payload as GitHubCheckSuitePayload;
 		const { owner, repo } = parseRepoFullName(payload.repository.full_name);
 
@@ -102,24 +107,23 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		// Fetch PR details
 		const prDetails = await githubClient.getPR(owner, repo, prNumber);
 
-		// Gate on PR author based on configured review trigger modes
-		if (!ctx.personaIdentities) return null;
-		const implLogin = ctx.personaIdentities.implementer;
-		const isImplementerPR =
-			prDetails.user.login === implLogin || prDetails.user.login === `${implLogin}[bot]`;
-
-		const reviewConfig = resolveReviewTriggerConfig(ctx.project.github?.triggers);
-		const shouldTrigger =
-			(reviewConfig.ownPrsOnly && isImplementerPR) ||
-			(reviewConfig.externalPrs && !isImplementerPR);
-
-		if (!shouldTrigger) {
-			logger.info('PR author does not match any enabled review trigger mode, skipping', {
+		// Gate on PR author based on configured authorMode parameter
+		const authorResult = evaluateAuthorMode(
+			prDetails.user.login,
+			ctx.personaIdentities,
+			triggerConfig.parameters,
+			this.name,
+		);
+		if (!authorResult) {
+			return null;
+		}
+		if (!authorResult.shouldTrigger) {
+			logger.info('PR author does not match configured authorMode, skipping', {
+				handler: this.name,
 				prNumber,
 				prAuthor: prDetails.user.login,
-				isImplementerPR,
-				ownPrsOnly: reviewConfig.ownPrsOnly,
-				externalPrs: reviewConfig.externalPrs,
+				isImplementerPR: authorResult.isImplementerPR,
+				authorMode: authorResult.authorMode,
 			});
 			return null;
 		}
@@ -146,7 +150,8 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		const reviews = await githubClient.getPRReviews(owner, repo, prNumber);
 
 		// Use persona identities to identify reviewer bot's reviews
-		const reviewerUsername = ctx.personaIdentities.reviewer;
+		// (evaluateAuthorMode above already verified personaIdentities exists)
+		const reviewerUsername = ctx.personaIdentities?.reviewer;
 
 		// Only consider actual reviews (approved/changes_requested), not COMMENTED
 		// which are reply acknowledgments posted by respond-to-review agent

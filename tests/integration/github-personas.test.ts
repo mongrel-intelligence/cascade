@@ -25,6 +25,7 @@ import {
 	seedIntegrationCredential,
 	seedOrg,
 	seedProject,
+	seedTriggerConfig,
 } from './helpers/seed.js';
 
 // ============================================================================
@@ -336,12 +337,11 @@ describe('GitHub Dual-Persona System (integration)', () => {
 	// =========================================================================
 
 	describe('ReviewRequestedTrigger', () => {
-		it('does not match when onReviewRequested is disabled (default)', async () => {
+		it('returns null from handle() when scm:review-requested is disabled (default)', async () => {
 			await seedIntegration({
 				category: 'scm',
 				provider: 'github',
 				config: {},
-				// No reviewTrigger config → defaults to false
 			});
 
 			const project = await findProjectByRepoFromDb('owner/repo');
@@ -356,15 +356,23 @@ describe('GitHub Dual-Persona System (integration)', () => {
 				personaIdentities: TEST_PERSONAS,
 			};
 
-			expect(trigger.matches(ctx)).toBe(false);
+			// matches() checks payload shape (returns true), handle() checks DB config
+			// scm:review-requested has defaultEnabled: false in definition
+			expect(trigger.matches(ctx)).toBe(true);
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
 		});
 
-		it('matches when onReviewRequested is enabled and persona is requested', async () => {
+		it('triggers review when enabled via DB and persona is requested', async () => {
 			await seedIntegration({
 				category: 'scm',
 				provider: 'github',
 				config: {},
-				triggers: { reviewTrigger: { onReviewRequested: true } },
+			});
+			await seedTriggerConfig({
+				agentType: 'review',
+				triggerEvent: 'scm:review-requested',
+				enabled: true,
 			});
 
 			const project = await findProjectByRepoFromDb('owner/repo');
@@ -380,14 +388,20 @@ describe('GitHub Dual-Persona System (integration)', () => {
 			};
 
 			expect(trigger.matches(ctx)).toBe(true);
+			const result = await trigger.handle(ctx);
+			expect(result?.agentType).toBe('review');
 		});
 
-		it('does not match when a non-persona reviewer is requested', async () => {
+		it('returns null when non-persona reviewer is requested', async () => {
 			await seedIntegration({
 				category: 'scm',
 				provider: 'github',
 				config: {},
-				triggers: { reviewTrigger: { onReviewRequested: true } },
+			});
+			await seedTriggerConfig({
+				agentType: 'review',
+				triggerEvent: 'scm:review-requested',
+				enabled: true,
 			});
 
 			const project = await findProjectByRepoFromDb('owner/repo');
