@@ -30,6 +30,7 @@ export async function truncateAll() {
 			pr_work_items,
 			integration_credentials,
 			project_integrations,
+			agent_trigger_configs,
 			agent_configs,
 			prompt_partials,
 			sessions,
