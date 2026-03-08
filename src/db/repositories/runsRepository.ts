@@ -248,95 +248,74 @@ export async function getDebugAnalysisByDebugRunId(debugRunId: string) {
 /** Safe fallback for non-router callers (dashboard API). 2 hours. */
 export const DEFAULT_STALE_RUN_THRESHOLD_MS = 2 * 60 * 60 * 1000;
 
+export interface CountActiveRunsOpts {
+	projectId: string;
+	cardId?: string;
+	agentType?: string;
+	maxAgeMs?: number;
+}
+
+/**
+ * Unified active-run counter. Replaces the four near-identical
+ * countActiveRuns* functions with a single parameterized query.
+ */
+export async function countActiveRuns(opts: CountActiveRunsOpts): Promise<number> {
+	const db = getDb();
+	const conditions: SQL[] = [
+		eq(agentRuns.projectId, opts.projectId),
+		eq(agentRuns.status, 'running'),
+	];
+	if (opts.cardId !== undefined) {
+		conditions.push(eq(agentRuns.cardId, opts.cardId));
+	}
+	if (opts.agentType !== undefined) {
+		conditions.push(eq(agentRuns.agentType, opts.agentType));
+	}
+	if (opts.maxAgeMs !== undefined) {
+		const cutoff = new Date(Date.now() - opts.maxAgeMs);
+		conditions.push(gte(agentRuns.startedAt, cutoff));
+	}
+	const [row] = await db
+		.select({ count: count() })
+		.from(agentRuns)
+		.where(and(...conditions));
+	return row?.count ?? 0;
+}
+
 export async function hasActiveRunForWorkItem(
 	projectId: string,
 	cardId: string,
 	maxAgeMs?: number,
 ): Promise<boolean> {
-	const db = getDb();
-	const conditions = [
-		eq(agentRuns.projectId, projectId),
-		eq(agentRuns.cardId, cardId),
-		eq(agentRuns.status, 'running'),
-	];
-	if (maxAgeMs !== undefined) {
-		const cutoff = new Date(Date.now() - maxAgeMs);
-		conditions.push(gte(agentRuns.startedAt, cutoff));
-	}
-	const [row] = await db
-		.select({ id: agentRuns.id })
-		.from(agentRuns)
-		.where(and(...conditions))
-		.limit(1);
-	return !!row;
+	return (await countActiveRuns({ projectId, cardId, maxAgeMs })) > 0;
 }
 
+/** @deprecated Use countActiveRuns({ projectId, agentType, maxAgeMs }) instead. */
 export async function countActiveRunsForAgentType(
 	projectId: string,
 	agentType: string,
 	maxAgeMs?: number,
 ): Promise<number> {
-	const db = getDb();
-	const conditions: SQL[] = [
-		eq(agentRuns.projectId, projectId),
-		eq(agentRuns.agentType, agentType),
-		eq(agentRuns.status, 'running'),
-	];
-	if (maxAgeMs !== undefined) {
-		const cutoff = new Date(Date.now() - maxAgeMs);
-		conditions.push(gte(agentRuns.startedAt, cutoff));
-	}
-	const [row] = await db
-		.select({ count: count() })
-		.from(agentRuns)
-		.where(and(...conditions));
-	return row?.count ?? 0;
+	return countActiveRuns({ projectId, agentType, maxAgeMs });
 }
 
+/** @deprecated Use countActiveRuns({ projectId, cardId, maxAgeMs }) instead. */
 export async function countActiveRunsForWorkItem(
 	projectId: string,
 	cardId: string,
 	maxAgeMs?: number,
 ): Promise<number> {
-	const db = getDb();
-	const conditions: SQL[] = [
-		eq(agentRuns.projectId, projectId),
-		eq(agentRuns.cardId, cardId),
-		eq(agentRuns.status, 'running'),
-	];
-	if (maxAgeMs !== undefined) {
-		const cutoff = new Date(Date.now() - maxAgeMs);
-		conditions.push(gte(agentRuns.startedAt, cutoff));
-	}
-	const [row] = await db
-		.select({ count: count() })
-		.from(agentRuns)
-		.where(and(...conditions));
-	return row?.count ?? 0;
+	return countActiveRuns({ projectId, cardId, maxAgeMs });
 }
 
+/** @deprecated Use countActiveRuns({ projectId, cardId, agentType, maxAgeMs }) instead. */
 export async function countActiveRunsForWorkItemAndType(
 	projectId: string,
 	cardId: string,
 	agentType: string,
 	maxAgeMs?: number,
 ): Promise<number> {
-	const db = getDb();
-	const conditions: SQL[] = [
-		eq(agentRuns.projectId, projectId),
-		eq(agentRuns.cardId, cardId),
-		eq(agentRuns.agentType, agentType),
-		eq(agentRuns.status, 'running'),
-	];
-	if (maxAgeMs !== undefined) {
-		const cutoff = new Date(Date.now() - maxAgeMs);
-		conditions.push(gte(agentRuns.startedAt, cutoff));
-	}
-	const [row] = await db
-		.select({ count: count() })
-		.from(agentRuns)
-		.where(and(...conditions));
-	return row?.count ?? 0;
+	return countActiveRuns({ projectId, cardId, agentType, maxAgeMs });
 }
 
 export async function failOrphanedRun(

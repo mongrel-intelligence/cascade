@@ -26,6 +26,7 @@ vi.mock('../../../src/db/schema/index.js', () => ({
 		id: 'id',
 		projectId: 'project_id',
 		cardId: 'card_id',
+		agentType: 'agent_type',
 		status: 'status',
 		startedAt: 'started_at',
 	},
@@ -36,6 +37,7 @@ vi.mock('../../../src/db/schema/index.js', () => ({
 
 import {
 	completeRun,
+	countActiveRuns,
 	createRun,
 	deleteDebugAnalysisByRunId,
 	getDebugAnalysisByDebugRunId,
@@ -388,6 +390,55 @@ describe('runsRepository', () => {
 
 			expect(mockDelete).toHaveBeenCalled();
 			expect(mockWhere).toHaveBeenCalled();
+		});
+	});
+
+	describe('countActiveRuns', () => {
+		it('returns count for projectId only', async () => {
+			mockWhere.mockResolvedValue([{ count: 3 }]);
+
+			const result = await countActiveRuns({ projectId: 'proj-1' });
+			expect(result).toBe(3);
+			expect(mockSelect).toHaveBeenCalled();
+		});
+
+		it('returns count for projectId + cardId', async () => {
+			mockWhere.mockResolvedValue([{ count: 1 }]);
+
+			const result = await countActiveRuns({ projectId: 'proj-1', cardId: 'card-1' });
+			expect(result).toBe(1);
+		});
+
+		it('returns count for projectId + agentType', async () => {
+			mockWhere.mockResolvedValue([{ count: 2 }]);
+
+			const result = await countActiveRuns({ projectId: 'proj-1', agentType: 'implementation' });
+			expect(result).toBe(2);
+		});
+
+		it('returns count for projectId + cardId + agentType', async () => {
+			mockWhere.mockResolvedValue([{ count: 1 }]);
+
+			const result = await countActiveRuns({
+				projectId: 'proj-1',
+				cardId: 'card-1',
+				agentType: 'implementation',
+			});
+			expect(result).toBe(1);
+		});
+
+		it('accepts maxAgeMs and returns 0 when no rows', async () => {
+			mockWhere.mockResolvedValue([]);
+
+			const result = await countActiveRuns({ projectId: 'proj-1', maxAgeMs: 3600000 });
+			expect(result).toBe(0);
+		});
+
+		it('returns 0 when count row is missing', async () => {
+			mockWhere.mockResolvedValue([undefined]);
+
+			const result = await countActiveRuns({ projectId: 'proj-1' });
+			expect(result).toBe(0);
 		});
 	});
 });
