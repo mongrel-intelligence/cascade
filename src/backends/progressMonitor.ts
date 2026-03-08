@@ -38,7 +38,7 @@ export interface ProgressMonitorConfig {
 	logWriter: LogWriter;
 	repoDir?: string;
 	trello?: { cardId: string };
-	github?: { owner: string; repo: string; headerMessage: string };
+	github?: { owner: string; repo: string };
 	/** Pre-seeded comment ID from router ack — skip initial comment posting */
 	preSeededCommentId?: string;
 	/**
@@ -81,7 +81,6 @@ export class ProgressMonitor implements ProgressReporter {
 			? new GitHubProgressPoster({
 					owner: config.github.owner,
 					repo: config.github.repo,
-					headerMessage: config.github.headerMessage,
 					logWriter: config.logWriter,
 				})
 			: null;
@@ -207,7 +206,7 @@ export class ProgressMonitor implements ProgressReporter {
 			// Post to GitHub
 			if (this.githubPoster) {
 				try {
-					await this.githubPoster.update(summary, this.config.agentType);
+					await this.githubPoster.update(summary);
 				} catch (err) {
 					this.config.logWriter('WARN', 'Failed to update GitHub PR comment', {
 						error: String(err),

@@ -179,7 +179,6 @@ function buildProgressMonitorConfig(
 					github: {
 						owner: input.repoFullName.split('/')[0],
 						repo: input.repoFullName.split('/')[1],
-						headerMessage: input.ackMessage ?? '',
 					},
 				}
 			: {}),

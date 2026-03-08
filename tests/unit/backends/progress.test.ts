@@ -52,7 +52,6 @@ vi.mock('../../../src/agents/utils/checklistSync.js', () => ({
 vi.mock('../../../src/config/statusUpdateConfig.js', () => ({
 	getStatusUpdateConfig: vi.fn(),
 	formatStatusMessage: vi.fn(),
-	formatGitHubProgressComment: vi.fn(),
 }));
 
 vi.mock('../../../src/backends/progressState.js', () => ({
@@ -71,7 +70,6 @@ import {
 	writeProgressCommentId,
 } from '../../../src/backends/progressState.js';
 import {
-	formatGitHubProgressComment,
 	formatStatusMessage,
 	getStatusUpdateConfig,
 } from '../../../src/config/statusUpdateConfig.js';
@@ -89,7 +87,6 @@ const mockPMProvider = { addComment: vi.fn(), updateComment: vi.fn() };
 const mockGithub = vi.mocked(githubClient);
 const mockGetStatusConfig = vi.mocked(getStatusUpdateConfig);
 const mockFormatStatus = vi.mocked(formatStatusMessage);
-const mockFormatGitHub = vi.mocked(formatGitHubProgressComment);
 const mockGetSessionState = vi.mocked(getSessionState);
 const mockLoadTodos = vi.mocked(loadTodos);
 const mockCallProgressModel = vi.mocked(callProgressModel);
@@ -513,7 +510,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			github: { owner: 'o', repo: 'r', headerMessage: 'Header' },
+			github: { owner: 'o', repo: 'r' },
 		});
 
 		mockCallProgressModel.mockResolvedValue('Progress');
@@ -525,7 +522,6 @@ describe('ProgressMonitor — tick behavior', () => {
 			reviewUrl: null,
 			initialCommentId: 42,
 		});
-		mockFormatGitHub.mockReturnValue('GitHub body');
 		mockGithub.updatePRComment.mockResolvedValue(undefined as never);
 
 		monitor.start();
@@ -544,7 +540,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			github: { owner: 'o', repo: 'r', headerMessage: 'Header' },
+			github: { owner: 'o', repo: 'r' },
 		});
 
 		mockCallProgressModel.mockResolvedValue('Progress');

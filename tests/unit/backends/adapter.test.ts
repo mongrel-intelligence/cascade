@@ -737,7 +737,6 @@ describe('executeWithBackend', () => {
 					github: {
 						owner: 'acme',
 						repo: 'widgets',
-						headerMessage: 'Reviewing code...',
 					},
 				}),
 			);
@@ -797,7 +796,7 @@ describe('executeWithBackend', () => {
 			);
 		});
 
-		it('passes github config with empty headerMessage when ackMessage is undefined', async () => {
+		it('passes github config when ackMessage is undefined', async () => {
 			setupMocks();
 			const backend = makeMockBackend();
 			const input = makeInput({
@@ -813,7 +812,6 @@ describe('executeWithBackend', () => {
 					github: {
 						owner: 'org',
 						repo: 'repo',
-						headerMessage: '',
 					},
 				}),
 			);
