@@ -18,10 +18,11 @@ describe('triggerTypes', () => {
 			expect(TRIGGER_CATEGORY_LABELS.scm).toBe('Source Control');
 			expect(TRIGGER_CATEGORY_LABELS.email).toBe('Email');
 			expect(TRIGGER_CATEGORY_LABELS.sms).toBe('SMS');
+			expect(TRIGGER_CATEGORY_LABELS.internal).toBe('Internal');
 		});
 
-		it('has exactly 4 categories', () => {
-			expect(Object.keys(TRIGGER_CATEGORY_LABELS)).toHaveLength(4);
+		it('has exactly 5 categories', () => {
+			expect(Object.keys(TRIGGER_CATEGORY_LABELS)).toHaveLength(5);
 		});
 	});
 
@@ -74,8 +75,9 @@ describe('triggerTypes', () => {
 			const scm: TriggerCategory = 'scm';
 			const email: TriggerCategory = 'email';
 			const sms: TriggerCategory = 'sms';
+			const internal: TriggerCategory = 'internal';
 
-			expect([pm, scm, email, sms]).toEqual(['pm', 'scm', 'email', 'sms']);
+			expect([pm, scm, email, sms, internal]).toEqual(['pm', 'scm', 'email', 'sms', 'internal']);
 		});
 
 		it('ProjectTriggersView has agents and integrations', () => {
@@ -101,8 +103,8 @@ describe('triggerTypes', () => {
 	});
 
 	describe('TRIGGER_REGISTRY', () => {
-		it('has all four categories', () => {
-			expect(Object.keys(TRIGGER_REGISTRY)).toEqual(['pm', 'scm', 'email', 'sms']);
+		it('has all five categories', () => {
+			expect(Object.keys(TRIGGER_REGISTRY)).toEqual(['pm', 'scm', 'email', 'sms', 'internal']);
 		});
 
 		it('pm category has expected triggers', () => {
@@ -135,6 +137,11 @@ describe('triggerTypes', () => {
 		it('sms category has expected triggers', () => {
 			const smsEvents = TRIGGER_REGISTRY.sms.map((t) => t.event);
 			expect(smsEvents).toContain('sms:received');
+		});
+
+		it('internal category has expected triggers', () => {
+			const internalEvents = TRIGGER_REGISTRY.internal.map((t) => t.event);
+			expect(internalEvents).toContain('internal:auto-chain');
 		});
 
 		it('all triggers have required KnownTriggerEvent fields', () => {

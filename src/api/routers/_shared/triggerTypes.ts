@@ -102,12 +102,13 @@ export const TRIGGER_CATEGORY_LABELS: Record<string, string> = {
 	scm: 'Source Control',
 	email: 'Email',
 	sms: 'SMS',
+	internal: 'Internal',
 } as const;
 
 /**
  * Valid trigger categories.
  */
-export type TriggerCategory = 'pm' | 'scm' | 'email' | 'sms';
+export type TriggerCategory = 'pm' | 'scm' | 'email' | 'sms' | 'internal';
 
 // ============================================================================
 // Known Trigger Registry
@@ -226,6 +227,14 @@ export const TRIGGER_REGISTRY: Record<TriggerCategory, KnownTriggerEvent[]> = {
 			event: 'sms:received',
 			label: 'SMS Received',
 			description: 'SMS received',
+			contextPipeline: [],
+		},
+	],
+	internal: [
+		{
+			event: 'internal:auto-chain',
+			label: 'Auto-Chain',
+			description: 'Orchestration trigger for chaining agents after completion',
 			contextPipeline: [],
 		},
 	],

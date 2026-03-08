@@ -39,6 +39,11 @@ triggers:
         options: [backlog]
         defaultValue: backlog
     contextPipeline: []
+  - event: internal:auto-chain
+    label: Auto-chain after Splitting
+    description: When splitting completes on a card with the auto label, immediately chain to backlog manager
+    defaultEnabled: true
+    contextPipeline: []
 
 strategies: {}
 

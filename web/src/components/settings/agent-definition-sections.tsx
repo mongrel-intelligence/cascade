@@ -403,7 +403,7 @@ export function TriggersSection({
 		);
 	}
 
-	const categories = ['pm', 'scm', 'email', 'sms'] as const;
+	const categories = ['pm', 'scm', 'email', 'sms', 'internal'] as const;
 
 	return (
 		<section className="space-y-4">
