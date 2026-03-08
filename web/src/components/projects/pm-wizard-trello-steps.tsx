@@ -25,7 +25,7 @@ const TRELLO_LIST_SLOTS = [
 	'debug',
 ];
 
-const TRELLO_LABEL_SLOTS = ['readyToProcess', 'processing', 'processed', 'error'];
+const TRELLO_LABEL_SLOTS = ['readyToProcess', 'processing', 'processed', 'error', 'auto'];
 
 // ============================================================================
 // TrelloCredentialsStep

@@ -40,6 +40,7 @@ export function buildPromptContext(
 		mergedListId:
 			getTrelloConfig(project)?.lists?.merged ?? getJiraConfig(project)?.statuses?.merged,
 		processedLabelId: getTrelloConfig(project)?.labels?.processed,
+		autoLabelId: getTrelloConfig(project)?.labels?.auto ?? getJiraConfig(project)?.labels?.auto,
 		pmType: pmProvider?.type,
 		workItemNoun: isJira ? 'issue' : 'card',
 		workItemNounPlural: isJira ? 'issues' : 'cards',

@@ -457,6 +457,7 @@ describe('webhooksRouter', () => {
 				'my-processed',
 				'my-error',
 				'my-ready',
+				'cascade-auto',
 			]);
 		});
 

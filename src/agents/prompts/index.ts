@@ -48,6 +48,7 @@ export interface PromptContext {
 	inReviewListId?: string;
 	mergedListId?: string;
 	processedLabelId?: string;
+	autoLabelId?: string;
 
 	// Check-failure specific
 	prNumber?: number;

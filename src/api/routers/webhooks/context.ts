@@ -29,6 +29,7 @@ export async function resolveProjectContext(
 				jiraConfig.labels?.processed ?? 'cascade-processed',
 				jiraConfig.labels?.error ?? 'cascade-error',
 				jiraConfig.labels?.readyToProcess ?? 'cascade-ready',
+				jiraConfig.labels?.auto ?? 'cascade-auto',
 			]
 		: undefined;
 

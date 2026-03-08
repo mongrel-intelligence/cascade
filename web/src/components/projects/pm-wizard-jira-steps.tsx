@@ -24,7 +24,7 @@ const JIRA_STATUS_SLOTS = [
 	'merged',
 ];
 
-const JIRA_LABEL_SLOTS = ['processing', 'processed', 'error', 'readyToProcess'];
+const JIRA_LABEL_SLOTS = ['processing', 'processed', 'error', 'readyToProcess', 'auto'];
 
 // ============================================================================
 // JiraCredentialsStep

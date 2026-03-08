@@ -454,6 +454,21 @@ export const githubClient = {
 			throw error;
 		}
 	},
+
+	async mergePR(
+		owner: string,
+		repo: string,
+		prNumber: number,
+		mergeMethod: 'merge' | 'squash' | 'rebase' = 'squash',
+	): Promise<void> {
+		logger.debug('Merging PR', { owner, repo, prNumber, mergeMethod });
+		await getClient().pulls.merge({
+			owner,
+			repo,
+			pull_number: prNumber,
+			merge_method: mergeMethod,
+		});
+	},
 };
 
 export async function getAuthenticatedUser(): Promise<string> {

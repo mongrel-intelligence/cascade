@@ -60,6 +60,12 @@ export interface CreateWorkItemConfig {
 	labels?: string[];
 }
 
+/** Optional filters for listWorkItems to enable server-side filtering */
+export interface ListWorkItemsFilter {
+	/** Filter by status name (JIRA: adds status filter to JQL; Trello: ignored since lists are status-scoped) */
+	status?: string;
+}
+
 export interface PMProvider {
 	readonly type: PMType;
 
@@ -70,7 +76,7 @@ export interface PMProvider {
 	addComment(id: string, text: string): Promise<string>;
 	updateComment(id: string, commentId: string, text: string): Promise<void>;
 	createWorkItem(config: CreateWorkItemConfig): Promise<WorkItem>;
-	listWorkItems(containerId: string): Promise<WorkItem[]>;
+	listWorkItems(containerId: string, filter?: ListWorkItemsFilter): Promise<WorkItem[]>;
 
 	// Lifecycle
 	moveWorkItem(id: string, destination: string): Promise<void>;

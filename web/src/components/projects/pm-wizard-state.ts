@@ -100,6 +100,7 @@ export const INITIAL_JIRA_LABELS: Record<string, string> = {
 	processed: 'cascade-processed',
 	error: 'cascade-error',
 	readyToProcess: 'cascade-ready',
+	auto: 'cascade-auto',
 };
 
 export function createInitialState(): WizardState {

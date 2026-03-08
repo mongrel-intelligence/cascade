@@ -84,6 +84,7 @@ describe('pm/lifecycle', () => {
 					processed: 'cascade-processed',
 					error: 'cascade-error',
 					readyToProcess: 'cascade-ready',
+					auto: 'cascade-auto',
 				},
 				statuses: {
 					inProgress: 'In Progress',
@@ -194,6 +195,7 @@ describe('pm/lifecycle', () => {
 				processed: 'my-processed',
 				error: 'my-error',
 				readyToProcess: 'my-ready',
+				auto: 'cascade-auto',
 			});
 		});
 
@@ -247,6 +249,7 @@ describe('pm/lifecycle', () => {
 				processed: 'cascade-processed',
 				error: 'cascade-error',
 				readyToProcess: 'cascade-ready',
+				auto: 'cascade-auto',
 			});
 		});
 
