@@ -10,8 +10,9 @@ import { resolveWorkItemId } from './utils.js';
  *
  * This trigger:
  * 1. Fires on `pull_request.review_requested` events
- * 2. Checks if the requested reviewer is a CASCADE persona (implementer OR reviewer)
- * 3. Fires the `review` agent with PR number and work item ID from PR body
+ * 2. Rejects requests sent by CASCADE personas (loop prevention)
+ * 3. Checks if the requested reviewer is a CASCADE persona (implementer OR reviewer)
+ * 4. Fires the `review` agent with PR number and work item ID from PR body
  *
  * Default: **disabled** (opt-in via trigger config).
  *
@@ -46,6 +47,17 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 		if (!ctx.personaIdentities) {
 			logger.warn('No persona identities available, skipping review-requested trigger', {
 				prNumber,
+			});
+			return null;
+		}
+
+		// Skip review requests FROM CASCADE personas (self-loop prevention)
+		const senderLogin = payload.sender.login;
+		if (isCascadeBot(senderLogin, ctx.personaIdentities)) {
+			logger.info('Skipping review request from CASCADE persona (loop prevention)', {
+				prNumber,
+				sender: senderLogin,
+				requestedReviewer: payload.requested_reviewer?.login,
 			});
 			return null;
 		}
