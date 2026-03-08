@@ -11,6 +11,11 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 		prNumber: 'prNumber',
 		workItemId: 'workItemId',
 		repoFullName: 'repoFullName',
+		workItemUrl: 'workItemUrl',
+		workItemTitle: 'workItemTitle',
+		prUrl: 'prUrl',
+		prTitle: 'prTitle',
+		updatedAt: 'updatedAt',
 	},
 }));
 
@@ -37,32 +42,93 @@ describe('prWorkItemsRepository', () => {
 			await linkPRToWorkItem('proj-1', 'owner/repo', 42, 'wi-abc');
 
 			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
-			expect(mockDb.chain.values).toHaveBeenCalledWith({
-				projectId: 'proj-1',
-				repoFullName: 'owner/repo',
-				prNumber: 42,
-				workItemId: 'wi-abc',
-			});
+			expect(mockDb.chain.values).toHaveBeenCalledWith(
+				expect.objectContaining({
+					projectId: 'proj-1',
+					repoFullName: 'owner/repo',
+					prNumber: 42,
+					workItemId: 'wi-abc',
+				}),
+			);
 		});
 
 		it('calls onConflictDoUpdate for upsert behavior', async () => {
 			await linkPRToWorkItem('proj-1', 'owner/repo', 42, 'wi-abc');
 
 			expect(mockDb.chain.onConflictDoUpdate).toHaveBeenCalledTimes(1);
-			expect(mockDb.chain.onConflictDoUpdate).toHaveBeenCalledWith({
-				target: expect.arrayContaining([expect.anything(), expect.anything()]),
-				set: { workItemId: 'wi-abc', repoFullName: 'owner/repo' },
-			});
+			expect(mockDb.chain.onConflictDoUpdate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					target: expect.arrayContaining([expect.anything(), expect.anything()]),
+					set: expect.objectContaining({ workItemId: 'wi-abc', repoFullName: 'owner/repo' }),
+				}),
+			);
 		});
 
 		it('updates workItemId and repoFullName on conflict', async () => {
 			await linkPRToWorkItem('proj-1', 'new-owner/repo', 99, 'wi-new');
 
 			const conflictArg = mockDb.chain.onConflictDoUpdate.mock.calls[0][0];
-			expect(conflictArg.set).toEqual({
+			expect(conflictArg.set).toMatchObject({
 				workItemId: 'wi-new',
 				repoFullName: 'new-owner/repo',
 			});
+		});
+
+		it('persists optional display fields when provided', async () => {
+			await linkPRToWorkItem('proj-1', 'owner/repo', 42, 'wi-abc', {
+				workItemUrl: 'https://trello.com/c/abc',
+				workItemTitle: 'My Card',
+				prUrl: 'https://github.com/owner/repo/pull/42',
+				prTitle: 'feat: my feature',
+			});
+
+			expect(mockDb.chain.values).toHaveBeenCalledWith(
+				expect.objectContaining({
+					workItemUrl: 'https://trello.com/c/abc',
+					workItemTitle: 'My Card',
+					prUrl: 'https://github.com/owner/repo/pull/42',
+					prTitle: 'feat: my feature',
+				}),
+			);
+
+			const conflictArg = mockDb.chain.onConflictDoUpdate.mock.calls[0][0];
+			expect(conflictArg.set).toMatchObject({
+				workItemUrl: 'https://trello.com/c/abc',
+				workItemTitle: 'My Card',
+				prUrl: 'https://github.com/owner/repo/pull/42',
+				prTitle: 'feat: my feature',
+			});
+		});
+
+		it('accepts null workItemId for orphan PRs', async () => {
+			await linkPRToWorkItem('proj-1', 'owner/repo', 42, null);
+
+			expect(mockDb.chain.values).toHaveBeenCalledWith(
+				expect.objectContaining({
+					projectId: 'proj-1',
+					workItemId: null,
+				}),
+			);
+		});
+
+		it('sets updatedAt on insert and conflict update', async () => {
+			await linkPRToWorkItem('proj-1', 'owner/repo', 42, 'wi-abc');
+
+			const valuesArg = mockDb.chain.values.mock.calls[0][0];
+			expect(valuesArg.updatedAt).toBeInstanceOf(Date);
+
+			const conflictArg = mockDb.chain.onConflictDoUpdate.mock.calls[0][0];
+			expect(conflictArg.set.updatedAt).toBeInstanceOf(Date);
+		});
+
+		it('omits optional display fields when not provided', async () => {
+			await linkPRToWorkItem('proj-1', 'owner/repo', 42, 'wi-abc');
+
+			const valuesArg = mockDb.chain.values.mock.calls[0][0];
+			expect(valuesArg.workItemUrl).toBeUndefined();
+			expect(valuesArg.workItemTitle).toBeUndefined();
+			expect(valuesArg.prUrl).toBeUndefined();
+			expect(valuesArg.prTitle).toBeUndefined();
 		});
 	});
 
@@ -84,6 +150,14 @@ describe('prWorkItemsRepository', () => {
 			mockDb.chain.limit.mockResolvedValueOnce([]);
 
 			const result = await lookupWorkItemForPR('proj-1', 999);
+
+			expect(result).toBeNull();
+		});
+
+		it('returns null when workItemId is null (orphan PR)', async () => {
+			mockDb.chain.limit.mockResolvedValueOnce([{ workItemId: null }]);
+
+			const result = await lookupWorkItemForPR('proj-1', 42);
 
 			expect(result).toBeNull();
 		});

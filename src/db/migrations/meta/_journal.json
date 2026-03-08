@@ -204,6 +204,13 @@
 			"when": 1763000000000,
 			"tag": "0028_remove_stories_status",
 			"breakpoints": false
+		},
+		{
+			"idx": 29,
+			"version": "7",
+			"when": 1764000000000,
+			"tag": "0029_work_item_pr_details",
+			"breakpoints": false
 		}
 	]
 }
