@@ -12,6 +12,7 @@
 
 import type { TriggerRegistry } from '../triggers/registry.js';
 import { logger } from '../utils/logging.js';
+import { isDuplicateAction, markActionProcessed } from './action-dedup.js';
 import {
 	checkAgentTypeConcurrency,
 	markAgentTypeEnqueued,
@@ -33,17 +34,18 @@ export interface ProcessRouterWebhookResult {
 /**
  * Process a single incoming webhook through the full router pipeline.
  *
- * 1. Parse payload into a normalized `ParsedWebhookEvent`
- * 2. Check if the event type is processable
- * 3. Check for self-authored events (loop prevention)
- * 4. Fire acknowledgment reaction (fire-and-forget)
- * 5. Resolve project config
- * 6. Dispatch triggers with platform credential scope
- * 7. Work-item concurrency lock check
- * 8. Post acknowledgment comment (ack info available at build time)
- * 9. Build job (with ack info embedded)
- * 10. Fire optional pre-actions (e.g. GitHub 👀 reaction)
- * 11. Enqueue job to Redis (durable)
+ * 1.  Parse payload into a normalized `ParsedWebhookEvent`
+ * 2.  Action-level dedup (skip duplicate webhook deliveries)
+ * 3.  Check if the event type is processable
+ * 4.  Check for self-authored events (loop prevention)
+ * 5.  Fire acknowledgment reaction (fire-and-forget)
+ * 6.  Resolve project config
+ * 7.  Dispatch triggers with platform credential scope
+ * 8.  Work-item concurrency lock check
+ * 9.  Post acknowledgment comment (ack info available at build time)
+ * 10. Build job (with ack info embedded)
+ * 11. Fire optional pre-actions (e.g. GitHub 👀 reaction)
+ * 12. Enqueue job to Redis (durable)
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: webhook pipeline with sequential guard checks
 export async function processRouterWebhook(
@@ -58,7 +60,20 @@ export async function processRouterWebhook(
 		return { shouldProcess: false, decisionReason: 'Event unparseable or not processable' };
 	}
 
-	// Step 2: Filter
+	// Step 2: Action-level deduplication (handles duplicate webhook deliveries)
+	if (event.actionId) {
+		if (isDuplicateAction(event.actionId)) {
+			logger.info(`Ignoring duplicate ${adapter.type} action`, {
+				actionId: event.actionId,
+				eventType: event.eventType,
+				workItemId: event.workItemId,
+			});
+			return { shouldProcess: false, decisionReason: 'Duplicate action' };
+		}
+		markActionProcessed(event.actionId);
+	}
+
+	// Step 3: Filter
 	if (!adapter.isProcessableEvent(event)) {
 		logger.debug(`Ignoring ${adapter.type} event`, { eventType: event.eventType });
 		return {
@@ -67,7 +82,7 @@ export async function processRouterWebhook(
 		};
 	}
 
-	// Step 3: Self-authored check
+	// Step 4: Self-authored check
 	if (await adapter.isSelfAuthored(event, payload)) {
 		logger.info(`Ignoring self-authored ${adapter.type} event`, {
 			eventType: event.eventType,
@@ -76,10 +91,10 @@ export async function processRouterWebhook(
 		return { shouldProcess: true, decisionReason: 'Self-authored event (loop prevention)' };
 	}
 
-	// Step 4: Fire acknowledgment reaction (fire-and-forget)
+	// Step 5: Fire acknowledgment reaction (fire-and-forget)
 	adapter.sendReaction(event, payload);
 
-	// Step 5: Resolve project config
+	// Step 6: Resolve project config
 	const project = await adapter.resolveProject(event);
 	if (!project) {
 		logger.info(`No project config found for ${adapter.type} event`, {
@@ -91,7 +106,7 @@ export async function processRouterWebhook(
 		};
 	}
 
-	// Step 6: Dispatch triggers with credential scope
+	// Step 7: Dispatch triggers with credential scope
 	let result = null;
 	try {
 		result = await adapter.dispatchWithCredentials(event, payload, project, triggerRegistry);
@@ -131,7 +146,7 @@ export async function processRouterWebhook(
 		};
 	}
 
-	// Step 7: Work-item concurrency lock
+	// Step 8: Work-item concurrency lock
 	if (result.workItemId) {
 		const lockStatus = await isWorkItemLocked(project.id, result.workItemId, result.agentType);
 		if (lockStatus.locked) {
@@ -150,7 +165,7 @@ export async function processRouterWebhook(
 		}
 	}
 
-	// Step 7b: Agent-type concurrency limit
+	// Step 8b: Agent-type concurrency limit
 	let agentTypeMaxConcurrency: number | null = null;
 	if (result.agentType) {
 		const concurrencyCheck = await checkAgentTypeConcurrency(
@@ -169,7 +184,7 @@ export async function processRouterWebhook(
 		}
 	}
 
-	// Step 8: Post acknowledgment comment — ack info is now available at job build time
+	// Step 9: Post acknowledgment comment — ack info is now available at job build time
 	const ackResult = await adapter.postAck(event, payload, project, result.agentType);
 	if (ackResult?.commentId != null) {
 		logger.info(`${adapter.type} ack comment posted`, {
@@ -185,13 +200,13 @@ export async function processRouterWebhook(
 		);
 	}
 
-	// Step 9: Build job with ack info embedded
+	// Step 10: Build job with ack info embedded
 	const job = adapter.buildJob(event, payload, project, result, ackResult);
 
-	// Step 10: Fire optional pre-actions (fire-and-forget)
+	// Step 11: Fire optional pre-actions (fire-and-forget)
 	adapter.firePreActions?.(job, payload);
 
-	// Step 11: Enqueue — job is now durable in Redis
+	// Step 12: Enqueue — job is now durable in Redis
 	try {
 		const jobId = await addJob(job);
 		if (result.workItemId) {

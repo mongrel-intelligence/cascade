@@ -39,6 +39,7 @@ export class TrelloRouterAdapter implements RouterPlatformAdapter {
 
 		const boardId = model.id as string;
 		const actionType = action.type as string;
+		const actionId = action.id as string | undefined;
 		const data = action.data as Record<string, unknown> | undefined;
 
 		const config = await loadProjectConfig();
@@ -61,6 +62,7 @@ export class TrelloRouterAdapter implements RouterPlatformAdapter {
 			eventType: actionType,
 			workItemId,
 			isCommentEvent: actionType === 'commentCard',
+			actionId,
 		};
 	}
 

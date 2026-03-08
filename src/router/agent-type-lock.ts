@@ -12,6 +12,7 @@
 import { countActiveRunsForAgentType } from '../db/repositories/runsRepository.js';
 import { getMaxConcurrency } from '../db/repositories/settingsRepository.js';
 import { logger } from '../utils/logging.js';
+import { clearActionRecords } from './action-dedup.js';
 import { routerConfig } from './config.js';
 
 // ============================================================================
@@ -112,6 +113,7 @@ export function clearAgentTypeEnqueued(projectId: string, agentType: string): vo
 export function clearAllAgentTypeLocks(): void {
 	concurrencyMap.clear();
 	dedupMap.clear();
+	clearActionRecords();
 }
 
 // ============================================================================
