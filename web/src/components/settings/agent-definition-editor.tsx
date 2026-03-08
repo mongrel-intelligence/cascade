@@ -1,4 +1,3 @@
-import type { AppRouter } from '@/../../src/api/router.js';
 import {
 	type KnownTriggerEvent,
 	TRIGGER_CATEGORY_LABELS,
@@ -8,150 +7,28 @@ import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.js';
 import { Textarea } from '@/components/ui/textarea.js';
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from '@/components/ui/tooltip.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { inferRouterOutputs } from '@trpc/server';
-import { Info } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import {
+	type AgentDefinition,
+	CAPABILITY_GROUPS,
+	type Capability,
+	type DefinitionRow,
+	EMPTY_DEFINITION,
+	InfoTooltip,
+	MultiSelectBadges,
+	type SchemaData,
+	Toggle,
+	TooltipProvider,
+	deepSet,
+} from './agent-definition-shared.js';
 import { ReferencePanel } from './prompt-editor.js';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
-
-type RouterOutput = inferRouterOutputs<AppRouter>;
-type DefinitionRow = RouterOutput['agentDefinitions']['list'][number];
-type AgentDefinition = DefinitionRow['definition'];
-type Capability = AgentDefinition['capabilities']['required'][number];
 
 export interface AgentDefinitionEditorProps {
 	/** When provided, we are editing an existing definition. When undefined, we are creating a new one. */
 	existing?: DefinitionRow;
 	onClose: () => void;
-}
-
-interface SchemaData {
-	capabilities: readonly string[];
-	triggerRegistry: Record<string, KnownTriggerEvent[]>;
-}
-
-// All available capabilities organized by integration
-const CAPABILITY_GROUPS: Record<string, { label: string; caps: Capability[] }> = {
-	'built-in': {
-		label: 'Built-in (always available)',
-		caps: ['fs:read', 'fs:write', 'shell:exec', 'session:ctrl'],
-	},
-	pm: {
-		label: 'PM Integration (Trello/JIRA)',
-		caps: ['pm:read', 'pm:write', 'pm:checklist'],
-	},
-	scm: {
-		label: 'SCM Integration (GitHub)',
-		caps: ['scm:read', 'scm:comment', 'scm:review', 'scm:pr'],
-	},
-	email: {
-		label: 'Email Integration',
-		caps: ['email:read', 'email:write'],
-	},
-	sms: {
-		label: 'SMS Integration (Twilio)',
-		caps: ['sms:send'],
-	},
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper components (shared with form dialog)
-// ─────────────────────────────────────────────────────────────────────────────
-
-function InfoTooltip({ text }: { text: string }) {
-	return (
-		<Tooltip>
-			<TooltipTrigger asChild>
-				<span className="inline-flex cursor-help text-muted-foreground hover:text-foreground">
-					<Info className="h-3.5 w-3.5" />
-				</span>
-			</TooltipTrigger>
-			<TooltipContent className="max-w-xs">{text}</TooltipContent>
-		</Tooltip>
-	);
-}
-
-function Toggle({
-	checked,
-	onChange,
-	label,
-	description,
-}: {
-	checked: boolean;
-	onChange: (v: boolean) => void;
-	label: string;
-	description?: string;
-}) {
-	return (
-		<div className="flex cursor-pointer select-none items-center gap-2">
-			<button
-				type="button"
-				role="switch"
-				aria-checked={checked}
-				aria-label={label}
-				onClick={() => onChange(!checked)}
-				className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-					checked ? 'bg-primary' : 'bg-input'
-				}`}
-			>
-				<span
-					className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-						checked ? 'translate-x-4.5' : 'translate-x-0.5'
-					}`}
-				/>
-			</button>
-			<span className="text-sm">{label}</span>
-			{description && <InfoTooltip text={description} />}
-		</div>
-	);
-}
-
-function MultiSelectBadges({
-	available,
-	selected,
-	onChange,
-}: {
-	available: readonly string[];
-	selected: string[];
-	onChange: (v: string[]) => void;
-}) {
-	const toggle = (item: string) => {
-		if (selected.includes(item)) {
-			onChange(selected.filter((s) => s !== item));
-		} else {
-			onChange([...selected, item]);
-		}
-	};
-	return (
-		<div className="flex flex-wrap gap-1.5">
-			{available.map((item) => (
-				<button
-					key={item}
-					type="button"
-					onClick={() => toggle(item)}
-					className="focus:outline-none"
-				>
-					<Badge
-						variant={selected.includes(item) ? 'default' : 'outline'}
-						className="cursor-pointer text-xs hover:opacity-80"
-					>
-						{item}
-					</Badge>
-				</button>
-			))}
-		</div>
-	);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -364,26 +241,6 @@ function StrategiesSection({
 			</div>
 		</section>
 	);
-}
-
-/**
- * Immutably set a deeply nested key in an object.
- * e.g. deepSet({}, ['trailing', 'scm', 'gitStatus'], true)
- */
-function deepSet(
-	obj: Record<string, unknown>,
-	path: string[],
-	value: unknown,
-): Record<string, unknown> {
-	if (path.length === 0) return obj;
-	const [head, ...rest] = path;
-	return {
-		...obj,
-		[head]:
-			rest.length === 0
-				? value
-				: deepSet((obj[head] ?? {}) as Record<string, unknown>, rest, value),
-	};
 }
 
 function HooksSection({
@@ -947,25 +804,6 @@ function PromptsPanel({ agentType }: { agentType: string }) {
 		</div>
 	);
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Default empty definition for "create" mode
-// ─────────────────────────────────────────────────────────────────────────────
-
-const EMPTY_DEFINITION: AgentDefinition = {
-	identity: { emoji: '🤖', label: '', roleHint: '', initialMessage: '' },
-	capabilities: {
-		required: ['fs:read', 'session:ctrl'],
-		optional: [],
-	},
-	triggers: [],
-	strategies: {},
-	hint: '',
-	prompts: {
-		taskPrompt:
-			'Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.',
-	},
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Hook — encapsulates all editor state and mutations
