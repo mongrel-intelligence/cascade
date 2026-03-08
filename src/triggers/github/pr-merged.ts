@@ -57,32 +57,26 @@ export class PRMergedTrigger implements TriggerHandler {
 
 		const provider = getPMProvider();
 
-		// Idempotency: skip if work item is already in the MERGED status
-		// (handles concurrent webhooks from multiple PR close events)
+		// Idempotency: skip move/comment if work item is already in MERGED status
+		// (handles concurrent webhooks or pre-moved cards from other triggers like pr-ready-to-merge)
 		const workItem = await provider.getWorkItem(workItemId);
-		if (workItem.status === mergedStatus) {
+		const alreadyMerged = workItem.status === mergedStatus;
+
+		if (alreadyMerged) {
 			logger.info('Work item already in MERGED status, skipping duplicate move', {
 				workItemId,
 				prNumber,
 			});
-			return {
-				agentType: null,
-				agentInput: {},
+		} else {
+			await provider.moveWorkItem(workItemId, mergedStatus);
+			await provider.addComment(
 				workItemId,
-				prNumber,
-			};
+				`PR #${prNumber} has been merged to ${prDetails.baseRef}`,
+			);
+			logger.info('Moved work item to merged status', { workItemId, prNumber });
 		}
 
-		// Move work item to MERGED status
-		await provider.moveWorkItem(workItemId, mergedStatus);
-		await provider.addComment(
-			workItemId,
-			`PR #${prNumber} has been merged to ${prDetails.baseRef}`,
-		);
-
-		logger.info('Moved work item to merged status', { workItemId, prNumber });
-
-		// Optionally chain into the backlog-manager agent to pick the next card
+		// Chain to backlog-manager if enabled (regardless of whether card was already merged)
 		if (await checkTriggerEnabled(ctx.project.id, 'backlog-manager', 'scm:pr-merged', this.name)) {
 			logger.info('Chaining to backlog-manager after PR merge', { workItemId, prNumber });
 			return {
