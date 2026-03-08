@@ -1,10 +1,11 @@
 /**
  * Trello-specific step renderer components for PMWizard.
  */
+import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import type { UseMutationResult } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import type { WizardAction, WizardState } from './pm-wizard-state.js';
 import { FieldMappingRow, InlineCredentialCreator, SearchableSelect } from './wizard-shared.js';
 import type { CredentialOption } from './wizard-shared.js';
@@ -26,6 +27,14 @@ const TRELLO_LIST_SLOTS = [
 ];
 
 const TRELLO_LABEL_SLOTS = ['readyToProcess', 'processing', 'processed', 'error', 'auto'];
+
+export const TRELLO_LABEL_DEFAULTS: Record<string, { name: string; color: string }> = {
+	readyToProcess: { name: 'cascade-ready', color: 'sky' },
+	processing: { name: 'cascade-processing', color: 'blue' },
+	processed: { name: 'cascade-processed', color: 'green' },
+	error: { name: 'cascade-error', color: 'red' },
+	auto: { name: 'cascade-auto', color: 'purple' },
+};
 
 // ============================================================================
 // TrelloCredentialsStep
@@ -145,10 +154,28 @@ export function TrelloBoardStep({
 export function TrelloFieldMappingStep({
 	state,
 	dispatch,
+	onCreateLabel,
+	onCreateAllMissingLabels,
+	isCreatingLabel,
+	isCreatingAllLabels,
 }: {
 	state: WizardState;
 	dispatch: React.Dispatch<WizardAction>;
+	onCreateLabel?: (slot: string) => void;
+	onCreateAllMissingLabels?: () => void;
+	isCreatingLabel?: boolean;
+	isCreatingAllLabels?: boolean;
 }) {
+	const existingLabelNames = new Set(
+		(state.trelloBoardDetails?.labels ?? []).map((l) => l.name.toLowerCase()),
+	);
+
+	const missingSlots = TRELLO_LABEL_SLOTS.filter((slot) => {
+		if (state.trelloLabelMappings[slot]) return false;
+		const defaultName = TRELLO_LABEL_DEFAULTS[slot]?.name ?? '';
+		return !existingLabelNames.has(defaultName.toLowerCase());
+	});
+
 	return (
 		<div className="space-y-6">
 			{/* List mappings */}
@@ -188,34 +215,82 @@ export function TrelloFieldMappingStep({
 
 			{/* Label mappings */}
 			<div className="space-y-3">
-				<Label>Label Mappings</Label>
+				<div className="flex items-center justify-between">
+					<Label>Label Mappings</Label>
+					{state.trelloBoardDetails && missingSlots.length > 0 && onCreateAllMissingLabels && (
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							onClick={onCreateAllMissingLabels}
+							disabled={isCreatingAllLabels || isCreatingLabel}
+							className="h-7 text-xs"
+						>
+							{isCreatingAllLabels ? (
+								<Loader2 className="h-3 w-3 animate-spin mr-1" />
+							) : (
+								<Plus className="h-3 w-3 mr-1" />
+							)}
+							Create All Missing ({missingSlots.length})
+						</Button>
+					)}
+				</div>
 				<p className="text-xs text-muted-foreground">
 					Map each CASCADE label to a Trello label on the board.
 				</p>
 				{state.trelloBoardDetails ? (
-					TRELLO_LABEL_SLOTS.map((slot) => (
-						<FieldMappingRow
-							key={slot}
-							slotLabel={slot}
-							options={
-								state.trelloBoardDetails?.labels
-									.filter((l) => l.name)
-									.map((l) => ({
-										label: `${l.name} (${l.color})`,
-										value: l.id,
-									})) ?? []
-							}
-							value={state.trelloLabelMappings[slot] ?? ''}
-							onChange={(v) =>
-								dispatch({
-									type: 'SET_TRELLO_LABEL_MAPPING',
-									key: slot,
-									value: v,
-								})
-							}
-							manualFallback
-						/>
-					))
+					TRELLO_LABEL_SLOTS.map((slot) => {
+						const isMapped = !!state.trelloLabelMappings[slot];
+						const defaultInfo = TRELLO_LABEL_DEFAULTS[slot];
+						const alreadyExists =
+							defaultInfo && existingLabelNames.has(defaultInfo.name.toLowerCase());
+						const showCreateButton = !isMapped && !alreadyExists && onCreateLabel && defaultInfo;
+
+						return (
+							<div key={slot} className="flex items-center gap-2">
+								<div className="flex-1">
+									<FieldMappingRow
+										slotLabel={slot}
+										options={
+											state.trelloBoardDetails?.labels
+												.filter((l) => l.name)
+												.map((l) => ({
+													label: `${l.name} (${l.color})`,
+													value: l.id,
+												})) ?? []
+										}
+										value={state.trelloLabelMappings[slot] ?? ''}
+										onChange={(v) =>
+											dispatch({
+												type: 'SET_TRELLO_LABEL_MAPPING',
+												key: slot,
+												value: v,
+											})
+										}
+										manualFallback
+									/>
+								</div>
+								{showCreateButton && (
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										onClick={() => onCreateLabel(slot)}
+										disabled={isCreatingLabel || isCreatingAllLabels}
+										className="h-8 text-xs shrink-0 text-muted-foreground hover:text-foreground"
+										title={`Create "${defaultInfo.name}" (${defaultInfo.color})`}
+									>
+										{isCreatingLabel ? (
+											<Loader2 className="h-3 w-3 animate-spin" />
+										) : (
+											<Plus className="h-3 w-3" />
+										)}
+										Create
+									</Button>
+								)}
+							</div>
+						);
+					})
 				) : (
 					<p className="text-sm text-muted-foreground">
 						Select a board first to populate label options.

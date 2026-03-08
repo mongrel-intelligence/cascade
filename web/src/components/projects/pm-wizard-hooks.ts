@@ -323,6 +323,63 @@ export function useWebhookManagement(projectId: string, state: WizardState) {
 }
 
 // ============================================================================
+// Trello Label Creation
+// ============================================================================
+
+export function useTrelloLabelCreation(state: WizardState, dispatch: React.Dispatch<WizardAction>) {
+	const createLabelMutation = useMutation({
+		mutationFn: (vars: { name: string; color?: string; slot: string }) => {
+			if (
+				!state.trelloApiKeyCredentialId ||
+				!state.trelloTokenCredentialId ||
+				!state.trelloBoardId
+			) {
+				throw new Error('Missing credentials or board selection');
+			}
+			return trpcClient.integrationsDiscovery.createTrelloLabel.mutate({
+				apiKeyCredentialId: state.trelloApiKeyCredentialId,
+				tokenCredentialId: state.trelloTokenCredentialId,
+				boardId: state.trelloBoardId,
+				name: vars.name,
+				color: vars.color,
+			});
+		},
+		onSuccess: (label, vars) => {
+			dispatch({ type: 'ADD_TRELLO_BOARD_LABEL', label });
+			dispatch({ type: 'SET_TRELLO_LABEL_MAPPING', key: vars.slot, value: label.id });
+		},
+	});
+
+	const createMissingLabelsMutation = useMutation({
+		mutationFn: (labelsToCreate: Array<{ slot: string; name: string; color?: string }>) => {
+			if (
+				!state.trelloApiKeyCredentialId ||
+				!state.trelloTokenCredentialId ||
+				!state.trelloBoardId
+			) {
+				throw new Error('Missing credentials or board selection');
+			}
+			return trpcClient.integrationsDiscovery.createTrelloLabels.mutate({
+				apiKeyCredentialId: state.trelloApiKeyCredentialId,
+				tokenCredentialId: state.trelloTokenCredentialId,
+				boardId: state.trelloBoardId,
+				labels: labelsToCreate.map(({ name, color }) => ({ name, color })),
+			});
+		},
+		onSuccess: (createdLabels, labelsToCreate) => {
+			for (let i = 0; i < createdLabels.length; i++) {
+				const label = createdLabels[i];
+				const slot = labelsToCreate[i].slot;
+				dispatch({ type: 'ADD_TRELLO_BOARD_LABEL', label });
+				dispatch({ type: 'SET_TRELLO_LABEL_MAPPING', key: slot, value: label.id });
+			}
+		},
+	});
+
+	return { createLabelMutation, createMissingLabelsMutation };
+}
+
+// ============================================================================
 // Save Mutation
 // ============================================================================
 

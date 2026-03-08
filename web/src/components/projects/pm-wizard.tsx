@@ -8,6 +8,7 @@ import {
 	useJiraDiscovery,
 	useSaveMutation,
 	useTrelloDiscovery,
+	useTrelloLabelCreation,
 	useVerification,
 	useWebhookManagement,
 } from './pm-wizard-hooks.js';
@@ -27,6 +28,7 @@ import {
 	wizardReducer,
 } from './pm-wizard-state.js';
 import {
+	TRELLO_LABEL_DEFAULTS,
 	TrelloBoardStep,
 	TrelloCredentialsStep,
 	TrelloFieldMappingStep,
@@ -113,8 +115,35 @@ export function PMWizard({
 		dispatch,
 		advanceToStep,
 	);
+	const { createLabelMutation, createMissingLabelsMutation } = useTrelloLabelCreation(
+		state,
+		dispatch,
+	);
 	const webhookManagement = useWebhookManagement(projectId, state);
 	const { saveMutation } = useSaveMutation(projectId, state);
+
+	// ---- Label creation handlers ----
+
+	const handleCreateLabel = (slot: string) => {
+		const defaults = TRELLO_LABEL_DEFAULTS[slot];
+		if (!defaults) return;
+		createLabelMutation.mutate({ name: defaults.name, color: defaults.color, slot });
+	};
+
+	const handleCreateAllMissingLabels = () => {
+		const existingLabelNames = new Set(
+			(state.trelloBoardDetails?.labels ?? []).map((l) => l.name.toLowerCase()),
+		);
+		const labelsToCreate = Object.entries(TRELLO_LABEL_DEFAULTS)
+			.filter(([slot, { name }]) => {
+				if (state.trelloLabelMappings[slot]) return false;
+				return !existingLabelNames.has(name.toLowerCase());
+			})
+			.map(([slot, { name, color }]) => ({ slot, name, color }));
+		if (labelsToCreate.length > 0) {
+			createMissingLabelsMutation.mutate(labelsToCreate);
+		}
+	};
 
 	// ---- Step status ----
 
@@ -261,7 +290,14 @@ export function PMWizard({
 				onToggle={() => toggleStep(4)}
 			>
 				{state.provider === 'trello' ? (
-					<TrelloFieldMappingStep state={state} dispatch={dispatch} />
+					<TrelloFieldMappingStep
+						state={state}
+						dispatch={dispatch}
+						onCreateLabel={handleCreateLabel}
+						onCreateAllMissingLabels={handleCreateAllMissingLabels}
+						isCreatingLabel={createLabelMutation.isPending}
+						isCreatingAllLabels={createMissingLabelsMutation.isPending}
+					/>
 				) : (
 					<JiraFieldMappingStep state={state} dispatch={dispatch} />
 				)}
