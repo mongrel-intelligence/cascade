@@ -159,7 +159,7 @@ describe('ProgressMonitor - constructor', () => {
 	it('creates GitHubProgressPoster when github config is provided', () => {
 		new ProgressMonitor(
 			makeConfig({
-				github: { owner: 'owner', repo: 'repo', headerMessage: 'Working...' },
+				github: { owner: 'owner', repo: 'repo' },
 			}),
 		);
 
@@ -309,9 +309,9 @@ describe('ProgressMonitor - tick (via scheduler callback)', () => {
 	});
 
 	it('posts summary to GitHub when github configured', async () => {
-		await runTick(makeConfig({ github: { owner: 'o', repo: 'r', headerMessage: 'Working...' } }));
+		await runTick(makeConfig({ github: { owner: 'o', repo: 'r' } }));
 
-		expect(mockGitHubPosterUpdate).toHaveBeenCalledWith('AI-generated summary', 'implementation');
+		expect(mockGitHubPosterUpdate).toHaveBeenCalledWith('AI-generated summary');
 	});
 
 	it('falls back to formatStatusMessage when callProgressModel fails', async () => {

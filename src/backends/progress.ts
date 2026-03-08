@@ -13,7 +13,7 @@ export interface ProgressMonitorOptions {
 	customModels: ModelSpec[];
 	repoDir?: string;
 	trello?: { cardId: string };
-	github?: { owner: string; repo: string; headerMessage: string };
+	github?: { owner: string; repo: string };
 	/** Pre-seeded comment ID from router ack — skip initial comment posting */
 	preSeededCommentId?: string;
 }
