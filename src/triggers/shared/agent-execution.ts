@@ -332,7 +332,7 @@ async function propagateAutoLabelAfterSplitting(
 			}
 			backlogItems = await provider.listWorkItems(backlogListId);
 		} else if (provider.type === 'jira') {
-			// JIRA: cannot use listWorkItems with status name — must use JQL to filter by status
+			// JIRA: use server-side JQL filtering by status to avoid fetching all project issues
 			const jiraConfig = getJiraConfig(project);
 			const backlogStatus = jiraConfig?.statuses?.backlog;
 			const projectKey = jiraConfig?.projectKey;
@@ -343,13 +343,8 @@ async function propagateAutoLabelAfterSplitting(
 				);
 				return null;
 			}
-			// Fetch all items from the project, then filter by status locally
-			// (JIRA adapter's listWorkItems expects project key, not status name)
-			// TODO: Add JQL-based filtering to JIRA adapter to avoid fetching all project issues
-			const allItems = await provider.listWorkItems(projectKey);
-			backlogItems = allItems.filter((item) => item.status === backlogStatus);
-			logger.info('JIRA backlog filtering for auto-label propagation', {
-				totalFetched: allItems.length,
+			backlogItems = await provider.listWorkItems(projectKey, { status: backlogStatus });
+			logger.info('JIRA backlog items fetched for auto-label propagation', {
 				backlogCount: backlogItems.length,
 				projectKey,
 			});

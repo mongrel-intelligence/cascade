@@ -331,6 +331,31 @@ describe('JiraPMProvider', () => {
 				status: 'To Do',
 			});
 		});
+
+		it('applies status filter to JQL when provided', async () => {
+			mockJiraClient.searchIssues.mockResolvedValue([
+				{
+					key: 'PROJ-2',
+					fields: {
+						summary: 'Backlog Item',
+						status: { name: 'Backlog' },
+						labels: [],
+					},
+				},
+			]);
+
+			const result = await provider.listWorkItems('PROJ', { status: 'Backlog' });
+
+			expect(mockJiraClient.searchIssues).toHaveBeenCalledWith(
+				'project = "PROJ" AND status = "Backlog" ORDER BY created DESC',
+			);
+			expect(result).toHaveLength(1);
+			expect(result[0]).toMatchObject({
+				id: 'PROJ-2',
+				title: 'Backlog Item',
+				status: 'Backlog',
+			});
+		});
 	});
 
 	describe('moveWorkItem', () => {

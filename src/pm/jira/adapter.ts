@@ -11,6 +11,7 @@ import type {
 	Checklist,
 	ChecklistItem,
 	CreateWorkItemConfig,
+	ListWorkItemsFilter,
 	PMProvider,
 	WorkItem,
 	WorkItemComment,
@@ -173,9 +174,13 @@ export class JiraPMProvider implements PMProvider {
 		};
 	}
 
-	async listWorkItems(containerId: string): Promise<WorkItem[]> {
+	async listWorkItems(containerId: string, filter?: ListWorkItemsFilter): Promise<WorkItem[]> {
 		// containerId is the JIRA project key
-		const jql = `project = "${containerId}" ORDER BY created DESC`;
+		let jql = `project = "${containerId}"`;
+		if (filter?.status) {
+			jql += ` AND status = "${filter.status}"`;
+		}
+		jql += ' ORDER BY created DESC';
 		const issues = await jiraClient.searchIssues(jql);
 		return issues.map((issue: JiraSearchIssue) => ({
 			id: issue.key ?? '',

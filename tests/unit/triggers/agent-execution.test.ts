@@ -545,7 +545,7 @@ describe('runAgentExecutionPipeline', () => {
 			expect(mockProvider.addLabel).toHaveBeenCalledWith('card-3', 'auto-label-id');
 		});
 
-		it('propagates auto label for JIRA projects by filtering by status', async () => {
+		it('propagates auto label for JIRA projects using server-side status filtering', async () => {
 			const jiraProvider = {
 				type: 'jira' as const,
 				getWorkItem: vi.fn(),
@@ -577,16 +577,9 @@ describe('runAgentExecutionPipeline', () => {
 				labels: [{ id: 'auto', name: 'auto' }],
 			});
 
+			// Server-side filtering: only backlog items are returned
 			jiraProvider.listWorkItems.mockResolvedValue([
 				{ id: 'PROJ-2', title: 'Item 1', description: '', url: '', status: 'Backlog', labels: [] },
-				{
-					id: 'PROJ-3',
-					title: 'Item 2',
-					description: '',
-					url: '',
-					status: 'In Progress',
-					labels: [],
-				},
 				{
 					id: 'PROJ-4',
 					title: 'Item 3',
@@ -601,9 +594,9 @@ describe('runAgentExecutionPipeline', () => {
 
 			await runAgentExecutionPipeline(splittingResult, mockProject, mockConfig);
 
-			// Should list all items from the project
-			expect(jiraProvider.listWorkItems).toHaveBeenCalledWith('PROJ');
-			// Should only label PROJ-2 (Backlog status, no auto label)
+			// Should use server-side status filtering via the filter parameter
+			expect(jiraProvider.listWorkItems).toHaveBeenCalledWith('PROJ', { status: 'Backlog' });
+			// Should only label PROJ-2 (no auto label yet); PROJ-4 already has auto label
 			expect(jiraProvider.addLabel).toHaveBeenCalledTimes(1);
 			expect(jiraProvider.addLabel).toHaveBeenCalledWith('PROJ-2', 'auto-label-id');
 		});
