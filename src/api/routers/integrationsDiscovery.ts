@@ -15,6 +15,7 @@ import { jiraClient, withJiraCredentials } from '../../jira/client.js';
 import { trelloClient, withTrelloCredentials } from '../../trello/client.js';
 import { logger } from '../../utils/logging.js';
 import { protectedProcedure, router } from '../trpc.js';
+import { wrapIntegrationCall } from './_shared/integrationErrors.js';
 import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
 async function resolveCredentialValue(credentialId: number, orgId: string): Promise<string> {
@@ -56,53 +57,69 @@ async function resolveJiraCreds(input: z.infer<typeof jiraCredsInput>, orgId: st
 	return { email, apiToken, baseUrl: input.baseUrl };
 }
 
+async function withResolvedTrelloCreds<T>(
+	input: z.infer<typeof trelloCredsInput>,
+	orgId: string,
+	label: string,
+	fn: (creds: { apiKey: string; token: string }) => Promise<T>,
+): Promise<T> {
+	const creds = await resolveTrelloCreds(input, orgId);
+	return wrapIntegrationCall(label, () => fn(creds));
+}
+
+async function withResolvedJiraCreds<T>(
+	input: z.infer<typeof jiraCredsInput>,
+	orgId: string,
+	label: string,
+	fn: (creds: { email: string; apiToken: string; baseUrl: string }) => Promise<T>,
+): Promise<T> {
+	const creds = await resolveJiraCreds(input, orgId);
+	return wrapIntegrationCall(label, () => fn(creds));
+}
+
 export const integrationsDiscoveryRouter = router({
 	verifyTrello: protectedProcedure.input(trelloCredsInput).mutation(async ({ ctx, input }) => {
 		logger.debug('integrationsDiscovery.verifyTrello called', { orgId: ctx.effectiveOrgId });
-		const creds = await resolveTrelloCreds(input, ctx.effectiveOrgId);
-
-		try {
-			const me = await withTrelloCredentials(creds, () => trelloClient.getMe());
-			return { id: me.id, fullName: me.fullName, username: me.username };
-		} catch (err) {
-			throw new TRPCError({
-				code: 'BAD_REQUEST',
-				message: `Failed to verify Trello credentials: ${err instanceof Error ? err.message : String(err)}`,
-			});
-		}
+		return withResolvedTrelloCreds(
+			input,
+			ctx.effectiveOrgId,
+			'Failed to verify Trello credentials',
+			(creds) =>
+				withTrelloCredentials(creds, () =>
+					trelloClient.getMe().then((me) => ({
+						id: me.id,
+						fullName: me.fullName,
+						username: me.username,
+					})),
+				),
+		);
 	}),
 
 	verifyJira: protectedProcedure.input(jiraCredsInput).mutation(async ({ ctx, input }) => {
 		logger.debug('integrationsDiscovery.verifyJira called', { orgId: ctx.effectiveOrgId });
-		const creds = await resolveJiraCreds(input, ctx.effectiveOrgId);
-
-		try {
-			const me = await withJiraCredentials(creds, () => jiraClient.getMyself());
-			return {
-				displayName: (me as { displayName?: string }).displayName ?? '',
-				emailAddress: (me as { emailAddress?: string }).emailAddress ?? '',
-				accountId: (me as { accountId?: string }).accountId ?? '',
-			};
-		} catch (err) {
-			throw new TRPCError({
-				code: 'BAD_REQUEST',
-				message: `Failed to verify JIRA credentials: ${err instanceof Error ? err.message : String(err)}`,
-			});
-		}
+		return withResolvedJiraCreds(
+			input,
+			ctx.effectiveOrgId,
+			'Failed to verify JIRA credentials',
+			(creds) =>
+				withJiraCredentials(creds, () =>
+					jiraClient.getMyself().then((me) => ({
+						displayName: (me as { displayName?: string }).displayName ?? '',
+						emailAddress: (me as { emailAddress?: string }).emailAddress ?? '',
+						accountId: (me as { accountId?: string }).accountId ?? '',
+					})),
+				),
+		);
 	}),
 
 	trelloBoards: protectedProcedure.input(trelloCredsInput).mutation(async ({ ctx, input }) => {
 		logger.debug('integrationsDiscovery.trelloBoards called', { orgId: ctx.effectiveOrgId });
-		const creds = await resolveTrelloCreds(input, ctx.effectiveOrgId);
-
-		try {
-			return await withTrelloCredentials(creds, () => trelloClient.getBoards());
-		} catch (err) {
-			throw new TRPCError({
-				code: 'BAD_REQUEST',
-				message: `Failed to fetch Trello boards: ${err instanceof Error ? err.message : String(err)}`,
-			});
-		}
+		return withResolvedTrelloCreds(
+			input,
+			ctx.effectiveOrgId,
+			'Failed to fetch Trello boards',
+			(creds) => withTrelloCredentials(creds, () => trelloClient.getBoards()),
+		);
 	}),
 
 	trelloBoardDetails: protectedProcedure
@@ -119,23 +136,19 @@ export const integrationsDiscoveryRouter = router({
 				orgId: ctx.effectiveOrgId,
 				boardId: input.boardId,
 			});
-			const creds = await resolveTrelloCreds(input, ctx.effectiveOrgId);
-
-			try {
-				const [lists, labels, customFields] = await withTrelloCredentials(creds, () =>
-					Promise.all([
-						trelloClient.getBoardLists(input.boardId),
-						trelloClient.getBoardLabels(input.boardId),
-						trelloClient.getBoardCustomFields(input.boardId),
-					]),
-				);
-				return { lists, labels, customFields };
-			} catch (err) {
-				throw new TRPCError({
-					code: 'BAD_REQUEST',
-					message: `Failed to fetch Trello board details: ${err instanceof Error ? err.message : String(err)}`,
-				});
-			}
+			return withResolvedTrelloCreds(
+				input,
+				ctx.effectiveOrgId,
+				'Failed to fetch Trello board details',
+				(creds) =>
+					withTrelloCredentials(creds, () =>
+						Promise.all([
+							trelloClient.getBoardLists(input.boardId),
+							trelloClient.getBoardLabels(input.boardId),
+							trelloClient.getBoardCustomFields(input.boardId),
+						]).then(([lists, labels, customFields]) => ({ lists, labels, customFields })),
+					),
+			);
 		}),
 
 	createTrelloLabel: protectedProcedure
@@ -155,18 +168,15 @@ export const integrationsDiscoveryRouter = router({
 				boardId: input.boardId,
 				name: input.name,
 			});
-			const creds = await resolveTrelloCreds(input, ctx.effectiveOrgId);
-
-			try {
-				return await withTrelloCredentials(creds, () =>
-					trelloClient.createBoardLabel(input.boardId, input.name, input.color),
-				);
-			} catch (err) {
-				throw new TRPCError({
-					code: 'BAD_REQUEST',
-					message: `Failed to create Trello label: ${err instanceof Error ? err.message : String(err)}`,
-				});
-			}
+			return withResolvedTrelloCreds(
+				input,
+				ctx.effectiveOrgId,
+				'Failed to create Trello label',
+				(creds) =>
+					withTrelloCredentials(creds, () =>
+						trelloClient.createBoardLabel(input.boardId, input.name, input.color),
+					),
+			);
 		}),
 
 	createTrelloLabels: protectedProcedure
@@ -223,16 +233,12 @@ export const integrationsDiscoveryRouter = router({
 
 	jiraProjects: protectedProcedure.input(jiraCredsInput).mutation(async ({ ctx, input }) => {
 		logger.debug('integrationsDiscovery.jiraProjects called', { orgId: ctx.effectiveOrgId });
-		const creds = await resolveJiraCreds(input, ctx.effectiveOrgId);
-
-		try {
-			return await withJiraCredentials(creds, () => jiraClient.searchProjects());
-		} catch (err) {
-			throw new TRPCError({
-				code: 'BAD_REQUEST',
-				message: `Failed to fetch JIRA projects: ${err instanceof Error ? err.message : String(err)}`,
-			});
-		}
+		return withResolvedJiraCreds(
+			input,
+			ctx.effectiveOrgId,
+			'Failed to fetch JIRA projects',
+			(creds) => withJiraCredentials(creds, () => jiraClient.searchProjects()),
+		);
 	}),
 
 	jiraProjectDetails: protectedProcedure
@@ -249,27 +255,23 @@ export const integrationsDiscoveryRouter = router({
 				orgId: ctx.effectiveOrgId,
 				projectKey: input.projectKey,
 			});
-			const creds = await resolveJiraCreds(input, ctx.effectiveOrgId);
-
-			try {
-				const [statuses, issueTypes, fields] = await withJiraCredentials(creds, () =>
-					Promise.all([
-						jiraClient.getProjectStatuses(input.projectKey),
-						jiraClient.getIssueTypesForProject(input.projectKey),
-						jiraClient.getFields(),
-					]),
-				);
-				return {
-					statuses,
-					issueTypes,
-					fields: fields.filter((f) => f.custom),
-				};
-			} catch (err) {
-				throw new TRPCError({
-					code: 'BAD_REQUEST',
-					message: `Failed to fetch JIRA project details: ${err instanceof Error ? err.message : String(err)}`,
-				});
-			}
+			return withResolvedJiraCreds(
+				input,
+				ctx.effectiveOrgId,
+				'Failed to fetch JIRA project details',
+				(creds) =>
+					withJiraCredentials(creds, () =>
+						Promise.all([
+							jiraClient.getProjectStatuses(input.projectKey),
+							jiraClient.getIssueTypesForProject(input.projectKey),
+							jiraClient.getFields(),
+						]).then(([statuses, issueTypes, fields]) => ({
+							statuses,
+							issueTypes,
+							fields: fields.filter((f) => f.custom),
+						})),
+					),
+			);
 		}),
 
 	// ============================================================================
@@ -431,7 +433,7 @@ export const integrationsDiscoveryRouter = router({
 				resolveCredentialValue(input.gmailEmailCredentialId, ctx.effectiveOrgId),
 			]);
 
-			try {
+			return wrapIntegrationCall('Gmail verification failed', async () => {
 				// Exchange refresh token for access token
 				const { exchangeGmailCode: _, refreshGmailAccessToken } = await import(
 					'../../email/gmail/oauth.js'
@@ -456,12 +458,7 @@ export const integrationsDiscoveryRouter = router({
 				await client.logout();
 
 				return { success: true, email };
-			} catch (err) {
-				throw new TRPCError({
-					code: 'BAD_REQUEST',
-					message: `Gmail verification failed: ${err instanceof Error ? err.message : String(err)}`,
-				});
-			}
+			});
 		}),
 
 	/**
@@ -482,16 +479,11 @@ export const integrationsDiscoveryRouter = router({
 				resolveCredentialValue(input.authTokenCredentialId, ctx.effectiveOrgId),
 			]);
 
-			try {
+			return wrapIntegrationCall('Failed to verify Twilio credentials', async () => {
 				const client = twilio(accountSid, authToken);
 				const account = await client.api.accounts(accountSid).fetch();
 				return { friendlyName: account.friendlyName, status: account.status };
-			} catch (err) {
-				throw new TRPCError({
-					code: 'BAD_REQUEST',
-					message: `Failed to verify Twilio credentials: ${err instanceof Error ? err.message : String(err)}`,
-				});
-			}
+			});
 		}),
 
 	/**
@@ -521,7 +513,7 @@ export const integrationsDiscoveryRouter = router({
 				throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid port number' });
 			}
 
-			try {
+			return wrapIntegrationCall('IMAP verification failed', async () => {
 				const client = new ImapFlow({
 					host,
 					port,
@@ -539,11 +531,6 @@ export const integrationsDiscoveryRouter = router({
 				await client.logout();
 
 				return { success: true, email: username };
-			} catch (err) {
-				throw new TRPCError({
-					code: 'BAD_REQUEST',
-					message: `IMAP verification failed: ${err instanceof Error ? err.message : String(err)}`,
-				});
-			}
+			});
 		}),
 });
