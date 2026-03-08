@@ -94,7 +94,13 @@ function DefinitionAgentSection({
 
 	// Group triggers by category and filter by active integrations
 	const triggersByCategory = useMemo(() => {
-		const groups: Record<string, ResolvedTrigger[]> = { pm: [], scm: [], email: [], sms: [] };
+		const groups: Record<string, ResolvedTrigger[]> = {
+			pm: [],
+			scm: [],
+			email: [],
+			sms: [],
+			internal: [],
+		};
 
 		for (const trigger of triggers) {
 			// Extract category from event (e.g., "pm:card-moved" -> "pm")
@@ -118,6 +124,7 @@ function DefinitionAgentSection({
 		triggersByCategory.scm.length > 0 ||
 		triggersByCategory.email.length > 0 ||
 		triggersByCategory.sms.length > 0 ||
+		triggersByCategory.internal.length > 0 ||
 		hasEmailTriggers;
 
 	return (
@@ -170,7 +177,7 @@ function DefinitionAgentSection({
 			{expanded && (
 				<div className="border-t border-border px-4 py-4 space-y-6 bg-muted/20">
 					{/* Render triggers by category */}
-					{(['pm', 'scm', 'email', 'sms'] as const).map((category) => {
+					{(['pm', 'scm', 'email', 'sms', 'internal'] as const).map((category) => {
 						const categoryTriggers = triggersByCategory[category];
 						if (categoryTriggers.length === 0) return null;
 

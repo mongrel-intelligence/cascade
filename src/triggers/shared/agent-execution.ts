@@ -385,7 +385,7 @@ async function propagateAutoLabelAfterSplitting(
 	const backlogManagerEnabled = await checkTriggerEnabled(
 		project.id,
 		'backlog-manager',
-		'splitting:auto-chain',
+		'internal:auto-chain',
 		'splitting-auto-propagate',
 	);
 	if (!backlogManagerEnabled) {

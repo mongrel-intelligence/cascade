@@ -163,6 +163,15 @@ describe('SupportedTriggerSchema', () => {
 		}
 	});
 
+	it('parses a valid trigger with internal: category prefix', () => {
+		const trigger = {
+			event: 'internal:auto-chain',
+			label: 'Auto-Chain',
+		};
+		const result = SupportedTriggerSchema.safeParse(trigger);
+		expect(result.success).toBe(true);
+	});
+
 	it('rejects invalid event format (invalid category)', () => {
 		const trigger = {
 			event: 'invalid:card-moved', // Invalid category

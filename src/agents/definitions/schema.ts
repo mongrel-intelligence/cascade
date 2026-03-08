@@ -12,10 +12,11 @@ export const IntegrationCategorySchema = z.enum(['pm', 'scm', 'email', 'sms']);
 export const KnownProviderSchema = z.enum(['trello', 'jira', 'github', 'imap', 'gmail', 'twilio']);
 
 // Trigger event format validation: {category}:{event-name}
+// Categories: pm, scm, email, sms (integration-bound), internal (orchestration chaining)
 const TriggerEventSchema = z
 	.string()
 	.regex(
-		/^(pm|scm|email|sms):[a-z][a-z0-9-]*$/,
+		/^(pm|scm|email|sms|internal):[a-z][a-z0-9-]*$/,
 		'Event must be in format {category}:{event-name} (e.g., pm:status-changed, scm:check-suite-success)',
 	);
 
