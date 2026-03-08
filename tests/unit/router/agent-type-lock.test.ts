@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
-	countActiveRunsForAgentType: vi.fn().mockResolvedValue(0),
+	countActiveRuns: vi.fn().mockResolvedValue(0),
 }));
 vi.mock('../../../src/db/repositories/settingsRepository.js', () => ({
 	getMaxConcurrency: vi.fn().mockResolvedValue(null),
@@ -13,7 +13,7 @@ vi.mock('../../../src/router/config.js', () => ({
 	routerConfig: { workerTimeoutMs: 30 * 60 * 1000 },
 }));
 
-import { countActiveRunsForAgentType } from '../../../src/db/repositories/runsRepository.js';
+import { countActiveRuns } from '../../../src/db/repositories/runsRepository.js';
 import { getMaxConcurrency } from '../../../src/db/repositories/settingsRepository.js';
 import {
 	checkAgentTypeConcurrency,
@@ -43,11 +43,11 @@ describe('agent-type-lock', () => {
 		it('returns locked: false when no active run and no in-memory mark', async () => {
 			const result = await isAgentTypeLocked('proj1', 'backlog-manager', 1);
 			expect(result).toEqual({ locked: false });
-			expect(countActiveRunsForAgentType).toHaveBeenCalledWith(
-				'proj1',
-				'backlog-manager',
-				2 * 30 * 60 * 1000,
-			);
+			expect(countActiveRuns).toHaveBeenCalledWith({
+				projectId: 'proj1',
+				agentType: 'backlog-manager',
+				maxAgeMs: 2 * 30 * 60 * 1000,
+			});
 		});
 
 		it('returns locked: true after markAgentTypeEnqueued (maxConcurrency=1)', async () => {
@@ -78,7 +78,7 @@ describe('agent-type-lock', () => {
 		});
 
 		it('returns locked: true when DB has active runs at limit', async () => {
-			vi.mocked(countActiveRunsForAgentType).mockResolvedValueOnce(1);
+			vi.mocked(countActiveRuns).mockResolvedValueOnce(1);
 			const result = await isAgentTypeLocked('proj1', 'backlog-manager', 1);
 			expect(result.locked).toBe(true);
 			expect(result.reason).toContain('running');
@@ -86,14 +86,14 @@ describe('agent-type-lock', () => {
 
 		it('uses Math.max of in-memory and DB counts (not sum)', async () => {
 			markAgentTypeEnqueued('proj1', 'implementation');
-			vi.mocked(countActiveRunsForAgentType).mockResolvedValueOnce(1);
+			vi.mocked(countActiveRuns).mockResolvedValueOnce(1);
 			// Math.max(1 DB, 1 in-memory) = 1 < 2 → NOT locked
 			const result = await isAgentTypeLocked('proj1', 'implementation', 2);
 			expect(result.locked).toBe(false);
 		});
 
 		it('locks when DB count alone meets max', async () => {
-			vi.mocked(countActiveRunsForAgentType).mockResolvedValueOnce(2);
+			vi.mocked(countActiveRuns).mockResolvedValueOnce(2);
 			const result = await isAgentTypeLocked('proj1', 'implementation', 2);
 			expect(result.locked).toBe(true);
 		});

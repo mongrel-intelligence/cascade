@@ -8,6 +8,7 @@ import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories
 // ---------------------------------------------------------------------------
 
 const mockGetKnownAgentTypes = vi.fn<() => string[]>();
+const mockIsBuiltinAgentType = vi.fn<(agentType: string) => boolean>();
 const mockInvalidateDefinitionCache = vi.fn();
 const mockLoadAgentDefinition = vi.fn<(agentType: string) => AgentDefinition>();
 const mockResolveAgentDefinition = vi.fn<(agentType: string) => Promise<AgentDefinition>>();
@@ -15,6 +16,7 @@ const mockResolveKnownAgentTypes = vi.fn<() => Promise<string[]>>();
 
 vi.mock('../../../../src/agents/definitions/loader.js', () => ({
 	getKnownAgentTypes: (...args: unknown[]) => mockGetKnownAgentTypes(...(args as [])),
+	isBuiltinAgentType: (...args: unknown[]) => mockIsBuiltinAgentType(...(args as [string])),
 	invalidateDefinitionCache: (...args: unknown[]) => mockInvalidateDefinitionCache(...(args as [])),
 	loadAgentDefinition: (...args: unknown[]) => mockLoadAgentDefinition(...(args as [string])),
 	resolveAgentDefinition: (...args: unknown[]) => mockResolveAgentDefinition(...(args as [string])),
@@ -99,6 +101,9 @@ describe('agentDefinitionsRouter', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockGetKnownAgentTypes.mockReturnValue(['implementation', 'review']);
+		mockIsBuiltinAgentType.mockImplementation((agentType: string) =>
+			['implementation', 'review'].includes(agentType),
+		);
 		mockValidateTemplate.mockReturnValue({ valid: true });
 		mockLoadPartials.mockResolvedValue(new Map());
 	});

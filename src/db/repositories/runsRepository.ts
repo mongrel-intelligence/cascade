@@ -290,34 +290,6 @@ export async function hasActiveRunForWorkItem(
 	return (await countActiveRuns({ projectId, cardId, maxAgeMs })) > 0;
 }
 
-/** @deprecated Use countActiveRuns({ projectId, agentType, maxAgeMs }) instead. */
-export async function countActiveRunsForAgentType(
-	projectId: string,
-	agentType: string,
-	maxAgeMs?: number,
-): Promise<number> {
-	return countActiveRuns({ projectId, agentType, maxAgeMs });
-}
-
-/** @deprecated Use countActiveRuns({ projectId, cardId, maxAgeMs }) instead. */
-export async function countActiveRunsForWorkItem(
-	projectId: string,
-	cardId: string,
-	maxAgeMs?: number,
-): Promise<number> {
-	return countActiveRuns({ projectId, cardId, maxAgeMs });
-}
-
-/** @deprecated Use countActiveRuns({ projectId, cardId, agentType, maxAgeMs }) instead. */
-export async function countActiveRunsForWorkItemAndType(
-	projectId: string,
-	cardId: string,
-	agentType: string,
-	maxAgeMs?: number,
-): Promise<number> {
-	return countActiveRuns({ projectId, cardId, agentType, maxAgeMs });
-}
-
 export async function failOrphanedRun(
 	projectId: string,
 	workItemId: string,

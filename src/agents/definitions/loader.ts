@@ -84,6 +84,15 @@ export function clearDefinitionCache(): void {
 	knownTypes = null;
 }
 
+/**
+ * Returns true if the given agentType has a backing YAML file (i.e. is a built-in type).
+ * Wraps `getKnownAgentTypes().includes()` to avoid repeated deprecated-function calls at each
+ * call site.
+ */
+export function isBuiltinAgentType(agentType: string): boolean {
+	return getKnownAgentTypes().includes(agentType);
+}
+
 // ============================================================================
 // Async Resolver (Cache → DB → YAML fallback)
 // ============================================================================
