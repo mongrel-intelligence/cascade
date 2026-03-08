@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { linkPRToWorkItem } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import {
 	completeRun,
 	createRun,
@@ -10,6 +11,8 @@ import {
 	getRunLogs,
 	getRunsByCardId,
 	getRunsByProjectId,
+	getRunsByWorkItem,
+	getRunsForPR,
 	listLlmCallsMeta,
 	listProjectsForOrg,
 	listRuns,
@@ -528,6 +531,252 @@ describe('runsRepository (integration)', () => {
 			await seedOrg('empty-org', 'Empty Org');
 			const projects = await listProjectsForOrg('empty-org');
 			expect(projects).toEqual([]);
+		});
+	});
+
+	// =========================================================================
+	// listRuns with pr_work_items enrichment
+	// =========================================================================
+
+	describe('listRuns enrichment (workItemUrl, workItemTitle, prTitle)', () => {
+		it('includes null work item fields for runs without a linked PR work item row', async () => {
+			await createRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				backend: 'claude-code',
+			});
+
+			const result = await listRuns({ orgId: 'test-org', limit: 10, offset: 0 });
+			expect(result.data).toHaveLength(1);
+			expect(result.data[0].workItemUrl).toBeNull();
+			expect(result.data[0].workItemTitle).toBeNull();
+			expect(result.data[0].prTitle).toBeNull();
+		});
+
+		it('enriches runs with work item info when a pr_work_items row exists', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 42, 'card-abc', {
+				workItemUrl: 'https://trello.com/c/abc',
+				workItemTitle: 'My Feature Card',
+				prTitle: 'feat: my feature',
+			});
+			await createRun({
+				projectId: 'test-project',
+				prNumber: 42,
+				agentType: 'implementation',
+				backend: 'claude-code',
+			});
+
+			const result = await listRuns({ orgId: 'test-org', limit: 10, offset: 0 });
+			expect(result.data).toHaveLength(1);
+			expect(result.data[0].workItemUrl).toBe('https://trello.com/c/abc');
+			expect(result.data[0].workItemTitle).toBe('My Feature Card');
+			expect(result.data[0].prTitle).toBe('feat: my feature');
+		});
+
+		it('does not lose runs that have no pr_work_items row (LEFT JOIN correctness)', async () => {
+			// Run without a linked PR
+			await createRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				backend: 'claude-code',
+			});
+			// Run with a linked PR
+			await linkPRToWorkItem('test-project', 'owner/repo', 7, 'card-7', {
+				prTitle: 'PR Seven',
+			});
+			await createRun({
+				projectId: 'test-project',
+				prNumber: 7,
+				agentType: 'review',
+				backend: 'claude-code',
+			});
+
+			const result = await listRuns({ orgId: 'test-org', limit: 10, offset: 0 });
+			expect(result.data).toHaveLength(2);
+			const withPR = result.data.find((r) => r.prNumber === 7);
+			const withoutPR = result.data.find((r) => r.prNumber === null);
+			expect(withPR?.prTitle).toBe('PR Seven');
+			expect(withoutPR?.prTitle).toBeNull();
+		});
+	});
+
+	// =========================================================================
+	// getRunById enrichment
+	// =========================================================================
+
+	describe('getRunById enrichment', () => {
+		it('includes null work item fields for a run without a linked pr_work_items row', async () => {
+			const id = await createRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				backend: 'claude-code',
+			});
+			const run = await getRunById(id);
+			expect(run).not.toBeNull();
+			expect(run?.workItemUrl).toBeNull();
+			expect(run?.workItemTitle).toBeNull();
+			expect(run?.prTitle).toBeNull();
+		});
+
+		it('enriches getRunById with work item info when a pr_work_items row exists', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 99, 'card-xyz', {
+				workItemUrl: 'https://trello.com/c/xyz',
+				workItemTitle: 'XYZ Card',
+				prTitle: 'fix: xyz bug',
+			});
+			const id = await createRun({
+				projectId: 'test-project',
+				prNumber: 99,
+				agentType: 'implementation',
+				backend: 'claude-code',
+			});
+			const run = await getRunById(id);
+			expect(run?.workItemUrl).toBe('https://trello.com/c/xyz');
+			expect(run?.workItemTitle).toBe('XYZ Card');
+			expect(run?.prTitle).toBe('fix: xyz bug');
+		});
+	});
+
+	// =========================================================================
+	// getRunsByWorkItem
+	// =========================================================================
+
+	describe('getRunsByWorkItem', () => {
+		it('returns empty array when no runs exist for the work item', async () => {
+			const runs = await getRunsByWorkItem('test-project', 'nonexistent-card');
+			expect(runs).toEqual([]);
+		});
+
+		it('returns only runs matching the work item (cardId)', async () => {
+			await createRun({
+				projectId: 'test-project',
+				cardId: 'card-target',
+				agentType: 'implementation',
+				backend: 'claude-code',
+			});
+			await createRun({
+				projectId: 'test-project',
+				cardId: 'card-target',
+				agentType: 'review',
+				backend: 'claude-code',
+			});
+			await createRun({
+				projectId: 'test-project',
+				cardId: 'card-other',
+				agentType: 'implementation',
+				backend: 'claude-code',
+			});
+
+			const runs = await getRunsByWorkItem('test-project', 'card-target');
+			expect(runs).toHaveLength(2);
+			expect(runs.every((r) => r.cardId === 'card-target')).toBe(true);
+		});
+
+		it('enriches results with pr_work_items info when available', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 5, 'card-linked', {
+				workItemUrl: 'https://trello.com/c/linked',
+				workItemTitle: 'Linked Card',
+				prTitle: 'feat: linked',
+			});
+			await createRun({
+				projectId: 'test-project',
+				cardId: 'card-linked',
+				prNumber: 5,
+				agentType: 'implementation',
+				backend: 'claude-code',
+			});
+
+			const runs = await getRunsByWorkItem('test-project', 'card-linked');
+			expect(runs).toHaveLength(1);
+			expect(runs[0].workItemUrl).toBe('https://trello.com/c/linked');
+			expect(runs[0].workItemTitle).toBe('Linked Card');
+			expect(runs[0].prTitle).toBe('feat: linked');
+		});
+
+		it('returns null for work item fields when no pr_work_items row matches', async () => {
+			await createRun({
+				projectId: 'test-project',
+				cardId: 'card-no-pr-link',
+				agentType: 'implementation',
+				backend: 'claude-code',
+			});
+
+			const runs = await getRunsByWorkItem('test-project', 'card-no-pr-link');
+			expect(runs).toHaveLength(1);
+			expect(runs[0].workItemUrl).toBeNull();
+			expect(runs[0].workItemTitle).toBeNull();
+			expect(runs[0].prTitle).toBeNull();
+		});
+	});
+
+	// =========================================================================
+	// getRunsForPR
+	// =========================================================================
+
+	describe('getRunsForPR', () => {
+		it('returns empty array when no runs exist for the PR', async () => {
+			const runs = await getRunsForPR('test-project', 999);
+			expect(runs).toEqual([]);
+		});
+
+		it('returns only runs matching the PR number', async () => {
+			await createRun({
+				projectId: 'test-project',
+				prNumber: 10,
+				agentType: 'implementation',
+				backend: 'claude-code',
+			});
+			await createRun({
+				projectId: 'test-project',
+				prNumber: 10,
+				agentType: 'review',
+				backend: 'claude-code',
+			});
+			await createRun({
+				projectId: 'test-project',
+				prNumber: 20,
+				agentType: 'implementation',
+				backend: 'claude-code',
+			});
+
+			const runs = await getRunsForPR('test-project', 10);
+			expect(runs).toHaveLength(2);
+			expect(runs.every((r) => r.prNumber === 10)).toBe(true);
+		});
+
+		it('enriches results with pr_work_items info', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 30, 'card-pr30', {
+				workItemUrl: 'https://trello.com/c/pr30',
+				workItemTitle: 'PR 30 Card',
+				prTitle: 'feat: pr30',
+			});
+			await createRun({
+				projectId: 'test-project',
+				prNumber: 30,
+				agentType: 'implementation',
+				backend: 'claude-code',
+			});
+
+			const runs = await getRunsForPR('test-project', 30);
+			expect(runs).toHaveLength(1);
+			expect(runs[0].workItemUrl).toBe('https://trello.com/c/pr30');
+			expect(runs[0].workItemTitle).toBe('PR 30 Card');
+			expect(runs[0].prTitle).toBe('feat: pr30');
+		});
+
+		it('returns null for work item fields when no pr_work_items row exists', async () => {
+			await createRun({
+				projectId: 'test-project',
+				prNumber: 40,
+				agentType: 'review',
+				backend: 'claude-code',
+			});
+
+			const runs = await getRunsForPR('test-project', 40);
+			expect(runs).toHaveLength(1);
+			expect(runs[0].workItemUrl).toBeNull();
+			expect(runs[0].workItemTitle).toBeNull();
+			expect(runs[0].prTitle).toBeNull();
 		});
 	});
 });
