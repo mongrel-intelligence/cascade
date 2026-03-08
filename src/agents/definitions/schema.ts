@@ -76,6 +76,7 @@ export const CONTEXT_STEP_NAMES = [
 	'contextFiles',
 	'squint',
 	'workItem',
+	'prepopulateTodos',
 	'prContext',
 	'prConversation',
 	'prefetchedEmails',

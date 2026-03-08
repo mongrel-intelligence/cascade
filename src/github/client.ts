@@ -78,6 +78,19 @@ export interface CheckSuiteStatus {
 	allPassing: boolean;
 }
 
+export interface FailedJob {
+	runName: string;
+	runId: number;
+	jobName: string;
+	conclusion: string | null;
+	steps: Array<{ name: string; conclusion: string | null }>;
+}
+
+export interface FailedWorkflowRuns {
+	runs: Array<{ id: number; name: string }>;
+	failedJobs: FailedJob[];
+}
+
 export interface PRDiffFile {
 	filename: string;
 	status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
@@ -436,6 +449,66 @@ export const githubClient = {
 			comment_id: commentId,
 			content,
 		});
+	},
+
+	async getFailedWorkflowRunJobs(
+		owner: string,
+		repo: string,
+		ref: string,
+	): Promise<FailedWorkflowRuns> {
+		logger.debug('Fetching failed workflow run jobs', { owner, repo, ref });
+		const client = getClient();
+
+		const { data: runsData } = await client.actions.listWorkflowRunsForRepo({
+			owner,
+			repo,
+			head_sha: ref,
+			per_page: 100,
+		});
+
+		const failedRuns = runsData.workflow_runs.filter(
+			(run) => run.conclusion === 'failure' || run.conclusion === 'timed_out',
+		);
+
+		if (failedRuns.length === 0) {
+			return { runs: [], failedJobs: [] };
+		}
+
+		const jobResults = await Promise.all(
+			failedRuns.map((run) =>
+				client.actions
+					.listJobsForWorkflowRun({
+						owner,
+						repo,
+						run_id: run.id,
+						per_page: 100,
+					})
+					.then((res) => ({ run, jobs: res.data.jobs })),
+			),
+		);
+
+		const failedJobs: FailedJob[] = [];
+		for (const { run, jobs } of jobResults) {
+			for (const job of jobs) {
+				if (job.conclusion === 'failure' || job.conclusion === 'timed_out') {
+					failedJobs.push({
+						runName: run.name ?? `Run #${run.id}`,
+						runId: run.id,
+						jobName: job.name,
+						conclusion: job.conclusion,
+						steps: (job.steps ?? []).map((s) => ({
+							name: s.name,
+							conclusion: s.conclusion,
+						})),
+					});
+				}
+			}
+		}
+
+		return {
+			runs: failedRuns.map((r) => ({ id: r.id, name: r.name ?? `Run #${r.id}` })),
+			failedJobs,
+		};
 	},
 
 	async branchExists(owner: string, repo: string, branch: string): Promise<boolean> {

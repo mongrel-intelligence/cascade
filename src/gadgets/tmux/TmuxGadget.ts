@@ -24,7 +24,7 @@ export class TmuxGadget extends Gadget({
 	name: 'Tmux',
 	description: `Execute commands in tmux sessions.
 
-**Use this for ALL commands** (npm, tests, builds, git, gh, etc.)
+**Use this for ALL commands** (npm, tests, builds, git, etc.)
 
 **COMMAND FORMAT:** Pass command as a shell string.
 - command="npm test"
@@ -33,9 +33,9 @@ export class TmuxGadget extends Gadget({
 
 Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all work.
 
-**QUOTING:** When using gh, git, or commands with special characters:
+**QUOTING:** When using git or commands with special characters:
 - Use single quotes around values with parentheses: --title 'feat(scope): message'
-- Example: command="gh pr create --title 'feat(auth): add login' --body 'Description'"
+- Example: command="git commit -m 'feat(auth): add login'"
 
 **WORKING DIRECTORY:** Set \`cwd\` parameter to run commands in subdirectories.
 - Tmux(action="start", session="test", command="npm test", cwd="packages/core")
@@ -226,20 +226,6 @@ Commands are interpreted by bash, so pipes, &&, ||, redirects, and globs all wor
 			params: { action: 'list', comment: 'Checking for running sessions' },
 			output: 'sessions=2\n\ntest-run: npm (running)\nnpm-install: npm (running)',
 			comment: 'List all active tmux sessions',
-		},
-		{
-			params: {
-				action: 'start',
-				comment: 'Creating PR for OAuth feature',
-				session: 'create-pr',
-				command:
-					"gh pr create --title 'feat(auth): add OAuth login' --body 'Implements OAuth flow'",
-				wait: 30000,
-			},
-			output:
-				'session=create-pr status=exited exit_code=0\n\nCreating pull request for feature/oauth...\nhttps://github.com/org/repo/pull/123',
-			comment:
-				'Create PR - note single quotes around title with parentheses to prevent shell errors',
 		},
 	],
 }) {

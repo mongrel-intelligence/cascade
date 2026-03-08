@@ -1,6 +1,6 @@
-## Git and GitHub CLI
+## Git
 
-Use standard git commands and GitHub CLI (`gh`) via Tmux for all version control.
+Use standard git commands via Tmux for all version control.
 
 **CRITICAL: Pass commands as argv arrays to Tmux, NOT shell strings!**
 
@@ -14,10 +14,6 @@ Use the CreatePR gadget to finalize your work. It handles the full workflow auto
 3. Create the pull request
 
 Set `commit=false` or `push=false` if you've already done those steps manually.
-
-**GitHub CLI (`gh`) for other operations:**
-- View PR: `command=["gh", "pr", "view"]`
-- List PRs: `command=["gh", "pr", "list"]`
 
 ### Staging Safety
 

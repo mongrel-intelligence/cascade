@@ -2,6 +2,7 @@ import { execSync } from 'node:child_process';
 import type { TrailingMessage } from 'llmist';
 import { resolveAgentDefinition } from '../agents/definitions/index.js';
 import type { TrailingHookFlags } from '../agents/definitions/schema.js';
+import { getSessionState } from '../gadgets/sessionState.js';
 import {
 	formatDiagnosticStatus,
 	getDiagnosticLoopFiles,
@@ -28,10 +29,14 @@ function getGitStatus(): string | null {
 }
 
 /**
- * Get PR view output if a PR exists for current branch.
+ * Get PR status from session state (set when CreatePR gadget succeeds).
  */
-function getPRView(): string | null {
-	return runCommand('gh pr view 2>/dev/null');
+function getPRStatus(): string | null {
+	const state = getSessionState();
+	if (state.prUrl) {
+		return `PR created: ${state.prUrl}`;
+	}
+	return null;
 }
 
 /**
@@ -99,11 +104,9 @@ function buildFullTrailingMessage(
 	}
 
 	if (flags.prStatus) {
-		const prView = getPRView();
+		const prStatus = getPRStatus();
 		sections.push(
-			prView
-				? `## PR Status\n\n\`\`\`\n${prView}\n\`\`\``
-				: '## PR Status\n\nNo PR exists for current branch.',
+			prStatus ? `## PR Status\n\n${prStatus}` : '## PR Status\n\nNo PR exists for current branch.',
 		);
 	}
 

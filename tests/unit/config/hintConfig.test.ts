@@ -17,6 +17,10 @@ vi.mock('../../../src/gadgets/todo/storage.js', () => ({
 	formatTodoList: vi.fn(() => ''),
 }));
 
+vi.mock('../../../src/gadgets/sessionState.js', () => ({
+	getSessionState: vi.fn(() => ({ prUrl: null })),
+}));
+
 // Mock resolveAgentDefinition — hintConfig now uses async resolver
 vi.mock('../../../src/agents/definitions/index.js', () => ({
 	resolveAgentDefinition: vi.fn(),
@@ -24,12 +28,14 @@ vi.mock('../../../src/agents/definitions/index.js', () => ({
 
 import { execSync } from 'node:child_process';
 import { resolveAgentDefinition } from '../../../src/agents/definitions/index.js';
+import { getSessionState } from '../../../src/gadgets/sessionState.js';
 import { formatTodoList, loadTodos } from '../../../src/gadgets/todo/storage.js';
 
 const mockExecSync = vi.mocked(execSync);
 const mockLoadTodos = vi.mocked(loadTodos);
 const mockFormatTodoList = vi.mocked(formatTodoList);
 const mockResolveAgentDefinition = vi.mocked(resolveAgentDefinition);
+const mockGetSessionState = vi.mocked(getSessionState);
 
 const ctx = { iteration: 3, maxIterations: 20 };
 
@@ -254,20 +260,19 @@ describe('getIterationTrailingMessage', () => {
 			expect(message).toContain('No uncommitted changes');
 		});
 
-		it('shows PR status with content when gh pr view returns output', async () => {
-			mockExecSync.mockImplementation((cmd: string) => {
-				if ((cmd as string).includes('gh pr view')) return 'title: My PR\nurl: http://...';
-				return '';
-			});
+		it('shows PR status with URL when PR has been created', async () => {
+			mockGetSessionState.mockReturnValue({
+				prUrl: 'https://github.com/acme/myapp/pull/42',
+			} as never);
 
 			const message = await getMessage('implementation');
 
 			expect(message).toContain('## PR Status');
-			expect(message).toContain('My PR');
+			expect(message).toContain('PR created: https://github.com/acme/myapp/pull/42');
 		});
 
-		it('shows "No PR exists" when gh pr view returns empty', async () => {
-			mockExecSync.mockReturnValue('');
+		it('shows "No PR exists" when no PR in session state', async () => {
+			mockGetSessionState.mockReturnValue({ prUrl: null } as never);
 
 			const message = await getMessage('implementation');
 

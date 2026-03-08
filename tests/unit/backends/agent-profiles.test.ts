@@ -68,6 +68,7 @@ vi.mock('../../../src/gadgets/Finish.js', () => ({
 vi.mock('../../../src/gadgets/github/index.js', () => ({
 	CreatePR: mockClass('CreatePR'),
 	CreatePRReview: mockClass('CreatePRReview'),
+	GetCIRunLogs: mockClass('GetCIRunLogs'),
 	GetPRChecks: mockClass('GetPRChecks'),
 	GetPRComments: mockClass('GetPRComments'),
 	GetPRDetails: mockClass('GetPRDetails'),

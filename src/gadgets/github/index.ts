@@ -1,5 +1,6 @@
 export { CreatePR } from './CreatePR.js';
 export { CreatePRReview } from './CreatePRReview.js';
+export { GetCIRunLogs } from './GetCIRunLogs.js';
 export { formatCheckStatus, GetPRChecks } from './GetPRChecks.js';
 export { GetPRComments } from './GetPRComments.js';
 export { GetPRDetails } from './GetPRDetails.js';

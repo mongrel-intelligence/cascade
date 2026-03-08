@@ -35,7 +35,7 @@ triggers:
         label: Target Status
         options: [todo]
         defaultValue: todo
-    contextPipeline: [directoryListing, contextFiles, squint, workItem]
+    contextPipeline: [directoryListing, contextFiles, squint, workItem, prepopulateTodos]
   - event: pm:label-added
     label: Ready to Process Label
     description: Trigger when Ready to Process label added to a card in the Todo list
@@ -46,7 +46,7 @@ triggers:
         label: Target List
         options: [todo]
         defaultValue: todo
-    contextPipeline: [directoryListing, contextFiles, squint, workItem]
+    contextPipeline: [directoryListing, contextFiles, squint, workItem, prepopulateTodos]
 
 strategies: {}
 
