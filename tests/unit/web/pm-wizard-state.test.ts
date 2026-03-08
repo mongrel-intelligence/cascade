@@ -279,6 +279,52 @@ describe('wizardReducer', () => {
 		expect(next.jiraBaseUrl).toBe('https://example.atlassian.net');
 	});
 
+	it('ADD_TRELLO_BOARD_LABEL appends a label to trelloBoardDetails.labels', () => {
+		const state = {
+			...initialState(),
+			trelloBoardDetails: {
+				lists: [],
+				labels: [{ id: 'lbl-existing', name: 'Existing', color: 'red' }],
+				customFields: [],
+			},
+		};
+		const newLabel = { id: 'lbl-new', name: 'cascade-processing', color: 'blue' };
+		const next = dispatch(state, { type: 'ADD_TRELLO_BOARD_LABEL', label: newLabel });
+		expect(next.trelloBoardDetails?.labels).toHaveLength(2);
+		expect(next.trelloBoardDetails?.labels[1]).toEqual(newLabel);
+	});
+
+	it('ADD_TRELLO_BOARD_LABEL is a no-op when trelloBoardDetails is null', () => {
+		const state = initialState();
+		const next = dispatch(state, {
+			type: 'ADD_TRELLO_BOARD_LABEL',
+			label: { id: 'lbl-1', name: 'test', color: 'blue' },
+		});
+		expect(next.trelloBoardDetails).toBeNull();
+		expect(next).toBe(state);
+	});
+
+	it('ADD_TRELLO_BOARD_LABEL preserves existing labels', () => {
+		const existingLabels = [
+			{ id: 'lbl-1', name: 'ready', color: 'sky' },
+			{ id: 'lbl-2', name: 'processing', color: 'blue' },
+		];
+		const state = {
+			...initialState(),
+			trelloBoardDetails: {
+				lists: [],
+				labels: existingLabels,
+				customFields: [],
+			},
+		};
+		const newLabel = { id: 'lbl-3', name: 'cascade-error', color: 'red' };
+		const next = dispatch(state, { type: 'ADD_TRELLO_BOARD_LABEL', label: newLabel });
+		expect(next.trelloBoardDetails?.labels).toHaveLength(3);
+		expect(next.trelloBoardDetails?.labels[0]).toEqual(existingLabels[0]);
+		expect(next.trelloBoardDetails?.labels[1]).toEqual(existingLabels[1]);
+		expect(next.trelloBoardDetails?.labels[2]).toEqual(newLabel);
+	});
+
 	it('unknown action returns state unchanged', () => {
 		const state = initialState();
 		// @ts-expect-error testing unknown action

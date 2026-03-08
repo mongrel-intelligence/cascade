@@ -471,6 +471,27 @@ export const trelloClient = {
 		}));
 	},
 
+	async createBoardLabel(
+		boardId: string,
+		name: string,
+		color = 'blue',
+	): Promise<{ id: string; name: string; color: string }> {
+		logger.debug('Creating board label', { boardId, name, color });
+		const label = await trelloFetch<{ id?: string; name?: string; color?: string }>(
+			`/boards/${boardId}/labels`,
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: { name, color },
+			},
+		);
+		return {
+			id: label.id || '',
+			name: label.name || '',
+			color: label.color || '',
+		};
+	},
+
 	async getBoardCustomFields(
 		boardId: string,
 	): Promise<Array<{ id: string; name: string; type: string }>> {

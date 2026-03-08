@@ -8,6 +8,7 @@ import {
 	useJiraDiscovery,
 	useSaveMutation,
 	useTrelloDiscovery,
+	useTrelloLabelCreation,
 	useVerification,
 	useWebhookManagement,
 } from './pm-wizard-hooks.js';
@@ -27,6 +28,7 @@ import {
 	wizardReducer,
 } from './pm-wizard-state.js';
 import {
+	TRELLO_LABEL_DEFAULTS,
 	TrelloBoardStep,
 	TrelloCredentialsStep,
 	TrelloFieldMappingStep,
@@ -68,6 +70,7 @@ export function PMWizard({
 
 	const [state, dispatch] = useReducer(wizardReducer, undefined, createInitialState);
 	const [openSteps, setOpenSteps] = useState<Set<number>>(new Set([1]));
+	const [creatingSlot, setCreatingSlot] = useState<string | null>(null);
 
 	// ---- Step navigation helpers ----
 
@@ -113,8 +116,44 @@ export function PMWizard({
 		dispatch,
 		advanceToStep,
 	);
+	const { createLabelMutation, createMissingLabelsMutation } = useTrelloLabelCreation(
+		state,
+		dispatch,
+	);
 	const webhookManagement = useWebhookManagement(projectId, state);
 	const { saveMutation } = useSaveMutation(projectId, state);
+
+	// ---- Label creation handlers ----
+
+	const handleCreateLabel = (slot: string) => {
+		const defaults = TRELLO_LABEL_DEFAULTS[slot];
+		if (!defaults) return;
+		setCreatingSlot(slot);
+		createLabelMutation.mutate(
+			{ name: defaults.name, color: defaults.color, slot },
+			{
+				onSettled: () => setCreatingSlot(null),
+			},
+		);
+	};
+
+	const handleCreateAllMissingLabels = () => {
+		const existingLabelNames = new Set(
+			(state.trelloBoardDetails?.labels ?? []).map((l) => l.name.toLowerCase()),
+		);
+		const labelsToCreate = Object.entries(TRELLO_LABEL_DEFAULTS)
+			.filter(([slot, { name }]) => {
+				if (state.trelloLabelMappings[slot]) return false;
+				return !existingLabelNames.has(name.toLowerCase());
+			})
+			.map(([slot, { name, color }]) => ({ slot, name, color }));
+		if (labelsToCreate.length > 0) {
+			setCreatingSlot('__batch__');
+			createMissingLabelsMutation.mutate(labelsToCreate, {
+				onSettled: () => setCreatingSlot(null),
+			});
+		}
+	};
 
 	// ---- Step status ----
 
@@ -261,7 +300,13 @@ export function PMWizard({
 				onToggle={() => toggleStep(4)}
 			>
 				{state.provider === 'trello' ? (
-					<TrelloFieldMappingStep state={state} dispatch={dispatch} />
+					<TrelloFieldMappingStep
+						state={state}
+						dispatch={dispatch}
+						onCreateLabel={handleCreateLabel}
+						onCreateAllMissingLabels={handleCreateAllMissingLabels}
+						creatingSlot={creatingSlot}
+					/>
 				) : (
 					<JiraFieldMappingStep state={state} dispatch={dispatch} />
 				)}

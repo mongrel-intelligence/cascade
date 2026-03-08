@@ -138,6 +138,89 @@ export const integrationsDiscoveryRouter = router({
 			}
 		}),
 
+	createTrelloLabel: protectedProcedure
+		.input(
+			trelloCredsInput.extend({
+				boardId: z
+					.string()
+					.regex(/^[a-zA-Z0-9]+$/)
+					.max(32),
+				name: z.string().min(1).max(100),
+				color: z.string().optional(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.createTrelloLabel called', {
+				orgId: ctx.effectiveOrgId,
+				boardId: input.boardId,
+				name: input.name,
+			});
+			const creds = await resolveTrelloCreds(input, ctx.effectiveOrgId);
+
+			try {
+				return await withTrelloCredentials(creds, () =>
+					trelloClient.createBoardLabel(input.boardId, input.name, input.color),
+				);
+			} catch (err) {
+				throw new TRPCError({
+					code: 'BAD_REQUEST',
+					message: `Failed to create Trello label: ${err instanceof Error ? err.message : String(err)}`,
+				});
+			}
+		}),
+
+	createTrelloLabels: protectedProcedure
+		.input(
+			trelloCredsInput.extend({
+				boardId: z
+					.string()
+					.regex(/^[a-zA-Z0-9]+$/)
+					.max(32),
+				labels: z
+					.array(
+						z.object({
+							name: z.string().min(1).max(100),
+							color: z.string().optional(),
+						}),
+					)
+					.min(1)
+					.max(10),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.createTrelloLabels called', {
+				orgId: ctx.effectiveOrgId,
+				boardId: input.boardId,
+				count: input.labels.length,
+			});
+			const creds = await resolveTrelloCreds(input, ctx.effectiveOrgId);
+
+			const results = await Promise.allSettled(
+				input.labels.map((label) =>
+					withTrelloCredentials(creds, () =>
+						trelloClient.createBoardLabel(input.boardId, label.name, label.color),
+					),
+				),
+			);
+
+			const successes: Array<{ id: string; name: string; color: string }> = [];
+			const errors: Array<{ name: string; error: string }> = [];
+
+			for (let i = 0; i < results.length; i++) {
+				const result = results[i];
+				if (result.status === 'fulfilled') {
+					successes.push(result.value);
+				} else {
+					errors.push({
+						name: input.labels[i].name,
+						error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+					});
+				}
+			}
+
+			return { successes, errors };
+		}),
+
 	jiraProjects: protectedProcedure.input(jiraCredsInput).mutation(async ({ ctx, input }) => {
 		logger.debug('integrationsDiscovery.jiraProjects called', { orgId: ctx.effectiveOrgId });
 		const creds = await resolveJiraCreds(input, ctx.effectiveOrgId);

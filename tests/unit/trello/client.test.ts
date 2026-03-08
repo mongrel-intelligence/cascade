@@ -645,4 +645,64 @@ describe('trelloClient', () => {
 			).rejects.toThrow('Trello API error 401');
 		});
 	});
+
+	describe('createBoardLabel', () => {
+		it('POSTs to the correct endpoint with name and color', async () => {
+			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response(JSON.stringify({ id: 'lbl-new', name: 'cascade-processing', color: 'blue' }), {
+					status: 200,
+				}),
+			);
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.createBoardLabel('board-abc', 'cascade-processing', 'blue'),
+			);
+
+			expect(result).toEqual({ id: 'lbl-new', name: 'cascade-processing', color: 'blue' });
+			const [url, options] = fetchSpy.mock.calls[0];
+			expect(url).toContain('/1/boards/board-abc/labels');
+			expect(url).toContain('key=test-key');
+			expect(url).toContain('token=test-token');
+			expect(options?.method).toBe('POST');
+			expect(options?.headers).toEqual({ 'Content-Type': 'application/json' });
+			expect(options?.body).toBe(JSON.stringify({ name: 'cascade-processing', color: 'blue' }));
+		});
+
+		it('defaults color to blue when not provided', async () => {
+			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response(JSON.stringify({ id: 'lbl-1', name: 'my-label', color: 'blue' }), {
+					status: 200,
+				}),
+			);
+
+			await withTrelloCredentials(creds, () =>
+				trelloClient.createBoardLabel('board-xyz', 'my-label'),
+			);
+
+			const [, options] = fetchSpy.mock.calls[0];
+			expect(options?.body).toBe(JSON.stringify({ name: 'my-label', color: 'blue' }));
+		});
+
+		it('normalizes missing response fields to empty strings', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response(JSON.stringify({}), { status: 200 }),
+			);
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.createBoardLabel('board-abc', 'my-label'),
+			);
+
+			expect(result).toEqual({ id: '', name: '', color: '' });
+		});
+
+		it('throws on non-OK response', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Forbidden', { status: 403 }));
+
+			await expect(
+				withTrelloCredentials(creds, () =>
+					trelloClient.createBoardLabel('board-abc', 'cascade-error', 'red'),
+				),
+			).rejects.toThrow('Trello API error 403');
+		});
+	});
 });

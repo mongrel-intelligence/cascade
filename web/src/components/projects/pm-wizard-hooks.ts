@@ -323,6 +323,83 @@ export function useWebhookManagement(projectId: string, state: WizardState) {
 }
 
 // ============================================================================
+// Trello Label Creation
+// ============================================================================
+
+export function useTrelloLabelCreation(state: WizardState, dispatch: React.Dispatch<WizardAction>) {
+	const createLabelMutation = useMutation({
+		mutationFn: (vars: { name: string; color?: string; slot: string }) => {
+			if (
+				!state.trelloApiKeyCredentialId ||
+				!state.trelloTokenCredentialId ||
+				!state.trelloBoardId
+			) {
+				throw new Error('Missing credentials or board selection');
+			}
+			return trpcClient.integrationsDiscovery.createTrelloLabel.mutate({
+				apiKeyCredentialId: state.trelloApiKeyCredentialId,
+				tokenCredentialId: state.trelloTokenCredentialId,
+				boardId: state.trelloBoardId,
+				name: vars.name,
+				color: vars.color,
+			});
+		},
+		onSuccess: (label, vars) => {
+			dispatch({ type: 'ADD_TRELLO_BOARD_LABEL', label });
+			dispatch({ type: 'SET_TRELLO_LABEL_MAPPING', key: vars.slot, value: label.id });
+		},
+		onError: (error) => {
+			console.error('Failed to create label:', error);
+			alert(`Failed to create label: ${error instanceof Error ? error.message : String(error)}`);
+		},
+	});
+
+	const createMissingLabelsMutation = useMutation({
+		mutationFn: (labelsToCreate: Array<{ slot: string; name: string; color?: string }>) => {
+			if (
+				!state.trelloApiKeyCredentialId ||
+				!state.trelloTokenCredentialId ||
+				!state.trelloBoardId
+			) {
+				throw new Error('Missing credentials or board selection');
+			}
+			return trpcClient.integrationsDiscovery.createTrelloLabels.mutate({
+				apiKeyCredentialId: state.trelloApiKeyCredentialId,
+				tokenCredentialId: state.trelloTokenCredentialId,
+				boardId: state.trelloBoardId,
+				labels: labelsToCreate.map(({ name, color }) => ({ name, color })),
+			});
+		},
+		onSuccess: (result, labelsToCreate) => {
+			// Handle successful label creations
+			for (let i = 0; i < result.successes.length; i++) {
+				const label = result.successes[i];
+				// Find the slot for this label by matching the name
+				const slot = labelsToCreate.find((l) => l.name === label.name)?.slot;
+				if (slot) {
+					dispatch({ type: 'ADD_TRELLO_BOARD_LABEL', label });
+					dispatch({ type: 'SET_TRELLO_LABEL_MAPPING', key: slot, value: label.id });
+				}
+			}
+
+			// Show error feedback if any labels failed
+			if (result.errors.length > 0) {
+				const errorMsg = result.errors.map((e) => `${e.name}: ${e.error}`).join('\n');
+				alert(
+					`Some labels failed to create:\n${errorMsg}\n\n${result.successes.length} label(s) created successfully.`,
+				);
+			}
+		},
+		onError: (error) => {
+			console.error('Failed to create labels:', error);
+			alert(`Failed to create labels: ${error instanceof Error ? error.message : String(error)}`);
+		},
+	});
+
+	return { createLabelMutation, createMissingLabelsMutation };
+}
+
+// ============================================================================
 // Save Mutation
 // ============================================================================
 
