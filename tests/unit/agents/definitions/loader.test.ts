@@ -247,19 +247,28 @@ describe('YAML agent definitions loader', () => {
 			}
 		});
 
-		it('backlog-manager has pm:status-changed and scm:pr-merged triggers', () => {
+		it('backlog-manager has pm:status-changed, scm:pr-merged, and internal:auto-chain triggers', () => {
 			const def = loadAgentDefinition('backlog-manager');
 			const statusChangedTrigger = def.triggers.find((t) => t.event === 'pm:status-changed');
 			const prMergedTrigger = def.triggers.find((t) => t.event === 'scm:pr-merged');
+			const autoChainTrigger = def.triggers.find((t) => t.event === 'internal:auto-chain');
 			expect(statusChangedTrigger).toBeDefined();
 			expect(prMergedTrigger).toBeDefined();
+			expect(autoChainTrigger).toBeDefined();
 		});
 
-		it('backlog-manager triggers are defaultEnabled: false (opt-in)', () => {
+		it('backlog-manager integration triggers are defaultEnabled: false (opt-in)', () => {
 			const def = loadAgentDefinition('backlog-manager');
-			for (const trigger of def.triggers) {
+			const integrationTriggers = def.triggers.filter((t) => !t.event.startsWith('internal:'));
+			for (const trigger of integrationTriggers) {
 				expect(trigger.defaultEnabled).toBe(false);
 			}
+		});
+
+		it('backlog-manager internal:auto-chain trigger is defaultEnabled: true', () => {
+			const def = loadAgentDefinition('backlog-manager');
+			const autoChainTrigger = def.triggers.find((t) => t.event === 'internal:auto-chain');
+			expect(autoChainTrigger?.defaultEnabled).toBe(true);
 		});
 
 		it('backlog-manager requires only pm integration', () => {
