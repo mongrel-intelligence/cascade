@@ -6,6 +6,7 @@ import {
 import {
 	clearDefinitionCache,
 	getKnownAgentTypes,
+	isBuiltinAgentType,
 	loadAgentDefinition,
 	loadAllAgentDefinitions,
 } from '../../../../src/agents/definitions/loader.js';
@@ -35,6 +36,19 @@ describe('YAML agent definitions loader', () => {
 		it('discovers all 11 agent types from YAML files', () => {
 			const types = getKnownAgentTypes();
 			expect(types).toEqual(ALL_AGENT_TYPES);
+		});
+	});
+
+	describe('isBuiltinAgentType', () => {
+		it('returns true for known YAML-backed agent types', () => {
+			for (const agentType of ALL_AGENT_TYPES) {
+				expect(isBuiltinAgentType(agentType)).toBe(true);
+			}
+		});
+
+		it('returns false for unknown agent types', () => {
+			expect(isBuiltinAgentType('nonexistent-agent')).toBe(false);
+			expect(isBuiltinAgentType('custom-agent')).toBe(false);
 		});
 	});
 

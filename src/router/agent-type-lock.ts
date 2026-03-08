@@ -9,7 +9,7 @@
  *    completion (TTL-only). Handles sequential batch webhooks in server mode.
  */
 
-import { countActiveRunsForAgentType } from '../db/repositories/runsRepository.js';
+import { countActiveRuns } from '../db/repositories/runsRepository.js';
 import { getMaxConcurrency } from '../db/repositories/settingsRepository.js';
 import { logger } from '../utils/logging.js';
 import { clearActionRecords } from './action-dedup.js';
@@ -62,7 +62,7 @@ export async function isAgentTypeLocked(
 
 	// DB check — ignore runs older than 2× worker timeout (stale/orphaned)
 	const maxAgeMs = 2 * routerConfig.workerTimeoutMs;
-	const activeCount = await countActiveRunsForAgentType(projectId, agentType, maxAgeMs);
+	const activeCount = await countActiveRuns({ projectId, agentType, maxAgeMs });
 	const inMemoryCount =
 		entry && Date.now() - entry.timestamp <= CONCURRENCY_TTL_MS ? entry.count : 0;
 	const effectiveCount = Math.max(activeCount, inMemoryCount);

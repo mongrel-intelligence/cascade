@@ -9,10 +9,7 @@
  * 2. DB query — authoritative, survives restarts, detects orphaned workers
  */
 
-import {
-	countActiveRunsForWorkItem,
-	countActiveRunsForWorkItemAndType,
-} from '../db/repositories/runsRepository.js';
+import { countActiveRuns } from '../db/repositories/runsRepository.js';
 import { logger } from '../utils/logging.js';
 import { routerConfig } from './config.js';
 
@@ -104,8 +101,8 @@ export async function isWorkItemLocked(
 	// DB check — ignore runs older than 2× worker timeout (stale/orphaned)
 	const maxAgeMs = 2 * routerConfig.workerTimeoutMs;
 	const [dbTotal, dbSameType] = await Promise.all([
-		countActiveRunsForWorkItem(projectId, workItemId, maxAgeMs),
-		countActiveRunsForWorkItemAndType(projectId, workItemId, agentType, maxAgeMs),
+		countActiveRuns({ projectId, cardId: workItemId, maxAgeMs }),
+		countActiveRuns({ projectId, cardId: workItemId, agentType, maxAgeMs }),
 	]);
 
 	// Same-type check first (more specific)
