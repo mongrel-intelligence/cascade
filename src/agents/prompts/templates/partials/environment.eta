@@ -1,5 +1,11 @@
 ## Available Environment
 
+### Available Runtimes
+
+The execution environment includes: Node.js, Ruby, git, and standard Unix tools.
+Other runtimes (python, java, go, etc.) are NOT available unless the project installs them.
+Use the project's own test/lint commands for verification.
+
 ### Service Recovery
 
 Services (databases, caches) may stop running during long sessions. If tests fail with connection errors:

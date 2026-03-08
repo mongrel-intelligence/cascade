@@ -153,6 +153,7 @@ describe('YAML agent definitions loader', () => {
 				'contextFiles',
 				'squint',
 				'workItem',
+				'prepopulateTodos',
 			]);
 		});
 

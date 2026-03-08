@@ -24,6 +24,7 @@ import {
 import {
 	CreatePR,
 	CreatePRReview,
+	GetCIRunLogs,
 	GetPRChecks,
 	GetPRComments,
 	GetPRDetails,
@@ -114,6 +115,9 @@ const GADGET_CONSTRUCTORS: Record<string, new () => any> = {
 	GetPRDetails,
 	GetPRDiff,
 	GetPRChecks,
+
+	// scm:ci-logs
+	GetCIRunLogs,
 
 	// scm:comment
 	PostPRComment,

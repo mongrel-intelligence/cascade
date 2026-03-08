@@ -10,7 +10,15 @@ import { execFileSync } from 'node:child_process';
 import { ListDirectory } from '../../gadgets/ListDirectory.js';
 import { formatCheckStatus } from '../../gadgets/github/core/getPRChecks.js';
 import { readWorkItem } from '../../gadgets/pm/core/readWorkItem.js';
+import {
+	formatTodoList,
+	getNextId,
+	initTodoSession,
+	saveTodos,
+} from '../../gadgets/todo/storage.js';
+import type { Todo } from '../../gadgets/todo/storage.js';
 import { githubClient } from '../../github/client.js';
+import { getPMProviderOrNull } from '../../pm/index.js';
 import type { AgentInput } from '../../types/index.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { resolveSquintDbPath } from '../../utils/squintDb.js';
@@ -231,6 +239,65 @@ export async function fetchPRConversationStep(
 	});
 
 	return injections;
+}
+
+export async function prepopulateTodosStep(
+	params: FetchContextParams,
+): Promise<ContextInjection[]> {
+	const { cardId } = params.input;
+	if (!cardId) return [];
+
+	try {
+		const provider = getPMProviderOrNull();
+		if (!provider) return [];
+
+		const checklists = await provider.getChecklists(cardId);
+
+		// Find checklist whose name includes "Implementation Steps" (case-insensitive, handles emoji prefix)
+		const implChecklist = checklists.find((cl) =>
+			cl.name.toLowerCase().includes('implementation steps'),
+		);
+		if (!implChecklist || implChecklist.items.length === 0) return [];
+
+		// Extract incomplete items
+		const incompleteItems = implChecklist.items.filter((item) => !item.complete);
+		if (incompleteItems.length === 0) return [];
+
+		// Initialize todo session and create todos
+		initTodoSession(cardId);
+		const todos: Todo[] = [];
+		const now = new Date().toISOString();
+
+		for (const item of incompleteItems) {
+			const id = getNextId(todos);
+			todos.push({
+				id,
+				content: item.name,
+				status: 'pending',
+				createdAt: now,
+				updatedAt: now,
+			});
+		}
+
+		saveTodos(todos);
+
+		const result = `Pre-populated from work item's Implementation Steps checklist. Do NOT delete or recreate these.\n\n${formatTodoList(todos)}`;
+
+		return [
+			{
+				toolName: 'TodoUpsert',
+				params: { comment: 'Pre-populated todos from Implementation Steps checklist' },
+				result,
+				description: `Pre-populated ${todos.length} todos from Implementation Steps`,
+			},
+		];
+	} catch (error) {
+		params.logWriter('WARN', 'prepopulateTodosStep failed', {
+			cardId,
+			error: error instanceof Error ? error.message : String(error),
+		});
+		return [];
+	}
 }
 
 export function fetchEmailsFromInputStep(params: FetchContextParams): ContextInjection[] {

@@ -36,6 +36,7 @@ export const CAPABILITIES = [
 
 	// SCM integration capabilities
 	'scm:read',
+	'scm:ci-logs',
 	'scm:comment',
 	'scm:review',
 	'scm:pr',
@@ -148,6 +149,14 @@ export const CAPABILITY_REGISTRY: Record<Capability, CapabilityDefinition> = {
 		integration: 'scm',
 		description: 'Read PR details, diffs, and checks',
 		gadgetNames: ['GetPRDetails', 'GetPRDiff', 'GetPRChecks'],
+		sdkToolNames: [],
+		cliToolNames: [],
+	},
+
+	'scm:ci-logs': {
+		integration: 'scm',
+		description: 'Download CI run failure logs',
+		gadgetNames: ['GetCIRunLogs'],
 		sdkToolNames: [],
 		cliToolNames: [],
 	},

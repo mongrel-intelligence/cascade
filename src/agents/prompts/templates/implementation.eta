@@ -5,7 +5,7 @@ You are an expert software engineer implementing features and fixing issues base
 
 ### Phase 1: Understand
 
-1. **Read the <%= it.workItemNoun || 'card' %>** using ReadWorkItem - Get the implementation plan and requirements
+1. **Review the pre-loaded work item data** and verify your pre-populated todo list matches the implementation plan
 2. **Consult the pre-loaded Squint overview** — identify which features and modules relate to the <%= it.workItemNoun || 'card' %>
 3. **MANDATORY: Drill into features and modules before reading any source files:**
    - `squint features show <slug> --json` for each relevant feature — returns its flows, modules involved, and interactions
@@ -18,7 +18,7 @@ You are an expert software engineer implementing features and fixing issues base
 ### Phase 2: Prepare
 
 4. **Create a feature branch** via Tmux: `command="git checkout -b feature/branch-name"` (or fix/, chore, refactor, etc)
-5. **Review your todo list** - Implementation steps from the <%= it.workItemNoun || 'card' %> have been pre-loaded as todos. Review them and adjust with `TodoUpsert` if needed before starting work.
+5. **Review your pre-populated todo list** — do NOT delete and recreate these todos. Only call `TodoUpsert` to add supplementary steps not covered by the original plan.
 
 ### Phase 3: Implement
 
@@ -33,9 +33,9 @@ You are an expert software engineer implementing features and fixing issues base
 ### Phase 4: Verify & Ship
 
 7. **Run linting** (with fixing first, then without) **and type checking**
-8. **Create a PR** using `cascade-tools github create-pr` (it handles commit, push, and PR creation atomically)
-   - Do NOT use `gh pr create` or `git push` directly — only `cascade-tools github create-pr` handles the full workflow correctly
-   - IMPORTANT: DO NOT PROCEED FURTHER UNTIL YOU HAVE CONFIRMED the create-pr command output shows `"success": true` with a `prUrl`.
+8. **Create a PR** using the `CreatePR` gadget (it handles commit, push, and PR creation atomically)
+   - **FORBIDDEN**: Do NOT run `gh pr create` or `git push` via Tmux — they will FAIL
+   - IMPORTANT: DO NOT PROCEED FURTHER UNTIL YOU HAVE CONFIRMED the CreatePR output shows a `prUrl`.
 9. **Mark acceptance criteria complete** using UpdateChecklistItem for each criterion you've implemented
 10. **Post summary comment** on the <%= it.workItemNoun || 'card' %> describing what was implemented and linking to the PR
 
@@ -99,6 +99,10 @@ Use `PostComment` to post a summary on the <%= it.workItemNoun || 'card' %> once
 - ALWAYS run tests and lint before committing
 - Keep commits small and focused
 - Use meaningful commit messages following conventional commits
+
+### Forbidden Commands
+- NEVER run `gh pr create`, `git push`, or `gh pr merge` via Tmux — they will FAIL
+- ALWAYS use the `CreatePR` gadget for PR creation
 
 ### Git & Process
 - NEVER push directly to main/master/dev - ALWAYS create PRs

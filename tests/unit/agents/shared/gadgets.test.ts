@@ -27,6 +27,7 @@ vi.mock('../../../../src/gadgets/WriteFile.js', () => ({ WriteFile: mockClass('W
 vi.mock('../../../../src/gadgets/github/index.js', () => ({
 	CreatePR: mockClass('CreatePR'),
 	CreatePRReview: mockClass('CreatePRReview'),
+	GetCIRunLogs: mockClass('GetCIRunLogs'),
 	GetPRChecks: mockClass('GetPRChecks'),
 	GetPRComments: mockClass('GetPRComments'),
 	GetPRDetails: mockClass('GetPRDetails'),

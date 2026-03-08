@@ -18,7 +18,6 @@ Multi-project Trello-to-code automation platform. CASCADE reacts to Trello card 
 - Node.js 22+
 - npm
 - Git
-- GitHub CLI (`gh`) - for PR creation
 - Redis (required for router mode / BullMQ job queue)
 
 ### Installation
