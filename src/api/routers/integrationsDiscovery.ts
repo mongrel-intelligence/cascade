@@ -195,21 +195,30 @@ export const integrationsDiscoveryRouter = router({
 			});
 			const creds = await resolveTrelloCreds(input, ctx.effectiveOrgId);
 
-			try {
-				const results: Array<{ id: string; name: string; color: string }> = [];
-				for (const label of input.labels) {
-					const created = await withTrelloCredentials(creds, () =>
+			const results = await Promise.allSettled(
+				input.labels.map((label) =>
+					withTrelloCredentials(creds, () =>
 						trelloClient.createBoardLabel(input.boardId, label.name, label.color),
-					);
-					results.push(created);
+					),
+				),
+			);
+
+			const successes: Array<{ id: string; name: string; color: string }> = [];
+			const errors: Array<{ name: string; error: string }> = [];
+
+			for (let i = 0; i < results.length; i++) {
+				const result = results[i];
+				if (result.status === 'fulfilled') {
+					successes.push(result.value);
+				} else {
+					errors.push({
+						name: input.labels[i].name,
+						error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+					});
 				}
-				return results;
-			} catch (err) {
-				throw new TRPCError({
-					code: 'BAD_REQUEST',
-					message: `Failed to create Trello labels: ${err instanceof Error ? err.message : String(err)}`,
-				});
 			}
+
+			return { successes, errors };
 		}),
 
 	jiraProjects: protectedProcedure.input(jiraCredsInput).mutation(async ({ ctx, input }) => {

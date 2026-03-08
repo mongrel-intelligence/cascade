@@ -348,6 +348,10 @@ export function useTrelloLabelCreation(state: WizardState, dispatch: React.Dispa
 			dispatch({ type: 'ADD_TRELLO_BOARD_LABEL', label });
 			dispatch({ type: 'SET_TRELLO_LABEL_MAPPING', key: vars.slot, value: label.id });
 		},
+		onError: (error) => {
+			console.error('Failed to create label:', error);
+			alert(`Failed to create label: ${error instanceof Error ? error.message : String(error)}`);
+		},
 	});
 
 	const createMissingLabelsMutation = useMutation({
@@ -366,13 +370,29 @@ export function useTrelloLabelCreation(state: WizardState, dispatch: React.Dispa
 				labels: labelsToCreate.map(({ name, color }) => ({ name, color })),
 			});
 		},
-		onSuccess: (createdLabels, labelsToCreate) => {
-			for (let i = 0; i < createdLabels.length; i++) {
-				const label = createdLabels[i];
-				const slot = labelsToCreate[i].slot;
-				dispatch({ type: 'ADD_TRELLO_BOARD_LABEL', label });
-				dispatch({ type: 'SET_TRELLO_LABEL_MAPPING', key: slot, value: label.id });
+		onSuccess: (result, labelsToCreate) => {
+			// Handle successful label creations
+			for (let i = 0; i < result.successes.length; i++) {
+				const label = result.successes[i];
+				// Find the slot for this label by matching the name
+				const slot = labelsToCreate.find((l) => l.name === label.name)?.slot;
+				if (slot) {
+					dispatch({ type: 'ADD_TRELLO_BOARD_LABEL', label });
+					dispatch({ type: 'SET_TRELLO_LABEL_MAPPING', key: slot, value: label.id });
+				}
 			}
+
+			// Show error feedback if any labels failed
+			if (result.errors.length > 0) {
+				const errorMsg = result.errors.map((e) => `${e.name}: ${e.error}`).join('\n');
+				alert(
+					`Some labels failed to create:\n${errorMsg}\n\n${result.successes.length} label(s) created successfully.`,
+				);
+			}
+		},
+		onError: (error) => {
+			console.error('Failed to create labels:', error);
+			alert(`Failed to create labels: ${error instanceof Error ? error.message : String(error)}`);
 		},
 	});
 

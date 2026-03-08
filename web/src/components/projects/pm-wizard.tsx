@@ -70,6 +70,7 @@ export function PMWizard({
 
 	const [state, dispatch] = useReducer(wizardReducer, undefined, createInitialState);
 	const [openSteps, setOpenSteps] = useState<Set<number>>(new Set([1]));
+	const [creatingSlot, setCreatingSlot] = useState<string | null>(null);
 
 	// ---- Step navigation helpers ----
 
@@ -127,7 +128,13 @@ export function PMWizard({
 	const handleCreateLabel = (slot: string) => {
 		const defaults = TRELLO_LABEL_DEFAULTS[slot];
 		if (!defaults) return;
-		createLabelMutation.mutate({ name: defaults.name, color: defaults.color, slot });
+		setCreatingSlot(slot);
+		createLabelMutation.mutate(
+			{ name: defaults.name, color: defaults.color, slot },
+			{
+				onSettled: () => setCreatingSlot(null),
+			},
+		);
 	};
 
 	const handleCreateAllMissingLabels = () => {
@@ -141,7 +148,10 @@ export function PMWizard({
 			})
 			.map(([slot, { name, color }]) => ({ slot, name, color }));
 		if (labelsToCreate.length > 0) {
-			createMissingLabelsMutation.mutate(labelsToCreate);
+			setCreatingSlot('__batch__');
+			createMissingLabelsMutation.mutate(labelsToCreate, {
+				onSettled: () => setCreatingSlot(null),
+			});
 		}
 	};
 
@@ -295,8 +305,7 @@ export function PMWizard({
 						dispatch={dispatch}
 						onCreateLabel={handleCreateLabel}
 						onCreateAllMissingLabels={handleCreateAllMissingLabels}
-						isCreatingLabel={createLabelMutation.isPending}
-						isCreatingAllLabels={createMissingLabelsMutation.isPending}
+						creatingSlot={creatingSlot}
 					/>
 				) : (
 					<JiraFieldMappingStep state={state} dispatch={dispatch} />

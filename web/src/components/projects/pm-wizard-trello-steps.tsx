@@ -156,15 +156,13 @@ export function TrelloFieldMappingStep({
 	dispatch,
 	onCreateLabel,
 	onCreateAllMissingLabels,
-	isCreatingLabel,
-	isCreatingAllLabels,
+	creatingSlot,
 }: {
 	state: WizardState;
 	dispatch: React.Dispatch<WizardAction>;
 	onCreateLabel?: (slot: string) => void;
 	onCreateAllMissingLabels?: () => void;
-	isCreatingLabel?: boolean;
-	isCreatingAllLabels?: boolean;
+	creatingSlot?: string | null;
 }) {
 	const existingLabelNames = new Set(
 		(state.trelloBoardDetails?.labels ?? []).map((l) => l.name.toLowerCase()),
@@ -223,10 +221,10 @@ export function TrelloFieldMappingStep({
 							variant="outline"
 							size="sm"
 							onClick={onCreateAllMissingLabels}
-							disabled={isCreatingAllLabels || isCreatingLabel}
+							disabled={creatingSlot !== null}
 							className="h-7 text-xs"
 						>
-							{isCreatingAllLabels ? (
+							{creatingSlot === '__batch__' ? (
 								<Loader2 className="h-3 w-3 animate-spin mr-1" />
 							) : (
 								<Plus className="h-3 w-3 mr-1" />
@@ -276,11 +274,11 @@ export function TrelloFieldMappingStep({
 										variant="ghost"
 										size="sm"
 										onClick={() => onCreateLabel(slot)}
-										disabled={isCreatingLabel || isCreatingAllLabels}
+										disabled={creatingSlot !== null}
 										className="h-8 text-xs shrink-0 text-muted-foreground hover:text-foreground"
 										title={`Create "${defaultInfo.name}" (${defaultInfo.color})`}
 									>
-										{isCreatingLabel ? (
+										{creatingSlot === slot ? (
 											<Loader2 className="h-3 w-3 animate-spin" />
 										) : (
 											<Plus className="h-3 w-3" />
