@@ -64,6 +64,37 @@ export interface CreateDebugAnalysisInput {
 // Run CRUD
 // ============================================================================
 
+/**
+ * Shared select object for enriched run queries that join with prWorkItems.
+ * Used by getRunById, getRunsByWorkItem, and getRunsForPR to ensure consistent
+ * field selection across all enriched run queries.
+ */
+const enrichedRunSelect = {
+	id: agentRuns.id,
+	projectId: agentRuns.projectId,
+	cardId: agentRuns.cardId,
+	prNumber: agentRuns.prNumber,
+	agentType: agentRuns.agentType,
+	backend: agentRuns.backend,
+	triggerType: agentRuns.triggerType,
+	status: agentRuns.status,
+	model: agentRuns.model,
+	maxIterations: agentRuns.maxIterations,
+	startedAt: agentRuns.startedAt,
+	completedAt: agentRuns.completedAt,
+	durationMs: agentRuns.durationMs,
+	llmIterations: agentRuns.llmIterations,
+	gadgetCalls: agentRuns.gadgetCalls,
+	costUsd: agentRuns.costUsd,
+	success: agentRuns.success,
+	error: agentRuns.error,
+	prUrl: agentRuns.prUrl,
+	outputSummary: agentRuns.outputSummary,
+	workItemUrl: prWorkItems.workItemUrl,
+	workItemTitle: prWorkItems.workItemTitle,
+	prTitle: prWorkItems.prTitle,
+} as const;
+
 export async function createRun(input: CreateRunInput): Promise<string> {
 	const db = getDb();
 	const [row] = await db
@@ -105,31 +136,7 @@ export async function completeRun(runId: string, input: CompleteRunInput): Promi
 export async function getRunById(runId: string) {
 	const db = getDb();
 	const rows = await db
-		.select({
-			id: agentRuns.id,
-			projectId: agentRuns.projectId,
-			cardId: agentRuns.cardId,
-			prNumber: agentRuns.prNumber,
-			agentType: agentRuns.agentType,
-			backend: agentRuns.backend,
-			triggerType: agentRuns.triggerType,
-			status: agentRuns.status,
-			model: agentRuns.model,
-			maxIterations: agentRuns.maxIterations,
-			startedAt: agentRuns.startedAt,
-			completedAt: agentRuns.completedAt,
-			durationMs: agentRuns.durationMs,
-			llmIterations: agentRuns.llmIterations,
-			gadgetCalls: agentRuns.gadgetCalls,
-			costUsd: agentRuns.costUsd,
-			success: agentRuns.success,
-			error: agentRuns.error,
-			prUrl: agentRuns.prUrl,
-			outputSummary: agentRuns.outputSummary,
-			workItemUrl: prWorkItems.workItemUrl,
-			workItemTitle: prWorkItems.workItemTitle,
-			prTitle: prWorkItems.prTitle,
-		})
+		.select(enrichedRunSelect)
 		.from(agentRuns)
 		.leftJoin(
 			prWorkItems,
@@ -515,31 +522,7 @@ export async function listProjectsForOrg(orgId: string) {
 export async function getRunsByWorkItem(projectId: string, workItemId: string) {
 	const db = getDb();
 	return db
-		.select({
-			id: agentRuns.id,
-			projectId: agentRuns.projectId,
-			cardId: agentRuns.cardId,
-			prNumber: agentRuns.prNumber,
-			agentType: agentRuns.agentType,
-			backend: agentRuns.backend,
-			triggerType: agentRuns.triggerType,
-			status: agentRuns.status,
-			model: agentRuns.model,
-			maxIterations: agentRuns.maxIterations,
-			startedAt: agentRuns.startedAt,
-			completedAt: agentRuns.completedAt,
-			durationMs: agentRuns.durationMs,
-			llmIterations: agentRuns.llmIterations,
-			gadgetCalls: agentRuns.gadgetCalls,
-			costUsd: agentRuns.costUsd,
-			success: agentRuns.success,
-			error: agentRuns.error,
-			prUrl: agentRuns.prUrl,
-			outputSummary: agentRuns.outputSummary,
-			workItemUrl: prWorkItems.workItemUrl,
-			workItemTitle: prWorkItems.workItemTitle,
-			prTitle: prWorkItems.prTitle,
-		})
+		.select(enrichedRunSelect)
 		.from(agentRuns)
 		.leftJoin(
 			prWorkItems,
@@ -559,31 +542,7 @@ export async function getRunsByWorkItem(projectId: string, workItemId: string) {
 export async function getRunsForPR(projectId: string, prNumber: number) {
 	const db = getDb();
 	return db
-		.select({
-			id: agentRuns.id,
-			projectId: agentRuns.projectId,
-			cardId: agentRuns.cardId,
-			prNumber: agentRuns.prNumber,
-			agentType: agentRuns.agentType,
-			backend: agentRuns.backend,
-			triggerType: agentRuns.triggerType,
-			status: agentRuns.status,
-			model: agentRuns.model,
-			maxIterations: agentRuns.maxIterations,
-			startedAt: agentRuns.startedAt,
-			completedAt: agentRuns.completedAt,
-			durationMs: agentRuns.durationMs,
-			llmIterations: agentRuns.llmIterations,
-			gadgetCalls: agentRuns.gadgetCalls,
-			costUsd: agentRuns.costUsd,
-			success: agentRuns.success,
-			error: agentRuns.error,
-			prUrl: agentRuns.prUrl,
-			outputSummary: agentRuns.outputSummary,
-			workItemUrl: prWorkItems.workItemUrl,
-			workItemTitle: prWorkItems.workItemTitle,
-			prTitle: prWorkItems.prTitle,
-		})
+		.select(enrichedRunSelect)
 		.from(agentRuns)
 		.leftJoin(
 			prWorkItems,

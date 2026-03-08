@@ -1,4 +1,4 @@
-import { and, count, countDistinct, eq, isNotNull } from 'drizzle-orm';
+import { and, countDistinct, eq, isNotNull } from 'drizzle-orm';
 import { getDb } from '../client.js';
 import { agentRuns, prWorkItems } from '../schema/index.js';
 
@@ -75,7 +75,7 @@ export async function listWorkItemsForProject(projectId: string): Promise<WorkIt
 			workItemId: prWorkItems.workItemId,
 			workItemUrl: prWorkItems.workItemUrl,
 			workItemTitle: prWorkItems.workItemTitle,
-			prCount: count(prWorkItems.prNumber),
+			prCount: countDistinct(prWorkItems.prNumber),
 			runCount: countDistinct(agentRuns.id),
 		})
 		.from(prWorkItems)
