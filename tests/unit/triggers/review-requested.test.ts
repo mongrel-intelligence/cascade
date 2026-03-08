@@ -105,6 +105,48 @@ describe('ReviewRequestedTrigger', () => {
 			expect(result).toBeNull();
 		});
 
+		it('returns null when sender is the implementer persona (loop prevention)', async () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					...makeReviewRequestedPayload('cascade-reviewer'),
+					sender: { login: 'cascade-impl' },
+				},
+				personaIdentities: mockPersonaIdentities,
+			};
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+		});
+
+		it('returns null when sender is the reviewer persona (loop prevention)', async () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					...makeReviewRequestedPayload('cascade-impl'),
+					sender: { login: 'cascade-reviewer' },
+				},
+				personaIdentities: mockPersonaIdentities,
+			};
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+		});
+
+		it('returns null when a persona requests review from itself (loop prevention)', async () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					...makeReviewRequestedPayload('cascade-impl'),
+					sender: { login: 'cascade-impl' },
+				},
+				personaIdentities: mockPersonaIdentities,
+			};
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+		});
+
 		it('returns null when requested reviewer is not a CASCADE persona', async () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
