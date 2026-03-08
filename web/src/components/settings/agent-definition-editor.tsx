@@ -2,9 +2,8 @@ import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.js';
 import { Textarea } from '@/components/ui/textarea.js';
-import { trpc, trpcClient } from '@/lib/trpc.js';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { trpc } from '@/lib/trpc.js';
+import { useQuery } from '@tanstack/react-query';
 import { PromptsPanel } from './agent-definition-prompts.js';
 import {
 	CapabilitiesSection,
@@ -13,129 +12,13 @@ import {
 	StrategiesSection,
 	TriggersSection,
 } from './agent-definition-sections.js';
-import {
-	type AgentDefinition,
-	type DefinitionRow,
-	EMPTY_DEFINITION,
-	TooltipProvider,
-} from './agent-definition-shared.js';
+import { type DefinitionRow, TooltipProvider } from './agent-definition-shared.js';
+import { useDefinitionEditor } from './useDefinitionEditor.js';
 
 export interface AgentDefinitionEditorProps {
 	/** When provided, we are editing an existing definition. When undefined, we are creating a new one. */
 	existing?: DefinitionRow;
 	onClose: () => void;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Hook — encapsulates all editor state and mutations
-// ─────────────────────────────────────────────────────────────────────────────
-
-function useDefinitionEditor(existing: DefinitionRow | undefined, onClose: () => void) {
-	const queryClient = useQueryClient();
-	const isEdit = !!existing;
-	const queryKey = trpc.agentDefinitions.list.queryOptions().queryKey;
-
-	const [agentType, setAgentType] = useState(existing?.agentType ?? '');
-	const [def, setDef] = useState<AgentDefinition>(existing?.definition ?? EMPTY_DEFINITION);
-	const [jsonText, setJsonText] = useState(
-		existing
-			? JSON.stringify(existing.definition, null, 2)
-			: JSON.stringify(EMPTY_DEFINITION, null, 2),
-	);
-	const [jsonError, setJsonError] = useState<string | null>(null);
-	const [agentTypeError, setAgentTypeError] = useState<string | null>(null);
-	const [activeTab, setActiveTab] = useState('definition');
-
-	const onSuccess = () => {
-		queryClient.invalidateQueries({ queryKey });
-		onClose();
-	};
-
-	const createMutation = useMutation({
-		mutationFn: (params: { agentType: string; definition: AgentDefinition }) =>
-			trpcClient.agentDefinitions.create.mutate(params),
-		onSuccess,
-	});
-
-	const updateMutation = useMutation({
-		mutationFn: (params: { agentType: string; patch: AgentDefinition }) =>
-			trpcClient.agentDefinitions.update.mutate(params),
-		onSuccess,
-	});
-
-	const activeMutation = isEdit ? updateMutation : createMutation;
-
-	const handleTabChange = (tab: string) => {
-		const structuredTabs = ['definition', 'capabilities', 'triggers'];
-		const isLeavingStructured = structuredTabs.includes(activeTab);
-		const isEnteringStructured = structuredTabs.includes(tab);
-
-		if (tab === 'json' && isLeavingStructured) {
-			setJsonText(JSON.stringify(def, null, 2));
-			setJsonError(null);
-		} else if (isEnteringStructured && activeTab === 'json') {
-			try {
-				setDef(JSON.parse(jsonText) as AgentDefinition);
-				setJsonError(null);
-			} catch (err) {
-				setJsonError((err as Error).message);
-				return; // keep user on JSON tab so they can fix the error
-			}
-		}
-		setActiveTab(tab);
-	};
-
-	const handleSave = () => {
-		if (!isEdit && !agentType.trim()) {
-			setAgentTypeError('Agent type is required.');
-			return;
-		}
-
-		let submission = def;
-		if (activeTab === 'json') {
-			try {
-				submission = JSON.parse(jsonText) as AgentDefinition;
-				setDef(submission);
-				setJsonError(null);
-			} catch (err) {
-				setJsonError((err as Error).message);
-				return;
-			}
-		}
-		if (isEdit && existing) {
-			updateMutation.mutate({ agentType: existing.agentType, patch: submission });
-		} else {
-			createMutation.mutate({ agentType, definition: submission });
-		}
-	};
-
-	const setIdentity = (k: keyof AgentDefinition['identity'], v: string) =>
-		setDef((d) => ({ ...d, identity: { ...d.identity, [k]: v } }));
-
-	const clearJsonError = () => setJsonError(null);
-
-	const updateAgentType = (value: string) => {
-		setAgentType(value);
-		if (agentTypeError) setAgentTypeError(null);
-	};
-
-	return {
-		isEdit,
-		agentType,
-		setAgentType: updateAgentType,
-		def,
-		setDef,
-		jsonText,
-		setJsonText,
-		jsonError,
-		clearJsonError,
-		agentTypeError,
-		activeTab,
-		activeMutation,
-		handleTabChange,
-		handleSave,
-		setIdentity,
-	};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
