@@ -1,4 +1,5 @@
 import { Octokit } from '@octokit/rest';
+import { logger } from '../../../utils/logging.js';
 import { parseRepoFullName } from '../../../utils/repo.js';
 import type { GitHubWebhook, ProjectContext } from './types.js';
 
@@ -27,6 +28,32 @@ export async function githubCreateWebhook(
 	}
 	const octokit = new Octokit({ auth: ctx.githubToken });
 	const { owner, repo } = parseRepoFullName(ctx.repo);
+
+	// Delete any existing webhooks with the same callback URL to prevent duplicates.
+	// Unlike Trello, GitHub repos can have webhooks from other integrations, so we
+	// only delete webhooks matching our specific callback URL.
+	const existingWebhooks = await githubListWebhooks(ctx);
+	for (const webhook of existingWebhooks) {
+		if (webhook.config?.url === callbackURL) {
+			try {
+				await githubDeleteWebhook(ctx, webhook.id);
+				logger.info('[GitHubWebhook] Deleted existing webhook to prevent duplicates', {
+					webhookId: webhook.id,
+					projectId: ctx.projectId,
+					repo: ctx.repo,
+				});
+			} catch (err) {
+				// Log and continue — failing to delete shouldn't prevent creating a new one
+				logger.warn('[GitHubWebhook] Failed to delete existing webhook (continuing)', {
+					webhookId: webhook.id,
+					projectId: ctx.projectId,
+					error: String(err),
+				});
+			}
+		}
+	}
+
+	// Now create the new webhook
 	const { data } = await octokit.repos.createWebhook({
 		owner,
 		repo,

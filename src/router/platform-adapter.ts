@@ -46,6 +46,9 @@ export interface ParsedWebhookEvent {
 
 	/** Whether this is a comment/mention event that may need an acknowledgment reaction. */
 	isCommentEvent: boolean;
+
+	/** Platform-specific unique action ID for deduplication (e.g., Trello action.id). */
+	actionId?: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -20,7 +20,12 @@ vi.mock('../../../src/router/agent-type-lock.js', () => ({
 	markAgentTypeEnqueued: vi.fn(),
 	markRecentlyDispatched: vi.fn(),
 }));
+vi.mock('../../../src/router/action-dedup.js', () => ({
+	isDuplicateAction: vi.fn().mockReturnValue(false),
+	markActionProcessed: vi.fn(),
+}));
 
+import { isDuplicateAction, markActionProcessed } from '../../../src/router/action-dedup.js';
 import { checkAgentTypeConcurrency } from '../../../src/router/agent-type-lock.js';
 import type { RouterProjectConfig } from '../../../src/router/config.js';
 import type { RouterPlatformAdapter } from '../../../src/router/platform-adapter.js';
@@ -70,6 +75,10 @@ function makeMockAdapter(overrides: Partial<RouterPlatformAdapter> = {}): Router
 }
 
 describe('processRouterWebhook', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
 	it('returns shouldProcess false when parseWebhook returns null', async () => {
 		const adapter = makeMockAdapter({
 			parseWebhook: vi.fn().mockResolvedValue(null),
@@ -78,6 +87,55 @@ describe('processRouterWebhook', () => {
 		expect(result.shouldProcess).toBe(false);
 		expect(result.decisionReason).toBe('Event unparseable or not processable');
 		expect(addJob).not.toHaveBeenCalled();
+	});
+
+	it('returns shouldProcess false when action is a duplicate', async () => {
+		vi.mocked(isDuplicateAction).mockReturnValueOnce(true);
+		const adapter = makeMockAdapter({
+			parseWebhook: vi.fn().mockResolvedValue({
+				projectIdentifier: 'board1',
+				eventType: 'updateCard',
+				workItemId: 'card1',
+				isCommentEvent: false,
+				actionId: 'action-123',
+			}),
+		});
+		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(result.shouldProcess).toBe(false);
+		expect(result.decisionReason).toBe('Duplicate action');
+		expect(addJob).not.toHaveBeenCalled();
+		expect(markActionProcessed).not.toHaveBeenCalled();
+	});
+
+	it('marks action as processed when not a duplicate', async () => {
+		vi.mocked(isDuplicateAction).mockReturnValueOnce(false);
+		const adapter = makeMockAdapter({
+			parseWebhook: vi.fn().mockResolvedValue({
+				projectIdentifier: 'board1',
+				eventType: 'updateCard',
+				workItemId: 'card1',
+				isCommentEvent: false,
+				actionId: 'action-456',
+			}),
+		});
+		await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(isDuplicateAction).toHaveBeenCalledWith('action-456');
+		expect(markActionProcessed).toHaveBeenCalledWith('action-456');
+	});
+
+	it('skips dedup check when event has no actionId', async () => {
+		const adapter = makeMockAdapter({
+			parseWebhook: vi.fn().mockResolvedValue({
+				projectIdentifier: 'board1',
+				eventType: 'commentCard',
+				workItemId: 'card1',
+				isCommentEvent: true,
+				// no actionId
+			}),
+		});
+		await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(isDuplicateAction).not.toHaveBeenCalled();
+		expect(markActionProcessed).not.toHaveBeenCalled();
 	});
 
 	it('returns shouldProcess false when event is not processable', async () => {
