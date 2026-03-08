@@ -84,7 +84,9 @@ describe('PRMergedTrigger', () => {
 	});
 
 	beforeEach(() => {
+		vi.clearAllMocks();
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
 	});
 
 	describe('matches', () => {
@@ -287,7 +289,7 @@ describe('PRMergedTrigger', () => {
 			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 		});
 
-		it('skips move and comment when card is already in MERGED list', async () => {
+		it('skips move/comment but chains to backlog-manager when card already merged', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 123,
 				title: 'Test PR',
@@ -303,7 +305,7 @@ describe('PRMergedTrigger', () => {
 				title: 'Card',
 				description: '',
 				url: '',
-				status: 'merged-list-id',
+				status: 'merged-list-id', // Already in merged status
 				labels: [],
 			});
 
@@ -325,7 +327,69 @@ describe('PRMergedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(mockProvider.getWorkItem).toHaveBeenCalledWith('abc123');
+			// Verify idempotency: no move or comment
+			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
+			expect(mockProvider.addComment).not.toHaveBeenCalled();
+
+			// Verify backlog-manager check was made
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test',
+				'backlog-manager',
+				'scm:pr-merged',
+				'pr-merged',
+			);
+
+			// Should still chain to backlog-manager
+			expect(result).toEqual({
+				agentType: 'backlog-manager',
+				agentInput: {},
+				workItemId: 'abc123',
+				prNumber: 123,
+			});
+		});
+
+		it('skips move/comment and returns null when card already merged and backlog-manager disabled', async () => {
+			vi.mocked(checkTriggerEnabled)
+				.mockResolvedValueOnce(true) // scm:pr-merged enabled
+				.mockResolvedValueOnce(false); // backlog-manager disabled
+
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 123,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'closed',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: true,
+			});
+			mockProvider.getWorkItem.mockResolvedValue({
+				id: 'abc123',
+				title: 'Card',
+				description: '',
+				url: '',
+				status: 'merged-list-id', // Already in merged status
+				labels: [],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'closed',
+					number: 123,
+					pull_request: {
+						number: 123,
+						body: 'https://trello.com/c/abc123/card-name',
+					},
+					repository: {
+						full_name: 'owner/repo',
+					},
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+
 			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 			expect(mockProvider.addComment).not.toHaveBeenCalled();
 			expect(result).toEqual({
