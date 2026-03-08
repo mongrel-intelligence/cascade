@@ -29,10 +29,18 @@ vi.mock('../../../src/db/schema/index.js', () => ({
 		agentType: 'agent_type',
 		status: 'status',
 		startedAt: 'started_at',
+		prNumber: 'pr_number',
 	},
 	agentRunLogs: { runId: 'run_id' },
 	agentRunLlmCalls: { runId: 'run_id', callNumber: 'call_number' },
 	debugAnalyses: { id: 'id', analyzedRunId: 'analyzed_run_id', debugRunId: 'debug_run_id' },
+	prWorkItems: {
+		projectId: 'project_id',
+		prNumber: 'pr_number',
+		workItemUrl: 'work_item_url',
+		workItemTitle: 'work_item_title',
+		prTitle: 'pr_title',
+	},
 }));
 
 import {
@@ -53,6 +61,9 @@ import {
 } from '../../../src/db/repositories/runsRepository.js';
 
 describe('runsRepository', () => {
+	// Additional mock for leftJoin (used by getRunById)
+	const mockLeftJoin = vi.fn();
+
 	beforeEach(() => {
 		// Set up chained mock returns
 		mockInsert.mockReturnValue({ values: mockValues });
@@ -60,7 +71,8 @@ describe('runsRepository', () => {
 		mockUpdate.mockReturnValue({ set: mockSet });
 		mockSet.mockReturnValue({ where: mockWhere });
 		mockSelect.mockReturnValue({ from: mockFrom });
-		mockFrom.mockReturnValue({ where: mockWhere, orderBy: mockOrderBy });
+		mockFrom.mockReturnValue({ where: mockWhere, orderBy: mockOrderBy, leftJoin: mockLeftJoin });
+		mockLeftJoin.mockReturnValue({ where: mockWhere, orderBy: mockOrderBy });
 		mockWhere.mockReturnValue({ orderBy: mockOrderBy });
 		mockDelete.mockReturnValue({ where: mockWhere });
 	});
