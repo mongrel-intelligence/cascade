@@ -1,4 +1,5 @@
 import { runAgent } from '../../agents/registry.js';
+import { createWorkItem } from '../../db/repositories/prWorkItemsRepository.js';
 import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
 import { getPMProvider } from '../../pm/context.js';
 import {
@@ -227,6 +228,24 @@ export async function runAgentExecutionPipeline(
 		const budgetResult = await checkPreRunBudget(workItemId, project, config, lifecycle);
 		if (budgetResult.abort) return;
 		remainingBudgetUsd = budgetResult.remainingBudgetUsd;
+	}
+
+	// Insert a work-item-only row so PM-triggered runs show up in the dashboard
+	// even before a PR is created. This is idempotent — if a row already exists
+	// it is updated with the latest display fields.
+	if (workItemId) {
+		try {
+			await createWorkItem(project.id, workItemId, {
+				workItemUrl: result.workItemUrl,
+				workItemTitle: result.workItemTitle,
+			});
+		} catch (err) {
+			logger.warn('Failed to persist work-item row for PM-triggered run', {
+				projectId: project.id,
+				workItemId,
+				error: String(err),
+			});
+		}
 	}
 
 	if (workItemId && !skipPrepareForAgent) {

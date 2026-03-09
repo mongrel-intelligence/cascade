@@ -211,6 +211,13 @@
 			"when": 1764000000000,
 			"tag": "0029_work_item_pr_details",
 			"breakpoints": false
+		},
+		{
+			"idx": 30,
+			"version": "7",
+			"when": 1765000000000,
+			"tag": "0030_make_pr_work_items_flexible",
+			"breakpoints": false
 		}
 	]
 }

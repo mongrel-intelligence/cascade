@@ -15,9 +15,9 @@ import React, { useEffect, useState } from 'react';
 
 interface WorkItem {
 	id: string;
-	type: 'pr' | 'linked';
-	prNumber: number;
-	repoFullName: string;
+	type: 'pr' | 'linked' | 'work-item';
+	prNumber: number | null;
+	repoFullName: string | null;
 	prUrl: string | null;
 	prTitle: string | null;
 	workItemId: string | null;
@@ -42,11 +42,16 @@ interface ProjectWorkTableProps {
 
 interface ExpandedRunsRowProps {
 	projectId: string;
-	prNumber: number;
+	prNumber: number | null;
+	workItemId: string | null;
 }
 
-function ExpandedRunsRow({ projectId, prNumber }: ExpandedRunsRowProps) {
-	const runsQuery = useQuery(trpc.prs.runs.queryOptions({ projectId, prNumber }));
+function ExpandedRunsRow({ projectId, prNumber, workItemId }: ExpandedRunsRowProps) {
+	const runsQuery = useQuery(
+		prNumber !== null
+			? trpc.prs.runs.queryOptions({ projectId, prNumber })
+			: trpc.workItems.runs.queryOptions({ projectId, workItemId: workItemId ?? '' }),
+	);
 
 	return (
 		<tr>
@@ -158,6 +163,10 @@ function WorkItemRow({ item, isExpanded, onToggle }: WorkItemRowProps) {
 					<span title="Linked (PR + Work Item)">
 						<ClipboardList className="h-4 w-4" />
 					</span>
+				) : item.type === 'work-item' ? (
+					<span title="Work Item">
+						<ClipboardList className="h-4 w-4" />
+					</span>
 				) : (
 					<span title="Pull Request">
 						<GitPullRequest className="h-4 w-4" />
@@ -167,7 +176,9 @@ function WorkItemRow({ item, isExpanded, onToggle }: WorkItemRowProps) {
 
 			{/* PR title / number */}
 			<td className="px-4 py-3">
-				{item.prUrl ? (
+				{item.type === 'work-item' ? (
+					<span className="text-muted-foreground italic">No PR yet</span>
+				) : item.prUrl ? (
 					<a
 						href={item.prUrl}
 						target="_blank"
@@ -291,7 +302,11 @@ export function ProjectWorkTable({
 									onToggle={toggleRow}
 								/>
 								{expandedRows.has(item.id) && (
-									<ExpandedRunsRow projectId={projectId} prNumber={item.prNumber} />
+									<ExpandedRunsRow
+										projectId={projectId}
+										prNumber={item.prNumber}
+										workItemId={item.workItemId}
+									/>
 								)}
 							</React.Fragment>
 						))}

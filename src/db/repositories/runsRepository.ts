@@ -8,6 +8,7 @@ import {
 	prWorkItems,
 	projects,
 } from '../schema/index.js';
+import { buildAgentRunWorkItemJoin } from './joinHelpers.js';
 
 // ============================================================================
 // Types
@@ -63,6 +64,9 @@ export interface CreateDebugAnalysisInput {
 // ============================================================================
 // Run CRUD
 // ============================================================================
+
+// Note: The enrichedJoinCondition() helper has been extracted to joinHelpers.ts
+// as buildAgentRunWorkItemJoin() for reuse across repositories
 
 /**
  * Shared select object for enriched run queries that join with prWorkItems.
@@ -138,13 +142,7 @@ export async function getRunById(runId: string) {
 	const rows = await db
 		.select(enrichedRunSelect)
 		.from(agentRuns)
-		.leftJoin(
-			prWorkItems,
-			and(
-				eq(agentRuns.projectId, prWorkItems.projectId),
-				eq(agentRuns.prNumber, prWorkItems.prNumber),
-			),
-		)
+		.leftJoin(prWorkItems, buildAgentRunWorkItemJoin())
 		.where(eq(agentRuns.id, runId));
 	return rows[0] ?? null;
 }
@@ -453,13 +451,7 @@ export async function listRuns(input: ListRunsInput) {
 			})
 			.from(agentRuns)
 			.innerJoin(projects, eq(agentRuns.projectId, projects.id))
-			.leftJoin(
-				prWorkItems,
-				and(
-					eq(agentRuns.projectId, prWorkItems.projectId),
-					eq(agentRuns.prNumber, prWorkItems.prNumber),
-				),
-			)
+			.leftJoin(prWorkItems, buildAgentRunWorkItemJoin())
 			.where(where)
 			.orderBy(orderFn(sortColumn))
 			.limit(input.limit)
@@ -524,13 +516,7 @@ export async function getRunsByWorkItem(projectId: string, workItemId: string) {
 	return db
 		.select(enrichedRunSelect)
 		.from(agentRuns)
-		.leftJoin(
-			prWorkItems,
-			and(
-				eq(agentRuns.projectId, prWorkItems.projectId),
-				eq(agentRuns.prNumber, prWorkItems.prNumber),
-			),
-		)
+		.leftJoin(prWorkItems, buildAgentRunWorkItemJoin())
 		.where(and(eq(agentRuns.projectId, projectId), eq(agentRuns.cardId, workItemId)))
 		.orderBy(desc(agentRuns.startedAt));
 }
@@ -544,13 +530,7 @@ export async function getRunsForPR(projectId: string, prNumber: number) {
 	return db
 		.select(enrichedRunSelect)
 		.from(agentRuns)
-		.leftJoin(
-			prWorkItems,
-			and(
-				eq(agentRuns.projectId, prWorkItems.projectId),
-				eq(agentRuns.prNumber, prWorkItems.prNumber),
-			),
-		)
+		.leftJoin(prWorkItems, buildAgentRunWorkItemJoin())
 		.where(and(eq(agentRuns.projectId, projectId), eq(agentRuns.prNumber, prNumber)))
 		.orderBy(desc(agentRuns.startedAt));
 }

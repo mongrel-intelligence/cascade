@@ -1,6 +1,18 @@
-import { type SQL, and, countDistinct, desc, eq, inArray, isNotNull, max, sum } from 'drizzle-orm';
+import {
+	type SQL,
+	and,
+	countDistinct,
+	desc,
+	eq,
+	inArray,
+	isNotNull,
+	isNull,
+	max,
+	sum,
+} from 'drizzle-orm';
 import { getDb } from '../client.js';
 import { agentRuns, prWorkItems, projects } from '../schema/index.js';
+import { buildAgentRunWorkItemJoin } from './joinHelpers.js';
 
 export interface LinkPRToWorkItemOptions {
 	workItemUrl?: string;
@@ -10,8 +22,66 @@ export interface LinkPRToWorkItemOptions {
 }
 
 /**
- * Upsert a PR ↔ work item link. If a row already exists for the
- * (projectId, prNumber) pair, update the work item ID and optional display fields.
+ * Insert a work-item-only row into pr_work_items (no PR yet).
+ * Called at agent run start for PM-triggered runs.
+ *
+ * Before inserting, checks if a row already exists for (projectId, workItemId)
+ * regardless of prNumber to prevent duplicates when a work-item row is promoted.
+ */
+export async function createWorkItem(
+	projectId: string,
+	workItemId: string,
+	options: Pick<LinkPRToWorkItemOptions, 'workItemUrl' | 'workItemTitle'> = {},
+): Promise<void> {
+	const db = getDb();
+	const now = new Date();
+	const { workItemUrl, workItemTitle } = options;
+
+	// Check if a row already exists for (projectId, workItemId) regardless of prNumber.
+	// This prevents duplicate rows when a work-item-only row has been promoted
+	// (prNumber set) and the same PM card triggers again.
+	const existing = await db
+		.select({ id: prWorkItems.id })
+		.from(prWorkItems)
+		.where(and(eq(prWorkItems.projectId, projectId), eq(prWorkItems.workItemId, workItemId)))
+		.limit(1);
+
+	if (existing.length > 0) {
+		// Row already exists (either work-item-only or promoted with prNumber).
+		// For work-item-only rows, update display fields. For promoted rows, do nothing.
+		await db
+			.update(prWorkItems)
+			.set({
+				workItemUrl,
+				workItemTitle,
+				updatedAt: now,
+			})
+			.where(
+				and(
+					eq(prWorkItems.projectId, projectId),
+					eq(prWorkItems.workItemId, workItemId),
+					isNull(prWorkItems.prNumber),
+				),
+			);
+		return;
+	}
+
+	// No existing row — insert a new work-item-only row
+	await db.insert(prWorkItems).values({
+		projectId,
+		workItemId,
+		workItemUrl,
+		workItemTitle,
+		updatedAt: now,
+	});
+}
+
+/**
+ * Upsert a PR ↔ work item link.
+ *
+ * Two-step logic:
+ * 1. If a work-item-only row exists for (projectId, workItemId), UPDATE it with PR data.
+ * 2. Otherwise INSERT a new row, using onConflictDoUpdate on (projectId, prNumber).
  *
  * workItemId is optional to support "orphan" PRs (PRs created without a linked work item).
  */
@@ -25,6 +95,36 @@ export async function linkPRToWorkItem(
 	const db = getDb();
 	const now = new Date();
 	const { workItemUrl, workItemTitle, prUrl, prTitle } = options;
+
+	// Step 1: If workItemId is provided, try to update the existing work-item-only row
+	if (workItemId) {
+		const updated = await db
+			.update(prWorkItems)
+			.set({
+				repoFullName,
+				prNumber,
+				workItemUrl,
+				workItemTitle,
+				prUrl,
+				prTitle,
+				updatedAt: now,
+			})
+			.where(
+				and(
+					eq(prWorkItems.projectId, projectId),
+					eq(prWorkItems.workItemId, workItemId),
+					isNull(prWorkItems.prNumber),
+				),
+			)
+			.returning({ id: prWorkItems.id });
+
+		if (updated.length > 0) {
+			// Successfully updated the work-item-only row with PR data
+			return;
+		}
+	}
+
+	// Step 2: Insert or update by (projectId, prNumber)
 	await db
 		.insert(prWorkItems)
 		.values({
@@ -40,6 +140,7 @@ export async function linkPRToWorkItem(
 		})
 		.onConflictDoUpdate({
 			target: [prWorkItems.projectId, prWorkItems.prNumber],
+			targetWhere: isNotNull(prWorkItems.prNumber),
 			set: {
 				workItemId,
 				repoFullName,
@@ -51,6 +152,11 @@ export async function linkPRToWorkItem(
 			},
 		});
 }
+
+// ============================================================================
+// Dual JOIN helper
+// ============================================================================
+// Note: The dual-join helper has been extracted to joinHelpers.ts for reuse
 
 // ============================================================================
 // List queries
@@ -96,13 +202,7 @@ export async function listWorkItems(orgId: string, projectId?: string): Promise<
 			runCount: countDistinct(agentRuns.id),
 		})
 		.from(prWorkItems)
-		.leftJoin(
-			agentRuns,
-			and(
-				eq(agentRuns.projectId, prWorkItems.projectId),
-				eq(agentRuns.prNumber, prWorkItems.prNumber),
-			),
-		)
+		.leftJoin(agentRuns, buildAgentRunWorkItemJoin())
 		.where(and(...conditions))
 		.groupBy(prWorkItems.workItemId);
 
@@ -116,8 +216,8 @@ export async function listWorkItems(orgId: string, projectId?: string): Promise<
 }
 
 export interface PRSummary {
-	prNumber: number;
-	repoFullName: string;
+	prNumber: number | null;
+	repoFullName: string | null;
 	prUrl: string | null;
 	prTitle: string | null;
 	workItemId: string | null;
@@ -144,13 +244,7 @@ export async function listPRsForProject(projectId: string): Promise<PRSummary[]>
 			runCount: countDistinct(agentRuns.id),
 		})
 		.from(prWorkItems)
-		.leftJoin(
-			agentRuns,
-			and(
-				eq(agentRuns.projectId, prWorkItems.projectId),
-				eq(agentRuns.prNumber, prWorkItems.prNumber),
-			),
-		)
+		.leftJoin(agentRuns, buildAgentRunWorkItemJoin())
 		.where(eq(prWorkItems.projectId, projectId))
 		.groupBy(
 			prWorkItems.prNumber,
@@ -191,13 +285,7 @@ export async function listPRsForOrg(orgId: string): Promise<PRSummary[]> {
 			runCount: countDistinct(agentRuns.id),
 		})
 		.from(prWorkItems)
-		.leftJoin(
-			agentRuns,
-			and(
-				eq(agentRuns.projectId, prWorkItems.projectId),
-				eq(agentRuns.prNumber, prWorkItems.prNumber),
-			),
-		)
+		.leftJoin(agentRuns, buildAgentRunWorkItemJoin())
 		.where(inArray(prWorkItems.projectId, ids))
 		.groupBy(
 			prWorkItems.prNumber,
@@ -233,13 +321,7 @@ export async function listPRsForWorkItem(
 			runCount: countDistinct(agentRuns.id),
 		})
 		.from(prWorkItems)
-		.leftJoin(
-			agentRuns,
-			and(
-				eq(agentRuns.projectId, prWorkItems.projectId),
-				eq(agentRuns.prNumber, prWorkItems.prNumber),
-			),
-		)
+		.leftJoin(agentRuns, buildAgentRunWorkItemJoin())
 		.where(and(eq(prWorkItems.projectId, projectId), eq(prWorkItems.workItemId, workItemId)))
 		.groupBy(
 			prWorkItems.prNumber,
@@ -278,9 +360,9 @@ export async function lookupWorkItemForPR(
 
 export interface UnifiedWorkItem {
 	id: string;
-	type: 'pr' | 'linked';
-	prNumber: number;
-	repoFullName: string;
+	type: 'pr' | 'linked' | 'work-item';
+	prNumber: number | null;
+	repoFullName: string | null;
 	prUrl: string | null;
 	prTitle: string | null;
 	workItemId: string | null;
@@ -294,6 +376,7 @@ export interface UnifiedWorkItem {
 /**
  * Returns all PR entries for a project as a unified work view, ordered by updatedAt desc.
  * PRs without a linked work item have type 'pr'; rows with both have type 'linked'.
+ * Work-item-only rows (no PR yet) have type 'work-item'.
  */
 export async function listUnifiedWorkForProject(projectId: string): Promise<UnifiedWorkItem[]> {
 	const db = getDb();
@@ -312,13 +395,7 @@ export async function listUnifiedWorkForProject(projectId: string): Promise<Unif
 			totalCostUsd: sum(agentRuns.costUsd),
 		})
 		.from(prWorkItems)
-		.leftJoin(
-			agentRuns,
-			and(
-				eq(agentRuns.projectId, prWorkItems.projectId),
-				eq(agentRuns.prNumber, prWorkItems.prNumber),
-			),
-		)
+		.leftJoin(agentRuns, buildAgentRunWorkItemJoin())
 		.where(eq(prWorkItems.projectId, projectId))
 		.groupBy(
 			prWorkItems.id,
@@ -333,18 +410,28 @@ export async function listUnifiedWorkForProject(projectId: string): Promise<Unif
 		)
 		.orderBy(desc(prWorkItems.updatedAt));
 
-	return rows.map((r) => ({
-		id: r.id,
-		type: r.workItemId ? ('linked' as const) : ('pr' as const),
-		prNumber: r.prNumber,
-		repoFullName: r.repoFullName,
-		prUrl: r.prUrl,
-		prTitle: r.prTitle,
-		workItemId: r.workItemId,
-		workItemUrl: r.workItemUrl,
-		workItemTitle: r.workItemTitle,
-		runCount: r.runCount,
-		updatedAt: r.updatedAt,
-		totalCostUsd: r.totalCostUsd ?? null,
-	}));
+	return rows.map((r) => {
+		let type: 'pr' | 'linked' | 'work-item';
+		if (r.prNumber === null) {
+			type = 'work-item';
+		} else if (r.workItemId) {
+			type = 'linked';
+		} else {
+			type = 'pr';
+		}
+		return {
+			id: r.id,
+			type,
+			prNumber: r.prNumber,
+			repoFullName: r.repoFullName,
+			prUrl: r.prUrl,
+			prTitle: r.prTitle,
+			workItemId: r.workItemId,
+			workItemUrl: r.workItemUrl,
+			workItemTitle: r.workItemTitle,
+			runCount: r.runCount,
+			updatedAt: r.updatedAt,
+			totalCostUsd: r.totalCostUsd ?? null,
+		};
+	});
 }
