@@ -58,9 +58,13 @@ export function ProjectWorkTable({ items, offset, limit, onPageChange }: Project
 								{/* Type icon */}
 								<td className="px-4 py-3 text-muted-foreground">
 									{item.type === 'linked' ? (
-										<ClipboardList className="h-4 w-4" title="Linked (PR + Work Item)" />
+										<span title="Linked (PR + Work Item)">
+											<ClipboardList className="h-4 w-4" />
+										</span>
 									) : (
-										<GitPullRequest className="h-4 w-4" title="Pull Request" />
+										<span title="Pull Request">
+											<GitPullRequest className="h-4 w-4" />
+										</span>
 									)}
 								</td>
 
