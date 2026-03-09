@@ -8,6 +8,8 @@ let sessionState = {
 	baseBranch: 'main' as string,
 	projectId: null as string | null,
 	cardId: null as string | null,
+	workItemUrl: null as string | null,
+	workItemTitle: null as string | null,
 	prCreated: false,
 	prUrl: null as string | null,
 	reviewSubmitted: false,
@@ -24,12 +26,16 @@ export function initSessionState(
 	projectId?: string,
 	cardId?: string,
 	hooks?: SessionHooks,
+	workItemUrl?: string,
+	workItemTitle?: string,
 ): void {
 	sessionState = {
 		agentType,
 		baseBranch: baseBranch ?? 'main',
 		projectId: projectId ?? null,
 		cardId: cardId ?? null,
+		workItemUrl: workItemUrl ?? null,
+		workItemTitle: workItemTitle ?? null,
 		prCreated: false,
 		prUrl: null,
 		reviewSubmitted: false,
@@ -51,6 +57,14 @@ export function getProjectId(): string | null {
 
 export function getCardId(): string | null {
 	return sessionState.cardId;
+}
+
+export function getWorkItemUrl(): string | null {
+	return sessionState.workItemUrl;
+}
+
+export function getWorkItemTitle(): string | null {
+	return sessionState.workItemTitle;
 }
 
 export function recordPRCreation(prUrl: string): void {

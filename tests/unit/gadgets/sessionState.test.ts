@@ -17,6 +17,8 @@ import {
 	getCardId,
 	getProjectId,
 	getSessionState,
+	getWorkItemTitle,
+	getWorkItemUrl,
 	initSessionState,
 	recordInitialComment,
 	recordPRCreation,
@@ -87,6 +89,51 @@ describe('getters', () => {
 
 	it('getCardId returns the card id', () => {
 		expect(getCardId()).toBe('card-xyz');
+	});
+
+	it('getWorkItemUrl returns null when not set', () => {
+		expect(getWorkItemUrl()).toBeNull();
+	});
+
+	it('getWorkItemTitle returns null when not set', () => {
+		expect(getWorkItemTitle()).toBeNull();
+	});
+});
+
+describe('workItemUrl and workItemTitle', () => {
+	it('stores workItemUrl and workItemTitle when provided to initSessionState', () => {
+		initSessionState(
+			'implementation',
+			'main',
+			'proj-1',
+			'card-1',
+			undefined,
+			'https://trello.com/c/abc123',
+			'My Feature Card',
+		);
+		expect(getWorkItemUrl()).toBe('https://trello.com/c/abc123');
+		expect(getWorkItemTitle()).toBe('My Feature Card');
+	});
+
+	it('returns null for workItemUrl and workItemTitle when not provided', () => {
+		initSessionState('implementation', 'main', 'proj-1', 'card-1');
+		expect(getWorkItemUrl()).toBeNull();
+		expect(getWorkItemTitle()).toBeNull();
+	});
+
+	it('resets workItemUrl and workItemTitle on subsequent initSessionState call', () => {
+		initSessionState(
+			'implementation',
+			'main',
+			'proj-1',
+			'card-1',
+			undefined,
+			'https://trello.com/c/abc',
+			'Card A',
+		);
+		initSessionState('implementation');
+		expect(getWorkItemUrl()).toBeNull();
+		expect(getWorkItemTitle()).toBeNull();
 	});
 });
 

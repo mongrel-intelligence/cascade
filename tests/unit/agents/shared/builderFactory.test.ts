@@ -171,6 +171,8 @@ describe('createConfiguredBuilder', () => {
 			undefined,
 			undefined,
 			undefined,
+			undefined,
+			undefined,
 		);
 	});
 
@@ -193,6 +195,28 @@ describe('createConfiguredBuilder', () => {
 			'project-1',
 			'card-123',
 			undefined,
+			undefined,
+			undefined,
+		);
+	});
+
+	it('passes workItemUrl and workItemTitle to initSessionState', async () => {
+		const options = createBaseOptions({
+			baseBranch: 'main',
+			projectId: 'project-1',
+			cardId: 'card-123',
+			workItemUrl: 'https://trello.com/c/abc123',
+			workItemTitle: 'My Feature Card',
+		});
+		await createConfiguredBuilder(options);
+		expect(mockInitSessionState).toHaveBeenCalledWith(
+			'implementation',
+			'main',
+			'project-1',
+			'card-123',
+			undefined,
+			'https://trello.com/c/abc123',
+			'My Feature Card',
 		);
 	});
 

@@ -78,10 +78,16 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 			agentType,
 		});
 
+		// Capture work item display data from the issue payload
+		const workItemUrl = `${jiraConfig.baseUrl}/browse/${issueKey}`;
+		const workItemTitle = payload.issue?.fields?.summary ?? undefined;
+
 		return {
 			agentType,
-			agentInput: { cardId: issueKey },
+			agentInput: { cardId: issueKey, workItemUrl, workItemTitle },
 			workItemId: issueKey,
+			workItemUrl,
+			workItemTitle,
 		};
 	}
 }

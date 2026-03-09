@@ -46,6 +46,10 @@ export interface CreateBuilderOptions {
 	projectId?: string;
 	/** Work item (card) ID for PR ↔ work item linking. Passed to session state. */
 	cardId?: string;
+	/** Work item URL for PR ↔ work item enrichment. Passed to session state. */
+	workItemUrl?: string;
+	/** Work item display title for PR ↔ work item enrichment. Passed to session state. */
+	workItemTitle?: string;
 	/** Resolved SCM hook flags for finish validation (requiresPR, requiresReview, etc.) */
 	hooks?: SessionHooks;
 }
@@ -81,6 +85,8 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 			options.projectId,
 			options.cardId,
 			options.hooks,
+			options.workItemUrl,
+			options.workItemTitle,
 		);
 	}
 

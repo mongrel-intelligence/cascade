@@ -101,6 +101,11 @@ export class TrelloCommentMentionTrigger implements TriggerHandler {
 		// Extract comment author username
 		const commentAuthor = payload.action.memberCreator?.username || 'unknown';
 
+		// Capture work item display data from the fetched card
+		// card.shortUrl is the canonical short URL (e.g. https://trello.com/c/abc123)
+		const workItemUrl = card.shortUrl || undefined;
+		const workItemTitle = card.name || undefined;
+
 		logger.info('Trello comment @mention detected on PLANNING card, triggering agent', {
 			cardId,
 			commentAuthor,
@@ -113,8 +118,12 @@ export class TrelloCommentMentionTrigger implements TriggerHandler {
 				cardId,
 				triggerCommentText: commentText,
 				triggerCommentAuthor: commentAuthor,
+				workItemUrl,
+				workItemTitle,
 			},
 			workItemId: cardId,
+			workItemUrl,
+			workItemTitle,
 		};
 	}
 }

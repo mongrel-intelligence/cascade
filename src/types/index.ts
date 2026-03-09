@@ -83,6 +83,10 @@ export interface TriggerResult {
 	agentType: string | null;
 	agentInput: AgentInput;
 	workItemId?: string;
+	/** URL to the work item in the PM provider (e.g. Trello card URL, Jira issue URL). */
+	workItemUrl?: string;
+	/** Display title of the work item (e.g. Trello card name, Jira issue summary). */
+	workItemTitle?: string;
 	prNumber?: number;
 	/** When true, the worker must poll for all CI checks to pass before starting the agent. */
 	waitForChecks?: boolean;

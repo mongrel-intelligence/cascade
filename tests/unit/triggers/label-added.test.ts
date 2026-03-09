@@ -216,6 +216,43 @@ describe('ReadyToProcessLabelTrigger', () => {
 			expect(mockGetCard).toHaveBeenCalledWith('card123');
 		});
 
+		it('populates workItemUrl and workItemTitle from fetched card data', async () => {
+			mockGetCard.mockResolvedValue({
+				id: 'card123',
+				name: 'My Feature Card',
+				desc: '',
+				url: 'https://trello.com/c/xyz123/my-feature-card',
+				shortUrl: 'https://trello.com/c/xyz123',
+				idList: 'splitting-list-id',
+				labels: [],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'trello',
+				payload: {
+					model: { id: 'board123', name: 'Board' },
+					action: {
+						id: 'action1',
+						idMemberCreator: 'member1',
+						type: 'addLabelToCard',
+						date: '2024-01-01',
+						data: {
+							card: { id: 'card123', name: 'My Feature Card', idShort: 1, shortLink: 'xyz123' },
+							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
+						},
+					},
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result.workItemUrl).toBe('https://trello.com/c/xyz123');
+			expect(result.workItemTitle).toBe('My Feature Card');
+			expect(result.agentInput.workItemUrl).toBe('https://trello.com/c/xyz123');
+			expect(result.agentInput.workItemTitle).toBe('My Feature Card');
+		});
+
 		it('returns planning agent when card is in planning list', async () => {
 			mockGetCard.mockResolvedValue({
 				id: 'card456',
