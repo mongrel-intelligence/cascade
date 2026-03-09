@@ -1,6 +1,6 @@
-import { and, countDistinct, eq, isNotNull, max } from 'drizzle-orm';
+import { type SQL, and, countDistinct, eq, inArray, isNotNull, max } from 'drizzle-orm';
 import { getDb } from '../client.js';
-import { agentRuns, prWorkItems } from '../schema/index.js';
+import { agentRuns, prWorkItems, projects } from '../schema/index.js';
 
 export interface LinkPRToWorkItemOptions {
 	workItemUrl?: string;
@@ -87,6 +87,57 @@ export async function listWorkItemsForProject(projectId: string): Promise<WorkIt
 			),
 		)
 		.where(and(eq(prWorkItems.projectId, projectId), isNotNull(prWorkItems.workItemId)))
+		.groupBy(prWorkItems.workItemId);
+
+	return rows.map((r) => ({
+		workItemId: r.workItemId as string,
+		workItemUrl: r.workItemUrl,
+		workItemTitle: r.workItemTitle,
+		prCount: r.prCount,
+		runCount: r.runCount,
+	}));
+}
+
+/**
+ * Returns distinct work items for an org (all projects), with optional projectId filter.
+ * Includes counts of associated PRs and agent runs.
+ * Only rows with a non-null workItemId are included.
+ */
+export async function listWorkItems(orgId: string, projectId?: string): Promise<WorkItemSummary[]> {
+	const db = getDb();
+
+	const conditions: SQL[] = [isNotNull(prWorkItems.workItemId)];
+
+	if (projectId) {
+		conditions.push(eq(prWorkItems.projectId, projectId));
+	} else {
+		// Filter by org: join with projects and restrict to org
+		const projectIds = await db
+			.select({ id: projects.id })
+			.from(projects)
+			.where(eq(projects.orgId, orgId));
+		const ids = projectIds.map((p) => p.id);
+		if (ids.length === 0) return [];
+		conditions.push(inArray(prWorkItems.projectId, ids));
+	}
+
+	const rows = await db
+		.select({
+			workItemId: prWorkItems.workItemId,
+			workItemUrl: max(prWorkItems.workItemUrl),
+			workItemTitle: max(prWorkItems.workItemTitle),
+			prCount: countDistinct(prWorkItems.prNumber),
+			runCount: countDistinct(agentRuns.id),
+		})
+		.from(prWorkItems)
+		.leftJoin(
+			agentRuns,
+			and(
+				eq(agentRuns.projectId, prWorkItems.projectId),
+				eq(agentRuns.prNumber, prWorkItems.prNumber),
+			),
+		)
+		.where(and(...conditions))
 		.groupBy(prWorkItems.workItemId);
 
 	return rows.map((r) => ({

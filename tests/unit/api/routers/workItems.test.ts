@@ -7,11 +7,11 @@ import { createMockUser } from '../../../helpers/factories.js';
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockListWorkItemsForProject = vi.fn();
+const mockListWorkItems = vi.fn();
 const mockGetRunsByWorkItem = vi.fn();
 
 vi.mock('../../../../src/db/repositories/prWorkItemsRepository.js', () => ({
-	listWorkItemsForProject: (...args: unknown[]) => mockListWorkItemsForProject(...args),
+	listWorkItems: (...args: unknown[]) => mockListWorkItems(...args),
 }));
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
@@ -61,18 +61,32 @@ describe('workItemsRouter', () => {
 					runCount: 0,
 				},
 			];
-			mockListWorkItemsForProject.mockResolvedValue(mockItems);
+			mockListWorkItems.mockResolvedValue(mockItems);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
 			const result = await caller.list({ projectId: 'test-project' });
 
 			expect(result).toEqual(mockItems);
 			expect(mockVerifyProjectOrgAccess).toHaveBeenCalledWith('test-project', 'org-1');
-			expect(mockListWorkItemsForProject).toHaveBeenCalledWith('test-project');
+			expect(mockListWorkItems).toHaveBeenCalledWith('org-1', 'test-project');
+		});
+
+		it('returns work items across all projects when no projectId given', async () => {
+			const mockItems = [
+				{ workItemId: 'wi-1', workItemUrl: null, workItemTitle: 'Card 1', prCount: 2, runCount: 3 },
+			];
+			mockListWorkItems.mockResolvedValue(mockItems);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			const result = await caller.list({});
+
+			expect(result).toEqual(mockItems);
+			expect(mockVerifyProjectOrgAccess).not.toHaveBeenCalled();
+			expect(mockListWorkItems).toHaveBeenCalledWith('org-1', undefined);
 		});
 
 		it('returns empty array when no work items exist', async () => {
-			mockListWorkItemsForProject.mockResolvedValue([]);
+			mockListWorkItems.mockResolvedValue([]);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
 			const result = await caller.list({ projectId: 'test-project' });

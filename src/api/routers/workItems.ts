@@ -1,15 +1,17 @@
 import { z } from 'zod';
-import { listWorkItemsForProject } from '../../db/repositories/prWorkItemsRepository.js';
+import { listWorkItems } from '../../db/repositories/prWorkItemsRepository.js';
 import { getRunsByWorkItem } from '../../db/repositories/runsRepository.js';
 import { protectedProcedure, router } from '../trpc.js';
 import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
 export const workItemsRouter = router({
 	list: protectedProcedure
-		.input(z.object({ projectId: z.string() }))
+		.input(z.object({ projectId: z.string().optional() }))
 		.query(async ({ ctx, input }) => {
-			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
-			const items = await listWorkItemsForProject(input.projectId);
+			if (input.projectId) {
+				await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+			}
+			const items = await listWorkItems(ctx.effectiveOrgId, input.projectId);
 			return items;
 		}),
 

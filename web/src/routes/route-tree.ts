@@ -10,6 +10,7 @@ import { settingsCredentialsRoute } from './settings/credentials.js';
 import { settingsDefinitionsRoute } from './settings/definitions.js';
 import { settingsGeneralRoute } from './settings/general.js';
 import { webhookLogsRoute } from './webhooklogs.js';
+import { workItemsRoute } from './workitems.js';
 
 export const routeTree = rootRoute.addChildren([
 	loginRoute,
@@ -22,5 +23,6 @@ export const routeTree = rootRoute.addChildren([
 	settingsAgentsRoute,
 	settingsDefinitionsRoute,
 	webhookLogsRoute,
+	workItemsRoute,
 	gmailCallbackRoute,
 ]);
