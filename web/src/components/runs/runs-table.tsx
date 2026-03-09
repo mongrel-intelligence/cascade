@@ -15,6 +15,8 @@ interface Run {
 	costUsd: string | null;
 	llmIterations: number | null;
 	prUrl: string | null;
+	workItemTitle?: string | null;
+	workItemUrl?: string | null;
 }
 
 interface RunsTableProps {
@@ -39,6 +41,9 @@ export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTabl
 							<th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
 								Project
 							</th>
+							<th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
+								Work Item
+							</th>
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Started</th>
 							<th className="hidden px-4 py-3 text-right font-medium text-muted-foreground md:table-cell">
@@ -59,7 +64,7 @@ export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTabl
 					<tbody>
 						{runs.length === 0 && (
 							<tr>
-								<td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+								<td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
 									No runs found
 								</td>
 							</tr>
@@ -80,6 +85,23 @@ export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTabl
 								</td>
 								<td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
 									{run.projectName ?? '-'}
+								</td>
+								<td className="hidden px-4 py-3 md:table-cell">
+									{run.workItemUrl && run.workItemTitle ? (
+										<a
+											href={run.workItemUrl}
+											target="_blank"
+											rel="noopener noreferrer"
+											className="inline-flex items-center gap-1 text-primary hover:underline"
+										>
+											{run.workItemTitle}
+											<ExternalLink className="h-3 w-3 shrink-0" />
+										</a>
+									) : (
+										<span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+											Unlinked
+										</span>
+									)}
 								</td>
 								<td className="px-4 py-3">
 									<RunStatusBadge status={run.status} />
