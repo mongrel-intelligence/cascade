@@ -10,6 +10,7 @@ let sessionState = {
 	cardId: null as string | null,
 	workItemUrl: null as string | null,
 	workItemTitle: null as string | null,
+	initialHeadSha: null as string | null,
 	prCreated: false,
 	prUrl: null as string | null,
 	reviewSubmitted: false,
@@ -28,6 +29,7 @@ export function initSessionState(
 	hooks?: SessionHooks,
 	workItemUrl?: string,
 	workItemTitle?: string,
+	initialHeadSha?: string,
 ): void {
 	sessionState = {
 		agentType,
@@ -36,6 +38,7 @@ export function initSessionState(
 		cardId: cardId ?? null,
 		workItemUrl: workItemUrl ?? null,
 		workItemTitle: workItemTitle ?? null,
+		initialHeadSha: initialHeadSha ?? null,
 		prCreated: false,
 		prUrl: null,
 		reviewSubmitted: false,

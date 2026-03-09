@@ -88,10 +88,20 @@ describe('Finish gadget', () => {
 	});
 
 	describe('respond-to-ci agent (hooks.requiresPushedChanges: true)', () => {
+		const INITIAL_SHA = 'a'.repeat(40);
+		const NEW_SHA = 'b'.repeat(40);
+
 		beforeEach(() => {
-			initSessionState('respond-to-ci', undefined, undefined, undefined, {
-				requiresPushedChanges: true,
-			});
+			initSessionState(
+				'respond-to-ci',
+				undefined,
+				undefined,
+				undefined,
+				{ requiresPushedChanges: true },
+				undefined,
+				undefined,
+				INITIAL_SHA,
+			);
 		});
 
 		it('rejects finish with uncommitted changes', async () => {
@@ -120,6 +130,37 @@ describe('Finish gadget', () => {
 		});
 
 		it('allows finish when changes are committed and pushed', async () => {
+			vi.mocked(execSync).mockImplementation((cmd: string) => {
+				if (cmd.includes('status --porcelain')) return '';
+				if (cmd.includes('rev-list')) return '0';
+				if (cmd === 'git rev-parse HEAD') return NEW_SHA;
+				return '';
+			});
+
+			const gadget = new Finish();
+			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(TaskCompletionSignal);
+		});
+
+		it('rejects finish when no new commits were made (HEAD unchanged)', async () => {
+			vi.mocked(execSync).mockImplementation((cmd: string) => {
+				if (cmd.includes('status --porcelain')) return '';
+				if (cmd.includes('rev-list')) return '0';
+				if (cmd === 'git rev-parse HEAD') return INITIAL_SHA;
+				return '';
+			});
+
+			const gadget = new Finish();
+			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(
+				'Cannot finish session without making any changes',
+			);
+		});
+
+		it('skips no-op check when initialHeadSha is not set', async () => {
+			// Re-init without initialHeadSha
+			initSessionState('respond-to-ci', undefined, undefined, undefined, {
+				requiresPushedChanges: true,
+			});
+
 			vi.mocked(execSync).mockImplementation((cmd: string) => {
 				if (cmd.includes('status --porcelain')) return '';
 				if (cmd.includes('rev-list')) return '0';

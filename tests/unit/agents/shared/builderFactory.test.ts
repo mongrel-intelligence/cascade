@@ -24,6 +24,10 @@ vi.mock('../../../../src/gadgets/sessionState.js', () => ({
 	initSessionState: vi.fn(),
 }));
 
+vi.mock('node:child_process', () => ({
+	execSync: vi.fn().mockReturnValue('abc123headsha\n'),
+}));
+
 vi.mock('../../../../src/agents/utils/hooks.js', () => ({
 	createObserverHooks: vi.fn().mockReturnValue({ onIteration: vi.fn() }),
 }));
@@ -59,6 +63,7 @@ vi.mock('llmist', () => ({
 	BudgetPricingUnavailableError: class BudgetPricingUnavailableError extends Error {},
 }));
 
+import { execSync } from 'node:child_process';
 import { AgentBuilder, BudgetPricingUnavailableError } from 'llmist';
 import {
 	createConfiguredBuilder,
@@ -67,6 +72,7 @@ import {
 import { initSessionState } from '../../../../src/gadgets/sessionState.js';
 import { resolveSquintDbPath } from '../../../../src/utils/squintDb.js';
 
+const mockExecSync = vi.mocked(execSync);
 const mockResolveSquintDbPath = vi.mocked(resolveSquintDbPath);
 const mockInitSessionState = vi.mocked(initSessionState);
 const MockAgentBuilder = vi.mocked(AgentBuilder);
@@ -173,6 +179,7 @@ describe('createConfiguredBuilder', () => {
 			undefined,
 			undefined,
 			undefined,
+			'abc123headsha',
 		);
 	});
 
@@ -197,6 +204,7 @@ describe('createConfiguredBuilder', () => {
 			undefined,
 			undefined,
 			undefined,
+			'abc123headsha',
 		);
 	});
 
@@ -217,6 +225,25 @@ describe('createConfiguredBuilder', () => {
 			undefined,
 			'https://trello.com/c/abc123',
 			'My Feature Card',
+			'abc123headsha',
+		);
+	});
+
+	it('passes undefined initialHeadSha when git rev-parse fails', async () => {
+		mockExecSync.mockImplementation(() => {
+			throw new Error('not a git repository');
+		});
+		const options = createBaseOptions();
+		await createConfiguredBuilder(options);
+		expect(mockInitSessionState).toHaveBeenCalledWith(
+			'implementation',
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
 		);
 	});
 

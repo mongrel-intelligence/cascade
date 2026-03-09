@@ -38,6 +38,7 @@ describe('initSessionState', () => {
 		expect(state.baseBranch).toBe('main');
 		expect(state.projectId).toBeNull();
 		expect(state.cardId).toBeNull();
+		expect(state.initialHeadSha).toBeNull();
 		expect(state.prCreated).toBe(false);
 		expect(state.prUrl).toBeNull();
 		expect(state.reviewSubmitted).toBe(false);
@@ -134,6 +135,42 @@ describe('workItemUrl and workItemTitle', () => {
 		initSessionState('implementation');
 		expect(getWorkItemUrl()).toBeNull();
 		expect(getWorkItemTitle()).toBeNull();
+	});
+});
+
+describe('initialHeadSha', () => {
+	it('stores initialHeadSha when passed to initSessionState', () => {
+		initSessionState(
+			'respond-to-ci',
+			'main',
+			'proj-1',
+			'card-1',
+			undefined,
+			undefined,
+			undefined,
+			'abc123sha',
+		);
+		expect(getSessionState().initialHeadSha).toBe('abc123sha');
+	});
+
+	it('defaults to null when not provided', () => {
+		initSessionState('implementation');
+		expect(getSessionState().initialHeadSha).toBeNull();
+	});
+
+	it('resets to null on re-init without the param', () => {
+		initSessionState(
+			'respond-to-ci',
+			'main',
+			'proj-1',
+			'card-1',
+			undefined,
+			undefined,
+			undefined,
+			'abc123sha',
+		);
+		initSessionState('implementation');
+		expect(getSessionState().initialHeadSha).toBeNull();
 	});
 });
 
