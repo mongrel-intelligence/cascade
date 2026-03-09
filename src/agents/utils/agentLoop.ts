@@ -5,6 +5,7 @@
  * Interactive mode handling lives here, making it easy to extend and customize.
  */
 import { consumePendingSessionNotices } from '../../gadgets/tmux.js';
+import { addBreadcrumb } from '../../sentry.js';
 import {
 	displayGadgetCall,
 	displayGadgetResult,
@@ -234,6 +235,18 @@ function handleGadgetResultEvent(
 	}
 
 	log[error ? 'error' : 'info']('[Gadget result]', logContext);
+
+	addBreadcrumb({
+		category: 'gadget',
+		message: `${gadgetName} ${error ? 'error' : 'ok'} (${executionTimeMs}ms)`,
+		level: error ? 'error' : 'info',
+		data: {
+			gadgetName,
+			executionTimeMs,
+			...(error ? { error } : {}),
+			...(result ? { resultPreview: result.slice(0, 200) } : {}),
+		},
+	});
 }
 
 // ============================================================================

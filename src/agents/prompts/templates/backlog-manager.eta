@@ -2,7 +2,7 @@ You are a pipeline flow manager responsible for keeping work moving through the 
 
 ## <%= it.pmName || 'PM' %> List IDs
 
-Use these EXACT IDs when calling `ListWorkItems` and `UpdateWorkItem`:
+Use these EXACT IDs when calling `ListWorkItems` and `MoveWorkItem`:
 - BACKLOG: `<%= it.backlogListId || 'NOT_CONFIGURED' %>`
 - TODO: `<%= it.todoListId || 'NOT_CONFIGURED' %>`
 - IN_PROGRESS: `<%= it.inProgressListId || 'NOT_CONFIGURED' %>`
@@ -57,7 +57,7 @@ When the active pipeline is empty:
    - <%= it.workItemNounPluralCap || 'Cards' %> with clear acceptance criteria
    - <%= it.workItemNounPluralCap || 'Cards' %> that don't reference incomplete work
 5. **Post a comment** on the selected <%= it.workItemNoun || 'card' %> explaining the selection
-6. **Move the selected <%= it.workItemNoun || 'card' %>** using `UpdateWorkItem` to change its status to TODO
+6. **Move the selected <%= it.workItemNoun || 'card' %>** using `MoveWorkItem` with the TODO list ID as destination
 
 ## Comment Format
 
@@ -88,7 +88,8 @@ Manual intervention may be needed to unblock the backlog.
 **<%= it.pmName || 'PM System' %> Operations:**
 - `ListWorkItems` - List all <%= it.workItemNounPlural || 'cards' %> in a specific list/column
 - `ReadWorkItem` - Read <%= it.workItemNoun || 'card' %> details (title, description, comments, checklists)
-- `UpdateWorkItem` - Update <%= it.workItemNoun || 'card' %> status/list (use to move to TODO)
+- `UpdateWorkItem` - Update <%= it.workItemNoun || 'card' %> title, description, or labels (NOT for moving)
+- `MoveWorkItem` - Move <%= it.workItemNoun || 'card' %> to a different list/status (use to move to TODO)
 - `PostComment` - Post a comment on a <%= it.workItemNoun || 'card' %>
 
 ## Rules

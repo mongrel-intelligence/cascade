@@ -128,7 +128,13 @@ export const CAPABILITY_REGISTRY: Record<Capability, CapabilityDefinition> = {
 	'pm:write': {
 		integration: 'pm',
 		description: 'Create and update work items, post comments',
-		gadgetNames: ['UpdateWorkItem', 'CreateWorkItem', 'PostComment', 'AddChecklist'],
+		gadgetNames: [
+			'UpdateWorkItem',
+			'CreateWorkItem',
+			'MoveWorkItem',
+			'PostComment',
+			'AddChecklist',
+		],
 		sdkToolNames: [],
 		cliToolNames: [],
 	},
