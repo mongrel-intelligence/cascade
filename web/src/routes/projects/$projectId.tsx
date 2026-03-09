@@ -20,7 +20,10 @@ function ProjectDetailPage() {
 	const [workOffset, setWorkOffset] = useState(0);
 
 	const projectQuery = useQuery(trpc.projects.getById.queryOptions({ id: projectId }));
-	const workQuery = useQuery(trpc.prs.listUnified.queryOptions({ projectId }));
+	const workQuery = useQuery({
+		...trpc.prs.listUnified.queryOptions({ projectId }),
+		enabled: activeTab === 'work',
+	});
 
 	if (projectQuery.isLoading) {
 		return <div className="py-8 text-center text-muted-foreground">Loading project...</div>;
