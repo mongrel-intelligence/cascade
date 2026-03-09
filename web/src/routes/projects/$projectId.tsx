@@ -100,6 +100,7 @@ function ProjectDetailPage() {
 					{workQuery.data && (
 						<ProjectWorkTable
 							items={workQuery.data}
+							projectId={projectId}
 							offset={workOffset}
 							limit={WORK_PAGE_SIZE}
 							onPageChange={setWorkOffset}
