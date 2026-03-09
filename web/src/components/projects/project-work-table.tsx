@@ -25,6 +25,7 @@ interface WorkItem {
 	workItemTitle: string | null;
 	runCount: number;
 	updatedAt: Date | string | null;
+	totalCostUsd: string | number | null;
 }
 
 interface ProjectWorkTableProps {
@@ -186,9 +187,6 @@ function WorkItemRow({ item, isExpanded, onToggle }: WorkItemRowProps) {
 				)}
 			</td>
 
-			{/* Repository */}
-			<td className="px-4 py-3 text-muted-foreground">{item.repoFullName}</td>
-
 			{/* Associated work item */}
 			<td className="px-4 py-3">
 				{item.workItemUrl && item.workItemTitle ? (
@@ -216,6 +214,11 @@ function WorkItemRow({ item, isExpanded, onToggle }: WorkItemRowProps) {
 				) : (
 					item.runCount
 				)}
+			</td>
+
+			{/* Cost */}
+			<td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+				{formatCost(item.totalCostUsd)}
 			</td>
 		</tr>
 	);
@@ -265,11 +268,11 @@ export function ProjectWorkTable({
 						<tr className="border-b border-border bg-muted/50">
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground w-8" />
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Title</th>
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Repository</th>
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">
 								Associated Item
 							</th>
 							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Runs</th>
+							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Cost</th>
 						</tr>
 					</thead>
 					<tbody>
