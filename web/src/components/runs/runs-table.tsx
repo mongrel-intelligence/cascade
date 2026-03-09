@@ -1,6 +1,7 @@
 import { formatCost, formatRelativeTime } from '@/lib/utils.js';
 import { Link } from '@tanstack/react-router';
 import { ExternalLink } from 'lucide-react';
+import { CancelRunButton } from './cancel-run-button.js';
 import { LiveDuration } from './live-duration.js';
 import { RetryRunButton } from './retry-run-button.js';
 import { RunStatusBadge } from './run-status-badge.js';
@@ -137,6 +138,7 @@ export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTabl
 									)}
 								</td>
 								<td className="px-4 py-3 text-center">
+									<CancelRunButton runId={run.id} status={run.status} />
 									<RetryRunButton runId={run.id} status={run.status} />
 								</td>
 							</tr>
