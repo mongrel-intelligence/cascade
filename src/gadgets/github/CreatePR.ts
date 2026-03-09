@@ -1,7 +1,14 @@
 import { Gadget, z } from 'llmist';
 import { linkPRToWorkItem } from '../../db/repositories/prWorkItemsRepository.js';
 import { logger } from '../../utils/logging.js';
-import { getBaseBranch, getCardId, getProjectId, recordPRCreation } from '../sessionState.js';
+import {
+	getBaseBranch,
+	getCardId,
+	getProjectId,
+	getWorkItemTitle,
+	getWorkItemUrl,
+	recordPRCreation,
+} from '../sessionState.js';
 import { createPR } from './core/createPR.js';
 
 export class CreatePR extends Gadget({
@@ -99,7 +106,12 @@ If hooks fail or timeout, the full output will be shown.`,
 		const cardId = getCardId();
 		if (projectId && cardId) {
 			try {
-				await linkPRToWorkItem(projectId, result.repoFullName, result.prNumber, cardId);
+				await linkPRToWorkItem(projectId, result.repoFullName, result.prNumber, cardId, {
+					prUrl: result.prUrl,
+					prTitle: params.title,
+					workItemUrl: getWorkItemUrl() ?? undefined,
+					workItemTitle: getWorkItemTitle() ?? undefined,
+				});
 			} catch (err) {
 				logger.warn('Failed to persist PR-work-item link', {
 					projectId,

@@ -6,6 +6,7 @@
  */
 
 import { jiraClient } from '../../jira/client.js';
+import { getJiraConfig } from '../../pm/config.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
@@ -163,6 +164,13 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 		const commentText = extractText(commentBody);
 		const authorName = commentAuthor?.displayName || 'unknown';
 
+		// Capture work item display data from the issue payload and Jira config
+		const jiraConfig = getJiraConfig(ctx.project);
+		const workItemUrl = jiraConfig?.baseUrl
+			? `${jiraConfig.baseUrl}/browse/${issueKey}`
+			: undefined;
+		const workItemTitle = payload.issue?.fields?.summary ?? undefined;
+
 		logger.info('JIRA comment @mention detected, triggering agent', {
 			issueKey,
 			commentAuthor: authorName,
@@ -175,8 +183,12 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 				cardId: issueKey,
 				triggerCommentText: commentText,
 				triggerCommentAuthor: authorName,
+				workItemUrl,
+				workItemTitle,
 			},
 			workItemId: issueKey,
+			workItemUrl,
+			workItemTitle,
 		};
 	}
 }

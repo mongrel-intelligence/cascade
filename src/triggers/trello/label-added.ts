@@ -67,10 +67,17 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 			return null;
 		}
 
+		// Capture work item display data from the fetched card
+		// card.shortUrl is the canonical short URL (e.g. https://trello.com/c/abc123)
+		const workItemUrl = card.shortUrl || undefined;
+		const workItemTitle = card.name || undefined;
+
 		return {
 			agentType,
-			agentInput: { cardId },
+			agentInput: { cardId, workItemUrl, workItemTitle },
 			workItemId: cardId,
+			workItemUrl,
+			workItemTitle,
 		};
 	}
 }

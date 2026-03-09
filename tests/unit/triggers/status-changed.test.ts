@@ -219,6 +219,34 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 		expect(result?.workItemId).toBe('card123');
 		expect(result?.agentInput.cardId).toBe('card123');
 	});
+
+	it('populates workItemUrl and workItemTitle from payload card data', async () => {
+		const ctx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: {
+				model: { id: 'board123', name: 'Board' },
+				action: {
+					id: 'action1',
+					idMemberCreator: 'member1',
+					type: 'updateCard',
+					date: '2024-01-01',
+					data: {
+						card: { id: 'card123', name: 'My Feature Card', idShort: 1, shortLink: 'xyz123' },
+						listBefore: { id: 'other-list', name: 'Other' },
+						listAfter: { id: 'splitting-list-id', name: 'Splitting' },
+					},
+				},
+			},
+		};
+
+		const result = await trigger.handle(ctx);
+
+		expect(result?.workItemUrl).toBe('https://trello.com/c/xyz123');
+		expect(result?.workItemTitle).toBe('My Feature Card');
+		expect(result?.agentInput.workItemUrl).toBe('https://trello.com/c/xyz123');
+		expect(result?.agentInput.workItemTitle).toBe('My Feature Card');
+	});
 });
 
 describe('TrelloStatusChangedTodoTrigger', () => {

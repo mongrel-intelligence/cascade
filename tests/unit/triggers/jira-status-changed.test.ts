@@ -29,6 +29,7 @@ const mockProject = {
 	branchPrefix: 'feature/',
 	jira: {
 		projectKey: 'PROJ',
+		baseUrl: 'https://myorg.atlassian.net',
 		statuses: {
 			backlog: 'Backlog',
 			splitting: 'Splitting',
@@ -120,7 +121,9 @@ describe('JiraStatusChangedTrigger', () => {
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('implementation');
 			expect(result?.workItemId).toBe('PROJ-42');
-			expect(result?.agentInput).toEqual({ cardId: 'PROJ-42' });
+			expect(result?.agentInput.cardId).toBe('PROJ-42');
+			expect(result?.workItemUrl).toBe('https://myorg.atlassian.net/browse/PROJ-42');
+			expect(result?.workItemTitle).toBe('Test Issue');
 		});
 
 		it('returns splitting agent for "Splitting" transition', async () => {

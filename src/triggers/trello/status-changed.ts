@@ -62,10 +62,18 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 				return null;
 			}
 
+			// Capture work item display data from the webhook payload
+			const cardShortLink = payload.action.data.card?.shortLink;
+			const cardName = payload.action.data.card?.name;
+			const workItemUrl = cardShortLink ? `https://trello.com/c/${cardShortLink}` : undefined;
+			const workItemTitle = cardName ?? undefined;
+
 			return {
 				agentType: config.agentType,
-				agentInput: { cardId },
+				agentInput: { cardId, workItemUrl, workItemTitle },
 				workItemId: cardId,
+				workItemUrl,
+				workItemTitle,
 			};
 		},
 	};

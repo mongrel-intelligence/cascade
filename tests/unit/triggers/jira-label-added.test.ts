@@ -240,6 +240,15 @@ describe('JiraReadyToProcessLabelTrigger', () => {
 			expect(result?.agentInput.cardId).toBe('TEST-42');
 		});
 
+		it('populates workItemUrl and workItemTitle from Jira issue data', async () => {
+			const result = await trigger.handle(buildCtx({ statusName: 'Splitting' }));
+			expect(result).not.toBeNull();
+			expect(result?.workItemUrl).toBe('https://test.atlassian.net/browse/TEST-42');
+			expect(result?.workItemTitle).toBe('Test issue');
+			expect(result?.agentInput.workItemUrl).toBe('https://test.atlassian.net/browse/TEST-42');
+			expect(result?.agentInput.workItemTitle).toBe('Test issue');
+		});
+
 		it('returns planning agent for issue in Planning status', async () => {
 			const result = await trigger.handle(buildCtx({ statusName: 'Planning' }));
 			expect(result).not.toBeNull();
