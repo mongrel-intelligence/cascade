@@ -1,4 +1,4 @@
-import { index, integer, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { index, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { projects } from './projects.js';
 
 export const prWorkItems = pgTable(
@@ -19,8 +19,10 @@ export const prWorkItems = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true }),
 	},
 	(table) => [
-		// Partial unique index: only one row per (projectId, prNumber) when prNumber is set
-		unique('uq_pr_work_items_project_pr').on(table.projectId, table.prNumber),
+		// NOTE: Drizzle doesn't support partial unique indexes natively.
+		// The migration creates two partial unique indexes enforced by SQL directly:
+		// - uq_pr_work_items_project_pr on (project_id, pr_number) WHERE pr_number IS NOT NULL
+		// - uq_pr_work_items_project_work_item on (project_id, work_item_id) WHERE work_item_id IS NOT NULL AND pr_number IS NULL
 		index('idx_pr_work_items_work_item').on(table.workItemId),
 		// Index for dual-join path: look up by (projectId, workItemId)
 		index('idx_pr_work_items_project_work_item').on(table.projectId, table.workItemId),

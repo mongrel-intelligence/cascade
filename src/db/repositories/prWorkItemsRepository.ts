@@ -25,8 +25,8 @@ export interface LinkPRToWorkItemOptions {
  * Insert a work-item-only row into pr_work_items (no PR yet).
  * Called at agent run start for PM-triggered runs.
  *
- * Uses an upsert on (projectId, workItemId) WHERE prNumber IS NULL
- * so re-triggering the same card is idempotent.
+ * Before inserting, checks if a row already exists for (projectId, workItemId)
+ * regardless of prNumber to prevent duplicates when a work-item row is promoted.
  */
 export async function createWorkItem(
 	projectId: string,
@@ -37,27 +37,43 @@ export async function createWorkItem(
 	const now = new Date();
 	const { workItemUrl, workItemTitle } = options;
 
-	// Try to insert a work-item-only row. If a row already exists for this
-	// (projectId, workItemId) with no prNumber, update the display fields.
-	// If a row already exists WITH a prNumber (PR was already linked), do nothing.
-	await db
-		.insert(prWorkItems)
-		.values({
-			projectId,
-			workItemId,
-			workItemUrl,
-			workItemTitle,
-			updatedAt: now,
-		})
-		.onConflictDoUpdate({
-			target: [prWorkItems.projectId, prWorkItems.workItemId],
-			targetWhere: and(isNotNull(prWorkItems.workItemId), isNull(prWorkItems.prNumber)),
-			set: {
+	// Check if a row already exists for (projectId, workItemId) regardless of prNumber.
+	// This prevents duplicate rows when a work-item-only row has been promoted
+	// (prNumber set) and the same PM card triggers again.
+	const existing = await db
+		.select({ id: prWorkItems.id })
+		.from(prWorkItems)
+		.where(and(eq(prWorkItems.projectId, projectId), eq(prWorkItems.workItemId, workItemId)))
+		.limit(1);
+
+	if (existing.length > 0) {
+		// Row already exists (either work-item-only or promoted with prNumber).
+		// For work-item-only rows, update display fields. For promoted rows, do nothing.
+		await db
+			.update(prWorkItems)
+			.set({
 				workItemUrl,
 				workItemTitle,
 				updatedAt: now,
-			},
-		});
+			})
+			.where(
+				and(
+					eq(prWorkItems.projectId, projectId),
+					eq(prWorkItems.workItemId, workItemId),
+					isNull(prWorkItems.prNumber),
+				),
+			);
+		return;
+	}
+
+	// No existing row — insert a new work-item-only row
+	await db.insert(prWorkItems).values({
+		projectId,
+		workItemId,
+		workItemUrl,
+		workItemTitle,
+		updatedAt: now,
+	});
 }
 
 /**

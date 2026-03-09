@@ -82,12 +82,14 @@ describe('prWorkItemsRepository', () => {
 	// ==========================================================================
 
 	describe('createWorkItem', () => {
-		it('inserts a work-item-only row with correct values', async () => {
+		it('inserts a work-item-only row when no existing row found', async () => {
+			// Default: SELECT returns [] (no existing row)
 			await createWorkItem('proj-1', 'wi-abc', {
 				workItemUrl: 'https://trello.com/c/abc',
 				workItemTitle: 'My Card',
 			});
 
+			expect(mockDb.select).toHaveBeenCalledTimes(1);
 			expect(mockDb.insert).toHaveBeenCalledTimes(1);
 			expect(chain.values).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -99,10 +101,36 @@ describe('prWorkItemsRepository', () => {
 			);
 		});
 
-		it('calls onConflictDoUpdate for idempotent upsert', async () => {
+		it('updates existing work-item-only row when found', async () => {
+			// Simulate: SELECT finds an existing work-item-only row
+			chain.limit.mockResolvedValueOnce([{ id: 'existing-id' }]);
+
+			await createWorkItem('proj-1', 'wi-abc', {
+				workItemUrl: 'https://trello.com/c/abc',
+				workItemTitle: 'My Card',
+			});
+
+			expect(mockDb.select).toHaveBeenCalledTimes(1);
+			expect(mockDb.update).toHaveBeenCalledTimes(1);
+			expect(mockDb.insert).not.toHaveBeenCalled();
+			expect(chain.set).toHaveBeenCalledWith(
+				expect.objectContaining({
+					workItemUrl: 'https://trello.com/c/abc',
+					workItemTitle: 'My Card',
+					updatedAt: expect.any(Date),
+				}),
+			);
+		});
+
+		it('skips insert when row already exists with prNumber (promoted)', async () => {
+			// Simulate: SELECT finds an existing promoted row (has prNumber)
+			chain.limit.mockResolvedValueOnce([{ id: 'existing-id' }]);
+
 			await createWorkItem('proj-1', 'wi-abc');
 
-			expect(chain.onConflictDoUpdate).toHaveBeenCalledTimes(1);
+			expect(mockDb.select).toHaveBeenCalledTimes(1);
+			expect(mockDb.update).toHaveBeenCalledTimes(1);
+			expect(mockDb.insert).not.toHaveBeenCalled();
 		});
 
 		it('sets updatedAt on insert', async () => {
