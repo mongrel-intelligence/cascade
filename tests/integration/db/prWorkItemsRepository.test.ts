@@ -5,6 +5,7 @@ import {
 	linkPRToWorkItem,
 	listPRsForProject,
 	listPRsForWorkItem,
+	listUnifiedWorkForProject,
 	listWorkItems,
 	lookupWorkItemForPR,
 } from '../../../src/db/repositories/prWorkItemsRepository.js';
@@ -403,6 +404,70 @@ describe('prWorkItemsRepository (integration)', () => {
 			const result = await listPRsForProject('test-project');
 			expect(result).toHaveLength(1);
 			expect(result[0].prNumber).toBe(1);
+		});
+	});
+
+	// =========================================================================
+	// listUnifiedWorkForProject
+	// =========================================================================
+
+	describe('listUnifiedWorkForProject', () => {
+		it('returns empty array when no PRs exist', async () => {
+			const result = await listUnifiedWorkForProject('test-project');
+			expect(result).toEqual([]);
+		});
+
+		it('returns null totalCostUsd when no agent runs exist', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 1, 'card-aaa', {
+				prTitle: 'feat: no runs',
+			});
+
+			const result = await listUnifiedWorkForProject('test-project');
+			expect(result).toHaveLength(1);
+			expect(result[0].totalCostUsd).toBeNull();
+		});
+
+		it('aggregates totalCostUsd from agent runs', async () => {
+			const db = getDb();
+			await linkPRToWorkItem('test-project', 'owner/repo', 10, 'card-cost');
+			// Insert agent runs with known costUsd values
+			await db.insert(agentRuns).values([
+				{
+					projectId: 'test-project',
+					prNumber: 10,
+					agentType: 'implementation',
+					backend: 'claude-code',
+					status: 'completed',
+					costUsd: '1.000000',
+				},
+				{
+					projectId: 'test-project',
+					prNumber: 10,
+					agentType: 'review',
+					backend: 'claude-code',
+					status: 'completed',
+					costUsd: '0.500000',
+				},
+			]);
+
+			const result = await listUnifiedWorkForProject('test-project');
+			expect(result).toHaveLength(1);
+			// sum should be 1.5
+			expect(Number(result[0].totalCostUsd)).toBeCloseTo(1.5, 5);
+		});
+
+		it('sets type to linked when workItemId is present', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 1, 'card-aaa');
+			const result = await listUnifiedWorkForProject('test-project');
+			expect(result[0].type).toBe('linked');
+		});
+
+		it('sets type to pr when workItemId is null', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 2, null, {
+				prTitle: 'orphan PR',
+			});
+			const result = await listUnifiedWorkForProject('test-project');
+			expect(result[0].type).toBe('pr');
 		});
 	});
 
