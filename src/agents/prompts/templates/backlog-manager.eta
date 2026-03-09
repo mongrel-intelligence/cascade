@@ -7,6 +7,7 @@ Use these EXACT IDs when calling `ListWorkItems` and `UpdateWorkItem`:
 - TODO: `<%= it.todoListId || 'NOT_CONFIGURED' %>`
 - IN_PROGRESS: `<%= it.inProgressListId || 'NOT_CONFIGURED' %>`
 - IN_REVIEW: `<%= it.inReviewListId || 'NOT_CONFIGURED' %>`
+- DONE: `<%= it.doneListId || 'NOT_CONFIGURED' %>`
 - MERGED: `<%= it.mergedListId || 'NOT_CONFIGURED' %>`
 
 CRITICAL:
@@ -21,9 +22,9 @@ You maintain flow by ensuring there's always work ready when the pipeline clears
 
 ## Pipeline Status Check (MANDATORY FIRST STEP)
 
-Before doing anything else, check if the active pipeline has work:
+A **Pipeline Snapshot** has been pre-loaded into your context containing the current state of all pipeline lists. Use this pre-loaded data instead of calling `ListWorkItems`:
 
-1. Use `ListWorkItems` with the exact list IDs from above to check each active pipeline stage:
+1. **Check the pre-loaded snapshot** for <%= it.workItemNounPlural || 'cards' %> in these active pipeline stages:
    - TODO
    - IN PROGRESS
    - IN REVIEW
@@ -35,14 +36,14 @@ Before doing anything else, check if the active pipeline has work:
 
 3. **Only if the active pipeline is completely empty**, proceed to backlog selection.
 
-Note: DONE <%= it.workItemNounPlural || 'cards' %> are completed work and do not block new work from being selected.
+Note: DONE and MERGED <%= it.workItemNounPlural || 'cards' %> are completed work and do not block new work from being selected. The snapshot shows their titles for dependency checking.
 
 ## Backlog Selection Process
 
 When the active pipeline is empty:
 
-1. **Fetch backlog <%= it.workItemNounPlural || 'cards' %>** using `ListWorkItems` with the BACKLOG list ID from above
-2. **Read each <%= it.workItemNoun || 'card' %>** using `ReadWorkItem` to understand:
+1. **Use pre-loaded BACKLOG data** from the Pipeline Snapshot — full details (title, description, checklists, comments) are already available. No need to call `ListWorkItems` or `ReadWorkItem` for BACKLOG <%= it.workItemNounPlural || 'cards' %>.
+2. **Review each <%= it.workItemNoun || 'card' %> from the snapshot** to understand:
    - Title and description
    - Checklists and acceptance criteria
    - Comments (may contain context or dependencies)
@@ -50,7 +51,7 @@ When the active pipeline is empty:
    - References to other <%= it.workItemNounPlural || 'cards' %>: "blocked by", "depends on", "waiting for", "after"
    - Cross-references to <%= it.workItemNoun || 'card' %> IDs, URLs, or titles
    - Comments indicating external dependencies
-   - **IMPORTANT**: Before declaring a <%= it.workItemNoun || 'card' %> blocked, check whether the dependency exists in the MERGED list. A dependency in MERGED is **resolved** — it does NOT block. Use `ListWorkItems` with the MERGED list ID to verify.
+   - **IMPORTANT**: Before declaring a <%= it.workItemNoun || 'card' %> blocked, check whether the dependency exists in the MERGED list. A dependency in MERGED is **resolved** — it does NOT block. Check the pre-loaded Pipeline Snapshot MERGED section (titles are provided for dependency checking).
 4. **Select the best unblocked <%= it.workItemNoun || 'card' %>** considering:
    - Smaller, self-contained <%= it.workItemNounPlural || 'cards' %> are preferred
    - <%= it.workItemNounPluralCap || 'Cards' %> with clear acceptance criteria

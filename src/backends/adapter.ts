@@ -112,6 +112,7 @@ async function buildBackendInput(
 		repoDir,
 		contextFiles,
 		logWriter,
+		project,
 	});
 
 	const cliToolsDir = new URL('../../bin', import.meta.url).pathname;

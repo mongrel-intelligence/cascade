@@ -37,6 +37,7 @@ export function buildPromptContext(
 			getTrelloConfig(project)?.lists?.inProgress ?? getJiraConfig(project)?.statuses?.inProgress,
 		inReviewListId:
 			getTrelloConfig(project)?.lists?.inReview ?? getJiraConfig(project)?.statuses?.inReview,
+		doneListId: getTrelloConfig(project)?.lists?.done ?? getJiraConfig(project)?.statuses?.done,
 		mergedListId:
 			getTrelloConfig(project)?.lists?.merged ?? getJiraConfig(project)?.statuses?.merged,
 		processedLabelId: getTrelloConfig(project)?.labels?.processed,

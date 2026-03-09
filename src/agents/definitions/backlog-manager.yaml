@@ -27,7 +27,7 @@ triggers:
     label: PR Merged
     description: When a CASCADE PR is merged, check if pipeline is empty and pull next backlog item
     defaultEnabled: false
-    contextPipeline: []
+    contextPipeline: [pipelineSnapshot]
   - event: pm:status-changed
     label: Item Added to Backlog
     description: When an item is moved to Backlog, check if pipeline is empty and it should be moved to TODO immediately
@@ -38,12 +38,12 @@ triggers:
         label: Target Status
         options: [backlog]
         defaultValue: backlog
-    contextPipeline: []
+    contextPipeline: [pipelineSnapshot]
   - event: internal:auto-chain
     label: Auto-chain after Splitting
     description: When splitting completes on a card with the auto label, immediately chain to backlog manager
     defaultEnabled: true
-    contextPipeline: []
+    contextPipeline: [pipelineSnapshot]
 
 strategies: {}
 
@@ -51,9 +51,10 @@ prompts:
   # The system prompt (.eta file) contains full instructions.
   # This taskPrompt provides the per-run context and directive.
   taskPrompt: |
-    Check if the active pipeline (TODO, IN PROGRESS, IN REVIEW) is empty.
+    A Pipeline Snapshot has been pre-loaded into your context with the current state of all pipeline lists (BACKLOG, TODO, IN_PROGRESS, IN_REVIEW, DONE, MERGED).
 
-    If empty: scan the BACKLOG, select the best unblocked item, and move it to TODO.
-    If not empty: exit immediately without taking action.
+    1. Review the pre-loaded Pipeline Snapshot to check if the active pipeline (TODO, IN PROGRESS, IN REVIEW) is empty.
+    2. If empty: use the pre-loaded BACKLOG data from the snapshot to select the best unblocked item and move it to TODO.
+    3. If not empty: exit immediately without taking action.
 
 hint: Check pipeline first. Only act if TODO, IN PROGRESS, and IN REVIEW are all empty.
