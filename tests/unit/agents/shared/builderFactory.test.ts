@@ -171,16 +171,16 @@ describe('createConfiguredBuilder', () => {
 	it('calls initSessionState when skipSessionState is not set', async () => {
 		const options = createBaseOptions();
 		await createConfiguredBuilder(options);
-		expect(mockInitSessionState).toHaveBeenCalledWith(
-			'implementation',
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			'abc123headsha',
-		);
+		expect(mockInitSessionState).toHaveBeenCalledWith({
+			agentType: 'implementation',
+			baseBranch: undefined,
+			projectId: undefined,
+			cardId: undefined,
+			hooks: undefined,
+			workItemUrl: undefined,
+			workItemTitle: undefined,
+			initialHeadSha: 'abc123headsha',
+		});
 	});
 
 	it('skips initSessionState when skipSessionState is true', async () => {
@@ -196,16 +196,16 @@ describe('createConfiguredBuilder', () => {
 			cardId: 'card-123',
 		});
 		await createConfiguredBuilder(options);
-		expect(mockInitSessionState).toHaveBeenCalledWith(
-			'implementation',
-			'main',
-			'project-1',
-			'card-123',
-			undefined,
-			undefined,
-			undefined,
-			'abc123headsha',
-		);
+		expect(mockInitSessionState).toHaveBeenCalledWith({
+			agentType: 'implementation',
+			baseBranch: 'main',
+			projectId: 'project-1',
+			cardId: 'card-123',
+			hooks: undefined,
+			workItemUrl: undefined,
+			workItemTitle: undefined,
+			initialHeadSha: 'abc123headsha',
+		});
 	});
 
 	it('passes workItemUrl and workItemTitle to initSessionState', async () => {
@@ -217,16 +217,16 @@ describe('createConfiguredBuilder', () => {
 			workItemTitle: 'My Feature Card',
 		});
 		await createConfiguredBuilder(options);
-		expect(mockInitSessionState).toHaveBeenCalledWith(
-			'implementation',
-			'main',
-			'project-1',
-			'card-123',
-			undefined,
-			'https://trello.com/c/abc123',
-			'My Feature Card',
-			'abc123headsha',
-		);
+		expect(mockInitSessionState).toHaveBeenCalledWith({
+			agentType: 'implementation',
+			baseBranch: 'main',
+			projectId: 'project-1',
+			cardId: 'card-123',
+			hooks: undefined,
+			workItemUrl: 'https://trello.com/c/abc123',
+			workItemTitle: 'My Feature Card',
+			initialHeadSha: 'abc123headsha',
+		});
 	});
 
 	it('passes undefined initialHeadSha when git rev-parse fails', async () => {
@@ -235,16 +235,16 @@ describe('createConfiguredBuilder', () => {
 		});
 		const options = createBaseOptions();
 		await createConfiguredBuilder(options);
-		expect(mockInitSessionState).toHaveBeenCalledWith(
-			'implementation',
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-		);
+		expect(mockInitSessionState).toHaveBeenCalledWith({
+			agentType: 'implementation',
+			baseBranch: undefined,
+			projectId: undefined,
+			cardId: undefined,
+			hooks: undefined,
+			workItemUrl: undefined,
+			workItemTitle: undefined,
+			initialHeadSha: undefined,
+		});
 	});
 
 	it('calls withBudget when remainingBudgetUsd is positive', async () => {
