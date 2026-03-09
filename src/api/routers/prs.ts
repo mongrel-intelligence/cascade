@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+	listPRsForOrg,
 	listPRsForProject,
 	listPRsForWorkItem,
 } from '../../db/repositories/prWorkItemsRepository.js';
@@ -9,11 +10,13 @@ import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
 export const prsRouter = router({
 	list: protectedProcedure
-		.input(z.object({ projectId: z.string() }))
+		.input(z.object({ projectId: z.string().optional() }))
 		.query(async ({ ctx, input }) => {
-			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
-			const prs = await listPRsForProject(input.projectId);
-			return prs;
+			if (input.projectId) {
+				await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+				return listPRsForProject(input.projectId);
+			}
+			return listPRsForOrg(ctx.effectiveOrgId);
 		}),
 
 	forWorkItem: protectedProcedure
