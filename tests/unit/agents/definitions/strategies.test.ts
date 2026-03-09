@@ -13,6 +13,7 @@ describe('CONTEXT_STEP_REGISTRY', () => {
 			'prContext',
 			'prConversation',
 			'prefetchedEmails',
+			'pipelineSnapshot',
 		];
 
 		for (const key of expectedKeys) {
@@ -36,6 +37,7 @@ describe('CONTEXT_STEP_REGISTRY', () => {
 			'prContext',
 			'prConversation',
 			'prefetchedEmails',
+			'pipelineSnapshot',
 		];
 
 		const actualKeys = Object.keys(CONTEXT_STEP_REGISTRY);
@@ -68,5 +70,9 @@ describe('CONTEXT_STEP_REGISTRY', () => {
 
 	it('prefetchedEmails entry is a function', () => {
 		expect(typeof CONTEXT_STEP_REGISTRY.prefetchedEmails).toBe('function');
+	});
+
+	it('pipelineSnapshot entry is a function', () => {
+		expect(typeof CONTEXT_STEP_REGISTRY.pipelineSnapshot).toBe('function');
 	});
 });

@@ -81,6 +81,7 @@ export const CONTEXT_STEP_NAMES = [
 	'prContext',
 	'prConversation',
 	'prefetchedEmails',
+	'pipelineSnapshot',
 ] as const;
 
 /** Context step name schema for use in triggers */

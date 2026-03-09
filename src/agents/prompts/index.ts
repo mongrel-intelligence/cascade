@@ -46,6 +46,7 @@ export interface PromptContext {
 	todoListId?: string;
 	inProgressListId?: string;
 	inReviewListId?: string;
+	doneListId?: string;
 	mergedListId?: string;
 	processedLabelId?: string;
 	autoLabelId?: string;
@@ -303,6 +304,7 @@ export function getTemplateVariables(): Array<{
 		{ name: 'todoListId', group: 'PM Lists', description: 'TODO list/column ID' },
 		{ name: 'inProgressListId', group: 'PM Lists', description: 'In Progress list/column ID' },
 		{ name: 'inReviewListId', group: 'PM Lists', description: 'In Review list/column ID' },
+		{ name: 'doneListId', group: 'PM Lists', description: 'Done list/column ID' },
 		{ name: 'mergedListId', group: 'PM Lists', description: 'Merged list/column ID' },
 		{ name: 'processedLabelId', group: 'PM Labels', description: 'Processed label ID' },
 		{ name: 'prNumber', group: 'CI', description: 'Pull request number' },
