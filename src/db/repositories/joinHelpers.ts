@@ -19,12 +19,13 @@ export function buildAgentRunWorkItemJoin(): SQL | undefined {
 			eq(agentRuns.projectId, prWorkItems.projectId),
 			eq(agentRuns.prNumber, prWorkItems.prNumber),
 		),
-		// Branch 2: Match by cardId = workItemId (for PM-triggered runs)
-		// No isNull(prWorkItems.prNumber) guard — this allows PM-triggered runs
-		// to remain linked even after the work item row is promoted with a PR
+		// Branch 2: Match by cardId = workItemId (only for PM-triggered runs that have no prNumber)
+		// The isNull(agentRuns.prNumber) guard prevents duplicate rows in non-aggregate queries
+		// when a work item has multiple linked PRs.
 		and(
 			eq(agentRuns.projectId, prWorkItems.projectId),
 			sql`${agentRuns.cardId} = ${prWorkItems.workItemId}`,
+			sql`${agentRuns.prNumber} IS NULL`,
 		),
 	);
 }
