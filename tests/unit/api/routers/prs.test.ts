@@ -8,11 +8,13 @@ import { createMockUser } from '../../../helpers/factories.js';
 // ---------------------------------------------------------------------------
 
 const mockListPRsForProject = vi.fn();
+const mockListPRsForOrg = vi.fn();
 const mockListPRsForWorkItem = vi.fn();
 const mockGetRunsForPR = vi.fn();
 
 vi.mock('../../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	listPRsForProject: (...args: unknown[]) => mockListPRsForProject(...args),
+	listPRsForOrg: (...args: unknown[]) => mockListPRsForOrg(...args),
 	listPRsForWorkItem: (...args: unknown[]) => mockListPRsForWorkItem(...args),
 }));
 
@@ -72,6 +74,21 @@ describe('prsRouter', () => {
 			expect(result).toEqual(mockPRs);
 			expect(mockVerifyProjectOrgAccess).toHaveBeenCalledWith('test-project', 'org-1');
 			expect(mockListPRsForProject).toHaveBeenCalledWith('test-project');
+		});
+
+		it('returns PRs across all projects when no projectId given', async () => {
+			const mockPRs = [
+				mockPRSummary,
+				{ ...mockPRSummary, prNumber: 43, repoFullName: 'owner/other-repo' },
+			];
+			mockListPRsForOrg.mockResolvedValue(mockPRs);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			const result = await caller.list({});
+
+			expect(result).toEqual(mockPRs);
+			expect(mockVerifyProjectOrgAccess).not.toHaveBeenCalled();
+			expect(mockListPRsForOrg).toHaveBeenCalledWith('org-1');
 		});
 
 		it('returns empty array when no PRs exist', async () => {

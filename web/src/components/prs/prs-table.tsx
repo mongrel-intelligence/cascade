@@ -2,6 +2,7 @@ import { ExternalLink } from 'lucide-react';
 
 interface PR {
 	prNumber: number;
+	repoFullName: string;
 	prUrl: string | null;
 	prTitle: string | null;
 	workItemId: string | null;
@@ -15,9 +16,16 @@ interface PRsTableProps {
 	offset: number;
 	limit: number;
 	onPageChange: (offset: number) => void;
+	showRepoName?: boolean;
 }
 
-export function PRsTable({ items, offset, limit, onPageChange }: PRsTableProps) {
+export function PRsTable({
+	items,
+	offset,
+	limit,
+	onPageChange,
+	showRepoName = false,
+}: PRsTableProps) {
 	const total = items.length;
 	const totalPages = Math.ceil(total / limit);
 	const currentPage = Math.floor(offset / limit) + 1;
@@ -30,6 +38,11 @@ export function PRsTable({ items, offset, limit, onPageChange }: PRsTableProps) 
 					<thead>
 						<tr className="border-b border-border bg-muted/50">
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">PR</th>
+							{showRepoName && (
+								<th className="px-4 py-3 text-left font-medium text-muted-foreground">
+									Repository
+								</th>
+							)}
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Work Item</th>
 							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Runs</th>
 						</tr>
@@ -37,14 +50,17 @@ export function PRsTable({ items, offset, limit, onPageChange }: PRsTableProps) 
 					<tbody>
 						{pageItems.length === 0 && (
 							<tr>
-								<td colSpan={3} className="px-4 py-8 text-center text-muted-foreground">
+								<td
+									colSpan={showRepoName ? 4 : 3}
+									className="px-4 py-8 text-center text-muted-foreground"
+								>
 									No PRs found
 								</td>
 							</tr>
 						)}
 						{pageItems.map((item) => (
 							<tr
-								key={item.prNumber}
+								key={`${item.repoFullName}-${item.prNumber}`}
 								className="border-b border-border transition-colors hover:bg-muted/30"
 							>
 								<td className="px-4 py-3">
@@ -66,6 +82,9 @@ export function PRsTable({ items, offset, limit, onPageChange }: PRsTableProps) 
 										</span>
 									)}
 								</td>
+								{showRepoName && (
+									<td className="px-4 py-3 text-muted-foreground">{item.repoFullName}</td>
+								)}
 								<td className="px-4 py-3">
 									{item.workItemUrl && item.workItemTitle ? (
 										<a

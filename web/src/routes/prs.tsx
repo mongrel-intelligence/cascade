@@ -80,6 +80,7 @@ function PRsPage() {
 					offset={offset}
 					limit={limit}
 					onPageChange={(newOffset) => updateSearch({ offset: newOffset })}
+					showRepoName={!projectId}
 				/>
 			)}
 		</div>
