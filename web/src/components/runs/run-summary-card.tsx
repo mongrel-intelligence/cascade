@@ -24,6 +24,8 @@ interface RunSummaryProps {
 		error: string | null;
 		prUrl: string | null;
 		outputSummary: string | null;
+		workItemTitle?: string | null;
+		workItemUrl?: string | null;
 	};
 }
 
@@ -61,7 +63,23 @@ export function RunSummaryCard({ run }: RunSummaryProps) {
 				<Field label="Completed">
 					{run.completedAt ? new Date(run.completedAt).toLocaleString() : '-'}
 				</Field>
-				<Field label="Card ID">{run.cardId ?? '-'}</Field>
+				<Field label="Work Item">
+					{run.workItemUrl && run.workItemTitle ? (
+						<a
+							href={run.workItemUrl}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="inline-flex items-center gap-1 text-primary hover:underline"
+						>
+							{run.workItemTitle}
+							<ExternalLink className="h-3 w-3" />
+						</a>
+					) : run.cardId ? (
+						run.cardId
+					) : (
+						'-'
+					)}
+				</Field>
 				{run.prUrl && (
 					<Field label="Pull Request">
 						<a
