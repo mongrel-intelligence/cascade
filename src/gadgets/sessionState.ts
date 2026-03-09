@@ -2,6 +2,17 @@ import type { FinishHookFlags } from '../agents/definitions/schema.js';
 
 export type SessionHooks = FinishHookFlags;
 
+export interface InitSessionStateOptions {
+	agentType: string;
+	baseBranch?: string;
+	projectId?: string;
+	cardId?: string;
+	hooks?: SessionHooks;
+	workItemUrl?: string;
+	workItemTitle?: string;
+	initialHeadSha?: string;
+}
+
 // Session-level state accessible to all gadgets
 let sessionState = {
 	agentType: null as string | null,
@@ -22,16 +33,17 @@ let sessionState = {
 	initialCommentId: null as number | null,
 };
 
-export function initSessionState(
-	agentType: string,
-	baseBranch?: string,
-	projectId?: string,
-	cardId?: string,
-	hooks?: SessionHooks,
-	workItemUrl?: string,
-	workItemTitle?: string,
-	initialHeadSha?: string,
-): void {
+export function initSessionState(options: InitSessionStateOptions): void {
+	const {
+		agentType,
+		baseBranch,
+		projectId,
+		cardId,
+		hooks,
+		workItemUrl,
+		workItemTitle,
+		initialHeadSha,
+	} = options;
 	sessionState = {
 		agentType,
 		baseBranch: baseBranch ?? 'main',

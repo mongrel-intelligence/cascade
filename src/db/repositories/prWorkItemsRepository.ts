@@ -1,4 +1,4 @@
-import { type SQL, and, countDistinct, desc, eq, inArray, isNotNull, max } from 'drizzle-orm';
+import { type SQL, and, countDistinct, desc, eq, inArray, isNotNull, max, sum } from 'drizzle-orm';
 import { getDb } from '../client.js';
 import { agentRuns, prWorkItems, projects } from '../schema/index.js';
 
@@ -288,6 +288,7 @@ export interface UnifiedWorkItem {
 	workItemTitle: string | null;
 	runCount: number;
 	updatedAt: Date | null;
+	totalCostUsd: string | null;
 }
 
 /**
@@ -308,6 +309,7 @@ export async function listUnifiedWorkForProject(projectId: string): Promise<Unif
 			workItemTitle: prWorkItems.workItemTitle,
 			updatedAt: prWorkItems.updatedAt,
 			runCount: countDistinct(agentRuns.id),
+			totalCostUsd: sum(agentRuns.costUsd),
 		})
 		.from(prWorkItems)
 		.leftJoin(
@@ -343,5 +345,6 @@ export async function listUnifiedWorkForProject(projectId: string): Promise<Unif
 		workItemTitle: r.workItemTitle,
 		runCount: r.runCount,
 		updatedAt: r.updatedAt,
+		totalCostUsd: r.totalCostUsd ?? null,
 	}));
 }

@@ -64,6 +64,7 @@ const mockUnifiedItem = {
 	workItemTitle: 'Card 1',
 	runCount: 3,
 	updatedAt: new Date('2024-01-01'),
+	totalCostUsd: '1.2345',
 };
 
 // ---------------------------------------------------------------------------

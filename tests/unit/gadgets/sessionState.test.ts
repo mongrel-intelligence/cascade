@@ -31,7 +31,7 @@ describe('initSessionState', () => {
 	});
 
 	it('initializes with required agentType and default baseBranch', () => {
-		initSessionState('implementation');
+		initSessionState({ agentType: 'implementation' });
 		const state = getSessionState();
 
 		expect(state.agentType).toBe('implementation');
@@ -49,7 +49,13 @@ describe('initSessionState', () => {
 
 	it('initializes with all parameters', () => {
 		const hooks = { requiresPR: true, requiresReview: false };
-		initSessionState('review', 'develop', 'project-123', 'card-456', hooks);
+		initSessionState({
+			agentType: 'review',
+			baseBranch: 'develop',
+			projectId: 'project-123',
+			cardId: 'card-456',
+			hooks,
+		});
 		const state = getSessionState();
 
 		expect(state.agentType).toBe('review');
@@ -60,14 +66,14 @@ describe('initSessionState', () => {
 	});
 
 	it('uses "main" as default baseBranch when undefined provided', () => {
-		initSessionState('splitting', undefined, 'proj-1');
+		initSessionState({ agentType: 'splitting', projectId: 'proj-1' });
 		expect(getBaseBranch()).toBe('main');
 	});
 
 	it('resets state on each call', () => {
-		initSessionState('implementation');
+		initSessionState({ agentType: 'implementation' });
 		recordPRCreation('https://github.com/test/pr/1');
-		initSessionState('review');
+		initSessionState({ agentType: 'review' });
 
 		const state = getSessionState();
 		expect(state.prCreated).toBe(false);
@@ -77,7 +83,12 @@ describe('initSessionState', () => {
 
 describe('getters', () => {
 	beforeEach(() => {
-		initSessionState('implementation', 'feature-branch', 'proj-abc', 'card-xyz');
+		initSessionState({
+			agentType: 'implementation',
+			baseBranch: 'feature-branch',
+			projectId: 'proj-abc',
+			cardId: 'card-xyz',
+		});
 	});
 
 	it('getBaseBranch returns the base branch', () => {
@@ -103,36 +114,39 @@ describe('getters', () => {
 
 describe('workItemUrl and workItemTitle', () => {
 	it('stores workItemUrl and workItemTitle when provided to initSessionState', () => {
-		initSessionState(
-			'implementation',
-			'main',
-			'proj-1',
-			'card-1',
-			undefined,
-			'https://trello.com/c/abc123',
-			'My Feature Card',
-		);
+		initSessionState({
+			agentType: 'implementation',
+			baseBranch: 'main',
+			projectId: 'proj-1',
+			cardId: 'card-1',
+			workItemUrl: 'https://trello.com/c/abc123',
+			workItemTitle: 'My Feature Card',
+		});
 		expect(getWorkItemUrl()).toBe('https://trello.com/c/abc123');
 		expect(getWorkItemTitle()).toBe('My Feature Card');
 	});
 
 	it('returns null for workItemUrl and workItemTitle when not provided', () => {
-		initSessionState('implementation', 'main', 'proj-1', 'card-1');
+		initSessionState({
+			agentType: 'implementation',
+			baseBranch: 'main',
+			projectId: 'proj-1',
+			cardId: 'card-1',
+		});
 		expect(getWorkItemUrl()).toBeNull();
 		expect(getWorkItemTitle()).toBeNull();
 	});
 
 	it('resets workItemUrl and workItemTitle on subsequent initSessionState call', () => {
-		initSessionState(
-			'implementation',
-			'main',
-			'proj-1',
-			'card-1',
-			undefined,
-			'https://trello.com/c/abc',
-			'Card A',
-		);
-		initSessionState('implementation');
+		initSessionState({
+			agentType: 'implementation',
+			baseBranch: 'main',
+			projectId: 'proj-1',
+			cardId: 'card-1',
+			workItemUrl: 'https://trello.com/c/abc',
+			workItemTitle: 'Card A',
+		});
+		initSessionState({ agentType: 'implementation' });
 		expect(getWorkItemUrl()).toBeNull();
 		expect(getWorkItemTitle()).toBeNull();
 	});
@@ -140,43 +154,37 @@ describe('workItemUrl and workItemTitle', () => {
 
 describe('initialHeadSha', () => {
 	it('stores initialHeadSha when passed to initSessionState', () => {
-		initSessionState(
-			'respond-to-ci',
-			'main',
-			'proj-1',
-			'card-1',
-			undefined,
-			undefined,
-			undefined,
-			'abc123sha',
-		);
+		initSessionState({
+			agentType: 'respond-to-ci',
+			baseBranch: 'main',
+			projectId: 'proj-1',
+			cardId: 'card-1',
+			initialHeadSha: 'abc123sha',
+		});
 		expect(getSessionState().initialHeadSha).toBe('abc123sha');
 	});
 
 	it('defaults to null when not provided', () => {
-		initSessionState('implementation');
+		initSessionState({ agentType: 'implementation' });
 		expect(getSessionState().initialHeadSha).toBeNull();
 	});
 
 	it('resets to null on re-init without the param', () => {
-		initSessionState(
-			'respond-to-ci',
-			'main',
-			'proj-1',
-			'card-1',
-			undefined,
-			undefined,
-			undefined,
-			'abc123sha',
-		);
-		initSessionState('implementation');
+		initSessionState({
+			agentType: 'respond-to-ci',
+			baseBranch: 'main',
+			projectId: 'proj-1',
+			cardId: 'card-1',
+			initialHeadSha: 'abc123sha',
+		});
+		initSessionState({ agentType: 'implementation' });
 		expect(getSessionState().initialHeadSha).toBeNull();
 	});
 });
 
 describe('recordPRCreation', () => {
 	beforeEach(() => {
-		initSessionState('implementation');
+		initSessionState({ agentType: 'implementation' });
 	});
 
 	it('sets prCreated=true and stores prUrl', () => {
@@ -190,7 +198,7 @@ describe('recordPRCreation', () => {
 
 describe('recordReviewSubmission', () => {
 	beforeEach(() => {
-		initSessionState('review');
+		initSessionState({ agentType: 'review' });
 	});
 
 	it('sets reviewSubmitted=true and stores reviewUrl', () => {
@@ -227,7 +235,7 @@ describe('recordReviewSubmission', () => {
 			'LGTM!',
 			'APPROVE',
 		);
-		initSessionState('review');
+		initSessionState({ agentType: 'review' });
 		const state = getSessionState();
 
 		expect(state.reviewBody).toBeNull();
@@ -237,7 +245,7 @@ describe('recordReviewSubmission', () => {
 
 describe('recordInitialComment', () => {
 	beforeEach(() => {
-		initSessionState('implementation');
+		initSessionState({ agentType: 'implementation' });
 	});
 
 	it('stores the comment id', () => {
@@ -251,7 +259,7 @@ describe('recordInitialComment', () => {
 describe('deleteInitialComment', () => {
 	beforeEach(() => {
 		vi.resetAllMocks();
-		initSessionState('implementation');
+		initSessionState({ agentType: 'implementation' });
 	});
 
 	it('does nothing when no initial comment id', async () => {
@@ -291,7 +299,12 @@ describe('deleteInitialComment', () => {
 
 describe('getSessionState', () => {
 	beforeEach(() => {
-		initSessionState('implementation', 'main', 'proj-1', 'card-1');
+		initSessionState({
+			agentType: 'implementation',
+			baseBranch: 'main',
+			projectId: 'proj-1',
+			cardId: 'card-1',
+		});
 	});
 
 	it('returns a copy (not the original reference)', () => {
