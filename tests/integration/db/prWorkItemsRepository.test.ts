@@ -3,9 +3,12 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { getDb } from '../../../src/db/client.js';
 import {
 	linkPRToWorkItem,
+	listPRsForProject,
+	listPRsForWorkItem,
+	listWorkItemsForProject,
 	lookupWorkItemForPR,
 } from '../../../src/db/repositories/prWorkItemsRepository.js';
-import { prWorkItems } from '../../../src/db/schema/index.js';
+import { agentRuns, prWorkItems } from '../../../src/db/schema/index.js';
 import { truncateAll } from '../helpers/db.js';
 import { seedOrg, seedProject } from '../helpers/seed.js';
 
@@ -213,6 +216,200 @@ describe('prWorkItemsRepository (integration)', () => {
 			// test-project's link is unaffected
 			expect(await lookupWorkItemForPR('test-project', 200)).toBe('card-a');
 			expect(await lookupWorkItemForPR('project-c', 200)).toBe('card-c-new');
+		});
+	});
+
+	// =========================================================================
+	// listWorkItemsForProject
+	// =========================================================================
+
+	describe('listWorkItemsForProject', () => {
+		it('returns empty array when no work items exist', async () => {
+			const result = await listWorkItemsForProject('test-project');
+			expect(result).toEqual([]);
+		});
+
+		it('returns distinct work items with display fields', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 1, 'card-aaa', {
+				workItemUrl: 'https://trello.com/c/aaa',
+				workItemTitle: 'Card AAA',
+				prUrl: 'https://github.com/owner/repo/pull/1',
+				prTitle: 'feat: add AAA',
+			});
+
+			const result = await listWorkItemsForProject('test-project');
+			expect(result).toHaveLength(1);
+			expect(result[0].workItemId).toBe('card-aaa');
+			expect(result[0].workItemUrl).toBe('https://trello.com/c/aaa');
+			expect(result[0].workItemTitle).toBe('Card AAA');
+		});
+
+		it('counts PRs per work item', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 1, 'card-aaa');
+			await linkPRToWorkItem('test-project', 'owner/repo', 2, 'card-aaa');
+			await linkPRToWorkItem('test-project', 'owner/repo', 3, 'card-bbb');
+
+			const result = await listWorkItemsForProject('test-project');
+			const aaa = result.find((r) => r.workItemId === 'card-aaa');
+			const bbb = result.find((r) => r.workItemId === 'card-bbb');
+			expect(aaa?.prCount).toBe(2);
+			expect(bbb?.prCount).toBe(1);
+		});
+
+		it('counts runs linked to the work item PRs', async () => {
+			const db = getDb();
+			await linkPRToWorkItem('test-project', 'owner/repo', 10, 'card-runs');
+			// Insert agent runs for PR 10
+			await db.insert(agentRuns).values([
+				{
+					projectId: 'test-project',
+					prNumber: 10,
+					agentType: 'implementation',
+					backend: 'claude-code',
+					status: 'completed',
+				},
+				{
+					projectId: 'test-project',
+					prNumber: 10,
+					agentType: 'review',
+					backend: 'claude-code',
+					status: 'completed',
+				},
+			]);
+
+			const result = await listWorkItemsForProject('test-project');
+			const item = result.find((r) => r.workItemId === 'card-runs');
+			expect(item?.runCount).toBe(2);
+		});
+
+		it('does not produce duplicate work items when display fields differ across PR rows', async () => {
+			// Same work item linked to two PRs with different display fields
+			await linkPRToWorkItem('test-project', 'owner/repo', 1, 'card-dup', {
+				workItemUrl: 'https://trello.com/c/dup',
+				workItemTitle: 'Card Dup',
+			});
+			await linkPRToWorkItem('test-project', 'owner/repo', 2, 'card-dup', {
+				workItemUrl: null,
+				workItemTitle: 'Card Dup Updated',
+			});
+
+			const result = await listWorkItemsForProject('test-project');
+			// Should produce exactly one row, not two
+			expect(result).toHaveLength(1);
+			expect(result[0].workItemId).toBe('card-dup');
+			expect(result[0].prCount).toBe(2);
+			// max() picks the non-null / lexicographically greatest value
+			expect(result[0].workItemUrl).toBe('https://trello.com/c/dup');
+		});
+
+		it('excludes orphan PRs (null workItemId)', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 55, null, {
+				prTitle: 'orphan PR',
+			});
+
+			const result = await listWorkItemsForProject('test-project');
+			expect(result).toHaveLength(0);
+		});
+
+		it('isolates results by project', async () => {
+			await seedProject({ id: 'other-project', repo: 'owner/other-repo' });
+			await linkPRToWorkItem('test-project', 'owner/repo', 1, 'card-p1');
+			await linkPRToWorkItem('other-project', 'owner/other-repo', 1, 'card-p2');
+
+			const result = await listWorkItemsForProject('test-project');
+			expect(result).toHaveLength(1);
+			expect(result[0].workItemId).toBe('card-p1');
+		});
+	});
+
+	// =========================================================================
+	// listPRsForProject
+	// =========================================================================
+
+	describe('listPRsForProject', () => {
+		it('returns empty array when no PRs exist', async () => {
+			const result = await listPRsForProject('test-project');
+			expect(result).toEqual([]);
+		});
+
+		it('returns all PRs with work item info', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 1, 'card-aaa', {
+				workItemUrl: 'https://trello.com/c/aaa',
+				workItemTitle: 'Card AAA',
+				prUrl: 'https://github.com/owner/repo/pull/1',
+				prTitle: 'feat: add AAA',
+			});
+			await linkPRToWorkItem('test-project', 'owner/repo', 2, 'card-bbb', {
+				prTitle: 'feat: add BBB',
+			});
+
+			const result = await listPRsForProject('test-project');
+			expect(result).toHaveLength(2);
+			expect(result[0].prNumber).toBe(1);
+			expect(result[0].workItemId).toBe('card-aaa');
+			expect(result[0].workItemTitle).toBe('Card AAA');
+			expect(result[0].prTitle).toBe('feat: add AAA');
+			expect(result[1].prNumber).toBe(2);
+			expect(result[1].workItemId).toBe('card-bbb');
+		});
+
+		it('includes orphan PRs (null workItemId)', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 7, null, {
+				prTitle: 'orphan PR',
+			});
+
+			const result = await listPRsForProject('test-project');
+			expect(result).toHaveLength(1);
+			expect(result[0].workItemId).toBeNull();
+			expect(result[0].prTitle).toBe('orphan PR');
+		});
+
+		it('isolates results by project', async () => {
+			await seedProject({ id: 'other-project', repo: 'owner/other-repo' });
+			await linkPRToWorkItem('test-project', 'owner/repo', 1, 'card-p1');
+			await linkPRToWorkItem('other-project', 'owner/other-repo', 2, 'card-p2');
+
+			const result = await listPRsForProject('test-project');
+			expect(result).toHaveLength(1);
+			expect(result[0].prNumber).toBe(1);
+		});
+	});
+
+	// =========================================================================
+	// listPRsForWorkItem
+	// =========================================================================
+
+	describe('listPRsForWorkItem', () => {
+		it('returns empty array when no PRs are linked to the work item', async () => {
+			const result = await listPRsForWorkItem('test-project', 'card-nonexistent');
+			expect(result).toEqual([]);
+		});
+
+		it('returns only PRs for the given work item', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 1, 'card-aaa', {
+				prTitle: 'feat: AAA #1',
+			});
+			await linkPRToWorkItem('test-project', 'owner/repo', 2, 'card-aaa', {
+				prTitle: 'feat: AAA #2',
+			});
+			await linkPRToWorkItem('test-project', 'owner/repo', 3, 'card-bbb', {
+				prTitle: 'feat: BBB #3',
+			});
+
+			const result = await listPRsForWorkItem('test-project', 'card-aaa');
+			expect(result).toHaveLength(2);
+			expect(result.every((r) => r.workItemId === 'card-aaa')).toBe(true);
+			expect(result.map((r) => r.prNumber)).toEqual([1, 2]);
+		});
+
+		it('isolates results by project', async () => {
+			await seedProject({ id: 'other-project', repo: 'owner/other-repo' });
+			await linkPRToWorkItem('test-project', 'owner/repo', 1, 'card-shared');
+			await linkPRToWorkItem('other-project', 'owner/other-repo', 2, 'card-shared');
+
+			const result = await listPRsForWorkItem('test-project', 'card-shared');
+			expect(result).toHaveLength(1);
+			expect(result[0].prNumber).toBe(1);
 		});
 	});
 });

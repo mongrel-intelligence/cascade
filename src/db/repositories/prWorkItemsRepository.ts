@@ -1,6 +1,6 @@
-import { and, eq } from 'drizzle-orm';
+import { and, countDistinct, eq, isNotNull, max } from 'drizzle-orm';
 import { getDb } from '../client.js';
-import { prWorkItems } from '../schema/index.js';
+import { agentRuns, prWorkItems } from '../schema/index.js';
 
 export interface LinkPRToWorkItemOptions {
 	workItemUrl?: string;
@@ -50,6 +50,109 @@ export async function linkPRToWorkItem(
 				updatedAt: now,
 			},
 		});
+}
+
+// ============================================================================
+// List queries
+// ============================================================================
+
+export interface WorkItemSummary {
+	workItemId: string;
+	workItemUrl: string | null;
+	workItemTitle: string | null;
+	prCount: number;
+	runCount: number;
+}
+
+/**
+ * Returns distinct work items for a project, with a count of associated PRs
+ * and agent runs. Only rows with a non-null workItemId are included.
+ */
+export async function listWorkItemsForProject(projectId: string): Promise<WorkItemSummary[]> {
+	const db = getDb();
+	const rows = await db
+		.select({
+			workItemId: prWorkItems.workItemId,
+			workItemUrl: max(prWorkItems.workItemUrl),
+			workItemTitle: max(prWorkItems.workItemTitle),
+			prCount: countDistinct(prWorkItems.prNumber),
+			runCount: countDistinct(agentRuns.id),
+		})
+		.from(prWorkItems)
+		.leftJoin(
+			agentRuns,
+			and(
+				eq(agentRuns.projectId, prWorkItems.projectId),
+				eq(agentRuns.prNumber, prWorkItems.prNumber),
+			),
+		)
+		.where(and(eq(prWorkItems.projectId, projectId), isNotNull(prWorkItems.workItemId)))
+		.groupBy(prWorkItems.workItemId);
+
+	return rows.map((r) => ({
+		workItemId: r.workItemId as string,
+		workItemUrl: r.workItemUrl,
+		workItemTitle: r.workItemTitle,
+		prCount: r.prCount,
+		runCount: r.runCount,
+	}));
+}
+
+export interface PRSummary {
+	prNumber: number;
+	repoFullName: string;
+	prUrl: string | null;
+	prTitle: string | null;
+	workItemId: string | null;
+	workItemUrl: string | null;
+	workItemTitle: string | null;
+}
+
+/**
+ * Returns all PR entries for a project (with associated work item display info).
+ */
+export async function listPRsForProject(projectId: string): Promise<PRSummary[]> {
+	const db = getDb();
+	const rows = await db
+		.select({
+			prNumber: prWorkItems.prNumber,
+			repoFullName: prWorkItems.repoFullName,
+			prUrl: prWorkItems.prUrl,
+			prTitle: prWorkItems.prTitle,
+			workItemId: prWorkItems.workItemId,
+			workItemUrl: prWorkItems.workItemUrl,
+			workItemTitle: prWorkItems.workItemTitle,
+		})
+		.from(prWorkItems)
+		.where(eq(prWorkItems.projectId, projectId))
+		.orderBy(prWorkItems.prNumber);
+
+	return rows;
+}
+
+/**
+ * Returns all PRs linked to a specific work item within a project.
+ */
+export async function listPRsForWorkItem(
+	projectId: string,
+	workItemId: string,
+): Promise<PRSummary[]> {
+	const db = getDb();
+	const rows = await db
+		.select({
+			prNumber: prWorkItems.prNumber,
+			repoFullName: prWorkItems.repoFullName,
+			prUrl: prWorkItems.prUrl,
+			prTitle: prWorkItems.prTitle,
+			workItemId: prWorkItems.workItemId,
+			workItemUrl: prWorkItems.workItemUrl,
+			workItemTitle: prWorkItems.workItemTitle,
+		})
+		.from(prWorkItems)
+		.where(and(eq(prWorkItems.projectId, projectId), eq(prWorkItems.workItemId, workItemId)))
+		.orderBy(prWorkItems.prNumber);
+
+	return rows;
 }
 
 /**

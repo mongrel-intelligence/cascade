@@ -45,6 +45,13 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 		name: 'name',
 		orgId: 'org_id',
 	},
+	prWorkItems: {
+		projectId: 'project_id',
+		prNumber: 'pr_number',
+		workItemUrl: 'work_item_url',
+		workItemTitle: 'work_item_title',
+		prTitle: 'pr_title',
+	},
 }));
 
 import {
@@ -58,7 +65,7 @@ import {
 // Each method returns the chain (sync), and the chain itself is thenable.
 function createChain(resolveValue: unknown = []) {
 	const chain: Record<string, unknown> = {};
-	const methods = ['from', 'innerJoin', 'where', 'orderBy', 'limit', 'offset'];
+	const methods = ['from', 'innerJoin', 'leftJoin', 'where', 'orderBy', 'limit', 'offset'];
 	for (const method of methods) {
 		chain[method] = vi.fn().mockReturnValue(chain);
 	}
