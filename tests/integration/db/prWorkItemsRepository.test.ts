@@ -5,7 +5,7 @@ import {
 	linkPRToWorkItem,
 	listPRsForProject,
 	listPRsForWorkItem,
-	listWorkItemsForProject,
+	listWorkItems,
 	lookupWorkItemForPR,
 } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { agentRuns, prWorkItems } from '../../../src/db/schema/index.js';
@@ -220,12 +220,12 @@ describe('prWorkItemsRepository (integration)', () => {
 	});
 
 	// =========================================================================
-	// listWorkItemsForProject
+	// listWorkItems
 	// =========================================================================
 
-	describe('listWorkItemsForProject', () => {
+	describe('listWorkItems', () => {
 		it('returns empty array when no work items exist', async () => {
-			const result = await listWorkItemsForProject('test-project');
+			const result = await listWorkItems('test-org', 'test-project');
 			expect(result).toEqual([]);
 		});
 
@@ -237,7 +237,7 @@ describe('prWorkItemsRepository (integration)', () => {
 				prTitle: 'feat: add AAA',
 			});
 
-			const result = await listWorkItemsForProject('test-project');
+			const result = await listWorkItems('test-org', 'test-project');
 			expect(result).toHaveLength(1);
 			expect(result[0].workItemId).toBe('card-aaa');
 			expect(result[0].workItemUrl).toBe('https://trello.com/c/aaa');
@@ -249,7 +249,7 @@ describe('prWorkItemsRepository (integration)', () => {
 			await linkPRToWorkItem('test-project', 'owner/repo', 2, 'card-aaa');
 			await linkPRToWorkItem('test-project', 'owner/repo', 3, 'card-bbb');
 
-			const result = await listWorkItemsForProject('test-project');
+			const result = await listWorkItems('test-org', 'test-project');
 			const aaa = result.find((r) => r.workItemId === 'card-aaa');
 			const bbb = result.find((r) => r.workItemId === 'card-bbb');
 			expect(aaa?.prCount).toBe(2);
@@ -277,7 +277,7 @@ describe('prWorkItemsRepository (integration)', () => {
 				},
 			]);
 
-			const result = await listWorkItemsForProject('test-project');
+			const result = await listWorkItems('test-org', 'test-project');
 			const item = result.find((r) => r.workItemId === 'card-runs');
 			expect(item?.runCount).toBe(2);
 		});
@@ -293,7 +293,7 @@ describe('prWorkItemsRepository (integration)', () => {
 				workItemTitle: 'Card Dup Updated',
 			});
 
-			const result = await listWorkItemsForProject('test-project');
+			const result = await listWorkItems('test-org', 'test-project');
 			// Should produce exactly one row, not two
 			expect(result).toHaveLength(1);
 			expect(result[0].workItemId).toBe('card-dup');
@@ -307,7 +307,7 @@ describe('prWorkItemsRepository (integration)', () => {
 				prTitle: 'orphan PR',
 			});
 
-			const result = await listWorkItemsForProject('test-project');
+			const result = await listWorkItems('test-org', 'test-project');
 			expect(result).toHaveLength(0);
 		});
 
@@ -316,7 +316,7 @@ describe('prWorkItemsRepository (integration)', () => {
 			await linkPRToWorkItem('test-project', 'owner/repo', 1, 'card-p1');
 			await linkPRToWorkItem('other-project', 'owner/other-repo', 1, 'card-p2');
 
-			const result = await listWorkItemsForProject('test-project');
+			const result = await listWorkItems('test-org', 'test-project');
 			expect(result).toHaveLength(1);
 			expect(result[0].workItemId).toBe('card-p1');
 		});
