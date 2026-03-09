@@ -1,4 +1,6 @@
+import { CancelRunButton } from '@/components/runs/cancel-run-button.js';
 import { LiveDuration } from '@/components/runs/live-duration.js';
+import { RetryRunButton } from '@/components/runs/retry-run-button.js';
 import { RunStatusBadge } from '@/components/runs/run-status-badge.js';
 import { trpc } from '@/lib/trpc.js';
 import { formatCost, formatRelativeTime } from '@/lib/utils.js';
@@ -78,7 +80,9 @@ function ExpandedRunsRow({ projectId, prNumber, workItemId }: ExpandedRunsRowPro
 									<th className="pb-2 pr-4 text-right font-medium text-muted-foreground">
 										Duration
 									</th>
-									<th className="pb-2 text-right font-medium text-muted-foreground">Cost</th>
+									<th className="pb-2 pr-4 text-right font-medium text-muted-foreground">Cost</th>
+									<th className="pb-2 pr-4 text-right font-medium text-muted-foreground">Iters</th>
+									<th className="pb-2 text-center font-medium text-muted-foreground">Actions</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -106,8 +110,15 @@ function ExpandedRunsRow({ projectId, prNumber, workItemId }: ExpandedRunsRowPro
 												status={run.status}
 											/>
 										</td>
-										<td className="py-1.5 text-right tabular-nums text-muted-foreground">
+										<td className="py-1.5 pr-4 text-right tabular-nums text-muted-foreground">
 											{formatCost(run.costUsd)}
+										</td>
+										<td className="py-1.5 pr-4 text-right tabular-nums text-muted-foreground">
+											{run.llmIterations ?? '-'}
+										</td>
+										<td className="py-1.5 text-center">
+											<CancelRunButton runId={run.id} status={run.status} />
+											<RetryRunButton runId={run.id} status={run.status} />
 										</td>
 									</tr>
 								))}
