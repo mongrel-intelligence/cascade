@@ -123,10 +123,12 @@ export interface PRSummary {
 	workItemId: string | null;
 	workItemUrl: string | null;
 	workItemTitle: string | null;
+	runCount: number;
 }
 
 /**
- * Returns all PR entries for a project (with associated work item display info).
+ * Returns all PR entries for a project (with associated work item display info and run count).
+ * Optionally filter by projectId; if omitted, returns all PRs across the org.
  */
 export async function listPRsForProject(projectId: string): Promise<PRSummary[]> {
 	const db = getDb();
@@ -139,9 +141,73 @@ export async function listPRsForProject(projectId: string): Promise<PRSummary[]>
 			workItemId: prWorkItems.workItemId,
 			workItemUrl: prWorkItems.workItemUrl,
 			workItemTitle: prWorkItems.workItemTitle,
+			runCount: countDistinct(agentRuns.id),
 		})
 		.from(prWorkItems)
+		.leftJoin(
+			agentRuns,
+			and(
+				eq(agentRuns.projectId, prWorkItems.projectId),
+				eq(agentRuns.prNumber, prWorkItems.prNumber),
+			),
+		)
 		.where(eq(prWorkItems.projectId, projectId))
+		.groupBy(
+			prWorkItems.prNumber,
+			prWorkItems.repoFullName,
+			prWorkItems.prUrl,
+			prWorkItems.prTitle,
+			prWorkItems.workItemId,
+			prWorkItems.workItemUrl,
+			prWorkItems.workItemTitle,
+		)
+		.orderBy(prWorkItems.prNumber);
+
+	return rows;
+}
+
+/**
+ * Returns all PR entries for an org (all projects), with associated work item display info and run count.
+ */
+export async function listPRsForOrg(orgId: string): Promise<PRSummary[]> {
+	const db = getDb();
+
+	const projectIds = await db
+		.select({ id: projects.id })
+		.from(projects)
+		.where(eq(projects.orgId, orgId));
+	const ids = projectIds.map((p) => p.id);
+	if (ids.length === 0) return [];
+
+	const rows = await db
+		.select({
+			prNumber: prWorkItems.prNumber,
+			repoFullName: prWorkItems.repoFullName,
+			prUrl: prWorkItems.prUrl,
+			prTitle: prWorkItems.prTitle,
+			workItemId: prWorkItems.workItemId,
+			workItemUrl: prWorkItems.workItemUrl,
+			workItemTitle: prWorkItems.workItemTitle,
+			runCount: countDistinct(agentRuns.id),
+		})
+		.from(prWorkItems)
+		.leftJoin(
+			agentRuns,
+			and(
+				eq(agentRuns.projectId, prWorkItems.projectId),
+				eq(agentRuns.prNumber, prWorkItems.prNumber),
+			),
+		)
+		.where(inArray(prWorkItems.projectId, ids))
+		.groupBy(
+			prWorkItems.prNumber,
+			prWorkItems.repoFullName,
+			prWorkItems.prUrl,
+			prWorkItems.prTitle,
+			prWorkItems.workItemId,
+			prWorkItems.workItemUrl,
+			prWorkItems.workItemTitle,
+		)
 		.orderBy(prWorkItems.prNumber);
 
 	return rows;
@@ -164,9 +230,26 @@ export async function listPRsForWorkItem(
 			workItemId: prWorkItems.workItemId,
 			workItemUrl: prWorkItems.workItemUrl,
 			workItemTitle: prWorkItems.workItemTitle,
+			runCount: countDistinct(agentRuns.id),
 		})
 		.from(prWorkItems)
+		.leftJoin(
+			agentRuns,
+			and(
+				eq(agentRuns.projectId, prWorkItems.projectId),
+				eq(agentRuns.prNumber, prWorkItems.prNumber),
+			),
+		)
 		.where(and(eq(prWorkItems.projectId, projectId), eq(prWorkItems.workItemId, workItemId)))
+		.groupBy(
+			prWorkItems.prNumber,
+			prWorkItems.repoFullName,
+			prWorkItems.prUrl,
+			prWorkItems.prTitle,
+			prWorkItems.workItemId,
+			prWorkItems.workItemUrl,
+			prWorkItems.workItemTitle,
+		)
 		.orderBy(prWorkItems.prNumber);
 
 	return rows;
