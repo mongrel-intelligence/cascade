@@ -1,4 +1,4 @@
-import { type SQL, and, countDistinct, eq, inArray, isNotNull, max } from 'drizzle-orm';
+import { type SQL, and, countDistinct, desc, eq, inArray, isNotNull, max } from 'drizzle-orm';
 import { getDb } from '../client.js';
 import { agentRuns, prWorkItems, projects } from '../schema/index.js';
 
@@ -270,4 +270,78 @@ export async function lookupWorkItemForPR(
 		.where(and(eq(prWorkItems.projectId, projectId), eq(prWorkItems.prNumber, prNumber)))
 		.limit(1);
 	return rows.length > 0 ? rows[0].workItemId : null;
+}
+
+// ============================================================================
+// Unified work view
+// ============================================================================
+
+export interface UnifiedWorkItem {
+	id: string;
+	type: 'pr' | 'linked';
+	prNumber: number;
+	repoFullName: string;
+	prUrl: string | null;
+	prTitle: string | null;
+	workItemId: string | null;
+	workItemUrl: string | null;
+	workItemTitle: string | null;
+	runCount: number;
+	updatedAt: Date | null;
+}
+
+/**
+ * Returns all PR entries for a project as a unified work view, ordered by updatedAt desc.
+ * PRs without a linked work item have type 'pr'; rows with both have type 'linked'.
+ */
+export async function listUnifiedWorkForProject(projectId: string): Promise<UnifiedWorkItem[]> {
+	const db = getDb();
+	const rows = await db
+		.select({
+			id: prWorkItems.id,
+			prNumber: prWorkItems.prNumber,
+			repoFullName: prWorkItems.repoFullName,
+			prUrl: prWorkItems.prUrl,
+			prTitle: prWorkItems.prTitle,
+			workItemId: prWorkItems.workItemId,
+			workItemUrl: prWorkItems.workItemUrl,
+			workItemTitle: prWorkItems.workItemTitle,
+			updatedAt: prWorkItems.updatedAt,
+			runCount: countDistinct(agentRuns.id),
+		})
+		.from(prWorkItems)
+		.leftJoin(
+			agentRuns,
+			and(
+				eq(agentRuns.projectId, prWorkItems.projectId),
+				eq(agentRuns.prNumber, prWorkItems.prNumber),
+			),
+		)
+		.where(eq(prWorkItems.projectId, projectId))
+		.groupBy(
+			prWorkItems.id,
+			prWorkItems.prNumber,
+			prWorkItems.repoFullName,
+			prWorkItems.prUrl,
+			prWorkItems.prTitle,
+			prWorkItems.workItemId,
+			prWorkItems.workItemUrl,
+			prWorkItems.workItemTitle,
+			prWorkItems.updatedAt,
+		)
+		.orderBy(desc(prWorkItems.updatedAt));
+
+	return rows.map((r) => ({
+		id: r.id,
+		type: r.workItemId ? ('linked' as const) : ('pr' as const),
+		prNumber: r.prNumber,
+		repoFullName: r.repoFullName,
+		prUrl: r.prUrl,
+		prTitle: r.prTitle,
+		workItemId: r.workItemId,
+		workItemUrl: r.workItemUrl,
+		workItemTitle: r.workItemTitle,
+		runCount: r.runCount,
+		updatedAt: r.updatedAt,
+	}));
 }

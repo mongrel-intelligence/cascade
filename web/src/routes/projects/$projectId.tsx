@@ -1,6 +1,7 @@
 import { IntegrationForm } from '@/components/projects/integration-form.js';
 import { ProjectAgentConfigs } from '@/components/projects/project-agent-configs.js';
 import { ProjectGeneralForm } from '@/components/projects/project-general-form.js';
+import { ProjectWorkTable } from '@/components/projects/project-work-table.js';
 import { trpc } from '@/lib/trpc.js';
 import { cn } from '@/lib/utils.js';
 import { useQuery } from '@tanstack/react-query';
@@ -9,13 +10,17 @@ import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { rootRoute } from '../__root.js';
 
-type Tab = 'general' | 'integrations' | 'agent-configs';
+type Tab = 'general' | 'work' | 'integrations' | 'agent-configs';
+
+const WORK_PAGE_SIZE = 50;
 
 function ProjectDetailPage() {
 	const { projectId } = projectDetailRoute.useParams();
 	const [activeTab, setActiveTab] = useState<Tab>('general');
+	const [workOffset, setWorkOffset] = useState(0);
 
 	const projectQuery = useQuery(trpc.projects.getById.queryOptions({ id: projectId }));
+	const workQuery = useQuery(trpc.prs.listUnified.queryOptions({ projectId }));
 
 	if (projectQuery.isLoading) {
 		return <div className="py-8 text-center text-muted-foreground">Loading project...</div>;
@@ -29,6 +34,7 @@ function ProjectDetailPage() {
 
 	const tabs: { id: Tab; label: string }[] = [
 		{ id: 'general', label: 'General' },
+		{ id: 'work', label: 'Work' },
 		{ id: 'integrations', label: 'Integrations' },
 		{ id: 'agent-configs', label: 'Agent Configs' },
 	];
@@ -68,6 +74,37 @@ function ProjectDetailPage() {
 			</div>
 
 			{activeTab === 'general' && <ProjectGeneralForm project={project} />}
+
+			{activeTab === 'work' && (
+				<div className="space-y-4">
+					<div className="flex items-center justify-between">
+						<h2 className="text-lg font-semibold">Work</h2>
+						{workQuery.data && (
+							<span className="text-sm text-muted-foreground">{workQuery.data.length} total</span>
+						)}
+					</div>
+
+					{workQuery.isLoading && (
+						<div className="py-8 text-center text-muted-foreground">Loading work items...</div>
+					)}
+
+					{workQuery.isError && (
+						<div className="py-8 text-center text-destructive">
+							Failed to load work: {workQuery.error.message}
+						</div>
+					)}
+
+					{workQuery.data && (
+						<ProjectWorkTable
+							items={workQuery.data}
+							offset={workOffset}
+							limit={WORK_PAGE_SIZE}
+							onPageChange={setWorkOffset}
+						/>
+					)}
+				</div>
+			)}
+
 			{activeTab === 'integrations' && <IntegrationForm projectId={projectId} />}
 			{activeTab === 'agent-configs' && <ProjectAgentConfigs projectId={projectId} />}
 		</div>

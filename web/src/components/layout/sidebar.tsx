@@ -7,9 +7,7 @@ import {
 	Activity,
 	BookOpen,
 	Bot,
-	ClipboardList,
 	FolderGit2,
-	GitPullRequest,
 	KeyRound,
 	LayoutDashboard,
 	Settings,
@@ -22,8 +20,6 @@ interface SidebarProps {
 
 const mainNav = [
 	{ to: '/' as const, label: 'Runs', icon: Activity },
-	{ to: '/workitems' as const, label: 'Work Items', icon: ClipboardList },
-	{ to: '/prs' as const, label: 'PRs', icon: GitPullRequest },
 	{ to: '/webhooklogs' as const, label: 'Webhook Logs', icon: Zap },
 ];
 
