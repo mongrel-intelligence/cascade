@@ -5,7 +5,7 @@ import {
 	linkPRToWorkItem,
 	listPRsForProject,
 	listPRsForWorkItem,
-	listWorkItemsForProject,
+	listWorkItems,
 	lookupWorkItemForPR,
 } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { agentRuns, prWorkItems } from '../../../src/db/schema/index.js';
@@ -220,12 +220,12 @@ describe('prWorkItemsRepository (integration)', () => {
 	});
 
 	// =========================================================================
-	// listWorkItemsForProject
+	// listWorkItems
 	// =========================================================================
 
-	describe('listWorkItemsForProject', () => {
+	describe('listWorkItems', () => {
 		it('returns empty array when no work items exist', async () => {
-			const result = await listWorkItemsForProject('test-project');
+			const result = await listWorkItems('test-org', 'test-project');
 			expect(result).toEqual([]);
 		});
 
@@ -237,7 +237,7 @@ describe('prWorkItemsRepository (integration)', () => {
 				prTitle: 'feat: add AAA',
 			});
 
-			const result = await listWorkItemsForProject('test-project');
+			const result = await listWorkItems('test-org', 'test-project');
 			expect(result).toHaveLength(1);
 			expect(result[0].workItemId).toBe('card-aaa');
 			expect(result[0].workItemUrl).toBe('https://trello.com/c/aaa');
@@ -249,7 +249,7 @@ describe('prWorkItemsRepository (integration)', () => {
 			await linkPRToWorkItem('test-project', 'owner/repo', 2, 'card-aaa');
 			await linkPRToWorkItem('test-project', 'owner/repo', 3, 'card-bbb');
 
-			const result = await listWorkItemsForProject('test-project');
+			const result = await listWorkItems('test-org', 'test-project');
 			const aaa = result.find((r) => r.workItemId === 'card-aaa');
 			const bbb = result.find((r) => r.workItemId === 'card-bbb');
 			expect(aaa?.prCount).toBe(2);
@@ -277,7 +277,7 @@ describe('prWorkItemsRepository (integration)', () => {
 				},
 			]);
 
-			const result = await listWorkItemsForProject('test-project');
+			const result = await listWorkItems('test-org', 'test-project');
 			const item = result.find((r) => r.workItemId === 'card-runs');
 			expect(item?.runCount).toBe(2);
 		});
@@ -293,7 +293,7 @@ describe('prWorkItemsRepository (integration)', () => {
 				workItemTitle: 'Card Dup Updated',
 			});
 
-			const result = await listWorkItemsForProject('test-project');
+			const result = await listWorkItems('test-org', 'test-project');
 			// Should produce exactly one row, not two
 			expect(result).toHaveLength(1);
 			expect(result[0].workItemId).toBe('card-dup');
@@ -307,7 +307,7 @@ describe('prWorkItemsRepository (integration)', () => {
 				prTitle: 'orphan PR',
 			});
 
-			const result = await listWorkItemsForProject('test-project');
+			const result = await listWorkItems('test-org', 'test-project');
 			expect(result).toHaveLength(0);
 		});
 
@@ -316,9 +316,40 @@ describe('prWorkItemsRepository (integration)', () => {
 			await linkPRToWorkItem('test-project', 'owner/repo', 1, 'card-p1');
 			await linkPRToWorkItem('other-project', 'owner/other-repo', 1, 'card-p2');
 
-			const result = await listWorkItemsForProject('test-project');
+			const result = await listWorkItems('test-org', 'test-project');
 			expect(result).toHaveLength(1);
 			expect(result[0].workItemId).toBe('card-p1');
+		});
+
+		it('correctly counts PRs across multiple projects when no projectId is provided', async () => {
+			await seedProject({ id: 'project-a', repo: 'owner/repo-a' });
+			await seedProject({ id: 'project-b', repo: 'owner/repo-b' });
+
+			// Link PR #1 in project-a to card-shared
+			await linkPRToWorkItem('project-a', 'owner/repo-a', 1, 'card-shared', {
+				workItemUrl: 'https://trello.com/c/shared',
+				workItemTitle: 'Shared Card',
+			});
+
+			// Link PR #1 in project-b to card-shared (same PR number, different project)
+			await linkPRToWorkItem('project-b', 'owner/repo-b', 1, 'card-shared', {
+				workItemUrl: 'https://trello.com/c/shared',
+				workItemTitle: 'Shared Card',
+			});
+
+			// Link PR #2 in project-a to card-shared
+			await linkPRToWorkItem('project-a', 'owner/repo-a', 2, 'card-shared', {
+				workItemUrl: 'https://trello.com/c/shared',
+				workItemTitle: 'Shared Card',
+			});
+
+			// Query org-wide (no projectId filter)
+			const result = await listWorkItems('test-org');
+			expect(result).toHaveLength(1);
+			expect(result[0].workItemId).toBe('card-shared');
+			// Should count all 3 distinct PRs (project-a/PR#1, project-b/PR#1, project-a/PR#2)
+			// not just 2 (if it were counting distinct prNumber instead of distinct id)
+			expect(result[0].prCount).toBe(3);
 		});
 	});
 
