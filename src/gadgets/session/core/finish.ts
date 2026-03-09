@@ -25,6 +25,17 @@ export async function findPRForCurrentBranch(): Promise<string | null> {
 	}
 }
 
+export function hasNewCommits(initialSha: string): boolean {
+	try {
+		const currentSha = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
+		return currentSha !== initialSha;
+	} catch {
+		// If git fails here, preceding checks (uncommitted/unpushed) would have
+		// already caught real issues. Fail-open: assume work was done.
+		return true;
+	}
+}
+
 export function hasUnpushedCommits(): boolean {
 	try {
 		const result = execSync('git rev-list @{upstream}..HEAD --count 2>/dev/null', {
@@ -49,6 +60,7 @@ export interface SessionState {
 	prCreated: boolean;
 	reviewSubmitted: boolean;
 	hooks: SessionHooks;
+	initialHeadSha?: string | null;
 }
 
 export interface FinishValidationError {
@@ -99,6 +111,13 @@ export async function validateFinish(state: SessionState): Promise<FinishValidat
 				valid: false,
 				error:
 					'Cannot finish session without pushing changes. You must push your commits (git push) before calling Finish.',
+			};
+		}
+		if (state.initialHeadSha && !hasNewCommits(state.initialHeadSha)) {
+			return {
+				valid: false,
+				error:
+					'Cannot finish session without making any changes. You must commit and push at least one change before calling Finish.',
 			};
 		}
 	}

@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import {
 	AgentBuilder,
 	BudgetPricingUnavailableError,
@@ -79,6 +80,16 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 
 	// Initialize session state for gadgets (e.g., Finish checks PR requirement for implementation)
 	if (!skipSessionState) {
+		let initialHeadSha: string | undefined;
+		try {
+			initialHeadSha = execSync('git rev-parse HEAD', {
+				encoding: 'utf-8',
+				cwd: options.repoDir,
+			}).trim();
+		} catch {
+			// Not in a git repo or git not available — leave undefined
+		}
+
 		initSessionState(
 			agentType,
 			options.baseBranch,
@@ -87,6 +98,7 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 			options.hooks,
 			options.workItemUrl,
 			options.workItemTitle,
+			initialHeadSha,
 		);
 	}
 

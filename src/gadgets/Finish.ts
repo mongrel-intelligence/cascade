@@ -26,6 +26,7 @@ export class Finish extends Gadget({
 			prCreated: state.prCreated,
 			reviewSubmitted: state.reviewSubmitted,
 			hooks: state.hooks,
+			initialHeadSha: state.initialHeadSha,
 		});
 
 		if (!result.valid) {
