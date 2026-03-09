@@ -52,7 +52,7 @@ export async function createWorkItem(
 		})
 		.onConflictDoUpdate({
 			target: [prWorkItems.projectId, prWorkItems.workItemId],
-			targetWhere: isNull(prWorkItems.prNumber),
+			targetWhere: and(isNotNull(prWorkItems.workItemId), isNull(prWorkItems.prNumber)),
 			set: {
 				workItemUrl,
 				workItemTitle,
@@ -125,6 +125,7 @@ export async function linkPRToWorkItem(
 		})
 		.onConflictDoUpdate({
 			target: [prWorkItems.projectId, prWorkItems.prNumber],
+			targetWhere: isNotNull(prWorkItems.prNumber),
 			set: {
 				workItemId,
 				repoFullName,
