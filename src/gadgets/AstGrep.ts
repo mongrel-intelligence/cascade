@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { Gadget, z } from 'llmist';
 
 import { assertFileRead, markFileRead } from './readTracking.js';
+import { getSessionState } from './sessionState.js';
 import { runPostEditChecks, validatePath } from './shared/index.js';
 
 export class AstGrep extends Gadget({
@@ -63,6 +64,9 @@ Use for:
 		const { pattern, language, path, rewrite } = params;
 
 		if (rewrite) {
+			if (getSessionState().readOnlyFs) {
+				return 'AstGrep rewrite is not available for read-only agents. Use AstGrep without rewrite for search only.';
+			}
 			return this.executeRewrite(pattern, language, path, rewrite);
 		}
 		return this.executeSearch(pattern, language, path);

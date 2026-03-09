@@ -11,6 +11,8 @@ let sessionState = {
 	workItemUrl: null as string | null,
 	workItemTitle: null as string | null,
 	initialHeadSha: null as string | null,
+	hooks: {} as SessionHooks,
+	readOnlyFs: false,
 	prCreated: false,
 	prUrl: null as string | null,
 	reviewSubmitted: false,
@@ -18,7 +20,6 @@ let sessionState = {
 	reviewBody: null as string | null,
 	reviewEvent: null as string | null,
 	initialCommentId: null as number | null,
-	hooks: {} as SessionHooks,
 };
 
 export function initSessionState(
@@ -39,6 +40,8 @@ export function initSessionState(
 		workItemUrl: workItemUrl ?? null,
 		workItemTitle: workItemTitle ?? null,
 		initialHeadSha: initialHeadSha ?? null,
+		hooks: hooks ?? {},
+		readOnlyFs: false,
 		prCreated: false,
 		prUrl: null,
 		reviewSubmitted: false,
@@ -46,7 +49,6 @@ export function initSessionState(
 		reviewBody: null,
 		reviewEvent: null,
 		initialCommentId: null,
-		hooks: hooks ?? {},
 	};
 }
 
@@ -60,6 +62,10 @@ export function getProjectId(): string | null {
 
 export function getCardId(): string | null {
 	return sessionState.cardId;
+}
+
+export function setReadOnlyFs(readOnly: boolean): void {
+	sessionState.readOnlyFs = readOnly;
 }
 
 export function getWorkItemUrl(): string | null {

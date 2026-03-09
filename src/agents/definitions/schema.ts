@@ -212,6 +212,7 @@ const StrategiesSchema = z.object({
 const ScmTrailingSchema = z.object({
 	gitStatus: z.boolean().optional(),
 	prStatus: z.boolean().optional(),
+	reviewDeadline: z.boolean().optional(),
 });
 
 const BuiltinTrailingSchema = z.object({

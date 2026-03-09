@@ -78,6 +78,8 @@ function buildFullTrailingMessage(
 	timestamp: string,
 	iterationStatus: string,
 	flags: TrailingHookFlags,
+	iteration?: number,
+	maxIterations?: number,
 ): string {
 	const sections: string[] = [timestamp, iterationStatus];
 
@@ -87,12 +89,8 @@ function buildFullTrailingMessage(
 		if (loopWarning) sections.push(loopWarning);
 	}
 
-	if (flags.todoProgress) {
-		const todos = loadTodos();
-		if (todos.length > 0) {
-			sections.push(`## Current Progress\n\n${formatTodoList(todos)}`);
-		}
-	}
+	const todoSection = flags.todoProgress ? formatTodoSection() : null;
+	if (todoSection) sections.push(todoSection);
 
 	if (flags.gitStatus) {
 		const gitStatus = getGitStatus();
@@ -117,7 +115,47 @@ function buildFullTrailingMessage(
 		);
 	}
 
+	const reviewDeadline = flags.reviewDeadline
+		? formatReviewDeadline(iteration, maxIterations)
+		: null;
+	if (reviewDeadline) sections.push(reviewDeadline);
+
 	return sections.join('\n\n');
+}
+
+/**
+ * Format todo progress section, or null if no todos exist.
+ */
+function formatTodoSection(): string | null {
+	const todos = loadTodos();
+	return todos.length > 0 ? `## Current Progress\n\n${formatTodoList(todos)}` : null;
+}
+
+/**
+ * Format a review deadline warning based on iteration progress.
+ * Returns null if review has already been submitted or we're below 40% of budget.
+ */
+function formatReviewDeadline(iteration?: number, maxIterations?: number): string | null {
+	const state = getSessionState();
+	if (state.reviewSubmitted) return null;
+
+	if (iteration == null || maxIterations == null || maxIterations === 0) {
+		return null;
+	}
+
+	const percent = Math.round((iteration / maxIterations) * 100);
+
+	if (percent >= 80) {
+		return '## 🚨 CRITICAL: Review Deadline\n\n80% of iterations used without submitting a review. Call CreatePRReview IMMEDIATELY with your findings.';
+	}
+	if (percent >= 60) {
+		return '## ⚠️ WARNING: Review Deadline\n\nPast 60% of budget without submitting a review. Submit your review NOW via CreatePRReview.';
+	}
+	if (percent >= 40) {
+		return '## Review Deadline\n\nYou have not submitted a review yet. Your primary goal is to call CreatePRReview.';
+	}
+
+	return null;
 }
 
 /**
@@ -186,6 +224,7 @@ export async function getIterationTrailingMessage(agentType?: string): Promise<T
 					gitStatus: scm?.gitStatus,
 					prStatus: scm?.prStatus,
 					reminder: builtin?.reminder,
+					reviewDeadline: scm?.reviewDeadline,
 				};
 			}
 		} catch {
@@ -200,7 +239,13 @@ export async function getIterationTrailingMessage(agentType?: string): Promise<T
 		const iterationStatus = formatIterationStatus(ctx.iteration, ctx.maxIterations, batchHint);
 
 		if (hasAnyFlag) {
-			return buildFullTrailingMessage(timestamp, iterationStatus, flags);
+			return buildFullTrailingMessage(
+				timestamp,
+				iterationStatus,
+				flags,
+				ctx.iteration,
+				ctx.maxIterations,
+			);
 		}
 
 		return `${timestamp}\n\n${iterationStatus}`;

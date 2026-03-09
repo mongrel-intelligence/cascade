@@ -78,6 +78,9 @@ prompts:
     Examine the code changes carefully and submit your review using CreatePRReview.
 
 hooks:
+  trailing:
+    scm:
+      reviewDeadline: true
   finish:
     scm:
       requiresReview: true
