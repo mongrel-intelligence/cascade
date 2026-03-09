@@ -23,20 +23,20 @@ vi.mock('../../../src/github/client.js', () => ({
 
 describe('Finish gadget', () => {
 	it('has exclusive set to prevent parallel execution with other gadgets', () => {
-		initSessionState('unknown');
+		initSessionState({ agentType: 'unknown' });
 		const gadget = new Finish();
 		expect(gadget.exclusive).toBe(true);
 	});
 
 	it('throws TaskCompletionSignal when no hooks are set', async () => {
-		initSessionState('unknown');
+		initSessionState({ agentType: 'unknown' });
 		const gadget = new Finish();
 		await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(TaskCompletionSignal);
 	});
 
 	describe('implementation agent (hooks.requiresPR: true)', () => {
 		beforeEach(() => {
-			initSessionState('implementation', undefined, undefined, undefined, { requiresPR: true });
+			initSessionState({ agentType: 'implementation', hooks: { requiresPR: true } });
 		});
 
 		it('rejects finish without PR creation and no PR on branch', async () => {
@@ -92,16 +92,11 @@ describe('Finish gadget', () => {
 		const NEW_SHA = 'b'.repeat(40);
 
 		beforeEach(() => {
-			initSessionState(
-				'respond-to-ci',
-				undefined,
-				undefined,
-				undefined,
-				{ requiresPushedChanges: true },
-				undefined,
-				undefined,
-				INITIAL_SHA,
-			);
+			initSessionState({
+				agentType: 'respond-to-ci',
+				hooks: { requiresPushedChanges: true },
+				initialHeadSha: INITIAL_SHA,
+			});
 		});
 
 		it('rejects finish with uncommitted changes', async () => {
@@ -157,8 +152,9 @@ describe('Finish gadget', () => {
 
 		it('skips no-op check when initialHeadSha is not set', async () => {
 			// Re-init without initialHeadSha
-			initSessionState('respond-to-ci', undefined, undefined, undefined, {
-				requiresPushedChanges: true,
+			initSessionState({
+				agentType: 'respond-to-ci',
+				hooks: { requiresPushedChanges: true },
 			});
 
 			vi.mocked(execSync).mockImplementation((cmd: string) => {
@@ -174,7 +170,7 @@ describe('Finish gadget', () => {
 
 	describe('review agent (hooks.requiresReview: true)', () => {
 		beforeEach(() => {
-			initSessionState('review', undefined, undefined, undefined, { requiresReview: true });
+			initSessionState({ agentType: 'review', hooks: { requiresReview: true } });
 		});
 
 		it('rejects finish without submitting a review', async () => {

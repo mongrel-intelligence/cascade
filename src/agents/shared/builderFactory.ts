@@ -90,16 +90,16 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 			// Not in a git repo or git not available — leave undefined
 		}
 
-		initSessionState(
+		initSessionState({
 			agentType,
-			options.baseBranch,
-			options.projectId,
-			options.cardId,
-			options.hooks,
-			options.workItemUrl,
-			options.workItemTitle,
+			baseBranch: options.baseBranch,
+			projectId: options.projectId,
+			cardId: options.cardId,
+			hooks: options.hooks,
+			workItemUrl: options.workItemUrl,
+			workItemTitle: options.workItemTitle,
 			initialHeadSha,
-		);
+		});
 	}
 
 	// Resolve config values before building
