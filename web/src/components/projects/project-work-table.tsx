@@ -55,7 +55,7 @@ function ExpandedRunsRow({ projectId, prNumber, workItemId }: ExpandedRunsRowPro
 
 	return (
 		<tr>
-			<td colSpan={5} className="border-t border-border bg-muted/20 px-4 py-3">
+			<td colSpan={4} className="border-t border-border bg-muted/20 px-4 py-3">
 				{runsQuery.isLoading && (
 					<div className="text-sm text-muted-foreground">Loading runs...</div>
 				)}
@@ -174,48 +174,69 @@ function WorkItemRow({ item, isExpanded, onToggle }: WorkItemRowProps) {
 				)}
 			</td>
 
-			{/* PR title / number */}
+			{/* PR title / number + Associated work item (stacked) */}
 			<td className="px-4 py-3">
-				{item.type === 'work-item' ? (
-					<span className="text-muted-foreground italic">No PR yet</span>
-				) : item.prUrl ? (
-					<a
-						href={item.prUrl}
-						target="_blank"
-						rel="noopener noreferrer"
-						onClick={(e) => e.stopPropagation()}
-						className="inline-flex items-center gap-1 text-primary hover:underline"
-					>
-						#{item.prNumber}
-						{item.prTitle && <span className="ml-1 text-foreground">{item.prTitle}</span>}
-						<ExternalLink className="h-3 w-3 shrink-0" />
-					</a>
-				) : (
-					<span className="text-muted-foreground">
-						#{item.prNumber}
-						{item.prTitle && <span className="ml-1 text-foreground">{item.prTitle}</span>}
-					</span>
-				)}
-			</td>
+				<div className="flex flex-col gap-1">
+					{/* Primary row: work item title (for work-item type) or PR title */}
+					{item.type === 'work-item' ? (
+						item.workItemUrl && item.workItemTitle ? (
+							<a
+								href={item.workItemUrl}
+								target="_blank"
+								rel="noopener noreferrer"
+								onClick={(e) => e.stopPropagation()}
+								className="inline-flex items-center gap-1 text-primary hover:underline"
+							>
+								{item.workItemTitle}
+								<ExternalLink className="h-3 w-3 shrink-0" />
+							</a>
+						) : item.workItemTitle ? (
+							<span>{item.workItemTitle}</span>
+						) : (
+							<span className="text-muted-foreground italic">No title</span>
+						)
+					) : item.prUrl ? (
+						<a
+							href={item.prUrl}
+							target="_blank"
+							rel="noopener noreferrer"
+							onClick={(e) => e.stopPropagation()}
+							className="inline-flex items-center gap-1 text-primary hover:underline"
+						>
+							#{item.prNumber}
+							{item.prTitle && <span className="ml-1 text-foreground">{item.prTitle}</span>}
+							<ExternalLink className="h-3 w-3 shrink-0" />
+						</a>
+					) : (
+						<span className="text-muted-foreground">
+							#{item.prNumber}
+							{item.prTitle && <span className="ml-1 text-foreground">{item.prTitle}</span>}
+						</span>
+					)}
 
-			{/* Associated work item */}
-			<td className="px-4 py-3">
-				{item.workItemUrl && item.workItemTitle ? (
-					<a
-						href={item.workItemUrl}
-						target="_blank"
-						rel="noopener noreferrer"
-						onClick={(e) => e.stopPropagation()}
-						className="inline-flex items-center gap-1 text-primary hover:underline"
-					>
-						{item.workItemTitle}
-						<ExternalLink className="h-3 w-3 shrink-0" />
-					</a>
-				) : item.workItemTitle ? (
-					<span>{item.workItemTitle}</span>
-				) : (
-					<span className="text-muted-foreground italic">None</span>
-				)}
+					{/* Secondary row: "No PR yet" for work-item, or associated work item for linked */}
+					{item.type === 'work-item' ? (
+						<span className="text-xs text-muted-foreground italic">No PR yet</span>
+					) : item.type === 'linked' && item.workItemTitle ? (
+						<span className="flex items-center gap-1 text-xs text-muted-foreground">
+							<ClipboardList className="h-3 w-3 shrink-0" />
+							{item.workItemUrl ? (
+								<a
+									href={item.workItemUrl}
+									target="_blank"
+									rel="noopener noreferrer"
+									onClick={(e) => e.stopPropagation()}
+									className="inline-flex items-center gap-1 hover:underline hover:text-primary"
+								>
+									{item.workItemTitle}
+									<ExternalLink className="h-3 w-3 shrink-0" />
+								</a>
+							) : (
+								<span>{item.workItemTitle}</span>
+							)}
+						</span>
+					) : null}
+				</div>
 			</td>
 
 			{/* Run count */}
@@ -278,9 +299,8 @@ export function ProjectWorkTable({
 					<thead>
 						<tr className="border-b border-border bg-muted/50">
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground w-8" />
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Title</th>
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">
-								Associated Item
+								Title / Associated Item
 							</th>
 							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Runs</th>
 							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Cost</th>
@@ -289,7 +309,7 @@ export function ProjectWorkTable({
 					<tbody>
 						{pageItems.length === 0 && (
 							<tr>
-								<td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+								<td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
 									No work found for this project
 								</td>
 							</tr>
