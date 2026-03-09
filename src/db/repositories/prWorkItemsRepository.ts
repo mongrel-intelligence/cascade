@@ -92,7 +92,7 @@ export async function listWorkItems(orgId: string, projectId?: string): Promise<
 			workItemId: prWorkItems.workItemId,
 			workItemUrl: max(prWorkItems.workItemUrl),
 			workItemTitle: max(prWorkItems.workItemTitle),
-			prCount: countDistinct(prWorkItems.prNumber),
+			prCount: countDistinct(prWorkItems.id),
 			runCount: countDistinct(agentRuns.id),
 		})
 		.from(prWorkItems)

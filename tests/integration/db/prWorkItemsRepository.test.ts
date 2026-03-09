@@ -320,6 +320,37 @@ describe('prWorkItemsRepository (integration)', () => {
 			expect(result).toHaveLength(1);
 			expect(result[0].workItemId).toBe('card-p1');
 		});
+
+		it('correctly counts PRs across multiple projects when no projectId is provided', async () => {
+			await seedProject({ id: 'project-a', repo: 'owner/repo-a' });
+			await seedProject({ id: 'project-b', repo: 'owner/repo-b' });
+
+			// Link PR #1 in project-a to card-shared
+			await linkPRToWorkItem('project-a', 'owner/repo-a', 1, 'card-shared', {
+				workItemUrl: 'https://trello.com/c/shared',
+				workItemTitle: 'Shared Card',
+			});
+
+			// Link PR #1 in project-b to card-shared (same PR number, different project)
+			await linkPRToWorkItem('project-b', 'owner/repo-b', 1, 'card-shared', {
+				workItemUrl: 'https://trello.com/c/shared',
+				workItemTitle: 'Shared Card',
+			});
+
+			// Link PR #2 in project-a to card-shared
+			await linkPRToWorkItem('project-a', 'owner/repo-a', 2, 'card-shared', {
+				workItemUrl: 'https://trello.com/c/shared',
+				workItemTitle: 'Shared Card',
+			});
+
+			// Query org-wide (no projectId filter)
+			const result = await listWorkItems('test-org');
+			expect(result).toHaveLength(1);
+			expect(result[0].workItemId).toBe('card-shared');
+			// Should count all 3 distinct PRs (project-a/PR#1, project-b/PR#1, project-a/PR#2)
+			// not just 2 (if it were counting distinct prNumber instead of distinct id)
+			expect(result[0].prCount).toBe(3);
+		});
 	});
 
 	// =========================================================================
