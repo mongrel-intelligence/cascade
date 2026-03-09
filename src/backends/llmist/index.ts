@@ -64,7 +64,7 @@ export class LlmistBackend implements AgentBackend {
 
 		// Create per-execution llmist logger and tracking state
 		const llmistLogger = createLogger({ minLevel: getLogLevel() });
-		const trackingContext = createTrackingContext();
+		const trackingContext = createTrackingContext(agentType);
 		const llmCallAccumulator: AccumulatedLlmCall[] = [];
 
 		// Create a LLM call logger for raw request/response file logging.

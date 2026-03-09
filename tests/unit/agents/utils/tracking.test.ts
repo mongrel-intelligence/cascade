@@ -439,4 +439,84 @@ describe('loop detection', () => {
 			expect(consumeLoopAction(ctx)).toBeNull();
 		});
 	});
+
+	describe('role-aware loop messages', () => {
+		it('uses review-specific loop warning for review agent', () => {
+			const ctx = createTrackingContext('review');
+
+			// Create a loop to trigger warning
+			recordGadgetCallForLoop(ctx, 'ReadFile', { filePath: '/foo.ts' });
+			checkForLoopAndAdvance(ctx);
+			recordGadgetCallForLoop(ctx, 'ReadFile', { filePath: '/foo.ts' });
+			checkForLoopAndAdvance(ctx);
+
+			const warning = consumeLoopWarning(ctx);
+			expect(warning).toContain('CreatePRReview');
+			expect(warning).not.toContain('COMPLETELY DIFFERENT APPROACH');
+		});
+
+		it('uses default loop warning for non-review agents', () => {
+			const ctx = createTrackingContext('implementation');
+
+			recordGadgetCallForLoop(ctx, 'ReadFile', { filePath: '/foo.ts' });
+			checkForLoopAndAdvance(ctx);
+			recordGadgetCallForLoop(ctx, 'ReadFile', { filePath: '/foo.ts' });
+			checkForLoopAndAdvance(ctx);
+
+			const warning = consumeLoopWarning(ctx);
+			expect(warning).toContain('COMPLETELY DIFFERENT APPROACH');
+			expect(warning).not.toContain('CreatePRReview');
+		});
+
+		it('uses review-specific name-only loop action for review agent', () => {
+			const ctx = createTrackingContext('review');
+
+			for (let i = 0; i < LOOP_THRESHOLDS.WARNING; i++) {
+				recordGadgetCallForLoop(ctx, 'FileSearchAndReplace', {
+					filePath: '/foo.ts',
+					search: `v${i}`,
+				});
+				checkForLoopAndAdvance(ctx);
+			}
+
+			const action = consumeLoopAction(ctx);
+			expect(action).not.toBeNull();
+			expect(action?.message).toContain('CreatePRReview');
+			expect(action?.message).not.toContain('delete the failing test');
+		});
+
+		it('uses review-specific hard_stop message for review agent', () => {
+			const ctx = createTrackingContext('review');
+
+			for (let i = 0; i < LOOP_THRESHOLDS.HARD_STOP; i++) {
+				recordGadgetCallForLoop(ctx, 'FileSearchAndReplace', {
+					filePath: '/foo.ts',
+					search: `v${i}`,
+				});
+				checkForLoopAndAdvance(ctx);
+			}
+
+			const action = consumeLoopAction(ctx);
+			expect(action).not.toBeNull();
+			expect(action?.type).toBe('hard_stop');
+			expect(action?.message).toContain('REVIEW agent');
+			expect(action?.message).toContain('CreatePRReview');
+		});
+
+		it('uses default name-only loop messages without agentType', () => {
+			const ctx = createTrackingContext();
+
+			for (let i = 0; i < LOOP_THRESHOLDS.WARNING; i++) {
+				recordGadgetCallForLoop(ctx, 'FileSearchAndReplace', {
+					filePath: '/foo.ts',
+					search: `v${i}`,
+				});
+				checkForLoopAndAdvance(ctx);
+			}
+
+			const action = consumeLoopAction(ctx);
+			expect(action).not.toBeNull();
+			expect(action?.message).toContain('delete the failing test');
+		});
+	});
 });

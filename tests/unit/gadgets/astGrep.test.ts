@@ -22,6 +22,11 @@ vi.mock('../../../src/gadgets/shared/pathValidation.js', () => ({
 	validatePath: vi.fn((path: string) => path),
 }));
 
+// Mock sessionState for readOnlyFs checks
+vi.mock('../../../src/gadgets/sessionState.js', () => ({
+	getSessionState: vi.fn(() => ({ readOnlyFs: false })),
+}));
+
 // Mock readTracking so assertFileRead is a no-op
 vi.mock('../../../src/gadgets/readTracking.js', () => ({
 	assertFileRead: vi.fn(),
@@ -44,8 +49,11 @@ vi.mock('../../../src/gadgets/shared/postEditChecks.js', () => ({
 
 import { AstGrep } from '../../../src/gadgets/AstGrep.js';
 import { assertFileRead } from '../../../src/gadgets/readTracking.js';
+import { getSessionState } from '../../../src/gadgets/sessionState.js';
 import { validatePath } from '../../../src/gadgets/shared/pathValidation.js';
 import { runPostEditChecks } from '../../../src/gadgets/shared/postEditChecks.js';
+
+const mockGetSessionState = vi.mocked(getSessionState);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -369,6 +377,22 @@ describe('AstGrep', () => {
 
 			expect(result).toContain('ast-grep error');
 			expect(result).toContain('code 3');
+		});
+
+		it('blocks rewrite when session is read-only', async () => {
+			mockGetSessionState.mockReturnValueOnce({ readOnlyFs: true } as never);
+			const filePath = createFile('example.ts', 'const x = foo();\n');
+
+			const result = await gadget.execute({
+				comment: 'test',
+				pattern: 'foo()',
+				language: 'typescript',
+				path: filePath,
+				rewrite: 'bar()',
+			});
+
+			expect(result).toContain('not available for read-only agents');
+			expect(mockSpawn).not.toHaveBeenCalled();
 		});
 
 		it('includes diagnostic error status when postEditChecks reports errors', async () => {

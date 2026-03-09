@@ -10,10 +10,11 @@ import { getCompactionConfig } from '../../config/compactionConfig.js';
 import { getIterationTrailingMessage } from '../../config/hintConfig.js';
 import { getRateLimitForModel } from '../../config/rateLimits.js';
 import { getRetryConfig } from '../../config/retryConfig.js';
-import { type SessionHooks, initSessionState } from '../../gadgets/sessionState.js';
+import { type SessionHooks, initSessionState, setReadOnlyFs } from '../../gadgets/sessionState.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
 import { resolveSquintDbPath } from '../../utils/squintDb.js';
 import type { IProgressMonitor } from '../contracts/index.js';
+import { getAgentCapabilities } from '../shared/capabilities.js';
 import { type AccumulatedLlmCall, createObserverHooks } from '../utils/hooks.js';
 import type { TrackingContext } from '../utils/tracking.js';
 
@@ -33,7 +34,7 @@ export interface CreateBuilderOptions {
 	gadgets: Parameters<typeof AgentBuilder.prototype.withGadgets>;
 	/** Optional progress monitor for time-based progress reporting */
 	progressMonitor?: IProgressMonitor;
-	/** Set to true to skip calling initSessionState (review agent doesn't use it) */
+	/** Skip session state initialization and capability checks. No current callers use this flag. */
 	skipSessionState?: boolean;
 	/** Remaining card budget in USD — passed to llmist's withBudget() for in-flight enforcement */
 	remainingBudgetUsd?: number;
@@ -100,6 +101,12 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 			workItemTitle: options.workItemTitle,
 			initialHeadSha,
 		});
+
+		// Mark session as read-only if agent lacks fs:write capability
+		const caps = await getAgentCapabilities(agentType);
+		if (caps.isReadOnly) {
+			setReadOnlyFs(true);
+		}
 	}
 
 	// Resolve config values before building

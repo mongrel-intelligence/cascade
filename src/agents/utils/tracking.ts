@@ -70,6 +70,8 @@ export interface TrackingContext {
 	syntheticInvocationIds: Set<string>;
 	/** Loop detection state */
 	loopDetection: LoopDetectionState;
+	/** Agent type for role-aware loop messages */
+	agentType?: string;
 }
 
 /**
@@ -90,11 +92,12 @@ export function createLoopDetectionState(): LoopDetectionState {
 /**
  * Create a new tracking context with zero metrics.
  */
-export function createTrackingContext(): TrackingContext {
+export function createTrackingContext(agentType?: string): TrackingContext {
 	return {
 		metrics: { llmIterations: 0, gadgetCalls: 0 },
 		syntheticInvocationIds: new Set(),
 		loopDetection: createLoopDetectionState(),
+		agentType,
 	};
 }
 
@@ -193,30 +196,74 @@ export function recordGadgetCallForLoop(
 }
 
 /**
+ * Per-agent advice lines for loop messages.
+ * Review agents should submit findings; implementation agents should change strategy.
+ */
+const LOOP_ADVICE = {
+	review: {
+		exact:
+			'STOP. Submit your review NOW with CreatePRReview. Report issues as findings instead of trying to fix them.',
+		warning: 'STOP and call CreatePRReview with your findings immediately.',
+		strong: 'Submit your review NOW with CreatePRReview. Report all issues as review findings.',
+		hard_stop: 'Session terminated. You should have called CreatePRReview with your findings.',
+	},
+	default: {
+		exact: 'STOP. THINK VERY HARD. TRY A COMPLETELY DIFFERENT APPROACH.',
+		warning: 'STOP and try a fundamentally different approach, or delete the failing test.',
+		strong: 'DELETE the failing test and move on. Partial coverage is better than no PR.',
+		hard_stop: 'Session terminated. Ship what works or delete the failing test.',
+	},
+} as const;
+
+function getAdvice(agentType?: string): (typeof LOOP_ADVICE)[keyof typeof LOOP_ADVICE] {
+	return agentType === 'review' ? LOOP_ADVICE.review : LOOP_ADVICE.default;
+}
+
+/**
+ * Role-specific context line for name-only loop messages.
+ */
+function getSemanticContext(isReview: boolean, pattern: string, repeatCount: number): string {
+	if (isReview) {
+		return `You have repeated the same operation types (${pattern}) ${repeatCount} times with different parameters.\nYou are a REVIEW agent — your job is to submit a review, not fix code.`;
+	}
+	return `You have repeated the same operation types (${pattern}) ${repeatCount} times with different parameters.\nEach attempt produces a different error, but you are cycling between the same failing strategies.`;
+}
+
+/**
  * Generate the loop warning message.
  */
-function generateLoopWarning(repeatCount: number, repeatedPattern: string): string {
+function generateLoopWarning(
+	repeatCount: number,
+	repeatedPattern: string,
+	agentType?: string,
+): string {
 	const urgency = repeatCount >= 3 ? '🚨' : '⚠️';
 	return `[System] ${urgency} LOOP DETECTED (×${repeatCount})
 
 Pattern: ${repeatedPattern}
 
-STOP. THINK VERY HARD. TRY A COMPLETELY DIFFERENT APPROACH.`;
+${getAdvice(agentType).exact}`;
 }
 
 /**
  * Generate the appropriate action for name-only loop detection based on repeat count.
  */
-function generateNameOnlyLoopAction(repeatCount: number, pattern: string): LoopAction | null {
+function generateNameOnlyLoopAction(
+	repeatCount: number,
+	pattern: string,
+	agentType?: string,
+): LoopAction | null {
+	const isReview = agentType === 'review';
+	const advice = getAdvice(agentType);
+
 	if (repeatCount >= LOOP_THRESHOLDS.HARD_STOP) {
 		return {
 			type: 'hard_stop',
 			message: `[System] 🛑 SEMANTIC LOOP — FORCED TERMINATION
 
-You have repeated the same operation types (${pattern}) ${repeatCount} times with different parameters.
-Each attempt produces a different error, but you are cycling between the same failing strategies.
+${getSemanticContext(isReview, pattern, repeatCount)}
 
-Session terminated. Ship what works or delete the failing test.`,
+${advice.hard_stop}`,
 		};
 	}
 	if (repeatCount >= LOOP_THRESHOLDS.STRONG_WARNING) {
@@ -227,18 +274,21 @@ Session terminated. Ship what works or delete the failing test.`,
 You are repeating the same operation types (${pattern}) with different parameters — ${repeatCount} times now.
 You have ONE more iteration before this session is forcefully terminated.
 
-DELETE the failing test and move on. Partial coverage is better than no PR.`,
+${advice.strong}`,
 		};
 	}
 	if (repeatCount >= LOOP_THRESHOLDS.WARNING) {
+		const context = isReview
+			? 'You are a REVIEW agent — you should not be editing code or fixing issues.'
+			: "This suggests you're cycling between approaches that don't work.";
 		return {
 			type: 'warning',
 			message: `[System] ⚠️ SEMANTIC LOOP DETECTED (×${repeatCount})
 
 You are repeating the same operation types (${pattern}) with different parameters each time.
-This suggests you're cycling between approaches that don't work.
+${context}
 
-STOP and try a fundamentally different approach, or delete the failing test.`,
+${advice.warning}`,
 		};
 	}
 	return null;
@@ -270,7 +320,11 @@ export function checkForLoopAndAdvance(context: TrackingContext): boolean {
 		state.repeatCount++;
 		state.repeatedPattern = formatCallsForDisplay(state.currentIterationCalls);
 		// Set pending warning to be injected as user message
-		state.pendingWarning = generateLoopWarning(state.repeatCount, state.repeatedPattern);
+		state.pendingWarning = generateLoopWarning(
+			state.repeatCount,
+			state.repeatedPattern,
+			context.agentType,
+		);
 	} else {
 		state.repeatCount = 1;
 		state.repeatedPattern = null;
@@ -291,6 +345,7 @@ export function checkForLoopAndAdvance(context: TrackingContext): boolean {
 			state.pendingAction = generateNameOnlyLoopAction(
 				state.nameOnlyRepeatCount,
 				formatCallsForDisplay(state.currentIterationCalls),
+				context.agentType,
 			);
 		} else {
 			state.nameOnlyRepeatCount = 1;

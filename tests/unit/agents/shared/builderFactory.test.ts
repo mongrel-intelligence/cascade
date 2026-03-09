@@ -22,6 +22,16 @@ vi.mock('../../../../src/config/retryConfig.js', () => ({
 
 vi.mock('../../../../src/gadgets/sessionState.js', () => ({
 	initSessionState: vi.fn(),
+	setReadOnlyFs: vi.fn(),
+}));
+
+vi.mock('../../../../src/agents/shared/capabilities.js', () => ({
+	getAgentCapabilities: vi.fn().mockResolvedValue({
+		canEditFiles: true,
+		canCreatePR: true,
+		canUpdateChecklists: true,
+		isReadOnly: false,
+	}),
 }));
 
 vi.mock('node:child_process', () => ({
@@ -69,12 +79,15 @@ import {
 	createConfiguredBuilder,
 	isSquintEnabled,
 } from '../../../../src/agents/shared/builderFactory.js';
-import { initSessionState } from '../../../../src/gadgets/sessionState.js';
+import { getAgentCapabilities } from '../../../../src/agents/shared/capabilities.js';
+import { initSessionState, setReadOnlyFs } from '../../../../src/gadgets/sessionState.js';
 import { resolveSquintDbPath } from '../../../../src/utils/squintDb.js';
 
 const mockExecSync = vi.mocked(execSync);
 const mockResolveSquintDbPath = vi.mocked(resolveSquintDbPath);
 const mockInitSessionState = vi.mocked(initSessionState);
+const mockSetReadOnlyFs = vi.mocked(setReadOnlyFs);
+const mockGetAgentCapabilities = vi.mocked(getAgentCapabilities);
 const MockAgentBuilder = vi.mocked(AgentBuilder);
 
 function createBaseOptions(overrides?: object) {
@@ -107,6 +120,7 @@ function createBaseOptions(overrides?: object) {
 }
 
 beforeEach(() => {
+	vi.clearAllMocks();
 	mockResolveSquintDbPath.mockReturnValue(null);
 
 	// Reset all mock builder methods to return the builder instance
@@ -294,5 +308,35 @@ describe('createConfiguredBuilder', () => {
 		const options = createBaseOptions();
 		await createConfiguredBuilder(options);
 		expect(mockBuilderInstance.withMaxGadgetsPerResponse).toHaveBeenCalledWith(25);
+	});
+
+	it('calls setReadOnlyFs(true) when agent is read-only', async () => {
+		mockGetAgentCapabilities.mockResolvedValueOnce({
+			canEditFiles: false,
+			canCreatePR: false,
+			canUpdateChecklists: false,
+			isReadOnly: true,
+		});
+		const options = createBaseOptions({ agentType: 'review' });
+		await createConfiguredBuilder(options);
+		expect(mockSetReadOnlyFs).toHaveBeenCalledWith(true);
+	});
+
+	it('does not call setReadOnlyFs when agent has write access', async () => {
+		mockGetAgentCapabilities.mockResolvedValueOnce({
+			canEditFiles: true,
+			canCreatePR: true,
+			canUpdateChecklists: true,
+			isReadOnly: false,
+		});
+		const options = createBaseOptions();
+		await createConfiguredBuilder(options);
+		expect(mockSetReadOnlyFs).not.toHaveBeenCalled();
+	});
+
+	it('does not call setReadOnlyFs when skipSessionState is true', async () => {
+		const options = createBaseOptions({ skipSessionState: true });
+		await createConfiguredBuilder(options);
+		expect(mockSetReadOnlyFs).not.toHaveBeenCalled();
 	});
 });

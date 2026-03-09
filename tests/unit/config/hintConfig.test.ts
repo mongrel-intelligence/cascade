@@ -44,7 +44,7 @@ function makeDefinition(overrides?: {
 	hint?: string;
 	hooks?: {
 		trailing?: {
-			scm?: { gitStatus?: boolean; prStatus?: boolean };
+			scm?: { gitStatus?: boolean; prStatus?: boolean; reviewDeadline?: boolean };
 			builtin?: { diagnostics?: boolean; todoProgress?: boolean; reminder?: boolean };
 		};
 	};
@@ -386,6 +386,65 @@ describe('getIterationTrailingMessage', () => {
 	// ============================================================================
 	// formatDiagnosticLoopWarning (Step 10)
 	// ============================================================================
+
+	// ============================================================================
+	// Review deadline trailing message
+	// ============================================================================
+
+	describe('review deadline trailing message', () => {
+		beforeEach(() => {
+			mockResolveAgentDefinition.mockImplementation(async (agentType: string) => {
+				if (agentType === 'review') {
+					return makeDefinition({
+						hint: 'Focus on the current aspect.',
+						hooks: { trailing: { scm: { reviewDeadline: true } } },
+					}) as never;
+				}
+				return null as never;
+			});
+		});
+
+		it('shows critical warning at >= 80% of iterations', async () => {
+			mockGetSessionState.mockReturnValue({ reviewSubmitted: false } as never);
+			const message = await getMessage('review', 17, 20);
+			expect(message).toContain('CRITICAL: Review Deadline');
+			expect(message).toContain('CreatePRReview IMMEDIATELY');
+		});
+
+		it('shows warning at >= 60% of iterations', async () => {
+			mockGetSessionState.mockReturnValue({ reviewSubmitted: false } as never);
+			const message = await getMessage('review', 13, 20);
+			expect(message).toContain('WARNING: Review Deadline');
+			expect(message).toContain('Submit your review NOW');
+		});
+
+		it('shows gentle reminder at >= 40% of iterations', async () => {
+			mockGetSessionState.mockReturnValue({ reviewSubmitted: false } as never);
+			const message = await getMessage('review', 9, 20);
+			expect(message).toContain('Review Deadline');
+			expect(message).toContain('Your primary goal is to call CreatePRReview');
+		});
+
+		it('does not show deadline below 40% of iterations', async () => {
+			mockGetSessionState.mockReturnValue({ reviewSubmitted: false } as never);
+			const message = await getMessage('review', 3, 20);
+			expect(message).not.toContain('Review Deadline');
+		});
+
+		it('does not show deadline when review has been submitted', async () => {
+			mockGetSessionState.mockReturnValue({ reviewSubmitted: true } as never);
+			const message = await getMessage('review', 17, 20);
+			expect(message).not.toContain('Review Deadline');
+		});
+
+		it('returns null (no deadline) when iteration data is missing', async () => {
+			mockGetSessionState.mockReturnValue({ reviewSubmitted: false } as never);
+			// getMessage always passes iteration data, so test the edge case
+			// by verifying no crash and no deadline at low iterations
+			const message = await getMessage('review', 0, 0);
+			expect(message).not.toContain('Review Deadline');
+		});
+	});
 
 	describe('formatDiagnosticLoopWarning via implementation', () => {
 		beforeEach(() => {
