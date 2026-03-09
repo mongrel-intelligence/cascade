@@ -37,6 +37,7 @@ import {
 	AddChecklist,
 	CreateWorkItem,
 	ListWorkItems,
+	MoveWorkItem,
 	PMDeleteChecklistItem,
 	PMUpdateChecklistItem,
 	PostComment,
@@ -104,6 +105,7 @@ const GADGET_CONSTRUCTORS: Record<string, new () => any> = {
 	// pm:write
 	UpdateWorkItem,
 	CreateWorkItem,
+	MoveWorkItem,
 	PostComment,
 	AddChecklist,
 
