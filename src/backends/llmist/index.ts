@@ -12,8 +12,8 @@ import { getLogLevel } from '../../agents/utils/index.js';
 import { createAgentLogger } from '../../agents/utils/logging.js';
 import { createTrackingContext } from '../../agents/utils/tracking.js';
 import { CUSTOM_MODELS } from '../../config/customModels.js';
+import { getSessionState } from '../../gadgets/sessionState.js';
 import { createLLMCallLogger } from '../../utils/llmLogging.js';
-import { extractPRUrl } from '../../utils/prUrl.js';
 import type { AgentBackend, AgentBackendInput, AgentBackendResult } from '../types.js';
 
 /**
@@ -163,7 +163,7 @@ export class LlmistBackend implements AgentBackend {
 		return {
 			success: !result.loopTerminated,
 			output: result.output,
-			prUrl: extractPRUrl(result.output) ?? undefined,
+			prUrl: getSessionState().prUrl ?? undefined,
 			error: result.loopTerminated ? 'Agent terminated due to persistent loop' : undefined,
 			cost: result.cost,
 		};

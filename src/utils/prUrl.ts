@@ -1,7 +1,7 @@
 /**
  * Shared utility for extracting GitHub PR URLs from text.
- * Used by both the llmist backend (agents/base.ts) and the
- * Claude Code backend (backends/claude-code/index.ts) to avoid duplication.
+ * Used by the Claude Code backend (backends/claude-code/index.ts) to extract
+ * PR URLs from agent output and assistant messages.
  */
 
 /**

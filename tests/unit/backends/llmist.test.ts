@@ -83,18 +83,19 @@ vi.mock('../../../src/utils/llmLogging.js', () => ({
 	})),
 }));
 
-vi.mock('../../../src/utils/prUrl.js', () => ({
-	extractPRUrl: vi.fn((output: string) => {
-		const m = output.match(/https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/);
-		return m ? m[0] : undefined;
-	}),
+vi.mock('../../../src/gadgets/sessionState.js', () => ({
+	getSessionState: vi.fn(() => ({
+		prUrl: null,
+	})),
 }));
 
 import { runAgentLoop } from '../../../src/agents/utils/agentLoop.js';
 import { LlmistBackend } from '../../../src/backends/llmist/index.js';
 import type { AgentBackendInput } from '../../../src/backends/types.js';
+import { getSessionState } from '../../../src/gadgets/sessionState.js';
 
 const mockRunAgentLoop = vi.mocked(runAgentLoop);
+const mockGetSessionState = vi.mocked(getSessionState);
 
 function makeInput(agentType = 'implementation'): AgentBackendInput {
 	return {
@@ -137,6 +138,10 @@ describe('LlmistBackend', () => {
 });
 
 describe('LlmistBackend.execute', () => {
+	beforeEach(() => {
+		mockGetSessionState.mockReturnValue({ prUrl: null } as ReturnType<typeof getSessionState>);
+	});
+
 	it('returns success when runAgentLoop completes normally', async () => {
 		mockRunAgentLoop.mockResolvedValue({
 			output: 'Done',
@@ -171,19 +176,41 @@ describe('LlmistBackend.execute', () => {
 		expect(result.error).toContain('loop');
 	});
 
-	it('extracts PR URL from output when present', async () => {
+	it('reads prUrl from session state regardless of agent output text', async () => {
+		// Reproduces the false positive from run 1391506b: the CreatePR gadget
+		// recorded the URL in session state, but the LLM didn't echo it in output.
 		mockRunAgentLoop.mockResolvedValue({
-			output: 'Created PR: https://github.com/owner/repo/pull/42',
+			output: 'All done, PR created successfully.',
+			iterations: 9,
+			gadgetCalls: 12,
+			cost: 0.15,
+			loopTerminated: false,
+		});
+		mockGetSessionState.mockReturnValue({
+			prUrl: 'https://github.com/owner/repo/pull/42',
+		} as ReturnType<typeof getSessionState>);
+
+		const backend = new LlmistBackend();
+		const result = await backend.execute(makeInput());
+
+		expect(result.success).toBe(true);
+		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/42');
+	});
+
+	it('returns undefined prUrl when no PR was created', async () => {
+		mockRunAgentLoop.mockResolvedValue({
+			output: 'Done',
 			iterations: 5,
 			gadgetCalls: 8,
 			cost: 0.1,
 			loopTerminated: false,
 		});
+		// Session state has prUrl: null (default from beforeEach)
 
 		const backend = new LlmistBackend();
 		const result = await backend.execute(makeInput());
 
-		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/42');
+		expect(result.prUrl).toBeUndefined();
 	});
 
 	it('injects context injections as synthetic calls', async () => {
