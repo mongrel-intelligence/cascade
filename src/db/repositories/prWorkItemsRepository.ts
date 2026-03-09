@@ -1,4 +1,4 @@
-import { and, countDistinct, eq, isNotNull } from 'drizzle-orm';
+import { and, countDistinct, eq, isNotNull, max } from 'drizzle-orm';
 import { getDb } from '../client.js';
 import { agentRuns, prWorkItems } from '../schema/index.js';
 
@@ -73,8 +73,8 @@ export async function listWorkItemsForProject(projectId: string): Promise<WorkIt
 	const rows = await db
 		.select({
 			workItemId: prWorkItems.workItemId,
-			workItemUrl: prWorkItems.workItemUrl,
-			workItemTitle: prWorkItems.workItemTitle,
+			workItemUrl: max(prWorkItems.workItemUrl),
+			workItemTitle: max(prWorkItems.workItemTitle),
 			prCount: countDistinct(prWorkItems.prNumber),
 			runCount: countDistinct(agentRuns.id),
 		})
@@ -87,7 +87,7 @@ export async function listWorkItemsForProject(projectId: string): Promise<WorkIt
 			),
 		)
 		.where(and(eq(prWorkItems.projectId, projectId), isNotNull(prWorkItems.workItemId)))
-		.groupBy(prWorkItems.workItemId, prWorkItems.workItemUrl, prWorkItems.workItemTitle);
+		.groupBy(prWorkItems.workItemId);
 
 	return rows.map((r) => ({
 		workItemId: r.workItemId as string,

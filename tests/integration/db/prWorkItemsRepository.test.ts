@@ -282,6 +282,26 @@ describe('prWorkItemsRepository (integration)', () => {
 			expect(item?.runCount).toBe(2);
 		});
 
+		it('does not produce duplicate work items when display fields differ across PR rows', async () => {
+			// Same work item linked to two PRs with different display fields
+			await linkPRToWorkItem('test-project', 'owner/repo', 1, 'card-dup', {
+				workItemUrl: 'https://trello.com/c/dup',
+				workItemTitle: 'Card Dup',
+			});
+			await linkPRToWorkItem('test-project', 'owner/repo', 2, 'card-dup', {
+				workItemUrl: null,
+				workItemTitle: 'Card Dup Updated',
+			});
+
+			const result = await listWorkItemsForProject('test-project');
+			// Should produce exactly one row, not two
+			expect(result).toHaveLength(1);
+			expect(result[0].workItemId).toBe('card-dup');
+			expect(result[0].prCount).toBe(2);
+			// max() picks the non-null / lexicographically greatest value
+			expect(result[0].workItemUrl).toBe('https://trello.com/c/dup');
+		});
+
 		it('excludes orphan PRs (null workItemId)', async () => {
 			await linkPRToWorkItem('test-project', 'owner/repo', 55, null, {
 				prTitle: 'orphan PR',
