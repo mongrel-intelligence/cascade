@@ -12,7 +12,6 @@ import { prsRouter } from './routers/prs.js';
 import { runsRouter } from './routers/runs.js';
 import { webhookLogsRouter } from './routers/webhookLogs.js';
 import { webhooksRouter } from './routers/webhooks.js';
-import { workItemsRouter } from './routers/workItems.js';
 import { router } from './trpc.js';
 
 export const appRouter = router({
@@ -29,7 +28,6 @@ export const appRouter = router({
 	webhooks: webhooksRouter,
 	webhookLogs: webhookLogsRouter,
 	integrationsDiscovery: integrationsDiscoveryRouter,
-	workItems: workItemsRouter,
 	prs: prsRouter,
 });
 

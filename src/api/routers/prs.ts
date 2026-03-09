@@ -3,6 +3,7 @@ import {
 	listPRsForOrg,
 	listPRsForProject,
 	listPRsForWorkItem,
+	listUnifiedWorkForProject,
 } from '../../db/repositories/prWorkItemsRepository.js';
 import { getRunsForPR } from '../../db/repositories/runsRepository.js';
 import { protectedProcedure, router } from '../trpc.js';
@@ -33,5 +34,12 @@ export const prsRouter = router({
 			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
 			const runs = await getRunsForPR(input.projectId, input.prNumber);
 			return runs;
+		}),
+
+	listUnified: protectedProcedure
+		.input(z.object({ projectId: z.string() }))
+		.query(async ({ ctx, input }) => {
+			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+			return listUnifiedWorkForProject(input.projectId);
 		}),
 });

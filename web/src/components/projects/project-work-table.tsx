@@ -1,6 +1,8 @@
-import { ExternalLink } from 'lucide-react';
+import { ClipboardList, ExternalLink, GitPullRequest } from 'lucide-react';
 
-interface PR {
+interface WorkItem {
+	id: string;
+	type: 'pr' | 'linked';
 	prNumber: number;
 	repoFullName: string;
 	prUrl: string | null;
@@ -9,23 +11,17 @@ interface PR {
 	workItemUrl: string | null;
 	workItemTitle: string | null;
 	runCount: number;
+	updatedAt: Date | string | null;
 }
 
-interface PRsTableProps {
-	items: PR[];
+interface ProjectWorkTableProps {
+	items: WorkItem[];
 	offset: number;
 	limit: number;
 	onPageChange: (offset: number) => void;
-	showRepoName?: boolean;
 }
 
-export function PRsTable({
-	items,
-	offset,
-	limit,
-	onPageChange,
-	showRepoName = false,
-}: PRsTableProps) {
+export function ProjectWorkTable({ items, offset, limit, onPageChange }: ProjectWorkTableProps) {
 	const total = items.length;
 	const totalPages = Math.ceil(total / limit);
 	const currentPage = Math.floor(offset / limit) + 1;
@@ -37,32 +33,42 @@ export function PRsTable({
 				<table className="w-full text-sm">
 					<thead>
 						<tr className="border-b border-border bg-muted/50">
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">PR</th>
-							{showRepoName && (
-								<th className="px-4 py-3 text-left font-medium text-muted-foreground">
-									Repository
-								</th>
-							)}
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Work Item</th>
+							<th className="px-4 py-3 text-left font-medium text-muted-foreground w-8" />
+							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Title</th>
+							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Repository</th>
+							<th className="px-4 py-3 text-left font-medium text-muted-foreground">
+								Associated Item
+							</th>
 							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Runs</th>
 						</tr>
 					</thead>
 					<tbody>
 						{pageItems.length === 0 && (
 							<tr>
-								<td
-									colSpan={showRepoName ? 4 : 3}
-									className="px-4 py-8 text-center text-muted-foreground"
-								>
-									No PRs found
+								<td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+									No work found for this project
 								</td>
 							</tr>
 						)}
 						{pageItems.map((item) => (
 							<tr
-								key={`${item.repoFullName}-${item.prNumber}`}
+								key={item.id}
 								className="border-b border-border transition-colors hover:bg-muted/30"
 							>
+								{/* Type icon */}
+								<td className="px-4 py-3 text-muted-foreground">
+									{item.type === 'linked' ? (
+										<span title="Linked (PR + Work Item)">
+											<ClipboardList className="h-4 w-4" />
+										</span>
+									) : (
+										<span title="Pull Request">
+											<GitPullRequest className="h-4 w-4" />
+										</span>
+									)}
+								</td>
+
+								{/* PR title / number */}
 								<td className="px-4 py-3">
 									{item.prUrl ? (
 										<a
@@ -82,9 +88,11 @@ export function PRsTable({
 										</span>
 									)}
 								</td>
-								{showRepoName && (
-									<td className="px-4 py-3 text-muted-foreground">{item.repoFullName}</td>
-								)}
+
+								{/* Repository */}
+								<td className="px-4 py-3 text-muted-foreground">{item.repoFullName}</td>
+
+								{/* Associated work item */}
 								<td className="px-4 py-3">
 									{item.workItemUrl && item.workItemTitle ? (
 										<a
@@ -99,9 +107,11 @@ export function PRsTable({
 									) : item.workItemTitle ? (
 										<span>{item.workItemTitle}</span>
 									) : (
-										<span className="text-muted-foreground italic">Unlinked</span>
+										<span className="text-muted-foreground italic">None</span>
 									)}
 								</td>
+
+								{/* Run count */}
 								<td className="px-4 py-3 text-right tabular-nums">{item.runCount}</td>
 							</tr>
 						))}

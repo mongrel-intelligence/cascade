@@ -11,11 +11,13 @@ const mockListPRsForProject = vi.fn();
 const mockListPRsForOrg = vi.fn();
 const mockListPRsForWorkItem = vi.fn();
 const mockGetRunsForPR = vi.fn();
+const mockListUnifiedWorkForProject = vi.fn();
 
 vi.mock('../../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	listPRsForProject: (...args: unknown[]) => mockListPRsForProject(...args),
 	listPRsForOrg: (...args: unknown[]) => mockListPRsForOrg(...args),
 	listPRsForWorkItem: (...args: unknown[]) => mockListPRsForWorkItem(...args),
+	listUnifiedWorkForProject: (...args: unknown[]) => mockListUnifiedWorkForProject(...args),
 }));
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
@@ -48,6 +50,20 @@ const mockPRSummary = {
 	workItemId: 'wi-1',
 	workItemUrl: 'https://trello.com/c/abc',
 	workItemTitle: 'Card 1',
+};
+
+const mockUnifiedItem = {
+	id: 'uuid-1',
+	type: 'linked' as const,
+	prNumber: 42,
+	repoFullName: 'owner/repo',
+	prUrl: 'https://github.com/owner/repo/pull/42',
+	prTitle: 'feat: add feature',
+	workItemId: 'wi-1',
+	workItemUrl: 'https://trello.com/c/abc',
+	workItemTitle: 'Card 1',
+	runCount: 3,
+	updatedAt: new Date('2024-01-01'),
 };
 
 // ---------------------------------------------------------------------------
@@ -190,6 +206,58 @@ describe('prsRouter', () => {
 			await expect(caller.runs({ projectId: 'other-project', prNumber: 42 })).rejects.toMatchObject(
 				{ code: 'NOT_FOUND' },
 			);
+		});
+	});
+
+	// =========================================================================
+	// listUnified
+	// =========================================================================
+	describe('listUnified', () => {
+		it('returns unified work items for a project', async () => {
+			const mockItems = [
+				mockUnifiedItem,
+				{
+					...mockUnifiedItem,
+					id: 'uuid-2',
+					type: 'pr' as const,
+					prNumber: 43,
+					workItemId: null,
+					workItemUrl: null,
+					workItemTitle: null,
+					runCount: 0,
+				},
+			];
+			mockListUnifiedWorkForProject.mockResolvedValue(mockItems);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			const result = await caller.listUnified({ projectId: 'test-project' });
+
+			expect(result).toEqual(mockItems);
+			expect(mockVerifyProjectOrgAccess).toHaveBeenCalledWith('test-project', 'org-1');
+			expect(mockListUnifiedWorkForProject).toHaveBeenCalledWith('test-project');
+		});
+
+		it('returns empty array when no work exists for project', async () => {
+			mockListUnifiedWorkForProject.mockResolvedValue([]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			const result = await caller.listUnified({ projectId: 'test-project' });
+
+			expect(result).toEqual([]);
+		});
+
+		it('throws UNAUTHORIZED when no user', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(caller.listUnified({ projectId: 'test-project' })).rejects.toThrow(TRPCError);
+		});
+
+		it('throws when project does not belong to org', async () => {
+			mockVerifyProjectOrgAccess.mockRejectedValue(new TRPCError({ code: 'NOT_FOUND' }));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			await expect(caller.listUnified({ projectId: 'other-project' })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
 		});
 	});
 });
