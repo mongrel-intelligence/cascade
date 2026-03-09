@@ -8,12 +8,11 @@ import {
 	isNotNull,
 	isNull,
 	max,
-	or,
-	sql,
 	sum,
 } from 'drizzle-orm';
 import { getDb } from '../client.js';
 import { agentRuns, prWorkItems, projects } from '../schema/index.js';
+import { buildAgentRunWorkItemJoin } from './joinHelpers.js';
 
 export interface LinkPRToWorkItemOptions {
 	workItemUrl?: string;
@@ -141,25 +140,7 @@ export async function linkPRToWorkItem(
 // ============================================================================
 // Dual JOIN helper
 // ============================================================================
-
-/**
- * Build the OR condition for joining agent_runs to pr_work_items via either:
- * - (projectId, prNumber) — existing PR-linked runs
- * - (projectId, cardId = workItemId) — PM-triggered runs (work-item-only rows)
- */
-function dualJoinCondition() {
-	return or(
-		and(
-			eq(agentRuns.projectId, prWorkItems.projectId),
-			eq(agentRuns.prNumber, prWorkItems.prNumber),
-		),
-		and(
-			eq(agentRuns.projectId, prWorkItems.projectId),
-			sql`${agentRuns.cardId} = ${prWorkItems.workItemId}`,
-			isNull(prWorkItems.prNumber),
-		),
-	);
-}
+// Note: The dual-join helper has been extracted to joinHelpers.ts for reuse
 
 // ============================================================================
 // List queries
@@ -205,7 +186,7 @@ export async function listWorkItems(orgId: string, projectId?: string): Promise<
 			runCount: countDistinct(agentRuns.id),
 		})
 		.from(prWorkItems)
-		.leftJoin(agentRuns, dualJoinCondition())
+		.leftJoin(agentRuns, buildAgentRunWorkItemJoin())
 		.where(and(...conditions))
 		.groupBy(prWorkItems.workItemId);
 
@@ -247,7 +228,7 @@ export async function listPRsForProject(projectId: string): Promise<PRSummary[]>
 			runCount: countDistinct(agentRuns.id),
 		})
 		.from(prWorkItems)
-		.leftJoin(agentRuns, dualJoinCondition())
+		.leftJoin(agentRuns, buildAgentRunWorkItemJoin())
 		.where(eq(prWorkItems.projectId, projectId))
 		.groupBy(
 			prWorkItems.prNumber,
@@ -288,7 +269,7 @@ export async function listPRsForOrg(orgId: string): Promise<PRSummary[]> {
 			runCount: countDistinct(agentRuns.id),
 		})
 		.from(prWorkItems)
-		.leftJoin(agentRuns, dualJoinCondition())
+		.leftJoin(agentRuns, buildAgentRunWorkItemJoin())
 		.where(inArray(prWorkItems.projectId, ids))
 		.groupBy(
 			prWorkItems.prNumber,
@@ -324,7 +305,7 @@ export async function listPRsForWorkItem(
 			runCount: countDistinct(agentRuns.id),
 		})
 		.from(prWorkItems)
-		.leftJoin(agentRuns, dualJoinCondition())
+		.leftJoin(agentRuns, buildAgentRunWorkItemJoin())
 		.where(and(eq(prWorkItems.projectId, projectId), eq(prWorkItems.workItemId, workItemId)))
 		.groupBy(
 			prWorkItems.prNumber,
@@ -398,7 +379,7 @@ export async function listUnifiedWorkForProject(projectId: string): Promise<Unif
 			totalCostUsd: sum(agentRuns.costUsd),
 		})
 		.from(prWorkItems)
-		.leftJoin(agentRuns, dualJoinCondition())
+		.leftJoin(agentRuns, buildAgentRunWorkItemJoin())
 		.where(eq(prWorkItems.projectId, projectId))
 		.groupBy(
 			prWorkItems.id,

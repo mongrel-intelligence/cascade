@@ -233,7 +233,7 @@ export async function runAgentExecutionPipeline(
 	// Insert a work-item-only row so PM-triggered runs show up in the dashboard
 	// even before a PR is created. This is idempotent — if a row already exists
 	// it is updated with the latest display fields.
-	if (workItemId && result.workItemId) {
+	if (workItemId) {
 		try {
 			await createWorkItem(project.id, workItemId, {
 				workItemUrl: result.workItemUrl,

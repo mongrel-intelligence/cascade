@@ -1,17 +1,4 @@
-import {
-	type SQL,
-	and,
-	asc,
-	count,
-	desc,
-	eq,
-	gte,
-	inArray,
-	isNull,
-	lte,
-	or,
-	sql,
-} from 'drizzle-orm';
+import { type SQL, and, asc, count, desc, eq, gte, inArray, lte } from 'drizzle-orm';
 import { getDb } from '../client.js';
 import {
 	agentRunLlmCalls,
@@ -21,6 +8,7 @@ import {
 	prWorkItems,
 	projects,
 } from '../schema/index.js';
+import { buildAgentRunWorkItemJoin } from './joinHelpers.js';
 
 // ============================================================================
 // Types
@@ -77,27 +65,8 @@ export interface CreateDebugAnalysisInput {
 // Run CRUD
 // ============================================================================
 
-/**
- * Build the OR condition for joining agent_runs to pr_work_items via either:
- * - (projectId, prNumber) — existing PR-linked runs
- * - (projectId, cardId = workItemId) — PM-triggered runs (work-item-only rows)
- *
- * This is required because PM-triggered runs never set prNumber, so the old
- * prNumber-only JOIN would yield NULL → "Unlinked" in the dashboard.
- */
-function enrichedJoinCondition() {
-	return or(
-		and(
-			eq(agentRuns.projectId, prWorkItems.projectId),
-			eq(agentRuns.prNumber, prWorkItems.prNumber),
-		),
-		and(
-			eq(agentRuns.projectId, prWorkItems.projectId),
-			sql`${agentRuns.cardId} = ${prWorkItems.workItemId}`,
-			isNull(prWorkItems.prNumber),
-		),
-	);
-}
+// Note: The enrichedJoinCondition() helper has been extracted to joinHelpers.ts
+// as buildAgentRunWorkItemJoin() for reuse across repositories
 
 /**
  * Shared select object for enriched run queries that join with prWorkItems.
@@ -173,7 +142,7 @@ export async function getRunById(runId: string) {
 	const rows = await db
 		.select(enrichedRunSelect)
 		.from(agentRuns)
-		.leftJoin(prWorkItems, enrichedJoinCondition())
+		.leftJoin(prWorkItems, buildAgentRunWorkItemJoin())
 		.where(eq(agentRuns.id, runId));
 	return rows[0] ?? null;
 }
@@ -482,7 +451,7 @@ export async function listRuns(input: ListRunsInput) {
 			})
 			.from(agentRuns)
 			.innerJoin(projects, eq(agentRuns.projectId, projects.id))
-			.leftJoin(prWorkItems, enrichedJoinCondition())
+			.leftJoin(prWorkItems, buildAgentRunWorkItemJoin())
 			.where(where)
 			.orderBy(orderFn(sortColumn))
 			.limit(input.limit)
@@ -547,7 +516,7 @@ export async function getRunsByWorkItem(projectId: string, workItemId: string) {
 	return db
 		.select(enrichedRunSelect)
 		.from(agentRuns)
-		.leftJoin(prWorkItems, enrichedJoinCondition())
+		.leftJoin(prWorkItems, buildAgentRunWorkItemJoin())
 		.where(and(eq(agentRuns.projectId, projectId), eq(agentRuns.cardId, workItemId)))
 		.orderBy(desc(agentRuns.startedAt));
 }
@@ -561,7 +530,7 @@ export async function getRunsForPR(projectId: string, prNumber: number) {
 	return db
 		.select(enrichedRunSelect)
 		.from(agentRuns)
-		.leftJoin(prWorkItems, enrichedJoinCondition())
+		.leftJoin(prWorkItems, buildAgentRunWorkItemJoin())
 		.where(and(eq(agentRuns.projectId, projectId), eq(agentRuns.prNumber, prNumber)))
 		.orderBy(desc(agentRuns.startedAt));
 }

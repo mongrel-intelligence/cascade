@@ -163,6 +163,10 @@ function WorkItemRow({ item, isExpanded, onToggle }: WorkItemRowProps) {
 					<span title="Linked (PR + Work Item)">
 						<ClipboardList className="h-4 w-4" />
 					</span>
+				) : item.type === 'work-item' ? (
+					<span title="Work Item">
+						<ClipboardList className="h-4 w-4" />
+					</span>
 				) : (
 					<span title="Pull Request">
 						<GitPullRequest className="h-4 w-4" />
