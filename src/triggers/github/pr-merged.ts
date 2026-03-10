@@ -80,7 +80,10 @@ export class PRMergedTrigger implements TriggerHandler {
 			logger.info('Chaining to backlog-manager after PR merge', { workItemId, prNumber });
 			return {
 				agentType: 'backlog-manager',
-				agentInput: { triggerEvent: 'scm:pr-merged' },
+				// Include cardId so PM operations (progress, lifecycle) have the work item ID.
+				// The backlog-manager is a PM-focused agent — it needs the card ID for ack posting
+				// and PM lifecycle, not GitHub PR details.
+				agentInput: { triggerEvent: 'scm:pr-merged', cardId: workItemId },
 				workItemId,
 				prNumber,
 			};

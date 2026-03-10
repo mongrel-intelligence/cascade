@@ -7,6 +7,7 @@
  * `processRouterWebhook()` function.
  */
 
+import { isPMFocusedAgent } from '../../agents/definitions/loader.js';
 import { getProjectGitHubToken } from '../../config/projects.js';
 import { findProjectByRepo } from '../../config/provider.js';
 import { withGitHubToken } from '../../github/client.js';
@@ -22,13 +23,71 @@ import type { TriggerRegistry } from '../../triggers/registry.js';
 import type { TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { extractGitHubContext, generateAckMessage } from '../ackMessageGenerator.js';
-import { postGitHubAck, resolveGitHubTokenForAckByAgent } from '../acknowledgments.js';
+import {
+	postGitHubAck,
+	postJiraAck,
+	postTrelloAck,
+	resolveGitHubTokenForAckByAgent,
+} from '../acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from '../config.js';
 import { extractPRNumber } from '../notifications.js';
 import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
 import { addEyesReactionToPR } from '../pre-actions.js';
 import type { CascadeJob, GitHubJob } from '../queue.js';
 import { sendAcknowledgeReaction } from '../reactions.js';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Post an acknowledgment comment to the PM tool (Trello/JIRA) for PM-focused agents.
+ * Returns an AckResult with the comment ID and message, or undefined on failure.
+ */
+async function postPMAck(
+	projectId: string,
+	workItemId: string,
+	pmType: string | undefined,
+	agentType: string,
+	message: string,
+): Promise<AckResult | undefined> {
+	let commentId: string | null = null;
+	if (pmType === 'trello') {
+		commentId = await postTrelloAck(projectId, workItemId, message);
+	} else if (pmType === 'jira') {
+		commentId = await postJiraAck(projectId, workItemId, message);
+	} else {
+		logger.warn('Unknown PM type for PM-focused agent ack, skipping', { agentType, pmType });
+		return undefined;
+	}
+	if (commentId) return { commentId, message };
+	return undefined;
+}
+
+/**
+ * Post a GitHub PR acknowledgment comment using the agent-specific token.
+ * Returns an AckResult, or undefined if not applicable.
+ */
+async function postGitHubPRAck(
+	repoFullName: string,
+	eventType: string,
+	payload: unknown,
+	agentType: string,
+	projectId: string,
+): Promise<AckResult | undefined> {
+	const resolved = await resolveGitHubTokenForAckByAgent(repoFullName, agentType);
+	if (!resolved) return undefined;
+
+	const context = extractGitHubContext(payload, eventType);
+	const message = await generateAckMessage(agentType, context, projectId);
+	const tempJob = { eventType, repoFullName, payload } as GitHubJob;
+	const prNumber = extractPRNumber(tempJob);
+	if (!prNumber) return undefined;
+
+	const commentId = await postGitHubAck(repoFullName, prNumber, message, resolved.token);
+	if (commentId != null) return { commentId, message };
+	return undefined;
+}
 
 const PROCESSABLE_EVENTS = [
 	'pull_request',
@@ -179,31 +238,29 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 		payload: unknown,
 		project: RouterProjectConfig,
 		agentType: string,
+		triggerResult?: TriggerResult,
 	): Promise<AckResult | undefined> {
 		try {
-			const context = extractGitHubContext(payload, event.eventType);
-			const message = await generateAckMessage(agentType, context, project.id);
-			const resolved = await resolveGitHubTokenForAckByAgent(
-				(event as GitHubParsedEvent).repoFullName,
-				agentType,
-			);
-			if (resolved) {
-				const tempJob = {
-					eventType: event.eventType,
-					repoFullName: (event as GitHubParsedEvent).repoFullName,
-					payload,
-				} as GitHubJob;
-				const prNumber = extractPRNumber(tempJob);
-				if (prNumber) {
-					const commentId = await postGitHubAck(
-						(event as GitHubParsedEvent).repoFullName,
-						prNumber,
-						message,
-						resolved.token,
-					);
-					if (commentId != null) return { commentId, message };
+			// PM-focused agents (e.g. backlog-manager) should have ack posted to the PM tool
+			// (Trello/JIRA card), not to the already-merged GitHub PR.
+			if (await isPMFocusedAgent(agentType)) {
+				const workItemId = triggerResult?.workItemId ?? event.workItemId;
+				if (!workItemId) {
+					logger.warn('PM-focused agent has no workItemId for ack, skipping PM ack', { agentType });
+					return undefined;
 				}
+				const context = extractGitHubContext(payload, event.eventType);
+				const message = await generateAckMessage(agentType, context, project.id);
+				return postPMAck(project.id, workItemId, project.pmType, agentType, message);
 			}
+
+			return postGitHubPRAck(
+				(event as GitHubParsedEvent).repoFullName,
+				event.eventType,
+				payload,
+				agentType,
+				project.id,
+			);
 		} catch (err) {
 			logger.warn('GitHub ack comment failed (non-fatal)', { error: String(err) });
 		}

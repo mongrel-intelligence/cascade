@@ -132,6 +132,7 @@ export class TrelloRouterAdapter implements RouterPlatformAdapter {
 		payload: unknown,
 		project: RouterProjectConfig,
 		agentType: string,
+		_triggerResult?: TriggerResult,
 	): Promise<AckResult | undefined> {
 		if (!event.workItemId) return undefined;
 		try {

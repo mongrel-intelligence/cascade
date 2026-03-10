@@ -41,6 +41,21 @@ vi.mock('../../../src/github/client.js', () => ({
 
 vi.mock('../../../src/utils/repo.js', () => ({
 	parseRepoFullName: vi.fn().mockReturnValue({ owner: 'owner', repo: 'repo' }),
+	getWorkspaceDir: vi.fn().mockReturnValue('/tmp/workspace'),
+}));
+
+vi.mock('../../../src/agents/definitions/loader.js', () => ({
+	isPMFocusedAgent: vi.fn().mockResolvedValue(false),
+}));
+
+vi.mock('../../../src/router/ackMessageGenerator.js', () => ({
+	extractGitHubContext: vi.fn().mockReturnValue('PR context'),
+	generateAckMessage: vi.fn().mockResolvedValue('Starting...'),
+}));
+
+vi.mock('../../../src/router/acknowledgments.js', () => ({
+	postTrelloAck: vi.fn().mockResolvedValue('comment-id'),
+	postJiraAck: vi.fn().mockResolvedValue('comment-id'),
 }));
 
 vi.mock('../../../src/utils/safeOperation.js', () => ({

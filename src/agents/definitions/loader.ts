@@ -191,3 +191,40 @@ export function invalidateDefinitionCache(): void {
 	cache.clear();
 	knownTypes = null;
 }
+
+// ============================================================================
+// PM-Focused Agent Detection
+// ============================================================================
+
+/**
+ * Returns true if an agent is PM-focused: it requires 'pm' integration but NOT 'scm'.
+ *
+ * PM-focused agents (e.g. backlog-manager) should have their ack comments posted to
+ * the PM tool (Trello/JIRA card) rather than a GitHub PR, since they don't interact
+ * with GitHub PRs directly.
+ *
+ * Uses the explicit `integrations.required` field from the agent definition when
+ * available; otherwise falls back to capability-derived integrations.
+ *
+ * Results are NOT cached separately — the agent definition itself is cached by the
+ * loader, so repeated calls are inexpensive.
+ */
+export async function isPMFocusedAgent(agentType: string): Promise<boolean> {
+	try {
+		const def = await resolveAgentDefinition(agentType);
+		const requiredIntegrations = def.integrations?.required ?? [];
+		const hasPM = requiredIntegrations.includes('pm');
+		const hasSCM = requiredIntegrations.includes('scm');
+		// If explicit integrations are not defined, fall back to capability-derived check
+		if (requiredIntegrations.length === 0) {
+			// No explicit integrations: check capabilities (pm: prefix required, no scm: prefix required)
+			const caps = def.capabilities.required;
+			const capHasPM = caps.some((c) => c.startsWith('pm:'));
+			const capHasSCM = caps.some((c) => c.startsWith('scm:'));
+			return capHasPM && !capHasSCM;
+		}
+		return hasPM && !hasSCM;
+	} catch {
+		return false;
+	}
+}

@@ -7,6 +7,7 @@ import {
 	clearDefinitionCache,
 	getKnownAgentTypes,
 	isBuiltinAgentType,
+	isPMFocusedAgent,
 	loadAgentDefinition,
 	loadAllAgentDefinitions,
 } from '../../../../src/agents/definitions/loader.js';
@@ -352,6 +353,40 @@ describe('YAML agent definitions loader', () => {
 				canUpdateChecklists: true,
 				isReadOnly: false,
 			});
+		});
+	});
+
+	describe('isPMFocusedAgent', () => {
+		it('returns true for backlog-manager (requires pm, no scm)', async () => {
+			expect(await isPMFocusedAgent('backlog-manager')).toBe(true);
+		});
+
+		it('returns true for splitting (requires pm only)', async () => {
+			expect(await isPMFocusedAgent('splitting')).toBe(true);
+		});
+
+		it('returns true for planning (requires pm only)', async () => {
+			expect(await isPMFocusedAgent('planning')).toBe(true);
+		});
+
+		it('returns false for implementation (requires both pm and scm)', async () => {
+			expect(await isPMFocusedAgent('implementation')).toBe(false);
+		});
+
+		it('returns false for review (requires scm, pm optional)', async () => {
+			expect(await isPMFocusedAgent('review')).toBe(false);
+		});
+
+		it('returns false for respond-to-review (requires scm, pm optional)', async () => {
+			expect(await isPMFocusedAgent('respond-to-review')).toBe(false);
+		});
+
+		it('returns false for respond-to-ci (requires scm, pm optional)', async () => {
+			expect(await isPMFocusedAgent('respond-to-ci')).toBe(false);
+		});
+
+		it('returns false for unknown agent types', async () => {
+			expect(await isPMFocusedAgent('nonexistent-agent')).toBe(false);
 		});
 	});
 

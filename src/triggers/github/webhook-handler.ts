@@ -8,10 +8,13 @@
  * - GitHub-specific AgentExecutionConfig → ./integration.ts
  */
 
+import { isPMFocusedAgent } from '../../agents/definitions/loader.js';
 import { githubClient, withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
 import { withPMCredentials, withPMProvider } from '../../pm/context.js';
 import { createPMProvider, pmRegistry } from '../../pm/index.js';
+import { extractGitHubContext, generateAckMessage } from '../../router/ackMessageGenerator.js';
+import { postJiraAck, postTrelloAck } from '../../router/acknowledgments.js';
 import {
 	checkAgentTypeConcurrency,
 	clearAgentTypeEnqueued,
@@ -57,6 +60,47 @@ async function maybePostAckComment(
 	eventType: string,
 	project: ProjectConfig,
 ): Promise<void> {
+	// PM-focused agents (e.g. backlog-manager) triggered from GitHub should have their
+	// ack posted to the PM tool (Trello/JIRA card), not to the already-merged GitHub PR.
+	if (result.agentType && (await isPMFocusedAgent(result.agentType))) {
+		const workItemId = result.workItemId;
+		if (!workItemId) {
+			logger.warn('PM-focused agent has no workItemId for ack, skipping PM ack (worker-side)', {
+				agentType: result.agentType,
+			});
+			return;
+		}
+		try {
+			const context = extractGitHubContext(payload, eventType);
+			const message = await generateAckMessage(result.agentType, context, project.id);
+			const pmType = project.pm?.type;
+			if (pmType === 'trello') {
+				const commentId = await postTrelloAck(project.id, workItemId, message);
+				if (commentId) {
+					result.agentInput.ackCommentId = commentId;
+					result.agentInput.ackMessage = message;
+				}
+			} else if (pmType === 'jira') {
+				const commentId = await postJiraAck(project.id, workItemId, message);
+				if (commentId) {
+					result.agentInput.ackCommentId = commentId;
+					result.agentInput.ackMessage = message;
+				}
+			} else {
+				logger.warn('Unknown PM type for PM-focused agent ack (worker-side)', {
+					agentType: result.agentType,
+					pmType,
+				});
+			}
+		} catch (err) {
+			logger.warn('PM ack comment failed for PM-focused agent (non-fatal)', {
+				error: String(err),
+				agentType: result.agentType,
+			});
+		}
+		return;
+	}
+
 	let prCommentToken: string;
 	try {
 		prCommentToken = await getPersonaToken(project.id, result.agentType ?? 'implementation');
@@ -68,7 +112,7 @@ async function maybePostAckComment(
 	);
 }
 
-/** Run the agent with GitHub-specific execution config. */
+/** Run the agent with GitHub-specific (or PM-appropriate) execution config. */
 async function runGitHubAgent(
 	result: TriggerResult,
 	project: ProjectConfig,
@@ -88,6 +132,10 @@ async function runGitHubAgent(
 
 	startWatchdog(config.defaults.watchdogTimeoutMs);
 
+	// PM-focused agents (e.g. backlog-manager) triggered from GitHub should use
+	// PM-appropriate lifecycle config: no GitHub PR comment callbacks, allow PM lifecycle ops.
+	const pmFocused = result.agentType ? await isPMFocusedAgent(result.agentType) : false;
+
 	try {
 		// Establish PM credential + provider scope for agents with workItemId
 		// (needed for PM lifecycle operations: labels, status moves, PR links)
@@ -103,22 +151,31 @@ async function runGitHubAgent(
 						result,
 						project,
 						config,
-						integration.resolveExecutionConfig(),
+						pmFocused
+							? {
+									// PM-focused agents: allow PM lifecycle ops, skip GitHub PR comment callbacks
+									skipPrepareForAgent: false,
+									skipHandleFailure: false,
+									logLabel: 'GitHub (PM-focused agent)',
+								}
+							: integration.resolveExecutionConfig(),
 					),
 				),
 		);
 	} catch (err) {
 		logger.error('Failed to process GitHub webhook', { error: String(err) });
-		// Update the PR comment with the error (outside credential scope, so requires token)
-		let prCommentToken: string;
-		try {
-			prCommentToken = await getPersonaToken(project.id, result.agentType ?? 'implementation');
-		} catch {
-			prCommentToken = await getPersonaToken(project.id, 'implementation').catch(() => '');
+		if (!pmFocused) {
+			// Update the PR comment with the error (outside credential scope, so requires token)
+			let prCommentToken: string;
+			try {
+				prCommentToken = await getPersonaToken(project.id, result.agentType ?? 'implementation');
+			} catch {
+				prCommentToken = await getPersonaToken(project.id, 'implementation').catch(() => '');
+			}
+			await withGitHubToken(prCommentToken, () =>
+				updateInitialCommentWithError(result, { success: false, error: String(err) }),
+			);
 		}
-		await withGitHubToken(prCommentToken, () =>
-			updateInitialCommentWithError(result, { success: false, error: String(err) }),
-		);
 	} finally {
 		if (result.agentType && agentTypeMaxConcurrency !== null) {
 			clearAgentTypeEnqueued(project.id, result.agentType);
