@@ -10,3 +10,6 @@ export * from './diagnosticState.js';
 export * from './onFileEditHook.js';
 export * from './postEditChecks.js';
 export * from './toolDefinition.js';
+export * from './gadgetFactory.js';
+export * from './cliCommandFactory.js';
+export * from './manifestGenerator.js';
