@@ -12,7 +12,7 @@ import { resolveWorkItemId } from './utils.js';
  * 1. Fires on `pull_request.review_requested` events
  * 2. Rejects requests sent by CASCADE personas (loop prevention)
  * 3. Checks if the requested reviewer is a CASCADE persona (implementer OR reviewer)
- * 4. Fires the `review` agent with PR number and work item ID from PR body
+ * 4. Fires the `review` agent with PR number and work item ID from DB lookup
  *
  * Default: **disabled** (opt-in via trigger config).
  *

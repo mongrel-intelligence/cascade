@@ -475,7 +475,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(result?.waitForChecks).toBe(true);
 		});
 
-		it('fires without work item when PR body has no work item reference', async () => {
+		it('fires without work item when DB has no link', async () => {
 			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
@@ -634,7 +634,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(result2?.agentInput.headSha).toBe('newsha456');
 		});
 
-		it('uses DB lookup result over PR body extraction', async () => {
+		it('uses DB lookup result for work item resolution', async () => {
 			vi.mocked(lookupWorkItemForPR).mockResolvedValue('db-work-item');
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
