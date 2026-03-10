@@ -172,7 +172,7 @@ async function buildBackendInput(
 }
 
 /**
- * Read the review sidecar file written by `cascade-tools github create-pr-review`
+ * Read the review sidecar file written by `cascade-tools scm create-pr-review`
  * and hydrate session state so `postReviewSummaryToPM()` can post to the PM.
  *
  * Only needed for the claude-code backend where tools run as child processes

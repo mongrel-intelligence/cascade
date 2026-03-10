@@ -23,7 +23,7 @@ vi.mock('../../../../src/cli/base.js', () => ({
 	resolveOwnerRepo: vi.fn((owner: string, repo: string) => ({ owner, repo })),
 }));
 
-import CreatePRReviewCommand from '../../../../src/cli/github/create-pr-review.js';
+import CreatePRReviewCommand from '../../../../src/cli/scm/create-pr-review.js';
 
 describe('CreatePRReviewCommand sidecar write', () => {
 	let testDir: string;
