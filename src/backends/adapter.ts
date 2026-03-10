@@ -21,6 +21,7 @@ import { CUSTOM_MODELS } from '../config/customModels.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import {
 	REVIEW_SIDECAR_FILENAME,
+	clearInitialComment,
 	recordInitialComment,
 	recordReviewSubmission,
 } from '../gadgets/sessionState.js';
@@ -30,6 +31,7 @@ import { postProcessResult } from './postProcess.js';
 import { createProgressMonitor } from './progress.js';
 import {
 	augmentProjectSecrets,
+	injectGitHubAckCommentId,
 	injectProgressCommentId,
 	resolveGitHubToken,
 } from './secretBuilder.js';
@@ -66,6 +68,7 @@ async function buildBackendInput(
 	logWriter: LogWriter,
 	_log: ReturnType<typeof createAgentLogger>,
 	gitHubToken: string | undefined,
+	isGitHubAck: boolean,
 ): Promise<Omit<AgentBackendInput, 'progressReporter'>> {
 	const { project, config, cardId } = input;
 
@@ -134,6 +137,13 @@ async function buildBackendInput(
 		input.ackCommentId as string | number | undefined,
 	);
 
+	// Inject GitHub ack comment ID so the subprocess can delete it after review submission
+	injectGitHubAckCommentId(
+		projectSecrets,
+		input.ackCommentId as string | number | undefined,
+		isGitHubAck,
+	);
+
 	// Override GITHUB_TOKEN in subprocess secrets with agent-scoped token
 	if (gitHubToken && profile.needsGitHubToken) {
 		projectSecrets.GITHUB_TOKEN = gitHubToken;
@@ -173,6 +183,11 @@ async function hydrateReviewSidecar(repoDir: string): Promise<void> {
 		const sidecar = JSON.parse(readFileSync(join(repoDir, REVIEW_SIDECAR_FILENAME), 'utf-8'));
 		if (sidecar.body && sidecar.reviewUrl) {
 			recordReviewSubmission(sidecar.reviewUrl, sidecar.body, sidecar.event);
+		}
+		// If the subprocess already deleted the ack comment, clear it from session state
+		// so the GitHubProgressPoster post-agent callback does not attempt a redundant delete.
+		if (sidecar.ackCommentDeleted) {
+			clearInitialComment();
 		}
 	} catch {
 		// File doesn't exist (llmist backend) or malformed — ignore.
@@ -247,9 +262,15 @@ export async function executeWithBackend(
 			const profile = await getAgentProfile(agentType);
 			const gitHubToken = await resolveGitHubToken(profile, input.project.id, agentType);
 
+			// Determine if the ack comment is a GitHub PR comment (numeric ID) vs PM comment (string ID)
+			// Must be computed before buildBackendInput so it can be injected into subprocess secrets.
+			const isGitHubAck = Boolean(
+				input.prNumber && input.repoFullName && typeof input.ackCommentId === 'number',
+			);
+
 			// Build backend input wrapped in GitHub token scope if needed
 			const buildPartial = () =>
-				buildBackendInput(agentType, input, repoDir, logWriter, log, gitHubToken);
+				buildBackendInput(agentType, input, repoDir, logWriter, log, gitHubToken, isGitHubAck);
 
 			const partialInput = gitHubToken
 				? await withGitHubToken(gitHubToken, buildPartial)
@@ -269,11 +290,6 @@ export async function executeWithBackend(
 				partialInput.maxIterations,
 			);
 			if (runId) setRunId(runId);
-
-			// Determine if the ack comment is a GitHub PR comment (numeric ID) vs PM comment (string ID)
-			const isGitHubAck = Boolean(
-				input.prNumber && input.repoFullName && typeof input.ackCommentId === 'number',
-			);
 
 			// Seed session state so GitHub progress updates target the existing ack comment
 			if (isGitHubAck) {

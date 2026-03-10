@@ -7,6 +7,12 @@ import { parseRepoFullName } from '../utils/repo.js';
 import { ENV_VAR_NAME } from './progressState.js';
 
 /**
+ * Env var name for the GitHub ack comment ID injected into the claude-code subprocess.
+ * The `CreatePRReviewCommand` CLI reads this to delete the comment after review submission.
+ */
+export const GITHUB_ACK_COMMENT_ID_ENV_VAR = 'CASCADE_GITHUB_ACK_COMMENT_ID';
+
+/**
  * Resolve the GitHub token for profiles that need GitHub client access.
  * Uses the persona token system (GITHUB_TOKEN_IMPLEMENTER / GITHUB_TOKEN_REVIEWER).
  */
@@ -78,5 +84,23 @@ export function injectProgressCommentId(
 ): void {
 	if (cardId && typeof ackCommentId === 'string' && ackCommentId) {
 		projectSecrets[ENV_VAR_NAME] = `${cardId}:${ackCommentId}`;
+	}
+}
+
+/**
+ * Inject the GitHub ack comment ID into project secrets so the claude-code subprocess
+ * can delete it immediately after posting the PR review.
+ *
+ * Only injects when isGitHubAck is true (numeric ackCommentId on a PR trigger).
+ * This is specific to the claude-code backend path — llmist handles deletion in-process
+ * via the CreatePRReview gadget's deleteInitialComment() call.
+ */
+export function injectGitHubAckCommentId(
+	projectSecrets: Record<string, string>,
+	ackCommentId: string | number | undefined,
+	isGitHubAck: boolean,
+): void {
+	if (isGitHubAck && typeof ackCommentId === 'number' && ackCommentId) {
+		projectSecrets[GITHUB_ACK_COMMENT_ID_ENV_VAR] = String(ackCommentId);
 	}
 }

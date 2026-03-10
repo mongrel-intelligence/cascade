@@ -11,7 +11,9 @@ vi.mock('../../../src/github/personas.js', () => ({
 import type { AgentProfile } from '../../../src/agents/definitions/profiles.js';
 import { ENV_VAR_NAME } from '../../../src/backends/progressState.js';
 import {
+	GITHUB_ACK_COMMENT_ID_ENV_VAR,
 	augmentProjectSecrets,
+	injectGitHubAckCommentId,
 	injectProgressCommentId,
 	resolveGitHubToken,
 } from '../../../src/backends/secretBuilder.js';
@@ -199,5 +201,41 @@ describe('injectProgressCommentId', () => {
 		const secrets: Record<string, string> = {};
 		injectProgressCommentId(secrets, 'card-123', '');
 		expect(secrets[ENV_VAR_NAME]).toBeUndefined();
+	});
+});
+
+describe('injectGitHubAckCommentId', () => {
+	it('injects env var when isGitHubAck is true and ackCommentId is a number', () => {
+		const secrets: Record<string, string> = {};
+		injectGitHubAckCommentId(secrets, 12345, true);
+		expect(secrets[GITHUB_ACK_COMMENT_ID_ENV_VAR]).toBe('12345');
+	});
+
+	it('does not inject when isGitHubAck is false (PM ack)', () => {
+		const secrets: Record<string, string> = {};
+		injectGitHubAckCommentId(secrets, 12345, false);
+		expect(secrets[GITHUB_ACK_COMMENT_ID_ENV_VAR]).toBeUndefined();
+	});
+
+	it('does not inject when ackCommentId is a string (PM comment ID)', () => {
+		const secrets: Record<string, string> = {};
+		injectGitHubAckCommentId(secrets, 'string-id', true);
+		expect(secrets[GITHUB_ACK_COMMENT_ID_ENV_VAR]).toBeUndefined();
+	});
+
+	it('does not inject when ackCommentId is undefined', () => {
+		const secrets: Record<string, string> = {};
+		injectGitHubAckCommentId(secrets, undefined, true);
+		expect(secrets[GITHUB_ACK_COMMENT_ID_ENV_VAR]).toBeUndefined();
+	});
+
+	it('does not inject when ackCommentId is zero', () => {
+		const secrets: Record<string, string> = {};
+		injectGitHubAckCommentId(secrets, 0, true);
+		expect(secrets[GITHUB_ACK_COMMENT_ID_ENV_VAR]).toBeUndefined();
+	});
+
+	it('uses the GITHUB_ACK_COMMENT_ID_ENV_VAR constant as the key', () => {
+		expect(GITHUB_ACK_COMMENT_ID_ENV_VAR).toBe('CASCADE_GITHUB_ACK_COMMENT_ID');
 	});
 });
