@@ -44,3 +44,6 @@ test-results/
 
 # Progress comment state file (legacy — kept to ignore stale files from older runs)
 .cascade-progress-comment-id
+
+# CASCADE context files (temporary pre-fetched data)
+.cascade/context/
