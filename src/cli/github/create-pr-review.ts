@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { Flags } from '@oclif/core';
+import { GITHUB_ACK_COMMENT_ID_ENV_VAR } from '../../backends/secretBuilder.js';
 import { createPRReview } from '../../gadgets/github/core/createPRReview.js';
 import { REVIEW_SIDECAR_FILENAME } from '../../gadgets/sessionState.js';
 import { CredentialScopedCommand, resolveOwnerRepo } from '../base.js';
@@ -52,6 +53,24 @@ export default class CreatePRReviewCommand extends CredentialScopedCommand {
 			comments,
 		});
 
+		// Delete the GitHub ack/progress comment immediately after successful review submission.
+		// This mirrors what the llmist backend's CreatePRReview gadget does via deleteInitialComment().
+		// In the claude-code backend, the parent process cannot delete it in-process, so we do it here.
+		let ackCommentDeleted = false;
+		const ackCommentIdStr = process.env[GITHUB_ACK_COMMENT_ID_ENV_VAR];
+		if (ackCommentIdStr) {
+			const ackCommentId = Number(ackCommentIdStr);
+			if (Number.isFinite(ackCommentId) && ackCommentId > 0) {
+				try {
+					const { githubClient } = await import('../../github/client.js');
+					await githubClient.deletePRComment(owner, repo, ackCommentId);
+					ackCommentDeleted = true;
+				} catch {
+					// Best-effort — deletion failure should not prevent the review from being reported
+				}
+			}
+		}
+
 		// Persist review data for the parent process (backend adapter)
 		// to read and populate session state post-execution.
 		try {
@@ -63,6 +82,7 @@ export default class CreatePRReviewCommand extends CredentialScopedCommand {
 					reviewUrl: result.reviewUrl,
 					event: flags.event,
 					body: flags.body,
+					...(ackCommentDeleted && { ackCommentDeleted: true }),
 				}),
 			);
 		} catch {

@@ -7,6 +7,7 @@
  */
 
 import { ENV_VAR_NAME as PROGRESS_COMMENT_ENV_VAR } from '../progressState.js';
+import { GITHUB_ACK_COMMENT_ID_ENV_VAR } from '../secretBuilder.js';
 
 /** Exact variable names to pass through. */
 export const ALLOWED_ENV_EXACT = new Set([
@@ -31,6 +32,9 @@ export const ALLOWED_ENV_EXACT = new Set([
 
 	// Progress comment state (pre-seeded ack comment ID)
 	PROGRESS_COMMENT_ENV_VAR,
+
+	// GitHub ack comment ID for claude-code subprocess deletion after PR review
+	GITHUB_ACK_COMMENT_ID_ENV_VAR,
 
 	// Node
 	'NODE_PATH',

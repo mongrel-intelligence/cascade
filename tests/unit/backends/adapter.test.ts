@@ -46,6 +46,7 @@ vi.mock('../../../src/gadgets/sessionState.js', () => ({
 	REVIEW_SIDECAR_FILENAME: '.cascade/review-result.json',
 	recordInitialComment: vi.fn(),
 	recordReviewSubmission: vi.fn(),
+	clearInitialComment: vi.fn(),
 }));
 
 vi.mock('../../../src/config/customModels.js', () => ({
@@ -128,7 +129,11 @@ import { executeWithBackend } from '../../../src/backends/adapter.js';
 import { createProgressMonitor } from '../../../src/backends/progress.js';
 import type { AgentBackend } from '../../../src/backends/types.js';
 import { getAllProjectCredentials } from '../../../src/config/provider.js';
-import { recordInitialComment, recordReviewSubmission } from '../../../src/gadgets/sessionState.js';
+import {
+	clearInitialComment,
+	recordInitialComment,
+	recordReviewSubmission,
+} from '../../../src/gadgets/sessionState.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../../../src/utils/cascadeEnv.js';
 import {
@@ -153,6 +158,7 @@ const mockClearWatchdogCleanup = vi.mocked(clearWatchdogCleanup);
 const mockCreateProgressMonitor = vi.mocked(createProgressMonitor);
 const mockRecordInitialComment = vi.mocked(recordInitialComment);
 const mockRecordReviewSubmission = vi.mocked(recordReviewSubmission);
+const mockClearInitialComment = vi.mocked(clearInitialComment);
 const mockGetAllProjectCredentials = vi.mocked(getAllProjectCredentials);
 const mockGetAgentProfile = vi.mocked(getAgentProfile);
 
@@ -836,6 +842,34 @@ describe('executeWithBackend', () => {
 
 			expect(mockRecordInitialComment).not.toHaveBeenCalled();
 		});
+
+		it('injects CASCADE_GITHUB_ACK_COMMENT_ID into secrets when ack is a GitHub PR comment', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			const input = makeInput({
+				prNumber: 42,
+				repoFullName: 'acme/widgets',
+				ackCommentId: 98765,
+			});
+
+			await executeWithBackend(backend, 'review', input);
+
+			const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
+			expect(backendInput.projectSecrets?.CASCADE_GITHUB_ACK_COMMENT_ID).toBe('98765');
+		});
+
+		it('does not inject CASCADE_GITHUB_ACK_COMMENT_ID for PM (string) ack comment IDs', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			const input = makeInput({
+				ackCommentId: 'pm-comment-abc',
+			});
+
+			await executeWithBackend(backend, 'implementation', input);
+
+			const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
+			expect(backendInput.projectSecrets?.CASCADE_GITHUB_ACK_COMMENT_ID).toBeUndefined();
+		});
 	});
 
 	describe('review sidecar hydration', () => {
@@ -943,6 +977,55 @@ describe('executeWithBackend', () => {
 			await executeWithBackend(backend, 'review', input);
 
 			expect(mockRecordReviewSubmission).not.toHaveBeenCalled();
+		});
+
+		it('clears initialCommentId when sidecar has ackCommentDeleted: true', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			vi.mocked(backend.execute).mockImplementation(async () => {
+				writeSidecar({
+					reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-42',
+					event: 'REQUEST_CHANGES',
+					body: 'Please fix this',
+					ackCommentDeleted: true,
+				});
+				return { success: true, output: 'Done' };
+			});
+			const input = makeInput();
+
+			await executeWithBackend(backend, 'review', input);
+
+			expect(mockClearInitialComment).toHaveBeenCalled();
+		});
+
+		it('does not clear initialCommentId when sidecar has ackCommentDeleted absent', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			vi.mocked(backend.execute).mockImplementation(async () => {
+				writeSidecar({
+					reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-42',
+					event: 'APPROVE',
+					body: 'LGTM',
+					// no ackCommentDeleted
+				});
+				return { success: true, output: 'Done' };
+			});
+			const input = makeInput();
+
+			await executeWithBackend(backend, 'review', input);
+
+			expect(mockClearInitialComment).not.toHaveBeenCalled();
+		});
+
+		it('backward compatible — no clearInitialComment when sidecar is absent', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			// No sidecar written
+			const input = makeInput();
+
+			await executeWithBackend(backend, 'review', input);
+
+			expect(mockClearInitialComment).not.toHaveBeenCalled();
 		});
 	});
 });

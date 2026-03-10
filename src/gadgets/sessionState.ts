@@ -112,6 +112,17 @@ export function recordInitialComment(commentId: number): void {
 }
 
 /**
+ * Clear the initial comment ID from session state without performing a deletion.
+ *
+ * Called by the backend adapter when the sidecar signals that the subprocess
+ * already deleted the comment (ackCommentDeleted: true), so that the
+ * GitHubProgressPoster post-agent callback does not attempt a redundant delete.
+ */
+export function clearInitialComment(): void {
+	sessionState.initialCommentId = null;
+}
+
+/**
  * Delete the initial ack comment from the PR and clear it from session state.
  *
  * Called by gadgets (e.g. CreatePRReview) immediately after a significant event
