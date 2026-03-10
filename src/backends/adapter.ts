@@ -27,6 +27,7 @@ import {
 } from '../gadgets/sessionState.js';
 import { withGitHubToken } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
+import { logger } from '../utils/logging.js';
 import { postProcessResult } from './postProcess.js';
 import { createProgressMonitor } from './progress.js';
 import {
@@ -179,19 +180,30 @@ async function buildBackendInput(
  * and cannot update the parent process's module-level session state directly.
  */
 async function hydrateReviewSidecar(repoDir: string): Promise<void> {
+	const sidecarPath = join(repoDir, REVIEW_SIDECAR_FILENAME);
 	try {
-		const sidecar = JSON.parse(readFileSync(join(repoDir, REVIEW_SIDECAR_FILENAME), 'utf-8'));
+		const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8'));
 		if (sidecar.body && sidecar.reviewUrl) {
 			recordReviewSubmission(sidecar.reviewUrl, sidecar.body, sidecar.event);
+			logger.info('Hydrated review sidecar from subprocess', {
+				event: sidecar.event,
+				bodyLength: sidecar.body.length,
+			});
+		} else {
+			logger.warn('Review sidecar missing required fields', {
+				hasBody: !!sidecar.body,
+				hasReviewUrl: !!sidecar.reviewUrl,
+			});
 		}
 		// If the subprocess already deleted the ack comment, clear it from session state
 		// so the GitHubProgressPoster post-agent callback does not attempt a redundant delete.
 		if (sidecar.ackCommentDeleted) {
 			clearInitialComment();
 		}
-	} catch {
-		// File doesn't exist (llmist backend) or malformed — ignore.
+	} catch (err) {
+		// File doesn't exist (llmist backend) or malformed.
 		// llmist backend already populates session state via in-process gadgets.
+		logger.warn('Failed to read review sidecar', { path: sidecarPath, error: String(err) });
 	}
 }
 
