@@ -26,7 +26,7 @@ const TriggerEventSchema = z
 
 /**
  * Parameter definition for agent triggers.
- * Supports string, email, boolean, and select types.
+ * Supports string, boolean, and select types.
  */
 export const TriggerParameterSchema = z
 	.object({
