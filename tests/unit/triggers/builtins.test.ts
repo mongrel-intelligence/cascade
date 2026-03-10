@@ -10,6 +10,9 @@ vi.mock('../../../src/triggers/github/check-suite-success.js', () => ({
 vi.mock('../../../src/triggers/github/pr-comment-mention.js', () => ({
 	PRCommentMentionTrigger: vi.fn().mockImplementation(() => ({ name: 'pr-comment-mention' })),
 }));
+vi.mock('../../../src/triggers/github/pr-conflict-detected.js', () => ({
+	PRConflictDetectedTrigger: vi.fn().mockImplementation(() => ({ name: 'pr-conflict-detected' })),
+}));
 vi.mock('../../../src/triggers/github/pr-merged.js', () => ({
 	PRMergedTrigger: vi.fn().mockImplementation(() => ({ name: 'pr-merged' })),
 }));
@@ -77,8 +80,8 @@ describe('registerBuiltInTriggers', () => {
 
 		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
 
-		// Should have registered all 17 built-in triggers (16 + backlog-manager)
-		expect(registry.register).toHaveBeenCalledTimes(17);
+		// Should have registered all 18 built-in triggers (17 + pr-conflict-detected)
+		expect(registry.register).toHaveBeenCalledTimes(18);
 	});
 
 	it('registers TrelloCommentMentionTrigger first', () => {
@@ -111,6 +114,7 @@ describe('registerBuiltInTriggers', () => {
 		expect(registeredNames).toContain('check-suite-failure');
 		expect(registeredNames).toContain('check-suite-success');
 		expect(registeredNames).toContain('pr-comment-mention');
+		expect(registeredNames).toContain('pr-conflict-detected');
 		expect(registeredNames).toContain('pr-merged');
 		expect(registeredNames).toContain('pr-opened');
 		expect(registeredNames).toContain('pr-ready-to-merge');

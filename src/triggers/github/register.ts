@@ -13,6 +13,7 @@ import type { TriggerRegistry } from '../registry.js';
 import { CheckSuiteFailureTrigger } from './check-suite-failure.js';
 import { CheckSuiteSuccessTrigger } from './check-suite-success.js';
 import { PRCommentMentionTrigger } from './pr-comment-mention.js';
+import { PRConflictDetectedTrigger } from './pr-conflict-detected.js';
 import { PRMergedTrigger } from './pr-merged.js';
 import { PROpenedTrigger } from './pr-opened.js';
 import { PRReadyToMergeTrigger } from './pr-ready-to-merge.js';
@@ -40,6 +41,7 @@ export function registerGitHubTriggers(registry: TriggerRegistry): void {
 	registry.register(new ReviewRequestedTrigger());
 
 	registry.register(new CheckSuiteFailureTrigger());
+	registry.register(new PRConflictDetectedTrigger());
 	registry.register(new CheckSuiteSuccessTrigger());
 	registry.register(new PRReadyToMergeTrigger());
 	registry.register(new PRMergedTrigger());
