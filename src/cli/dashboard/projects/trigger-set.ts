@@ -69,7 +69,7 @@ export default class ProjectsTriggerSet extends DashboardCommand {
 		}
 
 		// Validate event format early (before API call)
-		const eventPattern = /^(pm|scm|email|internal):[a-z][a-z0-9-]*$/;
+		const eventPattern = /^(pm|scm|internal):[a-z][a-z0-9-]*$/;
 		if (!eventPattern.test(event)) {
 			this.error(
 				`Invalid event format: "${event}". Events must be in format {category}:{event-name} (e.g., pm:status-changed, scm:check-suite-success).`,

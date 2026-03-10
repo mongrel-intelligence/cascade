@@ -97,7 +97,7 @@ const ContextStepNameSchema = z.enum(CONTEXT_STEP_NAMES);
  * Examples:
  * - pm:status-changed (work item status changed, replaces pm:card-moved and pm:issue-transitioned)
  * - scm:check-suite-success (CI passed)
- * - email:received (new email received)
+ * - internal:orchestration (internal orchestration events)
  */
 export const SupportedTriggerSchema = z.object({
 	/** Event identifier, e.g., 'pm:status-changed', 'scm:check-suite-success' */
