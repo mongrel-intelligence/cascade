@@ -13,7 +13,6 @@ import {
 	type FetchContextParams,
 	fetchContextFilesStep,
 	fetchDirectoryListingStep,
-	fetchEmailsFromInputStep,
 	fetchPRContextStep,
 	fetchPRConversationStep,
 	fetchPipelineSnapshotStep,
@@ -37,6 +36,5 @@ export const CONTEXT_STEP_REGISTRY: Record<
 	prepopulateTodos: prepopulateTodosStep,
 	prContext: fetchPRContextStep,
 	prConversation: fetchPRConversationStep,
-	prefetchedEmails: fetchEmailsFromInputStep,
 	pipelineSnapshot: fetchPipelineSnapshotStep,
 };

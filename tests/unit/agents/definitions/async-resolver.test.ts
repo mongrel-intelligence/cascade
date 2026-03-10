@@ -11,7 +11,6 @@ import {
 const ALL_AGENT_TYPES = [
 	'backlog-manager',
 	'debug',
-	'email-joke',
 	'implementation',
 	'planning',
 	'resolve-conflicts',

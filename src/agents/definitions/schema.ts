@@ -80,7 +80,6 @@ export const CONTEXT_STEP_NAMES = [
 	'prepopulateTodos',
 	'prContext',
 	'prConversation',
-	'prefetchedEmails',
 	'pipelineSnapshot',
 ] as const;
 

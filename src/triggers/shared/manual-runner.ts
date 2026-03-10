@@ -1,9 +1,6 @@
 import { runAgent } from '../../agents/registry.js';
-import { parseEmailJokeTriggers } from '../../config/triggerConfig.js';
 import { getRunById } from '../../db/repositories/runsRepository.js';
-import { getIntegrationByProjectAndCategory } from '../../db/repositories/settingsRepository.js';
-import { getEmailProviderOrNull, withEmailIntegration } from '../../email/index.js';
-import type { EmailSearchCriteria } from '../../email/index.js';
+import { withEmailIntegration } from '../../email/index.js';
 import { withPMCredentials } from '../../pm/context.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../types/index.js';
@@ -55,37 +52,6 @@ export interface ManualTriggerInput {
 	repoFullName?: string;
 	headSha?: string;
 	modelOverride?: string;
-}
-
-/**
- * Pre-fetch emails for the email-joke agent before the agent starts.
- *
- * Returns true if the agent should run (emails found or no provider),
- * false if no matching emails were found (agent should be skipped).
- * Mutates agentInput.preFoundEmails when emails are found.
- */
-async function prefetchEmailsForJokeAgent(
-	agentInput: AgentInput,
-	projectId: string,
-): Promise<boolean> {
-	const provider = getEmailProviderOrNull();
-	if (!provider) {
-		logger.warn('Email provider unavailable, skipping email-joke agent', { projectId });
-		return false;
-	}
-
-	const criteria: EmailSearchCriteria = { unseen: true };
-	if (agentInput.senderEmail) criteria.from = agentInput.senderEmail;
-	const emails = await provider.searchEmails('INBOX', criteria, 10);
-	if (emails.length === 0) {
-		logger.info('No matching emails found, skipping email-joke agent', {
-			projectId,
-			senderEmail: agentInput.senderEmail,
-		});
-		return false;
-	}
-	agentInput.preFoundEmails = emails;
-	return true;
 }
 
 /**
@@ -142,21 +108,6 @@ export async function triggerManualRun(
 		config,
 	};
 
-	// For email-joke agent, fetch senderEmail from email integration triggers
-	if (input.agentType === 'email-joke') {
-		const emailIntegration = await getIntegrationByProjectAndCategory(input.projectId, 'email');
-		if (emailIntegration) {
-			const triggers = parseEmailJokeTriggers(emailIntegration.triggers);
-			if (triggers.senderEmail) {
-				agentInput.senderEmail = triggers.senderEmail;
-			}
-		} else {
-			logger.debug('No email integration found, skipping senderEmail injection', {
-				projectId: input.projectId,
-			});
-		}
-	}
-
 	try {
 		const pmProvider = createPMProvider(project);
 		const result = await withPMCredentials(
@@ -165,13 +116,7 @@ export async function triggerManualRun(
 			(t) => pmRegistry.getOrNull(t),
 			() =>
 				withPMProvider(pmProvider, () =>
-					withEmailIntegration(project.id, async () => {
-						if (input.agentType === 'email-joke') {
-							const shouldRun = await prefetchEmailsForJokeAgent(agentInput, input.projectId);
-							if (!shouldRun) return undefined;
-						}
-						return runAgent(input.agentType, agentInput);
-					}),
+					withEmailIntegration(project.id, () => runAgent(input.agentType, agentInput)),
 				),
 		);
 		if (result !== undefined) {

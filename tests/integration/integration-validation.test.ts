@@ -291,10 +291,6 @@ describe('Integration Validation (integration)', () => {
 
 				const hasEmail = await hasEmailIntegration('test-project');
 				expect(hasEmail).toBe(true);
-
-				// email-joke requires email
-				const result = await validateIntegrations('test-project', 'email-joke');
-				expect(result.valid).toBe(true);
 			});
 
 			it('fails when password is missing', async () => {
@@ -302,11 +298,6 @@ describe('Integration Validation (integration)', () => {
 
 				const hasEmail = await hasEmailIntegration('test-project');
 				expect(hasEmail).toBe(false);
-
-				const result = await validateIntegrations('test-project', 'email-joke');
-				expect(result.valid).toBe(false);
-				expect(result.errors).toHaveLength(1);
-				expect(result.errors[0].category).toBe('email');
 			});
 
 			it('fails when imap_host is missing', async () => {
@@ -334,11 +325,6 @@ describe('Integration Validation (integration)', () => {
 
 				const hasEmail = await hasEmailIntegration('test-project');
 				expect(hasEmail).toBe(false);
-
-				const result = await validateIntegrations('test-project', 'email-joke');
-				expect(result.valid).toBe(false);
-				expect(result.errors).toHaveLength(1);
-				expect(result.errors[0].category).toBe('email');
 			});
 
 			it('fails when gmail_refresh_token is missing', async () => {
@@ -346,11 +332,6 @@ describe('Integration Validation (integration)', () => {
 
 				const hasEmail = await hasEmailIntegration('test-project');
 				expect(hasEmail).toBe(false);
-
-				const result = await validateIntegrations('test-project', 'email-joke');
-				expect(result.valid).toBe(false);
-				expect(result.errors).toHaveLength(1);
-				expect(result.errors[0].category).toBe('email');
 			});
 		});
 
@@ -358,12 +339,6 @@ describe('Integration Validation (integration)', () => {
 			// No email integration at all
 			const hasEmail = await hasEmailIntegration('test-project');
 			expect(hasEmail).toBe(false);
-
-			const result = await validateIntegrations('test-project', 'email-joke');
-			expect(result.valid).toBe(false);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0].category).toBe('email');
-			expect(result.errors[0].message).toContain('email integration');
 		});
 	});
 
@@ -524,11 +499,6 @@ describe('Integration Validation (integration)', () => {
 			const reqs = await getIntegrationRequirements('debug');
 			expect(reqs.required).toEqual([]);
 			expect(reqs.optional).toContain('pm');
-		});
-
-		it('email-joke requires only email', async () => {
-			const reqs = await getIntegrationRequirements('email-joke');
-			expect(reqs.required).toEqual(['email']);
 		});
 	});
 

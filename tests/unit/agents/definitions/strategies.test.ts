@@ -12,7 +12,6 @@ describe('CONTEXT_STEP_REGISTRY', () => {
 			'prepopulateTodos',
 			'prContext',
 			'prConversation',
-			'prefetchedEmails',
 			'pipelineSnapshot',
 		];
 
@@ -36,7 +35,6 @@ describe('CONTEXT_STEP_REGISTRY', () => {
 			'prepopulateTodos',
 			'prContext',
 			'prConversation',
-			'prefetchedEmails',
 			'pipelineSnapshot',
 		];
 
@@ -66,10 +64,6 @@ describe('CONTEXT_STEP_REGISTRY', () => {
 
 	it('prConversation entry is a function', () => {
 		expect(typeof CONTEXT_STEP_REGISTRY.prConversation).toBe('function');
-	});
-
-	it('prefetchedEmails entry is a function', () => {
-		expect(typeof CONTEXT_STEP_REGISTRY.prefetchedEmails).toBe('function');
 	});
 
 	it('pipelineSnapshot entry is a function', () => {

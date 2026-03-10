@@ -14,7 +14,6 @@ vi.mock('../../../src/agents/definitions/index.js', () => ({
 			'respond-to-pr-comment',
 			'respond-to-planning-comment',
 			'debug',
-			'email-joke',
 			'backlog-manager',
 		]),
 }));
