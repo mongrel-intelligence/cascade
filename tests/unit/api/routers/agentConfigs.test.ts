@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
+import { CLAUDE_CODE_MODELS } from '../../../../src/backends/claude-code/models.js';
 import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
 
 const mockListAgentConfigs = vi.fn();
@@ -300,6 +301,117 @@ describe('agentConfigsRouter', () => {
 			await caller.delete({ id: 10 });
 
 			expect(mockDeleteAgentConfig).toHaveBeenCalledWith(10);
+		});
+	});
+
+	describe('claudeCodeModels', () => {
+		it('returns the list of claude code models (public endpoint)', async () => {
+			// No auth required — publicProcedure
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+
+			const result = await caller.claudeCodeModels();
+
+			expect(result).toEqual(CLAUDE_CODE_MODELS);
+			expect(Array.isArray(result)).toBe(true);
+			expect(result.length).toBeGreaterThan(0);
+			// Each entry should have value and label fields
+			for (const model of result) {
+				expect(model).toHaveProperty('value');
+				expect(model).toHaveProperty('label');
+			}
+		});
+
+		it('returns models accessible without authentication', async () => {
+			// Ensure an unauthenticated request succeeds (no UNAUTHORIZED error)
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+
+			await expect(caller.claudeCodeModels()).resolves.not.toThrow();
+		});
+	});
+
+	describe('create with maxConcurrency', () => {
+		it('passes maxConcurrency to repository when creating org-scoped config', async () => {
+			mockCreateAgentConfig.mockResolvedValue({ id: 20 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				agentType: 'implementation',
+				maxConcurrency: 3,
+			});
+
+			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+				expect.objectContaining({
+					agentType: 'implementation',
+					maxConcurrency: 3,
+				}),
+			);
+		});
+
+		it('passes maxConcurrency to repository when creating project-scoped config', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 21 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'review',
+				maxConcurrency: 2,
+			});
+
+			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+				expect.objectContaining({
+					projectId: 'proj-1',
+					agentType: 'review',
+					maxConcurrency: 2,
+				}),
+			);
+		});
+	});
+
+	describe('update with maxConcurrency', () => {
+		it('passes maxConcurrency to repository when updating org-scoped config', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1', projectId: null }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 10, maxConcurrency: 5 });
+
+			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(
+				10,
+				expect.objectContaining({ maxConcurrency: 5 }),
+			);
+		});
+
+		it('passes maxConcurrency to repository when updating project-scoped config', async () => {
+			// First call: find config
+			mockDbWhere.mockResolvedValueOnce([{ orgId: null, projectId: 'proj-1' }]);
+			// Second call: verify project ownership
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 11, maxConcurrency: 4 });
+
+			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(
+				11,
+				expect.objectContaining({ maxConcurrency: 4 }),
+			);
+		});
+
+		it('can set maxConcurrency alongside other fields', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1', projectId: null }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 10, model: 'new-model', maxConcurrency: 2, maxIterations: 20 });
+
+			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(10, {
+				agentType: undefined,
+				model: 'new-model',
+				maxIterations: 20,
+				agentBackend: undefined,
+				maxConcurrency: 2,
+			});
 		});
 	});
 });
