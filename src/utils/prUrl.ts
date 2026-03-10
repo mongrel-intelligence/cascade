@@ -15,3 +15,11 @@ export function extractPRUrl(text: string): string | undefined {
 	const match = text.match(/https:\/\/github\.com\/[^\s"')\]]+\/pull\/\d+/);
 	return match ? match[0] : undefined;
 }
+
+/**
+ * Extract the PR number from a URL or arbitrary text containing a `/pull/NNN` path.
+ */
+export function extractPRNumber(text: string): number | undefined {
+	const match = text.match(/\/pull\/(\d+)/);
+	return match ? Number(match[1]) : undefined;
+}

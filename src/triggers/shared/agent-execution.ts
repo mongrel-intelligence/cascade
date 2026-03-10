@@ -1,5 +1,6 @@
 import { runAgent } from '../../agents/registry.js';
-import { createWorkItem } from '../../db/repositories/prWorkItemsRepository.js';
+import { createWorkItem, linkPRToWorkItem } from '../../db/repositories/prWorkItemsRepository.js';
+import { updateRunPRNumber } from '../../db/repositories/runsRepository.js';
 import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
 import { getPMProvider } from '../../pm/context.js';
 import {
@@ -11,6 +12,7 @@ import {
 import { checkTriggerEnabled } from '../../triggers/shared/trigger-check.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { extractPRNumber } from '../../utils/prUrl.js';
 import type { TriggerResult } from '../types.js';
 import { handleAgentResultArtifacts } from './agent-result-handler.js';
 import { checkBudgetExceeded } from './budget.js';
@@ -168,6 +170,48 @@ async function notifyValidationFailure(
 }
 
 /**
+ * Link a PR to a work item and backfill the run's prNumber after agent execution.
+ * Extracted to reduce cognitive complexity in the main pipeline function.
+ */
+async function linkPRPostExecution(
+	agentResult: AgentResult & { prUrl: string },
+	project: ProjectConfig & { repo: string },
+	result: TriggerResult,
+	workItemId: string,
+): Promise<void> {
+	// TODO: prTitle not available in AgentResult — Work view shows PR number only
+	const prNumber = extractPRNumber(agentResult.prUrl);
+	if (!prNumber) return;
+
+	try {
+		await linkPRToWorkItem(project.id, project.repo, prNumber, workItemId, {
+			prUrl: agentResult.prUrl,
+			workItemUrl: result.workItemUrl,
+			workItemTitle: result.workItemTitle,
+		});
+	} catch (err) {
+		logger.warn('Failed to link PR to work item post-execution', {
+			projectId: project.id,
+			prNumber,
+			workItemId,
+			error: String(err),
+		});
+	}
+
+	if (agentResult.runId) {
+		try {
+			await updateRunPRNumber(agentResult.runId, prNumber);
+		} catch (err) {
+			logger.warn('Failed to backfill prNumber on run', {
+				runId: agentResult.runId,
+				prNumber,
+				error: String(err),
+			});
+		}
+	}
+}
+
+/**
  * Shared agent execution pipeline.
  *
  * Handles the common steps across all webhook handlers:
@@ -258,6 +302,16 @@ export async function runAgentExecutionPipeline(
 		project,
 		config,
 	});
+
+	// Link PR to work item post-execution (single code path for all backends)
+	if (agentResult.success && agentResult.prUrl && workItemId && project.repo) {
+		await linkPRPostExecution(
+			agentResult as AgentResult & { prUrl: string },
+			project as ProjectConfig & { repo: string },
+			result,
+			workItemId,
+		);
+	}
 
 	if (workItemId) {
 		await runPostAgentLifecycle(
