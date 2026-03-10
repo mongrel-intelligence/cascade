@@ -172,6 +172,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 						headSha: 'sha123',
 						triggerType: 'ci-success',
 						cardId: 'abc123',
+						triggerEvent: 'scm:check-suite-success',
 					},
 					prNumber: 42,
 					workItemId: 'abc123',

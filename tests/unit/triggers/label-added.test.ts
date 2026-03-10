@@ -214,6 +214,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 			expect(result.agentType).toBe('splitting');
 			expect(result.workItemId).toBe('card123');
 			expect(mockGetCard).toHaveBeenCalledWith('card123');
+			expect(result.agentInput.triggerEvent).toBe('pm:label-added');
 		});
 
 		it('populates workItemUrl and workItemTitle from fetched card data', async () => {

@@ -173,6 +173,7 @@ describe('JiraCommentMentionTrigger', () => {
 			expect(result?.workItemId).toBe(ISSUE_KEY);
 			expect(result?.agentInput.cardId).toBe(ISSUE_KEY);
 			expect(result?.agentInput.triggerCommentAuthor).toBe('Alice');
+			expect(result?.agentInput.triggerEvent).toBe('pm:comment-mention');
 		});
 
 		it('returns result when @mention found in ADF body', async () => {

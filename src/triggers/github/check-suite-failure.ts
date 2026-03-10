@@ -166,6 +166,7 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 				repoFullName: payload.repository.full_name,
 				headSha,
 				triggerType: 'check-failure',
+				triggerEvent: 'scm:check-suite-failure',
 				cardId: workItemId,
 			},
 			prNumber,

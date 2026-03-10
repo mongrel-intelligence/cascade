@@ -70,7 +70,7 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 
 			return {
 				agentType: config.agentType,
-				agentInput: { cardId, workItemUrl, workItemTitle },
+				agentInput: { cardId, workItemUrl, workItemTitle, triggerEvent: 'pm:status-changed' },
 				workItemId: cardId,
 				workItemUrl,
 				workItemTitle,

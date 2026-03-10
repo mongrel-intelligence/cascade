@@ -421,7 +421,7 @@ async function propagateAutoLabelAfterSplitting(
 
 	return {
 		agentType: 'backlog-manager',
-		agentInput: {},
+		agentInput: { triggerEvent: 'internal:auto-chain' },
 		workItemId,
 	};
 }

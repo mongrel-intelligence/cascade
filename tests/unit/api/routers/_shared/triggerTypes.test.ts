@@ -121,9 +121,10 @@ describe('triggerTypes', () => {
 			expect(scmEvents).toContain('scm:pr-review-submitted');
 			expect(scmEvents).toContain('scm:review-requested');
 			expect(scmEvents).toContain('scm:pr-opened');
-			expect(scmEvents).toContain('scm:pr-comment');
+			expect(scmEvents).toContain('scm:pr-comment-mention');
 			expect(scmEvents).toContain('scm:pr-merged');
 			expect(scmEvents).toContain('scm:pr-ready-to-merge');
+			expect(scmEvents).toContain('scm:pr-conflict-detected');
 		});
 
 		it('email category has expected triggers', () => {

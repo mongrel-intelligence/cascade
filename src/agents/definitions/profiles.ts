@@ -188,7 +188,7 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 		finishHooks: finish,
 		fetchContext: async (params) => {
 			// Resolve context pipeline from the trigger (empty array if no trigger or trigger has no pipeline)
-			const contextPipeline = resolveContextPipeline(triggers, params.input.triggerType);
+			const contextPipeline = resolveContextPipeline(triggers, params.input.triggerEvent);
 
 			const injections: ContextInjection[] = [];
 			for (const step of contextPipeline) {

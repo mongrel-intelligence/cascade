@@ -96,6 +96,7 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 				repoFullName: payload.repository.full_name,
 				headSha: payload.pull_request.head.sha,
 				triggerType: 'review-requested',
+				triggerEvent: 'scm:review-requested',
 				cardId: workItemId,
 			},
 			prNumber,

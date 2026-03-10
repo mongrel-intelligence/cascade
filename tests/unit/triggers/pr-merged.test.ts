@@ -342,7 +342,9 @@ describe('PRMergedTrigger', () => {
 			// Should still chain to backlog-manager
 			expect(result).toEqual({
 				agentType: 'backlog-manager',
-				agentInput: {},
+				agentInput: {
+					triggerEvent: 'scm:pr-merged',
+				},
 				workItemId: 'abc123',
 				prNumber: 123,
 			});
@@ -441,7 +443,9 @@ describe('PRMergedTrigger', () => {
 
 			expect(result).toEqual({
 				agentType: 'backlog-manager',
-				agentInput: {},
+				agentInput: {
+					triggerEvent: 'scm:pr-merged',
+				},
 				workItemId: 'abc123',
 				prNumber: 123,
 			});

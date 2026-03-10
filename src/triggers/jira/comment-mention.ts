@@ -185,6 +185,7 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 				triggerCommentAuthor: authorName,
 				workItemUrl,
 				workItemTitle,
+				triggerEvent: 'pm:comment-mention',
 			},
 			workItemId: issueKey,
 			workItemUrl,

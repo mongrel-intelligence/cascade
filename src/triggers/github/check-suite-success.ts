@@ -209,6 +209,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 				repoFullName: payload.repository.full_name,
 				headSha,
 				triggerType: 'ci-success',
+				triggerEvent: 'scm:check-suite-success',
 				cardId: workItemId,
 			},
 			prNumber,
