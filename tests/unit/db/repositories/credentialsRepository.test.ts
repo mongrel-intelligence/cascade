@@ -11,12 +11,15 @@ import { getDb } from '../../../../src/db/client.js';
 import {
 	createCredential,
 	deleteCredential,
+	getIntegrationProvider,
 	listOrgCredentials,
 	resolveAllIntegrationCredentials,
 	resolveAllOrgCredentials,
 	resolveIntegrationCredential,
 	resolveOrgCredential,
 	updateCredential,
+	upsertCredentialByEnvVarKey,
+	upsertGmailIntegrationWithCredentials,
 } from '../../../../src/db/repositories/credentialsRepository.js';
 
 describe('credentialsRepository', () => {
@@ -273,6 +276,179 @@ describe('credentialsRepository', () => {
 
 			const result = await listOrgCredentials('empty-org');
 			expect(result).toEqual([]);
+		});
+	});
+
+	describe('upsertCredentialByEnvVarKey', () => {
+		it('updates existing credential when found (find→update branch)', async () => {
+			// First where: find existing credential → found
+			mockDb.chain.where.mockResolvedValueOnce([{ id: 10 }]);
+			// Second where: the update().set().where() call
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			const result = await upsertCredentialByEnvVarKey({
+				orgId: 'org1',
+				envVarKey: 'GMAIL_EMAIL',
+				name: 'Gmail Email',
+				value: 'user@example.com',
+			});
+
+			expect(result).toBe(10);
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
+			expect(mockDb.db.update).toHaveBeenCalledTimes(1);
+			expect(mockDb.chain.set).toHaveBeenCalledWith(
+				expect.objectContaining({ value: 'user@example.com' }),
+			);
+			expect(mockDb.db.insert).not.toHaveBeenCalled();
+		});
+
+		it('inserts new credential when not found (not-found→insert branch)', async () => {
+			// First where: find existing credential → not found
+			mockDb.chain.where.mockResolvedValueOnce([]);
+			// returning: the insert().values().returning() call
+			mockDb.chain.returning.mockResolvedValueOnce([{ id: 99 }]);
+
+			const result = await upsertCredentialByEnvVarKey({
+				orgId: 'org1',
+				envVarKey: 'GMAIL_REFRESH_TOKEN',
+				name: 'Gmail Refresh Token',
+				value: 'refresh-token-abc',
+			});
+
+			expect(result).toBe(99);
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
+			expect(mockDb.db.update).not.toHaveBeenCalled();
+			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
+			expect(mockDb.chain.values).toHaveBeenCalledWith(
+				expect.objectContaining({
+					orgId: 'org1',
+					envVarKey: 'GMAIL_REFRESH_TOKEN',
+					name: 'Gmail Refresh Token',
+					value: 'refresh-token-abc',
+					isDefault: false,
+				}),
+			);
+		});
+
+		it('stores the (encrypted) value when inserting', async () => {
+			// Not found → insert path
+			mockDb.chain.where.mockResolvedValueOnce([]);
+			mockDb.chain.returning.mockResolvedValueOnce([{ id: 5 }]);
+
+			await upsertCredentialByEnvVarKey({
+				orgId: 'org1',
+				envVarKey: 'KEY',
+				name: 'Key Name',
+				value: 'plaintext',
+			});
+
+			// Without CREDENTIAL_MASTER_KEY, encryptCredential passes through the value
+			expect(mockDb.chain.values).toHaveBeenCalledWith(
+				expect.objectContaining({ value: 'plaintext' }),
+			);
+		});
+	});
+
+	describe('upsertGmailIntegrationWithCredentials', () => {
+		it('updates existing integration and replaces credential links (existing→update path)', async () => {
+			// Step 1: find existing integration → found
+			mockDb.chain.where.mockResolvedValueOnce([{ id: 7 }]);
+			// Step 2: update integration → where
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+			// Step 3: delete existing credential links → where
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			// For the final insert().values() without .returning(), we need values to be thenable
+			mockDb.chain.values.mockResolvedValueOnce(undefined);
+
+			const result = await upsertGmailIntegrationWithCredentials({
+				projectId: 'proj1',
+				credentialLinks: [
+					{ role: 'email', credentialId: 1 },
+					{ role: 'refresh_token', credentialId: 2 },
+				],
+			});
+
+			expect(result).toBe(7);
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
+			expect(mockDb.db.update).toHaveBeenCalledTimes(1);
+			expect(mockDb.chain.set).toHaveBeenCalledWith(
+				expect.objectContaining({ provider: 'gmail', config: {} }),
+			);
+			// delete + insert for credential links
+			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
+			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
+			expect(mockDb.chain.values).toHaveBeenCalledWith([
+				{ integrationId: 7, role: 'email', credentialId: 1 },
+				{ integrationId: 7, role: 'refresh_token', credentialId: 2 },
+			]);
+		});
+
+		it('creates new integration when none exists (new→create path)', async () => {
+			// Step 1: find existing integration → not found
+			mockDb.chain.where.mockResolvedValueOnce([]);
+			// Step 2a: insert integration — first values() call must return object with .returning()
+			mockDb.chain.returning.mockResolvedValueOnce([{ id: 15 }]);
+			// Step 3: delete existing credential links → where
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+			// Step 4: insert credential links — second values() call is awaited directly (no .returning())
+			// Use mockImplementation to make the second call return a resolved promise
+			const originalValuesMock = mockDb.chain.values.getMockImplementation();
+			let valuesCallCount = 0;
+			mockDb.chain.values.mockImplementation((arg: unknown) => {
+				valuesCallCount++;
+				if (valuesCallCount === 1) {
+					// First call: insert projectIntegrations → must return { returning }
+					return { returning: mockDb.chain.returning };
+				}
+				// Second call: insert integrationCredentials → awaited directly
+				return Promise.resolve(undefined);
+			});
+
+			const result = await upsertGmailIntegrationWithCredentials({
+				projectId: 'proj2',
+				credentialLinks: [{ role: 'email', credentialId: 3 }],
+			});
+
+			// Restore original implementation
+			if (originalValuesMock) {
+				mockDb.chain.values.mockImplementation(originalValuesMock);
+			} else {
+				mockDb.chain.values.mockReturnValue({ returning: mockDb.chain.returning });
+			}
+
+			expect(result).toBe(15);
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
+			expect(mockDb.db.update).not.toHaveBeenCalled();
+			expect(mockDb.db.insert).toHaveBeenCalledTimes(2);
+			// First insert: projectIntegrations
+			expect(mockDb.chain.values).toHaveBeenNthCalledWith(
+				1,
+				expect.objectContaining({ projectId: 'proj2', category: 'email', provider: 'gmail' }),
+			);
+			// Second insert: integrationCredentials
+			expect(mockDb.chain.values).toHaveBeenNthCalledWith(2, [
+				{ integrationId: 15, role: 'email', credentialId: 3 },
+			]);
+		});
+	});
+
+	describe('getIntegrationProvider', () => {
+		it('returns provider when integration is found', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([{ provider: 'trello' }]);
+
+			const result = await getIntegrationProvider('proj1', 'pm');
+
+			expect(result).toBe('trello');
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
+		});
+
+		it('returns null when no integration found for category', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			const result = await getIntegrationProvider('proj1', 'sms');
+
+			expect(result).toBeNull();
 		});
 	});
 });
