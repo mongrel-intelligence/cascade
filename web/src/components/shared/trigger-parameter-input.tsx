@@ -27,7 +27,7 @@ interface Props {
 
 /**
  * Renders an input widget for a trigger parameter based on its type.
- * Supports string, email, boolean, select, and number types.
+ * Supports string, boolean, select, and number types.
  */
 export function TriggerParameterInput({ parameter, value, onChange, disabled }: Props) {
 	// Helper to get the current value with fallback to default
@@ -116,7 +116,7 @@ export function TriggerParameterInput({ parameter, value, onChange, disabled }: 
 				</div>
 			);
 
-		// 'email' and 'string' types (and any unknown type) render a text input
+		// 'string' type (and any unknown type) renders a text input
 		default:
 			return (
 				<div className="space-y-1">
@@ -126,7 +126,7 @@ export function TriggerParameterInput({ parameter, value, onChange, disabled }: 
 					</label>
 					<Input
 						id={`param-${parameter.name}`}
-						type={parameter.type === 'email' ? 'email' : 'text'}
+						type="text"
 						value={getCurrentValue('')}
 						onChange={(e) => onChange(e.target.value)}
 						placeholder={parameter.description ?? undefined}

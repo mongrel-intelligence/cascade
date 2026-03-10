@@ -60,7 +60,6 @@ interface DefinitionAgentSectionProps {
 	integrations: {
 		pm: string | null;
 		scm: string | null;
-		email: string | null;
 	};
 	onEditConfig: (config: AgentConfig | null, agentType: string) => void;
 	onDeleteConfig: (id: number) => void;
@@ -90,7 +89,6 @@ function DefinitionAgentSection({
 		const groups: Record<string, ResolvedTrigger[]> = {
 			pm: [],
 			scm: [],
-			email: [],
 			internal: [],
 		};
 
@@ -114,7 +112,6 @@ function DefinitionAgentSection({
 	const hasTriggers =
 		triggersByCategory.pm.length > 0 ||
 		triggersByCategory.scm.length > 0 ||
-		triggersByCategory.email.length > 0 ||
 		triggersByCategory.internal.length > 0;
 
 	return (
@@ -167,7 +164,7 @@ function DefinitionAgentSection({
 			{expanded && (
 				<div className="border-t border-border px-4 py-4 space-y-6 bg-muted/20">
 					{/* Render triggers by category */}
-					{(['pm', 'scm', 'email', 'internal'] as const).map((category) => {
+					{(['pm', 'scm', 'internal'] as const).map((category) => {
 						const categoryTriggers = triggersByCategory[category];
 						if (categoryTriggers.length === 0) return null;
 
@@ -362,7 +359,6 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const triggersViewIntegrations = triggersViewQuery.data?.integrations ?? {
 		pm: null,
 		scm: null,
-		email: null,
 	};
 	if (triggersViewQuery.data) {
 		for (const agent of triggersViewQuery.data.agents) {
