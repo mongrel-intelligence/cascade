@@ -92,6 +92,7 @@ export class PROpenedTrigger implements TriggerHandler {
 				repoFullName: payload.repository.full_name,
 				headSha: payload.pull_request.head.sha,
 				triggerType: 'pr-opened',
+				triggerEvent: 'scm:pr-opened',
 				cardId: workItemId,
 			},
 			prNumber,

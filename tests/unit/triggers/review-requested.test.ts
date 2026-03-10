@@ -206,6 +206,7 @@ describe('ReviewRequestedTrigger', () => {
 				prNumber: 42,
 				repoFullName: 'owner/repo',
 				triggerType: 'review-requested',
+				triggerEvent: 'scm:review-requested',
 				cardId: 'abc123',
 			});
 		});

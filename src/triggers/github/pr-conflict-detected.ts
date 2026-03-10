@@ -151,6 +151,7 @@ export class PRConflictDetectedTrigger implements TriggerHandler {
 				repoFullName,
 				headSha: payload.pull_request.head.sha,
 				triggerType: 'conflict-resolution',
+				triggerEvent: 'scm:pr-conflict-detected',
 				cardId: workItemId,
 			},
 			prNumber,

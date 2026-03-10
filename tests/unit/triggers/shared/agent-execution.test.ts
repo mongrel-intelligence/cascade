@@ -111,16 +111,16 @@ const PROJECT = {
 	id: 'project-1',
 	pm: { type: 'trello' },
 	trello: { lists: { backlog: 'backlog-list-id' } },
-} as any;
+} as unknown as Parameters<typeof runAgentExecutionPipeline>[0]['project'];
 
-const CONFIG = {} as any;
+const CONFIG = {} as unknown as Parameters<typeof runAgentExecutionPipeline>[0]['config'];
 
 const PM_CONFIG = {
 	type: 'trello',
 	labels: { auto: 'label-auto-id', readyToProcess: 'label-rtp' },
-} as any;
+} as unknown as ReturnType<typeof mockResolveProjectPMConfig>;
 
-function mockProvider(overrides: Record<string, any> = {}) {
+function mockProvider(overrides: Record<string, unknown> = {}) {
 	return {
 		type: 'trello' as const,
 		getWorkItem: vi.fn().mockResolvedValue({
@@ -140,7 +140,7 @@ function mockProvider(overrides: Record<string, any> = {}) {
 // Shared setup for splitting auto-chain tests
 // ---------------------------------------------------------------------------
 
-function setupSplittingDefaults(providerOverrides: Record<string, any> = {}) {
+function setupSplittingDefaults(providerOverrides: Record<string, unknown> = {}) {
 	const provider = mockProvider(providerOverrides);
 	mockGetPMProvider.mockReturnValue(provider);
 	mockCreatePMProvider.mockReturnValue(provider);

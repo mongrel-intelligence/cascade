@@ -23,6 +23,9 @@ export interface AgentInput {
 		| 'conflict-resolution'
 		| 'manual';
 
+	/** YAML-format trigger event name for context pipeline resolution (e.g. 'scm:check-suite-success') */
+	triggerEvent?: string;
+
 	// Debug agent fields
 	logDir?: string;
 	originalCardId?: string;

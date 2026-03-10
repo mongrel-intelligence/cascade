@@ -81,7 +81,7 @@ export class PRMergedTrigger implements TriggerHandler {
 			logger.info('Chaining to backlog-manager after PR merge', { workItemId, prNumber });
 			return {
 				agentType: 'backlog-manager',
-				agentInput: {},
+				agentInput: { triggerEvent: 'scm:pr-merged' },
 				workItemId,
 				prNumber,
 			};

@@ -124,6 +124,7 @@ describe('JiraStatusChangedTrigger', () => {
 			expect(result?.agentInput.cardId).toBe('PROJ-42');
 			expect(result?.workItemUrl).toBe('https://myorg.atlassian.net/browse/PROJ-42');
 			expect(result?.workItemTitle).toBe('Test Issue');
+			expect(result?.agentInput.triggerEvent).toBe('pm:status-changed');
 		});
 
 		it('returns splitting agent for "Splitting" transition', async () => {

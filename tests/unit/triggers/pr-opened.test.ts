@@ -173,6 +173,7 @@ describe('PROpenedTrigger', () => {
 					headSha: 'abc',
 					triggerType: 'pr-opened',
 					cardId: 'abc123',
+					triggerEvent: 'scm:pr-opened',
 				},
 				prNumber: 42,
 				workItemId: 'abc123',

@@ -130,6 +130,7 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 				prNumber,
 				prBranch,
 				repoFullName,
+				triggerEvent: 'scm:pr-comment-mention',
 				triggerCommentId: commentId,
 				triggerCommentBody: commentBody,
 				triggerCommentPath: commentPath,

@@ -120,6 +120,7 @@ export class TrelloCommentMentionTrigger implements TriggerHandler {
 				triggerCommentAuthor: commentAuthor,
 				workItemUrl,
 				workItemTitle,
+				triggerEvent: 'pm:comment-mention',
 			},
 			workItemId: cardId,
 			workItemUrl,

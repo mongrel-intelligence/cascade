@@ -190,6 +190,7 @@ describe('CheckSuiteFailureTrigger', () => {
 					headSha: 'sha123',
 					triggerType: 'check-failure',
 					cardId: 'abc123',
+					triggerEvent: 'scm:check-suite-failure',
 				},
 				prNumber: 42,
 				workItemId: 'abc123',

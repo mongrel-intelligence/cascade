@@ -156,6 +156,7 @@ describe('PRConflictDetectedTrigger', () => {
 					headSha: 'sha123',
 					triggerType: 'conflict-resolution',
 					cardId: 'abc123',
+					triggerEvent: 'scm:pr-conflict-detected',
 				},
 				prNumber: 42,
 				workItemId: 'abc123',
