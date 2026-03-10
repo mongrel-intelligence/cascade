@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type { ModelSpec } from 'llmist';
 
 import { hasFinishValidation } from '../agents/definitions/index.js';
@@ -16,7 +19,11 @@ import { finalizeBackendRun, tryCreateRun } from '../agents/shared/runTracking.j
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
-import { recordInitialComment } from '../gadgets/sessionState.js';
+import {
+	REVIEW_SIDECAR_FILENAME,
+	recordInitialComment,
+	recordReviewSubmission,
+} from '../gadgets/sessionState.js';
 import { withGitHubToken } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { postProcessResult } from './postProcess.js';
@@ -155,6 +162,25 @@ async function buildBackendInput(
 }
 
 /**
+ * Read the review sidecar file written by `cascade-tools github create-pr-review`
+ * and hydrate session state so `postReviewSummaryToPM()` can post to the PM.
+ *
+ * Only needed for the claude-code backend where tools run as child processes
+ * and cannot update the parent process's module-level session state directly.
+ */
+async function hydrateReviewSidecar(repoDir: string): Promise<void> {
+	try {
+		const sidecar = JSON.parse(readFileSync(join(repoDir, REVIEW_SIDECAR_FILENAME), 'utf-8'));
+		if (sidecar.body && sidecar.reviewUrl) {
+			recordReviewSubmission(sidecar.reviewUrl, sidecar.body, sidecar.event);
+		}
+	} catch {
+		// File doesn't exist (llmist backend) or malformed — ignore.
+		// llmist backend already populates session state via in-process gadgets.
+	}
+}
+
+/**
  * Build progress-monitor config from pipeline inputs.
  */
 function buildProgressMonitorConfig(
@@ -280,6 +306,11 @@ export async function executeWithBackend(
 			postProcessResult(result, agentType, backend, input, identifier, {
 				requiresPR: profile.finishHooks.requiresPR,
 			});
+
+			// Hydrate session state from sidecar written by subprocess tools.
+			if (agentType === 'review') {
+				await hydrateReviewSidecar(repoDir);
+			}
 
 			return {
 				success: result.success,

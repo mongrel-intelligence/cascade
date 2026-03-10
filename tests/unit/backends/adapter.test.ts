@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock all external dependencies
 vi.mock('../../../src/agents/shared/repository.js', () => ({
@@ -43,7 +43,9 @@ vi.mock('../../../src/backends/progress.js', () => ({
 }));
 
 vi.mock('../../../src/gadgets/sessionState.js', () => ({
+	REVIEW_SIDECAR_FILENAME: '.cascade/review-result.json',
 	recordInitialComment: vi.fn(),
+	recordReviewSubmission: vi.fn(),
 }));
 
 vi.mock('../../../src/config/customModels.js', () => ({
@@ -115,6 +117,9 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	storeRunLogs: (...args: unknown[]) => mockStoreRunLogs(...args),
 }));
 
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { type AgentProfile, getAgentProfile } from '../../../src/agents/definitions/profiles.js';
 import { resolveModelConfig } from '../../../src/agents/shared/modelResolution.js';
 import { setupRepository } from '../../../src/agents/shared/repository.js';
@@ -123,7 +128,7 @@ import { executeWithBackend } from '../../../src/backends/adapter.js';
 import { createProgressMonitor } from '../../../src/backends/progress.js';
 import type { AgentBackend } from '../../../src/backends/types.js';
 import { getAllProjectCredentials } from '../../../src/config/provider.js';
-import { recordInitialComment } from '../../../src/gadgets/sessionState.js';
+import { recordInitialComment, recordReviewSubmission } from '../../../src/gadgets/sessionState.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../../../src/utils/cascadeEnv.js';
 import {
@@ -147,6 +152,7 @@ const mockCleanupLogDirectory = vi.mocked(cleanupLogDirectory);
 const mockClearWatchdogCleanup = vi.mocked(clearWatchdogCleanup);
 const mockCreateProgressMonitor = vi.mocked(createProgressMonitor);
 const mockRecordInitialComment = vi.mocked(recordInitialComment);
+const mockRecordReviewSubmission = vi.mocked(recordReviewSubmission);
 const mockGetAllProjectCredentials = vi.mocked(getAllProjectCredentials);
 const mockGetAgentProfile = vi.mocked(getAgentProfile);
 
@@ -829,6 +835,114 @@ describe('executeWithBackend', () => {
 			await executeWithBackend(backend, 'review', input);
 
 			expect(mockRecordInitialComment).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('review sidecar hydration', () => {
+		function writeSidecar(data: Record<string, unknown>): void {
+			const dir = join(process.cwd(), '.cascade');
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(join(dir, 'review-result.json'), JSON.stringify(data));
+		}
+
+		// Only remove the sidecar file, not the .cascade/ directory — setupMocks sets
+		// repoDir to process.cwd() (the actual repo root) which has a real .cascade/ dir.
+		function cleanupSidecar(): void {
+			try {
+				rmSync(join(process.cwd(), '.cascade', 'review-result.json'), { force: true });
+			} catch {
+				// ignore
+			}
+		}
+
+		afterEach(() => {
+			cleanupSidecar();
+		});
+
+		it('calls recordReviewSubmission when sidecar exists for review agent', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			vi.mocked(backend.execute).mockImplementation(async () => {
+				writeSidecar({
+					reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-99',
+					event: 'REQUEST_CHANGES',
+					body: 'Please fix the null check',
+				});
+				return { success: true, output: 'Done' };
+			});
+			const input = makeInput();
+
+			await executeWithBackend(backend, 'review', input);
+
+			expect(mockRecordReviewSubmission).toHaveBeenCalledWith(
+				'https://github.com/o/r/pull/1#pullrequestreview-99',
+				'Please fix the null check',
+				'REQUEST_CHANGES',
+			);
+		});
+
+		it('does not error when sidecar file is absent (llmist backend)', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			const input = makeInput();
+
+			const result = await executeWithBackend(backend, 'review', input);
+
+			expect(result.success).toBe(true);
+			expect(mockRecordReviewSubmission).not.toHaveBeenCalled();
+		});
+
+		it('does not error when sidecar file is malformed JSON', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			vi.mocked(backend.execute).mockImplementation(async () => {
+				const dir = join(process.cwd(), '.cascade');
+				mkdirSync(dir, { recursive: true });
+				writeFileSync(join(dir, 'review-result.json'), 'not valid json');
+				return { success: true, output: 'Done' };
+			});
+			const input = makeInput();
+
+			const result = await executeWithBackend(backend, 'review', input);
+
+			expect(result.success).toBe(true);
+			expect(mockRecordReviewSubmission).not.toHaveBeenCalled();
+		});
+
+		it('does not read sidecar for non-review agent types', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			vi.mocked(backend.execute).mockImplementation(async () => {
+				writeSidecar({
+					reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-99',
+					event: 'APPROVE',
+					body: 'LGTM',
+				});
+				return { success: true, output: 'Done' };
+			});
+			const input = makeInput();
+
+			await executeWithBackend(backend, 'implementation', input);
+
+			expect(mockRecordReviewSubmission).not.toHaveBeenCalled();
+		});
+
+		it('skips hydration when sidecar body is missing', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			vi.mocked(backend.execute).mockImplementation(async () => {
+				writeSidecar({
+					reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-99',
+					event: 'APPROVE',
+					// no body
+				});
+				return { success: true, output: 'Done' };
+			});
+			const input = makeInput();
+
+			await executeWithBackend(backend, 'review', input);
+
+			expect(mockRecordReviewSubmission).not.toHaveBeenCalled();
 		});
 	});
 });

@@ -19,6 +19,11 @@ const {
 	mockTriggerDebugAnalysis,
 	mockLogger,
 	MockPMLifecycleManager,
+	mockGetSessionState,
+	mockPostReviewToPM,
+	mockLookupWorkItemForPR,
+	mockGithubClient,
+	mockParseRepoFullName,
 } = vi.hoisted(() => ({
 	mockRunAgent: vi.fn(),
 	mockGetPMProvider: vi.fn(),
@@ -46,6 +51,11 @@ const {
 		handleBudgetWarning: vi.fn().mockResolvedValue(undefined),
 		cleanupProcessing: vi.fn().mockResolvedValue(undefined),
 	})),
+	mockGetSessionState: vi.fn().mockReturnValue({}),
+	mockPostReviewToPM: vi.fn().mockResolvedValue(undefined),
+	mockLookupWorkItemForPR: vi.fn().mockResolvedValue(null),
+	mockGithubClient: { getPR: vi.fn().mockResolvedValue({ title: 'feat: test PR' }) },
+	mockParseRepoFullName: vi.fn().mockReturnValue({ owner: 'acme', repo: 'myapp' }),
 }));
 
 vi.mock('../../../../src/agents/registry.js', () => ({
@@ -100,12 +110,30 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 vi.mock('../../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	createWorkItem: vi.fn().mockResolvedValue(undefined),
 	linkPRToWorkItem: vi.fn().mockResolvedValue(undefined),
+	lookupWorkItemForPR: mockLookupWorkItemForPR,
 }));
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	updateRunPRNumber: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../../../src/gadgets/sessionState.js', () => ({
+	getSessionState: mockGetSessionState,
+}));
+
+vi.mock('../../../../src/triggers/shared/review-pm-poster.js', () => ({
+	postReviewToPM: mockPostReviewToPM,
+}));
+
+vi.mock('../../../../src/github/client.js', () => ({
+	githubClient: mockGithubClient,
+}));
+
+vi.mock('../../../../src/utils/repo.js', () => ({
+	parseRepoFullName: mockParseRepoFullName,
+}));
+
+import { linkPRToWorkItem } from '../../../../src/db/repositories/prWorkItemsRepository.js';
 import { runAgentExecutionPipeline } from '../../../../src/triggers/shared/agent-execution.js';
 
 // ---------------------------------------------------------------------------
@@ -114,6 +142,7 @@ import { runAgentExecutionPipeline } from '../../../../src/triggers/shared/agent
 
 const PROJECT = {
 	id: 'project-1',
+	repo: 'acme/myapp',
 	pm: { type: 'trello' },
 	trello: { lists: { backlog: 'backlog-list-id' } },
 } as unknown as Parameters<typeof runAgentExecutionPipeline>[0]['project'];
@@ -268,5 +297,224 @@ describe('propagateAutoLabelAfterSplitting (via runAgentExecutionPipeline)', () 
 
 		// Should not attempt label propagation on failure
 		expect(mockGetPMProvider).not.toHaveBeenCalled();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// postReviewSummaryToPM (via runAgentExecutionPipeline)
+// ---------------------------------------------------------------------------
+
+describe('postReviewSummaryToPM (via runAgentExecutionPipeline)', () => {
+	function setupReviewDefaults() {
+		mockCreatePMProvider.mockReturnValue({});
+		mockResolveProjectPMConfig.mockReturnValue(PM_CONFIG);
+		mockValidateIntegrations.mockResolvedValue({ valid: true, errors: [] });
+		mockCheckBudgetExceeded.mockResolvedValue(null);
+		mockHandleAgentResultArtifacts.mockResolvedValue(undefined);
+		mockShouldTriggerDebug.mockResolvedValue(null);
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setupReviewDefaults();
+	});
+
+	it('calls postReviewToPM when agentType=review, success, and sessionState has reviewBody', async () => {
+		mockRunAgent.mockResolvedValueOnce({
+			success: true,
+			output: '',
+			runId: 'run-rev',
+			progressCommentId: 'pm-comment-1',
+		});
+		mockGetSessionState.mockReturnValue({
+			reviewBody: 'Looks good',
+			reviewEvent: 'APPROVE',
+			reviewUrl: 'https://github.com/acme/myapp/pull/42#pullrequestreview-1',
+		});
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'review', agentInput: {}, workItemId: 'card-1', prNumber: 42 },
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockPostReviewToPM).toHaveBeenCalledWith(
+			'card-1',
+			expect.objectContaining({ reviewBody: 'Looks good' }),
+			'pm-comment-1',
+		);
+	});
+
+	it('skips when agentType is not review', async () => {
+		mockRunAgent.mockResolvedValueOnce({ success: true, output: '', runId: 'run-impl' });
+		mockGetSessionState.mockReturnValue({ reviewBody: 'something' });
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'implementation', agentInput: {}, workItemId: 'card-1' },
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockPostReviewToPM).not.toHaveBeenCalled();
+	});
+
+	it('skips when agent failed', async () => {
+		mockRunAgent.mockResolvedValueOnce({ success: false, output: '', error: 'review error' });
+		mockGetSessionState.mockReturnValue({ reviewBody: 'Looks good' });
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'review', agentInput: {}, workItemId: 'card-1' },
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockPostReviewToPM).not.toHaveBeenCalled();
+	});
+
+	it('skips when sessionState has no reviewBody', async () => {
+		mockRunAgent.mockResolvedValueOnce({ success: true, output: '', runId: 'run-rev' });
+		mockGetSessionState.mockReturnValue({ reviewBody: null });
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'review', agentInput: {}, workItemId: 'card-1' },
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockPostReviewToPM).not.toHaveBeenCalled();
+	});
+
+	it('resolves workItemId from DB when result.workItemId is undefined', async () => {
+		mockRunAgent.mockResolvedValueOnce({ success: true, output: '', runId: 'run-rev' });
+		mockGetSessionState.mockReturnValue({
+			reviewBody: 'Nice',
+			reviewEvent: 'COMMENT',
+			reviewUrl: 'https://github.com/acme/myapp/pull/99#pullrequestreview-5',
+		});
+		mockLookupWorkItemForPR.mockResolvedValueOnce('card-from-db');
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'review', agentInput: {}, prNumber: 99 },
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockLookupWorkItemForPR).toHaveBeenCalledWith('project-1', 99);
+		expect(mockPostReviewToPM).toHaveBeenCalledWith(
+			'card-from-db',
+			expect.objectContaining({ reviewBody: 'Nice' }),
+			undefined,
+		);
+	});
+
+	it('skips when no workItemId found (neither result nor DB)', async () => {
+		mockRunAgent.mockResolvedValueOnce({ success: true, output: '', runId: 'run-rev' });
+		mockGetSessionState.mockReturnValue({
+			reviewBody: 'Good',
+			reviewEvent: 'APPROVE',
+			reviewUrl: 'https://github.com/acme/myapp/pull/55#pullrequestreview-6',
+		});
+		mockLookupWorkItemForPR.mockResolvedValueOnce(null);
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'review', agentInput: {}, prNumber: 55 },
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockPostReviewToPM).not.toHaveBeenCalled();
+	});
+
+	it('passes progressCommentId through', async () => {
+		mockRunAgent.mockResolvedValueOnce({
+			success: true,
+			output: '',
+			runId: 'run-rev',
+			progressCommentId: 'pm-prog-xyz',
+		});
+		mockGetSessionState.mockReturnValue({
+			reviewBody: 'All good',
+			reviewEvent: 'APPROVE',
+			reviewUrl: 'https://github.com/acme/myapp/pull/42#pullrequestreview-7',
+		});
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'review', agentInput: {}, workItemId: 'card-1', prNumber: 42 },
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockPostReviewToPM).toHaveBeenCalledWith('card-1', expect.anything(), 'pm-prog-xyz');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// linkPRPostExecution PR title backfill (via runAgentExecutionPipeline)
+// ---------------------------------------------------------------------------
+
+describe('linkPRPostExecution PR title backfill (via runAgentExecutionPipeline)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockCreatePMProvider.mockReturnValue({});
+		mockResolveProjectPMConfig.mockReturnValue(PM_CONFIG);
+		mockValidateIntegrations.mockResolvedValue({ valid: true, errors: [] });
+		mockCheckBudgetExceeded.mockResolvedValue(null);
+		mockHandleAgentResultArtifacts.mockResolvedValue(undefined);
+		mockShouldTriggerDebug.mockResolvedValue(null);
+		mockGetSessionState.mockReturnValue({});
+		mockParseRepoFullName.mockReturnValue({ owner: 'acme', repo: 'myapp' });
+	});
+
+	it('fetches PR title and passes to linkPRToWorkItem', async () => {
+		mockGithubClient.getPR.mockResolvedValueOnce({ title: 'feat: add auth' });
+		mockRunAgent.mockResolvedValueOnce({
+			success: true,
+			output: '',
+			runId: 'run-1',
+			prUrl: 'https://github.com/acme/myapp/pull/42',
+		});
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'implementation', agentInput: {}, workItemId: 'card-1' },
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockGithubClient.getPR).toHaveBeenCalledWith('acme', 'myapp', 42);
+		expect(vi.mocked(linkPRToWorkItem)).toHaveBeenCalledWith(
+			'project-1',
+			'acme/myapp',
+			42,
+			'card-1',
+			expect.objectContaining({ prTitle: 'feat: add auth' }),
+		);
+	});
+
+	it('handles GitHub API failure gracefully (still links without title)', async () => {
+		mockGithubClient.getPR.mockRejectedValueOnce(new Error('GitHub 500'));
+		mockRunAgent.mockResolvedValueOnce({
+			success: true,
+			output: '',
+			runId: 'run-1',
+			prUrl: 'https://github.com/acme/myapp/pull/42',
+		});
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'implementation', agentInput: {}, workItemId: 'card-1' },
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(vi.mocked(linkPRToWorkItem)).toHaveBeenCalledWith(
+			'project-1',
+			'acme/myapp',
+			42,
+			'card-1',
+			expect.objectContaining({ prTitle: undefined }),
+		);
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			'Failed to fetch PR title from GitHub',
+			expect.objectContaining({ prNumber: 42 }),
+		);
 	});
 });

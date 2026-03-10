@@ -1,5 +1,9 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
 import { Flags } from '@oclif/core';
 import { createPRReview } from '../../gadgets/github/core/createPRReview.js';
+import { REVIEW_SIDECAR_FILENAME } from '../../gadgets/sessionState.js';
 import { CredentialScopedCommand, resolveOwnerRepo } from '../base.js';
 
 export default class CreatePRReviewCommand extends CredentialScopedCommand {
@@ -47,6 +51,24 @@ export default class CreatePRReviewCommand extends CredentialScopedCommand {
 			body: flags.body,
 			comments,
 		});
+
+		// Persist review data for the parent process (backend adapter)
+		// to read and populate session state post-execution.
+		try {
+			const sidecarPath = join(process.cwd(), REVIEW_SIDECAR_FILENAME);
+			mkdirSync(dirname(sidecarPath), { recursive: true });
+			writeFileSync(
+				sidecarPath,
+				JSON.stringify({
+					reviewUrl: result.reviewUrl,
+					event: flags.event,
+					body: flags.body,
+				}),
+			);
+		} catch {
+			// Best-effort — don't fail the review on sidecar write failure
+		}
+
 		this.log(JSON.stringify({ success: true, data: result }));
 	}
 }

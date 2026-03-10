@@ -179,13 +179,29 @@ async function linkPRPostExecution(
 	result: TriggerResult,
 	workItemId: string,
 ): Promise<void> {
-	// TODO: prTitle not available in AgentResult — Work view shows PR number only
 	const prNumber = extractPRNumber(agentResult.prUrl);
 	if (!prNumber) return;
+
+	// Fetch PR title from GitHub API (best-effort, resolves the prTitle gap)
+	let prTitle: string | undefined;
+	try {
+		const { githubClient } = await import('../../github/client.js');
+		const { parseRepoFullName } = await import('../../utils/repo.js');
+		const { owner, repo } = parseRepoFullName(project.repo);
+		const pr = await githubClient.getPR(owner, repo, prNumber);
+		prTitle = pr.title;
+	} catch (err) {
+		logger.warn('Failed to fetch PR title from GitHub', {
+			projectId: project.id,
+			prNumber,
+			error: String(err),
+		});
+	}
 
 	try {
 		await linkPRToWorkItem(project.id, project.repo, prNumber, workItemId, {
 			prUrl: agentResult.prUrl,
+			prTitle,
 			workItemUrl: result.workItemUrl,
 			workItemTitle: result.workItemTitle,
 		});
@@ -209,6 +225,49 @@ async function linkPRPostExecution(
 			});
 		}
 	}
+}
+
+/**
+ * Post the review summary to the PM work item after a successful review agent run.
+ * Cross-source concern: fires for all trigger types (GitHub, Trello, JIRA).
+ */
+async function postReviewSummaryToPM(
+	agentType: string,
+	agentResult: AgentResult,
+	workItemId: string | undefined,
+	projectId: string,
+	prNumber: number | undefined,
+): Promise<void> {
+	if (agentType !== 'review' || !agentResult.success) return;
+
+	const { getSessionState } = await import('../../gadgets/sessionState.js');
+	const sessionState = getSessionState();
+	if (!sessionState.reviewBody) return;
+
+	// Resolve workItemId: prefer TriggerResult, fall back to DB lookup
+	let resolvedWorkItemId = workItemId;
+	if (!resolvedWorkItemId && prNumber && projectId) {
+		try {
+			const { lookupWorkItemForPR } = await import(
+				'../../db/repositories/prWorkItemsRepository.js'
+			);
+			resolvedWorkItemId = (await lookupWorkItemForPR(projectId, prNumber)) ?? undefined;
+		} catch {
+			/* best-effort */
+		}
+	}
+	if (!resolvedWorkItemId) return;
+
+	const { postReviewToPM } = await import('./review-pm-poster.js');
+	await postReviewToPM(
+		resolvedWorkItemId,
+		{
+			reviewBody: sessionState.reviewBody,
+			reviewEvent: sessionState.reviewEvent,
+			reviewUrl: sessionState.reviewUrl,
+		},
+		agentResult.progressCommentId,
+	);
 }
 
 /**
@@ -312,6 +371,9 @@ export async function runAgentExecutionPipeline(
 			workItemId,
 		);
 	}
+
+	// Post review summary to PM work item (cross-source: works for all trigger types)
+	await postReviewSummaryToPM(agentType, agentResult, workItemId, project.id, result.prNumber);
 
 	if (workItemId) {
 		await runPostAgentLifecycle(
