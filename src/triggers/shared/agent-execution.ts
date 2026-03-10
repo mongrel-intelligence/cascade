@@ -516,6 +516,15 @@ async function propagateAutoLabelAfterSplitting(
 			),
 	);
 
+	// Skip chaining if the backlog is empty — no items to process
+	if (backlogItems.length === 0) {
+		logger.info(
+			'propagateAutoLabelAfterSplitting: backlog is empty after splitting, skipping backlog-manager chain',
+			{ workItemId },
+		);
+		return null;
+	}
+
 	// Check if backlog-manager trigger is enabled, then chain to it
 	const backlogManagerEnabled = await checkTriggerEnabled(
 		project.id,
