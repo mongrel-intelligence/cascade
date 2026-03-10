@@ -84,13 +84,8 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Resolve work item from DB (with PR body fallback)
-		const workItemId = await resolveWorkItemId(
-			ctx.project.id,
-			prNumber,
-			prDetails.body,
-			ctx.project,
-		);
+		// Resolve work item from DB
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 
 		// Get ALL check runs for this commit to verify they're all complete
 		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);

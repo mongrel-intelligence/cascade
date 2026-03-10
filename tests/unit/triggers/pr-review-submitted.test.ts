@@ -23,7 +23,7 @@ describe('PRReviewSubmittedTrigger', () => {
 	const trigger = new PRReviewSubmittedTrigger();
 
 	beforeEach(() => {
-		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
 	});
 
 	const mockProject = createMockProject();
@@ -250,6 +250,7 @@ describe('PRReviewSubmittedTrigger', () => {
 		});
 
 		it('fires without work item when PR has no work item reference', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',

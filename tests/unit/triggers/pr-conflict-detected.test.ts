@@ -57,7 +57,7 @@ describe('PRConflictDetectedTrigger', () => {
 
 	beforeEach(() => {
 		resetConflictAttempts(42);
-		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
 		vi.mocked(githubClient.createPRComment).mockResolvedValue(undefined);
 	});
 
@@ -251,6 +251,7 @@ describe('PRConflictDetectedTrigger', () => {
 		});
 
 		it('fires without work item when PR body has no reference', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',

@@ -6,7 +6,7 @@ import { evaluateAuthorMode, resolveWorkItemId } from './utils.js';
 
 /**
  * Trigger that fires the review agent when a new PR is opened.
- * Resolves work item from DB (with PR body fallback); fires even without a linked work item.
+ * Resolves work item from DB; fires even without a linked work item.
  */
 export class PROpenedTrigger implements TriggerHandler {
 	name = 'pr-opened';
@@ -73,10 +73,8 @@ export class PROpenedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const prBody = payload.pull_request.body || '';
-
-		// Resolve work item from DB (with PR body fallback)
-		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber, prBody, ctx.project);
+		// Resolve work item from DB
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 
 		logger.info('New PR opened, triggering review agent', {
 			prNumber,

@@ -67,9 +67,8 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Resolve work item from DB (with PR body fallback)
-		const prBody = reviewPayload.pull_request.body || '';
-		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber, prBody, ctx.project);
+		// Resolve work item from DB
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 
 		logger.info('PR review submitted, triggering review agent', {
 			prNumber,

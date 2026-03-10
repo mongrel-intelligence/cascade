@@ -37,9 +37,8 @@ export class PRMergedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Resolve work item from DB (with PR body fallback)
-		const prBody = payload.pull_request.body || '';
-		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber, prBody, ctx.project);
+		// Resolve work item from DB
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 		if (!workItemId) {
 			logger.info('No work item linked to PR, skipping pr-merged', { prNumber });
 			return null;

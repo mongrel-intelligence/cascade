@@ -121,7 +121,6 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 		let prNumber: number;
 		let headSha: string;
 		let repoFullName: string;
-		let prBody: string | null;
 
 		// Extract info based on payload type
 		if (isGitHubCheckSuitePayload(ctx.payload)) {
@@ -130,25 +129,19 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 			prNumber = prRef.number;
 			headSha = prRef.head.sha;
 			repoFullName = payload.repository.full_name;
-
-			// Need to fetch PR to get body
-			const { owner, repo } = parseRepoFullName(repoFullName);
-			const prDetails = await githubClient.getPR(owner, repo, prNumber);
-			prBody = prDetails.body;
 		} else if (isGitHubPullRequestReviewPayload(ctx.payload)) {
 			const payload = ctx.payload as GitHubPullRequestReviewPayload;
 			prNumber = payload.pull_request.number;
 			headSha = payload.pull_request.head.sha;
 			repoFullName = payload.repository.full_name;
-			prBody = payload.pull_request.body;
 		} else {
 			return null;
 		}
 
 		const { owner, repo } = parseRepoFullName(repoFullName);
 
-		// Resolve work item from DB (with PR body fallback)
-		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber, prBody, ctx.project);
+		// Resolve work item from DB
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 		if (!workItemId) {
 			logger.info('No work item linked to PR, skipping pr-ready-to-merge', { prNumber });
 			return null;

@@ -129,13 +129,8 @@ export class PRConflictDetectedTrigger implements TriggerHandler {
 		// Increment attempt counter
 		conflictAttempts.set(prNumber, attempts + 1);
 
-		// Resolve work item from DB (with PR body fallback)
-		const workItemId = await resolveWorkItemId(
-			ctx.project.id,
-			prNumber,
-			prDetails.body,
-			ctx.project,
-		);
+		// Resolve work item from DB
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 
 		logger.info('PR has merge conflicts — triggering resolve-conflicts agent', {
 			prNumber,

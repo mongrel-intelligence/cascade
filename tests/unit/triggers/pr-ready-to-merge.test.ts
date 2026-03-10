@@ -86,7 +86,7 @@ describe('PRReadyToMergeTrigger', () => {
 	});
 
 	beforeEach(() => {
-		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
 	});
 
 	describe('matches', () => {
@@ -409,6 +409,7 @@ describe('PRReadyToMergeTrigger', () => {
 		});
 
 		it('returns null when PR has no Trello URL (check_suite path)', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',

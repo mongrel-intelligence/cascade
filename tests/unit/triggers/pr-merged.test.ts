@@ -85,7 +85,7 @@ describe('PRMergedTrigger', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
 		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
 	});
 
@@ -256,6 +256,7 @@ describe('PRMergedTrigger', () => {
 		});
 
 		it('returns null when PR has no Trello card URL', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 123,
 				title: 'Test PR',

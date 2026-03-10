@@ -162,7 +162,7 @@ describe('PRCommentMentionTrigger', () => {
 		trigger = new PRCommentMentionTrigger();
 		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
 		mockIsCascadeBot.mockReturnValue(false);
-		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123card');
 		mockGetPR.mockResolvedValue({
 			headRef: 'feature/test',
 			body: PR_BODY_WITH_CARD,
@@ -263,6 +263,7 @@ describe('PRCommentMentionTrigger', () => {
 		});
 
 		it('fires with workItemId undefined when PR body has no Trello card link', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			mockGetPR.mockResolvedValue({
 				headRef: 'feature/test',
 				body: PR_BODY_NO_CARD,

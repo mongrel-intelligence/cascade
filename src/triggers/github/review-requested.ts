@@ -78,9 +78,8 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Resolve work item from DB (with PR body fallback)
-		const prBody = payload.pull_request.body;
-		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber, prBody, ctx.project);
+		// Resolve work item from DB
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 
 		logger.info('Review requested from CASCADE persona, triggering review agent', {
 			prNumber,

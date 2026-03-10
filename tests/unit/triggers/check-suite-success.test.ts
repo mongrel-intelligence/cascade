@@ -54,7 +54,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 	});
 
 	beforeEach(() => {
-		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
 		recentlyDispatched.clear();
 	});
 
@@ -476,6 +476,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 		});
 
 		it('fires without work item when PR body has no work item reference', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',

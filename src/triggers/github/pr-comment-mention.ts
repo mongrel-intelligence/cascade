@@ -65,7 +65,6 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 		let prNumber: number;
 		let prBranch: string;
 		let repoFullName: string;
-		let prBody: string | null;
 
 		if (isGitHubIssueCommentPayload(ctx.payload)) {
 			const payload = ctx.payload;
@@ -77,11 +76,10 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 			prNumber = payload.issue.number;
 			repoFullName = payload.repository.full_name;
 
-			// Need to fetch PR for branch info and body
+			// Need to fetch PR for branch info
 			const { owner, repo } = parseRepoFullName(repoFullName);
 			const prDetails = await githubClient.getPR(owner, repo, prNumber);
 			prBranch = prDetails.headRef;
-			prBody = prDetails.body;
 		} else if (isGitHubPRReviewCommentPayload(ctx.payload)) {
 			const payload = ctx.payload;
 			commentBody = payload.comment.body;
@@ -92,11 +90,6 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 			prNumber = payload.pull_request.number;
 			prBranch = payload.pull_request.head.ref;
 			repoFullName = payload.repository.full_name;
-
-			// Fetch PR for body (needed for work item resolution)
-			const { owner, repo } = parseRepoFullName(repoFullName);
-			const prDetails = await githubClient.getPR(owner, repo, prNumber);
-			prBody = prDetails.body;
 		} else {
 			return null;
 		}
@@ -114,8 +107,8 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Resolve work item from DB (with PR body fallback)
-		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber, prBody, ctx.project);
+		// Resolve work item from DB
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 
 		logger.info('PR comment @mention detected, triggering respond-to-pr-comment agent', {
 			prNumber,
