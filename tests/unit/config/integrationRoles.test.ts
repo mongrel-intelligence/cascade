@@ -24,23 +24,15 @@ describe('PROVIDER_CATEGORY', () => {
 		expect(PROVIDER_CATEGORY.github).toBe('scm');
 	});
 
-	it('maps imap to email category', () => {
-		expect(PROVIDER_CATEGORY.imap).toBe('email');
-	});
-
-	it('maps gmail to email category', () => {
-		expect(PROVIDER_CATEGORY.gmail).toBe('email');
-	});
-
 	it('maps all known providers to valid categories', () => {
-		const validCategories: IntegrationCategory[] = ['pm', 'scm', 'email'];
+		const validCategories: IntegrationCategory[] = ['pm', 'scm'];
 		for (const [provider, category] of Object.entries(PROVIDER_CATEGORY)) {
 			expect(validCategories).toContain(category);
 		}
 	});
 
 	it('contains all expected providers', () => {
-		const expectedProviders: IntegrationProvider[] = ['trello', 'jira', 'github', 'imap', 'gmail'];
+		const expectedProviders: IntegrationProvider[] = ['trello', 'jira', 'github'];
 		for (const provider of expectedProviders) {
 			expect(PROVIDER_CATEGORY).toHaveProperty(provider);
 		}

@@ -1,6 +1,5 @@
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
-import { ImapFlow } from 'imapflow';
 import { z } from 'zod';
 import { getDb } from '../../db/client.js';
 import { decryptCredential } from '../../db/crypto.js';
@@ -265,53 +264,5 @@ export const integrationsDiscoveryRouter = router({
 						})),
 					),
 			);
-		}),
-
-	/**
-	 * Verify IMAP connection with password auth.
-	 */
-	verifyImap: protectedProcedure
-		.input(
-			z.object({
-				hostCredentialId: z.number(),
-				portCredentialId: z.number(),
-				usernameCredentialId: z.number(),
-				passwordCredentialId: z.number(),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			logger.debug('integrationsDiscovery.verifyImap called', { orgId: ctx.effectiveOrgId });
-
-			const [host, portStr, username, password] = await Promise.all([
-				resolveCredentialValue(input.hostCredentialId, ctx.effectiveOrgId),
-				resolveCredentialValue(input.portCredentialId, ctx.effectiveOrgId),
-				resolveCredentialValue(input.usernameCredentialId, ctx.effectiveOrgId),
-				resolveCredentialValue(input.passwordCredentialId, ctx.effectiveOrgId),
-			]);
-
-			const port = Number.parseInt(portStr, 10);
-			if (Number.isNaN(port)) {
-				throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid port number' });
-			}
-
-			return wrapIntegrationCall('IMAP verification failed', async () => {
-				const client = new ImapFlow({
-					host,
-					port,
-					secure: true,
-					auth: {
-						user: username,
-						pass: password,
-					},
-					logger: false,
-					connectionTimeout: 15000,
-					greetingTimeout: 10000,
-				});
-
-				await client.connect();
-				await client.logout();
-
-				return { success: true, email: username };
-			});
 		}),
 });

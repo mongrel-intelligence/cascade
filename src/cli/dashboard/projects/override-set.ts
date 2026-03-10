@@ -13,9 +13,9 @@ export default class ProjectsIntegrationCredentialSet extends DashboardCommand {
 	static override flags = {
 		...DashboardCommand.baseFlags,
 		category: Flags.string({
-			description: 'Integration category (pm, scm, or email)',
+			description: 'Integration category (pm or scm)',
 			required: true,
-			options: ['pm', 'scm', 'email'],
+			options: ['pm', 'scm'],
 		}),
 		role: Flags.string({
 			description: 'Credential role (e.g. api_key, token, implementer_token)',
@@ -30,7 +30,7 @@ export default class ProjectsIntegrationCredentialSet extends DashboardCommand {
 		try {
 			await this.client.projects.integrationCredentials.set.mutate({
 				projectId: args.id,
-				category: flags.category as 'pm' | 'scm' | 'email',
+				category: flags.category as 'pm' | 'scm',
 				role: flags.role,
 				credentialId: flags['credential-id'],
 			});
