@@ -22,6 +22,7 @@ describe('ALL_AGENT_TYPES', () => {
 			'review',
 			'respond-to-review',
 			'respond-to-ci',
+			'resolve-conflicts',
 			'respond-to-pr-comment',
 			'respond-to-planning-comment',
 			'email-joke',
