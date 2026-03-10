@@ -85,7 +85,6 @@ export async function resolveModelConfig(options: ResolveModelConfigOptions): Pr
 				triggerCommentAuthor: options.agentInput?.triggerCommentAuthor,
 				triggerCommentBody: options.agentInput?.triggerCommentBody,
 				triggerCommentPath: options.agentInput?.triggerCommentPath,
-				senderEmail: options.agentInput?.senderEmail,
 			}),
 		};
 		taskPrompt = renderInlineTaskPrompt(definitionTaskPrompt, taskContext, dbPartials);

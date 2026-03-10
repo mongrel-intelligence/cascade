@@ -1,6 +1,5 @@
 import type { z } from 'zod';
 import type { CascadeConfigSchema, ProjectConfigSchema } from '../config/schema.js';
-import type { EmailSummary } from '../email/types.js';
 import type { PersonaIdentities } from '../github/personas.js';
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
@@ -38,10 +37,6 @@ export interface AgentInput {
 	// PR comment trigger fields (for respond-to-pr-comment and similar agents)
 	triggerCommentBody?: string;
 	triggerCommentPath?: string;
-
-	// Email-joke agent fields
-	senderEmail?: string;
-	preFoundEmails?: EmailSummary[]; // pre-fetched before agent start to skip if empty
 
 	// Interactive mode (local development)
 	interactive?: boolean;

@@ -3,15 +3,14 @@ import {
 	AGENT_LABELS,
 	ALL_AGENT_TYPES,
 	CATEGORY_LABELS,
-	EMAIL_TRIGGER_AGENTS,
 	LIFECYCLE_TRIGGERS,
 	getTriggerValue,
 	setTriggerValue,
 } from '../../../web/src/lib/trigger-agent-mapping.js';
 
 describe('ALL_AGENT_TYPES', () => {
-	it('includes email-joke', () => {
-		expect(ALL_AGENT_TYPES).toContain('email-joke');
+	it('does not include email-joke', () => {
+		expect(ALL_AGENT_TYPES).not.toContain('email-joke');
 	});
 
 	it('contains all expected agent types in order', () => {
@@ -25,7 +24,6 @@ describe('ALL_AGENT_TYPES', () => {
 			'resolve-conflicts',
 			'respond-to-pr-comment',
 			'respond-to-planning-comment',
-			'email-joke',
 		]);
 	});
 });
@@ -39,33 +37,10 @@ describe('AGENT_LABELS', () => {
 		}
 	});
 
-	it('maps email-joke to a friendly label', () => {
-		expect(AGENT_LABELS['email-joke']).toBe('Email Joke');
-	});
-
 	it('has no entries beyond ALL_AGENT_TYPES', () => {
 		const knownTypes = new Set<string>(ALL_AGENT_TYPES);
 		for (const key of Object.keys(AGENT_LABELS)) {
 			expect(knownTypes).toContain(key);
-		}
-	});
-});
-
-describe('EMAIL_TRIGGER_AGENTS', () => {
-	it('contains email-joke', () => {
-		expect(EMAIL_TRIGGER_AGENTS.has('email-joke')).toBe(true);
-	});
-
-	it('does not contain non-email agents', () => {
-		expect(EMAIL_TRIGGER_AGENTS.has('implementation')).toBe(false);
-		expect(EMAIL_TRIGGER_AGENTS.has('review')).toBe(false);
-		expect(EMAIL_TRIGGER_AGENTS.has('splitting')).toBe(false);
-	});
-
-	it('every entry is a known agent type', () => {
-		const knownTypes = new Set<string>(ALL_AGENT_TYPES);
-		for (const agentType of EMAIL_TRIGGER_AGENTS) {
-			expect(knownTypes).toContain(agentType);
 		}
 	});
 });

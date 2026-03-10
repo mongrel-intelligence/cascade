@@ -17,8 +17,6 @@ import {
 import {
 	AGENT_LABELS,
 	CATEGORY_LABELS,
-	EMAIL_TRIGGER_AGENTS,
-	type KnownAgentType,
 	LIFECYCLE_TRIGGERS,
 	type TriggerParameterValue,
 } from '@/lib/trigger-agent-mapping.js';
@@ -28,7 +26,6 @@ import { Link } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { EmailJokeConfig } from './email-joke-config.js';
 
 interface AgentConfig {
 	id: number;
@@ -58,7 +55,6 @@ function AgentConfigBadge({ config }: { config: AgentConfig | null }) {
 
 interface DefinitionAgentSectionProps {
 	agentType: string;
-	projectId: string;
 	config: AgentConfig | null;
 	triggers: ResolvedTrigger[];
 	integrations: {
@@ -79,7 +75,6 @@ interface DefinitionAgentSectionProps {
 
 function DefinitionAgentSection({
 	agentType,
-	projectId,
 	config,
 	triggers,
 	integrations,
@@ -89,7 +84,6 @@ function DefinitionAgentSection({
 	onTriggerParamChange,
 }: DefinitionAgentSectionProps) {
 	const [expanded, setExpanded] = useState(false);
-	const hasEmailTriggers = EMAIL_TRIGGER_AGENTS.has(agentType as KnownAgentType);
 
 	// Group triggers by category and filter by active integrations
 	const triggersByCategory = useMemo(() => {
@@ -121,8 +115,7 @@ function DefinitionAgentSection({
 		triggersByCategory.pm.length > 0 ||
 		triggersByCategory.scm.length > 0 ||
 		triggersByCategory.email.length > 0 ||
-		triggersByCategory.internal.length > 0 ||
-		hasEmailTriggers;
+		triggersByCategory.internal.length > 0;
 
 	return (
 		<div className="rounded-lg border border-border overflow-hidden">
@@ -196,16 +189,6 @@ function DefinitionAgentSection({
 							</div>
 						);
 					})}
-
-					{/* Email Triggers (custom widget) */}
-					{hasEmailTriggers && (
-						<div className="space-y-3">
-							<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-								Email Configuration
-							</p>
-							<EmailJokeConfig projectId={projectId} />
-						</div>
-					)}
 
 					{!hasTriggers && (
 						<p className="text-xs text-muted-foreground">
@@ -462,7 +445,6 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 					<DefinitionAgentSection
 						key={type}
 						agentType={type}
-						projectId={projectId}
 						config={configByAgent.get(type) ?? null}
 						triggers={triggersByAgent.get(type) ?? []}
 						integrations={triggersViewIntegrations}

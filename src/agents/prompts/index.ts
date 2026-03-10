@@ -174,8 +174,6 @@ export interface TaskPromptContext {
 	prBranch?: string;
 	commentBody?: string;
 	commentPath?: string;
-	// Email-joke agent fields
-	senderEmail?: string;
 	[key: string]: unknown;
 }
 
@@ -194,8 +192,6 @@ export interface TaskPromptInput {
 	// PR comment trigger fields
 	triggerCommentBody?: string;
 	triggerCommentPath?: string;
-	// Email agent fields
-	senderEmail?: string;
 	// Allow extra fields for future extensibility
 	[key: string]: unknown;
 }
@@ -215,7 +211,6 @@ export function buildTaskPromptContext(input: TaskPromptInput): TaskPromptContex
 		commentAuthor: input.triggerCommentAuthor,
 		commentBody: input.triggerCommentBody,
 		commentPath: input.triggerCommentPath,
-		senderEmail: input.senderEmail,
 	};
 }
 
@@ -335,6 +330,5 @@ export function getTaskTemplateVariables(): Array<{
 		{ name: 'prBranch', group: 'PR', description: 'Pull request branch name' },
 		{ name: 'commentBody', group: 'PR Comment', description: 'PR comment body text' },
 		{ name: 'commentPath', group: 'PR Comment', description: 'File path for inline PR comments' },
-		{ name: 'senderEmail', group: 'Email', description: 'Email sender address (email-joke agent)' },
 	];
 }

@@ -217,7 +217,7 @@ export const TRIGGER_REGISTRY: Record<TriggerCategory, KnownTriggerEvent[]> = {
 			event: 'email:received',
 			label: 'Email Received',
 			description: 'Email received',
-			contextPipeline: ['prefetchedEmails'],
+			contextPipeline: [],
 		},
 	],
 	internal: [

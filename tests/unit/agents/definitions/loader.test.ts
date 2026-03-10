@@ -16,7 +16,6 @@ import { getAgentCapabilities } from '../../../../src/agents/shared/capabilities
 const ALL_AGENT_TYPES = [
 	'backlog-manager',
 	'debug',
-	'email-joke',
 	'implementation',
 	'planning',
 	'resolve-conflicts',
@@ -34,7 +33,7 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('getKnownAgentTypes', () => {
-		it('discovers all 12 agent types from YAML files', () => {
+		it('discovers all 11 agent types from YAML files', () => {
 			const types = getKnownAgentTypes();
 			expect(types).toEqual(ALL_AGENT_TYPES);
 		});
@@ -80,7 +79,7 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('loadAllAgentDefinitions', () => {
-		it('returns a map with all 12 agent types', () => {
+		it('returns a map with all 11 agent types', () => {
 			const all = loadAllAgentDefinitions();
 			expect(all.size).toBe(ALL_AGENT_TYPES.length);
 			for (const agentType of ALL_AGENT_TYPES) {
@@ -101,7 +100,6 @@ describe('YAML agent definitions loader', () => {
 
 		it('agents with fs or shell capabilities derive to non-empty SDK tools', () => {
 			// Only agents with fs:* or shell:exec capabilities need SDK tools.
-			// Email-only agents (e.g., email-joke) use llmist gadgets exclusively.
 			for (const agentType of ALL_AGENT_TYPES) {
 				const def = loadAgentDefinition(agentType);
 				const allCaps = [...def.capabilities.required, ...def.capabilities.optional];
@@ -427,13 +425,6 @@ describe('YAML agent definitions loader', () => {
 			const def = loadAgentDefinition('debug');
 			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
 			expect(integrations.required).toEqual(['pm']);
-			expect(integrations.optional).toEqual([]);
-		});
-
-		it('email-joke agent requires email only', () => {
-			const def = loadAgentDefinition('email-joke');
-			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
-			expect(integrations.required).toEqual(['email']);
 			expect(integrations.optional).toEqual([]);
 		});
 

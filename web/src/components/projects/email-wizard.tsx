@@ -8,7 +8,6 @@
  *   - email-wizard-gmail-steps.tsx  — GmailConnectContent, GmailVerifyContent
  *   - email-wizard-imap-steps.tsx   — ImapConnectContent, ImapVerifyContent, CredentialSelect
  *   - email-wizard-common-steps.tsx — ProviderStep, SaveStep, STEP_TITLES
- *   - email-joke-config.tsx     — EmailJokeConfig (independent component)
  */
 import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
@@ -25,9 +24,6 @@ import { createInitialState, wizardReducer } from './email-wizard-state.js';
 import type { Provider, WizardState } from './email-wizard-state.js';
 import { WizardStep } from './wizard-shared.js';
 import type { CredentialOption } from './wizard-shared.js';
-
-// Re-export EmailJokeConfig so existing import paths continue to work.
-export { EmailJokeConfig } from './email-joke-config.js';
 
 // ============================================================================
 // EmailWizard
