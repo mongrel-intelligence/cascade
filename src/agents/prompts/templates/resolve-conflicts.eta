@@ -85,16 +85,18 @@ Always commit and push before calling Finish!
 
 ### Understanding Conflict Markers
 
+During a **rebase** (`git rebase origin/<base-branch>`), Git checks out the base branch as HEAD and replays your PR commits on top. This means:
+
 ```
-<<<<<<< HEAD (your PR branch changes)
-  code from the PR branch
-=======
+<<<<<<< HEAD (base branch - where you're rebasing onto)
   code from the base branch
->>>>>>> origin/main
+=======
+  code from your PR commit being replayed
+>>>>>>> commit-hash (your PR branch changes)
 ```
 
-- **Top section** (`<<<<<<< HEAD` to `=======`): Your PR branch's version
-- **Bottom section** (`=======` to `>>>>>>>`): The base branch's version
+- **Top section** (`<<<<<<< HEAD` to `=======`): The base branch's version (the branch you're rebasing onto)
+- **Bottom section** (`=======` to `>>>>>>>`): Your PR branch's version (the commit being replayed)
 - **Goal**: Produce a result that preserves the intent of BOTH sides
 
 ### Common Conflict Patterns
