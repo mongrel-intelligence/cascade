@@ -20,7 +20,13 @@ vi.mock('../../../../src/router/reactions.js', () => ({
 }));
 vi.mock('../../../../src/router/acknowledgments.js', () => ({
 	postGitHubAck: vi.fn(),
+	postTrelloAck: vi.fn(),
+	postJiraAck: vi.fn(),
 	resolveGitHubTokenForAckByAgent: vi.fn(),
+}));
+
+vi.mock('../../../../src/agents/definitions/loader.js', () => ({
+	isPMFocusedAgent: vi.fn().mockResolvedValue(false),
 }));
 vi.mock('../../../../src/router/notifications.js', () => ({
 	extractPRNumber: vi.fn(),
@@ -68,10 +74,12 @@ vi.mock('../../../../src/sentry.js', () => ({
 	captureException: vi.fn(),
 }));
 
+import { isPMFocusedAgent } from '../../../../src/agents/definitions/loader.js';
 import { findProjectByRepo } from '../../../../src/config/provider.js';
 import { isCascadeBot, resolvePersonaIdentities } from '../../../../src/github/personas.js';
 import {
 	postGitHubAck,
+	postTrelloAck,
 	resolveGitHubTokenForAckByAgent,
 } from '../../../../src/router/acknowledgments.js';
 import { GitHubRouterAdapter, injectEventType } from '../../../../src/router/adapters/github.js';
@@ -337,6 +345,74 @@ describe('GitHubRouterAdapter', () => {
 			);
 			expect(ackResult?.commentId).toBe(999);
 			expect(ackResult?.message).toBe('Starting implementation...');
+		});
+
+		it('routes ack to PM tool (Trello) for PM-focused agents (backlog-manager)', async () => {
+			vi.mocked(isPMFocusedAgent).mockResolvedValue(true);
+			vi.mocked(postTrelloAck).mockResolvedValue('trello-comment-id');
+
+			const ackResult = await adapter.postAck(
+				{
+					projectIdentifier: 'owner/repo',
+					eventType: 'pull_request',
+					workItemId: 'card-123',
+					isCommentEvent: false,
+					// @ts-expect-error extended field
+					repoFullName: 'owner/repo',
+				},
+				{},
+				mockProject,
+				'backlog-manager',
+				{ agentType: 'backlog-manager', agentInput: {}, workItemId: 'card-123' },
+			);
+
+			expect(postTrelloAck).toHaveBeenCalledWith('p1', 'card-123', expect.any(String));
+			expect(postGitHubAck).not.toHaveBeenCalled();
+			expect(ackResult?.commentId).toBe('trello-comment-id');
+		});
+
+		it('uses triggerResult.workItemId over event.workItemId for PM-focused agents', async () => {
+			vi.mocked(isPMFocusedAgent).mockResolvedValue(true);
+			vi.mocked(postTrelloAck).mockResolvedValue('comment-from-trigger');
+
+			await adapter.postAck(
+				{
+					projectIdentifier: 'owner/repo',
+					eventType: 'pull_request',
+					workItemId: 'event-card-id',
+					isCommentEvent: false,
+					// @ts-expect-error extended field
+					repoFullName: 'owner/repo',
+				},
+				{},
+				mockProject,
+				'backlog-manager',
+				{ agentType: 'backlog-manager', agentInput: {}, workItemId: 'trigger-card-id' },
+			);
+
+			expect(postTrelloAck).toHaveBeenCalledWith('p1', 'trigger-card-id', expect.any(String));
+		});
+
+		it('returns undefined for PM-focused agents when no workItemId available', async () => {
+			vi.mocked(isPMFocusedAgent).mockResolvedValue(true);
+
+			const ackResult = await adapter.postAck(
+				{
+					projectIdentifier: 'owner/repo',
+					eventType: 'pull_request',
+					// no workItemId
+					isCommentEvent: false,
+					// @ts-expect-error extended field
+					repoFullName: 'owner/repo',
+				},
+				{},
+				mockProject,
+				'backlog-manager',
+			);
+
+			expect(postTrelloAck).not.toHaveBeenCalled();
+			expect(postGitHubAck).not.toHaveBeenCalled();
+			expect(ackResult).toBeUndefined();
 		});
 	});
 

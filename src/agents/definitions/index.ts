@@ -16,6 +16,7 @@ export {
 	resolveAllAgentDefinitions,
 	resolveKnownAgentTypes,
 	invalidateDefinitionCache,
+	isPMFocusedAgent,
 } from './loader.js';
 export { CONTEXT_STEP_REGISTRY } from './strategies.js';
 export type { FetchContextParams } from './contextSteps.js';

@@ -340,11 +340,12 @@ describe('PRMergedTrigger', () => {
 				'pr-merged',
 			);
 
-			// Should still chain to backlog-manager
+			// Should still chain to backlog-manager (with cardId for PM operations)
 			expect(result).toEqual({
 				agentType: 'backlog-manager',
 				agentInput: {
 					triggerEvent: 'scm:pr-merged',
+					cardId: 'abc123',
 				},
 				workItemId: 'abc123',
 				prNumber: 123,
@@ -442,10 +443,12 @@ describe('PRMergedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
+			// backlog-manager receives cardId in agentInput for PM operations
 			expect(result).toEqual({
 				agentType: 'backlog-manager',
 				agentInput: {
 					triggerEvent: 'scm:pr-merged',
+					cardId: 'abc123',
 				},
 				workItemId: 'abc123',
 				prNumber: 123,

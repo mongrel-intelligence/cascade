@@ -105,12 +105,16 @@ export interface RouterPlatformAdapter {
 	 * Post an acknowledgment comment on the work item.
 	 * Returns an `AckResult` with the comment ID and message text,
 	 * or `undefined` on failure.
+	 *
+	 * The optional `triggerResult` parameter provides additional context (e.g. workItemId)
+	 * that some adapters (e.g. GitHub) need to route ack comments for PM-focused agents.
 	 */
 	postAck(
 		event: ParsedWebhookEvent,
 		payload: unknown,
 		project: RouterProjectConfig,
 		agentType: string,
+		triggerResult?: TriggerResult,
 	): Promise<AckResult | undefined>;
 
 	/**

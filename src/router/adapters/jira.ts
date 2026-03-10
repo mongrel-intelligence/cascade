@@ -135,6 +135,7 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 		payload: unknown,
 		project: RouterProjectConfig,
 		agentType: string,
+		_triggerResult?: TriggerResult,
 	): Promise<AckResult | undefined> {
 		const issueKey = (event as JiraParsedEvent).issueKey;
 		if (!issueKey) return undefined;

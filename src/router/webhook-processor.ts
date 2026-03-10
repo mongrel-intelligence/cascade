@@ -185,7 +185,9 @@ export async function processRouterWebhook(
 	}
 
 	// Step 9: Post acknowledgment comment — ack info is now available at job build time
-	const ackResult = await adapter.postAck(event, payload, project, result.agentType);
+	// Pass the full triggerResult so PM-focused agents (e.g. backlog-manager) can
+	// route the ack to the PM tool (Trello/JIRA card) instead of a GitHub PR.
+	const ackResult = await adapter.postAck(event, payload, project, result.agentType, result);
 	if (ackResult?.commentId != null) {
 		logger.info(`${adapter.type} ack comment posted`, {
 			ackCommentId: ackResult.commentId,

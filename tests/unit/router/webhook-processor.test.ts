@@ -197,11 +197,13 @@ describe('processRouterWebhook', () => {
 		expect(result.projectId).toBe('p1');
 		expect(result.decisionReason).toMatch(/Job queued: implementation agent for work item/);
 		// postAck is called before buildJob — ack info is embedded at build time
+		// The 5th arg is the full triggerResult so PM-focused agents can route ack to PM tool
 		expect(adapter.postAck).toHaveBeenCalledWith(
 			expect.objectContaining({ eventType: 'commentCard' }),
 			expect.anything(),
 			mockProject,
 			'implementation',
+			triggerResult,
 		);
 		expect(adapter.buildJob).toHaveBeenCalledWith(
 			expect.objectContaining({ eventType: 'commentCard' }),

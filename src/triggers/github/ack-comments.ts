@@ -5,6 +5,7 @@
  * incoming webhook events and report agent status.
  */
 
+import { isPMFocusedAgent } from '../../agents/definitions/loader.js';
 import { INITIAL_MESSAGES } from '../../config/agentMessages.js';
 import { githubClient } from '../../github/client.js';
 import { extractGitHubContext, generateAckMessage } from '../../router/ackMessageGenerator.js';
@@ -24,6 +25,10 @@ export async function deleteProgressCommentOnSuccess(
 	_agentResult: AgentResult,
 ): Promise<void> {
 	if (result.agentType === 'implementation') return;
+
+	// PM-focused agents (e.g. backlog-manager) don't have GitHub PR comments to delete.
+	// Their ack is on the PM card (Trello/JIRA), handled by PM lifecycle.
+	if (result.agentType && (await isPMFocusedAgent(result.agentType))) return;
 
 	const input = result.agentInput as { repoFullName?: string };
 	if (!input.repoFullName || !result.prNumber) return;
@@ -59,6 +64,10 @@ export async function updateInitialCommentWithError(
 	result: TriggerResult,
 	agentResult: { success: boolean; error?: string },
 ): Promise<void> {
+	// PM-focused agents (e.g. backlog-manager) don't have GitHub PR comments to update.
+	// Their failure is handled by PM lifecycle (handleFailure on the PM card).
+	if (result.agentType && (await isPMFocusedAgent(result.agentType))) return;
+
 	const input = result.agentInput as { repoFullName?: string };
 	if (!input.repoFullName || !result.prNumber) return;
 
@@ -89,6 +98,9 @@ export async function updateInitialCommentWithError(
  * Generates an LLM-based ack message contextual to the event, falling back
  * to static INITIAL_MESSAGES on failure. Injects ackCommentId and ackMessage
  * into the result's agentInput so the agent can pre-seed its ProgressMonitor.
+ *
+ * For PM-focused agents (e.g. backlog-manager), this is a no-op — their ack
+ * is posted to the PM tool (Trello/JIRA card) instead of a GitHub PR.
  */
 export async function postAcknowledgmentComment(
 	result: TriggerResult,
@@ -97,6 +109,11 @@ export async function postAcknowledgmentComment(
 	project: ProjectConfig,
 ): Promise<void> {
 	if (!result.agentType || !result.prNumber) {
+		return;
+	}
+
+	// PM-focused agents post ack to PM card, not GitHub PR (handled in maybePostAckComment)
+	if (await isPMFocusedAgent(result.agentType)) {
 		return;
 	}
 	const input = result.agentInput as {
