@@ -5,7 +5,6 @@
  * - PM integration validation (Trello, JIRA)
  * - SCM integration validation (GitHub)
  * - Persona-specific token validation (implementer vs reviewer)
- * - Email integration validation (IMAP)
  * - Partial credential scenarios
  * - Error message formatting
  *
@@ -13,7 +12,6 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { hasEmailIntegration } from '../../src/email/index.js';
 import { hasScmIntegration, hasScmPersonaToken } from '../../src/github/integration.js';
 import { hasPmIntegration } from '../../src/pm/integration.js';
 import {
@@ -25,8 +23,6 @@ import { truncateAll } from './helpers/db.js';
 import {
 	seedCredential,
 	seedGitHubIntegration,
-	seedGmailEmailIntegration,
-	seedImapEmailIntegration,
 	seedIntegration,
 	seedIntegrationCredential,
 	seedJiraIntegration,
@@ -277,68 +273,6 @@ describe('Integration Validation (integration)', () => {
 				expect(result.errors).toHaveLength(1);
 				expect(result.errors[0].message).toContain('Reviewer token');
 			});
-		});
-	});
-
-	// =========================================================================
-	// Email Integration Validation
-	// =========================================================================
-
-	describe('email integration validation', () => {
-		describe('IMAP', () => {
-			it('passes when all 6 IMAP credentials are configured', async () => {
-				await seedImapEmailIntegration();
-
-				const hasEmail = await hasEmailIntegration('test-project');
-				expect(hasEmail).toBe(true);
-			});
-
-			it('fails when password is missing', async () => {
-				await seedImapEmailIntegration('test-project', { skipCredential: 'password' });
-
-				const hasEmail = await hasEmailIntegration('test-project');
-				expect(hasEmail).toBe(false);
-			});
-
-			it('fails when imap_host is missing', async () => {
-				await seedImapEmailIntegration('test-project', { skipCredential: 'imap_host' });
-
-				const hasEmail = await hasEmailIntegration('test-project');
-				expect(hasEmail).toBe(false);
-			});
-
-			it('fails when username is missing', async () => {
-				await seedImapEmailIntegration('test-project', { skipCredential: 'username' });
-
-				const hasEmail = await hasEmailIntegration('test-project');
-				expect(hasEmail).toBe(false);
-			});
-		});
-
-		describe('Gmail', () => {
-			// Note: Can't fully test Gmail validation without mocking the OAuth token refresh.
-			// The hasEmailIntegration check requires fetching a valid access token from Google.
-			// Instead, we verify that missing credentials are properly detected.
-
-			it('fails when gmail_email is missing', async () => {
-				await seedGmailEmailIntegration('test-project', { skipEmail: true });
-
-				const hasEmail = await hasEmailIntegration('test-project');
-				expect(hasEmail).toBe(false);
-			});
-
-			it('fails when gmail_refresh_token is missing', async () => {
-				await seedGmailEmailIntegration('test-project', { skipRefreshToken: true });
-
-				const hasEmail = await hasEmailIntegration('test-project');
-				expect(hasEmail).toBe(false);
-			});
-		});
-
-		it('fails when no email integration exists', async () => {
-			// No email integration at all
-			const hasEmail = await hasEmailIntegration('test-project');
-			expect(hasEmail).toBe(false);
 		});
 	});
 

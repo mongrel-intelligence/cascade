@@ -40,10 +40,6 @@ export const CAPABILITIES = [
 	'scm:comment',
 	'scm:review',
 	'scm:pr',
-
-	// Email integration capabilities
-	'email:read',
-	'email:write',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -187,26 +183,6 @@ export const CAPABILITY_REGISTRY: Record<Capability, CapabilityDefinition> = {
 		sdkToolNames: [],
 		cliToolNames: [],
 	},
-
-	// -------------------------------------------------------------------------
-	// Email integration capabilities
-	// -------------------------------------------------------------------------
-
-	'email:read': {
-		integration: 'email',
-		description: 'Search and read emails',
-		gadgetNames: ['SearchEmails', 'ReadEmail', 'MarkEmailAsSeen'],
-		sdkToolNames: [],
-		cliToolNames: [],
-	},
-
-	'email:write': {
-		integration: 'email',
-		description: 'Send and reply to emails',
-		gadgetNames: ['SendEmail', 'ReplyToEmail'],
-		sdkToolNames: [],
-		cliToolNames: [],
-	},
 };
 
 // ============================================================================
@@ -224,7 +200,7 @@ export function getCapabilitiesByIntegration(): Record<
 		builtin: [],
 		pm: [],
 		scm: [],
-		email: [],
+		email: [], // email capabilities removed; kept for IntegrationCategory compatibility
 	};
 
 	for (const cap of CAPABILITIES) {

@@ -17,10 +17,9 @@ import {
 	XCircle,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { EmailWizard } from './email-wizard.js';
 import { PMWizard } from './pm-wizard.js';
 
-type IntegrationCategory = 'pm' | 'scm' | 'email';
+type IntegrationCategory = 'pm' | 'scm';
 
 interface CredentialOption {
 	id: number;
@@ -565,10 +564,6 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 	const scmCredsQuery = useQuery(
 		trpc.projects.integrationCredentials.list.queryOptions({ projectId, category: 'scm' }),
 	);
-	const emailCredsQuery = useQuery(
-		trpc.projects.integrationCredentials.list.queryOptions({ projectId, category: 'email' }),
-	);
-
 	const [activeTab, setActiveTab] = useState<IntegrationCategory>('pm');
 
 	if (integrationsQuery.isLoading) {
@@ -578,20 +573,14 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 	const integrations = integrationsQuery.data ?? [];
 	const pmIntegration = findIntegrationByCategory(integrations, 'pm');
 	const scmIntegration = findIntegrationByCategory(integrations, 'scm');
-	const emailIntegration = findIntegrationByCategory(integrations, 'email');
-
 	const pmProvider = (pmIntegration?.provider as string) ?? 'trello';
 	const scmProvider = (scmIntegration?.provider as string) ?? 'github';
-	const emailProvider = (emailIntegration?.provider as string) ?? '';
 
 	const pmCredMap = buildCredentialMap(
 		pmCredsQuery.data as Array<{ role: string; credentialId: number }>,
 	);
 	const scmCredMap = buildCredentialMap(
 		scmCredsQuery.data as Array<{ role: string; credentialId: number }>,
-	);
-	const emailCredMap = buildCredentialMap(
-		emailCredsQuery.data as Array<{ role: string; credentialId: number }>,
 	);
 
 	return (
@@ -609,12 +598,6 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 					activeTab={activeTab}
 					onClick={() => setActiveTab('scm')}
 				/>
-				<TabButton
-					label="Email"
-					tab="email"
-					activeTab={activeTab}
-					onClick={() => setActiveTab('email')}
-				/>
 			</div>
 
 			{activeTab === 'pm' && (
@@ -631,14 +614,6 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 					projectId={projectId}
 					initialProvider={scmProvider}
 					initialCredentials={scmCredMap}
-				/>
-			)}
-
-			{activeTab === 'email' && (
-				<EmailWizard
-					projectId={projectId}
-					initialProvider={emailProvider}
-					initialCredentials={emailCredMap}
 				/>
 			)}
 		</div>

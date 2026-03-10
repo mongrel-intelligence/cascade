@@ -6,7 +6,6 @@
  *
  *   injectLlmApiKeys
  *     → integration.withCredentials
- *       → withEmailIntegration
  *       → withGitHubToken (persona token)
  *             → runAgentExecutionPipeline
  *
@@ -14,7 +13,6 @@
  * via the optional `AgentExecutionConfig` returned by `integration.resolveExecutionConfig?.()`.
  */
 
-import { withEmailIntegration } from '../../email/index.js';
 import { withGitHubToken } from '../../github/client.js';
 import { getPersonaToken } from '../../github/personas.js';
 import type { PMIntegration } from '../../pm/integration.js';
@@ -28,7 +26,7 @@ import { runAgentExecutionPipeline } from './agent-execution.js';
  * Run the agent execution pipeline inside the full credential scope.
  *
  * Wraps `runAgentExecutionPipeline` in the standard nesting:
- *   LLM env → PM credentials → email integration → GitHub token
+ *   LLM env → PM credentials → GitHub token
  *
  * The `executionConfig` controls source-specific lifecycle overrides (e.g. GitHub
  * skips `prepareForAgent` and `handleFailure` since those are PR-based, not card-based).
@@ -51,10 +49,8 @@ export async function runAgentWithCredentials(
 
 	try {
 		await integration.withCredentials(project.id, () =>
-			withEmailIntegration(project.id, () =>
-				withGitHubToken(githubToken, () =>
-					runAgentExecutionPipeline(result, project, config, resolvedConfig),
-				),
+			withGitHubToken(githubToken, () =>
+				runAgentExecutionPipeline(result, project, config, resolvedConfig),
 			),
 		);
 	} finally {

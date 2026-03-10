@@ -12,41 +12,6 @@ export default class EmailVerify extends DashboardCommand {
 		...DashboardCommand.baseFlags,
 	};
 
-	private async verifyGmail(credMap: Map<string, number>, jsonOutput: boolean): Promise<void> {
-		const orgCredentials = await this.client.credentials.list.query();
-		const clientIdCred = orgCredentials.find(
-			(c: { envVarKey: string }) => c.envVarKey === 'GOOGLE_OAUTH_CLIENT_ID',
-		) as { id: number } | undefined;
-		const clientSecretCred = orgCredentials.find(
-			(c: { envVarKey: string }) => c.envVarKey === 'GOOGLE_OAUTH_CLIENT_SECRET',
-		) as { id: number } | undefined;
-
-		const refreshTokenCredId = credMap.get('gmail_refresh_token');
-		const gmailEmailCredId = credMap.get('gmail_email');
-
-		if (!clientIdCred || !clientSecretCred) {
-			this.error('Google OAuth credentials not configured at org level.');
-		}
-
-		if (!refreshTokenCredId || !gmailEmailCredId) {
-			this.error('Gmail credentials not linked to project. Run "cascade email oauth" first.');
-		}
-
-		const result = await this.client.integrationsDiscovery.verifyGmail.mutate({
-			clientIdCredentialId: clientIdCred.id,
-			clientSecretCredentialId: clientSecretCred.id,
-			refreshTokenCredentialId: refreshTokenCredId,
-			gmailEmailCredentialId: gmailEmailCredId,
-		});
-
-		if (jsonOutput) {
-			this.outputJson(result);
-			return;
-		}
-
-		this.log(`Gmail connection verified for: ${result.email}`);
-	}
-
 	private async verifyImap(credMap: Map<string, number>, jsonOutput: boolean): Promise<void> {
 		const hostCredId = credMap.get('imap_host');
 		const portCredId = credMap.get('imap_port');
@@ -98,12 +63,10 @@ export default class EmailVerify extends DashboardCommand {
 				credMap.set(c.role, c.credentialId);
 			}
 
-			if (emailIntegration.provider === 'gmail') {
-				await this.verifyGmail(credMap, flags.json);
-			} else if (emailIntegration.provider === 'imap') {
+			if (emailIntegration.provider === 'imap') {
 				await this.verifyImap(credMap, flags.json);
 			} else {
-				this.error(`Unknown email provider: ${emailIntegration.provider}`);
+				this.error(`Email provider '${emailIntegration.provider}' is no longer supported.`);
 			}
 		} catch (err) {
 			this.handleError(err);

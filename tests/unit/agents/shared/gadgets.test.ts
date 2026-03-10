@@ -47,13 +47,6 @@ vi.mock('../../../../src/gadgets/pm/index.js', () => ({
 	ReadWorkItem: mockClass('ReadWorkItem'),
 	UpdateWorkItem: mockClass('UpdateWorkItem'),
 }));
-vi.mock('../../../../src/gadgets/email/index.js', () => ({
-	SendEmail: mockClass('SendEmail'),
-	SearchEmails: mockClass('SearchEmails'),
-	ReadEmail: mockClass('ReadEmail'),
-	ReplyToEmail: mockClass('ReplyToEmail'),
-	MarkEmailAsSeen: mockClass('MarkEmailAsSeen'),
-}));
 vi.mock('../../../../src/gadgets/tmux.js', () => ({ Tmux: mockClass('Tmux') }));
 vi.mock('../../../../src/gadgets/todo/index.js', () => ({
 	TodoUpsert: mockClass('TodoUpsert'),
@@ -165,23 +158,6 @@ describe('buildGadgetsFromCapabilities', () => {
 			const caps: Capability[] = ['scm:pr'];
 			const gadgets = names(buildGadgetsFromCapabilities(caps));
 			expect(gadgets).toContain('CreatePR');
-		});
-	});
-
-	describe('email capabilities', () => {
-		it('email:read includes email read gadgets', () => {
-			const caps: Capability[] = ['email:read'];
-			const gadgets = names(buildGadgetsFromCapabilities(caps));
-			expect(gadgets).toContain('SearchEmails');
-			expect(gadgets).toContain('ReadEmail');
-			expect(gadgets).toContain('MarkEmailAsSeen');
-		});
-
-		it('email:write includes email write gadgets', () => {
-			const caps: Capability[] = ['email:write'];
-			const gadgets = names(buildGadgetsFromCapabilities(caps));
-			expect(gadgets).toContain('SendEmail');
-			expect(gadgets).toContain('ReplyToEmail');
 		});
 	});
 

@@ -1,4 +1,3 @@
-import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockUser } from '../../../helpers/factories.js';
@@ -23,28 +22,18 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 	credentials: { id: 'id', orgId: 'org_id', value: 'value' },
 }));
 
-const { mockImapConnect, mockImapLogout, MockImapFlow, mockRefreshGmailAccessToken } = vi.hoisted(
-	() => {
-		const mockImapConnect = vi.fn();
-		const mockImapLogout = vi.fn();
-		const MockImapFlow = vi.fn().mockImplementation(() => ({
-			connect: mockImapConnect,
-			logout: mockImapLogout,
-		}));
-		const mockRefreshGmailAccessToken = vi.fn();
-		return { mockImapConnect, mockImapLogout, MockImapFlow, mockRefreshGmailAccessToken };
-	},
-);
+const { mockImapConnect, mockImapLogout, MockImapFlow } = vi.hoisted(() => {
+	const mockImapConnect = vi.fn();
+	const mockImapLogout = vi.fn();
+	const MockImapFlow = vi.fn().mockImplementation(() => ({
+		connect: mockImapConnect,
+		logout: mockImapLogout,
+	}));
+	return { mockImapConnect, mockImapLogout, MockImapFlow };
+});
 
 vi.mock('imapflow', () => ({
 	ImapFlow: MockImapFlow,
-}));
-
-vi.mock('../../../../src/email/gmail/oauth.js', () => ({
-	getGmailAuthUrl: vi.fn(),
-	exchangeGmailCode: vi.fn(),
-	getGmailUserInfo: vi.fn(),
-	refreshGmailAccessToken: (...args: unknown[]) => mockRefreshGmailAccessToken(...args),
 }));
 
 const mockTrelloGetMe = vi.fn();
@@ -124,7 +113,6 @@ describe('integrationsDiscoveryRouter', () => {
 		mockDbFrom.mockReturnValue({ where: mockDbWhere });
 		mockImapConnect.mockResolvedValue(undefined);
 		mockImapLogout.mockResolvedValue(undefined);
-		mockRefreshGmailAccessToken.mockResolvedValue({ accessToken: 'access-token-123' });
 	});
 
 	// ── Auth ─────────────────────────────────────────────────────────────
@@ -169,18 +157,6 @@ describe('integrationsDiscoveryRouter', () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(
 				caller.jiraProjectDetails({ ...jiraCredsInput, projectKey: 'PROJ' }),
-			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
-		});
-
-		it('verifyGmail throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
-				caller.verifyGmail({
-					clientIdCredentialId: 10,
-					clientSecretCredentialId: 11,
-					refreshTokenCredentialId: 12,
-					gmailEmailCredentialId: 13,
-				}),
 			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 		});
 
@@ -531,92 +507,6 @@ describe('integrationsDiscoveryRouter', () => {
 			await expect(
 				caller.jiraProjectDetails({ ...jiraCredsInput, projectKey: 'PROJ' }),
 			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
-		});
-	});
-
-	// ── verifyGmail ───────────────────────────────────────────────────────
-
-	const gmailInput = {
-		clientIdCredentialId: 10,
-		clientSecretCredentialId: 11,
-		refreshTokenCredentialId: 12,
-		gmailEmailCredentialId: 13,
-	};
-
-	describe('verifyGmail', () => {
-		it('resolves all four credentials server-side and returns email', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'client-id' },
-				{ orgId: 'org-1', value: 'client-secret' },
-				{ orgId: 'org-1', value: 'refresh-token' },
-				{ orgId: 'org-1', value: 'user@gmail.com' },
-			]);
-			mockRefreshGmailAccessToken.mockResolvedValue({ accessToken: 'access-token-123' });
-
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			const result = await caller.verifyGmail(gmailInput);
-
-			expect(result).toEqual({ success: true, email: 'user@gmail.com' });
-			expect(mockRefreshGmailAccessToken).toHaveBeenCalledWith(
-				'client-id',
-				'client-secret',
-				'refresh-token',
-			);
-		});
-
-		it('passes resolved email as IMAP user (not a credential ID or masked value)', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'client-id' },
-				{ orgId: 'org-1', value: 'client-secret' },
-				{ orgId: 'org-1', value: 'refresh-token' },
-				{ orgId: 'org-1', value: 'user@gmail.com' },
-			]);
-			mockRefreshGmailAccessToken.mockResolvedValue({ accessToken: 'tok' });
-
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			await caller.verifyGmail(gmailInput);
-
-			const imapArgs = MockImapFlow.mock.calls[0][0] as { auth: { user: string } };
-			expect(imapArgs.auth.user).toBe('user@gmail.com');
-		});
-
-		it('wraps token refresh failure in BAD_REQUEST', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'client-id' },
-				{ orgId: 'org-1', value: 'client-secret' },
-				{ orgId: 'org-1', value: 'bad-refresh-token' },
-				{ orgId: 'org-1', value: 'user@gmail.com' },
-			]);
-			mockRefreshGmailAccessToken.mockRejectedValue(new Error('invalid_grant'));
-
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			await expect(caller.verifyGmail(gmailInput)).rejects.toMatchObject({
-				code: 'BAD_REQUEST',
-			});
-		});
-
-		it('wraps IMAP connection failure in BAD_REQUEST', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'client-id' },
-				{ orgId: 'org-1', value: 'client-secret' },
-				{ orgId: 'org-1', value: 'refresh-token' },
-				{ orgId: 'org-1', value: 'user@gmail.com' },
-			]);
-			mockRefreshGmailAccessToken.mockResolvedValue({ accessToken: 'tok' });
-			mockImapConnect.mockRejectedValue(new Error('Connection refused'));
-
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			await expect(caller.verifyGmail(gmailInput)).rejects.toMatchObject({
-				code: 'BAD_REQUEST',
-			});
-		});
-
-		it('rejects input containing a plain email string (schema change guard)', async () => {
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			await expect(
-				// biome-ignore lint/suspicious/noExplicitAny: testing schema rejection of old API shape
-				caller.verifyGmail({ ...gmailInput, email: 'user@gmail.com' } as any),
-			).rejects.toThrow();
 		});
 	});
 

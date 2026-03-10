@@ -48,13 +48,6 @@ vi.mock('../../../../src/gadgets/pm/index.js', () => ({
 	ReadWorkItem: mockClass('ReadWorkItem'),
 	UpdateWorkItem: mockClass('UpdateWorkItem'),
 }));
-vi.mock('../../../../src/gadgets/email/index.js', () => ({
-	SendEmail: mockClass('SendEmail'),
-	SearchEmails: mockClass('SearchEmails'),
-	ReadEmail: mockClass('ReadEmail'),
-	ReplyToEmail: mockClass('ReplyToEmail'),
-	MarkEmailAsSeen: mockClass('MarkEmailAsSeen'),
-}));
 vi.mock('../../../../src/gadgets/tmux.js', () => ({ Tmux: mockClass('Tmux') }));
 vi.mock('../../../../src/gadgets/todo/index.js', () => ({
 	TodoUpsert: mockClass('TodoUpsert'),
@@ -99,12 +92,11 @@ describe('deriveRequiredIntegrations', () => {
 	});
 
 	it('returns all unique integrations from mixed capabilities', () => {
-		const caps: Capability[] = ['fs:read', 'pm:read', 'scm:pr', 'email:read'];
+		const caps: Capability[] = ['fs:read', 'pm:read', 'scm:pr'];
 		const result = deriveRequiredIntegrations(caps);
 		expect(result).toContain('pm');
 		expect(result).toContain('scm');
-		expect(result).toContain('email');
-		expect(result).toHaveLength(3);
+		expect(result).toHaveLength(2);
 	});
 });
 
@@ -166,11 +158,10 @@ describe('resolveEffectiveCapabilities', () => {
 
 	it('handles mixed availability of optional integrations', () => {
 		const required: Capability[] = ['fs:read'];
-		const optional: Capability[] = ['pm:read', 'email:read', 'scm:read'];
+		const optional: Capability[] = ['pm:read', 'scm:read'];
 		const hasIntegration = (cat: IntegrationCategory) => cat === 'pm';
 		const result = resolveEffectiveCapabilities(required, optional, hasIntegration);
 		expect(result).toContain('pm:read');
-		expect(result).not.toContain('email:read');
 		expect(result).not.toContain('scm:read');
 	});
 });
@@ -183,10 +174,10 @@ describe('getUnavailableOptionalCapabilities', () => {
 	});
 
 	it('returns unavailable integration-based capabilities', () => {
-		const optional: Capability[] = ['pm:read', 'pm:write', 'email:read'];
+		const optional: Capability[] = ['pm:read', 'pm:write', 'scm:read'];
 		const hasIntegration = (cat: IntegrationCategory) => cat === 'pm';
 		const result = getUnavailableOptionalCapabilities(optional, hasIntegration);
-		expect(result).toEqual(['email:read']);
+		expect(result).toEqual(['scm:read']);
 	});
 
 	it('returns all integration-based capabilities when no integrations available', () => {
@@ -212,10 +203,10 @@ describe('generateUnavailableCapabilitiesNote', () => {
 	});
 
 	it('generates note for multiple unavailable integrations', () => {
-		const unavailable: Capability[] = ['pm:read', 'email:write'];
+		const unavailable: Capability[] = ['pm:read', 'scm:read'];
 		const note = generateUnavailableCapabilitiesNote(unavailable);
 		expect(note).toContain('PM integration');
-		expect(note).toContain('Email integration');
+		expect(note).toContain('SCM integration');
 	});
 });
 

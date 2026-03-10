@@ -1,7 +1,6 @@
 import { rootRoute } from './__root.js';
 import { indexRoute } from './index.js';
 import { loginRoute } from './login.js';
-import { gmailCallbackRoute } from './oauth/gmail-callback.js';
 import { projectDetailRoute } from './projects/$projectId.js';
 import { projectsIndexRoute } from './projects/index.js';
 import { runDetailRoute } from './runs/$runId.js';
@@ -22,5 +21,4 @@ export const routeTree = rootRoute.addChildren([
 	settingsAgentsRoute,
 	settingsDefinitionsRoute,
 	webhookLogsRoute,
-	gmailCallbackRoute,
 ]);
