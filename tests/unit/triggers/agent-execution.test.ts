@@ -623,7 +623,7 @@ describe('runAgentExecutionPipeline', () => {
 			expect(mockProvider.addLabel).not.toHaveBeenCalled();
 		});
 
-		it('chains to backlog-manager after splitting when trigger is enabled', async () => {
+		it('chains to backlog-manager after splitting when trigger is enabled and backlog is non-empty', async () => {
 			vi.mocked(checkTriggerEnabled).mockResolvedValue(true); // Enable chaining
 
 			const splittingResult: TriggerResult = {
@@ -641,7 +641,10 @@ describe('runAgentExecutionPipeline', () => {
 				labels: [{ id: 'auto-label-id', name: 'auto' }],
 			});
 
-			mockProvider.listWorkItems.mockResolvedValue([]);
+			// Non-empty backlog — agent should chain to backlog-manager
+			mockProvider.listWorkItems.mockResolvedValue([
+				{ id: 'backlog-card-1', title: 'Item 1', description: '', url: '', labels: [] },
+			]);
 
 			await runAgentExecutionPipeline(splittingResult, mockProject, mockConfig);
 
@@ -649,6 +652,34 @@ describe('runAgentExecutionPipeline', () => {
 			expect(runAgent).toHaveBeenCalledTimes(2);
 			expect(runAgent).toHaveBeenNthCalledWith(1, 'splitting', expect.any(Object));
 			expect(runAgent).toHaveBeenNthCalledWith(2, 'backlog-manager', expect.any(Object));
+		});
+
+		it('skips backlog-manager chain when backlog is empty after splitting', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValue(true); // Enable chaining
+
+			const splittingResult: TriggerResult = {
+				agentType: 'splitting',
+				workItemId: 'parent-card',
+				agentInput: {},
+			};
+
+			mockProvider.getWorkItem.mockResolvedValue({
+				id: 'parent-card',
+				title: 'Parent',
+				description: '',
+				url: '',
+				status: 'backlog-list-id',
+				labels: [{ id: 'auto-label-id', name: 'auto' }],
+			});
+
+			// Empty backlog — backlog-manager should be skipped
+			mockProvider.listWorkItems.mockResolvedValue([]);
+
+			await runAgentExecutionPipeline(splittingResult, mockProject, mockConfig);
+
+			// Only splitting ran — backlog-manager skipped because backlog is empty
+			expect(runAgent).toHaveBeenCalledTimes(1);
+			expect(runAgent).toHaveBeenCalledWith('splitting', expect.any(Object));
 		});
 
 		it('skips propagation if backlog list/status is not configured', async () => {

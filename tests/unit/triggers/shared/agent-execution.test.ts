@@ -298,6 +298,43 @@ describe('propagateAutoLabelAfterSplitting (via runAgentExecutionPipeline)', () 
 		// Should not attempt label propagation on failure
 		expect(mockGetPMProvider).not.toHaveBeenCalled();
 	});
+
+	it('does not chain to backlog-manager when backlog is empty after splitting', async () => {
+		// Override the provider to return no backlog items
+		const provider = setupSplittingDefaults({
+			listWorkItems: vi.fn().mockResolvedValue([]), // empty backlog
+		});
+		// Reset so we consume both queued return values cleanly (only splitting runs)
+		mockRunAgent.mockReset();
+		mockRunAgent.mockResolvedValueOnce({ success: true, output: '', runId: 'run-1' });
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'splitting', agentInput: {}, workItemId: 'parent-card' },
+			PROJECT,
+			CONFIG,
+		);
+
+		// Only splitting agent ran — no backlog-manager chain
+		expect(mockRunAgent).toHaveBeenCalledTimes(1);
+		expect(mockRunAgent).toHaveBeenCalledWith('splitting', expect.anything());
+
+		// No labels added since backlog is empty
+		expect(provider.addLabel).not.toHaveBeenCalled();
+
+		// Should log that backlog is empty
+		expect(mockLogger.info).toHaveBeenCalledWith(
+			'propagateAutoLabelAfterSplitting: backlog is empty after splitting, skipping backlog-manager chain',
+			expect.objectContaining({ workItemId: 'parent-card' }),
+		);
+
+		// Should NOT have checked the trigger enabled state
+		expect(mockCheckTriggerEnabled).not.toHaveBeenCalledWith(
+			'project-1',
+			'backlog-manager',
+			'internal:auto-chain',
+			'splitting-auto-propagate',
+		);
+	});
 });
 
 // ---------------------------------------------------------------------------

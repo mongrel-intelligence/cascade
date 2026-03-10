@@ -4,6 +4,7 @@ import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
+import { isBacklogEmpty } from '../shared/backlog-check.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
@@ -77,16 +78,25 @@ export class PRMergedTrigger implements TriggerHandler {
 
 		// Chain to backlog-manager if enabled (regardless of whether card was already merged)
 		if (await checkTriggerEnabled(ctx.project.id, 'backlog-manager', 'scm:pr-merged', this.name)) {
-			logger.info('Chaining to backlog-manager after PR merge', { workItemId, prNumber });
-			return {
-				agentType: 'backlog-manager',
-				// Include cardId so PM operations (progress, lifecycle) have the work item ID.
-				// The backlog-manager is a PM-focused agent — it needs the card ID for ack posting
-				// and PM lifecycle, not GitHub PR details.
-				agentInput: { triggerEvent: 'scm:pr-merged', cardId: workItemId },
-				workItemId,
-				prNumber,
-			};
+			// Skip if the backlog is already empty — no point running the agent
+			const backlogEmpty = await isBacklogEmpty(ctx.project, provider);
+			if (backlogEmpty) {
+				logger.info('Skipping backlog-manager: backlog is empty after PR merge', {
+					workItemId,
+					prNumber,
+				});
+			} else {
+				logger.info('Chaining to backlog-manager after PR merge', { workItemId, prNumber });
+				return {
+					agentType: 'backlog-manager',
+					// Include cardId so PM operations (progress, lifecycle) have the work item ID.
+					// The backlog-manager is a PM-focused agent — it needs the card ID for ack posting
+					// and PM lifecycle, not GitHub PR details.
+					agentInput: { triggerEvent: 'scm:pr-merged', cardId: workItemId },
+					workItemId,
+					prNumber,
+				};
+			}
 		}
 
 		return {

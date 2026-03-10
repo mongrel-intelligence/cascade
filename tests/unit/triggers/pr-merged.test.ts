@@ -9,6 +9,10 @@ vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
 	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
 }));
 
+vi.mock('../../../src/triggers/shared/backlog-check.js', () => ({
+	isBacklogEmpty: vi.fn().mockResolvedValue(false),
+}));
+
 // Mock the GitHub client
 vi.mock('../../../src/github/client.js', () => ({
 	githubClient: {
@@ -65,6 +69,7 @@ import { createMockProject } from '../../helpers/factories.js';
 
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { githubClient } from '../../../src/github/client.js';
+import { isBacklogEmpty } from '../../../src/triggers/shared/backlog-check.js';
 import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 
 describe('PRMergedTrigger', () => {
@@ -499,6 +504,107 @@ describe('PRMergedTrigger', () => {
 			expect(result).toEqual({
 				agentType: null,
 				agentInput: {},
+				workItemId: 'abc123',
+				prNumber: 123,
+			});
+		});
+
+		it('skips backlog-manager and returns agentType null when backlog is empty', async () => {
+			// Both trigger checks return true, but backlog is empty
+			vi.mocked(isBacklogEmpty).mockResolvedValue(true);
+
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 123,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'closed',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: true,
+			});
+			mockProvider.getWorkItem.mockResolvedValue({
+				id: 'abc123',
+				title: 'Card',
+				description: '',
+				url: '',
+				status: 'todo-list-id',
+				labels: [],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'closed',
+					number: 123,
+					pull_request: {
+						number: 123,
+						body: 'https://trello.com/c/abc123/card-name',
+					},
+					repository: {
+						full_name: 'owner/repo',
+					},
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+
+			// Card should still move to merged status
+			expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('abc123', 'merged-list-id');
+
+			// But backlog-manager should NOT be chained
+			expect(result).toEqual({
+				agentType: null,
+				agentInput: {},
+				workItemId: 'abc123',
+				prNumber: 123,
+			});
+		});
+
+		it('still chains to backlog-manager when backlog is non-empty', async () => {
+			vi.mocked(isBacklogEmpty).mockResolvedValue(false);
+
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 123,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'closed',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: true,
+			});
+			mockProvider.getWorkItem.mockResolvedValue({
+				id: 'abc123',
+				title: 'Card',
+				description: '',
+				url: '',
+				status: 'todo-list-id',
+				labels: [],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'closed',
+					number: 123,
+					pull_request: {
+						number: 123,
+						body: 'https://trello.com/c/abc123/card-name',
+					},
+					repository: {
+						full_name: 'owner/repo',
+					},
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toEqual({
+				agentType: 'backlog-manager',
+				agentInput: { triggerEvent: 'scm:pr-merged', cardId: 'abc123' },
 				workItemId: 'abc123',
 				prNumber: 123,
 			});
