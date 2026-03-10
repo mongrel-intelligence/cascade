@@ -1,18 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockAddComment, mockGetPMProviderOrNull, mockSafeOperation, mockLogger } = vi.hoisted(
-	() => ({
-		mockAddComment: vi.fn(),
-		mockGetPMProviderOrNull: vi.fn(),
-		mockSafeOperation: vi.fn(),
-		mockLogger: {
-			info: vi.fn(),
-			warn: vi.fn(),
-			debug: vi.fn(),
-			error: vi.fn(),
-		},
-	}),
-);
+const {
+	mockAddComment,
+	mockUpdateComment,
+	mockGetPMProviderOrNull,
+	mockSafeOperation,
+	mockLogger,
+} = vi.hoisted(() => ({
+	mockAddComment: vi.fn(),
+	mockUpdateComment: vi.fn(),
+	mockGetPMProviderOrNull: vi.fn(),
+	mockSafeOperation: vi.fn(),
+	mockLogger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		debug: vi.fn(),
+		error: vi.fn(),
+	},
+}));
 
 vi.mock('../../../../src/pm/index.js', () => ({
 	getPMProviderOrNull: mockGetPMProviderOrNull,
@@ -184,5 +189,74 @@ describe('postReviewToPM', () => {
 		).resolves.toBeUndefined();
 
 		expect(mockSafeOperation).toHaveBeenCalled();
+	});
+
+	it('updates existing comment when progressCommentId is provided and updateComment succeeds', async () => {
+		mockGetPMProviderOrNull.mockReturnValue({
+			addComment: mockAddComment,
+			updateComment: mockUpdateComment,
+		});
+		mockUpdateComment.mockResolvedValue(undefined);
+
+		await postReviewToPM(
+			'card-123',
+			{
+				reviewBody: 'LGTM!',
+				reviewEvent: 'APPROVE',
+				reviewUrl: 'https://github.com/pr/1#review-1',
+			},
+			'comment-id-progress',
+		);
+
+		expect(mockUpdateComment).toHaveBeenCalledTimes(1);
+		const [workItemId, commentId, text] = mockUpdateComment.mock.calls[0];
+		expect(workItemId).toBe('card-123');
+		expect(commentId).toBe('comment-id-progress');
+		expect(text).toContain('✅');
+		expect(text).toContain('LGTM!');
+		expect(mockAddComment).not.toHaveBeenCalled();
+	});
+
+	it('falls back to addComment when progressCommentId is provided but updateComment throws', async () => {
+		mockGetPMProviderOrNull.mockReturnValue({
+			addComment: mockAddComment,
+			updateComment: mockUpdateComment,
+		});
+		mockUpdateComment.mockRejectedValue(new Error('Comment not found'));
+		mockAddComment.mockResolvedValue('comment-id-new');
+
+		await postReviewToPM(
+			'card-123',
+			{
+				reviewBody: 'LGTM!',
+				reviewEvent: 'APPROVE',
+				reviewUrl: 'https://github.com/pr/1#review-1',
+			},
+			'comment-id-deleted',
+		);
+
+		expect(mockUpdateComment).toHaveBeenCalledTimes(1);
+		expect(mockAddComment).toHaveBeenCalledTimes(1);
+		const [workItemId, text] = mockAddComment.mock.calls[0];
+		expect(workItemId).toBe('card-123');
+		expect(text).toContain('✅');
+		expect(text).toContain('LGTM!');
+	});
+
+	it('uses addComment (not updateComment) when progressCommentId is undefined', async () => {
+		mockGetPMProviderOrNull.mockReturnValue({
+			addComment: mockAddComment,
+			updateComment: mockUpdateComment,
+		});
+		mockAddComment.mockResolvedValue('comment-id-1');
+
+		await postReviewToPM('card-123', {
+			reviewBody: 'LGTM!',
+			reviewEvent: 'APPROVE',
+			reviewUrl: 'https://github.com/pr/1#review-1',
+		});
+
+		expect(mockAddComment).toHaveBeenCalledTimes(1);
+		expect(mockUpdateComment).not.toHaveBeenCalled();
 	});
 });

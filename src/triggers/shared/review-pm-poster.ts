@@ -56,10 +56,15 @@ export function formatReviewForPM(body: string, event: string, url: string): str
  *
  * @param workItemId - The PM work item ID to post to
  * @param sessionState - Current session state snapshot
+ * @param progressCommentId - Optional ID of an existing PM progress comment to update in-place.
+ *   When provided, attempts to update the existing comment via `provider.updateComment`.
+ *   Falls back to `provider.addComment` if the update fails (e.g. the comment was deleted).
+ *   When not provided, always calls `provider.addComment` (backward-compatible behavior).
  */
 export async function postReviewToPM(
 	workItemId: string,
 	sessionState: { reviewBody: string | null; reviewEvent: string | null; reviewUrl: string | null },
+	progressCommentId?: string,
 ): Promise<void> {
 	const { reviewBody, reviewEvent, reviewUrl } = sessionState;
 
@@ -71,8 +76,24 @@ export async function postReviewToPM(
 	const event = reviewEvent ?? 'COMMENT';
 	const formatted = formatReviewForPM(reviewBody, event, reviewUrl);
 
-	await safeOperation(() => provider.addComment(workItemId, formatted), {
-		action: 'post review summary to PM work item',
-		workItemId,
-	});
+	if (progressCommentId) {
+		await safeOperation(
+			async () => {
+				try {
+					await provider.updateComment(workItemId, progressCommentId, formatted);
+				} catch {
+					await provider.addComment(workItemId, formatted);
+				}
+			},
+			{
+				action: 'post review summary to PM work item',
+				workItemId,
+			},
+		);
+	} else {
+		await safeOperation(() => provider.addComment(workItemId, formatted), {
+			action: 'post review summary to PM work item',
+			workItemId,
+		});
+	}
 }
