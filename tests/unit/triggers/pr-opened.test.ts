@@ -25,7 +25,7 @@ describe('PROpenedTrigger', () => {
 	const mockProject = createMockProject();
 
 	beforeEach(() => {
-		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
 		vi.mocked(checkTriggerEnabledWithParams).mockResolvedValue({ enabled: true, parameters: {} });
 	});
 
@@ -181,6 +181,7 @@ describe('PROpenedTrigger', () => {
 		});
 
 		it('fires without work item when PR has no work item reference', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
 				enabled: true,
 				parameters: { authorMode: 'all' },
@@ -535,6 +536,7 @@ describe('PROpenedTrigger', () => {
 		});
 
 		it('fires with undefined workItemId for null PR body', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
 				enabled: true,
 				parameters: { authorMode: 'all' },

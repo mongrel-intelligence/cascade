@@ -58,7 +58,7 @@ export async function waitForChecks(
  * 2. The PR author matches the configured author mode (own/external/all)
  * 3. All checks are actually passing (verified via API)
  *
- * Work item resolution uses the pr_work_items DB table (with PR body extraction as fallback).
+ * Work item resolution uses the pr_work_items DB table only.
  * The trigger fires even without a linked work item — agents run, PM updates are simply skipped.
  *
  * Registration order matters - this should be registered BEFORE PRReadyToMergeTrigger
@@ -138,13 +138,8 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Resolve work item from DB (with PR body fallback)
-		const workItemId = await resolveWorkItemId(
-			ctx.project.id,
-			prNumber,
-			prDetails.body,
-			ctx.project,
-		);
+		// Resolve work item from DB
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 
 		// Skip if the reviewer persona's latest review already covers the current HEAD SHA
 		const reviews = await githubClient.getPRReviews(owner, repo, prNumber);

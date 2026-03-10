@@ -139,25 +139,23 @@ export function requireWorkItemId(
 }
 
 /**
- * Resolve work item ID for a PR. Primary source: DB lookup (pr_work_items table).
- * Fallback: extract from PR body (backward compat for pre-migration PRs).
+ * Resolve work item ID for a PR using DB lookup only (pr_work_items table).
+ * Returns undefined when DB returns null or throws.
  */
 export async function resolveWorkItemId(
 	projectId: string,
 	prNumber: number,
-	prBody: string | null,
-	project: ProjectConfig,
 ): Promise<string | undefined> {
 	try {
 		const dbResult = await lookupWorkItemForPR(projectId, prNumber);
 		if (dbResult) return dbResult;
 	} catch (err) {
-		logger.warn('Failed to look up work item from DB, falling back to PR body', {
+		logger.warn('Failed to look up work item from DB', {
 			projectId,
 			prNumber,
 			error: String(err),
 		});
 	}
 
-	return extractWorkItemId(prBody, project) ?? undefined;
+	return undefined;
 }
