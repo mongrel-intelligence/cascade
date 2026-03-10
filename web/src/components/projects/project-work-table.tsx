@@ -50,9 +50,11 @@ interface ExpandedRunsRowProps {
 
 function ExpandedRunsRow({ projectId, prNumber, workItemId }: ExpandedRunsRowProps) {
 	const runsQuery = useQuery(
-		prNumber !== null
-			? trpc.prs.runs.queryOptions({ projectId, prNumber })
-			: trpc.workItems.runs.queryOptions({ projectId, workItemId: workItemId ?? '' }),
+		workItemId
+			? trpc.workItems.runs.queryOptions({ projectId, workItemId })
+			: prNumber !== null
+				? trpc.prs.runs.queryOptions({ projectId, prNumber })
+				: trpc.workItems.runs.queryOptions({ projectId, workItemId: '' }),
 	);
 
 	return (

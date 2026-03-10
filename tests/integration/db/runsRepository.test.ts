@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { linkPRToWorkItem } from '../../../src/db/repositories/prWorkItemsRepository.js';
+import {
+	createWorkItem,
+	linkPRToWorkItem,
+} from '../../../src/db/repositories/prWorkItemsRepository.js';
 import {
 	completeRun,
 	createRun,
@@ -707,6 +710,53 @@ describe('runsRepository (integration)', () => {
 			expect(runs[0].workItemTitle).toBeNull();
 			expect(runs[0].prTitle).toBeNull();
 		});
+
+		it('returns planning runs alongside PR-linked runs after work item promotion', async () => {
+			// Step 1: Insert a work-item-only row (simulates PM-triggered card before PR exists)
+			await createWorkItem('test-project', 'card-plan', {
+				workItemUrl: 'https://trello.com/c/card-plan',
+				workItemTitle: 'Planning Card',
+			});
+
+			// Step 2: Create a planning run with no prNumber (pre-PR)
+			await createRun({
+				projectId: 'test-project',
+				cardId: 'card-plan',
+				agentType: 'planning',
+				backend: 'claude-code',
+			});
+
+			// Step 3: Promote the work-item row by linking a PR to it
+			await linkPRToWorkItem('test-project', 'owner/repo', 99, 'card-plan', {
+				workItemUrl: 'https://trello.com/c/card-plan',
+				workItemTitle: 'Planning Card',
+				prTitle: 'feat: planning card implementation',
+			});
+
+			// Step 4: Create an implementation run with prNumber
+			await createRun({
+				projectId: 'test-project',
+				cardId: 'card-plan',
+				prNumber: 99,
+				agentType: 'implementation',
+				backend: 'claude-code',
+			});
+
+			// Step 5: getRunsByWorkItem should return BOTH runs
+			const runs = await getRunsByWorkItem('test-project', 'card-plan');
+			expect(runs).toHaveLength(2);
+
+			const planningRun = runs.find((r) => r.agentType === 'planning');
+			const implRun = runs.find((r) => r.agentType === 'implementation');
+
+			expect(planningRun).toBeDefined();
+			expect(planningRun?.prNumber).toBeNull();
+			expect(planningRun?.cardId).toBe('card-plan');
+
+			expect(implRun).toBeDefined();
+			expect(implRun?.prNumber).toBe(99);
+			expect(implRun?.cardId).toBe('card-plan');
+		});
 	});
 
 	// =========================================================================
@@ -777,6 +827,32 @@ describe('runsRepository (integration)', () => {
 			expect(runs[0].workItemUrl).toBeNull();
 			expect(runs[0].workItemTitle).toBeNull();
 			expect(runs[0].prTitle).toBeNull();
+		});
+
+		it('does not return runs without a prNumber (pre-PR runs like planning)', async () => {
+			// Create a planning run (no prNumber) for the same card
+			await createRun({
+				projectId: 'test-project',
+				cardId: 'card-gap-demo',
+				agentType: 'planning',
+				backend: 'claude-code',
+			});
+			// Create an implementation run with prNumber=99
+			await createRun({
+				projectId: 'test-project',
+				cardId: 'card-gap-demo',
+				prNumber: 99,
+				agentType: 'implementation',
+				backend: 'claude-code',
+			});
+
+			// getRunsForPR only returns runs with prNumber=99 — it MISSES the planning run
+			// This documents the expected (limited) behavior of getRunsForPR and shows why
+			// the frontend must use getRunsByWorkItem for work items with a workItemId
+			const runs = await getRunsForPR('test-project', 99);
+			expect(runs).toHaveLength(1);
+			expect(runs[0].agentType).toBe('implementation');
+			expect(runs[0].prNumber).toBe(99);
 		});
 	});
 });
