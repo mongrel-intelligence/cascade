@@ -51,10 +51,6 @@ export const CAPABILITY_GROUPS: Record<string, { label: string; caps: Capability
 		label: 'SCM Integration (GitHub)',
 		caps: ['scm:read', 'scm:comment', 'scm:review', 'scm:pr'],
 	},
-	email: {
-		label: 'Email Integration',
-		caps: ['email:read', 'email:write'],
-	},
 };
 
 /** Default empty definition used for "create" mode */

@@ -26,7 +26,7 @@ function getCapabilityIndicators(capabilities: DefinitionRow['definition']['capa
 		canCreatePR: all.includes('scm:pr'),
 		hasChecklists: all.includes('pm:checklist'),
 		isReadOnly: !all.includes('fs:write'),
-		hasEmail: all.includes('email:read') || all.includes('email:write'),
+		hasEmail: false, // email capabilities removed
 	};
 }
 
