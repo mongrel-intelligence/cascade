@@ -69,9 +69,9 @@ export function buildToolGuidance(tools: ToolManifest[]): string {
 	guidance += 'Use the Bash tool to invoke these CASCADE-specific commands.\n';
 	guidance += 'All commands output JSON. Parse the output to extract results.\n\n';
 	guidance +=
-		'**CRITICAL**: You MUST use these cascade-tools commands for all PM (Trello/JIRA), GitHub, and session operations. ' +
+		'**CRITICAL**: You MUST use these cascade-tools commands for all PM (Trello/JIRA), SCM (GitHub), and session operations. ' +
 		'Do NOT use `gh` CLI or other tools directly — cascade-tools handle authentication, push, and ' +
-		'state tracking that raw CLI tools do not. For example, `cascade-tools github create-pr` pushes ' +
+		'state tracking that raw CLI tools do not. For example, `cascade-tools scm create-pr` pushes ' +
 		'the branch AND creates the PR atomically, while `gh pr create` does NOT push and will fail.\n\n';
 
 	for (const tool of tools) {

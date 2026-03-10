@@ -18,17 +18,17 @@ const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
 	{
 		pattern: /\bgh\s+pr\s+create\b/,
 		reason:
-			'Do not use `gh pr create`. Use `cascade-tools github create-pr` instead — it pushes the branch and creates the PR atomically.',
+			'Do not use `gh pr create`. Use `cascade-tools scm create-pr` instead — it pushes the branch and creates the PR atomically.',
 	},
 	{
 		pattern: /\bgh\s+pr\s+merge\b/,
 		reason:
-			'Do not use `gh pr merge`. Merging is managed externally. Use `cascade-tools github create-pr` to create PRs.',
+			'Do not use `gh pr merge`. Merging is managed externally. Use `cascade-tools scm create-pr` to create PRs.',
 	},
 	{
 		pattern: /\bgit\s+push\b/,
 		reason:
-			'Do not use `git push` directly. Use `cascade-tools github create-pr` instead — it handles push atomically.',
+			'Do not use `git push` directly. Use `cascade-tools scm create-pr` instead — it handles push atomically.',
 	},
 ];
 
@@ -36,7 +36,7 @@ const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
  * Build PreToolUse hooks that block dangerous Bash commands.
  *
  * @param options.blockGitPush - When false, allows `git push` (for agents on existing PR branches).
- *   Defaults to true (block git push, redirect to cascade-tools github create-pr).
+ *   Defaults to true (block git push, redirect to cascade-tools scm create-pr).
  */
 export function buildPreToolUseHooks(
 	logWriter: LogWriter,
@@ -134,7 +134,7 @@ function checkUncommittedChanges(logWriter: LogWriter, repoDir: string): SyncHoo
 	logWriter('WARN', 'Stop hook blocked: uncommitted changes', { status });
 	return {
 		decision: 'block',
-		reason: 'You have uncommitted changes. Stage, commit, then use cascade-tools github create-pr.',
+		reason: 'You have uncommitted changes. Stage, commit, then use cascade-tools scm create-pr.',
 	};
 }
 
@@ -155,7 +155,7 @@ function checkUnpushedCommits(
 	return {
 		decision: 'block',
 		reason: blockGitPush
-			? 'You have unpushed commits. Use cascade-tools github create-pr to push and create a PR.'
+			? 'You have unpushed commits. Use cascade-tools scm create-pr to push and create a PR.'
 			: 'You have unpushed commits. Push your changes with git push before finishing.',
 	};
 }
@@ -178,7 +178,7 @@ function checkNonDefaultBranch(
 		return {
 			decision: 'block',
 			reason: blockGitPush
-				? `On non-default branch '${branch}' — use cascade-tools github create-pr to push and create a PR.`
+				? `On non-default branch '${branch}' — use cascade-tools scm create-pr to push and create a PR.`
 				: `On non-default branch '${branch}' with git errors — push your changes with git push before finishing.`,
 		};
 	} catch {
@@ -195,7 +195,7 @@ function checkNonDefaultBranch(
  * the catch block to silently allow stop.
  *
  * @param options.blockGitPush - When false, stop hook messages tell the agent to use
- *   `git push` instead of `cascade-tools github create-pr`. Defaults to true.
+ *   `git push` instead of `cascade-tools scm create-pr`. Defaults to true.
  */
 export function buildStopHooks(
 	logWriter: LogWriter,

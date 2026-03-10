@@ -46,11 +46,11 @@ import { createWorkItem } from '../../../src/gadgets/pm/core/createWorkItem.js';
 import { postComment } from '../../../src/gadgets/pm/core/postComment.js';
 import { updateWorkItem } from '../../../src/gadgets/pm/core/updateWorkItem.js';
 
-import CreatePR from '../../../src/cli/github/create-pr.js';
-import PostPRComment from '../../../src/cli/github/post-pr-comment.js';
 import CreateWorkItem from '../../../src/cli/pm/create-work-item.js';
 import PostComment from '../../../src/cli/pm/post-comment.js';
 import UpdateWorkItem from '../../../src/cli/pm/update-work-item.js';
+import CreatePR from '../../../src/cli/scm/create-pr.js';
+import PostPRComment from '../../../src/cli/scm/post-pr-comment.js';
 
 let tmpDir: string;
 

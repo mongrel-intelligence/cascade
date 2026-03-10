@@ -105,7 +105,7 @@ export function getToolManifests(): ToolManifest[] {
 			name: 'CreatePR',
 			description:
 				'Create a GitHub pull request. Handles the full workflow: stages changes, commits, pushes branch to remote, and creates the PR. ALWAYS use this instead of gh pr create or manual git push. If you have already committed your changes, use --no-commit to skip the commit step. The target base branch is set automatically — do not specify --base.',
-			cliCommand: 'cascade-tools github create-pr',
+			cliCommand: 'cascade-tools scm create-pr',
 			parameters: {
 				title: { type: 'string', required: true },
 				body: { type: 'string', required: true },
@@ -124,7 +124,7 @@ export function getToolManifests(): ToolManifest[] {
 		{
 			name: 'GetPRDetails',
 			description: 'Get details about a GitHub pull request.',
-			cliCommand: 'cascade-tools github get-pr-details',
+			cliCommand: 'cascade-tools scm get-pr-details',
 			parameters: {
 				prNumber: { type: 'number', required: true },
 			},
@@ -132,7 +132,7 @@ export function getToolManifests(): ToolManifest[] {
 		{
 			name: 'GetPRDiff',
 			description: 'Get the unified diff of all file changes in a PR.',
-			cliCommand: 'cascade-tools github get-pr-diff',
+			cliCommand: 'cascade-tools scm get-pr-diff',
 			parameters: {
 				prNumber: { type: 'number', required: true },
 			},
@@ -140,7 +140,7 @@ export function getToolManifests(): ToolManifest[] {
 		{
 			name: 'GetPRChecks',
 			description: 'Get CI check status for a PR.',
-			cliCommand: 'cascade-tools github get-pr-checks',
+			cliCommand: 'cascade-tools scm get-pr-checks',
 			parameters: {
 				prNumber: { type: 'number', required: true },
 			},
@@ -148,7 +148,7 @@ export function getToolManifests(): ToolManifest[] {
 		{
 			name: 'GetPRComments',
 			description: 'Get all review comments on a PR.',
-			cliCommand: 'cascade-tools github get-pr-comments',
+			cliCommand: 'cascade-tools scm get-pr-comments',
 			parameters: {
 				prNumber: { type: 'number', required: true },
 			},
@@ -156,7 +156,7 @@ export function getToolManifests(): ToolManifest[] {
 		{
 			name: 'PostPRComment',
 			description: 'Post a comment on a GitHub pull request.',
-			cliCommand: 'cascade-tools github post-pr-comment',
+			cliCommand: 'cascade-tools scm post-pr-comment',
 			parameters: {
 				prNumber: { type: 'number', required: true },
 				body: { type: 'string', required: true },
@@ -169,7 +169,7 @@ export function getToolManifests(): ToolManifest[] {
 		{
 			name: 'UpdatePRComment',
 			description: 'Update an existing PR comment.',
-			cliCommand: 'cascade-tools github update-pr-comment',
+			cliCommand: 'cascade-tools scm update-pr-comment',
 			parameters: {
 				commentId: { type: 'number', required: true },
 				body: { type: 'string', required: true },
@@ -178,7 +178,7 @@ export function getToolManifests(): ToolManifest[] {
 		{
 			name: 'ReplyToReviewComment',
 			description: 'Reply to a review comment on a PR.',
-			cliCommand: 'cascade-tools github reply-to-review-comment',
+			cliCommand: 'cascade-tools scm reply-to-review-comment',
 			parameters: {
 				prNumber: { type: 'number', required: true },
 				commentId: { type: 'number', required: true },
@@ -188,7 +188,7 @@ export function getToolManifests(): ToolManifest[] {
 		{
 			name: 'CreatePRReview',
 			description: 'Submit a code review on a PR.',
-			cliCommand: 'cascade-tools github create-pr-review',
+			cliCommand: 'cascade-tools scm create-pr-review',
 			parameters: {
 				prNumber: { type: 'number', required: true },
 				event: { type: 'string', required: true },
@@ -198,7 +198,7 @@ export function getToolManifests(): ToolManifest[] {
 		{
 			name: 'GetCIRunLogs',
 			description: 'Get failed CI workflow run info for a commit. Shows failed jobs and steps.',
-			cliCommand: 'cascade-tools github get-ci-run-logs',
+			cliCommand: 'cascade-tools scm get-ci-run-logs',
 			parameters: {
 				ref: { type: 'string', required: true },
 			},
