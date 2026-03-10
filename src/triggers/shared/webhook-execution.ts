@@ -7,7 +7,7 @@
  *   injectLlmApiKeys
  *     → integration.withCredentials
  *       → withEmailIntegration
- *  *           → withGitHubToken (persona token)
+ *       → withGitHubToken (persona token)
  *             → runAgentExecutionPipeline
  *
  * Source-specific behavior (e.g. GitHub skipping PM lifecycle steps) is controlled

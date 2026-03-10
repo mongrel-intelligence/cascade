@@ -106,7 +106,7 @@ CASCADE stores all project configuration in PostgreSQL (Supabase). The `config/p
 - `organizations` - Organization definitions (multi-tenant support)
 - `cascade_defaults` - Global defaults per org (model, iterations, timeouts, budget)
 - `projects` - Per-project config (repo, base branch, budget, backend)
-- `project_integrations` - Integration configs per project with `category` (pm/scm/email), `provider` (trello/jira/github/imap/gmail/twilio), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
+- `project_integrations` - Integration configs per project with `category` (pm/scm/email), `provider` (trello/jira/github/imap/gmail), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
 - `integration_credentials` - Links integration roles to org-scoped credential rows (e.g., `api_key` → credential #5). Roles are provider-specific: trello has `api_key`/`token`, jira has `email`/`api_token`, github has `implementer_token`/`reviewer_token`
 - `agent_configs` - Per-agent-type overrides (model, iterations, backend, prompt), scoped globally, per-org, or per-project
 - `credentials` - Org-scoped credentials (API keys, tokens)
