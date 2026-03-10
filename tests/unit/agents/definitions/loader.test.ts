@@ -19,6 +19,7 @@ const ALL_AGENT_TYPES = [
 	'email-joke',
 	'implementation',
 	'planning',
+	'resolve-conflicts',
 	'respond-to-ci',
 	'respond-to-planning-comment',
 	'respond-to-pr-comment',
@@ -33,7 +34,7 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('getKnownAgentTypes', () => {
-		it('discovers all 11 agent types from YAML files', () => {
+		it('discovers all 12 agent types from YAML files', () => {
 			const types = getKnownAgentTypes();
 			expect(types).toEqual(ALL_AGENT_TYPES);
 		});
@@ -79,7 +80,7 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('loadAllAgentDefinitions', () => {
-		it('returns a map with all 11 agent types', () => {
+		it('returns a map with all 12 agent types', () => {
 			const all = loadAllAgentDefinitions();
 			expect(all.size).toBe(ALL_AGENT_TYPES.length);
 			for (const agentType of ALL_AGENT_TYPES) {

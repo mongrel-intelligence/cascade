@@ -1,0 +1,50 @@
+identity:
+  emoji: "\U0001F500"
+  label: Conflict Resolution Update
+  roleHint: Resolves merge conflicts by rebasing the PR branch onto the base branch
+  initialMessage: "**\U0001F500 Resolving merge conflicts** — Fetching base branch updates and rebasing to resolve conflicts..."
+
+# Explicit integration requirements.
+integrations:
+  required: [scm]
+  optional: [pm]
+
+# Can edit files and read SCM, optional PM for status updates.
+capabilities:
+  required:
+    - fs:read
+    - fs:write
+    - shell:exec
+    - session:ctrl
+    - scm:read
+    - scm:comment
+  optional:
+    - pm:read
+    - pm:write
+    - pm:checklist
+
+# Supported triggers for this agent
+triggers:
+  - event: scm:pr-conflict-detected
+    label: PR Conflict Detected
+    description: Trigger when a PR has merge conflicts with the base branch
+    defaultEnabled: true
+    providers: [github]
+    contextPipeline: [prContext, directoryListing, contextFiles, squint, workItem]
+
+strategies: {}
+
+prompts:
+  taskPrompt: |
+    You are on the branch `<%= it.prBranch %>` for PR #<%= it.prNumber %>. The PR has merge conflicts with the base branch. Resolve the conflicts.
+
+hooks:
+  trailing:
+    builtin:
+      diagnostics: true
+  finish:
+    scm:
+      requiresPushedChanges: true
+      blockGitPush: false
+
+hint: Resolve conflicts by rebasing onto the base branch. Fix each conflicting file carefully, preserving the intent of both sides.

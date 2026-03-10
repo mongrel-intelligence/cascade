@@ -14,6 +14,7 @@ const ALL_AGENT_TYPES = [
 	'email-joke',
 	'implementation',
 	'planning',
+	'resolve-conflicts',
 	'respond-to-ci',
 	'respond-to-planning-comment',
 	'respond-to-pr-comment',
