@@ -73,13 +73,32 @@ export function getToolManifests(): ToolManifest[] {
 			},
 		},
 		{
-			name: 'UpdateChecklistItem',
+			name: 'MoveWorkItem',
+			description:
+				'Move a work item to a different list or status. For Trello, destination is a list ID. For JIRA, destination is a status name.',
+			cliCommand: 'cascade-tools pm move-work-item',
+			parameters: {
+				workItemId: { type: 'string', required: true },
+				destination: { type: 'string', required: true },
+			},
+		},
+		{
+			name: 'PMUpdateChecklistItem',
 			description: 'Update a checklist item state on a work item.',
 			cliCommand: 'cascade-tools pm update-checklist-item',
 			parameters: {
 				workItemId: { type: 'string', required: true },
 				'check-item-id': { type: 'string', required: true },
 				state: { type: 'string', required: true, description: 'complete or incomplete' },
+			},
+		},
+		{
+			name: 'PMDeleteChecklistItem',
+			description: 'Delete a checklist item from a work item.',
+			cliCommand: 'cascade-tools pm delete-checklist-item',
+			parameters: {
+				workItemId: { type: 'string', required: true },
+				'check-item-id': { type: 'string', required: true },
 			},
 		},
 		{
@@ -174,6 +193,14 @@ export function getToolManifests(): ToolManifest[] {
 				prNumber: { type: 'number', required: true },
 				event: { type: 'string', required: true },
 				body: { type: 'string', required: true },
+			},
+		},
+		{
+			name: 'GetCIRunLogs',
+			description: 'Get failed CI workflow run info for a commit. Shows failed jobs and steps.',
+			cliCommand: 'cascade-tools github get-ci-run-logs',
+			parameters: {
+				ref: { type: 'string', required: true },
 			},
 		},
 		{
