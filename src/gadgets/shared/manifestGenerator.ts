@@ -94,11 +94,9 @@ function toKebabCase(name: string): string {
 function deriveCLICommand(toolName: string, cliCommandOverride?: string): string {
 	if (cliCommandOverride) return cliCommandOverride;
 
-	const kebab = toKebabCase(toolName);
-
 	// Session tools
 	if (toolName === 'Finish') {
-		return `cascade-tools session ${kebab}`;
+		return `cascade-tools session ${toKebabCase(toolName)}`;
 	}
 
 	// SCM tools: PR-related, CI-related
@@ -126,12 +124,18 @@ function deriveCLICommand(toolName: string, cliCommandOverride?: string): string
 			toolName.startsWith('ReplyTo') ||
 			toolName === 'GetCIRunLogs'
 		) {
-			return `cascade-tools scm ${kebab}`;
+			return `cascade-tools scm ${toKebabCase(toolName)}`;
 		}
 	}
 
-	// PM tools: default
-	return `cascade-tools pm ${kebab}`;
+	// PM tools: Strip "PM" prefix if present (e.g., PMUpdateChecklistItem → update-checklist-item)
+	// to avoid double "pm" prefix (cascade-tools pm pm-update-checklist-item)
+	let commandName = toolName;
+	if (toolName.startsWith('PM') && toolName.length > 2 && /[A-Z]/.test(toolName[2])) {
+		commandName = toolName.slice(2);
+	}
+
+	return `cascade-tools pm ${toKebabCase(commandName)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,15 +187,13 @@ export function generateToolManifest(
 	// Add file-input alternative flags to the manifest
 	if (def.cli?.fileInputAlternatives) {
 		for (const alt of def.cli.fileInputAlternatives) {
-			const existingParam = def.parameters[alt.paramName];
 			const description =
 				alt.description ??
 				`Path to file with ${alt.paramName} (prefer over --${alt.paramName} for long content)`;
 			parameters[alt.fileFlag] = {
 				type: 'string',
 				description,
-				// File flags are optional (they are alternatives)
-				...(existingParam?.required === true ? {} : {}),
+				// File flags are always optional (they are alternatives to the direct param)
 			};
 		}
 	}

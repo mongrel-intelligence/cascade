@@ -848,6 +848,21 @@ describe('generateToolManifest', () => {
 		expect(manifest.cliCommand).toBe('cascade-tools scm get-pr-details');
 	});
 
+	it('strips PM prefix from tool names to avoid double pm prefix', () => {
+		const pmPrefixedToolDef: ToolDefinition = {
+			name: 'PMUpdateChecklistItem',
+			description: 'Update a checklist item',
+			parameters: {
+				itemId: { type: 'string', describe: 'Item ID', required: true },
+			},
+		};
+
+		const manifest = generateToolManifest(pmPrefixedToolDef);
+
+		// Should be "cascade-tools pm update-checklist-item", not "cascade-tools pm pm-update-checklist-item"
+		expect(manifest.cliCommand).toBe('cascade-tools pm update-checklist-item');
+	});
+
 	it('returns a ToolManifest with required fields', () => {
 		const manifest = generateToolManifest(simpleToolDef, 'cascade-tools pm simple-tool');
 

@@ -1,5 +1,5 @@
 /**
- * Shared utilities for file editing gadgets.
+ * Shared utilities and factory functions for gadgets, CLI commands, and tool manifests.
  */
 
 export * from './types.js';
