@@ -24,6 +24,14 @@ vi.mock('../../../../src/utils/safeOperation.js', () => ({
 	safeOperation: vi.fn().mockImplementation((fn: () => Promise<unknown>) => fn()),
 }));
 
+vi.mock('../../../../src/triggers/shared/review-pm-poster.js', () => ({
+	postReviewToPM: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../../../src/db/repositories/prWorkItemsRepository.js', () => ({
+	lookupWorkItemForPR: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock('../../../../src/router/ackMessageGenerator.js', () => ({
 	extractGitHubContext: vi.fn().mockReturnValue('PR: Fix the bug'),
 	generateAckMessage: vi.fn().mockResolvedValue('🔧 On it — fixing that bug'),
@@ -36,6 +44,7 @@ vi.mock('../../../../src/config/agentMessages.js', () => ({
 	},
 }));
 
+import { lookupWorkItemForPR } from '../../../../src/db/repositories/prWorkItemsRepository.js';
 import { getSessionState } from '../../../../src/gadgets/sessionState.js';
 import { githubClient } from '../../../../src/github/client.js';
 import {
@@ -47,6 +56,7 @@ import {
 	postAcknowledgmentComment,
 	updateInitialCommentWithError,
 } from '../../../../src/triggers/github/ack-comments.js';
+import { postReviewToPM } from '../../../../src/triggers/shared/review-pm-poster.js';
 import type { TriggerResult } from '../../../../src/triggers/types.js';
 import type { AgentResult } from '../../../../src/types/index.js';
 import { parseRepoFullName } from '../../../../src/utils/repo.js';
@@ -56,6 +66,8 @@ const mockGetSessionState = vi.mocked(getSessionState);
 const mockParseRepoFullName = vi.mocked(parseRepoFullName);
 const mockExtractGitHubContext = vi.mocked(extractGitHubContext);
 const mockGenerateAckMessage = vi.mocked(generateAckMessage);
+const mockPostReviewToPM = vi.mocked(postReviewToPM);
+const mockLookupWorkItemForPR = vi.mocked(lookupWorkItemForPR);
 
 function makeResult(
 	overrides: Partial<TriggerResult & { agentInput: Record<string, unknown> }> = {},
@@ -70,8 +82,8 @@ function makeResult(
 	} as TriggerResult;
 }
 
-function makeAgentResult(): AgentResult {
-	return { success: true } as AgentResult;
+function makeAgentResult(overrides: Partial<AgentResult> = {}): AgentResult {
+	return { success: true, output: '', ...overrides } as AgentResult;
 }
 
 describe('deleteProgressCommentOnSuccess', () => {
@@ -167,6 +179,121 @@ describe('deleteProgressCommentOnSuccess', () => {
 		await expect(
 			deleteProgressCommentOnSuccess(result, makeAgentResult()),
 		).resolves.toBeUndefined();
+	});
+
+	it('passes agentResult.progressCommentId to postReviewToPM', async () => {
+		mockGetSessionState.mockReturnValue({
+			initialCommentId: 101,
+			reviewBody: 'Looks good',
+			reviewEvent: 'APPROVE',
+			reviewUrl: 'https://github.com/acme/myapp/pull/42#pullrequestreview-1',
+		} as ReturnType<typeof getSessionState>);
+
+		const result = makeResult({ workItemId: 'card-123' });
+		const agentResult = makeAgentResult({ progressCommentId: 'pm-comment-abc' });
+		await deleteProgressCommentOnSuccess(result, agentResult);
+
+		expect(mockPostReviewToPM).toHaveBeenCalledWith(
+			'card-123',
+			expect.objectContaining({ reviewBody: 'Looks good' }),
+			'pm-comment-abc',
+		);
+	});
+
+	it('looks up work item from DB when result.workItemId is absent', async () => {
+		mockGetSessionState.mockReturnValue({
+			initialCommentId: 101,
+			reviewBody: 'LGTM',
+			reviewEvent: 'APPROVE',
+			reviewUrl: 'https://github.com/acme/myapp/pull/42#pullrequestreview-2',
+		} as ReturnType<typeof getSessionState>);
+		mockLookupWorkItemForPR.mockResolvedValueOnce('card-from-db');
+
+		const result = makeResult({
+			agentInput: {
+				repoFullName: 'acme/myapp',
+				project: { id: 'proj-999' },
+			},
+		} as Partial<TriggerResult>);
+
+		await deleteProgressCommentOnSuccess(result, makeAgentResult());
+
+		expect(mockLookupWorkItemForPR).toHaveBeenCalledWith('proj-999', 42);
+		expect(mockPostReviewToPM).toHaveBeenCalledWith(
+			'card-from-db',
+			expect.objectContaining({ reviewBody: 'LGTM' }),
+			undefined,
+		);
+	});
+
+	it('posts review using DB work item when result.workItemId is absent and DB returns one', async () => {
+		mockGetSessionState.mockReturnValue({
+			initialCommentId: 101,
+			reviewBody: 'Nice work',
+			reviewEvent: 'COMMENT',
+			reviewUrl: 'https://github.com/acme/myapp/pull/42#pullrequestreview-3',
+		} as ReturnType<typeof getSessionState>);
+		mockLookupWorkItemForPR.mockResolvedValueOnce('card-db-456');
+
+		const result = makeResult({
+			agentInput: {
+				repoFullName: 'acme/myapp',
+				project: { id: 'proj-1' },
+			},
+		} as Partial<TriggerResult>);
+		const agentResult = makeAgentResult({ progressCommentId: 'pm-prog-xyz' });
+
+		await deleteProgressCommentOnSuccess(result, agentResult);
+
+		expect(mockPostReviewToPM).toHaveBeenCalledWith(
+			'card-db-456',
+			expect.objectContaining({ reviewBody: 'Nice work' }),
+			'pm-prog-xyz',
+		);
+	});
+
+	it('skips review posting when no work item found in result or DB', async () => {
+		mockGetSessionState.mockReturnValue({
+			initialCommentId: 101,
+			reviewBody: 'Good PR',
+			reviewEvent: 'APPROVE',
+			reviewUrl: 'https://github.com/acme/myapp/pull/42#pullrequestreview-4',
+		} as ReturnType<typeof getSessionState>);
+		mockLookupWorkItemForPR.mockResolvedValueOnce(null);
+
+		const result = makeResult({
+			agentInput: {
+				repoFullName: 'acme/myapp',
+				project: { id: 'proj-1' },
+			},
+		} as Partial<TriggerResult>);
+
+		await deleteProgressCommentOnSuccess(result, makeAgentResult());
+
+		expect(mockPostReviewToPM).not.toHaveBeenCalled();
+	});
+
+	it('swallows DB lookup errors and skips review posting gracefully', async () => {
+		mockGetSessionState.mockReturnValue({
+			initialCommentId: 101,
+			reviewBody: 'Looks good',
+			reviewEvent: 'APPROVE',
+			reviewUrl: 'https://github.com/acme/myapp/pull/42#pullrequestreview-5',
+		} as ReturnType<typeof getSessionState>);
+		mockLookupWorkItemForPR.mockRejectedValueOnce(new Error('DB connection failed'));
+
+		const result = makeResult({
+			agentInput: {
+				repoFullName: 'acme/myapp',
+				project: { id: 'proj-1' },
+			},
+		} as Partial<TriggerResult>);
+
+		// Should not throw
+		await expect(
+			deleteProgressCommentOnSuccess(result, makeAgentResult()),
+		).resolves.toBeUndefined();
+		expect(mockPostReviewToPM).not.toHaveBeenCalled();
 	});
 });
 
