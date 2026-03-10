@@ -28,7 +28,7 @@ import { Link } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { EmailJokeConfig } from './email-wizard.js';
+import { EmailJokeConfig } from './email-joke-config.js';
 
 interface AgentConfig {
 	id: number;
