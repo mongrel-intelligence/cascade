@@ -14,6 +14,29 @@ import { safeOperation } from '../../utils/safeOperation.js';
 import type { TriggerResult } from '../types.js';
 
 /**
+ * Resolve the work item ID for a trigger result.
+ *
+ * Returns the workItemId from the result if present, otherwise falls back to
+ * a DB lookup via pr_work_items using projectId (from agentInput.project.id)
+ * and prNumber. The DB lookup is best-effort and swallows errors.
+ */
+async function resolveWorkItemIdFromResult(result: TriggerResult): Promise<string | null> {
+	if (result.workItemId) return result.workItemId;
+	if (!result.prNumber) return null;
+
+	const projectId = (result.agentInput as { project?: { id?: string } }).project?.id;
+	if (!projectId) return null;
+
+	try {
+		const { lookupWorkItemForPR } = await import('../../db/repositories/prWorkItemsRepository.js');
+		return await lookupWorkItemForPR(projectId, result.prNumber);
+	} catch {
+		// DB lookup is best-effort; don't break the flow on error
+		return null;
+	}
+}
+
+/**
  * Delete the progress comment after a successful non-implementation agent run.
  *
  * The implementation agent's success is handled via lifecycle (handleSuccess),
@@ -21,7 +44,7 @@ import type { TriggerResult } from '../types.js';
  */
 export async function deleteProgressCommentOnSuccess(
 	result: TriggerResult,
-	_agentResult: AgentResult,
+	agentResult: AgentResult,
 ): Promise<void> {
 	if (result.agentType === 'implementation') return;
 
@@ -51,14 +74,21 @@ export async function deleteProgressCommentOnSuccess(
 		prNumber: result.prNumber,
 	});
 
+	// Resolve work item ID — prefer the one on the result, fall back to a DB lookup
+	const workItemId = await resolveWorkItemIdFromResult(result);
+
 	// Post review summary to PM work item if review was submitted and a work item is linked
-	if (result.workItemId && sessionState.reviewBody) {
+	if (workItemId && sessionState.reviewBody) {
 		const { postReviewToPM } = await import('../shared/review-pm-poster.js');
-		await postReviewToPM(result.workItemId, {
-			reviewBody: sessionState.reviewBody,
-			reviewEvent: sessionState.reviewEvent,
-			reviewUrl: sessionState.reviewUrl,
-		});
+		await postReviewToPM(
+			workItemId,
+			{
+				reviewBody: sessionState.reviewBody,
+				reviewEvent: sessionState.reviewEvent,
+				reviewUrl: sessionState.reviewUrl,
+			},
+			agentResult.progressCommentId,
+		);
 	}
 }
 
