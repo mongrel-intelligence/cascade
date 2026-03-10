@@ -55,9 +55,6 @@ vi.mock('../../../../src/gadgets/email/index.js', () => ({
 	ReplyToEmail: mockClass('ReplyToEmail'),
 	MarkEmailAsSeen: mockClass('MarkEmailAsSeen'),
 }));
-vi.mock('../../../../src/gadgets/sms/index.js', () => ({
-	SendSms: mockClass('SendSms'),
-}));
 vi.mock('../../../../src/gadgets/tmux.js', () => ({ Tmux: mockClass('Tmux') }));
 vi.mock('../../../../src/gadgets/todo/index.js', () => ({
 	TodoUpsert: mockClass('TodoUpsert'),
@@ -169,12 +166,12 @@ describe('resolveEffectiveCapabilities', () => {
 
 	it('handles mixed availability of optional integrations', () => {
 		const required: Capability[] = ['fs:read'];
-		const optional: Capability[] = ['pm:read', 'email:read', 'sms:send'];
-		const hasIntegration = (cat: IntegrationCategory) => cat === 'pm' || cat === 'sms';
+		const optional: Capability[] = ['pm:read', 'email:read', 'scm:read'];
+		const hasIntegration = (cat: IntegrationCategory) => cat === 'pm';
 		const result = resolveEffectiveCapabilities(required, optional, hasIntegration);
 		expect(result).toContain('pm:read');
-		expect(result).toContain('sms:send');
 		expect(result).not.toContain('email:read');
+		expect(result).not.toContain('scm:read');
 	});
 });
 

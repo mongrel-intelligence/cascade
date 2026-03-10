@@ -27,7 +27,6 @@ function getCapabilityIndicators(capabilities: DefinitionRow['definition']['capa
 		hasChecklists: all.includes('pm:checklist'),
 		isReadOnly: !all.includes('fs:write'),
 		hasEmail: all.includes('email:read') || all.includes('email:write'),
-		hasSms: all.includes('sms:send'),
 	};
 }
 
@@ -111,11 +110,6 @@ export function AgentDefinitionsTable({
 										{caps.hasEmail && (
 											<Badge variant="secondary" className="text-xs">
 												email
-											</Badge>
-										)}
-										{caps.hasSms && (
-											<Badge variant="secondary" className="text-xs">
-												sms
 											</Badge>
 										)}
 									</div>

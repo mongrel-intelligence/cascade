@@ -121,7 +121,7 @@ export const projectsRouter = router({
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm', 'email', 'sms']),
+					category: z.enum(['pm', 'scm', 'email']),
 					provider: z.string().min(1),
 					config: z.record(z.unknown()),
 					triggers: z.record(z.boolean()).optional(),
@@ -142,7 +142,7 @@ export const projectsRouter = router({
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm', 'email', 'sms']),
+					category: z.enum(['pm', 'scm', 'email']),
 					triggers: z.record(z.union([z.boolean(), z.string().nullable(), z.record(z.boolean())])),
 				}),
 			)
@@ -152,7 +152,7 @@ export const projectsRouter = router({
 			}),
 
 		delete: protectedProcedure
-			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm', 'email', 'sms']) }))
+			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm', 'email']) }))
 			.mutation(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				await deleteProjectIntegration(input.projectId, input.category);
@@ -162,7 +162,7 @@ export const projectsRouter = router({
 	// Integration Credentials
 	integrationCredentials: router({
 		list: protectedProcedure
-			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm', 'email', 'sms']) }))
+			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm', 'email']) }))
 			.query(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				const integration = await getIntegrationByProjectAndCategory(
@@ -177,7 +177,7 @@ export const projectsRouter = router({
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm', 'email', 'sms']),
+					category: z.enum(['pm', 'scm', 'email']),
 					role: z.string().min(1),
 					credentialId: z.number(),
 				}),
@@ -202,7 +202,7 @@ export const projectsRouter = router({
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm', 'email', 'sms']),
+					category: z.enum(['pm', 'scm', 'email']),
 					role: z.string().min(1),
 				}),
 			)

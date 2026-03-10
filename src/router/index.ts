@@ -18,7 +18,6 @@ import {
 import { GitHubRouterAdapter, injectEventType } from './adapters/github.js';
 import { JiraRouterAdapter } from './adapters/jira.js';
 import { TrelloRouterAdapter } from './adapters/trello.js';
-import { handleTwilioWebhook } from './adapters/twilio.js';
 import { startEmailScheduler, stopEmailScheduler } from './email-scheduler.js';
 import { getQueueStats } from './queue.js';
 import { processRouterWebhook } from './webhook-processor.js';
@@ -126,9 +125,6 @@ app.post(
 		},
 	}),
 );
-
-// Twilio SMS webhook handler
-app.post('/twilio/webhook/:projectId', handleTwilioWebhook);
 
 // Graceful shutdown
 async function shutdown(signal: string): Promise<void> {

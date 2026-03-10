@@ -106,8 +106,8 @@ CASCADE stores all project configuration in PostgreSQL (Supabase). The `config/p
 - `organizations` - Organization definitions (multi-tenant support)
 - `cascade_defaults` - Global defaults per org (model, iterations, timeouts, budget)
 - `projects` - Per-project config (repo, base branch, budget, backend)
-- `project_integrations` - Integration configs per project with `category` (pm/scm/email/sms), `provider` (trello/jira/github/imap/gmail/twilio), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
-- `integration_credentials` - Links integration roles to org-scoped credential rows (e.g., `api_key` → credential #5). Roles are provider-specific: trello has `api_key`/`token`, jira has `email`/`api_token`, github has `implementer_token`/`reviewer_token`, twilio has `account_sid`/`auth_token`/`phone_number`
+- `project_integrations` - Integration configs per project with `category` (pm/scm/email), `provider` (trello/jira/github/imap/gmail), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
+- `integration_credentials` - Links integration roles to org-scoped credential rows (e.g., `api_key` → credential #5). Roles are provider-specific: trello has `api_key`/`token`, jira has `email`/`api_token`, github has `implementer_token`/`reviewer_token`
 - `agent_configs` - Per-agent-type overrides (model, iterations, backend, prompt), scoped globally, per-org, or per-project
 - `credentials` - Org-scoped credentials (API keys, tokens)
 - `users` - Dashboard users (email, bcrypt password hash, org-scoped)
@@ -206,22 +206,6 @@ const openrouterKey = await getOrgCredential(projectId, 'OPENROUTER_API_KEY');
 
 Role definitions and env-var-key mappings are in `src/config/integrationRoles.ts`.
 
-### Twilio SMS Integration
-
-CASCADE supports sending and receiving SMS via Twilio. Configure per-project in the dashboard (Project Settings > Integrations > SMS tab) or CLI:
-
-```bash
-cascade credentials create --name "Twilio Account SID" --key TWILIO_ACCOUNT_SID --value ACxxx... --default
-cascade credentials create --name "Twilio Auth Token" --key TWILIO_AUTH_TOKEN --value xxx... --default
-cascade credentials create --name "Twilio Phone Number" --key TWILIO_PHONE_NUMBER --value +15550000001 --default
-cascade projects integration-credential-set <project-id> --category sms --role account_sid --credential-id 5
-cascade projects integration-credential-set <project-id> --category sms --role auth_token --credential-id 6
-cascade projects integration-credential-set <project-id> --category sms --role phone_number --credential-id 7
-```
-
-**Inbound webhook**: `POST /twilio/webhook/:projectId` — configure this URL in the Twilio console under *Phone Numbers → Manage → Active Numbers → [your number] → Messaging → A Message Comes In*. The handler validates the Twilio signature and logs incoming messages (agent triggering will be added with a future `sms-responder` agent).
-
-**Outbound SMS**: Agents use the `SendSms` gadget. SMS credentials are scoped automatically during agent execution (mirrors email integration).
 
 ### Agent Trigger Configuration
 
@@ -233,7 +217,6 @@ Triggers use a category-prefixed event format: `{category}:{event-name}`
 - PM triggers: `pm:status-changed`, `pm:label-added`
 - SCM triggers: `scm:check-suite-success`, `scm:check-suite-failure`, `scm:pr-review-submitted`
 - Email triggers: `email:received`
-- SMS triggers: `sms:received`
 
 #### CLI Commands
 

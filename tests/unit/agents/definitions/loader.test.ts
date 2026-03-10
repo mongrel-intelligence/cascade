@@ -437,7 +437,7 @@ describe('YAML agent definitions loader', () => {
 		});
 
 		it('all derived integration categories are valid', () => {
-			const validCategories = ['pm', 'scm', 'email', 'sms'];
+			const validCategories = ['pm', 'scm', 'email'];
 			for (const agentType of ALL_AGENT_TYPES) {
 				const def = loadAgentDefinition(agentType);
 				const integrations = deriveIntegrations(

@@ -55,10 +55,6 @@ export const CAPABILITY_GROUPS: Record<string, { label: string; caps: Capability
 		label: 'Email Integration',
 		caps: ['email:read', 'email:write'],
 	},
-	sms: {
-		label: 'SMS Integration (Twilio)',
-		caps: ['sms:send'],
-	},
 };
 
 /** Default empty definition used for "create" mode */

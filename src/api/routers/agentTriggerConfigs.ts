@@ -33,13 +33,13 @@ import type {
 
 /**
  * Trigger event format: {category}:{event-name}
- * Categories: pm, scm, email, sms
+ * Categories: pm, scm, email
  * Event name: lowercase letters, numbers, and hyphens
  */
 const TriggerEventSchema = z
 	.string()
 	.regex(
-		/^(pm|scm|email|sms|internal):[a-z][a-z0-9-]*$/,
+		/^(pm|scm|email|internal):[a-z][a-z0-9-]*$/,
 		'Event must be in format {category}:{event-name} (e.g., pm:status-changed, scm:check-suite-success)',
 	);
 
@@ -313,7 +313,6 @@ export const agentTriggerConfigsRouter = router({
 				pm: null as string | null,
 				scm: null as string | null,
 				email: null as string | null,
-				sms: null as string | null,
 			};
 			for (const integration of integrations) {
 				const category = integration.category as keyof typeof integrationsMap;

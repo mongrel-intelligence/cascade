@@ -78,7 +78,6 @@ export interface ProjectIntegrationsMap {
 	pm: string | null;
 	scm: string | null;
 	email: string | null;
-	sms: string | null;
 }
 
 /**
@@ -101,14 +100,13 @@ export const TRIGGER_CATEGORY_LABELS: Record<string, string> = {
 	pm: 'Project Management',
 	scm: 'Source Control',
 	email: 'Email',
-	sms: 'SMS',
 	internal: 'Internal',
 } as const;
 
 /**
  * Valid trigger categories.
  */
-export type TriggerCategory = 'pm' | 'scm' | 'email' | 'sms' | 'internal';
+export type TriggerCategory = 'pm' | 'scm' | 'email' | 'internal';
 
 // ============================================================================
 // Known Trigger Registry
@@ -220,14 +218,6 @@ export const TRIGGER_REGISTRY: Record<TriggerCategory, KnownTriggerEvent[]> = {
 			label: 'Email Received',
 			description: 'Email received',
 			contextPipeline: ['prefetchedEmails'],
-		},
-	],
-	sms: [
-		{
-			event: 'sms:received',
-			label: 'SMS Received',
-			description: 'SMS received',
-			contextPipeline: [],
 		},
 	],
 	internal: [

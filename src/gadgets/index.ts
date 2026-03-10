@@ -15,6 +15,3 @@ export { GetPRDetails, GetPRComments, ReplyToReviewComment } from './github/inde
 
 // Email gadgets
 export { SendEmail, SearchEmails, ReadEmail, ReplyToEmail } from './email/index.js';
-
-// SMS gadgets
-export { SendSms } from './sms/index.js';

@@ -17,12 +17,11 @@ describe('triggerTypes', () => {
 			expect(TRIGGER_CATEGORY_LABELS.pm).toBe('Project Management');
 			expect(TRIGGER_CATEGORY_LABELS.scm).toBe('Source Control');
 			expect(TRIGGER_CATEGORY_LABELS.email).toBe('Email');
-			expect(TRIGGER_CATEGORY_LABELS.sms).toBe('SMS');
 			expect(TRIGGER_CATEGORY_LABELS.internal).toBe('Internal');
 		});
 
-		it('has exactly 5 categories', () => {
-			expect(Object.keys(TRIGGER_CATEGORY_LABELS)).toHaveLength(5);
+		it('has exactly 4 categories', () => {
+			expect(Object.keys(TRIGGER_CATEGORY_LABELS)).toHaveLength(4);
 		});
 	});
 
@@ -74,10 +73,9 @@ describe('triggerTypes', () => {
 			const pm: TriggerCategory = 'pm';
 			const scm: TriggerCategory = 'scm';
 			const email: TriggerCategory = 'email';
-			const sms: TriggerCategory = 'sms';
 			const internal: TriggerCategory = 'internal';
 
-			expect([pm, scm, email, sms, internal]).toEqual(['pm', 'scm', 'email', 'sms', 'internal']);
+			expect([pm, scm, email, internal]).toEqual(['pm', 'scm', 'email', 'internal']);
 		});
 
 		it('ProjectTriggersView has agents and integrations', () => {
@@ -92,7 +90,6 @@ describe('triggerTypes', () => {
 					pm: 'trello',
 					scm: 'github',
 					email: null,
-					sms: null,
 				},
 			};
 
@@ -103,8 +100,8 @@ describe('triggerTypes', () => {
 	});
 
 	describe('TRIGGER_REGISTRY', () => {
-		it('has all five categories', () => {
-			expect(Object.keys(TRIGGER_REGISTRY)).toEqual(['pm', 'scm', 'email', 'sms', 'internal']);
+		it('has all four categories', () => {
+			expect(Object.keys(TRIGGER_REGISTRY)).toEqual(['pm', 'scm', 'email', 'internal']);
 		});
 
 		it('pm category has expected triggers', () => {
@@ -132,11 +129,6 @@ describe('triggerTypes', () => {
 		it('email category has expected triggers', () => {
 			const emailEvents = TRIGGER_REGISTRY.email.map((t) => t.event);
 			expect(emailEvents).toContain('email:received');
-		});
-
-		it('sms category has expected triggers', () => {
-			const smsEvents = TRIGGER_REGISTRY.sms.map((t) => t.event);
-			expect(smsEvents).toContain('sms:received');
 		});
 
 		it('internal category has expected triggers', () => {
@@ -167,7 +159,7 @@ describe('triggerTypes', () => {
 		});
 
 		it('all provider values are valid KnownProviders', () => {
-			const validProviders = new Set(['trello', 'jira', 'github', 'imap', 'gmail', 'twilio']);
+			const validProviders = new Set(['trello', 'jira', 'github', 'imap', 'gmail']);
 			const allProviders = Object.values(TRIGGER_REGISTRY)
 				.flat()
 				.flatMap((t) => t.providers ?? []);
