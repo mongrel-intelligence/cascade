@@ -20,7 +20,7 @@ import type { TriggerResult } from '../types.js';
  * a DB lookup via pr_work_items using projectId (from agentInput.project.id)
  * and prNumber. The DB lookup is best-effort and swallows errors.
  */
-async function resolveWorkItemId(result: TriggerResult): Promise<string | null> {
+async function resolveWorkItemIdFromResult(result: TriggerResult): Promise<string | null> {
 	if (result.workItemId) return result.workItemId;
 	if (!result.prNumber) return null;
 
@@ -75,7 +75,7 @@ export async function deleteProgressCommentOnSuccess(
 	});
 
 	// Resolve work item ID — prefer the one on the result, fall back to a DB lookup
-	const workItemId = await resolveWorkItemId(result);
+	const workItemId = await resolveWorkItemIdFromResult(result);
 
 	// Post review summary to PM work item if review was submitted and a work item is linked
 	if (workItemId && sessionState.reviewBody) {
