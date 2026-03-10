@@ -34,10 +34,6 @@ vi.mock('../../../src/pm/context.js', () => ({
 	),
 }));
 
-vi.mock('../../../src/email/integration.js', () => ({
-	withEmailIntegration: vi.fn((_projectId: string, fn: () => unknown) => fn()),
-}));
-
 vi.mock('../../../src/triggers/shared/integration-validation.js', () => ({
 	validateIntegrations: vi.fn().mockResolvedValue({ valid: true, errors: [] }),
 	formatValidationErrors: vi.fn().mockReturnValue(''),

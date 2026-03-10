@@ -8,7 +8,6 @@
 import { deriveIntegrations } from '../../agents/capabilities/index.js';
 import { resolveAgentDefinition } from '../../agents/definitions/loader.js';
 import type { IntegrationCategory } from '../../agents/definitions/schema.js';
-import { hasEmailIntegration } from '../../email/index.js';
 import { hasScmIntegration, hasScmPersonaToken } from '../../github/integration.js';
 import { getPersonaForAgentType } from '../../github/personas.js';
 import { hasPmIntegration } from '../../pm/integration.js';
@@ -97,20 +96,6 @@ async function validateScmIntegration(
 	return null;
 }
 
-async function validateEmailIntegration(
-	projectId: string,
-	agentType: string,
-): Promise<ValidationError | null> {
-	const hasEmail = await hasEmailIntegration(projectId);
-	if (!hasEmail) {
-		return {
-			category: 'email',
-			message: `Agent '${agentType}' requires email integration, but none is configured.`,
-		};
-	}
-	return null;
-}
-
 // ============================================================================
 // Main validation function
 // ============================================================================
@@ -132,8 +117,6 @@ export async function validateIntegrations(
 				return validatePmIntegration(projectId, agentType);
 			case 'scm':
 				return validateScmIntegration(projectId, agentType);
-			case 'email':
-				return validateEmailIntegration(projectId, agentType);
 			default:
 				return null;
 		}

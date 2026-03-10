@@ -15,13 +15,6 @@ import { Sleep } from '../../gadgets/Sleep.js';
 import { VerifyChanges } from '../../gadgets/VerifyChanges.js';
 import { WriteFile } from '../../gadgets/WriteFile.js';
 import {
-	MarkEmailAsSeen,
-	ReadEmail,
-	ReplyToEmail,
-	SearchEmails,
-	SendEmail,
-} from '../../gadgets/email/index.js';
-import {
 	CreatePR,
 	CreatePRReview,
 	GetCIRunLogs,
@@ -131,15 +124,6 @@ const GADGET_CONSTRUCTORS: Record<string, new () => any> = {
 
 	// scm:pr
 	CreatePR,
-
-	// email:read
-	SearchEmails,
-	ReadEmail,
-	MarkEmailAsSeen,
-
-	// email:write
-	SendEmail,
-	ReplyToEmail,
 };
 
 // ============================================================================
@@ -387,24 +371,22 @@ export function generateUnavailableCapabilitiesNote(unavailableCaps: Capability[
  */
 export async function createIntegrationChecker(projectId: string): Promise<IntegrationChecker> {
 	// Import integration checking functions dynamically to avoid circular deps
-	const [{ hasPmIntegration }, { hasScmIntegration }, { hasEmailIntegration }] = await Promise.all([
+	const [{ hasPmIntegration }, { hasScmIntegration }] = await Promise.all([
 		import('../../pm/integration.js'),
 		import('../../github/integration.js'),
-		import('../../email/integration.js'),
 	]);
 
 	// Pre-fetch all integration statuses in parallel
-	const [hasPm, hasScm, hasEmail] = await Promise.all([
+	const [hasPm, hasScm] = await Promise.all([
 		hasPmIntegration(projectId),
 		hasScmIntegration(projectId),
-		hasEmailIntegration(projectId),
 	]);
 
 	// Return synchronous checker
 	const availableIntegrations: Record<IntegrationCategory, boolean> = {
 		pm: hasPm,
 		scm: hasScm,
-		email: hasEmail,
+		email: false,
 	};
 
 	return (category: IntegrationCategory) => availableIntegrations[category] ?? false;

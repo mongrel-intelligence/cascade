@@ -15,10 +15,6 @@ vi.mock('../../../../src/github/integration.js', () => ({
 	hasScmPersonaToken: vi.fn(),
 }));
 
-vi.mock('../../../../src/email/integration.js', () => ({
-	hasEmailIntegration: vi.fn(),
-}));
-
 vi.mock('../../../../src/github/personas.js', () => ({
 	getPersonaForAgentType: vi.fn().mockReturnValue('implementer'),
 }));
@@ -32,7 +28,6 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 	},
 }));
 
-import { hasEmailIntegration } from '../../../../src/email/integration.js';
 import { hasScmIntegration, hasScmPersonaToken } from '../../../../src/github/integration.js';
 import { getPersonaForAgentType } from '../../../../src/github/personas.js';
 import { hasPmIntegration } from '../../../../src/pm/integration.js';
@@ -141,14 +136,6 @@ describe('integration-validation', () => {
 				const result = await validateIntegrations('test-project', 'review');
 				expect(result.valid).toBe(false);
 				expect(result.errors[0].message).toContain('Reviewer token');
-			});
-		});
-
-		describe('Email integration validation', () => {
-			it('hasEmailIntegration mock is available for future email-capable agents', () => {
-				// Email integration validation logic is tested via mocks.
-				// Email-specific agents have been removed; this tests the mock setup.
-				expect(typeof hasEmailIntegration).toBe('function');
 			});
 		});
 
