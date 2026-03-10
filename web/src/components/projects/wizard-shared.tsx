@@ -1,5 +1,5 @@
 /**
- * Shared wizard UI components used across pm-wizard, email-wizard, and twilio-wizard.
+ * Shared wizard UI components used across pm-wizard and email-wizard.
  * Extracted to eliminate ~250 lines of verbatim duplication.
  */
 import { Input } from '@/components/ui/input.js';
@@ -36,7 +36,7 @@ export interface CredentialOption {
  *
  * The `status` prop is a superset of all three wizard usages:
  * - pm-wizard uses 'pending' | 'complete' | 'error' | 'active'
- * - email-wizard and twilio-wizard use 'pending' | 'complete' | 'active'
+ * - email-wizard uses 'pending' | 'complete' | 'active'
  */
 export function WizardStep({
 	stepNumber,
@@ -262,7 +262,7 @@ export function FieldMappingRow({
  * Renders as a "Create new" link that expands into a small form.
  *
  * The optional `suggestedKey` prop pre-fills the ENV_VAR_KEY input and is
- * reset on success (used by email-wizard and twilio-wizard; absent in pm-wizard).
+ * reset on success (used by email-wizard; absent in pm-wizard).
  */
 export function InlineCredentialCreator({
 	onCreated,

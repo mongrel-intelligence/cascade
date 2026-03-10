@@ -446,7 +446,7 @@ describe('credentialsRepository', () => {
 		it('returns null when no integration found for category', async () => {
 			mockDb.chain.where.mockResolvedValueOnce([]);
 
-			const result = await getIntegrationProvider('proj1', 'sms');
+			const result = await getIntegrationProvider('proj1', 'nonexistent');
 
 			expect(result).toBeNull();
 		});

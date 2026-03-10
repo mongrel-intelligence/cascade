@@ -1,7 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { ImapFlow } from 'imapflow';
-import twilio from 'twilio';
 import { z } from 'zod';
 import { getDb } from '../../db/client.js';
 import { decryptCredential } from '../../db/crypto.js';
@@ -458,31 +457,6 @@ export const integrationsDiscoveryRouter = router({
 				await client.logout();
 
 				return { success: true, email };
-			});
-		}),
-
-	/**
-	 * Verify Twilio credentials by fetching the account details.
-	 */
-	verifyTwilio: protectedProcedure
-		.input(
-			z.object({
-				accountSidCredentialId: z.number(),
-				authTokenCredentialId: z.number(),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			logger.debug('integrationsDiscovery.verifyTwilio called', { orgId: ctx.effectiveOrgId });
-
-			const [accountSid, authToken] = await Promise.all([
-				resolveCredentialValue(input.accountSidCredentialId, ctx.effectiveOrgId),
-				resolveCredentialValue(input.authTokenCredentialId, ctx.effectiveOrgId),
-			]);
-
-			return wrapIntegrationCall('Failed to verify Twilio credentials', async () => {
-				const client = twilio(accountSid, authToken);
-				const account = await client.api.accounts(accountSid).fetch();
-				return { friendlyName: account.friendlyName, status: account.status };
 			});
 		}),
 

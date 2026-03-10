@@ -44,7 +44,6 @@ import {
 	ReadWorkItem,
 	UpdateWorkItem,
 } from '../../gadgets/pm/index.js';
-import { SendSms } from '../../gadgets/sms/index.js';
 import { Tmux } from '../../gadgets/tmux.js';
 import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../../gadgets/todo/index.js';
 import type { ToolManifest } from '../contracts/index.js';
@@ -141,9 +140,6 @@ const GADGET_CONSTRUCTORS: Record<string, new () => any> = {
 	// email:write
 	SendEmail,
 	ReplyToEmail,
-
-	// sms:send
-	SendSms,
 };
 
 // ============================================================================
@@ -366,7 +362,6 @@ export function generateUnavailableCapabilitiesNote(unavailableCaps: Capability[
 		pm: 'PM integration (Trello/JIRA)',
 		scm: 'SCM integration (GitHub)',
 		email: 'Email integration',
-		sms: 'SMS integration (Twilio)',
 	};
 
 	for (const [integration, gadgetNames] of byIntegration) {
@@ -392,24 +387,17 @@ export function generateUnavailableCapabilitiesNote(unavailableCaps: Capability[
  */
 export async function createIntegrationChecker(projectId: string): Promise<IntegrationChecker> {
 	// Import integration checking functions dynamically to avoid circular deps
-	const [
-		{ hasPmIntegration },
-		{ hasScmIntegration },
-		{ hasEmailIntegration },
-		{ hasSmsIntegration },
-	] = await Promise.all([
+	const [{ hasPmIntegration }, { hasScmIntegration }, { hasEmailIntegration }] = await Promise.all([
 		import('../../pm/integration.js'),
 		import('../../github/integration.js'),
 		import('../../email/integration.js'),
-		import('../../sms/index.js'),
 	]);
 
 	// Pre-fetch all integration statuses in parallel
-	const [hasPm, hasScm, hasEmail, hasSms] = await Promise.all([
+	const [hasPm, hasScm, hasEmail] = await Promise.all([
 		hasPmIntegration(projectId),
 		hasScmIntegration(projectId),
 		hasEmailIntegration(projectId),
-		hasSmsIntegration(projectId),
 	]);
 
 	// Return synchronous checker
@@ -417,7 +405,6 @@ export async function createIntegrationChecker(projectId: string): Promise<Integ
 		pm: hasPm,
 		scm: hasScm,
 		email: hasEmail,
-		sms: hasSms,
 	};
 
 	return (category: IntegrationCategory) => availableIntegrations[category] ?? false;

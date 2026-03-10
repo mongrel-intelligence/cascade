@@ -54,9 +54,6 @@ vi.mock('../../../../src/gadgets/email/index.js', () => ({
 	ReplyToEmail: mockClass('ReplyToEmail'),
 	MarkEmailAsSeen: mockClass('MarkEmailAsSeen'),
 }));
-vi.mock('../../../../src/gadgets/sms/index.js', () => ({
-	SendSms: mockClass('SendSms'),
-}));
 vi.mock('../../../../src/gadgets/tmux.js', () => ({ Tmux: mockClass('Tmux') }));
 vi.mock('../../../../src/gadgets/todo/index.js', () => ({
 	TodoUpsert: mockClass('TodoUpsert'),
@@ -185,14 +182,6 @@ describe('buildGadgetsFromCapabilities', () => {
 			const gadgets = names(buildGadgetsFromCapabilities(caps));
 			expect(gadgets).toContain('SendEmail');
 			expect(gadgets).toContain('ReplyToEmail');
-		});
-	});
-
-	describe('sms capabilities', () => {
-		it('sms:send includes SMS gadget', () => {
-			const caps: Capability[] = ['sms:send'];
-			const gadgets = names(buildGadgetsFromCapabilities(caps));
-			expect(gadgets).toContain('SendSms');
 		});
 	});
 

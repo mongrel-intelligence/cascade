@@ -32,26 +32,15 @@ describe('PROVIDER_CATEGORY', () => {
 		expect(PROVIDER_CATEGORY.gmail).toBe('email');
 	});
 
-	it('maps twilio to sms category', () => {
-		expect(PROVIDER_CATEGORY.twilio).toBe('sms');
-	});
-
 	it('maps all known providers to valid categories', () => {
-		const validCategories: IntegrationCategory[] = ['pm', 'scm', 'email', 'sms'];
+		const validCategories: IntegrationCategory[] = ['pm', 'scm', 'email'];
 		for (const [provider, category] of Object.entries(PROVIDER_CATEGORY)) {
 			expect(validCategories).toContain(category);
 		}
 	});
 
 	it('contains all expected providers', () => {
-		const expectedProviders: IntegrationProvider[] = [
-			'trello',
-			'jira',
-			'github',
-			'imap',
-			'gmail',
-			'twilio',
-		];
+		const expectedProviders: IntegrationProvider[] = ['trello', 'jira', 'github', 'imap', 'gmail'];
 		for (const provider of expectedProviders) {
 			expect(PROVIDER_CATEGORY).toHaveProperty(provider);
 		}
@@ -129,13 +118,6 @@ describe('PROVIDER_CREDENTIAL_ROLES', () => {
 		const roles = PROVIDER_CREDENTIAL_ROLES.github.map((r) => r.role);
 		expect(roles).toContain('implementer_token');
 		expect(roles).toContain('reviewer_token');
-	});
-
-	it('twilio has account_sid, auth_token, and phone_number roles', () => {
-		const roles = PROVIDER_CREDENTIAL_ROLES.twilio.map((r) => r.role);
-		expect(roles).toContain('account_sid');
-		expect(roles).toContain('auth_token');
-		expect(roles).toContain('phone_number');
 	});
 
 	it('trello envVarKeys map to correct values', () => {

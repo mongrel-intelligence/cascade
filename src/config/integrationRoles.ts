@@ -1,5 +1,5 @@
-export type IntegrationCategory = 'pm' | 'scm' | 'email' | 'sms';
-export type IntegrationProvider = 'trello' | 'jira' | 'github' | 'imap' | 'gmail' | 'twilio';
+export type IntegrationCategory = 'pm' | 'scm' | 'email';
+export type IntegrationProvider = 'trello' | 'jira' | 'github' | 'imap' | 'gmail';
 
 export const PROVIDER_CATEGORY: Record<IntegrationProvider, IntegrationCategory> = {
 	trello: 'pm',
@@ -7,7 +7,6 @@ export const PROVIDER_CATEGORY: Record<IntegrationProvider, IntegrationCategory>
 	github: 'scm',
 	imap: 'email',
 	gmail: 'email',
-	twilio: 'sms',
 };
 
 export interface CredentialRoleDef {
@@ -44,10 +43,5 @@ export const PROVIDER_CREDENTIAL_ROLES: Record<IntegrationProvider, CredentialRo
 	gmail: [
 		{ role: 'gmail_email', label: 'Gmail Address', envVarKey: 'EMAIL_GMAIL_ADDRESS' },
 		{ role: 'gmail_refresh_token', label: 'Refresh Token', envVarKey: 'EMAIL_GMAIL_REFRESH_TOKEN' },
-	],
-	twilio: [
-		{ role: 'account_sid', label: 'Account SID', envVarKey: 'TWILIO_ACCOUNT_SID' },
-		{ role: 'auth_token', label: 'Auth Token', envVarKey: 'TWILIO_AUTH_TOKEN' },
-		{ role: 'phone_number', label: 'Phone Number', envVarKey: 'TWILIO_PHONE_NUMBER' },
 	],
 };

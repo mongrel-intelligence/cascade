@@ -142,15 +142,6 @@ describe('SupportedTriggerSchema', () => {
 		expect(result.success).toBe(true);
 	});
 
-	it('parses a valid trigger with sms:received', () => {
-		const trigger = {
-			event: 'sms:received',
-			label: 'SMS Received',
-		};
-		const result = SupportedTriggerSchema.safeParse(trigger);
-		expect(result.success).toBe(true);
-	});
-
 	it('rejects invalid event format (missing category)', () => {
 		const trigger = {
 			event: 'card-moved', // Missing category prefix
@@ -204,7 +195,7 @@ describe('SupportedTriggerSchema', () => {
 		const trigger = {
 			event: 'pm:status-changed',
 			label: 'Card Moved',
-			providers: ['trello', 'jira', 'github', 'imap', 'gmail', 'twilio'],
+			providers: ['trello', 'jira', 'github', 'imap', 'gmail'],
 		};
 		const result = SupportedTriggerSchema.safeParse(trigger);
 		expect(result.success).toBe(true);
@@ -252,10 +243,6 @@ describe('KnownProviderSchema', () => {
 
 	it('accepts gmail', () => {
 		expect(KnownProviderSchema.safeParse('gmail').success).toBe(true);
-	});
-
-	it('accepts twilio', () => {
-		expect(KnownProviderSchema.safeParse('twilio').success).toBe(true);
 	});
 
 	it('rejects unknown providers', () => {
@@ -311,7 +298,7 @@ describe('IntegrationRequirementsSchema', () => {
 	it('accepts all valid integration categories', () => {
 		const requirements = {
 			required: ['pm', 'scm'],
-			optional: ['email', 'sms'],
+			optional: ['email'],
 		};
 		const result = IntegrationRequirementsSchema.safeParse(requirements);
 		expect(result.success).toBe(true);
