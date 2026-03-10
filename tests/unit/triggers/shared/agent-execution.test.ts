@@ -99,6 +99,11 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 
 vi.mock('../../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	createWorkItem: vi.fn().mockResolvedValue(undefined),
+	linkPRToWorkItem: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
+	updateRunPRNumber: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { runAgentExecutionPipeline } from '../../../../src/triggers/shared/agent-execution.js';

@@ -1,4 +1,4 @@
-import { type SQL, and, asc, count, desc, eq, gte, inArray, lte } from 'drizzle-orm';
+import { type SQL, and, asc, count, desc, eq, gte, inArray, isNull, lte } from 'drizzle-orm';
 import { getDb } from '../client.js';
 import {
 	agentRunLlmCalls,
@@ -116,6 +116,14 @@ export async function createRun(input: CreateRunInput): Promise<string> {
 		})
 		.returning({ id: agentRuns.id });
 	return row.id;
+}
+
+export async function updateRunPRNumber(runId: string, prNumber: number): Promise<void> {
+	const db = getDb();
+	await db
+		.update(agentRuns)
+		.set({ prNumber })
+		.where(and(eq(agentRuns.id, runId), isNull(agentRuns.prNumber)));
 }
 
 export async function completeRun(runId: string, input: CompleteRunInput): Promise<void> {
