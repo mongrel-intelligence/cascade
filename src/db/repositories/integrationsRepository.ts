@@ -93,15 +93,6 @@ export async function deleteProjectIntegration(projectId: string, category: stri
 		);
 }
 
-export async function getAllProjectIdsWithEmailIntegration(): Promise<string[]> {
-	const db = getDb();
-	const rows = await db
-		.select({ projectId: projectIntegrations.projectId })
-		.from(projectIntegrations)
-		.where(eq(projectIntegrations.category, 'email'));
-	return rows.map((r) => r.projectId);
-}
-
 // ============================================================================
 // Integration Credentials
 // ============================================================================

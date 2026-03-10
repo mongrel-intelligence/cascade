@@ -345,7 +345,6 @@ export function generateUnavailableCapabilitiesNote(unavailableCaps: Capability[
 	const integrationLabels: Record<IntegrationCategory, string> = {
 		pm: 'PM integration (Trello/JIRA)',
 		scm: 'SCM integration (GitHub)',
-		email: 'Email integration',
 	};
 
 	for (const [integration, gadgetNames] of byIntegration) {
@@ -386,7 +385,6 @@ export async function createIntegrationChecker(projectId: string): Promise<Integ
 	const availableIntegrations: Record<IntegrationCategory, boolean> = {
 		pm: hasPm,
 		scm: hasScm,
-		email: false,
 	};
 
 	return (category: IntegrationCategory) => availableIntegrations[category] ?? false;

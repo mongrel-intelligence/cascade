@@ -26,7 +26,6 @@ function getCapabilityIndicators(capabilities: DefinitionRow['definition']['capa
 		canCreatePR: all.includes('scm:pr'),
 		hasChecklists: all.includes('pm:checklist'),
 		isReadOnly: !all.includes('fs:write'),
-		hasEmail: false, // email capabilities removed
 	};
 }
 
@@ -105,11 +104,6 @@ export function AgentDefinitionsTable({
 										{caps.isReadOnly && (
 											<Badge variant="outline" className="text-xs">
 												read-only
-											</Badge>
-										)}
-										{caps.hasEmail && (
-											<Badge variant="secondary" className="text-xs">
-												email
 											</Badge>
 										)}
 									</div>

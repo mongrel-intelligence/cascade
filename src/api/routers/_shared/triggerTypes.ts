@@ -28,7 +28,7 @@ export type TriggerParameterValue = string | boolean | number;
  */
 export interface TriggerParameterDef {
 	name: string;
-	type: 'string' | 'email' | 'boolean' | 'select' | 'number';
+	type: 'string' | 'boolean' | 'select' | 'number';
 	label: string;
 	description: string | null;
 	required: boolean;
@@ -77,7 +77,6 @@ export interface AgentTriggersView {
 export interface ProjectIntegrationsMap {
 	pm: string | null;
 	scm: string | null;
-	email: string | null;
 }
 
 /**
@@ -99,14 +98,13 @@ export interface ProjectTriggersView {
 export const TRIGGER_CATEGORY_LABELS: Record<string, string> = {
 	pm: 'Project Management',
 	scm: 'Source Control',
-	email: 'Email',
 	internal: 'Internal',
 } as const;
 
 /**
  * Valid trigger categories.
  */
-export type TriggerCategory = 'pm' | 'scm' | 'email' | 'internal';
+export type TriggerCategory = 'pm' | 'scm' | 'internal';
 
 // ============================================================================
 // Known Trigger Registry
@@ -217,14 +215,6 @@ export const TRIGGER_REGISTRY: Record<TriggerCategory, KnownTriggerEvent[]> = {
 			description: 'PR has merge conflicts with the base branch',
 			contextPipeline: ['prContext'],
 			providers: ['github'],
-		},
-	],
-	email: [
-		{
-			event: 'email:received',
-			label: 'Email Received',
-			description: 'Email received',
-			contextPipeline: [],
 		},
 	],
 	internal: [

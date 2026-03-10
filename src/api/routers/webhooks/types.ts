@@ -29,7 +29,7 @@ export interface JiraWebhookInfo {
 export interface ProjectContext {
 	projectId: string;
 	orgId: string;
-	repo?: string; // optional for email-only projects
+	repo?: string;
 	pmType: 'trello' | 'jira';
 	boardId?: string;
 	jiraBaseUrl?: string;

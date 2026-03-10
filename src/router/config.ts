@@ -5,7 +5,7 @@ import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 // Minimal config types - what router needs for quick filtering
 export interface RouterProjectConfig {
 	id: string;
-	repo?: string; // owner/repo format (optional for email-only projects)
+	repo?: string; // owner/repo format (optional for projects without SCM integration)
 	pmType: 'trello' | 'jira';
 	trello?: {
 		boardId: string;

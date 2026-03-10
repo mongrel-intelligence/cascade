@@ -200,7 +200,6 @@ export function getCapabilitiesByIntegration(): Record<
 		builtin: [],
 		pm: [],
 		scm: [],
-		email: [], // email capabilities removed; kept for IntegrationCategory compatibility
 	};
 
 	for (const cap of CAPABILITIES) {

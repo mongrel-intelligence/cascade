@@ -51,14 +51,14 @@ describe('ProjectsIntegrationCredentials (overrides)', () => {
 		mockLoadConfig.mockReturnValue(baseConfig);
 	});
 
-	it('queries pm, scm, and email categories by default', async () => {
+	it('queries pm and scm categories by default', async () => {
 		const client = makeClient();
 		mockCreateDashboardClient.mockReturnValue(client);
 
 		const cmd = new ProjectsIntegrationCredentials(['my-project'], oclifConfig as never);
 		await cmd.run();
 
-		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledTimes(3);
+		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledTimes(2);
 		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledWith({
 			projectId: 'my-project',
 			category: 'pm',
@@ -66,27 +66,6 @@ describe('ProjectsIntegrationCredentials (overrides)', () => {
 		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledWith({
 			projectId: 'my-project',
 			category: 'scm',
-		});
-		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledWith({
-			projectId: 'my-project',
-			category: 'email',
-		});
-	});
-
-	it('queries only email when --category email is passed', async () => {
-		const client = makeClient();
-		mockCreateDashboardClient.mockReturnValue(client);
-
-		const cmd = new ProjectsIntegrationCredentials(
-			['my-project', '--category', 'email'],
-			oclifConfig as never,
-		);
-		await cmd.run();
-
-		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledTimes(1);
-		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledWith({
-			projectId: 'my-project',
-			category: 'email',
 		});
 	});
 
@@ -133,49 +112,11 @@ describe('ProjectsIntegrationCredentials (overrides)', () => {
 		);
 		await expect(cmd.run()).rejects.toThrow();
 	});
-
-	it('outputs email creds in JSON when --json flag is set', async () => {
-		const creds = [{ role: 'gmail_refresh_token', credentialId: 5, credentialName: 'Gmail' }];
-		const client = makeClient();
-		(client.projects.integrationCredentials.list.query as ReturnType<typeof vi.fn>)
-			.mockResolvedValueOnce([]) // pm
-			.mockResolvedValueOnce([]) // scm
-			.mockResolvedValueOnce(creds); // email
-		mockCreateDashboardClient.mockReturnValue(client);
-		const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
-		const cmd = new ProjectsIntegrationCredentials(['my-project', '--json'], oclifConfig as never);
-		await cmd.run();
-
-		const output = JSON.parse(consoleSpy.mock.calls[0][0] as string) as unknown[];
-		expect(output).toEqual(
-			expect.arrayContaining([expect.objectContaining({ category: 'email' })]),
-		);
-		consoleSpy.mockRestore();
-	});
 });
 
 describe('ProjectsIntegrationCredentialSet (override-set)', () => {
 	beforeEach(() => {
 		mockLoadConfig.mockReturnValue(baseConfig);
-	});
-
-	it('links an email credential role', async () => {
-		const client = makeClient();
-		mockCreateDashboardClient.mockReturnValue(client);
-
-		const cmd = new ProjectsIntegrationCredentialSet(
-			['my-project', '--category', 'email', '--role', 'imap_password', '--credential-id', '7'],
-			oclifConfig as never,
-		);
-		await cmd.run();
-
-		expect(client.projects.integrationCredentials.set.mutate).toHaveBeenCalledWith({
-			projectId: 'my-project',
-			category: 'email',
-			role: 'imap_password',
-			credentialId: 7,
-		});
 	});
 
 	it('links a pm credential role', async () => {
@@ -228,23 +169,6 @@ describe('ProjectsIntegrationCredentialSet (override-set)', () => {
 describe('ProjectsIntegrationCredentialRm (override-rm)', () => {
 	beforeEach(() => {
 		mockLoadConfig.mockReturnValue(baseConfig);
-	});
-
-	it('unlinks an email credential role', async () => {
-		const client = makeClient();
-		mockCreateDashboardClient.mockReturnValue(client);
-
-		const cmd = new ProjectsIntegrationCredentialRm(
-			['my-project', '--category', 'email', '--role', 'imap_password'],
-			oclifConfig as never,
-		);
-		await cmd.run();
-
-		expect(client.projects.integrationCredentials.remove.mutate).toHaveBeenCalledWith({
-			projectId: 'my-project',
-			category: 'email',
-			role: 'imap_password',
-		});
 	});
 
 	it('unlinks a pm credential role', async () => {

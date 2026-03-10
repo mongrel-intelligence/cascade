@@ -20,7 +20,7 @@ export async function setupRepository(options: SetupRepositoryOptions): Promise<
 	// Create temp directory for all agents
 	const repoDir = createTempDir(project.id);
 
-	// Skip cloning if no repo is configured (email-only agents)
+	// Skip cloning if no repo is configured
 	if (!project.repo) {
 		log.info('No repo configured, skipping clone', { projectId: project.id, agentType });
 		return repoDir;

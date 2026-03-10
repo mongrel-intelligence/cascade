@@ -6,17 +6,17 @@ import { CAPABILITIES } from '../capabilities/registry.js';
 // ============================================================================
 
 // Integration categories (aligned with integrationRoles.ts)
-export const IntegrationCategorySchema = z.enum(['pm', 'scm', 'email']);
+export const IntegrationCategorySchema = z.enum(['pm', 'scm']);
 
 // Known providers for validation
-export const KnownProviderSchema = z.enum(['trello', 'jira', 'github', 'imap', 'gmail']);
+export const KnownProviderSchema = z.enum(['trello', 'jira', 'github']);
 
 // Trigger event format validation: {category}:{event-name}
-// Categories: pm, scm, email (integration-bound), internal (orchestration chaining)
+// Categories: pm, scm (integration-bound), internal (orchestration chaining)
 const TriggerEventSchema = z
 	.string()
 	.regex(
-		/^(pm|scm|email|internal):[a-z][a-z0-9-]*$/,
+		/^(pm|scm|internal):[a-z][a-z0-9-]*$/,
 		'Event must be in format {category}:{event-name} (e.g., pm:status-changed, scm:check-suite-success)',
 	);
 
@@ -26,14 +26,14 @@ const TriggerEventSchema = z
 
 /**
  * Parameter definition for agent triggers.
- * Supports string, email, boolean, and select types.
+ * Supports string, boolean, and select types.
  */
 export const TriggerParameterSchema = z
 	.object({
 		/** Parameter name (used as key in configuration) */
 		name: z.string(),
 		/** Parameter type - determines input widget */
-		type: z.enum(['string', 'email', 'boolean', 'select']),
+		type: z.enum(['string', 'boolean', 'select']),
 		/** Human-readable label for the parameter */
 		label: z.string(),
 		/** Optional description for help text */
@@ -50,7 +50,7 @@ export const TriggerParameterSchema = z
 			// Validate defaultValue type matches parameter type
 			if (p.defaultValue === undefined) return true;
 			if (p.type === 'boolean') return typeof p.defaultValue === 'boolean';
-			if (p.type === 'string' || p.type === 'email' || p.type === 'select') {
+			if (p.type === 'string' || p.type === 'select') {
 				return typeof p.defaultValue === 'string';
 			}
 			return true;
@@ -97,7 +97,7 @@ const ContextStepNameSchema = z.enum(CONTEXT_STEP_NAMES);
  * Examples:
  * - pm:status-changed (work item status changed, replaces pm:card-moved and pm:issue-transitioned)
  * - scm:check-suite-success (CI passed)
- * - email:received (new email received)
+ * - internal:orchestration (internal orchestration events)
  */
 export const SupportedTriggerSchema = z.object({
 	/** Event identifier, e.g., 'pm:status-changed', 'scm:check-suite-success' */
