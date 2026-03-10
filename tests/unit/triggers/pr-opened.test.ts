@@ -133,7 +133,7 @@ describe('PROpenedTrigger', () => {
 	});
 
 	describe('handle', () => {
-		it('returns result when PR body has Trello URL', async () => {
+		it('returns result when DB has Trello card linked', async () => {
 			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
 				enabled: true,
 				parameters: { authorMode: 'all' },
@@ -535,7 +535,7 @@ describe('PROpenedTrigger', () => {
 			expect(await trigger.handle(ctx)).toBeNull();
 		});
 
-		it('fires with undefined workItemId for null PR body', async () => {
+		it('fires with undefined workItemId when DB has no link', async () => {
 			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
 				enabled: true,

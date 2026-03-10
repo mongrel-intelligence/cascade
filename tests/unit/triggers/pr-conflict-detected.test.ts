@@ -250,7 +250,7 @@ describe('PRConflictDetectedTrigger', () => {
 			expect(result).toBeNull();
 		});
 
-		it('fires without work item when PR body has no reference', async () => {
+		it('fires without work item when DB has no link', async () => {
 			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
