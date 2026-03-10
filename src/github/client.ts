@@ -29,6 +29,7 @@ export interface PRDetails {
 	headSha: string;
 	baseRef: string;
 	merged: boolean;
+	mergeable: boolean | null;
 	user: { login: string };
 }
 
@@ -142,6 +143,7 @@ export const githubClient = {
 			headSha: data.head.sha,
 			baseRef: data.base.ref,
 			merged: data.merged ?? false,
+			mergeable: data.mergeable ?? null,
 			user: { login: data.user?.login || 'unknown' },
 		};
 	},
