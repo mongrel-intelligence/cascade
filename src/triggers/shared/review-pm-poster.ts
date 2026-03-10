@@ -10,6 +10,7 @@
  */
 
 import { getPMProviderOrNull } from '../../pm/index.js';
+import { logger } from '../../utils/logging.js';
 import { safeOperation } from '../../utils/safeOperation.js';
 
 const MAX_BODY_LENGTH = 15_000; // Leave headroom below Trello's 16K limit
@@ -68,10 +69,20 @@ export async function postReviewToPM(
 ): Promise<void> {
 	const { reviewBody, reviewEvent, reviewUrl } = sessionState;
 
-	if (!reviewBody || !reviewUrl) return;
+	if (!reviewBody || !reviewUrl) {
+		logger.warn('postReviewToPM skipped: missing reviewBody or reviewUrl', {
+			hasBody: !!reviewBody,
+			hasUrl: !!reviewUrl,
+			workItemId,
+		});
+		return;
+	}
 
 	const provider = getPMProviderOrNull();
-	if (!provider) return;
+	if (!provider) {
+		logger.warn('postReviewToPM skipped: no PM provider available', { workItemId });
+		return;
+	}
 
 	const event = reviewEvent ?? 'COMMENT';
 	const formatted = formatReviewForPM(reviewBody, event, reviewUrl);
@@ -81,8 +92,16 @@ export async function postReviewToPM(
 			async () => {
 				try {
 					await provider.updateComment(workItemId, progressCommentId, formatted);
+					logger.info('Updated existing PM comment with review summary', {
+						workItemId,
+						progressCommentId,
+					});
 				} catch {
 					await provider.addComment(workItemId, formatted);
+					logger.info('Added new PM comment with review summary (update failed)', {
+						workItemId,
+						progressCommentId,
+					});
 				}
 			},
 			{
@@ -91,9 +110,15 @@ export async function postReviewToPM(
 			},
 		);
 	} else {
-		await safeOperation(() => provider.addComment(workItemId, formatted), {
-			action: 'post review summary to PM work item',
-			workItemId,
-		});
+		await safeOperation(
+			async () => {
+				await provider.addComment(workItemId, formatted);
+				logger.info('Added new PM comment with review summary', { workItemId });
+			},
+			{
+				action: 'post review summary to PM work item',
+				workItemId,
+			},
+		);
 	}
 }

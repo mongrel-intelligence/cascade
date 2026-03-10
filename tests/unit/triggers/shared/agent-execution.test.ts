@@ -408,7 +408,7 @@ describe('postReviewSummaryToPM (via runAgentExecutionPipeline)', () => {
 		expect(mockPostReviewToPM).not.toHaveBeenCalled();
 	});
 
-	it('skips when sessionState has no reviewBody', async () => {
+	it('skips when sessionState has no reviewBody and logs reason', async () => {
 		mockRunAgent.mockResolvedValueOnce({ success: true, output: '', runId: 'run-rev' });
 		mockGetSessionState.mockReturnValue({ reviewBody: null });
 
@@ -419,6 +419,9 @@ describe('postReviewSummaryToPM (via runAgentExecutionPipeline)', () => {
 		);
 
 		expect(mockPostReviewToPM).not.toHaveBeenCalled();
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			'Review PM posting skipped: no reviewBody in session state',
+		);
 	});
 
 	it('resolves workItemId from DB when result.workItemId is undefined', async () => {
@@ -444,7 +447,7 @@ describe('postReviewSummaryToPM (via runAgentExecutionPipeline)', () => {
 		);
 	});
 
-	it('skips when no workItemId found (neither result nor DB)', async () => {
+	it('skips when no workItemId found (neither result nor DB) and logs reason', async () => {
 		mockRunAgent.mockResolvedValueOnce({ success: true, output: '', runId: 'run-rev' });
 		mockGetSessionState.mockReturnValue({
 			reviewBody: 'Good',
@@ -460,6 +463,10 @@ describe('postReviewSummaryToPM (via runAgentExecutionPipeline)', () => {
 		);
 
 		expect(mockPostReviewToPM).not.toHaveBeenCalled();
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			'Review PM posting skipped: no workItemId found',
+			expect.objectContaining({ projectId: 'project-1', prNumber: 55 }),
+		);
 	});
 
 	it('passes progressCommentId through', async () => {

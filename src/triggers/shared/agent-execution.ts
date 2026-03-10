@@ -242,7 +242,10 @@ async function postReviewSummaryToPM(
 
 	const { getSessionState } = await import('../../gadgets/sessionState.js');
 	const sessionState = getSessionState();
-	if (!sessionState.reviewBody) return;
+	if (!sessionState.reviewBody) {
+		logger.warn('Review PM posting skipped: no reviewBody in session state');
+		return;
+	}
 
 	// Resolve workItemId: prefer TriggerResult, fall back to DB lookup
 	let resolvedWorkItemId = workItemId;
@@ -256,7 +259,16 @@ async function postReviewSummaryToPM(
 			/* best-effort */
 		}
 	}
-	if (!resolvedWorkItemId) return;
+	if (!resolvedWorkItemId) {
+		logger.warn('Review PM posting skipped: no workItemId found', { projectId, prNumber });
+		return;
+	}
+
+	logger.info('Posting review summary to PM work item', {
+		workItemId: resolvedWorkItemId,
+		hasProgressCommentId: !!agentResult.progressCommentId,
+		event: sessionState.reviewEvent,
+	});
 
 	const { postReviewToPM } = await import('./review-pm-poster.js');
 	await postReviewToPM(

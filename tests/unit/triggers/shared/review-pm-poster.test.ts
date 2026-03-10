@@ -109,7 +109,7 @@ describe('postReviewToPM', () => {
 		mockSafeOperation.mockImplementation(async (fn: () => Promise<unknown>) => fn());
 	});
 
-	it('does nothing when reviewBody is null', async () => {
+	it('does nothing when reviewBody is null and logs reason', async () => {
 		await postReviewToPM('card-123', {
 			reviewBody: null,
 			reviewEvent: 'APPROVE',
@@ -117,9 +117,13 @@ describe('postReviewToPM', () => {
 		});
 
 		expect(mockGetPMProviderOrNull).not.toHaveBeenCalled();
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			'postReviewToPM skipped: missing reviewBody or reviewUrl',
+			expect.objectContaining({ hasBody: false, hasUrl: true, workItemId: 'card-123' }),
+		);
 	});
 
-	it('does nothing when reviewUrl is null', async () => {
+	it('does nothing when reviewUrl is null and logs reason', async () => {
 		await postReviewToPM('card-123', {
 			reviewBody: 'Looks good!',
 			reviewEvent: 'APPROVE',
@@ -127,9 +131,13 @@ describe('postReviewToPM', () => {
 		});
 
 		expect(mockGetPMProviderOrNull).not.toHaveBeenCalled();
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			'postReviewToPM skipped: missing reviewBody or reviewUrl',
+			expect.objectContaining({ hasBody: true, hasUrl: false, workItemId: 'card-123' }),
+		);
 	});
 
-	it('does nothing when PM provider is not available', async () => {
+	it('does nothing when PM provider is not available and logs reason', async () => {
 		mockGetPMProviderOrNull.mockReturnValue(null);
 
 		await postReviewToPM('card-123', {
@@ -139,6 +147,10 @@ describe('postReviewToPM', () => {
 		});
 
 		expect(mockAddComment).not.toHaveBeenCalled();
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			'postReviewToPM skipped: no PM provider available',
+			expect.objectContaining({ workItemId: 'card-123' }),
+		);
 	});
 
 	it('calls provider.addComment with formatted review when all data is present', async () => {
@@ -215,6 +227,10 @@ describe('postReviewToPM', () => {
 		expect(text).toContain('✅');
 		expect(text).toContain('LGTM!');
 		expect(mockAddComment).not.toHaveBeenCalled();
+		expect(mockLogger.info).toHaveBeenCalledWith(
+			'Updated existing PM comment with review summary',
+			expect.objectContaining({ workItemId: 'card-123', progressCommentId: 'comment-id-progress' }),
+		);
 	});
 
 	it('falls back to addComment when progressCommentId is provided but updateComment throws', async () => {
@@ -241,6 +257,10 @@ describe('postReviewToPM', () => {
 		expect(workItemId).toBe('card-123');
 		expect(text).toContain('✅');
 		expect(text).toContain('LGTM!');
+		expect(mockLogger.info).toHaveBeenCalledWith(
+			'Added new PM comment with review summary (update failed)',
+			expect.objectContaining({ workItemId: 'card-123', progressCommentId: 'comment-id-deleted' }),
+		);
 	});
 
 	it('uses addComment (not updateComment) when progressCommentId is undefined', async () => {
@@ -258,5 +278,9 @@ describe('postReviewToPM', () => {
 
 		expect(mockAddComment).toHaveBeenCalledTimes(1);
 		expect(mockUpdateComment).not.toHaveBeenCalled();
+		expect(mockLogger.info).toHaveBeenCalledWith(
+			'Added new PM comment with review summary',
+			expect.objectContaining({ workItemId: 'card-123' }),
+		);
 	});
 });
