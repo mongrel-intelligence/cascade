@@ -1,6 +1,7 @@
 export { CheckSuiteFailureTrigger } from './check-suite-failure.js';
 export { CheckSuiteSuccessTrigger } from './check-suite-success.js';
 export { PRCommentMentionTrigger } from './pr-comment-mention.js';
+export { PRConflictDetectedTrigger } from './pr-conflict-detected.js';
 export { PRMergedTrigger } from './pr-merged.js';
 export { PROpenedTrigger } from './pr-opened.js';
 export { PRReadyToMergeTrigger } from './pr-ready-to-merge.js';
