@@ -12,6 +12,11 @@ const MAX_ATTEMPTS = 2;
 const MERGEABLE_RETRY_COUNT = 2;
 const MERGEABLE_RETRY_DELAY_MS = 2000;
 
+// Export for cleanup when conflicts are resolved
+export function resetConflictAttempts(prNumber: number): void {
+	conflictAttempts.delete(prNumber);
+}
+
 export class PRConflictDetectedTrigger implements TriggerHandler {
 	name = 'pr-conflict-detected';
 	description =
@@ -112,6 +117,12 @@ export class PRConflictDetectedTrigger implements TriggerHandler {
 				prNumber,
 				attempts,
 			});
+			await githubClient.createPRComment(
+				owner,
+				repo,
+				prNumber,
+				'⚠️ Unable to automatically resolve merge conflicts after 2 attempts. Manual intervention required.',
+			);
 			return null;
 		}
 
