@@ -19,7 +19,7 @@ export function DefaultsForm() {
 	const [model, setModel] = useState('');
 	const [maxIterations, setMaxIterations] = useState('');
 	const [watchdogTimeoutMs, setWatchdogTimeoutMs] = useState('');
-	const [workItemBudgetUsd, setCardBudgetUsd] = useState('');
+	const [workItemBudgetUsd, setWorkItemBudgetUsd] = useState('');
 	const [agentBackend, setAgentBackend] = useState('');
 	const [progressModel, setProgressModel] = useState('');
 	const [progressIntervalMinutes, setProgressIntervalMinutes] = useState('');
@@ -30,7 +30,7 @@ export function DefaultsForm() {
 			setModel(d.model ?? '');
 			setMaxIterations(d.maxIterations?.toString() ?? '');
 			setWatchdogTimeoutMs(d.watchdogTimeoutMs?.toString() ?? '');
-			setCardBudgetUsd(d.workItemBudgetUsd ?? '');
+			setWorkItemBudgetUsd(d.workItemBudgetUsd ?? '');
 			setAgentBackend(d.agentBackend ?? '');
 			setProgressModel(d.progressModel ?? '');
 			setProgressIntervalMinutes(d.progressIntervalMinutes ?? '');
@@ -96,7 +96,7 @@ export function DefaultsForm() {
 					<Input
 						id="d-budget"
 						value={workItemBudgetUsd}
-						onChange={(e) => setCardBudgetUsd(e.target.value)}
+						onChange={(e) => setWorkItemBudgetUsd(e.target.value)}
 						placeholder="e.g. 2.00"
 					/>
 				</div>

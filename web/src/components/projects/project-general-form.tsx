@@ -30,7 +30,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const [baseBranch, setBaseBranch] = useState(project.baseBranch ?? 'main');
 	const [branchPrefix, setBranchPrefix] = useState(project.branchPrefix ?? 'feature/');
 	const [model, setModel] = useState(project.model ?? '');
-	const [workItemBudgetUsd, setCardBudgetUsd] = useState(project.workItemBudgetUsd ?? '');
+	const [workItemBudgetUsd, setWorkItemBudgetUsd] = useState(project.workItemBudgetUsd ?? '');
 	const [agentBackend, setAgentBackend] = useState(project.agentBackend ?? '');
 	const [subscriptionCostZero, setSubscriptionCostZero] = useState(
 		project.subscriptionCostZero ?? false,
@@ -113,7 +113,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 					<Input
 						id="workItemBudgetUsd"
 						value={workItemBudgetUsd}
-						onChange={(e) => setCardBudgetUsd(e.target.value)}
+						onChange={(e) => setWorkItemBudgetUsd(e.target.value)}
 						placeholder="Inherits from defaults"
 					/>
 				</div>
