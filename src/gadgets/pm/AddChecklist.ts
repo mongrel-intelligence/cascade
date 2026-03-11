@@ -6,6 +6,6 @@ export const AddChecklist = createGadgetClass(addChecklistDef, async (params) =>
 	return addChecklist({
 		workItemId: params.workItemId as string,
 		checklistName: params.checklistName as string,
-		items: params.items as ChecklistItemInput[],
+		items: params.item as ChecklistItemInput[],
 	});
 });

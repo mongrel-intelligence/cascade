@@ -7,6 +7,6 @@ export default createCLICommand(updateWorkItemDef, async (params) => {
 		workItemId: params.workItemId as string,
 		title: params.title as string | undefined,
 		description: params.description as string | undefined,
-		addLabelIds: params.addLabelIds as string[] | undefined,
+		addLabelIds: params.addLabelId as string[] | undefined,
 	});
 });

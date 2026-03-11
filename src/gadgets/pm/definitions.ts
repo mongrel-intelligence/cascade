@@ -94,7 +94,7 @@ export const updateWorkItemDef: ToolDefinition = {
 			describe: 'New description (markdown supported). Use this to save the full brief or plan.',
 			optional: true,
 		},
-		addLabelIds: {
+		addLabelId: {
 			type: 'array',
 			items: 'string',
 			describe: 'Label IDs/names to add to the work item',
@@ -229,7 +229,7 @@ export const addChecklistDef: ToolDefinition = {
 			describe: 'Name of the checklist (e.g., "Acceptance Criteria" or "Implementation Steps")',
 			required: true,
 		},
-		items: {
+		item: {
 			type: 'array',
 			items: 'object',
 			describe:
@@ -242,7 +242,7 @@ export const addChecklistDef: ToolDefinition = {
 			params: {
 				workItemId: 'PROJ-42',
 				checklistName: 'Implementation Steps',
-				items: [
+				item: [
 					{
 						name: 'Add reset password endpoint to API',
 						description:

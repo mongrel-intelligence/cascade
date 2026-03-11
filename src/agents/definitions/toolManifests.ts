@@ -42,9 +42,9 @@ export function getToolManifests(): ToolManifest[] {
 					type: 'string',
 					description: 'Path to file with description (prefer over --description for long content)',
 				},
-				addLabelIds: {
+				addLabelId: {
 					type: 'array',
-					description: 'Label IDs to add (repeatable: --addLabelIds id1 --addLabelIds id2)',
+					description: 'Label IDs to add (repeatable: --addLabelId id1 --addLabelId id2)',
 				},
 			},
 		},
@@ -74,7 +74,7 @@ export function getToolManifests(): ToolManifest[] {
 			parameters: {
 				workItemId: { type: 'string', required: true },
 				checklistName: { type: 'string', required: true },
-				items: { type: 'array', required: true },
+				item: { type: 'array', required: true },
 			},
 		},
 		{

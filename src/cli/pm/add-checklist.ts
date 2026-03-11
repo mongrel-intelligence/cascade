@@ -34,7 +34,7 @@ export function parseItem(raw: string): ChecklistItemInput {
 }
 
 export default createCLICommand(addChecklistDef, async (params) => {
-	const rawItems = params.items as string[];
+	const rawItems = params.item as string[];
 	const items = rawItems.map(parseItem);
 	return addChecklist({
 		workItemId: params.workItemId as string,
