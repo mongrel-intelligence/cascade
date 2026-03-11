@@ -81,7 +81,7 @@ function makeInput(overrides: Partial<AgentBackendInput> = {}): AgentBackendInpu
 			onText: vi.fn(),
 		},
 		logWriter: vi.fn(),
-		agentInput: { cardId: 'c1' } as AgentBackendInput['agentInput'],
+		agentInput: { workItemId: 'c1' } as AgentBackendInput['agentInput'],
 		...overrides,
 	};
 }

@@ -37,7 +37,7 @@ export interface ProgressMonitorConfig {
 	customModels: ModelSpec[];
 	logWriter: LogWriter;
 	repoDir?: string;
-	trello?: { cardId: string };
+	trello?: { workItemId: string };
 	github?: { owner: string; repo: string };
 	/** Pre-seeded comment ID from router ack — skip initial comment posting */
 	preSeededCommentId?: string;
@@ -72,7 +72,7 @@ export class ProgressMonitor implements ProgressReporter {
 		this.pmPoster = config.trello
 			? new PMProgressPoster({
 					agentType: config.agentType,
-					cardId: config.trello.cardId,
+					workItemId: config.trello.workItemId,
 					logWriter: config.logWriter,
 				})
 			: null;
@@ -125,7 +125,7 @@ export class ProgressMonitor implements ProgressReporter {
 
 			// Write env var so PostComment gadget can find it
 			if (this.config.trello) {
-				writeProgressCommentId(this.config.trello.cardId, this.config.preSeededCommentId);
+				writeProgressCommentId(this.config.trello.workItemId, this.config.preSeededCommentId);
 			}
 		} else if (this.pmPoster) {
 			// Post initial comment immediately (fire-and-forget)
@@ -216,7 +216,7 @@ export class ProgressMonitor implements ProgressReporter {
 
 			// Sync checklist items for implementation agents
 			if (this.config.agentType === 'implementation' && this.config.trello) {
-				await syncCompletedTodosToChecklist(this.config.trello.cardId);
+				await syncCompletedTodosToChecklist(this.config.trello.workItemId);
 			}
 		} catch (err) {
 			this.config.logWriter('WARN', 'Progress tick failed', { error: String(err) });

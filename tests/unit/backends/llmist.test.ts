@@ -117,7 +117,7 @@ function makeInput(agentType = 'implementation'): AgentBackendInput {
 		model: 'claude-sonnet-4',
 		progressReporter: { onIteration: async () => {}, onToolCall: () => {}, onText: () => {} },
 		logWriter: () => {},
-		agentInput: { cardId: 'c1' } as AgentBackendInput['agentInput'],
+		agentInput: { workItemId: 'c1' } as AgentBackendInput['agentInput'],
 		runId: 'run-123',
 		llmistLogPath: '/workspace/llmist-implementation-12345.log',
 	};

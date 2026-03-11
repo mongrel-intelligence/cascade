@@ -74,16 +74,16 @@ export async function augmentProjectSecrets(
  * Inject the pre-seeded progress comment ID into project secrets so the
  * Claude Code subprocess can find it via the CASCADE_PROGRESS_COMMENT_ID env var.
  *
- * Only injects when ackCommentId is a string (PM comment) and cardId is set.
+ * Only injects when ackCommentId is a string (PM comment) and workItemId is set.
  * GitHub ack comments (numeric IDs) are handled separately via session state.
  */
 export function injectProgressCommentId(
 	projectSecrets: Record<string, string>,
-	cardId: string | undefined,
+	workItemId: string | undefined,
 	ackCommentId: string | number | undefined,
 ): void {
-	if (cardId && typeof ackCommentId === 'string' && ackCommentId) {
-		projectSecrets[ENV_VAR_NAME] = `${cardId}:${ackCommentId}`;
+	if (workItemId && typeof ackCommentId === 'string' && ackCommentId) {
+		projectSecrets[ENV_VAR_NAME] = `${workItemId}:${ackCommentId}`;
 	}
 }
 

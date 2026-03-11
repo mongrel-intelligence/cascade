@@ -364,7 +364,7 @@ describe('cleanupWorker', () => {
 				data: {
 					type: 'trello',
 					projectId: 'proj-1',
-					cardId: 'card-1',
+					workItemId: 'card-1',
 					agentType: 'implementation',
 				} as CascadeJob,
 			}) as never,
@@ -386,7 +386,7 @@ describe('cleanupWorker', () => {
 				data: {
 					type: 'trello',
 					projectId: 'proj-1',
-					cardId: 'card-1',
+					workItemId: 'card-1',
 					agentType: 'implementation',
 				} as CascadeJob,
 			}) as never,
@@ -411,7 +411,7 @@ describe('cleanupWorker', () => {
 				data: {
 					type: 'trello',
 					projectId: 'proj-1',
-					cardId: 'card-1',
+					workItemId: 'card-1',
 					agentType: 'implementation',
 				} as CascadeJob,
 			}) as never,
@@ -433,7 +433,7 @@ describe('cleanupWorker', () => {
 				data: {
 					type: 'trello',
 					projectId: 'proj-1',
-					cardId: 'card-1',
+					workItemId: 'card-1',
 				} as CascadeJob,
 			}) as never,
 		);
@@ -455,7 +455,7 @@ describe('cleanupWorker', () => {
 		await spawnWorker(
 			makeJob({
 				id: 'job-undef',
-				data: { type: 'trello', projectId: 'proj-1', cardId: 'card-1' } as CascadeJob,
+				data: { type: 'trello', projectId: 'proj-1', workItemId: 'card-1' } as CascadeJob,
 			}) as never,
 		);
 

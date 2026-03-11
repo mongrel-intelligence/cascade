@@ -113,7 +113,7 @@ describe('ProgressMonitor — state accumulation', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 	}
 
@@ -132,7 +132,7 @@ describe('ProgressMonitor — state accumulation', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		// Add 25 tool calls (more than ring buffer max of 20)
@@ -218,7 +218,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -235,7 +235,7 @@ describe('ProgressMonitor — tick behavior', () => {
 		expect(logWriter).toHaveBeenCalledWith(
 			'INFO',
 			'Posted initial progress comment to work item',
-			expect.objectContaining({ cardId: 'card1', commentId: 'comment-id-initial' }),
+			expect.objectContaining({ workItemId: 'card1', commentId: 'comment-id-initial' }),
 		);
 		monitor.stop();
 	});
@@ -249,7 +249,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -282,7 +282,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -308,7 +308,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(null);
@@ -330,7 +330,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -362,7 +362,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -397,7 +397,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -432,7 +432,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -463,7 +463,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -487,7 +487,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -570,7 +570,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -602,7 +602,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		// Make the progress model take a long time
@@ -647,7 +647,7 @@ describe('ProgressMonitor — progressive schedule', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		monitor.start();
@@ -689,7 +689,7 @@ describe('ProgressMonitor — progressive schedule', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		monitor.start();
@@ -722,7 +722,7 @@ describe('ProgressMonitor — progressive schedule', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 			// No scheduleMinutes — should use DEFAULT_SCHEDULE_MINUTES = [1, 3, 5]
 		});
 
@@ -753,7 +753,7 @@ describe('ProgressMonitor — progressive schedule', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		monitor.start();
@@ -805,7 +805,7 @@ describe('createProgressMonitor', () => {
 			progressModel: 'test-model',
 			intervalMinutes: 5,
 			customModels: [],
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		expect(monitor).toBeInstanceOf(ProgressMonitor);
@@ -821,7 +821,7 @@ describe('ProgressMonitor — agent-specific initial messages', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -872,7 +872,7 @@ describe('ProgressMonitor — getProgressCommentId()', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		expect(monitor.getProgressCommentId()).toBeNull();
@@ -886,7 +886,7 @@ describe('ProgressMonitor — getProgressCommentId()', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -927,7 +927,7 @@ describe('ProgressMonitor — preSeededCommentId', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 			repoDir: '/tmp/test-repo',
 			preSeededCommentId: 'router-ack-comment-42',
 		});
@@ -956,7 +956,7 @@ describe('ProgressMonitor — preSeededCommentId', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 			preSeededCommentId: 'router-ack-comment-42',
 		});
 
@@ -975,7 +975,7 @@ describe('ProgressMonitor — preSeededCommentId', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 			preSeededCommentId: 'router-ack-comment-42',
 		});
 
@@ -995,7 +995,7 @@ describe('ProgressMonitor — preSeededCommentId', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 			preSeededCommentId: 'router-ack-comment-42',
 		});
 
@@ -1029,7 +1029,7 @@ describe('ProgressMonitor — env var integration', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -1050,7 +1050,7 @@ describe('ProgressMonitor — env var integration', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		monitor.start();
@@ -1068,7 +1068,7 @@ describe('ProgressMonitor — env var integration', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -1103,7 +1103,7 @@ describe('ProgressMonitor — env var integration', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -1142,7 +1142,7 @@ describe('ProgressMonitor — env var integration', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);

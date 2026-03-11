@@ -226,7 +226,7 @@ function buildProgressMonitorConfig(
 		intervalMinutes: input.config.defaults.progressIntervalMinutes,
 		customModels: CUSTOM_MODELS as ModelSpec[],
 		repoDir: repoDir ?? undefined,
-		trello: workItemId ? { cardId: workItemId } : undefined,
+		trello: workItemId ? { workItemId } : undefined,
 		preSeededCommentId: isGitHubAck ? undefined : (input.ackCommentId as string | undefined),
 		...(input.prNumber && input.repoFullName
 			? {

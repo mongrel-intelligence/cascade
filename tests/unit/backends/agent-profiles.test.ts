@@ -522,7 +522,7 @@ describe('AgentProfile.getLlmistGadgets', () => {
  * Helper params for fetchContext calls.
  */
 function makeContextParams(overrides: {
-	cardId?: string;
+	workItemId?: string;
 	repoFullName?: string;
 	prNumber?: number;
 	contextFiles?: Array<{ path: string; content: string }>;
@@ -535,7 +535,7 @@ function makeContextParams(overrides: {
 } {
 	return {
 		input: {
-			workItemId: overrides.cardId,
+			workItemId: overrides.workItemId,
 			repoFullName: overrides.repoFullName ?? 'acme/widgets',
 			prNumber: overrides.prNumber ?? 42,
 			triggerEvent: overrides.triggerEvent,
@@ -550,7 +550,7 @@ describe('fetchDirectoryListing', () => {
 	it('splitting fetchContext returns a ListDirectory injection with maxDepth:3', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ cardId: undefined, triggerEvent: 'pm:status-changed' });
+		const params = makeContextParams({ workItemId: undefined, triggerEvent: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -671,7 +671,7 @@ describe('fetchWorkItemInjection', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		mockReadWorkItem.mockResolvedValue('# card title\n\ncard body');
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerEvent: 'pm:status-changed', cardId: 'card-123' });
+		const params = makeContextParams({ triggerEvent: 'pm:status-changed', workItemId: 'card-123' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -691,7 +691,10 @@ describe('fetchWorkItemInjection', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		mockReadWorkItem.mockRejectedValue(new Error('card not found'));
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerEvent: 'pm:status-changed', cardId: 'missing-card' });
+		const params = makeContextParams({
+			triggerEvent: 'pm:status-changed',
+			workItemId: 'missing-card',
+		});
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -704,7 +707,7 @@ describe('fetchWorkItemInjection', () => {
 	it('never calls readWorkItem when workItemId is absent', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerEvent: 'pm:status-changed', cardId: undefined });
+		const params = makeContextParams({ triggerEvent: 'pm:status-changed', workItemId: undefined });
 
 		await profile.fetchContext(params as Parameters<typeof profile.fetchContext>[0]);
 
@@ -720,7 +723,7 @@ describe('fetchWorkItemContext orchestration', () => {
 		const profile = await getAgentProfile('splitting');
 		const params = makeContextParams({
 			triggerEvent: 'pm:status-changed',
-			cardId: 'card-abc',
+			workItemId: 'card-abc',
 			contextFiles: [{ path: 'CLAUDE.md', content: 'guidelines' }],
 		});
 
@@ -748,7 +751,7 @@ describe('fetchWorkItemContext orchestration', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		mockReadWorkItem.mockRejectedValue(new Error('unavailable'));
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerEvent: 'pm:status-changed', cardId: 'card-xyz' });
+		const params = makeContextParams({ triggerEvent: 'pm:status-changed', workItemId: 'card-xyz' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -899,7 +902,7 @@ describe('fetchCIContext', () => {
 			triggerEvent: 'scm:check-suite-failure',
 			repoFullName: 'acme/widgets',
 			prNumber: 5,
-			cardId: 'ci-card',
+			workItemId: 'ci-card',
 			contextFiles: [{ path: 'CLAUDE.md', content: 'info' }],
 		});
 
@@ -924,7 +927,7 @@ describe('fetchCIContext', () => {
 			triggerEvent: 'scm:check-suite-failure',
 			repoFullName: 'acme/widgets',
 			prNumber: 5,
-			cardId: undefined,
+			workItemId: undefined,
 		});
 
 		const injections = await profile.fetchContext(

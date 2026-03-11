@@ -13,7 +13,7 @@ import type { LogWriter } from '../types.js';
 
 export interface PMProgressPosterConfig {
 	agentType: string;
-	cardId: string;
+	workItemId: string;
 	logWriter: LogWriter;
 }
 
@@ -42,21 +42,21 @@ export class PMProgressPoster {
 		if (!provider) return;
 
 		const message = this.formatInitialMessage();
-		this.progressCommentId = await provider.addComment(this.config.cardId, message);
+		this.progressCommentId = await provider.addComment(this.config.workItemId, message);
 		this.config.logWriter('INFO', 'Posted initial progress comment to work item', {
-			cardId: this.config.cardId,
+			workItemId: this.config.workItemId,
 			commentId: this.progressCommentId,
 		});
 
 		// Write env var so PostComment gadget can update this comment
-		writeProgressCommentId(this.config.cardId, this.progressCommentId);
+		writeProgressCommentId(this.config.workItemId, this.progressCommentId);
 	}
 
 	async update(summary: string): Promise<void> {
 		const provider = getPMProviderOrNull();
 		if (!provider) return;
 
-		const { cardId } = this.config;
+		const { workItemId } = this.config;
 
 		if (this.progressCommentId) {
 			// If the PostComment gadget cleared the env var,
@@ -72,9 +72,9 @@ export class PMProgressPoster {
 
 			// Subsequent ticks: update the existing comment.
 			try {
-				await provider.updateComment(cardId, this.progressCommentId, summary);
+				await provider.updateComment(workItemId, this.progressCommentId, summary);
 				this.config.logWriter('INFO', 'Updated progress comment on work item', {
-					cardId,
+					workItemId,
 					commentId: this.progressCommentId,
 				});
 			} catch (updateErr) {
@@ -82,25 +82,25 @@ export class PMProgressPoster {
 				this.config.logWriter('WARN', 'Failed to update progress comment, creating new one', {
 					error: String(updateErr),
 				});
-				this.progressCommentId = await provider.addComment(cardId, summary);
+				this.progressCommentId = await provider.addComment(workItemId, summary);
 				this.config.logWriter('INFO', 'Posted new progress comment to work item', {
-					cardId,
+					workItemId,
 					commentId: this.progressCommentId,
 				});
 				// Update env var with new comment ID
-				writeProgressCommentId(cardId, this.progressCommentId);
+				writeProgressCommentId(workItemId, this.progressCommentId);
 			}
 		} else {
 			// First tick: create the comment and store its ID.
 			// This branch is reached when postInitial() failed (transient API error)
 			// and the first tick creates the comment instead.
-			this.progressCommentId = await provider.addComment(cardId, summary);
+			this.progressCommentId = await provider.addComment(workItemId, summary);
 			this.config.logWriter('INFO', 'Posted progress update to work item', {
-				cardId,
+				workItemId,
 				commentId: this.progressCommentId,
 			});
 			// Write env var so PostComment gadget can find this comment
-			writeProgressCommentId(cardId, this.progressCommentId);
+			writeProgressCommentId(workItemId, this.progressCommentId);
 		}
 	}
 }

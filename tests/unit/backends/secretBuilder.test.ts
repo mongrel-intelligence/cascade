@@ -173,7 +173,7 @@ describe('resolveGitHubToken', () => {
 });
 
 describe('injectProgressCommentId', () => {
-	it('injects env var when cardId and string ackCommentId are provided', () => {
+	it('injects env var when workItemId and string ackCommentId are provided', () => {
 		const secrets: Record<string, string> = {};
 		injectProgressCommentId(secrets, 'card-123', 'ack-comment-456');
 		expect(secrets[ENV_VAR_NAME]).toBe('card-123:ack-comment-456');
@@ -185,7 +185,7 @@ describe('injectProgressCommentId', () => {
 		expect(secrets[ENV_VAR_NAME]).toBeUndefined();
 	});
 
-	it('does not inject when cardId is undefined', () => {
+	it('does not inject when workItemId is undefined', () => {
 		const secrets: Record<string, string> = {};
 		injectProgressCommentId(secrets, undefined, 'ack-comment-456');
 		expect(secrets[ENV_VAR_NAME]).toBeUndefined();

@@ -85,7 +85,7 @@ vi.mock('../../../src/agents/prompts/index.js', () => ({}));
 vi.mock('../../../src/agents/shared/promptContext.js', () => ({
 	buildPromptContext: vi.fn().mockImplementation(
 		(
-			cardId: string | undefined,
+			workItemId: string | undefined,
 			project: { id: string },
 			triggerType?: string,
 			prContext?: {
@@ -95,7 +95,7 @@ vi.mock('../../../src/agents/shared/promptContext.js', () => ({
 				headSha?: string;
 			},
 		) => ({
-			cardId,
+			workItemId,
 			projectId: project.id,
 			pmType: 'trello',
 			...(prContext && {
@@ -194,7 +194,7 @@ function makeInput(
 	overrides?: Partial<AgentInput>,
 ): AgentInput & { project: ProjectConfig; config: CascadeConfig } {
 	return {
-		cardId: 'card123',
+		workItemId: 'card123',
 		project: makeProject(),
 		config: makeConfig(),
 		...overrides,
@@ -400,13 +400,13 @@ describe('executeWithBackend', () => {
 		const mockFetchContext = vi.fn().mockResolvedValue([]);
 		mockGetAgentProfile.mockReturnValue(makeMockProfile({ fetchContext: mockFetchContext }));
 		const backend = makeMockBackend();
-		const input = makeInput({ cardId: 'card123' });
+		const input = makeInput({ workItemId: 'card123' });
 
 		await executeWithBackend(backend, 'implementation', input);
 
 		expect(mockFetchContext).toHaveBeenCalledWith(
 			expect.objectContaining({
-				input: expect.objectContaining({ cardId: 'card123' }),
+				input: expect.objectContaining({ workItemId: 'card123' }),
 				contextFiles: [],
 			}),
 		);
