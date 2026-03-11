@@ -75,17 +75,18 @@ npm run db:migrate
 
 ### 5. Start the services
 
-Open two terminals:
+Open three terminals:
 
 ```bash
 # Terminal 1 — Router (receives webhooks)
 npm run dev
 
-# Terminal 2 — Web UI (Vite dev server)
+# Terminal 2 — Dashboard API (tRPC server on :3000)
+npm run build && node dist/dashboard.js
+
+# Terminal 3 — Web UI (Vite dev server on :5173)
 npm run dev:web
 ```
-
-> **Note**: The current dev setup only starts the router service. The dashboard UI will load but API calls will fail until the dashboard service is started separately. A `dev:dashboard` script is planned to simplify this.
 
 Open **http://localhost:5173** — you'll see the dashboard.
 
@@ -486,7 +487,11 @@ registry.register(new MyCustomTrigger());
 
 ### Adding a PM provider
 
-Implement the `PMProvider` interface from `src/pm/types.ts`, then register it in `src/pm/registry.ts`. See `src/pm/trello/` and `src/pm/jira/` for reference implementations.
+1. Implement the `PMProvider` interface from `src/pm/types.ts` for data operations (card/issue management)
+2. Implement the `PMIntegration` interface from `src/pm/integration.ts` to wrap your provider with credential resolution, webhook parsing, and trigger registration
+3. Register the `PMIntegration` instance in `src/pm/registry.ts` via `pmRegistry.register()`
+
+See `src/pm/trello/` and `src/pm/jira/` for reference implementations.
 
 ---
 
