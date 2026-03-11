@@ -10,10 +10,13 @@ export interface BudgetCheckResult {
 }
 
 /**
- * Resolve the card budget for a project.
+ * Resolve the work item budget for a project.
  * Returns `null` if no cost custom field is configured (budget enforcement not applicable).
  */
-export function resolveCardBudget(project: ProjectConfig, config: CascadeConfig): number | null {
+export function resolveWorkItemBudget(
+	project: ProjectConfig,
+	config: CascadeConfig,
+): number | null {
 	const costFieldId = getCostFieldId(project);
 	if (!costFieldId) return null;
 
@@ -24,30 +27,30 @@ export function resolveCardBudget(project: ProjectConfig, config: CascadeConfig)
  * Read the accumulated cost from a work item's custom field.
  * Returns 0 if no value set yet.
  */
-export async function getCardAccumulatedCost(
-	cardId: string,
+export async function getWorkItemAccumulatedCost(
+	workItemId: string,
 	project: ProjectConfig,
 ): Promise<number> {
 	const costFieldId = getCostFieldId(project);
 	if (!costFieldId) return 0;
 
 	const provider = getPMProvider();
-	return provider.getCustomFieldNumber(cardId, costFieldId);
+	return provider.getCustomFieldNumber(workItemId, costFieldId);
 }
 
 /**
- * Check if a card has exceeded its budget.
- * Returns `null` if budget enforcement is not applicable (no cost field or no cardId).
+ * Check if a work item has exceeded its budget.
+ * Returns `null` if budget enforcement is not applicable (no cost field or no workItemId).
  */
 export async function checkBudgetExceeded(
-	cardId: string,
+	workItemId: string,
 	project: ProjectConfig,
 	config: CascadeConfig,
 ): Promise<BudgetCheckResult | null> {
-	const budget = resolveCardBudget(project, config);
+	const budget = resolveWorkItemBudget(project, config);
 	if (budget === null) return null;
 
-	const currentCost = await getCardAccumulatedCost(cardId, project);
+	const currentCost = await getWorkItemAccumulatedCost(workItemId, project);
 	const exceeded = currentCost >= budget;
 
 	return {

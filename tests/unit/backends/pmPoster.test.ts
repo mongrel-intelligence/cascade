@@ -54,7 +54,7 @@ beforeEach(() => {
 function makePoster(overrides?: Partial<Parameters<typeof PMProgressPoster>[0]>) {
 	return new PMProgressPoster({
 		agentType: 'implementation',
-		cardId: 'card1',
+		workItemId: 'card1',
 		logWriter: vi.fn(),
 		...overrides,
 	});
@@ -109,7 +109,7 @@ describe('PMProgressPoster — postInitial()', () => {
 		);
 	});
 
-	it('writes env var with cardId and commentId after posting', async () => {
+	it('writes env var with workItemId and commentId after posting', async () => {
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
 		mockPMProvider.addComment.mockResolvedValue('initial-id');
 		const poster = makePoster();

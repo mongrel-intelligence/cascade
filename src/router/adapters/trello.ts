@@ -162,7 +162,7 @@ export class TrelloRouterAdapter implements RouterPlatformAdapter {
 			source: 'trello',
 			payload,
 			projectId: project.id,
-			cardId: event.workItemId ?? '',
+			workItemId: event.workItemId ?? '',
 			actionType: event.eventType,
 			receivedAt: new Date().toISOString(),
 			triggerResult: result,

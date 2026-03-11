@@ -34,7 +34,7 @@ interface TrelloJobData {
 	source: 'trello';
 	payload: unknown;
 	projectId: string;
-	cardId: string;
+	workItemId: string;
 	actionType: string;
 	receivedAt: string;
 	ackCommentId?: string;
@@ -148,7 +148,7 @@ async function dispatchJob(
 		case 'trello':
 			logger.info('[Worker] Processing Trello job', {
 				jobId,
-				cardId: jobData.cardId,
+				workItemId: jobData.workItemId,
 				actionType: jobData.actionType,
 				ackCommentId: jobData.ackCommentId,
 				hasTriggerResult: !!jobData.triggerResult,

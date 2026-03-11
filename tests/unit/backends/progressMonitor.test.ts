@@ -143,10 +143,10 @@ describe('ProgressMonitor - constructor', () => {
 	});
 
 	it('creates PMProgressPoster when trello config is provided', () => {
-		new ProgressMonitor(makeConfig({ trello: { cardId: 'card-1' } }));
+		new ProgressMonitor(makeConfig({ trello: { workItemId: 'card-1' } }));
 
 		expect(mockPMPosterConstructor).toHaveBeenCalledWith(
-			expect.objectContaining({ cardId: 'card-1' }),
+			expect.objectContaining({ workItemId: 'card-1' }),
 		);
 	});
 
@@ -210,7 +210,7 @@ describe('ProgressMonitor - start()', () => {
 	it('uses pre-seeded comment ID when provided, skips postInitial', () => {
 		const config = makeConfig({
 			preSeededCommentId: 'pre-seed-123',
-			trello: { cardId: 'card-1' },
+			trello: { workItemId: 'card-1' },
 		});
 		const monitor = new ProgressMonitor(config);
 		monitor.start();
@@ -222,7 +222,7 @@ describe('ProgressMonitor - start()', () => {
 	it('writes progress comment ID to env var when preSeededCommentId + trello', () => {
 		const config = makeConfig({
 			preSeededCommentId: 'seed-id',
-			trello: { cardId: 'card-1' },
+			trello: { workItemId: 'card-1' },
 		});
 		const monitor = new ProgressMonitor(config);
 		monitor.start();
@@ -231,7 +231,7 @@ describe('ProgressMonitor - start()', () => {
 	});
 
 	it('posts initial comment when no preSeededCommentId and trello is configured', () => {
-		const config = makeConfig({ trello: { cardId: 'card-1' } });
+		const config = makeConfig({ trello: { workItemId: 'card-1' } });
 		const monitor = new ProgressMonitor(config);
 		monitor.start();
 
@@ -293,7 +293,7 @@ describe('ProgressMonitor - tick (via scheduler callback)', () => {
 	}
 
 	it('calls callProgressModel with agentType and taskDescription', async () => {
-		await runTick(makeConfig({ trello: { cardId: 'card-1' } }));
+		await runTick(makeConfig({ trello: { workItemId: 'card-1' } }));
 
 		expect(mockCallProgressModel).toHaveBeenCalledWith(
 			'claude-3-haiku',
@@ -303,7 +303,7 @@ describe('ProgressMonitor - tick (via scheduler callback)', () => {
 	});
 
 	it('posts summary to PM when trello configured', async () => {
-		await runTick(makeConfig({ trello: { cardId: 'card-1' } }));
+		await runTick(makeConfig({ trello: { workItemId: 'card-1' } }));
 
 		expect(mockPMPosterUpdate).toHaveBeenCalledWith('AI-generated summary');
 	});
@@ -317,7 +317,7 @@ describe('ProgressMonitor - tick (via scheduler callback)', () => {
 	it('falls back to formatStatusMessage when callProgressModel fails', async () => {
 		mockCallProgressModel.mockRejectedValueOnce(new Error('LLM unavailable'));
 
-		await runTick(makeConfig({ trello: { cardId: 'card-1' } }));
+		await runTick(makeConfig({ trello: { workItemId: 'card-1' } }));
 
 		expect(mockFormatStatusMessage).toHaveBeenCalledWith('implementation');
 		expect(mockPMPosterUpdate).toHaveBeenCalledWith('Template fallback message');
@@ -335,7 +335,7 @@ describe('ProgressMonitor - tick (via scheduler callback)', () => {
 	});
 
 	it('skips second concurrent tick when isGenerating is true', async () => {
-		const monitor = new ProgressMonitor(makeConfig({ trello: { cardId: 'card-1' } }));
+		const monitor = new ProgressMonitor(makeConfig({ trello: { workItemId: 'card-1' } }));
 
 		// Simulate long-running model call
 		let resolveModel: (val: string) => void = () => {};
@@ -366,13 +366,13 @@ describe('ProgressMonitor - tick (via scheduler callback)', () => {
 	});
 
 	it('syncs todos to checklist for implementation agent with trello', async () => {
-		await runTick(makeConfig({ trello: { cardId: 'card-1' } }));
+		await runTick(makeConfig({ trello: { workItemId: 'card-1' } }));
 
 		expect(mockSyncCompletedTodosToChecklist).toHaveBeenCalledWith('card-1');
 	});
 
 	it('does not sync todos for non-implementation agents', async () => {
-		await runTick(makeConfig({ agentType: 'review', trello: { cardId: 'card-1' } }));
+		await runTick(makeConfig({ agentType: 'review', trello: { workItemId: 'card-1' } }));
 
 		expect(mockSyncCompletedTodosToChecklist).not.toHaveBeenCalled();
 	});
@@ -405,7 +405,7 @@ describe('ProgressMonitor - ProgressReporter interface', () => {
 
 	it('getProgressCommentId returns pmPoster comment id when trello configured', () => {
 		mockPMPosterGetCommentId.mockReturnValue('comment-abc');
-		const monitor = new ProgressMonitor(makeConfig({ trello: { cardId: 'card-1' } }));
+		const monitor = new ProgressMonitor(makeConfig({ trello: { workItemId: 'card-1' } }));
 		expect(monitor.getProgressCommentId()).toBe('comment-abc');
 	});
 

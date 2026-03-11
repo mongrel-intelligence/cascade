@@ -129,21 +129,21 @@ async function buildWorkerEnvWithProjectId(
 
 /**
  * Extract work-item ID from job data for concurrency lock tracking.
- * Returns the PM work item identifier (cardId, issueKey, or triggerResult.workItemId).
+ * Returns the PM work item identifier (workItemId, issueKey, or triggerResult.workItemId).
  */
 function extractWorkItemId(data: CascadeJob): string | undefined {
 	const jobData = data as unknown as {
 		type: string;
-		cardId?: string;
+		workItemId?: string;
 		issueKey?: string;
 		triggerResult?: { workItemId?: string };
 	};
 
-	if (jobData.type === 'trello' && jobData.cardId) return jobData.cardId;
+	if (jobData.type === 'trello' && jobData.workItemId) return jobData.workItemId;
 	if (jobData.type === 'jira' && jobData.issueKey) return jobData.issueKey;
 	if (jobData.type === 'github') return jobData.triggerResult?.workItemId;
 	// Dashboard jobs (manual-run, retry-run, debug-analysis)
-	if (jobData.cardId) return jobData.cardId;
+	if (jobData.workItemId) return jobData.workItemId;
 	return undefined;
 }
 

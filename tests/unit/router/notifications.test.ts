@@ -194,7 +194,7 @@ describe('notifyTimeout', () => {
 			source: 'trello',
 			payload: {},
 			projectId: 'test',
-			cardId: 'card123',
+			workItemId: 'card123',
 			actionType: 'updateCard',
 			receivedAt: '2026-02-14T10:00:00.000Z',
 		};
@@ -394,7 +394,7 @@ describe('notifyTimeout', () => {
 				source: 'trello',
 				payload: {},
 				projectId: 'test',
-				cardId: 'card123',
+				workItemId: 'card123',
 				actionType: 'updateCard',
 				receivedAt: '2026-02-14T10:00:00.000Z',
 			};

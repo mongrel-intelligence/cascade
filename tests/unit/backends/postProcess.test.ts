@@ -43,7 +43,7 @@ function makeResult(overrides?: Partial<AgentBackendResult>): AgentBackendResult
 
 function makeInput(overrides?: Partial<ProjectConfig>): AgentInput & { project: ProjectConfig } {
 	return {
-		cardId: 'card-123',
+		workItemId: 'card-123',
 		project: makeProject(overrides),
 	} as AgentInput & { project: ProjectConfig };
 }

@@ -85,7 +85,7 @@ async function notifyTrelloTimeout(job: TrelloJob, info: TimeoutInfo): Promise<v
 		'Move this card back to the trigger list to retry.',
 	);
 
-	await new TrelloPlatformClient(job.projectId).postComment(job.cardId, message);
+	await new TrelloPlatformClient(job.projectId).postComment(job.workItemId, message);
 }
 
 async function notifyGitHubTimeout(job: GitHubJob, info: TimeoutInfo): Promise<void> {
