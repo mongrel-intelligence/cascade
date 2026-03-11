@@ -81,12 +81,14 @@ Open three terminals:
 # Terminal 1 — Router (receives webhooks)
 npm run dev
 
-# Terminal 2 — Dashboard API (tRPC server on :3000)
-npm run build && node dist/dashboard.js
+# Terminal 2 — Dashboard API (tRPC server on :3001)
+npm run build && node --env-file=.env dist/dashboard.js
 
 # Terminal 3 — Web UI (Vite dev server on :5173)
 npm run dev:web
 ```
+
+> **Note**: The Vite dev server currently proxies API requests to :3000 (the router), but the dashboard API runs on :3001. You'll need to either (1) update `web/vite.config.ts` proxy targets to `http://localhost:3001`, or (2) set `PORT=3000` in `.env` before starting the dashboard. A `dev:dashboard` script to handle this automatically is planned.
 
 Open **http://localhost:5173** — you'll see the dashboard.
 
@@ -483,7 +485,8 @@ registry.register(new MyCustomTrigger());
 
 1. Add a YAML definition in `src/agents/definitions/` (see existing files for the schema)
 2. Add a system prompt template in `src/agents/prompts/templates/`
-3. Register the agent type in `src/agents/registry.ts`
+
+Agent types are auto-discovered from YAML filenames in `src/agents/definitions/` — no manual registration is needed. The `registry.ts` file only registers agent *backends* (llmist, claude-code), not agent types.
 
 ### Adding a PM provider
 
