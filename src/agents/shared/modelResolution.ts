@@ -78,7 +78,7 @@ export async function resolveModelConfig(options: ResolveModelConfigOptions): Pr
 			...promptContext,
 			// Task-specific fields from agentInput override prompt context
 			...buildTaskPromptContext({
-				cardId: options.agentInput?.cardId ?? promptContext?.cardId,
+				workItemId: options.agentInput?.workItemId ?? promptContext?.workItemId,
 				prNumber: options.agentInput?.prNumber ?? (promptContext?.prNumber as number | undefined),
 				prBranch: options.agentInput?.prBranch ?? (promptContext?.prBranch as string | undefined),
 				triggerCommentText: options.agentInput?.triggerCommentText,

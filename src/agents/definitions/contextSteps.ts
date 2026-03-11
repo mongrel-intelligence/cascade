@@ -108,13 +108,13 @@ export function fetchSquintStep(params: FetchContextParams): ContextInjection[] 
 }
 
 export async function fetchWorkItemStep(params: FetchContextParams): Promise<ContextInjection[]> {
-	if (!params.input.cardId) return [];
+	if (!params.input.workItemId) return [];
 	try {
-		const cardData = await readWorkItem(params.input.cardId, true);
+		const cardData = await readWorkItem(params.input.workItemId, true);
 		return [
 			{
 				toolName: 'ReadWorkItem',
-				params: { workItemId: params.input.cardId, includeComments: true },
+				params: { workItemId: params.input.workItemId, includeComments: true },
 				result: cardData,
 				description: 'Pre-fetched work item data',
 			},
@@ -247,14 +247,14 @@ export async function fetchPRConversationStep(
 export async function prepopulateTodosStep(
 	params: FetchContextParams,
 ): Promise<ContextInjection[]> {
-	const { cardId } = params.input;
-	if (!cardId) return [];
+	const { workItemId } = params.input;
+	if (!workItemId) return [];
 
 	try {
 		const provider = getPMProviderOrNull();
 		if (!provider) return [];
 
-		const checklists = await provider.getChecklists(cardId);
+		const checklists = await provider.getChecklists(workItemId);
 
 		// Find checklist whose name includes "Implementation Steps" (case-insensitive, handles emoji prefix)
 		const implChecklist = checklists.find((cl) =>
@@ -267,7 +267,7 @@ export async function prepopulateTodosStep(
 		if (incompleteItems.length === 0) return [];
 
 		// Initialize todo session and create todos
-		initTodoSession(cardId);
+		initTodoSession(workItemId);
 		const todos: Todo[] = [];
 		const now = new Date().toISOString();
 
@@ -296,7 +296,7 @@ export async function prepopulateTodosStep(
 		];
 	} catch (error) {
 		params.logWriter('WARN', 'prepopulateTodosStep failed', {
-			cardId,
+			workItemId,
 			error: error instanceof Error ? error.message : String(error),
 		});
 		return [];

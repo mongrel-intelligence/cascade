@@ -237,7 +237,7 @@ describe('JiraReadyToProcessLabelTrigger', () => {
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('splitting');
 			expect(result?.workItemId).toBe('TEST-42');
-			expect(result?.agentInput.cardId).toBe('TEST-42');
+			expect(result?.agentInput.workItemId).toBe('TEST-42');
 			expect(result?.agentInput.triggerEvent).toBe('pm:label-added');
 		});
 

@@ -105,7 +105,7 @@ describe('Trigger Registry (integration)', () => {
 					handled = true;
 					return {
 						agentType: 'implementation',
-						agentInput: { cardId: 'card-1' },
+						agentInput: { workItemId: 'card-1' },
 					};
 				},
 			});
@@ -303,7 +303,7 @@ describe('Trigger Registry (integration)', () => {
 
 			const result = await TrelloStatusChangedTodoTrigger.handle(ctx);
 			expect(result?.agentType).toBe('implementation');
-			expect(result?.agentInput.cardId).toBe('card-xyz');
+			expect(result?.agentInput.workItemId).toBe('card-xyz');
 			expect(result?.workItemId).toBe('card-xyz');
 		});
 	});

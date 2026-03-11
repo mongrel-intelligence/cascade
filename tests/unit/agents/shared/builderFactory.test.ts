@@ -189,7 +189,7 @@ describe('createConfiguredBuilder', () => {
 			agentType: 'implementation',
 			baseBranch: undefined,
 			projectId: undefined,
-			cardId: undefined,
+			workItemId: undefined,
 			hooks: undefined,
 			workItemUrl: undefined,
 			workItemTitle: undefined,
@@ -203,18 +203,18 @@ describe('createConfiguredBuilder', () => {
 		expect(mockInitSessionState).not.toHaveBeenCalled();
 	});
 
-	it('passes baseBranch, projectId, cardId to initSessionState', async () => {
+	it('passes baseBranch, projectId, workItemId to initSessionState', async () => {
 		const options = createBaseOptions({
 			baseBranch: 'main',
 			projectId: 'project-1',
-			cardId: 'card-123',
+			workItemId: 'card-123',
 		});
 		await createConfiguredBuilder(options);
 		expect(mockInitSessionState).toHaveBeenCalledWith({
 			agentType: 'implementation',
 			baseBranch: 'main',
 			projectId: 'project-1',
-			cardId: 'card-123',
+			workItemId: 'card-123',
 			hooks: undefined,
 			workItemUrl: undefined,
 			workItemTitle: undefined,
@@ -226,7 +226,7 @@ describe('createConfiguredBuilder', () => {
 		const options = createBaseOptions({
 			baseBranch: 'main',
 			projectId: 'project-1',
-			cardId: 'card-123',
+			workItemId: 'card-123',
 			workItemUrl: 'https://trello.com/c/abc123',
 			workItemTitle: 'My Feature Card',
 		});
@@ -235,7 +235,7 @@ describe('createConfiguredBuilder', () => {
 			agentType: 'implementation',
 			baseBranch: 'main',
 			projectId: 'project-1',
-			cardId: 'card-123',
+			workItemId: 'card-123',
 			hooks: undefined,
 			workItemUrl: 'https://trello.com/c/abc123',
 			workItemTitle: 'My Feature Card',
@@ -253,7 +253,7 @@ describe('createConfiguredBuilder', () => {
 			agentType: 'implementation',
 			baseBranch: undefined,
 			projectId: undefined,
-			cardId: undefined,
+			workItemId: undefined,
 			hooks: undefined,
 			workItemUrl: undefined,
 			workItemTitle: undefined,

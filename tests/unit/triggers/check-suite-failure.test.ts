@@ -189,7 +189,7 @@ describe('CheckSuiteFailureTrigger', () => {
 					repoFullName: 'owner/repo',
 					headSha: 'sha123',
 					triggerType: 'check-failure',
-					cardId: 'abc123',
+					workItemId: 'abc123',
 					triggerEvent: 'scm:check-suite-failure',
 				},
 				prNumber: 42,
@@ -302,7 +302,7 @@ describe('CheckSuiteFailureTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.workItemId).toBeUndefined();
-			expect(result?.agentInput.cardId).toBeUndefined();
+			expect(result?.agentInput.workItemId).toBeUndefined();
 		});
 
 		it('returns null when not all checks are complete', async () => {

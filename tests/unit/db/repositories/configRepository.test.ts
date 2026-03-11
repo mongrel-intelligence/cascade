@@ -228,7 +228,7 @@ describe('configRepository', () => {
 			expect(config.defaults.model).toBe('test-model');
 			expect(config.defaults.maxIterations).toBe(50);
 			expect(config.defaults.agentBackend).toBe('llmist');
-			expect(config.defaults.cardBudgetUsd).toBe(5);
+			expect(config.defaults.workItemBudgetUsd).toBe(5);
 			expect(config.defaults.progressModel).toBe('progress-model');
 			expect(config.defaults.progressIntervalMinutes).toBe(5);
 		});
@@ -465,10 +465,9 @@ describe('configRepository', () => {
 
 			const result = await findProjectByIdFromDb('proj1');
 
-			// The mapper reads from row.workItemBudgetUsd (DB column) but outputs as
-			// cardBudgetUsd (config schema key) to maintain compatibility with the
-			// Zod schema until the schema is renamed in a follow-on PR.
-			expect(result?.cardBudgetUsd).toBe(10.5);
+			// The mapper reads from row.workItemBudgetUsd (DB column) and outputs as
+			// workItemBudgetUsd (config schema key).
+			expect(result?.workItemBudgetUsd).toBe(10.5);
 		});
 
 		it('handles Trello integration with customFields', async () => {

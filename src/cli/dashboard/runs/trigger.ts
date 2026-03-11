@@ -23,7 +23,7 @@ export default class RunsTrigger extends DashboardCommand {
 			const result = await this.client.runs.trigger.mutate({
 				projectId: flags.project,
 				agentType: flags['agent-type'],
-				cardId: flags['card-id'],
+				workItemId: flags['card-id'],
 				prNumber: flags['pr-number'],
 				prBranch: flags['pr-branch'],
 				repoFullName: flags['repo-full-name'],

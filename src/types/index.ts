@@ -6,7 +6,7 @@ export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 export type CascadeConfig = z.infer<typeof CascadeConfigSchema>;
 
 export interface AgentInput {
-	cardId?: string;
+	workItemId?: string;
 	prNumber?: number;
 	repoDir?: string;
 
@@ -28,9 +28,9 @@ export interface AgentInput {
 
 	// Debug agent fields
 	logDir?: string;
-	originalCardId?: string;
-	originalCardName?: string;
-	originalCardUrl?: string;
+	originalWorkItemId?: string;
+	originalWorkItemName?: string;
+	originalWorkItemUrl?: string;
 	detectedAgentType?: string;
 
 	// Trello comment trigger fields

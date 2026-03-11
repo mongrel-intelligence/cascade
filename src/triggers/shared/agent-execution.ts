@@ -558,8 +558,8 @@ async function propagateAutoLabelAfterSplitting(
 
 	return {
 		agentType: 'backlog-manager',
-		// Include cardId so PM operations (progress, lifecycle) have the work item ID.
-		agentInput: { triggerEvent: 'internal:auto-chain', cardId: workItemId },
+		// Include workItemId so PM operations (progress, lifecycle) have the work item ID.
+		agentInput: { triggerEvent: 'internal:auto-chain', workItemId: workItemId },
 		workItemId,
 	};
 }

@@ -9,7 +9,7 @@ export interface InitSessionStateOptions {
 	agentType: string;
 	baseBranch?: string;
 	projectId?: string;
-	cardId?: string;
+	workItemId?: string;
 	hooks?: SessionHooks;
 	workItemUrl?: string;
 	workItemTitle?: string;
@@ -21,7 +21,7 @@ let sessionState = {
 	agentType: null as string | null,
 	baseBranch: 'main' as string,
 	projectId: null as string | null,
-	cardId: null as string | null,
+	workItemId: null as string | null,
 	workItemUrl: null as string | null,
 	workItemTitle: null as string | null,
 	initialHeadSha: null as string | null,
@@ -41,7 +41,7 @@ export function initSessionState(options: InitSessionStateOptions): void {
 		agentType,
 		baseBranch,
 		projectId,
-		cardId,
+		workItemId,
 		hooks,
 		workItemUrl,
 		workItemTitle,
@@ -51,7 +51,7 @@ export function initSessionState(options: InitSessionStateOptions): void {
 		agentType,
 		baseBranch: baseBranch ?? 'main',
 		projectId: projectId ?? null,
-		cardId: cardId ?? null,
+		workItemId: workItemId ?? null,
 		workItemUrl: workItemUrl ?? null,
 		workItemTitle: workItemTitle ?? null,
 		initialHeadSha: initialHeadSha ?? null,
@@ -75,8 +75,8 @@ export function getProjectId(): string | null {
 	return sessionState.projectId;
 }
 
-export function getCardId(): string | null {
-	return sessionState.cardId;
+export function getWorkItemId(): string | null {
+	return sessionState.workItemId;
 }
 
 export function setReadOnlyFs(readOnly: boolean): void {

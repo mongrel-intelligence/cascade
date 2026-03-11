@@ -15,7 +15,7 @@ import type { FileLogger } from './executionPipeline.js';
 
 export interface RunTrackingInput {
 	projectId: string;
-	cardId?: string;
+	workItemId?: string;
 	prNumber?: number;
 	agentType: string;
 	backendName: string;
@@ -37,7 +37,7 @@ export async function tryCreateRun(
 	try {
 		return await createRun({
 			projectId: input.projectId,
-			workItemId: input.cardId,
+			workItemId: input.workItemId,
 			prNumber: input.prNumber,
 			agentType: input.agentType,
 			backend: input.backendName,

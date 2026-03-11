@@ -115,7 +115,7 @@ export class TrelloCommentMentionTrigger implements TriggerHandler {
 		return {
 			agentType: 'respond-to-planning-comment',
 			agentInput: {
-				cardId,
+				workItemId: cardId,
 				triggerCommentText: commentText,
 				triggerCommentAuthor: commentAuthor,
 				workItemUrl,

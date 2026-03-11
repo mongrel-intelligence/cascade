@@ -155,7 +155,7 @@ describe('PRConflictDetectedTrigger', () => {
 					repoFullName: 'owner/repo',
 					headSha: 'sha123',
 					triggerType: 'conflict-resolution',
-					cardId: 'abc123',
+					workItemId: 'abc123',
 					triggerEvent: 'scm:pr-conflict-detected',
 				},
 				prNumber: 42,
@@ -281,7 +281,7 @@ describe('PRConflictDetectedTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.workItemId).toBeUndefined();
-			expect(result?.agentInput.cardId).toBeUndefined();
+			expect(result?.agentInput.workItemId).toBeUndefined();
 		});
 
 		it('returns null when PR is mergeable (no conflicts)', async () => {

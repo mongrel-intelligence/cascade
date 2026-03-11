@@ -14,9 +14,9 @@ vi.mock('../../../src/github/client.js', () => ({
 import {
 	deleteInitialComment,
 	getBaseBranch,
-	getCardId,
 	getProjectId,
 	getSessionState,
+	getWorkItemId,
 	getWorkItemTitle,
 	getWorkItemUrl,
 	initSessionState,
@@ -37,7 +37,7 @@ describe('initSessionState', () => {
 		expect(state.agentType).toBe('implementation');
 		expect(state.baseBranch).toBe('main');
 		expect(state.projectId).toBeNull();
-		expect(state.cardId).toBeNull();
+		expect(state.workItemId).toBeNull();
 		expect(state.initialHeadSha).toBeNull();
 		expect(state.prCreated).toBe(false);
 		expect(state.prUrl).toBeNull();
@@ -53,7 +53,7 @@ describe('initSessionState', () => {
 			agentType: 'review',
 			baseBranch: 'develop',
 			projectId: 'project-123',
-			cardId: 'card-456',
+			workItemId: 'card-456',
 			hooks,
 		});
 		const state = getSessionState();
@@ -61,7 +61,7 @@ describe('initSessionState', () => {
 		expect(state.agentType).toBe('review');
 		expect(state.baseBranch).toBe('develop');
 		expect(state.projectId).toBe('project-123');
-		expect(state.cardId).toBe('card-456');
+		expect(state.workItemId).toBe('card-456');
 		expect(state.hooks).toEqual(hooks);
 	});
 
@@ -87,7 +87,7 @@ describe('getters', () => {
 			agentType: 'implementation',
 			baseBranch: 'feature-branch',
 			projectId: 'proj-abc',
-			cardId: 'card-xyz',
+			workItemId: 'card-xyz',
 		});
 	});
 
@@ -99,8 +99,8 @@ describe('getters', () => {
 		expect(getProjectId()).toBe('proj-abc');
 	});
 
-	it('getCardId returns the card id', () => {
-		expect(getCardId()).toBe('card-xyz');
+	it('getWorkItemId returns the work item id', () => {
+		expect(getWorkItemId()).toBe('card-xyz');
 	});
 
 	it('getWorkItemUrl returns null when not set', () => {
@@ -118,7 +118,7 @@ describe('workItemUrl and workItemTitle', () => {
 			agentType: 'implementation',
 			baseBranch: 'main',
 			projectId: 'proj-1',
-			cardId: 'card-1',
+			workItemId: 'card-1',
 			workItemUrl: 'https://trello.com/c/abc123',
 			workItemTitle: 'My Feature Card',
 		});
@@ -131,7 +131,7 @@ describe('workItemUrl and workItemTitle', () => {
 			agentType: 'implementation',
 			baseBranch: 'main',
 			projectId: 'proj-1',
-			cardId: 'card-1',
+			workItemId: 'card-1',
 		});
 		expect(getWorkItemUrl()).toBeNull();
 		expect(getWorkItemTitle()).toBeNull();
@@ -142,7 +142,7 @@ describe('workItemUrl and workItemTitle', () => {
 			agentType: 'implementation',
 			baseBranch: 'main',
 			projectId: 'proj-1',
-			cardId: 'card-1',
+			workItemId: 'card-1',
 			workItemUrl: 'https://trello.com/c/abc',
 			workItemTitle: 'Card A',
 		});
@@ -158,7 +158,7 @@ describe('initialHeadSha', () => {
 			agentType: 'respond-to-ci',
 			baseBranch: 'main',
 			projectId: 'proj-1',
-			cardId: 'card-1',
+			workItemId: 'card-1',
 			initialHeadSha: 'abc123sha',
 		});
 		expect(getSessionState().initialHeadSha).toBe('abc123sha');
@@ -174,7 +174,7 @@ describe('initialHeadSha', () => {
 			agentType: 'respond-to-ci',
 			baseBranch: 'main',
 			projectId: 'proj-1',
-			cardId: 'card-1',
+			workItemId: 'card-1',
 			initialHeadSha: 'abc123sha',
 		});
 		initSessionState({ agentType: 'implementation' });
@@ -303,7 +303,7 @@ describe('getSessionState', () => {
 			agentType: 'implementation',
 			baseBranch: 'main',
 			projectId: 'proj-1',
-			cardId: 'card-1',
+			workItemId: 'card-1',
 		});
 	});
 

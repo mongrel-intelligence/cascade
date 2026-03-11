@@ -279,7 +279,7 @@ describe('resolveModelConfig', () => {
 
 		it('renders task prompt from definition', async () => {
 			vi.mocked(resolveAgentDefinition).mockResolvedValue(
-				mockAgentDefinition({ taskPrompt: 'Custom task for <%= it.cardId %>.' }),
+				mockAgentDefinition({ taskPrompt: 'Custom task for <%= it.workItemId %>.' }),
 			);
 
 			const result = await resolveModelConfig({
@@ -287,7 +287,7 @@ describe('resolveModelConfig', () => {
 				project: makeProject(),
 				config: makeConfig(),
 				repoDir: '/tmp/test',
-				agentInput: { cardId: 'card-42' },
+				agentInput: { workItemId: 'card-42' },
 			});
 
 			expect(result.taskPrompt).toBe('Custom task for card-42.');
@@ -373,7 +373,7 @@ describe('resolveModelConfig', () => {
 				project: makeProject(),
 				config: makeConfig(),
 				repoDir: '/tmp/test',
-				agentInput: { cardId: 'card-99' },
+				agentInput: { workItemId: 'card-99' },
 			});
 
 			expect(result.taskPrompt).toBeUndefined();

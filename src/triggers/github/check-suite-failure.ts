@@ -162,7 +162,7 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 				headSha,
 				triggerType: 'check-failure',
 				triggerEvent: 'scm:check-suite-failure',
-				cardId: workItemId,
+				workItemId: workItemId,
 			},
 			prNumber,
 			workItemId,

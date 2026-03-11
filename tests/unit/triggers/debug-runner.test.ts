@@ -98,7 +98,7 @@ describe('triggerDebugAnalysis', () => {
 		expect(runAgent).toHaveBeenCalledWith(
 			'debug',
 			expect.objectContaining({
-				originalCardId: 'card-1',
+				originalWorkItemId: 'card-1',
 				detectedAgentType: 'implementation',
 				project: mockProject,
 				config: mockConfig,

@@ -119,7 +119,12 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 
 		return {
 			agentType,
-			agentInput: { cardId: issueKey, workItemUrl, workItemTitle, triggerEvent: 'pm:label-added' },
+			agentInput: {
+				workItemId: issueKey,
+				workItemUrl,
+				workItemTitle,
+				triggerEvent: 'pm:label-added',
+			},
 			workItemId: issueKey,
 			workItemUrl,
 			workItemTitle,

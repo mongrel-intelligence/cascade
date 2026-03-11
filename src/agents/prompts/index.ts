@@ -29,8 +29,8 @@ function requireInitialized(name: string): void {
 // Template context interface
 export interface PromptContext {
 	// Common
-	cardId?: string;
-	cardUrl?: string;
+	workItemId?: string;
+	workItemUrl?: string;
 	projectId?: string;
 
 	// PM vocabulary (computed from pmType)
@@ -60,9 +60,9 @@ export interface PromptContext {
 
 	// Debug-specific
 	logDir?: string;
-	originalCardId?: string;
-	originalCardName?: string;
-	originalCardUrl?: string;
+	originalWorkItemId?: string;
+	originalWorkItemName?: string;
+	originalWorkItemUrl?: string;
 	detectedAgentType?: string;
 	debugListId?: string;
 
@@ -167,7 +167,7 @@ export function getSystemPrompt(
 
 /** Context for task prompt Eta rendering */
 export interface TaskPromptContext {
-	cardId?: string;
+	workItemId?: string;
 	commentText?: string;
 	commentAuthor?: string;
 	prNumber?: number;
@@ -183,7 +183,7 @@ export interface TaskPromptContext {
  */
 export interface TaskPromptInput {
 	// Common fields
-	cardId?: string;
+	workItemId?: string;
 	prNumber?: number;
 	prBranch?: string;
 	// PM comment trigger fields
@@ -204,7 +204,7 @@ export interface TaskPromptInput {
  */
 export function buildTaskPromptContext(input: TaskPromptInput): TaskPromptContext {
 	return {
-		cardId: input.cardId,
+		workItemId: input.workItemId,
 		prNumber: input.prNumber,
 		prBranch: input.prBranch,
 		commentText: input.triggerCommentText,
@@ -286,8 +286,8 @@ export function getTemplateVariables(): Array<{
 	description: string;
 }> {
 	return [
-		{ name: 'cardId', group: 'Common', description: 'Work item ID' },
-		{ name: 'cardUrl', group: 'Common', description: 'Work item URL' },
+		{ name: 'workItemId', group: 'Common', description: 'Work item ID' },
+		{ name: 'workItemUrl', group: 'Common', description: 'Work item URL' },
 		{ name: 'projectId', group: 'Common', description: 'Project identifier' },
 		{ name: 'pmType', group: 'PM', description: 'PM type: trello or jira' },
 		{ name: 'workItemNoun', group: 'PM', description: 'card or issue' },
@@ -308,9 +308,13 @@ export function getTemplateVariables(): Array<{
 		{ name: 'headSha', group: 'CI', description: 'HEAD commit SHA' },
 		{ name: 'triggerType', group: 'CI', description: 'Trigger type identifier' },
 		{ name: 'logDir', group: 'Debug', description: 'Debug log directory path' },
-		{ name: 'originalCardId', group: 'Debug', description: 'Original card ID being debugged' },
-		{ name: 'originalCardName', group: 'Debug', description: 'Original card name' },
-		{ name: 'originalCardUrl', group: 'Debug', description: 'Original card URL' },
+		{
+			name: 'originalWorkItemId',
+			group: 'Debug',
+			description: 'Original work item ID being debugged',
+		},
+		{ name: 'originalWorkItemName', group: 'Debug', description: 'Original work item name' },
+		{ name: 'originalWorkItemUrl', group: 'Debug', description: 'Original work item URL' },
 		{ name: 'detectedAgentType', group: 'Debug', description: 'Agent type from session log' },
 		{ name: 'debugListId', group: 'Debug', description: 'Debug list ID for output cards' },
 	];
@@ -323,7 +327,7 @@ export function getTaskTemplateVariables(): Array<{
 	description: string;
 }> {
 	return [
-		{ name: 'cardId', group: 'Work Item', description: 'Work item ID (card or issue)' },
+		{ name: 'workItemId', group: 'Work Item', description: 'Work item ID (card or issue)' },
 		{ name: 'commentText', group: 'Comment', description: 'Comment text content (PM comments)' },
 		{ name: 'commentAuthor', group: 'Comment', description: 'Comment author username' },
 		{ name: 'prNumber', group: 'PR', description: 'Pull request number' },

@@ -57,7 +57,7 @@ function makeFileLogger() {
 
 const baseInput: RunTrackingInput = {
 	projectId: 'proj-1',
-	cardId: 'card-123',
+	workItemId: 'card-123',
 	agentType: 'implementation',
 	backendName: 'claude-code',
 };

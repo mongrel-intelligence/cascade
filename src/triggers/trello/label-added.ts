@@ -74,7 +74,12 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 
 		return {
 			agentType,
-			agentInput: { cardId, workItemUrl, workItemTitle, triggerEvent: 'pm:label-added' },
+			agentInput: {
+				workItemId: cardId,
+				workItemUrl,
+				workItemTitle,
+				triggerEvent: 'pm:label-added',
+			},
 			workItemId: cardId,
 			workItemUrl,
 			workItemTitle,

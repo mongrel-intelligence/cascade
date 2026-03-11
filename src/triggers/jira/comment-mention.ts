@@ -180,7 +180,7 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 		return {
 			agentType: 'respond-to-planning-comment',
 			agentInput: {
-				cardId: issueKey,
+				workItemId: issueKey,
 				triggerCommentText: commentText,
 				triggerCommentAuthor: authorName,
 				workItemUrl,

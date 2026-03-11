@@ -435,7 +435,7 @@ describe('getTemplateVariables', () => {
 	it('includes common variables', () => {
 		const vars = getTemplateVariables();
 		const names = vars.map((v) => v.name);
-		expect(names).toContain('cardId');
+		expect(names).toContain('workItemId');
 		expect(names).toContain('projectId');
 	});
 });

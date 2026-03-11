@@ -85,7 +85,7 @@ export interface ProjectConfigRaw {
 	pm: { type: string };
 	model?: string;
 	agentModels?: Record<string, string>;
-	cardBudgetUsd?: number;
+	workItemBudgetUsd?: number;
 	squintDbUrl?: string;
 	trello?: {
 		boardId: string;
@@ -194,7 +194,7 @@ export function mapDefaultsRow(
 		maxIterations: row?.maxIterations ?? undefined,
 		agentIterations: orUndefined(iterations),
 		watchdogTimeoutMs: row?.watchdogTimeoutMs ?? undefined,
-		cardBudgetUsd: row?.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
+		workItemBudgetUsd: row?.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
 		agentBackend: row?.agentBackend ?? undefined,
 		progressModel: row?.progressModel ?? undefined,
 		progressIntervalMinutes: row?.progressIntervalMinutes
@@ -240,7 +240,7 @@ export function mapProjectRow({
 		pm: { type: pmType },
 		model: row.model ?? undefined,
 		agentModels: orUndefined(models),
-		cardBudgetUsd: row.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
+		workItemBudgetUsd: row.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
 		squintDbUrl: row.squintDbUrl ?? undefined,
 	};
 

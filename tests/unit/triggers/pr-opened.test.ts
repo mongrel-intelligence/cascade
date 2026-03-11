@@ -172,7 +172,7 @@ describe('PROpenedTrigger', () => {
 					repoFullName: 'owner/repo',
 					headSha: 'abc',
 					triggerType: 'pr-opened',
-					cardId: 'abc123',
+					workItemId: 'abc123',
 					triggerEvent: 'scm:pr-opened',
 				},
 				prNumber: 42,

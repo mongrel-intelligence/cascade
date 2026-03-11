@@ -159,9 +159,9 @@ export async function triggerDebugAnalysis(
 
 		const agentResult: AgentResult = await runAgent('debug', {
 			logDir,
-			originalCardId: cardId,
-			originalCardName: cardId ? `Card ${cardId}` : 'Unknown card',
-			originalCardUrl: cardId ? resolveCardUrl(cardId) : '',
+			originalWorkItemId: cardId,
+			originalWorkItemName: cardId ? `Card ${cardId}` : 'Unknown card',
+			originalWorkItemUrl: cardId ? resolveCardUrl(cardId) : '',
 			detectedAgentType: run.agentType,
 			project,
 			config,

@@ -67,7 +67,7 @@ export function TriggerRunDialog({ open, onOpenChange }: TriggerRunDialogProps) 
 			trpcClient.runs.trigger.mutate({
 				projectId,
 				agentType,
-				cardId: cardId || undefined,
+				workItemId: cardId || undefined,
 				prNumber: prNumber ? Number(prNumber) : undefined,
 				prBranch: prBranch || undefined,
 				model: model || undefined,

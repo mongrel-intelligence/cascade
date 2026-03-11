@@ -14,7 +14,7 @@ export interface ManualRunJob {
 	type: 'manual-run';
 	projectId: string;
 	agentType: string;
-	cardId?: string;
+	workItemId?: string;
 	prNumber?: number;
 	prBranch?: string;
 	repoFullName?: string;
@@ -33,7 +33,7 @@ export interface DebugAnalysisJob {
 	type: 'debug-analysis';
 	runId: string;
 	projectId: string;
-	cardId?: string;
+	workItemId?: string;
 }
 
 export type DashboardJob = ManualRunJob | RetryRunJob | DebugAnalysisJob;
