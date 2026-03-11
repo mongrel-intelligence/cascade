@@ -1,6 +1,6 @@
-import { Flags } from '@oclif/core';
 import { type ChecklistItemInput, addChecklist } from '../../gadgets/pm/core/addChecklist.js';
-import { CredentialScopedCommand } from '../base.js';
+import { addChecklistDef } from '../../gadgets/pm/definitions.js';
+import { createCLICommand } from '../../gadgets/shared/cliCommandFactory.js';
 
 /**
  * Parses a raw --item flag string into a ChecklistItemInput.
@@ -33,27 +33,12 @@ export function parseItem(raw: string): ChecklistItemInput {
 	return raw;
 }
 
-export default class AddChecklist extends CredentialScopedCommand {
-	static override description = 'Add a checklist with items to a work item.';
-
-	static override flags = {
-		workItemId: Flags.string({ description: 'The work item ID', required: true }),
-		name: Flags.string({ description: 'Checklist name', required: true }),
-		item: Flags.string({
-			description: 'Checklist item (repeatable, specify multiple times)',
-			required: true,
-			multiple: true,
-		}),
-	};
-
-	async execute(): Promise<void> {
-		const { flags } = await this.parse(AddChecklist);
-		const items = flags.item.map(parseItem);
-		const result = await addChecklist({
-			workItemId: flags.workItemId,
-			checklistName: flags.name,
-			items,
-		});
-		this.log(JSON.stringify({ success: true, data: result }));
-	}
-}
+export default createCLICommand(addChecklistDef, async (params) => {
+	const rawItems = params.item as string[];
+	const items = rawItems.map(parseItem);
+	return addChecklist({
+		workItemId: params.workItemId as string,
+		checklistName: params.checklistName as string,
+		items,
+	});
+});

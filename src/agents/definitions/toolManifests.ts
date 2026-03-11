@@ -13,7 +13,8 @@ export function getToolManifests(): ToolManifest[] {
 			cliCommand: 'cascade-tools pm read-work-item',
 			parameters: {
 				workItemId: { type: 'string', required: true },
-				'include-comments': { type: 'boolean', default: true },
+				includeComments: { type: 'boolean', default: true },
+				'no-includeComments': { type: 'boolean', description: 'Exclude comments from response' },
 			},
 		},
 		{
@@ -40,6 +41,10 @@ export function getToolManifests(): ToolManifest[] {
 				'description-file': {
 					type: 'string',
 					description: 'Path to file with description (prefer over --description for long content)',
+				},
+				addLabelId: {
+					type: 'array',
+					description: 'Label IDs to add (repeatable: --addLabelId id1 --addLabelId id2)',
 				},
 			},
 		},
@@ -68,7 +73,7 @@ export function getToolManifests(): ToolManifest[] {
 			cliCommand: 'cascade-tools pm add-checklist',
 			parameters: {
 				workItemId: { type: 'string', required: true },
-				name: { type: 'string', required: true },
+				checklistName: { type: 'string', required: true },
 				item: { type: 'array', required: true },
 			},
 		},
@@ -88,7 +93,7 @@ export function getToolManifests(): ToolManifest[] {
 			cliCommand: 'cascade-tools pm update-checklist-item',
 			parameters: {
 				workItemId: { type: 'string', required: true },
-				'check-item-id': { type: 'string', required: true },
+				checkItemId: { type: 'string', required: true },
 				state: { type: 'string', required: true, description: 'complete or incomplete' },
 			},
 		},
@@ -98,7 +103,7 @@ export function getToolManifests(): ToolManifest[] {
 			cliCommand: 'cascade-tools pm delete-checklist-item',
 			parameters: {
 				workItemId: { type: 'string', required: true },
-				'check-item-id': { type: 'string', required: true },
+				checkItemId: { type: 'string', required: true },
 			},
 		},
 		{

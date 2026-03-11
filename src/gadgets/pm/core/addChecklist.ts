@@ -9,6 +9,10 @@ export interface AddChecklistParams {
 }
 
 export async function addChecklist(params: AddChecklistParams): Promise<string> {
+	if (params.items.length === 0) {
+		throw new Error('At least one checklist item is required');
+	}
+
 	const provider = getPMProvider();
 	const checklist = await provider.createChecklist(params.workItemId, params.checklistName);
 
