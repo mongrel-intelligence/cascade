@@ -70,7 +70,7 @@ describe('tryCreateRun', () => {
 		expect(runId).toBe('run-abc');
 		expect(mockCreateRun).toHaveBeenCalledWith({
 			projectId: 'proj-1',
-			cardId: 'card-123',
+			workItemId: 'card-123',
 			prNumber: undefined,
 			agentType: 'implementation',
 			backend: 'claude-code',

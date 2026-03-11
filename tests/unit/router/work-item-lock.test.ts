@@ -34,11 +34,15 @@ describe('work-item-lock', () => {
 		const result = await isWorkItemLocked('proj1', 'card1', 'implementation');
 		expect(result).toEqual({ locked: false });
 		const maxAgeMs = 2 * 30 * 60 * 1000;
-		// Two parallel countActiveRuns calls: one for total (cardId only) and one for same-type
-		expect(countActiveRuns).toHaveBeenCalledWith({ projectId: 'proj1', cardId: 'card1', maxAgeMs });
+		// Two parallel countActiveRuns calls: one for total (workItemId only) and one for same-type
 		expect(countActiveRuns).toHaveBeenCalledWith({
 			projectId: 'proj1',
-			cardId: 'card1',
+			workItemId: 'card1',
+			maxAgeMs,
+		});
+		expect(countActiveRuns).toHaveBeenCalledWith({
+			projectId: 'proj1',
+			workItemId: 'card1',
 			agentType: 'implementation',
 			maxAgeMs,
 		});

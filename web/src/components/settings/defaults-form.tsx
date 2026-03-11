@@ -19,7 +19,7 @@ export function DefaultsForm() {
 	const [model, setModel] = useState('');
 	const [maxIterations, setMaxIterations] = useState('');
 	const [watchdogTimeoutMs, setWatchdogTimeoutMs] = useState('');
-	const [cardBudgetUsd, setCardBudgetUsd] = useState('');
+	const [workItemBudgetUsd, setCardBudgetUsd] = useState('');
 	const [agentBackend, setAgentBackend] = useState('');
 	const [progressModel, setProgressModel] = useState('');
 	const [progressIntervalMinutes, setProgressIntervalMinutes] = useState('');
@@ -30,7 +30,7 @@ export function DefaultsForm() {
 			setModel(d.model ?? '');
 			setMaxIterations(d.maxIterations?.toString() ?? '');
 			setWatchdogTimeoutMs(d.watchdogTimeoutMs?.toString() ?? '');
-			setCardBudgetUsd(d.cardBudgetUsd ?? '');
+			setCardBudgetUsd(d.workItemBudgetUsd ?? '');
 			setAgentBackend(d.agentBackend ?? '');
 			setProgressModel(d.progressModel ?? '');
 			setProgressIntervalMinutes(d.progressIntervalMinutes ?? '');
@@ -43,7 +43,7 @@ export function DefaultsForm() {
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				watchdogTimeoutMs: watchdogTimeoutMs ? Number(watchdogTimeoutMs) : null,
-				cardBudgetUsd: cardBudgetUsd || null,
+				workItemBudgetUsd: workItemBudgetUsd || null,
 				agentBackend: agentBackend || null,
 				progressModel: progressModel || null,
 				progressIntervalMinutes: progressIntervalMinutes || null,
@@ -95,7 +95,7 @@ export function DefaultsForm() {
 					<Label htmlFor="d-budget">Card Budget (USD)</Label>
 					<Input
 						id="d-budget"
-						value={cardBudgetUsd}
+						value={workItemBudgetUsd}
 						onChange={(e) => setCardBudgetUsd(e.target.value)}
 						placeholder="e.g. 2.00"
 					/>

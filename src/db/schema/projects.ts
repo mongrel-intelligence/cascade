@@ -14,7 +14,7 @@ export const projects = pgTable(
 		branchPrefix: text('branch_prefix').default('feature/'),
 
 		model: text('model'),
-		cardBudgetUsd: numeric('card_budget_usd', { precision: 10, scale: 2 }),
+		workItemBudgetUsd: numeric('work_item_budget_usd', { precision: 10, scale: 2 }),
 		agentBackend: text('agent_backend'),
 		subscriptionCostZero: boolean('subscription_cost_zero').default(false),
 		squintDbUrl: text('squint_db_url'),

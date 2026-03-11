@@ -165,7 +165,7 @@ export async function triggerRetryRun(
 	const triggerInput: ManualTriggerInput = {
 		projectId: run.projectId,
 		agentType: run.agentType,
-		cardId: run.cardId ?? undefined,
+		cardId: run.workItemId ?? undefined,
 		prNumber: run.prNumber ?? undefined,
 		modelOverride: modelOverride ?? run.model ?? undefined,
 	};

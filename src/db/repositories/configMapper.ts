@@ -37,7 +37,7 @@ export interface DefaultsRow {
 	model: string | null;
 	maxIterations: number | null;
 	watchdogTimeoutMs: number | null;
-	cardBudgetUsd: string | null;
+	workItemBudgetUsd: string | null;
 	agentBackend: string | null;
 	progressModel: string | null;
 	progressIntervalMinutes: string | null;
@@ -120,7 +120,7 @@ type ProjectRow = {
 	baseBranch: string | null;
 	branchPrefix: string | null;
 	model: string | null;
-	cardBudgetUsd: string | null;
+	workItemBudgetUsd: string | null;
 	squintDbUrl: string | null;
 	agentBackend: string | null;
 	subscriptionCostZero: boolean | null;
@@ -194,7 +194,7 @@ export function mapDefaultsRow(
 		maxIterations: row?.maxIterations ?? undefined,
 		agentIterations: orUndefined(iterations),
 		watchdogTimeoutMs: row?.watchdogTimeoutMs ?? undefined,
-		cardBudgetUsd: row?.cardBudgetUsd ? Number(row.cardBudgetUsd) : undefined,
+		cardBudgetUsd: row?.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
 		agentBackend: row?.agentBackend ?? undefined,
 		progressModel: row?.progressModel ?? undefined,
 		progressIntervalMinutes: row?.progressIntervalMinutes
@@ -240,7 +240,7 @@ export function mapProjectRow({
 		pm: { type: pmType },
 		model: row.model ?? undefined,
 		agentModels: orUndefined(models),
-		cardBudgetUsd: row.cardBudgetUsd ? Number(row.cardBudgetUsd) : undefined,
+		cardBudgetUsd: row.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
 		squintDbUrl: row.squintDbUrl ?? undefined,
 	};
 

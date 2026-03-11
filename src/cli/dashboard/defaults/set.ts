@@ -23,7 +23,7 @@ export default class DefaultsSet extends DashboardCommand {
 				model: flags.model,
 				maxIterations: flags['max-iterations'],
 				watchdogTimeoutMs: flags['watchdog-timeout'],
-				cardBudgetUsd: flags['card-budget'],
+				workItemBudgetUsd: flags['card-budget'],
 				agentBackend: flags['agent-backend'],
 				progressModel: flags['progress-model'],
 				progressIntervalMinutes: flags['progress-interval'],

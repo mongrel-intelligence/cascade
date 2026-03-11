@@ -24,7 +24,7 @@ const baseProjectRow = {
 	baseBranch: 'main',
 	branchPrefix: 'feature/',
 	model: null,
-	cardBudgetUsd: null,
+	workItemBudgetUsd: null,
 	squintDbUrl: null,
 	agentBackend: null,
 	subscriptionCostZero: false,
@@ -143,7 +143,7 @@ describe('mapDefaultsRow', () => {
 		model: 'test-model',
 		maxIterations: 50,
 		watchdogTimeoutMs: 1800000,
-		cardBudgetUsd: '5.00',
+		workItemBudgetUsd: '5.00',
 		agentBackend: 'llmist',
 		progressModel: 'progress-model',
 		progressIntervalMinutes: '5',
@@ -160,8 +160,8 @@ describe('mapDefaultsRow', () => {
 		expect(result.progressIntervalMinutes).toBe(5);
 	});
 
-	it('converts cardBudgetUsd string to number', () => {
-		const result = mapDefaultsRow({ ...defaultsRow, cardBudgetUsd: '10.50' }, []);
+	it('converts workItemBudgetUsd string to number', () => {
+		const result = mapDefaultsRow({ ...defaultsRow, workItemBudgetUsd: '10.50' }, []);
 		expect(result.cardBudgetUsd).toBe(10.5);
 	});
 
@@ -320,8 +320,10 @@ describe('mapProjectRow', () => {
 		expect(result.agentBackend?.overrides).toEqual({ implementation: 'claude-code' });
 	});
 
-	it('converts cardBudgetUsd from string to number', () => {
-		const result = mapProjectRow(makeInput({ row: { ...baseProjectRow, cardBudgetUsd: '7.50' } }));
+	it('converts workItemBudgetUsd from string to number', () => {
+		const result = mapProjectRow(
+			makeInput({ row: { ...baseProjectRow, workItemBudgetUsd: '7.50' } }),
+		);
 		expect(result.cardBudgetUsd).toBe(7.5);
 	});
 

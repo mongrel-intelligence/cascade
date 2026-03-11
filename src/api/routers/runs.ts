@@ -154,11 +154,11 @@ export const runsRouter = router({
 					type: 'debug-analysis',
 					runId: input.runId,
 					projectId: run.projectId,
-					cardId: run.cardId ?? undefined,
+					cardId: run.workItemId ?? undefined,
 				});
 			} else {
 				const { triggerDebugAnalysis } = await import('../../triggers/shared/debug-runner.js');
-				triggerDebugAnalysis(input.runId, pc.project, pc.config, run.cardId ?? undefined).catch(
+				triggerDebugAnalysis(input.runId, pc.project, pc.config, run.workItemId ?? undefined).catch(
 					(err) => {
 						logger.error('Manual debug analysis failed', {
 							runId: input.runId,
@@ -275,10 +275,10 @@ export const runsRouter = router({
 			}
 
 			// Block if a worker is already active on this work item
-			if (run.cardId && run.agentType !== 'debug') {
+			if (run.workItemId && run.agentType !== 'debug') {
 				const active = await hasActiveRunForWorkItem(
 					run.projectId,
-					run.cardId,
+					run.workItemId,
 					DEFAULT_STALE_RUN_THRESHOLD_MS,
 				);
 				if (active) {

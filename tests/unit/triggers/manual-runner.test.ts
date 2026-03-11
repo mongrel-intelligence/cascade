@@ -258,7 +258,7 @@ describe('triggerRetryRun', () => {
 			id: 'run-1',
 			agentType: 'implementation',
 			projectId: 'test-project',
-			cardId: 'card-1',
+			workItemId: 'card-1',
 			prNumber: null,
 			model: 'claude-sonnet-4-5-20250929',
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
@@ -286,7 +286,7 @@ describe('triggerRetryRun', () => {
 			id: 'run-1',
 			agentType: 'review',
 			projectId: 'test-project',
-			cardId: null,
+			workItemId: null,
 			prNumber: 10,
 			model: 'claude-sonnet-4-5-20250929',
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);

@@ -133,7 +133,7 @@ describe('settingsRepository (integration)', () => {
 				baseBranch: 'develop',
 				branchPrefix: 'fix/',
 				model: 'claude-sonnet',
-				cardBudgetUsd: '10.00',
+				workItemBudgetUsd: '10.00',
 				agentBackend: 'claude-code',
 			});
 			expect(project.baseBranch).toBe('develop');

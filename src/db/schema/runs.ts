@@ -15,7 +15,7 @@ export const agentRuns = pgTable(
 	{
 		id: uuid('id').primaryKey().defaultRandom(),
 		projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
-		cardId: text('card_id'),
+		workItemId: text('work_item_id'),
 		prNumber: integer('pr_number'),
 		agentType: text('agent_type').notNull(),
 		backend: text('backend').notNull(),
@@ -36,10 +36,10 @@ export const agentRuns = pgTable(
 	},
 	(table) => [
 		index('idx_agent_runs_project_id').on(table.projectId),
-		index('idx_agent_runs_card_id').on(table.cardId),
+		index('idx_agent_runs_work_item_id').on(table.workItemId),
 		index('idx_agent_runs_status').on(table.status),
 		index('idx_agent_runs_started_at').on(table.startedAt),
-		index('idx_agent_runs_project_card').on(table.projectId, table.cardId),
+		index('idx_agent_runs_project_work_item').on(table.projectId, table.workItemId),
 	],
 );
 

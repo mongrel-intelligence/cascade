@@ -31,7 +31,7 @@ export default class ProjectsShow extends DashboardCommand {
 				baseBranch: { label: 'Base Branch' },
 				branchPrefix: { label: 'Branch Prefix' },
 				model: { label: 'Model' },
-				cardBudgetUsd: { label: 'Card Budget' },
+				workItemBudgetUsd: { label: 'Card Budget' },
 				agentBackend: { label: 'Backend' },
 				subscriptionCostZero: { label: 'Sub Cost Zero', format: formatBoolean },
 			});

@@ -52,7 +52,7 @@ function buildProjectValues(p: ProjectConfig) {
 		baseBranch: p.baseBranch,
 		branchPrefix: p.branchPrefix,
 		model: p.model ?? null,
-		cardBudgetUsd: p.cardBudgetUsd ? String(p.cardBudgetUsd) : null,
+		workItemBudgetUsd: p.cardBudgetUsd ? String(p.cardBudgetUsd) : null,
 		agentBackend: p.agentBackend?.default ?? null,
 		subscriptionCostZero: p.agentBackend?.subscriptionCostZero ?? false,
 	};
@@ -68,7 +68,7 @@ async function seedDefaults(d: CascadeConfig['defaults']) {
 		freshMachineTimeoutMs: d.freshMachineTimeoutMs,
 		watchdogTimeoutMs: d.watchdogTimeoutMs,
 		postJobGracePeriodMs: d.postJobGracePeriodMs,
-		cardBudgetUsd: String(d.cardBudgetUsd),
+		workItemBudgetUsd: String(d.cardBudgetUsd),
 		agentBackend: d.agentBackend,
 		progressModel: d.progressModel,
 		progressIntervalMinutes: String(d.progressIntervalMinutes),

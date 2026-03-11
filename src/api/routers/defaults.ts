@@ -16,7 +16,7 @@ export const defaultsRouter = router({
 				model: z.string().nullish(),
 				maxIterations: z.number().int().positive().nullish(),
 				watchdogTimeoutMs: z.number().int().positive().nullish(),
-				cardBudgetUsd: z.string().nullish(),
+				workItemBudgetUsd: z.string().nullish(),
 				agentBackend: z.string().nullish(),
 				progressModel: z.string().nullish(),
 				progressIntervalMinutes: z.string().nullish(),

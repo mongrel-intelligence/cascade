@@ -396,7 +396,7 @@ describe('runsRouter', () => {
 				id: RUN_UUID,
 				projectId: 'p1',
 				agentType: 'implementation',
-				cardId: 'card-1',
+				workItemId: 'card-1',
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockIsAnalysisRunning.mockReturnValue(false);
@@ -424,7 +424,7 @@ describe('runsRouter', () => {
 				id: RUN_UUID,
 				projectId: 'p1',
 				agentType: 'implementation',
-				cardId: null,
+				workItemId: null,
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockIsAnalysisRunning.mockReturnValue(false);
@@ -795,7 +795,7 @@ describe('runsRouter', () => {
 				id: RUN_UUID,
 				projectId: 'p1',
 				agentType: 'implementation',
-				cardId: 'card-1',
+				workItemId: 'card-1',
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockHasActiveRunForWorkItem.mockResolvedValueOnce(true);
@@ -812,7 +812,7 @@ describe('runsRouter', () => {
 				id: RUN_UUID,
 				projectId: 'p1',
 				agentType: 'debug',
-				cardId: 'card-1',
+				workItemId: 'card-1',
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockLoadProjectConfigById.mockResolvedValue({

@@ -6,7 +6,7 @@ interface RunSummaryProps {
 	run: {
 		id: string;
 		projectId: string | null;
-		cardId: string | null;
+		workItemId: string | null;
 		prNumber: number | null;
 		agentType: string;
 		backend: string;
@@ -74,8 +74,8 @@ export function RunSummaryCard({ run }: RunSummaryProps) {
 							{run.workItemTitle}
 							<ExternalLink className="h-3 w-3" />
 						</a>
-					) : run.cardId ? (
-						run.cardId
+					) : run.workItemId ? (
+						run.workItemId
 					) : (
 						'-'
 					)}

@@ -29,7 +29,7 @@ export async function createProject(
 		baseBranch?: string;
 		branchPrefix?: string;
 		model?: string | null;
-		cardBudgetUsd?: string | null;
+		workItemBudgetUsd?: string | null;
 		agentBackend?: string | null;
 		subscriptionCostZero?: boolean;
 	},
@@ -45,7 +45,7 @@ export async function createProject(
 			baseBranch: data.baseBranch ?? 'main',
 			branchPrefix: data.branchPrefix ?? 'feature/',
 			model: data.model,
-			cardBudgetUsd: data.cardBudgetUsd,
+			workItemBudgetUsd: data.workItemBudgetUsd,
 			agentBackend: data.agentBackend,
 			subscriptionCostZero: data.subscriptionCostZero ?? false,
 		})
@@ -62,7 +62,7 @@ export async function updateProject(
 		baseBranch?: string;
 		branchPrefix?: string;
 		model?: string | null;
-		cardBudgetUsd?: string | null;
+		workItemBudgetUsd?: string | null;
 		agentBackend?: string | null;
 		subscriptionCostZero?: boolean;
 	},
