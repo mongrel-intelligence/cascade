@@ -88,15 +88,17 @@ npm run build && node --env-file=.env dist/dashboard.js
 npm run dev:web
 ```
 
-> **Note**: The Vite dev server currently proxies API requests to :3000 (the router), but the dashboard API runs on :3001. You'll need to update `web/vite.config.ts` proxy targets to `http://localhost:3001`. A `dev:dashboard` script to handle this automatically is planned.
-
 Open **http://localhost:5173** — you'll see the dashboard.
 
 ### 6. First login
 
-Create your first user directly in the database:
+Create your first organization and user directly in the database:
 
 ```bash
+# First, create an organization (required for foreign key constraint)
+psql $DATABASE_URL -c "INSERT INTO organizations (id, name) VALUES ('my-org', 'My Organization');"
+
+# Then hash your password and create the user
 node -e "import('bcrypt').then(b => b.default.hash('yourpassword', 10).then(console.log))"
 psql $DATABASE_URL -c "INSERT INTO users (org_id, email, password_hash, name, role) VALUES ('my-org', 'you@example.com', '\$2b\$10\$...', 'Your Name', 'admin');"
 ```
@@ -299,7 +301,7 @@ node bin/cascade.js projects trigger-set my-project \
 | `npm run lint:fix` | Auto-fix lint issues |
 | `npm run typecheck` | TypeScript type checking |
 | `npm run build` | Compile TypeScript to `dist/` |
-| `npm start` | Start production server |
+| `npm start` | Start production Router |
 | `npm run db:generate` | Generate migration SQL from schema changes |
 | `npm run db:migrate` | Apply pending migrations |
 | `npm run db:studio` | Open Drizzle Studio |
