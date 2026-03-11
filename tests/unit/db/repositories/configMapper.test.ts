@@ -173,7 +173,7 @@ describe('mapDefaultsRow', () => {
 	it('handles undefined defaults row gracefully', () => {
 		const result = mapDefaultsRow(undefined, []);
 		expect(result.model).toBeUndefined();
-		expect(result.workItemBudgetUsd).toBeUndefined();
+		expect(result.cardBudgetUsd).toBeUndefined();
 	});
 
 	it('builds agentModels and agentIterations from agent configs', () => {
