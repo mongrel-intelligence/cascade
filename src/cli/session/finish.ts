@@ -1,9 +1,9 @@
 import { Command, Flags } from '@oclif/core';
 import { validateFinish } from '../../gadgets/session/core/finish.js';
+import { finishDef } from '../../gadgets/session/definitions.js';
 
 export default class Finish extends Command {
-	static override description =
-		'Validate and signal session completion. Checks that all required work is done before finishing.';
+	static override description = finishDef.description;
 
 	static override flags = {
 		'agent-type': Flags.string({ description: 'The agent type running the session' }),

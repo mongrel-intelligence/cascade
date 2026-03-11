@@ -370,4 +370,11 @@ export interface ToolDefinition {
 	 * Called after `execute()` returns, before the result is returned to the agent.
 	 */
 	gadgetPostExecute?: GadgetPostExecuteHook;
+
+	/**
+	 * If `true`, this gadget cannot run in parallel with other gadgets.
+	 * Maps to llmist Gadget `exclusive: true`.
+	 * Use for gadgets that signal session termination (e.g., Finish).
+	 */
+	exclusive?: boolean;
 }
