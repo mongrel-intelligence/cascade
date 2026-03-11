@@ -7,11 +7,10 @@
  * - JSON Schema manifests (generated via buildManifest)
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { writeFileSync } from 'node:fs';
 
 import { GITHUB_ACK_COMMENT_ID_ENV_VAR } from '../../backends/secretBuilder.js';
-import { REVIEW_SIDECAR_FILENAME } from '../sessionState.js';
+import { REVIEW_SIDECAR_ENV_VAR } from '../sessionState.js';
 import type { ToolDefinition } from '../shared/toolDefinition.js';
 
 /**
@@ -258,20 +257,21 @@ export const createPRReviewDef: ToolDefinition = {
 
 			// Persist review data for the parent process (backend adapter)
 			// to read and populate session state post-execution.
-			try {
-				const sidecarPath = join(process.cwd(), REVIEW_SIDECAR_FILENAME);
-				mkdirSync(dirname(sidecarPath), { recursive: true });
-				writeFileSync(
-					sidecarPath,
-					JSON.stringify({
-						reviewUrl: reviewResult.reviewUrl,
-						event: flags.event,
-						body: flags.body,
-						...(ackCommentDeleted && { ackCommentDeleted: true }),
-					}),
-				);
-			} catch {
-				// Best-effort — don't fail the review on sidecar write failure
+			const sidecarPath = process.env[REVIEW_SIDECAR_ENV_VAR];
+			if (sidecarPath) {
+				try {
+					writeFileSync(
+						sidecarPath,
+						JSON.stringify({
+							reviewUrl: reviewResult.reviewUrl,
+							event: flags.event,
+							body: flags.body,
+							...(ackCommentDeleted && { ackCommentDeleted: true }),
+						}),
+					);
+				} catch {
+					// Best-effort — don't fail the review on sidecar write failure
+				}
 			}
 		},
 	},

@@ -152,7 +152,7 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { execFileSync } from 'node:child_process';
-import { hasFinishValidation } from '../../../src/agents/definitions/profiles.js';
+import { needsGitStateStopHooks } from '../../../src/agents/definitions/profiles.js';
 import { type AgentProfile, getAgentProfile } from '../../../src/agents/definitions/profiles.js';
 import {
 	formatPRComments,
@@ -1082,31 +1082,31 @@ describe('resolveContextPipeline edge cases', () => {
 });
 
 // ============================================================================
-// hasFinishValidation
+// needsGitStateStopHooks
 // ============================================================================
 
-describe('hasFinishValidation', () => {
+describe('needsGitStateStopHooks', () => {
 	it('returns true when requiresPR is set', () => {
-		expect(hasFinishValidation({ requiresPR: true })).toBe(true);
+		expect(needsGitStateStopHooks({ requiresPR: true })).toBe(true);
 	});
 
-	it('returns true when requiresReview is set', () => {
-		expect(hasFinishValidation({ requiresReview: true })).toBe(true);
+	it('returns false when only requiresReview is set (review validation is post-session)', () => {
+		expect(needsGitStateStopHooks({ requiresReview: true })).toBe(false);
 	});
 
 	it('returns true when requiresPushedChanges is set', () => {
-		expect(hasFinishValidation({ requiresPushedChanges: true })).toBe(true);
+		expect(needsGitStateStopHooks({ requiresPushedChanges: true })).toBe(true);
 	});
 
 	it('returns false when only blockGitPush is set', () => {
-		expect(hasFinishValidation({ blockGitPush: true })).toBe(false);
+		expect(needsGitStateStopHooks({ blockGitPush: true })).toBe(false);
 	});
 
 	it('returns false for empty hooks', () => {
-		expect(hasFinishValidation({})).toBe(false);
+		expect(needsGitStateStopHooks({})).toBe(false);
 	});
 
 	it('returns true when multiple finish requirements are set', () => {
-		expect(hasFinishValidation({ requiresPR: true, requiresReview: true })).toBe(true);
+		expect(needsGitStateStopHooks({ requiresPR: true, requiresReview: true })).toBe(true);
 	});
 });

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -11,7 +11,7 @@ vi.mock('../../../../src/gadgets/github/core/createPRReview.js', () => ({
 }));
 
 vi.mock('../../../../src/gadgets/sessionState.js', () => ({
-	REVIEW_SIDECAR_FILENAME: '.cascade/review-result.json',
+	REVIEW_SIDECAR_ENV_VAR: 'CASCADE_REVIEW_SIDECAR_PATH',
 }));
 
 // Mock the CLI base class to avoid credential resolution
@@ -26,23 +26,30 @@ vi.mock('../../../../src/cli/base.js', () => ({
 import CreatePRReviewCommand from '../../../../src/cli/scm/create-pr-review.js';
 
 describe('CreatePRReviewCommand sidecar write', () => {
-	let testDir: string;
-	let originalCwd: string;
+	let sidecarPath: string;
+	let originalEnv: string | undefined;
 
 	beforeEach(() => {
-		originalCwd = process.cwd();
-		testDir = join(tmpdir(), `cascade-test-review-${Date.now()}`);
-		mkdirSync(testDir, { recursive: true });
-		process.chdir(testDir);
+		sidecarPath = join(tmpdir(), `cascade-test-review-sidecar-${Date.now()}.json`);
+		originalEnv = process.env.CASCADE_REVIEW_SIDECAR_PATH;
+		process.env.CASCADE_REVIEW_SIDECAR_PATH = sidecarPath;
 	});
 
 	afterEach(() => {
-		process.chdir(originalCwd);
-		rmSync(testDir, { recursive: true, force: true });
+		try {
+			rmSync(sidecarPath, { force: true });
+		} catch {
+			// ignore
+		}
+		if (originalEnv !== undefined) {
+			process.env.CASCADE_REVIEW_SIDECAR_PATH = originalEnv;
+		} else {
+			process.env.CASCADE_REVIEW_SIDECAR_PATH = undefined;
+		}
 		vi.restoreAllMocks();
 	});
 
-	it('writes .cascade/review-result.json after successful review', async () => {
+	it('writes sidecar to temp path from CASCADE_REVIEW_SIDECAR_PATH after successful review', async () => {
 		mockCreatePRReview.mockResolvedValue({
 			reviewUrl: 'https://github.com/owner/repo/pull/1#pullrequestreview-123',
 			event: 'REQUEST_CHANGES',
@@ -66,7 +73,6 @@ describe('CreatePRReviewCommand sidecar write', () => {
 
 		await cmd.execute();
 
-		const sidecarPath = join(testDir, '.cascade', 'review-result.json');
 		expect(existsSync(sidecarPath)).toBe(true);
 
 		const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8'));
@@ -98,7 +104,35 @@ describe('CreatePRReviewCommand sidecar write', () => {
 
 		await expect(cmd.execute()).rejects.toThrow('GitHub API error');
 
-		const sidecarPath = join(testDir, '.cascade', 'review-result.json');
+		expect(existsSync(sidecarPath)).toBe(false);
+	});
+
+	it('does not write sidecar when CASCADE_REVIEW_SIDECAR_PATH is not set', async () => {
+		process.env.CASCADE_REVIEW_SIDECAR_PATH = undefined;
+
+		mockCreatePRReview.mockResolvedValue({
+			reviewUrl: 'https://github.com/owner/repo/pull/1#pullrequestreview-123',
+			event: 'APPROVE',
+		});
+
+		const cmd = new CreatePRReviewCommand([], {} as never);
+		vi.mocked(cmd.parse).mockResolvedValue({
+			flags: {
+				owner: 'owner',
+				repo: 'repo',
+				prNumber: 1,
+				event: 'APPROVE',
+				body: 'LGTM',
+			},
+			args: {},
+			argv: [],
+			raw: [],
+			metadata: {},
+			nonExistentFlags: {},
+		} as never);
+
+		await cmd.execute();
+
 		expect(existsSync(sidecarPath)).toBe(false);
 	});
 });

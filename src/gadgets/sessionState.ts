@@ -1,7 +1,7 @@
 import type { FinishHookFlags } from '../agents/definitions/schema.js';
 
-/** Sidecar file written by CLI subprocess, read by adapter post-execution. */
-export const REVIEW_SIDECAR_FILENAME = '.cascade/review-result.json';
+/** Env var holding the temp file path for the review sidecar (written by CLI subprocess, read by adapter). */
+export const REVIEW_SIDECAR_ENV_VAR = 'CASCADE_REVIEW_SIDECAR_PATH';
 
 export type SessionHooks = FinishHookFlags;
 

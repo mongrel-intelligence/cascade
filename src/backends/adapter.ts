@@ -1,9 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { ModelSpec } from 'llmist';
 
-import { hasFinishValidation } from '../agents/definitions/index.js';
+import { needsGitStateStopHooks } from '../agents/definitions/index.js';
 import { getAgentProfile } from '../agents/definitions/profiles.js';
 import { getToolManifests } from '../agents/definitions/toolManifests.js';
 import type { PromptContext } from '../agents/prompts/index.js';
@@ -20,7 +21,7 @@ import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import {
-	REVIEW_SIDECAR_FILENAME,
+	REVIEW_SIDECAR_ENV_VAR,
 	clearInitialComment,
 	recordInitialComment,
 	recordReviewSubmission,
@@ -70,7 +71,7 @@ async function buildBackendInput(
 	_log: ReturnType<typeof createAgentLogger>,
 	gitHubToken: string | undefined,
 	isGitHubAck: boolean,
-): Promise<Omit<AgentBackendInput, 'progressReporter'>> {
+): Promise<Omit<AgentBackendInput, 'progressReporter'> & { reviewSidecarPath?: string }> {
 	const { project, config, workItemId } = input;
 
 	// PR context from check-failure trigger
@@ -145,6 +146,15 @@ async function buildBackendInput(
 		isGitHubAck,
 	);
 
+	// Generate temp sidecar path for review agents (outside the repo to avoid polluting git status)
+	const reviewSidecarPath =
+		agentType === 'review'
+			? join(tmpdir(), `cascade-review-sidecar-${process.pid}-${Date.now()}.json`)
+			: undefined;
+	if (reviewSidecarPath) {
+		projectSecrets[REVIEW_SIDECAR_ENV_VAR] = reviewSidecarPath;
+	}
+
 	// Override GITHUB_TOKEN in subprocess secrets with agent-scoped token
 	if (gitHubToken && profile.needsGitHubToken) {
 		projectSecrets.GITHUB_TOKEN = gitHubToken;
@@ -166,9 +176,10 @@ async function buildBackendInput(
 		logWriter,
 		agentInput: input,
 		sdkTools: profile.sdkTools,
-		enableStopHooks: hasFinishValidation(profile.finishHooks),
+		enableStopHooks: needsGitStateStopHooks(profile.finishHooks),
 		blockGitPush: profile.finishHooks.blockGitPush,
 		...(Object.keys(projectSecrets).length > 0 && { projectSecrets }),
+		reviewSidecarPath,
 	};
 }
 
@@ -179,8 +190,7 @@ async function buildBackendInput(
  * Only needed for the claude-code backend where tools run as child processes
  * and cannot update the parent process's module-level session state directly.
  */
-async function hydrateReviewSidecar(repoDir: string): Promise<void> {
-	const sidecarPath = join(repoDir, REVIEW_SIDECAR_FILENAME);
+async function hydrateReviewSidecar(sidecarPath: string): Promise<void> {
 	try {
 		const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8'));
 		if (sidecar.body && sidecar.reviewUrl) {
@@ -200,9 +210,14 @@ async function hydrateReviewSidecar(repoDir: string): Promise<void> {
 		if (sidecar.ackCommentDeleted) {
 			clearInitialComment();
 		}
+		// Clean up the temp file after successful read
+		try {
+			unlinkSync(sidecarPath);
+		} catch {
+			// Best-effort cleanup
+		}
 	} catch (err) {
-		// File doesn't exist (llmist backend) or malformed.
-		// llmist backend already populates session state via in-process gadgets.
+		// Sidecar not written by subprocess (agent may have failed before review) or malformed.
 		logger.warn('Failed to read review sidecar', { path: sidecarPath, error: String(err) });
 	}
 }
@@ -288,6 +303,8 @@ export async function executeWithBackend(
 				? await withGitHubToken(gitHubToken, buildPartial)
 				: await buildPartial();
 
+			const { reviewSidecarPath } = partialInput;
+
 			// Create run record now that we have model and maxIterations
 			const runId = await tryCreateRun(
 				{
@@ -336,8 +353,8 @@ export async function executeWithBackend(
 			});
 
 			// Hydrate session state from sidecar written by subprocess tools.
-			if (agentType === 'review') {
-				await hydrateReviewSidecar(repoDir);
+			if (reviewSidecarPath) {
+				await hydrateReviewSidecar(reviewSidecarPath);
 			}
 
 			return {
