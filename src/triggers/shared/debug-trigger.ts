@@ -29,7 +29,7 @@ export async function shouldTriggerDebug(
 		return {
 			runId,
 			agentType: run.agentType,
-			cardId: run.cardId ?? undefined,
+			cardId: run.workItemId ?? undefined,
 		};
 	} catch (err) {
 		logger.warn('Failed to check debug trigger', { runId, error: String(err) });

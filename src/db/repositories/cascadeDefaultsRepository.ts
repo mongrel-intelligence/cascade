@@ -18,7 +18,7 @@ export async function upsertCascadeDefaults(
 		model?: string | null;
 		maxIterations?: number | null;
 		watchdogTimeoutMs?: number | null;
-		cardBudgetUsd?: string | null;
+		workItemBudgetUsd?: string | null;
 		agentBackend?: string | null;
 		progressModel?: string | null;
 		progressIntervalMinutes?: string | null;

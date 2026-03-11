@@ -37,7 +37,7 @@ export async function tryCreateRun(
 	try {
 		return await createRun({
 			projectId: input.projectId,
-			cardId: input.cardId,
+			workItemId: input.cardId,
 			prNumber: input.prNumber,
 			agentType: input.agentType,
 			backend: input.backendName,

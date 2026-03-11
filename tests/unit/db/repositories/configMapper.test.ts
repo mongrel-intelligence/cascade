@@ -24,7 +24,7 @@ const baseProjectRow = {
 	baseBranch: 'main',
 	branchPrefix: 'feature/',
 	model: null,
-	cardBudgetUsd: null,
+	workItemBudgetUsd: null,
 	squintDbUrl: null,
 	agentBackend: null,
 	subscriptionCostZero: false,
@@ -143,7 +143,7 @@ describe('mapDefaultsRow', () => {
 		model: 'test-model',
 		maxIterations: 50,
 		watchdogTimeoutMs: 1800000,
-		cardBudgetUsd: '5.00',
+		workItemBudgetUsd: '5.00',
 		agentBackend: 'llmist',
 		progressModel: 'progress-model',
 		progressIntervalMinutes: '5',
@@ -154,15 +154,15 @@ describe('mapDefaultsRow', () => {
 		expect(result.model).toBe('test-model');
 		expect(result.maxIterations).toBe(50);
 		expect(result.watchdogTimeoutMs).toBe(1800000);
-		expect(result.cardBudgetUsd).toBe(5);
+		expect(result.workItemBudgetUsd).toBe(5);
 		expect(result.agentBackend).toBe('llmist');
 		expect(result.progressModel).toBe('progress-model');
 		expect(result.progressIntervalMinutes).toBe(5);
 	});
 
-	it('converts cardBudgetUsd string to number', () => {
-		const result = mapDefaultsRow({ ...defaultsRow, cardBudgetUsd: '10.50' }, []);
-		expect(result.cardBudgetUsd).toBe(10.5);
+	it('converts workItemBudgetUsd string to number', () => {
+		const result = mapDefaultsRow({ ...defaultsRow, workItemBudgetUsd: '10.50' }, []);
+		expect(result.workItemBudgetUsd).toBe(10.5);
 	});
 
 	it('converts progressIntervalMinutes string to number', () => {
@@ -173,7 +173,7 @@ describe('mapDefaultsRow', () => {
 	it('handles undefined defaults row gracefully', () => {
 		const result = mapDefaultsRow(undefined, []);
 		expect(result.model).toBeUndefined();
-		expect(result.cardBudgetUsd).toBeUndefined();
+		expect(result.workItemBudgetUsd).toBeUndefined();
 	});
 
 	it('builds agentModels and agentIterations from agent configs', () => {
@@ -320,9 +320,11 @@ describe('mapProjectRow', () => {
 		expect(result.agentBackend?.overrides).toEqual({ implementation: 'claude-code' });
 	});
 
-	it('converts cardBudgetUsd from string to number', () => {
-		const result = mapProjectRow(makeInput({ row: { ...baseProjectRow, cardBudgetUsd: '7.50' } }));
-		expect(result.cardBudgetUsd).toBe(7.5);
+	it('converts workItemBudgetUsd from string to number', () => {
+		const result = mapProjectRow(
+			makeInput({ row: { ...baseProjectRow, workItemBudgetUsd: '7.50' } }),
+		);
+		expect(result.workItemBudgetUsd).toBe(7.5);
 	});
 
 	it('includes squintDbUrl when set', () => {

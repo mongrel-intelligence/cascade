@@ -28,7 +28,7 @@ vi.mock('../../../src/db/schema/index.js', () => ({
 	agentRuns: {
 		id: 'id',
 		projectId: 'project_id',
-		cardId: 'card_id',
+		workItemId: 'work_item_id',
 		agentType: 'agent_type',
 		status: 'status',
 		startedAt: 'started_at',
@@ -92,9 +92,9 @@ import {
 	getLlmCallsByRunId,
 	getRunById,
 	getRunLogs,
-	getRunsByCardId,
 	getRunsByProjectId,
 	getRunsByWorkItem,
+	getRunsByWorkItemId,
 	getRunsForPR,
 	hasActiveRunForWorkItem,
 	listLlmCallsMeta,
@@ -148,7 +148,7 @@ describe('runsRepository', () => {
 
 			const result = await createRun({
 				projectId: 'proj-1',
-				cardId: 'card-1',
+				workItemId: 'card-1',
 				agentType: 'implementation',
 				backend: 'llmist',
 				triggerType: 'card-moved-to-todo',
@@ -161,7 +161,7 @@ describe('runsRepository', () => {
 			expect(mockValues).toHaveBeenCalledWith(
 				expect.objectContaining({
 					projectId: 'proj-1',
-					cardId: 'card-1',
+					workItemId: 'card-1',
 					agentType: 'implementation',
 					backend: 'llmist',
 					status: 'running',
@@ -185,7 +185,7 @@ describe('runsRepository', () => {
 					agentType: 'splitting',
 					backend: 'claude-code',
 					status: 'running',
-					cardId: undefined,
+					workItemId: undefined,
 					prNumber: undefined,
 				}),
 			);
@@ -274,15 +274,15 @@ describe('runsRepository', () => {
 		});
 	});
 
-	describe('getRunsByCardId', () => {
+	describe('getRunsByWorkItemId', () => {
 		it('returns runs ordered by startedAt desc', async () => {
 			const mockRuns = [
-				{ id: 'run-2', cardId: 'card-1' },
-				{ id: 'run-1', cardId: 'card-1' },
+				{ id: 'run-2', workItemId: 'card-1' },
+				{ id: 'run-1', workItemId: 'card-1' },
 			];
 			mockOrderBy.mockResolvedValue(mockRuns);
 
-			const result = await getRunsByCardId('card-1');
+			const result = await getRunsByWorkItemId('card-1');
 			expect(result).toEqual(mockRuns);
 		});
 	});
@@ -534,10 +534,10 @@ describe('runsRepository', () => {
 			expect(mockSelect).toHaveBeenCalled();
 		});
 
-		it('returns count for projectId + cardId', async () => {
+		it('returns count for projectId + workItemId', async () => {
 			mockWhere.mockResolvedValue([{ count: 1 }]);
 
-			const result = await countActiveRuns({ projectId: 'proj-1', cardId: 'card-1' });
+			const result = await countActiveRuns({ projectId: 'proj-1', workItemId: 'card-1' });
 			expect(result).toBe(1);
 		});
 
@@ -548,12 +548,12 @@ describe('runsRepository', () => {
 			expect(result).toBe(2);
 		});
 
-		it('returns count for projectId + cardId + agentType', async () => {
+		it('returns count for projectId + workItemId + agentType', async () => {
 			mockWhere.mockResolvedValue([{ count: 1 }]);
 
 			const result = await countActiveRuns({
 				projectId: 'proj-1',
-				cardId: 'card-1',
+				workItemId: 'card-1',
 				agentType: 'implementation',
 			});
 			expect(result).toBe(1);
@@ -930,7 +930,7 @@ describe('runsRepository', () => {
 				{
 					id: 'run-2',
 					projectId: 'proj-1',
-					cardId: 'card-1',
+					workItemId: 'card-1',
 					workItemUrl: 'https://trello.com/c/abc123',
 					workItemTitle: 'Test Card',
 					prTitle: 'Fix the thing',
@@ -938,7 +938,7 @@ describe('runsRepository', () => {
 				{
 					id: 'run-1',
 					projectId: 'proj-1',
-					cardId: 'card-1',
+					workItemId: 'card-1',
 					workItemUrl: null,
 					workItemTitle: null,
 					prTitle: null,

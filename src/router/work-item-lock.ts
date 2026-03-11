@@ -101,8 +101,8 @@ export async function isWorkItemLocked(
 	// DB check — ignore runs older than 2× worker timeout (stale/orphaned)
 	const maxAgeMs = 2 * routerConfig.workerTimeoutMs;
 	const [dbTotal, dbSameType] = await Promise.all([
-		countActiveRuns({ projectId, cardId: workItemId, maxAgeMs }),
-		countActiveRuns({ projectId, cardId: workItemId, agentType, maxAgeMs }),
+		countActiveRuns({ projectId, workItemId, maxAgeMs }),
+		countActiveRuns({ projectId, workItemId, agentType, maxAgeMs }),
 	]);
 
 	// Same-type check first (more specific)

@@ -16,7 +16,7 @@ import { buildAgentRunWorkItemJoin } from './joinHelpers.js';
 
 export interface CreateRunInput {
 	projectId: string;
-	cardId?: string;
+	workItemId?: string;
 	prNumber?: number;
 	agentType: string;
 	backend: string;
@@ -76,7 +76,7 @@ export interface CreateDebugAnalysisInput {
 const enrichedRunSelect = {
 	id: agentRuns.id,
 	projectId: agentRuns.projectId,
-	cardId: agentRuns.cardId,
+	workItemId: agentRuns.workItemId,
 	prNumber: agentRuns.prNumber,
 	agentType: agentRuns.agentType,
 	backend: agentRuns.backend,
@@ -105,7 +105,7 @@ export async function createRun(input: CreateRunInput): Promise<string> {
 		.insert(agentRuns)
 		.values({
 			projectId: input.projectId,
-			cardId: input.cardId,
+			workItemId: input.workItemId,
 			prNumber: input.prNumber,
 			agentType: input.agentType,
 			backend: input.backend,
@@ -155,12 +155,12 @@ export async function getRunById(runId: string) {
 	return rows[0] ?? null;
 }
 
-export async function getRunsByCardId(cardId: string) {
+export async function getRunsByWorkItemId(workItemId: string) {
 	const db = getDb();
 	return db
 		.select()
 		.from(agentRuns)
-		.where(eq(agentRuns.cardId, cardId))
+		.where(eq(agentRuns.workItemId, workItemId))
 		.orderBy(desc(agentRuns.startedAt));
 }
 
@@ -298,7 +298,7 @@ export const DEFAULT_STALE_RUN_THRESHOLD_MS = 2 * 60 * 60 * 1000;
 
 export interface CountActiveRunsOpts {
 	projectId: string;
-	cardId?: string;
+	workItemId?: string;
 	agentType?: string;
 	maxAgeMs?: number;
 }
@@ -313,8 +313,8 @@ export async function countActiveRuns(opts: CountActiveRunsOpts): Promise<number
 		eq(agentRuns.projectId, opts.projectId),
 		eq(agentRuns.status, 'running'),
 	];
-	if (opts.cardId !== undefined) {
-		conditions.push(eq(agentRuns.cardId, opts.cardId));
+	if (opts.workItemId !== undefined) {
+		conditions.push(eq(agentRuns.workItemId, opts.workItemId));
 	}
 	if (opts.agentType !== undefined) {
 		conditions.push(eq(agentRuns.agentType, opts.agentType));
@@ -332,10 +332,10 @@ export async function countActiveRuns(opts: CountActiveRunsOpts): Promise<number
 
 export async function hasActiveRunForWorkItem(
 	projectId: string,
-	cardId: string,
+	workItemId: string,
 	maxAgeMs?: number,
 ): Promise<boolean> {
-	return (await countActiveRuns({ projectId, cardId, maxAgeMs })) > 0;
+	return (await countActiveRuns({ projectId, workItemId, maxAgeMs })) > 0;
 }
 
 export async function failOrphanedRun(
@@ -350,7 +350,7 @@ export async function failOrphanedRun(
 		.where(
 			and(
 				eq(agentRuns.projectId, projectId),
-				eq(agentRuns.cardId, workItemId),
+				eq(agentRuns.workItemId, workItemId),
 				eq(agentRuns.status, 'running'),
 			),
 		)
@@ -438,7 +438,7 @@ export async function listRuns(input: ListRunsInput) {
 				id: agentRuns.id,
 				projectId: agentRuns.projectId,
 				projectName: projects.name,
-				cardId: agentRuns.cardId,
+				workItemId: agentRuns.workItemId,
 				prNumber: agentRuns.prNumber,
 				agentType: agentRuns.agentType,
 				backend: agentRuns.backend,
@@ -525,7 +525,7 @@ export async function getRunsByWorkItem(projectId: string, workItemId: string) {
 		.select(enrichedRunSelect)
 		.from(agentRuns)
 		.leftJoin(prWorkItems, buildAgentRunWorkItemJoin())
-		.where(and(eq(agentRuns.projectId, projectId), eq(agentRuns.cardId, workItemId)))
+		.where(and(eq(agentRuns.projectId, projectId), eq(agentRuns.workItemId, workItemId)))
 		.orderBy(desc(agentRuns.startedAt));
 }
 

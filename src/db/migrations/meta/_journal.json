@@ -218,6 +218,13 @@
 			"when": 1765000000000,
 			"tag": "0030_make_pr_work_items_flexible",
 			"breakpoints": false
+		},
+		{
+			"idx": 31,
+			"version": "7",
+			"when": 1766000000000,
+			"tag": "0031_rename_card_id_to_work_item_id",
+			"breakpoints": false
 		}
 	]
 }
