@@ -107,22 +107,17 @@ describe('addChecklist', () => {
 		);
 	});
 
-	it('creates checklist with no items', async () => {
-		mockProvider.createChecklist.mockResolvedValue({
-			id: 'cl1',
-			name: 'Empty',
-			workItemId: 'item1',
-			items: [],
-		});
+	it('throws error when creating checklist with no items', async () => {
+		await expect(
+			addChecklist({
+				workItemId: 'item1',
+				checklistName: 'Empty',
+				items: [],
+			}),
+		).rejects.toThrow('At least one checklist item is required');
 
-		const result = await addChecklist({
-			workItemId: 'item1',
-			checklistName: 'Empty',
-			items: [],
-		});
-
+		expect(mockProvider.createChecklist).not.toHaveBeenCalled();
 		expect(mockProvider.addChecklistItem).not.toHaveBeenCalled();
-		expect(result).toBe('Checklist "Empty" created with 0 items on work item item1');
 	});
 
 	it('throws on createChecklist failure', async () => {

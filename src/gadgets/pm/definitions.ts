@@ -134,7 +134,7 @@ export const createWorkItemDef: ToolDefinition = {
 		},
 		title: {
 			type: 'string',
-			describe: 'Work item title',
+			describe: 'Work item title (max 200 characters)',
 			required: true,
 		},
 		description: {
@@ -233,7 +233,7 @@ export const addChecklistDef: ToolDefinition = {
 			type: 'array',
 			items: 'object',
 			describe:
-				'List of checklist items to add. Use objects with name+description for richer subtasks.',
+				'List of checklist items to add (at least one required). Each item can be a string or an object with name (required) and description (optional) properties. Use objects with name+description for richer subtasks.',
 			required: true,
 		},
 	},
@@ -243,16 +243,16 @@ export const addChecklistDef: ToolDefinition = {
 				workItemId: 'PROJ-42',
 				checklistName: 'Implementation Steps',
 				items: [
-					JSON.stringify({
+					{
 						name: 'Add reset password endpoint to API',
 						description:
 							'**Files:** `src/api/auth.ts`\n- Add POST /auth/reset-password route\n- Validate email format and lookup user\n- Generate time-limited reset token',
-					}),
-					JSON.stringify({
+					},
+					{
 						name: 'Create email template for reset link',
 						description:
 							'**Files:** `src/templates/reset-password.html`\n- Create responsive HTML email template\n- Include reset link with token parameter',
-					}),
+					},
 				],
 			},
 			comment: 'Add implementation steps with descriptions to a JIRA issue',

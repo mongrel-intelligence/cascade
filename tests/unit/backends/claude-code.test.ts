@@ -122,12 +122,13 @@ describe('buildToolGuidance', () => {
 				description: 'Test.',
 				cliCommand: 'cascade-tools test',
 				parameters: {
-					'include-comments': { type: 'boolean', default: true },
+					includeComments: { type: 'boolean', default: true },
+					'no-includeComments': { type: 'boolean' },
 				},
 			},
 		];
 		const guidance = buildToolGuidance(tools);
-		expect(guidance).toContain('[--no-include-comments]');
+		expect(guidance).toContain('[--no-includeComments]');
 		expect(guidance).not.toContain('<boolean>');
 	});
 

@@ -94,13 +94,13 @@ describe('getToolManifests', () => {
 		});
 	});
 
-	it('PMDeleteChecklistItem has required workItemId and check-item-id parameters', () => {
+	it('PMDeleteChecklistItem has required workItemId and checkItemId parameters', () => {
 		const manifests = getToolManifests();
 		const deleteChecklist = manifests.find((m) => m.name === 'PMDeleteChecklistItem');
 		expect(deleteChecklist).toBeDefined();
 		expect(deleteChecklist?.parameters).toMatchObject({
 			workItemId: { type: 'string', required: true },
-			'check-item-id': { type: 'string', required: true },
+			checkItemId: { type: 'string', required: true },
 		});
 	});
 
