@@ -31,14 +31,14 @@ function makeParams(input: Partial<AgentInput>): FetchContextParams {
 }
 
 describe('prepopulateTodosStep', () => {
-	it('returns empty array when no cardId', async () => {
+	it('returns empty array when no workItemId', async () => {
 		const result = await prepopulateTodosStep(makeParams({}));
 		expect(result).toEqual([]);
 	});
 
 	it('returns empty array when no PM provider', async () => {
 		mockGetPMProviderOrNull.mockReturnValue(null);
-		const result = await prepopulateTodosStep(makeParams({ cardId: 'card-1' }));
+		const result = await prepopulateTodosStep(makeParams({ workItemId: 'card-1' }));
 		expect(result).toEqual([]);
 	});
 
@@ -52,7 +52,7 @@ describe('prepopulateTodosStep', () => {
 		};
 		mockGetPMProviderOrNull.mockReturnValue(provider as never);
 
-		const result = await prepopulateTodosStep(makeParams({ cardId: 'card-1' }));
+		const result = await prepopulateTodosStep(makeParams({ workItemId: 'card-1' }));
 		expect(result).toEqual([]);
 	});
 
@@ -73,12 +73,12 @@ describe('prepopulateTodosStep', () => {
 		};
 		mockGetPMProviderOrNull.mockReturnValue(provider as never);
 
-		const result = await prepopulateTodosStep(makeParams({ cardId: 'card-1' }));
+		const result = await prepopulateTodosStep(makeParams({ workItemId: 'card-1' }));
 
 		expect(result).toHaveLength(1);
 		expect(result[0].toolName).toBe('TodoUpsert');
 		expect(result[0].description).toBe('Pre-populated 2 todos from Implementation Steps');
-		expect(mockInitTodoSession).toHaveBeenCalledWith('card-1');
+		expect(mockInitTodoSession).toHaveBeenCalledWith('card-1'); // workItemId value
 		expect(mockSaveTodos).toHaveBeenCalledWith(
 			expect.arrayContaining([
 				expect.objectContaining({ content: 'Step 2', status: 'pending' }),
@@ -100,7 +100,7 @@ describe('prepopulateTodosStep', () => {
 		};
 		mockGetPMProviderOrNull.mockReturnValue(provider as never);
 
-		const result = await prepopulateTodosStep(makeParams({ cardId: 'card-1' }));
+		const result = await prepopulateTodosStep(makeParams({ workItemId: 'card-1' }));
 		expect(result).toHaveLength(1);
 	});
 
@@ -117,7 +117,7 @@ describe('prepopulateTodosStep', () => {
 		};
 		mockGetPMProviderOrNull.mockReturnValue(provider as never);
 
-		const result = await prepopulateTodosStep(makeParams({ cardId: 'card-1' }));
+		const result = await prepopulateTodosStep(makeParams({ workItemId: 'card-1' }));
 
 		expect(result[0]).toEqual({
 			toolName: 'TodoUpsert',
@@ -133,11 +133,11 @@ describe('prepopulateTodosStep', () => {
 		};
 		mockGetPMProviderOrNull.mockReturnValue(provider as never);
 
-		const params = makeParams({ cardId: 'card-1' });
+		const params = makeParams({ workItemId: 'card-1' });
 		const result = await prepopulateTodosStep(params);
 		expect(result).toEqual([]);
 		expect(params.logWriter).toHaveBeenCalledWith('WARN', 'prepopulateTodosStep failed', {
-			cardId: 'card-1',
+			workItemId: 'card-1',
 			error: 'PM error',
 		});
 	});
@@ -158,7 +158,7 @@ describe('prepopulateTodosStep', () => {
 		};
 		mockGetPMProviderOrNull.mockReturnValue(provider as never);
 
-		const result = await prepopulateTodosStep(makeParams({ cardId: 'card-1' }));
+		const result = await prepopulateTodosStep(makeParams({ workItemId: 'card-1' }));
 		expect(result).toEqual([]);
 	});
 });

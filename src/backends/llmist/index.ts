@@ -104,7 +104,7 @@ export class LlmistBackend implements AgentBackend {
 			runId,
 			baseBranch: input.project.baseBranch,
 			projectId: input.project.id,
-			cardId: agentInput.cardId,
+			workItemId: agentInput.workItemId,
 			workItemUrl: agentInput.workItemUrl as string | undefined,
 			workItemTitle: agentInput.workItemTitle as string | undefined,
 			// Pass resolved hook flags for finish validation (hook-driven instead of agent-type checks)

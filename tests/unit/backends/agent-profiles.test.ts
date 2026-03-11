@@ -535,7 +535,7 @@ function makeContextParams(overrides: {
 } {
 	return {
 		input: {
-			cardId: overrides.cardId,
+			workItemId: overrides.cardId,
 			repoFullName: overrides.repoFullName ?? 'acme/widgets',
 			prNumber: overrides.prNumber ?? 42,
 			triggerEvent: overrides.triggerEvent,
@@ -701,7 +701,7 @@ describe('fetchWorkItemInjection', () => {
 		expect(workItemInjection).toBeUndefined();
 	});
 
-	it('never calls readWorkItem when cardId is absent', async () => {
+	it('never calls readWorkItem when workItemId is absent', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('splitting');
 		const params = makeContextParams({ triggerEvent: 'pm:status-changed', cardId: undefined });
@@ -823,7 +823,7 @@ describe('fetchReviewContext', () => {
 		expect(injections.some((i) => i.toolName === 'SquintOverview')).toBe(true);
 	});
 
-	it('does NOT include a work item injection (review has no cardId)', async () => {
+	it('does NOT include a work item injection (review has no workItemId)', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('review');
 		const params = makeContextParams({
@@ -917,7 +917,7 @@ describe('fetchCIContext', () => {
 		expect(toolNames).toContain('ReadWorkItem');
 	});
 
-	it('skips workItem injection when cardId is absent', async () => {
+	it('skips workItem injection when workItemId is absent', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('respond-to-ci');
 		const params = makeContextParams({

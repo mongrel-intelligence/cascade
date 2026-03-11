@@ -76,14 +76,14 @@ describe('buildPromptContext', () => {
 			expect(ctx.pmType).toBe('trello');
 		});
 
-		it('generates cardUrl from provider', () => {
+		it('generates workItemUrl from provider', () => {
 			const ctx = buildPromptContext('card123', makeProject() as never);
-			expect(ctx.cardUrl).toBe('https://trello.com/c/card123');
+			expect(ctx.workItemUrl).toBe('https://trello.com/c/card123');
 		});
 
-		it('sets cardId from parameter', () => {
+		it('sets workItemId from parameter', () => {
 			const ctx = buildPromptContext('card-abc', makeProject() as never);
-			expect(ctx.cardId).toBe('card-abc');
+			expect(ctx.workItemId).toBe('card-abc');
 		});
 
 		it('includes processedLabelId from project trello config', () => {
@@ -248,9 +248,9 @@ describe('buildPromptContext', () => {
 
 		const debugContext = {
 			logDir: '/tmp/logs/debug-session',
-			originalCardId: 'original-card-id',
-			originalCardName: 'My Feature Card',
-			originalCardUrl: 'https://trello.com/c/abc',
+			originalWorkItemId: 'original-card-id',
+			originalWorkItemName: 'My Feature Card',
+			originalWorkItemUrl: 'https://trello.com/c/abc',
 			detectedAgentType: 'implementation',
 		};
 
@@ -265,7 +265,7 @@ describe('buildPromptContext', () => {
 			expect(ctx.logDir).toBe('/tmp/logs/debug-session');
 		});
 
-		it('includes originalCardName', () => {
+		it('includes originalWorkItemName', () => {
 			const ctx = buildPromptContext(
 				undefined,
 				makeProject() as never,
@@ -273,10 +273,10 @@ describe('buildPromptContext', () => {
 				undefined,
 				debugContext,
 			);
-			expect(ctx.originalCardName).toBe('My Feature Card');
+			expect(ctx.originalWorkItemName).toBe('My Feature Card');
 		});
 
-		it('includes originalCardUrl', () => {
+		it('includes originalWorkItemUrl', () => {
 			const ctx = buildPromptContext(
 				undefined,
 				makeProject() as never,
@@ -284,7 +284,7 @@ describe('buildPromptContext', () => {
 				undefined,
 				debugContext,
 			);
-			expect(ctx.originalCardUrl).toBe('https://trello.com/c/abc');
+			expect(ctx.originalWorkItemUrl).toBe('https://trello.com/c/abc');
 		});
 
 		it('includes detectedAgentType', () => {
@@ -327,10 +327,10 @@ describe('buildPromptContext', () => {
 			expect(ctx.logDir).toBeUndefined();
 		});
 
-		it('handles undefined cardId', () => {
+		it('handles undefined workItemId', () => {
 			const ctx = buildPromptContext(undefined, makeProject() as never);
-			expect(ctx.cardId).toBeUndefined();
-			expect(ctx.cardUrl).toBeUndefined();
+			expect(ctx.workItemId).toBeUndefined();
+			expect(ctx.workItemUrl).toBeUndefined();
 		});
 
 		it('includes projectId from project', () => {
@@ -358,9 +358,9 @@ describe('buildPromptContext', () => {
 			expect(ctx.pmType).toBeUndefined();
 		});
 
-		it('leaves cardUrl undefined even when cardId is provided', () => {
+		it('leaves workItemUrl undefined even when workItemId is provided', () => {
 			const ctx = buildPromptContext('card123', makeProject() as never);
-			expect(ctx.cardUrl).toBeUndefined();
+			expect(ctx.workItemUrl).toBeUndefined();
 		});
 
 		it('defaults workItemNoun to "card" (Trello vocabulary fallback)', () => {
@@ -387,9 +387,9 @@ describe('buildPromptContext', () => {
 		it('still includes debugContext fields when provided', () => {
 			const debugContext = {
 				logDir: '/tmp/logs',
-				originalCardId: 'orig-id',
-				originalCardName: 'Original Card',
-				originalCardUrl: 'https://trello.com/c/orig',
+				originalWorkItemId: 'orig-id',
+				originalWorkItemName: 'Original Card',
+				originalWorkItemUrl: 'https://trello.com/c/orig',
 				detectedAgentType: 'implementation',
 			};
 			const ctx = buildPromptContext(

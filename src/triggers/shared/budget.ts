@@ -17,7 +17,7 @@ export function resolveCardBudget(project: ProjectConfig, config: CascadeConfig)
 	const costFieldId = getCostFieldId(project);
 	if (!costFieldId) return null;
 
-	return project.cardBudgetUsd ?? config.defaults.cardBudgetUsd;
+	return project.workItemBudgetUsd ?? config.defaults.workItemBudgetUsd;
 }
 
 /**

@@ -46,8 +46,8 @@ export interface CreateBuilderOptions {
 	baseBranch?: string;
 	/** Project ID for PR ↔ work item linking. Passed to session state. */
 	projectId?: string;
-	/** Work item (card) ID for PR ↔ work item linking. Passed to session state. */
-	cardId?: string;
+	/** Work item ID for PR ↔ work item linking. Passed to session state. */
+	workItemId?: string;
 	/** Work item URL for PR ↔ work item enrichment. Passed to session state. */
 	workItemUrl?: string;
 	/** Work item display title for PR ↔ work item enrichment. Passed to session state. */
@@ -95,7 +95,7 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 			agentType,
 			baseBranch: options.baseBranch,
 			projectId: options.projectId,
-			cardId: options.cardId,
+			workItemId: options.workItemId,
 			hooks: options.hooks,
 			workItemUrl: options.workItemUrl,
 			workItemTitle: options.workItemTitle,

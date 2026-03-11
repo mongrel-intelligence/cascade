@@ -71,7 +71,7 @@ async function buildBackendInput(
 	gitHubToken: string | undefined,
 	isGitHubAck: boolean,
 ): Promise<Omit<AgentBackendInput, 'progressReporter'>> {
-	const { project, config, cardId } = input;
+	const { project, config, workItemId } = input;
 
 	// PR context from check-failure trigger
 	const prContext =
@@ -85,7 +85,7 @@ async function buildBackendInput(
 			: undefined;
 
 	const promptContext: PromptContext = buildPromptContext(
-		cardId,
+		workItemId,
 		project,
 		input.triggerType,
 		prContext,
@@ -134,7 +134,7 @@ async function buildBackendInput(
 	// Inject pre-seeded progress comment ID so the subprocess finds it at startup
 	injectProgressCommentId(
 		projectSecrets,
-		cardId,
+		workItemId,
 		input.ackCommentId as string | number | undefined,
 	);
 
@@ -217,16 +217,16 @@ function buildProgressMonitorConfig(
 	repoDir: string | null,
 	isGitHubAck: boolean,
 ) {
-	const { cardId } = input;
+	const { workItemId } = input;
 	return {
 		logWriter,
 		agentType,
-		taskDescription: cardId ? `Work item ${cardId}` : 'Unknown task',
+		taskDescription: workItemId ? `Work item ${workItemId}` : 'Unknown task',
 		progressModel: input.config.defaults.progressModel,
 		intervalMinutes: input.config.defaults.progressIntervalMinutes,
 		customModels: CUSTOM_MODELS as ModelSpec[],
 		repoDir: repoDir ?? undefined,
-		trello: cardId ? { cardId } : undefined,
+		trello: workItemId ? { cardId: workItemId } : undefined,
 		preSeededCommentId: isGitHubAck ? undefined : (input.ackCommentId as string | undefined),
 		...(input.prNumber && input.repoFullName
 			? {
@@ -244,8 +244,8 @@ export async function executeWithBackend(
 	agentType: string,
 	input: AgentInput & { project: ProjectConfig; config: CascadeConfig },
 ): Promise<AgentResult> {
-	const { cardId } = input;
-	const identifier = `${agentType}-${cardId || 'unknown'}`;
+	const { workItemId } = input;
+	const identifier = `${agentType}-${workItemId || 'unknown'}`;
 
 	return executeAgentPipeline({
 		loggerIdentifier: identifier,
@@ -292,7 +292,7 @@ export async function executeWithBackend(
 			const runId = await tryCreateRun(
 				{
 					projectId: input.project.id,
-					cardId: input.cardId,
+					workItemId: input.workItemId,
 					prNumber: input.prNumber as number | undefined,
 					agentType,
 					backendName: backend.name,

@@ -60,7 +60,7 @@ export const ProjectConfigSchema = z.object({
 
 	model: z.string().optional(),
 	agentModels: z.record(z.string()).optional(),
-	cardBudgetUsd: z.number().positive().optional(),
+	workItemBudgetUsd: z.number().positive().optional(),
 	agentBackend: AgentBackendConfigSchema.optional(),
 	squintDbUrl: z.string().url().optional(),
 });
@@ -77,7 +77,7 @@ export const CascadeConfigSchema = z.object({
 				.int()
 				.positive()
 				.default(30 * 60 * 1000), // 30 min max job duration
-			cardBudgetUsd: z.number().positive().default(5),
+			workItemBudgetUsd: z.number().positive().default(5),
 			agentBackend: z.string().default('llmist'),
 			progressModel: z.string().default('openrouter:google/gemini-2.5-flash-lite'),
 			progressIntervalMinutes: z.number().positive().default(5),
