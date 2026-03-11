@@ -66,14 +66,14 @@ Branch: ${prContext.prBranch}`;
  */
 export function buildDebugPrompt(debugContext: {
 	logDir: string;
-	originalCardName: string;
-	originalCardUrl: string;
+	originalWorkItemName: string;
+	originalWorkItemUrl: string;
 	detectedAgentType: string;
 }): string {
 	return `Analyze the ${debugContext.detectedAgentType} agent session logs in directory: ${debugContext.logDir}
 
-Original card: "${debugContext.originalCardName}"
-Link: ${debugContext.originalCardUrl}
+Original work item: "${debugContext.originalWorkItemName}"
+Link: ${debugContext.originalWorkItemUrl}
 
 Start by listing the contents of the log directory, then read and analyze the logs to identify issues.`;
 }
