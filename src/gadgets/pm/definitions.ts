@@ -261,7 +261,7 @@ export const addChecklistDef: ToolDefinition = {
 };
 
 export const pmUpdateChecklistItemDef: ToolDefinition = {
-	name: 'UpdateChecklistItem',
+	name: 'PMUpdateChecklistItem',
 	description:
 		'Update a checklist item state on a work item. Use this to mark items as complete or incomplete.',
 	timeoutMs: 15000,
@@ -296,7 +296,7 @@ export const pmUpdateChecklistItemDef: ToolDefinition = {
 };
 
 export const pmDeleteChecklistItemDef: ToolDefinition = {
-	name: 'DeleteChecklistItem',
+	name: 'PMDeleteChecklistItem',
 	description:
 		'Delete a checklist item from a work item. For JIRA this deletes the subtask issue. For Trello this removes the checklist item. Use this to remove descoped or invalid plan steps — do NOT mark items as "complete" if they were never done.',
 	timeoutMs: 15000,

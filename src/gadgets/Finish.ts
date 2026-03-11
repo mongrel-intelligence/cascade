@@ -1,38 +1,23 @@
-import { Gadget, TaskCompletionSignal, z } from 'llmist';
+import { TaskCompletionSignal } from 'llmist';
 import { validateFinish } from './session/core/finish.js';
+import { finishDef } from './session/definitions.js';
 import { getSessionState } from './sessionState.js';
+import { createGadgetClass } from './shared/gadgetFactory.js';
 
-export class Finish extends Gadget({
-	name: 'Finish',
-	exclusive: true,
-	description:
-		'Call this gadget when you have completed all tasks and want to end the session. This should be your final gadget call.',
-	schema: z.object({
-		comment: z.string().min(1).describe('A brief summary of what was accomplished'),
-	}),
-	examples: [
-		{
-			params: { comment: 'Created PR with all requested changes and tests passing' },
-			output: 'Session ended: Created PR with all requested changes and tests passing',
-			comment: 'End session after completing all work',
-		},
-	],
-}) {
-	override async execute(params: this['params']): Promise<never> {
-		const state = getSessionState();
+export const Finish = createGadgetClass(finishDef, async (params) => {
+	const state = getSessionState();
 
-		const result = await validateFinish({
-			agentType: state.agentType,
-			prCreated: state.prCreated,
-			reviewSubmitted: state.reviewSubmitted,
-			hooks: state.hooks,
-			initialHeadSha: state.initialHeadSha,
-		});
+	const result = await validateFinish({
+		agentType: state.agentType,
+		prCreated: state.prCreated,
+		reviewSubmitted: state.reviewSubmitted,
+		hooks: state.hooks,
+		initialHeadSha: state.initialHeadSha,
+	});
 
-		if (!result.valid) {
-			throw new Error(result.error);
-		}
-
-		throw new TaskCompletionSignal(params.comment);
+	if (!result.valid) {
+		throw new Error(result.error);
 	}
-}
+
+	throw new TaskCompletionSignal(params.comment as string);
+});

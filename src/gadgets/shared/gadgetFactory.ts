@@ -167,6 +167,7 @@ export function createGadgetClass(
 		timeoutMs: def.timeoutMs,
 		schema,
 		...(examples ? { examples } : {}),
+		...(def.exclusive ? { exclusive: true } : {}),
 	});
 
 	class FactoryGadget extends GadgetBase {
