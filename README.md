@@ -75,15 +75,17 @@ npm run db:migrate
 
 ### 5. Start the services
 
-Open three terminals:
+Open two terminals:
 
 ```bash
 # Terminal 1 — Router (receives webhooks)
 npm run dev
 
-# Terminal 2 — Dashboard API + Web UI
+# Terminal 2 — Web UI (Vite dev server)
 npm run dev:web
 ```
+
+> **Note**: The current dev setup only starts the router service. The dashboard UI will load but API calls will fail until the dashboard service is started separately. A `dev:dashboard` script is planned to simplify this.
 
 Open **http://localhost:5173** — you'll see the dashboard.
 
@@ -151,6 +153,7 @@ cascade/
 │   │   ├── registry.ts       # Agent registry
 │   │   ├── definitions/      # Per-agent YAML configs
 │   │   └── prompts/          # System prompt templates
+│   ├── backends/             # Agent backend implementations (llmist, claude-code)
 │   ├── gadgets/              # Tools available to agents
 │   ├── pm/                   # PM provider abstraction (Trello, JIRA)
 │   ├── github/               # GitHub client and dual-persona model
@@ -158,6 +161,9 @@ cascade/
 │   ├── jira/                 # JIRA API client
 │   ├── db/                   # Drizzle schema, migrations, repositories
 │   ├── api/                  # Dashboard API (tRPC routers)
+│   ├── cli/                  # CLI commands for dashboard and agents
+│   ├── queue/                # BullMQ job queue client
+│   ├── types/                # Shared TypeScript types
 │   └── utils/                # Logging, repo cloning, lifecycle helpers
 ├── web/                      # Dashboard frontend (React 19, Vite, Tailwind v4)
 ├── tests/                    # Unit and integration tests
@@ -332,7 +338,7 @@ CASCADE ships four Docker images for production:
 | Router | `Dockerfile.router` | Lightweight webhook receiver |
 | Worker | `Dockerfile.worker` | Full agent runtime (clones repos, runs AI) |
 | Dashboard | `Dockerfile.dashboard` | API server (tRPC + auth) |
-| Frontend | `Dockerfile.frontend` | Static web UI (served by nginx) |
+| Frontend | `Dockerfile.frontend` | Static web UI (deployed via Cloudflare Pages) |
 
 ### Required production environment variables
 
@@ -376,6 +382,7 @@ services:
       dockerfile: Dockerfile.dashboard
     environment:
       DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
     ports:
       - "3001:3001"
 ```
@@ -512,4 +519,4 @@ Please follow [Conventional Commits](https://www.conventionalcommits.org/) for c
 
 ## License
 
-MIT — see [LICENSE](./LICENSE) for details.
+MIT
