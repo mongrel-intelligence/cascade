@@ -465,10 +465,10 @@ describe('configRepository', () => {
 
 			const result = await findProjectByIdFromDb('proj1');
 
-			// workItemBudgetUsd is read from DB but not yet mapped to the config-layer
-			// property (cardBudgetUsd → workItemBudgetUsd rename in config/schema.ts is
-			// a separate story). The value flows through as undefined until that rename.
-			expect(result?.cardBudgetUsd).toBeUndefined();
+			// The mapper reads from row.workItemBudgetUsd (DB column) but outputs as
+			// cardBudgetUsd (config schema key) to maintain compatibility with the
+			// Zod schema until the schema is renamed in a follow-on PR.
+			expect(result?.cardBudgetUsd).toBe(10.5);
 		});
 
 		it('handles Trello integration with customFields', async () => {

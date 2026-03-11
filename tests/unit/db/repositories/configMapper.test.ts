@@ -154,7 +154,7 @@ describe('mapDefaultsRow', () => {
 		expect(result.model).toBe('test-model');
 		expect(result.maxIterations).toBe(50);
 		expect(result.watchdogTimeoutMs).toBe(1800000);
-		expect(result.workItemBudgetUsd).toBe(5);
+		expect(result.cardBudgetUsd).toBe(5);
 		expect(result.agentBackend).toBe('llmist');
 		expect(result.progressModel).toBe('progress-model');
 		expect(result.progressIntervalMinutes).toBe(5);
@@ -162,7 +162,7 @@ describe('mapDefaultsRow', () => {
 
 	it('converts workItemBudgetUsd string to number', () => {
 		const result = mapDefaultsRow({ ...defaultsRow, workItemBudgetUsd: '10.50' }, []);
-		expect(result.workItemBudgetUsd).toBe(10.5);
+		expect(result.cardBudgetUsd).toBe(10.5);
 	});
 
 	it('converts progressIntervalMinutes string to number', () => {
@@ -324,7 +324,7 @@ describe('mapProjectRow', () => {
 		const result = mapProjectRow(
 			makeInput({ row: { ...baseProjectRow, workItemBudgetUsd: '7.50' } }),
 		);
-		expect(result.workItemBudgetUsd).toBe(7.5);
+		expect(result.cardBudgetUsd).toBe(7.5);
 	});
 
 	it('includes squintDbUrl when set', () => {
