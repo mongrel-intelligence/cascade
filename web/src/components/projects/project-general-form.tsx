@@ -109,7 +109,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 					/>
 				</div>
 				<div className="space-y-2">
-					<Label htmlFor="workItemBudgetUsd">Card Budget (USD)</Label>
+					<Label htmlFor="workItemBudgetUsd">Work Item Budget (USD)</Label>
 					<Input
 						id="workItemBudgetUsd"
 						value={workItemBudgetUsd}

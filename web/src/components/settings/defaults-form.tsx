@@ -92,7 +92,7 @@ export function DefaultsForm() {
 					/>
 				</div>
 				<div className="space-y-2">
-					<Label htmlFor="d-budget">Card Budget (USD)</Label>
+					<Label htmlFor="d-budget">Work Item Budget (USD)</Label>
 					<Input
 						id="d-budget"
 						value={workItemBudgetUsd}

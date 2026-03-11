@@ -34,7 +34,7 @@ export function TriggerRunDialog({ open, onOpenChange }: TriggerRunDialogProps) 
 
 	const [projectId, setProjectId] = useState('');
 	const [agentType, setAgentType] = useState('');
-	const [cardId, setCardId] = useState('');
+	const [workItemId, setWorkItemId] = useState('');
 	const [prNumber, setPrNumber] = useState('');
 	const [prBranch, setPrBranch] = useState('');
 	const [model, setModel] = useState('');
@@ -42,7 +42,7 @@ export function TriggerRunDialog({ open, onOpenChange }: TriggerRunDialogProps) 
 	const resetForm = useCallback(() => {
 		setProjectId('');
 		setAgentType('');
-		setCardId('');
+		setWorkItemId('');
 		setPrNumber('');
 		setPrBranch('');
 		setModel('');
@@ -67,7 +67,7 @@ export function TriggerRunDialog({ open, onOpenChange }: TriggerRunDialogProps) 
 			trpcClient.runs.trigger.mutate({
 				projectId,
 				agentType,
-				workItemId: cardId || undefined,
+				workItemId: workItemId || undefined,
 				prNumber: prNumber ? Number(prNumber) : undefined,
 				prBranch: prBranch || undefined,
 				model: model || undefined,
@@ -144,12 +144,12 @@ export function TriggerRunDialog({ open, onOpenChange }: TriggerRunDialogProps) 
 					</div>
 
 					<div className="space-y-2">
-						<Label htmlFor="tr-cardId">Card ID (optional)</Label>
+						<Label htmlFor="tr-workItemId">Work Item ID (optional)</Label>
 						<Input
-							id="tr-cardId"
-							value={cardId}
-							onChange={(e) => setCardId(e.target.value)}
-							placeholder="Trello card ID"
+							id="tr-workItemId"
+							value={workItemId}
+							onChange={(e) => setWorkItemId(e.target.value)}
+							placeholder="Work item ID"
 						/>
 					</div>
 
