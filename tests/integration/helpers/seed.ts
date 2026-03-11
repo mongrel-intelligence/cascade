@@ -206,7 +206,7 @@ export async function seedTriggerConfig(overrides: {
 export async function seedRun(
 	overrides: {
 		projectId?: string;
-		cardId?: string;
+		workItemId?: string;
 		agentType?: string;
 		backend?: string;
 		status?: string;
@@ -217,7 +217,7 @@ export async function seedRun(
 		.insert(agentRuns)
 		.values({
 			projectId: overrides.projectId ?? 'test-project',
-			cardId: overrides.cardId ?? 'test-card',
+			workItemId: overrides.workItemId ?? 'test-card',
 			agentType: overrides.agentType ?? 'implementation',
 			backend: overrides.backend ?? 'claude-code',
 			status: overrides.status ?? 'running',

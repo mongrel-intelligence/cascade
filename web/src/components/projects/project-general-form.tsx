@@ -18,7 +18,7 @@ interface Project {
 	baseBranch: string | null;
 	branchPrefix: string | null;
 	model: string | null;
-	cardBudgetUsd: string | null;
+	workItemBudgetUsd: string | null;
 	agentBackend: string | null;
 	subscriptionCostZero: boolean | null;
 }
@@ -30,7 +30,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const [baseBranch, setBaseBranch] = useState(project.baseBranch ?? 'main');
 	const [branchPrefix, setBranchPrefix] = useState(project.branchPrefix ?? 'feature/');
 	const [model, setModel] = useState(project.model ?? '');
-	const [cardBudgetUsd, setCardBudgetUsd] = useState(project.cardBudgetUsd ?? '');
+	const [workItemBudgetUsd, setCardBudgetUsd] = useState(project.workItemBudgetUsd ?? '');
 	const [agentBackend, setAgentBackend] = useState(project.agentBackend ?? '');
 	const [subscriptionCostZero, setSubscriptionCostZero] = useState(
 		project.subscriptionCostZero ?? false,
@@ -57,7 +57,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 			baseBranch,
 			branchPrefix,
 			model: model || null,
-			cardBudgetUsd: cardBudgetUsd || null,
+			workItemBudgetUsd: workItemBudgetUsd || null,
 			agentBackend: agentBackend || null,
 			subscriptionCostZero,
 		});
@@ -109,10 +109,10 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 					/>
 				</div>
 				<div className="space-y-2">
-					<Label htmlFor="cardBudgetUsd">Card Budget (USD)</Label>
+					<Label htmlFor="workItemBudgetUsd">Card Budget (USD)</Label>
 					<Input
-						id="cardBudgetUsd"
-						value={cardBudgetUsd}
+						id="workItemBudgetUsd"
+						value={workItemBudgetUsd}
 						onChange={(e) => setCardBudgetUsd(e.target.value)}
 						placeholder="Inherits from defaults"
 					/>

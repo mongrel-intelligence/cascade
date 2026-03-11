@@ -34,7 +34,7 @@ export default class ProjectsUpdate extends DashboardCommand {
 				baseBranch: flags['base-branch'],
 				branchPrefix: flags['branch-prefix'],
 				model: flags.model,
-				cardBudgetUsd: flags['card-budget'],
+				workItemBudgetUsd: flags['card-budget'],
 				agentBackend: flags['agent-backend'],
 				subscriptionCostZero: flags['subscription-cost-zero'],
 			});

@@ -29,7 +29,7 @@ interface Project {
 	repo?: string | null;
 	baseBranch: string | null;
 	agentBackend: string | null;
-	cardBudgetUsd: string | null;
+	workItemBudgetUsd: string | null;
 }
 
 export function ProjectsTable({ projects }: { projects: Project[] }) {
@@ -86,7 +86,7 @@ export function ProjectsTable({ projects }: { projects: Project[] }) {
 									{project.agentBackend ?? 'llmist'}
 								</TableCell>
 								<TableCell className="hidden md:table-cell text-right tabular-nums">
-									{project.cardBudgetUsd ? `$${project.cardBudgetUsd}` : '-'}
+									{project.workItemBudgetUsd ? `$${project.workItemBudgetUsd}` : '-'}
 								</TableCell>
 								<TableCell>
 									<button
