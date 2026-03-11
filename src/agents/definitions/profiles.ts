@@ -81,9 +81,9 @@ function resolveFinishHooks(def: AgentDefinition): FinishHookFlags {
 	};
 }
 
-/** Stop hooks are needed when any finish validation requirement is set. */
-export function hasFinishValidation(hooks: FinishHookFlags): boolean {
-	return !!(hooks.requiresPR || hooks.requiresReview || hooks.requiresPushedChanges);
+/** Git-state stop hooks are needed when the agent must create a PR or push changes. */
+export function needsGitStateStopHooks(hooks: FinishHookFlags): boolean {
+	return !!(hooks.requiresPR || hooks.requiresPushedChanges);
 }
 
 function resolveRegistry<T>(registry: Record<string, T>, key: string, label: string): T {

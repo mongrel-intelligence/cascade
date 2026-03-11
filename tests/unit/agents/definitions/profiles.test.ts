@@ -32,7 +32,7 @@ vi.mock('../../../../src/agents/definitions/strategies.js', () => ({
 
 import {
 	getAgentProfile,
-	hasFinishValidation,
+	needsGitStateStopHooks,
 } from '../../../../src/agents/definitions/profiles.js';
 
 function makeDefinition(overrides: Record<string, unknown> = {}) {
@@ -227,24 +227,24 @@ describe('getAgentProfile', () => {
 	});
 });
 
-describe('hasFinishValidation', () => {
+describe('needsGitStateStopHooks', () => {
 	it('returns false when all hooks are undefined', () => {
-		expect(hasFinishValidation({})).toBe(false);
+		expect(needsGitStateStopHooks({})).toBe(false);
 	});
 
 	it('returns true when requiresPR is true', () => {
-		expect(hasFinishValidation({ requiresPR: true })).toBe(true);
+		expect(needsGitStateStopHooks({ requiresPR: true })).toBe(true);
 	});
 
-	it('returns true when requiresReview is true', () => {
-		expect(hasFinishValidation({ requiresReview: true })).toBe(true);
+	it('returns false when only requiresReview is true (review validation is post-session)', () => {
+		expect(needsGitStateStopHooks({ requiresReview: true })).toBe(false);
 	});
 
 	it('returns true when requiresPushedChanges is true', () => {
-		expect(hasFinishValidation({ requiresPushedChanges: true })).toBe(true);
+		expect(needsGitStateStopHooks({ requiresPushedChanges: true })).toBe(true);
 	});
 
 	it('returns false when only blockGitPush is true (no validation required)', () => {
-		expect(hasFinishValidation({ blockGitPush: true })).toBe(false);
+		expect(needsGitStateStopHooks({ blockGitPush: true })).toBe(false);
 	});
 });

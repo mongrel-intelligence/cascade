@@ -43,7 +43,7 @@ vi.mock('../../../src/backends/progress.js', () => ({
 }));
 
 vi.mock('../../../src/gadgets/sessionState.js', () => ({
-	REVIEW_SIDECAR_FILENAME: '.cascade/review-result.json',
+	REVIEW_SIDECAR_ENV_VAR: 'CASCADE_REVIEW_SIDECAR_PATH',
 	recordInitialComment: vi.fn(),
 	recordReviewSubmission: vi.fn(),
 	clearInitialComment: vi.fn(),
@@ -71,7 +71,7 @@ vi.mock('../../../src/github/client.js', () => ({
 
 vi.mock('../../../src/agents/definitions/profiles.js', () => ({
 	getAgentProfile: vi.fn(),
-	hasFinishValidation: vi.fn(() => false),
+	needsGitStateStopHooks: vi.fn(() => false),
 	getAgentCapabilities: vi.fn(),
 }));
 
@@ -118,8 +118,7 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	storeRunLogs: (...args: unknown[]) => mockStoreRunLogs(...args),
 }));
 
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { writeFileSync } from 'node:fs';
 
 import { type AgentProfile, getAgentProfile } from '../../../src/agents/definitions/profiles.js';
 import { resolveModelConfig } from '../../../src/agents/shared/modelResolution.js';
@@ -873,36 +872,31 @@ describe('executeWithBackend', () => {
 	});
 
 	describe('review sidecar hydration', () => {
-		function writeSidecar(data: Record<string, unknown>): void {
-			const dir = join(process.cwd(), '.cascade');
-			mkdirSync(dir, { recursive: true });
-			writeFileSync(join(dir, 'review-result.json'), JSON.stringify(data));
+		/**
+		 * The adapter now generates a temp sidecar path and injects it into projectSecrets.
+		 * In tests, we intercept the backend.execute call to find the injected path
+		 * and write the sidecar data there (simulating what the subprocess does).
+		 */
+		function writeSidecarAtInjectedPath(
+			backend: AgentBackend,
+			data: Record<string, unknown>,
+		): void {
+			vi.mocked(backend.execute).mockImplementation(async (backendInput) => {
+				const sidecarPath = backendInput.projectSecrets?.CASCADE_REVIEW_SIDECAR_PATH;
+				if (sidecarPath) {
+					writeFileSync(sidecarPath, JSON.stringify(data));
+				}
+				return { success: true, output: 'Done' };
+			});
 		}
-
-		// Only remove the sidecar file, not the .cascade/ directory — setupMocks sets
-		// repoDir to process.cwd() (the actual repo root) which has a real .cascade/ dir.
-		function cleanupSidecar(): void {
-			try {
-				rmSync(join(process.cwd(), '.cascade', 'review-result.json'), { force: true });
-			} catch {
-				// ignore
-			}
-		}
-
-		afterEach(() => {
-			cleanupSidecar();
-		});
 
 		it('calls recordReviewSubmission when sidecar exists for review agent', async () => {
 			setupMocks();
 			const backend = makeMockBackend();
-			vi.mocked(backend.execute).mockImplementation(async () => {
-				writeSidecar({
-					reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-99',
-					event: 'REQUEST_CHANGES',
-					body: 'Please fix the null check',
-				});
-				return { success: true, output: 'Done' };
+			writeSidecarAtInjectedPath(backend, {
+				reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-99',
+				event: 'REQUEST_CHANGES',
+				body: 'Please fix the null check',
 			});
 			const input = makeInput();
 
@@ -913,6 +907,30 @@ describe('executeWithBackend', () => {
 				'Please fix the null check',
 				'REQUEST_CHANGES',
 			);
+		});
+
+		it('injects CASCADE_REVIEW_SIDECAR_PATH into projectSecrets for review agent', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			const input = makeInput();
+
+			await executeWithBackend(backend, 'review', input);
+
+			const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
+			expect(backendInput.projectSecrets?.CASCADE_REVIEW_SIDECAR_PATH).toMatch(
+				/cascade-review-sidecar-\d+-\d+\.json$/,
+			);
+		});
+
+		it('does not inject CASCADE_REVIEW_SIDECAR_PATH for non-review agents', async () => {
+			setupMocks();
+			const backend = makeMockBackend();
+			const input = makeInput();
+
+			await executeWithBackend(backend, 'implementation', input);
+
+			const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
+			expect(backendInput.projectSecrets?.CASCADE_REVIEW_SIDECAR_PATH).toBeUndefined();
 		});
 
 		it('does not error when sidecar file is absent (llmist backend)', async () => {
@@ -929,10 +947,11 @@ describe('executeWithBackend', () => {
 		it('does not error when sidecar file is malformed JSON', async () => {
 			setupMocks();
 			const backend = makeMockBackend();
-			vi.mocked(backend.execute).mockImplementation(async () => {
-				const dir = join(process.cwd(), '.cascade');
-				mkdirSync(dir, { recursive: true });
-				writeFileSync(join(dir, 'review-result.json'), 'not valid json');
+			vi.mocked(backend.execute).mockImplementation(async (backendInput) => {
+				const sidecarPath = backendInput.projectSecrets?.CASCADE_REVIEW_SIDECAR_PATH;
+				if (sidecarPath) {
+					writeFileSync(sidecarPath, 'not valid json');
+				}
 				return { success: true, output: 'Done' };
 			});
 			const input = makeInput();
@@ -946,14 +965,6 @@ describe('executeWithBackend', () => {
 		it('does not read sidecar for non-review agent types', async () => {
 			setupMocks();
 			const backend = makeMockBackend();
-			vi.mocked(backend.execute).mockImplementation(async () => {
-				writeSidecar({
-					reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-99',
-					event: 'APPROVE',
-					body: 'LGTM',
-				});
-				return { success: true, output: 'Done' };
-			});
 			const input = makeInput();
 
 			await executeWithBackend(backend, 'implementation', input);
@@ -964,13 +975,10 @@ describe('executeWithBackend', () => {
 		it('skips hydration when sidecar body is missing', async () => {
 			setupMocks();
 			const backend = makeMockBackend();
-			vi.mocked(backend.execute).mockImplementation(async () => {
-				writeSidecar({
-					reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-99',
-					event: 'APPROVE',
-					// no body
-				});
-				return { success: true, output: 'Done' };
+			writeSidecarAtInjectedPath(backend, {
+				reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-99',
+				event: 'APPROVE',
+				// no body
 			});
 			const input = makeInput();
 
@@ -982,14 +990,11 @@ describe('executeWithBackend', () => {
 		it('clears initialCommentId when sidecar has ackCommentDeleted: true', async () => {
 			setupMocks();
 			const backend = makeMockBackend();
-			vi.mocked(backend.execute).mockImplementation(async () => {
-				writeSidecar({
-					reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-42',
-					event: 'REQUEST_CHANGES',
-					body: 'Please fix this',
-					ackCommentDeleted: true,
-				});
-				return { success: true, output: 'Done' };
+			writeSidecarAtInjectedPath(backend, {
+				reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-42',
+				event: 'REQUEST_CHANGES',
+				body: 'Please fix this',
+				ackCommentDeleted: true,
 			});
 			const input = makeInput();
 
@@ -1001,14 +1006,11 @@ describe('executeWithBackend', () => {
 		it('does not clear initialCommentId when sidecar has ackCommentDeleted absent', async () => {
 			setupMocks();
 			const backend = makeMockBackend();
-			vi.mocked(backend.execute).mockImplementation(async () => {
-				writeSidecar({
-					reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-42',
-					event: 'APPROVE',
-					body: 'LGTM',
-					// no ackCommentDeleted
-				});
-				return { success: true, output: 'Done' };
+			writeSidecarAtInjectedPath(backend, {
+				reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-42',
+				event: 'APPROVE',
+				body: 'LGTM',
+				// no ackCommentDeleted
 			});
 			const input = makeInput();
 

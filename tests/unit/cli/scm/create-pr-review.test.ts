@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -11,7 +11,7 @@ vi.mock('../../../../src/gadgets/github/core/createPRReview.js', () => ({
 }));
 
 vi.mock('../../../../src/gadgets/sessionState.js', () => ({
-	REVIEW_SIDECAR_FILENAME: '.cascade/review-result.json',
+	REVIEW_SIDECAR_ENV_VAR: 'CASCADE_REVIEW_SIDECAR_PATH',
 }));
 
 const mockDeletePRComment = vi.fn();
@@ -55,27 +55,34 @@ function makeParseResult(overrides?: Record<string, unknown>) {
 }
 
 describe('CreatePRReviewCommand — GitHub ack comment deletion', () => {
-	let testDir: string;
-	let originalCwd: string;
+	let sidecarPath: string;
 	let originalEnv: string | undefined;
+	let originalSidecarEnv: string | undefined;
 
 	beforeEach(() => {
-		originalCwd = process.cwd();
-		testDir = join(tmpdir(), `cascade-test-review-delete-${Date.now()}`);
-		mkdirSync(testDir, { recursive: true });
-		process.chdir(testDir);
+		sidecarPath = join(tmpdir(), `cascade-test-review-delete-${Date.now()}.json`);
 		originalEnv = process.env.CASCADE_GITHUB_ACK_COMMENT_ID;
+		originalSidecarEnv = process.env.CASCADE_REVIEW_SIDECAR_PATH;
 		process.env.CASCADE_GITHUB_ACK_COMMENT_ID = undefined;
+		process.env.CASCADE_REVIEW_SIDECAR_PATH = sidecarPath;
 		mockDeletePRComment.mockReset();
 	});
 
 	afterEach(() => {
-		process.chdir(originalCwd);
-		rmSync(testDir, { recursive: true, force: true });
+		try {
+			rmSync(sidecarPath, { force: true });
+		} catch {
+			// ignore
+		}
 		if (originalEnv !== undefined) {
 			process.env.CASCADE_GITHUB_ACK_COMMENT_ID = originalEnv;
 		} else {
 			process.env.CASCADE_GITHUB_ACK_COMMENT_ID = undefined;
+		}
+		if (originalSidecarEnv !== undefined) {
+			process.env.CASCADE_REVIEW_SIDECAR_PATH = originalSidecarEnv;
+		} else {
+			process.env.CASCADE_REVIEW_SIDECAR_PATH = undefined;
 		}
 		vi.restoreAllMocks();
 	});
@@ -121,7 +128,6 @@ describe('CreatePRReviewCommand — GitHub ack comment deletion', () => {
 
 		await cmd.execute();
 
-		const sidecarPath = join(testDir, '.cascade', 'review-result.json');
 		expect(existsSync(sidecarPath)).toBe(true);
 		const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8'));
 		expect(sidecar.ackCommentDeleted).toBe(true);
@@ -137,7 +143,6 @@ describe('CreatePRReviewCommand — GitHub ack comment deletion', () => {
 
 		await cmd.execute();
 
-		const sidecarPath = join(testDir, '.cascade', 'review-result.json');
 		expect(existsSync(sidecarPath)).toBe(true);
 		const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8'));
 		expect(sidecar.ackCommentDeleted).toBeUndefined();
@@ -156,7 +161,6 @@ describe('CreatePRReviewCommand — GitHub ack comment deletion', () => {
 		// Should not throw even if deletion fails
 		await expect(cmd.execute()).resolves.toBeUndefined();
 
-		const sidecarPath = join(testDir, '.cascade', 'review-result.json');
 		const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8'));
 		// ackCommentDeleted should NOT be set since deletion failed
 		expect(sidecar.ackCommentDeleted).toBeUndefined();
