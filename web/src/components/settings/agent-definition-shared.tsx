@@ -65,7 +65,7 @@ export const EMPTY_DEFINITION: AgentDefinition = {
 	hint: '',
 	prompts: {
 		taskPrompt:
-			'Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.',
+			'Analyze and process the work item with ID: <%= it.workItemId %>. The work item data has been pre-loaded.',
 	},
 };
 

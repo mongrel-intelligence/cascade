@@ -238,7 +238,7 @@ export function PromptsPanel({ agentType }: { agentType: string }) {
 	const sectionLabel = isSystemSection ? 'System' : 'Task';
 	const placeholder = isSystemSection
 		? 'Enter the system prompt template with Eta variables and <%~ include("partials/...") %> directives'
-		: 'Enter the task prompt template with Eta variables like <%= it.cardId %>';
+		: 'Enter the task prompt template with Eta variables like <%= it.workItemId %>';
 
 	// Loading state
 	const isLoading = definitionQuery.isLoading || defaultQuery.isLoading;
