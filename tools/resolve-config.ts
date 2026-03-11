@@ -7,7 +7,7 @@
  *   2. Global agent_configs (org_id IS NULL, project_id IS NULL)
  *   3. Org-level agent_configs (org_id set, project_id IS NULL)
  *   4. Project-level agent_configs (project_id set)
- *   5. Project row overrides (model, cardBudgetUsd, agentBackend)
+ *   5. Project row overrides (model, workItemBudgetUsd, agentBackend)
  *   6. Resolved credentials (integration credentials + org defaults)
  *
  * Usage:

@@ -14,7 +14,7 @@ import type { AgentInput, CascadeConfig, ProjectConfig } from '../src/types/inde
 // Input types
 interface TrelloInput {
 	type: 'trello';
-	cardId: string;
+	workItemId: string;
 }
 
 interface GitHubPRInput {
@@ -31,7 +31,7 @@ function parseEntrypointArgs(): { agentType: string; input: ParsedInput } {
 	const agentType = args[0];
 
 	if (!agentType) {
-		console.error('Usage: run-agent-entrypoint.ts <agent-type> <card-id>');
+		console.error('Usage: run-agent-entrypoint.ts <agent-type> <work-item-id>');
 		console.error('       run-agent-entrypoint.ts <agent-type> --pr <owner> <repo> <pr-number>');
 		process.exit(1);
 	}
@@ -53,20 +53,20 @@ function parseEntrypointArgs(): { agentType: string; input: ParsedInput } {
 		};
 	}
 
-	// Legacy: card ID as second argument
-	const cardId = args[1];
-	if (!cardId) {
-		console.error('Usage: run-agent-entrypoint.ts <agent-type> <card-id>');
+	// Legacy: work item ID as second argument
+	const workItemId = args[1];
+	if (!workItemId) {
+		console.error('Usage: run-agent-entrypoint.ts <agent-type> <work-item-id>');
 		process.exit(1);
 	}
 
 	return {
 		agentType,
-		input: { type: 'trello', cardId },
+		input: { type: 'trello', workItemId },
 	};
 }
 
-async function getCardBoardId(cardId: string): Promise<string> {
+async function getCardBoardId(workItemId: string): Promise<string> {
 	const apiKey = process.env.TRELLO_API_KEY;
 	const token = process.env.TRELLO_TOKEN;
 
@@ -75,11 +75,11 @@ async function getCardBoardId(cardId: string): Promise<string> {
 	}
 
 	const response = await fetch(
-		`https://api.trello.com/1/cards/${cardId}?fields=idBoard&key=${apiKey}&token=${token}`,
+		`https://api.trello.com/1/cards/${workItemId}?fields=idBoard&key=${apiKey}&token=${token}`,
 	);
 
 	if (!response.ok) {
-		throw new Error(`Failed to fetch card ${cardId}: ${response.status}`);
+		throw new Error(`Failed to fetch card ${workItemId}: ${response.status}`);
 	}
 
 	const card = (await response.json()) as { idBoard: string };
@@ -174,7 +174,7 @@ async function main() {
 	if (input.type === 'github-pr') {
 		console.log(`PR: ${input.owner}/${input.repo}#${input.prNumber}`);
 	} else {
-		console.log(`Card ID: ${input.cardId}`);
+		console.log(`Work Item ID: ${input.workItemId}`);
 	}
 	console.log('');
 
@@ -194,7 +194,7 @@ async function main() {
 	} else {
 		// Trello card flow
 		console.log('Fetching card to determine project...');
-		const boardId = await getCardBoardId(input.cardId);
+		const boardId = await getCardBoardId(input.workItemId);
 		console.log(`Card belongs to board: ${boardId}`);
 
 		const foundProject = await findProjectByBoardId(boardId);
@@ -210,7 +210,7 @@ async function main() {
 		agentInput = {
 			project,
 			config,
-			cardId: input.cardId,
+			workItemId: input.workItemId,
 		};
 	}
 

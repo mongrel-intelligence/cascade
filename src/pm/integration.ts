@@ -25,7 +25,7 @@ export interface PMWebhookEvent {
 	eventType: string;
 	/** Provider-specific identifier for matching a project (boardId, projectKey) */
 	projectIdentifier: string;
-	/** Work item ID when available (cardId, issueKey) */
+	/** Work item ID when available (workItemId, issueKey) */
 	workItemId?: string;
 	/** Original payload, passed to trigger dispatch */
 	raw: unknown;

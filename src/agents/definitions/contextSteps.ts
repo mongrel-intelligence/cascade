@@ -404,7 +404,7 @@ export async function fetchPipelineSnapshotStep(
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
 					params.logWriter('WARN', 'fetchPipelineSnapshotStep: Failed to read card details', {
-						cardId: id,
+						workItemId: id,
 						error: message,
 					});
 					fullDetails.set(id, `Error reading details: ${message}`);

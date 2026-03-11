@@ -516,7 +516,7 @@ export async function listProjectsForOrg(orgId: string) {
 // ============================================================================
 
 /**
- * Returns all runs for a specific work item (by cardId) within a project,
+ * Returns all runs for a specific work item (by workItemId) within a project,
  * enriched with PR work item display info via LEFT JOIN.
  */
 export async function getRunsByWorkItem(projectId: string, workItemId: string) {
