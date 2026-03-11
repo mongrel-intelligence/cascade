@@ -575,7 +575,7 @@ async function tryAutoDebug(
 	if (!agentResult.runId) return;
 	const debugTarget = await shouldTriggerDebug(agentResult.runId);
 	if (debugTarget) {
-		triggerDebugAnalysis(debugTarget.runId, project, config, debugTarget.cardId).catch((err) =>
+		triggerDebugAnalysis(debugTarget.runId, project, config, debugTarget.workItemId).catch((err) =>
 			logger.error('Auto-debug failed', { error: String(err) }),
 		);
 	}

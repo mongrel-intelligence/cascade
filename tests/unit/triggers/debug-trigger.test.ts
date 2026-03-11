@@ -100,7 +100,7 @@ describe('shouldTriggerDebug', () => {
 		expect(result).toEqual({
 			runId: 'run-1',
 			agentType: 'implementation',
-			cardId: 'card-1',
+			workItemId: 'card-1',
 		});
 	});
 
@@ -117,11 +117,11 @@ describe('shouldTriggerDebug', () => {
 		expect(result).toEqual({
 			runId: 'run-2',
 			agentType: 'splitting',
-			cardId: 'card-2',
+			workItemId: 'card-2',
 		});
 	});
 
-	it('returns undefined cardId when run has no workItemId', async () => {
+	it('returns undefined workItemId when run has no workItemId', async () => {
 		vi.mocked(getRunById).mockResolvedValue({
 			id: 'run-3',
 			agentType: 'review',
@@ -134,7 +134,7 @@ describe('shouldTriggerDebug', () => {
 		expect(result).toEqual({
 			runId: 'run-3',
 			agentType: 'review',
-			cardId: undefined,
+			workItemId: undefined,
 		});
 	});
 

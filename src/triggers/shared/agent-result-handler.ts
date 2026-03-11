@@ -12,7 +12,7 @@ import { safeOperation } from '../../utils/safeOperation.js';
  * being uploaded as attachments.
  */
 export async function handleAgentResultArtifacts(
-	cardId: string,
+	workItemId: string,
 	_agentType: string,
 	agentResult: AgentResult,
 	project: ProjectConfig,
@@ -24,11 +24,11 @@ export async function handleAgentResultArtifacts(
 		await safeOperation(
 			async () => {
 				const provider = getPMProvider();
-				const currentCost = await provider.getCustomFieldNumber(cardId, costFieldId);
+				const currentCost = await provider.getCustomFieldNumber(workItemId, costFieldId);
 				const newTotal = Math.round((currentCost + sessionCost) * 10000) / 10000;
-				await provider.updateCustomFieldNumber(cardId, costFieldId, newTotal);
+				await provider.updateCustomFieldNumber(workItemId, costFieldId, newTotal);
 				logger.info('Updated work item cost', {
-					cardId,
+					workItemId,
 					sessionCost,
 					totalCost: newTotal,
 				});

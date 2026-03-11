@@ -144,7 +144,7 @@ export class TrelloRouterAdapter implements RouterPlatformAdapter {
 		} catch (err) {
 			logger.warn('Trello ack comment failed (non-fatal)', {
 				error: String(err),
-				cardId: event.workItemId,
+				workItemId: event.workItemId,
 			});
 			return undefined;
 		}

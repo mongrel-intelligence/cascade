@@ -68,12 +68,12 @@ export class TrelloIntegration implements PMIntegration {
 		const actionType = action.type as string;
 		const data = action.data as Record<string, unknown> | undefined;
 		const card = data?.card as Record<string, unknown> | undefined;
-		const cardId = card?.id as string | undefined;
+		const workItemId = card?.id as string | undefined;
 
 		return {
 			eventType: actionType,
 			projectIdentifier: boardId,
-			workItemId: cardId,
+			workItemId: workItemId,
 			raw,
 		};
 	}

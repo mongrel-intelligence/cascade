@@ -22,21 +22,21 @@ import {
 
 export async function postTrelloAck(
 	projectId: string,
-	cardId: string,
+	workItemId: string,
 	message: string,
 ): Promise<string | null> {
 	const client = new TrelloPlatformClient(projectId);
-	const result = await client.postComment(cardId, message);
+	const result = await client.postComment(workItemId, message);
 	return typeof result === 'string' ? result : null;
 }
 
 export async function deleteTrelloAck(
 	projectId: string,
-	cardId: string,
+	workItemId: string,
 	commentId: string,
 ): Promise<void> {
 	const client = new TrelloPlatformClient(projectId);
-	await client.deleteComment(cardId, commentId);
+	await client.deleteComment(workItemId, commentId);
 }
 
 // ---------------------------------------------------------------------------
