@@ -88,7 +88,7 @@ npm run build && node --env-file=.env dist/dashboard.js
 npm run dev:web
 ```
 
-> **Note**: The Vite dev server currently proxies API requests to :3000 (the router), but the dashboard API runs on :3001. You'll need to either (1) update `web/vite.config.ts` proxy targets to `http://localhost:3001`, or (2) set `PORT=3000` in `.env` before starting the dashboard. A `dev:dashboard` script to handle this automatically is planned.
+> **Note**: The Vite dev server currently proxies API requests to :3000 (the router), but the dashboard API runs on :3001. You'll need to update `web/vite.config.ts` proxy targets to `http://localhost:3001`. A `dev:dashboard` script to handle this automatically is planned.
 
 Open **http://localhost:5173** — you'll see the dashboard.
 
@@ -465,6 +465,9 @@ Triggers live in `src/triggers/`. Implement the `TriggerHandler` interface from 
 import type { TriggerHandler, TriggerContext, TriggerResult } from '../types.js';
 
 export class MyCustomTrigger implements TriggerHandler {
+  name = 'my-custom-trigger';
+  description = 'Triggers when something happens';
+
   matches(ctx: TriggerContext): boolean {
     return ctx.source === 'trello' && /* your condition */;
   }
