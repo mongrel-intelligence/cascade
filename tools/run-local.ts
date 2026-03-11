@@ -30,7 +30,7 @@ const IMAGE_NAME = 'cascade:local';
 // Input types for different sources
 interface TrelloInput {
 	type: 'trello';
-	cardId: string;
+	workItemId: string;
 }
 
 interface GitHubPRInput {
@@ -59,14 +59,14 @@ function parseInput(input: string): ParsedInput {
 	if (trelloMatch) {
 		return {
 			type: 'trello',
-			cardId: trelloMatch[1],
+			workItemId: trelloMatch[1],
 		};
 	}
 
-	// Assume it's a Trello card ID
+	// Assume it's a Trello work item ID
 	return {
 		type: 'trello',
-		cardId: input,
+		workItemId: input,
 	};
 }
 
@@ -134,9 +134,9 @@ function runAgentInDocker(
 		entrypointArgs = [agentType, '--pr', input.owner, input.repo, String(input.prNumber)];
 		displayName = `${input.owner}/${input.repo}#${input.prNumber}`;
 	} else {
-		// Pass Trello card ID
-		entrypointArgs = [agentType, input.cardId];
-		displayName = `card ${input.cardId}`;
+		// Pass Trello work item ID
+		entrypointArgs = [agentType, input.workItemId];
+		displayName = `work item ${input.workItemId}`;
 	}
 
 	const dockerArgs = [
@@ -229,7 +229,7 @@ program
 			if (parsedInput.type === 'github-pr') {
 				console.log(`PR: ${parsedInput.owner}/${parsedInput.repo}#${parsedInput.prNumber}`);
 			} else {
-				console.log(`Card ID: ${parsedInput.cardId}`);
+				console.log(`Work Item ID: ${parsedInput.workItemId}`);
 			}
 
 			ensureDockerImage(options.rebuild);

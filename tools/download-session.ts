@@ -17,13 +17,13 @@ import { createGunzip } from 'node:zlib';
 import AdmZip from 'adm-zip';
 import { trelloClient } from '../src/trello/client.js';
 
-function extractCardId(input: string): string {
+function extractWorkItemId(input: string): string {
 	// Match Trello URL: https://trello.com/c/abc123/... or https://trello.com/c/abc123
 	const urlMatch = input.match(/trello\.com\/c\/([a-zA-Z0-9]+)/);
 	if (urlMatch) {
 		return urlMatch[1];
 	}
-	// Assume it's already a card ID
+	// Assume it's already a work item ID
 	return input;
 }
 
@@ -149,19 +149,19 @@ async function main() {
 		process.exit(1);
 	}
 
-	const cardId = extractCardId(input);
-	console.log(`Fetching card: ${cardId}`);
+	const workItemId = extractWorkItemId(input);
+	console.log(`Fetching card: ${workItemId}`);
 
 	// Create temp directory
-	const sessionDir = join(tmpdir(), `session-${cardId}-${Date.now()}`);
+	const sessionDir = join(tmpdir(), `session-${workItemId}-${Date.now()}`);
 	await mkdir(sessionDir, { recursive: true });
 
 	// Fetch card data in parallel
 	const [card, comments, checklists, attachments] = await Promise.all([
-		trelloClient.getCard(cardId),
-		trelloClient.getCardComments(cardId),
-		trelloClient.getCardChecklists(cardId),
-		trelloClient.getCardAttachments(cardId),
+		trelloClient.getCard(workItemId),
+		trelloClient.getCardComments(workItemId),
+		trelloClient.getCardChecklists(workItemId),
+		trelloClient.getCardAttachments(workItemId),
 	]);
 
 	console.log(`Card: ${card.name}`);

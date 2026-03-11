@@ -227,7 +227,7 @@ export class MyCustomTrigger implements TriggerHandler {
     return {
       agentType: 'implementation', // or 'splitting', 'planning'
       agentInput: { /* data for the agent */ },
-      cardId: 'optional-card-id',
+      workItemId: 'optional-work-item-id',
     };
   }
 }
