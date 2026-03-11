@@ -14,7 +14,7 @@
 		"watchdogTimeoutMs": 2700000,
 		"selfDestructTimeoutMs": 1800000,
 		"postJobGracePeriodMs": 45000,
-		"cardBudgetUsd": 5.00
+		"workItemBudgetUsd": 5.00
 	},
 	"projects": [
 		{
