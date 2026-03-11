@@ -105,7 +105,7 @@ Then log in via the dashboard or CLI:
 
 ```bash
 npm run build
-node bin/cascade.js login --server http://localhost:3000 --email you@example.com --password yourpassword
+node bin/cascade.js login --server http://localhost:3001 --email you@example.com --password yourpassword
 ```
 
 ---
@@ -414,7 +414,7 @@ In production, the `cascade` binary is available globally.
 
 ```bash
 # Authentication
-cascade login --server http://localhost:3000 --email you@example.com --password secret
+cascade login --server http://localhost:3001 --email you@example.com --password secret
 cascade logout
 cascade whoami
 
