@@ -14,10 +14,10 @@ const runningTriggers = new Map<string, boolean>();
 function generateTriggerKey(
 	projectId: string,
 	agentType: string,
-	cardId?: string,
+	workItemId?: string,
 	prNumber?: number,
 ): string {
-	return `${projectId}:${agentType}:${cardId ?? 'no-card'}:${prNumber ?? 'no-pr'}`;
+	return `${projectId}:${agentType}:${workItemId ?? 'no-card'}:${prNumber ?? 'no-pr'}`;
 }
 
 function markTriggerRunning(key: string): void {

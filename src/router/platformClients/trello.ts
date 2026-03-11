@@ -9,7 +9,7 @@ import type { PlatformCommentClient } from './types.js';
 export class TrelloPlatformClient implements PlatformCommentClient {
 	constructor(private readonly projectId: string) {}
 
-	async postComment(cardId: string, message: string): Promise<string | null> {
+	async postComment(workItemId: string, message: string): Promise<string | null> {
 		const creds = await resolveTrelloCredentials(this.projectId);
 		if (!creds) {
 			logger.warn('[PlatformClient] Missing Trello credentials, skipping comment');
@@ -17,7 +17,7 @@ export class TrelloPlatformClient implements PlatformCommentClient {
 		}
 
 		try {
-			const url = `https://api.trello.com/1/cards/${cardId}/actions/comments?key=${creds.apiKey}&token=${creds.token}`;
+			const url = `https://api.trello.com/1/cards/${workItemId}/actions/comments?key=${creds.apiKey}&token=${creds.token}`;
 			const response = await fetch(url, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -34,7 +34,7 @@ export class TrelloPlatformClient implements PlatformCommentClient {
 			}
 
 			const data = (await response.json()) as { id?: string };
-			logger.info('[PlatformClient] Trello comment posted for card:', cardId);
+			logger.info('[PlatformClient] Trello comment posted for card:', workItemId);
 			return data.id ?? null;
 		} catch (err) {
 			logger.warn('[PlatformClient] Failed to post Trello comment:', String(err));
@@ -42,11 +42,11 @@ export class TrelloPlatformClient implements PlatformCommentClient {
 		}
 	}
 
-	async deleteComment(cardId: string, commentId: string): Promise<void> {
+	async deleteComment(workItemId: string, commentId: string): Promise<void> {
 		const creds = await resolveTrelloCredentials(this.projectId);
 		if (!creds) return;
 
-		const url = `https://api.trello.com/1/cards/${cardId}/actions/${commentId}/comments?key=${creds.apiKey}&token=${creds.token}`;
+		const url = `https://api.trello.com/1/cards/${workItemId}/actions/${commentId}/comments?key=${creds.apiKey}&token=${creds.token}`;
 		try {
 			await fetch(url, { method: 'DELETE' });
 			logger.info('[PlatformClient] Trello comment deleted:', commentId);

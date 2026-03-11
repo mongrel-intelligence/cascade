@@ -321,7 +321,7 @@ describe('runAgentExecutionPipeline', () => {
 	});
 
 	describe('workItemId resolution', () => {
-		it('uses cardId when present', async () => {
+		it('uses workItemId when present (via result.workItemId)', async () => {
 			const result: TriggerResult = {
 				agentType: 'implementation',
 				workItemId: 'card-456',
@@ -378,7 +378,7 @@ describe('runAgentExecutionPipeline', () => {
 			vi.mocked(shouldTriggerDebug).mockResolvedValue({
 				runId: 'run-failed',
 				agentType: 'implementation',
-				cardId: 'card-123',
+				workItemId: 'card-123',
 			});
 
 			await runAgentExecutionPipeline(mockTriggerResult, mockProject, mockConfig);

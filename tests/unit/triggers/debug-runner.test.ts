@@ -222,7 +222,7 @@ describe('triggerDebugAnalysis', () => {
 		);
 	});
 
-	it('does not post comment when no cardId', async () => {
+	it('does not post comment when no workItemId', async () => {
 		vi.mocked(getRunById).mockResolvedValue({
 			id: 'run-1',
 			agentType: 'implementation',

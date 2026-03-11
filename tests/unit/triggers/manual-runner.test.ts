@@ -198,7 +198,7 @@ describe('triggerManualRun', () => {
 	it('marks trigger as complete after runAgent finishes', async () => {
 		const projectId = 'test-project';
 		const agentType = 'implementation';
-		const cardId = 'card-complete';
+		const workItemId = 'card-complete';
 
 		vi.mocked(runAgent).mockResolvedValue({
 			success: true,
@@ -206,24 +206,24 @@ describe('triggerManualRun', () => {
 			runId: 'run-complete',
 		});
 
-		await triggerManualRun({ projectId, agentType, cardId }, mockProject, mockConfig);
+		await triggerManualRun({ projectId, agentType, workItemId }, mockProject, mockConfig);
 
 		// After awaiting triggerManualRun, trigger should already be complete
-		const key = `${projectId}:${agentType}:${cardId}:no-pr`;
+		const key = `${projectId}:${agentType}:${workItemId}:no-pr`;
 		expect(isTriggerRunning(key)).toBe(false);
 	});
 
 	it('marks trigger as complete even when runAgent fails', async () => {
 		const projectId = 'test-project';
 		const agentType = 'implementation';
-		const cardId = 'card-fail';
+		const workItemId = 'card-fail';
 
 		vi.mocked(runAgent).mockRejectedValue(new Error('Agent error'));
 
-		await triggerManualRun({ projectId, agentType, cardId }, mockProject, mockConfig);
+		await triggerManualRun({ projectId, agentType, workItemId }, mockProject, mockConfig);
 
 		// After awaiting triggerManualRun (error caught internally), trigger should be complete
-		const key = `${projectId}:${agentType}:${cardId}:no-pr`;
+		const key = `${projectId}:${agentType}:${workItemId}:no-pr`;
 		expect(isTriggerRunning(key)).toBe(false);
 	});
 });
