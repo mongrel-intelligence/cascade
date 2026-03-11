@@ -69,7 +69,7 @@ interface ManualRunJobData {
 	type: 'manual-run';
 	projectId: string;
 	agentType: string;
-	cardId?: string;
+	workItemId?: string;
 	prNumber?: number;
 	prBranch?: string;
 	repoFullName?: string;
@@ -88,7 +88,7 @@ interface DebugAnalysisJobData {
 	type: 'debug-analysis';
 	runId: string;
 	projectId: string;
-	cardId?: string;
+	workItemId?: string;
 }
 
 type DashboardJobData = ManualRunJobData | RetryRunJobData | DebugAnalysisJobData;
@@ -111,7 +111,7 @@ async function processDashboardJob(jobId: string, jobData: DashboardJobData): Pr
 			{
 				projectId: jobData.projectId,
 				agentType: jobData.agentType,
-				cardId: jobData.cardId,
+				workItemId: jobData.workItemId,
 				prNumber: jobData.prNumber,
 				prBranch: jobData.prBranch,
 				repoFullName: jobData.repoFullName,
@@ -135,7 +135,7 @@ async function processDashboardJob(jobId: string, jobData: DashboardJobData): Pr
 		const { triggerDebugAnalysis } = await import('./triggers/shared/debug-runner.js');
 		const pc = await loadProjectConfigById(jobData.projectId);
 		if (!pc) throw new Error(`Project not found: ${jobData.projectId}`);
-		await triggerDebugAnalysis(jobData.runId, pc.project, pc.config, jobData.cardId);
+		await triggerDebugAnalysis(jobData.runId, pc.project, pc.config, jobData.workItemId);
 	}
 }
 

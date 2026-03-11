@@ -91,7 +91,7 @@ export class PROpenedTrigger implements TriggerHandler {
 				headSha: payload.pull_request.head.sha,
 				triggerType: 'pr-opened',
 				triggerEvent: 'scm:pr-opened',
-				cardId: workItemId,
+				workItemId: workItemId,
 			},
 			prNumber,
 			workItemId,

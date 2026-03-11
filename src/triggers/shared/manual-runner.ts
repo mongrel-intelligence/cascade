@@ -45,7 +45,7 @@ export function clearTriggerTracking(): void {
 export interface ManualTriggerInput {
 	projectId: string;
 	agentType: string;
-	cardId?: string;
+	workItemId?: string;
 	prNumber?: number;
 	prBranch?: string;
 	repoFullName?: string;
@@ -69,13 +69,13 @@ export async function triggerManualRun(
 	const triggerKey = generateTriggerKey(
 		input.projectId,
 		input.agentType,
-		input.cardId,
+		input.workItemId,
 		input.prNumber,
 	);
 
 	if (isTriggerRunning(triggerKey)) {
 		throw new Error(
-			`Manual trigger already running for project=${input.projectId}, agent=${input.agentType}, card=${input.cardId ?? 'N/A'}, pr=${input.prNumber ?? 'N/A'}`,
+			`Manual trigger already running for project=${input.projectId}, agent=${input.agentType}, card=${input.workItemId ?? 'N/A'}, pr=${input.prNumber ?? 'N/A'}`,
 		);
 	}
 
@@ -88,7 +88,7 @@ export async function triggerManualRun(
 	logger.info('Triggering manual agent run', {
 		projectId: input.projectId,
 		agentType: input.agentType,
-		cardId: input.cardId,
+		workItemId: input.workItemId,
 		prNumber: input.prNumber,
 		modelOverride: input.modelOverride,
 	});
@@ -96,7 +96,7 @@ export async function triggerManualRun(
 	markTriggerRunning(triggerKey);
 
 	const agentInput: AgentInput & { project: ProjectConfig; config: CascadeConfig } = {
-		cardId: input.cardId,
+		workItemId: input.workItemId,
 		prNumber: input.prNumber,
 		prBranch: input.prBranch,
 		repoFullName: input.repoFullName,
@@ -165,7 +165,7 @@ export async function triggerRetryRun(
 	const triggerInput: ManualTriggerInput = {
 		projectId: run.projectId,
 		agentType: run.agentType,
-		cardId: run.workItemId ?? undefined,
+		workItemId: run.workItemId ?? undefined,
 		prNumber: run.prNumber ?? undefined,
 		modelOverride: modelOverride ?? run.model ?? undefined,
 	};

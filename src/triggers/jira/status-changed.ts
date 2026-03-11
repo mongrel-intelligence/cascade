@@ -85,7 +85,7 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 		return {
 			agentType,
 			agentInput: {
-				cardId: issueKey,
+				workItemId: issueKey,
 				workItemUrl,
 				workItemTitle,
 				triggerEvent: 'pm:status-changed',

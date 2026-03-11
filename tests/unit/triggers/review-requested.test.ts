@@ -208,7 +208,7 @@ describe('ReviewRequestedTrigger', () => {
 				repoFullName: 'owner/repo',
 				triggerType: 'review-requested',
 				triggerEvent: 'scm:review-requested',
-				cardId: 'abc123',
+				workItemId: 'abc123',
 			});
 		});
 

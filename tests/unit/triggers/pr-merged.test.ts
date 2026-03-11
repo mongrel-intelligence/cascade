@@ -350,7 +350,7 @@ describe('PRMergedTrigger', () => {
 				agentType: 'backlog-manager',
 				agentInput: {
 					triggerEvent: 'scm:pr-merged',
-					cardId: 'abc123',
+					workItemId: 'abc123',
 				},
 				workItemId: 'abc123',
 				prNumber: 123,
@@ -453,7 +453,7 @@ describe('PRMergedTrigger', () => {
 				agentType: 'backlog-manager',
 				agentInput: {
 					triggerEvent: 'scm:pr-merged',
-					cardId: 'abc123',
+					workItemId: 'abc123',
 				},
 				workItemId: 'abc123',
 				prNumber: 123,
@@ -604,7 +604,7 @@ describe('PRMergedTrigger', () => {
 
 			expect(result).toEqual({
 				agentType: 'backlog-manager',
-				agentInput: { triggerEvent: 'scm:pr-merged', cardId: 'abc123' },
+				agentInput: { triggerEvent: 'scm:pr-merged', workItemId: 'abc123' },
 				workItemId: 'abc123',
 				prNumber: 123,
 			});

@@ -171,7 +171,7 @@ describe('JiraCommentMentionTrigger', () => {
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('respond-to-planning-comment');
 			expect(result?.workItemId).toBe(ISSUE_KEY);
-			expect(result?.agentInput.cardId).toBe(ISSUE_KEY);
+			expect(result?.agentInput.workItemId).toBe(ISSUE_KEY);
 			expect(result?.agentInput.triggerCommentAuthor).toBe('Alice');
 			expect(result?.agentInput.triggerEvent).toBe('pm:comment-mention');
 		});

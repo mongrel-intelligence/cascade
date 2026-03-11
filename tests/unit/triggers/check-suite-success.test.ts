@@ -171,7 +171,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 						repoFullName: 'owner/repo',
 						headSha: 'sha123',
 						triggerType: 'ci-success',
-						cardId: 'abc123',
+						workItemId: 'abc123',
 						triggerEvent: 'scm:check-suite-success',
 					},
 					prNumber: 42,
@@ -502,7 +502,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.workItemId).toBeUndefined();
-			expect(result?.agentInput.cardId).toBeUndefined();
+			expect(result?.agentInput.workItemId).toBeUndefined();
 			expect(result?.waitForChecks).toBe(true);
 		});
 

@@ -205,7 +205,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 				headSha,
 				triggerType: 'ci-success',
 				triggerEvent: 'scm:check-suite-success',
-				cardId: workItemId,
+				workItemId: workItemId,
 			},
 			prNumber,
 			workItemId,

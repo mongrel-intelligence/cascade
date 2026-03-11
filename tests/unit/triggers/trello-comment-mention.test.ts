@@ -162,7 +162,7 @@ describe('TrelloCommentMentionTrigger', () => {
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('respond-to-planning-comment');
 			expect(result?.workItemId).toBe('card-1');
-			expect(result?.agentInput.cardId).toBe('card-1');
+			expect(result?.agentInput.workItemId).toBe('card-1');
 			expect(result?.agentInput.triggerCommentText).toContain(`@${BOT_USERNAME}`);
 			expect(result?.agentInput.triggerEvent).toBe('pm:comment-mention');
 		});

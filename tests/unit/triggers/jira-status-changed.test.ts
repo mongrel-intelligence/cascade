@@ -121,7 +121,7 @@ describe('JiraStatusChangedTrigger', () => {
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('implementation');
 			expect(result?.workItemId).toBe('PROJ-42');
-			expect(result?.agentInput.cardId).toBe('PROJ-42');
+			expect(result?.agentInput.workItemId).toBe('PROJ-42');
 			expect(result?.workItemUrl).toBe('https://myorg.atlassian.net/browse/PROJ-42');
 			expect(result?.workItemTitle).toBe('Test Issue');
 			expect(result?.agentInput.triggerEvent).toBe('pm:status-changed');

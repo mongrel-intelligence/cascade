@@ -217,7 +217,7 @@ describe('TrelloStatusChangedBacklogTrigger', () => {
 
 		expect(result?.agentType).toBe('backlog-manager');
 		expect(result?.workItemId).toBe('card789');
-		expect(result?.agentInput.cardId).toBe('card789');
+		expect(result?.agentInput.workItemId).toBe('card789');
 	});
 
 	it('returns null when card ID is missing from payload', async () => {

@@ -79,7 +79,7 @@ describe('triggerManualRun', () => {
 			{
 				projectId: 'test-project',
 				agentType: 'implementation',
-				cardId: 'card-1',
+				workItemId: 'card-1',
 			},
 			mockProject,
 			mockConfig,
@@ -94,7 +94,7 @@ describe('triggerManualRun', () => {
 				{
 					projectId: 'test-project',
 					agentType: 'implementation',
-					cardId: 'card-1',
+					workItemId: 'card-1',
 				},
 				mockProject,
 				mockConfig,
@@ -116,7 +116,7 @@ describe('triggerManualRun', () => {
 			{
 				projectId: 'test-project',
 				agentType: 'implementation',
-				cardId: 'card-1',
+				workItemId: 'card-1',
 				modelOverride: 'claude-3-5-sonnet-20241022',
 			},
 			mockProject,
@@ -126,7 +126,7 @@ describe('triggerManualRun', () => {
 		expect(runAgent).toHaveBeenCalledWith(
 			'implementation',
 			expect.objectContaining({
-				cardId: 'card-1',
+				workItemId: 'card-1',
 				modelOverride: 'claude-3-5-sonnet-20241022',
 				triggerType: 'manual',
 				project: mockProject,
@@ -274,7 +274,7 @@ describe('triggerRetryRun', () => {
 		expect(runAgent).toHaveBeenCalledWith(
 			'implementation',
 			expect.objectContaining({
-				cardId: 'card-1',
+				workItemId: 'card-1',
 				modelOverride: 'claude-sonnet-4-5-20250929',
 				triggerType: 'manual',
 			}),

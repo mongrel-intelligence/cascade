@@ -33,7 +33,7 @@ strategies: {}
 
 prompts:
   taskPrompt: |
-    A user (@<%= it.commentAuthor %>) mentioned you in a comment on work item <%= it.cardId %>.
+    A user (@<%= it.commentAuthor %>) mentioned you in a comment on work item <%= it.workItemId %>.
 
     Their comment:
     ---

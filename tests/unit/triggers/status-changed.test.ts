@@ -217,7 +217,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 
 		expect(result?.agentType).toBe('splitting');
 		expect(result?.workItemId).toBe('card123');
-		expect(result?.agentInput.cardId).toBe('card123');
+		expect(result?.agentInput.workItemId).toBe('card123');
 		expect(result?.agentInput.triggerEvent).toBe('pm:status-changed');
 	});
 

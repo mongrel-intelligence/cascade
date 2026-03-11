@@ -154,7 +154,7 @@ export const runsRouter = router({
 					type: 'debug-analysis',
 					runId: input.runId,
 					projectId: run.projectId,
-					cardId: run.workItemId ?? undefined,
+					workItemId: run.workItemId ?? undefined,
 				});
 			} else {
 				const { triggerDebugAnalysis } = await import('../../triggers/shared/debug-runner.js');
@@ -176,7 +176,7 @@ export const runsRouter = router({
 			z.object({
 				projectId: z.string(),
 				agentType: z.string(),
-				cardId: z.string().optional(),
+				workItemId: z.string().optional(),
 				prNumber: z.number().optional(),
 				prBranch: z.string().optional(),
 				repoFullName: z.string().optional(),
@@ -189,10 +189,10 @@ export const runsRouter = router({
 			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
 
 			// Block if a worker is already active on this work item
-			if (input.cardId && input.agentType !== 'debug') {
+			if (input.workItemId && input.agentType !== 'debug') {
 				const active = await hasActiveRunForWorkItem(
 					input.projectId,
-					input.cardId,
+					input.workItemId,
 					DEFAULT_STALE_RUN_THRESHOLD_MS,
 				);
 				if (active) {
@@ -217,7 +217,7 @@ export const runsRouter = router({
 					type: 'manual-run',
 					projectId: input.projectId,
 					agentType: input.agentType,
-					cardId: input.cardId,
+					workItemId: input.workItemId,
 					prNumber: input.prNumber,
 					prBranch: input.prBranch,
 					repoFullName: input.repoFullName,
@@ -230,7 +230,7 @@ export const runsRouter = router({
 					{
 						projectId: input.projectId,
 						agentType: input.agentType,
-						cardId: input.cardId,
+						workItemId: input.workItemId,
 						prNumber: input.prNumber,
 						prBranch: input.prBranch,
 						repoFullName: input.repoFullName,

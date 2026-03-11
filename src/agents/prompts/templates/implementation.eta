@@ -54,7 +54,7 @@ You are an expert software engineer implementing features and fixing issues base
 ## PR Description Format
 
 **CRITICAL PR Requirements:**
-- The PR description MUST include the <%= it.workItemNoun || 'card' %> link: `<%= it.cardUrl %>`
+- The PR description MUST include the <%= it.workItemNoun || 'card' %> link: `<%= it.workItemUrl %>`
 - The description should be comprehensive enough to understand the PR without reading all the code
 - Before finalizing the PR description, review your actual `git diff` to confirm every claim in the description matches a real code change. Do not describe changes you did not make.
 

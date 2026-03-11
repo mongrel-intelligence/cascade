@@ -547,7 +547,7 @@ describe('runsRouter', () => {
 			const result = await caller.trigger({
 				projectId: 'p1',
 				agentType: 'implementation',
-				cardId: 'card-abc',
+				workItemId: 'card-abc',
 			});
 
 			expect(result).toEqual({ triggered: true });
@@ -555,7 +555,7 @@ describe('runsRouter', () => {
 				expect.objectContaining({
 					projectId: 'p1',
 					agentType: 'implementation',
-					cardId: 'card-abc',
+					workItemId: 'card-abc',
 				}),
 				{ id: 'p1', name: 'Test Project' },
 				{},
@@ -630,7 +630,7 @@ describe('runsRouter', () => {
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(
-				caller.trigger({ projectId: 'p1', agentType: 'implementation', cardId: 'card-1' }),
+				caller.trigger({ projectId: 'p1', agentType: 'implementation', workItemId: 'card-1' }),
 			).rejects.toMatchObject({ code: 'CONFLICT' });
 			expect(mockHasActiveRunForWorkItem).toHaveBeenCalledWith('p1', 'card-1', 2 * 60 * 60 * 1000);
 		});
@@ -647,13 +647,13 @@ describe('runsRouter', () => {
 			const result = await caller.trigger({
 				projectId: 'p1',
 				agentType: 'implementation',
-				cardId: 'card-1',
+				workItemId: 'card-1',
 			});
 			expect(result).toEqual({ triggered: true });
 			expect(mockHasActiveRunForWorkItem).toHaveBeenCalledWith('p1', 'card-1', 2 * 60 * 60 * 1000);
 		});
 
-		it('skips lock check when no cardId is provided', async () => {
+		it('skips lock check when no workItemId is provided', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockLoadProjectConfigById.mockResolvedValue({
 				project: { id: 'p1', name: 'Test' },
@@ -677,7 +677,7 @@ describe('runsRouter', () => {
 			const result = await caller.trigger({
 				projectId: 'p1',
 				agentType: 'debug',
-				cardId: 'card-1',
+				workItemId: 'card-1',
 			});
 			expect(result).toEqual({ triggered: true });
 			expect(mockHasActiveRunForWorkItem).not.toHaveBeenCalled();
