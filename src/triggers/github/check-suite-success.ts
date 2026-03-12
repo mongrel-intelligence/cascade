@@ -3,15 +3,18 @@ import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
+import {
+	buildReviewDispatchKey,
+	claimReviewDispatch,
+	releaseReviewDispatch,
+} from './review-dispatch-dedup.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
 import { evaluateAuthorMode, resolveWorkItemId } from './utils.js';
 
 const MAX_RETRIES = 12;
 const RETRY_DELAY_MS = 10_000;
 
-/** In-memory dedup for review triggers on the same PR+SHA (prevents duplicate reviews from multiple check_suite webhooks) */
-export const recentlyDispatched = new Map<string, number>();
-const DEDUP_TTL_MS = 30 * 60 * 1000; // 30 minutes
+export { recentlyDispatched } from './review-dispatch-dedup.js';
 
 /**
  * Wait for all check suites to complete, retrying when some are still in-progress.
@@ -173,17 +176,12 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			});
 		}
 
-		// In-memory dedup: skip if we already dispatched a review for this PR+SHA
-		const dedupKey = `${owner}/${repo}:${prNumber}:${headSha}`;
-		const now = Date.now();
-		for (const [key, ts] of recentlyDispatched) {
-			if (now - ts > DEDUP_TTL_MS) recentlyDispatched.delete(key);
-		}
-		if (recentlyDispatched.has(dedupKey)) {
-			logger.info('Review already dispatched for this PR+SHA, skipping', { prNumber, headSha });
+		// PR+SHA-scoped dedup prevents duplicate reviews across both duplicate
+		// check_suite deliveries and other review-producing triggers.
+		const dedupKey = buildReviewDispatchKey(owner, repo, prNumber, headSha);
+		if (!claimReviewDispatch(dedupKey, this.name, { prNumber, headSha })) {
 			return null;
 		}
-		recentlyDispatched.set(dedupKey, now);
 
 		// The trigger decision is made — the review agent should run.
 		// Actual check polling (waitForChecks) is deferred to the worker via the flag.
@@ -210,7 +208,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			prNumber,
 			workItemId,
 			waitForChecks: true,
-			onBlocked: () => recentlyDispatched.delete(dedupKey),
+			onBlocked: () => releaseReviewDispatch(dedupKey),
 		};
 	}
 }

@@ -79,7 +79,7 @@ export function createWebhookHandler(config: WebhookHandlerConfig): Handler {
 		// Process synchronously so 200 means "job queued."
 		// Errors propagate to Hono's error handler (500).
 		try {
-			const logOverrides = await processWebhook(payload, eventType);
+			const logOverrides = await processWebhook(payload, eventType, rawHeaders);
 			logSuccessfulWebhook(source, c, rawHeaders, payload, eventType, logOverrides);
 		} catch (err) {
 			handleProcessingError(source, err);

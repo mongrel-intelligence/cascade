@@ -184,32 +184,32 @@ export async function processRouterWebhook(
 		}
 	}
 
-	// Step 9: Post acknowledgment comment — ack info is now available at job build time
-	// Pass the full triggerResult so PM-focused agents (e.g. backlog-manager) can
-	// route the ack to the PM tool (Trello/JIRA card) instead of a GitHub PR.
-	const ackResult = await adapter.postAck(event, payload, project, result.agentType, result);
-	if (ackResult?.commentId != null) {
-		logger.info(`${adapter.type} ack comment posted`, {
-			ackCommentId: ackResult.commentId,
-			workItemId: event.workItemId,
-		});
-	} else {
-		logger.debug(
-			`${adapter.type} ack returned no comment ID (worker will run without pre-seeded comment)`,
-			{
-				workItemId: event.workItemId,
-			},
-		);
-	}
-
-	// Step 10: Build job with ack info embedded
-	const job = adapter.buildJob(event, payload, project, result, ackResult);
-
-	// Step 11: Fire optional pre-actions (fire-and-forget)
-	adapter.firePreActions?.(job, payload);
-
-	// Step 12: Enqueue — job is now durable in Redis
 	try {
+		// Step 9: Post acknowledgment comment — ack info is now available at build time
+		// Pass the full triggerResult so PM-focused agents (e.g. backlog-manager) can
+		// route the ack to the PM tool (Trello/JIRA card) instead of a GitHub PR.
+		const ackResult = await adapter.postAck(event, payload, project, result.agentType, result);
+		if (ackResult?.commentId != null) {
+			logger.info(`${adapter.type} ack comment posted`, {
+				ackCommentId: ackResult.commentId,
+				workItemId: event.workItemId,
+			});
+		} else {
+			logger.debug(
+				`${adapter.type} ack returned no comment ID (worker will run without pre-seeded comment)`,
+				{
+					workItemId: event.workItemId,
+				},
+			);
+		}
+
+		// Step 10: Build job with ack info embedded
+		const job = adapter.buildJob(event, payload, project, result, ackResult);
+
+		// Step 11: Fire optional pre-actions (fire-and-forget)
+		adapter.firePreActions?.(job, payload);
+
+		// Step 12: Enqueue — job is now durable in Redis
 		const jobId = await addJob(job);
 		if (result.workItemId) {
 			markWorkItemEnqueued(project.id, result.workItemId, result.agentType);
@@ -223,6 +223,7 @@ export async function processRouterWebhook(
 			eventType: event.eventType,
 		});
 	} catch (err) {
+		result.onBlocked?.();
 		logger.error(`Failed to queue ${adapter.type} job`, {
 			error: String(err),
 			eventType: event.eventType,

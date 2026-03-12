@@ -89,9 +89,10 @@ app.post(
 	createWebhookHandler({
 		source: 'github',
 		parsePayload: parseGitHubPayload,
-		processWebhook: async (payload, eventType) => {
+		processWebhook: async (payload, eventType, headers) => {
 			const adapter = new GitHubRouterAdapter();
-			const augmented = injectEventType(payload, eventType ?? 'unknown');
+			const deliveryId = headers['x-github-delivery'] ?? headers['X-GitHub-Delivery'];
+			const augmented = injectEventType(payload, eventType ?? 'unknown', deliveryId);
 			const result = await processRouterWebhook(adapter, augmented, triggerRegistry);
 			return {
 				processed: result.shouldProcess,

@@ -50,6 +50,7 @@ export interface WebhookHandlerConfig {
 	processWebhook: (
 		payload: unknown,
 		eventType: string | undefined,
+		headers: Record<string, string>,
 		// biome-ignore lint/suspicious/noConfusingVoidType: void needed for Promise<void> compat
 	) => Promise<WebhookLogOverrides | void>;
 }

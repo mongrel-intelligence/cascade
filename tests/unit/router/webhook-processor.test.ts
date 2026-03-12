@@ -310,7 +310,8 @@ describe('processRouterWebhook', () => {
 	});
 
 	it('still returns successfully even when addJob throws', async () => {
-		const triggerResult = { agentType: 'implementation', agentInput: {} };
+		const onBlocked = vi.fn();
+		const triggerResult = { agentType: 'implementation', agentInput: {}, onBlocked };
 		vi.mocked(addJob).mockRejectedValue(new Error('Redis down'));
 		const adapter = makeMockAdapter({
 			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
@@ -320,6 +321,21 @@ describe('processRouterWebhook', () => {
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(result.shouldProcess).toBe(true);
 		expect(result.decisionReason).toBe('Failed to enqueue job to Redis');
+		expect(onBlocked).toHaveBeenCalledOnce();
+	});
+
+	it('calls onBlocked when postAck throws', async () => {
+		const onBlocked = vi.fn();
+		const triggerResult = { agentType: 'review', agentInput: { prNumber: 42 }, onBlocked };
+		const adapter = makeMockAdapter({
+			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
+			postAck: vi.fn().mockRejectedValue(new Error('GitHub down')),
+		});
+
+		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(result.shouldProcess).toBe(true);
+		expect(result.decisionReason).toBe('Failed to enqueue job to Redis');
+		expect(onBlocked).toHaveBeenCalledOnce();
 	});
 
 	it('works with adapters that do not implement firePreActions', async () => {

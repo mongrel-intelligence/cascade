@@ -275,21 +275,30 @@ export async function processGitHubWebhook(
 	// Poll until all CI checks pass before starting agent (deferred from trigger)
 	if (result.waitForChecks) {
 		const githubToken = await getPersonaToken(project.id, 'implementation');
-		const checksOk = await pollWaitForChecks(result, event.projectIdentifier, githubToken);
-		if (!checksOk) {
-			// Clean up orphaned ack comment so the PR doesn't show a misleading "Reviewing" message
-			const ackId = result.agentInput.ackCommentId as number | undefined;
-			if (ackId && event.projectIdentifier) {
-				const { owner, repo } = parseRepoFullName(event.projectIdentifier);
-				const deleteToken = await getPersonaToken(project.id, result.agentType ?? 'implementation');
-				await withGitHubToken(deleteToken, () =>
-					safeOperation(() => githubClient.deletePRComment(owner, repo, ackId), {
-						action: 'delete ack comment after check polling timeout',
-						prNumber: result.prNumber,
-					}),
-				);
+		try {
+			const checksOk = await pollWaitForChecks(result, event.projectIdentifier, githubToken);
+			if (!checksOk) {
+				result.onBlocked?.();
+				// Clean up orphaned ack comment so the PR doesn't show a misleading "Reviewing" message
+				const ackId = result.agentInput.ackCommentId as number | undefined;
+				if (ackId && event.projectIdentifier) {
+					const { owner, repo } = parseRepoFullName(event.projectIdentifier);
+					const deleteToken = await getPersonaToken(
+						project.id,
+						result.agentType ?? 'implementation',
+					);
+					await withGitHubToken(deleteToken, () =>
+						safeOperation(() => githubClient.deletePRComment(owner, repo, ackId), {
+							action: 'delete ack comment after check polling timeout',
+							prNumber: result.prNumber,
+						}),
+					);
+				}
+				return;
 			}
-			return;
+		} catch (err) {
+			result.onBlocked?.();
+			throw err;
 		}
 	}
 

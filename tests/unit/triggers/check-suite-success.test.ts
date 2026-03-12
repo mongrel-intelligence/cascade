@@ -3,6 +3,7 @@ import {
 	CheckSuiteSuccessTrigger,
 	recentlyDispatched,
 } from '../../../src/triggers/github/check-suite-success.js';
+import { ReviewRequestedTrigger } from '../../../src/triggers/github/review-requested.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
 import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
@@ -36,6 +37,7 @@ import { checkTriggerEnabledWithParams } from '../../../src/triggers/shared/trig
 
 describe('CheckSuiteSuccessTrigger', () => {
 	const trigger = new CheckSuiteSuccessTrigger();
+	const reviewRequestedTrigger = new ReviewRequestedTrigger();
 
 	const mockProject = createMockProject();
 
@@ -180,6 +182,60 @@ describe('CheckSuiteSuccessTrigger', () => {
 				}),
 			);
 			expect(result?.onBlocked).toBeTypeOf('function');
+		});
+
+		it('returns null when review-requested already claimed the same PR head SHA', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+
+			const reviewRequestedContext: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'review_requested',
+					number: 42,
+					pull_request: {
+						number: 42,
+						title: 'Test PR',
+						body: 'https://trello.com/c/abc123/card-name',
+						html_url: 'https://github.com/owner/repo/pull/42',
+						state: 'open',
+						draft: false,
+						head: { ref: 'feature/test', sha: 'sha123' },
+						base: { ref: 'main' },
+						user: { login: 'author' },
+					},
+					requested_reviewer: { login: 'cascade-reviewer' },
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'author' },
+				},
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const reviewRequestedResult = await reviewRequestedTrigger.handle(reviewRequestedContext);
+			expect(reviewRequestedResult?.agentType).toBe('review');
+
+			const checkSuiteContext: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const checkSuiteResult = await trigger.handle(checkSuiteContext);
+
+			expect(checkSuiteResult).toBeNull();
 		});
 
 		it('returns null when PR targets non-base branch', async () => {
