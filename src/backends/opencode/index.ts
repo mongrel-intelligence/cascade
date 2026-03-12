@@ -450,6 +450,92 @@ function buildOpenCodeResult(
 	};
 }
 
+function buildOpenCodeResultFromState(
+	input: AgentExecutionPlan,
+	state: OpenCodeStreamState,
+): AgentEngineResult {
+	const output = getPartialOutput(state);
+	const prUrl = extractPRUrl(output);
+	const prEvidence = prUrl
+		? {
+				source: 'text' as const,
+				authoritative: false,
+			}
+		: undefined;
+
+	if (state.finalError) {
+		return buildOpenCodeResult(
+			false,
+			output,
+			state.totalCost || undefined,
+			prUrl,
+			prEvidence,
+			state.finalError,
+		);
+	}
+
+	input.logWriter('INFO', 'OpenCode execution completed from streamed state', {
+		turns: state.iterationCount,
+		cost: state.totalCost || null,
+		prUrl: prUrl ?? null,
+	});
+
+	return buildOpenCodeResult(true, output, state.totalCost || undefined, prUrl, prEvidence);
+}
+
+async function promptOpenCodeSession(
+	client: ReturnType<typeof createOpencodeClient>,
+	sessionId: string,
+	agent: 'build' | 'plan',
+	input: AgentExecutionPlan,
+	taskPrompt: string,
+	state: OpenCodeStreamState,
+): Promise<
+	| {
+			parts: Part[];
+			info: AssistantMessage;
+	  }
+	| undefined
+> {
+	try {
+		const promptResult = await retryNativeToolOperation(
+			() =>
+				client.session.prompt({
+					path: { id: sessionId },
+					body: {
+						agent,
+						system: buildSystemPrompt(input.systemPrompt, input.availableTools),
+						parts: buildPromptParts(taskPrompt),
+					},
+					throwOnError: true,
+				}),
+			{
+				logWriter: input.logWriter,
+				operation: 'opencode.session.prompt',
+				isRetryable: (error) =>
+					isRetryableNativeToolError(error) && getPartialOutput(state).length === 0,
+			},
+		);
+		const response = promptResult.data;
+		if (!response) {
+			throw new Error('OpenCode did not return a prompt response payload');
+		}
+		return {
+			parts: response.parts,
+			info: response.info as AssistantMessage,
+		};
+	} catch (error) {
+		if (!(isRetryableNativeToolError(error) && getPartialOutput(state).length > 0)) {
+			throw error;
+		}
+		input.logWriter('WARN', 'OpenCode prompt response lost after stream output began', {
+			error: error instanceof Error ? error.message : String(error),
+			sessionId,
+		});
+		return undefined;
+	}
+}
+
 function buildOpenCodeResultFromResponse(
 	input: AgentExecutionPlan,
 	state: OpenCodeStreamState,
@@ -635,37 +721,22 @@ export class OpenCodeEngine implements AgentEngine {
 				}
 			})();
 
-			const promptResult = await retryNativeToolOperation(
-				() =>
-					client.session.prompt({
-						path: { id: session.id },
-						body: {
-							agent,
-							system: buildSystemPrompt(input.systemPrompt, input.availableTools),
-							parts: buildPromptParts(taskPrompt),
-						},
-						throwOnError: true,
-					}),
-				{
-					logWriter: input.logWriter,
-					operation: 'opencode.session.prompt',
-					isRetryable: (error) =>
-						isRetryableNativeToolError(error) && getPartialOutput(state).length === 0,
-				},
+			const promptResponse = await promptOpenCodeSession(
+				client,
+				session.id,
+				agent,
+				input,
+				taskPrompt,
+				state,
 			);
-			const response = promptResult.data;
-			if (!response) {
-				throw new Error('OpenCode did not return a prompt response payload');
-			}
 
 			await idlePromise;
 			eventAbort.abort();
 			await streamTask;
 
-			return buildOpenCodeResultFromResponse(input, state, {
-				parts: response.parts,
-				info: response.info as AssistantMessage,
-			});
+			return promptResponse
+				? buildOpenCodeResultFromResponse(input, state, promptResponse)
+				: buildOpenCodeResultFromState(input, state);
 		} catch (error) {
 			const output = getPartialOutput(state);
 			const prUrl = extractPRUrl(output) ?? undefined;
