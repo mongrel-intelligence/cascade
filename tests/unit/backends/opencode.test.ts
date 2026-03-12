@@ -452,6 +452,135 @@ describe('OpenCodeEngine', () => {
 		expect(sessionCreate).toHaveBeenCalledTimes(2);
 	});
 
+	it('retries transient fetch failures when prompting before any stream output', async () => {
+		vi.useFakeTimers();
+		mockSpawn.mockReturnValue(createMockChild());
+
+		const sessionPrompt = vi
+			.fn()
+			.mockRejectedValueOnce(new TypeError('fetch failed'))
+			.mockResolvedValue({
+				data: {
+					info: { id: 'assistant-retry', cost: 0.1 },
+					parts: [
+						{
+							id: 'text-final',
+							sessionID: 'session-prompt-retry',
+							messageID: 'assistant-retry',
+							type: 'text',
+							text: 'Prompt retry succeeded.',
+						},
+					],
+				},
+			});
+		mockCreateOpencodeClient.mockImplementation(() => ({
+			session: {
+				create: vi.fn().mockResolvedValue({ data: { id: 'session-prompt-retry' } }),
+				prompt: sessionPrompt,
+				delete: vi.fn().mockResolvedValue(true),
+			},
+			event: {
+				subscribe: vi
+					.fn()
+					.mockResolvedValue(
+						createEventStream([
+							{ type: 'session.idle', properties: { sessionID: 'session-prompt-retry' } },
+						]),
+					),
+			},
+			postSessionIdPermissionsPermissionId: vi.fn(),
+		}));
+
+		const engine = new OpenCodeEngine();
+		const resultPromise = engine.execute(makeInput());
+		await vi.runAllTimersAsync();
+		const result = await resultPromise;
+		vi.useRealTimers();
+
+		expect(result.success).toBe(true);
+		expect(result.output).toContain('Prompt retry succeeded.');
+		expect(sessionPrompt).toHaveBeenCalledTimes(2);
+	});
+
+	it('completes from streamed state when prompt response fetch fails after output begins', async () => {
+		mockSpawn.mockReturnValue(createMockChild());
+
+		const logWriter = vi.fn();
+		mockCreateOpencodeClient.mockImplementation(() => ({
+			session: {
+				create: vi.fn().mockResolvedValue({ data: { id: 'session-stream-only' } }),
+				prompt: vi.fn().mockRejectedValue(new TypeError('fetch failed')),
+				delete: vi.fn().mockResolvedValue(true),
+			},
+			event: {
+				subscribe: vi.fn().mockResolvedValue(
+					createEventStream([
+						{
+							type: 'message.part.updated',
+							properties: {
+								part: {
+									id: 'step-1',
+									sessionID: 'session-stream-only',
+									messageID: 'assistant-stream-only',
+									type: 'step-start',
+								},
+							},
+						},
+						{
+							type: 'message.part.updated',
+							properties: {
+								part: {
+									id: 'text-1',
+									sessionID: 'session-stream-only',
+									messageID: 'assistant-stream-only',
+									type: 'text',
+									text: 'Recovered from stream output.',
+								},
+								delta: 'Recovered from stream output.',
+							},
+						},
+						{
+							type: 'message.part.updated',
+							properties: {
+								part: {
+									id: 'finish-1',
+									sessionID: 'session-stream-only',
+									messageID: 'assistant-stream-only',
+									type: 'step-finish',
+									reason: 'done',
+									cost: 0.3,
+									tokens: {
+										input: 7,
+										output: 4,
+										reasoning: 0,
+										cache: { read: 0, write: 0 },
+									},
+								},
+							},
+						},
+						{
+							type: 'session.idle',
+							properties: { sessionID: 'session-stream-only' },
+						},
+					]),
+				),
+			},
+			postSessionIdPermissionsPermissionId: vi.fn(),
+		}));
+
+		const engine = new OpenCodeEngine();
+		const result = await engine.execute(makeInput({ logWriter }));
+
+		expect(result.success).toBe(true);
+		expect(result.output).toContain('Recovered from stream output.');
+		expect(result.cost).toBe(0.3);
+		expect(logWriter).toHaveBeenCalledWith(
+			'WARN',
+			'OpenCode prompt response lost after stream output began',
+			expect.objectContaining({ sessionId: 'session-stream-only', error: 'fetch failed' }),
+		);
+	});
+
 	it('preserves partial output when the event stream fails mid-run', async () => {
 		mockSpawn.mockReturnValue(createMockChild());
 
