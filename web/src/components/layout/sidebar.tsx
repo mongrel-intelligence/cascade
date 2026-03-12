@@ -7,6 +7,7 @@ import {
 	Activity,
 	BookOpen,
 	Bot,
+	Building,
 	FolderGit2,
 	KeyRound,
 	LayoutDashboard,
@@ -21,6 +22,10 @@ interface SidebarProps {
 const mainNav = [
 	{ to: '/' as const, label: 'Runs', icon: Activity },
 	{ to: '/webhooklogs' as const, label: 'Webhook Logs', icon: Zap },
+];
+
+const globalNav = [
+	{ to: '/global/organizations' as const, label: 'Organizations', icon: Building },
 ];
 
 const settingsNav = [
@@ -107,6 +112,18 @@ export function Sidebar({ user }: SidebarProps) {
 					currentPath={currentPath}
 					exact
 				/>
+
+				{user?.role === 'superadmin' && (
+					<>
+						<Separator className="my-3" />
+						<div className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+							Global
+						</div>
+						{globalNav.map((item) => (
+							<NavLink key={item.to} {...item} currentPath={currentPath} />
+						))}
+					</>
+				)}
 
 				<Separator className="my-3" />
 
