@@ -1,4 +1,5 @@
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../types/index.js';
+import type { CompletionRequirements } from './completion.js';
 
 // Re-export shared contracts so downstream code that imports from here continues to work.
 export type {
@@ -68,6 +69,7 @@ export interface AgentExecutionPlan
 		AgentEnginePolicy {
 	cliToolsDir: string;
 	nativeToolShimDir?: string;
+	completionRequirements?: CompletionRequirements;
 }
 
 export type PrEvidenceSource = 'llmist-session' | 'native-tool-sidecar' | 'text';

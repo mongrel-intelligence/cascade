@@ -1,4 +1,7 @@
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -411,45 +414,61 @@ describe('OpenCodeEngine', () => {
 		expect(result.error).toBe('bad auth');
 	});
 
-	it('fails when the model emits pseudo tool-call text without real tool events', async () => {
+	it('continues the same session when PR completion checks fail after a clean turn', async () => {
 		mockSpawn.mockReturnValue(createMockChild());
-
-		mockCreateOpencodeClient.mockImplementation(() => ({
-			session: {
-				create: vi.fn().mockResolvedValue({ data: { id: 'session-pseudo-tools' } }),
-				prompt: vi.fn().mockResolvedValue({
+		const tempDir = mkdtempSync(join(tmpdir(), 'opencode-pr-sidecar-'));
+		const prSidecarPath = join(tempDir, 'pr-sidecar.json');
+		const sessionPrompt = vi
+			.fn()
+			.mockResolvedValueOnce({
+				data: {
+					info: { id: 'assistant-first', cost: 0.1 },
+					parts: [
+						{
+							id: 'text-first',
+							sessionID: 'session-followup',
+							messageID: 'assistant-first',
+							type: 'text',
+							text: 'Initial exploration complete.',
+						},
+					],
+				},
+			})
+			.mockImplementationOnce(async () => {
+				writeFileSync(
+					prSidecarPath,
+					JSON.stringify({
+						prUrl: 'https://github.com/owner/repo/pull/123',
+						source: 'cascade-tools scm create-pr',
+					}),
+				);
+				return {
 					data: {
-						info: { id: 'assistant-pseudo-tools', cost: 0.1 },
+						info: { id: 'assistant-second', cost: 0.2 },
 						parts: [
 							{
-								id: 'text-final',
-								sessionID: 'session-pseudo-tools',
-								messageID: 'assistant-pseudo-tools',
+								id: 'text-second',
+								sessionID: 'session-followup',
+								messageID: 'assistant-second',
 								type: 'text',
-								text: '[tool_call: ReadFile(filePath="src/app.ts")]',
+								text: 'PR created successfully.',
 							},
 						],
 					},
-				}),
+				};
+			});
+
+		mockCreateOpencodeClient.mockImplementation(() => ({
+			session: {
+				create: vi.fn().mockResolvedValue({ data: { id: 'session-followup' } }),
+				prompt: sessionPrompt,
 				delete: vi.fn().mockResolvedValue(true),
 			},
 			event: {
 				subscribe: vi.fn().mockResolvedValue(
 					createEventStream([
-						{
-							type: 'message.part.updated',
-							properties: {
-								part: {
-									id: 'text-1',
-									sessionID: 'session-pseudo-tools',
-									messageID: 'assistant-pseudo-tools',
-									type: 'text',
-									text: '[tool_call: ReadFile(filePath="src/app.ts")]',
-								},
-								delta: '[tool_call: ReadFile(filePath="src/app.ts")]',
-							},
-						},
-						{ type: 'session.idle', properties: { sessionID: 'session-pseudo-tools' } },
+						{ type: 'session.idle', properties: { sessionID: 'session-followup' } },
+						{ type: 'session.idle', properties: { sessionID: 'session-followup' } },
 					]),
 				),
 			},
@@ -457,11 +476,34 @@ describe('OpenCodeEngine', () => {
 		}));
 
 		const engine = new OpenCodeEngine();
-		const result = await engine.execute(makeInput());
+		const logWriter = vi.fn();
+		const result = await engine.execute(
+			makeInput({
+				logWriter,
+				completionRequirements: {
+					requiresPR: true,
+					prSidecarPath,
+					maxContinuationTurns: 1,
+				},
+			}),
+		);
+		rmSync(tempDir, { recursive: true, force: true });
 
-		expect(result.success).toBe(false);
-		expect(result.error).toBe(
-			'OpenCode model emitted pseudo tool-call text instead of executable tool events',
+		expect(result.success).toBe(true);
+		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/123');
+		expect(result.prEvidence).toEqual({
+			source: 'native-tool-sidecar',
+			authoritative: true,
+			command: 'cascade-tools scm create-pr',
+		});
+		expect(sessionPrompt).toHaveBeenCalledTimes(2);
+		expect(logWriter).toHaveBeenCalledWith(
+			'WARN',
+			'OpenCode completion check failed; continuing session',
+			expect.objectContaining({
+				reason: 'Agent completed but no authoritative PR creation was recorded',
+				continuationTurn: 1,
+			}),
 		);
 	});
 

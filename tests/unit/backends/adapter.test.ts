@@ -467,6 +467,29 @@ describe('executeWithEngine', () => {
 		);
 	});
 
+	it('passes completion requirements through to native-tool engines', async () => {
+		setupMocks();
+		mockGetAgentProfile.mockReturnValue(
+			makeMockProfile({
+				finishHooks: { requiresPR: true, requiresReview: true, requiresPushedChanges: true },
+			}),
+		);
+		const engine = makeMockBackend('opencode');
+		const input = makeInput();
+
+		await executeWithEngine(engine, 'implementation', input);
+
+		const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
+		expect(backendInput.completionRequirements).toEqual(
+			expect.objectContaining({
+				requiresPR: true,
+				requiresReview: true,
+				requiresPushedChanges: true,
+				maxContinuationTurns: 1,
+			}),
+		);
+	});
+
 	it('does not validate PR creation for non-implementation agents', async () => {
 		setupMocks();
 		const engine = makeMockBackend();

@@ -12,7 +12,7 @@ export function postProcessResult(
 	engine: AgentEngine,
 	input: AgentInput & { project: ProjectConfig },
 	identifier: string,
-	options?: { requiresPR?: boolean },
+	options?: { requiresPR?: boolean; requiresReview?: boolean; hasAuthoritativeReview?: boolean },
 ): void {
 	// Validate PR creation for agents that require it (e.g., implementation)
 	if (options?.requiresPR && result.success && !result.prEvidence?.authoritative) {
@@ -24,6 +24,15 @@ export function postProcessResult(
 		});
 		result.success = false;
 		result.error = 'Agent completed but no authoritative PR creation was recorded';
+	}
+
+	if (options?.requiresReview && result.success && !options.hasAuthoritativeReview) {
+		logger.warn(`${agentType} agent completed without authoritative review evidence`, {
+			identifier,
+			engine: engine.definition.id,
+		});
+		result.success = false;
+		result.error = 'Agent completed but no authoritative PR review submission was recorded';
 	}
 
 	// Zero out cost for subscription-backed Claude Code sessions

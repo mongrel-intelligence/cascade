@@ -16,6 +16,7 @@ import { storeLlmCall } from '../../db/repositories/runsRepository.js';
 import { logger } from '../../utils/logging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { OPENCODE_ENGINE_DEFINITION } from '../catalog.js';
+import { getCompletionFailure, readCompletionEvidence } from '../completion.js';
 import { cleanupContextFiles } from '../contextFiles.js';
 import {
 	formatNativeToolTransportError,
@@ -244,13 +245,6 @@ function getPartDelta(part: Part, delta?: string): string | undefined {
 	return part.text;
 }
 
-const PSEUDO_TOOL_CALL_PATTERN =
-	/\[tool_call:\s*[^\]]+\]|\b(?:ReadFile|ListDirectory|RipGrep|TodoUpsert|TodoUpdateStatus|Tmux|CreatePR|CreatePRReview|PostComment|UpdateChecklistItem|PMUpdateChecklistItem|Finish)\s*\(/;
-
-function containsPseudoToolCallText(text: string): boolean {
-	return PSEUDO_TOOL_CALL_PATTERN.test(text);
-}
-
 function appendPartialOutput(state: OpenCodeStreamState, text: string): void {
 	const trimmed = text.trim();
 	if (!trimmed) return;
@@ -333,7 +327,6 @@ interface OpenCodeStreamState {
 	totalCost: number;
 	partialOutput: string[];
 	toolCallCount: number;
-	sawPseudoToolCallText: boolean;
 	finalError?: string;
 	idleResolver?: () => void;
 	idleRejecter?: (error: Error) => void;
@@ -431,12 +424,6 @@ async function handleMessagePartUpdated(
 
 	const textDelta = getPartDelta(part, event.properties.delta);
 	if (!textDelta) return;
-	if (containsPseudoToolCallText(textDelta)) {
-		state.sawPseudoToolCallText = true;
-		state.input.logWriter('WARN', 'OpenCode emitted pseudo tool-call text', {
-			text: textDelta.length > 200 ? `${textDelta.slice(0, 200)}...` : textDelta,
-		});
-	}
 	if (!event.properties.delta && state.seenTextPartIds.has(part.id)) return;
 	state.seenTextPartIds.add(part.id);
 	appendPartialOutput(state, textDelta);
@@ -466,11 +453,6 @@ function buildOpenCodeResult(
 	};
 }
 
-function getPseudoToolCallError(state: OpenCodeStreamState): string | undefined {
-	if (!state.sawPseudoToolCallText || state.toolCallCount > 0) return undefined;
-	return 'OpenCode model emitted pseudo tool-call text instead of executable tool events';
-}
-
 function buildOpenCodeResultFromState(
 	input: AgentExecutionPlan,
 	state: OpenCodeStreamState,
@@ -495,18 +477,6 @@ function buildOpenCodeResultFromState(
 		);
 	}
 
-	const pseudoToolCallError = getPseudoToolCallError(state);
-	if (pseudoToolCallError) {
-		return buildOpenCodeResult(
-			false,
-			output,
-			state.totalCost || undefined,
-			prUrl,
-			prEvidence,
-			pseudoToolCallError,
-		);
-	}
-
 	input.logWriter('INFO', 'OpenCode execution completed from streamed state', {
 		turns: state.iterationCount,
 		cost: state.totalCost || null,
@@ -521,7 +491,7 @@ async function promptOpenCodeSession(
 	sessionId: string,
 	agent: 'build' | 'plan',
 	input: AgentExecutionPlan,
-	taskPrompt: string,
+	promptText: string,
 	state: OpenCodeStreamState,
 ): Promise<
 	| {
@@ -538,7 +508,7 @@ async function promptOpenCodeSession(
 					body: {
 						agent,
 						system: buildSystemPrompt(input.systemPrompt, input.availableTools),
-						parts: buildPromptParts(taskPrompt),
+						parts: buildPromptParts(promptText),
 					},
 					throwOnError: true,
 				}),
@@ -569,6 +539,30 @@ async function promptOpenCodeSession(
 	}
 }
 
+function createIdlePromise(state: OpenCodeStreamState): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
+		state.idleResolver = resolve;
+		state.idleRejecter = reject;
+	});
+}
+
+function applyCompletionEvidence(
+	result: AgentEngineResult,
+	input: AgentExecutionPlan,
+): AgentEngineResult {
+	const evidence = readCompletionEvidence(input.completionRequirements);
+	if (!evidence.prUrl) return result;
+	return {
+		...result,
+		prUrl: evidence.prUrl,
+		prEvidence: {
+			source: 'native-tool-sidecar',
+			authoritative: true,
+			command: evidence.prCommand ?? 'cascade-tools scm create-pr',
+		},
+	};
+}
+
 function buildOpenCodeResultFromResponse(
 	input: AgentExecutionPlan,
 	state: OpenCodeStreamState,
@@ -595,18 +589,6 @@ function buildOpenCodeResultFromResponse(
 				(typeof assistant.error?.data?.message === 'string'
 					? assistant.error.data.message
 					: assistant.error?.name),
-		);
-	}
-
-	const pseudoToolCallError = getPseudoToolCallError(state);
-	if (pseudoToolCallError) {
-		return buildOpenCodeResult(
-			false,
-			output,
-			state.totalCost || assistant.cost || undefined,
-			prUrl,
-			prEvidence,
-			pseudoToolCallError,
 		);
 	}
 
@@ -641,6 +623,166 @@ async function processStreamEvent(
 	}
 }
 
+function logOpenCodeStart(
+	input: AgentExecutionPlan,
+	model: string,
+	agent: 'build' | 'plan',
+	webSearch: boolean,
+	hasOffloadedContext: boolean,
+): void {
+	input.logWriter('INFO', 'Starting OpenCode execution', {
+		agentType: input.agentType,
+		model,
+		opencodeAgent: agent,
+		repoDir: input.repoDir,
+		maxIterations: input.maxIterations,
+		webSearch,
+		hasOffloadedContext,
+	});
+}
+
+function attachServerState(
+	server: Awaited<ReturnType<typeof startOpenCodeServer>>,
+	serverState: OpenCodeServerState,
+): void {
+	server.child.stdout?.on('data', (chunk: Buffer | string) => {
+		serverState.stdout += chunk.toString();
+	});
+	server.child.stderr?.on('data', (chunk: Buffer | string) => {
+		serverState.stderr += chunk.toString();
+	});
+	server.child.once('exit', (code) => {
+		serverState.exitCode = code ?? 1;
+	});
+}
+
+async function createOpenCodeSession(
+	client: ReturnType<typeof createOpencodeClient>,
+	input: AgentExecutionPlan,
+): Promise<string> {
+	const sessionResult = await retryNativeToolOperation(
+		() =>
+			client.session.create({
+				body: { title: `CASCADE ${input.agentType}` },
+				throwOnError: true,
+			}),
+		{
+			logWriter: input.logWriter,
+			operation: 'opencode.session.create',
+		},
+	);
+	const session = sessionResult.data;
+	if (!session) {
+		throw new Error('OpenCode did not return a session payload');
+	}
+	return session.id;
+}
+
+function createOpenCodeStreamState(
+	input: AgentExecutionPlan,
+	model: string,
+	webSearch: boolean,
+	sessionId: string,
+): OpenCodeStreamState {
+	return {
+		sessionId,
+		model,
+		input,
+		permissionConfig: buildPermissionConfig(input.nativeToolCapabilities, webSearch),
+		reportedToolCalls: new Set<string>(),
+		seenTextPartIds: new Set<string>(),
+		iterationCount: 0,
+		llmCallCount: 0,
+		totalCost: 0,
+		partialOutput: [],
+		toolCallCount: 0,
+	};
+}
+
+async function runOpenCodeTurnLoop(
+	client: ReturnType<typeof createOpencodeClient>,
+	sessionId: string,
+	agent: 'build' | 'plan',
+	input: AgentExecutionPlan,
+	initialPrompt: string,
+	state: OpenCodeStreamState,
+	eventAbort: AbortController,
+): Promise<AgentEngineResult> {
+	const eventStream = await retryNativeToolOperation(
+		() =>
+			client.event.subscribe({
+				signal: eventAbort.signal,
+			}),
+		{
+			logWriter: input.logWriter,
+			operation: 'opencode.event.subscribe',
+		},
+	);
+
+	const streamTask = (async () => {
+		try {
+			for await (const event of eventStream.stream) {
+				await processStreamEvent(client, event, state);
+			}
+		} catch (error) {
+			if (eventAbort.signal.aborted) return;
+			state.idleRejecter?.(error instanceof Error ? error : new Error(String(error)));
+		}
+	})();
+
+	try {
+		const maxContinuationTurns = input.completionRequirements?.maxContinuationTurns ?? 1;
+		let continuationTurns = 0;
+		let promptText = initialPrompt;
+		for (;;) {
+			const idlePromise = createIdlePromise(state);
+			const promptResponse = await promptOpenCodeSession(
+				client,
+				sessionId,
+				agent,
+				input,
+				promptText,
+				state,
+			);
+
+			await idlePromise;
+
+			const turnResult = applyCompletionEvidence(
+				promptResponse
+					? buildOpenCodeResultFromResponse(input, state, promptResponse)
+					: buildOpenCodeResultFromState(input, state),
+				input,
+			);
+			if (!turnResult.success) return turnResult;
+
+			const completionFailure = getCompletionFailure(
+				input.completionRequirements,
+				readCompletionEvidence(input.completionRequirements),
+			);
+			if (!completionFailure) return turnResult;
+			if (continuationTurns >= maxContinuationTurns) {
+				return {
+					...turnResult,
+					success: false,
+					error: completionFailure.error,
+				};
+			}
+
+			continuationTurns += 1;
+			input.logWriter('WARN', 'OpenCode completion check failed; continuing session', {
+				reason: completionFailure.error,
+				continuationTurn: continuationTurns,
+				maxContinuationTurns,
+				toolCallCount: state.toolCallCount,
+			});
+			promptText = completionFailure.continuationPrompt;
+		}
+	} finally {
+		eventAbort.abort();
+		await streamTask;
+	}
+}
+
 /**
  * OpenCode backend for CASCADE.
  *
@@ -666,15 +808,7 @@ export class OpenCodeEngine implements AgentEngine {
 			input.repoDir,
 		);
 
-		input.logWriter('INFO', 'Starting OpenCode execution', {
-			agentType: input.agentType,
-			model,
-			opencodeAgent: agent,
-			repoDir: input.repoDir,
-			maxIterations: input.maxIterations,
-			webSearch: settings.webSearch,
-			hasOffloadedContext,
-		});
+		logOpenCodeStart(input, model, agent, settings.webSearch, hasOffloadedContext);
 
 		let server: Awaited<ReturnType<typeof startOpenCodeServer>> | undefined;
 		let sessionId: string | undefined;
@@ -694,96 +828,18 @@ export class OpenCodeEngine implements AgentEngine {
 				baseUrl: server.url,
 				directory: input.repoDir,
 			});
-			server.child.stdout?.on('data', (chunk: Buffer | string) => {
-				serverState.stdout += chunk.toString();
-			});
-			server.child.stderr?.on('data', (chunk: Buffer | string) => {
-				serverState.stderr += chunk.toString();
-			});
-			server.child.once('exit', (code) => {
-				serverState.exitCode = code ?? 1;
-			});
-
-			const sessionResult = await retryNativeToolOperation(
-				() =>
-					client.session.create({
-						body: { title: `CASCADE ${input.agentType}` },
-						throwOnError: true,
-					}),
-				{
-					logWriter: input.logWriter,
-					operation: 'opencode.session.create',
-				},
-			);
-			const session = sessionResult.data;
-			if (!session) {
-				throw new Error('OpenCode did not return a session payload');
-			}
-			sessionId = session.id;
-
-			const reportedToolCalls = new Set<string>();
-			const seenTextPartIds = new Set<string>();
-			let idleResolver: (() => void) | undefined;
-			let idleRejecter: ((error: Error) => void) | undefined;
-			const idlePromise = new Promise<void>((resolve, reject) => {
-				idleResolver = resolve;
-				idleRejecter = reject;
-			});
-
-			state = {
-				sessionId: session.id,
-				model,
-				input,
-				permissionConfig: buildPermissionConfig(input.nativeToolCapabilities, settings.webSearch),
-				reportedToolCalls,
-				seenTextPartIds,
-				iterationCount: 0,
-				llmCallCount: 0,
-				totalCost: 0,
-				partialOutput: [],
-				toolCallCount: 0,
-				sawPseudoToolCallText: false,
-				idleResolver,
-				idleRejecter,
-			};
-			const eventStream = await retryNativeToolOperation(
-				() =>
-					client.event.subscribe({
-						signal: eventAbort.signal,
-					}),
-				{
-					logWriter: input.logWriter,
-					operation: 'opencode.event.subscribe',
-				},
-			);
-
-			const streamTask = (async () => {
-				try {
-					for await (const event of eventStream.stream) {
-						await processStreamEvent(client, event, state);
-					}
-				} catch (error) {
-					if (eventAbort.signal.aborted) return;
-					state.idleRejecter?.(error instanceof Error ? error : new Error(String(error)));
-				}
-			})();
-
-			const promptResponse = await promptOpenCodeSession(
+			attachServerState(server, serverState);
+			sessionId = await createOpenCodeSession(client, input);
+			state = createOpenCodeStreamState(input, model, settings.webSearch, sessionId);
+			return await runOpenCodeTurnLoop(
 				client,
-				session.id,
+				sessionId,
 				agent,
 				input,
 				taskPrompt,
 				state,
+				eventAbort,
 			);
-
-			await idlePromise;
-			eventAbort.abort();
-			await streamTask;
-
-			return promptResponse
-				? buildOpenCodeResultFromResponse(input, state, promptResponse)
-				: buildOpenCodeResultFromState(input, state);
 		} catch (error) {
 			const output = getPartialOutput(state);
 			const prUrl = extractPRUrl(output) ?? undefined;
