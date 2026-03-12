@@ -37,9 +37,9 @@ export function buildToolGuidance(tools: ToolManifest[]): string {
 	guidance += 'All commands output JSON. Parse the output to extract results.\n\n';
 	guidance +=
 		'**CRITICAL**: You MUST use these cascade-tools commands for all PM (Trello/JIRA), SCM (GitHub), and session operations. ' +
-		'Do NOT use `gh` CLI or other tools directly — cascade-tools handle authentication, push, and ' +
+		'Do NOT use `gh` CLI or other tools directly — native-tool engine runs block `gh`, and cascade-tools handle authentication, push, and ' +
 		'state tracking that raw CLI tools do not. For example, `cascade-tools scm create-pr` pushes ' +
-		'the branch AND creates the PR atomically, while `gh pr create` does NOT push and will fail.\n\n';
+		'the branch AND creates the PR atomically.\n\n';
 
 	for (const tool of tools) {
 		guidance += `### ${tool.name}\n`;

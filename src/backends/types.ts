@@ -67,6 +67,15 @@ export interface AgentExecutionPlan
 		AgentPromptSpec,
 		AgentEnginePolicy {
 	cliToolsDir: string;
+	nativeToolShimDir?: string;
+}
+
+export type PrEvidenceSource = 'llmist-session' | 'native-tool-sidecar' | 'text';
+
+export interface PrEvidence {
+	source: PrEvidenceSource;
+	authoritative: boolean;
+	command?: string;
 }
 
 /**
@@ -76,6 +85,7 @@ export interface AgentEngineResult {
 	success: boolean;
 	output: string;
 	prUrl?: string;
+	prEvidence?: PrEvidence;
 	error?: string;
 	cost?: number;
 	logBuffer?: Buffer;

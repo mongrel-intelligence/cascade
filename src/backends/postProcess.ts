@@ -15,13 +15,15 @@ export function postProcessResult(
 	options?: { requiresPR?: boolean },
 ): void {
 	// Validate PR creation for agents that require it (e.g., implementation)
-	if (options?.requiresPR && result.success && !result.prUrl) {
-		logger.warn(`${agentType} agent completed without creating a PR`, {
+	if (options?.requiresPR && result.success && !result.prEvidence?.authoritative) {
+		logger.warn(`${agentType} agent completed without authoritative PR evidence`, {
 			identifier,
 			engine: engine.definition.id,
+			prUrl: result.prUrl,
+			prEvidenceSource: result.prEvidence?.source ?? null,
 		});
 		result.success = false;
-		result.error = 'Agent completed but no PR was created';
+		result.error = 'Agent completed but no authoritative PR creation was recorded';
 	}
 
 	// Zero out cost for subscription-backed Claude Code sessions

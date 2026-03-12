@@ -16,11 +16,12 @@ import { CLAUDE_CODE_ENGINE_DEFINITION } from '../catalog.js';
 import { cleanupContextFiles } from '../contextFiles.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
-import { filterProcessEnv } from './env.js';
+import { buildClaudeEnv } from './env.js';
 import { buildHooks } from './hooks.js';
 import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
 
 export { buildToolGuidance, buildTaskPrompt, buildSystemPrompt } from '../nativeTools.js';
+export { buildClaudeEnv as buildEnv } from './env.js';
 
 /**
  * Resolve a CASCADE model string to a Claude model ID.
@@ -53,34 +54,6 @@ export function ensureOnboardingFlag(): void {
 			mode: 0o600,
 		});
 	}
-}
-
-/**
- * Build environment variables to pass through to the SDK subprocess.
- *
- * Uses an allowlist filter on process.env so only safe system variables
- * (HOME, PATH, locale, etc.) reach the subprocess. Server-side secrets
- * like DATABASE_URL are never passed through.
- *
- * Project-specific secrets (GITHUB_TOKEN, TRELLO_API_KEY, etc.) are
- * injected via projectSecrets, which are layered on top.
- *
- * Auth (handled by SDK via inherited env vars):
- * - CLAUDE_CODE_OAUTH_TOKEN — long-lived OAuth token from `claude setup-token`
- */
-export function buildEnv(projectSecrets?: Record<string, string>): {
-	env: Record<string, string | undefined>;
-} {
-	const env: Record<string, string | undefined> = {
-		...filterProcessEnv(process.env),
-		...projectSecrets,
-		CLAUDE_AGENT_SDK_CLIENT_APP: 'cascade/1.0.0',
-	};
-
-	// Always ensure onboarding flag exists (required for both API key and subscription auth)
-	ensureOnboardingFlag();
-
-	return { env };
 }
 
 /**
@@ -218,6 +191,12 @@ function buildResult(
 	}
 
 	const prUrl = extractPRUrl(output) ?? extractPRUrlFromMessages(assistantMessages);
+	const prEvidence = prUrl
+		? {
+				source: 'text' as const,
+				authoritative: false,
+			}
+		: undefined;
 
 	input.logWriter('INFO', 'Claude Code SDK execution completed', {
 		success,
@@ -228,7 +207,7 @@ function buildResult(
 		durationMs: Date.now() - startTime,
 	});
 
-	return { success, output, cost, error, prUrl };
+	return { success, output, cost, error, prUrl, prEvidence };
 }
 
 /**
@@ -375,7 +354,13 @@ export class ClaudeCodeEngine implements AgentEngine {
 			hasOffloadedContext,
 		});
 
-		const { env } = buildEnv(input.projectSecrets);
+		const { env } = buildClaudeEnv(
+			input.projectSecrets,
+			input.cliToolsDir,
+			input.nativeToolShimDir,
+		);
+		// Always ensure onboarding flag exists (required for both API key and subscription auth)
+		ensureOnboardingFlag();
 		const hooks = buildHooks(input.logWriter, input.repoDir, input.enableStopHooks ?? true, {
 			blockGitPush: input.blockGitPush,
 		});

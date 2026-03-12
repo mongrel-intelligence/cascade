@@ -10,7 +10,7 @@
 import { writeFileSync } from 'node:fs';
 
 import { GITHUB_ACK_COMMENT_ID_ENV_VAR } from '../../backends/secretBuilder.js';
-import { REVIEW_SIDECAR_ENV_VAR } from '../sessionState.js';
+import { PR_SIDECAR_ENV_VAR, REVIEW_SIDECAR_ENV_VAR } from '../sessionState.js';
 import type { ToolDefinition } from '../shared/toolDefinition.js';
 
 /**
@@ -149,6 +149,31 @@ If hooks fail or timeout, the full output will be shown.`,
 				description: 'Read PR body from file (use - for stdin)',
 			},
 		],
+		postExecute: async (result) => {
+			const prResult = result as {
+				prUrl: string;
+				prNumber: number;
+				alreadyExisted: boolean;
+				repoFullName: string;
+			};
+			const sidecarPath = process.env[PR_SIDECAR_ENV_VAR];
+			if (!sidecarPath || sidecarPath === 'undefined') return;
+
+			try {
+				writeFileSync(
+					sidecarPath,
+					JSON.stringify({
+						source: 'cascade-tools scm create-pr',
+						prUrl: prResult.prUrl,
+						prNumber: prResult.prNumber,
+						alreadyExisted: prResult.alreadyExisted,
+						repoFullName: prResult.repoFullName,
+					}),
+				);
+			} catch {
+				// Best-effort — don't fail PR creation on sidecar write failure
+			}
+		},
 	},
 };
 

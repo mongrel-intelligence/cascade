@@ -5,6 +5,8 @@
  * explicitly safe host variables, then layer project-scoped secrets on top.
  */
 
+import { PR_SIDECAR_ENV_VAR, REVIEW_SIDECAR_ENV_VAR } from '../../gadgets/sessionState.js';
+import { buildNativeToolPath } from '../nativeToolRuntime.js';
 import { ENV_VAR_NAME as PROGRESS_COMMENT_ENV_VAR } from '../progressState.js';
 import { GITHUB_ACK_COMMENT_ID_ENV_VAR } from '../secretBuilder.js';
 
@@ -27,6 +29,8 @@ const ALLOWED_ENV_EXACT = new Set([
 	// Progress/session bridge
 	PROGRESS_COMMENT_ENV_VAR,
 	GITHUB_ACK_COMMENT_ID_ENV_VAR,
+	PR_SIDECAR_ENV_VAR,
+	REVIEW_SIDECAR_ENV_VAR,
 
 	// Node
 	'NODE_PATH',
@@ -81,11 +85,19 @@ export function filterProcessEnv(
 
 export function buildEnv(
 	projectSecrets?: Record<string, string>,
+	cliToolsDir?: string,
+	nativeToolShimDir?: string,
 ): Record<string, string | undefined> {
-	return {
+	const env: Record<string, string | undefined> = {
 		...filterProcessEnv(process.env),
 		...projectSecrets,
 		CI: 'true',
 		CODEX_DISABLE_UPDATE_NOTIFIER: '1',
 	};
+
+	if (cliToolsDir) {
+		env.PATH = buildNativeToolPath(env.PATH, cliToolsDir, nativeToolShimDir);
+	}
+
+	return env;
 }
