@@ -2,6 +2,11 @@ import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
+import {
+	buildReviewDispatchKey,
+	claimReviewDispatch,
+	releaseReviewDispatch,
+} from './review-dispatch-dedup.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
 
@@ -16,9 +21,8 @@ import { resolveWorkItemId } from './utils.js';
  *
  * Default: **disabled** (opt-in via trigger config).
  *
- * Registration: should be registered BEFORE CheckSuiteSuccessTrigger so that
- * both triggers can independently fire review. The HEAD-SHA dedup in
- * CheckSuiteSuccessTrigger prevents double-reviews.
+ * Registration: this may race with CheckSuiteSuccessTrigger for the same PR head SHA.
+ * Shared PR+SHA dispatch dedup ensures only one review agent is launched.
  */
 export class ReviewRequestedTrigger implements TriggerHandler {
 	name = 'review-requested';
@@ -42,6 +46,9 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 
 		const payload = ctx.payload as GitHubPullRequestPayload;
 		const prNumber = payload.pull_request.number;
+		const headSha = payload.pull_request.head.sha;
+		const repoFullName = payload.repository.full_name;
+		const [owner, repo] = repoFullName.split('/', 2);
 
 		// Require persona identities for bot detection
 		if (!ctx.personaIdentities) {
@@ -80,11 +87,16 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 
 		// Resolve work item from DB
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
+		const reviewDispatchKey = buildReviewDispatchKey(owner, repo, prNumber, headSha);
+		if (!claimReviewDispatch(reviewDispatchKey, this.name, { prNumber, headSha })) {
+			return null;
+		}
 
 		logger.info('Review requested from CASCADE persona, triggering review agent', {
 			prNumber,
 			requestedReviewer,
 			workItemId,
+			headSha,
 		});
 
 		return {
@@ -92,14 +104,15 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 			agentInput: {
 				prNumber,
 				prBranch: payload.pull_request.head.ref,
-				repoFullName: payload.repository.full_name,
-				headSha: payload.pull_request.head.sha,
+				repoFullName,
+				headSha,
 				triggerType: 'review-requested',
 				triggerEvent: 'scm:review-requested',
 				workItemId: workItemId,
 			},
 			prNumber,
 			workItemId,
+			onBlocked: () => releaseReviewDispatch(reviewDispatchKey),
 		};
 	}
 }

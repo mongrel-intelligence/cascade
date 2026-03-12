@@ -105,6 +105,11 @@ interface GitHubParsedEvent extends ParsedWebhookEvent {
 	personaIdentities?: PersonaIdentities;
 }
 
+function getGitHubDeliveryId(payload: Record<string, unknown>): string | undefined {
+	const deliveryId = payload._deliveryId;
+	return typeof deliveryId === 'string' && deliveryId.length > 0 ? deliveryId : undefined;
+}
+
 export class GitHubRouterAdapter implements RouterPlatformAdapter {
 	readonly type = 'github' as const;
 
@@ -134,6 +139,7 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 			eventType,
 			workItemId,
 			isCommentEvent,
+			actionId: getGitHubDeliveryId(p),
 			repoFullName,
 		};
 	}
@@ -308,6 +314,14 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
  * Inject the event type into the payload object for the adapter's parseWebhook.
  * GitHub event type comes from the X-GitHub-Event header, not the body.
  */
-export function injectEventType(payload: unknown, eventType: string): Record<string, unknown> {
-	return { ...(payload as Record<string, unknown>), _eventType: eventType };
+export function injectEventType(
+	payload: unknown,
+	eventType: string,
+	deliveryId?: string,
+): Record<string, unknown> {
+	return {
+		...(payload as Record<string, unknown>),
+		_eventType: eventType,
+		...(deliveryId ? { _deliveryId: deliveryId } : {}),
+	};
 }

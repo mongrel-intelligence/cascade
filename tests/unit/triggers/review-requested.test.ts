@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { recentlyDispatched } from '../../../src/triggers/github/review-dispatch-dedup.js';
 import { ReviewRequestedTrigger } from '../../../src/triggers/github/review-requested.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
@@ -27,6 +28,7 @@ describe('ReviewRequestedTrigger', () => {
 	beforeEach(() => {
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
 		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
+		recentlyDispatched.clear();
 	});
 
 	const makeReviewRequestedPayload = (reviewerLogin = 'cascade-reviewer') => ({
@@ -206,10 +208,12 @@ describe('ReviewRequestedTrigger', () => {
 			expect(result?.agentInput).toMatchObject({
 				prNumber: 42,
 				repoFullName: 'owner/repo',
+				headSha: 'abc123',
 				triggerType: 'review-requested',
 				triggerEvent: 'scm:review-requested',
 				workItemId: 'abc123',
 			});
+			expect(result?.onBlocked).toBeTypeOf('function');
 		});
 
 		it('triggers review agent when implementer persona is requested', async () => {
@@ -222,6 +226,21 @@ describe('ReviewRequestedTrigger', () => {
 			const result = await trigger.handle(ctx);
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('review');
+		});
+
+		it('returns null when the same PR head SHA was already dispatched', async () => {
+			recentlyDispatched.set('owner/repo:42:abc123', Date.now());
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeReviewRequestedPayload('cascade-reviewer'),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
 		});
 	});
 

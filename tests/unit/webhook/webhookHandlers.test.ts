@@ -120,7 +120,11 @@ describe('createWebhookHandler', () => {
 
 		// processWebhook was called synchronously before response
 		expect(res.status).toBe(200);
-		expect(processWebhook).toHaveBeenCalledWith({ x: 1 }, 'commentCard');
+		expect(processWebhook).toHaveBeenCalledWith(
+			{ x: 1 },
+			'commentCard',
+			expect.objectContaining({ 'content-type': 'application/json' }),
+		);
 		expect(callOrder).toEqual(['process']);
 	});
 

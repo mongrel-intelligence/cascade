@@ -114,6 +114,11 @@ describe('injectEventType', () => {
 		expect(result._eventType).toBe('pull_request');
 		expect(result.action).toBe('opened');
 	});
+
+	it('injects GitHub delivery ID when provided', () => {
+		const result = injectEventType({ action: 'opened' }, 'pull_request', 'delivery-123');
+		expect(result._deliveryId).toBe('delivery-123');
+	});
 });
 
 describe('GitHubRouterAdapter', () => {
@@ -144,6 +149,19 @@ describe('GitHubRouterAdapter', () => {
 			expect(result?.eventType).toBe('pull_request');
 			expect(result?.isCommentEvent).toBe(false);
 			expect(result?.workItemId).toBe('42');
+		});
+
+		it('uses GitHub delivery ID as actionId when present', async () => {
+			const payload = injectEventType(
+				{
+					repository: { full_name: 'owner/repo' },
+					pull_request: { number: 42 },
+				},
+				'pull_request',
+				'delivery-123',
+			);
+			const result = await adapter.parseWebhook(payload);
+			expect(result?.actionId).toBe('delivery-123');
 		});
 
 		it('marks issue_comment as isCommentEvent=true', async () => {

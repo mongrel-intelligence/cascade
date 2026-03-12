@@ -248,12 +248,14 @@ describe('processGitHubWebhook', () => {
 
 	it('deletes ack comment when pollWaitForChecks returns false', async () => {
 		vi.mocked(pollWaitForChecks).mockResolvedValueOnce(false);
+		const onBlocked = vi.fn();
 		const registry = {
 			dispatch: vi.fn().mockResolvedValue({
 				agentType: 'review',
 				agentInput: { repoFullName: 'owner/repo', headSha: 'abc123' },
 				prNumber: 42,
 				waitForChecks: true,
+				onBlocked,
 			}),
 		};
 
@@ -267,22 +269,46 @@ describe('processGitHubWebhook', () => {
 
 		expect(vi.mocked(githubClient.deletePRComment)).toHaveBeenCalledWith('owner', 'repo', 999);
 		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
+		expect(onBlocked).toHaveBeenCalledOnce();
 	});
 
 	it('does not attempt ack deletion when no ackCommentId on check timeout', async () => {
 		vi.mocked(pollWaitForChecks).mockResolvedValueOnce(false);
+		const onBlocked = vi.fn();
 		const registry = {
 			dispatch: vi.fn().mockResolvedValue({
 				agentType: 'review',
 				agentInput: { repoFullName: 'owner/repo', headSha: 'abc123' },
 				prNumber: 42,
 				waitForChecks: true,
+				onBlocked,
 			}),
 		};
 
 		await processGitHubWebhook(validPayload, 'check_suite', registry as never);
 
 		expect(vi.mocked(githubClient.deletePRComment)).not.toHaveBeenCalled();
+		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
+		expect(onBlocked).toHaveBeenCalledOnce();
+	});
+
+	it('releases the claim when pollWaitForChecks throws before review starts', async () => {
+		vi.mocked(pollWaitForChecks).mockRejectedValueOnce(new Error('GitHub API timeout'));
+		const onBlocked = vi.fn();
+		const registry = {
+			dispatch: vi.fn().mockResolvedValue({
+				agentType: 'review',
+				agentInput: { repoFullName: 'owner/repo', headSha: 'abc123' },
+				prNumber: 42,
+				waitForChecks: true,
+				onBlocked,
+			}),
+		};
+
+		await expect(
+			processGitHubWebhook(validPayload, 'check_suite', registry as never),
+		).rejects.toThrow('GitHub API timeout');
+		expect(onBlocked).toHaveBeenCalledOnce();
 		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
 	});
 });
