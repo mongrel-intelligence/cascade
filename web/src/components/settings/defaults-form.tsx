@@ -23,9 +23,7 @@ export function DefaultsForm() {
 	const [watchdogTimeoutMs, setWatchdogTimeoutMs] = useState('');
 	const [workItemBudgetUsd, setWorkItemBudgetUsd] = useState('');
 	const [agentEngine, setAgentEngine] = useState('');
-	const [engineSettings, setEngineSettings] = useState<
-		Record<string, Record<string, unknown> | undefined>
-	>({});
+	const [engineSettings, setEngineSettings] = useState<Record<string, Record<string, unknown>>>({});
 	const [progressModel, setProgressModel] = useState('');
 	const [progressIntervalMinutes, setProgressIntervalMinutes] = useState('');
 
@@ -37,9 +35,7 @@ export function DefaultsForm() {
 			setWatchdogTimeoutMs(d.watchdogTimeoutMs?.toString() ?? '');
 			setWorkItemBudgetUsd(d.workItemBudgetUsd ?? '');
 			setAgentEngine(d.agentEngine ?? '');
-			setEngineSettings(
-				(d.engineSettings as Record<string, Record<string, unknown> | undefined> | null) ?? {},
-			);
+			setEngineSettings((d.engineSettings as Record<string, Record<string, unknown>> | null) ?? {});
 			setProgressModel(d.progressModel ?? '');
 			setProgressIntervalMinutes(d.progressIntervalMinutes ?? '');
 		}

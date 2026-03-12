@@ -41,14 +41,14 @@ interface EngineDefinition {
 interface EngineSettingsFieldsProps {
 	engine?: EngineDefinition;
 	engines?: EngineDefinition[];
-	value?: Record<string, Record<string, unknown> | undefined>;
-	onChange: (value: Record<string, Record<string, unknown> | undefined> | undefined) => void;
+	value?: Record<string, Record<string, unknown>>;
+	onChange: (value: Record<string, Record<string, unknown>> | undefined) => void;
 	inheritLabel?: string;
 }
 
 function normalizeValue(
-	value?: Record<string, Record<string, unknown> | undefined>,
-): Record<string, Record<string, unknown> | undefined> | undefined {
+	value?: Record<string, Record<string, unknown>>,
+): Record<string, Record<string, unknown>> | undefined {
 	if (!value) return undefined;
 	return Object.keys(value).length > 0 ? value : undefined;
 }

@@ -22,7 +22,7 @@ interface Project {
 	model: string | null;
 	workItemBudgetUsd: string | null;
 	agentEngine: string | null;
-	engineSettings: Record<string, Record<string, unknown> | undefined> | null;
+	engineSettings: Record<string, Record<string, unknown>> | null;
 	subscriptionCostZero: boolean | null;
 }
 
@@ -37,9 +37,9 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const [model, setModel] = useState(project.model ?? '');
 	const [workItemBudgetUsd, setWorkItemBudgetUsd] = useState(project.workItemBudgetUsd ?? '');
 	const [agentEngine, setAgentEngine] = useState(project.agentEngine ?? '');
-	const [engineSettings, setEngineSettings] = useState<
-		Record<string, Record<string, unknown> | undefined>
-	>(project.engineSettings ?? {});
+	const [engineSettings, setEngineSettings] = useState<Record<string, Record<string, unknown>>>(
+		project.engineSettings ?? {},
+	);
 	const [subscriptionCostZero, setSubscriptionCostZero] = useState(
 		project.subscriptionCostZero ?? false,
 	);
