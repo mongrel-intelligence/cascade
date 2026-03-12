@@ -1,3 +1,5 @@
+import type { EngineSettings } from '../../config/engineSettings.js';
+
 /**
  * Config mapper — pure transformation functions for converting DB rows into
  * raw config objects consumed by `validateConfig`.
@@ -39,6 +41,7 @@ export interface DefaultsRow {
 	watchdogTimeoutMs: number | null;
 	workItemBudgetUsd: string | null;
 	agentEngine: string | null;
+	agentEngineSettings: EngineSettings | null;
 	progressModel: string | null;
 	progressIntervalMinutes: string | null;
 }
@@ -87,6 +90,7 @@ export interface ProjectConfigRaw {
 	agentModels?: Record<string, string>;
 	workItemBudgetUsd?: number;
 	squintDbUrl?: string;
+	engineSettings?: EngineSettings;
 	trello?: {
 		boardId: string;
 		lists: Record<string, string>;
@@ -123,6 +127,7 @@ type ProjectRow = {
 	workItemBudgetUsd: string | null;
 	squintDbUrl: string | null;
 	agentEngine: string | null;
+	agentEngineSettings: EngineSettings | null;
 	subscriptionCostZero: boolean | null;
 };
 
@@ -196,6 +201,7 @@ export function mapDefaultsRow(
 		watchdogTimeoutMs: row?.watchdogTimeoutMs ?? undefined,
 		workItemBudgetUsd: row?.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
 		agentEngine: row?.agentEngine ?? undefined,
+		engineSettings: row?.agentEngineSettings ?? undefined,
 		progressModel: row?.progressModel ?? undefined,
 		progressIntervalMinutes: row?.progressIntervalMinutes
 			? Number(row.progressIntervalMinutes)
@@ -241,6 +247,7 @@ export function mapProjectRow({
 		model: row.model ?? undefined,
 		agentModels: orUndefined(models),
 		workItemBudgetUsd: row.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
+		engineSettings: row.agentEngineSettings ?? undefined,
 		squintDbUrl: row.squintDbUrl ?? undefined,
 	};
 

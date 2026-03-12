@@ -1,0 +1,455 @@
+import { spawn } from 'node:child_process';
+import { appendFileSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createInterface } from 'node:readline';
+
+import { storeLlmCall } from '../../db/repositories/runsRepository.js';
+import { logger } from '../../utils/logging.js';
+import { extractPRUrl } from '../../utils/prUrl.js';
+import { CODEX_ENGINE_DEFINITION } from '../catalog.js';
+import { cleanupContextFiles } from '../contextFiles.js';
+import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
+import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
+import { buildEnv } from './env.js';
+import { CODEX_MODEL_IDS, DEFAULT_CODEX_MODEL } from './models.js';
+import { assertHeadlessCodexSettings, resolveCodexSettings } from './settings.js';
+
+type JsonRecord = Record<string, unknown>;
+type ToolCall = { name: string; input?: Record<string, unknown> };
+type ParsedCodexEvent = {
+	textParts: string[];
+	toolCall: ToolCall | null;
+	usage: UsageSummary | null;
+	error?: string;
+};
+type UsageSummary = {
+	inputTokens?: number;
+	outputTokens?: number;
+	costUsd?: number;
+};
+type CodexLineContext = {
+	input: AgentExecutionPlan;
+	model: string;
+	maxIterations: number;
+	rawTextParts: string[];
+	iterationCount: number;
+	llmCallCount: number;
+	cost?: number;
+	finalError?: string;
+};
+
+function appendEngineLog(path: string | undefined, chunk: string): void {
+	if (!path || chunk.length === 0) return;
+	appendFileSync(path, chunk, 'utf-8');
+}
+
+function tomlString(value: string): string {
+	return JSON.stringify(value);
+}
+
+function extractTextFromContentParts(candidate: unknown): string[] {
+	const parts: string[] = [];
+	if (!Array.isArray(candidate)) return parts;
+
+	for (const item of candidate) {
+		if (typeof item === 'string' && item.trim()) {
+			parts.push(item);
+			continue;
+		}
+		if (!item || typeof item !== 'object') continue;
+		if ('type' in item && item.type !== 'text') continue;
+		if ('text' in item && typeof item.text === 'string' && item.text.trim()) {
+			parts.push(item.text);
+		}
+	}
+
+	return parts;
+}
+
+function extractTextParts(event: JsonRecord): string[] {
+	const parts: string[] = [];
+	const directFields: unknown[] = [event.text, event.delta];
+
+	for (const field of directFields) {
+		if (typeof field === 'string' && field.trim()) {
+			parts.push(field);
+		}
+	}
+
+	parts.push(...extractTextFromContentParts(event.content));
+	parts.push(...extractTextFromContentParts(event.last_message));
+
+	const message = event.message;
+	if (message && typeof message === 'object' && 'content' in message) {
+		parts.push(...extractTextFromContentParts(message.content));
+	}
+
+	return parts;
+}
+
+function extractToolCall(event: JsonRecord): ToolCall | null {
+	if (typeof event.tool_name === 'string' && event.tool_name) {
+		return {
+			name: event.tool_name,
+			input: (event.tool_input as Record<string, unknown> | undefined) ?? undefined,
+		};
+	}
+
+	if (
+		event.type === 'tool_call' &&
+		typeof event.name === 'string' &&
+		event.name &&
+		(event.input === undefined || (event.input && typeof event.input === 'object'))
+	) {
+		return {
+			name: event.name,
+			input: event.input as Record<string, unknown> | undefined,
+		};
+	}
+
+	return null;
+}
+
+function extractUsage(event: JsonRecord): UsageSummary | null {
+	const usage =
+		(event.usage as JsonRecord | undefined) ?? (event.token_usage as JsonRecord | undefined);
+	const inputTokens =
+		typeof usage?.input_tokens === 'number'
+			? usage.input_tokens
+			: typeof usage?.inputTokens === 'number'
+				? usage.inputTokens
+				: undefined;
+	const outputTokens =
+		typeof usage?.output_tokens === 'number'
+			? usage.output_tokens
+			: typeof usage?.outputTokens === 'number'
+				? usage.outputTokens
+				: undefined;
+	const costUsd =
+		typeof event.total_cost_usd === 'number'
+			? event.total_cost_usd
+			: typeof event.cost_usd === 'number'
+				? event.cost_usd
+				: typeof usage?.cost_usd === 'number'
+					? usage.cost_usd
+					: undefined;
+
+	return inputTokens !== undefined || outputTokens !== undefined || costUsd !== undefined
+		? { inputTokens, outputTokens, costUsd }
+		: null;
+}
+
+function parseCodexEvent(event: JsonRecord): ParsedCodexEvent {
+	return {
+		textParts: extractTextParts(event),
+		toolCall: extractToolCall(event),
+		usage: extractUsage(event),
+		error: typeof event.error === 'string' && event.error ? event.error : undefined,
+	};
+}
+
+function trackIteration(context: CodexLineContext): Promise<void> {
+	context.iterationCount += 1;
+	return context.input.progressReporter.onIteration(context.iterationCount, context.maxIterations);
+}
+
+function logText(context: CodexLineContext, text: string): void {
+	context.rawTextParts.push(text);
+	context.input.logWriter('INFO', 'Codex text', {
+		text: text.length > 300 ? `${text.slice(0, 300)}...` : text,
+	});
+	context.input.progressReporter.onText(text);
+}
+
+function trackUsage(context: CodexLineContext, responseLine: string, usage: UsageSummary): void {
+	context.cost = usage.costUsd ?? context.cost;
+	if (!context.input.runId) return;
+
+	context.llmCallCount += 1;
+	void storeLlmCall({
+		runId: context.input.runId,
+		callNumber: context.llmCallCount,
+		request: undefined,
+		response: responseLine,
+		inputTokens: usage.inputTokens,
+		outputTokens: usage.outputTokens,
+		cachedTokens: undefined,
+		costUsd: usage.costUsd,
+		durationMs: undefined,
+		model: context.model,
+	}).catch((error) => {
+		logger.warn('Failed to store Codex LLM call in real-time', {
+			runId: context.input.runId,
+			call: context.llmCallCount,
+			error: String(error),
+		});
+	});
+}
+
+async function handleParsedLine(
+	context: CodexLineContext,
+	responseLine: string,
+	parsed: JsonRecord,
+): Promise<void> {
+	const { textParts, toolCall, usage, error } = parseCodexEvent(parsed);
+
+	if (textParts.length > 0 || toolCall) {
+		await trackIteration(context);
+	}
+
+	for (const text of textParts) {
+		logText(context, text);
+	}
+
+	if (toolCall) {
+		context.input.progressReporter.onToolCall(toolCall.name, toolCall.input);
+	}
+
+	if (usage) {
+		trackUsage(context, responseLine, usage);
+	}
+
+	if (error) {
+		context.finalError = error;
+	}
+}
+
+async function processStdoutLine(context: CodexLineContext, line: string): Promise<void> {
+	appendEngineLog(context.input.engineLogPath, `${line}\n`);
+	if (!line.trim()) return;
+
+	let parsed: JsonRecord | undefined;
+	try {
+		parsed = JSON.parse(line) as JsonRecord;
+	} catch {
+		context.rawTextParts.push(line);
+		context.input.progressReporter.onText(line);
+		return;
+	}
+
+	await handleParsedLine(context, line, parsed);
+}
+
+function resolveCodexModel(cascadeModel: string): string {
+	if (CODEX_MODEL_IDS.includes(cascadeModel)) return cascadeModel;
+	if (cascadeModel.startsWith('openai:')) return cascadeModel.replace('openai:', '');
+	if (cascadeModel.startsWith('gpt-') && cascadeModel.includes('codex')) return cascadeModel;
+
+	logger.warn('Non-Codex model configured for Codex engine, falling back to default', {
+		configured: cascadeModel,
+		fallback: DEFAULT_CODEX_MODEL,
+	});
+	return DEFAULT_CODEX_MODEL;
+}
+
+function buildPrompt(systemPrompt: string, taskPrompt: string): string {
+	return `## System Instructions\n${systemPrompt}\n\n## Task\n${taskPrompt}`;
+}
+
+function buildArgs(
+	input: AgentExecutionPlan,
+	settings: ReturnType<typeof resolveCodexSettings>,
+	model: string,
+	lastMessagePath: string,
+): string[] {
+	const args = [
+		'exec',
+		'--json',
+		'--ephemeral',
+		'--skip-git-repo-check',
+		'-C',
+		input.repoDir,
+		'-m',
+		model,
+		'-s',
+		settings.sandboxMode,
+		'-o',
+		lastMessagePath,
+		'-c',
+		`approval_policy=${tomlString(settings.approvalPolicy)}`,
+	];
+
+	if (settings.reasoningEffort) {
+		args.push('-c', `model_reasoning_effort=${tomlString(settings.reasoningEffort)}`);
+	}
+	args.push('-c', `web_search=${settings.webSearch ? 'true' : 'false'}`);
+	args.push('-');
+
+	return args;
+}
+
+/**
+ * Codex CLI backend for CASCADE.
+ *
+ * Uses `codex exec` in JSONL mode and a conservative event parser so the engine
+ * remains robust across Codex CLI upgrades. The product surface is intentionally
+ * stable even though the runtime transport can evolve later.
+ */
+export class CodexEngine implements AgentEngine {
+	readonly definition = CODEX_ENGINE_DEFINITION;
+
+	supportsAgentType(_agentType: string): boolean {
+		return true;
+	}
+
+	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
+		const startTime = Date.now();
+		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools);
+		const { prompt: taskPrompt, hasOffloadedContext } = await buildTaskPrompt(
+			input.taskPrompt,
+			input.contextInjections,
+			input.repoDir,
+		);
+		const model = resolveCodexModel(input.model);
+		const settings = resolveCodexSettings(
+			input.project,
+			input.config,
+			input.nativeToolCapabilities,
+		);
+		assertHeadlessCodexSettings(settings);
+
+		const lastMessagePath = join(
+			tmpdir(),
+			`cascade-codex-last-message-${process.pid}-${Date.now()}.txt`,
+		);
+		const prompt = buildPrompt(systemPrompt, taskPrompt);
+		const env = buildEnv(input.projectSecrets);
+		const args = buildArgs(input, settings, model, lastMessagePath);
+
+		input.logWriter('INFO', 'Starting Codex execution', {
+			agentType: input.agentType,
+			model,
+			repoDir: input.repoDir,
+			maxIterations: input.maxIterations,
+			sandboxMode: settings.sandboxMode,
+			approvalPolicy: settings.approvalPolicy,
+			hasOffloadedContext,
+		});
+
+		appendEngineLog(
+			input.engineLogPath,
+			`$ codex ${args.map((arg) => JSON.stringify(arg)).join(' ')}\n`,
+		);
+
+		let iterationCount = 0;
+		let llmCallCount = 0;
+		let cost: number | undefined;
+		const rawTextParts: string[] = [];
+		const stderrChunks: string[] = [];
+		let finalError: string | undefined;
+
+		try {
+			const exitCode = await new Promise<number>((resolve, reject) => {
+				const child = spawn('codex', args, {
+					cwd: input.repoDir,
+					env,
+					stdio: ['pipe', 'pipe', 'pipe'],
+				});
+				let lineQueue = Promise.resolve();
+				let streamFailed = false;
+				const lineContext: CodexLineContext = {
+					input,
+					model,
+					maxIterations: input.maxIterations,
+					rawTextParts,
+					iterationCount,
+					llmCallCount,
+					cost,
+					finalError,
+				};
+
+				child.once('error', (error) => {
+					reject(
+						error instanceof Error && 'code' in error && error.code === 'ENOENT'
+							? new Error(
+									'Codex CLI not found in PATH. Install `@openai/codex` in the worker image.',
+								)
+							: error,
+					);
+				});
+
+				const stdout = createInterface({ input: child.stdout });
+				stdout.on('line', (line) => {
+					lineQueue = lineQueue
+						.then(() => processStdoutLine(lineContext, line))
+						.catch((error) => {
+							streamFailed = true;
+							reject(error);
+						});
+				});
+
+				child.stderr.on('data', (chunk: Buffer | string) => {
+					const text = chunk.toString();
+					stderrChunks.push(text);
+					appendEngineLog(input.engineLogPath, text);
+				});
+
+				child.stdin.write(prompt);
+				child.stdin.end();
+
+				child.once('close', (code) => {
+					void lineQueue
+						.then(() => {
+							iterationCount = lineContext.iterationCount;
+							llmCallCount = lineContext.llmCallCount;
+							cost = lineContext.cost;
+							finalError = lineContext.finalError;
+							if (!streamFailed) {
+								resolve(code ?? 1);
+							}
+						})
+						.catch(reject);
+				});
+			});
+
+			const finalOutput =
+				existsSync(lastMessagePath) && readFileSync(lastMessagePath, 'utf-8').trim()
+					? readFileSync(lastMessagePath, 'utf-8').trim()
+					: rawTextParts.join('\n').trim();
+			const stderrOutput = stderrChunks.join('').trim();
+			const prUrl = extractPRUrl(finalOutput) ?? extractPRUrl(rawTextParts.join('\n'));
+
+			if (stderrOutput) {
+				input.logWriter('WARN', 'Codex stderr output', { stderr: stderrOutput });
+			}
+
+			if (exitCode !== 0) {
+				return {
+					success: false,
+					output: finalOutput,
+					error: finalError ?? stderrOutput ?? `Codex exited with code ${exitCode}`,
+					cost,
+					prUrl,
+				};
+			}
+
+			input.logWriter('INFO', 'Codex execution completed', {
+				turns: iterationCount,
+				cost: cost ?? null,
+				prUrl: prUrl ?? null,
+				durationMs: Date.now() - startTime,
+			});
+
+			return {
+				success: true,
+				output: finalOutput,
+				cost,
+				prUrl,
+			};
+		} finally {
+			if (existsSync(lastMessagePath)) {
+				try {
+					unlinkSync(lastMessagePath);
+				} catch {
+					// Best-effort cleanup
+				}
+			}
+			if (hasOffloadedContext) {
+				await cleanupContextFiles(input.repoDir);
+			}
+		}
+	}
+}
+
+export { resolveCodexModel };

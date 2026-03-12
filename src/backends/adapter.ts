@@ -175,7 +175,7 @@ async function buildExecutionPlan(
 		model,
 		logWriter,
 		agentInput: input,
-		sdkTools: profile.sdkTools,
+		nativeToolCapabilities: profile.allCapabilities,
 		enableStopHooks: needsGitStateStopHooks(profile.finishHooks),
 		blockGitPush: profile.finishHooks.blockGitPush,
 		...(Object.keys(projectSecrets).length > 0 && { projectSecrets }),

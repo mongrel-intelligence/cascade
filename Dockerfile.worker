@@ -49,8 +49,8 @@ RUN ARCH=$(dpkg --print-architecture) && \
     rm /tmp/ast-grep.zip && \
     chmod +x /usr/local/bin/sg
 
-# Install Claude Code CLI (required by Claude Code SDK - spawns claude subprocess)
-RUN npm install -g @anthropic-ai/claude-code
+# Install agent CLIs used by headless engines in worker jobs
+RUN npm install -g @anthropic-ai/claude-code @openai/codex@0.114.0
 
 # Browsers (Playwright Chromium, Camoufox) are pre-installed in niu-browser-base
 

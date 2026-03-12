@@ -109,6 +109,45 @@ describe('ProjectConfigSchema', () => {
 		expect(result.agentEngine?.subscriptionCostZero).toBe(true);
 	});
 
+	it('accepts codex engine settings on project config', () => {
+		const config = {
+			id: 'test',
+			orgId: 'default',
+			name: 'Test',
+			repo: 'owner/repo',
+			trello: { boardId: 'b1', lists: {}, labels: {} },
+			engineSettings: {
+				codex: {
+					approvalPolicy: 'never',
+					sandboxMode: 'workspace-write',
+					webSearch: false,
+				},
+			},
+		};
+
+		const result = ProjectConfigSchema.parse(config);
+		expect(result.engineSettings?.codex?.approvalPolicy).toBe('never');
+		expect(result.engineSettings?.codex?.sandboxMode).toBe('workspace-write');
+		expect(result.engineSettings?.codex?.webSearch).toBe(false);
+	});
+
+	it('rejects unsupported engine settings on project config', () => {
+		const config = {
+			id: 'test',
+			orgId: 'default',
+			name: 'Test',
+			repo: 'owner/repo',
+			trello: { boardId: 'b1', lists: {}, labels: {} },
+			engineSettings: {
+				unknownEngine: {
+					foo: 'bar',
+				},
+			},
+		};
+
+		expect(() => ProjectConfigSchema.parse(config)).toThrow('Unsupported engine settings');
+	});
+
 	it('defaults subscriptionCostZero to false', () => {
 		const config = {
 			id: 'test',
@@ -266,5 +305,54 @@ describe('validateConfig', () => {
 
 		const result = validateConfig(config);
 		expect(result.defaults.agentEngine).toBe('claude-code');
+	});
+
+	it('accepts defaults.engineSettings for codex', () => {
+		const config = {
+			defaults: {
+				engineSettings: {
+					codex: {
+						approvalPolicy: 'never',
+						reasoningEffort: 'high',
+					},
+				},
+			},
+			projects: [
+				{
+					id: 'test',
+					orgId: 'default',
+					name: 'Test',
+					repo: 'owner/repo',
+					trello: { boardId: 'b1', lists: {}, labels: {} },
+				},
+			],
+		};
+
+		const result = validateConfig(config);
+		expect(result.defaults.engineSettings.codex?.approvalPolicy).toBe('never');
+		expect(result.defaults.engineSettings.codex?.reasoningEffort).toBe('high');
+	});
+
+	it('rejects unsupported defaults.engineSettings entries', () => {
+		const config = {
+			defaults: {
+				engineSettings: {
+					'claude-code': {
+						foo: 'bar',
+					},
+				},
+			},
+			projects: [
+				{
+					id: 'test',
+					orgId: 'default',
+					name: 'Test',
+					repo: 'owner/repo',
+					trello: { boardId: 'b1', lists: {}, labels: {} },
+				},
+			],
+		};
+
+		expect(() => validateConfig(config)).toThrow('Unsupported engine settings');
 	});
 });

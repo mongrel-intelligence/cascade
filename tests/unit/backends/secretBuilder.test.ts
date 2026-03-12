@@ -39,16 +39,14 @@ function makeProject(overrides?: Partial<ProjectConfig>): ProjectConfig {
 function makeProfile(overrides?: Partial<AgentProfile>): AgentProfile {
 	return {
 		filterTools: (tools) => tools,
-		sdkTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
-		enableStopHooks: true,
+		allCapabilities: ['fs:read', 'fs:write', 'shell:exec'],
 		needsGitHubToken: false,
+		finishHooks: {},
 		fetchContext: vi.fn().mockResolvedValue([]),
 		buildTaskPrompt: () => 'Process the work item',
 		capabilities: {
-			canEditFiles: true,
-			canCreatePR: true,
-			canUpdateChecklists: true,
-			isReadOnly: false,
+			required: ['fs:read'],
+			optional: ['fs:write', 'shell:exec'],
 		},
 		...overrides,
 	};

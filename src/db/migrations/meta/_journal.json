@@ -232,6 +232,13 @@
 			"when": 1767000000000,
 			"tag": "0032_rename_backends_to_engines",
 			"breakpoints": false
+		},
+		{
+			"idx": 33,
+			"version": "7",
+			"when": 1768000000000,
+			"tag": "0033_add_engine_settings",
+			"breakpoints": false
 		}
 	]
 }

@@ -8,7 +8,7 @@ Core pieces:
 - `registry.ts`: runtime engine registry and catalog source
 - `bootstrap.ts`: built-in engine registration
 - `adapter.ts`: shared lifecycle around repo setup, prompts, progress, secrets, run tracking, and post-processing
-- `llmist/` and `claude-code/`: engine-specific adapters
+- `llmist/`, `claude-code/`, and `codex/`: engine-specific adapters
 
 To add a new engine:
 

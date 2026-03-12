@@ -182,6 +182,7 @@ function makeConfig(): CascadeConfig {
 			watchdogTimeoutMs: 1800000,
 			workItemBudgetUsd: 5,
 			agentEngine: 'llmist',
+			engineSettings: {},
 			progressModel: 'openrouter:google/gemini-2.5-flash-lite',
 			progressIntervalMinutes: 5,
 		},
@@ -222,16 +223,14 @@ function makeMockBackend(id = 'test-engine'): AgentEngine {
 function makeMockProfile(overrides?: Partial<AgentProfile>): AgentProfile {
 	return {
 		filterTools: (tools) => tools,
-		sdkTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+		allCapabilities: ['fs:read', 'fs:write', 'shell:exec'],
 		needsGitHubToken: false,
 		finishHooks: {},
 		fetchContext: vi.fn().mockResolvedValue([]),
 		buildTaskPrompt: () => 'Process the work item',
 		capabilities: {
-			canEditFiles: true,
-			canCreatePR: true,
-			canUpdateChecklists: true,
-			isReadOnly: false,
+			required: ['fs:read'],
+			optional: ['fs:write', 'shell:exec'],
 		},
 		...overrides,
 	};
@@ -418,7 +417,7 @@ describe('executeWithEngine', () => {
 		);
 	});
 
-	it('uses profile to filter tools and set sdkTools', async () => {
+	it('uses profile to filter tools and set native tool capabilities', async () => {
 		setupMocks();
 		const filterTools = vi.fn((tools) =>
 			tools.filter((t: { name: string }) => t.name === 'Finish'),
@@ -426,7 +425,7 @@ describe('executeWithEngine', () => {
 		mockGetAgentProfile.mockReturnValue(
 			makeMockProfile({
 				filterTools,
-				sdkTools: ['Read', 'Bash', 'Glob', 'Grep'],
+				allCapabilities: ['fs:read', 'shell:exec'],
 				finishHooks: {},
 			}),
 		);
@@ -439,7 +438,7 @@ describe('executeWithEngine', () => {
 		const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
 		expect(backendInput.availableTools).toHaveLength(1);
 		expect(backendInput.availableTools[0].name).toBe('Finish');
-		expect(backendInput.sdkTools).toEqual(['Read', 'Bash', 'Glob', 'Grep']);
+		expect(backendInput.nativeToolCapabilities).toEqual(['fs:read', 'shell:exec']);
 		expect(backendInput.enableStopHooks).toBe(false);
 	});
 

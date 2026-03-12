@@ -115,14 +115,30 @@ describe('projectsRouter', () => {
 
 	describe('listFull', () => {
 		it('returns all project columns', async () => {
-			const projects = [{ id: 'p1', name: 'Project 1', repo: 'owner/repo1', baseBranch: 'main' }];
+			const projects = [
+				{
+					id: 'p1',
+					name: 'Project 1',
+					repo: 'owner/repo1',
+					baseBranch: 'main',
+					agentEngineSettings: { codex: { approvalPolicy: 'never' } },
+				},
+			];
 			mockListProjectsFull.mockResolvedValue(projects);
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.listFull();
 
 			expect(mockListProjectsFull).toHaveBeenCalledWith('org-1');
-			expect(result).toEqual(projects);
+			expect(result).toEqual([
+				{
+					id: 'p1',
+					name: 'Project 1',
+					repo: 'owner/repo1',
+					baseBranch: 'main',
+					engineSettings: { codex: { approvalPolicy: 'never' } },
+				},
+			]);
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
@@ -133,14 +149,24 @@ describe('projectsRouter', () => {
 
 	describe('getById', () => {
 		it('returns project when found', async () => {
-			const project = { id: 'p1', orgId: 'org-1', name: 'Project 1' };
+			const project = {
+				id: 'p1',
+				orgId: 'org-1',
+				name: 'Project 1',
+				agentEngineSettings: { codex: { sandboxMode: 'read-only' } },
+			};
 			mockGetProjectFull.mockResolvedValue(project);
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.getById({ id: 'p1' });
 
 			expect(mockGetProjectFull).toHaveBeenCalledWith('p1', 'org-1');
-			expect(result).toEqual(project);
+			expect(result).toEqual({
+				id: 'p1',
+				orgId: 'org-1',
+				name: 'Project 1',
+				engineSettings: { codex: { sandboxMode: 'read-only' } },
+			});
 		});
 
 		it('throws NOT_FOUND when project does not exist', async () => {
@@ -163,12 +189,14 @@ describe('projectsRouter', () => {
 				id: 'my-project',
 				name: 'My Project',
 				repo: 'owner/repo',
+				engineSettings: { codex: { approvalPolicy: 'never' } },
 			});
 
 			expect(mockCreateProject).toHaveBeenCalledWith('org-1', {
 				id: 'my-project',
 				name: 'My Project',
 				repo: 'owner/repo',
+				engineSettings: { codex: { approvalPolicy: 'never' } },
 			});
 			expect(result).toEqual(created);
 		});
@@ -185,6 +213,21 @@ describe('projectsRouter', () => {
 			await expect(
 				caller.create({ id: 'valid-id', name: '', repo: 'owner/repo' }),
 			).rejects.toThrow();
+		});
+
+		it('rejects unsupported engine settings on create', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				caller.create({
+					id: 'valid-id',
+					name: 'Project',
+					repo: 'owner/repo',
+					engineSettings: {
+						unknown: { foo: 'bar' },
+					},
+				}),
+			).rejects.toThrow('Unsupported engine settings');
 		});
 	});
 
@@ -209,6 +252,35 @@ describe('projectsRouter', () => {
 			await expect(caller.update({ id: 'p1', name: 'X' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
 			});
+			expect(mockUpdateProject).not.toHaveBeenCalled();
+		});
+
+		it('passes engineSettings through on update', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockUpdateProject.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({
+				id: 'p1',
+				engineSettings: { codex: { approvalPolicy: 'never', webSearch: false } },
+			});
+
+			expect(mockUpdateProject).toHaveBeenCalledWith('p1', 'org-1', {
+				engineSettings: { codex: { approvalPolicy: 'never', webSearch: false } },
+			});
+		});
+
+		it('rejects unsupported engine settings on update', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				caller.update({
+					id: 'p1',
+					engineSettings: {
+						unknown: { foo: 'bar' },
+					},
+				}),
+			).rejects.toThrow('Unsupported engine settings');
 			expect(mockUpdateProject).not.toHaveBeenCalled();
 		});
 	});

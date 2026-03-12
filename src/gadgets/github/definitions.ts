@@ -258,7 +258,7 @@ export const createPRReviewDef: ToolDefinition = {
 			// Persist review data for the parent process (backend adapter)
 			// to read and populate session state post-execution.
 			const sidecarPath = process.env[REVIEW_SIDECAR_ENV_VAR];
-			if (sidecarPath) {
+			if (sidecarPath && sidecarPath !== 'undefined') {
 				try {
 					writeFileSync(
 						sidecarPath,

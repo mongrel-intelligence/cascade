@@ -30,12 +30,6 @@ export const agentConfigsRouter = router({
 		return getEngineCatalog();
 	}),
 
-	claudeCodeModels: publicProcedure.query(() => {
-		registerBuiltInEngines();
-		const claudeCode = getEngineCatalog().find((engine) => engine.id === 'claude-code');
-		return claudeCode?.modelSelection.type === 'select' ? claudeCode.modelSelection.options : [];
-	}),
-
 	list: protectedProcedure
 		.input(z.object({ projectId: z.string().optional() }).optional())
 		.query(async ({ ctx, input }) => {
