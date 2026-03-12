@@ -50,7 +50,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
     chmod +x /usr/local/bin/sg
 
 # Install agent CLIs used by headless engines in worker jobs
-RUN npm install -g @anthropic-ai/claude-code @openai/codex@0.114.0
+RUN npm install -g @anthropic-ai/claude-code @openai/codex@0.114.0 opencode-ai
 
 # Browsers (Playwright Chromium, Camoufox) are pre-installed in niu-browser-base
 

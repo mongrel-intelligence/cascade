@@ -7,8 +7,14 @@ export const CodexSettingsSchema = z.object({
 	webSearch: z.boolean().optional(),
 });
 
+export const OpenCodeSettingsSchema = z.object({
+	agent: z.enum(['auto', 'build', 'plan']).optional(),
+	webSearch: z.boolean().optional(),
+});
+
 const ENGINE_SETTINGS_SCHEMAS: Record<string, z.ZodType<Record<string, unknown>>> = {
 	codex: CodexSettingsSchema,
+	opencode: OpenCodeSettingsSchema,
 };
 
 const EngineSettingsValueSchema = z.record(z.string(), z.unknown());
@@ -41,6 +47,7 @@ export const EngineSettingsSchema = z
 	.transform((settings) => normalizeEngineSettings(settings) ?? {});
 
 export type CodexSettings = z.infer<typeof CodexSettingsSchema>;
+export type OpenCodeSettings = z.infer<typeof OpenCodeSettingsSchema>;
 export type EngineSettings = Record<string, Record<string, unknown>>;
 type EngineSettingsInput = Record<string, Record<string, unknown> | undefined>;
 

@@ -52,6 +52,7 @@ const mockBuilderInstance = {
 	withRateLimits: vi.fn(),
 	withRetry: vi.fn(),
 	withCompaction: vi.fn(),
+	withCaching: vi.fn(),
 	withTrailingMessage: vi.fn(),
 	withTextOnlyHandler: vi.fn(),
 	withHooks: vi.fn(),

@@ -131,6 +131,26 @@ describe('ProjectConfigSchema', () => {
 		expect(result.engineSettings?.codex?.webSearch).toBe(false);
 	});
 
+	it('accepts opencode engine settings on project config', () => {
+		const config = {
+			id: 'test',
+			orgId: 'default',
+			name: 'Test',
+			repo: 'owner/repo',
+			trello: { boardId: 'b1', lists: {}, labels: {} },
+			engineSettings: {
+				opencode: {
+					agent: 'plan',
+					webSearch: true,
+				},
+			},
+		};
+
+		const result = ProjectConfigSchema.parse(config);
+		expect(result.engineSettings?.opencode?.agent).toBe('plan');
+		expect(result.engineSettings?.opencode?.webSearch).toBe(true);
+	});
+
 	it('rejects unsupported engine settings on project config', () => {
 		const config = {
 			id: 'test',
@@ -331,6 +351,31 @@ describe('validateConfig', () => {
 		const result = validateConfig(config);
 		expect(result.defaults.engineSettings.codex?.approvalPolicy).toBe('never');
 		expect(result.defaults.engineSettings.codex?.reasoningEffort).toBe('high');
+	});
+
+	it('accepts defaults.engineSettings for opencode', () => {
+		const result = validateConfig({
+			projects: [
+				{
+					id: 'p1',
+					orgId: 'org-1',
+					name: 'Project',
+					repo: 'owner/repo',
+					trello: { boardId: 'b1', lists: {}, labels: {} },
+				},
+			],
+			defaults: {
+				engineSettings: {
+					opencode: {
+						agent: 'build',
+						webSearch: true,
+					},
+				},
+			},
+		});
+
+		expect(result.defaults.engineSettings.opencode?.agent).toBe('build');
+		expect(result.defaults.engineSettings.opencode?.webSearch).toBe(true);
 	});
 
 	it('rejects unsupported defaults.engineSettings entries', () => {

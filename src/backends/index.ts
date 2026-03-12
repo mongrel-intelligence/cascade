@@ -24,3 +24,4 @@ export { createProgressMonitor, ProgressMonitor } from './progress.js';
 export { LlmistEngine } from './llmist/index.js';
 export { ClaudeCodeEngine } from './claude-code/index.js';
 export { CodexEngine } from './codex/index.js';
+export { OpenCodeEngine } from './opencode/index.js';

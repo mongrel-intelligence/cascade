@@ -104,8 +104,50 @@ export const CODEX_ENGINE_DEFINITION: AgentEngineDefinition = {
 	},
 };
 
+export const OPENCODE_ENGINE_DEFINITION: AgentEngineDefinition = {
+	id: 'opencode',
+	label: 'OpenCode',
+	description: 'OpenCode headless agent server with scoped permissions and CASCADE tool guidance.',
+	capabilities: [
+		'inline_prompt_context',
+		'offloaded_context_files',
+		'native_file_edit_tools',
+		'external_cli_tools',
+		'streaming_text_events',
+		'streaming_tool_events',
+		'scoped_env_secrets',
+		'permission_policy',
+	],
+	modelSelection: { type: 'free-text' },
+	logLabel: 'OpenCode Log',
+	settings: {
+		title: 'OpenCode Settings',
+		description: 'Headless OpenCode agent selection and permission policy.',
+		fields: [
+			{
+				key: 'agent',
+				label: 'Agent',
+				type: 'select',
+				description: 'Auto uses `plan` for read-only runs and `build` when file edits are allowed.',
+				options: [
+					{ value: 'auto', label: 'Auto' },
+					{ value: 'build', label: 'Build' },
+					{ value: 'plan', label: 'Plan' },
+				],
+			},
+			{
+				key: 'webSearch',
+				label: 'Web Search',
+				type: 'boolean',
+				description: 'Allow OpenCode web fetch permissions during runs.',
+			},
+		],
+	},
+};
+
 export const DEFAULT_ENGINE_CATALOG: AgentEngineDefinition[] = [
 	LLMIST_ENGINE_DEFINITION,
 	CLAUDE_CODE_ENGINE_DEFINITION,
 	CODEX_ENGINE_DEFINITION,
+	OPENCODE_ENGINE_DEFINITION,
 ];
