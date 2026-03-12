@@ -88,7 +88,7 @@ Optional (infrastructure):
 - `PORT` - Server port (default: 3000)
 - `LOG_LEVEL` - Logging level (default: info)
 - `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled)
-- `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code backend (subscription auth)
+- `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code engine (subscription auth)
 - `CREDENTIAL_MASTER_KEY` - 64-char hex string (32-byte AES-256 key) for encrypting credentials at rest. Generate with `npm run credentials:generate-key`. When set, all new/updated credentials are encrypted automatically; existing plaintext credentials continue to work.
 - `SENTRY_DSN` - Sentry DSN for error monitoring (router + worker)
 - `SENTRY_ENVIRONMENT` - Sentry environment tag (default: NODE_ENV or 'production')
@@ -105,10 +105,10 @@ CASCADE stores all project configuration in PostgreSQL (Supabase). The `config/p
 
 - `organizations` - Organization definitions (multi-tenant support)
 - `cascade_defaults` - Global defaults per org (model, iterations, timeouts, budget)
-- `projects` - Per-project config (repo, base branch, budget, backend)
+- `projects` - Per-project config (repo, base branch, budget, engine)
 - `project_integrations` - Integration configs per project with `category` (pm/scm/email), `provider` (trello/jira/github/imap/gmail), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
 - `integration_credentials` - Links integration roles to org-scoped credential rows (e.g., `api_key` → credential #5). Roles are provider-specific: trello has `api_key`/`token`, jira has `email`/`api_token`, github has `implementer_token`/`reviewer_token`
-- `agent_configs` - Per-agent-type overrides (model, iterations, backend, prompt), scoped globally, per-org, or per-project
+- `agent_configs` - Per-agent-type overrides (model, iterations, engine, prompt), scoped globally, per-org, or per-project
 - `credentials` - Org-scoped credentials (API keys, tokens)
 - `users` - Dashboard users (email, bcrypt password hash, org-scoped)
 - `sessions` - Session tokens for cookie-based auth (30-day expiry)
@@ -290,13 +290,13 @@ cascade projects trigger-set <project-id> --agent planning --event pm:status-cha
 cascade projects trigger-set <project-id> --agent splitting --event pm:label-added --enable
 ```
 
-## Claude Code Backend
+## Claude Code Engine
 
-CASCADE supports using Claude Code SDK as an alternative agent backend. Configure per-project:
+CASCADE supports using Claude Code SDK as an alternative agent engine. Configure per-project:
 
 ```json
 {
-  "agentBackend": {
+  "agentEngine": {
     "default": "claude-code",
     "overrides": {
       "implementation": "claude-code",
@@ -332,14 +332,14 @@ When using a Claude Max subscription (OAuth token), API costs are covered by the
 
 ```json
 {
-  "agentBackend": {
+  "agentEngine": {
     "default": "claude-code",
     "subscriptionCostZero": true
   }
 }
 ```
 
-When enabled and the backend is `claude-code`, reported costs are zeroed after each session.
+When enabled and the engine is `claude-code`, reported costs are zeroed after each session.
 
 ## Dashboard
 
@@ -461,7 +461,7 @@ cascade credentials delete <id> --yes
 
 # Defaults
 cascade defaults show
-cascade defaults set --model claude-sonnet-4-5-20250929 --max-iterations 25 --agent-backend claude-code
+cascade defaults set --model claude-sonnet-4-5-20250929 --max-iterations 25 --agent-engine claude-code
 
 # Organization
 cascade org show

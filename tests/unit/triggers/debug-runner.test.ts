@@ -78,7 +78,7 @@ describe('triggerDebugAnalysis', () => {
 
 		vi.mocked(getRunLogs).mockResolvedValue({
 			cascadeLog: 'cascade log content',
-			llmistLog: 'llmist log content',
+			engineLog: 'engine log content',
 		} as ReturnType<typeof getRunLogs> extends Promise<infer T> ? NonNullable<T> : never);
 
 		vi.mocked(getLlmCallsByRunId).mockResolvedValue([]);
@@ -254,7 +254,7 @@ describe('triggerDebugAnalysis', () => {
 
 		vi.mocked(getRunLogs).mockResolvedValue({
 			cascadeLog: 'log',
-			llmistLog: null,
+			engineLog: null,
 		} as ReturnType<typeof getRunLogs> extends Promise<infer T> ? NonNullable<T> : never);
 
 		vi.mocked(getLlmCallsByRunId).mockResolvedValue([

@@ -242,7 +242,7 @@ describe('runsRouter', () => {
 
 	describe('getLogs', () => {
 		it('returns logs for given runId', async () => {
-			const mockLogs = { cascadeLog: 'log text', llmistLog: null };
+			const mockLogs = { cascadeLog: 'log text', engineLog: null };
 			mockGetRunLogs.mockResolvedValue(mockLogs);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });

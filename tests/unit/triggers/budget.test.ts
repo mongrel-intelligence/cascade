@@ -30,7 +30,7 @@ const baseConfig: CascadeConfig = {
 		agentIterations: {},
 		watchdogTimeoutMs: 1800000,
 		workItemBudgetUsd: 5,
-		agentBackend: 'llmist',
+		agentEngine: 'llmist',
 		progressModel: 'openrouter:google/gemini-2.5-flash-lite',
 		progressIntervalMinutes: 5,
 	},

@@ -82,7 +82,7 @@ function setupMocks() {
 		close: vi.fn(),
 		getZippedBuffer: vi.fn().mockResolvedValue(Buffer.from('logs')),
 		logPath: '/tmp/test.log',
-		llmistLogPath: '/tmp/test-llmist.log',
+		engineLogPath: '/tmp/test-engine.log',
 		llmCallLogger: { logDir: '/tmp/llm-calls' },
 	};
 	mockCreateFileLogger.mockReturnValue(mockLoggerInstance as never);
@@ -519,5 +519,21 @@ describe('createLogWriter', () => {
 		logWriter('DEBUG', 'Debug message');
 
 		expect(logger.debug).toHaveBeenCalledWith('Debug message', undefined);
+	});
+
+	it('writes to fileLogger with all three parameters', () => {
+		const mockFileLogger = {
+			write: vi.fn(),
+			close: vi.fn(),
+			getZippedBuffer: vi.fn(),
+			logPath: '/tmp/test.log',
+			engineLogPath: '/tmp/test-engine.log',
+			llmCallLogger: { logDir: '/tmp/llm-calls' },
+		};
+
+		const logWriter = createLogWriter(mockFileLogger as never);
+		logWriter('INFO', 'Test message', { key: 'value' });
+
+		expect(mockFileLogger.write).toHaveBeenCalledWith('INFO', 'Test message', { key: 'value' });
 	});
 });
