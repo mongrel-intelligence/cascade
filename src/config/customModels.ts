@@ -26,6 +26,21 @@ export const CUSTOM_MODELS: ModelSpec[] = [
 	},
 	{
 		provider: 'openrouter',
+		modelId: 'google/gemini-3.1-flash-lite-preview',
+		displayName: 'Gemini 3.1 Flash Lite Preview',
+		contextWindow: 1_048_576,
+		maxOutputTokens: 65_536,
+		pricing: { input: 0.25, output: 1.5 },
+		knowledgeCutoff: '2026-01',
+		features: {
+			streaming: true,
+			functionCalling: true,
+			vision: false,
+			reasoning: true,
+		},
+	},
+	{
+		provider: 'openrouter',
 		modelId: 'x-ai/grok-code-fast-1',
 		displayName: 'Grok Code Fast 1',
 		contextWindow: 256_000,
@@ -76,6 +91,21 @@ export const CUSTOM_MODELS: ModelSpec[] = [
 		maxOutputTokens: 65_536,
 		pricing: { input: 2.0, output: 12.0 },
 		knowledgeCutoff: '2025-12',
+		features: {
+			streaming: true,
+			functionCalling: true,
+			vision: true,
+			reasoning: true,
+		},
+	},
+	{
+		provider: 'openrouter',
+		modelId: 'google/gemini-3.1-pro-preview',
+		displayName: 'Gemini 3.1 Pro Preview',
+		contextWindow: 1_048_576,
+		maxOutputTokens: 65_536,
+		pricing: { input: 2.0, output: 12.0 },
+		knowledgeCutoff: '2026-01',
 		features: {
 			streaming: true,
 			functionCalling: true,
