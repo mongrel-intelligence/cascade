@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock all external dependencies
@@ -43,8 +45,10 @@ vi.mock('../../../src/backends/progress.js', () => ({
 }));
 
 vi.mock('../../../src/gadgets/sessionState.js', () => ({
+	PR_SIDECAR_ENV_VAR: 'CASCADE_PR_SIDECAR_PATH',
 	REVIEW_SIDECAR_ENV_VAR: 'CASCADE_REVIEW_SIDECAR_PATH',
 	recordInitialComment: vi.fn(),
+	recordPRCreation: vi.fn(),
 	recordReviewSubmission: vi.fn(),
 	clearInitialComment: vi.fn(),
 }));
@@ -118,8 +122,6 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	storeRunLogs: (...args: unknown[]) => mockStoreRunLogs(...args),
 }));
 
-import { writeFileSync } from 'node:fs';
-
 import { type AgentProfile, getAgentProfile } from '../../../src/agents/definitions/profiles.js';
 import { resolveModelConfig } from '../../../src/agents/shared/modelResolution.js';
 import { setupRepository } from '../../../src/agents/shared/repository.js';
@@ -131,6 +133,7 @@ import { getAllProjectCredentials } from '../../../src/config/provider.js';
 import {
 	clearInitialComment,
 	recordInitialComment,
+	recordPRCreation,
 	recordReviewSubmission,
 } from '../../../src/gadgets/sessionState.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
@@ -156,6 +159,7 @@ const mockCleanupLogDirectory = vi.mocked(cleanupLogDirectory);
 const mockClearWatchdogCleanup = vi.mocked(clearWatchdogCleanup);
 const mockCreateProgressMonitor = vi.mocked(createProgressMonitor);
 const mockRecordInitialComment = vi.mocked(recordInitialComment);
+const mockRecordPRCreation = vi.mocked(recordPRCreation);
 const mockRecordReviewSubmission = vi.mocked(recordReviewSubmission);
 const mockClearInitialComment = vi.mocked(clearInitialComment);
 const mockGetAllProjectCredentials = vi.mocked(getAllProjectCredentials);
@@ -442,7 +446,7 @@ describe('executeWithEngine', () => {
 		expect(backendInput.enableStopHooks).toBe(false);
 	});
 
-	it('marks implementation agent as failed when no PR was created', async () => {
+	it('marks implementation agent as failed when no authoritative PR evidence was recorded', async () => {
 		setupMocks();
 		mockGetAgentProfile.mockReturnValue(makeMockProfile({ finishHooks: { requiresPR: true } }));
 		const engine = makeMockBackend();
@@ -456,9 +460,9 @@ describe('executeWithEngine', () => {
 		const result = await executeWithEngine(engine, 'implementation', input);
 
 		expect(result.success).toBe(false);
-		expect(result.error).toBe('Agent completed but no PR was created');
+		expect(result.error).toBe('Agent completed but no authoritative PR creation was recorded');
 		expect(logger.warn).toHaveBeenCalledWith(
-			'implementation agent completed without creating a PR',
+			'implementation agent completed without authoritative PR evidence',
 			expect.objectContaining({ engine: 'test-engine' }),
 		);
 	});
@@ -480,11 +484,13 @@ describe('executeWithEngine', () => {
 
 	it('passes through when implementation agent creates a PR', async () => {
 		setupMocks();
+		mockGetAgentProfile.mockReturnValue(makeMockProfile({ finishHooks: { requiresPR: true } }));
 		const engine = makeMockBackend();
 		vi.mocked(engine.execute).mockResolvedValue({
 			success: true,
 			output: 'Done',
 			prUrl: 'https://github.com/o/r/pull/5',
+			prEvidence: { source: 'llmist-session', authoritative: true },
 		});
 		const input = makeInput();
 
@@ -1027,6 +1033,76 @@ describe('executeWithEngine', () => {
 			await executeWithEngine(engine, 'review', input);
 
 			expect(mockClearInitialComment).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('PR sidecar hydration', () => {
+		it('hydrates authoritative PR evidence from subprocess sidecar before post-processing', async () => {
+			setupMocks();
+			mockGetAgentProfile.mockReturnValue(makeMockProfile({ finishHooks: { requiresPR: true } }));
+			const engine = makeMockBackend('codex');
+			vi.mocked(engine.execute).mockImplementation(async (backendInput) => {
+				const sidecarPath = backendInput.projectSecrets?.CASCADE_PR_SIDECAR_PATH;
+				if (sidecarPath) {
+					writeFileSync(
+						sidecarPath,
+						JSON.stringify({
+							source: 'cascade-tools scm create-pr',
+							prUrl: 'https://github.com/o/r/pull/88',
+							prNumber: 88,
+							alreadyExisted: false,
+						}),
+					);
+				}
+				return {
+					success: true,
+					output: 'Created a PR',
+				};
+			});
+
+			const result = await executeWithEngine(engine, 'implementation', makeInput());
+
+			expect(result.success).toBe(true);
+			expect(result.prUrl).toBe('https://github.com/o/r/pull/88');
+			expect(mockRecordPRCreation).toHaveBeenCalledWith('https://github.com/o/r/pull/88');
+		});
+
+		it('fails implementation runs when only text-derived PR evidence exists', async () => {
+			setupMocks();
+			mockGetAgentProfile.mockReturnValue(makeMockProfile({ finishHooks: { requiresPR: true } }));
+			const engine = makeMockBackend('opencode');
+			vi.mocked(engine.execute).mockResolvedValue({
+				success: true,
+				output: 'I created https://github.com/o/r/pull/99',
+				prUrl: 'https://github.com/o/r/pull/99',
+				prEvidence: { source: 'text', authoritative: false },
+			});
+
+			const result = await executeWithEngine(engine, 'implementation', makeInput());
+
+			expect(result.success).toBe(false);
+			expect(result.error).toBe('Agent completed but no authoritative PR creation was recorded');
+		});
+
+		it('injects native-tool PATH shims that block gh and expose cascade-tools first', async () => {
+			setupMocks();
+			mockGetAgentProfile.mockReturnValue(makeMockProfile({ finishHooks: { requiresPR: true } }));
+			const engine = makeMockBackend('claude-code');
+			vi.mocked(engine.execute).mockImplementation(async (backendInput) => {
+				expect(backendInput.nativeToolShimDir).toBeTruthy();
+				expect(existsSync(`${backendInput.nativeToolShimDir}/gh`)).toBe(true);
+				expect(readFileSync(`${backendInput.nativeToolShimDir}/gh`, 'utf-8')).toContain(
+					'cascade-tools scm create-pr',
+				);
+				return { success: true, output: 'Done' };
+			});
+
+			await executeWithEngine(engine, 'implementation', makeInput());
+
+			const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
+			expect(backendInput.projectSecrets?.CASCADE_PR_SIDECAR_PATH).toMatch(
+				/cascade-pr-sidecar-\d+-\d+\.json$/,
+			);
 		});
 	});
 });

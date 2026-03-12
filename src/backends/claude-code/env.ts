@@ -6,6 +6,8 @@
  * server-side secrets from leaking into agent environments.
  */
 
+import { PR_SIDECAR_ENV_VAR, REVIEW_SIDECAR_ENV_VAR } from '../../gadgets/sessionState.js';
+import { buildNativeToolPath } from '../nativeToolRuntime.js';
 import { ENV_VAR_NAME as PROGRESS_COMMENT_ENV_VAR } from '../progressState.js';
 import { GITHUB_ACK_COMMENT_ID_ENV_VAR } from '../secretBuilder.js';
 
@@ -35,6 +37,8 @@ export const ALLOWED_ENV_EXACT = new Set([
 
 	// GitHub ack comment ID for claude-code subprocess deletion after PR review
 	GITHUB_ACK_COMMENT_ID_ENV_VAR,
+	PR_SIDECAR_ENV_VAR,
+	REVIEW_SIDECAR_ENV_VAR,
 
 	// Node
 	'NODE_PATH',
@@ -99,4 +103,24 @@ export function filterProcessEnv(
 	}
 
 	return result;
+}
+
+export function buildClaudeEnv(
+	projectSecrets?: Record<string, string>,
+	cliToolsDir?: string,
+	nativeToolShimDir?: string,
+): {
+	env: Record<string, string | undefined>;
+} {
+	const env: Record<string, string | undefined> = {
+		...filterProcessEnv(process.env),
+		...projectSecrets,
+		CLAUDE_AGENT_SDK_CLIENT_APP: 'cascade/1.0.0',
+	};
+
+	if (cliToolsDir) {
+		env.PATH = buildNativeToolPath(env.PATH, cliToolsDir, nativeToolShimDir);
+	}
+
+	return { env };
 }

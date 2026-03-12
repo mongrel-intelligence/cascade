@@ -314,7 +314,7 @@ export class CodexEngine implements AgentEngine {
 			`cascade-codex-last-message-${process.pid}-${Date.now()}.txt`,
 		);
 		const prompt = buildPrompt(systemPrompt, taskPrompt);
-		const env = buildEnv(input.projectSecrets);
+		const env = buildEnv(input.projectSecrets, input.cliToolsDir, input.nativeToolShimDir);
 		const args = buildArgs(input, settings, model, lastMessagePath);
 
 		input.logWriter('INFO', 'Starting Codex execution', {
@@ -409,6 +409,12 @@ export class CodexEngine implements AgentEngine {
 					: rawTextParts.join('\n').trim();
 			const stderrOutput = stderrChunks.join('').trim();
 			const prUrl = extractPRUrl(finalOutput) ?? extractPRUrl(rawTextParts.join('\n'));
+			const prEvidence = prUrl
+				? {
+						source: 'text' as const,
+						authoritative: false,
+					}
+				: undefined;
 
 			if (stderrOutput) {
 				input.logWriter('WARN', 'Codex stderr output', { stderr: stderrOutput });
@@ -421,6 +427,7 @@ export class CodexEngine implements AgentEngine {
 					error: finalError ?? stderrOutput ?? `Codex exited with code ${exitCode}`,
 					cost,
 					prUrl,
+					prEvidence,
 				};
 			}
 
@@ -436,6 +443,7 @@ export class CodexEngine implements AgentEngine {
 				output: finalOutput,
 				cost,
 				prUrl,
+				prEvidence,
 			};
 		} finally {
 			if (existsSync(lastMessagePath)) {

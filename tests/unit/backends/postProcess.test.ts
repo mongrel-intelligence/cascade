@@ -63,8 +63,8 @@ describe('postProcessResult', () => {
 	});
 
 	describe('PR validation for agents with requiresPR', () => {
-		it('marks as failed when requiresPR agent succeeds without prUrl', () => {
-			const result = makeResult({ success: true, prUrl: undefined });
+		it('marks as failed when requiresPR agent succeeds without authoritative PR evidence', () => {
+			const result = makeResult({ success: true, prUrl: undefined, prEvidence: undefined });
 			const engine = makeEngine();
 			const input = makeInput();
 
@@ -73,11 +73,11 @@ describe('postProcessResult', () => {
 			});
 
 			expect(result.success).toBe(false);
-			expect(result.error).toBe('Agent completed but no PR was created');
+			expect(result.error).toBe('Agent completed but no authoritative PR creation was recorded');
 		});
 
-		it('logs warning when requiresPR agent succeeds without prUrl', () => {
-			const result = makeResult({ success: true, prUrl: undefined });
+		it('logs warning when requiresPR agent succeeds without authoritative PR evidence', () => {
+			const result = makeResult({ success: true, prUrl: undefined, prEvidence: undefined });
 			const engine = makeEngine('my-engine');
 			const input = makeInput();
 
@@ -86,13 +86,17 @@ describe('postProcessResult', () => {
 			});
 
 			expect(logger.warn).toHaveBeenCalledWith(
-				'implementation agent completed without creating a PR',
-				{ identifier: 'impl-id', engine: 'my-engine' },
+				'implementation agent completed without authoritative PR evidence',
+				{ identifier: 'impl-id', engine: 'my-engine', prUrl: undefined, prEvidenceSource: null },
 			);
 		});
 
-		it('passes through when requiresPR agent succeeds with prUrl', () => {
-			const result = makeResult({ success: true, prUrl: 'https://github.com/o/r/pull/1' });
+		it('passes through when requiresPR agent has authoritative PR evidence', () => {
+			const result = makeResult({
+				success: true,
+				prUrl: 'https://github.com/o/r/pull/1',
+				prEvidence: { source: 'native-tool-sidecar', authoritative: true },
+			});
 			const engine = makeEngine();
 			const input = makeInput();
 
@@ -102,6 +106,23 @@ describe('postProcessResult', () => {
 
 			expect(result.success).toBe(true);
 			expect(result.error).toBeUndefined();
+		});
+
+		it('fails when only text-derived PR evidence exists', () => {
+			const result = makeResult({
+				success: true,
+				prUrl: 'https://github.com/o/r/pull/1',
+				prEvidence: { source: 'text', authoritative: false },
+			});
+			const engine = makeEngine();
+			const input = makeInput();
+
+			postProcessResult(result, 'implementation', engine, input, 'impl-id', {
+				requiresPR: true,
+			});
+
+			expect(result.success).toBe(false);
+			expect(result.error).toBe('Agent completed but no authoritative PR creation was recorded');
 		});
 
 		it('passes through when requiresPR agent already failed', () => {
@@ -119,7 +140,7 @@ describe('postProcessResult', () => {
 		});
 
 		it('does not validate PR creation when requiresPR is not set', () => {
-			const result = makeResult({ success: true, prUrl: undefined });
+			const result = makeResult({ success: true, prUrl: undefined, prEvidence: undefined });
 			const engine = makeEngine();
 			const input = makeInput();
 

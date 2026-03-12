@@ -161,10 +161,17 @@ export class LlmistEngine implements AgentEngine {
 			loopTerminated: result.loopTerminated ?? false,
 		});
 
+		const prUrl = getSessionState().prUrl ?? undefined;
 		return {
 			success: !result.loopTerminated,
 			output: result.output,
-			prUrl: getSessionState().prUrl ?? undefined,
+			prUrl,
+			prEvidence: prUrl
+				? {
+						source: 'llmist-session',
+						authoritative: true,
+					}
+				: undefined,
 			error: result.loopTerminated ? 'Agent terminated due to persistent loop' : undefined,
 			cost: result.cost,
 		};

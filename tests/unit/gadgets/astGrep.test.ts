@@ -24,6 +24,8 @@ vi.mock('../../../src/gadgets/shared/pathValidation.js', () => ({
 
 // Mock sessionState for readOnlyFs checks
 vi.mock('../../../src/gadgets/sessionState.js', () => ({
+	PR_SIDECAR_ENV_VAR: 'CASCADE_PR_SIDECAR_PATH',
+	REVIEW_SIDECAR_ENV_VAR: 'CASCADE_REVIEW_SIDECAR_PATH',
 	getSessionState: vi.fn(() => ({ readOnlyFs: false })),
 }));
 

@@ -21,14 +21,17 @@ import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import {
+	PR_SIDECAR_ENV_VAR,
 	REVIEW_SIDECAR_ENV_VAR,
 	clearInitialComment,
 	recordInitialComment,
+	recordPRCreation,
 	recordReviewSubmission,
 } from '../gadgets/sessionState.js';
 import { withGitHubToken } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
+import { createNativeToolRuntimeArtifacts } from './nativeToolRuntime.js';
 import { postProcessResult } from './postProcess.js';
 import { createProgressMonitor } from './progress.js';
 import {
@@ -71,7 +74,14 @@ async function buildExecutionPlan(
 	_log: ReturnType<typeof createAgentLogger>,
 	gitHubToken: string | undefined,
 	isGitHubAck: boolean,
-): Promise<Omit<AgentExecutionPlan, 'progressReporter'> & { reviewSidecarPath?: string }> {
+	engineId: string,
+): Promise<
+	Omit<AgentExecutionPlan, 'progressReporter'> & {
+		reviewSidecarPath?: string;
+		prSidecarPath?: string;
+		nativeToolRuntimeCleanup?: () => void;
+	}
+> {
 	const { project, config, workItemId } = input;
 
 	// PR context from check-failure trigger
@@ -128,6 +138,8 @@ async function buildExecutionPlan(
 	});
 
 	const cliToolsDir = new URL('../../bin', import.meta.url).pathname;
+	const needsNativeToolRuntime = ['claude-code', 'codex', 'opencode'].includes(engineId);
+	const nativeToolRuntime = needsNativeToolRuntime ? createNativeToolRuntimeArtifacts() : undefined;
 
 	// Build per-project secrets with CASCADE env var injections
 	const projectSecrets = await augmentProjectSecrets(project, agentType, input);
@@ -154,6 +166,13 @@ async function buildExecutionPlan(
 	if (reviewSidecarPath) {
 		projectSecrets[REVIEW_SIDECAR_ENV_VAR] = reviewSidecarPath;
 	}
+	const prSidecarPath =
+		needsNativeToolRuntime && profile.finishHooks.requiresPR
+			? join(tmpdir(), `cascade-pr-sidecar-${process.pid}-${Date.now()}.json`)
+			: undefined;
+	if (prSidecarPath) {
+		projectSecrets[PR_SIDECAR_ENV_VAR] = prSidecarPath;
+	}
 
 	// Override GITHUB_TOKEN in subprocess secrets with agent-scoped token
 	if (gitHubToken && profile.needsGitHubToken) {
@@ -168,6 +187,7 @@ async function buildExecutionPlan(
 		systemPrompt,
 		taskPrompt: taskPromptOverride ?? profile.buildTaskPrompt(input),
 		cliToolsDir,
+		nativeToolShimDir: nativeToolRuntime?.shimDir,
 		availableTools: profile.filterTools(getToolManifests()),
 		contextInjections,
 		maxIterations,
@@ -180,6 +200,8 @@ async function buildExecutionPlan(
 		blockGitPush: profile.finishHooks.blockGitPush,
 		...(Object.keys(projectSecrets).length > 0 && { projectSecrets }),
 		reviewSidecarPath,
+		prSidecarPath,
+		nativeToolRuntimeCleanup: nativeToolRuntime?.cleanup,
 	};
 }
 
@@ -222,6 +244,47 @@ async function hydrateReviewSidecar(sidecarPath: string): Promise<void> {
 	}
 }
 
+async function hydratePrSidecar(sidecarPath: string): Promise<{
+	prUrl?: string;
+	prEvidence?: { source: 'native-tool-sidecar'; authoritative: true; command: string };
+}> {
+	try {
+		const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8'));
+		if (typeof sidecar.prUrl === 'string' && sidecar.prUrl) {
+			recordPRCreation(sidecar.prUrl);
+			logger.info('Hydrated PR sidecar from subprocess', {
+				command: sidecar.source ?? 'cascade-tools scm create-pr',
+				prUrl: sidecar.prUrl,
+				alreadyExisted: Boolean(sidecar.alreadyExisted),
+			});
+			return {
+				prUrl: sidecar.prUrl,
+				prEvidence: {
+					source: 'native-tool-sidecar',
+					authoritative: true,
+					command:
+						typeof sidecar.source === 'string' && sidecar.source
+							? sidecar.source
+							: 'cascade-tools scm create-pr',
+				},
+			};
+		}
+		logger.warn('PR sidecar missing required fields', {
+			hasPrUrl: !!sidecar.prUrl,
+		});
+	} catch (err) {
+		logger.warn('Failed to read PR sidecar', { path: sidecarPath, error: String(err) });
+	} finally {
+		try {
+			unlinkSync(sidecarPath);
+		} catch {
+			// Best-effort cleanup
+		}
+	}
+
+	return {};
+}
+
 /**
  * Build progress-monitor config from pipeline inputs.
  */
@@ -252,6 +315,67 @@ function buildProgressMonitorConfig(
 				}
 			: {}),
 	};
+}
+
+function isGitHubAckComment(input: AgentInput): boolean {
+	return Boolean(input.prNumber && input.repoFullName && typeof input.ackCommentId === 'number');
+}
+
+function cleanupTempFile(path: string | undefined): void {
+	if (!path) return;
+	try {
+		unlinkSync(path);
+	} catch {
+		// Best-effort cleanup
+	}
+}
+
+async function resolvePartialExecutionPlan(
+	engine: AgentEngine,
+	agentType: string,
+	input: AgentInput & { project: ProjectConfig; config: CascadeConfig },
+	repoDir: string,
+	logWriter: LogWriter,
+	log: ReturnType<typeof createAgentLogger>,
+): Promise<Awaited<ReturnType<typeof buildExecutionPlan>>> {
+	const profile = await getAgentProfile(agentType);
+	const gitHubToken = await resolveGitHubToken(profile, input.project.id, agentType);
+	const isGitHubAck = isGitHubAckComment(input);
+	const buildPartial = () =>
+		buildExecutionPlan(
+			agentType,
+			input,
+			repoDir,
+			logWriter,
+			log,
+			gitHubToken,
+			isGitHubAck,
+			engine.definition.id,
+		);
+
+	const partialInput = gitHubToken
+		? await withGitHubToken(gitHubToken, buildPartial)
+		: await buildPartial();
+
+	return partialInput;
+}
+
+async function hydrateNativeToolSidecars(
+	result: Awaited<ReturnType<AgentEngine['execute']>>,
+	prSidecarPath?: string,
+	reviewSidecarPath?: string,
+): Promise<void> {
+	if (prSidecarPath) {
+		const hydratedPr = await hydratePrSidecar(prSidecarPath);
+		if (hydratedPr.prUrl) {
+			result.prUrl = hydratedPr.prUrl;
+			result.prEvidence = hydratedPr.prEvidence;
+		}
+	}
+
+	if (reviewSidecarPath) {
+		await hydrateReviewSidecar(reviewSidecarPath);
+	}
 }
 
 export async function executeWithEngine(
@@ -285,25 +409,18 @@ export async function executeWithEngine(
 		execute: async (ctx: PipelineContext) => {
 			const { repoDir, fileLogger, logWriter, setRunId } = ctx;
 			const log = createAgentLogger(fileLogger);
-
 			const profile = await getAgentProfile(agentType);
-			const gitHubToken = await resolveGitHubToken(profile, input.project.id, agentType);
-
-			// Determine if the ack comment is a GitHub PR comment (numeric ID) vs PM comment (string ID)
-			// Must be computed before buildExecutionPlan so it can be injected into subprocess secrets.
-			const isGitHubAck = Boolean(
-				input.prNumber && input.repoFullName && typeof input.ackCommentId === 'number',
+			const isGitHubAck = isGitHubAckComment(input);
+			const partialInput = await resolvePartialExecutionPlan(
+				engine,
+				agentType,
+				input,
+				repoDir,
+				logWriter,
+				log,
 			);
 
-			// Build the engine execution plan wrapped in GitHub token scope if needed
-			const buildPartial = () =>
-				buildExecutionPlan(agentType, input, repoDir, logWriter, log, gitHubToken, isGitHubAck);
-
-			const partialInput = gitHubToken
-				? await withGitHubToken(gitHubToken, buildPartial)
-				: await buildPartial();
-
-			const { reviewSidecarPath } = partialInput;
+			const { reviewSidecarPath, prSidecarPath, nativeToolRuntimeCleanup } = partialInput;
 
 			// Create run record now that we have model and maxIterations
 			const runId = await tryCreateRun(
@@ -344,17 +461,16 @@ export async function executeWithEngine(
 			let result: Awaited<ReturnType<typeof engine.execute>>;
 			try {
 				result = await engine.execute(executionPlan);
+				await hydrateNativeToolSidecars(result, prSidecarPath, reviewSidecarPath);
+
+				postProcessResult(result, agentType, engine, input, identifier, {
+					requiresPR: profile.finishHooks.requiresPR,
+				});
 			} finally {
 				monitor?.stop();
-			}
-
-			postProcessResult(result, agentType, engine, input, identifier, {
-				requiresPR: profile.finishHooks.requiresPR,
-			});
-
-			// Hydrate session state from sidecar written by subprocess tools.
-			if (reviewSidecarPath) {
-				await hydrateReviewSidecar(reviewSidecarPath);
+				cleanupTempFile(prSidecarPath);
+				cleanupTempFile(reviewSidecarPath);
+				nativeToolRuntimeCleanup?.();
 			}
 
 			return {

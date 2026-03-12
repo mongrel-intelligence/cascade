@@ -1057,6 +1057,11 @@ describe('buildEnv', () => {
 		expect(env.PATH).toBe(process.env.PATH);
 	});
 
+	it('prepends native-tool shim dir and cascade-tools bin dir to PATH', () => {
+		const { env } = buildEnv(undefined, '/app/bin', '/tmp/cascade-shim');
+		expect(env.PATH?.startsWith('/tmp/cascade-shim:/app/bin:')).toBe(true);
+	});
+
 	it('passes through LC_*, GIT_*, SSH_* prefixed vars', () => {
 		process.env.LC_ALL = 'en_US.UTF-8';
 		process.env.GIT_AUTHOR_NAME = 'Test';

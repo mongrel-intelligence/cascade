@@ -152,11 +152,13 @@ async function startOpenCodeServer(
 	config: Config,
 	projectSecrets: Record<string, string> | undefined,
 	engineLogPath: string | undefined,
+	cliToolsDir: string,
+	nativeToolShimDir?: string,
 ): Promise<{ child: ReturnType<typeof spawn>; url: string }> {
 	const port = await reservePort();
 	const host = '127.0.0.1';
 	const env = {
-		...buildEnv(projectSecrets),
+		...buildEnv(projectSecrets, cliToolsDir, nativeToolShimDir),
 		OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
 	};
 	const args = ['serve', `--hostname=${host}`, `--port=${port}`];
@@ -386,6 +388,68 @@ async function handleMessagePartUpdated(
 
 type EventPayload = Event;
 
+function buildOpenCodeResult(
+	success: boolean,
+	output: string,
+	cost: number | undefined,
+	prUrl: string | undefined,
+	prEvidence: AgentEngineResult['prEvidence'],
+	error?: string,
+): AgentEngineResult {
+	return {
+		success,
+		output,
+		cost,
+		prUrl,
+		prEvidence,
+		error,
+	};
+}
+
+function buildOpenCodeResultFromResponse(
+	input: AgentExecutionPlan,
+	state: OpenCodeStreamState,
+	response: { parts: Part[]; info: AssistantMessage },
+): AgentEngineResult {
+	const output = getTextOutput(response.parts);
+	const assistant = response.info;
+	const prUrl = extractPRUrl(output);
+	const prEvidence = prUrl
+		? {
+				source: 'text' as const,
+				authoritative: false,
+			}
+		: undefined;
+
+	if (assistant.error || state.finalError) {
+		return buildOpenCodeResult(
+			false,
+			output,
+			state.totalCost || assistant.cost || undefined,
+			prUrl,
+			prEvidence,
+			state.finalError ??
+				(typeof assistant.error?.data?.message === 'string'
+					? assistant.error.data.message
+					: assistant.error?.name),
+		);
+	}
+
+	input.logWriter('INFO', 'OpenCode execution completed', {
+		turns: state.iterationCount,
+		cost: state.totalCost || assistant.cost || null,
+		prUrl: prUrl ?? null,
+	});
+
+	return buildOpenCodeResult(
+		true,
+		output,
+		state.totalCost || assistant.cost || undefined,
+		prUrl,
+		prEvidence,
+	);
+}
+
 async function processStreamEvent(
 	client: ReturnType<typeof createOpencodeClient>,
 	event: EventPayload,
@@ -442,7 +506,13 @@ export class OpenCodeEngine implements AgentEngine {
 		const eventAbort = new AbortController();
 
 		try {
-			server = await startOpenCodeServer(config, input.projectSecrets, input.engineLogPath);
+			server = await startOpenCodeServer(
+				config,
+				input.projectSecrets,
+				input.engineLogPath,
+				input.cliToolsDir,
+				input.nativeToolShimDir,
+			);
 			const client = createOpencodeClient({
 				baseUrl: server.url,
 				directory: input.repoDir,
@@ -513,36 +583,10 @@ export class OpenCodeEngine implements AgentEngine {
 			eventAbort.abort();
 			await streamTask;
 
-			const output = getTextOutput(response.parts);
-			const assistant = response.info as AssistantMessage;
-			const prUrl = extractPRUrl(output);
-
-			if (assistant.error || state.finalError) {
-				return {
-					success: false,
-					output,
-					error:
-						state.finalError ??
-						(typeof assistant.error?.data?.message === 'string'
-							? assistant.error.data.message
-							: assistant.error?.name),
-					cost: state.totalCost || assistant.cost || undefined,
-					prUrl,
-				};
-			}
-
-			input.logWriter('INFO', 'OpenCode execution completed', {
-				turns: state.iterationCount,
-				cost: state.totalCost || assistant.cost || null,
-				prUrl: prUrl ?? null,
+			return buildOpenCodeResultFromResponse(input, state, {
+				parts: response.parts,
+				info: response.info as AssistantMessage,
 			});
-
-			return {
-				success: true,
-				output,
-				cost: state.totalCost || assistant.cost || undefined,
-				prUrl,
-			};
 		} finally {
 			eventAbort.abort();
 			if (sessionId && server) {
