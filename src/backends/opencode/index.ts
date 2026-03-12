@@ -17,6 +17,11 @@ import { logger } from '../../utils/logging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { OPENCODE_ENGINE_DEFINITION } from '../catalog.js';
 import { cleanupContextFiles } from '../contextFiles.js';
+import {
+	formatNativeToolTransportError,
+	isRetryableNativeToolError,
+	retryNativeToolOperation,
+} from '../nativeToolRetry.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
 import { buildEnv } from './env.js';
@@ -239,6 +244,30 @@ function getPartDelta(part: Part, delta?: string): string | undefined {
 	return part.text;
 }
 
+function appendPartialOutput(state: OpenCodeStreamState, text: string): void {
+	const trimmed = text.trim();
+	if (!trimmed) return;
+	state.partialOutput.push(trimmed);
+}
+
+function getPartialOutput(state: OpenCodeStreamState | undefined): string {
+	if (!state) return '';
+	return state.partialOutput.join('\n').trim();
+}
+
+function summarizeServerOutput(serverState: OpenCodeServerState): string | undefined {
+	const summary = [serverState.stderr.trim(), serverState.stdout.trim()].filter(Boolean).join('\n');
+	if (!summary) return undefined;
+	return summary.length > 500 ? `${summary.slice(0, 500)}...` : summary;
+}
+
+function formatOpenCodeServerExitError(serverState: OpenCodeServerState): string {
+	const summary = summarizeServerOutput(serverState);
+	return summary
+		? `OpenCode server exited unexpectedly with code ${serverState.exitCode ?? 1}: ${summary}`
+		: `OpenCode server exited unexpectedly with code ${serverState.exitCode ?? 1}`;
+}
+
 function reportToolPart(
 	input: AgentExecutionPlan,
 	part: ToolPart,
@@ -295,9 +324,16 @@ interface OpenCodeStreamState {
 	iterationCount: number;
 	llmCallCount: number;
 	totalCost: number;
+	partialOutput: string[];
 	finalError?: string;
 	idleResolver?: () => void;
 	idleRejecter?: (error: Error) => void;
+}
+
+interface OpenCodeServerState {
+	stdout: string;
+	stderr: string;
+	exitCode?: number;
 }
 
 async function handlePermissionEvent(
@@ -307,11 +343,18 @@ async function handlePermissionEvent(
 ): Promise<boolean> {
 	if (event.properties.sessionID !== state.sessionId) return false;
 	const decision = resolvePermissionDecision(event.properties, state.permissionConfig);
-	await client.postSessionIdPermissionsPermissionId({
-		path: { id: state.sessionId, permissionID: event.properties.id },
-		body: { response: normalizePermissionDecision(decision) },
-		throwOnError: true,
-	});
+	await retryNativeToolOperation(
+		() =>
+			client.postSessionIdPermissionsPermissionId({
+				path: { id: state.sessionId, permissionID: event.properties.id },
+				body: { response: normalizePermissionDecision(decision) },
+				throwOnError: true,
+			}),
+		{
+			logWriter: state.input.logWriter,
+			operation: 'opencode.permission.respond',
+		},
+	);
 	return true;
 }
 
@@ -380,6 +423,7 @@ async function handleMessagePartUpdated(
 	if (!textDelta) return;
 	if (!event.properties.delta && state.seenTextPartIds.has(part.id)) return;
 	state.seenTextPartIds.add(part.id);
+	appendPartialOutput(state, textDelta);
 	state.input.logWriter('INFO', 'OpenCode text', {
 		text: textDelta.length > 300 ? `${textDelta.slice(0, 300)}...` : textDelta,
 	});
@@ -411,7 +455,7 @@ function buildOpenCodeResultFromResponse(
 	state: OpenCodeStreamState,
 	response: { parts: Part[]; info: AssistantMessage },
 ): AgentEngineResult {
-	const output = getTextOutput(response.parts);
+	const output = getTextOutput(response.parts) || getPartialOutput(state);
 	const assistant = response.info;
 	const prUrl = extractPRUrl(output);
 	const prEvidence = prUrl
@@ -503,7 +547,9 @@ export class OpenCodeEngine implements AgentEngine {
 
 		let server: Awaited<ReturnType<typeof startOpenCodeServer>> | undefined;
 		let sessionId: string | undefined;
+		let state: OpenCodeStreamState | undefined;
 		const eventAbort = new AbortController();
+		const serverState: OpenCodeServerState = { stdout: '', stderr: '' };
 
 		try {
 			server = await startOpenCodeServer(
@@ -517,11 +563,27 @@ export class OpenCodeEngine implements AgentEngine {
 				baseUrl: server.url,
 				directory: input.repoDir,
 			});
-
-			const sessionResult = await client.session.create({
-				body: { title: `CASCADE ${input.agentType}` },
-				throwOnError: true,
+			server.child.stdout?.on('data', (chunk: Buffer | string) => {
+				serverState.stdout += chunk.toString();
 			});
+			server.child.stderr?.on('data', (chunk: Buffer | string) => {
+				serverState.stderr += chunk.toString();
+			});
+			server.child.once('exit', (code) => {
+				serverState.exitCode = code ?? 1;
+			});
+
+			const sessionResult = await retryNativeToolOperation(
+				() =>
+					client.session.create({
+						body: { title: `CASCADE ${input.agentType}` },
+						throwOnError: true,
+					}),
+				{
+					logWriter: input.logWriter,
+					operation: 'opencode.session.create',
+				},
+			);
 			const session = sessionResult.data;
 			if (!session) {
 				throw new Error('OpenCode did not return a session payload');
@@ -537,7 +599,7 @@ export class OpenCodeEngine implements AgentEngine {
 				idleRejecter = reject;
 			});
 
-			const state: OpenCodeStreamState = {
+			state = {
 				sessionId: session.id,
 				model,
 				input,
@@ -547,12 +609,20 @@ export class OpenCodeEngine implements AgentEngine {
 				iterationCount: 0,
 				llmCallCount: 0,
 				totalCost: 0,
+				partialOutput: [],
 				idleResolver,
 				idleRejecter,
 			};
-			const eventStream = await client.event.subscribe({
-				signal: eventAbort.signal,
-			});
+			const eventStream = await retryNativeToolOperation(
+				() =>
+					client.event.subscribe({
+						signal: eventAbort.signal,
+					}),
+				{
+					logWriter: input.logWriter,
+					operation: 'opencode.event.subscribe',
+				},
+			);
 
 			const streamTask = (async () => {
 				try {
@@ -565,15 +635,24 @@ export class OpenCodeEngine implements AgentEngine {
 				}
 			})();
 
-			const promptResult = await client.session.prompt({
-				path: { id: session.id },
-				body: {
-					agent,
-					system: buildSystemPrompt(input.systemPrompt, input.availableTools),
-					parts: buildPromptParts(taskPrompt),
+			const promptResult = await retryNativeToolOperation(
+				() =>
+					client.session.prompt({
+						path: { id: session.id },
+						body: {
+							agent,
+							system: buildSystemPrompt(input.systemPrompt, input.availableTools),
+							parts: buildPromptParts(taskPrompt),
+						},
+						throwOnError: true,
+					}),
+				{
+					logWriter: input.logWriter,
+					operation: 'opencode.session.prompt',
+					isRetryable: (error) =>
+						isRetryableNativeToolError(error) && getPartialOutput(state).length === 0,
 				},
-				throwOnError: true,
-			});
+			);
 			const response = promptResult.data;
 			if (!response) {
 				throw new Error('OpenCode did not return a prompt response payload');
@@ -587,6 +666,26 @@ export class OpenCodeEngine implements AgentEngine {
 				parts: response.parts,
 				info: response.info as AssistantMessage,
 			});
+		} catch (error) {
+			const output = getPartialOutput(state);
+			const prUrl = extractPRUrl(output) ?? undefined;
+			const prEvidence = prUrl
+				? {
+						source: 'text' as const,
+						authoritative: false,
+					}
+				: undefined;
+			const errorMessage =
+				serverState.exitCode !== undefined
+					? formatOpenCodeServerExitError(serverState)
+					: formatNativeToolTransportError('OpenCode transport failed after retries', error);
+			input.logWriter('ERROR', 'OpenCode execution failed', {
+				error: error instanceof Error ? error.message : String(error),
+				serverExited: serverState.exitCode !== undefined,
+				serverExitCode: serverState.exitCode ?? null,
+				hasPartialOutput: output.length > 0,
+			});
+			return buildOpenCodeResult(false, output, undefined, prUrl, prEvidence, errorMessage);
 		} finally {
 			eventAbort.abort();
 			if (sessionId && server) {
