@@ -58,6 +58,9 @@ function buildArrayField(def: Extract<ParameterDefinition, { type: 'array' }>) {
 			return z.array(z.number());
 		case 'boolean':
 			return z.array(z.boolean());
+		case 'object':
+			// Allow strings or objects for flexible items (e.g. AddChecklist items)
+			return z.array(z.union([z.string(), z.object({}).passthrough()]));
 		default:
 			return z.array(z.unknown());
 	}
@@ -89,7 +92,7 @@ function buildZodField(def: ParameterDefinition) {
 			return applyFieldModifiers(buildArrayField(def), def);
 		}
 		case 'object': {
-			return applyFieldModifiers(z.object({}).catchall(z.unknown()), def);
+			return applyFieldModifiers(z.object({}).passthrough(), def);
 		}
 		default: {
 			const _exhaustive: never = def;

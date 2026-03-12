@@ -193,7 +193,8 @@ export const createPRReviewDef: ToolDefinition = {
 			required: true,
 		},
 		comments: {
-			type: 'object',
+			type: 'array',
+			items: 'object',
 			describe:
 				'Optional inline comments on specific files/lines ([{"path":"file","line":1,"body":"comment"}])',
 			optional: true,
