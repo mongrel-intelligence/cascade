@@ -1,4 +1,4 @@
-import { readFileSync, unlinkSync } from 'node:fs';
+import { unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -31,6 +31,7 @@ import {
 import { withGitHubToken } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
+import { readCompletionEvidence } from './completion.js';
 import { createNativeToolRuntimeArtifacts } from './nativeToolRuntime.js';
 import { postProcessResult } from './postProcess.js';
 import { createProgressMonitor } from './progress.js';
@@ -196,6 +197,14 @@ async function buildExecutionPlan(
 		logWriter,
 		agentInput: input,
 		nativeToolCapabilities: profile.allCapabilities,
+		completionRequirements: {
+			requiresPR: profile.finishHooks.requiresPR,
+			requiresReview: profile.finishHooks.requiresReview,
+			requiresPushedChanges: profile.finishHooks.requiresPushedChanges,
+			prSidecarPath,
+			reviewSidecarPath,
+			maxContinuationTurns: 1,
+		},
 		enableStopHooks: needsGitStateStopHooks(profile.finishHooks),
 		blockGitPush: profile.finishHooks.blockGitPush,
 		...(Object.keys(projectSecrets).length > 0 && { projectSecrets }),
@@ -214,16 +223,16 @@ async function buildExecutionPlan(
  */
 async function hydrateReviewSidecar(sidecarPath: string): Promise<void> {
 	try {
-		const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8'));
-		if (sidecar.body && sidecar.reviewUrl) {
-			recordReviewSubmission(sidecar.reviewUrl, sidecar.body, sidecar.event);
+		const sidecar = readCompletionEvidence({ reviewSidecarPath: sidecarPath });
+		if (sidecar.reviewBody && sidecar.reviewUrl) {
+			recordReviewSubmission(sidecar.reviewUrl, sidecar.reviewBody, sidecar.reviewEvent);
 			logger.info('Hydrated review sidecar from subprocess', {
-				event: sidecar.event,
-				bodyLength: sidecar.body.length,
+				event: sidecar.reviewEvent,
+				bodyLength: sidecar.reviewBody.length,
 			});
 		} else {
 			logger.warn('Review sidecar missing required fields', {
-				hasBody: !!sidecar.body,
+				hasBody: !!sidecar.reviewBody,
 				hasReviewUrl: !!sidecar.reviewUrl,
 			});
 		}
@@ -249,23 +258,19 @@ async function hydratePrSidecar(sidecarPath: string): Promise<{
 	prEvidence?: { source: 'native-tool-sidecar'; authoritative: true; command: string };
 }> {
 	try {
-		const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8'));
-		if (typeof sidecar.prUrl === 'string' && sidecar.prUrl) {
+		const sidecar = readCompletionEvidence({ prSidecarPath: sidecarPath });
+		if (sidecar.prUrl) {
 			recordPRCreation(sidecar.prUrl);
 			logger.info('Hydrated PR sidecar from subprocess', {
-				command: sidecar.source ?? 'cascade-tools scm create-pr',
+				command: sidecar.prCommand ?? 'cascade-tools scm create-pr',
 				prUrl: sidecar.prUrl,
-				alreadyExisted: Boolean(sidecar.alreadyExisted),
 			});
 			return {
 				prUrl: sidecar.prUrl,
 				prEvidence: {
 					source: 'native-tool-sidecar',
 					authoritative: true,
-					command:
-						typeof sidecar.source === 'string' && sidecar.source
-							? sidecar.source
-							: 'cascade-tools scm create-pr',
+					command: sidecar.prCommand ?? 'cascade-tools scm create-pr',
 				},
 			};
 		}
@@ -462,9 +467,12 @@ export async function executeWithEngine(
 			try {
 				result = await engine.execute(executionPlan);
 				await hydrateNativeToolSidecars(result, prSidecarPath, reviewSidecarPath);
+				const completionEvidence = readCompletionEvidence(executionPlan.completionRequirements);
 
 				postProcessResult(result, agentType, engine, input, identifier, {
 					requiresPR: profile.finishHooks.requiresPR,
+					requiresReview: profile.finishHooks.requiresReview,
+					hasAuthoritativeReview: completionEvidence.hasAuthoritativeReview,
 				});
 			} finally {
 				monitor?.stop();

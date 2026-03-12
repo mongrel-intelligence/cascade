@@ -151,6 +151,38 @@ describe('postProcessResult', () => {
 		});
 	});
 
+	describe('review validation for agents with requiresReview', () => {
+		it('marks as failed when requiresReview agent succeeds without authoritative review evidence', () => {
+			const result = makeResult({ success: true });
+			const engine = makeEngine();
+			const input = makeInput();
+
+			postProcessResult(result, 'review', engine, input, 'review-pr-123', {
+				requiresReview: true,
+				hasAuthoritativeReview: false,
+			});
+
+			expect(result.success).toBe(false);
+			expect(result.error).toBe(
+				'Agent completed but no authoritative PR review submission was recorded',
+			);
+		});
+
+		it('passes through when requiresReview agent has authoritative review evidence', () => {
+			const result = makeResult({ success: true });
+			const engine = makeEngine();
+			const input = makeInput();
+
+			postProcessResult(result, 'review', engine, input, 'review-pr-123', {
+				requiresReview: true,
+				hasAuthoritativeReview: true,
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.error).toBeUndefined();
+		});
+	});
+
 	describe('subscription cost zeroing', () => {
 		it('zeroes cost for claude-code engine with subscriptionCostZero=true', () => {
 			const result = makeResult({ success: true, cost: 2.5 });
