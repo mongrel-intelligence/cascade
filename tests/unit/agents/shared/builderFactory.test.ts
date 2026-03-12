@@ -54,6 +54,7 @@ const mockBuilderInstance = {
 	withCompaction: vi.fn(),
 	withTrailingMessage: vi.fn(),
 	withTextOnlyHandler: vi.fn(),
+	withCaching: vi.fn(),
 	withHooks: vi.fn(),
 	withGadgets: vi.fn(),
 	withMaxGadgetsPerResponse: vi.fn(),
@@ -180,6 +181,12 @@ describe('createConfiguredBuilder', () => {
 		const options = createBaseOptions();
 		await createConfiguredBuilder(options);
 		expect(mockBuilderInstance.withTemperature).toHaveBeenCalledWith(0);
+	});
+
+	it('enables token caching', async () => {
+		const options = createBaseOptions();
+		await createConfiguredBuilder(options);
+		expect(mockBuilderInstance.withCaching).toHaveBeenCalled();
 	});
 
 	it('calls initSessionState when skipSessionState is not set', async () => {
