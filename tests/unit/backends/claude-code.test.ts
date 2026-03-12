@@ -277,11 +277,15 @@ describe('buildSystemPrompt', () => {
 	it('appends tool guidance to system prompt', () => {
 		const result = buildSystemPrompt('You are an agent.', sampleTools);
 		expect(result).toContain('You are an agent.');
+		expect(result).toContain('## Native Tool Execution Rules');
+		expect(result).toContain('Never write pseudo tool calls');
 		expect(result).toContain('## CASCADE Tools');
 	});
 
 	it('returns system prompt unchanged when no tools', () => {
-		expect(buildSystemPrompt('You are an agent.', [])).toBe('You are an agent.');
+		const result = buildSystemPrompt('You are an agent.', []);
+		expect(result).toContain('## Native Tool Execution Rules');
+		expect(result).toContain('You are an agent.');
 	});
 });
 
