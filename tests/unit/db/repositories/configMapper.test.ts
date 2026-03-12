@@ -26,7 +26,7 @@ const baseProjectRow = {
 	model: null,
 	workItemBudgetUsd: null,
 	squintDbUrl: null,
-	agentBackend: null,
+	agentEngine: null,
 	subscriptionCostZero: false,
 };
 
@@ -86,10 +86,10 @@ describe('buildAgentMaps', () => {
 		const result = buildAgentMaps([]);
 		expect(result.models).toEqual({});
 		expect(result.iterations).toEqual({});
-		expect(result.backends).toEqual({});
+		expect(result.engines).toEqual({});
 	});
 
-	it('maps model, iterations, and backend for each agent type', () => {
+	it('maps model, iterations, and engine for each agent type', () => {
 		const configs: AgentConfigRow[] = [
 			{
 				orgId: null,
@@ -97,7 +97,7 @@ describe('buildAgentMaps', () => {
 				agentType: 'implementation',
 				model: 'claude-3-7-sonnet',
 				maxIterations: 30,
-				agentBackend: 'claude-code',
+				agentEngine: 'claude-code',
 			},
 			{
 				orgId: null,
@@ -105,14 +105,14 @@ describe('buildAgentMaps', () => {
 				agentType: 'review',
 				model: 'claude-3-opus',
 				maxIterations: null,
-				agentBackend: null,
+				agentEngine: null,
 			},
 		];
 
 		const result = buildAgentMaps(configs);
 		expect(result.models).toEqual({ implementation: 'claude-3-7-sonnet', review: 'claude-3-opus' });
 		expect(result.iterations).toEqual({ implementation: 30 });
-		expect(result.backends).toEqual({ implementation: 'claude-code' });
+		expect(result.engines).toEqual({ implementation: 'claude-code' });
 	});
 
 	it('skips null values', () => {
@@ -123,14 +123,14 @@ describe('buildAgentMaps', () => {
 				agentType: 'splitting',
 				model: null,
 				maxIterations: null,
-				agentBackend: null,
+				agentEngine: null,
 			},
 		];
 
 		const result = buildAgentMaps(configs);
 		expect(Object.keys(result.models)).toHaveLength(0);
 		expect(Object.keys(result.iterations)).toHaveLength(0);
-		expect(Object.keys(result.backends)).toHaveLength(0);
+		expect(Object.keys(result.engines)).toHaveLength(0);
 	});
 });
 
@@ -144,7 +144,7 @@ describe('mapDefaultsRow', () => {
 		maxIterations: 50,
 		watchdogTimeoutMs: 1800000,
 		workItemBudgetUsd: '5.00',
-		agentBackend: 'llmist',
+		agentEngine: 'llmist',
 		progressModel: 'progress-model',
 		progressIntervalMinutes: '5',
 	};
@@ -155,7 +155,7 @@ describe('mapDefaultsRow', () => {
 		expect(result.maxIterations).toBe(50);
 		expect(result.watchdogTimeoutMs).toBe(1800000);
 		expect(result.workItemBudgetUsd).toBe(5);
-		expect(result.agentBackend).toBe('llmist');
+		expect(result.agentEngine).toBe('llmist');
 		expect(result.progressModel).toBe('progress-model');
 		expect(result.progressIntervalMinutes).toBe(5);
 	});
@@ -184,7 +184,7 @@ describe('mapDefaultsRow', () => {
 				agentType: 'review',
 				model: 'review-model',
 				maxIterations: 20,
-				agentBackend: null,
+				agentEngine: null,
 			},
 		];
 		const result = mapDefaultsRow(defaultsRow, agentConfigs);
@@ -290,22 +290,22 @@ describe('mapProjectRow', () => {
 		expect(result.jira?.statuses).toEqual({ splitting: 'Briefing', todo: 'To Do' });
 	});
 
-	it('omits agentBackend when neither row.agentBackend nor agent overrides are set', () => {
+	it('omits agentEngine when neither row.agentEngine nor agent overrides are set', () => {
 		const result = mapProjectRow(makeInput());
-		expect(result.agentBackend).toBeUndefined();
+		expect(result.agentEngine).toBeUndefined();
 	});
 
-	it('builds agentBackend from project row', () => {
+	it('builds agentEngine from project row', () => {
 		const result = mapProjectRow(
 			makeInput({
-				row: { ...baseProjectRow, agentBackend: 'claude-code', subscriptionCostZero: true },
+				row: { ...baseProjectRow, agentEngine: 'claude-code', subscriptionCostZero: true },
 			}),
 		);
-		expect(result.agentBackend?.default).toBe('claude-code');
-		expect(result.agentBackend?.subscriptionCostZero).toBe(true);
+		expect(result.agentEngine?.default).toBe('claude-code');
+		expect(result.agentEngine?.subscriptionCostZero).toBe(true);
 	});
 
-	it('builds agentBackend overrides from project agent configs', () => {
+	it('builds agentEngine overrides from project agent configs', () => {
 		const agentConfigs: AgentConfigRow[] = [
 			{
 				orgId: null,
@@ -313,11 +313,11 @@ describe('mapProjectRow', () => {
 				agentType: 'implementation',
 				model: 'impl-model',
 				maxIterations: null,
-				agentBackend: 'claude-code',
+				agentEngine: 'claude-code',
 			},
 		];
 		const result = mapProjectRow(makeInput({ projectAgentConfigs: agentConfigs }));
-		expect(result.agentBackend?.overrides).toEqual({ implementation: 'claude-code' });
+		expect(result.agentEngine?.overrides).toEqual({ implementation: 'claude-code' });
 	});
 
 	it('converts workItemBudgetUsd from string to number', () => {
@@ -342,7 +342,7 @@ describe('mapProjectRow', () => {
 				agentType: 'implementation',
 				model: null,
 				maxIterations: null,
-				agentBackend: null,
+				agentEngine: null,
 			},
 		];
 		const result = mapProjectRow(makeInput({ projectAgentConfigs: agentConfigs }));

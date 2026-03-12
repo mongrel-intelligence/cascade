@@ -32,7 +32,7 @@ interface AgentConfig {
 	agentType: string;
 	model: string | null;
 	maxIterations: number | null;
-	agentBackend: string | null;
+	agentEngine: string | null;
 	maxConcurrency: number | null;
 }
 
@@ -44,7 +44,7 @@ function AgentConfigBadge({ config }: { config: AgentConfig | null }) {
 	if (config.model) parts.push(config.model);
 	if (config.maxIterations) parts.push(`${config.maxIterations} iterations`);
 	if (config.maxConcurrency) parts.push(`max ${config.maxConcurrency} concurrent`);
-	if (config.agentBackend) parts.push(config.agentBackend);
+	if (config.agentEngine) parts.push(config.agentEngine);
 	if (parts.length === 0) return <span className="text-xs text-muted-foreground">Configured</span>;
 	return <span className="text-xs text-muted-foreground">{parts.join(' · ')}</span>;
 }
@@ -208,6 +208,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 
 	// Agent configs query
 	const configsQuery = useQuery(trpc.agentConfigs.list.queryOptions({ projectId }));
+	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
 
 	// Definition-based triggers query
 	const triggersViewQuery = useQuery(
@@ -222,7 +223,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const [agentType, setAgentType] = useState('');
 	const [model, setModel] = useState('');
 	const [maxIterations, setMaxIterations] = useState('');
-	const [agentBackend, setAgentBackend] = useState('');
+	const [agentEngine, setAgentEngine] = useState('');
 	const [maxConcurrency, setMaxConcurrency] = useState('');
 	const [localLifecycleTriggers, setLocalLifecycleTriggers] = useState<Record<string, unknown>>({});
 	const [lifecycleSaving, setLifecycleSaving] = useState(false);
@@ -239,7 +240,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		setAgentType(defaultAgentType);
 		setModel('');
 		setMaxIterations('');
-		setAgentBackend('');
+		setAgentEngine('');
 		setMaxConcurrency('');
 		setDialogOpen(true);
 	}
@@ -249,7 +250,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		setAgentType(config.agentType);
 		setModel(config.model ?? '');
 		setMaxIterations(config.maxIterations?.toString() ?? '');
-		setAgentBackend(config.agentBackend ?? '');
+		setAgentEngine(config.agentEngine ?? '');
 		setMaxConcurrency(config.maxConcurrency?.toString() ?? '');
 		setDialogOpen(true);
 	}
@@ -262,7 +263,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				agentType,
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
-				agentBackend: agentBackend || null,
+				agentEngine: agentEngine || null,
 				maxConcurrency: maxConcurrency ? Number(maxConcurrency) : null,
 			}),
 		onSuccess: () => {
@@ -278,7 +279,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				agentType,
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
-				agentBackend: agentBackend || null,
+				agentEngine: agentEngine || null,
 				maxConcurrency: maxConcurrency ? Number(maxConcurrency) : null,
 			}),
 		onSuccess: () => {
@@ -506,12 +507,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 						<div className="grid grid-cols-2 gap-4">
 							<div className="space-y-2">
 								<Label htmlFor="ac-model">Model</Label>
-								<ModelField
-									id="ac-model"
-									value={model}
-									onChange={setModel}
-									backend={agentBackend}
-								/>
+								<ModelField id="ac-model" value={model} onChange={setModel} engine={agentEngine} />
 							</div>
 							<div className="space-y-2">
 								<Label htmlFor="ac-iterations">Max Iterations</Label>
@@ -536,18 +532,21 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 							/>
 						</div>
 						<div className="space-y-2">
-							<Label>Backend</Label>
+							<Label>Engine</Label>
 							<Select
-								value={agentBackend || '_none'}
-								onValueChange={(v) => setAgentBackend(v === '_none' ? '' : v)}
+								value={agentEngine || '_none'}
+								onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
 							>
 								<SelectTrigger className="w-full">
 									<SelectValue placeholder="Optional" />
 								</SelectTrigger>
 								<SelectContent>
 									<SelectItem value="_none">None</SelectItem>
-									<SelectItem value="llmist">llmist</SelectItem>
-									<SelectItem value="claude-code">claude-code</SelectItem>
+									{enginesQuery.data?.map((engine) => (
+										<SelectItem key={engine.id} value={engine.id}>
+											{engine.label}
+										</SelectItem>
+									))}
 								</SelectContent>
 							</Select>
 						</div>

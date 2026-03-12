@@ -73,12 +73,15 @@ export const projectsRouter = router({
 				branchPrefix: z.string().optional(),
 				model: z.string().nullish(),
 				workItemBudgetUsd: z.string().nullish(),
-				agentBackend: z.string().nullish(),
+				agentEngine: z.string().nullish(),
 				subscriptionCostZero: z.boolean().optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			return createProject(ctx.effectiveOrgId, input);
+			return createProject(ctx.effectiveOrgId, {
+				...input,
+				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
+			});
 		}),
 
 	update: protectedProcedure
@@ -91,14 +94,17 @@ export const projectsRouter = router({
 				branchPrefix: z.string().optional(),
 				model: z.string().nullish(),
 				workItemBudgetUsd: z.string().nullish(),
-				agentBackend: z.string().nullish(),
+				agentEngine: z.string().nullish(),
 				subscriptionCostZero: z.boolean().optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
 			await verifyProjectOwnership(input.id, ctx.effectiveOrgId);
 			const { id, ...updates } = input;
-			await updateProject(id, ctx.effectiveOrgId, updates);
+			await updateProject(id, ctx.effectiveOrgId, {
+				...updates,
+				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
+			});
 		}),
 
 	delete: protectedProcedure

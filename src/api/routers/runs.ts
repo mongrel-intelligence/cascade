@@ -67,8 +67,7 @@ export const runsRouter = router({
 	getLogs: protectedProcedure
 		.input(z.object({ runId: z.string().uuid() }))
 		.query(async ({ input }) => {
-			const logs = await getRunLogs(input.runId);
-			return logs;
+			return getRunLogs(input.runId);
 		}),
 
 	listLlmCalls: protectedProcedure

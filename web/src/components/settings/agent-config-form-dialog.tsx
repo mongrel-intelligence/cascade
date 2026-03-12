@@ -10,7 +10,7 @@ import {
 	SelectValue,
 } from '@/components/ui/select.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 
@@ -19,7 +19,7 @@ interface AgentConfig {
 	agentType: string;
 	model: string | null;
 	maxIterations: number | null;
-	agentBackend: string | null;
+	agentEngine: string | null;
 	maxConcurrency: number | null;
 }
 
@@ -32,11 +32,12 @@ interface AgentConfigFormDialogProps {
 export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfigFormDialogProps) {
 	const queryClient = useQueryClient();
 	const isEdit = !!config;
+	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
 
 	const [agentType, setAgentType] = useState(config?.agentType ?? '');
 	const [model, setModel] = useState(config?.model ?? '');
 	const [maxIterations, setMaxIterations] = useState(config?.maxIterations?.toString() ?? '');
-	const [agentBackend, setAgentBackend] = useState(config?.agentBackend ?? '');
+	const [agentEngine, setAgentEngine] = useState(config?.agentEngine ?? '');
 	const [maxConcurrency, setMaxConcurrency] = useState(config?.maxConcurrency?.toString() ?? '');
 
 	const queryKey = trpc.agentConfigs.list.queryOptions().queryKey;
@@ -47,7 +48,7 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 				agentType,
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
-				agentBackend: agentBackend || null,
+				agentEngine: agentEngine || null,
 				maxConcurrency: maxConcurrency ? Number(maxConcurrency) : null,
 			}),
 		onSuccess: () => {
@@ -63,7 +64,7 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 				agentType,
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
-				agentBackend: agentBackend || null,
+				agentEngine: agentEngine || null,
 				maxConcurrency: maxConcurrency ? Number(maxConcurrency) : null,
 			}),
 		onSuccess: () => {
@@ -100,7 +101,7 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 					<div className="grid grid-cols-2 gap-4">
 						<div className="space-y-2">
 							<Label htmlFor="gac-model">Model</Label>
-							<ModelField id="gac-model" value={model} onChange={setModel} backend={agentBackend} />
+							<ModelField id="gac-model" value={model} onChange={setModel} engine={agentEngine} />
 						</div>
 						<div className="space-y-2">
 							<Label htmlFor="gac-iterations">Max Iterations</Label>
@@ -125,18 +126,21 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 						/>
 					</div>
 					<div className="space-y-2">
-						<Label>Backend</Label>
+						<Label>Engine</Label>
 						<Select
-							value={agentBackend || '_none'}
-							onValueChange={(v) => setAgentBackend(v === '_none' ? '' : v)}
+							value={agentEngine || '_none'}
+							onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
 						>
 							<SelectTrigger className="w-full">
 								<SelectValue placeholder="Optional" />
 							</SelectTrigger>
 							<SelectContent>
 								<SelectItem value="_none">None</SelectItem>
-								<SelectItem value="llmist">llmist</SelectItem>
-								<SelectItem value="claude-code">claude-code</SelectItem>
+								{enginesQuery.data?.map((engine) => (
+									<SelectItem key={engine.id} value={engine.id}>
+										{engine.label}
+									</SelectItem>
+								))}
 							</SelectContent>
 						</Select>
 					</div>

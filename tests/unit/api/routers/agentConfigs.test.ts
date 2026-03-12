@@ -4,16 +4,32 @@ import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { CLAUDE_CODE_MODELS } from '../../../../src/backends/claude-code/models.js';
 import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
 
-const mockListAgentConfigs = vi.fn();
-const mockCreateAgentConfig = vi.fn();
-const mockUpdateAgentConfig = vi.fn();
-const mockDeleteAgentConfig = vi.fn();
+const {
+	mockListAgentConfigs,
+	mockCreateAgentConfig,
+	mockUpdateAgentConfig,
+	mockDeleteAgentConfig,
+	mockGetEngineCatalog,
+	mockRegisterBuiltInEngines,
+} = vi.hoisted(() => ({
+	mockListAgentConfigs: vi.fn(),
+	mockCreateAgentConfig: vi.fn(),
+	mockUpdateAgentConfig: vi.fn(),
+	mockDeleteAgentConfig: vi.fn(),
+	mockGetEngineCatalog: vi.fn(),
+	mockRegisterBuiltInEngines: vi.fn(),
+}));
 
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
 	listAgentConfigs: (...args: unknown[]) => mockListAgentConfigs(...args),
 	createAgentConfig: (...args: unknown[]) => mockCreateAgentConfig(...args),
 	updateAgentConfig: (...args: unknown[]) => mockUpdateAgentConfig(...args),
 	deleteAgentConfig: (...args: unknown[]) => mockDeleteAgentConfig(...args),
+}));
+
+vi.mock('../../../../src/backends/index.js', () => ({
+	getEngineCatalog: (...args: unknown[]) => mockGetEngineCatalog(...args),
+	registerBuiltInEngines: (...args: unknown[]) => mockRegisterBuiltInEngines(...args),
 }));
 
 // Mock getDb for ownership checks
@@ -44,6 +60,28 @@ describe('agentConfigsRouter', () => {
 	beforeEach(() => {
 		mockDbSelect.mockReturnValue({ from: mockDbFrom });
 		mockDbFrom.mockReturnValue({ where: mockDbWhere });
+		mockGetEngineCatalog.mockReturnValue([
+			{
+				id: 'llmist',
+				label: 'LLMist',
+				description: 'LLMist',
+				capabilities: [],
+				modelSelection: { type: 'free-text' },
+				logLabel: 'LLMist Log',
+			},
+			{
+				id: 'claude-code',
+				label: 'Claude Code',
+				description: 'Claude Code',
+				capabilities: [],
+				modelSelection: {
+					type: 'select',
+					defaultValueLabel: 'Default',
+					options: CLAUDE_CODE_MODELS,
+				},
+				logLabel: 'Claude Code Log',
+			},
+		]);
 	});
 
 	describe('list', () => {
@@ -111,7 +149,6 @@ describe('agentConfigsRouter', () => {
 				agentType: 'implementation',
 				model: 'claude-sonnet-4-5-20250929',
 				maxIterations: 25,
-				agentBackend: undefined,
 			});
 			expect(result).toEqual({ id: 10 });
 		});
@@ -124,14 +161,14 @@ describe('agentConfigsRouter', () => {
 			await caller.create({
 				projectId: 'proj-1',
 				agentType: 'review',
-				agentBackend: 'claude-code',
+				agentEngine: 'claude-code',
 			});
 
 			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
 				expect.objectContaining({
 					projectId: 'proj-1',
 					agentType: 'review',
-					agentBackend: 'claude-code',
+					agentEngine: 'claude-code',
 				}),
 			);
 		});
@@ -181,10 +218,10 @@ describe('agentConfigsRouter', () => {
 			mockUpdateAgentConfig.mockResolvedValue(undefined);
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
-			await caller.update({ id: 11, agentBackend: 'claude-code' });
+			await caller.update({ id: 11, agentEngine: 'claude-code' });
 
 			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(11, {
-				agentBackend: 'claude-code',
+				agentEngine: 'claude-code',
 			});
 		});
 
@@ -409,7 +446,6 @@ describe('agentConfigsRouter', () => {
 				agentType: undefined,
 				model: 'new-model',
 				maxIterations: 20,
-				agentBackend: undefined,
 				maxConcurrency: 2,
 			});
 		});

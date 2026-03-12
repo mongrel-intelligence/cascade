@@ -7,7 +7,7 @@
  *   2. Global agent_configs (org_id IS NULL, project_id IS NULL)
  *   3. Org-level agent_configs (org_id set, project_id IS NULL)
  *   4. Project-level agent_configs (project_id set)
- *   5. Project row overrides (model, workItemBudgetUsd, agentBackend)
+ *   5. Project row overrides (model, workItemBudgetUsd, agentEngine)
  *   6. Resolved credentials (integration credentials + org defaults)
  *
  * Usage:
@@ -49,7 +49,7 @@ interface TrelloIntegrationConfig {
 interface AgentConfigInfo {
 	model: string | null;
 	maxIterations: number | null;
-	agentBackend: string | null;
+	agentEngine: string | null;
 	prompt: string | null;
 }
 
@@ -61,7 +61,7 @@ interface EffectiveConfig {
 	agentType: string | null;
 	effectiveModel: string;
 	effectiveMaxIterations: number;
-	effectiveBackend: string;
+	effectiveEngine: string;
 	effectivePrompt: string | null;
 	orgDefaults: Record<string, string | number | null>;
 	projectOverrides: Record<string, string | number | boolean | null>;
@@ -80,24 +80,24 @@ function toInfo(ac: typeof agentConfigs.$inferSelect | null | undefined): AgentC
 	return {
 		model: ac.model,
 		maxIterations: ac.maxIterations,
-		agentBackend: ac.agentBackend,
+		agentEngine: ac.agentEngine,
 		prompt: ac.prompt,
 	};
 }
 
-function resolveBackend(
+function resolveEngine(
 	projectAc: AgentConfigInfo | null,
 	orgAc: AgentConfigInfo | null,
 	globalAc: AgentConfigInfo | null,
-	projectBackendDefault: string | null,
-	orgBackend: string | null,
+	projectEngineDefault: string | null,
+	orgEngine: string | null,
 ): string {
 	return (
-		projectAc?.agentBackend ??
-		orgAc?.agentBackend ??
-		globalAc?.agentBackend ??
-		projectBackendDefault ??
-		orgBackend ??
+		projectAc?.agentEngine ??
+		orgAc?.agentEngine ??
+		globalAc?.agentEngine ??
+		projectEngineDefault ??
+		orgEngine ??
 		'llmist'
 	);
 }
@@ -182,18 +182,18 @@ async function resolveEffectiveConfig(
 			globalAc?.maxIterations ??
 			defaultsRow?.maxIterations ??
 			50,
-		effectiveBackend: resolveBackend(
+		effectiveEngine: resolveEngine(
 			projectAc,
 			orgAc,
 			globalAc,
-			projectRow.agentBackend,
-			defaultsRow?.agentBackend ?? null,
+			projectRow.agentEngine,
+			defaultsRow?.agentEngine ?? null,
 		),
 		effectivePrompt: projectAc?.prompt ?? orgAc?.prompt ?? globalAc?.prompt ?? null,
 		orgDefaults: {
 			model: defaultsRow?.model ?? null,
 			maxIterations: defaultsRow?.maxIterations ?? null,
-			agentBackend: defaultsRow?.agentBackend ?? null,
+			agentEngine: defaultsRow?.agentEngine ?? null,
 			workItemBudgetUsd: defaultsRow?.workItemBudgetUsd ?? null,
 			watchdogTimeoutMs: defaultsRow?.watchdogTimeoutMs ?? null,
 			progressModel: defaultsRow?.progressModel ?? null,
@@ -202,7 +202,7 @@ async function resolveEffectiveConfig(
 		projectOverrides: {
 			model: projectRow.model,
 			workItemBudgetUsd: projectRow.workItemBudgetUsd,
-			agentBackend: projectRow.agentBackend,
+			agentEngine: projectRow.agentEngine,
 			subscriptionCostZero: projectRow.subscriptionCostZero,
 			baseBranch: projectRow.baseBranch,
 			branchPrefix: projectRow.branchPrefix,
@@ -236,7 +236,7 @@ function printAgentLayer(name: string, data: AgentConfigInfo | null): void {
 	console.log(`  ${name}:`);
 	if (data.model) console.log(`    model: ${data.model}`);
 	if (data.maxIterations != null) console.log(`    maxIterations: ${data.maxIterations}`);
-	if (data.agentBackend) console.log(`    agentBackend: ${data.agentBackend}`);
+	if (data.agentEngine) console.log(`    agentEngine: ${data.agentEngine}`);
 	if (data.prompt) {
 		const truncated = data.prompt.length > 80 ? `${data.prompt.slice(0, 80)}...` : data.prompt;
 		console.log(`    prompt: ${truncated}`);
@@ -315,7 +315,7 @@ function printConfig(config: EffectiveConfig): void {
 		printSection(`Agent: ${config.agentType}`, [
 			['Model', config.effectiveModel],
 			['Max iterations', config.effectiveMaxIterations],
-			['Backend', config.effectiveBackend],
+			['Engine', config.effectiveEngine],
 			['Prompt', config.effectivePrompt ?? '(none)'],
 		]);
 

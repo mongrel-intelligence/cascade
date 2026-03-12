@@ -28,7 +28,7 @@ export default class AgentsList extends DashboardCommand {
 				{ key: 'projectId', header: 'Project', format: (v) => String(v ?? '(org)') },
 				{ key: 'model', header: 'Model' },
 				{ key: 'maxIterations', header: 'Max Iter' },
-				{ key: 'agentBackend', header: 'Backend' },
+				{ key: 'agentEngine', header: 'Engine' },
 				{ key: 'prompt', header: 'Prompt', format: (v) => (v ? 'custom' : '-') },
 			]);
 		} catch (err) {

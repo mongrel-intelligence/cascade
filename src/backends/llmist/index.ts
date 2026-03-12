@@ -14,13 +14,14 @@ import { createTrackingContext } from '../../agents/utils/tracking.js';
 import { CUSTOM_MODELS } from '../../config/customModels.js';
 import { getSessionState } from '../../gadgets/sessionState.js';
 import { createLLMCallLogger } from '../../utils/llmLogging.js';
-import type { AgentBackend, AgentBackendInput, AgentBackendResult } from '../types.js';
+import { LLMIST_ENGINE_DEFINITION } from '../catalog.js';
+import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
 
 /**
- * llmist backend — executes agents using the llmist SDK.
+ * LLMist engine adapter — executes agents using the llmist SDK.
  *
- * Receives a fully pre-resolved AgentBackendInput from the shared adapter
- * (adapter.ts → executeWithBackend → buildBackendInput), which provides:
+ * Receives a fully pre-resolved AgentExecutionPlan from the shared adapter
+ * (adapter.ts → executeWithEngine → buildExecutionPlan), which provides:
  *   - systemPrompt, taskPrompt, model, maxIterations
  *   - contextInjections (pre-fetched PR/work-item/directory data)
  *   - repoDir (already set up by the outer executeAgentPipeline)
@@ -33,14 +34,14 @@ import type { AgentBackend, AgentBackendInput, AgentBackendResult } from '../typ
  *   - Context compaction (via createConfiguredBuilder)
  *   - Synthetic gadget call injection from ContextInjection[]
  */
-export class LlmistBackend implements AgentBackend {
-	readonly name = 'llmist';
+export class LlmistEngine implements AgentEngine {
+	readonly definition = LLMIST_ENGINE_DEFINITION;
 
 	supportsAgentType(): boolean {
 		return true; // llmist supports all agent types
 	}
 
-	async execute(input: AgentBackendInput): Promise<AgentBackendResult> {
+	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const {
 			agentType,
 			systemPrompt,
@@ -53,7 +54,7 @@ export class LlmistBackend implements AgentBackend {
 			logWriter,
 			runId,
 			agentInput,
-			llmistLogPath,
+			engineLogPath,
 			progressReporter,
 		} = input;
 
@@ -69,14 +70,14 @@ export class LlmistBackend implements AgentBackend {
 
 		// Create a LLM call logger for raw request/response file logging.
 		// Lives in the system tmp dir, independent from the outer fileLogger
-		// (which handles cascade.log / llmist.log).
+		// (which handles cascade.log / engine.log).
 		const llmCallLogger = createLLMCallLogger(os.tmpdir(), `llmist-${agentType}-${Date.now()}`);
 
-		// Point llmist SDK at the workspace directory llmist log path (provided by the outer
-		// pipeline's fileLogger). This ensures the structured llmist log is included in run
-		// records and log bundles (read from fileLogger.llmistLogPath during finalization).
-		if (llmistLogPath) {
-			process.env.LLMIST_LOG_FILE = llmistLogPath;
+		// Point llmist SDK at the workspace directory engine log path (provided by the outer
+		// pipeline's fileLogger). This ensures the structured engine log is included in run
+		// records and log bundles during finalization.
+		if (engineLogPath) {
+			process.env.LLMIST_LOG_FILE = engineLogPath;
 			process.env.LLMIST_LOG_TEE = 'true';
 		}
 

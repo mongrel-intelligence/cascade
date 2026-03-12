@@ -61,25 +61,25 @@ describe('ProjectConfigSchema', () => {
 		expect(result.branchPrefix).toBe('feature/');
 	});
 
-	it('accepts agentBackend with default and overrides', () => {
+	it('accepts agentEngine with default and overrides', () => {
 		const config = {
 			id: 'test',
 			orgId: 'default',
 			name: 'Test',
 			repo: 'owner/repo',
 			trello: { boardId: 'b1', lists: {}, labels: {} },
-			agentBackend: {
+			agentEngine: {
 				default: 'claude-code',
 				overrides: { review: 'llmist' },
 			},
 		};
 
 		const result = ProjectConfigSchema.parse(config);
-		expect(result.agentBackend?.default).toBe('claude-code');
-		expect(result.agentBackend?.overrides).toEqual({ review: 'llmist' });
+		expect(result.agentEngine?.default).toBe('claude-code');
+		expect(result.agentEngine?.overrides).toEqual({ review: 'llmist' });
 	});
 
-	it('works without agentBackend (optional field)', () => {
+	it('works without agentEngine (optional field)', () => {
 		const config = {
 			id: 'test',
 			orgId: 'default',
@@ -89,24 +89,24 @@ describe('ProjectConfigSchema', () => {
 		};
 
 		const result = ProjectConfigSchema.parse(config);
-		expect(result.agentBackend).toBeUndefined();
+		expect(result.agentEngine).toBeUndefined();
 	});
 
-	it('accepts subscriptionCostZero on agentBackend', () => {
+	it('accepts subscriptionCostZero on agentEngine', () => {
 		const config = {
 			id: 'test',
 			orgId: 'default',
 			name: 'Test',
 			repo: 'owner/repo',
 			trello: { boardId: 'b1', lists: {}, labels: {} },
-			agentBackend: {
+			agentEngine: {
 				default: 'claude-code',
 				subscriptionCostZero: true,
 			},
 		};
 
 		const result = ProjectConfigSchema.parse(config);
-		expect(result.agentBackend?.subscriptionCostZero).toBe(true);
+		expect(result.agentEngine?.subscriptionCostZero).toBe(true);
 	});
 
 	it('defaults subscriptionCostZero to false', () => {
@@ -116,28 +116,28 @@ describe('ProjectConfigSchema', () => {
 			name: 'Test',
 			repo: 'owner/repo',
 			trello: { boardId: 'b1', lists: {}, labels: {} },
-			agentBackend: {
+			agentEngine: {
 				default: 'claude-code',
 			},
 		};
 
 		const result = ProjectConfigSchema.parse(config);
-		expect(result.agentBackend?.subscriptionCostZero).toBe(false);
+		expect(result.agentEngine?.subscriptionCostZero).toBe(false);
 	});
 
-	it('applies default "llmist" for agentBackend.default when object provided', () => {
+	it('applies default "llmist" for agentEngine.default when object provided', () => {
 		const config = {
 			id: 'test',
 			orgId: 'default',
 			name: 'Test',
 			repo: 'owner/repo',
 			trello: { boardId: 'b1', lists: {}, labels: {} },
-			agentBackend: {},
+			agentEngine: {},
 		};
 
 		const result = ProjectConfigSchema.parse(config);
-		expect(result.agentBackend?.default).toBe('llmist');
-		expect(result.agentBackend?.overrides).toEqual({});
+		expect(result.agentEngine?.default).toBe('llmist');
+		expect(result.agentEngine?.overrides).toEqual({});
 	});
 
 	it('validates JIRA config with labels', () => {
@@ -231,7 +231,7 @@ describe('validateConfig', () => {
 		expect(() => validateConfig({ projects: [] })).toThrow();
 	});
 
-	it('applies default "llmist" for defaults.agentBackend', () => {
+	it('applies default "llmist" for defaults.agentEngine', () => {
 		const config = {
 			projects: [
 				{
@@ -245,13 +245,13 @@ describe('validateConfig', () => {
 		};
 
 		const result = validateConfig(config);
-		expect(result.defaults.agentBackend).toBe('llmist');
+		expect(result.defaults.agentEngine).toBe('llmist');
 	});
 
-	it('accepts custom defaults.agentBackend value', () => {
+	it('accepts custom defaults.agentEngine value', () => {
 		const config = {
 			defaults: {
-				agentBackend: 'claude-code',
+				agentEngine: 'claude-code',
 			},
 			projects: [
 				{
@@ -265,6 +265,6 @@ describe('validateConfig', () => {
 		};
 
 		const result = validateConfig(config);
-		expect(result.defaults.agentBackend).toBe('claude-code');
+		expect(result.defaults.agentEngine).toBe('claude-code');
 	});
 });

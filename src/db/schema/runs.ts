@@ -18,7 +18,7 @@ export const agentRuns = pgTable(
 		workItemId: text('work_item_id'),
 		prNumber: integer('pr_number'),
 		agentType: text('agent_type').notNull(),
-		backend: text('backend').notNull(),
+		engine: text('engine').notNull(),
 		triggerType: text('trigger_type'),
 		status: text('status').notNull().default('running'),
 		model: text('model'),
@@ -50,7 +50,7 @@ export const agentRunLogs = pgTable('agent_run_logs', {
 		.unique()
 		.references(() => agentRuns.id, { onDelete: 'cascade' }),
 	cascadeLog: text('cascade_log'),
-	llmistLog: text('llmist_log'),
+	engineLog: text('engine_log'),
 });
 
 export const agentRunLlmCalls = pgTable(

@@ -1,19 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Must mock backend modules before importing the registry
+// Must mock engine modules before importing the registry
 vi.mock('../../../src/backends/index.js', () => ({
-	resolveBackendName: vi.fn(),
-	getBackend: vi.fn(),
-	getRegisteredBackends: vi.fn(),
-	registerBackend: vi.fn(),
-	executeWithBackend: vi.fn(),
-	LlmistBackend: vi.fn().mockImplementation(() => ({
-		name: 'llmist',
+	resolveEngineName: vi.fn(),
+	getEngine: vi.fn(),
+	getRegisteredEngines: vi.fn(),
+	registerBuiltInEngines: vi.fn(),
+	registerEngine: vi.fn(),
+	executeWithEngine: vi.fn(),
+	LlmistEngine: vi.fn().mockImplementation(() => ({
+		definition: { id: 'llmist' },
 		execute: vi.fn(),
 		supportsAgentType: vi.fn().mockReturnValue(true),
 	})),
-	ClaudeCodeBackend: vi.fn().mockImplementation(() => ({
-		name: 'claude-code',
+	ClaudeCodeEngine: vi.fn().mockImplementation(() => ({
+		definition: { id: 'claude-code' },
 		execute: vi.fn(),
 		supportsAgentType: vi.fn().mockReturnValue(true),
 	})),
@@ -29,18 +30,18 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 import { runAgent } from '../../../src/agents/registry.js';
 import {
-	executeWithBackend,
-	getBackend,
-	getRegisteredBackends,
-	resolveBackendName,
+	executeWithEngine,
+	getEngine,
+	getRegisteredEngines,
+	resolveEngineName,
 } from '../../../src/backends/index.js';
-import type { AgentBackend } from '../../../src/backends/types.js';
+import type { AgentEngine } from '../../../src/backends/types.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 
-const mockResolveBackendName = vi.mocked(resolveBackendName);
-const mockGetBackend = vi.mocked(getBackend);
-const mockGetRegisteredBackends = vi.mocked(getRegisteredBackends);
-const mockExecuteWithBackend = vi.mocked(executeWithBackend);
+const mockResolveEngineName = vi.mocked(resolveEngineName);
+const mockGetEngine = vi.mocked(getEngine);
+const mockGetRegisteredEngines = vi.mocked(getRegisteredEngines);
+const mockExecuteWithEngine = vi.mocked(executeWithEngine);
 
 function makeInput(): AgentInput & { project: ProjectConfig; config: CascadeConfig } {
 	return {
@@ -60,8 +61,8 @@ function makeInput(): AgentInput & { project: ProjectConfig; config: CascadeConf
 				maxIterations: 50,
 				agentIterations: {},
 				watchdogTimeoutMs: 1800000,
-				cardBudgetUsd: 5,
-				agentBackend: 'llmist',
+				workItemBudgetUsd: 5,
+				agentEngine: 'llmist',
 				progressModel: 'openrouter:google/gemini-2.5-flash-lite',
 				progressIntervalMinutes: 5,
 			},
@@ -70,46 +71,53 @@ function makeInput(): AgentInput & { project: ProjectConfig; config: CascadeConf
 	} as AgentInput & { project: ProjectConfig; config: CascadeConfig };
 }
 
-function makeMockBackend(name: string, supportsAll = true): AgentBackend {
+function makeMockEngine(id: string, supportsAll = true): AgentEngine {
 	return {
-		name,
+		definition: {
+			id,
+			label: id,
+			description: `${id} description`,
+			capabilities: [],
+			modelSelection: { type: 'free-text' },
+			logLabel: 'Engine Log',
+		},
 		execute: vi.fn().mockResolvedValue({ success: true, output: 'Done' }),
 		supportsAgentType: vi.fn().mockReturnValue(supportsAll),
 	};
 }
 
 describe('runAgent', () => {
-	it('resolves backend name from config', async () => {
-		const backend = makeMockBackend('llmist');
-		mockResolveBackendName.mockReturnValue('llmist');
-		mockGetBackend.mockReturnValue(backend);
-		mockExecuteWithBackend.mockResolvedValue({ success: true, output: 'Done' });
+	it('resolves engine name from config', async () => {
+		const engine = makeMockEngine('llmist');
+		mockResolveEngineName.mockReturnValue('llmist');
+		mockGetEngine.mockReturnValue(engine);
+		mockExecuteWithEngine.mockResolvedValue({ success: true, output: 'Done' });
 
 		await runAgent('implementation', makeInput());
 
-		expect(mockResolveBackendName).toHaveBeenCalledWith(
+		expect(mockResolveEngineName).toHaveBeenCalledWith(
 			'implementation',
 			expect.any(Object),
 			expect.any(Object),
 		);
 	});
 
-	it('returns error when backend not found (lists registered backends)', async () => {
-		mockResolveBackendName.mockReturnValue('unknown-backend');
-		mockGetBackend.mockReturnValue(undefined);
-		mockGetRegisteredBackends.mockReturnValue(['llmist']);
+	it('returns error when engine not found (lists registered engines)', async () => {
+		mockResolveEngineName.mockReturnValue('unknown-engine');
+		mockGetEngine.mockReturnValue(undefined);
+		mockGetRegisteredEngines.mockReturnValue(['llmist']);
 
 		const result = await runAgent('implementation', makeInput());
 
 		expect(result.success).toBe(false);
-		expect(result.error).toContain('Unknown agent backend: "unknown-backend"');
+		expect(result.error).toContain('Unknown agent engine: "unknown-engine"');
 		expect(result.error).toContain('llmist');
 	});
 
-	it('returns error when backend does not support agent type', async () => {
-		const backend = makeMockBackend('custom', false);
-		mockResolveBackendName.mockReturnValue('custom');
-		mockGetBackend.mockReturnValue(backend);
+	it('returns error when engine does not support agent type', async () => {
+		const engine = makeMockEngine('custom', false);
+		mockResolveEngineName.mockReturnValue('custom');
+		mockGetEngine.mockReturnValue(engine);
 
 		const result = await runAgent('implementation', makeInput());
 
@@ -117,11 +125,11 @@ describe('runAgent', () => {
 		expect(result.error).toContain('does not support agent type "implementation"');
 	});
 
-	it('for llmist: calls executeWithBackend (unified adapter path)', async () => {
-		const backend = makeMockBackend('llmist');
-		mockResolveBackendName.mockReturnValue('llmist');
-		mockGetBackend.mockReturnValue(backend);
-		mockExecuteWithBackend.mockResolvedValue({
+	it('for llmist: calls executeWithEngine (unified adapter path)', async () => {
+		const engine = makeMockEngine('llmist');
+		mockResolveEngineName.mockReturnValue('llmist');
+		mockGetEngine.mockReturnValue(engine);
+		mockExecuteWithEngine.mockResolvedValue({
 			success: true,
 			output: 'Done via adapter',
 		});
@@ -129,17 +137,16 @@ describe('runAgent', () => {
 		const input = makeInput();
 		const result = await runAgent('implementation', input);
 
-		// llmist now goes through executeWithBackend like all other backends
-		expect(mockExecuteWithBackend).toHaveBeenCalledWith(backend, 'implementation', input);
-		expect(backend.execute).not.toHaveBeenCalled();
+		expect(mockExecuteWithEngine).toHaveBeenCalledWith(engine, 'implementation', input);
+		expect(engine.execute).not.toHaveBeenCalled();
 		expect(result.output).toBe('Done via adapter');
 	});
 
-	it('for claude-code: calls executeWithBackend with full lifecycle', async () => {
-		const backend = makeMockBackend('claude-code');
-		mockResolveBackendName.mockReturnValue('claude-code');
-		mockGetBackend.mockReturnValue(backend);
-		mockExecuteWithBackend.mockResolvedValue({
+	it('for claude-code: calls executeWithEngine with full lifecycle', async () => {
+		const engine = makeMockEngine('claude-code');
+		mockResolveEngineName.mockReturnValue('claude-code');
+		mockGetEngine.mockReturnValue(engine);
+		mockExecuteWithEngine.mockResolvedValue({
 			success: true,
 			output: 'Done via adapter',
 		});
@@ -147,8 +154,8 @@ describe('runAgent', () => {
 		const input = makeInput();
 		const result = await runAgent('implementation', input);
 
-		expect(mockExecuteWithBackend).toHaveBeenCalledWith(backend, 'implementation', input);
-		expect(backend.execute).not.toHaveBeenCalled();
+		expect(mockExecuteWithEngine).toHaveBeenCalledWith(engine, 'implementation', input);
+		expect(engine.execute).not.toHaveBeenCalled();
 		expect(result.output).toBe('Done via adapter');
 	});
 });

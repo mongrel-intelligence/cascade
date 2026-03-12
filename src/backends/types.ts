@@ -16,28 +16,39 @@ import type {
 } from '../agents/contracts/index.js';
 
 /**
- * Input provided to an AgentBackend for execution.
+ * Shared execution context created by the platform lifecycle.
  */
-export interface AgentBackendInput {
+export interface AgentExecutionContext {
 	agentType: string;
 	project: ProjectConfig;
 	config: CascadeConfig;
 	repoDir: string;
-	systemPrompt: string;
-	taskPrompt: string;
-	cliToolsDir: string;
-	availableTools: ToolManifest[];
-	contextInjections: ContextInjection[];
-	maxIterations: number;
-	budgetUsd?: number;
-	model: string;
+	agentInput: AgentInput;
 	progressReporter: ProgressReporter;
 	logWriter: LogWriter;
-	agentInput: AgentInput;
 	/** Per-project secrets to inject into subprocess environment */
 	projectSecrets?: Record<string, string>;
 	/** Database run ID for real-time LLM call logging */
 	runId?: string;
+}
+
+/**
+ * Prompt material normalized by the shared lifecycle before engine execution.
+ */
+export interface AgentPromptSpec {
+	systemPrompt: string;
+	taskPrompt: string;
+	availableTools: ToolManifest[];
+	contextInjections: ContextInjection[];
+}
+
+/**
+ * Engine policy resolved by shared orchestration.
+ */
+export interface AgentEnginePolicy {
+	maxIterations: number;
+	budgetUsd?: number;
+	model: string;
 	/** SDK tools to allow (defaults to all 6: Read, Write, Edit, Bash, Glob, Grep) */
 	sdkTools?: string[];
 	/** Whether to enable stop hooks that check for uncommitted/unpushed changes (defaults to true) */
@@ -45,13 +56,23 @@ export interface AgentBackendInput {
 	/** Whether to block git push in hooks (defaults to true) */
 	blockGitPush?: boolean;
 	/** Path where the llmist SDK should write its structured log (workspace dir, not temp) */
-	llmistLogPath?: string;
+	engineLogPath?: string;
 }
 
 /**
- * Result returned by an AgentBackend after execution.
+ * Fully normalized execution plan passed to an engine implementation.
  */
-export interface AgentBackendResult {
+export interface AgentExecutionPlan
+	extends AgentExecutionContext,
+		AgentPromptSpec,
+		AgentEnginePolicy {
+	cliToolsDir: string;
+}
+
+/**
+ * Result returned by an AgentEngine after execution.
+ */
+export interface AgentEngineResult {
 	success: boolean;
 	output: string;
 	prUrl?: string;
@@ -62,16 +83,29 @@ export interface AgentBackendResult {
 }
 
 /**
- * Interface that all agent backends must implement.
- * This is the core abstraction that makes agent execution pluggable.
+ * Describes how an engine should be presented and configured by callers/UI.
  */
-export interface AgentBackend {
-	/** Unique name for this backend, e.g., 'llmist', 'claude-code' */
-	readonly name: string;
+export interface AgentEngineDefinition {
+	readonly id: string;
+	readonly label: string;
+	readonly description: string;
+	readonly capabilities: string[];
+	readonly modelSelection:
+		| { type: 'free-text' }
+		| {
+				type: 'select';
+				defaultValueLabel: string;
+				options: ReadonlyArray<{ value: string; label: string }>;
+		  };
+	readonly logLabel: string;
+}
 
-	/** Execute an agent with the given input */
-	execute(input: AgentBackendInput): Promise<AgentBackendResult>;
+/**
+ * Interface that all agent engines must implement.
+ */
+export interface AgentEngine {
+	readonly definition: AgentEngineDefinition;
 
-	/** Check whether this backend supports the given agent type */
+	execute(input: AgentExecutionPlan): Promise<AgentEngineResult>;
 	supportsAgentType(agentType: string): boolean;
 }

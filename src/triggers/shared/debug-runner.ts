@@ -26,8 +26,8 @@ async function extractLogsToTempDir(runId: string): Promise<string> {
 	if (logs?.cascadeLog) {
 		fs.writeFileSync(join(logDir, 'cascade.log'), logs.cascadeLog, 'utf-8');
 	}
-	if (logs?.llmistLog) {
-		fs.writeFileSync(join(logDir, 'llmist.log'), logs.llmistLog, 'utf-8');
+	if (logs?.engineLog) {
+		fs.writeFileSync(join(logDir, 'engine.log'), logs.engineLog, 'utf-8');
 	}
 
 	// Write LLM call request/response files

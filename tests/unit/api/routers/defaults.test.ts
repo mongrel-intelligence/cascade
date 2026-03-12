@@ -61,7 +61,7 @@ describe('defaultsRouter', () => {
 				maxIterations: 30,
 				watchdogTimeoutMs: 300000,
 				workItemBudgetUsd: '5.00',
-				agentBackend: 'claude-code',
+				agentEngine: 'claude-code',
 				progressModel: 'claude-haiku-3-20240307',
 				progressIntervalMinutes: '10',
 			});
@@ -71,7 +71,7 @@ describe('defaultsRouter', () => {
 				maxIterations: 30,
 				watchdogTimeoutMs: 300000,
 				workItemBudgetUsd: '5.00',
-				agentBackend: 'claude-code',
+				agentEngine: 'claude-code',
 				progressModel: 'claude-haiku-3-20240307',
 				progressIntervalMinutes: '10',
 			});

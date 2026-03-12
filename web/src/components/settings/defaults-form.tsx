@@ -15,12 +15,13 @@ import { useEffect, useState } from 'react';
 export function DefaultsForm() {
 	const queryClient = useQueryClient();
 	const defaultsQuery = useQuery(trpc.defaults.get.queryOptions());
+	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
 
 	const [model, setModel] = useState('');
 	const [maxIterations, setMaxIterations] = useState('');
 	const [watchdogTimeoutMs, setWatchdogTimeoutMs] = useState('');
 	const [workItemBudgetUsd, setWorkItemBudgetUsd] = useState('');
-	const [agentBackend, setAgentBackend] = useState('');
+	const [agentEngine, setAgentEngine] = useState('');
 	const [progressModel, setProgressModel] = useState('');
 	const [progressIntervalMinutes, setProgressIntervalMinutes] = useState('');
 
@@ -31,7 +32,7 @@ export function DefaultsForm() {
 			setMaxIterations(d.maxIterations?.toString() ?? '');
 			setWatchdogTimeoutMs(d.watchdogTimeoutMs?.toString() ?? '');
 			setWorkItemBudgetUsd(d.workItemBudgetUsd ?? '');
-			setAgentBackend(d.agentBackend ?? '');
+			setAgentEngine(d.agentEngine ?? '');
 			setProgressModel(d.progressModel ?? '');
 			setProgressIntervalMinutes(d.progressIntervalMinutes ?? '');
 		}
@@ -44,7 +45,7 @@ export function DefaultsForm() {
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				watchdogTimeoutMs: watchdogTimeoutMs ? Number(watchdogTimeoutMs) : null,
 				workItemBudgetUsd: workItemBudgetUsd || null,
-				agentBackend: agentBackend || null,
+				agentEngine: agentEngine || null,
 				progressModel: progressModel || null,
 				progressIntervalMinutes: progressIntervalMinutes || null,
 			}),
@@ -68,7 +69,7 @@ export function DefaultsForm() {
 			<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 				<div className="space-y-2">
 					<Label htmlFor="d-model">Model</Label>
-					<ModelField id="d-model" value={model} onChange={setModel} backend={agentBackend} />
+					<ModelField id="d-model" value={model} onChange={setModel} engine={agentEngine} />
 				</div>
 				<div className="space-y-2">
 					<Label htmlFor="d-iterations">Max Iterations</Label>
@@ -101,18 +102,21 @@ export function DefaultsForm() {
 					/>
 				</div>
 				<div className="space-y-2">
-					<Label>Agent Backend</Label>
+					<Label>Agent Engine</Label>
 					<Select
-						value={agentBackend || '_none'}
-						onValueChange={(v) => setAgentBackend(v === '_none' ? '' : v)}
+						value={agentEngine || '_none'}
+						onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
 					>
 						<SelectTrigger className="w-full">
-							<SelectValue placeholder="Select backend" />
+							<SelectValue placeholder="Select engine" />
 						</SelectTrigger>
 						<SelectContent>
 							<SelectItem value="_none">None</SelectItem>
-							<SelectItem value="llmist">llmist</SelectItem>
-							<SelectItem value="claude-code">claude-code</SelectItem>
+							{enginesQuery.data?.map((engine) => (
+								<SelectItem key={engine.id} value={engine.id}>
+									{engine.label}
+								</SelectItem>
+							))}
 						</SelectContent>
 					</Select>
 				</div>

@@ -20,7 +20,7 @@ interface AgentConfig {
 	agentType: string;
 	model: string | null;
 	maxIterations: number | null;
-	agentBackend: string | null;
+	agentEngine: string | null;
 	maxConcurrency: number | null;
 }
 
@@ -45,7 +45,7 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 							<TableHead>Model</TableHead>
 							<TableHead className="hidden md:table-cell">Max Iterations</TableHead>
 							<TableHead className="hidden md:table-cell">Max Concurrency</TableHead>
-							<TableHead className="hidden md:table-cell">Backend</TableHead>
+							<TableHead className="hidden md:table-cell">Engine</TableHead>
 							<TableHead>Scope</TableHead>
 							<TableHead className="w-20" />
 						</TableRow>
@@ -68,7 +68,7 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 								<TableCell className="hidden md:table-cell">
 									{config.maxConcurrency ?? '-'}
 								</TableCell>
-								<TableCell className="hidden md:table-cell">{config.agentBackend ?? '-'}</TableCell>
+								<TableCell className="hidden md:table-cell">{config.agentEngine ?? '-'}</TableCell>
 								<TableCell>
 									{config.orgId ? (
 										<Badge variant="secondary">Org</Badge>

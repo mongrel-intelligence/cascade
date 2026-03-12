@@ -19,7 +19,7 @@ export async function upsertCascadeDefaults(
 		maxIterations?: number | null;
 		watchdogTimeoutMs?: number | null;
 		workItemBudgetUsd?: string | null;
-		agentBackend?: string | null;
+		agentEngine?: string | null;
 		progressModel?: string | null;
 		progressIntervalMinutes?: string | null;
 	},

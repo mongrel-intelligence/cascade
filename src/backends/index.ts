@@ -1,16 +1,25 @@
 export type {
-	AgentBackend,
-	AgentBackendInput,
-	AgentBackendResult,
+	AgentEngine,
+	AgentEngineDefinition,
+	AgentEnginePolicy,
+	AgentEngineResult,
+	AgentExecutionContext,
+	AgentExecutionPlan,
 	ContextInjection,
 	LogWriter,
 	ProgressReporter,
 	ToolManifest,
 } from './types.js';
 
-export { registerBackend, getBackend, getRegisteredBackends } from './registry.js';
-export { resolveBackendName } from './resolution.js';
-export { executeWithBackend } from './adapter.js';
+export {
+	getEngine,
+	getEngineCatalog,
+	getRegisteredEngines,
+	registerEngine,
+} from './registry.js';
+export { registerBuiltInEngines } from './bootstrap.js';
+export { resolveEngineName } from './resolution.js';
+export { executeWithEngine } from './adapter.js';
 export { createProgressMonitor, ProgressMonitor } from './progress.js';
-export { LlmistBackend } from './llmist/index.js';
-export { ClaudeCodeBackend } from './claude-code/index.js';
+export { LlmistEngine } from './llmist/index.js';
+export { ClaudeCodeEngine } from './claude-code/index.js';

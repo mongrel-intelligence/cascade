@@ -7,7 +7,7 @@ interface LogViewerProps {
 	runId: string;
 }
 
-type LogTab = 'cascade' | 'llmist';
+type LogTab = 'cascade' | 'engine';
 
 export function LogViewer({ runId }: LogViewerProps) {
 	const logsQuery = useQuery(trpc.runs.getLogs.queryOptions({ runId }));
@@ -28,10 +28,10 @@ export function LogViewer({ runId }: LogViewerProps) {
 		);
 	}
 
-	const logContent = activeTab === 'cascade' ? data.cascadeLog : data.llmistLog;
+	const logContent = activeTab === 'cascade' ? data.cascadeLog : data.engineLog;
 	const tabs: { id: LogTab; label: string }[] = [
 		{ id: 'cascade', label: 'Cascade Log' },
-		{ id: 'llmist', label: 'LLMist Log' },
+		{ id: 'engine', label: 'Engine Log' },
 	];
 
 	return (

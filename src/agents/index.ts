@@ -1,2 +1,2 @@
-export { runAgent, registerBackend } from './registry.js';
+export { runAgent, registerEngine } from './registry.js';
 export { getSystemPrompt } from './prompts/index.js';

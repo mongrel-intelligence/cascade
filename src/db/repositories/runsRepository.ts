@@ -19,7 +19,7 @@ export interface CreateRunInput {
 	workItemId?: string;
 	prNumber?: number;
 	agentType: string;
-	backend: string;
+	engine: string;
 	triggerType?: string;
 	model?: string;
 	maxIterations?: number;
@@ -79,7 +79,7 @@ const enrichedRunSelect = {
 	workItemId: agentRuns.workItemId,
 	prNumber: agentRuns.prNumber,
 	agentType: agentRuns.agentType,
-	backend: agentRuns.backend,
+	engine: agentRuns.engine,
 	triggerType: agentRuns.triggerType,
 	status: agentRuns.status,
 	model: agentRuns.model,
@@ -108,7 +108,7 @@ export async function createRun(input: CreateRunInput): Promise<string> {
 			workItemId: input.workItemId,
 			prNumber: input.prNumber,
 			agentType: input.agentType,
-			backend: input.backend,
+			engine: input.engine,
 			triggerType: input.triggerType,
 			model: input.model,
 			maxIterations: input.maxIterations,
@@ -180,13 +180,13 @@ export async function getRunsByProjectId(projectId: string) {
 export async function storeRunLogs(
 	runId: string,
 	cascadeLog?: string,
-	llmistLog?: string,
+	engineLog?: string,
 ): Promise<void> {
 	const db = getDb();
 	await db.insert(agentRunLogs).values({
 		runId,
 		cascadeLog: cascadeLog ?? null,
-		llmistLog: llmistLog ?? null,
+		engineLog: engineLog ?? null,
 	});
 }
 
@@ -441,7 +441,7 @@ export async function listRuns(input: ListRunsInput) {
 				workItemId: agentRuns.workItemId,
 				prNumber: agentRuns.prNumber,
 				agentType: agentRuns.agentType,
-				backend: agentRuns.backend,
+				engine: agentRuns.engine,
 				triggerType: agentRuns.triggerType,
 				status: agentRuns.status,
 				model: agentRuns.model,

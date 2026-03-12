@@ -35,7 +35,7 @@ vi.mock('../../../src/db/schema/index.js', () => ({
 		prNumber: 'pr_number',
 		durationMs: 'duration_ms',
 		costUsd: 'cost_usd',
-		backend: 'backend',
+		engine: 'engine',
 		triggerType: 'trigger_type',
 		model: 'model',
 		maxIterations: 'max_iterations',
@@ -150,7 +150,7 @@ describe('runsRepository', () => {
 				projectId: 'proj-1',
 				workItemId: 'card-1',
 				agentType: 'implementation',
-				backend: 'llmist',
+				engine: 'llmist',
 				triggerType: 'card-moved-to-todo',
 				model: 'claude-3',
 				maxIterations: 20,
@@ -163,7 +163,7 @@ describe('runsRepository', () => {
 					projectId: 'proj-1',
 					workItemId: 'card-1',
 					agentType: 'implementation',
-					backend: 'llmist',
+					engine: 'llmist',
 					status: 'running',
 				}),
 			);
@@ -175,7 +175,7 @@ describe('runsRepository', () => {
 			const result = await createRun({
 				projectId: 'proj-1',
 				agentType: 'splitting',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			expect(result).toBe('run-uuid-2');
@@ -183,7 +183,7 @@ describe('runsRepository', () => {
 				expect.objectContaining({
 					projectId: 'proj-1',
 					agentType: 'splitting',
-					backend: 'claude-code',
+					engine: 'claude-code',
 					status: 'running',
 					workItemId: undefined,
 					prNumber: undefined,
@@ -306,7 +306,7 @@ describe('runsRepository', () => {
 			expect(mockValues).toHaveBeenCalledWith({
 				runId: 'run-1',
 				cascadeLog: 'cascade log text',
-				llmistLog: 'llmist log text',
+				engineLog: 'llmist log text',
 			});
 		});
 
@@ -318,14 +318,14 @@ describe('runsRepository', () => {
 			expect(mockValues).toHaveBeenCalledWith({
 				runId: 'run-1',
 				cascadeLog: null,
-				llmistLog: null,
+				engineLog: null,
 			});
 		});
 	});
 
 	describe('getRunLogs', () => {
 		it('returns logs when found', async () => {
-			const mockLogs = { runId: 'run-1', cascadeLog: 'log text', llmistLog: null };
+			const mockLogs = { runId: 'run-1', cascadeLog: 'log text', engineLog: null };
 			mockWhere.mockResolvedValue([mockLogs]);
 
 			const result = await getRunLogs('run-1');

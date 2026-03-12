@@ -16,7 +16,7 @@ import {
 import { resolveModelConfig } from '../agents/shared/modelResolution.js';
 import { buildPromptContext } from '../agents/shared/promptContext.js';
 import { setupRepository } from '../agents/shared/repository.js';
-import { finalizeBackendRun, tryCreateRun } from '../agents/shared/runTracking.js';
+import { finalizeEngineRun, tryCreateRun } from '../agents/shared/runTracking.js';
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
@@ -37,7 +37,7 @@ import {
 	injectProgressCommentId,
 	resolveGitHubToken,
 } from './secretBuilder.js';
-import type { AgentBackend, AgentBackendInput } from './types.js';
+import type { AgentEngine, AgentExecutionPlan } from './types.js';
 
 /**
  * Resolve the working directory — either a pre-existing log dir or a fresh repo clone.
@@ -60,10 +60,10 @@ async function resolveRepoDir(
 }
 
 /**
- * Build the BackendInput by resolving model config, fetching context, etc.
+ * Build the execution plan by resolving model config, fetching context, etc.
  * Uses agent profiles to customize tools, context, and prompts per agent type.
  */
-async function buildBackendInput(
+async function buildExecutionPlan(
 	agentType: string,
 	input: AgentInput & { project: ProjectConfig; config: CascadeConfig },
 	repoDir: string,
@@ -71,7 +71,7 @@ async function buildBackendInput(
 	_log: ReturnType<typeof createAgentLogger>,
 	gitHubToken: string | undefined,
 	isGitHubAck: boolean,
-): Promise<Omit<AgentBackendInput, 'progressReporter'> & { reviewSidecarPath?: string }> {
+): Promise<Omit<AgentExecutionPlan, 'progressReporter'> & { reviewSidecarPath?: string }> {
 	const { project, config, workItemId } = input;
 
 	// PR context from check-failure trigger
@@ -254,8 +254,8 @@ function buildProgressMonitorConfig(
 	};
 }
 
-export async function executeWithBackend(
-	backend: AgentBackend,
+export async function executeWithEngine(
+	engine: AgentEngine,
 	agentType: string,
 	input: AgentInput & { project: ProjectConfig; config: CascadeConfig },
 ): Promise<AgentResult> {
@@ -272,7 +272,7 @@ export async function executeWithBackend(
 		squintDbUrl: input.project.squintDbUrl,
 
 		finalizeRun: (runId, fileLogger, outcome) =>
-			finalizeBackendRun(runId, fileLogger, {
+			finalizeEngineRun(runId, fileLogger, {
 				status: outcome.status,
 				durationMs: outcome.durationMs,
 				success: outcome.success,
@@ -290,14 +290,14 @@ export async function executeWithBackend(
 			const gitHubToken = await resolveGitHubToken(profile, input.project.id, agentType);
 
 			// Determine if the ack comment is a GitHub PR comment (numeric ID) vs PM comment (string ID)
-			// Must be computed before buildBackendInput so it can be injected into subprocess secrets.
+			// Must be computed before buildExecutionPlan so it can be injected into subprocess secrets.
 			const isGitHubAck = Boolean(
 				input.prNumber && input.repoFullName && typeof input.ackCommentId === 'number',
 			);
 
-			// Build backend input wrapped in GitHub token scope if needed
+			// Build the engine execution plan wrapped in GitHub token scope if needed
 			const buildPartial = () =>
-				buildBackendInput(agentType, input, repoDir, logWriter, log, gitHubToken, isGitHubAck);
+				buildExecutionPlan(agentType, input, repoDir, logWriter, log, gitHubToken, isGitHubAck);
 
 			const partialInput = gitHubToken
 				? await withGitHubToken(gitHubToken, buildPartial)
@@ -312,7 +312,7 @@ export async function executeWithBackend(
 					workItemId: input.workItemId,
 					prNumber: input.prNumber as number | undefined,
 					agentType,
-					backendName: backend.name,
+					engineName: engine.definition.id,
 					triggerType: input.triggerType,
 				},
 				partialInput.model,
@@ -329,7 +329,7 @@ export async function executeWithBackend(
 				buildProgressMonitorConfig(input, agentType, logWriter, repoDir, isGitHubAck),
 			);
 
-			const backendInput: AgentBackendInput = {
+			const executionPlan: AgentExecutionPlan = {
 				...partialInput,
 				progressReporter: monitor ?? {
 					onIteration: async () => {},
@@ -337,18 +337,18 @@ export async function executeWithBackend(
 					onText: () => {},
 				},
 				runId,
-				llmistLogPath: fileLogger.llmistLogPath,
+				engineLogPath: fileLogger.engineLogPath,
 			};
 
 			monitor?.start();
-			let result: Awaited<ReturnType<typeof backend.execute>>;
+			let result: Awaited<ReturnType<typeof engine.execute>>;
 			try {
-				result = await backend.execute(backendInput);
+				result = await engine.execute(executionPlan);
 			} finally {
 				monitor?.stop();
 			}
 
-			postProcessResult(result, agentType, backend, input, identifier, {
+			postProcessResult(result, agentType, engine, input, identifier, {
 				requiresPR: profile.finishHooks.requiresPR,
 			});
 

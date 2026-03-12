@@ -16,9 +16,9 @@ export default class ProjectsUpdate extends DashboardCommand {
 		'branch-prefix': Flags.string({ description: 'Branch prefix' }),
 		model: Flags.string({ description: 'Default model' }),
 		'work-item-budget': Flags.string({ description: 'Per-work-item budget in USD' }),
-		'agent-backend': Flags.string({ description: 'Agent backend' }),
+		'agent-engine': Flags.string({ description: 'Agent engine' }),
 		'subscription-cost-zero': Flags.boolean({
-			description: 'Zero costs for subscription backends',
+			description: 'Zero costs for subscription engines',
 			allowNo: true,
 		}),
 	};
@@ -35,7 +35,7 @@ export default class ProjectsUpdate extends DashboardCommand {
 				branchPrefix: flags['branch-prefix'],
 				model: flags.model,
 				workItemBudgetUsd: flags['work-item-budget'],
-				agentBackend: flags['agent-backend'],
+				agentEngine: flags['agent-engine'],
 				subscriptionCostZero: flags['subscription-cost-zero'],
 			});
 

@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { CLAUDE_CODE_MODELS } from '../../backends/claude-code/models.js';
+import { getEngineCatalog, registerBuiltInEngines } from '../../backends/index.js';
 import { getDb } from '../../db/client.js';
 import {
 	createAgentConfig,
@@ -14,6 +14,8 @@ import type { TRPCContext } from '../trpc.js';
 import { protectedProcedure, publicProcedure, router } from '../trpc.js';
 import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
+registerBuiltInEngines();
+
 /** Throws FORBIDDEN when a global config (no org, no project) is modified by a non-superadmin. */
 function assertCanModifyConfig(
 	config: { orgId: string | null; projectId: string | null },
@@ -25,8 +27,13 @@ function assertCanModifyConfig(
 }
 
 export const agentConfigsRouter = router({
+	engines: publicProcedure.query(() => {
+		return getEngineCatalog();
+	}),
+
 	claudeCodeModels: publicProcedure.query(() => {
-		return CLAUDE_CODE_MODELS;
+		const claudeCode = getEngineCatalog().find((engine) => engine.id === 'claude-code');
+		return claudeCode?.modelSelection.type === 'select' ? claudeCode.modelSelection.options : [];
 	}),
 
 	list: protectedProcedure
@@ -51,7 +58,7 @@ export const agentConfigsRouter = router({
 				agentType: z.string().min(1),
 				model: z.string().nullish(),
 				maxIterations: z.number().int().positive().nullish(),
-				agentBackend: z.string().nullish(),
+				agentEngine: z.string().nullish(),
 				maxConcurrency: z.number().int().positive().nullish(),
 			}),
 		)
@@ -66,8 +73,8 @@ export const agentConfigsRouter = router({
 				agentType: input.agentType,
 				model: input.model,
 				maxIterations: input.maxIterations,
-				agentBackend: input.agentBackend,
-				maxConcurrency: input.maxConcurrency,
+				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
+				...(input.maxConcurrency !== undefined ? { maxConcurrency: input.maxConcurrency } : {}),
 			});
 		}),
 
@@ -78,7 +85,7 @@ export const agentConfigsRouter = router({
 				agentType: z.string().min(1).optional(),
 				model: z.string().nullish(),
 				maxIterations: z.number().int().positive().nullish(),
-				agentBackend: z.string().nullish(),
+				agentEngine: z.string().nullish(),
 				maxConcurrency: z.number().int().positive().nullish(),
 			}),
 		)
@@ -103,7 +110,10 @@ export const agentConfigsRouter = router({
 			}
 
 			const { id, ...updates } = input;
-			await updateAgentConfig(id, updates);
+			await updateAgentConfig(id, {
+				...updates,
+				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
+			});
 		}),
 
 	delete: protectedProcedure

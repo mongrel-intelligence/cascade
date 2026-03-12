@@ -32,7 +32,7 @@ export default class ProjectsShow extends DashboardCommand {
 				branchPrefix: { label: 'Branch Prefix' },
 				model: { label: 'Model' },
 				workItemBudgetUsd: { label: 'Work Item Budget' },
-				agentBackend: { label: 'Backend' },
+				agentEngine: { label: 'Engine' },
 				subscriptionCostZero: { label: 'Sub Cost Zero', format: formatBoolean },
 			});
 		} catch (err) {

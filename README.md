@@ -17,7 +17,7 @@ PM Card → Webhook → Router → Redis/BullMQ → Worker → Agent → PR
 - **Dual-persona GitHub model** — Separate implementer and reviewer bot accounts to prevent feedback loops
 - **Web dashboard + CLI** — Monitor runs, manage projects, configure triggers
 - **Extensible trigger system** — Add new events without touching core logic
-- **Claude Code backend** — Use your Claude Max subscription as the AI engine
+- **Pluggable agent engines** — Built-in `llmist` and `claude-code` engines, with a shared contract for adding more
 - **Credential encryption** — AES-256-GCM encryption for all stored secrets
 
 ---
@@ -158,7 +158,7 @@ cascade/
 │   │   ├── registry.ts       # Agent registry
 │   │   ├── definitions/      # Per-agent YAML configs
 │   │   └── prompts/          # System prompt templates
-│   ├── backends/             # Agent backend implementations (llmist, claude-code)
+│   ├── backends/             # Agent engine implementations and shared execution lifecycle
 │   ├── gadgets/              # Tools available to agents
 │   ├── pm/                   # PM provider abstraction (Trello, JIRA)
 │   ├── github/               # GitHub client and dual-persona model
@@ -491,7 +491,7 @@ registry.register(new MyCustomTrigger());
 1. Add a YAML definition in `src/agents/definitions/` (see existing files for the schema)
 2. Add a system prompt template in `src/agents/prompts/templates/`
 
-Agent types are auto-discovered from YAML filenames in `src/agents/definitions/` — no manual registration is needed. The `registry.ts` file only registers agent *backends* (llmist, claude-code), not agent types.
+Agent types are auto-discovered from YAML filenames in `src/agents/definitions/` — no manual registration is needed. The agent registry only resolves and executes registered agent *engines* (currently `llmist` and `claude-code`), not agent types.
 
 ### Adding a PM provider
 
@@ -509,7 +509,7 @@ See `src/pm/trello/` and `src/pm/jira/` for reference implementations.
 
 **Trigger system** — Events from Trello, JIRA, and GitHub webhooks are matched against registered `TriggerHandler` instances. Triggers are configured per-project in the database via `agent_trigger_configs`.
 
-**Agent backends** — Agents can run on any supported LLM backend. The default is `llmist` (supports OpenRouter, Anthropic, OpenAI). The `claude-code` backend uses the Claude Code SDK with your Claude Max subscription.
+**Agent engines** — Agents run through a shared execution lifecycle and a pluggable engine registry. The default engine is `llmist` (supports OpenRouter, Anthropic, OpenAI). The `claude-code` engine uses the Claude Code SDK with your Claude Max subscription. Adding a new engine means registering a new engine definition plus an execution adapter.
 
 **Credential management** — All secrets are stored in the `credentials` table, scoped to an organization. Integration-specific credentials are linked via the `integration_credentials` join table. Optional AES-256-GCM encryption is enabled by setting `CREDENTIAL_MASTER_KEY`.
 

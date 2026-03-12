@@ -9,7 +9,7 @@ export const cascadeDefaults = pgTable('cascade_defaults', {
 	maxIterations: integer('max_iterations'),
 	watchdogTimeoutMs: integer('watchdog_timeout_ms'),
 	workItemBudgetUsd: numeric('work_item_budget_usd', { precision: 10, scale: 2 }),
-	agentBackend: text('agent_backend'),
+	agentEngine: text('agent_engine'),
 	progressModel: text('progress_model'),
 	progressIntervalMinutes: numeric('progress_interval_minutes', { precision: 5, scale: 1 }),
 	createdAt: timestamp('created_at').defaultNow(),

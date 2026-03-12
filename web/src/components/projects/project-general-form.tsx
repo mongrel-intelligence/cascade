@@ -8,7 +8,7 @@ import {
 	SelectValue,
 } from '@/components/ui/select.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
 interface Project {
@@ -19,19 +19,20 @@ interface Project {
 	branchPrefix: string | null;
 	model: string | null;
 	workItemBudgetUsd: string | null;
-	agentBackend: string | null;
+	agentEngine: string | null;
 	subscriptionCostZero: boolean | null;
 }
 
 export function ProjectGeneralForm({ project }: { project: Project }) {
 	const queryClient = useQueryClient();
+	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
 	const [name, setName] = useState(project.name);
 	const [repo, setRepo] = useState(project.repo ?? '');
 	const [baseBranch, setBaseBranch] = useState(project.baseBranch ?? 'main');
 	const [branchPrefix, setBranchPrefix] = useState(project.branchPrefix ?? 'feature/');
 	const [model, setModel] = useState(project.model ?? '');
 	const [workItemBudgetUsd, setWorkItemBudgetUsd] = useState(project.workItemBudgetUsd ?? '');
-	const [agentBackend, setAgentBackend] = useState(project.agentBackend ?? '');
+	const [agentEngine, setAgentEngine] = useState(project.agentEngine ?? '');
 	const [subscriptionCostZero, setSubscriptionCostZero] = useState(
 		project.subscriptionCostZero ?? false,
 	);
@@ -58,7 +59,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 			branchPrefix,
 			model: model || null,
 			workItemBudgetUsd: workItemBudgetUsd || null,
-			agentBackend: agentBackend || null,
+			agentEngine: agentEngine || null,
 			subscriptionCostZero,
 		});
 	}
@@ -120,18 +121,21 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 			</div>
 			<div className="grid grid-cols-2 gap-4">
 				<div className="space-y-2">
-					<Label>Agent Backend</Label>
+					<Label>Agent Engine</Label>
 					<Select
-						value={agentBackend}
-						onValueChange={(v) => setAgentBackend(v === '_none' ? '' : v)}
+						value={agentEngine || '_none'}
+						onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
 					>
 						<SelectTrigger className="w-full">
 							<SelectValue placeholder="Inherits from defaults" />
 						</SelectTrigger>
 						<SelectContent>
 							<SelectItem value="_none">Inherits from defaults</SelectItem>
-							<SelectItem value="llmist">llmist</SelectItem>
-							<SelectItem value="claude-code">claude-code</SelectItem>
+							{enginesQuery.data?.map((engine) => (
+								<SelectItem key={engine.id} value={engine.id}>
+									{engine.label}
+								</SelectItem>
+							))}
 						</SelectContent>
 					</Select>
 				</div>

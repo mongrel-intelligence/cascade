@@ -1,14 +1,17 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-	getBackend,
-	getRegisteredBackends,
-	registerBackend,
-} from '../../../src/backends/registry.js';
-import type { AgentBackend } from '../../../src/backends/types.js';
+import { getEngine, getRegisteredEngines, registerEngine } from '../../../src/backends/registry.js';
+import type { AgentEngine } from '../../../src/backends/types.js';
 
-function createMockBackend(name: string): AgentBackend {
+function createMockEngine(id: string): AgentEngine {
 	return {
-		name,
+		definition: {
+			id,
+			label: id,
+			description: `${id} description`,
+			capabilities: [],
+			modelSelection: { type: 'free-text' },
+			logLabel: 'Engine Log',
+		},
 		execute: async () => ({ success: true, output: '' }),
 		supportsAgentType: () => true,
 	};
@@ -17,39 +20,39 @@ function createMockBackend(name: string): AgentBackend {
 // The registry uses module-level state (Map), so tests interact with shared state.
 // We rely on unique names per test to avoid interference.
 
-describe('registerBackend', () => {
-	it('registers a backend by name', () => {
-		const backend = createMockBackend('test-register');
-		registerBackend(backend);
-		expect(getBackend('test-register')).toBe(backend);
+describe('registerEngine', () => {
+	it('registers an engine by id', () => {
+		const engine = createMockEngine('test-register');
+		registerEngine(engine);
+		expect(getEngine('test-register')).toBe(engine);
 	});
 
-	it('overwrites existing backend with same name', () => {
-		const backend1 = createMockBackend('test-overwrite');
-		const backend2 = createMockBackend('test-overwrite');
-		registerBackend(backend1);
-		registerBackend(backend2);
-		expect(getBackend('test-overwrite')).toBe(backend2);
+	it('overwrites existing engine with same id', () => {
+		const engine1 = createMockEngine('test-overwrite');
+		const engine2 = createMockEngine('test-overwrite');
+		registerEngine(engine1);
+		registerEngine(engine2);
+		expect(getEngine('test-overwrite')).toBe(engine2);
 	});
 });
 
-describe('getBackend', () => {
-	it('returns registered backend', () => {
-		const backend = createMockBackend('test-get');
-		registerBackend(backend);
-		expect(getBackend('test-get')).toBe(backend);
+describe('getEngine', () => {
+	it('returns registered engine', () => {
+		const engine = createMockEngine('test-get');
+		registerEngine(engine);
+		expect(getEngine('test-get')).toBe(engine);
 	});
 
 	it('returns undefined for unknown name', () => {
-		expect(getBackend('nonexistent-backend-xyz')).toBeUndefined();
+		expect(getEngine('nonexistent-engine-xyz')).toBeUndefined();
 	});
 });
 
-describe('getRegisteredBackends', () => {
-	it('returns all registered backend names', () => {
-		registerBackend(createMockBackend('test-list-a'));
-		registerBackend(createMockBackend('test-list-b'));
-		const names = getRegisteredBackends();
+describe('getRegisteredEngines', () => {
+	it('returns all registered engine ids', () => {
+		registerEngine(createMockEngine('test-list-a'));
+		registerEngine(createMockEngine('test-list-b'));
+		const names = getRegisteredEngines();
 		expect(names).toContain('test-list-a');
 		expect(names).toContain('test-list-b');
 	});

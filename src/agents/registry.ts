@@ -1,62 +1,58 @@
 import {
-	ClaudeCodeBackend,
-	LlmistBackend,
-	executeWithBackend,
-	getBackend,
-	getRegisteredBackends,
-	registerBackend,
-	resolveBackendName,
+	executeWithEngine,
+	getEngine,
+	getRegisteredEngines,
+	registerBuiltInEngines,
+	resolveEngineName,
 } from '../backends/index.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 
-// Register backends on module load
-registerBackend(new LlmistBackend());
-registerBackend(new ClaudeCodeBackend());
+registerBuiltInEngines();
 
 /**
- * Run an agent using the appropriate backend.
+ * Run an agent using the appropriate engine.
  *
- * Backend resolution order:
+ * Engine resolution order:
  * 1. Project-level agent type override
- * 2. Project-level default backend
- * 3. Cascade-level default backend
+ * 2. Project-level default engine
+ * 3. Cascade-level default engine
  * 4. Fallback: 'llmist'
  *
- * All backends — including llmist — go through the shared adapter
- * (executeWithBackend), which handles repo setup, lifecycle, progress
+ * All engines — including llmist — go through the shared adapter
+ * (executeWithEngine), which handles repo setup, lifecycle, progress
  * monitoring, run tracking, and log finalization in one place.
  */
 export async function runAgent(
 	agentType: string,
 	input: AgentInput & { project: ProjectConfig; config: CascadeConfig },
 ): Promise<AgentResult> {
-	const backendName = resolveBackendName(agentType, input.project, input.config);
-	const backend = getBackend(backendName);
+	const engineName = resolveEngineName(agentType, input.project, input.config);
+	const engine = getEngine(engineName);
 
-	if (!backend) {
+	if (!engine) {
 		return {
 			success: false,
 			output: '',
-			error: `Unknown agent backend: "${backendName}". Registered backends: ${getRegisteredBackends().join(', ')}`,
+			error: `Unknown agent engine: "${engineName}". Registered engines: ${getRegisteredEngines().join(', ')}`,
 		};
 	}
 
-	if (!backend.supportsAgentType(agentType)) {
+	if (!engine.supportsAgentType(agentType)) {
 		return {
 			success: false,
 			output: '',
-			error: `Backend "${backendName}" does not support agent type "${agentType}"`,
+			error: `Engine "${engineName}" does not support agent type "${agentType}"`,
 		};
 	}
 
-	logger.info('Running agent via backend', { agentType, backend: backendName });
+	logger.info('Running agent via engine', { agentType, engine: engineName });
 
-	// All backends (including llmist) use the shared adapter which handles:
+	// All engines (including llmist) use the shared adapter which handles:
 	// - Repo setup, CWD change/restore, env var loading
 	// - Run record creation, log finalization
 	// - Progress monitor, watchdog
-	return executeWithBackend(backend, agentType, input);
+	return executeWithEngine(engine, agentType, input);
 }
 
-export { registerBackend } from '../backends/index.js';
+export { registerEngine } from '../backends/index.js';

@@ -9,7 +9,7 @@ interface RunSummaryProps {
 		workItemId: string | null;
 		prNumber: number | null;
 		agentType: string;
-		backend: string;
+		engine: string;
 		triggerType: string | null;
 		status: string;
 		model: string | null;
@@ -46,7 +46,7 @@ export function RunSummaryCard({ run }: RunSummaryProps) {
 		<div className="space-y-6">
 			<div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 				<Field label="Status">{run.status}</Field>
-				<Field label="Backend">{run.backend}</Field>
+				<Field label="Engine">{run.engine}</Field>
 				<Field label="Model">{run.model ?? '-'}</Field>
 				<Field label="Trigger">{run.triggerType ?? '-'}</Field>
 				<Field label="Duration">{formatDuration(displayDuration)}</Field>

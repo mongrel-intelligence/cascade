@@ -18,7 +18,7 @@ export interface RunTrackingInput {
 	workItemId?: string;
 	prNumber?: number;
 	agentType: string;
-	backendName: string;
+	engineName: string;
 	triggerType?: string;
 }
 
@@ -40,7 +40,7 @@ export async function tryCreateRun(
 			workItemId: input.workItemId,
 			prNumber: input.prNumber,
 			agentType: input.agentType,
-			backend: input.backendName,
+			engine: input.engineName,
 			triggerType: input.triggerType,
 			model,
 			maxIterations,
@@ -52,17 +52,17 @@ export async function tryCreateRun(
 }
 
 /**
- * Store cascade and llmist log files for a run, suppressing errors.
+ * Store cascade and engine log files for a run, suppressing errors.
  */
 export async function tryStoreRunLogs(runId: string, fileLogger: FileLogger): Promise<void> {
 	try {
 		const cascadeLog = fs.existsSync(fileLogger.logPath)
 			? fs.readFileSync(fileLogger.logPath, 'utf-8')
 			: undefined;
-		const llmistLog = fs.existsSync(fileLogger.llmistLogPath)
-			? fs.readFileSync(fileLogger.llmistLogPath, 'utf-8')
+		const engineLog = fs.existsSync(fileLogger.engineLogPath)
+			? fs.readFileSync(fileLogger.engineLogPath, 'utf-8')
 			: undefined;
-		await storeRunLogs(runId, cascadeLog, llmistLog);
+		await storeRunLogs(runId, cascadeLog, engineLog);
 	} catch (err) {
 		logger.warn('Failed to store run logs', { runId, error: String(err) });
 	}
@@ -80,10 +80,9 @@ export async function tryCompleteRun(runId: string, input: CompleteRunInput): Pr
 }
 
 /**
- * Finalize a backend run: store logs and mark complete.
- * Used by non-llmist backends (claude-code adapter) that don't accumulate LLM calls.
+ * Finalize an engine run: store logs and mark complete.
  */
-export async function finalizeBackendRun(
+export async function finalizeEngineRun(
 	runId: string | undefined,
 	fileLogger: FileLogger,
 	input: CompleteRunInput,
