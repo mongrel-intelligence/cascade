@@ -411,6 +411,60 @@ describe('OpenCodeEngine', () => {
 		expect(result.error).toBe('bad auth');
 	});
 
+	it('fails when the model emits pseudo tool-call text without real tool events', async () => {
+		mockSpawn.mockReturnValue(createMockChild());
+
+		mockCreateOpencodeClient.mockImplementation(() => ({
+			session: {
+				create: vi.fn().mockResolvedValue({ data: { id: 'session-pseudo-tools' } }),
+				prompt: vi.fn().mockResolvedValue({
+					data: {
+						info: { id: 'assistant-pseudo-tools', cost: 0.1 },
+						parts: [
+							{
+								id: 'text-final',
+								sessionID: 'session-pseudo-tools',
+								messageID: 'assistant-pseudo-tools',
+								type: 'text',
+								text: '[tool_call: ReadFile(filePath="src/app.ts")]',
+							},
+						],
+					},
+				}),
+				delete: vi.fn().mockResolvedValue(true),
+			},
+			event: {
+				subscribe: vi.fn().mockResolvedValue(
+					createEventStream([
+						{
+							type: 'message.part.updated',
+							properties: {
+								part: {
+									id: 'text-1',
+									sessionID: 'session-pseudo-tools',
+									messageID: 'assistant-pseudo-tools',
+									type: 'text',
+									text: '[tool_call: ReadFile(filePath="src/app.ts")]',
+								},
+								delta: '[tool_call: ReadFile(filePath="src/app.ts")]',
+							},
+						},
+						{ type: 'session.idle', properties: { sessionID: 'session-pseudo-tools' } },
+					]),
+				),
+			},
+			postSessionIdPermissionsPermissionId: vi.fn(),
+		}));
+
+		const engine = new OpenCodeEngine();
+		const result = await engine.execute(makeInput());
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe(
+			'OpenCode model emitted pseudo tool-call text instead of executable tool events',
+		);
+	});
+
 	it('retries transient fetch failures when creating a session', async () => {
 		vi.useFakeTimers();
 		mockSpawn.mockReturnValue(createMockChild());

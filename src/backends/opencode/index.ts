@@ -244,6 +244,13 @@ function getPartDelta(part: Part, delta?: string): string | undefined {
 	return part.text;
 }
 
+const PSEUDO_TOOL_CALL_PATTERN =
+	/\[tool_call:\s*[^\]]+\]|\b(?:ReadFile|ListDirectory|RipGrep|TodoUpsert|TodoUpdateStatus|Tmux|CreatePR|CreatePRReview|PostComment|UpdateChecklistItem|PMUpdateChecklistItem|Finish)\s*\(/;
+
+function containsPseudoToolCallText(text: string): boolean {
+	return PSEUDO_TOOL_CALL_PATTERN.test(text);
+}
+
 function appendPartialOutput(state: OpenCodeStreamState, text: string): void {
 	const trimmed = text.trim();
 	if (!trimmed) return;
@@ -325,6 +332,8 @@ interface OpenCodeStreamState {
 	llmCallCount: number;
 	totalCost: number;
 	partialOutput: string[];
+	toolCallCount: number;
+	sawPseudoToolCallText: boolean;
 	finalError?: string;
 	idleResolver?: () => void;
 	idleRejecter?: (error: Error) => void;
@@ -415,12 +424,19 @@ async function handleMessagePartUpdated(
 	}
 
 	if (part.type === 'tool') {
+		state.toolCallCount += 1;
 		reportToolPart(state.input, part, state.reportedToolCalls);
 		return;
 	}
 
 	const textDelta = getPartDelta(part, event.properties.delta);
 	if (!textDelta) return;
+	if (containsPseudoToolCallText(textDelta)) {
+		state.sawPseudoToolCallText = true;
+		state.input.logWriter('WARN', 'OpenCode emitted pseudo tool-call text', {
+			text: textDelta.length > 200 ? `${textDelta.slice(0, 200)}...` : textDelta,
+		});
+	}
 	if (!event.properties.delta && state.seenTextPartIds.has(part.id)) return;
 	state.seenTextPartIds.add(part.id);
 	appendPartialOutput(state, textDelta);
@@ -450,6 +466,11 @@ function buildOpenCodeResult(
 	};
 }
 
+function getPseudoToolCallError(state: OpenCodeStreamState): string | undefined {
+	if (!state.sawPseudoToolCallText || state.toolCallCount > 0) return undefined;
+	return 'OpenCode model emitted pseudo tool-call text instead of executable tool events';
+}
+
 function buildOpenCodeResultFromState(
 	input: AgentExecutionPlan,
 	state: OpenCodeStreamState,
@@ -471,6 +492,18 @@ function buildOpenCodeResultFromState(
 			prUrl,
 			prEvidence,
 			state.finalError,
+		);
+	}
+
+	const pseudoToolCallError = getPseudoToolCallError(state);
+	if (pseudoToolCallError) {
+		return buildOpenCodeResult(
+			false,
+			output,
+			state.totalCost || undefined,
+			prUrl,
+			prEvidence,
+			pseudoToolCallError,
 		);
 	}
 
@@ -562,6 +595,18 @@ function buildOpenCodeResultFromResponse(
 				(typeof assistant.error?.data?.message === 'string'
 					? assistant.error.data.message
 					: assistant.error?.name),
+		);
+	}
+
+	const pseudoToolCallError = getPseudoToolCallError(state);
+	if (pseudoToolCallError) {
+		return buildOpenCodeResult(
+			false,
+			output,
+			state.totalCost || assistant.cost || undefined,
+			prUrl,
+			prEvidence,
+			pseudoToolCallError,
 		);
 	}
 
@@ -696,6 +741,8 @@ export class OpenCodeEngine implements AgentEngine {
 				llmCallCount: 0,
 				totalCost: 0,
 				partialOutput: [],
+				toolCallCount: 0,
+				sawPseudoToolCallText: false,
 				idleResolver,
 				idleRejecter,
 			};

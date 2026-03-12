@@ -1,6 +1,18 @@
 import { buildInlineContextSection, offloadLargeContext } from './contextFiles.js';
 import type { ContextInjection, ToolManifest } from './types.js';
 
+const NATIVE_TOOL_EXECUTION_RULES = `## Native Tool Execution Rules
+
+You are operating in a native-tool environment, not a gadget/function-call environment.
+
+- Never write pseudo tool calls such as \`[tool_call: ...]\`, \`ReadFile(...)\`, \`RipGrep(...)\`, \`Tmux(...)\`, \`CreatePR(...)\`, or similar function-call text in your assistant response.
+- Use actual OpenCode/Codex tool invocations instead:
+  - use built-in file/search tools or the shell tool for repository exploration
+  - use the edit tool for file modifications
+  - use the shell tool for all \`cascade-tools ...\`, \`git ...\`, \`rg ...\`, \`fd ...\`, test, lint, and build commands
+- When the task instructions mention gadget names like \`CreatePR\`, \`PostComment\`, \`UpdateChecklistItem\`, \`Finish\`, \`ReadWorkItem\`, \`TodoUpsert\`, or \`TodoUpdateStatus\`, treat that as a request to run the equivalent real command or tool action, not to print the gadget name.
+- If you catch yourself composing a pseudo tool call in plain text, stop and use the real tool instead.`;
+
 /**
  * Format a single CLI parameter for tool guidance documentation.
  */
@@ -98,5 +110,6 @@ export async function buildTaskPrompt(
  */
 export function buildSystemPrompt(systemPrompt: string, tools: ToolManifest[]): string {
 	const toolGuidance = buildToolGuidance(tools);
-	return toolGuidance ? `${systemPrompt}\n\n${toolGuidance}` : systemPrompt;
+	const promptWithRules = `${NATIVE_TOOL_EXECUTION_RULES}\n\n${systemPrompt}`;
+	return toolGuidance ? `${promptWithRules}\n\n${toolGuidance}` : promptWithRules;
 }
