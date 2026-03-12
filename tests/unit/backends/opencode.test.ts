@@ -410,4 +410,90 @@ describe('OpenCodeEngine', () => {
 		expect(result.success).toBe(false);
 		expect(result.error).toBe('bad auth');
 	});
+
+	it('retries transient fetch failures when creating a session', async () => {
+		vi.useFakeTimers();
+		mockSpawn.mockReturnValue(createMockChild());
+
+		const sessionCreate = vi
+			.fn()
+			.mockRejectedValueOnce(new TypeError('fetch failed'))
+			.mockResolvedValue({ data: { id: 'session-retry' } });
+		mockCreateOpencodeClient.mockImplementation(() => ({
+			session: {
+				create: sessionCreate,
+				prompt: vi.fn().mockResolvedValue({
+					data: {
+						info: { id: 'assistant-1', cost: 0 },
+						parts: [],
+					},
+				}),
+				delete: vi.fn().mockResolvedValue(true),
+			},
+			event: {
+				subscribe: vi
+					.fn()
+					.mockResolvedValue(
+						createEventStream([
+							{ type: 'session.idle', properties: { sessionID: 'session-retry' } },
+						]),
+					),
+			},
+			postSessionIdPermissionsPermissionId: vi.fn(),
+		}));
+
+		const engine = new OpenCodeEngine();
+		const resultPromise = engine.execute(makeInput());
+		await vi.runAllTimersAsync();
+		const result = await resultPromise;
+		vi.useRealTimers();
+
+		expect(result.success).toBe(true);
+		expect(sessionCreate).toHaveBeenCalledTimes(2);
+	});
+
+	it('preserves partial output when the event stream fails mid-run', async () => {
+		mockSpawn.mockReturnValue(createMockChild());
+
+		mockCreateOpencodeClient.mockImplementation(() => ({
+			session: {
+				create: vi.fn().mockResolvedValue({ data: { id: 'session-partial' } }),
+				prompt: vi.fn().mockResolvedValue({
+					data: {
+						info: { id: 'assistant-partial', cost: 0.2 },
+						parts: [],
+					},
+				}),
+				delete: vi.fn().mockResolvedValue(true),
+			},
+			event: {
+				subscribe: vi.fn().mockResolvedValue({
+					stream: (async function* () {
+						yield {
+							type: 'message.part.updated',
+							properties: {
+								part: {
+									id: 'text-1',
+									sessionID: 'session-partial',
+									messageID: 'assistant-partial',
+									type: 'text',
+									text: 'Partial progress...',
+								},
+								delta: 'Partial progress...',
+							},
+						};
+						throw new TypeError('fetch failed');
+					})(),
+				}),
+			},
+			postSessionIdPermissionsPermissionId: vi.fn(),
+		}));
+
+		const engine = new OpenCodeEngine();
+		const result = await engine.execute(makeInput());
+
+		expect(result.success).toBe(false);
+		expect(result.output).toContain('Partial progress...');
+		expect(result.error).toContain('OpenCode transport failed after retries');
+	});
 });
