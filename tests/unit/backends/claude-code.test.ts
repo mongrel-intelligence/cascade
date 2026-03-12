@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock the SDK before importing the backend
+// Mock the SDK before importing the engine
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 	query: vi.fn(),
 }));
@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import {
-	ClaudeCodeBackend,
+	ClaudeCodeEngine,
 	buildEnv,
 	buildSystemPrompt,
 	buildTaskPrompt,
@@ -33,7 +33,7 @@ import {
 	CLAUDE_CODE_MODEL_IDS,
 	DEFAULT_CLAUDE_CODE_MODEL,
 } from '../../../src/backends/claude-code/models.js';
-import type { AgentBackendInput, ToolManifest } from '../../../src/backends/types.js';
+import type { AgentExecutionPlan, ToolManifest } from '../../../src/backends/types.js';
 import { logger } from '../../../src/utils/logging.js';
 
 const mockQuery = vi.mocked(query);
@@ -61,11 +61,11 @@ const sampleTools: ToolManifest[] = [
 	},
 ];
 
-function makeInput(overrides: Partial<AgentBackendInput> = {}): AgentBackendInput {
+function makeInput(overrides: Partial<AgentExecutionPlan> = {}): AgentExecutionPlan {
 	return {
 		agentType: 'implementation',
-		project: { id: 'test', name: 'Test', repo: 'o/r' } as AgentBackendInput['project'],
-		config: { defaults: {} } as AgentBackendInput['config'],
+		project: { id: 'test', name: 'Test', repo: 'o/r' } as AgentExecutionPlan['project'],
+		config: { defaults: {} } as AgentExecutionPlan['config'],
 		repoDir: '/tmp/repo',
 		systemPrompt: 'You are an agent.',
 		taskPrompt: 'Implement feature X.',
@@ -81,7 +81,7 @@ function makeInput(overrides: Partial<AgentBackendInput> = {}): AgentBackendInpu
 			onText: vi.fn(),
 		},
 		logWriter: vi.fn(),
-		agentInput: { workItemId: 'c1' } as AgentBackendInput['agentInput'],
+		agentInput: { workItemId: 'c1' } as AgentExecutionPlan['agentInput'],
 		...overrides,
 	};
 }
@@ -347,18 +347,18 @@ describe('resolveClaudeModel', () => {
 	});
 });
 
-describe('ClaudeCodeBackend', () => {
-	it('has name "claude-code"', () => {
-		const backend = new ClaudeCodeBackend();
-		expect(backend.name).toBe('claude-code');
+describe('ClaudeCodeEngine', () => {
+	it('has engine id "claude-code"', () => {
+		const engine = new ClaudeCodeEngine();
+		expect(engine.definition.id).toBe('claude-code');
 	});
 
 	it('supportsAgentType returns true for any type', () => {
-		const backend = new ClaudeCodeBackend();
-		expect(backend.supportsAgentType('implementation')).toBe(true);
-		expect(backend.supportsAgentType('review')).toBe(true);
-		expect(backend.supportsAgentType('splitting')).toBe(true);
-		expect(backend.supportsAgentType('anything')).toBe(true);
+		const engine = new ClaudeCodeEngine();
+		expect(engine.supportsAgentType('implementation')).toBe(true);
+		expect(engine.supportsAgentType('review')).toBe(true);
+		expect(engine.supportsAgentType('splitting')).toBe(true);
+		expect(engine.supportsAgentType('anything')).toBe(true);
 	});
 });
 
@@ -389,8 +389,8 @@ describe('execute', () => {
 			},
 		]);
 
-		const backend = new ClaudeCodeBackend();
-		await backend.execute(makeInput());
+		const engine = new ClaudeCodeEngine();
+		await engine.execute(makeInput());
 
 		expect(mockQuery).toHaveBeenCalledWith({
 			prompt: expect.stringContaining('Implement feature X.'),
@@ -420,8 +420,8 @@ describe('execute', () => {
 			},
 		]);
 
-		const backend = new ClaudeCodeBackend();
-		const result = await backend.execute(makeInput());
+		const engine = new ClaudeCodeEngine();
+		const result = await engine.execute(makeInput());
 
 		expect(result.success).toBe(true);
 		expect(result.output).toBe('Task completed successfully.');
@@ -440,8 +440,8 @@ describe('execute', () => {
 			},
 		]);
 
-		const backend = new ClaudeCodeBackend();
-		const result = await backend.execute(makeInput());
+		const engine = new ClaudeCodeEngine();
+		const result = await engine.execute(makeInput());
 
 		expect(result.success).toBe(false);
 		expect(result.error).toBe('Exceeded maximum turns');
@@ -472,8 +472,8 @@ describe('execute', () => {
 		]);
 
 		const input = makeInput();
-		const backend = new ClaudeCodeBackend();
-		await backend.execute(input);
+		const engine = new ClaudeCodeEngine();
+		await engine.execute(input);
 
 		expect(input.progressReporter.onIteration).toHaveBeenCalledWith(1, 20);
 		expect(input.progressReporter.onText).toHaveBeenCalledWith('Analyzing...');
@@ -508,8 +508,8 @@ describe('execute', () => {
 			},
 		]);
 
-		const backend = new ClaudeCodeBackend();
-		const result = await backend.execute(makeInput());
+		const engine = new ClaudeCodeEngine();
+		const result = await engine.execute(makeInput());
 
 		expect(result.success).toBe(true);
 		expect(result.output).toBe('All done');
@@ -526,8 +526,8 @@ describe('execute', () => {
 			},
 		]);
 
-		const backend = new ClaudeCodeBackend();
-		const result = await backend.execute(makeInput());
+		const engine = new ClaudeCodeEngine();
+		const result = await engine.execute(makeInput());
 
 		expect(result.success).toBe(true);
 		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/42');
@@ -558,8 +558,8 @@ describe('execute', () => {
 			},
 		]);
 
-		const backend = new ClaudeCodeBackend();
-		const result = await backend.execute(makeInput());
+		const engine = new ClaudeCodeEngine();
+		const result = await engine.execute(makeInput());
 
 		expect(result.success).toBe(true);
 		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/99');
@@ -576,8 +576,8 @@ describe('execute', () => {
 			},
 		]);
 
-		const backend = new ClaudeCodeBackend();
-		const result = await backend.execute(makeInput());
+		const engine = new ClaudeCodeEngine();
+		const result = await engine.execute(makeInput());
 
 		expect(result.success).toBe(true);
 		expect(result.prUrl).toBeUndefined();
@@ -594,8 +594,8 @@ describe('execute', () => {
 			},
 		]);
 
-		const backend = new ClaudeCodeBackend();
-		await backend.execute(makeInput({ model: 'openrouter:google/gemini-3-flash' }));
+		const engine = new ClaudeCodeEngine();
+		await engine.execute(makeInput({ model: 'openrouter:google/gemini-3-flash' }));
 
 		expect(mockQuery).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -619,8 +619,8 @@ describe('execute', () => {
 		]);
 
 		const input = makeInput();
-		const backend = new ClaudeCodeBackend();
-		const result = await backend.execute(input);
+		const engine = new ClaudeCodeEngine();
+		const result = await engine.execute(input);
 
 		expect(result.success).toBe(true);
 		expect(input.progressReporter.onIteration).not.toHaveBeenCalled();
@@ -648,8 +648,8 @@ describe('execute', () => {
 		]);
 
 		const input = makeInput();
-		const backend = new ClaudeCodeBackend();
-		await backend.execute(input);
+		const engine = new ClaudeCodeEngine();
+		await engine.execute(input);
 
 		expect(input.logWriter).toHaveBeenCalledWith('INFO', 'Agent text', {
 			text: `${'A'.repeat(300)}...`,
@@ -676,8 +676,8 @@ describe('execute', () => {
 		]);
 
 		const input = makeInput();
-		const backend = new ClaudeCodeBackend();
-		await backend.execute(input);
+		const engine = new ClaudeCodeEngine();
+		await engine.execute(input);
 
 		expect(input.logWriter).toHaveBeenCalledWith('ERROR', 'Assistant message error', {
 			error: 'rate_limit',
@@ -707,8 +707,8 @@ describe('execute', () => {
 		]);
 
 		const input = makeInput();
-		const backend = new ClaudeCodeBackend();
-		await backend.execute(input);
+		const engine = new ClaudeCodeEngine();
+		await engine.execute(input);
 
 		expect(input.logWriter).toHaveBeenCalledWith('DEBUG', 'Token usage', {
 			turn: 1,
@@ -738,8 +738,8 @@ describe('execute', () => {
 		]);
 
 		const input = makeInput();
-		const backend = new ClaudeCodeBackend();
-		await backend.execute(input);
+		const engine = new ClaudeCodeEngine();
+		await engine.execute(input);
 
 		expect(input.logWriter).toHaveBeenCalledWith('INFO', 'Claude Code session initialized', {
 			model: 'claude-sonnet-4-5-20250929',
@@ -767,8 +767,8 @@ describe('execute', () => {
 		]);
 
 		const input = makeInput();
-		const backend = new ClaudeCodeBackend();
-		await backend.execute(input);
+		const engine = new ClaudeCodeEngine();
+		await engine.execute(input);
 
 		expect(input.logWriter).toHaveBeenCalledWith('INFO', 'Session status change', {
 			status: 'compacting',
@@ -787,8 +787,8 @@ describe('execute', () => {
 		]);
 
 		const input = makeInput();
-		const backend = new ClaudeCodeBackend();
-		await backend.execute(input);
+		const engine = new ClaudeCodeEngine();
+		await engine.execute(input);
 
 		expect(input.logWriter).toHaveBeenCalledWith(
 			'INFO',
@@ -823,8 +823,8 @@ describe('execute', () => {
 		]);
 
 		const input = makeInput({ runId: 'test-run-id-cc' });
-		const backend = new ClaudeCodeBackend();
-		await backend.execute(input);
+		const engine = new ClaudeCodeEngine();
+		await engine.execute(input);
 
 		// Flush fire-and-forget promises
 		await Promise.resolve();
@@ -865,8 +865,8 @@ describe('execute', () => {
 
 		const input = makeInput();
 		// Explicitly no runId
-		const backend = new ClaudeCodeBackend();
-		await backend.execute(input);
+		const engine = new ClaudeCodeEngine();
+		await engine.execute(input);
 
 		await Promise.resolve();
 		expect(mockStoreLlmCall).not.toHaveBeenCalled();
@@ -894,8 +894,8 @@ describe('execute', () => {
 		]);
 
 		const input = makeInput({ runId: 'test-run-id-no-usage' });
-		const backend = new ClaudeCodeBackend();
-		await backend.execute(input);
+		const engine = new ClaudeCodeEngine();
+		await engine.execute(input);
 
 		await Promise.resolve();
 		expect(mockStoreLlmCall).not.toHaveBeenCalled();

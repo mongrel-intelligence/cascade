@@ -1,23 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Must mock engine modules before importing the registry
-vi.mock('../../../src/backends/index.js', () => ({
-	resolveEngineName: vi.fn(),
+vi.mock('../../../src/backends/adapter.js', () => ({
+	executeWithEngine: vi.fn(),
+}));
+
+vi.mock('../../../src/backends/bootstrap.js', () => ({
+	registerBuiltInEngines: vi.fn(),
+}));
+
+vi.mock('../../../src/backends/registry.js', () => ({
 	getEngine: vi.fn(),
 	getRegisteredEngines: vi.fn(),
-	registerBuiltInEngines: vi.fn(),
 	registerEngine: vi.fn(),
-	executeWithEngine: vi.fn(),
-	LlmistEngine: vi.fn().mockImplementation(() => ({
-		definition: { id: 'llmist' },
-		execute: vi.fn(),
-		supportsAgentType: vi.fn().mockReturnValue(true),
-	})),
-	ClaudeCodeEngine: vi.fn().mockImplementation(() => ({
-		definition: { id: 'claude-code' },
-		execute: vi.fn(),
-		supportsAgentType: vi.fn().mockReturnValue(true),
-	})),
+}));
+
+vi.mock('../../../src/backends/resolution.js', () => ({
+	resolveEngineName: vi.fn(),
 }));
 
 vi.mock('../../../src/utils/logging.js', () => ({
@@ -29,12 +28,9 @@ vi.mock('../../../src/utils/logging.js', () => ({
 }));
 
 import { runAgent } from '../../../src/agents/registry.js';
-import {
-	executeWithEngine,
-	getEngine,
-	getRegisteredEngines,
-	resolveEngineName,
-} from '../../../src/backends/index.js';
+import { executeWithEngine } from '../../../src/backends/adapter.js';
+import { getEngine, getRegisteredEngines } from '../../../src/backends/registry.js';
+import { resolveEngineName } from '../../../src/backends/resolution.js';
 import type { AgentEngine } from '../../../src/backends/types.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 

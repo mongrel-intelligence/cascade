@@ -315,6 +315,139 @@ interface PipelineList {
 	id: string;
 }
 
+interface PipelineListResult {
+	list: PipelineList;
+	items: Awaited<
+		ReturnType<NonNullable<ReturnType<typeof getPMProviderOrNull>>['listWorkItems']>
+	> | null;
+	error: string | null;
+}
+
+const PIPELINE_DETAIL_LISTS = new Set(['BACKLOG', 'TODO', 'IN_PROGRESS', 'IN_REVIEW']);
+const PIPELINE_DETAIL_CONCURRENCY = 5;
+
+function buildPipelineLists(project: ProjectConfig): PipelineList[] {
+	const trelloConfig = getTrelloConfig(project);
+	const jiraConfig = getJiraConfig(project);
+	const lists: PipelineList[] = [];
+
+	const addList = (name: string, id: string | undefined): void => {
+		if (id) lists.push({ name, id });
+	};
+
+	addList('BACKLOG', trelloConfig?.lists?.backlog ?? jiraConfig?.statuses?.backlog);
+	addList('TODO', trelloConfig?.lists?.todo ?? jiraConfig?.statuses?.todo);
+	addList('IN_PROGRESS', trelloConfig?.lists?.inProgress ?? jiraConfig?.statuses?.inProgress);
+	addList('IN_REVIEW', trelloConfig?.lists?.inReview ?? jiraConfig?.statuses?.inReview);
+	addList('DONE', trelloConfig?.lists?.done ?? jiraConfig?.statuses?.done);
+	addList('MERGED', trelloConfig?.lists?.merged ?? jiraConfig?.statuses?.merged);
+
+	return lists;
+}
+
+async function fetchPipelineLists(
+	lists: PipelineList[],
+	provider: NonNullable<ReturnType<typeof getPMProviderOrNull>>,
+	logWriter: LogWriter,
+): Promise<PipelineListResult[]> {
+	return Promise.all(
+		lists.map(async (list) => {
+			try {
+				const items = await provider.listWorkItems(list.id);
+				return { list, items, error: null };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				logWriter('WARN', `fetchPipelineSnapshotStep: Failed to fetch list ${list.name}`, {
+					listId: list.id,
+					error: message,
+				});
+				return { list, items: null, error: message };
+			}
+		}),
+	);
+}
+
+function collectItemsNeedingFullDetails(listResults: PipelineListResult[]): Array<{ id: string }> {
+	return listResults.flatMap(({ list, items }) =>
+		!items || !PIPELINE_DETAIL_LISTS.has(list.name) ? [] : items.map((item) => ({ id: item.id })),
+	);
+}
+
+async function fetchFullPipelineDetails(
+	items: Array<{ id: string }>,
+	logWriter: LogWriter,
+): Promise<Map<string, string>> {
+	const fullDetails = new Map<string, string>();
+
+	for (let i = 0; i < items.length; i += PIPELINE_DETAIL_CONCURRENCY) {
+		const batch = items.slice(i, i + PIPELINE_DETAIL_CONCURRENCY);
+		await Promise.all(
+			batch.map(async ({ id }) => {
+				try {
+					const details = await readWorkItem(id, true);
+					fullDetails.set(id, details);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					logWriter('WARN', 'fetchPipelineSnapshotStep: Failed to read card details', {
+						workItemId: id,
+						error: message,
+					});
+					fullDetails.set(id, `Error reading details: ${message}`);
+				}
+			}),
+		);
+	}
+
+	return fullDetails;
+}
+
+function appendPipelineSection(
+	sections: string[],
+	listResult: PipelineListResult,
+	fullDetails: Map<string, string>,
+): void {
+	const { list, items, error } = listResult;
+
+	sections.push(`## ${list.name} (list ID: ${list.id})`);
+	sections.push('');
+
+	if (error) {
+		sections.push(`_Failed to fetch: ${error}_`);
+		sections.push('');
+		return;
+	}
+
+	if (!items || items.length === 0) {
+		sections.push('_Empty — no items_');
+		sections.push('');
+		return;
+	}
+
+	sections.push(`${items.length} item(s):`);
+	sections.push('');
+
+	if (!PIPELINE_DETAIL_LISTS.has(list.name)) {
+		for (const item of items) {
+			sections.push(`- [${item.id}] ${item.title}`);
+		}
+		sections.push('');
+		return;
+	}
+
+	for (const item of items) {
+		const details = fullDetails.get(item.id);
+		if (details) {
+			sections.push(`### [${item.id}] ${item.title}`);
+			sections.push('');
+			sections.push(details);
+			sections.push('');
+			continue;
+		}
+
+		sections.push(`- [${item.id}] ${item.title} _(details unavailable)_`);
+	}
+}
+
 /**
  * Fetch full contents of all pipeline lists (BACKLOG, TODO, IN_PROGRESS, IN_REVIEW, DONE, MERGED)
  * and inject them as a structured snapshot into agent context.
@@ -337,124 +470,21 @@ export async function fetchPipelineSnapshotStep(
 		return [];
 	}
 
-	// Collect configured list IDs for all pipeline stages
-	const trelloConfig = getTrelloConfig(project);
-	const jiraConfig = getJiraConfig(project);
-
-	const lists: PipelineList[] = [];
-
-	function addList(name: string, id: string | undefined): void {
-		if (id) lists.push({ name, id });
-	}
-
-	addList('BACKLOG', trelloConfig?.lists?.backlog ?? jiraConfig?.statuses?.backlog);
-	addList('TODO', trelloConfig?.lists?.todo ?? jiraConfig?.statuses?.todo);
-	addList('IN_PROGRESS', trelloConfig?.lists?.inProgress ?? jiraConfig?.statuses?.inProgress);
-	addList('IN_REVIEW', trelloConfig?.lists?.inReview ?? jiraConfig?.statuses?.inReview);
-	addList('DONE', trelloConfig?.lists?.done ?? jiraConfig?.statuses?.done);
-	addList('MERGED', trelloConfig?.lists?.merged ?? jiraConfig?.statuses?.merged);
-
+	const lists = buildPipelineLists(project);
 	if (lists.length === 0) {
 		params.logWriter('WARN', 'fetchPipelineSnapshotStep: No pipeline lists configured, skipping');
 		return [];
 	}
 
-	// Fetch all lists in parallel
-	const listResults = await Promise.all(
-		lists.map(async (list) => {
-			try {
-				const items = await provider.listWorkItems(list.id);
-				return { list, items, error: null };
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				params.logWriter('WARN', `fetchPipelineSnapshotStep: Failed to fetch list ${list.name}`, {
-					listId: list.id,
-					error: message,
-				});
-				return { list, items: null, error: message };
-			}
-		}),
-	);
-
-	// Collect all item IDs that need full details (BACKLOG, TODO, IN_PROGRESS, IN_REVIEW)
-	// For DONE and MERGED, use title-only to save tokens
-	const fullDetailLists = new Set(['BACKLOG', 'TODO', 'IN_PROGRESS', 'IN_REVIEW']);
-	const itemsNeedingFullDetails: Array<{ id: string; listName: string }> = [];
-
-	for (const { list, items } of listResults) {
-		if (!items) continue;
-		if (fullDetailLists.has(list.name)) {
-			for (const item of items) {
-				itemsNeedingFullDetails.push({ id: item.id, listName: list.name });
-			}
-		}
-	}
-
-	// Fetch full card details in parallel with a concurrency limit of 5
-	const CONCURRENCY = 5;
-	const fullDetails = new Map<string, string>();
-
-	for (let i = 0; i < itemsNeedingFullDetails.length; i += CONCURRENCY) {
-		const batch = itemsNeedingFullDetails.slice(i, i + CONCURRENCY);
-		await Promise.all(
-			batch.map(async ({ id }) => {
-				try {
-					const details = await readWorkItem(id, true);
-					fullDetails.set(id, details);
-				} catch (error) {
-					const message = error instanceof Error ? error.message : String(error);
-					params.logWriter('WARN', 'fetchPipelineSnapshotStep: Failed to read card details', {
-						workItemId: id,
-						error: message,
-					});
-					fullDetails.set(id, `Error reading details: ${message}`);
-				}
-			}),
-		);
-	}
+	const listResults = await fetchPipelineLists(lists, provider, params.logWriter);
+	const itemsNeedingFullDetails = collectItemsNeedingFullDetails(listResults);
+	const fullDetails = await fetchFullPipelineDetails(itemsNeedingFullDetails, params.logWriter);
 
 	// Format the snapshot
 	const sections: string[] = ['# Pipeline Snapshot', ''];
 
-	for (const { list, items, error } of listResults) {
-		sections.push(`## ${list.name} (list ID: ${list.id})`);
-		sections.push('');
-
-		if (error) {
-			sections.push(`_Failed to fetch: ${error}_`);
-			sections.push('');
-			continue;
-		}
-
-		if (!items || items.length === 0) {
-			sections.push('_Empty — no items_');
-			sections.push('');
-			continue;
-		}
-
-		sections.push(`${items.length} item(s):`);
-		sections.push('');
-
-		if (fullDetailLists.has(list.name)) {
-			// Full details for active pipeline stages
-			for (const item of items) {
-				const details = fullDetails.get(item.id);
-				if (details) {
-					sections.push(`### [${item.id}] ${item.title}`);
-					sections.push('');
-					sections.push(details);
-					sections.push('');
-				} else {
-					sections.push(`- [${item.id}] ${item.title} _(details unavailable)_`);
-				}
-			}
-		} else {
-			// Title-only for DONE and MERGED (to conserve tokens)
-			for (const item of items) {
-				sections.push(`- [${item.id}] ${item.title}`);
-			}
-			sections.push('');
-		}
+	for (const listResult of listResults) {
+		appendPipelineSection(sections, listResult, fullDetails);
 	}
 
 	const result = sections.join('\n');

@@ -38,7 +38,7 @@ const mockCleanupLogDirectory = vi.mocked(cleanupLogDirectory);
 function makeFileLogger() {
 	return {
 		logPath: '/tmp/cascade.log',
-		llmistLogPath: '/tmp/llmist.log',
+		engineLogPath: '/tmp/llmist.log',
 		llmCallLogger: { logDir: '/tmp/llm-calls' },
 	} as unknown as Parameters<typeof cleanupAgentResources>[1];
 }

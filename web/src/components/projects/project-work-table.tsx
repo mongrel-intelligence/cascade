@@ -143,6 +143,121 @@ interface WorkItemRowProps {
 	onToggle: (id: string) => void;
 }
 
+function ItemIcon({
+	item,
+	isExpanded,
+	canExpand,
+}: Pick<WorkItemRowProps, 'item' | 'isExpanded'> & {
+	canExpand: boolean;
+}) {
+	if (canExpand) {
+		return isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />;
+	}
+
+	if (item.type === 'linked' || item.type === 'work-item') {
+		return (
+			<span title={item.type === 'linked' ? 'Linked (PR + Work Item)' : 'Work Item'}>
+				<ClipboardList className="h-4 w-4" />
+			</span>
+		);
+	}
+
+	return (
+		<span title="Pull Request">
+			<GitPullRequest className="h-4 w-4" />
+		</span>
+	);
+}
+
+function ExternalItemLink({
+	href,
+	children,
+	className,
+}: {
+	href: string;
+	children: React.ReactNode;
+	className?: string;
+}) {
+	return (
+		<a
+			href={href}
+			target="_blank"
+			rel="noopener noreferrer"
+			onClick={(e) => e.stopPropagation()}
+			className={className}
+		>
+			{children}
+			<ExternalLink className="h-3 w-3 shrink-0" />
+		</a>
+	);
+}
+
+function PrimaryItemTitle({ item }: Pick<WorkItemRowProps, 'item'>) {
+	if (item.type === 'work-item') {
+		if (item.workItemUrl && item.workItemTitle) {
+			return (
+				<ExternalItemLink
+					href={item.workItemUrl}
+					className="inline-flex items-center gap-1 text-primary hover:underline"
+				>
+					{item.workItemTitle}
+				</ExternalItemLink>
+			);
+		}
+
+		return item.workItemTitle ? (
+			<span>{item.workItemTitle}</span>
+		) : (
+			<span className="text-muted-foreground italic">No title</span>
+		);
+	}
+
+	if (item.prUrl) {
+		return (
+			<ExternalItemLink
+				href={item.prUrl}
+				className="inline-flex items-center gap-1 text-primary hover:underline"
+			>
+				#{item.prNumber}
+				{item.prTitle && <span className="ml-1 text-foreground">{item.prTitle}</span>}
+			</ExternalItemLink>
+		);
+	}
+
+	return (
+		<span className="text-muted-foreground">
+			#{item.prNumber}
+			{item.prTitle && <span className="ml-1 text-foreground">{item.prTitle}</span>}
+		</span>
+	);
+}
+
+function SecondaryItemTitle({ item }: Pick<WorkItemRowProps, 'item'>) {
+	if (item.type === 'work-item') {
+		return <span className="text-xs text-muted-foreground italic">No PR yet</span>;
+	}
+
+	if (item.type !== 'linked' || !item.workItemTitle) {
+		return null;
+	}
+
+	return (
+		<span className="flex items-center gap-1 text-xs text-muted-foreground">
+			<ClipboardList className="h-3 w-3 shrink-0" />
+			{item.workItemUrl ? (
+				<ExternalItemLink
+					href={item.workItemUrl}
+					className="inline-flex items-center gap-1 hover:text-primary hover:underline"
+				>
+					{item.workItemTitle}
+				</ExternalItemLink>
+			) : (
+				<span>{item.workItemTitle}</span>
+			)}
+		</span>
+	);
+}
+
 function WorkItemRow({ item, isExpanded, onToggle }: WorkItemRowProps) {
 	const canExpand = item.runCount > 0;
 
@@ -166,89 +281,14 @@ function WorkItemRow({ item, isExpanded, onToggle }: WorkItemRowProps) {
 		>
 			{/* Expand chevron / Type icon */}
 			<td className="px-4 py-3 text-muted-foreground">
-				{canExpand ? (
-					isExpanded ? (
-						<ChevronDown className="h-4 w-4" />
-					) : (
-						<ChevronRight className="h-4 w-4" />
-					)
-				) : item.type === 'linked' ? (
-					<span title="Linked (PR + Work Item)">
-						<ClipboardList className="h-4 w-4" />
-					</span>
-				) : item.type === 'work-item' ? (
-					<span title="Work Item">
-						<ClipboardList className="h-4 w-4" />
-					</span>
-				) : (
-					<span title="Pull Request">
-						<GitPullRequest className="h-4 w-4" />
-					</span>
-				)}
+				<ItemIcon item={item} isExpanded={isExpanded} canExpand={canExpand} />
 			</td>
 
 			{/* PR title / number + Associated work item (stacked) */}
 			<td className="px-4 py-3">
 				<div className="flex flex-col gap-1">
-					{/* Primary row: work item title (for work-item type) or PR title */}
-					{item.type === 'work-item' ? (
-						item.workItemUrl && item.workItemTitle ? (
-							<a
-								href={item.workItemUrl}
-								target="_blank"
-								rel="noopener noreferrer"
-								onClick={(e) => e.stopPropagation()}
-								className="inline-flex items-center gap-1 text-primary hover:underline"
-							>
-								{item.workItemTitle}
-								<ExternalLink className="h-3 w-3 shrink-0" />
-							</a>
-						) : item.workItemTitle ? (
-							<span>{item.workItemTitle}</span>
-						) : (
-							<span className="text-muted-foreground italic">No title</span>
-						)
-					) : item.prUrl ? (
-						<a
-							href={item.prUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-							onClick={(e) => e.stopPropagation()}
-							className="inline-flex items-center gap-1 text-primary hover:underline"
-						>
-							#{item.prNumber}
-							{item.prTitle && <span className="ml-1 text-foreground">{item.prTitle}</span>}
-							<ExternalLink className="h-3 w-3 shrink-0" />
-						</a>
-					) : (
-						<span className="text-muted-foreground">
-							#{item.prNumber}
-							{item.prTitle && <span className="ml-1 text-foreground">{item.prTitle}</span>}
-						</span>
-					)}
-
-					{/* Secondary row: "No PR yet" for work-item, or associated work item for linked */}
-					{item.type === 'work-item' ? (
-						<span className="text-xs text-muted-foreground italic">No PR yet</span>
-					) : item.type === 'linked' && item.workItemTitle ? (
-						<span className="flex items-center gap-1 text-xs text-muted-foreground">
-							<ClipboardList className="h-3 w-3 shrink-0" />
-							{item.workItemUrl ? (
-								<a
-									href={item.workItemUrl}
-									target="_blank"
-									rel="noopener noreferrer"
-									onClick={(e) => e.stopPropagation()}
-									className="inline-flex items-center gap-1 hover:underline hover:text-primary"
-								>
-									{item.workItemTitle}
-									<ExternalLink className="h-3 w-3 shrink-0" />
-								</a>
-							) : (
-								<span>{item.workItemTitle}</span>
-							)}
-						</span>
-					) : null}
+					<PrimaryItemTitle item={item} />
+					<SecondaryItemTitle item={item} />
 				</div>
 			</td>
 

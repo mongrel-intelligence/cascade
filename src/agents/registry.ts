@@ -1,14 +1,9 @@
-import {
-	executeWithEngine,
-	getEngine,
-	getRegisteredEngines,
-	registerBuiltInEngines,
-	resolveEngineName,
-} from '../backends/index.js';
+import { executeWithEngine } from '../backends/adapter.js';
+import { registerBuiltInEngines } from '../backends/bootstrap.js';
+import { getEngine, getRegisteredEngines } from '../backends/registry.js';
+import { resolveEngineName } from '../backends/resolution.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
-
-registerBuiltInEngines();
 
 /**
  * Run an agent using the appropriate engine.
@@ -27,6 +22,8 @@ export async function runAgent(
 	agentType: string,
 	input: AgentInput & { project: ProjectConfig; config: CascadeConfig },
 ): Promise<AgentResult> {
+	registerBuiltInEngines();
+
 	const engineName = resolveEngineName(agentType, input.project, input.config);
 	const engine = getEngine(engineName);
 
@@ -55,4 +52,4 @@ export async function runAgent(
 	return executeWithEngine(engine, agentType, input);
 }
 
-export { registerEngine } from '../backends/index.js';
+export { registerEngine } from '../backends/registry.js';

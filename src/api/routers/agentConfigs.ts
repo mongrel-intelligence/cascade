@@ -14,8 +14,6 @@ import type { TRPCContext } from '../trpc.js';
 import { protectedProcedure, publicProcedure, router } from '../trpc.js';
 import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
-registerBuiltInEngines();
-
 /** Throws FORBIDDEN when a global config (no org, no project) is modified by a non-superadmin. */
 function assertCanModifyConfig(
 	config: { orgId: string | null; projectId: string | null },
@@ -28,10 +26,12 @@ function assertCanModifyConfig(
 
 export const agentConfigsRouter = router({
 	engines: publicProcedure.query(() => {
+		registerBuiltInEngines();
 		return getEngineCatalog();
 	}),
 
 	claudeCodeModels: publicProcedure.query(() => {
+		registerBuiltInEngines();
 		const claudeCode = getEngineCatalog().find((engine) => engine.id === 'claude-code');
 		return claudeCode?.modelSelection.type === 'select' ? claudeCode.modelSelection.options : [];
 	}),
