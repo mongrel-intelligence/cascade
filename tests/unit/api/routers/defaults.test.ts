@@ -26,6 +26,7 @@ describe('defaultsRouter', () => {
 				orgId: 'org-1',
 				model: 'claude-sonnet-4-5-20250929',
 				maxIterations: 20,
+				agentEngineSettings: { codex: { approvalPolicy: 'never' } },
 			};
 			mockGetCascadeDefaults.mockResolvedValue(mockDefaults);
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -33,7 +34,12 @@ describe('defaultsRouter', () => {
 			const result = await caller.get();
 
 			expect(mockGetCascadeDefaults).toHaveBeenCalledWith('org-1');
-			expect(result).toEqual(mockDefaults);
+			expect(result).toEqual({
+				orgId: 'org-1',
+				model: 'claude-sonnet-4-5-20250929',
+				maxIterations: 20,
+				engineSettings: { codex: { approvalPolicy: 'never' } },
+			});
 		});
 
 		it('returns null when no defaults configured', async () => {
@@ -62,6 +68,13 @@ describe('defaultsRouter', () => {
 				watchdogTimeoutMs: 300000,
 				workItemBudgetUsd: '5.00',
 				agentEngine: 'claude-code',
+				engineSettings: {
+					codex: {
+						approvalPolicy: 'never',
+						sandboxMode: 'workspace-write',
+						webSearch: false,
+					},
+				},
 				progressModel: 'claude-haiku-3-20240307',
 				progressIntervalMinutes: '10',
 			});
@@ -72,6 +85,13 @@ describe('defaultsRouter', () => {
 				watchdogTimeoutMs: 300000,
 				workItemBudgetUsd: '5.00',
 				agentEngine: 'claude-code',
+				engineSettings: {
+					codex: {
+						approvalPolicy: 'never',
+						sandboxMode: 'workspace-write',
+						webSearch: false,
+					},
+				},
 				progressModel: 'claude-haiku-3-20240307',
 				progressIntervalMinutes: '10',
 			});
@@ -101,6 +121,18 @@ describe('defaultsRouter', () => {
 		it('rejects negative maxIterations', async () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.upsert({ maxIterations: -1 })).rejects.toThrow();
+		});
+
+		it('rejects unsupported engine settings', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				caller.upsert({
+					engineSettings: {
+						unknown: { foo: 'bar' },
+					},
+				}),
+			).rejects.toThrow('Unsupported engine settings');
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {

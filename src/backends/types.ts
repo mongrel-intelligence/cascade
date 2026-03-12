@@ -49,8 +49,8 @@ export interface AgentEnginePolicy {
 	maxIterations: number;
 	budgetUsd?: number;
 	model: string;
-	/** SDK tools to allow (defaults to all 6: Read, Write, Edit, Bash, Glob, Grep) */
-	sdkTools?: string[];
+	/** Engine-neutral capability list used to derive native tools per engine */
+	nativeToolCapabilities?: string[];
 	/** Whether to enable stop hooks that check for uncommitted/unpushed changes (defaults to true) */
 	enableStopHooks?: boolean;
 	/** Whether to block git push in hooks (defaults to true) */
@@ -82,6 +82,32 @@ export interface AgentEngineResult {
 	runId?: string;
 }
 
+export interface AgentEngineSettingFieldOption {
+	value: string;
+	label: string;
+}
+
+export type AgentEngineSettingField =
+	| {
+			key: string;
+			label: string;
+			type: 'select';
+			description?: string;
+			options: ReadonlyArray<AgentEngineSettingFieldOption>;
+	  }
+	| {
+			key: string;
+			label: string;
+			type: 'boolean';
+			description?: string;
+	  };
+
+export interface AgentEngineSettingsDefinition {
+	title?: string;
+	description?: string;
+	fields: ReadonlyArray<AgentEngineSettingField>;
+}
+
 /**
  * Describes how an engine should be presented and configured by callers/UI.
  */
@@ -98,6 +124,7 @@ export interface AgentEngineDefinition {
 				options: ReadonlyArray<{ value: string; label: string }>;
 		  };
 	readonly logLabel: string;
+	readonly settings?: AgentEngineSettingsDefinition;
 }
 
 /**

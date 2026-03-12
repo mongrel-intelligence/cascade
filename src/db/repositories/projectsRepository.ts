@@ -1,4 +1,5 @@
 import { and, eq } from 'drizzle-orm';
+import { type EngineSettings, normalizeEngineSettings } from '../../config/engineSettings.js';
 import { getDb } from '../client.js';
 import { projects } from '../schema/index.js';
 
@@ -31,23 +32,28 @@ export async function createProject(
 		model?: string | null;
 		workItemBudgetUsd?: string | null;
 		agentEngine?: string | null;
+		engineSettings?: EngineSettings | null;
 		subscriptionCostZero?: boolean;
 	},
 ) {
 	const db = getDb();
+	const { engineSettings, ...rest } = data;
 	const [row] = await db
 		.insert(projects)
 		.values({
-			id: data.id,
+			id: rest.id,
 			orgId,
-			name: data.name,
-			repo: data.repo ?? null,
-			baseBranch: data.baseBranch ?? 'main',
-			branchPrefix: data.branchPrefix ?? 'feature/',
-			model: data.model,
-			workItemBudgetUsd: data.workItemBudgetUsd,
-			agentEngine: data.agentEngine,
-			subscriptionCostZero: data.subscriptionCostZero ?? false,
+			name: rest.name,
+			repo: rest.repo ?? null,
+			baseBranch: rest.baseBranch ?? 'main',
+			branchPrefix: rest.branchPrefix ?? 'feature/',
+			model: rest.model,
+			workItemBudgetUsd: rest.workItemBudgetUsd,
+			agentEngine: rest.agentEngine,
+			...(engineSettings !== undefined
+				? { agentEngineSettings: normalizeEngineSettings(engineSettings) }
+				: {}),
+			subscriptionCostZero: rest.subscriptionCostZero ?? false,
 		})
 		.returning();
 	return row;
@@ -64,13 +70,21 @@ export async function updateProject(
 		model?: string | null;
 		workItemBudgetUsd?: string | null;
 		agentEngine?: string | null;
+		engineSettings?: EngineSettings | null;
 		subscriptionCostZero?: boolean;
 	},
 ) {
 	const db = getDb();
+	const { engineSettings, ...rest } = updates;
 	await db
 		.update(projects)
-		.set({ ...updates, updatedAt: new Date() })
+		.set({
+			...rest,
+			...(engineSettings !== undefined
+				? { agentEngineSettings: normalizeEngineSettings(engineSettings) }
+				: {}),
+			updatedAt: new Date(),
+		})
 		.where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)));
 }
 

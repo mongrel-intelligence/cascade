@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { EngineSettingsSchema } from '../../config/engineSettings.js';
 import { getDb } from '../../db/client.js';
 import { listProjectsForOrg } from '../../db/repositories/runsRepository.js';
 import {
@@ -43,6 +44,16 @@ async function verifyCredentialOwnership(credentialId: number, orgId: string) {
 	}
 }
 
+function serializeProject<T extends { agentEngineSettings?: unknown }>(
+	project: T,
+): Omit<T, 'agentEngineSettings'> & { engineSettings: T['agentEngineSettings'] | null } {
+	const { agentEngineSettings, ...rest } = project;
+	return {
+		...rest,
+		engineSettings: (agentEngineSettings ?? null) as T['agentEngineSettings'] | null,
+	};
+}
+
 export const projectsRouter = router({
 	// Existing - returns id+name for dropdowns
 	list: protectedProcedure.query(async ({ ctx }) => {
@@ -51,13 +62,13 @@ export const projectsRouter = router({
 
 	// New - returns all columns
 	listFull: protectedProcedure.query(async ({ ctx }) => {
-		return listProjectsFull(ctx.effectiveOrgId);
+		return (await listProjectsFull(ctx.effectiveOrgId)).map(serializeProject);
 	}),
 
 	getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ ctx, input }) => {
 		const project = await getProjectFull(input.id, ctx.effectiveOrgId);
 		if (!project) throw new TRPCError({ code: 'NOT_FOUND' });
-		return project;
+		return serializeProject(project);
 	}),
 
 	create: protectedProcedure
@@ -74,6 +85,7 @@ export const projectsRouter = router({
 				model: z.string().nullish(),
 				workItemBudgetUsd: z.string().nullish(),
 				agentEngine: z.string().nullish(),
+				engineSettings: EngineSettingsSchema.nullish(),
 				subscriptionCostZero: z.boolean().optional(),
 			}),
 		)
@@ -81,6 +93,7 @@ export const projectsRouter = router({
 			return createProject(ctx.effectiveOrgId, {
 				...input,
 				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
+				...(input.engineSettings !== undefined ? { engineSettings: input.engineSettings } : {}),
 			});
 		}),
 
@@ -95,6 +108,7 @@ export const projectsRouter = router({
 				model: z.string().nullish(),
 				workItemBudgetUsd: z.string().nullish(),
 				agentEngine: z.string().nullish(),
+				engineSettings: EngineSettingsSchema.nullish(),
 				subscriptionCostZero: z.boolean().optional(),
 			}),
 		)
@@ -104,6 +118,7 @@ export const projectsRouter = router({
 			await updateProject(id, ctx.effectiveOrgId, {
 				...updates,
 				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
+				...(input.engineSettings !== undefined ? { engineSettings: input.engineSettings } : {}),
 			});
 		}),
 

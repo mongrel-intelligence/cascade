@@ -1,7 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
-import { CLAUDE_CODE_MODELS } from '../../../../src/backends/claude-code/models.js';
 import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
 
 const {
@@ -77,7 +76,12 @@ describe('agentConfigsRouter', () => {
 				modelSelection: {
 					type: 'select',
 					defaultValueLabel: 'Default',
-					options: CLAUDE_CODE_MODELS,
+					options: [
+						{
+							value: 'claude-sonnet-4-5-20250929',
+							label: 'Claude Sonnet 4.5',
+						},
+					],
 				},
 				logLabel: 'Claude Code Log',
 			},
@@ -338,31 +342,6 @@ describe('agentConfigsRouter', () => {
 			await caller.delete({ id: 10 });
 
 			expect(mockDeleteAgentConfig).toHaveBeenCalledWith(10);
-		});
-	});
-
-	describe('claudeCodeModels', () => {
-		it('returns the list of claude code models (public endpoint)', async () => {
-			// No auth required — publicProcedure
-			const caller = createCaller({ user: null, effectiveOrgId: null });
-
-			const result = await caller.claudeCodeModels();
-
-			expect(result).toEqual(CLAUDE_CODE_MODELS);
-			expect(Array.isArray(result)).toBe(true);
-			expect(result.length).toBeGreaterThan(0);
-			// Each entry should have value and label fields
-			for (const model of result) {
-				expect(model).toHaveProperty('value');
-				expect(model).toHaveProperty('label');
-			}
-		});
-
-		it('returns models accessible without authentication', async () => {
-			// Ensure an unauthenticated request succeeds (no UNAUTHORIZED error)
-			const caller = createCaller({ user: null, effectiveOrgId: null });
-
-			await expect(caller.claudeCodeModels()).resolves.not.toThrow();
 		});
 	});
 

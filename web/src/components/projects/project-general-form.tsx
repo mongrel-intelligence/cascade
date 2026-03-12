@@ -1,3 +1,5 @@
+import { EngineSettingsFields } from '@/components/settings/engine-settings-fields.js';
+import { ModelField } from '@/components/settings/model-field.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import {
@@ -20,12 +22,14 @@ interface Project {
 	model: string | null;
 	workItemBudgetUsd: string | null;
 	agentEngine: string | null;
+	engineSettings: Record<string, Record<string, unknown> | undefined> | null;
 	subscriptionCostZero: boolean | null;
 }
 
 export function ProjectGeneralForm({ project }: { project: Project }) {
 	const queryClient = useQueryClient();
 	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
+	const defaultsQuery = useQuery(trpc.defaults.get.queryOptions());
 	const [name, setName] = useState(project.name);
 	const [repo, setRepo] = useState(project.repo ?? '');
 	const [baseBranch, setBaseBranch] = useState(project.baseBranch ?? 'main');
@@ -33,6 +37,9 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const [model, setModel] = useState(project.model ?? '');
 	const [workItemBudgetUsd, setWorkItemBudgetUsd] = useState(project.workItemBudgetUsd ?? '');
 	const [agentEngine, setAgentEngine] = useState(project.agentEngine ?? '');
+	const [engineSettings, setEngineSettings] = useState<
+		Record<string, Record<string, unknown> | undefined>
+	>(project.engineSettings ?? {});
 	const [subscriptionCostZero, setSubscriptionCostZero] = useState(
 		project.subscriptionCostZero ?? false,
 	);
@@ -60,9 +67,13 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 			model: model || null,
 			workItemBudgetUsd: workItemBudgetUsd || null,
 			agentEngine: agentEngine || null,
+			engineSettings: Object.keys(engineSettings).length > 0 ? engineSettings : null,
 			subscriptionCostZero,
 		});
 	}
+
+	const effectiveEngineId = agentEngine || defaultsQuery.data?.agentEngine || '';
+	const effectiveEngine = enginesQuery.data?.find((engine) => engine.id === effectiveEngineId);
 
 	return (
 		<form onSubmit={handleSubmit} className="max-w-2xl space-y-4">
@@ -102,12 +113,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 			<div className="grid grid-cols-2 gap-4">
 				<div className="space-y-2">
 					<Label htmlFor="model">Model</Label>
-					<Input
-						id="model"
-						value={model}
-						onChange={(e) => setModel(e.target.value)}
-						placeholder="Inherits from defaults"
-					/>
+					<ModelField id="model" value={model} onChange={setModel} engine={effectiveEngineId} />
 				</div>
 				<div className="space-y-2">
 					<Label htmlFor="workItemBudgetUsd">Work Item Budget (USD)</Label>
@@ -150,6 +156,12 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 					<Label htmlFor="subscriptionCostZero">Subscription Cost Zero</Label>
 				</div>
 			</div>
+			<EngineSettingsFields
+				engine={effectiveEngine}
+				engines={enginesQuery.data}
+				value={engineSettings}
+				onChange={(next) => setEngineSettings(next ?? {})}
+			/>
 			<div className="flex items-center gap-2">
 				<button
 					type="submit"

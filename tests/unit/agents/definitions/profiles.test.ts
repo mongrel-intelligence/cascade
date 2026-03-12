@@ -16,7 +16,6 @@ vi.mock('../../../../src/agents/shared/gadgets.js', () => ({
 vi.mock('../../../../src/agents/capabilities/resolver.js', () => ({
 	deriveRequiredIntegrations: vi.fn().mockReturnValue([]),
 	getGadgetNamesFromCapabilities: vi.fn().mockReturnValue(['ReadFile', 'WriteFile']),
-	getSdkToolsFromCapabilities: vi.fn().mockReturnValue(['Read', 'Write']),
 	resolveEffectiveCapabilities: vi.fn().mockImplementation((req, opt) => [...req, ...opt]),
 }));
 
@@ -76,12 +75,12 @@ describe('getAgentProfile', () => {
 		);
 	});
 
-	it('returns profile with sdkTools from capabilities', async () => {
+	it('returns profile with allCapabilities from capabilities', async () => {
 		mockResolveAgentDefinition.mockResolvedValue(makeDefinition());
 
 		const profile = await getAgentProfile('implementation');
 
-		expect(profile.sdkTools).toEqual(['Read', 'Write']);
+		expect(profile.allCapabilities).toEqual(['file-system', 'trello']);
 	});
 
 	it('returns needsGitHubToken=false when no scm integration required', async () => {

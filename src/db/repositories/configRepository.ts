@@ -1,4 +1,5 @@
 import { type SQL, and, eq, isNull, sql } from 'drizzle-orm';
+import { mergeEngineSettings } from '../../config/engineSettings.js';
 import { validateConfig } from '../../config/schema.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { getDb } from '../client.js';
@@ -62,6 +63,16 @@ async function loadAgentConfigs(): Promise<AgentConfigRow[]> {
 	return db.select().from(agentConfigs);
 }
 
+function applyProjectEngineSettings(config: CascadeConfig): CascadeConfig {
+	return {
+		...config,
+		projects: config.projects.map((project) => ({
+			...project,
+			engineSettings: mergeEngineSettings(config.defaults.engineSettings, project.engineSettings),
+		})),
+	};
+}
+
 export async function loadConfigFromDb(): Promise<CascadeConfig> {
 	const db = getDb();
 
@@ -109,7 +120,7 @@ export async function loadConfigFromDb(): Promise<CascadeConfig> {
 		projectAgentConfigsMap,
 	});
 
-	return validateConfig(rawConfig);
+	return applyProjectEngineSettings(validateConfig(rawConfig));
 }
 
 async function findProjectConfigFromDb(
@@ -147,7 +158,7 @@ async function findProjectConfigFromDb(
 		projectAgentConfigsMap,
 	});
 
-	const config = validateConfig(rawConfig);
+	const config = applyProjectEngineSettings(validateConfig(rawConfig));
 	return { project: config.projects[0], config };
 }
 

@@ -222,10 +222,20 @@ describe('getAgentProfile', () => {
 			expect(names).toContain('ReadWorkItem');
 		});
 
-		it('has SDK tools for code editing', () => {
-			// SDK tools derived from capabilities - order may vary
-			expect(new Set(profile.sdkTools)).toEqual(
-				new Set(['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']),
+		it('has native-tool capabilities for code editing', () => {
+			expect(new Set(profile.allCapabilities)).toEqual(
+				new Set([
+					'fs:read',
+					'fs:write',
+					'shell:exec',
+					'session:ctrl',
+					'scm:read',
+					'scm:ci-logs',
+					'scm:comment',
+					'pm:read',
+					'pm:write',
+					'pm:checklist',
+				]),
 			);
 		});
 
@@ -292,10 +302,18 @@ describe('getAgentProfile', () => {
 			expect(names).not.toContain('CreatePR');
 		});
 
-		it('has SDK tools for code editing', () => {
-			// SDK tools derived from capabilities - order may vary
-			expect(new Set(profile.sdkTools)).toEqual(
-				new Set(['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']),
+		it('has native-tool capabilities for code editing', () => {
+			expect(new Set(profile.allCapabilities)).toEqual(
+				new Set([
+					'fs:read',
+					'fs:write',
+					'shell:exec',
+					'session:ctrl',
+					'scm:read',
+					'scm:comment',
+					'pm:read',
+					'pm:write',
+				]),
 			);
 		});
 

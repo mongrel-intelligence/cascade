@@ -63,7 +63,7 @@ describe('CreatePRReviewCommand — GitHub ack comment deletion', () => {
 		sidecarPath = join(tmpdir(), `cascade-test-review-delete-${Date.now()}.json`);
 		originalEnv = process.env.CASCADE_GITHUB_ACK_COMMENT_ID;
 		originalSidecarEnv = process.env.CASCADE_REVIEW_SIDECAR_PATH;
-		process.env.CASCADE_GITHUB_ACK_COMMENT_ID = undefined;
+		Reflect.deleteProperty(process.env, 'CASCADE_GITHUB_ACK_COMMENT_ID');
 		process.env.CASCADE_REVIEW_SIDECAR_PATH = sidecarPath;
 		mockDeletePRComment.mockReset();
 	});
@@ -77,12 +77,12 @@ describe('CreatePRReviewCommand — GitHub ack comment deletion', () => {
 		if (originalEnv !== undefined) {
 			process.env.CASCADE_GITHUB_ACK_COMMENT_ID = originalEnv;
 		} else {
-			process.env.CASCADE_GITHUB_ACK_COMMENT_ID = undefined;
+			Reflect.deleteProperty(process.env, 'CASCADE_GITHUB_ACK_COMMENT_ID');
 		}
 		if (originalSidecarEnv !== undefined) {
 			process.env.CASCADE_REVIEW_SIDECAR_PATH = originalSidecarEnv;
 		} else {
-			process.env.CASCADE_REVIEW_SIDECAR_PATH = undefined;
+			Reflect.deleteProperty(process.env, 'CASCADE_REVIEW_SIDECAR_PATH');
 		}
 		vi.restoreAllMocks();
 	});

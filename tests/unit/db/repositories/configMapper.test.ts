@@ -27,6 +27,7 @@ const baseProjectRow = {
 	workItemBudgetUsd: null,
 	squintDbUrl: null,
 	agentEngine: null,
+	agentEngineSettings: null,
 	subscriptionCostZero: false,
 };
 
@@ -145,6 +146,7 @@ describe('mapDefaultsRow', () => {
 		watchdogTimeoutMs: 1800000,
 		workItemBudgetUsd: '5.00',
 		agentEngine: 'llmist',
+		agentEngineSettings: { codex: { approvalPolicy: 'never' } },
 		progressModel: 'progress-model',
 		progressIntervalMinutes: '5',
 	};
@@ -156,6 +158,7 @@ describe('mapDefaultsRow', () => {
 		expect(result.watchdogTimeoutMs).toBe(1800000);
 		expect(result.workItemBudgetUsd).toBe(5);
 		expect(result.agentEngine).toBe('llmist');
+		expect(result.engineSettings).toEqual({ codex: { approvalPolicy: 'never' } });
 		expect(result.progressModel).toBe('progress-model');
 		expect(result.progressIntervalMinutes).toBe(5);
 	});
@@ -298,10 +301,16 @@ describe('mapProjectRow', () => {
 	it('builds agentEngine from project row', () => {
 		const result = mapProjectRow(
 			makeInput({
-				row: { ...baseProjectRow, agentEngine: 'claude-code', subscriptionCostZero: true },
+				row: {
+					...baseProjectRow,
+					agentEngine: 'claude-code',
+					agentEngineSettings: { codex: { sandboxMode: 'workspace-write' } },
+					subscriptionCostZero: true,
+				},
 			}),
 		);
 		expect(result.agentEngine?.default).toBe('claude-code');
+		expect(result.engineSettings).toEqual({ codex: { sandboxMode: 'workspace-write' } });
 		expect(result.agentEngine?.subscriptionCostZero).toBe(true);
 	});
 

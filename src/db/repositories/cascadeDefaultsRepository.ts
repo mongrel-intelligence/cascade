@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import { type EngineSettings, normalizeEngineSettings } from '../../config/engineSettings.js';
 import { getDb } from '../client.js';
 import { cascadeDefaults } from '../schema/index.js';
 
@@ -20,18 +21,32 @@ export async function upsertCascadeDefaults(
 		watchdogTimeoutMs?: number | null;
 		workItemBudgetUsd?: string | null;
 		agentEngine?: string | null;
+		engineSettings?: EngineSettings | null;
 		progressModel?: string | null;
 		progressIntervalMinutes?: string | null;
 	},
 ) {
 	const db = getDb();
 	const existing = await getCascadeDefaults(orgId);
+	const { engineSettings, ...rest } = data;
 	if (existing) {
 		await db
 			.update(cascadeDefaults)
-			.set({ ...data, updatedAt: new Date() })
+			.set({
+				...rest,
+				...(engineSettings !== undefined
+					? { agentEngineSettings: normalizeEngineSettings(engineSettings) }
+					: {}),
+				updatedAt: new Date(),
+			})
 			.where(eq(cascadeDefaults.orgId, orgId));
 	} else {
-		await db.insert(cascadeDefaults).values({ orgId, ...data });
+		await db.insert(cascadeDefaults).values({
+			orgId,
+			...rest,
+			...(engineSettings !== undefined
+				? { agentEngineSettings: normalizeEngineSettings(engineSettings) }
+				: {}),
+		});
 	}
 }

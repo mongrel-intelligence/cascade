@@ -1,3 +1,4 @@
+import { EngineSettingsFields } from '@/components/settings/engine-settings-fields.js';
 import { ModelField } from '@/components/settings/model-field.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
@@ -22,6 +23,9 @@ export function DefaultsForm() {
 	const [watchdogTimeoutMs, setWatchdogTimeoutMs] = useState('');
 	const [workItemBudgetUsd, setWorkItemBudgetUsd] = useState('');
 	const [agentEngine, setAgentEngine] = useState('');
+	const [engineSettings, setEngineSettings] = useState<
+		Record<string, Record<string, unknown> | undefined>
+	>({});
 	const [progressModel, setProgressModel] = useState('');
 	const [progressIntervalMinutes, setProgressIntervalMinutes] = useState('');
 
@@ -33,6 +37,9 @@ export function DefaultsForm() {
 			setWatchdogTimeoutMs(d.watchdogTimeoutMs?.toString() ?? '');
 			setWorkItemBudgetUsd(d.workItemBudgetUsd ?? '');
 			setAgentEngine(d.agentEngine ?? '');
+			setEngineSettings(
+				(d.engineSettings as Record<string, Record<string, unknown> | undefined> | null) ?? {},
+			);
 			setProgressModel(d.progressModel ?? '');
 			setProgressIntervalMinutes(d.progressIntervalMinutes ?? '');
 		}
@@ -46,6 +53,7 @@ export function DefaultsForm() {
 				watchdogTimeoutMs: watchdogTimeoutMs ? Number(watchdogTimeoutMs) : null,
 				workItemBudgetUsd: workItemBudgetUsd || null,
 				agentEngine: agentEngine || null,
+				engineSettings: Object.keys(engineSettings).length > 0 ? engineSettings : null,
 				progressModel: progressModel || null,
 				progressIntervalMinutes: progressIntervalMinutes || null,
 			}),
@@ -57,6 +65,8 @@ export function DefaultsForm() {
 	if (defaultsQuery.isLoading) {
 		return <div className="py-4 text-muted-foreground">Loading defaults...</div>;
 	}
+
+	const selectedEngine = enginesQuery.data?.find((engine) => engine.id === agentEngine);
 
 	return (
 		<form
@@ -82,6 +92,13 @@ export function DefaultsForm() {
 					/>
 				</div>
 			</div>
+			<EngineSettingsFields
+				engine={selectedEngine}
+				engines={enginesQuery.data}
+				value={engineSettings}
+				onChange={(next) => setEngineSettings(next ?? {})}
+				inheritLabel="Default behavior"
+			/>
 			<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 				<div className="space-y-2">
 					<Label htmlFor="d-watchdog">Watchdog Timeout (ms)</Label>

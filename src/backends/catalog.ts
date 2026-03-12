@@ -1,4 +1,5 @@
 import { CLAUDE_CODE_MODELS } from './claude-code/models.js';
+import { CODEX_MODELS } from './codex/models.js';
 import type { AgentEngineDefinition } from './types.js';
 
 export const LLMIST_ENGINE_DEFINITION: AgentEngineDefinition = {
@@ -38,7 +39,73 @@ export const CLAUDE_CODE_ENGINE_DEFINITION: AgentEngineDefinition = {
 	logLabel: 'Claude Code Log',
 };
 
+export const CODEX_ENGINE_DEFINITION: AgentEngineDefinition = {
+	id: 'codex',
+	label: 'Codex',
+	description: 'OpenAI Codex CLI in headless automation mode with CASCADE tool guidance.',
+	capabilities: [
+		'inline_prompt_context',
+		'offloaded_context_files',
+		'native_file_edit_tools',
+		'external_cli_tools',
+		'streaming_text_events',
+		'streaming_tool_events',
+		'scoped_env_secrets',
+	],
+	modelSelection: {
+		type: 'select',
+		defaultValueLabel: 'Default (GPT-5.3 Codex)',
+		options: CODEX_MODELS,
+	},
+	logLabel: 'Codex Log',
+	settings: {
+		title: 'Codex Settings',
+		description: 'Automation policy for Codex headless runs.',
+		fields: [
+			{
+				key: 'approvalPolicy',
+				label: 'Approval Policy',
+				type: 'select',
+				description: 'Headless worker runs must use `never`.',
+				options: [
+					{ value: 'never', label: 'Never' },
+					{ value: 'on-request', label: 'On Request' },
+					{ value: 'untrusted', label: 'Untrusted' },
+				],
+			},
+			{
+				key: 'sandboxMode',
+				label: 'Sandbox Mode',
+				type: 'select',
+				options: [
+					{ value: 'read-only', label: 'Read Only' },
+					{ value: 'workspace-write', label: 'Workspace Write' },
+					{ value: 'danger-full-access', label: 'Danger Full Access' },
+				],
+			},
+			{
+				key: 'reasoningEffort',
+				label: 'Reasoning Effort',
+				type: 'select',
+				options: [
+					{ value: 'low', label: 'Low' },
+					{ value: 'medium', label: 'Medium' },
+					{ value: 'high', label: 'High' },
+					{ value: 'xhigh', label: 'XHigh' },
+				],
+			},
+			{
+				key: 'webSearch',
+				label: 'Web Search',
+				type: 'boolean',
+				description: 'Allow Codex to use web search during runs.',
+			},
+		],
+	},
+};
+
 export const DEFAULT_ENGINE_CATALOG: AgentEngineDefinition[] = [
 	LLMIST_ENGINE_DEFINITION,
 	CLAUDE_CODE_ENGINE_DEFINITION,
+	CODEX_ENGINE_DEFINITION,
 ];

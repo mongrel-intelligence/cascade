@@ -13,142 +13,14 @@ import { logger } from '../../utils/logging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { getWorkspaceDir } from '../../utils/repo.js';
 import { CLAUDE_CODE_ENGINE_DEFINITION } from '../catalog.js';
-import type {
-	AgentEngine,
-	AgentEngineResult,
-	AgentExecutionPlan,
-	ContextInjection,
-	ToolManifest,
-} from '../types.js';
-import {
-	buildInlineContextSection,
-	cleanupContextFiles,
-	offloadLargeContext,
-} from './contextFiles.js';
+import { cleanupContextFiles } from '../contextFiles.js';
+import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
+import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
 import { filterProcessEnv } from './env.js';
 import { buildHooks } from './hooks.js';
 import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
 
-/**
- * Format a single CLI parameter for tool guidance documentation.
- */
-function formatParam(
-	key: string,
-	schema: { type: string; required?: boolean; default?: unknown; description?: string },
-): string {
-	let result: string;
-	if (schema.type === 'array') {
-		// Array params use repeated flags: --item "a" --item "b"
-		const singular = key.replace(/s$/, '');
-		result = schema.required
-			? ` --${singular} <string> (repeatable)`
-			: ` [--${singular} <string> (repeatable)]`;
-	} else if (schema.type === 'boolean') {
-		// Boolean flags are presence-based: --flag (true) or --no-flag (false), no value argument
-		if (schema.default === true) {
-			result = ` [--no-${key}]`;
-		} else {
-			result = ` [--${key}]`;
-		}
-	} else {
-		result = schema.required ? ` --${key} <${schema.type}>` : ` [--${key} <${schema.type}>]`;
-	}
-	if (schema.description) {
-		result += ` # ${schema.description}`;
-	}
-	return result;
-}
-
-/**
- * Build prompt guidance for CASCADE-specific CLI tools.
- * The Claude Code agent invokes these via its built-in Bash tool.
- */
-export function buildToolGuidance(tools: ToolManifest[]): string {
-	if (tools.length === 0) return '';
-
-	let guidance = '## CASCADE Tools\n\n';
-	guidance += 'Use the Bash tool to invoke these CASCADE-specific commands.\n';
-	guidance += 'All commands output JSON. Parse the output to extract results.\n\n';
-	guidance +=
-		'**CRITICAL**: You MUST use these cascade-tools commands for all PM (Trello/JIRA), SCM (GitHub), and session operations. ' +
-		'Do NOT use `gh` CLI or other tools directly — cascade-tools handle authentication, push, and ' +
-		'state tracking that raw CLI tools do not. For example, `cascade-tools scm create-pr` pushes ' +
-		'the branch AND creates the PR atomically, while `gh pr create` does NOT push and will fail.\n\n';
-
-	for (const tool of tools) {
-		guidance += `### ${tool.name}\n`;
-		guidance += `${tool.description}\n`;
-		guidance += `\`\`\`bash\n${tool.cliCommand}`;
-
-		for (const [key, schema] of Object.entries(tool.parameters)) {
-			guidance += formatParam(key, schema as { type: string; required?: boolean });
-		}
-
-		guidance += '\n```\n\n';
-	}
-
-	return guidance;
-}
-
-/**
- * Result of building the task prompt with context offloading.
- */
-export interface BuildTaskPromptResult {
-	/** The assembled task prompt */
-	prompt: string;
-	/** Whether any context was offloaded to files */
-	hasOffloadedContext: boolean;
-}
-
-/**
- * Build the task prompt with pre-fetched context injections.
- *
- * Large context is offloaded to files to avoid exceeding prompt limits.
- * Claude is instructed to read the files on-demand using its Read tool.
- *
- * @param taskPrompt - The base task prompt
- * @param contextInjections - Context data to include
- * @param repoDir - Repository directory for writing context files
- * @returns The assembled prompt and offload metadata
- */
-export async function buildTaskPrompt(
-	taskPrompt: string,
-	contextInjections: ContextInjection[],
-	repoDir: string,
-): Promise<BuildTaskPromptResult> {
-	let prompt = taskPrompt;
-
-	if (contextInjections.length === 0) {
-		return { prompt, hasOffloadedContext: false };
-	}
-
-	const { inlineInjections, offloadedFiles, instructions } = await offloadLargeContext(
-		repoDir,
-		contextInjections,
-	);
-
-	// Add inline context
-	prompt += buildInlineContextSection(inlineInjections);
-
-	// Add instructions for offloaded files
-	if (instructions) {
-		prompt += `\n\n${instructions}`;
-	}
-
-	return {
-		prompt,
-		hasOffloadedContext: offloadedFiles.length > 0,
-	};
-}
-
-/**
- * Build the system prompt by combining CASCADE's agent prompt with tool guidance.
- */
-export function buildSystemPrompt(systemPrompt: string, tools: ToolManifest[]): string {
-	const toolGuidance = buildToolGuidance(tools);
-	if (!toolGuidance) return systemPrompt;
-	return `${systemPrompt}\n\n${toolGuidance}`;
-}
+export { buildToolGuidance, buildTaskPrompt, buildSystemPrompt } from '../nativeTools.js';
 
 /**
  * Resolve a CASCADE model string to a Claude model ID.
@@ -413,6 +285,27 @@ function debugRepoDirectory(repoDir: string): void {
 	}
 }
 
+const CLAUDE_NATIVE_TOOL_MAP: Record<string, string[]> = {
+	'fs:read': ['Read', 'Glob', 'Grep'],
+	'fs:write': ['Write', 'Edit'],
+	'shell:exec': ['Bash'],
+};
+
+function resolveNativeTools(nativeToolCapabilities?: string[]): string[] {
+	if (!nativeToolCapabilities || nativeToolCapabilities.length === 0) {
+		return ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
+	}
+
+	const tools = new Set<string>();
+	for (const capability of nativeToolCapabilities) {
+		for (const tool of CLAUDE_NATIVE_TOOL_MAP[capability] ?? []) {
+			tools.add(tool);
+		}
+	}
+
+	return tools.size > 0 ? [...tools] : ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
+}
+
 function logLlmCall(
 	input: AgentExecutionPlan,
 	assistantMsg: SDKAssistantMessage,
@@ -487,7 +380,7 @@ export class ClaudeCodeEngine implements AgentEngine {
 			blockGitPush: input.blockGitPush,
 		});
 
-		const sdkTools = input.sdkTools ?? ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
+		const sdkTools = resolveNativeTools(input.nativeToolCapabilities);
 
 		debugRepoDirectory(input.repoDir);
 

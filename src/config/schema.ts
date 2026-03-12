@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EngineSettingsSchema } from './engineSettings.js';
 
 const AgentEngineConfigSchema = z.object({
 	default: z.string().default('llmist'),
@@ -62,6 +63,7 @@ export const ProjectConfigSchema = z.object({
 	agentModels: z.record(z.string()).optional(),
 	workItemBudgetUsd: z.number().positive().optional(),
 	agentEngine: AgentEngineConfigSchema.optional(),
+	engineSettings: EngineSettingsSchema.optional(),
 	squintDbUrl: z.string().url().optional(),
 });
 
@@ -79,6 +81,7 @@ export const CascadeConfigSchema = z.object({
 				.default(30 * 60 * 1000), // 30 min max job duration
 			workItemBudgetUsd: z.number().positive().default(5),
 			agentEngine: z.string().default('llmist'),
+			engineSettings: EngineSettingsSchema.default({}),
 			progressModel: z.string().default('openrouter:google/gemini-2.5-flash-lite'),
 			progressIntervalMinutes: z.number().positive().default(5),
 		})

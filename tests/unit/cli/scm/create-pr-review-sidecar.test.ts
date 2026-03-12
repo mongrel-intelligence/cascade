@@ -44,7 +44,7 @@ describe('CreatePRReviewCommand sidecar write', () => {
 		if (originalEnv !== undefined) {
 			process.env.CASCADE_REVIEW_SIDECAR_PATH = originalEnv;
 		} else {
-			process.env.CASCADE_REVIEW_SIDECAR_PATH = undefined;
+			Reflect.deleteProperty(process.env, 'CASCADE_REVIEW_SIDECAR_PATH');
 		}
 		vi.restoreAllMocks();
 	});
@@ -108,7 +108,7 @@ describe('CreatePRReviewCommand sidecar write', () => {
 	});
 
 	it('does not write sidecar when CASCADE_REVIEW_SIDECAR_PATH is not set', async () => {
-		process.env.CASCADE_REVIEW_SIDECAR_PATH = undefined;
+		Reflect.deleteProperty(process.env, 'CASCADE_REVIEW_SIDECAR_PATH');
 
 		mockCreatePRReview.mockResolvedValue({
 			reviewUrl: 'https://github.com/owner/repo/pull/1#pullrequestreview-123',

@@ -17,7 +17,7 @@ PM Card → Webhook → Router → Redis/BullMQ → Worker → Agent → PR
 - **Dual-persona GitHub model** — Separate implementer and reviewer bot accounts to prevent feedback loops
 - **Web dashboard + CLI** — Monitor runs, manage projects, configure triggers
 - **Extensible trigger system** — Add new events without touching core logic
-- **Pluggable agent engines** — Built-in `llmist` and `claude-code` engines, with a shared contract for adding more
+- **Pluggable agent engines** — Built-in `llmist`, `claude-code`, and `codex` engines, with a shared contract for adding more
 - **Credential encryption** — AES-256-GCM encryption for all stored secrets
 
 ---
@@ -206,11 +206,17 @@ node bin/cascade.js credentials create \
   --value ghp_bbb... \
   --default
 
-# LLM API key (e.g., OpenRouter)
+# LLM API keys
 node bin/cascade.js credentials create \
   --name "OpenRouter" \
   --key OPENROUTER_API_KEY \
   --value sk-or-... \
+  --default
+
+node bin/cascade.js credentials create \
+  --name "OpenAI" \
+  --key OPENAI_API_KEY \
+  --value sk-proj-... \
   --default
 ```
 
@@ -491,7 +497,7 @@ registry.register(new MyCustomTrigger());
 1. Add a YAML definition in `src/agents/definitions/` (see existing files for the schema)
 2. Add a system prompt template in `src/agents/prompts/templates/`
 
-Agent types are auto-discovered from YAML filenames in `src/agents/definitions/` — no manual registration is needed. The agent registry only resolves and executes registered agent *engines* (currently `llmist` and `claude-code`), not agent types.
+Agent types are auto-discovered from YAML filenames in `src/agents/definitions/` — no manual registration is needed. The agent registry only resolves and executes registered agent *engines* (currently `llmist`, `claude-code`, and `codex`), not agent types.
 
 ### Adding a PM provider
 
@@ -509,7 +515,7 @@ See `src/pm/trello/` and `src/pm/jira/` for reference implementations.
 
 **Trigger system** — Events from Trello, JIRA, and GitHub webhooks are matched against registered `TriggerHandler` instances. Triggers are configured per-project in the database via `agent_trigger_configs`.
 
-**Agent engines** — Agents run through a shared execution lifecycle and a pluggable engine registry. The default engine is `llmist` (supports OpenRouter, Anthropic, OpenAI). The `claude-code` engine uses the Claude Code SDK with your Claude Max subscription. Adding a new engine means registering a new engine definition plus an execution adapter.
+**Agent engines** — Agents run through a shared execution lifecycle and a pluggable engine registry. The default engine is `llmist` (supports OpenRouter, Anthropic, OpenAI). The `claude-code` engine uses the Claude Code SDK. The `codex` engine runs the official OpenAI Codex CLI in headless mode and expects an `OPENAI_API_KEY` credential. Adding a new engine means registering a new engine definition plus an execution adapter.
 
 **Credential management** — All secrets are stored in the `credentials` table, scoped to an organization. Integration-specific credentials are linked via the `integration_credentials` join table. Optional AES-256-GCM encryption is enabled by setting `CREDENTIAL_MASTER_KEY`.
 
