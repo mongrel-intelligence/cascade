@@ -54,7 +54,7 @@
 			"baseBranch": "dev",
 			"branchPrefix": "feature/",
 
-			"agentBackend": {
+			"agentEngine": {
 				"default": "llmist",
 				"overrides": {
 					"implementation": "claude-code",

@@ -53,8 +53,8 @@ function buildProjectValues(p: ProjectConfig) {
 		branchPrefix: p.branchPrefix,
 		model: p.model ?? null,
 		workItemBudgetUsd: p.workItemBudgetUsd ? String(p.workItemBudgetUsd) : null,
-		agentBackend: p.agentBackend?.default ?? null,
-		subscriptionCostZero: p.agentBackend?.subscriptionCostZero ?? false,
+		agentEngine: p.agentEngine?.default ?? null,
+		subscriptionCostZero: p.agentEngine?.subscriptionCostZero ?? false,
 	};
 }
 
@@ -69,7 +69,7 @@ async function seedDefaults(d: CascadeConfig['defaults']) {
 		watchdogTimeoutMs: d.watchdogTimeoutMs,
 		postJobGracePeriodMs: d.postJobGracePeriodMs,
 		workItemBudgetUsd: String(d.workItemBudgetUsd),
-		agentBackend: d.agentBackend,
+		agentEngine: d.agentEngine,
 		progressModel: d.progressModel,
 		progressIntervalMinutes: String(d.progressIntervalMinutes),
 	};
@@ -146,23 +146,23 @@ async function seedProjectAgentConfigs(p: ProjectConfig) {
 	const db = getDb();
 	const agentTypes = new Set([
 		...Object.keys(p.agentModels ?? {}),
-		...Object.keys(p.agentBackend?.overrides ?? {}),
+		...Object.keys(p.agentEngine?.overrides ?? {}),
 		...Object.keys(p.prompts ?? {}),
 	]);
 	for (const agentType of agentTypes) {
 		console.log(`    Inserting project agent config: ${agentType}...`);
 		const model = p.agentModels?.[agentType] ?? null;
-		const agentBackend = p.agentBackend?.overrides?.[agentType] ?? null;
+		const agentEngine = p.agentEngine?.overrides?.[agentType] ?? null;
 		const prompt = p.prompts?.[agentType] ?? null;
 		// Use raw SQL because the partial unique index (WHERE project_id IS NOT NULL)
 		// can't be expressed via Drizzle's onConflictDoUpdate target
 		await db.execute(sql`
-			INSERT INTO agent_configs (project_id, agent_type, model, agent_backend, prompt)
-			VALUES (${p.id}, ${agentType}, ${model}, ${agentBackend}, ${prompt})
+			INSERT INTO agent_configs (project_id, agent_type, model, agent_engine, prompt)
+			VALUES (${p.id}, ${agentType}, ${model}, ${agentEngine}, ${prompt})
 			ON CONFLICT (project_id, agent_type) WHERE project_id IS NOT NULL
 			DO UPDATE SET
 				model = COALESCE(EXCLUDED.model, agent_configs.model),
-				agent_backend = COALESCE(EXCLUDED.agent_backend, agent_configs.agent_backend),
+				agent_engine = COALESCE(EXCLUDED.agent_engine, agent_configs.agent_engine),
 				prompt = COALESCE(EXCLUDED.prompt, agent_configs.prompt),
 				updated_at = NOW()
 		`);

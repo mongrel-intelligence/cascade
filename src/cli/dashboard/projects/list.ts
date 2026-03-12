@@ -24,7 +24,7 @@ export default class ProjectsList extends DashboardCommand {
 				{ key: 'repo', header: 'Repo' },
 				{ key: 'baseBranch', header: 'Base Branch' },
 				{ key: 'model', header: 'Model' },
-				{ key: 'agentBackend', header: 'Backend' },
+				{ key: 'agentEngine', header: 'Engine' },
 			]);
 		} catch (err) {
 			this.handleError(err);

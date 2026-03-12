@@ -17,12 +17,15 @@ export const defaultsRouter = router({
 				maxIterations: z.number().int().positive().nullish(),
 				watchdogTimeoutMs: z.number().int().positive().nullish(),
 				workItemBudgetUsd: z.string().nullish(),
-				agentBackend: z.string().nullish(),
+				agentEngine: z.string().nullish(),
 				progressModel: z.string().nullish(),
 				progressIntervalMinutes: z.string().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			await upsertCascadeDefaults(ctx.effectiveOrgId, input);
+			await upsertCascadeDefaults(ctx.effectiveOrgId, {
+				...input,
+				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
+			});
 		}),
 });

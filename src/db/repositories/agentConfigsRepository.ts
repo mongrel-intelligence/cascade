@@ -32,7 +32,7 @@ export async function createAgentConfig(data: {
 	agentType: string;
 	model?: string | null;
 	maxIterations?: number | null;
-	agentBackend?: string | null;
+	agentEngine?: string | null;
 	maxConcurrency?: number | null;
 }) {
 	const db = getDb();
@@ -44,7 +44,7 @@ export async function createAgentConfig(data: {
 			agentType: data.agentType,
 			model: data.model,
 			maxIterations: data.maxIterations,
-			agentBackend: data.agentBackend,
+			agentEngine: data.agentEngine,
 			maxConcurrency: data.maxConcurrency,
 		})
 		.returning({ id: agentConfigs.id });
@@ -57,7 +57,7 @@ export async function updateAgentConfig(
 		agentType?: string;
 		model?: string | null;
 		maxIterations?: number | null;
-		agentBackend?: string | null;
+		agentEngine?: string | null;
 		maxConcurrency?: number | null;
 	},
 ) {

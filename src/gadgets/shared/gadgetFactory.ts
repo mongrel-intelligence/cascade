@@ -20,95 +20,90 @@ import type {
 // Zod schema generation from ParameterMap
 // ---------------------------------------------------------------------------
 
-// Use permissive types to work with both Zod v3 and v4
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyZodType = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyZodShape = Record<string, any>;
+type GadgetClass = new () => {
+	execute(params: Record<string, unknown>): Promise<string>;
+};
+type GadgetExampleParams = Record<
+	string,
+	string | number | boolean | string[] | number[] | boolean[] | unknown[] | Record<string, unknown>
+>;
+
+interface SchemaLike {
+	describe(description: string): SchemaLike;
+	optional(): SchemaLike;
+	default(value: unknown): SchemaLike;
+}
+
+function applyFieldModifiers<T extends SchemaLike>(field: T, def: ParameterDefinition): T {
+	let nextField = field;
+
+	nextField = nextField.describe(def.describe) as T;
+
+	if (def.optional === true) {
+		nextField = nextField.optional() as T;
+	}
+
+	if ('default' in def && def.default !== undefined) {
+		nextField = nextField.default(def.default) as T;
+	}
+
+	return nextField;
+}
+
+function buildArrayField(def: Extract<ParameterDefinition, { type: 'array' }>) {
+	switch (def.items) {
+		case 'string':
+			return z.array(z.string());
+		case 'number':
+			return z.array(z.number());
+		case 'boolean':
+			return z.array(z.boolean());
+		default:
+			return z.array(z.unknown());
+	}
+}
 
 /**
  * Build a single Zod field from a ParameterDefinition.
  */
-function buildZodField(def: ParameterDefinition): AnyZodType {
-	let field: AnyZodType;
-
+function buildZodField(def: ParameterDefinition) {
 	switch (def.type) {
 		case 'string': {
-			field = z.string();
-			break;
+			return applyFieldModifiers(z.string(), def);
 		}
 		case 'number': {
 			let n = z.number();
 			if (def.min !== undefined) n = n.min(def.min);
 			if (def.max !== undefined) n = n.max(def.max);
-			field = n;
-			break;
+			return applyFieldModifiers(n, def);
 		}
 		case 'boolean': {
-			field = z.boolean();
-			break;
+			return applyFieldModifiers(z.boolean(), def);
 		}
 		case 'enum': {
 			// z.enum requires a non-empty tuple with at least one value
 			const [first, ...rest] = def.options;
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			field = (z.enum as any)([first, ...rest] as [string, ...string[]]);
-			break;
+			return applyFieldModifiers(z.enum([first, ...rest] as [string, ...string[]]), def);
 		}
 		case 'array': {
-			// Build the item schema based on the items type
-			let itemSchema: AnyZodType;
-			switch (def.items) {
-				case 'string':
-					itemSchema = z.string();
-					break;
-				case 'number':
-					itemSchema = z.number();
-					break;
-				case 'boolean':
-					itemSchema = z.boolean();
-					break;
-				default:
-					itemSchema = z.unknown();
-			}
-			field = z.array(itemSchema);
-			break;
+			return applyFieldModifiers(buildArrayField(def), def);
 		}
 		case 'object': {
-			// Use z.record with key + value in Zod v4, or just z.record(z.unknown()) in v3
-			// Since llmist re-exports Zod v4, use z.string() key type
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			field = (z as any).record(z.string(), z.unknown());
-			break;
+			return applyFieldModifiers(z.object({}).catchall(z.unknown()), def);
 		}
 		default: {
 			const _exhaustive: never = def;
 			throw new Error(`Unknown parameter type: ${(_exhaustive as ParameterDefinition).type}`);
 		}
 	}
-
-	// Add description
-	field = field.describe(def.describe);
-
-	// Handle optional: apply before default so .optional().default() works correctly
-	if (def.optional === true) {
-		field = field.optional();
-	}
-
-	// Handle default values
-	if ('default' in def && def.default !== undefined) {
-		field = field.default(def.default);
-	}
-
-	return field;
 }
 
 /**
  * Convert a ParameterMap to a Zod object schema.
  * Gadget schemas include ALL parameters (including gadgetOnly params like `comment`).
  */
-export function buildZodSchema(parameters: ParameterMap): AnyZodType {
-	const shape: AnyZodShape = {};
+export function buildZodSchema(parameters: ParameterMap) {
+	const shape: Record<string, ReturnType<typeof buildZodField>> = {};
 
 	for (const [name, def] of Object.entries(parameters)) {
 		shape[name] = buildZodField(def);
@@ -145,16 +140,12 @@ export type GadgetCoreFn<TParams extends Record<string, unknown> = Record<string
  * });
  * ```
  */
-export function createGadgetClass(
-	def: ToolDefinition,
-	coreFn: GadgetCoreFn,
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-): new () => any {
+export function createGadgetClass(def: ToolDefinition, coreFn: GadgetCoreFn): GadgetClass {
 	const schema = buildZodSchema(def.parameters);
 
 	// Map ToolExample to GadgetExample
-	const examples: GadgetExample[] | undefined = def.examples?.map((ex) => ({
-		params: ex.params,
+	const examples: GadgetExample<GadgetExampleParams>[] | undefined = def.examples?.map((ex) => ({
+		params: ex.params as GadgetExampleParams,
 		output: ex.output,
 		comment: ex.comment,
 	}));
@@ -184,6 +175,5 @@ export function createGadgetClass(
 		}
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	return FactoryGadget as unknown as new () => any;
+	return FactoryGadget as unknown as GadgetClass;
 }

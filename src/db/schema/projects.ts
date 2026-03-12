@@ -15,7 +15,7 @@ export const projects = pgTable(
 
 		model: text('model'),
 		workItemBudgetUsd: numeric('work_item_budget_usd', { precision: 10, scale: 2 }),
-		agentBackend: text('agent_backend'),
+		agentEngine: text('agent_engine'),
 		subscriptionCostZero: boolean('subscription_cost_zero').default(false),
 		squintDbUrl: text('squint_db_url'),
 

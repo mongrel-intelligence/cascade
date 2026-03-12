@@ -22,7 +22,7 @@ const defaultsRow = {
 	maxIterations: 50,
 	watchdogTimeoutMs: 1800000,
 	workItemBudgetUsd: '5.00',
-	agentBackend: 'llmist',
+	agentEngine: 'llmist',
 	progressModel: 'progress-model',
 	progressIntervalMinutes: '5',
 	createdAt: new Date(),
@@ -38,7 +38,7 @@ const projectRow = {
 	branchPrefix: 'feature/',
 	model: null,
 	workItemBudgetUsd: null,
-	agentBackend: null,
+	agentEngine: null,
 	subscriptionCostZero: false,
 	createdAt: new Date(),
 	updatedAt: new Date(),
@@ -49,7 +49,7 @@ const projectRowWithBackend = {
 	id: 'proj2',
 	name: 'Project Two',
 	repo: 'owner/repo2',
-	agentBackend: 'claude-code',
+	agentEngine: 'claude-code',
 	subscriptionCostZero: true,
 };
 
@@ -92,7 +92,7 @@ const globalAgentConfig = {
 	agentType: 'review',
 	model: 'global-review-model',
 	maxIterations: 30,
-	agentBackend: null,
+	agentEngine: null,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };
@@ -104,7 +104,7 @@ const projectAgentConfig = {
 	agentType: 'implementation',
 	model: 'impl-model',
 	maxIterations: null,
-	agentBackend: 'claude-code',
+	agentEngine: 'claude-code',
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };
@@ -116,7 +116,7 @@ const orgAgentConfig = {
 	agentType: 'splitting',
 	model: 'org-splitting-model',
 	maxIterations: 20,
-	agentBackend: null,
+	agentEngine: null,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };
@@ -227,13 +227,13 @@ describe('configRepository', () => {
 
 			expect(config.defaults.model).toBe('test-model');
 			expect(config.defaults.maxIterations).toBe(50);
-			expect(config.defaults.agentBackend).toBe('llmist');
+			expect(config.defaults.agentEngine).toBe('llmist');
 			expect(config.defaults.workItemBudgetUsd).toBe(5);
 			expect(config.defaults.progressModel).toBe('progress-model');
 			expect(config.defaults.progressIntervalMinutes).toBe(5);
 		});
 
-		it('maps agentBackend from project row when set', async () => {
+		it('maps agentEngine from project row when set', async () => {
 			const mockDb = createSequentialMockDb([
 				[defaultsRow],
 				[projectRowWithBackend],
@@ -245,12 +245,12 @@ describe('configRepository', () => {
 			const config = await loadConfigFromDb();
 			const proj = config.projects[0];
 
-			expect(proj.agentBackend).toBeDefined();
-			expect(proj.agentBackend?.default).toBe('claude-code');
-			expect(proj.agentBackend?.subscriptionCostZero).toBe(true);
+			expect(proj.agentEngine).toBeDefined();
+			expect(proj.agentEngine?.default).toBe('claude-code');
+			expect(proj.agentEngine?.subscriptionCostZero).toBe(true);
 		});
 
-		it('builds agent backend overrides from agentBackend column in agent_configs', async () => {
+		it('builds agent engine overrides from agentEngine column in agent_configs', async () => {
 			const mockDb = createSequentialMockDb([
 				[defaultsRow],
 				[projectRowWithBackend],
@@ -262,7 +262,7 @@ describe('configRepository', () => {
 			const config = await loadConfigFromDb();
 			const proj = config.projects[0];
 
-			expect(proj.agentBackend?.overrides).toEqual({
+			expect(proj.agentEngine?.overrides).toEqual({
 				implementation: 'claude-code',
 			});
 			expect(proj.agentModels).toEqual({ implementation: 'impl-model' });
@@ -326,10 +326,10 @@ describe('configRepository', () => {
 			expect(mockDb.select).toHaveBeenCalledTimes(4);
 		});
 
-		it('omits agentBackend from project when not set', async () => {
+		it('omits agentEngine from project when not set', async () => {
 			const mockDb = createSequentialMockDb([
 				[defaultsRow],
-				[projectRow], // agentBackend is null
+				[projectRow], // agentEngine is null
 				[],
 				[trelloIntegration],
 			]);
@@ -337,14 +337,14 @@ describe('configRepository', () => {
 
 			const config = await loadConfigFromDb();
 
-			expect(config.projects[0].agentBackend).toBeUndefined();
+			expect(config.projects[0].agentEngine).toBeUndefined();
 		});
 
-		it('preserves agent_config backend overrides even when project agentBackend is null', async () => {
+		it('preserves agent_config engine overrides even when project agentEngine is null', async () => {
 			const mockDb = createSequentialMockDb([
 				[defaultsRow],
-				[projectRow], // agentBackend is null
-				[projectAgentConfig], // has agentBackend: 'claude-code' for implementation
+				[projectRow], // agentEngine is null
+				[projectAgentConfig], // has agentEngine: 'claude-code' for implementation
 				[trelloIntegration],
 			]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
@@ -352,9 +352,9 @@ describe('configRepository', () => {
 			const config = await loadConfigFromDb();
 			const proj = config.projects[0];
 
-			expect(proj.agentBackend).toBeDefined();
-			expect(proj.agentBackend?.default).toBe('llmist'); // Zod default
-			expect(proj.agentBackend?.overrides).toEqual({
+			expect(proj.agentEngine).toBeDefined();
+			expect(proj.agentEngine?.default).toBe('llmist'); // Zod default
+			expect(proj.agentEngine?.overrides).toEqual({
 				implementation: 'claude-code',
 			});
 		});
@@ -394,10 +394,10 @@ describe('configRepository', () => {
 			expect(result).toBeUndefined();
 		});
 
-		it('maps agent configs with agentBackend column (renamed from backend)', async () => {
+		it('maps agent configs with agentEngine column', async () => {
 			const mockDb = createSequentialMockDb([
 				[projectRowWithBackend],
-				[projectAgentConfig], // has agentBackend: 'claude-code'
+				[projectAgentConfig], // has agentEngine: 'claude-code'
 				[],
 				[],
 				[defaultsRow],
@@ -408,8 +408,8 @@ describe('configRepository', () => {
 			const result = await findProjectByIdFromDb('proj2');
 
 			expect(result).toBeDefined();
-			expect(result?.agentBackend?.default).toBe('claude-code');
-			expect(result?.agentBackend?.overrides).toEqual({
+			expect(result?.agentEngine?.default).toBe('claude-code');
+			expect(result?.agentEngine?.overrides).toEqual({
 				implementation: 'claude-code',
 			});
 		});
@@ -417,7 +417,7 @@ describe('configRepository', () => {
 		it('maps agent configs with backend override for project', async () => {
 			const mockDb = createSequentialMockDb([
 				[projectRow],
-				[projectAgentConfig], // has agentBackend: 'claude-code'
+				[projectAgentConfig], // has agentEngine: 'claude-code'
 				[],
 				[],
 				[defaultsRow],
@@ -428,7 +428,7 @@ describe('configRepository', () => {
 			const result = await findProjectByIdFromDb('proj1');
 
 			expect(result).toBeDefined();
-			expect(result?.agentBackend?.overrides).toEqual({ implementation: 'claude-code' });
+			expect(result?.agentEngine?.overrides).toEqual({ implementation: 'claude-code' });
 			// prompts are no longer stored in agent_configs (moved to agent_definitions)
 			expect(result && Object.hasOwn(result, 'prompts')).toBe(false);
 		});

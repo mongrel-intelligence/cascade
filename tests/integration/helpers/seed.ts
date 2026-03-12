@@ -132,7 +132,7 @@ export async function seedDefaults(
 		orgId?: string;
 		model?: string | null;
 		maxIterations?: number | null;
-		agentBackend?: string | null;
+		agentEngine?: string | null;
 	} = {},
 ) {
 	const db = getDb();
@@ -142,7 +142,7 @@ export async function seedDefaults(
 			orgId: overrides.orgId ?? 'test-org',
 			model: overrides.model ?? null,
 			maxIterations: overrides.maxIterations ?? null,
-			agentBackend: overrides.agentBackend ?? null,
+			agentEngine: overrides.agentEngine ?? null,
 		})
 		.returning();
 	return row;
@@ -158,7 +158,7 @@ export async function seedAgentConfig(
 		agentType?: string;
 		model?: string | null;
 		maxIterations?: number | null;
-		agentBackend?: string | null;
+		agentEngine?: string | null;
 	} = {},
 ) {
 	const db = getDb();
@@ -170,7 +170,7 @@ export async function seedAgentConfig(
 			agentType: overrides.agentType ?? 'implementation',
 			model: overrides.model ?? null,
 			maxIterations: overrides.maxIterations ?? null,
-			agentBackend: overrides.agentBackend ?? null,
+			agentEngine: overrides.agentEngine ?? null,
 		})
 		.returning();
 	return row;
@@ -208,7 +208,7 @@ export async function seedRun(
 		projectId?: string;
 		workItemId?: string;
 		agentType?: string;
-		backend?: string;
+		engine?: string;
 		status?: string;
 	} = {},
 ) {
@@ -219,7 +219,7 @@ export async function seedRun(
 			projectId: overrides.projectId ?? 'test-project',
 			workItemId: overrides.workItemId ?? 'test-card',
 			agentType: overrides.agentType ?? 'implementation',
-			backend: overrides.backend ?? 'claude-code',
+			engine: overrides.engine ?? 'claude-code',
 			status: overrides.status ?? 'running',
 		})
 		.returning();

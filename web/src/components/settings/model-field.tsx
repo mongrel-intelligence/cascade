@@ -12,22 +12,23 @@ import { useQuery } from '@tanstack/react-query';
 interface ModelFieldProps {
 	value: string;
 	onChange: (value: string) => void;
-	backend: string;
+	engine: string;
 	id?: string;
 }
 
-export function ModelField({ value, onChange, backend, id }: ModelFieldProps) {
-	const modelsQuery = useQuery(trpc.agentConfigs.claudeCodeModels.queryOptions());
+export function ModelField({ value, onChange, engine, id }: ModelFieldProps) {
+	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
+	const engineDefinition = enginesQuery.data?.find((item) => item.id === engine);
 
-	if (backend === 'claude-code') {
+	if (engineDefinition?.modelSelection.type === 'select') {
 		return (
 			<Select value={value || '_none'} onValueChange={(v) => onChange(v === '_none' ? '' : v)}>
 				<SelectTrigger id={id} className="w-full">
 					<SelectValue placeholder="Select model" />
 				</SelectTrigger>
 				<SelectContent>
-					<SelectItem value="_none">Default (Sonnet 4.5)</SelectItem>
-					{modelsQuery.data?.map((m) => (
+					<SelectItem value="_none">{engineDefinition.modelSelection.defaultValueLabel}</SelectItem>
+					{engineDefinition.modelSelection.options.map((m) => (
 						<SelectItem key={m.value} value={m.value}>
 							{m.label}
 						</SelectItem>

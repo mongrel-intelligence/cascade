@@ -30,7 +30,7 @@ export async function createProject(
 		branchPrefix?: string;
 		model?: string | null;
 		workItemBudgetUsd?: string | null;
-		agentBackend?: string | null;
+		agentEngine?: string | null;
 		subscriptionCostZero?: boolean;
 	},
 ) {
@@ -46,7 +46,7 @@ export async function createProject(
 			branchPrefix: data.branchPrefix ?? 'feature/',
 			model: data.model,
 			workItemBudgetUsd: data.workItemBudgetUsd,
-			agentBackend: data.agentBackend,
+			agentEngine: data.agentEngine,
 			subscriptionCostZero: data.subscriptionCostZero ?? false,
 		})
 		.returning();
@@ -63,7 +63,7 @@ export async function updateProject(
 		branchPrefix?: string;
 		model?: string | null;
 		workItemBudgetUsd?: string | null;
-		agentBackend?: string | null;
+		agentEngine?: string | null;
 		subscriptionCostZero?: boolean;
 	},
 ) {

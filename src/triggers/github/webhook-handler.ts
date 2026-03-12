@@ -34,18 +34,77 @@ import { GitHubWebhookIntegration } from './integration.js';
 
 const integration = new GitHubWebhookIntegration();
 
+async function getPersonaTokenWithFallback(
+	projectId: string,
+	agentType: string | undefined,
+): Promise<string> {
+	try {
+		return await getPersonaToken(projectId, agentType ?? 'implementation');
+	} catch {
+		return getPersonaToken(projectId, 'implementation').catch(() => '');
+	}
+}
+
+function requireProjectId(project: ProjectConfig): string {
+	if (!project.id) {
+		throw new Error('Project id is required for GitHub webhook processing');
+	}
+
+	return project.id;
+}
+
+function isValidPmType(pmType: string | undefined): pmType is 'trello' | 'jira' {
+	return pmType === 'trello' || pmType === 'jira';
+}
+
+async function maybePostPmAckComment(
+	result: TriggerResult,
+	payload: unknown,
+	eventType: string,
+	project: ProjectConfig,
+	workItemId: string,
+): Promise<void> {
+	const context = extractGitHubContext(payload, eventType);
+	const projectId = requireProjectId(project);
+	const message = await generateAckMessage(
+		result.agentType ?? 'implementation',
+		context,
+		projectId,
+	);
+	const pmType = project.pm?.type;
+
+	if (!isValidPmType(pmType)) {
+		logger.warn('Unknown PM type for PM-focused agent ack (worker-side)', {
+			agentType: result.agentType,
+			pmType,
+		});
+		return;
+	}
+
+	const commentId =
+		pmType === 'trello'
+			? await postTrelloAck(projectId, workItemId, message)
+			: await postJiraAck(projectId, workItemId, message);
+
+	if (commentId) {
+		result.agentInput.ackCommentId = commentId;
+		result.agentInput.ackMessage = message;
+	}
+}
+
 /** Dispatch to trigger registry within PM credential + provider scope. */
 async function dispatchTrigger(
 	registry: TriggerRegistry,
 	payload: unknown,
 	project: ProjectConfig,
 ): Promise<TriggerResult | null> {
-	const personaIdentities = await resolvePersonaIdentities(project.id);
-	const githubToken = await getPersonaToken(project.id, 'implementation');
+	const projectId = requireProjectId(project);
+	const personaIdentities = await resolvePersonaIdentities(projectId);
+	const githubToken = await getPersonaToken(projectId, 'implementation');
 	const ctx: TriggerContext = { project, source: 'github', payload, personaIdentities };
 	const pmProvider = createPMProvider(project);
 	return withPMCredentials(
-		project.id,
+		projectId,
 		project.pm?.type,
 		(t) => pmRegistry.getOrNull(t),
 		() =>
@@ -71,27 +130,7 @@ async function maybePostAckComment(
 			return;
 		}
 		try {
-			const context = extractGitHubContext(payload, eventType);
-			const message = await generateAckMessage(result.agentType, context, project.id);
-			const pmType = project.pm?.type;
-			if (pmType === 'trello') {
-				const commentId = await postTrelloAck(project.id, workItemId, message);
-				if (commentId) {
-					result.agentInput.ackCommentId = commentId;
-					result.agentInput.ackMessage = message;
-				}
-			} else if (pmType === 'jira') {
-				const commentId = await postJiraAck(project.id, workItemId, message);
-				if (commentId) {
-					result.agentInput.ackCommentId = commentId;
-					result.agentInput.ackMessage = message;
-				}
-			} else {
-				logger.warn('Unknown PM type for PM-focused agent ack (worker-side)', {
-					agentType: result.agentType,
-					pmType,
-				});
-			}
+			await maybePostPmAckComment(result, payload, eventType, project, workItemId);
 		} catch (err) {
 			logger.warn('PM ack comment failed for PM-focused agent (non-fatal)', {
 				error: String(err),
@@ -101,15 +140,25 @@ async function maybePostAckComment(
 		return;
 	}
 
-	let prCommentToken: string;
-	try {
-		prCommentToken = await getPersonaToken(project.id, result.agentType ?? 'implementation');
-	} catch {
-		prCommentToken = await getPersonaToken(project.id, 'implementation').catch(() => '');
-	}
+	const prCommentToken = await getPersonaTokenWithFallback(
+		requireProjectId(project),
+		result.agentType ?? undefined,
+	);
 	await withGitHubToken(prCommentToken, () =>
 		postAcknowledgmentComment(result, payload, eventType, project),
 	);
+}
+
+function resolveGitHubExecutionConfig(pmFocused: boolean) {
+	if (!pmFocused) {
+		return integration.resolveExecutionConfig();
+	}
+
+	return {
+		skipPrepareForAgent: false,
+		skipHandleFailure: false,
+		logLabel: 'GitHub (PM-focused agent)',
+	};
 }
 
 /** Run the agent with GitHub-specific (or PM-appropriate) execution config. */
@@ -151,14 +200,7 @@ async function runGitHubAgent(
 						result,
 						project,
 						config,
-						pmFocused
-							? {
-									// PM-focused agents: allow PM lifecycle ops, skip GitHub PR comment callbacks
-									skipPrepareForAgent: false,
-									skipHandleFailure: false,
-									logLabel: 'GitHub (PM-focused agent)',
-								}
-							: integration.resolveExecutionConfig(),
+						resolveGitHubExecutionConfig(pmFocused),
 					),
 				),
 		);
@@ -166,12 +208,10 @@ async function runGitHubAgent(
 		logger.error('Failed to process GitHub webhook', { error: String(err) });
 		if (!pmFocused) {
 			// Update the PR comment with the error (outside credential scope, so requires token)
-			let prCommentToken: string;
-			try {
-				prCommentToken = await getPersonaToken(project.id, result.agentType ?? 'implementation');
-			} catch {
-				prCommentToken = await getPersonaToken(project.id, 'implementation').catch(() => '');
-			}
+			const prCommentToken = await getPersonaTokenWithFallback(
+				requireProjectId(project),
+				result.agentType ?? undefined,
+			);
 			await withGitHubToken(prCommentToken, () =>
 				updateInitialCommentWithError(result, { success: false, error: String(err) }),
 			);

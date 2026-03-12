@@ -1,15 +1,15 @@
 import type { AgentInput, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
-import type { AgentBackend, AgentBackendResult } from './types.js';
+import type { AgentEngine, AgentEngineResult } from './types.js';
 
 /**
- * Post-process a backend result: validate PR creation for agents that require it
+ * Post-process an engine result: validate PR creation for agents that require it
  * and zero out cost for subscription-backed Claude Code sessions.
  */
 export function postProcessResult(
-	result: AgentBackendResult,
+	result: AgentEngineResult,
 	agentType: string,
-	backend: AgentBackend,
+	engine: AgentEngine,
 	input: AgentInput & { project: ProjectConfig },
 	identifier: string,
 	options?: { requiresPR?: boolean },
@@ -18,7 +18,7 @@ export function postProcessResult(
 	if (options?.requiresPR && result.success && !result.prUrl) {
 		logger.warn(`${agentType} agent completed without creating a PR`, {
 			identifier,
-			backend: backend.name,
+			engine: engine.definition.id,
 		});
 		result.success = false;
 		result.error = 'Agent completed but no PR was created';
@@ -26,8 +26,8 @@ export function postProcessResult(
 
 	// Zero out cost for subscription-backed Claude Code sessions
 	if (
-		backend.name === 'claude-code' &&
-		input.project.agentBackend?.subscriptionCostZero === true &&
+		engine.definition.id === 'claude-code' &&
+		input.project.agentEngine?.subscriptionCostZero === true &&
 		result.cost !== undefined &&
 		result.cost > 0
 	) {

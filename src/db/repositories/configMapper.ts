@@ -38,7 +38,7 @@ export interface DefaultsRow {
 	maxIterations: number | null;
 	watchdogTimeoutMs: number | null;
 	workItemBudgetUsd: string | null;
-	agentBackend: string | null;
+	agentEngine: string | null;
 	progressModel: string | null;
 	progressIntervalMinutes: string | null;
 }
@@ -49,7 +49,7 @@ export interface AgentConfigRow {
 	agentType: string;
 	model: string | null;
 	maxIterations: number | null;
-	agentBackend: string | null;
+	agentEngine: string | null;
 }
 
 export interface IntegrationRow {
@@ -101,7 +101,7 @@ export interface ProjectConfigRaw {
 		customFields?: { cost?: string };
 		labels?: Record<string, string>;
 	};
-	agentBackend?: {
+	agentEngine?: {
 		default?: string;
 		overrides: Record<string, string>;
 		subscriptionCostZero: boolean;
@@ -122,24 +122,24 @@ type ProjectRow = {
 	model: string | null;
 	workItemBudgetUsd: string | null;
 	squintDbUrl: string | null;
-	agentBackend: string | null;
+	agentEngine: string | null;
 	subscriptionCostZero: boolean | null;
 };
 
 export function buildAgentMaps(configs: AgentConfigRow[]): {
 	models: Record<string, string>;
 	iterations: Record<string, number>;
-	backends: Record<string, string>;
+	engines: Record<string, string>;
 } {
 	const models: Record<string, string> = {};
 	const iterations: Record<string, number> = {};
-	const backends: Record<string, string> = {};
+	const engines: Record<string, string> = {};
 	for (const ac of configs) {
 		if (ac.model) models[ac.agentType] = ac.model;
 		if (ac.maxIterations != null) iterations[ac.agentType] = ac.maxIterations;
-		if (ac.agentBackend) backends[ac.agentType] = ac.agentBackend;
+		if (ac.agentEngine) engines[ac.agentType] = ac.agentEngine;
 	}
-	return { models, iterations, backends };
+	return { models, iterations, engines };
 }
 
 export function orUndefined<T extends Record<string, unknown>>(obj: T): T | undefined {
@@ -166,14 +166,14 @@ function buildJiraConfig(config: JiraIntegrationConfig): ProjectConfigRaw['jira'
 	};
 }
 
-function buildAgentBackendConfig(
+function buildAgentEngineConfig(
 	row: ProjectRow,
-	backends: Record<string, string>,
-): ProjectConfigRaw['agentBackend'] | undefined {
-	if (!row.agentBackend && Object.keys(backends).length === 0) return undefined;
+	engines: Record<string, string>,
+): ProjectConfigRaw['agentEngine'] | undefined {
+	if (!row.agentEngine && Object.keys(engines).length === 0) return undefined;
 	return {
-		default: row.agentBackend ?? undefined,
-		overrides: backends,
+		default: row.agentEngine ?? undefined,
+		overrides: engines,
 		subscriptionCostZero: row.subscriptionCostZero ?? false,
 	};
 }
@@ -195,7 +195,7 @@ export function mapDefaultsRow(
 		agentIterations: orUndefined(iterations),
 		watchdogTimeoutMs: row?.watchdogTimeoutMs ?? undefined,
 		workItemBudgetUsd: row?.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
-		agentBackend: row?.agentBackend ?? undefined,
+		agentEngine: row?.agentEngine ?? undefined,
 		progressModel: row?.progressModel ?? undefined,
 		progressIntervalMinutes: row?.progressIntervalMinutes
 			? Number(row.progressIntervalMinutes)
@@ -225,7 +225,7 @@ export function mapProjectRow({
 	trelloConfig,
 	jiraConfig,
 }: MapProjectInput): ProjectConfigRaw {
-	const { models, backends } = buildAgentMaps(projectAgentConfigs);
+	const { models, engines } = buildAgentMaps(projectAgentConfigs);
 
 	// Derive PM type from integration config
 	const pmType = jiraConfig ? 'jira' : 'trello';
@@ -252,9 +252,9 @@ export function mapProjectRow({
 		project.jira = buildJiraConfig(jiraConfig);
 	}
 
-	const agentBackend = buildAgentBackendConfig(row, backends);
-	if (agentBackend) {
-		project.agentBackend = agentBackend;
+	const agentEngine = buildAgentEngineConfig(row, engines);
+	if (agentEngine) {
+		project.agentEngine = agentEngine;
 	}
 
 	return project;

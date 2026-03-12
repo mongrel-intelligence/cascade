@@ -9,13 +9,20 @@ vi.mock('../../../src/utils/logging.js', () => ({
 }));
 
 import { postProcessResult } from '../../../src/backends/postProcess.js';
-import type { AgentBackend, AgentBackendResult } from '../../../src/backends/types.js';
+import type { AgentEngine, AgentEngineResult } from '../../../src/backends/types.js';
 import type { AgentInput, ProjectConfig } from '../../../src/types/index.js';
 import { logger } from '../../../src/utils/logging.js';
 
-function makeBackend(name = 'test-backend'): AgentBackend {
+function makeEngine(id = 'test-engine'): AgentEngine {
 	return {
-		name,
+		definition: {
+			id,
+			label: id,
+			description: `${id} description`,
+			capabilities: [],
+			modelSelection: { type: 'free-text' },
+			logLabel: 'Engine Log',
+		},
 		execute: vi.fn(),
 		supportsAgentType: () => true,
 	};
@@ -24,16 +31,18 @@ function makeBackend(name = 'test-backend'): AgentBackend {
 function makeProject(overrides?: Partial<ProjectConfig>): ProjectConfig {
 	return {
 		id: 'test-project',
+		orgId: 'org-1',
 		name: 'Test',
 		repo: 'owner/repo',
 		baseBranch: 'main',
 		branchPrefix: 'feature/',
 		trello: { boardId: 'b1', lists: {}, labels: {} },
+		pm: { type: 'trello' },
 		...overrides,
 	};
 }
 
-function makeResult(overrides?: Partial<AgentBackendResult>): AgentBackendResult {
+function makeResult(overrides?: Partial<AgentEngineResult>): AgentEngineResult {
 	return {
 		success: true,
 		output: 'Done',
@@ -49,13 +58,17 @@ function makeInput(overrides?: Partial<ProjectConfig>): AgentInput & { project: 
 }
 
 describe('postProcessResult', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
 	describe('PR validation for agents with requiresPR', () => {
 		it('marks as failed when requiresPR agent succeeds without prUrl', () => {
 			const result = makeResult({ success: true, prUrl: undefined });
-			const backend = makeBackend();
+			const engine = makeEngine();
 			const input = makeInput();
 
-			postProcessResult(result, 'implementation', backend, input, 'implementation-card-123', {
+			postProcessResult(result, 'implementation', engine, input, 'implementation-card-123', {
 				requiresPR: true,
 			});
 
@@ -65,25 +78,25 @@ describe('postProcessResult', () => {
 
 		it('logs warning when requiresPR agent succeeds without prUrl', () => {
 			const result = makeResult({ success: true, prUrl: undefined });
-			const backend = makeBackend('my-backend');
+			const engine = makeEngine('my-engine');
 			const input = makeInput();
 
-			postProcessResult(result, 'implementation', backend, input, 'impl-id', {
+			postProcessResult(result, 'implementation', engine, input, 'impl-id', {
 				requiresPR: true,
 			});
 
 			expect(logger.warn).toHaveBeenCalledWith(
 				'implementation agent completed without creating a PR',
-				{ identifier: 'impl-id', backend: 'my-backend' },
+				{ identifier: 'impl-id', engine: 'my-engine' },
 			);
 		});
 
 		it('passes through when requiresPR agent succeeds with prUrl', () => {
 			const result = makeResult({ success: true, prUrl: 'https://github.com/o/r/pull/1' });
-			const backend = makeBackend();
+			const engine = makeEngine();
 			const input = makeInput();
 
-			postProcessResult(result, 'implementation', backend, input, 'impl-id', {
+			postProcessResult(result, 'implementation', engine, input, 'impl-id', {
 				requiresPR: true,
 			});
 
@@ -93,10 +106,10 @@ describe('postProcessResult', () => {
 
 		it('passes through when requiresPR agent already failed', () => {
 			const result = makeResult({ success: false, error: 'Budget exceeded' });
-			const backend = makeBackend();
+			const engine = makeEngine();
 			const input = makeInput();
 
-			postProcessResult(result, 'implementation', backend, input, 'impl-id', {
+			postProcessResult(result, 'implementation', engine, input, 'impl-id', {
 				requiresPR: true,
 			});
 
@@ -107,10 +120,10 @@ describe('postProcessResult', () => {
 
 		it('does not validate PR creation when requiresPR is not set', () => {
 			const result = makeResult({ success: true, prUrl: undefined });
-			const backend = makeBackend();
+			const engine = makeEngine();
 			const input = makeInput();
 
-			postProcessResult(result, 'splitting', backend, input, 'splitting-id');
+			postProcessResult(result, 'splitting', engine, input, 'splitting-id');
 
 			expect(result.success).toBe(true);
 			expect(logger.warn).not.toHaveBeenCalled();
@@ -118,17 +131,18 @@ describe('postProcessResult', () => {
 	});
 
 	describe('subscription cost zeroing', () => {
-		it('zeroes cost for claude-code backend with subscriptionCostZero=true', () => {
+		it('zeroes cost for claude-code engine with subscriptionCostZero=true', () => {
 			const result = makeResult({ success: true, cost: 2.5 });
-			const backend = makeBackend('claude-code');
-			const input = makeInput();
-			input.project.agentBackend = {
-				default: 'claude-code',
-				overrides: {},
-				subscriptionCostZero: true,
-			};
+			const engine = makeEngine('claude-code');
+			const input = makeInput({
+				agentEngine: {
+					default: 'claude-code',
+					overrides: {},
+					subscriptionCostZero: true,
+				},
+			});
 
-			postProcessResult(result, 'implementation', backend, input, 'id');
+			postProcessResult(result, 'implementation', engine, input, 'id');
 
 			expect(result.cost).toBe(0);
 			expect(logger.info).toHaveBeenCalledWith(
@@ -139,56 +153,58 @@ describe('postProcessResult', () => {
 
 		it('preserves cost when subscriptionCostZero is false', () => {
 			const result = makeResult({ success: true, cost: 1.5 });
-			const backend = makeBackend('claude-code');
-			const input = makeInput();
-			input.project.agentBackend = {
-				default: 'claude-code',
-				overrides: {},
-				subscriptionCostZero: false,
-			};
+			const engine = makeEngine('claude-code');
+			const input = makeInput({
+				agentEngine: {
+					default: 'claude-code',
+					overrides: {},
+					subscriptionCostZero: false,
+				},
+			});
 
-			postProcessResult(result, 'implementation', backend, input, 'id');
+			postProcessResult(result, 'implementation', engine, input, 'id');
 
 			expect(result.cost).toBe(1.5);
 		});
 
-		it('preserves cost for non-claude-code backends', () => {
+		it('preserves cost for non-claude-code engines', () => {
 			const result = makeResult({ success: true, cost: 3.0 });
-			const backend = makeBackend('llmist');
-			const input = makeInput();
-			input.project.agentBackend = {
-				default: 'llmist',
-				overrides: {},
-				subscriptionCostZero: true,
-			};
+			const engine = makeEngine('llmist');
+			const input = makeInput({
+				agentEngine: {
+					default: 'llmist',
+					overrides: {},
+					subscriptionCostZero: true,
+				},
+			});
 
-			postProcessResult(result, 'implementation', backend, input, 'id');
+			postProcessResult(result, 'implementation', engine, input, 'id');
 
 			expect(result.cost).toBe(3.0);
 		});
 
-		it('preserves cost when agentBackend config is undefined', () => {
+		it('preserves cost when agentEngine config is undefined', () => {
 			const result = makeResult({ success: true, cost: 1.0 });
-			const backend = makeBackend('claude-code');
+			const engine = makeEngine('claude-code');
 			const input = makeInput();
-			// no agentBackend set
 
-			postProcessResult(result, 'implementation', backend, input, 'id');
+			postProcessResult(result, 'implementation', engine, input, 'id');
 
 			expect(result.cost).toBe(1.0);
 		});
 
 		it('preserves zero cost without logging', () => {
 			const result = makeResult({ success: true, cost: 0 });
-			const backend = makeBackend('claude-code');
-			const input = makeInput();
-			input.project.agentBackend = {
-				default: 'claude-code',
-				overrides: {},
-				subscriptionCostZero: true,
-			};
+			const engine = makeEngine('claude-code');
+			const input = makeInput({
+				agentEngine: {
+					default: 'claude-code',
+					overrides: {},
+					subscriptionCostZero: true,
+				},
+			});
 
-			postProcessResult(result, 'implementation', backend, input, 'id');
+			postProcessResult(result, 'implementation', engine, input, 'id');
 
 			expect(result.cost).toBe(0);
 			expect(logger.info).not.toHaveBeenCalled();
@@ -196,15 +212,16 @@ describe('postProcessResult', () => {
 
 		it('passes through when cost is undefined', () => {
 			const result = makeResult({ success: true, cost: undefined });
-			const backend = makeBackend('claude-code');
-			const input = makeInput();
-			input.project.agentBackend = {
-				default: 'claude-code',
-				overrides: {},
-				subscriptionCostZero: true,
-			};
+			const engine = makeEngine('claude-code');
+			const input = makeInput({
+				agentEngine: {
+					default: 'claude-code',
+					overrides: {},
+					subscriptionCostZero: true,
+				},
+			});
 
-			postProcessResult(result, 'implementation', backend, input, 'id');
+			postProcessResult(result, 'implementation', engine, input, 'id');
 
 			expect(result.cost).toBeUndefined();
 		});

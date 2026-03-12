@@ -22,9 +22,9 @@ import type {
 	ToolDefinition,
 } from './toolDefinition.js';
 
-// Use a broad type for the flags record to avoid oclif's complex generic inference
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: oclif flag generics do not compose safely for dynamic factories
 type AnyFlagsRecord = Record<string, any>;
+type ParsedFlags = Record<string, unknown>;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -38,7 +38,7 @@ function buildOclifFlag(
 	def: ParameterDefinition,
 	isAutoResolved: boolean,
 	isFileInputParam: boolean,
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	// biome-ignore lint/suspicious/noExplicitAny: dynamic flag factory must accept heterogeneous oclif flag instances
 ): any {
 	// gadgetOnly params (like `comment`) are excluded from CLI flags
 	if (def.gadgetOnly) return undefined;
@@ -133,6 +133,130 @@ function buildFlagsRecord(def: ToolDefinition): AnyFlagsRecord {
 	return flags;
 }
 
+function readFileInput(fileFlagValue: string): string {
+	return fileFlagValue === '-' ? readFileSync(0, 'utf-8') : readFileSync(fileFlagValue, 'utf-8');
+}
+
+function resolveFileInputParam(
+	name: string,
+	paramDef: ParameterDefinition,
+	fileAlt: FileInputAlternative,
+	flags: ParsedFlags,
+	command: CredentialScopedCommand,
+	resolvedParams: Record<string, unknown>,
+): void {
+	const fileFlagValue = flags[fileAlt.fileFlag];
+	const directValue = flags[name];
+
+	if (typeof fileFlagValue === 'string' && fileFlagValue.length > 0) {
+		resolvedParams[name] = readFileInput(fileFlagValue);
+		return;
+	}
+
+	if (typeof directValue === 'string') {
+		resolvedParams[name] = directValue;
+		return;
+	}
+
+	if (paramDef.required === true) {
+		command.error(`Either --${name} or --${fileAlt.fileFlag} is required`);
+	}
+}
+
+function resolveObjectParam(
+	name: string,
+	flags: ParsedFlags,
+	command: CredentialScopedCommand,
+	resolvedParams: Record<string, unknown>,
+): void {
+	const rawValue = flags[name];
+	if (typeof rawValue !== 'string') {
+		return;
+	}
+
+	try {
+		resolvedParams[name] = JSON.parse(rawValue) as unknown;
+	} catch {
+		command.error(`--${name} must be valid JSON`);
+	}
+}
+
+function resolveStandardParam(
+	name: string,
+	flags: ParsedFlags,
+	resolvedParams: Record<string, unknown>,
+): void {
+	const value = flags[name];
+	if (value !== undefined) {
+		resolvedParams[name] = value;
+	}
+}
+
+function resolveDirectParams(
+	def: ToolDefinition,
+	flags: ParsedFlags,
+	fileInputMap: Map<string, FileInputAlternative>,
+	autoResolvedMap: Map<string, CLIAutoResolved>,
+	command: CredentialScopedCommand,
+): Record<string, unknown> {
+	const resolvedParams: Record<string, unknown> = {};
+
+	for (const [name, paramDef] of Object.entries(def.parameters)) {
+		if (paramDef.gadgetOnly) continue;
+
+		const autoResolvedConfig = autoResolvedMap.get(name);
+		if (autoResolvedConfig?.resolvedFrom === 'git-remote') {
+			continue;
+		}
+
+		const fileAlt = fileInputMap.get(name);
+		if (fileAlt) {
+			resolveFileInputParam(name, paramDef, fileAlt, flags, command, resolvedParams);
+			continue;
+		}
+
+		if (paramDef.type === 'object') {
+			resolveObjectParam(name, flags, command, resolvedParams);
+			continue;
+		}
+
+		resolveStandardParam(name, flags, resolvedParams);
+	}
+
+	return resolvedParams;
+}
+
+function resolveGitRemoteParams(
+	autoResolvedParams: CLIAutoResolved[],
+	flags: ParsedFlags,
+	resolvedParams: Record<string, unknown>,
+): void {
+	const gitRemoteParams = autoResolvedParams.filter((a) => a.resolvedFrom === 'git-remote');
+	if (gitRemoteParams.length === 0) return;
+
+	const ownerConfig = gitRemoteParams.find(
+		(a) => a.paramName === 'owner' || a.envVar?.includes('OWNER'),
+	);
+	const repoConfig = gitRemoteParams.find(
+		(a) => a.paramName === 'repo' || a.envVar?.includes('NAME'),
+	);
+
+	if (!ownerConfig && !repoConfig) return;
+
+	const ownerFlag =
+		ownerConfig && typeof flags[ownerConfig.paramName] === 'string'
+			? (flags[ownerConfig.paramName] as string)
+			: undefined;
+	const repoFlag =
+		repoConfig && typeof flags[repoConfig.paramName] === 'string'
+			? (flags[repoConfig.paramName] as string)
+			: undefined;
+	const { owner, repo } = resolveOwnerRepo(ownerFlag, repoFlag);
+
+	if (ownerConfig) resolvedParams[ownerConfig.paramName] = owner;
+	if (repoConfig) resolvedParams[repoConfig.paramName] = repo;
+}
+
 // ---------------------------------------------------------------------------
 // Factory function
 // ---------------------------------------------------------------------------
@@ -195,89 +319,15 @@ export function createCLICommand(
 
 		async execute(): Promise<void> {
 			const { flags } = await this.parse(FactoryCommand);
-
-			// Build resolved params
-			const resolvedParams: Record<string, unknown> = {};
-
-			// Process each parameter
-			for (const [name, paramDef] of Object.entries(def.parameters)) {
-				// Skip gadgetOnly params — they are not in CLI flags
-				if (paramDef.gadgetOnly) continue;
-
-				// Check if this is an auto-resolved param (owner/repo)
-				const autoResolvedConfig = autoResolvedMap.get(name);
-				if (autoResolvedConfig?.resolvedFrom === 'git-remote') {
-					// Will be resolved after the loop via resolveOwnerRepo
-					continue;
-				}
-
-				// Check if this is a file-input param
-				const fileAlt = fileInputMap.get(name);
-				if (fileAlt) {
-					const fileFlagValue = flags[fileAlt.fileFlag] as string | undefined;
-					const directValue = flags[name] as string | undefined;
-
-					if (fileFlagValue) {
-						// Read from file or stdin
-						const content =
-							fileFlagValue === '-'
-								? readFileSync(0, 'utf-8')
-								: readFileSync(fileFlagValue, 'utf-8');
-						resolvedParams[name] = content;
-					} else if (directValue !== undefined) {
-						resolvedParams[name] = directValue;
-					} else if (paramDef.required === true) {
-						// Neither flag nor file flag provided for a required param
-						this.error(`Either --${name} or --${fileAlt.fileFlag} is required`);
-					}
-					continue;
-				}
-
-				// Handle object type — parse JSON string
-				if (paramDef.type === 'object') {
-					const rawValue = flags[name] as string | undefined;
-					if (rawValue !== undefined) {
-						try {
-							resolvedParams[name] = JSON.parse(rawValue) as unknown;
-						} catch {
-							this.error(`--${name} must be valid JSON`);
-						}
-					}
-					continue;
-				}
-
-				// Standard parameter — pass through as-is
-				const value = flags[name];
-				if (value !== undefined) {
-					resolvedParams[name] = value;
-				}
-			}
-
-			// Resolve auto-resolved params (owner/repo from env vars or git remote)
-			const gitRemoteParams = autoResolvedParams.filter((a) => a.resolvedFrom === 'git-remote');
-			if (gitRemoteParams.length > 0) {
-				// Find owner and repo params among git-remote auto-resolved params
-				const ownerConfig = gitRemoteParams.find(
-					(a) => a.paramName === 'owner' || a.envVar?.includes('OWNER'),
-				);
-				const repoConfig = gitRemoteParams.find(
-					(a) => a.paramName === 'repo' || a.envVar?.includes('NAME'),
-				);
-
-				if (ownerConfig || repoConfig) {
-					const ownerFlag = ownerConfig
-						? (flags[ownerConfig.paramName] as string | undefined)
-						: undefined;
-					const repoFlag = repoConfig
-						? (flags[repoConfig.paramName] as string | undefined)
-						: undefined;
-
-					const { owner, repo } = resolveOwnerRepo(ownerFlag, repoFlag);
-
-					if (ownerConfig) resolvedParams[ownerConfig.paramName] = owner;
-					if (repoConfig) resolvedParams[repoConfig.paramName] = repo;
-				}
-			}
+			const parsedFlags = flags as ParsedFlags;
+			const resolvedParams = resolveDirectParams(
+				def,
+				parsedFlags,
+				fileInputMap,
+				autoResolvedMap,
+				this,
+			);
+			resolveGitRemoteParams(autoResolvedParams, parsedFlags, resolvedParams);
 
 			// Call the core function
 			const result = await coreFn(resolvedParams);
@@ -287,7 +337,7 @@ export function createCLICommand(
 
 			// Call post-execute hook if defined
 			if (postExecuteHook) {
-				await postExecuteHook(result, flags as Record<string, unknown>);
+				await postExecuteHook(result, parsedFlags);
 			}
 		}
 	}

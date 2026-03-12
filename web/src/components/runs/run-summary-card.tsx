@@ -9,7 +9,7 @@ interface RunSummaryProps {
 		workItemId: string | null;
 		prNumber: number | null;
 		agentType: string;
-		backend: string;
+		engine: string;
 		triggerType: string | null;
 		status: string;
 		model: string | null;
@@ -38,6 +38,52 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 	);
 }
 
+function getIterationsLabel(run: RunSummaryProps['run']): string {
+	if (run.llmIterations == null) {
+		return '-';
+	}
+
+	return `${run.llmIterations}${run.maxIterations ? ` / ${run.maxIterations}` : ''}`;
+}
+
+function renderWorkItem(run: RunSummaryProps['run']) {
+	if (run.workItemUrl && run.workItemTitle) {
+		return (
+			<a
+				href={run.workItemUrl}
+				target="_blank"
+				rel="noopener noreferrer"
+				className="inline-flex items-center gap-1 text-primary hover:underline"
+			>
+				{run.workItemTitle}
+				<ExternalLink className="h-3 w-3" />
+			</a>
+		);
+	}
+
+	return run.workItemId ?? '-';
+}
+
+function renderPullRequest(run: RunSummaryProps['run']) {
+	if (!run.prUrl) {
+		return null;
+	}
+
+	return (
+		<Field label="Pull Request">
+			<a
+				href={run.prUrl}
+				target="_blank"
+				rel="noopener noreferrer"
+				className="inline-flex items-center gap-1 text-primary hover:underline"
+			>
+				PR #{run.prNumber ?? 'link'}
+				<ExternalLink className="h-3 w-3" />
+			</a>
+		</Field>
+	);
+}
+
 export function RunSummaryCard({ run }: RunSummaryProps) {
 	const elapsed = useElapsedTime(run.startedAt, run.status === 'running');
 	const displayDuration = elapsed ?? run.durationMs;
@@ -46,16 +92,12 @@ export function RunSummaryCard({ run }: RunSummaryProps) {
 		<div className="space-y-6">
 			<div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 				<Field label="Status">{run.status}</Field>
-				<Field label="Backend">{run.backend}</Field>
+				<Field label="Engine">{run.engine}</Field>
 				<Field label="Model">{run.model ?? '-'}</Field>
 				<Field label="Trigger">{run.triggerType ?? '-'}</Field>
 				<Field label="Duration">{formatDuration(displayDuration)}</Field>
 				<Field label="Cost">{formatCost(run.costUsd)}</Field>
-				<Field label="LLM Iterations">
-					{run.llmIterations != null
-						? `${run.llmIterations}${run.maxIterations ? ` / ${run.maxIterations}` : ''}`
-						: '-'}
-				</Field>
+				<Field label="LLM Iterations">{getIterationsLabel(run)}</Field>
 				<Field label="Gadget Calls">{run.gadgetCalls ?? '-'}</Field>
 				<Field label="Started">
 					{run.startedAt ? new Date(run.startedAt).toLocaleString() : '-'}
@@ -63,36 +105,8 @@ export function RunSummaryCard({ run }: RunSummaryProps) {
 				<Field label="Completed">
 					{run.completedAt ? new Date(run.completedAt).toLocaleString() : '-'}
 				</Field>
-				<Field label="Work Item">
-					{run.workItemUrl && run.workItemTitle ? (
-						<a
-							href={run.workItemUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-							className="inline-flex items-center gap-1 text-primary hover:underline"
-						>
-							{run.workItemTitle}
-							<ExternalLink className="h-3 w-3" />
-						</a>
-					) : run.workItemId ? (
-						run.workItemId
-					) : (
-						'-'
-					)}
-				</Field>
-				{run.prUrl && (
-					<Field label="Pull Request">
-						<a
-							href={run.prUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-							className="inline-flex items-center gap-1 text-primary hover:underline"
-						>
-							PR #{run.prNumber ?? 'link'}
-							<ExternalLink className="h-3 w-3" />
-						</a>
-					</Field>
-				)}
+				<Field label="Work Item">{renderWorkItem(run)}</Field>
+				{renderPullRequest(run)}
 			</div>
 
 			{run.error && (

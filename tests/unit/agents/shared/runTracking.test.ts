@@ -26,7 +26,7 @@ vi.mock('node:fs', () => ({
 import fs from 'node:fs';
 import {
 	type RunTrackingInput,
-	finalizeBackendRun,
+	finalizeEngineRun,
 	tryCompleteRun,
 	tryCreateRun,
 	tryStoreRunLogs,
@@ -47,7 +47,7 @@ const mockReadFileSync = vi.mocked(fs.readFileSync);
 function makeFileLogger() {
 	return {
 		logPath: '/tmp/test.log',
-		llmistLogPath: '/tmp/test-llmist.log',
+		engineLogPath: '/tmp/test-llmist.log',
 		llmCallLogger: { logDir: '/tmp/llm-calls' },
 		write: vi.fn(),
 		close: vi.fn(),
@@ -59,7 +59,7 @@ const baseInput: RunTrackingInput = {
 	projectId: 'proj-1',
 	workItemId: 'card-123',
 	agentType: 'implementation',
-	backendName: 'claude-code',
+	engineName: 'claude-code',
 };
 
 describe('tryCreateRun', () => {
@@ -73,7 +73,7 @@ describe('tryCreateRun', () => {
 			workItemId: 'card-123',
 			prNumber: undefined,
 			agentType: 'implementation',
-			backend: 'claude-code',
+			engine: 'claude-code',
 			triggerType: undefined,
 			model: 'claude-3-5-sonnet-20241022',
 			maxIterations: 25,
@@ -148,14 +148,14 @@ describe('tryStoreRunLogs', () => {
 	});
 });
 
-describe('finalizeBackendRun', () => {
+describe('finalizeEngineRun', () => {
 	beforeEach(() => {
 		mockExistsSync.mockReturnValue(false);
 	});
 
 	it('does nothing when runId is undefined', async () => {
 		const fileLogger = makeFileLogger();
-		await finalizeBackendRun(undefined, fileLogger, { status: 'completed', success: true });
+		await finalizeEngineRun(undefined, fileLogger, { status: 'completed', success: true });
 		expect(mockStoreRunLogs).not.toHaveBeenCalled();
 		expect(mockCompleteRun).not.toHaveBeenCalled();
 	});
@@ -165,7 +165,7 @@ describe('finalizeBackendRun', () => {
 		mockCompleteRun.mockResolvedValue(undefined);
 		const fileLogger = makeFileLogger();
 
-		await finalizeBackendRun('run-abc', fileLogger, { status: 'failed', success: false });
+		await finalizeEngineRun('run-abc', fileLogger, { status: 'failed', success: false });
 		expect(mockStoreRunLogs).toHaveBeenCalledWith('run-abc', undefined, undefined);
 		expect(mockCompleteRun).toHaveBeenCalledWith('run-abc', { status: 'failed', success: false });
 	});

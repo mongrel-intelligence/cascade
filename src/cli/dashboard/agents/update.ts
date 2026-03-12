@@ -13,7 +13,7 @@ export default class AgentsUpdate extends DashboardCommand {
 		'agent-type': Flags.string({ description: 'Agent type' }),
 		model: Flags.string({ description: 'Model override' }),
 		'max-iterations': Flags.integer({ description: 'Max iterations override' }),
-		backend: Flags.string({ description: 'Agent backend override' }),
+		engine: Flags.string({ description: 'Agent engine override' }),
 		'max-concurrency': Flags.integer({ description: 'Max concurrent runs per project' }),
 	};
 
@@ -26,7 +26,7 @@ export default class AgentsUpdate extends DashboardCommand {
 				agentType: flags['agent-type'],
 				model: flags.model,
 				maxIterations: flags['max-iterations'],
-				agentBackend: flags.backend,
+				agentEngine: flags.engine,
 				maxConcurrency: flags['max-concurrency'],
 			});
 

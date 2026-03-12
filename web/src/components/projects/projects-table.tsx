@@ -28,7 +28,7 @@ interface Project {
 	name: string;
 	repo?: string | null;
 	baseBranch: string | null;
-	agentBackend: string | null;
+	agentEngine: string | null;
 	workItemBudgetUsd: string | null;
 }
 
@@ -54,7 +54,7 @@ export function ProjectsTable({ projects }: { projects: Project[] }) {
 							<TableHead>Name</TableHead>
 							<TableHead>Repo</TableHead>
 							<TableHead className="hidden md:table-cell">Base Branch</TableHead>
-							<TableHead className="hidden md:table-cell">Backend</TableHead>
+							<TableHead className="hidden md:table-cell">Engine</TableHead>
 							<TableHead className="hidden md:table-cell text-right">Budget</TableHead>
 							<TableHead className="w-10" />
 						</TableRow>
@@ -83,7 +83,7 @@ export function ProjectsTable({ projects }: { projects: Project[] }) {
 									<Badge variant="outline">{project.baseBranch ?? 'main'}</Badge>
 								</TableCell>
 								<TableCell className="hidden md:table-cell">
-									{project.agentBackend ?? 'llmist'}
+									{project.agentEngine ?? 'llmist'}
 								</TableCell>
 								<TableCell className="hidden md:table-cell text-right tabular-nums">
 									{project.workItemBudgetUsd ? `$${project.workItemBudgetUsd}` : '-'}

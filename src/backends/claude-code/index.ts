@@ -12,10 +12,11 @@ import { storeLlmCall } from '../../db/repositories/runsRepository.js';
 import { logger } from '../../utils/logging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { getWorkspaceDir } from '../../utils/repo.js';
+import { CLAUDE_CODE_ENGINE_DEFINITION } from '../catalog.js';
 import type {
-	AgentBackend,
-	AgentBackendInput,
-	AgentBackendResult,
+	AgentEngine,
+	AgentEngineResult,
+	AgentExecutionPlan,
 	ContextInjection,
 	ToolManifest,
 } from '../types.js';
@@ -259,7 +260,7 @@ function extractFinishComment(assistantMessages: SDKAssistantMessage[]): string 
 function processAssistantMessage(
 	assistantMsg: SDKAssistantMessage,
 	turnCount: number,
-	input: AgentBackendInput,
+	input: AgentExecutionPlan,
 ): void {
 	if (assistantMsg.message?.content) {
 		for (const block of assistantMsg.message.content) {
@@ -296,7 +297,7 @@ function processAssistantMessage(
  */
 function processSystemMessage(
 	message: { subtype: string; [key: string]: unknown },
-	logWriter: AgentBackendInput['logWriter'],
+	logWriter: AgentExecutionPlan['logWriter'],
 ): void {
 	if (message.subtype === 'init') {
 		const initMsg = message as unknown as SDKSystemMessage;
@@ -318,9 +319,9 @@ function buildResult(
 	assistantMessages: SDKAssistantMessage[],
 	resultMessage: SDKResultMessage | undefined,
 	stderrChunks: string[],
-	input: AgentBackendInput,
+	input: AgentExecutionPlan,
 	startTime: number,
-): AgentBackendResult {
+): AgentEngineResult {
 	const finishComment = extractFinishComment(assistantMessages);
 	const success = resultMessage?.subtype === 'success';
 	const cost = resultMessage?.total_cost_usd;
@@ -363,7 +364,7 @@ function buildResult(
  */
 function processTaskNotification(
 	sysMsg: { [key: string]: unknown },
-	input: AgentBackendInput,
+	input: AgentExecutionPlan,
 ): void {
 	const taskMsg = sysMsg as unknown as {
 		task_id: string;
@@ -413,7 +414,7 @@ function debugRepoDirectory(repoDir: string): void {
 }
 
 function logLlmCall(
-	input: AgentBackendInput,
+	input: AgentExecutionPlan,
 	assistantMsg: SDKAssistantMessage,
 	turnCount: number,
 	model: string,
@@ -456,14 +457,14 @@ function logLlmCall(
  * are invoked via the built-in Bash tool through the cascade-tools CLI, with usage
  * guidance injected into the system prompt.
  */
-export class ClaudeCodeBackend implements AgentBackend {
-	readonly name = 'claude-code';
+export class ClaudeCodeEngine implements AgentEngine {
+	readonly definition = CLAUDE_CODE_ENGINE_DEFINITION;
 
 	supportsAgentType(_agentType: string): boolean {
 		return true;
 	}
 
-	async execute(input: AgentBackendInput): Promise<AgentBackendResult> {
+	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const startTime = Date.now();
 		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools);
 		const { prompt: taskPrompt, hasOffloadedContext } = await buildTaskPrompt(

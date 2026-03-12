@@ -43,7 +43,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			expect(id).toBeTruthy();
 			expect(typeof id).toBe('string');
@@ -55,7 +55,7 @@ describe('runsRepository (integration)', () => {
 				workItemId: 'card-123',
 				prNumber: 42,
 				agentType: 'review',
-				backend: 'llmist',
+				engine: 'llmist',
 				triggerType: 'feature-implementation',
 				model: 'claude-opus-4-5',
 				maxIterations: 20,
@@ -64,7 +64,7 @@ describe('runsRepository (integration)', () => {
 			expect(run?.workItemId).toBe('card-123');
 			expect(run?.prNumber).toBe(42);
 			expect(run?.agentType).toBe('review');
-			expect(run?.backend).toBe('llmist');
+			expect(run?.engine).toBe('llmist');
 			expect(run?.model).toBe('claude-opus-4-5');
 			expect(run?.maxIterations).toBe(20);
 			expect(run?.status).toBe('running');
@@ -76,7 +76,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			await completeRun(id, {
@@ -104,7 +104,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			await completeRun(id, {
@@ -125,7 +125,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			const run = await getRunById(id);
 			expect(run).toBeDefined();
@@ -144,19 +144,19 @@ describe('runsRepository (integration)', () => {
 				projectId: 'test-project',
 				workItemId: 'card-A',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			await createRun({
 				projectId: 'test-project',
 				workItemId: 'card-A',
 				agentType: 'review',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			await createRun({
 				projectId: 'test-project',
 				workItemId: 'card-B',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			const runs = await getRunsByWorkItemId('card-A');
@@ -175,9 +175,9 @@ describe('runsRepository (integration)', () => {
 			await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
-			await createRun({ projectId: 'test-project', agentType: 'review', backend: 'claude-code' });
+			await createRun({ projectId: 'test-project', agentType: 'review', engine: 'claude-code' });
 
 			const runs = await getRunsByProjectId('test-project');
 			expect(runs).toHaveLength(2);
@@ -193,21 +193,21 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
-			await storeRunLogs(id, 'cascade log content', 'llmist log content');
+			await storeRunLogs(id, 'cascade log content', 'engine log content');
 
 			const logs = await getRunLogs(id);
 			expect(logs?.cascadeLog).toBe('cascade log content');
-			expect(logs?.llmistLog).toBe('llmist log content');
+			expect(logs?.engineLog).toBe('engine log content');
 		});
 
 		it('returns null for run with no logs', async () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			const logs = await getRunLogs(id);
 			expect(logs).toBeNull();
@@ -223,7 +223,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			await storeLlmCall({
@@ -252,7 +252,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			await storeLlmCallsBulk([
@@ -297,7 +297,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			await storeLlmCallsBulk([
@@ -315,7 +315,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			const call = await getLlmCallByNumber(id, 99);
 			expect(call).toBeNull();
@@ -327,7 +327,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			await storeLlmCall({
@@ -358,7 +358,7 @@ describe('runsRepository (integration)', () => {
 			const runId = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			const analysisId = await storeDebugAnalysis({
@@ -383,7 +383,7 @@ describe('runsRepository (integration)', () => {
 			const runId = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			const analysis = await getDebugAnalysisByRunId(runId);
 			expect(analysis).toBeNull();
@@ -393,7 +393,7 @@ describe('runsRepository (integration)', () => {
 			const runId = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			await storeDebugAnalysis({
@@ -418,10 +418,10 @@ describe('runsRepository (integration)', () => {
 			await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
-			await createRun({ projectId: 'test-project', agentType: 'review', backend: 'claude-code' });
-			await createRun({ projectId: 'test-project', agentType: 'planning', backend: 'claude-code' });
+			await createRun({ projectId: 'test-project', agentType: 'review', engine: 'claude-code' });
+			await createRun({ projectId: 'test-project', agentType: 'planning', engine: 'claude-code' });
 
 			const result = await listRuns({ orgId: 'test-org', limit: 10, offset: 0 });
 			expect(result.data).toHaveLength(3);
@@ -433,12 +433,12 @@ describe('runsRepository (integration)', () => {
 			await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			await createRun({
 				projectId: 'project-2',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			const result = await listRuns({
@@ -455,12 +455,12 @@ describe('runsRepository (integration)', () => {
 			const id1 = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			const id2 = await createRun({
 				projectId: 'test-project',
 				agentType: 'review',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			await completeRun(id1, { status: 'completed', success: true });
 			await completeRun(id2, { status: 'failed', success: false });
@@ -479,9 +479,9 @@ describe('runsRepository (integration)', () => {
 			await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
-			await createRun({ projectId: 'test-project', agentType: 'review', backend: 'claude-code' });
+			await createRun({ projectId: 'test-project', agentType: 'review', engine: 'claude-code' });
 
 			const result = await listRuns({
 				orgId: 'test-org',
@@ -498,7 +498,7 @@ describe('runsRepository (integration)', () => {
 				await createRun({
 					projectId: 'test-project',
 					agentType: 'implementation',
-					backend: 'claude-code',
+					engine: 'claude-code',
 				});
 			}
 
@@ -515,7 +515,7 @@ describe('runsRepository (integration)', () => {
 			await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			const result = await listRuns({ orgId: 'test-org', limit: 10, offset: 0 });
 			expect(result.data[0].projectName).toBe('Test Project');
@@ -546,7 +546,7 @@ describe('runsRepository (integration)', () => {
 			await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			const result = await listRuns({ orgId: 'test-org', limit: 10, offset: 0 });
@@ -566,7 +566,7 @@ describe('runsRepository (integration)', () => {
 				projectId: 'test-project',
 				prNumber: 42,
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			const result = await listRuns({ orgId: 'test-org', limit: 10, offset: 0 });
@@ -581,7 +581,7 @@ describe('runsRepository (integration)', () => {
 			await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			// Run with a linked PR
 			await linkPRToWorkItem('test-project', 'owner/repo', 7, 'card-7', {
@@ -591,7 +591,7 @@ describe('runsRepository (integration)', () => {
 				projectId: 'test-project',
 				prNumber: 7,
 				agentType: 'review',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			const result = await listRuns({ orgId: 'test-org', limit: 10, offset: 0 });
@@ -612,7 +612,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			const run = await getRunById(id);
 			expect(run).not.toBeNull();
@@ -631,7 +631,7 @@ describe('runsRepository (integration)', () => {
 				projectId: 'test-project',
 				prNumber: 99,
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			const run = await getRunById(id);
 			expect(run?.workItemUrl).toBe('https://trello.com/c/xyz');
@@ -655,19 +655,19 @@ describe('runsRepository (integration)', () => {
 				projectId: 'test-project',
 				workItemId: 'card-target',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			await createRun({
 				projectId: 'test-project',
 				workItemId: 'card-target',
 				agentType: 'review',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			await createRun({
 				projectId: 'test-project',
 				workItemId: 'card-other',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			const runs = await getRunsByWorkItem('test-project', 'card-target');
@@ -686,7 +686,7 @@ describe('runsRepository (integration)', () => {
 				workItemId: 'card-linked',
 				prNumber: 5,
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			const runs = await getRunsByWorkItem('test-project', 'card-linked');
@@ -701,7 +701,7 @@ describe('runsRepository (integration)', () => {
 				projectId: 'test-project',
 				workItemId: 'card-no-pr-link',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			const runs = await getRunsByWorkItem('test-project', 'card-no-pr-link');
@@ -723,7 +723,7 @@ describe('runsRepository (integration)', () => {
 				projectId: 'test-project',
 				workItemId: 'card-plan',
 				agentType: 'planning',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			// Step 3: Promote the work-item row by linking a PR to it
@@ -739,7 +739,7 @@ describe('runsRepository (integration)', () => {
 				workItemId: 'card-plan',
 				prNumber: 99,
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			// Step 5: getRunsByWorkItem should return BOTH runs
@@ -774,19 +774,19 @@ describe('runsRepository (integration)', () => {
 				projectId: 'test-project',
 				prNumber: 10,
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			await createRun({
 				projectId: 'test-project',
 				prNumber: 10,
 				agentType: 'review',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			await createRun({
 				projectId: 'test-project',
 				prNumber: 20,
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			const runs = await getRunsForPR('test-project', 10);
@@ -804,7 +804,7 @@ describe('runsRepository (integration)', () => {
 				projectId: 'test-project',
 				prNumber: 30,
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			const runs = await getRunsForPR('test-project', 30);
@@ -819,7 +819,7 @@ describe('runsRepository (integration)', () => {
 				projectId: 'test-project',
 				prNumber: 40,
 				agentType: 'review',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			const runs = await getRunsForPR('test-project', 40);
@@ -835,7 +835,7 @@ describe('runsRepository (integration)', () => {
 				projectId: 'test-project',
 				workItemId: 'card-gap-demo',
 				agentType: 'planning',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			// Create an implementation run with prNumber=99
 			await createRun({
@@ -843,7 +843,7 @@ describe('runsRepository (integration)', () => {
 				workItemId: 'card-gap-demo',
 				prNumber: 99,
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			// getRunsForPR only returns runs with prNumber=99 — it MISSES the planning run

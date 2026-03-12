@@ -84,12 +84,12 @@ describe('settingsRepository (integration)', () => {
 			await upsertCascadeDefaults('test-org', {
 				model: 'claude-opus-4-5',
 				maxIterations: 30,
-				agentBackend: 'claude-code',
+				agentEngine: 'claude-code',
 			});
 			const defaults = await getCascadeDefaults('test-org');
 			expect(defaults?.model).toBe('claude-opus-4-5');
 			expect(defaults?.maxIterations).toBe(30);
-			expect(defaults?.agentBackend).toBe('claude-code');
+			expect(defaults?.agentEngine).toBe('claude-code');
 		});
 
 		it('updates existing defaults', async () => {
@@ -134,7 +134,7 @@ describe('settingsRepository (integration)', () => {
 				branchPrefix: 'fix/',
 				model: 'claude-sonnet',
 				workItemBudgetUsd: '10.00',
-				agentBackend: 'claude-code',
+				agentEngine: 'claude-code',
 			});
 			expect(project.baseBranch).toBe('develop');
 			expect(project.branchPrefix).toBe('fix/');

@@ -3,6 +3,35 @@ import { getPMProviderOrNull } from '../../pm/index.js';
 import type { ProjectConfig } from '../../types/index.js';
 import type { PromptContext } from '../prompts/index.js';
 
+function getListIds(project: ProjectConfig) {
+	const trelloConfig = getTrelloConfig(project);
+	const jiraConfig = getJiraConfig(project);
+
+	return {
+		backlogListId: trelloConfig?.lists?.backlog ?? jiraConfig?.statuses?.backlog,
+		todoListId: trelloConfig?.lists?.todo ?? jiraConfig?.statuses?.todo,
+		inProgressListId: trelloConfig?.lists?.inProgress ?? jiraConfig?.statuses?.inProgress,
+		inReviewListId: trelloConfig?.lists?.inReview ?? jiraConfig?.statuses?.inReview,
+		doneListId: trelloConfig?.lists?.done ?? jiraConfig?.statuses?.done,
+		mergedListId: trelloConfig?.lists?.merged ?? jiraConfig?.statuses?.merged,
+		debugListId: trelloConfig?.lists?.debug,
+		processedLabelId: trelloConfig?.labels?.processed,
+		autoLabelId: trelloConfig?.labels?.auto ?? jiraConfig?.labels?.auto,
+	};
+}
+
+function getPromptTerminology(pmType: string | undefined) {
+	const isJira = pmType === 'jira';
+
+	return {
+		workItemNoun: isJira ? 'issue' : 'card',
+		workItemNounPlural: isJira ? 'issues' : 'cards',
+		workItemNounCap: isJira ? 'Issue' : 'Card',
+		workItemNounPluralCap: isJira ? 'Issues' : 'Cards',
+		pmName: isJira ? 'JIRA' : 'Trello',
+	};
+}
+
 /**
  * Build a PromptContext from project config and optional trigger data.
  *
@@ -24,30 +53,17 @@ export function buildPromptContext(
 	},
 ): PromptContext {
 	const pmProvider = getPMProviderOrNull();
-	const isJira = pmProvider?.type === 'jira';
+	const listIds = getListIds(project);
+	const terminology = getPromptTerminology(pmProvider?.type);
+
 	return {
 		workItemId,
 		workItemUrl: workItemId && pmProvider ? pmProvider.getWorkItemUrl(workItemId) : undefined,
 		projectId: project.id,
 		baseBranch: project.baseBranch,
-		backlogListId:
-			getTrelloConfig(project)?.lists?.backlog ?? getJiraConfig(project)?.statuses?.backlog,
-		todoListId: getTrelloConfig(project)?.lists?.todo ?? getJiraConfig(project)?.statuses?.todo,
-		inProgressListId:
-			getTrelloConfig(project)?.lists?.inProgress ?? getJiraConfig(project)?.statuses?.inProgress,
-		inReviewListId:
-			getTrelloConfig(project)?.lists?.inReview ?? getJiraConfig(project)?.statuses?.inReview,
-		doneListId: getTrelloConfig(project)?.lists?.done ?? getJiraConfig(project)?.statuses?.done,
-		mergedListId:
-			getTrelloConfig(project)?.lists?.merged ?? getJiraConfig(project)?.statuses?.merged,
-		processedLabelId: getTrelloConfig(project)?.labels?.processed,
-		autoLabelId: getTrelloConfig(project)?.labels?.auto ?? getJiraConfig(project)?.labels?.auto,
+		...listIds,
 		pmType: pmProvider?.type,
-		workItemNoun: isJira ? 'issue' : 'card',
-		workItemNounPlural: isJira ? 'issues' : 'cards',
-		workItemNounCap: isJira ? 'Issue' : 'Card',
-		workItemNounPluralCap: isJira ? 'Issues' : 'Cards',
-		pmName: isJira ? 'JIRA' : 'Trello',
+		...terminology,
 		...(prContext && {
 			prNumber: prContext.prNumber,
 			prBranch: prContext.prBranch,
@@ -61,7 +77,7 @@ export function buildPromptContext(
 			originalWorkItemName: debugContext.originalWorkItemName,
 			originalWorkItemUrl: debugContext.originalWorkItemUrl,
 			detectedAgentType: debugContext.detectedAgentType,
-			debugListId: getTrelloConfig(project)?.lists?.debug,
+			debugListId: listIds.debugListId,
 		}),
 	};
 }
