@@ -59,10 +59,13 @@ function buildArrayField(def: Extract<ParameterDefinition, { type: 'array' }>) {
 		case 'boolean':
 			return z.array(z.boolean());
 		case 'object':
-			// Allow strings or objects for flexible items (e.g. AddChecklist items)
-			return z.array(z.union([z.string(), z.object({}).passthrough()]));
+			// Allow strings or objects for flexible items (e.g. AddChecklist items).
+			// We use .catchall(z.any()) instead of .passthrough() because the latter
+			// uses z.unknown() internally which produces incomplete JSON schemas
+			// that some LLM providers reject.
+			return z.array(z.union([z.string(), z.object({}).catchall(z.any())]));
 		default:
-			return z.array(z.unknown());
+			return z.array(z.any());
 	}
 }
 
@@ -92,7 +95,8 @@ function buildZodField(def: ParameterDefinition) {
 			return applyFieldModifiers(buildArrayField(def), def);
 		}
 		case 'object': {
-			return applyFieldModifiers(z.object({}).passthrough(), def);
+			// Use .catchall(z.any()) instead of .passthrough() to avoid z.unknown().
+			return applyFieldModifiers(z.object({}).catchall(z.any()), def);
 		}
 		default: {
 			const _exhaustive: never = def;
