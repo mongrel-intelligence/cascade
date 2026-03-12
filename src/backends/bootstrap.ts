@@ -1,6 +1,7 @@
 import { ClaudeCodeEngine } from './claude-code/index.js';
 import { CodexEngine } from './codex/index.js';
 import { LlmistEngine } from './llmist/index.js';
+import { OpenCodeEngine } from './opencode/index.js';
 import { getEngine, registerEngine } from './registry.js';
 
 export function registerBuiltInEngines(): void {
@@ -12,5 +13,8 @@ export function registerBuiltInEngines(): void {
 	}
 	if (!getEngine('codex')) {
 		registerEngine(new CodexEngine());
+	}
+	if (!getEngine('opencode')) {
+		registerEngine(new OpenCodeEngine());
 	}
 }
