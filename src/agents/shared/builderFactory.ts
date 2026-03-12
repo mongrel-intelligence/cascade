@@ -122,6 +122,7 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 		.withRateLimits(getRateLimitForModel(model))
 		.withRetry(getRetryConfig(llmistLogger))
 		.withCompaction(compactionConfig)
+		.withCaching()
 		.withTrailingMessage(trailingMessage)
 		.withTextOnlyHandler('acknowledge')
 		.withHooks({
