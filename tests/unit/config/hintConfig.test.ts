@@ -17,9 +17,13 @@ vi.mock('../../../src/gadgets/todo/storage.js', () => ({
 	formatTodoList: vi.fn(() => ''),
 }));
 
-vi.mock('../../../src/gadgets/sessionState.js', () => ({
-	getSessionState: vi.fn(() => ({ prUrl: null })),
-}));
+vi.mock('../../../src/gadgets/sessionState.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../../../src/gadgets/sessionState.js')>();
+	return {
+		...actual,
+		getSessionState: vi.fn(() => ({ prUrl: null })),
+	};
+});
 
 // Mock resolveAgentDefinition — hintConfig now uses async resolver
 vi.mock('../../../src/agents/definitions/index.js', () => ({

@@ -22,6 +22,7 @@ import { CUSTOM_MODELS } from '../config/customModels.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import {
 	PR_SIDECAR_ENV_VAR,
+	PUSHED_CHANGES_SIDECAR_ENV_VAR,
 	REVIEW_SIDECAR_ENV_VAR,
 	clearInitialComment,
 	recordInitialComment,
@@ -63,6 +64,51 @@ async function resolveRepoDir(
 	});
 }
 
+function createCompletionArtifacts(
+	profile: Awaited<ReturnType<typeof getAgentProfile>>,
+	agentType: string,
+	needsNativeToolRuntime: boolean,
+	input: AgentInput,
+	projectSecrets: Record<string, string>,
+) {
+	const reviewSidecarPath =
+		agentType === 'review'
+			? join(tmpdir(), `cascade-review-sidecar-${process.pid}-${Date.now()}.json`)
+			: undefined;
+	if (reviewSidecarPath) {
+		projectSecrets[REVIEW_SIDECAR_ENV_VAR] = reviewSidecarPath;
+	}
+
+	const prSidecarPath =
+		needsNativeToolRuntime && profile.finishHooks.requiresPR
+			? join(tmpdir(), `cascade-pr-sidecar-${process.pid}-${Date.now()}.json`)
+			: undefined;
+	if (prSidecarPath) {
+		projectSecrets[PR_SIDECAR_ENV_VAR] = prSidecarPath;
+	}
+
+	const pushedChangesSidecarPath =
+		needsNativeToolRuntime && profile.finishHooks.requiresPushedChanges
+			? join(tmpdir(), `cascade-pushed-changes-sidecar-${process.pid}-${Date.now()}.json`)
+			: undefined;
+	if (pushedChangesSidecarPath) {
+		projectSecrets[PUSHED_CHANGES_SIDECAR_ENV_VAR] = pushedChangesSidecarPath;
+	}
+
+	if (Object.keys(profile.finishHooks).length > 0) {
+		projectSecrets.CASCADE_FINISH_HOOKS = JSON.stringify(profile.finishHooks);
+	}
+	if (input.headSha) {
+		projectSecrets.CASCADE_INITIAL_HEAD_SHA = input.headSha as string;
+	}
+
+	return {
+		prSidecarPath,
+		pushedChangesSidecarPath,
+		reviewSidecarPath,
+	};
+}
+
 /**
  * Build the execution plan by resolving model config, fetching context, etc.
  * Uses agent profiles to customize tools, context, and prompts per agent type.
@@ -80,6 +126,7 @@ async function buildExecutionPlan(
 	Omit<AgentExecutionPlan, 'progressReporter'> & {
 		reviewSidecarPath?: string;
 		prSidecarPath?: string;
+		pushedChangesSidecarPath?: string;
 		nativeToolRuntimeCleanup?: () => void;
 	}
 > {
@@ -159,21 +206,23 @@ async function buildExecutionPlan(
 		isGitHubAck,
 	);
 
-	// Generate temp sidecar path for review agents (outside the repo to avoid polluting git status)
-	const reviewSidecarPath =
-		agentType === 'review'
-			? join(tmpdir(), `cascade-review-sidecar-${process.pid}-${Date.now()}.json`)
-			: undefined;
-	if (reviewSidecarPath) {
-		projectSecrets[REVIEW_SIDECAR_ENV_VAR] = reviewSidecarPath;
-	}
-	const prSidecarPath =
-		needsNativeToolRuntime && profile.finishHooks.requiresPR
-			? join(tmpdir(), `cascade-pr-sidecar-${process.pid}-${Date.now()}.json`)
-			: undefined;
-	if (prSidecarPath) {
-		projectSecrets[PR_SIDECAR_ENV_VAR] = prSidecarPath;
-	}
+	const { reviewSidecarPath, prSidecarPath, pushedChangesSidecarPath } = createCompletionArtifacts(
+		profile,
+		agentType,
+		needsNativeToolRuntime,
+		input,
+		projectSecrets,
+	);
+
+	const completionRequirements = {
+		requiresPR: profile.finishHooks.requiresPR,
+		requiresReview: profile.finishHooks.requiresReview,
+		requiresPushedChanges: profile.finishHooks.requiresPushedChanges,
+		prSidecarPath,
+		reviewSidecarPath,
+		pushedChangesSidecarPath,
+		maxContinuationTurns: 1,
+	};
 
 	// Override GITHUB_TOKEN in subprocess secrets with agent-scoped token
 	if (gitHubToken && profile.needsGitHubToken) {
@@ -197,19 +246,13 @@ async function buildExecutionPlan(
 		logWriter,
 		agentInput: input,
 		nativeToolCapabilities: profile.allCapabilities,
-		completionRequirements: {
-			requiresPR: profile.finishHooks.requiresPR,
-			requiresReview: profile.finishHooks.requiresReview,
-			requiresPushedChanges: profile.finishHooks.requiresPushedChanges,
-			prSidecarPath,
-			reviewSidecarPath,
-			maxContinuationTurns: 1,
-		},
+		completionRequirements,
 		enableStopHooks: needsGitStateStopHooks(profile.finishHooks),
 		blockGitPush: profile.finishHooks.blockGitPush,
 		...(Object.keys(projectSecrets).length > 0 && { projectSecrets }),
 		reviewSidecarPath,
 		prSidecarPath,
+		pushedChangesSidecarPath,
 		nativeToolRuntimeCleanup: nativeToolRuntime?.cleanup,
 	};
 }
@@ -426,6 +469,7 @@ export async function executeWithEngine(
 			);
 
 			const { reviewSidecarPath, prSidecarPath, nativeToolRuntimeCleanup } = partialInput;
+			const { pushedChangesSidecarPath } = partialInput;
 
 			// Create run record now that we have model and maxIterations
 			const runId = await tryCreateRun(
@@ -472,12 +516,18 @@ export async function executeWithEngine(
 				postProcessResult(result, agentType, engine, input, identifier, {
 					requiresPR: profile.finishHooks.requiresPR,
 					requiresReview: profile.finishHooks.requiresReview,
+					requiresPushedChanges: profile.finishHooks.requiresPushedChanges,
 					hasAuthoritativeReview: completionEvidence.hasAuthoritativeReview,
+					hasAuthoritativePushedChanges:
+						pushedChangesSidecarPath !== undefined
+							? completionEvidence.hasAuthoritativePushedChanges
+							: undefined,
 				});
 			} finally {
 				monitor?.stop();
 				cleanupTempFile(prSidecarPath);
 				cleanupTempFile(reviewSidecarPath);
+				cleanupTempFile(pushedChangesSidecarPath);
 				nativeToolRuntimeCleanup?.();
 			}
 

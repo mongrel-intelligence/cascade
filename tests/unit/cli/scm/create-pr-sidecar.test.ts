@@ -9,10 +9,14 @@ vi.mock('../../../../src/gadgets/github/core/createPR.js', () => ({
 	createPR: (...args: unknown[]) => mockCreatePR(...args),
 }));
 
-vi.mock('../../../../src/gadgets/sessionState.js', () => ({
-	PR_SIDECAR_ENV_VAR: 'CASCADE_PR_SIDECAR_PATH',
-	REVIEW_SIDECAR_ENV_VAR: 'CASCADE_REVIEW_SIDECAR_PATH',
-}));
+vi.mock('../../../../src/gadgets/sessionState.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../../../../src/gadgets/sessionState.js')>();
+	return {
+		...actual,
+		PR_SIDECAR_ENV_VAR: 'CASCADE_PR_SIDECAR_PATH',
+		REVIEW_SIDECAR_ENV_VAR: 'CASCADE_REVIEW_SIDECAR_PATH',
+	};
+});
 
 vi.mock('../../../../src/cli/base.js', () => ({
 	CredentialScopedCommand: class {

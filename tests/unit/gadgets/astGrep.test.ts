@@ -23,11 +23,13 @@ vi.mock('../../../src/gadgets/shared/pathValidation.js', () => ({
 }));
 
 // Mock sessionState for readOnlyFs checks
-vi.mock('../../../src/gadgets/sessionState.js', () => ({
-	PR_SIDECAR_ENV_VAR: 'CASCADE_PR_SIDECAR_PATH',
-	REVIEW_SIDECAR_ENV_VAR: 'CASCADE_REVIEW_SIDECAR_PATH',
-	getSessionState: vi.fn(() => ({ readOnlyFs: false })),
-}));
+vi.mock('../../../src/gadgets/sessionState.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../../../src/gadgets/sessionState.js')>();
+	return {
+		...actual,
+		getSessionState: vi.fn(() => ({ readOnlyFs: false })),
+	};
+});
 
 // Mock readTracking so assertFileRead is a no-op
 vi.mock('../../../src/gadgets/readTracking.js', () => ({

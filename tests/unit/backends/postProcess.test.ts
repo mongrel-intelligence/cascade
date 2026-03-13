@@ -183,6 +183,38 @@ describe('postProcessResult', () => {
 		});
 	});
 
+	describe('pushed-changes validation for agents with requiresPushedChanges', () => {
+		it('marks as failed when requiresPushedChanges agent succeeds without authoritative push evidence', () => {
+			const result = makeResult({ success: true });
+			const engine = makeEngine();
+			const input = makeInput();
+
+			postProcessResult(result, 'respond-to-review', engine, input, 'review-pr-123', {
+				requiresPushedChanges: true,
+				hasAuthoritativePushedChanges: false,
+			});
+
+			expect(result.success).toBe(false);
+			expect(result.error).toBe(
+				'Agent completed but no authoritative pushed changes were recorded',
+			);
+		});
+
+		it('passes through when requiresPushedChanges agent has authoritative push evidence', () => {
+			const result = makeResult({ success: true });
+			const engine = makeEngine();
+			const input = makeInput();
+
+			postProcessResult(result, 'respond-to-ci', engine, input, 'ci-pr-123', {
+				requiresPushedChanges: true,
+				hasAuthoritativePushedChanges: true,
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.error).toBeUndefined();
+		});
+	});
+
 	describe('subscription cost zeroing', () => {
 		it('zeroes cost for claude-code engine with subscriptionCostZero=true', () => {
 			const result = makeResult({ success: true, cost: 2.5 });

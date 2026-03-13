@@ -4,10 +4,14 @@ vi.mock('../../../../src/gadgets/github/core/createPRReview.js', () => ({
 	createPRReview: vi.fn(),
 }));
 
-vi.mock('../../../../src/gadgets/sessionState.js', () => ({
-	recordReviewSubmission: vi.fn(),
-	deleteInitialComment: vi.fn(),
-}));
+vi.mock('../../../../src/gadgets/sessionState.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../../../../src/gadgets/sessionState.js')>();
+	return {
+		...actual,
+		recordReviewSubmission: vi.fn(),
+		deleteInitialComment: vi.fn(),
+	};
+});
 
 import { CreatePRReview } from '../../../../src/gadgets/github/CreatePRReview.js';
 import { createPRReview } from '../../../../src/gadgets/github/core/createPRReview.js';

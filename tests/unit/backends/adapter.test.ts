@@ -46,6 +46,7 @@ vi.mock('../../../src/backends/progress.js', () => ({
 
 vi.mock('../../../src/gadgets/sessionState.js', () => ({
 	PR_SIDECAR_ENV_VAR: 'CASCADE_PR_SIDECAR_PATH',
+	PUSHED_CHANGES_SIDECAR_ENV_VAR: 'CASCADE_PUSHED_CHANGES_SIDECAR_PATH',
 	REVIEW_SIDECAR_ENV_VAR: 'CASCADE_REVIEW_SIDECAR_PATH',
 	recordInitialComment: vi.fn(),
 	recordPRCreation: vi.fn(),
@@ -487,6 +488,35 @@ describe('executeWithEngine', () => {
 				requiresPushedChanges: true,
 				maxContinuationTurns: 1,
 			}),
+		);
+		expect(backendInput.completionRequirements?.pushedChangesSidecarPath).toBeTruthy();
+		expect(backendInput.projectSecrets?.CASCADE_FINISH_HOOKS).toBe(
+			JSON.stringify({
+				requiresPR: true,
+				requiresReview: true,
+				requiresPushedChanges: true,
+			}),
+		);
+	});
+
+	it('marks requiresPushedChanges agent as failed when no authoritative push evidence was recorded', async () => {
+		setupMocks();
+		mockGetAgentProfile.mockReturnValue(
+			makeMockProfile({ finishHooks: { requiresPushedChanges: true } }),
+		);
+		const engine = makeMockBackend('opencode');
+		vi.mocked(engine.execute).mockResolvedValue({
+			success: true,
+			output: 'Done',
+		});
+
+		const result = await executeWithEngine(engine, 'respond-to-review', makeInput());
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe('Agent completed but no authoritative pushed changes were recorded');
+		expect(logger.warn).toHaveBeenCalledWith(
+			'respond-to-review agent completed without authoritative pushed-change evidence',
+			expect.objectContaining({ engine: 'opencode' }),
 		);
 	});
 

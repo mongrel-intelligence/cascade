@@ -83,11 +83,15 @@ vi.mock('../../../src/utils/llmLogging.js', () => ({
 	})),
 }));
 
-vi.mock('../../../src/gadgets/sessionState.js', () => ({
-	getSessionState: vi.fn(() => ({
-		prUrl: null,
-	})),
-}));
+vi.mock('../../../src/gadgets/sessionState.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../../../src/gadgets/sessionState.js')>();
+	return {
+		...actual,
+		getSessionState: vi.fn(() => ({
+			prUrl: null,
+		})),
+	};
+});
 
 import { runAgentLoop } from '../../../src/agents/utils/agentLoop.js';
 import { LlmistEngine } from '../../../src/backends/llmist/index.js';

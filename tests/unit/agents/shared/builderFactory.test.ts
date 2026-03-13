@@ -20,10 +20,14 @@ vi.mock('../../../../src/config/retryConfig.js', () => ({
 	getRetryConfig: vi.fn().mockReturnValue({ maxRetries: 3 }),
 }));
 
-vi.mock('../../../../src/gadgets/sessionState.js', () => ({
-	initSessionState: vi.fn(),
-	setReadOnlyFs: vi.fn(),
-}));
+vi.mock('../../../../src/gadgets/sessionState.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../../../../src/gadgets/sessionState.js')>();
+	return {
+		...actual,
+		initSessionState: vi.fn(),
+		setReadOnlyFs: vi.fn(),
+	};
+});
 
 vi.mock('../../../../src/agents/shared/capabilities.js', () => ({
 	getAgentCapabilities: vi.fn().mockResolvedValue({
