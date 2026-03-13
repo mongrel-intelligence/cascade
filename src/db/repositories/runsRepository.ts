@@ -5,6 +5,7 @@ import {
 	agentRunLogs,
 	agentRuns,
 	debugAnalyses,
+	organizations,
 	prWorkItems,
 	projects,
 } from '../schema/index.js';
@@ -389,7 +390,7 @@ export async function cancelRunById(runId: string, reason: string): Promise<bool
 // ============================================================================
 
 export interface ListRunsInput {
-	orgId: string;
+	orgId?: string;
 	projectId?: string;
 	status?: string[];
 	agentType?: string;
@@ -404,8 +405,11 @@ export interface ListRunsInput {
 export async function listRuns(input: ListRunsInput) {
 	const db = getDb();
 
-	const conditions: SQL[] = [eq(projects.orgId, input.orgId)];
+	const conditions: SQL[] = [];
 
+	if (input.orgId) {
+		conditions.push(eq(projects.orgId, input.orgId));
+	}
 	if (input.projectId) {
 		conditions.push(eq(agentRuns.projectId, input.projectId));
 	}
@@ -438,6 +442,8 @@ export async function listRuns(input: ListRunsInput) {
 				id: agentRuns.id,
 				projectId: agentRuns.projectId,
 				projectName: projects.name,
+				orgId: projects.orgId,
+				orgName: organizations.name,
 				workItemId: agentRuns.workItemId,
 				prNumber: agentRuns.prNumber,
 				agentType: agentRuns.agentType,
@@ -459,6 +465,7 @@ export async function listRuns(input: ListRunsInput) {
 			})
 			.from(agentRuns)
 			.innerJoin(projects, eq(agentRuns.projectId, projects.id))
+			.innerJoin(organizations, eq(projects.orgId, organizations.id))
 			.leftJoin(prWorkItems, buildAgentRunWorkItemJoin())
 			.where(where)
 			.orderBy(orderFn(sortColumn))

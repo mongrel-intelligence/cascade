@@ -10,6 +10,7 @@ import {
 	createProject,
 	deleteProject,
 	getProjectFull,
+	listAllProjects,
 	listProjectsFull,
 	updateProject,
 } from '../../../../src/db/repositories/projectsRepository.js';
@@ -30,6 +31,21 @@ describe('projectsRepository', () => {
 			const result = await listProjectsFull('org-1');
 			expect(result).toEqual(projects);
 			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('listAllProjects', () => {
+		it('queries all projects without filter', async () => {
+			const projects = [
+				{ id: 'p1', name: 'Project 1' },
+				{ id: 'p2', name: 'Project 2' },
+			];
+			mockDb.chain.where.mockResolvedValueOnce(projects);
+
+			const result = await listAllProjects();
+			expect(result).toEqual(projects);
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
+			expect(mockDb.chain.where).toHaveBeenCalledWith(expect.anything());
 		});
 	});
 

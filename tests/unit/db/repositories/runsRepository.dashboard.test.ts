@@ -45,6 +45,10 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 		name: 'name',
 		orgId: 'org_id',
 	},
+	organizations: {
+		id: 'id',
+		name: 'name',
+	},
 	prWorkItems: {
 		projectId: 'project_id',
 		prNumber: 'pr_number',
@@ -78,7 +82,7 @@ function createChain(resolveValue: unknown = []) {
 describe('runsRepository - dashboard queries', () => {
 	describe('listRuns', () => {
 		it('returns data and total count', async () => {
-			const dataChain = createChain([{ id: 'run-1', agentType: 'impl' }]);
+			const dataChain = createChain([{ id: 'run-1', agentType: 'impl', orgName: 'Org 1' }]);
 			const countChain = createChain([{ total: 1 }]);
 
 			mockSelect.mockReturnValueOnce(dataChain).mockReturnValueOnce(countChain);
@@ -89,7 +93,7 @@ describe('runsRepository - dashboard queries', () => {
 				offset: 0,
 			});
 
-			expect(result.data).toEqual([{ id: 'run-1', agentType: 'impl' }]);
+			expect(result.data).toEqual([{ id: 'run-1', agentType: 'impl', orgName: 'Org 1' }]);
 			expect(result.total).toBe(1);
 		});
 
