@@ -33,7 +33,6 @@ export function CredentialFormDialog({
 
 	const invalidate = () => {
 		queryClient.invalidateQueries({ queryKey: trpc.credentials.list.queryOptions().queryKey });
-		queryClient.invalidateQueries({ queryKey: trpc.credentials.listAll.queryOptions().queryKey });
 	};
 
 	const createMutation = useMutation({
