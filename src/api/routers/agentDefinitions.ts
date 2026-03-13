@@ -22,7 +22,7 @@ import {
 	upsertAgentDefinition,
 } from '../../db/repositories/agentDefinitionsRepository.js';
 import { loadPartials } from '../../db/repositories/partialsRepository.js';
-import { protectedProcedure, publicProcedure, router, superAdminProcedure } from '../trpc.js';
+import { publicProcedure, router, superAdminProcedure } from '../trpc.js';
 import { TRIGGER_REGISTRY } from './_shared/triggerTypes.js';
 
 async function validatePromptIfPresent(prompt: string | null | undefined) {
@@ -59,7 +59,7 @@ export const agentDefinitionsRouter = router({
 	 * Uses a single listAgentDefinitions() call + YAML fallback instead of going through
 	 * resolveAllAgentDefinitions() which would issue its own redundant listAgentDefinitions() call.
 	 */
-	list: protectedProcedure.query(async () => {
+	list: superAdminProcedure.query(async () => {
 		// Intentional: getKnownAgentTypes() (deprecated) is used here to enumerate YAML types
 		// for the merge loop below. resolveKnownAgentTypes() also hits the DB, which we already
 		// cover via listAgentDefinitions(); calling both would be redundant.
@@ -104,7 +104,7 @@ export const agentDefinitionsRouter = router({
 	/**
 	 * Returns a single definition by agentType, or throws NOT_FOUND.
 	 */
-	get: protectedProcedure
+	get: superAdminProcedure
 		.input(z.object({ agentType: z.string().min(1) }))
 		.query(async ({ input }) => {
 			// Try the resolver (cache → DB → YAML)

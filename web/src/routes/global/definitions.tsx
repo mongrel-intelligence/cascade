@@ -209,8 +209,8 @@ function PartialsTab({ onEdit }: { onEdit: (name: string) => void }) {
 	);
 }
 
-export const settingsDefinitionsRoute = createRoute({
+export const globalDefinitionsRoute = createRoute({
 	getParentRoute: () => rootRoute,
-	path: '/settings/definitions',
+	path: '/global/definitions',
 	component: AgentDefinitionsPage,
 });

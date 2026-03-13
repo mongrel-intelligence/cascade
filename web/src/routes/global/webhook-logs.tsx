@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { createRoute, useNavigate, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
 import { z } from 'zod';
-import { rootRoute } from './__root.js';
+import { rootRoute } from '../__root.js';
 
 const searchSchema = z.object({
 	source: z.string().optional().catch(undefined),
@@ -14,8 +14,8 @@ const searchSchema = z.object({
 });
 
 function WebhookLogsPage() {
-	const navigate = useNavigate({ from: '/webhooklogs' });
-	const search = useSearch({ from: '/webhooklogs' });
+	const navigate = useNavigate({ from: '/global/webhook-logs' });
+	const search = useSearch({ from: '/global/webhook-logs' });
 	const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
 
 	const source = search.source ?? '';
@@ -99,9 +99,9 @@ function WebhookLogsPage() {
 	);
 }
 
-export const webhookLogsRoute = createRoute({
+export const globalWebhookLogsRoute = createRoute({
 	getParentRoute: () => rootRoute,
-	path: '/webhooklogs',
+	path: '/global/webhook-logs',
 	component: WebhookLogsPage,
 	validateSearch: searchSchema,
 });
