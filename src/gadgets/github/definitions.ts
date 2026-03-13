@@ -7,10 +7,6 @@
  * - JSON Schema manifests (generated via buildManifest)
  */
 
-import { writeFileSync } from 'node:fs';
-
-import { GITHUB_ACK_COMMENT_ID_ENV_VAR } from '../../backends/secretBuilder.js';
-import { PR_SIDECAR_ENV_VAR, REVIEW_SIDECAR_ENV_VAR } from '../sessionState.js';
 import type { ToolDefinition } from '../shared/toolDefinition.js';
 
 /**
@@ -149,31 +145,6 @@ If hooks fail or timeout, the full output will be shown.`,
 				description: 'Read PR body from file (use - for stdin)',
 			},
 		],
-		postExecute: async (result) => {
-			const prResult = result as {
-				prUrl: string;
-				prNumber: number;
-				alreadyExisted: boolean;
-				repoFullName: string;
-			};
-			const sidecarPath = process.env[PR_SIDECAR_ENV_VAR];
-			if (!sidecarPath || sidecarPath === 'undefined') return;
-
-			try {
-				writeFileSync(
-					sidecarPath,
-					JSON.stringify({
-						source: 'cascade-tools scm create-pr',
-						prUrl: prResult.prUrl,
-						prNumber: prResult.prNumber,
-						alreadyExisted: prResult.alreadyExisted,
-						repoFullName: prResult.repoFullName,
-					}),
-				);
-			} catch {
-				// Best-effort — don't fail PR creation on sidecar write failure
-			}
-		},
 	},
 };
 
@@ -258,48 +229,6 @@ export const createPRReviewDef: ToolDefinition = {
 	],
 	cli: {
 		autoResolved: ownerRepoAutoResolved,
-		postExecute: async (result, flags) => {
-			const reviewResult = result as { reviewUrl: string };
-
-			// Delete the GitHub ack/progress comment immediately after successful review submission.
-			// This mirrors what the llmist backend's CreatePRReview gadget does via deleteInitialComment().
-			// In the claude-code backend, the parent process cannot delete it in-process, so we do it here.
-			let ackCommentDeleted = false;
-			const ackCommentIdStr = process.env[GITHUB_ACK_COMMENT_ID_ENV_VAR];
-			if (ackCommentIdStr) {
-				const ackCommentId = Number(ackCommentIdStr);
-				if (Number.isFinite(ackCommentId) && ackCommentId > 0) {
-					try {
-						const owner = flags.owner as string;
-						const repo = flags.repo as string;
-						const { githubClient } = await import('../../github/client.js');
-						await githubClient.deletePRComment(owner, repo, ackCommentId);
-						ackCommentDeleted = true;
-					} catch {
-						// Best-effort — deletion failure should not prevent the review from being reported
-					}
-				}
-			}
-
-			// Persist review data for the parent process (backend adapter)
-			// to read and populate session state post-execution.
-			const sidecarPath = process.env[REVIEW_SIDECAR_ENV_VAR];
-			if (sidecarPath && sidecarPath !== 'undefined') {
-				try {
-					writeFileSync(
-						sidecarPath,
-						JSON.stringify({
-							reviewUrl: reviewResult.reviewUrl,
-							event: flags.event,
-							body: flags.body,
-							...(ackCommentDeleted && { ackCommentDeleted: true }),
-						}),
-					);
-				} catch {
-					// Best-effort — don't fail the review on sidecar write failure
-				}
-			}
-		},
 	},
 };
 

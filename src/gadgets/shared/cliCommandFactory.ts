@@ -16,7 +16,6 @@ import { Flags } from '@oclif/core';
 import { CredentialScopedCommand, resolveOwnerRepo } from '../../cli/base.js';
 import type {
 	CLIAutoResolved,
-	CLIPostExecuteHook,
 	FileInputAlternative,
 	ParameterDefinition,
 	ToolDefinition,
@@ -284,7 +283,6 @@ export type CLICoreFn<
  *   4. Validates required params
  *   5. Calls `coreFn` with resolved params
  *   6. Logs JSON output: `{ success: true, data: result }`
- *   7. Calls `cli.postExecute` hook if defined
  *
  * @example
  * ```typescript
@@ -301,7 +299,6 @@ export function createCLICommand(
 
 	const fileInputAlts: FileInputAlternative[] = def.cli?.fileInputAlternatives ?? [];
 	const autoResolvedParams: CLIAutoResolved[] = def.cli?.autoResolved ?? [];
-	const postExecuteHook: CLIPostExecuteHook | undefined = def.cli?.postExecute;
 
 	// Create a map of paramName -> autoResolved config for fast lookup
 	const autoResolvedMap = new Map<string, CLIAutoResolved>(
@@ -334,11 +331,6 @@ export function createCLICommand(
 
 			// Output JSON result
 			this.log(JSON.stringify({ success: true, data: result }));
-
-			// Call post-execute hook if defined
-			if (postExecuteHook) {
-				await postExecuteHook(result, parsedFlags);
-			}
 		}
 	}
 

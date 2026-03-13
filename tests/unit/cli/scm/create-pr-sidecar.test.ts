@@ -18,6 +18,16 @@ vi.mock('../../../../src/gadgets/sessionState.js', async (importOriginal) => {
 	};
 });
 
+// Mock logger to suppress warnings in tests
+vi.mock('../../../../src/utils/logging.js', () => ({
+	logger: {
+		warn: vi.fn(),
+		info: vi.fn(),
+		debug: vi.fn(),
+		error: vi.fn(),
+	},
+}));
+
 vi.mock('../../../../src/cli/base.js', () => ({
 	CredentialScopedCommand: class {
 		log = vi.fn();
