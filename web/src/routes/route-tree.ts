@@ -1,4 +1,5 @@
 import { rootRoute } from './__root.js';
+import { globalOrganizationsRoute } from './global/organizations.js';
 import { indexRoute } from './index.js';
 import { loginRoute } from './login.js';
 import { projectDetailRoute } from './projects/$projectId.js';
@@ -21,4 +22,5 @@ export const routeTree = rootRoute.addChildren([
 	settingsAgentsRoute,
 	settingsDefinitionsRoute,
 	webhookLogsRoute,
+	globalOrganizationsRoute,
 ]);

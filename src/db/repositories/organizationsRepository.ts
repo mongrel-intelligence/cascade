@@ -12,6 +12,12 @@ export async function getOrganization(orgId: string) {
 	return row ?? null;
 }
 
+export async function createOrganization(data: { id: string; name: string }) {
+	const db = getDb();
+	const [row] = await db.insert(organizations).values({ id: data.id, name: data.name }).returning();
+	return row;
+}
+
 export async function updateOrganization(orgId: string, data: { name: string }) {
 	const db = getDb();
 	await db.update(organizations).set({ name: data.name }).where(eq(organizations.id, orgId));
