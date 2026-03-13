@@ -18,6 +18,23 @@ vi.mock('../../../../src/gadgets/sessionState.js', async (importOriginal) => {
 	};
 });
 
+// Mock the GitHub client used by deleteAckComment
+vi.mock('../../../../src/github/client.js', () => ({
+	githubClient: {
+		deletePRComment: vi.fn(),
+	},
+}));
+
+// Mock logger to suppress warnings in tests
+vi.mock('../../../../src/utils/logging.js', () => ({
+	logger: {
+		warn: vi.fn(),
+		info: vi.fn(),
+		debug: vi.fn(),
+		error: vi.fn(),
+	},
+}));
+
 // Mock the CLI base class to avoid credential resolution
 vi.mock('../../../../src/cli/base.js', () => ({
 	CredentialScopedCommand: class {
@@ -81,6 +98,7 @@ describe('CreatePRReviewCommand sidecar write', () => {
 
 		const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8'));
 		expect(sidecar).toEqual({
+			source: 'cascade-tools scm create-pr-review',
 			reviewUrl: 'https://github.com/owner/repo/pull/1#pullrequestreview-123',
 			event: 'REQUEST_CHANGES',
 			body: 'Needs changes to error handling',

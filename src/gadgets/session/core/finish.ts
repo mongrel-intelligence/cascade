@@ -1,7 +1,8 @@
 import { execSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
 import { githubClient } from '../../../github/client.js';
 import type { SessionHooks } from '../../sessionState.js';
+
+export { writePushedChangesSidecar } from './sidecar.js';
 
 export function hasUncommittedChanges(): boolean {
 	try {
@@ -50,28 +51,6 @@ export function getCurrentHeadSha(): string | null {
 		return execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
 	} catch {
 		return null;
-	}
-}
-
-export function writePushedChangesSidecar(sidecarPath: string | undefined): boolean {
-	if (!sidecarPath || sidecarPath === 'undefined') return false;
-
-	const branch = getCurrentBranch();
-	const headSha = getCurrentHeadSha();
-	if (!branch || !headSha) return false;
-
-	try {
-		writeFileSync(
-			sidecarPath,
-			JSON.stringify({
-				source: 'cascade-tools session finish',
-				branch,
-				headSha,
-			}),
-		);
-		return true;
-	} catch {
-		return false;
 	}
 }
 

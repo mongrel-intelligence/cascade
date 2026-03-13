@@ -645,37 +645,6 @@ describe('createCLICommand', () => {
 		await expect(instance.execute()).rejects.toThrow('--config must be valid JSON');
 	});
 
-	it('calls post-execute hook when defined', async () => {
-		const postExecute = vi.fn();
-		const coreFn: CLICoreFn = async () => ({ prUrl: 'https://github.com/pr/1' });
-
-		const defWithHook: ToolDefinition = {
-			...simpleToolDef,
-			cli: {
-				postExecute,
-			},
-		};
-
-		const CommandClass = createCLICommand(defWithHook, coreFn);
-		const instance = new CommandClass([], {});
-
-		vi.spyOn(instance, 'parse').mockResolvedValue({
-			flags: { name: 'test' },
-			args: {},
-			argv: [],
-			raw: [],
-		} as unknown as Awaited<ReturnType<typeof instance.parse>>);
-
-		vi.spyOn(instance, 'log').mockImplementation(() => {});
-
-		await instance.execute();
-
-		expect(postExecute).toHaveBeenCalledWith(
-			{ prUrl: 'https://github.com/pr/1' },
-			{ name: 'test' },
-		);
-	});
-
 	it('skips gadgetOnly params in flag processing', async () => {
 		let capturedParams: Record<string, unknown> = {};
 		const coreFn: CLICoreFn = async (params) => {

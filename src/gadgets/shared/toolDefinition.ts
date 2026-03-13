@@ -6,7 +6,7 @@
  * - Parameter definitions (typed, with required/optional/default/describe support)
  * - Examples for documentation and agent prompts
  * - CLI-specific metadata: file-input alternatives, auto-resolved fields, env vars
- * - Hook types for gadget and CLI post-execute lifecycle
+ * - Hook types for gadget post-execute lifecycle
  *
  * Parameter types map to:
  * - Zod schemas (for Gadgets)
@@ -239,22 +239,6 @@ export type GadgetPostExecuteHook = (
 	params: Record<string, unknown>,
 ) => Promise<string | undefined> | string | undefined;
 
-/**
- * Post-execute hook called after the CLI command's core logic completes.
- *
- * Receives the result object and the parsed CLI flags, and may perform
- * additional side effects (e.g., printing extra output, updating state).
- *
- * @example
- * async (result, flags) => {
- *   console.log('PR URL:', result.prUrl);
- * }
- */
-export type CLIPostExecuteHook = (
-	result: unknown,
-	flags: Record<string, unknown>,
-) => Promise<void> | void;
-
 // ---------------------------------------------------------------------------
 // CLI metadata
 // ---------------------------------------------------------------------------
@@ -283,12 +267,6 @@ export interface CLIToolMetadata {
 	 * @example [{ paramName: 'owner', envVar: 'CASCADE_REPO_OWNER', resolvedFrom: 'git-remote' }]
 	 */
 	autoResolved?: CLIAutoResolved[];
-
-	/**
-	 * Post-execute hook for the CLI command.
-	 * Called after the core logic completes successfully.
-	 */
-	postExecute?: CLIPostExecuteHook;
 }
 
 // ---------------------------------------------------------------------------
@@ -360,8 +338,8 @@ export interface ToolDefinition {
 	examples?: ToolExample[];
 
 	/**
-	 * CLI-specific metadata: file-input alternatives, auto-resolved fields,
-	 * and post-execute hooks. Omit for gadgets that have no CLI counterpart.
+	 * CLI-specific metadata: file-input alternatives and auto-resolved fields.
+	 * Omit for gadgets that have no CLI counterpart.
 	 */
 	cli?: CLIToolMetadata;
 
