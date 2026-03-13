@@ -54,7 +54,6 @@ function buildProjectValues(p: ProjectConfig) {
 		model: p.model ?? null,
 		workItemBudgetUsd: p.workItemBudgetUsd ? String(p.workItemBudgetUsd) : null,
 		agentEngine: p.agentEngine?.default ?? null,
-		subscriptionCostZero: p.agentEngine?.subscriptionCostZero ?? false,
 	};
 }
 

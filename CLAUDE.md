@@ -326,21 +326,6 @@ Generate a long-lived OAuth token for headless/containerized environments:
 bash tests/docker/claude-code-auth/run-test.sh
 ```
 
-### Subscription Cost Zeroing
-
-When using a Claude Max subscription (OAuth token), API costs are covered by the subscription. Enable `subscriptionCostZero` to prevent these costs from counting against the per-card budget:
-
-```json
-{
-  "agentBackend": {
-    "default": "claude-code",
-    "subscriptionCostZero": true
-  }
-}
-```
-
-When enabled and the backend is `claude-code`, reported costs are zeroed after each session.
-
 ## Dashboard
 
 CASCADE includes a web dashboard for exploring agent runs, logs, LLM calls, and debug analyses.

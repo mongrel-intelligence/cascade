@@ -23,7 +23,6 @@ interface Project {
 	workItemBudgetUsd: string | null;
 	agentEngine: string | null;
 	engineSettings: Record<string, Record<string, unknown>> | null;
-	subscriptionCostZero: boolean | null;
 }
 
 export function ProjectGeneralForm({ project }: { project: Project }) {
@@ -39,9 +38,6 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const [agentEngine, setAgentEngine] = useState(project.agentEngine ?? '');
 	const [engineSettings, setEngineSettings] = useState<Record<string, Record<string, unknown>>>(
 		project.engineSettings ?? {},
-	);
-	const [subscriptionCostZero, setSubscriptionCostZero] = useState(
-		project.subscriptionCostZero ?? false,
 	);
 
 	const updateMutation = useMutation({
@@ -68,7 +64,6 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 			workItemBudgetUsd: workItemBudgetUsd || null,
 			agentEngine: agentEngine || null,
 			engineSettings: Object.keys(engineSettings).length > 0 ? engineSettings : null,
-			subscriptionCostZero,
 		});
 	}
 
@@ -125,36 +120,24 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 					/>
 				</div>
 			</div>
-			<div className="grid grid-cols-2 gap-4">
-				<div className="space-y-2">
-					<Label>Agent Engine</Label>
-					<Select
-						value={agentEngine || '_none'}
-						onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
-					>
-						<SelectTrigger className="w-full">
-							<SelectValue placeholder="Inherits from defaults" />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectItem value="_none">Inherits from defaults</SelectItem>
-							{enginesQuery.data?.map((engine) => (
-								<SelectItem key={engine.id} value={engine.id}>
-									{engine.label}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-				</div>
-				<div className="flex items-center gap-2 pt-6">
-					<input
-						id="subscriptionCostZero"
-						type="checkbox"
-						checked={subscriptionCostZero}
-						onChange={(e) => setSubscriptionCostZero(e.target.checked)}
-						className="h-4 w-4 rounded border-input"
-					/>
-					<Label htmlFor="subscriptionCostZero">Subscription Cost Zero</Label>
-				</div>
+			<div className="space-y-2">
+				<Label>Agent Engine</Label>
+				<Select
+					value={agentEngine || '_none'}
+					onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
+				>
+					<SelectTrigger className="w-full">
+						<SelectValue placeholder="Inherits from defaults" />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="_none">Inherits from defaults</SelectItem>
+						{enginesQuery.data?.map((engine) => (
+							<SelectItem key={engine.id} value={engine.id}>
+								{engine.label}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
 			</div>
 			<EngineSettingsFields
 				engine={effectiveEngine}

@@ -108,7 +108,6 @@ export interface ProjectConfigRaw {
 	agentEngine?: {
 		default?: string;
 		overrides: Record<string, string>;
-		subscriptionCostZero: boolean;
 	};
 }
 
@@ -128,7 +127,6 @@ type ProjectRow = {
 	squintDbUrl: string | null;
 	agentEngine: string | null;
 	agentEngineSettings: EngineSettings | null;
-	subscriptionCostZero: boolean | null;
 };
 
 export function buildAgentMaps(configs: AgentConfigRow[]): {
@@ -179,7 +177,6 @@ function buildAgentEngineConfig(
 	return {
 		default: row.agentEngine ?? undefined,
 		overrides: engines,
-		subscriptionCostZero: row.subscriptionCostZero ?? false,
 	};
 }
 

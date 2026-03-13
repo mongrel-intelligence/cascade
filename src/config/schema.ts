@@ -4,7 +4,6 @@ import { EngineSettingsSchema } from './engineSettings.js';
 const AgentEngineConfigSchema = z.object({
 	default: z.string().default('llmist'),
 	overrides: z.record(z.string()).default({}),
-	subscriptionCostZero: z.boolean().default(false),
 });
 
 const JiraConfigSchema = z.object({

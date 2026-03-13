@@ -92,23 +92,6 @@ describe('ProjectConfigSchema', () => {
 		expect(result.agentEngine).toBeUndefined();
 	});
 
-	it('accepts subscriptionCostZero on agentEngine', () => {
-		const config = {
-			id: 'test',
-			orgId: 'default',
-			name: 'Test',
-			repo: 'owner/repo',
-			trello: { boardId: 'b1', lists: {}, labels: {} },
-			agentEngine: {
-				default: 'claude-code',
-				subscriptionCostZero: true,
-			},
-		};
-
-		const result = ProjectConfigSchema.parse(config);
-		expect(result.agentEngine?.subscriptionCostZero).toBe(true);
-	});
-
 	it('accepts codex engine settings on project config', () => {
 		const config = {
 			id: 'test',
@@ -166,22 +149,6 @@ describe('ProjectConfigSchema', () => {
 		};
 
 		expect(() => ProjectConfigSchema.parse(config)).toThrow('Unsupported engine settings');
-	});
-
-	it('defaults subscriptionCostZero to false', () => {
-		const config = {
-			id: 'test',
-			orgId: 'default',
-			name: 'Test',
-			repo: 'owner/repo',
-			trello: { boardId: 'b1', lists: {}, labels: {} },
-			agentEngine: {
-				default: 'claude-code',
-			},
-		};
-
-		const result = ProjectConfigSchema.parse(config);
-		expect(result.agentEngine?.subscriptionCostZero).toBe(false);
 	});
 
 	it('applies default "llmist" for agentEngine.default when object provided', () => {

@@ -38,7 +38,6 @@ export async function createProject(
 		workItemBudgetUsd?: string | null;
 		agentEngine?: string | null;
 		engineSettings?: EngineSettings | null;
-		subscriptionCostZero?: boolean;
 	},
 ) {
 	const db = getDb();
@@ -58,7 +57,6 @@ export async function createProject(
 			...(engineSettings !== undefined
 				? { agentEngineSettings: normalizeEngineSettings(engineSettings) }
 				: {}),
-			subscriptionCostZero: rest.subscriptionCostZero ?? false,
 		})
 		.returning();
 	return row;
@@ -76,7 +74,6 @@ export async function updateProject(
 		workItemBudgetUsd?: string | null;
 		agentEngine?: string | null;
 		engineSettings?: EngineSettings | null;
-		subscriptionCostZero?: boolean;
 	},
 ) {
 	const db = getDb();

@@ -39,7 +39,6 @@ const projectRow = {
 	model: null,
 	workItemBudgetUsd: null,
 	agentEngine: null,
-	subscriptionCostZero: false,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };
@@ -50,7 +49,6 @@ const projectRowWithBackend = {
 	name: 'Project Two',
 	repo: 'owner/repo2',
 	agentEngine: 'claude-code',
-	subscriptionCostZero: true,
 };
 
 const trelloIntegration = {
@@ -247,7 +245,6 @@ describe('configRepository', () => {
 
 			expect(proj.agentEngine).toBeDefined();
 			expect(proj.agentEngine?.default).toBe('claude-code');
-			expect(proj.agentEngine?.subscriptionCostZero).toBe(true);
 		});
 
 		it('builds agent engine overrides from agentEngine column in agent_configs', async () => {

@@ -1,6 +1,5 @@
 import { Args } from '@oclif/core';
 import { DashboardCommand } from '../_shared/base.js';
-import { formatBoolean } from '../_shared/format.js';
 
 export default class ProjectsShow extends DashboardCommand {
 	static override description = 'Show project details.';
@@ -33,7 +32,6 @@ export default class ProjectsShow extends DashboardCommand {
 				model: { label: 'Model' },
 				workItemBudgetUsd: { label: 'Work Item Budget' },
 				agentEngine: { label: 'Engine' },
-				subscriptionCostZero: { label: 'Sub Cost Zero', format: formatBoolean },
 			});
 		} catch (err) {
 			this.handleError(err);
