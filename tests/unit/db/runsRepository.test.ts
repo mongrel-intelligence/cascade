@@ -46,6 +46,7 @@ vi.mock('../../../src/db/schema/index.js', () => ({
 		error: 'error',
 		prUrl: 'pr_url',
 		outputSummary: 'output_summary',
+		jobId: 'job_id',
 	},
 	agentRunLogs: { runId: 'run_id' },
 	agentRunLlmCalls: {
