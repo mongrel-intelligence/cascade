@@ -312,4 +312,29 @@ export const jiraClient = {
 			},
 		});
 	},
+
+	async createCustomField(name: string, type: string): Promise<{ id: string; name: string }> {
+		logger.debug('Creating JIRA custom field', { name, type });
+		try {
+			const result = await getClient().issueFields.createCustomField({
+				name,
+				type,
+			});
+			return {
+				id: (result as { id?: string }).id ?? '',
+				name: (result as { name?: string }).name ?? '',
+			};
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : String(error);
+			const detail =
+				error instanceof Object && 'response' in error
+					? (error as { response?: { data?: unknown } }).response?.data
+					: undefined;
+			const detailStr = detail ? ` — JIRA response: ${JSON.stringify(detail)}` : '';
+
+			logger.error('JIRA createCustomField failed', { name, type, detail });
+
+			throw new Error(`JIRA createCustomField requires admin permissions: ${message}${detailStr}`);
+		}
+	},
 };
