@@ -77,7 +77,7 @@ export const credentialsRouter = router({
 			}
 
 			if (cred.orgId !== ctx.effectiveOrgId && ctx.user.role !== 'superadmin') {
-				throw new TRPCError({ code: 'FORBIDDEN' });
+				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 
 			const { id, ...updates } = input;
@@ -99,7 +99,7 @@ export const credentialsRouter = router({
 			}
 
 			if (cred.orgId !== ctx.effectiveOrgId && ctx.user.role !== 'superadmin') {
-				throw new TRPCError({ code: 'FORBIDDEN' });
+				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 
 			await deleteCredential(input.id);
@@ -119,7 +119,7 @@ export const credentialsRouter = router({
 			}
 
 			if (cred.orgId !== ctx.effectiveOrgId && ctx.user.role !== 'superadmin') {
-				throw new TRPCError({ code: 'FORBIDDEN' });
+				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 
 			try {
