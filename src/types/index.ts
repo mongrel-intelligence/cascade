@@ -87,6 +87,10 @@ export interface TriggerResult {
 	/** Display title of the work item (e.g. Trello card name, Jira issue summary). */
 	workItemTitle?: string;
 	prNumber?: number;
+	/** URL to the pull request (e.g. https://github.com/owner/repo/pull/123). */
+	prUrl?: string;
+	/** Display title of the pull request. */
+	prTitle?: string;
 	/** When true, the worker must poll for all CI checks to pass before starting the agent. */
 	waitForChecks?: boolean;
 	/** Called when the router cannot enqueue the job (work-item lock, concurrency limit).

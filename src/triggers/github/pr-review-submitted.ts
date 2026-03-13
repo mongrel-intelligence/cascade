@@ -2,7 +2,7 @@ import { getPersonaForLogin } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
-import { isGitHubPullRequestReviewPayload } from './types.js';
+import { type GitHubPullRequestReviewPayload, isGitHubPullRequestReviewPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
 
 export class PRReviewSubmittedTrigger implements TriggerHandler {
@@ -36,17 +36,7 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 		}
 
 		// Type assertion since we validated in matches()
-		const reviewPayload = ctx.payload as {
-			pull_request: { number: number; body: string | null; head: { ref: string } };
-			repository: { full_name: string };
-			review: {
-				id: number;
-				body: string | null;
-				html_url: string;
-				state: string;
-				user: { login: string };
-			};
-		};
+		const reviewPayload = ctx.payload as GitHubPullRequestReviewPayload;
 
 		const prNumber = reviewPayload.pull_request.number;
 		const reviewAuthor = reviewPayload.review.user.login;
@@ -89,6 +79,8 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 				triggerCommentUrl: reviewPayload.review.html_url,
 			},
 			prNumber,
+			prUrl: reviewPayload.pull_request.html_url,
+			prTitle: reviewPayload.pull_request.title,
 			workItemId,
 		};
 	}

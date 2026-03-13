@@ -111,6 +111,8 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 				workItemId: workItemId,
 			},
 			prNumber,
+			prUrl: payload.pull_request.html_url,
+			prTitle: payload.pull_request.title,
 			workItemId,
 			onBlocked: () => releaseReviewDispatch(reviewDispatchKey),
 		};

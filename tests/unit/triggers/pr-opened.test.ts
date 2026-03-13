@@ -176,6 +176,8 @@ describe('PROpenedTrigger', () => {
 					triggerEvent: 'scm:pr-opened',
 				},
 				prNumber: 42,
+				prUrl: 'https://github.com/owner/repo/pull/42',
+				prTitle: 'Test PR',
 				workItemId: 'abc123',
 			});
 		});

@@ -711,3 +711,112 @@ describe('linkPRPostExecution PR title backfill (via runAgentExecutionPipeline)'
 		);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Pre-execution PR linking (via runAgentExecutionPipeline)
+// ---------------------------------------------------------------------------
+
+describe('pre-execution PR linking (via runAgentExecutionPipeline)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockCreatePMProvider.mockReturnValue({});
+		mockResolveProjectPMConfig.mockReturnValue(PM_CONFIG);
+		mockValidateIntegrations.mockResolvedValue({ valid: true, errors: [] });
+		mockCheckBudgetExceeded.mockResolvedValue(null);
+		mockHandleAgentResultArtifacts.mockResolvedValue(undefined);
+		mockShouldTriggerDebug.mockResolvedValue(null);
+		mockGetSessionState.mockReturnValue({});
+		mockRunAgent.mockResolvedValue({ success: true, output: '', runId: 'run-1' });
+	});
+
+	it('calls linkPRToWorkItem before agent runs when result has prNumber', async () => {
+		await runAgentExecutionPipeline(
+			{
+				agentType: 'review',
+				agentInput: {},
+				prNumber: 42,
+				prUrl: 'https://github.com/acme/myapp/pull/42',
+				prTitle: 'Test PR',
+				workItemId: 'card-1',
+			},
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(vi.mocked(linkPRToWorkItem)).toHaveBeenCalledWith(
+			'project-1',
+			'acme/myapp',
+			42,
+			'card-1',
+			expect.objectContaining({
+				prUrl: 'https://github.com/acme/myapp/pull/42',
+				prTitle: 'Test PR',
+			}),
+		);
+	});
+
+	it('creates orphan PR entry when prNumber is set but workItemId is undefined', async () => {
+		await runAgentExecutionPipeline(
+			{
+				agentType: 'review',
+				agentInput: {},
+				prNumber: 42,
+				prUrl: 'https://github.com/acme/myapp/pull/42',
+				prTitle: 'Test PR',
+			},
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(vi.mocked(linkPRToWorkItem)).toHaveBeenCalledWith(
+			'project-1',
+			'acme/myapp',
+			42,
+			null,
+			expect.objectContaining({
+				prUrl: 'https://github.com/acme/myapp/pull/42',
+				prTitle: 'Test PR',
+			}),
+		);
+	});
+
+	it('skips pre-execution linkPRToWorkItem when no prNumber', async () => {
+		await runAgentExecutionPipeline(
+			{ agentType: 'implementation', agentInput: {}, workItemId: 'card-1' },
+			PROJECT,
+			CONFIG,
+		);
+
+		// linkPRToWorkItem should not have been called pre-execution
+		// (it may be called post-execution if the agent produces a prUrl, but
+		// our mock agent returns no prUrl so it won't be called at all)
+		expect(vi.mocked(linkPRToWorkItem)).not.toHaveBeenCalled();
+	});
+
+	it('continues pipeline when pre-execution linkPRToWorkItem fails', async () => {
+		vi.mocked(linkPRToWorkItem).mockRejectedValueOnce(new Error('DB connection failed'));
+
+		await runAgentExecutionPipeline(
+			{
+				agentType: 'review',
+				agentInput: {},
+				prNumber: 42,
+				prUrl: 'https://github.com/acme/myapp/pull/42',
+				prTitle: 'Test PR',
+				workItemId: 'card-1',
+			},
+			PROJECT,
+			CONFIG,
+		);
+
+		// Agent should still have run despite the linkPRToWorkItem failure
+		expect(mockRunAgent).toHaveBeenCalledWith('review', expect.anything());
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			'Failed to ensure pr_work_items entry for PR-triggered run',
+			expect.objectContaining({
+				projectId: 'project-1',
+				prNumber: 42,
+			}),
+		);
+	});
+});

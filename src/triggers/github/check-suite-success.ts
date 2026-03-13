@@ -206,6 +206,8 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 				workItemId: workItemId,
 			},
 			prNumber,
+			prUrl: prDetails.htmlUrl,
+			prTitle: prDetails.title,
 			workItemId,
 			waitForChecks: true,
 			onBlocked: () => releaseReviewDispatch(dedupKey),
