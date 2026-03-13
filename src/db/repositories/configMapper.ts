@@ -47,8 +47,7 @@ export interface DefaultsRow {
 }
 
 export interface AgentConfigRow {
-	orgId: string | null;
-	projectId: string | null;
+	projectId: string;
 	agentType: string;
 	model: string | null;
 	maxIterations: number | null;
@@ -184,17 +183,10 @@ function buildAgentEngineConfig(
 // Public mapping functions
 // ---------------------------------------------------------------------------
 
-export function mapDefaultsRow(
-	row: DefaultsRow | undefined,
-	globalAgentConfigs: AgentConfigRow[],
-): Record<string, unknown> {
-	const { models, iterations } = buildAgentMaps(globalAgentConfigs);
-
+export function mapDefaultsRow(row: DefaultsRow | undefined): Record<string, unknown> {
 	return {
 		model: row?.model ?? undefined,
-		agentModels: orUndefined(models),
 		maxIterations: row?.maxIterations ?? undefined,
-		agentIterations: orUndefined(iterations),
 		watchdogTimeoutMs: row?.watchdogTimeoutMs ?? undefined,
 		workItemBudgetUsd: row?.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
 		agentEngine: row?.agentEngine ?? undefined,

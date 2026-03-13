@@ -45,34 +45,14 @@ describe('Database Repository Edge Cases (integration)', () => {
 	});
 
 	// =========================================================================
-	// Agent Config 4-Level Resolution Cascade
+	// Agent Config Project-Level Resolution
 	// =========================================================================
 
-	describe('agent config resolution cascade', () => {
-		it('resolves global → org → project config hierarchy', async () => {
+	describe('agent config project-level resolution', () => {
+		it('applies project-level agent config model override', async () => {
 			await seedDefaults();
 
-			// Global (no org, no project)
 			await seedAgentConfig({
-				orgId: null,
-				projectId: null,
-				agentType: 'implementation',
-				model: 'global-model',
-				maxIterations: 10,
-			});
-
-			// Org-level (org set, no project)
-			await seedAgentConfig({
-				orgId: 'test-org',
-				projectId: null,
-				agentType: 'implementation',
-				model: 'org-model',
-				maxIterations: 20,
-			});
-
-			// Project-level (project set)
-			await seedAgentConfig({
-				orgId: null,
 				projectId: 'test-project',
 				agentType: 'implementation',
 				model: 'project-model',
@@ -80,34 +60,14 @@ describe('Database Repository Edge Cases (integration)', () => {
 			});
 
 			const config = await loadConfigFromDb();
-
-			// Global defaults should reflect global agent config
-			expect(config.defaults.agentModels.implementation).toBe('org-model');
-
-			// Project-level config should override
 			const project = config.projects[0];
 			expect(project.agentModels?.implementation).toBe('project-model');
 		});
 
-		it('handles multiple agent types with independent overrides', async () => {
+		it('handles multiple agent types with independent project overrides', async () => {
 			await seedDefaults();
 
 			await seedAgentConfig({
-				orgId: null,
-				projectId: null,
-				agentType: 'implementation',
-				model: 'global-impl-model',
-			});
-			await seedAgentConfig({
-				orgId: null,
-				projectId: null,
-				agentType: 'review',
-				model: 'global-review-model',
-			});
-
-			// Project overrides only implementation
-			await seedAgentConfig({
-				orgId: null,
 				projectId: 'test-project',
 				agentType: 'implementation',
 				model: 'project-impl-model',
@@ -119,8 +79,6 @@ describe('Database Repository Edge Cases (integration)', () => {
 			expect(project.agentModels?.implementation).toBe('project-impl-model');
 			// review not overridden at project level
 			expect(project.agentModels?.review).toBeUndefined();
-			// Global still has review model
-			expect(config.defaults.agentModels.review).toBe('global-review-model');
 		});
 	});
 

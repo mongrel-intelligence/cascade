@@ -108,7 +108,7 @@ CASCADE stores all project configuration in PostgreSQL (Supabase). The `config/p
 - `projects` - Per-project config (repo, base branch, budget, backend)
 - `project_integrations` - Integration configs per project with `category` (pm/scm/email), `provider` (trello/jira/github/imap/gmail), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
 - `integration_credentials` - Links integration roles to org-scoped credential rows (e.g., `api_key` → credential #5). Roles are provider-specific: trello has `api_key`/`token`, jira has `email`/`api_token`, github has `implementer_token`/`reviewer_token`
-- `agent_configs` - Per-agent-type overrides (model, iterations, backend, prompt), scoped globally, per-org, or per-project
+- `agent_configs` - Per-agent-type overrides (model, iterations, engine, max_concurrency), project-scoped only (`project_id NOT NULL`)
 - `credentials` - Org-scoped credentials (API keys, tokens)
 - `users` - Dashboard users (email, bcrypt password hash, org-scoped)
 - `sessions` - Session tokens for cookie-based auth (30-day expiry)
@@ -453,8 +453,8 @@ cascade org show
 cascade org update --name "My Org"
 
 # Agent Configs
-cascade agents list [--project-id ID]
-cascade agents create --agent-type implementation --model claude-sonnet-4-5-20250929 [--project-id ID]
+cascade agents list --project-id ID
+cascade agents create --agent-type implementation --model claude-sonnet-4-5-20250929 --project-id ID
 cascade agents update <id> --max-iterations 30
 cascade agents delete <id> --yes
 

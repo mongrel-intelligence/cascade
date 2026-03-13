@@ -1,14 +1,12 @@
 #!/usr/bin/env tsx
 /**
- * Resolve and display the full effective configuration for an agent in a project/org context.
+ * Resolve and display the full effective configuration for an agent in a project context.
  *
  * Merges all configuration layers:
  *   1. cascade_defaults (org-level global defaults)
- *   2. Global agent_configs (org_id IS NULL, project_id IS NULL)
- *   3. Org-level agent_configs (org_id set, project_id IS NULL)
- *   4. Project-level agent_configs (project_id set)
- *   5. Project row overrides (model, workItemBudgetUsd, agentEngine)
- *   6. Resolved credentials (integration credentials + org defaults)
+ *   2. Project-level agent_configs (project_id set)
+ *   3. Project row overrides (model, workItemBudgetUsd, agentEngine)
+ *   4. Resolved credentials (integration credentials + org defaults)
  *
  * Usage:
  *   npx tsx tools/resolve-config.ts <project-id> <agent-type>
@@ -17,7 +15,7 @@
  * Requires DATABASE_URL to be set.
  */
 
-import { and, eq, isNull } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
 	type IntegrationProvider,
 	PROVIDER_CREDENTIAL_ROLES,
@@ -50,7 +48,6 @@ interface AgentConfigInfo {
 	model: string | null;
 	maxIterations: number | null;
 	agentEngine: string | null;
-	prompt: string | null;
 }
 
 interface EffectiveConfig {
@@ -62,14 +59,9 @@ interface EffectiveConfig {
 	effectiveModel: string;
 	effectiveMaxIterations: number;
 	effectiveEngine: string;
-	effectivePrompt: string | null;
 	orgDefaults: Record<string, string | number | null>;
 	projectOverrides: Record<string, string | number | boolean | null>;
-	agentConfigLayers: {
-		global: AgentConfigInfo | null;
-		org: AgentConfigInfo | null;
-		project: AgentConfigInfo | null;
-	};
+	projectAgentConfig: AgentConfigInfo | null;
 	trello: TrelloIntegrationConfig | null;
 	credentials: Record<string, string>;
 	integrationCredentials: { category: string; provider: string; role: string; value: string }[];
@@ -81,25 +73,7 @@ function toInfo(ac: typeof agentConfigs.$inferSelect | null | undefined): AgentC
 		model: ac.model,
 		maxIterations: ac.maxIterations,
 		agentEngine: ac.agentEngine,
-		prompt: ac.prompt,
 	};
-}
-
-function resolveEngine(
-	projectAc: AgentConfigInfo | null,
-	orgAc: AgentConfigInfo | null,
-	globalAc: AgentConfigInfo | null,
-	projectEngineDefault: string | null,
-	orgEngine: string | null,
-): string {
-	return (
-		projectAc?.agentEngine ??
-		orgAc?.agentEngine ??
-		globalAc?.agentEngine ??
-		projectEngineDefault ??
-		orgEngine ??
-		'llmist'
-	);
 }
 
 function buildCredentialMap(
@@ -129,26 +103,17 @@ async function resolveEffectiveConfig(
 
 	const orgId = projectRow.orgId;
 
-	const [defaultsRow, globalAcs, orgAcs, projectAcs, integrations, integrationCreds, orgCreds] =
-		await Promise.all([
-			db
-				.select()
-				.from(cascadeDefaults)
-				.where(eq(cascadeDefaults.orgId, orgId))
-				.then((r) => r[0]),
-			db
-				.select()
-				.from(agentConfigs)
-				.where(and(isNull(agentConfigs.projectId), isNull(agentConfigs.orgId))),
-			db
-				.select()
-				.from(agentConfigs)
-				.where(and(eq(agentConfigs.orgId, orgId), isNull(agentConfigs.projectId))),
-			db.select().from(agentConfigs).where(eq(agentConfigs.projectId, projectId)),
-			db.select().from(projectIntegrations).where(eq(projectIntegrations.projectId, projectId)),
-			resolveAllIntegrationCredentials(projectId),
-			resolveAllOrgCredentials(orgId),
-		]);
+	const [defaultsRow, projectAcs, integrations, integrationCreds, orgCreds] = await Promise.all([
+		db
+			.select()
+			.from(cascadeDefaults)
+			.where(eq(cascadeDefaults.orgId, orgId))
+			.then((r) => r[0]),
+		db.select().from(agentConfigs).where(eq(agentConfigs.projectId, projectId)),
+		db.select().from(projectIntegrations).where(eq(projectIntegrations.projectId, projectId)),
+		resolveAllIntegrationCredentials(projectId),
+		resolveAllOrgCredentials(orgId),
+	]);
 
 	const credentials = buildCredentialMap(integrationCreds, orgCreds);
 
@@ -159,8 +124,6 @@ async function resolveEffectiveConfig(
 	const findByType = (acs: (typeof agentConfigs.$inferSelect)[]) =>
 		agentType ? acs.find((ac) => ac.agentType === agentType) : null;
 
-	const globalAc = toInfo(findByType(globalAcs));
-	const orgAc = toInfo(findByType(orgAcs));
 	const projectAc = toInfo(findByType(projectAcs));
 
 	return {
@@ -171,25 +134,12 @@ async function resolveEffectiveConfig(
 		agentType,
 		effectiveModel:
 			projectAc?.model ??
-			orgAc?.model ??
-			globalAc?.model ??
 			projectRow.model ??
 			defaultsRow?.model ??
 			'openrouter:google/gemini-3-flash-preview',
-		effectiveMaxIterations:
-			projectAc?.maxIterations ??
-			orgAc?.maxIterations ??
-			globalAc?.maxIterations ??
-			defaultsRow?.maxIterations ??
-			50,
-		effectiveEngine: resolveEngine(
-			projectAc,
-			orgAc,
-			globalAc,
-			projectRow.agentEngine,
-			defaultsRow?.agentEngine ?? null,
-		),
-		effectivePrompt: projectAc?.prompt ?? orgAc?.prompt ?? globalAc?.prompt ?? null,
+		effectiveMaxIterations: projectAc?.maxIterations ?? defaultsRow?.maxIterations ?? 50,
+		effectiveEngine:
+			projectAc?.agentEngine ?? projectRow.agentEngine ?? defaultsRow?.agentEngine ?? 'llmist',
 		orgDefaults: {
 			model: defaultsRow?.model ?? null,
 			maxIterations: defaultsRow?.maxIterations ?? null,
@@ -206,7 +156,7 @@ async function resolveEffectiveConfig(
 			baseBranch: projectRow.baseBranch,
 			branchPrefix: projectRow.branchPrefix,
 		},
-		agentConfigLayers: { global: globalAc, org: orgAc, project: projectAc },
+		projectAgentConfig: projectAc,
 		trello: trelloConfig ?? null,
 		credentials,
 		integrationCredentials: integrationCreds,
@@ -236,10 +186,6 @@ function printAgentLayer(name: string, data: AgentConfigInfo | null): void {
 	if (data.model) console.log(`    model: ${data.model}`);
 	if (data.maxIterations != null) console.log(`    maxIterations: ${data.maxIterations}`);
 	if (data.agentEngine) console.log(`    agentEngine: ${data.agentEngine}`);
-	if (data.prompt) {
-		const truncated = data.prompt.length > 80 ? `${data.prompt.slice(0, 80)}...` : data.prompt;
-		console.log(`    prompt: ${truncated}`);
-	}
 }
 
 function printTrello(trello: TrelloIntegrationConfig | null): void {
@@ -315,13 +261,10 @@ function printConfig(config: EffectiveConfig): void {
 			['Model', config.effectiveModel],
 			['Max iterations', config.effectiveMaxIterations],
 			['Engine', config.effectiveEngine],
-			['Prompt', config.effectivePrompt ?? '(none)'],
 		]);
 
 		console.log('\n--- Resolution Chain ---');
-		printAgentLayer('Project agent_config', config.agentConfigLayers.project);
-		printAgentLayer('Org agent_config', config.agentConfigLayers.org);
-		printAgentLayer('Global agent_config', config.agentConfigLayers.global);
+		printAgentLayer('Project agent_config', config.projectAgentConfig);
 	}
 
 	printKeyValueSection('Org Defaults (cascade_defaults)', config.orgDefaults);

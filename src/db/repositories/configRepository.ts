@@ -1,4 +1,4 @@
-import { type SQL, and, eq, isNull, sql } from 'drizzle-orm';
+import { type SQL, eq, sql } from 'drizzle-orm';
 import { mergeEngineSettings } from '../../config/engineSettings.js';
 import { validateConfig } from '../../config/schema.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
@@ -19,7 +19,6 @@ import {
 
 interface BuildRawConfigOpts {
 	defaultsRow: DefaultsRow | undefined;
-	globalAgentConfigs: AgentConfigRow[];
 	projectRows: Array<typeof projects.$inferSelect>;
 	/** All integration rows for all projects in projectRows */
 	integrationRows: IntegrationRow[];
@@ -29,7 +28,6 @@ interface BuildRawConfigOpts {
 
 function buildRawConfig({
 	defaultsRow,
-	globalAgentConfigs,
 	projectRows,
 	integrationRows,
 	projectAgentConfigsMap,
@@ -43,7 +41,7 @@ function buildRawConfig({
 	}
 
 	return {
-		defaults: mapDefaultsRow(defaultsRow, globalAgentConfigs),
+		defaults: mapDefaultsRow(defaultsRow),
 		projects: projectRows.map((row) => {
 			const integrations = integrationsByProject.get(row.id) ?? [];
 			const { trelloConfig, jiraConfig, githubConfig } = extractIntegrationConfigs(integrations);
@@ -87,34 +85,16 @@ export async function loadConfigFromDb(): Promise<CascadeConfig> {
 		db.select().from(projectIntegrations),
 	]);
 
-	// Split agent configs: global (project_id IS NULL, org_id IS NULL) and per-project
-	// Also collect org-level configs (org_id set, project_id IS NULL) as fallback globals
-	const globalAgentConfigs = allAgentConfigs.filter(
-		(ac) => ac.projectId === null && ac.orgId === null,
-	);
-	const orgAgentConfigsMap = new Map<string, AgentConfigRow[]>();
+	// All agent configs are project-scoped (project_id IS NOT NULL) after migration 0036
 	const projectAgentConfigsMap = new Map<string, AgentConfigRow[]>();
 	for (const ac of allAgentConfigs) {
-		if (ac.projectId !== null) {
-			const existing = projectAgentConfigsMap.get(ac.projectId) ?? [];
-			existing.push(ac);
-			projectAgentConfigsMap.set(ac.projectId, existing);
-		} else if (ac.orgId !== null) {
-			const existing = orgAgentConfigsMap.get(ac.orgId) ?? [];
-			existing.push(ac);
-			orgAgentConfigsMap.set(ac.orgId, existing);
-		}
+		const existing = projectAgentConfigsMap.get(ac.projectId) ?? [];
+		existing.push(ac);
+		projectAgentConfigsMap.set(ac.projectId, existing);
 	}
-
-	// Merge global + org-level agent configs for defaults
-	const mergedGlobalConfigs = [
-		...globalAgentConfigs,
-		...(defaultsRow ? (orgAgentConfigsMap.get(defaultsRow.orgId) ?? []) : []),
-	];
 
 	const rawConfig = buildRawConfig({
 		defaultsRow,
-		globalAgentConfigs: mergedGlobalConfigs,
 		projectRows,
 		integrationRows: integrationRows as IntegrationRow[],
 		projectAgentConfigsMap,
@@ -130,16 +110,8 @@ async function findProjectConfigFromDb(
 	const [row] = await db.select().from(projects).where(whereClause);
 	if (!row) return undefined;
 
-	const [projectAcs, orgAcs, globalAcs, defaultsRow, integrations] = await Promise.all([
+	const [projectAcs, defaultsRow, integrations] = await Promise.all([
 		db.select().from(agentConfigs).where(eq(agentConfigs.projectId, row.id)),
-		db
-			.select()
-			.from(agentConfigs)
-			.where(and(eq(agentConfigs.orgId, row.orgId), isNull(agentConfigs.projectId))),
-		db
-			.select()
-			.from(agentConfigs)
-			.where(and(isNull(agentConfigs.projectId), isNull(agentConfigs.orgId))),
 		db
 			.select()
 			.from(cascadeDefaults)
@@ -152,7 +124,6 @@ async function findProjectConfigFromDb(
 
 	const rawConfig = buildRawConfig({
 		defaultsRow,
-		globalAgentConfigs: [...globalAcs, ...orgAcs],
 		projectRows: [row],
 		integrationRows: integrations as IntegrationRow[],
 		projectAgentConfigsMap,

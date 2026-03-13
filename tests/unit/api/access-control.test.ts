@@ -76,7 +76,7 @@ vi.mock('../../../src/db/client.js', () => ({
 vi.mock('../../../src/db/schema/index.js', () => ({
 	credentials: { id: 'id', orgId: 'org_id', value: 'value' },
 	projects: { id: 'id', orgId: 'org_id' },
-	agentConfigs: { id: 'id', orgId: 'org_id', projectId: 'project_id' },
+	agentConfigs: { id: 'id', projectId: 'project_id' },
 	organizations: { id: 'id', name: 'name' },
 	cascadeDefaults: { orgId: 'org_id' },
 }));

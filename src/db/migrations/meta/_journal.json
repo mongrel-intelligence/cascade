@@ -253,6 +253,13 @@
 			"when": 1770000000000,
 			"tag": "0035_add_job_id_to_runs",
 			"breakpoints": false
+		},
+		{
+			"idx": 36,
+			"version": "7",
+			"when": 1771000000000,
+			"tag": "0036_project_only_agent_configs",
+			"breakpoints": false
 		}
 	]
 }

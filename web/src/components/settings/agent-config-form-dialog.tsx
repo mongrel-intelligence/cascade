@@ -20,15 +20,9 @@ interface AgentConfigFormDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	config?: AgentConfig;
-	isGlobalScope?: boolean;
 }
 
-export function AgentConfigFormDialog({
-	open,
-	onOpenChange,
-	config,
-	isGlobalScope = false,
-}: AgentConfigFormDialogProps) {
+export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfigFormDialogProps) {
 	const queryClient = useQueryClient();
 	const isEdit = !!config && config.id !== 0;
 	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
@@ -39,15 +33,14 @@ export function AgentConfigFormDialog({
 	const [agentEngine, setAgentEngine] = useState(config?.agentEngine ?? '');
 	const [maxConcurrency, setMaxConcurrency] = useState(config?.maxConcurrency?.toString() ?? '');
 
-	const queryKey = isGlobalScope
-		? trpc.agentConfigs.listGlobal.queryOptions().queryKey
-		: trpc.agentConfigs.list.queryOptions().queryKey;
+	const queryKey = trpc.agentConfigs.list.queryOptions({
+		projectId: config?.projectId ?? '',
+	}).queryKey;
 
 	const createMutation = useMutation({
 		mutationFn: () =>
 			trpcClient.agentConfigs.create.mutate({
-				orgId: isGlobalScope ? null : config?.orgId,
-				projectId: config?.projectId,
+				projectId: config?.projectId as string,
 				agentType,
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,

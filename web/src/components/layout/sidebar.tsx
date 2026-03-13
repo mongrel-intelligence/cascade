@@ -6,7 +6,6 @@ import { Link, useRouterState } from '@tanstack/react-router';
 import {
 	Activity,
 	BookOpen,
-	Bot,
 	Building,
 	FolderGit2,
 	KeyRound,
@@ -25,7 +24,6 @@ const mainNav = [{ to: '/' as const, label: 'Runs', icon: Activity }];
 const globalNav = [
 	{ to: '/global/runs' as const, label: 'Global Runs', icon: Activity },
 	{ to: '/global/webhook-logs' as const, label: 'Webhook Logs', icon: Zap },
-	{ to: '/global/agent-configs' as const, label: 'Global Agent Configs', icon: Bot },
 	{ to: '/global/defaults' as const, label: 'Cascade Defaults', icon: SlidersHorizontal },
 	{ to: '/global/definitions' as const, label: 'Agent Definitions', icon: BookOpen },
 	{ to: '/global/organizations' as const, label: 'Organizations', icon: Building },
@@ -34,7 +32,6 @@ const globalNav = [
 const settingsNav = [
 	{ to: '/settings/general' as const, label: 'General', icon: Settings },
 	{ to: '/settings/credentials' as const, label: 'Credentials', icon: KeyRound },
-	{ to: '/settings/agents' as const, label: 'Agent Configs', icon: Bot },
 ];
 
 function NavLink({
