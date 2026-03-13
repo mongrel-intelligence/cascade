@@ -40,12 +40,17 @@ describe('agentConfigsRepository', () => {
 			expect(result).toEqual(configs);
 		});
 
-		it('filters by projectId when provided', async () => {
+		it('filters by projectId and fetches orgId if not provided', async () => {
 			const configs = [{ id: 2, agentType: 'review', projectId: 'p1' }];
+			// First call: fetch orgId from projects table
+			mockDb.chain.where.mockReturnValueOnce({ limit: mockDb.chain.limit });
+			mockDb.chain.limit.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			// Second call: list configs with the fetched orgId
 			mockDb.chain.where.mockResolvedValueOnce(configs);
 
 			const result = await listAgentConfigs({ projectId: 'p1' });
 			expect(result).toEqual(configs);
+			expect(mockDb.db.select).toHaveBeenCalledTimes(2);
 		});
 
 		it('filters by projectId and includes fallbacks when orgId provided', async () => {
@@ -132,18 +137,16 @@ describe('agentConfigsRepository', () => {
 			expect(result).toBe(3);
 		});
 
-		it('falls back to global-scoped limit if org-scoped is not set', async () => {
+		it('falls back to global-scoped limit if project is not found', async () => {
 			// First call (project-scoped): return empty
 			mockDb.chain.limit.mockResolvedValueOnce([]);
-			// Second call (fetch orgId from project): return org-1
-			mockDb.chain.limit.mockResolvedValueOnce([{ orgId: 'org-1' }]);
-			// Third call (org-scoped): return empty
+			// Second call (fetch orgId from project): return empty (project not found)
 			mockDb.chain.limit.mockResolvedValueOnce([]);
-			// Fourth call (global-scoped): return limit 2
-			mockDb.chain.limit.mockResolvedValueOnce([{ maxConcurrency: 2 }]);
+			// Third call (global-scoped): return limit 1
+			mockDb.chain.limit.mockResolvedValueOnce([{ maxConcurrency: 1 }]);
 
-			const result = await getMaxConcurrency('p-proj-3', 'implementation');
-			expect(result).toBe(2);
+			const result = await getMaxConcurrency('missing-project', 'implementation');
+			expect(result).toBe(1);
 		});
 	});
 });
