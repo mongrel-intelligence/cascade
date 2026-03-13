@@ -17,10 +17,6 @@ export default class ProjectsUpdate extends DashboardCommand {
 		model: Flags.string({ description: 'Default model' }),
 		'work-item-budget': Flags.string({ description: 'Per-work-item budget in USD' }),
 		'agent-engine': Flags.string({ description: 'Agent engine' }),
-		'subscription-cost-zero': Flags.boolean({
-			description: 'Zero costs for subscription engines',
-			allowNo: true,
-		}),
 	};
 
 	async run(): Promise<void> {
@@ -36,7 +32,6 @@ export default class ProjectsUpdate extends DashboardCommand {
 				model: flags.model,
 				workItemBudgetUsd: flags['work-item-budget'],
 				agentEngine: flags['agent-engine'],
-				subscriptionCostZero: flags['subscription-cost-zero'],
 			});
 
 			if (flags.json) {

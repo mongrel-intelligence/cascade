@@ -61,8 +61,7 @@
 					"respond-to-review": "claude-code",
 					"respond-to-ci": "claude-code",
 					"respond-to-pr-comment": "claude-code"
-				},
-				"subscriptionCostZero": true
+				}
 			},
 			"agentModels": {
 				"planning": "openrouter:google/gemini-3-flash-preview",

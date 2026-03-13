@@ -239,6 +239,13 @@
 			"when": 1768000000000,
 			"tag": "0033_add_engine_settings",
 			"breakpoints": false
+		},
+		{
+			"idx": 34,
+			"version": "7",
+			"when": 1769000000000,
+			"tag": "0034_remove_subscription_cost_zero",
+			"breakpoints": false
 		}
 	]
 }

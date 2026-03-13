@@ -165,7 +165,6 @@ describe('settingsRepository', () => {
 					repo: 'owner/repo',
 					baseBranch: 'main',
 					branchPrefix: 'feature/',
-					subscriptionCostZero: false,
 				}),
 			);
 		});

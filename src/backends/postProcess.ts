@@ -1,16 +1,14 @@
-import type { AgentInput, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import type { AgentEngine, AgentEngineResult } from './types.js';
 
 /**
- * Post-process an engine result: validate PR creation for agents that require it
- * and zero out cost for subscription-backed Claude Code sessions.
+ * Post-process an engine result: validate PR creation for agents that require it.
  */
 export function postProcessResult(
 	result: AgentEngineResult,
 	agentType: string,
 	engine: AgentEngine,
-	input: AgentInput & { project: ProjectConfig },
+	_input: unknown,
 	identifier: string,
 	options?: {
 		requiresPR?: boolean;
@@ -52,19 +50,5 @@ export function postProcessResult(
 		});
 		result.success = false;
 		result.error = 'Agent completed but no authoritative pushed changes were recorded';
-	}
-
-	// Zero out cost for subscription-backed Claude Code sessions
-	if (
-		engine.definition.id === 'claude-code' &&
-		input.project.agentEngine?.subscriptionCostZero === true &&
-		result.cost !== undefined &&
-		result.cost > 0
-	) {
-		logger.info('Zeroing Claude Code cost (subscription mode)', {
-			originalCost: result.cost,
-			project: input.project.id,
-		});
-		result.cost = 0;
 	}
 }

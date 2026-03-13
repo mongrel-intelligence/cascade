@@ -28,7 +28,6 @@ const baseProjectRow = {
 	squintDbUrl: null,
 	agentEngine: null,
 	agentEngineSettings: null,
-	subscriptionCostZero: false,
 };
 
 const trelloConfig = {
@@ -305,13 +304,11 @@ describe('mapProjectRow', () => {
 					...baseProjectRow,
 					agentEngine: 'claude-code',
 					agentEngineSettings: { codex: { sandboxMode: 'workspace-write' } },
-					subscriptionCostZero: true,
 				},
 			}),
 		);
 		expect(result.agentEngine?.default).toBe('claude-code');
 		expect(result.engineSettings).toEqual({ codex: { sandboxMode: 'workspace-write' } });
-		expect(result.agentEngine?.subscriptionCostZero).toBe(true);
 	});
 
 	it('builds agentEngine overrides from project agent configs', () => {

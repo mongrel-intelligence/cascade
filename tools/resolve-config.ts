@@ -203,7 +203,6 @@ async function resolveEffectiveConfig(
 			model: projectRow.model,
 			workItemBudgetUsd: projectRow.workItemBudgetUsd,
 			agentEngine: projectRow.agentEngine,
-			subscriptionCostZero: projectRow.subscriptionCostZero,
 			baseBranch: projectRow.baseBranch,
 			branchPrefix: projectRow.branchPrefix,
 		},
