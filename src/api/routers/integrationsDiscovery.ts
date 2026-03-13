@@ -223,6 +223,35 @@ export const integrationsDiscoveryRouter = router({
 			return { successes, errors };
 		}),
 
+	createTrelloCustomField: protectedProcedure
+		.input(
+			trelloCredsInput.extend({
+				boardId: z
+					.string()
+					.regex(/^[a-zA-Z0-9]+$/)
+					.max(32),
+				name: z.string().min(1).max(100),
+				type: z.enum(['number', 'text', 'checkbox', 'date', 'list']),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.createTrelloCustomField called', {
+				orgId: ctx.effectiveOrgId,
+				boardId: input.boardId,
+				name: input.name,
+				type: input.type,
+			});
+			return withResolvedTrelloCreds(
+				input,
+				ctx.effectiveOrgId,
+				'Failed to create Trello custom field',
+				(creds) =>
+					withTrelloCredentials(creds, () =>
+						trelloClient.createBoardCustomField(input.boardId, input.name, input.type),
+					),
+			);
+		}),
+
 	jiraProjects: protectedProcedure.input(jiraCredsInput).mutation(async ({ ctx, input }) => {
 		logger.debug('integrationsDiscovery.jiraProjects called', { orgId: ctx.effectiveOrgId });
 		return withResolvedJiraCreds(

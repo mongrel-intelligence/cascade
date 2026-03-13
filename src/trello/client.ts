@@ -484,6 +484,27 @@ export const trelloClient = {
 		}));
 	},
 
+	async createBoardCustomField(
+		boardId: string,
+		name: string,
+		type: string,
+	): Promise<{ id: string; name: string; type: string }> {
+		logger.debug('Creating board custom field', { boardId, name, type });
+		const field = await trelloFetch<{ id?: string; name?: string; type?: string }>(
+			'/customFields',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: { idModel: boardId, modelType: 'board', name, type, pos: 'bottom' },
+			},
+		);
+		return {
+			id: field.id || '',
+			name: field.name || '',
+			type: field.type || '',
+		};
+	},
+
 	// ===== Member / Actions =====
 
 	async getMe(): Promise<{ id: string; fullName: string; username: string }> {
