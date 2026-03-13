@@ -312,4 +312,40 @@ export const jiraClient = {
 			},
 		});
 	},
+
+	async createCustomField(
+		name: string,
+		type: string,
+		searcherKey?: string,
+	): Promise<{ id: string; name: string }> {
+		logger.debug('Creating JIRA custom field', { name, type, searcherKey });
+		try {
+			const result = await getClient().issueFields.createCustomField({
+				name,
+				type,
+				// searcherKey enables JQL searchability for this field (e.g. `"Cost" > 100`).
+				// For float fields, 'com.atlassian.jira.plugin.system.customfieldtypes:exactnumber'
+				// enables exact-value JQL queries while 'numberrange' enables range queries.
+				// Omitting searcherKey creates a non-searchable field.
+				...(searcherKey ? { searcherKey } : {}),
+			});
+			return {
+				id: (result as { id?: string }).id ?? '',
+				name: (result as { name?: string }).name ?? '',
+			};
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : String(error);
+			const detail =
+				error instanceof Object && 'response' in error
+					? (error as { response?: { data?: unknown } }).response?.data
+					: undefined;
+			const detailStr = detail ? ` — JIRA response: ${JSON.stringify(detail)}` : '';
+
+			logger.error('JIRA createCustomField failed', { name, type, detail });
+
+			throw new Error(
+				`JIRA createCustomField failed (admin permissions may be required): ${message}${detailStr}`,
+			);
+		}
+	},
 };

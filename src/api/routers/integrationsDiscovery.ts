@@ -294,4 +294,31 @@ export const integrationsDiscoveryRouter = router({
 					),
 			);
 		}),
+
+	createJiraCustomField: protectedProcedure
+		.input(
+			jiraCredsInput.extend({
+				name: z.string().min(1).max(100),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.createJiraCustomField called', {
+				orgId: ctx.effectiveOrgId,
+				name: input.name,
+			});
+			return withResolvedJiraCreds(
+				input,
+				ctx.effectiveOrgId,
+				'Failed to create JIRA custom field',
+				(creds) =>
+					withJiraCredentials(creds, () =>
+						jiraClient.createCustomField(
+							input.name,
+							'com.atlassian.jira.plugin.system.customfieldtypes:float',
+							// exactnumber searcher enables JQL queries like `"Cost" > 100`
+							'com.atlassian.jira.plugin.system.customfieldtypes:exactnumber',
+						),
+					),
+			);
+		}),
 });

@@ -49,6 +49,7 @@ const mockJiraSearchProjects = vi.fn();
 const mockJiraGetProjectStatuses = vi.fn();
 const mockJiraGetIssueTypesForProject = vi.fn();
 const mockJiraGetFields = vi.fn();
+const mockJiraCreateCustomField = vi.fn();
 
 vi.mock('../../../../src/jira/client.js', () => ({
 	withJiraCredentials: (...args: unknown[]) => {
@@ -61,6 +62,7 @@ vi.mock('../../../../src/jira/client.js', () => ({
 		getProjectStatuses: (...args: unknown[]) => mockJiraGetProjectStatuses(...args),
 		getIssueTypesForProject: (...args: unknown[]) => mockJiraGetIssueTypesForProject(...args),
 		getFields: (...args: unknown[]) => mockJiraGetFields(...args),
+		createCustomField: (...args: unknown[]) => mockJiraCreateCustomField(...args),
 	},
 }));
 
@@ -614,6 +616,95 @@ describe('integrationsDiscoveryRouter', () => {
 					boardId: 'boardabc',
 					name: 'Cost',
 					type: 'number',
+				}),
+			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+		});
+	});
+
+	// ── createJiraCustomField ────────────────────────────────────────────
+
+	describe('createJiraCustomField', () => {
+		it('returns id and name on success', async () => {
+			setupDbCredentials([
+				{ orgId: 'org-1', value: 'email' },
+				{ orgId: 'org-1', value: 'api-token' },
+			]);
+			mockJiraCreateCustomField.mockResolvedValue({
+				id: 'customfield_10001',
+				name: 'Cost',
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.createJiraCustomField({
+				...jiraCredsInput,
+				name: 'Cost',
+			});
+
+			expect(result).toEqual({
+				id: 'customfield_10001',
+				name: 'Cost',
+			});
+			expect(mockJiraCreateCustomField).toHaveBeenCalledWith(
+				'Cost',
+				'com.atlassian.jira.plugin.system.customfieldtypes:float',
+				'com.atlassian.jira.plugin.system.customfieldtypes:exactnumber',
+			);
+		});
+
+		it('throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(
+				caller.createJiraCustomField({
+					...jiraCredsInput,
+					name: 'Cost',
+				}),
+			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+		});
+
+		it('throws NOT_FOUND when credential does not exist', async () => {
+			mockDbWhere.mockResolvedValueOnce([]);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				caller.createJiraCustomField({
+					...jiraCredsInput,
+					name: 'Cost',
+				}),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+
+		it('validates name min length of 1', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createJiraCustomField({
+					...jiraCredsInput,
+					name: '',
+				}),
+			).rejects.toThrow();
+		});
+
+		it('validates name max length of 100', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createJiraCustomField({
+					...jiraCredsInput,
+					name: 'a'.repeat(101),
+				}),
+			).rejects.toThrow();
+		});
+
+		it('wraps API failure in BAD_REQUEST', async () => {
+			setupDbCredentials([
+				{ orgId: 'org-1', value: 'email' },
+				{ orgId: 'org-1', value: 'api-token' },
+			]);
+			mockJiraCreateCustomField.mockRejectedValue(new Error('Admin permission required'));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createJiraCustomField({
+					...jiraCredsInput,
+					name: 'Cost',
 				}),
 			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 		});
