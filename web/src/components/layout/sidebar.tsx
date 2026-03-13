@@ -29,7 +29,6 @@ const globalNav = [
 	{ to: '/global/defaults' as const, label: 'Cascade Defaults', icon: SlidersHorizontal },
 	{ to: '/global/definitions' as const, label: 'Agent Definitions', icon: BookOpen },
 	{ to: '/global/organizations' as const, label: 'Organizations', icon: Building },
-	{ to: '/global/credentials' as const, label: 'Global Credentials', icon: KeyRound },
 ];
 
 const settingsNav = [

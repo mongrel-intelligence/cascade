@@ -7,12 +7,11 @@ import { decryptCredential } from '../../db/crypto.js';
 import {
 	createCredential,
 	deleteCredential,
-	listAllCredentials,
 	listOrgCredentials,
 	updateCredential,
 } from '../../db/repositories/credentialsRepository.js';
 import { credentials } from '../../db/schema/index.js';
-import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
+import { protectedProcedure, router } from '../trpc.js';
 
 function maskValue(value: string): string {
 	if (value.length <= 4) return '****';
@@ -22,14 +21,6 @@ function maskValue(value: string): string {
 export const credentialsRouter = router({
 	list: protectedProcedure.query(async ({ ctx }) => {
 		const rows = await listOrgCredentials(ctx.effectiveOrgId);
-		return rows.map((row) => ({
-			...row,
-			value: maskValue(row.value),
-		}));
-	}),
-
-	listAll: superAdminProcedure.query(async () => {
-		const rows = await listAllCredentials();
 		return rows.map((row) => ({
 			...row,
 			value: maskValue(row.value),
