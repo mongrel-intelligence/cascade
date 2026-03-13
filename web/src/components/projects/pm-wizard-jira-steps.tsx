@@ -157,6 +157,12 @@ export function JiraFieldMappingStep({
 	onCreateCostField?: () => void;
 	creatingCostField?: boolean;
 }) {
+	const existingCostField = state.jiraProjectDetails?.fields.some(
+		(f) => f.name.toLowerCase() === 'cost',
+	);
+	const showCreateCostButton =
+		state.jiraProjectDetails && onCreateCostField && !state.jiraCostFieldId && !existingCostField;
+
 	return (
 		<div className="space-y-6">
 			{/* Status mappings */}
@@ -274,7 +280,7 @@ export function JiraFieldMappingStep({
 			<div className="space-y-2">
 				<div className="flex items-center justify-between">
 					<Label>Custom Field: Cost</Label>
-					{state.jiraProjectDetails && onCreateCostField && !state.jiraCostFieldId && (
+					{showCreateCostButton && (
 						<Button
 							type="button"
 							variant="outline"
