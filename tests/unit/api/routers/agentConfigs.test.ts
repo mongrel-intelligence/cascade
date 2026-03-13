@@ -186,6 +186,38 @@ describe('agentConfigsRouter', () => {
 			).rejects.toMatchObject({ code: 'NOT_FOUND' });
 		});
 
+		it('allows superadmin to create global config with explicit orgId: null', async () => {
+			mockCreateAgentConfig.mockResolvedValue({ id: 12 });
+			const superAdmin = createMockSuperAdmin();
+			const caller = createCaller({ user: superAdmin, effectiveOrgId: superAdmin.orgId });
+
+			const result = await caller.create({
+				orgId: null,
+				agentType: 'implementation',
+				model: 'claude-sonnet-4-5-20250929',
+			});
+
+			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+				expect.objectContaining({
+					orgId: null,
+					projectId: null,
+					agentType: 'implementation',
+				}),
+			);
+			expect(result).toEqual({ id: 12 });
+		});
+
+		it('throws FORBIDDEN when non-superadmin tries to create global config', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				caller.create({ orgId: null, agentType: 'implementation' }),
+			).rejects.toMatchObject({
+				code: 'FORBIDDEN',
+				message: 'Superadmin access required for global config',
+			});
+		});
+
 		it('rejects empty agentType', async () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.create({ agentType: '' })).rejects.toThrow();

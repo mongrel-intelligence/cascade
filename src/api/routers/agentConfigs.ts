@@ -61,7 +61,8 @@ export const agentConfigsRouter = router({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const finalOrgId = input.orgId ?? (input.projectId ? null : ctx.effectiveOrgId);
+			const finalOrgId =
+				input.orgId === undefined ? (input.projectId ? null : ctx.effectiveOrgId) : input.orgId;
 			const finalProjectId = input.projectId ?? null;
 
 			// If projectId given, verify ownership
