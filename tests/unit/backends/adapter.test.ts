@@ -1077,6 +1077,32 @@ describe('executeWithEngine', () => {
 			expect(mockClearInitialComment).not.toHaveBeenCalled();
 		});
 
+		it('preserves sidecar file for readCompletionEvidence when requiresReview is set', async () => {
+			setupMocks();
+			mockGetAgentProfile.mockReturnValue(
+				makeMockProfile({ finishHooks: { requiresReview: true } }),
+			);
+			const engine = makeMockBackend('claude-code');
+			writeSidecarAtInjectedPath(engine, {
+				reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-55',
+				event: 'APPROVE',
+				body: 'Looks good!',
+			});
+			const input = makeInput();
+
+			const result = await executeWithEngine(engine, 'review', input);
+
+			// Before the fix, hydrateReviewSidecar deleted the file, causing
+			// readCompletionEvidence to miss it and postProcessResult to mark
+			// the run as failed despite a successful review.
+			expect(result.success).toBe(true);
+			expect(mockRecordReviewSubmission).toHaveBeenCalledWith(
+				'https://github.com/o/r/pull/1#pullrequestreview-55',
+				'Looks good!',
+				'APPROVE',
+			);
+		});
+
 		it('backward compatible — no clearInitialComment when sidecar is absent', async () => {
 			setupMocks();
 			const engine = makeMockBackend();
