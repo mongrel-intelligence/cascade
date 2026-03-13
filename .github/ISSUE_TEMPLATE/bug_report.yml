@@ -1,0 +1,76 @@
+name: Bug Report
+description: Report a bug in CASCADE
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill in as much detail as possible.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Configure project with...
+        2. Trigger the agent by...
+        3. Observe error in...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened. Include error messages or log output if available.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: CASCADE Version
+      description: Output of `node -e "console.log(require('./package.json').version)"` or the Docker image tag.
+      placeholder: "1.0.0"
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of CASCADE is affected?
+      options:
+        - Router (webhook receiver)
+        - Worker (agent execution)
+        - Dashboard (web UI / API)
+        - CLI
+        - Triggers (Trello / GitHub / JIRA)
+        - Agents (splitting / planning / implementation / review)
+        - Other
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Any relevant environment details.
+      placeholder: |
+        - OS: macOS 15 / Ubuntu 24.04
+        - Node.js: 22.x
+        - Deployment: Docker / bare metal
+        - PM provider: Trello / JIRA

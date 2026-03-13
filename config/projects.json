@@ -1,4 +1,5 @@
 {
+	"_comment": "This file is a seeding example for initial setup. It is NOT used at runtime — all project configuration lives in the database. Use 'npm run db:seed -- --org <org-id>' to import.",
 	"defaults": {
 		"model": "openrouter:google/gemini-3-flash-preview",
 		"maxIterations": 70,
@@ -18,39 +19,39 @@
 	},
 	"projects": [
 		{
-			"id": "niu",
-			"name": "niu",
-			"repo": "zbigniewsobiecki/niu",
+			"id": "my-project",
+			"name": "my-project",
+			"repo": "your-org/your-repo",
 			"baseBranch": "dev",
 			"branchPrefix": "feature/",
 
 			"trello": {
-				"boardId": "694ec393370da080b52eb64c",
+				"boardId": "your-trello-board-id",
 				"lists": {
-					"splitting": "694fc5e57256ac0717c3dfea",
-					"planning": "694ec39e91e3487c1351a491",
-					"todo": "694ec3a365a4c75df2493504",
-					"inProgress": "694ec3a5d0dae4cb06d25517",
-					"inReview": "694ec3a8f0359b62fa76ecb9",
-					"done": "694ec3a935da16c70d20375c",
-					"merged": "6956533a02fbc51954449070",
-					"debug": "6957b2b9e407abc139296db3"
+					"splitting": "your-splitting-list-id",
+					"planning": "your-planning-list-id",
+					"todo": "your-todo-list-id",
+					"inProgress": "your-in-progress-list-id",
+					"inReview": "your-in-review-list-id",
+					"done": "your-done-list-id",
+					"merged": "your-merged-list-id",
+					"debug": "your-debug-list-id"
 				},
 				"labels": {
-					"readyToProcess": "694ec394370da080b52eb6be",
-					"processing": "694ec394370da080b52eb6c2",
-					"processed": "694ec394370da080b52eb6bd",
-					"error": "694ec394370da080b52eb6c0"
+					"readyToProcess": "your-ready-to-process-label-id",
+					"processing": "your-processing-label-id",
+					"processed": "your-processed-label-id",
+					"error": "your-error-label-id"
 				},
 				"customFields": {
-					"cost": "695443ed683031e20d140ba4"
+					"cost": "your-cost-custom-field-id"
 				}
 			}
 		},
 		{
-			"id": "car-dealership",
-			"name": "car-dealership",
-			"repo": "zbigniewsobiecki/car-dealership",
+			"id": "claude-code-project",
+			"name": "claude-code-project",
+			"repo": "your-org/another-repo",
 			"baseBranch": "dev",
 			"branchPrefix": "feature/",
 
@@ -69,45 +70,25 @@
 				"review": "openrouter:google/gemini-3-flash-preview"
 			},
 			"trello": {
-				"boardId": "698db5df2b873930c7c38bc0",
+				"boardId": "your-trello-board-id",
 				"lists": {
-					"splitting": "698db5df2b873930c7c38bbb",
-					"planning": "698db5df2b873930c7c38bb6",
-					"todo": "698db5df2b873930c7c38bb7",
-					"inProgress": "698db5df2b873930c7c38bb8",
-					"inReview": "698db5df2b873930c7c38bb9",
-					"done": "698db5df2b873930c7c38bba",
-					"merged": "698db5df2b873930c7c38bbe",
-					"debug": "698db5df2b873930c7c38bbf"
+					"splitting": "your-splitting-list-id",
+					"planning": "your-planning-list-id",
+					"todo": "your-todo-list-id",
+					"inProgress": "your-in-progress-list-id",
+					"inReview": "your-in-review-list-id",
+					"done": "your-done-list-id",
+					"merged": "your-merged-list-id",
+					"debug": "your-debug-list-id"
 				},
 				"labels": {
-					"readyToProcess": "698db5df2b873930c7c38c64",
-					"processing": "698db5df2b873930c7c38c62",
-					"processed": "698db5df2b873930c7c38c61",
-					"error": "698db5df2b873930c7c38c63"
+					"readyToProcess": "your-ready-to-process-label-id",
+					"processing": "your-processing-label-id",
+					"processed": "your-processed-label-id",
+					"error": "your-error-label-id"
 				},
 				"customFields": {
-					"cost": "698dbf6a346e92adfcf70263"
-				}
-			}
-		},
-		{
-			"id": "damisa",
-			"name": "damisa",
-			"repo": "zbigniewsobiecki/damisa",
-			"baseBranch": "main",
-			"branchPrefix": "feature/",
-			"trello": {
-				"boardId": "6970fa9aab0e56304a15fbac",
-				"lists": {
-					"splitting": "6970faa01757ddb3286e7bae",
-					"planning": "6970fa9d48b639dad13dc8f7"
-				},
-				"labels": {
-					"readyToProcess": "6970fa9aab0e56304a15fbe1",
-					"processing": "6970fa9aab0e56304a15fbe2",
-					"processed": "6970fa9aab0e56304a15fbe6",
-					"error": "6970fa9aab0e56304a15fbe4"
+					"cost": "your-cost-custom-field-id"
 				}
 			}
 		}
