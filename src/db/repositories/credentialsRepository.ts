@@ -1,7 +1,45 @@
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '../client.js';
 import { decryptCredential, encryptCredential } from '../crypto.js';
-import { credentials, integrationCredentials, projectIntegrations } from '../schema/index.js';
+import {
+	credentials,
+	integrationCredentials,
+	organizations,
+	projectIntegrations,
+} from '../schema/index.js';
+
+// ============================================================================
+// Global credential management (superadmin only)
+// ============================================================================
+
+/**
+ * List all credentials across all organizations.
+ * Joins with organizations to include org name.
+ */
+export async function listAllCredentials(): Promise<
+	(typeof credentials.$inferSelect & { orgName: string })[]
+> {
+	const db = getDb();
+	const rows = await db
+		.select({
+			id: credentials.id,
+			orgId: credentials.orgId,
+			orgName: organizations.name,
+			name: credentials.name,
+			envVarKey: credentials.envVarKey,
+			value: credentials.value,
+			isDefault: credentials.isDefault,
+			createdAt: credentials.createdAt,
+			updatedAt: credentials.updatedAt,
+		})
+		.from(credentials)
+		.innerJoin(organizations, eq(credentials.orgId, organizations.id));
+
+	return rows.map((row) => ({
+		...row,
+		value: decryptCredential(row.value, row.orgId),
+	}));
+}
 
 // ============================================================================
 // Integration credential resolution
