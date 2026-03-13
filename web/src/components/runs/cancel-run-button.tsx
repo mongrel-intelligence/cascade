@@ -4,6 +4,7 @@ import {
 	AlertDialogCancel,
 	AlertDialogContent,
 	AlertDialogDescription,
+	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from '@/components/ui/alert-dialog.js';
@@ -99,20 +100,17 @@ export function CancelRunButton({ runId, status }: CancelRunButtonProps) {
 							This will terminate the worker container. Are you sure?
 						</AlertDialogDescription>
 					</AlertDialogHeader>
-					<div className="flex gap-3 justify-end">
-						<AlertDialogCancel disabled={cancelMutation.isPending}>Cancel</AlertDialogCancel>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
 						<AlertDialogAction
-							disabled={cancelMutation.isPending}
 							onClick={() => {
 								cancelMutation.mutate();
-								setShowDialog(false);
 							}}
 							className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
 						>
-							{cancelMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
 							Terminate
 						</AlertDialogAction>
-					</div>
+					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
 		</>
