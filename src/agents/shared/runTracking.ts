@@ -5,6 +5,7 @@ import {
 	completeRun,
 	createRun,
 	storeRunLogs,
+	updateRunJobId,
 } from '../../db/repositories/runsRepository.js';
 import { logger } from '../../utils/logging.js';
 import type { FileLogger } from './executionPipeline.js';
@@ -28,6 +29,7 @@ export interface RunTrackingInput {
 
 /**
  * Create a DB run record, suppressing errors so agent execution is unaffected.
+ * If JOB_ID env var is set (Docker mode), store it immediately after run creation.
  */
 export async function tryCreateRun(
 	input: RunTrackingInput,
@@ -35,7 +37,7 @@ export async function tryCreateRun(
 	maxIterations?: number,
 ): Promise<string | undefined> {
 	try {
-		return await createRun({
+		const runId = await createRun({
 			projectId: input.projectId,
 			workItemId: input.workItemId,
 			prNumber: input.prNumber,
@@ -45,6 +47,19 @@ export async function tryCreateRun(
 			model,
 			maxIterations,
 		});
+
+		// Store BullMQ jobId if running in Docker (JOB_ID env var is set)
+		const jobId = process.env.JOB_ID;
+		if (jobId) {
+			try {
+				await updateRunJobId(runId, jobId);
+			} catch (err) {
+				logger.warn('Failed to store job ID for run', { runId, jobId, error: String(err) });
+				// Continue - failure to store jobId should not block agent execution
+			}
+		}
+
+		return runId;
 	} catch (err) {
 		logger.warn('Failed to create run record', { error: String(err) });
 		return undefined;
