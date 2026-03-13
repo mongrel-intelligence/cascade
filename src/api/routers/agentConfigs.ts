@@ -37,7 +37,7 @@ export const agentConfigsRouter = router({
 			if (input?.projectId) {
 				// Verify project belongs to org
 				await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
-				return listAgentConfigs({ projectId: input.projectId });
+				return listAgentConfigs({ projectId: input.projectId, orgId: ctx.effectiveOrgId });
 			}
 			return listAgentConfigs({ orgId: ctx.effectiveOrgId });
 		}),

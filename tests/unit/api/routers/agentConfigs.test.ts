@@ -108,7 +108,7 @@ describe('agentConfigsRouter', () => {
 
 			const result = await caller.list({ projectId: 'proj-1' });
 
-			expect(mockListAgentConfigs).toHaveBeenCalledWith({ projectId: 'proj-1' });
+			expect(mockListAgentConfigs).toHaveBeenCalledWith({ projectId: 'proj-1', orgId: 'org-1' });
 			expect(result).toEqual(configs);
 		});
 

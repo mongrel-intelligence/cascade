@@ -11,7 +11,19 @@ export async function listAgentConfigs(filter?: { orgId?: string; projectId?: st
 	const conditions = [];
 
 	if (filter?.projectId) {
-		conditions.push(eq(agentConfigs.projectId, filter.projectId));
+		// Return project-scoped + org-scoped fallback + global fallback
+		const orgId = filter.orgId;
+		conditions.push(
+			or(
+				eq(agentConfigs.projectId, filter.projectId),
+				and(
+					isNull(agentConfigs.projectId),
+					orgId
+						? or(eq(agentConfigs.orgId, orgId), isNull(agentConfigs.orgId))
+						: isNull(agentConfigs.orgId),
+				),
+			),
+		);
 	} else if (filter?.orgId) {
 		// Return global (no orgId, no projectId) + org-scoped (orgId set, no projectId)
 		conditions.push(or(eq(agentConfigs.orgId, filter.orgId), isNull(agentConfigs.orgId)));
@@ -145,7 +157,28 @@ export async function getMaxConcurrency(
 		)
 		.limit(1);
 
-	const result = orgConfig?.maxConcurrency ?? null;
+	if (orgConfig?.maxConcurrency != null) {
+		maxConcurrencyCache.set(cacheKey, {
+			value: orgConfig.maxConcurrency,
+			expiresAt: Date.now() + MAX_CONCURRENCY_TTL_MS,
+		});
+		return orgConfig.maxConcurrency;
+	}
+
+	// 3. Global-scoped fallback
+	const [globalConfig] = await db
+		.select({ maxConcurrency: agentConfigs.maxConcurrency })
+		.from(agentConfigs)
+		.where(
+			and(
+				isNull(agentConfigs.orgId),
+				isNull(agentConfigs.projectId),
+				eq(agentConfigs.agentType, agentType),
+			),
+		)
+		.limit(1);
+
+	const result = globalConfig?.maxConcurrency ?? null;
 	maxConcurrencyCache.set(cacheKey, {
 		value: result,
 		expiresAt: Date.now() + MAX_CONCURRENCY_TTL_MS,

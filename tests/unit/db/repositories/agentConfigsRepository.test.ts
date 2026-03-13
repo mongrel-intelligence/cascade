@@ -9,6 +9,7 @@ import { getDb } from '../../../../src/db/client.js';
 import {
 	createAgentConfig,
 	deleteAgentConfig,
+	getMaxConcurrency,
 	listAgentConfigs,
 	updateAgentConfig,
 } from '../../../../src/db/repositories/agentConfigsRepository.js';
@@ -17,8 +18,11 @@ describe('agentConfigsRepository', () => {
 	let mockDb: ReturnType<typeof createMockDb>;
 
 	beforeEach(() => {
-		mockDb = createMockDb({ withUpsert: true, withThenable: true });
+		mockDb = createMockDb({ withUpsert: true, withThenable: true, withLimit: true });
 		vi.mocked(getDb).mockReturnValue(mockDb.db as never);
+		// Reset cache for getMaxConcurrency by clearing the internal map if it were accessible
+		// Since it's private to the module, we rely on unique projectIds or clearing it somehow.
+		// For now we'll just use fresh IDs.
 	});
 
 	describe('listAgentConfigs', () => {
@@ -41,6 +45,14 @@ describe('agentConfigsRepository', () => {
 			mockDb.chain.where.mockResolvedValueOnce(configs);
 
 			const result = await listAgentConfigs({ projectId: 'p1' });
+			expect(result).toEqual(configs);
+		});
+
+		it('filters by projectId and includes fallbacks when orgId provided', async () => {
+			const configs = [{ id: 2, agentType: 'review', projectId: 'p1' }];
+			mockDb.chain.where.mockResolvedValueOnce(configs);
+
+			const result = await listAgentConfigs({ projectId: 'p1', orgId: 'org-1' });
 			expect(result).toEqual(configs);
 		});
 
@@ -98,6 +110,40 @@ describe('agentConfigsRepository', () => {
 			await deleteAgentConfig(42);
 
 			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('getMaxConcurrency', () => {
+		it('returns project-scoped limit if set', async () => {
+			mockDb.chain.limit.mockResolvedValueOnce([{ maxConcurrency: 5 }]);
+			const result = await getMaxConcurrency('p-proj-1', 'implementation');
+			expect(result).toBe(5);
+		});
+
+		it('falls back to org-scoped limit if project-scoped is not set', async () => {
+			// First call (project-scoped): return empty
+			mockDb.chain.limit.mockResolvedValueOnce([]);
+			// Second call (fetch orgId from project): return org-1
+			mockDb.chain.limit.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			// Third call (org-scoped): return limit 3
+			mockDb.chain.limit.mockResolvedValueOnce([{ maxConcurrency: 3 }]);
+
+			const result = await getMaxConcurrency('p-proj-2', 'implementation');
+			expect(result).toBe(3);
+		});
+
+		it('falls back to global-scoped limit if org-scoped is not set', async () => {
+			// First call (project-scoped): return empty
+			mockDb.chain.limit.mockResolvedValueOnce([]);
+			// Second call (fetch orgId from project): return org-1
+			mockDb.chain.limit.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			// Third call (org-scoped): return empty
+			mockDb.chain.limit.mockResolvedValueOnce([]);
+			// Fourth call (global-scoped): return limit 2
+			mockDb.chain.limit.mockResolvedValueOnce([{ maxConcurrency: 2 }]);
+
+			const result = await getMaxConcurrency('p-proj-3', 'implementation');
+			expect(result).toBe(2);
 		});
 	});
 });

@@ -1,3 +1,13 @@
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from '@/components/ui/alert-dialog.js';
 import { Badge } from '@/components/ui/badge.js';
 import {
 	Table,
@@ -30,6 +40,7 @@ export function AgentConfigsTable({
 }: { configs: AgentConfig[]; isGlobalScope?: boolean }) {
 	const queryClient = useQueryClient();
 	const [editConfig, setEditConfig] = useState<AgentConfig | null>(null);
+	const [deleteConfigId, setDeleteConfigId] = useState<number | null>(null);
 
 	const deleteMutation = useMutation({
 		mutationFn: (id: number) => trpcClient.agentConfigs.delete.mutate({ id }),
@@ -41,6 +52,7 @@ export function AgentConfigsTable({
 			} else {
 				queryClient.invalidateQueries({ queryKey: trpc.agentConfigs.list.queryOptions().queryKey });
 			}
+			setDeleteConfigId(null);
 		},
 	});
 
@@ -98,11 +110,7 @@ export function AgentConfigsTable({
 										</button>
 										<button
 											type="button"
-											onClick={() => {
-												if (window.confirm('Delete this agent config?')) {
-													deleteMutation.mutate(config.id);
-												}
-											}}
+											onClick={() => setDeleteConfigId(config.id)}
 											className="p-1 text-muted-foreground hover:text-destructive"
 										>
 											<Trash2 className="h-4 w-4" />
@@ -114,6 +122,30 @@ export function AgentConfigsTable({
 					</TableBody>
 				</Table>
 			</div>
+
+			<AlertDialog
+				open={!!deleteConfigId}
+				onOpenChange={(open) => !open && setDeleteConfigId(null)}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Delete Agent Config</AlertDialogTitle>
+						<AlertDialogDescription>
+							Are you sure you want to delete this agent configuration? This action cannot be
+							undone.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={() => deleteConfigId && deleteMutation.mutate(deleteConfigId)}
+							className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+						>
+							{deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 
 			{editConfig && (
 				<AgentConfigFormDialog
