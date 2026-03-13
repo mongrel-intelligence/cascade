@@ -1,19 +1,21 @@
 /**
  * Shared color mapping for agent types used in recharts visualizations.
  *
- * Recharts requires actual color values (not CSS variables), so we define
- * both light and dark theme colors here, matching the CSS custom properties
- * in index.css. We use a static mapping for simplicity and dark-mode compat.
+ * Recharts requires actual color values (not CSS variables), so we use a
+ * static hex palette. These colors are approximations of the light-mode
+ * `oklch` chart colors from index.css. They remain visible in dark mode but
+ * do not match the theme's intended dark-mode chart color scheme (which uses
+ * a completely different set of oklch values).
  */
 
-// Light-mode hex equivalents of the oklch chart colors from index.css
+// Hex approximations of the light-mode oklch chart colors from index.css:
 // chart-1: oklch(0.646 0.222 41.116) ≈ #e8642a (orange)
 // chart-2: oklch(0.6 0.118 184.704)  ≈ #3aada0 (teal)
 // chart-3: oklch(0.398 0.07 227.392) ≈ #4a7a9b (steel blue)
 // chart-4: oklch(0.828 0.189 84.429) ≈ #d4c02a (yellow)
 // chart-5: oklch(0.769 0.188 70.08)  ≈ #d99c27 (amber)
 
-// We use a small palette that works in both light and dark mode
+// Static palette — visible in both themes, though not theme-adaptive
 const CHART_PALETTE = [
 	'#e8642a', // chart-1: orange → planning
 	'#3aada0', // chart-2: teal → implementation
