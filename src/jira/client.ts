@@ -334,7 +334,9 @@ export const jiraClient = {
 
 			logger.error('JIRA createCustomField failed', { name, type, detail });
 
-			throw new Error(`JIRA createCustomField requires admin permissions: ${message}${detailStr}`);
+			throw new Error(
+				`JIRA createCustomField failed (admin permissions may be required): ${message}${detailStr}`,
+			);
 		}
 	},
 };

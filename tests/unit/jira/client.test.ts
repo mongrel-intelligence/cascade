@@ -865,7 +865,7 @@ describe('jiraClient', () => {
 					),
 				),
 			).rejects.toThrow(
-				/JIRA createCustomField requires admin permissions: Forbidden.*Only administrators/,
+				/JIRA createCustomField failed \(admin permissions may be required\): Forbidden.*Only administrators/,
 			);
 
 			expect(logger.error).toHaveBeenCalledWith(
@@ -892,7 +892,9 @@ describe('jiraClient', () => {
 						'com.atlassian.jira.plugin.system.customfieldtypes:float',
 					),
 				),
-			).rejects.toThrow('JIRA createCustomField requires admin permissions: Network error');
+			).rejects.toThrow(
+				'JIRA createCustomField failed (admin permissions may be required): Network error',
+			);
 
 			expect(logger.error).toHaveBeenCalledWith(
 				'JIRA createCustomField failed',
