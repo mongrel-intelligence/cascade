@@ -1,0 +1,45 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement! Please describe the use case and your proposed solution.
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: What problem does this feature solve? What are you trying to accomplish?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: How do you think this should work?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or workarounds you've considered.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of CASCADE does this relate to?
+      options:
+        - Router (webhook receiver)
+        - Worker (agent execution)
+        - Dashboard (web UI / API)
+        - CLI
+        - Triggers (Trello / GitHub / JIRA)
+        - Agents (splitting / planning / implementation / review)
+        - Self-hosting / Docker
+        - Other
