@@ -548,7 +548,7 @@ export async function getRunsByWorkItem(projectId: string, workItemId: string) {
 		.from(agentRuns)
 		.leftJoin(prWorkItems, buildAgentRunWorkItemJoin())
 		.where(and(eq(agentRuns.projectId, projectId), eq(agentRuns.workItemId, workItemId)))
-		.orderBy(desc(agentRuns.startedAt));
+		.orderBy(asc(agentRuns.startedAt));
 }
 
 /**
@@ -562,5 +562,5 @@ export async function getRunsForPR(projectId: string, prNumber: number) {
 		.from(agentRuns)
 		.leftJoin(prWorkItems, buildAgentRunWorkItemJoin())
 		.where(and(eq(agentRuns.projectId, projectId), eq(agentRuns.prNumber, prNumber)))
-		.orderBy(desc(agentRuns.startedAt));
+		.orderBy(asc(agentRuns.startedAt));
 }

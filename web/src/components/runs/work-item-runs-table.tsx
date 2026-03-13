@@ -13,6 +13,8 @@ interface WorkItemRun {
 	durationMs: number | null;
 	costUsd: string | null;
 	llmIterations: number | null;
+	engine: string;
+	model: string | null;
 }
 
 interface WorkItemRunsTableProps {
@@ -45,6 +47,8 @@ export function WorkItemRunsTable({ runs, isLoading, isError, error }: WorkItemR
 				<thead>
 					<tr className="border-b border-border bg-muted/50">
 						<th className="px-4 py-3 text-left font-medium text-muted-foreground">Agent</th>
+						<th className="px-4 py-3 text-left font-medium text-muted-foreground">Engine</th>
+						<th className="px-4 py-3 text-left font-medium text-muted-foreground">Model</th>
 						<th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
 						<th className="px-4 py-3 text-left font-medium text-muted-foreground">Started</th>
 						<th className="px-4 py-3 text-right font-medium text-muted-foreground">Duration</th>
@@ -68,6 +72,8 @@ export function WorkItemRunsTable({ runs, isLoading, isError, error }: WorkItemR
 									{run.agentType}
 								</Link>
 							</td>
+							<td className="px-4 py-3 text-muted-foreground">{run.engine}</td>
+							<td className="px-4 py-3 text-muted-foreground">{run.model ?? '-'}</td>
 							<td className="px-4 py-3">
 								<RunStatusBadge status={run.status} />
 							</td>
