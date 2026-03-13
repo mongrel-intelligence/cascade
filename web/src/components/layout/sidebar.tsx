@@ -27,6 +27,7 @@ const mainNav = [
 const globalNav = [
 	{ to: '/global/runs' as const, label: 'Global Runs', icon: Activity },
 	{ to: '/global/organizations' as const, label: 'Organizations', icon: Building },
+	{ to: '/global/credentials' as const, label: 'Global Credentials', icon: KeyRound },
 ];
 
 const settingsNav = [

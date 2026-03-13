@@ -25,13 +25,21 @@ import { CredentialFormDialog } from './credential-form-dialog.js';
 
 interface Credential {
 	id: number;
+	orgId: string;
+	orgName?: string;
 	name: string;
 	envVarKey: string;
 	value: string;
 	isDefault: boolean;
 }
 
-export function CredentialsTable({ credentials }: { credentials: Credential[] }) {
+export function CredentialsTable({
+	credentials,
+	showOrg = false,
+}: {
+	credentials: Credential[];
+	showOrg?: boolean;
+}) {
 	const queryClient = useQueryClient();
 	const [deleteId, setDeleteId] = useState<number | null>(null);
 	const [editCredential, setEditCredential] = useState<Credential | null>(null);
@@ -40,6 +48,7 @@ export function CredentialsTable({ credentials }: { credentials: Credential[] })
 		mutationFn: (id: number) => trpcClient.credentials.delete.mutate({ id }),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: trpc.credentials.list.queryOptions().queryKey });
+			queryClient.invalidateQueries({ queryKey: trpc.credentials.listAll.queryOptions().queryKey });
 			setDeleteId(null);
 		},
 	});
@@ -50,6 +59,7 @@ export function CredentialsTable({ credentials }: { credentials: Credential[] })
 				<Table>
 					<TableHeader>
 						<TableRow>
+							{showOrg && <TableHead>Organization</TableHead>}
 							<TableHead>Name</TableHead>
 							<TableHead>Env Var Key</TableHead>
 							<TableHead className="hidden md:table-cell">Value</TableHead>
@@ -60,13 +70,26 @@ export function CredentialsTable({ credentials }: { credentials: Credential[] })
 					<TableBody>
 						{credentials.length === 0 && (
 							<TableRow>
-								<TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+								<TableCell
+									colSpan={showOrg ? 6 : 5}
+									className="text-center text-muted-foreground py-8"
+								>
 									No credentials yet
 								</TableCell>
 							</TableRow>
 						)}
 						{credentials.map((cred) => (
 							<TableRow key={cred.id}>
+								{showOrg && (
+									<TableCell>
+										<div className="flex flex-col">
+											<span className="font-medium">{cred.orgName}</span>
+											<span className="text-[10px] text-muted-foreground font-mono">
+												{cred.orgId}
+											</span>
+										</div>
+									</TableCell>
+								)}
 								<TableCell className="font-medium">{cred.name}</TableCell>
 								<TableCell className="font-mono text-xs">{cred.envVarKey}</TableCell>
 								<TableCell className="hidden md:table-cell font-mono text-xs text-muted-foreground">

@@ -7,11 +7,12 @@ import { decryptCredential } from '../../db/crypto.js';
 import {
 	createCredential,
 	deleteCredential,
+	listAllCredentials,
 	listOrgCredentials,
 	updateCredential,
 } from '../../db/repositories/credentialsRepository.js';
 import { credentials } from '../../db/schema/index.js';
-import { protectedProcedure, router } from '../trpc.js';
+import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
 
 function maskValue(value: string): string {
 	if (value.length <= 4) return '****';
@@ -21,6 +22,14 @@ function maskValue(value: string): string {
 export const credentialsRouter = router({
 	list: protectedProcedure.query(async ({ ctx }) => {
 		const rows = await listOrgCredentials(ctx.effectiveOrgId);
+		return rows.map((row) => ({
+			...row,
+			value: maskValue(row.value),
+		}));
+	}),
+
+	listAll: superAdminProcedure.query(async () => {
+		const rows = await listAllCredentials();
 		return rows.map((row) => ({
 			...row,
 			value: maskValue(row.value),
@@ -62,7 +71,12 @@ export const credentialsRouter = router({
 				.select({ orgId: credentials.orgId })
 				.from(credentials)
 				.where(eq(credentials.id, input.id));
-			if (!cred || cred.orgId !== ctx.effectiveOrgId) {
+
+			if (!cred) {
+				throw new TRPCError({ code: 'NOT_FOUND' });
+			}
+
+			if (cred.orgId !== ctx.effectiveOrgId && ctx.user.role !== 'superadmin') {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 
@@ -79,7 +93,12 @@ export const credentialsRouter = router({
 				.select({ orgId: credentials.orgId })
 				.from(credentials)
 				.where(eq(credentials.id, input.id));
-			if (!cred || cred.orgId !== ctx.effectiveOrgId) {
+
+			if (!cred) {
+				throw new TRPCError({ code: 'NOT_FOUND' });
+			}
+
+			if (cred.orgId !== ctx.effectiveOrgId && ctx.user.role !== 'superadmin') {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 
@@ -94,7 +113,12 @@ export const credentialsRouter = router({
 				.select({ orgId: credentials.orgId, value: credentials.value })
 				.from(credentials)
 				.where(eq(credentials.id, input.credentialId));
-			if (!cred || cred.orgId !== ctx.effectiveOrgId) {
+
+			if (!cred) {
+				throw new TRPCError({ code: 'NOT_FOUND' });
+			}
+
+			if (cred.orgId !== ctx.effectiveOrgId && ctx.user.role !== 'superadmin') {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 

@@ -31,7 +31,10 @@ export function CredentialFormDialog({
 	const [value, setValue] = useState('');
 	const [isDefault, setIsDefault] = useState(credential?.isDefault ?? false);
 
-	const queryKey = trpc.credentials.list.queryOptions().queryKey;
+	const invalidate = () => {
+		queryClient.invalidateQueries({ queryKey: trpc.credentials.list.queryOptions().queryKey });
+		queryClient.invalidateQueries({ queryKey: trpc.credentials.listAll.queryOptions().queryKey });
+	};
 
 	const createMutation = useMutation({
 		mutationFn: () =>
@@ -42,7 +45,7 @@ export function CredentialFormDialog({
 				isDefault,
 			}),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey });
+			invalidate();
 			onOpenChange(false);
 		},
 	});
@@ -56,7 +59,7 @@ export function CredentialFormDialog({
 				isDefault,
 			}),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey });
+			invalidate();
 			onOpenChange(false);
 		},
 	});
