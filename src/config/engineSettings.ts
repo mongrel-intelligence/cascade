@@ -8,7 +8,6 @@ export const CodexSettingsSchema = z.object({
 });
 
 export const OpenCodeSettingsSchema = z.object({
-	agent: z.enum(['auto', 'build', 'plan']).optional(),
 	webSearch: z.boolean().optional(),
 });
 
