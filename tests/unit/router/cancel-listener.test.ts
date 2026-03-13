@@ -1,24 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
-// Hoisted mocks
-// ---------------------------------------------------------------------------
-
-const { mockDockerListContainers, mockDockerGetContainer } = vi.hoisted(() => ({
-	mockDockerListContainers: vi.fn(),
-	mockDockerGetContainer: vi.fn(),
-}));
-
-// ---------------------------------------------------------------------------
 // Module mocks
 // ---------------------------------------------------------------------------
-
-vi.mock('dockerode', () => ({
-	default: vi.fn().mockImplementation(() => ({
-		listContainers: mockDockerListContainers,
-		getContainer: mockDockerGetContainer,
-	})),
-}));
 
 const mockGetRunJobId = vi.fn();
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
@@ -26,8 +10,10 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 }));
 
 const mockSubscribeToCancelCommands = vi.fn();
+const mockUnsubscribeFromCancelCommands = vi.fn();
 vi.mock('../../../src/queue/cancel.js', () => ({
 	subscribeToCancelCommands: (...args: unknown[]) => mockSubscribeToCancelCommands(...args),
+	unsubscribeFromCancelCommands: (...args: unknown[]) => mockUnsubscribeFromCancelCommands(...args),
 	publishCancelCommand: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -36,13 +22,16 @@ vi.mock('../../../src/router/container-manager.js', () => ({
 	killWorker: (...args: unknown[]) => mockKillWorker(...args),
 }));
 
-vi.mock('../../../src/utils/logging.js', () => ({
-	logger: {
+const { mockLogger } = vi.hoisted(() => ({
+	mockLogger: {
 		info: vi.fn(),
 		warn: vi.fn(),
 		error: vi.fn(),
 		debug: vi.fn(),
 	},
+}));
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: mockLogger,
 }));
 
 // ---------------------------------------------------------------------------
@@ -56,7 +45,12 @@ import { startCancelListener, stopCancelListener } from '../../../src/router/can
 // ---------------------------------------------------------------------------
 
 describe('cancel-listener', () => {
-	beforeEach(() => {
+	beforeEach(async () => {
+		vi.clearAllMocks();
+		// Reset module-level cancelSubscriberActive flag by stopping the listener
+		// (no-op if not active, safe to call always)
+		mockUnsubscribeFromCancelCommands.mockResolvedValue(undefined);
+		await stopCancelListener();
 		vi.clearAllMocks();
 	});
 
@@ -87,7 +81,7 @@ describe('cancel-listener', () => {
 			expect(mockKillWorker).toHaveBeenCalledWith('job-123');
 		});
 
-		it('uses Docker fallback when jobId is not found in DB', async () => {
+		it('logs a warning and does not kill any container when jobId is not found in DB', async () => {
 			process.env.REDIS_URL = 'redis://localhost:6379';
 			const handler = vi.fn();
 			mockSubscribeToCancelCommands.mockImplementation(async (cb: unknown) => {
@@ -97,50 +91,15 @@ describe('cancel-listener', () => {
 			await startCancelListener();
 
 			mockGetRunJobId.mockResolvedValue(null);
-			mockDockerListContainers.mockResolvedValue([
-				{
-					Id: 'container-abc123',
-					Labels: {
-						'cascade.managed': 'true',
-						'cascade.job.id': 'job-old',
-					},
-				},
-			]);
-
-			const mockStop = vi.fn().mockResolvedValue(undefined);
-			mockDockerGetContainer.mockReturnValue({ stop: mockStop });
 
 			// Simulate receiving a cancel command
 			await handler({ runId: 'run-123', reason: 'timeout' });
 
-			expect(mockDockerListContainers).toHaveBeenCalled();
-			expect(mockDockerGetContainer).toHaveBeenCalledWith('container-abc123');
-			expect(mockStop).toHaveBeenCalledWith({ t: 15 });
-		});
-
-		it('returns early if no cascade.managed containers exist', async () => {
-			process.env.REDIS_URL = 'redis://localhost:6379';
-			const handler = vi.fn();
-			mockSubscribeToCancelCommands.mockImplementation(async (cb: unknown) => {
-				handler.mockImplementation(cb);
-			});
-
-			await startCancelListener();
-
-			mockGetRunJobId.mockResolvedValue(null);
-			mockDockerListContainers.mockResolvedValue([
-				{
-					Id: 'container-other',
-					Labels: {
-						'cascade.managed': 'false',
-					},
-				},
-			]);
-
-			// Simulate receiving a cancel command
-			await handler({ runId: 'run-123', reason: 'user requested' });
-
-			expect(mockDockerGetContainer).not.toHaveBeenCalled();
+			expect(mockKillWorker).not.toHaveBeenCalled();
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				expect.stringContaining('JobId not found in DB for run'),
+				expect.objectContaining({ runId: 'run-123' }),
+			);
 		});
 
 		it('handles errors in cancel handler gracefully', async () => {
@@ -159,60 +118,34 @@ describe('cancel-listener', () => {
 
 			expect(mockKillWorker).not.toHaveBeenCalled();
 		});
-
-		it('handles Docker fallback errors gracefully', async () => {
-			process.env.REDIS_URL = 'redis://localhost:6379';
-			const handler = vi.fn();
-			mockSubscribeToCancelCommands.mockImplementation(async (cb: unknown) => {
-				handler.mockImplementation(cb);
-			});
-
-			await startCancelListener();
-
-			mockGetRunJobId.mockResolvedValue(null);
-			mockDockerListContainers.mockRejectedValue(new Error('Docker API error'));
-
-			// Should not throw
-			await expect(handler({ runId: 'run-123', reason: 'user requested' })).resolves.not.toThrow();
-		});
-
-		it('handles Docker container stop errors gracefully', async () => {
-			process.env.REDIS_URL = 'redis://localhost:6379';
-			const handler = vi.fn();
-			mockSubscribeToCancelCommands.mockImplementation(async (cb: unknown) => {
-				handler.mockImplementation(cb);
-			});
-
-			await startCancelListener();
-
-			mockGetRunJobId.mockResolvedValue(null);
-			mockDockerListContainers.mockResolvedValue([
-				{
-					Id: 'container-abc123',
-					Labels: {
-						'cascade.managed': 'true',
-					},
-				},
-			]);
-
-			const mockStop = vi.fn().mockRejectedValue(new Error('Container already stopped'));
-			mockDockerGetContainer.mockReturnValue({ stop: mockStop });
-
-			// Should not throw
-			await expect(handler({ runId: 'run-123', reason: 'user requested' })).resolves.not.toThrow();
-		});
 	});
 
 	describe('stopCancelListener', () => {
-		it('can be called without error', async () => {
+		it('can be called without error when not active', async () => {
 			await expect(stopCancelListener()).resolves.not.toThrow();
+			expect(mockUnsubscribeFromCancelCommands).not.toHaveBeenCalled();
+		});
+
+		it('calls unsubscribeFromCancelCommands when active', async () => {
+			process.env.REDIS_URL = 'redis://localhost:6379';
+			await startCancelListener();
+
+			mockUnsubscribeFromCancelCommands.mockResolvedValue(undefined);
+			await stopCancelListener();
+
+			expect(mockUnsubscribeFromCancelCommands).toHaveBeenCalled();
 		});
 
 		it('can be called multiple times without error', async () => {
-			await stopCancelListener();
-			await stopCancelListener();
+			process.env.REDIS_URL = 'redis://localhost:6379';
+			await startCancelListener();
 
-			expect(true).toBe(true); // Just verify no errors
+			mockUnsubscribeFromCancelCommands.mockResolvedValue(undefined);
+			await stopCancelListener();
+			await stopCancelListener(); // Second call is a no-op
+
+			// unsubscribe should only have been called once (second call is no-op)
+			expect(mockUnsubscribeFromCancelCommands).toHaveBeenCalledTimes(1);
 		});
 	});
 });
