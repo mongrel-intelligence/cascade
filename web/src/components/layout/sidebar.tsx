@@ -19,13 +19,12 @@ interface SidebarProps {
 	user: { name: string; email: string; role: string } | undefined;
 }
 
-const mainNav = [
-	{ to: '/' as const, label: 'Runs', icon: Activity },
-	{ to: '/webhooklogs' as const, label: 'Webhook Logs', icon: Zap },
-];
+const mainNav = [{ to: '/' as const, label: 'Runs', icon: Activity }];
 
 const globalNav = [
 	{ to: '/global/runs' as const, label: 'Global Runs', icon: Activity },
+	{ to: '/global/webhook-logs' as const, label: 'Webhook Logs', icon: Zap },
+	{ to: '/global/definitions' as const, label: 'Agent Definitions', icon: BookOpen },
 	{ to: '/global/organizations' as const, label: 'Organizations', icon: Building },
 	{ to: '/global/credentials' as const, label: 'Global Credentials', icon: KeyRound },
 ];
@@ -34,7 +33,6 @@ const settingsNav = [
 	{ to: '/settings/general' as const, label: 'General', icon: Settings },
 	{ to: '/settings/credentials' as const, label: 'Credentials', icon: KeyRound },
 	{ to: '/settings/agents' as const, label: 'Agent Configs', icon: Bot },
-	{ to: '/settings/definitions' as const, label: 'Agent Definitions', icon: BookOpen },
 ];
 
 function NavLink({

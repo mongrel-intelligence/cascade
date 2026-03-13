@@ -120,7 +120,7 @@ describe('agentDefinitionsRouter', () => {
 			const yamlDef = createMockDefinition({ hint: 'from yaml' });
 			mockLoadAgentDefinition.mockReturnValue(yamlDef);
 
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
 			const result = await caller.list();
 
 			expect(result).toHaveLength(2);
@@ -143,7 +143,7 @@ describe('agentDefinitionsRouter', () => {
 			const yamlDef = createMockDefinition();
 			mockLoadAgentDefinition.mockReturnValue(yamlDef);
 
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
 			const result = await caller.list();
 
 			// Should have all YAML types
@@ -160,7 +160,7 @@ describe('agentDefinitionsRouter', () => {
 			const yamlDef = createMockDefinition();
 			mockLoadAgentDefinition.mockReturnValue(yamlDef);
 
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
 			const result = await caller.list();
 
 			expect(result).toHaveLength(3); // 1 DB-only + 2 YAML fallback
@@ -175,7 +175,7 @@ describe('agentDefinitionsRouter', () => {
 			mockListAgentDefinitions.mockResolvedValue([]);
 			mockLoadAgentDefinition.mockReturnValue(createMockDefinition());
 
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
 			await caller.list();
 
 			expect(mockListAgentDefinitions).toHaveBeenCalledTimes(1);
@@ -195,7 +195,7 @@ describe('agentDefinitionsRouter', () => {
 			const def = createMockDefinition();
 			mockResolveAgentDefinition.mockResolvedValue(def);
 
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
 			const result = await caller.get({ agentType: 'implementation' });
 
 			expect(result).toEqual({
@@ -209,7 +209,7 @@ describe('agentDefinitionsRouter', () => {
 			const def = createMockDefinition();
 			mockResolveAgentDefinition.mockResolvedValue(def);
 
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
 			const result = await caller.get({ agentType: 'custom-agent' });
 
 			expect(result.isBuiltin).toBe(false);
@@ -218,7 +218,7 @@ describe('agentDefinitionsRouter', () => {
 		it('throws NOT_FOUND when definition does not exist', async () => {
 			mockResolveAgentDefinition.mockRejectedValue(new Error('not found'));
 
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
 			await expect(caller.get({ agentType: 'missing' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
 			});

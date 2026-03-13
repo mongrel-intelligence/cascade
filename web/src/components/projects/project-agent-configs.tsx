@@ -554,7 +554,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 							<Label>Prompt</Label>
 							<p className="text-sm text-muted-foreground">
 								Prompts are managed in{' '}
-								<Link to="/settings/definitions" className="text-primary hover:underline">
+								<Link to="/global/definitions" className="text-primary hover:underline">
 									Agent Definitions
 								</Link>
 							</p>
