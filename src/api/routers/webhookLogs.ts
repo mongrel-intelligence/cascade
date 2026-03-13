@@ -31,7 +31,7 @@ export const webhookLogsRouter = router({
 		}),
 
 	getById: superAdminProcedure
-		.input(z.object({ id: z.string().uuid() }))
+		.input(z.object({ id: z.string().min(4) }))
 		.query(async ({ input }) => {
 			const log = await getWebhookLogById(input.id);
 			if (!log) throw new TRPCError({ code: 'NOT_FOUND' });

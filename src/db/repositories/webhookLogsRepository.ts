@@ -90,6 +90,17 @@ export async function listWebhookLogs(input: ListWebhookLogsInput) {
 
 export async function getWebhookLogById(id: string) {
 	const db = getDb();
+	// Support short ID prefixes (e.g. first 8 chars from CLI list view)
+	if (id.length < 36) {
+		const rows = await db
+			.select()
+			.from(webhookLogs)
+			.where(sql`${webhookLogs.id}::text LIKE ${`${id}%`}`)
+			.limit(2);
+		if (rows.length === 1) return rows[0];
+		if (rows.length > 1) return null; // ambiguous prefix
+		return null;
+	}
 	const [row] = await db.select().from(webhookLogs).where(eq(webhookLogs.id, id));
 	return row ?? null;
 }

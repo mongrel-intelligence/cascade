@@ -148,18 +148,38 @@ describe('webhookLogsRepository', () => {
 		it('returns null when not found', async () => {
 			mockWhere.mockResolvedValue([]);
 
-			const result = await getWebhookLogById('non-existent-id');
+			const result = await getWebhookLogById('00000000-0000-0000-0000-000000000000');
 
 			expect(result).toBeNull();
 		});
 
 		it('returns the log when found', async () => {
-			const mockLog = { id: 'log-1', source: 'trello' };
+			const mockLog = { id: '11111111-1111-1111-1111-111111111111', source: 'trello' };
 			mockWhere.mockResolvedValue([mockLog]);
 
-			const result = await getWebhookLogById('log-1');
+			const result = await getWebhookLogById('11111111-1111-1111-1111-111111111111');
 
 			expect(result).toEqual(mockLog);
+		});
+
+		it('resolves short ID prefix', async () => {
+			const mockLog = { id: '11111111-1111-1111-1111-111111111111', source: 'trello' };
+			mockLimit.mockResolvedValue([mockLog]);
+
+			const result = await getWebhookLogById('11111111');
+
+			expect(result).toEqual(mockLog);
+		});
+
+		it('returns null for ambiguous short ID prefix', async () => {
+			mockLimit.mockResolvedValue([
+				{ id: '11111111-aaaa-0000-0000-000000000000' },
+				{ id: '11111111-bbbb-0000-0000-000000000000' },
+			]);
+
+			const result = await getWebhookLogById('11111111');
+
+			expect(result).toBeNull();
 		});
 	});
 

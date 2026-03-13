@@ -211,10 +211,15 @@ export const projectsRouter = router({
 			.mutation(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				await verifyCredentialOwnership(input.credentialId, ctx.effectiveOrgId);
-				const integration = await getIntegrationByProjectAndCategory(
-					input.projectId,
-					input.category,
-				);
+				let integration = await getIntegrationByProjectAndCategory(input.projectId, input.category);
+				if (!integration) {
+					// Auto-create SCM integration with GitHub as the default provider
+					const defaultProvider = input.category === 'scm' ? 'github' : undefined;
+					if (defaultProvider) {
+						await upsertProjectIntegration(input.projectId, input.category, defaultProvider, {});
+						integration = await getIntegrationByProjectAndCategory(input.projectId, input.category);
+					}
+				}
 				if (!integration) {
 					throw new TRPCError({
 						code: 'NOT_FOUND',

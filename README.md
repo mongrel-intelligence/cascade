@@ -22,92 +22,49 @@ PM Card → Webhook → Router → Redis/BullMQ → Worker → Agent → PR
 
 ---
 
-## Prerequisites
-
-- **Node.js 22+**
-- **PostgreSQL** (Supabase or self-hosted)
-- **Redis** (for BullMQ job queue)
-- **Git**
-
----
-
-## Quick Start
-
-### 1. Clone and install
+## Quick Start (Docker Compose)
 
 ```bash
-git clone https://github.com/your-org/cascade.git
+git clone https://github.com/zbigniewsobiecki/cascade.git
+cd cascade
+cp .env.docker.example .env    # Edit if needed
+bash setup.sh                  # Build, migrate, and start all services
+docker compose exec dashboard node dist/tools/create-admin-user.mjs \
+  --email admin@example.com --password changeme --name "Admin"
+```
+
+Open **http://localhost:3001** — log in with your admin credentials.
+
+For detailed setup including project configuration, webhooks, and credentials, see [Getting Started](./GETTING_STARTED.md).
+
+### Development Setup
+
+For contributing or local development without Docker:
+
+**Prerequisites:** Node.js 22+, PostgreSQL, Redis, Git
+
+```bash
+git clone https://github.com/zbigniewsobiecki/cascade.git
 cd cascade
 npm install
 cd web && npm install && cd ..
-```
-
-### 2. Configure environment
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` — at minimum set your database and Redis URLs:
-
-```
-DATABASE_URL=postgresql://user:password@localhost:5432/cascade
-REDIS_URL=redis://localhost:6379
-```
-
-> All project credentials (GitHub tokens, Trello/JIRA keys, LLM API keys) are stored in the database, not environment variables. The `.env` file only needs infrastructure connection strings.
-
-### 3. Start Redis
-
-```bash
-# macOS
-brew install redis && brew services start redis
-
-# Linux
-apt-get install redis-server && service redis-server start
-```
-
-### 4. Run database migrations
-
-```bash
+cp .env.example .env           # Set DATABASE_URL and REDIS_URL
 npm run db:migrate
 ```
 
-### 5. Start the services
-
-Open three terminals:
+Start each service in a separate terminal:
 
 ```bash
-# Terminal 1 — Router (receives webhooks)
-npm run dev
-
-# Terminal 2 — Dashboard API (tRPC server on :3001)
-npm run build && node --env-file=.env dist/dashboard.js
-
-# Terminal 3 — Web UI (Vite dev server on :5173)
-npm run dev:web
+npm run dev                                          # Terminal 1: Router (webhook receiver, :3000)
+npm run dev:web                                      # Terminal 2: Dashboard frontend (Vite, :5173)
+npm run build && node --env-file=.env dist/dashboard.js  # Terminal 3: Dashboard API (:3001)
 ```
 
-Open **http://localhost:5173** — you'll see the dashboard.
-
-### 6. First login
-
-Create your first organization and user directly in the database:
+Open **http://localhost:5173**. Create your first user:
 
 ```bash
-# First, create an organization (required for foreign key constraint)
-psql $DATABASE_URL -c "INSERT INTO organizations (id, name) VALUES ('my-org', 'My Organization');"
-
-# Then hash your password and create the user
-node -e "import('bcrypt').then(b => b.default.hash('yourpassword', 10).then(console.log))"
-psql $DATABASE_URL -c "INSERT INTO users (org_id, email, password_hash, name, role) VALUES ('my-org', 'you@example.com', '\$2b\$10\$...', 'Your Name', 'admin');"
-```
-
-Then log in via the dashboard or CLI:
-
-```bash
-npm run build
-node bin/cascade.js login --server http://localhost:3001 --email you@example.com --password yourpassword
+node --env-file=.env --import tsx tools/create-admin-user.ts \
+  --email you@example.com --password yourpassword --name "Your Name"
 ```
 
 ---
@@ -220,10 +177,11 @@ node bin/cascade.js credentials create \
   --default
 ```
 
-### Link credentials to the project
+### Link GitHub tokens to your project
 
 ```bash
 # After creating credentials, note their IDs from `cascade credentials list`
+# (The GitHub integration is created automatically if it doesn't exist)
 node bin/cascade.js projects integration-credential-set my-project \
   --category scm \
   --role implementer_token \
@@ -342,14 +300,15 @@ npx lefthook install
 
 ## Deployment
 
-CASCADE ships four Docker images for production:
+### Self-hosted (Docker Compose)
+
+The included `docker-compose.yml` runs all services (PostgreSQL, Redis, Dashboard + Frontend, Router) with a single command. Workers are built as a separate image and spawned dynamically by the Router via Docker socket. See the [Quick Start](#quick-start-docker-compose) above.
 
 | Image | Dockerfile | Purpose |
 |-------|-----------|---------|
-| Router | `Dockerfile.router` | Lightweight webhook receiver |
+| Dashboard + Frontend | `Dockerfile.selfhosted` | API server + web UI (combined) |
+| Router | `Dockerfile.router` | Webhook receiver, worker orchestration |
 | Worker | `Dockerfile.worker` | Full agent runtime (clones repos, runs AI) |
-| Dashboard | `Dockerfile.dashboard` | API server (tRPC + auth) |
-| Frontend | `Dockerfile.frontend` | Static web UI (deployed via Cloudflare Pages) |
 
 ### Required production environment variables
 
@@ -360,43 +319,14 @@ REDIS_URL=redis://your-redis-host:6379
 
 # Security
 CREDENTIAL_MASTER_KEY=<64-char hex string>   # Encrypt credentials at rest
-                                              # Generate: npm run credentials:generate-key
+                                              # Generate: openssl rand -hex 32
 ```
 
 All project-level credentials (GitHub tokens, Trello/JIRA keys, LLM API keys) are stored in the database and managed through the dashboard or CLI — no additional environment variables are needed per project.
 
-### Example: Docker Compose
+### Separate deployment
 
-```yaml
-services:
-  router:
-    build:
-      context: .
-      dockerfile: Dockerfile.router
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: ${REDIS_URL}
-    ports:
-      - "3000:3000"
-
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: ${REDIS_URL}
-
-  dashboard:
-    build:
-      context: .
-      dockerfile: Dockerfile.dashboard
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: ${REDIS_URL}
-    ports:
-      - "3001:3001"
-```
+For production deployments where services run on different hosts, use the individual Dockerfiles (`Dockerfile.router`, `Dockerfile.dashboard`, `Dockerfile.worker`). The `Dockerfile.frontend` builds the web UI for deployment via Cloudflare Pages or any static hosting.
 
 ---
 
