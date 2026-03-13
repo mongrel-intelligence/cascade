@@ -309,110 +309,81 @@ describe('settingsRepository (integration)', () => {
 	});
 
 	// =========================================================================
-	// Agent Configs
+	// Agent Configs (project-scoped only after migration 0036)
 	// =========================================================================
 
 	describe('listAgentConfigs', () => {
-		it('lists all agent configs when no filter given', async () => {
+		it('lists agent configs for a project', async () => {
 			await createAgentConfig({
-				orgId: null,
-				projectId: null,
-				agentType: 'implementation',
-				model: 'global-model',
-			});
-			await createAgentConfig({
-				orgId: 'test-org',
-				projectId: null,
-				agentType: 'review',
-				model: 'org-model',
-			});
-			await createAgentConfig({
-				orgId: null,
-				projectId: 'test-project',
-				agentType: 'planning',
-				model: 'proj-model',
-			});
-
-			const configs = await listAgentConfigs();
-			expect(configs.length).toBeGreaterThanOrEqual(3);
-		});
-
-		it('filters by projectId', async () => {
-			await createAgentConfig({
-				orgId: null,
 				projectId: 'test-project',
 				agentType: 'implementation',
-				model: 'proj-model',
+				model: 'impl-model',
 			});
 			await createAgentConfig({
-				orgId: null,
-				projectId: null,
+				projectId: 'test-project',
 				agentType: 'review',
-				model: 'global-model',
+				model: 'review-model',
 			});
 
 			const configs = await listAgentConfigs({ projectId: 'test-project' });
-			expect(configs.some((c) => c.projectId === 'test-project')).toBe(true);
-			expect(configs.some((c) => c.projectId === null)).toBe(true);
+			expect(configs).toHaveLength(2);
+			expect(configs.every((c) => c.projectId === 'test-project')).toBe(true);
 		});
 
-		it('filters by orgId (returns global + org-level configs with null projectId)', async () => {
+		it('returns empty list for project with no configs', async () => {
+			const configs = await listAgentConfigs({ projectId: 'test-project' });
+			expect(configs).toHaveLength(0);
+		});
+
+		it('only returns configs for the specified project', async () => {
+			await seedProject({ id: 'project-2', name: 'Project 2', repo: 'owner/repo2' });
 			await createAgentConfig({
-				orgId: null,
-				projectId: null,
-				agentType: 'implementation',
-				model: 'global-model',
-			});
-			await createAgentConfig({
-				orgId: 'test-org',
-				projectId: null,
-				agentType: 'review',
-				model: 'org-model',
-			});
-			await createAgentConfig({
-				orgId: null,
 				projectId: 'test-project',
-				agentType: 'planning',
-				model: 'proj-model',
+				agentType: 'implementation',
+				model: 'proj1-model',
+			});
+			await createAgentConfig({
+				projectId: 'project-2',
+				agentType: 'implementation',
+				model: 'proj2-model',
 			});
 
-			const configs = await listAgentConfigs({ orgId: 'test-org' });
-			// Should return configs where projectId is null (global + org-level)
-			expect(configs.every((c) => c.projectId === null)).toBe(true);
+			const configs = await listAgentConfigs({ projectId: 'test-project' });
+			expect(configs).toHaveLength(1);
+			expect(configs[0].model).toBe('proj1-model');
 		});
 	});
 
 	describe('createAgentConfig', () => {
-		it('creates a global agent config', async () => {
+		it('creates a project-scoped agent config', async () => {
 			const { id } = await createAgentConfig({
-				orgId: null,
-				projectId: null,
+				projectId: 'test-project',
 				agentType: 'implementation',
 				model: 'claude-opus-4-5',
 				maxIterations: 30,
 			});
 			expect(id).toBeGreaterThan(0);
+
+			const configs = await listAgentConfigs({ projectId: 'test-project' });
+			expect(configs.find((c) => c.id === id)?.model).toBe('claude-opus-4-5');
 		});
 
-		it('creates a project-scoped agent config', async () => {
+		it('creates a config with engine and max concurrency', async () => {
 			const { id } = await createAgentConfig({
-				orgId: null,
 				projectId: 'test-project',
 				agentType: 'review',
 				model: 'claude-sonnet',
+				agentEngine: 'claude-code',
+				maxConcurrency: 3,
 			});
 			expect(id).toBeGreaterThan(0);
-
-			const configs = await listAgentConfigs({ projectId: 'test-project' });
-			expect(configs.find((c) => c.id === id)?.model).toBe('claude-sonnet');
 		});
 	});
 
 	describe('updateAgentConfig', () => {
 		it('updates an agent config', async () => {
 			const { id } = await createAgentConfig({
-				orgId: null,
-				projectId: null,
+				projectId: 'test-project',
 				agentType: 'implementation',
 				model: 'old-model',
 				maxIterations: 10,
@@ -420,7 +391,7 @@ describe('settingsRepository (integration)', () => {
 
 			await updateAgentConfig(id, { model: 'new-model', maxIterations: 20 });
 
-			const configs = await listAgentConfigs();
+			const configs = await listAgentConfigs({ projectId: 'test-project' });
 			const config = configs.find((c) => c.id === id);
 			expect(config?.model).toBe('new-model');
 			expect(config?.maxIterations).toBe(20);
@@ -430,15 +401,14 @@ describe('settingsRepository (integration)', () => {
 	describe('deleteAgentConfig', () => {
 		it('deletes an agent config', async () => {
 			const { id } = await createAgentConfig({
-				orgId: null,
-				projectId: null,
+				projectId: 'test-project',
 				agentType: 'implementation',
 				model: 'to-delete',
 			});
 
 			await deleteAgentConfig(id);
 
-			const configs = await listAgentConfigs();
+			const configs = await listAgentConfigs({ projectId: 'test-project' });
 			expect(configs.find((c) => c.id === id)).toBeUndefined();
 		});
 	});
