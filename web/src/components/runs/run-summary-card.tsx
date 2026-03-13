@@ -1,5 +1,6 @@
 import { useElapsedTime } from '@/lib/useElapsedTime.js';
 import { formatCost, formatDuration } from '@/lib/utils.js';
+import { Link } from '@tanstack/react-router';
 import { ExternalLink } from 'lucide-react';
 
 interface RunSummaryProps {
@@ -49,15 +50,41 @@ function getIterationsLabel(run: RunSummaryProps['run']): string {
 function renderWorkItem(run: RunSummaryProps['run']) {
 	if (run.workItemUrl && run.workItemTitle) {
 		return (
-			<a
-				href={run.workItemUrl}
-				target="_blank"
-				rel="noopener noreferrer"
-				className="inline-flex items-center gap-1 text-primary hover:underline"
-			>
-				{run.workItemTitle}
-				<ExternalLink className="h-3 w-3" />
-			</a>
+			<div className="flex flex-col gap-0.5">
+				<a
+					href={run.workItemUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="inline-flex items-center gap-1 text-primary hover:underline"
+				>
+					{run.workItemTitle}
+					<ExternalLink className="h-3 w-3" />
+				</a>
+				{run.projectId && run.workItemId && (
+					<Link
+						to="/work-items/$projectId/$workItemId"
+						params={{ projectId: run.projectId, workItemId: run.workItemId }}
+						className="text-xs text-muted-foreground hover:text-primary hover:underline"
+					>
+						View all runs
+					</Link>
+				)}
+			</div>
+		);
+	}
+
+	if (run.workItemId && run.projectId) {
+		return (
+			<div className="flex flex-col gap-0.5">
+				<span>{run.workItemId}</span>
+				<Link
+					to="/work-items/$projectId/$workItemId"
+					params={{ projectId: run.projectId, workItemId: run.workItemId }}
+					className="text-xs text-muted-foreground hover:text-primary hover:underline"
+				>
+					View all runs
+				</Link>
+			</div>
 		);
 	}
 
@@ -71,15 +98,26 @@ function renderPullRequest(run: RunSummaryProps['run']) {
 
 	return (
 		<Field label="Pull Request">
-			<a
-				href={run.prUrl}
-				target="_blank"
-				rel="noopener noreferrer"
-				className="inline-flex items-center gap-1 text-primary hover:underline"
-			>
-				PR #{run.prNumber ?? 'link'}
-				<ExternalLink className="h-3 w-3" />
-			</a>
+			<div className="flex flex-col gap-0.5">
+				<a
+					href={run.prUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="inline-flex items-center gap-1 text-primary hover:underline"
+				>
+					PR #{run.prNumber ?? 'link'}
+					<ExternalLink className="h-3 w-3" />
+				</a>
+				{run.projectId && run.prNumber != null && (
+					<Link
+						to="/prs/$projectId/$prNumber"
+						params={{ projectId: run.projectId, prNumber: String(run.prNumber) }}
+						className="text-xs text-muted-foreground hover:text-primary hover:underline"
+					>
+						View all runs
+					</Link>
+				)}
+			</div>
 		</Field>
 	);
 }
