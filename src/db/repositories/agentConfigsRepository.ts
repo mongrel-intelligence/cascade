@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, or } from 'drizzle-orm';
 import { getDb } from '../client.js';
 import { agentConfigs, projects } from '../schema/index.js';
 
@@ -14,6 +14,7 @@ export async function listAgentConfigs(filter?: { orgId?: string; projectId?: st
 		conditions.push(eq(agentConfigs.projectId, filter.projectId));
 	} else if (filter?.orgId) {
 		// Return global (no orgId, no projectId) + org-scoped (orgId set, no projectId)
+		conditions.push(or(eq(agentConfigs.orgId, filter.orgId), isNull(agentConfigs.orgId)));
 		conditions.push(isNull(agentConfigs.projectId));
 	}
 
@@ -24,6 +25,14 @@ export async function listAgentConfigs(filter?: { orgId?: string; projectId?: st
 			.where(and(...conditions));
 	}
 	return db.select().from(agentConfigs);
+}
+
+export async function listGlobalAgentConfigs() {
+	const db = getDb();
+	return db
+		.select()
+		.from(agentConfigs)
+		.where(and(isNull(agentConfigs.orgId), isNull(agentConfigs.projectId)));
 }
 
 export async function createAgentConfig(data: {

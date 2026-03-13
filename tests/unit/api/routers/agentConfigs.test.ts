@@ -149,7 +149,7 @@ describe('agentConfigsRouter', () => {
 
 			expect(mockCreateAgentConfig).toHaveBeenCalledWith({
 				orgId: 'org-1',
-				projectId: undefined,
+				projectId: null,
 				agentType: 'implementation',
 				model: 'claude-sonnet-4-5-20250929',
 				maxIterations: 25,

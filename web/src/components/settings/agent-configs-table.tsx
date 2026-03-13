@@ -13,7 +13,7 @@ import { Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { AgentConfigFormDialog } from './agent-config-form-dialog.js';
 
-interface AgentConfig {
+export interface AgentConfig {
 	id: number;
 	orgId: string | null;
 	projectId: string | null;
@@ -24,14 +24,23 @@ interface AgentConfig {
 	maxConcurrency: number | null;
 }
 
-export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
+export function AgentConfigsTable({
+	configs,
+	isGlobalScope = false,
+}: { configs: AgentConfig[]; isGlobalScope?: boolean }) {
 	const queryClient = useQueryClient();
 	const [editConfig, setEditConfig] = useState<AgentConfig | null>(null);
 
 	const deleteMutation = useMutation({
 		mutationFn: (id: number) => trpcClient.agentConfigs.delete.mutate({ id }),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: trpc.agentConfigs.list.queryOptions().queryKey });
+			if (isGlobalScope) {
+				queryClient.invalidateQueries({
+					queryKey: trpc.agentConfigs.listGlobal.queryOptions().queryKey,
+				});
+			} else {
+				queryClient.invalidateQueries({ queryKey: trpc.agentConfigs.list.queryOptions().queryKey });
+			}
 		},
 	});
 
@@ -70,10 +79,12 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 								</TableCell>
 								<TableCell className="hidden md:table-cell">{config.agentEngine ?? '-'}</TableCell>
 								<TableCell>
-									{config.orgId ? (
+									{config.projectId ? (
+										<Badge variant="outline">Project</Badge>
+									) : config.orgId ? (
 										<Badge variant="secondary">Org</Badge>
 									) : (
-										<Badge variant="outline">Global</Badge>
+										<Badge variant="default">Global</Badge>
 									)}
 								</TableCell>
 								<TableCell>
@@ -87,7 +98,11 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 										</button>
 										<button
 											type="button"
-											onClick={() => deleteMutation.mutate(config.id)}
+											onClick={() => {
+												if (window.confirm('Delete this agent config?')) {
+													deleteMutation.mutate(config.id);
+												}
+											}}
 											className="p-1 text-muted-foreground hover:text-destructive"
 										>
 											<Trash2 className="h-4 w-4" />
@@ -105,6 +120,7 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 					open={true}
 					onOpenChange={(open) => !open && setEditConfig(null)}
 					config={editConfig}
+					isGlobalScope={isGlobalScope}
 				/>
 			)}
 		</>
