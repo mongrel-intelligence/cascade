@@ -13,6 +13,7 @@
  * - REDIS_URL — Redis for job dispatch to the router's worker-manager
  */
 
+import { existsSync } from 'node:fs';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { trpcServer } from '@hono/trpc-server';
@@ -67,14 +68,16 @@ app.use(
 );
 
 // Self-hosted mode: serve frontend static files when built into dist/web/
-app.use('/assets/*', serveStatic({ root: './dist/web' }));
-app.get(
-	'*',
-	serveStatic({
-		root: './dist/web',
-		rewriteRequestPath: () => '/index.html',
-	}),
-);
+if (existsSync('./dist/web/index.html')) {
+	app.use('/assets/*', serveStatic({ root: './dist/web' }));
+	app.get(
+		'*',
+		serveStatic({
+			root: './dist/web',
+			rewriteRequestPath: () => '/index.html',
+		}),
+	);
+}
 
 // 404
 app.notFound((c) => c.json({ error: 'Not Found' }, 404));
