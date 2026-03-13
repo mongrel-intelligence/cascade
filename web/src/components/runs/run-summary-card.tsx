@@ -1,6 +1,9 @@
 import { useElapsedTime } from '@/lib/useElapsedTime.js';
 import { formatCost, formatDuration } from '@/lib/utils.js';
 import { ExternalLink } from 'lucide-react';
+import { useState } from 'react';
+
+const OUTPUT_COLLAPSE_THRESHOLD = 500;
 
 interface RunSummaryProps {
 	run: {
@@ -84,6 +87,34 @@ function renderPullRequest(run: RunSummaryProps['run']) {
 	);
 }
 
+function OutputSection({ output }: { output: string }) {
+	const isLong = output.length > OUTPUT_COLLAPSE_THRESHOLD;
+	const [expanded, setExpanded] = useState(!isLong);
+
+	return (
+		<div className="rounded-lg border border-border p-4">
+			<div className="mb-1 flex items-center justify-between">
+				<h3 className="text-sm font-medium">Output</h3>
+				{isLong && (
+					<button
+						type="button"
+						onClick={() => setExpanded((prev) => !prev)}
+						className="text-xs text-primary hover:underline"
+					>
+						{expanded ? 'Show less' : 'Show more'}
+					</button>
+				)}
+			</div>
+			<pre
+				className={`overflow-x-auto whitespace-pre-wrap text-sm text-muted-foreground${expanded ? '' : ' max-h-96 overflow-y-auto'}`}
+			>
+				{expanded ? output : output.slice(0, OUTPUT_COLLAPSE_THRESHOLD)}
+				{!expanded && output.length > OUTPUT_COLLAPSE_THRESHOLD && '…'}
+			</pre>
+		</div>
+	);
+}
+
 export function RunSummaryCard({ run }: RunSummaryProps) {
 	const elapsed = useElapsedTime(run.startedAt, run.status === 'running');
 	const displayDuration = elapsed ?? run.durationMs;
@@ -116,14 +147,7 @@ export function RunSummaryCard({ run }: RunSummaryProps) {
 				</div>
 			)}
 
-			{run.outputSummary && (
-				<div className="rounded-lg border border-border p-4">
-					<h3 className="mb-1 text-sm font-medium">Output Summary</h3>
-					<pre className="overflow-x-auto whitespace-pre-wrap text-sm text-muted-foreground">
-						{run.outputSummary}
-					</pre>
-				</div>
-			)}
+			{run.outputSummary && <OutputSection output={run.outputSummary} />}
 		</div>
 	);
 }

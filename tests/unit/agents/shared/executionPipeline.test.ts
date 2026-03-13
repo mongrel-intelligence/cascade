@@ -251,6 +251,28 @@ describe('executeAgentPipeline', () => {
 				success: true,
 				durationMs: expect.any(Number),
 				costUsd: 1.0,
+				outputSummary: 'Done',
+			}),
+		);
+	});
+
+	it('stores full output without truncation when output exceeds 500 characters', async () => {
+		setupMocks();
+		const mockFinalizeRun = vi.fn();
+		const longOutput = 'x'.repeat(600);
+
+		await executeAgentPipeline({
+			loggerIdentifier: 'test-run',
+			setupRepoDir: vi.fn().mockResolvedValue(process.cwd()),
+			finalizeRun: mockFinalizeRun,
+			execute: async () => ({ success: true, output: longOutput }),
+		});
+
+		expect(mockFinalizeRun).toHaveBeenCalledWith(
+			undefined,
+			expect.anything(),
+			expect.objectContaining({
+				outputSummary: longOutput,
 			}),
 		);
 	});

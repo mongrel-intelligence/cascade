@@ -225,7 +225,7 @@ export async function executeAgentPipeline(options: AgentPipelineOptions): Promi
 			error: result.error,
 			costUsd: result.cost,
 			prUrl: result.prUrl,
-			outputSummary: result.output.slice(0, 500),
+			outputSummary: result.output,
 			metadata: result.finalizeMetadata,
 		});
 
