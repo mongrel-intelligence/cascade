@@ -1,20 +1,7 @@
-import { CancelRunButton } from '@/components/runs/cancel-run-button.js';
-import { LiveDuration } from '@/components/runs/live-duration.js';
-import { RetryRunButton } from '@/components/runs/retry-run-button.js';
-import { RunStatusBadge } from '@/components/runs/run-status-badge.js';
-import { trpc } from '@/lib/trpc.js';
-import { formatCost, formatRelativeTime } from '@/lib/utils.js';
-import { useQuery } from '@tanstack/react-query';
+import { formatCost } from '@/lib/utils.js';
+import { useNavigate } from '@tanstack/react-router';
 import { Link } from '@tanstack/react-router';
-import {
-	Activity,
-	ChevronDown,
-	ChevronRight,
-	ClipboardList,
-	ExternalLink,
-	GitPullRequest,
-} from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import { ClipboardList, ExternalLink, GitPullRequest } from 'lucide-react';
 
 interface WorkItem {
 	id: string;
@@ -40,122 +27,15 @@ interface ProjectWorkTableProps {
 }
 
 // ============================================================================
-// ExpandedRunsRow sub-component
-// ============================================================================
-
-interface ExpandedRunsRowProps {
-	projectId: string;
-	prNumber: number | null;
-	workItemId: string | null;
-}
-
-function ExpandedRunsRow({ projectId, prNumber, workItemId }: ExpandedRunsRowProps) {
-	const runsQuery = useQuery(
-		workItemId
-			? trpc.workItems.runs.queryOptions({ projectId, workItemId })
-			: prNumber !== null
-				? trpc.prs.runs.queryOptions({ projectId, prNumber })
-				: trpc.workItems.runs.queryOptions({ projectId, workItemId: '' }),
-	);
-
-	return (
-		<tr>
-			<td colSpan={4} className="border-t border-border bg-muted/20 px-4 py-3">
-				{runsQuery.isLoading && (
-					<div className="text-sm text-muted-foreground">Loading runs...</div>
-				)}
-				{runsQuery.isError && (
-					<div className="text-sm text-destructive">
-						Failed to load runs: {runsQuery.error.message}
-					</div>
-				)}
-				{runsQuery.data && runsQuery.data.length === 0 && (
-					<div className="text-sm text-muted-foreground italic">No runs found</div>
-				)}
-				{runsQuery.data && runsQuery.data.length > 0 && (
-					<div className="overflow-x-auto">
-						<table className="w-full text-xs">
-							<thead>
-								<tr className="border-b border-border">
-									<th className="pb-2 pr-4 text-left font-medium text-muted-foreground">Agent</th>
-									<th className="pb-2 pr-4 text-left font-medium text-muted-foreground">Status</th>
-									<th className="pb-2 pr-4 text-left font-medium text-muted-foreground">Started</th>
-									<th className="pb-2 pr-4 text-right font-medium text-muted-foreground">
-										Duration
-									</th>
-									<th className="pb-2 pr-4 text-right font-medium text-muted-foreground">Cost</th>
-									<th className="pb-2 pr-4 text-right font-medium text-muted-foreground">Iters</th>
-									<th className="pb-2 text-center font-medium text-muted-foreground">Actions</th>
-								</tr>
-							</thead>
-							<tbody>
-								{runsQuery.data.map((run) => (
-									<tr key={run.id} className="border-b border-border/50 last:border-0">
-										<td className="py-1.5 pr-4">
-											<Link
-												to="/runs/$runId"
-												params={{ runId: run.id }}
-												className="font-medium text-primary hover:underline"
-											>
-												{run.agentType}
-											</Link>
-										</td>
-										<td className="py-1.5 pr-4">
-											<RunStatusBadge status={run.status} />
-										</td>
-										<td className="py-1.5 pr-4 text-muted-foreground">
-											{formatRelativeTime(run.startedAt)}
-										</td>
-										<td className="py-1.5 pr-4 text-right tabular-nums text-muted-foreground">
-											<LiveDuration
-												startedAt={run.startedAt}
-												durationMs={run.durationMs}
-												status={run.status}
-											/>
-										</td>
-										<td className="py-1.5 pr-4 text-right tabular-nums text-muted-foreground">
-											{formatCost(run.costUsd)}
-										</td>
-										<td className="py-1.5 pr-4 text-right tabular-nums text-muted-foreground">
-											{run.llmIterations ?? '-'}
-										</td>
-										<td className="py-1.5 text-center">
-											<CancelRunButton runId={run.id} status={run.status} />
-											<RetryRunButton runId={run.id} status={run.status} />
-										</td>
-									</tr>
-								))}
-							</tbody>
-						</table>
-					</div>
-				)}
-			</td>
-		</tr>
-	);
-}
-
-// ============================================================================
 // WorkItemRow sub-component (extracted to reduce complexity)
 // ============================================================================
 
 interface WorkItemRowProps {
 	item: WorkItem;
 	projectId: string;
-	isExpanded: boolean;
-	onToggle: (id: string) => void;
 }
 
-function ItemIcon({
-	item,
-	isExpanded,
-	canExpand,
-}: Pick<WorkItemRowProps, 'item' | 'isExpanded'> & {
-	canExpand: boolean;
-}) {
-	if (canExpand) {
-		return isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />;
-	}
-
+function ItemIcon({ item }: Pick<WorkItemRowProps, 'item'>) {
 	if (item.type === 'linked' || item.type === 'work-item') {
 		return (
 			<span title={item.type === 'linked' ? 'Linked (PR + Work Item)' : 'Work Item'}>
@@ -260,51 +140,30 @@ function SecondaryItemTitle({ item }: Pick<WorkItemRowProps, 'item'>) {
 	);
 }
 
-function ActivityLink({ item, projectId }: { item: WorkItem; projectId: string }) {
-	if (item.runCount === 0) return null;
-
-	if ((item.type === 'work-item' || item.type === 'linked') && item.workItemId) {
-		return (
-			<Link
-				to="/work-items/$projectId/$workItemId"
-				params={{ projectId, workItemId: item.workItemId }}
-				onClick={(e) => e.stopPropagation()}
-				title="View all runs for this work item"
-				className="inline-flex items-center text-muted-foreground hover:text-primary"
-			>
-				<Activity className="h-4 w-4" />
-			</Link>
-		);
-	}
-
-	if (item.type === 'pr' && item.prNumber != null) {
-		return (
-			<Link
-				to="/prs/$projectId/$prNumber"
-				params={{ projectId, prNumber: String(item.prNumber) }}
-				onClick={(e) => e.stopPropagation()}
-				title="View all runs for this PR"
-				className="inline-flex items-center text-muted-foreground hover:text-primary"
-			>
-				<Activity className="h-4 w-4" />
-			</Link>
-		);
-	}
-
-	return null;
-}
-
-function WorkItemRow({ item, projectId, isExpanded, onToggle }: WorkItemRowProps) {
-	const canExpand = item.runCount > 0;
+function WorkItemRow({ item, projectId }: WorkItemRowProps) {
+	const navigate = useNavigate();
+	const canNavigate = item.runCount > 0;
 
 	const handleClick = () => {
-		if (canExpand) onToggle(item.id);
+		if (!canNavigate) return;
+
+		if ((item.type === 'work-item' || item.type === 'linked') && item.workItemId) {
+			navigate({
+				to: '/work-items/$projectId/$workItemId',
+				params: { projectId, workItemId: item.workItemId },
+			});
+		} else if (item.type === 'pr' && item.prNumber != null) {
+			navigate({
+				to: '/prs/$projectId/$prNumber',
+				params: { projectId, prNumber: String(item.prNumber) },
+			});
+		}
 	};
 
 	const handleKeyDown = (e: React.KeyboardEvent) => {
-		if (canExpand && (e.key === 'Enter' || e.key === ' ')) {
+		if (canNavigate && (e.key === 'Enter' || e.key === ' ')) {
 			e.preventDefault();
-			onToggle(item.id);
+			handleClick();
 		}
 	};
 
@@ -313,11 +172,11 @@ function WorkItemRow({ item, projectId, isExpanded, onToggle }: WorkItemRowProps
 			className="border-b border-border transition-colors hover:bg-muted/30"
 			onClick={handleClick}
 			onKeyDown={handleKeyDown}
-			style={canExpand ? { cursor: 'pointer' } : undefined}
+			style={canNavigate ? { cursor: 'pointer' } : undefined}
 		>
-			{/* Expand chevron / Type icon */}
+			{/* Type icon */}
 			<td className="px-4 py-3 text-muted-foreground">
-				<ItemIcon item={item} isExpanded={isExpanded} canExpand={canExpand} />
+				<ItemIcon item={item} />
 			</td>
 
 			{/* PR title / number + Associated work item (stacked) */}
@@ -328,16 +187,13 @@ function WorkItemRow({ item, projectId, isExpanded, onToggle }: WorkItemRowProps
 				</div>
 			</td>
 
-			{/* Run count + Activity link */}
+			{/* Run count */}
 			<td className="px-4 py-3 text-right tabular-nums">
-				<div className="flex items-center justify-end gap-2">
-					<ActivityLink item={item} projectId={projectId} />
-					{canExpand ? (
-						<span className="cursor-pointer text-primary hover:underline">{item.runCount}</span>
-					) : (
-						item.runCount
-					)}
-				</div>
+				{canNavigate ? (
+					<span className="cursor-pointer text-primary hover:underline">{item.runCount}</span>
+				) : (
+					item.runCount
+				)}
 			</td>
 
 			{/* Cost */}
@@ -364,26 +220,6 @@ export function ProjectWorkTable({
 	const currentPage = Math.floor(offset / limit) + 1;
 	const pageItems = items.slice(offset, offset + limit);
 
-	const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-
-	// Reset expanded rows when the page changes
-	// biome-ignore lint/correctness/useExhaustiveDependencies: offset is a prop used as a page-change trigger
-	useEffect(() => {
-		setExpandedRows(new Set());
-	}, [offset]);
-
-	const toggleRow = (id: string) => {
-		setExpandedRows((prev) => {
-			const next = new Set(prev);
-			if (next.has(id)) {
-				next.delete(id);
-			} else {
-				next.add(id);
-			}
-			return next;
-		});
-	};
-
 	return (
 		<div className="space-y-4">
 			<div className="overflow-x-auto rounded-lg border border-border">
@@ -407,21 +243,7 @@ export function ProjectWorkTable({
 							</tr>
 						)}
 						{pageItems.map((item) => (
-							<React.Fragment key={item.id}>
-								<WorkItemRow
-									item={item}
-									projectId={projectId}
-									isExpanded={expandedRows.has(item.id)}
-									onToggle={toggleRow}
-								/>
-								{expandedRows.has(item.id) && (
-									<ExpandedRunsRow
-										projectId={projectId}
-										prNumber={item.prNumber}
-										workItemId={item.workItemId}
-									/>
-								)}
-							</React.Fragment>
+							<WorkItemRow key={item.id} item={item} projectId={projectId} />
 						))}
 					</tbody>
 				</table>
