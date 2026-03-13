@@ -5,6 +5,7 @@ import { CheckCircle, Globe, Loader2, XCircle } from 'lucide-react';
 import { useEffect, useReducer, useState } from 'react';
 import { SaveStep, WebhookStep } from './pm-wizard-common-steps.js';
 import {
+	useJiraCustomFieldCreation,
 	useJiraDiscovery,
 	useSaveMutation,
 	useTrelloCustomFieldCreation,
@@ -73,6 +74,7 @@ export function PMWizard({
 	const [openSteps, setOpenSteps] = useState<Set<number>>(new Set([1]));
 	const [creatingSlot, setCreatingSlot] = useState<string | null>(null);
 	const [creatingCostField, setCreatingCostField] = useState(false);
+	const [creatingJiraCostField, setCreatingJiraCostField] = useState(false);
 
 	// ---- Step navigation helpers ----
 
@@ -123,6 +125,7 @@ export function PMWizard({
 		dispatch,
 	);
 	const { createCustomFieldMutation } = useTrelloCustomFieldCreation(state, dispatch);
+	const { createJiraCustomFieldMutation } = useJiraCustomFieldCreation(state, dispatch);
 	const webhookManagement = useWebhookManagement(projectId, state);
 	const { saveMutation } = useSaveMutation(projectId, state);
 
@@ -144,6 +147,13 @@ export function PMWizard({
 		setCreatingCostField(true);
 		createCustomFieldMutation.mutate(undefined, {
 			onSettled: () => setCreatingCostField(false),
+		});
+	};
+
+	const handleCreateJiraCostField = () => {
+		setCreatingJiraCostField(true);
+		createJiraCustomFieldMutation.mutate(undefined, {
+			onSettled: () => setCreatingJiraCostField(false),
 		});
 	};
 
@@ -320,7 +330,12 @@ export function PMWizard({
 						creatingCostField={creatingCostField}
 					/>
 				) : (
-					<JiraFieldMappingStep state={state} dispatch={dispatch} />
+					<JiraFieldMappingStep
+						state={state}
+						dispatch={dispatch}
+						onCreateCostField={handleCreateJiraCostField}
+						creatingCostField={creatingJiraCostField}
+					/>
 				)}
 			</WizardStep>
 
