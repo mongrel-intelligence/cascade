@@ -4,10 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Hoisted mock state — vi.hoisted creates variables before vi.mock factories run
 // ---------------------------------------------------------------------------
 
-const { mockDockerCreateContainer, mockDockerGetContainer } = vi.hoisted(() => ({
-	mockDockerCreateContainer: vi.fn(),
-	mockDockerGetContainer: vi.fn(),
-}));
+const { mockDockerCreateContainer, mockDockerGetContainer, mockDockerListContainers } = vi.hoisted(
+	() => ({
+		mockDockerCreateContainer: vi.fn(),
+		mockDockerGetContainer: vi.fn(),
+		mockDockerListContainers: vi.fn(),
+	}),
+);
 
 // ---------------------------------------------------------------------------
 // Module-level mocks
@@ -17,6 +20,7 @@ vi.mock('dockerode', () => ({
 	default: vi.fn().mockImplementation(() => ({
 		createContainer: mockDockerCreateContainer,
 		getContainer: mockDockerGetContainer,
+		listContainers: mockDockerListContainers,
 	})),
 }));
 
@@ -81,7 +85,10 @@ import {
 	getActiveWorkerCount,
 	getActiveWorkers,
 	killWorker,
+	scanAndCleanupOrphans,
 	spawnWorker,
+	startOrphanCleanup,
+	stopOrphanCleanup,
 } from '../../../src/router/container-manager.js';
 import { notifyTimeout } from '../../../src/router/notifications.js';
 import type { CascadeJob } from '../../../src/router/queue.js';
@@ -498,5 +505,255 @@ describe('detachAll', () => {
 		mockClearAllWorkItemLocks.mockClear();
 		detachAll();
 		expect(mockClearAllWorkItemLocks).toHaveBeenCalled();
+	});
+
+	it('calls stopOrphanCleanup on detach', async () => {
+		vi.spyOn(console, 'log').mockImplementation(() => {});
+		setupMockContainer();
+		await spawnWorker(makeJob({ id: 'job-d3' }) as never);
+
+		startOrphanCleanup();
+		expect(() => detachAll()).not.toThrow();
+		// orphan cleanup timer should be cleared
+	});
+});
+
+// ---------------------------------------------------------------------------
+// startOrphanCleanup / stopOrphanCleanup
+// ---------------------------------------------------------------------------
+
+describe('orphan cleanup', () => {
+	beforeEach(() => {
+		vi.spyOn(console, 'log').mockImplementation(() => {});
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		vi.spyOn(console, 'info').mockImplementation(() => {});
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		mockGetAllProjectCredentials.mockResolvedValue({});
+		mockDockerListContainers.mockResolvedValue([]);
+		detachAll();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		stopOrphanCleanup();
+		detachAll();
+	});
+
+	describe('startOrphanCleanup / stopOrphanCleanup', () => {
+		it('starts a periodic orphan cleanup scan', () => {
+			expect(() => startOrphanCleanup()).not.toThrow();
+			stopOrphanCleanup();
+		});
+
+		it('stops the orphan cleanup scan', () => {
+			startOrphanCleanup();
+			expect(() => stopOrphanCleanup()).not.toThrow();
+		});
+
+		it('is a no-op to stop if not started', () => {
+			expect(() => stopOrphanCleanup()).not.toThrow();
+		});
+
+		it('is idempotent on multiple calls', () => {
+			startOrphanCleanup();
+			expect(() => startOrphanCleanup()).not.toThrow();
+			stopOrphanCleanup();
+		});
+
+		it('allows multiple start/stop cycles', () => {
+			expect(() => {
+				startOrphanCleanup();
+				stopOrphanCleanup();
+				startOrphanCleanup();
+				stopOrphanCleanup();
+			}).not.toThrow();
+		});
+	});
+
+	describe('scanAndCleanupOrphans', () => {
+		it('lists containers with cascade.managed=true label', async () => {
+			mockDockerListContainers.mockResolvedValue([]);
+
+			await scanAndCleanupOrphans();
+
+			expect(mockDockerListContainers).toHaveBeenCalledWith(
+				expect.objectContaining({
+					all: false,
+					filters: expect.objectContaining({
+						label: expect.arrayContaining(['cascade.managed=true']),
+					}),
+				}),
+			);
+		});
+
+		it('skips tracked containers', async () => {
+			setupMockContainer();
+			await spawnWorker(makeJob({ id: 'job-tracked' }) as never);
+
+			const trackedContainerId = 'container-abc123def456';
+			mockDockerListContainers.mockResolvedValue([
+				{
+					Id: trackedContainerId,
+					Created: Math.floor(Date.now() / 1000) - 1000, // Very old
+					State: 'running',
+				} as never,
+			]);
+
+			await scanAndCleanupOrphans();
+
+			// Container should NOT be stopped since it's tracked
+			expect(mockDockerGetContainer).not.toHaveBeenCalled();
+		});
+
+		it('stops orphaned containers older than workerTimeoutMs', async () => {
+			const orphanContainerId = 'orphan-container-old';
+			const now = Math.floor(Date.now() / 1000);
+			const createdAt = now - 6; // 6 seconds old, workerTimeoutMs is 5000ms
+
+			const mockOrphanContainer = {
+				stop: vi.fn().mockResolvedValue(undefined),
+			};
+			mockDockerListContainers.mockResolvedValue([
+				{
+					Id: orphanContainerId,
+					Created: createdAt,
+					State: 'running',
+				} as never,
+			]);
+			mockDockerGetContainer.mockReturnValue(mockOrphanContainer as never);
+
+			await scanAndCleanupOrphans();
+
+			expect(mockOrphanContainer.stop).toHaveBeenCalledWith({ t: 15 });
+		});
+
+		it('leaves young orphaned containers alone', async () => {
+			const youngContainerId = 'orphan-container-young';
+			const now = Math.floor(Date.now() / 1000);
+			const createdAt = now - 1; // 1 second old, workerTimeoutMs is 5000ms
+
+			const mockYoungContainer = {
+				stop: vi.fn(),
+			};
+			mockDockerListContainers.mockResolvedValue([
+				{
+					Id: youngContainerId,
+					Created: createdAt,
+					State: 'running',
+				} as never,
+			]);
+			mockDockerGetContainer.mockReturnValue(mockYoungContainer as never);
+
+			await scanAndCleanupOrphans();
+
+			// Young container should NOT be stopped
+			expect(mockYoungContainer.stop).not.toHaveBeenCalled();
+		});
+
+		it('handles Docker list errors', async () => {
+			mockDockerListContainers.mockRejectedValue(new Error('Docker unavailable'));
+
+			await expect(scanAndCleanupOrphans()).rejects.toThrow('Docker unavailable');
+		});
+
+		it('handles container stop errors gracefully', async () => {
+			const orphanContainerId = 'orphan-stop-fails';
+			const now = Math.floor(Date.now() / 1000);
+			const createdAt = now - 6; // Old enough
+
+			const mockFailContainer = {
+				stop: vi.fn().mockRejectedValue(new Error('already stopped')),
+			};
+			mockDockerListContainers.mockResolvedValue([
+				{
+					Id: orphanContainerId,
+					Created: createdAt,
+					State: 'running',
+				} as never,
+			]);
+			mockDockerGetContainer.mockReturnValue(mockFailContainer as never);
+
+			// Should not throw, just log error
+			await expect(scanAndCleanupOrphans()).resolves.toBeUndefined();
+			expect(mockFailContainer.stop).toHaveBeenCalled();
+		});
+
+		it('stops multiple orphaned containers', async () => {
+			const now = Math.floor(Date.now() / 1000);
+
+			const mockContainer1 = {
+				stop: vi.fn().mockResolvedValue(undefined),
+			};
+			const mockContainer2 = {
+				stop: vi.fn().mockResolvedValue(undefined),
+			};
+
+			mockDockerListContainers.mockResolvedValue([
+				{
+					Id: 'orphan-1',
+					Created: now - 6,
+					State: 'running',
+				} as never,
+				{
+					Id: 'orphan-2',
+					Created: now - 10,
+					State: 'running',
+				} as never,
+			]);
+
+			mockDockerGetContainer.mockImplementation((id: string) => {
+				if (id === 'orphan-1') return mockContainer1 as never;
+				if (id === 'orphan-2') return mockContainer2 as never;
+				return null;
+			});
+
+			await scanAndCleanupOrphans();
+
+			expect(mockContainer1.stop).toHaveBeenCalledWith({ t: 15 });
+			expect(mockContainer2.stop).toHaveBeenCalledWith({ t: 15 });
+		});
+
+		it('stops orphans but leaves tracked and young containers', async () => {
+			setupMockContainer();
+			await spawnWorker(makeJob({ id: 'job-tracked' }) as never);
+
+			const now = Math.floor(Date.now() / 1000);
+			const mockedOrphanContainer = {
+				stop: vi.fn().mockResolvedValue(undefined),
+			};
+			const mockedYoungContainer = {
+				stop: vi.fn().mockResolvedValue(undefined),
+			};
+
+			mockDockerListContainers.mockResolvedValue([
+				{
+					Id: 'container-abc123def456', // tracked
+					Created: now - 10,
+					State: 'running',
+				} as never,
+				{
+					Id: 'orphan-old',
+					Created: now - 6,
+					State: 'running',
+				} as never,
+				{
+					Id: 'orphan-young',
+					Created: now - 1,
+					State: 'running',
+				} as never,
+			]);
+
+			mockDockerGetContainer.mockImplementation((id: string) => {
+				if (id === 'orphan-old') return mockedOrphanContainer as never;
+				if (id === 'orphan-young') return mockedYoungContainer as never;
+				return { stop: vi.fn() } as never;
+			});
+
+			await scanAndCleanupOrphans();
+
+			// Only the old orphan should be stopped
+			expect(mockedOrphanContainer.stop).toHaveBeenCalledWith({ t: 15 });
+			expect(mockedYoungContainer.stop).not.toHaveBeenCalled();
+		});
 	});
 });

@@ -14,6 +14,8 @@ vi.mock('../../../src/router/container-manager.js', () => ({
 	getActiveWorkerCount: vi.fn().mockReturnValue(0),
 	getActiveWorkers: vi.fn().mockReturnValue([]),
 	detachAll: vi.fn(),
+	startOrphanCleanup: vi.fn(),
+	stopOrphanCleanup: vi.fn(),
 }));
 
 vi.mock('../../../src/router/config.js', () => ({
@@ -47,6 +49,8 @@ import {
 	getActiveWorkerCount,
 	getActiveWorkers,
 	spawnWorker,
+	startOrphanCleanup,
+	stopOrphanCleanup,
 } from '../../../src/router/container-manager.js';
 import {
 	startWorkerProcessor,
@@ -62,6 +66,8 @@ const mockSpawnWorker = vi.mocked(spawnWorker);
 const mockGetActiveWorkerCount = vi.mocked(getActiveWorkerCount);
 const mockGetActiveWorkers = vi.mocked(getActiveWorkers);
 const mockDetachAll = vi.mocked(detachAll);
+const mockStartOrphanCleanup = vi.mocked(startOrphanCleanup);
+const mockStopOrphanCleanup = vi.mocked(stopOrphanCleanup);
 const mockLogger = vi.mocked(logger);
 
 // ---------------------------------------------------------------------------
@@ -231,5 +237,16 @@ describe('stopWorkerProcessor', () => {
 		await stopWorkerProcessor();
 
 		expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Stopped'));
+	});
+
+	it('calls startOrphanCleanup during startup', () => {
+		startWorkerProcessor();
+		expect(mockStartOrphanCleanup).toHaveBeenCalled();
+	});
+
+	it('calls stopOrphanCleanup during shutdown', async () => {
+		startWorkerProcessor();
+		await stopWorkerProcessor();
+		expect(mockStopOrphanCleanup).toHaveBeenCalled();
 	});
 });

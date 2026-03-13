@@ -16,11 +16,13 @@ import {
 	getActiveWorkerCount,
 	getActiveWorkers,
 	spawnWorker,
+	startOrphanCleanup,
+	stopOrphanCleanup,
 } from './container-manager.js';
 import type { CascadeJob } from './queue.js';
 
 // Re-export container-manager public API so existing callers are unaffected.
-export { getActiveWorkerCount, getActiveWorkers };
+export { getActiveWorkerCount, getActiveWorkers, startOrphanCleanup, stopOrphanCleanup };
 
 // BullMQ Workers that process jobs by spawning containers
 let bullWorker: Worker<CascadeJob> | null = null;
@@ -68,11 +70,17 @@ export function startWorkerProcessor(): void {
 		processFn: (job) => guardedSpawn(job as Job<CascadeJob>),
 	});
 
+	// Start periodic orphan cleanup scan
+	startOrphanCleanup();
+
 	logger.info('[WorkerManager] Started with max', routerConfig.maxWorkers, 'concurrent workers');
 }
 
 // Graceful shutdown — detach from workers, let them finish independently
 export async function stopWorkerProcessor(): Promise<void> {
+	// Stop orphan cleanup first
+	stopOrphanCleanup();
+
 	if (dashboardWorker) {
 		await dashboardWorker.close();
 		dashboardWorker = null;
