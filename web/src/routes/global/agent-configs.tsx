@@ -43,6 +43,7 @@ function GlobalAgentConfigsPage() {
 			<AgentConfigFormDialog
 				open={isCreateDialogOpen}
 				onOpenChange={setIsCreateDialogOpen}
+				isGlobalScope={true}
 				// Pass null orgId and projectId for global scope
 				config={{
 					id: 0,
