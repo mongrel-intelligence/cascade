@@ -1,6 +1,6 @@
 import { formatCost, formatRelativeTime } from '@/lib/utils.js';
 import { Link } from '@tanstack/react-router';
-import { ExternalLink } from 'lucide-react';
+import { Activity, ExternalLink } from 'lucide-react';
 import { CancelRunButton } from './cancel-run-button.js';
 import { LiveDuration } from './live-duration.js';
 import { RetryRunButton } from './retry-run-button.js';
@@ -84,9 +84,15 @@ export function RunsTable({
 							<tr>
 								<td
 									colSpan={showOrg ? 11 : 10}
-									className="px-4 py-8 text-center text-muted-foreground"
+									className="px-4 py-12 text-center text-muted-foreground"
 								>
-									No runs found
+									<div className="flex flex-col items-center gap-2">
+										<Activity className="h-8 w-8 text-muted-foreground/50" />
+										<p className="font-medium">No runs yet</p>
+										<p className="text-sm text-muted-foreground">
+											Runs appear here when CASCADE processes work items.
+										</p>
+									</div>
 								</td>
 							</tr>
 						)}

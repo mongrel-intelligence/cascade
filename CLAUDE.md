@@ -461,7 +461,7 @@ cascade credentials delete <id> --yes
 
 # Defaults
 cascade defaults show
-cascade defaults set --model claude-sonnet-4-5-20250929 --max-iterations 25 --agent-backend claude-code
+cascade defaults set --model claude-sonnet-4-5-20250929 --max-iterations 25 --agent-engine claude-code
 
 # Organization
 cascade org show

@@ -20,7 +20,7 @@ import {
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Trash2 } from 'lucide-react';
+import { FolderGit2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 interface Project {
@@ -32,7 +32,13 @@ interface Project {
 	workItemBudgetUsd: string | null;
 }
 
-export function ProjectsTable({ projects }: { projects: Project[] }) {
+export function ProjectsTable({
+	projects,
+	onCreateClick,
+}: {
+	projects: Project[];
+	onCreateClick?: () => void;
+}) {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -62,8 +68,25 @@ export function ProjectsTable({ projects }: { projects: Project[] }) {
 					<TableBody>
 						{projects.length === 0 && (
 							<TableRow>
-								<TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-									No projects yet
+								<TableCell colSpan={6} className="py-12">
+									<div className="flex flex-col items-center gap-3 text-center">
+										<FolderGit2 className="h-10 w-10 text-muted-foreground/50" />
+										<div>
+											<p className="font-medium">No projects yet</p>
+											<p className="text-sm text-muted-foreground">
+												Create a project to connect CASCADE to your GitHub repository.
+											</p>
+										</div>
+										{onCreateClick && (
+											<button
+												type="button"
+												onClick={onCreateClick}
+												className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+											>
+												New Project
+											</button>
+										)}
+									</div>
 								</TableCell>
 							</TableRow>
 						)}

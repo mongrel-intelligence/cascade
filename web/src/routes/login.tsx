@@ -33,7 +33,8 @@ function LoginPage() {
 			}
 
 			await queryClient.invalidateQueries({ queryKey: trpc.auth.me.queryOptions().queryKey });
-			navigate({ to: '/', replace: true });
+			const projects = await queryClient.fetchQuery(trpc.projects.list.queryOptions());
+			navigate({ to: projects.length === 0 ? '/projects' : '/', replace: true });
 		} catch {
 			setError('Network error');
 		} finally {

@@ -33,7 +33,9 @@ function ProjectsListPage() {
 				</div>
 			)}
 
-			{projectsQuery.data && <ProjectsTable projects={projectsQuery.data} />}
+			{projectsQuery.data && (
+				<ProjectsTable projects={projectsQuery.data} onCreateClick={() => setCreateOpen(true)} />
+			)}
 
 			<ProjectFormDialog open={createOpen} onOpenChange={setCreateOpen} />
 		</div>

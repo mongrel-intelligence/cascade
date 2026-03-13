@@ -431,6 +431,44 @@ describe('projectsRouter', () => {
 				expect(mockSetIntegrationCredential).toHaveBeenCalledWith(10, 'api_key', 42);
 			});
 
+			it('auto-creates SCM integration when none exists', async () => {
+				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project
+				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // credential
+				// First call: no integration; second call (after auto-create): integration exists
+				mockGetIntegrationByProjectAndCategory
+					.mockResolvedValueOnce(null)
+					.mockResolvedValueOnce({ id: 20 });
+				mockUpsertProjectIntegration.mockResolvedValue(undefined);
+				mockSetIntegrationCredential.mockResolvedValue(undefined);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await caller.integrationCredentials.set({
+					projectId: 'p1',
+					category: 'scm',
+					role: 'implementer_token',
+					credentialId: 42,
+				});
+
+				expect(mockUpsertProjectIntegration).toHaveBeenCalledWith('p1', 'scm', 'github', {});
+				expect(mockSetIntegrationCredential).toHaveBeenCalledWith(20, 'implementer_token', 42);
+			});
+
+			it('throws NOT_FOUND for non-SCM category when integration missing', async () => {
+				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project
+				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // credential
+				mockGetIntegrationByProjectAndCategory.mockResolvedValue(null);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await expect(
+					caller.integrationCredentials.set({
+						projectId: 'p1',
+						category: 'pm',
+						role: 'api_key',
+						credentialId: 42,
+					}),
+				).rejects.toMatchObject({ code: 'NOT_FOUND' });
+			});
+
 			it('throws NOT_FOUND when credential belongs to different org', async () => {
 				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project OK
 				mockDbWhere.mockResolvedValueOnce([{ orgId: 'different-org' }]); // credential not owned

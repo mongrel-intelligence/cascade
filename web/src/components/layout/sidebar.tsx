@@ -103,7 +103,12 @@ export function Sidebar({ user }: SidebarProps) {
 							/>
 						))
 					) : (
-						<div className="px-3 py-2 text-sm text-muted-foreground">No projects</div>
+						<Link
+							to="/projects"
+							className="block px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+						>
+							+ Create a project
+						</Link>
 					)}
 				</div>
 				<NavLink

@@ -1,0 +1,111 @@
+name: cascade # Fixed name → network is always "cascade_default"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cascade
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cascade}
+      POSTGRES_DB: cascade
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cascade -d cascade"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot migration runner: docker compose --profile setup run --rm migrate
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.selfhosted
+      target: migrator
+    environment:
+      DATABASE_URL: postgresql://cascade:${POSTGRES_PASSWORD:-cascade}@postgres:5432/cascade
+      DATABASE_SSL: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: [setup]
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.selfhosted
+    restart: unless-stopped
+    ports:
+      - "${DASHBOARD_PORT:-3001}:3001"
+    environment:
+      PORT: "3001"
+      DASHBOARD_PORT: "${DASHBOARD_PORT:-3001}"
+      DATABASE_URL: postgresql://cascade:${POSTGRES_PASSWORD:-cascade}@postgres:5432/cascade
+      DATABASE_SSL: "false"
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      CREDENTIAL_MASTER_KEY: ${CREDENTIAL_MASTER_KEY:-}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  router:
+    build:
+      context: .
+      dockerfile: Dockerfile.router
+    restart: unless-stopped
+    ports:
+      - "${ROUTER_PORT:-3000}:3000"
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgresql://cascade:${POSTGRES_PASSWORD:-cascade}@postgres:5432/cascade
+      DATABASE_SSL: "false"
+      REDIS_URL: redis://redis:6379
+      MAX_WORKERS: ${MAX_WORKERS:-3}
+      WORKER_IMAGE: cascade-worker:local
+      WORKER_MEMORY_MB: ${WORKER_MEMORY_MB:-4096}
+      WORKER_TIMEOUT_MS: ${WORKER_TIMEOUT_MS:-1800000}
+      DOCKER_NETWORK: cascade_default
+      CASCADE_POSTGRES_HOST: postgres
+      CASCADE_POSTGRES_PORT: "5432"
+      CREDENTIAL_MASTER_KEY: ${CREDENTIAL_MASTER_KEY:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Build-only: tags the worker image so the router can spawn it
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    image: cascade-worker:local
+    profiles: [build-only] # Never started, only built
+
+volumes:
+  postgres-data:
+  redis-data:
