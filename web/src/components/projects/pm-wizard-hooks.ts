@@ -445,6 +445,46 @@ export function useTrelloCustomFieldCreation(
 }
 
 // ============================================================================
+// JIRA Custom Field Creation
+// ============================================================================
+
+export function useJiraCustomFieldCreation(
+	state: WizardState,
+	dispatch: React.Dispatch<WizardAction>,
+) {
+	const createJiraCustomFieldMutation = useMutation({
+		mutationFn: () => {
+			if (!state.jiraEmailCredentialId || !state.jiraApiTokenCredentialId || !state.jiraBaseUrl) {
+				throw new Error('Missing JIRA credentials or base URL');
+			}
+			return trpcClient.integrationsDiscovery.createJiraCustomField.mutate({
+				emailCredentialId: state.jiraEmailCredentialId,
+				apiTokenCredentialId: state.jiraApiTokenCredentialId,
+				baseUrl: state.jiraBaseUrl,
+				name: 'Cost',
+			});
+		},
+		onSuccess: (field) => {
+			dispatch({ type: 'ADD_JIRA_PROJECT_CUSTOM_FIELD', field: { ...field, custom: true } });
+			dispatch({ type: 'SET_JIRA_COST_FIELD', id: field.id });
+		},
+		onError: (error) => {
+			console.error('Failed to create JIRA custom field:', error);
+			const message = error instanceof Error ? error.message : String(error);
+			if (message.includes('403') || message.toLowerCase().includes('admin')) {
+				alert(
+					'Failed to create custom field: JIRA admin permissions are required to create global custom fields. Please contact your JIRA administrator.',
+				);
+			} else {
+				alert(`Failed to create JIRA custom field: ${message}`);
+			}
+		},
+	});
+
+	return { createJiraCustomFieldMutation };
+}
+
+// ============================================================================
 // Save Mutation
 // ============================================================================
 

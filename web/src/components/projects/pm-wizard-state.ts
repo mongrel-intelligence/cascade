@@ -94,7 +94,8 @@ export type WizardAction =
 	| {
 			type: 'ADD_TRELLO_BOARD_CUSTOM_FIELD';
 			customField: { id: string; name: string; type: string };
-	  };
+	  }
+	| { type: 'ADD_JIRA_PROJECT_CUSTOM_FIELD'; field: { id: string; name: string; custom: boolean } };
 
 // ============================================================================
 // Initial state and constants
@@ -251,6 +252,15 @@ export const wizardReducer: Reducer<WizardState, WizardAction> = (state, action)
 				trelloBoardDetails: {
 					...state.trelloBoardDetails,
 					customFields: [...state.trelloBoardDetails.customFields, action.customField],
+				},
+			};
+		case 'ADD_JIRA_PROJECT_CUSTOM_FIELD':
+			if (!state.jiraProjectDetails) return state;
+			return {
+				...state,
+				jiraProjectDetails: {
+					...state.jiraProjectDetails,
+					fields: [...state.jiraProjectDetails.fields, action.field],
 				},
 			};
 		default:

@@ -1,10 +1,11 @@
 /**
  * JIRA-specific step renderer components for PMWizard.
  */
+import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import type { UseMutationResult } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import type { WizardAction, WizardState } from './pm-wizard-state.js';
 import { FieldMappingRow, InlineCredentialCreator, SearchableSelect } from './wizard-shared.js';
 import type { CredentialOption } from './wizard-shared.js';
@@ -148,9 +149,13 @@ export function JiraProjectStep({
 export function JiraFieldMappingStep({
 	state,
 	dispatch,
+	onCreateCostField,
+	creatingCostField,
 }: {
 	state: WizardState;
 	dispatch: React.Dispatch<WizardAction>;
+	onCreateCostField?: () => void;
+	creatingCostField?: boolean;
 }) {
 	return (
 		<div className="space-y-6">
@@ -267,7 +272,29 @@ export function JiraFieldMappingStep({
 
 			{/* Cost custom field */}
 			<div className="space-y-2">
-				<Label>Custom Field: Cost</Label>
+				<div className="flex items-center justify-between">
+					<Label>Custom Field: Cost</Label>
+					{state.jiraProjectDetails && onCreateCostField && !state.jiraCostFieldId && (
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							onClick={onCreateCostField}
+							disabled={creatingCostField}
+							className="h-7 text-xs"
+						>
+							{creatingCostField ? (
+								<Loader2 className="h-3 w-3 animate-spin mr-1" />
+							) : (
+								<Plus className="h-3 w-3 mr-1" />
+							)}
+							Create
+						</Button>
+					)}
+				</div>
+				<p className="text-xs text-muted-foreground">
+					JIRA custom fields are global and require admin permissions to create.
+				</p>
 				{state.jiraProjectDetails ? (
 					<FieldMappingRow
 						slotLabel="cost"
