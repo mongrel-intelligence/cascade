@@ -95,6 +95,7 @@ const enrichedRunSelect = {
 	error: agentRuns.error,
 	prUrl: agentRuns.prUrl,
 	outputSummary: agentRuns.outputSummary,
+	jobId: agentRuns.jobId,
 	workItemUrl: prWorkItems.workItemUrl,
 	workItemTitle: prWorkItems.workItemTitle,
 	prTitle: prWorkItems.prTitle,
@@ -125,6 +126,20 @@ export async function updateRunPRNumber(runId: string, prNumber: number): Promis
 		.update(agentRuns)
 		.set({ prNumber })
 		.where(and(eq(agentRuns.id, runId), isNull(agentRuns.prNumber)));
+}
+
+export async function updateRunJobId(runId: string, jobId: string): Promise<void> {
+	const db = getDb();
+	await db.update(agentRuns).set({ jobId }).where(eq(agentRuns.id, runId));
+}
+
+export async function getRunJobId(runId: string): Promise<string | null> {
+	const db = getDb();
+	const [row] = await db
+		.select({ jobId: agentRuns.jobId })
+		.from(agentRuns)
+		.where(eq(agentRuns.id, runId));
+	return row?.jobId ?? null;
 }
 
 export async function completeRun(runId: string, input: CompleteRunInput): Promise<void> {

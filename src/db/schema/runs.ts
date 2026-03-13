@@ -33,6 +33,7 @@ export const agentRuns = pgTable(
 		error: text('error'),
 		prUrl: text('pr_url'),
 		outputSummary: text('output_summary'),
+		jobId: text('job_id'),
 	},
 	(table) => [
 		index('idx_agent_runs_project_id').on(table.projectId),
