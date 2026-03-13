@@ -284,12 +284,6 @@ async function hydrateReviewSidecar(sidecarPath: string): Promise<void> {
 		if (sidecar.ackCommentDeleted) {
 			clearInitialComment();
 		}
-		// Clean up the temp file after successful read
-		try {
-			unlinkSync(sidecarPath);
-		} catch {
-			// Best-effort cleanup
-		}
 	} catch (err) {
 		// Sidecar not written by subprocess (agent may have failed before review) or malformed.
 		logger.warn('Failed to read review sidecar', { path: sidecarPath, error: String(err) });
@@ -322,12 +316,6 @@ async function hydratePrSidecar(sidecarPath: string): Promise<{
 		});
 	} catch (err) {
 		logger.warn('Failed to read PR sidecar', { path: sidecarPath, error: String(err) });
-	} finally {
-		try {
-			unlinkSync(sidecarPath);
-		} catch {
-			// Best-effort cleanup
-		}
 	}
 
 	return {};
