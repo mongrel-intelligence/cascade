@@ -1,3 +1,5 @@
+import { WorkItemCostChart } from '@/components/runs/work-item-cost-chart.js';
+import { WorkItemDurationChart } from '@/components/runs/work-item-duration-chart.js';
 import { WorkItemRunsTable } from '@/components/runs/work-item-runs-table.js';
 import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
@@ -86,6 +88,13 @@ function PRRunsPage() {
 							<span className="ml-1 text-muted-foreground">failed</span>
 						</div>
 					)}
+				</div>
+			)}
+
+			{runs && runs.length > 0 && (
+				<div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+					<WorkItemDurationChart runs={runs} />
+					<WorkItemCostChart runs={runs} />
 				</div>
 			)}
 
