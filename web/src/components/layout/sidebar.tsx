@@ -12,6 +12,7 @@ import {
 	KeyRound,
 	LayoutDashboard,
 	Settings,
+	SlidersHorizontal,
 	Zap,
 } from 'lucide-react';
 
@@ -25,6 +26,7 @@ const globalNav = [
 	{ to: '/global/runs' as const, label: 'Global Runs', icon: Activity },
 	{ to: '/global/webhook-logs' as const, label: 'Webhook Logs', icon: Zap },
 	{ to: '/global/agent-configs' as const, label: 'Global Agent Configs', icon: Bot },
+	{ to: '/global/defaults' as const, label: 'Cascade Defaults', icon: SlidersHorizontal },
 	{ to: '/global/definitions' as const, label: 'Agent Definitions', icon: BookOpen },
 	{ to: '/global/organizations' as const, label: 'Organizations', icon: Building },
 	{ to: '/global/credentials' as const, label: 'Global Credentials', icon: KeyRound },
