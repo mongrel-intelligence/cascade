@@ -123,14 +123,12 @@ describe('ProjectConfigSchema', () => {
 			trello: { boardId: 'b1', lists: {}, labels: {} },
 			engineSettings: {
 				opencode: {
-					agent: 'plan',
 					webSearch: true,
 				},
 			},
 		};
 
 		const result = ProjectConfigSchema.parse(config);
-		expect(result.engineSettings?.opencode?.agent).toBe('plan');
 		expect(result.engineSettings?.opencode?.webSearch).toBe(true);
 	});
 
@@ -334,14 +332,12 @@ describe('validateConfig', () => {
 			defaults: {
 				engineSettings: {
 					opencode: {
-						agent: 'build',
 						webSearch: true,
 					},
 				},
 			},
 		});
 
-		expect(result.defaults.engineSettings.opencode?.agent).toBe('build');
 		expect(result.defaults.engineSettings.opencode?.webSearch).toBe(true);
 	});
 
