@@ -6,8 +6,7 @@ import {
 import type { EngineSettings, OpenCodeSettings } from '../../config/engineSettings.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
 
-export interface ResolvedOpenCodeSettings
-	extends Required<Pick<OpenCodeSettings, 'agent' | 'webSearch'>> {}
+export interface ResolvedOpenCodeSettings extends Required<Pick<OpenCodeSettings, 'webSearch'>> {}
 
 export function resolveOpenCodeSettings(
 	project: ProjectConfig,
@@ -20,7 +19,6 @@ export function resolveOpenCodeSettings(
 	const opencode = getEngineSettings(merged, 'opencode', OpenCodeSettingsSchema) ?? {};
 
 	return {
-		agent: opencode.agent ?? 'auto',
 		webSearch: opencode.webSearch ?? false,
 	};
 }

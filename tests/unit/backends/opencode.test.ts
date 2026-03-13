@@ -38,7 +38,6 @@ vi.mock('../../../src/utils/logging.js', () => ({
 import {
 	OpenCodeEngine,
 	buildPermissionConfig,
-	resolveOpenCodeAgent,
 	resolveOpenCodeModel,
 } from '../../../src/backends/opencode/index.js';
 import { DEFAULT_OPENCODE_MODEL } from '../../../src/backends/opencode/models.js';
@@ -156,16 +155,6 @@ describe('resolveOpenCodeModel', () => {
 	});
 });
 
-describe('resolveOpenCodeAgent', () => {
-	it('uses build for write-capable runs when auto', () => {
-		expect(resolveOpenCodeAgent('auto', ['fs:read', 'fs:write'])).toBe('build');
-	});
-
-	it('uses plan for read-only runs when auto', () => {
-		expect(resolveOpenCodeAgent('auto', ['fs:read'])).toBe('plan');
-	});
-});
-
 describe('buildPermissionConfig', () => {
 	it('denies write, bash, and web by default', () => {
 		expect(buildPermissionConfig(['fs:read'], false)).toEqual({
@@ -189,10 +178,9 @@ describe('buildPermissionConfig', () => {
 });
 
 describe('resolveOpenCodeSettings', () => {
-	it('defaults to auto agent and webSearch=false', () => {
+	it('defaults to webSearch=false', () => {
 		const input = makeInput();
 		expect(resolveOpenCodeSettings(input.project, input.config)).toEqual({
-			agent: 'auto',
 			webSearch: false,
 		});
 	});
@@ -203,17 +191,16 @@ describe('resolveOpenCodeSettings', () => {
 				...makeInput().config,
 				defaults: {
 					...makeInput().config.defaults,
-					engineSettings: { opencode: { agent: 'plan', webSearch: false } },
+					engineSettings: { opencode: { webSearch: false } },
 				},
 			},
 			project: {
 				...makeInput().project,
-				engineSettings: { opencode: { agent: 'build', webSearch: true } },
+				engineSettings: { opencode: { webSearch: true } },
 			},
 		});
 
 		expect(resolveOpenCodeSettings(input.project, input.config)).toEqual({
-			agent: 'build',
 			webSearch: true,
 		});
 	});

@@ -55,14 +55,6 @@ export function resolveOpenCodeModel(cascadeModel: string): string {
 	return DEFAULT_OPENCODE_MODEL;
 }
 
-export function resolveOpenCodeAgent(
-	setting: 'auto' | 'build' | 'plan',
-	nativeToolCapabilities?: string[],
-): 'build' | 'plan' {
-	if (setting !== 'auto') return setting;
-	return nativeToolCapabilities?.includes('fs:write') ? 'build' : 'plan';
-}
-
 type PermissionDecision = 'allow' | 'deny';
 
 type OpenCodePermissionConfig = NonNullable<Config['permission']>;
@@ -832,7 +824,7 @@ export class OpenCodeEngine implements AgentEngine {
 
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const settings = resolveOpenCodeSettings(input.project, input.config);
-		const agent = resolveOpenCodeAgent(settings.agent, input.nativeToolCapabilities);
+		const agent = 'build' as const;
 		const model = resolveOpenCodeModel(input.model);
 		const config = buildConfig(input, model, settings);
 		const { prompt: taskPrompt, hasOffloadedContext } = await buildTaskPrompt(

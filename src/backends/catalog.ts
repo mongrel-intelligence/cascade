@@ -122,19 +122,8 @@ export const OPENCODE_ENGINE_DEFINITION: AgentEngineDefinition = {
 	logLabel: 'OpenCode Log',
 	settings: {
 		title: 'OpenCode Settings',
-		description: 'Headless OpenCode agent selection and permission policy.',
+		description: 'Headless OpenCode permission policy.',
 		fields: [
-			{
-				key: 'agent',
-				label: 'Agent',
-				type: 'select',
-				description: 'Auto uses `plan` for read-only runs and `build` when file edits are allowed.',
-				options: [
-					{ value: 'auto', label: 'Auto' },
-					{ value: 'build', label: 'Build' },
-					{ value: 'plan', label: 'Plan' },
-				],
-			},
 			{
 				key: 'webSearch',
 				label: 'Web Search',
