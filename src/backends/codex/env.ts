@@ -5,7 +5,11 @@
  * explicitly safe host variables, then layer project-scoped secrets on top.
  */
 
-import { PR_SIDECAR_ENV_VAR, REVIEW_SIDECAR_ENV_VAR } from '../../gadgets/sessionState.js';
+import {
+	PR_SIDECAR_ENV_VAR,
+	PUSHED_CHANGES_SIDECAR_ENV_VAR,
+	REVIEW_SIDECAR_ENV_VAR,
+} from '../../gadgets/sessionState.js';
 import { buildNativeToolPath } from '../nativeToolRuntime.js';
 import { ENV_VAR_NAME as PROGRESS_COMMENT_ENV_VAR } from '../progressState.js';
 import { GITHUB_ACK_COMMENT_ID_ENV_VAR } from '../secretBuilder.js';
@@ -30,6 +34,7 @@ const ALLOWED_ENV_EXACT = new Set([
 	PROGRESS_COMMENT_ENV_VAR,
 	GITHUB_ACK_COMMENT_ID_ENV_VAR,
 	PR_SIDECAR_ENV_VAR,
+	PUSHED_CHANGES_SIDECAR_ENV_VAR,
 	REVIEW_SIDECAR_ENV_VAR,
 
 	// Node

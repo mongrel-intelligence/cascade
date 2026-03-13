@@ -10,9 +10,13 @@ vi.mock('../../../../src/gadgets/github/core/createPRReview.js', () => ({
 	createPRReview: (...args: unknown[]) => mockCreatePRReview(...args),
 }));
 
-vi.mock('../../../../src/gadgets/sessionState.js', () => ({
-	REVIEW_SIDECAR_ENV_VAR: 'CASCADE_REVIEW_SIDECAR_PATH',
-}));
+vi.mock('../../../../src/gadgets/sessionState.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../../../../src/gadgets/sessionState.js')>();
+	return {
+		...actual,
+		REVIEW_SIDECAR_ENV_VAR: 'CASCADE_REVIEW_SIDECAR_PATH',
+	};
+});
 
 const mockDeletePRComment = vi.fn();
 vi.mock('../../../../src/github/client.js', () => ({

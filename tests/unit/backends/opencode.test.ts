@@ -507,6 +507,95 @@ describe('OpenCodeEngine', () => {
 		);
 	});
 
+	it('continues the same session when pushed-change completion checks fail after a clean turn', async () => {
+		mockSpawn.mockReturnValue(createMockChild());
+
+		const tempDir = mkdtempSync(join(tmpdir(), 'opencode-pushed-sidecar-'));
+		const pushedChangesSidecarPath = join(tempDir, 'pushed.json');
+		const sessionPrompt = vi
+			.fn()
+			.mockResolvedValueOnce({
+				data: {
+					info: { id: 'assistant-first', cost: 0.1 },
+					parts: [
+						{
+							id: 'text-first',
+							sessionID: 'session-pushed-followup',
+							messageID: 'assistant-first',
+							type: 'text',
+							text: 'Initial fixes are ready.',
+						},
+					],
+				},
+			})
+			.mockImplementationOnce(async () => {
+				writeFileSync(
+					pushedChangesSidecarPath,
+					JSON.stringify({
+						source: 'cascade-tools session finish',
+						branch: 'feat/respond-to-review',
+						headSha: 'b'.repeat(40),
+					}),
+				);
+				return {
+					data: {
+						info: { id: 'assistant-second', cost: 0.2 },
+						parts: [
+							{
+								id: 'text-second',
+								sessionID: 'session-pushed-followup',
+								messageID: 'assistant-second',
+								type: 'text',
+								text: 'Changes committed and pushed.',
+							},
+						],
+					},
+				};
+			});
+
+		mockCreateOpencodeClient.mockImplementation(() => ({
+			session: {
+				create: vi.fn().mockResolvedValue({ data: { id: 'session-pushed-followup' } }),
+				prompt: sessionPrompt,
+				delete: vi.fn().mockResolvedValue(true),
+			},
+			event: {
+				subscribe: vi.fn().mockResolvedValue(
+					createEventStream([
+						{ type: 'session.idle', properties: { sessionID: 'session-pushed-followup' } },
+						{ type: 'session.idle', properties: { sessionID: 'session-pushed-followup' } },
+					]),
+				),
+			},
+			postSessionIdPermissionsPermissionId: vi.fn(),
+		}));
+
+		const engine = new OpenCodeEngine();
+		const logWriter = vi.fn();
+		const result = await engine.execute(
+			makeInput({
+				logWriter,
+				completionRequirements: {
+					requiresPushedChanges: true,
+					pushedChangesSidecarPath,
+					maxContinuationTurns: 1,
+				},
+			}),
+		);
+		rmSync(tempDir, { recursive: true, force: true });
+
+		expect(result.success).toBe(true);
+		expect(sessionPrompt).toHaveBeenCalledTimes(2);
+		expect(logWriter).toHaveBeenCalledWith(
+			'WARN',
+			'OpenCode completion check failed; continuing session',
+			expect.objectContaining({
+				reason: 'Agent completed but no authoritative pushed changes were recorded',
+				continuationTurn: 1,
+			}),
+		);
+	});
+
 	it('retries transient fetch failures when creating a session', async () => {
 		vi.useFakeTimers();
 		mockSpawn.mockReturnValue(createMockChild());

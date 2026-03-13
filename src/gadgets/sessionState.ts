@@ -4,6 +4,8 @@ import type { FinishHookFlags } from '../agents/definitions/schema.js';
 export const REVIEW_SIDECAR_ENV_VAR = 'CASCADE_REVIEW_SIDECAR_PATH';
 /** Env var holding the temp file path for the PR sidecar (written by CLI subprocess, read by adapter). */
 export const PR_SIDECAR_ENV_VAR = 'CASCADE_PR_SIDECAR_PATH';
+/** Env var holding the temp file path for authoritative pushed-changes evidence. */
+export const PUSHED_CHANGES_SIDECAR_ENV_VAR = 'CASCADE_PUSHED_CHANGES_SIDECAR_PATH';
 
 export type SessionHooks = FinishHookFlags;
 

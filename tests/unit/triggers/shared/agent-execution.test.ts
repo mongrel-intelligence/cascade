@@ -117,9 +117,13 @@ vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	updateRunPRNumber: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../../../src/gadgets/sessionState.js', () => ({
-	getSessionState: mockGetSessionState,
-}));
+vi.mock('../../../../src/gadgets/sessionState.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../../../../src/gadgets/sessionState.js')>();
+	return {
+		...actual,
+		getSessionState: mockGetSessionState,
+	};
+});
 
 vi.mock('../../../../src/triggers/shared/review-pm-poster.js', () => ({
 	postReviewToPM: mockPostReviewToPM,

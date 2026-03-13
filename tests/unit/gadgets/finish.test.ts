@@ -1,6 +1,9 @@
 import { execSync } from 'node:child_process';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { TaskCompletionSignal } from 'llmist';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Finish } from '../../../src/gadgets/Finish.js';
 import {
 	initSessionState,
@@ -21,7 +24,35 @@ vi.mock('../../../src/github/client.js', () => ({
 	},
 }));
 
+function mockCleanPushedState(headSha: string, branch = 'feat/respond-to-ci'): void {
+	vi.mocked(execSync).mockImplementation((cmd: string) => {
+		if (cmd.includes('status --porcelain')) return '';
+		if (cmd.includes('rev-list')) return '0';
+		if (cmd === 'git rev-parse --abbrev-ref HEAD') return branch;
+		if (cmd === 'git rev-parse HEAD') return headSha;
+		return '';
+	});
+}
+
 describe('Finish gadget', () => {
+	let pushedChangesSidecarPath: string;
+	let originalPushedChangesEnv: string | undefined;
+
+	beforeEach(() => {
+		pushedChangesSidecarPath = join(tmpdir(), `cascade-finish-sidecar-${Date.now()}.json`);
+		originalPushedChangesEnv = process.env.CASCADE_PUSHED_CHANGES_SIDECAR_PATH;
+		process.env.CASCADE_PUSHED_CHANGES_SIDECAR_PATH = pushedChangesSidecarPath;
+	});
+
+	afterEach(() => {
+		rmSync(pushedChangesSidecarPath, { force: true });
+		if (originalPushedChangesEnv === undefined) {
+			Reflect.deleteProperty(process.env, 'CASCADE_PUSHED_CHANGES_SIDECAR_PATH');
+		} else {
+			process.env.CASCADE_PUSHED_CHANGES_SIDECAR_PATH = originalPushedChangesEnv;
+		}
+	});
+
 	it('has exclusive set to prevent parallel execution with other gadgets', () => {
 		initSessionState({ agentType: 'unknown' });
 		const gadget = new Finish();
@@ -125,15 +156,16 @@ describe('Finish gadget', () => {
 		});
 
 		it('allows finish when changes are committed and pushed', async () => {
-			vi.mocked(execSync).mockImplementation((cmd: string) => {
-				if (cmd.includes('status --porcelain')) return '';
-				if (cmd.includes('rev-list')) return '0';
-				if (cmd === 'git rev-parse HEAD') return NEW_SHA;
-				return '';
-			});
+			mockCleanPushedState(NEW_SHA);
 
 			const gadget = new Finish();
 			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(TaskCompletionSignal);
+			expect(existsSync(pushedChangesSidecarPath)).toBe(true);
+			expect(JSON.parse(readFileSync(pushedChangesSidecarPath, 'utf-8'))).toEqual({
+				source: 'cascade-tools session finish',
+				branch: 'feat/respond-to-ci',
+				headSha: NEW_SHA,
+			});
 		});
 
 		it('rejects finish when no new commits were made (HEAD unchanged)', async () => {

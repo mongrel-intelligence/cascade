@@ -33,9 +33,13 @@ vi.mock('../../../src/github/client.js', () => ({
 	},
 }));
 
-vi.mock('../../../src/gadgets/sessionState.js', () => ({
-	getSessionState: vi.fn(),
-}));
+vi.mock('../../../src/gadgets/sessionState.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../../../src/gadgets/sessionState.js')>();
+	return {
+		...actual,
+		getSessionState: vi.fn(),
+	};
+});
 
 vi.mock('../../../src/gadgets/todo/storage.js', () => ({
 	loadTodos: vi.fn(),

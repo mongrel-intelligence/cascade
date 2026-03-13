@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { githubClient } from '../../../github/client.js';
 import type { SessionHooks } from '../../sessionState.js';
 
@@ -33,6 +34,44 @@ export function hasNewCommits(initialSha: string): boolean {
 		// If git fails here, preceding checks (uncommitted/unpushed) would have
 		// already caught real issues. Fail-open: assume work was done.
 		return true;
+	}
+}
+
+export function getCurrentBranch(): string | null {
+	try {
+		return execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+	} catch {
+		return null;
+	}
+}
+
+export function getCurrentHeadSha(): string | null {
+	try {
+		return execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
+	} catch {
+		return null;
+	}
+}
+
+export function writePushedChangesSidecar(sidecarPath: string | undefined): boolean {
+	if (!sidecarPath || sidecarPath === 'undefined') return false;
+
+	const branch = getCurrentBranch();
+	const headSha = getCurrentHeadSha();
+	if (!branch || !headSha) return false;
+
+	try {
+		writeFileSync(
+			sidecarPath,
+			JSON.stringify({
+				source: 'cascade-tools session finish',
+				branch,
+				headSha,
+			}),
+		);
+		return true;
+	} catch {
+		return false;
 	}
 }
 

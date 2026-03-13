@@ -6,9 +6,13 @@ vi.mock('../../../src/github/client.js', () => ({
 	},
 }));
 
-vi.mock('../../../src/gadgets/sessionState.js', () => ({
-	getSessionState: vi.fn(),
-}));
+vi.mock('../../../src/gadgets/sessionState.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../../../src/gadgets/sessionState.js')>();
+	return {
+		...actual,
+		getSessionState: vi.fn(),
+	};
+});
 
 import { GitHubProgressPoster } from '../../../src/backends/progressState/githubPoster.js';
 import { getSessionState } from '../../../src/gadgets/sessionState.js';
