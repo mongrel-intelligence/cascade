@@ -27,6 +27,7 @@ const mockTrelloGetBoards = vi.fn();
 const mockTrelloGetBoardLists = vi.fn();
 const mockTrelloGetBoardLabels = vi.fn();
 const mockTrelloGetBoardCustomFields = vi.fn();
+const mockTrelloCreateBoardCustomField = vi.fn();
 
 vi.mock('../../../../src/trello/client.js', () => ({
 	withTrelloCredentials: (...args: unknown[]) => {
@@ -39,6 +40,7 @@ vi.mock('../../../../src/trello/client.js', () => ({
 		getBoardLists: (...args: unknown[]) => mockTrelloGetBoardLists(...args),
 		getBoardLabels: (...args: unknown[]) => mockTrelloGetBoardLabels(...args),
 		getBoardCustomFields: (...args: unknown[]) => mockTrelloGetBoardCustomFields(...args),
+		createBoardCustomField: (...args: unknown[]) => mockTrelloCreateBoardCustomField(...args),
 	},
 }));
 
@@ -478,6 +480,141 @@ describe('integrationsDiscoveryRouter', () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(
 				caller.jiraProjectDetails({ ...jiraCredsInput, projectKey: 'PROJ' }),
+			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+		});
+	});
+
+	// ── createTrelloCustomField ──────────────────────────────────────────
+
+	describe('createTrelloCustomField', () => {
+		it('returns id, name, and type on success', async () => {
+			setupDbCredentials([
+				{ orgId: 'org-1', value: 'api-key' },
+				{ orgId: 'org-1', value: 'token' },
+			]);
+			mockTrelloCreateBoardCustomField.mockResolvedValue({
+				id: 'cf-123',
+				name: 'Cost',
+				type: 'number',
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.createTrelloCustomField({
+				...trelloCredsInput,
+				boardId: 'boardabc',
+				name: 'Cost',
+				type: 'number',
+			});
+
+			expect(result).toEqual({
+				id: 'cf-123',
+				name: 'Cost',
+				type: 'number',
+			});
+			expect(mockTrelloCreateBoardCustomField).toHaveBeenCalledWith('boardabc', 'Cost', 'number');
+		});
+
+		it('throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'boardabc',
+					name: 'Cost',
+					type: 'number',
+				}),
+			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+		});
+
+		it('throws NOT_FOUND when credential does not exist', async () => {
+			mockDbWhere.mockResolvedValueOnce([]);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'boardabc',
+					name: 'Cost',
+					type: 'number',
+				}),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+
+		it('validates boardId with alphanumeric regex', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'board-with-hyphens',
+					name: 'Cost',
+					type: 'number',
+				}),
+			).rejects.toThrow();
+		});
+
+		it('validates boardId max length of 32', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'a'.repeat(33),
+					name: 'Cost',
+					type: 'number',
+				}),
+			).rejects.toThrow();
+		});
+
+		it('validates name min length of 1', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'boardabc',
+					name: '',
+					type: 'number',
+				}),
+			).rejects.toThrow();
+		});
+
+		it('validates name max length of 100', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'boardabc',
+					name: 'a'.repeat(101),
+					type: 'number',
+				}),
+			).rejects.toThrow();
+		});
+
+		it('validates type is one of the allowed enum values', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'boardabc',
+					name: 'Cost',
+					type: 'invalid-type',
+				}),
+			).rejects.toThrow();
+		});
+
+		it('wraps API failure in BAD_REQUEST', async () => {
+			setupDbCredentials([
+				{ orgId: 'org-1', value: 'api-key' },
+				{ orgId: 'org-1', value: 'token' },
+			]);
+			mockTrelloCreateBoardCustomField.mockRejectedValue(new Error('Board not found'));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'boardabc',
+					name: 'Cost',
+					type: 'number',
+				}),
 			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 		});
 	});
