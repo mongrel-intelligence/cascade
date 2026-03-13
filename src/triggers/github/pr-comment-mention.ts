@@ -64,6 +64,8 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 		let commentAuthor: string;
 		let prNumber: number;
 		let prBranch: string;
+		let prUrl: string;
+		let prTitle: string;
 		let repoFullName: string;
 
 		if (isGitHubIssueCommentPayload(ctx.payload)) {
@@ -76,10 +78,12 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 			prNumber = payload.issue.number;
 			repoFullName = payload.repository.full_name;
 
-			// Need to fetch PR for branch info
+			// Need to fetch PR for branch info and PR metadata
 			const { owner, repo } = parseRepoFullName(repoFullName);
 			const prDetails = await githubClient.getPR(owner, repo, prNumber);
 			prBranch = prDetails.headRef;
+			prUrl = prDetails.htmlUrl;
+			prTitle = prDetails.title;
 		} else if (isGitHubPRReviewCommentPayload(ctx.payload)) {
 			const payload = ctx.payload;
 			commentBody = payload.comment.body;
@@ -89,6 +93,8 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 			commentAuthor = payload.comment.user.login;
 			prNumber = payload.pull_request.number;
 			prBranch = payload.pull_request.head.ref;
+			prUrl = payload.pull_request.html_url;
+			prTitle = payload.pull_request.title;
 			repoFullName = payload.repository.full_name;
 		} else {
 			return null;
@@ -131,6 +137,8 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 				commentAuthor,
 			},
 			prNumber,
+			prUrl,
+			prTitle,
 			workItemId,
 		};
 	}

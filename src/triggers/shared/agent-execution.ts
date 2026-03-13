@@ -177,7 +177,7 @@ async function linkPRPostExecution(
 	agentResult: AgentResult & { prUrl: string },
 	project: ProjectConfig & { repo: string },
 	result: TriggerResult,
-	workItemId: string,
+	workItemId: string | undefined,
 ): Promise<void> {
 	const prNumber = extractPRNumber(agentResult.prUrl);
 	if (!prNumber) return;
@@ -199,7 +199,7 @@ async function linkPRPostExecution(
 	}
 
 	try {
-		await linkPRToWorkItem(project.id, project.repo, prNumber, workItemId, {
+		await linkPRToWorkItem(project.id, project.repo, prNumber, workItemId ?? null, {
 			prUrl: agentResult.prUrl,
 			prTitle,
 			workItemUrl: result.workItemUrl,
@@ -408,6 +408,27 @@ export async function runAgentExecutionPipeline(
 		}
 	}
 
+	// Ensure a pr_work_items entry exists for PR-triggered runs (SCM webhooks).
+	// This covers cases where no workItemId exists (orphan PRs) — linkPRToWorkItem
+	// handles upsert, promotion, and orphan creation.
+	if (result.prNumber && project.repo) {
+		try {
+			await linkPRToWorkItem(project.id, project.repo, result.prNumber, workItemId ?? null, {
+				workItemUrl: result.workItemUrl,
+				workItemTitle: result.workItemTitle,
+				prUrl: result.prUrl,
+				prTitle: result.prTitle,
+			});
+		} catch (err) {
+			logger.warn('Failed to ensure pr_work_items entry for PR-triggered run', {
+				projectId: project.id,
+				prNumber: result.prNumber,
+				workItemId,
+				error: String(err),
+			});
+		}
+	}
+
 	if (workItemId && !skipPrepareForAgent) {
 		await lifecycle.prepareForAgent(workItemId, agentType);
 	}
@@ -420,7 +441,7 @@ export async function runAgentExecutionPipeline(
 	});
 
 	// Link PR to work item post-execution (single code path for all backends)
-	if (agentResult.success && agentResult.prUrl && workItemId && project.repo) {
+	if (agentResult.success && agentResult.prUrl && project.repo) {
 		await linkPRPostExecution(
 			agentResult as AgentResult & { prUrl: string },
 			project as ProjectConfig & { repo: string },

@@ -191,6 +191,8 @@ describe('PRReviewSubmittedTrigger', () => {
 					triggerEvent: 'scm:pr-review-submitted',
 				},
 				prNumber: 42,
+				prUrl: 'https://github.com/owner/repo/pull/42',
+				prTitle: 'Test PR',
 				workItemId: 'abc123',
 			});
 		});
@@ -325,6 +327,8 @@ describe('PRReviewSubmittedTrigger', () => {
 					triggerEvent: 'scm:pr-review-submitted',
 				},
 				prNumber: 42,
+				prUrl: 'https://github.com/owner/repo/pull/42',
+				prTitle: 'Test PR',
 				workItemId: 'abc123',
 			});
 		});

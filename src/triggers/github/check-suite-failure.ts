@@ -165,6 +165,8 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 				workItemId: workItemId,
 			},
 			prNumber,
+			prUrl: prDetails.htmlUrl,
+			prTitle: prDetails.title,
 			workItemId,
 		};
 	}
