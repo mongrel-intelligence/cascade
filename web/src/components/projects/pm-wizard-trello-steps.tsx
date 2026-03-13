@@ -156,13 +156,17 @@ export function TrelloFieldMappingStep({
 	dispatch,
 	onCreateLabel,
 	onCreateAllMissingLabels,
+	onCreateCostField,
 	creatingSlot,
+	creatingCostField,
 }: {
 	state: WizardState;
 	dispatch: React.Dispatch<WizardAction>;
 	onCreateLabel?: (slot: string) => void;
 	onCreateAllMissingLabels?: () => void;
+	onCreateCostField?: () => void;
 	creatingSlot?: string | null;
+	creatingCostField?: boolean;
 }) {
 	const existingLabelNames = new Set(
 		(state.trelloBoardDetails?.labels ?? []).map((l) => l.name.toLowerCase()),
@@ -298,7 +302,26 @@ export function TrelloFieldMappingStep({
 
 			{/* Cost custom field */}
 			<div className="space-y-2">
-				<Label>Custom Field: Cost</Label>
+				<div className="flex items-center justify-between">
+					<Label>Custom Field: Cost</Label>
+					{state.trelloBoardDetails && onCreateCostField && (
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							onClick={onCreateCostField}
+							disabled={creatingCostField}
+							className="h-7 text-xs"
+						>
+							{creatingCostField ? (
+								<Loader2 className="h-3 w-3 animate-spin mr-1" />
+							) : (
+								<Plus className="h-3 w-3 mr-1" />
+							)}
+							Create
+						</Button>
+					)}
+				</div>
 				{state.trelloBoardDetails ? (
 					<FieldMappingRow
 						slotLabel="cost"

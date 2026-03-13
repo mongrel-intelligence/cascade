@@ -7,6 +7,7 @@ import { SaveStep, WebhookStep } from './pm-wizard-common-steps.js';
 import {
 	useJiraDiscovery,
 	useSaveMutation,
+	useTrelloCustomFieldCreation,
 	useTrelloDiscovery,
 	useTrelloLabelCreation,
 	useVerification,
@@ -71,6 +72,7 @@ export function PMWizard({
 	const [state, dispatch] = useReducer(wizardReducer, undefined, createInitialState);
 	const [openSteps, setOpenSteps] = useState<Set<number>>(new Set([1]));
 	const [creatingSlot, setCreatingSlot] = useState<string | null>(null);
+	const [creatingCostField, setCreatingCostField] = useState(false);
 
 	// ---- Step navigation helpers ----
 
@@ -120,6 +122,7 @@ export function PMWizard({
 		state,
 		dispatch,
 	);
+	const { createCustomFieldMutation } = useTrelloCustomFieldCreation(state, dispatch);
 	const webhookManagement = useWebhookManagement(projectId, state);
 	const { saveMutation } = useSaveMutation(projectId, state);
 
@@ -135,6 +138,13 @@ export function PMWizard({
 				onSettled: () => setCreatingSlot(null),
 			},
 		);
+	};
+
+	const handleCreateCostField = () => {
+		setCreatingCostField(true);
+		createCustomFieldMutation.mutate(undefined, {
+			onSettled: () => setCreatingCostField(false),
+		});
 	};
 
 	const handleCreateAllMissingLabels = () => {
@@ -305,7 +315,9 @@ export function PMWizard({
 						dispatch={dispatch}
 						onCreateLabel={handleCreateLabel}
 						onCreateAllMissingLabels={handleCreateAllMissingLabels}
+						onCreateCostField={handleCreateCostField}
 						creatingSlot={creatingSlot}
+						creatingCostField={creatingCostField}
 					/>
 				) : (
 					<JiraFieldMappingStep state={state} dispatch={dispatch} />

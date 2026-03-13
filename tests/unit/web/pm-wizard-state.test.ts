@@ -325,6 +325,58 @@ describe('wizardReducer', () => {
 		expect(next.trelloBoardDetails?.labels[2]).toEqual(newLabel);
 	});
 
+	it('ADD_TRELLO_BOARD_CUSTOM_FIELD appends a custom field to trelloBoardDetails.customFields', () => {
+		const state = {
+			...initialState(),
+			trelloBoardDetails: {
+				lists: [],
+				labels: [],
+				customFields: [{ id: 'cf-existing', name: 'Existing', type: 'text' }],
+			},
+		};
+		const newCustomField = { id: 'cf-cost', name: 'Cost', type: 'number' };
+		const next = dispatch(state, {
+			type: 'ADD_TRELLO_BOARD_CUSTOM_FIELD',
+			customField: newCustomField,
+		});
+		expect(next.trelloBoardDetails?.customFields).toHaveLength(2);
+		expect(next.trelloBoardDetails?.customFields[1]).toEqual(newCustomField);
+	});
+
+	it('ADD_TRELLO_BOARD_CUSTOM_FIELD is a no-op when trelloBoardDetails is null', () => {
+		const state = initialState();
+		const next = dispatch(state, {
+			type: 'ADD_TRELLO_BOARD_CUSTOM_FIELD',
+			customField: { id: 'cf-1', name: 'test', type: 'number' },
+		});
+		expect(next.trelloBoardDetails).toBeNull();
+		expect(next).toBe(state);
+	});
+
+	it('ADD_TRELLO_BOARD_CUSTOM_FIELD preserves existing custom fields', () => {
+		const existingFields = [
+			{ id: 'cf-1', name: 'Budget', type: 'number' },
+			{ id: 'cf-2', name: 'Tags', type: 'list' },
+		];
+		const state = {
+			...initialState(),
+			trelloBoardDetails: {
+				lists: [],
+				labels: [],
+				customFields: existingFields,
+			},
+		};
+		const newCustomField = { id: 'cf-3', name: 'Cost', type: 'number' };
+		const next = dispatch(state, {
+			type: 'ADD_TRELLO_BOARD_CUSTOM_FIELD',
+			customField: newCustomField,
+		});
+		expect(next.trelloBoardDetails?.customFields).toHaveLength(3);
+		expect(next.trelloBoardDetails?.customFields[0]).toEqual(existingFields[0]);
+		expect(next.trelloBoardDetails?.customFields[1]).toEqual(existingFields[1]);
+		expect(next.trelloBoardDetails?.customFields[2]).toEqual(newCustomField);
+	});
+
 	it('unknown action returns state unchanged', () => {
 		const state = initialState();
 		// @ts-expect-error testing unknown action

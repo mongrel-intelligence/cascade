@@ -90,7 +90,11 @@ export type WizardAction =
 	| { type: 'SET_JIRA_LABEL'; key: string; value: string }
 	| { type: 'SET_JIRA_COST_FIELD'; id: string }
 	| { type: 'INIT_EDIT'; state: Partial<WizardState> }
-	| { type: 'ADD_TRELLO_BOARD_LABEL'; label: { id: string; name: string; color: string } };
+	| { type: 'ADD_TRELLO_BOARD_LABEL'; label: { id: string; name: string; color: string } }
+	| {
+			type: 'ADD_TRELLO_BOARD_CUSTOM_FIELD';
+			customField: { id: string; name: string; type: string };
+	  };
 
 // ============================================================================
 // Initial state and constants
@@ -238,6 +242,15 @@ export const wizardReducer: Reducer<WizardState, WizardAction> = (state, action)
 				trelloBoardDetails: {
 					...state.trelloBoardDetails,
 					labels: [...state.trelloBoardDetails.labels, action.label],
+				},
+			};
+		case 'ADD_TRELLO_BOARD_CUSTOM_FIELD':
+			if (!state.trelloBoardDetails) return state;
+			return {
+				...state,
+				trelloBoardDetails: {
+					...state.trelloBoardDetails,
+					customFields: [...state.trelloBoardDetails.customFields, action.customField],
 				},
 			};
 		default:

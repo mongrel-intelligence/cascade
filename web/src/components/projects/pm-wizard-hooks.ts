@@ -400,6 +400,51 @@ export function useTrelloLabelCreation(state: WizardState, dispatch: React.Dispa
 }
 
 // ============================================================================
+// Trello Custom Field Creation
+// ============================================================================
+
+export function useTrelloCustomFieldCreation(
+	state: WizardState,
+	dispatch: React.Dispatch<WizardAction>,
+) {
+	const createCustomFieldMutation = useMutation({
+		mutationFn: () => {
+			if (
+				!state.trelloApiKeyCredentialId ||
+				!state.trelloTokenCredentialId ||
+				!state.trelloBoardId
+			) {
+				throw new Error('Missing credentials or board selection');
+			}
+			return trpcClient.integrationsDiscovery.createTrelloCustomField.mutate({
+				apiKeyCredentialId: state.trelloApiKeyCredentialId,
+				tokenCredentialId: state.trelloTokenCredentialId,
+				boardId: state.trelloBoardId,
+				name: 'Cost',
+				type: 'number',
+			});
+		},
+		onSuccess: (customField) => {
+			dispatch({ type: 'ADD_TRELLO_BOARD_CUSTOM_FIELD', customField });
+			dispatch({ type: 'SET_TRELLO_COST_FIELD', id: customField.id });
+		},
+		onError: (error) => {
+			console.error('Failed to create custom field:', error);
+			const message = error instanceof Error ? error.message : String(error);
+			if (message.includes('403')) {
+				alert(
+					'Failed to create custom field: The Trello Custom Fields power-up is required. Please enable it on your Trello board and try again.',
+				);
+			} else {
+				alert(`Failed to create custom field: ${message}`);
+			}
+		},
+	});
+
+	return { createCustomFieldMutation };
+}
+
+// ============================================================================
 // Save Mutation
 // ============================================================================
 
