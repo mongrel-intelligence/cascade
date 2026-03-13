@@ -18,6 +18,7 @@ import {
 import { GitHubRouterAdapter, injectEventType } from './adapters/github.js';
 import { JiraRouterAdapter } from './adapters/jira.js';
 import { TrelloRouterAdapter } from './adapters/trello.js';
+import { startCancelListener, stopCancelListener } from './cancel-listener.js';
 import { getQueueStats } from './queue.js';
 import { processRouterWebhook } from './webhook-processor.js';
 import {
@@ -129,6 +130,7 @@ app.post(
 // Graceful shutdown
 async function shutdown(signal: string): Promise<void> {
 	logger.info('Received shutdown signal', { signal });
+	await stopCancelListener();
 	await stopWorkerProcessor();
 	await flush(3000);
 	process.exit(0);
@@ -158,6 +160,9 @@ async function startRouter(): Promise<void> {
 	logger.info('Initializing agent messages...');
 	await initAgentMessages();
 	await initPrompts();
+
+	// Start cancel listener for handling run cancellations
+	await startCancelListener();
 
 	startWorkerProcessor();
 	logger.info('Starting router', { port });

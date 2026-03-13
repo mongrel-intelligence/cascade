@@ -91,3 +91,20 @@ export async function subscribeToCancelCommands(handler: CancelCommandHandler): 
 
 	await subscriber.subscribe(CANCEL_CHANNEL);
 }
+
+/**
+ * Unsubscribe from the cancel channel and close the subscriber connection.
+ *
+ * Should be called during graceful shutdown to release the Redis connection.
+ */
+export async function unsubscribeFromCancelCommands(): Promise<void> {
+	if (!subscriberInstance) return;
+
+	try {
+		await subscriberInstance.unsubscribe(CANCEL_CHANNEL);
+		subscriberInstance.disconnect();
+		subscriberInstance = null;
+	} catch (error) {
+		console.error('[cancel] Failed to unsubscribe from cancel commands:', error);
+	}
+}

@@ -73,6 +73,12 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 	logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+// Mock publishCancelCommand (fire-and-forget)
+const mockPublishCancelCommand = vi.fn().mockResolvedValue(undefined);
+vi.mock('../../../../src/queue/cancel.js', () => ({
+	publishCancelCommand: (...args: unknown[]) => mockPublishCancelCommand(...args),
+}));
+
 import { runsRouter } from '../../../../src/api/routers/runs.js';
 
 function createCaller(ctx: TRPCContext) {
@@ -890,6 +896,42 @@ describe('runsRouter', () => {
 
 			expect(result).toEqual({ cancelled: true });
 			expect(mockCancelRunById).toHaveBeenCalledWith(RUN_UUID, 'Manually cancelled via API');
+		});
+
+		it('publishes cancel command after successful cancel', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				status: 'running',
+			});
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCancelRunById.mockResolvedValue(true);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.cancel({ runId: RUN_UUID });
+
+			// Wait a tick for the fire-and-forget to execute
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(mockPublishCancelCommand).toHaveBeenCalledWith(RUN_UUID, 'Manually cancelled via API');
+		});
+
+		it('publishes cancel command with custom reason', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				status: 'running',
+			});
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCancelRunById.mockResolvedValue(true);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.cancel({ runId: RUN_UUID, reason: 'Orphaned worker' });
+
+			// Wait a tick for the fire-and-forget to execute
+			await new Promise((resolve) => setImmediate(resolve));
+
+			expect(mockPublishCancelCommand).toHaveBeenCalledWith(RUN_UUID, 'Orphaned worker');
 		});
 
 		it('uses custom reason when provided', async () => {

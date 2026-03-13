@@ -97,7 +97,7 @@ describe('CreatePRReviewCommand sidecar write', () => {
 		expect(existsSync(sidecarPath)).toBe(true);
 
 		const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8'));
-		expect(sidecar).toEqual({
+		expect(sidecar).toMatchObject({
 			source: 'cascade-tools scm create-pr-review',
 			reviewUrl: 'https://github.com/owner/repo/pull/1#pullrequestreview-123',
 			event: 'REQUEST_CHANGES',

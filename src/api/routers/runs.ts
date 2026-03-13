@@ -13,6 +13,7 @@ import {
 	listLlmCallsMeta,
 	listRuns,
 } from '../../db/repositories/runsRepository.js';
+import { publishCancelCommand } from '../../queue/cancel.js';
 import { isAnalysisRunning } from '../../triggers/shared/debug-status.js';
 import { logger } from '../../utils/logging.js';
 import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
@@ -382,6 +383,15 @@ export const runsRouter = router({
 					message: 'Run was already completed by the time cancel was processed',
 				});
 			}
+
+			// Publish cancel command to Router (fire-and-forget)
+			publishCancelCommand(input.runId, reason).catch((err) => {
+				logger.error('[runs.cancel] Failed to publish cancel command:', {
+					runId: input.runId,
+					reason,
+					error: String(err),
+				});
+			});
 
 			return { cancelled: true };
 		}),
