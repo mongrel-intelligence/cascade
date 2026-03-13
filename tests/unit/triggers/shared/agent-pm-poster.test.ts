@@ -32,9 +32,38 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 }));
 
 import {
+	PM_SUMMARY_AGENT_TYPES,
+	formatAgentOutputForPM,
 	formatReviewForPM,
+	isOutputBasedAgent,
+	postAgentOutputToPM,
 	postReviewToPM,
-} from '../../../../src/triggers/shared/review-pm-poster.js';
+} from '../../../../src/triggers/shared/agent-pm-poster.js';
+
+describe('PM_SUMMARY_AGENT_TYPES and isOutputBasedAgent', () => {
+	it('includes review and all output-based agent types', () => {
+		expect(PM_SUMMARY_AGENT_TYPES).toContain('review');
+		expect(PM_SUMMARY_AGENT_TYPES).toContain('respond-to-ci');
+		expect(PM_SUMMARY_AGENT_TYPES).toContain('respond-to-review');
+		expect(PM_SUMMARY_AGENT_TYPES).toContain('resolve-conflicts');
+	});
+
+	it('does not include non-summary agent types', () => {
+		expect(PM_SUMMARY_AGENT_TYPES).not.toContain('implementation');
+		expect(PM_SUMMARY_AGENT_TYPES).not.toContain('splitting');
+	});
+
+	it('isOutputBasedAgent returns true for output-based agents', () => {
+		expect(isOutputBasedAgent('respond-to-ci')).toBe(true);
+		expect(isOutputBasedAgent('respond-to-review')).toBe(true);
+		expect(isOutputBasedAgent('resolve-conflicts')).toBe(true);
+	});
+
+	it('isOutputBasedAgent returns false for review and unknown types', () => {
+		expect(isOutputBasedAgent('review')).toBe(false);
+		expect(isOutputBasedAgent('implementation')).toBe(false);
+	});
+});
 
 describe('formatReviewForPM', () => {
 	it('formats an APPROVE review with correct emoji and label', () => {
@@ -99,6 +128,87 @@ describe('formatReviewForPM', () => {
 
 		expect(result).toContain(body);
 		expect(result).not.toContain('[Review body truncated');
+	});
+});
+
+describe('formatAgentOutputForPM', () => {
+	it('formats respond-to-ci output with correct emoji and header', () => {
+		const result = formatAgentOutputForPM(
+			'respond-to-ci',
+			'Fixed the CI failure by updating deps.',
+		);
+
+		expect(result).toContain('🔧');
+		expect(result).toContain('**CI Fix Summary**');
+		expect(result).toContain('Fixed the CI failure by updating deps.');
+	});
+
+	it('formats respond-to-review output with correct emoji and header', () => {
+		const result = formatAgentOutputForPM('respond-to-review', 'Addressed all review comments.');
+
+		expect(result).toContain('💬');
+		expect(result).toContain('**Review Response Summary**');
+		expect(result).toContain('Addressed all review comments.');
+	});
+
+	it('formats resolve-conflicts output with correct emoji and header', () => {
+		const result = formatAgentOutputForPM(
+			'resolve-conflicts',
+			'Resolved merge conflicts in 3 files.',
+		);
+
+		expect(result).toContain('🔀');
+		expect(result).toContain('**Conflict Resolution Summary**');
+		expect(result).toContain('Resolved merge conflicts in 3 files.');
+	});
+
+	it('tail-extracts when output exceeds 2000 chars', () => {
+		// Build output where the first part is clearly distinguishable from the tail
+		const uniquePrefix = 'UNIQUE_START_MARKER\n';
+		const filler = `${'B'.repeat(99)}\n`.repeat(30); // 3000 chars
+		const suffix = 'Important final output line';
+		const output = uniquePrefix + filler + suffix;
+
+		const result = formatAgentOutputForPM('respond-to-ci', output);
+
+		// Should contain the tail content
+		expect(result).toContain(suffix);
+		// Should contain truncation notice
+		expect(result).toContain('[Output truncated — showing last portion]');
+		// Should NOT contain the unique prefix (it was truncated away)
+		expect(result).not.toContain('UNIQUE_START_MARKER');
+	});
+
+	it('does not truncate output at exactly 2000 chars', () => {
+		const output = 'X'.repeat(2_000);
+		const result = formatAgentOutputForPM('respond-to-ci', output);
+
+		expect(result).toContain(output);
+		expect(result).not.toContain('[Output truncated');
+	});
+
+	it('passes through short output without truncation', () => {
+		const output = 'Short output.';
+		const result = formatAgentOutputForPM('respond-to-ci', output);
+
+		expect(result).toContain(output);
+		expect(result).not.toContain('[Output truncated');
+	});
+
+	it('returns length-capped raw output for unknown agent type', () => {
+		const output = 'Some output from an unknown agent.';
+		const result = formatAgentOutputForPM('unknown-agent', output);
+
+		// No header/emoji formatting — just the raw output
+		expect(result).toBe(output);
+	});
+
+	it('caps output at MAX_BODY_LENGTH for unknown agent type', () => {
+		const output = 'Z'.repeat(20_000);
+		const result = formatAgentOutputForPM('unknown-agent', output);
+
+		expect(result.length).toBe(15_000);
+		expect(result).not.toContain('🔧'); // No formatting applied
 	});
 });
 
@@ -280,6 +390,95 @@ describe('postReviewToPM', () => {
 		expect(mockUpdateComment).not.toHaveBeenCalled();
 		expect(mockLogger.info).toHaveBeenCalledWith(
 			'Added new PM comment with review summary',
+			expect.objectContaining({ workItemId: 'card-123' }),
+		);
+	});
+});
+
+describe('postAgentOutputToPM', () => {
+	beforeEach(() => {
+		vi.resetAllMocks();
+		mockSafeOperation.mockImplementation(async (fn: () => Promise<unknown>) => fn());
+	});
+
+	it('skips when output is empty', async () => {
+		await postAgentOutputToPM('card-123', 'respond-to-ci', '');
+
+		expect(mockGetPMProviderOrNull).not.toHaveBeenCalled();
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			'postAgentOutputToPM skipped: empty output',
+			expect.objectContaining({ workItemId: 'card-123', agentType: 'respond-to-ci' }),
+		);
+	});
+
+	it('skips when output is whitespace-only', async () => {
+		await postAgentOutputToPM('card-123', 'respond-to-review', '   \n\t  ');
+
+		expect(mockGetPMProviderOrNull).not.toHaveBeenCalled();
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			'postAgentOutputToPM skipped: empty output',
+			expect.objectContaining({ workItemId: 'card-123', agentType: 'respond-to-review' }),
+		);
+	});
+
+	it('updates existing comment when progressCommentId is provided', async () => {
+		mockGetPMProviderOrNull.mockReturnValue({
+			addComment: mockAddComment,
+			updateComment: mockUpdateComment,
+		});
+		mockUpdateComment.mockResolvedValue(undefined);
+
+		await postAgentOutputToPM('card-123', 'respond-to-ci', 'Fixed CI by updating deps.', 'prog-1');
+
+		expect(mockUpdateComment).toHaveBeenCalledTimes(1);
+		const [workItemId, commentId, text] = mockUpdateComment.mock.calls[0];
+		expect(workItemId).toBe('card-123');
+		expect(commentId).toBe('prog-1');
+		expect(text).toContain('🔧');
+		expect(text).toContain('**CI Fix Summary**');
+		expect(text).toContain('Fixed CI by updating deps.');
+		expect(mockAddComment).not.toHaveBeenCalled();
+	});
+
+	it('creates new comment when progressCommentId is not provided', async () => {
+		mockGetPMProviderOrNull.mockReturnValue({
+			addComment: mockAddComment,
+			updateComment: mockUpdateComment,
+		});
+		mockAddComment.mockResolvedValue('new-comment-id');
+
+		await postAgentOutputToPM('card-123', 'resolve-conflicts', 'Resolved 3 conflicts.');
+
+		expect(mockAddComment).toHaveBeenCalledTimes(1);
+		const [workItemId, text] = mockAddComment.mock.calls[0];
+		expect(workItemId).toBe('card-123');
+		expect(text).toContain('🔀');
+		expect(text).toContain('**Conflict Resolution Summary**');
+		expect(text).toContain('Resolved 3 conflicts.');
+		expect(mockUpdateComment).not.toHaveBeenCalled();
+	});
+
+	it('falls back to addComment when update fails', async () => {
+		mockGetPMProviderOrNull.mockReturnValue({
+			addComment: mockAddComment,
+			updateComment: mockUpdateComment,
+		});
+		mockUpdateComment.mockRejectedValue(new Error('Not found'));
+		mockAddComment.mockResolvedValue('new-id');
+
+		await postAgentOutputToPM('card-123', 'respond-to-review', 'Addressed comments.', 'prog-2');
+
+		expect(mockUpdateComment).toHaveBeenCalledTimes(1);
+		expect(mockAddComment).toHaveBeenCalledTimes(1);
+	});
+
+	it('logs with function name prefix when PM provider is unavailable', async () => {
+		mockGetPMProviderOrNull.mockReturnValue(null);
+
+		await postAgentOutputToPM('card-123', 'respond-to-ci', 'Some output.');
+
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			'postAgentOutputToPM skipped: no PM provider available',
 			expect.objectContaining({ workItemId: 'card-123' }),
 		);
 	});
