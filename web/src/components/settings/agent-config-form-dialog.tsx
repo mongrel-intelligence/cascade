@@ -14,24 +14,23 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 
-interface AgentConfig {
-	id: number;
-	agentType: string;
-	model: string | null;
-	maxIterations: number | null;
-	agentEngine: string | null;
-	maxConcurrency: number | null;
-}
+import type { AgentConfig } from './agent-configs-table.js';
 
 interface AgentConfigFormDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	config?: AgentConfig;
+	isGlobalScope?: boolean;
 }
 
-export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfigFormDialogProps) {
+export function AgentConfigFormDialog({
+	open,
+	onOpenChange,
+	config,
+	isGlobalScope = false,
+}: AgentConfigFormDialogProps) {
 	const queryClient = useQueryClient();
-	const isEdit = !!config;
+	const isEdit = !!config && config.id !== 0;
 	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
 
 	const [agentType, setAgentType] = useState(config?.agentType ?? '');
@@ -40,11 +39,15 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 	const [agentEngine, setAgentEngine] = useState(config?.agentEngine ?? '');
 	const [maxConcurrency, setMaxConcurrency] = useState(config?.maxConcurrency?.toString() ?? '');
 
-	const queryKey = trpc.agentConfigs.list.queryOptions().queryKey;
+	const queryKey = isGlobalScope
+		? trpc.agentConfigs.listGlobal.queryOptions().queryKey
+		: trpc.agentConfigs.list.queryOptions().queryKey;
 
 	const createMutation = useMutation({
 		mutationFn: () =>
 			trpcClient.agentConfigs.create.mutate({
+				orgId: isGlobalScope ? null : config?.orgId,
+				projectId: config?.projectId,
 				agentType,
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,

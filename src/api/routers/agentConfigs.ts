@@ -7,11 +7,12 @@ import {
 	createAgentConfig,
 	deleteAgentConfig,
 	listAgentConfigs,
+	listGlobalAgentConfigs,
 	updateAgentConfig,
 } from '../../db/repositories/settingsRepository.js';
 import { agentConfigs } from '../../db/schema/index.js';
 import type { TRPCContext } from '../trpc.js';
-import { protectedProcedure, publicProcedure, router } from '../trpc.js';
+import { protectedProcedure, publicProcedure, router, superAdminProcedure } from '../trpc.js';
 import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
 /** Throws FORBIDDEN when a global config (no org, no project) is modified by a non-superadmin. */
@@ -36,14 +37,17 @@ export const agentConfigsRouter = router({
 			if (input?.projectId) {
 				// Verify project belongs to org
 				await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
-				return listAgentConfigs({ projectId: input.projectId });
+				return listAgentConfigs({ projectId: input.projectId, orgId: ctx.effectiveOrgId });
 			}
 			return listAgentConfigs({ orgId: ctx.effectiveOrgId });
 		}),
 
-	// No superadmin check needed: the `input.orgId ?? ctx.effectiveOrgId` fallback
-	// guarantees an orgId is always set, so a truly global config (no org, no project)
-	// cannot be created through this endpoint.
+	listGlobal: superAdminProcedure.query(async () => {
+		return listGlobalAgentConfigs();
+	}),
+
+	// Allows superadmins to create global configs (no org, no project).
+	// For other users, orgId defaults to effectiveOrgId.
 	create: protectedProcedure
 		.input(
 			z.object({
@@ -57,13 +61,26 @@ export const agentConfigsRouter = router({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
+			const finalOrgId =
+				input.orgId === undefined ? (input.projectId ? null : ctx.effectiveOrgId) : input.orgId;
+			const finalProjectId = input.projectId ?? null;
+
 			// If projectId given, verify ownership
-			if (input.projectId) {
-				await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+			if (finalProjectId) {
+				await verifyProjectOrgAccess(finalProjectId, ctx.effectiveOrgId);
 			}
+
+			// Global config (no orgId, no projectId) requires superadmin
+			if (!finalOrgId && !finalProjectId && ctx.user.role !== 'superadmin') {
+				throw new TRPCError({
+					code: 'FORBIDDEN',
+					message: 'Superadmin access required for global config',
+				});
+			}
+
 			return createAgentConfig({
-				orgId: input.orgId ?? ctx.effectiveOrgId,
-				projectId: input.projectId,
+				orgId: finalOrgId,
+				projectId: finalProjectId,
 				agentType: input.agentType,
 				model: input.model,
 				maxIterations: input.maxIterations,

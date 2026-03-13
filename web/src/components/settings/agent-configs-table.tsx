@@ -1,3 +1,13 @@
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from '@/components/ui/alert-dialog.js';
 import { Badge } from '@/components/ui/badge.js';
 import {
 	Table,
@@ -13,7 +23,7 @@ import { Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { AgentConfigFormDialog } from './agent-config-form-dialog.js';
 
-interface AgentConfig {
+export interface AgentConfig {
 	id: number;
 	orgId: string | null;
 	projectId: string | null;
@@ -24,14 +34,25 @@ interface AgentConfig {
 	maxConcurrency: number | null;
 }
 
-export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
+export function AgentConfigsTable({
+	configs,
+	isGlobalScope = false,
+}: { configs: AgentConfig[]; isGlobalScope?: boolean }) {
 	const queryClient = useQueryClient();
 	const [editConfig, setEditConfig] = useState<AgentConfig | null>(null);
+	const [deleteConfigId, setDeleteConfigId] = useState<number | null>(null);
 
 	const deleteMutation = useMutation({
 		mutationFn: (id: number) => trpcClient.agentConfigs.delete.mutate({ id }),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: trpc.agentConfigs.list.queryOptions().queryKey });
+			if (isGlobalScope) {
+				queryClient.invalidateQueries({
+					queryKey: trpc.agentConfigs.listGlobal.queryOptions().queryKey,
+				});
+			} else {
+				queryClient.invalidateQueries({ queryKey: trpc.agentConfigs.list.queryOptions().queryKey });
+			}
+			setDeleteConfigId(null);
 		},
 	});
 
@@ -70,10 +91,12 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 								</TableCell>
 								<TableCell className="hidden md:table-cell">{config.agentEngine ?? '-'}</TableCell>
 								<TableCell>
-									{config.orgId ? (
+									{config.projectId ? (
+										<Badge variant="outline">Project</Badge>
+									) : config.orgId ? (
 										<Badge variant="secondary">Org</Badge>
 									) : (
-										<Badge variant="outline">Global</Badge>
+										<Badge variant="default">Global</Badge>
 									)}
 								</TableCell>
 								<TableCell>
@@ -87,7 +110,7 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 										</button>
 										<button
 											type="button"
-											onClick={() => deleteMutation.mutate(config.id)}
+											onClick={() => setDeleteConfigId(config.id)}
 											className="p-1 text-muted-foreground hover:text-destructive"
 										>
 											<Trash2 className="h-4 w-4" />
@@ -100,11 +123,36 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 				</Table>
 			</div>
 
+			<AlertDialog
+				open={!!deleteConfigId}
+				onOpenChange={(open) => !open && setDeleteConfigId(null)}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Delete Agent Config</AlertDialogTitle>
+						<AlertDialogDescription>
+							Are you sure you want to delete this agent configuration? This action cannot be
+							undone.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={() => deleteConfigId && deleteMutation.mutate(deleteConfigId)}
+							className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+						>
+							{deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+
 			{editConfig && (
 				<AgentConfigFormDialog
 					open={true}
 					onOpenChange={(open) => !open && setEditConfig(null)}
 					config={editConfig}
+					isGlobalScope={isGlobalScope}
 				/>
 			)}
 		</>

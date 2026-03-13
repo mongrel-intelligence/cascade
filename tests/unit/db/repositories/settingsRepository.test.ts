@@ -29,7 +29,7 @@ describe('settingsRepository', () => {
 	let mockDb: ReturnType<typeof createMockDb>;
 
 	beforeEach(() => {
-		mockDb = createMockDb({ withUpsert: true, withThenable: true });
+		mockDb = createMockDb({ withUpsert: true, withThenable: true, withLimit: true });
 		vi.mocked(getDb).mockReturnValue(mockDb.db as never);
 	});
 
@@ -292,12 +292,18 @@ describe('settingsRepository', () => {
 			expect(result).toEqual(configs);
 		});
 
-		it('filters by projectId when provided', async () => {
+		it('filters by projectId and fetches orgId if not provided', async () => {
 			const configs = [{ id: 2, agentType: 'review', projectId: 'p1' }];
+			// First call (to where): return object with limit
+			mockDb.chain.where.mockReturnValueOnce({ limit: mockDb.chain.limit });
+			// First call (to limit): return the project
+			mockDb.chain.limit.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			// Second call (to where): return the configs
 			mockDb.chain.where.mockResolvedValueOnce(configs);
 
 			const result = await listAgentConfigs({ projectId: 'p1' });
 			expect(result).toEqual(configs);
+			expect(mockDb.db.select).toHaveBeenCalledTimes(2);
 		});
 
 		it('filters to non-project configs when orgId provided', async () => {

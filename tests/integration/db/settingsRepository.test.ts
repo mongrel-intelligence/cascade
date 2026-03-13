@@ -352,7 +352,8 @@ describe('settingsRepository (integration)', () => {
 			});
 
 			const configs = await listAgentConfigs({ projectId: 'test-project' });
-			expect(configs.every((c) => c.projectId === 'test-project')).toBe(true);
+			expect(configs.some((c) => c.projectId === 'test-project')).toBe(true);
+			expect(configs.some((c) => c.projectId === null)).toBe(true);
 		});
 
 		it('filters by orgId (returns global + org-level configs with null projectId)', async () => {

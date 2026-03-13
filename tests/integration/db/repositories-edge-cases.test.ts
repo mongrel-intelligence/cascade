@@ -312,7 +312,7 @@ describe('Database Repository Edge Cases (integration)', () => {
 			await deleteProject('test-project', 'test-org');
 
 			const configsAfter = await listAgentConfigs({ projectId: 'test-project' });
-			expect(configsAfter).toHaveLength(0);
+			expect(configsAfter.filter((c) => c.projectId === 'test-project')).toHaveLength(0);
 		});
 	});
 
