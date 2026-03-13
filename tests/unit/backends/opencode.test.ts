@@ -465,12 +465,15 @@ describe('OpenCodeEngine', () => {
 				delete: vi.fn().mockResolvedValue(true),
 			},
 			event: {
-				subscribe: vi.fn().mockResolvedValue(
-					createEventStream([
-						{ type: 'session.idle', properties: { sessionID: 'session-followup' } },
-						{ type: 'session.idle', properties: { sessionID: 'session-followup' } },
-					]),
-				),
+				subscribe: vi
+					.fn()
+					.mockImplementation(() =>
+						Promise.resolve(
+							createEventStream([
+								{ type: 'session.idle', properties: { sessionID: 'session-followup' } },
+							]),
+						),
+					),
 			},
 			postSessionIdPermissionsPermissionId: vi.fn(),
 		}));
@@ -560,11 +563,15 @@ describe('OpenCodeEngine', () => {
 				delete: vi.fn().mockResolvedValue(true),
 			},
 			event: {
-				subscribe: vi.fn().mockResolvedValue(
-					createEventStream([
-						{ type: 'session.idle', properties: { sessionID: 'session-pushed-followup' } },
-						{ type: 'session.idle', properties: { sessionID: 'session-pushed-followup' } },
-					]),
+				subscribe: vi.fn().mockImplementation(() =>
+					Promise.resolve(
+						createEventStream([
+							{
+								type: 'session.idle',
+								properties: { sessionID: 'session-pushed-followup' },
+							},
+						]),
+					),
 				),
 			},
 			postSessionIdPermissionsPermissionId: vi.fn(),
@@ -763,6 +770,145 @@ describe('OpenCodeEngine', () => {
 			'WARN',
 			'OpenCode prompt response lost after stream output began',
 			expect.objectContaining({ sessionId: 'session-stream-only', error: 'fetch failed' }),
+		);
+	});
+
+	it('continues the same session when streamed-state fallback ends without authoritative PR evidence', async () => {
+		mockSpawn.mockReturnValue(createMockChild());
+
+		const tempDir = mkdtempSync(join(tmpdir(), 'opencode-stream-pr-sidecar-'));
+		const prSidecarPath = join(tempDir, 'pr.json');
+		const logWriter = vi.fn();
+		const sessionPrompt = vi
+			.fn()
+			.mockImplementationOnce(async () => {
+				await new Promise((resolve) => setTimeout(resolve, 0));
+				throw new TypeError('fetch failed');
+			})
+			.mockImplementationOnce(async () => {
+				writeFileSync(
+					prSidecarPath,
+					JSON.stringify({
+						prUrl: 'https://github.com/owner/repo/pull/456',
+						source: 'cascade-tools scm create-pr',
+					}),
+				);
+				return {
+					data: {
+						info: { id: 'assistant-second', cost: 0.2 },
+						parts: [
+							{
+								id: 'text-second',
+								sessionID: 'session-stream-followup',
+								messageID: 'assistant-second',
+								type: 'text',
+								text: 'PR created successfully.',
+							},
+						],
+					},
+				};
+			});
+
+		mockCreateOpencodeClient.mockImplementation(() => ({
+			session: {
+				create: vi.fn().mockResolvedValue({ data: { id: 'session-stream-followup' } }),
+				prompt: sessionPrompt,
+				delete: vi.fn().mockResolvedValue(true),
+			},
+			event: {
+				subscribe: vi
+					.fn()
+					.mockImplementationOnce(() =>
+						Promise.resolve(
+							createEventStream([
+								{
+									type: 'message.part.updated',
+									properties: {
+										part: {
+											id: 'step-1',
+											sessionID: 'session-stream-followup',
+											messageID: 'assistant-stream-followup',
+											type: 'step-start',
+										},
+									},
+								},
+								{
+									type: 'message.part.updated',
+									properties: {
+										part: {
+											id: 'text-1',
+											sessionID: 'session-stream-followup',
+											messageID: 'assistant-stream-followup',
+											type: 'text',
+											text: 'Tests are ready and the PR is next.',
+										},
+										delta: 'Tests are ready and the PR is next.',
+									},
+								},
+								{
+									type: 'message.part.updated',
+									properties: {
+										part: {
+											id: 'finish-1',
+											sessionID: 'session-stream-followup',
+											messageID: 'assistant-stream-followup',
+											type: 'step-finish',
+											reason: 'done',
+											cost: 0.3,
+											tokens: {
+												input: 7,
+												output: 4,
+												reasoning: 0,
+												cache: { read: 0, write: 0 },
+											},
+										},
+									},
+								},
+								{
+									type: 'session.idle',
+									properties: { sessionID: 'session-stream-followup' },
+								},
+							]),
+						),
+					)
+					.mockImplementationOnce(() =>
+						Promise.resolve(
+							createEventStream([
+								{
+									type: 'session.idle',
+									properties: { sessionID: 'session-stream-followup' },
+								},
+							]),
+						),
+					),
+			},
+			postSessionIdPermissionsPermissionId: vi.fn(),
+		}));
+
+		const engine = new OpenCodeEngine();
+		const result = await engine.execute(
+			makeInput({
+				logWriter,
+				completionRequirements: {
+					requiresPR: true,
+					prSidecarPath,
+					maxContinuationTurns: 1,
+				},
+			}),
+		);
+		rmSync(tempDir, { recursive: true, force: true });
+
+		expect(result.success).toBe(true);
+		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/456');
+		expect(sessionPrompt).toHaveBeenCalledTimes(2);
+		expect(logWriter).toHaveBeenCalledWith(
+			'WARN',
+			'OpenCode completion check failed; continuing session',
+			expect.objectContaining({
+				reason: 'Agent completed but no authoritative PR creation was recorded',
+				continuationTurn: 1,
+				usedStreamedStateFallback: true,
+			}),
 		);
 	});
 

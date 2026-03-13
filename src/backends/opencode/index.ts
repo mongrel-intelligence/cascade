@@ -453,10 +453,15 @@ function buildOpenCodeResult(
 	};
 }
 
+interface OpenCodeTurnResult {
+	result: AgentEngineResult;
+	usedStreamedStateFallback: boolean;
+}
+
 function buildOpenCodeResultFromState(
 	input: AgentExecutionPlan,
 	state: OpenCodeStreamState,
-): AgentEngineResult {
+): OpenCodeTurnResult {
 	const output = getPartialOutput(state);
 	const prUrl = extractPRUrl(output);
 	const prEvidence = prUrl
@@ -467,14 +472,17 @@ function buildOpenCodeResultFromState(
 		: undefined;
 
 	if (state.finalError) {
-		return buildOpenCodeResult(
-			false,
-			output,
-			state.totalCost || undefined,
-			prUrl,
-			prEvidence,
-			state.finalError,
-		);
+		return {
+			result: buildOpenCodeResult(
+				false,
+				output,
+				state.totalCost || undefined,
+				prUrl,
+				prEvidence,
+				state.finalError,
+			),
+			usedStreamedStateFallback: true,
+		};
 	}
 
 	input.logWriter('INFO', 'OpenCode execution completed from streamed state', {
@@ -483,7 +491,10 @@ function buildOpenCodeResultFromState(
 		prUrl: prUrl ?? null,
 	});
 
-	return buildOpenCodeResult(true, output, state.totalCost || undefined, prUrl, prEvidence);
+	return {
+		result: buildOpenCodeResult(true, output, state.totalCost || undefined, prUrl, prEvidence),
+		usedStreamedStateFallback: true,
+	};
 }
 
 async function promptOpenCodeSession(
@@ -567,7 +578,7 @@ function buildOpenCodeResultFromResponse(
 	input: AgentExecutionPlan,
 	state: OpenCodeStreamState,
 	response: { parts: Part[]; info: AssistantMessage },
-): AgentEngineResult {
+): OpenCodeTurnResult {
 	const output = getTextOutput(response.parts) || getPartialOutput(state);
 	const assistant = response.info;
 	const prUrl = extractPRUrl(output);
@@ -579,17 +590,20 @@ function buildOpenCodeResultFromResponse(
 		: undefined;
 
 	if (assistant.error || state.finalError) {
-		return buildOpenCodeResult(
-			false,
-			output,
-			state.totalCost || assistant.cost || undefined,
-			prUrl,
-			prEvidence,
-			state.finalError ??
-				(typeof assistant.error?.data?.message === 'string'
-					? assistant.error.data.message
-					: assistant.error?.name),
-		);
+		return {
+			result: buildOpenCodeResult(
+				false,
+				output,
+				state.totalCost || assistant.cost || undefined,
+				prUrl,
+				prEvidence,
+				state.finalError ??
+					(typeof assistant.error?.data?.message === 'string'
+						? assistant.error.data.message
+						: assistant.error?.name),
+			),
+			usedStreamedStateFallback: false,
+		};
 	}
 
 	input.logWriter('INFO', 'OpenCode execution completed', {
@@ -598,13 +612,31 @@ function buildOpenCodeResultFromResponse(
 		prUrl: prUrl ?? null,
 	});
 
-	return buildOpenCodeResult(
-		true,
-		output,
-		state.totalCost || assistant.cost || undefined,
-		prUrl,
-		prEvidence,
-	);
+	return {
+		result: buildOpenCodeResult(
+			true,
+			output,
+			state.totalCost || assistant.cost || undefined,
+			prUrl,
+			prEvidence,
+		),
+		usedStreamedStateFallback: false,
+	};
+}
+
+function buildOpenCodeTurnResult(
+	input: AgentExecutionPlan,
+	state: OpenCodeStreamState,
+	promptResponse:
+		| {
+				parts: Part[];
+				info: AssistantMessage;
+		  }
+		| undefined,
+): OpenCodeTurnResult {
+	return promptResponse
+		? buildOpenCodeResultFromResponse(input, state, promptResponse)
+		: buildOpenCodeResultFromState(input, state);
 }
 
 async function processStreamEvent(
@@ -706,35 +738,35 @@ async function runOpenCodeTurnLoop(
 	input: AgentExecutionPlan,
 	initialPrompt: string,
 	state: OpenCodeStreamState,
-	eventAbort: AbortController,
 ): Promise<AgentEngineResult> {
-	const eventStream = await retryNativeToolOperation(
-		() =>
-			client.event.subscribe({
-				signal: eventAbort.signal,
-			}),
-		{
-			logWriter: input.logWriter,
-			operation: 'opencode.event.subscribe',
-		},
-	);
+	const maxContinuationTurns = input.completionRequirements?.maxContinuationTurns ?? 1;
+	let continuationTurns = 0;
+	let promptText = initialPrompt;
+	for (;;) {
+		const eventAbort = new AbortController();
+		const eventStream = await retryNativeToolOperation(
+			() =>
+				client.event.subscribe({
+					signal: eventAbort.signal,
+				}),
+			{
+				logWriter: input.logWriter,
+				operation: 'opencode.event.subscribe',
+			},
+		);
 
-	const streamTask = (async () => {
-		try {
-			for await (const event of eventStream.stream) {
-				await processStreamEvent(client, event, state);
+		const streamTask = (async () => {
+			try {
+				for await (const event of eventStream.stream) {
+					await processStreamEvent(client, event, state);
+				}
+			} catch (error) {
+				if (eventAbort.signal.aborted) return;
+				state.idleRejecter?.(error instanceof Error ? error : new Error(String(error)));
 			}
-		} catch (error) {
-			if (eventAbort.signal.aborted) return;
-			state.idleRejecter?.(error instanceof Error ? error : new Error(String(error)));
-		}
-	})();
+		})();
 
-	try {
-		const maxContinuationTurns = input.completionRequirements?.maxContinuationTurns ?? 1;
-		let continuationTurns = 0;
-		let promptText = initialPrompt;
-		for (;;) {
+		try {
 			const idlePromise = createIdlePromise(state);
 			const promptResponse = await promptOpenCodeSession(
 				client,
@@ -747,12 +779,12 @@ async function runOpenCodeTurnLoop(
 
 			await idlePromise;
 
-			const turnResult = applyCompletionEvidence(
-				promptResponse
-					? buildOpenCodeResultFromResponse(input, state, promptResponse)
-					: buildOpenCodeResultFromState(input, state),
+			const { result: rawTurnResult, usedStreamedStateFallback } = buildOpenCodeTurnResult(
 				input,
+				state,
+				promptResponse,
 			);
+			const turnResult = applyCompletionEvidence(rawTurnResult, input);
 			if (!turnResult.success) return turnResult;
 
 			const completionFailure = getCompletionFailure(
@@ -774,12 +806,13 @@ async function runOpenCodeTurnLoop(
 				continuationTurn: continuationTurns,
 				maxContinuationTurns,
 				toolCallCount: state.toolCallCount,
+				usedStreamedStateFallback,
 			});
 			promptText = completionFailure.continuationPrompt;
+		} finally {
+			eventAbort.abort();
+			await streamTask;
 		}
-	} finally {
-		eventAbort.abort();
-		await streamTask;
 	}
 }
 
@@ -813,7 +846,6 @@ export class OpenCodeEngine implements AgentEngine {
 		let server: Awaited<ReturnType<typeof startOpenCodeServer>> | undefined;
 		let sessionId: string | undefined;
 		let state: OpenCodeStreamState | undefined;
-		const eventAbort = new AbortController();
 		const serverState: OpenCodeServerState = { stdout: '', stderr: '' };
 
 		try {
@@ -831,15 +863,7 @@ export class OpenCodeEngine implements AgentEngine {
 			attachServerState(server, serverState);
 			sessionId = await createOpenCodeSession(client, input);
 			state = createOpenCodeStreamState(input, model, settings.webSearch, sessionId);
-			return await runOpenCodeTurnLoop(
-				client,
-				sessionId,
-				agent,
-				input,
-				taskPrompt,
-				state,
-				eventAbort,
-			);
+			return await runOpenCodeTurnLoop(client, sessionId, agent, input, taskPrompt, state);
 		} catch (error) {
 			const output = getPartialOutput(state);
 			const prUrl = extractPRUrl(output) ?? undefined;
@@ -861,7 +885,6 @@ export class OpenCodeEngine implements AgentEngine {
 			});
 			return buildOpenCodeResult(false, output, undefined, prUrl, prEvidence, errorMessage);
 		} finally {
-			eventAbort.abort();
 			if (sessionId && server) {
 				const client = createOpencodeClient({
 					baseUrl: server.url,

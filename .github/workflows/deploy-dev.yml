@@ -26,7 +26,11 @@ jobs:
 
       - name: Build and push router image
         run: |
-          docker build -f Dockerfile.router -t ${{ env.ROUTER_IMAGE }}:dev -t ${{ env.ROUTER_IMAGE }}:dev-${{ github.sha }} .
+          docker build \
+            --label org.opencontainers.image.revision=${{ github.sha }} \
+            -f Dockerfile.router \
+            -t ${{ env.ROUTER_IMAGE }}:dev \
+            -t ${{ env.ROUTER_IMAGE }}:dev-${{ github.sha }} .
           docker push ${{ env.ROUTER_IMAGE }}:dev
           docker push ${{ env.ROUTER_IMAGE }}:dev-${{ github.sha }}
 
@@ -37,13 +41,21 @@ jobs:
 
       - name: Build and push worker image
         run: |
-          docker build -f Dockerfile.worker -t ${{ env.WORKER_IMAGE }}:dev -t ${{ env.WORKER_IMAGE }}:dev-${{ github.sha }} .
+          docker build \
+            --label org.opencontainers.image.revision=${{ github.sha }} \
+            -f Dockerfile.worker \
+            -t ${{ env.WORKER_IMAGE }}:dev \
+            -t ${{ env.WORKER_IMAGE }}:dev-${{ github.sha }} .
           docker push ${{ env.WORKER_IMAGE }}:dev
           docker push ${{ env.WORKER_IMAGE }}:dev-${{ github.sha }}
 
       - name: Build and push dashboard image
         run: |
-          docker build -f Dockerfile.dashboard -t ${{ env.DASHBOARD_IMAGE }}:dev -t ${{ env.DASHBOARD_IMAGE }}:dev-${{ github.sha }} .
+          docker build \
+            --label org.opencontainers.image.revision=${{ github.sha }} \
+            -f Dockerfile.dashboard \
+            -t ${{ env.DASHBOARD_IMAGE }}:dev \
+            -t ${{ env.DASHBOARD_IMAGE }}:dev-${{ github.sha }} .
           docker push ${{ env.DASHBOARD_IMAGE }}:dev
           docker push ${{ env.DASHBOARD_IMAGE }}:dev-${{ github.sha }}
 
@@ -123,6 +135,24 @@ jobs:
           fi
           echo "cascade-router-dev image verified (commit ${{ github.sha }})"
 
+      - name: Verify cascade-router-dev runtime revision and worker image
+        run: |
+          REVISION=$(docker inspect cascade-router-dev --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')
+          WORKER_IMAGE=$(docker inspect cascade-router-dev --format '{{range .Config.Env}}{{println .}}{{end}}' | grep '^WORKER_IMAGE=' | cut -d= -f2-)
+          if [ "$REVISION" != "${{ github.sha }}" ]; then
+            echo "ERROR: cascade-router-dev revision label does not match deployed commit!"
+            echo "  Expected revision: ${{ github.sha }}"
+            echo "  Running revision:  $REVISION"
+            exit 1
+          fi
+          if [ "$WORKER_IMAGE" != "${{ env.WORKER_IMAGE }}:dev" ]; then
+            echo "ERROR: cascade-router-dev is configured to launch the wrong worker image!"
+            echo "  Expected worker image: ${{ env.WORKER_IMAGE }}:dev"
+            echo "  Running worker image:  $WORKER_IMAGE"
+            exit 1
+          fi
+          echo "cascade-router-dev runtime verified"
+
       - name: Pull and restart cascade-dashboard-dev
         run: |
           cd /opt/services
@@ -159,6 +189,17 @@ jobs:
             exit 1
           fi
           echo "cascade-dashboard-dev image verified (commit ${{ github.sha }})"
+
+      - name: Verify cascade-dashboard-dev runtime revision
+        run: |
+          REVISION=$(docker inspect cascade-dashboard-dev --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')
+          if [ "$REVISION" != "${{ github.sha }}" ]; then
+            echo "ERROR: cascade-dashboard-dev revision label does not match deployed commit!"
+            echo "  Expected revision: ${{ github.sha }}"
+            echo "  Running revision:  $REVISION"
+            exit 1
+          fi
+          echo "cascade-dashboard-dev runtime verified"
 
       - name: Verify worker image tag
         run: |
