@@ -315,6 +315,8 @@ export const integrationsDiscoveryRouter = router({
 						jiraClient.createCustomField(
 							input.name,
 							'com.atlassian.jira.plugin.system.customfieldtypes:float',
+							// exactnumber searcher enables JQL queries like `"Cost" > 100`
+							'com.atlassian.jira.plugin.system.customfieldtypes:exactnumber',
 						),
 					),
 			);

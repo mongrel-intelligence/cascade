@@ -313,12 +313,21 @@ export const jiraClient = {
 		});
 	},
 
-	async createCustomField(name: string, type: string): Promise<{ id: string; name: string }> {
-		logger.debug('Creating JIRA custom field', { name, type });
+	async createCustomField(
+		name: string,
+		type: string,
+		searcherKey?: string,
+	): Promise<{ id: string; name: string }> {
+		logger.debug('Creating JIRA custom field', { name, type, searcherKey });
 		try {
 			const result = await getClient().issueFields.createCustomField({
 				name,
 				type,
+				// searcherKey enables JQL searchability for this field (e.g. `"Cost" > 100`).
+				// For float fields, 'com.atlassian.jira.plugin.system.customfieldtypes:exactnumber'
+				// enables exact-value JQL queries while 'numberrange' enables range queries.
+				// Omitting searcherKey creates a non-searchable field.
+				...(searcherKey ? { searcherKey } : {}),
 			});
 			return {
 				id: (result as { id?: string }).id ?? '',

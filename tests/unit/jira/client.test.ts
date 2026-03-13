@@ -829,6 +829,31 @@ describe('jiraClient', () => {
 			});
 		});
 
+		it('passes searcherKey when provided, enabling JQL searchability', async () => {
+			mockIssueFields.createCustomField.mockResolvedValue({
+				id: 'customfield_10002',
+				name: 'Budget',
+			});
+
+			const result = await withJiraCredentials(creds, () =>
+				jiraClient.createCustomField(
+					'Budget',
+					'com.atlassian.jira.plugin.system.customfieldtypes:float',
+					'com.atlassian.jira.plugin.system.customfieldtypes:exactnumber',
+				),
+			);
+
+			expect(result).toEqual({
+				id: 'customfield_10002',
+				name: 'Budget',
+			});
+			expect(mockIssueFields.createCustomField).toHaveBeenCalledWith({
+				name: 'Budget',
+				type: 'com.atlassian.jira.plugin.system.customfieldtypes:float',
+				searcherKey: 'com.atlassian.jira.plugin.system.customfieldtypes:exactnumber',
+			});
+		});
+
 		it('returns empty id and name when response fields are missing', async () => {
 			mockIssueFields.createCustomField.mockResolvedValue({});
 

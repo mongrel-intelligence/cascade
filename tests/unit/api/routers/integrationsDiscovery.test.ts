@@ -647,6 +647,7 @@ describe('integrationsDiscoveryRouter', () => {
 			expect(mockJiraCreateCustomField).toHaveBeenCalledWith(
 				'Cost',
 				'com.atlassian.jira.plugin.system.customfieldtypes:float',
+				'com.atlassian.jira.plugin.system.customfieldtypes:exactnumber',
 			);
 		});
 
