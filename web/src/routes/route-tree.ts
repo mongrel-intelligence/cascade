@@ -1,6 +1,7 @@
 import { rootRoute } from './__root.js';
 import { globalAgentConfigsRoute } from './global/agent-configs.js';
 import { globalCredentialsRoute } from './global/credentials.js';
+import { globalDefaultsRoute } from './global/defaults.js';
 import { globalDefinitionsRoute } from './global/definitions.js';
 import { globalOrganizationsRoute } from './global/organizations.js';
 import { globalRunsRoute } from './global/runs.js';
@@ -26,6 +27,7 @@ export const routeTree = rootRoute.addChildren([
 	settingsCredentialsRoute,
 	settingsAgentsRoute,
 	globalAgentConfigsRoute,
+	globalDefaultsRoute,
 	globalDefinitionsRoute,
 	globalWebhookLogsRoute,
 	globalOrganizationsRoute,
