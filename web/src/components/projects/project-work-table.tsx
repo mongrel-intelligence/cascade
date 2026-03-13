@@ -7,6 +7,7 @@ import { formatCost, formatRelativeTime } from '@/lib/utils.js';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
+	Activity,
 	ChevronDown,
 	ChevronRight,
 	ClipboardList,
@@ -139,6 +140,7 @@ function ExpandedRunsRow({ projectId, prNumber, workItemId }: ExpandedRunsRowPro
 
 interface WorkItemRowProps {
 	item: WorkItem;
+	projectId: string;
 	isExpanded: boolean;
 	onToggle: (id: string) => void;
 }
@@ -258,7 +260,41 @@ function SecondaryItemTitle({ item }: Pick<WorkItemRowProps, 'item'>) {
 	);
 }
 
-function WorkItemRow({ item, isExpanded, onToggle }: WorkItemRowProps) {
+function ActivityLink({ item, projectId }: { item: WorkItem; projectId: string }) {
+	if (item.runCount === 0) return null;
+
+	if ((item.type === 'work-item' || item.type === 'linked') && item.workItemId) {
+		return (
+			<Link
+				to="/work-items/$projectId/$workItemId"
+				params={{ projectId, workItemId: item.workItemId }}
+				onClick={(e) => e.stopPropagation()}
+				title="View all runs for this work item"
+				className="inline-flex items-center text-muted-foreground hover:text-primary"
+			>
+				<Activity className="h-4 w-4" />
+			</Link>
+		);
+	}
+
+	if (item.type === 'pr' && item.prNumber != null) {
+		return (
+			<Link
+				to="/prs/$projectId/$prNumber"
+				params={{ projectId, prNumber: String(item.prNumber) }}
+				onClick={(e) => e.stopPropagation()}
+				title="View all runs for this PR"
+				className="inline-flex items-center text-muted-foreground hover:text-primary"
+			>
+				<Activity className="h-4 w-4" />
+			</Link>
+		);
+	}
+
+	return null;
+}
+
+function WorkItemRow({ item, projectId, isExpanded, onToggle }: WorkItemRowProps) {
 	const canExpand = item.runCount > 0;
 
 	const handleClick = () => {
@@ -292,13 +328,16 @@ function WorkItemRow({ item, isExpanded, onToggle }: WorkItemRowProps) {
 				</div>
 			</td>
 
-			{/* Run count */}
+			{/* Run count + Activity link */}
 			<td className="px-4 py-3 text-right tabular-nums">
-				{canExpand ? (
-					<span className="cursor-pointer text-primary hover:underline">{item.runCount}</span>
-				) : (
-					item.runCount
-				)}
+				<div className="flex items-center justify-end gap-2">
+					<ActivityLink item={item} projectId={projectId} />
+					{canExpand ? (
+						<span className="cursor-pointer text-primary hover:underline">{item.runCount}</span>
+					) : (
+						item.runCount
+					)}
+				</div>
 			</td>
 
 			{/* Cost */}
@@ -371,6 +410,7 @@ export function ProjectWorkTable({
 							<React.Fragment key={item.id}>
 								<WorkItemRow
 									item={item}
+									projectId={projectId}
 									isExpanded={expandedRows.has(item.id)}
 									onToggle={toggleRow}
 								/>

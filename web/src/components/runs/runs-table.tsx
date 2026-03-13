@@ -8,6 +8,7 @@ import { RunStatusBadge } from './run-status-badge.js';
 
 interface Run {
 	id: string;
+	projectId?: string | null;
 	projectName: string | null;
 	orgName?: string | null;
 	agentType: string;
@@ -17,6 +18,8 @@ interface Run {
 	costUsd: string | null;
 	llmIterations: number | null;
 	prUrl: string | null;
+	prNumber?: number | null;
+	workItemId?: string | null;
 	workItemTitle?: string | null;
 	workItemUrl?: string | null;
 }
@@ -111,15 +114,45 @@ export function RunsTable({
 								</td>
 								<td className="hidden px-4 py-3 md:table-cell">
 									{run.workItemUrl && run.workItemTitle ? (
-										<a
-											href={run.workItemUrl}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="inline-flex items-center gap-1 text-primary hover:underline"
-										>
-											{run.workItemTitle}
-											<ExternalLink className="h-3 w-3 shrink-0" />
-										</a>
+										<div className="flex flex-col gap-0.5">
+											<a
+												href={run.workItemUrl}
+												target="_blank"
+												rel="noopener noreferrer"
+												className="inline-flex items-center gap-1 text-primary hover:underline"
+											>
+												{run.workItemTitle}
+												<ExternalLink className="h-3 w-3 shrink-0" />
+											</a>
+											{run.projectId && run.workItemId && (
+												<Link
+													to="/work-items/$projectId/$workItemId"
+													params={{
+														projectId: run.projectId,
+														workItemId: run.workItemId,
+													}}
+													className="text-xs text-muted-foreground hover:text-primary hover:underline"
+												>
+													View all runs
+												</Link>
+											)}
+										</div>
+									) : run.workItemId && run.projectId ? (
+										<div className="flex flex-col gap-0.5">
+											<span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+												Unlinked
+											</span>
+											<Link
+												to="/work-items/$projectId/$workItemId"
+												params={{
+													projectId: run.projectId,
+													workItemId: run.workItemId,
+												}}
+												className="text-xs text-muted-foreground hover:text-primary hover:underline"
+											>
+												View all runs
+											</Link>
+										</div>
 									) : (
 										<span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
 											Unlinked
@@ -147,14 +180,28 @@ export function RunsTable({
 								</td>
 								<td className="hidden px-4 py-3 text-center md:table-cell">
 									{run.prUrl ? (
-										<a
-											href={run.prUrl}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="inline-flex items-center text-muted-foreground hover:text-foreground"
-										>
-											<ExternalLink className="h-4 w-4" />
-										</a>
+										<div className="flex flex-col items-center gap-0.5">
+											<a
+												href={run.prUrl}
+												target="_blank"
+												rel="noopener noreferrer"
+												className="inline-flex items-center text-muted-foreground hover:text-foreground"
+											>
+												<ExternalLink className="h-4 w-4" />
+											</a>
+											{run.projectId && run.prNumber != null && (
+												<Link
+													to="/prs/$projectId/$prNumber"
+													params={{
+														projectId: run.projectId,
+														prNumber: String(run.prNumber),
+													}}
+													className="text-xs text-muted-foreground hover:text-primary hover:underline"
+												>
+													View all runs
+												</Link>
+											)}
+										</div>
 									) : (
 										'-'
 									)}
