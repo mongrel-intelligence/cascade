@@ -15,7 +15,7 @@ import {
 } from '../../db/repositories/runsRepository.js';
 import { isAnalysisRunning } from '../../triggers/shared/debug-status.js';
 import { logger } from '../../utils/logging.js';
-import { protectedProcedure, router } from '../trpc.js';
+import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
 import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
 const useQueue = !!process.env.REDIS_URL;
@@ -50,6 +50,34 @@ export const runsRouter = router({
 			});
 		}),
 
+	listAll: superAdminProcedure
+		.input(
+			z.object({
+				projectId: z.string().optional(),
+				status: z.array(z.string()).optional(),
+				agentType: z.string().optional(),
+				startedAfter: z.string().datetime().optional(),
+				startedBefore: z.string().datetime().optional(),
+				limit: z.number().min(1).max(100).default(50),
+				offset: z.number().min(0).default(0),
+				sort: z.enum(['startedAt', 'durationMs', 'costUsd']).default('startedAt'),
+				order: z.enum(['asc', 'desc']).default('desc'),
+			}),
+		)
+		.query(async ({ input }) => {
+			return listRuns({
+				projectId: input.projectId,
+				status: input.status,
+				agentType: input.agentType,
+				startedAfter: input.startedAfter ? new Date(input.startedAfter) : undefined,
+				startedBefore: input.startedBefore ? new Date(input.startedBefore) : undefined,
+				limit: input.limit,
+				offset: input.offset,
+				sort: input.sort,
+				order: input.order,
+			});
+		}),
+
 	getById: protectedProcedure
 		.input(z.object({ id: z.string().uuid() }))
 		.query(async ({ ctx, input }) => {
@@ -57,7 +85,8 @@ export const runsRouter = router({
 			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
 
 			// Verify org access
-			if (run.projectId) {
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
 				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
 			}
 
@@ -111,7 +140,8 @@ export const runsRouter = router({
 			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
 
 			// Verify org access
-			if (run.projectId) {
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
 				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
 			}
 
@@ -185,7 +215,10 @@ export const runsRouter = router({
 		)
 		.mutation(async ({ ctx, input }) => {
 			// Verify org ownership of project
-			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+			if (ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+				await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+			}
 
 			// Block if a worker is already active on this work item
 			if (input.workItemId && input.agentType !== 'debug') {
@@ -262,7 +295,8 @@ export const runsRouter = router({
 			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
 
 			// Verify org access
-			if (run.projectId) {
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
 				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
 			}
 
@@ -328,7 +362,8 @@ export const runsRouter = router({
 			const run = await getRunById(input.runId);
 			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
 
-			if (run.projectId) {
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
 				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
 			}
 

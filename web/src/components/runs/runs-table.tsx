@@ -9,6 +9,7 @@ import { RunStatusBadge } from './run-status-badge.js';
 interface Run {
 	id: string;
 	projectName: string | null;
+	orgName?: string | null;
 	agentType: string;
 	status: string;
 	startedAt: string | null;
@@ -26,9 +27,17 @@ interface RunsTableProps {
 	offset: number;
 	limit: number;
 	onPageChange: (offset: number) => void;
+	showOrg?: boolean;
 }
 
-export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTableProps) {
+export function RunsTable({
+	runs,
+	total,
+	offset,
+	limit,
+	onPageChange,
+	showOrg = false,
+}: RunsTableProps) {
 	const totalPages = Math.ceil(total / limit);
 	const currentPage = Math.floor(offset / limit) + 1;
 
@@ -39,6 +48,11 @@ export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTabl
 					<thead>
 						<tr className="border-b border-border bg-muted/50">
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Agent</th>
+							{showOrg && (
+								<th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
+									Organization
+								</th>
+							)}
 							<th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
 								Project
 							</th>
@@ -65,7 +79,10 @@ export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTabl
 					<tbody>
 						{runs.length === 0 && (
 							<tr>
-								<td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
+								<td
+									colSpan={showOrg ? 11 : 10}
+									className="px-4 py-8 text-center text-muted-foreground"
+								>
 									No runs found
 								</td>
 							</tr>
@@ -84,6 +101,11 @@ export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTabl
 										{run.agentType}
 									</Link>
 								</td>
+								{showOrg && (
+									<td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
+										{run.orgName ?? '-'}
+									</td>
+								)}
 								<td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
 									{run.projectName ?? '-'}
 								</td>

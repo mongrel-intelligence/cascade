@@ -25,6 +25,7 @@ const mainNav = [
 ];
 
 const globalNav = [
+	{ to: '/global/runs' as const, label: 'Global Runs', icon: Activity },
 	{ to: '/global/organizations' as const, label: 'Organizations', icon: Building },
 ];
 

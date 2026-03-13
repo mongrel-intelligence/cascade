@@ -20,7 +20,7 @@ import {
 	upsertProjectIntegration,
 } from '../../db/repositories/settingsRepository.js';
 import { credentials, projects } from '../../db/schema/index.js';
-import { protectedProcedure, router } from '../trpc.js';
+import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
 
 async function verifyProjectOwnership(projectId: string, orgId: string) {
 	const db = getDb();
@@ -58,6 +58,11 @@ export const projectsRouter = router({
 	// Existing - returns id+name for dropdowns
 	list: protectedProcedure.query(async ({ ctx }) => {
 		return listProjectsForOrg(ctx.effectiveOrgId);
+	}),
+
+	listAll: superAdminProcedure.query(async () => {
+		const db = getDb();
+		return db.select({ id: projects.id, name: projects.name }).from(projects);
 	}),
 
 	// New - returns all columns

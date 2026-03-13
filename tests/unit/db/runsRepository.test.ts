@@ -73,6 +73,10 @@ vi.mock('../../../src/db/schema/index.js', () => ({
 		orgId: 'org_id',
 		name: 'name',
 	},
+	organizations: {
+		id: 'id',
+		name: 'name',
+	},
 }));
 
 vi.mock('../../../src/db/repositories/joinHelpers.js', () => ({
@@ -694,9 +698,12 @@ describe('runsRepository', () => {
 		const mockCountInnerJoin = vi.fn();
 
 		beforeEach(() => {
-			// First select call (data query): select(...).from(...).innerJoin(...).leftJoin(...).where(...).orderBy(...).limit(...).offset(...)
-			mockDataInnerJoin.mockReturnValue({ leftJoin: mockDataLeftJoin2 });
+			// First select call (data query): select(...).from(...).innerJoin(...).innerJoin(...).leftJoin(...).where(...).orderBy(...).limit(...).offset(...)
+			const mockDataInnerJoin2 = vi.fn();
+			mockDataInnerJoin.mockReturnValue({ innerJoin: mockDataInnerJoin2 });
+			mockDataInnerJoin2.mockReturnValue({ leftJoin: mockDataLeftJoin2 });
 			mockDataLeftJoin2.mockReturnValue({ where: mockDataWhere });
+
 			mockDataWhere.mockReturnValue({ orderBy: mockDataOrderBy });
 			mockDataOrderBy.mockReturnValue({ limit: mockDataLimit });
 			mockDataLimit.mockReturnValue({ offset: mockDataOffset });

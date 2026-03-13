@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { type EngineSettings, normalizeEngineSettings } from '../../config/engineSettings.js';
 import { getDb } from '../client.js';
 import { projects } from '../schema/index.js';
@@ -10,6 +10,11 @@ import { projects } from '../schema/index.js';
 export async function listProjectsFull(orgId: string) {
 	const db = getDb();
 	return db.select().from(projects).where(eq(projects.orgId, orgId));
+}
+
+export async function listAllProjects() {
+	const db = getDb();
+	return db.select().from(projects).where(sql`1=1`);
 }
 
 export async function getProjectFull(projectId: string, orgId: string) {

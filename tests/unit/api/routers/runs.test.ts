@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
-import { createMockUser } from '../../../helpers/factories.js';
+import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
 
 // Mock repository functions
 const mockListRuns = vi.fn();
@@ -168,6 +168,37 @@ describe('runsRouter', () => {
 		});
 	});
 
+	describe('listAll', () => {
+		it('calls listRuns without orgId filter for superadmin', async () => {
+			mockListRuns.mockResolvedValue({ data: [{ id: 'run-1' }], total: 1 });
+			const superAdmin = createMockSuperAdmin();
+			const caller = createCaller({ user: superAdmin, effectiveOrgId: superAdmin.orgId });
+
+			const result = await caller.listAll({
+				limit: 10,
+				offset: 5,
+			});
+
+			expect(mockListRuns).toHaveBeenCalledWith({
+				projectId: undefined,
+				status: undefined,
+				agentType: undefined,
+				limit: 10,
+				offset: 5,
+				sort: 'startedAt',
+				order: 'desc',
+				startedAfter: undefined,
+				startedBefore: undefined,
+			});
+			expect(result).toEqual({ data: [{ id: 'run-1' }], total: 1 });
+		});
+
+		it('throws FORBIDDEN when not superadmin', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.listAll({})).rejects.toMatchObject({ code: 'FORBIDDEN' });
+		});
+	});
+
 	describe('getById', () => {
 		it('returns run when found and org matches', async () => {
 			const mockRun = {
@@ -228,6 +259,23 @@ describe('runsRouter', () => {
 			mockGetRunById.mockResolvedValue(mockRun);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.getById({ id: RUN_UUID });
+
+			expect(result).toEqual(mockRun);
+			expect(mockDbSelect).not.toHaveBeenCalled();
+		});
+
+		it('returns run when user is superadmin even if org differs', async () => {
+			const mockRun = {
+				id: RUN_UUID,
+				projectId: 'p1',
+				agentType: 'implementation',
+			};
+			mockGetRunById.mockResolvedValue(mockRun);
+			// We don't even call verifyProjectOrgAccess, so mockDbWhere won't be called if it's skipped
+
+			const superAdmin = createMockSuperAdmin();
+			const caller = createCaller({ user: superAdmin, effectiveOrgId: 'different-org' });
 			const result = await caller.getById({ id: RUN_UUID });
 
 			expect(result).toEqual(mockRun);
@@ -857,6 +905,22 @@ describe('runsRouter', () => {
 			await caller.cancel({ runId: RUN_UUID, reason: 'Orphaned worker' });
 
 			expect(mockCancelRunById).toHaveBeenCalledWith(RUN_UUID, 'Orphaned worker');
+		});
+
+		it('allows superadmin to cancel run from different org', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				status: 'running',
+			});
+			mockCancelRunById.mockResolvedValue(true);
+
+			const superAdmin = createMockSuperAdmin();
+			const caller = createCaller({ user: superAdmin, effectiveOrgId: 'other-org' });
+			const result = await caller.cancel({ runId: RUN_UUID });
+
+			expect(result).toEqual({ cancelled: true });
+			expect(mockDbSelect).not.toHaveBeenCalled();
 		});
 
 		it('throws NOT_FOUND when run does not exist', async () => {
