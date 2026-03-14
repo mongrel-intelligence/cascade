@@ -148,12 +148,27 @@ function extractUsage(event: JsonRecord): UsageSummary | null {
 		: null;
 }
 
+function extractErrorMessage(event: JsonRecord): string | undefined {
+	// Case 1: event.error is a string (existing shape)
+	if (typeof event.error === 'string' && event.error) return event.error;
+	// Case 2: event.error is an object {message:"..."} — turn.failed shape
+	if (event.error && typeof event.error === 'object') {
+		const msg = (event.error as JsonRecord).message;
+		if (typeof msg === 'string' && msg) return msg;
+	}
+	// Case 3: {type:"error", message:"Reconnecting…"} — top-level message field
+	if (event.type === 'error' && typeof event.message === 'string' && event.message) {
+		return event.message;
+	}
+	return undefined;
+}
+
 function parseCodexEvent(event: JsonRecord): ParsedCodexEvent {
 	return {
 		textParts: extractTextParts(event),
 		toolCall: extractToolCall(event),
 		usage: extractUsage(event),
-		error: typeof event.error === 'string' && event.error ? event.error : undefined,
+		error: extractErrorMessage(event),
 	};
 }
 
@@ -220,6 +235,7 @@ async function handleParsedLine(
 
 	if (error) {
 		context.finalError = error;
+		context.input.logWriter('WARN', 'Codex error event', { error });
 	}
 }
 
@@ -244,11 +260,9 @@ function resolveCodexModel(cascadeModel: string): string {
 	if (cascadeModel.startsWith('openai:')) return cascadeModel.replace('openai:', '');
 	if (cascadeModel.startsWith('gpt-') && cascadeModel.includes('codex')) return cascadeModel;
 
-	logger.warn('Non-Codex model configured for Codex engine, falling back to default', {
-		configured: cascadeModel,
-		fallback: DEFAULT_CODEX_MODEL,
-	});
-	return DEFAULT_CODEX_MODEL;
+	throw new Error(
+		`Model "${cascadeModel}" is not compatible with the Codex engine. Configure a Codex-compatible model (e.g. "${DEFAULT_CODEX_MODEL}") or switch to a different engine.`,
+	);
 }
 
 function buildPrompt(systemPrompt: string, taskPrompt: string): string {
@@ -299,7 +313,10 @@ async function writeCodexAuthFile(
 	logWriter: LogWriter,
 ): Promise<string | undefined> {
 	const authJson = projectSecrets?.CODEX_AUTH_JSON;
-	if (!authJson) return undefined;
+	if (!authJson) {
+		logWriter('DEBUG', 'No CODEX_AUTH_JSON credential — using API key auth', {});
+		return undefined;
+	}
 
 	try {
 		JSON.parse(authJson);
@@ -542,4 +559,4 @@ export class CodexEngine implements AgentEngine {
 	}
 }
 
-export { resolveCodexModel };
+export { resolveCodexModel, extractErrorMessage };

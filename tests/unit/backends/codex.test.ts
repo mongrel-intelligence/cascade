@@ -42,7 +42,12 @@ vi.mock('../../../src/utils/logging.js', () => ({
 }));
 
 import { buildEnv } from '../../../src/backends/codex/env.js';
-import { CodexEngine, buildArgs, resolveCodexModel } from '../../../src/backends/codex/index.js';
+import {
+	CodexEngine,
+	buildArgs,
+	extractErrorMessage,
+	resolveCodexModel,
+} from '../../../src/backends/codex/index.js';
 import { DEFAULT_CODEX_MODEL } from '../../../src/backends/codex/models.js';
 import {
 	assertHeadlessCodexSettings,
@@ -152,8 +157,39 @@ describe('resolveCodexModel', () => {
 		expect(resolveCodexModel(`openai:${DEFAULT_CODEX_MODEL}`)).toBe(DEFAULT_CODEX_MODEL);
 	});
 
-	it('falls back for non-Codex models', () => {
-		expect(resolveCodexModel('openrouter:google/gemini-3-flash-preview')).toBe(DEFAULT_CODEX_MODEL);
+	it('throws for incompatible models', () => {
+		expect(() => resolveCodexModel('openrouter:google/gemini-3-flash-preview')).toThrow(
+			'not compatible with the Codex engine',
+		);
+	});
+});
+
+describe('extractErrorMessage', () => {
+	it('extracts string error field', () => {
+		expect(extractErrorMessage({ error: 'something went wrong' })).toBe('something went wrong');
+	});
+
+	it('extracts message from object error field (turn.failed shape)', () => {
+		expect(
+			extractErrorMessage({
+				type: 'turn.failed',
+				error: { message: 'unexpected status 401 Unauthorized' },
+			}),
+		).toBe('unexpected status 401 Unauthorized');
+	});
+
+	it('extracts message from top-level type:"error" event', () => {
+		expect(extractErrorMessage({ type: 'error', message: 'Reconnecting...' })).toBe(
+			'Reconnecting...',
+		);
+	});
+
+	it('returns undefined when no error fields are present', () => {
+		expect(extractErrorMessage({ type: 'text', text: 'hello' })).toBeUndefined();
+	});
+
+	it('returns undefined for empty string error', () => {
+		expect(extractErrorMessage({ error: '' })).toBeUndefined();
 	});
 });
 
@@ -339,6 +375,30 @@ describe('CodexEngine', () => {
 
 		await expect(engine.execute(input)).rejects.toThrow('approvalPolicy="never"');
 		expect(mockSpawn).not.toHaveBeenCalled();
+	});
+
+	it('surfaces turn.failed object error as finalError and logs WARN', async () => {
+		mockSpawn.mockImplementation(() =>
+			createMockChild({
+				stdoutLines: [
+					JSON.stringify({
+						type: 'turn.failed',
+						error: { message: 'unexpected status 401 Unauthorized' },
+					}),
+				],
+				exitCode: 1,
+			}),
+		);
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir });
+		const result = await engine.execute(input);
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe('unexpected status 401 Unauthorized');
+		expect(input.logWriter).toHaveBeenCalledWith('WARN', 'Codex error event', {
+			error: 'unexpected status 401 Unauthorized',
+		});
 	});
 
 	it('ignores non-tool events that happen to contain a name field', async () => {

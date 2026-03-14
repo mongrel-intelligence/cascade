@@ -41,12 +41,10 @@ export function resolveClaudeModel(cascadeModel: string): string {
 	if (CLAUDE_CODE_MODEL_IDS.includes(cascadeModel)) return cascadeModel;
 	if (cascadeModel.startsWith('claude-')) return cascadeModel;
 	if (cascadeModel.startsWith('anthropic:')) return cascadeModel.replace('anthropic:', '');
-	// Non-Claude model configured for Claude Code backend — warn and fall back
-	logger.warn('Non-Claude model configured for Claude Code backend, falling back to default', {
-		configured: cascadeModel,
-		fallback: DEFAULT_CLAUDE_CODE_MODEL,
-	});
-	return DEFAULT_CLAUDE_CODE_MODEL;
+
+	throw new Error(
+		`Model "${cascadeModel}" is not compatible with the Claude Code engine. Configure a Claude-compatible model (e.g. "${DEFAULT_CLAUDE_CODE_MODEL}") or switch to a different engine.`,
+	);
 }
 
 /**
