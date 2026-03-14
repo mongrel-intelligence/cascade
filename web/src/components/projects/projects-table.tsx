@@ -95,7 +95,10 @@ export function ProjectsTable({
 								key={project.id}
 								className="cursor-pointer"
 								onClick={() =>
-									navigate({ to: '/projects/$projectId', params: { projectId: project.id } })
+									navigate({
+										to: '/projects/$projectId/general',
+										params: { projectId: project.id },
+									})
 								}
 							>
 								<TableCell className="font-medium">{project.name}</TableCell>
