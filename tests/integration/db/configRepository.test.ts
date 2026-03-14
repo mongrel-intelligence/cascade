@@ -8,13 +8,7 @@ import {
 	loadConfigFromDb,
 } from '../../../src/db/repositories/configRepository.js';
 import { truncateAll } from '../helpers/db.js';
-import {
-	seedAgentConfig,
-	seedDefaults,
-	seedIntegration,
-	seedOrg,
-	seedProject,
-} from '../helpers/seed.js';
+import { seedAgentConfig, seedIntegration, seedOrg, seedProject } from '../helpers/seed.js';
 
 describe('configRepository (integration)', () => {
 	beforeEach(async () => {
@@ -35,11 +29,10 @@ describe('configRepository (integration)', () => {
 			expect(config.projects[0].id).toBe('test-project');
 		});
 
-		it('includes defaults when cascade_defaults row exists', async () => {
-			await seedDefaults({ model: 'claude-opus-4-5', maxIterations: 30 });
+		it('uses schema defaults when no project-specific overrides', async () => {
 			const config = await loadConfigFromDb();
-			expect(config.defaults.model).toBe('claude-opus-4-5');
-			expect(config.defaults.maxIterations).toBe(30);
+			expect(config.defaults.model).toBeDefined();
+			expect(config.defaults.maxIterations).toBeGreaterThan(0);
 		});
 
 		it('includes trello integration config in project', async () => {
@@ -161,7 +154,6 @@ describe('configRepository (integration)', () => {
 
 	describe('findProjectWithConfigByBoardId', () => {
 		it('returns both project and config', async () => {
-			await seedDefaults({ model: 'claude-sonnet' });
 			await seedIntegration({
 				category: 'pm',
 				provider: 'trello',
@@ -171,7 +163,7 @@ describe('configRepository (integration)', () => {
 			expect(result).toBeDefined();
 			expect(result?.project.id).toBe('test-project');
 			expect(result?.config).toBeDefined();
-			expect(result?.config.defaults.model).toBe('claude-sonnet');
+			expect(result?.config.defaults).toBeDefined();
 		});
 
 		it('returns undefined for non-existent board', async () => {

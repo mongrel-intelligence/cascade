@@ -2,12 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	type AgentConfigRow,
-	type DefaultsRow,
 	type IntegrationRow,
 	type MapProjectInput,
 	buildAgentMaps,
 	extractIntegrationConfigs,
-	mapDefaultsRow,
 	mapProjectRow,
 	orUndefined,
 } from '../../../../src/db/repositories/configMapper.js';
@@ -24,10 +22,15 @@ const baseProjectRow = {
 	baseBranch: 'main',
 	branchPrefix: 'feature/',
 	model: null,
+	maxIterations: null,
+	watchdogTimeoutMs: null,
 	workItemBudgetUsd: null,
+	progressModel: null,
+	progressIntervalMinutes: null,
 	squintDbUrl: null,
 	agentEngine: null,
 	agentEngineSettings: null,
+	runLinksEnabled: false,
 };
 
 const trelloConfig = {
@@ -135,49 +138,7 @@ describe('buildAgentMaps', () => {
 });
 
 // ---------------------------------------------------------------------------
-// mapDefaultsRow
 // ---------------------------------------------------------------------------
-
-describe('mapDefaultsRow', () => {
-	const defaultsRow: DefaultsRow = {
-		model: 'test-model',
-		maxIterations: 50,
-		watchdogTimeoutMs: 1800000,
-		workItemBudgetUsd: '5.00',
-		agentEngine: 'llmist',
-		agentEngineSettings: { codex: { approvalPolicy: 'never' } },
-		progressModel: 'progress-model',
-		progressIntervalMinutes: '5',
-	};
-
-	it('maps all fields from row', () => {
-		const result = mapDefaultsRow(defaultsRow);
-		expect(result.model).toBe('test-model');
-		expect(result.maxIterations).toBe(50);
-		expect(result.watchdogTimeoutMs).toBe(1800000);
-		expect(result.workItemBudgetUsd).toBe(5);
-		expect(result.agentEngine).toBe('llmist');
-		expect(result.engineSettings).toEqual({ codex: { approvalPolicy: 'never' } });
-		expect(result.progressModel).toBe('progress-model');
-		expect(result.progressIntervalMinutes).toBe(5);
-	});
-
-	it('converts workItemBudgetUsd string to number', () => {
-		const result = mapDefaultsRow({ ...defaultsRow, workItemBudgetUsd: '10.50' });
-		expect(result.workItemBudgetUsd).toBe(10.5);
-	});
-
-	it('converts progressIntervalMinutes string to number', () => {
-		const result = mapDefaultsRow({ ...defaultsRow, progressIntervalMinutes: '15' });
-		expect(result.progressIntervalMinutes).toBe(15);
-	});
-
-	it('handles undefined defaults row gracefully', () => {
-		const result = mapDefaultsRow(undefined);
-		expect(result.model).toBeUndefined();
-		expect(result.workItemBudgetUsd).toBeUndefined();
-	});
-});
 
 // ---------------------------------------------------------------------------
 // extractIntegrationConfigs

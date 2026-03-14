@@ -3,10 +3,9 @@
  * Resolve and display the full effective configuration for an agent in a project context.
  *
  * Merges all configuration layers:
- *   1. cascade_defaults (org-level global defaults)
+ *   1. Project row overrides (model, maxIterations, watchdogTimeoutMs, workItemBudgetUsd, agentEngine, etc.)
  *   2. Project-level agent_configs (project_id set)
- *   3. Project row overrides (model, workItemBudgetUsd, agentEngine)
- *   4. Resolved credentials (integration credentials + org defaults)
+ *   3. Resolved credentials (integration credentials + org defaults)
  *
  * Usage:
  *   npx tsx tools/resolve-config.ts <project-id> <agent-type>
@@ -25,12 +24,7 @@ import {
 	resolveAllIntegrationCredentials,
 	resolveAllOrgCredentials,
 } from '../src/db/repositories/credentialsRepository.js';
-import {
-	agentConfigs,
-	cascadeDefaults,
-	projectIntegrations,
-	projects,
-} from '../src/db/schema/index.js';
+import { agentConfigs, projectIntegrations, projects } from '../src/db/schema/index.js';
 
 function maskValue(value: string): string {
 	if (value.length <= 8) return '****';
@@ -59,7 +53,6 @@ interface EffectiveConfig {
 	effectiveModel: string;
 	effectiveMaxIterations: number;
 	effectiveEngine: string;
-	orgDefaults: Record<string, string | number | null>;
 	projectOverrides: Record<string, string | number | boolean | null>;
 	projectAgentConfig: AgentConfigInfo | null;
 	trello: TrelloIntegrationConfig | null;
@@ -103,12 +96,7 @@ async function resolveEffectiveConfig(
 
 	const orgId = projectRow.orgId;
 
-	const [defaultsRow, projectAcs, integrations, integrationCreds, orgCreds] = await Promise.all([
-		db
-			.select()
-			.from(cascadeDefaults)
-			.where(eq(cascadeDefaults.orgId, orgId))
-			.then((r) => r[0]),
+	const [projectAcs, integrations, integrationCreds, orgCreds] = await Promise.all([
 		db.select().from(agentConfigs).where(eq(agentConfigs.projectId, projectId)),
 		db.select().from(projectIntegrations).where(eq(projectIntegrations.projectId, projectId)),
 		resolveAllIntegrationCredentials(projectId),
@@ -133,26 +121,17 @@ async function resolveEffectiveConfig(
 		repo: projectRow.repo,
 		agentType,
 		effectiveModel:
-			projectAc?.model ??
-			projectRow.model ??
-			defaultsRow?.model ??
-			'openrouter:google/gemini-3-flash-preview',
-		effectiveMaxIterations: projectAc?.maxIterations ?? defaultsRow?.maxIterations ?? 50,
-		effectiveEngine:
-			projectAc?.agentEngine ?? projectRow.agentEngine ?? defaultsRow?.agentEngine ?? 'llmist',
-		orgDefaults: {
-			model: defaultsRow?.model ?? null,
-			maxIterations: defaultsRow?.maxIterations ?? null,
-			agentEngine: defaultsRow?.agentEngine ?? null,
-			workItemBudgetUsd: defaultsRow?.workItemBudgetUsd ?? null,
-			watchdogTimeoutMs: defaultsRow?.watchdogTimeoutMs ?? null,
-			progressModel: defaultsRow?.progressModel ?? null,
-			progressIntervalMinutes: defaultsRow?.progressIntervalMinutes ?? null,
-		},
+			projectAc?.model ?? projectRow.model ?? 'openrouter:google/gemini-3-flash-preview',
+		effectiveMaxIterations: projectAc?.maxIterations ?? projectRow.maxIterations ?? 50,
+		effectiveEngine: projectAc?.agentEngine ?? projectRow.agentEngine ?? 'llmist',
 		projectOverrides: {
 			model: projectRow.model,
+			maxIterations: projectRow.maxIterations,
+			watchdogTimeoutMs: projectRow.watchdogTimeoutMs,
 			workItemBudgetUsd: projectRow.workItemBudgetUsd,
 			agentEngine: projectRow.agentEngine,
+			progressModel: projectRow.progressModel,
+			progressIntervalMinutes: projectRow.progressIntervalMinutes,
 			baseBranch: projectRow.baseBranch,
 			branchPrefix: projectRow.branchPrefix,
 		},
@@ -267,7 +246,6 @@ function printConfig(config: EffectiveConfig): void {
 		printAgentLayer('Project agent_config', config.projectAgentConfig);
 	}
 
-	printKeyValueSection('Org Defaults (cascade_defaults)', config.orgDefaults);
 	printKeyValueSection('Project Overrides', config.projectOverrides);
 	printTrello(config.trello);
 	printCredentials(config);

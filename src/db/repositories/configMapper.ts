@@ -35,17 +35,6 @@ export type GitHubIntegrationConfig = {};
 // Row interfaces (mirrors DB select shapes)
 // ---------------------------------------------------------------------------
 
-export interface DefaultsRow {
-	model: string | null;
-	maxIterations: number | null;
-	watchdogTimeoutMs: number | null;
-	workItemBudgetUsd: string | null;
-	agentEngine: string | null;
-	agentEngineSettings: EngineSettings | null;
-	progressModel: string | null;
-	progressIntervalMinutes: string | null;
-}
-
 export interface AgentConfigRow {
 	projectId: string;
 	agentType: string;
@@ -123,7 +112,11 @@ type ProjectRow = {
 	baseBranch: string | null;
 	branchPrefix: string | null;
 	model: string | null;
+	maxIterations: number | null;
+	watchdogTimeoutMs: number | null;
 	workItemBudgetUsd: string | null;
+	progressModel: string | null;
+	progressIntervalMinutes: string | null;
 	squintDbUrl: string | null;
 	agentEngine: string | null;
 	agentEngineSettings: EngineSettings | null;
@@ -184,21 +177,6 @@ function buildAgentEngineConfig(
 // ---------------------------------------------------------------------------
 // Public mapping functions
 // ---------------------------------------------------------------------------
-
-export function mapDefaultsRow(row: DefaultsRow | undefined): Record<string, unknown> {
-	return {
-		model: row?.model ?? undefined,
-		maxIterations: row?.maxIterations ?? undefined,
-		watchdogTimeoutMs: row?.watchdogTimeoutMs ?? undefined,
-		workItemBudgetUsd: row?.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
-		agentEngine: row?.agentEngine ?? undefined,
-		engineSettings: row?.agentEngineSettings ?? undefined,
-		progressModel: row?.progressModel ?? undefined,
-		progressIntervalMinutes: row?.progressIntervalMinutes
-			? Number(row.progressIntervalMinutes)
-			: undefined,
-	};
-}
 
 export function extractIntegrationConfigs(integrations: IntegrationRow[]): {
 	trelloConfig?: TrelloIntegrationConfig;

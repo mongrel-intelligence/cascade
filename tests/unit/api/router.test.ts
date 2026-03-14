@@ -42,8 +42,6 @@ vi.mock('../../../src/utils/logging.js', () => ({
 vi.mock('../../../src/db/repositories/settingsRepository.js', () => ({
 	getOrganization: vi.fn(),
 	updateOrganization: vi.fn(),
-	getCascadeDefaults: vi.fn(),
-	upsertCascadeDefaults: vi.fn(),
 	listProjectsFull: vi.fn(),
 	getProjectFull: vi.fn(),
 	createProject: vi.fn(),
