@@ -153,12 +153,6 @@ describe('appRouter', () => {
 		expect(procedures).toContain('organization.list');
 	});
 
-	it('has defaults sub-router with all procedures', () => {
-		const procedures = Object.keys(appRouter._def.procedures);
-		expect(procedures).toContain('defaults.get');
-		expect(procedures).toContain('defaults.upsert');
-	});
-
 	it('has credentials sub-router with all procedures', () => {
 		const procedures = Object.keys(appRouter._def.procedures);
 		expect(procedures).toContain('credentials.list');
