@@ -19,6 +19,7 @@ export default defineConfig({
 				statements: 80,
 			},
 		},
+		projects: ['./vitest.unit.config.ts', './vitest.integration.config.ts'],
 	},
 	resolve: {
 		alias: {
