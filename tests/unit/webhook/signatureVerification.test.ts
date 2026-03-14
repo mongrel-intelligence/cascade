@@ -27,7 +27,6 @@ function trelloSignature(body: string, callbackUrl: string, secret: string): str
 describe('verifyGitHubSignature', () => {
 	const secret = 'my-github-secret';
 	const body = '{"action":"opened","number":1}';
-	const callbackUrl = 'https://example.com/webhook/github';
 
 	it('returns true for a valid signature', () => {
 		const sig = githubSignature(body, secret);

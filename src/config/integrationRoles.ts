@@ -16,6 +16,7 @@ export interface CredentialRoleDef {
 export const PROVIDER_CREDENTIAL_ROLES: Record<IntegrationProvider, CredentialRoleDef[]> = {
 	trello: [
 		{ role: 'api_key', label: 'API Key', envVarKey: 'TRELLO_API_KEY' },
+		{ role: 'api_secret', label: 'API Secret', envVarKey: 'TRELLO_API_SECRET' },
 		{ role: 'token', label: 'Token', envVarKey: 'TRELLO_TOKEN' },
 	],
 	jira: [
