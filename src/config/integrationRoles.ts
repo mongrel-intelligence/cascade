@@ -29,5 +29,6 @@ export const PROVIDER_CREDENTIAL_ROLES: Record<IntegrationProvider, CredentialRo
 			envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
 		},
 		{ role: 'reviewer_token', label: 'Reviewer Token', envVarKey: 'GITHUB_TOKEN_REVIEWER' },
+		{ role: 'webhook_secret', label: 'Webhook Secret', envVarKey: 'GITHUB_WEBHOOK_SECRET' },
 	],
 };

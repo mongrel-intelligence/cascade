@@ -6,7 +6,11 @@
  * `src/trello/client.ts` or `src/github/client.ts`.
  */
 
-import { findProjectById, getIntegrationCredential } from '../../config/provider.js';
+import {
+	findProjectById,
+	getIntegrationCredential,
+	getIntegrationCredentialOrNull,
+} from '../../config/provider.js';
 import { getJiraConfig } from '../../pm/config.js';
 import type { JiraCredentialsWithAuth, TrelloCredentials } from './types.js';
 
@@ -45,6 +49,26 @@ export async function resolveJiraCredentials(
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * Resolve the webhook secret for a given provider and project.
+ *
+ * - `'github'`: resolves the `webhook_secret` credential from the SCM integration.
+ * - `'trello'`: reuses the existing `api_key` credential from the PM integration
+ *   (Trello uses its API key as the HMAC secret).
+ *
+ * Returns `null` if the credential is not configured.
+ */
+export async function resolveWebhookSecret(
+	projectId: string,
+	provider: 'github' | 'trello',
+): Promise<string | null> {
+	if (provider === 'github') {
+		return getIntegrationCredentialOrNull(projectId, 'scm', 'webhook_secret');
+	}
+	// Trello reuses its API key as the webhook HMAC secret.
+	return getIntegrationCredentialOrNull(projectId, 'pm', 'api_key');
 }
 
 /**
