@@ -108,7 +108,7 @@ describe('runLink utility', () => {
 			expect(result).toBe('');
 		});
 
-		it('includes separator and newlines', () => {
+		it('includes spacing newlines', () => {
 			const result = buildRunLink({
 				dashboardUrl: 'https://dashboard.example.com',
 				runId: 'run-123',
@@ -116,7 +116,7 @@ describe('runLink utility', () => {
 				model: 'claude-haiku-4.5',
 			});
 
-			expect(result).toMatch(/^\n\n---\n/);
+			expect(result).toMatch(/^\n\n🕵️/);
 		});
 	});
 

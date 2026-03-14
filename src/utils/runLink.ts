@@ -65,7 +65,7 @@ export function buildRunLink({
 	const url = `${dashboardUrl.replace(/\/$/, '')}/runs/${runId}`;
 
 	const parts = [engineLabel, modelShort].filter(Boolean).join(' · ');
-	return `\n\n---\n🕵️ ${parts} · [run details](${url})`;
+	return `\n\n🕵️ ${parts} · [run details](${url})`;
 }
 
 /**
@@ -95,7 +95,7 @@ export function buildWorkItemRunsLink({
 	const modelShort = model ? shortenModelName(model) : '';
 	const parts = [engineLabel, modelShort].filter(Boolean).join(' · ');
 	const label = parts ? `${parts} · [run details](${url})` : `[run details](${url})`;
-	return `\n\n---\n🕵️ ${label}`;
+	return `\n\n🕵️ ${label}`;
 }
 
 /**
