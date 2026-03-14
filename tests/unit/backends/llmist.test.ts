@@ -139,6 +139,16 @@ describe('LlmistEngine', () => {
 		expect(engine.supportsAgentType('review')).toBe(true);
 		expect(engine.supportsAgentType('anything')).toBe(true);
 	});
+
+	it('does not implement beforeExecute lifecycle hook', () => {
+		const engine = new LlmistEngine();
+		expect(engine.beforeExecute).toBeUndefined();
+	});
+
+	it('does not implement afterExecute lifecycle hook', () => {
+		const engine = new LlmistEngine();
+		expect(engine.afterExecute).toBeUndefined();
+	});
 });
 
 describe('LlmistEngine.execute', () => {

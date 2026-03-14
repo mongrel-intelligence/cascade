@@ -805,6 +805,13 @@ export class OpenCodeEngine implements AgentEngine {
 		return resolveOpenCodeModel(cascadeModel);
 	}
 
+	async afterExecute(plan: AgentExecutionPlan, _result: AgentEngineResult): Promise<void> {
+		// Clean up offloaded context files — idempotent, safe to call from adapter hook.
+		// Server process and session cleanup happen inside execute()'s finally block
+		// since those resources are local to the execution.
+		await cleanupContextFiles(plan.repoDir);
+	}
+
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const settings = resolveOpenCodeSettings(input.project);
 		const agent = 'build' as const;

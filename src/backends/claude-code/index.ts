@@ -460,6 +460,20 @@ export class ClaudeCodeEngine implements AgentEngine {
 		return resolveClaudeModel(cascadeModel);
 	}
 
+	async beforeExecute(plan: AgentExecutionPlan): Promise<void> {
+		// Ensure onboarding flag exists (required for both API key and subscription auth)
+		ensureOnboardingFlag();
+		// Log repo directory state for debugging
+		debugRepoDirectory(plan.repoDir);
+	}
+
+	async afterExecute(plan: AgentExecutionPlan, _result: AgentEngineResult): Promise<void> {
+		// Clean up offloaded context files after execution
+		await cleanupContextFiles(plan.repoDir);
+		// Clean up persisted session directory — workers are ephemeral
+		await cleanupPersistedSession(plan.repoDir);
+	}
+
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const startTime = Date.now();
 		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools);
@@ -488,15 +502,11 @@ export class ClaudeCodeEngine implements AgentEngine {
 			input.cliToolsDir,
 			input.nativeToolShimDir,
 		);
-		// Always ensure onboarding flag exists (required for both API key and subscription auth)
-		ensureOnboardingFlag();
 		const hooks = buildHooks(input.logWriter, input.repoDir, input.enableStopHooks ?? true, {
 			blockGitPush: input.blockGitPush,
 		});
 
 		const sdkTools = resolveNativeTools(input.nativeToolCapabilities);
-
-		debugRepoDirectory(input.repoDir);
 
 		const maxContinuationTurns = input.completionRequirements?.maxContinuationTurns ?? 0;
 		let continuationTurns = 0;
@@ -505,83 +515,74 @@ export class ClaudeCodeEngine implements AgentEngine {
 		let turnCount = 0;
 		let totalCost: number | undefined;
 
-		try {
-			for (;;) {
-				const stderrChunks: string[] = [];
-				const stream = query({
-					prompt: promptText,
-					options: {
-						model,
-						systemPrompt,
-						cwd: input.repoDir,
-						additionalDirectories: [getWorkspaceDir()],
-						maxBudgetUsd: input.budgetUsd,
-						permissionMode: 'bypassPermissions',
-						allowDangerouslySkipPermissions: true,
-						tools: sdkTools,
-						allowedTools: sdkTools,
-						persistSession: true,
-						hooks,
-						env,
-						debug: true,
-						stderr: (data: string) => {
-							stderrChunks.push(data);
-							input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
-						},
-						...(isContinuation ? { continue: true } : {}),
+		for (;;) {
+			const stderrChunks: string[] = [];
+			const stream = query({
+				prompt: promptText,
+				options: {
+					model,
+					systemPrompt,
+					cwd: input.repoDir,
+					additionalDirectories: [getWorkspaceDir()],
+					maxBudgetUsd: input.budgetUsd,
+					permissionMode: 'bypassPermissions',
+					allowDangerouslySkipPermissions: true,
+					tools: sdkTools,
+					allowedTools: sdkTools,
+					persistSession: true,
+					hooks,
+					env,
+					debug: true,
+					stderr: (data: string) => {
+						stderrChunks.push(data);
+						input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
 					},
-				});
+					...(isContinuation ? { continue: true } : {}),
+				},
+			});
 
-				const {
-					assistantMessages,
-					resultMessage,
-					turnCount: newTurnCount,
-					toolCallCount,
-				} = await consumeStream(stream, input, model, turnCount);
-				turnCount = newTurnCount;
+			const {
+				assistantMessages,
+				resultMessage,
+				turnCount: newTurnCount,
+				toolCallCount,
+			} = await consumeStream(stream, input, model, turnCount);
+			turnCount = newTurnCount;
 
-				const turnResult = buildResult(
-					assistantMessages,
-					resultMessage,
-					stderrChunks,
-					input,
-					startTime,
-				);
+			const turnResult = buildResult(
+				assistantMessages,
+				resultMessage,
+				stderrChunks,
+				input,
+				startTime,
+			);
 
-				// Accumulate cost across continuation turns
-				if (turnResult.cost !== undefined) {
-					totalCost = (totalCost ?? 0) + turnResult.cost;
-				}
-
-				const result = applyCompletionEvidence(turnResult, input.completionRequirements);
-
-				// Don't continue on non-success results
-				if (!result.success) {
-					return { ...result, cost: totalCost };
-				}
-
-				const decision = decideContinuation(
-					result,
-					input.completionRequirements,
-					continuationTurns,
-					maxContinuationTurns,
-					totalCost,
-					input.logWriter,
-					toolCallCount,
-				);
-				if (decision.done) return decision.result;
-
-				continuationTurns++;
-				promptText = decision.promptText;
-				isContinuation = true;
+			// Accumulate cost across continuation turns
+			if (turnResult.cost !== undefined) {
+				totalCost = (totalCost ?? 0) + turnResult.cost;
 			}
-		} finally {
-			// Clean up offloaded context files after execution
-			if (hasOffloadedContext) {
-				await cleanupContextFiles(input.repoDir);
+
+			const result = applyCompletionEvidence(turnResult, input.completionRequirements);
+
+			// Don't continue on non-success results
+			if (!result.success) {
+				return { ...result, cost: totalCost };
 			}
-			// Clean up persisted session directory — workers are ephemeral
-			await cleanupPersistedSession(input.repoDir);
+
+			const decision = decideContinuation(
+				result,
+				input.completionRequirements,
+				continuationTurns,
+				maxContinuationTurns,
+				totalCost,
+				input.logWriter,
+				toolCallCount,
+			);
+			if (decision.done) return decision.result;
+
+			continuationTurns++;
+			promptText = decision.promptText;
+			isContinuation = true;
 		}
 	}
 }

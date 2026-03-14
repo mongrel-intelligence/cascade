@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock the SDK before importing the engine
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
@@ -1330,5 +1330,63 @@ describe('buildEnv', () => {
 		expect(env.GITHUB_TOKEN).toBe('proj-gh');
 		expect(env.TRELLO_API_KEY).toBe('proj-trello');
 		expect(env.CUSTOM_VAR).toBe('custom-val');
+	});
+});
+
+describe('ClaudeCodeEngine lifecycle hooks', () => {
+	let fakeHome: string;
+	let fakeRepoDir: string;
+	let originalHome: string | undefined;
+
+	beforeEach(() => {
+		fakeHome = mkdtempSync(join(tmpdir(), 'cascade-test-home-'));
+		fakeRepoDir = mkdtempSync(join(tmpdir(), 'cascade-test-repo-'));
+		originalHome = process.env.HOME;
+		process.env.HOME = fakeHome;
+	});
+
+	afterEach(async () => {
+		process.env.HOME = originalHome;
+		await rm(fakeHome, { recursive: true, force: true });
+		await rm(fakeRepoDir, { recursive: true, force: true });
+	});
+
+	it('beforeExecute creates .claude.json onboarding flag', async () => {
+		const engine = new ClaudeCodeEngine();
+		const plan = makeInput({ repoDir: fakeRepoDir });
+		await engine.beforeExecute(plan);
+
+		const claudeJsonPath = join(fakeHome, '.claude.json');
+		expect(existsSync(claudeJsonPath)).toBe(true);
+		const content = JSON.parse(readFileSync(claudeJsonPath, 'utf8'));
+		expect(content).toEqual({ hasCompletedOnboarding: true });
+	});
+
+	it('afterExecute cleans up context directory', async () => {
+		const contextDir = join(fakeRepoDir, '.cascade', 'context');
+		await import('node:fs/promises').then((fs) => fs.mkdir(contextDir, { recursive: true }));
+		await import('node:fs/promises').then((fs) =>
+			fs.writeFile(join(contextDir, 'test.txt'), 'test content'),
+		);
+
+		const engine = new ClaudeCodeEngine();
+		const plan = makeInput({ repoDir: fakeRepoDir });
+		await engine.afterExecute(plan, { success: true, output: '' });
+
+		expect(existsSync(contextDir)).toBe(false);
+	});
+
+	it('afterExecute cleans up persisted Claude session directory', async () => {
+		const { homedir } = await import('node:os');
+		const path = await import('node:path');
+		const encodedDir = fakeRepoDir.replaceAll(path.default.sep, '-');
+		const sessionDir = path.default.join(homedir(), '.claude', 'projects', encodedDir);
+		await import('node:fs/promises').then((fs) => fs.mkdir(sessionDir, { recursive: true }));
+
+		const engine = new ClaudeCodeEngine();
+		const plan = makeInput({ repoDir: fakeRepoDir });
+		await engine.afterExecute(plan, { success: true, output: '' });
+
+		expect(existsSync(sessionDir)).toBe(false);
 	});
 });

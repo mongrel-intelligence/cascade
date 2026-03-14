@@ -558,10 +558,21 @@ export async function executeWithEngine(
 			};
 
 			monitor?.start();
-			let result: Awaited<ReturnType<typeof engine.execute>>;
+			let result: Awaited<ReturnType<typeof engine.execute>> | undefined;
 			try {
-				result = await engine.execute(executionPlan);
-				await hydrateNativeToolSidecars(result, prSidecarPath, reviewSidecarPath);
+				if (engine.beforeExecute) {
+					await engine.beforeExecute(executionPlan);
+				}
+				try {
+					result = await engine.execute(executionPlan);
+				} finally {
+					if (engine.afterExecute) {
+						// afterExecute always runs; pass result if available (execute() may have thrown).
+						await engine.afterExecute(executionPlan, result ?? { success: false, output: '' });
+					}
+				}
+				// biome-ignore lint/style/noNonNullAssertion: result is always defined when execute() did not throw
+				await hydrateNativeToolSidecars(result!, prSidecarPath, reviewSidecarPath);
 				const completionEvidence = readCompletionEvidence(executionPlan.completionRequirements);
 
 				postProcessResult(result, agentType, engine, input, identifier, {

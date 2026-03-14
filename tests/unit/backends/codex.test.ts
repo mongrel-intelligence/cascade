@@ -1015,3 +1015,84 @@ describe('Codex subscription auth', () => {
 		expect(mockUpdateCredential).not.toHaveBeenCalled();
 	});
 });
+
+describe('CodexEngine lifecycle hooks', () => {
+	const AUTH_JSON = JSON.stringify({ accessToken: 'tok_abc', refreshToken: 'ref_xyz' });
+
+	let workspaceDir: string;
+
+	beforeEach(() => {
+		workspaceDir = mkdtempSync(join(tmpdir(), 'cascade-codex-lifecycle-test-'));
+		vi.clearAllMocks();
+		mockMkdir.mockResolvedValue(undefined);
+		mockWriteFile.mockResolvedValue(undefined);
+		mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+		mockFindCredentialIdByEnvVarKey.mockResolvedValue(null);
+		mockUpdateCredential.mockResolvedValue(undefined);
+		mockSpawn.mockImplementation(() => createMockChild({ exitCode: 0 }));
+	});
+
+	afterEach(() => {
+		rmSync(workspaceDir, { recursive: true, force: true });
+	});
+
+	it('beforeExecute writes auth.json when CODEX_AUTH_JSON is in projectSecrets', async () => {
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { CODEX_AUTH_JSON: AUTH_JSON },
+		});
+
+		await engine.beforeExecute(input);
+
+		expect(mockWriteFile).toHaveBeenCalledWith(expect.stringContaining('auth.json'), AUTH_JSON, {
+			mode: 0o600,
+		});
+	});
+
+	it('afterExecute calls captureRefreshedToken', async () => {
+		const refreshedJson = JSON.stringify({ accessToken: 'tok_NEW', refreshToken: 'ref_xyz' });
+		mockReadFile.mockResolvedValue(refreshedJson);
+		mockFindCredentialIdByEnvVarKey.mockResolvedValue(42);
+
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { CODEX_AUTH_JSON: AUTH_JSON },
+		});
+
+		// Simulate adapter lifecycle: beforeExecute stores originalAuthJson, afterExecute compares
+		await engine.beforeExecute(input);
+		await engine.afterExecute(input, { success: true, output: '' });
+
+		expect(mockFindCredentialIdByEnvVarKey).toHaveBeenCalledWith('org-1', 'CODEX_AUTH_JSON');
+		expect(mockUpdateCredential).toHaveBeenCalledWith(42, { value: refreshedJson });
+	});
+
+	it('afterExecute completes without throwing', async () => {
+		const engine = new CodexEngine();
+		const plan = makeInput({ repoDir: workspaceDir });
+
+		await expect(engine.afterExecute(plan, { success: true, output: '' })).resolves.not.toThrow();
+	});
+
+	it('adapter lifecycle: execute does not double-capture token when adapter calls afterExecute', async () => {
+		const refreshedJson = JSON.stringify({ accessToken: 'tok_NEW', refreshToken: 'ref_xyz' });
+		mockReadFile.mockResolvedValue(refreshedJson);
+		mockFindCredentialIdByEnvVarKey.mockResolvedValue(42);
+
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { CODEX_AUTH_JSON: AUTH_JSON },
+		});
+
+		// Simulate adapter: beforeExecute → execute → afterExecute
+		await engine.beforeExecute(input);
+		await engine.execute(input);
+		await engine.afterExecute(input, { success: true, output: '' });
+
+		// captureRefreshedToken should be called exactly once (from afterExecute, not from execute's finally)
+		expect(mockFindCredentialIdByEnvVarKey).toHaveBeenCalledTimes(1);
+	});
+});
