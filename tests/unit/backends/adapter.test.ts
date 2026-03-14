@@ -486,7 +486,7 @@ describe('executeWithEngine', () => {
 				requiresPR: true,
 				requiresReview: true,
 				requiresPushedChanges: true,
-				maxContinuationTurns: 1,
+				maxContinuationTurns: 2,
 			}),
 		);
 		expect(backendInput.completionRequirements?.pushedChangesSidecarPath).toBeTruthy();

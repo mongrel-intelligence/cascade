@@ -222,7 +222,7 @@ async function buildExecutionPlan(
 		prSidecarPath,
 		reviewSidecarPath,
 		pushedChangesSidecarPath,
-		maxContinuationTurns: 1,
+		maxContinuationTurns: 2,
 	};
 
 	// Override GITHUB_TOKEN in subprocess secrets with agent-scoped token
