@@ -30,6 +30,10 @@ interface Project {
 	runLinksEnabled?: boolean | null;
 }
 
+function numericFieldDefault(value: number | null | undefined): string {
+	return value != null ? String(value) : '';
+}
+
 export function ProjectGeneralForm({ project }: { project: Project }) {
 	const queryClient = useQueryClient();
 	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
@@ -38,11 +42,9 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const [baseBranch, setBaseBranch] = useState(project.baseBranch ?? 'main');
 	const [branchPrefix, setBranchPrefix] = useState(project.branchPrefix ?? 'feature/');
 	const [model, setModel] = useState(project.model ?? '');
-	const [maxIterations, setMaxIterations] = useState(
-		project.maxIterations != null ? String(project.maxIterations) : '',
-	);
+	const [maxIterations, setMaxIterations] = useState(numericFieldDefault(project.maxIterations));
 	const [watchdogTimeoutMs, setWatchdogTimeoutMs] = useState(
-		project.watchdogTimeoutMs != null ? String(project.watchdogTimeoutMs) : '',
+		numericFieldDefault(project.watchdogTimeoutMs),
 	);
 	const [progressModel, setProgressModel] = useState(project.progressModel ?? '');
 	const [progressIntervalMinutes, setProgressIntervalMinutes] = useState(
