@@ -98,7 +98,11 @@ export default defineConfig({
 
 			// ── Unit: Core ──────────────────────────────────────────────────
 			// ~159 files — agents, gadgets, config, db, utils, cli, pm, github,
-			// jira, trello, web, webhook, queue, and top-level unit tests
+			// jira, trello, web, webhook, queue, and top-level unit tests.
+			// isolate: false skips per-file module re-evaluation, reducing the
+			// collect phase overhead. Safe here because these tests use simple
+			// mocks with no inter-test shared state. Files that use
+			// vi.useFakeTimers() all call vi.useRealTimers() in afterEach/afterAll.
 			{
 				test: {
 					name: 'unit-core',
@@ -120,6 +124,7 @@ export default defineConfig({
 						'tests/unit/*.test.ts',
 					],
 					...sharedTest,
+					isolate: false,
 				},
 				resolve,
 			},
