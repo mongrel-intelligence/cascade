@@ -107,7 +107,8 @@ function ProjectNavItem({ project, currentPath }: ProjectNavItemProps) {
 						return (
 							<Link
 								key={section.id}
-								to={`/projects/${project.id}/${section.path}`}
+								to={section.route}
+								params={{ projectId: project.id }}
 								className={cn(
 									'rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
 									sectionActive

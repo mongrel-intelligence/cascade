@@ -1,11 +1,33 @@
 export type ProjectSection = 'general' | 'harness' | 'work' | 'integrations' | 'agent-configs';
 
-export const PROJECT_SECTIONS: { id: ProjectSection; label: string; path: string }[] = [
-	{ id: 'general', label: 'General', path: 'general' },
-	{ id: 'harness', label: 'Harness', path: 'harness' },
-	{ id: 'work', label: 'Work', path: 'work' },
-	{ id: 'integrations', label: 'Integrations', path: 'integrations' },
-	{ id: 'agent-configs', label: 'Agent Configs', path: 'agent-configs' },
+export type ProjectSectionRoute =
+	| '/projects/$projectId/general'
+	| '/projects/$projectId/harness'
+	| '/projects/$projectId/work'
+	| '/projects/$projectId/integrations'
+	| '/projects/$projectId/agent-configs';
+
+export const PROJECT_SECTIONS: {
+	id: ProjectSection;
+	label: string;
+	path: string;
+	route: ProjectSectionRoute;
+}[] = [
+	{ id: 'general', label: 'General', path: 'general', route: '/projects/$projectId/general' },
+	{ id: 'harness', label: 'Harness', path: 'harness', route: '/projects/$projectId/harness' },
+	{ id: 'work', label: 'Work', path: 'work', route: '/projects/$projectId/work' },
+	{
+		id: 'integrations',
+		label: 'Integrations',
+		path: 'integrations',
+		route: '/projects/$projectId/integrations',
+	},
+	{
+		id: 'agent-configs',
+		label: 'Agent Configs',
+		path: 'agent-configs',
+		route: '/projects/$projectId/agent-configs',
+	},
 ];
 
 export const DEFAULT_PROJECT_SECTION: ProjectSection = 'general';
