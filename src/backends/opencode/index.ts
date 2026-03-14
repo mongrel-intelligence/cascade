@@ -31,7 +31,7 @@ import { logLlmCall } from '../shared/llmCallLogger.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
 import { buildEnv } from './env.js';
 import { DEFAULT_OPENCODE_MODEL } from './models.js';
-import { resolveOpenCodeSettings } from './settings.js';
+import { OpenCodeSettingsSchema, resolveOpenCodeSettings } from './settings.js';
 
 function appendEngineLog(path: string | undefined, chunk: string): void {
 	if (!path || chunk.length === 0) return;
@@ -803,6 +803,10 @@ export class OpenCodeEngine implements AgentEngine {
 
 	resolveModel(cascadeModel: string): string {
 		return resolveOpenCodeModel(cascadeModel);
+	}
+
+	getSettingsSchema() {
+		return OpenCodeSettingsSchema;
 	}
 
 	async afterExecute(plan: AgentExecutionPlan, _result: AgentEngineResult): Promise<void> {

@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
+import { registerBuiltInEngines } from '../../../../src/backends/bootstrap.js';
 import { createMockUser } from '../../../helpers/factories.js';
 
 const mockListProjectsForOrg = vi.fn();
@@ -63,6 +64,10 @@ function createCaller(ctx: TRPCContext) {
 }
 
 const mockUser = createMockUser();
+
+beforeAll(() => {
+	registerBuiltInEngines();
+});
 
 describe('projectsRouter', () => {
 	beforeEach(() => {

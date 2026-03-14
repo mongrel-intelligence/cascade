@@ -17,7 +17,11 @@ import { logLlmCall } from '../shared/llmCallLogger.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan, LogWriter } from '../types.js';
 import { buildEnv } from './env.js';
 import { CODEX_MODEL_IDS, DEFAULT_CODEX_MODEL } from './models.js';
-import { assertHeadlessCodexSettings, resolveCodexSettings } from './settings.js';
+import {
+	CodexSettingsSchema,
+	assertHeadlessCodexSettings,
+	resolveCodexSettings,
+} from './settings.js';
 
 const CODEX_AUTH_DIR = join(homedir(), '.codex');
 const CODEX_AUTH_FILE = join(CODEX_AUTH_DIR, 'auth.json');
@@ -487,6 +491,10 @@ export class CodexEngine implements AgentEngine {
 
 	resolveModel(cascadeModel: string): string {
 		return resolveCodexModel(cascadeModel);
+	}
+
+	getSettingsSchema() {
+		return CodexSettingsSchema;
 	}
 
 	async beforeExecute(plan: AgentExecutionPlan): Promise<void> {
