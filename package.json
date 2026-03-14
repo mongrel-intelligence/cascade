@@ -13,7 +13,7 @@
 		"build:web": "cd web && npm run build",
 		"start": "node dist/router/index.js",
 		"test": "vitest run --project unit",
-		"test:fast": "vitest run --changed --project unit",
+		"test:fast": "vitest run --changed origin/dev --project unit",
 		"test:unit": "vitest run --project unit",
 		"test:integration": "vitest run --project integration",
 		"test:all": "vitest run",
