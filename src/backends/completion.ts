@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 
+import type { AgentEngineResult } from './types.js';
+
 export interface CompletionRequirements {
 	requiresPR?: boolean;
 	requiresReview?: boolean;
@@ -111,4 +113,25 @@ export function getCompletionFailure(
 	}
 
 	return undefined;
+}
+
+/**
+ * Read sidecar files and upgrade text-based PR evidence to authoritative.
+ * Shared across Claude Code and OpenCode backends.
+ */
+export function applyCompletionEvidence(
+	result: AgentEngineResult,
+	completionRequirements: CompletionRequirements | undefined,
+): AgentEngineResult {
+	const evidence = readCompletionEvidence(completionRequirements);
+	if (!evidence.prUrl) return result;
+	return {
+		...result,
+		prUrl: evidence.prUrl,
+		prEvidence: {
+			source: 'native-tool-sidecar',
+			authoritative: true,
+			command: evidence.prCommand ?? 'cascade-tools scm create-pr',
+		},
+	};
 }

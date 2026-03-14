@@ -16,7 +16,11 @@ import { storeLlmCall } from '../../db/repositories/runsRepository.js';
 import { logger } from '../../utils/logging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { OPENCODE_ENGINE_DEFINITION } from '../catalog.js';
-import { getCompletionFailure, readCompletionEvidence } from '../completion.js';
+import {
+	applyCompletionEvidence,
+	getCompletionFailure,
+	readCompletionEvidence,
+} from '../completion.js';
 import { cleanupContextFiles } from '../contextFiles.js';
 import {
 	formatNativeToolTransportError,
@@ -549,23 +553,6 @@ function createIdlePromise(state: OpenCodeStreamState): Promise<void> {
 	});
 }
 
-function applyCompletionEvidence(
-	result: AgentEngineResult,
-	input: AgentExecutionPlan,
-): AgentEngineResult {
-	const evidence = readCompletionEvidence(input.completionRequirements);
-	if (!evidence.prUrl) return result;
-	return {
-		...result,
-		prUrl: evidence.prUrl,
-		prEvidence: {
-			source: 'native-tool-sidecar',
-			authoritative: true,
-			command: evidence.prCommand ?? 'cascade-tools scm create-pr',
-		},
-	};
-}
-
 function buildOpenCodeResultFromResponse(
 	input: AgentExecutionPlan,
 	state: OpenCodeStreamState,
@@ -731,7 +718,7 @@ async function runOpenCodeTurnLoop(
 	initialPrompt: string,
 	state: OpenCodeStreamState,
 ): Promise<AgentEngineResult> {
-	const maxContinuationTurns = input.completionRequirements?.maxContinuationTurns ?? 1;
+	const maxContinuationTurns = input.completionRequirements?.maxContinuationTurns ?? 0;
 	let continuationTurns = 0;
 	let promptText = initialPrompt;
 	for (;;) {
@@ -776,7 +763,7 @@ async function runOpenCodeTurnLoop(
 				state,
 				promptResponse,
 			);
-			const turnResult = applyCompletionEvidence(rawTurnResult, input);
+			const turnResult = applyCompletionEvidence(rawTurnResult, input.completionRequirements);
 			if (!turnResult.success) return turnResult;
 
 			const completionFailure = getCompletionFailure(

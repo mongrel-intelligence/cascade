@@ -14,7 +14,7 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	storeLlmCall: (...args: unknown[]) => mockStoreLlmCall(...args),
 }));
 
-import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -404,7 +404,7 @@ describe('execute', () => {
 				maxBudgetUsd: 5,
 				permissionMode: 'bypassPermissions',
 				allowDangerouslySkipPermissions: true,
-				persistSession: false,
+				persistSession: true,
 				hooks: expect.objectContaining({
 					PreToolUse: expect.arrayContaining([expect.objectContaining({ matcher: 'Bash' })]),
 					Stop: expect.arrayContaining([expect.objectContaining({ hooks: expect.any(Array) })]),
@@ -816,7 +816,7 @@ describe('execute', () => {
 
 		expect(input.logWriter).toHaveBeenCalledWith(
 			'INFO',
-			'Claude Code SDK execution completed',
+			'Claude Code SDK turn completed',
 			expect.objectContaining({
 				success: true,
 				durationMs: expect.any(Number),
@@ -923,6 +923,254 @@ describe('execute', () => {
 
 		await Promise.resolve();
 		expect(mockStoreLlmCall).not.toHaveBeenCalled();
+	});
+});
+
+describe('continuation loop', () => {
+	beforeEach(() => {
+		mockQuery.mockReset();
+	});
+
+	function queueStream(messages: Array<{ type: string; [key: string]: unknown }>) {
+		const iterator = messages[Symbol.iterator]();
+		const asyncIterator = {
+			[Symbol.asyncIterator]() {
+				return {
+					next() {
+						const result = iterator.next();
+						return Promise.resolve(result);
+					},
+				};
+			},
+		};
+		mockQuery.mockReturnValueOnce(asyncIterator as ReturnType<typeof query>);
+	}
+
+	it('continues session when completion check fails', async () => {
+		const tempDir = mkdtempSync(join(tmpdir(), 'cascade-cc-sidecar-'));
+		const prSidecarPath = join(tempDir, 'pr.json');
+
+		// First call: no sidecar written (completion check fails)
+		queueStream([
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'I created a PR.',
+				total_cost_usd: 0.05,
+				num_turns: 3,
+			},
+		]);
+		// Second call: sidecar written (completion check passes)
+		const secondMessages = [
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'PR created for real.',
+				total_cost_usd: 0.03,
+				num_turns: 1,
+			},
+		];
+		const secondIterator = secondMessages[Symbol.iterator]();
+		mockQuery.mockReturnValueOnce({
+			[Symbol.asyncIterator]() {
+				return {
+					next() {
+						// Write sidecar on first next() call to simulate tool execution
+						writeFileSync(
+							prSidecarPath,
+							JSON.stringify({
+								prUrl: 'https://github.com/owner/repo/pull/42',
+								source: 'cascade-tools scm create-pr',
+							}),
+						);
+						const result = secondIterator.next();
+						return Promise.resolve(result);
+					},
+				};
+			},
+		} as ReturnType<typeof query>);
+
+		const engine = new ClaudeCodeEngine();
+		const logWriter = vi.fn();
+		const result = await engine.execute(
+			makeInput({
+				logWriter,
+				completionRequirements: {
+					requiresPR: true,
+					prSidecarPath,
+					maxContinuationTurns: 2,
+				},
+			}),
+		);
+		rmSync(tempDir, { recursive: true, force: true });
+
+		expect(result.success).toBe(true);
+		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/42');
+		expect(result.prEvidence).toEqual({
+			source: 'native-tool-sidecar',
+			authoritative: true,
+			command: 'cascade-tools scm create-pr',
+		});
+		expect(mockQuery).toHaveBeenCalledTimes(2);
+		// Second call should have continue: true
+		expect(mockQuery.mock.calls[1][0]).toEqual(
+			expect.objectContaining({
+				options: expect.objectContaining({ continue: true }),
+			}),
+		);
+		expect(logWriter).toHaveBeenCalledWith(
+			'WARN',
+			'Claude Code completion check failed; continuing session',
+			expect.objectContaining({
+				reason: 'Agent completed but no authoritative PR creation was recorded',
+				continuationTurn: 1,
+				maxContinuationTurns: 2,
+			}),
+		);
+	});
+
+	it('fails after exhausting continuation turns', async () => {
+		const tempDir = mkdtempSync(join(tmpdir(), 'cascade-cc-exhaust-'));
+		const prSidecarPath = join(tempDir, 'pr.json');
+
+		// All calls succeed but never write the sidecar
+		for (let i = 0; i < 3; i++) {
+			queueStream([
+				{
+					type: 'result',
+					subtype: 'success',
+					result: 'Narrated PR creation.',
+					total_cost_usd: 0.02,
+					num_turns: 1,
+				},
+			]);
+		}
+
+		const engine = new ClaudeCodeEngine();
+		const result = await engine.execute(
+			makeInput({
+				completionRequirements: {
+					requiresPR: true,
+					prSidecarPath,
+					maxContinuationTurns: 2,
+				},
+			}),
+		);
+		rmSync(tempDir, { recursive: true, force: true });
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe('Agent completed but no authoritative PR creation was recorded');
+		// Initial + 2 continuation = 3 total calls
+		expect(mockQuery).toHaveBeenCalledTimes(3);
+	});
+
+	it('does not continue on non-success results', async () => {
+		const tempDir = mkdtempSync(join(tmpdir(), 'cascade-cc-nosuccess-'));
+		const prSidecarPath = join(tempDir, 'pr.json');
+
+		queueStream([
+			{
+				type: 'result',
+				subtype: 'error_max_turns',
+				errors: ['Exceeded maximum turns'],
+				total_cost_usd: 1.5,
+				num_turns: 20,
+			},
+		]);
+
+		const engine = new ClaudeCodeEngine();
+		const result = await engine.execute(
+			makeInput({
+				completionRequirements: {
+					requiresPR: true,
+					prSidecarPath,
+					maxContinuationTurns: 2,
+				},
+			}),
+		);
+		rmSync(tempDir, { recursive: true, force: true });
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe('Exceeded maximum turns');
+		// Should NOT have continued
+		expect(mockQuery).toHaveBeenCalledTimes(1);
+	});
+
+	it('accumulates cost across continuation turns', async () => {
+		const tempDir = mkdtempSync(join(tmpdir(), 'cascade-cc-cost-'));
+		const prSidecarPath = join(tempDir, 'pr.json');
+
+		// First call: no sidecar
+		queueStream([
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Working...',
+				total_cost_usd: 0.1,
+				num_turns: 2,
+			},
+		]);
+		// Second call: write sidecar
+		const secondMessages = [
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done.',
+				total_cost_usd: 0.05,
+				num_turns: 1,
+			},
+		];
+		const secondIterator = secondMessages[Symbol.iterator]();
+		mockQuery.mockReturnValueOnce({
+			[Symbol.asyncIterator]() {
+				return {
+					next() {
+						writeFileSync(
+							prSidecarPath,
+							JSON.stringify({
+								prUrl: 'https://github.com/owner/repo/pull/99',
+								source: 'cascade-tools scm create-pr',
+							}),
+						);
+						const result = secondIterator.next();
+						return Promise.resolve(result);
+					},
+				};
+			},
+		} as ReturnType<typeof query>);
+
+		const engine = new ClaudeCodeEngine();
+		const result = await engine.execute(
+			makeInput({
+				completionRequirements: {
+					requiresPR: true,
+					prSidecarPath,
+					maxContinuationTurns: 2,
+				},
+			}),
+		);
+		rmSync(tempDir, { recursive: true, force: true });
+
+		expect(result.success).toBe(true);
+		expect(result.cost).toBeCloseTo(0.15);
+	});
+
+	it('does not continue when no completionRequirements', async () => {
+		queueStream([
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done.',
+				total_cost_usd: 0.01,
+				num_turns: 1,
+			},
+		]);
+
+		const engine = new ClaudeCodeEngine();
+		const result = await engine.execute(makeInput({ completionRequirements: undefined }));
+
+		expect(result.success).toBe(true);
+		expect(mockQuery).toHaveBeenCalledTimes(1);
 	});
 });
 
