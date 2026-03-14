@@ -26,6 +26,7 @@ describe('registerBuiltInEngines', () => {
 		for (const id of EXPECTED_ENGINE_IDS) {
 			expect(registeredIds).toContain(id);
 		}
+		expect(registeredIds).toHaveLength(EXPECTED_ENGINE_IDS.length);
 	});
 });
 
