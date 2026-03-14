@@ -51,17 +51,6 @@ function makeInput(): AgentInput & { project: ProjectConfig; config: CascadeConf
 			trello: { boardId: 'b1', lists: {}, labels: {} },
 		},
 		config: {
-			defaults: {
-				model: 'test-model',
-				agentModels: {},
-				maxIterations: 50,
-				agentIterations: {},
-				watchdogTimeoutMs: 1800000,
-				workItemBudgetUsd: 5,
-				agentEngine: 'llmist',
-				progressModel: 'openrouter:google/gemini-2.5-flash-lite',
-				progressIntervalMinutes: 5,
-			},
 			projects: [],
 		},
 	} as AgentInput & { project: ProjectConfig; config: CascadeConfig };
@@ -91,11 +80,7 @@ describe('runAgent', () => {
 
 		await runAgent('implementation', makeInput());
 
-		expect(mockResolveEngineName).toHaveBeenCalledWith(
-			'implementation',
-			expect.any(Object),
-			expect.any(Object),
-		);
+		expect(mockResolveEngineName).toHaveBeenCalledWith('implementation', expect.any(Object));
 	});
 
 	it('returns error when engine not found (lists registered engines)', async () => {

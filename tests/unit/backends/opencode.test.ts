@@ -59,18 +59,6 @@ function makeInput(overrides: Partial<AgentExecutionPlan> = {}): AgentExecutionP
 			engineSettings: undefined,
 		},
 		config: {
-			defaults: {
-				model: DEFAULT_OPENCODE_MODEL,
-				agentModels: {},
-				maxIterations: 20,
-				agentIterations: {},
-				watchdogTimeoutMs: 1800000,
-				workItemBudgetUsd: 5,
-				agentEngine: 'opencode',
-				engineSettings: {},
-				progressModel: 'progress-model',
-				progressIntervalMinutes: 5,
-			},
 			projects: [],
 		},
 		repoDir: '/tmp/repo',
@@ -180,27 +168,20 @@ describe('buildPermissionConfig', () => {
 describe('resolveOpenCodeSettings', () => {
 	it('defaults to webSearch=false', () => {
 		const input = makeInput();
-		expect(resolveOpenCodeSettings(input.project, input.config)).toEqual({
+		expect(resolveOpenCodeSettings(input.project)).toEqual({
 			webSearch: false,
 		});
 	});
 
-	it('merges project settings over defaults', () => {
+	it('applies project engineSettings for webSearch', () => {
 		const input = makeInput({
-			config: {
-				...makeInput().config,
-				defaults: {
-					...makeInput().config.defaults,
-					engineSettings: { opencode: { webSearch: false } },
-				},
-			},
 			project: {
 				...makeInput().project,
 				engineSettings: { opencode: { webSearch: true } },
 			},
 		});
 
-		expect(resolveOpenCodeSettings(input.project, input.config)).toEqual({
+		expect(resolveOpenCodeSettings(input.project)).toEqual({
 			webSearch: true,
 		});
 	});

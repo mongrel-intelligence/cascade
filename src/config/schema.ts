@@ -58,13 +58,17 @@ export const ProjectConfigSchema = z.object({
 
 	jira: JiraConfigSchema.optional(),
 
-	model: z.string().optional(),
+	model: z.string().default('openrouter:google/gemini-3-flash-preview'),
 	agentModels: z.record(z.string()).optional(),
-	maxIterations: z.number().int().positive().optional(),
-	watchdogTimeoutMs: z.number().int().positive().optional(),
-	progressModel: z.string().optional(),
-	progressIntervalMinutes: z.number().positive().optional(),
-	workItemBudgetUsd: z.number().positive().optional(),
+	maxIterations: z.number().int().positive().default(50),
+	watchdogTimeoutMs: z
+		.number()
+		.int()
+		.positive()
+		.default(30 * 60 * 1000), // 30 min max job duration
+	progressModel: z.string().default('openrouter:google/gemini-2.5-flash-lite'),
+	progressIntervalMinutes: z.number().positive().default(5),
+	workItemBudgetUsd: z.number().positive().default(5),
 	agentEngine: AgentEngineConfigSchema.optional(),
 	engineSettings: EngineSettingsSchema.optional(),
 	squintDbUrl: z.string().url().optional(),
@@ -72,24 +76,6 @@ export const ProjectConfigSchema = z.object({
 });
 
 export const CascadeConfigSchema = z.object({
-	defaults: z
-		.object({
-			model: z.string().default('openrouter:google/gemini-3-flash-preview'),
-			agentModels: z.record(z.string()).default({}),
-			maxIterations: z.number().int().positive().default(50),
-			agentIterations: z.record(z.number().int().positive()).default({}),
-			watchdogTimeoutMs: z
-				.number()
-				.int()
-				.positive()
-				.default(30 * 60 * 1000), // 30 min max job duration
-			workItemBudgetUsd: z.number().positive().default(5),
-			agentEngine: z.string().default('llmist'),
-			engineSettings: EngineSettingsSchema.default({}),
-			progressModel: z.string().default('openrouter:google/gemini-2.5-flash-lite'),
-			progressIntervalMinutes: z.number().positive().default(5),
-		})
-		.default({}),
 	projects: z.array(ProjectConfigSchema).min(1),
 });
 

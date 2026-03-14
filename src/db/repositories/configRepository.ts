@@ -1,5 +1,4 @@
 import { type SQL, eq, sql } from 'drizzle-orm';
-import { mergeEngineSettings } from '../../config/engineSettings.js';
 import { validateConfig } from '../../config/schema.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { getDb } from '../client.js';
@@ -37,8 +36,6 @@ function buildRawConfig({
 	}
 
 	return {
-		// defaults is now fully driven by the Zod schema defaults (no cascade_defaults table)
-		defaults: {},
 		projects: projectRows.map((row) => {
 			const integrations = integrationsByProject.get(row.id) ?? [];
 			const { trelloConfig, jiraConfig, githubConfig } = extractIntegrationConfigs(integrations);
@@ -56,16 +53,6 @@ function buildRawConfig({
 async function loadAgentConfigs(): Promise<AgentConfigRow[]> {
 	const db = getDb();
 	return db.select().from(agentConfigs);
-}
-
-function applyProjectEngineSettings(config: CascadeConfig): CascadeConfig {
-	return {
-		...config,
-		projects: config.projects.map((project) => ({
-			...project,
-			engineSettings: mergeEngineSettings(config.defaults.engineSettings, project.engineSettings),
-		})),
-	};
 }
 
 export async function loadConfigFromDb(): Promise<CascadeConfig> {
@@ -91,7 +78,7 @@ export async function loadConfigFromDb(): Promise<CascadeConfig> {
 		projectAgentConfigsMap,
 	});
 
-	return applyProjectEngineSettings(validateConfig(rawConfig));
+	return validateConfig(rawConfig);
 }
 
 async function findProjectConfigFromDb(
@@ -114,7 +101,7 @@ async function findProjectConfigFromDb(
 		projectAgentConfigsMap,
 	});
 
-	const config = applyProjectEngineSettings(validateConfig(rawConfig));
+	const config = validateConfig(rawConfig);
 	return { project: config.projects[0], config };
 }
 

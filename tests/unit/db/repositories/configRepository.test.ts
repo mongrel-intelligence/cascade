@@ -16,19 +16,6 @@ import {
 // Test data
 // ---------------------------------------------------------------------------
 
-const defaultsRow = {
-	orgId: 'default',
-	model: 'test-model',
-	maxIterations: 50,
-	watchdogTimeoutMs: 1800000,
-	workItemBudgetUsd: '5.00',
-	agentEngine: 'llmist',
-	progressModel: 'progress-model',
-	progressIntervalMinutes: '5',
-	createdAt: new Date(),
-	updatedAt: new Date(),
-};
-
 const projectRow = {
 	id: 'proj1',
 	orgId: 'default',
@@ -191,29 +178,20 @@ describe('configRepository', () => {
 			expect(proj.jira?.labels).toBeUndefined();
 		});
 
-		it('uses Zod schema defaults when no cascade_defaults table exists', async () => {
+		it('uses Zod schema defaults for project fields when not set in DB', async () => {
 			const mockDb = createSequentialMockDb([[projectRow], [], [trelloIntegration]]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
 
 			const config = await loadConfigFromDb();
 
-			// Schema defaults apply (from CascadeConfigSchema)
-			expect(config.defaults.model).toBe('openrouter:google/gemini-3-flash-preview');
-			expect(config.defaults.maxIterations).toBe(50);
-			expect(config.defaults.agentEngine).toBe('llmist');
-			expect(config.defaults.workItemBudgetUsd).toBe(5);
-			expect(config.defaults.progressModel).toBe('openrouter:google/gemini-2.5-flash-lite');
-			expect(config.defaults.progressIntervalMinutes).toBe(5);
-		});
-
-		it('defaults have empty agentModels and agentIterations (no global/org configs)', async () => {
-			const mockDb = createSequentialMockDb([[projectRow], [], [trelloIntegration]]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
-
-			const config = await loadConfigFromDb();
-
-			expect(config.defaults.agentModels).toEqual({});
-			expect(config.defaults.agentIterations).toEqual({});
+			// Schema defaults apply from ProjectConfigSchema
+			const proj = config.projects[0];
+			expect(proj.model).toBe('openrouter:google/gemini-3-flash-preview');
+			expect(proj.maxIterations).toBe(50);
+			expect(proj.workItemBudgetUsd).toBe(5);
+			expect(proj.progressModel).toBe('openrouter:google/gemini-2.5-flash-lite');
+			expect(proj.progressIntervalMinutes).toBe(5);
+			expect(proj.watchdogTimeoutMs).toBe(30 * 60 * 1000);
 		});
 
 		it('maps agentEngine from project row when set', async () => {

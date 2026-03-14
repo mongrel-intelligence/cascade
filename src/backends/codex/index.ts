@@ -391,11 +391,7 @@ export class CodexEngine implements AgentEngine {
 			input.repoDir,
 		);
 		const model = resolveCodexModel(input.model);
-		const settings = resolveCodexSettings(
-			input.project,
-			input.config,
-			input.nativeToolCapabilities,
-		);
+		const settings = resolveCodexSettings(input.project, input.nativeToolCapabilities);
 		assertHeadlessCodexSettings(settings);
 
 		const originalAuthJson = await writeCodexAuthFile(input.projectSecrets, input.logWriter);

@@ -351,9 +351,8 @@ function buildProgressMonitorConfig(
 		logWriter,
 		agentType,
 		taskDescription: workItemId ? `Work item ${workItemId}` : 'Unknown task',
-		progressModel: input.project.progressModel ?? input.config.defaults.progressModel,
-		intervalMinutes:
-			input.project.progressIntervalMinutes ?? input.config.defaults.progressIntervalMinutes,
+		progressModel: input.project.progressModel,
+		intervalMinutes: input.project.progressIntervalMinutes,
 		customModels: CUSTOM_MODELS as ModelSpec[],
 		repoDir: repoDir ?? undefined,
 		trello: workItemId ? { workItemId } : undefined,

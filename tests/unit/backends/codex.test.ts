@@ -70,18 +70,6 @@ function makeInput(overrides: Partial<AgentExecutionPlan> = {}): AgentExecutionP
 			engineSettings: undefined,
 		},
 		config: {
-			defaults: {
-				model: DEFAULT_CODEX_MODEL,
-				agentModels: {},
-				maxIterations: 20,
-				agentIterations: {},
-				watchdogTimeoutMs: 1800000,
-				workItemBudgetUsd: 5,
-				agentEngine: 'codex',
-				engineSettings: {},
-				progressModel: 'progress-model',
-				progressIntervalMinutes: 5,
-			},
 			projects: [],
 		},
 		repoDir: '/tmp/repo',
@@ -199,39 +187,30 @@ describe('resolveCodexSettings', () => {
 			nativeToolCapabilities: ['fs:read'],
 		});
 
-		expect(resolveCodexSettings(input.project, input.config, input.nativeToolCapabilities)).toEqual(
-			{
-				approvalPolicy: 'never',
-				sandboxMode: 'read-only',
-				webSearch: false,
-				reasoningEffort: undefined,
-			},
-		);
+		expect(resolveCodexSettings(input.project, input.nativeToolCapabilities)).toEqual({
+			approvalPolicy: 'never',
+			sandboxMode: 'read-only',
+			webSearch: false,
+			reasoningEffort: undefined,
+		});
 	});
 
-	it('merges project settings over defaults', () => {
+	it('applies project engineSettings', () => {
 		const input = makeInput({
-			config: {
-				...makeInput().config,
-				defaults: {
-					...makeInput().config.defaults,
-					engineSettings: { codex: { approvalPolicy: 'never', sandboxMode: 'read-only' } },
-				},
-			},
 			project: {
 				...makeInput().project,
-				engineSettings: { codex: { sandboxMode: 'workspace-write', webSearch: true } },
+				engineSettings: {
+					codex: { approvalPolicy: 'never', sandboxMode: 'workspace-write', webSearch: true },
+				},
 			},
 		});
 
-		expect(resolveCodexSettings(input.project, input.config, input.nativeToolCapabilities)).toEqual(
-			{
-				approvalPolicy: 'never',
-				sandboxMode: 'workspace-write',
-				webSearch: true,
-				reasoningEffort: undefined,
-			},
-		);
+		expect(resolveCodexSettings(input.project, input.nativeToolCapabilities)).toEqual({
+			approvalPolicy: 'never',
+			sandboxMode: 'workspace-write',
+			webSearch: true,
+			reasoningEffort: undefined,
+		});
 	});
 
 	it('rejects interactive approval modes for headless runs', () => {
