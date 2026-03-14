@@ -7,7 +7,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockGetOrganization = vi.fn();
 const mockListAllOrganizations = vi.fn();
-const mockGetCascadeDefaults = vi.fn();
 const mockUpdateOrganization = vi.fn();
 const mockListProjectsFull = vi.fn();
 const mockGetProjectFull = vi.fn();
@@ -17,7 +16,6 @@ const mockDeleteProject = vi.fn();
 const mockListProjectIntegrations = vi.fn();
 const mockUpsertProjectIntegration = vi.fn();
 const mockDeleteProjectIntegration = vi.fn();
-const mockUpsertCascadeDefaults = vi.fn();
 const mockListAgentConfigs = vi.fn();
 const mockCreateAgentConfig = vi.fn();
 const mockUpdateAgentConfig = vi.fn();
@@ -26,7 +24,6 @@ const mockDeleteAgentConfig = vi.fn();
 vi.mock('../../../src/db/repositories/settingsRepository.js', () => ({
 	getOrganization: (...args: unknown[]) => mockGetOrganization(...args),
 	listAllOrganizations: (...args: unknown[]) => mockListAllOrganizations(...args),
-	getCascadeDefaults: (...args: unknown[]) => mockGetCascadeDefaults(...args),
 	updateOrganization: (...args: unknown[]) => mockUpdateOrganization(...args),
 	listProjectsFull: (...args: unknown[]) => mockListProjectsFull(...args),
 	getProjectFull: (...args: unknown[]) => mockGetProjectFull(...args),
@@ -36,7 +33,6 @@ vi.mock('../../../src/db/repositories/settingsRepository.js', () => ({
 	listProjectIntegrations: (...args: unknown[]) => mockListProjectIntegrations(...args),
 	upsertProjectIntegration: (...args: unknown[]) => mockUpsertProjectIntegration(...args),
 	deleteProjectIntegration: (...args: unknown[]) => mockDeleteProjectIntegration(...args),
-	upsertCascadeDefaults: (...args: unknown[]) => mockUpsertCascadeDefaults(...args),
 	listAgentConfigs: (...args: unknown[]) => mockListAgentConfigs(...args),
 	createAgentConfig: (...args: unknown[]) => mockCreateAgentConfig(...args),
 	updateAgentConfig: (...args: unknown[]) => mockUpdateAgentConfig(...args),
@@ -78,7 +74,6 @@ vi.mock('../../../src/db/schema/index.js', () => ({
 	projects: { id: 'id', orgId: 'org_id' },
 	agentConfigs: { id: 'id', projectId: 'project_id' },
 	organizations: { id: 'id', name: 'name' },
-	cascadeDefaults: { orgId: 'org_id' },
 }));
 
 // Mocks required by runsRouter (dynamically imported in Section 4)
@@ -106,7 +101,6 @@ vi.mock('../../../src/utils/logging.js', () => ({
 import { computeEffectiveOrgId } from '../../../src/api/context.js';
 import { authRouter } from '../../../src/api/routers/auth.js';
 import { credentialsRouter } from '../../../src/api/routers/credentials.js';
-import { defaultsRouter } from '../../../src/api/routers/defaults.js';
 import { organizationRouter } from '../../../src/api/routers/organization.js';
 import { projectsRouter } from '../../../src/api/routers/projects.js';
 import {
@@ -305,18 +299,6 @@ describe('Router org-isolation with admin org-switching', () => {
 		await caller.list();
 
 		expect(mockListOrgCredentials).toHaveBeenCalledWith('org-2');
-	});
-
-	it('defaults.get uses effectiveOrgId (not user.orgId)', async () => {
-		mockGetCascadeDefaults.mockResolvedValue(null);
-		const caller = defaultsRouter.createCaller({
-			user: adminUser,
-			effectiveOrgId: 'org-2',
-		});
-
-		await caller.get();
-
-		expect(mockGetCascadeDefaults).toHaveBeenCalledWith('org-2');
 	});
 
 	it('organization.get uses effectiveOrgId (not user.orgId)', async () => {

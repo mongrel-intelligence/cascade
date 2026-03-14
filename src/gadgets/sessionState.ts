@@ -6,6 +6,8 @@ export const REVIEW_SIDECAR_ENV_VAR = 'CASCADE_REVIEW_SIDECAR_PATH';
 export const PR_SIDECAR_ENV_VAR = 'CASCADE_PR_SIDECAR_PATH';
 /** Env var holding the temp file path for authoritative pushed-changes evidence. */
 export const PUSHED_CHANGES_SIDECAR_ENV_VAR = 'CASCADE_PUSHED_CHANGES_SIDECAR_PATH';
+/** Env var holding the temp file path for PM write evidence (written by cascade-tools pm add-checklist). */
+export const PM_WRITE_SIDECAR_ENV_VAR = 'CASCADE_PM_WRITE_SIDECAR_PATH';
 
 export type SessionHooks = FinishHookFlags;
 

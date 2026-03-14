@@ -1,15 +1,12 @@
 import { type SQL, eq, sql } from 'drizzle-orm';
-import { mergeEngineSettings } from '../../config/engineSettings.js';
 import { validateConfig } from '../../config/schema.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { getDb } from '../client.js';
-import { agentConfigs, cascadeDefaults, projectIntegrations, projects } from '../schema/index.js';
+import { agentConfigs, projectIntegrations, projects } from '../schema/index.js';
 import {
 	type AgentConfigRow,
-	type DefaultsRow,
 	type IntegrationRow,
 	extractIntegrationConfigs,
-	mapDefaultsRow,
 	mapProjectRow,
 } from './configMapper.js';
 
@@ -18,7 +15,6 @@ import {
 // ---------------------------------------------------------------------------
 
 interface BuildRawConfigOpts {
-	defaultsRow: DefaultsRow | undefined;
 	projectRows: Array<typeof projects.$inferSelect>;
 	/** All integration rows for all projects in projectRows */
 	integrationRows: IntegrationRow[];
@@ -27,7 +23,6 @@ interface BuildRawConfigOpts {
 }
 
 function buildRawConfig({
-	defaultsRow,
 	projectRows,
 	integrationRows,
 	projectAgentConfigsMap,
@@ -41,7 +36,6 @@ function buildRawConfig({
 	}
 
 	return {
-		defaults: mapDefaultsRow(defaultsRow),
 		projects: projectRows.map((row) => {
 			const integrations = integrationsByProject.get(row.id) ?? [];
 			const { trelloConfig, jiraConfig, githubConfig } = extractIntegrationConfigs(integrations);
@@ -61,25 +55,10 @@ async function loadAgentConfigs(): Promise<AgentConfigRow[]> {
 	return db.select().from(agentConfigs);
 }
 
-function applyProjectEngineSettings(config: CascadeConfig): CascadeConfig {
-	return {
-		...config,
-		projects: config.projects.map((project) => ({
-			...project,
-			engineSettings: mergeEngineSettings(config.defaults.engineSettings, project.engineSettings),
-		})),
-	};
-}
-
 export async function loadConfigFromDb(): Promise<CascadeConfig> {
 	const db = getDb();
 
-	const [defaultsRow, projectRows, allAgentConfigs, integrationRows] = await Promise.all([
-		db
-			.select()
-			.from(cascadeDefaults)
-			.limit(1)
-			.then((r) => r[0]),
+	const [projectRows, allAgentConfigs, integrationRows] = await Promise.all([
 		db.select().from(projects),
 		loadAgentConfigs(),
 		db.select().from(projectIntegrations),
@@ -94,13 +73,12 @@ export async function loadConfigFromDb(): Promise<CascadeConfig> {
 	}
 
 	const rawConfig = buildRawConfig({
-		defaultsRow,
 		projectRows,
 		integrationRows: integrationRows as IntegrationRow[],
 		projectAgentConfigsMap,
 	});
 
-	return applyProjectEngineSettings(validateConfig(rawConfig));
+	return validateConfig(rawConfig);
 }
 
 async function findProjectConfigFromDb(
@@ -110,26 +88,20 @@ async function findProjectConfigFromDb(
 	const [row] = await db.select().from(projects).where(whereClause);
 	if (!row) return undefined;
 
-	const [projectAcs, defaultsRow, integrations] = await Promise.all([
+	const [projectAcs, integrations] = await Promise.all([
 		db.select().from(agentConfigs).where(eq(agentConfigs.projectId, row.id)),
-		db
-			.select()
-			.from(cascadeDefaults)
-			.where(eq(cascadeDefaults.orgId, row.orgId))
-			.then((r) => r[0]),
 		db.select().from(projectIntegrations).where(eq(projectIntegrations.projectId, row.id)),
 	]);
 
 	const projectAgentConfigsMap = new Map<string, AgentConfigRow[]>([[row.id, projectAcs]]);
 
 	const rawConfig = buildRawConfig({
-		defaultsRow,
 		projectRows: [row],
 		integrationRows: integrations as IntegrationRow[],
 		projectAgentConfigsMap,
 	});
 
-	const config = applyProjectEngineSettings(validateConfig(rawConfig));
+	const config = validateConfig(rawConfig);
 	return { project: config.projects[0], config };
 }
 

@@ -59,7 +59,7 @@ npm run typecheck        # Type check
 
 ### Git Hooks
 
-Lefthook runs pre-commit (lint, typecheck) and pre-push (test) hooks automatically.
+Lefthook runs pre-commit (lint, typecheck) and pre-push (unit tests, integration tests) hooks automatically. The pre-push hook auto-starts an ephemeral PostgreSQL via Docker (`npm run test:db:up`) for integration tests — Docker must be running.
 
 ## Key Directories
 
@@ -90,6 +90,8 @@ Optional (infrastructure):
 - `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled)
 - `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code backend (subscription auth)
 - `CREDENTIAL_MASTER_KEY` - 64-char hex string (32-byte AES-256 key) for encrypting credentials at rest. Generate with `npm run credentials:generate-key`. When set, all new/updated credentials are encrypted automatically; existing plaintext credentials continue to work.
+- `WEBHOOK_CALLBACK_BASE_URL` - Base URL for webhook callbacks (e.g., `https://cascade.example.com`). Used by `tools/setup-webhooks.ts` and the `cascade webhooks create` CLI command to construct the full webhook URL.
+- `GITHUB_WEBHOOK_SECRET` - Optional HMAC secret for GitHub webhook signature verification. When set as an integration credential (`webhook_secret` role on the GitHub SCM integration), all newly created GitHub webhooks will include the secret so GitHub signs each delivery. The router then verifies the `X-Hub-Signature-256` header on incoming payloads.
 - `SENTRY_DSN` - Sentry DSN for error monitoring (router + worker)
 - `SENTRY_ENVIRONMENT` - Sentry environment tag (default: NODE_ENV or 'production')
 - `SENTRY_RELEASE` - Release identifier for source maps (e.g., git SHA)
@@ -104,8 +106,7 @@ CASCADE stores all project configuration in PostgreSQL (Supabase). The `config/p
 ### Schema
 
 - `organizations` - Organization definitions (multi-tenant support)
-- `cascade_defaults` - Global defaults per org (model, iterations, timeouts, budget)
-- `projects` - Per-project config (repo, base branch, budget, backend)
+- `projects` - Per-project config (repo, base branch, budget, backend, and per-project overrides for model, iterations, timeouts, progress model/interval)
 - `project_integrations` - Integration configs per project with `category` (pm/scm/email), `provider` (trello/jira/github/imap/gmail), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
 - `integration_credentials` - Links integration roles to org-scoped credential rows (e.g., `api_key` → credential #5). Roles are provider-specific: trello has `api_key`/`token`, jira has `email`/`api_token`, github has `implementer_token`/`reviewer_token`
 - `agent_configs` - Per-agent-type overrides (model, iterations, engine, max_concurrency), project-scoped only (`project_id NOT NULL`)
@@ -188,6 +189,34 @@ cascade projects integration-credential-set <project-id> --category scm --role r
 - `respond-to-review` ONLY fires when the **reviewer** persona submits a `changes_requested` review
 - `respond-to-pr-comment` skips @mentions from **any** known persona
 - `check-suite-success` checks reviews from the **reviewer** persona specifically
+
+### Webhook Signature Verification
+
+CASCADE supports opt-in HMAC-SHA256 signature verification for GitHub webhook payloads.
+
+#### How it works
+
+1. Store a `GITHUB_WEBHOOK_SECRET` credential (any strong random string) as an integration credential with role `webhook_secret` on the project's GitHub SCM integration:
+
+```bash
+cascade credentials create --name "GitHub Webhook Secret" --key GITHUB_WEBHOOK_SECRET --value <random-secret>
+cascade projects integration-credential-set <project-id> --category scm --role webhook_secret --credential-id <id>
+```
+
+2. Create (or recreate) the GitHub webhook — CASCADE will automatically include the secret in the Octokit `createWebhook` call:
+
+```bash
+cascade webhooks create <project-id> [--callback-url URL]
+# or via the setup tool:
+npx tsx tools/setup-webhooks.ts create <project-id> <callback-base-url>
+```
+
+3. GitHub will then sign every webhook delivery with `X-Hub-Signature-256`. The CASCADE router verifies this signature before processing the payload, rejecting requests with invalid or missing signatures.
+
+#### Backwards compatibility
+
+- If no `webhook_secret` credential is configured, webhook creation behaves exactly as before (no secret, no signature verification).
+- Existing webhooks created without a secret continue to work — signature verification is only applied when a secret is present in the project credentials.
 
 ### Integration Credential Resolution
 
@@ -328,10 +357,10 @@ bash tests/docker/claude-code-auth/run-test.sh
 
 ## Codex Backend
 
-CASCADE supports OpenAI's Codex CLI as an alternative agent engine. Configure it as the default or per-project via the `agent-engine` setting:
+CASCADE supports OpenAI's Codex CLI as an alternative agent engine. Configure it per-project via the `agent-engine` setting:
 
 ```bash
-cascade defaults set --agent-engine codex
+cascade projects update <project-id> --agent-engine codex
 ```
 
 ### Authentication
@@ -358,7 +387,7 @@ cascade credentials create \
   --default
 
 # 3. Set the engine (if not already done):
-cascade defaults set --agent-engine codex
+cascade projects update <project-id> --agent-engine codex
 ```
 
 CASCADE then:
@@ -395,7 +424,25 @@ The dashboard is a single-process deployment. The Hono server mounts tRPC routes
 
 ### User Management
 
-Users are managed via direct database inserts:
+Users can be managed via the CLI (recommended) or the dashboard at `/settings/users`:
+
+```bash
+# Create a user
+cascade users create --email user@example.com --password secret --name "User Name" --role admin
+
+# List all users
+cascade users list
+
+# Update a user
+cascade users update <id> --name "New Name" --role member
+
+# Delete a user
+cascade users delete <id> --yes
+```
+
+Alternatively, use the dashboard at `/settings/users` to manage users via the web UI.
+
+If the CLI and dashboard are unavailable, users can be inserted directly into the database as a fallback:
 
 ```bash
 # Generate bcrypt hash
@@ -476,16 +523,18 @@ cascade projects trigger-discover --agent <agent-type>
 cascade projects trigger-list <id> [--agent <type>]
 cascade projects trigger-set <id> --agent <type> --event <event> [--enable|--disable] [--params JSON]
 
+# Users
+cascade users list
+cascade users create --email X --password Y --name Z [--role member|admin|superadmin]
+cascade users update <id> [--name Z] [--email X] [--role member|admin|superadmin] [--password Y]
+cascade users delete <id> --yes
+
 # Credentials
 cascade credentials list
 cascade credentials create --name "Implementer Bot" --key GITHUB_TOKEN_IMPLEMENTER --value ghp_aaa... [--default]
 cascade credentials create --name "Reviewer Bot" --key GITHUB_TOKEN_REVIEWER --value ghp_bbb... [--default]
 cascade credentials update <id> --value new-secret
 cascade credentials delete <id> --yes
-
-# Defaults
-cascade defaults show
-cascade defaults set --model claude-sonnet-4-5-20250929 --max-iterations 25 --agent-engine claude-code
 
 # Organization
 cascade org show
@@ -520,8 +569,8 @@ src/cli/dashboard/
 ├── whoami.ts
 ├── runs/             # 6 commands
 ├── projects/         # 13 commands
+├── users/            # 4 commands
 ├── credentials/      # 4 commands
-├── defaults/         # 2 commands
 ├── org/              # 2 commands
 ├── agents/           # 4 commands
 └── webhooks/         # 3 commands

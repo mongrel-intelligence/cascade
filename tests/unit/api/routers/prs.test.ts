@@ -12,6 +12,7 @@ const mockListPRsForOrg = vi.fn();
 const mockListPRsForWorkItem = vi.fn();
 const mockGetRunsForPR = vi.fn();
 const mockListUnifiedWorkForProject = vi.fn();
+const mockGetProjectWorkStats = vi.fn();
 
 vi.mock('../../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	listPRsForProject: (...args: unknown[]) => mockListPRsForProject(...args),
@@ -22,6 +23,7 @@ vi.mock('../../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	getRunsForPR: (...args: unknown[]) => mockGetRunsForPR(...args),
+	getProjectWorkStats: (...args: unknown[]) => mockGetProjectWorkStats(...args),
 }));
 
 const mockVerifyProjectOrgAccess = vi.fn();
@@ -257,6 +259,73 @@ describe('prsRouter', () => {
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
 			await expect(caller.listUnified({ projectId: 'other-project' })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+	});
+
+	// =========================================================================
+	// workStats
+	// =========================================================================
+	describe('workStats', () => {
+		const mockStats = [
+			{
+				agentType: 'implementation',
+				status: 'completed',
+				durationMs: 120000,
+				costUsd: '0.250000',
+				model: 'claude-opus-4-6',
+				startedAt: new Date('2024-01-01T10:00:00Z'),
+			},
+			{
+				agentType: 'review',
+				status: 'completed',
+				durationMs: 60000,
+				costUsd: '0.100000',
+				model: 'claude-sonnet-4-5',
+				startedAt: new Date('2024-01-01T11:00:00Z'),
+			},
+			{
+				agentType: 'implementation',
+				status: 'failed',
+				durationMs: 30000,
+				costUsd: null,
+				model: 'claude-opus-4-6',
+				startedAt: new Date('2024-01-01T12:00:00Z'),
+			},
+		];
+
+		it('returns work stats for a project', async () => {
+			mockGetProjectWorkStats.mockResolvedValue(mockStats);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			const result = await caller.workStats({ projectId: 'test-project' });
+
+			expect(result).toEqual(mockStats);
+			expect(mockVerifyProjectOrgAccess).toHaveBeenCalledWith('test-project', 'org-1');
+			expect(mockGetProjectWorkStats).toHaveBeenCalledWith('test-project');
+		});
+
+		it('returns empty array when no completed runs exist', async () => {
+			mockGetProjectWorkStats.mockResolvedValue([]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			const result = await caller.workStats({ projectId: 'test-project' });
+
+			expect(result).toEqual([]);
+			expect(mockGetProjectWorkStats).toHaveBeenCalledWith('test-project');
+		});
+
+		it('throws UNAUTHORIZED when no user', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(caller.workStats({ projectId: 'test-project' })).rejects.toThrow(TRPCError);
+		});
+
+		it('throws when project does not belong to org', async () => {
+			mockVerifyProjectOrgAccess.mockRejectedValue(new TRPCError({ code: 'NOT_FOUND' }));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			await expect(caller.workStats({ projectId: 'other-project' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
 			});
 		});

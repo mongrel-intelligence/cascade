@@ -86,17 +86,6 @@ const mockProject: ProjectConfig = createMockProject({
 });
 
 const mockConfig: CascadeConfig = {
-	defaults: {
-		model: 'test-model',
-		agentModels: {},
-		maxIterations: 50,
-		agentIterations: {},
-		watchdogTimeoutMs: 1800000,
-		cardBudgetUsd: 5,
-		agentBackend: 'llmist',
-		progressModel: 'openrouter:google/gemini-2.5-flash-lite',
-		progressIntervalMinutes: 5,
-	},
 	projects: [mockProject],
 };
 

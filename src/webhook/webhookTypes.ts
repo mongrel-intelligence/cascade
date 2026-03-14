@@ -6,7 +6,7 @@ import type { Context } from 'hono';
 
 /** Result returned by a payload parser. */
 export type ParseResult =
-	| { ok: true; payload: unknown; eventType?: string }
+	| { ok: true; payload: unknown; eventType?: string; rawBody?: string }
 	| { ok: false; error: string; eventType?: string };
 
 /**
@@ -40,6 +40,24 @@ export interface WebhookHandlerConfig {
 	 * Errors are caught internally — must never propagate.
 	 */
 	sendReaction?: (payload: unknown, eventType: string | undefined) => void;
+
+	/**
+	 * Optional signature verification callback.
+	 * Called after `parsePayload` succeeds (so `rawBody` is available) but before
+	 * `processWebhook`. Receives the Hono context, raw body string, and optional
+	 * project ID (not yet resolved at this stage — the callback handles project
+	 * lookup internally when needed).
+	 *
+	 * Return values:
+	 * - `null` — no secret configured; skip verification (backwards compatible)
+	 * - `{ valid: true }` — signature verified; continue processing
+	 * - `{ valid: false, reason }` — signature invalid; return 401 and log reason
+	 */
+	verifySignature?: (
+		c: Context,
+		rawBody: string,
+		projectId?: string,
+	) => Promise<{ valid: boolean; reason: string } | null>;
 
 	/**
 	 * Processing callback. The handler awaits this callback before responding,

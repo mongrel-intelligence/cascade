@@ -110,7 +110,7 @@ function makeInput(agentType = 'implementation'): AgentExecutionPlan {
 			repo: 'o/r',
 			baseBranch: 'main',
 		} as AgentExecutionPlan['project'],
-		config: { defaults: {} } as AgentExecutionPlan['config'],
+		config: { projects: [] } as AgentExecutionPlan['config'],
 		repoDir: '/repo',
 		systemPrompt: 'You are an agent.',
 		taskPrompt: 'Implement feature X.',

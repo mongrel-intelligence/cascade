@@ -34,7 +34,6 @@ import {
 	DEFAULT_CLAUDE_CODE_MODEL,
 } from '../../../src/backends/claude-code/models.js';
 import type { AgentExecutionPlan, ToolManifest } from '../../../src/backends/types.js';
-import { logger } from '../../../src/utils/logging.js';
 
 const mockQuery = vi.mocked(query);
 
@@ -65,7 +64,7 @@ function makeInput(overrides: Partial<AgentExecutionPlan> = {}): AgentExecutionP
 	return {
 		agentType: 'implementation',
 		project: { id: 'test', name: 'Test', repo: 'o/r' } as AgentExecutionPlan['project'],
-		config: { defaults: {} } as AgentExecutionPlan['config'],
+		config: { projects: [] } as AgentExecutionPlan['config'],
 		repoDir: '/tmp/repo',
 		systemPrompt: 'You are an agent.',
 		taskPrompt: 'Implement feature X.',
@@ -328,26 +327,13 @@ describe('resolveClaudeModel', () => {
 		);
 	});
 
-	it('falls back to default for non-Claude models', () => {
-		expect(resolveClaudeModel('openrouter:google/gemini-3-flash-preview')).toBe(
-			DEFAULT_CLAUDE_CODE_MODEL,
+	it('throws for incompatible models', () => {
+		expect(() => resolveClaudeModel('openrouter:google/gemini-3-flash-preview')).toThrow(
+			'not compatible with the Claude Code engine',
 		);
-		expect(resolveClaudeModel('gpt-4o')).toBe(DEFAULT_CLAUDE_CODE_MODEL);
-	});
-
-	it('logs a warning when falling back', () => {
-		vi.mocked(logger.warn).mockClear();
-		resolveClaudeModel('gpt-4o');
-		expect(logger.warn).toHaveBeenCalledWith(
-			'Non-Claude model configured for Claude Code backend, falling back to default',
-			{ configured: 'gpt-4o', fallback: DEFAULT_CLAUDE_CODE_MODEL },
+		expect(() => resolveClaudeModel('gpt-4o')).toThrow(
+			'not compatible with the Claude Code engine',
 		);
-	});
-
-	it('does not warn for valid Claude models', () => {
-		vi.mocked(logger.warn).mockClear();
-		resolveClaudeModel('claude-sonnet-4-5-20250929');
-		expect(logger.warn).not.toHaveBeenCalled();
 	});
 });
 
@@ -607,27 +593,11 @@ describe('execute', () => {
 		expect(result.prUrl).toBeUndefined();
 	});
 
-	it('resolves model for non-Claude models', async () => {
-		mockStream([
-			{
-				type: 'result',
-				subtype: 'success',
-				result: 'Done',
-				total_cost_usd: 0.01,
-				num_turns: 1,
-			},
-		]);
-
+	it('throws for incompatible non-Claude models', async () => {
 		const engine = new ClaudeCodeEngine();
-		await engine.execute(makeInput({ model: 'openrouter:google/gemini-3-flash' }));
-
-		expect(mockQuery).toHaveBeenCalledWith(
-			expect.objectContaining({
-				options: expect.objectContaining({
-					model: 'claude-sonnet-4-5-20250929',
-				}),
-			}),
-		);
+		await expect(
+			engine.execute(makeInput({ model: 'openrouter:google/gemini-3-flash' })),
+		).rejects.toThrow('not compatible with the Claude Code engine');
 	});
 
 	it('ignores non-assistant non-result non-system messages', async () => {

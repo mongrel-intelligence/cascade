@@ -42,8 +42,6 @@ vi.mock('../../../src/utils/logging.js', () => ({
 vi.mock('../../../src/db/repositories/settingsRepository.js', () => ({
 	getOrganization: vi.fn(),
 	updateOrganization: vi.fn(),
-	getCascadeDefaults: vi.fn(),
-	upsertCascadeDefaults: vi.fn(),
 	listProjectsFull: vi.fn(),
 	getProjectFull: vi.fn(),
 	createProject: vi.fn(),
@@ -153,12 +151,6 @@ describe('appRouter', () => {
 		expect(procedures).toContain('organization.get');
 		expect(procedures).toContain('organization.update');
 		expect(procedures).toContain('organization.list');
-	});
-
-	it('has defaults sub-router with all procedures', () => {
-		const procedures = Object.keys(appRouter._def.procedures);
-		expect(procedures).toContain('defaults.get');
-		expect(procedures).toContain('defaults.upsert');
 	});
 
 	it('has credentials sub-router with all procedures', () => {

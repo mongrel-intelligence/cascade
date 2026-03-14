@@ -247,15 +247,15 @@ describe('validateConfig', () => {
 
 		const result = validateConfig(config);
 		expect(result.projects).toHaveLength(1);
-		expect(result.defaults.model).toBe('openrouter:google/gemini-3-flash-preview');
-		expect(result.defaults.maxIterations).toBe(50);
+		expect(result.projects[0].model).toBe('openrouter:google/gemini-3-flash-preview');
+		expect(result.projects[0].maxIterations).toBe(50);
 	});
 
 	it('rejects config without projects', () => {
 		expect(() => validateConfig({ projects: [] })).toThrow();
 	});
 
-	it('applies default "llmist" for defaults.agentEngine', () => {
+	it('applies default "llmist" for project agentEngine.default', () => {
 		const config = {
 			projects: [
 				{
@@ -264,19 +264,17 @@ describe('validateConfig', () => {
 					name: 'Test',
 					repo: 'owner/repo',
 					trello: { boardId: 'b1', lists: {}, labels: {} },
+					agentEngine: {},
 				},
 			],
 		};
 
 		const result = validateConfig(config);
-		expect(result.defaults.agentEngine).toBe('llmist');
+		expect(result.projects[0].agentEngine?.default).toBe('llmist');
 	});
 
-	it('accepts custom defaults.agentEngine value', () => {
+	it('accepts custom project agentEngine value', () => {
 		const config = {
-			defaults: {
-				agentEngine: 'claude-code',
-			},
 			projects: [
 				{
 					id: 'test',
@@ -284,41 +282,40 @@ describe('validateConfig', () => {
 					name: 'Test',
 					repo: 'owner/repo',
 					trello: { boardId: 'b1', lists: {}, labels: {} },
+					agentEngine: { default: 'claude-code' },
 				},
 			],
 		};
 
 		const result = validateConfig(config);
-		expect(result.defaults.agentEngine).toBe('claude-code');
+		expect(result.projects[0].agentEngine?.default).toBe('claude-code');
 	});
 
-	it('accepts defaults.engineSettings for codex', () => {
+	it('accepts project engineSettings for codex', () => {
 		const config = {
-			defaults: {
-				engineSettings: {
-					codex: {
-						approvalPolicy: 'never',
-						reasoningEffort: 'high',
+			projects: [
+				{
+					id: 'test',
+					orgId: 'default',
+					name: 'Test',
+					repo: 'owner/repo',
+					trello: { boardId: 'b1', lists: {}, labels: {} },
+					engineSettings: {
+						codex: {
+							approvalPolicy: 'never',
+							reasoningEffort: 'high',
+						},
 					},
 				},
-			},
-			projects: [
-				{
-					id: 'test',
-					orgId: 'default',
-					name: 'Test',
-					repo: 'owner/repo',
-					trello: { boardId: 'b1', lists: {}, labels: {} },
-				},
 			],
 		};
 
 		const result = validateConfig(config);
-		expect(result.defaults.engineSettings.codex?.approvalPolicy).toBe('never');
-		expect(result.defaults.engineSettings.codex?.reasoningEffort).toBe('high');
+		expect(result.projects[0].engineSettings?.codex?.approvalPolicy).toBe('never');
+		expect(result.projects[0].engineSettings?.codex?.reasoningEffort).toBe('high');
 	});
 
-	it('accepts defaults.engineSettings for opencode', () => {
+	it('accepts project engineSettings for opencode', () => {
 		const result = validateConfig({
 			projects: [
 				{
@@ -327,29 +324,20 @@ describe('validateConfig', () => {
 					name: 'Project',
 					repo: 'owner/repo',
 					trello: { boardId: 'b1', lists: {}, labels: {} },
+					engineSettings: {
+						opencode: {
+							webSearch: true,
+						},
+					},
 				},
 			],
-			defaults: {
-				engineSettings: {
-					opencode: {
-						webSearch: true,
-					},
-				},
-			},
 		});
 
-		expect(result.defaults.engineSettings.opencode?.webSearch).toBe(true);
+		expect(result.projects[0].engineSettings?.opencode?.webSearch).toBe(true);
 	});
 
-	it('rejects unsupported defaults.engineSettings entries', () => {
+	it('rejects unsupported project engineSettings entries', () => {
 		const config = {
-			defaults: {
-				engineSettings: {
-					'claude-code': {
-						foo: 'bar',
-					},
-				},
-			},
 			projects: [
 				{
 					id: 'test',
@@ -357,6 +345,11 @@ describe('validateConfig', () => {
 					name: 'Test',
 					repo: 'owner/repo',
 					trello: { boardId: 'b1', lists: {}, labels: {} },
+					engineSettings: {
+						'claude-code': {
+							foo: 'bar',
+						},
+					},
 				},
 			],
 		};

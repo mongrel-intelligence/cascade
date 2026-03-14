@@ -277,6 +277,200 @@ describe('createWebhookHandler', () => {
 });
 
 // ---------------------------------------------------------------------------
+// verifySignature callback
+// ---------------------------------------------------------------------------
+
+describe('createWebhookHandler — verifySignature', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('returns 401 when verifySignature returns { valid: false }', async () => {
+		const handler = createWebhookHandler({
+			source: 'trello',
+			parsePayload: async () => ({
+				ok: true,
+				payload: { action: { type: 'commentCard' } },
+				eventType: 'commentCard',
+				rawBody: JSON.stringify({ action: { type: 'commentCard' } }),
+			}),
+			verifySignature: vi.fn().mockResolvedValue({ valid: false, reason: 'Signature mismatch' }),
+			processWebhook: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const app = buildApp(handler);
+		const res = await postJson(app, { action: { type: 'commentCard' } });
+		expect(res.status).toBe(401);
+	});
+
+	it('logs decision reason when verifySignature returns { valid: false }', async () => {
+		const handler = createWebhookHandler({
+			source: 'trello',
+			parsePayload: async () => ({
+				ok: true,
+				payload: { action: { type: 'commentCard' } },
+				eventType: 'commentCard',
+				rawBody: JSON.stringify({ action: { type: 'commentCard' } }),
+			}),
+			verifySignature: vi.fn().mockResolvedValue({ valid: false, reason: 'Signature mismatch' }),
+			processWebhook: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const app = buildApp(handler);
+		await postJson(app, { action: { type: 'commentCard' } });
+
+		expect(mockLogWebhookCall).toHaveBeenCalledWith(
+			expect.objectContaining({
+				statusCode: 401,
+				processed: false,
+				decisionReason: 'Signature mismatch',
+			}),
+		);
+	});
+
+	it('returns 200 when verifySignature returns { valid: true }', async () => {
+		const handler = createWebhookHandler({
+			source: 'github',
+			parsePayload: async () => ({
+				ok: true,
+				payload: { action: 'push' },
+				eventType: 'push',
+				rawBody: JSON.stringify({ action: 'push' }),
+			}),
+			verifySignature: vi.fn().mockResolvedValue({ valid: true, reason: 'Signature valid' }),
+			processWebhook: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const app = buildApp(handler);
+		const res = await postJson(app, { action: 'push' }, { 'X-GitHub-Event': 'push' });
+		expect(res.status).toBe(200);
+	});
+
+	it('returns 200 when verifySignature returns null (no secret configured)', async () => {
+		const handler = createWebhookHandler({
+			source: 'trello',
+			parsePayload: async () => ({
+				ok: true,
+				payload: { action: { type: 'commentCard' } },
+				eventType: 'commentCard',
+				rawBody: JSON.stringify({ action: { type: 'commentCard' } }),
+			}),
+			verifySignature: vi.fn().mockResolvedValue(null),
+			processWebhook: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const app = buildApp(handler);
+		const res = await postJson(app, { action: { type: 'commentCard' } });
+		expect(res.status).toBe(200);
+	});
+
+	it('returns 200 when verifySignature is not provided (backwards compat)', async () => {
+		const handler = createWebhookHandler({
+			source: 'github',
+			parsePayload: async () => ({
+				ok: true,
+				payload: { action: 'push' },
+				eventType: 'push',
+				rawBody: JSON.stringify({ action: 'push' }),
+			}),
+			processWebhook: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const app = buildApp(handler);
+		const res = await postJson(app, { action: 'push' });
+		expect(res.status).toBe(200);
+	});
+
+	it('does not call processWebhook when verifySignature returns { valid: false }', async () => {
+		const processWebhook = vi.fn().mockResolvedValue(undefined);
+		const handler = createWebhookHandler({
+			source: 'trello',
+			parsePayload: async () => ({
+				ok: true,
+				payload: { action: { type: 'commentCard' } },
+				eventType: 'commentCard',
+				rawBody: JSON.stringify({ action: { type: 'commentCard' } }),
+			}),
+			verifySignature: vi.fn().mockResolvedValue({ valid: false, reason: 'Bad signature' }),
+			processWebhook,
+		});
+
+		const app = buildApp(handler);
+		await postJson(app, { action: { type: 'commentCard' } });
+		expect(processWebhook).not.toHaveBeenCalled();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// rawBody in ParseResult
+// ---------------------------------------------------------------------------
+
+describe('rawBody in ParseResult', () => {
+	it('parseTrelloPayload populates rawBody', async () => {
+		const app = new Hono();
+		app.post('/test', async (c) => {
+			const result = await parseTrelloPayload(c);
+			return c.json(result);
+		});
+		const bodyObj = { action: { type: 'commentCard' } };
+		const res = await app.fetch(
+			new Request('http://localhost/test', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(bodyObj),
+			}),
+		);
+		const body = await res.json();
+		expect(body.ok).toBe(true);
+		expect(typeof body.rawBody).toBe('string');
+		expect(JSON.parse(body.rawBody)).toEqual(bodyObj);
+	});
+
+	it('parseJiraPayload populates rawBody', async () => {
+		const app = new Hono();
+		app.post('/test', async (c) => {
+			const result = await parseJiraPayload(c);
+			return c.json(result);
+		});
+		const bodyObj = { webhookEvent: 'issue_updated', issue: { key: 'PROJ-2' } };
+		const res = await app.fetch(
+			new Request('http://localhost/test', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(bodyObj),
+			}),
+		);
+		const body = await res.json();
+		expect(body.ok).toBe(true);
+		expect(typeof body.rawBody).toBe('string');
+		expect(JSON.parse(body.rawBody)).toEqual(bodyObj);
+	});
+
+	it('parseGitHubPayload populates rawBody for JSON content type', async () => {
+		const app = new Hono();
+		app.post('/test', async (c) => {
+			const result = await parseGitHubPayload(c);
+			return c.json(result);
+		});
+		const bodyObj = { action: 'created', repository: { full_name: 'owner/repo' } };
+		const res = await app.fetch(
+			new Request('http://localhost/test', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-GitHub-Event': 'issue_comment',
+				},
+				body: JSON.stringify(bodyObj),
+			}),
+		);
+		const body = await res.json();
+		expect(body.ok).toBe(true);
+		expect(typeof body.rawBody).toBe('string');
+		expect(JSON.parse(body.rawBody)).toEqual(bodyObj);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Platform parsers (integration tests via Hono)
 // ---------------------------------------------------------------------------
 

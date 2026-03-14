@@ -6,9 +6,11 @@ export interface CompletionRequirements {
 	requiresPR?: boolean;
 	requiresReview?: boolean;
 	requiresPushedChanges?: boolean;
+	requiresPMWrite?: boolean;
 	prSidecarPath?: string;
 	reviewSidecarPath?: string;
 	pushedChangesSidecarPath?: string;
+	pmWriteSidecarPath?: string;
 	maxContinuationTurns?: number;
 }
 
@@ -25,6 +27,7 @@ export interface CompletionEvidence {
 	pushedHeadSha?: string;
 	pushedCommand?: string;
 	ackCommentDeleted?: boolean;
+	hasPMWrite: boolean;
 }
 
 function readJsonSidecar(path: string | undefined): Record<string, unknown> | undefined {
@@ -49,6 +52,7 @@ export function readCompletionEvidence(requirements?: CompletionRequirements): C
 	const prSidecar = readJsonSidecar(requirements?.prSidecarPath);
 	const reviewSidecar = readJsonSidecar(requirements?.reviewSidecarPath);
 	const pushedChangesSidecar = readJsonSidecar(requirements?.pushedChangesSidecarPath);
+	const pmWriteSidecar = readJsonSidecar(requirements?.pmWriteSidecarPath);
 
 	const prUrl = readStringProp(prSidecar, 'prUrl');
 	const prCommand = readStringProp(prSidecar, 'source') ?? 'cascade-tools scm create-pr';
@@ -76,6 +80,7 @@ export function readCompletionEvidence(requirements?: CompletionRequirements): C
 			typeof reviewSidecar?.ackCommentDeleted === 'boolean'
 				? reviewSidecar.ackCommentDeleted
 				: undefined,
+		hasPMWrite: Boolean(pmWriteSidecar),
 	};
 }
 
@@ -109,6 +114,14 @@ export function getCompletionFailure(
 			error: 'Agent completed but no authoritative pushed changes were recorded',
 			continuationPrompt:
 				'CASCADE completion check failed: no authoritative pushed changes were recorded for this task. Continue from the current session, commit and push the required changes, confirm the push succeeded, and only then finish.',
+		};
+	}
+
+	if (requirements?.requiresPMWrite && !evidence.hasPMWrite) {
+		return {
+			error: 'Agent completed but no PM write (checklist creation) was recorded',
+			continuationPrompt:
+				'CASCADE completion check failed: no PM write was recorded. Create the implementation plan checklist using `cascade-tools pm add-checklist`, then finish.',
 		};
 	}
 

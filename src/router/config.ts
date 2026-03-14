@@ -33,6 +33,11 @@ export interface RouterConfig {
 
 	// Email scheduler
 	emailScheduleIntervalMs: number;
+
+	// Webhook signature verification
+	// Used for Trello HMAC which includes the full callback URL in the signature.
+	// Falls back to deriving from request Host header + path at runtime if not set.
+	webhookCallbackBaseUrl: string | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,4 +108,5 @@ export const routerConfig: RouterConfig = {
 	workerTimeoutMs: Number(process.env.WORKER_TIMEOUT_MS) || 30 * 60 * 1000, // 30 minutes
 	dockerNetwork: process.env.DOCKER_NETWORK || 'services_default',
 	emailScheduleIntervalMs: Number(process.env.EMAIL_SCHEDULE_INTERVAL_MS) || 5 * 60 * 1000,
+	webhookCallbackBaseUrl: process.env.WEBHOOK_CALLBACK_BASE_URL,
 };

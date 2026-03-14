@@ -1,6 +1,6 @@
 import { getCostFieldId } from '../../pm/config.js';
 import { getPMProvider } from '../../pm/index.js';
-import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
+import type { ProjectConfig } from '../../types/index.js';
 
 export interface BudgetCheckResult {
 	exceeded: boolean;
@@ -13,14 +13,11 @@ export interface BudgetCheckResult {
  * Resolve the work item budget for a project.
  * Returns `null` if no cost custom field is configured (budget enforcement not applicable).
  */
-export function resolveWorkItemBudget(
-	project: ProjectConfig,
-	config: CascadeConfig,
-): number | null {
+export function resolveWorkItemBudget(project: ProjectConfig): number | null {
 	const costFieldId = getCostFieldId(project);
 	if (!costFieldId) return null;
 
-	return project.workItemBudgetUsd ?? config.defaults.workItemBudgetUsd;
+	return project.workItemBudgetUsd;
 }
 
 /**
@@ -45,9 +42,8 @@ export async function getWorkItemAccumulatedCost(
 export async function checkBudgetExceeded(
 	workItemId: string,
 	project: ProjectConfig,
-	config: CascadeConfig,
 ): Promise<BudgetCheckResult | null> {
-	const budget = resolveWorkItemBudget(project, config);
+	const budget = resolveWorkItemBudget(project);
 	if (budget === null) return null;
 
 	const currentCost = await getWorkItemAccumulatedCost(workItemId, project);

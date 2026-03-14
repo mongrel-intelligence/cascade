@@ -35,17 +35,6 @@ export type GitHubIntegrationConfig = {};
 // Row interfaces (mirrors DB select shapes)
 // ---------------------------------------------------------------------------
 
-export interface DefaultsRow {
-	model: string | null;
-	maxIterations: number | null;
-	watchdogTimeoutMs: number | null;
-	workItemBudgetUsd: string | null;
-	agentEngine: string | null;
-	agentEngineSettings: EngineSettings | null;
-	progressModel: string | null;
-	progressIntervalMinutes: string | null;
-}
-
 export interface AgentConfigRow {
 	projectId: string;
 	agentType: string;
@@ -87,6 +76,10 @@ export interface ProjectConfigRaw {
 	pm: { type: string };
 	model?: string;
 	agentModels?: Record<string, string>;
+	maxIterations?: number;
+	watchdogTimeoutMs?: number;
+	progressModel?: string;
+	progressIntervalMinutes?: number;
 	workItemBudgetUsd?: number;
 	squintDbUrl?: string;
 	engineSettings?: EngineSettings;
@@ -123,7 +116,11 @@ type ProjectRow = {
 	baseBranch: string | null;
 	branchPrefix: string | null;
 	model: string | null;
+	maxIterations: number | null;
+	watchdogTimeoutMs: number | null;
 	workItemBudgetUsd: string | null;
+	progressModel: string | null;
+	progressIntervalMinutes: string | null;
 	squintDbUrl: string | null;
 	agentEngine: string | null;
 	agentEngineSettings: EngineSettings | null;
@@ -148,6 +145,10 @@ export function buildAgentMaps(configs: AgentConfigRow[]): {
 
 export function orUndefined<T extends Record<string, unknown>>(obj: T): T | undefined {
 	return Object.keys(obj).length > 0 ? obj : undefined;
+}
+
+function numericOrUndefined(value: string | null): number | undefined {
+	return value != null ? Number(value) : undefined;
 }
 
 function buildTrelloConfig(config: TrelloIntegrationConfig): ProjectConfigRaw['trello'] {
@@ -184,21 +185,6 @@ function buildAgentEngineConfig(
 // ---------------------------------------------------------------------------
 // Public mapping functions
 // ---------------------------------------------------------------------------
-
-export function mapDefaultsRow(row: DefaultsRow | undefined): Record<string, unknown> {
-	return {
-		model: row?.model ?? undefined,
-		maxIterations: row?.maxIterations ?? undefined,
-		watchdogTimeoutMs: row?.watchdogTimeoutMs ?? undefined,
-		workItemBudgetUsd: row?.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
-		agentEngine: row?.agentEngine ?? undefined,
-		engineSettings: row?.agentEngineSettings ?? undefined,
-		progressModel: row?.progressModel ?? undefined,
-		progressIntervalMinutes: row?.progressIntervalMinutes
-			? Number(row.progressIntervalMinutes)
-			: undefined,
-	};
-}
 
 export function extractIntegrationConfigs(integrations: IntegrationRow[]): {
 	trelloConfig?: TrelloIntegrationConfig;
@@ -237,7 +223,11 @@ export function mapProjectRow({
 		pm: { type: pmType },
 		model: row.model ?? undefined,
 		agentModels: orUndefined(models),
-		workItemBudgetUsd: row.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
+		maxIterations: row.maxIterations ?? undefined,
+		watchdogTimeoutMs: row.watchdogTimeoutMs ?? undefined,
+		progressModel: row.progressModel ?? undefined,
+		progressIntervalMinutes: numericOrUndefined(row.progressIntervalMinutes),
+		workItemBudgetUsd: numericOrUndefined(row.workItemBudgetUsd),
 		engineSettings: row.agentEngineSettings ?? undefined,
 		squintDbUrl: row.squintDbUrl ?? undefined,
 		runLinksEnabled: row.runLinksEnabled ?? false,

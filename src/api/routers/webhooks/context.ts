@@ -47,6 +47,7 @@ export async function resolveProjectContext(
 		githubToken: creds.GITHUB_TOKEN_IMPLEMENTER ?? '',
 		jiraEmail: creds.JIRA_EMAIL ?? '',
 		jiraApiToken: creds.JIRA_API_TOKEN ?? '',
+		webhookSecret: creds.GITHUB_WEBHOOK_SECRET ?? undefined,
 	};
 }
 

@@ -25,9 +25,11 @@ import {
 } from '../../../src/webhook/webhookParsers.js';
 
 function makeHonoContext(body: unknown, headers: Record<string, string> = {}) {
+	const rawBody = JSON.stringify(body);
 	return {
 		req: {
 			json: vi.fn().mockResolvedValue(body),
+			text: vi.fn().mockResolvedValue(rawBody),
 			header: vi.fn((name: string) => headers[name] ?? ''),
 		},
 	};
@@ -61,7 +63,7 @@ describe('parseTrelloPayload', () => {
 	it('returns ok=false and error string on parse failure', async () => {
 		const ctx = {
 			req: {
-				json: vi.fn().mockRejectedValue(new Error('Invalid JSON')),
+				text: vi.fn().mockResolvedValue('not valid json {{{'),
 				header: vi.fn(),
 			},
 		};
@@ -69,7 +71,7 @@ describe('parseTrelloPayload', () => {
 		const result = await parseTrelloPayload(ctx as never);
 
 		expect(result.ok).toBe(false);
-		expect(result.error).toContain('Invalid JSON');
+		expect(result.error).toBeDefined();
 	});
 
 	it('logs debug message with action type on success', async () => {
@@ -191,7 +193,7 @@ describe('parseJiraPayload', () => {
 	it('returns ok=false and error string on parse failure', async () => {
 		const ctx = {
 			req: {
-				json: vi.fn().mockRejectedValue(new Error('Malformed JSON')),
+				text: vi.fn().mockResolvedValue('not valid json {{{'),
 				header: vi.fn(),
 			},
 		};
@@ -199,7 +201,7 @@ describe('parseJiraPayload', () => {
 		const result = await parseJiraPayload(ctx as never);
 
 		expect(result.ok).toBe(false);
-		expect(result.error).toContain('Malformed JSON');
+		expect(result.error).toBeDefined();
 	});
 
 	it('logs info with event and issue key', async () => {

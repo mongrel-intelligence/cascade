@@ -179,7 +179,7 @@ async function runGitHubAgent(
 		}
 	}
 
-	startWatchdog(config.defaults.watchdogTimeoutMs);
+	startWatchdog(project.watchdogTimeoutMs);
 
 	// PM-focused agents (e.g. backlog-manager) triggered from GitHub should use
 	// PM-appropriate lifecycle config: no GitHub PR comment callbacks, allow PM lifecycle ops.

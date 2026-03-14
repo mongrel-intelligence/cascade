@@ -810,7 +810,7 @@ export class OpenCodeEngine implements AgentEngine {
 	}
 
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
-		const settings = resolveOpenCodeSettings(input.project, input.config);
+		const settings = resolveOpenCodeSettings(input.project);
 		const agent = 'build' as const;
 		const model = resolveOpenCodeModel(input.model);
 		const config = buildConfig(input, model, settings);

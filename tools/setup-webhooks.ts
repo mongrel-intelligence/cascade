@@ -62,6 +62,7 @@ interface ProjectContext {
 	trelloApiKey: string;
 	trelloToken: string;
 	githubToken: string;
+	webhookSecret?: string;
 }
 
 async function resolveProjectContext(projectId: string): Promise<ProjectContext> {
@@ -106,6 +107,7 @@ async function resolveProjectContext(projectId: string): Promise<ProjectContext>
 		trelloApiKey: trelloApiKey ?? '',
 		trelloToken: trelloToken ?? '',
 		githubToken: githubToken ?? '',
+		webhookSecret: credMap.GITHUB_WEBHOOK_SECRET ?? undefined,
 	};
 }
 
@@ -196,13 +198,17 @@ async function githubCreateWebhook(
 	}
 	const octokit = getOctokit(ctx.githubToken);
 	const { owner, repo } = parseRepo(ctx.repo);
+	const webhookConfig: { url: string; content_type: string; secret?: string } = {
+		url: callbackURL,
+		content_type: 'json',
+	};
+	if (ctx.webhookSecret) {
+		webhookConfig.secret = ctx.webhookSecret;
+	}
 	const { data } = await octokit.repos.createWebhook({
 		owner,
 		repo,
-		config: {
-			url: callbackURL,
-			content_type: 'json',
-		},
+		config: webhookConfig,
 		events: GITHUB_WEBHOOK_EVENTS,
 		active: true,
 	});

@@ -74,10 +74,9 @@ export interface AgentExecutionConfig {
 async function checkPreRunBudget(
 	workItemId: string,
 	project: ProjectConfig,
-	config: CascadeConfig,
 	lifecycle: PMLifecycleManager,
 ): Promise<{ remainingBudgetUsd: number | undefined; abort: boolean }> {
-	const budgetCheck = await checkBudgetExceeded(workItemId, project, config);
+	const budgetCheck = await checkBudgetExceeded(workItemId, project);
 	if (budgetCheck?.exceeded) {
 		logger.warn('Budget exceeded, agent not started', {
 			workItemId,
@@ -98,7 +97,6 @@ async function runPostAgentLifecycle(
 	agentType: string,
 	agentResult: AgentResult,
 	project: ProjectConfig,
-	config: CascadeConfig,
 	lifecycle: PMLifecycleManager,
 	executionConfig: AgentExecutionConfig,
 ): Promise<void> {
@@ -110,7 +108,7 @@ async function runPostAgentLifecycle(
 
 	await handleAgentResultArtifacts(workItemId, agentType, agentResult, project);
 
-	const postBudgetCheck = await checkBudgetExceeded(workItemId, project, config);
+	const postBudgetCheck = await checkBudgetExceeded(workItemId, project);
 	if (postBudgetCheck?.exceeded) {
 		await lifecycle.handleBudgetWarning(
 			workItemId,
@@ -385,7 +383,7 @@ export async function runAgentExecutionPipeline(
 
 	let remainingBudgetUsd: number | undefined;
 	if (workItemId) {
-		const budgetResult = await checkPreRunBudget(workItemId, project, config, lifecycle);
+		const budgetResult = await checkPreRunBudget(workItemId, project, lifecycle);
 		if (budgetResult.abort) return;
 		remainingBudgetUsd = budgetResult.remainingBudgetUsd;
 	}
@@ -459,7 +457,6 @@ export async function runAgentExecutionPipeline(
 			agentType,
 			agentResult,
 			project,
-			config,
 			lifecycle,
 			executionConfig,
 		);

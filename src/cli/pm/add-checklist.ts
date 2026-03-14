@@ -1,5 +1,7 @@
 import { type ChecklistItemInput, addChecklist } from '../../gadgets/pm/core/addChecklist.js';
 import { addChecklistDef } from '../../gadgets/pm/definitions.js';
+import { writePMWriteSidecar } from '../../gadgets/session/core/sidecar.js';
+import { PM_WRITE_SIDECAR_ENV_VAR } from '../../gadgets/sessionState.js';
 import { createCLICommand } from '../../gadgets/shared/cliCommandFactory.js';
 
 /**
@@ -36,9 +38,11 @@ export function parseItem(raw: string): ChecklistItemInput {
 export default createCLICommand(addChecklistDef, async (params) => {
 	const rawItems = params.item as string[];
 	const items = rawItems.map(parseItem);
-	return addChecklist({
+	const result = await addChecklist({
 		workItemId: params.workItemId as string,
 		checklistName: params.checklistName as string,
 		items,
 	});
+	writePMWriteSidecar(process.env[PM_WRITE_SIDECAR_ENV_VAR], params.workItemId as string);
+	return result;
 });

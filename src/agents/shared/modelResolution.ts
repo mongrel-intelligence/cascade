@@ -22,7 +22,7 @@ export interface ModelConfig {
 export interface ResolveModelConfigOptions {
 	agentType: string;
 	project: ProjectConfig;
-	config: CascadeConfig;
+	config?: CascadeConfig;
 	repoDir: string;
 	modelOverride?: string;
 	promptContext?: PromptContext;
@@ -35,7 +35,7 @@ export interface ResolveModelConfigOptions {
 }
 
 export async function resolveModelConfig(options: ResolveModelConfigOptions): Promise<ModelConfig> {
-	const { agentType, project, config, repoDir, modelOverride, promptContext, dbPartials } = options;
+	const { agentType, project, repoDir, modelOverride, promptContext, dbPartials } = options;
 	const configKey = options.configKey ?? agentType;
 
 	// Resolve prompts from agent definition (cache → DB → YAML)
@@ -58,10 +58,9 @@ export async function resolveModelConfig(options: ResolveModelConfigOptions): Pr
 		systemPrompt = getSystemPrompt(agentType, promptContext ?? {}, dbPartials);
 	}
 
-	const model =
-		modelOverride || project.agentModels?.[configKey] || project.model || config.defaults.model;
+	const model = modelOverride || project.agentModels?.[configKey] || project.model;
 
-	const maxIterations = config.defaults.maxIterations;
+	const maxIterations = project.maxIterations;
 
 	// Resolve task prompt override from definition → undefined (use .eta default)
 	let taskPrompt: string | undefined;

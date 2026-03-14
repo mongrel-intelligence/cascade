@@ -1,10 +1,6 @@
-import {
-	CodexSettingsSchema,
-	getEngineSettings,
-	mergeEngineSettings,
-} from '../../config/engineSettings.js';
-import type { CodexSettings, EngineSettings } from '../../config/engineSettings.js';
-import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
+import { CodexSettingsSchema, getEngineSettings } from '../../config/engineSettings.js';
+import type { CodexSettings } from '../../config/engineSettings.js';
+import type { ProjectConfig } from '../../types/index.js';
 
 export interface ResolvedCodexSettings
 	extends Required<Pick<CodexSettings, 'approvalPolicy' | 'sandboxMode' | 'webSearch'>> {
@@ -12,24 +8,19 @@ export interface ResolvedCodexSettings
 }
 
 function getDefaultsFromCapabilities(
-	nativeToolCapabilities?: string[],
+	_nativeToolCapabilities?: string[],
 ): Pick<ResolvedCodexSettings, 'sandboxMode'> {
-	const canWrite = nativeToolCapabilities?.includes('fs:write') ?? false;
-	return {
-		sandboxMode: canWrite ? 'workspace-write' : 'read-only',
-	};
+	// Default to full access — Codex always runs inside an ephemeral Docker
+	// container, so network/filesystem isolation is enforced at the container
+	// level rather than by Codex's own sandbox.
+	return { sandboxMode: 'danger-full-access' };
 }
 
 export function resolveCodexSettings(
 	project: ProjectConfig,
-	config: CascadeConfig,
 	nativeToolCapabilities?: string[],
 ): ResolvedCodexSettings {
-	const merged: EngineSettings | undefined = mergeEngineSettings(
-		config.defaults.engineSettings,
-		project.engineSettings,
-	);
-	const codex = getEngineSettings(merged, 'codex', CodexSettingsSchema) ?? {};
+	const codex = getEngineSettings(project.engineSettings, 'codex', CodexSettingsSchema) ?? {};
 	const defaults = getDefaultsFromCapabilities(nativeToolCapabilities);
 
 	return {

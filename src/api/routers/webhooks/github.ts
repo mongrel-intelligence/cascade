@@ -54,10 +54,17 @@ export async function githubCreateWebhook(
 	}
 
 	// Now create the new webhook
+	const webhookConfig: { url: string; content_type: string; secret?: string } = {
+		url: callbackURL,
+		content_type: 'json',
+	};
+	if (ctx.webhookSecret) {
+		webhookConfig.secret = ctx.webhookSecret;
+	}
 	const { data } = await octokit.repos.createWebhook({
 		owner,
 		repo,
-		config: { url: callbackURL, content_type: 'json' },
+		config: webhookConfig,
 		events: GITHUB_WEBHOOK_EVENTS,
 		active: true,
 	});

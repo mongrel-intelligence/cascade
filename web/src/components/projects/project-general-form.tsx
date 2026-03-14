@@ -20,21 +20,36 @@ interface Project {
 	baseBranch: string | null;
 	branchPrefix: string | null;
 	model: string | null;
+	maxIterations: number | null;
+	watchdogTimeoutMs: number | null;
+	progressModel: string | null;
+	progressIntervalMinutes: string | null;
 	workItemBudgetUsd: string | null;
 	agentEngine: string | null;
 	engineSettings: Record<string, Record<string, unknown>> | null;
 	runLinksEnabled?: boolean | null;
 }
 
+function numericFieldDefault(value: number | null | undefined): string {
+	return value != null ? String(value) : '';
+}
+
 export function ProjectGeneralForm({ project }: { project: Project }) {
 	const queryClient = useQueryClient();
 	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
-	const defaultsQuery = useQuery(trpc.defaults.get.queryOptions());
 	const [name, setName] = useState(project.name);
 	const [repo, setRepo] = useState(project.repo ?? '');
 	const [baseBranch, setBaseBranch] = useState(project.baseBranch ?? 'main');
 	const [branchPrefix, setBranchPrefix] = useState(project.branchPrefix ?? 'feature/');
 	const [model, setModel] = useState(project.model ?? '');
+	const [maxIterations, setMaxIterations] = useState(numericFieldDefault(project.maxIterations));
+	const [watchdogTimeoutMs, setWatchdogTimeoutMs] = useState(
+		numericFieldDefault(project.watchdogTimeoutMs),
+	);
+	const [progressModel, setProgressModel] = useState(project.progressModel ?? '');
+	const [progressIntervalMinutes, setProgressIntervalMinutes] = useState(
+		project.progressIntervalMinutes ?? '',
+	);
 	const [workItemBudgetUsd, setWorkItemBudgetUsd] = useState(project.workItemBudgetUsd ?? '');
 	const [agentEngine, setAgentEngine] = useState(project.agentEngine ?? '');
 	const [engineSettings, setEngineSettings] = useState<Record<string, Record<string, unknown>>>(
@@ -63,6 +78,10 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 			baseBranch,
 			branchPrefix,
 			model: model || null,
+			maxIterations: maxIterations ? Number.parseInt(maxIterations, 10) : null,
+			watchdogTimeoutMs: watchdogTimeoutMs ? Number.parseInt(watchdogTimeoutMs, 10) : null,
+			progressModel: progressModel || null,
+			progressIntervalMinutes: progressIntervalMinutes || null,
 			workItemBudgetUsd: workItemBudgetUsd || null,
 			agentEngine: agentEngine || null,
 			engineSettings: Object.keys(engineSettings).length > 0 ? engineSettings : null,
@@ -70,7 +89,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 		});
 	}
 
-	const effectiveEngineId = agentEngine || defaultsQuery.data?.agentEngine || '';
+	const effectiveEngineId = agentEngine || '';
 	const effectiveEngine = enginesQuery.data?.find((engine) => engine.id === effectiveEngineId);
 
 	return (
@@ -119,7 +138,53 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 						id="workItemBudgetUsd"
 						value={workItemBudgetUsd}
 						onChange={(e) => setWorkItemBudgetUsd(e.target.value)}
-						placeholder="Inherits from defaults"
+						placeholder="e.g. 5.00"
+					/>
+				</div>
+			</div>
+			<div className="grid grid-cols-2 gap-4">
+				<div className="space-y-2">
+					<Label htmlFor="maxIterations">Max Iterations</Label>
+					<Input
+						id="maxIterations"
+						type="number"
+						min="1"
+						value={maxIterations}
+						onChange={(e) => setMaxIterations(e.target.value)}
+						placeholder="e.g. 20"
+					/>
+				</div>
+				<div className="space-y-2">
+					<Label htmlFor="watchdogTimeoutMs">Watchdog Timeout (ms)</Label>
+					<Input
+						id="watchdogTimeoutMs"
+						type="number"
+						min="1"
+						value={watchdogTimeoutMs}
+						onChange={(e) => setWatchdogTimeoutMs(e.target.value)}
+						placeholder="e.g. 3600000"
+					/>
+				</div>
+			</div>
+			<div className="grid grid-cols-2 gap-4">
+				<div className="space-y-2">
+					<Label htmlFor="progressModel">Progress Model</Label>
+					<Input
+						id="progressModel"
+						value={progressModel}
+						onChange={(e) => setProgressModel(e.target.value)}
+						placeholder="e.g. claude-haiku-3-5"
+					/>
+				</div>
+				<div className="space-y-2">
+					<Label htmlFor="progressIntervalMinutes">Progress Interval (minutes)</Label>
+					<Input
+						id="progressIntervalMinutes"
+						type="number"
+						min="1"
+						value={progressIntervalMinutes}
+						onChange={(e) => setProgressIntervalMinutes(e.target.value)}
+						placeholder="e.g. 5"
 					/>
 				</div>
 			</div>
@@ -130,10 +195,10 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 					onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
 				>
 					<SelectTrigger className="w-full">
-						<SelectValue placeholder="Inherits from defaults" />
+						<SelectValue placeholder="Select engine" />
 					</SelectTrigger>
 					<SelectContent>
-						<SelectItem value="_none">Inherits from defaults</SelectItem>
+						<SelectItem value="_none">None</SelectItem>
 						{enginesQuery.data?.map((engine) => (
 							<SelectItem key={engine.id} value={engine.id}>
 								{engine.label}

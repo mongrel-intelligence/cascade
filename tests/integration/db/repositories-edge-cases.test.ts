@@ -23,14 +23,12 @@ import {
 	setIntegrationCredential,
 	updateOrganization,
 	updateProjectIntegrationTriggers,
-	upsertCascadeDefaults,
 	upsertProjectIntegration,
 } from '../../../src/db/repositories/settingsRepository.js';
 import { truncateAll } from '../helpers/db.js';
 import {
 	seedAgentConfig,
 	seedCredential,
-	seedDefaults,
 	seedIntegration,
 	seedIntegrationCredential,
 	seedOrg,
@@ -50,8 +48,6 @@ describe('Database Repository Edge Cases (integration)', () => {
 
 	describe('agent config project-level resolution', () => {
 		it('applies project-level agent config model override', async () => {
-			await seedDefaults();
-
 			await seedAgentConfig({
 				projectId: 'test-project',
 				agentType: 'implementation',
@@ -65,8 +61,6 @@ describe('Database Repository Edge Cases (integration)', () => {
 		});
 
 		it('handles multiple agent types with independent project overrides', async () => {
-			await seedDefaults();
-
 			await seedAgentConfig({
 				projectId: 'test-project',
 				agentType: 'implementation',
@@ -337,29 +331,6 @@ describe('Database Repository Edge Cases (integration)', () => {
 		it('returns null for non-existent org', async () => {
 			const org = await getOrganization('nonexistent-org');
 			expect(org).toBeNull();
-		});
-	});
-
-	describe('cascade defaults upsert', () => {
-		it('creates defaults when none exist', async () => {
-			await upsertCascadeDefaults('test-org', {
-				model: 'claude-opus-4-5',
-				maxIterations: 25,
-			});
-
-			const config = await loadConfigFromDb();
-			expect(config.defaults.model).toBe('claude-opus-4-5');
-			expect(config.defaults.maxIterations).toBe(25);
-		});
-
-		it('updates existing defaults', async () => {
-			await seedDefaults({ model: 'old-model', maxIterations: 10 });
-
-			await upsertCascadeDefaults('test-org', { model: 'new-model', maxIterations: 20 });
-
-			const config = await loadConfigFromDb();
-			expect(config.defaults.model).toBe('new-model');
-			expect(config.defaults.maxIterations).toBe(20);
 		});
 	});
 
