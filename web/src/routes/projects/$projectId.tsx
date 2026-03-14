@@ -103,8 +103,12 @@ function ProjectDetailPage() {
 							</div>
 							<div className="flex flex-wrap gap-6 text-sm text-muted-foreground">
 								<span>
-									<span className="font-medium text-foreground">{workStatsQuery.data.length}</span>{' '}
-									total runs
+									<span className="font-medium text-foreground">
+										{workStatsQuery.data.length >= 500 ? '500+' : workStatsQuery.data.length}
+									</span>{' '}
+									{workStatsQuery.data.length >= 500
+										? 'latest runs (showing most recent 500)'
+										: 'total runs'}
 								</span>
 								<span>
 									<span className="font-medium text-foreground">

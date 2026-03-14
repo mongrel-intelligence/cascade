@@ -580,7 +580,7 @@ export interface ProjectWorkStat {
 
 /**
  * Returns lightweight per-run stats for a project's completed/failed/timed_out runs,
- * ordered by startedAt ASC. Used for client-side chart aggregation on the Work tab.
+ * ordered by startedAt DESC. Used for client-side chart aggregation on the Work tab.
  *
  * Limits to the 500 most-recent runs to avoid performance issues on large projects.
  */
