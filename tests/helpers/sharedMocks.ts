@@ -21,6 +21,8 @@
 
 import { vi } from 'vitest';
 
+type GitHubClientContract = typeof import('../../src/github/client.js').githubClient;
+
 // ---------------------------------------------------------------------------
 // src/utils/logging.js — mocked in ~47 files
 // ---------------------------------------------------------------------------
@@ -89,24 +91,24 @@ export const mockWithGitHubToken = vi.fn((_token: string, fn: () => Promise<unkn
  */
 export const mockGithubClient = {
 	getPR: vi.fn(),
-	getPRReviews: vi.fn(),
-	getPRComments: vi.fn(),
-	getPRDiff: vi.fn(),
-	getCheckSuiteStatus: vi.fn(),
-	getFailedWorkflowRuns: vi.fn(),
-	createPR: vi.fn(),
-	updatePR: vi.fn(),
-	createPRReview: vi.fn(),
-	postPRComment: vi.fn(),
+	getPRReviewComments: vi.fn(),
+	replyToReviewComment: vi.fn(),
+	createPRComment: vi.fn(),
 	updatePRComment: vi.fn(),
 	deletePRComment: vi.fn(),
-	replyToReviewComment: vi.fn(),
-	getRepository: vi.fn(),
-	createWebhook: vi.fn(),
-	deleteWebhook: vi.fn(),
-	listWebhooks: vi.fn(),
-	requestReview: vi.fn(),
-};
+	getPRReviews: vi.fn(),
+	getPRIssueComments: vi.fn(),
+	getCheckSuiteStatus: vi.fn(),
+	getPRDiff: vi.fn(),
+	createPRReview: vi.fn(),
+	getOpenPRByBranch: vi.fn(),
+	createPR: vi.fn(),
+	addIssueCommentReaction: vi.fn(),
+	addReviewCommentReaction: vi.fn(),
+	getFailedWorkflowRunJobs: vi.fn(),
+	branchExists: vi.fn(),
+	mergePR: vi.fn(),
+} satisfies GitHubClientContract;
 
 /**
  * Full mock for `src/github/client.js`.
