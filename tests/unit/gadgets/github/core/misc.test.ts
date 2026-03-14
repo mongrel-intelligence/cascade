@@ -13,6 +13,11 @@ vi.mock('../../../../../src/github/client.js', () => ({
 	},
 }));
 
+// Mock run link to prevent env var leakage from CASCADE agent environment
+vi.mock('../../../../../src/utils/runLink.js', () => ({
+	buildRunLinkFooterFromEnv: vi.fn(() => ''),
+}));
+
 import { createPRReview } from '../../../../../src/gadgets/github/core/createPRReview.js';
 import {
 	formatCheckStatus,

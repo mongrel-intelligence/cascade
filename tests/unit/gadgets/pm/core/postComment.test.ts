@@ -19,6 +19,10 @@ vi.mock('../../../../../src/utils/logging.js', () => ({
 	},
 }));
 
+vi.mock('../../../../../src/utils/runLink.js', () => ({
+	buildRunLinkFooterFromEnv: vi.fn(() => ''),
+}));
+
 import {
 	clearProgressCommentId,
 	readProgressCommentId,
