@@ -277,10 +277,15 @@ async function handleParsedLine(
 	}
 
 	if (toolCall) {
+		context.input.logWriter('DEBUG', 'Codex tool call', {
+			name: toolCall.name,
+			input: toolCall.input,
+		});
 		context.input.progressReporter.onToolCall(toolCall.name, toolCall.input);
 	}
 
 	if (usage) {
+		context.input.logWriter('DEBUG', 'Codex usage', { usage });
 		trackUsage(context, responseLine, usage);
 	}
 
@@ -292,6 +297,9 @@ async function handleParsedLine(
 	if (textParts.length === 0 && !toolCall && !usage && !error) {
 		context.input.logWriter('DEBUG', 'Unrecognized Codex event type — no fields extracted', {
 			type: typeof parsed.type === 'string' ? parsed.type : '(none)',
+			item: parsed.item ?? null,
+			delta: parsed.delta ?? null,
+			event: parsed,
 		});
 	}
 }
@@ -534,6 +542,8 @@ export class CodexEngine implements AgentEngine {
 					const text = chunk.toString();
 					stderrChunks.push(text);
 					appendEngineLog(input.engineLogPath, text);
+					const trimmed = text.trim();
+					if (trimmed) input.logWriter('DEBUG', 'Codex stderr', { stderr: trimmed });
 				});
 
 				child.stdin.write(prompt);
@@ -566,6 +576,13 @@ export class CodexEngine implements AgentEngine {
 						authoritative: false,
 					}
 				: undefined;
+
+			input.logWriter('DEBUG', 'Codex process exited', {
+				exitCode,
+				iterationCount,
+				llmCallCount,
+				finalOutputLength: finalOutput.length,
+			});
 
 			if (stderrOutput) {
 				input.logWriter('WARN', 'Codex stderr output', { stderr: stderrOutput });
