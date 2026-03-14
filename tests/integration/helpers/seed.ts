@@ -2,6 +2,7 @@ import { getDb } from '../../../src/db/client.js';
 import {
 	agentConfigs,
 	agentRuns,
+	agentTriggerConfigs,
 	cascadeDefaults,
 	credentials,
 	integrationCredentials,
@@ -131,7 +132,7 @@ export async function seedDefaults(
 		orgId?: string;
 		model?: string | null;
 		maxIterations?: number | null;
-		agentBackend?: string | null;
+		agentEngine?: string | null;
 	} = {},
 ) {
 	const db = getDb();
@@ -141,35 +142,57 @@ export async function seedDefaults(
 			orgId: overrides.orgId ?? 'test-org',
 			model: overrides.model ?? null,
 			maxIterations: overrides.maxIterations ?? null,
-			agentBackend: overrides.agentBackend ?? null,
+			agentEngine: overrides.agentEngine ?? null,
 		})
 		.returning();
 	return row;
 }
 
 /**
- * Seeds an agent config row.
+ * Seeds a project-scoped agent config row.
  */
 export async function seedAgentConfig(
 	overrides: {
-		orgId?: string | null;
-		projectId?: string | null;
+		projectId?: string;
 		agentType?: string;
 		model?: string | null;
 		maxIterations?: number | null;
-		agentBackend?: string | null;
+		agentEngine?: string | null;
 	} = {},
 ) {
 	const db = getDb();
 	const [row] = await db
 		.insert(agentConfigs)
 		.values({
-			orgId: overrides.orgId ?? null,
-			projectId: overrides.projectId ?? null,
+			projectId: overrides.projectId ?? 'test-project',
 			agentType: overrides.agentType ?? 'implementation',
 			model: overrides.model ?? null,
 			maxIterations: overrides.maxIterations ?? null,
-			agentBackend: overrides.agentBackend ?? null,
+			agentEngine: overrides.agentEngine ?? null,
+		})
+		.returning();
+	return row;
+}
+
+/**
+ * Seeds an agent trigger config row (DB-driven trigger enable/disable).
+ */
+export async function seedTriggerConfig(overrides: {
+	projectId?: string;
+	agentType: string;
+	triggerEvent: string;
+	enabled?: boolean;
+	parameters?: Record<string, unknown>;
+}) {
+	const db = getDb();
+	const [row] = await db
+		.insert(agentTriggerConfigs)
+		.values({
+			projectId: overrides.projectId ?? 'test-project',
+			agentType: overrides.agentType,
+			triggerEvent: overrides.triggerEvent,
+			enabled: overrides.enabled ?? true,
+			parameters: overrides.parameters ?? {},
 		})
 		.returning();
 	return row;
@@ -181,9 +204,9 @@ export async function seedAgentConfig(
 export async function seedRun(
 	overrides: {
 		projectId?: string;
-		cardId?: string;
+		workItemId?: string;
 		agentType?: string;
-		backend?: string;
+		engine?: string;
 		status?: string;
 	} = {},
 ) {
@@ -192,9 +215,9 @@ export async function seedRun(
 		.insert(agentRuns)
 		.values({
 			projectId: overrides.projectId ?? 'test-project',
-			cardId: overrides.cardId ?? 'test-card',
+			workItemId: overrides.workItemId ?? 'test-card',
 			agentType: overrides.agentType ?? 'implementation',
-			backend: overrides.backend ?? 'claude-code',
+			engine: overrides.engine ?? 'claude-code',
 			status: overrides.status ?? 'running',
 		})
 		.returning();
@@ -430,97 +453,6 @@ export async function seedGitHubIntegration(
 			integrationId: integ.id,
 			role: 'reviewer_token',
 			credentialId: revCred.id,
-		});
-	}
-
-	return integ;
-}
-
-/**
- * Seeds a complete IMAP email integration with all 6 required credentials.
- */
-export async function seedImapEmailIntegration(
-	projectId = 'test-project',
-	options?: { skipCredential?: string },
-) {
-	const integ = await seedIntegration({
-		projectId,
-		category: 'email',
-		provider: 'imap',
-	});
-
-	const roles = [
-		{ role: 'imap_host', envKey: 'EMAIL_IMAP_HOST', value: 'imap.example.com' },
-		{ role: 'imap_port', envKey: 'EMAIL_IMAP_PORT', value: '993' },
-		{ role: 'smtp_host', envKey: 'EMAIL_SMTP_HOST', value: 'smtp.example.com' },
-		{ role: 'smtp_port', envKey: 'EMAIL_SMTP_PORT', value: '465' },
-		{ role: 'username', envKey: 'EMAIL_USERNAME', value: 'user@example.com' },
-		{ role: 'password', envKey: 'EMAIL_PASSWORD', value: 'secret' },
-	];
-
-	for (const { role, envKey, value } of roles) {
-		if (options?.skipCredential === role) continue;
-		const cred = await seedCredential({ envVarKey: envKey, value, name: `Email ${role}` });
-		await seedIntegrationCredential({ integrationId: integ.id, role, credentialId: cred.id });
-	}
-
-	return integ;
-}
-
-/**
- * Seeds a Gmail email integration with required credentials.
- * Note: Does NOT seed the OAuth tokens needed for actual Gmail access,
- * only the gmail_email and gmail_refresh_token integration credentials.
- */
-export async function seedGmailEmailIntegration(
-	projectId = 'test-project',
-	options?: { skipEmail?: boolean; skipRefreshToken?: boolean; includeOrgOAuth?: boolean },
-) {
-	const integ = await seedIntegration({
-		projectId,
-		category: 'email',
-		provider: 'gmail',
-	});
-
-	if (!options?.skipEmail) {
-		const gmailEmail = await seedCredential({
-			envVarKey: 'GMAIL_EMAIL',
-			value: 'test@gmail.com',
-			name: 'Gmail Email',
-		});
-		await seedIntegrationCredential({
-			integrationId: integ.id,
-			role: 'gmail_email',
-			credentialId: gmailEmail.id,
-		});
-	}
-
-	if (!options?.skipRefreshToken) {
-		const refreshToken = await seedCredential({
-			envVarKey: 'GMAIL_REFRESH_TOKEN',
-			value: 'test-refresh-token',
-			name: 'Gmail Refresh Token',
-		});
-		await seedIntegrationCredential({
-			integrationId: integ.id,
-			role: 'gmail_refresh_token',
-			credentialId: refreshToken.id,
-		});
-	}
-
-	// Optionally seed org-level OAuth credentials
-	if (options?.includeOrgOAuth) {
-		await seedCredential({
-			envVarKey: 'GOOGLE_OAUTH_CLIENT_ID',
-			value: 'test-client-id',
-			name: 'Google OAuth Client ID',
-			isDefault: true,
-		});
-		await seedCredential({
-			envVarKey: 'GOOGLE_OAUTH_CLIENT_SECRET',
-			value: 'test-client-secret',
-			name: 'Google OAuth Client Secret',
-			isDefault: true,
 		});
 	}
 

@@ -8,6 +8,7 @@ interface RunFiltersProps {
 	onProjectChange: (v: string) => void;
 	onStatusChange: (v: string) => void;
 	onAgentTypeChange: (v: string) => void;
+	projects?: { id: string; name: string }[];
 }
 
 const statuses = ['running', 'completed', 'failed', 'timed_out'];
@@ -28,11 +29,17 @@ export function RunFilters({
 	onProjectChange,
 	onStatusChange,
 	onAgentTypeChange,
+	projects: projectsProp,
 }: RunFiltersProps) {
-	const projectsQuery = useQuery(trpc.projects.list.queryOptions());
+	const defaultProjectsQuery = useQuery({
+		...trpc.projects.list.queryOptions(),
+		enabled: !projectsProp,
+	});
+
+	const projects = projectsProp || defaultProjectsQuery.data || [];
 
 	const selectClass =
-		'h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
+		'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:w-auto';
 
 	return (
 		<div className="flex flex-wrap items-center gap-3">
@@ -42,7 +49,7 @@ export function RunFilters({
 				className={selectClass}
 			>
 				<option value="">All projects</option>
-				{projectsQuery.data?.map((p) => (
+				{projects.map((p) => (
 					<option key={p.id} value={p.id}>
 						{p.name}
 					</option>

@@ -9,6 +9,7 @@
 	},
 	"dependencies": {
 		"@hookform/resolvers": "^5.2.2",
+		"@tailwindcss/typography": "^0.5.19",
 		"@tanstack/react-query": "^5.75.5",
 		"@tanstack/react-router": "^1.121.0",
 		"@trpc/client": "^11.1.2",
@@ -21,6 +22,8 @@
 		"react": "^19.1.0",
 		"react-dom": "^19.1.0",
 		"react-hook-form": "^7.71.1",
+		"react-markdown": "^10.1.0",
+		"recharts": "^3.8.0",
 		"sonner": "^2.0.7",
 		"tailwind-merge": "^3.3.0",
 		"tw-animate-css": "^1.2.9",

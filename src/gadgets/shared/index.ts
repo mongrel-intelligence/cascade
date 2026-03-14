@@ -1,5 +1,5 @@
 /**
- * Shared utilities for file editing gadgets.
+ * Shared utilities and factory functions for gadgets, CLI commands, and tool manifests.
  */
 
 export * from './types.js';
@@ -9,3 +9,7 @@ export * from './diagnostics.js';
 export * from './diagnosticState.js';
 export * from './onFileEditHook.js';
 export * from './postEditChecks.js';
+export * from './toolDefinition.js';
+export * from './gadgetFactory.js';
+export * from './cliCommandFactory.js';
+export * from './manifestGenerator.js';

@@ -6,8 +6,8 @@ identity:
 
 # Explicit integration requirements.
 integrations:
-  required: [pm]
-  optional: []
+  required: []
+  optional: [pm]
 
 # Read-only FS access for log analysis, full PM access for creating debug cards.
 capabilities:
@@ -28,9 +28,6 @@ strategies: {}
 
 prompts:
   taskPrompt: |
-    Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.
-
-backend: {}
-
+    Analyze and process the work item with ID: <%= it.workItemId %>. The work item data has been pre-loaded.
 
 hint: Analyze the current issue fully before moving to the next.

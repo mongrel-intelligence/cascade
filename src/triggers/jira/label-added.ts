@@ -10,14 +10,11 @@
  * explicitly excludes events that also contain a status change in the changelog.
  */
 
-import {
-	resolveJiraTriggerEnabled,
-	resolveReadyToProcessEnabled,
-} from '../../config/triggerConfig.js';
 import { getJiraConfig } from '../../pm/config.js';
 import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { type JiraWebhookPayload, STATUS_TO_AGENT } from './types.js';
 
 /**
@@ -41,11 +38,6 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'jira') return false;
-
-		// Check trigger config — default enabled for backward compatibility
-		if (!resolveJiraTriggerEnabled(getJiraConfig(ctx.project)?.triggers, 'readyToProcessLabel')) {
-			return false;
-		}
 
 		const payload = ctx.payload as JiraWebhookPayload;
 		if (!payload.webhookEvent?.startsWith('jira:issue_updated')) return false;
@@ -110,12 +102,8 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Check per-agent ready-to-process toggle
-		if (!resolveReadyToProcessEnabled(getJiraConfig(ctx.project)?.triggers, agentType)) {
-			logger.info('JIRA ready-to-process disabled for agent type, skipping', {
-				issueKey,
-				agentType,
-			});
+		// Check per-agent ready-to-process toggle via new DB-driven system
+		if (!(await checkTriggerEnabled(ctx.project.id, agentType, 'pm:label-added', this.name))) {
 			return null;
 		}
 
@@ -125,10 +113,21 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 			agentType,
 		});
 
+		// Capture work item display data from the issue payload
+		const workItemUrl = `${jiraConfig.baseUrl}/browse/${issueKey}`;
+		const workItemTitle = payload.issue?.fields?.summary ?? undefined;
+
 		return {
 			agentType,
-			agentInput: { cardId: issueKey },
+			agentInput: {
+				workItemId: issueKey,
+				workItemUrl,
+				workItemTitle,
+				triggerEvent: 'pm:label-added',
+			},
 			workItemId: issueKey,
+			workItemUrl,
+			workItemTitle,
 		};
 	}
 }

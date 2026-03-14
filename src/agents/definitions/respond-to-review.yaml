@@ -27,7 +27,7 @@ capabilities:
 triggers:
   - event: scm:pr-review-submitted
     label: PR Review Submitted
-    description: Trigger when a review with changes requested is submitted
+    description: Trigger when a review with changes requested or comments is submitted
     defaultEnabled: true
     providers: [github]
     contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
@@ -49,15 +49,13 @@ prompts:
 
     Carefully read each review comment and make the requested changes. Commit and push your changes when done. Use the ReplyToReviewComment tool to respond to individual review comments as you address them. Focus on surgical, targeted fixes unless the reviewer clearly asks for broader changes.
 
-backend:
-  hooks:
+hooks:
+  trailing:
+    builtin:
+      diagnostics: true
+  finish:
     scm:
-      enableStopHooks: true
-      blockGitPush: false
       requiresPushedChanges: true
-
+      blockGitPush: false
 
 hint: Address the current review comment fully before moving to the next. Batch related file edits together.
-
-trailingMessage:
-  includeDiagnostics: true

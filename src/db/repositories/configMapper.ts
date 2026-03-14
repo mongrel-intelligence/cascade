@@ -1,3 +1,5 @@
+import type { EngineSettings } from '../../config/engineSettings.js';
+
 /**
  * Config mapper — pure transformation functions for converting DB rows into
  * raw config objects consumed by `validateConfig`.
@@ -37,19 +39,19 @@ export interface DefaultsRow {
 	model: string | null;
 	maxIterations: number | null;
 	watchdogTimeoutMs: number | null;
-	cardBudgetUsd: string | null;
-	agentBackend: string | null;
+	workItemBudgetUsd: string | null;
+	agentEngine: string | null;
+	agentEngineSettings: EngineSettings | null;
 	progressModel: string | null;
 	progressIntervalMinutes: string | null;
 }
 
 export interface AgentConfigRow {
-	orgId: string | null;
-	projectId: string | null;
+	projectId: string;
 	agentType: string;
 	model: string | null;
 	maxIterations: number | null;
-	agentBackend: string | null;
+	agentEngine: string | null;
 }
 
 export interface IntegrationRow {
@@ -57,7 +59,6 @@ export interface IntegrationRow {
 	category: string;
 	provider: string;
 	config: unknown;
-	triggers: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -68,11 +69,8 @@ export interface MapProjectInput {
 	row: ProjectRow;
 	projectAgentConfigs: AgentConfigRow[];
 	trelloConfig?: TrelloIntegrationConfig;
-	trelloTriggers?: Record<string, boolean>;
 	jiraConfig?: JiraIntegrationConfig;
-	jiraTriggers?: Record<string, boolean>;
 	githubConfig?: GitHubIntegrationConfig;
-	githubTriggers?: Record<string, boolean>;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,14 +87,15 @@ export interface ProjectConfigRaw {
 	pm: { type: string };
 	model?: string;
 	agentModels?: Record<string, string>;
-	cardBudgetUsd?: number;
+	workItemBudgetUsd?: number;
 	squintDbUrl?: string;
+	engineSettings?: EngineSettings;
+	runLinksEnabled?: boolean;
 	trello?: {
 		boardId: string;
 		lists: Record<string, string>;
 		labels: Record<string, string>;
 		customFields?: { cost?: string };
-		triggers?: Record<string, boolean>;
 	};
 	jira?: {
 		projectKey: string;
@@ -105,13 +104,10 @@ export interface ProjectConfigRaw {
 		issueTypes?: Record<string, string>;
 		customFields?: { cost?: string };
 		labels?: Record<string, string>;
-		triggers?: Record<string, boolean>;
 	};
-	github?: { triggers: Record<string, boolean> };
-	agentBackend?: {
+	agentEngine?: {
 		default?: string;
 		overrides: Record<string, string>;
-		subscriptionCostZero: boolean;
 	};
 }
 
@@ -127,49 +123,43 @@ type ProjectRow = {
 	baseBranch: string | null;
 	branchPrefix: string | null;
 	model: string | null;
-	cardBudgetUsd: string | null;
+	workItemBudgetUsd: string | null;
 	squintDbUrl: string | null;
-	agentBackend: string | null;
-	subscriptionCostZero: boolean | null;
+	agentEngine: string | null;
+	agentEngineSettings: EngineSettings | null;
+	runLinksEnabled: boolean;
 };
 
 export function buildAgentMaps(configs: AgentConfigRow[]): {
 	models: Record<string, string>;
 	iterations: Record<string, number>;
-	backends: Record<string, string>;
+	engines: Record<string, string>;
 } {
 	const models: Record<string, string> = {};
 	const iterations: Record<string, number> = {};
-	const backends: Record<string, string> = {};
+	const engines: Record<string, string> = {};
 	for (const ac of configs) {
 		if (ac.model) models[ac.agentType] = ac.model;
 		if (ac.maxIterations != null) iterations[ac.agentType] = ac.maxIterations;
-		if (ac.agentBackend) backends[ac.agentType] = ac.agentBackend;
+		if (ac.agentEngine) engines[ac.agentType] = ac.agentEngine;
 	}
-	return { models, iterations, backends };
+	return { models, iterations, engines };
 }
 
 export function orUndefined<T extends Record<string, unknown>>(obj: T): T | undefined {
 	return Object.keys(obj).length > 0 ? obj : undefined;
 }
 
-function buildTrelloConfig(
-	config: TrelloIntegrationConfig,
-	triggers?: Record<string, boolean>,
-): ProjectConfigRaw['trello'] {
+function buildTrelloConfig(config: TrelloIntegrationConfig): ProjectConfigRaw['trello'] {
 	return {
 		boardId: config.boardId,
 		lists: config.lists,
 		labels: config.labels,
 		customFields: config.customFields,
-		...(triggers && Object.keys(triggers).length > 0 ? { triggers } : {}),
 	};
 }
 
-function buildJiraConfig(
-	config: JiraIntegrationConfig,
-	triggers?: Record<string, boolean>,
-): ProjectConfigRaw['jira'] {
+function buildJiraConfig(config: JiraIntegrationConfig): ProjectConfigRaw['jira'] {
 	return {
 		projectKey: config.projectKey,
 		baseUrl: config.baseUrl,
@@ -177,19 +167,17 @@ function buildJiraConfig(
 		issueTypes: config.issueTypes,
 		customFields: config.customFields,
 		labels: config.labels,
-		...(triggers && Object.keys(triggers).length > 0 ? { triggers } : {}),
 	};
 }
 
-function buildAgentBackendConfig(
+function buildAgentEngineConfig(
 	row: ProjectRow,
-	backends: Record<string, string>,
-): ProjectConfigRaw['agentBackend'] | undefined {
-	if (!row.agentBackend && Object.keys(backends).length === 0) return undefined;
+	engines: Record<string, string>,
+): ProjectConfigRaw['agentEngine'] | undefined {
+	if (!row.agentEngine && Object.keys(engines).length === 0) return undefined;
 	return {
-		default: row.agentBackend ?? undefined,
-		overrides: backends,
-		subscriptionCostZero: row.subscriptionCostZero ?? false,
+		default: row.agentEngine ?? undefined,
+		overrides: engines,
 	};
 }
 
@@ -197,20 +185,14 @@ function buildAgentBackendConfig(
 // Public mapping functions
 // ---------------------------------------------------------------------------
 
-export function mapDefaultsRow(
-	row: DefaultsRow | undefined,
-	globalAgentConfigs: AgentConfigRow[],
-): Record<string, unknown> {
-	const { models, iterations } = buildAgentMaps(globalAgentConfigs);
-
+export function mapDefaultsRow(row: DefaultsRow | undefined): Record<string, unknown> {
 	return {
 		model: row?.model ?? undefined,
-		agentModels: orUndefined(models),
 		maxIterations: row?.maxIterations ?? undefined,
-		agentIterations: orUndefined(iterations),
 		watchdogTimeoutMs: row?.watchdogTimeoutMs ?? undefined,
-		cardBudgetUsd: row?.cardBudgetUsd ? Number(row.cardBudgetUsd) : undefined,
-		agentBackend: row?.agentBackend ?? undefined,
+		workItemBudgetUsd: row?.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
+		agentEngine: row?.agentEngine ?? undefined,
+		engineSettings: row?.agentEngineSettings ?? undefined,
 		progressModel: row?.progressModel ?? undefined,
 		progressIntervalMinutes: row?.progressIntervalMinutes
 			? Number(row.progressIntervalMinutes)
@@ -220,11 +202,8 @@ export function mapDefaultsRow(
 
 export function extractIntegrationConfigs(integrations: IntegrationRow[]): {
 	trelloConfig?: TrelloIntegrationConfig;
-	trelloTriggers?: Record<string, boolean>;
 	jiraConfig?: JiraIntegrationConfig;
-	jiraTriggers?: Record<string, boolean>;
 	githubConfig?: GitHubIntegrationConfig;
-	githubTriggers?: Record<string, boolean>;
 } {
 	const trelloRow = integrations.find((i) => i.provider === 'trello');
 	const jiraRow = integrations.find((i) => i.provider === 'jira');
@@ -232,11 +211,8 @@ export function extractIntegrationConfigs(integrations: IntegrationRow[]): {
 
 	return {
 		trelloConfig: trelloRow?.config as TrelloIntegrationConfig | undefined,
-		trelloTriggers: (trelloRow?.triggers ?? undefined) as Record<string, boolean> | undefined,
 		jiraConfig: jiraRow?.config as JiraIntegrationConfig | undefined,
-		jiraTriggers: (jiraRow?.triggers ?? undefined) as Record<string, boolean> | undefined,
 		githubConfig: githubRow?.config as GitHubIntegrationConfig | undefined,
-		githubTriggers: (githubRow?.triggers ?? undefined) as Record<string, boolean> | undefined,
 	};
 }
 
@@ -244,12 +220,9 @@ export function mapProjectRow({
 	row,
 	projectAgentConfigs,
 	trelloConfig,
-	trelloTriggers,
 	jiraConfig,
-	jiraTriggers,
-	githubTriggers,
 }: MapProjectInput): ProjectConfigRaw {
-	const { models, backends } = buildAgentMaps(projectAgentConfigs);
+	const { models, engines } = buildAgentMaps(projectAgentConfigs);
 
 	// Derive PM type from integration config
 	const pmType = jiraConfig ? 'jira' : 'trello';
@@ -264,25 +237,23 @@ export function mapProjectRow({
 		pm: { type: pmType },
 		model: row.model ?? undefined,
 		agentModels: orUndefined(models),
-		cardBudgetUsd: row.cardBudgetUsd ? Number(row.cardBudgetUsd) : undefined,
+		workItemBudgetUsd: row.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
+		engineSettings: row.agentEngineSettings ?? undefined,
 		squintDbUrl: row.squintDbUrl ?? undefined,
+		runLinksEnabled: row.runLinksEnabled ?? false,
 	};
 
 	if (trelloConfig) {
-		project.trello = buildTrelloConfig(trelloConfig, trelloTriggers);
+		project.trello = buildTrelloConfig(trelloConfig);
 	}
 
 	if (jiraConfig) {
-		project.jira = buildJiraConfig(jiraConfig, jiraTriggers);
+		project.jira = buildJiraConfig(jiraConfig);
 	}
 
-	if (githubTriggers && Object.keys(githubTriggers).length > 0) {
-		project.github = { triggers: githubTriggers };
-	}
-
-	const agentBackend = buildAgentBackendConfig(row, backends);
-	if (agentBackend) {
-		project.agentBackend = agentBackend;
+	const agentEngine = buildAgentEngineConfig(row, engines);
+	if (agentEngine) {
+		project.agentEngine = agentEngine;
 	}
 
 	return project;

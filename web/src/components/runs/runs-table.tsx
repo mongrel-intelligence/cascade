@@ -1,13 +1,16 @@
 import { formatCost, formatRelativeTime } from '@/lib/utils.js';
 import { Link } from '@tanstack/react-router';
-import { ExternalLink } from 'lucide-react';
+import { Activity, ExternalLink } from 'lucide-react';
+import { CancelRunButton } from './cancel-run-button.js';
 import { LiveDuration } from './live-duration.js';
 import { RetryRunButton } from './retry-run-button.js';
 import { RunStatusBadge } from './run-status-badge.js';
 
 interface Run {
 	id: string;
+	projectId?: string | null;
 	projectName: string | null;
+	orgName?: string | null;
 	agentType: string;
 	status: string;
 	startedAt: string | null;
@@ -15,6 +18,10 @@ interface Run {
 	costUsd: string | null;
 	llmIterations: number | null;
 	prUrl: string | null;
+	prNumber?: number | null;
+	workItemId?: string | null;
+	workItemTitle?: string | null;
+	workItemUrl?: string | null;
 }
 
 interface RunsTableProps {
@@ -23,34 +30,69 @@ interface RunsTableProps {
 	offset: number;
 	limit: number;
 	onPageChange: (offset: number) => void;
+	showOrg?: boolean;
 }
 
-export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTableProps) {
+export function RunsTable({
+	runs,
+	total,
+	offset,
+	limit,
+	onPageChange,
+	showOrg = false,
+}: RunsTableProps) {
 	const totalPages = Math.ceil(total / limit);
 	const currentPage = Math.floor(offset / limit) + 1;
 
 	return (
 		<div className="space-y-4">
-			<div className="overflow-hidden rounded-lg border border-border">
+			<div className="overflow-x-auto rounded-lg border border-border">
 				<table className="w-full text-sm">
 					<thead>
 						<tr className="border-b border-border bg-muted/50">
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Agent</th>
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Project</th>
+							{showOrg && (
+								<th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
+									Organization
+								</th>
+							)}
+							<th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
+								Project
+							</th>
+							<th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
+								Work Item
+							</th>
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Started</th>
-							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Duration</th>
-							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Cost</th>
-							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Iterations</th>
-							<th className="px-4 py-3 text-center font-medium text-muted-foreground">PR</th>
+							<th className="hidden px-4 py-3 text-right font-medium text-muted-foreground md:table-cell">
+								Duration
+							</th>
+							<th className="hidden px-4 py-3 text-right font-medium text-muted-foreground md:table-cell">
+								Cost
+							</th>
+							<th className="hidden px-4 py-3 text-right font-medium text-muted-foreground md:table-cell">
+								Iterations
+							</th>
+							<th className="hidden px-4 py-3 text-center font-medium text-muted-foreground md:table-cell">
+								PR
+							</th>
 							<th className="px-4 py-3 text-center font-medium text-muted-foreground">Actions</th>
 						</tr>
 					</thead>
 					<tbody>
 						{runs.length === 0 && (
 							<tr>
-								<td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
-									No runs found
+								<td
+									colSpan={showOrg ? 11 : 10}
+									className="px-4 py-12 text-center text-muted-foreground"
+								>
+									<div className="flex flex-col items-center gap-2">
+										<Activity className="h-8 w-8 text-muted-foreground/50" />
+										<p className="font-medium">No runs yet</p>
+										<p className="text-sm text-muted-foreground">
+											Runs appear here when CASCADE processes work items.
+										</p>
+									</div>
 								</td>
 							</tr>
 						)}
@@ -68,37 +110,110 @@ export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTabl
 										{run.agentType}
 									</Link>
 								</td>
-								<td className="px-4 py-3 text-muted-foreground">{run.projectName ?? '-'}</td>
+								{showOrg && (
+									<td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
+										{run.orgName ?? '-'}
+									</td>
+								)}
+								<td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
+									{run.projectName ?? '-'}
+								</td>
+								<td className="hidden px-4 py-3 md:table-cell">
+									{run.workItemUrl && run.workItemTitle ? (
+										<div className="flex flex-col gap-0.5">
+											<a
+												href={run.workItemUrl}
+												target="_blank"
+												rel="noopener noreferrer"
+												className="inline-flex items-center gap-1 text-primary hover:underline"
+											>
+												{run.workItemTitle}
+												<ExternalLink className="h-3 w-3 shrink-0" />
+											</a>
+											{run.projectId && run.workItemId && (
+												<Link
+													to="/work-items/$projectId/$workItemId"
+													params={{
+														projectId: run.projectId,
+														workItemId: run.workItemId,
+													}}
+													className="text-xs text-muted-foreground hover:text-primary hover:underline"
+												>
+													View all runs
+												</Link>
+											)}
+										</div>
+									) : run.workItemId && run.projectId ? (
+										<div className="flex flex-col gap-0.5">
+											<span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+												Unlinked
+											</span>
+											<Link
+												to="/work-items/$projectId/$workItemId"
+												params={{
+													projectId: run.projectId,
+													workItemId: run.workItemId,
+												}}
+												className="text-xs text-muted-foreground hover:text-primary hover:underline"
+											>
+												View all runs
+											</Link>
+										</div>
+									) : (
+										<span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+											Unlinked
+										</span>
+									)}
+								</td>
 								<td className="px-4 py-3">
 									<RunStatusBadge status={run.status} />
 								</td>
 								<td className="px-4 py-3 text-muted-foreground">
 									{formatRelativeTime(run.startedAt)}
 								</td>
-								<td className="px-4 py-3 text-right tabular-nums">
+								<td className="hidden px-4 py-3 text-right tabular-nums md:table-cell">
 									<LiveDuration
 										startedAt={run.startedAt}
 										durationMs={run.durationMs}
 										status={run.status}
 									/>
 								</td>
-								<td className="px-4 py-3 text-right tabular-nums">{formatCost(run.costUsd)}</td>
-								<td className="px-4 py-3 text-right tabular-nums">{run.llmIterations ?? '-'}</td>
-								<td className="px-4 py-3 text-center">
+								<td className="hidden px-4 py-3 text-right tabular-nums md:table-cell">
+									{formatCost(run.costUsd)}
+								</td>
+								<td className="hidden px-4 py-3 text-right tabular-nums md:table-cell">
+									{run.llmIterations ?? '-'}
+								</td>
+								<td className="hidden px-4 py-3 text-center md:table-cell">
 									{run.prUrl ? (
-										<a
-											href={run.prUrl}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="inline-flex items-center text-muted-foreground hover:text-foreground"
-										>
-											<ExternalLink className="h-4 w-4" />
-										</a>
+										<div className="flex flex-col items-center gap-0.5">
+											<a
+												href={run.prUrl}
+												target="_blank"
+												rel="noopener noreferrer"
+												className="inline-flex items-center text-muted-foreground hover:text-foreground"
+											>
+												<ExternalLink className="h-4 w-4" />
+											</a>
+											{run.projectId && run.prNumber != null && (
+												<Link
+													to="/prs/$projectId/$prNumber"
+													params={{
+														projectId: run.projectId,
+														prNumber: String(run.prNumber),
+													}}
+													className="text-xs text-muted-foreground hover:text-primary hover:underline"
+												>
+													View all runs
+												</Link>
+											)}
+										</div>
 									) : (
 										'-'
 									)}
 								</td>
 								<td className="px-4 py-3 text-center">
+									<CancelRunButton runId={run.id} status={run.status} />
 									<RetryRunButton runId={run.id} status={run.status} />
 								</td>
 							</tr>
@@ -108,7 +223,7 @@ export function RunsTable({ runs, total, offset, limit, onPageChange }: RunsTabl
 			</div>
 
 			{total > limit && (
-				<div className="flex items-center justify-between">
+				<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 					<div className="text-sm text-muted-foreground">
 						Showing {offset + 1}-{Math.min(offset + limit, total)} of {total}
 					</div>

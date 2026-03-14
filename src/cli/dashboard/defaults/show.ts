@@ -27,8 +27,8 @@ export default class DefaultsShow extends DashboardCommand {
 				model: { label: 'Model' },
 				maxIterations: { label: 'Max Iterations' },
 				watchdogTimeoutMs: { label: 'Watchdog Timeout' },
-				cardBudgetUsd: { label: 'Card Budget' },
-				agentBackend: { label: 'Agent Backend' },
+				workItemBudgetUsd: { label: 'Work Item Budget' },
+				agentEngine: { label: 'Agent Engine' },
 				progressModel: { label: 'Progress Model' },
 				progressIntervalMinutes: { label: 'Progress Interval' },
 			});

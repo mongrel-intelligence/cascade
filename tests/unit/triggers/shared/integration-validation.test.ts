@@ -15,10 +15,6 @@ vi.mock('../../../../src/github/integration.js', () => ({
 	hasScmPersonaToken: vi.fn(),
 }));
 
-vi.mock('../../../../src/email/integration.js', () => ({
-	hasEmailIntegration: vi.fn(),
-}));
-
 vi.mock('../../../../src/github/personas.js', () => ({
 	getPersonaForAgentType: vi.fn().mockReturnValue('implementer'),
 }));
@@ -32,7 +28,6 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 	},
 }));
 
-import { hasEmailIntegration } from '../../../../src/email/integration.js';
 import { hasScmIntegration, hasScmPersonaToken } from '../../../../src/github/integration.js';
 import { getPersonaForAgentType } from '../../../../src/github/personas.js';
 import { hasPmIntegration } from '../../../../src/pm/integration.js';
@@ -56,16 +51,10 @@ describe('integration-validation', () => {
 			expect(reqs.optional).toEqual(['pm']);
 		});
 
-		it('returns integration requirements for email-joke agent', async () => {
-			const reqs = await getIntegrationRequirements('email-joke');
-			expect(reqs.required).toEqual(['email']);
-			expect(reqs.optional).toEqual([]);
-		});
-
 		it('returns integration requirements for debug agent', async () => {
 			const reqs = await getIntegrationRequirements('debug');
-			expect(reqs.required).toEqual(['pm']);
-			expect(reqs.optional).toEqual([]);
+			expect(reqs.required).toEqual([]);
+			expect(reqs.optional).toEqual(['pm']);
 		});
 
 		it('rejects for unknown agent type', async () => {
@@ -147,26 +136,6 @@ describe('integration-validation', () => {
 				const result = await validateIntegrations('test-project', 'review');
 				expect(result.valid).toBe(false);
 				expect(result.errors[0].message).toContain('Reviewer token');
-			});
-		});
-
-		describe('Email integration validation', () => {
-			it('passes when email integration is configured', async () => {
-				vi.mocked(hasEmailIntegration).mockResolvedValue(true);
-
-				const result = await validateIntegrations('test-project', 'email-joke');
-				expect(result.valid).toBe(true);
-				expect(result.errors).toEqual([]);
-			});
-
-			it('fails when email integration is missing', async () => {
-				vi.mocked(hasEmailIntegration).mockResolvedValue(false);
-
-				const result = await validateIntegrations('test-project', 'email-joke');
-				expect(result.valid).toBe(false);
-				expect(result.errors).toHaveLength(1);
-				expect(result.errors[0].category).toBe('email');
-				expect(result.errors[0].message).toContain('requires email integration');
 			});
 		});
 

@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
 // Mocks required for PM integration registration (pm/index.js side-effect)
 vi.mock('../../../src/config/provider.js', () => ({
 	getIntegrationCredential: vi.fn(),
@@ -31,6 +39,7 @@ vi.mock('../../../src/router/reactions.js', () => ({
 import '../../../src/pm/index.js';
 
 import { JiraReadyToProcessLabelTrigger } from '../../../src/triggers/jira/label-added.js';
+import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 import type { TriggerContext } from '../../../src/types/index.js';
 
 const trigger = new JiraReadyToProcessLabelTrigger();
@@ -210,12 +219,35 @@ describe('JiraReadyToProcessLabelTrigger', () => {
 	});
 
 	describe('handle()', () => {
+		it('should return null when trigger is disabled for the resolved agent', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
+			const result = await trigger.handle(buildCtx({ statusName: 'Splitting' }));
+			expect(result).toBeNull();
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test-project',
+				'splitting',
+				'pm:label-added',
+				'jira-ready-to-process-label-added',
+			);
+		});
+
 		it('returns splitting agent for issue in Briefing status', async () => {
 			const result = await trigger.handle(buildCtx({ statusName: 'Splitting' }));
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('splitting');
 			expect(result?.workItemId).toBe('TEST-42');
-			expect(result?.agentInput.cardId).toBe('TEST-42');
+			expect(result?.agentInput.workItemId).toBe('TEST-42');
+			expect(result?.agentInput.triggerEvent).toBe('pm:label-added');
+		});
+
+		it('populates workItemUrl and workItemTitle from Jira issue data', async () => {
+			const result = await trigger.handle(buildCtx({ statusName: 'Splitting' }));
+			expect(result).not.toBeNull();
+			expect(result?.workItemUrl).toBe('https://test.atlassian.net/browse/TEST-42');
+			expect(result?.workItemTitle).toBe('Test issue');
+			expect(result?.agentInput.workItemUrl).toBe('https://test.atlassian.net/browse/TEST-42');
+			expect(result?.agentInput.workItemTitle).toBe('Test issue');
 		});
 
 		it('returns planning agent for issue in Planning status', async () => {

@@ -20,13 +20,28 @@ export interface ProjectPMConfig {
 		processed?: string;
 		error?: string;
 		readyToProcess?: string;
+		auto?: string;
 	};
 	statuses: {
+		backlog?: string;
 		inProgress?: string;
 		inReview?: string;
 		done?: string;
 		merged?: string;
 	};
+}
+
+/**
+ * Check if a work item has the 'auto' label configured for the project.
+ * Returns true if the auto label is configured AND the work item carries it.
+ */
+export function hasAutoLabel(
+	workItemLabels: Array<{ id: string; name: string }>,
+	pmConfig: ProjectPMConfig,
+): boolean {
+	const autoLabelId = pmConfig.labels.auto;
+	if (!autoLabelId) return false;
+	return workItemLabels.some((l) => l.id === autoLabelId || l.name === autoLabelId);
 }
 
 /**

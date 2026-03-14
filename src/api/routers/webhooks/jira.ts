@@ -1,4 +1,5 @@
 import { TRPCError } from '@trpc/server';
+import { logger } from '../../../utils/logging.js';
 import type { JiraWebhookInfo, ProjectContext } from './types.js';
 
 function jiraAuthHeader(ctx: ProjectContext): string {
@@ -33,6 +34,32 @@ export async function jiraCreateWebhook(
 			message: 'JIRA credentials not configured',
 		});
 	}
+
+	// Delete any existing webhooks with the same callback URL to prevent duplicates.
+	// Like GitHub, JIRA can have webhooks from other integrations, so we only
+	// delete webhooks matching our specific callback URL.
+	const existingWebhooks = await jiraListWebhooks(ctx);
+	for (const webhook of existingWebhooks) {
+		if (webhook.url === callbackURL) {
+			try {
+				await jiraDeleteWebhook(ctx, webhook.id);
+				logger.info('[JiraWebhook] Deleted existing webhook to prevent duplicates', {
+					webhookId: webhook.id,
+					projectId: ctx.projectId,
+					jiraProjectKey: ctx.jiraProjectKey,
+				});
+			} catch (err) {
+				// Log and continue — failing to delete shouldn't prevent creating a new one
+				logger.warn('[JiraWebhook] Failed to delete existing webhook (continuing)', {
+					webhookId: webhook.id,
+					projectId: ctx.projectId,
+					error: String(err),
+				});
+			}
+		}
+	}
+
+	// Now create the new webhook
 	const response = await fetch(`${ctx.jiraBaseUrl}/rest/api/3/webhook`, {
 		method: 'POST',
 		headers: {

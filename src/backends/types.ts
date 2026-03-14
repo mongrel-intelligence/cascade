@@ -1,4 +1,5 @@
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../types/index.js';
+import type { CompletionRequirements } from './completion.js';
 
 // Re-export shared contracts so downstream code that imports from here continues to work.
 export type {
@@ -16,62 +17,134 @@ import type {
 } from '../agents/contracts/index.js';
 
 /**
- * Input provided to an AgentBackend for execution.
+ * Shared execution context created by the platform lifecycle.
  */
-export interface AgentBackendInput {
+export interface AgentExecutionContext {
 	agentType: string;
 	project: ProjectConfig;
 	config: CascadeConfig;
 	repoDir: string;
-	systemPrompt: string;
-	taskPrompt: string;
-	cliToolsDir: string;
-	availableTools: ToolManifest[];
-	contextInjections: ContextInjection[];
-	maxIterations: number;
-	budgetUsd?: number;
-	model: string;
+	agentInput: AgentInput;
 	progressReporter: ProgressReporter;
 	logWriter: LogWriter;
-	agentInput: AgentInput;
 	/** Per-project secrets to inject into subprocess environment */
 	projectSecrets?: Record<string, string>;
 	/** Database run ID for real-time LLM call logging */
 	runId?: string;
-	/** SDK tools to allow (defaults to all 6: Read, Write, Edit, Bash, Glob, Grep) */
-	sdkTools?: string[];
+}
+
+/**
+ * Prompt material normalized by the shared lifecycle before engine execution.
+ */
+export interface AgentPromptSpec {
+	systemPrompt: string;
+	taskPrompt: string;
+	availableTools: ToolManifest[];
+	contextInjections: ContextInjection[];
+}
+
+/**
+ * Engine policy resolved by shared orchestration.
+ */
+export interface AgentEnginePolicy {
+	maxIterations: number;
+	budgetUsd?: number;
+	model: string;
+	/** Engine-neutral capability list used to derive native tools per engine */
+	nativeToolCapabilities?: string[];
 	/** Whether to enable stop hooks that check for uncommitted/unpushed changes (defaults to true) */
 	enableStopHooks?: boolean;
 	/** Whether to block git push in hooks (defaults to true) */
 	blockGitPush?: boolean;
 	/** Path where the llmist SDK should write its structured log (workspace dir, not temp) */
-	llmistLogPath?: string;
+	engineLogPath?: string;
 }
 
 /**
- * Result returned by an AgentBackend after execution.
+ * Fully normalized execution plan passed to an engine implementation.
  */
-export interface AgentBackendResult {
+export interface AgentExecutionPlan
+	extends AgentExecutionContext,
+		AgentPromptSpec,
+		AgentEnginePolicy {
+	cliToolsDir: string;
+	nativeToolShimDir?: string;
+	completionRequirements?: CompletionRequirements;
+}
+
+export type PrEvidenceSource = 'llmist-session' | 'native-tool-sidecar' | 'text';
+
+export interface PrEvidence {
+	source: PrEvidenceSource;
+	authoritative: boolean;
+	command?: string;
+}
+
+/**
+ * Result returned by an AgentEngine after execution.
+ */
+export interface AgentEngineResult {
 	success: boolean;
 	output: string;
 	prUrl?: string;
+	prEvidence?: PrEvidence;
 	error?: string;
 	cost?: number;
 	logBuffer?: Buffer;
 	runId?: string;
 }
 
+export interface AgentEngineSettingFieldOption {
+	value: string;
+	label: string;
+}
+
+export type AgentEngineSettingField =
+	| {
+			key: string;
+			label: string;
+			type: 'select';
+			description?: string;
+			options: ReadonlyArray<AgentEngineSettingFieldOption>;
+	  }
+	| {
+			key: string;
+			label: string;
+			type: 'boolean';
+			description?: string;
+	  };
+
+export interface AgentEngineSettingsDefinition {
+	title?: string;
+	description?: string;
+	fields: ReadonlyArray<AgentEngineSettingField>;
+}
+
 /**
- * Interface that all agent backends must implement.
- * This is the core abstraction that makes agent execution pluggable.
+ * Describes how an engine should be presented and configured by callers/UI.
  */
-export interface AgentBackend {
-	/** Unique name for this backend, e.g., 'llmist', 'claude-code' */
-	readonly name: string;
+export interface AgentEngineDefinition {
+	readonly id: string;
+	readonly label: string;
+	readonly description: string;
+	readonly capabilities: string[];
+	readonly modelSelection:
+		| { type: 'free-text' }
+		| {
+				type: 'select';
+				defaultValueLabel: string;
+				options: ReadonlyArray<{ value: string; label: string }>;
+		  };
+	readonly logLabel: string;
+	readonly settings?: AgentEngineSettingsDefinition;
+}
 
-	/** Execute an agent with the given input */
-	execute(input: AgentBackendInput): Promise<AgentBackendResult>;
+/**
+ * Interface that all agent engines must implement.
+ */
+export interface AgentEngine {
+	readonly definition: AgentEngineDefinition;
 
-	/** Check whether this backend supports the given agent type */
+	execute(input: AgentExecutionPlan): Promise<AgentEngineResult>;
 	supportsAgentType(agentType: string): boolean;
 }

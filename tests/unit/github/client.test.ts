@@ -110,6 +110,7 @@ describe('githubClient', () => {
 				headSha: 'sha123',
 				baseRef: 'main',
 				merged: false,
+				mergeable: null,
 				user: { login: 'test-user' },
 			});
 			expect(mockPulls.get).toHaveBeenCalledWith({

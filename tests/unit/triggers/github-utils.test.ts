@@ -187,56 +187,23 @@ describe('resolveWorkItemId', () => {
 	it('returns DB result when available', async () => {
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue('db-item-123');
 
-		const result = await resolveWorkItemId(
-			'proj',
-			42,
-			'https://trello.com/c/abc123',
-			mockTrelloProject,
-		);
+		const result = await resolveWorkItemId('proj', 42);
 
 		expect(result).toBe('db-item-123');
 		expect(lookupWorkItemForPR).toHaveBeenCalledWith('proj', 42);
 	});
 
-	it('falls back to PR body extraction when DB returns null', async () => {
-		const result = await resolveWorkItemId(
-			'proj',
-			42,
-			'https://trello.com/c/abc123',
-			mockTrelloProject,
-		);
-
-		expect(result).toBe('abc123');
-	});
-
-	it('falls back to JIRA extraction for JIRA projects', async () => {
-		const result = await resolveWorkItemId('proj', 42, 'Fixes PROJ-456', mockJiraProject);
-
-		expect(result).toBe('PROJ-456');
-	});
-
-	it('returns undefined when neither DB nor body has work item', async () => {
-		const result = await resolveWorkItemId('proj', 42, 'No work item here', mockTrelloProject);
+	it('returns undefined when DB returns null', async () => {
+		const result = await resolveWorkItemId('proj', 42);
 
 		expect(result).toBeUndefined();
 	});
 
-	it('returns undefined for null body with no DB result', async () => {
-		const result = await resolveWorkItemId('proj', 42, null, mockTrelloProject);
-
-		expect(result).toBeUndefined();
-	});
-
-	it('falls back to body extraction when DB throws', async () => {
+	it('returns undefined when DB throws', async () => {
 		vi.mocked(lookupWorkItemForPR).mockRejectedValue(new Error('DB connection failed'));
 
-		const result = await resolveWorkItemId(
-			'proj',
-			42,
-			'https://trello.com/c/abc123',
-			mockTrelloProject,
-		);
+		const result = await resolveWorkItemId('proj', 42);
 
-		expect(result).toBe('abc123');
+		expect(result).toBeUndefined();
 	});
 });

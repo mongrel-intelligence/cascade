@@ -1,6 +1,8 @@
 import { execSync } from 'node:child_process';
 import type { TrailingMessage } from 'llmist';
 import { resolveAgentDefinition } from '../agents/definitions/index.js';
+import type { TrailingHookFlags } from '../agents/definitions/schema.js';
+import { getSessionState } from '../gadgets/sessionState.js';
 import {
 	formatDiagnosticStatus,
 	getDiagnosticLoopFiles,
@@ -27,10 +29,14 @@ function getGitStatus(): string | null {
 }
 
 /**
- * Get PR view output if a PR exists for current branch.
+ * Get PR status from session state (set when CreatePR gadget succeeds).
  */
-function getPRView(): string | null {
-	return runCommand('gh pr view 2>/dev/null');
+function getPRStatus(): string | null {
+	const state = getSessionState();
+	if (state.prUrl) {
+		return `PR created: ${state.prUrl}`;
+	}
+	return null;
 }
 
 /**
@@ -71,30 +77,22 @@ function formatIterationStatus(
 function buildFullTrailingMessage(
 	timestamp: string,
 	iterationStatus: string,
-	flags: {
-		includeDiagnostics?: boolean;
-		includeTodoProgress?: boolean;
-		includeGitStatus?: boolean;
-		includePRStatus?: boolean;
-		includeReminder?: boolean;
-	},
+	flags: TrailingHookFlags,
+	iteration?: number,
+	maxIterations?: number,
 ): string {
 	const sections: string[] = [timestamp, iterationStatus];
 
-	if (flags.includeDiagnostics && hasAnyDiagnosticErrors()) {
+	if (flags.diagnostics && hasAnyDiagnosticErrors()) {
 		sections.push(formatDiagnosticStatus());
 		const loopWarning = formatDiagnosticLoopWarning();
 		if (loopWarning) sections.push(loopWarning);
 	}
 
-	if (flags.includeTodoProgress) {
-		const todos = loadTodos();
-		if (todos.length > 0) {
-			sections.push(`## Current Progress\n\n${formatTodoList(todos)}`);
-		}
-	}
+	const todoSection = flags.todoProgress ? formatTodoSection() : null;
+	if (todoSection) sections.push(todoSection);
 
-	if (flags.includeGitStatus) {
+	if (flags.gitStatus) {
 		const gitStatus = getGitStatus();
 		sections.push(
 			gitStatus
@@ -103,23 +101,61 @@ function buildFullTrailingMessage(
 		);
 	}
 
-	if (flags.includePRStatus) {
-		const prView = getPRView();
+	if (flags.prStatus) {
+		const prStatus = getPRStatus();
 		sections.push(
-			prView
-				? `## PR Status\n\n\`\`\`\n${prView}\n\`\`\``
-				: '## PR Status\n\nNo PR exists for current branch.',
+			prStatus ? `## PR Status\n\n${prStatus}` : '## PR Status\n\nNo PR exists for current branch.',
 		);
 	}
 
-	if (flags.includeReminder) {
+	if (flags.reminder) {
 		sections.push(
 			'## Reminder\n\nCall multiple gadgets in a single response when you know which ones you need. ' +
 				'For example, read multiple related files at once, or make multiple independent edits together.',
 		);
 	}
 
+	const reviewDeadline = flags.reviewDeadline
+		? formatReviewDeadline(iteration, maxIterations)
+		: null;
+	if (reviewDeadline) sections.push(reviewDeadline);
+
 	return sections.join('\n\n');
+}
+
+/**
+ * Format todo progress section, or null if no todos exist.
+ */
+function formatTodoSection(): string | null {
+	const todos = loadTodos();
+	return todos.length > 0 ? `## Current Progress\n\n${formatTodoList(todos)}` : null;
+}
+
+/**
+ * Format a review deadline warning based on iteration progress.
+ * Returns null if review has already been submitted or we're below 40% of budget.
+ */
+function formatReviewDeadline(iteration?: number, maxIterations?: number): string | null {
+	const state = getSessionState();
+	if (state.reviewSubmitted) return null;
+
+	if (iteration == null || maxIterations == null || maxIterations === 0) {
+		return null;
+	}
+
+	const percent = Math.round((iteration / maxIterations) * 100);
+
+	if (percent >= 80) {
+		return '## 🚨 CRITICAL: Review Deadline\n\n80% of iterations used without submitting a review. Call CreatePRReview IMMEDIATELY with your findings.';
+	}
+	if (percent >= 60) {
+		return '## ⚠️ WARNING: Review Deadline\n\nPast 60% of budget without submitting a review. Submit your review NOW via CreatePRReview.';
+	}
+	if (percent >= 40) {
+		return '## Review Deadline\n\nYou have not submitted a review yet. Your primary goal is to call CreatePRReview.';
+	}
+
+	return null;
 }
 
 /**
@@ -158,7 +194,7 @@ function formatDiagnosticLoopWarning(): string | null {
  * - Always shows current iteration, remaining count, and percentage
  * - Adds urgency indicator when running low on iterations
  * - Includes agent-specific batch processing hints
- * - Uses agent definition trailingMessage flags to decide which extra sections to include
+ * - Uses agent definition hooks.trailing flags to decide which extra sections to include
  *
  * Note: Loop detection warnings are injected as separate user messages
  * (see agentLoop.ts) rather than in trailing messages for higher visibility.
@@ -172,20 +208,24 @@ function formatDiagnosticLoopWarning(): string | null {
 export async function getIterationTrailingMessage(agentType?: string): Promise<TrailingMessage> {
 	// Resolve agent definition once (DB → YAML fallback) for both hint and flags
 	let batchHint = 'Complete the current task efficiently before moving to the next.';
-	let flags: {
-		includeDiagnostics?: boolean;
-		includeTodoProgress?: boolean;
-		includeGitStatus?: boolean;
-		includePRStatus?: boolean;
-		includeReminder?: boolean;
-	} = {};
+	let flags: TrailingHookFlags = {};
 
 	if (agentType) {
 		try {
 			const def = await resolveAgentDefinition(agentType);
 			if (def) {
 				batchHint = def.hint;
-				flags = def.trailingMessage ?? {};
+				const trailing = def.hooks?.trailing;
+				const builtin = trailing?.builtin;
+				const scm = trailing?.scm;
+				flags = {
+					diagnostics: builtin?.diagnostics,
+					todoProgress: builtin?.todoProgress,
+					gitStatus: scm?.gitStatus,
+					prStatus: scm?.prStatus,
+					reminder: builtin?.reminder,
+					reviewDeadline: scm?.reviewDeadline,
+				};
 			}
 		} catch {
 			// Unknown agent type — use defaults
@@ -199,7 +239,13 @@ export async function getIterationTrailingMessage(agentType?: string): Promise<T
 		const iterationStatus = formatIterationStatus(ctx.iteration, ctx.maxIterations, batchHint);
 
 		if (hasAnyFlag) {
-			return buildFullTrailingMessage(timestamp, iterationStatus, flags);
+			return buildFullTrailingMessage(
+				timestamp,
+				iterationStatus,
+				flags,
+				ctx.iteration,
+				ctx.maxIterations,
+			);
 		}
 
 		return `${timestamp}\n\n${iterationStatus}`;

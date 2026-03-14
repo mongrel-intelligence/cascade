@@ -32,6 +32,10 @@ npm-debug.log*
 /tmp/
 *.tmp
 tmp-*.ts
+tmp-*.sh
+
+# Generated databases
+.squint.db
 
 # Local agent workspace (repos, logs)
 workspace/
@@ -42,6 +46,8 @@ test-results/
 # Claude Code — commit settings.json but exclude local settings (may contain secrets)
 .claude/settings.local.json
 
-# Progress comment state file (ephemeral, written by ProgressMonitor)
+# Progress comment state file (legacy — kept to ignore stale files from older runs)
 .cascade-progress-comment-id
 
+# CASCADE context files (temporary pre-fetched data)
+.cascade/context/

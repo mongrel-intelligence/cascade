@@ -16,12 +16,11 @@ describe('triggerTypes', () => {
 		it('has labels for all categories', () => {
 			expect(TRIGGER_CATEGORY_LABELS.pm).toBe('Project Management');
 			expect(TRIGGER_CATEGORY_LABELS.scm).toBe('Source Control');
-			expect(TRIGGER_CATEGORY_LABELS.email).toBe('Email');
-			expect(TRIGGER_CATEGORY_LABELS.sms).toBe('SMS');
+			expect(TRIGGER_CATEGORY_LABELS.internal).toBe('Internal');
 		});
 
-		it('has exactly 4 categories', () => {
-			expect(Object.keys(TRIGGER_CATEGORY_LABELS)).toHaveLength(4);
+		it('has exactly 3 categories', () => {
+			expect(Object.keys(TRIGGER_CATEGORY_LABELS)).toHaveLength(3);
 		});
 	});
 
@@ -72,10 +71,9 @@ describe('triggerTypes', () => {
 		it('TriggerCategory is a valid union type', () => {
 			const pm: TriggerCategory = 'pm';
 			const scm: TriggerCategory = 'scm';
-			const email: TriggerCategory = 'email';
-			const sms: TriggerCategory = 'sms';
+			const internal: TriggerCategory = 'internal';
 
-			expect([pm, scm, email, sms]).toEqual(['pm', 'scm', 'email', 'sms']);
+			expect([pm, scm, internal]).toEqual(['pm', 'scm', 'internal']);
 		});
 
 		it('ProjectTriggersView has agents and integrations', () => {
@@ -89,8 +87,6 @@ describe('triggerTypes', () => {
 				integrations: {
 					pm: 'trello',
 					scm: 'github',
-					email: null,
-					sms: null,
 				},
 			};
 
@@ -101,8 +97,8 @@ describe('triggerTypes', () => {
 	});
 
 	describe('TRIGGER_REGISTRY', () => {
-		it('has all four categories', () => {
-			expect(Object.keys(TRIGGER_REGISTRY)).toEqual(['pm', 'scm', 'email', 'sms']);
+		it('has all three categories', () => {
+			expect(Object.keys(TRIGGER_REGISTRY)).toEqual(['pm', 'scm', 'internal']);
 		});
 
 		it('pm category has expected triggers', () => {
@@ -122,19 +118,15 @@ describe('triggerTypes', () => {
 			expect(scmEvents).toContain('scm:pr-review-submitted');
 			expect(scmEvents).toContain('scm:review-requested');
 			expect(scmEvents).toContain('scm:pr-opened');
-			expect(scmEvents).toContain('scm:pr-comment');
+			expect(scmEvents).toContain('scm:pr-comment-mention');
 			expect(scmEvents).toContain('scm:pr-merged');
 			expect(scmEvents).toContain('scm:pr-ready-to-merge');
+			expect(scmEvents).toContain('scm:pr-conflict-detected');
 		});
 
-		it('email category has expected triggers', () => {
-			const emailEvents = TRIGGER_REGISTRY.email.map((t) => t.event);
-			expect(emailEvents).toContain('email:received');
-		});
-
-		it('sms category has expected triggers', () => {
-			const smsEvents = TRIGGER_REGISTRY.sms.map((t) => t.event);
-			expect(smsEvents).toContain('sms:received');
+		it('internal category has expected triggers', () => {
+			const internalEvents = TRIGGER_REGISTRY.internal.map((t) => t.event);
+			expect(internalEvents).toContain('internal:auto-chain');
 		});
 
 		it('all triggers have required KnownTriggerEvent fields', () => {
@@ -160,7 +152,7 @@ describe('triggerTypes', () => {
 		});
 
 		it('all provider values are valid KnownProviders', () => {
-			const validProviders = new Set(['trello', 'jira', 'github', 'imap', 'gmail', 'twilio']);
+			const validProviders = new Set(['trello', 'jira', 'github']);
 			const allProviders = Object.values(TRIGGER_REGISTRY)
 				.flat()
 				.flatMap((t) => t.providers ?? []);

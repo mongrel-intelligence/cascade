@@ -43,7 +43,6 @@ vi.mock('../../../../src/agents/definitions/loader.js', () => ({
 			'respond-to-pr-comment',
 			'respond-to-planning-comment',
 			'debug',
-			'email-joke',
 		]),
 	getKnownAgentTypes: vi.fn().mockReturnValue([]),
 }));
@@ -63,7 +62,6 @@ vi.mock('../../../../src/agents/definitions/index.js', () => ({
 			'respond-to-pr-comment',
 			'respond-to-planning-comment',
 			'debug',
-			'email-joke',
 		]),
 	getKnownAgentTypes: vi.fn().mockReturnValue([]),
 }));
@@ -250,14 +248,13 @@ describe('resolveModelConfig', () => {
 			expect(result.model).toBe('agent-specific-model');
 		});
 
-		it('uses configKey for model lookup when provided', async () => {
-			const config = makeConfig({
-				agentModels: { review: 'review-model' },
-			});
+		it('uses configKey for model lookup when provided (project-level)', async () => {
+			const config = makeConfig();
+			const project = makeProject({ agentModels: { review: 'review-model' } });
 
 			const result = await resolveModelConfig({
 				agentType: 'respond-to-review',
-				project: makeProject(),
+				project,
 				config,
 				repoDir: '/tmp/test',
 				configKey: 'review',
@@ -281,7 +278,7 @@ describe('resolveModelConfig', () => {
 
 		it('renders task prompt from definition', async () => {
 			vi.mocked(resolveAgentDefinition).mockResolvedValue(
-				mockAgentDefinition({ taskPrompt: 'Custom task for <%= it.cardId %>.' }),
+				mockAgentDefinition({ taskPrompt: 'Custom task for <%= it.workItemId %>.' }),
 			);
 
 			const result = await resolveModelConfig({
@@ -289,7 +286,7 @@ describe('resolveModelConfig', () => {
 				project: makeProject(),
 				config: makeConfig(),
 				repoDir: '/tmp/test',
-				agentInput: { cardId: 'card-42' },
+				agentInput: { workItemId: 'card-42' },
 			});
 
 			expect(result.taskPrompt).toBe('Custom task for card-42.');
@@ -342,6 +339,29 @@ describe('resolveModelConfig', () => {
 			expect(result.taskPrompt).toContain('Fix this line');
 		});
 
+		it('forwards promptContext fields to task prompt rendering', async () => {
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(
+				mockAgentDefinition({
+					taskPrompt:
+						'Backlog: <%= it.backlogListId %>, TODO: <%= it.todoListId %>, PM: <%= it.pmName %>',
+				}),
+			);
+
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project: makeProject(),
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+				promptContext: {
+					backlogListId: 'list-abc',
+					todoListId: 'list-def',
+					pmName: 'Trello',
+				},
+			});
+
+			expect(result.taskPrompt).toBe('Backlog: list-abc, TODO: list-def, PM: Trello');
+		});
+
 		it('returns undefined taskPrompt when definition has no taskPrompt', async () => {
 			vi.mocked(resolveAgentDefinition).mockResolvedValue(
 				mockAgentDefinition({ systemPrompt: 'Only system prompt configured.' }),
@@ -352,7 +372,7 @@ describe('resolveModelConfig', () => {
 				project: makeProject(),
 				config: makeConfig(),
 				repoDir: '/tmp/test',
-				agentInput: { cardId: 'card-99' },
+				agentInput: { workItemId: 'card-99' },
 			});
 
 			expect(result.taskPrompt).toBeUndefined();
@@ -371,9 +391,8 @@ describe('resolveModelConfig', () => {
 			expect(result.maxIterations).toBe(42);
 		});
 
-		it('uses agent-specific iterations', async () => {
+		it('falls back to defaults.maxIterations when no agent-specific config', async () => {
 			const config = makeConfig({
-				agentIterations: { splitting: 10 },
 				maxIterations: 50,
 			});
 
@@ -384,7 +403,7 @@ describe('resolveModelConfig', () => {
 				repoDir: '/tmp/test',
 			});
 
-			expect(result.maxIterations).toBe(10);
+			expect(result.maxIterations).toBe(50);
 		});
 	});
 });

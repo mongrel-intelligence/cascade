@@ -5,22 +5,32 @@
 ```bash
 npm install
 cd web && npm install && cd ..
-npm run dev          # Backend
+# Start Redis (required for router/BullMQ):
+#   macOS: brew install redis && brew services start redis
+#   Linux: apt-get install redis-server && service redis-server start
+# The .cascade/setup.sh script handles this automatically.
+npm run dev          # Router (webhook receiver, requires Redis)
 npm run dev:web      # Dashboard frontend (separate terminal)
 ```
 
 ## Architecture
 
-CASCADE reacts to Trello webhooks and runs AI agents to analyze, plan, and implement features.
+CASCADE runs as three services (no monolithic server mode):
+
+1. **Router** (`src/router/index.ts`) — receives webhooks, enqueues jobs to Redis via BullMQ
+2. **Worker** (`src/worker-entry.ts`) — processes one job per container, exits when done
+3. **Dashboard** (`src/dashboard.ts`) — API + tRPC for web UI and CLI
 
 ### Trigger System
 
 The extensible trigger system routes events to agents:
 
 ```
-Trello/GitHub Webhook → TriggerRegistry → Agent → Code Changes → PR
+Trello/GitHub Webhook → Router → Redis/BullMQ → Worker → TriggerRegistry → Agent → Code Changes → PR
 ```
 
+- `src/router/` - Webhook receiver (enqueues jobs to Redis)
+- `src/webhook/` - Shared webhook handler factory, parsers, and logging
 - `src/triggers/` - Event handlers (Trello card moves, labels, GitHub PRs, attachments)
 - `src/agents/` - AI agents (splitting, planning, implementation, review, debug)
 - `src/gadgets/` - Tools agents can use (Trello API, Git operations, file system)
@@ -53,6 +63,8 @@ Lefthook runs pre-commit (lint, typecheck) and pre-push (test) hooks automatical
 
 ## Key Directories
 
+- `src/router/` - Router entry point (webhook receiver, enqueues to Redis)
+- `src/webhook/` - Shared webhook handler factory, parsers, and logging helpers
 - `src/config/` - Configuration provider, caching, Zod schemas
 - `src/db/` - Database client, Drizzle schema, repositories
 - `src/triggers/` - Extensible trigger system (Trello, GitHub)
@@ -70,6 +82,7 @@ Lefthook runs pre-commit (lint, typecheck) and pre-push (test) hooks automatical
 
 Required:
 - `DATABASE_URL` - PostgreSQL connection string (Supabase transaction pooler, port 6543)
+- `REDIS_URL` - Redis connection string for BullMQ job queue (router + worker). Defaults to `redis://localhost:6379`. Run `.cascade/setup.sh` to install and start Redis locally.
 
 Optional (infrastructure):
 - `PORT` - Server port (default: 3000)
@@ -93,9 +106,9 @@ CASCADE stores all project configuration in PostgreSQL (Supabase). The `config/p
 - `organizations` - Organization definitions (multi-tenant support)
 - `cascade_defaults` - Global defaults per org (model, iterations, timeouts, budget)
 - `projects` - Per-project config (repo, base branch, budget, backend)
-- `project_integrations` - Integration configs per project with `category` (pm/scm/email/sms), `provider` (trello/jira/github/imap/gmail/twilio), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
-- `integration_credentials` - Links integration roles to org-scoped credential rows (e.g., `api_key` → credential #5). Roles are provider-specific: trello has `api_key`/`token`, jira has `email`/`api_token`, github has `implementer_token`/`reviewer_token`, twilio has `account_sid`/`auth_token`/`phone_number`
-- `agent_configs` - Per-agent-type overrides (model, iterations, backend, prompt), scoped globally, per-org, or per-project
+- `project_integrations` - Integration configs per project with `category` (pm/scm/email), `provider` (trello/jira/github/imap/gmail), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
+- `integration_credentials` - Links integration roles to org-scoped credential rows (e.g., `api_key` → credential #5). Roles are provider-specific: trello has `api_key`/`token`, jira has `email`/`api_token`, github has `implementer_token`/`reviewer_token`
+- `agent_configs` - Per-agent-type overrides (model, iterations, engine, max_concurrency), project-scoped only (`project_id NOT NULL`)
 - `credentials` - Org-scoped credentials (API keys, tokens)
 - `users` - Dashboard users (email, bcrypt password hash, org-scoped)
 - `sessions` - Session tokens for cookie-based auth (30-day expiry)
@@ -193,22 +206,6 @@ const openrouterKey = await getOrgCredential(projectId, 'OPENROUTER_API_KEY');
 
 Role definitions and env-var-key mappings are in `src/config/integrationRoles.ts`.
 
-### Twilio SMS Integration
-
-CASCADE supports sending and receiving SMS via Twilio. Configure per-project in the dashboard (Project Settings > Integrations > SMS tab) or CLI:
-
-```bash
-cascade credentials create --name "Twilio Account SID" --key TWILIO_ACCOUNT_SID --value ACxxx... --default
-cascade credentials create --name "Twilio Auth Token" --key TWILIO_AUTH_TOKEN --value xxx... --default
-cascade credentials create --name "Twilio Phone Number" --key TWILIO_PHONE_NUMBER --value +15550000001 --default
-cascade projects integration-credential-set <project-id> --category sms --role account_sid --credential-id 5
-cascade projects integration-credential-set <project-id> --category sms --role auth_token --credential-id 6
-cascade projects integration-credential-set <project-id> --category sms --role phone_number --credential-id 7
-```
-
-**Inbound webhook**: `POST /twilio/webhook/:projectId` — configure this URL in the Twilio console under *Phone Numbers → Manage → Active Numbers → [your number] → Messaging → A Message Comes In*. The handler validates the Twilio signature and logs incoming messages (agent triggering will be added with a future `sms-responder` agent).
-
-**Outbound SMS**: Agents use the `SendSms` gadget. SMS credentials are scoped automatically during agent execution (mirrors email integration).
 
 ### Agent Trigger Configuration
 
@@ -220,7 +217,6 @@ Triggers use a category-prefixed event format: `{category}:{event-name}`
 - PM triggers: `pm:status-changed`, `pm:label-added`
 - SCM triggers: `scm:check-suite-success`, `scm:check-suite-failure`, `scm:pr-review-submitted`
 - Email triggers: `email:received`
-- SMS triggers: `sms:received`
 
 #### CLI Commands
 
@@ -330,20 +326,44 @@ Generate a long-lived OAuth token for headless/containerized environments:
 bash tests/docker/claude-code-auth/run-test.sh
 ```
 
-### Subscription Cost Zeroing
+## Codex Backend
 
-When using a Claude Max subscription (OAuth token), API costs are covered by the subscription. Enable `subscriptionCostZero` to prevent these costs from counting against the per-card budget:
+CASCADE supports OpenAI's Codex CLI as an alternative agent engine. Configure it as the default or per-project via the `agent-engine` setting:
 
-```json
-{
-  "agentBackend": {
-    "default": "claude-code",
-    "subscriptionCostZero": true
-  }
-}
+```bash
+cascade defaults set --agent-engine codex
 ```
 
-When enabled and the backend is `claude-code`, reported costs are zeroed after each session.
+### Authentication
+
+The Codex engine supports two auth modes:
+
+**API key (`OPENAI_API_KEY`):** Store the key as an org-scoped credential. No extra setup needed.
+
+**Subscription (ChatGPT Plus/Pro via `CODEX_AUTH_JSON`):**
+
+Codex CLI authenticates with an `auth.json` file at `~/.codex/auth.json` written by `codex login`. CASCADE reads this credential, writes the file before each run, and automatically captures any token refreshes the Codex CLI performs back into the database — so the credential stays current in ephemeral worker environments.
+
+Setup:
+
+```bash
+# 1. On a machine with a browser:
+codex login
+
+# 2. Store the auth token in CASCADE:
+cascade credentials create \
+  --name "Codex Subscription Auth" \
+  --key CODEX_AUTH_JSON \
+  --value "$(cat ~/.codex/auth.json)" \
+  --default
+
+# 3. Set the engine (if not already done):
+cascade defaults set --agent-engine codex
+```
+
+CASCADE then:
+- Writes `~/.codex/auth.json` from the stored credential at run start
+- Detects post-run token refreshes from the Codex CLI and updates the DB credential automatically
 
 ## Dashboard
 
@@ -439,7 +459,7 @@ cascade runs llm-call <run-id> <call-number>
 cascade runs debug <run-id>                    # View debug analysis
 cascade runs debug <run-id> --analyze          # Trigger new debug analysis
 cascade runs debug <run-id> --analyze --wait   # Trigger and wait for completion
-cascade runs trigger --project <id> --agent-type <type> [--card-id ID] [--model MODEL]
+cascade runs trigger --project <id> --agent-type <type> [--work-item-id ID] [--model MODEL]
 cascade runs retry <run-id> [--model MODEL]
 
 # Projects
@@ -465,15 +485,15 @@ cascade credentials delete <id> --yes
 
 # Defaults
 cascade defaults show
-cascade defaults set --model claude-sonnet-4-5-20250929 --max-iterations 25 --agent-backend claude-code
+cascade defaults set --model claude-sonnet-4-5-20250929 --max-iterations 25 --agent-engine claude-code
 
 # Organization
 cascade org show
 cascade org update --name "My Org"
 
 # Agent Configs
-cascade agents list [--project-id ID]
-cascade agents create --agent-type implementation --model claude-sonnet-4-5-20250929 [--project-id ID]
+cascade agents list --project-id ID
+cascade agents create --agent-type implementation --model claude-sonnet-4-5-20250929 --project-id ID
 cascade agents update <id> --max-iterations 30
 cascade agents delete <id> --yes
 
@@ -507,7 +527,7 @@ src/cli/dashboard/
 └── webhooks/         # 3 commands
 ```
 
-The `cascade` binary is separate from `cascade-tools` (which is for agents). The `cascade-tools` binary uses a custom oclif config in `bin/cascade-tools.js` to discover only agent tool commands (`dist/cli/pm/`, `dist/cli/github/`, `dist/cli/session/`), while `cascade` discovers only dashboard commands (`dist/cli/dashboard/`).
+The `cascade` binary is separate from `cascade-tools` (which is for agents). The `cascade-tools` binary uses a custom oclif config in `bin/cascade-tools.js` to discover only agent tool commands (`dist/cli/pm/`, `dist/cli/scm/`, `dist/cli/session/`), while `cascade` discovers only dashboard commands (`dist/cli/dashboard/`).
 
 ## Adding New Triggers
 

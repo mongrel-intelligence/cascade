@@ -96,7 +96,7 @@ describe('createFileLogger', () => {
 		const logger = createFileLogger('test-prefix');
 
 		expect(logger.logPath).toMatch(/\/tmp\/workspace\/test-prefix-cascade-\d+\.log/);
-		expect(logger.llmistLogPath).toMatch(/\/tmp\/workspace\/test-prefix-llmist-\d+\.log/);
+		expect(logger.engineLogPath).toMatch(/\/tmp\/workspace\/test-prefix-engine-\d+\.log/);
 	});
 
 	it('opens the log file for appending', () => {

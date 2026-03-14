@@ -91,4 +91,42 @@ if pg_isready -q 2>/dev/null; then
   fi
 fi
 
+# Redis check and restart (required for router mode / BullMQ job queue)
+if redis-cli ping 2>/dev/null | grep -q PONG; then
+  echo "Redis: running"
+else
+  echo "Redis: down - attempting restart..."
+
+  if command -v brew &>/dev/null; then
+    brew services start redis 2>/dev/null || true
+  elif command -v service &>/dev/null; then
+    sudo service redis-server start 2>/dev/null || \
+      redis-server --daemonize yes 2>/dev/null || true
+  elif command -v redis-server &>/dev/null; then
+    redis-server --daemonize yes 2>/dev/null || true
+  fi
+
+  # Wait for Redis to be ready
+  for i in {1..10}; do
+    if redis-cli ping 2>/dev/null | grep -q PONG; then
+      break
+    fi
+    echo "Waiting for Redis... ($i/10)"
+    sleep 1
+  done
+
+  # Final check
+  if redis-cli ping 2>/dev/null | grep -q PONG; then
+    echo "Redis: restarted successfully"
+  else
+    echo "Redis: FAILED TO START"
+    echo ""
+    echo "Troubleshooting:"
+    echo "  - Install Redis: brew install redis (macOS) or apt-get install redis-server (Linux)"
+    echo "  - Start manually: redis-server"
+    echo "  - Note: Redis is required for router mode (BullMQ job queue)"
+    exit 1
+  fi
+fi
+
 echo "=== All services running ==="

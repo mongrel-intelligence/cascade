@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import {
 	AgentBuilder,
 	BudgetPricingUnavailableError,
@@ -9,10 +10,11 @@ import { getCompactionConfig } from '../../config/compactionConfig.js';
 import { getIterationTrailingMessage } from '../../config/hintConfig.js';
 import { getRateLimitForModel } from '../../config/rateLimits.js';
 import { getRetryConfig } from '../../config/retryConfig.js';
-import { type SessionHooks, initSessionState } from '../../gadgets/sessionState.js';
+import { type SessionHooks, initSessionState, setReadOnlyFs } from '../../gadgets/sessionState.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
 import { resolveSquintDbPath } from '../../utils/squintDb.js';
 import type { IProgressMonitor } from '../contracts/index.js';
+import { getAgentCapabilities } from '../shared/capabilities.js';
 import { type AccumulatedLlmCall, createObserverHooks } from '../utils/hooks.js';
 import type { TrackingContext } from '../utils/tracking.js';
 
@@ -32,7 +34,7 @@ export interface CreateBuilderOptions {
 	gadgets: Parameters<typeof AgentBuilder.prototype.withGadgets>;
 	/** Optional progress monitor for time-based progress reporting */
 	progressMonitor?: IProgressMonitor;
-	/** Set to true to skip calling initSessionState (review agent doesn't use it) */
+	/** Skip session state initialization and capability checks. No current callers use this flag. */
 	skipSessionState?: boolean;
 	/** Remaining card budget in USD — passed to llmist's withBudget() for in-flight enforcement */
 	remainingBudgetUsd?: number;
@@ -44,8 +46,12 @@ export interface CreateBuilderOptions {
 	baseBranch?: string;
 	/** Project ID for PR ↔ work item linking. Passed to session state. */
 	projectId?: string;
-	/** Work item (card) ID for PR ↔ work item linking. Passed to session state. */
-	cardId?: string;
+	/** Work item ID for PR ↔ work item linking. Passed to session state. */
+	workItemId?: string;
+	/** Work item URL for PR ↔ work item enrichment. Passed to session state. */
+	workItemUrl?: string;
+	/** Work item display title for PR ↔ work item enrichment. Passed to session state. */
+	workItemTitle?: string;
 	/** Resolved SCM hook flags for finish validation (requiresPR, requiresReview, etc.) */
 	hooks?: SessionHooks;
 }
@@ -75,13 +81,32 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 
 	// Initialize session state for gadgets (e.g., Finish checks PR requirement for implementation)
 	if (!skipSessionState) {
-		initSessionState(
+		let initialHeadSha: string | undefined;
+		try {
+			initialHeadSha = execSync('git rev-parse HEAD', {
+				encoding: 'utf-8',
+				cwd: options.repoDir,
+			}).trim();
+		} catch {
+			// Not in a git repo or git not available — leave undefined
+		}
+
+		initSessionState({
 			agentType,
-			options.baseBranch,
-			options.projectId,
-			options.cardId,
-			options.hooks,
-		);
+			baseBranch: options.baseBranch,
+			projectId: options.projectId,
+			workItemId: options.workItemId,
+			hooks: options.hooks,
+			workItemUrl: options.workItemUrl,
+			workItemTitle: options.workItemTitle,
+			initialHeadSha,
+		});
+
+		// Mark session as read-only if agent lacks fs:write capability
+		const caps = await getAgentCapabilities(agentType);
+		if (caps.isReadOnly) {
+			setReadOnlyFs(true);
+		}
 	}
 
 	// Resolve config values before building
@@ -97,6 +122,7 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 		.withRateLimits(getRateLimitForModel(model))
 		.withRetry(getRetryConfig(llmistLogger))
 		.withCompaction(compactionConfig)
+		.withCaching()
 		.withTrailingMessage(trailingMessage)
 		.withTextOnlyHandler('acknowledge')
 		.withHooks({

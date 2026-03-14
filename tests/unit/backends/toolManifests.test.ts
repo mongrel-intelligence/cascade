@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getToolManifests } from '../../../src/backends/toolManifests.js';
+import { getToolManifests } from '../../../src/agents/definitions/toolManifests.js';
 
 describe('getToolManifests', () => {
 	it('returns an array of tool manifests', () => {
@@ -8,9 +8,9 @@ describe('getToolManifests', () => {
 		expect(manifests.length).toBeGreaterThan(0);
 	});
 
-	it('returns exactly 17 tools', () => {
+	it('returns exactly 20 tools', () => {
 		const manifests = getToolManifests();
-		expect(manifests).toHaveLength(17);
+		expect(manifests).toHaveLength(20);
 	});
 
 	it('every manifest has required fields: name, description, cliCommand, parameters', () => {
@@ -42,7 +42,9 @@ describe('getToolManifests', () => {
 		expect(names).toContain('CreateWorkItem');
 		expect(names).toContain('ListWorkItems');
 		expect(names).toContain('AddChecklist');
-		expect(names).toContain('UpdateChecklistItem');
+		expect(names).toContain('MoveWorkItem');
+		expect(names).toContain('PMUpdateChecklistItem');
+		expect(names).toContain('PMDeleteChecklistItem');
 	});
 
 	it('includes GitHub PR tools', () => {
@@ -57,6 +59,7 @@ describe('getToolManifests', () => {
 		expect(names).toContain('UpdatePRComment');
 		expect(names).toContain('ReplyToReviewComment');
 		expect(names).toContain('CreatePRReview');
+		expect(names).toContain('GetCIRunLogs');
 	});
 
 	it('includes Finish tool', () => {
@@ -78,6 +81,35 @@ describe('getToolManifests', () => {
 		expect(readWorkItem).toBeDefined();
 		expect(readWorkItem?.parameters).toMatchObject({
 			workItemId: { type: 'string', required: true },
+		});
+	});
+
+	it('MoveWorkItem has required workItemId and destination parameters', () => {
+		const manifests = getToolManifests();
+		const moveWorkItem = manifests.find((m) => m.name === 'MoveWorkItem');
+		expect(moveWorkItem).toBeDefined();
+		expect(moveWorkItem?.parameters).toMatchObject({
+			workItemId: { type: 'string', required: true },
+			destination: { type: 'string', required: true },
+		});
+	});
+
+	it('PMDeleteChecklistItem has required workItemId and checkItemId parameters', () => {
+		const manifests = getToolManifests();
+		const deleteChecklist = manifests.find((m) => m.name === 'PMDeleteChecklistItem');
+		expect(deleteChecklist).toBeDefined();
+		expect(deleteChecklist?.parameters).toMatchObject({
+			workItemId: { type: 'string', required: true },
+			checkItemId: { type: 'string', required: true },
+		});
+	});
+
+	it('GetCIRunLogs has required ref parameter', () => {
+		const manifests = getToolManifests();
+		const getCIRunLogs = manifests.find((m) => m.name === 'GetCIRunLogs');
+		expect(getCIRunLogs).toBeDefined();
+		expect(getCIRunLogs?.parameters).toMatchObject({
+			ref: { type: 'string', required: true },
 		});
 	});
 

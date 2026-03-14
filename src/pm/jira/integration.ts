@@ -59,8 +59,10 @@ export class JiraIntegration implements PMIntegration {
 				processed: jiraLabels?.processed ?? 'cascade-processed',
 				error: jiraLabels?.error ?? 'cascade-error',
 				readyToProcess: jiraLabels?.readyToProcess ?? 'cascade-ready',
+				auto: jiraLabels?.auto ?? 'cascade-auto',
 			},
 			statuses: {
+				backlog: jiraConfig?.statuses?.backlog,
 				inProgress: jiraConfig?.statuses?.inProgress,
 				inReview: jiraConfig?.statuses?.inReview,
 				done: jiraConfig?.statuses?.done,

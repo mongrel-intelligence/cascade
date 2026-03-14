@@ -5,6 +5,7 @@ import {
 	BLOCKED_ENV_EXACT,
 	filterProcessEnv,
 } from '../../../src/backends/claude-code/env.js';
+import { GITHUB_ACK_COMMENT_ID_ENV_VAR } from '../../../src/backends/secretBuilder.js';
 
 describe('filterProcessEnv', () => {
 	it('passes through exact-match allowed vars', () => {
@@ -149,5 +150,16 @@ describe('allowlist constants', () => {
 		for (const prefix of ALLOWED_ENV_PREFIXES) {
 			expect(prefix).toMatch(/^[A-Z_]+_$/);
 		}
+	});
+
+	it('CASCADE_GITHUB_ACK_COMMENT_ID is in the allowlist', () => {
+		expect(ALLOWED_ENV_EXACT.has(GITHUB_ACK_COMMENT_ID_ENV_VAR)).toBe(true);
+	});
+
+	it('CASCADE_GITHUB_ACK_COMMENT_ID passes through filterProcessEnv', () => {
+		const result = filterProcessEnv({
+			[GITHUB_ACK_COMMENT_ID_ENV_VAR]: '12345',
+		});
+		expect(result[GITHUB_ACK_COMMENT_ID_ENV_VAR]).toBe('12345');
 	});
 });

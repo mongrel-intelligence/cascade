@@ -47,7 +47,7 @@ export function WebhookLogDetailDialog({ logId, onClose }: WebhookLogDetailDialo
 
 				{log && (
 					<div className="space-y-4 text-sm">
-						<div className="grid grid-cols-2 gap-3">
+						<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 							<div>
 								<div className="text-xs font-medium text-muted-foreground">ID</div>
 								<div className="font-mono text-xs">{log.id}</div>
@@ -83,6 +83,10 @@ export function WebhookLogDetailDialog({ logId, onClose }: WebhookLogDetailDialo
 							<div>
 								<div className="text-xs font-medium text-muted-foreground">Received At</div>
 								<div>{log.receivedAt ? new Date(log.receivedAt).toLocaleString() : '-'}</div>
+							</div>
+							<div>
+								<div className="text-xs font-medium text-muted-foreground">Decision Reason</div>
+								<div>{log.decisionReason ?? '-'}</div>
 							</div>
 						</div>
 

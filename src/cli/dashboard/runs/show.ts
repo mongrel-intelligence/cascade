@@ -32,7 +32,7 @@ export default class RunsShow extends DashboardCommand {
 				startedAt: { label: 'Started', format: formatDate },
 				durationMs: { label: 'Duration', format: formatDuration },
 				costUsd: { label: 'Cost', format: formatCost },
-				cardId: { label: 'Card ID' },
+				workItemId: { label: 'Work Item ID' },
 				cardName: { label: 'Card Name' },
 				iterations: { label: 'Iterations' },
 				llmCalls: { label: 'LLM Calls' },

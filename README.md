@@ -1,207 +1,405 @@
 # CASCADE
 
-Multi-project Trello-to-code automation platform. CASCADE reacts to Trello card movements and triggers AI agents to handle splitting, planning, and implementation tasks.
+> **CASCADE turns PM cards into pull requests using AI agents.**
+
+CASCADE is an open-source automation platform that bridges your project management tool (Trello or JIRA) with your GitHub repository. When you move a card to the right list — or add a label — CASCADE picks it up, runs an AI agent, and delivers a pull request.
+
+```
+PM Card → Webhook → Router → Redis/BullMQ → Worker → Agent → PR
+```
+
+---
 
 ## Features
 
-- **Multi-project support** - Single deployment handles multiple repos/Trello boards
-- **Extensible trigger system** - Easy to add new triggers (card moved, label added, PR ready, etc.)
-- **AI-powered agents** - Splitting, planning, implementation, review, and debug agents using llmist
-- **Git workflow** - Automatic branch creation, commits, and PR creation
-- **Trello integration** - Full card management (labels, comments, attachments)
-- **GitHub integration** - PR review webhooks, automatic card movement, CI check monitoring
+- **Multi-PM support** — Works with Trello and JIRA out of the box
+- **11 agent types** — Splitting, planning, implementation, review, debug, respond-to-review, respond-to-CI, and more
+- **Dual-persona GitHub model** — Separate implementer and reviewer bot accounts to prevent feedback loops
+- **Web dashboard + CLI** — Monitor runs, manage projects, configure triggers
+- **Extensible trigger system** — Add new events without touching core logic
+- **Pluggable agent engines** — Built-in `llmist`, `claude-code`, `codex`, and `opencode` engines, with a shared contract for adding more
+- **Credential encryption** — AES-256-GCM encryption for all stored secrets
 
-## Getting Started
+---
 
-### Prerequisites
-
-- Node.js 22+
-- npm
-- Git
-- GitHub CLI (`gh`) - for PR creation
-
-### Installation
+## Quick Start (Docker Compose)
 
 ```bash
-# Clone the repository
 git clone https://github.com/zbigniewsobiecki/cascade.git
 cd cascade
+cp .env.docker.example .env    # Edit if needed
+bash setup.sh                  # Build, migrate, and start all services
+docker compose exec dashboard node dist/tools/create-admin-user.mjs \
+  --email admin@example.com --password changeme --name "Admin"
+```
 
-# Install dependencies
+Open **http://localhost:3001** — log in with your admin credentials.
+
+For detailed setup including project configuration, webhooks, and credentials, see [Getting Started](./GETTING_STARTED.md).
+
+### Development Setup
+
+For contributing or local development without Docker:
+
+**Prerequisites:** Node.js 22+, PostgreSQL, Redis, Git
+
+```bash
+git clone https://github.com/zbigniewsobiecki/cascade.git
+cd cascade
 npm install
-
-# Install git hooks
-npx lefthook install
-
-# Copy environment template
-cp .env.example .env
+cd web && npm install && cd ..
+cp .env.example .env           # Set DATABASE_URL and REDIS_URL
+npm run db:migrate
 ```
 
-### Environment Variables
-
-Edit `.env` with your credentials:
+Start each service in a separate terminal:
 
 ```bash
-# Required for Trello integration
-TRELLO_API_KEY=your_trello_api_key
-TRELLO_TOKEN=your_trello_token
-
-# Required for GitHub dual-persona model
-GITHUB_TOKEN_IMPLEMENTER=your_implementer_bot_token
-GITHUB_TOKEN_REVIEWER=your_reviewer_bot_token
-
-# Required for AI agents (via OpenRouter)
-OPENROUTER_API_KEY=your_openrouter_api_key
-
-# Optional
-PORT=3000
-LOG_LEVEL=info
-CONFIG_PATH=./config/projects.json
+npm run dev                                          # Terminal 1: Router (webhook receiver, :3000)
+npm run dev:web                                      # Terminal 2: Dashboard frontend (Vite, :5173)
+npm run build && node --env-file=.env dist/dashboard.js  # Terminal 3: Dashboard API (:3001)
 ```
 
-#### Getting Trello Credentials
-
-1. Get your API key: https://trello.com/app-key
-2. Generate a token using the link on that page
-3. Find board/list/label IDs:
-   - Open a Trello board
-   - Add `.json` to the URL (e.g., `https://trello.com/b/BOARD_ID.json`)
-   - Search for list names to find their IDs
-
-#### Getting GitHub Token
+Open **http://localhost:5173**. Create your first user:
 
 ```bash
-# Using GitHub CLI
-gh auth token
-
-# Or create a Personal Access Token at:
-# https://github.com/settings/tokens
-# Required scopes: repo, workflow
+node --env-file=.env --import tsx tools/create-admin-user.ts \
+  --email you@example.com --password yourpassword --name "Your Name"
 ```
 
-## Configuration
+---
 
-### Project Configuration
+## Architecture
 
-Edit `config/projects.json` to add your projects:
+CASCADE runs as three independent services:
 
-```json
-{
-  "defaults": {
-    "model": "openrouter:google/gemini-3-flash-preview",
-    "maxIterations": 50,
-    "selfDestructTimeoutMs": 1800000
-  },
-  "projects": [
-    {
-      "id": "my-project",
-      "name": "My Project",
-      "repo": "owner/repo-name",
-      "baseBranch": "main",
-      "branchPrefix": "feature/",
-      "trello": {
-        "boardId": "your_board_id",
-        "lists": {
-          "splitting": "list_id_for_splitting",
-          "planning": "list_id_for_planning",
-          "todo": "list_id_for_todo",
-          "inProgress": "list_id_for_in_progress",
-          "inReview": "list_id_for_in_review"
-        },
-        "labels": {
-          "readyToProcess": "label_id_ready",
-          "processing": "label_id_processing",
-          "processed": "label_id_processed",
-          "error": "label_id_error"
-        }
-      }
-    }
-  ]
-}
-```
+| Service | Entry Point | Role |
+|---------|-------------|------|
+| **Router** | `src/router/index.ts` | Receives webhooks, enqueues jobs to Redis via BullMQ |
+| **Worker** | `src/worker-entry.ts` | Processes one job per container, exits when done |
+| **Dashboard** | `src/dashboard.ts` | Serves the API (tRPC) and web UI |
 
-### Trello Lists
+### Agent Types
 
-| List | Purpose |
-|------|---------|
-| `splitting` | Cards here trigger the splitting agent (splits plan into work items) |
-| `planning` | Cards here trigger the planning agent (creates implementation plan) |
-| `todo` | Cards here trigger the implementation agent (writes code, creates PR) |
-| `inProgress` | Cards being actively worked on |
-| `inReview` | Cards with PRs ready for review |
-
-### Trello Labels
-
-| Label | Purpose |
-|-------|---------|
-| `readyToProcess` | Card is ready for agent processing |
-| `processing` | Agent is currently working on the card |
-| `processed` | Agent completed successfully |
-| `error` | Agent encountered an error |
-
-## Development
-
-### Commands
-
-```bash
-# Start development server (with hot reload)
-npm run dev
-
-# Run tests
-npm test
-
-# Run tests with coverage
-npm run test:coverage
-
-# Type check
-npm run typecheck
-
-# Lint
-npm run lint
-
-# Lint and fix
-npm run lint:fix
-
-# Build for production
-npm run build
-
-# Start production server
-npm start
-```
+| Agent | Trigger | What it does |
+|-------|---------|-------------|
+| `splitting` | PM status change | Splits a large card into smaller work items |
+| `planning` | PM status change | Creates a detailed implementation plan on the card |
+| `implementation` | PM status change | Writes code and opens a pull request |
+| `review` | CI pass / PR opened / review requested | Reviews a pull request |
+| `respond-to-review` | Reviewer requests changes | Addresses review feedback |
+| `respond-to-ci` | CI failure | Diagnoses and fixes failing CI checks |
+| `respond-to-pr-comment` | PR comment | Responds to comments on a PR |
+| `respond-to-planning-comment` | Planning card comment | Updates the plan based on feedback |
+| `debug` | Session log uploaded | Analyzes agent session logs and creates a debug card |
+| `resolve-conflicts` | Merge conflict detected | Resolves git merge conflicts |
+| `backlog-manager` | Scheduled / manual | Manages and prioritizes the backlog |
 
 ### Project Structure
 
 ```
 cascade/
 ├── src/
-│   ├── index.ts              # Entry point
-│   ├── server.ts             # Hono HTTP server
-│   ├── config/               # Configuration loading & validation
+│   ├── router/               # Webhook receiver (enqueues to Redis)
+│   ├── worker-entry.ts       # Worker entry point (job processor)
+│   ├── dashboard.ts          # Dashboard entry point (API + tRPC)
+│   ├── webhook/              # Shared webhook handler factory, parsers, logging
+│   ├── config/               # Configuration loading, caching, Zod schemas
 │   ├── triggers/             # Extensible trigger system
 │   │   ├── registry.ts       # TriggerRegistry
-│   │   ├── types.ts          # Trigger interfaces
-│   │   └── trello/           # Trello-specific triggers
-│   ├── agents/               # AI agents
+│   │   ├── types.ts          # TriggerHandler interface
+│   │   ├── trello/           # Trello-specific triggers
+│   │   ├── github/           # GitHub-specific triggers
+│   │   └── jira/             # JIRA-specific triggers
+│   ├── agents/               # AI agent implementations
 │   │   ├── registry.ts       # Agent registry
-│   │   ├── base.ts           # Base agent runner
-│   │   └── prompts/          # System prompts
-│   ├── gadgets/              # Agent tools
-│   │   ├── trello/           # Trello API gadgets
-│   │   └── git/              # Git operation gadgets
-│   ├── trello/               # Trello client
-│   ├── utils/                # Utilities
-│   └── types/                # TypeScript types
-├── tests/                    # Test files
-├── config/                   # Project configurations
-└── ...
+│   │   ├── definitions/      # Per-agent YAML configs
+│   │   └── prompts/          # System prompt templates
+│   ├── backends/             # Agent engine implementations and shared execution lifecycle
+│   ├── gadgets/              # Tools available to agents
+│   ├── pm/                   # PM provider abstraction (Trello, JIRA)
+│   ├── github/               # GitHub client and dual-persona model
+│   ├── trello/               # Trello API client
+│   ├── jira/                 # JIRA API client
+│   ├── db/                   # Drizzle schema, migrations, repositories
+│   ├── api/                  # Dashboard API (tRPC routers)
+│   ├── cli/                  # CLI commands for dashboard and agents
+│   ├── queue/                # BullMQ job queue client
+│   ├── types/                # Shared TypeScript types
+│   └── utils/                # Logging, repo cloning, lifecycle helpers
+├── web/                      # Dashboard frontend (React 19, Vite, Tailwind v4)
+├── tests/                    # Unit and integration tests
+└── tools/                    # Developer scripts (seeding, secrets, debugging)
 ```
 
-## Adding New Triggers
+---
 
-The trigger system is extensible. To add a new trigger:
+## Initial Setup
+
+After completing the Quick Start, configure your first project.
+
+### Create a project
+
+```bash
+node bin/cascade.js projects create \
+  --id my-project \
+  --name "My Project" \
+  --repo owner/repo-name
+```
+
+### Add credentials
+
+```bash
+# GitHub bot tokens
+node bin/cascade.js credentials create \
+  --name "Implementer Bot" \
+  --key GITHUB_TOKEN_IMPLEMENTER \
+  --value ghp_aaa... \
+  --default
+
+node bin/cascade.js credentials create \
+  --name "Reviewer Bot" \
+  --key GITHUB_TOKEN_REVIEWER \
+  --value ghp_bbb... \
+  --default
+
+# LLM API keys
+node bin/cascade.js credentials create \
+  --name "OpenRouter" \
+  --key OPENROUTER_API_KEY \
+  --value sk-or-... \
+  --default
+
+node bin/cascade.js credentials create \
+  --name "OpenAI" \
+  --key OPENAI_API_KEY \
+  --value sk-proj-... \
+  --default
+```
+
+### Link GitHub tokens to your project
+
+```bash
+# After creating credentials, note their IDs from `cascade credentials list`
+# (The GitHub integration is created automatically if it doesn't exist)
+node bin/cascade.js projects integration-credential-set my-project \
+  --category scm \
+  --role implementer_token \
+  --credential-id 1
+
+node bin/cascade.js projects integration-credential-set my-project \
+  --category scm \
+  --role reviewer_token \
+  --credential-id 2
+```
+
+### Connect a PM integration
+
+**Trello:**
+
+```bash
+node bin/cascade.js projects integration-set my-project \
+  --category pm \
+  --provider trello \
+  --config '{"boardId":"YOUR_BOARD_ID","lists":{"splitting":"LIST_ID","planning":"LIST_ID","todo":"LIST_ID","inProgress":"LIST_ID","inReview":"LIST_ID"},"labels":{"readyToProcess":"LABEL_ID","processing":"LABEL_ID","processed":"LABEL_ID","error":"LABEL_ID"}}'
+
+# Link Trello credentials
+node bin/cascade.js projects integration-credential-set my-project \
+  --category pm \
+  --role api_key \
+  --credential-id 3
+
+node bin/cascade.js projects integration-credential-set my-project \
+  --category pm \
+  --role token \
+  --credential-id 4
+```
+
+**JIRA:**
+
+```bash
+node bin/cascade.js projects integration-set my-project \
+  --category pm \
+  --provider jira \
+  --config '{"baseUrl":"https://yourorg.atlassian.net","projectKey":"PROJ","statusMap":{"splitting":"Splitting","planning":"Planning","todo":"To Do"}}'
+```
+
+### Set up webhooks
+
+```bash
+# Creates webhooks on GitHub (and Trello if configured)
+node bin/cascade.js webhooks create my-project \
+  --callback-url https://your-deployment.example.com
+```
+
+### Configure agent triggers
+
+```bash
+# Enable implementation when a card moves to the right status
+node bin/cascade.js projects trigger-set my-project \
+  --agent implementation \
+  --event pm:status-changed \
+  --enable
+
+# Enable review after CI passes (for implementer PRs only)
+node bin/cascade.js projects trigger-set my-project \
+  --agent review \
+  --event scm:check-suite-success \
+  --enable \
+  --params '{"authorMode":"own"}'
+```
+
+---
+
+## Development
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start Router with hot reload |
+| `npm run dev:web` | Start Dashboard frontend (Vite on :5173) |
+| `npm test` | Run all tests (Vitest) |
+| `npm run test:coverage` | Run tests with coverage report |
+| `npm run lint` | Check code style (Biome) |
+| `npm run lint:fix` | Auto-fix lint issues |
+| `npm run typecheck` | TypeScript type checking |
+| `npm run build` | Compile TypeScript to `dist/` |
+| `npm start` | Start production Router |
+| `npm run db:generate` | Generate migration SQL from schema changes |
+| `npm run db:migrate` | Apply pending migrations |
+| `npm run db:studio` | Open Drizzle Studio |
+
+### Testing
+
+```bash
+# Unit tests (fast, no DB required)
+npm test
+
+# Integration tests (requires PostgreSQL — starts via Docker)
+npm run test:db:up
+npm run test:integration
+```
+
+Tests use [Vitest](https://vitest.dev/). Unit tests are in `tests/unit/`, integration tests in `tests/integration/`.
+
+### Git Hooks
+
+[Lefthook](https://github.com/evilmartians/lefthook) runs automatically:
+
+- **pre-commit**: lint + typecheck
+- **pre-push**: full test suite
+
+Install hooks after cloning:
+
+```bash
+npx lefthook install
+```
+
+---
+
+## Deployment
+
+### Self-hosted (Docker Compose)
+
+The included `docker-compose.yml` runs all services (PostgreSQL, Redis, Dashboard + Frontend, Router) with a single command. Workers are built as a separate image and spawned dynamically by the Router via Docker socket. See the [Quick Start](#quick-start-docker-compose) above.
+
+| Image | Dockerfile | Purpose |
+|-------|-----------|---------|
+| Dashboard + Frontend | `Dockerfile.selfhosted` | API server + web UI (combined) |
+| Router | `Dockerfile.router` | Webhook receiver, worker orchestration |
+| Worker | `Dockerfile.worker` | Full agent runtime (clones repos, runs AI) |
+
+### Required production environment variables
+
+```bash
+# Infrastructure
+DATABASE_URL=postgresql://user:pass@host:5432/cascade
+REDIS_URL=redis://your-redis-host:6379
+
+# Security
+CREDENTIAL_MASTER_KEY=<64-char hex string>   # Encrypt credentials at rest
+                                              # Generate: openssl rand -hex 32
+```
+
+All project-level credentials (GitHub tokens, Trello/JIRA keys, LLM API keys) are stored in the database and managed through the dashboard or CLI — no additional environment variables are needed per project.
+
+### Separate deployment
+
+For production deployments where services run on different hosts, use the individual Dockerfiles (`Dockerfile.router`, `Dockerfile.dashboard`, `Dockerfile.worker`). The `Dockerfile.frontend` builds the web UI for deployment via Cloudflare Pages or any static hosting.
+
+---
+
+## CLI Reference
+
+The `cascade` CLI connects to your dashboard API for all operations. In development, build first:
+
+```bash
+npm run build
+node bin/cascade.js <command>
+```
+
+In production, the `cascade` binary is available globally.
+
+### Global flags
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Machine-readable JSON output |
+| `--server URL` | Override dashboard server URL |
+
+### Command groups
+
+```bash
+# Authentication
+cascade login --server http://localhost:3001 --email you@example.com --password secret
+cascade logout
+cascade whoami
+
+# Projects
+cascade projects list
+cascade projects show <id>
+cascade projects create --id <id> --name "Name" --repo owner/repo
+cascade projects integrations <id>
+cascade projects trigger-list <id>
+cascade projects trigger-set <id> --agent <type> --event <event> --enable
+
+# Credentials
+cascade credentials list
+cascade credentials create --name "..." --key KEY_NAME --value secret --default
+cascade credentials update <id> --value new-secret
+cascade credentials delete <id> --yes
+
+# Runs
+cascade runs list [--project ID] [--status running,failed]
+cascade runs show <run-id>
+cascade runs logs <run-id>
+cascade runs trigger --project <id> --agent-type <type>
+cascade runs retry <run-id>
+
+# Webhooks
+cascade webhooks list <project-id>
+cascade webhooks create <project-id> --callback-url https://...
+cascade webhooks delete <project-id>
+
+# Defaults and org
+cascade defaults show
+cascade defaults set --model claude-sonnet-4-5 --max-iterations 25
+cascade org show
+```
+
+See `cascade <command> --help` for full options on any command.
+
+---
+
+## Extending CASCADE
+
+### Adding a trigger
+
+Triggers live in `src/triggers/`. Implement the `TriggerHandler` interface from `src/triggers/types.ts`:
 
 ```typescript
-// src/triggers/custom/my-trigger.ts
+// src/triggers/trello/my-trigger.ts
 import type { TriggerHandler, TriggerContext, TriggerResult } from '../types.js';
 
 export class MyCustomTrigger implements TriggerHandler {
@@ -209,15 +407,13 @@ export class MyCustomTrigger implements TriggerHandler {
   description = 'Triggers when something happens';
 
   matches(ctx: TriggerContext): boolean {
-    // Return true if this trigger should handle the context
     return ctx.source === 'trello' && /* your condition */;
   }
 
   async handle(ctx: TriggerContext): Promise<TriggerResult> {
     return {
-      agentType: 'implementation', // or 'splitting', 'planning'
+      agentType: 'implementation',
       agentInput: { /* data for the agent */ },
-      cardId: 'optional-card-id',
     };
   }
 }
@@ -226,83 +422,49 @@ export class MyCustomTrigger implements TriggerHandler {
 registry.register(new MyCustomTrigger());
 ```
 
-## Deployment
+### Adding an agent
 
-### Fly.io
+1. Add a YAML definition in `src/agents/definitions/` (see existing files for the schema)
+2. Add a system prompt template in `src/agents/prompts/templates/`
 
-```bash
-# Install Fly CLI
-curl -L https://fly.io/install.sh | sh
+Agent types are auto-discovered from YAML filenames in `src/agents/definitions/` — no manual registration is needed. The agent registry only resolves and executes registered agent *engines* (currently `llmist`, `claude-code`, `codex`, and `opencode`), not agent types.
 
-# Login
-fly auth login
+### Adding a PM provider
 
-# Create app
-fly apps create cascade
+1. Implement the `PMProvider` interface from `src/pm/types.ts` for data operations (card/issue management)
+2. Implement the `PMIntegration` interface from `src/pm/integration.ts` to wrap your provider with credential resolution, webhook parsing, and trigger registration
+3. Register the `PMIntegration` instance in `src/pm/registry.ts` via `pmRegistry.register()`
 
-# Set secrets
-fly secrets set \
-  TRELLO_API_KEY="..." \
-  TRELLO_TOKEN="..." \
-  GITHUB_TOKEN_IMPLEMENTER="..." \
-  GITHUB_TOKEN_REVIEWER="..." \
-  OPENROUTER_API_KEY="..."
+See `src/pm/trello/` and `src/pm/jira/` for reference implementations.
 
-# Deploy
-fly deploy
-```
+---
 
-### Trello Webhook Setup
+## Key Concepts
 
-After deployment, set up the Trello webhook:
+**Dual-persona GitHub model** — CASCADE uses two separate GitHub bot accounts per project (implementer and reviewer) to prevent feedback loops. The implementer writes code and creates PRs; the reviewer reviews and approves them. See CLAUDE.md for setup details.
 
-```bash
-# Get your Trello callback URL
-CALLBACK_URL="https://api.ca.sca.de.com/trello/webhooks"
+**Trigger system** — Events from Trello, JIRA, and GitHub webhooks are matched against registered `TriggerHandler` instances. Triggers are configured per-project in the database via `agent_trigger_configs`.
 
-# Create webhook for each board
-curl -X POST "https://api.trello.com/1/webhooks" \
-  -d "key=${TRELLO_API_KEY}" \
-  -d "token=${TRELLO_TOKEN}" \
-  -d "callbackURL=${CALLBACK_URL}" \
-  -d "idModel=${BOARD_ID}" \
-  -d "description=Cascade webhook"
-```
+**Agent engines** — Agents run through a shared execution lifecycle and a pluggable engine registry. The default engine is `llmist` (supports OpenRouter, Anthropic, OpenAI). The `claude-code` engine uses the Claude Code SDK. The `codex` engine runs the official OpenAI Codex CLI in headless mode and expects an `OPENAI_API_KEY` credential. The `opencode` engine runs the official OpenCode server in headless mode via the published SDK client and accepts provider/model strings like `openai/gpt-5` or `openrouter/google/gemini-3-flash-preview`. Native-tool engines (`claude-code`, `codex`, `opencode`) are expected to use `cascade-tools` for SCM/PM/session operations; `gh` is blocked in those runs so PR creation goes through CASCADE-controlled tooling and state tracking. Adding a new engine means registering a new engine definition plus an execution adapter.
 
-### GitHub Webhook Setup
+**Credential management** — All secrets are stored in the `credentials` table, scoped to an organization. Integration-specific credentials are linked via the `integration_credentials` join table. Optional AES-256-GCM encryption is enabled by setting `CREDENTIAL_MASTER_KEY`.
 
-Set up GitHub webhooks for your repository to enable PR review triggers:
+**Agent resilience** — Built-in rate limiting (proactive), exponential-backoff retry (reactive), and context compaction prevent failures during long-running sessions. See `src/config/rateLimits.ts`, `retryConfig.ts`, and `compactionConfig.ts`.
 
-1. Go to your repository settings: `https://github.com/owner/repo/settings/hooks`
-2. Click "Add webhook"
-3. Configure:
-   - **Payload URL**: `https://api.ca.sca.de.com/github/webhook`
-   - **Content type**: `application/json`
-   - **Secret**: (optional, not currently validated)
-   - **Events**: Select individual events:
-     - Pull request review comments
-     - Pull request reviews
-     - Check suites
-4. Click "Add webhook"
+For deeper documentation on any of these topics, see [CLAUDE.md](./CLAUDE.md).
 
-**Supported GitHub Triggers**:
-- **PR Review Comments**: Triggers review agent when someone comments on a PR review
-- **PR Review Submissions**: Triggers review agent when someone submits a PR review (approve/request changes)
-- **Check Suite Failures**: Triggers review agent to fix failed CI checks
-- **PR Ready to Merge**: Auto-moves card to DONE when all checks pass and PR is approved
+---
 
-**Note**: GitHub webhooks only trigger for PRs that have a Trello card URL in their description.
+## Contributing
 
-## API Endpoints
+1. Fork the repository and create a feature branch
+2. Make your changes with tests (`npm test`)
+3. Ensure lint and typecheck pass (`npm run lint && npm run typecheck`)
+4. Open a pull request — CASCADE will review its own PRs if configured to do so
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/health` | HEAD | Health check (no body) |
-| `/trello/webhooks` | POST | Trello webhook receiver |
-| `/trello/webhooks` | HEAD | Trello webhook verification |
-| `/github/webhook` | POST | GitHub webhook receiver |
-| `/github/webhook` | GET | GitHub webhook verification |
+Please follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
+
+---
 
 ## License
 

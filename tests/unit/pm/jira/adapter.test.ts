@@ -258,27 +258,27 @@ describe('JiraPMProvider', () => {
 			);
 		});
 
-		it('transitions new issue to stories status when configured', async () => {
-			const storiesProvider = new JiraPMProvider({
+		it('transitions new issue to backlog status when configured', async () => {
+			const backlogProvider = new JiraPMProvider({
 				...mockConfig,
-				statuses: { ...mockConfig.statuses, stories: 'Stories' },
+				statuses: { ...mockConfig.statuses, backlog: 'Backlog' },
 			});
 			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-100' });
 			mockJiraClient.getTransitions.mockResolvedValue([
-				{ id: '31', name: 'Stories', to: { name: 'Stories' } },
+				{ id: '31', name: 'Backlog', to: { name: 'Backlog' } },
 			]);
 			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
 
-			await storiesProvider.createWorkItem({
+			await backlogProvider.createWorkItem({
 				containerId: 'PROJ',
-				title: 'Story task',
+				title: 'Backlog task',
 			});
 
 			expect(mockJiraClient.getTransitions).toHaveBeenCalledWith('PROJ-100');
 			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-100', '31');
 		});
 
-		it('does not transition when stories status is not configured', async () => {
+		it('does not transition when backlog status is not configured', async () => {
 			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-101' });
 
 			await provider.createWorkItem({
@@ -289,15 +289,15 @@ describe('JiraPMProvider', () => {
 			expect(mockJiraClient.getTransitions).not.toHaveBeenCalled();
 		});
 
-		it('logs warning and continues when stories transition fails', async () => {
-			const storiesProvider = new JiraPMProvider({
+		it('logs warning and continues when backlog transition fails', async () => {
+			const backlogProvider = new JiraPMProvider({
 				...mockConfig,
-				statuses: { ...mockConfig.statuses, stories: 'Stories' },
+				statuses: { ...mockConfig.statuses, backlog: 'Backlog' },
 			});
 			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-102' });
 			mockJiraClient.getTransitions.mockRejectedValue(new Error('API error'));
 
-			const result = await storiesProvider.createWorkItem({
+			const result = await backlogProvider.createWorkItem({
 				containerId: 'PROJ',
 				title: 'Task with failing transition',
 			});
@@ -329,6 +329,31 @@ describe('JiraPMProvider', () => {
 				id: 'PROJ-1',
 				title: 'Issue 1',
 				status: 'To Do',
+			});
+		});
+
+		it('applies status filter to JQL when provided', async () => {
+			mockJiraClient.searchIssues.mockResolvedValue([
+				{
+					key: 'PROJ-2',
+					fields: {
+						summary: 'Backlog Item',
+						status: { name: 'Backlog' },
+						labels: [],
+					},
+				},
+			]);
+
+			const result = await provider.listWorkItems('PROJ', { status: 'Backlog' });
+
+			expect(mockJiraClient.searchIssues).toHaveBeenCalledWith(
+				'project = "PROJ" AND status = "Backlog" ORDER BY created DESC',
+			);
+			expect(result).toHaveLength(1);
+			expect(result[0]).toMatchObject({
+				id: 'PROJ-2',
+				title: 'Backlog Item',
+				status: 'Backlog',
 			});
 		});
 	});

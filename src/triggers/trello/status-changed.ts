@@ -1,6 +1,6 @@
-import { resolveTrelloStatusChangedEnabled } from '../../config/triggerConfig.js';
 import { getTrelloConfig } from '../../pm/config.js';
 import { logger } from '../../utils/logging.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../types.js';
 import { type TrelloWebhookPayload, isTrelloWebhookPayload } from './types.js';
 
@@ -11,8 +11,8 @@ import { type TrelloWebhookPayload, isTrelloWebhookPayload } from './types.js';
 interface StatusChangedConfig {
 	name: string;
 	description: string;
-	listKey: 'splitting' | 'planning' | 'todo';
-	agentType: 'splitting' | 'planning' | 'implementation';
+	listKey: 'splitting' | 'planning' | 'todo' | 'backlog';
+	agentType: 'splitting' | 'planning' | 'implementation' | 'backlog-manager';
 }
 
 function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler {
@@ -24,12 +24,7 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 			if (ctx.source !== 'trello') return false;
 			if (!isTrelloWebhookPayload(ctx.payload)) return false;
 
-			// Check trigger config with per-agent fallback to legacy keys
 			const trelloConfig = getTrelloConfig(ctx.project);
-			if (!resolveTrelloStatusChangedEnabled(trelloConfig?.triggers, config.agentType)) {
-				return false;
-			}
-
 			const payload = ctx.payload;
 			const targetListId = trelloConfig?.lists[config.listKey];
 
@@ -47,6 +42,18 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 		},
 
 		async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+			// Check trigger config via new DB-driven system
+			if (
+				!(await checkTriggerEnabled(
+					ctx.project.id,
+					config.agentType,
+					'pm:status-changed',
+					config.name,
+				))
+			) {
+				return null;
+			}
+
 			const payload = ctx.payload as TrelloWebhookPayload;
 			const cardId = payload.action.data.card?.id;
 
@@ -55,10 +62,23 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 				return null;
 			}
 
+			// Capture work item display data from the webhook payload
+			const cardShortLink = payload.action.data.card?.shortLink;
+			const cardName = payload.action.data.card?.name;
+			const workItemUrl = cardShortLink ? `https://trello.com/c/${cardShortLink}` : undefined;
+			const workItemTitle = cardName ?? undefined;
+
 			return {
 				agentType: config.agentType,
-				agentInput: { cardId },
+				agentInput: {
+					workItemId: cardId,
+					workItemUrl,
+					workItemTitle,
+					triggerEvent: 'pm:status-changed',
+				},
 				workItemId: cardId,
+				workItemUrl,
+				workItemTitle,
 			};
 		},
 	};
@@ -87,4 +107,11 @@ export const TrelloStatusChangedTodoTrigger = createStatusChangedTrigger({
 	description: 'Triggers implementation agent when card moved to TODO list',
 	listKey: 'todo',
 	agentType: 'implementation',
+});
+
+export const TrelloStatusChangedBacklogTrigger = createStatusChangedTrigger({
+	name: 'trello-status-changed-backlog',
+	description: 'Triggers backlog-manager agent when card moved to backlog list',
+	listKey: 'backlog',
+	agentType: 'backlog-manager',
 });

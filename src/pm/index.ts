@@ -13,7 +13,7 @@ export type {
 export { withPMProvider, getPMProvider, getPMProviderOrNull } from './context.js';
 export { TrelloPMProvider } from './trello/adapter.js';
 export { JiraPMProvider } from './jira/adapter.js';
-export { PMLifecycleManager, resolveProjectPMConfig } from './lifecycle.js';
+export { PMLifecycleManager, resolveProjectPMConfig, hasAutoLabel } from './lifecycle.js';
 export type { ProjectPMConfig } from './lifecycle.js';
 
 // PMIntegration interface + registry

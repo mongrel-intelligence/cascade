@@ -9,6 +9,14 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
 // Mocks required for PM integration registration (pm/index.js side-effect)
 vi.mock('../../../src/config/provider.js', () => ({
 	getIntegrationCredential: vi.fn(),
@@ -39,6 +47,7 @@ vi.mock('../../../src/router/reactions.js', () => ({
 // Register PM integrations in the registry
 import '../../../src/pm/index.js';
 
+import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 import {
 	TrelloStatusChangedPlanningTrigger,
 	TrelloStatusChangedSplittingTrigger,
@@ -152,6 +161,38 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 		expect(trigger.matches(ctx)).toBe(false);
 	});
 
+	it('should return null when trigger is disabled', async () => {
+		vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
+		const ctx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: {
+				model: { id: 'board123', name: 'Board' },
+				action: {
+					id: 'action1',
+					idMemberCreator: 'member1',
+					type: 'updateCard',
+					date: '2024-01-01',
+					data: {
+						card: { id: 'card123', name: 'Test Card', idShort: 1, shortLink: 'abc' },
+						listBefore: { id: 'other-list', name: 'Other' },
+						listAfter: { id: 'splitting-list-id', name: 'Splitting' },
+					},
+				},
+			},
+		};
+
+		const result = await trigger.handle(ctx);
+		expect(result).toBeNull();
+		expect(checkTriggerEnabled).toHaveBeenCalledWith(
+			'test',
+			'splitting',
+			'pm:status-changed',
+			'trello-status-changed-splitting',
+		);
+	});
+
 	it('handles and returns splitting agent', async () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
@@ -176,7 +217,36 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 
 		expect(result?.agentType).toBe('splitting');
 		expect(result?.workItemId).toBe('card123');
-		expect(result?.agentInput.cardId).toBe('card123');
+		expect(result?.agentInput.workItemId).toBe('card123');
+		expect(result?.agentInput.triggerEvent).toBe('pm:status-changed');
+	});
+
+	it('populates workItemUrl and workItemTitle from payload card data', async () => {
+		const ctx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: {
+				model: { id: 'board123', name: 'Board' },
+				action: {
+					id: 'action1',
+					idMemberCreator: 'member1',
+					type: 'updateCard',
+					date: '2024-01-01',
+					data: {
+						card: { id: 'card123', name: 'My Feature Card', idShort: 1, shortLink: 'xyz123' },
+						listBefore: { id: 'other-list', name: 'Other' },
+						listAfter: { id: 'splitting-list-id', name: 'Splitting' },
+					},
+				},
+			},
+		};
+
+		const result = await trigger.handle(ctx);
+
+		expect(result?.workItemUrl).toBe('https://trello.com/c/xyz123');
+		expect(result?.workItemTitle).toBe('My Feature Card');
+		expect(result?.agentInput.workItemUrl).toBe('https://trello.com/c/xyz123');
+		expect(result?.agentInput.workItemTitle).toBe('My Feature Card');
 	});
 });
 

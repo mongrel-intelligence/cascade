@@ -47,14 +47,14 @@ const mockPMProvider = {
 };
 
 beforeEach(() => {
-	// Default: state file exists
+	// Default: env var is set (progress state exists)
 	mockReadProgressCommentId.mockReturnValue({ workItemId: 'card1', commentId: 'comment1' });
 });
 
 function makePoster(overrides?: Partial<Parameters<typeof PMProgressPoster>[0]>) {
 	return new PMProgressPoster({
 		agentType: 'implementation',
-		cardId: 'card1',
+		workItemId: 'card1',
 		logWriter: vi.fn(),
 		...overrides,
 	});
@@ -109,24 +109,14 @@ describe('PMProgressPoster — postInitial()', () => {
 		);
 	});
 
-	it('writes state file when repoDir is provided', async () => {
+	it('writes env var with workItemId and commentId after posting', async () => {
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
 		mockPMProvider.addComment.mockResolvedValue('initial-id');
-		const poster = makePoster({ repoDir: '/tmp/repo' });
+		const poster = makePoster();
 
 		await poster.postInitial();
 
-		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('/tmp/repo', 'card1', 'initial-id');
-	});
-
-	it('does not write state file when repoDir is absent', async () => {
-		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
-		mockPMProvider.addComment.mockResolvedValue('initial-id');
-		const poster = makePoster(); // no repoDir
-
-		await poster.postInitial();
-
-		expect(mockWriteProgressCommentId).not.toHaveBeenCalled();
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('card1', 'initial-id');
 	});
 });
 
@@ -141,14 +131,14 @@ describe('PMProgressPoster — update()', () => {
 	it('creates new comment when no existing comment ID (fallback branch)', async () => {
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
 		mockPMProvider.addComment.mockResolvedValue('tick-id');
-		const poster = makePoster({ repoDir: '/tmp/repo' });
+		const poster = makePoster();
 		// No initial comment was posted
 
 		await poster.update('First progress update');
 
 		expect(mockPMProvider.addComment).toHaveBeenCalledWith('card1', 'First progress update');
 		expect(poster.getCommentId()).toBe('tick-id');
-		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('/tmp/repo', 'card1', 'tick-id');
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('card1', 'tick-id');
 	});
 
 	it('updates existing comment when comment ID is set', async () => {
@@ -167,9 +157,9 @@ describe('PMProgressPoster — update()', () => {
 		expect(mockPMProvider.addComment).not.toHaveBeenCalled();
 	});
 
-	it('skips update when state file has been cleared by agent subprocess', async () => {
+	it('skips update when env var has been cleared by agent subprocess', async () => {
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
-		mockReadProgressCommentId.mockReturnValue(null); // state file cleared
+		mockReadProgressCommentId.mockReturnValue(null); // env var cleared
 		const poster = makePoster();
 		poster.setCommentId('existing-id');
 
@@ -183,7 +173,7 @@ describe('PMProgressPoster — update()', () => {
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
 		mockPMProvider.updateComment.mockRejectedValue(new Error('Comment not found'));
 		mockPMProvider.addComment.mockResolvedValue('fallback-id');
-		const poster = makePoster({ repoDir: '/tmp/repo' });
+		const poster = makePoster();
 		poster.setCommentId('deleted-id');
 
 		await poster.update('Fallback summary');
@@ -195,6 +185,6 @@ describe('PMProgressPoster — update()', () => {
 		);
 		expect(mockPMProvider.addComment).toHaveBeenCalledWith('card1', 'Fallback summary');
 		expect(poster.getCommentId()).toBe('fallback-id');
-		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('/tmp/repo', 'card1', 'fallback-id');
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('card1', 'fallback-id');
 	});
 });

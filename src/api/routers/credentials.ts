@@ -62,7 +62,12 @@ export const credentialsRouter = router({
 				.select({ orgId: credentials.orgId })
 				.from(credentials)
 				.where(eq(credentials.id, input.id));
-			if (!cred || cred.orgId !== ctx.effectiveOrgId) {
+
+			if (!cred) {
+				throw new TRPCError({ code: 'NOT_FOUND' });
+			}
+
+			if (cred.orgId !== ctx.effectiveOrgId && ctx.user.role !== 'superadmin') {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 
@@ -79,7 +84,12 @@ export const credentialsRouter = router({
 				.select({ orgId: credentials.orgId })
 				.from(credentials)
 				.where(eq(credentials.id, input.id));
-			if (!cred || cred.orgId !== ctx.effectiveOrgId) {
+
+			if (!cred) {
+				throw new TRPCError({ code: 'NOT_FOUND' });
+			}
+
+			if (cred.orgId !== ctx.effectiveOrgId && ctx.user.role !== 'superadmin') {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 
@@ -94,7 +104,12 @@ export const credentialsRouter = router({
 				.select({ orgId: credentials.orgId, value: credentials.value })
 				.from(credentials)
 				.where(eq(credentials.id, input.credentialId));
-			if (!cred || cred.orgId !== ctx.effectiveOrgId) {
+
+			if (!cred) {
+				throw new TRPCError({ code: 'NOT_FOUND' });
+			}
+
+			if (cred.orgId !== ctx.effectiveOrgId && ctx.user.role !== 'superadmin') {
 				throw new TRPCError({ code: 'NOT_FOUND' });
 			}
 

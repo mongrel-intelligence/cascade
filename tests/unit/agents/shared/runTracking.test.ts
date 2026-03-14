@@ -4,6 +4,7 @@ vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	createRun: vi.fn(),
 	completeRun: vi.fn(),
 	storeRunLogs: vi.fn(),
+	updateRunJobId: vi.fn(),
 }));
 
 vi.mock('../../../../src/utils/logging.js', () => ({
@@ -26,7 +27,7 @@ vi.mock('node:fs', () => ({
 import fs from 'node:fs';
 import {
 	type RunTrackingInput,
-	finalizeBackendRun,
+	finalizeEngineRun,
 	tryCompleteRun,
 	tryCreateRun,
 	tryStoreRunLogs,
@@ -35,19 +36,21 @@ import {
 	completeRun,
 	createRun,
 	storeRunLogs,
+	updateRunJobId,
 } from '../../../../src/db/repositories/runsRepository.js';
 import { logger } from '../../../../src/utils/logging.js';
 
 const mockCreateRun = vi.mocked(createRun);
 const mockCompleteRun = vi.mocked(completeRun);
 const mockStoreRunLogs = vi.mocked(storeRunLogs);
+const mockUpdateRunJobId = vi.mocked(updateRunJobId);
 const mockExistsSync = vi.mocked(fs.existsSync);
 const mockReadFileSync = vi.mocked(fs.readFileSync);
 
 function makeFileLogger() {
 	return {
 		logPath: '/tmp/test.log',
-		llmistLogPath: '/tmp/test-llmist.log',
+		engineLogPath: '/tmp/test-llmist.log',
 		llmCallLogger: { logDir: '/tmp/llm-calls' },
 		write: vi.fn(),
 		close: vi.fn(),
@@ -57,27 +60,71 @@ function makeFileLogger() {
 
 const baseInput: RunTrackingInput = {
 	projectId: 'proj-1',
-	cardId: 'card-123',
+	workItemId: 'card-123',
 	agentType: 'implementation',
-	backendName: 'claude-code',
+	engineName: 'claude-code',
 };
 
 describe('tryCreateRun', () => {
-	it('creates a run and returns the run ID', async () => {
+	beforeEach(() => {
 		mockCreateRun.mockResolvedValue('run-abc');
+		mockUpdateRunJobId.mockResolvedValue(undefined);
+		mockUpdateRunJobId.mockClear();
+	});
 
+	afterEach(() => {
+		// biome-ignore lint/performance/noDelete: Clean up test environment
+		delete process.env.JOB_ID;
+	});
+
+	it('creates a run and returns the run ID', async () => {
 		const runId = await tryCreateRun(baseInput, 'claude-3-5-sonnet-20241022', 25);
 		expect(runId).toBe('run-abc');
 		expect(mockCreateRun).toHaveBeenCalledWith({
 			projectId: 'proj-1',
-			cardId: 'card-123',
+			workItemId: 'card-123',
 			prNumber: undefined,
 			agentType: 'implementation',
-			backend: 'claude-code',
+			engine: 'claude-code',
 			triggerType: undefined,
 			model: 'claude-3-5-sonnet-20241022',
 			maxIterations: 25,
 		});
+	});
+
+	it('stores the job ID when JOB_ID env var is set', async () => {
+		process.env.JOB_ID = 'job-12345';
+		mockUpdateRunJobId.mockClear();
+
+		const runId = await tryCreateRun(baseInput);
+		expect(runId).toBe('run-abc');
+		expect(mockUpdateRunJobId).toHaveBeenCalledWith('run-abc', 'job-12345');
+	});
+
+	it('does not call updateRunJobId when JOB_ID env var is not set', async () => {
+		// biome-ignore lint/performance/noDelete: Clean environment before test
+		delete process.env.JOB_ID;
+		mockUpdateRunJobId.mockClear();
+
+		const runId = await tryCreateRun(baseInput);
+		expect(runId).toBe('run-abc');
+		expect(mockUpdateRunJobId).not.toHaveBeenCalled();
+	});
+
+	it('logs a warning but continues when updateRunJobId fails', async () => {
+		process.env.JOB_ID = 'job-12345';
+		mockUpdateRunJobId.mockRejectedValue(new Error('Failed to update job ID'));
+
+		const runId = await tryCreateRun(baseInput);
+		expect(runId).toBe('run-abc');
+		expect(logger.warn).toHaveBeenCalledWith(
+			'Failed to store job ID for run',
+			expect.objectContaining({
+				runId: 'run-abc',
+				jobId: 'job-12345',
+				error: expect.stringContaining('Failed to update job ID'),
+			}),
+		);
 	});
 
 	it('returns undefined and logs a warning when createRun throws', async () => {
@@ -148,14 +195,14 @@ describe('tryStoreRunLogs', () => {
 	});
 });
 
-describe('finalizeBackendRun', () => {
+describe('finalizeEngineRun', () => {
 	beforeEach(() => {
 		mockExistsSync.mockReturnValue(false);
 	});
 
 	it('does nothing when runId is undefined', async () => {
 		const fileLogger = makeFileLogger();
-		await finalizeBackendRun(undefined, fileLogger, { status: 'completed', success: true });
+		await finalizeEngineRun(undefined, fileLogger, { status: 'completed', success: true });
 		expect(mockStoreRunLogs).not.toHaveBeenCalled();
 		expect(mockCompleteRun).not.toHaveBeenCalled();
 	});
@@ -165,7 +212,7 @@ describe('finalizeBackendRun', () => {
 		mockCompleteRun.mockResolvedValue(undefined);
 		const fileLogger = makeFileLogger();
 
-		await finalizeBackendRun('run-abc', fileLogger, { status: 'failed', success: false });
+		await finalizeEngineRun('run-abc', fileLogger, { status: 'failed', success: false });
 		expect(mockStoreRunLogs).toHaveBeenCalledWith('run-abc', undefined, undefined);
 		expect(mockCompleteRun).toHaveBeenCalledWith('run-abc', { status: 'failed', success: false });
 	});

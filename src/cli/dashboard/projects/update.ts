@@ -15,10 +15,10 @@ export default class ProjectsUpdate extends DashboardCommand {
 		'base-branch': Flags.string({ description: 'Base branch' }),
 		'branch-prefix': Flags.string({ description: 'Branch prefix' }),
 		model: Flags.string({ description: 'Default model' }),
-		'card-budget': Flags.string({ description: 'Per-card budget in USD' }),
-		'agent-backend': Flags.string({ description: 'Agent backend' }),
-		'subscription-cost-zero': Flags.boolean({
-			description: 'Zero costs for subscription backends',
+		'work-item-budget': Flags.string({ description: 'Per-work-item budget in USD' }),
+		'agent-engine': Flags.string({ description: 'Agent engine' }),
+		'run-links-enabled': Flags.boolean({
+			description: 'Enable run links in agent comments (requires CASCADE_DASHBOARD_URL env var)',
 			allowNo: true,
 		}),
 	};
@@ -34,9 +34,11 @@ export default class ProjectsUpdate extends DashboardCommand {
 				baseBranch: flags['base-branch'],
 				branchPrefix: flags['branch-prefix'],
 				model: flags.model,
-				cardBudgetUsd: flags['card-budget'],
-				agentBackend: flags['agent-backend'],
-				subscriptionCostZero: flags['subscription-cost-zero'],
+				workItemBudgetUsd: flags['work-item-budget'],
+				agentEngine: flags['agent-engine'],
+				...(flags['run-links-enabled'] !== undefined
+					? { runLinksEnabled: flags['run-links-enabled'] }
+					: {}),
 			});
 
 			if (flags.json) {

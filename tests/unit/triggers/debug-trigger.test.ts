@@ -37,7 +37,7 @@ describe('shouldTriggerDebug', () => {
 			id: 'run-1',
 			agentType: 'implementation',
 			status: 'completed',
-			cardId: 'card-1',
+			workItemId: 'card-1',
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
 
 		const result = await shouldTriggerDebug('run-1');
@@ -49,7 +49,7 @@ describe('shouldTriggerDebug', () => {
 			id: 'run-1',
 			agentType: 'implementation',
 			status: 'running',
-			cardId: 'card-1',
+			workItemId: 'card-1',
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
 
 		const result = await shouldTriggerDebug('run-1');
@@ -61,7 +61,7 @@ describe('shouldTriggerDebug', () => {
 			id: 'run-1',
 			agentType: 'debug',
 			status: 'failed',
-			cardId: 'card-1',
+			workItemId: 'card-1',
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
 
 		const result = await shouldTriggerDebug('run-1');
@@ -73,7 +73,7 @@ describe('shouldTriggerDebug', () => {
 			id: 'run-1',
 			agentType: 'implementation',
 			status: 'failed',
-			cardId: 'card-1',
+			workItemId: 'card-1',
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
 		vi.mocked(getDebugAnalysisByRunId).mockResolvedValue({
 			id: 'da-1',
@@ -92,7 +92,7 @@ describe('shouldTriggerDebug', () => {
 			id: 'run-1',
 			agentType: 'implementation',
 			status: 'failed',
-			cardId: 'card-1',
+			workItemId: 'card-1',
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
 		vi.mocked(getDebugAnalysisByRunId).mockResolvedValue(null);
 
@@ -100,7 +100,7 @@ describe('shouldTriggerDebug', () => {
 		expect(result).toEqual({
 			runId: 'run-1',
 			agentType: 'implementation',
-			cardId: 'card-1',
+			workItemId: 'card-1',
 		});
 	});
 
@@ -109,7 +109,7 @@ describe('shouldTriggerDebug', () => {
 			id: 'run-2',
 			agentType: 'splitting',
 			status: 'timed_out',
-			cardId: 'card-2',
+			workItemId: 'card-2',
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
 		vi.mocked(getDebugAnalysisByRunId).mockResolvedValue(null);
 
@@ -117,16 +117,16 @@ describe('shouldTriggerDebug', () => {
 		expect(result).toEqual({
 			runId: 'run-2',
 			agentType: 'splitting',
-			cardId: 'card-2',
+			workItemId: 'card-2',
 		});
 	});
 
-	it('returns undefined cardId when run has no cardId', async () => {
+	it('returns undefined workItemId when run has no workItemId', async () => {
 		vi.mocked(getRunById).mockResolvedValue({
 			id: 'run-3',
 			agentType: 'review',
 			status: 'failed',
-			cardId: null,
+			workItemId: null,
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
 		vi.mocked(getDebugAnalysisByRunId).mockResolvedValue(null);
 
@@ -134,7 +134,7 @@ describe('shouldTriggerDebug', () => {
 		expect(result).toEqual({
 			runId: 'run-3',
 			agentType: 'review',
-			cardId: undefined,
+			workItemId: undefined,
 		});
 	});
 

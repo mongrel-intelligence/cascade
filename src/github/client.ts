@@ -29,6 +29,7 @@ export interface PRDetails {
 	headSha: string;
 	baseRef: string;
 	merged: boolean;
+	mergeable: boolean | null;
 	user: { login: string };
 }
 
@@ -76,6 +77,19 @@ export interface CheckSuiteStatus {
 	totalCount: number;
 	checkRuns: CheckRunStatus[];
 	allPassing: boolean;
+}
+
+export interface FailedJob {
+	runName: string;
+	runId: number;
+	jobName: string;
+	conclusion: string | null;
+	steps: Array<{ name: string; conclusion: string | null }>;
+}
+
+export interface FailedWorkflowRuns {
+	runs: Array<{ id: number; name: string }>;
+	failedJobs: FailedJob[];
 }
 
 export interface PRDiffFile {
@@ -129,6 +143,7 @@ export const githubClient = {
 			headSha: data.head.sha,
 			baseRef: data.base.ref,
 			merged: data.merged ?? false,
+			mergeable: data.mergeable ?? null,
 			user: { login: data.user?.login || 'unknown' },
 		};
 	},
@@ -438,6 +453,66 @@ export const githubClient = {
 		});
 	},
 
+	async getFailedWorkflowRunJobs(
+		owner: string,
+		repo: string,
+		ref: string,
+	): Promise<FailedWorkflowRuns> {
+		logger.debug('Fetching failed workflow run jobs', { owner, repo, ref });
+		const client = getClient();
+
+		const { data: runsData } = await client.actions.listWorkflowRunsForRepo({
+			owner,
+			repo,
+			head_sha: ref,
+			per_page: 100,
+		});
+
+		const failedRuns = runsData.workflow_runs.filter(
+			(run) => run.conclusion === 'failure' || run.conclusion === 'timed_out',
+		);
+
+		if (failedRuns.length === 0) {
+			return { runs: [], failedJobs: [] };
+		}
+
+		const jobResults = await Promise.all(
+			failedRuns.map((run) =>
+				client.actions
+					.listJobsForWorkflowRun({
+						owner,
+						repo,
+						run_id: run.id,
+						per_page: 100,
+					})
+					.then((res) => ({ run, jobs: res.data.jobs })),
+			),
+		);
+
+		const failedJobs: FailedJob[] = [];
+		for (const { run, jobs } of jobResults) {
+			for (const job of jobs) {
+				if (job.conclusion === 'failure' || job.conclusion === 'timed_out') {
+					failedJobs.push({
+						runName: run.name ?? `Run #${run.id}`,
+						runId: run.id,
+						jobName: job.name,
+						conclusion: job.conclusion,
+						steps: (job.steps ?? []).map((s) => ({
+							name: s.name,
+							conclusion: s.conclusion,
+						})),
+					});
+				}
+			}
+		}
+
+		return {
+			runs: failedRuns.map((r) => ({ id: r.id, name: r.name ?? `Run #${r.id}` })),
+			failedJobs,
+		};
+	},
+
 	async branchExists(owner: string, repo: string, branch: string): Promise<boolean> {
 		logger.debug('Checking if branch exists', { owner, repo, branch });
 		try {
@@ -453,6 +528,21 @@ export const githubClient = {
 			}
 			throw error;
 		}
+	},
+
+	async mergePR(
+		owner: string,
+		repo: string,
+		prNumber: number,
+		mergeMethod: 'merge' | 'squash' | 'rebase' = 'squash',
+	): Promise<void> {
+		logger.debug('Merging PR', { owner, repo, prNumber, mergeMethod });
+		await getClient().pulls.merge({
+			owner,
+			repo,
+			pull_number: prNumber,
+			merge_method: mergeMethod,
+		});
 	},
 };
 

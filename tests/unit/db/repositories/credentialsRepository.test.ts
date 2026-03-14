@@ -11,6 +11,7 @@ import { getDb } from '../../../../src/db/client.js';
 import {
 	createCredential,
 	deleteCredential,
+	getIntegrationProvider,
 	listOrgCredentials,
 	resolveAllIntegrationCredentials,
 	resolveAllOrgCredentials,
@@ -273,6 +274,25 @@ describe('credentialsRepository', () => {
 
 			const result = await listOrgCredentials('empty-org');
 			expect(result).toEqual([]);
+		});
+	});
+
+	describe('getIntegrationProvider', () => {
+		it('returns provider when integration is found', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([{ provider: 'trello' }]);
+
+			const result = await getIntegrationProvider('proj1', 'pm');
+
+			expect(result).toBe('trello');
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
+		});
+
+		it('returns null when no integration found for category', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			const result = await getIntegrationProvider('proj1', 'nonexistent');
+
+			expect(result).toBeNull();
 		});
 	});
 });

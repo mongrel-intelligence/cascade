@@ -12,6 +12,7 @@ import type {
 	Checklist,
 	ChecklistItem,
 	CreateWorkItemConfig,
+	ListWorkItemsFilter,
 	PMProvider,
 	WorkItem,
 	WorkItemComment,
@@ -92,7 +93,7 @@ export class TrelloPMProvider implements PMProvider {
 		};
 	}
 
-	async listWorkItems(containerId: string): Promise<WorkItem[]> {
+	async listWorkItems(containerId: string, _filter?: ListWorkItemsFilter): Promise<WorkItem[]> {
 		const cards = await trelloClient.getListCards(containerId);
 		return cards.map((card) => ({
 			id: card.id,

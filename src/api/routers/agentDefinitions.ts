@@ -4,6 +4,7 @@ import { CAPABILITIES } from '../../agents/capabilities/index.js';
 import {
 	getKnownAgentTypes,
 	invalidateDefinitionCache,
+	isBuiltinAgentType,
 	loadAgentDefinition,
 	resolveAgentDefinition,
 	resolveKnownAgentTypes,
@@ -13,7 +14,7 @@ import {
 	AgentDefinitionSchema,
 	DefinitionPatchSchema,
 } from '../../agents/definitions/schema.js';
-import { validateTemplate } from '../../agents/prompts/index.js';
+import { getRawTemplate, validateTemplate } from '../../agents/prompts/index.js';
 import {
 	deleteAgentDefinition,
 	getAgentDefinition,
@@ -21,7 +22,7 @@ import {
 	upsertAgentDefinition,
 } from '../../db/repositories/agentDefinitionsRepository.js';
 import { loadPartials } from '../../db/repositories/partialsRepository.js';
-import { protectedProcedure, publicProcedure, router, superAdminProcedure } from '../trpc.js';
+import { publicProcedure, router, superAdminProcedure } from '../trpc.js';
 import { TRIGGER_REGISTRY } from './_shared/triggerTypes.js';
 
 async function validatePromptIfPresent(prompt: string | null | undefined) {
@@ -36,6 +37,21 @@ async function validatePromptIfPresent(prompt: string | null | undefined) {
 	}
 }
 
+/**
+ * Resolve an agent definition or throw a NOT_FOUND TRPCError.
+ * Consolidates the 4 identical try/catch blocks across this router.
+ */
+async function resolveDefinitionOrThrow(agentType: string) {
+	try {
+		return await resolveAgentDefinition(agentType);
+	} catch {
+		throw new TRPCError({
+			code: 'NOT_FOUND',
+			message: `Agent definition not found: ${agentType}`,
+		});
+	}
+}
+
 export const agentDefinitionsRouter = router({
 	/**
 	 * Returns all definitions (YAML + DB merged), with agentType, definition, and isBuiltin flag.
@@ -43,7 +59,10 @@ export const agentDefinitionsRouter = router({
 	 * Uses a single listAgentDefinitions() call + YAML fallback instead of going through
 	 * resolveAllAgentDefinitions() which would issue its own redundant listAgentDefinitions() call.
 	 */
-	list: protectedProcedure.query(async () => {
+	list: superAdminProcedure.query(async () => {
+		// Intentional: getKnownAgentTypes() (deprecated) is used here to enumerate YAML types
+		// for the merge loop below. resolveKnownAgentTypes() also hits the DB, which we already
+		// cover via listAgentDefinitions(); calling both would be redundant.
 		const yamlTypes = getKnownAgentTypes();
 		const result: Array<{ agentType: string; definition: AgentDefinition; isBuiltin: boolean }> =
 			[];
@@ -66,6 +85,9 @@ export const agentDefinitionsRouter = router({
 		}
 
 		// Fill in YAML-only types not present in DB
+		// Intentional: loadAgentDefinition() (deprecated) is used here because this is a
+		// synchronous fallback path — we already have the YAML type list and just need the
+		// raw definition content; the async resolveAgentDefinition() would add DB round-trips.
 		for (const agentType of yamlTypes) {
 			if (!seen.has(agentType)) {
 				result.push({
@@ -82,14 +104,14 @@ export const agentDefinitionsRouter = router({
 	/**
 	 * Returns a single definition by agentType, or throws NOT_FOUND.
 	 */
-	get: protectedProcedure
+	get: superAdminProcedure
 		.input(z.object({ agentType: z.string().min(1) }))
 		.query(async ({ input }) => {
 			// Try the resolver (cache → DB → YAML)
 			try {
 				const definition = await resolveAgentDefinition(input.agentType);
 				// isBuiltin = true if the agentType has a backing YAML file
-				const isBuiltin = getKnownAgentTypes().includes(input.agentType);
+				const isBuiltin = isBuiltinAgentType(input.agentType);
 				return {
 					agentType: input.agentType,
 					definition,
@@ -132,7 +154,7 @@ export const agentDefinitionsRouter = router({
 					message: `Agent definition already exists: ${input.agentType}`,
 				});
 			}
-			const isBuiltin = getKnownAgentTypes().includes(input.agentType);
+			const isBuiltin = isBuiltinAgentType(input.agentType);
 			await upsertAgentDefinition(input.agentType, input.definition, isBuiltin);
 			invalidateDefinitionCache();
 			return { agentType: input.agentType };
@@ -151,22 +173,14 @@ export const agentDefinitionsRouter = router({
 		)
 		.mutation(async ({ input }) => {
 			// Resolve the current definition (cache → DB → YAML)
-			let current: Awaited<ReturnType<typeof resolveAgentDefinition>>;
-			try {
-				current = await resolveAgentDefinition(input.agentType);
-			} catch {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: `Agent definition not found: ${input.agentType}`,
-				});
-			}
+			const current = await resolveDefinitionOrThrow(input.agentType);
 
 			// Merge the patch into the current definition
 			const merged = { ...current, ...input.patch };
 			// Full-schema validate the merged result
 			const validated = AgentDefinitionSchema.parse(merged);
 
-			const isBuiltin = getKnownAgentTypes().includes(input.agentType);
+			const isBuiltin = isBuiltinAgentType(input.agentType);
 			await upsertAgentDefinition(input.agentType, validated, isBuiltin);
 			invalidateDefinitionCache();
 			return { agentType: input.agentType };
@@ -189,7 +203,7 @@ export const agentDefinitionsRouter = router({
 			}
 
 			// Check if it's a builtin (YAML-backed) type — those cannot be deleted
-			const isYamlBuiltin = getKnownAgentTypes().includes(input.agentType);
+			const isYamlBuiltin = isBuiltinAgentType(input.agentType);
 			if (isYamlBuiltin) {
 				throw new TRPCError({
 					code: 'FORBIDDEN',
@@ -209,7 +223,7 @@ export const agentDefinitionsRouter = router({
 	reset: superAdminProcedure
 		.input(z.object({ agentType: z.string().min(1) }))
 		.mutation(async ({ input }) => {
-			const isYamlBuiltin = getKnownAgentTypes().includes(input.agentType);
+			const isYamlBuiltin = isBuiltinAgentType(input.agentType);
 			if (!isYamlBuiltin) {
 				throw new TRPCError({
 					code: 'BAD_REQUEST',
@@ -217,7 +231,10 @@ export const agentDefinitionsRouter = router({
 				});
 			}
 
-			// Re-read the YAML (bypass cache)
+			// Re-read the YAML (bypass cache).
+			// Intentional: loadAgentDefinition() (deprecated) is used here because this endpoint
+			// explicitly needs the raw YAML definition — the purpose of reset is to bypass any DB
+			// override and restore the hard-coded YAML defaults.
 			invalidateDefinitionCache();
 			const yamlDefinition = loadAgentDefinition(input.agentType);
 			await upsertAgentDefinition(input.agentType, yamlDefinition, true);
@@ -231,15 +248,7 @@ export const agentDefinitionsRouter = router({
 	getPrompt: superAdminProcedure
 		.input(z.object({ agentType: z.string().min(1) }))
 		.query(async ({ input }) => {
-			let current: AgentDefinition;
-			try {
-				current = await resolveAgentDefinition(input.agentType);
-			} catch {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: `Agent definition not found: ${input.agentType}`,
-				});
-			}
+			const current = await resolveDefinitionOrThrow(input.agentType);
 			return {
 				agentType: input.agentType,
 				systemPrompt: current.prompts?.systemPrompt ?? null,
@@ -262,15 +271,7 @@ export const agentDefinitionsRouter = router({
 			await validatePromptIfPresent(input.systemPrompt);
 			await validatePromptIfPresent(input.taskPrompt);
 
-			let current: AgentDefinition;
-			try {
-				current = await resolveAgentDefinition(input.agentType);
-			} catch {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: `Agent definition not found: ${input.agentType}`,
-				});
-			}
+			const current = await resolveDefinitionOrThrow(input.agentType);
 
 			// Build updated prompts section
 			// Merge with existing prompts: undefined preserves current, null clears (for systemPrompt only), string sets
@@ -292,7 +293,7 @@ export const agentDefinitionsRouter = router({
 			};
 			const validated = AgentDefinitionSchema.parse(updated);
 
-			const isBuiltin = getKnownAgentTypes().includes(input.agentType);
+			const isBuiltin = isBuiltinAgentType(input.agentType);
 			await upsertAgentDefinition(input.agentType, validated, isBuiltin);
 			invalidateDefinitionCache();
 			return { agentType: input.agentType };
@@ -305,15 +306,7 @@ export const agentDefinitionsRouter = router({
 	resetPrompt: superAdminProcedure
 		.input(z.object({ agentType: z.string().min(1) }))
 		.mutation(async ({ input }) => {
-			let current: AgentDefinition;
-			try {
-				current = await resolveAgentDefinition(input.agentType);
-			} catch {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: `Agent definition not found: ${input.agentType}`,
-				});
-			}
+			const current = await resolveDefinitionOrThrow(input.agentType);
 
 			// Load YAML defaults and use its prompts section
 			let yamlDefault: AgentDefinition;
@@ -326,11 +319,24 @@ export const agentDefinitionsRouter = router({
 				});
 			}
 
-			// Replace prompts with YAML defaults
-			const updated: AgentDefinition = { ...current, prompts: yamlDefault.prompts };
+			// Restore system prompt from .eta file — YAML definitions don't include systemPrompt
+			let systemPrompt: string | undefined = yamlDefault.prompts.systemPrompt;
+			if (!systemPrompt) {
+				try {
+					systemPrompt = getRawTemplate(input.agentType);
+				} catch {
+					// No .eta file for this agent type
+				}
+			}
+
+			// Replace prompts with YAML defaults + restored system prompt
+			const updated: AgentDefinition = {
+				...current,
+				prompts: { ...yamlDefault.prompts, systemPrompt },
+			};
 			const validated = AgentDefinitionSchema.parse(updated);
 
-			const isBuiltin = getKnownAgentTypes().includes(input.agentType);
+			const isBuiltin = isBuiltinAgentType(input.agentType);
 			await upsertAgentDefinition(input.agentType, validated, isBuiltin);
 			invalidateDefinitionCache();
 			return { agentType: input.agentType };

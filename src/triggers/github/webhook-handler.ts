@@ -8,25 +8,25 @@
  * - GitHub-specific AgentExecutionConfig → ./integration.ts
  */
 
-import { withGitHubToken } from '../../github/client.js';
+import { isPMFocusedAgent } from '../../agents/definitions/loader.js';
+import { githubClient, withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
 import { withPMCredentials, withPMProvider } from '../../pm/context.js';
 import { createPMProvider, pmRegistry } from '../../pm/index.js';
-import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
+import { extractGitHubContext, generateAckMessage } from '../../router/ackMessageGenerator.js';
+import { postJiraAck, postTrelloAck } from '../../router/acknowledgments.js';
 import {
-	clearCardActive,
-	enqueueWebhook,
-	getQueueLength,
-	isCardActive,
-	isCurrentlyProcessing,
-	logger,
-	setCardActive,
-	setProcessing,
-	startWatchdog,
-} from '../../utils/index.js';
+	checkAgentTypeConcurrency,
+	clearAgentTypeEnqueued,
+	markAgentTypeEnqueued,
+	markRecentlyDispatched,
+} from '../../router/agent-type-lock.js';
+import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
+import { logger, startWatchdog } from '../../utils/index.js';
+import { parseRepoFullName } from '../../utils/repo.js';
+import { safeOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
 import { runAgentWithCredentials } from '../shared/webhook-execution.js';
-import { processNextQueuedWebhook } from '../shared/webhook-queue.js';
 import type { TriggerResult } from '../types.js';
 import { postAcknowledgmentComment, updateInitialCommentWithError } from './ack-comments.js';
 import { pollWaitForChecks } from './check-polling.js';
@@ -34,39 +34,62 @@ import { GitHubWebhookIntegration } from './integration.js';
 
 const integration = new GitHubWebhookIntegration();
 
-function processNextQueuedGitHubWebhook(registry: TriggerRegistry): void {
-	processNextQueuedWebhook(
-		(payload, eventType, ackCommentId, ackMsg) =>
-			processGitHubWebhook(
-				payload,
-				eventType ?? 'pull_request_review_comment',
-				registry,
-				ackCommentId as number | undefined,
-				ackMsg,
-			),
-		'GitHub',
-		(entry) => entry.eventType ?? 'pull_request_review_comment',
-	);
+async function getPersonaTokenWithFallback(
+	projectId: string,
+	agentType: string | undefined,
+): Promise<string> {
+	try {
+		return await getPersonaToken(projectId, agentType ?? 'implementation');
+	} catch {
+		return getPersonaToken(projectId, 'implementation').catch(() => '');
+	}
 }
 
-/** Enqueue the webhook if another job is currently processing. Returns true if enqueued. */
-function tryEnqueueIfBusy(
+function requireProjectId(project: ProjectConfig): string {
+	if (!project.id) {
+		throw new Error('Project id is required for GitHub webhook processing');
+	}
+
+	return project.id;
+}
+
+function isValidPmType(pmType: string | undefined): pmType is 'trello' | 'jira' {
+	return pmType === 'trello' || pmType === 'jira';
+}
+
+async function maybePostPmAckComment(
+	result: TriggerResult,
 	payload: unknown,
 	eventType: string,
-	ackCommentId?: number,
-	ackMessage?: string,
-): boolean {
-	if (!isCurrentlyProcessing()) return false;
-	const queued = enqueueWebhook(payload, eventType, ackCommentId, ackMessage);
-	if (queued) {
-		logger.info('Currently processing, GitHub webhook queued', {
-			queueLength: getQueueLength(),
-			eventType,
+	project: ProjectConfig,
+	workItemId: string,
+): Promise<void> {
+	const context = extractGitHubContext(payload, eventType);
+	const projectId = requireProjectId(project);
+	const message = await generateAckMessage(
+		result.agentType ?? 'implementation',
+		context,
+		projectId,
+	);
+	const pmType = project.pm?.type;
+
+	if (!isValidPmType(pmType)) {
+		logger.warn('Unknown PM type for PM-focused agent ack (worker-side)', {
+			agentType: result.agentType,
+			pmType,
 		});
-	} else {
-		logger.warn('Queue full, GitHub webhook rejected', { queueLength: getQueueLength() });
+		return;
 	}
-	return true;
+
+	const commentId =
+		pmType === 'trello'
+			? await postTrelloAck(projectId, workItemId, message)
+			: await postJiraAck(projectId, workItemId, message);
+
+	if (commentId) {
+		result.agentInput.ackCommentId = commentId;
+		result.agentInput.ackMessage = message;
+	}
 }
 
 /** Dispatch to trigger registry within PM credential + provider scope. */
@@ -75,12 +98,13 @@ async function dispatchTrigger(
 	payload: unknown,
 	project: ProjectConfig,
 ): Promise<TriggerResult | null> {
-	const personaIdentities = await resolvePersonaIdentities(project.id);
-	const githubToken = await getPersonaToken(project.id, 'implementation');
+	const projectId = requireProjectId(project);
+	const personaIdentities = await resolvePersonaIdentities(projectId);
+	const githubToken = await getPersonaToken(projectId, 'implementation');
 	const ctx: TriggerContext = { project, source: 'github', payload, personaIdentities };
 	const pmProvider = createPMProvider(project);
 	return withPMCredentials(
-		project.id,
+		projectId,
 		project.pm?.type,
 		(t) => pmRegistry.getOrNull(t),
 		() =>
@@ -95,35 +119,73 @@ async function maybePostAckComment(
 	eventType: string,
 	project: ProjectConfig,
 ): Promise<void> {
-	let prCommentToken: string;
-	try {
-		prCommentToken = await getPersonaToken(project.id, result.agentType ?? 'implementation');
-	} catch {
-		prCommentToken = await getPersonaToken(project.id, 'implementation').catch(() => '');
+	// PM-focused agents (e.g. backlog-manager) triggered from GitHub should have their
+	// ack posted to the PM tool (Trello/JIRA card), not to the already-merged GitHub PR.
+	if (result.agentType && (await isPMFocusedAgent(result.agentType))) {
+		const workItemId = result.workItemId;
+		if (!workItemId) {
+			logger.warn('PM-focused agent has no workItemId for ack, skipping PM ack (worker-side)', {
+				agentType: result.agentType,
+			});
+			return;
+		}
+		try {
+			await maybePostPmAckComment(result, payload, eventType, project, workItemId);
+		} catch (err) {
+			logger.warn('PM ack comment failed for PM-focused agent (non-fatal)', {
+				error: String(err),
+				agentType: result.agentType,
+			});
+		}
+		return;
 	}
+
+	const prCommentToken = await getPersonaTokenWithFallback(
+		requireProjectId(project),
+		result.agentType ?? undefined,
+	);
 	await withGitHubToken(prCommentToken, () =>
 		postAcknowledgmentComment(result, payload, eventType, project),
 	);
 }
 
-/** Run the agent with GitHub-specific execution config, managing processing flags. */
+function resolveGitHubExecutionConfig(pmFocused: boolean) {
+	if (!pmFocused) {
+		return integration.resolveExecutionConfig();
+	}
+
+	return {
+		skipPrepareForAgent: false,
+		skipHandleFailure: false,
+		logLabel: 'GitHub (PM-focused agent)',
+	};
+}
+
+/** Run the agent with GitHub-specific (or PM-appropriate) execution config. */
 async function runGitHubAgent(
 	result: TriggerResult,
 	project: ProjectConfig,
 	config: CascadeConfig,
-	registry: TriggerRegistry,
 ): Promise<void> {
-	const workItemId = result.workItemId;
-	if (workItemId && isCardActive(workItemId)) {
-		logger.info('Work item already being processed, skipping', { workItemId });
-		return;
+	// Agent-type concurrency limit
+	let agentTypeMaxConcurrency: number | null = null;
+	if (result.agentType) {
+		const concurrencyCheck = await checkAgentTypeConcurrency(project.id, result.agentType);
+		agentTypeMaxConcurrency = concurrencyCheck.maxConcurrency;
+		if (concurrencyCheck.blocked) return;
+		if (agentTypeMaxConcurrency !== null) {
+			markRecentlyDispatched(project.id, result.agentType);
+			markAgentTypeEnqueued(project.id, result.agentType);
+		}
 	}
 
-	setProcessing(true);
 	startWatchdog(config.defaults.watchdogTimeoutMs);
 
+	// PM-focused agents (e.g. backlog-manager) triggered from GitHub should use
+	// PM-appropriate lifecycle config: no GitHub PR comment callbacks, allow PM lifecycle ops.
+	const pmFocused = result.agentType ? await isPMFocusedAgent(result.agentType) : false;
+
 	try {
-		if (workItemId) setCardActive(workItemId);
 		// Establish PM credential + provider scope for agents with workItemId
 		// (needed for PM lifecycle operations: labels, status moves, PR links)
 		const pmProvider = createPMProvider(project);
@@ -138,29 +200,30 @@ async function runGitHubAgent(
 						result,
 						project,
 						config,
-						integration.resolveExecutionConfig(),
+						resolveGitHubExecutionConfig(pmFocused),
 					),
 				),
 		);
 	} catch (err) {
 		logger.error('Failed to process GitHub webhook', { error: String(err) });
-		// Update the PR comment with the error (outside credential scope, so requires token)
-		let prCommentToken: string;
-		try {
-			prCommentToken = await getPersonaToken(project.id, result.agentType ?? 'implementation');
-		} catch {
-			prCommentToken = await getPersonaToken(project.id, 'implementation').catch(() => '');
+		if (!pmFocused) {
+			// Update the PR comment with the error (outside credential scope, so requires token)
+			const prCommentToken = await getPersonaTokenWithFallback(
+				requireProjectId(project),
+				result.agentType ?? undefined,
+			);
+			await withGitHubToken(prCommentToken, () =>
+				updateInitialCommentWithError(result, { success: false, error: String(err) }),
+			);
 		}
-		await withGitHubToken(prCommentToken, () =>
-			updateInitialCommentWithError(result, { success: false, error: String(err) }),
-		);
 	} finally {
-		if (workItemId) clearCardActive(workItemId);
-		setProcessing(false);
-		processNextQueuedGitHubWebhook(registry);
+		if (result.agentType && agentTypeMaxConcurrency !== null) {
+			clearAgentTypeEnqueued(project.id, result.agentType);
+		}
 	}
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: webhook orchestration with ack cleanup
 export async function processGitHubWebhook(
 	payload: unknown,
 	eventType: string,
@@ -176,8 +239,6 @@ export async function processGitHubWebhook(
 		logger.warn('GitHub webhook missing repository info');
 		return;
 	}
-
-	if (tryEnqueueIfBusy(payload, eventType, ackCommentId, ackMessage)) return;
 
 	const projectConfig = await integration.lookupProject(event.projectIdentifier);
 	if (!projectConfig) {
@@ -214,8 +275,31 @@ export async function processGitHubWebhook(
 	// Poll until all CI checks pass before starting agent (deferred from trigger)
 	if (result.waitForChecks) {
 		const githubToken = await getPersonaToken(project.id, 'implementation');
-		const checksOk = await pollWaitForChecks(result, event.projectIdentifier, githubToken);
-		if (!checksOk) return;
+		try {
+			const checksOk = await pollWaitForChecks(result, event.projectIdentifier, githubToken);
+			if (!checksOk) {
+				result.onBlocked?.();
+				// Clean up orphaned ack comment so the PR doesn't show a misleading "Reviewing" message
+				const ackId = result.agentInput.ackCommentId as number | undefined;
+				if (ackId && event.projectIdentifier) {
+					const { owner, repo } = parseRepoFullName(event.projectIdentifier);
+					const deleteToken = await getPersonaToken(
+						project.id,
+						result.agentType ?? 'implementation',
+					);
+					await withGitHubToken(deleteToken, () =>
+						safeOperation(() => githubClient.deletePRComment(owner, repo, ackId), {
+							action: 'delete ack comment after check polling timeout',
+							prNumber: result.prNumber,
+						}),
+					);
+				}
+				return;
+			}
+		} catch (err) {
+			result.onBlocked?.();
+			throw err;
+		}
 	}
 
 	logger.info('GitHub trigger matched', {
@@ -233,5 +317,5 @@ export async function processGitHubWebhook(
 		await maybePostAckComment(result, payload, eventType, project);
 	}
 
-	await runGitHubAgent(result, project, config, registry);
+	await runGitHubAgent(result, project, config);
 }

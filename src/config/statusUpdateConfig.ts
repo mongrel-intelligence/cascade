@@ -5,7 +5,7 @@
  * to provide visibility into long-running sessions.
  */
 
-import { formatTodoList, loadTodos } from '../gadgets/todo/storage.js';
+import { loadTodos } from '../gadgets/todo/storage.js';
 import { getAgentLabel } from './agentMessages.js';
 
 /**
@@ -72,24 +72,6 @@ export function formatStatusMessage(agentType: string): string {
 			lines.push(`**Working on:** ${inProgressTodo.content}`);
 		}
 	}
-
-	return lines.join('\n');
-}
-
-/**
- * Format a GitHub progress comment that updates the initial PR comment.
- *
- * Renders a todo list and metadata footer.
- *
- * @param headerMessage - Original comment text preserved as header (e.g., "🔍 Reviewing PR...")
- * @param agentType - Type of agent posting the update
- * @returns Formatted markdown comment body
- */
-export function formatGitHubProgressComment(headerMessage: string, agentType: string): string {
-	const todos = loadTodos();
-	const todoSection = formatTodoList(todos);
-
-	const lines = [headerMessage, '', '---', '', todoSection, '', `<sub>${agentType}</sub>`];
 
 	return lines.join('\n');
 }

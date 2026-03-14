@@ -1,13 +1,20 @@
-import { resolveReviewTriggerConfig } from '../../config/triggerConfig.js';
 import { type CheckSuiteStatus, githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
+import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
+import {
+	buildReviewDispatchKey,
+	claimReviewDispatch,
+	releaseReviewDispatch,
+} from './review-dispatch-dedup.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
-import { resolveWorkItemId } from './utils.js';
+import { evaluateAuthorMode, resolveWorkItemId } from './utils.js';
 
-const MAX_RETRIES = 5;
+const MAX_RETRIES = 12;
 const RETRY_DELAY_MS = 10_000;
+
+export { recentlyDispatched } from './review-dispatch-dedup.js';
 
 /**
  * Wait for all check suites to complete, retrying when some are still in-progress.
@@ -51,10 +58,10 @@ export async function waitForChecks(
  *
  * This trigger fires when:
  * 1. A check_suite completes with success conclusion
- * 2. The PR author matches the implementer persona (or its [bot] variant)
+ * 2. The PR author matches the configured author mode (own/external/all)
  * 3. All checks are actually passing (verified via API)
  *
- * Work item resolution uses the pr_work_items DB table (with PR body extraction as fallback).
+ * Work item resolution uses the pr_work_items DB table only.
  * The trigger fires even without a linked work item — agents run, PM updates are simply skipped.
  *
  * Registration order matters - this should be registered BEFORE PRReadyToMergeTrigger
@@ -67,12 +74,6 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'github') return false;
 		if (!isGitHubCheckSuitePayload(ctx.payload)) return false;
-
-		// Check trigger config — at least one CI-based review mode must be active
-		const reviewConfig = resolveReviewTriggerConfig(ctx.project.github?.triggers);
-		if (!reviewConfig.ownPrsOnly && !reviewConfig.externalPrs) {
-			return false;
-		}
 
 		const payload = ctx.payload;
 
@@ -87,6 +88,17 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+		// Check trigger config + get parameters in a single DB call
+		const triggerConfig = await checkTriggerEnabledWithParams(
+			ctx.project.id,
+			'review',
+			'scm:check-suite-success',
+			this.name,
+		);
+		if (!triggerConfig.enabled) {
+			return null;
+		}
+
 		const payload = ctx.payload as GitHubCheckSuitePayload;
 		const { owner, repo } = parseRepoFullName(payload.repository.full_name);
 
@@ -98,24 +110,23 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		// Fetch PR details
 		const prDetails = await githubClient.getPR(owner, repo, prNumber);
 
-		// Gate on PR author based on configured review trigger modes
-		if (!ctx.personaIdentities) return null;
-		const implLogin = ctx.personaIdentities.implementer;
-		const isImplementerPR =
-			prDetails.user.login === implLogin || prDetails.user.login === `${implLogin}[bot]`;
-
-		const reviewConfig = resolveReviewTriggerConfig(ctx.project.github?.triggers);
-		const shouldTrigger =
-			(reviewConfig.ownPrsOnly && isImplementerPR) ||
-			(reviewConfig.externalPrs && !isImplementerPR);
-
-		if (!shouldTrigger) {
-			logger.info('PR author does not match any enabled review trigger mode, skipping', {
+		// Gate on PR author based on configured authorMode parameter
+		const authorResult = evaluateAuthorMode(
+			prDetails.user.login,
+			ctx.personaIdentities,
+			triggerConfig.parameters,
+			this.name,
+		);
+		if (!authorResult) {
+			return null;
+		}
+		if (!authorResult.shouldTrigger) {
+			logger.info('PR author does not match configured authorMode, skipping', {
+				handler: this.name,
 				prNumber,
 				prAuthor: prDetails.user.login,
-				isImplementerPR,
-				ownPrsOnly: reviewConfig.ownPrsOnly,
-				externalPrs: reviewConfig.externalPrs,
+				isImplementerPR: authorResult.isImplementerPR,
+				authorMode: authorResult.authorMode,
 			});
 			return null;
 		}
@@ -130,19 +141,15 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Resolve work item from DB (with PR body fallback)
-		const workItemId = await resolveWorkItemId(
-			ctx.project.id,
-			prNumber,
-			prDetails.body,
-			ctx.project,
-		);
+		// Resolve work item from DB
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 
 		// Skip if the reviewer persona's latest review already covers the current HEAD SHA
 		const reviews = await githubClient.getPRReviews(owner, repo, prNumber);
 
 		// Use persona identities to identify reviewer bot's reviews
-		const reviewerUsername = ctx.personaIdentities.reviewer;
+		// (evaluateAuthorMode above already verified personaIdentities exists)
+		const reviewerUsername = ctx.personaIdentities?.reviewer;
 
 		// Only consider actual reviews (approved/changes_requested), not COMMENTED
 		// which are reply acknowledgments posted by respond-to-review agent
@@ -169,6 +176,13 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			});
 		}
 
+		// PR+SHA-scoped dedup prevents duplicate reviews across both duplicate
+		// check_suite deliveries and other review-producing triggers.
+		const dedupKey = buildReviewDispatchKey(owner, repo, prNumber, headSha);
+		if (!claimReviewDispatch(dedupKey, this.name, { prNumber, headSha })) {
+			return null;
+		}
+
 		// The trigger decision is made — the review agent should run.
 		// Actual check polling (waitForChecks) is deferred to the worker via the flag.
 		// GitHub fires a check_suite webhook per individual suite completion.
@@ -188,11 +202,15 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 				repoFullName: payload.repository.full_name,
 				headSha,
 				triggerType: 'ci-success',
-				cardId: workItemId,
+				triggerEvent: 'scm:check-suite-success',
+				workItemId: workItemId,
 			},
 			prNumber,
+			prUrl: prDetails.htmlUrl,
+			prTitle: prDetails.title,
 			workItemId,
 			waitForChecks: true,
+			onBlocked: () => releaseReviewDispatch(dedupKey),
 		};
 	}
 }

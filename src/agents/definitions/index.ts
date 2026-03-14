@@ -1,4 +1,12 @@
-export { AgentDefinitionSchema, type AgentDefinition, type AgentCapabilities } from './schema.js';
+export {
+	AgentDefinitionSchema,
+	IntegrationHooksSchema,
+	type AgentDefinition,
+	type AgentCapabilities,
+	type IntegrationHooks,
+	type TrailingHookFlags,
+	type FinishHookFlags,
+} from './schema.js';
 export {
 	loadAgentDefinition,
 	loadAllAgentDefinitions,
@@ -8,11 +16,12 @@ export {
 	resolveAllAgentDefinitions,
 	resolveKnownAgentTypes,
 	invalidateDefinitionCache,
+	isPMFocusedAgent,
 } from './loader.js';
 export { CONTEXT_STEP_REGISTRY } from './strategies.js';
 export type { FetchContextParams } from './contextSteps.js';
 export type { AgentProfile } from './profiles.js';
-export { getAgentProfile, getAgentCapabilities } from './profiles.js';
+export { getAgentProfile, getAgentCapabilities, needsGitStateStopHooks } from './profiles.js';
 export { getToolManifests } from './toolManifests.js';
 
 // Re-export capability system

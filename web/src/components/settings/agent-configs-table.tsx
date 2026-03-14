@@ -1,4 +1,13 @@
-import { Badge } from '@/components/ui/badge.js';
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from '@/components/ui/alert-dialog.js';
 import {
 	Table,
 	TableBody,
@@ -13,38 +22,43 @@ import { Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { AgentConfigFormDialog } from './agent-config-form-dialog.js';
 
-interface AgentConfig {
+export interface AgentConfig {
 	id: number;
-	orgId: string | null;
-	projectId: string | null;
+	projectId: string;
 	agentType: string;
 	model: string | null;
 	maxIterations: number | null;
-	agentBackend: string | null;
+	agentEngine: string | null;
+	maxConcurrency: number | null;
 }
 
 export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 	const queryClient = useQueryClient();
 	const [editConfig, setEditConfig] = useState<AgentConfig | null>(null);
+	const [deleteConfigId, setDeleteConfigId] = useState<number | null>(null);
 
 	const deleteMutation = useMutation({
 		mutationFn: (id: number) => trpcClient.agentConfigs.delete.mutate({ id }),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: trpc.agentConfigs.list.queryOptions().queryKey });
+			queryClient.invalidateQueries({
+				queryKey: trpc.agentConfigs.list.queryOptions({ projectId: configs[0]?.projectId ?? '' })
+					.queryKey,
+			});
+			setDeleteConfigId(null);
 		},
 	});
 
 	return (
 		<>
-			<div className="overflow-hidden rounded-lg border border-border">
+			<div className="overflow-x-auto rounded-lg border border-border">
 				<Table>
 					<TableHeader>
 						<TableRow>
 							<TableHead>Agent Type</TableHead>
 							<TableHead>Model</TableHead>
-							<TableHead>Max Iterations</TableHead>
-							<TableHead>Backend</TableHead>
-							<TableHead>Scope</TableHead>
+							<TableHead className="hidden md:table-cell">Max Iterations</TableHead>
+							<TableHead className="hidden md:table-cell">Max Concurrency</TableHead>
+							<TableHead className="hidden md:table-cell">Engine</TableHead>
 							<TableHead className="w-20" />
 						</TableRow>
 					</TableHeader>
@@ -60,15 +74,13 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 							<TableRow key={config.id}>
 								<TableCell className="font-medium">{config.agentType}</TableCell>
 								<TableCell>{config.model ?? '-'}</TableCell>
-								<TableCell>{config.maxIterations ?? '-'}</TableCell>
-								<TableCell>{config.agentBackend ?? '-'}</TableCell>
-								<TableCell>
-									{config.orgId ? (
-										<Badge variant="secondary">Org</Badge>
-									) : (
-										<Badge variant="outline">Global</Badge>
-									)}
+								<TableCell className="hidden md:table-cell">
+									{config.maxIterations ?? '-'}
 								</TableCell>
+								<TableCell className="hidden md:table-cell">
+									{config.maxConcurrency ?? '-'}
+								</TableCell>
+								<TableCell className="hidden md:table-cell">{config.agentEngine ?? '-'}</TableCell>
 								<TableCell>
 									<div className="flex gap-1">
 										<button
@@ -80,7 +92,7 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 										</button>
 										<button
 											type="button"
-											onClick={() => deleteMutation.mutate(config.id)}
+											onClick={() => setDeleteConfigId(config.id)}
 											className="p-1 text-muted-foreground hover:text-destructive"
 										>
 											<Trash2 className="h-4 w-4" />
@@ -92,6 +104,30 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 					</TableBody>
 				</Table>
 			</div>
+
+			<AlertDialog
+				open={!!deleteConfigId}
+				onOpenChange={(open) => !open && setDeleteConfigId(null)}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Delete Agent Config</AlertDialogTitle>
+						<AlertDialogDescription>
+							Are you sure you want to delete this agent configuration? This action cannot be
+							undone.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={() => deleteConfigId && deleteMutation.mutate(deleteConfigId)}
+							className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+						>
+							{deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 
 			{editConfig && (
 				<AgentConfigFormDialog

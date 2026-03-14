@@ -10,7 +10,6 @@ import type { Capability, IntegrationChecker } from '../capabilities/index.js';
 import {
 	deriveRequiredIntegrations,
 	getGadgetNamesFromCapabilities,
-	getSdkToolsFromCapabilities,
 	resolveEffectiveCapabilities,
 } from '../capabilities/resolver.js';
 import type { ContextInjection, ToolManifest } from '../contracts/index.js';
@@ -26,7 +25,7 @@ import type {
 	AgentCapabilities,
 	AgentDefinition,
 	ContextStepName,
-	ScmHooks,
+	FinishHookFlags,
 	SupportedTrigger,
 } from './schema.js';
 import { CONTEXT_STEP_REGISTRY } from './strategies.js';
@@ -41,20 +40,12 @@ export type { AgentCapabilities } from './schema.js';
 export interface AgentProfile {
 	/** Filter the full set of tool manifests down to what this agent needs */
 	filterTools(allTools: ToolManifest[]): ToolManifest[];
-	/** SDK tools for Claude Code (subset of Read, Write, Edit, Bash, Glob, Grep) */
-	sdkTools: string[];
-	/** Whether to enable stop hooks that check for uncommitted/unpushed changes */
-	enableStopHooks: boolean;
+	/** Engine-neutral capabilities used to derive native tools inside each engine */
+	allCapabilities: Capability[];
 	/** Whether this profile needs the GitHub client for context fetching */
 	needsGitHubToken: boolean;
-	/** Whether to block git push in hooks (default: true — set false for agents on existing PR branches) */
-	blockGitPush?: boolean;
-	/** Whether the agent must create a PR for success (e.g., implementation) */
-	requiresPR?: boolean;
-	/** Whether the agent must submit a review before finishing (e.g., review) */
-	requiresReview?: boolean;
-	/** Whether the agent must have pushed changes before finishing */
-	requiresPushedChanges?: boolean;
+	/** Finish hook flags (SCM requirements: requiresPR, requiresReview, etc.) */
+	finishHooks: FinishHookFlags;
 	/** Fetch context injections for this agent type */
 	fetchContext(params: FetchContextParams): Promise<ContextInjection[]>;
 	/** Build the task prompt for this agent type */
@@ -77,29 +68,21 @@ export interface AgentProfile {
 // ============================================================================
 
 /**
- * Resolve the effective SCM hooks configuration from an agent definition.
- *
- * Merges legacy flat flags with the new `hooks.scm` format.
- * The new `hooks.scm` format wins when both are present.
- *
- * Legacy flat flags (deprecated):
- * - `backend.enableStopHooks` → `hooks.scm.enableStopHooks`
- * - `backend.blockGitPush` → `hooks.scm.blockGitPush`
- * - `backend.requiresPR` → `hooks.scm.requiresPR`
- *
- * New fields only available via `hooks.scm`:
- * - `hooks.scm.requiresReview`
- * - `hooks.scm.requiresPushedChanges`
+ * Resolve finish hooks from an agent definition.
  */
-export function resolveScmHooks(backend: AgentDefinition['backend']): ScmHooks {
-	const legacy: ScmHooks = {
-		...(backend.enableStopHooks !== undefined && { enableStopHooks: backend.enableStopHooks }),
-		...(backend.blockGitPush !== undefined && { blockGitPush: backend.blockGitPush }),
-		...(backend.requiresPR !== undefined && { requiresPR: backend.requiresPR }),
+function resolveFinishHooks(def: AgentDefinition): FinishHookFlags {
+	const scm = def.hooks?.finish?.scm;
+	return {
+		requiresPR: scm?.requiresPR,
+		requiresReview: scm?.requiresReview,
+		requiresPushedChanges: scm?.requiresPushedChanges,
+		blockGitPush: scm?.blockGitPush,
 	};
-	const newHooks = backend.hooks?.scm ?? {};
-	// New hooks.scm wins over legacy flat flags
-	return { ...legacy, ...newHooks };
+}
+
+/** Git-state stop hooks are needed when the agent must create a PR or push changes. */
+export function needsGitStateStopHooks(hooks: FinishHookFlags): boolean {
+	return !!(hooks.requiresPR || hooks.requiresPushedChanges);
 }
 
 function resolveRegistry<T>(registry: Record<string, T>, key: string, label: string): T {
@@ -172,9 +155,6 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 	// Derive tool names from capabilities for filtering
 	const gadgetNames = getGadgetNamesFromCapabilities(allCapabilities);
 
-	// Derive SDK tools from capabilities
-	const sdkTools = getSdkToolsFromCapabilities(allCapabilities);
-
 	// Get gadget options from strategies
 	const gadgetOptions = def.strategies.gadgetOptions;
 
@@ -190,8 +170,8 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 		throw new Error(`Agent '${agentType}' has invalid taskPrompt: ${validationResult.error}`);
 	}
 
-	// Resolve SCM hooks (merges legacy flat flags with new hooks.scm format)
-	const scmHooks = resolveScmHooks(def.backend);
+	// Resolve finish hooks
+	const finish = resolveFinishHooks(def);
 
 	const profile: AgentProfile = {
 		filterTools: (allTools: ToolManifest[]) => {
@@ -199,16 +179,12 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 			const nameSet = new Set(gadgetNames);
 			return allTools.filter((t) => nameSet.has(t.name));
 		},
-		sdkTools,
-		enableStopHooks: scmHooks.enableStopHooks ?? false,
+		allCapabilities,
 		needsGitHubToken: requiresScmIntegration(def),
-		...(scmHooks.blockGitPush !== undefined && { blockGitPush: scmHooks.blockGitPush }),
-		...(scmHooks.requiresPR && { requiresPR: true }),
-		...(scmHooks.requiresReview && { requiresReview: true }),
-		...(scmHooks.requiresPushedChanges && { requiresPushedChanges: true }),
+		finishHooks: finish,
 		fetchContext: async (params) => {
 			// Resolve context pipeline from the trigger (empty array if no trigger or trigger has no pipeline)
-			const contextPipeline = resolveContextPipeline(triggers, params.input.triggerType);
+			const contextPipeline = resolveContextPipeline(triggers, params.input.triggerEvent);
 
 			const injections: ContextInjection[] = [];
 			for (const step of contextPipeline) {

@@ -11,28 +11,32 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-# Production image - uses niu-browser-base which has Playwright and Camoufox pre-installed
-FROM zbigniew1/niu-browser-base:latest AS production
+# Production image
+FROM node:22-bookworm AS production
 WORKDIR /app
 
 # Install pnpm and squint globally (some repos use pnpm, squint for codebase analysis)
 RUN npm install -g pnpm @zbigniewsobiecki/squint@^1.10.2 --force
 
-# Install additional tools not in niu-browser-base
-# Note: PostgreSQL is NOT installed - workers connect to external PostgreSQL
-# (niu-browser-base already has: git, curl, ca-certificates, gnupg, postgresql-client)
+# Install system packages needed by agent runtime
 RUN apt-get update && apt-get install -y \
-    fd-find \
-    jq \
-    ripgrep \
+    ca-certificates \
+    curl \
     ed \
-    unzip \
+    fd-find \
+    git \
+    gnupg \
+    jq \
     lsof \
+    postgresql-client \
     procps \
     psutils \
-    tmux \
     redis-tools \
+    ripgrep \
+    ruby \
     sudo \
+    tmux \
+    unzip \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s $(which fdfind) /usr/local/bin/fd
 
@@ -48,20 +52,8 @@ RUN ARCH=$(dpkg --print-architecture) && \
     rm /tmp/ast-grep.zip && \
     chmod +x /usr/local/bin/sg
 
-# Install GitHub CLI
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-    | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-    | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-    && apt-get update \
-    && apt-get install -y gh \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Claude Code CLI (required by Claude Code SDK - spawns claude subprocess)
-RUN npm install -g @anthropic-ai/claude-code
-
-# Browsers (Playwright Chromium, Camoufox) are pre-installed in niu-browser-base
+# Install agent CLIs used by headless engines in worker jobs
+RUN npm install -g @anthropic-ai/claude-code @openai/codex@0.114.0 opencode-ai
 
 # Switch to non-root user for running workers.
 # Claude Code CLI refuses --dangerously-skip-permissions when running as root.

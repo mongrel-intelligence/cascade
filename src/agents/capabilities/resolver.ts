@@ -15,15 +15,9 @@ import { Sleep } from '../../gadgets/Sleep.js';
 import { VerifyChanges } from '../../gadgets/VerifyChanges.js';
 import { WriteFile } from '../../gadgets/WriteFile.js';
 import {
-	MarkEmailAsSeen,
-	ReadEmail,
-	ReplyToEmail,
-	SearchEmails,
-	SendEmail,
-} from '../../gadgets/email/index.js';
-import {
 	CreatePR,
 	CreatePRReview,
+	GetCIRunLogs,
 	GetPRChecks,
 	GetPRComments,
 	GetPRDetails,
@@ -36,13 +30,13 @@ import {
 	AddChecklist,
 	CreateWorkItem,
 	ListWorkItems,
+	MoveWorkItem,
 	PMDeleteChecklistItem,
 	PMUpdateChecklistItem,
 	PostComment,
 	ReadWorkItem,
 	UpdateWorkItem,
 } from '../../gadgets/pm/index.js';
-import { SendSms } from '../../gadgets/sms/index.js';
 import { Tmux } from '../../gadgets/tmux.js';
 import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../../gadgets/todo/index.js';
 import type { ToolManifest } from '../contracts/index.js';
@@ -103,6 +97,7 @@ const GADGET_CONSTRUCTORS: Record<string, new () => any> = {
 	// pm:write
 	UpdateWorkItem,
 	CreateWorkItem,
+	MoveWorkItem,
 	PostComment,
 	AddChecklist,
 
@@ -115,6 +110,9 @@ const GADGET_CONSTRUCTORS: Record<string, new () => any> = {
 	GetPRDiff,
 	GetPRChecks,
 
+	// scm:ci-logs
+	GetCIRunLogs,
+
 	// scm:comment
 	PostPRComment,
 	UpdatePRComment,
@@ -126,18 +124,6 @@ const GADGET_CONSTRUCTORS: Record<string, new () => any> = {
 
 	// scm:pr
 	CreatePR,
-
-	// email:read
-	SearchEmails,
-	ReadEmail,
-	MarkEmailAsSeen,
-
-	// email:write
-	SendEmail,
-	ReplyToEmail,
-
-	// sms:send
-	SendSms,
 };
 
 // ============================================================================
@@ -359,8 +345,6 @@ export function generateUnavailableCapabilitiesNote(unavailableCaps: Capability[
 	const integrationLabels: Record<IntegrationCategory, string> = {
 		pm: 'PM integration (Trello/JIRA)',
 		scm: 'SCM integration (GitHub)',
-		email: 'Email integration',
-		sms: 'SMS integration (Twilio)',
 	};
 
 	for (const [integration, gadgetNames] of byIntegration) {
@@ -386,32 +370,21 @@ export function generateUnavailableCapabilitiesNote(unavailableCaps: Capability[
  */
 export async function createIntegrationChecker(projectId: string): Promise<IntegrationChecker> {
 	// Import integration checking functions dynamically to avoid circular deps
-	const [
-		{ hasPmIntegration },
-		{ hasScmIntegration },
-		{ hasEmailIntegration },
-		{ hasSmsIntegration },
-	] = await Promise.all([
+	const [{ hasPmIntegration }, { hasScmIntegration }] = await Promise.all([
 		import('../../pm/integration.js'),
 		import('../../github/integration.js'),
-		import('../../email/integration.js'),
-		import('../../sms/index.js'),
 	]);
 
 	// Pre-fetch all integration statuses in parallel
-	const [hasPm, hasScm, hasEmail, hasSms] = await Promise.all([
+	const [hasPm, hasScm] = await Promise.all([
 		hasPmIntegration(projectId),
 		hasScmIntegration(projectId),
-		hasEmailIntegration(projectId),
-		hasSmsIntegration(projectId),
 	]);
 
 	// Return synchronous checker
 	const availableIntegrations: Record<IntegrationCategory, boolean> = {
 		pm: hasPm,
 		scm: hasScm,
-		email: hasEmail,
-		sms: hasSms,
 	};
 
 	return (category: IntegrationCategory) => availableIntegrations[category] ?? false;

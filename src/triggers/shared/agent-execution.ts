@@ -1,7 +1,18 @@
 import { runAgent } from '../../agents/registry.js';
-import { PMLifecycleManager, createPMProvider, resolveProjectPMConfig } from '../../pm/index.js';
+import { createWorkItem, linkPRToWorkItem } from '../../db/repositories/prWorkItemsRepository.js';
+import { updateRunPRNumber } from '../../db/repositories/runsRepository.js';
+import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
+import { getPMProvider } from '../../pm/context.js';
+import {
+	PMLifecycleManager,
+	createPMProvider,
+	hasAutoLabel,
+	resolveProjectPMConfig,
+} from '../../pm/index.js';
+import { checkTriggerEnabled } from '../../triggers/shared/trigger-check.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { extractPRNumber } from '../../utils/prUrl.js';
 import type { TriggerResult } from '../types.js';
 import { handleAgentResultArtifacts } from './agent-result-handler.js';
 import { checkBudgetExceeded } from './budget.js';
@@ -159,6 +170,164 @@ async function notifyValidationFailure(
 }
 
 /**
+ * Link a PR to a work item and backfill the run's prNumber after agent execution.
+ * Extracted to reduce cognitive complexity in the main pipeline function.
+ */
+async function linkPRPostExecution(
+	agentResult: AgentResult & { prUrl: string },
+	project: ProjectConfig & { repo: string },
+	result: TriggerResult,
+	workItemId: string | undefined,
+): Promise<void> {
+	const prNumber = extractPRNumber(agentResult.prUrl);
+	if (!prNumber) return;
+
+	// Fetch PR title from GitHub API (best-effort, resolves the prTitle gap)
+	let prTitle: string | undefined;
+	try {
+		const { githubClient } = await import('../../github/client.js');
+		const { parseRepoFullName } = await import('../../utils/repo.js');
+		const { owner, repo } = parseRepoFullName(project.repo);
+		const pr = await githubClient.getPR(owner, repo, prNumber);
+		prTitle = pr.title;
+	} catch (err) {
+		logger.warn('Failed to fetch PR title from GitHub', {
+			projectId: project.id,
+			prNumber,
+			error: String(err),
+		});
+	}
+
+	try {
+		await linkPRToWorkItem(project.id, project.repo, prNumber, workItemId ?? null, {
+			prUrl: agentResult.prUrl,
+			prTitle,
+			workItemUrl: result.workItemUrl,
+			workItemTitle: result.workItemTitle,
+		});
+	} catch (err) {
+		logger.warn('Failed to link PR to work item post-execution', {
+			projectId: project.id,
+			prNumber,
+			workItemId,
+			error: String(err),
+		});
+	}
+
+	if (agentResult.runId) {
+		try {
+			await updateRunPRNumber(agentResult.runId, prNumber);
+		} catch (err) {
+			logger.warn('Failed to backfill prNumber on run', {
+				runId: agentResult.runId,
+				prNumber,
+				error: String(err),
+			});
+		}
+	}
+}
+
+/**
+ * Post an agent summary to the PM work item after a successful agent run.
+ * Cross-source concern: fires for all trigger types (GitHub, Trello, JIRA).
+ *
+ * Handles two cases:
+ * - review agent: structured session state (reviewBody/reviewEvent/reviewUrl)
+ * - output-based agents (respond-to-ci, respond-to-review, resolve-conflicts): AgentResult.output
+ */
+async function postAgentSummaryToPM(
+	agentType: string,
+	agentResult: AgentResult,
+	workItemId: string | undefined,
+	projectId: string,
+	prNumber: number | undefined,
+): Promise<void> {
+	const { PM_SUMMARY_AGENT_TYPES, isOutputBasedAgent, postReviewToPM, postAgentOutputToPM } =
+		await import('./agent-pm-poster.js');
+	if (!agentResult.success || !PM_SUMMARY_AGENT_TYPES.has(agentType)) return;
+
+	if (isOutputBasedAgent(agentType)) {
+		// Output-based agents (respond-to-ci, respond-to-review, resolve-conflicts)
+		// Resolve workItemId: prefer TriggerResult, fall back to DB lookup
+		const resolvedWorkItemId = await resolveWorkItemId(workItemId, projectId, prNumber);
+		if (!resolvedWorkItemId) {
+			logger.warn('Agent PM posting skipped: no workItemId found', {
+				agentType,
+				projectId,
+				prNumber,
+			});
+			return;
+		}
+
+		logger.info('Posting agent output summary to PM work item', {
+			agentType,
+			workItemId: resolvedWorkItemId,
+			hasProgressCommentId: !!agentResult.progressCommentId,
+		});
+
+		await postAgentOutputToPM(
+			resolvedWorkItemId,
+			agentType,
+			agentResult.output,
+			agentResult.progressCommentId,
+		);
+	} else {
+		// Review agent: use structured session state
+		const { getSessionState } = await import('../../gadgets/sessionState.js');
+		const sessionState = getSessionState();
+		if (!sessionState.reviewBody) {
+			logger.warn('Review PM posting skipped: no reviewBody in session state');
+			return;
+		}
+
+		// Resolve workItemId only after confirming we have a review to post
+		const resolvedWorkItemId = await resolveWorkItemId(workItemId, projectId, prNumber);
+		if (!resolvedWorkItemId) {
+			logger.warn('Agent PM posting skipped: no workItemId found', {
+				agentType,
+				projectId,
+				prNumber,
+			});
+			return;
+		}
+
+		logger.info('Posting review summary to PM work item', {
+			workItemId: resolvedWorkItemId,
+			hasProgressCommentId: !!agentResult.progressCommentId,
+			event: sessionState.reviewEvent,
+		});
+
+		await postReviewToPM(
+			resolvedWorkItemId,
+			{
+				reviewBody: sessionState.reviewBody,
+				reviewEvent: sessionState.reviewEvent,
+				reviewUrl: sessionState.reviewUrl,
+			},
+			agentResult.progressCommentId,
+		);
+	}
+}
+
+/**
+ * Resolve a work item ID: prefer the one from TriggerResult, fall back to DB lookup by PR number.
+ */
+async function resolveWorkItemId(
+	workItemId: string | undefined,
+	projectId: string,
+	prNumber: number | undefined,
+): Promise<string | undefined> {
+	if (workItemId) return workItemId;
+	if (!prNumber || !projectId) return undefined;
+	try {
+		const { lookupWorkItemForPR } = await import('../../db/repositories/prWorkItemsRepository.js');
+		return (await lookupWorkItemForPR(projectId, prNumber)) ?? undefined;
+	} catch {
+		return undefined; // best-effort
+	}
+}
+
+/**
  * Shared agent execution pipeline.
  *
  * Handles the common steps across all webhook handlers:
@@ -178,6 +347,7 @@ async function notifyValidationFailure(
  * This function must be called inside credential/PM-provider context
  * (e.g. `withTrelloCredentials`, `withPMProvider`, `withGitHubToken`).
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: intentional — pipeline with multiple conditional branches + splitting auto-chain
 export async function runAgentExecutionPipeline(
 	result: TriggerResult,
 	project: ProjectConfig,
@@ -220,6 +390,45 @@ export async function runAgentExecutionPipeline(
 		remainingBudgetUsd = budgetResult.remainingBudgetUsd;
 	}
 
+	// Insert a work-item-only row so PM-triggered runs show up in the dashboard
+	// even before a PR is created. This is idempotent — if a row already exists
+	// it is updated with the latest display fields.
+	if (workItemId) {
+		try {
+			await createWorkItem(project.id, workItemId, {
+				workItemUrl: result.workItemUrl,
+				workItemTitle: result.workItemTitle,
+			});
+		} catch (err) {
+			logger.warn('Failed to persist work-item row for PM-triggered run', {
+				projectId: project.id,
+				workItemId,
+				error: String(err),
+			});
+		}
+	}
+
+	// Ensure a pr_work_items entry exists for PR-triggered runs (SCM webhooks).
+	// This covers cases where no workItemId exists (orphan PRs) — linkPRToWorkItem
+	// handles upsert, promotion, and orphan creation.
+	if (result.prNumber && project.repo) {
+		try {
+			await linkPRToWorkItem(project.id, project.repo, result.prNumber, workItemId ?? null, {
+				workItemUrl: result.workItemUrl,
+				workItemTitle: result.workItemTitle,
+				prUrl: result.prUrl,
+				prTitle: result.prTitle,
+			});
+		} catch (err) {
+			logger.warn('Failed to ensure pr_work_items entry for PR-triggered run', {
+				projectId: project.id,
+				prNumber: result.prNumber,
+				workItemId,
+				error: String(err),
+			});
+		}
+	}
+
 	if (workItemId && !skipPrepareForAgent) {
 		await lifecycle.prepareForAgent(workItemId, agentType);
 	}
@@ -230,6 +439,19 @@ export async function runAgentExecutionPipeline(
 		project,
 		config,
 	});
+
+	// Link PR to work item post-execution (single code path for all backends)
+	if (agentResult.success && agentResult.prUrl && project.repo) {
+		await linkPRPostExecution(
+			agentResult as AgentResult & { prUrl: string },
+			project as ProjectConfig & { repo: string },
+			result,
+			workItemId,
+		);
+	}
+
+	// Post agent summary to PM work item (cross-source: works for all trigger types)
+	await postAgentSummaryToPM(agentType, agentResult, workItemId, project.id, result.prNumber);
 
 	if (workItemId) {
 		await runPostAgentLifecycle(
@@ -257,7 +479,155 @@ export async function runAgentExecutionPipeline(
 		await onFailure(result, agentResult);
 	}
 
+	// After a successful splitting run, propagate auto label and optionally chain backlog-manager
+	if (agentType === 'splitting' && agentResult.success && workItemId) {
+		const chainResult = await propagateAutoLabelAfterSplitting(workItemId, project);
+		if (chainResult) {
+			await runAgentExecutionPipeline(chainResult, project, config, {
+				...executionConfig,
+				skipPrepareForAgent: true,
+				skipHandleFailure: true,
+				logLabel: 'backlog-manager (auto-chain)',
+			});
+		}
+	}
+
 	await tryAutoDebug(agentResult, project, config);
+}
+
+/**
+ * After a successful splitting agent run, propagate the 'auto' label to all
+ * cards in the backlog list and immediately chain to the backlog-manager agent.
+ *
+ * Only runs if the parent work item has the 'auto' label configured.
+ *
+ * NOTE: This propagates the label to ALL items currently in the backlog, not just
+ * those created by the splitting agent. This is intentional to enable batch auto-processing.
+ */
+async function propagateAutoLabelAfterSplitting(
+	workItemId: string,
+	project: ProjectConfig,
+): Promise<TriggerResult | null> {
+	const pmConfig = resolveProjectPMConfig(project);
+	const provider = getPMProvider();
+
+	// Check if parent has the auto label
+	let parentWorkItem: Awaited<ReturnType<typeof provider.getWorkItem>>;
+	try {
+		parentWorkItem = await provider.getWorkItem(workItemId);
+	} catch (err) {
+		logger.warn('propagateAutoLabelAfterSplitting: failed to fetch parent work item', {
+			workItemId,
+			error: String(err),
+		});
+		return null;
+	}
+
+	if (!hasAutoLabel(parentWorkItem.labels, pmConfig)) {
+		return null;
+	}
+
+	const autoLabelId = pmConfig.labels.auto;
+	if (!autoLabelId) return null;
+
+	// List all backlog items and add auto label
+	let backlogItems: Awaited<ReturnType<typeof provider.listWorkItems>>;
+	try {
+		if (provider.type === 'trello') {
+			// Trello: containerId is the list ID
+			const backlogListId = getTrelloConfig(project)?.lists?.backlog;
+			if (!backlogListId) {
+				logger.warn(
+					'propagateAutoLabelAfterSplitting: no backlog list configured for Trello, skipping',
+					{ workItemId },
+				);
+				return null;
+			}
+			backlogItems = await provider.listWorkItems(backlogListId);
+		} else if (provider.type === 'jira') {
+			// JIRA: use server-side JQL filtering by status to avoid fetching all project issues
+			const jiraConfig = getJiraConfig(project);
+			const backlogStatus = jiraConfig?.statuses?.backlog;
+			const projectKey = jiraConfig?.projectKey;
+			if (!backlogStatus || !projectKey) {
+				logger.warn(
+					'propagateAutoLabelAfterSplitting: no backlog status or projectKey configured for JIRA, skipping',
+					{ workItemId },
+				);
+				return null;
+			}
+			backlogItems = await provider.listWorkItems(projectKey, { status: backlogStatus });
+			logger.info('JIRA backlog items fetched for auto-label propagation', {
+				backlogCount: backlogItems.length,
+				projectKey,
+			});
+		} else {
+			logger.warn('propagateAutoLabelAfterSplitting: unsupported PM provider type', {
+				providerType: provider.type,
+			});
+			return null;
+		}
+	} catch (err) {
+		logger.warn('propagateAutoLabelAfterSplitting: failed to list backlog items', {
+			workItemId,
+			error: String(err),
+		});
+		return null;
+	}
+
+	logger.info('Propagating auto label to backlog items after splitting', {
+		parentWorkItemId: workItemId,
+		backlogItemCount: backlogItems.length,
+	});
+
+	// Label all backlog items that don't already have the auto label
+	await Promise.all(
+		backlogItems
+			.filter((item) => !hasAutoLabel(item.labels, pmConfig))
+			.map((item) =>
+				provider.addLabel(item.id, autoLabelId).catch((err) =>
+					logger.warn('Failed to add auto label to backlog item', {
+						itemId: item.id,
+						error: String(err),
+					}),
+				),
+			),
+	);
+
+	// Skip chaining if the backlog is empty — no items to process
+	if (backlogItems.length === 0) {
+		logger.info(
+			'propagateAutoLabelAfterSplitting: backlog is empty after splitting, skipping backlog-manager chain',
+			{ workItemId },
+		);
+		return null;
+	}
+
+	// Check if backlog-manager trigger is enabled, then chain to it
+	const backlogManagerEnabled = await checkTriggerEnabled(
+		project.id,
+		'backlog-manager',
+		'internal:auto-chain',
+		'splitting-auto-propagate',
+	);
+	if (!backlogManagerEnabled) {
+		logger.info(
+			'propagateAutoLabelAfterSplitting: backlog-manager trigger not enabled, skipping chain',
+			{ workItemId },
+		);
+		return null;
+	}
+
+	logger.info('Chaining to backlog-manager after splitting with auto label', {
+		parentWorkItemId: workItemId,
+	});
+
+	return {
+		agentType: 'backlog-manager',
+		// Include workItemId so PM operations (progress, lifecycle) have the work item ID.
+		agentInput: { triggerEvent: 'internal:auto-chain', workItemId: workItemId },
+		workItemId,
+	};
 }
 
 /**
@@ -271,7 +641,7 @@ async function tryAutoDebug(
 	if (!agentResult.runId) return;
 	const debugTarget = await shouldTriggerDebug(agentResult.runId);
 	if (debugTarget) {
-		triggerDebugAnalysis(debugTarget.runId, project, config, debugTarget.cardId).catch((err) =>
+		triggerDebugAnalysis(debugTarget.runId, project, config, debugTarget.workItemId).catch((err) =>
 			logger.error('Auto-debug failed', { error: String(err) }),
 		);
 	}

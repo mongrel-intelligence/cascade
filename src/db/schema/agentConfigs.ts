@@ -1,23 +1,23 @@
-import { integer, pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core';
-import { organizations } from './organizations.js';
+import { integer, pgTable, serial, text, timestamp, unique } from 'drizzle-orm/pg-core';
 import { projects } from './projects.js';
 
 export const agentConfigs = pgTable(
 	'agent_configs',
 	{
 		id: serial('id').primaryKey(),
-		orgId: text('org_id').references(() => organizations.id, { onDelete: 'cascade' }),
-		projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+		// Only project-scoped rows exist; org-level and global rows were removed in migration 0036.
+		projectId: text('project_id')
+			.notNull()
+			.references(() => projects.id, { onDelete: 'cascade' }),
 		agentType: text('agent_type').notNull(),
 		model: text('model'),
 		maxIterations: integer('max_iterations'),
-		agentBackend: text('agent_backend'),
+		agentEngine: text('agent_engine'),
+		maxConcurrency: integer('max_concurrency'),
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')
 			.defaultNow()
 			.$onUpdate(() => new Date()),
 	},
-	// Unique constraints are enforced by partial indexes in the DB:
-	// - uq_agent_configs_global: UNIQUE(agent_type) WHERE project_id IS NULL
-	// - uq_agent_configs_with_project: UNIQUE(project_id, agent_type) WHERE project_id IS NOT NULL
+	(t) => [unique('uq_agent_configs_project').on(t.projectId, t.agentType)],
 );

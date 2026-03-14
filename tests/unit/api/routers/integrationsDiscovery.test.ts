@@ -1,4 +1,3 @@
-import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockUser } from '../../../helpers/factories.js';
@@ -23,35 +22,12 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 	credentials: { id: 'id', orgId: 'org_id', value: 'value' },
 }));
 
-const { mockImapConnect, mockImapLogout, MockImapFlow, mockRefreshGmailAccessToken } = vi.hoisted(
-	() => {
-		const mockImapConnect = vi.fn();
-		const mockImapLogout = vi.fn();
-		const MockImapFlow = vi.fn().mockImplementation(() => ({
-			connect: mockImapConnect,
-			logout: mockImapLogout,
-		}));
-		const mockRefreshGmailAccessToken = vi.fn();
-		return { mockImapConnect, mockImapLogout, MockImapFlow, mockRefreshGmailAccessToken };
-	},
-);
-
-vi.mock('imapflow', () => ({
-	ImapFlow: MockImapFlow,
-}));
-
-vi.mock('../../../../src/email/gmail/oauth.js', () => ({
-	getGmailAuthUrl: vi.fn(),
-	exchangeGmailCode: vi.fn(),
-	getGmailUserInfo: vi.fn(),
-	refreshGmailAccessToken: (...args: unknown[]) => mockRefreshGmailAccessToken(...args),
-}));
-
 const mockTrelloGetMe = vi.fn();
 const mockTrelloGetBoards = vi.fn();
 const mockTrelloGetBoardLists = vi.fn();
 const mockTrelloGetBoardLabels = vi.fn();
 const mockTrelloGetBoardCustomFields = vi.fn();
+const mockTrelloCreateBoardCustomField = vi.fn();
 
 vi.mock('../../../../src/trello/client.js', () => ({
 	withTrelloCredentials: (...args: unknown[]) => {
@@ -64,6 +40,7 @@ vi.mock('../../../../src/trello/client.js', () => ({
 		getBoardLists: (...args: unknown[]) => mockTrelloGetBoardLists(...args),
 		getBoardLabels: (...args: unknown[]) => mockTrelloGetBoardLabels(...args),
 		getBoardCustomFields: (...args: unknown[]) => mockTrelloGetBoardCustomFields(...args),
+		createBoardCustomField: (...args: unknown[]) => mockTrelloCreateBoardCustomField(...args),
 	},
 }));
 
@@ -72,6 +49,7 @@ const mockJiraSearchProjects = vi.fn();
 const mockJiraGetProjectStatuses = vi.fn();
 const mockJiraGetIssueTypesForProject = vi.fn();
 const mockJiraGetFields = vi.fn();
+const mockJiraCreateCustomField = vi.fn();
 
 vi.mock('../../../../src/jira/client.js', () => ({
 	withJiraCredentials: (...args: unknown[]) => {
@@ -84,6 +62,7 @@ vi.mock('../../../../src/jira/client.js', () => ({
 		getProjectStatuses: (...args: unknown[]) => mockJiraGetProjectStatuses(...args),
 		getIssueTypesForProject: (...args: unknown[]) => mockJiraGetIssueTypesForProject(...args),
 		getFields: (...args: unknown[]) => mockJiraGetFields(...args),
+		createCustomField: (...args: unknown[]) => mockJiraCreateCustomField(...args),
 	},
 }));
 
@@ -122,9 +101,6 @@ describe('integrationsDiscoveryRouter', () => {
 	beforeEach(() => {
 		mockDbSelect.mockReturnValue({ from: mockDbFrom });
 		mockDbFrom.mockReturnValue({ where: mockDbWhere });
-		mockImapConnect.mockResolvedValue(undefined);
-		mockImapLogout.mockResolvedValue(undefined);
-		mockRefreshGmailAccessToken.mockResolvedValue({ accessToken: 'access-token-123' });
 	});
 
 	// ── Auth ─────────────────────────────────────────────────────────────
@@ -169,30 +145,6 @@ describe('integrationsDiscoveryRouter', () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(
 				caller.jiraProjectDetails({ ...jiraCredsInput, projectKey: 'PROJ' }),
-			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
-		});
-
-		it('verifyGmail throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
-				caller.verifyGmail({
-					clientIdCredentialId: 10,
-					clientSecretCredentialId: 11,
-					refreshTokenCredentialId: 12,
-					gmailEmailCredentialId: 13,
-				}),
-			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
-		});
-
-		it('verifyImap throws UNAUTHORIZED when not authenticated', async () => {
-			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
-				caller.verifyImap({
-					hostCredentialId: 20,
-					portCredentialId: 21,
-					usernameCredentialId: 22,
-					passwordCredentialId: 23,
-				}),
 			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 		});
 	});
@@ -534,143 +486,227 @@ describe('integrationsDiscoveryRouter', () => {
 		});
 	});
 
-	// ── verifyGmail ───────────────────────────────────────────────────────
+	// ── createTrelloCustomField ──────────────────────────────────────────
 
-	const gmailInput = {
-		clientIdCredentialId: 10,
-		clientSecretCredentialId: 11,
-		refreshTokenCredentialId: 12,
-		gmailEmailCredentialId: 13,
-	};
-
-	describe('verifyGmail', () => {
-		it('resolves all four credentials server-side and returns email', async () => {
+	describe('createTrelloCustomField', () => {
+		it('returns id, name, and type on success', async () => {
 			setupDbCredentials([
-				{ orgId: 'org-1', value: 'client-id' },
-				{ orgId: 'org-1', value: 'client-secret' },
-				{ orgId: 'org-1', value: 'refresh-token' },
-				{ orgId: 'org-1', value: 'user@gmail.com' },
+				{ orgId: 'org-1', value: 'api-key' },
+				{ orgId: 'org-1', value: 'token' },
 			]);
-			mockRefreshGmailAccessToken.mockResolvedValue({ accessToken: 'access-token-123' });
-
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			const result = await caller.verifyGmail(gmailInput);
-
-			expect(result).toEqual({ success: true, email: 'user@gmail.com' });
-			expect(mockRefreshGmailAccessToken).toHaveBeenCalledWith(
-				'client-id',
-				'client-secret',
-				'refresh-token',
-			);
-		});
-
-		it('passes resolved email as IMAP user (not a credential ID or masked value)', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'client-id' },
-				{ orgId: 'org-1', value: 'client-secret' },
-				{ orgId: 'org-1', value: 'refresh-token' },
-				{ orgId: 'org-1', value: 'user@gmail.com' },
-			]);
-			mockRefreshGmailAccessToken.mockResolvedValue({ accessToken: 'tok' });
-
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			await caller.verifyGmail(gmailInput);
-
-			const imapArgs = MockImapFlow.mock.calls[0][0] as { auth: { user: string } };
-			expect(imapArgs.auth.user).toBe('user@gmail.com');
-		});
-
-		it('wraps token refresh failure in BAD_REQUEST', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'client-id' },
-				{ orgId: 'org-1', value: 'client-secret' },
-				{ orgId: 'org-1', value: 'bad-refresh-token' },
-				{ orgId: 'org-1', value: 'user@gmail.com' },
-			]);
-			mockRefreshGmailAccessToken.mockRejectedValue(new Error('invalid_grant'));
-
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			await expect(caller.verifyGmail(gmailInput)).rejects.toMatchObject({
-				code: 'BAD_REQUEST',
+			mockTrelloCreateBoardCustomField.mockResolvedValue({
+				id: 'cf-123',
+				name: 'Cost',
+				type: 'number',
 			});
-		});
-
-		it('wraps IMAP connection failure in BAD_REQUEST', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'client-id' },
-				{ orgId: 'org-1', value: 'client-secret' },
-				{ orgId: 'org-1', value: 'refresh-token' },
-				{ orgId: 'org-1', value: 'user@gmail.com' },
-			]);
-			mockRefreshGmailAccessToken.mockResolvedValue({ accessToken: 'tok' });
-			mockImapConnect.mockRejectedValue(new Error('Connection refused'));
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			await expect(caller.verifyGmail(gmailInput)).rejects.toMatchObject({
-				code: 'BAD_REQUEST',
+			const result = await caller.createTrelloCustomField({
+				...trelloCredsInput,
+				boardId: 'boardabc',
+				name: 'Cost',
+				type: 'number',
 			});
+
+			expect(result).toEqual({
+				id: 'cf-123',
+				name: 'Cost',
+				type: 'number',
+			});
+			expect(mockTrelloCreateBoardCustomField).toHaveBeenCalledWith('boardabc', 'Cost', 'number');
 		});
 
-		it('rejects input containing a plain email string (schema change guard)', async () => {
+		it('throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'boardabc',
+					name: 'Cost',
+					type: 'number',
+				}),
+			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+		});
+
+		it('throws NOT_FOUND when credential does not exist', async () => {
+			mockDbWhere.mockResolvedValueOnce([]);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'boardabc',
+					name: 'Cost',
+					type: 'number',
+				}),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+
+		it('validates boardId with alphanumeric regex', async () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(
-				// biome-ignore lint/suspicious/noExplicitAny: testing schema rejection of old API shape
-				caller.verifyGmail({ ...gmailInput, email: 'user@gmail.com' } as any),
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'board-with-hyphens',
+					name: 'Cost',
+					type: 'number',
+				}),
 			).rejects.toThrow();
+		});
+
+		it('validates boardId max length of 32', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'a'.repeat(33),
+					name: 'Cost',
+					type: 'number',
+				}),
+			).rejects.toThrow();
+		});
+
+		it('validates name min length of 1', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'boardabc',
+					name: '',
+					type: 'number',
+				}),
+			).rejects.toThrow();
+		});
+
+		it('validates name max length of 100', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'boardabc',
+					name: 'a'.repeat(101),
+					type: 'number',
+				}),
+			).rejects.toThrow();
+		});
+
+		it('validates type is one of the allowed enum values', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'boardabc',
+					name: 'Cost',
+					type: 'invalid-type',
+				}),
+			).rejects.toThrow();
+		});
+
+		it('wraps API failure in BAD_REQUEST', async () => {
+			setupDbCredentials([
+				{ orgId: 'org-1', value: 'api-key' },
+				{ orgId: 'org-1', value: 'token' },
+			]);
+			mockTrelloCreateBoardCustomField.mockRejectedValue(new Error('Board not found'));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createTrelloCustomField({
+					...trelloCredsInput,
+					boardId: 'boardabc',
+					name: 'Cost',
+					type: 'number',
+				}),
+			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 		});
 	});
 
-	// ── verifyImap ────────────────────────────────────────────────────────
+	// ── createJiraCustomField ────────────────────────────────────────────
 
-	const imapInput = {
-		hostCredentialId: 20,
-		portCredentialId: 21,
-		usernameCredentialId: 22,
-		passwordCredentialId: 23,
-	};
-
-	describe('verifyImap', () => {
-		it('resolves all four credentials server-side and returns email', async () => {
+	describe('createJiraCustomField', () => {
+		it('returns id and name on success', async () => {
 			setupDbCredentials([
-				{ orgId: 'org-1', value: 'imap.example.com' },
-				{ orgId: 'org-1', value: '993' },
-				{ orgId: 'org-1', value: 'user@example.com' },
-				{ orgId: 'org-1', value: 'secret' },
+				{ orgId: 'org-1', value: 'email' },
+				{ orgId: 'org-1', value: 'api-token' },
 			]);
+			mockJiraCreateCustomField.mockResolvedValue({
+				id: 'customfield_10001',
+				name: 'Cost',
+			});
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			const result = await caller.verifyImap(imapInput);
+			const result = await caller.createJiraCustomField({
+				...jiraCredsInput,
+				name: 'Cost',
+			});
 
-			expect(result).toEqual({ success: true, email: 'user@example.com' });
+			expect(result).toEqual({
+				id: 'customfield_10001',
+				name: 'Cost',
+			});
+			expect(mockJiraCreateCustomField).toHaveBeenCalledWith(
+				'Cost',
+				'com.atlassian.jira.plugin.system.customfieldtypes:float',
+				'com.atlassian.jira.plugin.system.customfieldtypes:exactnumber',
+			);
 		});
 
-		it('rejects non-numeric port with BAD_REQUEST', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'imap.example.com' },
-				{ orgId: 'org-1', value: 'not-a-port' },
-				{ orgId: 'org-1', value: 'user@example.com' },
-				{ orgId: 'org-1', value: 'secret' },
-			]);
-
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			await expect(caller.verifyImap(imapInput)).rejects.toMatchObject({
-				code: 'BAD_REQUEST',
-			});
+		it('throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(
+				caller.createJiraCustomField({
+					...jiraCredsInput,
+					name: 'Cost',
+				}),
+			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 		});
 
-		it('wraps IMAP connection failure in BAD_REQUEST', async () => {
+		it('throws NOT_FOUND when credential does not exist', async () => {
+			mockDbWhere.mockResolvedValueOnce([]);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				caller.createJiraCustomField({
+					...jiraCredsInput,
+					name: 'Cost',
+				}),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+
+		it('validates name min length of 1', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createJiraCustomField({
+					...jiraCredsInput,
+					name: '',
+				}),
+			).rejects.toThrow();
+		});
+
+		it('validates name max length of 100', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.createJiraCustomField({
+					...jiraCredsInput,
+					name: 'a'.repeat(101),
+				}),
+			).rejects.toThrow();
+		});
+
+		it('wraps API failure in BAD_REQUEST', async () => {
 			setupDbCredentials([
-				{ orgId: 'org-1', value: 'imap.example.com' },
-				{ orgId: 'org-1', value: '993' },
-				{ orgId: 'org-1', value: 'user@example.com' },
-				{ orgId: 'org-1', value: 'wrong-password' },
+				{ orgId: 'org-1', value: 'email' },
+				{ orgId: 'org-1', value: 'api-token' },
 			]);
-			mockImapConnect.mockRejectedValue(new Error('Authentication failed'));
+			mockJiraCreateCustomField.mockRejectedValue(new Error('Admin permission required'));
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			await expect(caller.verifyImap(imapInput)).rejects.toMatchObject({
-				code: 'BAD_REQUEST',
-			});
+			await expect(
+				caller.createJiraCustomField({
+					...jiraCredsInput,
+					name: 'Cost',
+				}),
+			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 		});
 	});
 });

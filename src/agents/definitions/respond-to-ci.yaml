@@ -17,6 +17,7 @@ capabilities:
     - shell:exec
     - session:ctrl
     - scm:read
+    - scm:ci-logs
     - scm:comment
   optional:
     - pm:read
@@ -40,15 +41,13 @@ prompts:
 
     CI checks have failed. Analyze the failures and fix them.
 
-backend:
-  hooks:
+hooks:
+  trailing:
+    builtin:
+      diagnostics: true
+  finish:
     scm:
-      enableStopHooks: true
-      blockGitPush: false
       requiresPushedChanges: true
-
+      blockGitPush: false
 
 hint: Fix CI failures with minimal, focused changes. Batch related file edits together.
-
-trailingMessage:
-  includeDiagnostics: true

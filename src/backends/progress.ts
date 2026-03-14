@@ -12,10 +12,18 @@ export interface ProgressMonitorOptions {
 	intervalMinutes: number;
 	customModels: ModelSpec[];
 	repoDir?: string;
-	trello?: { cardId: string };
-	github?: { owner: string; repo: string; headerMessage: string };
+	trello?: { workItemId: string };
+	github?: { owner: string; repo: string };
 	/** Pre-seeded comment ID from router ack — skip initial comment posting */
 	preSeededCommentId?: string;
+	/** Run link config — when set, appends a dashboard link to progress comments */
+	runLink?: {
+		runId?: string;
+		engineLabel: string;
+		model: string;
+		projectId: string;
+		workItemId?: string;
+	};
 }
 
 /**
@@ -41,6 +49,7 @@ export function createProgressMonitor(options: ProgressMonitorOptions): Progress
 		trello: options.trello,
 		github: options.github,
 		preSeededCommentId: options.preSeededCommentId,
+		runLink: options.runLink,
 	};
 
 	return new ProgressMonitor(config);

@@ -1,40 +1,54 @@
-import type { AgentInput, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
-import type { AgentBackend, AgentBackendResult } from './types.js';
+import type { AgentEngine, AgentEngineResult } from './types.js';
 
 /**
- * Post-process a backend result: validate PR creation for agents that require it
- * and zero out cost for subscription-backed Claude Code sessions.
+ * Post-process an engine result: validate PR creation for agents that require it.
  */
 export function postProcessResult(
-	result: AgentBackendResult,
+	result: AgentEngineResult,
 	agentType: string,
-	backend: AgentBackend,
-	input: AgentInput & { project: ProjectConfig },
+	engine: AgentEngine,
+	_input: unknown,
 	identifier: string,
-	options?: { requiresPR?: boolean },
+	options?: {
+		requiresPR?: boolean;
+		requiresReview?: boolean;
+		requiresPushedChanges?: boolean;
+		hasAuthoritativeReview?: boolean;
+		hasAuthoritativePushedChanges?: boolean;
+	},
 ): void {
 	// Validate PR creation for agents that require it (e.g., implementation)
-	if (options?.requiresPR && result.success && !result.prUrl) {
-		logger.warn(`${agentType} agent completed without creating a PR`, {
+	if (options?.requiresPR && result.success && !result.prEvidence?.authoritative) {
+		logger.warn(`${agentType} agent completed without authoritative PR evidence`, {
 			identifier,
-			backend: backend.name,
+			engine: engine.definition.id,
+			prUrl: result.prUrl,
+			prEvidenceSource: result.prEvidence?.source ?? null,
 		});
 		result.success = false;
-		result.error = 'Agent completed but no PR was created';
+		result.error = 'Agent completed but no authoritative PR creation was recorded';
 	}
 
-	// Zero out cost for subscription-backed Claude Code sessions
-	if (
-		backend.name === 'claude-code' &&
-		input.project.agentBackend?.subscriptionCostZero === true &&
-		result.cost !== undefined &&
-		result.cost > 0
-	) {
-		logger.info('Zeroing Claude Code cost (subscription mode)', {
-			originalCost: result.cost,
-			project: input.project.id,
+	if (options?.requiresReview && result.success && !options.hasAuthoritativeReview) {
+		logger.warn(`${agentType} agent completed without authoritative review evidence`, {
+			identifier,
+			engine: engine.definition.id,
 		});
-		result.cost = 0;
+		result.success = false;
+		result.error = 'Agent completed but no authoritative PR review submission was recorded';
+	}
+
+	if (
+		options?.requiresPushedChanges &&
+		result.success &&
+		options.hasAuthoritativePushedChanges === false
+	) {
+		logger.warn(`${agentType} agent completed without authoritative pushed-change evidence`, {
+			identifier,
+			engine: engine.definition.id,
+		});
+		result.success = false;
+		result.error = 'Agent completed but no authoritative pushed changes were recorded';
 	}
 }

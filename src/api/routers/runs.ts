@@ -2,17 +2,21 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { loadProjectConfigById } from '../../config/provider.js';
 import {
+	DEFAULT_STALE_RUN_THRESHOLD_MS,
+	cancelRunById,
 	deleteDebugAnalysisByRunId,
 	getDebugAnalysisByRunId,
 	getLlmCallByNumber,
 	getRunById,
 	getRunLogs,
+	hasActiveRunForWorkItem,
 	listLlmCallsMeta,
 	listRuns,
 } from '../../db/repositories/runsRepository.js';
+import { publishCancelCommand } from '../../queue/cancel.js';
 import { isAnalysisRunning } from '../../triggers/shared/debug-status.js';
 import { logger } from '../../utils/logging.js';
-import { protectedProcedure, router } from '../trpc.js';
+import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
 import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
 const useQueue = !!process.env.REDIS_URL;
@@ -47,6 +51,34 @@ export const runsRouter = router({
 			});
 		}),
 
+	listAll: superAdminProcedure
+		.input(
+			z.object({
+				projectId: z.string().optional(),
+				status: z.array(z.string()).optional(),
+				agentType: z.string().optional(),
+				startedAfter: z.string().datetime().optional(),
+				startedBefore: z.string().datetime().optional(),
+				limit: z.number().min(1).max(100).default(50),
+				offset: z.number().min(0).default(0),
+				sort: z.enum(['startedAt', 'durationMs', 'costUsd']).default('startedAt'),
+				order: z.enum(['asc', 'desc']).default('desc'),
+			}),
+		)
+		.query(async ({ input }) => {
+			return listRuns({
+				projectId: input.projectId,
+				status: input.status,
+				agentType: input.agentType,
+				startedAfter: input.startedAfter ? new Date(input.startedAfter) : undefined,
+				startedBefore: input.startedBefore ? new Date(input.startedBefore) : undefined,
+				limit: input.limit,
+				offset: input.offset,
+				sort: input.sort,
+				order: input.order,
+			});
+		}),
+
 	getById: protectedProcedure
 		.input(z.object({ id: z.string().uuid() }))
 		.query(async ({ ctx, input }) => {
@@ -54,7 +86,8 @@ export const runsRouter = router({
 			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
 
 			// Verify org access
-			if (run.projectId) {
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
 				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
 			}
 
@@ -64,8 +97,7 @@ export const runsRouter = router({
 	getLogs: protectedProcedure
 		.input(z.object({ runId: z.string().uuid() }))
 		.query(async ({ input }) => {
-			const logs = await getRunLogs(input.runId);
-			return logs;
+			return getRunLogs(input.runId);
 		}),
 
 	listLlmCalls: protectedProcedure
@@ -109,7 +141,8 @@ export const runsRouter = router({
 			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
 
 			// Verify org access
-			if (run.projectId) {
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
 				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
 			}
 
@@ -151,11 +184,11 @@ export const runsRouter = router({
 					type: 'debug-analysis',
 					runId: input.runId,
 					projectId: run.projectId,
-					cardId: run.cardId ?? undefined,
+					workItemId: run.workItemId ?? undefined,
 				});
 			} else {
 				const { triggerDebugAnalysis } = await import('../../triggers/shared/debug-runner.js');
-				triggerDebugAnalysis(input.runId, pc.project, pc.config, run.cardId ?? undefined).catch(
+				triggerDebugAnalysis(input.runId, pc.project, pc.config, run.workItemId ?? undefined).catch(
 					(err) => {
 						logger.error('Manual debug analysis failed', {
 							runId: input.runId,
@@ -173,7 +206,7 @@ export const runsRouter = router({
 			z.object({
 				projectId: z.string(),
 				agentType: z.string(),
-				cardId: z.string().optional(),
+				workItemId: z.string().optional(),
 				prNumber: z.number().optional(),
 				prBranch: z.string().optional(),
 				repoFullName: z.string().optional(),
@@ -183,7 +216,25 @@ export const runsRouter = router({
 		)
 		.mutation(async ({ ctx, input }) => {
 			// Verify org ownership of project
-			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+			if (ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+				await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+			}
+
+			// Block if a worker is already active on this work item
+			if (input.workItemId && input.agentType !== 'debug') {
+				const active = await hasActiveRunForWorkItem(
+					input.projectId,
+					input.workItemId,
+					DEFAULT_STALE_RUN_THRESHOLD_MS,
+				);
+				if (active) {
+					throw new TRPCError({
+						code: 'CONFLICT',
+						message: 'A worker is already active on this work item',
+					});
+				}
+			}
 
 			const pc = await loadProjectConfigById(input.projectId);
 			if (!pc) {
@@ -199,7 +250,7 @@ export const runsRouter = router({
 					type: 'manual-run',
 					projectId: input.projectId,
 					agentType: input.agentType,
-					cardId: input.cardId,
+					workItemId: input.workItemId,
 					prNumber: input.prNumber,
 					prBranch: input.prBranch,
 					repoFullName: input.repoFullName,
@@ -212,7 +263,7 @@ export const runsRouter = router({
 					{
 						projectId: input.projectId,
 						agentType: input.agentType,
-						cardId: input.cardId,
+						workItemId: input.workItemId,
 						prNumber: input.prNumber,
 						prBranch: input.prBranch,
 						repoFullName: input.repoFullName,
@@ -245,7 +296,8 @@ export const runsRouter = router({
 			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
 
 			// Verify org access
-			if (run.projectId) {
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
 				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
 			}
 
@@ -254,6 +306,21 @@ export const runsRouter = router({
 					code: 'BAD_REQUEST',
 					message: 'Run has no associated project',
 				});
+			}
+
+			// Block if a worker is already active on this work item
+			if (run.workItemId && run.agentType !== 'debug') {
+				const active = await hasActiveRunForWorkItem(
+					run.projectId,
+					run.workItemId,
+					DEFAULT_STALE_RUN_THRESHOLD_MS,
+				);
+				if (active) {
+					throw new TRPCError({
+						code: 'CONFLICT',
+						message: 'A worker is already active on this work item',
+					});
+				}
 			}
 
 			const pc = await loadProjectConfigById(run.projectId);
@@ -283,5 +350,49 @@ export const runsRouter = router({
 			}
 
 			return { triggered: true };
+		}),
+
+	cancel: protectedProcedure
+		.input(
+			z.object({
+				runId: z.string().uuid(),
+				reason: z.string().optional(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const run = await getRunById(input.runId);
+			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
+
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
+			}
+
+			if (run.status !== 'running') {
+				throw new TRPCError({
+					code: 'BAD_REQUEST',
+					message: `Run is not running (status: ${run.status})`,
+				});
+			}
+
+			const reason = input.reason ?? 'Manually cancelled via API';
+			const updated = await cancelRunById(input.runId, reason);
+			if (!updated) {
+				throw new TRPCError({
+					code: 'CONFLICT',
+					message: 'Run was already completed by the time cancel was processed',
+				});
+			}
+
+			// Publish cancel command to Router (fire-and-forget)
+			publishCancelCommand(input.runId, reason).catch((err) => {
+				logger.error('[runs.cancel] Failed to publish cancel command:', {
+					runId: input.runId,
+					reason,
+					error: String(err),
+				});
+			});
+
+			return { cancelled: true };
 		}),
 });

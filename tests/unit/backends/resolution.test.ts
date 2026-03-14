@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveBackendName } from '../../../src/backends/resolution.js';
+import { resolveEngineName } from '../../../src/backends/resolution.js';
 import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 
 function makeProject(overrides?: Partial<ProjectConfig>): ProjectConfig {
@@ -22,8 +22,8 @@ function makeConfig(overrides?: Partial<CascadeConfig['defaults']>): CascadeConf
 			maxIterations: 50,
 			agentIterations: {},
 			watchdogTimeoutMs: 1800000,
-			cardBudgetUsd: 5,
-			agentBackend: 'llmist',
+			workItemBudgetUsd: 5,
+			agentEngine: 'llmist',
 			progressModel: 'openrouter:google/gemini-2.5-flash-lite',
 			progressIntervalMinutes: 5,
 			...overrides,
@@ -32,47 +32,47 @@ function makeConfig(overrides?: Partial<CascadeConfig['defaults']>): CascadeConf
 	};
 }
 
-describe('resolveBackendName', () => {
+describe('resolveEngineName', () => {
 	it('returns project-level agent type override when set', () => {
 		const project = makeProject({
-			agentBackend: { default: 'llmist', overrides: { implementation: 'claude-code' } },
+			agentEngine: { default: 'llmist', overrides: { implementation: 'claude-code' } },
 		});
 		const config = makeConfig();
-		expect(resolveBackendName('implementation', project, config)).toBe('claude-code');
+		expect(resolveEngineName('implementation', project, config)).toBe('claude-code');
 	});
 
 	it('returns project-level default when no override for agent type', () => {
 		const project = makeProject({
-			agentBackend: { default: 'custom-backend', overrides: {} },
+			agentEngine: { default: 'custom-backend', overrides: {} },
 		});
 		const config = makeConfig();
-		expect(resolveBackendName('implementation', project, config)).toBe('custom-backend');
+		expect(resolveEngineName('implementation', project, config)).toBe('custom-backend');
 	});
 
 	it('returns cascade-level default when no project config', () => {
-		const project = makeProject(); // no agentBackend
-		const config = makeConfig({ agentBackend: 'cascade-default' });
-		expect(resolveBackendName('implementation', project, config)).toBe('cascade-default');
+		const project = makeProject(); // no agentEngine
+		const config = makeConfig({ agentEngine: 'cascade-default' });
+		expect(resolveEngineName('implementation', project, config)).toBe('cascade-default');
 	});
 
 	it('returns "llmist" when nothing configured', () => {
-		const project = makeProject(); // no agentBackend
-		const config = makeConfig(); // agentBackend = 'llmist' (default)
-		expect(resolveBackendName('implementation', project, config)).toBe('llmist');
+		const project = makeProject(); // no agentEngine
+		const config = makeConfig(); // agentEngine = 'llmist' (default)
+		expect(resolveEngineName('implementation', project, config)).toBe('llmist');
 	});
 
 	it('prioritizes override > project default > cascade default > fallback', () => {
 		const project = makeProject({
-			agentBackend: {
+			agentEngine: {
 				default: 'project-default',
 				overrides: { review: 'review-backend' },
 			},
 		});
-		const config = makeConfig({ agentBackend: 'cascade-default' });
+		const config = makeConfig({ agentEngine: 'cascade-default' });
 
 		// Agent type with override → uses override
-		expect(resolveBackendName('review', project, config)).toBe('review-backend');
+		expect(resolveEngineName('review', project, config)).toBe('review-backend');
 		// Agent type without override → uses project default
-		expect(resolveBackendName('implementation', project, config)).toBe('project-default');
+		expect(resolveEngineName('implementation', project, config)).toBe('project-default');
 	});
 });

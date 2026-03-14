@@ -33,9 +33,13 @@ vi.mock('../../../src/github/client.js', () => ({
 	},
 }));
 
-vi.mock('../../../src/gadgets/sessionState.js', () => ({
-	getSessionState: vi.fn(),
-}));
+vi.mock('../../../src/gadgets/sessionState.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../../../src/gadgets/sessionState.js')>();
+	return {
+		...actual,
+		getSessionState: vi.fn(),
+	};
+});
 
 vi.mock('../../../src/gadgets/todo/storage.js', () => ({
 	loadTodos: vi.fn(),
@@ -52,7 +56,6 @@ vi.mock('../../../src/agents/utils/checklistSync.js', () => ({
 vi.mock('../../../src/config/statusUpdateConfig.js', () => ({
 	getStatusUpdateConfig: vi.fn(),
 	formatStatusMessage: vi.fn(),
-	formatGitHubProgressComment: vi.fn(),
 }));
 
 vi.mock('../../../src/backends/progressState.js', () => ({
@@ -71,7 +74,6 @@ import {
 	writeProgressCommentId,
 } from '../../../src/backends/progressState.js';
 import {
-	formatGitHubProgressComment,
 	formatStatusMessage,
 	getStatusUpdateConfig,
 } from '../../../src/config/statusUpdateConfig.js';
@@ -89,7 +91,6 @@ const mockPMProvider = { addComment: vi.fn(), updateComment: vi.fn() };
 const mockGithub = vi.mocked(githubClient);
 const mockGetStatusConfig = vi.mocked(getStatusUpdateConfig);
 const mockFormatStatus = vi.mocked(formatStatusMessage);
-const mockFormatGitHub = vi.mocked(formatGitHubProgressComment);
 const mockGetSessionState = vi.mocked(getSessionState);
 const mockLoadTodos = vi.mocked(loadTodos);
 const mockCallProgressModel = vi.mocked(callProgressModel);
@@ -116,7 +117,7 @@ describe('ProgressMonitor — state accumulation', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 	}
 
@@ -135,7 +136,7 @@ describe('ProgressMonitor — state accumulation', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		// Add 25 tool calls (more than ring buffer max of 20)
@@ -221,7 +222,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -238,7 +239,7 @@ describe('ProgressMonitor — tick behavior', () => {
 		expect(logWriter).toHaveBeenCalledWith(
 			'INFO',
 			'Posted initial progress comment to work item',
-			expect.objectContaining({ cardId: 'card1', commentId: 'comment-id-initial' }),
+			expect.objectContaining({ workItemId: 'card1', commentId: 'comment-id-initial' }),
 		);
 		monitor.stop();
 	});
@@ -252,7 +253,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -285,7 +286,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -311,7 +312,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(null);
@@ -333,7 +334,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -365,7 +366,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -400,7 +401,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -435,7 +436,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -466,7 +467,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -490,7 +491,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -513,7 +514,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			github: { owner: 'o', repo: 'r', headerMessage: 'Header' },
+			github: { owner: 'o', repo: 'r' },
 		});
 
 		mockCallProgressModel.mockResolvedValue('Progress');
@@ -525,7 +526,6 @@ describe('ProgressMonitor — tick behavior', () => {
 			reviewUrl: null,
 			initialCommentId: 42,
 		});
-		mockFormatGitHub.mockReturnValue('GitHub body');
 		mockGithub.updatePRComment.mockResolvedValue(undefined as never);
 
 		monitor.start();
@@ -544,7 +544,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			github: { owner: 'o', repo: 'r', headerMessage: 'Header' },
+			github: { owner: 'o', repo: 'r' },
 		});
 
 		mockCallProgressModel.mockResolvedValue('Progress');
@@ -574,7 +574,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -606,7 +606,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		// Make the progress model take a long time
@@ -651,7 +651,7 @@ describe('ProgressMonitor — progressive schedule', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		monitor.start();
@@ -693,7 +693,7 @@ describe('ProgressMonitor — progressive schedule', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		monitor.start();
@@ -726,7 +726,7 @@ describe('ProgressMonitor — progressive schedule', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 			// No scheduleMinutes — should use DEFAULT_SCHEDULE_MINUTES = [1, 3, 5]
 		});
 
@@ -757,7 +757,7 @@ describe('ProgressMonitor — progressive schedule', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		monitor.start();
@@ -809,7 +809,7 @@ describe('createProgressMonitor', () => {
 			progressModel: 'test-model',
 			intervalMinutes: 5,
 			customModels: [],
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		expect(monitor).toBeInstanceOf(ProgressMonitor);
@@ -825,7 +825,7 @@ describe('ProgressMonitor — agent-specific initial messages', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -876,7 +876,7 @@ describe('ProgressMonitor — getProgressCommentId()', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		expect(monitor.getProgressCommentId()).toBeNull();
@@ -890,7 +890,7 @@ describe('ProgressMonitor — getProgressCommentId()', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -931,7 +931,7 @@ describe('ProgressMonitor — preSeededCommentId', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 			repoDir: '/tmp/test-repo',
 			preSeededCommentId: 'router-ack-comment-42',
 		});
@@ -952,7 +952,7 @@ describe('ProgressMonitor — preSeededCommentId', () => {
 		monitor.stop();
 	});
 
-	it('writes state file for pre-seeded comment ID', async () => {
+	it('writes env var for pre-seeded comment ID', async () => {
 		const monitor = new ProgressMonitor({
 			agentType: 'implementation',
 			taskDescription: 'Test task',
@@ -960,23 +960,18 @@ describe('ProgressMonitor — preSeededCommentId', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
-			repoDir: '/tmp/test-repo',
+			trello: { workItemId: 'card1' },
 			preSeededCommentId: 'router-ack-comment-42',
 		});
 
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(0);
 
-		expect(mockWriteProgressCommentId).toHaveBeenCalledWith(
-			'/tmp/test-repo',
-			'card1',
-			'router-ack-comment-42',
-		);
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('card1', 'router-ack-comment-42');
 		monitor.stop();
 	});
 
-	it('does not write state file when repoDir is missing', async () => {
+	it('writes env var for pre-seeded comment ID even without repoDir', async () => {
 		const monitor = new ProgressMonitor({
 			agentType: 'implementation',
 			taskDescription: 'Test task',
@@ -984,14 +979,14 @@ describe('ProgressMonitor — preSeededCommentId', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 			preSeededCommentId: 'router-ack-comment-42',
 		});
 
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(0);
 
-		expect(mockWriteProgressCommentId).not.toHaveBeenCalled();
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('card1', 'router-ack-comment-42');
 		monitor.stop();
 	});
 
@@ -1004,7 +999,7 @@ describe('ProgressMonitor — preSeededCommentId', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 			preSeededCommentId: 'router-ack-comment-42',
 		});
 
@@ -1028,8 +1023,8 @@ describe('ProgressMonitor — preSeededCommentId', () => {
 	});
 });
 
-describe('ProgressMonitor — state file integration', () => {
-	it('writes state file on initial comment when repoDir is provided', async () => {
+describe('ProgressMonitor — env var integration', () => {
+	it('writes env var on initial comment', async () => {
 		const logWriter = vi.fn();
 		const monitor = new ProgressMonitor({
 			agentType: 'planning',
@@ -1038,8 +1033,7 @@ describe('ProgressMonitor — state file integration', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			repoDir: '/tmp/test-repo',
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -1048,15 +1042,11 @@ describe('ProgressMonitor — state file integration', () => {
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(0);
 
-		expect(mockWriteProgressCommentId).toHaveBeenCalledWith(
-			'/tmp/test-repo',
-			'card1',
-			'comment-id-initial',
-		);
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('card1', 'comment-id-initial');
 		monitor.stop();
 	});
 
-	it('does not write state file when repoDir is not provided', async () => {
+	it('clears env var on stop()', () => {
 		const monitor = new ProgressMonitor({
 			agentType: 'planning',
 			taskDescription: 'Test task',
@@ -1064,55 +1054,16 @@ describe('ProgressMonitor — state file integration', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
-		});
-
-		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
-		mockPMProvider.addComment.mockResolvedValue('comment-id-initial');
-
-		monitor.start();
-		await vi.advanceTimersByTimeAsync(0);
-
-		expect(mockWriteProgressCommentId).not.toHaveBeenCalled();
-		monitor.stop();
-	});
-
-	it('clears state file on stop()', () => {
-		const monitor = new ProgressMonitor({
-			agentType: 'planning',
-			taskDescription: 'Test task',
-			intervalMinutes: 5,
-			progressModel: 'test-model',
-			customModels: [],
-			logWriter: vi.fn(),
-			repoDir: '/tmp/test-repo',
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		monitor.start();
 		monitor.stop();
 
-		expect(mockClearProgressCommentId).toHaveBeenCalledWith('/tmp/test-repo');
+		expect(mockClearProgressCommentId).toHaveBeenCalledWith();
 	});
 
-	it('clears state file on stop() even when repoDir not provided', () => {
-		const monitor = new ProgressMonitor({
-			agentType: 'planning',
-			taskDescription: 'Test task',
-			intervalMinutes: 5,
-			progressModel: 'test-model',
-			customModels: [],
-			logWriter: vi.fn(),
-			trello: { cardId: 'card1' },
-		});
-
-		monitor.start();
-		monitor.stop();
-
-		expect(mockClearProgressCommentId).toHaveBeenCalledWith(undefined);
-	});
-
-	it('writes state file from first tick when postInitialComment() failed', async () => {
+	it('writes env var from first tick when postInitialComment() failed', async () => {
 		const logWriter = vi.fn();
 		const monitor = new ProgressMonitor({
 			agentType: 'planning',
@@ -1121,8 +1072,7 @@ describe('ProgressMonitor — state file integration', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			repoDir: '/tmp/test-repo',
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -1144,15 +1094,11 @@ describe('ProgressMonitor — state file integration', () => {
 		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 		monitor.stop();
 
-		// State file should be written from the else branch in postProgressToPM
-		expect(mockWriteProgressCommentId).toHaveBeenCalledWith(
-			'/tmp/test-repo',
-			'card1',
-			'comment-id-from-tick',
-		);
+		// Env var should be written from the else branch in postProgressToPM
+		expect(mockWriteProgressCommentId).toHaveBeenCalledWith('card1', 'comment-id-from-tick');
 	});
 
-	it('skips progress update when state file is cleared by agent subprocess', async () => {
+	it('skips progress update when env var is cleared by agent subprocess', async () => {
 		const logWriter = vi.fn();
 		const monitor = new ProgressMonitor({
 			agentType: 'respond-to-planning-comment',
@@ -1161,8 +1107,7 @@ describe('ProgressMonitor — state file integration', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			repoDir: '/tmp/test-repo',
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -1173,26 +1118,26 @@ describe('ProgressMonitor — state file integration', () => {
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(0);
 
-		// Simulate the PostComment gadget clearing the state file
+		// Simulate the PostComment gadget clearing the env var
 		mockReadProgressCommentId.mockReturnValue(null);
 
-		// First tick fires at 1 minute — should detect cleared state file and skip
+		// First tick fires at 1 minute — should detect cleared env var and skip
 		await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
 		monitor.stop();
 
-		// updateComment should NOT have been called (state file was cleared)
+		// updateComment should NOT have been called (env var was cleared)
 		expect(mockPMProvider.updateComment).not.toHaveBeenCalled();
 		// Should log the skip
 		expect(logWriter).toHaveBeenCalledWith(
 			'DEBUG',
-			'State file cleared by agent — skipping progress update',
+			'Env var cleared by agent — skipping progress update',
 			expect.objectContaining({ commentId: 'comment-id-initial' }),
 		);
 		// progressCommentId should be cleared
 		expect(monitor.getProgressCommentId()).toBeNull();
 	});
 
-	it('updates state file when new comment is created after update failure', async () => {
+	it('updates env var when new comment is created after update failure', async () => {
 		const logWriter = vi.fn();
 		const monitor = new ProgressMonitor({
 			agentType: 'planning',
@@ -1201,8 +1146,7 @@ describe('ProgressMonitor — state file integration', () => {
 			progressModel: 'test-model',
 			customModels: [],
 			logWriter,
-			repoDir: '/tmp/test-repo',
-			trello: { cardId: 'card1' },
+			trello: { workItemId: 'card1' },
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -1220,10 +1164,6 @@ describe('ProgressMonitor — state file integration', () => {
 
 		// writeProgressCommentId called for initial comment and for fallback comment
 		expect(mockWriteProgressCommentId).toHaveBeenCalledTimes(2);
-		expect(mockWriteProgressCommentId).toHaveBeenLastCalledWith(
-			'/tmp/test-repo',
-			'card1',
-			'comment-id-fallback',
-		);
+		expect(mockWriteProgressCommentId).toHaveBeenLastCalledWith('card1', 'comment-id-fallback');
 	});
 });

@@ -1,7 +1,7 @@
 /**
  * Shared utility for extracting GitHub PR URLs from text.
- * Used by both the llmist backend (agents/base.ts) and the
- * Claude Code backend (backends/claude-code/index.ts) to avoid duplication.
+ * Used by the Claude Code backend (backends/claude-code/index.ts) to extract
+ * PR URLs from agent output and assistant messages.
  */
 
 /**
@@ -14,4 +14,12 @@
 export function extractPRUrl(text: string): string | undefined {
 	const match = text.match(/https:\/\/github\.com\/[^\s"')\]]+\/pull\/\d+/);
 	return match ? match[0] : undefined;
+}
+
+/**
+ * Extract the PR number from a URL or arbitrary text containing a `/pull/NNN` path.
+ */
+export function extractPRNumber(text: string): number | undefined {
+	const match = text.match(/\/pull\/(\d+)/);
+	return match ? Number(match[1]) : undefined;
 }

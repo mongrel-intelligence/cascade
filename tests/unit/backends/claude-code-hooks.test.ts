@@ -63,7 +63,7 @@ describe('buildPreToolUseHooks', () => {
 			hookSpecificOutput: {
 				hookEventName: 'PreToolUse',
 				permissionDecision: 'deny',
-				permissionDecisionReason: expect.stringContaining('cascade-tools github create-pr'),
+				permissionDecisionReason: expect.stringContaining('cascade-tools scm create-pr'),
 			},
 		});
 		expect(logWriter).toHaveBeenCalledWith(
@@ -106,7 +106,7 @@ describe('buildPreToolUseHooks', () => {
 			hookSpecificOutput: {
 				hookEventName: 'PreToolUse',
 				permissionDecision: 'deny',
-				permissionDecisionReason: expect.stringContaining('cascade-tools github create-pr'),
+				permissionDecisionReason: expect.stringContaining('cascade-tools scm create-pr'),
 			},
 		});
 	});
@@ -124,13 +124,13 @@ describe('buildPreToolUseHooks', () => {
 		expect(logWriter).not.toHaveBeenCalled();
 	});
 
-	it('allows cascade-tools github create-pr', async () => {
+	it('allows cascade-tools scm create-pr', async () => {
 		const logWriter = makeLogWriter();
 		const [matcher] = buildPreToolUseHooks(logWriter);
 		const [hook] = matcher.hooks;
 
 		const result = await hook(
-			makePreToolUseInput('cascade-tools github create-pr --title "feat" --body "desc"'),
+			makePreToolUseInput('cascade-tools scm create-pr --title "feat" --body "desc"'),
 			'tu-1',
 			{ signal: AbortSignal.timeout(5000) },
 		);
@@ -173,7 +173,7 @@ describe('buildPreToolUseHooks', () => {
 				hookSpecificOutput: {
 					hookEventName: 'PreToolUse',
 					permissionDecision: 'deny',
-					permissionDecisionReason: expect.stringContaining('cascade-tools github create-pr'),
+					permissionDecisionReason: expect.stringContaining('cascade-tools scm create-pr'),
 				},
 			});
 		});

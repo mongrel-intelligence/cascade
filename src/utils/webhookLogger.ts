@@ -17,6 +17,7 @@ export interface WebhookLogInput {
 	projectId?: string;
 	eventType?: string;
 	processed: boolean;
+	decisionReason?: string;
 }
 
 /**
@@ -42,6 +43,7 @@ async function _logWebhookCallAsync(input: WebhookLogInput): Promise<void> {
 		projectId: input.projectId,
 		eventType: input.eventType,
 		processed: input.processed,
+		decisionReason: input.decisionReason,
 	});
 
 	insertCount += 1;

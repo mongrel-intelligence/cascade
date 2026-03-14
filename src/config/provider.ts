@@ -257,8 +257,6 @@ function roleToEnvVarKey(category: string, role: string): string | undefined {
 			providerCategory = 'pm';
 		} else if (provider === 'github') {
 			providerCategory = 'scm';
-		} else if (provider === 'imap' || provider === 'gmail') {
-			providerCategory = 'email';
 		} else {
 			continue;
 		}

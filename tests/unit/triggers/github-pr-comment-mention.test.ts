@@ -6,6 +6,15 @@ const { mockGetPR, mockIsCascadeBot } = vi.hoisted(() => ({
 	mockIsCascadeBot: vi.fn(),
 }));
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock('../../../src/github/client.js', () => ({
 	githubClient: {
 		getPR: mockGetPR,
@@ -31,6 +40,7 @@ vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { PRCommentMentionTrigger } from '../../../src/triggers/github/pr-comment-mention.js';
+import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
 import {
@@ -41,8 +51,6 @@ import {
 
 const HUMAN_USERNAME = 'alice-human';
 const CARD_SHORT_ID = 'abc123card';
-const PR_BODY_WITH_CARD = `Fixes https://trello.com/c/${CARD_SHORT_ID}/my-card`;
-const PR_BODY_NO_CARD = 'This PR has no Trello card link';
 
 const mockProject = createMockProject({
 	id: 'test-project',
@@ -150,11 +158,11 @@ describe('PRCommentMentionTrigger', () => {
 	beforeEach(() => {
 		vi.resetAllMocks();
 		trigger = new PRCommentMentionTrigger();
+		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
 		mockIsCascadeBot.mockReturnValue(false);
-		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123card');
 		mockGetPR.mockResolvedValue({
 			headRef: 'feature/test',
-			body: PR_BODY_WITH_CARD,
 		});
 	});
 
@@ -200,6 +208,21 @@ describe('PRCommentMentionTrigger', () => {
 		});
 	});
 
+	describe('handle — disabled trigger', () => {
+		it('should return null when trigger is disabled', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
+			const result = await trigger.handle(buildCtx());
+			expect(result).toBeNull();
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test-project',
+				'respond-to-pr-comment',
+				'scm:pr-comment-mention',
+				'pr-comment-mention',
+			);
+		});
+	});
+
 	describe('handle — issue_comment path', () => {
 		it('returns respond-to-pr-comment result when @mention is present', async () => {
 			const result = await trigger.handle(buildCtx());
@@ -236,10 +259,10 @@ describe('PRCommentMentionTrigger', () => {
 			expect(result).toBeNull();
 		});
 
-		it('fires with workItemId undefined when PR body has no Trello card link', async () => {
+		it('fires with workItemId undefined when DB has no link', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			mockGetPR.mockResolvedValue({
 				headRef: 'feature/test',
-				body: PR_BODY_NO_CARD,
 			});
 
 			const result = await trigger.handle(buildCtx());
@@ -258,7 +281,6 @@ describe('PRCommentMentionTrigger', () => {
 		it('includes branch from fetched PR details', async () => {
 			mockGetPR.mockResolvedValue({
 				headRef: 'feature/my-feature',
-				body: PR_BODY_WITH_CARD,
 			});
 
 			const result = await trigger.handle(buildCtx());
@@ -291,7 +313,6 @@ describe('PRCommentMentionTrigger', () => {
 		it('uses PR head ref from payload for branch (not fetched)', async () => {
 			mockGetPR.mockResolvedValue({
 				headRef: 'should-not-be-used',
-				body: PR_BODY_WITH_CARD,
 			});
 
 			const result = await trigger.handle(

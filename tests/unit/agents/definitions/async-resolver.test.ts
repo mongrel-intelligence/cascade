@@ -9,10 +9,11 @@ import {
 } from '../../../../src/agents/definitions/loader.js';
 
 const ALL_AGENT_TYPES = [
+	'backlog-manager',
 	'debug',
-	'email-joke',
 	'implementation',
 	'planning',
+	'resolve-conflicts',
 	'respond-to-ci',
 	'respond-to-planning-comment',
 	'respond-to-pr-comment',
@@ -117,7 +118,7 @@ describe('resolveAllAgentDefinitions', () => {
 		listAgentDefinitions.mockResolvedValue([]);
 
 		const result = await resolveAllAgentDefinitions();
-		expect(result.size).toBe(10);
+		expect(result.size).toBe(ALL_AGENT_TYPES.length);
 		for (const agentType of ALL_AGENT_TYPES) {
 			expect(result.has(agentType)).toBe(true);
 		}
@@ -134,7 +135,7 @@ describe('resolveAllAgentDefinitions', () => {
 		]);
 
 		const result = await resolveAllAgentDefinitions();
-		expect(result.size).toBe(10); // still has all 10 (rest from YAML)
+		expect(result.size).toBe(ALL_AGENT_TYPES.length); // still has all (rest from YAML)
 		expect(result.get('implementation')).toEqual(dbDef);
 	});
 
@@ -143,7 +144,7 @@ describe('resolveAllAgentDefinitions', () => {
 		listAgentDefinitions.mockRejectedValue(new Error('DB offline'));
 
 		const result = await resolveAllAgentDefinitions();
-		expect(result.size).toBe(10);
+		expect(result.size).toBe(ALL_AGENT_TYPES.length);
 		for (const agentType of ALL_AGENT_TYPES) {
 			expect(result.has(agentType)).toBe(true);
 		}
@@ -160,7 +161,7 @@ describe('resolveKnownAgentTypes', () => {
 		vi.clearAllMocks();
 	});
 
-	it('returns all 10 YAML types when DB returns empty list', async () => {
+	it('returns all YAML types when DB returns empty list', async () => {
 		const { listAgentDefinitions } = await getDbMocks();
 		listAgentDefinitions.mockResolvedValue([]);
 
@@ -192,7 +193,10 @@ describe('resolveKnownAgentTypes', () => {
 		listAgentDefinitions.mockRejectedValue(new Error('DB offline'));
 
 		const types = await resolveKnownAgentTypes();
-		expect(types).toEqual(ALL_AGENT_TYPES);
+		// Should contain all known YAML agent types (sorted)
+		for (const t of ALL_AGENT_TYPES) {
+			expect(types).toContain(t);
+		}
 	});
 });
 
@@ -245,7 +249,7 @@ describe('seed script idempotency (unit)', () => {
 		await expect(seedAgentDefinitions()).resolves.not.toThrow();
 		await expect(seedAgentDefinitions()).resolves.not.toThrow();
 
-		// Should have been called 10 types × 2 runs = 20 times
-		expect(vi.mocked(upsertAgentDefinition)).toHaveBeenCalledTimes(20);
+		// Should have been called (ALL_AGENT_TYPES.length) types × 2 runs
+		expect(vi.mocked(upsertAgentDefinition)).toHaveBeenCalledTimes(ALL_AGENT_TYPES.length * 2);
 	});
 });

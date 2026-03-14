@@ -6,7 +6,7 @@ vi.mock('../../../src/pm/index.js', () => ({
 
 import type { PMProvider } from '../../../src/pm/index.js';
 import { getPMProvider } from '../../../src/pm/index.js';
-import { checkBudgetExceeded, resolveCardBudget } from '../../../src/triggers/shared/budget.js';
+import { checkBudgetExceeded, resolveWorkItemBudget } from '../../../src/triggers/shared/budget.js';
 import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 import { createMockProject } from '../../helpers/factories.js';
 
@@ -29,7 +29,7 @@ const baseConfig: CascadeConfig = {
 		maxIterations: 50,
 		agentIterations: {},
 		watchdogTimeoutMs: 1800000,
-		cardBudgetUsd: 5,
+		workItemBudgetUsd: 5,
 		agentBackend: 'llmist',
 		progressModel: 'openrouter:google/gemini-2.5-flash-lite',
 		progressIntervalMinutes: 5,
@@ -37,13 +37,13 @@ const baseConfig: CascadeConfig = {
 	projects: [baseProject],
 };
 
-describe('resolveCardBudget', () => {
+describe('resolveWorkItemBudget', () => {
 	it('returns null when no cost custom field configured', () => {
 		const project = {
 			...baseProject,
 			trello: { ...baseProject.trello, customFields: undefined },
 		};
-		expect(resolveCardBudget(project, baseConfig)).toBeNull();
+		expect(resolveWorkItemBudget(project, baseConfig)).toBeNull();
 	});
 
 	it('returns null when cost field is missing from customFields', () => {
@@ -51,16 +51,16 @@ describe('resolveCardBudget', () => {
 			...baseProject,
 			trello: { ...baseProject.trello, customFields: {} },
 		};
-		expect(resolveCardBudget(project, baseConfig)).toBeNull();
+		expect(resolveWorkItemBudget(project, baseConfig)).toBeNull();
 	});
 
 	it('returns global default when project has no override', () => {
-		expect(resolveCardBudget(baseProject, baseConfig)).toBe(5);
+		expect(resolveWorkItemBudget(baseProject, baseConfig)).toBe(5);
 	});
 
 	it('returns project override when set', () => {
-		const project = { ...baseProject, cardBudgetUsd: 8.0 };
-		expect(resolveCardBudget(project, baseConfig)).toBe(8.0);
+		const project = { ...baseProject, workItemBudgetUsd: 8.0 };
+		expect(resolveWorkItemBudget(project, baseConfig)).toBe(8.0);
 	});
 });
 
@@ -119,7 +119,7 @@ describe('checkBudgetExceeded', () => {
 	});
 
 	it('uses project budget override', async () => {
-		const project = { ...baseProject, cardBudgetUsd: 10.0 };
+		const project = { ...baseProject, workItemBudgetUsd: 10.0 };
 		mockPMProvider.getCustomFieldNumber.mockResolvedValue(5);
 		const result = await checkBudgetExceeded('card1', project, baseConfig);
 		expect(result).toEqual({

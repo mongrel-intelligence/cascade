@@ -1,15 +1,22 @@
-import type { AgentBackend } from './types.js';
+import type { AgentEngine, AgentEngineDefinition } from './types.js';
 
-const backends = new Map<string, AgentBackend>();
+const engines = new Map<string, AgentEngine>();
 
-export function registerBackend(backend: AgentBackend): void {
-	backends.set(backend.name, backend);
+export function registerEngine(engine: AgentEngine): void {
+	if (!engine.definition?.id) {
+		throw new Error('Cannot register engine without definition.id');
+	}
+	engines.set(engine.definition.id, engine);
 }
 
-export function getBackend(name: string): AgentBackend | undefined {
-	return backends.get(name);
+export function getEngine(name: string): AgentEngine | undefined {
+	return engines.get(name);
 }
 
-export function getRegisteredBackends(): string[] {
-	return Array.from(backends.keys());
+export function getRegisteredEngines(): string[] {
+	return Array.from(engines.keys());
+}
+
+export function getEngineCatalog(): AgentEngineDefinition[] {
+	return Array.from(engines.values()).map((engine) => engine.definition);
 }

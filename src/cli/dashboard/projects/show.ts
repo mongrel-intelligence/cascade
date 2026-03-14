@@ -1,6 +1,5 @@
 import { Args } from '@oclif/core';
 import { DashboardCommand } from '../_shared/base.js';
-import { formatBoolean } from '../_shared/format.js';
 
 export default class ProjectsShow extends DashboardCommand {
 	static override description = 'Show project details.';
@@ -31,9 +30,8 @@ export default class ProjectsShow extends DashboardCommand {
 				baseBranch: { label: 'Base Branch' },
 				branchPrefix: { label: 'Branch Prefix' },
 				model: { label: 'Model' },
-				cardBudgetUsd: { label: 'Card Budget' },
-				agentBackend: { label: 'Backend' },
-				subscriptionCostZero: { label: 'Sub Cost Zero', format: formatBoolean },
+				workItemBudgetUsd: { label: 'Work Item Budget' },
+				agentEngine: { label: 'Engine' },
 			});
 		} catch (err) {
 			this.handleError(err);

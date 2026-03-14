@@ -11,6 +11,7 @@ import { withTrelloCredentials } from '../../trello/client.js';
 import type { TriggerRegistry } from '../../triggers/registry.js';
 import type { TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { buildWorkItemRunsLink, getDashboardUrl } from '../../utils/runLink.js';
 import { extractTrelloContext, generateAckMessage } from '../ackMessageGenerator.js';
 import { postTrelloAck } from '../acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from '../config.js';
@@ -39,6 +40,7 @@ export class TrelloRouterAdapter implements RouterPlatformAdapter {
 
 		const boardId = model.id as string;
 		const actionType = action.type as string;
+		const actionId = action.id as string | undefined;
 		const data = action.data as Record<string, unknown> | undefined;
 
 		const config = await loadProjectConfig();
@@ -61,6 +63,7 @@ export class TrelloRouterAdapter implements RouterPlatformAdapter {
 			eventType: actionType,
 			workItemId,
 			isCommentEvent: actionType === 'commentCard',
+			actionId,
 		};
 	}
 
@@ -130,18 +133,35 @@ export class TrelloRouterAdapter implements RouterPlatformAdapter {
 		payload: unknown,
 		project: RouterProjectConfig,
 		agentType: string,
+		_triggerResult?: TriggerResult,
 	): Promise<AckResult | undefined> {
 		if (!event.workItemId) return undefined;
 		try {
 			const context = extractTrelloContext(payload);
-			const message = await generateAckMessage(agentType, context, project.id);
+			let message = await generateAckMessage(agentType, context, project.id);
+
+			// Append run link footer when enabled for this project
+			const config = await loadProjectConfig();
+			const fullProject = config.fullProjects.find((fp) => fp.id === project.id);
+			if (fullProject?.runLinksEnabled && event.workItemId) {
+				const dashboardUrl = getDashboardUrl();
+				if (dashboardUrl) {
+					const link = buildWorkItemRunsLink({
+						dashboardUrl,
+						projectId: project.id,
+						workItemId: event.workItemId,
+					});
+					if (link) message += link;
+				}
+			}
+
 			const commentId = await postTrelloAck(project.id, event.workItemId, message);
 			if (commentId) return { commentId, message };
 			return undefined;
 		} catch (err) {
 			logger.warn('Trello ack comment failed (non-fatal)', {
 				error: String(err),
-				cardId: event.workItemId,
+				workItemId: event.workItemId,
 			});
 			return undefined;
 		}
@@ -152,18 +172,18 @@ export class TrelloRouterAdapter implements RouterPlatformAdapter {
 		payload: unknown,
 		project: RouterProjectConfig,
 		result: TriggerResult,
-		ackCommentId: string | number | undefined,
+		ackResult?: AckResult,
 	): CascadeJob {
 		const job: TrelloJob = {
 			type: 'trello',
 			source: 'trello',
 			payload,
 			projectId: project.id,
-			cardId: event.workItemId ?? '',
+			workItemId: event.workItemId ?? '',
 			actionType: event.eventType,
 			receivedAt: new Date().toISOString(),
-			ackCommentId: ackCommentId as string | undefined,
 			triggerResult: result,
+			ackCommentId: ackResult?.commentId as string | undefined,
 		};
 		return job;
 	}

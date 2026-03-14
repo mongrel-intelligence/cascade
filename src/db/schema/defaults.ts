@@ -1,4 +1,6 @@
-import { integer, numeric, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { integer, jsonb, numeric, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+
+import type { EngineSettings } from '../../config/engineSettings.js';
 import { organizations } from './organizations.js';
 
 export const cascadeDefaults = pgTable('cascade_defaults', {
@@ -8,8 +10,9 @@ export const cascadeDefaults = pgTable('cascade_defaults', {
 	model: text('model'),
 	maxIterations: integer('max_iterations'),
 	watchdogTimeoutMs: integer('watchdog_timeout_ms'),
-	cardBudgetUsd: numeric('card_budget_usd', { precision: 10, scale: 2 }),
-	agentBackend: text('agent_backend'),
+	workItemBudgetUsd: numeric('work_item_budget_usd', { precision: 10, scale: 2 }),
+	agentEngine: text('agent_engine'),
+	agentEngineSettings: jsonb('agent_engine_settings').$type<EngineSettings>(),
 	progressModel: text('progress_model'),
 	progressIntervalMinutes: numeric('progress_interval_minutes', { precision: 5, scale: 1 }),
 	createdAt: timestamp('created_at').defaultNow(),

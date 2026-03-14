@@ -17,6 +17,14 @@ vi.mock('../../../src/gadgets/todo/storage.js', () => ({
 	formatTodoList: vi.fn(() => ''),
 }));
 
+vi.mock('../../../src/gadgets/sessionState.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../../../src/gadgets/sessionState.js')>();
+	return {
+		...actual,
+		getSessionState: vi.fn(() => ({ prUrl: null })),
+	};
+});
+
 // Mock resolveAgentDefinition — hintConfig now uses async resolver
 vi.mock('../../../src/agents/definitions/index.js', () => ({
 	resolveAgentDefinition: vi.fn(),
@@ -24,23 +32,30 @@ vi.mock('../../../src/agents/definitions/index.js', () => ({
 
 import { execSync } from 'node:child_process';
 import { resolveAgentDefinition } from '../../../src/agents/definitions/index.js';
+import { getSessionState } from '../../../src/gadgets/sessionState.js';
 import { formatTodoList, loadTodos } from '../../../src/gadgets/todo/storage.js';
 
 const mockExecSync = vi.mocked(execSync);
 const mockLoadTodos = vi.mocked(loadTodos);
 const mockFormatTodoList = vi.mocked(formatTodoList);
 const mockResolveAgentDefinition = vi.mocked(resolveAgentDefinition);
+const mockGetSessionState = vi.mocked(getSessionState);
 
 const ctx = { iteration: 3, maxIterations: 20 };
 
 /** Minimal agent definition shape for testing */
 function makeDefinition(overrides?: {
 	hint?: string;
-	trailingMessage?: Record<string, boolean>;
+	hooks?: {
+		trailing?: {
+			scm?: { gitStatus?: boolean; prStatus?: boolean; reviewDeadline?: boolean };
+			builtin?: { diagnostics?: boolean; todoProgress?: boolean; reminder?: boolean };
+		};
+	};
 }) {
 	return {
 		hint: overrides?.hint ?? 'Complete the current task efficiently.',
-		trailingMessage: overrides?.trailingMessage ?? {},
+		hooks: overrides?.hooks,
 	};
 }
 
@@ -75,7 +90,7 @@ describe('getIterationTrailingMessage', () => {
 				if (agentType === 'respond-to-ci') {
 					return makeDefinition({
 						hint: 'Fix CI failures with minimal, focused changes.',
-						trailingMessage: { includeDiagnostics: true },
+						hooks: { trailing: { builtin: { diagnostics: true } } },
 					}) as never;
 				}
 				return null as never;
@@ -145,7 +160,7 @@ describe('getIterationTrailingMessage', () => {
 			mockResolveAgentDefinition.mockImplementation(async (agentType: string) => {
 				if (agentType === 'respond-to-review') {
 					return makeDefinition({
-						trailingMessage: { includeDiagnostics: true },
+						hooks: { trailing: { builtin: { diagnostics: true } } },
 					}) as never;
 				}
 				return null as never;
@@ -177,9 +192,7 @@ describe('getIterationTrailingMessage', () => {
 			});
 
 			// review agent has no trailingMessage.includeDiagnostics
-			mockResolveAgentDefinition.mockResolvedValue(
-				makeDefinition({ trailingMessage: {} }) as never,
-			);
+			mockResolveAgentDefinition.mockResolvedValue(makeDefinition({}) as never);
 
 			const trailingFn = await getIterationTrailingMessage('review');
 			const message = typeof trailingFn === 'function' ? trailingFn(ctx) : trailingFn;
@@ -198,12 +211,11 @@ describe('getIterationTrailingMessage', () => {
 				if (agentType === 'implementation') {
 					return makeDefinition({
 						hint: 'Batch related edits together.',
-						trailingMessage: {
-							includeDiagnostics: true,
-							includeTodoProgress: true,
-							includeGitStatus: true,
-							includePRStatus: true,
-							includeReminder: true,
+						hooks: {
+							trailing: {
+								scm: { gitStatus: true, prStatus: true },
+								builtin: { diagnostics: true, todoProgress: true, reminder: true },
+							},
 						},
 					}) as never;
 				}
@@ -252,20 +264,19 @@ describe('getIterationTrailingMessage', () => {
 			expect(message).toContain('No uncommitted changes');
 		});
 
-		it('shows PR status with content when gh pr view returns output', async () => {
-			mockExecSync.mockImplementation((cmd: string) => {
-				if ((cmd as string).includes('gh pr view')) return 'title: My PR\nurl: http://...';
-				return '';
-			});
+		it('shows PR status with URL when PR has been created', async () => {
+			mockGetSessionState.mockReturnValue({
+				prUrl: 'https://github.com/acme/myapp/pull/42',
+			} as never);
 
 			const message = await getMessage('implementation');
 
 			expect(message).toContain('## PR Status');
-			expect(message).toContain('My PR');
+			expect(message).toContain('PR created: https://github.com/acme/myapp/pull/42');
 		});
 
-		it('shows "No PR exists" when gh pr view returns empty', async () => {
-			mockExecSync.mockReturnValue('');
+		it('shows "No PR exists" when no PR in session state', async () => {
+			mockGetSessionState.mockReturnValue({ prUrl: null } as never);
 
 			const message = await getMessage('implementation');
 
@@ -380,12 +391,71 @@ describe('getIterationTrailingMessage', () => {
 	// formatDiagnosticLoopWarning (Step 10)
 	// ============================================================================
 
+	// ============================================================================
+	// Review deadline trailing message
+	// ============================================================================
+
+	describe('review deadline trailing message', () => {
+		beforeEach(() => {
+			mockResolveAgentDefinition.mockImplementation(async (agentType: string) => {
+				if (agentType === 'review') {
+					return makeDefinition({
+						hint: 'Focus on the current aspect.',
+						hooks: { trailing: { scm: { reviewDeadline: true } } },
+					}) as never;
+				}
+				return null as never;
+			});
+		});
+
+		it('shows critical warning at >= 80% of iterations', async () => {
+			mockGetSessionState.mockReturnValue({ reviewSubmitted: false } as never);
+			const message = await getMessage('review', 17, 20);
+			expect(message).toContain('CRITICAL: Review Deadline');
+			expect(message).toContain('CreatePRReview IMMEDIATELY');
+		});
+
+		it('shows warning at >= 60% of iterations', async () => {
+			mockGetSessionState.mockReturnValue({ reviewSubmitted: false } as never);
+			const message = await getMessage('review', 13, 20);
+			expect(message).toContain('WARNING: Review Deadline');
+			expect(message).toContain('Submit your review NOW');
+		});
+
+		it('shows gentle reminder at >= 40% of iterations', async () => {
+			mockGetSessionState.mockReturnValue({ reviewSubmitted: false } as never);
+			const message = await getMessage('review', 9, 20);
+			expect(message).toContain('Review Deadline');
+			expect(message).toContain('Your primary goal is to call CreatePRReview');
+		});
+
+		it('does not show deadline below 40% of iterations', async () => {
+			mockGetSessionState.mockReturnValue({ reviewSubmitted: false } as never);
+			const message = await getMessage('review', 3, 20);
+			expect(message).not.toContain('Review Deadline');
+		});
+
+		it('does not show deadline when review has been submitted', async () => {
+			mockGetSessionState.mockReturnValue({ reviewSubmitted: true } as never);
+			const message = await getMessage('review', 17, 20);
+			expect(message).not.toContain('Review Deadline');
+		});
+
+		it('returns null (no deadline) when iteration data is missing', async () => {
+			mockGetSessionState.mockReturnValue({ reviewSubmitted: false } as never);
+			// getMessage always passes iteration data, so test the edge case
+			// by verifying no crash and no deadline at low iterations
+			const message = await getMessage('review', 0, 0);
+			expect(message).not.toContain('Review Deadline');
+		});
+	});
+
 	describe('formatDiagnosticLoopWarning via implementation', () => {
 		beforeEach(() => {
 			mockResolveAgentDefinition.mockImplementation(async (agentType: string) => {
 				if (agentType === 'implementation') {
 					return makeDefinition({
-						trailingMessage: { includeDiagnostics: true },
+						hooks: { trailing: { builtin: { diagnostics: true } } },
 					}) as never;
 				}
 				return null as never;

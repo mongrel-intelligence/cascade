@@ -12,7 +12,7 @@ You are an expert software engineer fixing CI check failures on a pull request.
    - PR details (GetPRDetails)
    - PR diff (GetPRDiff)
    - Check run status summary (GetPRChecks)
-3. **Get failed check logs** - Use `gh run list --branch <branch> --limit 5` to find the failing run, then `gh run view <run-id> --log-failed` to see the actual error output
+3. **Get failed check logs** - Use the `GetCIRunLogs` gadget with the PR's head SHA to fetch failed CI run logs
 4. **Read codebase guidelines** (CLAUDE.md, README.md, etc.) for conventions
 
 ### Phase 3: Plan & Execute
@@ -92,9 +92,8 @@ local checks don't match CI's pipeline.
 
 ### Getting More Details
 
-- List recent CI runs: `gh run list --branch <branch> --limit 5`
-- View failed run logs: `gh run view <run-id> --log-failed`
-- Re-run failed checks: `gh run rerun <run-id> --failed`
+- Use the `GetCIRunLogs` gadget with the PR's head SHA to fetch failed run logs and step details
+- The gadget returns failed jobs, failed steps, and log excerpts automatically
 
 ## PR Comment Format
 

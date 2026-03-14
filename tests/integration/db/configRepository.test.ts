@@ -53,52 +53,8 @@ describe('configRepository (integration)', () => {
 			expect(project.trello?.boardId).toBe('board-123');
 		});
 
-		it('handles multiple projects', async () => {
-			await seedProject({ id: 'project-2', name: 'Project 2', repo: 'owner/repo2' });
-			const config = await loadConfigFromDb();
-			expect(config.projects).toHaveLength(2);
-			expect(config.projects.map((p) => p.id).sort()).toEqual(['project-2', 'test-project']);
-		});
-
-		it('applies global agent config model overrides to defaults.agentModels', async () => {
-			await seedDefaults();
-			await seedAgentConfig({
-				orgId: null,
-				projectId: null,
-				agentType: 'implementation',
-				model: 'global-impl-model',
-			});
-			const config = await loadConfigFromDb();
-			expect(config.defaults.agentModels.implementation).toBe('global-impl-model');
-		});
-
-		it('applies global agent config iteration overrides to defaults.agentIterations', async () => {
-			await seedDefaults();
-			await seedAgentConfig({
-				orgId: null,
-				projectId: null,
-				agentType: 'implementation',
-				maxIterations: 25,
-			});
-			const config = await loadConfigFromDb();
-			expect(config.defaults.agentIterations.implementation).toBe(25);
-		});
-
-		it('applies org-level agent config overrides to defaults.agentModels', async () => {
-			await seedDefaults();
-			await seedAgentConfig({
-				orgId: 'test-org',
-				projectId: null,
-				agentType: 'review',
-				model: 'org-review-model',
-			});
-			const config = await loadConfigFromDb();
-			expect(config.defaults.agentModels.review).toBe('org-review-model');
-		});
-
 		it('applies project-level agent config overrides to project.agentModels', async () => {
 			await seedAgentConfig({
-				orgId: null,
 				projectId: 'test-project',
 				agentType: 'implementation',
 				model: 'project-impl-model',
@@ -106,6 +62,13 @@ describe('configRepository (integration)', () => {
 			const config = await loadConfigFromDb();
 			const project = config.projects[0];
 			expect(project.agentModels?.implementation).toBe('project-impl-model');
+		});
+
+		it('handles multiple projects', async () => {
+			await seedProject({ id: 'project-2', name: 'Project 2', repo: 'owner/repo2' });
+			const config = await loadConfigFromDb();
+			expect(config.projects).toHaveLength(2);
+			expect(config.projects.map((p) => p.id).sort()).toEqual(['project-2', 'test-project']);
 		});
 	});
 
@@ -214,34 +177,6 @@ describe('configRepository (integration)', () => {
 		it('returns undefined for non-existent board', async () => {
 			const result = await findProjectWithConfigByBoardId('no-such-board');
 			expect(result).toBeUndefined();
-		});
-	});
-
-	// =========================================================================
-	// Agent config inheritance: global → org → project
-	// =========================================================================
-
-	describe('agent config inheritance', () => {
-		it('project agentModels overrides global agentModels for the same agent', async () => {
-			await seedDefaults();
-			await seedAgentConfig({
-				orgId: null,
-				projectId: null,
-				agentType: 'implementation',
-				model: 'global-model',
-			});
-			await seedAgentConfig({
-				orgId: null,
-				projectId: 'test-project',
-				agentType: 'implementation',
-				model: 'project-model',
-			});
-			const config = await loadConfigFromDb();
-			const project = config.projects[0];
-			// Project-level agentModels should take precedence
-			expect(project.agentModels?.implementation).toBe('project-model');
-			// Global-level should be in defaults
-			expect(config.defaults.agentModels.implementation).toBe('global-model');
 		});
 	});
 

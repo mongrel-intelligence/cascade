@@ -6,6 +6,8 @@ import {
 import {
 	clearDefinitionCache,
 	getKnownAgentTypes,
+	isBuiltinAgentType,
+	isPMFocusedAgent,
 	loadAgentDefinition,
 	loadAllAgentDefinitions,
 } from '../../../../src/agents/definitions/loader.js';
@@ -13,10 +15,11 @@ import { CONTEXT_STEP_REGISTRY } from '../../../../src/agents/definitions/strate
 import { getAgentCapabilities } from '../../../../src/agents/shared/capabilities.js';
 
 const ALL_AGENT_TYPES = [
+	'backlog-manager',
 	'debug',
-	'email-joke',
 	'implementation',
 	'planning',
+	'resolve-conflicts',
 	'respond-to-ci',
 	'respond-to-planning-comment',
 	'respond-to-pr-comment',
@@ -31,9 +34,22 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('getKnownAgentTypes', () => {
-		it('discovers all 10 agent types from YAML files', () => {
+		it('discovers all 11 agent types from YAML files', () => {
 			const types = getKnownAgentTypes();
 			expect(types).toEqual(ALL_AGENT_TYPES);
+		});
+	});
+
+	describe('isBuiltinAgentType', () => {
+		it('returns true for known YAML-backed agent types', () => {
+			for (const agentType of ALL_AGENT_TYPES) {
+				expect(isBuiltinAgentType(agentType)).toBe(true);
+			}
+		});
+
+		it('returns false for unknown agent types', () => {
+			expect(isBuiltinAgentType('nonexistent-agent')).toBe(false);
+			expect(isBuiltinAgentType('custom-agent')).toBe(false);
 		});
 	});
 
@@ -64,9 +80,9 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('loadAllAgentDefinitions', () => {
-		it('returns a map with all 10 agent types', () => {
+		it('returns a map with all 11 agent types', () => {
 			const all = loadAllAgentDefinitions();
-			expect(all.size).toBe(10);
+			expect(all.size).toBe(ALL_AGENT_TYPES.length);
 			for (const agentType of ALL_AGENT_TYPES) {
 				expect(all.has(agentType)).toBe(true);
 			}
@@ -85,7 +101,6 @@ describe('YAML agent definitions loader', () => {
 
 		it('agents with fs or shell capabilities derive to non-empty SDK tools', () => {
 			// Only agents with fs:* or shell:exec capabilities need SDK tools.
-			// Email-only agents (e.g., email-joke) use llmist gadgets exclusively.
 			for (const agentType of ALL_AGENT_TYPES) {
 				const def = loadAgentDefinition(agentType);
 				const allCaps = [...def.capabilities.required, ...def.capabilities.optional];
@@ -131,15 +146,15 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('definition content spot checks', () => {
-		it('implementation has requiresPR flag in hooks.scm', () => {
+		it('implementation has requiresPR flag in hooks.finish.scm', () => {
 			const def = loadAgentDefinition('implementation');
-			expect(def.backend.hooks?.scm?.requiresPR).toBe(true);
+			expect(def.hooks?.finish?.scm?.requiresPR).toBe(true);
 		});
 
-		it('non-implementation agents do not have hooks.scm.requiresPR', () => {
+		it('non-implementation agents do not have hooks.finish.scm.requiresPR', () => {
 			for (const agentType of ALL_AGENT_TYPES.filter((t) => t !== 'implementation')) {
 				const def = loadAgentDefinition(agentType);
-				expect(def.backend.hooks?.scm?.requiresPR).toBeUndefined();
+				expect(def.hooks?.finish?.scm?.requiresPR).toBeUndefined();
 			}
 		});
 
@@ -152,6 +167,7 @@ describe('YAML agent definitions loader', () => {
 				'contextFiles',
 				'squint',
 				'workItem',
+				'prepopulateTodos',
 			]);
 		});
 
@@ -191,34 +207,31 @@ describe('YAML agent definitions loader', () => {
 			expect(def.capabilities.required).not.toContain('fs:write');
 		});
 
-		it('implementation has trailingMessage with all flags', () => {
+		it('implementation has trailing hooks with all flags', () => {
 			const def = loadAgentDefinition('implementation');
-			expect(def.trailingMessage).toEqual({
-				includeDiagnostics: true,
-				includeTodoProgress: true,
-				includeGitStatus: true,
-				includePRStatus: true,
-				includeReminder: true,
+			expect(def.hooks?.trailing).toEqual({
+				scm: { gitStatus: true, prStatus: true },
+				builtin: { diagnostics: true, todoProgress: true, reminder: true },
 			});
 		});
 
-		it('respond-to-review has diagnostics-only trailingMessage', () => {
+		it('respond-to-review has diagnostics-only trailing hooks', () => {
 			const def = loadAgentDefinition('respond-to-review');
-			expect(def.trailingMessage).toEqual({
-				includeDiagnostics: true,
+			expect(def.hooks?.trailing).toEqual({
+				builtin: { diagnostics: true },
 			});
 		});
 
-		it('respond-to-ci has diagnostics-only trailingMessage', () => {
+		it('respond-to-ci has diagnostics-only trailing hooks', () => {
 			const def = loadAgentDefinition('respond-to-ci');
-			expect(def.trailingMessage).toEqual({
-				includeDiagnostics: true,
+			expect(def.hooks?.trailing).toEqual({
+				builtin: { diagnostics: true },
 			});
 		});
 
-		it('splitting has no trailingMessage', () => {
+		it('splitting has no hooks', () => {
 			const def = loadAgentDefinition('splitting');
-			expect(def.trailingMessage).toBeUndefined();
+			expect(def.hooks).toBeUndefined();
 		});
 
 		it('respond-to-review includes review comment gadget options', () => {
@@ -247,6 +260,36 @@ describe('YAML agent definitions loader', () => {
 				expect(def.hint.length).toBeGreaterThan(0);
 			}
 		});
+
+		it('backlog-manager has pm:status-changed, scm:pr-merged, and internal:auto-chain triggers', () => {
+			const def = loadAgentDefinition('backlog-manager');
+			const statusChangedTrigger = def.triggers.find((t) => t.event === 'pm:status-changed');
+			const prMergedTrigger = def.triggers.find((t) => t.event === 'scm:pr-merged');
+			const autoChainTrigger = def.triggers.find((t) => t.event === 'internal:auto-chain');
+			expect(statusChangedTrigger).toBeDefined();
+			expect(prMergedTrigger).toBeDefined();
+			expect(autoChainTrigger).toBeDefined();
+		});
+
+		it('backlog-manager integration triggers are defaultEnabled: false (opt-in)', () => {
+			const def = loadAgentDefinition('backlog-manager');
+			const integrationTriggers = def.triggers.filter((t) => !t.event.startsWith('internal:'));
+			for (const trigger of integrationTriggers) {
+				expect(trigger.defaultEnabled).toBe(false);
+			}
+		});
+
+		it('backlog-manager internal:auto-chain trigger is defaultEnabled: true', () => {
+			const def = loadAgentDefinition('backlog-manager');
+			const autoChainTrigger = def.triggers.find((t) => t.event === 'internal:auto-chain');
+			expect(autoChainTrigger?.defaultEnabled).toBe(true);
+		});
+
+		it('backlog-manager requires only pm integration', () => {
+			const def = loadAgentDefinition('backlog-manager');
+			expect(def.integrations?.required).toContain('pm');
+			expect(def.integrations?.optional ?? []).not.toContain('scm');
+		});
 	});
 
 	describe('roundtrip: YAML definition → profile properties', () => {
@@ -258,7 +301,7 @@ describe('YAML agent definitions loader', () => {
 			expect(caps.canCreatePR).toBe(true);
 			expect(caps.canUpdateChecklists).toBe(true);
 			expect(caps.isReadOnly).toBe(false);
-			expect(def.backend.hooks?.scm?.enableStopHooks).toBe(true);
+			expect(def.hooks?.finish?.scm?.requiresPR).toBe(true);
 			expect(def.integrations?.required).toContain('scm');
 		});
 
@@ -268,7 +311,7 @@ describe('YAML agent definitions loader', () => {
 
 			expect(caps.canEditFiles).toBe(false);
 			expect(caps.isReadOnly).toBe(true);
-			expect(def.backend.hooks?.scm?.enableStopHooks).toBe(false);
+			expect(def.hooks?.finish?.scm?.requiresReview).toBe(true);
 			expect(def.integrations?.required).toContain('scm');
 		});
 
@@ -310,6 +353,40 @@ describe('YAML agent definitions loader', () => {
 				canUpdateChecklists: true,
 				isReadOnly: false,
 			});
+		});
+	});
+
+	describe('isPMFocusedAgent', () => {
+		it('returns true for backlog-manager (requires pm, no scm)', async () => {
+			expect(await isPMFocusedAgent('backlog-manager')).toBe(true);
+		});
+
+		it('returns true for splitting (requires pm only)', async () => {
+			expect(await isPMFocusedAgent('splitting')).toBe(true);
+		});
+
+		it('returns true for planning (requires pm only)', async () => {
+			expect(await isPMFocusedAgent('planning')).toBe(true);
+		});
+
+		it('returns false for implementation (requires both pm and scm)', async () => {
+			expect(await isPMFocusedAgent('implementation')).toBe(false);
+		});
+
+		it('returns false for review (requires scm, pm optional)', async () => {
+			expect(await isPMFocusedAgent('review')).toBe(false);
+		});
+
+		it('returns false for respond-to-review (requires scm, pm optional)', async () => {
+			expect(await isPMFocusedAgent('respond-to-review')).toBe(false);
+		});
+
+		it('returns false for respond-to-ci (requires scm, pm optional)', async () => {
+			expect(await isPMFocusedAgent('respond-to-ci')).toBe(false);
+		});
+
+		it('returns false for unknown agent types', async () => {
+			expect(await isPMFocusedAgent('nonexistent-agent')).toBe(false);
 		});
 	});
 
@@ -386,15 +463,8 @@ describe('YAML agent definitions loader', () => {
 			expect(integrations.optional).toEqual([]);
 		});
 
-		it('email-joke agent requires email only', () => {
-			const def = loadAgentDefinition('email-joke');
-			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
-			expect(integrations.required).toEqual(['email']);
-			expect(integrations.optional).toEqual([]);
-		});
-
 		it('all derived integration categories are valid', () => {
-			const validCategories = ['pm', 'scm', 'email', 'sms'];
+			const validCategories = ['pm', 'scm', 'email'];
 			for (const agentType of ALL_AGENT_TYPES) {
 				const def = loadAgentDefinition(agentType);
 				const integrations = deriveIntegrations(

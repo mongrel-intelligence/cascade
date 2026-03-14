@@ -1,8 +1,8 @@
-import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import { getPersonaForLogin } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
-import { isGitHubPullRequestReviewPayload } from './types.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
+import { type GitHubPullRequestReviewPayload, isGitHubPullRequestReviewPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
 
 export class PRReviewSubmittedTrigger implements TriggerHandler {
@@ -13,38 +13,35 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 		if (ctx.source !== 'github') return false;
 		if (!isGitHubPullRequestReviewPayload(ctx.payload)) return false;
 
-		// Check trigger config — default enabled for backward compatibility
-		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'prReviewSubmitted')) {
-			return false;
-		}
-
 		// Only trigger on submitted reviews, not edits or dismissals
 		if (ctx.payload.action !== 'submitted') return false;
 
-		// Only respond to changes_requested reviews — not approved or commented
-		if (ctx.payload.review.state !== 'changes_requested') return false;
+		// Respond to changes_requested and commented reviews — not approved
+		if (ctx.payload.review.state === 'approved') return false;
 
 		return true;
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+		// Check trigger config via new DB-driven system
+		if (
+			!(await checkTriggerEnabled(
+				ctx.project.id,
+				'respond-to-review',
+				'scm:pr-review-submitted',
+				this.name,
+			))
+		) {
+			return null;
+		}
+
 		// Type assertion since we validated in matches()
-		const reviewPayload = ctx.payload as {
-			pull_request: { number: number; body: string | null; head: { ref: string } };
-			repository: { full_name: string };
-			review: {
-				id: number;
-				body: string | null;
-				html_url: string;
-				state: string;
-				user: { login: string };
-			};
-		};
+		const reviewPayload = ctx.payload as GitHubPullRequestReviewPayload;
 
 		const prNumber = reviewPayload.pull_request.number;
 		const reviewAuthor = reviewPayload.review.user.login;
 
-		// Only respond to changes_requested from the reviewer persona
+		// Only respond to reviews from the reviewer persona
 		if (!ctx.personaIdentities) {
 			logger.warn('No persona identities available, skipping review trigger', { prNumber });
 			return null;
@@ -60,9 +57,8 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Resolve work item from DB (with PR body fallback)
-		const prBody = reviewPayload.pull_request.body || '';
-		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber, prBody, ctx.project);
+		// Resolve work item from DB
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 
 		logger.info('PR review submitted, triggering review agent', {
 			prNumber,
@@ -76,12 +72,15 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 				prNumber,
 				prBranch: reviewPayload.pull_request.head.ref,
 				repoFullName: reviewPayload.repository.full_name,
+				triggerEvent: 'scm:pr-review-submitted',
 				triggerCommentId: reviewPayload.review.id,
 				triggerCommentBody: reviewPayload.review.body || `Review: ${reviewPayload.review.state}`,
 				triggerCommentPath: '', // Reviews don't have a specific file path
 				triggerCommentUrl: reviewPayload.review.html_url,
 			},
 			prNumber,
+			prUrl: reviewPayload.pull_request.html_url,
+			prTitle: reviewPayload.pull_request.title,
 			workItemId,
 		};
 	}

@@ -16,7 +16,7 @@ export interface TrelloJob {
 	source: 'trello';
 	payload: unknown;
 	projectId: string;
-	cardId: string;
+	workItemId: string;
 	actionType: string;
 	receivedAt: string;
 	ackCommentId?: string;

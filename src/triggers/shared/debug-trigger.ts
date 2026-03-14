@@ -9,7 +9,7 @@ import { logger } from '../../utils/logging.js';
  */
 export async function shouldTriggerDebug(
 	runId?: string,
-): Promise<{ runId: string; agentType: string; cardId?: string } | null> {
+): Promise<{ runId: string; agentType: string; workItemId?: string } | null> {
 	if (!runId) return null;
 
 	try {
@@ -29,7 +29,7 @@ export async function shouldTriggerDebug(
 		return {
 			runId,
 			agentType: run.agentType,
-			cardId: run.cardId ?? undefined,
+			workItemId: run.workItemId ?? undefined,
 		};
 	} catch (err) {
 		logger.warn('Failed to check debug trigger', { runId, error: String(err) });

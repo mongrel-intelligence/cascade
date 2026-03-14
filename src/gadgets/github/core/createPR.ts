@@ -1,5 +1,6 @@
 import { githubClient } from '../../../github/client.js';
 import { runCommand } from '../../../utils/repo.js';
+import { buildRunLinkFooterFromEnv } from '../../../utils/runLink.js';
 
 export interface CreatePRParams {
 	title: string;
@@ -100,10 +101,13 @@ export async function createPR(params: CreatePRParams): Promise<CreatePRResult> 
 		);
 	}
 
+	const runLinkFooter = buildRunLinkFooterFromEnv();
+	const prBody = runLinkFooter ? params.body + runLinkFooter : params.body;
+
 	try {
 		const pr = await githubClient.createPR(owner, repo, {
 			title: params.title,
-			body: params.body,
+			body: prBody,
 			head: params.head,
 			base: params.base,
 			draft: params.draft,

@@ -13,13 +13,13 @@ vi.mock('../../../src/agents/capabilities/index.js', () => ({
 
 // Mock agents/definitions to break the circular dependency chain:
 // backends/llmist → definitions → strategies → gadgets → pm/ → webhook-handler
-// → triggers/agent-execution → agents/registry → new LlmistBackend() (still loading)
+// → triggers/agent-execution → agents/registry → new LlmistEngine() (still loading)
 vi.mock('../../../src/agents/definitions/index.js', () => ({
-	loadAgentDefinition: vi.fn(() => ({ backend: {} })),
-	resolveAgentDefinition: vi.fn(async () => ({ backend: {} })),
+	loadAgentDefinition: vi.fn(() => ({ engine: {} })),
+	resolveAgentDefinition: vi.fn(async () => ({ engine: {} })),
 }));
 
-vi.mock('../../../src/backends/agent-profiles.js', () => ({
+vi.mock('../../../src/agents/definitions/profiles.js', () => ({
 	getAgentProfile: vi.fn(() => ({
 		getLlmistGadgets: vi.fn(() => []),
 	})),
@@ -83,20 +83,25 @@ vi.mock('../../../src/utils/llmLogging.js', () => ({
 	})),
 }));
 
-vi.mock('../../../src/utils/prUrl.js', () => ({
-	extractPRUrl: vi.fn((output: string) => {
-		const m = output.match(/https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/);
-		return m ? m[0] : undefined;
-	}),
-}));
+vi.mock('../../../src/gadgets/sessionState.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../../../src/gadgets/sessionState.js')>();
+	return {
+		...actual,
+		getSessionState: vi.fn(() => ({
+			prUrl: null,
+		})),
+	};
+});
 
 import { runAgentLoop } from '../../../src/agents/utils/agentLoop.js';
-import { LlmistBackend } from '../../../src/backends/llmist/index.js';
-import type { AgentBackendInput } from '../../../src/backends/types.js';
+import { LlmistEngine } from '../../../src/backends/llmist/index.js';
+import type { AgentExecutionPlan } from '../../../src/backends/types.js';
+import { getSessionState } from '../../../src/gadgets/sessionState.js';
 
 const mockRunAgentLoop = vi.mocked(runAgentLoop);
+const mockGetSessionState = vi.mocked(getSessionState);
 
-function makeInput(agentType = 'implementation'): AgentBackendInput {
+function makeInput(agentType = 'implementation'): AgentExecutionPlan {
 	return {
 		agentType,
 		project: {
@@ -104,8 +109,8 @@ function makeInput(agentType = 'implementation'): AgentBackendInput {
 			name: 'P',
 			repo: 'o/r',
 			baseBranch: 'main',
-		} as AgentBackendInput['project'],
-		config: { defaults: {} } as AgentBackendInput['config'],
+		} as AgentExecutionPlan['project'],
+		config: { defaults: {} } as AgentExecutionPlan['config'],
 		repoDir: '/repo',
 		systemPrompt: 'You are an agent.',
 		taskPrompt: 'Implement feature X.',
@@ -116,27 +121,31 @@ function makeInput(agentType = 'implementation'): AgentBackendInput {
 		model: 'claude-sonnet-4',
 		progressReporter: { onIteration: async () => {}, onToolCall: () => {}, onText: () => {} },
 		logWriter: () => {},
-		agentInput: { cardId: 'c1' } as AgentBackendInput['agentInput'],
+		agentInput: { workItemId: 'c1' } as AgentExecutionPlan['agentInput'],
 		runId: 'run-123',
-		llmistLogPath: '/workspace/llmist-implementation-12345.log',
+		engineLogPath: '/workspace/llmist-implementation-12345.log',
 	};
 }
 
-describe('LlmistBackend', () => {
-	it('has name "llmist"', () => {
-		const backend = new LlmistBackend();
-		expect(backend.name).toBe('llmist');
+describe('LlmistEngine', () => {
+	it('has engine id "llmist"', () => {
+		const engine = new LlmistEngine();
+		expect(engine.definition.id).toBe('llmist');
 	});
 
 	it('supportsAgentType returns true for any type', () => {
-		const backend = new LlmistBackend();
-		expect(backend.supportsAgentType('implementation')).toBe(true);
-		expect(backend.supportsAgentType('review')).toBe(true);
-		expect(backend.supportsAgentType('anything')).toBe(true);
+		const engine = new LlmistEngine();
+		expect(engine.supportsAgentType('implementation')).toBe(true);
+		expect(engine.supportsAgentType('review')).toBe(true);
+		expect(engine.supportsAgentType('anything')).toBe(true);
 	});
 });
 
-describe('LlmistBackend.execute', () => {
+describe('LlmistEngine.execute', () => {
+	beforeEach(() => {
+		mockGetSessionState.mockReturnValue({ prUrl: null } as ReturnType<typeof getSessionState>);
+	});
+
 	it('returns success when runAgentLoop completes normally', async () => {
 		mockRunAgentLoop.mockResolvedValue({
 			output: 'Done',
@@ -146,8 +155,8 @@ describe('LlmistBackend.execute', () => {
 			loopTerminated: false,
 		});
 
-		const backend = new LlmistBackend();
-		const result = await backend.execute(makeInput());
+		const engine = new LlmistEngine();
+		const result = await engine.execute(makeInput());
 
 		expect(result.success).toBe(true);
 		expect(result.output).toBe('Done');
@@ -164,26 +173,48 @@ describe('LlmistBackend.execute', () => {
 			loopTerminated: true,
 		});
 
-		const backend = new LlmistBackend();
-		const result = await backend.execute(makeInput());
+		const engine = new LlmistEngine();
+		const result = await engine.execute(makeInput());
 
 		expect(result.success).toBe(false);
 		expect(result.error).toContain('loop');
 	});
 
-	it('extracts PR URL from output when present', async () => {
+	it('reads prUrl from session state regardless of agent output text', async () => {
+		// Reproduces the false positive from run 1391506b: the CreatePR gadget
+		// recorded the URL in session state, but the LLM didn't echo it in output.
 		mockRunAgentLoop.mockResolvedValue({
-			output: 'Created PR: https://github.com/owner/repo/pull/42',
+			output: 'All done, PR created successfully.',
+			iterations: 9,
+			gadgetCalls: 12,
+			cost: 0.15,
+			loopTerminated: false,
+		});
+		mockGetSessionState.mockReturnValue({
+			prUrl: 'https://github.com/owner/repo/pull/42',
+		} as ReturnType<typeof getSessionState>);
+
+		const engine = new LlmistEngine();
+		const result = await engine.execute(makeInput());
+
+		expect(result.success).toBe(true);
+		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/42');
+	});
+
+	it('returns undefined prUrl when no PR was created', async () => {
+		mockRunAgentLoop.mockResolvedValue({
+			output: 'Done',
 			iterations: 5,
 			gadgetCalls: 8,
 			cost: 0.1,
 			loopTerminated: false,
 		});
+		// Session state has prUrl: null (default from beforeEach)
 
-		const backend = new LlmistBackend();
-		const result = await backend.execute(makeInput());
+		const engine = new LlmistEngine();
+		const result = await engine.execute(makeInput());
 
-		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/42');
+		expect(result.prUrl).toBeUndefined();
 	});
 
 	it('injects context injections as synthetic calls', async () => {
@@ -214,8 +245,8 @@ describe('LlmistBackend.execute', () => {
 			},
 		];
 
-		const backend = new LlmistBackend();
-		await backend.execute(input);
+		const engine = new LlmistEngine();
+		await engine.execute(input);
 
 		expect(mockInjectSyntheticCall).toHaveBeenCalledTimes(2);
 		expect(mockInjectSyntheticCall).toHaveBeenNthCalledWith(
@@ -256,8 +287,8 @@ describe('LlmistBackend.execute', () => {
 		input.model = 'claude-3-5-sonnet-20241022';
 		input.maxIterations = 25;
 
-		const backend = new LlmistBackend();
-		await backend.execute(input);
+		const engine = new LlmistEngine();
+		await engine.execute(input);
 
 		expect(mockCreateConfiguredBuilder).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -276,22 +307,22 @@ describe('LlmistBackend.execute', () => {
 			loopTerminated: false,
 		});
 
-		const { getAgentProfile } = await import('../../../src/backends/agent-profiles.js');
+		const { getAgentProfile } = await import('../../../src/agents/definitions/profiles.js');
 		const mockGetAgentProfile = vi.mocked(getAgentProfile);
 		const mockGetLlmistGadgets = vi.fn().mockReturnValue([]);
 		mockGetAgentProfile.mockReturnValue({
 			getLlmistGadgets: mockGetLlmistGadgets,
 		} as ReturnType<typeof getAgentProfile>);
 
-		const backend = new LlmistBackend();
-		await backend.execute(makeInput('review'));
+		const engine = new LlmistEngine();
+		await engine.execute(makeInput('review'));
 
 		expect(mockGetAgentProfile).toHaveBeenCalledWith('review');
 		// getLlmistGadgets no longer takes an argument - gadgets are pre-built in profile
 		expect(mockGetLlmistGadgets).toHaveBeenCalled();
 	});
 
-	it('sets LLMIST_LOG_FILE to the provided llmistLogPath', async () => {
+	it('sets LLMIST_LOG_FILE to the provided engineLogPath', async () => {
 		mockRunAgentLoop.mockResolvedValue({
 			output: 'Done',
 			iterations: 1,
@@ -301,10 +332,10 @@ describe('LlmistBackend.execute', () => {
 		});
 
 		const input = makeInput();
-		input.llmistLogPath = '/workspace/test-llmist.log';
+		input.engineLogPath = '/workspace/test-llmist.log';
 
-		const backend = new LlmistBackend();
-		await backend.execute(input);
+		const engine = new LlmistEngine();
+		await engine.execute(input);
 
 		expect(process.env.LLMIST_LOG_FILE).toBe('/workspace/test-llmist.log');
 		expect(process.env.LLMIST_LOG_TEE).toBe('true');
@@ -333,8 +364,8 @@ describe('LlmistBackend.execute', () => {
 		const input = makeInput();
 		input.progressReporter = mockProgressReporter;
 
-		const backend = new LlmistBackend();
-		await backend.execute(input);
+		const engine = new LlmistEngine();
+		await engine.execute(input);
 
 		expect(mockCreateConfiguredBuilder).toHaveBeenCalledWith(
 			expect.objectContaining({

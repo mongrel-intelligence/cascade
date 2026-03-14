@@ -13,11 +13,12 @@ import {
 	type FetchContextParams,
 	fetchContextFilesStep,
 	fetchDirectoryListingStep,
-	fetchEmailsFromInputStep,
 	fetchPRContextStep,
 	fetchPRConversationStep,
+	fetchPipelineSnapshotStep,
 	fetchSquintStep,
 	fetchWorkItemStep,
+	prepopulateTodosStep,
 } from './contextSteps.js';
 
 // ============================================================================
@@ -32,7 +33,8 @@ export const CONTEXT_STEP_REGISTRY: Record<
 	contextFiles: fetchContextFilesStep,
 	squint: fetchSquintStep,
 	workItem: fetchWorkItemStep,
+	prepopulateTodos: prepopulateTodosStep,
 	prContext: fetchPRContextStep,
 	prConversation: fetchPRConversationStep,
-	prefetchedEmails: fetchEmailsFromInputStep,
+	pipelineSnapshot: fetchPipelineSnapshotStep,
 };

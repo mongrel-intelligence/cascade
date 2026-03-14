@@ -9,8 +9,8 @@ export default class DefaultsSet extends DashboardCommand {
 		model: Flags.string({ description: 'Default model' }),
 		'max-iterations': Flags.integer({ description: 'Max iterations per agent run' }),
 		'watchdog-timeout': Flags.integer({ description: 'Watchdog timeout (ms)' }),
-		'card-budget': Flags.string({ description: 'Per-card budget in USD' }),
-		'agent-backend': Flags.string({ description: 'Default agent backend' }),
+		'work-item-budget': Flags.string({ description: 'Per-work-item budget in USD' }),
+		'agent-engine': Flags.string({ description: 'Default agent engine' }),
 		'progress-model': Flags.string({ description: 'Model for progress updates' }),
 		'progress-interval': Flags.string({ description: 'Progress update interval (minutes)' }),
 	};
@@ -23,8 +23,8 @@ export default class DefaultsSet extends DashboardCommand {
 				model: flags.model,
 				maxIterations: flags['max-iterations'],
 				watchdogTimeoutMs: flags['watchdog-timeout'],
-				cardBudgetUsd: flags['card-budget'],
-				agentBackend: flags['agent-backend'],
+				workItemBudgetUsd: flags['work-item-budget'],
+				agentEngine: flags['agent-engine'],
 				progressModel: flags['progress-model'],
 				progressIntervalMinutes: flags['progress-interval'],
 			});

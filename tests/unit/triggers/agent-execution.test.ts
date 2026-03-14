@@ -8,6 +8,7 @@ vi.mock('../../../src/pm/index.js', () => ({
 	PMLifecycleManager: vi.fn(),
 	createPMProvider: vi.fn(),
 	resolveProjectPMConfig: vi.fn(),
+	hasAutoLabel: vi.fn(),
 }));
 
 vi.mock('../../../src/utils/logging.js', () => ({
@@ -39,10 +40,26 @@ vi.mock('../../../src/triggers/shared/integration-validation.js', () => ({
 	formatValidationErrors: vi.fn().mockReturnValue(''),
 }));
 
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock('../../../src/pm/context.js', () => ({
+	getPMProvider: vi.fn(),
+}));
+
+vi.mock('../../../src/pm/config.js', () => ({
+	getTrelloConfig: vi.fn(),
+	getJiraConfig: vi.fn(),
+}));
+
 import { runAgent } from '../../../src/agents/registry.js';
+import { getJiraConfig, getTrelloConfig } from '../../../src/pm/config.js';
+import { getPMProvider } from '../../../src/pm/context.js';
 import {
 	PMLifecycleManager,
 	createPMProvider,
+	hasAutoLabel,
 	resolveProjectPMConfig,
 } from '../../../src/pm/index.js';
 import { runAgentExecutionPipeline } from '../../../src/triggers/shared/agent-execution.js';
@@ -50,6 +67,7 @@ import { handleAgentResultArtifacts } from '../../../src/triggers/shared/agent-r
 import { checkBudgetExceeded } from '../../../src/triggers/shared/budget.js';
 import { triggerDebugAnalysis } from '../../../src/triggers/shared/debug-runner.js';
 import { shouldTriggerDebug } from '../../../src/triggers/shared/debug-trigger.js';
+import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 import type { TriggerResult } from '../../../src/triggers/types.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 import { createMockProject } from '../../helpers/factories.js';
@@ -303,7 +321,7 @@ describe('runAgentExecutionPipeline', () => {
 	});
 
 	describe('workItemId resolution', () => {
-		it('uses cardId when present', async () => {
+		it('uses workItemId when present (via result.workItemId)', async () => {
 			const result: TriggerResult = {
 				agentType: 'implementation',
 				workItemId: 'card-456',
@@ -360,7 +378,7 @@ describe('runAgentExecutionPipeline', () => {
 			vi.mocked(shouldTriggerDebug).mockResolvedValue({
 				runId: 'run-failed',
 				agentType: 'implementation',
-				cardId: 'card-123',
+				workItemId: 'card-123',
 			});
 
 			await runAgentExecutionPipeline(mockTriggerResult, mockProject, mockConfig);
@@ -446,6 +464,248 @@ describe('runAgentExecutionPipeline', () => {
 			await runAgentExecutionPipeline(mockTriggerResult, mockProject, mockConfig, { onFailure });
 
 			expect(onFailure).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('splitting agent auto-label propagation', () => {
+		const mockProvider = {
+			type: 'trello' as const,
+			getWorkItem: vi.fn(),
+			listWorkItems: vi.fn(),
+			addLabel: vi.fn(),
+		};
+
+		beforeEach(() => {
+			vi.mocked(getPMProvider).mockReturnValue(mockProvider as never);
+			vi.mocked(resolveProjectPMConfig).mockReturnValue({
+				labels: { auto: 'auto-label-id' },
+				statuses: {},
+			});
+			vi.mocked(getTrelloConfig).mockReturnValue({
+				boardId: 'board123',
+				lists: { backlog: 'backlog-list-id' },
+				labels: {},
+			});
+			vi.mocked(getJiraConfig).mockReturnValue(undefined);
+			vi.mocked(checkTriggerEnabled).mockResolvedValue(false); // Don't chain backlog-manager
+
+			// Mock hasAutoLabel to check if labels contain auto label
+			vi.mocked(hasAutoLabel).mockImplementation((labels, config) => {
+				return labels?.some((l) => l.id === config.labels.auto || l.name === 'auto') ?? false;
+			});
+		});
+
+		it('propagates auto label to unlabeled backlog items after successful splitting (Trello)', async () => {
+			const splittingResult: TriggerResult = {
+				agentType: 'splitting',
+				workItemId: 'parent-card',
+				agentInput: {},
+			};
+
+			mockProvider.getWorkItem.mockResolvedValue({
+				id: 'parent-card',
+				title: 'Parent',
+				description: '',
+				url: '',
+				status: 'backlog-list-id',
+				labels: [{ id: 'auto-label-id', name: 'auto' }],
+			});
+
+			mockProvider.listWorkItems.mockResolvedValue([
+				{
+					id: 'card-1',
+					title: 'Item 1',
+					description: '',
+					url: '',
+					labels: [],
+				},
+				{
+					id: 'card-2',
+					title: 'Item 2',
+					description: '',
+					url: '',
+					labels: [{ id: 'auto-label-id', name: 'auto' }],
+				},
+				{
+					id: 'card-3',
+					title: 'Item 3',
+					description: '',
+					url: '',
+					labels: [],
+				},
+			]);
+
+			mockProvider.addLabel.mockResolvedValue(undefined);
+
+			await runAgentExecutionPipeline(splittingResult, mockProject, mockConfig);
+
+			expect(mockProvider.listWorkItems).toHaveBeenCalledWith('backlog-list-id');
+			expect(mockProvider.addLabel).toHaveBeenCalledTimes(2);
+			expect(mockProvider.addLabel).toHaveBeenCalledWith('card-1', 'auto-label-id');
+			expect(mockProvider.addLabel).toHaveBeenCalledWith('card-3', 'auto-label-id');
+		});
+
+		it('propagates auto label for JIRA projects using server-side status filtering', async () => {
+			const jiraProvider = {
+				type: 'jira' as const,
+				getWorkItem: vi.fn(),
+				listWorkItems: vi.fn(),
+				addLabel: vi.fn(),
+			};
+
+			vi.mocked(getPMProvider).mockReturnValue(jiraProvider as never);
+			vi.mocked(getTrelloConfig).mockReturnValue(undefined);
+			vi.mocked(getJiraConfig).mockReturnValue({
+				projectKey: 'PROJ',
+				baseUrl: 'https://jira.example.com',
+				statuses: { backlog: 'Backlog' },
+				labels: {},
+			});
+
+			const splittingResult: TriggerResult = {
+				agentType: 'splitting',
+				workItemId: 'PROJ-1',
+				agentInput: {},
+			};
+
+			jiraProvider.getWorkItem.mockResolvedValue({
+				id: 'PROJ-1',
+				title: 'Parent',
+				description: '',
+				url: '',
+				status: 'Backlog',
+				labels: [{ id: 'auto', name: 'auto' }],
+			});
+
+			// Server-side filtering: only backlog items are returned
+			jiraProvider.listWorkItems.mockResolvedValue([
+				{ id: 'PROJ-2', title: 'Item 1', description: '', url: '', status: 'Backlog', labels: [] },
+				{
+					id: 'PROJ-4',
+					title: 'Item 3',
+					description: '',
+					url: '',
+					status: 'Backlog',
+					labels: [{ id: 'auto', name: 'auto' }],
+				},
+			]);
+
+			jiraProvider.addLabel.mockResolvedValue(undefined);
+
+			await runAgentExecutionPipeline(splittingResult, mockProject, mockConfig);
+
+			// Should use server-side status filtering via the filter parameter
+			expect(jiraProvider.listWorkItems).toHaveBeenCalledWith('PROJ', { status: 'Backlog' });
+			// Should only label PROJ-2 (no auto label yet); PROJ-4 already has auto label
+			expect(jiraProvider.addLabel).toHaveBeenCalledTimes(1);
+			expect(jiraProvider.addLabel).toHaveBeenCalledWith('PROJ-2', 'auto-label-id');
+		});
+
+		it('does not propagate auto label if parent does not have auto label', async () => {
+			const splittingResult: TriggerResult = {
+				agentType: 'splitting',
+				workItemId: 'parent-card',
+				agentInput: {},
+			};
+
+			mockProvider.getWorkItem.mockResolvedValue({
+				id: 'parent-card',
+				title: 'Parent',
+				description: '',
+				url: '',
+				status: 'backlog-list-id',
+				labels: [], // No auto label
+			});
+
+			await runAgentExecutionPipeline(splittingResult, mockProject, mockConfig);
+
+			expect(mockProvider.listWorkItems).not.toHaveBeenCalled();
+			expect(mockProvider.addLabel).not.toHaveBeenCalled();
+		});
+
+		it('chains to backlog-manager after splitting when trigger is enabled and backlog is non-empty', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValue(true); // Enable chaining
+
+			const splittingResult: TriggerResult = {
+				agentType: 'splitting',
+				workItemId: 'parent-card',
+				agentInput: {},
+			};
+
+			mockProvider.getWorkItem.mockResolvedValue({
+				id: 'parent-card',
+				title: 'Parent',
+				description: '',
+				url: '',
+				status: 'backlog-list-id',
+				labels: [{ id: 'auto-label-id', name: 'auto' }],
+			});
+
+			// Non-empty backlog — agent should chain to backlog-manager
+			mockProvider.listWorkItems.mockResolvedValue([
+				{ id: 'backlog-card-1', title: 'Item 1', description: '', url: '', labels: [] },
+			]);
+
+			await runAgentExecutionPipeline(splittingResult, mockProject, mockConfig);
+
+			// Should run agent twice: once for splitting, once for backlog-manager
+			expect(runAgent).toHaveBeenCalledTimes(2);
+			expect(runAgent).toHaveBeenNthCalledWith(1, 'splitting', expect.any(Object));
+			expect(runAgent).toHaveBeenNthCalledWith(2, 'backlog-manager', expect.any(Object));
+		});
+
+		it('skips backlog-manager chain when backlog is empty after splitting', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValue(true); // Enable chaining
+
+			const splittingResult: TriggerResult = {
+				agentType: 'splitting',
+				workItemId: 'parent-card',
+				agentInput: {},
+			};
+
+			mockProvider.getWorkItem.mockResolvedValue({
+				id: 'parent-card',
+				title: 'Parent',
+				description: '',
+				url: '',
+				status: 'backlog-list-id',
+				labels: [{ id: 'auto-label-id', name: 'auto' }],
+			});
+
+			// Empty backlog — backlog-manager should be skipped
+			mockProvider.listWorkItems.mockResolvedValue([]);
+
+			await runAgentExecutionPipeline(splittingResult, mockProject, mockConfig);
+
+			// Only splitting ran — backlog-manager skipped because backlog is empty
+			expect(runAgent).toHaveBeenCalledTimes(1);
+			expect(runAgent).toHaveBeenCalledWith('splitting', expect.any(Object));
+		});
+
+		it('skips propagation if backlog list/status is not configured', async () => {
+			vi.mocked(getTrelloConfig).mockReturnValue({
+				boardId: 'board123',
+				lists: {}, // No backlog list
+				labels: {},
+			});
+
+			const splittingResult: TriggerResult = {
+				agentType: 'splitting',
+				workItemId: 'parent-card',
+				agentInput: {},
+			};
+
+			mockProvider.getWorkItem.mockResolvedValue({
+				id: 'parent-card',
+				title: 'Parent',
+				description: '',
+				url: '',
+				labels: [{ id: 'auto-label-id', name: 'auto' }],
+			});
+
+			await runAgentExecutionPipeline(splittingResult, mockProject, mockConfig);
+
+			expect(mockProvider.listWorkItems).not.toHaveBeenCalled();
 		});
 	});
 });

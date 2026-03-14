@@ -10,6 +10,9 @@ vi.mock('../../../src/triggers/github/check-suite-success.js', () => ({
 vi.mock('../../../src/triggers/github/pr-comment-mention.js', () => ({
 	PRCommentMentionTrigger: vi.fn().mockImplementation(() => ({ name: 'pr-comment-mention' })),
 }));
+vi.mock('../../../src/triggers/github/pr-conflict-detected.js', () => ({
+	PRConflictDetectedTrigger: vi.fn().mockImplementation(() => ({ name: 'pr-conflict-detected' })),
+}));
 vi.mock('../../../src/triggers/github/pr-merged.js', () => ({
 	PRMergedTrigger: vi.fn().mockImplementation(() => ({ name: 'pr-merged' })),
 }));
@@ -38,6 +41,7 @@ vi.mock('../../../src/triggers/trello/status-changed.js', () => ({
 	TrelloStatusChangedSplittingTrigger: { name: 'trello-status-changed-splitting' },
 	TrelloStatusChangedPlanningTrigger: { name: 'trello-status-changed-planning' },
 	TrelloStatusChangedTodoTrigger: { name: 'trello-status-changed-todo' },
+	TrelloStatusChangedBacklogTrigger: { name: 'trello-status-changed-backlog' },
 }));
 vi.mock('../../../src/triggers/trello/comment-mention.js', () => ({
 	TrelloCommentMentionTrigger: vi
@@ -76,8 +80,8 @@ describe('registerBuiltInTriggers', () => {
 
 		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
 
-		// Should have registered all 16 built-in triggers
-		expect(registry.register).toHaveBeenCalledTimes(16);
+		// Should have registered all 18 built-in triggers (17 + pr-conflict-detected)
+		expect(registry.register).toHaveBeenCalledTimes(18);
 	});
 
 	it('registers TrelloCommentMentionTrigger first', () => {
@@ -89,7 +93,7 @@ describe('registerBuiltInTriggers', () => {
 		expect(firstCall.name).toBe('trello-comment-mention');
 	});
 
-	it('registers all three status-changed triggers (Trello)', () => {
+	it('registers all four status-changed triggers (Trello)', () => {
 		const registry = createMockRegistry();
 
 		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
@@ -98,6 +102,7 @@ describe('registerBuiltInTriggers', () => {
 		expect(registeredNames).toContain('trello-status-changed-splitting');
 		expect(registeredNames).toContain('trello-status-changed-planning');
 		expect(registeredNames).toContain('trello-status-changed-todo');
+		expect(registeredNames).toContain('trello-status-changed-backlog');
 	});
 
 	it('registers GitHub triggers', () => {
@@ -109,6 +114,7 @@ describe('registerBuiltInTriggers', () => {
 		expect(registeredNames).toContain('check-suite-failure');
 		expect(registeredNames).toContain('check-suite-success');
 		expect(registeredNames).toContain('pr-comment-mention');
+		expect(registeredNames).toContain('pr-conflict-detected');
 		expect(registeredNames).toContain('pr-merged');
 		expect(registeredNames).toContain('pr-opened');
 		expect(registeredNames).toContain('pr-ready-to-merge');

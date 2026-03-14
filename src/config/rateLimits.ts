@@ -19,6 +19,13 @@ export const MODEL_RATE_LIMITS: ModelRateLimits = {
 		safetyMargin: 0.8, // Conservative - start throttling at 80%
 	},
 
+	// Claude Sonnet 4.6 (Tier 1: 50 RPM, 40K TPM)
+	'anthropic:claude-sonnet-4-6': {
+		requestsPerMinute: 50,
+		tokensPerMinute: 40_000,
+		safetyMargin: 0.9,
+	},
+
 	// Claude Sonnet 4.5 (Tier 1: 50 RPM, 40K TPM)
 	'anthropic:claude-sonnet-4-5': {
 		requestsPerMinute: 50,
@@ -42,6 +49,16 @@ export const MODEL_RATE_LIMITS: ModelRateLimits = {
 	'openrouter:google/gemini-3-pro-preview': {
 		requestsPerMinute: 100,
 		tokensPerMinute: 500_000,
+		safetyMargin: 0.9,
+	},
+	'openrouter:google/gemini-3.1-pro-preview': {
+		requestsPerMinute: 100,
+		tokensPerMinute: 500_000,
+		safetyMargin: 0.9,
+	},
+	'openrouter:google/gemini-3.1-flash-lite-preview': {
+		requestsPerMinute: 100,
+		tokensPerMinute: 1_000_000,
 		safetyMargin: 0.9,
 	},
 	'openrouter:x-ai/grok-code-fast-1': {

@@ -117,6 +117,10 @@ function setupProjectContext(opts?: { noTrello?: boolean; noGithub?: boolean }) 
 }
 
 describe('webhooksRouter', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
 	describe('list', () => {
 		it('returns trello and github webhooks', async () => {
 			setupProjectContext();
@@ -238,12 +242,18 @@ describe('webhooksRouter', () => {
 		it('creates both trello and github webhooks', async () => {
 			setupProjectContext();
 
-			// First fetch: trello list (for duplicate check) - empty
-			// Second fetch: trello create
+			// Fetch calls in order:
+			// 1. trelloListWebhooks (router duplicate check) - returns empty
+			// 2. trelloListWebhooks (inside trelloCreateWebhook for delete-before-create) - returns empty
+			// 3. trelloCreateWebhook POST - creates new webhook
 			mockFetch
 				.mockResolvedValueOnce({
 					ok: true,
-					json: () => Promise.resolve([]),
+					json: () => Promise.resolve([]), // router duplicate check
+				})
+				.mockResolvedValueOnce({
+					ok: true,
+					json: () => Promise.resolve([]), // trelloCreateWebhook internal list
 				})
 				.mockResolvedValueOnce({
 					ok: true,
@@ -256,6 +266,7 @@ describe('webhooksRouter', () => {
 						}),
 				});
 
+			// githubCreateWebhook also calls githubListWebhooks internally (via mockListWebhooks)
 			mockListWebhooks.mockResolvedValue({ data: [] });
 			mockCreateWebhook.mockResolvedValue({
 				data: {
@@ -344,8 +355,13 @@ describe('webhooksRouter', () => {
 		it('respects trelloOnly flag', async () => {
 			setupProjectContext();
 
+			// Fetch calls:
+			// 1. trelloListWebhooks (router duplicate check)
+			// 2. trelloListWebhooks (inside trelloCreateWebhook)
+			// 3. trelloCreateWebhook POST
 			mockFetch
-				.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([]) })
+				.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([]) }) // router duplicate check
+				.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([]) }) // internal list
 				.mockResolvedValueOnce({
 					ok: true,
 					json: () =>
@@ -398,16 +414,21 @@ describe('webhooksRouter', () => {
 		it('seeds JIRA labels when creating JIRA webhook', async () => {
 			setupJiraProjectContext();
 
-			// Calls in order:
-			// 1. jiraListWebhooks (GET /rest/api/3/webhook) - empty
-			// 2. jiraCreateWebhook (POST /rest/api/3/webhook) - success
-			// 3. jiraEnsureLabels: JQL search (GET /rest/api/3/search) - returns 1 issue
-			// 4. jiraEnsureLabels: add labels (PUT /rest/api/3/issue/PROJ-1)
-			// 5. jiraEnsureLabels: restore labels (PUT /rest/api/3/issue/PROJ-1)
+			// Fetch calls in order:
+			// 1. jiraListWebhooks (router duplicate check at line 103)
+			// 2. jiraListWebhooks (inside jiraCreateWebhook for delete-before-create)
+			// 3. jiraCreateWebhook (POST /rest/api/3/webhook) - success
+			// 4. jiraEnsureLabels: JQL search (GET /rest/api/3/search) - returns 1 issue
+			// 5. jiraEnsureLabels: add labels (PUT /rest/api/3/issue/PROJ-1)
+			// 6. jiraEnsureLabels: restore labels (PUT /rest/api/3/issue/PROJ-1)
 			mockFetch
 				.mockResolvedValueOnce({
 					ok: true,
-					json: () => Promise.resolve({ values: [] }),
+					json: () => Promise.resolve({ values: [] }), // router duplicate check
+				})
+				.mockResolvedValueOnce({
+					ok: true,
+					json: () => Promise.resolve({ values: [] }), // jiraCreateWebhook internal list
 				})
 				.mockResolvedValueOnce({
 					ok: true,
@@ -457,16 +478,26 @@ describe('webhooksRouter', () => {
 				'my-processed',
 				'my-error',
 				'my-ready',
+				'cascade-auto',
 			]);
 		});
 
 		it('returns empty labelsEnsured when JIRA project has no issues', async () => {
 			setupJiraProjectContext();
 
+			// Fetch calls in order:
+			// 1. jiraListWebhooks (router duplicate check)
+			// 2. jiraListWebhooks (inside jiraCreateWebhook for delete-before-create)
+			// 3. jiraCreateWebhook POST
+			// 4. jiraEnsureLabels search (returns no issues)
 			mockFetch
 				.mockResolvedValueOnce({
 					ok: true,
-					json: () => Promise.resolve({ values: [] }),
+					json: () => Promise.resolve({ values: [] }), // router duplicate check
+				})
+				.mockResolvedValueOnce({
+					ok: true,
+					json: () => Promise.resolve({ values: [] }), // jiraCreateWebhook internal list
 				})
 				.mockResolvedValueOnce({
 					ok: true,
@@ -736,9 +767,13 @@ describe('webhooksRouter', () => {
 		it('create uses oneTimeTokens for github', async () => {
 			setupProjectContext({ noGithub: true });
 
-			// Trello: skip (no Trello flag), but we have creds from DB so it'll try
+			// Fetch calls in order:
+			// 1. trelloListWebhooks (router duplicate check)
+			// 2. trelloListWebhooks (inside trelloCreateWebhook for delete-before-create)
+			// 3. trelloCreateWebhook POST
 			mockFetch
-				.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([]) })
+				.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([]) }) // router duplicate check
+				.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([]) }) // trelloCreateWebhook internal list
 				.mockResolvedValueOnce({
 					ok: true,
 					json: () =>

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+	createOrganization,
 	getOrganization,
 	listAllOrganizations,
 	updateOrganization,
@@ -20,4 +21,24 @@ export const organizationRouter = router({
 	list: superAdminProcedure.query(async () => {
 		return listAllOrganizations();
 	}),
+
+	create: superAdminProcedure
+		.input(
+			z.object({
+				id: z
+					.string()
+					.min(1)
+					.regex(/^[a-z0-9-]+$/),
+				name: z.string().min(1),
+			}),
+		)
+		.mutation(async ({ input }) => {
+			return createOrganization(input);
+		}),
+
+	updateById: superAdminProcedure
+		.input(z.object({ id: z.string(), name: z.string().min(1) }))
+		.mutation(async ({ input }) => {
+			await updateOrganization(input.id, { name: input.name });
+		}),
 });

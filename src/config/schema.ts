@@ -1,14 +1,9 @@
 import { z } from 'zod';
-import {
-	GitHubTriggerConfigSchema,
-	JiraTriggerConfigSchema,
-	TrelloTriggerConfigSchema,
-} from './triggerConfig.js';
+import { EngineSettingsSchema } from './engineSettings.js';
 
-const AgentBackendConfigSchema = z.object({
+const AgentEngineConfigSchema = z.object({
 	default: z.string().default('llmist'),
 	overrides: z.record(z.string()).default({}),
-	subscriptionCostZero: z.boolean().default(false),
 });
 
 const JiraConfigSchema = z.object({
@@ -29,7 +24,6 @@ const JiraConfigSchema = z.object({
 			readyToProcess: z.string().default('cascade-ready'),
 		})
 		.optional(),
-	triggers: JiraTriggerConfigSchema.partial().optional(),
 });
 
 export const ProjectConfigSchema = z.object({
@@ -59,27 +53,18 @@ export const ProjectConfigSchema = z.object({
 					cost: z.string().optional(),
 				})
 				.optional(),
-			triggers: TrelloTriggerConfigSchema.partial().optional(),
 		})
 		.optional(),
 
 	jira: JiraConfigSchema.optional(),
 
-	/**
-	 * GitHub-specific configuration, including trigger toggles.
-	 * Separate from trello/jira because GitHub integration is always present for code operations.
-	 */
-	github: z
-		.object({
-			triggers: GitHubTriggerConfigSchema.partial().optional(),
-		})
-		.optional(),
-
 	model: z.string().optional(),
 	agentModels: z.record(z.string()).optional(),
-	cardBudgetUsd: z.number().positive().optional(),
-	agentBackend: AgentBackendConfigSchema.optional(),
+	workItemBudgetUsd: z.number().positive().optional(),
+	agentEngine: AgentEngineConfigSchema.optional(),
+	engineSettings: EngineSettingsSchema.optional(),
 	squintDbUrl: z.string().url().optional(),
+	runLinksEnabled: z.boolean().default(false),
 });
 
 export const CascadeConfigSchema = z.object({
@@ -94,8 +79,9 @@ export const CascadeConfigSchema = z.object({
 				.int()
 				.positive()
 				.default(30 * 60 * 1000), // 30 min max job duration
-			cardBudgetUsd: z.number().positive().default(5),
-			agentBackend: z.string().default('llmist'),
+			workItemBudgetUsd: z.number().positive().default(5),
+			agentEngine: z.string().default('llmist'),
+			engineSettings: EngineSettingsSchema.default({}),
 			progressModel: z.string().default('openrouter:google/gemini-2.5-flash-lite'),
 			progressIntervalMinutes: z.number().positive().default(5),
 		})

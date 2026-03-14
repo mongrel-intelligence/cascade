@@ -3,43 +3,34 @@ import { PROpenedTrigger } from '../../../src/triggers/github/pr-opened.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+	checkTriggerEnabledWithParams: vi.fn().mockResolvedValue({ enabled: true, parameters: {} }),
+}));
+
 vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
 }));
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
+import { checkTriggerEnabledWithParams } from '../../../src/triggers/shared/trigger-check.js';
 
 describe('PROpenedTrigger', () => {
 	const trigger = new PROpenedTrigger();
 
 	const mockProject = createMockProject();
 
-	/** Project with prOpened + externalPrs enabled (most common config for external PR review) */
-	const mockProjectWithPrOpenedEnabled = createMockProject({
-		github: {
-			triggers: { prOpened: true, reviewTrigger: { externalPrs: true } },
-		},
-	});
-
-	/** Project with prOpened + ownPrsOnly (fires on implementer-authored PRs) */
-	const mockProjectWithOwnPrsOnly = createMockProject({
-		github: {
-			triggers: { prOpened: true, reviewTrigger: { ownPrsOnly: true } },
-		},
-	});
-
-	/** Project with prOpened + both modes (fires on all PRs) */
-	const mockProjectWithBothModes = createMockProject({
-		github: {
-			triggers: { prOpened: true, reviewTrigger: { ownPrsOnly: true, externalPrs: true } },
-		},
-	});
-
 	beforeEach(() => {
-		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
+		vi.mocked(checkTriggerEnabledWithParams).mockResolvedValue({ enabled: true, parameters: {} });
 	});
 
 	describe('matches', () => {
-		it('does not match by default (opt-in trigger, disabled without config)', () => {
+		it('matches when action is opened and not draft', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -62,132 +53,12 @@ describe('PROpenedTrigger', () => {
 				},
 			};
 
-			expect(trigger.matches(ctx)).toBe(false);
-		});
-
-		it('matches when action is opened and not draft with prOpened + externalPrs enabled', () => {
-			const ctx: TriggerContext = {
-				project: mockProjectWithPrOpenedEnabled,
-				source: 'github',
-				payload: {
-					action: 'opened',
-					number: 42,
-					pull_request: {
-						number: 42,
-						title: 'Test PR',
-						body: 'https://trello.com/c/abc123',
-						html_url: 'https://github.com/owner/repo/pull/42',
-						state: 'open',
-						draft: false,
-						head: { ref: 'feature/test', sha: 'abc123' },
-						base: { ref: 'main' },
-						user: { login: 'author' },
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'author' },
-				},
-			};
-
-			expect(trigger.matches(ctx)).toBe(true);
-		});
-
-		it('does not match when prOpened is true but neither ownPrsOnly nor externalPrs', () => {
-			const project = {
-				...mockProject,
-				github: {
-					triggers: {
-						prOpened: true,
-						reviewTrigger: { ownPrsOnly: false, externalPrs: false },
-					},
-				},
-			};
-			const ctx: TriggerContext = {
-				project,
-				source: 'github',
-				payload: {
-					action: 'opened',
-					number: 42,
-					pull_request: {
-						number: 42,
-						title: 'Test PR',
-						body: 'desc',
-						html_url: 'https://github.com/owner/repo/pull/42',
-						state: 'open',
-						draft: false,
-						head: { ref: 'feature/test', sha: 'abc' },
-						base: { ref: 'main' },
-						user: { login: 'author' },
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'author' },
-				},
-			};
-
-			expect(trigger.matches(ctx)).toBe(false);
-		});
-
-		it('matches when prOpened is true with ownPrsOnly only', () => {
-			const ctx: TriggerContext = {
-				project: mockProjectWithOwnPrsOnly,
-				source: 'github',
-				payload: {
-					action: 'opened',
-					number: 42,
-					pull_request: {
-						number: 42,
-						title: 'Test PR',
-						body: 'desc',
-						html_url: 'https://github.com/owner/repo/pull/42',
-						state: 'open',
-						draft: false,
-						head: { ref: 'feature/test', sha: 'abc' },
-						base: { ref: 'main' },
-						user: { login: 'author' },
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'author' },
-				},
-			};
-
-			expect(trigger.matches(ctx)).toBe(true);
-		});
-
-		it('matches when prOpened is true with legacy config (no reviewTrigger, checkSuiteSuccess defaults to ownPrsOnly)', () => {
-			const project = {
-				...mockProject,
-				github: {
-					triggers: { prOpened: true },
-				},
-			};
-			const ctx: TriggerContext = {
-				project,
-				source: 'github',
-				payload: {
-					action: 'opened',
-					number: 42,
-					pull_request: {
-						number: 42,
-						title: 'Test PR',
-						body: 'desc',
-						html_url: 'https://github.com/owner/repo/pull/42',
-						state: 'open',
-						draft: false,
-						head: { ref: 'feature/test', sha: 'abc' },
-						base: { ref: 'main' },
-						user: { login: 'author' },
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'author' },
-				},
-			};
-
-			// Legacy fallback: checkSuiteSuccess defaults to true → ownPrsOnly = true
 			expect(trigger.matches(ctx)).toBe(true);
 		});
 
 		it('does not match when source is not github', () => {
 			const ctx: TriggerContext = {
-				project: mockProjectWithPrOpenedEnabled,
+				project: mockProject,
 				source: 'trello',
 				payload: {},
 			};
@@ -197,7 +68,7 @@ describe('PROpenedTrigger', () => {
 
 		it('does not match when action is not opened', () => {
 			const ctx: TriggerContext = {
-				project: mockProjectWithPrOpenedEnabled,
+				project: mockProject,
 				source: 'github',
 				payload: {
 					action: 'closed',
@@ -223,7 +94,7 @@ describe('PROpenedTrigger', () => {
 
 		it('does not match draft PRs', () => {
 			const ctx: TriggerContext = {
-				project: mockProjectWithPrOpenedEnabled,
+				project: mockProject,
 				source: 'github',
 				payload: {
 					action: 'opened',
@@ -249,7 +120,7 @@ describe('PROpenedTrigger', () => {
 
 		it('does not match non-PR payloads', () => {
 			const ctx: TriggerContext = {
-				project: mockProjectWithPrOpenedEnabled,
+				project: mockProject,
 				source: 'github',
 				payload: {
 					action: 'opened',
@@ -262,9 +133,14 @@ describe('PROpenedTrigger', () => {
 	});
 
 	describe('handle', () => {
-		it('returns result when PR body has Trello URL', async () => {
+		it('returns result when DB has Trello card linked', async () => {
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: true,
+				parameters: { authorMode: 'all' },
+			});
+
 			const ctx: TriggerContext = {
-				project: mockProjectWithPrOpenedEnabled,
+				project: mockProject,
 				source: 'github',
 				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
 				payload: {
@@ -296,16 +172,25 @@ describe('PROpenedTrigger', () => {
 					repoFullName: 'owner/repo',
 					headSha: 'abc',
 					triggerType: 'pr-opened',
-					cardId: 'abc123',
+					workItemId: 'abc123',
+					triggerEvent: 'scm:pr-opened',
 				},
 				prNumber: 42,
+				prUrl: 'https://github.com/owner/repo/pull/42',
+				prTitle: 'Test PR',
 				workItemId: 'abc123',
 			});
 		});
 
 		it('fires without work item when PR has no work item reference', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: true,
+				parameters: { authorMode: 'all' },
+			});
+
 			const ctx: TriggerContext = {
-				project: mockProjectWithPrOpenedEnabled,
+				project: mockProject,
 				source: 'github',
 				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
 				payload: {
@@ -333,9 +218,52 @@ describe('PROpenedTrigger', () => {
 			expect(result?.workItemId).toBeUndefined();
 		});
 
-		it('returns null for implementer PR when only externalPrs is enabled', async () => {
+		it('returns null when trigger is disabled via checkTriggerEnabledWithParams', async () => {
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: false,
+				parameters: {},
+			});
+
 			const ctx: TriggerContext = {
-				project: mockProjectWithPrOpenedEnabled,
+				project: mockProject,
+				source: 'github',
+				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
+				payload: {
+					action: 'opened',
+					number: 42,
+					pull_request: {
+						number: 42,
+						title: 'Test PR',
+						body: 'desc',
+						html_url: 'https://github.com/owner/repo/pull/42',
+						state: 'open',
+						draft: false,
+						head: { ref: 'feature/test', sha: 'abc' },
+						base: { ref: 'main' },
+						user: { login: 'author' },
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'author' },
+				},
+			};
+
+			expect(await trigger.handle(ctx)).toBeNull();
+			expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
+				'test',
+				'review',
+				'scm:pr-opened',
+				'pr-opened',
+			);
+		});
+
+		it('returns null for implementer PR when authorMode=external', async () => {
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: true,
+				parameters: { authorMode: 'external' },
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
 				source: 'github',
 				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
 				payload: {
@@ -360,9 +288,14 @@ describe('PROpenedTrigger', () => {
 			expect(await trigger.handle(ctx)).toBeNull();
 		});
 
-		it('fires for implementer PR when ownPrsOnly is enabled', async () => {
+		it('fires for implementer PR when authorMode=own', async () => {
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: true,
+				parameters: { authorMode: 'own' },
+			});
+
 			const ctx: TriggerContext = {
-				project: mockProjectWithOwnPrsOnly,
+				project: mockProject,
 				source: 'github',
 				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
 				payload: {
@@ -389,9 +322,14 @@ describe('PROpenedTrigger', () => {
 			expect(result?.agentType).toBe('review');
 		});
 
-		it('returns null for external PR when only ownPrsOnly is enabled', async () => {
+		it('returns null for external PR when authorMode=own', async () => {
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: true,
+				parameters: { authorMode: 'own' },
+			});
+
 			const ctx: TriggerContext = {
-				project: mockProjectWithOwnPrsOnly,
+				project: mockProject,
 				source: 'github',
 				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
 				payload: {
@@ -416,9 +354,14 @@ describe('PROpenedTrigger', () => {
 			expect(await trigger.handle(ctx)).toBeNull();
 		});
 
-		it('returns null for implementer [bot] variant when only externalPrs is enabled', async () => {
+		it('returns null for implementer [bot] variant when authorMode=external', async () => {
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: true,
+				parameters: { authorMode: 'external' },
+			});
+
 			const ctx: TriggerContext = {
-				project: mockProjectWithPrOpenedEnabled,
+				project: mockProject,
 				source: 'github',
 				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
 				payload: {
@@ -443,9 +386,14 @@ describe('PROpenedTrigger', () => {
 			expect(await trigger.handle(ctx)).toBeNull();
 		});
 
-		it('fires for external PR when externalPrs is enabled', async () => {
+		it('fires for external PR when authorMode=external', async () => {
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: true,
+				parameters: { authorMode: 'external' },
+			});
+
 			const ctx: TriggerContext = {
-				project: mockProjectWithPrOpenedEnabled,
+				project: mockProject,
 				source: 'github',
 				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
 				payload: {
@@ -472,9 +420,14 @@ describe('PROpenedTrigger', () => {
 			expect(result?.agentType).toBe('review');
 		});
 
-		it('fires for reviewer persona PR when externalPrs is enabled (reviewer is not implementer)', async () => {
+		it('fires for reviewer persona PR when authorMode=external (reviewer is not implementer)', async () => {
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: true,
+				parameters: { authorMode: 'external' },
+			});
+
 			const ctx: TriggerContext = {
-				project: mockProjectWithPrOpenedEnabled,
+				project: mockProject,
 				source: 'github',
 				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
 				payload: {
@@ -501,9 +454,14 @@ describe('PROpenedTrigger', () => {
 			expect(result?.agentType).toBe('review');
 		});
 
-		it('fires for both implementer and external PRs when both modes enabled', async () => {
+		it('fires for both implementer and external PRs when authorMode=all', async () => {
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValue({
+				enabled: true,
+				parameters: { authorMode: 'all' },
+			});
+
 			const implCtx: TriggerContext = {
-				project: mockProjectWithBothModes,
+				project: mockProject,
 				source: 'github',
 				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
 				payload: {
@@ -526,7 +484,7 @@ describe('PROpenedTrigger', () => {
 			};
 
 			const extCtx: TriggerContext = {
-				project: mockProjectWithBothModes,
+				project: mockProject,
 				source: 'github',
 				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
 				payload: {
@@ -554,7 +512,7 @@ describe('PROpenedTrigger', () => {
 
 		it('returns null without personaIdentities (cannot determine author type)', async () => {
 			const ctx: TriggerContext = {
-				project: mockProjectWithPrOpenedEnabled,
+				project: mockProject,
 				source: 'github',
 				// no personaIdentities — credential resolution failed
 				payload: {
@@ -579,9 +537,15 @@ describe('PROpenedTrigger', () => {
 			expect(await trigger.handle(ctx)).toBeNull();
 		});
 
-		it('fires with undefined workItemId for null PR body', async () => {
+		it('fires with undefined workItemId when DB has no link', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: true,
+				parameters: { authorMode: 'all' },
+			});
+
 			const ctx: TriggerContext = {
-				project: mockProjectWithPrOpenedEnabled,
+				project: mockProject,
 				source: 'github',
 				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
 				payload: {

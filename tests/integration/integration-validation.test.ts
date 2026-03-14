@@ -5,7 +5,6 @@
  * - PM integration validation (Trello, JIRA)
  * - SCM integration validation (GitHub)
  * - Persona-specific token validation (implementer vs reviewer)
- * - Email integration validation (IMAP)
  * - Partial credential scenarios
  * - Error message formatting
  *
@@ -13,7 +12,6 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { hasEmailIntegration } from '../../src/email/index.js';
 import { hasScmIntegration, hasScmPersonaToken } from '../../src/github/integration.js';
 import { hasPmIntegration } from '../../src/pm/integration.js';
 import {
@@ -25,8 +23,6 @@ import { truncateAll } from './helpers/db.js';
 import {
 	seedCredential,
 	seedGitHubIntegration,
-	seedGmailEmailIntegration,
-	seedImapEmailIntegration,
 	seedIntegration,
 	seedIntegrationCredential,
 	seedJiraIntegration,
@@ -64,8 +60,8 @@ describe('Integration Validation (integration)', () => {
 				const hasPM = await hasPmIntegration('test-project');
 				expect(hasPM).toBe(true);
 
-				// debug agent only requires PM
-				const result = await validateIntegrations('test-project', 'debug');
+				// splitting requires only PM
+				const result = await validateIntegrations('test-project', 'splitting');
 				expect(result.valid).toBe(true);
 				expect(result.errors).toEqual([]);
 			});
@@ -76,7 +72,7 @@ describe('Integration Validation (integration)', () => {
 				const hasPM = await hasPmIntegration('test-project');
 				expect(hasPM).toBe(false);
 
-				const result = await validateIntegrations('test-project', 'debug');
+				const result = await validateIntegrations('test-project', 'splitting');
 				expect(result.valid).toBe(false);
 				expect(result.errors).toHaveLength(1);
 				expect(result.errors[0].category).toBe('pm');
@@ -89,7 +85,7 @@ describe('Integration Validation (integration)', () => {
 				const hasPM = await hasPmIntegration('test-project');
 				expect(hasPM).toBe(false);
 
-				const result = await validateIntegrations('test-project', 'debug');
+				const result = await validateIntegrations('test-project', 'splitting');
 				expect(result.valid).toBe(false);
 				expect(result.errors).toHaveLength(1);
 				expect(result.errors[0].category).toBe('pm');
@@ -103,7 +99,7 @@ describe('Integration Validation (integration)', () => {
 				const hasPM = await hasPmIntegration('test-project');
 				expect(hasPM).toBe(true);
 
-				const result = await validateIntegrations('test-project', 'debug');
+				const result = await validateIntegrations('test-project', 'splitting');
 				expect(result.valid).toBe(true);
 			});
 
@@ -113,7 +109,7 @@ describe('Integration Validation (integration)', () => {
 				const hasPM = await hasPmIntegration('test-project');
 				expect(hasPM).toBe(false);
 
-				const result = await validateIntegrations('test-project', 'debug');
+				const result = await validateIntegrations('test-project', 'splitting');
 				expect(result.errors).toHaveLength(1);
 				expect(result.valid).toBe(false);
 				expect(result.errors[0].category).toBe('pm');
@@ -125,7 +121,7 @@ describe('Integration Validation (integration)', () => {
 				const hasPM = await hasPmIntegration('test-project');
 				expect(hasPM).toBe(false);
 
-				const result = await validateIntegrations('test-project', 'debug');
+				const result = await validateIntegrations('test-project', 'splitting');
 				expect(result.valid).toBe(false);
 				expect(result.errors[0].category).toBe('pm');
 				expect(result.errors).toHaveLength(1);
@@ -281,93 +277,6 @@ describe('Integration Validation (integration)', () => {
 	});
 
 	// =========================================================================
-	// Email Integration Validation
-	// =========================================================================
-
-	describe('email integration validation', () => {
-		describe('IMAP', () => {
-			it('passes when all 6 IMAP credentials are configured', async () => {
-				await seedImapEmailIntegration();
-
-				const hasEmail = await hasEmailIntegration('test-project');
-				expect(hasEmail).toBe(true);
-
-				// email-joke requires email
-				const result = await validateIntegrations('test-project', 'email-joke');
-				expect(result.valid).toBe(true);
-			});
-
-			it('fails when password is missing', async () => {
-				await seedImapEmailIntegration('test-project', { skipCredential: 'password' });
-
-				const hasEmail = await hasEmailIntegration('test-project');
-				expect(hasEmail).toBe(false);
-
-				const result = await validateIntegrations('test-project', 'email-joke');
-				expect(result.valid).toBe(false);
-				expect(result.errors).toHaveLength(1);
-				expect(result.errors[0].category).toBe('email');
-			});
-
-			it('fails when imap_host is missing', async () => {
-				await seedImapEmailIntegration('test-project', { skipCredential: 'imap_host' });
-
-				const hasEmail = await hasEmailIntegration('test-project');
-				expect(hasEmail).toBe(false);
-			});
-
-			it('fails when username is missing', async () => {
-				await seedImapEmailIntegration('test-project', { skipCredential: 'username' });
-
-				const hasEmail = await hasEmailIntegration('test-project');
-				expect(hasEmail).toBe(false);
-			});
-		});
-
-		describe('Gmail', () => {
-			// Note: Can't fully test Gmail validation without mocking the OAuth token refresh.
-			// The hasEmailIntegration check requires fetching a valid access token from Google.
-			// Instead, we verify that missing credentials are properly detected.
-
-			it('fails when gmail_email is missing', async () => {
-				await seedGmailEmailIntegration('test-project', { skipEmail: true });
-
-				const hasEmail = await hasEmailIntegration('test-project');
-				expect(hasEmail).toBe(false);
-
-				const result = await validateIntegrations('test-project', 'email-joke');
-				expect(result.valid).toBe(false);
-				expect(result.errors).toHaveLength(1);
-				expect(result.errors[0].category).toBe('email');
-			});
-
-			it('fails when gmail_refresh_token is missing', async () => {
-				await seedGmailEmailIntegration('test-project', { skipRefreshToken: true });
-
-				const hasEmail = await hasEmailIntegration('test-project');
-				expect(hasEmail).toBe(false);
-
-				const result = await validateIntegrations('test-project', 'email-joke');
-				expect(result.valid).toBe(false);
-				expect(result.errors).toHaveLength(1);
-				expect(result.errors[0].category).toBe('email');
-			});
-		});
-
-		it('fails when no email integration exists', async () => {
-			// No email integration at all
-			const hasEmail = await hasEmailIntegration('test-project');
-			expect(hasEmail).toBe(false);
-
-			const result = await validateIntegrations('test-project', 'email-joke');
-			expect(result.valid).toBe(false);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0].category).toBe('email');
-			expect(result.errors[0].message).toContain('email integration');
-		});
-	});
-
-	// =========================================================================
 	// Partial Credential Scenarios
 	// =========================================================================
 
@@ -462,7 +371,7 @@ describe('Integration Validation (integration)', () => {
 
 	describe('error message format', () => {
 		it('PM errors contain provider reference', async () => {
-			const result = await validateIntegrations('test-project', 'debug');
+			const result = await validateIntegrations('test-project', 'splitting');
 			expect(result.valid).toBe(false);
 			expect(result.errors).toHaveLength(1);
 			expect(result.errors[0].message).toContain('PM integration (Trello/JIRA)');
@@ -476,7 +385,7 @@ describe('Integration Validation (integration)', () => {
 		});
 
 		it('formatValidationErrors includes dashboard link', async () => {
-			const result = await validateIntegrations('test-project', 'debug');
+			const result = await validateIntegrations('test-project', 'splitting');
 			const formatted = formatValidationErrors(result);
 			expect(formatted).toContain('Project Settings > Integrations');
 		});
@@ -520,14 +429,10 @@ describe('Integration Validation (integration)', () => {
 			expect(reqs.optional).toContain('pm');
 		});
 
-		it('debug requires only pm', async () => {
+		it('debug has pm as optional (no required integrations)', async () => {
 			const reqs = await getIntegrationRequirements('debug');
-			expect(reqs.required).toEqual(['pm']);
-		});
-
-		it('email-joke requires only email', async () => {
-			const reqs = await getIntegrationRequirements('email-joke');
-			expect(reqs.required).toEqual(['email']);
+			expect(reqs.required).toEqual([]);
+			expect(reqs.optional).toContain('pm');
 		});
 	});
 

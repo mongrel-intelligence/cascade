@@ -1,6 +1,7 @@
 import { DebugAnalysis } from '@/components/debug/debug-analysis.js';
 import { LlmCallList } from '@/components/llm-calls/llm-call-list.js';
 import { LogViewer } from '@/components/logs/log-viewer.js';
+import { CancelRunButton } from '@/components/runs/cancel-run-button.js';
 import { RetryRunButton } from '@/components/runs/retry-run-button.js';
 import { RunStatusBadge } from '@/components/runs/run-status-badge.js';
 import { RunSummaryCard } from '@/components/runs/run-summary-card.js';
@@ -39,7 +40,7 @@ function RunDetailPage() {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex items-center gap-3">
+			<div className="flex flex-wrap items-center gap-2">
 				<Link
 					to="/"
 					className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -50,10 +51,11 @@ function RunDetailPage() {
 				<span className="text-muted-foreground">/</span>
 				<h1 className="text-xl font-bold">{run.agentType}</h1>
 				<RunStatusBadge status={run.status} />
+				<CancelRunButton runId={run.id} status={run.status} />
 				<RetryRunButton runId={run.id} status={run.status} />
 			</div>
 
-			<div className="border-b border-border">
+			<div className="border-b border-border overflow-x-auto">
 				<nav className="flex gap-4">
 					{tabs.map((tab) => (
 						<button
@@ -61,7 +63,7 @@ function RunDetailPage() {
 							key={tab.id}
 							onClick={() => setActiveTab(tab.id)}
 							className={cn(
-								'border-b-2 px-1 pb-3 text-sm font-medium transition-colors',
+								'border-b-2 px-1 pb-3 text-sm font-medium transition-colors whitespace-nowrap',
 								activeTab === tab.id
 									? 'border-primary text-foreground'
 									: 'border-transparent text-muted-foreground hover:text-foreground',

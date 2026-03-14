@@ -12,12 +12,8 @@ export default class ProjectsCreate extends DashboardCommand {
 		'base-branch': Flags.string({ description: 'Base branch (default: main)' }),
 		'branch-prefix': Flags.string({ description: 'Branch prefix' }),
 		model: Flags.string({ description: 'Default model' }),
-		'card-budget': Flags.string({ description: 'Per-card budget in USD' }),
-		'agent-backend': Flags.string({ description: 'Agent backend (e.g. claude-code)' }),
-		'subscription-cost-zero': Flags.boolean({
-			description: 'Zero costs for subscription backends',
-			allowNo: true,
-		}),
+		'work-item-budget': Flags.string({ description: 'Per-work-item budget in USD' }),
+		'agent-engine': Flags.string({ description: 'Agent engine (e.g. claude-code)' }),
 	};
 
 	async run(): Promise<void> {
@@ -31,9 +27,8 @@ export default class ProjectsCreate extends DashboardCommand {
 				baseBranch: flags['base-branch'],
 				branchPrefix: flags['branch-prefix'],
 				model: flags.model,
-				cardBudgetUsd: flags['card-budget'],
-				agentBackend: flags['agent-backend'],
-				subscriptionCostZero: flags['subscription-cost-zero'],
+				workItemBudgetUsd: flags['work-item-budget'],
+				agentEngine: flags['agent-engine'],
 			});
 
 			if (flags.json) {

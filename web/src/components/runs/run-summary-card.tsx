@@ -1,15 +1,19 @@
 import { useElapsedTime } from '@/lib/useElapsedTime.js';
 import { formatCost, formatDuration } from '@/lib/utils.js';
+import { Link } from '@tanstack/react-router';
 import { ExternalLink } from 'lucide-react';
+import { useState } from 'react';
+
+const OUTPUT_COLLAPSE_THRESHOLD = 500;
 
 interface RunSummaryProps {
 	run: {
 		id: string;
 		projectId: string | null;
-		cardId: string | null;
+		workItemId: string | null;
 		prNumber: number | null;
 		agentType: string;
-		backend: string;
+		engine: string;
 		triggerType: string | null;
 		status: string;
 		model: string | null;
@@ -24,6 +28,8 @@ interface RunSummaryProps {
 		error: string | null;
 		prUrl: string | null;
 		outputSummary: string | null;
+		workItemTitle?: string | null;
+		workItemUrl?: string | null;
 	};
 }
 
@@ -36,24 +42,131 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 	);
 }
 
+function getIterationsLabel(run: RunSummaryProps['run']): string {
+	if (run.llmIterations == null) {
+		return '-';
+	}
+
+	return `${run.llmIterations}${run.maxIterations ? ` / ${run.maxIterations}` : ''}`;
+}
+
+function renderWorkItem(run: RunSummaryProps['run']) {
+	if (run.workItemUrl && run.workItemTitle) {
+		return (
+			<div className="flex flex-col gap-0.5">
+				<a
+					href={run.workItemUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="inline-flex items-center gap-1 text-primary hover:underline"
+				>
+					{run.workItemTitle}
+					<ExternalLink className="h-3 w-3" />
+				</a>
+				{run.projectId && run.workItemId && (
+					<Link
+						to="/work-items/$projectId/$workItemId"
+						params={{ projectId: run.projectId, workItemId: run.workItemId }}
+						className="text-xs text-muted-foreground hover:text-primary hover:underline"
+					>
+						View all runs
+					</Link>
+				)}
+			</div>
+		);
+	}
+
+	if (run.workItemId && run.projectId) {
+		return (
+			<div className="flex flex-col gap-0.5">
+				<span>{run.workItemId}</span>
+				<Link
+					to="/work-items/$projectId/$workItemId"
+					params={{ projectId: run.projectId, workItemId: run.workItemId }}
+					className="text-xs text-muted-foreground hover:text-primary hover:underline"
+				>
+					View all runs
+				</Link>
+			</div>
+		);
+	}
+
+	return run.workItemId ?? '-';
+}
+
+function renderPullRequest(run: RunSummaryProps['run']) {
+	if (!run.prUrl) {
+		return null;
+	}
+
+	return (
+		<Field label="Pull Request">
+			<div className="flex flex-col gap-0.5">
+				<a
+					href={run.prUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="inline-flex items-center gap-1 text-primary hover:underline"
+				>
+					PR #{run.prNumber ?? 'link'}
+					<ExternalLink className="h-3 w-3" />
+				</a>
+				{run.projectId && run.prNumber != null && (
+					<Link
+						to="/prs/$projectId/$prNumber"
+						params={{ projectId: run.projectId, prNumber: String(run.prNumber) }}
+						className="text-xs text-muted-foreground hover:text-primary hover:underline"
+					>
+						View all runs
+					</Link>
+				)}
+			</div>
+		</Field>
+	);
+}
+
+function OutputSection({ output }: { output: string }) {
+	const isLong = output.length > OUTPUT_COLLAPSE_THRESHOLD;
+	const [expanded, setExpanded] = useState(!isLong);
+
+	return (
+		<div className="rounded-lg border border-border p-4">
+			<div className="mb-1 flex items-center justify-between">
+				<h3 className="text-sm font-medium">Output</h3>
+				{isLong && (
+					<button
+						type="button"
+						onClick={() => setExpanded((prev) => !prev)}
+						className="text-xs text-primary hover:underline"
+					>
+						{expanded ? 'Show less' : 'Show more'}
+					</button>
+				)}
+			</div>
+			<pre
+				className={`overflow-x-auto whitespace-pre-wrap text-sm text-muted-foreground${expanded ? '' : ' max-h-96 overflow-y-auto'}`}
+			>
+				{expanded ? output : output.slice(0, OUTPUT_COLLAPSE_THRESHOLD)}
+				{!expanded && output.length > OUTPUT_COLLAPSE_THRESHOLD && '…'}
+			</pre>
+		</div>
+	);
+}
+
 export function RunSummaryCard({ run }: RunSummaryProps) {
 	const elapsed = useElapsedTime(run.startedAt, run.status === 'running');
 	const displayDuration = elapsed ?? run.durationMs;
 
 	return (
 		<div className="space-y-6">
-			<div className="grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-3 lg:grid-cols-4">
+			<div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 				<Field label="Status">{run.status}</Field>
-				<Field label="Backend">{run.backend}</Field>
+				<Field label="Engine">{run.engine}</Field>
 				<Field label="Model">{run.model ?? '-'}</Field>
 				<Field label="Trigger">{run.triggerType ?? '-'}</Field>
 				<Field label="Duration">{formatDuration(displayDuration)}</Field>
 				<Field label="Cost">{formatCost(run.costUsd)}</Field>
-				<Field label="LLM Iterations">
-					{run.llmIterations != null
-						? `${run.llmIterations}${run.maxIterations ? ` / ${run.maxIterations}` : ''}`
-						: '-'}
-				</Field>
+				<Field label="LLM Iterations">{getIterationsLabel(run)}</Field>
 				<Field label="Gadget Calls">{run.gadgetCalls ?? '-'}</Field>
 				<Field label="Started">
 					{run.startedAt ? new Date(run.startedAt).toLocaleString() : '-'}
@@ -61,37 +174,18 @@ export function RunSummaryCard({ run }: RunSummaryProps) {
 				<Field label="Completed">
 					{run.completedAt ? new Date(run.completedAt).toLocaleString() : '-'}
 				</Field>
-				<Field label="Card ID">{run.cardId ?? '-'}</Field>
-				{run.prUrl && (
-					<Field label="Pull Request">
-						<a
-							href={run.prUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-							className="inline-flex items-center gap-1 text-primary hover:underline"
-						>
-							PR #{run.prNumber ?? 'link'}
-							<ExternalLink className="h-3 w-3" />
-						</a>
-					</Field>
-				)}
+				<Field label="Work Item">{renderWorkItem(run)}</Field>
+				{renderPullRequest(run)}
 			</div>
 
 			{run.error && (
 				<div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
 					<h3 className="mb-1 text-sm font-medium text-destructive">Error</h3>
-					<pre className="whitespace-pre-wrap text-sm">{run.error}</pre>
+					<pre className="overflow-x-auto whitespace-pre-wrap text-sm">{run.error}</pre>
 				</div>
 			)}
 
-			{run.outputSummary && (
-				<div className="rounded-lg border border-border p-4">
-					<h3 className="mb-1 text-sm font-medium">Output Summary</h3>
-					<pre className="whitespace-pre-wrap text-sm text-muted-foreground">
-						{run.outputSummary}
-					</pre>
-				</div>
-			)}
+			{run.outputSummary && <OutputSection output={run.outputSummary} />}
 		</div>
 	);
 }

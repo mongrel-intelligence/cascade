@@ -1,4 +1,5 @@
 import { TRPCError } from '@trpc/server';
+import { logger } from '../../../utils/logging.js';
 import type { ProjectContext, TrelloWebhook } from './types.js';
 
 export async function trelloListWebhooks(ctx: ProjectContext): Promise<TrelloWebhook[]> {
@@ -20,6 +21,31 @@ export async function trelloCreateWebhook(
 	ctx: ProjectContext,
 	callbackURL: string,
 ): Promise<TrelloWebhook> {
+	// Delete any existing webhooks for this board first to prevent duplicates.
+	// Trello webhooks are token-scoped and board-scoped, so all webhooks returned
+	// by trelloListWebhooks are CASCADE-owned webhooks for this board.
+	const existingWebhooks = await trelloListWebhooks(ctx);
+	for (const webhook of existingWebhooks) {
+		try {
+			await trelloDeleteWebhook(ctx, webhook.id);
+			logger.info('[TrelloWebhook] Deleted existing webhook to prevent duplicates', {
+				webhookId: webhook.id,
+				projectId: ctx.projectId,
+				boardId: ctx.boardId,
+			});
+		} catch (err) {
+			// Log and continue — failing to delete an old webhook shouldn't prevent
+			// creating a new one. Worst case: we end up with duplicates (which the
+			// action-level dedup in the router will handle).
+			logger.warn('[TrelloWebhook] Failed to delete existing webhook (continuing)', {
+				webhookId: webhook.id,
+				projectId: ctx.projectId,
+				error: String(err),
+			});
+		}
+	}
+
+	// Now create the new webhook
 	const response = await fetch(
 		`https://api.trello.com/1/webhooks/?key=${ctx.trelloApiKey}&token=${ctx.trelloToken}`,
 		{

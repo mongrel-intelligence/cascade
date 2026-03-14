@@ -29,8 +29,8 @@ function requireInitialized(name: string): void {
 // Template context interface
 export interface PromptContext {
 	// Common
-	cardId?: string;
-	cardUrl?: string;
+	workItemId?: string;
+	workItemUrl?: string;
 	projectId?: string;
 
 	// PM vocabulary (computed from pmType)
@@ -41,9 +41,15 @@ export interface PromptContext {
 	workItemNounPluralCap?: string; // "Cards" or "Issues"
 	pmName?: string; // "Trello" or "JIRA"
 
-	// Splitting-specific
-	storiesListId?: string;
+	// PM list/column IDs
+	backlogListId?: string;
+	todoListId?: string;
+	inProgressListId?: string;
+	inReviewListId?: string;
+	doneListId?: string;
+	mergedListId?: string;
 	processedLabelId?: string;
+	autoLabelId?: string;
 
 	// Check-failure specific
 	prNumber?: number;
@@ -54,9 +60,9 @@ export interface PromptContext {
 
 	// Debug-specific
 	logDir?: string;
-	originalCardId?: string;
-	originalCardName?: string;
-	originalCardUrl?: string;
+	originalWorkItemId?: string;
+	originalWorkItemName?: string;
+	originalWorkItemUrl?: string;
 	detectedAgentType?: string;
 	debugListId?: string;
 
@@ -161,15 +167,13 @@ export function getSystemPrompt(
 
 /** Context for task prompt Eta rendering */
 export interface TaskPromptContext {
-	cardId?: string;
+	workItemId?: string;
 	commentText?: string;
 	commentAuthor?: string;
 	prNumber?: number;
 	prBranch?: string;
 	commentBody?: string;
 	commentPath?: string;
-	// Email-joke agent fields
-	senderEmail?: string;
 	[key: string]: unknown;
 }
 
@@ -179,7 +183,7 @@ export interface TaskPromptContext {
  */
 export interface TaskPromptInput {
 	// Common fields
-	cardId?: string;
+	workItemId?: string;
 	prNumber?: number;
 	prBranch?: string;
 	// PM comment trigger fields
@@ -188,8 +192,6 @@ export interface TaskPromptInput {
 	// PR comment trigger fields
 	triggerCommentBody?: string;
 	triggerCommentPath?: string;
-	// Email agent fields
-	senderEmail?: string;
 	// Allow extra fields for future extensibility
 	[key: string]: unknown;
 }
@@ -202,14 +204,13 @@ export interface TaskPromptInput {
  */
 export function buildTaskPromptContext(input: TaskPromptInput): TaskPromptContext {
 	return {
-		cardId: input.cardId,
+		workItemId: input.workItemId,
 		prNumber: input.prNumber,
 		prBranch: input.prBranch,
 		commentText: input.triggerCommentText,
 		commentAuthor: input.triggerCommentAuthor,
 		commentBody: input.triggerCommentBody,
 		commentPath: input.triggerCommentPath,
-		senderEmail: input.senderEmail,
 	};
 }
 
@@ -234,6 +235,19 @@ export function getRawTemplate(agentType: string): string {
 		throw new Error(`Unknown agent type: ${agentType}`);
 	}
 	return loadTemplate(agentType);
+}
+
+/**
+ * Read the raw .eta template file for an agent type without requiring initPrompts().
+ * Safe to call during startup seeding or before the prompt system is initialized.
+ * Returns undefined if the file does not exist.
+ */
+export function readTemplateFileSync(agentType: string): string | undefined {
+	try {
+		return readFileSync(join(templatesDir, `${agentType}.eta`), 'utf-8');
+	} catch {
+		return undefined;
+	}
 }
 
 /** Returns the raw partial source from disk. */
@@ -272,8 +286,8 @@ export function getTemplateVariables(): Array<{
 	description: string;
 }> {
 	return [
-		{ name: 'cardId', group: 'Common', description: 'Work item ID' },
-		{ name: 'cardUrl', group: 'Common', description: 'Work item URL' },
+		{ name: 'workItemId', group: 'Common', description: 'Work item ID' },
+		{ name: 'workItemUrl', group: 'Common', description: 'Work item URL' },
 		{ name: 'projectId', group: 'Common', description: 'Project identifier' },
 		{ name: 'pmType', group: 'PM', description: 'PM type: trello or jira' },
 		{ name: 'workItemNoun', group: 'PM', description: 'card or issue' },
@@ -281,17 +295,26 @@ export function getTemplateVariables(): Array<{
 		{ name: 'workItemNounCap', group: 'PM', description: 'Card or Issue' },
 		{ name: 'workItemNounPluralCap', group: 'PM', description: 'Cards or Issues' },
 		{ name: 'pmName', group: 'PM', description: 'Trello or JIRA' },
-		{ name: 'storiesListId', group: 'Splitting', description: 'Trello stories list ID' },
-		{ name: 'processedLabelId', group: 'Splitting', description: 'Trello processed label ID' },
+		{ name: 'backlogListId', group: 'PM Lists', description: 'Backlog list/column ID' },
+		{ name: 'todoListId', group: 'PM Lists', description: 'TODO list/column ID' },
+		{ name: 'inProgressListId', group: 'PM Lists', description: 'In Progress list/column ID' },
+		{ name: 'inReviewListId', group: 'PM Lists', description: 'In Review list/column ID' },
+		{ name: 'doneListId', group: 'PM Lists', description: 'Done list/column ID' },
+		{ name: 'mergedListId', group: 'PM Lists', description: 'Merged list/column ID' },
+		{ name: 'processedLabelId', group: 'PM Labels', description: 'Processed label ID' },
 		{ name: 'prNumber', group: 'CI', description: 'Pull request number' },
 		{ name: 'prBranch', group: 'CI', description: 'Pull request branch name' },
 		{ name: 'repoFullName', group: 'CI', description: 'Repository full name (owner/repo)' },
 		{ name: 'headSha', group: 'CI', description: 'HEAD commit SHA' },
 		{ name: 'triggerType', group: 'CI', description: 'Trigger type identifier' },
 		{ name: 'logDir', group: 'Debug', description: 'Debug log directory path' },
-		{ name: 'originalCardId', group: 'Debug', description: 'Original card ID being debugged' },
-		{ name: 'originalCardName', group: 'Debug', description: 'Original card name' },
-		{ name: 'originalCardUrl', group: 'Debug', description: 'Original card URL' },
+		{
+			name: 'originalWorkItemId',
+			group: 'Debug',
+			description: 'Original work item ID being debugged',
+		},
+		{ name: 'originalWorkItemName', group: 'Debug', description: 'Original work item name' },
+		{ name: 'originalWorkItemUrl', group: 'Debug', description: 'Original work item URL' },
 		{ name: 'detectedAgentType', group: 'Debug', description: 'Agent type from session log' },
 		{ name: 'debugListId', group: 'Debug', description: 'Debug list ID for output cards' },
 	];
@@ -304,13 +327,12 @@ export function getTaskTemplateVariables(): Array<{
 	description: string;
 }> {
 	return [
-		{ name: 'cardId', group: 'Work Item', description: 'Work item ID (card or issue)' },
+		{ name: 'workItemId', group: 'Work Item', description: 'Work item ID (card or issue)' },
 		{ name: 'commentText', group: 'Comment', description: 'Comment text content (PM comments)' },
 		{ name: 'commentAuthor', group: 'Comment', description: 'Comment author username' },
 		{ name: 'prNumber', group: 'PR', description: 'Pull request number' },
 		{ name: 'prBranch', group: 'PR', description: 'Pull request branch name' },
 		{ name: 'commentBody', group: 'PR Comment', description: 'PR comment body text' },
 		{ name: 'commentPath', group: 'PR Comment', description: 'File path for inline PR comments' },
-		{ name: 'senderEmail', group: 'Email', description: 'Email sender address (email-joke agent)' },
 	];
 }

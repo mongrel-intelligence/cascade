@@ -12,9 +12,3 @@ export { AstGrep } from './AstGrep.js';
 
 // GitHub gadgets
 export { GetPRDetails, GetPRComments, ReplyToReviewComment } from './github/index.js';
-
-// Email gadgets
-export { SendEmail, SearchEmails, ReadEmail, ReplyToEmail } from './email/index.js';
-
-// SMS gadgets
-export { SendSms } from './sms/index.js';

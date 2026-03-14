@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
-// Mock getPMProvider to control the PM type
+// Mock getPMProviderOrNull to control the PM type
 vi.mock('../../../../src/pm/index.js', () => ({
-	getPMProvider: vi.fn(),
+	getPMProviderOrNull: vi.fn(),
 }));
 
 import { buildPromptContext } from '../../../../src/agents/shared/promptContext.js';
-import { getPMProvider } from '../../../../src/pm/index.js';
+import { getPMProviderOrNull } from '../../../../src/pm/index.js';
 import { createMockPMProvider } from '../../../helpers/mockPMProvider.js';
 
-const mockGetPMProvider = vi.mocked(getPMProvider);
+const mockGetPMProvider = vi.mocked(getPMProviderOrNull);
 
 function makeProject(overrides: Record<string, unknown> = {}) {
 	return {
@@ -25,7 +25,10 @@ function makeProject(overrides: Record<string, unknown> = {}) {
 				splitting: 'list1',
 				planning: 'list2',
 				todo: 'list3',
-				stories: 'list-stories',
+				backlog: 'list-backlog',
+				inProgress: 'list-in-progress',
+				inReview: 'list-in-review',
+				merged: 'list-merged',
 				debug: 'list-debug',
 			},
 			labels: { readyToProcess: 'label1', processed: 'label2' },
@@ -73,24 +76,44 @@ describe('buildPromptContext', () => {
 			expect(ctx.pmType).toBe('trello');
 		});
 
-		it('generates cardUrl from provider', () => {
+		it('generates workItemUrl from provider', () => {
 			const ctx = buildPromptContext('card123', makeProject() as never);
-			expect(ctx.cardUrl).toBe('https://trello.com/c/card123');
+			expect(ctx.workItemUrl).toBe('https://trello.com/c/card123');
 		});
 
-		it('sets cardId from parameter', () => {
+		it('sets workItemId from parameter', () => {
 			const ctx = buildPromptContext('card-abc', makeProject() as never);
-			expect(ctx.cardId).toBe('card-abc');
-		});
-
-		it('includes storiesListId from project trello config', () => {
-			const ctx = buildPromptContext('card123', makeProject() as never);
-			expect(ctx.storiesListId).toBe('list-stories');
+			expect(ctx.workItemId).toBe('card-abc');
 		});
 
 		it('includes processedLabelId from project trello config', () => {
 			const ctx = buildPromptContext('card123', makeProject() as never);
 			expect(ctx.processedLabelId).toBe('label2');
+		});
+
+		it('includes backlogListId from project trello config', () => {
+			const ctx = buildPromptContext('card123', makeProject() as never);
+			expect(ctx.backlogListId).toBe('list-backlog');
+		});
+
+		it('includes todoListId from project trello config', () => {
+			const ctx = buildPromptContext('card123', makeProject() as never);
+			expect(ctx.todoListId).toBe('list3');
+		});
+
+		it('includes inProgressListId from project trello config', () => {
+			const ctx = buildPromptContext('card123', makeProject() as never);
+			expect(ctx.inProgressListId).toBe('list-in-progress');
+		});
+
+		it('includes inReviewListId from project trello config', () => {
+			const ctx = buildPromptContext('card123', makeProject() as never);
+			expect(ctx.inReviewListId).toBe('list-in-review');
+		});
+
+		it('includes mergedListId from project trello config', () => {
+			const ctx = buildPromptContext('card123', makeProject() as never);
+			expect(ctx.mergedListId).toBe('list-merged');
 		});
 	});
 
@@ -134,18 +157,45 @@ describe('buildPromptContext', () => {
 			expect(ctx.pmType).toBe('jira');
 		});
 
-		it('sets storiesListId to JIRA project key when no Trello config', () => {
+		it('sets pipeline list IDs from JIRA statuses', () => {
 			const jiraProject = makeProject({
 				trello: undefined,
 				pm: { type: 'jira' },
 				jira: {
-					projectKey: 'BTS',
+					projectKey: 'PROJ',
 					baseUrl: 'https://company.atlassian.net',
-					statuses: { todo: 'To Do' },
+					statuses: {
+						backlog: 'Backlog',
+						todo: 'To Do',
+						inProgress: 'In Progress',
+						inReview: 'In Review',
+						merged: 'Merged',
+					},
 				},
 			});
-			const ctx = buildPromptContext('BTS-148', jiraProject as never);
-			expect(ctx.storiesListId).toBe('BTS');
+			const ctx = buildPromptContext('PROJ-1', jiraProject as never);
+			expect(ctx.backlogListId).toBe('Backlog');
+			expect(ctx.todoListId).toBe('To Do');
+			expect(ctx.inProgressListId).toBe('In Progress');
+			expect(ctx.inReviewListId).toBe('In Review');
+			expect(ctx.mergedListId).toBe('Merged');
+		});
+
+		it('leaves pipeline list IDs undefined when JIRA statuses are missing', () => {
+			const jiraProject = makeProject({
+				trello: undefined,
+				pm: { type: 'jira' },
+				jira: {
+					projectKey: 'PROJ',
+					baseUrl: 'https://company.atlassian.net',
+					statuses: {},
+				},
+			});
+			const ctx = buildPromptContext('PROJ-1', jiraProject as never);
+			expect(ctx.backlogListId).toBeUndefined();
+			expect(ctx.todoListId).toBeUndefined();
+			expect(ctx.inProgressListId).toBeUndefined();
+			expect(ctx.inReviewListId).toBeUndefined();
 		});
 	});
 
@@ -198,9 +248,9 @@ describe('buildPromptContext', () => {
 
 		const debugContext = {
 			logDir: '/tmp/logs/debug-session',
-			originalCardId: 'original-card-id',
-			originalCardName: 'My Feature Card',
-			originalCardUrl: 'https://trello.com/c/abc',
+			originalWorkItemId: 'original-card-id',
+			originalWorkItemName: 'My Feature Card',
+			originalWorkItemUrl: 'https://trello.com/c/abc',
 			detectedAgentType: 'implementation',
 		};
 
@@ -215,7 +265,7 @@ describe('buildPromptContext', () => {
 			expect(ctx.logDir).toBe('/tmp/logs/debug-session');
 		});
 
-		it('includes originalCardName', () => {
+		it('includes originalWorkItemName', () => {
 			const ctx = buildPromptContext(
 				undefined,
 				makeProject() as never,
@@ -223,10 +273,10 @@ describe('buildPromptContext', () => {
 				undefined,
 				debugContext,
 			);
-			expect(ctx.originalCardName).toBe('My Feature Card');
+			expect(ctx.originalWorkItemName).toBe('My Feature Card');
 		});
 
-		it('includes originalCardUrl', () => {
+		it('includes originalWorkItemUrl', () => {
 			const ctx = buildPromptContext(
 				undefined,
 				makeProject() as never,
@@ -234,7 +284,7 @@ describe('buildPromptContext', () => {
 				undefined,
 				debugContext,
 			);
-			expect(ctx.originalCardUrl).toBe('https://trello.com/c/abc');
+			expect(ctx.originalWorkItemUrl).toBe('https://trello.com/c/abc');
 		});
 
 		it('includes detectedAgentType', () => {
@@ -277,10 +327,10 @@ describe('buildPromptContext', () => {
 			expect(ctx.logDir).toBeUndefined();
 		});
 
-		it('handles undefined cardId', () => {
+		it('handles undefined workItemId', () => {
 			const ctx = buildPromptContext(undefined, makeProject() as never);
-			expect(ctx.cardId).toBeUndefined();
-			expect(ctx.cardUrl).toBeUndefined();
+			expect(ctx.workItemId).toBeUndefined();
+			expect(ctx.workItemUrl).toBeUndefined();
 		});
 
 		it('includes projectId from project', () => {
@@ -291,6 +341,66 @@ describe('buildPromptContext', () => {
 		it('includes baseBranch from project', () => {
 			const ctx = buildPromptContext('card1', makeProject() as never);
 			expect(ctx.baseBranch).toBe('main');
+		});
+	});
+
+	describe('without PM provider (no PM context — e.g. debug agent from dashboard)', () => {
+		beforeEach(() => {
+			mockGetPMProvider.mockReturnValue(null);
+		});
+
+		it('does not throw when PM provider is null', () => {
+			expect(() => buildPromptContext('card1', makeProject() as never)).not.toThrow();
+		});
+
+		it('leaves pmType undefined', () => {
+			const ctx = buildPromptContext('card1', makeProject() as never);
+			expect(ctx.pmType).toBeUndefined();
+		});
+
+		it('leaves workItemUrl undefined even when workItemId is provided', () => {
+			const ctx = buildPromptContext('card123', makeProject() as never);
+			expect(ctx.workItemUrl).toBeUndefined();
+		});
+
+		it('defaults workItemNoun to "card" (Trello vocabulary fallback)', () => {
+			const ctx = buildPromptContext('card1', makeProject() as never);
+			expect(ctx.workItemNoun).toBe('card');
+		});
+
+		it('defaults workItemNounPlural to "cards"', () => {
+			const ctx = buildPromptContext('card1', makeProject() as never);
+			expect(ctx.workItemNounPlural).toBe('cards');
+		});
+
+		it('defaults pmName to "Trello"', () => {
+			const ctx = buildPromptContext('card1', makeProject() as never);
+			expect(ctx.pmName).toBe('Trello');
+		});
+
+		it('still includes projectId and baseBranch from project config', () => {
+			const ctx = buildPromptContext('card1', makeProject() as never);
+			expect(ctx.projectId).toBe('test-project');
+			expect(ctx.baseBranch).toBe('main');
+		});
+
+		it('still includes debugContext fields when provided', () => {
+			const debugContext = {
+				logDir: '/tmp/logs',
+				originalWorkItemId: 'orig-id',
+				originalWorkItemName: 'Original Card',
+				originalWorkItemUrl: 'https://trello.com/c/orig',
+				detectedAgentType: 'implementation',
+			};
+			const ctx = buildPromptContext(
+				undefined,
+				makeProject() as never,
+				undefined,
+				undefined,
+				debugContext,
+			);
+			expect(ctx.logDir).toBe('/tmp/logs');
+			expect(ctx.detectedAgentType).toBe('implementation');
 		});
 	});
 });

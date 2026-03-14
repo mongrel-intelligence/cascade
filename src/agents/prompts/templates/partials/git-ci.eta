@@ -4,7 +4,7 @@ You are on an EXISTING branch for an open pull request. Do NOT create a new PR.
 
 **Your workflow is: fix → commit → push to the existing branch.**
 
-Use standard git commands and GitHub CLI (`gh`) via Tmux for all version control.
+Use standard git commands via Tmux for all version control.
 
 **CRITICAL: Pass commands as argv arrays to Tmux, NOT shell strings!**
 

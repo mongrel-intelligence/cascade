@@ -4,7 +4,6 @@ import {
 	type ResolvedTrigger,
 } from '@/components/shared/definition-trigger-toggles.js';
 import { TriggerToggles } from '@/components/shared/trigger-toggles.js';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import {
@@ -17,25 +16,28 @@ import {
 import {
 	AGENT_LABELS,
 	CATEGORY_LABELS,
-	EMAIL_TRIGGER_AGENTS,
-	type KnownAgentType,
 	LIFECYCLE_TRIGGERS,
 	type TriggerParameterValue,
 } from '@/lib/trigger-agent-mapping.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { EmailJokeConfig } from './email-wizard.js';
 
 interface AgentConfig {
 	id: number;
 	agentType: string;
 	model: string | null;
 	maxIterations: number | null;
-	agentBackend: string | null;
+	agentEngine: string | null;
+	maxConcurrency: number | null;
+}
+
+interface Engine {
+	id: string;
+	label: string;
 }
 
 function AgentConfigBadge({ config }: { config: AgentConfig | null }) {
@@ -45,7 +47,8 @@ function AgentConfigBadge({ config }: { config: AgentConfig | null }) {
 	const parts: string[] = [];
 	if (config.model) parts.push(config.model);
 	if (config.maxIterations) parts.push(`${config.maxIterations} iterations`);
-	if (config.agentBackend) parts.push(config.agentBackend);
+	if (config.maxConcurrency) parts.push(`max ${config.maxConcurrency} concurrent`);
+	if (config.agentEngine) parts.push(config.agentEngine);
 	if (parts.length === 0) return <span className="text-xs text-muted-foreground">Configured</span>;
 	return <span className="text-xs text-muted-foreground">{parts.join(' · ')}</span>;
 }
@@ -54,18 +57,25 @@ function AgentConfigBadge({ config }: { config: AgentConfig | null }) {
 // Definition-Based Agent Section (New)
 // ============================================================================
 
+interface SaveConfigValues {
+	model: string;
+	maxIterations: string;
+	agentEngine: string;
+	maxConcurrency: string;
+}
+
 interface DefinitionAgentSectionProps {
 	agentType: string;
-	projectId: string;
 	config: AgentConfig | null;
 	triggers: ResolvedTrigger[];
 	integrations: {
 		pm: string | null;
 		scm: string | null;
-		email: string | null;
-		sms: string | null;
 	};
-	onEditConfig: (config: AgentConfig | null, agentType: string) => void;
+	engines: Engine[];
+	isSaving: boolean;
+	onSaveConfig: (agentType: string, configId: number | null, values: SaveConfigValues) => void;
+	saveSuccessNonce: number;
 	onDeleteConfig: (id: number) => void;
 	onTriggerToggle: (agentType: string, event: string, enabled: boolean) => void;
 	onTriggerParamChange: (
@@ -78,21 +88,71 @@ interface DefinitionAgentSectionProps {
 
 function DefinitionAgentSection({
 	agentType,
-	projectId,
 	config,
 	triggers,
 	integrations,
-	onEditConfig,
+	engines,
+	isSaving,
+	onSaveConfig,
+	saveSuccessNonce,
 	onDeleteConfig,
 	onTriggerToggle,
 	onTriggerParamChange,
 }: DefinitionAgentSectionProps) {
 	const [expanded, setExpanded] = useState(false);
-	const hasEmailTriggers = EMAIL_TRIGGER_AGENTS.has(agentType as KnownAgentType);
+	const [saved, setSaved] = useState(false);
+	const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	// Tracks whether a successful save is in flight (prevents config sync from clearing "Saved")
+	const justSavedRef = useRef(false);
+
+	// Local form state
+	const [model, setModel] = useState(config?.model ?? '');
+	const [maxIterations, setMaxIterations] = useState(config?.maxIterations?.toString() ?? '');
+	const [agentEngine, setAgentEngine] = useState(config?.agentEngine ?? '');
+	const [maxConcurrency, setMaxConcurrency] = useState(config?.maxConcurrency?.toString() ?? '');
+
+	// Sync form state when config changes (e.g. after invalidateQueries refetch)
+	// Skip clearing "Saved" if we just saved — the nonce effect will handle the timer
+	useEffect(() => {
+		setModel(config?.model ?? '');
+		setMaxIterations(config?.maxIterations?.toString() ?? '');
+		setAgentEngine(config?.agentEngine ?? '');
+		setMaxConcurrency(config?.maxConcurrency?.toString() ?? '');
+		if (justSavedRef.current) {
+			justSavedRef.current = false;
+		} else {
+			setSaved(false);
+		}
+	}, [config]);
+
+	// Show "Saved" indicator only after confirmed persistence (nonce increments on each success)
+	useEffect(() => {
+		if (saveSuccessNonce === 0) return;
+		// Mark that a save just completed so the config sync effect won't clear the indicator
+		justSavedRef.current = true;
+		if (savedTimerRef.current !== null) {
+			clearTimeout(savedTimerRef.current);
+		}
+		setSaved(true);
+		savedTimerRef.current = setTimeout(() => setSaved(false), 2000);
+	}, [saveSuccessNonce]);
+
+	// Clean up the "Saved" timer on unmount to avoid state updates on unmounted component
+	useEffect(() => {
+		return () => {
+			if (savedTimerRef.current !== null) {
+				clearTimeout(savedTimerRef.current);
+			}
+		};
+	}, []);
 
 	// Group triggers by category and filter by active integrations
 	const triggersByCategory = useMemo(() => {
-		const groups: Record<string, ResolvedTrigger[]> = { pm: [], scm: [], email: [], sms: [] };
+		const groups: Record<string, ResolvedTrigger[]> = {
+			pm: [],
+			scm: [],
+			internal: [],
+		};
 
 		for (const trigger of triggers) {
 			// Extract category from event (e.g., "pm:card-moved" -> "pm")
@@ -114,9 +174,29 @@ function DefinitionAgentSection({
 	const hasTriggers =
 		triggersByCategory.pm.length > 0 ||
 		triggersByCategory.scm.length > 0 ||
-		triggersByCategory.email.length > 0 ||
-		triggersByCategory.sms.length > 0 ||
-		hasEmailTriggers;
+		triggersByCategory.internal.length > 0;
+
+	const handleSave = () => {
+		onSaveConfig(agentType, config?.id ?? null, {
+			model,
+			maxIterations,
+			agentEngine,
+			maxConcurrency,
+		});
+	};
+
+	const handleCancel = () => {
+		setModel(config?.model ?? '');
+		setMaxIterations(config?.maxIterations?.toString() ?? '');
+		setAgentEngine(config?.agentEngine ?? '');
+		setMaxConcurrency(config?.maxConcurrency?.toString() ?? '');
+	};
+
+	const handleDelete = () => {
+		if (config && window.confirm('Delete this agent config?')) {
+			onDeleteConfig(config.id);
+		}
+	};
 
 	return (
 		<div className="rounded-lg border border-border overflow-hidden">
@@ -137,38 +217,82 @@ function DefinitionAgentSection({
 					</span>
 					<AgentConfigBadge config={config} />
 				</div>
-				<div className="flex items-center gap-1">
-					<button
-						type="button"
-						onClick={(e) => {
-							e.stopPropagation();
-							onEditConfig(config, agentType);
-						}}
-						className="inline-flex h-7 items-center gap-1 rounded-md border border-input px-2 text-xs hover:bg-accent"
-					>
-						<Pencil className="h-3 w-3" />
-						{config ? 'Edit Config' : 'Add Config'}
-					</button>
-					{config && (
-						<button
-							type="button"
-							onClick={(e) => {
-								e.stopPropagation();
-								onDeleteConfig(config.id);
-							}}
-							className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-accent"
-						>
-							<Trash2 className="h-3.5 w-3.5" />
-						</button>
-					)}
-				</div>
 			</button>
 
 			{/* Expanded content */}
 			{expanded && (
 				<div className="border-t border-border px-4 py-4 space-y-6 bg-muted/20">
+					{/* Config fields */}
+					<div className="space-y-4">
+						<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+							Configuration
+						</p>
+						<div className="grid grid-cols-2 gap-4">
+							<div className="space-y-2">
+								<Label htmlFor={`${agentType}-model`}>Model</Label>
+								<ModelField
+									id={`${agentType}-model`}
+									value={model}
+									onChange={setModel}
+									engine={agentEngine}
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label htmlFor={`${agentType}-iterations`}>Max Iterations</Label>
+								<Input
+									id={`${agentType}-iterations`}
+									type="number"
+									value={maxIterations}
+									onChange={(e) => setMaxIterations(e.target.value)}
+									placeholder="Optional"
+								/>
+							</div>
+						</div>
+						<div className="grid grid-cols-2 gap-4">
+							<div className="space-y-2">
+								<Label htmlFor={`${agentType}-concurrency`}>Max Concurrency</Label>
+								<Input
+									id={`${agentType}-concurrency`}
+									type="number"
+									min={1}
+									value={maxConcurrency}
+									onChange={(e) => setMaxConcurrency(e.target.value)}
+									placeholder="Optional"
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label>Engine</Label>
+								<Select
+									value={agentEngine || '_none'}
+									onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
+								>
+									<SelectTrigger className="w-full">
+										<SelectValue placeholder="Optional" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="_none">None</SelectItem>
+										{engines.map((engine) => (
+											<SelectItem key={engine.id} value={engine.id}>
+												{engine.label}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+						</div>
+						<div className="space-y-2">
+							<Label>Prompt</Label>
+							<p className="text-sm text-muted-foreground">
+								Prompts are managed in{' '}
+								<Link to="/global/definitions" className="text-primary hover:underline">
+									Agent Definitions
+								</Link>
+							</p>
+						</div>
+					</div>
+
 					{/* Render triggers by category */}
-					{(['pm', 'scm', 'email', 'sms'] as const).map((category) => {
+					{(['pm', 'scm', 'internal'] as const).map((category) => {
 						const categoryTriggers = triggersByCategory[category];
 						if (categoryTriggers.length === 0) return null;
 
@@ -191,21 +315,42 @@ function DefinitionAgentSection({
 						);
 					})}
 
-					{/* Email Triggers (custom widget) */}
-					{hasEmailTriggers && (
-						<div className="space-y-3">
-							<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-								Email Configuration
-							</p>
-							<EmailJokeConfig projectId={projectId} />
-						</div>
-					)}
-
 					{!hasTriggers && (
 						<p className="text-xs text-muted-foreground">
 							No trigger configuration for this agent.
 						</p>
 					)}
+
+					{/* Footer actions */}
+					<div className="flex items-center justify-between border-t border-border pt-4">
+						<div className="flex items-center gap-2">
+							<button
+								type="button"
+								onClick={handleSave}
+								disabled={isSaving}
+								className="inline-flex h-7 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+							>
+								{isSaving ? 'Saving...' : config ? 'Save' : 'Create Config'}
+							</button>
+							<button
+								type="button"
+								onClick={handleCancel}
+								className="inline-flex h-7 items-center rounded-md border border-input px-3 text-xs hover:bg-accent"
+							>
+								Reset
+							</button>
+							{saved && <span className="text-xs text-muted-foreground">Saved</span>}
+						</div>
+						{config && (
+							<button
+								type="button"
+								onClick={handleDelete}
+								className="inline-flex h-7 items-center rounded-md border border-destructive px-3 text-xs text-destructive hover:bg-destructive/10"
+							>
+								Delete Config
+							</button>
+						)}
+					</div>
 				</div>
 			)}
 		</div>
@@ -216,12 +361,12 @@ function DefinitionAgentSection({
 // Main Component
 // ============================================================================
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: manages multiple mutations + state for agent configs and trigger updates
 export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const queryClient = useQueryClient();
 
 	// Agent configs query
 	const configsQuery = useQuery(trpc.agentConfigs.list.queryOptions({ projectId }));
+	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
 
 	// Definition-based triggers query
 	const triggersViewQuery = useQuery(
@@ -231,15 +376,12 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	// Integrations query (for lifecycle triggers)
 	const integrationsQuery = useQuery(trpc.projects.integrations.list.queryOptions({ projectId }));
 
-	const [dialogOpen, setDialogOpen] = useState(false);
-	const [editing, setEditing] = useState<AgentConfig | null>(null);
-	const [agentType, setAgentType] = useState('');
-	const [model, setModel] = useState('');
-	const [maxIterations, setMaxIterations] = useState('');
-	const [agentBackend, setAgentBackend] = useState('');
 	const [localLifecycleTriggers, setLocalLifecycleTriggers] = useState<Record<string, unknown>>({});
 	const [lifecycleSaving, setLifecycleSaving] = useState(false);
 	const [lifecycleSaved, setLifecycleSaved] = useState(false);
+	const lifecycleSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const [savingAgentType, setSavingAgentType] = useState<string | null>(null);
+	const [saveSuccessNonces, setSaveSuccessNonces] = useState<Record<string, number>>({});
 
 	const configsQueryKey = trpc.agentConfigs.list.queryOptions({ projectId }).queryKey;
 	const triggersViewQueryKey = trpc.agentTriggerConfigs.getProjectTriggersView.queryOptions({
@@ -247,58 +389,74 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	}).queryKey;
 	const integrationsQueryKey = trpc.projects.integrations.list.queryOptions({ projectId }).queryKey;
 
-	function openCreate(defaultAgentType: string) {
-		setEditing(null);
-		setAgentType(defaultAgentType);
-		setModel('');
-		setMaxIterations('');
-		setAgentBackend('');
-		setDialogOpen(true);
-	}
-
-	function openEdit(config: AgentConfig) {
-		setEditing(config);
-		setAgentType(config.agentType);
-		setModel(config.model ?? '');
-		setMaxIterations(config.maxIterations?.toString() ?? '');
-		setAgentBackend(config.agentBackend ?? '');
-		setDialogOpen(true);
-	}
-
 	// Agent config mutations (shared)
 	const createMutation = useMutation({
-		mutationFn: () =>
+		mutationFn: (input: {
+			agentType: string;
+			model: string | null;
+			maxIterations: number | null;
+			agentEngine: string | null;
+			maxConcurrency: number | null;
+		}) =>
 			trpcClient.agentConfigs.create.mutate({
 				projectId,
-				agentType,
-				model: model || null,
-				maxIterations: maxIterations ? Number(maxIterations) : null,
-				agentBackend: agentBackend || null,
+				agentType: input.agentType,
+				model: input.model,
+				maxIterations: input.maxIterations,
+				agentEngine: input.agentEngine,
+				maxConcurrency: input.maxConcurrency,
 			}),
-		onSuccess: () => {
+		onSuccess: (_data, variables) => {
 			queryClient.invalidateQueries({ queryKey: configsQueryKey });
-			setDialogOpen(false);
+			setSavingAgentType(null);
+			setSaveSuccessNonces((prev) => ({
+				...prev,
+				[variables.agentType]: (prev[variables.agentType] ?? 0) + 1,
+			}));
+		},
+		onError: (err) => {
+			toast.error('Failed to create agent config', { description: err.message });
+			setSavingAgentType(null);
 		},
 	});
 
 	const updateMutation = useMutation({
-		mutationFn: () =>
+		mutationFn: (input: {
+			id: number;
+			agentType: string;
+			model: string | null;
+			maxIterations: number | null;
+			agentEngine: string | null;
+			maxConcurrency: number | null;
+		}) =>
 			trpcClient.agentConfigs.update.mutate({
-				id: editing?.id as number,
-				agentType,
-				model: model || null,
-				maxIterations: maxIterations ? Number(maxIterations) : null,
-				agentBackend: agentBackend || null,
+				id: input.id,
+				agentType: input.agentType,
+				model: input.model,
+				maxIterations: input.maxIterations,
+				agentEngine: input.agentEngine,
+				maxConcurrency: input.maxConcurrency,
 			}),
-		onSuccess: () => {
+		onSuccess: (_data, variables) => {
 			queryClient.invalidateQueries({ queryKey: configsQueryKey });
-			setDialogOpen(false);
+			setSavingAgentType(null);
+			setSaveSuccessNonces((prev) => ({
+				...prev,
+				[variables.agentType]: (prev[variables.agentType] ?? 0) + 1,
+			}));
+		},
+		onError: (err) => {
+			toast.error('Failed to update agent config', { description: err.message });
+			setSavingAgentType(null);
 		},
 	});
 
 	const deleteMutation = useMutation({
 		mutationFn: (id: number) => trpcClient.agentConfigs.delete.mutate({ id }),
 		onSuccess: () => queryClient.invalidateQueries({ queryKey: configsQueryKey }),
+		onError: (err) => {
+			toast.error('Failed to delete agent config', { description: err.message });
+		},
 	});
 
 	// New trigger mutation (uses agentTriggerConfigs.upsert)
@@ -348,6 +506,15 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		setLocalLifecycleTriggers(scmTriggers);
 	}, [scmTriggers]);
 
+	// Clean up the lifecycle "Saved" timer on unmount
+	useEffect(() => {
+		return () => {
+			if (lifecycleSavedTimerRef.current !== null) {
+				clearTimeout(lifecycleSavedTimerRef.current);
+			}
+		};
+	}, []);
+
 	// Loading state
 	const isLoading = configsQuery.isLoading || triggersViewQuery.isLoading;
 
@@ -356,6 +523,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	}
 
 	const configs = (configsQuery.data ?? []) as AgentConfig[];
+	const engines = (enginesQuery.data ?? []) as Engine[];
 
 	// Build agent config map
 	const configByAgent = new Map<string, AgentConfig>();
@@ -368,8 +536,6 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const triggersViewIntegrations = triggersViewQuery.data?.integrations ?? {
 		pm: null,
 		scm: null,
-		email: null,
-		sms: null,
 	};
 	if (triggersViewQuery.data) {
 		for (const agent of triggersViewQuery.data.agents) {
@@ -377,12 +543,24 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		}
 	}
 
-	// Handlers
-	const handleEditConfig = (config: AgentConfig | null, type: string) => {
-		if (config) {
-			openEdit(config);
+	const handleSaveConfig = (
+		type: string,
+		configId: number | null,
+		values: { model: string; maxIterations: string; agentEngine: string; maxConcurrency: string },
+	) => {
+		setSavingAgentType(type);
+		const payload = {
+			agentType: type,
+			model: values.model || null,
+			maxIterations: values.maxIterations ? Number(values.maxIterations) : null,
+			agentEngine: values.agentEngine || null,
+			maxConcurrency: values.maxConcurrency ? Number(values.maxConcurrency) : null,
+		};
+
+		if (configId !== null) {
+			updateMutation.mutate({ id: configId, ...payload });
 		} else {
-			openCreate(type);
+			createMutation.mutate(payload);
 		}
 	};
 
@@ -428,14 +606,15 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				}
 			}
 			await updateTriggersMutation.mutateAsync({ category: 'scm', triggers: changed });
+			if (lifecycleSavedTimerRef.current !== null) {
+				clearTimeout(lifecycleSavedTimerRef.current);
+			}
 			setLifecycleSaved(true);
-			setTimeout(() => setLifecycleSaved(false), 2000);
+			lifecycleSavedTimerRef.current = setTimeout(() => setLifecycleSaved(false), 2000);
 		} finally {
 			setLifecycleSaving(false);
 		}
 	};
-
-	const activeMutation = editing ? updateMutation : createMutation;
 
 	// Get list of agent types to display
 	const agentTypes = Array.from(triggersByAgent.keys());
@@ -452,11 +631,15 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 					<DefinitionAgentSection
 						key={type}
 						agentType={type}
-						projectId={projectId}
 						config={configByAgent.get(type) ?? null}
 						triggers={triggersByAgent.get(type) ?? []}
 						integrations={triggersViewIntegrations}
-						onEditConfig={handleEditConfig}
+						engines={engines}
+						isSaving={
+							savingAgentType === type && (createMutation.isPending || updateMutation.isPending)
+						}
+						onSaveConfig={handleSaveConfig}
+						saveSuccessNonce={saveSuccessNonces[type] ?? 0}
 						onDeleteConfig={(id) => deleteMutation.mutate(id)}
 						onTriggerToggle={handleTriggerToggle}
 						onTriggerParamChange={handleTriggerParamChange}
@@ -492,97 +675,6 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 					</div>
 				</div>
 			)}
-
-			{/* Dialog for add/edit agent config */}
-			<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>{editing ? 'Edit Agent Config' : 'New Agent Config'}</DialogTitle>
-					</DialogHeader>
-					<form
-						onSubmit={(e) => {
-							e.preventDefault();
-							activeMutation.mutate();
-						}}
-						className="space-y-4"
-					>
-						<div className="space-y-2">
-							<Label htmlFor="ac-agentType">Agent Type</Label>
-							<Input
-								id="ac-agentType"
-								value={(AGENT_LABELS as Record<string, string | undefined>)[agentType] ?? agentType}
-								readOnly
-								className="bg-muted"
-							/>
-						</div>
-						<div className="grid grid-cols-2 gap-4">
-							<div className="space-y-2">
-								<Label htmlFor="ac-model">Model</Label>
-								<ModelField
-									id="ac-model"
-									value={model}
-									onChange={setModel}
-									backend={agentBackend}
-								/>
-							</div>
-							<div className="space-y-2">
-								<Label htmlFor="ac-iterations">Max Iterations</Label>
-								<Input
-									id="ac-iterations"
-									type="number"
-									value={maxIterations}
-									onChange={(e) => setMaxIterations(e.target.value)}
-									placeholder="Optional"
-								/>
-							</div>
-						</div>
-						<div className="space-y-2">
-							<Label>Backend</Label>
-							<Select
-								value={agentBackend || '_none'}
-								onValueChange={(v) => setAgentBackend(v === '_none' ? '' : v)}
-							>
-								<SelectTrigger className="w-full">
-									<SelectValue placeholder="Optional" />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="_none">None</SelectItem>
-									<SelectItem value="llmist">llmist</SelectItem>
-									<SelectItem value="claude-code">claude-code</SelectItem>
-								</SelectContent>
-							</Select>
-						</div>
-						<div className="space-y-2">
-							<Label>Prompt</Label>
-							<p className="text-sm text-muted-foreground">
-								Prompts are managed in{' '}
-								<Link to="/settings/definitions" className="text-primary hover:underline">
-									Agent Definitions
-								</Link>
-							</p>
-						</div>
-						<div className="flex justify-end gap-2">
-							<button
-								type="button"
-								onClick={() => setDialogOpen(false)}
-								className="inline-flex h-9 items-center rounded-md border border-input px-4 text-sm hover:bg-accent"
-							>
-								Cancel
-							</button>
-							<button
-								type="submit"
-								disabled={activeMutation.isPending}
-								className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-							>
-								{activeMutation.isPending ? 'Saving...' : editing ? 'Update' : 'Create'}
-							</button>
-						</div>
-						{activeMutation.isError && (
-							<p className="text-sm text-destructive">{activeMutation.error.message}</p>
-						)}
-					</form>
-				</DialogContent>
-			</Dialog>
 		</div>
 	);
 }

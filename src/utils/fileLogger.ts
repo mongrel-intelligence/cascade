@@ -8,7 +8,7 @@ import { getWorkspaceDir } from './repo.js';
 
 export interface FileLogger {
 	logPath: string;
-	llmistLogPath: string;
+	engineLogPath: string;
 	llmCallLogger: LLMCallLogger;
 	write: (level: string, message: string, context?: Record<string, unknown>) => void;
 	close: () => void;
@@ -19,7 +19,7 @@ export function createFileLogger(prefix: string): FileLogger {
 	const timestamp = Date.now();
 	const workspaceDir = getWorkspaceDir();
 	const logPath = path.join(workspaceDir, `${prefix}-cascade-${timestamp}.log`);
-	const llmistLogPath = path.join(workspaceDir, `${prefix}-llmist-${timestamp}.log`);
+	const engineLogPath = path.join(workspaceDir, `${prefix}-engine-${timestamp}.log`);
 
 	// Create LLM call logger for raw request/response logging
 	const llmCallLogger = createLLMCallLogger(workspaceDir, prefix);
@@ -29,7 +29,7 @@ export function createFileLogger(prefix: string): FileLogger {
 
 	return {
 		logPath,
-		llmistLogPath,
+		engineLogPath,
 		llmCallLogger,
 		write(level: string, message: string, context?: Record<string, unknown>) {
 			if (fd === null) return;
@@ -64,9 +64,9 @@ export function createFileLogger(prefix: string): FileLogger {
 					archive.file(logPath, { name: 'cascade.log' });
 				}
 
-				// Add llmist log if it exists
-				if (fs.existsSync(llmistLogPath)) {
-					archive.file(llmistLogPath, { name: 'llmist.log' });
+				// Add engine log if it exists.
+				if (fs.existsSync(engineLogPath)) {
+					archive.file(engineLogPath, { name: 'engine.log' });
 				}
 
 				// Add LLM call request/response files

@@ -1,0 +1,60 @@
+identity:
+  emoji: "\U0001F4E6"
+  label: Backlog Manager
+  roleHint: Checks if pipeline is empty, then picks and moves the next backlog card to TODO
+  initialMessage: "**\U0001F4E6 Managing backlog** — Checking pipeline status before selecting next item..."
+
+# Explicit integration requirements.
+integrations:
+  required: [pm]
+  optional: []
+
+# Read-write agent that reads PM system and moves cards.
+capabilities:
+  required:
+    - fs:read
+    - shell:exec
+    - session:ctrl
+    - pm:read
+    - pm:write
+  optional: []
+
+# Supported triggers for this agent.
+# Note: The primary use case is scm:pr-merged — when a PR is merged, the pipeline
+# may be clearing out, so we check if backlog work should be pulled in.
+triggers:
+  - event: scm:pr-merged
+    label: PR Merged
+    description: When a CASCADE PR is merged, check if pipeline is empty and pull next backlog item
+    defaultEnabled: false
+    contextPipeline: [pipelineSnapshot]
+  - event: pm:status-changed
+    label: Item Added to Backlog
+    description: When an item is moved to Backlog, check if pipeline is empty and it should be moved to TODO immediately
+    defaultEnabled: false
+    parameters:
+      - name: targetStatus
+        type: select
+        label: Target Status
+        options: [backlog]
+        defaultValue: backlog
+    contextPipeline: [pipelineSnapshot]
+  - event: internal:auto-chain
+    label: Auto-chain after Splitting
+    description: When splitting completes on a card with the auto label, immediately chain to backlog manager
+    defaultEnabled: true
+    contextPipeline: [pipelineSnapshot]
+
+strategies: {}
+
+prompts:
+  # The system prompt (.eta file) contains full instructions.
+  # This taskPrompt provides the per-run context and directive.
+  taskPrompt: |
+    A Pipeline Snapshot has been pre-loaded into your context with the current state of all pipeline lists (BACKLOG, TODO, IN_PROGRESS, IN_REVIEW, DONE, MERGED).
+
+    1. Review the pre-loaded Pipeline Snapshot to check if the active pipeline (TODO, IN PROGRESS, IN REVIEW) is empty.
+    2. If empty: use the pre-loaded BACKLOG data from the snapshot to select the best unblocked item and move it to TODO.
+    3. If not empty: exit immediately without taking action.
+
+hint: Check pipeline first. Only act if TODO, IN PROGRESS, and IN REVIEW are all empty.

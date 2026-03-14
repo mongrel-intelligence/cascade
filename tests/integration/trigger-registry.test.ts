@@ -20,7 +20,7 @@ import {
 import type { TriggerContext } from '../../src/types/index.js';
 import { assertFound } from './helpers/assert.js';
 import { truncateAll } from './helpers/db.js';
-import { seedIntegration, seedOrg, seedProject } from './helpers/seed.js';
+import { seedIntegration, seedOrg, seedProject, seedTriggerConfig } from './helpers/seed.js';
 
 // ============================================================================
 // Helpers
@@ -105,7 +105,7 @@ describe('Trigger Registry (integration)', () => {
 					handled = true;
 					return {
 						agentType: 'implementation',
-						agentInput: { cardId: 'card-1' },
+						agentInput: { workItemId: 'card-1' },
 					};
 				},
 			});
@@ -303,7 +303,7 @@ describe('Trigger Registry (integration)', () => {
 
 			const result = await TrelloStatusChangedTodoTrigger.handle(ctx);
 			expect(result?.agentType).toBe('implementation');
-			expect(result?.agentInput.cardId).toBe('card-xyz');
+			expect(result?.agentInput.workItemId).toBe('card-xyz');
 			expect(result?.workItemId).toBe('card-xyz');
 		});
 	});
@@ -373,7 +373,7 @@ describe('Trigger Registry (integration)', () => {
 	// =========================================================================
 
 	describe('config toggles', () => {
-		it('does not fire status-changed-todo when statusChanged is disabled', async () => {
+		it('does not fire status-changed-todo when trigger is disabled via DB', async () => {
 			await seedIntegration({
 				category: 'pm',
 				provider: 'trello',
@@ -382,7 +382,11 @@ describe('Trigger Registry (integration)', () => {
 					lists: { todo: 'list-todo-123' },
 					labels: {},
 				},
-				triggers: { statusChanged: false },
+			});
+			await seedTriggerConfig({
+				agentType: 'implementation',
+				triggerEvent: 'pm:status-changed',
+				enabled: false,
 			});
 
 			const project = await findProjectByBoardIdFromDb('board-123');
@@ -397,10 +401,13 @@ describe('Trigger Registry (integration)', () => {
 				}),
 			};
 
-			expect(TrelloStatusChangedTodoTrigger.matches(ctx)).toBe(false);
+			// matches() checks payload shape (returns true), handle() checks DB config
+			expect(TrelloStatusChangedTodoTrigger.matches(ctx)).toBe(true);
+			const result = await TrelloStatusChangedTodoTrigger.handle(ctx);
+			expect(result).toBeNull();
 		});
 
-		it('does not fire status-changed-splitting when statusChanged is disabled', async () => {
+		it('does not fire status-changed-splitting when trigger is disabled via DB', async () => {
 			await seedIntegration({
 				category: 'pm',
 				provider: 'trello',
@@ -409,7 +416,11 @@ describe('Trigger Registry (integration)', () => {
 					lists: { splitting: 'list-split-789' },
 					labels: {},
 				},
-				triggers: { statusChanged: false },
+			});
+			await seedTriggerConfig({
+				agentType: 'splitting',
+				triggerEvent: 'pm:status-changed',
+				enabled: false,
 			});
 
 			const project = await findProjectByBoardIdFromDb('board-123');
@@ -424,7 +435,9 @@ describe('Trigger Registry (integration)', () => {
 				}),
 			};
 
-			expect(TrelloStatusChangedSplittingTrigger.matches(ctx)).toBe(false);
+			expect(TrelloStatusChangedSplittingTrigger.matches(ctx)).toBe(true);
+			const result = await TrelloStatusChangedSplittingTrigger.handle(ctx);
+			expect(result).toBeNull();
 		});
 	});
 

@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+	createWorkItem,
+	linkPRToWorkItem,
+} from '../../../src/db/repositories/prWorkItemsRepository.js';
+import {
 	completeRun,
 	createRun,
 	deleteDebugAnalysisByRunId,
@@ -8,8 +12,10 @@ import {
 	getLlmCallsByRunId,
 	getRunById,
 	getRunLogs,
-	getRunsByCardId,
 	getRunsByProjectId,
+	getRunsByWorkItem,
+	getRunsByWorkItemId,
+	getRunsForPR,
 	listLlmCallsMeta,
 	listProjectsForOrg,
 	listRuns,
@@ -37,7 +43,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			expect(id).toBeTruthy();
 			expect(typeof id).toBe('string');
@@ -46,19 +52,19 @@ describe('runsRepository (integration)', () => {
 		it('creates a run with optional fields', async () => {
 			const id = await createRun({
 				projectId: 'test-project',
-				cardId: 'card-123',
+				workItemId: 'card-123',
 				prNumber: 42,
 				agentType: 'review',
-				backend: 'llmist',
+				engine: 'llmist',
 				triggerType: 'feature-implementation',
 				model: 'claude-opus-4-5',
 				maxIterations: 20,
 			});
 			const run = await getRunById(id);
-			expect(run?.cardId).toBe('card-123');
+			expect(run?.workItemId).toBe('card-123');
 			expect(run?.prNumber).toBe(42);
 			expect(run?.agentType).toBe('review');
-			expect(run?.backend).toBe('llmist');
+			expect(run?.engine).toBe('llmist');
 			expect(run?.model).toBe('claude-opus-4-5');
 			expect(run?.maxIterations).toBe(20);
 			expect(run?.status).toBe('running');
@@ -70,7 +76,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			await completeRun(id, {
@@ -98,7 +104,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			await completeRun(id, {
@@ -119,7 +125,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			const run = await getRunById(id);
 			expect(run).toBeDefined();
@@ -132,34 +138,34 @@ describe('runsRepository (integration)', () => {
 		});
 	});
 
-	describe('getRunsByCardId', () => {
-		it('returns all runs for a card', async () => {
+	describe('getRunsByWorkItemId', () => {
+		it('returns all runs for a work item', async () => {
 			await createRun({
 				projectId: 'test-project',
-				cardId: 'card-A',
+				workItemId: 'card-A',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			await createRun({
 				projectId: 'test-project',
-				cardId: 'card-A',
+				workItemId: 'card-A',
 				agentType: 'review',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			await createRun({
 				projectId: 'test-project',
-				cardId: 'card-B',
+				workItemId: 'card-B',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
-			const runs = await getRunsByCardId('card-A');
+			const runs = await getRunsByWorkItemId('card-A');
 			expect(runs).toHaveLength(2);
-			expect(runs.every((r) => r.cardId === 'card-A')).toBe(true);
+			expect(runs.every((r) => r.workItemId === 'card-A')).toBe(true);
 		});
 
-		it('returns empty array for unknown card', async () => {
-			const runs = await getRunsByCardId('nonexistent-card');
+		it('returns empty array for unknown work item', async () => {
+			const runs = await getRunsByWorkItemId('nonexistent-card');
 			expect(runs).toEqual([]);
 		});
 	});
@@ -169,9 +175,9 @@ describe('runsRepository (integration)', () => {
 			await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
-			await createRun({ projectId: 'test-project', agentType: 'review', backend: 'claude-code' });
+			await createRun({ projectId: 'test-project', agentType: 'review', engine: 'claude-code' });
 
 			const runs = await getRunsByProjectId('test-project');
 			expect(runs).toHaveLength(2);
@@ -187,21 +193,21 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
-			await storeRunLogs(id, 'cascade log content', 'llmist log content');
+			await storeRunLogs(id, 'cascade log content', 'engine log content');
 
 			const logs = await getRunLogs(id);
 			expect(logs?.cascadeLog).toBe('cascade log content');
-			expect(logs?.llmistLog).toBe('llmist log content');
+			expect(logs?.engineLog).toBe('engine log content');
 		});
 
 		it('returns null for run with no logs', async () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			const logs = await getRunLogs(id);
 			expect(logs).toBeNull();
@@ -217,7 +223,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			await storeLlmCall({
@@ -246,7 +252,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			await storeLlmCallsBulk([
@@ -291,7 +297,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			await storeLlmCallsBulk([
@@ -309,7 +315,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			const call = await getLlmCallByNumber(id, 99);
 			expect(call).toBeNull();
@@ -321,7 +327,7 @@ describe('runsRepository (integration)', () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			await storeLlmCall({
@@ -352,7 +358,7 @@ describe('runsRepository (integration)', () => {
 			const runId = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			const analysisId = await storeDebugAnalysis({
@@ -377,7 +383,7 @@ describe('runsRepository (integration)', () => {
 			const runId = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			const analysis = await getDebugAnalysisByRunId(runId);
 			expect(analysis).toBeNull();
@@ -387,7 +393,7 @@ describe('runsRepository (integration)', () => {
 			const runId = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			await storeDebugAnalysis({
@@ -412,10 +418,10 @@ describe('runsRepository (integration)', () => {
 			await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
-			await createRun({ projectId: 'test-project', agentType: 'review', backend: 'claude-code' });
-			await createRun({ projectId: 'test-project', agentType: 'planning', backend: 'claude-code' });
+			await createRun({ projectId: 'test-project', agentType: 'review', engine: 'claude-code' });
+			await createRun({ projectId: 'test-project', agentType: 'planning', engine: 'claude-code' });
 
 			const result = await listRuns({ orgId: 'test-org', limit: 10, offset: 0 });
 			expect(result.data).toHaveLength(3);
@@ -427,12 +433,12 @@ describe('runsRepository (integration)', () => {
 			await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			await createRun({
 				projectId: 'project-2',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 
 			const result = await listRuns({
@@ -449,12 +455,12 @@ describe('runsRepository (integration)', () => {
 			const id1 = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			const id2 = await createRun({
 				projectId: 'test-project',
 				agentType: 'review',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			await completeRun(id1, { status: 'completed', success: true });
 			await completeRun(id2, { status: 'failed', success: false });
@@ -473,9 +479,9 @@ describe('runsRepository (integration)', () => {
 			await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
-			await createRun({ projectId: 'test-project', agentType: 'review', backend: 'claude-code' });
+			await createRun({ projectId: 'test-project', agentType: 'review', engine: 'claude-code' });
 
 			const result = await listRuns({
 				orgId: 'test-org',
@@ -492,7 +498,7 @@ describe('runsRepository (integration)', () => {
 				await createRun({
 					projectId: 'test-project',
 					agentType: 'implementation',
-					backend: 'claude-code',
+					engine: 'claude-code',
 				});
 			}
 
@@ -509,7 +515,7 @@ describe('runsRepository (integration)', () => {
 			await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
-				backend: 'claude-code',
+				engine: 'claude-code',
 			});
 			const result = await listRuns({ orgId: 'test-org', limit: 10, offset: 0 });
 			expect(result.data[0].projectName).toBe('Test Project');
@@ -528,6 +534,325 @@ describe('runsRepository (integration)', () => {
 			await seedOrg('empty-org', 'Empty Org');
 			const projects = await listProjectsForOrg('empty-org');
 			expect(projects).toEqual([]);
+		});
+	});
+
+	// =========================================================================
+	// listRuns with pr_work_items enrichment
+	// =========================================================================
+
+	describe('listRuns enrichment (workItemUrl, workItemTitle, prTitle)', () => {
+		it('includes null work item fields for runs without a linked PR work item row', async () => {
+			await createRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			const result = await listRuns({ orgId: 'test-org', limit: 10, offset: 0 });
+			expect(result.data).toHaveLength(1);
+			expect(result.data[0].workItemUrl).toBeNull();
+			expect(result.data[0].workItemTitle).toBeNull();
+			expect(result.data[0].prTitle).toBeNull();
+		});
+
+		it('enriches runs with work item info when a pr_work_items row exists', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 42, 'card-abc', {
+				workItemUrl: 'https://trello.com/c/abc',
+				workItemTitle: 'My Feature Card',
+				prTitle: 'feat: my feature',
+			});
+			await createRun({
+				projectId: 'test-project',
+				prNumber: 42,
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			const result = await listRuns({ orgId: 'test-org', limit: 10, offset: 0 });
+			expect(result.data).toHaveLength(1);
+			expect(result.data[0].workItemUrl).toBe('https://trello.com/c/abc');
+			expect(result.data[0].workItemTitle).toBe('My Feature Card');
+			expect(result.data[0].prTitle).toBe('feat: my feature');
+		});
+
+		it('does not lose runs that have no pr_work_items row (LEFT JOIN correctness)', async () => {
+			// Run without a linked PR
+			await createRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+			// Run with a linked PR
+			await linkPRToWorkItem('test-project', 'owner/repo', 7, 'card-7', {
+				prTitle: 'PR Seven',
+			});
+			await createRun({
+				projectId: 'test-project',
+				prNumber: 7,
+				agentType: 'review',
+				engine: 'claude-code',
+			});
+
+			const result = await listRuns({ orgId: 'test-org', limit: 10, offset: 0 });
+			expect(result.data).toHaveLength(2);
+			const withPR = result.data.find((r) => r.prNumber === 7);
+			const withoutPR = result.data.find((r) => r.prNumber === null);
+			expect(withPR?.prTitle).toBe('PR Seven');
+			expect(withoutPR?.prTitle).toBeNull();
+		});
+	});
+
+	// =========================================================================
+	// getRunById enrichment
+	// =========================================================================
+
+	describe('getRunById enrichment', () => {
+		it('includes null work item fields for a run without a linked pr_work_items row', async () => {
+			const id = await createRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+			const run = await getRunById(id);
+			expect(run).not.toBeNull();
+			expect(run?.workItemUrl).toBeNull();
+			expect(run?.workItemTitle).toBeNull();
+			expect(run?.prTitle).toBeNull();
+		});
+
+		it('enriches getRunById with work item info when a pr_work_items row exists', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 99, 'card-xyz', {
+				workItemUrl: 'https://trello.com/c/xyz',
+				workItemTitle: 'XYZ Card',
+				prTitle: 'fix: xyz bug',
+			});
+			const id = await createRun({
+				projectId: 'test-project',
+				prNumber: 99,
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+			const run = await getRunById(id);
+			expect(run?.workItemUrl).toBe('https://trello.com/c/xyz');
+			expect(run?.workItemTitle).toBe('XYZ Card');
+			expect(run?.prTitle).toBe('fix: xyz bug');
+		});
+	});
+
+	// =========================================================================
+	// getRunsByWorkItem
+	// =========================================================================
+
+	describe('getRunsByWorkItem', () => {
+		it('returns empty array when no runs exist for the work item', async () => {
+			const runs = await getRunsByWorkItem('test-project', 'nonexistent-card');
+			expect(runs).toEqual([]);
+		});
+
+		it('returns only runs matching the work item (workItemId)', async () => {
+			await createRun({
+				projectId: 'test-project',
+				workItemId: 'card-target',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+			await createRun({
+				projectId: 'test-project',
+				workItemId: 'card-target',
+				agentType: 'review',
+				engine: 'claude-code',
+			});
+			await createRun({
+				projectId: 'test-project',
+				workItemId: 'card-other',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			const runs = await getRunsByWorkItem('test-project', 'card-target');
+			expect(runs).toHaveLength(2);
+			expect(runs.every((r) => r.workItemId === 'card-target')).toBe(true);
+		});
+
+		it('enriches results with pr_work_items info when available', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 5, 'card-linked', {
+				workItemUrl: 'https://trello.com/c/linked',
+				workItemTitle: 'Linked Card',
+				prTitle: 'feat: linked',
+			});
+			await createRun({
+				projectId: 'test-project',
+				workItemId: 'card-linked',
+				prNumber: 5,
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			const runs = await getRunsByWorkItem('test-project', 'card-linked');
+			expect(runs).toHaveLength(1);
+			expect(runs[0].workItemUrl).toBe('https://trello.com/c/linked');
+			expect(runs[0].workItemTitle).toBe('Linked Card');
+			expect(runs[0].prTitle).toBe('feat: linked');
+		});
+
+		it('returns null for work item fields when no pr_work_items row matches', async () => {
+			await createRun({
+				projectId: 'test-project',
+				workItemId: 'card-no-pr-link',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			const runs = await getRunsByWorkItem('test-project', 'card-no-pr-link');
+			expect(runs).toHaveLength(1);
+			expect(runs[0].workItemUrl).toBeNull();
+			expect(runs[0].workItemTitle).toBeNull();
+			expect(runs[0].prTitle).toBeNull();
+		});
+
+		it('returns planning runs alongside PR-linked runs after work item promotion', async () => {
+			// Step 1: Insert a work-item-only row (simulates PM-triggered card before PR exists)
+			await createWorkItem('test-project', 'card-plan', {
+				workItemUrl: 'https://trello.com/c/card-plan',
+				workItemTitle: 'Planning Card',
+			});
+
+			// Step 2: Create a planning run with no prNumber (pre-PR)
+			await createRun({
+				projectId: 'test-project',
+				workItemId: 'card-plan',
+				agentType: 'planning',
+				engine: 'claude-code',
+			});
+
+			// Step 3: Promote the work-item row by linking a PR to it
+			await linkPRToWorkItem('test-project', 'owner/repo', 99, 'card-plan', {
+				workItemUrl: 'https://trello.com/c/card-plan',
+				workItemTitle: 'Planning Card',
+				prTitle: 'feat: planning card implementation',
+			});
+
+			// Step 4: Create an implementation run with prNumber
+			await createRun({
+				projectId: 'test-project',
+				workItemId: 'card-plan',
+				prNumber: 99,
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			// Step 5: getRunsByWorkItem should return BOTH runs
+			const runs = await getRunsByWorkItem('test-project', 'card-plan');
+			expect(runs).toHaveLength(2);
+
+			const planningRun = runs.find((r) => r.agentType === 'planning');
+			const implRun = runs.find((r) => r.agentType === 'implementation');
+
+			expect(planningRun).toBeDefined();
+			expect(planningRun?.prNumber).toBeNull();
+			expect(planningRun?.workItemId).toBe('card-plan');
+
+			expect(implRun).toBeDefined();
+			expect(implRun?.prNumber).toBe(99);
+			expect(implRun?.workItemId).toBe('card-plan');
+		});
+	});
+
+	// =========================================================================
+	// getRunsForPR
+	// =========================================================================
+
+	describe('getRunsForPR', () => {
+		it('returns empty array when no runs exist for the PR', async () => {
+			const runs = await getRunsForPR('test-project', 999);
+			expect(runs).toEqual([]);
+		});
+
+		it('returns only runs matching the PR number', async () => {
+			await createRun({
+				projectId: 'test-project',
+				prNumber: 10,
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+			await createRun({
+				projectId: 'test-project',
+				prNumber: 10,
+				agentType: 'review',
+				engine: 'claude-code',
+			});
+			await createRun({
+				projectId: 'test-project',
+				prNumber: 20,
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			const runs = await getRunsForPR('test-project', 10);
+			expect(runs).toHaveLength(2);
+			expect(runs.every((r) => r.prNumber === 10)).toBe(true);
+		});
+
+		it('enriches results with pr_work_items info', async () => {
+			await linkPRToWorkItem('test-project', 'owner/repo', 30, 'card-pr30', {
+				workItemUrl: 'https://trello.com/c/pr30',
+				workItemTitle: 'PR 30 Card',
+				prTitle: 'feat: pr30',
+			});
+			await createRun({
+				projectId: 'test-project',
+				prNumber: 30,
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			const runs = await getRunsForPR('test-project', 30);
+			expect(runs).toHaveLength(1);
+			expect(runs[0].workItemUrl).toBe('https://trello.com/c/pr30');
+			expect(runs[0].workItemTitle).toBe('PR 30 Card');
+			expect(runs[0].prTitle).toBe('feat: pr30');
+		});
+
+		it('returns null for work item fields when no pr_work_items row exists', async () => {
+			await createRun({
+				projectId: 'test-project',
+				prNumber: 40,
+				agentType: 'review',
+				engine: 'claude-code',
+			});
+
+			const runs = await getRunsForPR('test-project', 40);
+			expect(runs).toHaveLength(1);
+			expect(runs[0].workItemUrl).toBeNull();
+			expect(runs[0].workItemTitle).toBeNull();
+			expect(runs[0].prTitle).toBeNull();
+		});
+
+		it('does not return runs without a prNumber (pre-PR runs like planning)', async () => {
+			// Create a planning run (no prNumber) for the same card
+			await createRun({
+				projectId: 'test-project',
+				workItemId: 'card-gap-demo',
+				agentType: 'planning',
+				engine: 'claude-code',
+			});
+			// Create an implementation run with prNumber=99
+			await createRun({
+				projectId: 'test-project',
+				workItemId: 'card-gap-demo',
+				prNumber: 99,
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			// getRunsForPR only returns runs with prNumber=99 — it MISSES the planning run
+			// This documents the expected (limited) behavior of getRunsForPR and shows why
+			// the frontend must use getRunsByWorkItem for work items with a workItemId
+			const runs = await getRunsForPR('test-project', 99);
+			expect(runs).toHaveLength(1);
+			expect(runs[0].agentType).toBe('implementation');
+			expect(runs[0].prNumber).toBe(99);
 		});
 	});
 });

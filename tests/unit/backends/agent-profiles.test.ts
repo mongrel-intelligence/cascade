@@ -68,6 +68,7 @@ vi.mock('../../../src/gadgets/Finish.js', () => ({
 vi.mock('../../../src/gadgets/github/index.js', () => ({
 	CreatePR: mockClass('CreatePR'),
 	CreatePRReview: mockClass('CreatePRReview'),
+	GetCIRunLogs: mockClass('GetCIRunLogs'),
 	GetPRChecks: mockClass('GetPRChecks'),
 	GetPRComments: mockClass('GetPRComments'),
 	GetPRDetails: mockClass('GetPRDetails'),
@@ -80,6 +81,7 @@ vi.mock('../../../src/gadgets/pm/index.js', () => ({
 	AddChecklist: mockClass('AddChecklist'),
 	CreateWorkItem: mockClass('CreateWorkItem'),
 	ListWorkItems: mockClass('ListWorkItems'),
+	MoveWorkItem: mockClass('MoveWorkItem'),
 	PMDeleteChecklistItem: mockClass('PMDeleteChecklistItem'),
 	PMUpdateChecklistItem: mockClass('PMUpdateChecklistItem'),
 	PostComment: mockClass('PostComment'),
@@ -150,6 +152,8 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { execFileSync } from 'node:child_process';
+import { needsGitStateStopHooks } from '../../../src/agents/definitions/profiles.js';
+import { type AgentProfile, getAgentProfile } from '../../../src/agents/definitions/profiles.js';
 import {
 	formatPRComments,
 	formatPRDetails,
@@ -158,7 +162,6 @@ import {
 	formatPRReviews,
 	readPRFileContents,
 } from '../../../src/agents/shared/prFormatting.js';
-import { type AgentProfile, getAgentProfile } from '../../../src/backends/agent-profiles.js';
 import { readWorkItem } from '../../../src/gadgets/pm/core/readWorkItem.js';
 import { githubClient } from '../../../src/github/client.js';
 import { resolveSquintDbPath } from '../../../src/utils/squintDb.js';
@@ -219,15 +222,25 @@ describe('getAgentProfile', () => {
 			expect(names).toContain('ReadWorkItem');
 		});
 
-		it('has SDK tools for code editing', () => {
-			// SDK tools derived from capabilities - order may vary
-			expect(new Set(profile.sdkTools)).toEqual(
-				new Set(['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']),
+		it('has native-tool capabilities for code editing', () => {
+			expect(new Set(profile.allCapabilities)).toEqual(
+				new Set([
+					'fs:read',
+					'fs:write',
+					'shell:exec',
+					'session:ctrl',
+					'scm:read',
+					'scm:ci-logs',
+					'scm:comment',
+					'pm:read',
+					'pm:write',
+					'pm:checklist',
+				]),
 			);
 		});
 
-		it('enables stop hooks', () => {
-			expect(profile.enableStopHooks).toBe(true);
+		it('has finish hooks requiring pushed changes', () => {
+			expect(profile.finishHooks.requiresPushedChanges).toBe(true);
 		});
 
 		it('needs GitHub token', () => {
@@ -289,15 +302,23 @@ describe('getAgentProfile', () => {
 			expect(names).not.toContain('CreatePR');
 		});
 
-		it('has SDK tools for code editing', () => {
-			// SDK tools derived from capabilities - order may vary
-			expect(new Set(profile.sdkTools)).toEqual(
-				new Set(['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']),
+		it('has native-tool capabilities for code editing', () => {
+			expect(new Set(profile.allCapabilities)).toEqual(
+				new Set([
+					'fs:read',
+					'fs:write',
+					'shell:exec',
+					'session:ctrl',
+					'scm:read',
+					'scm:comment',
+					'pm:read',
+					'pm:write',
+				]),
 			);
 		});
 
-		it('enables stop hooks', () => {
-			expect(profile.enableStopHooks).toBe(true);
+		it('has finish hooks requiring pushed changes', () => {
+			expect(profile.finishHooks.requiresPushedChanges).toBe(true);
 		});
 
 		it('needs GitHub token', () => {
@@ -519,11 +540,11 @@ describe('AgentProfile.getLlmistGadgets', () => {
  * Helper params for fetchContext calls.
  */
 function makeContextParams(overrides: {
-	cardId?: string;
+	workItemId?: string;
 	repoFullName?: string;
 	prNumber?: number;
 	contextFiles?: Array<{ path: string; content: string }>;
-	triggerType?: string;
+	triggerEvent?: string;
 }): {
 	input: Record<string, unknown>;
 	repoDir: string;
@@ -532,11 +553,10 @@ function makeContextParams(overrides: {
 } {
 	return {
 		input: {
-			cardId: overrides.cardId,
+			workItemId: overrides.workItemId,
 			repoFullName: overrides.repoFullName ?? 'acme/widgets',
 			prNumber: overrides.prNumber ?? 42,
-			triggerType: overrides.triggerType,
-			...overrides,
+			triggerEvent: overrides.triggerEvent,
 		},
 		repoDir: '/repo',
 		contextFiles: overrides.contextFiles ?? [],
@@ -548,7 +568,7 @@ describe('fetchDirectoryListing', () => {
 	it('splitting fetchContext returns a ListDirectory injection with maxDepth:3', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ cardId: undefined, triggerType: 'pm:status-changed' });
+		const params = makeContextParams({ workItemId: undefined, triggerEvent: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -570,7 +590,7 @@ describe('fetchContextFileInjections', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('splitting');
 		const params = makeContextParams({
-			triggerType: 'pm:status-changed',
+			triggerEvent: 'pm:status-changed',
 			contextFiles: [
 				{ path: 'CLAUDE.md', content: 'project guidelines' },
 				{ path: 'README.md', content: 'readme text' },
@@ -592,7 +612,7 @@ describe('fetchContextFileInjections', () => {
 	it('returns no ReadFile injections when contextFiles is empty', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:status-changed', contextFiles: [] });
+		const params = makeContextParams({ triggerEvent: 'pm:status-changed', contextFiles: [] });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -608,7 +628,7 @@ describe('fetchSquintOverview', () => {
 		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
 		mockExecFileSync.mockReturnValue('squint overview output\n');
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:status-changed' });
+		const params = makeContextParams({ triggerEvent: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -623,7 +643,7 @@ describe('fetchSquintOverview', () => {
 	it('returns no SquintOverview injection when squint db is absent', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:status-changed' });
+		const params = makeContextParams({ triggerEvent: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -639,7 +659,7 @@ describe('fetchSquintOverview', () => {
 			throw new Error('squint not found');
 		});
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:status-changed' });
+		const params = makeContextParams({ triggerEvent: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -653,7 +673,7 @@ describe('fetchSquintOverview', () => {
 		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
 		mockExecFileSync.mockReturnValue('   ');
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:status-changed' });
+		const params = makeContextParams({ triggerEvent: 'pm:status-changed' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -669,7 +689,7 @@ describe('fetchWorkItemInjection', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		mockReadWorkItem.mockResolvedValue('# card title\n\ncard body');
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:status-changed', cardId: 'card-123' });
+		const params = makeContextParams({ triggerEvent: 'pm:status-changed', workItemId: 'card-123' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -689,7 +709,10 @@ describe('fetchWorkItemInjection', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		mockReadWorkItem.mockRejectedValue(new Error('card not found'));
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:status-changed', cardId: 'missing-card' });
+		const params = makeContextParams({
+			triggerEvent: 'pm:status-changed',
+			workItemId: 'missing-card',
+		});
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -699,10 +722,10 @@ describe('fetchWorkItemInjection', () => {
 		expect(workItemInjection).toBeUndefined();
 	});
 
-	it('never calls readWorkItem when cardId is absent', async () => {
+	it('never calls readWorkItem when workItemId is absent', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:status-changed', cardId: undefined });
+		const params = makeContextParams({ triggerEvent: 'pm:status-changed', workItemId: undefined });
 
 		await profile.fetchContext(params as Parameters<typeof profile.fetchContext>[0]);
 
@@ -717,8 +740,8 @@ describe('fetchWorkItemContext orchestration', () => {
 		mockReadWorkItem.mockResolvedValue('card content');
 		const profile = await getAgentProfile('splitting');
 		const params = makeContextParams({
-			triggerType: 'pm:status-changed',
-			cardId: 'card-abc',
+			triggerEvent: 'pm:status-changed',
+			workItemId: 'card-abc',
 			contextFiles: [{ path: 'CLAUDE.md', content: 'guidelines' }],
 		});
 
@@ -746,7 +769,7 @@ describe('fetchWorkItemContext orchestration', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		mockReadWorkItem.mockRejectedValue(new Error('unavailable'));
 		const profile = await getAgentProfile('splitting');
-		const params = makeContextParams({ triggerType: 'pm:status-changed', cardId: 'card-xyz' });
+		const params = makeContextParams({ triggerEvent: 'pm:status-changed', workItemId: 'card-xyz' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -770,7 +793,7 @@ describe('fetchReviewContext', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('review');
 		const params = makeContextParams({
-			triggerType: 'scm:check-suite-success',
+			triggerEvent: 'scm:check-suite-success',
 			repoFullName: 'acme/widgets',
 			prNumber: 42,
 		});
@@ -789,7 +812,7 @@ describe('fetchReviewContext', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('review');
 		const params = makeContextParams({
-			triggerType: 'scm:check-suite-success',
+			triggerEvent: 'scm:check-suite-success',
 			repoFullName: 'acme/widgets',
 			prNumber: 42,
 			contextFiles: [{ path: 'CLAUDE.md', content: 'project info' }],
@@ -809,7 +832,7 @@ describe('fetchReviewContext', () => {
 		mockExecFileSync.mockReturnValue('squint content\n');
 		const profile = await getAgentProfile('review');
 		const params = makeContextParams({
-			triggerType: 'scm:check-suite-success',
+			triggerEvent: 'scm:check-suite-success',
 			repoFullName: 'acme/widgets',
 			prNumber: 42,
 		});
@@ -821,11 +844,11 @@ describe('fetchReviewContext', () => {
 		expect(injections.some((i) => i.toolName === 'SquintOverview')).toBe(true);
 	});
 
-	it('does NOT include a work item injection (review has no cardId)', async () => {
+	it('does NOT include a work item injection (review has no workItemId)', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('review');
 		const params = makeContextParams({
-			triggerType: 'scm:check-suite-success',
+			triggerEvent: 'scm:check-suite-success',
 			repoFullName: 'acme/widgets',
 			prNumber: 42,
 		});
@@ -846,7 +869,7 @@ describe('fetchReviewContext', () => {
 		});
 		const profile = await getAgentProfile('review');
 		const params = makeContextParams({
-			triggerType: 'scm:check-suite-success',
+			triggerEvent: 'scm:check-suite-success',
 			repoFullName: 'acme/widgets',
 			prNumber: 42,
 		});
@@ -868,7 +891,7 @@ describe('fetchReviewContext', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('review');
 		const params = makeContextParams({
-			triggerType: 'scm:check-suite-success',
+			triggerEvent: 'scm:check-suite-success',
 			repoFullName: 'acme/widgets',
 			prNumber: 42,
 		});
@@ -894,10 +917,10 @@ describe('fetchCIContext', () => {
 		mockReadWorkItem.mockResolvedValue('ci card content');
 		const profile = await getAgentProfile('respond-to-ci');
 		const params = makeContextParams({
-			triggerType: 'scm:check-suite-failure',
+			triggerEvent: 'scm:check-suite-failure',
 			repoFullName: 'acme/widgets',
 			prNumber: 5,
-			cardId: 'ci-card',
+			workItemId: 'ci-card',
 			contextFiles: [{ path: 'CLAUDE.md', content: 'info' }],
 		});
 
@@ -915,14 +938,14 @@ describe('fetchCIContext', () => {
 		expect(toolNames).toContain('ReadWorkItem');
 	});
 
-	it('skips workItem injection when cardId is absent', async () => {
+	it('skips workItem injection when workItemId is absent', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('respond-to-ci');
 		const params = makeContextParams({
-			triggerType: 'scm:check-suite-failure',
+			triggerEvent: 'scm:check-suite-failure',
 			repoFullName: 'acme/widgets',
 			prNumber: 5,
-			cardId: undefined,
+			workItemId: undefined,
 		});
 
 		const injections = await profile.fetchContext(
@@ -949,7 +972,7 @@ describe('fetchPRCommentResponseContext', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('respond-to-pr-comment');
 		const params = makeContextParams({
-			triggerType: 'scm:pr-comment-mention',
+			triggerEvent: 'scm:pr-comment-mention',
 			repoFullName: 'acme/widgets',
 			prNumber: 7,
 		});
@@ -973,7 +996,7 @@ describe('fetchPRCommentResponseContext', () => {
 		mockExecFileSync.mockReturnValue('squint pr comment output\n');
 		const profile = await getAgentProfile('respond-to-pr-comment');
 		const params = makeContextParams({
-			triggerType: 'scm:pr-comment-mention',
+			triggerEvent: 'scm:pr-comment-mention',
 			repoFullName: 'acme/widgets',
 			prNumber: 7,
 			contextFiles: [{ path: 'AGENTS.md', content: 'agents doc' }],
@@ -993,7 +1016,7 @@ describe('fetchPRCommentResponseContext', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('respond-to-pr-comment');
 		const params = makeContextParams({
-			triggerType: 'scm:pr-comment-mention',
+			triggerEvent: 'scm:pr-comment-mention',
 			repoFullName: 'acme/widgets',
 			prNumber: 7,
 		});
@@ -1009,7 +1032,7 @@ describe('fetchPRCommentResponseContext', () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('respond-to-pr-comment');
 		const params = makeContextParams({
-			triggerType: 'scm:pr-comment-mention',
+			triggerEvent: 'scm:pr-comment-mention',
 			repoFullName: 'acme/widgets',
 			prNumber: 7,
 		});
@@ -1027,10 +1050,10 @@ describe('fetchPRCommentResponseContext', () => {
 // ============================================================================
 
 describe('resolveContextPipeline edge cases', () => {
-	it('returns empty array when triggerType is undefined', async () => {
+	it('returns empty array when triggerEvent is undefined', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('implementation');
-		const params = makeContextParams({ triggerType: undefined });
+		const params = makeContextParams({ triggerEvent: undefined });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -1039,10 +1062,10 @@ describe('resolveContextPipeline edge cases', () => {
 		expect(injections).toHaveLength(0);
 	});
 
-	it('returns empty array when triggerType matches no trigger', async () => {
+	it('returns empty array when triggerEvent matches no trigger', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('implementation');
-		const params = makeContextParams({ triggerType: 'scm:unknown-event' });
+		const params = makeContextParams({ triggerEvent: 'scm:unknown-event' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -1054,7 +1077,7 @@ describe('resolveContextPipeline edge cases', () => {
 	it('handles agent with no triggers (debug)', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('debug');
-		const params = makeContextParams({ triggerType: undefined });
+		const params = makeContextParams({ triggerEvent: undefined });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
@@ -1063,15 +1086,45 @@ describe('resolveContextPipeline edge cases', () => {
 		expect(injections).toHaveLength(0);
 	});
 
-	it('returns empty array when triggerType is empty string', async () => {
+	it('returns empty array when triggerEvent is empty string', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
 		const profile = await getAgentProfile('implementation');
-		const params = makeContextParams({ triggerType: '' });
+		const params = makeContextParams({ triggerEvent: '' });
 
 		const injections = await profile.fetchContext(
 			params as Parameters<typeof profile.fetchContext>[0],
 		);
 
 		expect(injections).toHaveLength(0);
+	});
+});
+
+// ============================================================================
+// needsGitStateStopHooks
+// ============================================================================
+
+describe('needsGitStateStopHooks', () => {
+	it('returns true when requiresPR is set', () => {
+		expect(needsGitStateStopHooks({ requiresPR: true })).toBe(true);
+	});
+
+	it('returns false when only requiresReview is set (review validation is post-session)', () => {
+		expect(needsGitStateStopHooks({ requiresReview: true })).toBe(false);
+	});
+
+	it('returns true when requiresPushedChanges is set', () => {
+		expect(needsGitStateStopHooks({ requiresPushedChanges: true })).toBe(true);
+	});
+
+	it('returns false when only blockGitPush is set', () => {
+		expect(needsGitStateStopHooks({ blockGitPush: true })).toBe(false);
+	});
+
+	it('returns false for empty hooks', () => {
+		expect(needsGitStateStopHooks({})).toBe(false);
+	});
+
+	it('returns true when multiple finish requirements are set', () => {
+		expect(needsGitStateStopHooks({ requiresPR: true, requiresReview: true })).toBe(true);
 	});
 });

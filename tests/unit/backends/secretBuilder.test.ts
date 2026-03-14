@@ -8,8 +8,15 @@ vi.mock('../../../src/github/personas.js', () => ({
 	getPersonaToken: vi.fn(),
 }));
 
-import type { AgentProfile } from '../../../src/backends/agent-profiles.js';
-import { augmentProjectSecrets, resolveGitHubToken } from '../../../src/backends/secretBuilder.js';
+import type { AgentProfile } from '../../../src/agents/definitions/profiles.js';
+import { ENV_VAR_NAME } from '../../../src/backends/progressState.js';
+import {
+	GITHUB_ACK_COMMENT_ID_ENV_VAR,
+	augmentProjectSecrets,
+	injectGitHubAckCommentId,
+	injectProgressCommentId,
+	resolveGitHubToken,
+} from '../../../src/backends/secretBuilder.js';
 import { getAllProjectCredentials } from '../../../src/config/provider.js';
 import { getPersonaToken } from '../../../src/github/personas.js';
 import type { AgentInput, ProjectConfig } from '../../../src/types/index.js';
@@ -32,16 +39,14 @@ function makeProject(overrides?: Partial<ProjectConfig>): ProjectConfig {
 function makeProfile(overrides?: Partial<AgentProfile>): AgentProfile {
 	return {
 		filterTools: (tools) => tools,
-		sdkTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
-		enableStopHooks: true,
+		allCapabilities: ['fs:read', 'fs:write', 'shell:exec'],
 		needsGitHubToken: false,
+		finishHooks: {},
 		fetchContext: vi.fn().mockResolvedValue([]),
 		buildTaskPrompt: () => 'Process the work item',
 		capabilities: {
-			canEditFiles: true,
-			canCreatePR: true,
-			canUpdateChecklists: true,
-			isReadOnly: false,
+			required: ['fs:read'],
+			optional: ['fs:write', 'shell:exec'],
 		},
 		...overrides,
 	};
@@ -162,5 +167,73 @@ describe('resolveGitHubToken', () => {
 		await expect(resolveGitHubToken(profile, 'project-id', 'implementation')).rejects.toThrow(
 			'persona not found',
 		);
+	});
+});
+
+describe('injectProgressCommentId', () => {
+	it('injects env var when workItemId and string ackCommentId are provided', () => {
+		const secrets: Record<string, string> = {};
+		injectProgressCommentId(secrets, 'card-123', 'ack-comment-456');
+		expect(secrets[ENV_VAR_NAME]).toBe('card-123:ack-comment-456');
+	});
+
+	it('does not inject when ackCommentId is a number (GitHub ack comment)', () => {
+		const secrets: Record<string, string> = {};
+		injectProgressCommentId(secrets, 'card-123', 12345);
+		expect(secrets[ENV_VAR_NAME]).toBeUndefined();
+	});
+
+	it('does not inject when workItemId is undefined', () => {
+		const secrets: Record<string, string> = {};
+		injectProgressCommentId(secrets, undefined, 'ack-comment-456');
+		expect(secrets[ENV_VAR_NAME]).toBeUndefined();
+	});
+
+	it('does not inject when ackCommentId is undefined', () => {
+		const secrets: Record<string, string> = {};
+		injectProgressCommentId(secrets, 'card-123', undefined);
+		expect(secrets[ENV_VAR_NAME]).toBeUndefined();
+	});
+
+	it('does not inject when ackCommentId is an empty string', () => {
+		const secrets: Record<string, string> = {};
+		injectProgressCommentId(secrets, 'card-123', '');
+		expect(secrets[ENV_VAR_NAME]).toBeUndefined();
+	});
+});
+
+describe('injectGitHubAckCommentId', () => {
+	it('injects env var when isGitHubAck is true and ackCommentId is a number', () => {
+		const secrets: Record<string, string> = {};
+		injectGitHubAckCommentId(secrets, 12345, true);
+		expect(secrets[GITHUB_ACK_COMMENT_ID_ENV_VAR]).toBe('12345');
+	});
+
+	it('does not inject when isGitHubAck is false (PM ack)', () => {
+		const secrets: Record<string, string> = {};
+		injectGitHubAckCommentId(secrets, 12345, false);
+		expect(secrets[GITHUB_ACK_COMMENT_ID_ENV_VAR]).toBeUndefined();
+	});
+
+	it('does not inject when ackCommentId is a string (PM comment ID)', () => {
+		const secrets: Record<string, string> = {};
+		injectGitHubAckCommentId(secrets, 'string-id', true);
+		expect(secrets[GITHUB_ACK_COMMENT_ID_ENV_VAR]).toBeUndefined();
+	});
+
+	it('does not inject when ackCommentId is undefined', () => {
+		const secrets: Record<string, string> = {};
+		injectGitHubAckCommentId(secrets, undefined, true);
+		expect(secrets[GITHUB_ACK_COMMENT_ID_ENV_VAR]).toBeUndefined();
+	});
+
+	it('does not inject when ackCommentId is zero', () => {
+		const secrets: Record<string, string> = {};
+		injectGitHubAckCommentId(secrets, 0, true);
+		expect(secrets[GITHUB_ACK_COMMENT_ID_ENV_VAR]).toBeUndefined();
+	});
+
+	it('uses the GITHUB_ACK_COMMENT_ID_ENV_VAR constant as the key', () => {
+		expect(GITHUB_ACK_COMMENT_ID_ENV_VAR).toBe('CASCADE_GITHUB_ACK_COMMENT_ID');
 	});
 });

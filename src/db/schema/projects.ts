@@ -1,4 +1,6 @@
-import { boolean, numeric, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, jsonb, numeric, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+
+import type { EngineSettings } from '../../config/engineSettings.js';
 import { organizations } from './organizations.js';
 
 export const projects = pgTable(
@@ -14,10 +16,11 @@ export const projects = pgTable(
 		branchPrefix: text('branch_prefix').default('feature/'),
 
 		model: text('model'),
-		cardBudgetUsd: numeric('card_budget_usd', { precision: 10, scale: 2 }),
-		agentBackend: text('agent_backend'),
-		subscriptionCostZero: boolean('subscription_cost_zero').default(false),
+		workItemBudgetUsd: numeric('work_item_budget_usd', { precision: 10, scale: 2 }),
+		agentEngine: text('agent_engine'),
+		agentEngineSettings: jsonb('agent_engine_settings').$type<EngineSettings>(),
 		squintDbUrl: text('squint_db_url'),
+		runLinksEnabled: boolean('run_links_enabled').default(false).notNull(),
 
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')

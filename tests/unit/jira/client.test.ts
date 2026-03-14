@@ -52,6 +52,7 @@ const {
 	},
 	mockIssueFields: {
 		getFields: vi.fn(),
+		createCustomField: vi.fn(),
 	},
 }));
 
@@ -102,6 +103,7 @@ describe('jiraClient', () => {
 		mockProjects.searchProjects.mockReset();
 		mockProjects.getAllStatuses.mockReset();
 		mockIssueFields.getFields.mockReset();
+		mockIssueFields.createCustomField.mockReset();
 		_resetCloudIdCache();
 	});
 
@@ -800,6 +802,142 @@ describe('jiraClient', () => {
 				captured = getJiraCredentials();
 			});
 			expect(captured).toEqual(creds);
+		});
+	});
+
+	describe('createCustomField', () => {
+		it('calls createCustomField with name and type, returns id and name', async () => {
+			mockIssueFields.createCustomField.mockResolvedValue({
+				id: 'customfield_10001',
+				name: 'Cost',
+			});
+
+			const result = await withJiraCredentials(creds, () =>
+				jiraClient.createCustomField(
+					'Cost',
+					'com.atlassian.jira.plugin.system.customfieldtypes:float',
+				),
+			);
+
+			expect(result).toEqual({
+				id: 'customfield_10001',
+				name: 'Cost',
+			});
+			expect(mockIssueFields.createCustomField).toHaveBeenCalledWith({
+				name: 'Cost',
+				type: 'com.atlassian.jira.plugin.system.customfieldtypes:float',
+			});
+		});
+
+		it('passes searcherKey when provided, enabling JQL searchability', async () => {
+			mockIssueFields.createCustomField.mockResolvedValue({
+				id: 'customfield_10002',
+				name: 'Budget',
+			});
+
+			const result = await withJiraCredentials(creds, () =>
+				jiraClient.createCustomField(
+					'Budget',
+					'com.atlassian.jira.plugin.system.customfieldtypes:float',
+					'com.atlassian.jira.plugin.system.customfieldtypes:exactnumber',
+				),
+			);
+
+			expect(result).toEqual({
+				id: 'customfield_10002',
+				name: 'Budget',
+			});
+			expect(mockIssueFields.createCustomField).toHaveBeenCalledWith({
+				name: 'Budget',
+				type: 'com.atlassian.jira.plugin.system.customfieldtypes:float',
+				searcherKey: 'com.atlassian.jira.plugin.system.customfieldtypes:exactnumber',
+			});
+		});
+
+		it('returns empty id and name when response fields are missing', async () => {
+			mockIssueFields.createCustomField.mockResolvedValue({});
+
+			const result = await withJiraCredentials(creds, () =>
+				jiraClient.createCustomField(
+					'Cost',
+					'com.atlassian.jira.plugin.system.customfieldtypes:float',
+				),
+			);
+
+			expect(result).toEqual({
+				id: '',
+				name: '',
+			});
+		});
+
+		it('throws enriched error with admin permission message on API failure', async () => {
+			const apiError = Object.assign(new Error('Forbidden'), {
+				response: {
+					data: {
+						errorMessages: ['Only administrators can create custom fields'],
+					},
+				},
+			});
+			mockIssueFields.createCustomField.mockRejectedValue(apiError);
+
+			const { logger } = await import('../../../src/utils/logging.js');
+
+			await expect(
+				withJiraCredentials(creds, () =>
+					jiraClient.createCustomField(
+						'Cost',
+						'com.atlassian.jira.plugin.system.customfieldtypes:float',
+					),
+				),
+			).rejects.toThrow(
+				/JIRA createCustomField failed \(admin permissions may be required\): Forbidden.*Only administrators/,
+			);
+
+			expect(logger.error).toHaveBeenCalledWith(
+				'JIRA createCustomField failed',
+				expect.objectContaining({
+					name: 'Cost',
+					type: 'com.atlassian.jira.plugin.system.customfieldtypes:float',
+					detail: expect.objectContaining({
+						errorMessages: ['Only administrators can create custom fields'],
+					}),
+				}),
+			);
+		});
+
+		it('throws enriched error without detail when error has no response', async () => {
+			mockIssueFields.createCustomField.mockRejectedValue(new Error('Network error'));
+
+			const { logger } = await import('../../../src/utils/logging.js');
+
+			await expect(
+				withJiraCredentials(creds, () =>
+					jiraClient.createCustomField(
+						'Cost',
+						'com.atlassian.jira.plugin.system.customfieldtypes:float',
+					),
+				),
+			).rejects.toThrow(
+				'JIRA createCustomField failed (admin permissions may be required): Network error',
+			);
+
+			expect(logger.error).toHaveBeenCalledWith(
+				'JIRA createCustomField failed',
+				expect.objectContaining({
+					name: 'Cost',
+					type: 'com.atlassian.jira.plugin.system.customfieldtypes:float',
+					detail: undefined,
+				}),
+			);
+		});
+
+		it('throws when called outside withJiraCredentials scope', async () => {
+			await expect(
+				jiraClient.createCustomField(
+					'Cost',
+					'com.atlassian.jira.plugin.system.customfieldtypes:float',
+				),
+			).rejects.toThrow('No JIRA credentials in scope');
 		});
 	});
 });

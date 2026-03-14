@@ -195,7 +195,7 @@ describe('TrelloRouterAdapter', () => {
 		it('dispatches to trigger registry', async () => {
 			vi.mocked(mockTriggerRegistry.dispatch).mockResolvedValue({
 				agentType: 'implementation',
-				agentInput: { cardId: 'card1' },
+				agentInput: { workItemId: 'card1' },
 			} as never);
 
 			const result = await adapter.dispatchWithCredentials(
@@ -256,7 +256,7 @@ describe('TrelloRouterAdapter', () => {
 		it('builds a trello job with correct fields', () => {
 			const result = {
 				agentType: 'implementation',
-				agentInput: { cardId: 'card1' },
+				agentInput: { workItemId: 'card1' },
 			};
 			const job = adapter.buildJob(
 				{
@@ -268,12 +268,11 @@ describe('TrelloRouterAdapter', () => {
 				{ action: { type: 'commentCard' } },
 				mockProject,
 				result as never,
-				'comment-abc',
 			);
 			expect(job.type).toBe('trello');
 			expect(job.source).toBe('trello');
-			expect((job as { cardId: string }).cardId).toBe('card1');
-			expect((job as { ackCommentId: string }).ackCommentId).toBe('comment-abc');
+			expect((job as { workItemId: string }).workItemId).toBe('card1');
+			expect((job as { ackCommentId?: string }).ackCommentId).toBeUndefined();
 		});
 	});
 });

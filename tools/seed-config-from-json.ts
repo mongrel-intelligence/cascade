@@ -11,7 +11,6 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { type CascadeConfigSchema, validateConfig } from '../src/config/schema.js';
 import { closeDb, getDb } from '../src/db/client.js';
@@ -52,9 +51,8 @@ function buildProjectValues(p: ProjectConfig) {
 		baseBranch: p.baseBranch,
 		branchPrefix: p.branchPrefix,
 		model: p.model ?? null,
-		cardBudgetUsd: p.cardBudgetUsd ? String(p.cardBudgetUsd) : null,
-		agentBackend: p.agentBackend?.default ?? null,
-		subscriptionCostZero: p.agentBackend?.subscriptionCostZero ?? false,
+		workItemBudgetUsd: p.workItemBudgetUsd ? String(p.workItemBudgetUsd) : null,
+		agentEngine: p.agentEngine?.default ?? null,
 	};
 }
 
@@ -68,8 +66,8 @@ async function seedDefaults(d: CascadeConfig['defaults']) {
 		freshMachineTimeoutMs: d.freshMachineTimeoutMs,
 		watchdogTimeoutMs: d.watchdogTimeoutMs,
 		postJobGracePeriodMs: d.postJobGracePeriodMs,
-		cardBudgetUsd: String(d.cardBudgetUsd),
-		agentBackend: d.agentBackend,
+		workItemBudgetUsd: String(d.workItemBudgetUsd),
+		agentEngine: d.agentEngine,
 		progressModel: d.progressModel,
 		progressIntervalMinutes: String(d.progressIntervalMinutes),
 	};
@@ -81,30 +79,6 @@ async function seedDefaults(d: CascadeConfig['defaults']) {
 			set: { ...values, updatedAt: new Date() },
 		});
 	console.log('  Defaults upserted.');
-}
-
-async function seedGlobalAgentConfigs(d: CascadeConfig['defaults']) {
-	const db = getDb();
-	const agentTypes = new Set([
-		...Object.keys(d.agentModels ?? {}),
-		...Object.keys(d.agentIterations ?? {}),
-	]);
-	for (const agentType of agentTypes) {
-		console.log(`  Inserting global agent config: ${agentType}...`);
-		const model = d.agentModels?.[agentType] ?? null;
-		const maxIterations = d.agentIterations?.[agentType] ?? null;
-		// Use raw SQL because the partial unique index (WHERE project_id IS NULL)
-		// can't be expressed via Drizzle's onConflictDoUpdate target
-		await db.execute(sql`
-			INSERT INTO agent_configs (project_id, agent_type, model, max_iterations)
-			VALUES (NULL, ${agentType}, ${model}, ${maxIterations})
-			ON CONFLICT (agent_type) WHERE project_id IS NULL
-			DO UPDATE SET
-				model = COALESCE(EXCLUDED.model, agent_configs.model),
-				max_iterations = COALESCE(EXCLUDED.max_iterations, agent_configs.max_iterations),
-				updated_at = NOW()
-		`);
-	}
 }
 
 async function seedProject(p: ProjectConfig) {
@@ -146,23 +120,23 @@ async function seedProjectAgentConfigs(p: ProjectConfig) {
 	const db = getDb();
 	const agentTypes = new Set([
 		...Object.keys(p.agentModels ?? {}),
-		...Object.keys(p.agentBackend?.overrides ?? {}),
+		...Object.keys(p.agentEngine?.overrides ?? {}),
 		...Object.keys(p.prompts ?? {}),
 	]);
 	for (const agentType of agentTypes) {
 		console.log(`    Inserting project agent config: ${agentType}...`);
 		const model = p.agentModels?.[agentType] ?? null;
-		const agentBackend = p.agentBackend?.overrides?.[agentType] ?? null;
+		const agentEngine = p.agentEngine?.overrides?.[agentType] ?? null;
 		const prompt = p.prompts?.[agentType] ?? null;
 		// Use raw SQL because the partial unique index (WHERE project_id IS NOT NULL)
 		// can't be expressed via Drizzle's onConflictDoUpdate target
 		await db.execute(sql`
-			INSERT INTO agent_configs (project_id, agent_type, model, agent_backend, prompt)
-			VALUES (${p.id}, ${agentType}, ${model}, ${agentBackend}, ${prompt})
+			INSERT INTO agent_configs (project_id, agent_type, model, agent_engine, prompt)
+			VALUES (${p.id}, ${agentType}, ${model}, ${agentEngine}, ${prompt})
 			ON CONFLICT (project_id, agent_type) WHERE project_id IS NOT NULL
 			DO UPDATE SET
 				model = COALESCE(EXCLUDED.model, agent_configs.model),
-				agent_backend = COALESCE(EXCLUDED.agent_backend, agent_configs.agent_backend),
+				agent_engine = COALESCE(EXCLUDED.agent_engine, agent_configs.agent_engine),
 				prompt = COALESCE(EXCLUDED.prompt, agent_configs.prompt),
 				updated_at = NOW()
 		`);
@@ -178,8 +152,6 @@ async function main() {
 	getDb(); // initialize connection
 
 	await seedDefaults(config.defaults);
-	await seedGlobalAgentConfigs(config.defaults);
-
 	for (const p of config.projects) {
 		await seedProject(p);
 		await seedProjectIntegrations(p);

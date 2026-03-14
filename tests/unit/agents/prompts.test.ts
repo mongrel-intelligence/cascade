@@ -14,7 +14,7 @@ vi.mock('../../../src/agents/definitions/index.js', () => ({
 			'respond-to-pr-comment',
 			'respond-to-planning-comment',
 			'debug',
-			'email-joke',
+			'backlog-manager',
 		]),
 }));
 
@@ -26,6 +26,7 @@ import {
 	getTemplateVariables,
 	getValidAgentTypes,
 	initPrompts,
+	readTemplateFileSync,
 	renderCustomPrompt,
 	resolveIncludes,
 	validateTemplate,
@@ -61,16 +62,16 @@ describe('getSystemPrompt', () => {
 
 	it('renders context variables in splitting prompt', () => {
 		const prompt = getSystemPrompt('splitting', {
-			storiesListId: 'stories-123',
+			backlogListId: 'backlog-123',
 			processedLabelId: 'label-456',
 		});
-		expect(prompt).toContain('STORIES_LIST_ID: stories-123');
+		expect(prompt).toContain('BACKLOG_LIST_ID: backlog-123');
 		expect(prompt).toContain('PROCESSED_LABEL_ID: label-456');
 	});
 
 	it('uses default values when context is not provided', () => {
 		const prompt = getSystemPrompt('splitting');
-		expect(prompt).toContain('STORIES_LIST_ID: NOT_CONFIGURED');
+		expect(prompt).toContain('BACKLOG_LIST_ID: NOT_CONFIGURED');
 		expect(prompt).toContain('PROCESSED_LABEL_ID: NOT_CONFIGURED');
 	});
 
@@ -145,6 +146,74 @@ describe('system prompts content', () => {
 		const prompt = getSystemPrompt('respond-to-planning-comment');
 		expect(prompt).toContain('Step N:');
 		expect(prompt).toContain('clean task names without');
+	});
+
+	it('backlog-manager prompt includes pipeline check as first step', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		expect(prompt).toContain('CHECK PIPELINE FIRST');
+		expect(prompt).toContain('MANDATORY FIRST STEP');
+	});
+
+	it('backlog-manager prompt checks only active pipeline stages (not DONE)', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		expect(prompt).toContain('TODO');
+		expect(prompt).toContain('IN PROGRESS');
+		expect(prompt).toContain('IN REVIEW');
+		expect(prompt).toContain('DONE');
+		// Verify DONE is explicitly noted as not blocking
+		expect(prompt).toContain('do not block new work');
+	});
+
+	it('backlog-manager prompt instructs to exit silently when pipeline not empty', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		expect(prompt).toContain('Exit immediately');
+		expect(prompt).toContain('EXIT SILENTLY');
+	});
+
+	it('backlog-manager prompt includes PM gadgets only', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		expect(prompt).toContain('ListWorkItems');
+		expect(prompt).toContain('ReadWorkItem');
+		expect(prompt).toContain('UpdateWorkItem');
+		expect(prompt).toContain('PostComment');
+		// Should NOT include codebase exploration tools
+		expect(prompt).not.toContain('ListDirectory');
+		expect(prompt).not.toContain('ReadFile');
+		expect(prompt).not.toContain('RipGrep');
+	});
+
+	it('backlog-manager prompt uses template variables for PM terminology', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		// Default fallback values should be used
+		expect(prompt).toContain('cards');
+		expect(prompt).toContain('card');
+	});
+
+	it('backlog-manager prompt warns against describing commands instead of invoking them', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		expect(prompt).toContain('EXECUTE COMMANDS');
+		expect(prompt).toContain('DO NOT JUST DESCRIBE THEM');
+		expect(prompt).toContain('text output has no effect on the system');
+	});
+
+	it('backlog-manager prompt posts comment before moving card', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		const commentStepIdx = prompt.indexOf('5. **Post a comment**');
+		const moveStepIdx = prompt.indexOf('6. **Move the selected');
+		expect(commentStepIdx).toBeGreaterThan(-1);
+		expect(moveStepIdx).toBeGreaterThan(-1);
+		expect(commentStepIdx).toBeLessThan(moveStepIdx);
+		// Rule reinforces the ordering
+		expect(prompt).toContain('comment BEFORE moving');
+	});
+
+	it('backlog-manager prompt renders custom PM terminology', () => {
+		const prompt = getSystemPrompt('backlog-manager', {
+			workItemNoun: 'issue',
+			workItemNounPlural: 'issues',
+		});
+		expect(prompt).toContain('issues');
+		expect(prompt).toContain('issue');
 	});
 });
 
@@ -260,6 +329,45 @@ describe('getRawTemplate', () => {
 	});
 });
 
+describe('readTemplateFileSync', () => {
+	it('returns raw .eta file content without requiring initPrompts()', () => {
+		const content = readTemplateFileSync('splitting');
+		expect(content).toBeTruthy();
+		expect(typeof content).toBe('string');
+		expect(content).toContain('<%');
+	});
+
+	it('returns content for all known builtin agent types', () => {
+		const builtinTypes = [
+			'splitting',
+			'planning',
+			'implementation',
+			'review',
+			'respond-to-review',
+			'respond-to-ci',
+			'respond-to-pr-comment',
+			'respond-to-planning-comment',
+			'debug',
+			'backlog-manager',
+		];
+		for (const agentType of builtinTypes) {
+			const content = readTemplateFileSync(agentType);
+			expect(content, `expected ${agentType} to have a .eta file`).toBeTruthy();
+		}
+	});
+
+	it('returns undefined for non-existent agent type (does not throw)', () => {
+		const content = readTemplateFileSync('nonexistent-agent-xyz');
+		expect(content).toBeUndefined();
+	});
+
+	it('returns the same content as getRawTemplate for known types', () => {
+		const viaSync = readTemplateFileSync('implementation');
+		const viaGet = getRawTemplate('implementation');
+		expect(viaSync).toBe(viaGet);
+	});
+});
+
 describe('getRawPartial', () => {
 	it('returns raw partial content from disk', () => {
 		const content = getRawPartial('git');
@@ -334,7 +442,7 @@ describe('getTemplateVariables', () => {
 	it('includes common variables', () => {
 		const vars = getTemplateVariables();
 		const names = vars.map((v) => v.name);
-		expect(names).toContain('cardId');
+		expect(names).toContain('workItemId');
 		expect(names).toContain('projectId');
 	});
 });

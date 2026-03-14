@@ -28,7 +28,7 @@ export type TriggerParameterValue = string | boolean | number;
  */
 export interface TriggerParameterDef {
 	name: string;
-	type: 'string' | 'email' | 'boolean' | 'select' | 'number';
+	type: 'string' | 'boolean' | 'select' | 'number';
 	label: string;
 	description: string | null;
 	required: boolean;
@@ -77,8 +77,6 @@ export interface AgentTriggersView {
 export interface ProjectIntegrationsMap {
 	pm: string | null;
 	scm: string | null;
-	email: string | null;
-	sms: string | null;
 }
 
 /**
@@ -100,14 +98,13 @@ export interface ProjectTriggersView {
 export const TRIGGER_CATEGORY_LABELS: Record<string, string> = {
 	pm: 'Project Management',
 	scm: 'Source Control',
-	email: 'Email',
-	sms: 'SMS',
+	internal: 'Internal',
 } as const;
 
 /**
  * Valid trigger categories.
  */
-export type TriggerCategory = 'pm' | 'scm' | 'email' | 'sms';
+export type TriggerCategory = 'pm' | 'scm' | 'internal';
 
 // ============================================================================
 // Known Trigger Registry
@@ -192,9 +189,9 @@ export const TRIGGER_REGISTRY: Record<TriggerCategory, KnownTriggerEvent[]> = {
 			providers: ['github'],
 		},
 		{
-			event: 'scm:pr-comment',
-			label: 'PR Comment',
-			description: 'Comment added to PR',
+			event: 'scm:pr-comment-mention',
+			label: 'PR Comment Mention',
+			description: 'Bot @mentioned in PR comment',
 			contextPipeline: ['prContext', 'prConversation'],
 			providers: ['github'],
 		},
@@ -212,20 +209,19 @@ export const TRIGGER_REGISTRY: Record<TriggerCategory, KnownTriggerEvent[]> = {
 			contextPipeline: ['prContext'],
 			providers: ['github'],
 		},
-	],
-	email: [
 		{
-			event: 'email:received',
-			label: 'Email Received',
-			description: 'Email received',
-			contextPipeline: ['prefetchedEmails'],
+			event: 'scm:pr-conflict-detected',
+			label: 'PR Conflict Detected',
+			description: 'PR has merge conflicts with the base branch',
+			contextPipeline: ['prContext'],
+			providers: ['github'],
 		},
 	],
-	sms: [
+	internal: [
 		{
-			event: 'sms:received',
-			label: 'SMS Received',
-			description: 'SMS received',
+			event: 'internal:auto-chain',
+			label: 'Auto-Chain',
+			description: 'Orchestration trigger for chaining agents after completion',
 			contextPipeline: [],
 		},
 	],

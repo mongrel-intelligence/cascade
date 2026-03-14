@@ -1,13 +1,12 @@
 import type { z } from 'zod';
 import type { CascadeConfigSchema, ProjectConfigSchema } from '../config/schema.js';
-import type { EmailSummary } from '../email/types.js';
 import type { PersonaIdentities } from '../github/personas.js';
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 export type CascadeConfig = z.infer<typeof CascadeConfigSchema>;
 
 export interface AgentInput {
-	cardId?: string;
+	workItemId?: string;
 	prNumber?: number;
 	repoDir?: string;
 
@@ -21,13 +20,17 @@ export interface AgentInput {
 		| 'ci-success'
 		| 'review-requested'
 		| 'pr-opened'
+		| 'conflict-resolution'
 		| 'manual';
+
+	/** YAML-format trigger event name for context pipeline resolution (e.g. 'scm:check-suite-success') */
+	triggerEvent?: string;
 
 	// Debug agent fields
 	logDir?: string;
-	originalCardId?: string;
-	originalCardName?: string;
-	originalCardUrl?: string;
+	originalWorkItemId?: string;
+	originalWorkItemName?: string;
+	originalWorkItemUrl?: string;
 	detectedAgentType?: string;
 
 	// Trello comment trigger fields
@@ -37,10 +40,6 @@ export interface AgentInput {
 	// PR comment trigger fields (for respond-to-pr-comment and similar agents)
 	triggerCommentBody?: string;
 	triggerCommentPath?: string;
-
-	// Email-joke agent fields
-	senderEmail?: string;
-	preFoundEmails?: EmailSummary[]; // pre-fetched before agent start to skip if empty
 
 	// Interactive mode (local development)
 	interactive?: boolean;
@@ -83,9 +82,20 @@ export interface TriggerResult {
 	agentType: string | null;
 	agentInput: AgentInput;
 	workItemId?: string;
+	/** URL to the work item in the PM provider (e.g. Trello card URL, Jira issue URL). */
+	workItemUrl?: string;
+	/** Display title of the work item (e.g. Trello card name, Jira issue summary). */
+	workItemTitle?: string;
 	prNumber?: number;
+	/** URL to the pull request (e.g. https://github.com/owner/repo/pull/123). */
+	prUrl?: string;
+	/** Display title of the pull request. */
+	prTitle?: string;
 	/** When true, the worker must poll for all CI checks to pass before starting the agent. */
 	waitForChecks?: boolean;
+	/** Called when the router cannot enqueue the job (work-item lock, concurrency limit).
+	 *  Allows the trigger handler to undo side-effects like dedup marking. */
+	onBlocked?: () => void;
 }
 
 export interface TriggerHandler {

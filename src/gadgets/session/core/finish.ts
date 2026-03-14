@@ -2,6 +2,8 @@ import { execSync } from 'node:child_process';
 import { githubClient } from '../../../github/client.js';
 import type { SessionHooks } from '../../sessionState.js';
 
+export { writePushedChangesSidecar } from './sidecar.js';
+
 export function hasUncommittedChanges(): boolean {
 	try {
 		const status = execSync('git status --porcelain', { encoding: 'utf-8' });
@@ -20,6 +22,33 @@ export async function findPRForCurrentBranch(): Promise<string | null> {
 		const [, owner, repo] = match;
 		const pr = await githubClient.getOpenPRByBranch(owner, repo, branch);
 		return pr?.htmlUrl ?? null;
+	} catch {
+		return null;
+	}
+}
+
+export function hasNewCommits(initialSha: string): boolean {
+	try {
+		const currentSha = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
+		return currentSha !== initialSha;
+	} catch {
+		// If git fails here, preceding checks (uncommitted/unpushed) would have
+		// already caught real issues. Fail-open: assume work was done.
+		return true;
+	}
+}
+
+export function getCurrentBranch(): string | null {
+	try {
+		return execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+	} catch {
+		return null;
+	}
+}
+
+export function getCurrentHeadSha(): string | null {
+	try {
+		return execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
 	} catch {
 		return null;
 	}
@@ -49,6 +78,7 @@ export interface SessionState {
 	prCreated: boolean;
 	reviewSubmitted: boolean;
 	hooks: SessionHooks;
+	initialHeadSha?: string | null;
 }
 
 export interface FinishValidationError {
@@ -99,6 +129,13 @@ export async function validateFinish(state: SessionState): Promise<FinishValidat
 				valid: false,
 				error:
 					'Cannot finish session without pushing changes. You must push your commits (git push) before calling Finish.',
+			};
+		}
+		if (state.initialHeadSha && !hasNewCommits(state.initialHeadSha)) {
+			return {
+				valid: false,
+				error:
+					'Cannot finish session without making any changes. You must commit and push at least one change before calling Finish.',
 			};
 		}
 	}

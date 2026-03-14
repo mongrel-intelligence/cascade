@@ -5,6 +5,7 @@ import {
 	completeRun,
 	createRun,
 	storeRunLogs,
+	updateRunJobId,
 } from '../../db/repositories/runsRepository.js';
 import { logger } from '../../utils/logging.js';
 import type { FileLogger } from './executionPipeline.js';
@@ -15,10 +16,10 @@ import type { FileLogger } from './executionPipeline.js';
 
 export interface RunTrackingInput {
 	projectId: string;
-	cardId?: string;
+	workItemId?: string;
 	prNumber?: number;
 	agentType: string;
-	backendName: string;
+	engineName: string;
 	triggerType?: string;
 }
 
@@ -28,6 +29,7 @@ export interface RunTrackingInput {
 
 /**
  * Create a DB run record, suppressing errors so agent execution is unaffected.
+ * If JOB_ID env var is set (Docker mode), store it immediately after run creation.
  */
 export async function tryCreateRun(
 	input: RunTrackingInput,
@@ -35,16 +37,29 @@ export async function tryCreateRun(
 	maxIterations?: number,
 ): Promise<string | undefined> {
 	try {
-		return await createRun({
+		const runId = await createRun({
 			projectId: input.projectId,
-			cardId: input.cardId,
+			workItemId: input.workItemId,
 			prNumber: input.prNumber,
 			agentType: input.agentType,
-			backend: input.backendName,
+			engine: input.engineName,
 			triggerType: input.triggerType,
 			model,
 			maxIterations,
 		});
+
+		// Store BullMQ jobId if running in Docker (JOB_ID env var is set)
+		const jobId = process.env.JOB_ID;
+		if (jobId) {
+			try {
+				await updateRunJobId(runId, jobId);
+			} catch (err) {
+				logger.warn('Failed to store job ID for run', { runId, jobId, error: String(err) });
+				// Continue - failure to store jobId should not block agent execution
+			}
+		}
+
+		return runId;
 	} catch (err) {
 		logger.warn('Failed to create run record', { error: String(err) });
 		return undefined;
@@ -52,17 +67,17 @@ export async function tryCreateRun(
 }
 
 /**
- * Store cascade and llmist log files for a run, suppressing errors.
+ * Store cascade and engine log files for a run, suppressing errors.
  */
 export async function tryStoreRunLogs(runId: string, fileLogger: FileLogger): Promise<void> {
 	try {
 		const cascadeLog = fs.existsSync(fileLogger.logPath)
 			? fs.readFileSync(fileLogger.logPath, 'utf-8')
 			: undefined;
-		const llmistLog = fs.existsSync(fileLogger.llmistLogPath)
-			? fs.readFileSync(fileLogger.llmistLogPath, 'utf-8')
+		const engineLog = fs.existsSync(fileLogger.engineLogPath)
+			? fs.readFileSync(fileLogger.engineLogPath, 'utf-8')
 			: undefined;
-		await storeRunLogs(runId, cascadeLog, llmistLog);
+		await storeRunLogs(runId, cascadeLog, engineLog);
 	} catch (err) {
 		logger.warn('Failed to store run logs', { runId, error: String(err) });
 	}
@@ -80,10 +95,9 @@ export async function tryCompleteRun(runId: string, input: CompleteRunInput): Pr
 }
 
 /**
- * Finalize a backend run: store logs and mark complete.
- * Used by non-llmist backends (claude-code adapter) that don't accumulate LLM calls.
+ * Finalize an engine run: store logs and mark complete.
  */
-export async function finalizeBackendRun(
+export async function finalizeEngineRun(
 	runId: string | undefined,
 	fileLogger: FileLogger,
 	input: CompleteRunInput,

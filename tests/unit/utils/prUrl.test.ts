@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractPRUrl } from '../../../src/utils/prUrl.js';
+import { extractPRNumber, extractPRUrl } from '../../../src/utils/prUrl.js';
 
 describe('extractPRUrl', () => {
 	it('extracts a GitHub PR URL from plain text', () => {
@@ -42,5 +42,27 @@ describe('extractPRUrl', () => {
 		const json = JSON.stringify({ prUrl: 'https://github.com/org/repo/pull/99', success: true });
 		// In JSON, URL is surrounded by quotes which are excluded by the regex
 		expect(extractPRUrl(json)).toBe('https://github.com/org/repo/pull/99');
+	});
+});
+
+describe('extractPRNumber', () => {
+	it('extracts PR number from a full GitHub PR URL', () => {
+		expect(extractPRNumber('https://github.com/owner/repo/pull/42')).toBe(42);
+	});
+
+	it('extracts PR number from text containing a PR path', () => {
+		expect(extractPRNumber('Created /pull/123 successfully')).toBe(123);
+	});
+
+	it('returns undefined when no PR path is present', () => {
+		expect(extractPRNumber('No PR here')).toBeUndefined();
+	});
+
+	it('returns undefined for empty string', () => {
+		expect(extractPRNumber('')).toBeUndefined();
+	});
+
+	it('extracts the first PR number when multiple are present', () => {
+		expect(extractPRNumber('/pull/1 and /pull/2')).toBe(1);
 	});
 });

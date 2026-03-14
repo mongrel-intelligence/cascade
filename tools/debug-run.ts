@@ -36,7 +36,7 @@ async function main() {
 		agentType: run.agentType,
 		status: run.status,
 		projectId: run.projectId,
-		cardId: run.cardId,
+		workItemId: run.workItemId,
 	});
 
 	if (!run.projectId) {
@@ -58,7 +58,7 @@ async function main() {
 
 	await withTrelloCredentials({ apiKey: trelloApiKey, token: trelloToken }, async () => {
 		console.log('Triggering debug analysis...');
-		await triggerDebugAnalysis(runId, project, config, run.cardId ?? undefined);
+		await triggerDebugAnalysis(runId, project, config, run.workItemId ?? undefined);
 		console.log('Debug analysis complete.');
 	});
 }

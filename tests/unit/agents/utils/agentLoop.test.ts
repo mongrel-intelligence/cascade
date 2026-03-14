@@ -5,6 +5,10 @@ vi.mock('../../../../src/gadgets/tmux.js', () => ({
 	consumePendingSessionNotices: vi.fn().mockReturnValue(new Map()),
 }));
 
+vi.mock('../../../../src/sentry.js', () => ({
+	addBreadcrumb: vi.fn(),
+}));
+
 vi.mock('../../../../src/utils/interactive.js', () => ({
 	displayGadgetCall: vi.fn(),
 	displayGadgetResult: vi.fn(),
@@ -33,6 +37,7 @@ import {
 	recordGadgetCallForLoop,
 } from '../../../../src/agents/utils/tracking.js';
 import { consumePendingSessionNotices } from '../../../../src/gadgets/tmux.js';
+import { addBreadcrumb } from '../../../../src/sentry.js';
 import {
 	displayGadgetCall,
 	displayGadgetResult,
@@ -40,6 +45,7 @@ import {
 	waitForEnter,
 } from '../../../../src/utils/interactive.js';
 
+const mockAddBreadcrumb = vi.mocked(addBreadcrumb);
 const mockConsumePendingSessionNotices = vi.mocked(consumePendingSessionNotices);
 const mockDisplayGadgetCall = vi.mocked(displayGadgetCall);
 const mockDisplayGadgetResult = vi.mocked(displayGadgetResult);
@@ -90,6 +96,7 @@ function createMockAgent(events: object[]) {
 }
 
 beforeEach(() => {
+	mockAddBreadcrumb.mockClear();
 	mockConsumePendingSessionNotices.mockReturnValue(new Map());
 	mockConsumeLoopWarning.mockReturnValue(null);
 	mockConsumeLoopAction.mockReturnValue(null);
@@ -481,5 +488,53 @@ describe('runAgentLoop', () => {
 
 		expect(result.output).toBe('');
 		expect(result.loopTerminated).toBe(false);
+	});
+
+	it('adds Sentry breadcrumb on successful gadget result', async () => {
+		const agent = createMockAgent([
+			{
+				type: 'gadget_result',
+				result: { gadgetName: 'ReadFile', executionTimeMs: 50, result: 'file contents' },
+			},
+		]);
+		const log = createMockLog();
+		const ctx = createTrackingContext();
+
+		await runAgentLoop(agent as never, log as never, ctx as never);
+
+		expect(mockAddBreadcrumb).toHaveBeenCalledWith({
+			category: 'gadget',
+			message: 'ReadFile ok (50ms)',
+			level: 'info',
+			data: {
+				gadgetName: 'ReadFile',
+				executionTimeMs: 50,
+				resultPreview: 'file contents',
+			},
+		});
+	});
+
+	it('adds Sentry breadcrumb with error level on gadget error', async () => {
+		const agent = createMockAgent([
+			{
+				type: 'gadget_result',
+				result: { gadgetName: 'WriteFile', executionTimeMs: 10, error: 'Permission denied' },
+			},
+		]);
+		const log = createMockLog();
+		const ctx = createTrackingContext();
+
+		await runAgentLoop(agent as never, log as never, ctx as never);
+
+		expect(mockAddBreadcrumb).toHaveBeenCalledWith({
+			category: 'gadget',
+			message: 'WriteFile error (10ms)',
+			level: 'error',
+			data: {
+				gadgetName: 'WriteFile',
+				executionTimeMs: 10,
+				error: 'Permission denied',
+			},
+		});
 	});
 });

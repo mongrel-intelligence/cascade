@@ -83,6 +83,27 @@ export interface TrelloCard {
 	labels: Array<{ id: string; name: string; color: string }>;
 }
 
+function mapCardResponse(card: {
+	id?: string;
+	name?: string;
+	desc?: string;
+	url?: string;
+	shortUrl?: string;
+	idList?: string;
+	labels?: unknown;
+}): TrelloCard {
+	const labels = card.labels as Array<{ id?: string; name?: string; color?: string }> | undefined;
+	return {
+		id: card.id ?? '',
+		name: card.name || '',
+		desc: card.desc || '',
+		url: card.url || '',
+		shortUrl: card.shortUrl || '',
+		idList: card.idList || '',
+		labels: mapLabels(labels),
+	};
+}
+
 export interface TrelloComment {
 	id: string;
 	date: string;
@@ -93,18 +114,6 @@ export interface TrelloComment {
 		id: string;
 		fullName: string;
 		username: string;
-	};
-}
-
-export interface TrelloAction {
-	id: string;
-	type: string;
-	date: string;
-	data: {
-		card?: { id: string; name: string; shortLink?: string };
-		list?: { id: string; name: string };
-		board?: { id: string; name: string };
-		text?: string;
 	};
 }
 
@@ -146,16 +155,7 @@ export const trelloClient = {
 	async getCard(cardId: string): Promise<TrelloCard> {
 		logger.debug('Fetching Trello card', { cardId });
 		const card = await getClient().cards.getCard({ id: cardId });
-		const labels = card.labels as Array<{ id?: string; name?: string; color?: string }> | undefined;
-		return {
-			id: card.id,
-			name: card.name || '',
-			desc: card.desc || '',
-			url: card.url || '',
-			shortUrl: card.shortUrl || '',
-			idList: card.idList || '',
-			labels: mapLabels(labels),
-		};
+		return mapCardResponse(card);
 	},
 
 	async updateCard(cardId: string, updates: { name?: string; desc?: string }): Promise<void> {
@@ -187,35 +187,13 @@ export const trelloClient = {
 			idLabels: data.idLabels,
 			pos: 'bottom',
 		});
-		const labels = card.labels as Array<{ id?: string; name?: string; color?: string }> | undefined;
-		return {
-			id: card.id,
-			name: card.name || '',
-			desc: card.desc || '',
-			url: card.url || '',
-			shortUrl: card.shortUrl || '',
-			idList: card.idList || '',
-			labels: mapLabels(labels),
-		};
+		return mapCardResponse(card);
 	},
 
 	async getListCards(listId: string): Promise<TrelloCard[]> {
 		logger.debug('Fetching cards from list', { listId });
 		const cards = await getClient().lists.getListCards({ id: listId });
-		return cards.map((card) => {
-			const labels = card.labels as
-				| Array<{ id?: string; name?: string; color?: string }>
-				| undefined;
-			return {
-				id: card.id,
-				name: card.name || '',
-				desc: card.desc || '',
-				url: card.url || '',
-				shortUrl: card.shortUrl || '',
-				idList: card.idList || '',
-				labels: mapLabels(labels),
-			};
-		});
+		return cards.map(mapCardResponse);
 	},
 
 	// ===== Comments =====
@@ -471,6 +449,27 @@ export const trelloClient = {
 		}));
 	},
 
+	async createBoardLabel(
+		boardId: string,
+		name: string,
+		color = 'blue',
+	): Promise<{ id: string; name: string; color: string }> {
+		logger.debug('Creating board label', { boardId, name, color });
+		const label = await trelloFetch<{ id?: string; name?: string; color?: string }>(
+			`/boards/${boardId}/labels`,
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: { name, color },
+			},
+		);
+		return {
+			id: label.id || '',
+			name: label.name || '',
+			color: label.color || '',
+		};
+	},
+
 	async getBoardCustomFields(
 		boardId: string,
 	): Promise<Array<{ id: string; name: string; type: string }>> {
@@ -485,52 +484,28 @@ export const trelloClient = {
 		}));
 	},
 
-	// ===== Member / Actions =====
-
-	async getMyActions(limit = 20): Promise<TrelloAction[]> {
-		logger.debug('Fetching my recent actions', { limit });
-		// Use raw fetch since trello.js types don't expose 'limit' parameter
-		const actions = await trelloFetch<
-			Array<{
-				id?: string;
-				type?: string;
-				date?: string;
-				data?: {
-					card?: { id?: string; name?: string; shortLink?: string };
-					list?: { id?: string; name?: string };
-					board?: { id?: string; name?: string };
-					text?: string;
-				};
-			}>
-		>(`/members/me/actions?limit=${limit}`);
-		return actions.map((a) => ({
-			id: a.id || '',
-			type: a.type || '',
-			date: a.date || '',
-			data: {
-				card: a.data?.card
-					? {
-							id: a.data.card.id || '',
-							name: a.data.card.name || '',
-							shortLink: a.data.card.shortLink,
-						}
-					: undefined,
-				list: a.data?.list
-					? {
-							id: a.data.list.id || '',
-							name: a.data.list.name || '',
-						}
-					: undefined,
-				board: a.data?.board
-					? {
-							id: a.data.board.id || '',
-							name: a.data.board.name || '',
-						}
-					: undefined,
-				text: a.data?.text,
+	async createBoardCustomField(
+		boardId: string,
+		name: string,
+		type: string,
+	): Promise<{ id: string; name: string; type: string }> {
+		logger.debug('Creating board custom field', { boardId, name, type });
+		const field = await trelloFetch<{ id?: string; name?: string; type?: string }>(
+			'/customFields',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: { idModel: boardId, modelType: 'board', name, type, pos: 'bottom' },
 			},
-		}));
+		);
+		return {
+			id: field.id || '',
+			name: field.name || '',
+			type: field.type || '',
+		};
 	},
+
+	// ===== Member / Actions =====
 
 	async getMe(): Promise<{ id: string; fullName: string; username: string }> {
 		logger.debug('Fetching authenticated member info');

@@ -25,6 +25,7 @@ import { CredentialFormDialog } from './credential-form-dialog.js';
 
 interface Credential {
 	id: number;
+	orgId: string;
 	name: string;
 	envVarKey: string;
 	value: string;
@@ -46,13 +47,13 @@ export function CredentialsTable({ credentials }: { credentials: Credential[] })
 
 	return (
 		<>
-			<div className="overflow-hidden rounded-lg border border-border">
+			<div className="overflow-x-auto rounded-lg border border-border">
 				<Table>
 					<TableHeader>
 						<TableRow>
 							<TableHead>Name</TableHead>
 							<TableHead>Env Var Key</TableHead>
-							<TableHead>Value</TableHead>
+							<TableHead className="hidden md:table-cell">Value</TableHead>
 							<TableHead>Default</TableHead>
 							<TableHead className="w-20" />
 						</TableRow>
@@ -69,7 +70,7 @@ export function CredentialsTable({ credentials }: { credentials: Credential[] })
 							<TableRow key={cred.id}>
 								<TableCell className="font-medium">{cred.name}</TableCell>
 								<TableCell className="font-mono text-xs">{cred.envVarKey}</TableCell>
-								<TableCell className="font-mono text-xs text-muted-foreground">
+								<TableCell className="hidden md:table-cell font-mono text-xs text-muted-foreground">
 									{cred.value}
 								</TableCell>
 								<TableCell>

@@ -22,10 +22,19 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
 // We need to reset the module-level cache between tests.
 // The module uses a module-level variable `cachedMemberInfo`.
 // We can reset it by re-importing with vi.resetModules() or by calling the exported functions.
 
+import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 import { TrelloCommentMentionTrigger } from '../../../src/triggers/trello/comment-mention.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 
@@ -99,6 +108,7 @@ describe('TrelloCommentMentionTrigger', () => {
 
 	beforeEach(() => {
 		vi.resetAllMocks();
+		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
 		trigger = new TrelloCommentMentionTrigger();
 		// Reset the module-level member info cache by re-importing.
 		// The cache is a module-level variable, so we set up getMe to always respond.
@@ -133,14 +143,28 @@ describe('TrelloCommentMentionTrigger', () => {
 	});
 
 	describe('handle', () => {
+		it('should return null when trigger is disabled', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
+			const result = await trigger.handle(buildCtx());
+			expect(result).toBeNull();
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test-project',
+				'respond-to-planning-comment',
+				'pm:comment-mention',
+				'trello-comment-mention',
+			);
+		});
+
 		it('returns respond-to-planning-comment result when @mention is present on PLANNING card', async () => {
 			const result = await trigger.handle(buildCtx());
 
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('respond-to-planning-comment');
 			expect(result?.workItemId).toBe('card-1');
-			expect(result?.agentInput.cardId).toBe('card-1');
+			expect(result?.agentInput.workItemId).toBe('card-1');
 			expect(result?.agentInput.triggerCommentText).toContain(`@${BOT_USERNAME}`);
+			expect(result?.agentInput.triggerEvent).toBe('pm:comment-mention');
 		});
 
 		it('includes comment author in agentInput', async () => {

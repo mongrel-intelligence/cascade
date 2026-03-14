@@ -20,7 +20,7 @@ import type { IntegrationCategory } from '../definitions/schema.js';
  *
  * Format: {source}:{action}
  * - Built-in sources: fs (filesystem), shell, session
- * - Integration sources: pm, scm, email, sms
+ * - Integration sources: pm, scm, email
  */
 export const CAPABILITIES = [
 	// Built-in capabilities (always available, no integration required)
@@ -36,16 +36,10 @@ export const CAPABILITIES = [
 
 	// SCM integration capabilities
 	'scm:read',
+	'scm:ci-logs',
 	'scm:comment',
 	'scm:review',
 	'scm:pr',
-
-	// Email integration capabilities
-	'email:read',
-	'email:write',
-
-	// SMS integration capabilities
-	'sms:send',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -127,7 +121,13 @@ export const CAPABILITY_REGISTRY: Record<Capability, CapabilityDefinition> = {
 	'pm:write': {
 		integration: 'pm',
 		description: 'Create and update work items, post comments',
-		gadgetNames: ['UpdateWorkItem', 'CreateWorkItem', 'PostComment', 'AddChecklist'],
+		gadgetNames: [
+			'UpdateWorkItem',
+			'CreateWorkItem',
+			'MoveWorkItem',
+			'PostComment',
+			'AddChecklist',
+		],
 		sdkToolNames: [],
 		cliToolNames: [],
 	},
@@ -148,6 +148,14 @@ export const CAPABILITY_REGISTRY: Record<Capability, CapabilityDefinition> = {
 		integration: 'scm',
 		description: 'Read PR details, diffs, and checks',
 		gadgetNames: ['GetPRDetails', 'GetPRDiff', 'GetPRChecks'],
+		sdkToolNames: [],
+		cliToolNames: [],
+	},
+
+	'scm:ci-logs': {
+		integration: 'scm',
+		description: 'Download CI run failure logs',
+		gadgetNames: ['GetCIRunLogs'],
 		sdkToolNames: [],
 		cliToolNames: [],
 	},
@@ -175,38 +183,6 @@ export const CAPABILITY_REGISTRY: Record<Capability, CapabilityDefinition> = {
 		sdkToolNames: [],
 		cliToolNames: [],
 	},
-
-	// -------------------------------------------------------------------------
-	// Email integration capabilities
-	// -------------------------------------------------------------------------
-
-	'email:read': {
-		integration: 'email',
-		description: 'Search and read emails',
-		gadgetNames: ['SearchEmails', 'ReadEmail', 'MarkEmailAsSeen'],
-		sdkToolNames: [],
-		cliToolNames: [],
-	},
-
-	'email:write': {
-		integration: 'email',
-		description: 'Send and reply to emails',
-		gadgetNames: ['SendEmail', 'ReplyToEmail'],
-		sdkToolNames: [],
-		cliToolNames: [],
-	},
-
-	// -------------------------------------------------------------------------
-	// SMS integration capabilities
-	// -------------------------------------------------------------------------
-
-	'sms:send': {
-		integration: 'sms',
-		description: 'Send SMS messages',
-		gadgetNames: ['SendSms'],
-		sdkToolNames: [],
-		cliToolNames: [],
-	},
 };
 
 // ============================================================================
@@ -224,8 +200,6 @@ export function getCapabilitiesByIntegration(): Record<
 		builtin: [],
 		pm: [],
 		scm: [],
-		email: [],
-		sms: [],
 	};
 
 	for (const cap of CAPABILITIES) {

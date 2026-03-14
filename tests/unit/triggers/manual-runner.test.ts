@@ -34,36 +34,13 @@ vi.mock('../../../src/pm/context.js', () => ({
 	),
 }));
 
-vi.mock('../../../src/email/integration.js', () => ({
-	withEmailIntegration: vi.fn((_projectId: string, fn: () => unknown) => fn()),
-}));
-
-vi.mock('../../../src/email/context.js', () => ({
-	getEmailProviderOrNull: vi.fn(),
-}));
-
-vi.mock('../../../src/db/repositories/settingsRepository.js', () => ({
-	getIntegrationByProjectAndCategory: vi.fn().mockResolvedValue(null),
-}));
-
-vi.mock('../../../src/config/triggerConfig.js', async (importOriginal) => {
-	const actual = await importOriginal();
-	return {
-		...(actual as object),
-		parseEmailJokeTriggers: vi.fn().mockReturnValue({}),
-	};
-});
-
 vi.mock('../../../src/triggers/shared/integration-validation.js', () => ({
 	validateIntegrations: vi.fn().mockResolvedValue({ valid: true, errors: [] }),
 	formatValidationErrors: vi.fn().mockReturnValue(''),
 }));
 
 import { runAgent } from '../../../src/agents/registry.js';
-import { parseEmailJokeTriggers } from '../../../src/config/triggerConfig.js';
 import { getRunById } from '../../../src/db/repositories/runsRepository.js';
-import { getIntegrationByProjectAndCategory } from '../../../src/db/repositories/settingsRepository.js';
-import { getEmailProviderOrNull } from '../../../src/email/context.js';
 import { withPMCredentials } from '../../../src/pm/context.js';
 import { createPMProvider, withPMProvider } from '../../../src/pm/index.js';
 import {
@@ -73,7 +50,6 @@ import {
 	triggerRetryRun,
 } from '../../../src/triggers/shared/manual-runner.js';
 import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
-import { logger } from '../../../src/utils/logging.js';
 
 const mockProject: ProjectConfig = {
 	id: 'test-project',
@@ -103,7 +79,7 @@ describe('triggerManualRun', () => {
 			{
 				projectId: 'test-project',
 				agentType: 'implementation',
-				cardId: 'card-1',
+				workItemId: 'card-1',
 			},
 			mockProject,
 			mockConfig,
@@ -118,7 +94,7 @@ describe('triggerManualRun', () => {
 				{
 					projectId: 'test-project',
 					agentType: 'implementation',
-					cardId: 'card-1',
+					workItemId: 'card-1',
 				},
 				mockProject,
 				mockConfig,
@@ -140,7 +116,7 @@ describe('triggerManualRun', () => {
 			{
 				projectId: 'test-project',
 				agentType: 'implementation',
-				cardId: 'card-1',
+				workItemId: 'card-1',
 				modelOverride: 'claude-3-5-sonnet-20241022',
 			},
 			mockProject,
@@ -150,7 +126,7 @@ describe('triggerManualRun', () => {
 		expect(runAgent).toHaveBeenCalledWith(
 			'implementation',
 			expect.objectContaining({
-				cardId: 'card-1',
+				workItemId: 'card-1',
 				modelOverride: 'claude-3-5-sonnet-20241022',
 				triggerType: 'manual',
 				project: mockProject,
@@ -222,7 +198,7 @@ describe('triggerManualRun', () => {
 	it('marks trigger as complete after runAgent finishes', async () => {
 		const projectId = 'test-project';
 		const agentType = 'implementation';
-		const cardId = 'card-complete';
+		const workItemId = 'card-complete';
 
 		vi.mocked(runAgent).mockResolvedValue({
 			success: true,
@@ -230,24 +206,24 @@ describe('triggerManualRun', () => {
 			runId: 'run-complete',
 		});
 
-		await triggerManualRun({ projectId, agentType, cardId }, mockProject, mockConfig);
+		await triggerManualRun({ projectId, agentType, workItemId }, mockProject, mockConfig);
 
 		// After awaiting triggerManualRun, trigger should already be complete
-		const key = `${projectId}:${agentType}:${cardId}:no-pr`;
+		const key = `${projectId}:${agentType}:${workItemId}:no-pr`;
 		expect(isTriggerRunning(key)).toBe(false);
 	});
 
 	it('marks trigger as complete even when runAgent fails', async () => {
 		const projectId = 'test-project';
 		const agentType = 'implementation';
-		const cardId = 'card-fail';
+		const workItemId = 'card-fail';
 
 		vi.mocked(runAgent).mockRejectedValue(new Error('Agent error'));
 
-		await triggerManualRun({ projectId, agentType, cardId }, mockProject, mockConfig);
+		await triggerManualRun({ projectId, agentType, workItemId }, mockProject, mockConfig);
 
 		// After awaiting triggerManualRun (error caught internally), trigger should be complete
-		const key = `${projectId}:${agentType}:${cardId}:no-pr`;
+		const key = `${projectId}:${agentType}:${workItemId}:no-pr`;
 		expect(isTriggerRunning(key)).toBe(false);
 	});
 });
@@ -282,7 +258,7 @@ describe('triggerRetryRun', () => {
 			id: 'run-1',
 			agentType: 'implementation',
 			projectId: 'test-project',
-			cardId: 'card-1',
+			workItemId: 'card-1',
 			prNumber: null,
 			model: 'claude-sonnet-4-5-20250929',
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
@@ -298,7 +274,7 @@ describe('triggerRetryRun', () => {
 		expect(runAgent).toHaveBeenCalledWith(
 			'implementation',
 			expect.objectContaining({
-				cardId: 'card-1',
+				workItemId: 'card-1',
 				modelOverride: 'claude-sonnet-4-5-20250929',
 				triggerType: 'manual',
 			}),
@@ -310,7 +286,7 @@ describe('triggerRetryRun', () => {
 			id: 'run-1',
 			agentType: 'review',
 			projectId: 'test-project',
-			cardId: null,
+			workItemId: null,
 			prNumber: 10,
 			model: 'claude-sonnet-4-5-20250929',
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
@@ -328,105 +304,6 @@ describe('triggerRetryRun', () => {
 			expect.objectContaining({
 				modelOverride: 'claude-3-5-sonnet-20241022',
 			}),
-		);
-	});
-});
-
-describe('email-joke pre-check', () => {
-	beforeEach(() => {
-		clearTriggerTracking();
-		vi.mocked(runAgent).mockResolvedValue({ success: true, output: 'Done', runId: 'run-joke' });
-	});
-
-	it('aborts and warns when no email provider is available', async () => {
-		vi.mocked(getEmailProviderOrNull).mockReturnValue(null);
-
-		await triggerManualRun(
-			{ projectId: 'test-project', agentType: 'email-joke' },
-			mockProject,
-			mockConfig,
-		);
-
-		expect(runAgent).not.toHaveBeenCalled();
-		expect(logger.warn).toHaveBeenCalledWith(
-			'Email provider unavailable, skipping email-joke agent',
-			expect.objectContaining({ projectId: 'test-project' }),
-		);
-	});
-
-	it('skips agent when no matching emails are found', async () => {
-		const mockProvider = { searchEmails: vi.fn().mockResolvedValue([]) };
-		vi.mocked(getEmailProviderOrNull).mockReturnValue(mockProvider as never);
-
-		await triggerManualRun(
-			{ projectId: 'test-project', agentType: 'email-joke' },
-			mockProject,
-			mockConfig,
-		);
-
-		expect(runAgent).not.toHaveBeenCalled();
-		expect(logger.info).toHaveBeenCalledWith(
-			'No matching emails found, skipping email-joke agent',
-			expect.any(Object),
-		);
-	});
-
-	it('runs agent with preFoundEmails when emails are found', async () => {
-		const emails = [
-			{
-				uid: 42,
-				subject: 'Hello',
-				from: 'sender@example.com',
-				to: ['me@example.com'],
-				date: new Date('2024-01-15'),
-				snippet: 'Hello there',
-			},
-		];
-		const mockProvider = { searchEmails: vi.fn().mockResolvedValue(emails) };
-		vi.mocked(getEmailProviderOrNull).mockReturnValue(mockProvider as never);
-
-		await triggerManualRun(
-			{ projectId: 'test-project', agentType: 'email-joke' },
-			mockProject,
-			mockConfig,
-		);
-
-		expect(runAgent).toHaveBeenCalledWith(
-			'email-joke',
-			expect.objectContaining({ preFoundEmails: emails }),
-		);
-	});
-
-	it('does not call getEmailProviderOrNull for non-email-joke agents', async () => {
-		vi.mocked(runAgent).mockResolvedValue({ success: true, output: 'Done', runId: 'run-impl' });
-
-		await triggerManualRun(
-			{ projectId: 'test-project', agentType: 'implementation', cardId: 'card-1' },
-			mockProject,
-			mockConfig,
-		);
-
-		expect(getEmailProviderOrNull).not.toHaveBeenCalled();
-	});
-
-	it('passes senderEmail as criteria.from when set via integration triggers', async () => {
-		const mockProvider = { searchEmails: vi.fn().mockResolvedValue([]) };
-		vi.mocked(getEmailProviderOrNull).mockReturnValue(mockProvider as never);
-		vi.mocked(getIntegrationByProjectAndCategory).mockResolvedValue({
-			triggers: {},
-		} as never);
-		vi.mocked(parseEmailJokeTriggers).mockReturnValue({ senderEmail: 'boss@example.com' } as never);
-
-		await triggerManualRun(
-			{ projectId: 'test-project', agentType: 'email-joke' },
-			mockProject,
-			mockConfig,
-		);
-
-		expect(mockProvider.searchEmails).toHaveBeenCalledWith(
-			'INBOX',
-			expect.objectContaining({ from: 'boss@example.com' }),
-			10,
 		);
 	});
 });

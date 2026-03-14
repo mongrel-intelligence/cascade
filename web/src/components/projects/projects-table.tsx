@@ -20,7 +20,7 @@ import {
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Trash2 } from 'lucide-react';
+import { FolderGit2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 interface Project {
@@ -28,11 +28,17 @@ interface Project {
 	name: string;
 	repo?: string | null;
 	baseBranch: string | null;
-	agentBackend: string | null;
-	cardBudgetUsd: string | null;
+	agentEngine: string | null;
+	workItemBudgetUsd: string | null;
 }
 
-export function ProjectsTable({ projects }: { projects: Project[] }) {
+export function ProjectsTable({
+	projects,
+	onCreateClick,
+}: {
+	projects: Project[];
+	onCreateClick?: () => void;
+}) {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -47,23 +53,40 @@ export function ProjectsTable({ projects }: { projects: Project[] }) {
 
 	return (
 		<>
-			<div className="overflow-hidden rounded-lg border border-border">
+			<div className="overflow-x-auto rounded-lg border border-border">
 				<Table>
 					<TableHeader>
 						<TableRow>
 							<TableHead>Name</TableHead>
 							<TableHead>Repo</TableHead>
-							<TableHead>Base Branch</TableHead>
-							<TableHead>Backend</TableHead>
-							<TableHead className="text-right">Budget</TableHead>
+							<TableHead className="hidden md:table-cell">Base Branch</TableHead>
+							<TableHead className="hidden md:table-cell">Engine</TableHead>
+							<TableHead className="hidden md:table-cell text-right">Budget</TableHead>
 							<TableHead className="w-10" />
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{projects.length === 0 && (
 							<TableRow>
-								<TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-									No projects yet
+								<TableCell colSpan={6} className="py-12">
+									<div className="flex flex-col items-center gap-3 text-center">
+										<FolderGit2 className="h-10 w-10 text-muted-foreground/50" />
+										<div>
+											<p className="font-medium">No projects yet</p>
+											<p className="text-sm text-muted-foreground">
+												Create a project to connect CASCADE to your GitHub repository.
+											</p>
+										</div>
+										{onCreateClick && (
+											<button
+												type="button"
+												onClick={onCreateClick}
+												className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+											>
+												New Project
+											</button>
+										)}
+									</div>
 								</TableCell>
 							</TableRow>
 						)}
@@ -79,12 +102,14 @@ export function ProjectsTable({ projects }: { projects: Project[] }) {
 								<TableCell className="text-muted-foreground font-mono text-xs">
 									{project.repo || '-'}
 								</TableCell>
-								<TableCell>
+								<TableCell className="hidden md:table-cell">
 									<Badge variant="outline">{project.baseBranch ?? 'main'}</Badge>
 								</TableCell>
-								<TableCell>{project.agentBackend ?? 'llmist'}</TableCell>
-								<TableCell className="text-right tabular-nums">
-									{project.cardBudgetUsd ? `$${project.cardBudgetUsd}` : '-'}
+								<TableCell className="hidden md:table-cell">
+									{project.agentEngine ?? 'llmist'}
+								</TableCell>
+								<TableCell className="hidden md:table-cell text-right tabular-nums">
+									{project.workItemBudgetUsd ? `$${project.workItemBudgetUsd}` : '-'}
 								</TableCell>
 								<TableCell>
 									<button

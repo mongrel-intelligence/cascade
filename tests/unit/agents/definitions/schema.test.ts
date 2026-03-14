@@ -133,24 +133,6 @@ describe('SupportedTriggerSchema', () => {
 		expect(result.success).toBe(true);
 	});
 
-	it('parses a valid trigger with email:received', () => {
-		const trigger = {
-			event: 'email:received',
-			label: 'Email Received',
-		};
-		const result = SupportedTriggerSchema.safeParse(trigger);
-		expect(result.success).toBe(true);
-	});
-
-	it('parses a valid trigger with sms:received', () => {
-		const trigger = {
-			event: 'sms:received',
-			label: 'SMS Received',
-		};
-		const result = SupportedTriggerSchema.safeParse(trigger);
-		expect(result.success).toBe(true);
-	});
-
 	it('rejects invalid event format (missing category)', () => {
 		const trigger = {
 			event: 'card-moved', // Missing category prefix
@@ -161,6 +143,15 @@ describe('SupportedTriggerSchema', () => {
 		if (!result.success) {
 			expect(result.error.issues[0].message).toContain('Event must be in format');
 		}
+	});
+
+	it('parses a valid trigger with internal: category prefix', () => {
+		const trigger = {
+			event: 'internal:auto-chain',
+			label: 'Auto-Chain',
+		};
+		const result = SupportedTriggerSchema.safeParse(trigger);
+		expect(result.success).toBe(true);
 	});
 
 	it('rejects invalid event format (invalid category)', () => {
@@ -195,7 +186,7 @@ describe('SupportedTriggerSchema', () => {
 		const trigger = {
 			event: 'pm:status-changed',
 			label: 'Card Moved',
-			providers: ['trello', 'jira', 'github', 'imap', 'gmail', 'twilio'],
+			providers: ['trello', 'jira', 'github'],
 		};
 		const result = SupportedTriggerSchema.safeParse(trigger);
 		expect(result.success).toBe(true);
@@ -237,21 +228,11 @@ describe('KnownProviderSchema', () => {
 		expect(KnownProviderSchema.safeParse('github').success).toBe(true);
 	});
 
-	it('accepts imap', () => {
-		expect(KnownProviderSchema.safeParse('imap').success).toBe(true);
-	});
-
-	it('accepts gmail', () => {
-		expect(KnownProviderSchema.safeParse('gmail').success).toBe(true);
-	});
-
-	it('accepts twilio', () => {
-		expect(KnownProviderSchema.safeParse('twilio').success).toBe(true);
-	});
-
 	it('rejects unknown providers', () => {
 		expect(KnownProviderSchema.safeParse('gitlab').success).toBe(false);
 		expect(KnownProviderSchema.safeParse('asana').success).toBe(false);
+		expect(KnownProviderSchema.safeParse('imap').success).toBe(false);
+		expect(KnownProviderSchema.safeParse('gmail').success).toBe(false);
 	});
 });
 
@@ -262,8 +243,8 @@ describe('KnownProviderSchema', () => {
 describe('IntegrationRequirementsSchema', () => {
 	it('parses valid integration requirements', () => {
 		const requirements = {
-			required: ['pm', 'scm'],
-			optional: ['email'],
+			required: ['pm'],
+			optional: ['scm'],
 		};
 		const result = IntegrationRequirementsSchema.safeParse(requirements);
 		expect(result.success).toBe(true);
@@ -301,8 +282,8 @@ describe('IntegrationRequirementsSchema', () => {
 
 	it('accepts all valid integration categories', () => {
 		const requirements = {
-			required: ['pm', 'scm'],
-			optional: ['email', 'sms'],
+			required: ['pm'],
+			optional: ['scm'],
 		};
 		const result = IntegrationRequirementsSchema.safeParse(requirements);
 		expect(result.success).toBe(true);
@@ -326,9 +307,6 @@ describe('AgentDefinitionSchema', () => {
 			optional: [],
 		},
 		strategies: {},
-		backend: {
-			enableStopHooks: false,
-		},
 		hint: 'Do the thing efficiently.',
 		prompts: {
 			taskPrompt: 'Analyze and process the work item with ID: <%= it.cardId %>.',
@@ -346,16 +324,14 @@ describe('AgentDefinitionSchema', () => {
 			strategies: {
 				gadgetOptions: { includeReviewComments: true },
 			},
-			backend: {
-				...validDefinition.backend,
-				blockGitPush: false,
-			},
-			trailingMessage: {
-				includeDiagnostics: true,
-				includeTodoProgress: true,
-				includeGitStatus: true,
-				includePRStatus: true,
-				includeReminder: true,
+			hooks: {
+				trailing: {
+					scm: { gitStatus: true, prStatus: true },
+					builtin: { diagnostics: true, todoProgress: true, reminder: true },
+				},
+				finish: {
+					scm: { requiresPR: true, blockGitPush: false },
+				},
 			},
 		};
 
@@ -378,23 +354,23 @@ describe('AgentDefinitionSchema', () => {
 		expect(result.success).toBe(false);
 	});
 
-	it('allows trailingMessage to be omitted', () => {
+	it('allows hooks to be omitted', () => {
 		const result = AgentDefinitionSchema.safeParse(validDefinition);
 		expect(result.success).toBe(true);
 		if (result.success) {
-			expect(result.data.trailingMessage).toBeUndefined();
+			expect(result.data.hooks).toBeUndefined();
 		}
 	});
 
-	it('accepts requiresPR boolean', () => {
+	it('accepts requiresPR boolean in hooks.finish.scm', () => {
 		const good = {
 			...validDefinition,
-			backend: { ...validDefinition.backend, requiresPR: true },
+			hooks: { finish: { scm: { requiresPR: true } } },
 		};
 		const result = AgentDefinitionSchema.safeParse(good);
 		expect(result.success).toBe(true);
 		if (result.success) {
-			expect(result.data.backend.requiresPR).toBe(true);
+			expect(result.data.hooks?.finish?.scm?.requiresPR).toBe(true);
 		}
 	});
 
@@ -402,7 +378,7 @@ describe('AgentDefinitionSchema', () => {
 		const result = AgentDefinitionSchema.safeParse(validDefinition);
 		expect(result.success).toBe(true);
 		if (result.success) {
-			expect(result.data.backend.requiresPR).toBeUndefined();
+			expect(result.data.hooks?.finish?.scm?.requiresPR).toBeUndefined();
 		}
 	});
 
@@ -479,8 +455,8 @@ describe('AgentDefinitionSchema', () => {
 		const withIntegrations = {
 			...validDefinition,
 			integrations: {
-				required: ['pm', 'scm'],
-				optional: ['email'],
+				required: ['pm'],
+				optional: ['scm'],
 			},
 		};
 		const result = AgentDefinitionSchema.safeParse(withIntegrations);

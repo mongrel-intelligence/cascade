@@ -21,6 +21,7 @@ import type { ModelSpec } from 'llmist';
 import { syncCompletedTodosToChecklist } from '../agents/utils/checklistSync.js';
 import { formatStatusMessage } from '../config/statusUpdateConfig.js';
 import { captureException } from '../sentry.js';
+import { buildRunLink, buildWorkItemRunsLink, getDashboardUrl } from '../utils/runLink.js';
 import { callProgressModel } from './progressModel.js';
 import { clearProgressCommentId, writeProgressCommentId } from './progressState.js';
 import { ProgressAccumulator } from './progressState/accumulator.js';
@@ -37,8 +38,8 @@ export interface ProgressMonitorConfig {
 	customModels: ModelSpec[];
 	logWriter: LogWriter;
 	repoDir?: string;
-	trello?: { cardId: string };
-	github?: { owner: string; repo: string; headerMessage: string };
+	trello?: { workItemId: string };
+	github?: { owner: string; repo: string };
 	/** Pre-seeded comment ID from router ack — skip initial comment posting */
 	preSeededCommentId?: string;
 	/**
@@ -49,6 +50,14 @@ export interface ProgressMonitorConfig {
 	 * Defaults to DEFAULT_SCHEDULE_MINUTES = [1, 3, 5].
 	 */
 	scheduleMinutes?: number[];
+	/** Run link config — when set, appends a dashboard link to progress comments */
+	runLink?: {
+		runId?: string;
+		engineLabel: string;
+		model: string;
+		projectId: string;
+		workItemId?: string;
+	};
 }
 
 const PROGRESS_MODEL_TIMEOUT_MS = 20_000;
@@ -72,8 +81,7 @@ export class ProgressMonitor implements ProgressReporter {
 		this.pmPoster = config.trello
 			? new PMProgressPoster({
 					agentType: config.agentType,
-					cardId: config.trello.cardId,
-					repoDir: config.repoDir,
+					workItemId: config.trello.workItemId,
 					logWriter: config.logWriter,
 				})
 			: null;
@@ -82,7 +90,6 @@ export class ProgressMonitor implements ProgressReporter {
 			? new GitHubProgressPoster({
 					owner: config.github.owner,
 					repo: config.github.repo,
-					headerMessage: config.github.headerMessage,
 					logWriter: config.logWriter,
 				})
 			: null;
@@ -92,6 +99,13 @@ export class ProgressMonitor implements ProgressReporter {
 
 	getProgressCommentId(): string | null {
 		return this.pmPoster?.getCommentId() ?? null;
+	}
+
+	/** Update the run ID (available after the run record is created). */
+	setRunId(runId: string): void {
+		if (this.config.runLink) {
+			this.config.runLink.runId = runId;
+		}
 	}
 
 	// ── ProgressReporter interface (accumulate only, no posting) ──
@@ -125,13 +139,9 @@ export class ProgressMonitor implements ProgressReporter {
 				commentId: this.config.preSeededCommentId,
 			});
 
-			// Write state file so PostComment gadget can find it
-			if (this.config.repoDir && this.config.trello) {
-				writeProgressCommentId(
-					this.config.repoDir,
-					this.config.trello.cardId,
-					this.config.preSeededCommentId,
-				);
+			// Write env var so PostComment gadget can find it
+			if (this.config.trello) {
+				writeProgressCommentId(this.config.trello.workItemId, this.config.preSeededCommentId);
 			}
 		} else if (this.pmPoster) {
 			// Post initial comment immediately (fire-and-forget)
@@ -148,17 +158,46 @@ export class ProgressMonitor implements ProgressReporter {
 
 	stop(): void {
 		this.scheduler.stop();
-		// Clean up state file on stop (best-effort — stop() is called from finally
-		// blocks, so an rmSync failure must not mask the actual agent result)
+		// Clean up env var on stop (best-effort — stop() is called from finally blocks)
 		try {
-			clearProgressCommentId(this.config.repoDir);
+			clearProgressCommentId();
 		} catch {
-			// State file cleanup is best-effort
+			// Env var cleanup is best-effort
 		}
 	}
 
 	// ── Internal ──
 
+	private buildRunLinkFooter(): string {
+		const { runLink } = this.config;
+		if (!runLink) return '';
+
+		const dashboardUrl = getDashboardUrl();
+		if (!dashboardUrl) return '';
+
+		if (runLink.runId) {
+			return buildRunLink({
+				dashboardUrl,
+				runId: runLink.runId,
+				engineLabel: runLink.engineLabel,
+				model: runLink.model,
+			});
+		}
+
+		if (runLink.workItemId) {
+			return buildWorkItemRunsLink({
+				dashboardUrl,
+				projectId: runLink.projectId,
+				workItemId: runLink.workItemId,
+				engineLabel: runLink.engineLabel,
+				model: runLink.model,
+			});
+		}
+
+		return '';
+	}
+
+	// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: progress reporting with multiple posting targets
 	private async tick(): Promise<void> {
 		// Wait for initial comment to complete before proceeding so the first
 		// tick updates the same comment instead of creating a duplicate
@@ -199,6 +238,10 @@ export class ProgressMonitor implements ProgressReporter {
 				summary = formatStatusMessage(this.config.agentType);
 			}
 
+			// Append run link footer if configured
+			const runLinkFooter = this.buildRunLinkFooter();
+			if (runLinkFooter) summary += runLinkFooter;
+
 			// Post to PM provider (Trello/JIRA)
 			if (this.pmPoster) {
 				try {
@@ -213,7 +256,7 @@ export class ProgressMonitor implements ProgressReporter {
 			// Post to GitHub
 			if (this.githubPoster) {
 				try {
-					await this.githubPoster.update(summary, this.config.agentType);
+					await this.githubPoster.update(summary);
 				} catch (err) {
 					this.config.logWriter('WARN', 'Failed to update GitHub PR comment', {
 						error: String(err),
@@ -223,7 +266,7 @@ export class ProgressMonitor implements ProgressReporter {
 
 			// Sync checklist items for implementation agents
 			if (this.config.agentType === 'implementation' && this.config.trello) {
-				await syncCompletedTodosToChecklist(this.config.trello.cardId);
+				await syncCompletedTodosToChecklist(this.config.trello.workItemId);
 			}
 		} catch (err) {
 			this.config.logWriter('WARN', 'Progress tick failed', { error: String(err) });

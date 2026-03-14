@@ -46,6 +46,9 @@ export interface ParsedWebhookEvent {
 
 	/** Whether this is a comment/mention event that may need an acknowledgment reaction. */
 	isCommentEvent: boolean;
+
+	/** Platform-specific unique action ID for deduplication (e.g., Trello action.id). */
+	actionId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,24 +105,29 @@ export interface RouterPlatformAdapter {
 	 * Post an acknowledgment comment on the work item.
 	 * Returns an `AckResult` with the comment ID and message text,
 	 * or `undefined` on failure.
+	 *
+	 * The optional `triggerResult` parameter provides additional context (e.g. workItemId)
+	 * that some adapters (e.g. GitHub) need to route ack comments for PM-focused agents.
 	 */
 	postAck(
 		event: ParsedWebhookEvent,
 		payload: unknown,
 		project: RouterProjectConfig,
 		agentType: string,
+		triggerResult?: TriggerResult,
 	): Promise<AckResult | undefined>;
 
 	/**
 	 * Build the `CascadeJob` to be enqueued.
+	 * The `ackResult` is available at build time (ack is posted before enqueue),
+	 * so `ackCommentId` and `ackMessage` can be embedded directly in the job.
 	 */
 	buildJob(
 		event: ParsedWebhookEvent,
 		payload: unknown,
 		project: RouterProjectConfig,
 		result: TriggerResult,
-		ackCommentId: string | number | undefined,
-		ackMessage?: string,
+		ackResult?: AckResult,
 	): CascadeJob;
 
 	/**

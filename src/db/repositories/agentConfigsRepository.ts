@@ -1,0 +1,93 @@
+import { and, eq } from 'drizzle-orm';
+import { getDb } from '../client.js';
+import { agentConfigs } from '../schema/index.js';
+
+// ============================================================================
+// Agent Configs
+// ============================================================================
+
+export async function listAgentConfigs(filter: { projectId: string }) {
+	const db = getDb();
+	return db.select().from(agentConfigs).where(eq(agentConfigs.projectId, filter.projectId));
+}
+
+export async function createAgentConfig(data: {
+	projectId: string;
+	agentType: string;
+	model?: string | null;
+	maxIterations?: number | null;
+	agentEngine?: string | null;
+	maxConcurrency?: number | null;
+}) {
+	const db = getDb();
+	const [row] = await db
+		.insert(agentConfigs)
+		.values({
+			projectId: data.projectId,
+			agentType: data.agentType,
+			model: data.model,
+			maxIterations: data.maxIterations,
+			agentEngine: data.agentEngine,
+			maxConcurrency: data.maxConcurrency,
+		})
+		.returning({ id: agentConfigs.id });
+	return row;
+}
+
+export async function updateAgentConfig(
+	id: number,
+	updates: {
+		agentType?: string;
+		model?: string | null;
+		maxIterations?: number | null;
+		agentEngine?: string | null;
+		maxConcurrency?: number | null;
+	},
+) {
+	const db = getDb();
+	await db
+		.update(agentConfigs)
+		.set({ ...updates, updatedAt: new Date() })
+		.where(eq(agentConfigs.id, id));
+}
+
+export async function deleteAgentConfig(id: number) {
+	const db = getDb();
+	await db.delete(agentConfigs).where(eq(agentConfigs.id, id));
+}
+
+/**
+ * Resolve max_concurrency for a (projectId, agentType) pair.
+ * Returns null if no project-scoped config with max_concurrency is found (= no limit).
+ *
+ * Results are cached for 5 seconds to avoid repeated DB queries on
+ * sequential webhook batches.
+ */
+const MAX_CONCURRENCY_TTL_MS = 5_000;
+const maxConcurrencyCache = new Map<string, { value: number | null; expiresAt: number }>();
+
+export async function getMaxConcurrency(
+	projectId: string,
+	agentType: string,
+): Promise<number | null> {
+	const cacheKey = `${projectId}:${agentType}`;
+	const cached = maxConcurrencyCache.get(cacheKey);
+	if (cached && Date.now() < cached.expiresAt) {
+		return cached.value;
+	}
+
+	const db = getDb();
+
+	const [projectConfig] = await db
+		.select({ maxConcurrency: agentConfigs.maxConcurrency })
+		.from(agentConfigs)
+		.where(and(eq(agentConfigs.projectId, projectId), eq(agentConfigs.agentType, agentType)))
+		.limit(1);
+
+	const result = projectConfig?.maxConcurrency ?? null;
+	maxConcurrencyCache.set(cacheKey, {
+		value: result,
+		expiresAt: Date.now() + MAX_CONCURRENCY_TTL_MS,
+	});
+	return result;
+}

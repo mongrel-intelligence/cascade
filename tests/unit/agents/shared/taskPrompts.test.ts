@@ -18,9 +18,9 @@ import {
 
 // Sample task prompt templates (matching what's in the YAML files)
 const WORK_ITEM_TEMPLATE =
-	'Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.';
+	'Analyze and process the work item with ID: <%= it.workItemId %>. The work item data has been pre-loaded.';
 
-const COMMENT_RESPONSE_TEMPLATE = `A user (@<%= it.commentAuthor %>) mentioned you in a comment on work item <%= it.cardId %>.
+const COMMENT_RESPONSE_TEMPLATE = `A user (@<%= it.commentAuthor %>) mentioned you in a comment on work item <%= it.workItemId %>.
 
 Their comment:
 ---
@@ -53,32 +53,32 @@ Their comment:
 Read the comment carefully and respond accordingly. If they ask for code changes, make the changes, commit, and push. If they ask a question, reply with a PR comment. Default to surgical, targeted changes unless they clearly ask for something broader.`;
 
 describe('workItem task template', () => {
-	it('includes the card ID', () => {
-		const prompt = renderInlineTaskPrompt(WORK_ITEM_TEMPLATE, { cardId: 'abc123' });
+	it('includes the work item ID', () => {
+		const prompt = renderInlineTaskPrompt(WORK_ITEM_TEMPLATE, { workItemId: 'abc123' });
 		expect(prompt).toContain('abc123');
 	});
 
 	it('asks the agent to process the work item', () => {
-		const prompt = renderInlineTaskPrompt(WORK_ITEM_TEMPLATE, { cardId: 'card-99' });
+		const prompt = renderInlineTaskPrompt(WORK_ITEM_TEMPLATE, { workItemId: 'wi-99' });
 		expect(prompt).toContain('work item');
 	});
 });
 
 describe('commentResponse task template', () => {
-	it('includes card ID, comment text, and author', () => {
+	it('includes work item ID, comment text, and author', () => {
 		const prompt = renderInlineTaskPrompt(COMMENT_RESPONSE_TEMPLATE, {
-			cardId: 'card-42',
+			workItemId: 'wi-42',
 			commentText: 'Please add tests',
 			commentAuthor: 'alice',
 		});
-		expect(prompt).toContain('card-42');
+		expect(prompt).toContain('wi-42');
 		expect(prompt).toContain('Please add tests');
 		expect(prompt).toContain('@alice');
 	});
 
 	it('instructs surgical updates for plan changes', () => {
 		const prompt = renderInlineTaskPrompt(COMMENT_RESPONSE_TEMPLATE, {
-			cardId: 'card-1',
+			workItemId: 'wi-1',
 			commentText: 'Fix the typo',
 			commentAuthor: 'bob',
 		});
@@ -87,7 +87,7 @@ describe('commentResponse task template', () => {
 
 	it('mentions that work item data is pre-loaded', () => {
 		const prompt = renderInlineTaskPrompt(COMMENT_RESPONSE_TEMPLATE, {
-			cardId: 'card-1',
+			workItemId: 'wi-1',
 			commentText: 'Update docs',
 			commentAuthor: 'carol',
 		});
@@ -96,7 +96,7 @@ describe('commentResponse task template', () => {
 
 	it('instructs to classify the comment', () => {
 		const prompt = renderInlineTaskPrompt(COMMENT_RESPONSE_TEMPLATE, {
-			cardId: 'card-1',
+			workItemId: 'wi-1',
 			commentText: 'Why this approach?',
 			commentAuthor: 'dave',
 		});
@@ -105,7 +105,7 @@ describe('commentResponse task template', () => {
 
 	it('instructs question-only replies via PostComment without plan modification', () => {
 		const prompt = renderInlineTaskPrompt(COMMENT_RESPONSE_TEMPLATE, {
-			cardId: 'card-1',
+			workItemId: 'wi-1',
 			commentText: 'Why this approach?',
 			commentAuthor: 'dave',
 		});
@@ -116,7 +116,7 @@ describe('commentResponse task template', () => {
 
 	it('defaults to plan updates when intent is ambiguous', () => {
 		const prompt = renderInlineTaskPrompt(COMMENT_RESPONSE_TEMPLATE, {
-			cardId: 'card-1',
+			workItemId: 'wi-1',
 			commentText: 'Some comment',
 			commentAuthor: 'eve',
 		});
@@ -212,9 +212,9 @@ describe('renderInlineTaskPrompt edge cases', () => {
 	});
 
 	it('renders basic template without partials', () => {
-		const template = 'Process card <%= it.cardId %>';
-		const prompt = renderInlineTaskPrompt(template, { cardId: 'test-123' });
-		expect(prompt).toBe('Process card test-123');
+		const template = 'Process work item <%= it.workItemId %>';
+		const prompt = renderInlineTaskPrompt(template, { workItemId: 'wi-123' });
+		expect(prompt).toBe('Process work item wi-123');
 	});
 });
 
@@ -252,8 +252,8 @@ describe('buildCheckFailurePrompt', () => {
 describe('buildDebugPrompt', () => {
 	const debugContext = {
 		logDir: '/tmp/logs/abc',
-		originalCardName: 'Fix the login bug',
-		originalCardUrl: 'https://trello.com/c/abc',
+		originalWorkItemName: 'Fix the login bug',
+		originalWorkItemUrl: 'https://trello.com/c/abc',
 		detectedAgentType: 'implementation',
 	};
 
@@ -262,7 +262,7 @@ describe('buildDebugPrompt', () => {
 		expect(prompt).toContain('/tmp/logs/abc');
 	});
 
-	it('includes the original card name', () => {
+	it('includes the original work item name', () => {
 		const prompt = buildDebugPrompt(debugContext);
 		expect(prompt).toContain('Fix the login bug');
 	});

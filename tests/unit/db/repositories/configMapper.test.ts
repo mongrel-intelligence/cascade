@@ -24,10 +24,10 @@ const baseProjectRow = {
 	baseBranch: 'main',
 	branchPrefix: 'feature/',
 	model: null,
-	cardBudgetUsd: null,
+	workItemBudgetUsd: null,
 	squintDbUrl: null,
-	agentBackend: null,
-	subscriptionCostZero: false,
+	agentEngine: null,
+	agentEngineSettings: null,
 };
 
 const trelloConfig = {
@@ -47,7 +47,6 @@ const trelloIntegrationRow: IntegrationRow = {
 	category: 'pm',
 	provider: 'trello',
 	config: trelloConfig,
-	triggers: {},
 };
 
 const jiraIntegrationRow: IntegrationRow = {
@@ -55,7 +54,6 @@ const jiraIntegrationRow: IntegrationRow = {
 	category: 'pm',
 	provider: 'jira',
 	config: jiraConfig,
-	triggers: {},
 };
 
 const githubIntegrationRow: IntegrationRow = {
@@ -63,7 +61,6 @@ const githubIntegrationRow: IntegrationRow = {
 	category: 'scm',
 	provider: 'github',
 	config: {},
-	triggers: { ownPrsOnly: true },
 };
 
 // ---------------------------------------------------------------------------
@@ -89,10 +86,10 @@ describe('buildAgentMaps', () => {
 		const result = buildAgentMaps([]);
 		expect(result.models).toEqual({});
 		expect(result.iterations).toEqual({});
-		expect(result.backends).toEqual({});
+		expect(result.engines).toEqual({});
 	});
 
-	it('maps model, iterations, and backend for each agent type', () => {
+	it('maps model, iterations, and engine for each agent type', () => {
 		const configs: AgentConfigRow[] = [
 			{
 				orgId: null,
@@ -100,7 +97,7 @@ describe('buildAgentMaps', () => {
 				agentType: 'implementation',
 				model: 'claude-3-7-sonnet',
 				maxIterations: 30,
-				agentBackend: 'claude-code',
+				agentEngine: 'claude-code',
 			},
 			{
 				orgId: null,
@@ -108,14 +105,14 @@ describe('buildAgentMaps', () => {
 				agentType: 'review',
 				model: 'claude-3-opus',
 				maxIterations: null,
-				agentBackend: null,
+				agentEngine: null,
 			},
 		];
 
 		const result = buildAgentMaps(configs);
 		expect(result.models).toEqual({ implementation: 'claude-3-7-sonnet', review: 'claude-3-opus' });
 		expect(result.iterations).toEqual({ implementation: 30 });
-		expect(result.backends).toEqual({ implementation: 'claude-code' });
+		expect(result.engines).toEqual({ implementation: 'claude-code' });
 	});
 
 	it('skips null values', () => {
@@ -126,14 +123,14 @@ describe('buildAgentMaps', () => {
 				agentType: 'splitting',
 				model: null,
 				maxIterations: null,
-				agentBackend: null,
+				agentEngine: null,
 			},
 		];
 
 		const result = buildAgentMaps(configs);
 		expect(Object.keys(result.models)).toHaveLength(0);
 		expect(Object.keys(result.iterations)).toHaveLength(0);
-		expect(Object.keys(result.backends)).toHaveLength(0);
+		expect(Object.keys(result.engines)).toHaveLength(0);
 	});
 });
 
@@ -146,53 +143,39 @@ describe('mapDefaultsRow', () => {
 		model: 'test-model',
 		maxIterations: 50,
 		watchdogTimeoutMs: 1800000,
-		cardBudgetUsd: '5.00',
-		agentBackend: 'llmist',
+		workItemBudgetUsd: '5.00',
+		agentEngine: 'llmist',
+		agentEngineSettings: { codex: { approvalPolicy: 'never' } },
 		progressModel: 'progress-model',
 		progressIntervalMinutes: '5',
 	};
 
 	it('maps all fields from row', () => {
-		const result = mapDefaultsRow(defaultsRow, []);
+		const result = mapDefaultsRow(defaultsRow);
 		expect(result.model).toBe('test-model');
 		expect(result.maxIterations).toBe(50);
 		expect(result.watchdogTimeoutMs).toBe(1800000);
-		expect(result.cardBudgetUsd).toBe(5);
-		expect(result.agentBackend).toBe('llmist');
+		expect(result.workItemBudgetUsd).toBe(5);
+		expect(result.agentEngine).toBe('llmist');
+		expect(result.engineSettings).toEqual({ codex: { approvalPolicy: 'never' } });
 		expect(result.progressModel).toBe('progress-model');
 		expect(result.progressIntervalMinutes).toBe(5);
 	});
 
-	it('converts cardBudgetUsd string to number', () => {
-		const result = mapDefaultsRow({ ...defaultsRow, cardBudgetUsd: '10.50' }, []);
-		expect(result.cardBudgetUsd).toBe(10.5);
+	it('converts workItemBudgetUsd string to number', () => {
+		const result = mapDefaultsRow({ ...defaultsRow, workItemBudgetUsd: '10.50' });
+		expect(result.workItemBudgetUsd).toBe(10.5);
 	});
 
 	it('converts progressIntervalMinutes string to number', () => {
-		const result = mapDefaultsRow({ ...defaultsRow, progressIntervalMinutes: '15' }, []);
+		const result = mapDefaultsRow({ ...defaultsRow, progressIntervalMinutes: '15' });
 		expect(result.progressIntervalMinutes).toBe(15);
 	});
 
 	it('handles undefined defaults row gracefully', () => {
-		const result = mapDefaultsRow(undefined, []);
+		const result = mapDefaultsRow(undefined);
 		expect(result.model).toBeUndefined();
-		expect(result.cardBudgetUsd).toBeUndefined();
-	});
-
-	it('builds agentModels and agentIterations from agent configs', () => {
-		const agentConfigs: AgentConfigRow[] = [
-			{
-				orgId: null,
-				projectId: null,
-				agentType: 'review',
-				model: 'review-model',
-				maxIterations: 20,
-				agentBackend: null,
-			},
-		];
-		const result = mapDefaultsRow(defaultsRow, agentConfigs);
-		expect(result.agentModels).toEqual({ review: 'review-model' });
-		expect(result.agentIterations).toEqual({ review: 20 });
+		expect(result.workItemBudgetUsd).toBeUndefined();
 	});
 });
 
@@ -214,18 +197,9 @@ describe('extractIntegrationConfigs', () => {
 		expect(result.trelloConfig).toBeUndefined();
 	});
 
-	it('extracts github triggers from integration rows', () => {
+	it('extracts github config from integration rows', () => {
 		const result = extractIntegrationConfigs([githubIntegrationRow]);
-		expect(result.githubTriggers).toEqual({ ownPrsOnly: true });
-	});
-
-	it('extracts trello triggers', () => {
-		const withTriggers: IntegrationRow = {
-			...trelloIntegrationRow,
-			triggers: { cardMovedToTodo: true },
-		};
-		const result = extractIntegrationConfigs([withTriggers]);
-		expect(result.trelloTriggers).toEqual({ cardMovedToTodo: true });
+		expect(result.githubConfig).toEqual({});
 	});
 
 	it('handles empty integration list', () => {
@@ -239,7 +213,7 @@ describe('extractIntegrationConfigs', () => {
 		const rows = [trelloIntegrationRow, githubIntegrationRow];
 		const result = extractIntegrationConfigs(rows);
 		expect(result.trelloConfig).toEqual(trelloConfig);
-		expect(result.githubTriggers).toEqual({ ownPrsOnly: true });
+		expect(result.githubConfig).toEqual({});
 		expect(result.jiraConfig).toBeUndefined();
 	});
 });
@@ -295,16 +269,6 @@ describe('mapProjectRow', () => {
 		expect(result.trello?.labels).toEqual({ processing: 'label-proc' });
 	});
 
-	it('includes trello triggers when non-empty', () => {
-		const result = mapProjectRow(makeInput({ trelloTriggers: { cardMovedToTodo: true } }));
-		expect(result.trello?.triggers).toEqual({ cardMovedToTodo: true });
-	});
-
-	it('omits trello triggers when empty object', () => {
-		const result = mapProjectRow(makeInput({ trelloTriggers: {} }));
-		expect(result.trello?.triggers).toBeUndefined();
-	});
-
 	it('builds jira config', () => {
 		const result = mapProjectRow(makeInput({ trelloConfig: undefined, jiraConfig }));
 		expect(result.jira?.projectKey).toBe('PROJ');
@@ -312,39 +276,26 @@ describe('mapProjectRow', () => {
 		expect(result.jira?.statuses).toEqual({ splitting: 'Briefing', todo: 'To Do' });
 	});
 
-	it('includes jira triggers when non-empty', () => {
-		const result = mapProjectRow(
-			makeInput({ trelloConfig: undefined, jiraConfig, jiraTriggers: { issueTransitioned: true } }),
-		);
-		expect(result.jira?.triggers).toEqual({ issueTransitioned: true });
-	});
-
-	it('builds github section when githubTriggers is non-empty', () => {
-		const result = mapProjectRow(makeInput({ githubTriggers: { ownPrsOnly: true } }));
-		expect(result.github?.triggers).toEqual({ ownPrsOnly: true });
-	});
-
-	it('omits github section when githubTriggers is empty', () => {
-		const result = mapProjectRow(makeInput({ githubTriggers: {} }));
-		expect(result.github).toBeUndefined();
-	});
-
-	it('omits agentBackend when neither row.agentBackend nor agent overrides are set', () => {
+	it('omits agentEngine when neither row.agentEngine nor agent overrides are set', () => {
 		const result = mapProjectRow(makeInput());
-		expect(result.agentBackend).toBeUndefined();
+		expect(result.agentEngine).toBeUndefined();
 	});
 
-	it('builds agentBackend from project row', () => {
+	it('builds agentEngine from project row', () => {
 		const result = mapProjectRow(
 			makeInput({
-				row: { ...baseProjectRow, agentBackend: 'claude-code', subscriptionCostZero: true },
+				row: {
+					...baseProjectRow,
+					agentEngine: 'claude-code',
+					agentEngineSettings: { codex: { sandboxMode: 'workspace-write' } },
+				},
 			}),
 		);
-		expect(result.agentBackend?.default).toBe('claude-code');
-		expect(result.agentBackend?.subscriptionCostZero).toBe(true);
+		expect(result.agentEngine?.default).toBe('claude-code');
+		expect(result.engineSettings).toEqual({ codex: { sandboxMode: 'workspace-write' } });
 	});
 
-	it('builds agentBackend overrides from project agent configs', () => {
+	it('builds agentEngine overrides from project agent configs', () => {
 		const agentConfigs: AgentConfigRow[] = [
 			{
 				orgId: null,
@@ -352,16 +303,18 @@ describe('mapProjectRow', () => {
 				agentType: 'implementation',
 				model: 'impl-model',
 				maxIterations: null,
-				agentBackend: 'claude-code',
+				agentEngine: 'claude-code',
 			},
 		];
 		const result = mapProjectRow(makeInput({ projectAgentConfigs: agentConfigs }));
-		expect(result.agentBackend?.overrides).toEqual({ implementation: 'claude-code' });
+		expect(result.agentEngine?.overrides).toEqual({ implementation: 'claude-code' });
 	});
 
-	it('converts cardBudgetUsd from string to number', () => {
-		const result = mapProjectRow(makeInput({ row: { ...baseProjectRow, cardBudgetUsd: '7.50' } }));
-		expect(result.cardBudgetUsd).toBe(7.5);
+	it('converts workItemBudgetUsd from string to number', () => {
+		const result = mapProjectRow(
+			makeInput({ row: { ...baseProjectRow, workItemBudgetUsd: '7.50' } }),
+		);
+		expect(result.workItemBudgetUsd).toBe(7.5);
 	});
 
 	it('includes squintDbUrl when set', () => {
@@ -379,7 +332,7 @@ describe('mapProjectRow', () => {
 				agentType: 'implementation',
 				model: null,
 				maxIterations: null,
-				agentBackend: null,
+				agentEngine: null,
 			},
 		];
 		const result = mapProjectRow(makeInput({ projectAgentConfigs: agentConfigs }));

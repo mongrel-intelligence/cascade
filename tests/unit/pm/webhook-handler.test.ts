@@ -12,24 +12,13 @@ vi.mock('../../../src/triggers/shared/agent-execution.js', () => ({
 	runAgentExecutionPipeline: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../../src/triggers/shared/webhook-queue.js', () => ({
-	processNextQueuedWebhook: vi.fn(),
-}));
-
 vi.mock('../../../src/utils/index.js', () => ({
-	clearCardActive: vi.fn(),
-	enqueueWebhook: vi.fn().mockReturnValue(true),
-	getQueueLength: vi.fn().mockReturnValue(0),
-	isCardActive: vi.fn().mockReturnValue(false),
-	isCurrentlyProcessing: vi.fn().mockReturnValue(false),
 	logger: {
 		debug: vi.fn(),
 		info: vi.fn(),
 		warn: vi.fn(),
 		error: vi.fn(),
 	},
-	setCardActive: vi.fn(),
-	setProcessing: vi.fn(),
 	startWatchdog: vi.fn(),
 }));
 
@@ -55,25 +44,19 @@ vi.mock('../../../src/pm/registry.js', () => ({
 	},
 }));
 
-import { processPMWebhook } from '../../../src/pm/webhook-handler.js';
-import { runAgentExecutionPipeline } from '../../../src/triggers/shared/agent-execution.js';
-import {
-	clearCardActive,
-	enqueueWebhook,
-	isCardActive,
-	isCurrentlyProcessing,
-	setCardActive,
-	setProcessing,
-	startWatchdog,
-} from '../../../src/utils/index.js';
+vi.mock('../../../src/router/agent-type-lock.js', () => ({
+	checkAgentTypeConcurrency: vi.fn().mockResolvedValue({ maxConcurrency: null, blocked: false }),
+	markAgentTypeEnqueued: vi.fn(),
+	clearAgentTypeEnqueued: vi.fn(),
+	markRecentlyDispatched: vi.fn(),
+}));
 
-const mockIsCurrentlyProcessing = vi.mocked(isCurrentlyProcessing);
-const mockIsCardActive = vi.mocked(isCardActive);
-const mockEnqueueWebhook = vi.mocked(enqueueWebhook);
-const mockSetProcessing = vi.mocked(setProcessing);
+import { processPMWebhook } from '../../../src/pm/webhook-handler.js';
+import { checkAgentTypeConcurrency } from '../../../src/router/agent-type-lock.js';
+import { runAgentExecutionPipeline } from '../../../src/triggers/shared/agent-execution.js';
+import { startWatchdog } from '../../../src/utils/index.js';
+
 const mockStartWatchdog = vi.mocked(startWatchdog);
-const mockSetCardActive = vi.mocked(setCardActive);
-const mockClearCardActive = vi.mocked(clearCardActive);
 const mockRunAgentExecutionPipeline = vi.mocked(runAgentExecutionPipeline);
 
 // ============================================================================
@@ -131,9 +114,6 @@ function createMockRegistry(result?: object | null) {
 }
 
 beforeEach(() => {
-	mockIsCurrentlyProcessing.mockReturnValue(false);
-	mockIsCardActive.mockReturnValue(false);
-	mockEnqueueWebhook.mockReturnValue(true);
 	mockRunAgentExecutionPipeline.mockResolvedValue(undefined);
 });
 
@@ -150,17 +130,6 @@ describe('processPMWebhook', () => {
 
 		await processPMWebhook(integration as never, { invalid: true }, registry as never);
 
-		expect(registry.dispatch).not.toHaveBeenCalled();
-	});
-
-	it('enqueues webhook when currently processing', async () => {
-		mockIsCurrentlyProcessing.mockReturnValue(true);
-		const integration = createMockIntegration();
-		const registry = createMockRegistry();
-
-		await processPMWebhook(integration as never, { type: 'card_moved' }, registry as never);
-
-		expect(mockEnqueueWebhook).toHaveBeenCalled();
 		expect(registry.dispatch).not.toHaveBeenCalled();
 	});
 
@@ -193,16 +162,6 @@ describe('processPMWebhook', () => {
 		expect(mockRunAgentExecutionPipeline).toHaveBeenCalled();
 	});
 
-	it('sets card active and clears it after execution', async () => {
-		const integration = createMockIntegration();
-		const registry = createMockRegistry();
-
-		await processPMWebhook(integration as never, { type: 'card_moved' }, registry as never);
-
-		expect(mockSetCardActive).toHaveBeenCalledWith('card-abc');
-		expect(mockClearCardActive).toHaveBeenCalledWith('card-abc');
-	});
-
 	it('starts watchdog on trigger match', async () => {
 		const integration = createMockIntegration();
 		const registry = createMockRegistry();
@@ -210,36 +169,6 @@ describe('processPMWebhook', () => {
 		await processPMWebhook(integration as never, { type: 'card_moved' }, registry as never);
 
 		expect(mockStartWatchdog).toHaveBeenCalledWith(120000);
-	});
-
-	it('sets processing to true on start and false when done', async () => {
-		const integration = createMockIntegration();
-		const registry = createMockRegistry();
-
-		await processPMWebhook(integration as never, { type: 'card_moved' }, registry as never);
-
-		expect(mockSetProcessing).toHaveBeenCalledWith(true);
-		expect(mockSetProcessing).toHaveBeenCalledWith(false);
-	});
-
-	it('skips agent execution when work item is already active', async () => {
-		mockIsCardActive.mockReturnValue(true);
-		const integration = createMockIntegration();
-		const registry = createMockRegistry();
-
-		await processPMWebhook(integration as never, { type: 'card_moved' }, registry as never);
-
-		expect(mockRunAgentExecutionPipeline).not.toHaveBeenCalled();
-	});
-
-	it('still clears processing flag when agent throws', async () => {
-		mockRunAgentExecutionPipeline.mockRejectedValue(new Error('Agent failed'));
-		const integration = createMockIntegration();
-		const registry = createMockRegistry();
-
-		await processPMWebhook(integration as never, { type: 'card_moved' }, registry as never);
-
-		expect(mockSetProcessing).toHaveBeenCalledWith(false);
 	});
 
 	it('uses pre-resolved trigger result when provided', async () => {
@@ -279,19 +208,17 @@ describe('processPMWebhook', () => {
 		expect(mockRunAgentExecutionPipeline).toHaveBeenCalled();
 	});
 
-	it('does not set card active when workItemId is undefined', async () => {
+	it('skips agent execution when agent-type concurrency is blocked', async () => {
+		vi.mocked(checkAgentTypeConcurrency).mockResolvedValueOnce({
+			maxConcurrency: 1,
+			blocked: true,
+		});
 		const integration = createMockIntegration();
-		const registry = {
-			dispatch: vi.fn().mockResolvedValue({
-				agentType: 'implementation',
-				workItemId: undefined, // no workItemId
-				agentInput: {},
-			}),
-		};
+		const registry = createMockRegistry();
 
 		await processPMWebhook(integration as never, { type: 'card_moved' }, registry as never);
 
-		expect(mockSetCardActive).not.toHaveBeenCalled();
+		expect(mockRunAgentExecutionPipeline).not.toHaveBeenCalled();
 	});
 
 	it('calls withCredentials on integration during execution', async () => {

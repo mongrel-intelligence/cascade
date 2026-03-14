@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getAgentLabel } from '../../../src/config/agentMessages.js';
 import {
-	formatGitHubProgressComment,
 	formatStatusMessage,
 	getStatusUpdateConfig,
 } from '../../../src/config/statusUpdateConfig.js';
@@ -28,10 +27,9 @@ vi.mock('../../../src/config/agentMessages.js', () => ({
 // Mock todo storage
 vi.mock('../../../src/gadgets/todo/storage.js', () => ({
 	loadTodos: vi.fn(() => []),
-	formatTodoList: vi.fn(() => '- [ ] Task 1\n- [x] Task 2'),
 }));
 
-import { formatTodoList, loadTodos } from '../../../src/gadgets/todo/storage.js';
+import { loadTodos } from '../../../src/gadgets/todo/storage.js';
 
 describe('config/statusUpdateConfig', () => {
 	describe('getStatusUpdateConfig', () => {
@@ -192,83 +190,6 @@ describe('config/statusUpdateConfig', () => {
 
 			const lines = message.split('\n');
 			expect(lines[0]).toBe('**🧑‍💻 Implementation Update** (implementation)');
-		});
-	});
-
-	describe('formatGitHubProgressComment', () => {
-		it('includes header message', () => {
-			vi.mocked(loadTodos).mockReturnValue([]);
-			vi.mocked(formatTodoList).mockReturnValue('- [ ] Task 1');
-
-			const comment = formatGitHubProgressComment('🔍 Reviewing PR...', 'review');
-
-			expect(comment).toContain('🔍 Reviewing PR...');
-		});
-
-		it('does not include progress bar or iteration counters', () => {
-			vi.mocked(loadTodos).mockReturnValue([]);
-			vi.mocked(formatTodoList).mockReturnValue('');
-
-			const comment = formatGitHubProgressComment('Header', 'review');
-
-			expect(comment).not.toMatch(/\[█/);
-			expect(comment).not.toMatch(/iteration \d+/);
-			expect(comment).not.toMatch(/\d+%/);
-			expect(comment).not.toContain('**Progress:**');
-		});
-
-		it('includes formatted todo list', () => {
-			vi.mocked(loadTodos).mockReturnValue([{ id: '1', content: 'Task 1', status: 'pending' }]);
-			vi.mocked(formatTodoList).mockReturnValue('- [ ] Task 1\n- [x] Task 2');
-
-			const comment = formatGitHubProgressComment('🔍 Reviewing PR...', 'review');
-
-			expect(comment).toContain('- [ ] Task 1');
-			expect(comment).toContain('- [x] Task 2');
-		});
-
-		it('includes metadata footer with agent type', () => {
-			vi.mocked(loadTodos).mockReturnValue([]);
-			vi.mocked(formatTodoList).mockReturnValue('');
-
-			const comment = formatGitHubProgressComment('🚀 Implementing feature...', 'implementation');
-
-			expect(comment).toContain('<sub>implementation</sub>');
-		});
-
-		it('separates sections with horizontal rule', () => {
-			vi.mocked(loadTodos).mockReturnValue([]);
-			vi.mocked(formatTodoList).mockReturnValue('');
-
-			const comment = formatGitHubProgressComment('Header text', 'review');
-
-			const lines = comment.split('\n');
-			expect(lines).toContain('---');
-		});
-
-		it('preserves header message exactly as provided', () => {
-			vi.mocked(loadTodos).mockReturnValue([]);
-			vi.mocked(formatTodoList).mockReturnValue('');
-
-			const headerWithMarkdown = '🔍 **Reviewing PR** #123\n\nThis is a test.';
-			const comment = formatGitHubProgressComment(headerWithMarkdown, 'review');
-
-			expect(comment.startsWith(headerWithMarkdown)).toBe(true);
-		});
-
-		it('loads todos and formats them via formatTodoList', () => {
-			const todos = [
-				{ id: '1', content: 'Test 1', status: 'done' as const },
-				{ id: '2', content: 'Test 2', status: 'pending' as const },
-			];
-			vi.mocked(loadTodos).mockReturnValue(todos);
-			vi.mocked(formatTodoList).mockReturnValue('formatted todos');
-
-			const comment = formatGitHubProgressComment('Header', 'implementation');
-
-			expect(loadTodos).toHaveBeenCalled();
-			expect(formatTodoList).toHaveBeenCalledWith(todos);
-			expect(comment).toContain('formatted todos');
 		});
 	});
 });

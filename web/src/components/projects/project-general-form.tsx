@@ -1,3 +1,5 @@
+import { EngineSettingsFields } from '@/components/settings/engine-settings-fields.js';
+import { ModelField } from '@/components/settings/model-field.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import {
@@ -8,7 +10,7 @@ import {
 	SelectValue,
 } from '@/components/ui/select.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
 interface Project {
@@ -18,23 +20,27 @@ interface Project {
 	baseBranch: string | null;
 	branchPrefix: string | null;
 	model: string | null;
-	cardBudgetUsd: string | null;
-	agentBackend: string | null;
-	subscriptionCostZero: boolean | null;
+	workItemBudgetUsd: string | null;
+	agentEngine: string | null;
+	engineSettings: Record<string, Record<string, unknown>> | null;
+	runLinksEnabled?: boolean | null;
 }
 
 export function ProjectGeneralForm({ project }: { project: Project }) {
 	const queryClient = useQueryClient();
+	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
+	const defaultsQuery = useQuery(trpc.defaults.get.queryOptions());
 	const [name, setName] = useState(project.name);
 	const [repo, setRepo] = useState(project.repo ?? '');
 	const [baseBranch, setBaseBranch] = useState(project.baseBranch ?? 'main');
 	const [branchPrefix, setBranchPrefix] = useState(project.branchPrefix ?? 'feature/');
 	const [model, setModel] = useState(project.model ?? '');
-	const [cardBudgetUsd, setCardBudgetUsd] = useState(project.cardBudgetUsd ?? '');
-	const [agentBackend, setAgentBackend] = useState(project.agentBackend ?? '');
-	const [subscriptionCostZero, setSubscriptionCostZero] = useState(
-		project.subscriptionCostZero ?? false,
+	const [workItemBudgetUsd, setWorkItemBudgetUsd] = useState(project.workItemBudgetUsd ?? '');
+	const [agentEngine, setAgentEngine] = useState(project.agentEngine ?? '');
+	const [engineSettings, setEngineSettings] = useState<Record<string, Record<string, unknown>>>(
+		project.engineSettings ?? {},
 	);
+	const [runLinksEnabled, setRunLinksEnabled] = useState(project.runLinksEnabled ?? false);
 
 	const updateMutation = useMutation({
 		mutationFn: (data: Record<string, unknown>) =>
@@ -57,11 +63,15 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 			baseBranch,
 			branchPrefix,
 			model: model || null,
-			cardBudgetUsd: cardBudgetUsd || null,
-			agentBackend: agentBackend || null,
-			subscriptionCostZero,
+			workItemBudgetUsd: workItemBudgetUsd || null,
+			agentEngine: agentEngine || null,
+			engineSettings: Object.keys(engineSettings).length > 0 ? engineSettings : null,
+			runLinksEnabled,
 		});
 	}
+
+	const effectiveEngineId = agentEngine || defaultsQuery.data?.agentEngine || '';
+	const effectiveEngine = enginesQuery.data?.find((engine) => engine.id === effectiveEngineId);
 
 	return (
 		<form onSubmit={handleSubmit} className="max-w-2xl space-y-4">
@@ -101,50 +111,55 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 			<div className="grid grid-cols-2 gap-4">
 				<div className="space-y-2">
 					<Label htmlFor="model">Model</Label>
-					<Input
-						id="model"
-						value={model}
-						onChange={(e) => setModel(e.target.value)}
-						placeholder="Inherits from defaults"
-					/>
+					<ModelField id="model" value={model} onChange={setModel} engine={effectiveEngineId} />
 				</div>
 				<div className="space-y-2">
-					<Label htmlFor="cardBudgetUsd">Card Budget (USD)</Label>
+					<Label htmlFor="workItemBudgetUsd">Work Item Budget (USD)</Label>
 					<Input
-						id="cardBudgetUsd"
-						value={cardBudgetUsd}
-						onChange={(e) => setCardBudgetUsd(e.target.value)}
+						id="workItemBudgetUsd"
+						value={workItemBudgetUsd}
+						onChange={(e) => setWorkItemBudgetUsd(e.target.value)}
 						placeholder="Inherits from defaults"
 					/>
 				</div>
 			</div>
-			<div className="grid grid-cols-2 gap-4">
-				<div className="space-y-2">
-					<Label>Agent Backend</Label>
-					<Select
-						value={agentBackend}
-						onValueChange={(v) => setAgentBackend(v === '_none' ? '' : v)}
-					>
-						<SelectTrigger className="w-full">
-							<SelectValue placeholder="Inherits from defaults" />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectItem value="_none">Inherits from defaults</SelectItem>
-							<SelectItem value="llmist">llmist</SelectItem>
-							<SelectItem value="claude-code">claude-code</SelectItem>
-						</SelectContent>
-					</Select>
-				</div>
-				<div className="flex items-center gap-2 pt-6">
-					<input
-						id="subscriptionCostZero"
-						type="checkbox"
-						checked={subscriptionCostZero}
-						onChange={(e) => setSubscriptionCostZero(e.target.checked)}
-						className="h-4 w-4 rounded border-input"
-					/>
-					<Label htmlFor="subscriptionCostZero">Subscription Cost Zero</Label>
-				</div>
+			<div className="space-y-2">
+				<Label>Agent Engine</Label>
+				<Select
+					value={agentEngine || '_none'}
+					onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
+				>
+					<SelectTrigger className="w-full">
+						<SelectValue placeholder="Inherits from defaults" />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="_none">Inherits from defaults</SelectItem>
+						{enginesQuery.data?.map((engine) => (
+							<SelectItem key={engine.id} value={engine.id}>
+								{engine.label}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+			</div>
+			<EngineSettingsFields
+				engine={effectiveEngine}
+				engines={enginesQuery.data}
+				value={engineSettings}
+				onChange={(next) => setEngineSettings(next ?? {})}
+			/>
+			<div className="flex items-center gap-3">
+				<input
+					type="checkbox"
+					id="runLinksEnabled"
+					checked={runLinksEnabled}
+					onChange={(e) => setRunLinksEnabled(e.target.checked)}
+					className="h-4 w-4 rounded border-border"
+				/>
+				<Label htmlFor="runLinksEnabled" className="cursor-pointer">
+					Enable run links in comments (requires{' '}
+					<code className="text-xs">CASCADE_DASHBOARD_URL</code> env var)
+				</Label>
 			</div>
 			<div className="flex items-center gap-2">
 				<button

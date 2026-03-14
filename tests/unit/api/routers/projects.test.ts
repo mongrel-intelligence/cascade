@@ -115,14 +115,30 @@ describe('projectsRouter', () => {
 
 	describe('listFull', () => {
 		it('returns all project columns', async () => {
-			const projects = [{ id: 'p1', name: 'Project 1', repo: 'owner/repo1', baseBranch: 'main' }];
+			const projects = [
+				{
+					id: 'p1',
+					name: 'Project 1',
+					repo: 'owner/repo1',
+					baseBranch: 'main',
+					agentEngineSettings: { codex: { approvalPolicy: 'never' } },
+				},
+			];
 			mockListProjectsFull.mockResolvedValue(projects);
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.listFull();
 
 			expect(mockListProjectsFull).toHaveBeenCalledWith('org-1');
-			expect(result).toEqual(projects);
+			expect(result).toEqual([
+				{
+					id: 'p1',
+					name: 'Project 1',
+					repo: 'owner/repo1',
+					baseBranch: 'main',
+					engineSettings: { codex: { approvalPolicy: 'never' } },
+				},
+			]);
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
@@ -133,14 +149,24 @@ describe('projectsRouter', () => {
 
 	describe('getById', () => {
 		it('returns project when found', async () => {
-			const project = { id: 'p1', orgId: 'org-1', name: 'Project 1' };
+			const project = {
+				id: 'p1',
+				orgId: 'org-1',
+				name: 'Project 1',
+				agentEngineSettings: { codex: { sandboxMode: 'read-only' } },
+			};
 			mockGetProjectFull.mockResolvedValue(project);
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.getById({ id: 'p1' });
 
 			expect(mockGetProjectFull).toHaveBeenCalledWith('p1', 'org-1');
-			expect(result).toEqual(project);
+			expect(result).toEqual({
+				id: 'p1',
+				orgId: 'org-1',
+				name: 'Project 1',
+				engineSettings: { codex: { sandboxMode: 'read-only' } },
+			});
 		});
 
 		it('throws NOT_FOUND when project does not exist', async () => {
@@ -163,12 +189,14 @@ describe('projectsRouter', () => {
 				id: 'my-project',
 				name: 'My Project',
 				repo: 'owner/repo',
+				engineSettings: { codex: { approvalPolicy: 'never' } },
 			});
 
 			expect(mockCreateProject).toHaveBeenCalledWith('org-1', {
 				id: 'my-project',
 				name: 'My Project',
 				repo: 'owner/repo',
+				engineSettings: { codex: { approvalPolicy: 'never' } },
 			});
 			expect(result).toEqual(created);
 		});
@@ -185,6 +213,21 @@ describe('projectsRouter', () => {
 			await expect(
 				caller.create({ id: 'valid-id', name: '', repo: 'owner/repo' }),
 			).rejects.toThrow();
+		});
+
+		it('rejects unsupported engine settings on create', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				caller.create({
+					id: 'valid-id',
+					name: 'Project',
+					repo: 'owner/repo',
+					engineSettings: {
+						unknown: { foo: 'bar' },
+					},
+				}),
+			).rejects.toThrow('Unsupported engine settings');
 		});
 	});
 
@@ -209,6 +252,35 @@ describe('projectsRouter', () => {
 			await expect(caller.update({ id: 'p1', name: 'X' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
 			});
+			expect(mockUpdateProject).not.toHaveBeenCalled();
+		});
+
+		it('passes engineSettings through on update', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockUpdateProject.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({
+				id: 'p1',
+				engineSettings: { codex: { approvalPolicy: 'never', webSearch: false } },
+			});
+
+			expect(mockUpdateProject).toHaveBeenCalledWith('p1', 'org-1', {
+				engineSettings: { codex: { approvalPolicy: 'never', webSearch: false } },
+			});
+		});
+
+		it('rejects unsupported engine settings on update', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				caller.update({
+					id: 'p1',
+					engineSettings: {
+						unknown: { foo: 'bar' },
+					},
+				}),
+			).rejects.toThrow('Unsupported engine settings');
 			expect(mockUpdateProject).not.toHaveBeenCalled();
 		});
 	});
@@ -339,22 +411,6 @@ describe('projectsRouter', () => {
 
 				expect(result).toEqual([]);
 			});
-
-			it('lists email credentials', async () => {
-				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-				mockGetIntegrationByProjectAndCategory.mockResolvedValue({ id: 20 });
-				const creds = [{ role: 'gmail_refresh_token', credentialId: 7, credentialName: 'Gmail' }];
-				mockListIntegrationCredentials.mockResolvedValue(creds);
-				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-				const result = await caller.integrationCredentials.list({
-					projectId: 'p1',
-					category: 'email',
-				});
-
-				expect(mockGetIntegrationByProjectAndCategory).toHaveBeenCalledWith('p1', 'email');
-				expect(result).toEqual(creds);
-			});
 		});
 
 		describe('set', () => {
@@ -375,22 +431,42 @@ describe('projectsRouter', () => {
 				expect(mockSetIntegrationCredential).toHaveBeenCalledWith(10, 'api_key', 42);
 			});
 
-			it('sets email credential role', async () => {
+			it('auto-creates SCM integration when none exists', async () => {
 				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project
 				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // credential
-				mockGetIntegrationByProjectAndCategory.mockResolvedValue({ id: 20 });
+				// First call: no integration; second call (after auto-create): integration exists
+				mockGetIntegrationByProjectAndCategory
+					.mockResolvedValueOnce(null)
+					.mockResolvedValueOnce({ id: 20 });
+				mockUpsertProjectIntegration.mockResolvedValue(undefined);
 				mockSetIntegrationCredential.mockResolvedValue(undefined);
 				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 				await caller.integrationCredentials.set({
 					projectId: 'p1',
-					category: 'email',
-					role: 'imap_password',
-					credentialId: 7,
+					category: 'scm',
+					role: 'implementer_token',
+					credentialId: 42,
 				});
 
-				expect(mockGetIntegrationByProjectAndCategory).toHaveBeenCalledWith('p1', 'email');
-				expect(mockSetIntegrationCredential).toHaveBeenCalledWith(20, 'imap_password', 7);
+				expect(mockUpsertProjectIntegration).toHaveBeenCalledWith('p1', 'scm', 'github', {});
+				expect(mockSetIntegrationCredential).toHaveBeenCalledWith(20, 'implementer_token', 42);
+			});
+
+			it('throws NOT_FOUND for non-SCM category when integration missing', async () => {
+				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project
+				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // credential
+				mockGetIntegrationByProjectAndCategory.mockResolvedValue(null);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await expect(
+					caller.integrationCredentials.set({
+						projectId: 'p1',
+						category: 'pm',
+						role: 'api_key',
+						credentialId: 42,
+					}),
+				).rejects.toMatchObject({ code: 'NOT_FOUND' });
 			});
 
 			it('throws NOT_FOUND when credential belongs to different org', async () => {
@@ -423,22 +499,6 @@ describe('projectsRouter', () => {
 				});
 
 				expect(mockRemoveIntegrationCredential).toHaveBeenCalledWith(10, 'api_key');
-			});
-
-			it('removes email credential role', async () => {
-				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-				mockGetIntegrationByProjectAndCategory.mockResolvedValue({ id: 20 });
-				mockRemoveIntegrationCredential.mockResolvedValue(undefined);
-				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-				await caller.integrationCredentials.remove({
-					projectId: 'p1',
-					category: 'email',
-					role: 'imap_password',
-				});
-
-				expect(mockGetIntegrationByProjectAndCategory).toHaveBeenCalledWith('p1', 'email');
-				expect(mockRemoveIntegrationCredential).toHaveBeenCalledWith(20, 'imap_password');
 			});
 		});
 	});

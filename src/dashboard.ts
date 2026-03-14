@@ -1,8 +1,9 @@
 /**
  * Dashboard API Entry Point
  *
- * Lightweight Hono server for the dashboard container.
- * Serves only auth routes + tRPC — no webhooks, no trigger registry, no static files.
+ * Hono server for the dashboard container.
+ * Serves auth routes + tRPC. In self-hosted mode (dist/web/ exists),
+ * also serves the frontend as static files.
  *
  * Environment variables:
  * - PORT (default: 3001)
@@ -12,7 +13,9 @@
  * - REDIS_URL — Redis for job dispatch to the router's worker-manager
  */
 
+import { existsSync } from 'node:fs';
 import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
 import { trpcServer } from '@hono/trpc-server';
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
@@ -63,6 +66,18 @@ app.use(
 		},
 	}),
 );
+
+// Self-hosted mode: serve frontend static files when built into dist/web/
+if (existsSync('./dist/web/index.html')) {
+	app.use('/assets/*', serveStatic({ root: './dist/web' }));
+	app.get(
+		'*',
+		serveStatic({
+			root: './dist/web',
+			rewriteRequestPath: () => '/index.html',
+		}),
+	);
+}
 
 // 404
 app.notFound((c) => c.json({ error: 'Not Found' }, 404));

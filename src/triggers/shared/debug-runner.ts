@@ -26,8 +26,8 @@ async function extractLogsToTempDir(runId: string): Promise<string> {
 	if (logs?.cascadeLog) {
 		fs.writeFileSync(join(logDir, 'cascade.log'), logs.cascadeLog, 'utf-8');
 	}
-	if (logs?.llmistLog) {
-		fs.writeFileSync(join(logDir, 'llmist.log'), logs.llmistLog, 'utf-8');
+	if (logs?.engineLog) {
+		fs.writeFileSync(join(logDir, 'engine.log'), logs.engineLog, 'utf-8');
 	}
 
 	// Write LLM call request/response files
@@ -105,17 +105,17 @@ function parseDebugOutput(output: string): {
  * 5. Post summary comment on original Trello card
  * 6. Cleanup temp directory
  */
-function resolveCardUrl(cardId: string): string {
+function resolveWorkItemUrl(workItemId: string): string {
 	try {
 		const provider = getPMProvider();
-		return provider.getWorkItemUrl(cardId);
+		return provider.getWorkItemUrl(workItemId);
 	} catch {
-		return `https://trello.com/c/${cardId}`;
+		return `https://trello.com/c/${workItemId}`;
 	}
 }
 
 async function postDebugComment(
-	cardId: string,
+	workItemId: string,
 	analyzedRunId: string,
 	parsed: ReturnType<typeof parseDebugOutput>,
 ): Promise<void> {
@@ -125,10 +125,10 @@ async function postDebugComment(
 			? `**Root Cause:** ${parsed.rootCause.slice(0, 200)}\n\n`
 			: '';
 		const comment = `🔍 **Debug Analysis** (run: ${analyzedRunId.slice(0, 8)})\n\n${parsed.summary}\n\n${rootCauseText}_Full analysis stored in database._`;
-		await provider.addComment(cardId, comment);
+		await provider.addComment(workItemId, comment);
 	} catch (err) {
 		logger.warn('Failed to post debug summary comment', {
-			cardId,
+			workItemId,
 			error: String(err),
 		});
 	}
@@ -138,7 +138,7 @@ export async function triggerDebugAnalysis(
 	analyzedRunId: string,
 	project: ProjectConfig,
 	config: CascadeConfig,
-	cardId?: string,
+	workItemId?: string,
 ): Promise<void> {
 	const run = await getRunById(analyzedRunId);
 	if (!run) {
@@ -149,7 +149,7 @@ export async function triggerDebugAnalysis(
 	logger.info('Starting debug analysis', {
 		analyzedRunId,
 		agentType: run.agentType,
-		cardId,
+		workItemId,
 	});
 
 	markAnalysisRunning(analyzedRunId);
@@ -159,9 +159,9 @@ export async function triggerDebugAnalysis(
 
 		const agentResult: AgentResult = await runAgent('debug', {
 			logDir,
-			originalCardId: cardId,
-			originalCardName: cardId ? `Card ${cardId}` : 'Unknown card',
-			originalCardUrl: cardId ? resolveCardUrl(cardId) : '',
+			originalWorkItemId: workItemId,
+			originalWorkItemName: workItemId ? `Card ${workItemId}` : 'Unknown card',
+			originalWorkItemUrl: workItemId ? resolveWorkItemUrl(workItemId) : '',
 			detectedAgentType: run.agentType,
 			project,
 			config,
@@ -181,8 +181,8 @@ export async function triggerDebugAnalysis(
 				run.status === 'timed_out' ? 'timeout' : run.status === 'failed' ? 'failure' : 'manual',
 		});
 
-		if (cardId && parsed.summary) {
-			await postDebugComment(cardId, analyzedRunId, parsed);
+		if (workItemId && parsed.summary) {
+			await postDebugComment(workItemId, analyzedRunId, parsed);
 		}
 
 		logger.info('Debug analysis completed', {

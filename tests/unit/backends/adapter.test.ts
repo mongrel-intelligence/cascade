@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock all external dependencies
 vi.mock('../../../src/agents/shared/repository.js', () => ({
@@ -26,6 +28,7 @@ vi.mock('../../../src/utils/cascadeEnv.js', () => ({
 
 vi.mock('../../../src/utils/repo.js', () => ({
 	cleanupTempDir: vi.fn(),
+	getWorkspaceDir: vi.fn(() => '/tmp/cascade-test'),
 	parseRepoFullName: vi.fn((fullName: string) => {
 		const [owner, repo] = fullName.split('/');
 		return { owner, repo };
@@ -42,7 +45,13 @@ vi.mock('../../../src/backends/progress.js', () => ({
 }));
 
 vi.mock('../../../src/gadgets/sessionState.js', () => ({
+	PR_SIDECAR_ENV_VAR: 'CASCADE_PR_SIDECAR_PATH',
+	PUSHED_CHANGES_SIDECAR_ENV_VAR: 'CASCADE_PUSHED_CHANGES_SIDECAR_PATH',
+	REVIEW_SIDECAR_ENV_VAR: 'CASCADE_REVIEW_SIDECAR_PATH',
 	recordInitialComment: vi.fn(),
+	recordPRCreation: vi.fn(),
+	recordReviewSubmission: vi.fn(),
+	clearInitialComment: vi.fn(),
 }));
 
 vi.mock('../../../src/config/customModels.js', () => ({
@@ -65,8 +74,10 @@ vi.mock('../../../src/github/client.js', () => ({
 	withGitHubToken: vi.fn((_token: string, fn: () => Promise<unknown>) => fn()),
 }));
 
-vi.mock('../../../src/backends/agent-profiles.js', () => ({
+vi.mock('../../../src/agents/definitions/profiles.js', () => ({
 	getAgentProfile: vi.fn(),
+	needsGitStateStopHooks: vi.fn(() => false),
+	getAgentCapabilities: vi.fn(),
 }));
 
 const mockCaptureException = vi.fn();
@@ -79,7 +90,7 @@ vi.mock('../../../src/agents/prompts/index.js', () => ({}));
 vi.mock('../../../src/agents/shared/promptContext.js', () => ({
 	buildPromptContext: vi.fn().mockImplementation(
 		(
-			cardId: string | undefined,
+			workItemId: string | undefined,
 			project: { id: string },
 			triggerType?: string,
 			prContext?: {
@@ -89,7 +100,7 @@ vi.mock('../../../src/agents/shared/promptContext.js', () => ({
 				headSha?: string;
 			},
 		) => ({
-			cardId,
+			workItemId,
 			projectId: project.id,
 			pmType: 'trello',
 			...(prContext && {
@@ -112,15 +123,20 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	storeRunLogs: (...args: unknown[]) => mockStoreRunLogs(...args),
 }));
 
+import { type AgentProfile, getAgentProfile } from '../../../src/agents/definitions/profiles.js';
 import { resolveModelConfig } from '../../../src/agents/shared/modelResolution.js';
 import { setupRepository } from '../../../src/agents/shared/repository.js';
 import { createAgentLogger } from '../../../src/agents/utils/logging.js';
-import { executeWithBackend } from '../../../src/backends/adapter.js';
-import { type AgentProfile, getAgentProfile } from '../../../src/backends/agent-profiles.js';
+import { executeWithEngine } from '../../../src/backends/adapter.js';
 import { createProgressMonitor } from '../../../src/backends/progress.js';
-import type { AgentBackend } from '../../../src/backends/types.js';
+import type { AgentEngine } from '../../../src/backends/types.js';
 import { getAllProjectCredentials } from '../../../src/config/provider.js';
-import { recordInitialComment } from '../../../src/gadgets/sessionState.js';
+import {
+	clearInitialComment,
+	recordInitialComment,
+	recordPRCreation,
+	recordReviewSubmission,
+} from '../../../src/gadgets/sessionState.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../../../src/utils/cascadeEnv.js';
 import {
@@ -144,6 +160,9 @@ const mockCleanupLogDirectory = vi.mocked(cleanupLogDirectory);
 const mockClearWatchdogCleanup = vi.mocked(clearWatchdogCleanup);
 const mockCreateProgressMonitor = vi.mocked(createProgressMonitor);
 const mockRecordInitialComment = vi.mocked(recordInitialComment);
+const mockRecordPRCreation = vi.mocked(recordPRCreation);
+const mockRecordReviewSubmission = vi.mocked(recordReviewSubmission);
+const mockClearInitialComment = vi.mocked(clearInitialComment);
 const mockGetAllProjectCredentials = vi.mocked(getAllProjectCredentials);
 const mockGetAgentProfile = vi.mocked(getAgentProfile);
 
@@ -166,8 +185,9 @@ function makeConfig(): CascadeConfig {
 			maxIterations: 50,
 			agentIterations: {},
 			watchdogTimeoutMs: 1800000,
-			cardBudgetUsd: 5,
-			agentBackend: 'llmist',
+			workItemBudgetUsd: 5,
+			agentEngine: 'llmist',
+			engineSettings: {},
 			progressModel: 'openrouter:google/gemini-2.5-flash-lite',
 			progressIntervalMinutes: 5,
 		},
@@ -179,16 +199,23 @@ function makeInput(
 	overrides?: Partial<AgentInput>,
 ): AgentInput & { project: ProjectConfig; config: CascadeConfig } {
 	return {
-		cardId: 'card123',
+		workItemId: 'card123',
 		project: makeProject(),
 		config: makeConfig(),
 		...overrides,
 	} as AgentInput & { project: ProjectConfig; config: CascadeConfig };
 }
 
-function makeMockBackend(): AgentBackend {
+function makeMockBackend(id = 'test-engine'): AgentEngine {
 	return {
-		name: 'test-backend',
+		definition: {
+			id,
+			label: 'Test Engine',
+			description: 'Test engine',
+			capabilities: [],
+			modelSelection: { type: 'free-text' },
+			logLabel: 'Engine Log',
+		},
 		execute: vi.fn().mockResolvedValue({
 			success: true,
 			output: 'Done',
@@ -201,16 +228,14 @@ function makeMockBackend(): AgentBackend {
 function makeMockProfile(overrides?: Partial<AgentProfile>): AgentProfile {
 	return {
 		filterTools: (tools) => tools,
-		sdkTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
-		enableStopHooks: true,
+		allCapabilities: ['fs:read', 'fs:write', 'shell:exec'],
 		needsGitHubToken: false,
+		finishHooks: {},
 		fetchContext: vi.fn().mockResolvedValue([]),
 		buildTaskPrompt: () => 'Process the work item',
 		capabilities: {
-			canEditFiles: true,
-			canCreatePR: true,
-			canUpdateChecklists: true,
-			isReadOnly: false,
+			required: ['fs:read'],
+			optional: ['fs:write', 'shell:exec'],
 		},
 		...overrides,
 	};
@@ -222,7 +247,7 @@ function setupMocks() {
 		close: vi.fn(),
 		getZippedBuffer: vi.fn().mockResolvedValue(Buffer.from('logs')),
 		logPath: '/tmp/test.log',
-		llmistLogPath: '/tmp/test-llmist.log',
+		engineLogPath: '/tmp/test-llmist.log',
 		llmCallLogger: { logDir: '/tmp/llm-calls' },
 	};
 	mockCreateFileLogger.mockReturnValue(mockLoggerInstance as never);
@@ -250,51 +275,51 @@ beforeEach(() => {
 	mockStoreRunLogs.mockResolvedValue(undefined);
 });
 
-describe('executeWithBackend', () => {
-	it('executes backend and returns successful result', async () => {
+describe('executeWithEngine', () => {
+	it('executes engine and returns successful result', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
+		const engine = makeMockBackend();
 		const input = makeInput();
 
-		const result = await executeWithBackend(backend, 'implementation', input);
+		const result = await executeWithEngine(engine, 'implementation', input);
 
 		expect(result.success).toBe(true);
 		expect(result.output).toBe('Done');
 		expect(result.prUrl).toBe('https://github.com/o/r/pull/1');
-		expect(backend.execute).toHaveBeenCalled();
+		expect(engine.execute).toHaveBeenCalled();
 	});
 
 	it('loads and unloads CASCADE env', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
+		const engine = makeMockBackend();
 		const input = makeInput();
 
-		await executeWithBackend(backend, 'implementation', input);
+		await executeWithEngine(engine, 'implementation', input);
 
 		expect(mockLoadCascadeEnv).toHaveBeenCalled();
 		expect(mockUnloadCascadeEnv).toHaveBeenCalled();
 	});
 
-	it('returns error result when backend throws', async () => {
+	it('returns error result when engine throws', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
-		vi.mocked(backend.execute).mockRejectedValue(new Error('Backend crashed'));
+		const engine = makeMockBackend();
+		vi.mocked(engine.execute).mockRejectedValue(new Error('Backend crashed'));
 		const input = makeInput();
 
-		const result = await executeWithBackend(backend, 'implementation', input);
+		const result = await executeWithEngine(engine, 'implementation', input);
 
 		expect(result.success).toBe(false);
 		expect(result.error).toContain('Backend crashed');
 	});
 
-	it('reports backend errors to Sentry via captureException', async () => {
+	it('reports engine errors to Sentry via captureException', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
+		const engine = makeMockBackend();
 		const error = new Error('HttpError: Not Found');
-		vi.mocked(backend.execute).mockRejectedValue(error);
+		vi.mocked(engine.execute).mockRejectedValue(error);
 		const input = makeInput();
 
-		await executeWithBackend(backend, 'review', input);
+		await executeWithEngine(engine, 'review', input);
 
 		expect(mockCaptureException).toHaveBeenCalledWith(error, {
 			tags: {
@@ -310,44 +335,44 @@ describe('executeWithBackend', () => {
 
 	it('includes log buffer in result', async () => {
 		const loggerInstance = setupMocks();
-		const backend = makeMockBackend();
-		vi.mocked(backend.execute).mockResolvedValue({
+		const engine = makeMockBackend();
+		vi.mocked(engine.execute).mockResolvedValue({
 			success: true,
 			output: 'Done',
 		});
 		const input = makeInput();
 
-		const result = await executeWithBackend(backend, 'implementation', input);
+		const result = await executeWithEngine(engine, 'implementation', input);
 
 		expect(result.logBuffer).toEqual(Buffer.from('logs'));
 	});
 
 	it('calls resolveRepoDir → setupRepository when no logDir', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
+		const engine = makeMockBackend();
 		const input = makeInput();
 
-		await executeWithBackend(backend, 'implementation', input);
+		await executeWithEngine(engine, 'implementation', input);
 
 		expect(mockSetupRepository).toHaveBeenCalled();
 	});
 
 	it('uses logDir when provided instead of setupRepository', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
+		const engine = makeMockBackend();
 		const input = makeInput({ logDir: '/existing/dir' });
 
-		await executeWithBackend(backend, 'implementation', input);
+		await executeWithEngine(engine, 'implementation', input);
 
 		expect(mockSetupRepository).not.toHaveBeenCalled();
 	});
 
 	it('cleans up resources in finally block', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
+		const engine = makeMockBackend();
 		const input = makeInput();
 
-		await executeWithBackend(backend, 'implementation', input);
+		await executeWithEngine(engine, 'implementation', input);
 
 		expect(mockClearWatchdogCleanup).toHaveBeenCalled();
 		expect(mockCleanupTempDir).toHaveBeenCalled();
@@ -358,10 +383,10 @@ describe('executeWithBackend', () => {
 	it('skips all cleanup in CASCADE_LOCAL_MODE', async () => {
 		process.env.CASCADE_LOCAL_MODE = 'true';
 		setupMocks();
-		const backend = makeMockBackend();
+		const engine = makeMockBackend();
 		const input = makeInput();
 
-		await executeWithBackend(backend, 'implementation', input);
+		await executeWithEngine(engine, 'implementation', input);
 
 		expect(mockCleanupTempDir).not.toHaveBeenCalled();
 		expect(mockCleanupLogFile).not.toHaveBeenCalled();
@@ -370,10 +395,10 @@ describe('executeWithBackend', () => {
 
 	it('skips temp dir cleanup when logDir was provided', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
+		const engine = makeMockBackend();
 		const input = makeInput({ logDir: '/existing/dir' });
 
-		await executeWithBackend(backend, 'implementation', input);
+		await executeWithEngine(engine, 'implementation', input);
 
 		expect(mockCleanupTempDir).not.toHaveBeenCalled();
 		// But log files should still be cleaned up
@@ -384,20 +409,20 @@ describe('executeWithBackend', () => {
 		setupMocks();
 		const mockFetchContext = vi.fn().mockResolvedValue([]);
 		mockGetAgentProfile.mockReturnValue(makeMockProfile({ fetchContext: mockFetchContext }));
-		const backend = makeMockBackend();
-		const input = makeInput({ cardId: 'card123' });
+		const engine = makeMockBackend();
+		const input = makeInput({ workItemId: 'card123' });
 
-		await executeWithBackend(backend, 'implementation', input);
+		await executeWithEngine(engine, 'implementation', input);
 
 		expect(mockFetchContext).toHaveBeenCalledWith(
 			expect.objectContaining({
-				input: expect.objectContaining({ cardId: 'card123' }),
+				input: expect.objectContaining({ workItemId: 'card123' }),
 				contextFiles: [],
 			}),
 		);
 	});
 
-	it('uses profile to filter tools and set sdkTools', async () => {
+	it('uses profile to filter tools and set native tool capabilities', async () => {
 		setupMocks();
 		const filterTools = vi.fn((tools) =>
 			tools.filter((t: { name: string }) => t.name === 'Finish'),
@@ -405,70 +430,124 @@ describe('executeWithBackend', () => {
 		mockGetAgentProfile.mockReturnValue(
 			makeMockProfile({
 				filterTools,
-				sdkTools: ['Read', 'Bash', 'Glob', 'Grep'],
-				enableStopHooks: false,
+				allCapabilities: ['fs:read', 'shell:exec'],
+				finishHooks: {},
 			}),
 		);
-		const backend = makeMockBackend();
+		const engine = makeMockBackend();
 		const input = makeInput();
 
-		await executeWithBackend(backend, 'implementation', input);
+		await executeWithEngine(engine, 'implementation', input);
 
 		expect(filterTools).toHaveBeenCalled();
-		const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
+		const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
 		expect(backendInput.availableTools).toHaveLength(1);
 		expect(backendInput.availableTools[0].name).toBe('Finish');
-		expect(backendInput.sdkTools).toEqual(['Read', 'Bash', 'Glob', 'Grep']);
+		expect(backendInput.nativeToolCapabilities).toEqual(['fs:read', 'shell:exec']);
 		expect(backendInput.enableStopHooks).toBe(false);
 	});
 
-	it('marks implementation agent as failed when no PR was created', async () => {
+	it('marks implementation agent as failed when no authoritative PR evidence was recorded', async () => {
 		setupMocks();
-		mockGetAgentProfile.mockReturnValue(makeMockProfile({ requiresPR: true }));
-		const backend = makeMockBackend();
-		vi.mocked(backend.execute).mockResolvedValue({
+		mockGetAgentProfile.mockReturnValue(makeMockProfile({ finishHooks: { requiresPR: true } }));
+		const engine = makeMockBackend();
+		vi.mocked(engine.execute).mockResolvedValue({
 			success: true,
 			output: 'Done',
 			// No prUrl
 		});
 		const input = makeInput();
 
-		const result = await executeWithBackend(backend, 'implementation', input);
+		const result = await executeWithEngine(engine, 'implementation', input);
 
 		expect(result.success).toBe(false);
-		expect(result.error).toBe('Agent completed but no PR was created');
+		expect(result.error).toBe('Agent completed but no authoritative PR creation was recorded');
 		expect(logger.warn).toHaveBeenCalledWith(
-			'implementation agent completed without creating a PR',
-			expect.objectContaining({ backend: 'test-backend' }),
+			'implementation agent completed without authoritative PR evidence',
+			expect.objectContaining({ engine: 'test-engine' }),
+		);
+	});
+
+	it('passes completion requirements through to native-tool engines', async () => {
+		setupMocks();
+		mockGetAgentProfile.mockReturnValue(
+			makeMockProfile({
+				finishHooks: { requiresPR: true, requiresReview: true, requiresPushedChanges: true },
+			}),
+		);
+		const engine = makeMockBackend('opencode');
+		const input = makeInput();
+
+		await executeWithEngine(engine, 'implementation', input);
+
+		const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
+		expect(backendInput.completionRequirements).toEqual(
+			expect.objectContaining({
+				requiresPR: true,
+				requiresReview: true,
+				requiresPushedChanges: true,
+				maxContinuationTurns: 2,
+			}),
+		);
+		expect(backendInput.completionRequirements?.pushedChangesSidecarPath).toBeTruthy();
+		expect(backendInput.projectSecrets?.CASCADE_FINISH_HOOKS).toBe(
+			JSON.stringify({
+				requiresPR: true,
+				requiresReview: true,
+				requiresPushedChanges: true,
+			}),
+		);
+	});
+
+	it('marks requiresPushedChanges agent as failed when no authoritative push evidence was recorded', async () => {
+		setupMocks();
+		mockGetAgentProfile.mockReturnValue(
+			makeMockProfile({ finishHooks: { requiresPushedChanges: true } }),
+		);
+		const engine = makeMockBackend('opencode');
+		vi.mocked(engine.execute).mockResolvedValue({
+			success: true,
+			output: 'Done',
+		});
+
+		const result = await executeWithEngine(engine, 'respond-to-review', makeInput());
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe('Agent completed but no authoritative pushed changes were recorded');
+		expect(logger.warn).toHaveBeenCalledWith(
+			'respond-to-review agent completed without authoritative pushed-change evidence',
+			expect.objectContaining({ engine: 'opencode' }),
 		);
 	});
 
 	it('does not validate PR creation for non-implementation agents', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
-		vi.mocked(backend.execute).mockResolvedValue({
+		const engine = makeMockBackend();
+		vi.mocked(engine.execute).mockResolvedValue({
 			success: true,
 			output: 'Done',
 			// No prUrl
 		});
 		const input = makeInput();
 
-		const result = await executeWithBackend(backend, 'splitting', input);
+		const result = await executeWithEngine(engine, 'splitting', input);
 
 		expect(result.success).toBe(true);
 	});
 
 	it('passes through when implementation agent creates a PR', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
-		vi.mocked(backend.execute).mockResolvedValue({
+		mockGetAgentProfile.mockReturnValue(makeMockProfile({ finishHooks: { requiresPR: true } }));
+		const engine = makeMockBackend();
+		vi.mocked(engine.execute).mockResolvedValue({
 			success: true,
 			output: 'Done',
 			prUrl: 'https://github.com/o/r/pull/5',
+			prEvidence: { source: 'llmist-session', authoritative: true },
 		});
 		const input = makeInput();
 
-		const result = await executeWithBackend(backend, 'implementation', input);
+		const result = await executeWithEngine(engine, 'implementation', input);
 
 		expect(result.success).toBe(true);
 		expect(result.prUrl).toBe('https://github.com/o/r/pull/5');
@@ -476,119 +555,51 @@ describe('executeWithBackend', () => {
 
 	it('does not validate PR creation when implementation agent already failed', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
-		vi.mocked(backend.execute).mockResolvedValue({
+		const engine = makeMockBackend();
+		vi.mocked(engine.execute).mockResolvedValue({
 			success: false,
 			output: '',
 			error: 'Budget exceeded',
 		});
 		const input = makeInput();
 
-		const result = await executeWithBackend(backend, 'implementation', input);
+		const result = await executeWithEngine(engine, 'implementation', input);
 
 		expect(result.success).toBe(false);
 		expect(result.error).toBe('Budget exceeded');
 	});
 
-	it('zeroes cost when subscriptionCostZero is true and backend is claude-code', async () => {
+	it('preserves cost when agentEngine config is undefined', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
-		backend.name = 'claude-code';
-		vi.mocked(backend.execute).mockResolvedValue({
-			success: true,
-			output: 'Done',
-			cost: 1.5,
-		});
-		const input = makeInput();
-		input.project.agentBackend = {
-			default: 'claude-code',
-			overrides: {},
-			subscriptionCostZero: true,
-		};
-
-		const result = await executeWithBackend(backend, 'implementation', input);
-
-		expect(result.cost).toBe(0);
-		expect(logger.info).toHaveBeenCalledWith(
-			'Zeroing Claude Code cost (subscription mode)',
-			expect.objectContaining({ originalCost: 1.5 }),
-		);
-	});
-
-	it('preserves cost when subscriptionCostZero is false', async () => {
-		setupMocks();
-		const backend = makeMockBackend();
-		backend.name = 'claude-code';
-		vi.mocked(backend.execute).mockResolvedValue({
-			success: true,
-			output: 'Done',
-			cost: 2.0,
-		});
-		const input = makeInput();
-		input.project.agentBackend = {
-			default: 'claude-code',
-			overrides: {},
-			subscriptionCostZero: false,
-		};
-
-		const result = await executeWithBackend(backend, 'implementation', input);
-
-		expect(result.cost).toBe(2.0);
-	});
-
-	it('preserves cost for non-claude-code backends even with subscriptionCostZero', async () => {
-		setupMocks();
-		const backend = makeMockBackend();
-		backend.name = 'llmist';
-		vi.mocked(backend.execute).mockResolvedValue({
-			success: true,
-			output: 'Done',
-			cost: 3.0,
-		});
-		const input = makeInput();
-		input.project.agentBackend = {
-			default: 'llmist',
-			overrides: {},
-			subscriptionCostZero: true,
-		};
-
-		const result = await executeWithBackend(backend, 'implementation', input);
-
-		expect(result.cost).toBe(3.0);
-	});
-
-	it('preserves cost when agentBackend config is undefined', async () => {
-		setupMocks();
-		const backend = makeMockBackend();
-		backend.name = 'claude-code';
-		vi.mocked(backend.execute).mockResolvedValue({
+		const engine = makeMockBackend('claude-code');
+		vi.mocked(engine.execute).mockResolvedValue({
 			success: true,
 			output: 'Done',
 			cost: 1.0,
 		});
 		const input = makeInput();
-		// agentBackend is not set (default from makeProject)
+		// agentEngine is not set (default from makeProject)
 
-		const result = await executeWithBackend(backend, 'implementation', input);
+		const result = await executeWithEngine(engine, 'implementation', input);
 
 		expect(result.cost).toBe(1.0);
 	});
 
-	it('resolves per-project secrets and passes them to backend', async () => {
+	it('resolves per-project secrets and passes them to engine', async () => {
 		setupMocks();
 		mockGetAllProjectCredentials.mockResolvedValue({
 			GITHUB_TOKEN: 'proj-gh-token',
 			TRELLO_API_KEY: 'proj-trello-key',
 		});
 
-		const backend = makeMockBackend();
+		const engine = makeMockBackend();
 		const input = makeInput();
 
-		await executeWithBackend(backend, 'implementation', input);
+		await executeWithEngine(engine, 'implementation', input);
 
 		expect(mockGetAllProjectCredentials).toHaveBeenCalledWith('test');
 
-		const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
+		const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
 		expect(backendInput.projectSecrets).toEqual({
 			GITHUB_TOKEN: 'proj-gh-token',
 			TRELLO_API_KEY: 'proj-trello-key',
@@ -602,7 +613,7 @@ describe('executeWithBackend', () => {
 
 	it('passes PR context fields to promptContext for respond-to-ci agent', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
+		const engine = makeMockBackend();
 		const input = makeInput({
 			prNumber: 42,
 			prBranch: 'fix/ci-errors',
@@ -611,7 +622,7 @@ describe('executeWithBackend', () => {
 			triggerType: 'check-failure',
 		});
 
-		await executeWithBackend(backend, 'respond-to-ci', input);
+		await executeWithEngine(engine, 'respond-to-ci', input);
 
 		const resolveCall = mockResolveModelConfig.mock.calls[0][0] as {
 			promptContext: Record<string, unknown>;
@@ -629,12 +640,12 @@ describe('executeWithBackend', () => {
 		setupMocks();
 		mockGetAllProjectCredentials.mockResolvedValue({});
 
-		const backend = makeMockBackend();
+		const engine = makeMockBackend();
 		const input = makeInput();
 
-		await executeWithBackend(backend, 'implementation', input);
+		await executeWithEngine(engine, 'implementation', input);
 
-		const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
+		const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
 		expect(backendInput.projectSecrets).toEqual({
 			CASCADE_BASE_BRANCH: 'main',
 			CASCADE_REPO_OWNER: 'owner',
@@ -646,10 +657,10 @@ describe('executeWithBackend', () => {
 
 	it('returns durationMs in successful result', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
+		const engine = makeMockBackend();
 		const input = makeInput();
 
-		const result = await executeWithBackend(backend, 'implementation', input);
+		const result = await executeWithEngine(engine, 'implementation', input);
 
 		expect(result.success).toBe(true);
 		expect(result.durationMs).toBeDefined();
@@ -659,11 +670,11 @@ describe('executeWithBackend', () => {
 
 	it('returns durationMs in error result', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
-		vi.mocked(backend.execute).mockRejectedValue(new Error('Backend crashed'));
+		const engine = makeMockBackend();
+		vi.mocked(engine.execute).mockRejectedValue(new Error('Backend crashed'));
 		const input = makeInput();
 
-		const result = await executeWithBackend(backend, 'implementation', input);
+		const result = await executeWithEngine(engine, 'implementation', input);
 
 		expect(result.success).toBe(false);
 		expect(result.durationMs).toBeDefined();
@@ -674,38 +685,38 @@ describe('executeWithBackend', () => {
 	it('forwards runId to backendInput after tryCreateBackendRun resolves', async () => {
 		setupMocks();
 		mockCreateRun.mockResolvedValue('test-run-id');
-		const backend = makeMockBackend();
+		const engine = makeMockBackend();
 		const input = makeInput();
 
-		await executeWithBackend(backend, 'implementation', input);
+		await executeWithEngine(engine, 'implementation', input);
 
-		const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
+		const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
 		expect(backendInput.runId).toBe('test-run-id');
 	});
 
 	it('forwards undefined runId to backendInput when createRun fails', async () => {
 		setupMocks();
 		mockCreateRun.mockRejectedValue(new Error('DB unavailable'));
-		const backend = makeMockBackend();
+		const engine = makeMockBackend();
 		const input = makeInput();
 
-		await executeWithBackend(backend, 'implementation', input);
+		await executeWithEngine(engine, 'implementation', input);
 
-		const backendInput = vi.mocked(backend.execute).mock.calls[0][0];
+		const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
 		expect(backendInput.runId).toBeUndefined();
 	});
 
-	it('returns durationMs when backend returns error', async () => {
+	it('returns durationMs when engine returns error', async () => {
 		setupMocks();
-		const backend = makeMockBackend();
-		vi.mocked(backend.execute).mockResolvedValue({
+		const engine = makeMockBackend();
+		vi.mocked(engine.execute).mockResolvedValue({
 			success: false,
 			output: '',
 			error: 'Budget exceeded',
 		});
 		const input = makeInput();
 
-		const result = await executeWithBackend(backend, 'implementation', input);
+		const result = await executeWithEngine(engine, 'implementation', input);
 
 		expect(result.success).toBe(false);
 		expect(result.error).toBe('Budget exceeded');
@@ -717,7 +728,7 @@ describe('executeWithBackend', () => {
 	describe('GitHub ack comment routing', () => {
 		it('calls recordInitialComment and passes github config when ack is a GitHub PR comment', async () => {
 			setupMocks();
-			const backend = makeMockBackend();
+			const engine = makeMockBackend();
 			const input = makeInput({
 				prNumber: 42,
 				repoFullName: 'acme/widgets',
@@ -725,7 +736,7 @@ describe('executeWithBackend', () => {
 				ackMessage: 'Reviewing code...',
 			});
 
-			await executeWithBackend(backend, 'review', input);
+			await executeWithEngine(engine, 'review', input);
 
 			expect(mockRecordInitialComment).toHaveBeenCalledWith(12345);
 			expect(mockCreateProgressMonitor).toHaveBeenCalledWith(
@@ -734,7 +745,6 @@ describe('executeWithBackend', () => {
 					github: {
 						owner: 'acme',
 						repo: 'widgets',
-						headerMessage: 'Reviewing code...',
 					},
 				}),
 			);
@@ -742,12 +752,12 @@ describe('executeWithBackend', () => {
 
 		it('does not call recordInitialComment for PM (string) ack comment IDs', async () => {
 			setupMocks();
-			const backend = makeMockBackend();
+			const engine = makeMockBackend();
 			const input = makeInput({
 				ackCommentId: 'trello-comment-abc',
 			});
 
-			await executeWithBackend(backend, 'implementation', input);
+			await executeWithEngine(engine, 'implementation', input);
 
 			expect(mockRecordInitialComment).not.toHaveBeenCalled();
 			expect(mockCreateProgressMonitor).toHaveBeenCalledWith(
@@ -759,12 +769,12 @@ describe('executeWithBackend', () => {
 
 		it('passes preSeededCommentId for PM ack even when PR context is absent', async () => {
 			setupMocks();
-			const backend = makeMockBackend();
+			const engine = makeMockBackend();
 			const input = makeInput({
 				ackCommentId: 'pm-comment-id',
 			});
 
-			await executeWithBackend(backend, 'implementation', input);
+			await executeWithEngine(engine, 'implementation', input);
 
 			expect(mockCreateProgressMonitor).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -778,14 +788,14 @@ describe('executeWithBackend', () => {
 
 		it('does not pass preSeededCommentId when ack is a GitHub comment (numeric)', async () => {
 			setupMocks();
-			const backend = makeMockBackend();
+			const engine = makeMockBackend();
 			const input = makeInput({
 				prNumber: 10,
 				repoFullName: 'org/repo',
 				ackCommentId: 999,
 			});
 
-			await executeWithBackend(backend, 'review', input);
+			await executeWithEngine(engine, 'review', input);
 
 			expect(mockCreateProgressMonitor).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -794,23 +804,22 @@ describe('executeWithBackend', () => {
 			);
 		});
 
-		it('passes github config with empty headerMessage when ackMessage is undefined', async () => {
+		it('passes github config when ackMessage is undefined', async () => {
 			setupMocks();
-			const backend = makeMockBackend();
+			const engine = makeMockBackend();
 			const input = makeInput({
 				prNumber: 7,
 				repoFullName: 'org/repo',
 				ackCommentId: 555,
 			});
 
-			await executeWithBackend(backend, 'review', input);
+			await executeWithEngine(engine, 'review', input);
 
 			expect(mockCreateProgressMonitor).toHaveBeenCalledWith(
 				expect.objectContaining({
 					github: {
 						owner: 'org',
 						repo: 'repo',
-						headerMessage: '',
 					},
 				}),
 			);
@@ -818,16 +827,297 @@ describe('executeWithBackend', () => {
 
 		it('does not call recordInitialComment when ackCommentId is absent', async () => {
 			setupMocks();
-			const backend = makeMockBackend();
+			const engine = makeMockBackend();
 			const input = makeInput({
 				prNumber: 42,
 				repoFullName: 'acme/widgets',
 				// no ackCommentId
 			});
 
-			await executeWithBackend(backend, 'review', input);
+			await executeWithEngine(engine, 'review', input);
 
 			expect(mockRecordInitialComment).not.toHaveBeenCalled();
+		});
+
+		it('injects CASCADE_GITHUB_ACK_COMMENT_ID into secrets when ack is a GitHub PR comment', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			const input = makeInput({
+				prNumber: 42,
+				repoFullName: 'acme/widgets',
+				ackCommentId: 98765,
+			});
+
+			await executeWithEngine(engine, 'review', input);
+
+			const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
+			expect(backendInput.projectSecrets?.CASCADE_GITHUB_ACK_COMMENT_ID).toBe('98765');
+		});
+
+		it('does not inject CASCADE_GITHUB_ACK_COMMENT_ID for PM (string) ack comment IDs', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			const input = makeInput({
+				ackCommentId: 'pm-comment-abc',
+			});
+
+			await executeWithEngine(engine, 'implementation', input);
+
+			const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
+			expect(backendInput.projectSecrets?.CASCADE_GITHUB_ACK_COMMENT_ID).toBeUndefined();
+		});
+	});
+
+	describe('review sidecar hydration', () => {
+		/**
+		 * The adapter now generates a temp sidecar path and injects it into projectSecrets.
+		 * In tests, we intercept the engine.execute call to find the injected path
+		 * and write the sidecar data there (simulating what the subprocess does).
+		 */
+		function writeSidecarAtInjectedPath(engine: AgentEngine, data: Record<string, unknown>): void {
+			vi.mocked(engine.execute).mockImplementation(async (backendInput) => {
+				const sidecarPath = backendInput.projectSecrets?.CASCADE_REVIEW_SIDECAR_PATH;
+				if (sidecarPath) {
+					writeFileSync(sidecarPath, JSON.stringify(data));
+				}
+				return { success: true, output: 'Done' };
+			});
+		}
+
+		it('calls recordReviewSubmission when sidecar exists for review agent', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			writeSidecarAtInjectedPath(engine, {
+				reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-99',
+				event: 'REQUEST_CHANGES',
+				body: 'Please fix the null check',
+			});
+			const input = makeInput();
+
+			await executeWithEngine(engine, 'review', input);
+
+			expect(mockRecordReviewSubmission).toHaveBeenCalledWith(
+				'https://github.com/o/r/pull/1#pullrequestreview-99',
+				'Please fix the null check',
+				'REQUEST_CHANGES',
+			);
+		});
+
+		it('injects CASCADE_REVIEW_SIDECAR_PATH into projectSecrets for review agent', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			const input = makeInput();
+
+			await executeWithEngine(engine, 'review', input);
+
+			const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
+			expect(backendInput.projectSecrets?.CASCADE_REVIEW_SIDECAR_PATH).toMatch(
+				/cascade-review-sidecar-\d+-\d+\.json$/,
+			);
+		});
+
+		it('does not inject CASCADE_REVIEW_SIDECAR_PATH for non-review agents', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			const input = makeInput();
+
+			await executeWithEngine(engine, 'implementation', input);
+
+			const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
+			expect(backendInput.projectSecrets?.CASCADE_REVIEW_SIDECAR_PATH).toBeUndefined();
+		});
+
+		it('does not error when sidecar file is absent (llmist engine)', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			const input = makeInput();
+
+			const result = await executeWithEngine(engine, 'review', input);
+
+			expect(result.success).toBe(true);
+			expect(mockRecordReviewSubmission).not.toHaveBeenCalled();
+		});
+
+		it('does not error when sidecar file is malformed JSON', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			vi.mocked(engine.execute).mockImplementation(async (backendInput) => {
+				const sidecarPath = backendInput.projectSecrets?.CASCADE_REVIEW_SIDECAR_PATH;
+				if (sidecarPath) {
+					writeFileSync(sidecarPath, 'not valid json');
+				}
+				return { success: true, output: 'Done' };
+			});
+			const input = makeInput();
+
+			const result = await executeWithEngine(engine, 'review', input);
+
+			expect(result.success).toBe(true);
+			expect(mockRecordReviewSubmission).not.toHaveBeenCalled();
+		});
+
+		it('does not read sidecar for non-review agent types', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			const input = makeInput();
+
+			await executeWithEngine(engine, 'implementation', input);
+
+			expect(mockRecordReviewSubmission).not.toHaveBeenCalled();
+		});
+
+		it('skips hydration when sidecar body is missing', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			writeSidecarAtInjectedPath(engine, {
+				reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-99',
+				event: 'APPROVE',
+				// no body
+			});
+			const input = makeInput();
+
+			await executeWithEngine(engine, 'review', input);
+
+			expect(mockRecordReviewSubmission).not.toHaveBeenCalled();
+		});
+
+		it('clears initialCommentId when sidecar has ackCommentDeleted: true', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			writeSidecarAtInjectedPath(engine, {
+				reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-42',
+				event: 'REQUEST_CHANGES',
+				body: 'Please fix this',
+				ackCommentDeleted: true,
+			});
+			const input = makeInput();
+
+			await executeWithEngine(engine, 'review', input);
+
+			expect(mockClearInitialComment).toHaveBeenCalled();
+		});
+
+		it('does not clear initialCommentId when sidecar has ackCommentDeleted absent', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			writeSidecarAtInjectedPath(engine, {
+				reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-42',
+				event: 'APPROVE',
+				body: 'LGTM',
+				// no ackCommentDeleted
+			});
+			const input = makeInput();
+
+			await executeWithEngine(engine, 'review', input);
+
+			expect(mockClearInitialComment).not.toHaveBeenCalled();
+		});
+
+		it('preserves sidecar file for readCompletionEvidence when requiresReview is set', async () => {
+			setupMocks();
+			mockGetAgentProfile.mockReturnValue(
+				makeMockProfile({ finishHooks: { requiresReview: true } }),
+			);
+			const engine = makeMockBackend('claude-code');
+			writeSidecarAtInjectedPath(engine, {
+				reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-55',
+				event: 'APPROVE',
+				body: 'Looks good!',
+			});
+			const input = makeInput();
+
+			const result = await executeWithEngine(engine, 'review', input);
+
+			// Before the fix, hydrateReviewSidecar deleted the file, causing
+			// readCompletionEvidence to miss it and postProcessResult to mark
+			// the run as failed despite a successful review.
+			expect(result.success).toBe(true);
+			expect(mockRecordReviewSubmission).toHaveBeenCalledWith(
+				'https://github.com/o/r/pull/1#pullrequestreview-55',
+				'Looks good!',
+				'APPROVE',
+			);
+		});
+
+		it('backward compatible — no clearInitialComment when sidecar is absent', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			// No sidecar written
+			const input = makeInput();
+
+			await executeWithEngine(engine, 'review', input);
+
+			expect(mockClearInitialComment).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('PR sidecar hydration', () => {
+		it('hydrates authoritative PR evidence from subprocess sidecar before post-processing', async () => {
+			setupMocks();
+			mockGetAgentProfile.mockReturnValue(makeMockProfile({ finishHooks: { requiresPR: true } }));
+			const engine = makeMockBackend('codex');
+			vi.mocked(engine.execute).mockImplementation(async (backendInput) => {
+				const sidecarPath = backendInput.projectSecrets?.CASCADE_PR_SIDECAR_PATH;
+				if (sidecarPath) {
+					writeFileSync(
+						sidecarPath,
+						JSON.stringify({
+							source: 'cascade-tools scm create-pr',
+							prUrl: 'https://github.com/o/r/pull/88',
+							prNumber: 88,
+							alreadyExisted: false,
+						}),
+					);
+				}
+				return {
+					success: true,
+					output: 'Created a PR',
+				};
+			});
+
+			const result = await executeWithEngine(engine, 'implementation', makeInput());
+
+			expect(result.success).toBe(true);
+			expect(result.prUrl).toBe('https://github.com/o/r/pull/88');
+			expect(mockRecordPRCreation).toHaveBeenCalledWith('https://github.com/o/r/pull/88');
+		});
+
+		it('fails implementation runs when only text-derived PR evidence exists', async () => {
+			setupMocks();
+			mockGetAgentProfile.mockReturnValue(makeMockProfile({ finishHooks: { requiresPR: true } }));
+			const engine = makeMockBackend('opencode');
+			vi.mocked(engine.execute).mockResolvedValue({
+				success: true,
+				output: 'I created https://github.com/o/r/pull/99',
+				prUrl: 'https://github.com/o/r/pull/99',
+				prEvidence: { source: 'text', authoritative: false },
+			});
+
+			const result = await executeWithEngine(engine, 'implementation', makeInput());
+
+			expect(result.success).toBe(false);
+			expect(result.error).toBe('Agent completed but no authoritative PR creation was recorded');
+		});
+
+		it('injects native-tool PATH shims that block gh and expose cascade-tools first', async () => {
+			setupMocks();
+			mockGetAgentProfile.mockReturnValue(makeMockProfile({ finishHooks: { requiresPR: true } }));
+			const engine = makeMockBackend('claude-code');
+			vi.mocked(engine.execute).mockImplementation(async (backendInput) => {
+				expect(backendInput.nativeToolShimDir).toBeTruthy();
+				expect(existsSync(`${backendInput.nativeToolShimDir}/gh`)).toBe(true);
+				expect(readFileSync(`${backendInput.nativeToolShimDir}/gh`, 'utf-8')).toContain(
+					'cascade-tools scm create-pr',
+				);
+				return { success: true, output: 'Done' };
+			});
+
+			await executeWithEngine(engine, 'implementation', makeInput());
+
+			const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
+			expect(backendInput.projectSecrets?.CASCADE_PR_SIDECAR_PATH).toMatch(
+				/cascade-pr-sidecar-\d+-\d+\.json$/,
+			);
 		});
 	});
 });

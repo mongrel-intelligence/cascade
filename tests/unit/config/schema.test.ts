@@ -61,25 +61,25 @@ describe('ProjectConfigSchema', () => {
 		expect(result.branchPrefix).toBe('feature/');
 	});
 
-	it('accepts agentBackend with default and overrides', () => {
+	it('accepts agentEngine with default and overrides', () => {
 		const config = {
 			id: 'test',
 			orgId: 'default',
 			name: 'Test',
 			repo: 'owner/repo',
 			trello: { boardId: 'b1', lists: {}, labels: {} },
-			agentBackend: {
+			agentEngine: {
 				default: 'claude-code',
 				overrides: { review: 'llmist' },
 			},
 		};
 
 		const result = ProjectConfigSchema.parse(config);
-		expect(result.agentBackend?.default).toBe('claude-code');
-		expect(result.agentBackend?.overrides).toEqual({ review: 'llmist' });
+		expect(result.agentEngine?.default).toBe('claude-code');
+		expect(result.agentEngine?.overrides).toEqual({ review: 'llmist' });
 	});
 
-	it('works without agentBackend (optional field)', () => {
+	it('works without agentEngine (optional field)', () => {
 		const config = {
 			id: 'test',
 			orgId: 'default',
@@ -89,55 +89,79 @@ describe('ProjectConfigSchema', () => {
 		};
 
 		const result = ProjectConfigSchema.parse(config);
-		expect(result.agentBackend).toBeUndefined();
+		expect(result.agentEngine).toBeUndefined();
 	});
 
-	it('accepts subscriptionCostZero on agentBackend', () => {
+	it('accepts codex engine settings on project config', () => {
 		const config = {
 			id: 'test',
 			orgId: 'default',
 			name: 'Test',
 			repo: 'owner/repo',
 			trello: { boardId: 'b1', lists: {}, labels: {} },
-			agentBackend: {
-				default: 'claude-code',
-				subscriptionCostZero: true,
+			engineSettings: {
+				codex: {
+					approvalPolicy: 'never',
+					sandboxMode: 'workspace-write',
+					webSearch: false,
+				},
 			},
 		};
 
 		const result = ProjectConfigSchema.parse(config);
-		expect(result.agentBackend?.subscriptionCostZero).toBe(true);
+		expect(result.engineSettings?.codex?.approvalPolicy).toBe('never');
+		expect(result.engineSettings?.codex?.sandboxMode).toBe('workspace-write');
+		expect(result.engineSettings?.codex?.webSearch).toBe(false);
 	});
 
-	it('defaults subscriptionCostZero to false', () => {
+	it('accepts opencode engine settings on project config', () => {
 		const config = {
 			id: 'test',
 			orgId: 'default',
 			name: 'Test',
 			repo: 'owner/repo',
 			trello: { boardId: 'b1', lists: {}, labels: {} },
-			agentBackend: {
-				default: 'claude-code',
+			engineSettings: {
+				opencode: {
+					webSearch: true,
+				},
 			},
 		};
 
 		const result = ProjectConfigSchema.parse(config);
-		expect(result.agentBackend?.subscriptionCostZero).toBe(false);
+		expect(result.engineSettings?.opencode?.webSearch).toBe(true);
 	});
 
-	it('applies default "llmist" for agentBackend.default when object provided', () => {
+	it('rejects unsupported engine settings on project config', () => {
 		const config = {
 			id: 'test',
 			orgId: 'default',
 			name: 'Test',
 			repo: 'owner/repo',
 			trello: { boardId: 'b1', lists: {}, labels: {} },
-			agentBackend: {},
+			engineSettings: {
+				unknownEngine: {
+					foo: 'bar',
+				},
+			},
+		};
+
+		expect(() => ProjectConfigSchema.parse(config)).toThrow('Unsupported engine settings');
+	});
+
+	it('applies default "llmist" for agentEngine.default when object provided', () => {
+		const config = {
+			id: 'test',
+			orgId: 'default',
+			name: 'Test',
+			repo: 'owner/repo',
+			trello: { boardId: 'b1', lists: {}, labels: {} },
+			agentEngine: {},
 		};
 
 		const result = ProjectConfigSchema.parse(config);
-		expect(result.agentBackend?.default).toBe('llmist');
-		expect(result.agentBackend?.overrides).toEqual({});
+		expect(result.agentEngine?.default).toBe('llmist');
+		expect(result.agentEngine?.overrides).toEqual({});
 	});
 
 	it('validates JIRA config with labels', () => {
@@ -231,7 +255,7 @@ describe('validateConfig', () => {
 		expect(() => validateConfig({ projects: [] })).toThrow();
 	});
 
-	it('applies default "llmist" for defaults.agentBackend', () => {
+	it('applies default "llmist" for defaults.agentEngine', () => {
 		const config = {
 			projects: [
 				{
@@ -245,13 +269,13 @@ describe('validateConfig', () => {
 		};
 
 		const result = validateConfig(config);
-		expect(result.defaults.agentBackend).toBe('llmist');
+		expect(result.defaults.agentEngine).toBe('llmist');
 	});
 
-	it('accepts custom defaults.agentBackend value', () => {
+	it('accepts custom defaults.agentEngine value', () => {
 		const config = {
 			defaults: {
-				agentBackend: 'claude-code',
+				agentEngine: 'claude-code',
 			},
 			projects: [
 				{
@@ -265,6 +289,78 @@ describe('validateConfig', () => {
 		};
 
 		const result = validateConfig(config);
-		expect(result.defaults.agentBackend).toBe('claude-code');
+		expect(result.defaults.agentEngine).toBe('claude-code');
+	});
+
+	it('accepts defaults.engineSettings for codex', () => {
+		const config = {
+			defaults: {
+				engineSettings: {
+					codex: {
+						approvalPolicy: 'never',
+						reasoningEffort: 'high',
+					},
+				},
+			},
+			projects: [
+				{
+					id: 'test',
+					orgId: 'default',
+					name: 'Test',
+					repo: 'owner/repo',
+					trello: { boardId: 'b1', lists: {}, labels: {} },
+				},
+			],
+		};
+
+		const result = validateConfig(config);
+		expect(result.defaults.engineSettings.codex?.approvalPolicy).toBe('never');
+		expect(result.defaults.engineSettings.codex?.reasoningEffort).toBe('high');
+	});
+
+	it('accepts defaults.engineSettings for opencode', () => {
+		const result = validateConfig({
+			projects: [
+				{
+					id: 'p1',
+					orgId: 'org-1',
+					name: 'Project',
+					repo: 'owner/repo',
+					trello: { boardId: 'b1', lists: {}, labels: {} },
+				},
+			],
+			defaults: {
+				engineSettings: {
+					opencode: {
+						webSearch: true,
+					},
+				},
+			},
+		});
+
+		expect(result.defaults.engineSettings.opencode?.webSearch).toBe(true);
+	});
+
+	it('rejects unsupported defaults.engineSettings entries', () => {
+		const config = {
+			defaults: {
+				engineSettings: {
+					'claude-code': {
+						foo: 'bar',
+					},
+				},
+			},
+			projects: [
+				{
+					id: 'test',
+					orgId: 'default',
+					name: 'Test',
+					repo: 'owner/repo',
+					trello: { boardId: 'b1', lists: {}, labels: {} },
+				},
+			],
+		};
+
+		expect(() => validateConfig(config)).toThrow('Unsupported engine settings');
 	});
 });

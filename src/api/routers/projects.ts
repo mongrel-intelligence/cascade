@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { EngineSettingsSchema } from '../../config/engineSettings.js';
 import { getDb } from '../../db/client.js';
 import { listProjectsForOrg } from '../../db/repositories/runsRepository.js';
 import {
@@ -19,7 +20,7 @@ import {
 	upsertProjectIntegration,
 } from '../../db/repositories/settingsRepository.js';
 import { credentials, projects } from '../../db/schema/index.js';
-import { protectedProcedure, router } from '../trpc.js';
+import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
 
 async function verifyProjectOwnership(projectId: string, orgId: string) {
 	const db = getDb();
@@ -43,21 +44,36 @@ async function verifyCredentialOwnership(credentialId: number, orgId: string) {
 	}
 }
 
+function serializeProject<T extends { agentEngineSettings?: unknown }>(
+	project: T,
+): Omit<T, 'agentEngineSettings'> & { engineSettings: T['agentEngineSettings'] | null } {
+	const { agentEngineSettings, ...rest } = project;
+	return {
+		...rest,
+		engineSettings: (agentEngineSettings ?? null) as T['agentEngineSettings'] | null,
+	};
+}
+
 export const projectsRouter = router({
 	// Existing - returns id+name for dropdowns
 	list: protectedProcedure.query(async ({ ctx }) => {
 		return listProjectsForOrg(ctx.effectiveOrgId);
 	}),
 
+	listAll: superAdminProcedure.query(async () => {
+		const db = getDb();
+		return db.select({ id: projects.id, name: projects.name }).from(projects);
+	}),
+
 	// New - returns all columns
 	listFull: protectedProcedure.query(async ({ ctx }) => {
-		return listProjectsFull(ctx.effectiveOrgId);
+		return (await listProjectsFull(ctx.effectiveOrgId)).map(serializeProject);
 	}),
 
 	getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ ctx, input }) => {
 		const project = await getProjectFull(input.id, ctx.effectiveOrgId);
 		if (!project) throw new TRPCError({ code: 'NOT_FOUND' });
-		return project;
+		return serializeProject(project);
 	}),
 
 	create: protectedProcedure
@@ -72,13 +88,18 @@ export const projectsRouter = router({
 				baseBranch: z.string().optional(),
 				branchPrefix: z.string().optional(),
 				model: z.string().nullish(),
-				cardBudgetUsd: z.string().nullish(),
-				agentBackend: z.string().nullish(),
-				subscriptionCostZero: z.boolean().optional(),
+				workItemBudgetUsd: z.string().nullish(),
+				agentEngine: z.string().nullish(),
+				engineSettings: EngineSettingsSchema.nullish(),
+				runLinksEnabled: z.boolean().optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			return createProject(ctx.effectiveOrgId, input);
+			return createProject(ctx.effectiveOrgId, {
+				...input,
+				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
+				...(input.engineSettings !== undefined ? { engineSettings: input.engineSettings } : {}),
+			});
 		}),
 
 	update: protectedProcedure
@@ -90,15 +111,20 @@ export const projectsRouter = router({
 				baseBranch: z.string().optional(),
 				branchPrefix: z.string().optional(),
 				model: z.string().nullish(),
-				cardBudgetUsd: z.string().nullish(),
-				agentBackend: z.string().nullish(),
-				subscriptionCostZero: z.boolean().optional(),
+				workItemBudgetUsd: z.string().nullish(),
+				agentEngine: z.string().nullish(),
+				engineSettings: EngineSettingsSchema.nullish(),
+				runLinksEnabled: z.boolean().optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
 			await verifyProjectOwnership(input.id, ctx.effectiveOrgId);
 			const { id, ...updates } = input;
-			await updateProject(id, ctx.effectiveOrgId, updates);
+			await updateProject(id, ctx.effectiveOrgId, {
+				...updates,
+				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
+				...(input.engineSettings !== undefined ? { engineSettings: input.engineSettings } : {}),
+			});
 		}),
 
 	delete: protectedProcedure
@@ -121,7 +147,7 @@ export const projectsRouter = router({
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm', 'email', 'sms']),
+					category: z.enum(['pm', 'scm']),
 					provider: z.string().min(1),
 					config: z.record(z.unknown()),
 					triggers: z.record(z.boolean()).optional(),
@@ -142,7 +168,7 @@ export const projectsRouter = router({
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm', 'email', 'sms']),
+					category: z.enum(['pm', 'scm']),
 					triggers: z.record(z.union([z.boolean(), z.string().nullable(), z.record(z.boolean())])),
 				}),
 			)
@@ -152,7 +178,7 @@ export const projectsRouter = router({
 			}),
 
 		delete: protectedProcedure
-			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm', 'email', 'sms']) }))
+			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm']) }))
 			.mutation(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				await deleteProjectIntegration(input.projectId, input.category);
@@ -162,7 +188,7 @@ export const projectsRouter = router({
 	// Integration Credentials
 	integrationCredentials: router({
 		list: protectedProcedure
-			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm', 'email', 'sms']) }))
+			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm']) }))
 			.query(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				const integration = await getIntegrationByProjectAndCategory(
@@ -177,7 +203,7 @@ export const projectsRouter = router({
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm', 'email', 'sms']),
+					category: z.enum(['pm', 'scm']),
 					role: z.string().min(1),
 					credentialId: z.number(),
 				}),
@@ -185,10 +211,15 @@ export const projectsRouter = router({
 			.mutation(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				await verifyCredentialOwnership(input.credentialId, ctx.effectiveOrgId);
-				const integration = await getIntegrationByProjectAndCategory(
-					input.projectId,
-					input.category,
-				);
+				let integration = await getIntegrationByProjectAndCategory(input.projectId, input.category);
+				if (!integration) {
+					// Auto-create SCM integration with GitHub as the default provider
+					const defaultProvider = input.category === 'scm' ? 'github' : undefined;
+					if (defaultProvider) {
+						await upsertProjectIntegration(input.projectId, input.category, defaultProvider, {});
+						integration = await getIntegrationByProjectAndCategory(input.projectId, input.category);
+					}
+				}
 				if (!integration) {
 					throw new TRPCError({
 						code: 'NOT_FOUND',
@@ -202,7 +233,7 @@ export const projectsRouter = router({
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm', 'email', 'sms']),
+					category: z.enum(['pm', 'scm']),
 					role: z.string().min(1),
 				}),
 			)

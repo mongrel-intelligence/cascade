@@ -6,20 +6,19 @@ import '../pm/bootstrap.js';
 import { initPrompts } from '../agents/prompts/index.js';
 import { initAgentMessages } from '../config/agentMessages.js';
 import { seedAgentDefinitions } from '../db/seeds/seedAgentDefinitions.js';
+import { registerBuiltInTriggers } from '../triggers/builtins.js';
+import { createTriggerRegistry } from '../triggers/registry.js';
+import { logger } from '../utils/logging.js';
 import {
 	createWebhookHandler,
 	parseGitHubPayload,
 	parseJiraPayload,
 	parseTrelloPayload,
-} from '../server/webhookHandlers.js';
-import { registerBuiltInTriggers } from '../triggers/builtins.js';
-import { createTriggerRegistry } from '../triggers/registry.js';
-import { logger } from '../utils/logging.js';
+} from '../webhook/webhookHandlers.js';
 import { GitHubRouterAdapter, injectEventType } from './adapters/github.js';
 import { JiraRouterAdapter } from './adapters/jira.js';
 import { TrelloRouterAdapter } from './adapters/trello.js';
-import { handleTwilioWebhook } from './adapters/twilio.js';
-import { startEmailScheduler, stopEmailScheduler } from './email-scheduler.js';
+import { startCancelListener, stopCancelListener } from './cancel-listener.js';
 import { getQueueStats } from './queue.js';
 import { processRouterWebhook } from './webhook-processor.js';
 import {
@@ -67,8 +66,6 @@ app.post(
 	'/trello/webhook',
 	createWebhookHandler({
 		source: 'trello',
-		checkCapacity: false,
-		fireAndForget: false,
 		parsePayload: parseTrelloPayload,
 		processWebhook: async (payload) => {
 			const adapter = new TrelloRouterAdapter();
@@ -76,6 +73,7 @@ app.post(
 			return {
 				processed: result.shouldProcess,
 				projectId: result.projectId,
+				decisionReason: result.decisionReason,
 			};
 		},
 	}),
@@ -91,14 +89,17 @@ app.post(
 	'/github/webhook',
 	createWebhookHandler({
 		source: 'github',
-		checkCapacity: false,
-		fireAndForget: false,
 		parsePayload: parseGitHubPayload,
-		processWebhook: async (payload, eventType) => {
+		processWebhook: async (payload, eventType, headers) => {
 			const adapter = new GitHubRouterAdapter();
-			const augmented = injectEventType(payload, eventType ?? 'unknown');
+			const deliveryId = headers['x-github-delivery'] ?? headers['X-GitHub-Delivery'];
+			const augmented = injectEventType(payload, eventType ?? 'unknown', deliveryId);
 			const result = await processRouterWebhook(adapter, augmented, triggerRegistry);
-			return { processed: result.shouldProcess };
+			return {
+				processed: result.shouldProcess,
+				projectId: result.projectId,
+				decisionReason: result.decisionReason,
+			};
 		},
 	}),
 );
@@ -113,8 +114,6 @@ app.post(
 	'/jira/webhook',
 	createWebhookHandler({
 		source: 'jira',
-		checkCapacity: false,
-		fireAndForget: false,
 		parsePayload: parseJiraPayload,
 		processWebhook: async (payload) => {
 			const adapter = new JiraRouterAdapter();
@@ -122,19 +121,17 @@ app.post(
 			return {
 				processed: result.shouldProcess,
 				projectId: result.projectId,
+				decisionReason: result.decisionReason,
 			};
 		},
 	}),
 );
 
-// Twilio SMS webhook handler
-app.post('/twilio/webhook/:projectId', handleTwilioWebhook);
-
 // Graceful shutdown
 async function shutdown(signal: string): Promise<void> {
 	logger.info('Received shutdown signal', { signal });
+	await stopCancelListener();
 	await stopWorkerProcessor();
-	stopEmailScheduler();
 	await flush(3000);
 	process.exit(0);
 }
@@ -164,8 +161,10 @@ async function startRouter(): Promise<void> {
 	await initAgentMessages();
 	await initPrompts();
 
+	// Start cancel listener for handling run cancellations
+	await startCancelListener();
+
 	startWorkerProcessor();
-	startEmailScheduler();
 	logger.info('Starting router', { port });
 	serve({ fetch: app.fetch, port });
 }

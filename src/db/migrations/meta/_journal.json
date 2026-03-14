@@ -176,6 +176,97 @@
 			"when": 1759000000000,
 			"tag": "0024_agent_trigger_configs",
 			"breakpoints": false
+		},
+		{
+			"idx": 25,
+			"version": "7",
+			"when": 1760000000000,
+			"tag": "0025_integration_hooks",
+			"breakpoints": false
+		},
+		{
+			"idx": 26,
+			"version": "7",
+			"when": 1761000000000,
+			"tag": "0026_agent_type_concurrency",
+			"breakpoints": false
+		},
+		{
+			"idx": 27,
+			"version": "7",
+			"when": 1762000000000,
+			"tag": "0027_webhook_decision_reason",
+			"breakpoints": false
+		},
+		{
+			"idx": 28,
+			"version": "7",
+			"when": 1763000000000,
+			"tag": "0028_remove_stories_status",
+			"breakpoints": false
+		},
+		{
+			"idx": 29,
+			"version": "7",
+			"when": 1764000000000,
+			"tag": "0029_work_item_pr_details",
+			"breakpoints": false
+		},
+		{
+			"idx": 30,
+			"version": "7",
+			"when": 1765000000000,
+			"tag": "0030_make_pr_work_items_flexible",
+			"breakpoints": false
+		},
+		{
+			"idx": 31,
+			"version": "7",
+			"when": 1766000000000,
+			"tag": "0031_rename_card_id_to_work_item_id",
+			"breakpoints": false
+		},
+		{
+			"idx": 32,
+			"version": "7",
+			"when": 1767000000000,
+			"tag": "0032_rename_backends_to_engines",
+			"breakpoints": false
+		},
+		{
+			"idx": 33,
+			"version": "7",
+			"when": 1768000000000,
+			"tag": "0033_add_engine_settings",
+			"breakpoints": false
+		},
+		{
+			"idx": 34,
+			"version": "7",
+			"when": 1769000000000,
+			"tag": "0034_remove_subscription_cost_zero",
+			"breakpoints": false
+		},
+		{
+			"idx": 35,
+			"version": "7",
+			"when": 1770000000000,
+			"tag": "0035_add_job_id_to_runs",
+			"breakpoints": false
+		},
+		{
+			"idx": 36,
+			"version": "7",
+			"when": 1771000000000,
+			"tag": "0036_project_only_agent_configs",
+			"breakpoints": false
+		},
+		{
+			"idx": 37,
+			"version": "7",
+			"when": 1772000000000,
+			"tag": "0037_add_run_links",
+			"breakpoints": false
 		}
 	]
 }

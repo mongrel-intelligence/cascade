@@ -1,6 +1,9 @@
 import { execSync } from 'node:child_process';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { TaskCompletionSignal } from 'llmist';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Finish } from '../../../src/gadgets/Finish.js';
 import {
 	initSessionState,
@@ -21,22 +24,50 @@ vi.mock('../../../src/github/client.js', () => ({
 	},
 }));
 
+function mockCleanPushedState(headSha: string, branch = 'feat/respond-to-ci'): void {
+	vi.mocked(execSync).mockImplementation((cmd: string) => {
+		if (cmd.includes('status --porcelain')) return '';
+		if (cmd.includes('rev-list')) return '0';
+		if (cmd === 'git rev-parse --abbrev-ref HEAD') return branch;
+		if (cmd === 'git rev-parse HEAD') return headSha;
+		return '';
+	});
+}
+
 describe('Finish gadget', () => {
+	let pushedChangesSidecarPath: string;
+	let originalPushedChangesEnv: string | undefined;
+
+	beforeEach(() => {
+		pushedChangesSidecarPath = join(tmpdir(), `cascade-finish-sidecar-${Date.now()}.json`);
+		originalPushedChangesEnv = process.env.CASCADE_PUSHED_CHANGES_SIDECAR_PATH;
+		process.env.CASCADE_PUSHED_CHANGES_SIDECAR_PATH = pushedChangesSidecarPath;
+	});
+
+	afterEach(() => {
+		rmSync(pushedChangesSidecarPath, { force: true });
+		if (originalPushedChangesEnv === undefined) {
+			Reflect.deleteProperty(process.env, 'CASCADE_PUSHED_CHANGES_SIDECAR_PATH');
+		} else {
+			process.env.CASCADE_PUSHED_CHANGES_SIDECAR_PATH = originalPushedChangesEnv;
+		}
+	});
+
 	it('has exclusive set to prevent parallel execution with other gadgets', () => {
-		initSessionState('unknown');
+		initSessionState({ agentType: 'unknown' });
 		const gadget = new Finish();
 		expect(gadget.exclusive).toBe(true);
 	});
 
 	it('throws TaskCompletionSignal when no hooks are set', async () => {
-		initSessionState('unknown');
+		initSessionState({ agentType: 'unknown' });
 		const gadget = new Finish();
 		await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(TaskCompletionSignal);
 	});
 
 	describe('implementation agent (hooks.requiresPR: true)', () => {
 		beforeEach(() => {
-			initSessionState('implementation', undefined, undefined, undefined, { requiresPR: true });
+			initSessionState({ agentType: 'implementation', hooks: { requiresPR: true } });
 		});
 
 		it('rejects finish without PR creation and no PR on branch', async () => {
@@ -88,9 +119,14 @@ describe('Finish gadget', () => {
 	});
 
 	describe('respond-to-ci agent (hooks.requiresPushedChanges: true)', () => {
+		const INITIAL_SHA = 'a'.repeat(40);
+		const NEW_SHA = 'b'.repeat(40);
+
 		beforeEach(() => {
-			initSessionState('respond-to-ci', undefined, undefined, undefined, {
-				requiresPushedChanges: true,
+			initSessionState({
+				agentType: 'respond-to-ci',
+				hooks: { requiresPushedChanges: true },
+				initialHeadSha: INITIAL_SHA,
 			});
 		});
 
@@ -120,6 +156,39 @@ describe('Finish gadget', () => {
 		});
 
 		it('allows finish when changes are committed and pushed', async () => {
+			mockCleanPushedState(NEW_SHA);
+
+			const gadget = new Finish();
+			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(TaskCompletionSignal);
+			expect(existsSync(pushedChangesSidecarPath)).toBe(true);
+			expect(JSON.parse(readFileSync(pushedChangesSidecarPath, 'utf-8'))).toEqual({
+				source: 'cascade-tools session finish',
+				branch: 'feat/respond-to-ci',
+				headSha: NEW_SHA,
+			});
+		});
+
+		it('rejects finish when no new commits were made (HEAD unchanged)', async () => {
+			vi.mocked(execSync).mockImplementation((cmd: string) => {
+				if (cmd.includes('status --porcelain')) return '';
+				if (cmd.includes('rev-list')) return '0';
+				if (cmd === 'git rev-parse HEAD') return INITIAL_SHA;
+				return '';
+			});
+
+			const gadget = new Finish();
+			await expect(gadget.execute({ comment: 'Done' })).rejects.toThrow(
+				'Cannot finish session without making any changes',
+			);
+		});
+
+		it('skips no-op check when initialHeadSha is not set', async () => {
+			// Re-init without initialHeadSha
+			initSessionState({
+				agentType: 'respond-to-ci',
+				hooks: { requiresPushedChanges: true },
+			});
+
 			vi.mocked(execSync).mockImplementation((cmd: string) => {
 				if (cmd.includes('status --porcelain')) return '';
 				if (cmd.includes('rev-list')) return '0';
@@ -133,7 +202,7 @@ describe('Finish gadget', () => {
 
 	describe('review agent (hooks.requiresReview: true)', () => {
 		beforeEach(() => {
-			initSessionState('review', undefined, undefined, undefined, { requiresReview: true });
+			initSessionState({ agentType: 'review', hooks: { requiresReview: true } });
 		});
 
 		it('rejects finish without submitting a review', async () => {

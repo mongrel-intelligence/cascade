@@ -7,6 +7,15 @@ import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
 import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock('../../../src/github/client.js', () => ({
 	githubClient: {
 		getPR: vi.fn(),
@@ -21,6 +30,7 @@ vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
 }));
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
+import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 
 describe('CheckSuiteFailureTrigger', () => {
 	const trigger = new CheckSuiteFailureTrigger();
@@ -43,7 +53,7 @@ describe('CheckSuiteFailureTrigger', () => {
 
 	beforeEach(() => {
 		resetFixAttempts(42);
-		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
 	});
 
 	describe('matches', () => {
@@ -121,12 +131,33 @@ describe('CheckSuiteFailureTrigger', () => {
 	});
 
 	describe('handle', () => {
+		it('should return null when trigger is disabled', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeFailurePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test',
+				'respond-to-ci',
+				'scm:check-suite-failure',
+				'check-suite-failure',
+			);
+		});
+
 		it('returns respond-to-ci result when PR has Trello URL and checks failed', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
 				body: 'https://trello.com/c/abc123/card-name',
 				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
 				headRef: 'feature/test',
 				headSha: 'sha123',
 				baseRef: 'main',
@@ -159,9 +190,12 @@ describe('CheckSuiteFailureTrigger', () => {
 					repoFullName: 'owner/repo',
 					headSha: 'sha123',
 					triggerType: 'check-failure',
-					cardId: 'abc123',
+					workItemId: 'abc123',
+					triggerEvent: 'scm:check-suite-failure',
 				},
 				prNumber: 42,
+				prUrl: 'https://github.com/owner/repo/pull/42',
+				prTitle: 'Test PR',
 				workItemId: 'abc123',
 			});
 		});
@@ -172,6 +206,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				title: 'Test PR',
 				body: 'https://trello.com/c/abc123/card-name',
 				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
 				headRef: 'feature/test',
 				headSha: 'sha123',
 				baseRef: 'develop',
@@ -198,6 +233,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				title: 'Test PR',
 				body: 'https://trello.com/c/abc123/card-name',
 				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
 				headRef: 'feature/test',
 				headSha: 'sha123',
 				baseRef: 'main',
@@ -223,6 +259,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				title: 'Test PR',
 				body: 'https://trello.com/c/abc123/card-name',
 				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
 				headRef: 'feature/test',
 				headSha: 'sha123',
 				baseRef: 'main',
@@ -241,12 +278,14 @@ describe('CheckSuiteFailureTrigger', () => {
 			expect(result).toBeNull();
 		});
 
-		it('fires without work item when PR body has no reference', async () => {
+		it('fires without work item when DB has no link', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
 				body: 'No work item link',
 				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
 				headRef: 'feature/test',
 				headSha: 'sha123',
 				baseRef: 'main',
@@ -270,7 +309,7 @@ describe('CheckSuiteFailureTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.workItemId).toBeUndefined();
-			expect(result?.agentInput.cardId).toBeUndefined();
+			expect(result?.agentInput.workItemId).toBeUndefined();
 		});
 
 		it('returns null when not all checks are complete', async () => {
@@ -279,6 +318,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				title: 'Test PR',
 				body: 'https://trello.com/c/abc123',
 				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
 				headRef: 'feature/test',
 				headSha: 'sha123',
 				baseRef: 'main',
@@ -312,6 +352,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				title: 'Test PR',
 				body: 'https://trello.com/c/abc123',
 				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
 				headRef: 'feature/test',
 				headSha: 'sha123',
 				baseRef: 'main',
@@ -345,6 +386,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				title: 'Test PR',
 				body: 'https://trello.com/c/abc123',
 				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
 				headRef: 'feature/test',
 				headSha: 'sha123',
 				baseRef: 'main',
@@ -387,6 +429,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				title: 'Test PR',
 				body: 'https://trello.com/c/abc123',
 				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
 				headRef: 'feature/test',
 				headSha: 'sha123',
 				baseRef: 'main',

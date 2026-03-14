@@ -32,7 +32,7 @@ export function cleanupAgentResources(
 	}
 	if (!isLocalMode) {
 		cleanupLogFile(fileLogger.logPath);
-		cleanupLogFile(fileLogger.llmistLogPath);
+		cleanupLogFile(fileLogger.engineLogPath);
 		cleanupLogDirectory(fileLogger.llmCallLogger.logDir);
 	}
 }

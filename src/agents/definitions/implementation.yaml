@@ -35,7 +35,7 @@ triggers:
         label: Target Status
         options: [todo]
         defaultValue: todo
-    contextPipeline: [directoryListing, contextFiles, squint, workItem]
+    contextPipeline: [directoryListing, contextFiles, squint, workItem, prepopulateTodos]
   - event: pm:label-added
     label: Ready to Process Label
     description: Trigger when Ready to Process label added to a card in the Todo list
@@ -46,29 +46,28 @@ triggers:
         label: Target List
         options: [todo]
         defaultValue: todo
-    contextPipeline: [directoryListing, contextFiles, squint, workItem]
+    contextPipeline: [directoryListing, contextFiles, squint, workItem, prepopulateTodos]
 
 strategies: {}
 
 prompts:
   taskPrompt: |
-    Analyze and process the work item with ID: <%= it.cardId %>. The work item data has been pre-loaded.
+    Analyze and process the work item with ID: <%= it.workItemId %>. The work item data has been pre-loaded.
 
-backend:
-  hooks:
+hooks:
+  trailing:
     scm:
-      enableStopHooks: true
+      gitStatus: true
+      prStatus: true
+    builtin:
+      diagnostics: true
+      todoProgress: true
+      reminder: true
+  finish:
+    scm:
       requiresPR: true
-
 
 hint: >-
   Complete the current todo in as few iterations as possible. Batch related
   edits together. Verify with Tmux after edits. NEVER mark acceptance criteria
   complete without passing verification.
-
-trailingMessage:
-  includeDiagnostics: true
-  includeTodoProgress: true
-  includeGitStatus: true
-  includePRStatus: true
-  includeReminder: true

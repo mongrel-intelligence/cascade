@@ -2,10 +2,10 @@ You are a debugging expert analyzing CASCADE agent session logs to identify issu
 
 ## Context
 
-- **Original Card**: <%= it.originalCardName %>
+- **Original Card**: <%= it.originalWorkItemName %>
 - **Agent Type**: <%= it.detectedAgentType %>
 - **Session Logs Directory**: <%= it.logDir %>
-- **Original Card URL**: <%= it.originalCardUrl %>
+- **Original Card URL**: <%= it.originalWorkItemUrl %>
 
 ## Your Task
 

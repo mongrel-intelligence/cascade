@@ -9,7 +9,16 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
+	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
 import { JiraStatusChangedTrigger } from '../../../src/triggers/jira/status-changed.js';
+import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 
 const mockProject = {
@@ -20,7 +29,9 @@ const mockProject = {
 	branchPrefix: 'feature/',
 	jira: {
 		projectKey: 'PROJ',
+		baseUrl: 'https://myorg.atlassian.net',
 		statuses: {
+			backlog: 'Backlog',
 			splitting: 'Splitting',
 			planning: 'Planning',
 			todo: 'To Do',
@@ -36,15 +47,9 @@ function buildCtx(
 		issueKey?: string;
 		statusChangeItems?: Array<{ field?: string; fromString?: string; toString?: string }>;
 		noJiraConfig?: boolean;
-		triggers?: Record<string, unknown>;
 	} = {},
 ): TriggerContext {
-	const baseJira = overrides.triggers
-		? { ...mockProject.jira, triggers: overrides.triggers }
-		: mockProject.jira;
-	const project = overrides.noJiraConfig
-		? { ...mockProject, jira: undefined }
-		: { ...mockProject, jira: baseJira };
+	const project = overrides.noJiraConfig ? { ...mockProject, jira: undefined } : mockProject;
 
 	return {
 		project: project as TriggerContext['project'],
@@ -69,6 +74,7 @@ describe('JiraStatusChangedTrigger', () => {
 
 	beforeEach(() => {
 		vi.resetAllMocks();
+		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
 		trigger = new JiraStatusChangedTrigger();
 	});
 
@@ -115,7 +121,10 @@ describe('JiraStatusChangedTrigger', () => {
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('implementation');
 			expect(result?.workItemId).toBe('PROJ-42');
-			expect(result?.agentInput).toEqual({ cardId: 'PROJ-42' });
+			expect(result?.agentInput.workItemId).toBe('PROJ-42');
+			expect(result?.workItemUrl).toBe('https://myorg.atlassian.net/browse/PROJ-42');
+			expect(result?.workItemTitle).toBe('Test Issue');
+			expect(result?.agentInput.triggerEvent).toBe('pm:status-changed');
 		});
 
 		it('returns splitting agent for "Splitting" transition', async () => {
@@ -146,6 +155,18 @@ describe('JiraStatusChangedTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result?.agentType).toBe('splitting');
+		});
+
+		it('returns backlog-manager agent for Backlog transition', async () => {
+			const ctx = buildCtx({
+				statusChangeItems: [{ field: 'status', fromString: 'Done', toString: 'Backlog' }],
+			});
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('backlog-manager');
+			expect(result?.workItemId).toBe('PROJ-42');
 		});
 
 		it('returns null for unmapped status transitions', async () => {
@@ -196,22 +217,30 @@ describe('JiraStatusChangedTrigger', () => {
 			expect(result).toBeNull();
 		});
 
-		describe('per-agent statusChanged toggle', () => {
-			it('fires when statusChanged toggle is true for agent (legacy boolean)', async () => {
+		describe('per-agent statusChanged toggle (via checkTriggerEnabled)', () => {
+			it('fires when trigger is enabled for agent', async () => {
+				vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
+
 				const ctx = buildCtx({
 					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
-					triggers: { statusChanged: true },
 				});
 
 				const result = await trigger.handle(ctx);
 
 				expect(result?.agentType).toBe('splitting');
+				expect(checkTriggerEnabled).toHaveBeenCalledWith(
+					'test-project',
+					'splitting',
+					'pm:status-changed',
+					'jira-status-changed',
+				);
 			});
 
-			it('returns null when statusChanged disabled globally (legacy boolean false)', async () => {
+			it('returns null when trigger is disabled for splitting agent', async () => {
+				vi.mocked(checkTriggerEnabled).mockResolvedValue(false);
+
 				const ctx = buildCtx({
 					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
-					triggers: { statusChanged: false },
 				});
 
 				const result = await trigger.handle(ctx);
@@ -219,38 +248,11 @@ describe('JiraStatusChangedTrigger', () => {
 				expect(result).toBeNull();
 			});
 
-			it('fires when per-agent statusChanged.splitting is enabled', async () => {
-				const ctx = buildCtx({
-					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
-					triggers: {
-						statusChanged: { splitting: true, planning: false, implementation: false },
-					},
-				});
+			it('fires planning agent when trigger is enabled', async () => {
+				vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
 
-				const result = await trigger.handle(ctx);
-
-				expect(result?.agentType).toBe('splitting');
-			});
-
-			it('returns null when per-agent statusChanged.splitting is disabled', async () => {
-				const ctx = buildCtx({
-					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
-					triggers: {
-						statusChanged: { splitting: false, planning: true, implementation: true },
-					},
-				});
-
-				const result = await trigger.handle(ctx);
-
-				expect(result).toBeNull();
-			});
-
-			it('fires planning agent when statusChanged.planning is enabled', async () => {
 				const ctx = buildCtx({
 					statusChangeItems: [{ field: 'status', fromString: 'Splitting', toString: 'Planning' }],
-					triggers: {
-						statusChanged: { splitting: false, planning: true, implementation: false },
-					},
 				});
 
 				const result = await trigger.handle(ctx);
@@ -258,23 +260,11 @@ describe('JiraStatusChangedTrigger', () => {
 				expect(result?.agentType).toBe('planning');
 			});
 
-			it('returns null when per-agent statusChanged.implementation is disabled', async () => {
+			it('returns null when trigger is disabled for implementation agent', async () => {
+				vi.mocked(checkTriggerEnabled).mockResolvedValue(false);
+
 				const ctx = buildCtx({
 					statusChangeItems: [{ field: 'status', fromString: 'Planning', toString: 'To Do' }],
-					triggers: {
-						statusChanged: { splitting: true, planning: true, implementation: false },
-					},
-				});
-
-				const result = await trigger.handle(ctx);
-
-				expect(result).toBeNull();
-			});
-
-			it('backward compat: respects legacy issueTransitioned boolean toggle', async () => {
-				const ctx = buildCtx({
-					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
-					triggers: { issueTransitioned: false },
 				});
 
 				const result = await trigger.handle(ctx);

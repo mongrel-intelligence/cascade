@@ -1,8 +1,7 @@
 /**
  * SCM (GitHub) integration — credential validation helpers.
  *
- * Provides hasScmIntegration() for checking if SCM integration is configured,
- * consistent with the pattern in email/integration.ts.
+ * Provides hasScmIntegration() for checking if SCM integration is configured.
  */
 
 import { getIntegrationCredentialOrNull } from '../config/provider.js';

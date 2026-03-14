@@ -6,11 +6,13 @@ import { Link, useRouterState } from '@tanstack/react-router';
 import {
 	Activity,
 	BookOpen,
-	Bot,
+	Building,
 	FolderGit2,
 	KeyRound,
 	LayoutDashboard,
 	Settings,
+	SlidersHorizontal,
+	Users,
 	Zap,
 } from 'lucide-react';
 
@@ -18,16 +20,20 @@ interface SidebarProps {
 	user: { name: string; email: string; role: string } | undefined;
 }
 
-const mainNav = [
-	{ to: '/' as const, label: 'Runs', icon: Activity },
-	{ to: '/webhooklogs' as const, label: 'Webhook Logs', icon: Zap },
+const mainNav = [{ to: '/' as const, label: 'Runs', icon: Activity }];
+
+const globalNav = [
+	{ to: '/global/runs' as const, label: 'Global Runs', icon: Activity },
+	{ to: '/global/webhook-logs' as const, label: 'Webhook Logs', icon: Zap },
+	{ to: '/global/defaults' as const, label: 'Cascade Defaults', icon: SlidersHorizontal },
+	{ to: '/global/definitions' as const, label: 'Agent Definitions', icon: BookOpen },
+	{ to: '/global/organizations' as const, label: 'Organizations', icon: Building },
 ];
 
 const settingsNav = [
 	{ to: '/settings/general' as const, label: 'General', icon: Settings },
 	{ to: '/settings/credentials' as const, label: 'Credentials', icon: KeyRound },
-	{ to: '/settings/agents' as const, label: 'Agent Configs', icon: Bot },
-	{ to: '/settings/definitions' as const, label: 'Agent Definitions', icon: BookOpen },
+	{ to: '/settings/users' as const, label: 'Users', icon: Users },
 ];
 
 function NavLink({
@@ -97,7 +103,12 @@ export function Sidebar({ user }: SidebarProps) {
 							/>
 						))
 					) : (
-						<div className="px-3 py-2 text-sm text-muted-foreground">No projects</div>
+						<Link
+							to="/projects"
+							className="block px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+						>
+							+ Create a project
+						</Link>
 					)}
 				</div>
 				<NavLink
@@ -107,6 +118,18 @@ export function Sidebar({ user }: SidebarProps) {
 					currentPath={currentPath}
 					exact
 				/>
+
+				{user?.role === 'superadmin' && (
+					<>
+						<Separator className="my-3" />
+						<div className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+							Global
+						</div>
+						{globalNav.map((item) => (
+							<NavLink key={item.to} {...item} currentPath={currentPath} />
+						))}
+					</>
+				)}
 
 				<Separator className="my-3" />
 

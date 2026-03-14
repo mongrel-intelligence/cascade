@@ -1,4 +1,6 @@
 import { constants, accessSync, existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type {
@@ -12,142 +14,22 @@ import { storeLlmCall } from '../../db/repositories/runsRepository.js';
 import { logger } from '../../utils/logging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { getWorkspaceDir } from '../../utils/repo.js';
-import type {
-	AgentBackend,
-	AgentBackendInput,
-	AgentBackendResult,
-	ContextInjection,
-	ToolManifest,
-} from '../types.js';
+import { CLAUDE_CODE_ENGINE_DEFINITION } from '../catalog.js';
 import {
-	buildInlineContextSection,
-	cleanupContextFiles,
-	offloadLargeContext,
-} from './contextFiles.js';
-import { filterProcessEnv } from './env.js';
+	type CompletionRequirements,
+	applyCompletionEvidence,
+	getCompletionFailure,
+	readCompletionEvidence,
+} from '../completion.js';
+import { cleanupContextFiles } from '../contextFiles.js';
+import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
+import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
+import { buildClaudeEnv } from './env.js';
 import { buildHooks } from './hooks.js';
 import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
 
-/**
- * Format a single CLI parameter for tool guidance documentation.
- */
-function formatParam(
-	key: string,
-	schema: { type: string; required?: boolean; default?: unknown; description?: string },
-): string {
-	let result: string;
-	if (schema.type === 'array') {
-		// Array params use repeated flags: --item "a" --item "b"
-		const singular = key.replace(/s$/, '');
-		result = schema.required
-			? ` --${singular} <string> (repeatable)`
-			: ` [--${singular} <string> (repeatable)]`;
-	} else if (schema.type === 'boolean') {
-		// Boolean flags are presence-based: --flag (true) or --no-flag (false), no value argument
-		if (schema.default === true) {
-			result = ` [--no-${key}]`;
-		} else {
-			result = ` [--${key}]`;
-		}
-	} else {
-		result = schema.required ? ` --${key} <${schema.type}>` : ` [--${key} <${schema.type}>]`;
-	}
-	if (schema.description) {
-		result += ` # ${schema.description}`;
-	}
-	return result;
-}
-
-/**
- * Build prompt guidance for CASCADE-specific CLI tools.
- * The Claude Code agent invokes these via its built-in Bash tool.
- */
-export function buildToolGuidance(tools: ToolManifest[]): string {
-	if (tools.length === 0) return '';
-
-	let guidance = '## CASCADE Tools\n\n';
-	guidance += 'Use the Bash tool to invoke these CASCADE-specific commands.\n';
-	guidance += 'All commands output JSON. Parse the output to extract results.\n\n';
-	guidance +=
-		'**CRITICAL**: You MUST use these cascade-tools commands for all PM (Trello/JIRA), GitHub, and session operations. ' +
-		'Do NOT use `gh` CLI or other tools directly — cascade-tools handle authentication, push, and ' +
-		'state tracking that raw CLI tools do not. For example, `cascade-tools github create-pr` pushes ' +
-		'the branch AND creates the PR atomically, while `gh pr create` does NOT push and will fail.\n\n';
-
-	for (const tool of tools) {
-		guidance += `### ${tool.name}\n`;
-		guidance += `${tool.description}\n`;
-		guidance += `\`\`\`bash\n${tool.cliCommand}`;
-
-		for (const [key, schema] of Object.entries(tool.parameters)) {
-			guidance += formatParam(key, schema as { type: string; required?: boolean });
-		}
-
-		guidance += '\n```\n\n';
-	}
-
-	return guidance;
-}
-
-/**
- * Result of building the task prompt with context offloading.
- */
-export interface BuildTaskPromptResult {
-	/** The assembled task prompt */
-	prompt: string;
-	/** Whether any context was offloaded to files */
-	hasOffloadedContext: boolean;
-}
-
-/**
- * Build the task prompt with pre-fetched context injections.
- *
- * Large context is offloaded to files to avoid exceeding prompt limits.
- * Claude is instructed to read the files on-demand using its Read tool.
- *
- * @param taskPrompt - The base task prompt
- * @param contextInjections - Context data to include
- * @param repoDir - Repository directory for writing context files
- * @returns The assembled prompt and offload metadata
- */
-export async function buildTaskPrompt(
-	taskPrompt: string,
-	contextInjections: ContextInjection[],
-	repoDir: string,
-): Promise<BuildTaskPromptResult> {
-	let prompt = taskPrompt;
-
-	if (contextInjections.length === 0) {
-		return { prompt, hasOffloadedContext: false };
-	}
-
-	const { inlineInjections, offloadedFiles, instructions } = await offloadLargeContext(
-		repoDir,
-		contextInjections,
-	);
-
-	// Add inline context
-	prompt += buildInlineContextSection(inlineInjections);
-
-	// Add instructions for offloaded files
-	if (instructions) {
-		prompt += `\n\n${instructions}`;
-	}
-
-	return {
-		prompt,
-		hasOffloadedContext: offloadedFiles.length > 0,
-	};
-}
-
-/**
- * Build the system prompt by combining CASCADE's agent prompt with tool guidance.
- */
-export function buildSystemPrompt(systemPrompt: string, tools: ToolManifest[]): string {
-	const toolGuidance = buildToolGuidance(tools);
-	if (!toolGuidance) return systemPrompt;
-	return `${systemPrompt}\n\n${toolGuidance}`;
-}
+export { buildToolGuidance, buildTaskPrompt, buildSystemPrompt } from '../nativeTools.js';
+export { buildClaudeEnv as buildEnv } from './env.js';
 
 /**
  * Resolve a CASCADE model string to a Claude model ID.
@@ -180,34 +62,6 @@ export function ensureOnboardingFlag(): void {
 			mode: 0o600,
 		});
 	}
-}
-
-/**
- * Build environment variables to pass through to the SDK subprocess.
- *
- * Uses an allowlist filter on process.env so only safe system variables
- * (HOME, PATH, locale, etc.) reach the subprocess. Server-side secrets
- * like DATABASE_URL are never passed through.
- *
- * Project-specific secrets (GITHUB_TOKEN, TRELLO_API_KEY, etc.) are
- * injected via projectSecrets, which are layered on top.
- *
- * Auth (handled by SDK via inherited env vars):
- * - CLAUDE_CODE_OAUTH_TOKEN — long-lived OAuth token from `claude setup-token`
- */
-export function buildEnv(projectSecrets?: Record<string, string>): {
-	env: Record<string, string | undefined>;
-} {
-	const env: Record<string, string | undefined> = {
-		...filterProcessEnv(process.env),
-		...projectSecrets,
-		CLAUDE_AGENT_SDK_CLIENT_APP: 'cascade/1.0.0',
-	};
-
-	// Always ensure onboarding flag exists (required for both API key and subscription auth)
-	ensureOnboardingFlag();
-
-	return { env };
 }
 
 /**
@@ -259,7 +113,7 @@ function extractFinishComment(assistantMessages: SDKAssistantMessage[]): string 
 function processAssistantMessage(
 	assistantMsg: SDKAssistantMessage,
 	turnCount: number,
-	input: AgentBackendInput,
+	input: AgentExecutionPlan,
 ): void {
 	if (assistantMsg.message?.content) {
 		for (const block of assistantMsg.message.content) {
@@ -296,7 +150,7 @@ function processAssistantMessage(
  */
 function processSystemMessage(
 	message: { subtype: string; [key: string]: unknown },
-	logWriter: AgentBackendInput['logWriter'],
+	logWriter: AgentExecutionPlan['logWriter'],
 ): void {
 	if (message.subtype === 'init') {
 		const initMsg = message as unknown as SDKSystemMessage;
@@ -312,15 +166,30 @@ function processSystemMessage(
 }
 
 /**
+ * Format a human-readable error message from a non-success SDK result.
+ */
+export function formatErrorMessage(
+	errorResult: Exclude<SDKResultMessage, SDKResultSuccess>,
+	budgetUsd?: number,
+): string {
+	if (errorResult.subtype === 'error_max_budget_usd') {
+		const spent = errorResult.total_cost_usd?.toFixed(2) ?? '?';
+		const limit = budgetUsd?.toFixed(2) ?? '?';
+		return `Budget limit reached: spent $${spent} of $${limit} allowed for this run. Increase the project work-item budget or retry with a higher limit.`;
+	}
+	return errorResult.errors?.join('; ') ?? errorResult.subtype;
+}
+
+/**
  * Build the result from collected stream data.
  */
 function buildResult(
 	assistantMessages: SDKAssistantMessage[],
 	resultMessage: SDKResultMessage | undefined,
 	stderrChunks: string[],
-	input: AgentBackendInput,
+	input: AgentExecutionPlan,
 	startTime: number,
-): AgentBackendResult {
+): AgentEngineResult {
 	const finishComment = extractFinishComment(assistantMessages);
 	const success = resultMessage?.subtype === 'success';
 	const cost = resultMessage?.total_cost_usd;
@@ -333,7 +202,7 @@ function buildResult(
 	let error: string | undefined;
 	if (resultMessage && resultMessage.subtype !== 'success') {
 		const errorResult = resultMessage as Exclude<SDKResultMessage, SDKResultSuccess>;
-		error = errorResult.errors?.join('; ') ?? errorResult.subtype;
+		error = formatErrorMessage(errorResult, input.budgetUsd);
 	}
 
 	const stderrOutput = stderrChunks.join('').trim();
@@ -345,8 +214,14 @@ function buildResult(
 	}
 
 	const prUrl = extractPRUrl(output) ?? extractPRUrlFromMessages(assistantMessages);
+	const prEvidence = prUrl
+		? {
+				source: 'text' as const,
+				authoritative: false,
+			}
+		: undefined;
 
-	input.logWriter('INFO', 'Claude Code SDK execution completed', {
+	input.logWriter('INFO', 'Claude Code SDK turn completed', {
 		success,
 		subtype: resultMessage?.subtype,
 		turns: resultMessage?.num_turns,
@@ -355,7 +230,7 @@ function buildResult(
 		durationMs: Date.now() - startTime,
 	});
 
-	return { success, output, cost, error, prUrl };
+	return { success, output, cost, error, prUrl, prEvidence };
 }
 
 /**
@@ -363,7 +238,7 @@ function buildResult(
  */
 function processTaskNotification(
 	sysMsg: { [key: string]: unknown },
-	input: AgentBackendInput,
+	input: AgentExecutionPlan,
 ): void {
 	const taskMsg = sysMsg as unknown as {
 		task_id: string;
@@ -412,8 +287,29 @@ function debugRepoDirectory(repoDir: string): void {
 	}
 }
 
+const CLAUDE_NATIVE_TOOL_MAP: Record<string, string[]> = {
+	'fs:read': ['Read', 'Glob', 'Grep'],
+	'fs:write': ['Write', 'Edit'],
+	'shell:exec': ['Bash'],
+};
+
+function resolveNativeTools(nativeToolCapabilities?: string[]): string[] {
+	if (!nativeToolCapabilities || nativeToolCapabilities.length === 0) {
+		return ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
+	}
+
+	const tools = new Set<string>();
+	for (const capability of nativeToolCapabilities) {
+		for (const tool of CLAUDE_NATIVE_TOOL_MAP[capability] ?? []) {
+			tools.add(tool);
+		}
+	}
+
+	return tools.size > 0 ? [...tools] : ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
+}
+
 function logLlmCall(
-	input: AgentBackendInput,
+	input: AgentExecutionPlan,
 	assistantMsg: SDKAssistantMessage,
 	turnCount: number,
 	model: string,
@@ -448,6 +344,112 @@ function logLlmCall(
 	});
 }
 
+function countToolCalls(assistantMsg: SDKAssistantMessage): number {
+	return (assistantMsg.message?.content ?? []).filter((b) => b.type === 'tool_use').length;
+}
+
+/**
+ * Consume the Claude Code SDK stream and collect assistant messages, result, and counters.
+ * Returns the updated turn count and tool call count accumulated during this stream.
+ */
+async function consumeStream(
+	stream: ReturnType<typeof query>,
+	input: AgentExecutionPlan,
+	model: string,
+	startTurnCount: number,
+): Promise<{
+	assistantMessages: SDKAssistantMessage[];
+	resultMessage: SDKResultMessage | undefined;
+	turnCount: number;
+	toolCallCount: number;
+}> {
+	const assistantMessages: SDKAssistantMessage[] = [];
+	let resultMessage: SDKResultMessage | undefined;
+	let turnCount = startTurnCount;
+	let toolCallCount = 0;
+
+	for await (const message of stream) {
+		if (message.type === 'assistant') {
+			const assistantMsg = message as SDKAssistantMessage;
+			assistantMessages.push(assistantMsg);
+			turnCount++;
+			await input.progressReporter.onIteration(turnCount, input.maxIterations);
+			processAssistantMessage(assistantMsg, turnCount, input);
+			toolCallCount += countToolCalls(assistantMsg);
+			logLlmCall(input, assistantMsg, turnCount, model);
+		} else if (message.type === 'system') {
+			const sysMsg = message as { subtype: string; [key: string]: unknown };
+			if (sysMsg.subtype === 'task_notification') {
+				processTaskNotification(sysMsg, input);
+			} else {
+				processSystemMessage(sysMsg, input.logWriter);
+			}
+		} else if (message.type === 'result') {
+			resultMessage = message as SDKResultMessage;
+		}
+	}
+
+	return { assistantMessages, resultMessage, turnCount, toolCallCount };
+}
+
+/**
+ * Clean up the Claude Code persisted session directory.
+ * Since workers are ephemeral, there's no need to keep session data after execution.
+ *
+ * The SDK encodes cwd into the session directory name by replacing path separators with '-'.
+ * For example, /tmp/cascade-repo-abc becomes ~/.claude/projects/-tmp-cascade-repo-abc.
+ */
+async function cleanupPersistedSession(repoDir: string): Promise<void> {
+	const encodedDir = repoDir.replaceAll(path.sep, '-');
+	const sessionDir = path.join(homedir(), '.claude', 'projects', encodedDir);
+	try {
+		if (existsSync(sessionDir)) {
+			await rm(sessionDir, { recursive: true, force: true });
+		}
+	} catch {
+		// Best-effort cleanup
+	}
+}
+
+type ContinuationDecision =
+	| { done: true; result: AgentEngineResult }
+	| { done: false; promptText: string };
+
+/**
+ * Check completion requirements and decide whether to continue or return a final result.
+ * Logs the continuation warning when a new turn is needed.
+ */
+function decideContinuation(
+	result: AgentEngineResult,
+	completionRequirements: CompletionRequirements | undefined,
+	continuationTurns: number,
+	maxContinuationTurns: number,
+	totalCost: number | undefined,
+	logWriter: AgentExecutionPlan['logWriter'],
+	toolCallCount: number,
+): ContinuationDecision {
+	const completionFailure = getCompletionFailure(
+		completionRequirements,
+		readCompletionEvidence(completionRequirements),
+	);
+	if (!completionFailure) {
+		return { done: true, result: { ...result, cost: totalCost } };
+	}
+	if (continuationTurns >= maxContinuationTurns) {
+		return {
+			done: true,
+			result: { ...result, success: false, error: completionFailure.error, cost: totalCost },
+		};
+	}
+	logWriter('WARN', 'Claude Code completion check failed; continuing session', {
+		reason: completionFailure.error,
+		continuationTurn: continuationTurns + 1,
+		maxContinuationTurns,
+		toolCallCount,
+	});
+	return { done: false, promptText: completionFailure.continuationPrompt };
+}
+
 /**
  * Claude Code SDK backend for CASCADE.
  *
@@ -456,14 +458,14 @@ function logLlmCall(
  * are invoked via the built-in Bash tool through the cascade-tools CLI, with usage
  * guidance injected into the system prompt.
  */
-export class ClaudeCodeBackend implements AgentBackend {
-	readonly name = 'claude-code';
+export class ClaudeCodeEngine implements AgentEngine {
+	readonly definition = CLAUDE_CODE_ENGINE_DEFINITION;
 
 	supportsAgentType(_agentType: string): boolean {
 		return true;
 	}
 
-	async execute(input: AgentBackendInput): Promise<AgentBackendResult> {
+	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const startTime = Date.now();
 		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools);
 		const { prompt: taskPrompt, hasOffloadedContext } = await buildTaskPrompt(
@@ -481,70 +483,105 @@ export class ClaudeCodeBackend implements AgentBackend {
 			hasOffloadedContext,
 		});
 
-		const { env } = buildEnv(input.projectSecrets);
+		const { env } = buildClaudeEnv(
+			input.projectSecrets,
+			input.cliToolsDir,
+			input.nativeToolShimDir,
+		);
+		// Always ensure onboarding flag exists (required for both API key and subscription auth)
+		ensureOnboardingFlag();
 		const hooks = buildHooks(input.logWriter, input.repoDir, input.enableStopHooks ?? true, {
 			blockGitPush: input.blockGitPush,
 		});
 
-		const sdkTools = input.sdkTools ?? ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
+		const sdkTools = resolveNativeTools(input.nativeToolCapabilities);
 
 		debugRepoDirectory(input.repoDir);
 
-		const assistantMessages: SDKAssistantMessage[] = [];
-		let resultMessage: SDKResultMessage | undefined;
+		const maxContinuationTurns = input.completionRequirements?.maxContinuationTurns ?? 0;
+		let continuationTurns = 0;
+		let promptText = taskPrompt;
+		let isContinuation = false;
 		let turnCount = 0;
-		const stderrChunks: string[] = [];
+		let totalCost: number | undefined;
 
 		try {
-			const stream = query({
-				prompt: taskPrompt,
-				options: {
-					model,
-					systemPrompt,
-					cwd: input.repoDir,
-					additionalDirectories: [getWorkspaceDir()],
-					maxBudgetUsd: input.budgetUsd,
-					permissionMode: 'bypassPermissions',
-					allowDangerouslySkipPermissions: true,
-					tools: sdkTools,
-					allowedTools: sdkTools,
-					persistSession: false,
-					hooks,
-					env,
-					debug: true,
-					stderr: (data: string) => {
-						stderrChunks.push(data);
-						input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
+			for (;;) {
+				const stderrChunks: string[] = [];
+				const stream = query({
+					prompt: promptText,
+					options: {
+						model,
+						systemPrompt,
+						cwd: input.repoDir,
+						additionalDirectories: [getWorkspaceDir()],
+						maxBudgetUsd: input.budgetUsd,
+						permissionMode: 'bypassPermissions',
+						allowDangerouslySkipPermissions: true,
+						tools: sdkTools,
+						allowedTools: sdkTools,
+						persistSession: true,
+						hooks,
+						env,
+						debug: true,
+						stderr: (data: string) => {
+							stderrChunks.push(data);
+							input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
+						},
+						...(isContinuation ? { continue: true } : {}),
 					},
-				},
-			});
+				});
 
-			for await (const message of stream) {
-				if (message.type === 'assistant') {
-					const assistantMsg = message as SDKAssistantMessage;
-					assistantMessages.push(assistantMsg);
-					turnCount++;
-					await input.progressReporter.onIteration(turnCount, input.maxIterations);
-					processAssistantMessage(assistantMsg, turnCount, input);
-					logLlmCall(input, assistantMsg, turnCount, model);
-				} else if (message.type === 'system') {
-					const sysMsg = message as { subtype: string; [key: string]: unknown };
-					if (sysMsg.subtype === 'task_notification') {
-						processTaskNotification(sysMsg, input);
-					} else {
-						processSystemMessage(sysMsg, input.logWriter);
-					}
-				} else if (message.type === 'result') {
-					resultMessage = message as SDKResultMessage;
+				const {
+					assistantMessages,
+					resultMessage,
+					turnCount: newTurnCount,
+					toolCallCount,
+				} = await consumeStream(stream, input, model, turnCount);
+				turnCount = newTurnCount;
+
+				const turnResult = buildResult(
+					assistantMessages,
+					resultMessage,
+					stderrChunks,
+					input,
+					startTime,
+				);
+
+				// Accumulate cost across continuation turns
+				if (turnResult.cost !== undefined) {
+					totalCost = (totalCost ?? 0) + turnResult.cost;
 				}
-			}
 
-			return buildResult(assistantMessages, resultMessage, stderrChunks, input, startTime);
+				const result = applyCompletionEvidence(turnResult, input.completionRequirements);
+
+				// Don't continue on non-success results
+				if (!result.success) {
+					return { ...result, cost: totalCost };
+				}
+
+				const decision = decideContinuation(
+					result,
+					input.completionRequirements,
+					continuationTurns,
+					maxContinuationTurns,
+					totalCost,
+					input.logWriter,
+					toolCallCount,
+				);
+				if (decision.done) return decision.result;
+
+				continuationTurns++;
+				promptText = decision.promptText;
+				isContinuation = true;
+			}
 		} finally {
 			// Clean up offloaded context files after execution
 			if (hasOffloadedContext) {
 				await cleanupContextFiles(input.repoDir);
 			}
+			// Clean up persisted session directory — workers are ephemeral
+			await cleanupPersistedSession(input.repoDir);
 		}
 	}
 }

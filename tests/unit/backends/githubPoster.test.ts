@@ -6,28 +6,25 @@ vi.mock('../../../src/github/client.js', () => ({
 	},
 }));
 
-vi.mock('../../../src/gadgets/sessionState.js', () => ({
-	getSessionState: vi.fn(),
-}));
-
-vi.mock('../../../src/config/statusUpdateConfig.js', () => ({
-	formatGitHubProgressComment: vi.fn(),
-}));
+vi.mock('../../../src/gadgets/sessionState.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../../../src/gadgets/sessionState.js')>();
+	return {
+		...actual,
+		getSessionState: vi.fn(),
+	};
+});
 
 import { GitHubProgressPoster } from '../../../src/backends/progressState/githubPoster.js';
-import { formatGitHubProgressComment } from '../../../src/config/statusUpdateConfig.js';
 import { getSessionState } from '../../../src/gadgets/sessionState.js';
 import { githubClient } from '../../../src/github/client.js';
 
 const mockGithubClient = vi.mocked(githubClient);
 const mockGetSessionState = vi.mocked(getSessionState);
-const mockFormatGitHubProgressComment = vi.mocked(formatGitHubProgressComment);
 
 function makePoster() {
 	return new GitHubProgressPoster({
 		owner: 'myorg',
 		repo: 'myrepo',
-		headerMessage: '**🧑‍💻 Implementation Update**',
 		logWriter: vi.fn(),
 	});
 }
@@ -44,12 +41,12 @@ describe('GitHubProgressPoster — update()', () => {
 		});
 
 		const poster = makePoster();
-		await poster.update('summary', 'implementation');
+		await poster.update('summary');
 
 		expect(mockGithubClient.updatePRComment).not.toHaveBeenCalled();
 	});
 
-	it('formats and updates PR comment when initialCommentId exists', async () => {
+	it('uses summary as full comment body when initialCommentId exists', async () => {
 		mockGetSessionState.mockReturnValue({
 			agentType: 'implementation',
 			prCreated: false,
@@ -58,25 +55,20 @@ describe('GitHubProgressPoster — update()', () => {
 			reviewUrl: null,
 			initialCommentId: 99,
 		});
-		mockFormatGitHubProgressComment.mockReturnValue('Header\n\n📋 Old todo section\n\nFooter');
 		mockGithubClient.updatePRComment.mockResolvedValue(undefined as never);
 
 		const poster = makePoster();
-		await poster.update('AI-generated summary', 'implementation');
+		await poster.update('AI-generated summary');
 
-		expect(mockFormatGitHubProgressComment).toHaveBeenCalledWith(
-			'**🧑‍💻 Implementation Update**',
-			'implementation',
-		);
 		expect(mockGithubClient.updatePRComment).toHaveBeenCalledWith(
 			'myorg',
 			'myrepo',
 			99,
-			expect.stringContaining('AI-generated summary'),
+			'AI-generated summary',
 		);
 	});
 
-	it('replaces the todo section with the AI summary', async () => {
+	it('replaces entire comment body with the AI summary (no header or separator)', async () => {
 		mockGetSessionState.mockReturnValue({
 			agentType: 'implementation',
 			prCreated: false,
@@ -85,18 +77,14 @@ describe('GitHubProgressPoster — update()', () => {
 			reviewUrl: null,
 			initialCommentId: 42,
 		});
-		// The format includes a todo section matching \n\n📋[\s\S]*?\n\n
-		mockFormatGitHubProgressComment.mockReturnValue(
-			'Header text\n\n📋 Todo item 1\nTodo item 2\n\nFooter text',
-		);
 		mockGithubClient.updatePRComment.mockResolvedValue(undefined as never);
 
 		const poster = makePoster();
-		await poster.update('My AI summary', 'review');
+		await poster.update('My AI summary');
 
 		const callArg = mockGithubClient.updatePRComment.mock.calls[0][3];
-		expect(callArg).toContain('My AI summary');
-		expect(callArg).not.toContain('📋 Todo item');
+		expect(callArg).toBe('My AI summary');
+		expect(callArg).not.toContain('---');
 	});
 
 	it('logs success after updating comment', async () => {
@@ -109,16 +97,14 @@ describe('GitHubProgressPoster — update()', () => {
 			reviewUrl: null,
 			initialCommentId: 7,
 		});
-		mockFormatGitHubProgressComment.mockReturnValue('body');
 		mockGithubClient.updatePRComment.mockResolvedValue(undefined as never);
 
 		const poster = new GitHubProgressPoster({
 			owner: 'o',
 			repo: 'r',
-			headerMessage: 'Header',
 			logWriter,
 		});
-		await poster.update('summary', 'review');
+		await poster.update('summary');
 
 		expect(logWriter).toHaveBeenCalledWith(
 			'INFO',

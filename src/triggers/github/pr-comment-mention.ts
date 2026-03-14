@@ -1,9 +1,9 @@
-import { resolveGitHubTriggerEnabled } from '../../config/triggerConfig.js';
 import { githubClient } from '../../github/client.js';
 import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { isGitHubIssueCommentPayload, isGitHubPRReviewCommentPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
 
@@ -20,11 +20,6 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'github') return false;
 
-		// Check trigger config — default enabled for backward compatibility
-		if (!resolveGitHubTriggerEnabled(ctx.project.github?.triggers, 'prCommentMention')) {
-			return false;
-		}
-
 		// Match issue_comment.created on PRs
 		if (isGitHubIssueCommentPayload(ctx.payload)) {
 			if (ctx.payload.action !== 'created') return false;
@@ -40,6 +35,18 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+		// Check trigger config via new DB-driven system
+		if (
+			!(await checkTriggerEnabled(
+				ctx.project.id,
+				'respond-to-pr-comment',
+				'scm:pr-comment-mention',
+				this.name,
+			))
+		) {
+			return null;
+		}
+
 		// Require persona identities for @mention detection
 		if (!ctx.personaIdentities) {
 			logger.warn('No persona identities available, skipping @mention trigger');
@@ -57,8 +64,9 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 		let commentAuthor: string;
 		let prNumber: number;
 		let prBranch: string;
+		let prUrl: string;
+		let prTitle: string;
 		let repoFullName: string;
-		let prBody: string | null;
 
 		if (isGitHubIssueCommentPayload(ctx.payload)) {
 			const payload = ctx.payload;
@@ -70,11 +78,12 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 			prNumber = payload.issue.number;
 			repoFullName = payload.repository.full_name;
 
-			// Need to fetch PR for branch info and body
+			// Need to fetch PR for branch info and PR metadata
 			const { owner, repo } = parseRepoFullName(repoFullName);
 			const prDetails = await githubClient.getPR(owner, repo, prNumber);
 			prBranch = prDetails.headRef;
-			prBody = prDetails.body;
+			prUrl = prDetails.htmlUrl;
+			prTitle = prDetails.title;
 		} else if (isGitHubPRReviewCommentPayload(ctx.payload)) {
 			const payload = ctx.payload;
 			commentBody = payload.comment.body;
@@ -84,12 +93,9 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 			commentAuthor = payload.comment.user.login;
 			prNumber = payload.pull_request.number;
 			prBranch = payload.pull_request.head.ref;
+			prUrl = payload.pull_request.html_url;
+			prTitle = payload.pull_request.title;
 			repoFullName = payload.repository.full_name;
-
-			// Fetch PR for body (needed for work item resolution)
-			const { owner, repo } = parseRepoFullName(repoFullName);
-			const prDetails = await githubClient.getPR(owner, repo, prNumber);
-			prBody = prDetails.body;
 		} else {
 			return null;
 		}
@@ -97,6 +103,7 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 		// Check for @mention of the implementer persona (case-insensitive)
 		const mentionPattern = new RegExp(`@${mentionTarget}\\b`, 'i');
 		if (!mentionPattern.test(commentBody)) {
+			logger.debug('No @mention in comment, skipping', { prNumber, mentionTarget });
 			return null;
 		}
 
@@ -106,8 +113,8 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Resolve work item from DB (with PR body fallback)
-		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber, prBody, ctx.project);
+		// Resolve work item from DB
+		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 
 		logger.info('PR comment @mention detected, triggering respond-to-pr-comment agent', {
 			prNumber,
@@ -122,6 +129,7 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 				prNumber,
 				prBranch,
 				repoFullName,
+				triggerEvent: 'scm:pr-comment-mention',
 				triggerCommentId: commentId,
 				triggerCommentBody: commentBody,
 				triggerCommentPath: commentPath,
@@ -129,6 +137,8 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 				commentAuthor,
 			},
 			prNumber,
+			prUrl,
+			prTitle,
 			workItemId,
 		};
 	}

@@ -5,13 +5,10 @@
  * a CASCADE agent type (splitting, planning, implementation).
  */
 
-import {
-	resolveJiraTriggerEnabled,
-	resolveStatusChangedEnabled,
-} from '../../config/triggerConfig.js';
 import { getJiraConfig } from '../../pm/config.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { type JiraWebhookPayload, STATUS_TO_AGENT } from './types.js';
 
 export class JiraStatusChangedTrigger implements TriggerHandler {
@@ -20,11 +17,6 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 
 	matches(ctx: TriggerContext): boolean {
 		if (ctx.source !== 'jira') return false;
-
-		// Check trigger config — default enabled for backward compatibility
-		if (!resolveJiraTriggerEnabled(getJiraConfig(ctx.project)?.triggers, 'statusChanged')) {
-			return false;
-		}
 
 		const payload = ctx.payload as JiraWebhookPayload;
 		if (!payload.webhookEvent?.startsWith('jira:issue_updated')) return false;
@@ -74,12 +66,8 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Check per-agent toggle for statusChanged
-		if (!resolveStatusChangedEnabled(jiraConfig?.triggers, agentType)) {
-			logger.debug('JIRA status-changed trigger disabled for agent', {
-				issueKey,
-				agentType,
-			});
+		// Check per-agent toggle for statusChanged via new DB-driven system
+		if (!(await checkTriggerEnabled(ctx.project.id, agentType, 'pm:status-changed', this.name))) {
 			return null;
 		}
 
@@ -90,10 +78,21 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 			agentType,
 		});
 
+		// Capture work item display data from the issue payload
+		const workItemUrl = `${jiraConfig.baseUrl}/browse/${issueKey}`;
+		const workItemTitle = payload.issue?.fields?.summary ?? undefined;
+
 		return {
 			agentType,
-			agentInput: { cardId: issueKey },
+			agentInput: {
+				workItemId: issueKey,
+				workItemUrl,
+				workItemTitle,
+				triggerEvent: 'pm:status-changed',
+			},
 			workItemId: issueKey,
+			workItemUrl,
+			workItemTitle,
 		};
 	}
 }
