@@ -72,11 +72,13 @@ export interface AgentProfile {
  */
 function resolveFinishHooks(def: AgentDefinition): FinishHookFlags {
 	const scm = def.hooks?.finish?.scm;
+	const pm = def.hooks?.finish?.pm;
 	return {
 		requiresPR: scm?.requiresPR,
 		requiresReview: scm?.requiresReview,
 		requiresPushedChanges: scm?.requiresPushedChanges,
 		blockGitPush: scm?.blockGitPush,
+		requiresPMWrite: pm?.requiresPMWrite,
 	};
 }
 

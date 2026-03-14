@@ -21,6 +21,7 @@ import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import {
+	PM_WRITE_SIDECAR_ENV_VAR,
 	PR_SIDECAR_ENV_VAR,
 	PUSHED_CHANGES_SIDECAR_ENV_VAR,
 	REVIEW_SIDECAR_ENV_VAR,
@@ -96,6 +97,14 @@ function createCompletionArtifacts(
 		projectSecrets[PUSHED_CHANGES_SIDECAR_ENV_VAR] = pushedChangesSidecarPath;
 	}
 
+	const pmWriteSidecarPath =
+		needsNativeToolRuntime && profile.finishHooks.requiresPMWrite
+			? join(tmpdir(), `cascade-pm-write-sidecar-${process.pid}-${Date.now()}.json`)
+			: undefined;
+	if (pmWriteSidecarPath) {
+		projectSecrets[PM_WRITE_SIDECAR_ENV_VAR] = pmWriteSidecarPath;
+	}
+
 	if (Object.keys(profile.finishHooks).length > 0) {
 		projectSecrets.CASCADE_FINISH_HOOKS = JSON.stringify(profile.finishHooks);
 	}
@@ -107,6 +116,7 @@ function createCompletionArtifacts(
 		prSidecarPath,
 		pushedChangesSidecarPath,
 		reviewSidecarPath,
+		pmWriteSidecarPath,
 	};
 }
 
@@ -128,6 +138,7 @@ async function buildExecutionPlan(
 		reviewSidecarPath?: string;
 		prSidecarPath?: string;
 		pushedChangesSidecarPath?: string;
+		pmWriteSidecarPath?: string;
 		nativeToolRuntimeCleanup?: () => void;
 	}
 > {
@@ -207,21 +218,18 @@ async function buildExecutionPlan(
 		isGitHubAck,
 	);
 
-	const { reviewSidecarPath, prSidecarPath, pushedChangesSidecarPath } = createCompletionArtifacts(
-		profile,
-		agentType,
-		needsNativeToolRuntime,
-		input,
-		projectSecrets,
-	);
+	const { reviewSidecarPath, prSidecarPath, pushedChangesSidecarPath, pmWriteSidecarPath } =
+		createCompletionArtifacts(profile, agentType, needsNativeToolRuntime, input, projectSecrets);
 
 	const completionRequirements = {
 		requiresPR: profile.finishHooks.requiresPR,
 		requiresReview: profile.finishHooks.requiresReview,
 		requiresPushedChanges: profile.finishHooks.requiresPushedChanges,
+		requiresPMWrite: profile.finishHooks.requiresPMWrite,
 		prSidecarPath,
 		reviewSidecarPath,
 		pushedChangesSidecarPath,
+		pmWriteSidecarPath,
 		maxContinuationTurns: 2,
 	};
 
@@ -254,6 +262,7 @@ async function buildExecutionPlan(
 		reviewSidecarPath,
 		prSidecarPath,
 		pushedChangesSidecarPath,
+		pmWriteSidecarPath,
 		nativeToolRuntimeCleanup: nativeToolRuntime?.cleanup,
 	};
 }
@@ -474,7 +483,7 @@ export async function executeWithEngine(
 			);
 
 			const { reviewSidecarPath, prSidecarPath, nativeToolRuntimeCleanup } = partialInput;
-			const { pushedChangesSidecarPath } = partialInput;
+			const { pushedChangesSidecarPath, pmWriteSidecarPath } = partialInput;
 
 			// Create run record now that we have model and maxIterations
 			const runId = await tryCreateRun(
@@ -554,17 +563,20 @@ export async function executeWithEngine(
 					requiresPR: profile.finishHooks.requiresPR,
 					requiresReview: profile.finishHooks.requiresReview,
 					requiresPushedChanges: profile.finishHooks.requiresPushedChanges,
+					requiresPMWrite: profile.finishHooks.requiresPMWrite,
 					hasAuthoritativeReview: completionEvidence.hasAuthoritativeReview,
 					hasAuthoritativePushedChanges:
 						pushedChangesSidecarPath !== undefined
 							? completionEvidence.hasAuthoritativePushedChanges
 							: undefined,
+					hasPMWrite: pmWriteSidecarPath !== undefined ? completionEvidence.hasPMWrite : undefined,
 				});
 			} finally {
 				monitor?.stop();
 				cleanupTempFile(prSidecarPath);
 				cleanupTempFile(reviewSidecarPath);
 				cleanupTempFile(pushedChangesSidecarPath);
+				cleanupTempFile(pmWriteSidecarPath);
 				nativeToolRuntimeCleanup?.();
 			}
 

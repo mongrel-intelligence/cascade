@@ -14,8 +14,10 @@ export function postProcessResult(
 		requiresPR?: boolean;
 		requiresReview?: boolean;
 		requiresPushedChanges?: boolean;
+		requiresPMWrite?: boolean;
 		hasAuthoritativeReview?: boolean;
 		hasAuthoritativePushedChanges?: boolean;
+		hasPMWrite?: boolean;
 	},
 ): void {
 	// Validate PR creation for agents that require it (e.g., implementation)
@@ -50,5 +52,14 @@ export function postProcessResult(
 		});
 		result.success = false;
 		result.error = 'Agent completed but no authoritative pushed changes were recorded';
+	}
+
+	if (options?.requiresPMWrite && result.success && options.hasPMWrite === false) {
+		logger.warn(`${agentType} agent completed without PM write evidence`, {
+			identifier,
+			engine: engine.definition.id,
+		});
+		result.success = false;
+		result.error = 'Agent completed but no PM write (checklist creation) was recorded';
 	}
 }

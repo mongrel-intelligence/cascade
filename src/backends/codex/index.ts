@@ -105,7 +105,7 @@ function extractToolCall(event: JsonRecord): ToolCall | null {
 	}
 
 	if (
-		event.type === 'tool_call' &&
+		(event.type === 'tool_call' || event.type === 'tool_use') &&
 		typeof event.name === 'string' &&
 		event.name &&
 		(event.input === undefined || (event.input && typeof event.input === 'object'))
@@ -236,6 +236,12 @@ async function handleParsedLine(
 	if (error) {
 		context.finalError = error;
 		context.input.logWriter('WARN', 'Codex error event', { error });
+	}
+
+	if (textParts.length === 0 && !toolCall && !usage && !error) {
+		context.input.logWriter('DEBUG', 'Unrecognized Codex event type — no fields extracted', {
+			type: typeof parsed.type === 'string' ? parsed.type : '(none)',
+		});
 	}
 }
 
@@ -555,4 +561,4 @@ export class CodexEngine implements AgentEngine {
 	}
 }
 
-export { resolveCodexModel, extractErrorMessage };
+export { resolveCodexModel, extractErrorMessage, extractToolCall };

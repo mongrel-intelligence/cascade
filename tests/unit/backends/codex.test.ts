@@ -46,6 +46,7 @@ import {
 	CodexEngine,
 	buildArgs,
 	extractErrorMessage,
+	extractToolCall,
 	resolveCodexModel,
 } from '../../../src/backends/codex/index.js';
 import { DEFAULT_CODEX_MODEL } from '../../../src/backends/codex/models.js';
@@ -178,6 +179,44 @@ describe('extractErrorMessage', () => {
 
 	it('returns undefined for empty string error', () => {
 		expect(extractErrorMessage({ error: '' })).toBeUndefined();
+	});
+});
+
+describe('extractToolCall', () => {
+	it('handles tool_use event with input', () => {
+		expect(extractToolCall({ type: 'tool_use', name: 'bash', input: { cmd: 'ls' } })).toEqual({
+			name: 'bash',
+			input: { cmd: 'ls' },
+		});
+	});
+
+	it('handles tool_use event without input', () => {
+		expect(extractToolCall({ type: 'tool_use', name: 'bash' })).toEqual({
+			name: 'bash',
+			input: undefined,
+		});
+	});
+
+	it('handles original tool_name/tool_input format', () => {
+		expect(extractToolCall({ tool_name: 'bash', tool_input: { cmd: 'ls' } })).toEqual({
+			name: 'bash',
+			input: { cmd: 'ls' },
+		});
+	});
+
+	it('handles tool_call event with input', () => {
+		expect(extractToolCall({ type: 'tool_call', name: 'bash', input: { cmd: 'ls' } })).toEqual({
+			name: 'bash',
+			input: { cmd: 'ls' },
+		});
+	});
+
+	it('returns null for empty-string name in tool_use event', () => {
+		expect(extractToolCall({ type: 'tool_use', name: '', input: {} })).toBeNull();
+	});
+
+	it('returns null for unrelated event type with name field', () => {
+		expect(extractToolCall({ type: 'status', name: 'planner' })).toBeNull();
 	});
 });
 
@@ -378,6 +417,49 @@ describe('CodexEngine', () => {
 		expect(input.logWriter).toHaveBeenCalledWith('WARN', 'Codex error event', {
 			error: 'unexpected status 401 Unauthorized',
 		});
+	});
+
+	it('parses tool_use events and calls onToolCall', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [JSON.stringify({ type: 'tool_use', name: 'bash', input: { cmd: 'ls' } })],
+				onBeforeClose: () => {
+					writeFileSync(outputPath, 'done', 'utf-8');
+				},
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir });
+
+		await engine.execute(input);
+
+		expect(input.progressReporter.onToolCall).toHaveBeenCalledWith('bash', { cmd: 'ls' });
+		expect(input.progressReporter.onIteration).toHaveBeenCalled();
+	});
+
+	it('emits DEBUG log for unrecognized event types', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [JSON.stringify({ type: 'thinking', content: 'Let me think...' })],
+				onBeforeClose: () => {
+					writeFileSync(outputPath, 'done', 'utf-8');
+				},
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir });
+
+		await engine.execute(input);
+
+		expect(input.logWriter).toHaveBeenCalledWith(
+			'DEBUG',
+			'Unrecognized Codex event type — no fields extracted',
+			{ type: 'thinking' },
+		);
 	});
 
 	it('ignores non-tool events that happen to contain a name field', async () => {

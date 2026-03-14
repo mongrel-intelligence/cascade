@@ -214,4 +214,62 @@ describe('postProcessResult', () => {
 			expect(result.error).toBeUndefined();
 		});
 	});
+
+	describe('PM write validation for agents with requiresPMWrite', () => {
+		it('marks as failed when requiresPMWrite agent succeeds without PM write evidence', () => {
+			const result = makeResult({ success: true });
+			const engine = makeEngine();
+			const input = makeInput();
+
+			postProcessResult(result, 'planning', engine, input, 'planning-card-123', {
+				requiresPMWrite: true,
+				hasPMWrite: false,
+			});
+
+			expect(result.success).toBe(false);
+			expect(result.error).toBe(
+				'Agent completed but no PM write (checklist creation) was recorded',
+			);
+		});
+
+		it('passes through when requiresPMWrite agent has PM write evidence', () => {
+			const result = makeResult({ success: true });
+			const engine = makeEngine();
+			const input = makeInput();
+
+			postProcessResult(result, 'planning', engine, input, 'planning-card-123', {
+				requiresPMWrite: true,
+				hasPMWrite: true,
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.error).toBeUndefined();
+		});
+
+		it('passes through when requiresPMWrite agent already failed (no double-failure)', () => {
+			const result = makeResult({ success: false, error: 'Budget exceeded' });
+			const engine = makeEngine();
+			const input = makeInput();
+
+			postProcessResult(result, 'planning', engine, input, 'planning-card-123', {
+				requiresPMWrite: true,
+				hasPMWrite: false,
+			});
+
+			expect(result.success).toBe(false);
+			expect(result.error).toBe('Budget exceeded');
+			expect(logger.warn).not.toHaveBeenCalled();
+		});
+
+		it('does not validate PM write when requiresPMWrite is not set', () => {
+			const result = makeResult({ success: true });
+			const engine = makeEngine();
+			const input = makeInput();
+
+			postProcessResult(result, 'planning', engine, input, 'planning-card-123');
+
+			expect(result.success).toBe(true);
+			expect(logger.warn).not.toHaveBeenCalled();
+		});
+	});
 });

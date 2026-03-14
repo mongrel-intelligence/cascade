@@ -2,6 +2,28 @@ import { writeFileSync } from 'node:fs';
 import { logger } from '../../../utils/logging.js';
 import { getCurrentBranch, getCurrentHeadSha } from './finish.js';
 
+export function writePMWriteSidecar(sidecarPath: string | undefined, workItemId: string): boolean {
+	if (!sidecarPath || sidecarPath === 'undefined') {
+		logger.warn('CASCADE_PM_WRITE_SIDECAR_PATH not set — PM write sidecar will not be written');
+		return false;
+	}
+	try {
+		writeFileSync(
+			sidecarPath,
+			JSON.stringify({
+				written: true,
+				command: 'add-checklist',
+				workItemId,
+				timestamp: new Date().toISOString(),
+			}),
+		);
+		return true;
+	} catch (err) {
+		logger.warn({ err, sidecarPath }, 'Failed to write PM write sidecar');
+		return false;
+	}
+}
+
 export function writePushedChangesSidecar(sidecarPath: string | undefined): boolean {
 	if (!sidecarPath || sidecarPath === 'undefined') {
 		logger.warn('CASCADE_SIDECAR_PATH not set — pushed-changes sidecar will not be written');
