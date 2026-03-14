@@ -210,6 +210,22 @@ describe('buildWorkerEnv', () => {
 		expect(env).toContain('SENTRY_DSN=https://sentry.example.com/1');
 		process.env.SENTRY_DSN = undefined;
 	});
+
+	it('forwards CASCADE_DASHBOARD_URL when set', async () => {
+		process.env.CASCADE_DASHBOARD_URL = 'https://dev.cascade.example.com';
+		try {
+			const env = await buildWorkerEnv(makeJob() as never);
+			expect(env).toContain('CASCADE_DASHBOARD_URL=https://dev.cascade.example.com');
+		} finally {
+			Reflect.deleteProperty(process.env, 'CASCADE_DASHBOARD_URL');
+		}
+	});
+
+	it('omits CASCADE_DASHBOARD_URL when not set', async () => {
+		Reflect.deleteProperty(process.env, 'CASCADE_DASHBOARD_URL');
+		const env = await buildWorkerEnv(makeJob() as never);
+		expect(env.some((e) => e.startsWith('CASCADE_DASHBOARD_URL='))).toBe(false);
+	});
 });
 
 // ---------------------------------------------------------------------------

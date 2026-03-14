@@ -243,6 +243,10 @@ async function buildWorkerEnvWithProjectId(
 		env.push(`SENTRY_ENVIRONMENT=${process.env.SENTRY_ENVIRONMENT}`);
 	if (process.env.SENTRY_RELEASE) env.push(`SENTRY_RELEASE=${process.env.SENTRY_RELEASE}`);
 
+	// Forward dashboard URL so worker progress comments can include run links.
+	if (process.env.CASCADE_DASHBOARD_URL)
+		env.push(`CASCADE_DASHBOARD_URL=${process.env.CASCADE_DASHBOARD_URL}`);
+
 	return env;
 }
 

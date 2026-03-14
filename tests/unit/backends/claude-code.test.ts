@@ -452,6 +452,26 @@ describe('execute', () => {
 		expect(result.cost).toBe(1.5);
 	});
 
+	it('returns human-readable error on budget exceeded', async () => {
+		mockStream([
+			{
+				type: 'result',
+				subtype: 'error_max_budget_usd',
+				total_cost_usd: 0.7,
+				num_turns: 5,
+			},
+		]);
+
+		const engine = new ClaudeCodeEngine();
+		const result = await engine.execute(makeInput({ budgetUsd: 0.18 }));
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe(
+			'Budget limit reached: spent $0.70 of $0.18 allowed for this run. Increase the project work-item budget or retry with a higher limit.',
+		);
+		expect(result.cost).toBe(0.7);
+	});
+
 	it('reports progress on assistant messages', async () => {
 		mockStream([
 			{
