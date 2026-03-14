@@ -525,10 +525,134 @@ describe('CodexEngine', () => {
 
 		await engine.execute(input);
 
+		const rawEvent = { type: 'thinking', content: 'Let me think...' };
 		expect(input.logWriter).toHaveBeenCalledWith(
 			'DEBUG',
 			'Unrecognized Codex event type — no fields extracted',
-			{ type: 'thinking' },
+			{ type: 'thinking', item: null, delta: null, event: rawEvent },
+		);
+	});
+
+	it('logs full event payload including item and delta on unrecognized events', async () => {
+		const unknownEvent = {
+			type: 'item.started',
+			item: { type: 'reasoning', id: 'rs_001' },
+		};
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [JSON.stringify(unknownEvent)],
+				onBeforeClose: () => writeFileSync(outputPath, 'done', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir });
+		await engine.execute(input);
+
+		expect(input.logWriter).toHaveBeenCalledWith(
+			'DEBUG',
+			'Unrecognized Codex event type — no fields extracted',
+			{
+				type: 'item.started',
+				item: { type: 'reasoning', id: 'rs_001' },
+				delta: null,
+				event: unknownEvent,
+			},
+		);
+	});
+
+	it('logs tool calls at DEBUG level when a function_call item is completed', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [
+					JSON.stringify({
+						type: 'item.completed',
+						item: {
+							type: 'function_call',
+							name: 'bash',
+							arguments: '{"command":"echo hello"}',
+						},
+					}),
+				],
+				onBeforeClose: () => writeFileSync(outputPath, 'done', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir });
+		await engine.execute(input);
+
+		expect(input.logWriter).toHaveBeenCalledWith('DEBUG', 'Codex tool call', {
+			name: 'bash',
+			input: { command: 'echo hello' },
+		});
+	});
+
+	it('logs usage at DEBUG level when a response.completed event is received', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [
+					JSON.stringify({
+						type: 'response.completed',
+						response: { usage: { input_tokens: 42, output_tokens: 7 } },
+					}),
+				],
+				onBeforeClose: () => writeFileSync(outputPath, 'done', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir, runId: 'run-usage-debug' });
+		await engine.execute(input);
+
+		expect(input.logWriter).toHaveBeenCalledWith(
+			'DEBUG',
+			'Codex usage',
+			expect.objectContaining({
+				usage: expect.objectContaining({ inputTokens: 42, outputTokens: 7 }),
+			}),
+		);
+	});
+
+	it('logs stderr in real-time via logWriter', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [],
+				stderr: 'fatal: something went wrong\n',
+				onBeforeClose: () => writeFileSync(outputPath, 'done', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir });
+		await engine.execute(input);
+
+		expect(input.logWriter).toHaveBeenCalledWith('DEBUG', 'Codex stderr', {
+			stderr: 'fatal: something went wrong',
+		});
+	});
+
+	it('logs process exit details at DEBUG level', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [],
+				onBeforeClose: () => writeFileSync(outputPath, 'finished', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir });
+		await engine.execute(input);
+
+		expect(input.logWriter).toHaveBeenCalledWith(
+			'DEBUG',
+			'Codex process exited',
+			expect.objectContaining({ exitCode: 0, iterationCount: 0, llmCallCount: 0 }),
 		);
 	});
 
