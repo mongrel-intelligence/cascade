@@ -671,6 +671,30 @@ describe('createCLICommand', () => {
 		expect(capturedParams.name).toBe('Alice');
 	});
 
+	it('logs { success: false, error } and exits 1 when coreFn throws', async () => {
+		const failingFn: CLICoreFn = async () => {
+			throw new Error('getaddrinfo EAI_AGAIN api.trello.com');
+		};
+		const CommandClass = createCLICommand(simpleToolDef, failingFn);
+		const instance = new CommandClass([], {});
+		vi.spyOn(instance, 'parse').mockResolvedValue({
+			flags: { name: 'Alice' },
+			args: {},
+			argv: [],
+			raw: [],
+		} as unknown as Awaited<ReturnType<typeof instance.parse>>);
+		const logSpy = vi.spyOn(instance, 'log').mockImplementation(() => {});
+		const exitSpy = vi.spyOn(instance, 'exit').mockImplementation(() => {
+			throw new Error('exit');
+		});
+
+		await expect(instance.execute()).rejects.toThrow('exit');
+		expect(logSpy).toHaveBeenCalledWith(
+			JSON.stringify({ success: false, error: 'getaddrinfo EAI_AGAIN api.trello.com' }),
+		);
+		expect(exitSpy).toHaveBeenCalledWith(1);
+	});
+
 	it('passes array flags through correctly', async () => {
 		let capturedParams: Record<string, unknown> = {};
 		const coreFn: CLICoreFn = async (params) => {
