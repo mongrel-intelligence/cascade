@@ -394,7 +394,25 @@ The dashboard is a single-process deployment. The Hono server mounts tRPC routes
 
 ### User Management
 
-Users are managed via direct database inserts:
+Users can be managed via the CLI (recommended) or the dashboard at `/settings/users`:
+
+```bash
+# Create a user
+cascade users create --email user@example.com --password secret --name "User Name" --role admin
+
+# List all users
+cascade users list
+
+# Update a user
+cascade users update <id> --name "New Name" --role member
+
+# Delete a user
+cascade users delete <id> --yes
+```
+
+Alternatively, use the dashboard at `/settings/users` to manage users via the web UI.
+
+If the CLI and dashboard are unavailable, users can be inserted directly into the database as a fallback:
 
 ```bash
 # Generate bcrypt hash
@@ -475,6 +493,12 @@ cascade projects trigger-discover --agent <agent-type>
 cascade projects trigger-list <id> [--agent <type>]
 cascade projects trigger-set <id> --agent <type> --event <event> [--enable|--disable] [--params JSON]
 
+# Users
+cascade users list
+cascade users create --email X --password Y --name Z [--role member|admin|superadmin]
+cascade users update <id> [--name Z] [--email X] [--role member|admin|superadmin] [--password Y]
+cascade users delete <id> --yes
+
 # Credentials
 cascade credentials list
 cascade credentials create --name "Implementer Bot" --key GITHUB_TOKEN_IMPLEMENTER --value ghp_aaa... [--default]
@@ -519,6 +543,7 @@ src/cli/dashboard/
 ├── whoami.ts
 ├── runs/             # 6 commands
 ├── projects/         # 13 commands
+├── users/            # 4 commands
 ├── credentials/      # 4 commands
 ├── defaults/         # 2 commands
 ├── org/              # 2 commands
