@@ -10,7 +10,6 @@ import type {
 	SDKStatusMessage,
 	SDKSystemMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import { storeLlmCall } from '../../db/repositories/runsRepository.js';
 import { logger } from '../../utils/logging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { getWorkspaceDir } from '../../utils/repo.js';
@@ -23,6 +22,7 @@ import {
 } from '../completion.js';
 import { cleanupContextFiles } from '../contextFiles.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
+import { logLlmCall } from '../shared/llmCallLogger.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
 import { buildClaudeEnv } from './env.js';
 import { buildHooks } from './hooks.js';
@@ -306,13 +306,13 @@ function resolveNativeTools(nativeToolCapabilities?: string[]): string[] {
 	return tools.size > 0 ? [...tools] : ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
 }
 
-function logLlmCall(
+function logClaudeCodeLlmCall(
 	input: AgentExecutionPlan,
 	assistantMsg: SDKAssistantMessage,
 	turnCount: number,
 	model: string,
 ): void {
-	if (!input.runId || !assistantMsg.message?.usage) return;
+	if (!assistantMsg.message?.usage) return;
 
 	const usage = assistantMsg.message.usage;
 	let response: string | undefined;
@@ -322,23 +322,16 @@ function logLlmCall(
 		// Ignore serialization errors
 	}
 
-	storeLlmCall({
+	logLlmCall({
 		runId: input.runId,
 		callNumber: turnCount,
-		request: undefined,
-		response,
+		model,
 		inputTokens: usage.input_tokens,
 		outputTokens: usage.output_tokens,
 		cachedTokens: undefined,
 		costUsd: undefined,
-		durationMs: undefined,
-		model,
-	}).catch((err) => {
-		logger.warn('Failed to store Claude Code LLM call in real-time', {
-			runId: input.runId,
-			turn: turnCount,
-			error: String(err),
-		});
+		response,
+		engineLabel: 'Claude Code',
 	});
 }
 
@@ -374,7 +367,7 @@ async function consumeStream(
 			await input.progressReporter.onIteration(turnCount, input.maxIterations);
 			processAssistantMessage(assistantMsg, turnCount, input);
 			toolCallCount += countToolCalls(assistantMsg);
-			logLlmCall(input, assistantMsg, turnCount, model);
+			logClaudeCodeLlmCall(input, assistantMsg, turnCount, model);
 		} else if (message.type === 'system') {
 			const sysMsg = message as { subtype: string; [key: string]: unknown };
 			if (sysMsg.subtype === 'task_notification') {

@@ -9,12 +9,11 @@ import {
 	findCredentialIdByEnvVarKey,
 	updateCredential,
 } from '../../db/repositories/credentialsRepository.js';
-import { storeLlmCall } from '../../db/repositories/runsRepository.js';
-import { logger } from '../../utils/logging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { CODEX_ENGINE_DEFINITION } from '../catalog.js';
 import { cleanupContextFiles } from '../contextFiles.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
+import { logLlmCall } from '../shared/llmCallLogger.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan, LogWriter } from '../types.js';
 import { buildEnv } from './env.js';
 import { CODEX_MODEL_IDS, DEFAULT_CODEX_MODEL } from './models.js';
@@ -249,26 +248,17 @@ function logText(context: CodexLineContext, text: string): void {
 
 function trackUsage(context: CodexLineContext, responseLine: string, usage: UsageSummary): void {
 	context.cost = usage.costUsd ?? context.cost;
-	if (!context.input.runId) return;
-
 	context.llmCallCount += 1;
-	void storeLlmCall({
+	logLlmCall({
 		runId: context.input.runId,
 		callNumber: context.llmCallCount,
-		request: undefined,
-		response: responseLine,
+		model: context.model,
 		inputTokens: usage.inputTokens,
 		outputTokens: usage.outputTokens,
 		cachedTokens: usage.cachedTokens,
 		costUsd: usage.costUsd,
-		durationMs: undefined,
-		model: context.model,
-	}).catch((error) => {
-		logger.warn('Failed to store Codex LLM call in real-time', {
-			runId: context.input.runId,
-			call: context.llmCallCount,
-			error: String(error),
-		});
+		response: responseLine,
+		engineLabel: 'Codex',
 	});
 }
 
