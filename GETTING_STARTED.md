@@ -87,7 +87,7 @@ node bin/cascade.js login --server http://localhost:3001 --email admin@example.c
 
 ## 5. Create Your First Project
 
-> **Note:** CLI commands in steps 5–9 require Node.js installed locally with `npm install && npm run build`. All operations can also be done through the dashboard UI.
+> **Note:** CLI commands in steps 5–10 require Node.js installed locally with `npm install && npm run build`. All operations can also be done through the dashboard UI.
 
 Via the dashboard: **Projects** > **New Project** — fill in the project ID, name, and GitHub repository (`owner/repo`).
 
@@ -135,14 +135,57 @@ node bin/cascade.js credentials create \
 
 ### LLM API keys
 
+Which credentials you need depends on which agent engine you plan to use. You can always add more later.
+
+#### Claude Code engine (default)
+
+Requires either an Anthropic API key or a Claude Max subscription token:
+
 ```bash
-# At least one of these:
+# Option A: Anthropic API key
 node bin/cascade.js credentials create \
   --name "Anthropic" \
   --key ANTHROPIC_API_KEY \
   --value sk-ant-... \
   --default
 
+# Option B: Claude Max subscription (long-lived OAuth token)
+# Generate with: claude login && claude setup-token
+node bin/cascade.js credentials create \
+  --name "Claude Code OAuth" \
+  --key CLAUDE_CODE_OAUTH_TOKEN \
+  --value sk-ant-oat01-... \
+  --default
+```
+
+#### Codex engine
+
+Requires either an OpenAI API key or a ChatGPT Plus/Pro subscription:
+
+```bash
+# Option A: OpenAI API key — just store the key, no extra setup needed
+node bin/cascade.js credentials create \
+  --name "OpenAI" \
+  --key OPENAI_API_KEY \
+  --value sk-... \
+  --default
+
+# Option B: ChatGPT Plus/Pro subscription auth
+# First, authenticate on a machine with a browser:
+#   codex login
+# Then store the auth token:
+node bin/cascade.js credentials create \
+  --name "Codex Subscription Auth" \
+  --key CODEX_AUTH_JSON \
+  --value "$(cat ~/.codex/auth.json)" \
+  --default
+```
+
+When using subscription auth, CASCADE automatically writes `~/.codex/auth.json` in the worker before each run and captures any token refreshes the Codex CLI performs back into the database — so the credential stays current across ephemeral worker environments.
+
+#### OpenRouter (works with any engine)
+
+```bash
 node bin/cascade.js credentials create \
   --name "OpenRouter" \
   --key OPENROUTER_API_KEY \
@@ -169,7 +212,30 @@ You can also manage all of this through the dashboard UI: **Projects** > select 
 
 ---
 
-## 7. Connect a PM Integration
+## 7. Choose Agent Engine
+
+CASCADE supports multiple agent engines. The default is **Claude Code** — change it if you want to use a different backend.
+
+| Engine | Description |
+|--------|-------------|
+| `claude-code` | Anthropic Claude Code SDK (default) |
+| `codex` | OpenAI Codex CLI |
+| `opencode` | OpenCode headless agent |
+| `llmist` | LLMist SDK with CASCADE gadgets |
+
+Via the dashboard: **Projects** > select project > **Settings** — choose the engine from the dropdown.
+
+Or via CLI:
+
+```bash
+node bin/cascade.js projects update my-project --agent-engine codex
+```
+
+You can also override the engine per agent type in the **Agent Configs** tab.
+
+---
+
+## 8. Connect a PM Integration
 
 Configure via the dashboard: **Projects** > select project > **Settings** > **Integrations** > **PM** tab.
 
@@ -211,7 +277,7 @@ node bin/cascade.js projects integration-set my-project \
 
 ---
 
-## 8. Set Up Webhooks
+## 9. Set Up Webhooks
 
 CASCADE needs to receive webhooks from GitHub (and optionally your PM tool) to trigger agents.
 
@@ -234,7 +300,7 @@ This creates webhooks on GitHub (and Trello if configured) pointing to your Rout
 
 ---
 
-## 9. Configure Triggers
+## 10. Configure Triggers
 
 Triggers control which events activate which agents.
 
@@ -262,7 +328,7 @@ node bin/cascade.js projects trigger-discover --agent implementation
 
 ---
 
-## 10. Test It
+## 11. Test It
 
 1. Create a card in your PM tool (Trello/JIRA) with a clear description of what code change you want
 2. Move it to the status that triggers the implementation agent (or add the "Ready to Process" label)
