@@ -17,12 +17,13 @@ import type { ParseResult } from './webhookTypes.js';
  */
 export async function parseTrelloPayload(c: Context): Promise<ParseResult> {
 	try {
-		const payload = await c.req.json();
+		const rawBody = await c.req.text();
+		const payload = JSON.parse(rawBody);
 		const eventType = (payload as Record<string, unknown>)?.action
 			? ((payload as Record<string, Record<string, unknown>>).action.type as string | undefined)
 			: undefined;
 		logger.debug('Received Trello webhook', { action: eventType });
-		return { ok: true, payload, eventType };
+		return { ok: true, payload, eventType, rawBody };
 	} catch (err) {
 		return { ok: false, error: String(err) };
 	}
@@ -45,6 +46,7 @@ export async function parseGitHubPayload(c: Context): Promise<ParseResult> {
 		return { ok: false, error: result.error, eventType };
 	}
 	const payload = result.payload;
+	const rawBody = result.rawBody;
 	logger.info('Received GitHub webhook', {
 		event: eventType,
 		contentType,
@@ -52,7 +54,7 @@ export async function parseGitHubPayload(c: Context): Promise<ParseResult> {
 		repository: ((payload as Record<string, unknown>)?.repository as Record<string, unknown>)
 			?.full_name,
 	});
-	return { ok: true, payload, eventType };
+	return { ok: true, payload, eventType, rawBody };
 }
 
 /**
@@ -61,13 +63,14 @@ export async function parseGitHubPayload(c: Context): Promise<ParseResult> {
  */
 export async function parseJiraPayload(c: Context): Promise<ParseResult> {
 	try {
-		const payload = await c.req.json();
+		const rawBody = await c.req.text();
+		const payload = JSON.parse(rawBody);
 		const eventType = (payload as Record<string, unknown>)?.webhookEvent as string | undefined;
 		logger.info('Received JIRA webhook', {
 			event: eventType,
 			issueKey: ((payload as Record<string, unknown>)?.issue as Record<string, unknown>)?.key,
 		});
-		return { ok: true, payload, eventType };
+		return { ok: true, payload, eventType, rawBody };
 	} catch (err) {
 		return { ok: false, error: String(err) };
 	}

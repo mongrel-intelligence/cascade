@@ -7,14 +7,17 @@ import {
 
 function makeContext(
 	overrides: Partial<{
+		text: () => Promise<string>;
 		json: () => Promise<unknown>;
 		parseBody: () => Promise<Record<string, unknown>>;
 		header: () => Record<string, string>;
 	}> = {},
 ): Context {
+	const defaultBody = { event: 'push' };
 	return {
 		req: {
-			json: overrides.json ?? vi.fn().mockResolvedValue({ event: 'push' }),
+			text: overrides.text ?? vi.fn().mockResolvedValue(JSON.stringify(defaultBody)),
+			json: overrides.json ?? vi.fn().mockResolvedValue(defaultBody),
 			parseBody: overrides.parseBody ?? vi.fn().mockResolvedValue({}),
 			header:
 				overrides.header ??
@@ -25,9 +28,10 @@ function makeContext(
 
 describe('parseGitHubWebhookPayload', () => {
 	it('parses JSON body', async () => {
-		const ctx = makeContext({ json: vi.fn().mockResolvedValue({ action: 'opened' }) });
+		const bodyObj = { action: 'opened' };
+		const ctx = makeContext({ text: vi.fn().mockResolvedValue(JSON.stringify(bodyObj)) });
 		const result = await parseGitHubWebhookPayload(ctx, 'application/json');
-		expect(result).toEqual({ ok: true, payload: { action: 'opened' } });
+		expect(result).toEqual({ ok: true, payload: bodyObj, rawBody: JSON.stringify(bodyObj) });
 	});
 
 	it('parses form-urlencoded body with payload field', async () => {
@@ -52,12 +56,12 @@ describe('parseGitHubWebhookPayload', () => {
 
 	it('returns error when JSON parsing fails', async () => {
 		const ctx = makeContext({
-			json: vi.fn().mockRejectedValue(new Error('Invalid JSON')),
+			text: vi.fn().mockResolvedValue('not valid json {{{'),
 		});
 		const result = await parseGitHubWebhookPayload(ctx, 'application/json');
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
-			expect(result.error).toContain('Invalid JSON');
+			expect(result.error).toBeDefined();
 		}
 	});
 });
