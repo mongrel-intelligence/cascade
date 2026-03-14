@@ -189,6 +189,13 @@ describe('system prompts content', () => {
 		expect(prompt).toContain('card');
 	});
 
+	it('backlog-manager prompt warns against describing commands instead of invoking them', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		expect(prompt).toContain('EXECUTE COMMANDS');
+		expect(prompt).toContain('DO NOT JUST DESCRIBE THEM');
+		expect(prompt).toContain('text output has no effect on the system');
+	});
+
 	it('backlog-manager prompt posts comment before moving card', () => {
 		const prompt = getSystemPrompt('backlog-manager');
 		const commentStepIdx = prompt.indexOf('5. **Post a comment**');
