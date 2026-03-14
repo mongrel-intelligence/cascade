@@ -84,6 +84,18 @@ export const usersRouter = router({
 				});
 			}
 
+			// Only superadmins can change a superadmin's role
+			if (
+				targetUser.role === 'superadmin' &&
+				input.role !== 'superadmin' &&
+				ctx.user.role !== 'superadmin'
+			) {
+				throw new TRPCError({
+					code: 'FORBIDDEN',
+					message: 'Only superadmins can change a superadmin user role',
+				});
+			}
+
 			const updates: {
 				name?: string;
 				email?: string;
@@ -119,6 +131,14 @@ export const usersRouter = router({
 
 		if (targetUser.orgId !== ctx.effectiveOrgId && ctx.user.role !== 'superadmin') {
 			throw new TRPCError({ code: 'NOT_FOUND' });
+		}
+
+		// Only superadmins can delete superadmin users
+		if (targetUser.role === 'superadmin' && ctx.user.role !== 'superadmin') {
+			throw new TRPCError({
+				code: 'FORBIDDEN',
+				message: 'Only superadmins can delete superadmin users',
+			});
 		}
 
 		await deleteUser(input.id);

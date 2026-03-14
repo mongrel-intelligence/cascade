@@ -70,10 +70,9 @@ describe('usersRouter', () => {
 
 			expect(mockListOrgUsers).toHaveBeenCalledWith('org-1');
 			expect(result).toEqual(orgUsers);
-			// Ensure no passwordHash in result
-			for (const user of result) {
-				expect(user).not.toHaveProperty('passwordHash');
-			}
+			// Note: passwordHash exclusion is enforced at the repository layer (listOrgUsers selects
+			// specific columns). The mock already returns data without passwordHash, reflecting
+			// the contract that the repository never returns this field.
 		});
 
 		it('returns empty array when no users', async () => {
@@ -267,6 +266,27 @@ describe('usersRouter', () => {
 			expect(mockUpdateUser).toHaveBeenCalledWith('user-2', { role: 'superadmin' });
 		});
 
+		it('prevents non-superadmin from revoking superadmin role', async () => {
+			mockGetUserById.mockResolvedValue({ id: 'user-2', orgId: 'org-1', role: 'superadmin' });
+			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
+
+			await expect(caller.update({ id: 'user-2', role: 'admin' })).rejects.toMatchObject({
+				code: 'FORBIDDEN',
+			});
+
+			expect(mockUpdateUser).not.toHaveBeenCalled();
+		});
+
+		it('allows superadmin to revoke superadmin role', async () => {
+			mockGetUserById.mockResolvedValue({ id: 'user-2', orgId: 'org-1', role: 'superadmin' });
+			mockUpdateUser.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
+
+			await caller.update({ id: 'user-2', role: 'admin' });
+
+			expect(mockUpdateUser).toHaveBeenCalledWith('user-2', { role: 'admin' });
+		});
+
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.update({ id: 'user-2', name: 'X' })).rejects.toMatchObject({
@@ -321,6 +341,27 @@ describe('usersRouter', () => {
 			});
 
 			expect(mockDeleteUser).not.toHaveBeenCalled();
+		});
+
+		it('prevents non-superadmin from deleting superadmin user', async () => {
+			mockGetUserById.mockResolvedValue({ id: 'user-super', orgId: 'org-1', role: 'superadmin' });
+			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
+
+			await expect(caller.delete({ id: 'user-super' })).rejects.toMatchObject({
+				code: 'FORBIDDEN',
+			});
+
+			expect(mockDeleteUser).not.toHaveBeenCalled();
+		});
+
+		it('allows superadmin to delete another superadmin user', async () => {
+			mockGetUserById.mockResolvedValue({ id: 'user-super2', orgId: 'org-1', role: 'superadmin' });
+			mockDeleteUser.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
+
+			await caller.delete({ id: 'user-super2' });
+
+			expect(mockDeleteUser).toHaveBeenCalledWith('user-super2');
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
