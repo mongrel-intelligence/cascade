@@ -76,6 +76,10 @@ export interface ProjectConfigRaw {
 	pm: { type: string };
 	model?: string;
 	agentModels?: Record<string, string>;
+	maxIterations?: number;
+	watchdogTimeoutMs?: number;
+	progressModel?: string;
+	progressIntervalMinutes?: number;
 	workItemBudgetUsd?: number;
 	squintDbUrl?: string;
 	engineSettings?: EngineSettings;
@@ -141,6 +145,10 @@ export function buildAgentMaps(configs: AgentConfigRow[]): {
 
 export function orUndefined<T extends Record<string, unknown>>(obj: T): T | undefined {
 	return Object.keys(obj).length > 0 ? obj : undefined;
+}
+
+function numericOrUndefined(value: string | null): number | undefined {
+	return value != null ? Number(value) : undefined;
 }
 
 function buildTrelloConfig(config: TrelloIntegrationConfig): ProjectConfigRaw['trello'] {
@@ -215,7 +223,11 @@ export function mapProjectRow({
 		pm: { type: pmType },
 		model: row.model ?? undefined,
 		agentModels: orUndefined(models),
-		workItemBudgetUsd: row.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
+		maxIterations: row.maxIterations ?? undefined,
+		watchdogTimeoutMs: row.watchdogTimeoutMs ?? undefined,
+		progressModel: row.progressModel ?? undefined,
+		progressIntervalMinutes: numericOrUndefined(row.progressIntervalMinutes),
+		workItemBudgetUsd: numericOrUndefined(row.workItemBudgetUsd),
 		engineSettings: row.agentEngineSettings ?? undefined,
 		squintDbUrl: row.squintDbUrl ?? undefined,
 		runLinksEnabled: row.runLinksEnabled ?? false,
