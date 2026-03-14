@@ -5,7 +5,7 @@ import {
 	listPRsForWorkItem,
 	listUnifiedWorkForProject,
 } from '../../db/repositories/prWorkItemsRepository.js';
-import { getRunsForPR } from '../../db/repositories/runsRepository.js';
+import { getProjectWorkStats, getRunsForPR } from '../../db/repositories/runsRepository.js';
 import { protectedProcedure, router } from '../trpc.js';
 import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
@@ -41,5 +41,12 @@ export const prsRouter = router({
 		.query(async ({ ctx, input }) => {
 			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
 			return listUnifiedWorkForProject(input.projectId);
+		}),
+
+	workStats: protectedProcedure
+		.input(z.object({ projectId: z.string() }))
+		.query(async ({ ctx, input }) => {
+			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+			return getProjectWorkStats(input.projectId);
 		}),
 });
