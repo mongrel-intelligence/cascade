@@ -54,7 +54,7 @@ export const CODEX_ENGINE_DEFINITION: AgentEngineDefinition = {
 	],
 	modelSelection: {
 		type: 'select',
-		defaultValueLabel: 'Default (GPT-5.3 Codex)',
+		defaultValueLabel: 'Default (GPT-5.4)',
 		options: CODEX_MODELS,
 	},
 	logLabel: 'Codex Log',
