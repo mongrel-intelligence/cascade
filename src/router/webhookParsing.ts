@@ -5,11 +5,15 @@
 
 import type { Context } from 'hono';
 
-export type PayloadParseResult = { ok: true; payload: unknown } | { ok: false; error: string };
+export type PayloadParseResult =
+	| { ok: true; payload: unknown; rawBody?: string }
+	| { ok: false; error: string };
 
 /**
  * Parse a GitHub webhook payload, handling both JSON and
  * application/x-www-form-urlencoded content types.
+ * For JSON content type, reads raw text first so rawBody is preserved for
+ * HMAC signature verification.
  */
 export async function parseGitHubWebhookPayload(
 	c: Context,
@@ -24,7 +28,8 @@ export async function parseGitHubWebhookPayload(
 			}
 			throw new Error('Missing payload field in form data');
 		}
-		return { ok: true, payload: await c.req.json() };
+		const rawBody = await c.req.text();
+		return { ok: true, payload: JSON.parse(rawBody), rawBody };
 	} catch (err) {
 		return { ok: false, error: String(err) };
 	}

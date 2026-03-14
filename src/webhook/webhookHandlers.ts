@@ -44,7 +44,7 @@ import type { WebhookHandlerConfig } from './webhookTypes.js';
  * 5. Returns 200 (or 400 on parse failure).
  */
 export function createWebhookHandler(config: WebhookHandlerConfig): Handler {
-	const { source, parsePayload, sendReaction, processWebhook } = config;
+	const { source, parsePayload, sendReaction, processWebhook, verifySignature } = config;
 
 	return async (c: Context) => {
 		const rawHeaders = extractRawHeaders(c);
@@ -68,7 +68,29 @@ export function createWebhookHandler(config: WebhookHandlerConfig): Handler {
 			return c.text('Bad Request', 400);
 		}
 
-		const { payload, eventType } = parseResult;
+		const { payload, eventType, rawBody } = parseResult;
+
+		// --- Signature verification (after parse, before processing) ---
+		if (verifySignature) {
+			const sigResult = await verifySignature(c, rawBody ?? '', undefined);
+			if (sigResult !== null && !sigResult.valid) {
+				logger.warn(`${source} webhook signature verification failed`, {
+					reason: sigResult.reason,
+				});
+				logWebhookCall({
+					source,
+					method: c.req.method,
+					path: c.req.path,
+					headers: rawHeaders,
+					body: payload,
+					statusCode: 401,
+					eventType,
+					processed: false,
+					decisionReason: sigResult.reason,
+				});
+				return c.text('Unauthorized', 401);
+			}
+		}
 
 		// --- Reaction (fire-and-forget) ---
 		if (sendReaction) {
