@@ -34,6 +34,7 @@ type ParsedCodexEvent = {
 type UsageSummary = {
 	inputTokens?: number;
 	outputTokens?: number;
+	cachedTokens?: number;
 	costUsd?: number;
 };
 type CodexLineContext = {
@@ -79,6 +80,10 @@ function extractTextFromContentParts(candidate: unknown): string[] {
 function extractItemText(item: unknown): string[] {
 	if (!item || typeof item !== 'object') return [];
 	const rec = item as JsonRecord;
+	// agent_message items carry text directly
+	if (rec.type === 'agent_message' && typeof rec.text === 'string' && rec.text.trim()) {
+		return [rec.text];
+	}
 	return 'content' in rec ? extractTextFromContentParts(rec.content) : [];
 }
 
@@ -116,10 +121,14 @@ function extractTextParts(event: JsonRecord): string[] {
 	return parts;
 }
 
-/** Parses a Responses API function_call item into a ToolCall. */
+/** Parses a Responses API function_call or command_execution item into a ToolCall. */
 function parseFunctionCallItem(item: unknown): ToolCall | null {
 	if (!item || typeof item !== 'object') return null;
 	const rec = item as JsonRecord;
+	// command_execution items are bash tool calls
+	if (rec.type === 'command_execution' && typeof rec.command === 'string') {
+		return { name: 'bash', input: { command: rec.command } };
+	}
 	if (rec.type !== 'function_call' || typeof rec.name !== 'string' || !rec.name) return null;
 	let input: Record<string, unknown> | undefined;
 	if (typeof rec.arguments === 'string') {
@@ -185,6 +194,8 @@ function extractUsage(event: JsonRecord): UsageSummary | null {
 			: typeof usage?.outputTokens === 'number'
 				? usage.outputTokens
 				: undefined;
+	const cachedTokens =
+		typeof usage?.cached_input_tokens === 'number' ? usage.cached_input_tokens : undefined;
 	const costUsd =
 		typeof event.total_cost_usd === 'number'
 			? event.total_cost_usd
@@ -195,7 +206,7 @@ function extractUsage(event: JsonRecord): UsageSummary | null {
 					: undefined;
 
 	return inputTokens !== undefined || outputTokens !== undefined || costUsd !== undefined
-		? { inputTokens, outputTokens, costUsd }
+		? { inputTokens, outputTokens, cachedTokens, costUsd }
 		: null;
 }
 
@@ -248,7 +259,7 @@ function trackUsage(context: CodexLineContext, responseLine: string, usage: Usag
 		response: responseLine,
 		inputTokens: usage.inputTokens,
 		outputTokens: usage.outputTokens,
-		cachedTokens: undefined,
+		cachedTokens: usage.cachedTokens,
 		costUsd: usage.costUsd,
 		durationMs: undefined,
 		model: context.model,
@@ -261,11 +272,43 @@ function trackUsage(context: CodexLineContext, responseLine: string, usage: Usag
 	});
 }
 
+/**
+ * Handles structural turn/thread/item lifecycle events.
+ * Returns true if the event was fully handled and no further processing is needed.
+ */
+async function handleStructuralEvent(
+	context: CodexLineContext,
+	responseLine: string,
+	parsed: JsonRecord,
+	eventType: string,
+): Promise<boolean> {
+	if (eventType === 'turn.completed') {
+		await trackIteration(context);
+		const usage = extractUsage(parsed);
+		if (usage) trackUsage(context, responseLine, usage);
+		return true;
+	}
+	if (eventType === 'turn.started' || eventType === 'thread.started') {
+		return true;
+	}
+	if (eventType === 'item.started') {
+		context.input.logWriter('DEBUG', 'Codex item started', {
+			itemType: (parsed.item as JsonRecord | undefined)?.type ?? '(unknown)',
+		});
+		return true;
+	}
+	return false;
+}
+
 async function handleParsedLine(
 	context: CodexLineContext,
 	responseLine: string,
 	parsed: JsonRecord,
 ): Promise<void> {
+	const eventType = typeof parsed.type === 'string' ? parsed.type : '';
+
+	if (await handleStructuralEvent(context, responseLine, parsed, eventType)) return;
+
 	const { textParts, toolCall, usage, error } = parseCodexEvent(parsed);
 
 	if (textParts.length > 0 || toolCall) {

@@ -230,6 +230,15 @@ describe('extractToolCall', () => {
 		).toEqual({ name: 'bash', input: { command: 'ls' } });
 	});
 
+	it('treats command_execution item as bash tool call', () => {
+		expect(
+			extractToolCall({
+				type: 'item.completed',
+				item: { type: 'command_execution', command: 'git status', status: 'completed' },
+			}),
+		).toEqual({ name: 'bash', input: { command: 'git status' } });
+	});
+
 	it('extracts function_call from item.completed event with no arguments', () => {
 		expect(
 			extractToolCall({
@@ -241,6 +250,14 @@ describe('extractToolCall', () => {
 });
 
 describe('extractTextParts', () => {
+	it('extracts text from item.completed agent_message event', () => {
+		const result = extractTextParts({
+			type: 'item.completed',
+			item: { type: 'agent_message', text: 'Done.' },
+		});
+		expect(result).toContain('Done.');
+	});
+
 	it('extracts text from item.completed message event', () => {
 		const result = extractTextParts({
 			type: 'item.completed',
@@ -274,7 +291,25 @@ describe('extractUsage', () => {
 			type: 'response.completed',
 			response: { usage: { input_tokens: 100, output_tokens: 50 } },
 		});
-		expect(result).toEqual({ inputTokens: 100, outputTokens: 50, costUsd: undefined });
+		expect(result).toEqual({
+			inputTokens: 100,
+			outputTokens: 50,
+			cachedTokens: undefined,
+			costUsd: undefined,
+		});
+	});
+
+	it('extracts cached_input_tokens from turn.completed usage', () => {
+		const result = extractUsage({
+			type: 'turn.completed',
+			usage: { input_tokens: 500, output_tokens: 30, cached_input_tokens: 450 },
+		});
+		expect(result).toEqual({
+			inputTokens: 500,
+			outputTokens: 30,
+			cachedTokens: 450,
+			costUsd: undefined,
+		});
 	});
 
 	it('still extracts top-level usage field (backward compat)', () => {
@@ -282,7 +317,12 @@ describe('extractUsage', () => {
 			usage: { input_tokens: 10, output_tokens: 5 },
 			total_cost_usd: 0.01,
 		});
-		expect(result).toEqual({ inputTokens: 10, outputTokens: 5, costUsd: 0.01 });
+		expect(result).toEqual({
+			inputTokens: 10,
+			outputTokens: 5,
+			cachedTokens: undefined,
+			costUsd: 0.01,
+		});
 	});
 
 	it('returns null when no usage fields are present', () => {
@@ -549,8 +589,8 @@ describe('CodexEngine', () => {
 
 	it('logs full event payload including item and delta on unrecognized events', async () => {
 		const unknownEvent = {
-			type: 'item.started',
-			item: { type: 'reasoning', id: 'rs_001' },
+			type: 'some.future.event',
+			metadata: { id: 'rs_001' },
 		};
 		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
 			const outputPath = args[args.indexOf('-o') + 1];
@@ -567,13 +607,137 @@ describe('CodexEngine', () => {
 		expect(input.logWriter).toHaveBeenCalledWith(
 			'DEBUG',
 			'Unrecognized Codex event type — no fields extracted',
-			{
-				type: 'item.started',
-				item: { type: 'reasoning', id: 'rs_001' },
-				delta: null,
-				event: unknownEvent,
-			},
+			expect.objectContaining({ type: 'some.future.event' }),
 		);
+	});
+
+	it('logs a clean debug message for item.started events (not "unrecognized")', async () => {
+		const itemStartedEvent = {
+			type: 'item.started',
+			item: { type: 'command_execution', id: 'item_1' },
+		};
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [JSON.stringify(itemStartedEvent)],
+				onBeforeClose: () => writeFileSync(outputPath, 'done', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir });
+		await engine.execute(input);
+
+		expect(input.logWriter).toHaveBeenCalledWith('DEBUG', 'Codex item started', {
+			itemType: 'command_execution',
+		});
+		expect(input.logWriter).not.toHaveBeenCalledWith(
+			'DEBUG',
+			'Unrecognized Codex event type — no fields extracted',
+			expect.anything(),
+		);
+	});
+
+	it('increments iterationCount on turn.completed and passes usage to storeLlmCall', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [
+					JSON.stringify({
+						type: 'turn.completed',
+						usage: { input_tokens: 200, output_tokens: 80, cached_input_tokens: 150 },
+					}),
+				],
+				onBeforeClose: () => writeFileSync(outputPath, 'done', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir, runId: 'run-turn-completed' });
+		await engine.execute(input);
+
+		expect(input.progressReporter.onIteration).toHaveBeenCalledTimes(1);
+		expect(mockStoreLlmCall).toHaveBeenCalledWith(
+			expect.objectContaining({ inputTokens: 200, outputTokens: 80, cachedTokens: 150 }),
+		);
+		expect(input.logWriter).not.toHaveBeenCalledWith(
+			'DEBUG',
+			'Unrecognized Codex event type — no fields extracted',
+			expect.anything(),
+		);
+	});
+
+	it('silently ignores turn.started and thread.started without logging unrecognized', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [
+					JSON.stringify({ type: 'thread.started', thread_id: 'th_abc' }),
+					JSON.stringify({ type: 'turn.started' }),
+				],
+				onBeforeClose: () => writeFileSync(outputPath, 'done', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir });
+		await engine.execute(input);
+
+		expect(input.progressReporter.onIteration).not.toHaveBeenCalled();
+		expect(input.logWriter).not.toHaveBeenCalledWith(
+			'DEBUG',
+			'Unrecognized Codex event type — no fields extracted',
+			expect.anything(),
+		);
+	});
+
+	it('extracts text from agent_message items and calls onText', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [
+					JSON.stringify({
+						type: 'item.completed',
+						item: { type: 'agent_message', text: 'Here is my plan.' },
+					}),
+				],
+				onBeforeClose: () => writeFileSync(outputPath, 'done', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir });
+		await engine.execute(input);
+
+		expect(input.progressReporter.onText).toHaveBeenCalledWith('Here is my plan.');
+		expect(input.progressReporter.onIteration).toHaveBeenCalledTimes(1);
+	});
+
+	it('treats command_execution items as bash tool calls', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [
+					JSON.stringify({
+						type: 'item.completed',
+						item: {
+							type: 'command_execution',
+							command: 'ls -la',
+							status: 'completed',
+							exit_code: 0,
+						},
+					}),
+				],
+				onBeforeClose: () => writeFileSync(outputPath, 'done', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir });
+		await engine.execute(input);
+
+		expect(input.progressReporter.onToolCall).toHaveBeenCalledWith('bash', { command: 'ls -la' });
+		expect(input.progressReporter.onIteration).toHaveBeenCalledTimes(1);
 	});
 
 	it('logs tool calls at DEBUG level when a function_call item is completed', async () => {
