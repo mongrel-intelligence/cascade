@@ -269,6 +269,35 @@ describe('verifyGitHubWebhookSignature — direct function tests', () => {
 		const result = await verifyGitHubWebhookSignature(makeContext({}), body);
 		expect(result).toBeNull();
 	});
+
+	it('verifies signature correctly for form-urlencoded delivery (valid signature)', async () => {
+		const payloadObj = { repository: { full_name: 'owner/repo' }, action: 'opened' };
+		const rawBody = `payload=${encodeURIComponent(JSON.stringify(payloadObj))}`;
+		const sig = githubSignature(rawBody, GITHUB_SECRET);
+		const result = await verifyGitHubWebhookSignature(
+			makeContext({ 'X-Hub-Signature-256': sig }),
+			rawBody,
+		);
+		expect(result).toEqual({ valid: true, reason: 'Signature valid' });
+	});
+
+	it('returns { valid: false } for form-urlencoded delivery with wrong signature', async () => {
+		const payloadObj = { repository: { full_name: 'owner/repo' }, action: 'opened' };
+		const rawBody = `payload=${encodeURIComponent(JSON.stringify(payloadObj))}`;
+		const badSig = githubSignature(rawBody, 'wrong-secret');
+		const result = await verifyGitHubWebhookSignature(
+			makeContext({ 'X-Hub-Signature-256': badSig }),
+			rawBody,
+		);
+		expect(result).toEqual({ valid: false, reason: 'GitHub signature mismatch' });
+	});
+
+	it('returns { valid: false, reason: "Missing signature header" } for form-urlencoded when header absent but secret configured', async () => {
+		const payloadObj = { repository: { full_name: 'owner/repo' }, action: 'opened' };
+		const rawBody = `payload=${encodeURIComponent(JSON.stringify(payloadObj))}`;
+		const result = await verifyGitHubWebhookSignature(makeContext({}), rawBody);
+		expect(result).toEqual({ valid: false, reason: 'Missing signature header' });
+	});
 });
 
 // ---------------------------------------------------------------------------
