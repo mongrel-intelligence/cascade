@@ -10,6 +10,7 @@ import { projectsRouter } from './routers/projects.js';
 import { promptsRouter } from './routers/prompts.js';
 import { prsRouter } from './routers/prs.js';
 import { runsRouter } from './routers/runs.js';
+import { usersRouter } from './routers/users.js';
 import { webhookLogsRouter } from './routers/webhookLogs.js';
 import { webhooksRouter } from './routers/webhooks.js';
 import { workItemsRouter } from './routers/workItems.js';
@@ -31,6 +32,7 @@ export const appRouter = router({
 	integrationsDiscovery: integrationsDiscoveryRouter,
 	prs: prsRouter,
 	workItems: workItemsRouter,
+	users: usersRouter,
 });
 
 export type AppRouter = typeof appRouter;
