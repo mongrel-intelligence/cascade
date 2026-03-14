@@ -30,11 +30,18 @@ export default class DefaultsSet extends DashboardCommand {
 			});
 
 			if (flags.json) {
-				this.outputJson({ ok: true });
+				this.outputJson({
+					ok: true,
+					deprecated: true,
+					message:
+						'Organization-level defaults have been removed (migration 0038). This command is a no-op. Use `cascade projects update` to set per-project overrides.',
+				});
 				return;
 			}
 
-			this.log('Defaults updated.');
+			this.warn(
+				'Organization-level defaults have been removed (migration 0038). This command is a no-op. Use `cascade projects update` to set per-project overrides.',
+			);
 		} catch (err) {
 			this.handleError(err);
 		}

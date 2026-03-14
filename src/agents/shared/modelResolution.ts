@@ -61,7 +61,7 @@ export async function resolveModelConfig(options: ResolveModelConfigOptions): Pr
 	const model =
 		modelOverride || project.agentModels?.[configKey] || project.model || config.defaults.model;
 
-	const maxIterations = config.defaults.maxIterations;
+	const maxIterations = project.maxIterations ?? config.defaults.maxIterations;
 
 	// Resolve task prompt override from definition → undefined (use .eta default)
 	let taskPrompt: string | undefined;

@@ -1,15 +1,7 @@
 import { TRPCError } from '@trpc/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockUser } from '../../../helpers/factories.js';
-
-const mockGetCascadeDefaults = vi.fn();
-const mockUpsertCascadeDefaults = vi.fn();
-
-vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
-	getCascadeDefaults: (...args: unknown[]) => mockGetCascadeDefaults(...args),
-	upsertCascadeDefaults: (...args: unknown[]) => mockUpsertCascadeDefaults(...args),
-}));
 
 import { defaultsRouter } from '../../../../src/api/routers/defaults.js';
 
@@ -21,31 +13,8 @@ const mockUser = createMockUser();
 
 describe('defaultsRouter', () => {
 	describe('get', () => {
-		it('returns cascade defaults for user orgId', async () => {
-			const mockDefaults = {
-				orgId: 'org-1',
-				model: 'claude-sonnet-4-5-20250929',
-				maxIterations: 20,
-				agentEngineSettings: { codex: { approvalPolicy: 'never' } },
-			};
-			mockGetCascadeDefaults.mockResolvedValue(mockDefaults);
+		it('returns null since cascade_defaults table has been removed', async () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			const result = await caller.get();
-
-			expect(mockGetCascadeDefaults).toHaveBeenCalledWith('org-1');
-			expect(result).toEqual({
-				orgId: 'org-1',
-				model: 'claude-sonnet-4-5-20250929',
-				maxIterations: 20,
-				engineSettings: { codex: { approvalPolicy: 'never' } },
-			});
-		});
-
-		it('returns null when no defaults configured', async () => {
-			mockGetCascadeDefaults.mockResolvedValue(null);
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
 			const result = await caller.get();
 			expect(result).toBeNull();
 		});
@@ -58,81 +27,13 @@ describe('defaultsRouter', () => {
 	});
 
 	describe('upsert', () => {
-		it('upserts all fields', async () => {
-			mockUpsertCascadeDefaults.mockResolvedValue(undefined);
+		it('returns a deprecation notice since cascade_defaults table has been removed', async () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await caller.upsert({
+			const result = await caller.upsert({
 				model: 'claude-sonnet-4-5-20250929',
 				maxIterations: 30,
-				watchdogTimeoutMs: 300000,
-				workItemBudgetUsd: '5.00',
-				agentEngine: 'claude-code',
-				engineSettings: {
-					codex: {
-						approvalPolicy: 'never',
-						sandboxMode: 'workspace-write',
-						webSearch: false,
-					},
-				},
-				progressModel: 'claude-haiku-3-20240307',
-				progressIntervalMinutes: '10',
 			});
-
-			expect(mockUpsertCascadeDefaults).toHaveBeenCalledWith('org-1', {
-				model: 'claude-sonnet-4-5-20250929',
-				maxIterations: 30,
-				watchdogTimeoutMs: 300000,
-				workItemBudgetUsd: '5.00',
-				agentEngine: 'claude-code',
-				engineSettings: {
-					codex: {
-						approvalPolicy: 'never',
-						sandboxMode: 'workspace-write',
-						webSearch: false,
-					},
-				},
-				progressModel: 'claude-haiku-3-20240307',
-				progressIntervalMinutes: '10',
-			});
-		});
-
-		it('accepts partial updates with null values', async () => {
-			mockUpsertCascadeDefaults.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await caller.upsert({ model: null, maxIterations: 15 });
-
-			expect(mockUpsertCascadeDefaults).toHaveBeenCalledWith(
-				'org-1',
-				expect.objectContaining({ model: null, maxIterations: 15 }),
-			);
-		});
-
-		it('accepts empty input', async () => {
-			mockUpsertCascadeDefaults.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await caller.upsert({});
-
-			expect(mockUpsertCascadeDefaults).toHaveBeenCalledWith('org-1', {});
-		});
-
-		it('rejects negative maxIterations', async () => {
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			await expect(caller.upsert({ maxIterations: -1 })).rejects.toThrow();
-		});
-
-		it('rejects unsupported engine settings', async () => {
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await expect(
-				caller.upsert({
-					engineSettings: {
-						unknown: { foo: 'bar' },
-					},
-				}),
-			).rejects.toThrow('Unsupported engine settings');
+			expect(result).toMatchObject({ ok: true, deprecated: true });
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {

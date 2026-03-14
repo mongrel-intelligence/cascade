@@ -3,7 +3,6 @@
  *
  * The original god-module has been split into focused single-responsibility modules:
  *   - organizationsRepository.ts   (getOrganization, updateOrganization, listAllOrganizations)
- *   - cascadeDefaultsRepository.ts (getCascadeDefaults, upsertCascadeDefaults)
  *   - projectsRepository.ts        (listProjectsFull, getProjectFull, createProject, updateProject, deleteProject)
  *   - integrationsRepository.ts    (all projectIntegration* + integrationCredential* functions)
  *   - agentConfigsRepository.ts    (listAgentConfigs, createAgentConfig, updateAgentConfig, deleteAgentConfig, getMaxConcurrency)
@@ -13,7 +12,6 @@
  */
 
 export * from './organizationsRepository.js';
-export * from './cascadeDefaultsRepository.js';
 export * from './projectsRepository.js';
 export * from './integrationsRepository.js';
 export * from './agentConfigsRepository.js';

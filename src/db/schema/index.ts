@@ -1,5 +1,4 @@
 export { credentials } from './credentials.js';
-export { cascadeDefaults } from './defaults.js';
 export { organizations } from './organizations.js';
 export { agentConfigs } from './agentConfigs.js';
 export { agentDefinitions } from './agentDefinitions.js';

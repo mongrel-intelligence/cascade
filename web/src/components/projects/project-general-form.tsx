@@ -29,7 +29,6 @@ interface Project {
 export function ProjectGeneralForm({ project }: { project: Project }) {
 	const queryClient = useQueryClient();
 	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
-	const defaultsQuery = useQuery(trpc.defaults.get.queryOptions());
 	const [name, setName] = useState(project.name);
 	const [repo, setRepo] = useState(project.repo ?? '');
 	const [baseBranch, setBaseBranch] = useState(project.baseBranch ?? 'main');
@@ -70,7 +69,8 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 		});
 	}
 
-	const effectiveEngineId = agentEngine || defaultsQuery.data?.agentEngine || '';
+	// cascade_defaults table removed (migration 0038); defaults.get always returns null
+	const effectiveEngineId = agentEngine || '';
 	const effectiveEngine = enginesQuery.data?.find((engine) => engine.id === effectiveEngineId);
 
 	return (

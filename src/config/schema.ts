@@ -60,6 +60,10 @@ export const ProjectConfigSchema = z.object({
 
 	model: z.string().optional(),
 	agentModels: z.record(z.string()).optional(),
+	maxIterations: z.number().int().positive().optional(),
+	watchdogTimeoutMs: z.number().int().positive().optional(),
+	progressModel: z.string().optional(),
+	progressIntervalMinutes: z.number().positive().optional(),
 	workItemBudgetUsd: z.number().positive().optional(),
 	agentEngine: AgentEngineConfigSchema.optional(),
 	engineSettings: EngineSettingsSchema.optional(),

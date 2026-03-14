@@ -101,8 +101,8 @@ const projectAgentConfig = {
 // in the queue. This works because the select().from() calls are set up in a
 // deterministic order within each function.
 //
-// loadConfigFromDb order (Promise.all): cascadeDefaults, projects, agentConfigs, integrations
-// findProjectFromDb order: projects (initial), then Promise.all: agentConfigs, defaults, integrations
+// loadConfigFromDb order (Promise.all): projects, agentConfigs, integrations
+// findProjectFromDb order: projects (initial), then Promise.all: agentConfigs, integrations
 // ---------------------------------------------------------------------------
 
 type QueryResult = Record<string, unknown>[];
@@ -137,7 +137,6 @@ describe('configRepository', () => {
 		it('loads config with Trello integration from project_integrations', async () => {
 			// loadConfigFromDb Promise.all order: defaults, projects, agentConfigs, integrations
 			const mockDb = createSequentialMockDb([
-				[defaultsRow], // cascadeDefaults
 				[projectRow], // projects
 				[], // agentConfigs (loadAgentConfigs)
 				[trelloIntegration], // projectIntegrations
@@ -156,7 +155,7 @@ describe('configRepository', () => {
 		});
 
 		it('loads config with JIRA integration including labels', async () => {
-			const mockDb = createSequentialMockDb([[defaultsRow], [projectRow], [], [jiraIntegration]]);
+			const mockDb = createSequentialMockDb([[projectRow], [], [jiraIntegration]]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
 
 			const config = await loadConfigFromDb();
@@ -184,7 +183,7 @@ describe('configRepository', () => {
 					statuses: { splitting: 'Splitting' },
 				},
 			};
-			const mockDb = createSequentialMockDb([[defaultsRow], [projectRow], [], [jiraNoLabels]]);
+			const mockDb = createSequentialMockDb([[projectRow], [], [jiraNoLabels]]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
 
 			const config = await loadConfigFromDb();
@@ -192,22 +191,23 @@ describe('configRepository', () => {
 			expect(proj.jira?.labels).toBeUndefined();
 		});
 
-		it('maps defaults correctly from DB row', async () => {
-			const mockDb = createSequentialMockDb([[defaultsRow], [projectRow], [], [trelloIntegration]]);
+		it('uses Zod schema defaults when no cascade_defaults table exists', async () => {
+			const mockDb = createSequentialMockDb([[projectRow], [], [trelloIntegration]]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
 
 			const config = await loadConfigFromDb();
 
-			expect(config.defaults.model).toBe('test-model');
+			// Schema defaults apply (from CascadeConfigSchema)
+			expect(config.defaults.model).toBe('openrouter:google/gemini-3-flash-preview');
 			expect(config.defaults.maxIterations).toBe(50);
 			expect(config.defaults.agentEngine).toBe('llmist');
 			expect(config.defaults.workItemBudgetUsd).toBe(5);
-			expect(config.defaults.progressModel).toBe('progress-model');
+			expect(config.defaults.progressModel).toBe('openrouter:google/gemini-2.5-flash-lite');
 			expect(config.defaults.progressIntervalMinutes).toBe(5);
 		});
 
 		it('defaults have empty agentModels and agentIterations (no global/org configs)', async () => {
-			const mockDb = createSequentialMockDb([[defaultsRow], [projectRow], [], [trelloIntegration]]);
+			const mockDb = createSequentialMockDb([[projectRow], [], [trelloIntegration]]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
 
 			const config = await loadConfigFromDb();
@@ -218,7 +218,6 @@ describe('configRepository', () => {
 
 		it('maps agentEngine from project row when set', async () => {
 			const mockDb = createSequentialMockDb([
-				[defaultsRow],
 				[projectRowWithBackend],
 				[],
 				[{ ...trelloIntegration, projectId: 'proj2' }],
@@ -234,7 +233,6 @@ describe('configRepository', () => {
 
 		it('builds agent engine overrides from agentEngine column in agent_configs', async () => {
 			const mockDb = createSequentialMockDb([
-				[defaultsRow],
 				[projectRowWithBackend],
 				[{ ...projectAgentConfig, projectId: 'proj2' }],
 				[{ ...trelloIntegration, projectId: 'proj2' }],
@@ -263,7 +261,6 @@ describe('configRepository', () => {
 			};
 
 			const mockDb = createSequentialMockDb([
-				[defaultsRow],
 				[projectRow, projectRowWithBackend],
 				[],
 				[trelloIntegration, proj2Integration],
@@ -277,19 +274,18 @@ describe('configRepository', () => {
 			expect(config.projects[1].trello.boardId).toBe('board456');
 		});
 
-		it('queries 4 tables via Promise.all', async () => {
-			const mockDb = createSequentialMockDb([[defaultsRow], [projectRow], [], [trelloIntegration]]);
+		it('queries 3 tables via Promise.all', async () => {
+			const mockDb = createSequentialMockDb([[projectRow], [], [trelloIntegration]]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
 
 			await loadConfigFromDb();
 
-			// 4 select() calls: defaults, projects, agentConfigs, integrations
-			expect(mockDb.select).toHaveBeenCalledTimes(4);
+			// 3 select() calls: projects, agentConfigs, integrations
+			expect(mockDb.select).toHaveBeenCalledTimes(3);
 		});
 
 		it('omits agentEngine from project when not set', async () => {
 			const mockDb = createSequentialMockDb([
-				[defaultsRow],
 				[projectRow], // agentEngine is null
 				[],
 				[trelloIntegration],
@@ -303,7 +299,6 @@ describe('configRepository', () => {
 
 		it('preserves agent_config engine overrides even when project agentEngine is null', async () => {
 			const mockDb = createSequentialMockDb([
-				[defaultsRow],
 				[projectRow], // agentEngine is null
 				[projectAgentConfig], // has agentEngine: 'claude-code' for implementation
 				[trelloIntegration],
@@ -328,7 +323,6 @@ describe('configRepository', () => {
 			const mockDb = createSequentialMockDb([
 				[projectRow], // project lookup
 				[projectAgentConfig], // project agent configs
-				[defaultsRow], // defaults
 				[trelloIntegration], // integrations
 			]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
@@ -357,7 +351,6 @@ describe('configRepository', () => {
 			const mockDb = createSequentialMockDb([
 				[projectRowWithBackend],
 				[projectAgentConfig], // has agentEngine: 'claude-code'
-				[defaultsRow],
 				[{ ...trelloIntegration, projectId: 'proj2' }],
 			]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
@@ -375,7 +368,6 @@ describe('configRepository', () => {
 			const mockDb = createSequentialMockDb([
 				[projectRow],
 				[projectAgentConfig], // has agentEngine: 'claude-code'
-				[defaultsRow],
 				[trelloIntegration],
 			]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
@@ -388,25 +380,20 @@ describe('configRepository', () => {
 			expect(result && Object.hasOwn(result, 'prompts')).toBe(false);
 		});
 
-		it('runs 3 sub-queries in parallel after initial project lookup', async () => {
-			const mockDb = createSequentialMockDb([[projectRow], [], [defaultsRow], [trelloIntegration]]);
+		it('runs 2 sub-queries in parallel after initial project lookup', async () => {
+			const mockDb = createSequentialMockDb([[projectRow], [], [trelloIntegration]]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
 
 			await findProjectByIdFromDb('proj1');
 
-			// 1 initial project lookup + 3 parallel sub-queries = 4 select() calls
-			expect(mockDb.select).toHaveBeenCalledTimes(4);
+			// 1 initial project lookup + 2 parallel sub-queries = 3 select() calls
+			expect(mockDb.select).toHaveBeenCalledTimes(3);
 		});
 
 		it('maps workItemBudgetUsd from DB row (config-layer rename pending)', async () => {
 			const projWithBudget = { ...projectRow, workItemBudgetUsd: '10.50' };
 
-			const mockDb = createSequentialMockDb([
-				[projWithBudget],
-				[],
-				[defaultsRow],
-				[trelloIntegration],
-			]);
+			const mockDb = createSequentialMockDb([[projWithBudget], [], [trelloIntegration]]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
 
 			const result = await findProjectByIdFromDb('proj1');
@@ -420,7 +407,6 @@ describe('configRepository', () => {
 			const mockDb = createSequentialMockDb([
 				[projectRow],
 				[],
-				[defaultsRow],
 				[trelloIntegration], // has customFields: { cost: 'cf-cost' }
 			]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
@@ -440,7 +426,7 @@ describe('configRepository', () => {
 				},
 			};
 
-			const mockDb = createSequentialMockDb([[projectRow], [], [defaultsRow], [noCustomFields]]);
+			const mockDb = createSequentialMockDb([[projectRow], [], [noCustomFields]]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
 
 			const result = await findProjectByIdFromDb('proj1');
@@ -451,7 +437,7 @@ describe('configRepository', () => {
 
 	describe('findProjectByRepoFromDb', () => {
 		it('returns project found by repo', async () => {
-			const mockDb = createSequentialMockDb([[projectRow], [], [defaultsRow], [trelloIntegration]]);
+			const mockDb = createSequentialMockDb([[projectRow], [], [trelloIntegration]]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
 
 			const result = await findProjectByRepoFromDb('owner/repo1');
@@ -476,7 +462,6 @@ describe('configRepository', () => {
 			const mockDb = createSequentialMockDb([
 				[projectRow], // subquery finds project
 				[],
-				[defaultsRow],
 				[trelloIntegration],
 			]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);

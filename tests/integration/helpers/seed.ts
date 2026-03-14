@@ -3,7 +3,6 @@ import {
 	agentConfigs,
 	agentRuns,
 	agentTriggerConfigs,
-	cascadeDefaults,
 	credentials,
 	integrationCredentials,
 	organizations,
@@ -35,6 +34,10 @@ export async function seedProject(
 		repo?: string;
 		baseBranch?: string;
 		branchPrefix?: string;
+		maxIterations?: number | null;
+		watchdogTimeoutMs?: number | null;
+		progressModel?: string | null;
+		progressIntervalMinutes?: string | null;
 	} = {},
 ) {
 	const db = getDb();
@@ -47,6 +50,10 @@ export async function seedProject(
 			repo: overrides.repo ?? 'owner/repo',
 			baseBranch: overrides.baseBranch ?? 'main',
 			branchPrefix: overrides.branchPrefix ?? 'feature/',
+			maxIterations: overrides.maxIterations,
+			watchdogTimeoutMs: overrides.watchdogTimeoutMs,
+			progressModel: overrides.progressModel,
+			progressIntervalMinutes: overrides.progressIntervalMinutes,
 		})
 		.returning();
 	return row;
@@ -119,30 +126,6 @@ export async function seedIntegrationCredential(overrides: {
 			integrationId: overrides.integrationId,
 			role: overrides.role ?? 'api_key',
 			credentialId: overrides.credentialId,
-		})
-		.returning();
-	return row;
-}
-
-/**
- * Seeds cascade defaults for an org.
- */
-export async function seedDefaults(
-	overrides: {
-		orgId?: string;
-		model?: string | null;
-		maxIterations?: number | null;
-		agentEngine?: string | null;
-	} = {},
-) {
-	const db = getDb();
-	const [row] = await db
-		.insert(cascadeDefaults)
-		.values({
-			orgId: overrides.orgId ?? 'test-org',
-			model: overrides.model ?? null,
-			maxIterations: overrides.maxIterations ?? null,
-			agentEngine: overrides.agentEngine ?? null,
 		})
 		.returning();
 	return row;

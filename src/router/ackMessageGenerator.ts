@@ -194,9 +194,10 @@ export async function generateAckMessage(
 	let restoreEnv: (() => void) | undefined;
 
 	try {
-		// Load config to get progressModel
+		// Load config to get progressModel — project-level override takes precedence
 		const config = await loadConfig();
-		const progressModel = config.defaults.progressModel;
+		const project = config.projects?.find((p) => p.id === projectId);
+		const progressModel = project?.progressModel ?? config.defaults.progressModel;
 		if (!progressModel) {
 			return fallback;
 		}

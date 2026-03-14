@@ -11,15 +11,11 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { type CascadeConfigSchema, validateConfig } from '../src/config/schema.js';
 import { closeDb, getDb } from '../src/db/client.js';
-import {
-	agentConfigs,
-	cascadeDefaults,
-	projectIntegrations,
-	projects,
-} from '../src/db/schema/index.js';
+import { agentConfigs, projectIntegrations, projects } from '../src/db/schema/index.js';
 
 type CascadeConfig = z.infer<typeof CascadeConfigSchema>;
 type ProjectConfig = CascadeConfig['projects'][number];
@@ -54,31 +50,6 @@ function buildProjectValues(p: ProjectConfig) {
 		workItemBudgetUsd: p.workItemBudgetUsd ? String(p.workItemBudgetUsd) : null,
 		agentEngine: p.agentEngine?.default ?? null,
 	};
-}
-
-async function seedDefaults(d: CascadeConfig['defaults']) {
-	console.log('Inserting defaults...');
-	const db = getDb();
-	const values = {
-		orgId,
-		model: d.model,
-		maxIterations: d.maxIterations,
-		freshMachineTimeoutMs: d.freshMachineTimeoutMs,
-		watchdogTimeoutMs: d.watchdogTimeoutMs,
-		postJobGracePeriodMs: d.postJobGracePeriodMs,
-		workItemBudgetUsd: String(d.workItemBudgetUsd),
-		agentEngine: d.agentEngine,
-		progressModel: d.progressModel,
-		progressIntervalMinutes: String(d.progressIntervalMinutes),
-	};
-	await db
-		.insert(cascadeDefaults)
-		.values(values)
-		.onConflictDoUpdate({
-			target: cascadeDefaults.orgId,
-			set: { ...values, updatedAt: new Date() },
-		});
-	console.log('  Defaults upserted.');
 }
 
 async function seedProject(p: ProjectConfig) {
@@ -151,7 +122,6 @@ async function main() {
 
 	getDb(); // initialize connection
 
-	await seedDefaults(config.defaults);
 	for (const p of config.projects) {
 		await seedProject(p);
 		await seedProjectIntegrations(p);

@@ -19,7 +19,9 @@ export default class DefaultsShow extends DashboardCommand {
 			}
 
 			if (!defaults) {
-				this.log('No defaults configured.');
+				this.log(
+					'Organization-level defaults have been removed (migration 0038). Use `cascade projects update` to set per-project overrides.',
+				);
 				return;
 			}
 

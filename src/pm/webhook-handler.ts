@@ -127,7 +127,7 @@ async function handleMatchedTrigger(
 		workItemId: result.workItemId,
 	});
 
-	startWatchdog(config.defaults.watchdogTimeoutMs);
+	startWatchdog(project.watchdogTimeoutMs ?? config.defaults.watchdogTimeoutMs);
 
 	const pmConfig = resolveProjectPMConfig(project);
 	const lifecycle = new PMLifecycleManager(getPMProvider(), pmConfig);

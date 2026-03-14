@@ -5,7 +5,6 @@ import {
 	deleteAgentConfig,
 	deleteProject,
 	deleteProjectIntegration,
-	getCascadeDefaults,
 	getOrganization,
 	getProjectFull,
 	listAgentConfigs,
@@ -19,7 +18,6 @@ import {
 	updateOrganization,
 	updateProject,
 	updateProjectIntegrationTriggers,
-	upsertCascadeDefaults,
 	upsertProjectIntegration,
 } from '../../../src/db/repositories/settingsRepository.js';
 import { truncateAll } from '../helpers/db.js';
@@ -65,46 +63,6 @@ describe('settingsRepository (integration)', () => {
 			expect(orgs.length).toBeGreaterThanOrEqual(2);
 			expect(orgs.map((o) => o.id)).toContain('test-org');
 			expect(orgs.map((o) => o.id)).toContain('org-2');
-		});
-	});
-
-	// =========================================================================
-	// Cascade Defaults
-	// =========================================================================
-
-	describe('getCascadeDefaults', () => {
-		it('returns null when no defaults exist', async () => {
-			const defaults = await getCascadeDefaults('test-org');
-			expect(defaults).toBeNull();
-		});
-	});
-
-	describe('upsertCascadeDefaults', () => {
-		it('inserts new defaults', async () => {
-			await upsertCascadeDefaults('test-org', {
-				model: 'claude-opus-4-5',
-				maxIterations: 30,
-				agentEngine: 'claude-code',
-			});
-			const defaults = await getCascadeDefaults('test-org');
-			expect(defaults?.model).toBe('claude-opus-4-5');
-			expect(defaults?.maxIterations).toBe(30);
-			expect(defaults?.agentEngine).toBe('claude-code');
-		});
-
-		it('updates existing defaults', async () => {
-			await upsertCascadeDefaults('test-org', { model: 'old-model', maxIterations: 20 });
-			await upsertCascadeDefaults('test-org', { model: 'new-model', maxIterations: 40 });
-			const defaults = await getCascadeDefaults('test-org');
-			expect(defaults?.model).toBe('new-model');
-			expect(defaults?.maxIterations).toBe(40);
-		});
-
-		it('allows null fields to clear values', async () => {
-			await upsertCascadeDefaults('test-org', { model: 'some-model' });
-			await upsertCascadeDefaults('test-org', { model: null });
-			const defaults = await getCascadeDefaults('test-org');
-			expect(defaults?.model).toBeNull();
 		});
 	});
 

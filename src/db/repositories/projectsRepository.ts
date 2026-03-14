@@ -35,9 +35,13 @@ export async function createProject(
 		baseBranch?: string;
 		branchPrefix?: string;
 		model?: string | null;
+		maxIterations?: number | null;
+		watchdogTimeoutMs?: number | null;
 		workItemBudgetUsd?: string | null;
 		agentEngine?: string | null;
 		engineSettings?: EngineSettings | null;
+		progressModel?: string | null;
+		progressIntervalMinutes?: string | null;
 		runLinksEnabled?: boolean;
 	},
 ) {
@@ -53,8 +57,12 @@ export async function createProject(
 			baseBranch: rest.baseBranch ?? 'main',
 			branchPrefix: rest.branchPrefix ?? 'feature/',
 			model: rest.model,
+			maxIterations: rest.maxIterations,
+			watchdogTimeoutMs: rest.watchdogTimeoutMs,
 			workItemBudgetUsd: rest.workItemBudgetUsd,
 			agentEngine: rest.agentEngine,
+			progressModel: rest.progressModel,
+			progressIntervalMinutes: rest.progressIntervalMinutes,
 			runLinksEnabled: rest.runLinksEnabled ?? false,
 			...(engineSettings !== undefined
 				? { agentEngineSettings: normalizeEngineSettings(engineSettings) }
@@ -73,9 +81,13 @@ export async function updateProject(
 		baseBranch?: string;
 		branchPrefix?: string;
 		model?: string | null;
+		maxIterations?: number | null;
+		watchdogTimeoutMs?: number | null;
 		workItemBudgetUsd?: string | null;
 		agentEngine?: string | null;
 		engineSettings?: EngineSettings | null;
+		progressModel?: string | null;
+		progressIntervalMinutes?: string | null;
 		runLinksEnabled?: boolean;
 	},
 ) {

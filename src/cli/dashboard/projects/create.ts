@@ -12,8 +12,12 @@ export default class ProjectsCreate extends DashboardCommand {
 		'base-branch': Flags.string({ description: 'Base branch (default: main)' }),
 		'branch-prefix': Flags.string({ description: 'Branch prefix' }),
 		model: Flags.string({ description: 'Default model' }),
+		'max-iterations': Flags.integer({ description: 'Max iterations per agent run' }),
+		'watchdog-timeout': Flags.integer({ description: 'Watchdog timeout (ms)' }),
 		'work-item-budget': Flags.string({ description: 'Per-work-item budget in USD' }),
 		'agent-engine': Flags.string({ description: 'Agent engine (e.g. claude-code)' }),
+		'progress-model': Flags.string({ description: 'Model for progress updates' }),
+		'progress-interval': Flags.string({ description: 'Progress update interval (minutes)' }),
 	};
 
 	async run(): Promise<void> {
@@ -27,8 +31,12 @@ export default class ProjectsCreate extends DashboardCommand {
 				baseBranch: flags['base-branch'],
 				branchPrefix: flags['branch-prefix'],
 				model: flags.model,
+				maxIterations: flags['max-iterations'],
+				watchdogTimeoutMs: flags['watchdog-timeout'],
 				workItemBudgetUsd: flags['work-item-budget'],
 				agentEngine: flags['agent-engine'],
+				progressModel: flags['progress-model'],
+				progressIntervalMinutes: flags['progress-interval'],
 			});
 
 			if (flags.json) {
