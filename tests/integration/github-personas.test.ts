@@ -5,7 +5,7 @@
  * modes with real DB-backed project configurations.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { findProjectByRepoFromDb } from '../../src/db/repositories/configRepository.js';
 import { resolveIntegrationCredential } from '../../src/db/repositories/credentialsRepository.js';
 import {
@@ -90,6 +90,10 @@ function makeReviewRequestedPayload(requestedReviewer: string, prAuthor: string)
 // ============================================================================
 // Tests
 // ============================================================================
+
+beforeAll(async () => {
+	await truncateAll();
+});
 
 describe('GitHub Dual-Persona System (integration)', () => {
 	beforeEach(async () => {

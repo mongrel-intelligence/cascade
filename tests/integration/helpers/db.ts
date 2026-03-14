@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { closeDb, getDb } from '../../../src/db/client.js';
+import { _setTestDb, closeDb, getDb } from '../../../src/db/client.js';
 
 function checkPortReachable(host: string, port: number, timeoutMs = 500): Promise<boolean> {
 	return new Promise((resolve) => {
@@ -129,4 +129,34 @@ export async function truncateAll() {
  */
 export async function closeTestDb() {
 	await closeDb();
+}
+
+const ROLLBACK = Symbol('TEST_ROLLBACK');
+
+/**
+ * Wraps a test body in a transaction that is always rolled back.
+ * Use this instead of truncateAll() for faster, isolated integration tests.
+ *
+ * Usage:
+ *   it('does something', withTestTransaction(async () => {
+ *     await seedOrg();
+ *     // ... assertions ...
+ *   }));
+ */
+export function withTestTransaction(fn: () => Promise<void>): () => Promise<void> {
+	return async () => {
+		try {
+			await getDb().transaction(async (tx) => {
+				_setTestDb(tx as ReturnType<typeof getDb>);
+				try {
+					await fn();
+				} finally {
+					_setTestDb(null);
+				}
+				throw ROLLBACK; // always roll back
+			});
+		} catch (e) {
+			if (e !== ROLLBACK) throw e;
+		}
+	};
 }

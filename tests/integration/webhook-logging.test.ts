@@ -6,13 +6,17 @@
  * pruning are covered in tests/integration/db/webhookLogsRepository.test.ts.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
 	getWebhookLogById,
 	insertWebhookLog,
 } from '../../src/db/repositories/webhookLogsRepository.js';
 import { truncateAll } from './helpers/db.js';
 import { seedOrg, seedProject, seedWebhookLog } from './helpers/seed.js';
+
+beforeAll(async () => {
+	await truncateAll();
+});
 
 describe('Webhook Logging — Provider-Specific (integration)', () => {
 	beforeEach(async () => {

@@ -9,7 +9,7 @@
  * tests/integration/db/credentialResolution.test.ts.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { resolveIntegrationCredential } from '../../src/db/repositories/credentialsRepository.js';
 import { truncateAll } from './helpers/db.js';
 import {
@@ -19,6 +19,10 @@ import {
 	seedOrg,
 	seedProject,
 } from './helpers/seed.js';
+
+beforeAll(async () => {
+	await truncateAll();
+});
 
 describe('Multi-Provider Credential Isolation (integration)', () => {
 	beforeEach(async () => {

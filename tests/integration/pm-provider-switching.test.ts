@@ -5,7 +5,7 @@
  * PM provider is returned and triggers dispatch correctly.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
 	findProjectByBoardIdFromDb,
 	findProjectByJiraProjectKeyFromDb,
@@ -84,6 +84,10 @@ function makeJiraStatusChangedPayload(statusName: string, issueKey: string) {
 // ============================================================================
 // Tests
 // ============================================================================
+
+beforeAll(async () => {
+	await truncateAll();
+});
 
 describe('PM Provider Switching (integration)', () => {
 	beforeEach(async () => {
