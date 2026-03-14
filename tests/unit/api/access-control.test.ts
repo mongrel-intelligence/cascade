@@ -101,7 +101,6 @@ vi.mock('../../../src/utils/logging.js', () => ({
 import { computeEffectiveOrgId } from '../../../src/api/context.js';
 import { authRouter } from '../../../src/api/routers/auth.js';
 import { credentialsRouter } from '../../../src/api/routers/credentials.js';
-import { defaultsRouter } from '../../../src/api/routers/defaults.js';
 import { organizationRouter } from '../../../src/api/routers/organization.js';
 import { projectsRouter } from '../../../src/api/routers/projects.js';
 import {
@@ -300,17 +299,6 @@ describe('Router org-isolation with admin org-switching', () => {
 		await caller.list();
 
 		expect(mockListOrgCredentials).toHaveBeenCalledWith('org-2');
-	});
-
-	it('defaults.get is accessible by authenticated user', async () => {
-		const caller = defaultsRouter.createCaller({
-			user: adminUser,
-			effectiveOrgId: 'org-2',
-		});
-
-		// defaults.get returns null since cascade_defaults table was removed
-		const result = await caller.get();
-		expect(result).toBeNull();
 	});
 
 	it('organization.get uses effectiveOrgId (not user.orgId)', async () => {
