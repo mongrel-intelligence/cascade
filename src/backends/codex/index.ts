@@ -247,7 +247,7 @@ function buildPrompt(systemPrompt: string, taskPrompt: string): string {
 	return `## System Instructions\n${systemPrompt}\n\n## Task\n${taskPrompt}`;
 }
 
-function buildArgs(
+export function buildArgs(
 	input: AgentExecutionPlan,
 	settings: ReturnType<typeof resolveCodexSettings>,
 	model: string,
@@ -273,7 +273,9 @@ function buildArgs(
 	if (settings.reasoningEffort) {
 		args.push('-c', `model_reasoning_effort=${tomlString(settings.reasoningEffort)}`);
 	}
-	args.push('-c', `web_search=${settings.webSearch ? 'true' : 'false'}`);
+	if (settings.webSearch) {
+		args.push('--search');
+	}
 	args.push('-');
 
 	return args;

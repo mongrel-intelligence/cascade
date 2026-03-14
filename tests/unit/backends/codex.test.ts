@@ -26,7 +26,7 @@ vi.mock('../../../src/utils/logging.js', () => ({
 }));
 
 import { buildEnv } from '../../../src/backends/codex/env.js';
-import { CodexEngine, resolveCodexModel } from '../../../src/backends/codex/index.js';
+import { CodexEngine, buildArgs, resolveCodexModel } from '../../../src/backends/codex/index.js';
 import { DEFAULT_CODEX_MODEL } from '../../../src/backends/codex/models.js';
 import {
 	assertHeadlessCodexSettings,
@@ -190,6 +190,36 @@ describe('resolveCodexSettings', () => {
 				webSearch: false,
 			}),
 		).toThrow('approvalPolicy="never"');
+	});
+});
+
+describe('buildArgs', () => {
+	const baseSettings = {
+		approvalPolicy: 'never' as const,
+		sandboxMode: 'read-only' as const,
+		reasoningEffort: undefined,
+	};
+
+	it('does not include --search or -c web_search when webSearch is false', () => {
+		const args = buildArgs(
+			makeInput(),
+			{ ...baseSettings, webSearch: false },
+			'model-x',
+			'/tmp/last.json',
+		);
+		expect(args).not.toContain('--search');
+		expect(args.join(' ')).not.toContain('web_search');
+	});
+
+	it('includes --search when webSearch is true', () => {
+		const args = buildArgs(
+			makeInput(),
+			{ ...baseSettings, webSearch: true },
+			'model-x',
+			'/tmp/last.json',
+		);
+		expect(args).toContain('--search');
+		expect(args.join(' ')).not.toContain('web_search');
 	});
 });
 
