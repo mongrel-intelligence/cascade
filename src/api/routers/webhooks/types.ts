@@ -40,4 +40,5 @@ export interface ProjectContext {
 	githubToken: string;
 	jiraEmail?: string;
 	jiraApiToken?: string;
+	webhookSecret?: string;
 }
