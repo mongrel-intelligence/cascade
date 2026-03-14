@@ -29,5 +29,11 @@ export const defaultsRouter = router({
 		.mutation(async () => {
 			// No-op: cascade_defaults table has been removed as of migration 0038.
 			// Project-level overrides should be set via the projects router.
+			return {
+				ok: true,
+				deprecated: true,
+				message:
+					'Organization-level defaults have been removed. This call is a no-op. Use the projects router to set per-project overrides.',
+			};
 		}),
 });
