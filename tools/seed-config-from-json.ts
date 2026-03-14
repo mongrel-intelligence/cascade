@@ -11,7 +11,6 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { type CascadeConfigSchema, validateConfig } from '../src/config/schema.js';
 import { closeDb, getDb } from '../src/db/client.js';
@@ -80,30 +79,6 @@ async function seedDefaults(d: CascadeConfig['defaults']) {
 			set: { ...values, updatedAt: new Date() },
 		});
 	console.log('  Defaults upserted.');
-}
-
-async function seedGlobalAgentConfigs(d: CascadeConfig['defaults']) {
-	const db = getDb();
-	const agentTypes = new Set([
-		...Object.keys(d.agentModels ?? {}),
-		...Object.keys(d.agentIterations ?? {}),
-	]);
-	for (const agentType of agentTypes) {
-		console.log(`  Inserting global agent config: ${agentType}...`);
-		const model = d.agentModels?.[agentType] ?? null;
-		const maxIterations = d.agentIterations?.[agentType] ?? null;
-		// Use raw SQL because the partial unique index (WHERE project_id IS NULL)
-		// can't be expressed via Drizzle's onConflictDoUpdate target
-		await db.execute(sql`
-			INSERT INTO agent_configs (project_id, agent_type, model, max_iterations)
-			VALUES (NULL, ${agentType}, ${model}, ${maxIterations})
-			ON CONFLICT (agent_type) WHERE project_id IS NULL
-			DO UPDATE SET
-				model = COALESCE(EXCLUDED.model, agent_configs.model),
-				max_iterations = COALESCE(EXCLUDED.max_iterations, agent_configs.max_iterations),
-				updated_at = NOW()
-		`);
-	}
 }
 
 async function seedProject(p: ProjectConfig) {
@@ -177,8 +152,6 @@ async function main() {
 	getDb(); // initialize connection
 
 	await seedDefaults(config.defaults);
-	await seedGlobalAgentConfigs(config.defaults);
-
 	for (const p of config.projects) {
 		await seedProject(p);
 		await seedProjectIntegrations(p);

@@ -2,7 +2,7 @@ import { Flags } from '@oclif/core';
 import { DashboardCommand } from '../_shared/base.js';
 
 export default class AgentsCreate extends DashboardCommand {
-	static override description = 'Create an agent configuration.';
+	static override description = 'Create an agent configuration for a project.';
 
 	static override flags = {
 		...DashboardCommand.baseFlags,
@@ -10,7 +10,10 @@ export default class AgentsCreate extends DashboardCommand {
 			description: 'Agent type (e.g. implementation, review)',
 			required: true,
 		}),
-		'project-id': Flags.string({ description: 'Scope to specific project' }),
+		'project-id': Flags.string({
+			description: 'Project ID to scope the config to',
+			required: true,
+		}),
 		model: Flags.string({ description: 'Model override' }),
 		'max-iterations': Flags.integer({ description: 'Max iterations override' }),
 		engine: Flags.string({ description: 'Agent engine override' }),

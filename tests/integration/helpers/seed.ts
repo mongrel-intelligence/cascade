@@ -149,12 +149,11 @@ export async function seedDefaults(
 }
 
 /**
- * Seeds an agent config row.
+ * Seeds a project-scoped agent config row.
  */
 export async function seedAgentConfig(
 	overrides: {
-		orgId?: string | null;
-		projectId?: string | null;
+		projectId?: string;
 		agentType?: string;
 		model?: string | null;
 		maxIterations?: number | null;
@@ -165,8 +164,7 @@ export async function seedAgentConfig(
 	const [row] = await db
 		.insert(agentConfigs)
 		.values({
-			orgId: overrides.orgId ?? null,
-			projectId: overrides.projectId ?? null,
+			projectId: overrides.projectId ?? 'test-project',
 			agentType: overrides.agentType ?? 'implementation',
 			model: overrides.model ?? null,
 			maxIterations: overrides.maxIterations ?? null,

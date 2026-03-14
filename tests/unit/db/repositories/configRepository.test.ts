@@ -83,38 +83,13 @@ const jiraIntegration = {
 	updatedAt: new Date(),
 };
 
-const globalAgentConfig = {
-	id: 1,
-	orgId: null,
-	projectId: null,
-	agentType: 'review',
-	model: 'global-review-model',
-	maxIterations: 30,
-	agentEngine: null,
-	createdAt: new Date(),
-	updatedAt: new Date(),
-};
-
 const projectAgentConfig = {
 	id: 2,
-	orgId: null,
 	projectId: 'proj1',
 	agentType: 'implementation',
 	model: 'impl-model',
 	maxIterations: null,
 	agentEngine: 'claude-code',
-	createdAt: new Date(),
-	updatedAt: new Date(),
-};
-
-const orgAgentConfig = {
-	id: 3,
-	orgId: 'default',
-	projectId: null,
-	agentType: 'splitting',
-	model: 'org-splitting-model',
-	maxIterations: 20,
-	agentEngine: null,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 };
@@ -127,7 +102,7 @@ const orgAgentConfig = {
 // deterministic order within each function.
 //
 // loadConfigFromDb order (Promise.all): cascadeDefaults, projects, agentConfigs, integrations
-// findProjectFromDb order: projects (initial), then Promise.all: agentConfigs x3, defaults, integrations
+// findProjectFromDb order: projects (initial), then Promise.all: agentConfigs, defaults, integrations
 // ---------------------------------------------------------------------------
 
 type QueryResult = Record<string, unknown>[];
@@ -231,6 +206,16 @@ describe('configRepository', () => {
 			expect(config.defaults.progressIntervalMinutes).toBe(5);
 		});
 
+		it('defaults have empty agentModels and agentIterations (no global/org configs)', async () => {
+			const mockDb = createSequentialMockDb([[defaultsRow], [projectRow], [], [trelloIntegration]]);
+			vi.mocked(getDb).mockReturnValue(mockDb as never);
+
+			const config = await loadConfigFromDb();
+
+			expect(config.defaults.agentModels).toEqual({});
+			expect(config.defaults.agentIterations).toEqual({});
+		});
+
 		it('maps agentEngine from project row when set', async () => {
 			const mockDb = createSequentialMockDb([
 				[defaultsRow],
@@ -263,27 +248,6 @@ describe('configRepository', () => {
 				implementation: 'claude-code',
 			});
 			expect(proj.agentModels).toEqual({ implementation: 'impl-model' });
-		});
-
-		it('merges global and org-level agent configs into defaults', async () => {
-			const mockDb = createSequentialMockDb([
-				[defaultsRow],
-				[projectRow],
-				[globalAgentConfig, orgAgentConfig],
-				[trelloIntegration],
-			]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
-
-			const config = await loadConfigFromDb();
-
-			expect(config.defaults.agentModels).toEqual({
-				review: 'global-review-model',
-				splitting: 'org-splitting-model',
-			});
-			expect(config.defaults.agentIterations).toEqual({
-				review: 30,
-				splitting: 20,
-			});
 		});
 
 		it('handles multiple projects with separate integrations', async () => {
@@ -360,12 +324,10 @@ describe('configRepository', () => {
 	describe('findProjectByIdFromDb', () => {
 		it('returns project with Trello integration from integrations table', async () => {
 			// findProjectFromDb order: projects (initial), then Promise.all:
-			// projectAcs, orgAcs, globalAcs, defaults, integrations
+			// projectAcs, defaults, integrations
 			const mockDb = createSequentialMockDb([
 				[projectRow], // project lookup
 				[projectAgentConfig], // project agent configs
-				[], // org agent configs
-				[globalAgentConfig], // global agent configs
 				[defaultsRow], // defaults
 				[trelloIntegration], // integrations
 			]);
@@ -395,8 +357,6 @@ describe('configRepository', () => {
 			const mockDb = createSequentialMockDb([
 				[projectRowWithBackend],
 				[projectAgentConfig], // has agentEngine: 'claude-code'
-				[],
-				[],
 				[defaultsRow],
 				[{ ...trelloIntegration, projectId: 'proj2' }],
 			]);
@@ -415,8 +375,6 @@ describe('configRepository', () => {
 			const mockDb = createSequentialMockDb([
 				[projectRow],
 				[projectAgentConfig], // has agentEngine: 'claude-code'
-				[],
-				[],
 				[defaultsRow],
 				[trelloIntegration],
 			]);
@@ -430,21 +388,14 @@ describe('configRepository', () => {
 			expect(result && Object.hasOwn(result, 'prompts')).toBe(false);
 		});
 
-		it('runs 5 sub-queries in parallel after initial project lookup', async () => {
-			const mockDb = createSequentialMockDb([
-				[projectRow],
-				[],
-				[],
-				[],
-				[defaultsRow],
-				[trelloIntegration],
-			]);
+		it('runs 3 sub-queries in parallel after initial project lookup', async () => {
+			const mockDb = createSequentialMockDb([[projectRow], [], [defaultsRow], [trelloIntegration]]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
 
 			await findProjectByIdFromDb('proj1');
 
-			// 1 initial project lookup + 5 parallel sub-queries = 6 select() calls
-			expect(mockDb.select).toHaveBeenCalledTimes(6);
+			// 1 initial project lookup + 3 parallel sub-queries = 4 select() calls
+			expect(mockDb.select).toHaveBeenCalledTimes(4);
 		});
 
 		it('maps workItemBudgetUsd from DB row (config-layer rename pending)', async () => {
@@ -452,8 +403,6 @@ describe('configRepository', () => {
 
 			const mockDb = createSequentialMockDb([
 				[projWithBudget],
-				[],
-				[],
 				[],
 				[defaultsRow],
 				[trelloIntegration],
@@ -470,8 +419,6 @@ describe('configRepository', () => {
 		it('handles Trello integration with customFields', async () => {
 			const mockDb = createSequentialMockDb([
 				[projectRow],
-				[],
-				[],
 				[],
 				[defaultsRow],
 				[trelloIntegration], // has customFields: { cost: 'cf-cost' }
@@ -493,14 +440,7 @@ describe('configRepository', () => {
 				},
 			};
 
-			const mockDb = createSequentialMockDb([
-				[projectRow],
-				[],
-				[],
-				[],
-				[defaultsRow],
-				[noCustomFields],
-			]);
+			const mockDb = createSequentialMockDb([[projectRow], [], [defaultsRow], [noCustomFields]]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
 
 			const result = await findProjectByIdFromDb('proj1');
@@ -511,14 +451,7 @@ describe('configRepository', () => {
 
 	describe('findProjectByRepoFromDb', () => {
 		it('returns project found by repo', async () => {
-			const mockDb = createSequentialMockDb([
-				[projectRow],
-				[],
-				[],
-				[],
-				[defaultsRow],
-				[trelloIntegration],
-			]);
+			const mockDb = createSequentialMockDb([[projectRow], [], [defaultsRow], [trelloIntegration]]);
 			vi.mocked(getDb).mockReturnValue(mockDb as never);
 
 			const result = await findProjectByRepoFromDb('owner/repo1');
@@ -542,8 +475,6 @@ describe('configRepository', () => {
 		it('returns project found via integrations board ID subquery', async () => {
 			const mockDb = createSequentialMockDb([
 				[projectRow], // subquery finds project
-				[],
-				[],
 				[],
 				[defaultsRow],
 				[trelloIntegration],

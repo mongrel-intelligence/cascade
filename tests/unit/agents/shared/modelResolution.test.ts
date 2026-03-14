@@ -248,14 +248,13 @@ describe('resolveModelConfig', () => {
 			expect(result.model).toBe('agent-specific-model');
 		});
 
-		it('uses configKey for model lookup when provided', async () => {
-			const config = makeConfig({
-				agentModels: { review: 'review-model' },
-			});
+		it('uses configKey for model lookup when provided (project-level)', async () => {
+			const config = makeConfig();
+			const project = makeProject({ agentModels: { review: 'review-model' } });
 
 			const result = await resolveModelConfig({
 				agentType: 'respond-to-review',
-				project: makeProject(),
+				project,
 				config,
 				repoDir: '/tmp/test',
 				configKey: 'review',
@@ -392,9 +391,8 @@ describe('resolveModelConfig', () => {
 			expect(result.maxIterations).toBe(42);
 		});
 
-		it('uses agent-specific iterations', async () => {
+		it('falls back to defaults.maxIterations when no agent-specific config', async () => {
 			const config = makeConfig({
-				agentIterations: { splitting: 10 },
 				maxIterations: 50,
 			});
 
@@ -405,7 +403,7 @@ describe('resolveModelConfig', () => {
 				repoDir: '/tmp/test',
 			});
 
-			expect(result.maxIterations).toBe(10);
+			expect(result.maxIterations).toBe(50);
 		});
 	});
 });

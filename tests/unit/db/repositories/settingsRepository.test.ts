@@ -277,49 +277,21 @@ describe('settingsRepository', () => {
 	// ============================================================================
 
 	describe('listAgentConfigs', () => {
-		it('returns all configs when no filter', async () => {
-			const configs = [{ id: 1, agentType: 'impl' }];
-			// No where clause → thenable chain resolves
-			const fromMock = vi.fn().mockReturnValue({
-				where: vi.fn().mockResolvedValue(configs),
-				// biome-ignore lint/suspicious/noThenProperty: intentional thenable mock for Drizzle query chains
-				then: (resolve: (v: unknown) => unknown) => Promise.resolve(configs).then(resolve),
-			});
-			mockDb.db.select.mockReturnValue({ from: fromMock });
-
-			const result = await listAgentConfigs();
-			expect(result).toEqual(configs);
-		});
-
-		it('filters by projectId and fetches orgId if not provided', async () => {
+		it('filters by projectId', async () => {
 			const configs = [{ id: 2, agentType: 'review', projectId: 'p1' }];
-			// First call (to where): return object with limit
-			mockDb.chain.where.mockReturnValueOnce({ limit: mockDb.chain.limit });
-			// First call (to limit): return the project
-			mockDb.chain.limit.mockResolvedValueOnce([{ orgId: 'org-1' }]);
-			// Second call (to where): return the configs
 			mockDb.chain.where.mockResolvedValueOnce(configs);
 
 			const result = await listAgentConfigs({ projectId: 'p1' });
-			expect(result).toEqual(configs);
-			expect(mockDb.db.select).toHaveBeenCalledTimes(2);
-		});
-
-		it('filters to non-project configs when orgId provided', async () => {
-			const configs = [{ id: 3, agentType: 'impl', orgId: 'org-1' }];
-			mockDb.chain.where.mockResolvedValueOnce(configs);
-
-			const result = await listAgentConfigs({ orgId: 'org-1' });
 			expect(result).toEqual(configs);
 		});
 	});
 
 	describe('createAgentConfig', () => {
-		it('inserts config and returns id', async () => {
+		it('inserts project-scoped config and returns id', async () => {
 			mockDb.chain.returning.mockResolvedValueOnce([{ id: 42 }]);
 
 			const result = await createAgentConfig({
-				orgId: 'org-1',
+				projectId: 'proj-1',
 				agentType: 'implementation',
 				model: 'test-model',
 				maxIterations: 20,
@@ -328,8 +300,7 @@ describe('settingsRepository', () => {
 			expect(result).toEqual({ id: 42 });
 			expect(mockDb.chain.values).toHaveBeenCalledWith(
 				expect.objectContaining({
-					orgId: 'org-1',
-					projectId: null,
+					projectId: 'proj-1',
 					agentType: 'implementation',
 					model: 'test-model',
 					maxIterations: 20,

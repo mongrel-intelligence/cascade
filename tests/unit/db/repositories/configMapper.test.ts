@@ -151,7 +151,7 @@ describe('mapDefaultsRow', () => {
 	};
 
 	it('maps all fields from row', () => {
-		const result = mapDefaultsRow(defaultsRow, []);
+		const result = mapDefaultsRow(defaultsRow);
 		expect(result.model).toBe('test-model');
 		expect(result.maxIterations).toBe(50);
 		expect(result.watchdogTimeoutMs).toBe(1800000);
@@ -163,35 +163,19 @@ describe('mapDefaultsRow', () => {
 	});
 
 	it('converts workItemBudgetUsd string to number', () => {
-		const result = mapDefaultsRow({ ...defaultsRow, workItemBudgetUsd: '10.50' }, []);
+		const result = mapDefaultsRow({ ...defaultsRow, workItemBudgetUsd: '10.50' });
 		expect(result.workItemBudgetUsd).toBe(10.5);
 	});
 
 	it('converts progressIntervalMinutes string to number', () => {
-		const result = mapDefaultsRow({ ...defaultsRow, progressIntervalMinutes: '15' }, []);
+		const result = mapDefaultsRow({ ...defaultsRow, progressIntervalMinutes: '15' });
 		expect(result.progressIntervalMinutes).toBe(15);
 	});
 
 	it('handles undefined defaults row gracefully', () => {
-		const result = mapDefaultsRow(undefined, []);
+		const result = mapDefaultsRow(undefined);
 		expect(result.model).toBeUndefined();
 		expect(result.workItemBudgetUsd).toBeUndefined();
-	});
-
-	it('builds agentModels and agentIterations from agent configs', () => {
-		const agentConfigs: AgentConfigRow[] = [
-			{
-				orgId: null,
-				projectId: null,
-				agentType: 'review',
-				model: 'review-model',
-				maxIterations: 20,
-				agentEngine: null,
-			},
-		];
-		const result = mapDefaultsRow(defaultsRow, agentConfigs);
-		expect(result.agentModels).toEqual({ review: 'review-model' });
-		expect(result.agentIterations).toEqual({ review: 20 });
 	});
 });
 

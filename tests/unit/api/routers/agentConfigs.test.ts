@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
-import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
+import { createMockUser } from '../../../helpers/factories.js';
 
 const {
 	mockListAgentConfigs,
@@ -43,7 +43,7 @@ vi.mock('../../../../src/db/client.js', () => ({
 }));
 
 vi.mock('../../../../src/db/schema/index.js', () => ({
-	agentConfigs: { id: 'id', orgId: 'org_id', projectId: 'project_id' },
+	agentConfigs: { id: 'id', projectId: 'project_id' },
 	projects: { id: 'id', orgId: 'org_id' },
 }));
 
@@ -89,17 +89,6 @@ describe('agentConfigsRouter', () => {
 	});
 
 	describe('list', () => {
-		it('lists org-scoped configs when no projectId', async () => {
-			const configs = [{ id: 1, agentType: 'implementation', model: 'claude-sonnet-4-5-20250929' }];
-			mockListAgentConfigs.mockResolvedValue(configs);
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			const result = await caller.list();
-
-			expect(mockListAgentConfigs).toHaveBeenCalledWith({ orgId: 'org-1' });
-			expect(result).toEqual(configs);
-		});
-
 		it('lists project-scoped configs when projectId provided', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			const configs = [{ id: 2, agentType: 'review', projectId: 'proj-1' }];
@@ -108,8 +97,14 @@ describe('agentConfigsRouter', () => {
 
 			const result = await caller.list({ projectId: 'proj-1' });
 
-			expect(mockListAgentConfigs).toHaveBeenCalledWith({ projectId: 'proj-1', orgId: 'org-1' });
+			expect(mockListAgentConfigs).toHaveBeenCalledWith({ projectId: 'proj-1' });
 			expect(result).toEqual(configs);
+		});
+
+		it('requires projectId', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			// @ts-expect-error: testing missing required param
+			await expect(caller.list()).rejects.toThrow();
 		});
 
 		it('throws NOT_FOUND when project does not belong to org', async () => {
@@ -132,37 +127,19 @@ describe('agentConfigsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.list()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+			await expect(caller.list({ projectId: 'proj-1' })).rejects.toMatchObject({
+				code: 'UNAUTHORIZED',
+			});
 		});
 	});
 
 	describe('create', () => {
-		it('creates org-scoped config', async () => {
-			mockCreateAgentConfig.mockResolvedValue({ id: 10 });
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			const result = await caller.create({
-				agentType: 'implementation',
-				model: 'claude-sonnet-4-5-20250929',
-				maxIterations: 25,
-			});
-
-			expect(mockCreateAgentConfig).toHaveBeenCalledWith({
-				orgId: 'org-1',
-				projectId: null,
-				agentType: 'implementation',
-				model: 'claude-sonnet-4-5-20250929',
-				maxIterations: 25,
-			});
-			expect(result).toEqual({ id: 10 });
-		});
-
 		it('creates project-scoped config after verifying ownership', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockCreateAgentConfig.mockResolvedValue({ id: 11 });
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
-			await caller.create({
+			const result = await caller.create({
 				projectId: 'proj-1',
 				agentType: 'review',
 				agentEngine: 'claude-code',
@@ -175,6 +152,7 @@ describe('agentConfigsRouter', () => {
 					agentEngine: 'claude-code',
 				}),
 			);
+			expect(result).toEqual({ id: 11 });
 		});
 
 		it('throws NOT_FOUND when project does not belong to org', async () => {
@@ -186,69 +164,25 @@ describe('agentConfigsRouter', () => {
 			).rejects.toMatchObject({ code: 'NOT_FOUND' });
 		});
 
-		it('allows superadmin to create global config with explicit orgId: null', async () => {
-			mockCreateAgentConfig.mockResolvedValue({ id: 12 });
-			const superAdmin = createMockSuperAdmin();
-			const caller = createCaller({ user: superAdmin, effectiveOrgId: superAdmin.orgId });
-
-			const result = await caller.create({
-				orgId: null,
-				agentType: 'implementation',
-				model: 'claude-sonnet-4-5-20250929',
-			});
-
-			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
-				expect.objectContaining({
-					orgId: null,
-					projectId: null,
-					agentType: 'implementation',
-				}),
-			);
-			expect(result).toEqual({ id: 12 });
-		});
-
-		it('throws FORBIDDEN when non-superadmin tries to create global config', async () => {
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await expect(
-				caller.create({ orgId: null, agentType: 'implementation' }),
-			).rejects.toMatchObject({
-				code: 'FORBIDDEN',
-				message: 'Superadmin access required for global config',
-			});
-		});
-
 		it('rejects empty agentType', async () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			await expect(caller.create({ agentType: '' })).rejects.toThrow();
+			await expect(caller.create({ projectId: 'proj-1', agentType: '' })).rejects.toThrow();
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.create({ agentType: 'test' })).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expect(caller.create({ projectId: 'proj-1', agentType: 'test' })).rejects.toMatchObject(
+				{
+					code: 'UNAUTHORIZED',
+				},
+			);
 		});
 	});
 
 	describe('update', () => {
-		it('updates org-scoped config', async () => {
-			// First call: find config
-			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1', projectId: null }]);
-			mockUpdateAgentConfig.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await caller.update({ id: 10, model: 'new-model', maxIterations: 30 });
-
-			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(10, {
-				model: 'new-model',
-				maxIterations: 30,
-			});
-		});
-
 		it('updates project-scoped config after verifying project ownership', async () => {
 			// First call: find config
-			mockDbWhere.mockResolvedValueOnce([{ orgId: null, projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
 			// Second call: verify project
 			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
 			mockUpdateAgentConfig.mockResolvedValue(undefined);
@@ -270,57 +204,17 @@ describe('agentConfigsRouter', () => {
 			});
 		});
 
-		it('throws NOT_FOUND when org-scoped config belongs to different org', async () => {
-			mockDbWhere.mockResolvedValue([{ orgId: 'different-org', projectId: null }]);
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await expect(caller.update({ id: 10, model: 'x' })).rejects.toMatchObject({
-				code: 'NOT_FOUND',
-			});
-		});
-
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.update({ id: 10, model: 'x' })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
 		});
-
-		it('throws FORBIDDEN when non-superadmin updates a global config', async () => {
-			mockDbWhere.mockResolvedValueOnce([{ orgId: null, projectId: null }]);
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await expect(caller.update({ id: 10, model: 'x' })).rejects.toMatchObject({
-				code: 'FORBIDDEN',
-				message: 'Superadmin access required',
-			});
-		});
-
-		it('allows superadmin to update a global config', async () => {
-			mockDbWhere.mockResolvedValueOnce([{ orgId: null, projectId: null }]);
-			mockUpdateAgentConfig.mockResolvedValue(undefined);
-			const superAdmin = createMockSuperAdmin();
-			const caller = createCaller({ user: superAdmin, effectiveOrgId: superAdmin.orgId });
-
-			await caller.update({ id: 10, model: 'global-model' });
-
-			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(10, { model: 'global-model' });
-		});
 	});
 
 	describe('delete', () => {
-		it('deletes org-scoped config', async () => {
-			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1', projectId: null }]);
-			mockDeleteAgentConfig.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await caller.delete({ id: 10 });
-
-			expect(mockDeleteAgentConfig).toHaveBeenCalledWith(10);
-		});
-
 		it('deletes project-scoped config after verifying project ownership', async () => {
-			mockDbWhere.mockResolvedValueOnce([{ orgId: null, projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
 			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
 			mockDeleteAgentConfig.mockResolvedValue(undefined);
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -339,62 +233,15 @@ describe('agentConfigsRouter', () => {
 			});
 		});
 
-		it('throws NOT_FOUND when org-scoped config belongs to different org', async () => {
-			mockDbWhere.mockResolvedValue([{ orgId: 'different-org', projectId: null }]);
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await expect(caller.delete({ id: 10 })).rejects.toMatchObject({
-				code: 'NOT_FOUND',
-			});
-		});
-
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(caller.delete({ id: 10 })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
 		});
-
-		it('throws FORBIDDEN when non-superadmin deletes a global config', async () => {
-			mockDbWhere.mockResolvedValueOnce([{ orgId: null, projectId: null }]);
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await expect(caller.delete({ id: 10 })).rejects.toMatchObject({
-				code: 'FORBIDDEN',
-				message: 'Superadmin access required',
-			});
-		});
-
-		it('allows superadmin to delete a global config', async () => {
-			mockDbWhere.mockResolvedValueOnce([{ orgId: null, projectId: null }]);
-			mockDeleteAgentConfig.mockResolvedValue(undefined);
-			const superAdmin = createMockSuperAdmin();
-			const caller = createCaller({ user: superAdmin, effectiveOrgId: superAdmin.orgId });
-
-			await caller.delete({ id: 10 });
-
-			expect(mockDeleteAgentConfig).toHaveBeenCalledWith(10);
-		});
 	});
 
 	describe('create with maxConcurrency', () => {
-		it('passes maxConcurrency to repository when creating org-scoped config', async () => {
-			mockCreateAgentConfig.mockResolvedValue({ id: 20 });
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await caller.create({
-				agentType: 'implementation',
-				maxConcurrency: 3,
-			});
-
-			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
-				expect.objectContaining({
-					agentType: 'implementation',
-					maxConcurrency: 3,
-				}),
-			);
-		});
-
 		it('passes maxConcurrency to repository when creating project-scoped config', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockCreateAgentConfig.mockResolvedValue({ id: 21 });
@@ -417,22 +264,9 @@ describe('agentConfigsRouter', () => {
 	});
 
 	describe('update with maxConcurrency', () => {
-		it('passes maxConcurrency to repository when updating org-scoped config', async () => {
-			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1', projectId: null }]);
-			mockUpdateAgentConfig.mockResolvedValue(undefined);
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await caller.update({ id: 10, maxConcurrency: 5 });
-
-			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(
-				10,
-				expect.objectContaining({ maxConcurrency: 5 }),
-			);
-		});
-
 		it('passes maxConcurrency to repository when updating project-scoped config', async () => {
 			// First call: find config
-			mockDbWhere.mockResolvedValueOnce([{ orgId: null, projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
 			// Second call: verify project ownership
 			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
 			mockUpdateAgentConfig.mockResolvedValue(undefined);
@@ -447,7 +281,8 @@ describe('agentConfigsRouter', () => {
 		});
 
 		it('can set maxConcurrency alongside other fields', async () => {
-			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1', projectId: null }]);
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
 			mockUpdateAgentConfig.mockResolvedValue(undefined);
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 

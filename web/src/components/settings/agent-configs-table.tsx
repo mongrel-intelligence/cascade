@@ -8,7 +8,6 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from '@/components/ui/alert-dialog.js';
-import { Badge } from '@/components/ui/badge.js';
 import {
 	Table,
 	TableBody,
@@ -25,8 +24,7 @@ import { AgentConfigFormDialog } from './agent-config-form-dialog.js';
 
 export interface AgentConfig {
 	id: number;
-	orgId: string | null;
-	projectId: string | null;
+	projectId: string;
 	agentType: string;
 	model: string | null;
 	maxIterations: number | null;
@@ -34,10 +32,7 @@ export interface AgentConfig {
 	maxConcurrency: number | null;
 }
 
-export function AgentConfigsTable({
-	configs,
-	isGlobalScope = false,
-}: { configs: AgentConfig[]; isGlobalScope?: boolean }) {
+export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 	const queryClient = useQueryClient();
 	const [editConfig, setEditConfig] = useState<AgentConfig | null>(null);
 	const [deleteConfigId, setDeleteConfigId] = useState<number | null>(null);
@@ -45,13 +40,10 @@ export function AgentConfigsTable({
 	const deleteMutation = useMutation({
 		mutationFn: (id: number) => trpcClient.agentConfigs.delete.mutate({ id }),
 		onSuccess: () => {
-			if (isGlobalScope) {
-				queryClient.invalidateQueries({
-					queryKey: trpc.agentConfigs.listGlobal.queryOptions().queryKey,
-				});
-			} else {
-				queryClient.invalidateQueries({ queryKey: trpc.agentConfigs.list.queryOptions().queryKey });
-			}
+			queryClient.invalidateQueries({
+				queryKey: trpc.agentConfigs.list.queryOptions({ projectId: configs[0]?.projectId ?? '' })
+					.queryKey,
+			});
 			setDeleteConfigId(null);
 		},
 	});
@@ -67,14 +59,13 @@ export function AgentConfigsTable({
 							<TableHead className="hidden md:table-cell">Max Iterations</TableHead>
 							<TableHead className="hidden md:table-cell">Max Concurrency</TableHead>
 							<TableHead className="hidden md:table-cell">Engine</TableHead>
-							<TableHead>Scope</TableHead>
 							<TableHead className="w-20" />
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{configs.length === 0 && (
 							<TableRow>
-								<TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+								<TableCell colSpan={6} className="text-center text-muted-foreground py-8">
 									No agent configs yet
 								</TableCell>
 							</TableRow>
@@ -90,15 +81,6 @@ export function AgentConfigsTable({
 									{config.maxConcurrency ?? '-'}
 								</TableCell>
 								<TableCell className="hidden md:table-cell">{config.agentEngine ?? '-'}</TableCell>
-								<TableCell>
-									{config.projectId ? (
-										<Badge variant="outline">Project</Badge>
-									) : config.orgId ? (
-										<Badge variant="secondary">Org</Badge>
-									) : (
-										<Badge variant="default">Global</Badge>
-									)}
-								</TableCell>
 								<TableCell>
 									<div className="flex gap-1">
 										<button
@@ -152,7 +134,6 @@ export function AgentConfigsTable({
 					open={true}
 					onOpenChange={(open) => !open && setEditConfig(null)}
 					config={editConfig}
-					isGlobalScope={isGlobalScope}
 				/>
 			)}
 		</>
