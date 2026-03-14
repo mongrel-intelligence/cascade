@@ -153,4 +153,16 @@ export interface AgentEngine {
 	 * Engines that pass the model through unchanged (e.g., LLMist) do not need to implement it.
 	 */
 	resolveModel?(cascadeModel: string): string;
+	/**
+	 * Optional hook called by the adapter before engine.execute().
+	 * Use for engine-specific environment setup (e.g., writing auth files, checking directories).
+	 * LLMist does not implement this hook.
+	 */
+	beforeExecute?(plan: AgentExecutionPlan): Promise<void>;
+	/**
+	 * Optional hook called by the adapter after engine.execute(), in a finally block.
+	 * Use for engine-specific cleanup (e.g., removing temp files, killing subprocesses).
+	 * LLMist does not implement this hook.
+	 */
+	afterExecute?(plan: AgentExecutionPlan, result: AgentEngineResult): Promise<void>;
 }

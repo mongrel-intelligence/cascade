@@ -476,12 +476,56 @@ async function captureRefreshedToken(
 export class CodexEngine implements AgentEngine {
 	readonly definition = CODEX_ENGINE_DEFINITION;
 
+	/** Stores the original auth JSON so afterExecute can detect token refreshes. */
+	private _originalAuthJson: string | undefined;
+	/** True when beforeExecute has been called (adapter lifecycle is active). */
+	private _adapterLifecycleActive = false;
+
 	supportsAgentType(_agentType: string): boolean {
 		return true;
 	}
 
 	resolveModel(cascadeModel: string): string {
 		return resolveCodexModel(cascadeModel);
+	}
+
+	async beforeExecute(plan: AgentExecutionPlan): Promise<void> {
+		this._adapterLifecycleActive = true;
+		this._originalAuthJson = await writeCodexAuthFile(plan.projectSecrets, plan.logWriter);
+	}
+
+	async afterExecute(plan: AgentExecutionPlan, _result: AgentEngineResult): Promise<void> {
+		await captureRefreshedToken(plan.project.orgId, this._originalAuthJson, plan.logWriter);
+		await cleanupContextFiles(plan.repoDir);
+		this._originalAuthJson = undefined;
+		this._adapterLifecycleActive = false;
+	}
+
+	/** Remove temp file created by execute() — best-effort, ignores errors. */
+	private static _cleanupLastMessagePath(path: string): void {
+		if (existsSync(path)) {
+			try {
+				unlinkSync(path);
+			} catch {
+				// Best-effort cleanup
+			}
+		}
+	}
+
+	/** Cleanup called from execute() finally block when adapter lifecycle is not active. */
+	private async _directCallCleanup(
+		repoDir: string,
+		orgId: string | undefined,
+		originalAuthJson: string | undefined,
+		logWriter: AgentExecutionPlan['logWriter'],
+		hasOffloadedContext: boolean,
+	): Promise<void> {
+		if (hasOffloadedContext) {
+			await cleanupContextFiles(repoDir);
+		}
+		if (orgId) {
+			await captureRefreshedToken(orgId, originalAuthJson, logWriter);
+		}
 	}
 
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
@@ -501,7 +545,11 @@ export class CodexEngine implements AgentEngine {
 		const settings = resolveCodexSettings(input.project, input.nativeToolCapabilities);
 		assertHeadlessCodexSettings(settings);
 
-		const originalAuthJson = await writeCodexAuthFile(input.projectSecrets, input.logWriter);
+		// When called via adapter, beforeExecute already wrote the auth file.
+		// When called directly (e.g. tests), write it here for backward compatibility.
+		const originalAuthJson = this._adapterLifecycleActive
+			? this._originalAuthJson
+			: await writeCodexAuthFile(input.projectSecrets, input.logWriter);
 
 		// Strip CODEX_AUTH_JSON from env — it's written to disk, not passed to the subprocess
 		const strippedSecrets: Record<string, string> | undefined = input.projectSecrets
@@ -656,17 +704,18 @@ export class CodexEngine implements AgentEngine {
 				prEvidence,
 			};
 		} finally {
-			if (existsSync(lastMessagePath)) {
-				try {
-					unlinkSync(lastMessagePath);
-				} catch {
-					// Best-effort cleanup
-				}
+			CodexEngine._cleanupLastMessagePath(lastMessagePath);
+			// When called directly (not via adapter), afterExecute won't be invoked.
+			// Perform cleanup here so direct callers (e.g. tests) still behave correctly.
+			if (!this._adapterLifecycleActive) {
+				await this._directCallCleanup(
+					input.repoDir,
+					input.project.orgId,
+					originalAuthJson,
+					input.logWriter,
+					hasOffloadedContext,
+				);
 			}
-			if (hasOffloadedContext) {
-				await cleanupContextFiles(input.repoDir);
-			}
-			await captureRefreshedToken(input.project.orgId, originalAuthJson, input.logWriter);
 		}
 	}
 }
