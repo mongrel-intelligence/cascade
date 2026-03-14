@@ -1,4 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mockGitHubClientModule, mockTriggerCheckModule } from '../../helpers/sharedMocks.js';
+
+vi.mock('../../../src/triggers/config-resolver.js', () => ({
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
+
+vi.mock('../../../src/github/client.js', () => mockGitHubClientModule);
+
 import {
 	CheckSuiteSuccessTrigger,
 	recentlyDispatched,
@@ -7,24 +18,6 @@ import { ReviewRequestedTrigger } from '../../../src/triggers/github/review-requ
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
 import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
-
-vi.mock('../../../src/triggers/config-resolver.js', () => ({
-	isTriggerEnabled: vi.fn().mockResolvedValue(true),
-	getTriggerParameters: vi.fn().mockResolvedValue({}),
-}));
-
-vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
-	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
-	checkTriggerEnabledWithParams: vi.fn().mockResolvedValue({ enabled: true, parameters: {} }),
-}));
-
-vi.mock('../../../src/github/client.js', () => ({
-	githubClient: {
-		getPR: vi.fn(),
-		getPRReviews: vi.fn(),
-		getCheckSuiteStatus: vi.fn(),
-	},
-}));
 
 import { githubClient } from '../../../src/github/client.js';
 

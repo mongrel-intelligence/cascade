@@ -1,21 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
+import { mockLogger, mockTriggerCheckModule } from '../../helpers/sharedMocks.js';
 
-vi.mock('../../../src/utils/logging.js', () => ({
-	logger: {
-		info: vi.fn(),
-		warn: vi.fn(),
-		error: vi.fn(),
-		debug: vi.fn(),
-	},
-}));
+vi.mock('../../../src/utils/logging.js', () => ({ logger: mockLogger }));
 
 vi.mock('../../../src/triggers/config-resolver.js', () => ({
 	isTriggerEnabled: vi.fn().mockResolvedValue(true),
 	getTriggerParameters: vi.fn().mockResolvedValue({}),
 }));
-vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
-	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
-}));
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
 
 // Mocks required for PM integration registration (pm/index.js side-effect)
 vi.mock('../../../src/config/provider.js', () => ({

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mockConfigProvider, mockLogger, mockWithGitHubToken } from '../../helpers/sharedMocks.js';
 
 // Mock all external dependencies
 vi.mock('../../../src/agents/shared/repository.js', () => ({
@@ -58,21 +59,13 @@ vi.mock('../../../src/config/customModels.js', () => ({
 	CUSTOM_MODELS: [],
 }));
 
-vi.mock('../../../src/utils/logging.js', () => ({
-	logger: {
-		info: vi.fn(),
-		warn: vi.fn(),
-		error: vi.fn(),
-	},
-}));
+vi.mock('../../../src/utils/logging.js', () => ({ logger: mockLogger }));
 
 vi.mock('../../../src/config/provider.js', () => ({
-	getAllProjectCredentials: vi.fn(),
+	getAllProjectCredentials: mockConfigProvider.getAllProjectCredentials,
 }));
 
-vi.mock('../../../src/github/client.js', () => ({
-	withGitHubToken: vi.fn((_token: string, fn: () => Promise<unknown>) => fn()),
-}));
+vi.mock('../../../src/github/client.js', () => ({ withGitHubToken: mockWithGitHubToken }));
 
 vi.mock('../../../src/agents/definitions/profiles.js', () => ({
 	getAgentProfile: vi.fn(),
