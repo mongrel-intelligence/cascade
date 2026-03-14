@@ -133,6 +133,7 @@ async function buildExecutionPlan(
 	gitHubToken: string | undefined,
 	isGitHubAck: boolean,
 	engineId: string,
+	engine: AgentEngine,
 ): Promise<
 	Omit<AgentExecutionPlan, 'progressReporter'> & {
 		reviewSidecarPath?: string;
@@ -173,7 +174,7 @@ async function buildExecutionPlan(
 	const {
 		systemPrompt,
 		taskPrompt: taskPromptOverride,
-		model,
+		model: rawModel,
 		maxIterations,
 		contextFiles,
 	} = await resolveModelConfig({
@@ -185,6 +186,9 @@ async function buildExecutionPlan(
 		dbPartials,
 		agentInput: input,
 	});
+
+	// Allow the engine to resolve/validate the model string (e.g. strip provider prefix)
+	const model = engine.resolveModel ? engine.resolveModel(rawModel) : rawModel;
 
 	const profile = await getAgentProfile(agentType);
 
@@ -412,6 +416,7 @@ async function resolvePartialExecutionPlan(
 			gitHubToken,
 			isGitHubAck,
 			engine.definition.id,
+			engine,
 		);
 
 	const partialInput = gitHubToken

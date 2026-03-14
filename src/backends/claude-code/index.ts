@@ -456,6 +456,10 @@ export class ClaudeCodeEngine implements AgentEngine {
 		return true;
 	}
 
+	resolveModel(cascadeModel: string): string {
+		return resolveClaudeModel(cascadeModel);
+	}
+
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const startTime = Date.now();
 		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools);
@@ -464,6 +468,11 @@ export class ClaudeCodeEngine implements AgentEngine {
 			input.contextInjections,
 			input.repoDir,
 		);
+		// Resolve model again here for backward compatibility: execute() may be called
+		// directly (e.g. in tests) without going through the adapter, so we cannot rely
+		// solely on the adapter's engine.resolveModel() pre-resolution. Since
+		// resolveClaudeModel() is idempotent, calling it twice via the normal adapter path
+		// is safe.
 		const model = resolveClaudeModel(input.model);
 
 		input.logWriter('INFO', 'Starting Claude Code SDK execution', {
