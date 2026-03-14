@@ -8,12 +8,12 @@ export interface ResolvedCodexSettings
 }
 
 function getDefaultsFromCapabilities(
-	nativeToolCapabilities?: string[],
+	_nativeToolCapabilities?: string[],
 ): Pick<ResolvedCodexSettings, 'sandboxMode'> {
-	const canWrite = nativeToolCapabilities?.includes('fs:write') ?? false;
-	return {
-		sandboxMode: canWrite ? 'workspace-write' : 'read-only',
-	};
+	// Default to full access — Codex always runs inside an ephemeral Docker
+	// container, so network/filesystem isolation is enforced at the container
+	// level rather than by Codex's own sandbox.
+	return { sandboxMode: 'danger-full-access' };
 }
 
 export function resolveCodexSettings(

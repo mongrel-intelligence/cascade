@@ -291,14 +291,28 @@ describe('extractUsage', () => {
 });
 
 describe('resolveCodexSettings', () => {
-	it('defaults to read-only when agent cannot write', () => {
-		const input = makeInput({
-			nativeToolCapabilities: ['fs:read'],
-		});
-
-		expect(resolveCodexSettings(input.project, input.nativeToolCapabilities)).toEqual({
+	it('defaults to danger-full-access regardless of capabilities (Docker provides isolation)', () => {
+		expect(resolveCodexSettings(makeInput({ nativeToolCapabilities: [] }).project, [])).toEqual({
 			approvalPolicy: 'never',
-			sandboxMode: 'read-only',
+			sandboxMode: 'danger-full-access',
+			webSearch: false,
+			reasoningEffort: undefined,
+		});
+		expect(
+			resolveCodexSettings(makeInput({ nativeToolCapabilities: ['fs:read'] }).project, ['fs:read']),
+		).toEqual({
+			approvalPolicy: 'never',
+			sandboxMode: 'danger-full-access',
+			webSearch: false,
+			reasoningEffort: undefined,
+		});
+		expect(
+			resolveCodexSettings(makeInput({ nativeToolCapabilities: ['fs:write'] }).project, [
+				'fs:write',
+			]),
+		).toEqual({
+			approvalPolicy: 'never',
+			sandboxMode: 'danger-full-access',
 			webSearch: false,
 			reasoningEffort: undefined,
 		});
