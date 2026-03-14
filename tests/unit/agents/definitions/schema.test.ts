@@ -11,7 +11,7 @@ import {
 // TriggerParameterSchema Tests
 // ============================================================================
 
-describe('TriggerParameterSchema', () => {
+describe.concurrent('TriggerParameterSchema', () => {
 	it('parses a valid string parameter', () => {
 		const param = {
 			name: 'senderEmail',
@@ -113,7 +113,7 @@ describe('TriggerParameterSchema', () => {
 // SupportedTriggerSchema Tests
 // ============================================================================
 
-describe('SupportedTriggerSchema', () => {
+describe.concurrent('SupportedTriggerSchema', () => {
 	it('parses a valid trigger with event format pm:status-changed', () => {
 		const trigger = {
 			event: 'pm:status-changed',
@@ -215,7 +215,7 @@ describe('SupportedTriggerSchema', () => {
 // KnownProviderSchema Tests
 // ============================================================================
 
-describe('KnownProviderSchema', () => {
+describe.concurrent('KnownProviderSchema', () => {
 	it('accepts trello', () => {
 		expect(KnownProviderSchema.safeParse('trello').success).toBe(true);
 	});
@@ -240,7 +240,7 @@ describe('KnownProviderSchema', () => {
 // IntegrationRequirementsSchema Tests
 // ============================================================================
 
-describe('IntegrationRequirementsSchema', () => {
+describe.concurrent('IntegrationRequirementsSchema', () => {
 	it('parses valid integration requirements', () => {
 		const requirements = {
 			required: ['pm'],
@@ -294,7 +294,7 @@ describe('IntegrationRequirementsSchema', () => {
 // AgentDefinitionSchema Tests
 // ============================================================================
 
-describe('AgentDefinitionSchema', () => {
+describe.concurrent('AgentDefinitionSchema', () => {
 	const validDefinition = {
 		identity: {
 			emoji: '🔧',

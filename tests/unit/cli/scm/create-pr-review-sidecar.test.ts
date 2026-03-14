@@ -40,6 +40,7 @@ vi.mock('../../../../src/cli/base.js', () => ({
 	CredentialScopedCommand: class {
 		log = vi.fn();
 		parse = vi.fn();
+		exit = vi.fn();
 	},
 	resolveOwnerRepo: vi.fn((owner: string, repo: string) => ({ owner, repo })),
 }));
@@ -124,8 +125,11 @@ describe('CreatePRReviewCommand sidecar write', () => {
 			nonExistentFlags: {},
 		} as never);
 
-		await expect(cmd.execute()).rejects.toThrow('GitHub API error');
-
+		await cmd.execute();
+		expect(vi.mocked(cmd.log)).toHaveBeenCalledWith(
+			JSON.stringify({ success: false, error: 'GitHub API error' }),
+		);
+		expect(vi.mocked(cmd.exit)).toHaveBeenCalledWith(1);
 		expect(existsSync(sidecarPath)).toBe(false);
 	});
 

@@ -6,7 +6,7 @@ import {
 	logLLMMetrics,
 } from '../../../src/utils/llmMetrics.js';
 
-describe('llmMetrics', () => {
+describe.concurrent('llmMetrics', () => {
 	describe('calculateCost', () => {
 		it('calculates cost for known model', () => {
 			const cost = calculateCost('gemini:gemini-2.5-flash', {

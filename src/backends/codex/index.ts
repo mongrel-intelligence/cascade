@@ -34,6 +34,7 @@ type ParsedCodexEvent = {
 type UsageSummary = {
 	inputTokens?: number;
 	outputTokens?: number;
+	cachedTokens?: number;
 	costUsd?: number;
 };
 type CodexLineContext = {
@@ -75,14 +76,32 @@ function extractTextFromContentParts(candidate: unknown): string[] {
 	return parts;
 }
 
+/** Extracts text from an item.completed message item (Responses API). */
+function extractItemText(item: unknown): string[] {
+	if (!item || typeof item !== 'object') return [];
+	const rec = item as JsonRecord;
+	// agent_message items carry text directly
+	if (rec.type === 'agent_message' && typeof rec.text === 'string' && rec.text.trim()) {
+		return [rec.text];
+	}
+	return 'content' in rec ? extractTextFromContentParts(rec.content) : [];
+}
+
+/** Extracts text from a delta field (either a plain string or a text_delta object). */
+function extractDeltaText(delta: unknown): string[] {
+	if (typeof delta === 'string' && delta.trim()) return [delta];
+	if (delta && typeof delta === 'object' && !Array.isArray(delta)) {
+		const rec = delta as JsonRecord;
+		if (typeof rec.text === 'string' && rec.text.trim()) return [rec.text];
+	}
+	return [];
+}
+
 function extractTextParts(event: JsonRecord): string[] {
 	const parts: string[] = [];
-	const directFields: unknown[] = [event.text, event.delta];
 
-	for (const field of directFields) {
-		if (typeof field === 'string' && field.trim()) {
-			parts.push(field);
-		}
+	if (typeof event.text === 'string' && event.text.trim()) {
+		parts.push(event.text);
 	}
 
 	parts.push(...extractTextFromContentParts(event.content));
@@ -90,10 +109,38 @@ function extractTextParts(event: JsonRecord): string[] {
 
 	const message = event.message;
 	if (message && typeof message === 'object' && 'content' in message) {
-		parts.push(...extractTextFromContentParts(message.content));
+		parts.push(...extractTextFromContentParts((message as JsonRecord).content));
 	}
 
+	// Case: item.completed → { item: { type: 'message', content: [...] } }
+	parts.push(...extractItemText(event.item));
+
+	// Case: item.delta → { delta: { type: 'text_delta', text: '...' } }
+	parts.push(...extractDeltaText(event.delta));
+
 	return parts;
+}
+
+/** Parses a Responses API function_call or command_execution item into a ToolCall. */
+function parseFunctionCallItem(item: unknown): ToolCall | null {
+	if (!item || typeof item !== 'object') return null;
+	const rec = item as JsonRecord;
+	// command_execution items are bash tool calls
+	if (rec.type === 'command_execution' && typeof rec.command === 'string') {
+		return { name: 'bash', input: { command: rec.command } };
+	}
+	if (rec.type !== 'function_call' || typeof rec.name !== 'string' || !rec.name) return null;
+	let input: Record<string, unknown> | undefined;
+	if (typeof rec.arguments === 'string') {
+		try {
+			input = JSON.parse(rec.arguments) as Record<string, unknown>;
+		} catch {
+			/* ignore malformed JSON arguments */
+		}
+	} else if (rec.arguments && typeof rec.arguments === 'object') {
+		input = rec.arguments as Record<string, unknown>;
+	}
+	return { name: rec.name, input };
 }
 
 function extractToolCall(event: JsonRecord): ToolCall | null {
@@ -116,12 +163,25 @@ function extractToolCall(event: JsonRecord): ToolCall | null {
 		};
 	}
 
-	return null;
+	// Case: item.completed → { item: { type: 'function_call', name: '...', arguments: '...' } }
+	return parseFunctionCallItem(event.item);
+}
+
+/** Resolves the usage record from flat event fields or nested response.usage (Responses API). */
+function resolveUsageRecord(event: JsonRecord): JsonRecord | undefined {
+	if (event.usage && typeof event.usage === 'object') return event.usage as JsonRecord;
+	if (event.token_usage && typeof event.token_usage === 'object')
+		return event.token_usage as JsonRecord;
+	const response = event.response;
+	if (response && typeof response === 'object') {
+		const r = response as JsonRecord;
+		if (r.usage && typeof r.usage === 'object') return r.usage as JsonRecord;
+	}
+	return undefined;
 }
 
 function extractUsage(event: JsonRecord): UsageSummary | null {
-	const usage =
-		(event.usage as JsonRecord | undefined) ?? (event.token_usage as JsonRecord | undefined);
+	const usage = resolveUsageRecord(event);
 	const inputTokens =
 		typeof usage?.input_tokens === 'number'
 			? usage.input_tokens
@@ -134,6 +194,8 @@ function extractUsage(event: JsonRecord): UsageSummary | null {
 			: typeof usage?.outputTokens === 'number'
 				? usage.outputTokens
 				: undefined;
+	const cachedTokens =
+		typeof usage?.cached_input_tokens === 'number' ? usage.cached_input_tokens : undefined;
 	const costUsd =
 		typeof event.total_cost_usd === 'number'
 			? event.total_cost_usd
@@ -144,7 +206,7 @@ function extractUsage(event: JsonRecord): UsageSummary | null {
 					: undefined;
 
 	return inputTokens !== undefined || outputTokens !== undefined || costUsd !== undefined
-		? { inputTokens, outputTokens, costUsd }
+		? { inputTokens, outputTokens, cachedTokens, costUsd }
 		: null;
 }
 
@@ -197,7 +259,7 @@ function trackUsage(context: CodexLineContext, responseLine: string, usage: Usag
 		response: responseLine,
 		inputTokens: usage.inputTokens,
 		outputTokens: usage.outputTokens,
-		cachedTokens: undefined,
+		cachedTokens: usage.cachedTokens,
 		costUsd: usage.costUsd,
 		durationMs: undefined,
 		model: context.model,
@@ -210,11 +272,43 @@ function trackUsage(context: CodexLineContext, responseLine: string, usage: Usag
 	});
 }
 
+/**
+ * Handles structural turn/thread/item lifecycle events.
+ * Returns true if the event was fully handled and no further processing is needed.
+ */
+async function handleStructuralEvent(
+	context: CodexLineContext,
+	responseLine: string,
+	parsed: JsonRecord,
+	eventType: string,
+): Promise<boolean> {
+	if (eventType === 'turn.completed') {
+		await trackIteration(context);
+		const usage = extractUsage(parsed);
+		if (usage) trackUsage(context, responseLine, usage);
+		return true;
+	}
+	if (eventType === 'turn.started' || eventType === 'thread.started') {
+		return true;
+	}
+	if (eventType === 'item.started') {
+		context.input.logWriter('DEBUG', 'Codex item started', {
+			itemType: (parsed.item as JsonRecord | undefined)?.type ?? '(unknown)',
+		});
+		return true;
+	}
+	return false;
+}
+
 async function handleParsedLine(
 	context: CodexLineContext,
 	responseLine: string,
 	parsed: JsonRecord,
 ): Promise<void> {
+	const eventType = typeof parsed.type === 'string' ? parsed.type : '';
+
+	if (await handleStructuralEvent(context, responseLine, parsed, eventType)) return;
+
 	const { textParts, toolCall, usage, error } = parseCodexEvent(parsed);
 
 	if (textParts.length > 0 || toolCall) {
@@ -226,10 +320,15 @@ async function handleParsedLine(
 	}
 
 	if (toolCall) {
+		context.input.logWriter('DEBUG', 'Codex tool call', {
+			name: toolCall.name,
+			input: toolCall.input,
+		});
 		context.input.progressReporter.onToolCall(toolCall.name, toolCall.input);
 	}
 
 	if (usage) {
+		context.input.logWriter('DEBUG', 'Codex usage', { usage });
 		trackUsage(context, responseLine, usage);
 	}
 
@@ -241,6 +340,9 @@ async function handleParsedLine(
 	if (textParts.length === 0 && !toolCall && !usage && !error) {
 		context.input.logWriter('DEBUG', 'Unrecognized Codex event type — no fields extracted', {
 			type: typeof parsed.type === 'string' ? parsed.type : '(none)',
+			item: parsed.item ?? null,
+			delta: parsed.delta ?? null,
+			event: parsed,
 		});
 	}
 }
@@ -302,7 +404,7 @@ export function buildArgs(
 		args.push('-c', `model_reasoning_effort=${tomlString(settings.reasoningEffort)}`);
 	}
 	if (settings.webSearch) {
-		args.push('-c', 'search=true');
+		args.push('--enable', 'web_search');
 	}
 	args.push('-');
 
@@ -483,6 +585,8 @@ export class CodexEngine implements AgentEngine {
 					const text = chunk.toString();
 					stderrChunks.push(text);
 					appendEngineLog(input.engineLogPath, text);
+					const trimmed = text.trim();
+					if (trimmed) input.logWriter('DEBUG', 'Codex stderr', { stderr: trimmed });
 				});
 
 				child.stdin.write(prompt);
@@ -515,6 +619,13 @@ export class CodexEngine implements AgentEngine {
 						authoritative: false,
 					}
 				: undefined;
+
+			input.logWriter('DEBUG', 'Codex process exited', {
+				exitCode,
+				iterationCount,
+				llmCallCount,
+				finalOutputLength: finalOutput.length,
+			});
 
 			if (stderrOutput) {
 				input.logWriter('WARN', 'Codex stderr output', { stderr: stderrOutput });
@@ -561,4 +672,4 @@ export class CodexEngine implements AgentEngine {
 	}
 }
 
-export { resolveCodexModel, extractErrorMessage, extractToolCall };
+export { resolveCodexModel, extractErrorMessage, extractToolCall, extractTextParts, extractUsage };

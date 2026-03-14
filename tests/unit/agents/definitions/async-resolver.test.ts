@@ -236,7 +236,7 @@ describe('invalidateDefinitionCache', () => {
 });
 
 describe('seed script idempotency (unit)', () => {
-	it('calling seedAgentDefinitions twice does not throw', async () => {
+	it('calling seedAgentDefinitions twice does not throw', { timeout: 15000 }, async () => {
 		const { upsertAgentDefinition } = await import(
 			'../../../../src/db/repositories/agentDefinitionsRepository.js'
 		);

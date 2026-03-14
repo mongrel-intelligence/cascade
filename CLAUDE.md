@@ -90,6 +90,8 @@ Optional (infrastructure):
 - `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled)
 - `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code backend (subscription auth)
 - `CREDENTIAL_MASTER_KEY` - 64-char hex string (32-byte AES-256 key) for encrypting credentials at rest. Generate with `npm run credentials:generate-key`. When set, all new/updated credentials are encrypted automatically; existing plaintext credentials continue to work.
+- `WEBHOOK_CALLBACK_BASE_URL` - Base URL for webhook callbacks (e.g., `https://cascade.example.com`). Used by `tools/setup-webhooks.ts` and the `cascade webhooks create` CLI command to construct the full webhook URL.
+- `GITHUB_WEBHOOK_SECRET` - Optional HMAC secret for GitHub webhook signature verification. When set as an integration credential (`webhook_secret` role on the GitHub SCM integration), all newly created GitHub webhooks will include the secret so GitHub signs each delivery. The router then verifies the `X-Hub-Signature-256` header on incoming payloads.
 - `SENTRY_DSN` - Sentry DSN for error monitoring (router + worker)
 - `SENTRY_ENVIRONMENT` - Sentry environment tag (default: NODE_ENV or 'production')
 - `SENTRY_RELEASE` - Release identifier for source maps (e.g., git SHA)
@@ -187,6 +189,34 @@ cascade projects integration-credential-set <project-id> --category scm --role r
 - `respond-to-review` ONLY fires when the **reviewer** persona submits a `changes_requested` review
 - `respond-to-pr-comment` skips @mentions from **any** known persona
 - `check-suite-success` checks reviews from the **reviewer** persona specifically
+
+### Webhook Signature Verification
+
+CASCADE supports opt-in HMAC-SHA256 signature verification for GitHub webhook payloads.
+
+#### How it works
+
+1. Store a `GITHUB_WEBHOOK_SECRET` credential (any strong random string) as an integration credential with role `webhook_secret` on the project's GitHub SCM integration:
+
+```bash
+cascade credentials create --name "GitHub Webhook Secret" --key GITHUB_WEBHOOK_SECRET --value <random-secret>
+cascade projects integration-credential-set <project-id> --category scm --role webhook_secret --credential-id <id>
+```
+
+2. Create (or recreate) the GitHub webhook — CASCADE will automatically include the secret in the Octokit `createWebhook` call:
+
+```bash
+cascade webhooks create <project-id> [--callback-url URL]
+# or via the setup tool:
+npx tsx tools/setup-webhooks.ts create <project-id> <callback-base-url>
+```
+
+3. GitHub will then sign every webhook delivery with `X-Hub-Signature-256`. The CASCADE router verifies this signature before processing the payload, rejecting requests with invalid or missing signatures.
+
+#### Backwards compatibility
+
+- If no `webhook_secret` credential is configured, webhook creation behaves exactly as before (no secret, no signature verification).
+- Existing webhooks created without a secret continue to work — signature verification is only applied when a secret is present in the project credentials.
 
 ### Integration Credential Resolution
 

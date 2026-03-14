@@ -100,7 +100,11 @@ function setupJiraProjectContext() {
 	});
 }
 
-function setupProjectContext(opts?: { noTrello?: boolean; noGithub?: boolean }) {
+function setupProjectContext(opts?: {
+	noTrello?: boolean;
+	noGithub?: boolean;
+	webhookSecret?: string;
+}) {
 	mockDbSelect.mockReturnValue({ from: mockDbFrom });
 	mockDbFrom.mockReturnValue({ where: mockDbWhere });
 	mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
@@ -112,6 +116,9 @@ function setupProjectContext(opts?: { noTrello?: boolean; noGithub?: boolean }) 
 	}
 	if (!opts?.noGithub) {
 		creds.GITHUB_TOKEN_IMPLEMENTER = 'ghp_test123';
+	}
+	if (opts?.webhookSecret) {
+		creds.GITHUB_WEBHOOK_SECRET = opts.webhookSecret;
 	}
 	mockGetAllProjectCredentials.mockResolvedValue(creds);
 }
@@ -762,6 +769,63 @@ describe('webhooksRouter', () => {
 			expect(mockListWebhooks).toHaveBeenCalled();
 			expect(result.github).toHaveLength(1);
 			expect(result.github[0].id).toBe(5);
+		});
+
+		it('passes webhook secret to GitHub when GITHUB_WEBHOOK_SECRET credential is set', async () => {
+			setupProjectContext({ noTrello: true, webhookSecret: 'my-hmac-secret' });
+
+			mockListWebhooks.mockResolvedValue({ data: [] });
+			mockCreateWebhook.mockResolvedValue({
+				data: {
+					id: 55,
+					config: { url: 'http://example.com/github/webhook' },
+					events: ['pull_request'],
+					active: true,
+				},
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.create({
+				projectId: 'my-project',
+				callbackBaseUrl: 'http://example.com',
+			});
+
+			expect(mockCreateWebhook).toHaveBeenCalledWith(
+				expect.objectContaining({
+					config: expect.objectContaining({
+						secret: 'my-hmac-secret',
+					}),
+				}),
+			);
+		});
+
+		it('omits secret from GitHub webhook when no GITHUB_WEBHOOK_SECRET credential', async () => {
+			setupProjectContext({ noTrello: true });
+
+			mockListWebhooks.mockResolvedValue({ data: [] });
+			mockCreateWebhook.mockResolvedValue({
+				data: {
+					id: 56,
+					config: { url: 'http://example.com/github/webhook' },
+					events: ['pull_request'],
+					active: true,
+				},
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.create({
+				projectId: 'my-project',
+				callbackBaseUrl: 'http://example.com',
+			});
+
+			// secret should not be in the config at all
+			expect(mockCreateWebhook).toHaveBeenCalledWith(
+				expect.objectContaining({
+					config: expect.not.objectContaining({
+						secret: expect.anything(),
+					}),
+				}),
+			);
 		});
 
 		it('create uses oneTimeTokens for github', async () => {

@@ -293,6 +293,17 @@ if pg_isready -q 2>/dev/null; then
   log_info "Running migrations on cascade_test..."
   DATABASE_URL="$TEST_DB_URL" DATABASE_SSL=false npm run db:migrate 2>&1 || \
     log_warn "Migration failed on cascade_test - may need manual intervention"
+
+  # Write TEST_DATABASE_URL to .cascade/env so resolveTestDbUrl() picks up the
+  # local postgres in worker containers where Docker is unavailable.
+  touch .cascade/env
+  if [ "$OS" = "macos" ]; then
+    sed -i '' '/^TEST_DATABASE_URL=/d' .cascade/env
+  else
+    sed -i '/^TEST_DATABASE_URL=/d' .cascade/env
+  fi
+  echo "TEST_DATABASE_URL=${TEST_DB_URL}" >> .cascade/env
+  log_info "Wrote TEST_DATABASE_URL to .cascade/env: ${TEST_DB_URL}"
 else
   log_warn "PostgreSQL not ready, skipping migrations"
 fi
