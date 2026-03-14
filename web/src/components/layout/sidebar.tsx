@@ -17,7 +17,7 @@ import {
 	Users,
 	Zap,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface SidebarProps {
 	user: { name: string; email: string; role: string } | undefined;
@@ -78,6 +78,13 @@ interface ProjectNavItemProps {
 function ProjectNavItem({ project, currentPath }: ProjectNavItemProps) {
 	const activeProject = isProjectActive(currentPath, project.id);
 	const [isExpanded, setIsExpanded] = useState(activeProject);
+
+	// Sync expansion state when the active project changes due to URL navigation
+	useEffect(() => {
+		if (activeProject) {
+			setIsExpanded(true);
+		}
+	}, [activeProject]);
 
 	return (
 		<div>

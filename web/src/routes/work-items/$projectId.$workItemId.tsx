@@ -32,12 +32,12 @@ function WorkItemRunsPage() {
 		<div className="space-y-6">
 			<div className="flex flex-wrap items-center gap-2">
 				<Link
-					to="/projects/$projectId/general"
+					to="/projects/$projectId/work"
 					params={{ projectId }}
 					className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
 				>
 					<ArrowLeft className="h-4 w-4" />
-					Project
+					Work
 				</Link>
 				<span className="text-muted-foreground">/</span>
 				<h1 className="text-xl font-bold">Work Item Runs</h1>
