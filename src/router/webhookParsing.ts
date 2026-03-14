@@ -12,8 +12,11 @@ export type PayloadParseResult =
 /**
  * Parse a GitHub webhook payload, handling both JSON and
  * application/x-www-form-urlencoded content types.
- * For JSON content type, reads raw text first so rawBody is preserved for
+ * For both content types, reads raw text first so rawBody is preserved for
  * HMAC signature verification.
+ * GitHub computes the HMAC over the raw HTTP body, so rawBody must reflect
+ * the exact bytes sent by GitHub (the form-encoded string for urlencoded,
+ * the JSON string for JSON delivery).
  */
 export async function parseGitHubWebhookPayload(
 	c: Context,
@@ -21,10 +24,12 @@ export async function parseGitHubWebhookPayload(
 ): Promise<PayloadParseResult> {
 	try {
 		if (contentType.includes('application/x-www-form-urlencoded')) {
-			const formData = await c.req.parseBody();
-			const payloadStr = formData.payload;
+			// Read raw body first so HMAC verification can use the exact bytes.
+			const rawBody = await c.req.text();
+			const params = new URLSearchParams(rawBody);
+			const payloadStr = params.get('payload');
 			if (typeof payloadStr === 'string') {
-				return { ok: true, payload: JSON.parse(payloadStr) };
+				return { ok: true, payload: JSON.parse(payloadStr), rawBody };
 			}
 			throw new Error('Missing payload field in form data');
 		}
