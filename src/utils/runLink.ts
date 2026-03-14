@@ -97,3 +97,39 @@ export function buildWorkItemRunsLink({
 	const label = parts ? `${parts} · [run details](${url})` : `[run details](${url})`;
 	return `\n\n---\n🕵️ ${label}`;
 }
+
+/**
+ * Build the run link footer by reading env vars injected by the secretBuilder
+ * for subprocess agents (claude-code/codex/opencode).
+ *
+ * The optional `workItemId` parameter is used as fallback when no runId is
+ * available (e.g. postComment gadget which knows the target work item).
+ *
+ * Returns empty string when run links are disabled or CASCADE_DASHBOARD_URL
+ * is unset — graceful no-op.
+ */
+export function buildRunLinkFooterFromEnv(workItemId?: string): string {
+	if (process.env.CASCADE_RUN_LINKS_ENABLED !== 'true') return '';
+	const dashboardUrl = getDashboardUrl();
+	if (!dashboardUrl) return '';
+
+	const runId = process.env.CASCADE_RUN_ID;
+	const engineLabel = process.env.CASCADE_ENGINE_LABEL ?? '';
+	const model = process.env.CASCADE_MODEL ?? '';
+	const projectId = process.env.CASCADE_PROJECT_ID ?? '';
+	const resolvedWorkItemId = workItemId ?? process.env.CASCADE_WORK_ITEM_ID ?? '';
+
+	if (runId) {
+		return buildRunLink({ dashboardUrl, runId, engineLabel, model });
+	}
+	if (projectId && resolvedWorkItemId) {
+		return buildWorkItemRunsLink({
+			dashboardUrl,
+			projectId,
+			workItemId: resolvedWorkItemId,
+			engineLabel,
+			model,
+		});
+	}
+	return '';
+}

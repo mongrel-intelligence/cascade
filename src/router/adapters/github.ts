@@ -68,6 +68,8 @@ async function postPMAck(
 /**
  * Post a GitHub PR acknowledgment comment using the agent-specific token.
  * Returns an AckResult, or undefined if not applicable.
+ *
+ * @param messageOverride — when provided, skips internal message generation and posts this text instead.
  */
 async function postGitHubPRAck(
 	repoFullName: string,
@@ -75,12 +77,13 @@ async function postGitHubPRAck(
 	payload: unknown,
 	agentType: string,
 	projectId: string,
+	messageOverride?: string,
 ): Promise<AckResult | undefined> {
 	const resolved = await resolveGitHubTokenForAckByAgent(repoFullName, agentType);
 	if (!resolved) return undefined;
 
 	const context = extractGitHubContext(payload, eventType);
-	const message = await generateAckMessage(agentType, context, projectId);
+	const message = messageOverride ?? (await generateAckMessage(agentType, context, projectId));
 	const tempJob = { eventType, repoFullName, payload } as GitHubJob;
 	const prNumber = extractPRNumber(tempJob);
 	if (!prNumber) return undefined;
@@ -276,31 +279,31 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 				return postPMAck(project.id, workItemId, project.pmType, agentType, message);
 			}
 
-			const ackResult = await postGitHubPRAck(
-				(event as GitHubParsedEvent).repoFullName,
-				event.eventType,
-				payload,
-				agentType,
-				project.id,
-			);
-
-			// For GitHub PR acks, append run link to the message if enabled
-			// (Note: the comment is already posted, we just update the returned message for reference)
-			if (ackResult && runLinksEnabled && event.workItemId) {
+			// Build the GitHub PR ack message with run link included before posting,
+			// so the actual comment on the PR contains the footer (not just internal metadata).
+			let githubAckMessage: string | undefined;
+			if (runLinksEnabled && event.workItemId) {
 				const dashboardUrl = getDashboardUrl();
 				if (dashboardUrl) {
+					const context = extractGitHubContext(payload, event.eventType);
+					const baseMessage = await generateAckMessage(agentType, context, project.id);
 					const link = buildWorkItemRunsLink({
 						dashboardUrl,
 						projectId: project.id,
 						workItemId: event.workItemId,
 					});
-					if (link) {
-						return { ...ackResult, message: (ackResult.message ?? '') + link };
-					}
+					githubAckMessage = link ? baseMessage + link : baseMessage;
 				}
 			}
 
-			return ackResult;
+			return postGitHubPRAck(
+				(event as GitHubParsedEvent).repoFullName,
+				event.eventType,
+				payload,
+				agentType,
+				project.id,
+				githubAckMessage,
+			);
 		} catch (err) {
 			logger.warn('GitHub ack comment failed (non-fatal)', { error: String(err) });
 		}
