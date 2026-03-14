@@ -327,10 +327,10 @@ bash tests/docker/claude-code-auth/run-test.sh
 
 ## Codex Backend
 
-CASCADE supports OpenAI's Codex CLI as an alternative agent engine. Configure it as the default or per-project via the `agent-engine` setting:
+CASCADE supports OpenAI's Codex CLI as an alternative agent engine. Configure it per-project via the `agent-engine` setting:
 
 ```bash
-cascade defaults set --agent-engine codex
+cascade projects update <project-id> --agent-engine codex
 ```
 
 ### Authentication
@@ -357,7 +357,7 @@ cascade credentials create \
   --default
 
 # 3. Set the engine (if not already done):
-cascade defaults set --agent-engine codex
+cascade projects update <project-id> --agent-engine codex
 ```
 
 CASCADE then:
@@ -506,10 +506,6 @@ cascade credentials create --name "Reviewer Bot" --key GITHUB_TOKEN_REVIEWER --v
 cascade credentials update <id> --value new-secret
 cascade credentials delete <id> --yes
 
-# Defaults
-cascade defaults show
-cascade defaults set --model claude-sonnet-4-5-20250929 --max-iterations 25 --agent-engine claude-code
-
 # Organization
 cascade org show
 cascade org update --name "My Org"
@@ -545,7 +541,6 @@ src/cli/dashboard/
 ├── projects/         # 13 commands
 ├── users/            # 4 commands
 ├── credentials/      # 4 commands
-├── defaults/         # 2 commands
 ├── org/              # 2 commands
 ├── agents/           # 4 commands
 └── webhooks/         # 3 commands

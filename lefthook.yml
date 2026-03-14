@@ -12,9 +12,9 @@ pre-push:
   parallel: true
   commands:
     test:
-      run: npm test || true
+      run: npm test
     test-integration:
-      run: npm run test:db:up && npm run test:integration || true
+      run: npm run test:db:up && npm run test:integration
 
 commit-msg:
   commands:

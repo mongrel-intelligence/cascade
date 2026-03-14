@@ -382,9 +382,7 @@ cascade webhooks list <project-id>
 cascade webhooks create <project-id> --callback-url https://...
 cascade webhooks delete <project-id>
 
-# Defaults and org
-cascade defaults show
-cascade defaults set --model claude-sonnet-4-5 --max-iterations 25
+# Organization
 cascade org show
 ```
 
