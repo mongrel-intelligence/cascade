@@ -59,7 +59,7 @@ npm run typecheck        # Type check
 
 ### Git Hooks
 
-Lefthook runs pre-commit (lint, typecheck) and pre-push (test) hooks automatically.
+Lefthook runs pre-commit (lint, typecheck) and pre-push (unit tests, integration tests) hooks automatically. The pre-push hook auto-starts an ephemeral PostgreSQL via Docker (`npm run test:db:up`) for integration tests — Docker must be running.
 
 ## Key Directories
 
