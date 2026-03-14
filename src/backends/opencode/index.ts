@@ -808,6 +808,11 @@ export class OpenCodeEngine implements AgentEngine {
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const settings = resolveOpenCodeSettings(input.project);
 		const agent = 'build' as const;
+		// Resolve model again here for backward compatibility: execute() may be called
+		// directly (e.g. in tests) without going through the adapter, so we cannot rely
+		// solely on the adapter's engine.resolveModel() pre-resolution. Since
+		// resolveOpenCodeModel() is idempotent, calling it twice via the normal adapter path
+		// is safe.
 		const model = resolveOpenCodeModel(input.model);
 		const config = buildConfig(input, model, settings);
 		const { prompt: taskPrompt, hasOffloadedContext } = await buildTaskPrompt(
