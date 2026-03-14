@@ -10,6 +10,16 @@ export interface DashboardUser {
 	role: 'member' | 'admin' | 'superadmin';
 }
 
+export interface OrgUser {
+	id: string;
+	orgId: string;
+	email: string;
+	name: string;
+	role: string;
+	createdAt: Date | null;
+	updatedAt: Date | null;
+}
+
 export async function getUserByEmail(email: string) {
 	const db = getDb();
 	const [row] = await db.select().from(users).where(eq(users.email, email));
@@ -72,4 +82,82 @@ export async function deleteSession(token: string): Promise<void> {
 export async function deleteExpiredSessions(): Promise<void> {
 	const db = getDb();
 	await db.delete(sessions).where(lt(sessions.expiresAt, new Date()));
+}
+
+// ============================================================================
+// CRUD for users (org-scoped)
+// ============================================================================
+
+/**
+ * List all users in an org. Never returns passwordHash.
+ */
+export async function listOrgUsers(orgId: string): Promise<OrgUser[]> {
+	const db = getDb();
+	return db
+		.select({
+			id: users.id,
+			orgId: users.orgId,
+			email: users.email,
+			name: users.name,
+			role: users.role,
+			createdAt: users.createdAt,
+			updatedAt: users.updatedAt,
+		})
+		.from(users)
+		.where(eq(users.orgId, orgId));
+}
+
+/**
+ * Create a new user. The passwordHash must be pre-hashed by the caller.
+ * Returns the new user's id.
+ */
+export async function createUser(params: {
+	orgId: string;
+	email: string;
+	passwordHash: string;
+	name: string;
+	role: string;
+}): Promise<{ id: string }> {
+	const db = getDb();
+	const [row] = await db
+		.insert(users)
+		.values({
+			orgId: params.orgId,
+			email: params.email,
+			passwordHash: params.passwordHash,
+			name: params.name,
+			role: params.role,
+		})
+		.returning({ id: users.id });
+	return row;
+}
+
+/**
+ * Sparse update for name, email, role, passwordHash. Sets updatedAt on every update.
+ */
+export async function updateUser(
+	id: string,
+	updates: {
+		name?: string;
+		email?: string;
+		role?: string;
+		passwordHash?: string;
+	},
+): Promise<void> {
+	const db = getDb();
+	const setClause: Record<string, unknown> = { updatedAt: new Date() };
+	if (updates.name !== undefined) setClause.name = updates.name;
+	if (updates.email !== undefined) setClause.email = updates.email;
+	if (updates.role !== undefined) setClause.role = updates.role;
+	if (updates.passwordHash !== undefined) setClause.passwordHash = updates.passwordHash;
+
+	await db.update(users).set(setClause).where(eq(users.id, id));
+}
+
+/**
+ * Delete a user by id. Sessions cascade-delete via FK constraint.
+ */
+export async function deleteUser(id: string): Promise<void> {
+	const db = getDb();
+	await db.delete(users).where(eq(users.id, id));
 }
