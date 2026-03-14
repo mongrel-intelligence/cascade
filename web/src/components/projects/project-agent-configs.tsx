@@ -23,7 +23,7 @@ import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 interface AgentConfig {
@@ -75,6 +75,7 @@ interface DefinitionAgentSectionProps {
 	engines: Engine[];
 	isSaving: boolean;
 	onSaveConfig: (agentType: string, configId: number | null, values: SaveConfigValues) => void;
+	saveSuccessNonce: number;
 	onDeleteConfig: (id: number) => void;
 	onTriggerToggle: (agentType: string, event: string, enabled: boolean) => void;
 	onTriggerParamChange: (
@@ -93,12 +94,14 @@ function DefinitionAgentSection({
 	engines,
 	isSaving,
 	onSaveConfig,
+	saveSuccessNonce,
 	onDeleteConfig,
 	onTriggerToggle,
 	onTriggerParamChange,
 }: DefinitionAgentSectionProps) {
 	const [expanded, setExpanded] = useState(false);
 	const [saved, setSaved] = useState(false);
+	const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	// Local form state
 	const [model, setModel] = useState(config?.model ?? '');
@@ -114,6 +117,25 @@ function DefinitionAgentSection({
 		setMaxConcurrency(config?.maxConcurrency?.toString() ?? '');
 		setSaved(false);
 	}, [config]);
+
+	// Show "Saved" indicator only after confirmed persistence (nonce increments on each success)
+	useEffect(() => {
+		if (saveSuccessNonce === 0) return;
+		if (savedTimerRef.current !== null) {
+			clearTimeout(savedTimerRef.current);
+		}
+		setSaved(true);
+		savedTimerRef.current = setTimeout(() => setSaved(false), 2000);
+	}, [saveSuccessNonce]);
+
+	// Clean up the "Saved" timer on unmount to avoid state updates on unmounted component
+	useEffect(() => {
+		return () => {
+			if (savedTimerRef.current !== null) {
+				clearTimeout(savedTimerRef.current);
+			}
+		};
+	}, []);
 
 	// Group triggers by category and filter by active integrations
 	const triggersByCategory = useMemo(() => {
@@ -152,8 +174,6 @@ function DefinitionAgentSection({
 			agentEngine,
 			maxConcurrency,
 		});
-		setSaved(true);
-		setTimeout(() => setSaved(false), 2000);
 	};
 
 	const handleCancel = () => {
@@ -350,7 +370,9 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const [localLifecycleTriggers, setLocalLifecycleTriggers] = useState<Record<string, unknown>>({});
 	const [lifecycleSaving, setLifecycleSaving] = useState(false);
 	const [lifecycleSaved, setLifecycleSaved] = useState(false);
+	const lifecycleSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [savingAgentType, setSavingAgentType] = useState<string | null>(null);
+	const [saveSuccessNonces, setSaveSuccessNonces] = useState<Record<string, number>>({});
 
 	const configsQueryKey = trpc.agentConfigs.list.queryOptions({ projectId }).queryKey;
 	const triggersViewQueryKey = trpc.agentTriggerConfigs.getProjectTriggersView.queryOptions({
@@ -375,9 +397,13 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				agentEngine: input.agentEngine,
 				maxConcurrency: input.maxConcurrency,
 			}),
-		onSuccess: () => {
+		onSuccess: (_data, variables) => {
 			queryClient.invalidateQueries({ queryKey: configsQueryKey });
 			setSavingAgentType(null);
+			setSaveSuccessNonces((prev) => ({
+				...prev,
+				[variables.agentType]: (prev[variables.agentType] ?? 0) + 1,
+			}));
 		},
 		onError: (err) => {
 			toast.error('Failed to create agent config', { description: err.message });
@@ -402,9 +428,13 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				agentEngine: input.agentEngine,
 				maxConcurrency: input.maxConcurrency,
 			}),
-		onSuccess: () => {
+		onSuccess: (_data, variables) => {
 			queryClient.invalidateQueries({ queryKey: configsQueryKey });
 			setSavingAgentType(null);
+			setSaveSuccessNonces((prev) => ({
+				...prev,
+				[variables.agentType]: (prev[variables.agentType] ?? 0) + 1,
+			}));
 		},
 		onError: (err) => {
 			toast.error('Failed to update agent config', { description: err.message });
@@ -463,6 +493,15 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	useEffect(() => {
 		setLocalLifecycleTriggers(scmTriggers);
 	}, [scmTriggers]);
+
+	// Clean up the lifecycle "Saved" timer on unmount
+	useEffect(() => {
+		return () => {
+			if (lifecycleSavedTimerRef.current !== null) {
+				clearTimeout(lifecycleSavedTimerRef.current);
+			}
+		};
+	}, []);
 
 	// Loading state
 	const isLoading = configsQuery.isLoading || triggersViewQuery.isLoading;
@@ -555,8 +594,11 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				}
 			}
 			await updateTriggersMutation.mutateAsync({ category: 'scm', triggers: changed });
+			if (lifecycleSavedTimerRef.current !== null) {
+				clearTimeout(lifecycleSavedTimerRef.current);
+			}
 			setLifecycleSaved(true);
-			setTimeout(() => setLifecycleSaved(false), 2000);
+			lifecycleSavedTimerRef.current = setTimeout(() => setLifecycleSaved(false), 2000);
 		} finally {
 			setLifecycleSaving(false);
 		}
@@ -585,6 +627,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 							savingAgentType === type && (createMutation.isPending || updateMutation.isPending)
 						}
 						onSaveConfig={handleSaveConfig}
+						saveSuccessNonce={saveSuccessNonces[type] ?? 0}
 						onDeleteConfig={(id) => deleteMutation.mutate(id)}
 						onTriggerToggle={handleTriggerToggle}
 						onTriggerParamChange={handleTriggerParamChange}
