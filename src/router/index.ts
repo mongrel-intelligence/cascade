@@ -9,6 +9,7 @@ import { seedAgentDefinitions } from '../db/seeds/seedAgentDefinitions.js';
 import { registerBuiltInTriggers } from '../triggers/builtins.js';
 import { createTriggerRegistry } from '../triggers/registry.js';
 import { logger } from '../utils/logging.js';
+import { verifyGitHubSignature, verifyTrelloSignature } from '../webhook/signatureVerification.js';
 import {
 	createWebhookHandler,
 	parseGitHubPayload,
@@ -19,6 +20,8 @@ import { GitHubRouterAdapter, injectEventType } from './adapters/github.js';
 import { JiraRouterAdapter } from './adapters/jira.js';
 import { TrelloRouterAdapter } from './adapters/trello.js';
 import { startCancelListener, stopCancelListener } from './cancel-listener.js';
+import { loadProjectConfig, routerConfig } from './config.js';
+import { resolveWebhookSecret } from './platformClients/credentials.js';
 import { getQueueStats } from './queue.js';
 import { processRouterWebhook } from './webhook-processor.js';
 import {
@@ -29,6 +32,112 @@ import {
 } from './worker-manager.js';
 
 setTag('role', 'router');
+
+// ---------------------------------------------------------------------------
+// Webhook signature verification helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the Trello board ID from a raw webhook payload.
+ * Trello sends the board ID at `action.data.board.id` or, for board-level
+ * events, at `model.id`.
+ */
+function extractTrelloBoardId(rawBody: string): string | undefined {
+	try {
+		const parsed = JSON.parse(rawBody) as Record<string, unknown>;
+		const boardId = (
+			((parsed?.action as Record<string, unknown>)?.data as Record<string, unknown>)
+				?.board as Record<string, unknown>
+		)?.id as string | undefined;
+		if (boardId) return boardId;
+		return (parsed?.model as Record<string, unknown>)?.id as string | undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Build the Trello webhook callback URL.
+ * Uses `routerConfig.webhookCallbackBaseUrl` when set; otherwise derives the
+ * base URL from the request's `x-forwarded-proto` / `host` headers.
+ */
+function buildTrelloCallbackUrl(host: string | undefined, proto: string | undefined): string {
+	if (routerConfig.webhookCallbackBaseUrl) {
+		return `${routerConfig.webhookCallbackBaseUrl}/trello/webhook`;
+	}
+	return `${proto ?? 'https'}://${host}/trello/webhook`;
+}
+
+/**
+ * verifySignature callback for the Trello webhook handler.
+ * Returns null to skip verification when no secret is configured (backwards compat).
+ */
+async function verifyTrelloWebhookSignature(
+	c: import('hono').Context,
+	rawBody: string,
+): Promise<{ valid: boolean; reason: string } | null> {
+	const signatureHeader = c.req.header('x-trello-webhook');
+	const boardId = extractTrelloBoardId(rawBody);
+
+	if (!boardId) return null;
+
+	const { projects } = await loadProjectConfig();
+	const project = projects.find((p) => p.trello?.boardId === boardId);
+	if (!project) return null;
+
+	const secret = await resolveWebhookSecret(project.id, 'trello');
+	if (!secret) return null; // No secret configured — skip verification
+
+	if (!signatureHeader) {
+		return { valid: false, reason: 'Missing signature header' };
+	}
+
+	const callbackUrl = buildTrelloCallbackUrl(
+		c.req.header('host'),
+		c.req.header('x-forwarded-proto'),
+	);
+	const valid = verifyTrelloSignature(rawBody, callbackUrl, signatureHeader, secret);
+	return valid
+		? { valid: true, reason: 'Signature valid' }
+		: { valid: false, reason: 'Trello signature mismatch' };
+}
+
+/**
+ * verifySignature callback for the GitHub webhook handler.
+ * Returns null to skip verification when no secret is configured (backwards compat).
+ */
+async function verifyGitHubWebhookSignature(
+	c: import('hono').Context,
+	rawBody: string,
+): Promise<{ valid: boolean; reason: string } | null> {
+	const signatureHeader = c.req.header('X-Hub-Signature-256');
+
+	let repoFullName: string | undefined;
+	try {
+		const parsed = JSON.parse(rawBody) as Record<string, unknown>;
+		repoFullName = (parsed?.repository as Record<string, unknown>)?.full_name as string | undefined;
+	} catch {
+		// If we can't parse the repo, skip verification
+	}
+
+	if (!repoFullName) return null;
+
+	const { projects } = await loadProjectConfig();
+	const project = projects.find((p) => p.repo === repoFullName);
+	if (!project) return null;
+
+	const secret = await resolveWebhookSecret(project.id, 'github');
+	if (!secret) return null; // No secret configured — skip verification
+
+	if (!signatureHeader) {
+		return { valid: false, reason: 'Missing signature header' };
+	}
+
+	const valid = verifyGitHubSignature(rawBody, signatureHeader, secret);
+	return valid
+		? { valid: true, reason: 'Signature valid' }
+		: { valid: false, reason: 'GitHub signature mismatch' };
+}
 
 // Create trigger registry once at router startup for dispatch() calls
 const triggerRegistry = createTriggerRegistry();
@@ -67,6 +176,7 @@ app.post(
 	createWebhookHandler({
 		source: 'trello',
 		parsePayload: parseTrelloPayload,
+		verifySignature: verifyTrelloWebhookSignature,
 		processWebhook: async (payload) => {
 			const adapter = new TrelloRouterAdapter();
 			const result = await processRouterWebhook(adapter, payload, triggerRegistry);
@@ -90,6 +200,7 @@ app.post(
 	createWebhookHandler({
 		source: 'github',
 		parsePayload: parseGitHubPayload,
+		verifySignature: verifyGitHubWebhookSignature,
 		processWebhook: async (payload, eventType, headers) => {
 			const adapter = new GitHubRouterAdapter();
 			const deliveryId = headers['x-github-delivery'] ?? headers['X-GitHub-Delivery'];
