@@ -99,8 +99,9 @@ export async function hasPmIntegration(projectId: string): Promise<boolean> {
 	const roles = PROVIDER_CREDENTIAL_ROLES[provider as keyof typeof PROVIDER_CREDENTIAL_ROLES];
 	if (!roles) return false;
 
+	const requiredRoles = roles.filter((r) => !r.optional);
 	const values = await Promise.all(
-		roles.map((roleDef) => getIntegrationCredentialOrNull(projectId, 'pm', roleDef.role)),
+		requiredRoles.map((roleDef) => getIntegrationCredentialOrNull(projectId, 'pm', roleDef.role)),
 	);
 	return values.every((v) => v !== null);
 }

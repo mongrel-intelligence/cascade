@@ -312,11 +312,11 @@ export async function seedSession(overrides: {
 // ============================================================================
 
 /**
- * Seeds a complete Trello PM integration with both required credentials.
+ * Seeds a complete Trello PM integration with all required credentials.
  */
 export async function seedTrelloIntegration(
 	projectId = 'test-project',
-	options?: { skipApiKey?: boolean; skipToken?: boolean },
+	options?: { skipApiKey?: boolean; skipToken?: boolean; skipApiSecret?: boolean },
 ) {
 	const integ = await seedIntegration({
 		projectId,
@@ -335,6 +335,19 @@ export async function seedTrelloIntegration(
 			integrationId: integ.id,
 			role: 'api_key',
 			credentialId: apiKey.id,
+		});
+	}
+
+	if (!options?.skipApiSecret) {
+		const apiSecret = await seedCredential({
+			envVarKey: 'TRELLO_API_SECRET',
+			value: 'test-api-secret',
+			name: 'Trello API Secret',
+		});
+		await seedIntegrationCredential({
+			integrationId: integ.id,
+			role: 'api_secret',
+			credentialId: apiSecret.id,
 		});
 	}
 
