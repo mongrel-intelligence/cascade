@@ -158,6 +158,21 @@ function processSystemMessage(
 }
 
 /**
+ * Format a human-readable error message from a non-success SDK result.
+ */
+export function formatErrorMessage(
+	errorResult: Exclude<SDKResultMessage, SDKResultSuccess>,
+	budgetUsd?: number,
+): string {
+	if (errorResult.subtype === 'error_max_budget_usd') {
+		const spent = errorResult.total_cost_usd?.toFixed(2) ?? '?';
+		const limit = budgetUsd?.toFixed(2) ?? '?';
+		return `Budget limit reached: spent $${spent} of $${limit} allowed for this run. Increase the project work-item budget or retry with a higher limit.`;
+	}
+	return errorResult.errors?.join('; ') ?? errorResult.subtype;
+}
+
+/**
  * Build the result from collected stream data.
  */
 function buildResult(
@@ -179,7 +194,7 @@ function buildResult(
 	let error: string | undefined;
 	if (resultMessage && resultMessage.subtype !== 'success') {
 		const errorResult = resultMessage as Exclude<SDKResultMessage, SDKResultSuccess>;
-		error = errorResult.errors?.join('; ') ?? errorResult.subtype;
+		error = formatErrorMessage(errorResult, input.budgetUsd);
 	}
 
 	const stderrOutput = stderrChunks.join('').trim();
