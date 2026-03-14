@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -17,6 +18,22 @@ function checkPortReachable(host: string, port: number, timeoutMs = 500): Promis
 	});
 }
 
+/**
+ * Reads TEST_DATABASE_URL from .cascade/env (machine-specific config written by setup.sh).
+ * Falls back for environments where .cascade/env is not exported into the process environment,
+ * e.g. cascade worker containers where the file exists but the shell doesn't source it.
+ */
+function readTestDbUrlFromCascadeEnv(): string | null {
+	try {
+		const envFile = path.resolve(import.meta.dirname, '../../../.cascade/env');
+		const contents = fs.readFileSync(envFile, 'utf-8');
+		const match = contents.match(/^TEST_DATABASE_URL=(.+)$/m);
+		return match ? match[1].trim() : null;
+	} catch {
+		return null;
+	}
+}
+
 function resolveContainerIp(containerName: string): string | null {
 	try {
 		const ip = execSync(
@@ -29,31 +46,41 @@ function resolveContainerIp(containerName: string): string | null {
 	}
 }
 
+async function tryUrl(url: string): Promise<boolean> {
+	try {
+		const u = new URL(url);
+		const port = Number.parseInt(u.port || '5432', 10);
+		return await checkPortReachable(u.hostname, port);
+	} catch {
+		return false;
+	}
+}
+
 export async function resolveTestDbUrl(): Promise<string | null> {
-	// 1. Explicit env var — check it's actually reachable
+	// 1. TEST_DATABASE_URL from process environment — check it's actually reachable
 	const envUrl = process.env.TEST_DATABASE_URL;
-	if (envUrl) {
-		try {
-			const u = new URL(envUrl);
-			const port = Number.parseInt(u.port || '5432', 10);
-			if (await checkPortReachable(u.hostname, port)) return envUrl;
-		} catch {
-			// malformed URL — fall through
-		}
+	if (envUrl && (await tryUrl(envUrl))) return envUrl;
+
+	// 2. TEST_DATABASE_URL from .cascade/env (machine-specific config written by setup.sh).
+	//    Falls back for cascade worker containers where the file exists but the shell doesn't
+	//    export the variable into the process environment.
+	const cascadeEnvUrl = readTestDbUrlFromCascadeEnv();
+	if (cascadeEnvUrl && cascadeEnvUrl !== envUrl && (await tryUrl(cascadeEnvUrl))) {
+		return cascadeEnvUrl;
 	}
 
-	// 2. Docker Compose default (standard Docker / CI)
+	// 3. Docker Compose default (standard Docker / CI)
 	if (await checkPortReachable('127.0.0.1', 5433)) {
 		return 'postgresql://cascade_test:cascade_test@127.0.0.1:5433/cascade_test';
 	}
 
-	// 3. Container bridge IP — rootless Docker workaround
+	// 4. Container bridge IP — rootless Docker workaround
 	const ip = resolveContainerIp('cascade-postgres-test');
 	if (ip && (await checkPortReachable(ip, 5432))) {
 		return `postgresql://cascade_test:cascade_test@${ip}:5432/cascade_test`;
 	}
 
-	// 4. No database reachable
+	// 5. No database reachable
 	return null;
 }
 

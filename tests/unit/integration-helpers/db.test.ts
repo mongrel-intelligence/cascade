@@ -11,7 +11,14 @@ vi.mock('node:child_process', () => ({
 	execSync: vi.fn(),
 }));
 
+vi.mock('node:fs', () => ({
+	default: {
+		readFileSync: vi.fn(),
+	},
+}));
+
 import { execSync } from 'node:child_process';
+import fs from 'node:fs';
 import net from 'node:net';
 import { resolveTestDbUrl } from '../../integration/helpers/db.js';
 
@@ -44,6 +51,10 @@ describe('resolveTestDbUrl', () => {
 	beforeEach(() => {
 		vi.mocked(net.connect).mockReset();
 		vi.mocked(execSync).mockReset();
+		// Default: no .cascade/env file (throws ENOENT)
+		vi.mocked(fs.readFileSync).mockImplementation(() => {
+			throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+		});
 	});
 
 	afterEach(() => {
@@ -66,10 +77,8 @@ describe('resolveTestDbUrl', () => {
 
 		it('falls through when TEST_DATABASE_URL host is not reachable', async () => {
 			vi.stubEnv('TEST_DATABASE_URL', 'postgresql://user:pass@unreachable:5432/mydb');
-			// First call (env-var probe) → error; second call (localhost:5433 probe) → error
-			vi.mocked(net.connect)
-				.mockReturnValueOnce(makeMockSocket('error') as never)
-				.mockReturnValueOnce(makeMockSocket('error') as never);
+			// env-var probe → error; localhost:5433 probe → error (each call needs its own socket)
+			vi.mocked(net.connect).mockImplementation(() => makeMockSocket('error') as never);
 			vi.mocked(execSync).mockReturnValue('' as never); // no container IP
 
 			const result = await resolveTestDbUrl();
@@ -80,7 +89,7 @@ describe('resolveTestDbUrl', () => {
 		it('falls through when TEST_DATABASE_URL is malformed', async () => {
 			vi.stubEnv('TEST_DATABASE_URL', 'not-a-valid-url');
 			// localhost:5433 probe → error
-			vi.mocked(net.connect).mockReturnValue(makeMockSocket('error') as never);
+			vi.mocked(net.connect).mockImplementation(() => makeMockSocket('error') as never);
 			vi.mocked(execSync).mockReturnValue('' as never);
 
 			const result = await resolveTestDbUrl();
@@ -101,11 +110,82 @@ describe('resolveTestDbUrl', () => {
 		});
 	});
 
+	describe('.cascade/env fallback', () => {
+		it('uses TEST_DATABASE_URL from .cascade/env when env var is absent and host is reachable', async () => {
+			vi.stubEnv('TEST_DATABASE_URL', '');
+			vi.mocked(fs.readFileSync).mockReturnValue(
+				'CI=true\nTEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/cascade_test\n' as never,
+			);
+			// .cascade/env URL probe → connect; downstream probes should not be reached
+			vi.mocked(net.connect).mockReturnValue(makeMockSocket('connect') as never);
+
+			const result = await resolveTestDbUrl();
+
+			expect(result).toBe('postgresql://postgres:postgres@localhost:5432/cascade_test');
+			expect(net.connect).toHaveBeenCalledWith(
+				expect.objectContaining({ host: 'localhost', port: 5432 }),
+			);
+		});
+
+		it('falls through when .cascade/env URL is not reachable', async () => {
+			vi.stubEnv('TEST_DATABASE_URL', '');
+			vi.mocked(fs.readFileSync).mockReturnValue(
+				'TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/cascade_test\n' as never,
+			);
+			// .cascade/env probe → error; localhost:5433 → error; no container IP (each call needs its own socket)
+			vi.mocked(net.connect).mockImplementation(() => makeMockSocket('error') as never);
+			vi.mocked(execSync).mockReturnValue('' as never);
+
+			const result = await resolveTestDbUrl();
+
+			expect(result).toBeNull();
+		});
+
+		it('falls through when .cascade/env does not contain TEST_DATABASE_URL', async () => {
+			vi.stubEnv('TEST_DATABASE_URL', '');
+			vi.mocked(fs.readFileSync).mockReturnValue(
+				'CI=true\nREDIS_URL=redis://localhost:6379\n' as never,
+			);
+			vi.mocked(net.connect).mockImplementation(() => makeMockSocket('error') as never);
+			vi.mocked(execSync).mockReturnValue('' as never);
+
+			const result = await resolveTestDbUrl();
+
+			expect(result).toBeNull();
+		});
+
+		it('falls through when .cascade/env file does not exist', async () => {
+			vi.stubEnv('TEST_DATABASE_URL', '');
+			vi.mocked(fs.readFileSync).mockImplementation(() => {
+				throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+			});
+			vi.mocked(net.connect).mockImplementation(() => makeMockSocket('error') as never);
+			vi.mocked(execSync).mockReturnValue('' as never);
+
+			const result = await resolveTestDbUrl();
+
+			expect(result).toBeNull();
+		});
+
+		it('skips .cascade/env URL when it duplicates the process env var', async () => {
+			const sharedUrl = 'postgresql://postgres:postgres@localhost:5432/cascade_test';
+			vi.stubEnv('TEST_DATABASE_URL', sharedUrl);
+			vi.mocked(fs.readFileSync).mockReturnValue(`TEST_DATABASE_URL=${sharedUrl}\n` as never);
+			// env-var probe → connect (should use this and return without re-probing via .cascade/env)
+			vi.mocked(net.connect).mockReturnValue(makeMockSocket('connect') as never);
+
+			const result = await resolveTestDbUrl();
+
+			expect(result).toBe(sharedUrl);
+			// Should probe exactly once (the process env var path)
+			expect(net.connect).toHaveBeenCalledTimes(1);
+		});
+	});
+
 	describe('localhost:5433 fallback (standard Docker / CI)', () => {
 		it('returns the standard Docker URL when localhost:5433 is reachable', async () => {
 			vi.stubEnv('TEST_DATABASE_URL', '');
-			// env var probe skipped (empty string is falsy after stubEnv removes it)
-			vi.mocked(net.connect).mockReturnValue(makeMockSocket('connect') as never);
+			vi.mocked(net.connect).mockImplementation(() => makeMockSocket('connect') as never);
 
 			const result = await resolveTestDbUrl();
 
@@ -114,7 +194,7 @@ describe('resolveTestDbUrl', () => {
 
 		it('probes 127.0.0.1:5433 for the Docker fallback', async () => {
 			vi.stubEnv('TEST_DATABASE_URL', '');
-			vi.mocked(net.connect).mockReturnValue(makeMockSocket('connect') as never);
+			vi.mocked(net.connect).mockImplementation(() => makeMockSocket('connect') as never);
 
 			await resolveTestDbUrl();
 
@@ -155,7 +235,7 @@ describe('resolveTestDbUrl', () => {
 
 		it('skips the bridge-IP probe when docker inspect returns empty', async () => {
 			vi.stubEnv('TEST_DATABASE_URL', '');
-			vi.mocked(net.connect).mockReturnValue(makeMockSocket('error') as never);
+			vi.mocked(net.connect).mockImplementation(() => makeMockSocket('error') as never);
 			vi.mocked(execSync).mockReturnValue('' as never);
 
 			const result = await resolveTestDbUrl();
@@ -165,7 +245,7 @@ describe('resolveTestDbUrl', () => {
 
 		it('skips the bridge-IP probe when docker inspect throws', async () => {
 			vi.stubEnv('TEST_DATABASE_URL', '');
-			vi.mocked(net.connect).mockReturnValue(makeMockSocket('error') as never);
+			vi.mocked(net.connect).mockImplementation(() => makeMockSocket('error') as never);
 			vi.mocked(execSync).mockImplementation(() => {
 				throw new Error('docker not found');
 			});
@@ -179,7 +259,7 @@ describe('resolveTestDbUrl', () => {
 	describe('no database reachable', () => {
 		it('returns null when all probes fail', async () => {
 			vi.stubEnv('TEST_DATABASE_URL', '');
-			vi.mocked(net.connect).mockReturnValue(makeMockSocket('error') as never);
+			vi.mocked(net.connect).mockImplementation(() => makeMockSocket('error') as never);
 			vi.mocked(execSync).mockReturnValue('' as never);
 
 			const result = await resolveTestDbUrl();
