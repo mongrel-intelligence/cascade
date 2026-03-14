@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { MODEL_RATE_LIMITS, getRateLimitForModel } from '../../../src/config/rateLimits.js';
 
-describe('config/rateLimits', () => {
+describe.concurrent('config/rateLimits', () => {
 	describe('getRateLimitForModel', () => {
 		it('returns exact match for known models', () => {
 			const result = getRateLimitForModel('gemini:gemini-2.5-flash');

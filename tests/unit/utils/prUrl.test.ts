@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { extractPRNumber, extractPRUrl } from '../../../src/utils/prUrl.js';
 
-describe('extractPRUrl', () => {
+describe.concurrent('extractPRUrl', () => {
 	it('extracts a GitHub PR URL from plain text', () => {
 		const text = 'Created PR: https://github.com/owner/repo/pull/42';
 		expect(extractPRUrl(text)).toBe('https://github.com/owner/repo/pull/42');
@@ -45,7 +45,7 @@ describe('extractPRUrl', () => {
 	});
 });
 
-describe('extractPRNumber', () => {
+describe.concurrent('extractPRNumber', () => {
 	it('extracts PR number from a full GitHub PR URL', () => {
 		expect(extractPRNumber('https://github.com/owner/repo/pull/42')).toBe(42);
 	});
