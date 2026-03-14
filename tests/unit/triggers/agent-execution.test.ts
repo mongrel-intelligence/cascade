@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mockLogger, mockTriggerCheckModule } from '../../helpers/sharedMocks.js';
 
 vi.mock('../../../src/agents/registry.js', () => ({
 	runAgent: vi.fn(),
@@ -11,13 +12,7 @@ vi.mock('../../../src/pm/index.js', () => ({
 	hasAutoLabel: vi.fn(),
 }));
 
-vi.mock('../../../src/utils/logging.js', () => ({
-	logger: {
-		warn: vi.fn(),
-		info: vi.fn(),
-		error: vi.fn(),
-	},
-}));
+vi.mock('../../../src/utils/logging.js', () => ({ logger: mockLogger }));
 
 vi.mock('../../../src/triggers/shared/agent-result-handler.js', () => ({
 	handleAgentResultArtifacts: vi.fn(),
@@ -40,9 +35,7 @@ vi.mock('../../../src/triggers/shared/integration-validation.js', () => ({
 	formatValidationErrors: vi.fn().mockReturnValue(''),
 }));
 
-vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
-	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
-}));
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
 
 vi.mock('../../../src/pm/context.js', () => ({
 	getPMProvider: vi.fn(),
