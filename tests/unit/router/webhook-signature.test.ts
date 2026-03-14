@@ -1,12 +1,15 @@
 /**
- * Tests for webhook signature verification wiring in src/router/index.ts.
+ * Tests for webhook signature verification helpers in src/router/webhookVerification.ts.
  *
- * These tests verify the full verification flow:
- * - GitHub: X-Hub-Signature-256 header, project resolved by repository.full_name
- * - Trello: x-trello-webhook header, project resolved by board ID
+ * These tests exercise the actual production functions:
+ * - `verifyGitHubWebhookSignature` — verifySignature callback for GitHub webhooks
+ * - `verifyTrelloWebhookSignature` — verifySignature callback for Trello webhooks
+ * - `extractTrelloBoardId` — board ID extraction from raw Trello payloads
+ * - `buildTrelloCallbackUrl` — callback URL construction with fallback logic
  *
- * We test via the Hono app built in src/router/index.ts by importing the module
- * (which is side-effect-heavy), so we mock all heavy dependencies first.
+ * The verification callbacks are also tested end-to-end by wiring them into a
+ * minimal Hono app (mirroring the wiring in src/router/index.ts), verifying the
+ * full HTTP request/response flow.
  */
 
 import { createHmac } from 'node:crypto';
@@ -118,8 +121,14 @@ vi.mock('../../../src/router/platformClients/credentials.js', () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import { loadProjectConfig, routerConfig } from '../../../src/router/config.js';
+import { loadProjectConfig } from '../../../src/router/config.js';
 import { resolveWebhookSecret } from '../../../src/router/platformClients/credentials.js';
+import {
+	buildTrelloCallbackUrl,
+	extractTrelloBoardId,
+	verifyGitHubWebhookSignature,
+	verifyTrelloWebhookSignature,
+} from '../../../src/router/webhookVerification.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -158,31 +167,206 @@ const TRELLO_SECRET = 'my-trello-api-secret';
 const TRELLO_CALLBACK_URL = 'https://example.com/trello/webhook';
 
 // ---------------------------------------------------------------------------
-// Tests: GitHub verifySignature callback (via router Hono app)
+// Unit tests: extractTrelloBoardId
 // ---------------------------------------------------------------------------
 
-describe('router — GitHub webhook signature verification', () => {
-	// We need to lazy-import the app after mocks are set up.
-	// Import the module once, then get the underlying Hono app.
-	// Since the app is not exported, we test through createWebhookHandler directly
-	// by reconstructing the same logic as in src/router/index.ts.
+describe('extractTrelloBoardId', () => {
+	it('extracts board ID from action.data.board.id', () => {
+		const body = JSON.stringify({
+			action: { type: 'createCard', data: { board: { id: 'board-abc' } } },
+		});
+		expect(extractTrelloBoardId(body)).toBe('board-abc');
+	});
 
+	it('falls back to model.id when action.data.board.id is missing', () => {
+		const body = JSON.stringify({ model: { id: 'board-xyz' }, action: { type: 'createBoard' } });
+		expect(extractTrelloBoardId(body)).toBe('board-xyz');
+	});
+
+	it('returns undefined when board ID is absent', () => {
+		const body = JSON.stringify({ action: { type: 'createCard' } });
+		expect(extractTrelloBoardId(body)).toBeUndefined();
+	});
+
+	it('returns undefined for invalid JSON', () => {
+		expect(extractTrelloBoardId('not json')).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests: buildTrelloCallbackUrl
+// ---------------------------------------------------------------------------
+
+describe('buildTrelloCallbackUrl', () => {
+	it('uses webhookCallbackBaseUrl from routerConfig when set', () => {
+		// routerConfig is mocked with webhookCallbackBaseUrl: 'https://example.com'
+		const url = buildTrelloCallbackUrl('other-host.com', 'http');
+		expect(url).toBe('https://example.com/trello/webhook');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests: verifyGitHubWebhookSignature (function directly)
+// ---------------------------------------------------------------------------
+
+describe('verifyGitHubWebhookSignature — direct function tests', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [GITHUB_PROJECT] });
+		vi.mocked(resolveWebhookSecret).mockResolvedValue(GITHUB_SECRET);
+	});
+
+	function makeContext(headers: Record<string, string> = {}) {
+		return {
+			req: {
+				header: (name: string) => headers[name.toLowerCase()] ?? headers[name],
+			},
+		} as unknown as import('hono').Context;
+	}
+
+	it('returns { valid: true } when signature is correct', async () => {
+		const body = JSON.stringify({ repository: { full_name: 'owner/repo' }, action: 'opened' });
+		const sig = githubSignature(body, GITHUB_SECRET);
+		const result = await verifyGitHubWebhookSignature(
+			makeContext({ 'X-Hub-Signature-256': sig }),
+			body,
+		);
+		expect(result).toEqual({ valid: true, reason: 'Signature valid' });
+	});
+
+	it('returns { valid: false } when signature is wrong', async () => {
+		const body = JSON.stringify({ repository: { full_name: 'owner/repo' }, action: 'opened' });
+		const badSig = githubSignature(body, 'wrong-secret');
+		const result = await verifyGitHubWebhookSignature(
+			makeContext({ 'X-Hub-Signature-256': badSig }),
+			body,
+		);
+		expect(result).toEqual({ valid: false, reason: 'GitHub signature mismatch' });
+	});
+
+	it('returns { valid: false, reason: "Missing signature header" } when header absent but secret configured', async () => {
+		const body = JSON.stringify({ repository: { full_name: 'owner/repo' }, action: 'opened' });
+		const result = await verifyGitHubWebhookSignature(makeContext({}), body);
+		expect(result).toEqual({ valid: false, reason: 'Missing signature header' });
+	});
+
+	it('returns null (skip) when no secret configured', async () => {
+		vi.mocked(resolveWebhookSecret).mockResolvedValue(null);
+		const body = JSON.stringify({ repository: { full_name: 'owner/repo' }, action: 'opened' });
+		const result = await verifyGitHubWebhookSignature(makeContext({}), body);
+		expect(result).toBeNull();
+	});
+
+	it('returns null (skip) when project not found', async () => {
+		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [] });
+		const body = JSON.stringify({ repository: { full_name: 'unknown/repo' }, action: 'opened' });
+		const result = await verifyGitHubWebhookSignature(makeContext({}), body);
+		expect(result).toBeNull();
+	});
+
+	it('returns null (skip) when repo is missing from payload', async () => {
+		const body = JSON.stringify({ action: 'opened' });
+		const result = await verifyGitHubWebhookSignature(makeContext({}), body);
+		expect(result).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests: verifyTrelloWebhookSignature (function directly)
+// ---------------------------------------------------------------------------
+
+describe('verifyTrelloWebhookSignature — direct function tests', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [TRELLO_PROJECT] });
+		vi.mocked(resolveWebhookSecret).mockResolvedValue(TRELLO_SECRET);
+	});
+
+	function makeContext(headers: Record<string, string> = {}) {
+		return {
+			req: {
+				header: (name: string) => headers[name.toLowerCase()] ?? headers[name],
+			},
+		} as unknown as import('hono').Context;
+	}
+
+	it('returns { valid: true } when signature is correct', async () => {
+		const body = JSON.stringify({
+			action: { type: 'createCard', data: { board: { id: 'board-abc' } } },
+		});
+		const sig = trelloSignature(body, TRELLO_CALLBACK_URL, TRELLO_SECRET);
+		const result = await verifyTrelloWebhookSignature(
+			makeContext({ 'x-trello-webhook': sig }),
+			body,
+		);
+		expect(result).toEqual({ valid: true, reason: 'Signature valid' });
+	});
+
+	it('returns { valid: false } when signature is wrong', async () => {
+		const body = JSON.stringify({
+			action: { type: 'createCard', data: { board: { id: 'board-abc' } } },
+		});
+		const badSig = trelloSignature(body, TRELLO_CALLBACK_URL, 'wrong-secret');
+		const result = await verifyTrelloWebhookSignature(
+			makeContext({ 'x-trello-webhook': badSig }),
+			body,
+		);
+		expect(result).toEqual({ valid: false, reason: 'Trello signature mismatch' });
+	});
+
+	it('returns { valid: false, reason: "Missing signature header" } when header absent', async () => {
+		const body = JSON.stringify({
+			action: { type: 'createCard', data: { board: { id: 'board-abc' } } },
+		});
+		const result = await verifyTrelloWebhookSignature(makeContext({}), body);
+		expect(result).toEqual({ valid: false, reason: 'Missing signature header' });
+	});
+
+	it('returns null (skip) when no secret configured', async () => {
+		vi.mocked(resolveWebhookSecret).mockResolvedValue(null);
+		const body = JSON.stringify({
+			action: { type: 'createCard', data: { board: { id: 'board-abc' } } },
+		});
+		const result = await verifyTrelloWebhookSignature(makeContext({}), body);
+		expect(result).toBeNull();
+	});
+
+	it('returns null (skip) when project not found', async () => {
+		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [] });
+		const body = JSON.stringify({
+			action: { type: 'createCard', data: { board: { id: 'unknown-board' } } },
+		});
+		const result = await verifyTrelloWebhookSignature(makeContext({}), body);
+		expect(result).toBeNull();
+	});
+
+	it('returns null (skip) when board ID is missing from payload', async () => {
+		const body = JSON.stringify({ action: { type: 'createCard' } });
+		const result = await verifyTrelloWebhookSignature(makeContext({}), body);
+		expect(result).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Integration tests: end-to-end via Hono app (mirrors src/router/index.ts wiring)
+// ---------------------------------------------------------------------------
+
+describe('router — GitHub webhook signature verification (end-to-end)', () => {
 	let app: Hono;
 
 	beforeEach(async () => {
 		vi.clearAllMocks();
 
-		// Set up default mocks
 		vi.mocked(loadProjectConfig).mockResolvedValue({
 			projects: [GITHUB_PROJECT],
 		});
 		vi.mocked(resolveWebhookSecret).mockResolvedValue(GITHUB_SECRET);
 
-		// Build minimal Hono app that mirrors src/router/index.ts GitHub handler
+		// Build minimal Hono app that mirrors src/router/index.ts GitHub handler,
+		// using the actual production verifyGitHubWebhookSignature function.
 		const { createWebhookHandler, parseGitHubPayload } = await import(
 			'../../../src/webhook/webhookHandlers.js'
 		);
-		const { verifyGitHubSignature } = await import('../../../src/webhook/signatureVerification.js');
 
 		app = new Hono();
 		app.post(
@@ -190,37 +374,7 @@ describe('router — GitHub webhook signature verification', () => {
 			createWebhookHandler({
 				source: 'github',
 				parsePayload: parseGitHubPayload,
-				verifySignature: async (c, rawBody) => {
-					const signatureHeader = c.req.header('X-Hub-Signature-256');
-
-					let repoFullName: string | undefined;
-					try {
-						const parsed = JSON.parse(rawBody) as Record<string, unknown>;
-						repoFullName = (parsed?.repository as Record<string, unknown>)?.full_name as
-							| string
-							| undefined;
-					} catch {
-						// skip
-					}
-
-					if (!repoFullName) return null;
-
-					const { projects } = await loadProjectConfig();
-					const project = projects.find((p) => p.repo === repoFullName);
-					if (!project) return null;
-
-					const secret = await resolveWebhookSecret(project.id, 'github');
-					if (!secret) return null;
-
-					if (!signatureHeader) {
-						return { valid: false, reason: 'Missing signature header' };
-					}
-
-					const valid = verifyGitHubSignature(rawBody, signatureHeader, secret);
-					return valid
-						? { valid: true, reason: 'Signature valid' }
-						: { valid: false, reason: 'GitHub signature mismatch' };
-				},
+				verifySignature: verifyGitHubWebhookSignature,
 				processWebhook: vi.fn().mockResolvedValue({
 					processed: true,
 					projectId: 'proj-gh',
@@ -317,10 +471,10 @@ describe('router — GitHub webhook signature verification', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tests: Trello verifySignature callback
+// Integration tests: end-to-end via Hono app — Trello
 // ---------------------------------------------------------------------------
 
-describe('router — Trello webhook signature verification', () => {
+describe('router — Trello webhook signature verification (end-to-end)', () => {
 	let app: Hono;
 
 	beforeEach(async () => {
@@ -334,7 +488,6 @@ describe('router — Trello webhook signature verification', () => {
 		const { createWebhookHandler, parseTrelloPayload } = await import(
 			'../../../src/webhook/webhookHandlers.js'
 		);
-		const { verifyTrelloSignature } = await import('../../../src/webhook/signatureVerification.js');
 
 		app = new Hono();
 		app.post(
@@ -342,44 +495,7 @@ describe('router — Trello webhook signature verification', () => {
 			createWebhookHandler({
 				source: 'trello',
 				parsePayload: parseTrelloPayload,
-				verifySignature: async (c, rawBody) => {
-					const signatureHeader = c.req.header('x-trello-webhook');
-
-					let boardId: string | undefined;
-					try {
-						const parsed = JSON.parse(rawBody) as Record<string, unknown>;
-						boardId = ((parsed?.action as Record<string, unknown>)?.data as Record<string, unknown>)
-							?.board?.id as string | undefined;
-						if (!boardId) {
-							boardId = (parsed?.model as Record<string, unknown>)?.id as string | undefined;
-						}
-					} catch {
-						// skip
-					}
-
-					if (!boardId) return null;
-
-					const { projects } = await loadProjectConfig();
-					const project = projects.find((p) => p.trello?.boardId === boardId);
-					if (!project) return null;
-
-					const secret = await resolveWebhookSecret(project.id, 'trello');
-					if (!secret) return null;
-
-					if (!signatureHeader) {
-						return { valid: false, reason: 'Missing signature header' };
-					}
-
-					const callbackUrl =
-						(routerConfig.webhookCallbackBaseUrl ?? '')
-							? `${routerConfig.webhookCallbackBaseUrl}/trello/webhook`
-							: `${c.req.header('x-forwarded-proto') ?? 'https'}://${c.req.header('host')}/trello/webhook`;
-
-					const valid = verifyTrelloSignature(rawBody, callbackUrl, signatureHeader, secret);
-					return valid
-						? { valid: true, reason: 'Signature valid' }
-						: { valid: false, reason: 'Trello signature mismatch' };
-				},
+				verifySignature: verifyTrelloWebhookSignature,
 				processWebhook: vi.fn().mockResolvedValue({
 					processed: true,
 					projectId: 'proj-trello',
