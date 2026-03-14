@@ -11,7 +11,7 @@
  * Unit tests (mocked) are in tests/unit/triggers/shared/integration-validation.test.ts
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hasScmIntegration, hasScmPersonaToken } from '../../src/github/integration.js';
 import { hasPmIntegration } from '../../src/pm/integration.js';
 import {
@@ -40,6 +40,10 @@ vi.mock('../../src/utils/logging.js', () => ({
 		debug: vi.fn(),
 	},
 }));
+
+beforeAll(async () => {
+	await truncateAll();
+});
 
 describe('Integration Validation (integration)', () => {
 	beforeEach(async () => {

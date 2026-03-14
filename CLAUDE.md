@@ -44,10 +44,21 @@ Projects are configured in the PostgreSQL database (`projects` table). Each proj
 ### Testing
 
 ```bash
-npm test                 # Run tests
-npm run test:coverage    # Run with coverage
-npm run test:watch       # Watch mode
+npm test                 # Run unit tests (all 4 unit projects)
+npm run test:unit        # Alias for npm test
+npm run test:integration # Run integration tests (requires DB — see below)
+npm run test:all         # Run unit + integration tests together
+npm run test:coverage    # Coverage report (unit tests)
+npm run test:watch       # Watch mode (unit tests)
 ```
+
+> **Do not use `npm test -- --project integration`** — it _adds_ the integration project on top of the hardcoded unit project flags, running all 5 projects instead of filtering. Use `npm run test:integration` instead.
+
+Integration tests require a PostgreSQL database. They find it via (in order):
+1. `TEST_DATABASE_URL` env var
+2. `TEST_DATABASE_URL` in `.cascade/env` (written by `.cascade/setup.sh`)
+3. Docker Compose default at `127.0.0.1:5433` (`npm run test:db:up`)
+4. Container IP of `cascade-postgres-test`
 
 ### Linting
 

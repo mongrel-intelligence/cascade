@@ -5,7 +5,7 @@
  * project configurations (loaded via configRepository).
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
 	findProjectByBoardIdFromDb,
 	findProjectByRepoFromDb,
@@ -80,6 +80,10 @@ function makeTrelloLabelPayload(cardId: string, labelId: string, labelName = 'Re
 // ============================================================================
 // Tests
 // ============================================================================
+
+beforeAll(async () => {
+	await truncateAll();
+});
 
 describe('Trigger Registry (integration)', () => {
 	beforeEach(async () => {
