@@ -21,7 +21,7 @@ import {
 	buildInlineContextSection,
 	cleanupContextFiles,
 	offloadLargeContext,
-} from '../../../src/backends/claude-code/contextFiles.js';
+} from '../../../src/backends/shared/contextFiles.js';
 import type { ContextInjection } from '../../../src/backends/types.js';
 import { CONTEXT_OFFLOAD_CONFIG } from '../../../src/config/claudeCodeConfig.js';
 
