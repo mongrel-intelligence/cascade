@@ -22,6 +22,10 @@ import { startCancelListener, stopCancelListener } from './cancel-listener.js';
 import { getQueueStats } from './queue.js';
 import { processRouterWebhook } from './webhook-processor.js';
 import {
+	verifyGitHubWebhookSignature,
+	verifyTrelloWebhookSignature,
+} from './webhookVerification.js';
+import {
 	getActiveWorkerCount,
 	getActiveWorkers,
 	startWorkerProcessor,
@@ -67,6 +71,7 @@ app.post(
 	createWebhookHandler({
 		source: 'trello',
 		parsePayload: parseTrelloPayload,
+		verifySignature: verifyTrelloWebhookSignature,
 		processWebhook: async (payload) => {
 			const adapter = new TrelloRouterAdapter();
 			const result = await processRouterWebhook(adapter, payload, triggerRegistry);
@@ -90,6 +95,7 @@ app.post(
 	createWebhookHandler({
 		source: 'github',
 		parsePayload: parseGitHubPayload,
+		verifySignature: verifyGitHubWebhookSignature,
 		processWebhook: async (payload, eventType, headers) => {
 			const adapter = new GitHubRouterAdapter();
 			const deliveryId = headers['x-github-delivery'] ?? headers['X-GitHub-Delivery'];
