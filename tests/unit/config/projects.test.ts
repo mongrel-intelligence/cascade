@@ -68,17 +68,6 @@ describe('config provider', () => {
 	};
 
 	const mockConfig = {
-		defaults: {
-			model: 'test-model',
-			agentModels: {},
-			maxIterations: 50,
-			agentIterations: {},
-			watchdogTimeoutMs: 1800000,
-			cardBudgetUsd: 5,
-			agentBackend: 'llmist',
-			progressModel: 'test-model',
-			progressIntervalMinutes: 5,
-		},
 		projects: [mockProject1, mockProject2],
 	};
 

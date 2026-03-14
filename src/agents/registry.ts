@@ -11,8 +11,7 @@ import { logger } from '../utils/logging.js';
  * Engine resolution order:
  * 1. Project-level agent type override
  * 2. Project-level default engine
- * 3. Cascade-level default engine
- * 4. Fallback: 'llmist'
+ * 3. Fallback: 'llmist'
  *
  * All engines — including llmist — go through the shared adapter
  * (executeWithEngine), which handles repo setup, lifecycle, progress
@@ -24,7 +23,7 @@ export async function runAgent(
 ): Promise<AgentResult> {
 	registerBuiltInEngines();
 
-	const engineName = resolveEngineName(agentType, input.project, input.config);
+	const engineName = resolveEngineName(agentType, input.project);
 	const engine = getEngine(engineName);
 
 	if (!engine) {

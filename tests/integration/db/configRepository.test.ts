@@ -29,10 +29,11 @@ describe('configRepository (integration)', () => {
 			expect(config.projects[0].id).toBe('test-project');
 		});
 
-		it('uses schema defaults when no project-specific overrides', async () => {
+		it('uses project schema defaults when no project-specific overrides', async () => {
 			const config = await loadConfigFromDb();
-			expect(config.defaults.model).toBeDefined();
-			expect(config.defaults.maxIterations).toBeGreaterThan(0);
+			const project = config.projects[0];
+			expect(project.model).toBeDefined();
+			expect(project.maxIterations).toBeGreaterThan(0);
 		});
 
 		it('includes trello integration config in project', async () => {
@@ -163,7 +164,7 @@ describe('configRepository (integration)', () => {
 			expect(result).toBeDefined();
 			expect(result?.project.id).toBe('test-project');
 			expect(result?.config).toBeDefined();
-			expect(result?.config.defaults).toBeDefined();
+			expect(result?.config.projects).toBeDefined();
 		});
 
 		it('returns undefined for non-existent board', async () => {

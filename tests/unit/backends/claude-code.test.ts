@@ -65,7 +65,7 @@ function makeInput(overrides: Partial<AgentExecutionPlan> = {}): AgentExecutionP
 	return {
 		agentType: 'implementation',
 		project: { id: 'test', name: 'Test', repo: 'o/r' } as AgentExecutionPlan['project'],
-		config: { defaults: {} } as AgentExecutionPlan['config'],
+		config: { projects: [] } as AgentExecutionPlan['config'],
 		repoDir: '/tmp/repo',
 		systemPrompt: 'You are an agent.',
 		taskPrompt: 'Implement feature X.',

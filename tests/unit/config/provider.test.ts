@@ -66,10 +66,6 @@ import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 // ---------------------------------------------------------------------------
 
 const mockConfig: CascadeConfig = {
-	defaults: {
-		model: 'test-model',
-		maxIterations: 50,
-	},
 	projects: [
 		{
 			id: 'proj1',

@@ -11,8 +11,14 @@ vi.mock('../../../src/triggers/github/integration.js', () => {
 			raw: {},
 		}),
 		lookupProject: vi.fn().mockResolvedValue({
-			project: { id: 'project-1', name: 'Test', repo: 'owner/repo', baseBranch: 'main' },
-			config: { defaults: { watchdogTimeoutMs: 120000 } },
+			project: {
+				id: 'project-1',
+				name: 'Test',
+				repo: 'owner/repo',
+				baseBranch: 'main',
+				watchdogTimeoutMs: 120000,
+			},
+			config: { projects: [] },
 		}),
 		withCredentials: vi.fn().mockImplementation((_projectId, fn) => fn()),
 		resolveExecutionConfig: vi.fn().mockReturnValue({

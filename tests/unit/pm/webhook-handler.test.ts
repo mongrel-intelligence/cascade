@@ -82,9 +82,10 @@ function createMockIntegration(
 		name: 'Test Project',
 		repo: 'owner/repo',
 		baseBranch: 'main',
+		watchdogTimeoutMs: 120000,
 	};
 	const mockConfig = {
-		defaults: { watchdogTimeoutMs: 120000 },
+		projects: [],
 	};
 
 	return {

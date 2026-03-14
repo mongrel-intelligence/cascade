@@ -93,20 +93,8 @@ function makeProject(overrides: Partial<ProjectConfig> = {}): ProjectConfig {
 	} as ProjectConfig;
 }
 
-function makeConfig(overrides: Partial<CascadeConfig['defaults']> = {}): CascadeConfig {
+function makeConfig(_overrides: Record<string, unknown> = {}): CascadeConfig {
 	return {
-		defaults: {
-			model: 'default-model',
-			agentModels: {},
-			maxIterations: 50,
-			agentIterations: {},
-			watchdogTimeoutMs: 1800000,
-			cardBudgetUsd: 5,
-			agentBackend: 'llmist',
-			progressModel: 'progress-model',
-			progressIntervalMinutes: 5,
-			...overrides,
-		},
 		projects: [],
 	};
 }
@@ -208,24 +196,22 @@ describe('resolveModelConfig', () => {
 	});
 
 	describe('model resolution', () => {
-		it('uses default model when no overrides', async () => {
+		it('uses project model when no overrides', async () => {
 			const result = await resolveModelConfig({
 				agentType: 'splitting',
-				project: makeProject(),
-				config: makeConfig({ model: 'my-default' }),
+				project: makeProject({ model: 'my-default' }),
 				repoDir: '/tmp/test',
 			});
 
 			expect(result.model).toBe('my-default');
 		});
 
-		it('prefers modelOverride over project and default', async () => {
+		it('prefers modelOverride over project model', async () => {
 			const project = makeProject({ model: 'project-model' });
 
 			const result = await resolveModelConfig({
 				agentType: 'splitting',
 				project,
-				config: makeConfig({ model: 'default-model' }),
 				repoDir: '/tmp/test',
 				modelOverride: 'override-model',
 			});
@@ -380,26 +366,20 @@ describe('resolveModelConfig', () => {
 	});
 
 	describe('iterations resolution', () => {
-		it('uses default maxIterations', async () => {
+		it('uses project maxIterations', async () => {
 			const result = await resolveModelConfig({
 				agentType: 'splitting',
-				project: makeProject(),
-				config: makeConfig({ maxIterations: 42 }),
+				project: makeProject({ maxIterations: 42 }),
 				repoDir: '/tmp/test',
 			});
 
 			expect(result.maxIterations).toBe(42);
 		});
 
-		it('falls back to defaults.maxIterations when no agent-specific config', async () => {
-			const config = makeConfig({
-				maxIterations: 50,
-			});
-
+		it('uses project maxIterations (default from schema)', async () => {
 			const result = await resolveModelConfig({
 				agentType: 'splitting',
-				project: makeProject(),
-				config,
+				project: makeProject({ maxIterations: 50 }),
 				repoDir: '/tmp/test',
 			});
 

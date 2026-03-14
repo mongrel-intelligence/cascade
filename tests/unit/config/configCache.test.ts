@@ -56,7 +56,6 @@ describe('configCache', () => {
 
 		it('is cleared by invalidate()', () => {
 			const config = {
-				defaults: {} as never,
 				projects: [] as never,
 			};
 			configCache.setConfig(config);

@@ -1,10 +1,6 @@
-import {
-	CodexSettingsSchema,
-	getEngineSettings,
-	mergeEngineSettings,
-} from '../../config/engineSettings.js';
-import type { CodexSettings, EngineSettings } from '../../config/engineSettings.js';
-import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
+import { CodexSettingsSchema, getEngineSettings } from '../../config/engineSettings.js';
+import type { CodexSettings } from '../../config/engineSettings.js';
+import type { ProjectConfig } from '../../types/index.js';
 
 export interface ResolvedCodexSettings
 	extends Required<Pick<CodexSettings, 'approvalPolicy' | 'sandboxMode' | 'webSearch'>> {
@@ -22,14 +18,9 @@ function getDefaultsFromCapabilities(
 
 export function resolveCodexSettings(
 	project: ProjectConfig,
-	config: CascadeConfig,
 	nativeToolCapabilities?: string[],
 ): ResolvedCodexSettings {
-	const merged: EngineSettings | undefined = mergeEngineSettings(
-		config.defaults.engineSettings,
-		project.engineSettings,
-	);
-	const codex = getEngineSettings(merged, 'codex', CodexSettingsSchema) ?? {};
+	const codex = getEngineSettings(project.engineSettings, 'codex', CodexSettingsSchema) ?? {};
 	const defaults = getDefaultsFromCapabilities(nativeToolCapabilities);
 
 	return {

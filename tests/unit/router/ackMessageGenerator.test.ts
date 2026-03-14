@@ -265,7 +265,7 @@ describe('extractJiraContext', () => {
 describe('generateAckMessage', () => {
 	function setupHappyPath(llmResponse: string) {
 		vi.mocked(loadConfig).mockResolvedValue({
-			defaults: { progressModel: 'openrouter:google/gemini-2.5-flash-lite' },
+			projects: [{ id: 'p1', progressModel: 'openrouter:google/gemini-2.5-flash-lite' }],
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
 
@@ -304,7 +304,7 @@ describe('generateAckMessage', () => {
 
 	it('falls back to static message when progressModel is not configured', async () => {
 		vi.mocked(loadConfig).mockResolvedValue({
-			defaults: { progressModel: '' },
+			projects: [{ id: 'p1', progressModel: '' }],
 		} as never);
 
 		const result = await generateAckMessage('implementation', 'Card: Test', 'p1');
@@ -316,7 +316,7 @@ describe('generateAckMessage', () => {
 
 	it('falls back to static message when no API key', async () => {
 		vi.mocked(loadConfig).mockResolvedValue({
-			defaults: { progressModel: 'openrouter:google/gemini-2.5-flash-lite' },
+			projects: [{ id: 'p1', progressModel: 'openrouter:google/gemini-2.5-flash-lite' }],
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue(null);
 
@@ -329,7 +329,7 @@ describe('generateAckMessage', () => {
 
 	it('falls back to static message when LLM call throws', async () => {
 		vi.mocked(loadConfig).mockResolvedValue({
-			defaults: { progressModel: 'openrouter:google/gemini-2.5-flash-lite' },
+			projects: [{ id: 'p1', progressModel: 'openrouter:google/gemini-2.5-flash-lite' }],
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
 		mockTextComplete.mockRejectedValue(new Error('Network error'));
@@ -343,7 +343,7 @@ describe('generateAckMessage', () => {
 
 	it('falls back to static message when LLM returns empty output', async () => {
 		vi.mocked(loadConfig).mockResolvedValue({
-			defaults: { progressModel: 'openrouter:google/gemini-2.5-flash-lite' },
+			projects: [{ id: 'p1', progressModel: 'openrouter:google/gemini-2.5-flash-lite' }],
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
 
@@ -374,7 +374,7 @@ describe('generateAckMessage', () => {
 	it('restores process.env after failed call', async () => {
 		const originalKey = process.env.OPENROUTER_API_KEY;
 		vi.mocked(loadConfig).mockResolvedValue({
-			defaults: { progressModel: 'openrouter:google/gemini-2.5-flash-lite' },
+			projects: [{ id: 'p1', progressModel: 'openrouter:google/gemini-2.5-flash-lite' }],
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
 		mockTextComplete.mockRejectedValue(new Error('LLM error'));
@@ -451,7 +451,7 @@ describe('generateAckMessage', () => {
 		vi.useFakeTimers();
 
 		vi.mocked(loadConfig).mockResolvedValue({
-			defaults: { progressModel: 'openrouter:google/gemini-2.5-flash-lite' },
+			projects: [{ id: 'p1', progressModel: 'openrouter:google/gemini-2.5-flash-lite' }],
 		} as never);
 		vi.mocked(getOrgCredential).mockResolvedValue('sk-test-key');
 

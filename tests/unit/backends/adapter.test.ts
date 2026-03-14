@@ -179,18 +179,6 @@ function makeProject(): ProjectConfig {
 
 function makeConfig(): CascadeConfig {
 	return {
-		defaults: {
-			model: 'test-model',
-			agentModels: {},
-			maxIterations: 50,
-			agentIterations: {},
-			watchdogTimeoutMs: 1800000,
-			workItemBudgetUsd: 5,
-			agentEngine: 'llmist',
-			engineSettings: {},
-			progressModel: 'openrouter:google/gemini-2.5-flash-lite',
-			progressIntervalMinutes: 5,
-		},
 		projects: [],
 	};
 }
