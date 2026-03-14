@@ -1,19 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-const mockInsert = vi.fn();
-const mockSelect = vi.fn();
-const mockDelete = vi.fn();
-const mockValues = vi.fn();
-const mockReturning = vi.fn();
-const mockWhere = vi.fn();
-const mockFrom = vi.fn();
+import { createMockDb } from '../../../helpers/mockDb.js';
 
 vi.mock('../../../../src/db/client.js', () => ({
-	getDb: () => ({
-		insert: mockInsert,
-		select: mockSelect,
-		delete: mockDelete,
-	}),
+	getDb: vi.fn(),
 }));
 
 vi.mock('../../../../src/db/schema/index.js', () => ({
@@ -24,6 +13,8 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 		passwordHash: 'password_hash',
 		name: 'name',
 		role: 'role',
+		createdAt: 'created_at',
+		updatedAt: 'updated_at',
 	},
 	sessions: {
 		id: 'id',
@@ -33,22 +24,26 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 	},
 }));
 
+import { getDb } from '../../../../src/db/client.js';
 import {
 	createSession,
+	createUser,
 	deleteExpiredSessions,
 	deleteSession,
+	deleteUser,
 	getSessionByToken,
 	getUserByEmail,
 	getUserById,
+	listOrgUsers,
+	updateUser,
 } from '../../../../src/db/repositories/usersRepository.js';
 
 describe('usersRepository', () => {
+	let mockDb: ReturnType<typeof createMockDb>;
+
 	beforeEach(() => {
-		mockInsert.mockReturnValue({ values: mockValues });
-		mockValues.mockReturnValue({ returning: mockReturning });
-		mockSelect.mockReturnValue({ from: mockFrom });
-		mockFrom.mockReturnValue({ where: mockWhere });
-		mockDelete.mockReturnValue({ where: mockWhere });
+		mockDb = createMockDb();
+		vi.mocked(getDb).mockReturnValue(mockDb.db as never);
 	});
 
 	describe('getUserByEmail', () => {
@@ -61,14 +56,14 @@ describe('usersRepository', () => {
 				name: 'Test',
 				role: 'admin',
 			};
-			mockWhere.mockResolvedValue([mockUser]);
+			mockDb.chain.where.mockResolvedValueOnce([mockUser]);
 
 			const result = await getUserByEmail('test@example.com');
 			expect(result).toEqual(mockUser);
 		});
 
 		it('returns null when no user matches', async () => {
-			mockWhere.mockResolvedValue([]);
+			mockDb.chain.where.mockResolvedValueOnce([]);
 
 			const result = await getUserByEmail('noone@example.com');
 			expect(result).toBeNull();
@@ -84,14 +79,14 @@ describe('usersRepository', () => {
 				name: 'Test',
 				role: 'admin',
 			};
-			mockWhere.mockResolvedValue([dashboardUser]);
+			mockDb.chain.where.mockResolvedValueOnce([dashboardUser]);
 
 			const result = await getUserById('u1');
 			expect(result).toEqual(dashboardUser);
 		});
 
 		it('returns null when not found', async () => {
-			mockWhere.mockResolvedValue([]);
+			mockDb.chain.where.mockResolvedValueOnce([]);
 
 			const result = await getUserById('nonexistent');
 			expect(result).toBeNull();
@@ -100,13 +95,13 @@ describe('usersRepository', () => {
 
 	describe('createSession', () => {
 		it('inserts session and returns id', async () => {
-			mockReturning.mockResolvedValue([{ id: 'session-uuid' }]);
+			mockDb.chain.returning.mockResolvedValueOnce([{ id: 'session-uuid' }]);
 			const expiresAt = new Date('2099-01-01');
 
 			const result = await createSession('user-1', 'token-abc', expiresAt);
 
 			expect(result).toBe('session-uuid');
-			expect(mockValues).toHaveBeenCalledWith({
+			expect(mockDb.chain.values).toHaveBeenCalledWith({
 				userId: 'user-1',
 				token: 'token-abc',
 				expiresAt,
@@ -121,14 +116,14 @@ describe('usersRepository', () => {
 				userId: 'u1',
 				expiresAt: new Date('2099-01-01'),
 			};
-			mockWhere.mockResolvedValue([sessionRow]);
+			mockDb.chain.where.mockResolvedValueOnce([sessionRow]);
 
 			const result = await getSessionByToken('valid-token');
 			expect(result).toEqual(sessionRow);
 		});
 
 		it('returns null when no matching session', async () => {
-			mockWhere.mockResolvedValue([]);
+			mockDb.chain.where.mockResolvedValueOnce([]);
 
 			const result = await getSessionByToken('expired-token');
 			expect(result).toBeNull();
@@ -137,19 +132,163 @@ describe('usersRepository', () => {
 
 	describe('deleteSession', () => {
 		it('deletes session by token', async () => {
-			mockWhere.mockResolvedValue(undefined);
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
 
 			await deleteSession('token-to-delete');
-			expect(mockDelete).toHaveBeenCalled();
+			expect(mockDb.db.delete).toHaveBeenCalled();
 		});
 	});
 
 	describe('deleteExpiredSessions', () => {
 		it('deletes sessions with past expiresAt', async () => {
-			mockWhere.mockResolvedValue(undefined);
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
 
 			await deleteExpiredSessions();
-			expect(mockDelete).toHaveBeenCalled();
+			expect(mockDb.db.delete).toHaveBeenCalled();
+		});
+	});
+
+	describe('listOrgUsers', () => {
+		it('returns all users for org without passwordHash', async () => {
+			const mockUsers = [
+				{
+					id: 'u1',
+					orgId: 'org-1',
+					email: 'alice@example.com',
+					name: 'Alice',
+					role: 'admin',
+					createdAt: new Date('2024-01-01'),
+					updatedAt: new Date('2024-01-01'),
+				},
+				{
+					id: 'u2',
+					orgId: 'org-1',
+					email: 'bob@example.com',
+					name: 'Bob',
+					role: 'member',
+					createdAt: new Date('2024-02-01'),
+					updatedAt: new Date('2024-02-01'),
+				},
+			];
+			mockDb.chain.where.mockResolvedValueOnce(mockUsers);
+
+			const result = await listOrgUsers('org-1');
+
+			expect(result).toHaveLength(2);
+			expect(result[0]).toEqual(mockUsers[0]);
+			expect(result[1]).toEqual(mockUsers[1]);
+			// Verify passwordHash is not in the result
+			for (const user of result) {
+				expect(user).not.toHaveProperty('passwordHash');
+			}
+		});
+
+		it('returns empty array when no users in org', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			const result = await listOrgUsers('empty-org');
+			expect(result).toEqual([]);
+		});
+
+		it('queries by orgId', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			await listOrgUsers('org-123');
+
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('createUser', () => {
+		it('inserts user and returns id', async () => {
+			mockDb.chain.returning.mockResolvedValueOnce([{ id: 'new-user-uuid' }]);
+
+			const result = await createUser({
+				orgId: 'org-1',
+				email: 'newuser@example.com',
+				passwordHash: '$2b$10$hashed',
+				name: 'New User',
+				role: 'member',
+			});
+
+			expect(result).toEqual({ id: 'new-user-uuid' });
+			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
+		});
+
+		it('stores pre-hashed password without modification', async () => {
+			mockDb.chain.returning.mockResolvedValueOnce([{ id: 'u1' }]);
+			const hashedPassword = '$2b$10$somehash';
+
+			await createUser({
+				orgId: 'org-1',
+				email: 'test@example.com',
+				passwordHash: hashedPassword,
+				name: 'Test User',
+				role: 'admin',
+			});
+
+			expect(mockDb.chain.values).toHaveBeenCalledWith({
+				orgId: 'org-1',
+				email: 'test@example.com',
+				passwordHash: hashedPassword,
+				name: 'Test User',
+				role: 'admin',
+			});
+		});
+	});
+
+	describe('updateUser', () => {
+		it('updates specified fields and sets updatedAt', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await updateUser('u1', { name: 'New Name', email: 'new@example.com' });
+
+			expect(mockDb.db.update).toHaveBeenCalledTimes(1);
+			const setArg = mockDb.chain.set.mock.calls[0][0];
+			expect(setArg.name).toBe('New Name');
+			expect(setArg.email).toBe('new@example.com');
+			expect(setArg.updatedAt).toBeInstanceOf(Date);
+		});
+
+		it('only updates provided fields', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await updateUser('u1', { role: 'admin' });
+
+			const setArg = mockDb.chain.set.mock.calls[0][0];
+			expect(setArg.role).toBe('admin');
+			expect(setArg.name).toBeUndefined();
+			expect(setArg.email).toBeUndefined();
+			expect(setArg.passwordHash).toBeUndefined();
+		});
+
+		it('updates passwordHash when provided', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+			const newHash = '$2b$10$newhash';
+
+			await updateUser('u1', { passwordHash: newHash });
+
+			const setArg = mockDb.chain.set.mock.calls[0][0];
+			expect(setArg.passwordHash).toBe(newHash);
+		});
+
+		it('always sets updatedAt even with no other fields', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await updateUser('u1', {});
+
+			const setArg = mockDb.chain.set.mock.calls[0][0];
+			expect(setArg.updatedAt).toBeInstanceOf(Date);
+		});
+	});
+
+	describe('deleteUser', () => {
+		it('deletes user by id', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await deleteUser('u1');
+
+			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
 		});
 	});
 });
