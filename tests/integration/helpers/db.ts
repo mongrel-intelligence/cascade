@@ -1,6 +1,61 @@
+import { execSync } from 'node:child_process';
+import net from 'node:net';
 import path from 'node:path';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { closeDb, getDb } from '../../../src/db/client.js';
+
+function checkPortReachable(host: string, port: number, timeoutMs = 500): Promise<boolean> {
+	return new Promise((resolve) => {
+		const socket = net.connect({ host, port });
+		const done = (result: boolean) => {
+			socket.destroy();
+			resolve(result);
+		};
+		socket.once('connect', () => done(true));
+		socket.once('error', () => done(false));
+		socket.setTimeout(timeoutMs, () => done(false));
+	});
+}
+
+function resolveContainerIp(containerName: string): string | null {
+	try {
+		const ip = execSync(
+			`docker inspect ${containerName} --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'`,
+			{ encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+		).trim();
+		return ip || null;
+	} catch {
+		return null;
+	}
+}
+
+export async function resolveTestDbUrl(): Promise<string | null> {
+	// 1. Explicit env var — check it's actually reachable
+	const envUrl = process.env.TEST_DATABASE_URL;
+	if (envUrl) {
+		try {
+			const u = new URL(envUrl);
+			const port = Number.parseInt(u.port || '5432', 10);
+			if (await checkPortReachable(u.hostname, port)) return envUrl;
+		} catch {
+			// malformed URL — fall through
+		}
+	}
+
+	// 2. Docker Compose default (standard Docker / CI)
+	if (await checkPortReachable('127.0.0.1', 5433)) {
+		return 'postgresql://cascade_test:cascade_test@127.0.0.1:5433/cascade_test';
+	}
+
+	// 3. Container bridge IP — rootless Docker workaround
+	const ip = resolveContainerIp('cascade-postgres-test');
+	if (ip && (await checkPortReachable(ip, 5432))) {
+		return `postgresql://cascade_test:cascade_test@${ip}:5432/cascade_test`;
+	}
+
+	// 4. No database reachable
+	return null;
+}
 
 /**
  * Runs Drizzle migrations against the test database.
