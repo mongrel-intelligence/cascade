@@ -12,7 +12,6 @@ import type {
 	ToolPart,
 } from '@opencode-ai/sdk/client';
 
-import { storeLlmCall } from '../../db/repositories/runsRepository.js';
 import { logger } from '../../utils/logging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { OPENCODE_ENGINE_DEFINITION } from '../catalog.js';
@@ -28,6 +27,7 @@ import {
 	retryNativeToolOperation,
 } from '../nativeToolRetry.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
+import { logLlmCall } from '../shared/llmCallLogger.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
 import { buildEnv } from './env.js';
 import { DEFAULT_OPENCODE_MODEL } from './models.js';
@@ -276,24 +276,22 @@ function reportToolPart(
 	input.progressReporter.onToolCall(part.tool, part.state.input);
 }
 
-async function storeUsage(
+function storeUsage(
 	input: AgentExecutionPlan,
 	model: string,
 	llmCallCount: number,
 	part: Extract<Part, { type: 'step-finish' }>,
-): Promise<void> {
-	if (!input.runId) return;
-	await storeLlmCall({
+): void {
+	logLlmCall({
 		runId: input.runId,
 		callNumber: llmCallCount,
-		request: undefined,
-		response: JSON.stringify(part),
+		model,
 		inputTokens: part.tokens.input,
 		outputTokens: part.tokens.output,
 		cachedTokens: part.tokens.cache.read,
 		costUsd: part.cost,
-		durationMs: undefined,
-		model,
+		response: JSON.stringify(part),
+		engineLabel: 'OpenCode',
 	});
 }
 
@@ -402,13 +400,7 @@ async function handleMessagePartUpdated(
 	if (part.type === 'step-finish') {
 		state.llmCallCount += 1;
 		state.totalCost += part.cost;
-		await storeUsage(state.input, state.model, state.llmCallCount, part).catch((error) => {
-			logger.warn('Failed to store OpenCode LLM call in real-time', {
-				runId: state.input.runId,
-				call: state.llmCallCount,
-				error: String(error),
-			});
-		});
+		storeUsage(state.input, state.model, state.llmCallCount, part);
 		return;
 	}
 
