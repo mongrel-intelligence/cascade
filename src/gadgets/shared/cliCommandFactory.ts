@@ -327,7 +327,15 @@ export function createCLICommand(
 			resolveGitRemoteParams(autoResolvedParams, parsedFlags, resolvedParams);
 
 			// Call the core function
-			const result = await coreFn(resolvedParams);
+			let result: unknown;
+			try {
+				result = await coreFn(resolvedParams);
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				this.log(JSON.stringify({ success: false, error: message }));
+				this.exit(1);
+				return;
+			}
 
 			// Output JSON result
 			this.log(JSON.stringify({ success: true, data: result }));
