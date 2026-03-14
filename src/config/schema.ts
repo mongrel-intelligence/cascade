@@ -64,6 +64,7 @@ export const ProjectConfigSchema = z.object({
 	agentEngine: AgentEngineConfigSchema.optional(),
 	engineSettings: EngineSettingsSchema.optional(),
 	squintDbUrl: z.string().url().optional(),
+	runLinksEnabled: z.boolean().default(false),
 });
 
 export const CascadeConfigSchema = z.object({

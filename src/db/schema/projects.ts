@@ -1,4 +1,4 @@
-import { jsonb, numeric, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, jsonb, numeric, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
 import type { EngineSettings } from '../../config/engineSettings.js';
 import { organizations } from './organizations.js';
@@ -20,6 +20,7 @@ export const projects = pgTable(
 		agentEngine: text('agent_engine'),
 		agentEngineSettings: jsonb('agent_engine_settings').$type<EngineSettings>(),
 		squintDbUrl: text('squint_db_url'),
+		runLinksEnabled: boolean('run_links_enabled').default(false).notNull(),
 
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')

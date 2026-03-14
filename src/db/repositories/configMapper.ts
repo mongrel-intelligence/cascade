@@ -90,6 +90,7 @@ export interface ProjectConfigRaw {
 	workItemBudgetUsd?: number;
 	squintDbUrl?: string;
 	engineSettings?: EngineSettings;
+	runLinksEnabled?: boolean;
 	trello?: {
 		boardId: string;
 		lists: Record<string, string>;
@@ -126,6 +127,7 @@ type ProjectRow = {
 	squintDbUrl: string | null;
 	agentEngine: string | null;
 	agentEngineSettings: EngineSettings | null;
+	runLinksEnabled: boolean;
 };
 
 export function buildAgentMaps(configs: AgentConfigRow[]): {
@@ -238,6 +240,7 @@ export function mapProjectRow({
 		workItemBudgetUsd: row.workItemBudgetUsd ? Number(row.workItemBudgetUsd) : undefined,
 		engineSettings: row.agentEngineSettings ?? undefined,
 		squintDbUrl: row.squintDbUrl ?? undefined,
+		runLinksEnabled: row.runLinksEnabled ?? false,
 	};
 
 	if (trelloConfig) {

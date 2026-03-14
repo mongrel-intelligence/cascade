@@ -22,6 +22,7 @@ import { captureException } from '../../sentry.js';
 import type { TriggerRegistry } from '../../triggers/registry.js';
 import type { TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { buildWorkItemRunsLink, getDashboardUrl } from '../../utils/runLink.js';
 import { extractGitHubContext, generateAckMessage } from '../ackMessageGenerator.js';
 import {
 	postGitHubAck,
@@ -67,6 +68,8 @@ async function postPMAck(
 /**
  * Post a GitHub PR acknowledgment comment using the agent-specific token.
  * Returns an AckResult, or undefined if not applicable.
+ *
+ * @param messageOverride — when provided, skips internal message generation and posts this text instead.
  */
 async function postGitHubPRAck(
 	repoFullName: string,
@@ -74,12 +77,13 @@ async function postGitHubPRAck(
 	payload: unknown,
 	agentType: string,
 	projectId: string,
+	messageOverride?: string,
 ): Promise<AckResult | undefined> {
 	const resolved = await resolveGitHubTokenForAckByAgent(repoFullName, agentType);
 	if (!resolved) return undefined;
 
 	const context = extractGitHubContext(payload, eventType);
-	const message = await generateAckMessage(agentType, context, projectId);
+	const message = messageOverride ?? (await generateAckMessage(agentType, context, projectId));
 	const tempJob = { eventType, repoFullName, payload } as GitHubJob;
 	const prNumber = extractPRNumber(tempJob);
 	if (!prNumber) return undefined;
@@ -247,6 +251,20 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 		triggerResult?: TriggerResult,
 	): Promise<AckResult | undefined> {
 		try {
+			// Load full project config to check run link settings
+			const config = await loadProjectConfig();
+			const fullProject = config.fullProjects.find((fp) => fp.id === project.id);
+			const runLinksEnabled = fullProject?.runLinksEnabled ?? false;
+
+			// Helper to append run link footer to a message when enabled
+			const withRunLink = (message: string, workItemId?: string): string => {
+				if (!runLinksEnabled || !workItemId) return message;
+				const dashboardUrl = getDashboardUrl();
+				if (!dashboardUrl) return message;
+				const link = buildWorkItemRunsLink({ dashboardUrl, projectId: project.id, workItemId });
+				return link ? message + link : message;
+			};
+
 			// PM-focused agents (e.g. backlog-manager) should have ack posted to the PM tool
 			// (Trello/JIRA card), not to the already-merged GitHub PR.
 			if (await isPMFocusedAgent(agentType)) {
@@ -256,8 +274,26 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 					return undefined;
 				}
 				const context = extractGitHubContext(payload, event.eventType);
-				const message = await generateAckMessage(agentType, context, project.id);
+				const baseMessage = await generateAckMessage(agentType, context, project.id);
+				const message = withRunLink(baseMessage, workItemId);
 				return postPMAck(project.id, workItemId, project.pmType, agentType, message);
+			}
+
+			// Build the GitHub PR ack message with run link included before posting,
+			// so the actual comment on the PR contains the footer (not just internal metadata).
+			let githubAckMessage: string | undefined;
+			if (runLinksEnabled && event.workItemId) {
+				const dashboardUrl = getDashboardUrl();
+				if (dashboardUrl) {
+					const context = extractGitHubContext(payload, event.eventType);
+					const baseMessage = await generateAckMessage(agentType, context, project.id);
+					const link = buildWorkItemRunsLink({
+						dashboardUrl,
+						projectId: project.id,
+						workItemId: event.workItemId,
+					});
+					githubAckMessage = link ? baseMessage + link : baseMessage;
+				}
 			}
 
 			return postGitHubPRAck(
@@ -266,6 +302,7 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 				payload,
 				agentType,
 				project.id,
+				githubAckMessage,
 			);
 		} catch (err) {
 			logger.warn('GitHub ack comment failed (non-fatal)', { error: String(err) });

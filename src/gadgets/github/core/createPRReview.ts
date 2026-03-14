@@ -1,4 +1,5 @@
 import { githubClient } from '../../../github/client.js';
+import { buildRunLinkFooterFromEnv } from '../../../utils/runLink.js';
 
 export interface CreatePRReviewParams {
 	owner: string;
@@ -15,12 +16,15 @@ export interface CreatePRReviewResult {
 }
 
 export async function createPRReview(params: CreatePRReviewParams): Promise<CreatePRReviewResult> {
+	const runLinkFooter = buildRunLinkFooterFromEnv();
+	const body = runLinkFooter ? params.body + runLinkFooter : params.body;
+
 	const review = await githubClient.createPRReview(
 		params.owner,
 		params.repo,
 		params.prNumber,
 		params.event,
-		params.body,
+		body,
 		params.comments,
 	);
 	return { reviewUrl: review.htmlUrl, event: params.event };

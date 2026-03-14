@@ -23,6 +23,7 @@ interface Project {
 	workItemBudgetUsd: string | null;
 	agentEngine: string | null;
 	engineSettings: Record<string, Record<string, unknown>> | null;
+	runLinksEnabled?: boolean | null;
 }
 
 export function ProjectGeneralForm({ project }: { project: Project }) {
@@ -39,6 +40,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const [engineSettings, setEngineSettings] = useState<Record<string, Record<string, unknown>>>(
 		project.engineSettings ?? {},
 	);
+	const [runLinksEnabled, setRunLinksEnabled] = useState(project.runLinksEnabled ?? false);
 
 	const updateMutation = useMutation({
 		mutationFn: (data: Record<string, unknown>) =>
@@ -64,6 +66,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 			workItemBudgetUsd: workItemBudgetUsd || null,
 			agentEngine: agentEngine || null,
 			engineSettings: Object.keys(engineSettings).length > 0 ? engineSettings : null,
+			runLinksEnabled,
 		});
 	}
 
@@ -145,6 +148,19 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 				value={engineSettings}
 				onChange={(next) => setEngineSettings(next ?? {})}
 			/>
+			<div className="flex items-center gap-3">
+				<input
+					type="checkbox"
+					id="runLinksEnabled"
+					checked={runLinksEnabled}
+					onChange={(e) => setRunLinksEnabled(e.target.checked)}
+					className="h-4 w-4 rounded border-border"
+				/>
+				<Label htmlFor="runLinksEnabled" className="cursor-pointer">
+					Enable run links in comments (requires{' '}
+					<code className="text-xs">CASCADE_DASHBOARD_URL</code> env var)
+				</Label>
+			</div>
 			<div className="flex items-center gap-2">
 				<button
 					type="submit"

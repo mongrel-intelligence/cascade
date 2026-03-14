@@ -21,6 +21,7 @@ import type { ModelSpec } from 'llmist';
 import { syncCompletedTodosToChecklist } from '../agents/utils/checklistSync.js';
 import { formatStatusMessage } from '../config/statusUpdateConfig.js';
 import { captureException } from '../sentry.js';
+import { buildRunLink, buildWorkItemRunsLink, getDashboardUrl } from '../utils/runLink.js';
 import { callProgressModel } from './progressModel.js';
 import { clearProgressCommentId, writeProgressCommentId } from './progressState.js';
 import { ProgressAccumulator } from './progressState/accumulator.js';
@@ -49,6 +50,14 @@ export interface ProgressMonitorConfig {
 	 * Defaults to DEFAULT_SCHEDULE_MINUTES = [1, 3, 5].
 	 */
 	scheduleMinutes?: number[];
+	/** Run link config — when set, appends a dashboard link to progress comments */
+	runLink?: {
+		runId?: string;
+		engineLabel: string;
+		model: string;
+		projectId: string;
+		workItemId?: string;
+	};
 }
 
 const PROGRESS_MODEL_TIMEOUT_MS = 20_000;
@@ -90,6 +99,13 @@ export class ProgressMonitor implements ProgressReporter {
 
 	getProgressCommentId(): string | null {
 		return this.pmPoster?.getCommentId() ?? null;
+	}
+
+	/** Update the run ID (available after the run record is created). */
+	setRunId(runId: string): void {
+		if (this.config.runLink) {
+			this.config.runLink.runId = runId;
+		}
 	}
 
 	// ── ProgressReporter interface (accumulate only, no posting) ──
@@ -152,6 +168,36 @@ export class ProgressMonitor implements ProgressReporter {
 
 	// ── Internal ──
 
+	private buildRunLinkFooter(): string {
+		const { runLink } = this.config;
+		if (!runLink) return '';
+
+		const dashboardUrl = getDashboardUrl();
+		if (!dashboardUrl) return '';
+
+		if (runLink.runId) {
+			return buildRunLink({
+				dashboardUrl,
+				runId: runLink.runId,
+				engineLabel: runLink.engineLabel,
+				model: runLink.model,
+			});
+		}
+
+		if (runLink.workItemId) {
+			return buildWorkItemRunsLink({
+				dashboardUrl,
+				projectId: runLink.projectId,
+				workItemId: runLink.workItemId,
+				engineLabel: runLink.engineLabel,
+				model: runLink.model,
+			});
+		}
+
+		return '';
+	}
+
+	// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: progress reporting with multiple posting targets
 	private async tick(): Promise<void> {
 		// Wait for initial comment to complete before proceeding so the first
 		// tick updates the same comment instead of creating a duplicate
@@ -191,6 +237,10 @@ export class ProgressMonitor implements ProgressReporter {
 				});
 				summary = formatStatusMessage(this.config.agentType);
 			}
+
+			// Append run link footer if configured
+			const runLinkFooter = this.buildRunLinkFooter();
+			if (runLinkFooter) summary += runLinkFooter;
 
 			// Post to PM provider (Trello/JIRA)
 			if (this.pmPoster) {
