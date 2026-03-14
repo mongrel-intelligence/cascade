@@ -6,9 +6,6 @@ import { useState } from 'react';
 interface Project {
 	id: string;
 	name: string;
-	repo?: string | null;
-	baseBranch: string | null;
-	branchPrefix: string | null;
 	model: string | null;
 	maxIterations: number | null;
 	watchdogTimeoutMs: number | null;
@@ -27,9 +24,6 @@ function numericFieldDefault(value: number | null | undefined): string {
 export function ProjectGeneralForm({ project }: { project: Project }) {
 	const updateMutation = useProjectUpdate(project.id);
 	const [name, setName] = useState(project.name);
-	const [repo, setRepo] = useState(project.repo ?? '');
-	const [baseBranch, setBaseBranch] = useState(project.baseBranch ?? 'main');
-	const [branchPrefix, setBranchPrefix] = useState(project.branchPrefix ?? 'feature/');
 	const [watchdogTimeoutMs, setWatchdogTimeoutMs] = useState(
 		numericFieldDefault(project.watchdogTimeoutMs),
 	);
@@ -44,9 +38,6 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 		e.preventDefault();
 		updateMutation.mutate({
 			name,
-			repo: repo || undefined,
-			baseBranch,
-			branchPrefix,
 			watchdogTimeoutMs: watchdogTimeoutMs ? Number.parseInt(watchdogTimeoutMs, 10) : null,
 			progressModel: progressModel || null,
 			progressIntervalMinutes: progressIntervalMinutes || null,
@@ -57,38 +48,9 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 
 	return (
 		<form onSubmit={handleSubmit} className="max-w-2xl space-y-4">
-			<div className="grid grid-cols-2 gap-4">
-				<div className="space-y-2">
-					<Label htmlFor="name">Name</Label>
-					<Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
-				</div>
-				<div className="space-y-2">
-					<Label htmlFor="repo">Repository (optional)</Label>
-					<Input
-						id="repo"
-						value={repo}
-						onChange={(e) => setRepo(e.target.value)}
-						placeholder="owner/repo"
-					/>
-				</div>
-			</div>
-			<div className="grid grid-cols-2 gap-4">
-				<div className="space-y-2">
-					<Label htmlFor="baseBranch">Base Branch</Label>
-					<Input
-						id="baseBranch"
-						value={baseBranch}
-						onChange={(e) => setBaseBranch(e.target.value)}
-					/>
-				</div>
-				<div className="space-y-2">
-					<Label htmlFor="branchPrefix">Branch Prefix</Label>
-					<Input
-						id="branchPrefix"
-						value={branchPrefix}
-						onChange={(e) => setBranchPrefix(e.target.value)}
-					/>
-				</div>
+			<div className="space-y-2">
+				<Label htmlFor="name">Name</Label>
+				<Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
 			</div>
 			<div className="grid grid-cols-2 gap-4">
 				<div className="space-y-2">

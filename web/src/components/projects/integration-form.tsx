@@ -391,14 +391,22 @@ function GitHubWebhookSection({ projectId }: { projectId: string }) {
 // SCM Tab (GitHub)
 // ============================================================================
 
+interface SCMTabProject {
+	repo?: string | null;
+	baseBranch?: string | null;
+	branchPrefix?: string | null;
+}
+
 function SCMTab({
 	projectId,
 	initialProvider,
 	initialCredentials,
+	project,
 }: {
 	projectId: string;
 	initialProvider: string;
 	initialCredentials: Map<string, number>;
+	project?: SCMTabProject;
 }) {
 	const queryClient = useQueryClient();
 
@@ -408,12 +416,31 @@ function SCMTab({
 	const [provider] = useState(initialProvider || 'github');
 	const [credentialMap, setCredentialMap] = useState<Map<string, number>>(initialCredentials);
 
+	// Project-level SCM fields
+	const [repo, setRepo] = useState(project?.repo ?? '');
+	const [baseBranch, setBaseBranch] = useState(project?.baseBranch ?? 'main');
+	const [branchPrefix, setBranchPrefix] = useState(project?.branchPrefix ?? 'feature/');
+
 	useEffect(() => {
 		setCredentialMap(initialCredentials);
 	}, [initialCredentials]);
 
+	useEffect(() => {
+		setRepo(project?.repo ?? '');
+		setBaseBranch(project?.baseBranch ?? 'main');
+		setBranchPrefix(project?.branchPrefix ?? 'feature/');
+	}, [project?.repo, project?.baseBranch, project?.branchPrefix]);
+
 	const saveMutation = useMutation({
 		mutationFn: async () => {
+			// Save project-level SCM fields
+			await trpcClient.projects.update.mutate({
+				id: projectId,
+				repo: repo || undefined,
+				baseBranch,
+				branchPrefix,
+			});
+
 			// Note: triggers are intentionally omitted — they are managed via the Agent Configs tab
 			const result = await trpcClient.projects.integrations.upsert.mutate({
 				projectId,
@@ -436,6 +463,12 @@ function SCMTab({
 		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({
+				queryKey: trpc.projects.getById.queryOptions({ id: projectId }).queryKey,
+			});
+			queryClient.invalidateQueries({
+				queryKey: trpc.projects.listFull.queryOptions().queryKey,
+			});
+			queryClient.invalidateQueries({
 				queryKey: trpc.projects.integrations.list.queryOptions({ projectId }).queryKey,
 			});
 			queryClient.invalidateQueries({
@@ -451,6 +484,42 @@ function SCMTab({
 
 	return (
 		<div className="space-y-6">
+			{/* Repository Settings */}
+			<div className="space-y-4">
+				<Label className="text-sm font-medium">Repository Settings</Label>
+				<div className="space-y-2">
+					<Label htmlFor="scm-repo">Repository (optional)</Label>
+					<Input
+						id="scm-repo"
+						value={repo}
+						onChange={(e) => setRepo(e.target.value)}
+						placeholder="owner/repo"
+					/>
+				</div>
+				<div className="grid grid-cols-2 gap-4">
+					<div className="space-y-2">
+						<Label htmlFor="scm-baseBranch">Base Branch</Label>
+						<Input
+							id="scm-baseBranch"
+							value={baseBranch}
+							onChange={(e) => setBaseBranch(e.target.value)}
+							placeholder="main"
+						/>
+					</div>
+					<div className="space-y-2">
+						<Label htmlFor="scm-branchPrefix">Branch Prefix</Label>
+						<Input
+							id="scm-branchPrefix"
+							value={branchPrefix}
+							onChange={(e) => setBranchPrefix(e.target.value)}
+							placeholder="feature/"
+						/>
+					</div>
+				</div>
+			</div>
+
+			<hr className="border-border" />
+
 			<p className="text-sm text-muted-foreground">
 				CASCADE uses two separate GitHub bot accounts to prevent feedback loops. The{' '}
 				<strong>implementer</strong> writes code and creates PRs. The <strong>reviewer</strong>{' '}
@@ -564,6 +633,7 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 	const scmCredsQuery = useQuery(
 		trpc.projects.integrationCredentials.list.queryOptions({ projectId, category: 'scm' }),
 	);
+	const projectQuery = useQuery(trpc.projects.getById.queryOptions({ id: projectId }));
 	const [activeTab, setActiveTab] = useState<IntegrationCategory>('pm');
 
 	if (integrationsQuery.isLoading) {
@@ -614,6 +684,7 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 					projectId={projectId}
 					initialProvider={scmProvider}
 					initialCredentials={scmCredMap}
+					project={projectQuery.data}
 				/>
 			)}
 		</div>
