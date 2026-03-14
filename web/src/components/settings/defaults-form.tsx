@@ -11,11 +11,13 @@ import {
 } from '@/components/ui/select.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 export function DefaultsForm() {
 	const queryClient = useQueryClient();
-	const defaultsQuery = useQuery(trpc.defaults.get.queryOptions());
+	// cascade_defaults table has been removed (migration 0038).
+	// defaults.get always returns null; the query is kept for cache invalidation compatibility.
+	useQuery(trpc.defaults.get.queryOptions());
 	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
 
 	const [model, setModel] = useState('');
@@ -26,20 +28,6 @@ export function DefaultsForm() {
 	const [engineSettings, setEngineSettings] = useState<Record<string, Record<string, unknown>>>({});
 	const [progressModel, setProgressModel] = useState('');
 	const [progressIntervalMinutes, setProgressIntervalMinutes] = useState('');
-
-	useEffect(() => {
-		if (defaultsQuery.data) {
-			const d = defaultsQuery.data;
-			setModel(d.model ?? '');
-			setMaxIterations(d.maxIterations?.toString() ?? '');
-			setWatchdogTimeoutMs(d.watchdogTimeoutMs?.toString() ?? '');
-			setWorkItemBudgetUsd(d.workItemBudgetUsd ?? '');
-			setAgentEngine(d.agentEngine ?? '');
-			setEngineSettings((d.engineSettings as Record<string, Record<string, unknown>> | null) ?? {});
-			setProgressModel(d.progressModel ?? '');
-			setProgressIntervalMinutes(d.progressIntervalMinutes ?? '');
-		}
-	}, [defaultsQuery.data]);
 
 	const upsertMutation = useMutation({
 		mutationFn: () =>
@@ -57,10 +45,6 @@ export function DefaultsForm() {
 			queryClient.invalidateQueries({ queryKey: trpc.defaults.get.queryOptions().queryKey });
 		},
 	});
-
-	if (defaultsQuery.isLoading) {
-		return <div className="py-4 text-muted-foreground">Loading defaults...</div>;
-	}
 
 	const selectedEngine = enginesQuery.data?.find((engine) => engine.id === agentEngine);
 

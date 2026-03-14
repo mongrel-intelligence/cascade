@@ -37,7 +37,6 @@ export async function truncateAll() {
 			users,
 			credentials,
 			projects,
-			cascade_defaults,
 			organizations
 		CASCADE
 	`);
