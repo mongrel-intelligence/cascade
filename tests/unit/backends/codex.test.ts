@@ -7,9 +7,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockSpawn = vi.fn();
 const mockStoreLlmCall = vi.fn().mockResolvedValue(undefined);
+const mockFindCredentialIdByEnvVarKey = vi.fn<() => Promise<number | null>>();
+const mockUpdateCredential = vi.fn<() => Promise<void>>();
+const mockWriteFile = vi.fn<() => Promise<void>>();
+const mockMkdir = vi.fn<() => Promise<void>>();
+const mockReadFile = vi.fn<() => Promise<string>>();
 
 vi.mock('node:child_process', () => ({
 	spawn: (...args: unknown[]) => mockSpawn(...args),
+}));
+
+vi.mock('node:fs/promises', () => ({
+	mkdir: (...args: unknown[]) => mockMkdir(...args),
+	writeFile: (...args: unknown[]) => mockWriteFile(...args),
+	readFile: (...args: unknown[]) => mockReadFile(...args),
+}));
+
+vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
+	findCredentialIdByEnvVarKey: (...args: unknown[]) => mockFindCredentialIdByEnvVarKey(...args),
+	updateCredential: (...args: unknown[]) => mockUpdateCredential(...args),
 }));
 
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
@@ -208,6 +224,12 @@ describe('CodexEngine', () => {
 	beforeEach(() => {
 		workspaceDir = mkdtempSync(join(tmpdir(), 'cascade-codex-test-'));
 		vi.clearAllMocks();
+		// Default fs/promises stubs — auth tests override as needed
+		mockMkdir.mockResolvedValue(undefined);
+		mockWriteFile.mockResolvedValue(undefined);
+		mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+		mockFindCredentialIdByEnvVarKey.mockResolvedValue(null);
+		mockUpdateCredential.mockResolvedValue(undefined);
 	});
 
 	afterEach(() => {
@@ -317,5 +339,112 @@ describe('CodexEngine', () => {
 		expect(input.progressReporter.onToolCall).not.toHaveBeenCalled();
 		expect(input.progressReporter.onText).toHaveBeenCalledWith('Final answer.');
 		expect(input.progressReporter.onIteration).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('Codex subscription auth', () => {
+	const AUTH_JSON = JSON.stringify({ accessToken: 'tok_abc', refreshToken: 'ref_xyz' });
+
+	let workspaceDir: string;
+
+	beforeEach(() => {
+		workspaceDir = mkdtempSync(join(tmpdir(), 'cascade-codex-auth-test-'));
+		vi.clearAllMocks();
+		mockMkdir.mockResolvedValue(undefined);
+		mockWriteFile.mockResolvedValue(undefined);
+		mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+		mockFindCredentialIdByEnvVarKey.mockResolvedValue(null);
+		mockUpdateCredential.mockResolvedValue(undefined);
+		mockSpawn.mockImplementation(() => createMockChild({ exitCode: 0 }));
+	});
+
+	afterEach(() => {
+		rmSync(workspaceDir, { recursive: true, force: true });
+	});
+
+	it('writes auth.json when CODEX_AUTH_JSON is present in projectSecrets', async () => {
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { OPENAI_API_KEY: 'sk-test', CODEX_AUTH_JSON: AUTH_JSON },
+		});
+
+		await engine.execute(input);
+
+		expect(mockWriteFile).toHaveBeenCalledWith(expect.stringContaining('auth.json'), AUTH_JSON, {
+			mode: 0o600,
+		});
+	});
+
+	it('does not pass CODEX_AUTH_JSON to the subprocess environment', async () => {
+		let capturedEnv: Record<string, string | undefined> | undefined;
+		mockSpawn.mockImplementation(
+			(_cmd: string, _args: string[], options: { env?: Record<string, string | undefined> }) => {
+				capturedEnv = options.env;
+				return createMockChild({ exitCode: 0 });
+			},
+		);
+
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { OPENAI_API_KEY: 'sk-test', CODEX_AUTH_JSON: AUTH_JSON },
+		});
+
+		await engine.execute(input);
+
+		expect(capturedEnv?.CODEX_AUTH_JSON).toBeUndefined();
+		expect(capturedEnv?.OPENAI_API_KEY).toBe('sk-test');
+	});
+
+	it('updates the DB credential when auth.json is refreshed by Codex CLI', async () => {
+		const refreshedJson = JSON.stringify({ accessToken: 'tok_NEW', refreshToken: 'ref_xyz' });
+		mockReadFile.mockResolvedValue(refreshedJson);
+		mockFindCredentialIdByEnvVarKey.mockResolvedValue(42);
+
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { CODEX_AUTH_JSON: AUTH_JSON },
+		});
+
+		await engine.execute(input);
+
+		expect(mockFindCredentialIdByEnvVarKey).toHaveBeenCalledWith('org-1', 'CODEX_AUTH_JSON');
+		expect(mockUpdateCredential).toHaveBeenCalledWith(42, { value: refreshedJson });
+	});
+
+	it('skips DB update when auth.json is unchanged after run', async () => {
+		mockReadFile.mockResolvedValue(AUTH_JSON);
+
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { CODEX_AUTH_JSON: AUTH_JSON },
+		});
+
+		await engine.execute(input);
+
+		expect(mockUpdateCredential).not.toHaveBeenCalled();
+	});
+
+	it('logs WARN and does not throw when credential row is not found for refresh', async () => {
+		const refreshedJson = JSON.stringify({ accessToken: 'tok_NEW', refreshToken: 'ref_xyz' });
+		mockReadFile.mockResolvedValue(refreshedJson);
+		mockFindCredentialIdByEnvVarKey.mockResolvedValue(null);
+
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { CODEX_AUTH_JSON: AUTH_JSON },
+		});
+
+		await expect(engine.execute(input)).resolves.not.toThrow();
+		expect(input.logWriter).toHaveBeenCalledWith(
+			'WARN',
+			'Could not find CODEX_AUTH_JSON credential to update after token refresh',
+			{},
+		);
+		expect(mockUpdateCredential).not.toHaveBeenCalled();
 	});
 });

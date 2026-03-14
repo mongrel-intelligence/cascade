@@ -205,3 +205,21 @@ export async function listOrgCredentials(
 	const rows = await db.select().from(credentials).where(eq(credentials.orgId, orgId));
 	return rows.map((row) => ({ ...row, value: decryptCredential(row.value, orgId) }));
 }
+
+export async function findCredentialIdByEnvVarKey(
+	orgId: string,
+	envVarKey: string,
+): Promise<number | null> {
+	const db = getDb();
+	const [row] = await db
+		.select({ id: credentials.id })
+		.from(credentials)
+		.where(
+			and(
+				eq(credentials.orgId, orgId),
+				eq(credentials.envVarKey, envVarKey),
+				eq(credentials.isDefault, true),
+			),
+		);
+	return row?.id ?? null;
+}

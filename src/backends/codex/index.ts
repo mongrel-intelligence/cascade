@@ -1,19 +1,27 @@
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
+import {
+	findCredentialIdByEnvVarKey,
+	updateCredential,
+} from '../../db/repositories/credentialsRepository.js';
 import { storeLlmCall } from '../../db/repositories/runsRepository.js';
 import { logger } from '../../utils/logging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { CODEX_ENGINE_DEFINITION } from '../catalog.js';
 import { cleanupContextFiles } from '../contextFiles.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
-import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
+import type { AgentEngine, AgentEngineResult, AgentExecutionPlan, LogWriter } from '../types.js';
 import { buildEnv } from './env.js';
 import { CODEX_MODEL_IDS, DEFAULT_CODEX_MODEL } from './models.js';
 import { assertHeadlessCodexSettings, resolveCodexSettings } from './settings.js';
+
+const CODEX_AUTH_DIR = join(homedir(), '.codex');
+const CODEX_AUTH_FILE = join(CODEX_AUTH_DIR, 'auth.json');
 
 type JsonRecord = Record<string, unknown>;
 type ToolCall = { name: string; input?: Record<string, unknown> };
@@ -280,6 +288,68 @@ function buildArgs(
 }
 
 /**
+ * Write ~/.codex/auth.json for Codex subscription auth (ChatGPT Plus/Pro).
+ * Returns the written JSON string so callers can detect post-run token refreshes.
+ * Returns undefined if CODEX_AUTH_JSON is not present (API key auth path — no-op).
+ */
+async function writeCodexAuthFile(
+	projectSecrets: Record<string, string> | undefined,
+	logWriter: LogWriter,
+): Promise<string | undefined> {
+	const authJson = projectSecrets?.CODEX_AUTH_JSON;
+	if (!authJson) return undefined;
+
+	try {
+		JSON.parse(authJson);
+	} catch {
+		logWriter('WARN', 'CODEX_AUTH_JSON is not valid JSON — skipping subscription auth', {});
+		return undefined;
+	}
+
+	await mkdir(CODEX_AUTH_DIR, { recursive: true });
+	await writeFile(CODEX_AUTH_FILE, authJson, { mode: 0o600 });
+	logWriter('INFO', 'Writing ~/.codex/auth.json for subscription auth', {});
+	return authJson;
+}
+
+/**
+ * After a Codex run, read ~/.codex/auth.json and update the DB credential if
+ * the Codex CLI refreshed the access token during the run.
+ */
+async function captureRefreshedToken(
+	orgId: string,
+	originalJson: string | undefined,
+	logWriter: LogWriter,
+): Promise<void> {
+	if (!originalJson) return;
+
+	let newJson: string;
+	try {
+		newJson = await readFile(CODEX_AUTH_FILE, 'utf-8');
+	} catch {
+		return; // Unreadable — nothing to capture
+	}
+
+	if (newJson === originalJson) return;
+
+	try {
+		const credId = await findCredentialIdByEnvVarKey(orgId, 'CODEX_AUTH_JSON');
+		if (!credId) {
+			logWriter(
+				'WARN',
+				'Could not find CODEX_AUTH_JSON credential to update after token refresh',
+				{},
+			);
+			return;
+		}
+		await updateCredential(credId, { value: newJson });
+		logWriter('INFO', 'Captured refreshed Codex auth token and updated DB credential', {});
+	} catch (error) {
+		logWriter('WARN', 'Failed to capture refreshed Codex auth token', { error: String(error) });
+	}
+}
+
+/**
  * Codex CLI backend for CASCADE.
  *
  * Uses `codex exec` in JSONL mode and a conservative event parser so the engine
@@ -309,12 +379,21 @@ export class CodexEngine implements AgentEngine {
 		);
 		assertHeadlessCodexSettings(settings);
 
+		const originalAuthJson = await writeCodexAuthFile(input.projectSecrets, input.logWriter);
+
+		// Strip CODEX_AUTH_JSON from env — it's written to disk, not passed to the subprocess
+		const strippedSecrets: Record<string, string> | undefined = input.projectSecrets
+			? Object.fromEntries(
+					Object.entries(input.projectSecrets).filter(([k]) => k !== 'CODEX_AUTH_JSON'),
+				)
+			: undefined;
+
 		const lastMessagePath = join(
 			tmpdir(),
 			`cascade-codex-last-message-${process.pid}-${Date.now()}.txt`,
 		);
 		const prompt = buildPrompt(systemPrompt, taskPrompt);
-		const env = buildEnv(input.projectSecrets, input.cliToolsDir, input.nativeToolShimDir);
+		const env = buildEnv(strippedSecrets, input.cliToolsDir, input.nativeToolShimDir);
 		const args = buildArgs(input, settings, model, lastMessagePath);
 
 		input.logWriter('INFO', 'Starting Codex execution', {
@@ -456,6 +535,7 @@ export class CodexEngine implements AgentEngine {
 			if (hasOffloadedContext) {
 				await cleanupContextFiles(input.repoDir);
 			}
+			await captureRefreshedToken(input.project.orgId, originalAuthJson, input.logWriter);
 		}
 	}
 }

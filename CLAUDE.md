@@ -326,6 +326,45 @@ Generate a long-lived OAuth token for headless/containerized environments:
 bash tests/docker/claude-code-auth/run-test.sh
 ```
 
+## Codex Backend
+
+CASCADE supports OpenAI's Codex CLI as an alternative agent engine. Configure it as the default or per-project via the `agent-engine` setting:
+
+```bash
+cascade defaults set --agent-engine codex
+```
+
+### Authentication
+
+The Codex engine supports two auth modes:
+
+**API key (`OPENAI_API_KEY`):** Store the key as an org-scoped credential. No extra setup needed.
+
+**Subscription (ChatGPT Plus/Pro via `CODEX_AUTH_JSON`):**
+
+Codex CLI authenticates with an `auth.json` file at `~/.codex/auth.json` written by `codex login`. CASCADE reads this credential, writes the file before each run, and automatically captures any token refreshes the Codex CLI performs back into the database — so the credential stays current in ephemeral worker environments.
+
+Setup:
+
+```bash
+# 1. On a machine with a browser:
+codex login
+
+# 2. Store the auth token in CASCADE:
+cascade credentials create \
+  --name "Codex Subscription Auth" \
+  --key CODEX_AUTH_JSON \
+  --value "$(cat ~/.codex/auth.json)" \
+  --default
+
+# 3. Set the engine (if not already done):
+cascade defaults set --agent-engine codex
+```
+
+CASCADE then:
+- Writes `~/.codex/auth.json` from the stored credential at run start
+- Detects post-run token refreshes from the Codex CLI and updates the DB credential automatically
+
 ## Dashboard
 
 CASCADE includes a web dashboard for exploring agent runs, logs, LLM calls, and debug analyses.
