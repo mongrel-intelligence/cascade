@@ -450,12 +450,20 @@ describe('CodexEngine', () => {
 			const outputPath = args[args.indexOf('-o') + 1];
 			return createMockChild({
 				stdoutLines: [
+					JSON.stringify({ type: 'turn.started' }),
 					JSON.stringify({ text: 'Thinking...' }),
 					JSON.stringify({
 						tool_name: 'Bash',
 						tool_input: { command: 'cascade-tools session finish --comment done' },
 					}),
+					// Intermediate usage event — accumulates into turn, does NOT persist a row
 					JSON.stringify({
+						usage: { input_tokens: 11, output_tokens: 7 },
+						total_cost_usd: 0.42,
+					}),
+					// turn.completed finalizes and persists the accumulated turn data
+					JSON.stringify({
+						type: 'turn.completed',
 						usage: { input_tokens: 11, output_tokens: 7 },
 						total_cost_usd: 0.42,
 					}),
@@ -839,6 +847,7 @@ describe('CodexEngine', () => {
 			const outputPath = args[args.indexOf('-o') + 1];
 			return createMockChild({
 				stdoutLines: [
+					JSON.stringify({ type: 'turn.started' }),
 					JSON.stringify({
 						type: 'item.completed',
 						item: { type: 'message', content: [{ type: 'text', text: 'Planning...' }] },
@@ -851,9 +860,15 @@ describe('CodexEngine', () => {
 							arguments: '{"command":"cascade-tools session finish --comment done"}',
 						},
 					}),
+					// response.completed carries usage — accumulates into turn, does NOT persist a row yet
 					JSON.stringify({
 						type: 'response.completed',
 						response: { usage: { input_tokens: 100, output_tokens: 50 } },
+					}),
+					// turn.completed is the persistence boundary — one row per completed turn
+					JSON.stringify({
+						type: 'turn.completed',
+						usage: { input_tokens: 100, output_tokens: 50 },
 					}),
 				],
 				onBeforeClose: () => {
@@ -868,11 +883,14 @@ describe('CodexEngine', () => {
 		const result = await engine.execute(input);
 
 		expect(result.success).toBe(true);
-		expect(input.progressReporter.onIteration).toHaveBeenCalledTimes(2);
+		// 2 item.completed events increment iteration + 1 turn.completed = 3 total
+		expect(input.progressReporter.onIteration).toHaveBeenCalledTimes(3);
 		expect(input.progressReporter.onText).toHaveBeenCalledWith('Planning...');
 		expect(input.progressReporter.onToolCall).toHaveBeenCalledWith('bash', {
 			command: 'cascade-tools session finish --comment done',
 		});
+		// Exactly ONE storeLlmCall row per completed turn
+		expect(mockStoreLlmCall).toHaveBeenCalledTimes(1);
 		expect(mockStoreLlmCall).toHaveBeenCalledWith(
 			expect.objectContaining({ inputTokens: 100, outputTokens: 50 }),
 		);
@@ -906,6 +924,155 @@ describe('CodexEngine', () => {
 		expect(input.progressReporter.onToolCall).not.toHaveBeenCalled();
 		expect(input.progressReporter.onText).toHaveBeenCalledWith('Final answer.');
 		expect(input.progressReporter.onIteration).toHaveBeenCalledTimes(1);
+	});
+
+	// ─── Turn-scoped accumulator / multi-turn / dedup tests ───────────────────
+
+	it('emits exactly one storeLlmCall row per completed turn across a multi-turn stream', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [
+					// Turn 1
+					JSON.stringify({ type: 'turn.started' }),
+					JSON.stringify({
+						type: 'item.completed',
+						item: { type: 'agent_message', text: 'First.' },
+					}),
+					JSON.stringify({
+						type: 'response.completed',
+						response: { usage: { input_tokens: 50, output_tokens: 20 } },
+					}),
+					JSON.stringify({
+						type: 'turn.completed',
+						usage: { input_tokens: 50, output_tokens: 20 },
+					}),
+					// Turn 2
+					JSON.stringify({ type: 'turn.started' }),
+					JSON.stringify({
+						type: 'item.completed',
+						item: { type: 'agent_message', text: 'Second.' },
+					}),
+					JSON.stringify({
+						type: 'response.completed',
+						response: { usage: { input_tokens: 80, output_tokens: 30 } },
+					}),
+					JSON.stringify({
+						type: 'turn.completed',
+						usage: { input_tokens: 80, output_tokens: 30 },
+					}),
+				],
+				onBeforeClose: () => writeFileSync(outputPath, 'Multi-turn done.', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir, runId: 'run-multiturn' });
+		const result = await engine.execute(input);
+
+		expect(result.success).toBe(true);
+		// Exactly two rows — one per completed turn
+		expect(mockStoreLlmCall).toHaveBeenCalledTimes(2);
+		// Stable, sequential callNumber values
+		expect(mockStoreLlmCall).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({ callNumber: 1, inputTokens: 50, outputTokens: 20 }),
+		);
+		expect(mockStoreLlmCall).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ callNumber: 2, inputTokens: 80, outputTokens: 30 }),
+		);
+	});
+
+	it('stores only one row when both response.completed and turn.completed carry usage (duplicate-usage prevention)', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [
+					JSON.stringify({ type: 'turn.started' }),
+					// response.completed fires with usage first (intermediate event)
+					JSON.stringify({
+						type: 'response.completed',
+						response: { usage: { input_tokens: 100, output_tokens: 40 } },
+					}),
+					// turn.completed fires with aggregate usage (the definitive values)
+					JSON.stringify({
+						type: 'turn.completed',
+						usage: { input_tokens: 120, output_tokens: 45 },
+					}),
+				],
+				onBeforeClose: () => writeFileSync(outputPath, 'done', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir, runId: 'run-dedup' });
+		await engine.execute(input);
+
+		// Only ONE row, not two (no duplicate from response.completed)
+		expect(mockStoreLlmCall).toHaveBeenCalledTimes(1);
+		// turn.completed totals supersede response.completed values
+		expect(mockStoreLlmCall).toHaveBeenCalledWith(
+			expect.objectContaining({ inputTokens: 120, outputTokens: 45 }),
+		);
+	});
+
+	it('stores a compact turn-scoped payload with text summary and tool names', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [
+					JSON.stringify({ type: 'turn.started' }),
+					JSON.stringify({
+						type: 'item.completed',
+						item: { type: 'agent_message', text: 'I will run a command.' },
+					}),
+					JSON.stringify({
+						type: 'item.completed',
+						item: { type: 'function_call', name: 'bash', arguments: '{"command":"ls"}' },
+					}),
+					JSON.stringify({
+						type: 'turn.completed',
+						usage: { input_tokens: 30, output_tokens: 10 },
+					}),
+				],
+				onBeforeClose: () => writeFileSync(outputPath, 'done', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir, runId: 'run-payload-shape' });
+		await engine.execute(input);
+
+		expect(mockStoreLlmCall).toHaveBeenCalledTimes(1);
+		const [{ response }] = mockStoreLlmCall.mock.calls[0] as [{ response: string }][];
+		const payload = JSON.parse(response) as Record<string, unknown>;
+		// Payload must be a compact object, NOT a raw JSONL line dump
+		expect(payload).toMatchObject({
+			turn: 1,
+			tools: ['bash'],
+			usage: { inputTokens: 30, outputTokens: 10 },
+		});
+		expect(typeof payload.text).toBe('string');
+		// Payload must be reasonably sized (< 2 KB) — not a multi-KB raw event dump
+		expect(response.length).toBeLessThan(2000);
+	});
+
+	it('does not call storeLlmCall when no turn.completed event fires (no response events only)', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [JSON.stringify({ text: 'Bare text without turn lifecycle events' })],
+				onBeforeClose: () => writeFileSync(outputPath, 'bare output', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir, runId: 'run-no-turn-completed' });
+		await engine.execute(input);
+
+		// Without turn.completed, nothing should be persisted — avoids phantom rows
+		expect(mockStoreLlmCall).not.toHaveBeenCalled();
 	});
 });
 
