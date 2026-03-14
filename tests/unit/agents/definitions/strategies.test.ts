@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CONTEXT_STEP_REGISTRY } from '../../../../src/agents/definitions/strategies.js';
 
-describe('CONTEXT_STEP_REGISTRY', () => {
+describe.concurrent('CONTEXT_STEP_REGISTRY', () => {
 	it('contains all expected step names', () => {
 		const expectedKeys = [
 			'directoryListing',

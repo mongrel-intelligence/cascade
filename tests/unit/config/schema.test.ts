@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ProjectConfigSchema, validateConfig } from '../../../src/config/schema.js';
 
-describe('ProjectConfigSchema', () => {
+describe.concurrent('ProjectConfigSchema', () => {
 	it('validates a valid project config', () => {
 		const config = {
 			id: 'test-project',
@@ -227,7 +227,7 @@ describe('ProjectConfigSchema', () => {
 	});
 });
 
-describe('validateConfig', () => {
+describe.concurrent('validateConfig', () => {
 	it('validates a complete cascade config', () => {
 		const config = {
 			projects: [
