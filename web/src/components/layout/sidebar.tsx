@@ -1,4 +1,5 @@
 import { Separator } from '@/components/ui/separator.js';
+import { PROJECT_SECTIONS } from '@/lib/project-sections.js';
 import { trpc } from '@/lib/trpc.js';
 import { cn } from '@/lib/utils.js';
 import { useQuery } from '@tanstack/react-query';
@@ -7,6 +8,8 @@ import {
 	Activity,
 	BookOpen,
 	Building,
+	ChevronDown,
+	ChevronRight,
 	FolderGit2,
 	KeyRound,
 	LayoutDashboard,
@@ -14,6 +17,7 @@ import {
 	Users,
 	Zap,
 } from 'lucide-react';
+import { useState } from 'react';
 
 interface SidebarProps {
 	user: { name: string; email: string; role: string } | undefined;
@@ -66,6 +70,64 @@ function NavLink({
 	);
 }
 
+interface ProjectNavItemProps {
+	project: { id: string; name: string };
+	currentPath: string;
+}
+
+function ProjectNavItem({ project, currentPath }: ProjectNavItemProps) {
+	const projectBasePath = `/projects/${project.id}`;
+	const isActiveProject = currentPath.startsWith(projectBasePath);
+	const [isExpanded, setIsExpanded] = useState(isActiveProject);
+
+	return (
+		<div>
+			<button
+				type="button"
+				onClick={() => setIsExpanded((prev) => !prev)}
+				className={cn(
+					'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+					isActiveProject
+						? 'bg-sidebar-accent text-sidebar-accent-foreground'
+						: 'text-sidebar-foreground hover:bg-sidebar-accent/50',
+				)}
+			>
+				<FolderGit2 className="h-4 w-4 shrink-0" />
+				<span className="flex-1 truncate text-left">{project.name}</span>
+				{isExpanded ? (
+					<ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+				) : (
+					<ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+				)}
+			</button>
+
+			{isExpanded && (
+				<div className="ml-4 mt-0.5 flex flex-col gap-0.5 border-l border-sidebar-border pl-2">
+					{PROJECT_SECTIONS.map((section) => {
+						const sectionPath = `${projectBasePath}/${section.path}`;
+						const isSectionActive =
+							currentPath === sectionPath || currentPath.startsWith(`${sectionPath}/`);
+						return (
+							<Link
+								key={section.id}
+								to={sectionPath}
+								className={cn(
+									'rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+									isSectionActive
+										? 'bg-sidebar-accent text-sidebar-accent-foreground'
+										: 'text-sidebar-foreground hover:bg-sidebar-accent/50',
+								)}
+							>
+								{section.label}
+							</Link>
+						);
+					})}
+				</div>
+			)}
+		</div>
+	);
+}
+
 export function Sidebar({ user }: SidebarProps) {
 	const routerState = useRouterState();
 	const currentPath = routerState.location.pathname;
@@ -89,16 +151,10 @@ export function Sidebar({ user }: SidebarProps) {
 				<div className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 					Projects
 				</div>
-				<div className="overflow-y-auto max-h-48">
+				<div className="flex flex-col gap-0.5">
 					{projects && projects.length > 0 ? (
 						projects.map((project) => (
-							<NavLink
-								key={project.id}
-								to={`/projects/${project.id}`}
-								label={project.name}
-								icon={FolderGit2}
-								currentPath={currentPath}
-							/>
+							<ProjectNavItem key={project.id} project={project} currentPath={currentPath} />
 						))
 					) : (
 						<Link

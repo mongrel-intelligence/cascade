@@ -5,7 +5,12 @@ import { globalRunsRoute } from './global/runs.js';
 import { globalWebhookLogsRoute } from './global/webhook-logs.js';
 import { indexRoute } from './index.js';
 import { loginRoute } from './login.js';
+import { projectAgentConfigsRoute } from './projects/$projectId.agent-configs.js';
+import { projectGeneralRoute } from './projects/$projectId.general.js';
+import { projectHarnessRoute } from './projects/$projectId.harness.js';
+import { projectIntegrationsRoute } from './projects/$projectId.integrations.js';
 import { projectDetailRoute } from './projects/$projectId.js';
+import { projectWorkRoute } from './projects/$projectId.work.js';
 import { projectsIndexRoute } from './projects/index.js';
 import { prRunsRoute } from './prs/$projectId.$prNumber.js';
 import { runDetailRoute } from './runs/$runId.js';
@@ -19,7 +24,13 @@ export const routeTree = rootRoute.addChildren([
 	indexRoute,
 	runDetailRoute,
 	projectsIndexRoute,
-	projectDetailRoute,
+	projectDetailRoute.addChildren([
+		projectGeneralRoute,
+		projectHarnessRoute,
+		projectWorkRoute,
+		projectIntegrationsRoute,
+		projectAgentConfigsRoute,
+	]),
 	settingsGeneralRoute,
 	settingsCredentialsRoute,
 	settingsUsersRoute,
