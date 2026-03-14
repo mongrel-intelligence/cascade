@@ -147,4 +147,10 @@ export interface AgentEngine {
 
 	execute(input: AgentExecutionPlan): Promise<AgentEngineResult>;
 	supportsAgentType(agentType: string): boolean;
+	/**
+	 * Optionally resolve a CASCADE model string to the engine-specific model identifier.
+	 * Engines that need model validation (e.g., Claude Code, Codex) implement this method.
+	 * Engines that pass the model through unchanged (e.g., LLMist) do not need to implement it.
+	 */
+	resolveModel?(cascadeModel: string): string;
 }

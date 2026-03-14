@@ -456,6 +456,10 @@ export class ClaudeCodeEngine implements AgentEngine {
 		return true;
 	}
 
+	resolveModel(cascadeModel: string): string {
+		return resolveClaudeModel(cascadeModel);
+	}
+
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const startTime = Date.now();
 		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools);

@@ -480,6 +480,10 @@ export class CodexEngine implements AgentEngine {
 		return true;
 	}
 
+	resolveModel(cascadeModel: string): string {
+		return resolveCodexModel(cascadeModel);
+	}
+
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const startTime = Date.now();
 		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools);

@@ -801,6 +801,10 @@ export class OpenCodeEngine implements AgentEngine {
 		return true;
 	}
 
+	resolveModel(cascadeModel: string): string {
+		return resolveOpenCodeModel(cascadeModel);
+	}
+
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const settings = resolveOpenCodeSettings(input.project);
 		const agent = 'build' as const;
