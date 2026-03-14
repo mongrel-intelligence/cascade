@@ -1,6 +1,7 @@
 import { IntegrationForm } from '@/components/projects/integration-form.js';
 import { ProjectAgentConfigs } from '@/components/projects/project-agent-configs.js';
 import { ProjectGeneralForm } from '@/components/projects/project-general-form.js';
+import { ProjectHarnessForm } from '@/components/projects/project-harness-form.js';
 import { ProjectWorkTable } from '@/components/projects/project-work-table.js';
 import { ProjectWorkDurationChart } from '@/components/runs/project-work-duration-chart.js';
 import { WorkItemCostChart } from '@/components/runs/work-item-cost-chart.js';
@@ -12,7 +13,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { rootRoute } from '../__root.js';
 
-type Tab = 'general' | 'work' | 'integrations' | 'agent-configs';
+type Tab = 'general' | 'harness' | 'work' | 'integrations' | 'agent-configs';
 
 const WORK_PAGE_SIZE = 50;
 
@@ -43,6 +44,7 @@ function ProjectDetailPage() {
 
 	const tabs: { id: Tab; label: string }[] = [
 		{ id: 'general', label: 'General' },
+		{ id: 'harness', label: 'Harness' },
 		{ id: 'work', label: 'Work' },
 		{ id: 'integrations', label: 'Integrations' },
 		{ id: 'agent-configs', label: 'Agent Configs' },
@@ -83,6 +85,8 @@ function ProjectDetailPage() {
 			</div>
 
 			{activeTab === 'general' && <ProjectGeneralForm project={project} />}
+
+			{activeTab === 'harness' && <ProjectHarnessForm project={project} />}
 
 			{activeTab === 'work' && (
 				<div className="space-y-6">
