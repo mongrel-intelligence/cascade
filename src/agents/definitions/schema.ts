@@ -233,8 +233,13 @@ const ScmFinishSchema = z.object({
 	blockGitPush: z.boolean().optional(),
 });
 
+const PmFinishSchema = z.object({
+	requiresPMWrite: z.boolean().optional(),
+});
+
 const FinishHooksSchema = z.object({
 	scm: ScmFinishSchema.optional(),
+	pm: PmFinishSchema.optional(),
 });
 
 // --- Top-level integration hooks ---
@@ -326,5 +331,5 @@ export type IntegrationHooks = z.infer<typeof IntegrationHooksSchema>;
 export type TrailingHookFlags = z.infer<typeof ScmTrailingSchema> &
 	z.infer<typeof BuiltinTrailingSchema>;
 
-/** Finish hook flags (SCM requirements) */
-export type FinishHookFlags = z.infer<typeof ScmFinishSchema>;
+/** Finish hook flags (SCM + PM requirements) */
+export type FinishHookFlags = z.infer<typeof ScmFinishSchema> & z.infer<typeof PmFinishSchema>;

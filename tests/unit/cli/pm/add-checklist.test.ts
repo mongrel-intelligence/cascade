@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockPMProvider } from '../../../helpers/mockPMProvider.js';
 
@@ -11,6 +14,7 @@ vi.mock('../../../../src/pm/index.js', () => ({
 // Import after mocks so the module picks up the mocked getPMProvider
 import { parseItem } from '../../../../src/cli/pm/add-checklist.js';
 import { addChecklist } from '../../../../src/gadgets/pm/core/addChecklist.js';
+import { writePMWriteSidecar } from '../../../../src/gadgets/session/core/sidecar.js';
 
 // ---------------------------------------------------------------------------
 // Unit tests for parseItem() — the JSON-parsing helper
@@ -239,5 +243,57 @@ describe('addChecklist with JSON --item strings (CLI integration)', () => {
 		});
 
 		expect(mockProvider.addChecklistItem).toHaveBeenCalledWith('cl1', raw, false, undefined);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests for writePMWriteSidecar
+// ---------------------------------------------------------------------------
+
+describe('writePMWriteSidecar', () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), 'cascade-sidecar-test-'));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+		Reflect.deleteProperty(process.env, 'CASCADE_PM_WRITE_SIDECAR_PATH');
+	});
+
+	it('writes sidecar file with correct JSON when path is set', () => {
+		const sidecarPath = join(tmpDir, 'pm-write.json');
+
+		const result = writePMWriteSidecar(sidecarPath, 'card-xyz');
+
+		expect(result).toBe(true);
+		expect(existsSync(sidecarPath)).toBe(true);
+		const written = JSON.parse(readFileSync(sidecarPath, 'utf-8')) as Record<string, unknown>;
+		expect(written.written).toBe(true);
+		expect(written.command).toBe('add-checklist');
+		expect(written.workItemId).toBe('card-xyz');
+		expect(typeof written.timestamp).toBe('string');
+	});
+
+	it('does not write sidecar when path is undefined', () => {
+		const result = writePMWriteSidecar(undefined, 'card-xyz');
+
+		expect(result).toBe(false);
+	});
+
+	it('does not write sidecar when path is the string "undefined"', () => {
+		const result = writePMWriteSidecar('undefined', 'card-xyz');
+
+		expect(result).toBe(false);
+	});
+
+	it('returns false and swallows error when sidecar write fails', () => {
+		const badPath = join(tmpDir, 'nonexistent-subdir', 'pm-write.json');
+
+		const result = writePMWriteSidecar(badPath, 'card-xyz');
+
+		expect(result).toBe(false);
+		expect(existsSync(badPath)).toBe(false);
 	});
 });
