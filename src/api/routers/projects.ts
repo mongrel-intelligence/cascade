@@ -91,6 +91,7 @@ export const projectsRouter = router({
 				workItemBudgetUsd: z.string().nullish(),
 				agentEngine: z.string().nullish(),
 				engineSettings: EngineSettingsSchema.nullish(),
+				runLinksEnabled: z.boolean().optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -113,6 +114,7 @@ export const projectsRouter = router({
 				workItemBudgetUsd: z.string().nullish(),
 				agentEngine: z.string().nullish(),
 				engineSettings: EngineSettingsSchema.nullish(),
+				runLinksEnabled: z.boolean().optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {

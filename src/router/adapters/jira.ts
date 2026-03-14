@@ -11,6 +11,7 @@ import { withJiraCredentials } from '../../jira/client.js';
 import type { TriggerRegistry } from '../../triggers/registry.js';
 import type { TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { buildWorkItemRunsLink, getDashboardUrl } from '../../utils/runLink.js';
 import { extractJiraContext, generateAckMessage } from '../ackMessageGenerator.js';
 import { postJiraAck, resolveJiraBotAccountId } from '../acknowledgments.js';
 import { type RouterProjectConfig, loadProjectConfig } from '../config.js';
@@ -141,7 +142,23 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 		if (!issueKey) return undefined;
 		try {
 			const context = extractJiraContext(payload);
-			const message = await generateAckMessage(agentType, context, project.id);
+			let message = await generateAckMessage(agentType, context, project.id);
+
+			// Append run link footer when enabled for this project
+			const config = await loadProjectConfig();
+			const fullProject = config.fullProjects.find((fp) => fp.id === project.id);
+			if (fullProject?.runLinksEnabled && event.workItemId) {
+				const dashboardUrl = getDashboardUrl();
+				if (dashboardUrl) {
+					const link = buildWorkItemRunsLink({
+						dashboardUrl,
+						projectId: project.id,
+						workItemId: event.workItemId,
+					});
+					if (link) message += link;
+				}
+			}
+
 			const commentId = await postJiraAck(project.id, issueKey, message);
 			if (commentId) return { commentId, message };
 			return undefined;

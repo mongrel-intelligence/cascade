@@ -32,6 +32,7 @@ import {
 import { withGitHubToken } from '../github/client.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
+import { getDashboardUrl } from '../utils/runLink.js';
 import { readCompletionEvidence } from './completion.js';
 import { createNativeToolRuntimeArtifacts } from './nativeToolRuntime.js';
 import { postProcessResult } from './postProcess.js';
@@ -325,13 +326,27 @@ async function hydratePrSidecar(sidecarPath: string): Promise<{
  * Build progress-monitor config from pipeline inputs.
  */
 function buildProgressMonitorConfig(
-	input: AgentInput & { config: CascadeConfig },
+	input: AgentInput & { config: CascadeConfig; project: ProjectConfig },
 	agentType: string,
 	logWriter: LogWriter,
 	repoDir: string | null,
 	isGitHubAck: boolean,
+	engineId: string,
+	model: string,
 ) {
 	const { workItemId } = input;
+
+	// Build run link config when the project has run links enabled and dashboard URL is set
+	const runLink =
+		input.project.runLinksEnabled && getDashboardUrl()
+			? {
+					engineLabel: engineId,
+					model,
+					projectId: input.project.id,
+					workItemId: workItemId ?? undefined,
+				}
+			: undefined;
+
 	return {
 		logWriter,
 		agentType,
@@ -342,6 +357,7 @@ function buildProgressMonitorConfig(
 		repoDir: repoDir ?? undefined,
 		trello: workItemId ? { workItemId } : undefined,
 		preSeededCommentId: isGitHubAck ? undefined : (input.ackCommentId as string | undefined),
+		runLink,
 		...(input.prNumber && input.repoFullName
 			? {
 					github: {
@@ -442,6 +458,7 @@ export async function executeWithEngine(
 				outputSummary: outcome.outputSummary,
 			}),
 
+		// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: webhook pipeline with sequential guard checks
 		execute: async (ctx: PipelineContext) => {
 			const { repoDir, fileLogger, logWriter, setRunId } = ctx;
 			const log = createAgentLogger(fileLogger);
@@ -480,8 +497,40 @@ export async function executeWithEngine(
 			}
 
 			const monitor = createProgressMonitor(
-				buildProgressMonitorConfig(input, agentType, logWriter, repoDir, isGitHubAck),
+				buildProgressMonitorConfig(
+					input,
+					agentType,
+					logWriter,
+					repoDir,
+					isGitHubAck,
+					engine.definition.id,
+					partialInput.model ?? '',
+				),
 			);
+
+			// Inject the runId into the progress monitor so links point to the specific run
+			if (runId && monitor) {
+				monitor.setRunId(runId);
+			}
+
+			// Inject run link env vars into project secrets for subprocess agents (claude-code/codex)
+			if (input.project.runLinksEnabled) {
+				partialInput.projectSecrets ??= {};
+				const dashboardUrl = getDashboardUrl();
+				if (dashboardUrl) {
+					partialInput.projectSecrets.CASCADE_RUN_LINKS_ENABLED = 'true';
+					partialInput.projectSecrets.CASCADE_DASHBOARD_URL = dashboardUrl;
+					partialInput.projectSecrets.CASCADE_ENGINE_LABEL = engine.definition.id;
+					partialInput.projectSecrets.CASCADE_MODEL = partialInput.model ?? '';
+					partialInput.projectSecrets.CASCADE_PROJECT_ID = input.project.id;
+					if (workItemId) {
+						partialInput.projectSecrets.CASCADE_WORK_ITEM_ID = workItemId;
+					}
+					if (runId) {
+						partialInput.projectSecrets.CASCADE_RUN_ID = runId;
+					}
+				}
+			}
 
 			const executionPlan: AgentExecutionPlan = {
 				...partialInput,

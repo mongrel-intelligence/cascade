@@ -38,6 +38,7 @@ export async function createProject(
 		workItemBudgetUsd?: string | null;
 		agentEngine?: string | null;
 		engineSettings?: EngineSettings | null;
+		runLinksEnabled?: boolean;
 	},
 ) {
 	const db = getDb();
@@ -54,6 +55,7 @@ export async function createProject(
 			model: rest.model,
 			workItemBudgetUsd: rest.workItemBudgetUsd,
 			agentEngine: rest.agentEngine,
+			runLinksEnabled: rest.runLinksEnabled ?? false,
 			...(engineSettings !== undefined
 				? { agentEngineSettings: normalizeEngineSettings(engineSettings) }
 				: {}),
@@ -74,6 +76,7 @@ export async function updateProject(
 		workItemBudgetUsd?: string | null;
 		agentEngine?: string | null;
 		engineSettings?: EngineSettings | null;
+		runLinksEnabled?: boolean;
 	},
 ) {
 	const db = getDb();

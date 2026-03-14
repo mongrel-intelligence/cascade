@@ -17,6 +17,10 @@ export default class ProjectsUpdate extends DashboardCommand {
 		model: Flags.string({ description: 'Default model' }),
 		'work-item-budget': Flags.string({ description: 'Per-work-item budget in USD' }),
 		'agent-engine': Flags.string({ description: 'Agent engine' }),
+		'run-links-enabled': Flags.boolean({
+			description: 'Enable run links in agent comments (requires CASCADE_DASHBOARD_URL env var)',
+			allowNo: true,
+		}),
 	};
 
 	async run(): Promise<void> {
@@ -32,6 +36,9 @@ export default class ProjectsUpdate extends DashboardCommand {
 				model: flags.model,
 				workItemBudgetUsd: flags['work-item-budget'],
 				agentEngine: flags['agent-engine'],
+				...(flags['run-links-enabled'] !== undefined
+					? { runLinksEnabled: flags['run-links-enabled'] }
+					: {}),
 			});
 
 			if (flags.json) {
