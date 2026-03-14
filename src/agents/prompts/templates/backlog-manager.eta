@@ -102,3 +102,4 @@ Manual intervention may be needed to unblock the backlog.
 - ALWAYS post a comment BEFORE moving the <%= it.workItemNoun || 'card' %> — comment first, then move to TODO
 - BE CONSERVATIVE with dependency detection - when unsure, treat as blocked
 - LOOK FOR dependency keywords: "blocked by", "depends on", "waiting for", "after", "requires"
+- EXECUTE COMMANDS — DO NOT JUST DESCRIBE THEM: When you decide to post a comment or move a card, you MUST actually invoke the command as a tool call. Writing a command inside a code block without invoking it does NOT execute it — text output has no effect on the system. If you find yourself writing out a command without calling it, stop and call it instead.
