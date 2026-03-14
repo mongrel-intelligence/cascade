@@ -1,5 +1,4 @@
 import { rootRoute } from './__root.js';
-import { globalDefaultsRoute } from './global/defaults.js';
 import { globalDefinitionsRoute } from './global/definitions.js';
 import { globalOrganizationsRoute } from './global/organizations.js';
 import { globalRunsRoute } from './global/runs.js';
@@ -24,7 +23,6 @@ export const routeTree = rootRoute.addChildren([
 	settingsGeneralRoute,
 	settingsCredentialsRoute,
 	settingsUsersRoute,
-	globalDefaultsRoute,
 	globalDefinitionsRoute,
 	globalWebhookLogsRoute,
 	globalOrganizationsRoute,
