@@ -270,7 +270,7 @@ describe('buildArgs', () => {
 		reasoningEffort: undefined,
 	};
 
-	it('does not include --search or -c web_search when webSearch is false', () => {
+	it('does not include -c search=true when webSearch is false', () => {
 		const args = buildArgs(
 			makeInput(),
 			{ ...baseSettings, webSearch: false },
@@ -278,18 +278,18 @@ describe('buildArgs', () => {
 			'/tmp/last.json',
 		);
 		expect(args).not.toContain('--search');
-		expect(args.join(' ')).not.toContain('web_search');
+		expect(args).not.toContain('search=true');
 	});
 
-	it('includes --search when webSearch is true', () => {
+	it('includes -c search=true when webSearch is true', () => {
 		const args = buildArgs(
 			makeInput(),
 			{ ...baseSettings, webSearch: true },
 			'model-x',
 			'/tmp/last.json',
 		);
-		expect(args).toContain('--search');
-		expect(args.join(' ')).not.toContain('web_search');
+		expect(args).toContain('search=true');
+		expect(args).not.toContain('--search');
 	});
 });
 

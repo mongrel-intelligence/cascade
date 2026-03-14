@@ -302,7 +302,7 @@ export function buildArgs(
 		args.push('-c', `model_reasoning_effort=${tomlString(settings.reasoningEffort)}`);
 	}
 	if (settings.webSearch) {
-		args.push('--search');
+		args.push('-c', 'search=true');
 	}
 	args.push('-');
 
