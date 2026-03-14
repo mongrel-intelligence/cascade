@@ -102,6 +102,8 @@ function DefinitionAgentSection({
 	const [expanded, setExpanded] = useState(false);
 	const [saved, setSaved] = useState(false);
 	const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	// Tracks whether a successful save is in flight (prevents config sync from clearing "Saved")
+	const justSavedRef = useRef(false);
 
 	// Local form state
 	const [model, setModel] = useState(config?.model ?? '');
@@ -109,18 +111,25 @@ function DefinitionAgentSection({
 	const [agentEngine, setAgentEngine] = useState(config?.agentEngine ?? '');
 	const [maxConcurrency, setMaxConcurrency] = useState(config?.maxConcurrency?.toString() ?? '');
 
-	// Sync form state when config changes
+	// Sync form state when config changes (e.g. after invalidateQueries refetch)
+	// Skip clearing "Saved" if we just saved — the nonce effect will handle the timer
 	useEffect(() => {
 		setModel(config?.model ?? '');
 		setMaxIterations(config?.maxIterations?.toString() ?? '');
 		setAgentEngine(config?.agentEngine ?? '');
 		setMaxConcurrency(config?.maxConcurrency?.toString() ?? '');
-		setSaved(false);
+		if (justSavedRef.current) {
+			justSavedRef.current = false;
+		} else {
+			setSaved(false);
+		}
 	}, [config]);
 
 	// Show "Saved" indicator only after confirmed persistence (nonce increments on each success)
 	useEffect(() => {
 		if (saveSuccessNonce === 0) return;
+		// Mark that a save just completed so the config sync effect won't clear the indicator
+		justSavedRef.current = true;
 		if (savedTimerRef.current !== null) {
 			clearTimeout(savedTimerRef.current);
 		}
@@ -445,6 +454,9 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const deleteMutation = useMutation({
 		mutationFn: (id: number) => trpcClient.agentConfigs.delete.mutate({ id }),
 		onSuccess: () => queryClient.invalidateQueries({ queryKey: configsQueryKey }),
+		onError: (err) => {
+			toast.error('Failed to delete agent config', { description: err.message });
+		},
 	});
 
 	// New trigger mutation (uses agentTriggerConfigs.upsert)
