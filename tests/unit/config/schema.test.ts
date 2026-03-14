@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { registerBuiltInEngines } from '../../../src/backends/bootstrap.js';
 import { ProjectConfigSchema, validateConfig } from '../../../src/config/schema.js';
+
+beforeAll(() => {
+	registerBuiltInEngines();
+});
 
 describe.concurrent('ProjectConfigSchema', () => {
 	it('validates a valid project config', () => {

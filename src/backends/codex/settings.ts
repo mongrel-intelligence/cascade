@@ -1,6 +1,15 @@
-import { CodexSettingsSchema, getEngineSettings } from '../../config/engineSettings.js';
-import type { CodexSettings } from '../../config/engineSettings.js';
+import { z } from 'zod';
+import { getEngineSettings } from '../../config/engineSettings.js';
 import type { ProjectConfig } from '../../types/index.js';
+
+export const CodexSettingsSchema = z.object({
+	approvalPolicy: z.enum(['never', 'on-request', 'untrusted']).optional(),
+	sandboxMode: z.enum(['read-only', 'workspace-write', 'danger-full-access']).optional(),
+	reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']).optional(),
+	webSearch: z.boolean().optional(),
+});
+
+export type CodexSettings = z.infer<typeof CodexSettingsSchema>;
 
 export interface ResolvedCodexSettings
 	extends Required<Pick<CodexSettings, 'approvalPolicy' | 'sandboxMode' | 'webSearch'>> {

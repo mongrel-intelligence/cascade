@@ -1,3 +1,4 @@
+import type { z } from 'zod';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../types/index.js';
 import type { CompletionRequirements } from './completion.js';
 
@@ -153,6 +154,12 @@ export interface AgentEngine {
 	 * Engines that pass the model through unchanged (e.g., LLMist) do not need to implement it.
 	 */
 	resolveModel?(cascadeModel: string): string;
+	/**
+	 * Optional method that returns the Zod schema for this engine's settings.
+	 * Engines that have configurable settings implement this method so the schema
+	 * can be registered dynamically during bootstrap.
+	 */
+	getSettingsSchema?(): z.ZodType<Record<string, unknown>>;
 	/**
 	 * Optional hook called by the adapter before engine.execute().
 	 * Use for engine-specific environment setup (e.g., writing auth files, checking directories).
