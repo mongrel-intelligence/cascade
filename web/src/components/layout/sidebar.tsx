@@ -1,5 +1,5 @@
 import { Separator } from '@/components/ui/separator.js';
-import { PROJECT_SECTIONS } from '@/lib/project-sections.js';
+import { PROJECT_SECTIONS, isProjectActive, isSectionActive } from '@/lib/project-sections.js';
 import { trpc } from '@/lib/trpc.js';
 import { cn } from '@/lib/utils.js';
 import { useQuery } from '@tanstack/react-query';
@@ -76,9 +76,8 @@ interface ProjectNavItemProps {
 }
 
 function ProjectNavItem({ project, currentPath }: ProjectNavItemProps) {
-	const projectBasePath = `/projects/${project.id}`;
-	const isActiveProject = currentPath.startsWith(projectBasePath);
-	const [isExpanded, setIsExpanded] = useState(isActiveProject);
+	const activeProject = isProjectActive(currentPath, project.id);
+	const [isExpanded, setIsExpanded] = useState(activeProject);
 
 	return (
 		<div>
@@ -87,7 +86,7 @@ function ProjectNavItem({ project, currentPath }: ProjectNavItemProps) {
 				onClick={() => setIsExpanded((prev) => !prev)}
 				className={cn(
 					'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-					isActiveProject
+					activeProject
 						? 'bg-sidebar-accent text-sidebar-accent-foreground'
 						: 'text-sidebar-foreground hover:bg-sidebar-accent/50',
 				)}
@@ -104,16 +103,14 @@ function ProjectNavItem({ project, currentPath }: ProjectNavItemProps) {
 			{isExpanded && (
 				<div className="ml-4 mt-0.5 flex flex-col gap-0.5 border-l border-sidebar-border pl-2">
 					{PROJECT_SECTIONS.map((section) => {
-						const sectionPath = `${projectBasePath}/${section.path}`;
-						const isSectionActive =
-							currentPath === sectionPath || currentPath.startsWith(`${sectionPath}/`);
+						const sectionActive = isSectionActive(currentPath, project.id, section.path);
 						return (
 							<Link
 								key={section.id}
-								to={sectionPath}
+								to={`/projects/${project.id}/${section.path}`}
 								className={cn(
 									'rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
-									isSectionActive
+									sectionActive
 										? 'bg-sidebar-accent text-sidebar-accent-foreground'
 										: 'text-sidebar-foreground hover:bg-sidebar-accent/50',
 								)}
@@ -151,7 +148,7 @@ export function Sidebar({ user }: SidebarProps) {
 				<div className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 					Projects
 				</div>
-				<div className="flex flex-col gap-0.5">
+				<div className="overflow-y-auto max-h-48 flex flex-col gap-0.5">
 					{projects && projects.length > 0 ? (
 						projects.map((project) => (
 							<ProjectNavItem key={project.id} project={project} currentPath={currentPath} />

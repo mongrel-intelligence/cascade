@@ -1,17 +1,8 @@
-import {
-	DEFAULT_PROJECT_SECTION,
-	PROJECT_SECTIONS,
-	type ProjectSection,
-} from '@/lib/project-sections.js';
 import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { Link, Outlet, createRoute, redirect } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
 import { rootRoute } from '../__root.js';
-
-// Re-export for backward compatibility
-export type { ProjectSection };
-export { DEFAULT_PROJECT_SECTION, PROJECT_SECTIONS };
 
 function ProjectShellPage() {
 	const { projectId } = projectDetailRoute.useParams();
