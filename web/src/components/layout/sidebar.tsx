@@ -12,6 +12,7 @@ import {
 	LayoutDashboard,
 	Settings,
 	SlidersHorizontal,
+	Users,
 	Zap,
 } from 'lucide-react';
 
@@ -32,6 +33,7 @@ const globalNav = [
 const settingsNav = [
 	{ to: '/settings/general' as const, label: 'General', icon: Settings },
 	{ to: '/settings/credentials' as const, label: 'Credentials', icon: KeyRound },
+	{ to: '/settings/users' as const, label: 'Users', icon: Users },
 ];
 
 function NavLink({
