@@ -564,3 +564,44 @@ export async function getRunsForPR(projectId: string, prNumber: number) {
 		.where(and(eq(agentRuns.projectId, projectId), eq(agentRuns.prNumber, prNumber)))
 		.orderBy(asc(agentRuns.startedAt));
 }
+
+// ============================================================================
+// Project-level stats (for Work tab aggregate charts)
+// ============================================================================
+
+export interface ProjectWorkStat {
+	agentType: string;
+	status: string;
+	durationMs: number | null;
+	costUsd: string | null;
+	model: string | null;
+	startedAt: Date | null;
+}
+
+/**
+ * Returns lightweight per-run stats for a project's completed/failed/timed_out runs,
+ * ordered by startedAt ASC. Used for client-side chart aggregation on the Work tab.
+ *
+ * Limits to the 500 most-recent runs to avoid performance issues on large projects.
+ */
+export async function getProjectWorkStats(projectId: string): Promise<ProjectWorkStat[]> {
+	const db = getDb();
+	return db
+		.select({
+			agentType: agentRuns.agentType,
+			status: agentRuns.status,
+			durationMs: agentRuns.durationMs,
+			costUsd: agentRuns.costUsd,
+			model: agentRuns.model,
+			startedAt: agentRuns.startedAt,
+		})
+		.from(agentRuns)
+		.where(
+			and(
+				eq(agentRuns.projectId, projectId),
+				inArray(agentRuns.status, ['completed', 'failed', 'timed_out']),
+			),
+		)
+		.orderBy(desc(agentRuns.startedAt))
+		.limit(500);
+}
