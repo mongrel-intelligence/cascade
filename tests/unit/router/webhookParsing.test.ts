@@ -36,16 +36,17 @@ describe('parseGitHubWebhookPayload', () => {
 
 	it('parses form-urlencoded body with payload field', async () => {
 		const payloadObj = { action: 'opened' };
+		const rawBody = `payload=${encodeURIComponent(JSON.stringify(payloadObj))}`;
 		const ctx = makeContext({
-			parseBody: vi.fn().mockResolvedValue({ payload: JSON.stringify(payloadObj) }),
+			text: vi.fn().mockResolvedValue(rawBody),
 		});
 		const result = await parseGitHubWebhookPayload(ctx, 'application/x-www-form-urlencoded');
-		expect(result).toEqual({ ok: true, payload: payloadObj });
+		expect(result).toEqual({ ok: true, payload: payloadObj, rawBody });
 	});
 
 	it('returns error when form-urlencoded missing payload field', async () => {
 		const ctx = makeContext({
-			parseBody: vi.fn().mockResolvedValue({}),
+			text: vi.fn().mockResolvedValue('other_field=value'),
 		});
 		const result = await parseGitHubWebhookPayload(ctx, 'application/x-www-form-urlencoded');
 		expect(result.ok).toBe(false);
