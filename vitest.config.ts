@@ -27,9 +27,9 @@ const sharedTest = {
 		moduleDirectories: ['node_modules'],
 	},
 
-	// ── Thread pool settings ──────────────────────────────────────────────────
-	// maxThreads: 4 in CI (lower memory pressure), 8 locally (12 CPUs available)
-	// minThreads: 2 avoids cold-start overhead on worker spin-up
+	// ── Fork pool settings ───────────────────────────────────────────────────
+	// maxForks: 4 in CI (lower memory pressure), 8 locally (12 CPUs available)
+	// minForks: 2 avoids cold-start overhead on worker spin-up
 	pool: 'forks' as const,
 	poolOptions: {
 		forks: {
