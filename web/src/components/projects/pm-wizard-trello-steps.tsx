@@ -7,8 +7,7 @@ import { Label } from '@/components/ui/label.js';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { Loader2, Plus } from 'lucide-react';
 import type { WizardAction, WizardState } from './pm-wizard-state.js';
-import { FieldMappingRow, InlineCredentialCreator, SearchableSelect } from './wizard-shared.js';
-import type { CredentialOption } from './wizard-shared.js';
+import { FieldMappingRow, SearchableSelect } from './wizard-shared.js';
 
 // ============================================================================
 // Slot definitions
@@ -43,63 +42,50 @@ export const TRELLO_LABEL_DEFAULTS: Record<string, { name: string; color: string
 export function TrelloCredentialsStep({
 	state,
 	dispatch,
-	orgCredentials,
 }: {
 	state: WizardState;
 	dispatch: React.Dispatch<WizardAction>;
-	orgCredentials: CredentialOption[];
 }) {
 	return (
 		<div className="space-y-4">
+			<p className="text-xs text-muted-foreground">
+				Enter your Trello API credentials. These will be saved securely to the project.
+			</p>
 			<div className="space-y-2">
-				<Label>API Key</Label>
-				<div className="flex gap-2">
-					<select
-						value={state.trelloApiKeyCredentialId ?? ''}
-						onChange={(e) =>
-							dispatch({
-								type: 'SET_TRELLO_API_KEY_CRED',
-								id: e.target.value ? Number(e.target.value) : null,
-							})
-						}
-						className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
-					>
-						<option value="">Select credential...</option>
-						{orgCredentials.map((c) => (
-							<option key={c.id} value={c.id}>
-								{c.name} ({c.envVarKey}) — {c.value}
-							</option>
-						))}
-					</select>
-				</div>
-				<InlineCredentialCreator
-					onCreated={(id) => dispatch({ type: 'SET_TRELLO_API_KEY_CRED', id })}
+				<Label htmlFor="trello-api-key">API Key</Label>
+				<Input
+					id="trello-api-key"
+					type="password"
+					value={state.trelloApiKey}
+					onChange={(e) => dispatch({ type: 'SET_TRELLO_API_KEY', value: e.target.value })}
+					placeholder="Trello API key"
+					autoComplete="off"
 				/>
+				<p className="text-xs text-muted-foreground">
+					Find your API key at{' '}
+					<a
+						href="https://trello.com/app-key"
+						target="_blank"
+						rel="noopener noreferrer"
+						className="underline"
+					>
+						trello.com/app-key
+					</a>
+				</p>
 			</div>
 			<div className="space-y-2">
-				<Label>Token</Label>
-				<div className="flex gap-2">
-					<select
-						value={state.trelloTokenCredentialId ?? ''}
-						onChange={(e) =>
-							dispatch({
-								type: 'SET_TRELLO_TOKEN_CRED',
-								id: e.target.value ? Number(e.target.value) : null,
-							})
-						}
-						className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
-					>
-						<option value="">Select credential...</option>
-						{orgCredentials.map((c) => (
-							<option key={c.id} value={c.id}>
-								{c.name} ({c.envVarKey}) — {c.value}
-							</option>
-						))}
-					</select>
-				</div>
-				<InlineCredentialCreator
-					onCreated={(id) => dispatch({ type: 'SET_TRELLO_TOKEN_CRED', id })}
+				<Label htmlFor="trello-token">Token</Label>
+				<Input
+					id="trello-token"
+					type="password"
+					value={state.trelloToken}
+					onChange={(e) => dispatch({ type: 'SET_TRELLO_TOKEN', value: e.target.value })}
+					placeholder="Trello token"
+					autoComplete="off"
 				/>
+				<p className="text-xs text-muted-foreground">
+					Generate a token from the API key page linked above.
+				</p>
 			</div>
 		</div>
 	);

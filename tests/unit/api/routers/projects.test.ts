@@ -39,7 +39,15 @@ vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
 	removeIntegrationCredential: (...args: unknown[]) => mockRemoveIntegrationCredential(...args),
 }));
 
-vi.mock('../../../../src/db/repositories/credentialsRepository.js', () => ({}));
+const mockListProjectCredentials = vi.fn();
+const mockWriteProjectCredential = vi.fn();
+const mockDeleteProjectCredential = vi.fn();
+
+vi.mock('../../../../src/db/repositories/credentialsRepository.js', () => ({
+	listProjectCredentials: (...args: unknown[]) => mockListProjectCredentials(...args),
+	writeProjectCredential: (...args: unknown[]) => mockWriteProjectCredential(...args),
+	deleteProjectCredential: (...args: unknown[]) => mockDeleteProjectCredential(...args),
+}));
 
 // Mock getDb for ownership checks
 const mockDbSelect = vi.fn();
@@ -504,6 +512,140 @@ describe('projectsRouter', () => {
 				});
 
 				expect(mockRemoveIntegrationCredential).toHaveBeenCalledWith(10, 'api_key');
+			});
+		});
+	});
+
+	// ============================================================================
+	// projects.credentials.* sub-router
+	// ============================================================================
+
+	describe('credentials', () => {
+		describe('list', () => {
+			it('throws UNAUTHORIZED when not authenticated', async () => {
+				const caller = createCaller({ user: null, effectiveOrgId: null });
+				await expect(caller.credentials.list({ projectId: 'p1' })).rejects.toMatchObject({
+					code: 'UNAUTHORIZED',
+				});
+			});
+
+			it('returns masked metadata — never plaintext', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				mockListProjectCredentials.mockResolvedValue([
+					{ envVarKey: 'OPENROUTER_API_KEY', name: 'OpenRouter Key', value: 'sk-or-12345678' },
+					{ envVarKey: 'SHORT', name: null, value: '123' },
+				]);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				const result = await caller.credentials.list({ projectId: 'p1' });
+
+				expect(result).toEqual([
+					{
+						envVarKey: 'OPENROUTER_API_KEY',
+						name: 'OpenRouter Key',
+						isConfigured: true,
+						maskedValue: '****5678',
+					},
+					{
+						envVarKey: 'SHORT',
+						name: null,
+						isConfigured: true,
+						maskedValue: '****',
+					},
+				]);
+			});
+
+			it('calls listProjectCredentials with projectId', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				mockListProjectCredentials.mockResolvedValue([]);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await caller.credentials.list({ projectId: 'p1' });
+
+				expect(mockListProjectCredentials).toHaveBeenCalledWith('p1');
+			});
+
+			it('returns project NOT_FOUND when project does not belong to org', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await expect(caller.credentials.list({ projectId: 'p1' })).rejects.toMatchObject({
+					code: 'NOT_FOUND',
+				});
+			});
+		});
+
+		describe('set', () => {
+			it('throws UNAUTHORIZED when not authenticated', async () => {
+				const caller = createCaller({ user: null, effectiveOrgId: null });
+				await expect(
+					caller.credentials.set({
+						projectId: 'p1',
+						envVarKey: 'OPENROUTER_API_KEY',
+						value: 'sk-or-abc',
+					}),
+				).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+			});
+
+			it('calls writeProjectCredential with correct args', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				mockWriteProjectCredential.mockResolvedValue(undefined);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await caller.credentials.set({
+					projectId: 'p1',
+					envVarKey: 'OPENROUTER_API_KEY',
+					value: 'sk-or-abc123',
+					name: 'OpenRouter',
+				});
+
+				expect(mockWriteProjectCredential).toHaveBeenCalledWith(
+					'p1',
+					'OPENROUTER_API_KEY',
+					'sk-or-abc123',
+					'OpenRouter',
+				);
+			});
+
+			it('rejects envVarKey with invalid format', async () => {
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+				await expect(
+					caller.credentials.set({
+						projectId: 'p1',
+						envVarKey: 'lower-case-key',
+						value: 'value',
+					}),
+				).rejects.toThrow();
+			});
+
+			it('rejects empty value', async () => {
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+				await expect(
+					caller.credentials.set({
+						projectId: 'p1',
+						envVarKey: 'OPENROUTER_API_KEY',
+						value: '',
+					}),
+				).rejects.toThrow();
+			});
+		});
+
+		describe('delete', () => {
+			it('throws UNAUTHORIZED when not authenticated', async () => {
+				const caller = createCaller({ user: null, effectiveOrgId: null });
+				await expect(
+					caller.credentials.delete({ projectId: 'p1', envVarKey: 'OPENROUTER_API_KEY' }),
+				).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+			});
+
+			it('calls deleteProjectCredential with correct args', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				mockDeleteProjectCredential.mockResolvedValue(undefined);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await caller.credentials.delete({ projectId: 'p1', envVarKey: 'OPENROUTER_API_KEY' });
+
+				expect(mockDeleteProjectCredential).toHaveBeenCalledWith('p1', 'OPENROUTER_API_KEY');
 			});
 		});
 	});

@@ -35,11 +35,11 @@ export type Provider = 'trello' | 'jira';
 
 export interface WizardState {
 	provider: Provider;
-	// Step 2: Credentials
-	trelloApiKeyCredentialId: number | null;
-	trelloTokenCredentialId: number | null;
-	jiraEmailCredentialId: number | null;
-	jiraApiTokenCredentialId: number | null;
+	// Step 2: Credentials (raw values — never credential IDs)
+	trelloApiKey: string;
+	trelloToken: string;
+	jiraEmail: string;
+	jiraApiToken: string;
 	jiraBaseUrl: string;
 	verificationResult: { provider: Provider; display: string } | null;
 	verifyError: string | null;
@@ -66,10 +66,10 @@ export interface WizardState {
 
 export type WizardAction =
 	| { type: 'SET_PROVIDER'; provider: Provider }
-	| { type: 'SET_TRELLO_API_KEY_CRED'; id: number | null }
-	| { type: 'SET_TRELLO_TOKEN_CRED'; id: number | null }
-	| { type: 'SET_JIRA_EMAIL_CRED'; id: number | null }
-	| { type: 'SET_JIRA_API_TOKEN_CRED'; id: number | null }
+	| { type: 'SET_TRELLO_API_KEY'; value: string }
+	| { type: 'SET_TRELLO_TOKEN'; value: string }
+	| { type: 'SET_JIRA_EMAIL'; value: string }
+	| { type: 'SET_JIRA_API_TOKEN'; value: string }
 	| { type: 'SET_JIRA_BASE_URL'; url: string }
 	| {
 			type: 'SET_VERIFICATION';
@@ -112,10 +112,10 @@ export const INITIAL_JIRA_LABELS: Record<string, string> = {
 export function createInitialState(): WizardState {
 	return {
 		provider: 'trello',
-		trelloApiKeyCredentialId: null,
-		trelloTokenCredentialId: null,
-		jiraEmailCredentialId: null,
-		jiraApiTokenCredentialId: null,
+		trelloApiKey: '',
+		trelloToken: '',
+		jiraEmail: '',
+		jiraApiToken: '',
 		jiraBaseUrl: '',
 		verificationResult: null,
 		verifyError: null,
@@ -147,31 +147,31 @@ export const wizardReducer: Reducer<WizardState, WizardAction> = (state, action)
 				...createInitialState(),
 				provider: action.provider,
 			};
-		case 'SET_TRELLO_API_KEY_CRED':
+		case 'SET_TRELLO_API_KEY':
 			return {
 				...state,
-				trelloApiKeyCredentialId: action.id,
+				trelloApiKey: action.value,
 				verificationResult: null,
 				verifyError: null,
 			};
-		case 'SET_TRELLO_TOKEN_CRED':
+		case 'SET_TRELLO_TOKEN':
 			return {
 				...state,
-				trelloTokenCredentialId: action.id,
+				trelloToken: action.value,
 				verificationResult: null,
 				verifyError: null,
 			};
-		case 'SET_JIRA_EMAIL_CRED':
+		case 'SET_JIRA_EMAIL':
 			return {
 				...state,
-				jiraEmailCredentialId: action.id,
+				jiraEmail: action.value,
 				verificationResult: null,
 				verifyError: null,
 			};
-		case 'SET_JIRA_API_TOKEN_CRED':
+		case 'SET_JIRA_API_TOKEN':
 			return {
 				...state,
-				jiraApiTokenCredentialId: action.id,
+				jiraApiToken: action.value,
 				verificationResult: null,
 				verifyError: null,
 			};
@@ -273,22 +273,21 @@ export const wizardReducer: Reducer<WizardState, WizardAction> = (state, action)
 // ============================================================================
 
 /**
- * Build a partial WizardState from an existing integration's config and credentials.
+ * Build a partial WizardState from an existing integration's config.
  * Called when editing an existing PM integration.
+ * Note: Credential values are NOT pre-populated for security — user must re-enter.
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: restoring state from two provider config shapes
 export function buildEditState(
 	provider: string,
 	initialConfig: Record<string, unknown>,
-	initialCredentials: Map<string, number>,
+	_initialCredentials: Map<string, number>,
 ): Partial<WizardState> {
 	const editState: Partial<WizardState> = {
 		provider: provider as Provider,
 	};
 
 	if (provider === 'trello') {
-		editState.trelloApiKeyCredentialId = initialCredentials.get('api_key') ?? null;
-		editState.trelloTokenCredentialId = initialCredentials.get('token') ?? null;
 		editState.trelloBoardId = (initialConfig.boardId as string) ?? '';
 
 		const lists = initialConfig.lists as Record<string, string> | undefined;
@@ -300,8 +299,6 @@ export function buildEditState(
 		const cf = initialConfig.customFields as Record<string, string> | undefined;
 		editState.trelloCostFieldId = cf?.cost ?? '';
 	} else if (provider === 'jira') {
-		editState.jiraEmailCredentialId = initialCredentials.get('email') ?? null;
-		editState.jiraApiTokenCredentialId = initialCredentials.get('api_token') ?? null;
 		editState.jiraBaseUrl = (initialConfig.baseUrl as string) ?? '';
 		editState.jiraProjectKey = (initialConfig.projectKey as string) ?? '';
 
@@ -332,8 +329,8 @@ export function isStep1Complete(state: WizardState): boolean {
 export function isStep2Complete(state: WizardState): boolean {
 	const credsReady =
 		state.provider === 'trello'
-			? !!(state.trelloApiKeyCredentialId && state.trelloTokenCredentialId)
-			: !!(state.jiraEmailCredentialId && state.jiraApiTokenCredentialId && state.jiraBaseUrl);
+			? !!(state.trelloApiKey && state.trelloToken)
+			: !!(state.jiraEmail && state.jiraApiToken && state.jiraBaseUrl);
 	return credsReady && !!state.verificationResult;
 }
 
@@ -349,6 +346,6 @@ export function isStep4Complete(state: WizardState): boolean {
 
 export function areCredentialsReady(state: WizardState): boolean {
 	return state.provider === 'trello'
-		? !!(state.trelloApiKeyCredentialId && state.trelloTokenCredentialId)
-		: !!(state.jiraEmailCredentialId && state.jiraApiTokenCredentialId && state.jiraBaseUrl);
+		? !!(state.trelloApiKey && state.trelloToken)
+		: !!(state.jiraEmail && state.jiraApiToken && state.jiraBaseUrl);
 }

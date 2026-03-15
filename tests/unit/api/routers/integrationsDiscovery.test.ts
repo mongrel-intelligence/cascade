@@ -2,26 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockUser } from '../../../helpers/factories.js';
 
-const mockDecryptCredential = vi.fn((value: string) => value);
-
-vi.mock('../../../../src/db/crypto.js', () => ({
-	decryptCredential: (...args: unknown[]) => mockDecryptCredential(...args),
-}));
-
-const mockDbSelect = vi.fn();
-const mockDbFrom = vi.fn();
-const mockDbWhere = vi.fn();
-
-vi.mock('../../../../src/db/client.js', () => ({
-	getDb: () => ({
-		select: mockDbSelect,
-	}),
-}));
-
-vi.mock('../../../../src/db/schema/index.js', () => ({
-	credentials: { id: 'id', orgId: 'org_id', value: 'value' },
-}));
-
 const mockTrelloGetMe = vi.fn();
 const mockTrelloGetBoards = vi.fn();
 const mockTrelloGetBoardLists = vi.fn();
@@ -78,29 +58,17 @@ function createCaller(ctx: TRPCContext) {
 
 const mockUser = createMockUser();
 
-const trelloCredsInput = { apiKeyCredentialId: 1, tokenCredentialId: 2 };
+// Raw credential inputs — no longer credential IDs
+const trelloCredsInput = { apiKey: 'my-api-key', token: 'my-token' };
 const jiraCredsInput = {
-	emailCredentialId: 3,
-	apiTokenCredentialId: 4,
+	email: 'user@example.com',
+	apiToken: 'my-jira-token',
 	baseUrl: 'https://myorg.atlassian.net',
 };
 
-/**
- * Helper: set up the DB mock chain so that resolveCredentialValue succeeds.
- * Each call to getDb().select().from().where() resolves with the given rows.
- * Because procedures resolve two credentials via Promise.all, we queue multiple
- * return values on mockDbWhere.
- */
-function setupDbCredentials(rows: Array<{ orgId: string; value: string }>) {
-	for (const row of rows) {
-		mockDbWhere.mockResolvedValueOnce([row]);
-	}
-}
-
 describe('integrationsDiscoveryRouter', () => {
 	beforeEach(() => {
-		mockDbSelect.mockReturnValue({ from: mockDbFrom });
-		mockDbFrom.mockReturnValue({ where: mockDbWhere });
+		vi.clearAllMocks();
 	});
 
 	// ── Auth ─────────────────────────────────────────────────────────────
@@ -149,52 +117,10 @@ describe('integrationsDiscoveryRouter', () => {
 		});
 	});
 
-	// ── Credential resolution ────────────────────────────────────────────
-
-	describe('credential resolution', () => {
-		it('throws NOT_FOUND when credential does not exist', async () => {
-			mockDbWhere.mockResolvedValueOnce([]);
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await expect(caller.verifyTrello(trelloCredsInput)).rejects.toMatchObject({
-				code: 'NOT_FOUND',
-			});
-		});
-
-		it('throws NOT_FOUND when credential belongs to different org', async () => {
-			mockDbWhere.mockResolvedValueOnce([{ orgId: 'different-org', value: 'some-key' }]);
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await expect(caller.verifyTrello(trelloCredsInput)).rejects.toMatchObject({
-				code: 'NOT_FOUND',
-			});
-		});
-
-		it('calls decryptCredential with value and orgId', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'enc:v1:api-key' },
-				{ orgId: 'org-1', value: 'enc:v1:token' },
-			]);
-			mockDecryptCredential.mockReturnValueOnce('decrypted-api-key');
-			mockDecryptCredential.mockReturnValueOnce('decrypted-token');
-			mockTrelloGetMe.mockResolvedValue({ id: '1', fullName: 'Me', username: 'me' });
-
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			await caller.verifyTrello(trelloCredsInput);
-
-			expect(mockDecryptCredential).toHaveBeenCalledWith('enc:v1:api-key', 'org-1');
-			expect(mockDecryptCredential).toHaveBeenCalledWith('enc:v1:token', 'org-1');
-		});
-	});
-
 	// ── verifyTrello ─────────────────────────────────────────────────────
 
 	describe('verifyTrello', () => {
 		it('returns username, fullName, and id on success', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'api-key' },
-				{ orgId: 'org-1', value: 'token' },
-			]);
 			mockTrelloGetMe.mockResolvedValue({
 				id: 'trello-123',
 				fullName: 'Trello User',
@@ -212,10 +138,6 @@ describe('integrationsDiscoveryRouter', () => {
 		});
 
 		it('wraps API failure in BAD_REQUEST', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'bad-key' },
-				{ orgId: 'org-1', value: 'bad-token' },
-			]);
 			mockTrelloGetMe.mockRejectedValue(new Error('Invalid API key'));
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -223,16 +145,22 @@ describe('integrationsDiscoveryRouter', () => {
 				code: 'BAD_REQUEST',
 			});
 		});
+
+		it('rejects empty apiKey', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.verifyTrello({ apiKey: '', token: 'my-token' })).rejects.toThrow();
+		});
+
+		it('rejects empty token', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.verifyTrello({ apiKey: 'my-api-key', token: '' })).rejects.toThrow();
+		});
 	});
 
 	// ── verifyJira ───────────────────────────────────────────────────────
 
 	describe('verifyJira', () => {
 		it('returns displayName, emailAddress, and accountId on success', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'email@example.com' },
-				{ orgId: 'org-1', value: 'api-token' },
-			]);
 			mockJiraGetMyself.mockResolvedValue({
 				displayName: 'Jira User',
 				emailAddress: 'jira@example.com',
@@ -250,10 +178,6 @@ describe('integrationsDiscoveryRouter', () => {
 		});
 
 		it('returns empty strings when JIRA response fields are missing', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'email' },
-				{ orgId: 'org-1', value: 'token' },
-			]);
 			mockJiraGetMyself.mockResolvedValue({});
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -267,10 +191,6 @@ describe('integrationsDiscoveryRouter', () => {
 		});
 
 		it('wraps API failure in BAD_REQUEST', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'email' },
-				{ orgId: 'org-1', value: 'bad-token' },
-			]);
 			mockJiraGetMyself.mockRejectedValue(new Error('Unauthorized'));
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -278,16 +198,19 @@ describe('integrationsDiscoveryRouter', () => {
 				code: 'BAD_REQUEST',
 			});
 		});
+
+		it('rejects invalid baseUrl', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.verifyJira({ email: 'a@b.com', apiToken: 'tok', baseUrl: 'not-a-url' }),
+			).rejects.toThrow();
+		});
 	});
 
 	// ── trelloBoards ─────────────────────────────────────────────────────
 
 	describe('trelloBoards', () => {
 		it('returns boards list on success', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'api-key' },
-				{ orgId: 'org-1', value: 'token' },
-			]);
 			const boards = [
 				{ id: 'board-1', name: 'Board One', url: 'https://trello.com/b/1' },
 				{ id: 'board-2', name: 'Board Two', url: 'https://trello.com/b/2' },
@@ -301,10 +224,6 @@ describe('integrationsDiscoveryRouter', () => {
 		});
 
 		it('wraps API failure in BAD_REQUEST', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'api-key' },
-				{ orgId: 'org-1', value: 'token' },
-			]);
 			mockTrelloGetBoards.mockRejectedValue(new Error('Network error'));
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -318,10 +237,6 @@ describe('integrationsDiscoveryRouter', () => {
 
 	describe('trelloBoardDetails', () => {
 		it('returns lists, labels, and customFields on success', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'api-key' },
-				{ orgId: 'org-1', value: 'token' },
-			]);
 			const lists = [{ id: 'list-1', name: 'Backlog' }];
 			const labels = [{ id: 'label-1', name: 'Bug', color: 'red' }];
 			const customFields = [{ id: 'cf-1', name: 'Priority', type: 'list' }];
@@ -359,10 +274,6 @@ describe('integrationsDiscoveryRouter', () => {
 		});
 
 		it('wraps API failure in BAD_REQUEST', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'api-key' },
-				{ orgId: 'org-1', value: 'token' },
-			]);
 			mockTrelloGetBoardLists.mockRejectedValue(new Error('Board not found'));
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -376,10 +287,6 @@ describe('integrationsDiscoveryRouter', () => {
 
 	describe('jiraProjects', () => {
 		it('returns project list on success', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'email' },
-				{ orgId: 'org-1', value: 'api-token' },
-			]);
 			const projects = [
 				{ key: 'PROJ', name: 'Project One' },
 				{ key: 'TEST', name: 'Test Project' },
@@ -393,10 +300,6 @@ describe('integrationsDiscoveryRouter', () => {
 		});
 
 		it('wraps API failure in BAD_REQUEST', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'email' },
-				{ orgId: 'org-1', value: 'api-token' },
-			]);
 			mockJiraSearchProjects.mockRejectedValue(new Error('Connection refused'));
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -410,10 +313,6 @@ describe('integrationsDiscoveryRouter', () => {
 
 	describe('jiraProjectDetails', () => {
 		it('returns statuses, issueTypes, and only custom fields', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'email' },
-				{ orgId: 'org-1', value: 'api-token' },
-			]);
 			const statuses = [
 				{ name: 'To Do', id: 'status-1' },
 				{ name: 'Done', id: 'status-2' },
@@ -473,10 +372,6 @@ describe('integrationsDiscoveryRouter', () => {
 		});
 
 		it('wraps API failure in BAD_REQUEST', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'email' },
-				{ orgId: 'org-1', value: 'api-token' },
-			]);
 			mockJiraGetProjectStatuses.mockRejectedValue(new Error('Project not found'));
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -490,10 +385,6 @@ describe('integrationsDiscoveryRouter', () => {
 
 	describe('createTrelloCustomField', () => {
 		it('returns id, name, and type on success', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'api-key' },
-				{ orgId: 'org-1', value: 'token' },
-			]);
 			mockTrelloCreateBoardCustomField.mockResolvedValue({
 				id: 'cf-123',
 				name: 'Cost',
@@ -526,20 +417,6 @@ describe('integrationsDiscoveryRouter', () => {
 					type: 'number',
 				}),
 			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
-		});
-
-		it('throws NOT_FOUND when credential does not exist', async () => {
-			mockDbWhere.mockResolvedValueOnce([]);
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await expect(
-				caller.createTrelloCustomField({
-					...trelloCredsInput,
-					boardId: 'boardabc',
-					name: 'Cost',
-					type: 'number',
-				}),
-			).rejects.toMatchObject({ code: 'NOT_FOUND' });
 		});
 
 		it('validates boardId with alphanumeric regex', async () => {
@@ -603,10 +480,6 @@ describe('integrationsDiscoveryRouter', () => {
 		});
 
 		it('wraps API failure in BAD_REQUEST', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'api-key' },
-				{ orgId: 'org-1', value: 'token' },
-			]);
 			mockTrelloCreateBoardCustomField.mockRejectedValue(new Error('Board not found'));
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -625,10 +498,6 @@ describe('integrationsDiscoveryRouter', () => {
 
 	describe('createJiraCustomField', () => {
 		it('returns id and name on success', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'email' },
-				{ orgId: 'org-1', value: 'api-token' },
-			]);
 			mockJiraCreateCustomField.mockResolvedValue({
 				id: 'customfield_10001',
 				name: 'Cost',
@@ -661,18 +530,6 @@ describe('integrationsDiscoveryRouter', () => {
 			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 		});
 
-		it('throws NOT_FOUND when credential does not exist', async () => {
-			mockDbWhere.mockResolvedValueOnce([]);
-			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-			await expect(
-				caller.createJiraCustomField({
-					...jiraCredsInput,
-					name: 'Cost',
-				}),
-			).rejects.toMatchObject({ code: 'NOT_FOUND' });
-		});
-
 		it('validates name min length of 1', async () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(
@@ -694,10 +551,6 @@ describe('integrationsDiscoveryRouter', () => {
 		});
 
 		it('wraps API failure in BAD_REQUEST', async () => {
-			setupDbCredentials([
-				{ orgId: 'org-1', value: 'email' },
-				{ orgId: 'org-1', value: 'api-token' },
-			]);
 			mockJiraCreateCustomField.mockRejectedValue(new Error('Admin permission required'));
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });

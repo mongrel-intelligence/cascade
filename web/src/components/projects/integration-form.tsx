@@ -1,3 +1,4 @@
+import { Badge } from '@/components/ui/badge.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import { API_URL } from '@/lib/api.js';
@@ -21,62 +22,131 @@ import { PMWizard } from './pm-wizard.js';
 
 type IntegrationCategory = 'pm' | 'scm';
 
-interface CredentialOption {
-	id: number;
-	name: string;
+// ============================================================================
+// Project Credential Input — write-only, shows "Configured" badge when set
+// ============================================================================
+
+interface ProjectCredentialMeta {
 	envVarKey: string;
-	value: string;
+	name: string | null;
+	isConfigured: boolean;
+	maskedValue: string;
 }
 
-function CredentialSelector({
+function ProjectSecretInput({
+	projectId,
+	envVarKey,
 	label,
 	description,
-	credentials,
-	selectedId,
-	onChange,
+	placeholder,
+	credential,
+	onSaved,
+	onCleared,
 	verifiedLogin,
 	onVerify,
 	isVerifying,
 	verifyError,
 }: {
+	projectId: string;
+	envVarKey: string;
 	label: string;
-	description: string;
-	credentials: CredentialOption[];
-	selectedId: number | null;
-	onChange: (id: number | null) => void;
+	description?: string;
+	placeholder?: string;
+	credential?: ProjectCredentialMeta;
+	onSaved?: () => void;
+	onCleared?: () => void;
 	verifiedLogin?: string | null;
-	onVerify?: () => void;
+	onVerify?: (rawValue: string) => void;
 	isVerifying?: boolean;
 	verifyError?: string | null;
 }) {
+	const [value, setValue] = useState('');
+	const queryClient = useQueryClient();
+
+	const saveMutation = useMutation({
+		mutationFn: () =>
+			trpcClient.projects.credentials.set.mutate({
+				projectId,
+				envVarKey,
+				value,
+				name: label,
+			}),
+		onSuccess: () => {
+			setValue('');
+			queryClient.invalidateQueries({
+				queryKey: trpc.projects.credentials.list.queryOptions({ projectId }).queryKey,
+			});
+			onSaved?.();
+		},
+	});
+
+	const deleteMutation = useMutation({
+		mutationFn: () => trpcClient.projects.credentials.delete.mutate({ projectId, envVarKey }),
+		onSuccess: () => {
+			queryClient.invalidateQueries({
+				queryKey: trpc.projects.credentials.list.queryOptions({ projectId }).queryKey,
+			});
+			onCleared?.();
+		},
+	});
+
 	return (
 		<div className="space-y-2">
-			<Label>{label}</Label>
-			<p className="text-xs text-muted-foreground">{description}</p>
+			<div className="flex items-center gap-2">
+				<Label>{label}</Label>
+				{credential?.isConfigured && (
+					<Badge variant="secondary" className="text-xs font-mono">
+						{credential.maskedValue}
+					</Badge>
+				)}
+			</div>
+			{description && <p className="text-xs text-muted-foreground">{description}</p>}
 			<div className="flex gap-2">
-				<select
-					value={selectedId ?? ''}
-					onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
-					className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
+				<Input
+					type="password"
+					value={value}
+					onChange={(e) => setValue(e.target.value)}
+					placeholder={credential?.isConfigured ? 'Enter new value to update...' : placeholder}
+					autoComplete="off"
+					className="flex-1"
+				/>
+				<button
+					type="button"
+					onClick={() => saveMutation.mutate()}
+					disabled={!value || saveMutation.isPending}
+					className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 shrink-0"
 				>
-					<option value="">Select a credential...</option>
-					{credentials.map((c) => (
-						<option key={c.id} value={c.id}>
-							{c.name} ({c.envVarKey})
-						</option>
-					))}
-				</select>
+					{saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
+				</button>
 				{onVerify && (
 					<button
 						type="button"
-						onClick={onVerify}
-						disabled={!selectedId || isVerifying}
-						className="inline-flex h-9 items-center rounded-md border border-input px-3 text-sm font-medium hover:bg-accent disabled:opacity-50"
+						onClick={() => onVerify(value || '')}
+						disabled={(!value && !credential?.isConfigured) || isVerifying}
+						className="inline-flex h-9 items-center rounded-md border border-input px-3 text-sm font-medium hover:bg-accent disabled:opacity-50 shrink-0"
 					>
 						{isVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Verify'}
 					</button>
 				)}
+				{credential?.isConfigured && (
+					<button
+						type="button"
+						onClick={() => deleteMutation.mutate()}
+						disabled={deleteMutation.isPending}
+						className="p-2 text-muted-foreground hover:text-destructive disabled:opacity-50"
+						title="Clear credential"
+					>
+						{deleteMutation.isPending ? (
+							<Loader2 className="h-4 w-4 animate-spin" />
+						) : (
+							<Trash2 className="h-4 w-4" />
+						)}
+					</button>
+				)}
 			</div>
+			{saveMutation.isError && (
+				<p className="text-xs text-destructive">{saveMutation.error.message}</p>
+			)}
 			{verifiedLogin && (
 				<div className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
 					<CheckCircle className="h-4 w-4" />
@@ -94,62 +164,32 @@ function CredentialSelector({
 }
 
 // ============================================================================
-// Provider-specific credential role definitions
+// GitHub Credential Slots (replaces the old CredentialSelector dropdowns)
 // ============================================================================
 
-interface CredentialRoleDef {
-	role: string;
-	label: string;
-	description: string;
-	hasVerify?: boolean;
-}
+function GitHubCredentialSlots({ projectId }: { projectId: string }) {
+	const credentialsQuery = useQuery(trpc.projects.credentials.list.queryOptions({ projectId }));
 
-const SCM_CREDENTIAL_ROLES: Record<string, CredentialRoleDef[]> = {
-	github: [
-		{
-			role: 'implementer_token',
-			label: 'Implementer Token',
-			description: 'GitHub PAT for the bot that writes code, creates PRs, and responds to reviews.',
-			hasVerify: true,
-		},
-		{
-			role: 'reviewer_token',
-			label: 'Reviewer Token',
-			description: 'GitHub PAT for the bot that reviews PRs. Must be a different account.',
-			hasVerify: true,
-		},
-	],
-};
-
-// ============================================================================
-// Integration credential slot component
-// ============================================================================
-
-function IntegrationCredentialSlots({
-	projectId,
-	category,
-	roles,
-	credentials,
-	existingCredentials,
-	onCredentialsChange,
-}: {
-	projectId: string;
-	category: IntegrationCategory;
-	roles: CredentialRoleDef[];
-	credentials: CredentialOption[];
-	existingCredentials: Map<string, number>;
-	onCredentialsChange: (role: string, credentialId: number | null) => void;
-}) {
 	const [verifiedLogins, setVerifiedLogins] = useState<Record<string, string | null>>({});
 	const [verifyErrors, setVerifyErrors] = useState<Record<string, string | null>>({});
 	const [verifyingRoles, setVerifyingRoles] = useState<Record<string, boolean>>({});
 
-	const handleVerify = async (role: string, credentialId: number) => {
+	const credentials = credentialsQuery.data ?? [];
+	const implementerCred = credentials.find((c) => c.envVarKey === 'GITHUB_TOKEN_IMPLEMENTER');
+	const reviewerCred = credentials.find((c) => c.envVarKey === 'GITHUB_TOKEN_REVIEWER');
+
+	const handleVerify = async (role: string, rawValue: string) => {
+		// If no new value entered, we can't verify (we never return plaintext to browser)
+		if (!rawValue) {
+			setVerifyErrors((prev) => ({
+				...prev,
+				[role]: 'Enter the token value to verify it',
+			}));
+			return;
+		}
 		setVerifyingRoles((prev) => ({ ...prev, [role]: true }));
 		try {
-			const result = await trpcClient.credentials.verifyGithubIdentity.mutate({
-				credentialId,
-			});
+			const result = await trpcClient.credentials.verifyGithubToken.mutate({ token: rawValue });
 			setVerifiedLogins((prev) => ({ ...prev, [role]: result.login }));
 			setVerifyErrors((prev) => ({ ...prev, [role]: null }));
 		} catch (err) {
@@ -166,31 +206,30 @@ function IntegrationCredentialSlots({
 	return (
 		<div className="space-y-4">
 			<Label className="text-sm font-medium">Credentials</Label>
-			{roles.map((roleDef) => (
-				<CredentialSelector
-					key={roleDef.role}
-					label={roleDef.label}
-					description={roleDef.description}
-					credentials={credentials}
-					selectedId={existingCredentials.get(roleDef.role) ?? null}
-					onChange={(id) => {
-						onCredentialsChange(roleDef.role, id);
-						setVerifiedLogins((prev) => ({ ...prev, [roleDef.role]: null }));
-						setVerifyErrors((prev) => ({ ...prev, [roleDef.role]: null }));
-					}}
-					verifiedLogin={roleDef.hasVerify ? verifiedLogins[roleDef.role] : undefined}
-					onVerify={
-						roleDef.hasVerify
-							? () => {
-									const credId = existingCredentials.get(roleDef.role);
-									if (credId) handleVerify(roleDef.role, credId);
-								}
-							: undefined
-					}
-					isVerifying={roleDef.hasVerify ? verifyingRoles[roleDef.role] : undefined}
-					verifyError={roleDef.hasVerify ? verifyErrors[roleDef.role] : undefined}
-				/>
-			))}
+			<ProjectSecretInput
+				projectId={projectId}
+				envVarKey="GITHUB_TOKEN_IMPLEMENTER"
+				label="Implementer Token"
+				description="GitHub PAT for the bot that writes code, creates PRs, and responds to reviews."
+				placeholder="ghp_..."
+				credential={implementerCred}
+				verifiedLogin={verifiedLogins.implementer}
+				onVerify={(val) => handleVerify('implementer', val)}
+				isVerifying={verifyingRoles.implementer}
+				verifyError={verifyErrors.implementer}
+			/>
+			<ProjectSecretInput
+				projectId={projectId}
+				envVarKey="GITHUB_TOKEN_REVIEWER"
+				label="Reviewer Token"
+				description="GitHub PAT for the bot that reviews PRs. Must be a different account."
+				placeholder="ghp_..."
+				credential={reviewerCred}
+				verifiedLogin={verifiedLogins.reviewer}
+				onVerify={(val) => handleVerify('reviewer', val)}
+				isVerifying={verifyingRoles.reviewer}
+				verifyError={verifyErrors.reviewer}
+			/>
 		</div>
 	);
 }
@@ -399,31 +438,17 @@ interface SCMTabProject {
 
 function SCMTab({
 	projectId,
-	initialProvider,
-	initialCredentials,
 	project,
 }: {
 	projectId: string;
-	initialProvider: string;
-	initialCredentials: Map<string, number>;
 	project?: SCMTabProject;
 }) {
 	const queryClient = useQueryClient();
-
-	const credentialsQuery = useQuery(trpc.credentials.list.queryOptions());
-	const orgCredentials = (credentialsQuery.data ?? []) as CredentialOption[];
-
-	const [provider] = useState(initialProvider || 'github');
-	const [credentialMap, setCredentialMap] = useState<Map<string, number>>(initialCredentials);
 
 	// Project-level SCM fields
 	const [repo, setRepo] = useState(project?.repo ?? '');
 	const [baseBranch, setBaseBranch] = useState(project?.baseBranch ?? 'main');
 	const [branchPrefix, setBranchPrefix] = useState(project?.branchPrefix ?? 'feature/');
-
-	useEffect(() => {
-		setCredentialMap(initialCredentials);
-	}, [initialCredentials]);
 
 	useEffect(() => {
 		setRepo(project?.repo ?? '');
@@ -445,19 +470,9 @@ function SCMTab({
 			const result = await trpcClient.projects.integrations.upsert.mutate({
 				projectId,
 				category: 'scm',
-				provider,
+				provider: 'github',
 				config: {},
 			});
-
-			// Set integration credentials
-			for (const [role, credentialId] of credentialMap) {
-				await trpcClient.projects.integrationCredentials.set.mutate({
-					projectId,
-					category: 'scm',
-					role,
-					credentialId,
-				});
-			}
 
 			return result;
 		},
@@ -471,16 +486,8 @@ function SCMTab({
 			queryClient.invalidateQueries({
 				queryKey: trpc.projects.integrations.list.queryOptions({ projectId }).queryKey,
 			});
-			queryClient.invalidateQueries({
-				queryKey: trpc.projects.integrationCredentials.list.queryOptions({
-					projectId,
-					category: 'scm',
-				}).queryKey,
-			});
 		},
 	});
-
-	const credentialRoles = SCM_CREDENTIAL_ROLES[provider] ?? [];
 
 	return (
 		<div className="space-y-6">
@@ -526,24 +533,7 @@ function SCMTab({
 				reviews PRs and can approve or request changes.
 			</p>
 
-			<IntegrationCredentialSlots
-				projectId={projectId}
-				category="scm"
-				roles={credentialRoles}
-				credentials={orgCredentials}
-				existingCredentials={credentialMap}
-				onCredentialsChange={(role, id) => {
-					setCredentialMap((prev) => {
-						const next = new Map(prev);
-						if (id) {
-							next.set(role, id);
-						} else {
-							next.delete(role);
-						}
-						return next;
-					});
-				}}
-			/>
+			<GitHubCredentialSlots projectId={projectId} />
 
 			<p className="text-xs text-muted-foreground">
 				Trigger configuration has moved to the <strong>Agents</strong> tab.
@@ -630,9 +620,6 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 	const pmCredsQuery = useQuery(
 		trpc.projects.integrationCredentials.list.queryOptions({ projectId, category: 'pm' }),
 	);
-	const scmCredsQuery = useQuery(
-		trpc.projects.integrationCredentials.list.queryOptions({ projectId, category: 'scm' }),
-	);
 	const projectQuery = useQuery(trpc.projects.getById.queryOptions({ id: projectId }));
 	const [activeTab, setActiveTab] = useState<IntegrationCategory>('pm');
 
@@ -642,15 +629,10 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 
 	const integrations = integrationsQuery.data ?? [];
 	const pmIntegration = findIntegrationByCategory(integrations, 'pm');
-	const scmIntegration = findIntegrationByCategory(integrations, 'scm');
 	const pmProvider = (pmIntegration?.provider as string) ?? 'trello';
-	const scmProvider = (scmIntegration?.provider as string) ?? 'github';
 
 	const pmCredMap = buildCredentialMap(
 		pmCredsQuery.data as Array<{ role: string; credentialId: number }>,
-	);
-	const scmCredMap = buildCredentialMap(
-		scmCredsQuery.data as Array<{ role: string; credentialId: number }>,
 	);
 
 	return (
@@ -679,14 +661,7 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 				/>
 			)}
 
-			{activeTab === 'scm' && (
-				<SCMTab
-					projectId={projectId}
-					initialProvider={scmProvider}
-					initialCredentials={scmCredMap}
-					project={projectQuery.data}
-				/>
-			)}
+			{activeTab === 'scm' && <SCMTab projectId={projectId} project={projectQuery.data} />}
 		</div>
 	);
 }

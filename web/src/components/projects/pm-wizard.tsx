@@ -36,7 +36,6 @@ import {
 	TrelloFieldMappingStep,
 } from './pm-wizard-trello-steps.js';
 import { WizardStep } from './wizard-shared.js';
-import type { CredentialOption } from './wizard-shared.js';
 
 // ============================================================================
 // Constants
@@ -66,8 +65,6 @@ export function PMWizard({
 	initialConfig?: Record<string, unknown>;
 	initialCredentials: Map<string, number>;
 }) {
-	const credentialsQuery = useQuery(trpc.credentials.list.queryOptions());
-	const orgCredentials = (credentialsQuery.data ?? []) as CredentialOption[];
 	const webhooksQuery = useQuery(trpc.webhooks.list.queryOptions({ projectId }));
 
 	const [state, dispatch] = useReducer(wizardReducer, undefined, createInitialState);
@@ -248,13 +245,9 @@ export function PMWizard({
 				onToggle={() => toggleStep(2)}
 			>
 				{state.provider === 'trello' ? (
-					<TrelloCredentialsStep
-						state={state}
-						dispatch={dispatch}
-						orgCredentials={orgCredentials}
-					/>
+					<TrelloCredentialsStep state={state} dispatch={dispatch} />
 				) : (
-					<JiraCredentialsStep state={state} dispatch={dispatch} orgCredentials={orgCredentials} />
+					<JiraCredentialsStep state={state} dispatch={dispatch} />
 				)}
 
 				<div className="flex items-center gap-3 pt-2">
