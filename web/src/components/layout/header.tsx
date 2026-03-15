@@ -1,3 +1,4 @@
+import { Breadcrumbs } from '@/components/layout/breadcrumbs.js';
 import {
 	Select,
 	SelectContent,
@@ -46,11 +47,11 @@ export function Header({ user, mobileMenuTrigger }: HeaderProps) {
 
 	return (
 		<header className="flex h-14 items-center justify-between border-b border-border px-4 md:px-6">
-			<div className="flex items-center gap-2">
+			<div className="flex min-w-0 flex-1 items-center gap-2">
 				{mobileMenuTrigger && <div className="md:hidden">{mobileMenuTrigger}</div>}
 				{isAdmin && availableOrgs && availableOrgs.length > 1 ? (
 					<Select value={effectiveOrgId ?? undefined} onValueChange={switchOrg}>
-						<SelectTrigger className="h-8 text-xs gap-1.5 max-w-[140px] sm:max-w-none">
+						<SelectTrigger className="h-8 text-xs gap-1.5 max-w-[140px] sm:max-w-none shrink-0">
 							<Building2 className="h-3.5 w-3.5" />
 							<SelectValue />
 						</SelectTrigger>
@@ -63,8 +64,12 @@ export function Header({ user, mobileMenuTrigger }: HeaderProps) {
 						</SelectContent>
 					</Select>
 				) : (
-					isAdmin && orgName && <span className="text-sm text-muted-foreground">{orgName}</span>
+					isAdmin &&
+					orgName && <span className="shrink-0 text-sm text-muted-foreground">{orgName}</span>
 				)}
+				<div className="min-w-0 flex-1 overflow-hidden">
+					<Breadcrumbs />
+				</div>
 			</div>
 			<div className="flex items-center gap-2 md:gap-4">
 				{user && (

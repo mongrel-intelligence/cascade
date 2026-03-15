@@ -9,7 +9,7 @@ import { trpc } from '@/lib/trpc.js';
 import { cn } from '@/lib/utils.js';
 import { useQuery } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, FileText, GitPullRequest } from 'lucide-react';
+import { FileText, GitPullRequest } from 'lucide-react';
 import { useState } from 'react';
 import { rootRoute } from '../__root.js';
 
@@ -41,14 +41,6 @@ function RunDetailPage() {
 	return (
 		<div className="space-y-6">
 			<div className="flex flex-wrap items-center gap-2">
-				<Link
-					to="/"
-					className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-				>
-					<ArrowLeft className="h-4 w-4" />
-					Back
-				</Link>
-				<span className="text-muted-foreground">/</span>
 				<h1 className="text-xl font-bold">{run.agentType}</h1>
 				<RunStatusBadge status={run.status} />
 				<CancelRunButton runId={run.id} status={run.status} />
