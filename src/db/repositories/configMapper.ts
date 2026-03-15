@@ -84,6 +84,7 @@ export interface ProjectConfigRaw {
 	squintDbUrl?: string;
 	engineSettings?: EngineSettings;
 	runLinksEnabled?: boolean;
+	maxInFlightItems?: number;
 	trello?: {
 		boardId: string;
 		lists: Record<string, string>;
@@ -125,6 +126,7 @@ type ProjectRow = {
 	agentEngine: string | null;
 	agentEngineSettings: EngineSettings | null;
 	runLinksEnabled: boolean;
+	maxInFlightItems: number | null;
 };
 
 export function buildAgentMaps(configs: AgentConfigRow[]): {
@@ -231,6 +233,7 @@ export function mapProjectRow({
 		engineSettings: row.agentEngineSettings ?? undefined,
 		squintDbUrl: row.squintDbUrl ?? undefined,
 		runLinksEnabled: row.runLinksEnabled ?? false,
+		maxInFlightItems: row.maxInFlightItems ?? undefined,
 	};
 
 	if (trelloConfig) {

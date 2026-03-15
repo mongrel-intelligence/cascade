@@ -43,6 +43,7 @@ export async function createProject(
 		progressModel?: string | null;
 		progressIntervalMinutes?: string | null;
 		runLinksEnabled?: boolean;
+		maxInFlightItems?: number | null;
 	},
 ) {
 	const db = getDb();
@@ -64,6 +65,7 @@ export async function createProject(
 			progressModel: rest.progressModel,
 			progressIntervalMinutes: rest.progressIntervalMinutes,
 			runLinksEnabled: rest.runLinksEnabled ?? false,
+			maxInFlightItems: rest.maxInFlightItems,
 			...(engineSettings !== undefined
 				? { agentEngineSettings: normalizeEngineSettings(engineSettings) }
 				: {}),
@@ -89,6 +91,7 @@ export async function updateProject(
 		progressModel?: string | null;
 		progressIntervalMinutes?: string | null;
 		runLinksEnabled?: boolean;
+		maxInFlightItems?: number | null;
 	},
 ) {
 	const db = getDb();

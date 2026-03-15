@@ -32,6 +32,7 @@ export default class ProjectsShow extends DashboardCommand {
 				model: { label: 'Model' },
 				workItemBudgetUsd: { label: 'Work Item Budget' },
 				agentEngine: { label: 'Engine' },
+				maxInFlightItems: { label: 'Max In-Flight Items' },
 			});
 		} catch (err) {
 			this.handleError(err);

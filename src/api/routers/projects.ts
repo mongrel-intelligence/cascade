@@ -86,6 +86,7 @@ export const projectsRouter = router({
 				progressModel: z.string().nullish(),
 				progressIntervalMinutes: z.string().nullish(),
 				runLinksEnabled: z.boolean().optional(),
+				maxInFlightItems: z.number().int().positive().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -113,6 +114,7 @@ export const projectsRouter = router({
 				progressModel: z.string().nullish(),
 				progressIntervalMinutes: z.string().nullish(),
 				runLinksEnabled: z.boolean().optional(),
+				maxInFlightItems: z.number().int().positive().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {

@@ -25,6 +25,9 @@ export default class ProjectsUpdate extends DashboardCommand {
 			description: 'Enable run links in agent comments (requires CASCADE_DASHBOARD_URL env var)',
 			allowNo: true,
 		}),
+		'max-in-flight-items': Flags.integer({
+			description: 'Max in-flight items (pipeline throughput)',
+		}),
 	};
 
 	async run(): Promise<void> {
@@ -46,6 +49,9 @@ export default class ProjectsUpdate extends DashboardCommand {
 				progressIntervalMinutes: flags['progress-interval'],
 				...(flags['run-links-enabled'] !== undefined
 					? { runLinksEnabled: flags['run-links-enabled'] }
+					: {}),
+				...(flags['max-in-flight-items'] !== undefined
+					? { maxInFlightItems: flags['max-in-flight-items'] }
 					: {}),
 			});
 

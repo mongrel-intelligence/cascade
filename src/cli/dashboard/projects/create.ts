@@ -18,6 +18,9 @@ export default class ProjectsCreate extends DashboardCommand {
 		'agent-engine': Flags.string({ description: 'Agent engine (e.g. claude-code)' }),
 		'progress-model': Flags.string({ description: 'Model for progress updates' }),
 		'progress-interval': Flags.string({ description: 'Progress update interval (minutes)' }),
+		'max-in-flight-items': Flags.integer({
+			description: 'Max in-flight items (pipeline throughput)',
+		}),
 	};
 
 	async run(): Promise<void> {
@@ -37,6 +40,7 @@ export default class ProjectsCreate extends DashboardCommand {
 				agentEngine: flags['agent-engine'],
 				progressModel: flags['progress-model'],
 				progressIntervalMinutes: flags['progress-interval'],
+				maxInFlightItems: flags['max-in-flight-items'],
 			});
 
 			if (flags.json) {
