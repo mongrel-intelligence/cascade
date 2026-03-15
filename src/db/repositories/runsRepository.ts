@@ -704,6 +704,7 @@ export async function getProjectWorkStatsAggregated(
 			timedOutCount: sql<number>`count(*) filter (where ${subquery.status} = 'timed_out')::int`,
 			totalCostUsd: sql<string>`coalesce(sum(${subquery.costUsd}::numeric), 0)::text`,
 			totalDurationMs: sql<number>`coalesce(sum(${subquery.durationMs}), 0)::int`,
+			durationRunCount: sql<number>`count(*) filter (where ${subquery.durationMs} is not null and ${subquery.durationMs} > 0)::int`,
 			avgDurationMs: sql<
 				number | null
 			>`case when count(*) filter (where ${subquery.durationMs} is not null and ${subquery.durationMs} > 0) > 0 then (sum(${subquery.durationMs}) filter (where ${subquery.durationMs} is not null and ${subquery.durationMs} > 0) / count(*) filter (where ${subquery.durationMs} is not null and ${subquery.durationMs} > 0))::int else null end`,
@@ -735,10 +736,9 @@ export async function getProjectWorkStatsAggregated(
 		failedRuns += row.failedCount;
 		timedOutRuns += row.timedOutCount;
 		totalCostNum += Number.parseFloat(row.totalCostUsd);
-		if (row.avgDurationMs !== null && row.avgDurationMs > 0) {
-			const runsWithDuration = row.runCount; // approximate — actual count from avgDurationMs
+		if (row.durationRunCount > 0) {
 			weightedDurationSum += row.totalDurationMs;
-			durationCount += runsWithDuration;
+			durationCount += row.durationRunCount;
 		}
 	}
 

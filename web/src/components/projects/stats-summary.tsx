@@ -3,7 +3,6 @@ import { formatCost, formatDuration } from '@/lib/utils.js';
 
 interface StatsSummaryProps {
 	totalRuns: number;
-	completedRuns: number;
 	totalCostUsd: string;
 	avgDurationMs: number | null;
 	successRate: number;
@@ -11,7 +10,6 @@ interface StatsSummaryProps {
 
 export function StatsSummary({
 	totalRuns,
-	completedRuns: _completedRuns,
 	totalCostUsd,
 	avgDurationMs,
 	successRate,

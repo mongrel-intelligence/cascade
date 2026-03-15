@@ -58,7 +58,6 @@ function ProjectStatsPage() {
 				<>
 					<StatsSummary
 						totalRuns={statsQuery.data.summary.totalRuns}
-						completedRuns={statsQuery.data.summary.completedRuns}
 						totalCostUsd={statsQuery.data.summary.totalCostUsd}
 						avgDurationMs={statsQuery.data.summary.avgDurationMs}
 						successRate={statsQuery.data.summary.successRate}
