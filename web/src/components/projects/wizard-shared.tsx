@@ -3,29 +3,8 @@
  * Extracted to eliminate ~250 lines of verbatim duplication.
  */
 import { Input } from '@/components/ui/input.js';
-import { trpc, trpcClient } from '@/lib/trpc.js';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-	AlertCircle,
-	Check,
-	ChevronDown,
-	ChevronRight,
-	Loader2,
-	Plus,
-	RefreshCw,
-} from 'lucide-react';
+import { AlertCircle, Check, ChevronDown, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
-
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface CredentialOption {
-	id: number;
-	name: string;
-	envVarKey: string;
-	value: string;
-}
 
 // ============================================================================
 // WizardStep Shell
@@ -249,105 +228,6 @@ export function FieldMappingRow({
 					)}
 				</div>
 			)}
-		</div>
-	);
-}
-
-// ============================================================================
-// Inline Credential Creator
-// ============================================================================
-
-/**
- * Inline form for creating a new credential without leaving the wizard.
- * Renders as a "Create new" link that expands into a small form.
- *
- * The optional `suggestedKey` prop pre-fills the ENV_VAR_KEY input and is
- * reset on success (used by email-wizard; absent in pm-wizard).
- */
-export function InlineCredentialCreator({
-	onCreated,
-	suggestedKey,
-}: {
-	onCreated: (id: number) => void;
-	suggestedKey?: string;
-}) {
-	const [isOpen, setIsOpen] = useState(false);
-	const [name, setName] = useState('');
-	const [envVarKey, setEnvVarKey] = useState(suggestedKey ?? '');
-	const [value, setValue] = useState('');
-	const queryClient = useQueryClient();
-
-	const createMutation = useMutation({
-		mutationFn: () =>
-			trpcClient.credentials.create.mutate({ name, envVarKey, value, isDefault: false }),
-		onSuccess: async (result) => {
-			await queryClient.invalidateQueries({
-				queryKey: trpc.credentials.list.queryOptions().queryKey,
-			});
-			onCreated((result as { id: number }).id);
-			setIsOpen(false);
-			setName('');
-			setEnvVarKey(suggestedKey ?? '');
-			setValue('');
-		},
-	});
-
-	if (!isOpen) {
-		return (
-			<button
-				type="button"
-				onClick={() => setIsOpen(true)}
-				className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-			>
-				<Plus className="h-3 w-3" /> Create new
-			</button>
-		);
-	}
-
-	return (
-		<div className="rounded-md border border-dashed p-3 space-y-2">
-			<div className="flex gap-2">
-				<Input
-					value={name}
-					onChange={(e) => setName(e.target.value)}
-					placeholder="Name"
-					className="flex-1"
-				/>
-				<Input
-					value={envVarKey}
-					onChange={(e) => setEnvVarKey(e.target.value.toUpperCase())}
-					placeholder="ENV_VAR_KEY"
-					className="flex-1"
-				/>
-			</div>
-			<Input
-				value={value}
-				onChange={(e) => setValue(e.target.value)}
-				placeholder="Secret value"
-				type="password"
-			/>
-			<div className="flex gap-2">
-				<button
-					type="button"
-					onClick={() => createMutation.mutate()}
-					disabled={!name || !envVarKey || !value || createMutation.isPending}
-					className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-				>
-					{createMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Create'}
-				</button>
-				<button
-					type="button"
-					onClick={() => setIsOpen(false)}
-					className="inline-flex h-8 items-center rounded-md border px-3 text-xs hover:bg-accent"
-				>
-					Cancel
-				</button>
-				{createMutation.isError && (
-					<span className="text-xs text-destructive self-center">
-						{createMutation.error.message}
-					</span>
-				)}
-			</div>
 		</div>
 	);
 }

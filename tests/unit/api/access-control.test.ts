@@ -47,16 +47,10 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	listRuns: (...args: unknown[]) => mockListRuns(...args),
 }));
 
-const mockListOrgCredentials = vi.fn();
-const mockCreateCredential = vi.fn();
-const mockUpdateCredential = vi.fn();
-const mockDeleteCredential = vi.fn();
-
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
-	listOrgCredentials: (...args: unknown[]) => mockListOrgCredentials(...args),
-	createCredential: (...args: unknown[]) => mockCreateCredential(...args),
-	updateCredential: (...args: unknown[]) => mockUpdateCredential(...args),
-	deleteCredential: (...args: unknown[]) => mockDeleteCredential(...args),
+	listProjectCredentials: vi.fn().mockResolvedValue([]),
+	writeProjectCredential: vi.fn(),
+	deleteProjectCredential: vi.fn(),
 }));
 
 const mockDbSelect = vi.fn();
@@ -100,7 +94,6 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 import { computeEffectiveOrgId } from '../../../src/api/context.js';
 import { authRouter } from '../../../src/api/routers/auth.js';
-import { credentialsRouter } from '../../../src/api/routers/credentials.js';
 import { organizationRouter } from '../../../src/api/routers/organization.js';
 import { projectsRouter } from '../../../src/api/routers/projects.js';
 import {
@@ -306,18 +299,6 @@ describe('Router org-isolation with admin org-switching', () => {
 		expect(mockListProjectsForOrg).toHaveBeenCalledWith('org-2');
 	});
 
-	it('credentials.list uses effectiveOrgId (not user.orgId)', async () => {
-		mockListOrgCredentials.mockResolvedValue([]);
-		const caller = credentialsRouter.createCaller({
-			user: adminUser,
-			effectiveOrgId: 'org-2',
-		});
-
-		await caller.list();
-
-		expect(mockListOrgCredentials).toHaveBeenCalledWith('org-2');
-	});
-
 	it('organization.get uses effectiveOrgId (not user.orgId)', async () => {
 		mockGetOrganization.mockResolvedValue({ id: 'org-2', name: 'Org Two' });
 		const caller = organizationRouter.createCaller({
@@ -406,32 +387,5 @@ describe('Cross-org ownership checks', () => {
 			code: 'NOT_FOUND',
 		});
 		expect(mockUpdateProject).not.toHaveBeenCalled();
-	});
-
-	it('admin switched to org-2 can delete org-2 credential', async () => {
-		mockDbWhere.mockResolvedValue([{ orgId: 'org-2' }]);
-		mockDeleteCredential.mockResolvedValue(undefined);
-
-		const caller = credentialsRouter.createCaller({
-			user: adminUser,
-			effectiveOrgId: 'org-2',
-		});
-
-		await caller.delete({ id: 42 });
-
-		expect(mockDeleteCredential).toHaveBeenCalledWith(42);
-	});
-
-	it('admin switched to org-2 cannot access org-1 credential', async () => {
-		mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-
-		const caller = credentialsRouter.createCaller({
-			user: adminUser,
-			effectiveOrgId: 'org-2',
-		});
-
-		await expect(caller.delete({ id: 42 })).rejects.toMatchObject({
-			code: 'NOT_FOUND',
-		});
 	});
 });

@@ -14,7 +14,6 @@ import { projectWorkRoute } from './projects/$projectId.work.js';
 import { projectsIndexRoute } from './projects/index.js';
 import { prRunsRoute } from './prs/$projectId.$prNumber.js';
 import { runDetailRoute } from './runs/$runId.js';
-import { settingsCredentialsRoute } from './settings/credentials.js';
 import { settingsGeneralRoute } from './settings/general.js';
 import { settingsUsersRoute } from './settings/users.js';
 import { workItemRunsRoute } from './work-items/$projectId.$workItemId.js';
@@ -32,7 +31,6 @@ export const routeTree = rootRoute.addChildren([
 		projectAgentConfigsRoute,
 	]),
 	settingsGeneralRoute,
-	settingsCredentialsRoute,
 	settingsUsersRoute,
 	globalDefinitionsRoute,
 	globalWebhookLogsRoute,

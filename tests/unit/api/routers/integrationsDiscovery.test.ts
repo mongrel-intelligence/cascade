@@ -50,6 +50,16 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 	logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+const mockGetAuthenticated = vi.fn();
+
+vi.mock('@octokit/rest', () => ({
+	Octokit: vi.fn().mockImplementation(() => ({
+		users: { getAuthenticated: mockGetAuthenticated },
+	})),
+}));
+
+import { Octokit } from '@octokit/rest';
+
 import { integrationsDiscoveryRouter } from '../../../../src/api/routers/integrationsDiscovery.js';
 
 function createCaller(ctx: TRPCContext) {
@@ -560,6 +570,46 @@ describe('integrationsDiscoveryRouter', () => {
 					name: 'Cost',
 				}),
 			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+		});
+	});
+
+	// ── verifyGithubToken ────────────────────────────────────────────────
+
+	describe('verifyGithubToken', () => {
+		it('calls GitHub API with the provided token and returns login/avatarUrl', async () => {
+			mockGetAuthenticated.mockResolvedValue({
+				data: { login: 'cascade-bot', avatar_url: 'https://example.com/avatar.png' },
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.verifyGithubToken({ token: 'ghp_test_token' });
+
+			expect(Octokit).toHaveBeenCalledWith({ auth: 'ghp_test_token' });
+			expect(result).toEqual({
+				login: 'cascade-bot',
+				avatarUrl: 'https://example.com/avatar.png',
+			});
+		});
+
+		it('throws BAD_REQUEST when GitHub API fails', async () => {
+			mockGetAuthenticated.mockRejectedValue(new Error('Bad credentials'));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.verifyGithubToken({ token: 'bad-token' })).rejects.toMatchObject({
+				code: 'BAD_REQUEST',
+			});
+		});
+
+		it('throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(caller.verifyGithubToken({ token: 'ghp_test' })).rejects.toMatchObject({
+				code: 'UNAUTHORIZED',
+			});
+		});
+
+		it('rejects empty token', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.verifyGithubToken({ token: '' })).rejects.toThrow();
 		});
 	});
 });

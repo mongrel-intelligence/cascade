@@ -68,6 +68,9 @@ vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
 	deleteCredential: vi.fn(),
 	resolveAllIntegrationCredentials: vi.fn(),
 	resolveAllOrgCredentials: vi.fn(),
+	listProjectCredentials: vi.fn(),
+	writeProjectCredential: vi.fn(),
+	deleteProjectCredential: vi.fn(),
 }));
 
 vi.mock('../../../src/db/repositories/configRepository.js', () => ({
@@ -106,6 +109,9 @@ vi.mock('@octokit/rest', () => ({
 			listWebhooks: vi.fn(),
 			createWebhook: vi.fn(),
 			deleteWebhook: vi.fn(),
+		},
+		users: {
+			getAuthenticated: vi.fn(),
 		},
 	})),
 }));
@@ -153,12 +159,12 @@ describe('appRouter', () => {
 		expect(procedures).toContain('organization.list');
 	});
 
-	it('has credentials sub-router with all procedures', () => {
+	it('has no top-level credentials sub-router (removed in favor of project-scoped credentials)', () => {
 		const procedures = Object.keys(appRouter._def.procedures);
-		expect(procedures).toContain('credentials.list');
-		expect(procedures).toContain('credentials.create');
-		expect(procedures).toContain('credentials.update');
-		expect(procedures).toContain('credentials.delete');
+		expect(procedures).not.toContain('credentials.list');
+		expect(procedures).not.toContain('credentials.create');
+		expect(procedures).not.toContain('credentials.update');
+		expect(procedures).not.toContain('credentials.delete');
 	});
 
 	it('has agentConfigs sub-router with all procedures', () => {
@@ -184,5 +190,6 @@ describe('appRouter', () => {
 		expect(procedures).toContain('integrationsDiscovery.trelloBoardDetails');
 		expect(procedures).toContain('integrationsDiscovery.jiraProjects');
 		expect(procedures).toContain('integrationsDiscovery.jiraProjectDetails');
+		expect(procedures).toContain('integrationsDiscovery.verifyGithubToken');
 	});
 });

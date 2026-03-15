@@ -11,7 +11,6 @@ import {
 	ChevronDown,
 	ChevronRight,
 	FolderGit2,
-	KeyRound,
 	LayoutDashboard,
 	Settings,
 	Users,
@@ -34,7 +33,6 @@ const globalNav = [
 
 const settingsNav = [
 	{ to: '/settings/general' as const, label: 'General', icon: Settings },
-	{ to: '/settings/credentials' as const, label: 'Credentials', icon: KeyRound },
 	{ to: '/settings/users' as const, label: 'Users', icon: Users },
 ];
 
