@@ -12,7 +12,10 @@ import { adminProcedure, router } from '../trpc.js';
 
 export const usersRouter = router({
 	list: adminProcedure.query(async ({ ctx }) => {
-		return listOrgUsers(ctx.effectiveOrgId);
+		if (ctx.user.role === 'superadmin') {
+			return listOrgUsers(ctx.effectiveOrgId);
+		}
+		return listOrgUsers(ctx.effectiveOrgId, { excludeRole: 'superadmin' });
 	}),
 
 	create: adminProcedure
@@ -66,6 +69,14 @@ export const usersRouter = router({
 
 			if (targetUser.orgId !== ctx.effectiveOrgId && ctx.user.role !== 'superadmin') {
 				throw new TRPCError({ code: 'NOT_FOUND' });
+			}
+
+			// Non-superadmins cannot edit any field on a superadmin user
+			if (targetUser.role === 'superadmin' && ctx.user.role !== 'superadmin') {
+				throw new TRPCError({
+					code: 'FORBIDDEN',
+					message: 'Only superadmins can edit superadmin users',
+				});
 			}
 
 			// Prevent self-demotion (can't change own role)
