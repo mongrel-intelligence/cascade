@@ -10,15 +10,12 @@ import {
 	loadConfigFromDb,
 } from '../db/repositories/configRepository.js';
 import {
-	resolveAllIntegrationCredentials,
-	resolveAllOrgCredentials,
-	resolveIntegrationCredential,
-	resolveOrgCredential,
+	resolveAllProjectCredentials,
+	resolveProjectCredential,
 } from '../db/repositories/credentialsRepository.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 import { configCache } from './configCache.js';
 import { PROVIDER_CREDENTIAL_ROLES } from './integrationRoles.js';
-import type { IntegrationProvider } from './integrationRoles.js';
 
 export async function loadConfig(): Promise<CascadeConfig> {
 	const cached = configCache.getConfig();
@@ -89,22 +86,6 @@ export async function loadProjectConfigById(id: string): Promise<ProjectWithConf
 	return findProjectWithConfigById(id);
 }
 
-/**
- * Resolve the org ID for a project. Cached to avoid repeated DB lookups.
- */
-async function getOrgIdForProject(projectId: string): Promise<string> {
-	const cached = configCache.getOrgIdForProject(projectId);
-	if (cached) return cached;
-
-	const project = await findProjectByIdFromDb(projectId);
-	if (!project) {
-		throw new Error(`Project not found: ${projectId}`);
-	}
-	const orgId = project.orgId;
-	configCache.setOrgIdForProject(projectId, orgId);
-	return orgId;
-}
-
 // ============================================================================
 // Internal: 3-step env/worker/DB resolution helper
 // ============================================================================
@@ -120,17 +101,13 @@ async function resolveFromEnvOrDb<T>(
 	notFoundValue: T,
 	dbLookup: () => Promise<T>,
 ): Promise<T> {
-	// Check process.env first (populated at worker startup from router-supplied credentials)
-	if (envKey && process.env[envKey]) {
-		return process.env[envKey] as T;
-	}
-
-	// Worker context: all credentials set by router, this one doesn't exist
+	// Worker context: credentials are pre-loaded into env vars by the router.
+	// Only use env vars here; never fall through to the DB.
 	if (process.env.CASCADE_CREDENTIAL_KEYS) {
-		return notFoundValue;
+		return envKey && process.env[envKey] ? (process.env[envKey] as T) : notFoundValue;
 	}
 
-	// Router/dashboard context: resolve from DB
+	// All other contexts (router, dashboard, tests): always resolve from DB.
 	return dbLookup();
 }
 
@@ -140,6 +117,7 @@ async function resolveFromEnvOrDb<T>(
 
 /**
  * Resolve an integration credential for a project by category and role.
+ * Resolves via project_credentials using the envVarKey mapping.
  * Throws if the credential is not found.
  */
 export async function getIntegrationCredential(
@@ -148,9 +126,10 @@ export async function getIntegrationCredential(
 	role: string,
 ): Promise<string> {
 	const envKey = roleToEnvVarKey(category, role);
-	const value = await resolveFromEnvOrDb<string | null>(envKey, null, () =>
-		resolveIntegrationCredential(projectId, category, role),
-	);
+	const value = await resolveFromEnvOrDb<string | null>(envKey, null, () => {
+		if (!envKey) return Promise.resolve(null);
+		return resolveProjectCredential(projectId, envKey);
+	});
 	if (value) return value;
 
 	throw new Error(
@@ -160,6 +139,7 @@ export async function getIntegrationCredential(
 
 /**
  * Resolve an integration credential for a project, returning null if not found.
+ * Resolves via project_credentials using the envVarKey mapping.
  */
 export async function getIntegrationCredentialOrNull(
 	projectId: string,
@@ -167,9 +147,10 @@ export async function getIntegrationCredentialOrNull(
 	role: string,
 ): Promise<string | null> {
 	const envKey = roleToEnvVarKey(category, role);
-	return resolveFromEnvOrDb<string | null>(envKey, null, () =>
-		resolveIntegrationCredential(projectId, category, role),
-	);
+	return resolveFromEnvOrDb<string | null>(envKey, null, () => {
+		if (!envKey) return Promise.resolve(null);
+		return resolveProjectCredential(projectId, envKey);
+	});
 }
 
 // ============================================================================
@@ -177,17 +158,16 @@ export async function getIntegrationCredentialOrNull(
 // ============================================================================
 
 /**
- * Resolve a non-integration org-scoped credential by env var key.
- * Used for LLM API keys, etc.
+ * Resolve a non-integration credential by env var key.
+ * Reads from project_credentials table — no org_id lookup needed.
  */
 export async function getOrgCredential(
 	projectId: string,
 	envVarKey: string,
 ): Promise<string | null> {
-	return resolveFromEnvOrDb<string | null>(envVarKey, null, async () => {
-		const orgId = await getOrgIdForProject(projectId);
-		return resolveOrgCredential(orgId, envVarKey);
-	});
+	return resolveFromEnvOrDb<string | null>(envVarKey, null, () =>
+		resolveProjectCredential(projectId, envVarKey),
+	);
 }
 
 // ============================================================================
@@ -196,9 +176,7 @@ export async function getOrgCredential(
 
 /**
  * Build a flat env-var-key → value map of all credentials for a project.
- * 1. Loads all integration credentials and maps role→envVarKey
- * 2. Loads all org-default non-integration credentials
- * 3. Merges integration credentials over org defaults
+ * Single query against project_credentials filtered by project_id.
  */
 export async function getAllProjectCredentials(projectId: string): Promise<Record<string, string>> {
 	// Worker context: reconstruct from individual env vars set by the router
@@ -213,28 +191,8 @@ export async function getAllProjectCredentials(projectId: string): Promise<Recor
 		return result;
 	}
 
-	// Router/dashboard context: resolve from DB (has CREDENTIAL_MASTER_KEY)
-	const orgId = await getOrgIdForProject(projectId);
-
-	const [integrationCreds, orgCreds] = await Promise.all([
-		resolveAllIntegrationCredentials(projectId),
-		resolveAllOrgCredentials(orgId),
-	]);
-
-	// Start with org defaults
-	const result: Record<string, string> = { ...orgCreds };
-
-	// Overlay integration credentials (mapped by role→envVarKey)
-	for (const cred of integrationCreds) {
-		const roles = PROVIDER_CREDENTIAL_ROLES[cred.provider as IntegrationProvider];
-		if (!roles) continue;
-		const roleDef = roles.find((r) => r.role === cred.role);
-		if (roleDef) {
-			result[roleDef.envVarKey] = cred.value;
-		}
-	}
-
-	return result;
+	// Router/dashboard context: single query against project_credentials
+	return resolveAllProjectCredentials(projectId);
 }
 
 export function invalidateConfigCache(): void {

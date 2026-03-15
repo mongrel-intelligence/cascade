@@ -1,5 +1,33 @@
+import pg from 'pg';
 import { afterAll, beforeAll } from 'vitest';
 import { closeTestDb, resolveTestDbUrl, runMigrations } from './helpers/db.js';
+
+async function tryCreateDatabase(dbUrl: string): Promise<void> {
+	let parsed: URL;
+	try {
+		parsed = new URL(dbUrl);
+	} catch {
+		return;
+	}
+	const dbName = parsed.pathname.slice(1);
+	if (!dbName) return;
+	const adminUrl = new URL(dbUrl);
+	adminUrl.pathname = '/postgres';
+	const client = new pg.Client({ connectionString: adminUrl.toString() });
+	try {
+		await client.connect();
+		await client.query(`CREATE DATABASE "${dbName}"`);
+	} catch {
+		// "already exists" (42P04) is fine; all others silently ignored
+	} finally {
+		await client.end().catch(() => {});
+	}
+}
+
+const candidateUrl = process.env.TEST_DATABASE_URL;
+if (candidateUrl) {
+	await tryCreateDatabase(candidateUrl);
+}
 
 const resolvedUrl = await resolveTestDbUrl();
 

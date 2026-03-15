@@ -1,4 +1,7 @@
+import { and, eq } from 'drizzle-orm';
 import { getDb } from '../../../src/db/client.js';
+import { createCredential } from '../../../src/db/repositories/credentialsRepository.js';
+import { setIntegrationCredential } from '../../../src/db/repositories/integrationsRepository.js';
 import {
 	agentConfigs,
 	agentRuns,
@@ -60,7 +63,7 @@ export async function seedProject(
 }
 
 /**
- * Seeds a credential row.
+ * Seeds a credential row via the repository (which syncs to project_credentials).
  */
 export async function seedCredential(
 	overrides: {
@@ -72,16 +75,14 @@ export async function seedCredential(
 	} = {},
 ) {
 	const db = getDb();
-	const [row] = await db
-		.insert(credentials)
-		.values({
-			orgId: overrides.orgId ?? 'test-org',
-			name: overrides.name ?? 'Test Key',
-			envVarKey: overrides.envVarKey ?? 'TEST_KEY',
-			value: overrides.value ?? 'test-value',
-			isDefault: overrides.isDefault ?? false,
-		})
-		.returning();
+	const { id } = await createCredential({
+		orgId: overrides.orgId ?? 'test-org',
+		name: overrides.name ?? 'Test Key',
+		envVarKey: overrides.envVarKey ?? 'TEST_KEY',
+		value: overrides.value ?? 'test-value',
+		isDefault: overrides.isDefault ?? false,
+	});
+	const [row] = await db.select().from(credentials).where(eq(credentials.id, id));
 	return row;
 }
 
@@ -112,7 +113,7 @@ export async function seedIntegration(
 }
 
 /**
- * Seeds an integration credential link.
+ * Seeds an integration credential link via the repository (which syncs to project_credentials).
  */
 export async function seedIntegrationCredential(overrides: {
 	integrationId: number;
@@ -120,14 +121,17 @@ export async function seedIntegrationCredential(overrides: {
 	credentialId: number;
 }) {
 	const db = getDb();
+	const role = overrides.role ?? 'api_key';
+	await setIntegrationCredential(overrides.integrationId, role, overrides.credentialId);
 	const [row] = await db
-		.insert(integrationCredentials)
-		.values({
-			integrationId: overrides.integrationId,
-			role: overrides.role ?? 'api_key',
-			credentialId: overrides.credentialId,
-		})
-		.returning();
+		.select()
+		.from(integrationCredentials)
+		.where(
+			and(
+				eq(integrationCredentials.integrationId, overrides.integrationId),
+				eq(integrationCredentials.role, role),
+			),
+		);
 	return row;
 }
 

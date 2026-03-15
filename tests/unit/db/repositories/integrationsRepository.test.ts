@@ -227,6 +227,9 @@ describe('integrationsRepository', () => {
 
 	describe('removeIntegrationCredential', () => {
 		it('deletes the credential link by integrationId and role', async () => {
+			// Initial select for project info (no integration found — skips cleanup)
+			mockDb.chain.where.mockResolvedValueOnce([]);
+			// delete().where()
 			mockDb.chain.where.mockResolvedValueOnce(undefined);
 
 			await removeIntegrationCredential(5, 'api_key');
@@ -235,6 +238,9 @@ describe('integrationsRepository', () => {
 		});
 
 		it('does not throw when no entry exists to remove', async () => {
+			// Initial select for project info
+			mockDb.chain.where.mockResolvedValueOnce([]);
+			// delete().where()
 			mockDb.chain.where.mockResolvedValueOnce(undefined);
 
 			await expect(removeIntegrationCredential(99, 'nonexistent_role')).resolves.toBeUndefined();
