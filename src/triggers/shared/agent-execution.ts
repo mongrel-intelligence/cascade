@@ -15,6 +15,7 @@ import { logger } from '../../utils/logging.js';
 import { extractPRNumber } from '../../utils/prUrl.js';
 import type { TriggerResult } from '../types.js';
 import { handleAgentResultArtifacts } from './agent-result-handler.js';
+import { isPipelineAtCapacity } from './backlog-check.js';
 import { checkBudgetExceeded } from './budget.js';
 import { triggerDebugAnalysis } from './debug-runner.js';
 import { shouldTriggerDebug } from './debug-trigger.js';
@@ -611,6 +612,21 @@ async function propagateAutoLabelAfterSplitting(
 		logger.info(
 			'propagateAutoLabelAfterSplitting: backlog-manager trigger not enabled, skipping chain',
 			{ workItemId },
+		);
+		return null;
+	}
+
+	// Check pipeline capacity before chaining to backlog-manager
+	const capacityResult = await isPipelineAtCapacity(project, provider);
+	if (capacityResult.atCapacity) {
+		logger.info(
+			'propagateAutoLabelAfterSplitting: pipeline at capacity, skipping backlog-manager chain',
+			{
+				workItemId,
+				reason: capacityResult.reason,
+				inFlightCount: capacityResult.inFlightCount,
+				limit: capacityResult.limit,
+			},
 		);
 		return null;
 	}

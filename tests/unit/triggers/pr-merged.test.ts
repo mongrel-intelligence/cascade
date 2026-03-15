@@ -10,7 +10,7 @@ vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
 }));
 
 vi.mock('../../../src/triggers/shared/backlog-check.js', () => ({
-	isBacklogEmpty: vi.fn().mockResolvedValue(false),
+	isPipelineAtCapacity: vi.fn().mockResolvedValue({ atCapacity: false, reason: 'below-capacity' }),
 }));
 
 // Mock the GitHub client
@@ -69,7 +69,7 @@ import { createMockProject } from '../../helpers/factories.js';
 
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { githubClient } from '../../../src/github/client.js';
-import { isBacklogEmpty } from '../../../src/triggers/shared/backlog-check.js';
+import { isPipelineAtCapacity } from '../../../src/triggers/shared/backlog-check.js';
 import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 
 describe('PRMergedTrigger', () => {
@@ -509,9 +509,12 @@ describe('PRMergedTrigger', () => {
 			});
 		});
 
-		it('skips backlog-manager and returns agentType null when backlog is empty', async () => {
-			// Both trigger checks return true, but backlog is empty
-			vi.mocked(isBacklogEmpty).mockResolvedValue(true);
+		it('skips backlog-manager and returns agentType null when pipeline is at capacity', async () => {
+			// Both trigger checks return true, but pipeline is at capacity
+			vi.mocked(isPipelineAtCapacity).mockResolvedValue({
+				atCapacity: true,
+				reason: 'backlog-empty',
+			});
 
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 123,
@@ -562,8 +565,11 @@ describe('PRMergedTrigger', () => {
 			});
 		});
 
-		it('still chains to backlog-manager when backlog is non-empty', async () => {
-			vi.mocked(isBacklogEmpty).mockResolvedValue(false);
+		it('still chains to backlog-manager when pipeline is below capacity', async () => {
+			vi.mocked(isPipelineAtCapacity).mockResolvedValue({
+				atCapacity: false,
+				reason: 'below-capacity',
+			});
 
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 123,
