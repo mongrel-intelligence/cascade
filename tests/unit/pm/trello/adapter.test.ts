@@ -64,6 +64,7 @@ describe('TrelloPMProvider', () => {
 				description: 'Card description',
 				url: 'https://trello.com/c/abc123',
 				labels: [{ id: 'lbl-1', name: 'Bug', color: 'red' }],
+				inlineMedia: undefined,
 			});
 		});
 
@@ -79,6 +80,74 @@ describe('TrelloPMProvider', () => {
 			const result = await provider.getWorkItem('card-2');
 
 			expect(result.labels).toEqual([]);
+		});
+
+		it('extracts inlineMedia from description markdown images', async () => {
+			mockTrelloClient.getCard.mockResolvedValue({
+				id: 'card-3',
+				name: 'Card with image',
+				desc: 'Here is a screenshot: ![screenshot](https://trello.com/1/cards/abc/attachments/xyz/download/shot.png)',
+				url: 'https://trello.com/c/abc123',
+				idList: 'list-1',
+				labels: [],
+			});
+
+			const result = await provider.getWorkItem('card-3');
+
+			expect(result.inlineMedia).toHaveLength(1);
+			expect(result.inlineMedia?.[0]).toMatchObject({
+				url: 'https://trello.com/1/cards/abc/attachments/xyz/download/shot.png',
+				mimeType: 'image/png',
+				altText: 'screenshot',
+				source: 'description',
+			});
+		});
+
+		it('extracts multiple inlineMedia from description', async () => {
+			mockTrelloClient.getCard.mockResolvedValue({
+				id: 'card-4',
+				name: 'Card with images',
+				desc: '![img1](https://example.com/a.jpg)\n\nSome text\n\n![img2](https://example.com/b.gif)',
+				url: 'https://trello.com/c/abc123',
+				idList: 'list-1',
+				labels: [],
+			});
+
+			const result = await provider.getWorkItem('card-4');
+
+			expect(result.inlineMedia).toHaveLength(2);
+			expect(result.inlineMedia?.[0].source).toBe('description');
+			expect(result.inlineMedia?.[1].source).toBe('description');
+		});
+
+		it('returns undefined inlineMedia when description has no images', async () => {
+			mockTrelloClient.getCard.mockResolvedValue({
+				id: 'card-5',
+				name: 'Plain text card',
+				desc: 'Just plain text, no images here.',
+				url: 'https://trello.com/c/abc123',
+				idList: 'list-1',
+				labels: [],
+			});
+
+			const result = await provider.getWorkItem('card-5');
+
+			expect(result.inlineMedia).toBeUndefined();
+		});
+
+		it('returns undefined inlineMedia when description is empty', async () => {
+			mockTrelloClient.getCard.mockResolvedValue({
+				id: 'card-6',
+				name: 'Empty desc',
+				desc: '',
+				url: 'https://trello.com/c/abc123',
+				idList: 'list-1',
+				labels: [],
+			});
+
+			const result = await provider.getWorkItem('card-6');
+
+			expect(result.inlineMedia).toBeUndefined();
 		});
 	});
 
@@ -102,8 +171,91 @@ describe('TrelloPMProvider', () => {
 					date: '2024-01-01T00:00:00.000Z',
 					text: 'Hello world',
 					author: { id: 'member-1', name: 'Alice', username: 'alice' },
+					inlineMedia: undefined,
 				},
 			]);
+		});
+
+		it('extracts inlineMedia from comment text with markdown images', async () => {
+			mockTrelloClient.getCardComments.mockResolvedValue([
+				{
+					id: 'comment-2',
+					date: '2024-01-02T00:00:00.000Z',
+					data: {
+						text: 'Here is a screenshot: ![screenshot](https://trello.com/1/cards/abc/attachments/xyz/download/shot.png)',
+					},
+					memberCreator: { id: 'member-1', fullName: 'Alice', username: 'alice' },
+				},
+			]);
+
+			const result = await provider.getWorkItemComments('card-1');
+
+			expect(result[0].inlineMedia).toHaveLength(1);
+			expect(result[0].inlineMedia?.[0]).toMatchObject({
+				url: 'https://trello.com/1/cards/abc/attachments/xyz/download/shot.png',
+				mimeType: 'image/png',
+				altText: 'screenshot',
+				source: 'comment',
+			});
+		});
+
+		it('returns undefined inlineMedia for comments with no images', async () => {
+			mockTrelloClient.getCardComments.mockResolvedValue([
+				{
+					id: 'comment-3',
+					date: '2024-01-03T00:00:00.000Z',
+					data: { text: 'Just plain text, no images.' },
+					memberCreator: { id: 'member-1', fullName: 'Alice', username: 'alice' },
+				},
+			]);
+
+			const result = await provider.getWorkItemComments('card-1');
+
+			expect(result[0].inlineMedia).toBeUndefined();
+		});
+
+		it('extracts inlineMedia independently for multiple comments', async () => {
+			mockTrelloClient.getCardComments.mockResolvedValue([
+				{
+					id: 'comment-4',
+					date: '2024-01-04T00:00:00.000Z',
+					data: { text: '![img](https://example.com/img.jpg)' },
+					memberCreator: { id: 'member-1', fullName: 'Alice', username: 'alice' },
+				},
+				{
+					id: 'comment-5',
+					date: '2024-01-05T00:00:00.000Z',
+					data: { text: 'No images here.' },
+					memberCreator: { id: 'member-2', fullName: 'Bob', username: 'bob' },
+				},
+			]);
+
+			const result = await provider.getWorkItemComments('card-1');
+
+			expect(result).toHaveLength(2);
+			expect(result[0].inlineMedia).toHaveLength(1);
+			expect(result[0].inlineMedia?.[0].source).toBe('comment');
+			expect(result[1].inlineMedia).toBeUndefined();
+		});
+
+		it('uses "comment" as source for all extracted media references', async () => {
+			mockTrelloClient.getCardComments.mockResolvedValue([
+				{
+					id: 'comment-6',
+					date: '2024-01-06T00:00:00.000Z',
+					data: {
+						text: '![a](https://example.com/a.png) and ![b](https://example.com/b.gif)',
+					},
+					memberCreator: { id: 'member-1', fullName: 'Alice', username: 'alice' },
+				},
+			]);
+
+			const result = await provider.getWorkItemComments('card-1');
+
+			expect(result[0].inlineMedia).toHaveLength(2);
+			for (const ref of result[0].inlineMedia ?? []) {
+				expect(ref.source).toBe('comment');
+			}
 		});
 	});
 
