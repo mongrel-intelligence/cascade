@@ -27,6 +27,7 @@ import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../type
 import { buildClaudeEnv } from './env.js';
 import { buildHooks } from './hooks.js';
 import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
+import { ClaudeCodeSettingsSchema } from './settings.js';
 
 export { buildToolGuidance, buildTaskPrompt, buildSystemPrompt } from '../nativeTools.js';
 export { buildClaudeEnv as buildEnv } from './env.js';
@@ -458,6 +459,10 @@ export class ClaudeCodeEngine implements AgentEngine {
 
 	resolveModel(cascadeModel: string): string {
 		return resolveClaudeModel(cascadeModel);
+	}
+
+	getSettingsSchema() {
+		return ClaudeCodeSettingsSchema;
 	}
 
 	async beforeExecute(plan: AgentExecutionPlan): Promise<void> {

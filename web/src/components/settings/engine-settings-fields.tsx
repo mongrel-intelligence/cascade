@@ -25,6 +25,15 @@ type EngineSettingField =
 			label: string;
 			type: 'boolean';
 			description?: string;
+	  }
+	| {
+			key: string;
+			label: string;
+			// TODO: Frontend rendering for 'number' fields is not yet implemented (Story #2).
+			// The field type is defined here for type compatibility with the backend catalog;
+			// the dashboard will render it once numeric field support is added.
+			type: 'number';
+			description?: string;
 	  };
 
 interface EngineDefinition {
@@ -97,6 +106,9 @@ export function EngineSettingsFields({
 
 					<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 						{engine.settings.fields.map((field) => {
+							// TODO: 'number' field rendering is not yet implemented (Story #2).
+							if (field.type === 'number') return null;
+
 							const rawValue = activeEngineValues[field.key];
 
 							return (

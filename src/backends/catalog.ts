@@ -37,6 +37,43 @@ export const CLAUDE_CODE_ENGINE_DEFINITION: AgentEngineDefinition = {
 		options: CLAUDE_CODE_MODELS,
 	},
 	logLabel: 'Claude Code Log',
+	settings: {
+		title: 'Claude Code Settings',
+		description: 'Effort level and thinking mode for Claude Code runs.',
+		fields: [
+			{
+				key: 'effort',
+				label: 'Effort',
+				type: 'select',
+				description: 'Controls the overall effort level applied during the run.',
+				options: [
+					{ value: 'low', label: 'Low' },
+					{ value: 'medium', label: 'Medium' },
+					{ value: 'high', label: 'High' },
+					{ value: 'max', label: 'Max' },
+				],
+			},
+			{
+				key: 'thinking',
+				label: 'Thinking',
+				type: 'select',
+				description: 'Controls extended thinking mode.',
+				options: [
+					{ value: 'adaptive', label: 'Adaptive' },
+					{ value: 'enabled', label: 'Enabled' },
+					{ value: 'disabled', label: 'Disabled' },
+				],
+			},
+			{
+				key: 'thinkingBudgetTokens',
+				label: 'Thinking Budget Tokens',
+				// TODO: Frontend 'number' field type is not yet supported (Story #2).
+				// The dashboard will render this field once numeric fields are implemented.
+				type: 'number',
+				description: 'Maximum tokens allocated for extended thinking (optional).',
+			},
+		],
+	},
 };
 
 export const CODEX_ENGINE_DEFINITION: AgentEngineDefinition = {
