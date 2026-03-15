@@ -6,6 +6,10 @@ const agentTypes = [
 	'debug',
 	'respond-to-review',
 	'respond-to-pr-comment',
+	'respond-to-ci',
+	'respond-to-planning-comment',
+	'backlog-manager',
+	'resolve-conflicts',
 ];
 
 const statuses = ['completed', 'failed', 'timed_out'];

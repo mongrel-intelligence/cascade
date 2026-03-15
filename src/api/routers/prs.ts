@@ -47,7 +47,7 @@ export const prsRouter = router({
 		.input(
 			z.object({
 				projectId: z.string(),
-				dateFrom: z.string().optional(),
+				dateFrom: z.string().datetime().optional(),
 				agentType: z.string().optional(),
 				status: z.string().optional(),
 			}),
