@@ -178,6 +178,15 @@ export function Sidebar({ user }: SidebarProps) {
 					exact
 				/>
 
+				<Separator className="my-3" />
+
+				<div className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+					Settings
+				</div>
+				{settingsNav.map((item) => (
+					<NavLink key={item.to} {...item} currentPath={currentPath} />
+				))}
+
 				{user?.role === 'superadmin' && (
 					<>
 						<Separator className="my-3" />
@@ -189,15 +198,6 @@ export function Sidebar({ user }: SidebarProps) {
 						))}
 					</>
 				)}
-
-				<Separator className="my-3" />
-
-				<div className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-					Settings
-				</div>
-				{settingsNav.map((item) => (
-					<NavLink key={item.to} {...item} currentPath={currentPath} />
-				))}
 			</nav>
 
 			{user && (
