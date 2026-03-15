@@ -1,3 +1,4 @@
+import { EngineSettingsFields } from '@/components/settings/engine-settings-fields.js';
 import { ModelField } from '@/components/settings/model-field.js';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
@@ -32,21 +33,33 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 	const [maxIterations, setMaxIterations] = useState(config?.maxIterations?.toString() ?? '');
 	const [agentEngine, setAgentEngine] = useState(config?.agentEngine ?? '');
 	const [maxConcurrency, setMaxConcurrency] = useState(config?.maxConcurrency?.toString() ?? '');
+	const [engineSettings, setEngineSettings] = useState<
+		Record<string, Record<string, unknown>> | undefined
+	>(config?.agentEngineSettings ?? undefined);
+
+	const effectiveEngineId = agentEngine || '';
+	const effectiveEngine = enginesQuery.data?.find((engine) => engine.id === effectiveEngineId);
 
 	const queryKey = trpc.agentConfigs.list.queryOptions({
 		projectId: config?.projectId ?? '',
 	}).queryKey;
 
 	const createMutation = useMutation({
-		mutationFn: () =>
-			trpcClient.agentConfigs.create.mutate({
+		mutationFn: () => {
+			const activeEngineSettings =
+				agentEngine && engineSettings?.[agentEngine]
+					? { [agentEngine]: engineSettings[agentEngine] }
+					: null;
+			return trpcClient.agentConfigs.create.mutate({
 				projectId: config?.projectId as string,
 				agentType,
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentEngine: agentEngine || null,
+				engineSettings: activeEngineSettings,
 				maxConcurrency: maxConcurrency ? Number(maxConcurrency) : null,
-			}),
+			});
+		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey });
 			onOpenChange(false);
@@ -54,15 +67,21 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 	});
 
 	const updateMutation = useMutation({
-		mutationFn: () =>
-			trpcClient.agentConfigs.update.mutate({
+		mutationFn: () => {
+			const activeEngineSettings =
+				agentEngine && engineSettings?.[agentEngine]
+					? { [agentEngine]: engineSettings[agentEngine] }
+					: null;
+			return trpcClient.agentConfigs.update.mutate({
 				id: config?.id as number,
 				agentType,
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentEngine: agentEngine || null,
+				engineSettings: activeEngineSettings,
 				maxConcurrency: maxConcurrency ? Number(maxConcurrency) : null,
-			}),
+			});
+		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey });
 			onOpenChange(false);
@@ -140,6 +159,14 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 							</SelectContent>
 						</Select>
 					</div>
+					{effectiveEngine && (
+						<EngineSettingsFields
+							engine={effectiveEngine}
+							value={engineSettings}
+							onChange={setEngineSettings}
+							inheritLabel="Inherit from project"
+						/>
+					)}
 					<div className="space-y-2">
 						<Label>Prompt</Label>
 						<p className="text-sm text-muted-foreground">

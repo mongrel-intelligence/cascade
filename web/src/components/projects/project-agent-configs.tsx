@@ -1,3 +1,4 @@
+import { EngineSettingsFields } from '@/components/settings/engine-settings-fields.js';
 import { ModelField } from '@/components/settings/model-field.js';
 import {
 	DefinitionTriggerToggles,
@@ -49,12 +50,42 @@ interface AgentConfig {
 	model: string | null;
 	maxIterations: number | null;
 	agentEngine: string | null;
+	agentEngineSettings: Record<string, Record<string, unknown>> | null;
 	maxConcurrency: number | null;
 }
+
+interface EngineSettingFieldOption {
+	value: string;
+	label: string;
+}
+
+type EngineSettingField =
+	| {
+			key: string;
+			label: string;
+			type: 'select';
+			description?: string;
+			options: EngineSettingFieldOption[];
+	  }
+	| { key: string; label: string; type: 'boolean'; description?: string }
+	| {
+			key: string;
+			label: string;
+			type: 'number';
+			description?: string;
+			min?: number;
+			max?: number;
+			step?: number;
+	  };
 
 interface Engine {
 	id: string;
 	label: string;
+	settings?: {
+		title?: string;
+		description?: string;
+		fields: EngineSettingField[];
+	};
 }
 
 // ============================================================================
@@ -66,6 +97,7 @@ interface SaveConfigValues {
 	maxIterations: string;
 	agentEngine: string;
 	maxConcurrency: string;
+	engineSettings: Record<string, Record<string, unknown>> | undefined;
 }
 
 interface DefinitionAgentSectionProps {
@@ -113,6 +145,12 @@ function DefinitionAgentSection({
 	const [maxIterations, setMaxIterations] = useState(config?.maxIterations?.toString() ?? '');
 	const [agentEngine, setAgentEngine] = useState(config?.agentEngine ?? '');
 	const [maxConcurrency, setMaxConcurrency] = useState(config?.maxConcurrency?.toString() ?? '');
+	const [engineSettings, setEngineSettings] = useState<
+		Record<string, Record<string, unknown>> | undefined
+	>(config?.agentEngineSettings ?? undefined);
+
+	const effectiveEngineId = agentEngine || '';
+	const effectiveEngine = engines.find((engine) => engine.id === effectiveEngineId);
 
 	// Sync form state when config changes (e.g. after invalidateQueries refetch)
 	// Skip clearing "Saved" if we just saved — the nonce effect will handle the timer
@@ -121,6 +159,7 @@ function DefinitionAgentSection({
 		setMaxIterations(config?.maxIterations?.toString() ?? '');
 		setAgentEngine(config?.agentEngine ?? '');
 		setMaxConcurrency(config?.maxConcurrency?.toString() ?? '');
+		setEngineSettings(config?.agentEngineSettings ?? undefined);
 		if (justSavedRef.current) {
 			justSavedRef.current = false;
 		} else {
@@ -185,6 +224,7 @@ function DefinitionAgentSection({
 			maxIterations,
 			agentEngine,
 			maxConcurrency,
+			engineSettings,
 		});
 	};
 
@@ -193,6 +233,7 @@ function DefinitionAgentSection({
 		setMaxIterations(config?.maxIterations?.toString() ?? '');
 		setAgentEngine(config?.agentEngine ?? '');
 		setMaxConcurrency(config?.maxConcurrency?.toString() ?? '');
+		setEngineSettings(config?.agentEngineSettings ?? undefined);
 	};
 
 	const handleDelete = () => {
@@ -261,6 +302,14 @@ function DefinitionAgentSection({
 						</Select>
 					</div>
 				</div>
+				{effectiveEngine && (
+					<EngineSettingsFields
+						engine={effectiveEngine}
+						value={engineSettings}
+						onChange={setEngineSettings}
+						inheritLabel="Inherit from project"
+					/>
+				)}
 				<div className="space-y-2">
 					<Label>Prompt</Label>
 					<p className="text-sm text-muted-foreground">
@@ -374,6 +423,8 @@ function AgentRow({
 	const activeTriggerCount = countActiveTriggers(triggers, integrations);
 	const modelInfo = config?.model ?? null;
 	const engineInfo = config?.agentEngine ?? null;
+	const hasCustomEngineSettings =
+		config?.agentEngineSettings != null && Object.keys(config.agentEngineSettings).length > 0;
 
 	return (
 		<TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => onSelect(type)}>
@@ -395,6 +446,11 @@ function AgentRow({
 						{modelInfo && <span>{modelInfo}</span>}
 						{modelInfo && engineInfo && <span> · </span>}
 						{engineInfo && <span>{engineInfo}</span>}
+						{hasCustomEngineSettings && (
+							<span className="ml-1.5 inline-flex items-center rounded-sm bg-muted px-1.5 py-0.5 text-xs">
+								Custom settings
+							</span>
+						)}
 					</span>
 				) : (
 					<span>—</span>
@@ -620,6 +676,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			model: string | null;
 			maxIterations: number | null;
 			agentEngine: string | null;
+			engineSettings: Record<string, Record<string, unknown>> | null;
 			maxConcurrency: number | null;
 		}) =>
 			trpcClient.agentConfigs.create.mutate({
@@ -628,6 +685,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				model: input.model,
 				maxIterations: input.maxIterations,
 				agentEngine: input.agentEngine,
+				engineSettings: input.engineSettings,
 				maxConcurrency: input.maxConcurrency,
 			}),
 		onSuccess: (_data, variables) => {
@@ -651,6 +709,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			model: string | null;
 			maxIterations: number | null;
 			agentEngine: string | null;
+			engineSettings: Record<string, Record<string, unknown>> | null;
 			maxConcurrency: number | null;
 		}) =>
 			trpcClient.agentConfigs.update.mutate({
@@ -659,6 +718,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				model: input.model,
 				maxIterations: input.maxIterations,
 				agentEngine: input.agentEngine,
+				engineSettings: input.engineSettings,
 				maxConcurrency: input.maxConcurrency,
 			}),
 		onSuccess: (_data, variables) => {
@@ -731,17 +791,19 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		}
 	}
 
-	const handleSaveConfig = (
-		type: string,
-		configId: number | null,
-		values: { model: string; maxIterations: string; agentEngine: string; maxConcurrency: string },
-	) => {
+	const handleSaveConfig = (type: string, configId: number | null, values: SaveConfigValues) => {
 		setSavingAgentType(type);
+		const activeEngine = values.agentEngine || null;
+		const activeEngineSettings =
+			activeEngine && values.engineSettings?.[activeEngine]
+				? { [activeEngine]: values.engineSettings[activeEngine] }
+				: null;
 		const payload = {
 			agentType: type,
 			model: values.model || null,
 			maxIterations: values.maxIterations ? Number(values.maxIterations) : null,
-			agentEngine: values.agentEngine || null,
+			agentEngine: activeEngine,
+			engineSettings: activeEngineSettings,
 			maxConcurrency: values.maxConcurrency ? Number(values.maxConcurrency) : null,
 		};
 
