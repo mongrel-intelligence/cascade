@@ -237,8 +237,7 @@ describe('JiraPMProvider', () => {
 			]);
 		});
 
-		it('does not include inlineMedia when comment has no media nodes', async () => {
-			mockExtractAdfMediaNodes.mockReturnValue([]);
+		it('does not include inlineMedia on comments (comment media resolution is not supported)', async () => {
 			mockJiraClient.getIssueComments.mockResolvedValue([
 				{
 					id: 'c-1',
@@ -251,32 +250,9 @@ describe('JiraPMProvider', () => {
 			const result = await provider.getWorkItemComments('PROJ-123');
 
 			expect(result[0].inlineMedia).toBeUndefined();
-		});
-
-		it('populates inlineMedia on comments when media nodes are present', async () => {
-			const mediaRef = { mediaId: 'comment-att-1', mediaType: 'file' };
-			const resolvedMedia = [
-				{
-					url: 'https://jira.example.com/attachment/comment-att-1',
-					mimeType: 'image/png',
-					altText: 'comment-att-1.png',
-					source: 'comment' as const,
-				},
-			];
-			mockExtractAdfMediaNodes.mockReturnValue([mediaRef]);
-			mockResolveJiraMediaUrls.mockReturnValue(resolvedMedia);
-			mockJiraClient.getIssueComments.mockResolvedValue([
-				{
-					id: 'c-2',
-					created: '2024-02-01T00:00:00.000Z',
-					body: { type: 'doc' },
-					author: { accountId: 'u-2', displayName: 'Carol', emailAddress: 'carol@example.com' },
-				},
-			]);
-
-			const result = await provider.getWorkItemComments('PROJ-123');
-
-			expect(result[0].inlineMedia).toEqual(resolvedMedia);
+			// Comments don't perform media extraction — these should never be called
+			expect(mockExtractAdfMediaNodes).not.toHaveBeenCalled();
+			expect(mockResolveJiraMediaUrls).not.toHaveBeenCalled();
 		});
 	});
 

@@ -112,37 +112,22 @@ export class JiraPMProvider implements PMProvider {
 					name: l,
 				}),
 			),
-			...(inlineMedia !== undefined ? { inlineMedia } : {}),
+			...(inlineMedia !== undefined && inlineMedia.length > 0 ? { inlineMedia } : {}),
 		};
 	}
 
 	async getWorkItemComments(id: string): Promise<WorkItemComment[]> {
 		const comments = await jiraClient.getIssueComments(id);
-		return comments.map((c: JiraComment) => {
-			const commentMediaRefs = extractAdfMediaNodes(c.body);
-			// Comments in JIRA don't have their own attachment list; media nodes
-			// in comments reference the parent issue's attachments. However, we
-			// don't have the parent issue's attachment list available here, so we
-			// return the raw ADF media refs without resolved URLs.
-			// Callers that need resolved URLs should use getWorkItem() and
-			// correlate comments manually if needed.
-			const inlineMedia =
-				commentMediaRefs.length > 0
-					? resolveJiraMediaUrls(commentMediaRefs, [], 'comment')
-					: undefined;
-
-			return {
-				id: c.id ?? '',
-				date: c.created ?? '',
-				text: adfToPlainText(c.body),
-				author: {
-					id: c.author?.accountId ?? '',
-					name: c.author?.displayName ?? '',
-					username: c.author?.emailAddress ?? '',
-				},
-				...(inlineMedia !== undefined && inlineMedia.length > 0 ? { inlineMedia } : {}),
-			};
-		});
+		return comments.map((c: JiraComment) => ({
+			id: c.id ?? '',
+			date: c.created ?? '',
+			text: adfToPlainText(c.body),
+			author: {
+				id: c.author?.accountId ?? '',
+				name: c.author?.displayName ?? '',
+				username: c.author?.emailAddress ?? '',
+			},
+		}));
 	}
 
 	async updateWorkItem(
