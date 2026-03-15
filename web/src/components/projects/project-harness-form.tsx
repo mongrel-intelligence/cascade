@@ -42,11 +42,16 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
+		const activeEngine = agentEngine || null;
+		const activeEngineSettings =
+			activeEngine && engineSettings[activeEngine]
+				? { [activeEngine]: engineSettings[activeEngine] }
+				: null;
 		updateMutation.mutate({
 			model: model || null,
 			maxIterations: maxIterations ? Number.parseInt(maxIterations, 10) : null,
-			agentEngine: agentEngine || null,
-			engineSettings: Object.keys(engineSettings).length > 0 ? engineSettings : null,
+			agentEngine: activeEngine,
+			engineSettings: activeEngineSettings,
 		});
 	}
 
@@ -73,7 +78,6 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 			</div>
 			<EngineSettingsFields
 				engine={effectiveEngine}
-				engines={enginesQuery.data}
 				value={engineSettings}
 				onChange={(next) => setEngineSettings(next ?? {})}
 			/>
