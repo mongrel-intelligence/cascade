@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS project_credentials (
   env_var_key  TEXT    NOT NULL,
   value        TEXT    NOT NULL,
   name         TEXT,
-  created_at   TIMESTAMPTZ DEFAULT NOW(),
-  updated_at   TIMESTAMPTZ DEFAULT NOW()
+  created_at   TIMESTAMP DEFAULT NOW(),
+  updated_at   TIMESTAMP DEFAULT NOW()
 );
 
 -- Step 2: Unique constraint on (project_id, env_var_key)
