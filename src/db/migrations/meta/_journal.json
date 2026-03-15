@@ -295,6 +295,13 @@
 			"when": 1776000000000,
 			"tag": "0041_drop_legacy_org_credentials",
 			"breakpoints": false
+		},
+		{
+			"idx": 42,
+			"version": "7",
+			"when": 1777000000000,
+			"tag": "0042_add_max_in_flight_items",
+			"breakpoints": false
 		}
 	]
 }

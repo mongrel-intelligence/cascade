@@ -25,6 +25,7 @@ export const projects = pgTable(
 		progressIntervalMinutes: numeric('progress_interval_minutes', { precision: 5, scale: 1 }),
 		squintDbUrl: text('squint_db_url'),
 		runLinksEnabled: boolean('run_links_enabled').default(false).notNull(),
+		maxInFlightItems: integer('max_in_flight_items'),
 
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')
