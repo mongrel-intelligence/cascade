@@ -23,7 +23,7 @@ export const PROJECT_SECTIONS: {
 	route: ProjectSectionRoute;
 }[] = [
 	{ id: 'general', label: 'General', path: 'general', route: '/projects/$projectId/general' },
-	{ id: 'harness', label: 'Harness', path: 'harness', route: '/projects/$projectId/harness' },
+	{ id: 'harness', label: 'Engine', path: 'harness', route: '/projects/$projectId/harness' },
 	{ id: 'work', label: 'Work', path: 'work', route: '/projects/$projectId/work' },
 	{ id: 'stats', label: 'Stats', path: 'stats', route: '/projects/$projectId/stats' },
 	{

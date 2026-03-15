@@ -55,6 +55,12 @@ describe('section path mapping', () => {
 		expect(generalSection?.path).toBe('general');
 	});
 
+	it('harness section has label "Engine" and path "harness" (URL stability)', () => {
+		const harnessSection = PROJECT_SECTIONS.find((s) => s.id === 'harness');
+		expect(harnessSection?.label).toBe('Engine');
+		expect(harnessSection?.path).toBe('harness');
+	});
+
 	it('maps agent-configs section to /agent-configs path', () => {
 		const agentConfigsSection = PROJECT_SECTIONS.find((s) => s.id === 'agent-configs');
 		expect(agentConfigsSection?.path).toBe('agent-configs');
