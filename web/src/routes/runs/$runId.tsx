@@ -55,7 +55,7 @@ function RunDetailPage() {
 				<RetryRunButton runId={run.id} status={run.status} />
 			</div>
 
-			{(run.workItemId || run.prNumber != null) && (
+			{run.projectId && (run.workItemId || run.prNumber != null) && (
 				<div className="flex flex-wrap items-center gap-4 text-sm">
 					{run.projectId && run.workItemId && (
 						<Link
