@@ -84,22 +84,26 @@ export function UsersTable({ users }: { users: User[] }) {
 									{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}
 								</TableCell>
 								<TableCell>
-									<div className="flex gap-1">
-										<button
-											type="button"
-											onClick={() => setEditUser(u)}
-											className="p-1 text-muted-foreground hover:text-foreground"
-										>
-											<Pencil className="h-4 w-4" />
-										</button>
-										<button
-											type="button"
-											onClick={() => setDeleteId(u.id)}
-											className="p-1 text-muted-foreground hover:text-destructive"
-										>
-											<Trash2 className="h-4 w-4" />
-										</button>
-									</div>
+									{u.role === 'superadmin' ? (
+										<span className="text-xs text-muted-foreground">Manage via CLI</span>
+									) : (
+										<div className="flex gap-1">
+											<button
+												type="button"
+												onClick={() => setEditUser(u)}
+												className="p-1 text-muted-foreground hover:text-foreground"
+											>
+												<Pencil className="h-4 w-4" />
+											</button>
+											<button
+												type="button"
+												onClick={() => setDeleteId(u.id)}
+												className="p-1 text-muted-foreground hover:text-destructive"
+											>
+												<Trash2 className="h-4 w-4" />
+											</button>
+										</div>
+									)}
 								</TableCell>
 							</TableRow>
 						))}
