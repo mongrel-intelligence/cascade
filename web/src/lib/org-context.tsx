@@ -30,7 +30,7 @@ export function OrgProvider({
 	me,
 }: { children: React.ReactNode; me: MeData | undefined }) {
 	const [effectiveOrgId, setEffectiveOrgId] = useState<string | null>(null);
-	const isAdmin = me?.role === 'admin' || me?.role === 'superadmin';
+	const isAdmin = me?.role === 'superadmin';
 	const initialized = useRef(false);
 
 	// Initialize from me data + localStorage
