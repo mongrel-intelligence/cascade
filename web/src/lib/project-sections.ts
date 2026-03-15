@@ -1,9 +1,16 @@
-export type ProjectSection = 'general' | 'harness' | 'work' | 'integrations' | 'agent-configs';
+export type ProjectSection =
+	| 'general'
+	| 'harness'
+	| 'work'
+	| 'stats'
+	| 'integrations'
+	| 'agent-configs';
 
 export type ProjectSectionRoute =
 	| '/projects/$projectId/general'
 	| '/projects/$projectId/harness'
 	| '/projects/$projectId/work'
+	| '/projects/$projectId/stats'
 	| '/projects/$projectId/integrations'
 	| '/projects/$projectId/agent-configs';
 
@@ -16,6 +23,7 @@ export const PROJECT_SECTIONS: {
 	{ id: 'general', label: 'General', path: 'general', route: '/projects/$projectId/general' },
 	{ id: 'harness', label: 'Harness', path: 'harness', route: '/projects/$projectId/harness' },
 	{ id: 'work', label: 'Work', path: 'work', route: '/projects/$projectId/work' },
+	{ id: 'stats', label: 'Stats', path: 'stats', route: '/projects/$projectId/stats' },
 	{
 		id: 'integrations',
 		label: 'Integrations',

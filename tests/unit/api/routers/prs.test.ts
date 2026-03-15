@@ -295,7 +295,7 @@ describe('prsRouter', () => {
 			},
 		];
 
-		it('returns work stats for a project', async () => {
+		it('returns work stats for a project without filters', async () => {
 			mockGetProjectWorkStats.mockResolvedValue(mockStats);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
@@ -303,7 +303,70 @@ describe('prsRouter', () => {
 
 			expect(result).toEqual(mockStats);
 			expect(mockVerifyProjectOrgAccess).toHaveBeenCalledWith('test-project', 'org-1');
-			expect(mockGetProjectWorkStats).toHaveBeenCalledWith('test-project');
+			expect(mockGetProjectWorkStats).toHaveBeenCalledWith('test-project', {
+				dateFrom: undefined,
+				agentType: undefined,
+				status: undefined,
+			});
+		});
+
+		it('passes dateFrom filter to repository', async () => {
+			mockGetProjectWorkStats.mockResolvedValue(mockStats);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			const dateFromStr = '2024-01-01T00:00:00.000Z';
+			await caller.workStats({ projectId: 'test-project', dateFrom: dateFromStr });
+
+			expect(mockGetProjectWorkStats).toHaveBeenCalledWith('test-project', {
+				dateFrom: new Date(dateFromStr),
+				agentType: undefined,
+				status: undefined,
+			});
+		});
+
+		it('passes agentType filter to repository', async () => {
+			mockGetProjectWorkStats.mockResolvedValue(mockStats);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			await caller.workStats({ projectId: 'test-project', agentType: 'implementation' });
+
+			expect(mockGetProjectWorkStats).toHaveBeenCalledWith('test-project', {
+				dateFrom: undefined,
+				agentType: 'implementation',
+				status: undefined,
+			});
+		});
+
+		it('passes status filter to repository', async () => {
+			mockGetProjectWorkStats.mockResolvedValue(mockStats);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			await caller.workStats({ projectId: 'test-project', status: 'completed' });
+
+			expect(mockGetProjectWorkStats).toHaveBeenCalledWith('test-project', {
+				dateFrom: undefined,
+				agentType: undefined,
+				status: 'completed',
+			});
+		});
+
+		it('passes all filters combined to repository', async () => {
+			mockGetProjectWorkStats.mockResolvedValue(mockStats);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			const dateFromStr = '2024-01-01T00:00:00.000Z';
+			await caller.workStats({
+				projectId: 'test-project',
+				dateFrom: dateFromStr,
+				agentType: 'review',
+				status: 'failed',
+			});
+
+			expect(mockGetProjectWorkStats).toHaveBeenCalledWith('test-project', {
+				dateFrom: new Date(dateFromStr),
+				agentType: 'review',
+				status: 'failed',
+			});
 		});
 
 		it('returns empty array when no completed runs exist', async () => {
@@ -313,7 +376,11 @@ describe('prsRouter', () => {
 			const result = await caller.workStats({ projectId: 'test-project' });
 
 			expect(result).toEqual([]);
-			expect(mockGetProjectWorkStats).toHaveBeenCalledWith('test-project');
+			expect(mockGetProjectWorkStats).toHaveBeenCalledWith('test-project', {
+				dateFrom: undefined,
+				agentType: undefined,
+				status: undefined,
+			});
 		});
 
 		it('throws UNAUTHORIZED when no user', async () => {

@@ -13,6 +13,7 @@ describe('PROJECT_SECTIONS', () => {
 			'general',
 			'harness',
 			'work',
+			'stats',
 			'integrations',
 			'agent-configs',
 		]);
@@ -66,6 +67,11 @@ describe('section path mapping', () => {
 	it('maps integrations section to /integrations path', () => {
 		const integrationsSection = PROJECT_SECTIONS.find((s) => s.id === 'integrations');
 		expect(integrationsSection?.path).toBe('integrations');
+	});
+
+	it('maps stats section to /stats path', () => {
+		const statsSection = PROJECT_SECTIONS.find((s) => s.id === 'stats');
+		expect(statsSection?.path).toBe('stats');
 	});
 });
 
