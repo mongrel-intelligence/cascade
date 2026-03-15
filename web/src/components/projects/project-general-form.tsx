@@ -305,7 +305,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 							params={{ projectId: project.id }}
 							className="text-primary hover:underline"
 						>
-							Harness tab
+							Engine tab
 						</Link>
 						.
 					</CardDescription>
@@ -315,7 +315,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 						projectId={project.id}
 						envVarKey="OPENROUTER_API_KEY"
 						label="OpenRouter API Key"
-						description="API key for OpenRouter LLM routing (progress model). Also used as the engine API key when the OpenCode engine is selected — configure it here or on the Harness tab."
+						description="API key for OpenRouter LLM routing (progress model). Also used as the engine API key when the OpenCode engine is selected — configure it here or on the Engine tab."
 						placeholder="sk-or-..."
 						credential={openrouterCred}
 					/>
