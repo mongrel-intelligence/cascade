@@ -263,6 +263,68 @@ describe('agentConfigsRouter', () => {
 		});
 	});
 
+	describe('create with engineSettings', () => {
+		it('passes engineSettings null to repository when explicitly set to null', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 22 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'implementation',
+				engineSettings: null,
+			});
+
+			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+				expect.objectContaining({
+					engineSettings: null,
+				}),
+			);
+		});
+
+		it('omits engineSettings from repository call when not provided', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 23 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'implementation',
+			});
+
+			const callArg = mockCreateAgentConfig.mock.calls[0][0];
+			expect(Object.hasOwn(callArg, 'engineSettings')).toBe(false);
+		});
+	});
+
+	describe('update with engineSettings', () => {
+		it('passes engineSettings null to repository when explicitly set to null', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 11, engineSettings: null });
+
+			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(
+				11,
+				expect.objectContaining({ engineSettings: null }),
+			);
+		});
+
+		it('omits engineSettings from repository call when not provided', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 11, model: 'new-model' });
+
+			const callArg = mockUpdateAgentConfig.mock.calls[0][1];
+			expect(Object.hasOwn(callArg, 'engineSettings')).toBe(false);
+		});
+	});
+
 	describe('update with maxConcurrency', () => {
 		it('passes maxConcurrency to repository when updating project-scoped config', async () => {
 			// First call: find config

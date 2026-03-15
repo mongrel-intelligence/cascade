@@ -1,4 +1,5 @@
-import { integer, pgTable, serial, text, timestamp, unique } from 'drizzle-orm/pg-core';
+import { integer, jsonb, pgTable, serial, text, timestamp, unique } from 'drizzle-orm/pg-core';
+import type { EngineSettings } from '../../config/engineSettings.js';
 import { projects } from './projects.js';
 
 export const agentConfigs = pgTable(
@@ -13,6 +14,7 @@ export const agentConfigs = pgTable(
 		model: text('model'),
 		maxIterations: integer('max_iterations'),
 		agentEngine: text('agent_engine'),
+		agentEngineSettings: jsonb('agent_engine_settings').$type<EngineSettings>(),
 		maxConcurrency: integer('max_concurrency'),
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')
