@@ -153,6 +153,9 @@ describe('credentialsRepository', () => {
 
 	describe('resolveAllProjectCredentials', () => {
 		it('returns all project credentials as key-value map', async () => {
+			// First select: project existence check
+			mockDb.chain.where.mockResolvedValueOnce([{ id: 'proj1' }]);
+			// Second select: project_credentials rows
 			mockDb.chain.where.mockResolvedValueOnce([
 				{ envVarKey: 'GITHUB_TOKEN_IMPLEMENTER', value: 'ghp_impl' },
 				{ envVarKey: 'TRELLO_API_KEY', value: 'trello-key' },
@@ -168,19 +171,32 @@ describe('credentialsRepository', () => {
 		});
 
 		it('returns empty object when no credentials', async () => {
+			// Project exists
+			mockDb.chain.where.mockResolvedValueOnce([{ id: 'proj1' }]);
+			// No credentials
 			mockDb.chain.where.mockResolvedValueOnce([]);
 
 			const result = await resolveAllProjectCredentials('proj1');
 			expect(result).toEqual({});
 		});
 
-		it('issues a single query against project_credentials', async () => {
+		it('throws when project not found', async () => {
+			// Project does not exist
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			await expect(resolveAllProjectCredentials('nonexistent')).rejects.toThrow(
+				'Project not found: nonexistent',
+			);
+		});
+
+		it('issues two queries: project existence check then project_credentials', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([{ id: 'proj1' }]);
 			mockDb.chain.where.mockResolvedValueOnce([{ envVarKey: 'KEY1', value: 'val1' }]);
 
 			await resolveAllProjectCredentials('proj1');
 
-			// Only one select call (no joins, no multiple queries)
-			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
+			// One select for project existence, one for project_credentials
+			expect(mockDb.db.select).toHaveBeenCalledTimes(2);
 		});
 	});
 

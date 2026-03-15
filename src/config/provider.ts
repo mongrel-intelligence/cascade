@@ -101,17 +101,13 @@ async function resolveFromEnvOrDb<T>(
 	notFoundValue: T,
 	dbLookup: () => Promise<T>,
 ): Promise<T> {
-	// Check process.env first (populated at worker startup from router-supplied credentials)
-	if (envKey && process.env[envKey]) {
-		return process.env[envKey] as T;
-	}
-
-	// Worker context: all credentials set by router, this one doesn't exist
+	// Worker context: credentials are pre-loaded into env vars by the router.
+	// Only use env vars here; never fall through to the DB.
 	if (process.env.CASCADE_CREDENTIAL_KEYS) {
-		return notFoundValue;
+		return envKey && process.env[envKey] ? (process.env[envKey] as T) : notFoundValue;
 	}
 
-	// Router/dashboard context: resolve from DB
+	// All other contexts (router, dashboard, tests): always resolve from DB.
 	return dbLookup();
 }
 

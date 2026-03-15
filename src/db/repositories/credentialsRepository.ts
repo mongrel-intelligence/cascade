@@ -6,6 +6,7 @@ import {
 	integrationCredentials,
 	projectCredentials,
 	projectIntegrations,
+	projects,
 } from '../schema/index.js';
 
 // ============================================================================
@@ -36,11 +37,20 @@ export async function resolveProjectCredential(
 /**
  * Resolve all credentials for a project as a flat env-var-key → value map.
  * Single query against project_credentials, using projectId as AAD.
+ * Throws if the project does not exist.
  */
 export async function resolveAllProjectCredentials(
 	projectId: string,
 ): Promise<Record<string, string>> {
 	const db = getDb();
+
+	const [project] = await db
+		.select({ id: projects.id })
+		.from(projects)
+		.where(eq(projects.id, projectId));
+	if (!project) {
+		throw new Error(`Project not found: ${projectId}`);
+	}
 
 	const rows = await db
 		.select({ envVarKey: projectCredentials.envVarKey, value: projectCredentials.value })
@@ -52,6 +62,38 @@ export async function resolveAllProjectCredentials(
 		result[row.envVarKey] = decryptCredential(row.value, projectId);
 	}
 	return result;
+}
+
+/**
+ * Upsert a row in project_credentials. Value must already be encrypted with
+ * projectId as AAD (or plaintext if encryption is disabled).
+ */
+export async function upsertProjectCredential(
+	projectId: string,
+	envVarKey: string,
+	value: string,
+	name?: string | null,
+): Promise<void> {
+	const db = getDb();
+	await db
+		.insert(projectCredentials)
+		.values({ projectId, envVarKey, value, name: name ?? null })
+		.onConflictDoUpdate({
+			target: [projectCredentials.projectId, projectCredentials.envVarKey],
+			set: { value, name: name ?? null, updatedAt: new Date() },
+		});
+}
+
+/**
+ * Delete a row from project_credentials.
+ */
+export async function deleteProjectCredential(projectId: string, envVarKey: string): Promise<void> {
+	const db = getDb();
+	await db
+		.delete(projectCredentials)
+		.where(
+			and(eq(projectCredentials.projectId, projectId), eq(projectCredentials.envVarKey, envVarKey)),
+		);
 }
 
 // ============================================================================
@@ -213,6 +255,24 @@ export async function createCredential(params: {
 			isDefault: params.isDefault ?? false,
 		})
 		.returning({ id: credentials.id });
+
+	// Sync to project_credentials for all projects in the org when this is a default credential.
+	// Default credentials are org-wide — every project should inherit them.
+	if (params.isDefault) {
+		const orgProjects = await db
+			.select({ id: projects.id })
+			.from(projects)
+			.where(eq(projects.orgId, params.orgId));
+		for (const project of orgProjects) {
+			await upsertProjectCredential(
+				project.id,
+				params.envVarKey,
+				encryptCredential(params.value, project.id),
+				params.name,
+			);
+		}
+	}
+
 	return row;
 }
 

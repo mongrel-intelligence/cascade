@@ -54,11 +54,33 @@ npm run test:watch       # Watch mode (unit tests)
 
 > **Do not use `npm test -- --project integration`** — it _adds_ the integration project on top of the hardcoded unit project flags, running all 5 projects instead of filtering. Use `npm run test:integration` instead.
 
-Integration tests require a PostgreSQL database. They find it via (in order):
-1. `TEST_DATABASE_URL` env var
-2. `TEST_DATABASE_URL` in `.cascade/env` (written by `.cascade/setup.sh`)
-3. Docker Compose default at `127.0.0.1:5433` (`npm run test:db:up`)
-4. Container IP of `cascade-postgres-test`
+> **Agent tip — integration test runs are slow (~4 min for full suite).** When a specific
+> test file is failing, always target it directly:
+> ```bash
+> # Run one file (seconds) instead of the full suite (4+ min):
+> TEST_DATABASE_URL=... npx vitest run --project integration tests/integration/<file>.test.ts
+> ```
+> Run the full suite only to confirm all tests pass before pushing.
+
+Integration tests require a PostgreSQL database. The setup:
+1. **Auto-creates** the database when `TEST_DATABASE_URL` is set and postgres is reachable
+   but the database doesn't exist yet (connects to `postgres` admin DB and creates it)
+2. **Auto-finds** an existing DB via (in order): `TEST_DATABASE_URL` env var →
+   `TEST_DATABASE_URL` in `.cascade/env` → Docker Compose at `127.0.0.1:5433` →
+   container IP of `cascade-postgres-test`
+3. **Silently skips** all integration tests if no database is reachable at all
+
+On developer machines (Docker):
+```bash
+npm run test:db:up        # start ephemeral postgres on :5433 (one-time per session)
+npm run test:integration  # tests auto-find it, run migrations, clean up
+```
+
+In worker/agent environments (local postgres already running):
+```bash
+TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/cascade_test \
+  npm run test:integration   # setup auto-creates cascade_test DB if missing
+```
 
 ### Linting
 

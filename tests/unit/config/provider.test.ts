@@ -279,13 +279,15 @@ describe('config/provider', () => {
 	});
 
 	describe('getIntegrationCredential', () => {
-		it('returns credential from process.env', async () => {
+		it('ignores process.env and resolves from DB outside worker mode', async () => {
 			setEnvCredential('TRELLO_API_KEY', 'env-key');
+			vi.mocked(resolveProjectCredential).mockResolvedValue('db-value');
 
 			const result = await getIntegrationCredential('proj1', 'pm', 'api_key');
 
-			expect(result).toBe('env-key');
-			expect(resolveProjectCredential).not.toHaveBeenCalled();
+			// env vars are ignored without CASCADE_CREDENTIAL_KEYS; DB is always used
+			expect(result).toBe('db-value');
+			expect(resolveProjectCredential).toHaveBeenCalledWith('proj1', 'TRELLO_API_KEY');
 		});
 
 		it('resolves from project_credentials via envVarKey mapping', async () => {
@@ -316,12 +318,15 @@ describe('config/provider', () => {
 	});
 
 	describe('getIntegrationCredentialOrNull', () => {
-		it('returns credential from process.env', async () => {
+		it('ignores process.env and resolves from DB outside worker mode', async () => {
 			setEnvCredential('GITHUB_TOKEN_IMPLEMENTER', 'env-token');
+			vi.mocked(resolveProjectCredential).mockResolvedValue('db-token');
 
 			const result = await getIntegrationCredentialOrNull('proj1', 'scm', 'implementer_token');
 
-			expect(result).toBe('env-token');
+			// env vars are ignored without CASCADE_CREDENTIAL_KEYS; DB is always used
+			expect(result).toBe('db-token');
+			expect(resolveProjectCredential).toHaveBeenCalledWith('proj1', 'GITHUB_TOKEN_IMPLEMENTER');
 		});
 
 		it('returns null when credential not found', async () => {
@@ -352,13 +357,15 @@ describe('config/provider', () => {
 	});
 
 	describe('getOrgCredential', () => {
-		it('returns credential from process.env', async () => {
+		it('ignores process.env and resolves from DB outside worker mode', async () => {
 			setEnvCredential('OPENROUTER_API_KEY', 'env-or-key');
+			vi.mocked(resolveProjectCredential).mockResolvedValue('proj-value');
 
 			const result = await getOrgCredential('proj1', 'OPENROUTER_API_KEY');
 
-			expect(result).toBe('env-or-key');
-			expect(resolveProjectCredential).not.toHaveBeenCalled();
+			// env vars are ignored without CASCADE_CREDENTIAL_KEYS; DB is always used
+			expect(result).toBe('proj-value');
+			expect(resolveProjectCredential).toHaveBeenCalledWith('proj1', 'OPENROUTER_API_KEY');
 		});
 
 		it('resolves from project_credentials (no org_id lookup needed)', async () => {

@@ -1,6 +1,15 @@
 import { and, eq } from 'drizzle-orm';
+import type { IntegrationProvider } from '../../config/integrationRoles.js';
+import { PROVIDER_CREDENTIAL_ROLES } from '../../config/integrationRoles.js';
 import { getDb } from '../client.js';
+import { reEncryptCredential } from '../crypto.js';
 import { credentials, integrationCredentials, projectIntegrations } from '../schema/index.js';
+import { deleteProjectCredential, upsertProjectCredential } from './credentialsRepository.js';
+
+function roleToEnvVarKey(provider: string, role: string): string | undefined {
+	const roles = PROVIDER_CREDENTIAL_ROLES[provider as IntegrationProvider];
+	return roles?.find((r) => r.role === role)?.envVarKey;
+}
 
 // ============================================================================
 // Project Integrations
@@ -127,10 +136,34 @@ export async function setIntegrationCredential(
 			),
 		);
 	await db.insert(integrationCredentials).values({ integrationId, role, credentialId });
+
+	// Sync to project_credentials
+	const [integration] = await db
+		.select({ projectId: projectIntegrations.projectId, provider: projectIntegrations.provider })
+		.from(projectIntegrations)
+		.where(eq(projectIntegrations.id, integrationId));
+	const envVarKey = integration ? roleToEnvVarKey(integration.provider, role) : undefined;
+	if (integration && envVarKey) {
+		const [cred] = await db
+			.select({ value: credentials.value, orgId: credentials.orgId, name: credentials.name })
+			.from(credentials)
+			.where(eq(credentials.id, credentialId));
+		if (cred) {
+			const valueForProject = reEncryptCredential(cred.value, cred.orgId, integration.projectId);
+			await upsertProjectCredential(integration.projectId, envVarKey, valueForProject, cred.name);
+		}
+	}
 }
 
 export async function removeIntegrationCredential(integrationId: number, role: string) {
 	const db = getDb();
+
+	// Look up project info before deleting (for project_credentials cleanup)
+	const [integration] = await db
+		.select({ projectId: projectIntegrations.projectId, provider: projectIntegrations.provider })
+		.from(projectIntegrations)
+		.where(eq(projectIntegrations.id, integrationId));
+
 	await db
 		.delete(integrationCredentials)
 		.where(
@@ -139,4 +172,12 @@ export async function removeIntegrationCredential(integrationId: number, role: s
 				eq(integrationCredentials.role, role),
 			),
 		);
+
+	// Remove from project_credentials
+	if (integration) {
+		const envVarKey = roleToEnvVarKey(integration.provider, role);
+		if (envVarKey) {
+			await deleteProjectCredential(integration.projectId, envVarKey);
+		}
+	}
 }
