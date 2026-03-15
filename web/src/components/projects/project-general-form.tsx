@@ -10,6 +10,13 @@ import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+function formatMs(ms: number): string {
+	const minutes = ms / 1000 / 60;
+	if (minutes % 60 === 0)
+		return `${ms.toLocaleString()} (${minutes / 60} hour${minutes / 60 !== 1 ? 's' : ''})`;
+	return `${ms.toLocaleString()} (${minutes} min)`;
+}
+
 interface Project {
 	id: string;
 	name: string;
@@ -35,6 +42,11 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const credentialsQuery = useQuery(
 		trpc.projects.credentials.list.queryOptions({ projectId: project.id }),
 	);
+	const defaultsQuery = useQuery({
+		...trpc.projects.defaults.queryOptions(),
+		staleTime: Number.POSITIVE_INFINITY,
+	});
+	const defaults = defaultsQuery.data;
 
 	const [name, setName] = useState(project.name);
 	const [watchdogTimeoutMs, setWatchdogTimeoutMs] = useState(
@@ -108,6 +120,24 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const credentials = credentialsQuery.data ?? [];
 	const openrouterCred = credentials.find((c) => c.envVarKey === 'OPENROUTER_API_KEY');
 
+	// Pre-compute placeholder/description values so JSX stays declarative
+	const budgetPlaceholder = defaults
+		? `${defaults.workItemBudgetUsd.toFixed(2)} (default)`
+		: 'e.g. 5.00';
+	const budgetDescription = defaults ? `$${defaults.workItemBudgetUsd.toFixed(2)} USD` : '…';
+	const watchdogPlaceholder = defaults ? formatMs(defaults.watchdogTimeoutMs) : 'e.g. 1800000';
+	const watchdogDescription = defaults ? formatMs(defaults.watchdogTimeoutMs) : '…';
+	const progressModelPlaceholder = defaults ? defaults.progressModel : 'e.g. gemini-flash';
+	const progressIntervalPlaceholder = defaults
+		? `${defaults.progressIntervalMinutes} (default)`
+		: 'e.g. 5';
+	const progressIntervalDescription = defaults ? `${defaults.progressIntervalMinutes} min` : '…';
+	const progressModelDescription = defaults ? (
+		<code className="text-xs">{defaults.progressModel}</code>
+	) : (
+		'…'
+	);
+
 	return (
 		<div className="max-w-2xl space-y-6">
 			<form onSubmit={handleSubmit} className="space-y-6">
@@ -174,10 +204,11 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 									id="workItemBudgetUsd"
 									value={workItemBudgetUsd}
 									onChange={(e) => setWorkItemBudgetUsd(e.target.value)}
-									placeholder="e.g. 5.00"
+									placeholder={budgetPlaceholder}
 								/>
 								<p className="text-xs text-muted-foreground">
-									Maximum spend per work item before the agent stops. Leave empty for no limit.
+									Maximum spend per work item before the agent stops. Leave empty to use default:{' '}
+									{budgetDescription}.
 								</p>
 							</div>
 							<div className="space-y-2">
@@ -203,11 +234,11 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 								min="1"
 								value={watchdogTimeoutMs}
 								onChange={(e) => setWatchdogTimeoutMs(e.target.value)}
-								placeholder="e.g. 3600000"
+								placeholder={watchdogPlaceholder}
 							/>
 							<p className="text-xs text-muted-foreground">
-								Maximum duration (in milliseconds) before a stalled agent run is forcibly
-								terminated. Leave empty to use the system default.
+								Maximum duration before a stalled agent run is forcibly terminated. Leave empty to
+								use default: {watchdogDescription}.
 							</p>
 						</div>
 					</CardContent>
@@ -229,11 +260,11 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 									id="progressModel"
 									value={progressModel}
 									onChange={(e) => setProgressModel(e.target.value)}
-									placeholder="e.g. claude-haiku-3-5"
+									placeholder={progressModelPlaceholder}
 								/>
 								<p className="text-xs text-muted-foreground">
-									LLM model used for generating progress summaries. Leave empty to use the project
-									default.
+									LLM model used for progress summaries. Leave empty to use default:{' '}
+									{progressModelDescription}.
 								</p>
 							</div>
 							<div className="space-y-2">
@@ -244,11 +275,11 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 									min="1"
 									value={progressIntervalMinutes}
 									onChange={(e) => setProgressIntervalMinutes(e.target.value)}
-									placeholder="e.g. 5"
+									placeholder={progressIntervalPlaceholder}
 								/>
 								<p className="text-xs text-muted-foreground">
-									How often (in minutes) the agent posts a progress update. Leave empty to use the
-									system default.
+									How often the agent posts a progress update. Leave empty to use default:{' '}
+									{progressIntervalDescription}.
 								</p>
 							</div>
 						</div>

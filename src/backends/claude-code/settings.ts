@@ -2,6 +2,11 @@ import { z } from 'zod';
 import { type EngineSettings, getEngineSettings } from '../../config/engineSettings.js';
 import type { ProjectConfig } from '../../types/index.js';
 
+export const CLAUDE_CODE_SETTING_DEFAULTS = {
+	effort: 'high' as const,
+	thinking: 'adaptive' as const,
+};
+
 export const ClaudeCodeSettingsSchema = z.object({
 	effort: z.enum(['low', 'medium', 'high', 'max']).optional(),
 	thinking: z.enum(['adaptive', 'enabled', 'disabled']).optional(),
@@ -36,8 +41,8 @@ export function resolveClaudeCodeSettings(
 		getEngineSettings(effectiveSettings, 'claude-code', ClaudeCodeSettingsSchema) ?? {};
 
 	return {
-		effort: claudeCode.effort ?? 'high',
-		thinking: claudeCode.thinking ?? 'adaptive',
+		effort: claudeCode.effort ?? CLAUDE_CODE_SETTING_DEFAULTS.effort,
+		thinking: claudeCode.thinking ?? CLAUDE_CODE_SETTING_DEFAULTS.thinking,
 		thinkingBudgetTokens: claudeCode.thinkingBudgetTokens,
 	};
 }

@@ -2,6 +2,10 @@ import { TRPCError } from '@trpc/server';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { registerBuiltInEngines } from '../../../../src/backends/bootstrap.js';
+import { CLAUDE_CODE_SETTING_DEFAULTS } from '../../../../src/backends/claude-code/settings.js';
+import { CODEX_SETTING_DEFAULTS } from '../../../../src/backends/codex/settings.js';
+import { OPENCODE_SETTING_DEFAULTS } from '../../../../src/backends/opencode/settings.js';
+import { PROJECT_DEFAULTS } from '../../../../src/config/schema.js';
 import { createMockUser } from '../../../helpers/factories.js';
 
 const mockListProjectsForOrg = vi.fn();
@@ -565,6 +569,68 @@ describe('projectsRouter', () => {
 
 				expect(mockDeleteProjectCredential).toHaveBeenCalledWith('p1', 'OPENROUTER_API_KEY');
 			});
+		});
+	});
+
+	// ============================================================================
+	// defaults procedure
+	// ============================================================================
+
+	describe('defaults', () => {
+		it('returns project defaults sourced from PROJECT_DEFAULTS constants', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+
+			const result = await caller.defaults();
+
+			expect(result.model).toBe(PROJECT_DEFAULTS.model);
+			expect(result.maxIterations).toBe(PROJECT_DEFAULTS.maxIterations);
+			expect(result.watchdogTimeoutMs).toBe(PROJECT_DEFAULTS.watchdogTimeoutMs);
+			expect(result.progressModel).toBe(PROJECT_DEFAULTS.progressModel);
+			expect(result.progressIntervalMinutes).toBe(PROJECT_DEFAULTS.progressIntervalMinutes);
+			expect(result.workItemBudgetUsd).toBe(PROJECT_DEFAULTS.workItemBudgetUsd);
+			expect(result.agentEngine).toBe(PROJECT_DEFAULTS.agentEngine);
+		});
+
+		it('returns per-engine setting defaults', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+
+			const result = await caller.defaults();
+
+			expect(result.engineSettings['claude-code']).toEqual(CLAUDE_CODE_SETTING_DEFAULTS);
+			expect(result.engineSettings.codex).toEqual(CODEX_SETTING_DEFAULTS);
+			expect(result.engineSettings.opencode).toEqual(OPENCODE_SETTING_DEFAULTS);
+		});
+
+		it('is accessible without authentication (publicProcedure)', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+
+			// Should not throw UNAUTHORIZED
+			await expect(caller.defaults()).resolves.toBeDefined();
+		});
+
+		it('PROJECT_DEFAULTS values match the Zod schema defaults', () => {
+			expect(PROJECT_DEFAULTS.model).toBe('openrouter:google/gemini-3-flash-preview');
+			expect(PROJECT_DEFAULTS.maxIterations).toBe(50);
+			expect(PROJECT_DEFAULTS.watchdogTimeoutMs).toBe(30 * 60 * 1000);
+			expect(PROJECT_DEFAULTS.progressModel).toBe('openrouter:google/gemini-2.5-flash-lite');
+			expect(PROJECT_DEFAULTS.progressIntervalMinutes).toBe(5);
+			expect(PROJECT_DEFAULTS.workItemBudgetUsd).toBe(5);
+			expect(PROJECT_DEFAULTS.agentEngine).toBe('llmist');
+		});
+
+		it('CLAUDE_CODE_SETTING_DEFAULTS match the resolver fallback values', () => {
+			expect(CLAUDE_CODE_SETTING_DEFAULTS.effort).toBe('high');
+			expect(CLAUDE_CODE_SETTING_DEFAULTS.thinking).toBe('adaptive');
+		});
+
+		it('CODEX_SETTING_DEFAULTS match the resolver fallback values', () => {
+			expect(CODEX_SETTING_DEFAULTS.approvalPolicy).toBe('never');
+			expect(CODEX_SETTING_DEFAULTS.sandboxMode).toBe('danger-full-access');
+			expect(CODEX_SETTING_DEFAULTS.webSearch).toBe(false);
+		});
+
+		it('OPENCODE_SETTING_DEFAULTS match the resolver fallback values', () => {
+			expect(OPENCODE_SETTING_DEFAULTS.webSearch).toBe(false);
 		});
 	});
 });

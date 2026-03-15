@@ -14,9 +14,12 @@ interface ModelFieldProps {
 	onChange: (value: string) => void;
 	engine: string;
 	id?: string;
+	/** Placeholder text for free-text mode (e.g. the resolved default model name).
+	 *  Defaults to "Optional" when not provided. */
+	defaultLabel?: string;
 }
 
-export function ModelField({ value, onChange, engine, id }: ModelFieldProps) {
+export function ModelField({ value, onChange, engine, id, defaultLabel }: ModelFieldProps) {
 	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
 	const engineDefinition = enginesQuery.data?.find((item) => item.id === engine);
 
@@ -43,7 +46,7 @@ export function ModelField({ value, onChange, engine, id }: ModelFieldProps) {
 			id={id}
 			value={value}
 			onChange={(e) => onChange(e.target.value)}
-			placeholder="Optional"
+			placeholder={defaultLabel ?? 'Optional'}
 		/>
 	);
 }

@@ -42,6 +42,10 @@ function numericFieldDefault(value: number | null | undefined): string {
 	return value != null ? String(value) : '';
 }
 
+function capitalize(s: string): string {
+	return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 const ENGINE_SECRETS: Array<{
 	envVarKey: string;
 	label: string;
@@ -93,6 +97,11 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 	const credentialsQuery = useQuery(
 		trpc.projects.credentials.list.queryOptions({ projectId: project.id }),
 	);
+	const defaultsQuery = useQuery({
+		...trpc.projects.defaults.queryOptions(),
+		staleTime: Number.POSITIVE_INFINITY,
+	});
+	const defaults = defaultsQuery.data;
 
 	const [model, setModel] = useState(project.model ?? '');
 	const [maxIterations, setMaxIterations] = useState(numericFieldDefault(project.maxIterations));
@@ -103,6 +112,12 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 
 	const effectiveEngineId = agentEngine || '';
 	const effectiveEngine = enginesQuery.data?.find((engine) => engine.id === effectiveEngineId);
+
+	// Resolved engine defaults for the EngineSettingsFields component
+	const engineDefaults =
+		defaults && effectiveEngineId
+			? (defaults.engineSettings as Record<string, Record<string, unknown>>)[effectiveEngineId]
+			: undefined;
 
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
@@ -125,6 +140,9 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 	const visibleSecrets = effectiveEngineId
 		? ENGINE_SECRETS.filter((s) => !s.engines || s.engines.includes(effectiveEngineId))
 		: [];
+
+	// Default engine label for the select placeholder
+	const defaultEngineLabel = defaults ? `Default (${capitalize(defaults.agentEngine)})` : 'Default';
 
 	return (
 		<TooltipProvider>
@@ -153,10 +171,10 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 									onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
 								>
 									<SelectTrigger className="w-full">
-										<SelectValue placeholder="Select engine" />
+										<SelectValue placeholder={defaultEngineLabel} />
 									</SelectTrigger>
 									<SelectContent>
-										<SelectItem value="_none">None</SelectItem>
+										<SelectItem value="_none">{defaultEngineLabel}</SelectItem>
 										{enginesQuery.data?.map((engine) => (
 											<SelectItem key={engine.id} value={engine.id}>
 												{engine.label}
@@ -172,6 +190,7 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 								engine={effectiveEngine}
 								value={engineSettings}
 								onChange={(next) => setEngineSettings(next ?? {})}
+								engineDefaults={engineDefaults}
 							/>
 							<div className="grid grid-cols-2 gap-4">
 								<div className="space-y-2">
@@ -191,6 +210,7 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 										value={model}
 										onChange={setModel}
 										engine={effectiveEngineId}
+										defaultLabel={defaults ? defaults.model : undefined}
 									/>
 									<p className="text-xs text-muted-foreground">
 										Project default model. Per-agent overrides in the Agents tab.
@@ -214,7 +234,7 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 										min="1"
 										value={maxIterations}
 										onChange={(e) => setMaxIterations(e.target.value)}
-										placeholder="e.g. 20"
+										placeholder={defaults ? `${defaults.maxIterations} (default)` : 'e.g. 50'}
 									/>
 									<p className="text-xs text-muted-foreground">
 										Safety limit on tool-call iterations per run.
