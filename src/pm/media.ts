@@ -104,11 +104,15 @@ function mimeTypeFromUrl(url: string): string {
 const MARKDOWN_IMAGE_RE = /!\[([^\]]*)\]\(([^)]+)\)/g;
 
 /**
- * Extracts all Markdown image references (`![alt](url)`) from a string.
+ * Extracts Markdown image references (`![alt](url)`) from a string.
+ *
+ * Results are capped at {@link MAX_IMAGES_PER_WORK_ITEM} entries. Images
+ * beyond that limit are silently dropped.
  *
  * @param md     - Markdown text to parse.
  * @param source - Where the text came from (`'description'` or `'comment'`).
- * @returns An array of `MediaReference` objects; empty when no images are found.
+ * @returns An array of `MediaReference` objects (at most `MAX_IMAGES_PER_WORK_ITEM`);
+ *          empty when no images are found.
  *
  * @example
  * ```ts
@@ -143,6 +147,10 @@ export function extractMarkdownImages(
 			altText: altText || undefined,
 			source,
 		});
+
+		if (results.length >= MAX_IMAGES_PER_WORK_ITEM) {
+			break;
+		}
 	}
 
 	return results;

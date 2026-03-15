@@ -240,4 +240,20 @@ describe('extractMarkdownImages', () => {
 		// MIME is inferred as octet-stream since pdf is not in the image extension map
 		expect(refs[0].mimeType).toBe('application/octet-stream');
 	});
+
+	it('caps results at MAX_IMAGES_PER_WORK_ITEM', () => {
+		// Build markdown with more images than the limit
+		const images = Array.from(
+			{ length: MAX_IMAGES_PER_WORK_ITEM + 5 },
+			(_, i) => `![img${i}](https://example.com/img${i}.png)`,
+		).join(' ');
+
+		const refs = extractMarkdownImages(images);
+		expect(refs).toHaveLength(MAX_IMAGES_PER_WORK_ITEM);
+		// First and last within the cap should be present
+		expect(refs[0].url).toBe('https://example.com/img0.png');
+		expect(refs[MAX_IMAGES_PER_WORK_ITEM - 1].url).toBe(
+			`https://example.com/img${MAX_IMAGES_PER_WORK_ITEM - 1}.png`,
+		);
+	});
 });
