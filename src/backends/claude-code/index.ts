@@ -536,12 +536,13 @@ export class ClaudeCodeEngine implements AgentEngine {
 		// resolveClaudeModel() is idempotent, calling it twice via the normal adapter path
 		// is safe.
 		const model = resolveClaudeModel(input.model);
-		const resolvedSettings = resolveClaudeCodeSettings(input.project);
+		const resolvedSettings = resolveClaudeCodeSettings(input.project, input.engineSettings);
 		// Only the explicitly-configured fields (raw, pre-default) are passed to the SDK.
 		// This preserves SDK defaults when no project-level settings are configured.
+		// Use the merged engineSettings from the execution plan (falls back to project-level).
+		const effectiveEngineSettings = input.engineSettings ?? input.project.engineSettings;
 		const rawEngineSettings =
-			getEngineSettings(input.project.engineSettings, 'claude-code', ClaudeCodeSettingsSchema) ??
-			{};
+			getEngineSettings(effectiveEngineSettings, 'claude-code', ClaudeCodeSettingsSchema) ?? {};
 
 		input.logWriter('INFO', 'Starting Claude Code SDK execution', {
 			agentType: input.agentType,

@@ -602,7 +602,11 @@ export class CodexEngine implements AgentEngine {
 		// resolveCodexModel() is idempotent, calling it twice via the normal adapter path
 		// is safe.
 		const model = resolveCodexModel(input.model);
-		const settings = resolveCodexSettings(input.project, input.nativeToolCapabilities);
+		const settings = resolveCodexSettings(
+			input.project,
+			input.nativeToolCapabilities,
+			input.engineSettings,
+		);
 		assertHeadlessCodexSettings(settings);
 
 		// When called via adapter, beforeExecute already wrote the auth file.

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getEngineSettings } from '../../config/engineSettings.js';
+import { type EngineSettings, getEngineSettings } from '../../config/engineSettings.js';
 import type { ProjectConfig } from '../../types/index.js';
 
 export const ClaudeCodeSettingsSchema = z.object({
@@ -19,9 +19,21 @@ export interface ResolvedClaudeCodeSettings {
 	thinkingBudgetTokens?: ClaudeCodeSettings['thinkingBudgetTokens'];
 }
 
-export function resolveClaudeCodeSettings(project: ProjectConfig): ResolvedClaudeCodeSettings {
+/**
+ * Resolve Claude Code settings from the given engine settings, falling back to
+ * project-level settings when no explicit override is provided.
+ *
+ * @param project - The project config (used as fallback when engineSettings is not provided)
+ * @param engineSettings - Optional pre-merged engine settings (e.g. from AgentExecutionPlan).
+ *   When provided, these take precedence over project.engineSettings.
+ */
+export function resolveClaudeCodeSettings(
+	project: ProjectConfig,
+	engineSettings?: EngineSettings,
+): ResolvedClaudeCodeSettings {
+	const effectiveSettings = engineSettings ?? project.engineSettings;
 	const claudeCode =
-		getEngineSettings(project.engineSettings, 'claude-code', ClaudeCodeSettingsSchema) ?? {};
+		getEngineSettings(effectiveSettings, 'claude-code', ClaudeCodeSettingsSchema) ?? {};
 
 	return {
 		effort: claudeCode.effort ?? 'high',

@@ -19,6 +19,7 @@ import { setupRepository } from '../agents/shared/repository.js';
 import { finalizeEngineRun, tryCreateRun } from '../agents/shared/runTracking.js';
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
+import { mergeEngineSettings } from '../config/engineSettings.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import {
 	PM_WRITE_SIDECAR_ENV_VAR,
@@ -242,6 +243,14 @@ async function buildExecutionPlan(
 		projectSecrets.GITHUB_TOKEN = gitHubToken;
 	}
 
+	// Merge engine settings: agent-config settings override project-level settings.
+	// When no per-agent settings exist for this agent type, project-level settings are used unchanged.
+	const agentLevelEngineSettings = project.agentEngineSettings?.[agentType];
+	const mergedEngineSettings = mergeEngineSettings(
+		project.engineSettings,
+		agentLevelEngineSettings,
+	);
+
 	return {
 		agentType,
 		project,
@@ -262,6 +271,7 @@ async function buildExecutionPlan(
 		completionRequirements,
 		enableStopHooks: needsGitStateStopHooks(profile.finishHooks),
 		blockGitPush: profile.finishHooks.blockGitPush,
+		engineSettings: mergedEngineSettings,
 		...(Object.keys(projectSecrets).length > 0 && { projectSecrets }),
 		reviewSidecarPath,
 		prSidecarPath,

@@ -817,7 +817,7 @@ export class OpenCodeEngine implements AgentEngine {
 	}
 
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
-		const settings = resolveOpenCodeSettings(input.project);
+		const settings = resolveOpenCodeSettings(input.project, input.engineSettings);
 		const agent = 'build' as const;
 		// Resolve model again here for backward compatibility: execute() may be called
 		// directly (e.g. in tests) without going through the adapter, so we cannot rely
