@@ -18,10 +18,6 @@ const mockDeleteProject = vi.fn();
 const mockListProjectIntegrations = vi.fn();
 const mockUpsertProjectIntegration = vi.fn();
 const mockDeleteProjectIntegration = vi.fn();
-const mockGetIntegrationByProjectAndCategory = vi.fn();
-const mockListIntegrationCredentials = vi.fn();
-const mockSetIntegrationCredential = vi.fn();
-const mockRemoveIntegrationCredential = vi.fn();
 
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
 	listProjectsFull: (...args: unknown[]) => mockListProjectsFull(...args),
@@ -32,11 +28,6 @@ vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
 	listProjectIntegrations: (...args: unknown[]) => mockListProjectIntegrations(...args),
 	upsertProjectIntegration: (...args: unknown[]) => mockUpsertProjectIntegration(...args),
 	deleteProjectIntegration: (...args: unknown[]) => mockDeleteProjectIntegration(...args),
-	getIntegrationByProjectAndCategory: (...args: unknown[]) =>
-		mockGetIntegrationByProjectAndCategory(...args),
-	listIntegrationCredentials: (...args: unknown[]) => mockListIntegrationCredentials(...args),
-	setIntegrationCredential: (...args: unknown[]) => mockSetIntegrationCredential(...args),
-	removeIntegrationCredential: (...args: unknown[]) => mockRemoveIntegrationCredential(...args),
 }));
 
 const mockListProjectCredentials = vi.fn();
@@ -61,7 +52,6 @@ vi.mock('../../../../src/db/client.js', () => ({
 }));
 
 vi.mock('../../../../src/db/schema/index.js', () => ({
-	credentials: { id: 'id', orgId: 'org_id' },
 	projects: { id: 'id', orgId: 'org_id' },
 }));
 
@@ -387,131 +377,6 @@ describe('projectsRouter', () => {
 				await caller.integrations.delete({ projectId: 'p1', category: 'pm' });
 
 				expect(mockDeleteProjectIntegration).toHaveBeenCalledWith('p1', 'pm');
-			});
-		});
-	});
-
-	// ============================================================================
-	// Integration Credentials sub-router
-	// ============================================================================
-
-	describe('integrationCredentials', () => {
-		describe('list', () => {
-			it('lists credentials after verifying ownership', async () => {
-				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-				mockGetIntegrationByProjectAndCategory.mockResolvedValue({ id: 10 });
-				const creds = [{ role: 'api_key', credentialId: 42, credentialName: 'Key' }];
-				mockListIntegrationCredentials.mockResolvedValue(creds);
-				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-				const result = await caller.integrationCredentials.list({
-					projectId: 'p1',
-					category: 'pm',
-				});
-
-				expect(result).toEqual(creds);
-			});
-
-			it('returns empty when integration not found', async () => {
-				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-				mockGetIntegrationByProjectAndCategory.mockResolvedValue(null);
-				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-				const result = await caller.integrationCredentials.list({
-					projectId: 'p1',
-					category: 'scm',
-				});
-
-				expect(result).toEqual([]);
-			});
-		});
-
-		describe('set', () => {
-			it('sets credential after verifying project and credential ownership', async () => {
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // credential
-				mockGetIntegrationByProjectAndCategory.mockResolvedValue({ id: 10 });
-				mockSetIntegrationCredential.mockResolvedValue(undefined);
-				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-				await caller.integrationCredentials.set({
-					projectId: 'p1',
-					category: 'pm',
-					role: 'api_key',
-					credentialId: 42,
-				});
-
-				expect(mockSetIntegrationCredential).toHaveBeenCalledWith(10, 'api_key', 42);
-			});
-
-			it('auto-creates SCM integration when none exists', async () => {
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // credential
-				// First call: no integration; second call (after auto-create): integration exists
-				mockGetIntegrationByProjectAndCategory
-					.mockResolvedValueOnce(null)
-					.mockResolvedValueOnce({ id: 20 });
-				mockUpsertProjectIntegration.mockResolvedValue(undefined);
-				mockSetIntegrationCredential.mockResolvedValue(undefined);
-				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-				await caller.integrationCredentials.set({
-					projectId: 'p1',
-					category: 'scm',
-					role: 'implementer_token',
-					credentialId: 42,
-				});
-
-				expect(mockUpsertProjectIntegration).toHaveBeenCalledWith('p1', 'scm', 'github', {});
-				expect(mockSetIntegrationCredential).toHaveBeenCalledWith(20, 'implementer_token', 42);
-			});
-
-			it('throws NOT_FOUND for non-SCM category when integration missing', async () => {
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // credential
-				mockGetIntegrationByProjectAndCategory.mockResolvedValue(null);
-				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-				await expect(
-					caller.integrationCredentials.set({
-						projectId: 'p1',
-						category: 'pm',
-						role: 'api_key',
-						credentialId: 42,
-					}),
-				).rejects.toMatchObject({ code: 'NOT_FOUND' });
-			});
-
-			it('throws NOT_FOUND when credential belongs to different org', async () => {
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project OK
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'different-org' }]); // credential not owned
-				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-				await expect(
-					caller.integrationCredentials.set({
-						projectId: 'p1',
-						category: 'pm',
-						role: 'api_key',
-						credentialId: 99,
-					}),
-				).rejects.toMatchObject({ code: 'NOT_FOUND' });
-			});
-		});
-
-		describe('remove', () => {
-			it('removes credential after verifying ownership', async () => {
-				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-				mockGetIntegrationByProjectAndCategory.mockResolvedValue({ id: 10 });
-				mockRemoveIntegrationCredential.mockResolvedValue(undefined);
-				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-				await caller.integrationCredentials.remove({
-					projectId: 'p1',
-					category: 'pm',
-					role: 'api_key',
-				});
-
-				expect(mockRemoveIntegrationCredential).toHaveBeenCalledWith(10, 'api_key');
 			});
 		});
 	});

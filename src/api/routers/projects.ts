@@ -13,18 +13,14 @@ import {
 	createProject,
 	deleteProject,
 	deleteProjectIntegration,
-	getIntegrationByProjectAndCategory,
 	getProjectFull,
-	listIntegrationCredentials,
 	listProjectIntegrations,
 	listProjectsFull,
-	removeIntegrationCredential,
-	setIntegrationCredential,
 	updateProject,
 	updateProjectIntegrationTriggers,
 	upsertProjectIntegration,
 } from '../../db/repositories/settingsRepository.js';
-import { credentials, projects } from '../../db/schema/index.js';
+import { projects } from '../../db/schema/index.js';
 import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
 
 async function verifyProjectOwnership(projectId: string, orgId: string) {
@@ -34,17 +30,6 @@ async function verifyProjectOwnership(projectId: string, orgId: string) {
 		.from(projects)
 		.where(eq(projects.id, projectId));
 	if (!project || project.orgId !== orgId) {
-		throw new TRPCError({ code: 'NOT_FOUND' });
-	}
-}
-
-async function verifyCredentialOwnership(credentialId: number, orgId: string) {
-	const db = getDb();
-	const [cred] = await db
-		.select({ orgId: credentials.orgId })
-		.from(credentials)
-		.where(eq(credentials.id, credentialId));
-	if (!cred || cred.orgId !== orgId) {
 		throw new TRPCError({ code: 'NOT_FOUND' });
 	}
 }
@@ -195,74 +180,6 @@ export const projectsRouter = router({
 			.mutation(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				await deleteProjectIntegration(input.projectId, input.category);
-			}),
-	}),
-
-	// Integration Credentials
-	integrationCredentials: router({
-		list: protectedProcedure
-			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm']) }))
-			.query(async ({ ctx, input }) => {
-				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
-				const integration = await getIntegrationByProjectAndCategory(
-					input.projectId,
-					input.category,
-				);
-				if (!integration) return [];
-				return listIntegrationCredentials(integration.id);
-			}),
-
-		set: protectedProcedure
-			.input(
-				z.object({
-					projectId: z.string(),
-					category: z.enum(['pm', 'scm']),
-					role: z.string().min(1),
-					credentialId: z.number(),
-				}),
-			)
-			.mutation(async ({ ctx, input }) => {
-				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
-				await verifyCredentialOwnership(input.credentialId, ctx.effectiveOrgId);
-				let integration = await getIntegrationByProjectAndCategory(input.projectId, input.category);
-				if (!integration) {
-					// Auto-create SCM integration with GitHub as the default provider
-					const defaultProvider = input.category === 'scm' ? 'github' : undefined;
-					if (defaultProvider) {
-						await upsertProjectIntegration(input.projectId, input.category, defaultProvider, {});
-						integration = await getIntegrationByProjectAndCategory(input.projectId, input.category);
-					}
-				}
-				if (!integration) {
-					throw new TRPCError({
-						code: 'NOT_FOUND',
-						message: `No ${input.category} integration found for project`,
-					});
-				}
-				await setIntegrationCredential(integration.id, input.role, input.credentialId);
-			}),
-
-		remove: protectedProcedure
-			.input(
-				z.object({
-					projectId: z.string(),
-					category: z.enum(['pm', 'scm']),
-					role: z.string().min(1),
-				}),
-			)
-			.mutation(async ({ ctx, input }) => {
-				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
-				const integration = await getIntegrationByProjectAndCategory(
-					input.projectId,
-					input.category,
-				);
-				if (!integration) {
-					throw new TRPCError({
-						code: 'NOT_FOUND',
-						message: `No ${input.category} integration found for project`,
-					});
-				}
-				await removeIntegrationCredential(integration.id, input.role);
 			}),
 	}),
 

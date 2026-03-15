@@ -10,10 +10,6 @@ vi.mock('../../../src/db/repositories/configRepository.js', () => ({
 }));
 
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
-	resolveIntegrationCredential: vi.fn(),
-	resolveAllIntegrationCredentials: vi.fn(),
-	resolveOrgCredential: vi.fn(),
-	resolveAllOrgCredentials: vi.fn(),
 	resolveProjectCredential: vi.fn(),
 	resolveAllProjectCredentials: vi.fn(),
 }));
@@ -56,11 +52,7 @@ import {
 	loadConfigFromDb,
 } from '../../../src/db/repositories/configRepository.js';
 import {
-	resolveAllIntegrationCredentials,
-	resolveAllOrgCredentials,
 	resolveAllProjectCredentials,
-	resolveIntegrationCredential,
-	resolveOrgCredential,
 	resolveProjectCredential,
 } from '../../../src/db/repositories/credentialsRepository.js';
 import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
@@ -415,9 +407,6 @@ describe('config/provider', () => {
 				GITHUB_TOKEN_IMPLEMENTER: 'ghp_impl',
 			});
 			expect(resolveAllProjectCredentials).toHaveBeenCalledWith('proj1');
-			// No org ID lookup, no two-query merge
-			expect(resolveAllIntegrationCredentials).not.toHaveBeenCalled();
-			expect(resolveAllOrgCredentials).not.toHaveBeenCalled();
 		});
 
 		it('returns empty object when no credentials exist', async () => {
@@ -436,8 +425,6 @@ describe('config/provider', () => {
 
 			expect(result).toEqual({ TRELLO_API_KEY: 'env-key', OPENROUTER_API_KEY: 'env-or' });
 			expect(resolveAllProjectCredentials).not.toHaveBeenCalled();
-			expect(resolveAllIntegrationCredentials).not.toHaveBeenCalled();
-			expect(resolveAllOrgCredentials).not.toHaveBeenCalled();
 		});
 	});
 

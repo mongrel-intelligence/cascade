@@ -1,14 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAllProjectCredentials } from '../../../src/config/provider.js';
-import { createCredential } from '../../../src/db/repositories/credentialsRepository.js';
+import { writeProjectCredential } from '../../../src/db/repositories/credentialsRepository.js';
 import { truncateAll } from '../helpers/db.js';
-import {
-	seedCredential,
-	seedIntegration,
-	seedIntegrationCredential,
-	seedOrg,
-	seedProject,
-} from '../helpers/seed.js';
+import { seedOrg, seedProject } from '../helpers/seed.js';
 
 describe('credentialResolution (integration)', () => {
 	beforeEach(async () => {
@@ -27,109 +21,22 @@ describe('credentialResolution (integration)', () => {
 			expect(creds).toEqual({});
 		});
 
-		it('includes default org credentials (LLM API keys)', async () => {
-			await seedCredential({
-				orgId: 'test-org',
-				envVarKey: 'OPENROUTER_API_KEY',
-				value: 'or-key-secret',
-				isDefault: true,
-			});
+		it('includes project credentials', async () => {
+			await writeProjectCredential('test-project', 'OPENROUTER_API_KEY', 'or-key-secret');
 
 			const creds = await getAllProjectCredentials('test-project');
 			expect(creds.OPENROUTER_API_KEY).toBe('or-key-secret');
 		});
 
-		it('excludes non-default org credentials', async () => {
-			await seedCredential({
-				orgId: 'test-org',
-				envVarKey: 'NON_DEFAULT_KEY',
-				value: 'should-not-appear',
-				isDefault: false,
-			});
+		it('includes all project credentials in the map', async () => {
+			await writeProjectCredential('test-project', 'GITHUB_TOKEN_IMPLEMENTER', 'ghp-impl');
+			await writeProjectCredential('test-project', 'TRELLO_API_KEY', 'trello-key');
+			await writeProjectCredential('test-project', 'OPENROUTER_API_KEY', 'llm-key');
 
 			const creds = await getAllProjectCredentials('test-project');
-			expect(creds.NON_DEFAULT_KEY).toBeUndefined();
-		});
-
-		it('includes integration credentials mapped to env var keys', async () => {
-			const apiKeyCred = await seedCredential({
-				envVarKey: 'TRELLO_API_KEY',
-				value: 'trello-api-key-value',
-			});
-			const tokenCred = await seedCredential({
-				envVarKey: 'TRELLO_TOKEN',
-				value: 'trello-token-value',
-				name: 'Trello Token',
-			});
-			const integration = await seedIntegration({ category: 'pm', provider: 'trello' });
-			await seedIntegrationCredential({
-				integrationId: integration.id,
-				role: 'api_key',
-				credentialId: apiKeyCred.id,
-			});
-			await seedIntegrationCredential({
-				integrationId: integration.id,
-				role: 'token',
-				credentialId: tokenCred.id,
-			});
-
-			const creds = await getAllProjectCredentials('test-project');
-			expect(creds.TRELLO_API_KEY).toBe('trello-api-key-value');
-			expect(creds.TRELLO_TOKEN).toBe('trello-token-value');
-		});
-
-		it('integration credentials override org default credentials', async () => {
-			// Set up a default org credential for GITHUB_TOKEN_IMPLEMENTER
-			await seedCredential({
-				orgId: 'test-org',
-				envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
-				value: 'default-token',
-				isDefault: true,
-			});
-
-			// Set up a project-specific integration credential
-			const specificCred = await seedCredential({
-				envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
-				value: 'specific-token',
-				name: 'Specific Implementer Token',
-			});
-			const integration = await seedIntegration({ category: 'scm', provider: 'github' });
-			await seedIntegrationCredential({
-				integrationId: integration.id,
-				role: 'implementer_token',
-				credentialId: specificCred.id,
-			});
-
-			const creds = await getAllProjectCredentials('test-project');
-			// Integration credential should override org default
-			expect(creds.GITHUB_TOKEN_IMPLEMENTER).toBe('specific-token');
-		});
-
-		it('includes both org defaults and integration credentials merged', async () => {
-			// Org default for LLM
-			await seedCredential({
-				orgId: 'test-org',
-				envVarKey: 'OPENROUTER_API_KEY',
-				value: 'llm-key',
-				isDefault: true,
-			});
-
-			// Integration credentials for SCM
-			const ghCred = await seedCredential({
-				envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
-				value: 'gh-impl-token',
-				name: 'GH Implementer',
-			});
-			const integration = await seedIntegration({ category: 'scm', provider: 'github' });
-			await seedIntegrationCredential({
-				integrationId: integration.id,
-				role: 'implementer_token',
-				credentialId: ghCred.id,
-			});
-
-			const creds = await getAllProjectCredentials('test-project');
+			expect(creds.GITHUB_TOKEN_IMPLEMENTER).toBe('ghp-impl');
+			expect(creds.TRELLO_API_KEY).toBe('trello-key');
 			expect(creds.OPENROUTER_API_KEY).toBe('llm-key');
-			expect(creds.GITHUB_TOKEN_IMPLEMENTER).toBe('gh-impl-token');
 		});
 
 		it('throws when project not found', async () => {
@@ -148,39 +55,11 @@ describe('credentialResolution (integration)', () => {
 			// 64-char hex = 32-byte AES-256 key
 			vi.stubEnv('CREDENTIAL_MASTER_KEY', 'b'.repeat(64));
 
-			const { id } = await createCredential({
-				orgId: 'test-org',
-				name: 'Encrypted LLM Key',
-				envVarKey: 'OPENROUTER_API_KEY',
-				value: 'plaintext-llm-secret',
-				isDefault: true,
-			});
-
-			expect(id).toBeGreaterThan(0);
+			await writeProjectCredential('test-project', 'OPENROUTER_API_KEY', 'plaintext-llm-secret');
 
 			// getAllProjectCredentials should transparently decrypt
 			const creds = await getAllProjectCredentials('test-project');
 			expect(creds.OPENROUTER_API_KEY).toBe('plaintext-llm-secret');
-		});
-
-		it('round-trips integration credentials through encrypt/decrypt', async () => {
-			vi.stubEnv('CREDENTIAL_MASTER_KEY', 'c'.repeat(64));
-
-			const cred = await createCredential({
-				orgId: 'test-org',
-				name: 'Encrypted Trello Key',
-				envVarKey: 'TRELLO_API_KEY',
-				value: 'encrypted-api-key',
-			});
-			const integration = await seedIntegration({ category: 'pm', provider: 'trello' });
-			await seedIntegrationCredential({
-				integrationId: integration.id,
-				role: 'api_key',
-				credentialId: cred.id,
-			});
-
-			const creds = await getAllProjectCredentials('test-project');
-			expect(creds.TRELLO_API_KEY).toBe('encrypted-api-key');
 		});
 	});
 

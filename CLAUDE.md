@@ -130,7 +130,7 @@ Optional (infrastructure):
 - `SENTRY_RELEASE` - Release identifier for source maps (e.g., git SHA)
 - `SENTRY_TRACES_SAMPLE_RATE` - Trace sampling rate 0.0-1.0 (default: 0.1)
 
-**Project credentials** (`GITHUB_TOKEN_IMPLEMENTER`, `GITHUB_TOKEN_REVIEWER`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored in the `credentials` table (org-scoped, encrypted at rest when `CREDENTIAL_MASTER_KEY` is set). Integration-specific credentials (GitHub tokens, Trello keys, JIRA tokens) are linked to integrations via the `integration_credentials` join table with provider-defined roles. Non-integration credentials (LLM API keys) remain org-scoped defaults. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
+**Project credentials** (`GITHUB_TOKEN_IMPLEMENTER`, `GITHUB_TOKEN_REVIEWER`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored in the `project_credentials` table — project-scoped, encrypted at rest when `CREDENTIAL_MASTER_KEY` is set. All credentials (integration tokens and LLM keys) use the same `project_credentials` table keyed by `(projectId, envVarKey)`. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
 
 ## Database Configuration
 
@@ -141,9 +141,8 @@ CASCADE stores all project configuration in PostgreSQL (Supabase). The `config/p
 - `organizations` - Organization definitions (multi-tenant support)
 - `projects` - Per-project config (repo, base branch, budget, backend, and per-project overrides for model, iterations, timeouts, progress model/interval)
 - `project_integrations` - Integration configs per project with `category` (pm/scm/email), `provider` (trello/jira/github/imap/gmail), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
-- `integration_credentials` - Links integration roles to org-scoped credential rows (e.g., `api_key` → credential #5). Roles are provider-specific: trello has `api_key`/`token`, jira has `email`/`api_token`, github has `implementer_token`/`reviewer_token`
+- `project_credentials` - Project-scoped credentials keyed by `(projectId, envVarKey)`. Stores all credential types (GitHub tokens, Trello keys, JIRA tokens, LLM API keys). Encrypted at rest when `CREDENTIAL_MASTER_KEY` is set
 - `agent_configs` - Per-agent-type overrides (model, iterations, engine, max_concurrency), project-scoped only (`project_id NOT NULL`)
-- `credentials` - Org-scoped credentials (API keys, tokens)
 - `users` - Dashboard users (email, bcrypt password hash, org-scoped)
 - `sessions` - Session tokens for cookie-based auth (30-day expiry)
 
@@ -170,11 +169,11 @@ For databases initially set up with `drizzle-kit push` (no migration journal), r
 
 ### Credentials
 
-Org-scoped credentials are stored in the `credentials` table. Integration-specific credentials are linked via the `integration_credentials` join table with provider-defined roles.
+All credentials are project-scoped and stored in the `project_credentials` table keyed by `(projectId, envVarKey)`.
 
 ```bash
-npx tsx tools/manage-secrets.ts create <org-id> <env-var-key> <value> [--name "..."] [--default]
-npx tsx tools/manage-secrets.ts list <org-id>
+npx tsx tools/manage-secrets.ts set <project-id> <env-var-key> <value> [--name "..."]
+npx tsx tools/manage-secrets.ts list <project-id>
 npx tsx tools/manage-secrets.ts resolve <project-id>
 ```
 
@@ -182,9 +181,9 @@ npx tsx tools/manage-secrets.ts resolve <project-id>
 
 Credentials are encrypted using AES-256-GCM when `CREDENTIAL_MASTER_KEY` is set. Encryption is transparent — all callers (config provider, tRPC, CLI, tools) are unaffected.
 
-- **Algorithm**: AES-256-GCM with 12-byte random IV, 16-byte auth tag, `orgId` as AAD
+- **Algorithm**: AES-256-GCM with 12-byte random IV, 16-byte auth tag, `projectId` as AAD
 - **Storage format**: `enc:v1:<iv_hex>:<authTag_hex>:<ciphertext_hex>` in the existing `value` TEXT column
-- **Automatic encryption**: `createCredential()` and `updateCredential()` encrypt before DB write
+- **Automatic encryption**: `writeProjectCredential()` encrypts before DB write
 - **Automatic decryption**: All resolve/list functions decrypt on read
 - **Opt-in**: Without the env var, system works identically to plaintext (zero behavior change)
 
@@ -207,13 +206,11 @@ CASCADE uses two dedicated GitHub bot accounts per project to prevent feedback l
 - **Reviewer** (`GITHUB_TOKEN_REVIEWER`) — reviews PRs, can approve or request changes
   - Agents: `review`
 
-Both tokens are **required** for each project. Create org-scoped credentials, then link them to the project's SCM integration via the dashboard (Project Settings > Integrations > Source Control tab) or CLI:
+Both tokens are **required** for each project. Store them directly as project credentials via the dashboard (Project Settings > Credentials tab) or CLI:
 
 ```bash
-cascade credentials create --name "Implementer Bot" --key GITHUB_TOKEN_IMPLEMENTER --value ghp_aaa... --default
-cascade credentials create --name "Reviewer Bot" --key GITHUB_TOKEN_REVIEWER --value ghp_bbb... --default
-cascade projects integration-credential-set <project-id> --category scm --role implementer_token --credential-id 5
-cascade projects integration-credential-set <project-id> --category scm --role reviewer_token --credential-id 7
+cascade projects credentials-set <project-id> --key GITHUB_TOKEN_IMPLEMENTER --value ghp_aaa...
+cascade projects credentials-set <project-id> --key GITHUB_TOKEN_REVIEWER --value ghp_bbb...
 ```
 
 **Bot detection**: Both persona usernames are resolved at first use and cached. Trigger handlers use `isCascadeBot(login)` to check if an event came from either persona, preventing self-triggered loops.
@@ -229,11 +226,10 @@ CASCADE supports opt-in HMAC-SHA256 signature verification for GitHub webhook pa
 
 #### How it works
 
-1. Store a `GITHUB_WEBHOOK_SECRET` credential (any strong random string) as an integration credential with role `webhook_secret` on the project's GitHub SCM integration:
+1. Store a `GITHUB_WEBHOOK_SECRET` credential (any strong random string) as a project credential:
 
 ```bash
-cascade credentials create --name "GitHub Webhook Secret" --key GITHUB_WEBHOOK_SECRET --value <random-secret>
-cascade projects integration-credential-set <project-id> --category scm --role webhook_secret --credential-id <id>
+cascade projects credentials-set <project-id> --key GITHUB_WEBHOOK_SECRET --value <random-secret>
 ```
 
 2. Create (or recreate) the GitHub webhook — CASCADE will automatically include the secret in the Octokit `createWebhook` call:
@@ -412,12 +408,11 @@ Setup:
 # 1. On a machine with a browser:
 codex login
 
-# 2. Store the auth token in CASCADE:
-cascade credentials create \
-  --name "Codex Subscription Auth" \
+# 2. Store the auth token in CASCADE (project-scoped):
+cascade projects credentials-set <project-id> \
   --key CODEX_AUTH_JSON \
   --value "$(cat ~/.codex/auth.json)" \
-  --default
+  --name "Codex Subscription Auth"
 
 # 3. Set the engine (if not already done):
 cascade projects update <project-id> --agent-engine codex
@@ -550,8 +545,9 @@ cascade projects update <id> --model claude-sonnet-4-5-20250929
 cascade projects delete <id> --yes
 cascade projects integrations <id>
 cascade projects integration-set <id> --category pm --provider trello --config '{"boardId":"..."}'
-cascade projects integration-credential-set <id> --category scm --role implementer_token --credential-id 5
-cascade projects integration-credential-rm <id> --category scm --role implementer_token
+cascade projects credentials-list <id>
+cascade projects credentials-set <id> --key GITHUB_TOKEN_IMPLEMENTER --value ghp_aaa...
+cascade projects credentials-delete <id> --key GITHUB_TOKEN_IMPLEMENTER
 cascade projects trigger-discover --agent <agent-type>
 cascade projects trigger-list <id> [--agent <type>]
 cascade projects trigger-set <id> --agent <type> --event <event> [--enable|--disable] [--params JSON]
@@ -561,13 +557,6 @@ cascade users list
 cascade users create --email X --password Y --name Z [--role member|admin|superadmin]
 cascade users update <id> [--name Z] [--email X] [--role member|admin|superadmin] [--password Y]
 cascade users delete <id> --yes
-
-# Credentials
-cascade credentials list
-cascade credentials create --name "Implementer Bot" --key GITHUB_TOKEN_IMPLEMENTER --value ghp_aaa... [--default]
-cascade credentials create --name "Reviewer Bot" --key GITHUB_TOKEN_REVIEWER --value ghp_bbb... [--default]
-cascade credentials update <id> --value new-secret
-cascade credentials delete <id> --yes
 
 # Organization
 cascade org show
@@ -603,7 +592,6 @@ src/cli/dashboard/
 ├── runs/             # 6 commands
 ├── projects/         # 13 commands
 ├── users/            # 4 commands
-├── credentials/      # 4 commands
 ├── org/              # 2 commands
 ├── agents/           # 4 commands
 └── webhooks/         # 3 commands

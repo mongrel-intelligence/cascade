@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+	listProjectCredentials,
+	writeProjectCredential,
+} from '../../../src/db/repositories/credentialsRepository.js';
+import {
 	createAgentConfig,
 	createProject,
 	deleteAgentConfig,
@@ -9,11 +13,9 @@ import {
 	getProjectFull,
 	listAgentConfigs,
 	listAllOrganizations,
-	listIntegrationCredentials,
 	listProjectIntegrations,
 	listProjectsFull,
 	removeIntegrationCredential,
-	setIntegrationCredential,
 	updateAgentConfig,
 	updateOrganization,
 	updateProject,
@@ -21,7 +23,7 @@ import {
 	upsertProjectIntegration,
 } from '../../../src/db/repositories/settingsRepository.js';
 import { truncateAll } from '../helpers/db.js';
-import { seedCredential, seedIntegration, seedOrg, seedProject } from '../helpers/seed.js';
+import { seedIntegration, seedOrg, seedProject } from '../helpers/seed.js';
 
 describe('settingsRepository (integration)', () => {
 	beforeEach(async () => {
@@ -221,48 +223,43 @@ describe('settingsRepository (integration)', () => {
 	});
 
 	// =========================================================================
-	// Integration Credentials
+	// Integration Credentials (via project_credentials)
 	// =========================================================================
 
-	describe('listIntegrationCredentials / setIntegrationCredential / removeIntegrationCredential', () => {
-		it('sets and lists integration credentials', async () => {
+	describe('removeIntegrationCredential', () => {
+		it('removes a project credential by integration role', async () => {
 			const integration = await seedIntegration({ category: 'scm', provider: 'github' });
-			const cred = await seedCredential({
-				envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
-				value: 'ghp_123',
-			});
+			// Write the credential directly to project_credentials
+			await writeProjectCredential(
+				'test-project',
+				'GITHUB_TOKEN_IMPLEMENTER',
+				'ghp_123',
+				'Implementer Token',
+			);
 
-			await setIntegrationCredential(integration.id, 'implementer_token', cred.id);
+			// Verify it exists
+			const credsBeforeRemoval = await listProjectCredentials('test-project');
+			expect(
+				credsBeforeRemoval.find((c) => c.envVarKey === 'GITHUB_TOKEN_IMPLEMENTER'),
+			).toBeDefined();
 
-			const creds = await listIntegrationCredentials(integration.id);
-			expect(creds).toHaveLength(1);
-			expect(creds[0].role).toBe('implementer_token');
-			expect(creds[0].credentialId).toBe(cred.id);
-			expect(creds[0].credentialName).toBe('Test Key');
-		});
-
-		it('upserts an integration credential (replace existing role)', async () => {
-			const integration = await seedIntegration({ category: 'scm', provider: 'github' });
-			const cred1 = await seedCredential({ envVarKey: 'GH_1', value: 'v1', name: 'Cred 1' });
-			const cred2 = await seedCredential({ envVarKey: 'GH_2', value: 'v2', name: 'Cred 2' });
-
-			await setIntegrationCredential(integration.id, 'implementer_token', cred1.id);
-			await setIntegrationCredential(integration.id, 'implementer_token', cred2.id);
-
-			const creds = await listIntegrationCredentials(integration.id);
-			expect(creds).toHaveLength(1);
-			expect(creds[0].credentialId).toBe(cred2.id);
-		});
-
-		it('removes an integration credential', async () => {
-			const integration = await seedIntegration({ category: 'scm', provider: 'github' });
-			const cred = await seedCredential({ envVarKey: 'GH_KEY', value: 'ghp_abc' });
-
-			await setIntegrationCredential(integration.id, 'implementer_token', cred.id);
+			// Remove via integration role
 			await removeIntegrationCredential(integration.id, 'implementer_token');
 
-			const creds = await listIntegrationCredentials(integration.id);
-			expect(creds).toHaveLength(0);
+			// Should be removed from project_credentials
+			const credsAfterRemoval = await listProjectCredentials('test-project');
+			expect(
+				credsAfterRemoval.find((c) => c.envVarKey === 'GITHUB_TOKEN_IMPLEMENTER'),
+			).toBeUndefined();
+		});
+
+		it('does nothing when no credential exists for the role', async () => {
+			const integration = await seedIntegration({ category: 'scm', provider: 'github' });
+
+			// Should not throw even when credential doesn't exist
+			await expect(
+				removeIntegrationCredential(integration.id, 'implementer_token'),
+			).resolves.toBeUndefined();
 		});
 	});
 

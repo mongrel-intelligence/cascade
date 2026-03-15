@@ -133,7 +133,7 @@ All project-level credentials (GitHub tokens, PM keys, LLM API keys) are stored 
 
 **Agent engines** — Agents run through a shared execution lifecycle with a pluggable engine registry. Default engine is `llmist` (supports OpenRouter, Anthropic, OpenAI). Alternatives: `claude-code` (Claude Code SDK), `codex` (OpenAI Codex CLI), `opencode` (OpenCode server).
 
-**Credential management** — All secrets are stored in the `credentials` table, scoped to an organization. Optional AES-256-GCM encryption via `CREDENTIAL_MASTER_KEY`.
+**Credential management** — All secrets are stored in the `project_credentials` table, scoped to a project. Optional AES-256-GCM encryption via `CREDENTIAL_MASTER_KEY`.
 
 **`.cascade/` directory** — Each target repository can include a `.cascade/` directory with hooks that control how the agent sets up the project, lints after edits, and runs tests. See **[`.cascade/` Directory Guide](./docs/cascade-directory.md)**.
 

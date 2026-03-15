@@ -288,6 +288,13 @@
 			"when": 1775000000000,
 			"tag": "0040_project_scoped_credentials",
 			"breakpoints": false
+		},
+		{
+			"idx": 41,
+			"version": "7",
+			"when": 1776000000000,
+			"tag": "0041_drop_legacy_org_credentials",
+			"breakpoints": false
 		}
 	]
 }
