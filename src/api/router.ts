@@ -2,7 +2,6 @@ import { agentConfigsRouter } from './routers/agentConfigs.js';
 import { agentDefinitionsRouter } from './routers/agentDefinitions.js';
 import { agentTriggerConfigsRouter } from './routers/agentTriggerConfigs.js';
 import { authRouter } from './routers/auth.js';
-import { credentialsRouter } from './routers/credentials.js';
 import { integrationsDiscoveryRouter } from './routers/integrationsDiscovery.js';
 import { organizationRouter } from './routers/organization.js';
 import { projectsRouter } from './routers/projects.js';
@@ -20,7 +19,6 @@ export const appRouter = router({
 	runs: runsRouter,
 	projects: projectsRouter,
 	organization: organizationRouter,
-	credentials: credentialsRouter,
 	agentConfigs: agentConfigsRouter,
 	agentDefinitions: agentDefinitionsRouter,
 	agentTriggerConfigs: agentTriggerConfigsRouter,

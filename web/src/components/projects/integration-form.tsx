@@ -46,7 +46,9 @@ function GitHubCredentialSlots({ projectId }: { projectId: string }) {
 		}
 		setVerifyingRoles((prev) => ({ ...prev, [role]: true }));
 		try {
-			const result = await trpcClient.credentials.verifyGithubToken.mutate({ token: rawValue });
+			const result = await trpcClient.integrationsDiscovery.verifyGithubToken.mutate({
+				token: rawValue,
+			});
 			setVerifiedLogins((prev) => ({ ...prev, [role]: result.login }));
 			setVerifyErrors((prev) => ({ ...prev, [role]: null }));
 		} catch (err) {
