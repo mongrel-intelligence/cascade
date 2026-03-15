@@ -4,6 +4,7 @@
  */
 
 import { logger } from '../utils/logging.js';
+import type { AdfMediaReference } from './jira/adf.js';
 import type { MediaReference } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -278,4 +279,103 @@ export async function downloadMedia(
  */
 export function mediaToBase64DataUri(buffer: Buffer, mimeType: string): string {
 	return `data:${mimeType};base64,${buffer.toString('base64')}`;
+}
+
+// ---------------------------------------------------------------------------
+// JIRA media URL resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal shape of a JIRA attachment as returned by the REST API.
+ * Only the fields needed for URL resolution are required.
+ */
+export interface JiraAttachmentLike {
+	/** JIRA attachment ID */
+	id?: string;
+	/** Attachment filename */
+	filename?: string;
+	/** Download URL of the attachment content */
+	content?: string;
+	/** MIME type reported by JIRA */
+	mimeType?: string;
+}
+
+/**
+ * Resolves a list of ADF media node references to actual download URLs by
+ * matching against the JIRA issue's attachment list.
+ *
+ * JIRA's `media` ADF nodes reference internal media by an opaque ID stored in
+ * `attrs.id`. The corresponding download URL lives in the issue's
+ * `fields.attachment` array. This function bridges the two by:
+ *
+ * 1. Building a lookup map from attachment ID → attachment record.
+ * 2. For each {@link AdfMediaReference}, finding the attachment whose `id`
+ *    matches `mediaId`.
+ * 3. Returning a {@link MediaReference} with the attachment's download URL and
+ *    MIME type.
+ *
+ * References that cannot be matched (e.g. external media not backed by an
+ * attachment) are silently skipped with a debug-level log.
+ *
+ * Results are capped at {@link MAX_IMAGES_PER_WORK_ITEM}.
+ *
+ * @param refs        - ADF media node references produced by `extractAdfMediaNodes`.
+ * @param attachments - JIRA attachment records from `fields.attachment`.
+ * @param source      - Whether the media came from a description or a comment.
+ * @returns Resolved {@link MediaReference} objects (at most `MAX_IMAGES_PER_WORK_ITEM`).
+ *
+ * @example
+ * ```ts
+ * const refs = extractAdfMediaNodes(fields.description);
+ * const mediaRefs = resolveJiraMediaUrls(refs, fields.attachment ?? [], 'description');
+ * ```
+ */
+export function resolveJiraMediaUrls(
+	refs: AdfMediaReference[],
+	attachments: JiraAttachmentLike[],
+	source: 'description' | 'comment' = 'description',
+): MediaReference[] {
+	if (refs.length === 0 || attachments.length === 0) return [];
+
+	// Build a lookup map: attachment ID → attachment record
+	const attachmentById = new Map<string, JiraAttachmentLike>();
+	for (const att of attachments) {
+		if (att.id) {
+			attachmentById.set(att.id, att);
+		}
+	}
+
+	const results: MediaReference[] = [];
+
+	for (const ref of refs) {
+		if (results.length >= MAX_IMAGES_PER_WORK_ITEM) break;
+
+		const attachment = attachmentById.get(ref.mediaId);
+		if (!attachment) {
+			logger.debug('resolveJiraMediaUrls: no attachment found for media ID', {
+				mediaId: ref.mediaId,
+			});
+			continue;
+		}
+
+		const url = attachment.content;
+		if (!url) {
+			logger.debug('resolveJiraMediaUrls: attachment has no content URL', {
+				mediaId: ref.mediaId,
+				attachmentId: attachment.id,
+			});
+			continue;
+		}
+
+		const mimeType = attachment.mimeType ?? mimeTypeFromUrl(url);
+
+		results.push({
+			url,
+			mimeType,
+			altText: ref.altText || attachment.filename || undefined,
+			source,
+		});
+	}
+
+	return results;
 }

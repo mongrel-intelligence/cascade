@@ -6,6 +6,7 @@
 
 import { jiraClient } from '../../jira/client.js';
 import { logger } from '../../utils/logging.js';
+import { resolveJiraMediaUrls } from '../media.js';
 import type {
 	Attachment,
 	Checklist,
@@ -17,7 +18,7 @@ import type {
 	WorkItemComment,
 	WorkItemLabel,
 } from '../types.js';
-import { adfToPlainText, markdownToAdf } from './adf.js';
+import { adfToPlainText, extractAdfMediaNodes, markdownToAdf } from './adf.js';
 
 interface JiraConfig {
 	projectKey: string;
@@ -91,6 +92,14 @@ export class JiraPMProvider implements PMProvider {
 	async getWorkItem(id: string): Promise<WorkItem> {
 		const issue = await jiraClient.getIssue(id);
 		const fields = issue.fields ?? {};
+
+		const attachments = (fields as { attachment?: JiraAttachment[] }).attachment ?? [];
+		const mediaRefs = extractAdfMediaNodes(fields.description);
+		const inlineMedia =
+			mediaRefs.length > 0
+				? resolveJiraMediaUrls(mediaRefs, attachments, 'description')
+				: undefined;
+
 		return {
 			id: issue.key ?? id,
 			title: (fields.summary as string) ?? '',
@@ -103,6 +112,7 @@ export class JiraPMProvider implements PMProvider {
 					name: l,
 				}),
 			),
+			...(inlineMedia !== undefined && inlineMedia.length > 0 ? { inlineMedia } : {}),
 		};
 	}
 
