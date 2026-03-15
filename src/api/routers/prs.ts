@@ -44,9 +44,20 @@ export const prsRouter = router({
 		}),
 
 	workStats: protectedProcedure
-		.input(z.object({ projectId: z.string() }))
+		.input(
+			z.object({
+				projectId: z.string(),
+				dateFrom: z.string().optional(),
+				agentType: z.string().optional(),
+				status: z.string().optional(),
+			}),
+		)
 		.query(async ({ ctx, input }) => {
 			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
-			return getProjectWorkStats(input.projectId);
+			return getProjectWorkStats(input.projectId, {
+				dateFrom: input.dateFrom ? new Date(input.dateFrom) : undefined,
+				agentType: input.agentType,
+				status: input.status,
+			});
 		}),
 });

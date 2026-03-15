@@ -578,14 +578,37 @@ export interface ProjectWorkStat {
 	startedAt: Date | null;
 }
 
+export interface GetProjectWorkStatsOptions {
+	dateFrom?: Date;
+	agentType?: string;
+	status?: string;
+}
+
 /**
  * Returns lightweight per-run stats for a project's completed/failed/timed_out runs,
- * ordered by startedAt DESC. Used for client-side chart aggregation on the Work tab.
+ * ordered by startedAt DESC. Used for client-side chart aggregation on the Stats tab.
  *
  * Limits to the 500 most-recent runs to avoid performance issues on large projects.
+ * Optional filters: dateFrom (startedAt >= dateFrom), agentType, status.
  */
-export async function getProjectWorkStats(projectId: string): Promise<ProjectWorkStat[]> {
+export async function getProjectWorkStats(
+	projectId: string,
+	opts?: GetProjectWorkStatsOptions,
+): Promise<ProjectWorkStat[]> {
 	const db = getDb();
+	const conditions: SQL[] = [
+		eq(agentRuns.projectId, projectId),
+		inArray(agentRuns.status, ['completed', 'failed', 'timed_out']),
+	];
+	if (opts?.dateFrom) {
+		conditions.push(gte(agentRuns.startedAt, opts.dateFrom));
+	}
+	if (opts?.agentType) {
+		conditions.push(eq(agentRuns.agentType, opts.agentType));
+	}
+	if (opts?.status) {
+		conditions.push(eq(agentRuns.status, opts.status));
+	}
 	return db
 		.select({
 			agentType: agentRuns.agentType,
@@ -596,12 +619,7 @@ export async function getProjectWorkStats(projectId: string): Promise<ProjectWor
 			startedAt: agentRuns.startedAt,
 		})
 		.from(agentRuns)
-		.where(
-			and(
-				eq(agentRuns.projectId, projectId),
-				inArray(agentRuns.status, ['completed', 'failed', 'timed_out']),
-			),
-		)
+		.where(and(...conditions))
 		.orderBy(desc(agentRuns.startedAt))
 		.limit(500);
 }
