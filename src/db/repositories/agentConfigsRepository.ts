@@ -20,6 +20,8 @@ export async function createAgentConfig(data: {
 	agentEngine?: string | null;
 	engineSettings?: EngineSettings | null;
 	maxConcurrency?: number | null;
+	systemPrompt?: string | null;
+	taskPrompt?: string | null;
 }) {
 	const db = getDb();
 	const [row] = await db
@@ -32,6 +34,8 @@ export async function createAgentConfig(data: {
 			agentEngine: data.agentEngine,
 			agentEngineSettings: data.engineSettings,
 			maxConcurrency: data.maxConcurrency,
+			systemPrompt: data.systemPrompt,
+			taskPrompt: data.taskPrompt,
 		})
 		.returning({ id: agentConfigs.id });
 	return row;
@@ -46,6 +50,8 @@ export async function updateAgentConfig(
 		agentEngine?: string | null;
 		engineSettings?: EngineSettings | null;
 		maxConcurrency?: number | null;
+		systemPrompt?: string | null;
+		taskPrompt?: string | null;
 	},
 ) {
 	const db = getDb();
@@ -63,6 +69,51 @@ export async function updateAgentConfig(
 export async function deleteAgentConfig(id: number) {
 	const db = getDb();
 	await db.delete(agentConfigs).where(eq(agentConfigs.id, id));
+}
+
+/**
+ * Resolve system_prompt and task_prompt for a (projectId, agentType) pair.
+ * Returns null for each field if no project-scoped config with that prompt is found.
+ *
+ * Results are cached for 5 seconds to avoid repeated DB queries on
+ * sequential webhook batches.
+ */
+const AGENT_CONFIG_PROMPTS_TTL_MS = 5_000;
+const agentConfigPromptsCache = new Map<
+	string,
+	{ value: { systemPrompt: string | null; taskPrompt: string | null }; expiresAt: number }
+>();
+
+export async function getAgentConfigPrompts(
+	projectId: string,
+	agentType: string,
+): Promise<{ systemPrompt: string | null; taskPrompt: string | null }> {
+	const cacheKey = `${projectId}:${agentType}`;
+	const cached = agentConfigPromptsCache.get(cacheKey);
+	if (cached && Date.now() < cached.expiresAt) {
+		return cached.value;
+	}
+
+	const db = getDb();
+
+	const [projectConfig] = await db
+		.select({
+			systemPrompt: agentConfigs.systemPrompt,
+			taskPrompt: agentConfigs.taskPrompt,
+		})
+		.from(agentConfigs)
+		.where(and(eq(agentConfigs.projectId, projectId), eq(agentConfigs.agentType, agentType)))
+		.limit(1);
+
+	const result = {
+		systemPrompt: projectConfig?.systemPrompt ?? null,
+		taskPrompt: projectConfig?.taskPrompt ?? null,
+	};
+	agentConfigPromptsCache.set(cacheKey, {
+		value: result,
+		expiresAt: Date.now() + AGENT_CONFIG_PROMPTS_TTL_MS,
+	});
+	return result;
 }
 
 /**

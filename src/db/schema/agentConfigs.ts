@@ -16,6 +16,8 @@ export const agentConfigs = pgTable(
 		agentEngine: text('agent_engine'),
 		agentEngineSettings: jsonb('agent_engine_settings').$type<EngineSettings>(),
 		maxConcurrency: integer('max_concurrency'),
+		systemPrompt: text('system_prompt'),
+		taskPrompt: text('task_prompt'),
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')
 			.defaultNow()

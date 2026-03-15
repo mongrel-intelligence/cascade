@@ -316,6 +316,13 @@
 			"when": 1779000000000,
 			"tag": "0044_agent_config_engine_settings",
 			"breakpoints": false
+		},
+		{
+			"idx": 45,
+			"version": "7",
+			"when": 1780000000000,
+			"tag": "0045_agent_config_prompts",
+			"breakpoints": false
 		}
 	]
 }

@@ -9,6 +9,7 @@ import { getDb } from '../../../../src/db/client.js';
 import {
 	createAgentConfig,
 	deleteAgentConfig,
+	getAgentConfigPrompts,
 	getMaxConcurrency,
 	listAgentConfigs,
 	updateAgentConfig,
@@ -71,6 +72,25 @@ describe('agentConfigsRepository', () => {
 				}),
 			);
 		});
+
+		it('persists systemPrompt and taskPrompt when provided', async () => {
+			mockDb.chain.returning.mockResolvedValueOnce([{ id: 44 }]);
+
+			const result = await createAgentConfig({
+				projectId: 'proj-1',
+				agentType: 'implementation',
+				systemPrompt: 'You are a helpful assistant.',
+				taskPrompt: 'Focus on clean code.',
+			});
+
+			expect(result).toEqual({ id: 44 });
+			expect(mockDb.chain.values).toHaveBeenCalledWith(
+				expect.objectContaining({
+					systemPrompt: 'You are a helpful assistant.',
+					taskPrompt: 'Focus on clean code.',
+				}),
+			);
+		});
 	});
 
 	describe('updateAgentConfig', () => {
@@ -106,6 +126,20 @@ describe('agentConfigsRepository', () => {
 			const setArg = mockDb.chain.set.mock.calls[0][0];
 			expect(Object.hasOwn(setArg, 'agentEngineSettings')).toBe(false);
 		});
+
+		it('persists systemPrompt and taskPrompt when provided', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await updateAgentConfig(42, {
+				systemPrompt: 'Updated system prompt.',
+				taskPrompt: 'Updated task prompt.',
+			});
+
+			const setArg = mockDb.chain.set.mock.calls[0][0];
+			expect(setArg.systemPrompt).toBe('Updated system prompt.');
+			expect(setArg.taskPrompt).toBe('Updated task prompt.');
+			expect(setArg.updatedAt).toBeInstanceOf(Date);
+		});
 	});
 
 	describe('deleteAgentConfig', () => {
@@ -138,6 +172,37 @@ describe('agentConfigsRepository', () => {
 
 			const result = await getMaxConcurrency('p-proj-unique-2', 'review');
 			expect(result).toBeNull();
+		});
+	});
+
+	describe('getAgentConfigPrompts', () => {
+		it('returns systemPrompt and taskPrompt when set', async () => {
+			mockDb.chain.limit.mockResolvedValueOnce([
+				{ systemPrompt: 'Custom system prompt.', taskPrompt: 'Custom task prompt.' },
+			]);
+
+			const result = await getAgentConfigPrompts('prompts-proj-1', 'implementation');
+
+			expect(result).toEqual({
+				systemPrompt: 'Custom system prompt.',
+				taskPrompt: 'Custom task prompt.',
+			});
+		});
+
+		it('returns null for both prompts when no config found', async () => {
+			mockDb.chain.limit.mockResolvedValueOnce([]);
+
+			const result = await getAgentConfigPrompts('prompts-proj-unique-1', 'review');
+
+			expect(result).toEqual({ systemPrompt: null, taskPrompt: null });
+		});
+
+		it('returns null for individual prompts when not set', async () => {
+			mockDb.chain.limit.mockResolvedValueOnce([{ systemPrompt: null, taskPrompt: null }]);
+
+			const result = await getAgentConfigPrompts('prompts-proj-unique-2', 'splitting');
+
+			expect(result).toEqual({ systemPrompt: null, taskPrompt: null });
 		});
 	});
 });
