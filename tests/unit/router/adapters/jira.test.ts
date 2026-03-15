@@ -34,6 +34,10 @@ vi.mock('../../../../src/router/platformClients/index.js', () => ({
 		auth: 'base64stuff',
 	}),
 }));
+vi.mock('../../../../src/utils/runLink.js', () => ({
+	buildWorkItemRunsLink: vi.fn().mockReturnValue(null),
+	getDashboardUrl: vi.fn().mockReturnValue(null),
+}));
 vi.mock('../../../../src/jira/client.js', () => ({
 	withJiraCredentials: vi.fn().mockImplementation((_creds: unknown, fn: () => unknown) => fn()),
 }));
@@ -42,8 +46,10 @@ import { postJiraAck, resolveJiraBotAccountId } from '../../../../src/router/ack
 import { JiraRouterAdapter } from '../../../../src/router/adapters/jira.js';
 import { loadProjectConfig } from '../../../../src/router/config.js';
 import type { RouterProjectConfig } from '../../../../src/router/config.js';
+import { resolveJiraCredentials } from '../../../../src/router/platformClients/index.js';
 import { sendAcknowledgeReaction } from '../../../../src/router/reactions.js';
 import type { TriggerRegistry } from '../../../../src/triggers/registry.js';
+import { buildWorkItemRunsLink, getDashboardUrl } from '../../../../src/utils/runLink.js';
 
 const mockProject: RouterProjectConfig = {
 	id: 'p1',
@@ -263,6 +269,114 @@ describe('JiraRouterAdapter', () => {
 			expect(job.type).toBe('jira');
 			expect((job as { issueKey: string }).issueKey).toBe('PROJ-1');
 			expect((job as { ackCommentId?: string }).ackCommentId).toBeUndefined();
+		});
+
+		it('includes ackCommentId when ackResult is provided', () => {
+			const result = { agentType: 'implementation', agentInput: {} };
+			const job = adapter.buildJob(
+				{
+					projectIdentifier: 'PROJ',
+					eventType: 'jira:issue_updated',
+					workItemId: 'PROJ-1',
+					isCommentEvent: false,
+					// @ts-expect-error extended field
+					issueKey: 'PROJ-1',
+					webhookEvent: 'jira:issue_updated',
+					projectId: 'p1',
+				},
+				{},
+				mockProject,
+				result as never,
+				{ commentId: 'jira-comment-789', message: 'Working...' },
+			);
+			expect((job as { ackCommentId?: string }).ackCommentId).toBe('jira-comment-789');
+		});
+	});
+
+	describe('dispatchWithCredentials - additional paths', () => {
+		it('returns null when JIRA credentials are missing', async () => {
+			vi.mocked(resolveJiraCredentials).mockResolvedValueOnce(null);
+
+			const result = await adapter.dispatchWithCredentials(
+				{
+					projectIdentifier: 'PROJ',
+					eventType: 'jira:issue_updated',
+					isCommentEvent: false,
+					// @ts-expect-error extended field
+					projectId: 'p1',
+				},
+				{},
+				mockProject,
+				mockTriggerRegistry,
+			);
+			expect(result).toBeNull();
+			expect(mockTriggerRegistry.dispatch).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('postAck - additional paths', () => {
+		it('returns undefined when postJiraAck returns null (silently)', async () => {
+			vi.mocked(postJiraAck).mockResolvedValue(null);
+			const ackResult = await adapter.postAck(
+				{
+					projectIdentifier: 'PROJ',
+					eventType: 'jira:issue_updated',
+					workItemId: 'PROJ-1',
+					isCommentEvent: false,
+					// @ts-expect-error extended field
+					issueKey: 'PROJ-1',
+				},
+				{},
+				mockProject,
+				'implementation',
+			);
+			expect(ackResult).toBeUndefined();
+		});
+
+		it('appends run link footer when runLinksEnabled and dashboardUrl available', async () => {
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [mockProject],
+				fullProjects: [{ id: 'p1', runLinksEnabled: true } as never],
+			});
+			vi.mocked(getDashboardUrl).mockReturnValue('https://dashboard.example.com');
+			vi.mocked(buildWorkItemRunsLink).mockReturnValue(
+				'\n[View runs](https://dashboard.example.com/runs)',
+			);
+			vi.mocked(postJiraAck).mockResolvedValue('jira-comment-id');
+
+			const ackResult = await adapter.postAck(
+				{
+					projectIdentifier: 'PROJ',
+					eventType: 'jira:issue_updated',
+					workItemId: 'PROJ-1',
+					isCommentEvent: false,
+					// @ts-expect-error extended field
+					issueKey: 'PROJ-1',
+				},
+				{},
+				mockProject,
+				'implementation',
+			);
+			expect(buildWorkItemRunsLink).toHaveBeenCalled();
+			expect(ackResult?.message).toContain('[View runs]');
+		});
+
+		it('handles postJiraAck error gracefully (returns undefined)', async () => {
+			vi.mocked(postJiraAck).mockRejectedValue(new Error('API error'));
+			const ackResult = await adapter.postAck(
+				{
+					projectIdentifier: 'PROJ',
+					eventType: 'jira:issue_updated',
+					workItemId: 'PROJ-1',
+					isCommentEvent: false,
+					// @ts-expect-error extended field
+					issueKey: 'PROJ-1',
+				},
+				{},
+				mockProject,
+				'implementation',
+			);
+			expect(ackResult).toBeUndefined();
 		});
 	});
 });
