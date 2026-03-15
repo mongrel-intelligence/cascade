@@ -424,16 +424,6 @@ function SCMTab({
 // Helpers
 // ============================================================================
 
-function buildCredentialMap(
-	data: Array<{ role: string; credentialId: number }> | undefined,
-): Map<string, number> {
-	const map = new Map<string, number>();
-	for (const c of data ?? []) {
-		map.set(c.role, c.credentialId);
-	}
-	return map;
-}
-
 function findIntegrationByCategory(
 	integrations: unknown[],
 	category: string,
@@ -476,9 +466,6 @@ function TabButton({
 
 export function IntegrationForm({ projectId }: { projectId: string }) {
 	const integrationsQuery = useQuery(trpc.projects.integrations.list.queryOptions({ projectId }));
-	const pmCredsQuery = useQuery(
-		trpc.projects.integrationCredentials.list.queryOptions({ projectId, category: 'pm' }),
-	);
 	const projectQuery = useQuery(trpc.projects.getById.queryOptions({ id: projectId }));
 	const [activeTab, setActiveTab] = useState<IntegrationCategory>('pm');
 
@@ -489,10 +476,6 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 	const integrations = integrationsQuery.data ?? [];
 	const pmIntegration = findIntegrationByCategory(integrations, 'pm');
 	const pmProvider = (pmIntegration?.provider as string) ?? 'trello';
-
-	const pmCredMap = buildCredentialMap(
-		pmCredsQuery.data as Array<{ role: string; credentialId: number }>,
-	);
 
 	return (
 		<div className="max-w-2xl space-y-6">
@@ -516,7 +499,7 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 					projectId={projectId}
 					initialProvider={pmProvider}
 					initialConfig={pmIntegration?.config as Record<string, unknown>}
-					initialCredentials={pmCredMap}
+					initialCredentials={new Map()}
 				/>
 			)}
 

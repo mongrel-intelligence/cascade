@@ -22,7 +22,7 @@ import { ReviewRequestedTrigger } from '../../src/triggers/github/review-request
 import type { TriggerContext } from '../../src/types/index.js';
 import { assertFound } from './helpers/assert.js';
 import { truncateAll } from './helpers/db.js';
-import { seedOrg, seedProject, seedTriggerConfig } from './helpers/seed.js';
+import { seedIntegration, seedOrg, seedProject, seedTriggerConfig } from './helpers/seed.js';
 
 // ============================================================================
 // Helpers
