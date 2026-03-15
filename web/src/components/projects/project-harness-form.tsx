@@ -121,7 +121,7 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 
 	const credentials = credentialsQuery.data ?? [];
 
-	// Show engine secrets filtered by selected engine; show all when none selected
+	// Show engine secrets filtered by selected engine; show none when no engine selected
 	const visibleSecrets = effectiveEngineId
 		? ENGINE_SECRETS.filter((s) => !s.engines || s.engines.includes(effectiveEngineId))
 		: [];
