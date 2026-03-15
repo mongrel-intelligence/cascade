@@ -53,8 +53,10 @@ prompts:
   taskPrompt: |
     A Pipeline Snapshot has been pre-loaded into your context with the current state of all pipeline lists (BACKLOG, TODO, IN_PROGRESS, IN_REVIEW, DONE, MERGED).
 
-    1. Review the pre-loaded Pipeline Snapshot to check if the active pipeline (TODO, IN PROGRESS, IN REVIEW) is empty.
-    2. If empty: use the pre-loaded BACKLOG data from the snapshot to select the best unblocked item and move it to TODO.
-    3. If not empty: exit immediately without taking action.
+    The pipeline capacity limit is <%= it.maxInFlightItems ?? 1 %> item(s).
 
-hint: Check pipeline first. Only act if TODO, IN PROGRESS, and IN REVIEW are all empty.
+    1. Review the pre-loaded Pipeline Snapshot and count items currently in the active pipeline (TODO + IN PROGRESS + IN REVIEW).
+    2. If the count is below the capacity limit: use the pre-loaded BACKLOG data from the snapshot to select the best unblocked item(s) and move them to TODO (up to the remaining capacity).
+    3. If already at or above capacity: exit immediately without taking action.
+
+hint: Only act if pipeline has capacity (items in TODO + IN PROGRESS + IN REVIEW < maxInFlightItems).

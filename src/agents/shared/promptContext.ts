@@ -64,6 +64,7 @@ export function buildPromptContext(
 		...listIds,
 		pmType: pmProvider?.type,
 		...terminology,
+		maxInFlightItems: project.maxInFlightItems ?? 1,
 		...(prContext && {
 			prNumber: prContext.prNumber,
 			prBranch: prContext.prBranch,
