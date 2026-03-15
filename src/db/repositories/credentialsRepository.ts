@@ -145,6 +145,20 @@ export async function listProjectCredentials(
 	}));
 }
 
+/**
+ * List credential metadata (key + name) without reading or decrypting values.
+ * Used as a fallback when decryption fails (missing/wrong master key).
+ */
+export async function listProjectCredentialsMeta(
+	projectId: string,
+): Promise<{ envVarKey: string; name: string | null }[]> {
+	const db = getDb();
+	return db
+		.select({ envVarKey: projectCredentials.envVarKey, name: projectCredentials.name })
+		.from(projectCredentials)
+		.where(eq(projectCredentials.projectId, projectId));
+}
+
 // ============================================================================
 // Integration metadata queries
 // ============================================================================

@@ -31,13 +31,20 @@ vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
 }));
 
 const mockListProjectCredentials = vi.fn();
+const mockListProjectCredentialsMeta = vi.fn();
 const mockWriteProjectCredential = vi.fn();
 const mockDeleteProjectCredential = vi.fn();
 
 vi.mock('../../../../src/db/repositories/credentialsRepository.js', () => ({
 	listProjectCredentials: (...args: unknown[]) => mockListProjectCredentials(...args),
+	listProjectCredentialsMeta: (...args: unknown[]) => mockListProjectCredentialsMeta(...args),
 	writeProjectCredential: (...args: unknown[]) => mockWriteProjectCredential(...args),
 	deleteProjectCredential: (...args: unknown[]) => mockDeleteProjectCredential(...args),
+}));
+
+const mockCaptureException = vi.fn();
+vi.mock('../../../../src/sentry.js', () => ({
+	captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
 // Mock getDb for ownership checks
@@ -436,6 +443,52 @@ describe('projectsRouter', () => {
 
 				await expect(caller.credentials.list({ projectId: 'p1' })).rejects.toMatchObject({
 					code: 'NOT_FOUND',
+				});
+			});
+
+			it('falls back to meta-only query when decryption fails', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				mockListProjectCredentials.mockRejectedValueOnce(
+					new Error('Decryption failed: CREDENTIAL_MASTER_KEY not set'),
+				);
+				mockListProjectCredentialsMeta.mockResolvedValueOnce([
+					{ envVarKey: 'GITHUB_TOKEN_IMPLEMENTER', name: 'GH Implementer' },
+					{ envVarKey: 'OPENROUTER_API_KEY', name: null },
+				]);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				const result = await caller.credentials.list({ projectId: 'p1' });
+
+				expect(result).toEqual([
+					{
+						envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
+						name: 'GH Implementer',
+						isConfigured: true,
+						maskedValue: '****',
+					},
+					{
+						envVarKey: 'OPENROUTER_API_KEY',
+						name: null,
+						isConfigured: true,
+						maskedValue: '****',
+					},
+				]);
+				expect(mockListProjectCredentialsMeta).toHaveBeenCalledWith('p1');
+			});
+
+			it('reports decryption failure to Sentry', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				const decryptionError = new Error('bad key');
+				mockListProjectCredentials.mockRejectedValueOnce(decryptionError);
+				mockListProjectCredentialsMeta.mockResolvedValueOnce([]);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await caller.credentials.list({ projectId: 'p1' });
+
+				expect(mockCaptureException).toHaveBeenCalledWith(decryptionError, {
+					tags: { source: 'credentials_list' },
+					extra: { projectId: 'p1' },
+					level: 'warning',
 				});
 			});
 		});
