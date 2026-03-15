@@ -13,9 +13,8 @@ pre-push:
   commands:
     test:
       run: npm run test:fast
-    # test-integration requires Docker which is not available in this environment
-    # test-integration:
-    #   run: npm run test:db:up && npm run test:integration
+    test-integration:
+      run: npm run test:db:up && npm run test:integration
 
 commit-msg:
   commands:

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, Loader2, Trash2 } from 'lucide-react';
+import { CheckCircle, Loader2, Trash2, XCircle } from 'lucide-react';
 import { useState } from 'react';
 
 export interface ProjectCredentialMeta {
@@ -23,6 +23,7 @@ export interface ProjectCredentialMeta {
  * - Provides a write-only input to update the value
  * - Includes a "Clear" button to delete the credential
  * - Never shows the plaintext value
+ * - Optionally supports inline verification via `onVerify` / `verifiedLogin` / `isVerifying` / `verifyError`
  */
 export function ProjectSecretField({
 	projectId,
@@ -31,6 +32,12 @@ export function ProjectSecretField({
 	description,
 	placeholder,
 	credential,
+	onSaved,
+	onCleared,
+	verifiedLogin,
+	onVerify,
+	isVerifying,
+	verifyError,
 }: {
 	projectId: string;
 	envVarKey: string;
@@ -38,6 +45,12 @@ export function ProjectSecretField({
 	description?: string;
 	placeholder?: string;
 	credential?: ProjectCredentialMeta;
+	onSaved?: () => void;
+	onCleared?: () => void;
+	verifiedLogin?: string | null;
+	onVerify?: (rawValue: string) => void;
+	isVerifying?: boolean;
+	verifyError?: string | null;
 }) {
 	const [value, setValue] = useState('');
 	const [savedFeedback, setSavedFeedback] = useState(false);
@@ -61,12 +74,16 @@ export function ProjectSecretField({
 			setSavedFeedback(true);
 			setTimeout(() => setSavedFeedback(false), 3000);
 			invalidate();
+			onSaved?.();
 		},
 	});
 
 	const deleteMutation = useMutation({
 		mutationFn: () => trpcClient.projects.credentials.delete.mutate({ projectId, envVarKey }),
-		onSuccess: () => invalidate(),
+		onSuccess: () => {
+			invalidate();
+			onCleared?.();
+		},
 	});
 
 	return (
@@ -102,6 +119,16 @@ export function ProjectSecretField({
 				>
 					{saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
 				</button>
+				{onVerify && (
+					<button
+						type="button"
+						onClick={() => onVerify(value || '')}
+						disabled={(!value && !credential?.isConfigured) || isVerifying}
+						className="inline-flex h-9 items-center rounded-md border border-input px-3 text-sm font-medium hover:bg-accent disabled:opacity-50 shrink-0"
+					>
+						{isVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Verify'}
+					</button>
+				)}
 				{credential?.isConfigured && (
 					<button
 						type="button"
@@ -125,6 +152,18 @@ export function ProjectSecretField({
 				<div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
 					<CheckCircle className="h-3.5 w-3.5" />
 					Saved
+				</div>
+			)}
+			{verifiedLogin && (
+				<div className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
+					<CheckCircle className="h-4 w-4" />
+					Resolved: <span className="font-medium">{verifiedLogin}</span>
+				</div>
+			)}
+			{verifyError && (
+				<div className="flex items-center gap-1.5 text-sm text-destructive">
+					<XCircle className="h-4 w-4" />
+					{verifyError}
 				</div>
 			)}
 		</div>

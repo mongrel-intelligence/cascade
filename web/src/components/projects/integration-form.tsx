@@ -1,4 +1,3 @@
-import { Badge } from '@/components/ui/badge.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import { API_URL } from '@/lib/api.js';
@@ -7,7 +6,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
 	AlertCircle,
 	AlertTriangle,
-	CheckCircle,
 	ChevronDown,
 	ChevronRight,
 	ExternalLink,
@@ -15,153 +13,12 @@ import {
 	Loader2,
 	RefreshCw,
 	Trash2,
-	XCircle,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { PMWizard } from './pm-wizard.js';
+import { ProjectSecretField } from './project-secret-field.js';
 
 type IntegrationCategory = 'pm' | 'scm';
-
-// ============================================================================
-// Project Credential Input — write-only, shows "Configured" badge when set
-// ============================================================================
-
-interface ProjectCredentialMeta {
-	envVarKey: string;
-	name: string | null;
-	isConfigured: boolean;
-	maskedValue: string;
-}
-
-function ProjectSecretInput({
-	projectId,
-	envVarKey,
-	label,
-	description,
-	placeholder,
-	credential,
-	onSaved,
-	onCleared,
-	verifiedLogin,
-	onVerify,
-	isVerifying,
-	verifyError,
-}: {
-	projectId: string;
-	envVarKey: string;
-	label: string;
-	description?: string;
-	placeholder?: string;
-	credential?: ProjectCredentialMeta;
-	onSaved?: () => void;
-	onCleared?: () => void;
-	verifiedLogin?: string | null;
-	onVerify?: (rawValue: string) => void;
-	isVerifying?: boolean;
-	verifyError?: string | null;
-}) {
-	const [value, setValue] = useState('');
-	const queryClient = useQueryClient();
-
-	const saveMutation = useMutation({
-		mutationFn: () =>
-			trpcClient.projects.credentials.set.mutate({
-				projectId,
-				envVarKey,
-				value,
-				name: label,
-			}),
-		onSuccess: () => {
-			setValue('');
-			queryClient.invalidateQueries({
-				queryKey: trpc.projects.credentials.list.queryOptions({ projectId }).queryKey,
-			});
-			onSaved?.();
-		},
-	});
-
-	const deleteMutation = useMutation({
-		mutationFn: () => trpcClient.projects.credentials.delete.mutate({ projectId, envVarKey }),
-		onSuccess: () => {
-			queryClient.invalidateQueries({
-				queryKey: trpc.projects.credentials.list.queryOptions({ projectId }).queryKey,
-			});
-			onCleared?.();
-		},
-	});
-
-	return (
-		<div className="space-y-2">
-			<div className="flex items-center gap-2">
-				<Label>{label}</Label>
-				{credential?.isConfigured && (
-					<Badge variant="secondary" className="text-xs font-mono">
-						{credential.maskedValue}
-					</Badge>
-				)}
-			</div>
-			{description && <p className="text-xs text-muted-foreground">{description}</p>}
-			<div className="flex gap-2">
-				<Input
-					type="password"
-					value={value}
-					onChange={(e) => setValue(e.target.value)}
-					placeholder={credential?.isConfigured ? 'Enter new value to update...' : placeholder}
-					autoComplete="off"
-					className="flex-1"
-				/>
-				<button
-					type="button"
-					onClick={() => saveMutation.mutate()}
-					disabled={!value || saveMutation.isPending}
-					className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 shrink-0"
-				>
-					{saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
-				</button>
-				{onVerify && (
-					<button
-						type="button"
-						onClick={() => onVerify(value || '')}
-						disabled={(!value && !credential?.isConfigured) || isVerifying}
-						className="inline-flex h-9 items-center rounded-md border border-input px-3 text-sm font-medium hover:bg-accent disabled:opacity-50 shrink-0"
-					>
-						{isVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Verify'}
-					</button>
-				)}
-				{credential?.isConfigured && (
-					<button
-						type="button"
-						onClick={() => deleteMutation.mutate()}
-						disabled={deleteMutation.isPending}
-						className="p-2 text-muted-foreground hover:text-destructive disabled:opacity-50"
-						title="Clear credential"
-					>
-						{deleteMutation.isPending ? (
-							<Loader2 className="h-4 w-4 animate-spin" />
-						) : (
-							<Trash2 className="h-4 w-4" />
-						)}
-					</button>
-				)}
-			</div>
-			{saveMutation.isError && (
-				<p className="text-xs text-destructive">{saveMutation.error.message}</p>
-			)}
-			{verifiedLogin && (
-				<div className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
-					<CheckCircle className="h-4 w-4" />
-					Resolved: <span className="font-medium">{verifiedLogin}</span>
-				</div>
-			)}
-			{verifyError && (
-				<div className="flex items-center gap-1.5 text-sm text-destructive">
-					<XCircle className="h-4 w-4" />
-					{verifyError}
-				</div>
-			)}
-		</div>
-	);
-}
 
 // ============================================================================
 // GitHub Credential Slots (replaces the old CredentialSelector dropdowns)
@@ -206,7 +63,7 @@ function GitHubCredentialSlots({ projectId }: { projectId: string }) {
 	return (
 		<div className="space-y-4">
 			<Label className="text-sm font-medium">Credentials</Label>
-			<ProjectSecretInput
+			<ProjectSecretField
 				projectId={projectId}
 				envVarKey="GITHUB_TOKEN_IMPLEMENTER"
 				label="Implementer Token"
@@ -218,7 +75,7 @@ function GitHubCredentialSlots({ projectId }: { projectId: string }) {
 				isVerifying={verifyingRoles.implementer}
 				verifyError={verifyErrors.implementer}
 			/>
-			<ProjectSecretInput
+			<ProjectSecretField
 				projectId={projectId}
 				envVarKey="GITHUB_TOKEN_REVIEWER"
 				label="Reviewer Token"
