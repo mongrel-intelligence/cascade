@@ -16,6 +16,7 @@ describe('PROJECT_SECTIONS', () => {
 			'stats',
 			'integrations',
 			'agent-configs',
+			'lifecycle',
 		]);
 	});
 
