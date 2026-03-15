@@ -148,7 +148,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 					projectId={project.id}
 					envVarKey="OPENROUTER_API_KEY"
 					label="OpenRouter API Key"
-					description="API key for OpenRouter LLM routing. Used when OPENROUTER_API_KEY is required by the agent backend."
+					description="API key for OpenRouter LLM routing (progress model). Also used as the engine API key when the OpenCode engine is selected — configure it here or on the Harness tab."
 					placeholder="sk-or-..."
 					credential={openrouterCred}
 				/>

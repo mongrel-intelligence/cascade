@@ -32,28 +32,43 @@ const ENGINE_SECRETS: Array<{
 	label: string;
 	description: string;
 	placeholder?: string;
-	engine?: string;
+	engines?: string[];
 }> = [
 	{
 		envVarKey: 'OPENAI_API_KEY',
 		label: 'OpenAI API Key',
-		description: 'API key for OpenAI/Codex backend.',
+		description: 'API key for OpenAI/Codex or OpenCode backend.',
 		placeholder: 'sk-...',
-		engine: 'codex',
+		engines: ['codex', 'opencode'],
 	},
 	{
 		envVarKey: 'CODEX_AUTH_JSON',
 		label: 'Codex Auth JSON',
 		description: 'Codex subscription auth.json contents for ChatGPT Plus/Pro.',
 		placeholder: '{"token":"..."}',
-		engine: 'codex',
+		engines: ['codex'],
+	},
+	{
+		envVarKey: 'ANTHROPIC_API_KEY',
+		label: 'Anthropic API Key',
+		description: 'API key for Claude Code (non-subscription) or OpenCode backend.',
+		placeholder: 'sk-ant-api03-...',
+		engines: ['claude-code', 'opencode'],
 	},
 	{
 		envVarKey: 'CLAUDE_CODE_OAUTH_TOKEN',
 		label: 'Claude Code OAuth Token',
 		description: 'OAuth token for Claude Code subscription auth.',
 		placeholder: 'sk-ant-oat01-...',
-		engine: 'claude-code',
+		engines: ['claude-code'],
+	},
+	{
+		envVarKey: 'OPENROUTER_API_KEY',
+		label: 'OpenRouter API Key',
+		description:
+			'API key for OpenCode engine. Also configurable on the General tab for LLM routing.',
+		placeholder: 'sk-or-...',
+		engines: ['opencode'],
 	},
 ];
 
@@ -93,7 +108,7 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 
 	// Show all engine secrets or filter by selected engine
 	const visibleSecrets = effectiveEngineId
-		? ENGINE_SECRETS.filter((s) => !s.engine || s.engine === effectiveEngineId)
+		? ENGINE_SECRETS.filter((s) => !s.engines || s.engines.includes(effectiveEngineId))
 		: ENGINE_SECRETS;
 
 	return (
