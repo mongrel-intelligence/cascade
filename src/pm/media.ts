@@ -192,6 +192,10 @@ export async function downloadMedia(
 	url: string,
 	authHeaders?: Record<string, string>,
 ): Promise<DownloadMediaResult | null> {
+	// Strip query params from the URL used in log messages to avoid leaking
+	// credentials (e.g. Trello key/token query params).
+	const safeUrl = url.split('?')[0];
+
 	try {
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
@@ -202,12 +206,14 @@ export async function downloadMedia(
 				signal: controller.signal,
 				headers: authHeaders,
 			});
-		} finally {
+		} catch (err) {
 			clearTimeout(timeout);
+			throw err;
 		}
 
 		if (!response.ok) {
-			logger.warn('downloadMedia: non-OK response', { url, status: response.status });
+			clearTimeout(timeout);
+			logger.warn('downloadMedia: non-OK response', { url: safeUrl, status: response.status });
 			return null;
 		}
 
@@ -216,8 +222,9 @@ export async function downloadMedia(
 		if (contentLength !== null) {
 			const length = Number(contentLength);
 			if (!Number.isNaN(length) && length > MAX_IMAGE_SIZE_BYTES) {
+				clearTimeout(timeout);
 				logger.warn('downloadMedia: content exceeds MAX_IMAGE_SIZE_BYTES (pre-check)', {
-					url,
+					url: safeUrl,
 					bytes: length,
 					limit: MAX_IMAGE_SIZE_BYTES,
 				});
@@ -225,11 +232,19 @@ export async function downloadMedia(
 			}
 		}
 
-		// Read the response body as an ArrayBuffer and convert to Buffer
-		const arrayBuffer = await response.arrayBuffer();
+		// Read the response body as an ArrayBuffer and convert to Buffer.
+		// clearTimeout is deferred to here so the abort signal remains active
+		// for the entire body read, not just the connection phase.
+		let arrayBuffer: ArrayBuffer;
+		try {
+			arrayBuffer = await response.arrayBuffer();
+		} finally {
+			clearTimeout(timeout);
+		}
+
 		if (arrayBuffer.byteLength > MAX_IMAGE_SIZE_BYTES) {
 			logger.warn('downloadMedia: content exceeds MAX_IMAGE_SIZE_BYTES (post-read)', {
-				url,
+				url: safeUrl,
 				bytes: arrayBuffer.byteLength,
 				limit: MAX_IMAGE_SIZE_BYTES,
 			});
@@ -245,9 +260,9 @@ export async function downloadMedia(
 		return { buffer, mimeType };
 	} catch (err) {
 		if (err instanceof Error && err.name === 'AbortError') {
-			logger.warn('downloadMedia: timed out', { url, timeoutMs: DOWNLOAD_TIMEOUT_MS });
+			logger.warn('downloadMedia: timed out', { url: safeUrl, timeoutMs: DOWNLOAD_TIMEOUT_MS });
 		} else {
-			logger.warn('downloadMedia: failed', { url, error: String(err) });
+			logger.warn('downloadMedia: failed', { url: safeUrl, error: String(err) });
 		}
 		return null;
 	}
