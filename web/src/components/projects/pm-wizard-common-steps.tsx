@@ -300,7 +300,7 @@ export function SaveStep({
 			</div>
 
 			<p className="text-xs text-muted-foreground">
-				Trigger configuration is managed separately in the <strong>Agent Configs</strong> tab.
+				Trigger configuration is managed separately in the <strong>Agents</strong> tab.
 			</p>
 
 			<div className="flex items-center gap-2">

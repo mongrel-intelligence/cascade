@@ -24,7 +24,7 @@ export const PROJECT_SECTIONS: {
 	},
 	{
 		id: 'agent-configs',
-		label: 'Agent Configs',
+		label: 'Agents',
 		path: 'agent-configs',
 		route: '/projects/$projectId/agent-configs',
 	},
