@@ -5,6 +5,21 @@
 
 export type PMType = 'trello' | 'jira';
 
+/**
+ * A reference to an inline media item (image, etc.) embedded in a work item
+ * description or comment.
+ */
+export interface MediaReference {
+	/** Public or authenticated URL of the media asset */
+	url: string;
+	/** MIME type of the media asset (e.g. 'image/png', 'image/jpeg') */
+	mimeType: string;
+	/** Optional alt text extracted from markdown or the attachment name */
+	altText?: string;
+	/** Where the reference was found */
+	source: 'description' | 'comment' | 'attachment';
+}
+
 export interface WorkItem {
 	id: string;
 	title: string;
@@ -12,6 +27,8 @@ export interface WorkItem {
 	url: string;
 	status?: string;
 	labels: WorkItemLabel[];
+	/** Inline media references parsed from the work item description */
+	inlineMedia?: MediaReference[];
 }
 
 export interface WorkItemLabel {
@@ -29,6 +46,8 @@ export interface WorkItemComment {
 		name: string;
 		username: string;
 	};
+	/** Inline media references parsed from the comment text */
+	inlineMedia?: MediaReference[];
 }
 
 export interface Checklist {
