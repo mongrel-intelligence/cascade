@@ -6,14 +6,16 @@ import { WorkItemCostChart } from '@/components/runs/work-item-cost-chart.js';
 import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { createRoute } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { projectDetailRoute } from './$projectId.js';
 
-function computeDateFrom(timeRange: string): string | undefined {
+export function computeDateFrom(timeRange: string): string | undefined {
 	if (timeRange === 'all') return undefined;
 	const days = Number.parseInt(timeRange, 10);
 	if (Number.isNaN(days)) return undefined;
-	return new Date(Date.now() - days * 86400000).toISOString();
+	const d = new Date(Date.now() - days * 86400000);
+	d.setUTCHours(0, 0, 0, 0);
+	return d.toISOString();
 }
 
 function ProjectStatsPage() {
@@ -25,7 +27,7 @@ function ProjectStatsPage() {
 		status: '',
 	});
 
-	const dateFrom = computeDateFrom(filters.timeRange);
+	const dateFrom = useMemo(() => computeDateFrom(filters.timeRange), [filters.timeRange]);
 
 	const statsQuery = useQuery(
 		trpc.prs.workStatsAggregated.queryOptions({
