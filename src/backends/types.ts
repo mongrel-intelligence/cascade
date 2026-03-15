@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { EngineSettings } from '../config/engineSettings.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../types/index.js';
 import type { CompletionRequirements } from './completion.js';
 
@@ -59,6 +60,13 @@ export interface AgentEnginePolicy {
 	blockGitPush?: boolean;
 	/** Path where the llmist SDK should write its structured log (workspace dir, not temp) */
 	engineLogPath?: string;
+	/**
+	 * Merged engine settings for this execution plan.
+	 * Produced by merging agent-config engine settings over project-level engine settings.
+	 * Engine resolve functions (resolveClaudeCodeSettings, etc.) read from this field
+	 * instead of project.engineSettings so per-agent overrides take precedence.
+	 */
+	engineSettings?: EngineSettings;
 }
 
 /**

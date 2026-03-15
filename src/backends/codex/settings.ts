@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getEngineSettings } from '../../config/engineSettings.js';
+import { type EngineSettings, getEngineSettings } from '../../config/engineSettings.js';
 import type { ProjectConfig } from '../../types/index.js';
 
 export const CodexSettingsSchema = z.object({
@@ -25,11 +25,22 @@ function getDefaultsFromCapabilities(
 	return { sandboxMode: 'danger-full-access' };
 }
 
+/**
+ * Resolve Codex settings from the given engine settings, falling back to
+ * project-level settings when no explicit override is provided.
+ *
+ * @param project - The project config (used as fallback when engineSettings is not provided)
+ * @param nativeToolCapabilities - Optional agent capabilities used to derive sandbox defaults
+ * @param engineSettings - Optional pre-merged engine settings (e.g. from AgentExecutionPlan).
+ *   When provided, these take precedence over project.engineSettings.
+ */
 export function resolveCodexSettings(
 	project: ProjectConfig,
 	nativeToolCapabilities?: string[],
+	engineSettings?: EngineSettings,
 ): ResolvedCodexSettings {
-	const codex = getEngineSettings(project.engineSettings, 'codex', CodexSettingsSchema) ?? {};
+	const effectiveSettings = engineSettings ?? project.engineSettings;
+	const codex = getEngineSettings(effectiveSettings, 'codex', CodexSettingsSchema) ?? {};
 	const defaults = getDefaultsFromCapabilities(nativeToolCapabilities);
 
 	return {

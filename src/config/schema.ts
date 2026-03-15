@@ -71,6 +71,12 @@ export const ProjectConfigSchema = z.object({
 	workItemBudgetUsd: z.number().positive().default(5),
 	agentEngine: AgentEngineConfigSchema.optional(),
 	engineSettings: EngineSettingsSchema.optional(),
+	/**
+	 * Per-agent engine settings overrides keyed by agent type.
+	 * Populated from agent_configs rows at config load time.
+	 * Used by buildExecutionPlan() to merge into the execution plan's engineSettings.
+	 */
+	agentEngineSettings: z.record(z.string(), EngineSettingsSchema).optional(),
 	squintDbUrl: z.string().url().optional(),
 	runLinksEnabled: z.boolean().default(false),
 	maxInFlightItems: z.number().int().positive().optional(),

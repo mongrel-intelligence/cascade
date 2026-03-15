@@ -84,6 +84,8 @@ export interface ProjectConfigRaw {
 	workItemBudgetUsd?: number;
 	squintDbUrl?: string;
 	engineSettings?: EngineSettings;
+	/** Per-agent engine settings overrides keyed by agent type. */
+	agentEngineSettings?: Record<string, EngineSettings>;
 	runLinksEnabled?: boolean;
 	maxInFlightItems?: number;
 	trello?: {
@@ -214,7 +216,11 @@ export function mapProjectRow({
 	trelloConfig,
 	jiraConfig,
 }: MapProjectInput): ProjectConfigRaw {
-	const { models, engines } = buildAgentMaps(projectAgentConfigs);
+	const {
+		models,
+		engines,
+		engineSettings: agentEngineSettingsMap,
+	} = buildAgentMaps(projectAgentConfigs);
 
 	// Derive PM type from integration config
 	const pmType = jiraConfig ? 'jira' : 'trello';
@@ -235,6 +241,9 @@ export function mapProjectRow({
 		progressIntervalMinutes: numericOrUndefined(row.progressIntervalMinutes),
 		workItemBudgetUsd: numericOrUndefined(row.workItemBudgetUsd),
 		engineSettings: row.agentEngineSettings ?? undefined,
+		agentEngineSettings: orUndefined(agentEngineSettingsMap) as
+			| Record<string, EngineSettings>
+			| undefined,
 		squintDbUrl: row.squintDbUrl ?? undefined,
 		runLinksEnabled: row.runLinksEnabled ?? false,
 		maxInFlightItems: row.maxInFlightItems ?? undefined,
