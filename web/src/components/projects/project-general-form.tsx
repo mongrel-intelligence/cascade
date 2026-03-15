@@ -18,6 +18,7 @@ interface Project {
 	agentEngine: string | null;
 	engineSettings: Record<string, Record<string, unknown>> | null;
 	runLinksEnabled?: boolean | null;
+	maxInFlightItems?: number | null;
 }
 
 function numericFieldDefault(value: number | null | undefined): string {
@@ -39,6 +40,9 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 		project.progressIntervalMinutes ?? '',
 	);
 	const [workItemBudgetUsd, setWorkItemBudgetUsd] = useState(project.workItemBudgetUsd ?? '');
+	const [maxInFlightItems, setMaxInFlightItems] = useState(
+		numericFieldDefault(project.maxInFlightItems),
+	);
 	const [runLinksEnabled, setRunLinksEnabled] = useState(project.runLinksEnabled ?? false);
 
 	function handleSubmit(e: React.FormEvent) {
@@ -49,6 +53,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 			progressModel: progressModel || null,
 			progressIntervalMinutes: progressIntervalMinutes || null,
 			workItemBudgetUsd: workItemBudgetUsd || null,
+			maxInFlightItems: maxInFlightItems ? Number.parseInt(maxInFlightItems, 10) : null,
 			runLinksEnabled,
 		});
 	}
@@ -105,6 +110,22 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 							onChange={(e) => setProgressIntervalMinutes(e.target.value)}
 							placeholder="e.g. 5"
 						/>
+					</div>
+				</div>
+				<div className="grid grid-cols-2 gap-4">
+					<div className="space-y-2">
+						<Label htmlFor="maxInFlightItems">Max In-Flight Items</Label>
+						<Input
+							id="maxInFlightItems"
+							type="number"
+							min="1"
+							value={maxInFlightItems}
+							onChange={(e) => setMaxInFlightItems(e.target.value)}
+							placeholder="1 (default)"
+						/>
+						<p className="text-xs text-muted-foreground">
+							Maximum items in TODO + In Progress + In Review simultaneously
+						</p>
 					</div>
 				</div>
 				<div className="flex items-center gap-3">
