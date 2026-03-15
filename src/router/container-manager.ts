@@ -1,286 +1,52 @@
 /**
  * Docker container lifecycle management for CASCADE worker processes.
  *
- * Handles spawning, monitoring, killing, and tracking of worker containers.
+ * Handles spawning and killing of worker containers.
  * Each BullMQ job gets its own isolated Docker container.
+ *
+ * State management, env building, and orphan cleanup are in dedicated modules:
+ * - active-workers.ts  — ActiveWorker state tracking
+ * - worker-env.ts      — Job data parsing + env building
+ * - orphan-cleanup.ts  — Periodic orphan container cleanup
  */
 
 import type { Job } from 'bullmq';
 import Docker from 'dockerode';
-import { findProjectByRepo, getAllProjectCredentials } from '../config/provider.js';
-import { failOrphanedRun } from '../db/repositories/runsRepository.js';
 import { captureException } from '../sentry.js';
 import { logger } from '../utils/logging.js';
-import { clearAgentTypeEnqueued, clearAllAgentTypeLocks } from './agent-type-lock.js';
+import { activeWorkers, cleanupWorker } from './active-workers.js';
+import { clearAllAgentTypeLocks } from './agent-type-lock.js';
 import { routerConfig } from './config.js';
 import { notifyTimeout } from './notifications.js';
+import { stopOrphanCleanup } from './orphan-cleanup.js';
 import type { CascadeJob } from './queue.js';
-import { clearAllWorkItemLocks, clearWorkItemEnqueued } from './work-item-lock.js';
+import { clearAllWorkItemLocks } from './work-item-lock.js';
+import {
+	buildWorkerEnvWithProjectId,
+	extractAgentType,
+	extractProjectIdFromJob,
+	extractWorkItemId,
+} from './worker-env.js';
+
+// Re-export from sub-modules so existing callers importing from container-manager.ts
+// continue to work without changes.
+export type { ActiveWorker } from './active-workers.js';
+export {
+	cleanupWorker,
+	getActiveWorkerCount,
+	getActiveWorkers,
+} from './active-workers.js';
+export {
+	startOrphanCleanup,
+	stopOrphanCleanup,
+	scanAndCleanupOrphans,
+} from './orphan-cleanup.js';
+export {
+	buildWorkerEnv,
+	extractProjectIdFromJob,
+} from './worker-env.js';
 
 const docker = new Docker();
-
-export interface ActiveWorker {
-	containerId: string;
-	jobId: string;
-	startedAt: Date;
-	timeoutHandle: NodeJS.Timeout;
-	job: CascadeJob;
-	/** Resolved at spawn time for work-item lock cleanup. */
-	projectId?: string;
-	/** Resolved at spawn time for work-item lock cleanup. */
-	workItemId?: string;
-	/** Resolved at spawn time for agent-type lock cleanup. */
-	agentType?: string;
-}
-
-const activeWorkers = new Map<string, ActiveWorker>();
-
-/**
- * Periodic orphan cleanup timer — scans for containers with cascade.managed=true
- * that are not tracked in activeWorkers map and are older than workerTimeoutMs.
- */
-let orphanCleanupTimer: NodeJS.Timeout | null = null;
-
-/**
- * Start periodic orphaned container cleanup.
- * Scans every 5 minutes for containers with cascade.managed=true label
- * that are not in the activeWorkers map and are older than workerTimeoutMs.
- * Stopped containers are logged at warn level with container ID and age.
- */
-export function startOrphanCleanup(): void {
-	if (orphanCleanupTimer) {
-		logger.warn('[WorkerManager] Orphan cleanup already started');
-		return;
-	}
-
-	const ORPHAN_SCAN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-
-	orphanCleanupTimer = setInterval(() => {
-		scanAndCleanupOrphans().catch((err) => {
-			logger.error('[WorkerManager] Error during orphan cleanup scan:', err);
-			captureException(err, {
-				tags: { source: 'orphan_cleanup_scan' },
-				level: 'error',
-			});
-		});
-	}, ORPHAN_SCAN_INTERVAL_MS);
-
-	logger.info('[WorkerManager] Started orphan cleanup scan (every 5 minutes)');
-}
-
-/**
- * Stop periodic orphaned container cleanup.
- * Clears the scan timer.
- */
-export function stopOrphanCleanup(): void {
-	if (orphanCleanupTimer) {
-		clearInterval(orphanCleanupTimer);
-		orphanCleanupTimer = null;
-		logger.info('[WorkerManager] Stopped orphan cleanup scan');
-	}
-}
-
-/**
- * Scan for orphaned containers and stop them.
- * Containers are considered orphaned if:
- * 1. They have cascade.managed=true label
- * 2. They are NOT in the activeWorkers map (tracked)
- * 3. They are older than workerTimeoutMs (avoid killing recently-spawned workers)
- * @internal Exported for testing
- */
-export async function scanAndCleanupOrphans(): Promise<void> {
-	try {
-		const containers = await docker.listContainers({
-			all: false, // Only running containers
-			filters: {
-				label: ['cascade.managed=true'],
-			},
-		});
-
-		const now = Date.now();
-		let stoppedCount = 0;
-
-		for (const containerInfo of containers) {
-			const containerId = containerInfo.Id;
-
-			// Check if this container is tracked in activeWorkers
-			const isTracked = Array.from(activeWorkers.values()).some(
-				(w) => w.containerId === containerId,
-			);
-
-			if (isTracked) {
-				// Don't touch tracked containers
-				continue;
-			}
-
-			// Check container age — only stop if older than workerTimeoutMs
-			const containerCreatedMs = containerInfo.Created * 1000;
-			const ageMs = now - containerCreatedMs;
-
-			if (ageMs < routerConfig.workerTimeoutMs) {
-				// Too young — might be a newly-spawned worker not yet registered
-				continue;
-			}
-
-			// This is an orphan — stop it
-			try {
-				const container = docker.getContainer(containerId);
-				await container.stop({ t: 15 }); // 15 second graceful shutdown
-
-				stoppedCount++;
-				const ageMinutes = Math.round(ageMs / 60000);
-				logger.warn('[WorkerManager] Stopped orphaned container:', {
-					containerId: containerId.slice(0, 12),
-					ageMinutes,
-				});
-			} catch (err) {
-				// Container might already be stopped — log but continue
-				logger.warn('[WorkerManager] Error stopping orphaned container:', {
-					containerId: containerId.slice(0, 12),
-					error: String(err),
-				});
-			}
-		}
-
-		if (stoppedCount > 0) {
-			logger.info('[WorkerManager] Orphan cleanup scan completed:', {
-				stoppedCount,
-				totalContainers: containers.length,
-			});
-		}
-	} catch (err) {
-		logger.error('[WorkerManager] Failed to list containers for orphan cleanup:', err);
-		throw err;
-	}
-}
-
-/**
- * Extract projectId from job data for credential resolution.
- * Different job types have the projectId in different locations.
- *
- * Note: Dashboard jobs (manual-run, retry-run, debug-analysis) come through
- * cascade-dashboard-jobs queue and are cast to CascadeJob for spawning.
- */
-export async function extractProjectIdFromJob(data: CascadeJob): Promise<string | null> {
-	// Use type assertion since dashboard jobs are cast to CascadeJob
-	const jobData = data as unknown as { type: string; projectId?: string; repoFullName?: string };
-
-	if (jobData.type === 'trello' || jobData.type === 'jira') {
-		return jobData.projectId ?? null;
-	}
-	if (jobData.type === 'github') {
-		if (!jobData.repoFullName) return null;
-		const project = await findProjectByRepo(jobData.repoFullName);
-		return project?.id ?? null;
-	}
-	if (jobData.type === 'manual-run' || jobData.type === 'debug-analysis') {
-		return jobData.projectId ?? null;
-	}
-	if (jobData.type === 'retry-run') {
-		// Retry jobs now include projectId from the API
-		return jobData.projectId ?? null;
-	}
-	return null;
-}
-
-/**
- * Build environment variables for a worker container.
- * Resolves project credentials and forwards required infrastructure env vars.
- */
-export async function buildWorkerEnv(job: Job<CascadeJob>): Promise<string[]> {
-	const projectId = await extractProjectIdFromJob(job.data);
-	return buildWorkerEnvWithProjectId(job, projectId);
-}
-
-async function buildWorkerEnvWithProjectId(
-	job: Job<CascadeJob>,
-	projectId: string | null,
-): Promise<string[]> {
-	const env: string[] = [
-		`JOB_ID=${job.id}`,
-		`JOB_TYPE=${job.data.type}`,
-		`JOB_DATA=${JSON.stringify(job.data)}`,
-		// Redis for job completion reporting
-		`REDIS_URL=${routerConfig.redisUrl}`,
-		// Database connection
-		`CASCADE_POSTGRES_HOST=${process.env.CASCADE_POSTGRES_HOST || 'postgres'}`,
-		`CASCADE_POSTGRES_PORT=${process.env.CASCADE_POSTGRES_PORT || '5432'}`,
-		// Database connection for config
-		`DATABASE_URL=${process.env.DATABASE_URL || ''}`,
-		// Logging
-		`LOG_LEVEL=${process.env.LOG_LEVEL || 'info'}`,
-	];
-
-	// Resolve project credentials in the router and set as individual env vars.
-	// NOTE: CREDENTIAL_MASTER_KEY is intentionally NOT passed to workers.
-	if (projectId) {
-		try {
-			const secrets = await getAllProjectCredentials(projectId);
-			for (const [key, value] of Object.entries(secrets)) {
-				env.push(`${key}=${value}`);
-			}
-			env.push(`CASCADE_CREDENTIAL_KEYS=${Object.keys(secrets).join(',')}`);
-		} catch (err) {
-			logger.warn('[WorkerManager] Failed to resolve credentials for project:', {
-				projectId,
-				error: String(err),
-			});
-			captureException(err, {
-				tags: { source: 'credential_resolution' },
-				extra: { projectId },
-				level: 'warning',
-			});
-		}
-	}
-
-	// CLAUDE_CODE_OAUTH_TOKEN is for the Claude Code backend (subscription auth).
-	if (process.env.CLAUDE_CODE_OAUTH_TOKEN)
-		env.push(`CLAUDE_CODE_OAUTH_TOKEN=${process.env.CLAUDE_CODE_OAUTH_TOKEN}`);
-
-	// Forward Sentry env vars so worker containers report to the same project.
-	if (process.env.SENTRY_DSN) env.push(`SENTRY_DSN=${process.env.SENTRY_DSN}`);
-	if (process.env.SENTRY_ENVIRONMENT)
-		env.push(`SENTRY_ENVIRONMENT=${process.env.SENTRY_ENVIRONMENT}`);
-	if (process.env.SENTRY_RELEASE) env.push(`SENTRY_RELEASE=${process.env.SENTRY_RELEASE}`);
-
-	// Forward dashboard URL so worker progress comments can include run links.
-	if (process.env.CASCADE_DASHBOARD_URL)
-		env.push(`CASCADE_DASHBOARD_URL=${process.env.CASCADE_DASHBOARD_URL}`);
-
-	return env;
-}
-
-/**
- * Extract work-item ID from job data for concurrency lock tracking.
- * Returns the PM work item identifier (workItemId, issueKey, or triggerResult.workItemId).
- */
-function extractWorkItemId(data: CascadeJob): string | undefined {
-	const jobData = data as unknown as {
-		type: string;
-		workItemId?: string;
-		issueKey?: string;
-		triggerResult?: { workItemId?: string };
-	};
-
-	if (jobData.type === 'trello' && jobData.workItemId) return jobData.workItemId;
-	if (jobData.type === 'jira' && jobData.issueKey) return jobData.issueKey;
-	if (jobData.type === 'github') return jobData.triggerResult?.workItemId;
-	// Dashboard jobs (manual-run, retry-run, debug-analysis)
-	if (jobData.workItemId) return jobData.workItemId;
-	return undefined;
-}
-
-/**
- * Extract agent type from job data for concurrency lock tracking.
- * Checks triggerResult.agentType first, then top-level agentType (dashboard jobs).
- */
-function extractAgentType(data: CascadeJob): string | undefined {
-	const jobData = data as unknown as {
-		triggerResult?: { agentType?: string };
-		agentType?: string;
-	};
-	return jobData.triggerResult?.agentType ?? jobData.agentType ?? undefined;
-}
 
 /**
  * Spawn a worker container for a job.
@@ -448,69 +214,6 @@ export async function killWorker(jobId: string): Promise<void> {
 	});
 
 	cleanupWorker(jobId, 137);
-}
-
-/**
- * Clean up worker tracking state (timeout handle + map entry).
- * When exitCode is non-zero, marks the corresponding DB run as failed (fire-and-forget).
- */
-export function cleanupWorker(jobId: string, exitCode?: number): void {
-	const worker = activeWorkers.get(jobId);
-	if (worker) {
-		clearTimeout(worker.timeoutHandle);
-		if (worker.projectId && worker.agentType) {
-			clearAgentTypeEnqueued(worker.projectId, worker.agentType);
-		}
-		if (worker.projectId && worker.workItemId && worker.agentType) {
-			clearWorkItemEnqueued(worker.projectId, worker.workItemId, worker.agentType);
-		}
-		if (worker.projectId && worker.workItemId) {
-			if (exitCode !== undefined && exitCode !== 0) {
-				failOrphanedRun(
-					worker.projectId,
-					worker.workItemId,
-					`Worker crashed with exit code ${exitCode}`,
-				)
-					.then((runId) => {
-						if (runId) {
-							logger.info('[WorkerManager] Marked orphaned run as failed:', {
-								jobId,
-								runId,
-								exitCode,
-							});
-						}
-					})
-					.catch((err) => {
-						logger.error('[WorkerManager] Failed to mark orphaned run:', {
-							jobId,
-							error: String(err),
-						});
-					});
-			}
-		}
-		activeWorkers.delete(jobId);
-		logger.info('[WorkerManager] Worker cleaned up:', {
-			jobId,
-			activeWorkers: activeWorkers.size,
-		});
-	}
-}
-
-/**
- * Get number of currently active worker containers.
- */
-export function getActiveWorkerCount(): number {
-	return activeWorkers.size;
-}
-
-/**
- * Get summary info for currently active workers.
- */
-export function getActiveWorkers(): Array<{ jobId: string; startedAt: Date }> {
-	return Array.from(activeWorkers.values()).map((w) => ({
-		jobId: w.jobId,
-		startedAt: w.startedAt,
-	}));
 }
 
 /**
