@@ -10,6 +10,7 @@ import type {
 	SDKStatusMessage,
 	SDKSystemMessage,
 } from '@anthropic-ai/claude-agent-sdk';
+import { getEngineSettings } from '../../config/engineSettings.js';
 import { logger } from '../../utils/logging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { getWorkspaceDir } from '../../utils/repo.js';
@@ -27,7 +28,7 @@ import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../type
 import { buildClaudeEnv } from './env.js';
 import { buildHooks } from './hooks.js';
 import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
-import { ClaudeCodeSettingsSchema } from './settings.js';
+import { ClaudeCodeSettingsSchema, resolveClaudeCodeSettings } from './settings.js';
 
 export { buildToolGuidance, buildTaskPrompt, buildSystemPrompt } from '../nativeTools.js';
 export { buildClaudeEnv as buildEnv } from './env.js';
@@ -307,6 +308,48 @@ function resolveNativeTools(nativeToolCapabilities?: string[]): string[] {
 	return tools.size > 0 ? [...tools] : ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
 }
 
+/**
+ * Map raw Claude Code engine settings to SDK query options.
+ * Only settings that are explicitly configured are returned; undefined fields
+ * are omitted to preserve SDK defaults.
+ */
+function buildSettingsOptions(rawSettings: {
+	effort?: 'low' | 'medium' | 'high' | 'max';
+	thinking?: 'adaptive' | 'enabled' | 'disabled';
+	thinkingBudgetTokens?: number;
+}): {
+	effort?: 'low' | 'medium' | 'high' | 'max';
+	thinking?:
+		| { type: 'adaptive' }
+		| { type: 'enabled'; budgetTokens: number }
+		| { type: 'disabled' };
+	maxThinkingTokens?: number;
+} {
+	const result: ReturnType<typeof buildSettingsOptions> = {};
+
+	if (rawSettings.effort !== undefined) {
+		result.effort = rawSettings.effort;
+	}
+
+	if (rawSettings.thinking !== undefined) {
+		if (rawSettings.thinking === 'enabled') {
+			result.thinking = {
+				type: 'enabled',
+				budgetTokens: rawSettings.thinkingBudgetTokens ?? 10_000,
+			};
+		} else if (rawSettings.thinking === 'disabled') {
+			result.thinking = { type: 'disabled' };
+		} else {
+			result.thinking = { type: 'adaptive' };
+		}
+	} else if (rawSettings.thinkingBudgetTokens !== undefined) {
+		// No explicit thinking mode — pass budget via deprecated maxThinkingTokens
+		result.maxThinkingTokens = rawSettings.thinkingBudgetTokens;
+	}
+
+	return result;
+}
+
 function logClaudeCodeLlmCall(
 	input: AgentExecutionPlan,
 	assistantMsg: SDKAssistantMessage,
@@ -493,6 +536,12 @@ export class ClaudeCodeEngine implements AgentEngine {
 		// resolveClaudeModel() is idempotent, calling it twice via the normal adapter path
 		// is safe.
 		const model = resolveClaudeModel(input.model);
+		const resolvedSettings = resolveClaudeCodeSettings(input.project);
+		// Only the explicitly-configured fields (raw, pre-default) are passed to the SDK.
+		// This preserves SDK defaults when no project-level settings are configured.
+		const rawEngineSettings =
+			getEngineSettings(input.project.engineSettings, 'claude-code', ClaudeCodeSettingsSchema) ??
+			{};
 
 		input.logWriter('INFO', 'Starting Claude Code SDK execution', {
 			agentType: input.agentType,
@@ -500,6 +549,9 @@ export class ClaudeCodeEngine implements AgentEngine {
 			repoDir: input.repoDir,
 			maxIterations: input.maxIterations,
 			hasOffloadedContext,
+			effort: resolvedSettings.effort,
+			thinking: resolvedSettings.thinking,
+			thinkingBudgetTokens: resolvedSettings.thinkingBudgetTokens,
 		});
 
 		const { env } = buildClaudeEnv(
@@ -512,6 +564,7 @@ export class ClaudeCodeEngine implements AgentEngine {
 		});
 
 		const sdkTools = resolveNativeTools(input.nativeToolCapabilities);
+		const sdkSettingsOptions = buildSettingsOptions(rawEngineSettings);
 
 		const maxContinuationTurns = input.completionRequirements?.maxContinuationTurns ?? 0;
 		let continuationTurns = 0;
@@ -543,6 +596,7 @@ export class ClaudeCodeEngine implements AgentEngine {
 						input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
 					},
 					...(isContinuation ? { continue: true } : {}),
+					...sdkSettingsOptions,
 				},
 			});
 
