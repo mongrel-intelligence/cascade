@@ -2,6 +2,12 @@ import { z } from 'zod';
 import { type EngineSettings, getEngineSettings } from '../../config/engineSettings.js';
 import type { ProjectConfig } from '../../types/index.js';
 
+export const CODEX_SETTING_DEFAULTS = {
+	approvalPolicy: 'never' as const,
+	sandboxMode: 'danger-full-access' as const,
+	webSearch: false,
+};
+
 export const CodexSettingsSchema = z.object({
 	approvalPolicy: z.enum(['never', 'on-request', 'untrusted']).optional(),
 	sandboxMode: z.enum(['read-only', 'workspace-write', 'danger-full-access']).optional(),
@@ -22,7 +28,7 @@ function getDefaultsFromCapabilities(
 	// Default to full access — Codex always runs inside an ephemeral Docker
 	// container, so network/filesystem isolation is enforced at the container
 	// level rather than by Codex's own sandbox.
-	return { sandboxMode: 'danger-full-access' };
+	return { sandboxMode: CODEX_SETTING_DEFAULTS.sandboxMode };
 }
 
 /**
@@ -44,10 +50,10 @@ export function resolveCodexSettings(
 	const defaults = getDefaultsFromCapabilities(nativeToolCapabilities);
 
 	return {
-		approvalPolicy: codex.approvalPolicy ?? 'never',
+		approvalPolicy: codex.approvalPolicy ?? CODEX_SETTING_DEFAULTS.approvalPolicy,
 		sandboxMode: codex.sandboxMode ?? defaults.sandboxMode,
 		reasoningEffort: codex.reasoningEffort,
-		webSearch: codex.webSearch ?? false,
+		webSearch: codex.webSearch ?? CODEX_SETTING_DEFAULTS.webSearch,
 	};
 }
 

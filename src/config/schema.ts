@@ -1,8 +1,18 @@
 import { z } from 'zod';
 import { EngineSettingsSchema } from './engineSettings.js';
 
+export const PROJECT_DEFAULTS = {
+	model: 'openrouter:google/gemini-3-flash-preview',
+	maxIterations: 50,
+	watchdogTimeoutMs: 30 * 60 * 1000, // 30 min
+	progressModel: 'openrouter:google/gemini-2.5-flash-lite',
+	progressIntervalMinutes: 5,
+	workItemBudgetUsd: 5,
+	agentEngine: 'llmist',
+} as const;
+
 const AgentEngineConfigSchema = z.object({
-	default: z.string().default('llmist'),
+	default: z.string().default(PROJECT_DEFAULTS.agentEngine),
 	overrides: z.record(z.string()).default({}),
 });
 
@@ -58,17 +68,13 @@ export const ProjectConfigSchema = z.object({
 
 	jira: JiraConfigSchema.optional(),
 
-	model: z.string().default('openrouter:google/gemini-3-flash-preview'),
+	model: z.string().default(PROJECT_DEFAULTS.model),
 	agentModels: z.record(z.string()).optional(),
-	maxIterations: z.number().int().positive().default(50),
-	watchdogTimeoutMs: z
-		.number()
-		.int()
-		.positive()
-		.default(30 * 60 * 1000), // 30 min max job duration
-	progressModel: z.string().default('openrouter:google/gemini-2.5-flash-lite'),
-	progressIntervalMinutes: z.number().positive().default(5),
-	workItemBudgetUsd: z.number().positive().default(5),
+	maxIterations: z.number().int().positive().default(PROJECT_DEFAULTS.maxIterations),
+	watchdogTimeoutMs: z.number().int().positive().default(PROJECT_DEFAULTS.watchdogTimeoutMs), // 30 min max job duration
+	progressModel: z.string().default(PROJECT_DEFAULTS.progressModel),
+	progressIntervalMinutes: z.number().positive().default(PROJECT_DEFAULTS.progressIntervalMinutes),
+	workItemBudgetUsd: z.number().positive().default(PROJECT_DEFAULTS.workItemBudgetUsd),
 	agentEngine: AgentEngineConfigSchema.optional(),
 	engineSettings: EngineSettingsSchema.optional(),
 	/**

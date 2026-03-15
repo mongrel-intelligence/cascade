@@ -2,6 +2,10 @@ import { z } from 'zod';
 import { type EngineSettings, getEngineSettings } from '../../config/engineSettings.js';
 import type { ProjectConfig } from '../../types/index.js';
 
+export const OPENCODE_SETTING_DEFAULTS = {
+	webSearch: false,
+};
+
 export const OpenCodeSettingsSchema = z.object({
 	webSearch: z.boolean().optional(),
 });
@@ -26,6 +30,6 @@ export function resolveOpenCodeSettings(
 	const opencode = getEngineSettings(effectiveSettings, 'opencode', OpenCodeSettingsSchema) ?? {};
 
 	return {
-		webSearch: opencode.webSearch ?? false,
+		webSearch: opencode.webSearch ?? OPENCODE_SETTING_DEFAULTS.webSearch,
 	};
 }

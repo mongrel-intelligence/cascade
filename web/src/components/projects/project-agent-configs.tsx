@@ -100,6 +100,13 @@ interface SaveConfigValues {
 	engineSettings: Record<string, Record<string, unknown>> | undefined;
 }
 
+interface SystemDefaults {
+	model: string;
+	maxIterations: number;
+	agentEngine: string;
+	engineSettings: Record<string, Record<string, unknown>>;
+}
+
 interface DefinitionAgentSectionProps {
 	agentType: string;
 	config: AgentConfig | null;
@@ -120,6 +127,14 @@ interface DefinitionAgentSectionProps {
 		parameters: Record<string, TriggerParameterValue>,
 		currentEnabled: boolean,
 	) => void;
+	/** Project-level model (null = use system default). */
+	projectModel: string | null;
+	/** Project-level engine (null = use system default). */
+	projectEngine: string | null;
+	/** Project-level maxIterations (null = use system default). */
+	projectMaxIterations: number | null;
+	/** System-level defaults from the backend. */
+	systemDefaults: SystemDefaults | undefined;
 }
 
 function DefinitionAgentSection({
@@ -134,6 +149,10 @@ function DefinitionAgentSection({
 	onDeleteConfig,
 	onTriggerToggle,
 	onTriggerParamChange,
+	projectModel,
+	projectEngine,
+	projectMaxIterations,
+	systemDefaults,
 }: DefinitionAgentSectionProps) {
 	const [saved, setSaved] = useState(false);
 	const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -151,6 +170,18 @@ function DefinitionAgentSection({
 
 	const effectiveEngineId = agentEngine || '';
 	const effectiveEngine = engines.find((engine) => engine.id === effectiveEngineId);
+
+	// Resolved inherited engine — project override or system default
+	const inheritedEngine = projectEngine ?? systemDefaults?.agentEngine ?? 'llmist';
+	// Per-field engine defaults for the EngineSettingsFields component
+	const engineDefaults =
+		systemDefaults && effectiveEngineId
+			? systemDefaults.engineSettings[effectiveEngineId]
+			: undefined;
+
+	// Resolved inherited model and iterations (walk the chain: project → system)
+	const inheritedModel = projectModel ?? systemDefaults?.model;
+	const inheritedMaxIterations = projectMaxIterations ?? systemDefaults?.maxIterations;
 
 	// Sync form state when config changes (e.g. after invalidateQueries refetch)
 	// Skip clearing "Saved" if we just saved — the nonce effect will handle the timer
@@ -257,6 +288,7 @@ function DefinitionAgentSection({
 							value={model}
 							onChange={setModel}
 							engine={agentEngine}
+							defaultLabel={inheritedModel ? `Inherit from project (${inheritedModel})` : undefined}
 						/>
 					</div>
 					<div className="space-y-2">
@@ -266,7 +298,11 @@ function DefinitionAgentSection({
 							type="number"
 							value={maxIterations}
 							onChange={(e) => setMaxIterations(e.target.value)}
-							placeholder="Optional"
+							placeholder={
+								inheritedMaxIterations !== undefined
+									? `${inheritedMaxIterations} (inherited)`
+									: 'Optional'
+							}
 						/>
 					</div>
 				</div>
@@ -292,7 +328,7 @@ function DefinitionAgentSection({
 								<SelectValue placeholder="Optional" />
 							</SelectTrigger>
 							<SelectContent>
-								<SelectItem value="_none">None</SelectItem>
+								<SelectItem value="_none">Inherit from project ({inheritedEngine})</SelectItem>
 								{engines.map((engine) => (
 									<SelectItem key={engine.id} value={engine.id}>
 										{engine.label}
@@ -308,6 +344,7 @@ function DefinitionAgentSection({
 						value={engineSettings}
 						onChange={setEngineSettings}
 						inheritLabel="Inherit from project"
+						engineDefaults={engineDefaults}
 					/>
 				)}
 				<div className="space-y-2">
@@ -409,6 +446,12 @@ interface AgentRowProps {
 	integrations: { pm: string | null; scm: string | null };
 	onSelect: (agentType: string) => void;
 	onDeleteRequest: (id: number, label: string) => void;
+	/** Project-level model to show as "inherited" when agent has no override. */
+	projectModel: string | null;
+	/** Project-level engine to show as "inherited" when agent has no override. */
+	projectEngine: string | null;
+	/** System-level defaults. */
+	systemDefaults: SystemDefaults | undefined;
 }
 
 function AgentRow({
@@ -418,6 +461,9 @@ function AgentRow({
 	integrations,
 	onSelect,
 	onDeleteRequest,
+	projectModel,
+	projectEngine,
+	systemDefaults,
 }: AgentRowProps) {
 	const label = (AGENT_LABELS as Record<string, string | undefined>)[type] ?? type;
 	const activeTriggerCount = countActiveTriggers(triggers, integrations);
@@ -425,6 +471,12 @@ function AgentRow({
 	const engineInfo = config?.agentEngine ?? null;
 	const hasCustomEngineSettings =
 		config?.agentEngineSettings != null && Object.keys(config.agentEngineSettings).length > 0;
+
+	// Fallback display: show inherited model/engine when agent has no specific override
+	const inheritedModel = projectModel ?? systemDefaults?.model ?? null;
+	const inheritedEngine = projectEngine ?? systemDefaults?.agentEngine ?? null;
+	const displayModel = modelInfo ?? (inheritedModel ? `${inheritedModel} (inherited)` : null);
+	const displayEngine = engineInfo ?? (inheritedEngine ? `${inheritedEngine} (inherited)` : null);
 
 	return (
 		<TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => onSelect(type)}>
@@ -441,11 +493,11 @@ function AgentRow({
 				)}
 			</TableCell>
 			<TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-				{modelInfo || engineInfo ? (
+				{displayModel || displayEngine ? (
 					<span>
-						{modelInfo && <span>{modelInfo}</span>}
-						{modelInfo && engineInfo && <span> · </span>}
-						{engineInfo && <span>{engineInfo}</span>}
+						{displayModel && <span>{displayModel}</span>}
+						{displayModel && displayEngine && <span> · </span>}
+						{displayEngine && <span>{displayEngine}</span>}
 						{hasCustomEngineSettings && (
 							<span className="ml-1.5 inline-flex items-center rounded-sm bg-muted px-1.5 py-0.5 text-xs">
 								Custom settings
@@ -489,6 +541,9 @@ interface AgentListViewProps {
 	onSelect: (agentType: string) => void;
 	onDelete: (id: number) => void;
 	isDeleting: boolean;
+	projectModel: string | null;
+	projectEngine: string | null;
+	systemDefaults: SystemDefaults | undefined;
 }
 
 function AgentListView({
@@ -499,6 +554,9 @@ function AgentListView({
 	onSelect,
 	onDelete,
 	isDeleting,
+	projectModel,
+	projectEngine,
+	systemDefaults,
 }: AgentListViewProps) {
 	const [deleteTarget, setDeleteTarget] = useState<{ id: number; label: string } | null>(null);
 
@@ -531,6 +589,9 @@ function AgentListView({
 								integrations={integrations}
 								onSelect={onSelect}
 								onDeleteRequest={(id, label) => setDeleteTarget({ id, label })}
+								projectModel={projectModel}
+								projectEngine={projectEngine}
+								systemDefaults={systemDefaults}
 							/>
 						))}
 					</TableBody>
@@ -589,6 +650,10 @@ interface AgentDetailViewProps {
 		currentEnabled: boolean,
 	) => void;
 	onBack: () => void;
+	projectModel: string | null;
+	projectEngine: string | null;
+	projectMaxIterations: number | null;
+	systemDefaults: SystemDefaults | undefined;
 }
 
 function AgentDetailView({
@@ -604,6 +669,10 @@ function AgentDetailView({
 	onTriggerToggle,
 	onTriggerParamChange,
 	onBack,
+	projectModel,
+	projectEngine,
+	projectMaxIterations,
+	systemDefaults,
 }: AgentDetailViewProps) {
 	const label = (AGENT_LABELS as Record<string, string | undefined>)[agentType] ?? agentType;
 
@@ -639,6 +708,10 @@ function AgentDetailView({
 				}}
 				onTriggerToggle={onTriggerToggle}
 				onTriggerParamChange={onTriggerParamChange}
+				projectModel={projectModel}
+				projectEngine={projectEngine}
+				projectMaxIterations={projectMaxIterations}
+				systemDefaults={systemDefaults}
 			/>
 		</div>
 	);
@@ -654,6 +727,13 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	// Agent configs query
 	const configsQuery = useQuery(trpc.agentConfigs.list.queryOptions({ projectId }));
 	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
+
+	// Project-level defaults (for inheritance chain display)
+	const projectQuery = useQuery(trpc.projects.getById.queryOptions({ id: projectId }));
+	const defaultsQuery = useQuery({
+		...trpc.projects.defaults.queryOptions(),
+		staleTime: Number.POSITIVE_INFINITY,
+	});
 
 	// Definition-based triggers query
 	const triggersViewQuery = useQuery(
@@ -773,6 +853,23 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const configs = (configsQuery.data ?? []) as AgentConfig[];
 	const engines = (enginesQuery.data ?? []) as Engine[];
 
+	// Project-level and system-level defaults for inheritance display
+	const projectData = projectQuery.data;
+	const systemDefaults = defaultsQuery.data
+		? {
+				model: defaultsQuery.data.model,
+				maxIterations: defaultsQuery.data.maxIterations,
+				agentEngine: defaultsQuery.data.agentEngine,
+				engineSettings: defaultsQuery.data.engineSettings as Record<
+					string,
+					Record<string, unknown>
+				>,
+			}
+		: undefined;
+	const projectModel = projectData?.model ?? null;
+	const projectEngine = projectData?.agentEngine ?? null;
+	const projectMaxIterations = projectData?.maxIterations ?? null;
+
 	// Build agent config map
 	const configByAgent = new Map<string, AgentConfig>();
 	for (const c of configs) {
@@ -868,6 +965,10 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				onTriggerToggle={handleTriggerToggle}
 				onTriggerParamChange={handleTriggerParamChange}
 				onBack={() => setSelectedAgent(null)}
+				projectModel={projectModel}
+				projectEngine={projectEngine}
+				projectMaxIterations={projectMaxIterations}
+				systemDefaults={systemDefaults}
 			/>
 		);
 	}
@@ -888,6 +989,9 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				onSelect={setSelectedAgent}
 				onDelete={(id) => deleteMutation.mutate(id)}
 				isDeleting={deleteMutation.isPending}
+				projectModel={projectModel}
+				projectEngine={projectEngine}
+				systemDefaults={systemDefaults}
 			/>
 		</div>
 	);

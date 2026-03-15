@@ -1,7 +1,11 @@
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { CLAUDE_CODE_SETTING_DEFAULTS } from '../../backends/claude-code/settings.js';
+import { CODEX_SETTING_DEFAULTS } from '../../backends/codex/settings.js';
+import { OPENCODE_SETTING_DEFAULTS } from '../../backends/opencode/settings.js';
 import { EngineSettingsSchema } from '../../config/engineSettings.js';
+import { PROJECT_DEFAULTS } from '../../config/schema.js';
 import { getDb } from '../../db/client.js';
 import {
 	deleteProjectCredential,
@@ -23,7 +27,7 @@ import {
 } from '../../db/repositories/settingsRepository.js';
 import { projects } from '../../db/schema/index.js';
 import { captureException } from '../../sentry.js';
-import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
+import { protectedProcedure, publicProcedure, router, superAdminProcedure } from '../trpc.js';
 
 async function verifyProjectOwnership(projectId: string, orgId: string) {
 	const db = getDb();
@@ -47,6 +51,27 @@ function serializeProject<T extends { agentEngineSettings?: unknown }>(
 }
 
 export const projectsRouter = router({
+	/**
+	 * Returns all system-level default values, sourced from code constants.
+	 * Use staleTime: Infinity on the client — these never change at runtime.
+	 */
+	defaults: publicProcedure.query(() => {
+		return {
+			model: PROJECT_DEFAULTS.model,
+			maxIterations: PROJECT_DEFAULTS.maxIterations,
+			watchdogTimeoutMs: PROJECT_DEFAULTS.watchdogTimeoutMs,
+			progressModel: PROJECT_DEFAULTS.progressModel,
+			progressIntervalMinutes: PROJECT_DEFAULTS.progressIntervalMinutes,
+			workItemBudgetUsd: PROJECT_DEFAULTS.workItemBudgetUsd,
+			agentEngine: PROJECT_DEFAULTS.agentEngine,
+			engineSettings: {
+				'claude-code': CLAUDE_CODE_SETTING_DEFAULTS,
+				codex: CODEX_SETTING_DEFAULTS,
+				opencode: OPENCODE_SETTING_DEFAULTS,
+			},
+		};
+	}),
+
 	// Existing - returns id+name for dropdowns
 	list: protectedProcedure.query(async ({ ctx }) => {
 		return listProjectsForOrg(ctx.effectiveOrgId);

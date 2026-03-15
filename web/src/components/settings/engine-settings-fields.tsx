@@ -51,7 +51,12 @@ interface EngineSettingsFieldsProps {
 	engine?: EngineDefinition;
 	value?: Record<string, Record<string, unknown>>;
 	onChange: (value: Record<string, Record<string, unknown>> | undefined) => void;
+	/** @deprecated Use engineDefaults instead. */
 	inheritLabel?: string;
+	/** Per-field default values for the active engine. When provided, labels
+	 *  like "Default (High)" are derived from these values instead of using
+	 *  the generic "Inherits from defaults" text. */
+	engineDefaults?: Record<string, unknown>;
 }
 
 function normalizeValue(
@@ -59,6 +64,32 @@ function normalizeValue(
 ): Record<string, Record<string, unknown>> | undefined {
 	if (!value) return undefined;
 	return Object.keys(value).length > 0 ? value : undefined;
+}
+
+/**
+ * Derive a human-readable label for a field's default value.
+ * Falls back to the generic inheritLabel when no default is found.
+ */
+function resolveInheritLabel(
+	field: EngineSettingField,
+	engineDefaults: Record<string, unknown> | undefined,
+	fallback: string,
+): string {
+	if (!engineDefaults) return fallback;
+	const defaultVal = engineDefaults[field.key];
+	if (defaultVal === undefined || defaultVal === null) return fallback;
+
+	if (field.type === 'select') {
+		const option = field.options.find((o) => o.value === String(defaultVal));
+		return option ? `Default (${option.label})` : fallback;
+	}
+
+	if (field.type === 'boolean') {
+		return defaultVal ? 'Default (Enabled)' : 'Default (Disabled)';
+	}
+
+	// number
+	return `Default (${defaultVal})`;
 }
 
 interface FieldControlProps {
@@ -139,6 +170,7 @@ export function EngineSettingsFields({
 	value,
 	onChange,
 	inheritLabel = 'Inherits from defaults',
+	engineDefaults,
 }: EngineSettingsFieldsProps) {
 	const activeEngineValues =
 		(engine && (value?.[engine.id] as Record<string, unknown> | undefined)) ?? {};
@@ -179,20 +211,23 @@ export function EngineSettingsFields({
 					</div>
 
 					<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-						{engine.settings.fields.map((field) => (
-							<div key={field.key} className="space-y-2">
-								<Label>{field.label}</Label>
-								<FieldControl
-									field={field}
-									rawValue={activeEngineValues[field.key]}
-									inheritLabel={inheritLabel}
-									onUpdate={updateField}
-								/>
-								{field.description && (
-									<p className="text-xs text-muted-foreground">{field.description}</p>
-								)}
-							</div>
-						))}
+						{engine.settings.fields.map((field) => {
+							const fieldInheritLabel = resolveInheritLabel(field, engineDefaults, inheritLabel);
+							return (
+								<div key={field.key} className="space-y-2">
+									<Label>{field.label}</Label>
+									<FieldControl
+										field={field}
+										rawValue={activeEngineValues[field.key]}
+										inheritLabel={fieldInheritLabel}
+										onUpdate={updateField}
+									/>
+									{field.description && (
+										<p className="text-xs text-muted-foreground">{field.description}</p>
+									)}
+								</div>
+							);
+						})}
 					</div>
 				</div>
 			)}
