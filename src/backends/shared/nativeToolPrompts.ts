@@ -88,10 +88,8 @@ export async function buildTaskPrompt(
 		return { prompt, hasOffloadedContext: false };
 	}
 
-	const { inlineInjections, offloadedFiles, instructions } = await offloadLargeContext(
-		repoDir,
-		contextInjections,
-	);
+	const { inlineInjections, offloadedFiles, offloadedImages, instructions } =
+		await offloadLargeContext(repoDir, contextInjections);
 
 	prompt += buildInlineContextSection(inlineInjections);
 
@@ -101,7 +99,7 @@ export async function buildTaskPrompt(
 
 	return {
 		prompt,
-		hasOffloadedContext: offloadedFiles.length > 0,
+		hasOffloadedContext: offloadedFiles.length > 0 || offloadedImages.length > 0,
 	};
 }
 
