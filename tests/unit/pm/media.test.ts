@@ -1,12 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	MAX_IMAGES_PER_WORK_ITEM,
 	MAX_IMAGE_SIZE_BYTES,
+	downloadMedia,
 	extractMarkdownImages,
 	filterImageMedia,
 	isImageMimeType,
+	mediaToBase64DataUri,
 } from '../../../src/pm/media.js';
 import type { MediaReference } from '../../../src/pm/types.js';
+
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: {
+		debug: vi.fn(),
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+	},
+}));
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -255,5 +266,174 @@ describe('extractMarkdownImages', () => {
 		expect(refs[MAX_IMAGES_PER_WORK_ITEM - 1].url).toBe(
 			`https://example.com/img${MAX_IMAGES_PER_WORK_ITEM - 1}.png`,
 		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// downloadMedia
+// ---------------------------------------------------------------------------
+
+describe('downloadMedia', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('returns buffer and mimeType from Content-Type header on success', async () => {
+		const imageBytes = Buffer.from('fake-image-data');
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+			new Response(imageBytes, {
+				status: 200,
+				headers: { 'Content-Type': 'image/png' },
+			}),
+		);
+
+		const result = await downloadMedia('https://example.com/image.png');
+
+		expect(result).not.toBeNull();
+		// biome-ignore lint/style/noNonNullAssertion: guarded by expect above
+		expect(result!.buffer).toBeInstanceOf(Buffer);
+		// biome-ignore lint/style/noNonNullAssertion: guarded by expect above
+		expect(result!.mimeType).toBe('image/png');
+	});
+
+	it('strips charset from Content-Type when determining MIME type', async () => {
+		const imageBytes = Buffer.from('fake-jpeg');
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+			new Response(imageBytes, {
+				status: 200,
+				headers: { 'Content-Type': 'image/jpeg; charset=utf-8' },
+			}),
+		);
+
+		const result = await downloadMedia('https://example.com/photo.jpg');
+
+		// biome-ignore lint/style/noNonNullAssertion: successful download guaranteed by mock
+		expect(result!.mimeType).toBe('image/jpeg');
+	});
+
+	it('falls back to URL extension MIME detection when no Content-Type header', async () => {
+		const imageBytes = Buffer.from('fake-png');
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(imageBytes, { status: 200 }));
+
+		const result = await downloadMedia('https://example.com/image.png');
+
+		// biome-ignore lint/style/noNonNullAssertion: successful download guaranteed by mock
+		expect(result!.mimeType).toBe('image/png');
+	});
+
+	it('passes auth headers to fetch', async () => {
+		const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+			new Response(Buffer.from('data'), {
+				status: 200,
+				headers: { 'Content-Type': 'image/gif' },
+			}),
+		);
+
+		const headers = { Authorization: 'Basic abc123' };
+		await downloadMedia('https://example.com/image.gif', headers);
+
+		expect(fetchSpy).toHaveBeenCalledOnce();
+		const [, options] = fetchSpy.mock.calls[0];
+		expect((options as RequestInit).headers).toEqual(headers);
+	});
+
+	it('returns null for non-OK HTTP status', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Not Found', { status: 404 }));
+
+		const result = await downloadMedia('https://example.com/missing.png');
+
+		expect(result).toBeNull();
+	});
+
+	it('returns null when Content-Length exceeds MAX_IMAGE_SIZE_BYTES', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+			new Response(Buffer.from('data'), {
+				status: 200,
+				headers: {
+					'Content-Type': 'image/png',
+					'Content-Length': String(MAX_IMAGE_SIZE_BYTES + 1),
+				},
+			}),
+		);
+
+		const result = await downloadMedia('https://example.com/large.png');
+
+		expect(result).toBeNull();
+	});
+
+	it('returns null when body bytes exceed MAX_IMAGE_SIZE_BYTES (no Content-Length)', async () => {
+		// Create a buffer just over the limit
+		const oversizedBuffer = Buffer.alloc(MAX_IMAGE_SIZE_BYTES + 1, 'x');
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+			new Response(oversizedBuffer, {
+				status: 200,
+				headers: { 'Content-Type': 'image/png' },
+			}),
+		);
+
+		const result = await downloadMedia('https://example.com/huge.png');
+
+		expect(result).toBeNull();
+	});
+
+	it('returns null when fetch times out (AbortError)', async () => {
+		vi.spyOn(globalThis, 'fetch').mockRejectedValue(
+			Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }),
+		);
+
+		const result = await downloadMedia('https://example.com/slow.png');
+
+		expect(result).toBeNull();
+	});
+
+	it('returns null when fetch throws a network error', async () => {
+		vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network failure'));
+
+		const result = await downloadMedia('https://example.com/error.png');
+
+		expect(result).toBeNull();
+	});
+
+	it('downloads successfully when Content-Length is exactly MAX_IMAGE_SIZE_BYTES', async () => {
+		const imageBytes = Buffer.alloc(MAX_IMAGE_SIZE_BYTES, 'x');
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+			new Response(imageBytes, {
+				status: 200,
+				headers: {
+					'Content-Type': 'image/webp',
+					'Content-Length': String(MAX_IMAGE_SIZE_BYTES),
+				},
+			}),
+		);
+
+		const result = await downloadMedia('https://example.com/exact.webp');
+
+		expect(result).not.toBeNull();
+		// biome-ignore lint/style/noNonNullAssertion: guarded by expect above
+		expect(result!.buffer.byteLength).toBe(MAX_IMAGE_SIZE_BYTES);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// mediaToBase64DataUri
+// ---------------------------------------------------------------------------
+
+describe('mediaToBase64DataUri', () => {
+	it('returns a correctly formatted data URI', () => {
+		const buffer = Buffer.from('hello');
+		const result = mediaToBase64DataUri(buffer, 'image/png');
+		expect(result).toBe(`data:image/png;base64,${Buffer.from('hello').toString('base64')}`);
+	});
+
+	it('works for different MIME types', () => {
+		const buffer = Buffer.from([0xff, 0xd8, 0xff]);
+		const result = mediaToBase64DataUri(buffer, 'image/jpeg');
+		expect(result).toMatch(/^data:image\/jpeg;base64,/);
+	});
+
+	it('empty buffer produces valid (empty content) data URI', () => {
+		const buffer = Buffer.alloc(0);
+		const result = mediaToBase64DataUri(buffer, 'image/gif');
+		expect(result).toBe('data:image/gif;base64,');
 	});
 });

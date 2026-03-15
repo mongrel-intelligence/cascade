@@ -784,4 +784,76 @@ describe('trelloClient', () => {
 			).rejects.toThrow('No Trello credentials in scope');
 		});
 	});
+
+	// ===== downloadAttachment =====
+
+	describe('downloadAttachment', () => {
+		afterEach(() => {
+			vi.restoreAllMocks();
+		});
+
+		it('appends key and token as query params and returns buffer + mimeType', async () => {
+			const imageBytes = Buffer.from('image-data');
+			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response(imageBytes, {
+					status: 200,
+					headers: { 'Content-Type': 'image/png' },
+				}),
+			);
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.downloadAttachment(
+					'https://trello-attachments.s3.amazonaws.com/card/image.png',
+				),
+			);
+
+			expect(result).not.toBeNull();
+			// biome-ignore lint/style/noNonNullAssertion: guarded by expect above
+			expect(result!.mimeType).toBe('image/png');
+			// biome-ignore lint/style/noNonNullAssertion: guarded by expect above
+			expect(result!.buffer).toBeInstanceOf(Buffer);
+
+			const [url] = fetchSpy.mock.calls[0];
+			expect(url).toContain('key=test-key');
+			expect(url).toContain('token=test-token');
+		});
+
+		it('appends credentials with & when URL already has query params', async () => {
+			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response(Buffer.from('data'), {
+					status: 200,
+					headers: { 'Content-Type': 'image/jpeg' },
+				}),
+			);
+
+			await withTrelloCredentials(creds, () =>
+				trelloClient.downloadAttachment(
+					'https://trello-attachments.s3.amazonaws.com/card/image.jpg?version=2',
+				),
+			);
+
+			const [url] = fetchSpy.mock.calls[0];
+			expect(url).toContain('version=2');
+			expect(url).toContain('&key=test-key');
+			expect(url).toContain('&token=test-token');
+		});
+
+		it('returns null when download fails (non-OK response)', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response('Unauthorized', { status: 401 }),
+			);
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.downloadAttachment('https://trello-attachments.s3.amazonaws.com/image.png'),
+			);
+
+			expect(result).toBeNull();
+		});
+
+		it('throws when called outside withTrelloCredentials scope', async () => {
+			await expect(
+				trelloClient.downloadAttachment('https://trello-attachments.s3.amazonaws.com/image.png'),
+			).rejects.toThrow('No Trello credentials in scope');
+		});
+	});
 });
