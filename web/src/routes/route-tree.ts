@@ -10,6 +10,7 @@ import { projectGeneralRoute } from './projects/$projectId.general.js';
 import { projectHarnessRoute } from './projects/$projectId.harness.js';
 import { projectIntegrationsRoute } from './projects/$projectId.integrations.js';
 import { projectDetailRoute } from './projects/$projectId.js';
+import { projectLifecycleRoute } from './projects/$projectId.lifecycle.js';
 import { projectStatsRoute } from './projects/$projectId.stats.js';
 import { projectWorkRoute } from './projects/$projectId.work.js';
 import { projectsIndexRoute } from './projects/index.js';
@@ -31,6 +32,7 @@ export const routeTree = rootRoute.addChildren([
 		projectStatsRoute,
 		projectIntegrationsRoute,
 		projectAgentConfigsRoute,
+		projectLifecycleRoute,
 	]),
 	settingsGeneralRoute,
 	settingsUsersRoute,

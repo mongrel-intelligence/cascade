@@ -4,7 +4,8 @@ export type ProjectSection =
 	| 'work'
 	| 'stats'
 	| 'integrations'
-	| 'agent-configs';
+	| 'agent-configs'
+	| 'lifecycle';
 
 export type ProjectSectionRoute =
 	| '/projects/$projectId/general'
@@ -12,7 +13,8 @@ export type ProjectSectionRoute =
 	| '/projects/$projectId/work'
 	| '/projects/$projectId/stats'
 	| '/projects/$projectId/integrations'
-	| '/projects/$projectId/agent-configs';
+	| '/projects/$projectId/agent-configs'
+	| '/projects/$projectId/lifecycle';
 
 export const PROJECT_SECTIONS: {
 	id: ProjectSection;
@@ -35,6 +37,12 @@ export const PROJECT_SECTIONS: {
 		label: 'Agents',
 		path: 'agent-configs',
 		route: '/projects/$projectId/agent-configs',
+	},
+	{
+		id: 'lifecycle',
+		label: 'Lifecycle',
+		path: 'lifecycle',
+		route: '/projects/$projectId/lifecycle',
 	},
 ];
 
