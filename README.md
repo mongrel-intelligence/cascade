@@ -81,9 +81,12 @@ npm run db:migrate
 Start each service in a separate terminal:
 
 ```bash
-npm run dev          # Router (webhook receiver, :3000)
-npm run dev:web      # Dashboard frontend (Vite, :5173)
+npm run dev                                           # Router (webhook receiver, :3000)
+npm run build && node --env-file=.env dist/dashboard.js  # Dashboard API (:3001)
+npm run dev:web                                       # Dashboard frontend (Vite, :5173)
 ```
+
+> **Note:** The Vite dev server proxies `/trpc` and `/api` to `localhost:3001`, so the Dashboard API must be running for the frontend to work. See [CLAUDE.md](./CLAUDE.md#running-the-dashboard) for more details.
 
 ### Commands
 
