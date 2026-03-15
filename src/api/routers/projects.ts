@@ -3,6 +3,11 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { EngineSettingsSchema } from '../../config/engineSettings.js';
 import { getDb } from '../../db/client.js';
+import {
+	deleteProjectCredential,
+	listProjectCredentials,
+	writeProjectCredential,
+} from '../../db/repositories/credentialsRepository.js';
 import { listProjectsForOrg } from '../../db/repositories/runsRepository.js';
 import {
 	createProject,
@@ -258,6 +263,63 @@ export const projectsRouter = router({
 					});
 				}
 				await removeIntegrationCredential(integration.id, input.role);
+			}),
+	}),
+
+	// Project-scoped credentials (project_credentials table)
+	credentials: router({
+		/**
+		 * List masked metadata for all project-scoped credentials.
+		 * Never returns plaintext values — only masked last-4-chars preview.
+		 */
+		list: protectedProcedure
+			.input(z.object({ projectId: z.string() }))
+			.query(async ({ ctx, input }) => {
+				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
+				const rows = await listProjectCredentials(input.projectId);
+				return rows.map((row) => ({
+					envVarKey: row.envVarKey,
+					name: row.name,
+					isConfigured: true,
+					maskedValue: row.value.length <= 4 ? '****' : `****${row.value.slice(-4)}`,
+				}));
+			}),
+
+		/**
+		 * Upsert a project-scoped credential (write-only — never exposes plaintext).
+		 */
+		set: protectedProcedure
+			.input(
+				z.object({
+					projectId: z.string(),
+					envVarKey: z.string().regex(/^[A-Z_][A-Z0-9_]*$/),
+					value: z.string().min(1),
+					name: z.string().optional(),
+				}),
+			)
+			.mutation(async ({ ctx, input }) => {
+				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
+				await writeProjectCredential(
+					input.projectId,
+					input.envVarKey,
+					input.value,
+					input.name ?? null,
+				);
+			}),
+
+		/**
+		 * Delete a project-scoped credential.
+		 */
+		delete: protectedProcedure
+			.input(
+				z.object({
+					projectId: z.string(),
+					envVarKey: z.string().min(1),
+				}),
+			)
+			.mutation(async ({ ctx, input }) => {
+				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
+				await deleteProjectCredential(input.projectId, input.envVarKey);
 			}),
 	}),
 });

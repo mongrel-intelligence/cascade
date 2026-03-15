@@ -125,4 +125,25 @@ export const credentialsRouter = router({
 				});
 			}
 		}),
+
+	/**
+	 * Verify a raw GitHub token (not a stored credential ID).
+	 * Used by the Integrations tab SCM credential inputs.
+	 * Accepts a plaintext token from the form and calls the GitHub API to resolve the login.
+	 * The token is never stored by this endpoint.
+	 */
+	verifyGithubToken: protectedProcedure
+		.input(z.object({ token: z.string().min(1) }))
+		.mutation(async ({ input }) => {
+			try {
+				const octokit = new Octokit({ auth: input.token });
+				const { data } = await octokit.users.getAuthenticated();
+				return { login: data.login, avatarUrl: data.avatar_url };
+			} catch (err) {
+				throw new TRPCError({
+					code: 'BAD_REQUEST',
+					message: `Failed to verify GitHub token: ${err instanceof Error ? err.message : String(err)}`,
+				});
+			}
+		}),
 });
