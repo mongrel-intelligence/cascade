@@ -13,6 +13,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select.js';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.js';
 import {
 	AGENT_LABELS,
 	CATEGORY_LABELS,
@@ -22,7 +23,6 @@ import {
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -38,19 +38,6 @@ interface AgentConfig {
 interface Engine {
 	id: string;
 	label: string;
-}
-
-function AgentConfigBadge({ config }: { config: AgentConfig | null }) {
-	if (!config) {
-		return <span className="text-xs text-muted-foreground">Using defaults</span>;
-	}
-	const parts: string[] = [];
-	if (config.model) parts.push(config.model);
-	if (config.maxIterations) parts.push(`${config.maxIterations} iterations`);
-	if (config.maxConcurrency) parts.push(`max ${config.maxConcurrency} concurrent`);
-	if (config.agentEngine) parts.push(config.agentEngine);
-	if (parts.length === 0) return <span className="text-xs text-muted-foreground">Configured</span>;
-	return <span className="text-xs text-muted-foreground">{parts.join(' · ')}</span>;
 }
 
 // ============================================================================
@@ -99,7 +86,6 @@ function DefinitionAgentSection({
 	onTriggerToggle,
 	onTriggerParamChange,
 }: DefinitionAgentSectionProps) {
-	const [expanded, setExpanded] = useState(false);
 	const [saved, setSaved] = useState(false);
 	const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	// Tracks whether a successful save is in flight (prevents config sync from clearing "Saved")
@@ -199,160 +185,134 @@ function DefinitionAgentSection({
 	};
 
 	return (
-		<div className="rounded-lg border border-border overflow-hidden">
-			{/* Header */}
-			<button
-				type="button"
-				onClick={() => setExpanded((v) => !v)}
-				className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors"
-			>
-				<div className="flex items-center gap-3">
-					{expanded ? (
-						<ChevronDown className="h-4 w-4 text-muted-foreground" />
-					) : (
-						<ChevronRight className="h-4 w-4 text-muted-foreground" />
-					)}
-					<span className="font-medium text-sm">
-						{(AGENT_LABELS as Record<string, string | undefined>)[agentType] ?? agentType}
-					</span>
-					<AgentConfigBadge config={config} />
+		<div className="space-y-6">
+			{/* Config fields */}
+			<div className="space-y-4">
+				<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+					Configuration
+				</p>
+				<div className="grid grid-cols-2 gap-4">
+					<div className="space-y-2">
+						<Label htmlFor={`${agentType}-model`}>Model</Label>
+						<ModelField
+							id={`${agentType}-model`}
+							value={model}
+							onChange={setModel}
+							engine={agentEngine}
+						/>
+					</div>
+					<div className="space-y-2">
+						<Label htmlFor={`${agentType}-iterations`}>Max Iterations</Label>
+						<Input
+							id={`${agentType}-iterations`}
+							type="number"
+							value={maxIterations}
+							onChange={(e) => setMaxIterations(e.target.value)}
+							placeholder="Optional"
+						/>
+					</div>
 				</div>
-			</button>
+				<div className="grid grid-cols-2 gap-4">
+					<div className="space-y-2">
+						<Label htmlFor={`${agentType}-concurrency`}>Max Concurrency</Label>
+						<Input
+							id={`${agentType}-concurrency`}
+							type="number"
+							min={1}
+							value={maxConcurrency}
+							onChange={(e) => setMaxConcurrency(e.target.value)}
+							placeholder="Optional"
+						/>
+					</div>
+					<div className="space-y-2">
+						<Label>Engine</Label>
+						<Select
+							value={agentEngine || '_none'}
+							onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
+						>
+							<SelectTrigger className="w-full">
+								<SelectValue placeholder="Optional" />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="_none">None</SelectItem>
+								{engines.map((engine) => (
+									<SelectItem key={engine.id} value={engine.id}>
+										{engine.label}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</div>
+				</div>
+				<div className="space-y-2">
+					<Label>Prompt</Label>
+					<p className="text-sm text-muted-foreground">
+						Prompts are managed in{' '}
+						<Link to="/global/definitions" className="text-primary hover:underline">
+							Agent Definitions
+						</Link>
+					</p>
+				</div>
+			</div>
 
-			{/* Expanded content */}
-			{expanded && (
-				<div className="border-t border-border px-4 py-4 space-y-6 bg-muted/20">
-					{/* Config fields */}
-					<div className="space-y-4">
+			{/* Render triggers by category */}
+			{(['pm', 'scm', 'internal'] as const).map((category) => {
+				const categoryTriggers = triggersByCategory[category];
+				if (categoryTriggers.length === 0) return null;
+
+				return (
+					<div key={category} className="space-y-3">
 						<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-							Configuration
+							{CATEGORY_LABELS[category] ?? category} Triggers
 						</p>
-						<div className="grid grid-cols-2 gap-4">
-							<div className="space-y-2">
-								<Label htmlFor={`${agentType}-model`}>Model</Label>
-								<ModelField
-									id={`${agentType}-model`}
-									value={model}
-									onChange={setModel}
-									engine={agentEngine}
-								/>
-							</div>
-							<div className="space-y-2">
-								<Label htmlFor={`${agentType}-iterations`}>Max Iterations</Label>
-								<Input
-									id={`${agentType}-iterations`}
-									type="number"
-									value={maxIterations}
-									onChange={(e) => setMaxIterations(e.target.value)}
-									placeholder="Optional"
-								/>
-							</div>
-						</div>
-						<div className="grid grid-cols-2 gap-4">
-							<div className="space-y-2">
-								<Label htmlFor={`${agentType}-concurrency`}>Max Concurrency</Label>
-								<Input
-									id={`${agentType}-concurrency`}
-									type="number"
-									min={1}
-									value={maxConcurrency}
-									onChange={(e) => setMaxConcurrency(e.target.value)}
-									placeholder="Optional"
-								/>
-							</div>
-							<div className="space-y-2">
-								<Label>Engine</Label>
-								<Select
-									value={agentEngine || '_none'}
-									onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
-								>
-									<SelectTrigger className="w-full">
-										<SelectValue placeholder="Optional" />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="_none">None</SelectItem>
-										{engines.map((engine) => (
-											<SelectItem key={engine.id} value={engine.id}>
-												{engine.label}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							</div>
-						</div>
-						<div className="space-y-2">
-							<Label>Prompt</Label>
-							<p className="text-sm text-muted-foreground">
-								Prompts are managed in{' '}
-								<Link to="/global/definitions" className="text-primary hover:underline">
-									Agent Definitions
-								</Link>
-							</p>
-						</div>
+						<DefinitionTriggerToggles
+							triggers={categoryTriggers}
+							onToggle={(event, enabled) => onTriggerToggle(agentType, event, enabled)}
+							onParamChange={(event, params) => {
+								// Find the current trigger to get its enabled state
+								const currentTrigger = categoryTriggers.find((t) => t.event === event);
+								onTriggerParamChange(agentType, event, params, currentTrigger?.enabled ?? true);
+							}}
+							idPrefix={`${agentType}-${category}`}
+						/>
 					</div>
+				);
+			})}
 
-					{/* Render triggers by category */}
-					{(['pm', 'scm', 'internal'] as const).map((category) => {
-						const categoryTriggers = triggersByCategory[category];
-						if (categoryTriggers.length === 0) return null;
-
-						return (
-							<div key={category} className="space-y-3">
-								<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-									{CATEGORY_LABELS[category] ?? category} Triggers
-								</p>
-								<DefinitionTriggerToggles
-									triggers={categoryTriggers}
-									onToggle={(event, enabled) => onTriggerToggle(agentType, event, enabled)}
-									onParamChange={(event, params) => {
-										// Find the current trigger to get its enabled state
-										const currentTrigger = categoryTriggers.find((t) => t.event === event);
-										onTriggerParamChange(agentType, event, params, currentTrigger?.enabled ?? true);
-									}}
-									idPrefix={`${agentType}-${category}`}
-								/>
-							</div>
-						);
-					})}
-
-					{!hasTriggers && (
-						<p className="text-xs text-muted-foreground">
-							No trigger configuration for this agent.
-						</p>
-					)}
-
-					{/* Footer actions */}
-					<div className="flex items-center justify-between border-t border-border pt-4">
-						<div className="flex items-center gap-2">
-							<button
-								type="button"
-								onClick={handleSave}
-								disabled={isSaving}
-								className="inline-flex h-7 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-							>
-								{isSaving ? 'Saving...' : config ? 'Save' : 'Create Config'}
-							</button>
-							<button
-								type="button"
-								onClick={handleCancel}
-								className="inline-flex h-7 items-center rounded-md border border-input px-3 text-xs hover:bg-accent"
-							>
-								Reset
-							</button>
-							{saved && <span className="text-xs text-muted-foreground">Saved</span>}
-						</div>
-						{config && (
-							<button
-								type="button"
-								onClick={handleDelete}
-								className="inline-flex h-7 items-center rounded-md border border-destructive px-3 text-xs text-destructive hover:bg-destructive/10"
-							>
-								Delete Config
-							</button>
-						)}
-					</div>
-				</div>
+			{!hasTriggers && (
+				<p className="text-xs text-muted-foreground">No trigger configuration for this agent.</p>
 			)}
+
+			{/* Footer actions */}
+			<div className="flex items-center justify-between border-t border-border pt-4">
+				<div className="flex items-center gap-2">
+					<button
+						type="button"
+						onClick={handleSave}
+						disabled={isSaving}
+						className="inline-flex h-7 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+					>
+						{isSaving ? 'Saving...' : config ? 'Save' : 'Create Config'}
+					</button>
+					<button
+						type="button"
+						onClick={handleCancel}
+						className="inline-flex h-7 items-center rounded-md border border-input px-3 text-xs hover:bg-accent"
+					>
+						Reset
+					</button>
+					{saved && <span className="text-xs text-muted-foreground">Saved</span>}
+				</div>
+				{config && (
+					<button
+						type="button"
+						onClick={handleDelete}
+						className="inline-flex h-7 items-center rounded-md border border-destructive px-3 text-xs text-destructive hover:bg-destructive/10"
+					>
+						Delete Config
+					</button>
+				)}
+			</div>
 		</div>
 	);
 }
@@ -361,6 +321,7 @@ function DefinitionAgentSection({
 // Main Component
 // ============================================================================
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: main config component with mutations and lifecycle state
 export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const queryClient = useQueryClient();
 
@@ -618,6 +579,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 
 	// Get list of agent types to display
 	const agentTypes = Array.from(triggersByAgent.keys());
+	const defaultTab = agentTypes[0] ?? '';
 
 	return (
 		<div className="space-y-4">
@@ -625,27 +587,37 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				Per-agent configuration and trigger settings scoped to this project.
 			</p>
 
-			{/* Agent sections */}
-			<div className="space-y-2">
-				{agentTypes.map((type) => (
-					<DefinitionAgentSection
-						key={type}
-						agentType={type}
-						config={configByAgent.get(type) ?? null}
-						triggers={triggersByAgent.get(type) ?? []}
-						integrations={triggersViewIntegrations}
-						engines={engines}
-						isSaving={
-							savingAgentType === type && (createMutation.isPending || updateMutation.isPending)
-						}
-						onSaveConfig={handleSaveConfig}
-						saveSuccessNonce={saveSuccessNonces[type] ?? 0}
-						onDeleteConfig={(id) => deleteMutation.mutate(id)}
-						onTriggerToggle={handleTriggerToggle}
-						onTriggerParamChange={handleTriggerParamChange}
-					/>
-				))}
-			</div>
+			{/* Agent tabs */}
+			{agentTypes.length > 0 && (
+				<Tabs defaultValue={defaultTab}>
+					<TabsList variant="line" className="flex-wrap h-auto gap-y-1">
+						{agentTypes.map((type) => (
+							<TabsTrigger key={type} value={type}>
+								{(AGENT_LABELS as Record<string, string | undefined>)[type] ?? type}
+							</TabsTrigger>
+						))}
+					</TabsList>
+					{agentTypes.map((type) => (
+						<TabsContent key={type} value={type} className="space-y-6 pt-4">
+							<DefinitionAgentSection
+								agentType={type}
+								config={configByAgent.get(type) ?? null}
+								triggers={triggersByAgent.get(type) ?? []}
+								integrations={triggersViewIntegrations}
+								engines={engines}
+								isSaving={
+									savingAgentType === type && (createMutation.isPending || updateMutation.isPending)
+								}
+								onSaveConfig={handleSaveConfig}
+								saveSuccessNonce={saveSuccessNonces[type] ?? 0}
+								onDeleteConfig={(id) => deleteMutation.mutate(id)}
+								onTriggerToggle={handleTriggerToggle}
+								onTriggerParamChange={handleTriggerParamChange}
+							/>
+						</TabsContent>
+					))}
+				</Tabs>
+			)}
 
 			{/* Lifecycle triggers section */}
 			{LIFECYCLE_TRIGGERS.length > 0 && (

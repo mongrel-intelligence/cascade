@@ -546,7 +546,7 @@ function SCMTab({
 			/>
 
 			<p className="text-xs text-muted-foreground">
-				Trigger configuration has moved to the <strong>Agent Configs</strong> tab.
+				Trigger configuration has moved to the <strong>Agents</strong> tab.
 			</p>
 
 			<div className="flex items-center gap-2">
