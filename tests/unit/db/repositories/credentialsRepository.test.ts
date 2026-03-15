@@ -10,6 +10,7 @@ vi.mock('../../../../src/db/client.js', () => ({
 import { getDb } from '../../../../src/db/client.js';
 import {
 	getIntegrationProvider,
+	listProjectCredentialsMeta,
 	resolveAllProjectCredentials,
 	resolveProjectCredential,
 } from '../../../../src/db/repositories/credentialsRepository.js';
@@ -97,6 +98,30 @@ describe('credentialsRepository', () => {
 
 			// One select for project existence, one for project_credentials
 			expect(mockDb.db.select).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	describe('listProjectCredentialsMeta', () => {
+		it('returns envVarKey and name without value column', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([
+				{ envVarKey: 'GITHUB_TOKEN_IMPLEMENTER', name: 'GH Token' },
+				{ envVarKey: 'OPENROUTER_API_KEY', name: null },
+			]);
+
+			const result = await listProjectCredentialsMeta('proj1');
+
+			expect(result).toEqual([
+				{ envVarKey: 'GITHUB_TOKEN_IMPLEMENTER', name: 'GH Token' },
+				{ envVarKey: 'OPENROUTER_API_KEY', name: null },
+			]);
+		});
+
+		it('returns empty array when no credentials exist', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			const result = await listProjectCredentialsMeta('proj1');
+
+			expect(result).toEqual([]);
 		});
 	});
 

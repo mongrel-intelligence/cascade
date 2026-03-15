@@ -8,7 +8,7 @@
  * Environment variables:
  * - PORT (default: 3001)
  * - DATABASE_URL — PostgreSQL connection string
- * - CORS_ORIGIN — Frontend origin (e.g. https://ca.sca.de.com)
+ * - CORS_ORIGIN — Frontend origin(s), comma-separated (e.g. https://ca.sca.de.com,https://dev.ca.sca.de.com)
  * - COOKIE_DOMAIN — Cookie domain for cross-origin auth
  * - REDIS_URL — Redis for job dispatch to the router's worker-manager
  */
@@ -36,7 +36,11 @@ const app = new Hono();
 
 // Middleware
 const corsOrigin = process.env.CORS_ORIGIN;
-app.use('*', corsOrigin ? cors({ origin: corsOrigin, credentials: true }) : cors());
+const corsOrigins = corsOrigin
+	?.split(',')
+	.map((o) => o.trim())
+	.filter(Boolean);
+app.use('*', corsOrigins?.length ? cors({ origin: corsOrigins, credentials: true }) : cors());
 app.use('*', honoLogger());
 
 // Health check

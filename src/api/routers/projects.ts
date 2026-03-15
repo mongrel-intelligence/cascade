@@ -6,6 +6,7 @@ import { getDb } from '../../db/client.js';
 import {
 	deleteProjectCredential,
 	listProjectCredentials,
+	listProjectCredentialsMeta,
 	writeProjectCredential,
 } from '../../db/repositories/credentialsRepository.js';
 import { listProjectsForOrg } from '../../db/repositories/runsRepository.js';
@@ -21,6 +22,7 @@ import {
 	upsertProjectIntegration,
 } from '../../db/repositories/settingsRepository.js';
 import { projects } from '../../db/schema/index.js';
+import { captureException } from '../../sentry.js';
 import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
 
 async function verifyProjectOwnership(projectId: string, orgId: string) {
@@ -195,13 +197,29 @@ export const projectsRouter = router({
 			.input(z.object({ projectId: z.string() }))
 			.query(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
-				const rows = await listProjectCredentials(input.projectId);
-				return rows.map((row) => ({
-					envVarKey: row.envVarKey,
-					name: row.name,
-					isConfigured: true,
-					maskedValue: row.value.length <= 4 ? '****' : `****${row.value.slice(-4)}`,
-				}));
+				try {
+					const rows = await listProjectCredentials(input.projectId);
+					return rows.map((row) => ({
+						envVarKey: row.envVarKey,
+						name: row.name,
+						isConfigured: true,
+						maskedValue: row.value.length <= 4 ? '****' : `****${row.value.slice(-4)}`,
+					}));
+				} catch (err) {
+					// Decryption key missing/wrong — return metadata without value preview
+					captureException(err, {
+						tags: { source: 'credentials_list' },
+						extra: { projectId: input.projectId },
+						level: 'warning',
+					});
+					const meta = await listProjectCredentialsMeta(input.projectId);
+					return meta.map((row) => ({
+						envVarKey: row.envVarKey,
+						name: row.name,
+						isConfigured: true,
+						maskedValue: '****',
+					}));
+				}
 			}),
 
 		/**
