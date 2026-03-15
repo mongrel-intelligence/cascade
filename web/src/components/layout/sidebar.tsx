@@ -156,7 +156,7 @@ export function Sidebar({ user }: SidebarProps) {
 				<div className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 					Projects
 				</div>
-				<div className="overflow-y-auto max-h-48 flex flex-col gap-0.5">
+				<div className="flex flex-col gap-0.5">
 					{projects && projects.length > 0 ? (
 						projects.map((project) => (
 							<ProjectNavItem key={project.id} project={project} currentPath={currentPath} />
