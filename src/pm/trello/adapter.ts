@@ -7,6 +7,7 @@
  */
 
 import { trelloClient } from '../../trello/client.js';
+import { extractMarkdownImages } from '../media.js';
 import type {
 	Attachment,
 	Checklist,
@@ -24,6 +25,7 @@ export class TrelloPMProvider implements PMProvider {
 
 	async getWorkItem(id: string): Promise<WorkItem> {
 		const card = await trelloClient.getCard(id);
+		const inlineMedia = extractMarkdownImages(card.desc, 'description');
 		return {
 			id: card.id,
 			title: card.name,
@@ -37,21 +39,26 @@ export class TrelloPMProvider implements PMProvider {
 					color: l.color,
 				}),
 			),
+			inlineMedia: inlineMedia.length > 0 ? inlineMedia : undefined,
 		};
 	}
 
 	async getWorkItemComments(id: string): Promise<WorkItemComment[]> {
 		const comments = await trelloClient.getCardComments(id);
-		return comments.map((c) => ({
-			id: c.id,
-			date: c.date,
-			text: c.data.text,
-			author: {
-				id: c.memberCreator.id,
-				name: c.memberCreator.fullName,
-				username: c.memberCreator.username,
-			},
-		}));
+		return comments.map((c) => {
+			const inlineMedia = extractMarkdownImages(c.data.text, 'comment');
+			return {
+				id: c.id,
+				date: c.date,
+				text: c.data.text,
+				author: {
+					id: c.memberCreator.id,
+					name: c.memberCreator.fullName,
+					username: c.memberCreator.username,
+				},
+				inlineMedia: inlineMedia.length > 0 ? inlineMedia : undefined,
+			};
+		});
 	}
 
 	async updateWorkItem(
