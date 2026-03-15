@@ -51,9 +51,6 @@ vi.mock('../../../src/db/repositories/settingsRepository.js', () => ({
 	upsertProjectIntegration: vi.fn(),
 	deleteProjectIntegration: vi.fn(),
 	getIntegrationByProjectAndCategory: vi.fn(),
-	listIntegrationCredentials: vi.fn(),
-	setIntegrationCredential: vi.fn(),
-	removeIntegrationCredential: vi.fn(),
 	listAgentConfigs: vi.fn(),
 	createAgentConfig: vi.fn(),
 	updateAgentConfig: vi.fn(),
@@ -62,12 +59,6 @@ vi.mock('../../../src/db/repositories/settingsRepository.js', () => ({
 }));
 
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
-	listOrgCredentials: vi.fn(),
-	createCredential: vi.fn(),
-	updateCredential: vi.fn(),
-	deleteCredential: vi.fn(),
-	resolveAllIntegrationCredentials: vi.fn(),
-	resolveAllOrgCredentials: vi.fn(),
 	listProjectCredentials: vi.fn(),
 	writeProjectCredential: vi.fn(),
 	deleteProjectCredential: vi.fn(),
@@ -147,9 +138,6 @@ describe('appRouter', () => {
 		expect(procedures).toContain('projects.integrations.list');
 		expect(procedures).toContain('projects.integrations.upsert');
 		expect(procedures).toContain('projects.integrations.delete');
-		expect(procedures).toContain('projects.integrationCredentials.list');
-		expect(procedures).toContain('projects.integrationCredentials.set');
-		expect(procedures).toContain('projects.integrationCredentials.remove');
 	});
 
 	it('has organization sub-router with all procedures', () => {

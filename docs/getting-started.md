@@ -104,9 +104,9 @@ node bin/cascade.js projects create \
 
 ## 6. Add Credentials
 
-CASCADE needs credentials to interact with GitHub, your PM tool, and LLM providers. All credentials are stored encrypted in the database.
+CASCADE needs credentials to interact with GitHub, your PM tool, and LLM providers. All credentials are stored encrypted in the database, scoped to your project.
 
-Via the dashboard: **Settings** > **Credentials** to create org-scoped credentials, then **Projects** > select project > **Integrations** to link them.
+Via the dashboard: **Projects** > select project > **Credentials** to manage project credentials.
 
 Or via CLI:
 
@@ -120,17 +120,15 @@ CASCADE uses two separate GitHub accounts to prevent feedback loops:
 Create [personal access tokens](https://github.com/settings/tokens) (or fine-grained tokens) for each bot account with `repo` scope.
 
 ```bash
-node bin/cascade.js credentials create \
-  --name "Implementer Bot" \
+node bin/cascade.js projects credentials-set my-project \
   --key GITHUB_TOKEN_IMPLEMENTER \
   --value ghp_... \
-  --default
+  --name "Implementer Bot"
 
-node bin/cascade.js credentials create \
-  --name "Reviewer Bot" \
+node bin/cascade.js projects credentials-set my-project \
   --key GITHUB_TOKEN_REVIEWER \
   --value ghp_... \
-  --default
+  --name "Reviewer Bot"
 ```
 
 ### LLM API keys
@@ -143,19 +141,17 @@ Requires either an Anthropic API key or a Claude Max subscription token:
 
 ```bash
 # Option A: Anthropic API key
-node bin/cascade.js credentials create \
-  --name "Anthropic" \
+node bin/cascade.js projects credentials-set my-project \
   --key ANTHROPIC_API_KEY \
   --value sk-ant-... \
-  --default
+  --name "Anthropic"
 
 # Option B: Claude Max subscription (long-lived OAuth token)
 # Generate with: claude login && claude setup-token
-node bin/cascade.js credentials create \
-  --name "Claude Code OAuth" \
+node bin/cascade.js projects credentials-set my-project \
   --key CLAUDE_CODE_OAUTH_TOKEN \
   --value sk-ant-oat01-... \
-  --default
+  --name "Claude Code OAuth"
 ```
 
 #### Codex engine
@@ -164,21 +160,19 @@ Requires either an OpenAI API key or a ChatGPT Plus/Pro subscription:
 
 ```bash
 # Option A: OpenAI API key — just store the key, no extra setup needed
-node bin/cascade.js credentials create \
-  --name "OpenAI" \
+node bin/cascade.js projects credentials-set my-project \
   --key OPENAI_API_KEY \
   --value sk-... \
-  --default
+  --name "OpenAI"
 
 # Option B: ChatGPT Plus/Pro subscription auth
 # First, authenticate on a machine with a browser:
 #   codex login
 # Then store the auth token:
-node bin/cascade.js credentials create \
-  --name "Codex Subscription Auth" \
+node bin/cascade.js projects credentials-set my-project \
   --key CODEX_AUTH_JSON \
   --value "$(cat ~/.codex/auth.json)" \
-  --default
+  --name "Codex Subscription Auth"
 ```
 
 When using subscription auth, CASCADE automatically writes `~/.codex/auth.json` in the worker before each run and captures any token refreshes the Codex CLI performs back into the database — so the credential stays current across ephemeral worker environments.
@@ -186,29 +180,13 @@ When using subscription auth, CASCADE automatically writes `~/.codex/auth.json` 
 #### OpenRouter (works with any engine)
 
 ```bash
-node bin/cascade.js credentials create \
-  --name "OpenRouter" \
+node bin/cascade.js projects credentials-set my-project \
   --key OPENROUTER_API_KEY \
   --value sk-or-... \
-  --default
+  --name "OpenRouter"
 ```
 
-### Link GitHub tokens to your project
-
-```bash
-# List credentials to see their IDs
-node bin/cascade.js credentials list
-
-# Link GitHub tokens to the project's SCM integration
-# (The GitHub integration is created automatically if it doesn't exist)
-node bin/cascade.js projects integration-credential-set my-project \
-  --category scm --role implementer_token --credential-id 1
-
-node bin/cascade.js projects integration-credential-set my-project \
-  --category scm --role reviewer_token --credential-id 2
-```
-
-You can also manage all of this through the dashboard UI: **Projects** > select project > **Settings** > **Integrations**.
+You can also manage all of this through the dashboard UI: **Projects** > select project > **Credentials**.
 
 ---
 
@@ -248,26 +226,22 @@ Or via CLI:
 3. Find your board ID and list IDs (use the Trello API or append `.json` to your board URL)
 
 ```bash
-# Store Trello credentials
-node bin/cascade.js credentials create --name "Trello API Key" --key TRELLO_API_KEY --value ... --default
-node bin/cascade.js credentials create --name "Trello Token" --key TRELLO_TOKEN --value ... --default
+# Store Trello credentials (project-scoped)
+node bin/cascade.js projects credentials-set my-project --key TRELLO_API_KEY --value ... --name "Trello API Key"
+node bin/cascade.js projects credentials-set my-project --key TRELLO_TOKEN --value ... --name "Trello Token"
 
 # Configure the integration
 node bin/cascade.js projects integration-set my-project \
   --category pm --provider trello \
   --config '{"boardId":"BOARD_ID","lists":{"todo":"LIST_ID","inProgress":"LIST_ID","inReview":"LIST_ID"},"labels":{"readyToProcess":"LABEL_ID","processing":"LABEL_ID","processed":"LABEL_ID","error":"LABEL_ID"}}'
-
-# Link credentials
-node bin/cascade.js projects integration-credential-set my-project --category pm --role api_key --credential-id 3
-node bin/cascade.js projects integration-credential-set my-project --category pm --role token --credential-id 4
 ```
 
 ### JIRA
 
 ```bash
-# Store JIRA credentials
-node bin/cascade.js credentials create --name "JIRA Email" --key JIRA_EMAIL --value you@company.com --default
-node bin/cascade.js credentials create --name "JIRA API Token" --key JIRA_API_TOKEN --value ... --default
+# Store JIRA credentials (project-scoped)
+node bin/cascade.js projects credentials-set my-project --key JIRA_EMAIL --value you@company.com --name "JIRA Email"
+node bin/cascade.js projects credentials-set my-project --key JIRA_API_TOKEN --value ... --name "JIRA API Token"
 
 # Configure the integration
 node bin/cascade.js projects integration-set my-project \

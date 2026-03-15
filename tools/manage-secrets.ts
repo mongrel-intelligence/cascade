@@ -16,7 +16,6 @@ import { findProjectByIdFromDb } from '../src/db/repositories/configRepository.j
 import {
 	deleteProjectCredential,
 	listProjectCredentials,
-	resolveAllIntegrationCredentials,
 	writeProjectCredential,
 } from '../src/db/repositories/credentialsRepository.js';
 
@@ -119,29 +118,17 @@ async function handleResolve(args: string[]): Promise<void> {
 
 	// Resolve project-scoped credentials
 	const projectCreds = await listProjectCredentials(projectId);
-	// Resolve integration credentials
-	const integrationCreds = await resolveAllIntegrationCredentials(projectId);
 
-	if (projectCreds.length === 0 && integrationCreds.length === 0) {
+	if (projectCreds.length === 0) {
 		console.log(`No credentials resolved for project ${projectId}`);
 		return;
 	}
 
-	console.log(`Resolved credentials for project ${projectId} (org: ${project.orgId}):`);
+	console.log(`Resolved credentials for project ${projectId}:`);
 
-	if (projectCreds.length > 0) {
-		console.log('  Project credentials:');
-		for (const c of projectCreds) {
-			const nameTag = c.name ? ` (${c.name})` : '';
-			console.log(`    ${c.envVarKey}${nameTag}: ${maskValue(c.value)}`);
-		}
-	}
-
-	if (integrationCreds.length > 0) {
-		console.log('  Integration credentials:');
-		for (const c of integrationCreds) {
-			console.log(`    ${c.category}/${c.provider} [${c.role}]: ${maskValue(c.value)}`);
-		}
+	for (const c of projectCreds) {
+		const nameTag = c.name ? ` (${c.name})` : '';
+		console.log(`  ${c.envVarKey}${nameTag}: ${maskValue(c.value)}`);
 	}
 }
 

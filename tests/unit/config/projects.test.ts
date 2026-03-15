@@ -9,10 +9,6 @@ vi.mock('../../../src/db/repositories/configRepository.js', () => ({
 }));
 
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
-	resolveIntegrationCredential: vi.fn(),
-	resolveAllIntegrationCredentials: vi.fn(),
-	resolveOrgCredential: vi.fn(),
-	resolveAllOrgCredentials: vi.fn(),
 	resolveProjectCredential: vi.fn(),
 	resolveAllProjectCredentials: vi.fn(),
 }));
@@ -35,10 +31,7 @@ import {
 	loadConfigFromDb,
 } from '../../../src/db/repositories/configRepository.js';
 import {
-	resolveAllIntegrationCredentials,
-	resolveAllOrgCredentials,
 	resolveAllProjectCredentials,
-	resolveIntegrationCredential,
 	resolveProjectCredential,
 } from '../../../src/db/repositories/credentialsRepository.js';
 

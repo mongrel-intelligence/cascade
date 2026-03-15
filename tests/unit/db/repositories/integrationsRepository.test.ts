@@ -8,10 +8,8 @@ vi.mock('../../../../src/db/client.js', () => ({
 import { getDb } from '../../../../src/db/client.js';
 import {
 	deleteProjectIntegration,
-	listIntegrationCredentials,
 	listProjectIntegrations,
 	removeIntegrationCredential,
-	setIntegrationCredential,
 	updateProjectIntegrationTriggers,
 	upsertProjectIntegration,
 } from '../../../../src/db/repositories/integrationsRepository.js';
@@ -169,82 +167,25 @@ describe('integrationsRepository', () => {
 		});
 	});
 
-	describe('listIntegrationCredentials', () => {
-		it('returns credentials linked to the integration with join', async () => {
-			const mockRows = [
-				{ id: 1, role: 'api_key', credentialId: 10, credentialName: 'Trello Key' },
-				{ id: 2, role: 'token', credentialId: 11, credentialName: 'Trello Token' },
-			];
-			// The query is select().from().innerJoin().where()
-			mockDb.chain.where.mockResolvedValueOnce(mockRows);
-
-			const result = await listIntegrationCredentials(42);
-
-			expect(result).toEqual(mockRows);
-			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
-			expect(mockDb.chain.innerJoin).toHaveBeenCalledTimes(1);
-		});
-
-		it('returns empty array when no credentials linked', async () => {
-			mockDb.chain.where.mockResolvedValueOnce([]);
-
-			const result = await listIntegrationCredentials(99);
-
-			expect(result).toEqual([]);
-		});
-	});
-
-	describe('setIntegrationCredential', () => {
-		it('deletes existing role entry then inserts new one', async () => {
-			// delete().where() call
-			mockDb.chain.where.mockResolvedValueOnce(undefined);
-			// insert().values() — needs to be thenable
-			mockDb.chain.values.mockResolvedValueOnce(undefined);
-
-			await setIntegrationCredential(5, 'api_key', 20);
-
-			// delete the existing role
-			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
-			// insert the new credential link
-			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
-			expect(mockDb.chain.values).toHaveBeenCalledWith({
-				integrationId: 5,
-				role: 'api_key',
-				credentialId: 20,
-			});
-		});
-
-		it('handles setting credential when no prior entry exists', async () => {
-			mockDb.chain.where.mockResolvedValueOnce(undefined);
-			mockDb.chain.values.mockResolvedValueOnce(undefined);
-
-			await setIntegrationCredential(7, 'token', 30);
-
-			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
-			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
-		});
-	});
-
 	describe('removeIntegrationCredential', () => {
-		it('deletes the credential link by integrationId and role', async () => {
-			// Initial select for project info (no integration found — skips cleanup)
-			mockDb.chain.where.mockResolvedValueOnce([]);
-			// delete().where()
+		it('looks up integration and deletes from project_credentials when envVarKey found', async () => {
+			// Select integration info
+			mockDb.chain.where.mockResolvedValueOnce([{ projectId: 'p1', provider: 'trello' }]);
+			// delete().where() for project_credentials
 			mockDb.chain.where.mockResolvedValueOnce(undefined);
 
 			await removeIntegrationCredential(5, 'api_key');
 
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
 			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
 		});
 
-		it('does not throw when no entry exists to remove', async () => {
-			// Initial select for project info
+		it('does not delete when no integration found', async () => {
+			// No integration found
 			mockDb.chain.where.mockResolvedValueOnce([]);
-			// delete().where()
-			mockDb.chain.where.mockResolvedValueOnce(undefined);
 
 			await expect(removeIntegrationCredential(99, 'nonexistent_role')).resolves.toBeUndefined();
-			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
+			expect(mockDb.db.delete).not.toHaveBeenCalled();
 		});
 	});
 });

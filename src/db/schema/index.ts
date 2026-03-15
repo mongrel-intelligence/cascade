@@ -1,10 +1,9 @@
-export { credentials } from './credentials.js';
 export { projectCredentials } from './projectCredentials.js';
 export { organizations } from './organizations.js';
 export { agentConfigs } from './agentConfigs.js';
 export { agentDefinitions } from './agentDefinitions.js';
 export { agentTriggerConfigs } from './agentTriggerConfigs.js';
-export { integrationCredentials, projectIntegrations } from './integrations.js';
+export { projectIntegrations } from './integrations.js';
 export { projects } from './projects.js';
 export { agentRunLlmCalls, agentRunLogs, agentRuns, debugAnalyses } from './runs.js';
 export { promptPartials } from './promptPartials.js';

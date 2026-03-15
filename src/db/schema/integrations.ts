@@ -1,14 +1,4 @@
-import {
-	index,
-	integer,
-	jsonb,
-	pgTable,
-	serial,
-	text,
-	timestamp,
-	uniqueIndex,
-} from 'drizzle-orm/pg-core';
-import { credentials } from './credentials.js';
+import { jsonb, pgTable, serial, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { projects } from './projects.js';
 
 export const projectIntegrations = pgTable(
@@ -32,24 +22,6 @@ export const projectIntegrations = pgTable(
 	],
 );
 
-export const integrationCredentials = pgTable(
-	'integration_credentials',
-	{
-		id: serial('id').primaryKey(),
-		integrationId: integer('integration_id')
-			.notNull()
-			.references(() => projectIntegrations.id, { onDelete: 'cascade' }),
-		role: text('role').notNull(),
-		credentialId: integer('credential_id')
-			.notNull()
-			.references(() => credentials.id, { onDelete: 'restrict' }),
-		createdAt: timestamp('created_at').defaultNow(),
-		updatedAt: timestamp('updated_at')
-			.defaultNow()
-			.$onUpdate(() => new Date()),
-	},
-	(table) => [
-		uniqueIndex('uq_integration_credentials_integration_role').on(table.integrationId, table.role),
-		index('idx_integration_credentials_credential_id').on(table.credentialId),
-	],
-);
+// integrationCredentials table has been removed.
+// Integration credentials are now stored directly in project_credentials.
+// See migration 0041_drop_legacy_org_credentials.sql

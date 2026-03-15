@@ -10,7 +10,7 @@
 import { eq } from 'drizzle-orm';
 import { closeDb, getDb } from '../src/db/client.js';
 import { decryptCredential, isEncryptedValue, isEncryptionEnabled } from '../src/db/crypto.js';
-import { credentials } from '../src/db/schema/index.js';
+import { projectCredentials } from '../src/db/schema/index.js';
 
 async function main() {
 	const dryRun = process.argv.includes('--dry-run');
@@ -22,8 +22,12 @@ async function main() {
 
 	const db = getDb();
 	const allCreds = await db
-		.select({ id: credentials.id, orgId: credentials.orgId, value: credentials.value })
-		.from(credentials);
+		.select({
+			id: projectCredentials.id,
+			projectId: projectCredentials.projectId,
+			value: projectCredentials.value,
+		})
+		.from(projectCredentials);
 
 	let decrypted = 0;
 	let skipped = 0;
@@ -35,16 +39,16 @@ async function main() {
 			continue;
 		}
 
-		const plaintextValue = decryptCredential(cred.value, cred.orgId);
+		const plaintextValue = decryptCredential(cred.value, cred.projectId);
 		if (dryRun) {
 			console.log(
 				`  #${cred.id}: would decrypt (${cred.value.length} chars → ${plaintextValue.length} chars)`,
 			);
 		} else {
 			await db
-				.update(credentials)
+				.update(projectCredentials)
 				.set({ value: plaintextValue, updatedAt: new Date() })
-				.where(eq(credentials.id, cred.id));
+				.where(eq(projectCredentials.id, cred.id));
 			console.log(`  #${cred.id}: decrypted`);
 		}
 		decrypted++;
