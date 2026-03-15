@@ -96,19 +96,37 @@ export const runsRouter = router({
 
 	getLogs: protectedProcedure
 		.input(z.object({ runId: z.string().uuid() }))
-		.query(async ({ input }) => {
+		.query(async ({ ctx, input }) => {
+			const run = await getRunById(input.runId);
+			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
+			}
 			return getRunLogs(input.runId);
 		}),
 
 	listLlmCalls: protectedProcedure
 		.input(z.object({ runId: z.string().uuid() }))
-		.query(async ({ input }) => {
+		.query(async ({ ctx, input }) => {
+			const run = await getRunById(input.runId);
+			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
+			}
 			return listLlmCallsMeta(input.runId);
 		}),
 
 	getLlmCall: protectedProcedure
 		.input(z.object({ runId: z.string().uuid(), callNumber: z.number() }))
-		.query(async ({ input }) => {
+		.query(async ({ ctx, input }) => {
+			const run = await getRunById(input.runId);
+			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
+			}
 			const call = await getLlmCallByNumber(input.runId, input.callNumber);
 			if (!call) throw new TRPCError({ code: 'NOT_FOUND' });
 			return call;
@@ -116,14 +134,26 @@ export const runsRouter = router({
 
 	getDebugAnalysis: protectedProcedure
 		.input(z.object({ runId: z.string().uuid() }))
-		.query(async ({ input }) => {
+		.query(async ({ ctx, input }) => {
+			const run = await getRunById(input.runId);
+			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
+			}
 			const analysis = await getDebugAnalysisByRunId(input.runId);
 			return analysis;
 		}),
 
 	getDebugAnalysisStatus: protectedProcedure
 		.input(z.object({ runId: z.string().uuid() }))
-		.query(async ({ input }) => {
+		.query(async ({ ctx, input }) => {
+			const run = await getRunById(input.runId);
+			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
+			}
 			if (isAnalysisRunning(input.runId)) {
 				return { status: 'running' as const };
 			}

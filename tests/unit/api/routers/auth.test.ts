@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
-import { createMockUser } from '../../../helpers/factories.js';
+import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
 
 const mockListAllOrganizations = vi.fn();
 
@@ -17,9 +17,8 @@ function createCaller(ctx: TRPCContext) {
 
 describe('authRouter', () => {
 	describe('me', () => {
-		it('returns user data from context', async () => {
+		it('returns user data from context for admin (no availableOrgs)', async () => {
 			const mockUser = createMockUser();
-			mockListAllOrganizations.mockResolvedValue([{ id: 'org-1', name: 'Org One' }]);
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.me();
@@ -31,8 +30,28 @@ describe('authRouter', () => {
 				role: 'admin',
 				orgId: 'org-1',
 				effectiveOrgId: 'org-1',
+				availableOrgs: undefined,
+			});
+			expect(mockListAllOrganizations).not.toHaveBeenCalled();
+		});
+
+		it('returns availableOrgs for superadmin', async () => {
+			const superAdmin = createMockSuperAdmin();
+			mockListAllOrganizations.mockResolvedValue([{ id: 'org-1', name: 'Org One' }]);
+			const caller = createCaller({ user: superAdmin, effectiveOrgId: superAdmin.orgId });
+
+			const result = await caller.me();
+
+			expect(result).toEqual({
+				id: 'superadmin-1',
+				email: 'admin@cascade.dev',
+				name: 'Super Admin',
+				role: 'superadmin',
+				orgId: 'org-1',
+				effectiveOrgId: 'org-1',
 				availableOrgs: [{ id: 'org-1', name: 'Org One' }],
 			});
+			expect(mockListAllOrganizations).toHaveBeenCalledOnce();
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {

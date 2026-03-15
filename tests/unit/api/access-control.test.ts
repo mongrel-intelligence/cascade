@@ -152,16 +152,24 @@ describe('computeEffectiveOrgId', () => {
 		expect(mockGetOrganization).not.toHaveBeenCalled();
 	});
 
-	it('returns requested org when admin requests valid different org', async () => {
-		mockGetOrganization.mockResolvedValue({ id: 'org-2', name: 'Org Two' });
+	it('ignores header for admin user requesting different org (admin cannot cross-org switch)', async () => {
 		const result = await computeEffectiveOrgId(adminUser, 'org-2');
+		expect(result).toBe('org-1');
+		expect(mockGetOrganization).not.toHaveBeenCalled();
+	});
+
+	it('returns requested org when superadmin requests valid different org', async () => {
+		const superAdmin = createMockUser({ role: 'superadmin' });
+		mockGetOrganization.mockResolvedValue({ id: 'org-2', name: 'Org Two' });
+		const result = await computeEffectiveOrgId(superAdmin, 'org-2');
 		expect(result).toBe('org-2');
 		expect(mockGetOrganization).toHaveBeenCalledWith('org-2');
 	});
 
-	it('falls back to user.orgId when admin requests nonexistent org', async () => {
+	it('falls back to user.orgId when superadmin requests nonexistent org', async () => {
+		const superAdmin = createMockUser({ role: 'superadmin' });
 		mockGetOrganization.mockResolvedValue(null);
-		const result = await computeEffectiveOrgId(adminUser, 'nonexistent');
+		const result = await computeEffectiveOrgId(superAdmin, 'nonexistent');
 		expect(result).toBe('org-1');
 		expect(mockGetOrganization).toHaveBeenCalledWith('nonexistent');
 	});
@@ -244,13 +252,22 @@ describe('Auth router — role-based data exposure', () => {
 		expect(result.role).toBe('member');
 	});
 
-	it('admin with switched org returns correct effectiveOrgId', async () => {
+	it('admin gets no availableOrgs (only superadmin sees org list)', async () => {
+		const caller = authRouter.createCaller({ user: adminUser, effectiveOrgId: 'org-1' });
+		const result = await caller.me();
+
+		expect(result.availableOrgs).toBeUndefined();
+		expect(mockListAllOrganizations).not.toHaveBeenCalled();
+	});
+
+	it('superadmin with switched org returns correct effectiveOrgId and availableOrgs', async () => {
 		mockListAllOrganizations.mockResolvedValue([
 			{ id: 'org-1', name: 'Org One' },
 			{ id: 'org-2', name: 'Org Two' },
 		]);
 
-		const caller = authRouter.createCaller({ user: adminUser, effectiveOrgId: 'org-2' });
+		const superAdmin = createMockUser({ role: 'superadmin' });
+		const caller = authRouter.createCaller({ user: superAdmin, effectiveOrgId: 'org-2' });
 		const result = await caller.me();
 
 		expect(result.effectiveOrgId).toBe('org-2');
