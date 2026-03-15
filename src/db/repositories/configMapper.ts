@@ -41,6 +41,7 @@ export interface AgentConfigRow {
 	model: string | null;
 	maxIterations: number | null;
 	agentEngine: string | null;
+	agentEngineSettings?: EngineSettings | null;
 }
 
 export interface IntegrationRow {
@@ -133,16 +134,19 @@ export function buildAgentMaps(configs: AgentConfigRow[]): {
 	models: Record<string, string>;
 	iterations: Record<string, number>;
 	engines: Record<string, string>;
+	engineSettings: Record<string, EngineSettings>;
 } {
 	const models: Record<string, string> = {};
 	const iterations: Record<string, number> = {};
 	const engines: Record<string, string> = {};
+	const engineSettings: Record<string, EngineSettings> = {};
 	for (const ac of configs) {
 		if (ac.model) models[ac.agentType] = ac.model;
 		if (ac.maxIterations != null) iterations[ac.agentType] = ac.maxIterations;
 		if (ac.agentEngine) engines[ac.agentType] = ac.agentEngine;
+		if (ac.agentEngineSettings != null) engineSettings[ac.agentType] = ac.agentEngineSettings;
 	}
-	return { models, iterations, engines };
+	return { models, iterations, engines, engineSettings };
 }
 
 export function orUndefined<T extends Record<string, unknown>>(obj: T): T | undefined {

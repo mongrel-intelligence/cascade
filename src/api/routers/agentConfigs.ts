@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getEngineCatalog, registerBuiltInEngines } from '../../backends/index.js';
+import { EngineSettingsSchema } from '../../config/engineSettings.js';
 import { getDb } from '../../db/client.js';
 import {
 	createAgentConfig,
@@ -35,6 +36,7 @@ export const agentConfigsRouter = router({
 				model: z.string().nullish(),
 				maxIterations: z.number().int().positive().nullish(),
 				agentEngine: z.string().nullish(),
+				engineSettings: EngineSettingsSchema.nullish(),
 				maxConcurrency: z.number().int().positive().nullish(),
 			}),
 		)
@@ -48,6 +50,7 @@ export const agentConfigsRouter = router({
 				model: input.model,
 				maxIterations: input.maxIterations,
 				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
+				...(input.engineSettings !== undefined ? { engineSettings: input.engineSettings } : {}),
 				...(input.maxConcurrency !== undefined ? { maxConcurrency: input.maxConcurrency } : {}),
 			});
 		}),
@@ -60,6 +63,7 @@ export const agentConfigsRouter = router({
 				model: z.string().nullish(),
 				maxIterations: z.number().int().positive().nullish(),
 				agentEngine: z.string().nullish(),
+				engineSettings: EngineSettingsSchema.nullish(),
 				maxConcurrency: z.number().int().positive().nullish(),
 			}),
 		)
@@ -76,10 +80,11 @@ export const agentConfigsRouter = router({
 			// Check project-scoped configs belong to user's org
 			await verifyProjectOrgAccess(config.projectId, ctx.effectiveOrgId);
 
-			const { id, ...updates } = input;
+			const { id, engineSettings, ...updates } = input;
 			await updateAgentConfig(id, {
 				...updates,
 				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
+				...(engineSettings !== undefined ? { engineSettings } : {}),
 			});
 		}),
 

@@ -53,6 +53,24 @@ describe('agentConfigsRepository', () => {
 				}),
 			);
 		});
+
+		it('persists engineSettings when provided', async () => {
+			mockDb.chain.returning.mockResolvedValueOnce([{ id: 43 }]);
+			const engineSettings = { 'claude-code': { maxThinkingTokens: 8000 } };
+
+			const result = await createAgentConfig({
+				projectId: 'proj-1',
+				agentType: 'implementation',
+				engineSettings,
+			});
+
+			expect(result).toEqual({ id: 43 });
+			expect(mockDb.chain.values).toHaveBeenCalledWith(
+				expect.objectContaining({
+					agentEngineSettings: engineSettings,
+				}),
+			);
+		});
 	});
 
 	describe('updateAgentConfig', () => {
@@ -66,6 +84,27 @@ describe('agentConfigsRepository', () => {
 			expect(setArg.model).toBe('new-model');
 			expect(setArg.maxIterations).toBe(30);
 			expect(setArg.updatedAt).toBeInstanceOf(Date);
+		});
+
+		it('persists engineSettings when provided', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+			const engineSettings = { codex: { sandboxMode: 'workspace-write' } };
+
+			await updateAgentConfig(42, { engineSettings });
+
+			expect(mockDb.db.update).toHaveBeenCalledTimes(1);
+			const setArg = mockDb.chain.set.mock.calls[0][0];
+			expect(setArg.agentEngineSettings).toEqual(engineSettings);
+			expect(setArg.updatedAt).toBeInstanceOf(Date);
+		});
+
+		it('does not set agentEngineSettings when engineSettings is not provided', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await updateAgentConfig(42, { model: 'updated-model' });
+
+			const setArg = mockDb.chain.set.mock.calls[0][0];
+			expect(Object.hasOwn(setArg, 'agentEngineSettings')).toBe(false);
 		});
 	});
 

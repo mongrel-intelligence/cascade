@@ -309,6 +309,13 @@
 			"when": 1778000000000,
 			"tag": "0043_stats_composite_index",
 			"breakpoints": false
+		},
+		{
+			"idx": 44,
+			"version": "7",
+			"when": 1779000000000,
+			"tag": "0044_agent_config_engine_settings",
+			"breakpoints": false
 		}
 	]
 }
