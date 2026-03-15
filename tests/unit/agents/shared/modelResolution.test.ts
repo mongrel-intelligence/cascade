@@ -66,9 +66,15 @@ vi.mock('../../../../src/agents/definitions/index.js', () => ({
 	getKnownAgentTypes: vi.fn().mockReturnValue([]),
 }));
 
+// Mock getAgentConfigPrompts (project-level prompt lookup)
+vi.mock('../../../../src/db/repositories/agentConfigsRepository.js', () => ({
+	getAgentConfigPrompts: vi.fn().mockResolvedValue({ systemPrompt: null, taskPrompt: null }),
+}));
+
 import { resolveAgentDefinition } from '../../../../src/agents/definitions/loader.js';
 import { initPrompts } from '../../../../src/agents/prompts/index.js';
 import { resolveModelConfig } from '../../../../src/agents/shared/modelResolution.js';
+import { getAgentConfigPrompts } from '../../../../src/db/repositories/agentConfigsRepository.js';
 
 // Initialize prompts before tests so validTypes is populated
 beforeAll(async () => {
@@ -78,6 +84,8 @@ beforeAll(async () => {
 beforeEach(() => {
 	// Reset to default (no custom prompt)
 	vi.mocked(resolveAgentDefinition).mockResolvedValue(mockAgentDefinition(undefined));
+	// Reset project-level prompts to empty (no project overrides)
+	vi.mocked(getAgentConfigPrompts).mockResolvedValue({ systemPrompt: null, taskPrompt: null });
 });
 
 function makeProject(overrides: Partial<ProjectConfig> = {}): ProjectConfig {
@@ -192,6 +200,215 @@ describe('resolveModelConfig', () => {
 			});
 
 			expect(result.systemPrompt).toContain('Custom git instructions from DB');
+		});
+	});
+
+	describe('3-tier prompt resolution chain (project → definition → .eta)', () => {
+		it('project-level systemPrompt takes priority over definition systemPrompt', async () => {
+			vi.mocked(getAgentConfigPrompts).mockResolvedValue({
+				systemPrompt: 'Project override: custom system prompt for <%= it.projectId %>.',
+				taskPrompt: null,
+			});
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(
+				mockAgentDefinition({ systemPrompt: 'Definition system prompt (should not be used).' }),
+			);
+
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project: makeProject({ id: 'my-proj' }),
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+				promptContext: { projectId: 'my-proj' },
+			});
+
+			expect(result.systemPrompt).toBe('Project override: custom system prompt for my-proj.');
+		});
+
+		it('project-level systemPrompt takes priority over .eta file defaults', async () => {
+			vi.mocked(getAgentConfigPrompts).mockResolvedValue({
+				systemPrompt: 'Project-level system prompt — no .eta.',
+				taskPrompt: null,
+			});
+			// No definition override
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(mockAgentDefinition(undefined));
+
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project: makeProject(),
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+			});
+
+			expect(result.systemPrompt).toBe('Project-level system prompt — no .eta.');
+		});
+
+		it('project-level taskPrompt takes priority over definition taskPrompt', async () => {
+			vi.mocked(getAgentConfigPrompts).mockResolvedValue({
+				systemPrompt: null,
+				taskPrompt: 'Project task: work on <%= it.workItemId %>.',
+			});
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(
+				mockAgentDefinition({ taskPrompt: 'Definition task prompt (should not be used).' }),
+			);
+
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project: makeProject(),
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+				agentInput: { workItemId: 'card-77' },
+			});
+
+			expect(result.taskPrompt).toBe('Project task: work on card-77.');
+		});
+
+		it('project-level taskPrompt takes priority over undefined (no .eta task prompt)', async () => {
+			vi.mocked(getAgentConfigPrompts).mockResolvedValue({
+				systemPrompt: null,
+				taskPrompt: 'Project-specific task override.',
+			});
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(mockAgentDefinition(undefined));
+
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project: makeProject(),
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+			});
+
+			expect(result.taskPrompt).toBe('Project-specific task override.');
+		});
+
+		it('definition systemPrompt wins when no project override', async () => {
+			vi.mocked(getAgentConfigPrompts).mockResolvedValue({
+				systemPrompt: null,
+				taskPrompt: null,
+			});
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(
+				mockAgentDefinition({ systemPrompt: 'Definition-level system prompt.' }),
+			);
+
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project: makeProject(),
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+			});
+
+			expect(result.systemPrompt).toBe('Definition-level system prompt.');
+		});
+
+		it('definition taskPrompt wins when no project task override', async () => {
+			vi.mocked(getAgentConfigPrompts).mockResolvedValue({
+				systemPrompt: null,
+				taskPrompt: null,
+			});
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(
+				mockAgentDefinition({ taskPrompt: 'Definition task: item <%= it.workItemId %>.' }),
+			);
+
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project: makeProject(),
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+				agentInput: { workItemId: 'item-55' },
+			});
+
+			expect(result.taskPrompt).toBe('Definition task: item item-55.');
+		});
+
+		it('.eta file is used when no project override and no definition systemPrompt', async () => {
+			vi.mocked(getAgentConfigPrompts).mockResolvedValue({
+				systemPrompt: null,
+				taskPrompt: null,
+			});
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(mockAgentDefinition(undefined));
+
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project: makeProject(),
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+			});
+
+			// .eta file for splitting contains "product manager"
+			expect(result.systemPrompt).toContain('product manager');
+			expect(result.taskPrompt).toBeUndefined();
+		});
+
+		it('project systemPrompt and definition taskPrompt can coexist independently', async () => {
+			vi.mocked(getAgentConfigPrompts).mockResolvedValue({
+				systemPrompt: 'Project system override.',
+				taskPrompt: null,
+			});
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(
+				mockAgentDefinition({ taskPrompt: 'Definition task for <%= it.workItemId %>.' }),
+			);
+
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project: makeProject(),
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+				agentInput: { workItemId: 'card-10' },
+			});
+
+			expect(result.systemPrompt).toBe('Project system override.');
+			expect(result.taskPrompt).toBe('Definition task for card-10.');
+		});
+
+		it('falls through to defaults when project config lookup fails', async () => {
+			vi.mocked(getAgentConfigPrompts).mockRejectedValue(new Error('DB unavailable'));
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(mockAgentDefinition(undefined));
+
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project: makeProject(),
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+			});
+
+			// Falls back to .eta file
+			expect(result.systemPrompt).toContain('product manager');
+		});
+
+		it('project prompt uses renderCustomPrompt with dbPartials for include resolution', async () => {
+			vi.mocked(getAgentConfigPrompts).mockResolvedValue({
+				systemPrompt: 'Project: <%~ include("partials/custom") %>',
+				taskPrompt: null,
+			});
+			const dbPartials = new Map([['custom', 'Injected from project prompt']]);
+
+			const result = await resolveModelConfig({
+				agentType: 'splitting',
+				project: makeProject(),
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+				dbPartials,
+			});
+
+			expect(result.systemPrompt).toContain('Injected from project prompt');
+		});
+
+		it('project task prompt uses renderInlineTaskPrompt with agentInput context', async () => {
+			vi.mocked(getAgentConfigPrompts).mockResolvedValue({
+				systemPrompt: null,
+				taskPrompt: 'Comment by @<%= it.commentAuthor %>: <%= it.commentText %>',
+			});
+
+			const result = await resolveModelConfig({
+				agentType: 'respond-to-planning-comment',
+				project: makeProject(),
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+				agentInput: {
+					triggerCommentText: 'Please refactor',
+					triggerCommentAuthor: 'bob',
+				},
+			});
+
+			expect(result.taskPrompt).toBe('Comment by @bob: Please refactor');
 		});
 	});
 
