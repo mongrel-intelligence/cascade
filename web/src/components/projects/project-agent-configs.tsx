@@ -3,6 +3,17 @@ import {
 	DefinitionTriggerToggles,
 	type ResolvedTrigger,
 } from '@/components/shared/definition-trigger-toggles.js';
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from '@/components/ui/alert-dialog.js';
+import { Badge } from '@/components/ui/badge.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import {
@@ -12,7 +23,14 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select.js';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.js';
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from '@/components/ui/table.js';
 import {
 	AGENT_LABELS,
 	CATEGORY_LABELS,
@@ -21,6 +39,7 @@ import {
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
+import { ArrowLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -316,6 +335,260 @@ function DefinitionAgentSection({
 }
 
 // ============================================================================
+// Agent List View
+// ============================================================================
+
+function countActiveTriggers(
+	triggers: ResolvedTrigger[],
+	integrations: { pm: string | null; scm: string | null },
+): number {
+	return triggers.filter((t) => {
+		if (!t.enabled) return false;
+		const [category] = t.event.split(':');
+		if (t.providers && t.providers.length > 0) {
+			const activeProvider = integrations[category as keyof typeof integrations];
+			return t.providers.some((p) => p === activeProvider);
+		}
+		return true;
+	}).length;
+}
+
+interface AgentRowProps {
+	type: string;
+	config: AgentConfig | null;
+	triggers: ResolvedTrigger[];
+	integrations: { pm: string | null; scm: string | null };
+	onSelect: (agentType: string) => void;
+	onDeleteRequest: (id: number, label: string) => void;
+}
+
+function AgentRow({
+	type,
+	config,
+	triggers,
+	integrations,
+	onSelect,
+	onDeleteRequest,
+}: AgentRowProps) {
+	const label = (AGENT_LABELS as Record<string, string | undefined>)[type] ?? type;
+	const activeTriggerCount = countActiveTriggers(triggers, integrations);
+	const modelInfo = config?.model ?? null;
+	const engineInfo = config?.agentEngine ?? null;
+
+	return (
+		<TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => onSelect(type)}>
+			<TableCell className="font-medium">{label}</TableCell>
+			<TableCell>
+				{config ? (
+					<Badge variant="default" className="text-xs">
+						Configured
+					</Badge>
+				) : (
+					<Badge variant="outline" className="text-xs">
+						Default
+					</Badge>
+				)}
+			</TableCell>
+			<TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+				{modelInfo || engineInfo ? (
+					<span>
+						{modelInfo && <span>{modelInfo}</span>}
+						{modelInfo && engineInfo && <span> · </span>}
+						{engineInfo && <span>{engineInfo}</span>}
+					</span>
+				) : (
+					<span>—</span>
+				)}
+			</TableCell>
+			<TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+				{activeTriggerCount > 0 ? <span>{activeTriggerCount} active</span> : <span>None</span>}
+			</TableCell>
+			<TableCell>
+				<div className="flex items-center justify-end gap-1">
+					{config && (
+						<button
+							type="button"
+							onClick={(e) => {
+								e.stopPropagation();
+								onDeleteRequest(config.id, label);
+							}}
+							className="p-1 text-muted-foreground hover:text-destructive"
+							title="Delete config"
+						>
+							<Trash2 className="h-4 w-4" />
+						</button>
+					)}
+					<ChevronRight className="h-4 w-4 text-muted-foreground" />
+				</div>
+			</TableCell>
+		</TableRow>
+	);
+}
+
+interface AgentListViewProps {
+	agentTypes: string[];
+	configByAgent: Map<string, AgentConfig>;
+	triggersByAgent: Map<string, ResolvedTrigger[]>;
+	integrations: { pm: string | null; scm: string | null };
+	onSelect: (agentType: string) => void;
+	onDelete: (id: number) => void;
+	isDeleting: boolean;
+}
+
+function AgentListView({
+	agentTypes,
+	configByAgent,
+	triggersByAgent,
+	integrations,
+	onSelect,
+	onDelete,
+	isDeleting,
+}: AgentListViewProps) {
+	const [deleteTarget, setDeleteTarget] = useState<{ id: number; label: string } | null>(null);
+
+	if (agentTypes.length === 0) {
+		return (
+			<div className="py-8 text-center text-muted-foreground">No agent definitions found.</div>
+		);
+	}
+
+	return (
+		<>
+			<div className="overflow-x-auto rounded-lg border border-border">
+				<Table>
+					<TableHeader>
+						<TableRow>
+							<TableHead>Agent</TableHead>
+							<TableHead>Status</TableHead>
+							<TableHead className="hidden sm:table-cell">Model / Engine</TableHead>
+							<TableHead className="hidden sm:table-cell">Active Triggers</TableHead>
+							<TableHead className="w-20" />
+						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{agentTypes.map((type) => (
+							<AgentRow
+								key={type}
+								type={type}
+								config={configByAgent.get(type) ?? null}
+								triggers={triggersByAgent.get(type) ?? []}
+								integrations={integrations}
+								onSelect={onSelect}
+								onDeleteRequest={(id, label) => setDeleteTarget({ id, label })}
+							/>
+						))}
+					</TableBody>
+				</Table>
+			</div>
+
+			<AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Delete Agent Config</AlertDialogTitle>
+						<AlertDialogDescription>
+							Are you sure you want to delete the custom config for{' '}
+							<strong>{deleteTarget?.label}</strong>? The agent will revert to default settings.
+							This action cannot be undone.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={() => {
+								if (deleteTarget) {
+									onDelete(deleteTarget.id);
+									setDeleteTarget(null);
+								}
+							}}
+							className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+						>
+							{isDeleting ? 'Deleting...' : 'Delete'}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+		</>
+	);
+}
+
+// ============================================================================
+// Agent Detail View
+// ============================================================================
+
+interface AgentDetailViewProps {
+	agentType: string;
+	config: AgentConfig | null;
+	triggers: ResolvedTrigger[];
+	integrations: { pm: string | null; scm: string | null };
+	engines: Engine[];
+	isSaving: boolean;
+	onSaveConfig: (agentType: string, configId: number | null, values: SaveConfigValues) => void;
+	saveSuccessNonce: number;
+	onDeleteConfig: (id: number) => void;
+	onTriggerToggle: (agentType: string, event: string, enabled: boolean) => void;
+	onTriggerParamChange: (
+		agentType: string,
+		event: string,
+		parameters: Record<string, TriggerParameterValue>,
+		currentEnabled: boolean,
+	) => void;
+	onBack: () => void;
+}
+
+function AgentDetailView({
+	agentType,
+	config,
+	triggers,
+	integrations,
+	engines,
+	isSaving,
+	onSaveConfig,
+	saveSuccessNonce,
+	onDeleteConfig,
+	onTriggerToggle,
+	onTriggerParamChange,
+	onBack,
+}: AgentDetailViewProps) {
+	const label = (AGENT_LABELS as Record<string, string | undefined>)[agentType] ?? agentType;
+
+	return (
+		<div className="space-y-4">
+			<div className="flex items-center gap-3">
+				<button
+					type="button"
+					onClick={onBack}
+					className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+				>
+					<ArrowLeft className="h-4 w-4" /> Back to agents
+				</button>
+			</div>
+			<div>
+				<h2 className="text-lg font-semibold">{label}</h2>
+				<p className="text-sm text-muted-foreground">
+					Configure model, engine, and trigger settings for the {label} agent.
+				</p>
+			</div>
+			<DefinitionAgentSection
+				agentType={agentType}
+				config={config}
+				triggers={triggers}
+				integrations={integrations}
+				engines={engines}
+				isSaving={isSaving}
+				onSaveConfig={onSaveConfig}
+				saveSuccessNonce={saveSuccessNonce}
+				onDeleteConfig={(id) => {
+					onDeleteConfig(id);
+					onBack();
+				}}
+				onTriggerToggle={onTriggerToggle}
+				onTriggerParamChange={onTriggerParamChange}
+			/>
+		</div>
+	);
+}
+
+// ============================================================================
 // Main Component
 // ============================================================================
 
@@ -333,6 +606,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 
 	const [savingAgentType, setSavingAgentType] = useState<string | null>(null);
 	const [saveSuccessNonces, setSaveSuccessNonces] = useState<Record<string, number>>({});
+	const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
 	const configsQueryKey = trpc.agentConfigs.list.queryOptions({ projectId }).queryKey;
 	const triggersViewQueryKey = trpc.agentTriggerConfigs.getProjectTriggersView.queryOptions({
@@ -512,47 +786,47 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 
 	// Get list of agent types to display
 	const agentTypes = Array.from(triggersByAgent.keys());
-	const defaultTab = agentTypes[0] ?? '';
 
+	// Render detail view when an agent is selected
+	if (selectedAgent !== null) {
+		return (
+			<AgentDetailView
+				agentType={selectedAgent}
+				config={configByAgent.get(selectedAgent) ?? null}
+				triggers={triggersByAgent.get(selectedAgent) ?? []}
+				integrations={triggersViewIntegrations}
+				engines={engines}
+				isSaving={
+					savingAgentType === selectedAgent &&
+					(createMutation.isPending || updateMutation.isPending)
+				}
+				onSaveConfig={handleSaveConfig}
+				saveSuccessNonce={saveSuccessNonces[selectedAgent] ?? 0}
+				onDeleteConfig={(id) => deleteMutation.mutate(id)}
+				onTriggerToggle={handleTriggerToggle}
+				onTriggerParamChange={handleTriggerParamChange}
+				onBack={() => setSelectedAgent(null)}
+			/>
+		);
+	}
+
+	// Render list view
 	return (
 		<div className="space-y-4">
 			<p className="text-sm text-muted-foreground">
-				Per-agent configuration and trigger settings scoped to this project.
+				Per-agent configuration and trigger settings scoped to this project. Click an agent to
+				configure its model, engine, and triggers.
 			</p>
 
-			{/* Agent tabs */}
-			{agentTypes.length > 0 && (
-				<Tabs defaultValue={defaultTab}>
-					<div className="overflow-x-auto border-b border-border scrollbar-hide pb-[5px]">
-						<TabsList variant="line" className="w-max">
-							{agentTypes.map((type) => (
-								<TabsTrigger key={type} value={type}>
-									{(AGENT_LABELS as Record<string, string | undefined>)[type] ?? type}
-								</TabsTrigger>
-							))}
-						</TabsList>
-					</div>
-					{agentTypes.map((type) => (
-						<TabsContent key={type} value={type} className="space-y-6 pt-4">
-							<DefinitionAgentSection
-								agentType={type}
-								config={configByAgent.get(type) ?? null}
-								triggers={triggersByAgent.get(type) ?? []}
-								integrations={triggersViewIntegrations}
-								engines={engines}
-								isSaving={
-									savingAgentType === type && (createMutation.isPending || updateMutation.isPending)
-								}
-								onSaveConfig={handleSaveConfig}
-								saveSuccessNonce={saveSuccessNonces[type] ?? 0}
-								onDeleteConfig={(id) => deleteMutation.mutate(id)}
-								onTriggerToggle={handleTriggerToggle}
-								onTriggerParamChange={handleTriggerParamChange}
-							/>
-						</TabsContent>
-					))}
-				</Tabs>
-			)}
+			<AgentListView
+				agentTypes={agentTypes}
+				configByAgent={configByAgent}
+				triggersByAgent={triggersByAgent}
+				integrations={triggersViewIntegrations}
+				onSelect={setSelectedAgent}
+				onDelete={(id) => deleteMutation.mutate(id)}
+				isDeleting={deleteMutation.isPending}
+			/>
 		</div>
 	);
 }
