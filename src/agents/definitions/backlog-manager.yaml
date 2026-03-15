@@ -53,10 +53,8 @@ prompts:
   taskPrompt: |
     A Pipeline Snapshot has been pre-loaded into your context with the current state of all pipeline lists (BACKLOG, TODO, IN_PROGRESS, IN_REVIEW, DONE, MERGED).
 
-    The pipeline capacity limit is <%= it.maxInFlightItems ?? 1 %> item(s).
-
     1. Review the pre-loaded Pipeline Snapshot and count items currently in the active pipeline (TODO + IN PROGRESS + IN REVIEW).
-    2. If the count is below the capacity limit: use the pre-loaded BACKLOG data from the snapshot to select the best unblocked item(s) and move them to TODO (up to the remaining capacity).
+    2. If the count is below the capacity limit (see system prompt): use the pre-loaded BACKLOG data from the snapshot to select the best unblocked item(s) and move them to TODO (up to the remaining capacity).
     3. If already at or above capacity: exit immediately without taking action.
 
 hint: Only act if pipeline has capacity (items in TODO + IN PROGRESS + IN REVIEW < maxInFlightItems).
