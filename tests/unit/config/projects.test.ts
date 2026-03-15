@@ -13,6 +13,8 @@ vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
 	resolveAllIntegrationCredentials: vi.fn(),
 	resolveOrgCredential: vi.fn(),
 	resolveAllOrgCredentials: vi.fn(),
+	resolveProjectCredential: vi.fn(),
+	resolveAllProjectCredentials: vi.fn(),
 }));
 
 import { getProjectGitHubToken } from '../../../src/config/projects.js';
@@ -35,7 +37,9 @@ import {
 import {
 	resolveAllIntegrationCredentials,
 	resolveAllOrgCredentials,
+	resolveAllProjectCredentials,
 	resolveIntegrationCredential,
+	resolveProjectCredential,
 } from '../../../src/db/repositories/credentialsRepository.js';
 
 describe('config provider', () => {
@@ -155,15 +159,15 @@ describe('config provider', () => {
 		beforeEach(() => {
 			vi.stubEnv('TRELLO_API_KEY', '');
 		});
-		it('resolves credential from DB', async () => {
-			vi.mocked(resolveIntegrationCredential).mockResolvedValue('db-secret-value');
+		it('resolves credential from project_credentials via envVarKey mapping', async () => {
+			vi.mocked(resolveProjectCredential).mockResolvedValue('db-secret-value');
 
 			const result = await getIntegrationCredential('project1', 'pm', 'api_key');
 			expect(result).toBe('db-secret-value');
 		});
 
 		it('throws when credential not found', async () => {
-			vi.mocked(resolveIntegrationCredential).mockResolvedValue(null);
+			vi.mocked(resolveProjectCredential).mockResolvedValue(null);
 
 			await expect(getIntegrationCredential('project1', 'pm', 'api_key')).rejects.toThrow(
 				"Integration credential 'pm/api_key' not found for project 'project1'",
@@ -177,14 +181,14 @@ describe('config provider', () => {
 			vi.stubEnv('GITHUB_TOKEN_IMPLEMENTER', '');
 		});
 		it('returns credential value when found', async () => {
-			vi.mocked(resolveIntegrationCredential).mockResolvedValue('secret-value');
+			vi.mocked(resolveProjectCredential).mockResolvedValue('secret-value');
 
 			const result = await getIntegrationCredentialOrNull('project1', 'scm', 'implementer_token');
 			expect(result).toBe('secret-value');
 		});
 
 		it('returns null when no credential found', async () => {
-			vi.mocked(resolveIntegrationCredential).mockResolvedValue(null);
+			vi.mocked(resolveProjectCredential).mockResolvedValue(null);
 
 			const result = await getIntegrationCredentialOrNull('project1', 'scm', 'implementer_token');
 			expect(result).toBeNull();
@@ -192,12 +196,10 @@ describe('config provider', () => {
 	});
 
 	describe('getAllProjectCredentials', () => {
-		it('resolves all credentials via integration + org defaults', async () => {
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject1);
-			vi.mocked(resolveAllIntegrationCredentials).mockResolvedValue([
-				{ category: 'pm', provider: 'trello', role: 'api_key', value: 'trello123' },
-			]);
-			vi.mocked(resolveAllOrgCredentials).mockResolvedValue({});
+		it('resolves all credentials via single project_credentials query', async () => {
+			vi.mocked(resolveAllProjectCredentials).mockResolvedValue({
+				TRELLO_API_KEY: 'trello123',
+			});
 
 			const result = await getAllProjectCredentials('project1');
 			expect(result).toEqual({
@@ -206,9 +208,7 @@ describe('config provider', () => {
 		});
 
 		it('returns empty object when no credentials exist', async () => {
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject2);
-			vi.mocked(resolveAllIntegrationCredentials).mockResolvedValue([]);
-			vi.mocked(resolveAllOrgCredentials).mockResolvedValue({});
+			vi.mocked(resolveAllProjectCredentials).mockResolvedValue({});
 
 			const result = await getAllProjectCredentials('project2');
 			expect(result).toEqual({});
@@ -222,14 +222,14 @@ describe('config provider', () => {
 			vi.stubEnv('GITHUB_TOKEN_IMPLEMENTER', '');
 		});
 		it('returns implementer token when available', async () => {
-			vi.mocked(resolveIntegrationCredential).mockResolvedValue('implementer-token');
+			vi.mocked(resolveProjectCredential).mockResolvedValue('implementer-token');
 
 			const result = await getProjectGitHubToken(mockConfig.projects[0]);
 			expect(result).toBe('implementer-token');
 		});
 
 		it('throws when implementer token is missing', async () => {
-			vi.mocked(resolveIntegrationCredential).mockResolvedValue(null);
+			vi.mocked(resolveProjectCredential).mockResolvedValue(null);
 
 			await expect(getProjectGitHubToken(mockConfig.projects[0])).rejects.toThrow(
 				"Missing implementer token (SCM integration) for project 'project1'",

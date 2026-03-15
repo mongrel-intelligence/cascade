@@ -15,8 +15,10 @@ import {
 	listOrgCredentials,
 	resolveAllIntegrationCredentials,
 	resolveAllOrgCredentials,
+	resolveAllProjectCredentials,
 	resolveIntegrationCredential,
 	resolveOrgCredential,
+	resolveProjectCredential,
 	updateCredential,
 } from '../../../../src/db/repositories/credentialsRepository.js';
 
@@ -117,6 +119,68 @@ describe('credentialsRepository', () => {
 
 			const result = await resolveAllOrgCredentials('org1');
 			expect(result).toEqual({});
+		});
+	});
+
+	describe('resolveProjectCredential', () => {
+		it('returns decrypted value when found', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([{ value: 'ghp_impl_token' }]);
+
+			const result = await resolveProjectCredential('proj1', 'GITHUB_TOKEN_IMPLEMENTER');
+			expect(result).toBe('ghp_impl_token');
+		});
+
+		it('returns null when not found', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			const result = await resolveProjectCredential('proj1', 'MISSING_KEY');
+			expect(result).toBeNull();
+		});
+
+		it('uses projectId as AAD for decryption when CREDENTIAL_MASTER_KEY is set', async () => {
+			const key = randomBytes(32).toString('hex');
+			vi.stubEnv('CREDENTIAL_MASTER_KEY', key);
+
+			// Import encryptCredential to produce a valid encrypted value
+			const { encryptCredential } = await import('../../../../src/db/crypto.js');
+			const encryptedValue = encryptCredential('my-secret', 'proj1');
+			mockDb.chain.where.mockResolvedValueOnce([{ value: encryptedValue }]);
+
+			const result = await resolveProjectCredential('proj1', 'SOME_KEY');
+			expect(result).toBe('my-secret');
+		});
+	});
+
+	describe('resolveAllProjectCredentials', () => {
+		it('returns all project credentials as key-value map', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([
+				{ envVarKey: 'GITHUB_TOKEN_IMPLEMENTER', value: 'ghp_impl' },
+				{ envVarKey: 'TRELLO_API_KEY', value: 'trello-key' },
+				{ envVarKey: 'OPENROUTER_API_KEY', value: 'or-key' },
+			]);
+
+			const result = await resolveAllProjectCredentials('proj1');
+			expect(result).toEqual({
+				GITHUB_TOKEN_IMPLEMENTER: 'ghp_impl',
+				TRELLO_API_KEY: 'trello-key',
+				OPENROUTER_API_KEY: 'or-key',
+			});
+		});
+
+		it('returns empty object when no credentials', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			const result = await resolveAllProjectCredentials('proj1');
+			expect(result).toEqual({});
+		});
+
+		it('issues a single query against project_credentials', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([{ envVarKey: 'KEY1', value: 'val1' }]);
+
+			await resolveAllProjectCredentials('proj1');
+
+			// Only one select call (no joins, no multiple queries)
+			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
 		});
 	});
 

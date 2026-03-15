@@ -14,6 +14,8 @@ vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
 	resolveAllIntegrationCredentials: vi.fn(),
 	resolveOrgCredential: vi.fn(),
 	resolveAllOrgCredentials: vi.fn(),
+	resolveProjectCredential: vi.fn(),
+	resolveAllProjectCredentials: vi.fn(),
 }));
 
 // Mock configCache
@@ -56,8 +58,10 @@ import {
 import {
 	resolveAllIntegrationCredentials,
 	resolveAllOrgCredentials,
+	resolveAllProjectCredentials,
 	resolveIntegrationCredential,
 	resolveOrgCredential,
+	resolveProjectCredential,
 } from '../../../src/db/repositories/credentialsRepository.js';
 import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 
@@ -281,20 +285,20 @@ describe('config/provider', () => {
 			const result = await getIntegrationCredential('proj1', 'pm', 'api_key');
 
 			expect(result).toBe('env-key');
-			expect(resolveIntegrationCredential).not.toHaveBeenCalled();
+			expect(resolveProjectCredential).not.toHaveBeenCalled();
 		});
 
-		it('resolves from DB when not in secrets store', async () => {
-			vi.mocked(resolveIntegrationCredential).mockResolvedValue('db-value');
+		it('resolves from project_credentials via envVarKey mapping', async () => {
+			vi.mocked(resolveProjectCredential).mockResolvedValue('db-value');
 
 			const result = await getIntegrationCredential('proj1', 'pm', 'api_key');
 
 			expect(result).toBe('db-value');
-			expect(resolveIntegrationCredential).toHaveBeenCalledWith('proj1', 'pm', 'api_key');
+			expect(resolveProjectCredential).toHaveBeenCalledWith('proj1', 'TRELLO_API_KEY');
 		});
 
 		it('throws when credential not found', async () => {
-			vi.mocked(resolveIntegrationCredential).mockResolvedValue(null);
+			vi.mocked(resolveProjectCredential).mockResolvedValue(null);
 
 			await expect(getIntegrationCredential('proj1', 'pm', 'api_key')).rejects.toThrow(
 				"Integration credential 'pm/api_key' not found for project 'proj1'",
@@ -307,7 +311,7 @@ describe('config/provider', () => {
 			await expect(getIntegrationCredential('proj1', 'pm', 'api_key')).rejects.toThrow(
 				"Integration credential 'pm/api_key' not found for project 'proj1'",
 			);
-			expect(resolveIntegrationCredential).not.toHaveBeenCalled();
+			expect(resolveProjectCredential).not.toHaveBeenCalled();
 		});
 	});
 
@@ -321,19 +325,20 @@ describe('config/provider', () => {
 		});
 
 		it('returns null when credential not found', async () => {
-			vi.mocked(resolveIntegrationCredential).mockResolvedValue(null);
+			vi.mocked(resolveProjectCredential).mockResolvedValue(null);
 
 			const result = await getIntegrationCredentialOrNull('proj1', 'scm', 'implementer_token');
 
 			expect(result).toBeNull();
 		});
 
-		it('returns value from DB when found', async () => {
-			vi.mocked(resolveIntegrationCredential).mockResolvedValue('db-token');
+		it('returns value from project_credentials via envVarKey mapping', async () => {
+			vi.mocked(resolveProjectCredential).mockResolvedValue('db-token');
 
 			const result = await getIntegrationCredentialOrNull('proj1', 'scm', 'implementer_token');
 
 			expect(result).toBe('db-token');
+			expect(resolveProjectCredential).toHaveBeenCalledWith('proj1', 'GITHUB_TOKEN_IMPLEMENTER');
 		});
 
 		it('returns null without DB fallback when CASCADE_CREDENTIAL_KEYS is set (worker context)', async () => {
@@ -342,46 +347,37 @@ describe('config/provider', () => {
 			const result = await getIntegrationCredentialOrNull('proj1', 'scm', 'implementer_token');
 
 			expect(result).toBeNull();
-			expect(resolveIntegrationCredential).not.toHaveBeenCalled();
+			expect(resolveProjectCredential).not.toHaveBeenCalled();
 		});
 	});
 
 	describe('getOrgCredential', () => {
-		beforeEach(() => {
-			vi.mocked(configCache.getOrgIdForProject).mockReturnValue(null);
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject);
-		});
-
 		it('returns credential from process.env', async () => {
 			setEnvCredential('OPENROUTER_API_KEY', 'env-or-key');
 
 			const result = await getOrgCredential('proj1', 'OPENROUTER_API_KEY');
 
 			expect(result).toBe('env-or-key');
-			expect(resolveOrgCredential).not.toHaveBeenCalled();
+			expect(resolveProjectCredential).not.toHaveBeenCalled();
 		});
 
-		it('resolves from DB via org ID', async () => {
-			vi.mocked(resolveOrgCredential).mockResolvedValue('org-value');
+		it('resolves from project_credentials (no org_id lookup needed)', async () => {
+			vi.mocked(resolveProjectCredential).mockResolvedValue('proj-value');
 
 			const result = await getOrgCredential('proj1', 'OPENROUTER_API_KEY');
 
-			expect(result).toBe('org-value');
-			expect(resolveOrgCredential).toHaveBeenCalledWith('org1', 'OPENROUTER_API_KEY');
+			expect(result).toBe('proj-value');
+			expect(resolveProjectCredential).toHaveBeenCalledWith('proj1', 'OPENROUTER_API_KEY');
+			// No org_id lookup needed
+			expect(findProjectByIdFromDb).not.toHaveBeenCalled();
 		});
 
 		it('returns null when credential not found', async () => {
-			vi.mocked(resolveOrgCredential).mockResolvedValue(null);
+			vi.mocked(resolveProjectCredential).mockResolvedValue(null);
 
 			const result = await getOrgCredential('proj1', 'MISSING');
 
 			expect(result).toBeNull();
-		});
-
-		it('throws when project not found', async () => {
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(undefined);
-
-			await expect(getOrgCredential('proj1', 'KEY')).rejects.toThrow('Project not found: proj1');
 		});
 
 		it('returns null without DB fallback when CASCADE_CREDENTIAL_KEYS is set (worker context)', async () => {
@@ -390,24 +386,17 @@ describe('config/provider', () => {
 			const result = await getOrgCredential('proj1', 'OPENROUTER_API_KEY');
 
 			expect(result).toBeNull();
-			expect(resolveOrgCredential).not.toHaveBeenCalled();
+			expect(resolveProjectCredential).not.toHaveBeenCalled();
 		});
 	});
 
 	describe('getAllProjectCredentials', () => {
-		beforeEach(() => {
-			vi.mocked(configCache.getOrgIdForProject).mockReturnValue(null);
-			vi.mocked(findProjectByIdFromDb).mockResolvedValue(mockProject);
-		});
-
-		it('loads all credentials from repositories', async () => {
-			vi.mocked(resolveAllIntegrationCredentials).mockResolvedValue([
-				{ category: 'pm', provider: 'trello', role: 'api_key', value: 'trello-key' },
-				{ category: 'pm', provider: 'trello', role: 'token', value: 'trello-token' },
-				{ category: 'scm', provider: 'github', role: 'implementer_token', value: 'ghp_impl' },
-			]);
-			vi.mocked(resolveAllOrgCredentials).mockResolvedValue({
+		it('loads all credentials from project_credentials (single query)', async () => {
+			vi.mocked(resolveAllProjectCredentials).mockResolvedValue({
 				OPENROUTER_API_KEY: 'or-key',
+				TRELLO_API_KEY: 'trello-key',
+				TRELLO_TOKEN: 'trello-token',
+				GITHUB_TOKEN_IMPLEMENTER: 'ghp_impl',
 			});
 
 			const result = await getAllProjectCredentials('proj1');
@@ -418,11 +407,14 @@ describe('config/provider', () => {
 				TRELLO_TOKEN: 'trello-token',
 				GITHUB_TOKEN_IMPLEMENTER: 'ghp_impl',
 			});
+			expect(resolveAllProjectCredentials).toHaveBeenCalledWith('proj1');
+			// No org ID lookup, no two-query merge
+			expect(resolveAllIntegrationCredentials).not.toHaveBeenCalled();
+			expect(resolveAllOrgCredentials).not.toHaveBeenCalled();
 		});
 
 		it('returns empty object when no credentials exist', async () => {
-			vi.mocked(resolveAllIntegrationCredentials).mockResolvedValue([]);
-			vi.mocked(resolveAllOrgCredentials).mockResolvedValue({});
+			vi.mocked(resolveAllProjectCredentials).mockResolvedValue({});
 
 			const result = await getAllProjectCredentials('proj1');
 			expect(result).toEqual({});
@@ -436,6 +428,7 @@ describe('config/provider', () => {
 			const result = await getAllProjectCredentials('proj1');
 
 			expect(result).toEqual({ TRELLO_API_KEY: 'env-key', OPENROUTER_API_KEY: 'env-or' });
+			expect(resolveAllProjectCredentials).not.toHaveBeenCalled();
 			expect(resolveAllIntegrationCredentials).not.toHaveBeenCalled();
 			expect(resolveAllOrgCredentials).not.toHaveBeenCalled();
 		});

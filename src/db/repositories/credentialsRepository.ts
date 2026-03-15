@@ -1,10 +1,61 @@
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '../client.js';
 import { decryptCredential, encryptCredential } from '../crypto.js';
-import { credentials, integrationCredentials, projectIntegrations } from '../schema/index.js';
+import {
+	credentials,
+	integrationCredentials,
+	projectCredentials,
+	projectIntegrations,
+} from '../schema/index.js';
 
 // ============================================================================
-// Integration credential resolution
+// Project-scoped credential resolution (reads from project_credentials table)
+// ============================================================================
+
+/**
+ * Resolve a single credential for a project by env var key.
+ * Reads from the project_credentials table using projectId as AAD for decryption.
+ */
+export async function resolveProjectCredential(
+	projectId: string,
+	envVarKey: string,
+): Promise<string | null> {
+	const db = getDb();
+
+	const [row] = await db
+		.select({ value: projectCredentials.value })
+		.from(projectCredentials)
+		.where(
+			and(eq(projectCredentials.projectId, projectId), eq(projectCredentials.envVarKey, envVarKey)),
+		);
+
+	if (!row) return null;
+	return decryptCredential(row.value, projectId);
+}
+
+/**
+ * Resolve all credentials for a project as a flat env-var-key → value map.
+ * Single query against project_credentials, using projectId as AAD.
+ */
+export async function resolveAllProjectCredentials(
+	projectId: string,
+): Promise<Record<string, string>> {
+	const db = getDb();
+
+	const rows = await db
+		.select({ envVarKey: projectCredentials.envVarKey, value: projectCredentials.value })
+		.from(projectCredentials)
+		.where(eq(projectCredentials.projectId, projectId));
+
+	const result: Record<string, string> = {};
+	for (const row of rows) {
+		result[row.envVarKey] = decryptCredential(row.value, projectId);
+	}
+	return result;
+}
+
+// ============================================================================
+// Integration credential resolution (legacy — kept for backward compatibility)
 // ============================================================================
 
 /**
