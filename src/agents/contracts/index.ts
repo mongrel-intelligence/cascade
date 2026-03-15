@@ -31,6 +31,21 @@ export interface ToolManifest {
 }
 
 /**
+ * An inline image to be injected into agent context.
+ * Backends that support image content blocks (e.g. Claude Code SDK)
+ * render these as image content; backends that don't support images
+ * simply ignore this field.
+ */
+export interface ContextImage {
+	/** Base64-encoded image data (raw bytes, not a data URI) */
+	base64Data: string;
+	/** MIME type of the image, e.g. 'image/png', 'image/jpeg' */
+	mimeType: string;
+	/** Optional alt text describing the image */
+	altText?: string;
+}
+
+/**
  * Pre-fetched data injected into agent context before execution.
  * Each backend decides how to present this (llmist: synthetic gadget calls,
  * Claude Code SDK: system prompt data, etc.)
@@ -44,6 +59,12 @@ export interface ContextInjection {
 	result: string;
 	/** Human-readable description of this data */
 	description: string;
+	/**
+	 * Optional inline images associated with this context injection.
+	 * Populated by fetchWorkItemStep when a work item contains embedded images.
+	 * Backends that don't support image rendering simply ignore this field.
+	 */
+	images?: ContextImage[];
 }
 
 /**

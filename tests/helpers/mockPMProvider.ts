@@ -1,5 +1,7 @@
 import { vi } from 'vitest';
 
+import type { MediaReference } from '../../src/pm/types.js';
+
 /**
  * Creates a mock PMProvider with all methods stubbed as vi.fn().
  * Use this factory instead of copy-pasting the mock object in every test file.
@@ -11,6 +13,17 @@ import { vi } from 'vitest';
  *   getPMProvider: vi.fn(() => mockProvider),
  * }));
  * ```
+ *
+ * The `getWorkItem` mock returns a work item without `inlineMedia` by default.
+ * Override `getWorkItem` to return a work item with `inlineMedia` for testing
+ * image injection:
+ *
+ * ```ts
+ * mockProvider.getWorkItem.mockResolvedValue({
+ *   ...baseItem,
+ *   inlineMedia: [{ url: '...', mimeType: 'image/png', source: 'description' }],
+ * });
+ * ```
  */
 export function createMockPMProvider() {
 	return {
@@ -18,7 +31,18 @@ export function createMockPMProvider() {
 		getWorkItem: vi.fn(),
 		getChecklists: vi.fn(),
 		getAttachments: vi.fn(),
-		getWorkItemComments: vi.fn(),
+		getWorkItemComments:
+			vi.fn<
+				() => Promise<
+					Array<{
+						id: string;
+						date: string;
+						text: string;
+						author: { id: string; name: string; username: string };
+						inlineMedia?: MediaReference[];
+					}>
+				>
+			>(),
 		updateWorkItem: vi.fn(),
 		addComment: vi.fn().mockResolvedValue(''),
 		updateComment: vi.fn(),

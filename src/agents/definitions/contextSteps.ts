@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process';
 
 import { ListDirectory } from '../../gadgets/ListDirectory.js';
 import { formatCheckStatus } from '../../gadgets/github/core/getPRChecks.js';
-import { readWorkItem } from '../../gadgets/pm/core/readWorkItem.js';
+import { readWorkItem, readWorkItemWithMedia } from '../../gadgets/pm/core/readWorkItem.js';
 import {
 	formatTodoList,
 	getNextId,
@@ -19,7 +19,7 @@ import {
 import type { Todo } from '../../gadgets/todo/storage.js';
 import { githubClient } from '../../github/client.js';
 import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
-import { getPMProviderOrNull } from '../../pm/index.js';
+import { MAX_IMAGES_PER_WORK_ITEM, getPMProviderOrNull } from '../../pm/index.js';
 import type { AgentInput, ProjectConfig } from '../../types/index.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { resolveSquintDbPath } from '../../utils/squintDb.js';
@@ -110,15 +110,55 @@ export function fetchSquintStep(params: FetchContextParams): ContextInjection[] 
 export async function fetchWorkItemStep(params: FetchContextParams): Promise<ContextInjection[]> {
 	if (!params.input.workItemId) return [];
 	try {
-		const cardData = await readWorkItem(params.input.workItemId, true);
-		return [
-			{
-				toolName: 'ReadWorkItem',
-				params: { workItemId: params.input.workItemId, includeComments: true },
-				result: cardData,
-				description: 'Pre-fetched work item data',
-			},
-		];
+		const { text: cardData, media } = await readWorkItemWithMedia(params.input.workItemId, true);
+
+		const injection: ContextInjection = {
+			toolName: 'ReadWorkItem',
+			params: { workItemId: params.input.workItemId, includeComments: true },
+			result: cardData,
+			description: 'Pre-fetched work item data',
+		};
+
+		// Download image media references in parallel (up to MAX_IMAGES_PER_WORK_ITEM)
+		if (media.length > 0) {
+			const provider = getPMProviderOrNull();
+			const limited = media.slice(0, MAX_IMAGES_PER_WORK_ITEM);
+
+			const { jiraClient } = await import('../../jira/client.js');
+			const { trelloClient } = await import('../../trello/client.js');
+
+			const results = await Promise.all(
+				limited.map(async (ref) => {
+					try {
+						let downloaded: { buffer: Buffer; mimeType: string } | null = null;
+						if (provider?.type === 'jira') {
+							downloaded = await jiraClient.downloadAttachment(ref.url);
+						} else {
+							downloaded = await trelloClient.downloadAttachment(ref.url);
+						}
+						if (!downloaded) return null;
+						return {
+							base64Data: downloaded.buffer.toString('base64'),
+							mimeType: downloaded.mimeType,
+							altText: ref.altText,
+						};
+					} catch (err) {
+						params.logWriter('WARN', 'fetchWorkItemStep: failed to download image', {
+							url: ref.url,
+							error: err instanceof Error ? err.message : String(err),
+						});
+						return null;
+					}
+				}),
+			);
+
+			const images = results.filter((r) => r !== null);
+			if (images.length > 0) {
+				injection.images = images;
+			}
+		}
+
+		return [injection];
 	} catch {
 		return [];
 	}
