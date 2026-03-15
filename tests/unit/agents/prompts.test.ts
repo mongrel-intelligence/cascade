@@ -215,6 +215,55 @@ describe('system prompts content', () => {
 		expect(prompt).toContain('issues');
 		expect(prompt).toContain('issue');
 	});
+
+	it('backlog-manager prompt renders single-item wording when limit=1 (backward compat)', () => {
+		const prompt = getSystemPrompt('backlog-manager', { maxInFlightItems: 1 });
+		expect(prompt).toContain('Move exactly one card per run. Never move multiple.');
+		expect(prompt).toContain('ALWAYS move exactly ONE card per run');
+		// Should NOT show conflict awareness section for single-item mode
+		expect(prompt).not.toContain('Conflict Awareness');
+	});
+
+	it('backlog-manager prompt renders single-item wording when maxInFlightItems is absent (default=1)', () => {
+		const prompt = getSystemPrompt('backlog-manager', {});
+		// Default fallback renders same as limit=1 behaviour
+		expect(prompt).toContain('Move exactly one card per run. Never move multiple.');
+		expect(prompt).not.toContain('Conflict Awareness');
+	});
+
+	it('backlog-manager prompt renders multi-item wording when limit>1', () => {
+		const prompt = getSystemPrompt('backlog-manager', { maxInFlightItems: 3 });
+		expect(prompt).toContain(
+			'Move up to 3 cards per run (only enough to fill remaining capacity).',
+		);
+		expect(prompt).toContain('Move only as many cards as needed to reach capacity (limit: 3)');
+	});
+
+	it('backlog-manager prompt includes conflict awareness section when limit>1', () => {
+		const prompt = getSystemPrompt('backlog-manager', { maxInFlightItems: 3 });
+		expect(prompt).toContain('Conflict Awareness');
+		expect(prompt).toContain('minimize file-level conflicts between simultaneously active cards');
+	});
+
+	it('backlog-manager prompt uses capacity-based check instead of binary empty check', () => {
+		const prompt = getSystemPrompt('backlog-manager', { maxInFlightItems: 2 });
+		expect(prompt).toContain('>= 2');
+		expect(prompt).toContain('at capacity');
+		// Must NOT use the old "all empty" absolute check
+		expect(prompt).not.toContain('If ANY cards exist in TODO, IN PROGRESS, or IN REVIEW');
+	});
+
+	it('backlog-manager prompt references maxInFlightItems limit in capacity check (limit=1)', () => {
+		const prompt = getSystemPrompt('backlog-manager', { maxInFlightItems: 1 });
+		expect(prompt).toContain('>= 1');
+		expect(prompt).toContain('at capacity');
+	});
+
+	it('backlog-manager prompt includes maxInFlightItems in getTemplateVariables', () => {
+		const vars = getTemplateVariables();
+		const names = vars.map((v) => v.name);
+		expect(names).toContain('maxInFlightItems');
+	});
 });
 
 describe('resolveIncludes', () => {

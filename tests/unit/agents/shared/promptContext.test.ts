@@ -310,6 +310,33 @@ describe('buildPromptContext', () => {
 		});
 	});
 
+	describe('maxInFlightItems', () => {
+		beforeEach(() => {
+			const mockProvider = createMockPMProvider();
+			mockProvider.type = 'trello';
+			mockProvider.getWorkItemUrl = vi.fn((id: string) => `https://trello.com/c/${id}`);
+			mockGetPMProvider.mockReturnValue(mockProvider);
+		});
+
+		it('defaults maxInFlightItems to 1 when not set on project', () => {
+			const ctx = buildPromptContext('card1', makeProject() as never);
+			expect(ctx.maxInFlightItems).toBe(1);
+		});
+
+		it('includes maxInFlightItems from project config when set', () => {
+			const ctx = buildPromptContext('card1', makeProject({ maxInFlightItems: 3 }) as never);
+			expect(ctx.maxInFlightItems).toBe(3);
+		});
+
+		it('uses 1 as default when maxInFlightItems is explicitly undefined', () => {
+			const ctx = buildPromptContext(
+				'card1',
+				makeProject({ maxInFlightItems: undefined }) as never,
+			);
+			expect(ctx.maxInFlightItems).toBe(1);
+		});
+	});
+
 	describe('without optional contexts', () => {
 		beforeEach(() => {
 			const mockProvider = createMockPMProvider();

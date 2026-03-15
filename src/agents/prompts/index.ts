@@ -66,6 +66,9 @@ export interface PromptContext {
 	detectedAgentType?: string;
 	debugListId?: string;
 
+	// Capacity / pipeline management
+	maxInFlightItems?: number;
+
 	// Future extensibility
 	[key: string]: unknown;
 }
@@ -317,6 +320,11 @@ export function getTemplateVariables(): Array<{
 		{ name: 'originalWorkItemUrl', group: 'Debug', description: 'Original work item URL' },
 		{ name: 'detectedAgentType', group: 'Debug', description: 'Agent type from session log' },
 		{ name: 'debugListId', group: 'Debug', description: 'Debug list ID for output cards' },
+		{
+			name: 'maxInFlightItems',
+			group: 'Capacity',
+			description: 'Maximum number of items allowed in the active pipeline at once (default: 1)',
+		},
 	];
 }
 
