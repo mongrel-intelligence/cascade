@@ -351,7 +351,7 @@ describe.concurrent('validateConfig', () => {
 					repo: 'owner/repo',
 					trello: { boardId: 'b1', lists: {}, labels: {} },
 					engineSettings: {
-						'claude-code': {
+						'unknown-engine': {
 							foo: 'bar',
 						},
 					},

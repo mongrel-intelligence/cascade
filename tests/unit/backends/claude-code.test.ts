@@ -33,6 +33,7 @@ import {
 	CLAUDE_CODE_MODEL_IDS,
 	DEFAULT_CLAUDE_CODE_MODEL,
 } from '../../../src/backends/claude-code/models.js';
+import { resolveClaudeCodeSettings } from '../../../src/backends/claude-code/settings.js';
 import type { AgentExecutionPlan, ToolManifest } from '../../../src/backends/types.js';
 
 const mockQuery = vi.mocked(query);
@@ -1388,5 +1389,82 @@ describe('ClaudeCodeEngine lifecycle hooks', () => {
 		await engine.afterExecute(plan, { success: true, output: '' });
 
 		expect(existsSync(sessionDir)).toBe(false);
+	});
+});
+
+describe('resolveClaudeCodeSettings', () => {
+	it('returns defaults when no engine settings are configured', () => {
+		const project = makeInput().project;
+		expect(resolveClaudeCodeSettings(project)).toEqual({
+			effort: 'high',
+			thinking: 'adaptive',
+			thinkingBudgetTokens: undefined,
+		});
+	});
+
+	it('applies explicit effort modes from project engine settings', () => {
+		const project = {
+			...makeInput().project,
+			engineSettings: { 'claude-code': { effort: 'max' } },
+		} as AgentExecutionPlan['project'];
+		expect(resolveClaudeCodeSettings(project)).toEqual({
+			effort: 'max',
+			thinking: 'adaptive',
+			thinkingBudgetTokens: undefined,
+		});
+
+		const projectLow = {
+			...makeInput().project,
+			engineSettings: { 'claude-code': { effort: 'low' } },
+		} as AgentExecutionPlan['project'];
+		expect(resolveClaudeCodeSettings(projectLow).effort).toBe('low');
+
+		const projectMedium = {
+			...makeInput().project,
+			engineSettings: { 'claude-code': { effort: 'medium' } },
+		} as AgentExecutionPlan['project'];
+		expect(resolveClaudeCodeSettings(projectMedium).effort).toBe('medium');
+	});
+
+	it('applies explicit thinking modes from project engine settings', () => {
+		const projectEnabled = {
+			...makeInput().project,
+			engineSettings: { 'claude-code': { thinking: 'enabled' } },
+		} as AgentExecutionPlan['project'];
+		expect(resolveClaudeCodeSettings(projectEnabled)).toEqual({
+			effort: 'high',
+			thinking: 'enabled',
+			thinkingBudgetTokens: undefined,
+		});
+
+		const projectDisabled = {
+			...makeInput().project,
+			engineSettings: { 'claude-code': { thinking: 'disabled' } },
+		} as AgentExecutionPlan['project'];
+		expect(resolveClaudeCodeSettings(projectDisabled).thinking).toBe('disabled');
+	});
+
+	it('applies thinkingBudgetTokens when provided', () => {
+		const project = {
+			...makeInput().project,
+			engineSettings: { 'claude-code': { thinkingBudgetTokens: 10000 } },
+		} as AgentExecutionPlan['project'];
+		expect(resolveClaudeCodeSettings(project)).toEqual({
+			effort: 'high',
+			thinking: 'adaptive',
+			thinkingBudgetTokens: 10000,
+		});
+	});
+
+	it('ClaudeCodeEngine.getSettingsSchema() returns ClaudeCodeSettingsSchema', () => {
+		const engine = new ClaudeCodeEngine();
+		const schema = engine.getSettingsSchema();
+		expect(schema).toBeDefined();
+		// Verify it parses valid settings
+		const result = schema.safeParse({ effort: 'high', thinking: 'adaptive' });
+		expect(result.success).toBe(true);
+		// Verify it rejects invalid settings
+		const bad = schema.safeParse({ effort: 'ultra' });
+		expect(bad.success).toBe(false);
 	});
 });
