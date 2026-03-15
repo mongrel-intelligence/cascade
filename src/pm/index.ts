@@ -8,7 +8,16 @@ export type {
 	ChecklistItem,
 	Attachment,
 	CreateWorkItemConfig,
+	MediaReference,
 } from './types.js';
+
+export {
+	MAX_IMAGE_SIZE_BYTES,
+	MAX_IMAGES_PER_WORK_ITEM,
+	isImageMimeType,
+	filterImageMedia,
+	extractMarkdownImages,
+} from './media.js';
 
 export { withPMProvider, getPMProvider, getPMProviderOrNull } from './context.js';
 export { TrelloPMProvider } from './trello/adapter.js';
