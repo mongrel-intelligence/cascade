@@ -590,7 +590,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			{/* Agent tabs */}
 			{agentTypes.length > 0 && (
 				<Tabs defaultValue={defaultTab}>
-					<div className="overflow-x-auto border-b border-border scrollbar-hide">
+					<div className="overflow-x-auto border-b border-border scrollbar-hide pb-[5px]">
 						<TabsList variant="line" className="w-max">
 							{agentTypes.map((type) => (
 								<TabsTrigger key={type} value={type}>
