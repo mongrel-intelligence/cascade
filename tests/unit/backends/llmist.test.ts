@@ -267,6 +267,7 @@ describe('LlmistEngine.execute', () => {
 			{ workItemId: 'c1' },
 			'card content',
 			'gc_readworkitem_0',
+			undefined, // no images on this injection
 		);
 		expect(mockInjectSyntheticCall).toHaveBeenNthCalledWith(
 			2,
@@ -276,6 +277,46 @@ describe('LlmistEngine.execute', () => {
 			{ directoryPath: '.' },
 			'dir listing',
 			'gc_listdirectory_1',
+			undefined, // no images on this injection
+		);
+	});
+
+	it('passes images from context injections to injectSyntheticCall', async () => {
+		mockRunAgentLoop.mockResolvedValue({
+			output: 'Done',
+			iterations: 3,
+			gadgetCalls: 2,
+			cost: 0.05,
+			loopTerminated: false,
+		});
+
+		const { injectSyntheticCall } = await import('../../../src/agents/shared/syntheticCalls.js');
+		const mockInjectSyntheticCall = vi.mocked(injectSyntheticCall);
+
+		const images = [{ base64Data: 'abc123', mimeType: 'image/png', altText: 'Screenshot' }];
+
+		const input = makeInput();
+		input.contextInjections = [
+			{
+				toolName: 'ReadWorkItem',
+				params: { workItemId: 'c1' },
+				result: 'card content with images',
+				description: 'Work item',
+				images,
+			},
+		];
+
+		const engine = new LlmistEngine();
+		await engine.execute(input);
+
+		expect(mockInjectSyntheticCall).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			'ReadWorkItem',
+			{ workItemId: 'c1' },
+			'card content with images',
+			'gc_readworkitem_0',
+			images,
 		);
 	});
 
