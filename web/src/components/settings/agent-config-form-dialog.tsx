@@ -1,3 +1,4 @@
+import { EngineSettingsFields } from '@/components/settings/engine-settings-fields.js';
 import { ModelField } from '@/components/settings/model-field.js';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
@@ -22,6 +23,13 @@ interface AgentConfigFormDialogProps {
 	config?: AgentConfig;
 }
 
+type EngineSettingsValue = Record<string, Record<string, unknown>> | undefined;
+
+function getInitialEngineSettings(config?: AgentConfig): EngineSettingsValue {
+	const raw = config && 'agentEngineSettings' in config ? config.agentEngineSettings : undefined;
+	return raw as EngineSettingsValue;
+}
+
 export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfigFormDialogProps) {
 	const queryClient = useQueryClient();
 	const isEdit = !!config && config.id !== 0;
@@ -32,6 +40,13 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 	const [maxIterations, setMaxIterations] = useState(config?.maxIterations?.toString() ?? '');
 	const [agentEngine, setAgentEngine] = useState(config?.agentEngine ?? '');
 	const [maxConcurrency, setMaxConcurrency] = useState(config?.maxConcurrency?.toString() ?? '');
+	const [engineSettings, setEngineSettings] = useState<EngineSettingsValue>(
+		getInitialEngineSettings(config),
+	);
+
+	const selectedEngine = agentEngine
+		? enginesQuery.data?.find((e) => e.id === agentEngine)
+		: undefined;
 
 	const queryKey = trpc.agentConfigs.list.queryOptions({
 		projectId: config?.projectId ?? '',
@@ -46,6 +61,7 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentEngine: agentEngine || null,
 				maxConcurrency: maxConcurrency ? Number(maxConcurrency) : null,
+				engineSettings: engineSettings ?? null,
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey });
@@ -62,6 +78,7 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentEngine: agentEngine || null,
 				maxConcurrency: maxConcurrency ? Number(maxConcurrency) : null,
+				engineSettings: engineSettings ?? null,
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey });
@@ -140,6 +157,12 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 							</SelectContent>
 						</Select>
 					</div>
+					<EngineSettingsFields
+						engine={selectedEngine}
+						value={engineSettings}
+						onChange={setEngineSettings}
+						inheritLabel="Inherit from project"
+					/>
 					<div className="space-y-2">
 						<Label>Prompt</Label>
 						<p className="text-sm text-muted-foreground">

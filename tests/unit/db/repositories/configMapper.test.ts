@@ -90,12 +90,12 @@ describe('buildAgentMaps', () => {
 		expect(result.models).toEqual({});
 		expect(result.iterations).toEqual({});
 		expect(result.engines).toEqual({});
+		expect(result.engineSettings).toEqual({});
 	});
 
 	it('maps model, iterations, and engine for each agent type', () => {
 		const configs: AgentConfigRow[] = [
 			{
-				orgId: null,
 				projectId: 'proj1',
 				agentType: 'implementation',
 				model: 'claude-3-7-sonnet',
@@ -103,7 +103,6 @@ describe('buildAgentMaps', () => {
 				agentEngine: 'claude-code',
 			},
 			{
-				orgId: null,
 				projectId: 'proj1',
 				agentType: 'review',
 				model: 'claude-3-opus',
@@ -118,10 +117,35 @@ describe('buildAgentMaps', () => {
 		expect(result.engines).toEqual({ implementation: 'claude-code' });
 	});
 
+	it('maps agentEngineSettings per agent type', () => {
+		const configs: AgentConfigRow[] = [
+			{
+				projectId: 'proj1',
+				agentType: 'implementation',
+				model: null,
+				maxIterations: null,
+				agentEngine: 'claude-code',
+				agentEngineSettings: { 'claude-code': { effort: 'high' } },
+			},
+			{
+				projectId: 'proj1',
+				agentType: 'review',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				agentEngineSettings: null,
+			},
+		];
+
+		const result = buildAgentMaps(configs);
+		expect(result.engineSettings).toEqual({
+			implementation: { 'claude-code': { effort: 'high' } },
+		});
+	});
+
 	it('skips null values', () => {
 		const configs: AgentConfigRow[] = [
 			{
-				orgId: null,
 				projectId: null,
 				agentType: 'splitting',
 				model: null,
@@ -134,6 +158,7 @@ describe('buildAgentMaps', () => {
 		expect(Object.keys(result.models)).toHaveLength(0);
 		expect(Object.keys(result.iterations)).toHaveLength(0);
 		expect(Object.keys(result.engines)).toHaveLength(0);
+		expect(Object.keys(result.engineSettings)).toHaveLength(0);
 	});
 });
 

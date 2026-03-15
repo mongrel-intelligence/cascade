@@ -3,6 +3,8 @@ import { z } from 'zod';
 // Re-export schemas from engine directories for backward compatibility.
 export { CodexSettingsSchema } from '../backends/codex/settings.js';
 export type { CodexSettings } from '../backends/codex/settings.js';
+export { ClaudeCodeSettingsSchema } from '../backends/claude-code/settings.js';
+export type { ClaudeCodeSettings } from '../backends/claude-code/settings.js';
 export { OpenCodeSettingsSchema } from '../backends/opencode/settings.js';
 export type { OpenCodeSettings } from '../backends/opencode/settings.js';
 

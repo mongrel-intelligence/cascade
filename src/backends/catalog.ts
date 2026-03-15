@@ -37,6 +37,41 @@ export const CLAUDE_CODE_ENGINE_DEFINITION: AgentEngineDefinition = {
 		options: CLAUDE_CODE_MODELS,
 	},
 	logLabel: 'Claude Code Log',
+	settings: {
+		title: 'Claude Code Settings',
+		description: 'Effort and thinking configuration for Claude Code runs.',
+		fields: [
+			{
+				key: 'effort',
+				label: 'Effort Level',
+				type: 'select',
+				description: 'Controls the effort level for Claude Code runs.',
+				options: [
+					{ value: 'low', label: 'Low' },
+					{ value: 'medium', label: 'Medium' },
+					{ value: 'high', label: 'High' },
+					{ value: 'max', label: 'Max' },
+				],
+			},
+			{
+				key: 'thinking',
+				label: 'Thinking Mode',
+				type: 'select',
+				description: 'Controls extended thinking behavior.',
+				options: [
+					{ value: 'adaptive', label: 'Adaptive' },
+					{ value: 'enabled', label: 'Enabled' },
+					{ value: 'disabled', label: 'Disabled' },
+				],
+			},
+			{
+				key: 'thinkingBudgetTokens',
+				label: 'Thinking Budget Tokens',
+				type: 'number',
+				description: 'Maximum tokens for extended thinking (optional).',
+			},
+		],
+	},
 };
 
 export const CODEX_ENGINE_DEFINITION: AgentEngineDefinition = {

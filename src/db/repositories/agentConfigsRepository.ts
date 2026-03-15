@@ -1,4 +1,5 @@
 import { and, eq } from 'drizzle-orm';
+import type { EngineSettings } from '../../config/engineSettings.js';
 import { getDb } from '../client.js';
 import { agentConfigs } from '../schema/index.js';
 
@@ -18,6 +19,7 @@ export async function createAgentConfig(data: {
 	maxIterations?: number | null;
 	agentEngine?: string | null;
 	maxConcurrency?: number | null;
+	engineSettings?: EngineSettings | null;
 }) {
 	const db = getDb();
 	const [row] = await db
@@ -29,6 +31,7 @@ export async function createAgentConfig(data: {
 			maxIterations: data.maxIterations,
 			agentEngine: data.agentEngine,
 			maxConcurrency: data.maxConcurrency,
+			agentEngineSettings: data.engineSettings,
 		})
 		.returning({ id: agentConfigs.id });
 	return row;
@@ -42,12 +45,18 @@ export async function updateAgentConfig(
 		maxIterations?: number | null;
 		agentEngine?: string | null;
 		maxConcurrency?: number | null;
+		engineSettings?: EngineSettings | null;
 	},
 ) {
 	const db = getDb();
+	const { engineSettings, ...rest } = updates;
 	await db
 		.update(agentConfigs)
-		.set({ ...updates, updatedAt: new Date() })
+		.set({
+			...rest,
+			...(engineSettings !== undefined ? { agentEngineSettings: engineSettings } : {}),
+			updatedAt: new Date(),
+		})
 		.where(eq(agentConfigs.id, id));
 }
 

@@ -71,6 +71,8 @@ export const ProjectConfigSchema = z.object({
 	workItemBudgetUsd: z.number().positive().default(5),
 	agentEngine: AgentEngineConfigSchema.optional(),
 	engineSettings: EngineSettingsSchema.optional(),
+	/** Per-agent engine settings overrides. Keys are agent types (e.g. "implementation"). */
+	agentEngineSettingsMap: z.record(z.record(z.unknown())).optional(),
 	squintDbUrl: z.string().url().optional(),
 	runLinksEnabled: z.boolean().default(false),
 });

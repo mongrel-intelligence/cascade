@@ -1,5 +1,5 @@
 import { TRPCError } from '@trpc/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockUser } from '../../../helpers/factories.js';
 
@@ -48,6 +48,8 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 }));
 
 import { agentConfigsRouter } from '../../../../src/api/routers/agentConfigs.js';
+import { ClaudeCodeSettingsSchema } from '../../../../src/backends/claude-code/settings.js';
+import { registerEngineSettingsSchema } from '../../../../src/config/engineSettings.js';
 
 function createCaller(ctx: TRPCContext) {
 	return agentConfigsRouter.createCaller(ctx);
@@ -56,6 +58,11 @@ function createCaller(ctx: TRPCContext) {
 const mockUser = createMockUser();
 
 describe('agentConfigsRouter', () => {
+	beforeAll(() => {
+		// Register engine settings schemas so EngineSettingsSchema validates correctly
+		registerEngineSettingsSchema('claude-code', ClaudeCodeSettingsSchema);
+	});
+
 	beforeEach(() => {
 		mockDbSelect.mockReturnValue({ from: mockDbFrom });
 		mockDbFrom.mockReturnValue({ where: mockDbWhere });
@@ -238,6 +245,72 @@ describe('agentConfigsRouter', () => {
 			await expect(caller.delete({ id: 10 })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
+		});
+	});
+
+	describe('create with engineSettings', () => {
+		it('passes engineSettings to repository when creating config', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 30 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'implementation',
+				agentEngine: 'claude-code',
+				engineSettings: { 'claude-code': { effort: 'high' } },
+			});
+
+			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+				expect.objectContaining({
+					projectId: 'proj-1',
+					agentType: 'implementation',
+					engineSettings: { 'claude-code': { effort: 'high' } },
+				}),
+			);
+		});
+
+		it('passes null engineSettings to repository when explicitly set to null', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 31 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'review',
+				engineSettings: null,
+			});
+
+			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+				expect.objectContaining({
+					projectId: 'proj-1',
+					agentType: 'review',
+					engineSettings: null,
+				}),
+			);
+		});
+	});
+
+	describe('update with engineSettings', () => {
+		it('passes engineSettings to repository when updating config', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({
+				id: 12,
+				agentEngine: 'claude-code',
+				engineSettings: { 'claude-code': { effort: 'max', thinking: 'adaptive' } },
+			});
+
+			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(
+				12,
+				expect.objectContaining({
+					agentEngine: 'claude-code',
+					engineSettings: { 'claude-code': { effort: 'max', thinking: 'adaptive' } },
+				}),
+			);
 		});
 	});
 

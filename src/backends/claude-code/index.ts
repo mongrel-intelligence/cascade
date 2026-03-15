@@ -27,6 +27,11 @@ import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../type
 import { buildClaudeEnv } from './env.js';
 import { buildHooks } from './hooks.js';
 import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
+import {
+	ClaudeCodeSettingsSchema,
+	type ResolvedClaudeCodeSettings,
+	resolveClaudeCodeSettings,
+} from './settings.js';
 
 export { buildToolGuidance, buildTaskPrompt, buildSystemPrompt } from '../nativeTools.js';
 export { buildClaudeEnv as buildEnv } from './env.js';
@@ -442,6 +447,32 @@ function decideContinuation(
 }
 
 /**
+ * Build the `thinking` option for the Claude Code SDK based on resolved settings.
+ * The SDK accepts three shapes: `{ type: 'adaptive' }`, `{ type: 'enabled', budgetTokens }`,
+ * or `{ type: 'disabled' }`.
+ */
+function buildThinkingOption(
+	settings: ResolvedClaudeCodeSettings,
+):
+	| { type: 'adaptive' }
+	| { type: 'enabled'; budgetTokens: number }
+	| { type: 'disabled' }
+	| undefined {
+	if (!settings.thinking) return undefined;
+
+	switch (settings.thinking) {
+		case 'adaptive':
+			return { type: 'adaptive' };
+		case 'enabled':
+			return settings.thinkingBudgetTokens !== undefined
+				? { type: 'enabled', budgetTokens: settings.thinkingBudgetTokens }
+				: { type: 'adaptive' };
+		case 'disabled':
+			return { type: 'disabled' };
+	}
+}
+
+/**
  * Claude Code SDK backend for CASCADE.
  *
  * Uses the Claude Code SDK's query() function to run agents with built-in file tools
@@ -474,6 +505,10 @@ export class ClaudeCodeEngine implements AgentEngine {
 		await cleanupPersistedSession(plan.repoDir);
 	}
 
+	getSettingsSchema(): typeof ClaudeCodeSettingsSchema {
+		return ClaudeCodeSettingsSchema;
+	}
+
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const startTime = Date.now();
 		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools);
@@ -488,6 +523,7 @@ export class ClaudeCodeEngine implements AgentEngine {
 		// resolveClaudeModel() is idempotent, calling it twice via the normal adapter path
 		// is safe.
 		const model = resolveClaudeModel(input.model);
+		const engineSettings = resolveClaudeCodeSettings(input.project, input.engineSettings);
 
 		input.logWriter('INFO', 'Starting Claude Code SDK execution', {
 			agentType: input.agentType,
@@ -495,6 +531,9 @@ export class ClaudeCodeEngine implements AgentEngine {
 			repoDir: input.repoDir,
 			maxIterations: input.maxIterations,
 			hasOffloadedContext,
+			effort: engineSettings.effort,
+			thinking: engineSettings.thinking,
+			thinkingBudgetTokens: engineSettings.thinkingBudgetTokens,
 		});
 
 		const { env } = buildClaudeEnv(
@@ -508,6 +547,12 @@ export class ClaudeCodeEngine implements AgentEngine {
 
 		const sdkTools = resolveNativeTools(input.nativeToolCapabilities);
 
+		const resolvedThinking = buildThinkingOption(engineSettings);
+		const resolvedEffort = engineSettings.effort;
+		const engineOptions = {
+			...(resolvedEffort !== undefined ? { effort: resolvedEffort } : {}),
+			...(resolvedThinking !== undefined ? { thinking: resolvedThinking } : {}),
+		};
 		const maxContinuationTurns = input.completionRequirements?.maxContinuationTurns ?? 0;
 		let continuationTurns = 0;
 		let promptText = taskPrompt;
@@ -538,6 +583,7 @@ export class ClaudeCodeEngine implements AgentEngine {
 						input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
 					},
 					...(isContinuation ? { continue: true } : {}),
+					...engineOptions,
 				},
 			});
 
