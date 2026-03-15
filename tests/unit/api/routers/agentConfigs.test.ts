@@ -8,15 +8,25 @@ const {
 	mockCreateAgentConfig,
 	mockUpdateAgentConfig,
 	mockDeleteAgentConfig,
+	mockGetAgentConfigPrompts,
 	mockGetEngineCatalog,
 	mockRegisterBuiltInEngines,
+	mockValidateTemplate,
+	mockLoadPartials,
+	mockResolveAgentDefinition,
+	mockGetRawTemplate,
 } = vi.hoisted(() => ({
 	mockListAgentConfigs: vi.fn(),
 	mockCreateAgentConfig: vi.fn(),
 	mockUpdateAgentConfig: vi.fn(),
 	mockDeleteAgentConfig: vi.fn(),
+	mockGetAgentConfigPrompts: vi.fn(),
 	mockGetEngineCatalog: vi.fn(),
 	mockRegisterBuiltInEngines: vi.fn(),
+	mockValidateTemplate: vi.fn(),
+	mockLoadPartials: vi.fn(),
+	mockResolveAgentDefinition: vi.fn(),
+	mockGetRawTemplate: vi.fn(),
 }));
 
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
@@ -24,11 +34,25 @@ vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
 	createAgentConfig: (...args: unknown[]) => mockCreateAgentConfig(...args),
 	updateAgentConfig: (...args: unknown[]) => mockUpdateAgentConfig(...args),
 	deleteAgentConfig: (...args: unknown[]) => mockDeleteAgentConfig(...args),
+	getAgentConfigPrompts: (...args: unknown[]) => mockGetAgentConfigPrompts(...args),
 }));
 
 vi.mock('../../../../src/backends/index.js', () => ({
 	getEngineCatalog: (...args: unknown[]) => mockGetEngineCatalog(...args),
 	registerBuiltInEngines: (...args: unknown[]) => mockRegisterBuiltInEngines(...args),
+}));
+
+vi.mock('../../../../src/agents/prompts/index.js', () => ({
+	validateTemplate: (...args: unknown[]) => mockValidateTemplate(...args),
+	getRawTemplate: (...args: unknown[]) => mockGetRawTemplate(...args),
+}));
+
+vi.mock('../../../../src/db/repositories/partialsRepository.js', () => ({
+	loadPartials: (...args: unknown[]) => mockLoadPartials(...args),
+}));
+
+vi.mock('../../../../src/agents/definitions/index.js', () => ({
+	resolveAgentDefinition: (...args: unknown[]) => mockResolveAgentDefinition(...args),
 }));
 
 // Mock getDb for ownership checks
@@ -59,6 +83,9 @@ describe('agentConfigsRouter', () => {
 	beforeEach(() => {
 		mockDbSelect.mockReturnValue({ from: mockDbFrom });
 		mockDbFrom.mockReturnValue({ where: mockDbWhere });
+		// Default: valid template
+		mockLoadPartials.mockResolvedValue(new Map());
+		mockValidateTemplate.mockReturnValue({ valid: true });
 		mockGetEngineCatalog.mockReturnValue([
 			{
 				id: 'llmist',
@@ -356,6 +383,272 @@ describe('agentConfigsRouter', () => {
 				maxIterations: 20,
 				maxConcurrency: 2,
 			});
+		});
+	});
+
+	describe('create with prompts', () => {
+		it('passes systemPrompt and taskPrompt to repository when provided', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 30 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'implementation',
+				systemPrompt: 'You are a helpful assistant.',
+				taskPrompt: 'Process the task: <%= it.workItemId %>',
+			});
+
+			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+				expect.objectContaining({
+					systemPrompt: 'You are a helpful assistant.',
+					taskPrompt: 'Process the task: <%= it.workItemId %>',
+				}),
+			);
+		});
+
+		it('omits systemPrompt and taskPrompt from repository call when not provided', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 31 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'implementation',
+			});
+
+			const callArg = mockCreateAgentConfig.mock.calls[0][0];
+			expect(Object.hasOwn(callArg, 'systemPrompt')).toBe(false);
+			expect(Object.hasOwn(callArg, 'taskPrompt')).toBe(false);
+		});
+
+		it('passes null systemPrompt to repository when explicitly set to null', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 32 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'implementation',
+				systemPrompt: null,
+			});
+
+			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+				expect.objectContaining({ systemPrompt: null }),
+			);
+		});
+	});
+
+	describe('update with prompts', () => {
+		it('passes systemPrompt and taskPrompt to repository when provided', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({
+				id: 11,
+				systemPrompt: 'Custom system prompt',
+				taskPrompt: 'Custom task prompt',
+			});
+
+			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(
+				11,
+				expect.objectContaining({
+					systemPrompt: 'Custom system prompt',
+					taskPrompt: 'Custom task prompt',
+				}),
+			);
+		});
+
+		it('omits systemPrompt and taskPrompt from repository call when not provided', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 11, model: 'new-model' });
+
+			const callArg = mockUpdateAgentConfig.mock.calls[0][1];
+			expect(Object.hasOwn(callArg, 'systemPrompt')).toBe(false);
+			expect(Object.hasOwn(callArg, 'taskPrompt')).toBe(false);
+		});
+
+		it('passes null taskPrompt to repository when explicitly set to null', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 11, taskPrompt: null });
+
+			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(
+				11,
+				expect.objectContaining({ taskPrompt: null }),
+			);
+		});
+	});
+
+	describe('prompt validation rejection', () => {
+		it('rejects create with invalid systemPrompt Eta syntax', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockValidateTemplate.mockReturnValue({ valid: false, error: 'Unexpected token' });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				caller.create({
+					projectId: 'proj-1',
+					agentType: 'implementation',
+					systemPrompt: '<% invalid syntax %>',
+				}),
+			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+			expect(mockCreateAgentConfig).not.toHaveBeenCalled();
+		});
+
+		it('rejects create with invalid taskPrompt Eta syntax', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockValidateTemplate.mockReturnValue({ valid: false, error: 'Unexpected token' });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				caller.create({
+					projectId: 'proj-1',
+					agentType: 'implementation',
+					taskPrompt: '<% invalid syntax %>',
+				}),
+			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+			expect(mockCreateAgentConfig).not.toHaveBeenCalled();
+		});
+
+		it('rejects update with invalid systemPrompt Eta syntax', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockValidateTemplate.mockReturnValue({ valid: false, error: 'Unexpected token' });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(caller.update({ id: 11, systemPrompt: '<% broken %>' })).rejects.toMatchObject({
+				code: 'BAD_REQUEST',
+			});
+
+			expect(mockUpdateAgentConfig).not.toHaveBeenCalled();
+		});
+
+		it('does not reject when prompt is null or undefined (no validation needed)', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 33 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			// null prompts should pass without calling validateTemplate
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'implementation',
+				systemPrompt: null,
+				taskPrompt: null,
+			});
+
+			expect(mockValidateTemplate).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('getPrompts', () => {
+		it('returns all three layers of prompt resolution', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockGetAgentConfigPrompts.mockResolvedValue({
+				systemPrompt: 'project system prompt',
+				taskPrompt: 'project task prompt',
+			});
+			mockResolveAgentDefinition.mockResolvedValue({
+				prompts: {
+					systemPrompt: 'global system prompt',
+					taskPrompt: 'global task prompt',
+				},
+			});
+			mockGetRawTemplate.mockReturnValue('raw disk template content');
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			const result = await caller.getPrompts({ projectId: 'proj-1', agentType: 'implementation' });
+
+			expect(result).toEqual({
+				projectSystemPrompt: 'project system prompt',
+				projectTaskPrompt: 'project task prompt',
+				globalSystemPrompt: 'global system prompt',
+				globalTaskPrompt: 'global task prompt',
+				defaultSystemPrompt: 'raw disk template content',
+			});
+		});
+
+		it('returns null for globalSystemPrompt when definition has no systemPrompt', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockGetAgentConfigPrompts.mockResolvedValue({
+				systemPrompt: null,
+				taskPrompt: null,
+			});
+			mockResolveAgentDefinition.mockResolvedValue({
+				prompts: {
+					taskPrompt: 'global task prompt',
+					// no systemPrompt
+				},
+			});
+			mockGetRawTemplate.mockReturnValue('raw template');
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			const result = await caller.getPrompts({ projectId: 'proj-1', agentType: 'implementation' });
+
+			expect(result.globalSystemPrompt).toBeNull();
+			expect(result.globalTaskPrompt).toBe('global task prompt');
+		});
+
+		it('returns null for global prompts when definition not found', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockGetAgentConfigPrompts.mockResolvedValue({
+				systemPrompt: null,
+				taskPrompt: null,
+			});
+			mockResolveAgentDefinition.mockRejectedValue(new Error('Not found'));
+			mockGetRawTemplate.mockReturnValue('raw template');
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			const result = await caller.getPrompts({ projectId: 'proj-1', agentType: 'unknown-type' });
+
+			expect(result.globalSystemPrompt).toBeNull();
+			expect(result.globalTaskPrompt).toBeNull();
+		});
+
+		it('returns null for defaultSystemPrompt when no disk template exists', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockGetAgentConfigPrompts.mockResolvedValue({
+				systemPrompt: null,
+				taskPrompt: null,
+			});
+			mockResolveAgentDefinition.mockResolvedValue({
+				prompts: { taskPrompt: 'task prompt' },
+			});
+			mockGetRawTemplate.mockImplementation(() => {
+				throw new Error('Template not found');
+			});
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			const result = await caller.getPrompts({ projectId: 'proj-1', agentType: 'custom-type' });
+
+			expect(result.defaultSystemPrompt).toBeNull();
+		});
+
+		it('throws NOT_FOUND when project does not belong to org', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				caller.getPrompts({ projectId: 'proj-x', agentType: 'implementation' }),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+
+		it('throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(
+				caller.getPrompts({ projectId: 'proj-1', agentType: 'implementation' }),
+			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 		});
 	});
 });
