@@ -6,6 +6,7 @@
 
 import { jiraClient } from '../../jira/client.js';
 import { logger } from '../../utils/logging.js';
+import { resolveJiraMediaUrls } from '../media.js';
 import type {
 	Attachment,
 	Checklist,
@@ -17,7 +18,7 @@ import type {
 	WorkItemComment,
 	WorkItemLabel,
 } from '../types.js';
-import { adfToPlainText, markdownToAdf } from './adf.js';
+import { adfToPlainText, extractAdfMediaNodes, markdownToAdf } from './adf.js';
 
 interface JiraConfig {
 	projectKey: string;
@@ -91,6 +92,14 @@ export class JiraPMProvider implements PMProvider {
 	async getWorkItem(id: string): Promise<WorkItem> {
 		const issue = await jiraClient.getIssue(id);
 		const fields = issue.fields ?? {};
+
+		const attachments = (fields as { attachment?: JiraAttachment[] }).attachment ?? [];
+		const mediaRefs = extractAdfMediaNodes(fields.description);
+		const inlineMedia =
+			mediaRefs.length > 0
+				? resolveJiraMediaUrls(mediaRefs, attachments, 'description')
+				: undefined;
+
 		return {
 			id: issue.key ?? id,
 			title: (fields.summary as string) ?? '',
@@ -103,21 +112,37 @@ export class JiraPMProvider implements PMProvider {
 					name: l,
 				}),
 			),
+			...(inlineMedia !== undefined ? { inlineMedia } : {}),
 		};
 	}
 
 	async getWorkItemComments(id: string): Promise<WorkItemComment[]> {
 		const comments = await jiraClient.getIssueComments(id);
-		return comments.map((c: JiraComment) => ({
-			id: c.id ?? '',
-			date: c.created ?? '',
-			text: adfToPlainText(c.body),
-			author: {
-				id: c.author?.accountId ?? '',
-				name: c.author?.displayName ?? '',
-				username: c.author?.emailAddress ?? '',
-			},
-		}));
+		return comments.map((c: JiraComment) => {
+			const commentMediaRefs = extractAdfMediaNodes(c.body);
+			// Comments in JIRA don't have their own attachment list; media nodes
+			// in comments reference the parent issue's attachments. However, we
+			// don't have the parent issue's attachment list available here, so we
+			// return the raw ADF media refs without resolved URLs.
+			// Callers that need resolved URLs should use getWorkItem() and
+			// correlate comments manually if needed.
+			const inlineMedia =
+				commentMediaRefs.length > 0
+					? resolveJiraMediaUrls(commentMediaRefs, [], 'comment')
+					: undefined;
+
+			return {
+				id: c.id ?? '',
+				date: c.created ?? '',
+				text: adfToPlainText(c.body),
+				author: {
+					id: c.author?.accountId ?? '',
+					name: c.author?.displayName ?? '',
+					username: c.author?.emailAddress ?? '',
+				},
+				...(inlineMedia !== undefined && inlineMedia.length > 0 ? { inlineMedia } : {}),
+			};
+		});
 	}
 
 	async updateWorkItem(

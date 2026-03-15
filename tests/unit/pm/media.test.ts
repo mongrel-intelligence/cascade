@@ -7,6 +7,7 @@ import {
 	filterImageMedia,
 	isImageMimeType,
 	mediaToBase64DataUri,
+	resolveJiraMediaUrls,
 } from '../../../src/pm/media.js';
 import type { MediaReference } from '../../../src/pm/types.js';
 
@@ -435,5 +436,155 @@ describe('mediaToBase64DataUri', () => {
 		const buffer = Buffer.alloc(0);
 		const result = mediaToBase64DataUri(buffer, 'image/gif');
 		expect(result).toBe('data:image/gif;base64,');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// resolveJiraMediaUrls
+// ---------------------------------------------------------------------------
+
+describe('resolveJiraMediaUrls', () => {
+	const makeRef = (
+		mediaId: string,
+		altText?: string,
+	): { mediaId: string; mediaType: string; altText?: string } => ({
+		mediaId,
+		mediaType: 'file',
+		altText,
+	});
+
+	const makeAttachment = (
+		id: string,
+		opts: { filename?: string; content?: string; mimeType?: string } = {},
+	) => ({
+		id,
+		filename: opts.filename ?? `file-${id}.png`,
+		content: opts.content ?? `https://jira.example.com/attachment/${id}`,
+		mimeType: opts.mimeType ?? 'image/png',
+	});
+
+	it('returns empty array when refs is empty', () => {
+		const result = resolveJiraMediaUrls([], [makeAttachment('att-1')]);
+		expect(result).toEqual([]);
+	});
+
+	it('returns empty array when attachments is empty', () => {
+		const result = resolveJiraMediaUrls([makeRef('att-1')], []);
+		expect(result).toEqual([]);
+	});
+
+	it('resolves a single media ref to its attachment URL', () => {
+		const attachment = makeAttachment('att-1', {
+			filename: 'screenshot.png',
+			content: 'https://jira.example.com/attachment/att-1',
+			mimeType: 'image/png',
+		});
+		const ref = makeRef('att-1');
+
+		const result = resolveJiraMediaUrls([ref], [attachment]);
+
+		expect(result).toHaveLength(1);
+		expect(result[0]).toMatchObject({
+			url: 'https://jira.example.com/attachment/att-1',
+			mimeType: 'image/png',
+			source: 'description',
+		});
+	});
+
+	it('uses source parameter (comment)', () => {
+		const attachment = makeAttachment('att-2');
+		const ref = makeRef('att-2');
+
+		const result = resolveJiraMediaUrls([ref], [attachment], 'comment');
+
+		expect(result[0].source).toBe('comment');
+	});
+
+	it('defaults source to "description"', () => {
+		const attachment = makeAttachment('att-3');
+		const ref = makeRef('att-3');
+
+		const result = resolveJiraMediaUrls([ref], [attachment]);
+
+		expect(result[0].source).toBe('description');
+	});
+
+	it('uses altText from the media ref when present', () => {
+		const attachment = makeAttachment('att-4', { filename: 'diagram.png' });
+		const ref = makeRef('att-4', 'my diagram');
+
+		const result = resolveJiraMediaUrls([ref], [attachment]);
+
+		expect(result[0].altText).toBe('my diagram');
+	});
+
+	it('falls back to attachment filename as altText when ref has no altText', () => {
+		const attachment = makeAttachment('att-5', { filename: 'fallback.png' });
+		const ref = makeRef('att-5'); // no altText
+
+		const result = resolveJiraMediaUrls([ref], [attachment]);
+
+		expect(result[0].altText).toBe('fallback.png');
+	});
+
+	it('skips refs that have no matching attachment', () => {
+		const attachment = makeAttachment('att-10');
+		const ref = makeRef('unknown-id');
+
+		const result = resolveJiraMediaUrls([ref], [attachment]);
+
+		expect(result).toHaveLength(0);
+	});
+
+	it('skips attachments with no content URL', () => {
+		const attachment = { id: 'att-11', filename: 'file.png', mimeType: 'image/png' };
+		const ref = makeRef('att-11');
+
+		const result = resolveJiraMediaUrls([ref], [attachment]);
+
+		expect(result).toHaveLength(0);
+	});
+
+	it('resolves multiple refs in order', () => {
+		const attachments = [
+			makeAttachment('att-a', { filename: 'a.png', content: 'https://jira.example.com/a' }),
+			makeAttachment('att-b', {
+				filename: 'b.jpg',
+				content: 'https://jira.example.com/b',
+				mimeType: 'image/jpeg',
+			}),
+		];
+		const refs = [makeRef('att-a'), makeRef('att-b')];
+
+		const result = resolveJiraMediaUrls(refs, attachments);
+
+		expect(result).toHaveLength(2);
+		expect(result[0].url).toBe('https://jira.example.com/a');
+		expect(result[1].url).toBe('https://jira.example.com/b');
+		expect(result[1].mimeType).toBe('image/jpeg');
+	});
+
+	it('caps results at MAX_IMAGES_PER_WORK_ITEM', () => {
+		const count = MAX_IMAGES_PER_WORK_ITEM + 3;
+		const attachments = Array.from({ length: count }, (_, i) => makeAttachment(`id-${i}`));
+		const refs = Array.from({ length: count }, (_, i) => makeRef(`id-${i}`));
+
+		const result = resolveJiraMediaUrls(refs, attachments);
+
+		expect(result).toHaveLength(MAX_IMAGES_PER_WORK_ITEM);
+	});
+
+	it('infers MIME type from URL when attachment mimeType is missing', () => {
+		const attachment = {
+			id: 'att-mime',
+			filename: 'image.jpg',
+			content: 'https://jira.example.com/attachment/image.jpg',
+			// no mimeType
+		};
+		const ref = makeRef('att-mime');
+
+		const result = resolveJiraMediaUrls([ref], [attachment]);
+
+		expect(result[0].mimeType).toBe('image/jpeg');
 	});
 });
