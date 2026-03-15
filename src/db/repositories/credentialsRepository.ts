@@ -97,6 +97,61 @@ export async function deleteProjectCredential(projectId: string, envVarKey: stri
 }
 
 // ============================================================================
+// Project-scoped credential CRUD helpers (public API — transparent encryption)
+// ============================================================================
+
+/**
+ * Read a single project credential by env var key.
+ * Returns the decrypted plaintext value, or null if not found.
+ * Uses projectId as AAD for decryption.
+ */
+export async function getProjectCredential(
+	projectId: string,
+	envVarKey: string,
+): Promise<string | null> {
+	return resolveProjectCredential(projectId, envVarKey);
+}
+
+/**
+ * Write (upsert) a project credential with automatic encryption.
+ * The plaintext value is encrypted using projectId as AAD before storage.
+ */
+export async function writeProjectCredential(
+	projectId: string,
+	envVarKey: string,
+	value: string,
+	name?: string | null,
+): Promise<void> {
+	const encryptedValue = encryptCredential(value, projectId);
+	await upsertProjectCredential(projectId, envVarKey, encryptedValue, name);
+}
+
+/**
+ * List all project credentials as an array of decrypted key-value records.
+ * Uses projectId as AAD for decryption.
+ */
+export async function listProjectCredentials(
+	projectId: string,
+): Promise<{ envVarKey: string; value: string; name: string | null }[]> {
+	const db = getDb();
+
+	const rows = await db
+		.select({
+			envVarKey: projectCredentials.envVarKey,
+			value: projectCredentials.value,
+			name: projectCredentials.name,
+		})
+		.from(projectCredentials)
+		.where(eq(projectCredentials.projectId, projectId));
+
+	return rows.map((row) => ({
+		envVarKey: row.envVarKey,
+		value: decryptCredential(row.value, projectId),
+		name: row.name,
+	}));
+}
+
+// ============================================================================
 // Integration credential resolution (legacy — kept for backward compatibility)
 // ============================================================================
 

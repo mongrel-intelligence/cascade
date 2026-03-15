@@ -5,10 +5,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
-import {
-	findCredentialIdByEnvVarKey,
-	updateCredential,
-} from '../../db/repositories/credentialsRepository.js';
+import { writeProjectCredential } from '../../db/repositories/credentialsRepository.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { CODEX_ENGINE_DEFINITION } from '../catalog.js';
 import { cleanupContextFiles } from '../contextFiles.js';
@@ -498,11 +495,11 @@ async function writeCodexAuthFile(
 }
 
 /**
- * After a Codex run, read ~/.codex/auth.json and update the DB credential if
+ * After a Codex run, read ~/.codex/auth.json and update the project credential if
  * the Codex CLI refreshed the access token during the run.
  */
 async function captureRefreshedToken(
-	orgId: string,
+	projectId: string,
 	originalJson: string | undefined,
 	logWriter: LogWriter,
 ): Promise<void> {
@@ -518,17 +515,8 @@ async function captureRefreshedToken(
 	if (newJson === originalJson) return;
 
 	try {
-		const credId = await findCredentialIdByEnvVarKey(orgId, 'CODEX_AUTH_JSON');
-		if (!credId) {
-			logWriter(
-				'WARN',
-				'Could not find CODEX_AUTH_JSON credential to update after token refresh',
-				{},
-			);
-			return;
-		}
-		await updateCredential(credId, { value: newJson });
-		logWriter('INFO', 'Captured refreshed Codex auth token and updated DB credential', {});
+		await writeProjectCredential(projectId, 'CODEX_AUTH_JSON', newJson);
+		logWriter('INFO', 'Captured refreshed Codex auth token and updated project credential', {});
 	} catch (error) {
 		logWriter('WARN', 'Failed to capture refreshed Codex auth token', { error: String(error) });
 	}
@@ -567,7 +555,7 @@ export class CodexEngine implements AgentEngine {
 	}
 
 	async afterExecute(plan: AgentExecutionPlan, _result: AgentEngineResult): Promise<void> {
-		await captureRefreshedToken(plan.project.orgId, this._originalAuthJson, plan.logWriter);
+		await captureRefreshedToken(plan.project.id, this._originalAuthJson, plan.logWriter);
 		await cleanupContextFiles(plan.repoDir);
 		this._originalAuthJson = undefined;
 		this._adapterLifecycleActive = false;
@@ -587,7 +575,7 @@ export class CodexEngine implements AgentEngine {
 	/** Cleanup called from execute() finally block when adapter lifecycle is not active. */
 	private async _directCallCleanup(
 		repoDir: string,
-		orgId: string | undefined,
+		projectId: string | undefined,
 		originalAuthJson: string | undefined,
 		logWriter: AgentExecutionPlan['logWriter'],
 		hasOffloadedContext: boolean,
@@ -595,8 +583,8 @@ export class CodexEngine implements AgentEngine {
 		if (hasOffloadedContext) {
 			await cleanupContextFiles(repoDir);
 		}
-		if (orgId) {
-			await captureRefreshedToken(orgId, originalAuthJson, logWriter);
+		if (projectId) {
+			await captureRefreshedToken(projectId, originalAuthJson, logWriter);
 		}
 	}
 
@@ -783,7 +771,7 @@ export class CodexEngine implements AgentEngine {
 			if (!this._adapterLifecycleActive) {
 				await this._directCallCleanup(
 					input.repoDir,
-					input.project.orgId,
+					input.project.id,
 					originalAuthJson,
 					input.logWriter,
 					hasOffloadedContext,

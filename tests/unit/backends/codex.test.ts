@@ -7,8 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockSpawn = vi.fn();
 const mockStoreLlmCall = vi.fn().mockResolvedValue(undefined);
-const mockFindCredentialIdByEnvVarKey = vi.fn<() => Promise<number | null>>();
-const mockUpdateCredential = vi.fn<() => Promise<void>>();
+const mockWriteProjectCredential = vi.fn<() => Promise<void>>();
 const mockWriteFile = vi.fn<() => Promise<void>>();
 const mockMkdir = vi.fn<() => Promise<void>>();
 const mockReadFile = vi.fn<() => Promise<string>>();
@@ -24,8 +23,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
-	findCredentialIdByEnvVarKey: (...args: unknown[]) => mockFindCredentialIdByEnvVarKey(...args),
-	updateCredential: (...args: unknown[]) => mockUpdateCredential(...args),
+	writeProjectCredential: (...args: unknown[]) => mockWriteProjectCredential(...args),
 }));
 
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
@@ -436,8 +434,7 @@ describe('CodexEngine', () => {
 		mockMkdir.mockResolvedValue(undefined);
 		mockWriteFile.mockResolvedValue(undefined);
 		mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
-		mockFindCredentialIdByEnvVarKey.mockResolvedValue(null);
-		mockUpdateCredential.mockResolvedValue(undefined);
+		mockWriteProjectCredential.mockResolvedValue(undefined);
 	});
 
 	afterEach(() => {
@@ -1087,8 +1084,7 @@ describe('Codex subscription auth', () => {
 		mockMkdir.mockResolvedValue(undefined);
 		mockWriteFile.mockResolvedValue(undefined);
 		mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
-		mockFindCredentialIdByEnvVarKey.mockResolvedValue(null);
-		mockUpdateCredential.mockResolvedValue(undefined);
+		mockWriteProjectCredential.mockResolvedValue(undefined);
 		mockSpawn.mockImplementation(() => createMockChild({ exitCode: 0 }));
 	});
 
@@ -1131,10 +1127,9 @@ describe('Codex subscription auth', () => {
 		expect(capturedEnv?.OPENAI_API_KEY).toBe('sk-test');
 	});
 
-	it('updates the DB credential when auth.json is refreshed by Codex CLI', async () => {
+	it('writes refreshed token to project_credentials when auth.json is updated by Codex CLI', async () => {
 		const refreshedJson = JSON.stringify({ accessToken: 'tok_NEW', refreshToken: 'ref_xyz' });
 		mockReadFile.mockResolvedValue(refreshedJson);
-		mockFindCredentialIdByEnvVarKey.mockResolvedValue(42);
 
 		const engine = new CodexEngine();
 		const input = makeInput({
@@ -1144,11 +1139,14 @@ describe('Codex subscription auth', () => {
 
 		await engine.execute(input);
 
-		expect(mockFindCredentialIdByEnvVarKey).toHaveBeenCalledWith('org-1', 'CODEX_AUTH_JSON');
-		expect(mockUpdateCredential).toHaveBeenCalledWith(42, { value: refreshedJson });
+		expect(mockWriteProjectCredential).toHaveBeenCalledWith(
+			'test-project',
+			'CODEX_AUTH_JSON',
+			refreshedJson,
+		);
 	});
 
-	it('skips DB update when auth.json is unchanged after run', async () => {
+	it('skips project credential update when auth.json is unchanged after run', async () => {
 		mockReadFile.mockResolvedValue(AUTH_JSON);
 
 		const engine = new CodexEngine();
@@ -1159,13 +1157,13 @@ describe('Codex subscription auth', () => {
 
 		await engine.execute(input);
 
-		expect(mockUpdateCredential).not.toHaveBeenCalled();
+		expect(mockWriteProjectCredential).not.toHaveBeenCalled();
 	});
 
-	it('logs WARN and does not throw when credential row is not found for refresh', async () => {
+	it('logs WARN and does not throw when writeProjectCredential fails during token refresh', async () => {
 		const refreshedJson = JSON.stringify({ accessToken: 'tok_NEW', refreshToken: 'ref_xyz' });
 		mockReadFile.mockResolvedValue(refreshedJson);
-		mockFindCredentialIdByEnvVarKey.mockResolvedValue(null);
+		mockWriteProjectCredential.mockRejectedValue(new Error('DB write failed'));
 
 		const engine = new CodexEngine();
 		const input = makeInput({
@@ -1176,10 +1174,9 @@ describe('Codex subscription auth', () => {
 		await expect(engine.execute(input)).resolves.not.toThrow();
 		expect(input.logWriter).toHaveBeenCalledWith(
 			'WARN',
-			'Could not find CODEX_AUTH_JSON credential to update after token refresh',
-			{},
+			'Failed to capture refreshed Codex auth token',
+			{ error: 'Error: DB write failed' },
 		);
-		expect(mockUpdateCredential).not.toHaveBeenCalled();
 	});
 });
 
@@ -1194,8 +1191,7 @@ describe('CodexEngine lifecycle hooks', () => {
 		mockMkdir.mockResolvedValue(undefined);
 		mockWriteFile.mockResolvedValue(undefined);
 		mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
-		mockFindCredentialIdByEnvVarKey.mockResolvedValue(null);
-		mockUpdateCredential.mockResolvedValue(undefined);
+		mockWriteProjectCredential.mockResolvedValue(undefined);
 		mockSpawn.mockImplementation(() => createMockChild({ exitCode: 0 }));
 	});
 
@@ -1217,10 +1213,9 @@ describe('CodexEngine lifecycle hooks', () => {
 		});
 	});
 
-	it('afterExecute calls captureRefreshedToken', async () => {
+	it('afterExecute writes refreshed token to project_credentials', async () => {
 		const refreshedJson = JSON.stringify({ accessToken: 'tok_NEW', refreshToken: 'ref_xyz' });
 		mockReadFile.mockResolvedValue(refreshedJson);
-		mockFindCredentialIdByEnvVarKey.mockResolvedValue(42);
 
 		const engine = new CodexEngine();
 		const input = makeInput({
@@ -1232,8 +1227,11 @@ describe('CodexEngine lifecycle hooks', () => {
 		await engine.beforeExecute(input);
 		await engine.afterExecute(input, { success: true, output: '' });
 
-		expect(mockFindCredentialIdByEnvVarKey).toHaveBeenCalledWith('org-1', 'CODEX_AUTH_JSON');
-		expect(mockUpdateCredential).toHaveBeenCalledWith(42, { value: refreshedJson });
+		expect(mockWriteProjectCredential).toHaveBeenCalledWith(
+			'test-project',
+			'CODEX_AUTH_JSON',
+			refreshedJson,
+		);
 	});
 
 	it('afterExecute completes without throwing', async () => {
@@ -1246,7 +1244,6 @@ describe('CodexEngine lifecycle hooks', () => {
 	it('adapter lifecycle: execute does not double-capture token when adapter calls afterExecute', async () => {
 		const refreshedJson = JSON.stringify({ accessToken: 'tok_NEW', refreshToken: 'ref_xyz' });
 		mockReadFile.mockResolvedValue(refreshedJson);
-		mockFindCredentialIdByEnvVarKey.mockResolvedValue(42);
 
 		const engine = new CodexEngine();
 		const input = makeInput({
@@ -1259,7 +1256,7 @@ describe('CodexEngine lifecycle hooks', () => {
 		await engine.execute(input);
 		await engine.afterExecute(input, { success: true, output: '' });
 
-		// captureRefreshedToken should be called exactly once (from afterExecute, not from execute's finally)
-		expect(mockFindCredentialIdByEnvVarKey).toHaveBeenCalledTimes(1);
+		// writeProjectCredential should be called exactly once (from afterExecute, not from execute's finally)
+		expect(mockWriteProjectCredential).toHaveBeenCalledTimes(1);
 	});
 });
