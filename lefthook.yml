@@ -13,8 +13,6 @@ pre-push:
   commands:
     test:
       run: npm run test:fast
-    test-integration:
-      run: npm run test:db:up && npm run test:integration
 
 commit-msg:
   commands:

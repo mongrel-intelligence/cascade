@@ -1,37 +1,19 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.js';
 import { formatCost, formatDuration } from '@/lib/utils.js';
 
-interface WorkStat {
-	agentType: string;
-	status: string;
-	durationMs: number | null;
-	costUsd: string | null;
-}
-
 interface StatsSummaryProps {
-	stats: WorkStat[];
+	totalRuns: number;
+	totalCostUsd: string;
+	avgDurationMs: number | null;
+	successRate: number;
 }
 
-export function StatsSummary({ stats }: StatsSummaryProps) {
-	const totalRuns = stats.length;
-
-	const totalCost = stats.reduce((sum, r) => {
-		if (r.costUsd != null) {
-			const cost = Number.parseFloat(r.costUsd);
-			return sum + (Number.isNaN(cost) ? 0 : cost);
-		}
-		return sum;
-	}, 0);
-
-	const completedRuns = stats.filter((r) => r.status === 'completed').length;
-	const successRate = totalRuns > 0 ? (completedRuns / totalRuns) * 100 : 0;
-
-	const runsWithDuration = stats.filter((r) => r.durationMs != null && r.durationMs > 0);
-	const avgDurationMs =
-		runsWithDuration.length > 0
-			? runsWithDuration.reduce((sum, r) => sum + (r.durationMs ?? 0), 0) / runsWithDuration.length
-			: null;
-
+export function StatsSummary({
+	totalRuns,
+	totalCostUsd,
+	avgDurationMs,
+	successRate,
+}: StatsSummaryProps) {
 	const summaryItems = [
 		{
 			label: 'Total Runs',
@@ -39,7 +21,7 @@ export function StatsSummary({ stats }: StatsSummaryProps) {
 		},
 		{
 			label: 'Total Cost',
-			value: formatCost(totalCost.toFixed(4)),
+			value: formatCost(totalCostUsd),
 		},
 		{
 			label: 'Avg Duration',

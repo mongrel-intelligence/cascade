@@ -8,9 +8,17 @@ interface WorkItemRun {
 	costUsd: string | null;
 }
 
-interface WorkItemCostChartProps {
-	runs: WorkItemRun[];
+interface AgentTypeBreakdown {
+	agentType: string;
+	runCount: number;
+	totalCostUsd: string;
+	totalDurationMs: number;
+	avgDurationMs: number | null;
 }
+
+type WorkItemCostChartProps =
+	| { runs: WorkItemRun[]; byAgentType?: never }
+	| { byAgentType: AgentTypeBreakdown[]; runs?: never };
 
 interface CostEntry {
 	name: string;
@@ -19,8 +27,7 @@ interface CostEntry {
 	color: string;
 }
 
-export function WorkItemCostChart({ runs }: WorkItemCostChartProps) {
-	// Aggregate cost by agent type
+function buildDataFromRuns(runs: WorkItemRun[]): CostEntry[] {
 	const costByAgent: Record<string, number> = {};
 	for (const run of runs) {
 		if (run.costUsd != null) {
@@ -30,13 +37,32 @@ export function WorkItemCostChart({ runs }: WorkItemCostChartProps) {
 			}
 		}
 	}
-
-	const data: CostEntry[] = Object.entries(costByAgent).map(([agentType, value]) => ({
+	return Object.entries(costByAgent).map(([agentType, value]) => ({
 		name: agentTypeLabel(agentType),
 		agentType,
 		value,
 		color: getAgentColor(agentType),
 	}));
+}
+
+function buildDataFromBreakdown(byAgentType: AgentTypeBreakdown[]): CostEntry[] {
+	return byAgentType
+		.map((breakdown) => {
+			const cost = Number.parseFloat(breakdown.totalCostUsd);
+			return {
+				name: agentTypeLabel(breakdown.agentType),
+				agentType: breakdown.agentType,
+				value: Number.isNaN(cost) ? 0 : cost,
+				color: getAgentColor(breakdown.agentType),
+			};
+		})
+		.filter((entry) => entry.value > 0);
+}
+
+export function WorkItemCostChart({ runs, byAgentType }: WorkItemCostChartProps) {
+	const data: CostEntry[] = byAgentType
+		? buildDataFromBreakdown(byAgentType)
+		: buildDataFromRuns(runs ?? []);
 
 	const totalCost = data.reduce((sum, d) => sum + d.value, 0);
 

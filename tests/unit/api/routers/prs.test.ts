@@ -13,6 +13,7 @@ const mockListPRsForWorkItem = vi.fn();
 const mockGetRunsForPR = vi.fn();
 const mockListUnifiedWorkForProject = vi.fn();
 const mockGetProjectWorkStats = vi.fn();
+const mockGetProjectWorkStatsAggregated = vi.fn();
 
 vi.mock('../../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	listPRsForProject: (...args: unknown[]) => mockListPRsForProject(...args),
@@ -24,6 +25,7 @@ vi.mock('../../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	getRunsForPR: (...args: unknown[]) => mockGetRunsForPR(...args),
 	getProjectWorkStats: (...args: unknown[]) => mockGetProjectWorkStats(...args),
+	getProjectWorkStatsAggregated: (...args: unknown[]) => mockGetProjectWorkStatsAggregated(...args),
 }));
 
 const mockVerifyProjectOrgAccess = vi.fn();
@@ -395,6 +397,152 @@ describe('prsRouter', () => {
 			await expect(caller.workStats({ projectId: 'other-project' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
 			});
+		});
+	});
+
+	// =========================================================================
+	// workStatsAggregated
+	// =========================================================================
+	describe('workStatsAggregated', () => {
+		const mockAggregatedStats = {
+			summary: {
+				totalRuns: 10,
+				completedRuns: 8,
+				failedRuns: 2,
+				timedOutRuns: 0,
+				totalCostUsd: '1.2500',
+				avgDurationMs: 90000,
+				successRate: 80,
+			},
+			byAgentType: [
+				{
+					agentType: 'implementation',
+					runCount: 7,
+					totalCostUsd: '1.0000',
+					totalDurationMs: 630000,
+					avgDurationMs: 90000,
+				},
+				{
+					agentType: 'review',
+					runCount: 3,
+					totalCostUsd: '0.2500',
+					totalDurationMs: 270000,
+					avgDurationMs: 90000,
+				},
+			],
+		};
+
+		it('returns aggregated stats for a project without filters', async () => {
+			mockGetProjectWorkStatsAggregated.mockResolvedValue(mockAggregatedStats);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			const result = await caller.workStatsAggregated({ projectId: 'test-project' });
+
+			expect(result).toEqual(mockAggregatedStats);
+			expect(mockVerifyProjectOrgAccess).toHaveBeenCalledWith('test-project', 'org-1');
+			expect(mockGetProjectWorkStatsAggregated).toHaveBeenCalledWith('test-project', {
+				dateFrom: undefined,
+				agentType: undefined,
+				status: undefined,
+			});
+		});
+
+		it('passes dateFrom filter to repository', async () => {
+			mockGetProjectWorkStatsAggregated.mockResolvedValue(mockAggregatedStats);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			const dateFromStr = '2024-01-01T00:00:00.000Z';
+			await caller.workStatsAggregated({ projectId: 'test-project', dateFrom: dateFromStr });
+
+			expect(mockGetProjectWorkStatsAggregated).toHaveBeenCalledWith('test-project', {
+				dateFrom: new Date(dateFromStr),
+				agentType: undefined,
+				status: undefined,
+			});
+		});
+
+		it('passes agentType filter to repository', async () => {
+			mockGetProjectWorkStatsAggregated.mockResolvedValue(mockAggregatedStats);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			await caller.workStatsAggregated({ projectId: 'test-project', agentType: 'implementation' });
+
+			expect(mockGetProjectWorkStatsAggregated).toHaveBeenCalledWith('test-project', {
+				dateFrom: undefined,
+				agentType: 'implementation',
+				status: undefined,
+			});
+		});
+
+		it('passes status filter to repository', async () => {
+			mockGetProjectWorkStatsAggregated.mockResolvedValue(mockAggregatedStats);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			await caller.workStatsAggregated({ projectId: 'test-project', status: 'completed' });
+
+			expect(mockGetProjectWorkStatsAggregated).toHaveBeenCalledWith('test-project', {
+				dateFrom: undefined,
+				agentType: undefined,
+				status: 'completed',
+			});
+		});
+
+		it('passes all filters combined to repository', async () => {
+			mockGetProjectWorkStatsAggregated.mockResolvedValue(mockAggregatedStats);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			const dateFromStr = '2024-01-01T00:00:00.000Z';
+			await caller.workStatsAggregated({
+				projectId: 'test-project',
+				dateFrom: dateFromStr,
+				agentType: 'review',
+				status: 'failed',
+			});
+
+			expect(mockGetProjectWorkStatsAggregated).toHaveBeenCalledWith('test-project', {
+				dateFrom: new Date(dateFromStr),
+				agentType: 'review',
+				status: 'failed',
+			});
+		});
+
+		it('returns empty summary when no completed runs exist', async () => {
+			const emptyStats = {
+				summary: {
+					totalRuns: 0,
+					completedRuns: 0,
+					failedRuns: 0,
+					timedOutRuns: 0,
+					totalCostUsd: '0.0000',
+					avgDurationMs: null,
+					successRate: 0,
+				},
+				byAgentType: [],
+			};
+			mockGetProjectWorkStatsAggregated.mockResolvedValue(emptyStats);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			const result = await caller.workStatsAggregated({ projectId: 'test-project' });
+
+			expect(result).toEqual(emptyStats);
+			expect(result.summary.totalRuns).toBe(0);
+			expect(result.byAgentType).toHaveLength(0);
+		});
+
+		it('throws UNAUTHORIZED when no user', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(caller.workStatsAggregated({ projectId: 'test-project' })).rejects.toThrow(
+				TRPCError,
+			);
+		});
+
+		it('throws when project does not belong to org', async () => {
+			mockVerifyProjectOrgAccess.mockRejectedValue(new TRPCError({ code: 'NOT_FOUND' }));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			await expect(
+				caller.workStatsAggregated({ projectId: 'other-project' }),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
 		});
 	});
 });

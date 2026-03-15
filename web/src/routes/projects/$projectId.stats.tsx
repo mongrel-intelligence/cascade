@@ -28,7 +28,7 @@ function ProjectStatsPage() {
 	const dateFrom = computeDateFrom(filters.timeRange);
 
 	const statsQuery = useQuery(
-		trpc.prs.workStats.queryOptions({
+		trpc.prs.workStatsAggregated.queryOptions({
 			projectId,
 			dateFrom,
 			agentType: filters.agentType || undefined,
@@ -56,12 +56,17 @@ function ProjectStatsPage() {
 
 			{statsQuery.data && (
 				<>
-					<StatsSummary stats={statsQuery.data} />
+					<StatsSummary
+						totalRuns={statsQuery.data.summary.totalRuns}
+						totalCostUsd={statsQuery.data.summary.totalCostUsd}
+						avgDurationMs={statsQuery.data.summary.avgDurationMs}
+						successRate={statsQuery.data.summary.successRate}
+					/>
 
-					{statsQuery.data.length > 0 ? (
+					{statsQuery.data.summary.totalRuns > 0 ? (
 						<div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-							<WorkItemCostChart runs={statsQuery.data.map((r, i) => ({ ...r, id: String(i) }))} />
-							<ProjectWorkDurationChart runs={statsQuery.data} />
+							<WorkItemCostChart byAgentType={statsQuery.data.byAgentType} />
+							<ProjectWorkDurationChart byAgentType={statsQuery.data.byAgentType} />
 						</div>
 					) : (
 						<div className="py-8 text-center text-muted-foreground">
