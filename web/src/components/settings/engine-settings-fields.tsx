@@ -1,3 +1,4 @@
+import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import {
 	Select,
@@ -29,11 +30,11 @@ type EngineSettingField =
 	| {
 			key: string;
 			label: string;
-			// TODO: Frontend rendering for 'number' fields is not yet implemented (Story #2).
-			// The field type is defined here for type compatibility with the backend catalog;
-			// the dashboard will render it once numeric field support is added.
 			type: 'number';
 			description?: string;
+			min?: number;
+			max?: number;
+			step?: number;
 	  };
 
 interface EngineDefinition {
@@ -58,6 +59,79 @@ function normalizeValue(
 ): Record<string, Record<string, unknown>> | undefined {
 	if (!value) return undefined;
 	return Object.keys(value).length > 0 ? value : undefined;
+}
+
+interface FieldControlProps {
+	field: EngineSettingField;
+	rawValue: unknown;
+	inheritLabel: string;
+	onUpdate: (key: string, value: unknown) => void;
+}
+
+function FieldControl({ field, rawValue, inheritLabel, onUpdate }: FieldControlProps) {
+	if (field.type === 'select') {
+		return (
+			<Select
+				value={typeof rawValue === 'string' ? rawValue : '_default'}
+				onValueChange={(next) => onUpdate(field.key, next === '_default' ? undefined : next)}
+			>
+				<SelectTrigger className="w-full">
+					<SelectValue placeholder={inheritLabel} />
+				</SelectTrigger>
+				<SelectContent>
+					<SelectItem value="_default">{inheritLabel}</SelectItem>
+					{field.options.map((option) => (
+						<SelectItem key={option.value} value={option.value}>
+							{option.label}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+		);
+	}
+
+	if (field.type === 'number') {
+		return (
+			<Input
+				type="number"
+				min={field.min}
+				max={field.max}
+				step={field.step}
+				placeholder={inheritLabel}
+				value={typeof rawValue === 'number' ? rawValue : ''}
+				onChange={(e) => {
+					const trimmed = e.target.value.trim();
+					if (trimmed === '') {
+						onUpdate(field.key, undefined);
+					} else {
+						const parsed = Number(trimmed);
+						if (!Number.isNaN(parsed)) {
+							onUpdate(field.key, parsed);
+						}
+					}
+				}}
+			/>
+		);
+	}
+
+	// boolean
+	return (
+		<Select
+			value={typeof rawValue === 'boolean' ? (rawValue ? 'true' : 'false') : '_default'}
+			onValueChange={(next) =>
+				onUpdate(field.key, next === '_default' ? undefined : next === 'true')
+			}
+		>
+			<SelectTrigger className="w-full">
+				<SelectValue placeholder={inheritLabel} />
+			</SelectTrigger>
+			<SelectContent>
+				<SelectItem value="_default">{inheritLabel}</SelectItem>
+				<SelectItem value="true">Enabled</SelectItem>
+				<SelectItem value="false">Disabled</SelectItem>
+			</SelectContent>
+		</Select>
+	);
 }
 
 export function EngineSettingsFields({
@@ -105,59 +179,20 @@ export function EngineSettingsFields({
 					</div>
 
 					<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-						{engine.settings.fields.map((field) => {
-							// TODO: 'number' field rendering is not yet implemented (Story #2).
-							if (field.type === 'number') return null;
-
-							const rawValue = activeEngineValues[field.key];
-
-							return (
-								<div key={field.key} className="space-y-2">
-									<Label>{field.label}</Label>
-									{field.type === 'select' ? (
-										<Select
-											value={typeof rawValue === 'string' ? rawValue : '_default'}
-											onValueChange={(next) =>
-												updateField(field.key, next === '_default' ? undefined : next)
-											}
-										>
-											<SelectTrigger className="w-full">
-												<SelectValue placeholder={inheritLabel} />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value="_default">{inheritLabel}</SelectItem>
-												{field.options.map((option) => (
-													<SelectItem key={option.value} value={option.value}>
-														{option.label}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
-									) : (
-										<Select
-											value={
-												typeof rawValue === 'boolean' ? (rawValue ? 'true' : 'false') : '_default'
-											}
-											onValueChange={(next) =>
-												updateField(field.key, next === '_default' ? undefined : next === 'true')
-											}
-										>
-											<SelectTrigger className="w-full">
-												<SelectValue placeholder={inheritLabel} />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value="_default">{inheritLabel}</SelectItem>
-												<SelectItem value="true">Enabled</SelectItem>
-												<SelectItem value="false">Disabled</SelectItem>
-											</SelectContent>
-										</Select>
-									)}
-									{field.description && (
-										<p className="text-xs text-muted-foreground">{field.description}</p>
-									)}
-								</div>
-							);
-						})}
+						{engine.settings.fields.map((field) => (
+							<div key={field.key} className="space-y-2">
+								<Label>{field.label}</Label>
+								<FieldControl
+									field={field}
+									rawValue={activeEngineValues[field.key]}
+									inheritLabel={inheritLabel}
+									onUpdate={updateField}
+								/>
+								{field.description && (
+									<p className="text-xs text-muted-foreground">{field.description}</p>
+								)}
+							</div>
+						))}
 					</div>
 				</div>
 			)}
