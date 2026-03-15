@@ -23,7 +23,7 @@ Thank you for your interest in contributing to CASCADE! This guide will help you
    cd web && npm install && cd ..
    ```
 
-3. **Configure environment**: Copy `.env.example` to `.env` and fill in the required values. See [GETTING_STARTED.md](./GETTING_STARTED.md) for detailed setup instructions.
+3. **Configure environment**: Copy `.env.example` to `.env` and fill in the required values. See [Getting Started](./docs/getting-started.md) for detailed setup instructions.
 
 4. **Set up the database**:
    ```bash
@@ -124,6 +124,12 @@ See [CLAUDE.md](./CLAUDE.md) for a detailed architecture overview. Key directori
 1. Create the agent in `src/agents/`
 2. Define its system prompt in `src/agents/prompts/`
 3. Register it in the agent registry
+
+## The `.cascade/` Directory
+
+When CASCADE works on a repository, it looks for a `.cascade/` directory at the root of that repo. This directory lets you customize agent behavior — setup scripts, post-edit hooks, test runners, and environment variables.
+
+See **[`.cascade/` Directory Guide](./docs/cascade-directory.md)** for the full reference.
 
 ## Getting Help
 
