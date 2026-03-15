@@ -590,13 +590,15 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			{/* Agent tabs */}
 			{agentTypes.length > 0 && (
 				<Tabs defaultValue={defaultTab}>
-					<TabsList variant="line" className="flex-wrap h-auto gap-y-1">
-						{agentTypes.map((type) => (
-							<TabsTrigger key={type} value={type}>
-								{(AGENT_LABELS as Record<string, string | undefined>)[type] ?? type}
-							</TabsTrigger>
-						))}
-					</TabsList>
+					<div className="overflow-x-auto border-b border-border scrollbar-hide">
+						<TabsList variant="line" className="w-max">
+							{agentTypes.map((type) => (
+								<TabsTrigger key={type} value={type}>
+									{(AGENT_LABELS as Record<string, string | undefined>)[type] ?? type}
+								</TabsTrigger>
+							))}
+						</TabsList>
+					</div>
 					{agentTypes.map((type) => (
 						<TabsContent key={type} value={type} className="space-y-6 pt-4">
 							<DefinitionAgentSection
