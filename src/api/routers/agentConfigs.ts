@@ -1,18 +1,38 @@
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { resolveAgentDefinition } from '../../agents/definitions/index.js';
+import { getRawTemplate, validateTemplate } from '../../agents/prompts/index.js';
 import { getEngineCatalog, registerBuiltInEngines } from '../../backends/index.js';
 import { EngineSettingsSchema } from '../../config/engineSettings.js';
 import { getDb } from '../../db/client.js';
+import { loadPartials } from '../../db/repositories/partialsRepository.js';
 import {
 	createAgentConfig,
 	deleteAgentConfig,
+	getAgentConfigPrompts,
 	listAgentConfigs,
 	updateAgentConfig,
 } from '../../db/repositories/settingsRepository.js';
 import { agentConfigs } from '../../db/schema/index.js';
 import { protectedProcedure, publicProcedure, router } from '../trpc.js';
 import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
+
+/**
+ * Validate an optional prompt template string.
+ * Throws BAD_REQUEST if the Eta syntax is invalid.
+ */
+async function validatePromptIfPresent(prompt: string | null | undefined) {
+	if (!prompt) return;
+	const dbPartials = await loadPartials();
+	const result = validateTemplate(prompt, dbPartials);
+	if (!result.valid) {
+		throw new TRPCError({
+			code: 'BAD_REQUEST',
+			message: `Invalid prompt template: ${result.error}`,
+		});
+	}
+}
 
 export const agentConfigsRouter = router({
 	engines: publicProcedure.query(() => {
@@ -38,11 +58,17 @@ export const agentConfigsRouter = router({
 				agentEngine: z.string().nullish(),
 				engineSettings: EngineSettingsSchema.nullish(),
 				maxConcurrency: z.number().int().positive().nullish(),
+				systemPrompt: z.string().nullish(),
+				taskPrompt: z.string().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
 			// Verify project ownership
 			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+
+			// Validate prompt templates before saving
+			await validatePromptIfPresent(input.systemPrompt);
+			await validatePromptIfPresent(input.taskPrompt);
 
 			return createAgentConfig({
 				projectId: input.projectId,
@@ -52,6 +78,8 @@ export const agentConfigsRouter = router({
 				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
 				...(input.engineSettings !== undefined ? { engineSettings: input.engineSettings } : {}),
 				...(input.maxConcurrency !== undefined ? { maxConcurrency: input.maxConcurrency } : {}),
+				...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
+				...(input.taskPrompt !== undefined ? { taskPrompt: input.taskPrompt } : {}),
 			});
 		}),
 
@@ -65,6 +93,8 @@ export const agentConfigsRouter = router({
 				agentEngine: z.string().nullish(),
 				engineSettings: EngineSettingsSchema.nullish(),
 				maxConcurrency: z.number().int().positive().nullish(),
+				systemPrompt: z.string().nullish(),
+				taskPrompt: z.string().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -80,11 +110,17 @@ export const agentConfigsRouter = router({
 			// Check project-scoped configs belong to user's org
 			await verifyProjectOrgAccess(config.projectId, ctx.effectiveOrgId);
 
-			const { id, engineSettings, ...updates } = input;
+			// Validate prompt templates before saving
+			await validatePromptIfPresent(input.systemPrompt);
+			await validatePromptIfPresent(input.taskPrompt);
+
+			const { id, engineSettings, systemPrompt, taskPrompt, ...updates } = input;
 			await updateAgentConfig(id, {
 				...updates,
 				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
 				...(engineSettings !== undefined ? { engineSettings } : {}),
+				...(systemPrompt !== undefined ? { systemPrompt } : {}),
+				...(taskPrompt !== undefined ? { taskPrompt } : {}),
 			});
 		}),
 
@@ -102,5 +138,52 @@ export const agentConfigsRouter = router({
 			await verifyProjectOrgAccess(config.projectId, ctx.effectiveOrgId);
 
 			await deleteAgentConfig(input.id);
+		}),
+
+	/**
+	 * Returns prompt overrides for a given (projectId, agentType), merged with
+	 * global definition defaults and disk template defaults.
+	 *
+	 * Resolution chain:
+	 * - projectSystemPrompt / projectTaskPrompt: project-level override from agent_configs
+	 * - globalSystemPrompt / globalTaskPrompt: from the resolved agent definition (DB or YAML)
+	 * - defaultSystemPrompt: raw .eta template from disk (before rendering)
+	 */
+	getPrompts: protectedProcedure
+		.input(z.object({ projectId: z.string(), agentType: z.string().min(1) }))
+		.query(async ({ ctx, input }) => {
+			// Verify project belongs to org
+			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+
+			// 1. Project-level overrides from agent_configs table
+			const { systemPrompt: projectSystemPrompt, taskPrompt: projectTaskPrompt } =
+				await getAgentConfigPrompts(input.projectId, input.agentType);
+
+			// 2. Global definition prompts (DB or YAML)
+			let globalSystemPrompt: string | null = null;
+			let globalTaskPrompt: string | null = null;
+			try {
+				const definition = await resolveAgentDefinition(input.agentType);
+				globalSystemPrompt = definition.prompts.systemPrompt ?? null;
+				globalTaskPrompt = definition.prompts.taskPrompt ?? null;
+			} catch {
+				// Agent type not found — skip global prompts gracefully
+			}
+
+			// 3. Raw disk template (before Eta rendering)
+			let defaultSystemPrompt: string | null = null;
+			try {
+				defaultSystemPrompt = getRawTemplate(input.agentType);
+			} catch {
+				// No .eta template on disk — skip gracefully
+			}
+
+			return {
+				projectSystemPrompt,
+				projectTaskPrompt,
+				globalSystemPrompt,
+				globalTaskPrompt,
+				defaultSystemPrompt,
+			};
 		}),
 });
