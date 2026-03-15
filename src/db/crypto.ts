@@ -48,6 +48,22 @@ export function encryptCredential(plaintext: string, aad: string): string {
 }
 
 /**
+ * Re-encrypt a credential value with a different AAD (e.g., when migrating from
+ * org-scoped to project-scoped credentials).
+ * - If encryption is disabled (no master key), returns the value unchanged.
+ * - If the value is plaintext, returns it unchanged (nothing to re-encrypt).
+ * - If the value is encrypted with `oldAad`, decrypts then re-encrypts with `newAad`.
+ * @param stored - The stored credential value (may be plaintext or encrypted).
+ * @param oldAad - The AAD used during original encryption (e.g., orgId).
+ * @param newAad - The new AAD to use for re-encryption (e.g., projectId).
+ */
+export function reEncryptCredential(stored: string, oldAad: string, newAad: string): string {
+	if (!isEncryptedValue(stored)) return stored;
+	const plaintext = decryptCredential(stored, oldAad);
+	return encryptCredential(plaintext, newAad);
+}
+
+/**
  * Decrypt a credential value.
  * If the value is not encrypted (no `enc:` prefix), returns it as-is.
  * Throws if the value is encrypted but no master key is configured.
