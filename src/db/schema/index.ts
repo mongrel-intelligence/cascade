@@ -1,4 +1,5 @@
 export { credentials } from './credentials.js';
+export { projectCredentials } from './projectCredentials.js';
 export { organizations } from './organizations.js';
 export { agentConfigs } from './agentConfigs.js';
 export { agentDefinitions } from './agentDefinitions.js';
