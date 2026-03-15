@@ -117,11 +117,11 @@ export type AgentEngineSettingField =
 	| {
 			key: string;
 			label: string;
-			// TODO: Frontend rendering for 'number' fields is not yet implemented (Story #2).
-			// The catalog definition is registered here; the dashboard will render it once
-			// numeric field support is added.
 			type: 'number';
 			description?: string;
+			min?: number;
+			max?: number;
+			step?: number;
 	  };
 
 export interface AgentEngineSettingsDefinition {
