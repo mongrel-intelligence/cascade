@@ -3,6 +3,7 @@
  * work item descriptions and comments.
  */
 
+import { logger } from '../utils/logging.js';
 import type { MediaReference } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -11,6 +12,9 @@ import type { MediaReference } from './types.js';
 
 /** Maximum supported image file size in bytes (5 MB) */
 export const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+
+/** Timeout for downloading media (10 seconds) */
+const DOWNLOAD_TIMEOUT_MS = 10_000;
 
 /** Maximum number of inline media references to extract per work item */
 export const MAX_IMAGES_PER_WORK_ITEM = 10;
@@ -154,4 +158,124 @@ export function extractMarkdownImages(
 	}
 
 	return results;
+}
+
+// ---------------------------------------------------------------------------
+// Download utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Result of a successful media download.
+ */
+export interface DownloadMediaResult {
+	/** Raw bytes of the downloaded media */
+	buffer: Buffer;
+	/** MIME type detected from Content-Type header or URL extension fallback */
+	mimeType: string;
+}
+
+/**
+ * Downloads media bytes from a URL with a 10-second timeout and
+ * {@link MAX_IMAGE_SIZE_BYTES} size enforcement.
+ *
+ * Auth headers (e.g. `Authorization: Basic ...`) can be provided by callers
+ * such as the Trello or JIRA client wrappers.
+ *
+ * Returns `null` gracefully on any failure (network error, timeout, oversized
+ * file, non-OK status) so callers never need to catch.
+ *
+ * @param url         - The URL to download.
+ * @param authHeaders - Optional additional request headers (e.g. auth headers).
+ * @returns `{ buffer, mimeType }` on success, `null` on any failure.
+ */
+export async function downloadMedia(
+	url: string,
+	authHeaders?: Record<string, string>,
+): Promise<DownloadMediaResult | null> {
+	// Strip query params from the URL used in log messages to avoid leaking
+	// credentials (e.g. Trello key/token query params).
+	const safeUrl = url.split('?')[0];
+
+	try {
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+
+		let response: Response;
+		try {
+			response = await fetch(url, {
+				signal: controller.signal,
+				headers: authHeaders,
+			});
+		} catch (err) {
+			clearTimeout(timeout);
+			throw err;
+		}
+
+		if (!response.ok) {
+			clearTimeout(timeout);
+			logger.warn('downloadMedia: non-OK response', { url: safeUrl, status: response.status });
+			return null;
+		}
+
+		// Enforce size limit using Content-Length header before streaming
+		const contentLength = response.headers.get('Content-Length');
+		if (contentLength !== null) {
+			const length = Number(contentLength);
+			if (!Number.isNaN(length) && length > MAX_IMAGE_SIZE_BYTES) {
+				clearTimeout(timeout);
+				logger.warn('downloadMedia: content exceeds MAX_IMAGE_SIZE_BYTES (pre-check)', {
+					url: safeUrl,
+					bytes: length,
+					limit: MAX_IMAGE_SIZE_BYTES,
+				});
+				return null;
+			}
+		}
+
+		// Read the response body as an ArrayBuffer and convert to Buffer.
+		// clearTimeout is deferred to here so the abort signal remains active
+		// for the entire body read, not just the connection phase.
+		let arrayBuffer: ArrayBuffer;
+		try {
+			arrayBuffer = await response.arrayBuffer();
+		} finally {
+			clearTimeout(timeout);
+		}
+
+		if (arrayBuffer.byteLength > MAX_IMAGE_SIZE_BYTES) {
+			logger.warn('downloadMedia: content exceeds MAX_IMAGE_SIZE_BYTES (post-read)', {
+				url: safeUrl,
+				bytes: arrayBuffer.byteLength,
+				limit: MAX_IMAGE_SIZE_BYTES,
+			});
+			return null;
+		}
+
+		const buffer = Buffer.from(arrayBuffer);
+
+		// Determine MIME type: prefer Content-Type header, fall back to URL extension
+		const contentType = response.headers.get('Content-Type') ?? '';
+		const mimeType = contentType ? contentType.split(';')[0].trim() : mimeTypeFromUrl(url);
+
+		return { buffer, mimeType };
+	} catch (err) {
+		if (err instanceof Error && err.name === 'AbortError') {
+			logger.warn('downloadMedia: timed out', { url: safeUrl, timeoutMs: DOWNLOAD_TIMEOUT_MS });
+		} else {
+			logger.warn('downloadMedia: failed', { url: safeUrl, error: String(err) });
+		}
+		return null;
+	}
+}
+
+/**
+ * Converts a downloaded media buffer to a base64 data URI string suitable
+ * for embedding in HTML or LLM context.
+ *
+ * @param buffer   - The raw bytes of the media.
+ * @param mimeType - The MIME type of the media (e.g. `'image/png'`).
+ * @returns A base64 data URI string, e.g. `'data:image/png;base64,iVBORw...'`.
+ */
+export function mediaToBase64DataUri(buffer: Buffer, mimeType: string): string {
+	return `data:${mimeType};base64,${buffer.toString('base64')}`;
 }

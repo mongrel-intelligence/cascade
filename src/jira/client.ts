@@ -285,6 +285,23 @@ export const jiraClient = {
 		await getClient().issues.deleteIssue({ issueIdOrKey: issueKey });
 	},
 
+	/**
+	 * Downloads an attachment from JIRA using Basic authentication.
+	 *
+	 * JIRA attachment download URLs always require `Authorization: Basic …`
+	 * credentials.  Returns `null` on any failure so the caller pipeline never
+	 * crashes.
+	 *
+	 * @param url - The JIRA attachment URL to download.
+	 * @returns `{ buffer, mimeType }` on success, `null` on failure.
+	 */
+	async downloadAttachment(url: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
+		const creds = getJiraCredentials();
+		const authHeader = `Basic ${Buffer.from(`${creds.email}:${creds.apiToken}`).toString('base64')}`;
+		const { downloadMedia } = await import('../pm/media.js');
+		return downloadMedia(url, { Authorization: authHeader });
+	},
+
 	async addAttachmentFile(issueKey: string, buffer: Buffer, filename: string) {
 		logger.debug('Adding JIRA attachment', { issueKey, filename });
 		await getClient().issueAttachments.addAttachment({
