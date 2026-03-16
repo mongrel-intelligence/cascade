@@ -6,12 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
 	mockFailOrphanedRun,
+	mockFailOrphanedRunFallback,
 	mockClearWorkItemEnqueued,
 	mockClearAllWorkItemLocks,
 	mockClearAgentTypeEnqueued,
 	mockClearAllAgentTypeLocks,
 } = vi.hoisted(() => ({
 	mockFailOrphanedRun: vi.fn().mockResolvedValue(null),
+	mockFailOrphanedRunFallback: vi.fn().mockResolvedValue(null),
 	mockClearWorkItemEnqueued: vi.fn(),
 	mockClearAllWorkItemLocks: vi.fn(),
 	mockClearAgentTypeEnqueued: vi.fn(),
@@ -24,6 +26,7 @@ const {
 
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	failOrphanedRun: (...args: unknown[]) => mockFailOrphanedRun(...args),
+	failOrphanedRunFallback: (...args: unknown[]) => mockFailOrphanedRunFallback(...args),
 }));
 
 vi.mock('../../../src/router/work-item-lock.js', () => ({
@@ -79,6 +82,8 @@ describe('active-workers', () => {
 		activeWorkers.clear();
 		mockFailOrphanedRun.mockReset();
 		mockFailOrphanedRun.mockResolvedValue(null);
+		mockFailOrphanedRunFallback.mockReset();
+		mockFailOrphanedRunFallback.mockResolvedValue(null);
 		mockClearWorkItemEnqueued.mockClear();
 		mockClearAgentTypeEnqueued.mockClear();
 	});
@@ -185,6 +190,8 @@ describe('active-workers', () => {
 				'proj-1',
 				'card-1',
 				'Worker crashed with exit code 1',
+				'failed',
+				expect.any(Number),
 			);
 		});
 
@@ -230,6 +237,62 @@ describe('active-workers', () => {
 
 			cleanupWorker('job-no-agent', 1);
 			expect(mockClearWorkItemEnqueued).not.toHaveBeenCalled();
+		});
+
+		it('calls failOrphanedRunFallback when no workItemId but projectId exists', () => {
+			mockFailOrphanedRunFallback.mockResolvedValue('run-fallback');
+			const startedAt = new Date();
+			activeWorkers.set(
+				'job-no-wi',
+				makeActiveWorker({
+					jobId: 'job-no-wi',
+					projectId: 'proj-1',
+					startedAt,
+					agentType: 'review',
+					// no workItemId
+				}),
+			);
+
+			cleanupWorker('job-no-wi', 1);
+			expect(mockFailOrphanedRunFallback).toHaveBeenCalledWith(
+				'proj-1',
+				'review',
+				startedAt,
+				'failed',
+				'Worker crashed with exit code 1',
+				expect.any(Number),
+			);
+			expect(mockFailOrphanedRun).not.toHaveBeenCalled();
+		});
+
+		it('calls failOrphanedRunFallback with undefined agentType when both absent', () => {
+			mockFailOrphanedRunFallback.mockResolvedValue('run-fallback2');
+			activeWorkers.set(
+				'job-no-wi-no-agent',
+				makeActiveWorker({
+					jobId: 'job-no-wi-no-agent',
+					projectId: 'proj-1',
+					// no workItemId, no agentType
+				}),
+			);
+
+			cleanupWorker('job-no-wi-no-agent', 1);
+			expect(mockFailOrphanedRunFallback).toHaveBeenCalled();
+			expect(mockFailOrphanedRun).not.toHaveBeenCalled();
+		});
+
+		it('does NOT call either fail function when projectId is missing', () => {
+			activeWorkers.set(
+				'job-no-proj',
+				makeActiveWorker({
+					jobId: 'job-no-proj',
+					// no projectId, no workItemId
+				}),
+			);
+
+			cleanupWorker('job-no-proj', 1);
+			expect(mockFailOrphanedRun).not.toHaveBeenCalled();
+			expect(mockFailOrphanedRunFallback).not.toHaveBeenCalled();
 		});
 	});
 });

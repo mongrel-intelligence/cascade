@@ -5,7 +5,7 @@
  * Tracks running worker containers and handles cleanup of their associated locks.
  */
 
-import { failOrphanedRun } from '../db/repositories/runsRepository.js';
+import { failOrphanedRun, failOrphanedRunFallback } from '../db/repositories/runsRepository.js';
 import { logger } from '../utils/logging.js';
 import { clearAgentTypeEnqueued } from './agent-type-lock.js';
 import type { CascadeJob } from './queue.js';
@@ -46,7 +46,9 @@ export function getActiveWorkers(): Array<{ jobId: string; startedAt: Date }> {
 
 /**
  * Clean up worker tracking state (timeout handle + map entry).
- * When exitCode is non-zero, marks the corresponding DB run as failed (fire-and-forget).
+ * When exitCode is non-zero, marks the DB run as 'failed' — crash path only.
+ * The timeout path (killWorker) handles its own 'timed_out' DB update and calls
+ * cleanupWorker without an exitCode so this block is skipped.
  */
 export function cleanupWorker(jobId: string, exitCode?: number): void {
 	const worker = activeWorkers.get(jobId);
@@ -58,29 +60,40 @@ export function cleanupWorker(jobId: string, exitCode?: number): void {
 		if (worker.projectId && worker.workItemId && worker.agentType) {
 			clearWorkItemEnqueued(worker.projectId, worker.workItemId, worker.agentType);
 		}
-		if (worker.projectId && worker.workItemId) {
-			if (exitCode !== undefined && exitCode !== 0) {
-				failOrphanedRun(
-					worker.projectId,
-					worker.workItemId,
-					`Worker crashed with exit code ${exitCode}`,
-				)
-					.then((runId) => {
-						if (runId) {
-							logger.info('[WorkerManager] Marked orphaned run as failed:', {
-								jobId,
-								runId,
-								exitCode,
-							});
-						}
-					})
-					.catch((err) => {
-						logger.error('[WorkerManager] Failed to mark orphaned run:', {
+		if (exitCode !== undefined && exitCode !== 0 && worker.projectId) {
+			const durationMs = Date.now() - worker.startedAt.getTime();
+			const updatePromise = worker.workItemId
+				? failOrphanedRun(
+						worker.projectId,
+						worker.workItemId,
+						`Worker crashed with exit code ${exitCode}`,
+						'failed',
+						durationMs,
+					)
+				: failOrphanedRunFallback(
+						worker.projectId,
+						worker.agentType,
+						worker.startedAt,
+						'failed',
+						`Worker crashed with exit code ${exitCode}`,
+						durationMs,
+					);
+			updatePromise
+				.then((runId) => {
+					if (runId) {
+						logger.info('[WorkerManager] Marked orphaned run as failed:', {
 							jobId,
-							error: String(err),
+							runId,
+							exitCode,
 						});
+					}
+				})
+				.catch((err) => {
+					logger.error('[WorkerManager] Failed to mark orphaned run:', {
+						jobId,
+						error: String(err),
 					});
-			}
+				});
 		}
 		activeWorkers.delete(jobId);
 		logger.info('[WorkerManager] Worker cleaned up:', {

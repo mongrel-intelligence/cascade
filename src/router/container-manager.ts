@@ -12,11 +12,12 @@
 
 import type { Job } from 'bullmq';
 import Docker from 'dockerode';
+import { failOrphanedRun, failOrphanedRunFallback } from '../db/repositories/runsRepository.js';
 import { captureException } from '../sentry.js';
 import { logger } from '../utils/logging.js';
 import { activeWorkers, cleanupWorker } from './active-workers.js';
 import { clearAllAgentTypeLocks } from './agent-type-lock.js';
-import { routerConfig } from './config.js';
+import { loadProjectConfig, routerConfig } from './config.js';
 import { notifyTimeout } from './notifications.js';
 import { stopOrphanCleanup } from './orphan-cleanup.js';
 import type { CascadeJob } from './queue.js';
@@ -48,6 +49,9 @@ export {
 
 const docker = new Docker();
 
+/** Buffer added on top of the in-container watchdog so the router kill is always a backstop. */
+const ROUTER_KILL_BUFFER_MS = 2 * 60 * 1000;
+
 /**
  * Spawn a worker container for a job.
  * Sets up timeout tracking and monitors container exit asynchronously.
@@ -60,6 +64,22 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 	const projectId = await extractProjectIdFromJob(job.data);
 	const workerEnv = await buildWorkerEnvWithProjectId(job, projectId);
 	const hasCredentials = workerEnv.some((e) => e.startsWith('CASCADE_CREDENTIAL_KEYS='));
+
+	// Extract agentType early so it can be included in container labels
+	// (needed by orphan cleanup to narrow DB fallback queries to the right agent type)
+	const agentType = extractAgentType(job.data);
+
+	// Determine container timeout: use project's watchdogTimeoutMs + buffer if available,
+	// falling back to the global workerTimeoutMs. This makes watchdogTimeoutMs the single source
+	// of truth — the in-container watchdog fires first, router kill is a backup.
+	let containerTimeoutMs = routerConfig.workerTimeoutMs;
+	if (projectId) {
+		const { fullProjects } = await loadProjectConfig();
+		const projectCfg = fullProjects.find((p) => p.id === projectId);
+		if (projectCfg?.watchdogTimeoutMs) {
+			containerTimeoutMs = projectCfg.watchdogTimeoutMs + ROUTER_KILL_BUFFER_MS;
+		}
+	}
 
 	logger.info('[WorkerManager] Spawning worker:', {
 		jobId,
@@ -83,12 +103,14 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 				'cascade.job.id': jobId,
 				'cascade.job.type': job.data.type,
 				'cascade.managed': 'true',
+				'cascade.project.id': projectId ?? '',
+				'cascade.agent.type': agentType ?? '',
 			},
 		});
 
 		await container.start();
 
-		// Set up timeout
+		// Set up timeout — fires at watchdogTimeoutMs + 2min (router backup kill)
 		const startedAt = new Date();
 		const timeoutHandle = setTimeout(() => {
 			const durationMs = Date.now() - startedAt.getTime();
@@ -104,11 +126,10 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 			killWorker(jobId).catch((err) => {
 				logger.error('[WorkerManager] Failed to kill timed-out worker:', err);
 			});
-		}, routerConfig.workerTimeoutMs);
+		}, containerTimeoutMs);
 
 		// Track the worker
 		const workItemId = extractWorkItemId(job.data);
-		const agentType = extractAgentType(job.data);
 		activeWorkers.set(jobId, {
 			containerId: container.id,
 			jobId,
@@ -203,8 +224,45 @@ export async function killWorker(jobId: string): Promise<void> {
 		});
 	}
 
-	// Send timeout notification (fire-and-forget)
 	const durationMs = Date.now() - worker.startedAt.getTime();
+
+	// Update DB run status to timed_out (fire-and-forget, no-op if watchdog already did it).
+	// cleanupWorker is called below without an exitCode so it skips its own DB update,
+	// avoiding a race where the wrong status ('failed') could win.
+	if (worker.projectId) {
+		const dbUpdate = worker.workItemId
+			? failOrphanedRun(
+					worker.projectId,
+					worker.workItemId,
+					'Router timeout',
+					'timed_out',
+					durationMs,
+				)
+			: failOrphanedRunFallback(
+					worker.projectId,
+					worker.agentType,
+					worker.startedAt,
+					'timed_out',
+					'Router timeout',
+					durationMs,
+				);
+		dbUpdate
+			.then((runId) => {
+				if (runId)
+					logger.info('[WorkerManager] Marked run timed_out after router kill', {
+						jobId,
+						runId,
+					});
+			})
+			.catch((err) =>
+				logger.error('[WorkerManager] DB update failed after router kill', {
+					jobId,
+					error: String(err),
+				}),
+			);
+	}
+
+	// Send timeout notification (fire-and-forget)
 	notifyTimeout(worker.job, {
 		jobId: worker.jobId,
 		startedAt: worker.startedAt,
@@ -213,7 +271,8 @@ export async function killWorker(jobId: string): Promise<void> {
 		logger.error('[WorkerManager] Timeout notification error:', String(err));
 	});
 
-	cleanupWorker(jobId, 137);
+	// No exitCode — DB update is handled above with the correct 'timed_out' status
+	cleanupWorker(jobId);
 }
 
 /**
