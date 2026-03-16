@@ -42,11 +42,7 @@ vi.mock('trello.js', () => ({
 }));
 
 import { TrelloClient } from 'trello.js';
-import {
-	getTrelloCredentials,
-	trelloClient,
-	withTrelloCredentials,
-} from '../../../src/trello/client.js';
+import { trelloClient, withTrelloCredentials } from '../../../src/trello/client.js';
 
 describe('trelloClient', () => {
 	const creds = { apiKey: 'test-key', token: 'test-token' };
@@ -276,20 +272,6 @@ describe('trelloClient', () => {
 			await expect(trelloClient.addActionReaction('action-123', emoji)).rejects.toThrow(
 				'No Trello credentials in scope',
 			);
-		});
-	});
-
-	describe('getTrelloCredentials', () => {
-		it('throws when called outside scope', () => {
-			expect(() => getTrelloCredentials()).toThrow('No Trello credentials in scope');
-		});
-
-		it('returns credentials when inside scope', async () => {
-			let captured: ReturnType<typeof getTrelloCredentials> | undefined;
-			await withTrelloCredentials(creds, async () => {
-				captured = getTrelloCredentials();
-			});
-			expect(captured).toEqual(creds);
 		});
 	});
 

@@ -115,16 +115,6 @@ export interface CreatedPR {
 	title: string;
 }
 
-export type GitHubReactionContent =
-	| '+1'
-	| '-1'
-	| 'laugh'
-	| 'confused'
-	| 'heart'
-	| 'hooray'
-	| 'rocket'
-	| 'eyes';
-
 export const githubClient = {
 	async getPR(owner: string, repo: string, prNumber: number): Promise<PRDetails> {
 		logger.debug('Fetching PR', { owner, repo, prNumber });
@@ -423,36 +413,6 @@ export const githubClient = {
 		};
 	},
 
-	async addIssueCommentReaction(
-		owner: string,
-		repo: string,
-		commentId: number,
-		content: GitHubReactionContent,
-	): Promise<void> {
-		logger.debug('Adding reaction to issue comment', { owner, repo, commentId, content });
-		await getClient().reactions.createForIssueComment({
-			owner,
-			repo,
-			comment_id: commentId,
-			content,
-		});
-	},
-
-	async addReviewCommentReaction(
-		owner: string,
-		repo: string,
-		commentId: number,
-		content: GitHubReactionContent,
-	): Promise<void> {
-		logger.debug('Adding reaction to review comment', { owner, repo, commentId, content });
-		await getClient().reactions.createForPullRequestReviewComment({
-			owner,
-			repo,
-			comment_id: commentId,
-			content,
-		});
-	},
-
 	async getFailedWorkflowRunJobs(
 		owner: string,
 		repo: string,
@@ -513,23 +473,6 @@ export const githubClient = {
 		};
 	},
 
-	async branchExists(owner: string, repo: string, branch: string): Promise<boolean> {
-		logger.debug('Checking if branch exists', { owner, repo, branch });
-		try {
-			await getClient().repos.getBranch({
-				owner,
-				repo,
-				branch,
-			});
-			return true;
-		} catch (error) {
-			if (error instanceof Error && 'status' in error && error.status === 404) {
-				return false;
-			}
-			throw error;
-		}
-	},
-
 	async mergePR(
 		owner: string,
 		repo: string,
@@ -545,11 +488,6 @@ export const githubClient = {
 		});
 	},
 };
-
-export async function getAuthenticatedUser(): Promise<string> {
-	const { data } = await getClient().users.getAuthenticated();
-	return data.login;
-}
 
 export async function getGitHubUserForToken(token: string | null): Promise<string | null> {
 	if (!token) return null;

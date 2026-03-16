@@ -28,33 +28,12 @@ import '../../../src/pm/index.js';
 import {
 	PMLifecycleManager,
 	type ProjectPMConfig,
-	extractPRTitle,
 	resolveProjectPMConfig,
 } from '../../../src/pm/lifecycle.js';
 import type { PMProvider } from '../../../src/pm/types.js';
 import type { ProjectConfig } from '../../../src/types/index.js';
 
 describe('pm/lifecycle', () => {
-	describe('extractPRTitle', () => {
-		it('extracts PR number from a standard GitHub PR URL', () => {
-			expect(extractPRTitle('https://github.com/owner/repo/pull/123')).toBe('Pull Request #123');
-		});
-
-		it('extracts PR number from a PR URL with trailing path', () => {
-			expect(extractPRTitle('https://github.com/owner/repo/pull/42/files')).toBe(
-				'Pull Request #42',
-			);
-		});
-
-		it('returns generic title when URL does not contain /pull/', () => {
-			expect(extractPRTitle('https://example.com/no-pull-here')).toBe('Pull Request');
-		});
-
-		it('returns generic title for empty string', () => {
-			expect(extractPRTitle('')).toBe('Pull Request');
-		});
-	});
-
 	describe('resolveProjectPMConfig', () => {
 		it('returns JIRA config when project type is jira', () => {
 			const project: ProjectConfig = {

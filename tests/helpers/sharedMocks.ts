@@ -103,10 +103,7 @@ export const mockGithubClient = {
 	createPRReview: vi.fn(),
 	getOpenPRByBranch: vi.fn(),
 	createPR: vi.fn(),
-	addIssueCommentReaction: vi.fn(),
-	addReviewCommentReaction: vi.fn(),
 	getFailedWorkflowRunJobs: vi.fn(),
-	branchExists: vi.fn(),
 	mergePR: vi.fn(),
 } satisfies GitHubClientContract;
 
