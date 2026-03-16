@@ -28,15 +28,6 @@ const mockActions = {
 	listJobsForWorkflowRun: vi.fn(),
 };
 
-const mockReactions = {
-	createForIssueComment: vi.fn(),
-	createForPullRequestReviewComment: vi.fn(),
-};
-
-const mockRepos = {
-	getBranch: vi.fn(),
-};
-
 const mockUsers = {
 	getAuthenticated: vi.fn(),
 };
@@ -47,8 +38,6 @@ vi.mock('@octokit/rest', () => ({
 		issues: mockIssues,
 		checks: mockChecks,
 		actions: mockActions,
-		reactions: mockReactions,
-		repos: mockRepos,
 		users: mockUsers,
 	})),
 }));
@@ -63,7 +52,6 @@ vi.mock('../../../src/utils/logging.js', () => ({
 }));
 
 import {
-	getAuthenticatedUser,
 	getGitHubUserForToken,
 	githubClient,
 	withGitHubToken,
@@ -646,50 +634,6 @@ describe('githubClient', () => {
 		});
 	});
 
-	describe('branchExists', () => {
-		it('returns true when branch exists', async () => {
-			mockRepos.getBranch.mockResolvedValue({ data: {} });
-
-			const result = await withGitHubToken('test-token', () =>
-				githubClient.branchExists('owner', 'repo', 'main'),
-			);
-
-			expect(result).toBe(true);
-		});
-
-		it('returns false when branch does not exist (404)', async () => {
-			const error = new Error('Not Found') as Error & { status: number };
-			error.status = 404;
-			mockRepos.getBranch.mockRejectedValue(error);
-
-			const result = await withGitHubToken('test-token', () =>
-				githubClient.branchExists('owner', 'repo', 'nonexistent'),
-			);
-
-			expect(result).toBe(false);
-		});
-
-		it('throws on other errors', async () => {
-			mockRepos.getBranch.mockRejectedValue(new Error('Server Error'));
-
-			await expect(
-				withGitHubToken('test-token', () => githubClient.branchExists('owner', 'repo', 'branch')),
-			).rejects.toThrow('Server Error');
-		});
-	});
-
-	describe('getAuthenticatedUser', () => {
-		it('returns authenticated user login', async () => {
-			mockUsers.getAuthenticated.mockResolvedValue({
-				data: { login: 'cascade-bot' },
-			});
-
-			const result = await withGitHubToken('test-token', () => getAuthenticatedUser());
-
-			expect(result).toBe('cascade-bot');
-		});
-	});
-
 	describe('withGitHubToken', () => {
 		it('scopes a different Octokit instance within the callback', async () => {
 			mockPulls.get.mockResolvedValue({
@@ -712,62 +656,6 @@ describe('githubClient', () => {
 
 			await withGitHubToken('token-b', () => githubClient.getPR('owner', 'repo', 2));
 			expect(Octokit).toHaveBeenCalledWith({ auth: 'token-b' });
-		});
-	});
-
-	describe('addIssueCommentReaction', () => {
-		it('calls reactions.createForIssueComment with correct params', async () => {
-			mockReactions.createForIssueComment.mockResolvedValue({ data: {} });
-
-			await withGitHubToken('test-token', () =>
-				githubClient.addIssueCommentReaction('owner', 'repo', 42, 'eyes'),
-			);
-
-			expect(mockReactions.createForIssueComment).toHaveBeenCalledWith({
-				owner: 'owner',
-				repo: 'repo',
-				comment_id: 42,
-				content: 'eyes',
-			});
-		});
-
-		it('propagates errors from the API', async () => {
-			mockReactions.createForIssueComment.mockRejectedValue(new Error('403 Forbidden'));
-
-			await expect(
-				withGitHubToken('test-token', () =>
-					githubClient.addIssueCommentReaction('owner', 'repo', 42, 'eyes'),
-				),
-			).rejects.toThrow('403 Forbidden');
-		});
-	});
-
-	describe('addReviewCommentReaction', () => {
-		it('calls reactions.createForPullRequestReviewComment with correct params', async () => {
-			mockReactions.createForPullRequestReviewComment.mockResolvedValue({ data: {} });
-
-			await withGitHubToken('test-token', () =>
-				githubClient.addReviewCommentReaction('owner', 'repo', 99, 'heart'),
-			);
-
-			expect(mockReactions.createForPullRequestReviewComment).toHaveBeenCalledWith({
-				owner: 'owner',
-				repo: 'repo',
-				comment_id: 99,
-				content: 'heart',
-			});
-		});
-
-		it('propagates errors from the API', async () => {
-			mockReactions.createForPullRequestReviewComment.mockRejectedValue(
-				new Error('422 Unprocessable'),
-			);
-
-			await expect(
-				withGitHubToken('test-token', () =>
-					githubClient.addReviewCommentReaction('owner', 'repo', 99, 'eyes'),
-				),
-			).rejects.toThrow('422 Unprocessable');
 		});
 	});
 

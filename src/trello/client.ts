@@ -12,7 +12,7 @@ export function withTrelloCredentials<T>(
 	return trelloCredentialStore.run(creds, fn);
 }
 
-export function getTrelloCredentials(): TrelloCredentials {
+function getTrelloCredentials(): TrelloCredentials {
 	const scoped = trelloCredentialStore.getStore();
 	if (!scoped) {
 		throw new Error(
