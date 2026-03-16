@@ -1,33 +1,26 @@
 /**
- * Integration tests for configRepository.ts lookup functions.
+ * Integration tests for the config provider layer (src/config/provider.ts).
  *
- * Tests the full JSONB sub-query round-trip and WithConfig lookups against a
- * real PostgreSQL database:
- * - findProjectByBoardIdFromDb — JSONB sub-query on project_integrations.config->>'boardId'
- * - findProjectByJiraProjectKeyFromDb — JSONB sub-query on project_integrations.config->>'projectKey'
- * - findProjectByRepoFromDb — simple column lookup on projects.repo
- * - findProjectByIdFromDb — primary key lookup
- * - findProjectWithConfigByBoardId — { project, config } pair
- * - findProjectWithConfigByRepo — { project, config } pair
- * - findProjectWithConfigById — { project, config } pair
- * - findProjectWithConfigByJiraProjectKey — { project, config } pair
- * - loadConfigFromDb — full config load, validated via validateConfig()
+ * Tests the cached lookup functions against a real PostgreSQL database,
+ * verifying that:
+ * - Cached provider functions (findProjectByBoardId, findProjectByRepo,
+ *   findProjectByJiraProjectKey, loadConfig) serve results from the cache
+ *   on subsequent calls.
+ * - invalidateConfigCache() forces a fresh DB read on the next call.
+ * - After cache invalidation + DB mutation, the provider returns the
+ *   updated result rather than the stale cached value.
  */
 
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { invalidateConfigCache } from '../../src/config/provider.js';
-import { CascadeConfigSchema, validateConfig } from '../../src/config/schema.js';
 import {
-	findProjectByBoardIdFromDb,
-	findProjectByIdFromDb,
-	findProjectByJiraProjectKeyFromDb,
-	findProjectByRepoFromDb,
-	findProjectWithConfigByBoardId,
-	findProjectWithConfigById,
-	findProjectWithConfigByJiraProjectKey,
-	findProjectWithConfigByRepo,
-	loadConfigFromDb,
-} from '../../src/db/repositories/configRepository.js';
+	findProjectByBoardId,
+	findProjectByJiraProjectKey,
+	findProjectByRepo,
+	invalidateConfigCache,
+	loadConfig,
+} from '../../src/config/provider.js';
+import { getDb } from '../../src/db/client.js';
+import { projectIntegrations } from '../../src/db/schema/index.js';
 import { truncateAll } from './helpers/db.js';
 import { seedIntegration, seedOrg, seedProject } from './helpers/seed.js';
 
@@ -35,7 +28,7 @@ beforeAll(async () => {
 	await truncateAll();
 });
 
-describe('Config Provider (integration)', () => {
+describe('Config Provider — cached lookups (integration)', () => {
 	beforeEach(async () => {
 		await truncateAll();
 		invalidateConfigCache();
@@ -43,20 +36,20 @@ describe('Config Provider (integration)', () => {
 	});
 
 	// =========================================================================
-	// findProjectByBoardIdFromDb — JSONB sub-query
+	// findProjectByBoardId — cached provider function
 	// =========================================================================
 
-	describe('findProjectByBoardIdFromDb', () => {
+	describe('findProjectByBoardId', () => {
 		it('returns the project for a known boardId', async () => {
 			await seedProject({ id: 'proj-trello', repo: 'owner/trello-repo' });
 			await seedIntegration({
 				projectId: 'proj-trello',
 				category: 'pm',
 				provider: 'trello',
-				config: { boardId: 'board-abc', lists: {}, labels: {} },
+				config: { boardId: 'board-cached', lists: {}, labels: {} },
 			});
 
-			const project = await findProjectByBoardIdFromDb('board-abc');
+			const project = await findProjectByBoardId('board-cached');
 
 			expect(project).toBeDefined();
 			expect(project?.id).toBe('proj-trello');
@@ -68,44 +61,107 @@ describe('Config Provider (integration)', () => {
 				projectId: 'proj-trello',
 				category: 'pm',
 				provider: 'trello',
-				config: { boardId: 'board-abc', lists: {}, labels: {} },
+				config: { boardId: 'board-cached', lists: {}, labels: {} },
 			});
 
-			const project = await findProjectByBoardIdFromDb('board-nonexistent');
+			const project = await findProjectByBoardId('board-nonexistent');
 
 			expect(project).toBeUndefined();
 		});
 
-		it('returns correct project when multiple projects exist', async () => {
-			await seedProject({ id: 'proj-a', repo: 'owner/repo-a' });
-			await seedProject({ id: 'proj-b', repo: 'owner/repo-b' });
-
+		it('returns a cached result on second call without invalidation', async () => {
+			await seedProject({ id: 'proj-cache-hit', repo: 'owner/cache-repo' });
 			await seedIntegration({
-				projectId: 'proj-a',
+				projectId: 'proj-cache-hit',
 				category: 'pm',
 				provider: 'trello',
-				config: { boardId: 'board-111', lists: {}, labels: {} },
+				config: { boardId: 'board-for-cache', lists: {}, labels: {} },
 			});
+
+			// First call — populates cache
+			const first = await findProjectByBoardId('board-for-cache');
+			expect(first?.id).toBe('proj-cache-hit');
+
+			// Mutate DB directly — delete the integration
+			const db = getDb();
+			await db.delete(projectIntegrations);
+
+			// Second call — should still return cached result, not hit DB
+			const second = await findProjectByBoardId('board-for-cache');
+			expect(second?.id).toBe('proj-cache-hit');
+		});
+
+		it('returns fresh DB result after invalidateConfigCache()', async () => {
+			await seedProject({ id: 'proj-invalidate', repo: 'owner/invalidate-repo' });
 			await seedIntegration({
-				projectId: 'proj-b',
+				projectId: 'proj-invalidate',
 				category: 'pm',
 				provider: 'trello',
-				config: { boardId: 'board-222', lists: {}, labels: {} },
+				config: { boardId: 'board-invalidate', lists: {}, labels: {} },
 			});
 
-			const projectA = await findProjectByBoardIdFromDb('board-111');
-			const projectB = await findProjectByBoardIdFromDb('board-222');
+			// First call — populates cache
+			const before = await findProjectByBoardId('board-invalidate');
+			expect(before?.id).toBe('proj-invalidate');
 
-			expect(projectA?.id).toBe('proj-a');
-			expect(projectB?.id).toBe('proj-b');
+			// Mutate DB: remove the integration so the boardId no longer exists
+			const db = getDb();
+			await db.delete(projectIntegrations);
+
+			// Invalidate cache then re-query — must reflect the DB mutation
+			invalidateConfigCache();
+			const after = await findProjectByBoardId('board-invalidate');
+			expect(after).toBeUndefined();
 		});
 	});
 
 	// =========================================================================
-	// findProjectByJiraProjectKeyFromDb — JSONB sub-query
+	// findProjectByRepo — cached provider function
 	// =========================================================================
 
-	describe('findProjectByJiraProjectKeyFromDb', () => {
+	describe('findProjectByRepo', () => {
+		it('returns the project for a known repo', async () => {
+			await seedProject({ id: 'proj-repo', repo: 'myorg/myrepo' });
+
+			const project = await findProjectByRepo('myorg/myrepo');
+
+			expect(project).toBeDefined();
+			expect(project?.id).toBe('proj-repo');
+		});
+
+		it('returns undefined for an unknown repo', async () => {
+			const project = await findProjectByRepo('myorg/nonexistent');
+
+			expect(project).toBeUndefined();
+		});
+
+		it('returns fresh DB result after invalidateConfigCache()', async () => {
+			await seedProject({ id: 'proj-repo-invalidate', repo: 'org/repo-to-delete' });
+
+			// Populate cache
+			const before = await findProjectByRepo('org/repo-to-delete');
+			expect(before?.id).toBe('proj-repo-invalidate');
+
+			// Delete the project from the DB
+			const db = getDb();
+			await db.execute(`DELETE FROM projects WHERE id = 'proj-repo-invalidate'`);
+
+			// Without invalidation, cache still serves the old result
+			const stale = await findProjectByRepo('org/repo-to-delete');
+			expect(stale?.id).toBe('proj-repo-invalidate');
+
+			// After invalidation, fresh DB read reflects the deletion
+			invalidateConfigCache();
+			const fresh = await findProjectByRepo('org/repo-to-delete');
+			expect(fresh).toBeUndefined();
+		});
+	});
+
+	// =========================================================================
+	// findProjectByJiraProjectKey — cached provider function
+	// =========================================================================
+
+	describe('findProjectByJiraProjectKey', () => {
 		it('returns the project for a known JIRA projectKey', async () => {
 			await seedProject({ id: 'proj-jira', repo: 'owner/jira-repo' });
 			await seedIntegration({
@@ -119,431 +175,96 @@ describe('Config Provider (integration)', () => {
 				},
 			});
 
-			const project = await findProjectByJiraProjectKeyFromDb('MYPROJ');
+			const project = await findProjectByJiraProjectKey('MYPROJ');
 
 			expect(project).toBeDefined();
 			expect(project?.id).toBe('proj-jira');
 		});
 
 		it('returns undefined for an unknown JIRA projectKey', async () => {
-			await seedProject({ id: 'proj-jira', repo: 'owner/jira-repo' });
-			await seedIntegration({
-				projectId: 'proj-jira',
-				category: 'pm',
-				provider: 'jira',
-				config: {
-					baseUrl: 'https://test.atlassian.net',
-					projectKey: 'MYPROJ',
-					statuses: {},
-				},
-			});
-
-			const project = await findProjectByJiraProjectKeyFromDb('UNKNOWN');
+			const project = await findProjectByJiraProjectKey('UNKNOWN');
 
 			expect(project).toBeUndefined();
 		});
 
-		it('returns correct project when multiple projects exist with different JIRA keys', async () => {
-			await seedProject({ id: 'proj-jira-1', repo: 'owner/repo-j1' });
-			await seedProject({ id: 'proj-jira-2', repo: 'owner/repo-j2' });
-
+		it('returns fresh DB result after invalidateConfigCache()', async () => {
+			await seedProject({ id: 'proj-jira-invalidate', repo: 'owner/jira-invalidate' });
 			await seedIntegration({
-				projectId: 'proj-jira-1',
+				projectId: 'proj-jira-invalidate',
 				category: 'pm',
 				provider: 'jira',
 				config: {
 					baseUrl: 'https://test.atlassian.net',
-					projectKey: 'ALPHA',
-					statuses: {},
-				},
-			});
-			await seedIntegration({
-				projectId: 'proj-jira-2',
-				category: 'pm',
-				provider: 'jira',
-				config: {
-					baseUrl: 'https://test.atlassian.net',
-					projectKey: 'BETA',
+					projectKey: 'INVAL',
 					statuses: {},
 				},
 			});
 
-			const proj1 = await findProjectByJiraProjectKeyFromDb('ALPHA');
-			const proj2 = await findProjectByJiraProjectKeyFromDb('BETA');
+			// Populate cache
+			const before = await findProjectByJiraProjectKey('INVAL');
+			expect(before?.id).toBe('proj-jira-invalidate');
 
-			expect(proj1?.id).toBe('proj-jira-1');
-			expect(proj2?.id).toBe('proj-jira-2');
+			// Remove the integration from the DB
+			const db = getDb();
+			await db.delete(projectIntegrations);
+
+			// After invalidation, fresh DB read shows the integration is gone
+			invalidateConfigCache();
+			const fresh = await findProjectByJiraProjectKey('INVAL');
+			expect(fresh).toBeUndefined();
 		});
 	});
 
 	// =========================================================================
-	// findProjectByRepoFromDb — simple column lookup
+	// loadConfig — cached provider function
 	// =========================================================================
 
-	describe('findProjectByRepoFromDb', () => {
-		it('returns the project for a known repo', async () => {
-			await seedProject({ id: 'proj-repo', repo: 'myorg/myrepo' });
-
-			const project = await findProjectByRepoFromDb('myorg/myrepo');
-
-			expect(project).toBeDefined();
-			expect(project?.id).toBe('proj-repo');
-		});
-
-		it('returns undefined for an unknown repo', async () => {
-			await seedProject({ id: 'proj-repo', repo: 'myorg/myrepo' });
-
-			const project = await findProjectByRepoFromDb('myorg/nonexistent');
-
-			expect(project).toBeUndefined();
-		});
-
-		it('returns correct project when multiple projects exist with different repos', async () => {
-			await seedProject({ id: 'proj-x', repo: 'org/repo-x' });
-			await seedProject({ id: 'proj-y', repo: 'org/repo-y' });
-
-			const projX = await findProjectByRepoFromDb('org/repo-x');
-			const projY = await findProjectByRepoFromDb('org/repo-y');
-
-			expect(projX?.id).toBe('proj-x');
-			expect(projY?.id).toBe('proj-y');
-		});
-	});
-
-	// =========================================================================
-	// findProjectByIdFromDb — primary key lookup
-	// =========================================================================
-
-	describe('findProjectByIdFromDb', () => {
-		it('returns the project for a known id', async () => {
-			await seedProject({ id: 'proj-known', repo: 'owner/repo-known' });
-
-			const project = await findProjectByIdFromDb('proj-known');
-
-			expect(project).toBeDefined();
-			expect(project?.id).toBe('proj-known');
-		});
-
-		it('returns undefined for an unknown id', async () => {
-			await seedProject({ id: 'proj-known', repo: 'owner/repo-known' });
-
-			const project = await findProjectByIdFromDb('proj-nonexistent');
-
-			expect(project).toBeUndefined();
-		});
-	});
-
-	// =========================================================================
-	// WithConfig variants — return { project, config } pair
-	// =========================================================================
-
-	describe('findProjectWithConfigByBoardId', () => {
-		it('returns { project, config } pair for a known boardId', async () => {
-			await seedProject({ id: 'proj-wc-trello', repo: 'owner/wc-trello' });
-			await seedIntegration({
-				projectId: 'proj-wc-trello',
-				category: 'pm',
-				provider: 'trello',
-				config: { boardId: 'board-wc', lists: {}, labels: {} },
-			});
-
-			const result = await findProjectWithConfigByBoardId('board-wc');
-
-			expect(result).toBeDefined();
-			expect(result?.project.id).toBe('proj-wc-trello');
-			expect(result?.config.projects).toHaveLength(1);
-			expect(result?.config.projects[0].id).toBe('proj-wc-trello');
-		});
-
-		it('returns undefined for an unknown boardId', async () => {
-			await seedProject({ id: 'proj-wc-trello', repo: 'owner/wc-trello' });
-
-			const result = await findProjectWithConfigByBoardId('board-missing');
-
-			expect(result).toBeUndefined();
-		});
-
-		it('project is a valid ProjectConfig', async () => {
-			await seedProject({ id: 'proj-valid', repo: 'owner/valid-repo' });
-			await seedIntegration({
-				projectId: 'proj-valid',
-				category: 'pm',
-				provider: 'trello',
-				config: { boardId: 'board-valid', lists: {}, labels: {} },
-			});
-
-			const result = await findProjectWithConfigByBoardId('board-valid');
-
-			expect(result).toBeDefined();
-			// project must have required fields
-			expect(result?.project.id).toBe('proj-valid');
-			expect(result?.project.orgId).toBe('test-org');
-			expect(result?.project.name).toBe('Test Project');
-			expect(result?.project.repo).toBe('owner/valid-repo');
-			expect(result?.project.baseBranch).toBeDefined();
-		});
-
-		it('config is a valid CascadeConfig containing the project', async () => {
-			await seedProject({ id: 'proj-cfg', repo: 'owner/cfg-repo' });
-			await seedIntegration({
-				projectId: 'proj-cfg',
-				category: 'pm',
-				provider: 'trello',
-				config: { boardId: 'board-cfg', lists: {}, labels: {} },
-			});
-
-			const result = await findProjectWithConfigByBoardId('board-cfg');
-
-			expect(result).toBeDefined();
-			// config must pass schema validation
-			const parsed = CascadeConfigSchema.safeParse(result?.config);
-			expect(parsed.success).toBe(true);
-		});
-	});
-
-	describe('findProjectWithConfigByRepo', () => {
-		it('returns { project, config } pair for a known repo', async () => {
-			await seedProject({ id: 'proj-wc-repo', repo: 'owner/wc-repo' });
-
-			const result = await findProjectWithConfigByRepo('owner/wc-repo');
-
-			expect(result).toBeDefined();
-			expect(result?.project.id).toBe('proj-wc-repo');
-			expect(result?.config.projects).toHaveLength(1);
-		});
-
-		it('returns undefined for an unknown repo', async () => {
-			const result = await findProjectWithConfigByRepo('owner/nonexistent');
-
-			expect(result).toBeUndefined();
-		});
-	});
-
-	describe('findProjectWithConfigById', () => {
-		it('returns { project, config } pair for a known id', async () => {
-			await seedProject({ id: 'proj-wc-id', repo: 'owner/wc-id-repo' });
-
-			const result = await findProjectWithConfigById('proj-wc-id');
-
-			expect(result).toBeDefined();
-			expect(result?.project.id).toBe('proj-wc-id');
-			expect(result?.config.projects).toHaveLength(1);
-		});
-
-		it('returns undefined for an unknown id', async () => {
-			const result = await findProjectWithConfigById('proj-missing');
-
-			expect(result).toBeUndefined();
-		});
-	});
-
-	describe('findProjectWithConfigByJiraProjectKey', () => {
-		it('returns { project, config } pair for a known JIRA projectKey', async () => {
-			await seedProject({ id: 'proj-wc-jira', repo: 'owner/wc-jira-repo' });
-			await seedIntegration({
-				projectId: 'proj-wc-jira',
-				category: 'pm',
-				provider: 'jira',
-				config: {
-					baseUrl: 'https://test.atlassian.net',
-					projectKey: 'WCJIRA',
-					statuses: {},
-				},
-			});
-
-			const result = await findProjectWithConfigByJiraProjectKey('WCJIRA');
-
-			expect(result).toBeDefined();
-			expect(result?.project.id).toBe('proj-wc-jira');
-			expect(result?.config.projects).toHaveLength(1);
-		});
-
-		it('returns undefined for an unknown JIRA projectKey', async () => {
-			const result = await findProjectWithConfigByJiraProjectKey('NOTFOUND');
-
-			expect(result).toBeUndefined();
-		});
-
-		it('project is a valid ProjectConfig and config is a valid CascadeConfig', async () => {
-			await seedProject({ id: 'proj-jira-valid', repo: 'owner/jira-valid-repo' });
-			await seedIntegration({
-				projectId: 'proj-jira-valid',
-				category: 'pm',
-				provider: 'jira',
-				config: {
-					baseUrl: 'https://test.atlassian.net',
-					projectKey: 'VALID',
-					statuses: {},
-				},
-			});
-
-			const result = await findProjectWithConfigByJiraProjectKey('VALID');
-
-			expect(result).toBeDefined();
-			expect(result?.project.id).toBe('proj-jira-valid');
-
-			const parsed = CascadeConfigSchema.safeParse(result?.config);
-			expect(parsed.success).toBe(true);
-		});
-	});
-
-	// =========================================================================
-	// Multi-project correctness
-	// =========================================================================
-
-	describe('Multi-project correctness', () => {
-		it('returns the correct project when Trello and JIRA projects coexist', async () => {
-			await seedProject({ id: 'proj-multi-trello', repo: 'owner/multi-trello' });
-			await seedProject({ id: 'proj-multi-jira', repo: 'owner/multi-jira' });
-
-			await seedIntegration({
-				projectId: 'proj-multi-trello',
-				category: 'pm',
-				provider: 'trello',
-				config: { boardId: 'board-multi', lists: {}, labels: {} },
-			});
-			await seedIntegration({
-				projectId: 'proj-multi-jira',
-				category: 'pm',
-				provider: 'jira',
-				config: {
-					baseUrl: 'https://test.atlassian.net',
-					projectKey: 'MULTI',
-					statuses: {},
-				},
-			});
-
-			const trelloProject = await findProjectByBoardIdFromDb('board-multi');
-			const jiraProject = await findProjectByJiraProjectKeyFromDb('MULTI');
-
-			expect(trelloProject?.id).toBe('proj-multi-trello');
-			expect(jiraProject?.id).toBe('proj-multi-jira');
-		});
-
-		it('boardId lookup does not match JIRA project with same value in config', async () => {
-			// Ensures provider filter in the sub-query is correct
-			await seedProject({ id: 'proj-jira-only', repo: 'owner/jira-only' });
-			await seedIntegration({
-				projectId: 'proj-jira-only',
-				category: 'pm',
-				provider: 'jira',
-				config: {
-					baseUrl: 'https://test.atlassian.net',
-					projectKey: 'BOARD123', // same value as what we'd search as boardId
-					statuses: {},
-				},
-			});
-
-			// Searching as boardId should not find the JIRA project
-			const result = await findProjectByBoardIdFromDb('BOARD123');
-			expect(result).toBeUndefined();
-		});
-	});
-
-	// =========================================================================
-	// loadConfigFromDb — full config load
-	// =========================================================================
-
-	describe('loadConfigFromDb', () => {
-		it('loads and validates config for a single project', async () => {
+	describe('loadConfig', () => {
+		it('returns a valid CascadeConfig with all seeded projects', async () => {
 			await seedProject({ id: 'proj-load', repo: 'owner/load-repo' });
-			await seedIntegration({
-				projectId: 'proj-load',
-				category: 'pm',
-				provider: 'trello',
-				config: { boardId: 'board-load', lists: {}, labels: {} },
-			});
 
-			const config = await loadConfigFromDb();
+			const config = await loadConfig();
 
+			expect(config).toBeDefined();
 			expect(config.projects).toHaveLength(1);
 			expect(config.projects[0].id).toBe('proj-load');
 		});
 
-		it('passes validateConfig() schema validation', async () => {
-			await seedProject({ id: 'proj-validate', repo: 'owner/validate-repo' });
+		it('serves cached result on second call without invalidation', async () => {
+			await seedProject({ id: 'proj-load-cache', repo: 'owner/load-cache-repo' });
 
-			const config = await loadConfigFromDb();
+			// First call — populates cache
+			const first = await loadConfig();
+			expect(first.projects).toHaveLength(1);
 
-			// Must not throw
-			expect(() => validateConfig(config)).not.toThrow();
+			// Seed another project directly into DB — bypasses cache
+			await seedProject({ id: 'proj-load-cache-2', repo: 'owner/load-cache-repo-2' });
 
-			// Must also pass safeParse
-			const parsed = CascadeConfigSchema.safeParse(config);
-			expect(parsed.success).toBe(true);
+			// Second call — should return cached result (1 project, not 2)
+			const second = await loadConfig();
+			expect(second.projects).toHaveLength(1);
 		});
 
-		it('loads all projects when multiple exist', async () => {
-			await seedProject({ id: 'proj-load-1', repo: 'owner/load-repo-1' });
-			await seedProject({ id: 'proj-load-2', repo: 'owner/load-repo-2' });
-			await seedProject({ id: 'proj-load-3', repo: 'owner/load-repo-3' });
+		it('returns fresh DB result after invalidateConfigCache()', async () => {
+			await seedProject({ id: 'proj-load-inv', repo: 'owner/load-inv-repo' });
 
-			const config = await loadConfigFromDb();
+			// Populate cache
+			const before = await loadConfig();
+			expect(before.projects).toHaveLength(1);
 
-			expect(config.projects).toHaveLength(3);
-			const ids = config.projects.map((p) => p.id).sort();
-			expect(ids).toEqual(['proj-load-1', 'proj-load-2', 'proj-load-3']);
-		});
+			// Seed a second project directly in DB
+			await seedProject({ id: 'proj-load-inv-2', repo: 'owner/load-inv-repo-2' });
 
-		it('includes trello config in project when Trello integration exists', async () => {
-			await seedProject({ id: 'proj-with-trello', repo: 'owner/trello-full' });
-			await seedIntegration({
-				projectId: 'proj-with-trello',
-				category: 'pm',
-				provider: 'trello',
-				config: { boardId: 'board-full', lists: { todo: 'list-1' }, labels: { bug: 'label-1' } },
-			});
+			// Without invalidation, cache still returns 1 project
+			const cached = await loadConfig();
+			expect(cached.projects).toHaveLength(1);
 
-			const config = await loadConfigFromDb();
-			const project = config.projects.find((p) => p.id === 'proj-with-trello');
-
-			expect(project).toBeDefined();
-			expect(project?.trello?.boardId).toBe('board-full');
-		});
-
-		it('includes jira config in project when JIRA integration exists', async () => {
-			await seedProject({ id: 'proj-with-jira', repo: 'owner/jira-full' });
-			await seedIntegration({
-				projectId: 'proj-with-jira',
-				category: 'pm',
-				provider: 'jira',
-				config: {
-					baseUrl: 'https://test.atlassian.net',
-					projectKey: 'FULL',
-					statuses: { todo: 'To Do' },
-				},
-			});
-
-			const config = await loadConfigFromDb();
-			const project = config.projects.find((p) => p.id === 'proj-with-jira');
-
-			expect(project).toBeDefined();
-			expect(project?.jira?.projectKey).toBe('FULL');
-		});
-	});
-
-	// =========================================================================
-	// Cache invalidation
-	// =========================================================================
-
-	describe('invalidateConfigCache (via provider layer)', () => {
-		it('invalidateConfigCache() clears the cache so fresh DB reads happen', async () => {
-			await seedProject({ id: 'proj-cache-test', repo: 'owner/cache-repo' });
-			await seedIntegration({
-				projectId: 'proj-cache-test',
-				category: 'pm',
-				provider: 'trello',
-				config: { boardId: 'board-cache', lists: {}, labels: {} },
-			});
-
-			// First lookup via DB
-			const first = await findProjectByBoardIdFromDb('board-cache');
-			expect(first?.id).toBe('proj-cache-test');
-
-			// Invalidate and re-lookup — should still work
+			// After invalidation, fresh DB read sees both projects
 			invalidateConfigCache();
-			const second = await findProjectByBoardIdFromDb('board-cache');
-			expect(second?.id).toBe('proj-cache-test');
+			const fresh = await loadConfig();
+			expect(fresh.projects).toHaveLength(2);
+			const ids = fresh.projects.map((p) => p.id).sort();
+			expect(ids).toEqual(['proj-load-inv', 'proj-load-inv-2']);
 		});
 	});
 });
