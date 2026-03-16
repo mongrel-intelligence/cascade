@@ -4,10 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Hoisted mock state — vi.hoisted creates variables before vi.mock factories run
 // ---------------------------------------------------------------------------
 
-const { mockDockerGetContainer, mockDockerListContainers } = vi.hoisted(() => ({
-	mockDockerGetContainer: vi.fn(),
-	mockDockerListContainers: vi.fn(),
-}));
+const { mockDockerGetContainer, mockDockerListContainers, mockFailOrphanedRunFallback } =
+	vi.hoisted(() => ({
+		mockDockerGetContainer: vi.fn(),
+		mockDockerListContainers: vi.fn(),
+		mockFailOrphanedRunFallback: vi.fn().mockResolvedValue(null),
+	}));
 
 // ---------------------------------------------------------------------------
 // Module-level mocks
@@ -18,6 +20,10 @@ vi.mock('dockerode', () => ({
 		getContainer: mockDockerGetContainer,
 		listContainers: mockDockerListContainers,
 	})),
+}));
+
+vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
+	failOrphanedRunFallback: (...args: unknown[]) => mockFailOrphanedRunFallback(...args),
 }));
 
 vi.mock('../../../src/sentry.js', () => ({
@@ -63,6 +69,8 @@ describe('orphan-cleanup', () => {
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 		mockDockerListContainers.mockResolvedValue([]);
 		mockTrackedIds.clear();
+		mockFailOrphanedRunFallback.mockClear();
+		mockFailOrphanedRunFallback.mockResolvedValue(null);
 	});
 
 	afterEach(() => {
@@ -241,6 +249,153 @@ describe('orphan-cleanup', () => {
 
 			expect(mockContainer1.stop).toHaveBeenCalledWith({ t: 15 });
 			expect(mockContainer2.stop).toHaveBeenCalledWith({ t: 15 });
+		});
+
+		it('calls failOrphanedRunFallback when container has cascade.project.id label', async () => {
+			const orphanContainerId = 'orphan-with-project';
+			const now = Math.floor(Date.now() / 1000);
+			const createdAt = now - 6; // old enough
+
+			const mockOrphanContainer = {
+				stop: vi.fn().mockResolvedValue(undefined),
+			};
+			mockDockerListContainers.mockResolvedValue([
+				{
+					Id: orphanContainerId,
+					Created: createdAt,
+					Labels: { 'cascade.project.id': 'proj-1' },
+					State: 'running',
+				} as never,
+			]);
+			mockDockerGetContainer.mockReturnValue(mockOrphanContainer as never);
+			mockFailOrphanedRunFallback.mockResolvedValue('run-orphan-1');
+
+			await scanAndCleanupOrphans();
+			// Fire-and-forget — flush microtasks
+			await new Promise((r) => setTimeout(r, 10));
+
+			expect(mockFailOrphanedRunFallback).toHaveBeenCalledWith(
+				'proj-1',
+				undefined,
+				expect.any(Date),
+				'failed',
+				'Orphan cleanup: container stopped',
+				expect.any(Number),
+			);
+		});
+
+		it('does NOT call failOrphanedRunFallback when container has no cascade.project.id label', async () => {
+			const orphanContainerId = 'orphan-no-label';
+			const now = Math.floor(Date.now() / 1000);
+			const createdAt = now - 6;
+
+			const mockOrphanContainer = {
+				stop: vi.fn().mockResolvedValue(undefined),
+			};
+			mockDockerListContainers.mockResolvedValue([
+				{
+					Id: orphanContainerId,
+					Created: createdAt,
+					State: 'running',
+				} as never,
+			]);
+			mockDockerGetContainer.mockReturnValue(mockOrphanContainer as never);
+
+			await scanAndCleanupOrphans();
+			await new Promise((r) => setTimeout(r, 10));
+
+			expect(mockFailOrphanedRunFallback).not.toHaveBeenCalled();
+		});
+
+		it('does NOT call failOrphanedRunFallback when cascade.project.id label is empty string', async () => {
+			const orphanContainerId = 'orphan-empty-label';
+			const now = Math.floor(Date.now() / 1000);
+			const createdAt = now - 6;
+
+			const mockOrphanContainer = {
+				stop: vi.fn().mockResolvedValue(undefined),
+			};
+			mockDockerListContainers.mockResolvedValue([
+				{
+					Id: orphanContainerId,
+					Created: createdAt,
+					Labels: { 'cascade.project.id': '' }, // empty → falsy
+					State: 'running',
+				} as never,
+			]);
+			mockDockerGetContainer.mockReturnValue(mockOrphanContainer as never);
+
+			await scanAndCleanupOrphans();
+			await new Promise((r) => setTimeout(r, 10));
+
+			expect(mockFailOrphanedRunFallback).not.toHaveBeenCalled();
+		});
+
+		it('passes cascade.agent.type label as agentType to failOrphanedRunFallback', async () => {
+			const orphanContainerId = 'orphan-with-agent-type';
+			const now = Math.floor(Date.now() / 1000);
+			const createdAt = now - 6;
+
+			const mockOrphanContainer = {
+				stop: vi.fn().mockResolvedValue(undefined),
+			};
+			mockDockerListContainers.mockResolvedValue([
+				{
+					Id: orphanContainerId,
+					Created: createdAt,
+					Labels: {
+						'cascade.project.id': 'proj-2',
+						'cascade.agent.type': 'review',
+					},
+					State: 'running',
+				} as never,
+			]);
+			mockDockerGetContainer.mockReturnValue(mockOrphanContainer as never);
+			mockFailOrphanedRunFallback.mockResolvedValue('run-agent-type');
+
+			await scanAndCleanupOrphans();
+			await new Promise((r) => setTimeout(r, 10));
+
+			expect(mockFailOrphanedRunFallback).toHaveBeenCalledWith(
+				'proj-2',
+				'review',
+				expect.any(Date),
+				'failed',
+				'Orphan cleanup: container stopped',
+				expect.any(Number),
+			);
+		});
+
+		it('passes undefined agentType when cascade.agent.type label is empty or absent', async () => {
+			const orphanContainerId = 'orphan-no-agent-type';
+			const now = Math.floor(Date.now() / 1000);
+			const createdAt = now - 6;
+
+			const mockOrphanContainer = {
+				stop: vi.fn().mockResolvedValue(undefined),
+			};
+			mockDockerListContainers.mockResolvedValue([
+				{
+					Id: orphanContainerId,
+					Created: createdAt,
+					Labels: { 'cascade.project.id': 'proj-3', 'cascade.agent.type': '' },
+					State: 'running',
+				} as never,
+			]);
+			mockDockerGetContainer.mockReturnValue(mockOrphanContainer as never);
+			mockFailOrphanedRunFallback.mockResolvedValue(null);
+
+			await scanAndCleanupOrphans();
+			await new Promise((r) => setTimeout(r, 10));
+
+			expect(mockFailOrphanedRunFallback).toHaveBeenCalledWith(
+				'proj-3',
+				undefined, // empty string coerced to undefined
+				expect.any(Date),
+				'failed',
+				'Orphan cleanup: container stopped',
+				expect.any(Number),
+			);
 		});
 
 		it('stops orphans but leaves tracked and young containers', async () => {

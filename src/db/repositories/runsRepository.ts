@@ -358,6 +358,8 @@ export async function failOrphanedRun(
 	projectId: string,
 	workItemId: string,
 	reason: string,
+	status: 'failed' | 'timed_out' = 'failed',
+	durationMs?: number,
 ): Promise<string | null> {
 	const db = getDb();
 	const [row] = await db
@@ -377,9 +379,53 @@ export async function failOrphanedRun(
 	const [updated] = await db
 		.update(agentRuns)
 		.set({
-			status: 'failed',
+			status,
 			completedAt: new Date(),
 			error: reason,
+			durationMs,
+		})
+		.where(and(eq(agentRuns.id, row.id), eq(agentRuns.status, 'running')))
+		.returning({ id: agentRuns.id });
+	return updated?.id ?? null;
+}
+
+/**
+ * Fail the most recent running run for a project without a workItemId (e.g. GitHub PR runs).
+ * Uses projectId + optional agentType + startedAfter to identify the run.
+ * Guards on status='running' so it's safe to call even if the run already completed.
+ */
+export async function failOrphanedRunFallback(
+	projectId: string,
+	agentType: string | undefined,
+	startedAfter: Date,
+	status: 'failed' | 'timed_out',
+	reason: string,
+	durationMs?: number,
+): Promise<string | null> {
+	const db = getDb();
+	const conditions: SQL[] = [
+		eq(agentRuns.projectId, projectId),
+		eq(agentRuns.status, 'running'),
+		gte(agentRuns.startedAt, startedAfter),
+	];
+	if (agentType) {
+		conditions.push(eq(agentRuns.agentType, agentType));
+	}
+	const [row] = await db
+		.select({ id: agentRuns.id })
+		.from(agentRuns)
+		.where(and(...conditions))
+		.orderBy(desc(agentRuns.startedAt))
+		.limit(1);
+	if (!row) return null;
+
+	const [updated] = await db
+		.update(agentRuns)
+		.set({
+			status,
+			completedAt: new Date(),
+			error: reason,
+			durationMs,
 		})
 		.where(and(eq(agentRuns.id, row.id), eq(agentRuns.status, 'running')))
 		.returning({ id: agentRuns.id });

@@ -6,6 +6,7 @@
  */
 
 import Docker from 'dockerode';
+import { failOrphanedRunFallback } from '../db/repositories/runsRepository.js';
 import { captureException } from '../sentry.js';
 import { logger } from '../utils/logging.js';
 import { getTrackedContainerIds } from './active-workers.js';
@@ -108,6 +109,37 @@ export async function scanAndCleanupOrphans(): Promise<void> {
 					containerId: containerId.slice(0, 12),
 					ageMinutes,
 				});
+
+				// Update DB run status (fire-and-forget). Containers created before this
+				// change won't have labels (projectId = '' → falsy) → skip, harmless.
+				const projectId = containerInfo.Labels?.['cascade.project.id'];
+				if (projectId) {
+					const containerCreatedAt = new Date(containerInfo.Created * 1000);
+					const orphanDurationMs = now - containerInfo.Created * 1000;
+					// agentType narrows the fallback query when multiple agent types run concurrently
+					const orphanAgentType = containerInfo.Labels?.['cascade.agent.type'] || undefined;
+					failOrphanedRunFallback(
+						projectId,
+						orphanAgentType,
+						containerCreatedAt,
+						'failed',
+						'Orphan cleanup: container stopped',
+						orphanDurationMs,
+					)
+						.then((runId) => {
+							if (runId)
+								logger.info('[WorkerManager] Marked orphaned run as failed after cleanup', {
+									containerId: containerId.slice(0, 12),
+									runId,
+								});
+						})
+						.catch((err) =>
+							logger.error('[WorkerManager] DB update failed after orphan cleanup', {
+								containerId: containerId.slice(0, 12),
+								error: String(err),
+							}),
+						);
+				}
 			} catch (err) {
 				// Container might already be stopped — log but continue
 				logger.warn('[WorkerManager] Error stopping orphaned container:', {
