@@ -5,8 +5,8 @@ vi.mock('../../../src/triggers/config-resolver.js', () => ({
 	getTriggerParameters: vi.fn().mockResolvedValue({}),
 }));
 
-vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
-	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+vi.mock('../../../src/triggers/shared/lifecycle-check.js', () => ({
+	isLifecycleTriggerEnabled: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('../../../src/github/client.js', () => ({
@@ -67,7 +67,7 @@ import { createMockProject } from '../../helpers/factories.js';
 
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { githubClient } from '../../../src/github/client.js';
-import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
+import { isLifecycleTriggerEnabled } from '../../../src/triggers/shared/lifecycle-check.js';
 
 describe('PRReadyToMergeTrigger', () => {
 	const trigger = new PRReadyToMergeTrigger();
@@ -250,7 +250,7 @@ describe('PRReadyToMergeTrigger', () => {
 
 	describe('handle', () => {
 		it('should return null when trigger is disabled', async () => {
-			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+			vi.mocked(isLifecycleTriggerEnabled).mockResolvedValueOnce(false);
 
 			const ctx: TriggerContext = {
 				project: mockProject,
@@ -271,10 +271,9 @@ describe('PRReadyToMergeTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 			expect(result).toBeNull();
-			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+			expect(isLifecycleTriggerEnabled).toHaveBeenCalledWith(
 				'test',
-				'review',
-				'scm:pr-ready-to-merge',
+				'prReadyToMerge',
 				'pr-ready-to-merge',
 			);
 		});

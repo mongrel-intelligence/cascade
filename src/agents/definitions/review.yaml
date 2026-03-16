@@ -56,19 +56,6 @@ triggers:
         options: [own, external, all]
         defaultValue: own
     contextPipeline: [prContext, contextFiles, squint]
-  - event: scm:pr-ready-to-merge
-    label: PR Ready to Merge
-    description: Move work item to DONE when PR is approved and all checks pass
-    defaultEnabled: false
-    providers: [github]
-    contextPipeline: []
-  - event: scm:pr-merged
-    label: PR Merged
-    description: Move work item to MERGED status when PR is merged
-    defaultEnabled: false
-    providers: [github]
-    contextPipeline: []
-
 strategies: {}
 
 prompts:

@@ -1,6 +1,5 @@
 import { ProjectSecretField } from '@/components/projects/project-secret-field.js';
 import { useProjectUpdate } from '@/components/projects/use-project-update.js';
-import { Badge } from '@/components/ui/badge.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
@@ -12,7 +11,6 @@ import {
 } from '@/components/ui/tooltip.js';
 import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
 import { HelpCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -50,7 +48,6 @@ function minutesToMs(minutes: string): number | null {
 	return Number.isNaN(parsed) ? null : parsed * 60000;
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: five independent form sections (identity, budget, progress, watchdog, run links) with shared dirty-state tracking and reset logic
 export function ProjectGeneralForm({ project }: { project: Project }) {
 	const updateMutation = useProjectUpdate(project.id);
 	const credentialsQuery = useQuery(
@@ -161,36 +158,6 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 							<CardTitle>Project Identity</CardTitle>
 						</CardHeader>
 						<CardContent className="space-y-4">
-							<div className="flex items-center gap-2">
-								<span className="text-sm text-muted-foreground">ID:</span>
-								<Badge variant="secondary" className="font-mono text-xs">
-									{project.id}
-								</Badge>
-							</div>
-							<div className="flex items-center gap-2">
-								<span className="text-sm text-muted-foreground">Repository:</span>
-								{project.repo ? (
-									<a
-										href={`https://github.com/${project.repo}`}
-										target="_blank"
-										rel="noopener noreferrer"
-										className="text-sm text-primary hover:underline font-mono"
-									>
-										{project.repo}
-									</a>
-								) : (
-									<span className="text-sm text-muted-foreground">
-										Not configured —{' '}
-										<Link
-											to="/projects/$projectId/integrations"
-											params={{ projectId: project.id }}
-											className="text-primary hover:underline"
-										>
-											set on Integrations tab →
-										</Link>
-									</span>
-								)}
-							</div>
 							<div className="space-y-2">
 								<Label htmlFor="name">Name</Label>
 								<Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -335,8 +302,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 										Enable run links in comments
 									</Label>
 									<p className="text-xs text-muted-foreground mt-0.5">
-										Adds a dashboard link to agent comments. Requires{' '}
-										<code className="text-xs">CASCADE_DASHBOARD_URL</code> env var.
+										Adds a dashboard link to agent comments.
 									</p>
 								</div>
 							</div>

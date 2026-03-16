@@ -6,7 +6,7 @@ import type { PMProvider } from '../../pm/types.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
-import { checkTriggerEnabled } from '../shared/trigger-check.js';
+import { isLifecycleTriggerEnabled } from '../shared/lifecycle-check.js';
 import {
 	type GitHubCheckSuitePayload,
 	type GitHubPullRequestReviewPayload,
@@ -111,10 +111,8 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 
 	// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: intentional — multiple review/check paths with auto-merge branching
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
-		// Check trigger config via new DB-driven system
-		if (
-			!(await checkTriggerEnabled(ctx.project.id, 'review', 'scm:pr-ready-to-merge', this.name))
-		) {
+		// Check lifecycle trigger config (stored in project_integrations.triggers)
+		if (!(await isLifecycleTriggerEnabled(ctx.project.id, 'prReadyToMerge', this.name))) {
 			return null;
 		}
 

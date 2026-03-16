@@ -177,6 +177,20 @@ describe('YAML agent definitions loader', () => {
 			expect(ciPassedTrigger?.contextPipeline).toEqual(['prContext', 'contextFiles', 'squint']);
 		});
 
+		it('planning agent does not have pm:comment-mention trigger (routed to respond-to-planning-comment)', () => {
+			const def = loadAgentDefinition('planning');
+			const commentMentionTrigger = def.triggers.find((t) => t.event === 'pm:comment-mention');
+			expect(commentMentionTrigger).toBeUndefined();
+		});
+
+		it('review agent does not have lifecycle triggers (scm:pr-ready-to-merge, scm:pr-merged)', () => {
+			const def = loadAgentDefinition('review');
+			const prReadyTrigger = def.triggers.find((t) => t.event === 'scm:pr-ready-to-merge');
+			const prMergedTrigger = def.triggers.find((t) => t.event === 'scm:pr-merged');
+			expect(prReadyTrigger).toBeUndefined();
+			expect(prMergedTrigger).toBeUndefined();
+		});
+
 		it('respond-to-ci trigger uses combined PR + work-item pipeline', () => {
 			const def = loadAgentDefinition('respond-to-ci');
 			const ciFailureTrigger = def.triggers.find((t) => t.event === 'scm:check-suite-failure');

@@ -68,6 +68,12 @@ describe('LIFECYCLE_TRIGGERS', () => {
 			expect(trigger.category).toBe('scm');
 		}
 	});
+
+	it('lifecycle triggers default to disabled (defaultValue: false)', () => {
+		for (const trigger of LIFECYCLE_TRIGGERS) {
+			expect(trigger.defaultValue).toBe(false);
+		}
+	});
 });
 
 describe('getTriggerValue', () => {
