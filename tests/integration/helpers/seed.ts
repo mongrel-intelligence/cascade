@@ -1,4 +1,6 @@
+import type { AgentDefinition } from '../../../src/agents/definitions/schema.js';
 import { getDb } from '../../../src/db/client.js';
+import { upsertAgentDefinition } from '../../../src/db/repositories/agentDefinitionsRepository.js';
 import { writeProjectCredential } from '../../../src/db/repositories/credentialsRepository.js';
 import {
 	agentConfigs,
@@ -300,6 +302,51 @@ export async function seedSession(overrides: {
 		})
 		.returning();
 	return row;
+}
+
+/**
+ * Minimal valid AgentDefinition fixture that satisfies AgentDefinitionSchema.parse().
+ */
+export const MINIMAL_AGENT_DEFINITION: AgentDefinition = {
+	identity: {
+		emoji: '🤖',
+		label: 'Test Agent',
+		roleHint: 'A minimal test agent definition',
+		initialMessage: 'Starting test agent...',
+	},
+	capabilities: {
+		required: ['fs:read'],
+		optional: [],
+	},
+	triggers: [],
+	strategies: {
+		gadgetOptions: undefined,
+	},
+	hint: 'This is a test hint for iteration guidance.',
+	prompts: {
+		taskPrompt: 'Perform the test task as described.',
+	},
+};
+
+/**
+ * Seeds an agent definition via the repository's upsertAgentDefinition function.
+ * Merges overrides into the minimal valid AgentDefinition.
+ */
+export async function seedAgentDefinition(
+	overrides: {
+		agentType?: string;
+		definition?: Partial<AgentDefinition>;
+		isBuiltin?: boolean;
+	} = {},
+) {
+	const agentType = overrides.agentType ?? 'test-agent';
+	const definition: AgentDefinition = {
+		...MINIMAL_AGENT_DEFINITION,
+		...overrides.definition,
+	};
+	const isBuiltin = overrides.isBuiltin ?? false;
+	await upsertAgentDefinition(agentType, definition, isBuiltin);
+	return { agentType, definition, isBuiltin };
 }
 
 // ============================================================================
