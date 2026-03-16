@@ -5,6 +5,7 @@ import { setOrgContextGetter } from './trpc';
 interface OrgContextValue {
 	effectiveOrgId: string | null;
 	availableOrgs: { id: string; name: string }[] | undefined;
+	orgName: string | null;
 	isAdmin: boolean;
 	switchOrg: (orgId: string) => void;
 }
@@ -12,6 +13,7 @@ interface OrgContextValue {
 const OrgContext = createContext<OrgContextValue>({
 	effectiveOrgId: null,
 	availableOrgs: undefined,
+	orgName: null,
 	isAdmin: false,
 	switchOrg: () => {},
 });
@@ -22,6 +24,7 @@ interface MeData {
 	orgId: string;
 	role: string;
 	effectiveOrgId: string;
+	orgName?: string | null;
 	availableOrgs?: { id: string; name: string }[];
 }
 
@@ -68,11 +71,18 @@ export function OrgProvider({
 		[isAdmin],
 	);
 
+	// Derive orgName: for superadmins look up from availableOrgs by effectiveOrgId;
+	// for regular users use the orgName from the API response.
+	const orgName = isAdmin
+		? (me?.availableOrgs?.find((o) => o.id === effectiveOrgId)?.name ?? null)
+		: (me?.orgName ?? null);
+
 	return (
 		<OrgContext.Provider
 			value={{
 				effectiveOrgId,
 				availableOrgs: me?.availableOrgs,
+				orgName,
 				isAdmin,
 				switchOrg,
 			}}
