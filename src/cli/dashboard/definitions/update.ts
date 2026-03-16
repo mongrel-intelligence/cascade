@@ -36,17 +36,19 @@ export default class DefinitionsUpdate extends DashboardCommand {
 				patch = yaml.load(raw);
 			}
 
-			const result = await this.client.agentDefinitions.update.mutate({
-				agentType: args.agentType,
-				patch: patch as Parameters<typeof this.client.agentDefinitions.update.mutate>[0]['patch'],
-			});
+			const result = await this.withSpinner('Updating agent definition...', () =>
+				this.client.agentDefinitions.update.mutate({
+					agentType: args.agentType,
+					patch: patch as Parameters<typeof this.client.agentDefinitions.update.mutate>[0]['patch'],
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson(result);
 				return;
 			}
 
-			this.log(`Updated agent definition: ${result.agentType}`);
+			this.success(`Updated agent definition '${result.agentType}'`);
 		} catch (err) {
 			this.handleError(err);
 		}

@@ -20,19 +20,21 @@ export default class UsersCreate extends DashboardCommand {
 		const { flags } = await this.parse(UsersCreate);
 
 		try {
-			const result = await this.client.users.create.mutate({
-				email: flags.email,
-				password: flags.password,
-				name: flags.name,
-				role: flags.role as 'member' | 'admin' | 'superadmin' | undefined,
-			});
+			const result = await this.withSpinner('Creating user...', () =>
+				this.client.users.create.mutate({
+					email: flags.email,
+					password: flags.password,
+					name: flags.name,
+					role: flags.role as 'member' | 'admin' | 'superadmin' | undefined,
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson(result);
 				return;
 			}
 
-			this.log(`Created user: ${flags.name} <${flags.email}> (role: ${flags.role})`);
+			this.success(`Created user '${flags.name}' (${flags.email}), role: ${flags.role}`);
 		} catch (err) {
 			this.handleError(err);
 		}

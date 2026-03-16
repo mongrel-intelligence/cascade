@@ -20,14 +20,16 @@ export default class AgentsDelete extends DashboardCommand {
 		await confirm(`Delete agent config #${args.id}?`, flags.yes);
 
 		try {
-			await this.client.agentConfigs.delete.mutate({ id: args.id });
+			await this.withSpinner('Deleting agent config...', () =>
+				this.client.agentConfigs.delete.mutate({ id: args.id }),
+			);
 
 			if (flags.json) {
 				this.outputJson({ ok: true });
 				return;
 			}
 
-			this.log(`Deleted agent config #${args.id}`);
+			this.success(`Deleted agent config #${args.id}`);
 		} catch (err) {
 			this.handleError(err);
 		}

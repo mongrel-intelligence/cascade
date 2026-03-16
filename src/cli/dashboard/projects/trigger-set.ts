@@ -131,27 +131,29 @@ export default class ProjectsTriggerSet extends DashboardCommand {
 				this.log(hint);
 			}
 
-			const result = await this.client.agentTriggerConfigs.upsert.mutate({
-				projectId: args.id,
-				agentType: agent,
-				triggerEvent: event,
-				enabled,
-				parameters,
-			});
+			const result = await this.withSpinner('Updating trigger config...', () =>
+				this.client.agentTriggerConfigs.upsert.mutate({
+					projectId: args.id,
+					agentType: agent,
+					triggerEvent: event,
+					enabled,
+					parameters,
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson(result);
 				return;
 			}
 
-			const lines: string[] = [`Trigger config updated for project: ${args.id}`];
-			lines.push(`  Agent: ${agent}`);
-			lines.push(`  Event: ${event}`);
-			lines.push(`  Enabled: ${result.enabled}`);
-			if (Object.keys(result.parameters).length > 0) {
-				lines.push(`  Parameters: ${JSON.stringify(result.parameters)}`);
-			}
-			this.log(lines.join('\n'));
+			const statusStr = result.enabled ? 'enabled' : 'disabled';
+			const paramsStr =
+				Object.keys(result.parameters).length > 0
+					? ` (params: ${JSON.stringify(result.parameters)})`
+					: '';
+			this.success(
+				`Trigger ${event} ${statusStr} for agent '${agent}' on project '${args.id}'${paramsStr}`,
+			);
 		} catch (err) {
 			this.handleError(err);
 		}

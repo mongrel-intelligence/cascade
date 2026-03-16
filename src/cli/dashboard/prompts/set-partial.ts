@@ -24,17 +24,19 @@ export default class PromptsSetPartial extends DashboardCommand {
 			const content =
 				flags.file === '-' ? readFileSync(0, 'utf-8') : readFileSync(flags.file, 'utf-8');
 
-			const result = await this.client.prompts.upsertPartial.mutate({
-				name: flags.name,
-				content,
-			});
+			const result = await this.withSpinner('Saving partial...', () =>
+				this.client.prompts.upsertPartial.mutate({
+					name: flags.name,
+					content,
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson(result);
 				return;
 			}
 
-			this.log(`Partial "${flags.name}" saved (id: ${result.id}).`);
+			this.success(`Saved partial '${flags.name}' (id: ${result.id})`);
 		} catch (err) {
 			this.handleError(err);
 		}

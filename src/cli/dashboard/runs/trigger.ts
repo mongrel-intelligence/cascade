@@ -20,21 +20,25 @@ export default class RunsTrigger extends DashboardCommand {
 		const { flags } = await this.parse(RunsTrigger);
 
 		try {
-			const result = await this.client.runs.trigger.mutate({
-				projectId: flags.project,
-				agentType: flags['agent-type'],
-				workItemId: flags['work-item-id'],
-				prNumber: flags['pr-number'],
-				prBranch: flags['pr-branch'],
-				repoFullName: flags['repo-full-name'],
-				headSha: flags['head-sha'],
-				model: flags.model,
-			});
+			const result = await this.withSpinner('Triggering agent run...', () =>
+				this.client.runs.trigger.mutate({
+					projectId: flags.project,
+					agentType: flags['agent-type'],
+					workItemId: flags['work-item-id'],
+					prNumber: flags['pr-number'],
+					prBranch: flags['pr-branch'],
+					repoFullName: flags['repo-full-name'],
+					headSha: flags['head-sha'],
+					model: flags.model,
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson(result);
 			} else {
-				this.log('Agent run triggered successfully.');
+				this.success(
+					`Agent run triggered — project: ${flags.project}, agent: ${flags['agent-type']}`,
+				);
 			}
 		} catch (err) {
 			this.handleError(err);

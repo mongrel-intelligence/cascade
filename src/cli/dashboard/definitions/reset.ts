@@ -21,16 +21,18 @@ export default class DefinitionsReset extends DashboardCommand {
 		}
 
 		try {
-			const result = await this.client.agentDefinitions.reset.mutate({
-				agentType: args.agentType,
-			});
+			const result = await this.withSpinner('Resetting agent definition...', () =>
+				this.client.agentDefinitions.reset.mutate({
+					agentType: args.agentType,
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson(result);
 				return;
 			}
 
-			this.log(`Reset agent definition to YAML default: ${result.agentType}`);
+			this.success(`Reset agent definition '${result.agentType}' to YAML default`);
 		} catch (err) {
 			this.handleError(err);
 		}

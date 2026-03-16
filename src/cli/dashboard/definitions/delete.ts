@@ -21,16 +21,18 @@ export default class DefinitionsDelete extends DashboardCommand {
 		}
 
 		try {
-			const result = await this.client.agentDefinitions.delete.mutate({
-				agentType: args.agentType,
-			});
+			const result = await this.withSpinner('Deleting agent definition...', () =>
+				this.client.agentDefinitions.delete.mutate({
+					agentType: args.agentType,
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson(result);
 				return;
 			}
 
-			this.log(`Deleted agent definition: ${result.agentType}`);
+			this.success(`Deleted agent definition '${result.agentType}'`);
 		} catch (err) {
 			this.handleError(err);
 		}
