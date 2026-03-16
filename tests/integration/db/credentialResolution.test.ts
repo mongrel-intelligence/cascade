@@ -1,6 +1,14 @@
+import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAllProjectCredentials } from '../../../src/config/provider.js';
-import { writeProjectCredential } from '../../../src/db/repositories/credentialsRepository.js';
+import { getDb } from '../../../src/db/client.js';
+import { isEncryptedValue } from '../../../src/db/crypto.js';
+import {
+	listProjectCredentials,
+	upsertProjectCredential,
+	writeProjectCredential,
+} from '../../../src/db/repositories/credentialsRepository.js';
+import { projectCredentials } from '../../../src/db/schema/index.js';
 import { truncateAll } from '../helpers/db.js';
 import { seedOrg, seedProject } from '../helpers/seed.js';
 
@@ -76,6 +84,167 @@ describe('credentialResolution (integration)', () => {
 			const creds = await getAllProjectCredentials('test-project');
 			expect(creds.OPENROUTER_API_KEY).toBe('env-llm-key');
 			expect(creds.GITHUB_TOKEN_IMPLEMENTER).toBe('env-gh-token');
+		});
+	});
+
+	// =========================================================================
+	// Multi-project AAD isolation
+	// =========================================================================
+
+	describe('multi-project AAD isolation', () => {
+		it('encrypts credentials with projectId as AAD — cross-project contamination is impossible', async () => {
+			// Seed a second project (different repo to avoid unique constraint on repo)
+			await seedProject({ id: 'project-b', name: 'Project B', repo: 'owner/repo-b' });
+
+			vi.stubEnv('CREDENTIAL_MASTER_KEY', 'a'.repeat(64));
+
+			// Write the same key name to both projects with different values
+			await writeProjectCredential('test-project', 'API_SECRET', 'secret-for-project-a');
+			await writeProjectCredential('project-b', 'API_SECRET', 'secret-for-project-b');
+
+			// Each project reads its own value
+			const credsA = await getAllProjectCredentials('test-project');
+			const credsB = await getAllProjectCredentials('project-b');
+
+			expect(credsA.API_SECRET).toBe('secret-for-project-a');
+			expect(credsB.API_SECRET).toBe('secret-for-project-b');
+
+			// Values are different, not cross-contaminated
+			expect(credsA.API_SECRET).not.toBe(credsB.API_SECRET);
+
+			// The raw stored ciphertexts should differ (different AAD produces different ciphertext)
+			const db = getDb();
+			const [rowA] = await db
+				.select({ value: projectCredentials.value })
+				.from(projectCredentials)
+				.where(
+					and(
+						eq(projectCredentials.projectId, 'test-project'),
+						eq(projectCredentials.envVarKey, 'API_SECRET'),
+					),
+				);
+			const [rowB] = await db
+				.select({ value: projectCredentials.value })
+				.from(projectCredentials)
+				.where(
+					and(
+						eq(projectCredentials.projectId, 'project-b'),
+						eq(projectCredentials.envVarKey, 'API_SECRET'),
+					),
+				);
+
+			// Both should be encrypted
+			expect(isEncryptedValue(rowA.value)).toBe(true);
+			expect(isEncryptedValue(rowB.value)).toBe(true);
+
+			// Ciphertexts differ because AAD (projectId) is different
+			expect(rowA.value).not.toBe(rowB.value);
+		});
+	});
+
+	// =========================================================================
+	// Mixed plaintext / encrypted credentials
+	// =========================================================================
+
+	describe('mixed plaintext/encrypted credentials', () => {
+		it('reads both plaintext and encrypted credentials via getAllProjectCredentials', async () => {
+			vi.stubEnv('CREDENTIAL_MASTER_KEY', 'c'.repeat(64));
+
+			// Write one credential while encryption is enabled
+			await writeProjectCredential('test-project', 'ENCRYPTED_KEY', 'encrypted-value');
+
+			// Write a second credential in plaintext by bypassing the high-level helper
+			// (simulates a credential that existed before encryption was enabled)
+			await upsertProjectCredential('test-project', 'PLAINTEXT_KEY', 'plaintext-value');
+
+			// Verify storage: one should be encrypted, one should be plaintext
+			const db = getDb();
+			const rows = await db
+				.select({ envVarKey: projectCredentials.envVarKey, value: projectCredentials.value })
+				.from(projectCredentials)
+				.where(eq(projectCredentials.projectId, 'test-project'));
+
+			const encryptedRawValue = rows.find((r) => r.envVarKey === 'ENCRYPTED_KEY')?.value;
+			const plaintextRawValue = rows.find((r) => r.envVarKey === 'PLAINTEXT_KEY')?.value;
+
+			expect(encryptedRawValue).toBeDefined();
+			expect(plaintextRawValue).toBeDefined();
+			expect(isEncryptedValue(encryptedRawValue ?? '')).toBe(true);
+			expect(isEncryptedValue(plaintextRawValue ?? '')).toBe(false);
+			expect(plaintextRawValue).toBe('plaintext-value');
+
+			// getAllProjectCredentials should transparently handle both formats
+			const creds = await getAllProjectCredentials('test-project');
+			expect(creds.ENCRYPTED_KEY).toBe('encrypted-value');
+			expect(creds.PLAINTEXT_KEY).toBe('plaintext-value');
+
+			// listProjectCredentials should also handle both formats
+			const list = await listProjectCredentials('test-project');
+			const encryptedEntry = list.find((e) => e.envVarKey === 'ENCRYPTED_KEY');
+			const plaintextEntry = list.find((e) => e.envVarKey === 'PLAINTEXT_KEY');
+			expect(encryptedEntry?.value).toBe('encrypted-value');
+			expect(plaintextEntry?.value).toBe('plaintext-value');
+		});
+	});
+
+	// =========================================================================
+	// Upsert re-encryption (fresh IV on every write)
+	// =========================================================================
+
+	describe('upsert re-encryption', () => {
+		it('generates a fresh IV when a credential is overwritten', async () => {
+			vi.stubEnv('CREDENTIAL_MASTER_KEY', 'd'.repeat(64));
+
+			// Write initial credential value
+			await writeProjectCredential('test-project', 'MY_SECRET', 'initial-value');
+
+			// Read the raw DB value to capture the first IV
+			const db = getDb();
+			const [firstRow] = await db
+				.select({ value: projectCredentials.value })
+				.from(projectCredentials)
+				.where(
+					and(
+						eq(projectCredentials.projectId, 'test-project'),
+						eq(projectCredentials.envVarKey, 'MY_SECRET'),
+					),
+				);
+
+			expect(isEncryptedValue(firstRow.value)).toBe(true);
+
+			// Parse the IV out of enc:v1:<iv_hex>:<authTag_hex>:<ciphertext_hex>
+			const firstParts = firstRow.value.split(':');
+			// Format is enc:v1:<iv>:<tag>:<data> → parts[2] is iv
+			const firstIv = firstParts[2];
+
+			// Overwrite with a new value
+			await writeProjectCredential('test-project', 'MY_SECRET', 'updated-value');
+
+			// Read the raw DB value again
+			const [secondRow] = await db
+				.select({ value: projectCredentials.value })
+				.from(projectCredentials)
+				.where(
+					and(
+						eq(projectCredentials.projectId, 'test-project'),
+						eq(projectCredentials.envVarKey, 'MY_SECRET'),
+					),
+				);
+
+			expect(isEncryptedValue(secondRow.value)).toBe(true);
+
+			const secondParts = secondRow.value.split(':');
+			const secondIv = secondParts[2];
+
+			// IVs must differ — fresh randomness on every write
+			expect(firstIv).not.toBe(secondIv);
+
+			// Full ciphertext strings should differ (new IV + new ciphertext)
+			expect(firstRow.value).not.toBe(secondRow.value);
+
+			// The decrypted value should be the new value
+			const creds = await getAllProjectCredentials('test-project');
+			expect(creds.MY_SECRET).toBe('updated-value');
 		});
 	});
 });
