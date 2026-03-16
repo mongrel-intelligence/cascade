@@ -10,9 +10,13 @@ interface Column {
 	format?: (value: unknown) => string;
 }
 
-export function printTable(rows: Record<string, unknown>[], columns: Column[]): void {
+export function printTable(
+	rows: Record<string, unknown>[],
+	columns: Column[],
+	emptyMessage?: string,
+): void {
 	if (rows.length === 0) {
-		console.log('  (no results)');
+		console.log(`  ${emptyMessage ?? '(no results)'}`);
 		return;
 	}
 
@@ -44,6 +48,43 @@ export function printTable(rows: Record<string, unknown>[], columns: Column[]): 
 			})
 			.join('  ');
 		console.log(line);
+	}
+}
+
+export function printCsv(rows: Record<string, unknown>[], columns: Column[]): void {
+	// Print header row
+	const headers = columns.map((col) => csvQuote(col.header));
+	console.log(headers.join(','));
+
+	// Print data rows
+	for (const row of columns.length === 0 ? [] : rows) {
+		const values = columns.map((col) => {
+			const raw = col.format ? col.format(row[col.key]) : String(row[col.key] ?? '');
+			// Strip ANSI escape codes for CSV output
+			const plain = raw.replace(ANSI_STRIP_RE, '');
+			return csvQuote(plain);
+		});
+		console.log(values.join(','));
+	}
+}
+
+function csvQuote(value: string): string {
+	// Quote the value if it contains commas, quotes, or newlines
+	if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+		return `"${value.replace(/"/g, '""')}"`;
+	}
+	return value;
+}
+
+export function printCompact(rows: Record<string, unknown>[], columns: Column[]): void {
+	for (const row of rows) {
+		const parts = columns.map((col) => {
+			const raw = col.format ? col.format(row[col.key]) : String(row[col.key] ?? '');
+			// Strip ANSI escape codes for compact output
+			const plain = raw.replace(ANSI_STRIP_RE, '');
+			return `${col.key}=${plain}`;
+		});
+		console.log(parts.join(' '));
 	}
 }
 

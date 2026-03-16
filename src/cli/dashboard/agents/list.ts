@@ -18,25 +18,23 @@ export default class AgentsList extends DashboardCommand {
 				projectId: flags['project-id'],
 			});
 
-			if (flags.json) {
-				this.outputJson(configs);
-				return;
-			}
-
-			if (configs.length === 0) {
-				this.log('No agents enabled for this project. Use `cascade agents create` to enable one.');
-				return;
-			}
-
-			this.outputTable(configs as unknown as Record<string, unknown>[], [
+			const columns = [
 				{ key: 'id', header: 'ID' },
 				{ key: 'agentType', header: 'Agent Type' },
 				{ key: 'projectId', header: 'Project' },
 				{ key: 'model', header: 'Model' },
 				{ key: 'maxIterations', header: 'Max Iter' },
 				{ key: 'agentEngine', header: 'Engine' },
-				{ key: 'prompt', header: 'Prompt', format: (v) => (v ? 'custom' : '-') },
-			]);
+				{ key: 'prompt', header: 'Prompt', format: (v: unknown) => (v ? 'custom' : '-') },
+			];
+
+			this.outputFormatted(
+				configs as unknown as Record<string, unknown>[],
+				columns,
+				flags,
+				configs,
+				'No agents enabled for this project. Use `cascade agents create` to enable one.',
+			);
 		} catch (err) {
 			this.handleError(err);
 		}

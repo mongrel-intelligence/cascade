@@ -14,18 +14,21 @@ export default class UsersList extends DashboardCommand {
 		try {
 			const users = await this.client.users.list.query();
 
-			if (flags.json) {
-				this.outputJson(users);
-				return;
-			}
-
-			this.outputTable(users as unknown as Record<string, unknown>[], [
+			const columns = [
 				{ key: 'id', header: 'ID' },
 				{ key: 'email', header: 'Email' },
 				{ key: 'name', header: 'Name' },
 				{ key: 'role', header: 'Role' },
 				{ key: 'createdAt', header: 'Created', format: formatDate },
-			]);
+			];
+
+			this.outputFormatted(
+				users as unknown as Record<string, unknown>[],
+				columns,
+				flags,
+				users,
+				'No users found. Create one with: cascade users create --email <email> --password <pass>',
+			);
 		} catch (err) {
 			this.handleError(err);
 		}
