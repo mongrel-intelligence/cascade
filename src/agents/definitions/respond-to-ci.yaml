@@ -29,7 +29,7 @@ triggers:
   - event: scm:check-suite-failure
     label: Check Suite Failure
     description: Trigger when CI checks fail
-    defaultEnabled: true
+    defaultEnabled: false
     providers: [github]
     contextPipeline: [prContext, directoryListing, contextFiles, squint, workItem]
 

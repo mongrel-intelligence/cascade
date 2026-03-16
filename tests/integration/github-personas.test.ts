@@ -22,7 +22,13 @@ import { ReviewRequestedTrigger } from '../../src/triggers/github/review-request
 import type { TriggerContext } from '../../src/types/index.js';
 import { assertFound } from './helpers/assert.js';
 import { truncateAll } from './helpers/db.js';
-import { seedIntegration, seedOrg, seedProject, seedTriggerConfig } from './helpers/seed.js';
+import {
+	seedAgentConfig,
+	seedIntegration,
+	seedOrg,
+	seedProject,
+	seedTriggerConfig,
+} from './helpers/seed.js';
 
 // ============================================================================
 // Helpers
@@ -229,6 +235,13 @@ describe('GitHub Dual-Persona System (integration)', () => {
 				config: {},
 				triggers: { prReviewSubmitted: true },
 			});
+			// Agent must be explicitly enabled for the trigger to fire
+			await seedAgentConfig({ agentType: 'respond-to-review' });
+			await seedTriggerConfig({
+				agentType: 'respond-to-review',
+				triggerEvent: 'scm:pr-review-submitted',
+				enabled: true,
+			});
 
 			const project = await findProjectByRepoFromDb('owner/repo');
 			expect(project).toBeDefined();
@@ -350,6 +363,8 @@ describe('GitHub Dual-Persona System (integration)', () => {
 				provider: 'github',
 				config: {},
 			});
+			// Agent must be explicitly enabled for the trigger to fire
+			await seedAgentConfig({ agentType: 'review' });
 			await seedTriggerConfig({
 				agentType: 'review',
 				triggerEvent: 'scm:review-requested',

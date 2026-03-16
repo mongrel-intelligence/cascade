@@ -6,6 +6,7 @@ import type {
 	SupportedTrigger,
 	TriggerParameter,
 } from '../../agents/definitions/schema.js';
+import { listAgentConfigs } from '../../db/repositories/agentConfigsRepository.js';
 import { listAgentDefinitions } from '../../db/repositories/agentDefinitionsRepository.js';
 import {
 	deleteTriggerConfig,
@@ -204,15 +205,19 @@ export const agentTriggerConfigsRouter = router({
 		.query(async ({ ctx, input }): Promise<ProjectTriggersView> => {
 			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
 
-			// Fetch DB definitions and configs in parallel
-			const [dbDefinitions, configs, integrations] = await Promise.all([
+			// Fetch DB definitions, trigger configs, agent configs (for enabled check), and integrations
+			const [dbDefinitions, configs, projectAgentConfigs, integrations] = await Promise.all([
 				listAgentDefinitions().catch((err) => {
 					logger.warn('Failed to fetch agent definitions from DB', { error: err });
 					return [];
 				}),
 				getTriggerConfigsByProject(input.projectId),
+				listAgentConfigs({ projectId: input.projectId }),
 				listProjectIntegrations(input.projectId),
 			]);
+
+			// Build set of explicitly enabled agent types for this project
+			const enabledAgentTypes = new Set(projectAgentConfigs.map((c) => c.agentType));
 
 			// Build a combined list of definitions (DB + YAML)
 			const yamlTypes = getKnownAgentTypes();
@@ -280,12 +285,12 @@ export const agentTriggerConfigsRouter = router({
 				};
 			}
 
-			// Build the agents array with merged trigger data
-			const agents = definitions.map((def) => {
-				const agentConfigs = configMap.get(def.agentType);
+			// Build merged trigger data for a definition
+			function buildAgentTriggersView(def: { agentType: string; definition: AgentDefinition }) {
+				const agentTriggerConfigs = configMap.get(def.agentType);
 				const triggers: ResolvedTrigger[] = (def.definition.triggers ?? []).map(
 					(trigger: SupportedTrigger) => {
-						const config = agentConfigs?.get(trigger.event);
+						const config = agentTriggerConfigs?.get(trigger.event);
 						return {
 							event: trigger.event,
 							label: trigger.label,
@@ -301,12 +306,18 @@ export const agentTriggerConfigsRouter = router({
 						};
 					},
 				);
+				return { agentType: def.agentType, triggers };
+			}
 
-				return {
-					agentType: def.agentType,
-					triggers,
-				};
-			});
+			// Split definitions into enabled (have agent_configs row) and available (no row)
+			// The debug agent is always shown as enabled (internal infrastructure)
+			const enabledAgents = definitions
+				.filter((def) => enabledAgentTypes.has(def.agentType) || def.agentType === 'debug')
+				.map(buildAgentTriggersView);
+
+			const availableAgents = definitions
+				.filter((def) => !enabledAgentTypes.has(def.agentType) && def.agentType !== 'debug')
+				.map((def) => def.agentType);
 
 			// Build integrations map with single pass
 			const integrationsMap = {
@@ -321,7 +332,9 @@ export const agentTriggerConfigsRouter = router({
 			}
 
 			return {
-				agents,
+				agents: enabledAgents, // backwards compat: same as enabledAgents
+				enabledAgents,
+				availableAgents,
 				integrations: integrationsMap,
 			};
 		}),

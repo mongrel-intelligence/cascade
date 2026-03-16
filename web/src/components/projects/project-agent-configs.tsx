@@ -591,78 +591,109 @@ function AgentRow({
 }
 
 interface AgentListViewProps {
-	agentTypes: string[];
+	enabledAgentTypes: string[];
+	availableAgentTypes: string[];
 	configByAgent: Map<string, AgentConfig>;
 	triggersByAgent: Map<string, ResolvedTrigger[]>;
 	integrations: { pm: string | null; scm: string | null };
 	onSelect: (agentType: string) => void;
 	onDelete: (id: number) => void;
+	onEnable: (agentType: string) => void;
 	isDeleting: boolean;
+	isEnabling: boolean;
 	projectModel: string | null;
 	projectEngine: string | null;
 	systemDefaults: SystemDefaults | undefined;
 }
 
 function AgentListView({
-	agentTypes,
+	enabledAgentTypes,
+	availableAgentTypes,
 	configByAgent,
 	triggersByAgent,
 	integrations,
 	onSelect,
 	onDelete,
+	onEnable,
 	isDeleting,
+	isEnabling,
 	projectModel,
 	projectEngine,
 	systemDefaults,
 }: AgentListViewProps) {
 	const [deleteTarget, setDeleteTarget] = useState<{ id: number; label: string } | null>(null);
 
-	if (agentTypes.length === 0) {
-		return (
-			<div className="py-8 text-center text-muted-foreground">No agent definitions found.</div>
-		);
-	}
-
 	return (
 		<>
-			<div className="overflow-x-auto rounded-lg border border-border">
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHead>Agent</TableHead>
-							<TableHead>Status</TableHead>
-							<TableHead className="hidden sm:table-cell">Model / Engine</TableHead>
-							<TableHead className="hidden sm:table-cell">Active Triggers</TableHead>
-							<TableHead className="w-20" />
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{agentTypes.map((type) => (
-							<AgentRow
-								key={type}
-								type={type}
-								config={configByAgent.get(type) ?? null}
-								triggers={triggersByAgent.get(type) ?? []}
-								integrations={integrations}
-								onSelect={onSelect}
-								onDeleteRequest={(id, label) => setDeleteTarget({ id, label })}
-								projectModel={projectModel}
-								projectEngine={projectEngine}
-								systemDefaults={systemDefaults}
-							/>
-						))}
-					</TableBody>
-				</Table>
-			</div>
+			{enabledAgentTypes.length === 0 ? (
+				<div className="rounded-lg border border-border py-8 text-center text-muted-foreground">
+					No agents enabled. Enable agents below to start processing.
+				</div>
+			) : (
+				<div className="overflow-x-auto rounded-lg border border-border">
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>Agent</TableHead>
+								<TableHead>Status</TableHead>
+								<TableHead className="hidden sm:table-cell">Model / Engine</TableHead>
+								<TableHead className="hidden sm:table-cell">Active Triggers</TableHead>
+								<TableHead className="w-20" />
+							</TableRow>
+						</TableHeader>
+						<TableBody>
+							{enabledAgentTypes.map((type) => (
+								<AgentRow
+									key={type}
+									type={type}
+									config={configByAgent.get(type) ?? null}
+									triggers={triggersByAgent.get(type) ?? []}
+									integrations={integrations}
+									onSelect={onSelect}
+									onDeleteRequest={(id, label) => setDeleteTarget({ id, label })}
+									projectModel={projectModel}
+									projectEngine={projectEngine}
+									systemDefaults={systemDefaults}
+								/>
+							))}
+						</TableBody>
+					</Table>
+				</div>
+			)}
+
+			{availableAgentTypes.length > 0 && (
+				<div className="space-y-3">
+					<p className="text-sm font-medium text-muted-foreground">Available Agents</p>
+					<div className="rounded-lg border border-border divide-y divide-border">
+						{availableAgentTypes.map((agentType) => {
+							const label =
+								(AGENT_LABELS as Record<string, string | undefined>)[agentType] ?? agentType;
+							return (
+								<div key={agentType} className="flex items-center justify-between px-4 py-3">
+									<span className="text-sm font-medium">{label}</span>
+									<button
+										type="button"
+										onClick={() => onEnable(agentType)}
+										disabled={isEnabling}
+										className="inline-flex h-7 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+									>
+										{isEnabling ? 'Enabling...' : 'Enable Agent'}
+									</button>
+								</div>
+							);
+						})}
+					</div>
+				</div>
+			)}
 
 			<AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
 						<AlertDialogTitle>Delete Agent Config</AlertDialogTitle>
 						<AlertDialogDescription>
-							Are you sure you want to delete the custom config for{' '}
-							<strong>{deleteTarget?.label}</strong>? The agent will revert to default settings.
-							This action cannot be undone.
+							Are you sure you want to delete the config for <strong>{deleteTarget?.label}</strong>?
+							The agent will be disabled and no longer process any events. This action cannot be
+							undone.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
@@ -886,9 +917,36 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 
 	const deleteMutation = useMutation({
 		mutationFn: (id: number) => trpcClient.agentConfigs.delete.mutate({ id }),
-		onSuccess: () => queryClient.invalidateQueries({ queryKey: configsQueryKey }),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: configsQueryKey });
+			queryClient.invalidateQueries({ queryKey: triggersViewQueryKey });
+		},
 		onError: (err) => {
 			toast.error('Failed to delete agent config', { description: err.message });
+		},
+	});
+
+	// Enable an agent by creating a bare agent_configs row (no overrides = project defaults)
+	const enableAgentMutation = useMutation({
+		mutationFn: (agentType: string) =>
+			trpcClient.agentConfigs.create.mutate({
+				projectId,
+				agentType,
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				engineSettings: null,
+				maxConcurrency: null,
+				systemPrompt: null,
+				taskPrompt: null,
+			}),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: configsQueryKey });
+			queryClient.invalidateQueries({ queryKey: triggersViewQueryKey });
+			toast.success('Agent enabled');
+		},
+		onError: (err) => {
+			toast.error('Failed to enable agent', { description: err.message });
 		},
 	});
 
@@ -945,17 +1003,21 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		configByAgent.set(c.agentType, c);
 	}
 
-	// Build triggers map from API
+	// Build triggers map from API — use enabledAgents (configured agents only)
 	const triggersByAgent = new Map<string, ResolvedTrigger[]>();
 	const triggersViewIntegrations = triggersViewQuery.data?.integrations ?? {
 		pm: null,
 		scm: null,
 	};
 	if (triggersViewQuery.data) {
-		for (const agent of triggersViewQuery.data.agents) {
+		const agentsList = triggersViewQuery.data.enabledAgents ?? triggersViewQuery.data.agents ?? [];
+		for (const agent of agentsList) {
 			triggersByAgent.set(agent.agentType, agent.triggers as ResolvedTrigger[]);
 		}
 	}
+
+	// Available (unconfigured) agent types
+	const availableAgentTypes = triggersViewQuery.data?.availableAgents ?? [];
 
 	// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: save handler dispatches create vs update, builds payload from many optional fields, and chains trigger upsert
 	const handleSaveConfig = (type: string, configId: number | null, values: SaveConfigValues) => {
@@ -1017,8 +1079,8 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		);
 	};
 
-	// Get list of agent types to display
-	const agentTypes = Array.from(triggersByAgent.keys());
+	// Get list of enabled agent types to display
+	const enabledAgentTypes = Array.from(triggersByAgent.keys());
 
 	// Render detail view when an agent is selected
 	if (selectedAgent !== null) {
@@ -1057,13 +1119,16 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			</p>
 
 			<AgentListView
-				agentTypes={agentTypes}
+				enabledAgentTypes={enabledAgentTypes}
+				availableAgentTypes={availableAgentTypes}
 				configByAgent={configByAgent}
 				triggersByAgent={triggersByAgent}
 				integrations={triggersViewIntegrations}
 				onSelect={setSelectedAgent}
 				onDelete={(id) => deleteMutation.mutate(id)}
+				onEnable={(agentType) => enableAgentMutation.mutate(agentType)}
 				isDeleting={deleteMutation.isPending}
+				isEnabling={enableAgentMutation.isPending}
 				projectModel={projectModel}
 				projectEngine={projectEngine}
 				systemDefaults={systemDefaults}

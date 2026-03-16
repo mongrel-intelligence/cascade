@@ -1,4 +1,5 @@
 import { runAgent } from '../../agents/registry.js';
+import { isAgentEnabledForProject } from '../../db/repositories/agentConfigsRepository.js';
 import { getRunById } from '../../db/repositories/runsRepository.js';
 import { withPMCredentials } from '../../pm/context.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
@@ -76,6 +77,14 @@ export async function triggerManualRun(
 	if (isTriggerRunning(triggerKey)) {
 		throw new Error(
 			`Manual trigger already running for project=${input.projectId}, agent=${input.agentType}, card=${input.workItemId ?? 'N/A'}, pr=${input.prNumber ?? 'N/A'}`,
+		);
+	}
+
+	// Check agent is explicitly enabled for this project
+	const agentEnabled = await isAgentEnabledForProject(input.projectId, input.agentType);
+	if (!agentEnabled) {
+		throw new Error(
+			`Agent '${input.agentType}' is not enabled for project '${input.projectId}'. Add an agent config in Project Settings > Agent Configs to enable it.`,
 		);
 	}
 

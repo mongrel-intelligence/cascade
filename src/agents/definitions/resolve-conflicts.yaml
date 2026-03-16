@@ -28,7 +28,7 @@ triggers:
   - event: scm:pr-conflict-detected
     label: PR Conflict Detected
     description: Trigger when a PR has merge conflicts with the base branch
-    defaultEnabled: true
+    defaultEnabled: false
     providers: [github]
     contextPipeline: [prContext, directoryListing, contextFiles, squint, workItem]
 

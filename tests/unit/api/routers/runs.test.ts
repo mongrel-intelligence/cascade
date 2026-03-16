@@ -79,6 +79,12 @@ vi.mock('../../../../src/queue/cancel.js', () => ({
 	publishCancelCommand: (...args: unknown[]) => mockPublishCancelCommand(...args),
 }));
 
+// Mock isAgentEnabledForProject — default: agent is enabled
+const mockIsAgentEnabledForProject = vi.fn().mockResolvedValue(true);
+vi.mock('../../../../src/db/repositories/agentConfigsRepository.js', () => ({
+	isAgentEnabledForProject: (...args: unknown[]) => mockIsAgentEnabledForProject(...args),
+}));
+
 import { runsRouter } from '../../../../src/api/routers/runs.js';
 
 function createCaller(ctx: TRPCContext) {
@@ -849,6 +855,20 @@ describe('runsRouter', () => {
 			await expect(
 				caller.trigger({ projectId: 'p1', agentType: 'implementation' }),
 			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+
+		it('throws BAD_REQUEST when agent is not enabled for the project', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test Project' },
+				config: {},
+			});
+			mockIsAgentEnabledForProject.mockResolvedValueOnce(false);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.trigger({ projectId: 'p1', agentType: 'implementation' }),
+			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 		});
 
 		it('throws UNAUTHORIZED when unauthenticated', async () => {

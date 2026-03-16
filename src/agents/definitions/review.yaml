@@ -59,13 +59,13 @@ triggers:
   - event: scm:pr-ready-to-merge
     label: PR Ready to Merge
     description: Move work item to DONE when PR is approved and all checks pass
-    defaultEnabled: true
+    defaultEnabled: false
     providers: [github]
     contextPipeline: []
   - event: scm:pr-merged
     label: PR Merged
     description: Move work item to MERGED status when PR is merged
-    defaultEnabled: true
+    defaultEnabled: false
     providers: [github]
     contextPipeline: []
 

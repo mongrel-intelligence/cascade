@@ -27,7 +27,7 @@ triggers:
   - event: scm:pr-comment-mention
     label: PR Comment @mention
     description: Trigger when the implementer bot is @mentioned in a PR comment
-    defaultEnabled: true
+    defaultEnabled: false
     providers: [github]
     contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
 
