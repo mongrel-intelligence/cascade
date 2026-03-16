@@ -32,6 +32,7 @@ import {
 	TableHeader,
 	TableRow,
 } from '@/components/ui/table.js';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.js';
 import {
 	AGENT_LABELS,
 	CATEGORY_LABELS,
@@ -39,10 +40,10 @@ import {
 } from '@/lib/trigger-agent-mapping.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
 import { ArrowLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { AgentPromptOverrides } from './agent-prompt-overrides.js';
 
 interface AgentConfig {
 	id: number;
@@ -52,6 +53,8 @@ interface AgentConfig {
 	agentEngine: string | null;
 	agentEngineSettings: Record<string, Record<string, unknown>> | null;
 	maxConcurrency: number | null;
+	systemPrompt: string | null;
+	taskPrompt: string | null;
 }
 
 interface EngineSettingFieldOption {
@@ -98,6 +101,12 @@ interface SaveConfigValues {
 	agentEngine: string;
 	maxConcurrency: string;
 	engineSettings: Record<string, Record<string, unknown>> | undefined;
+	systemPrompt: string;
+	taskPrompt: string;
+	/** True when the user explicitly cleared the system prompt override (send null, not the fallback text). */
+	systemPromptCleared: boolean;
+	/** True when the user explicitly cleared the task prompt override (send null, not the fallback text). */
+	taskPromptCleared: boolean;
 }
 
 interface SystemDefaults {
@@ -109,6 +118,7 @@ interface SystemDefaults {
 
 interface DefinitionAgentSectionProps {
 	agentType: string;
+	projectId: string;
 	config: AgentConfig | null;
 	triggers: ResolvedTrigger[];
 	integrations: {
@@ -139,6 +149,7 @@ interface DefinitionAgentSectionProps {
 
 function DefinitionAgentSection({
 	agentType,
+	projectId,
 	config,
 	triggers,
 	integrations,
@@ -159,7 +170,7 @@ function DefinitionAgentSection({
 	// Tracks whether a successful save is in flight (prevents config sync from clearing "Saved")
 	const justSavedRef = useRef(false);
 
-	// Local form state
+	// Local form state — engine fields
 	const [model, setModel] = useState(config?.model ?? '');
 	const [maxIterations, setMaxIterations] = useState(config?.maxIterations?.toString() ?? '');
 	const [agentEngine, setAgentEngine] = useState(config?.agentEngine ?? '');
@@ -167,6 +178,14 @@ function DefinitionAgentSection({
 	const [engineSettings, setEngineSettings] = useState<
 		Record<string, Record<string, unknown>> | undefined
 	>(config?.agentEngineSettings ?? undefined);
+
+	// Local form state — prompt fields (initialized by AgentPromptOverrides component)
+	const [systemPrompt, setSystemPrompt] = useState(config?.systemPrompt ?? '');
+	const [taskPrompt, setTaskPrompt] = useState(config?.taskPrompt ?? '');
+	// Track whether the user explicitly cleared a prompt override so we can send null on save
+	// instead of the fallback display text (which would create a duplicate "custom" override).
+	const [systemPromptCleared, setSystemPromptCleared] = useState(false);
+	const [taskPromptCleared, setTaskPromptCleared] = useState(false);
 
 	const effectiveEngineId = agentEngine || '';
 	const effectiveEngine = engines.find((engine) => engine.id === effectiveEngineId);
@@ -191,6 +210,10 @@ function DefinitionAgentSection({
 		setAgentEngine(config?.agentEngine ?? '');
 		setMaxConcurrency(config?.maxConcurrency?.toString() ?? '');
 		setEngineSettings(config?.agentEngineSettings ?? undefined);
+		setSystemPrompt(config?.systemPrompt ?? '');
+		setTaskPrompt(config?.taskPrompt ?? '');
+		setSystemPromptCleared(false);
+		setTaskPromptCleared(false);
 		if (justSavedRef.current) {
 			justSavedRef.current = false;
 		} else {
@@ -256,6 +279,10 @@ function DefinitionAgentSection({
 			agentEngine,
 			maxConcurrency,
 			engineSettings,
+			systemPrompt,
+			taskPrompt,
+			systemPromptCleared,
+			taskPromptCleared,
 		});
 	};
 
@@ -265,6 +292,10 @@ function DefinitionAgentSection({
 		setAgentEngine(config?.agentEngine ?? '');
 		setMaxConcurrency(config?.maxConcurrency?.toString() ?? '');
 		setEngineSettings(config?.agentEngineSettings ?? undefined);
+		setSystemPrompt(config?.systemPrompt ?? '');
+		setTaskPrompt(config?.taskPrompt ?? '');
+		setSystemPromptCleared(false);
+		setTaskPromptCleared(false);
 	};
 
 	const handleDelete = () => {
@@ -274,119 +305,143 @@ function DefinitionAgentSection({
 	};
 
 	return (
-		<div className="space-y-6">
-			{/* Config fields */}
-			<div className="space-y-4">
-				<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-					Configuration
-				</p>
-				<div className="grid grid-cols-2 gap-4">
-					<div className="space-y-2">
-						<Label htmlFor={`${agentType}-model`}>Model</Label>
-						<ModelField
-							id={`${agentType}-model`}
-							value={model}
-							onChange={setModel}
-							engine={agentEngine}
-							defaultLabel={inheritedModel ? `Inherit from project (${inheritedModel})` : undefined}
+		<div className="space-y-4">
+			<Tabs defaultValue="engine">
+				<TabsList>
+					<TabsTrigger value="engine">Engine</TabsTrigger>
+					<TabsTrigger value="prompts">Prompts</TabsTrigger>
+					<TabsTrigger value="triggers">Triggers</TabsTrigger>
+				</TabsList>
+
+				{/* Engine Tab */}
+				<TabsContent value="engine" className="space-y-4 pt-4">
+					<div className="grid grid-cols-2 gap-4">
+						<div className="space-y-2">
+							<Label htmlFor={`${agentType}-model`}>Model</Label>
+							<ModelField
+								id={`${agentType}-model`}
+								value={model}
+								onChange={setModel}
+								engine={agentEngine}
+								defaultLabel={
+									inheritedModel ? `Inherit from project (${inheritedModel})` : undefined
+								}
+							/>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor={`${agentType}-iterations`}>Max Iterations</Label>
+							<Input
+								id={`${agentType}-iterations`}
+								type="number"
+								value={maxIterations}
+								onChange={(e) => setMaxIterations(e.target.value)}
+								placeholder={
+									inheritedMaxIterations !== undefined
+										? `${inheritedMaxIterations} (inherited)`
+										: 'Optional'
+								}
+							/>
+						</div>
+					</div>
+					<div className="grid grid-cols-2 gap-4">
+						<div className="space-y-2">
+							<Label htmlFor={`${agentType}-concurrency`}>Max Concurrency</Label>
+							<Input
+								id={`${agentType}-concurrency`}
+								type="number"
+								min={1}
+								value={maxConcurrency}
+								onChange={(e) => setMaxConcurrency(e.target.value)}
+								placeholder="Optional"
+							/>
+						</div>
+						<div className="space-y-2">
+							<Label>Engine</Label>
+							<Select
+								value={agentEngine || '_none'}
+								onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
+							>
+								<SelectTrigger className="w-full">
+									<SelectValue placeholder="Optional" />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="_none">Inherit from project ({inheritedEngine})</SelectItem>
+									{engines.map((engine) => (
+										<SelectItem key={engine.id} value={engine.id}>
+											{engine.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+					</div>
+					{effectiveEngine && (
+						<EngineSettingsFields
+							engine={effectiveEngine}
+							value={engineSettings}
+							onChange={setEngineSettings}
+							inheritLabel="Inherit from project"
+							engineDefaults={engineDefaults}
 						/>
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor={`${agentType}-iterations`}>Max Iterations</Label>
-						<Input
-							id={`${agentType}-iterations`}
-							type="number"
-							value={maxIterations}
-							onChange={(e) => setMaxIterations(e.target.value)}
-							placeholder={
-								inheritedMaxIterations !== undefined
-									? `${inheritedMaxIterations} (inherited)`
-									: 'Optional'
-							}
-						/>
-					</div>
-				</div>
-				<div className="grid grid-cols-2 gap-4">
-					<div className="space-y-2">
-						<Label htmlFor={`${agentType}-concurrency`}>Max Concurrency</Label>
-						<Input
-							id={`${agentType}-concurrency`}
-							type="number"
-							min={1}
-							value={maxConcurrency}
-							onChange={(e) => setMaxConcurrency(e.target.value)}
-							placeholder="Optional"
-						/>
-					</div>
-					<div className="space-y-2">
-						<Label>Engine</Label>
-						<Select
-							value={agentEngine || '_none'}
-							onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
-						>
-							<SelectTrigger className="w-full">
-								<SelectValue placeholder="Optional" />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="_none">Inherit from project ({inheritedEngine})</SelectItem>
-								{engines.map((engine) => (
-									<SelectItem key={engine.id} value={engine.id}>
-										{engine.label}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
-				</div>
-				{effectiveEngine && (
-					<EngineSettingsFields
-						engine={effectiveEngine}
-						value={engineSettings}
-						onChange={setEngineSettings}
-						inheritLabel="Inherit from project"
-						engineDefaults={engineDefaults}
+					)}
+				</TabsContent>
+
+				{/* Prompts Tab */}
+				<TabsContent value="prompts" className="pt-4">
+					<AgentPromptOverrides
+						projectId={projectId}
+						agentType={agentType}
+						systemPrompt={systemPrompt}
+						onSystemPromptChange={(v) => {
+							setSystemPrompt(v);
+							// User is editing manually — cancel any pending clear
+							setSystemPromptCleared(false);
+						}}
+						taskPrompt={taskPrompt}
+						onTaskPromptChange={(v) => {
+							setTaskPrompt(v);
+							// User is editing manually — cancel any pending clear
+							setTaskPromptCleared(false);
+						}}
+						onSystemPromptClear={() => setSystemPromptCleared(true)}
+						onTaskPromptClear={() => setTaskPromptCleared(true)}
 					/>
-				)}
-				<div className="space-y-2">
-					<Label>Prompt</Label>
-					<p className="text-sm text-muted-foreground">
-						Prompts are managed in{' '}
-						<Link to="/global/definitions" className="text-primary hover:underline">
-							Agent Definitions
-						</Link>
-					</p>
-				</div>
-			</div>
+				</TabsContent>
 
-			{/* Render triggers by category */}
-			{(['pm', 'scm', 'internal'] as const).map((category) => {
-				const categoryTriggers = triggersByCategory[category];
-				if (categoryTriggers.length === 0) return null;
+				{/* Triggers Tab */}
+				<TabsContent value="triggers" className="space-y-6 pt-4">
+					{(['pm', 'scm', 'internal'] as const).map((category) => {
+						const categoryTriggers = triggersByCategory[category];
+						if (categoryTriggers.length === 0) return null;
 
-				return (
-					<div key={category} className="space-y-3">
-						<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-							{CATEGORY_LABELS[category] ?? category} Triggers
+						return (
+							<div key={category} className="space-y-3">
+								<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+									{CATEGORY_LABELS[category] ?? category} Triggers
+								</p>
+								<DefinitionTriggerToggles
+									triggers={categoryTriggers}
+									onToggle={(event, enabled) => onTriggerToggle(agentType, event, enabled)}
+									onParamChange={(event, params) => {
+										// Find the current trigger to get its enabled state
+										const currentTrigger = categoryTriggers.find((t) => t.event === event);
+										onTriggerParamChange(agentType, event, params, currentTrigger?.enabled ?? true);
+									}}
+									idPrefix={`${agentType}-${category}`}
+								/>
+							</div>
+						);
+					})}
+
+					{!hasTriggers && (
+						<p className="text-xs text-muted-foreground">
+							No trigger configuration for this agent.
 						</p>
-						<DefinitionTriggerToggles
-							triggers={categoryTriggers}
-							onToggle={(event, enabled) => onTriggerToggle(agentType, event, enabled)}
-							onParamChange={(event, params) => {
-								// Find the current trigger to get its enabled state
-								const currentTrigger = categoryTriggers.find((t) => t.event === event);
-								onTriggerParamChange(agentType, event, params, currentTrigger?.enabled ?? true);
-							}}
-							idPrefix={`${agentType}-${category}`}
-						/>
-					</div>
-				);
-			})}
+					)}
+				</TabsContent>
+			</Tabs>
 
-			{!hasTriggers && (
-				<p className="text-xs text-muted-foreground">No trigger configuration for this agent.</p>
-			)}
-
-			{/* Footer actions */}
+			{/* Footer actions — outside tabs, applies globally */}
 			<div className="flex items-center justify-between border-t border-border pt-4">
 				<div className="flex items-center gap-2">
 					<button
@@ -634,6 +689,7 @@ function AgentListView({
 
 interface AgentDetailViewProps {
 	agentType: string;
+	projectId: string;
 	config: AgentConfig | null;
 	triggers: ResolvedTrigger[];
 	integrations: { pm: string | null; scm: string | null };
@@ -658,6 +714,7 @@ interface AgentDetailViewProps {
 
 function AgentDetailView({
 	agentType,
+	projectId,
 	config,
 	triggers,
 	integrations,
@@ -695,6 +752,7 @@ function AgentDetailView({
 			</div>
 			<DefinitionAgentSection
 				agentType={agentType}
+				projectId={projectId}
 				config={config}
 				triggers={triggers}
 				integrations={integrations}
@@ -758,6 +816,8 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			agentEngine: string | null;
 			engineSettings: Record<string, Record<string, unknown>> | null;
 			maxConcurrency: number | null;
+			systemPrompt: string | null;
+			taskPrompt: string | null;
 		}) =>
 			trpcClient.agentConfigs.create.mutate({
 				projectId,
@@ -767,6 +827,8 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				agentEngine: input.agentEngine,
 				engineSettings: input.engineSettings,
 				maxConcurrency: input.maxConcurrency,
+				systemPrompt: input.systemPrompt,
+				taskPrompt: input.taskPrompt,
 			}),
 		onSuccess: (_data, variables) => {
 			queryClient.invalidateQueries({ queryKey: configsQueryKey });
@@ -791,6 +853,8 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			agentEngine: string | null;
 			engineSettings: Record<string, Record<string, unknown>> | null;
 			maxConcurrency: number | null;
+			systemPrompt: string | null;
+			taskPrompt: string | null;
 		}) =>
 			trpcClient.agentConfigs.update.mutate({
 				id: input.id,
@@ -800,6 +864,8 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				agentEngine: input.agentEngine,
 				engineSettings: input.engineSettings,
 				maxConcurrency: input.maxConcurrency,
+				systemPrompt: input.systemPrompt,
+				taskPrompt: input.taskPrompt,
 			}),
 		onSuccess: (_data, variables) => {
 			queryClient.invalidateQueries({ queryKey: configsQueryKey });
@@ -902,6 +968,10 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			agentEngine: activeEngine,
 			engineSettings: activeEngineSettings,
 			maxConcurrency: values.maxConcurrency ? Number(values.maxConcurrency) : null,
+			// When the user explicitly cleared an override, send null to remove it server-side.
+			// Otherwise fall back to empty-string → null conversion for unpopulated fields.
+			systemPrompt: values.systemPromptCleared ? null : values.systemPrompt || null,
+			taskPrompt: values.taskPromptCleared ? null : values.taskPrompt || null,
 		};
 
 		if (configId !== null) {
@@ -951,6 +1021,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		return (
 			<AgentDetailView
 				agentType={selectedAgent}
+				projectId={projectId}
 				config={configByAgent.get(selectedAgent) ?? null}
 				triggers={triggersByAgent.get(selectedAgent) ?? []}
 				integrations={triggersViewIntegrations}
