@@ -16,9 +16,13 @@ export function useTrelloDiscovery(
 	state: WizardState,
 	dispatch: React.Dispatch<WizardAction>,
 	advanceToStep: (step: number) => void,
+	projectId: string,
 ) {
 	const boardsMutation = useMutation({
 		mutationFn: () => {
+			if (state.isEditing && state.hasStoredCredentials && !state.trelloApiKey) {
+				return trpcClient.integrationsDiscovery.trelloBoardsByProject.mutate({ projectId });
+			}
 			if (!state.trelloApiKey || !state.trelloToken) {
 				throw new Error('Enter both credentials before fetching boards');
 			}
@@ -32,6 +36,12 @@ export function useTrelloDiscovery(
 
 	const boardDetailsMutation = useMutation({
 		mutationFn: (boardId: string) => {
+			if (state.isEditing && state.hasStoredCredentials && !state.trelloApiKey) {
+				return trpcClient.integrationsDiscovery.trelloBoardDetailsByProject.mutate({
+					projectId,
+					boardId,
+				});
+			}
 			if (!state.trelloApiKey || !state.trelloToken) {
 				throw new Error('Enter both credentials before fetching board details');
 			}
@@ -65,29 +75,23 @@ export function useTrelloDiscovery(
 	}, [state.verificationResult]);
 
 	// In edit mode, auto-fetch board list and details
-	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger only on edit mode state changes
+	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger on edit mode and stored creds
 	useEffect(() => {
 		if (!state.isEditing || state.provider !== 'trello') return;
-
-		if (
-			state.trelloApiKey &&
-			state.trelloToken &&
-			state.trelloBoards.length === 0 &&
-			!boardsMutation.isPending
-		) {
+		const canFetch = state.trelloApiKey ? !!state.trelloToken : state.hasStoredCredentials;
+		if (canFetch && state.trelloBoards.length === 0 && !boardsMutation.isPending) {
 			boardsMutation.mutate();
 		}
 		if (
 			state.trelloBoardId &&
 			!state.trelloBoardDetails &&
-			state.trelloApiKey &&
-			state.trelloToken &&
+			canFetch &&
 			!boardDetailsMutation.isPending
 		) {
 			boardDetailsMutation.mutate(state.trelloBoardId);
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [state.isEditing, state.trelloBoardId]);
+	}, [state.isEditing, state.trelloBoardId, state.hasStoredCredentials]);
 
 	return { boardsMutation, boardDetailsMutation, handleBoardSelect };
 }
@@ -100,9 +104,13 @@ export function useJiraDiscovery(
 	state: WizardState,
 	dispatch: React.Dispatch<WizardAction>,
 	advanceToStep: (step: number) => void,
+	projectId: string,
 ) {
 	const jiraProjectsMutation = useMutation({
 		mutationFn: () => {
+			if (state.isEditing && state.hasStoredCredentials && !state.jiraEmail) {
+				return trpcClient.integrationsDiscovery.jiraProjectsByProject.mutate({ projectId });
+			}
 			if (!state.jiraEmail || !state.jiraApiToken) {
 				throw new Error('Enter both credentials before fetching projects');
 			}
@@ -117,6 +125,12 @@ export function useJiraDiscovery(
 
 	const jiraDetailsMutation = useMutation({
 		mutationFn: (projectKey: string) => {
+			if (state.isEditing && state.hasStoredCredentials && !state.jiraEmail) {
+				return trpcClient.integrationsDiscovery.jiraProjectDetailsByProject.mutate({
+					projectId,
+					projectKey,
+				});
+			}
 			if (!state.jiraEmail || !state.jiraApiToken) {
 				throw new Error('Enter both credentials before fetching project details');
 			}
@@ -151,29 +165,23 @@ export function useJiraDiscovery(
 	}, [state.verificationResult]);
 
 	// In edit mode, auto-fetch project list and details
-	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger only on edit mode state changes
+	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger on edit mode and stored creds
 	useEffect(() => {
 		if (!state.isEditing || state.provider !== 'jira') return;
-
-		if (
-			state.jiraEmail &&
-			state.jiraApiToken &&
-			state.jiraProjects.length === 0 &&
-			!jiraProjectsMutation.isPending
-		) {
+		const canFetch = state.jiraEmail ? !!state.jiraApiToken : state.hasStoredCredentials;
+		if (canFetch && state.jiraProjects.length === 0 && !jiraProjectsMutation.isPending) {
 			jiraProjectsMutation.mutate();
 		}
 		if (
 			state.jiraProjectKey &&
 			!state.jiraProjectDetails &&
-			state.jiraEmail &&
-			state.jiraApiToken &&
+			canFetch &&
 			!jiraDetailsMutation.isPending
 		) {
 			jiraDetailsMutation.mutate(state.jiraProjectKey);
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [state.isEditing, state.jiraProjectKey]);
+	}, [state.isEditing, state.jiraProjectKey, state.hasStoredCredentials]);
 
 	return { jiraProjectsMutation, jiraDetailsMutation, handleProjectSelect };
 }
@@ -547,6 +555,18 @@ export function useSaveMutation(projectId: string, state: WizardState) {
 				}
 			}
 
+			// On first-time setup, auto-enable default PM triggers for the three main agents
+			if (!state.isEditing) {
+				await trpcClient.agentTriggerConfigs.bulkUpsert.mutate({
+					projectId,
+					configs: [
+						{ agentType: 'implementation', triggerEvent: 'pm:status-changed', enabled: true },
+						{ agentType: 'splitting', triggerEvent: 'pm:status-changed', enabled: true },
+						{ agentType: 'planning', triggerEvent: 'pm:status-changed', enabled: true },
+					],
+				});
+			}
+
 			return result;
 		},
 		onSuccess: () => {
@@ -555,6 +575,9 @@ export function useSaveMutation(projectId: string, state: WizardState) {
 			});
 			queryClient.invalidateQueries({
 				queryKey: trpc.projects.credentials.list.queryOptions({ projectId }).queryKey,
+			});
+			queryClient.invalidateQueries({
+				queryKey: trpc.agentTriggerConfigs.listByProject.queryOptions({ projectId }).queryKey,
 			});
 		},
 	});

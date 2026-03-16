@@ -58,6 +58,26 @@ vi.mock('@octokit/rest', () => ({
 	})),
 }));
 
+const mockVerifyProjectOrgAccess = vi.fn();
+
+vi.mock('../../../../src/api/routers/_shared/projectAccess.js', () => ({
+	verifyProjectOrgAccess: (...args: unknown[]) => mockVerifyProjectOrgAccess(...args),
+}));
+
+const mockGetIntegrationCredentialOrNull = vi.fn();
+
+vi.mock('../../../../src/config/provider.js', () => ({
+	getIntegrationCredentialOrNull: (...args: unknown[]) =>
+		mockGetIntegrationCredentialOrNull(...args),
+}));
+
+const mockGetIntegrationByProjectAndCategory = vi.fn();
+
+vi.mock('../../../../src/db/repositories/integrationsRepository.js', () => ({
+	getIntegrationByProjectAndCategory: (...args: unknown[]) =>
+		mockGetIntegrationByProjectAndCategory(...args),
+}));
+
 import { Octokit } from '@octokit/rest';
 
 import { integrationsDiscoveryRouter } from '../../../../src/api/routers/integrationsDiscovery.js';
@@ -79,6 +99,8 @@ const jiraCredsInput = {
 describe('integrationsDiscoveryRouter', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		// Default: org access check passes
+		mockVerifyProjectOrgAccess.mockResolvedValue(undefined);
 	});
 
 	// ── Auth ─────────────────────────────────────────────────────────────
@@ -123,6 +145,34 @@ describe('integrationsDiscoveryRouter', () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
 			await expect(
 				caller.jiraProjectDetails({ ...jiraCredsInput, projectKey: 'PROJ' }),
+			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+		});
+
+		it('trelloBoardsByProject throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(caller.trelloBoardsByProject({ projectId: 'proj-1' })).rejects.toMatchObject({
+				code: 'UNAUTHORIZED',
+			});
+		});
+
+		it('trelloBoardDetailsByProject throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(
+				caller.trelloBoardDetailsByProject({ projectId: 'proj-1', boardId: 'abc123' }),
+			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+		});
+
+		it('jiraProjectsByProject throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(caller.jiraProjectsByProject({ projectId: 'proj-1' })).rejects.toMatchObject({
+				code: 'UNAUTHORIZED',
+			});
+		});
+
+		it('jiraProjectDetailsByProject throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(
+				caller.jiraProjectDetailsByProject({ projectId: 'proj-1', projectKey: 'PROJ' }),
 			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 		});
 	});
@@ -387,6 +437,296 @@ describe('integrationsDiscoveryRouter', () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(
 				caller.jiraProjectDetails({ ...jiraCredsInput, projectKey: 'PROJ' }),
+			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+		});
+	});
+
+	// ── trelloBoardsByProject ────────────────────────────────────────────
+
+	describe('trelloBoardsByProject', () => {
+		it('returns boards using stored project credentials', async () => {
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('stored-api-key')
+				.mockResolvedValueOnce('stored-token');
+			const boards = [{ id: 'board-1', name: 'Board One', url: 'https://trello.com/b/1' }];
+			mockTrelloGetBoards.mockResolvedValue(boards);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.trelloBoardsByProject({ projectId: 'proj-1' });
+
+			expect(mockVerifyProjectOrgAccess).toHaveBeenCalledWith('proj-1', mockUser.orgId);
+			expect(result).toEqual(boards);
+		});
+
+		it('throws NOT_FOUND when apiKey credential is missing', async () => {
+			mockGetIntegrationCredentialOrNull.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.trelloBoardsByProject({ projectId: 'proj-1' })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws NOT_FOUND when token credential is missing', async () => {
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('stored-api-key')
+				.mockResolvedValueOnce(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.trelloBoardsByProject({ projectId: 'proj-1' })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('propagates org access denial', async () => {
+			const { TRPCError } = await import('@trpc/server');
+			mockVerifyProjectOrgAccess.mockRejectedValue(
+				new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' }),
+			);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.trelloBoardsByProject({ projectId: 'other-org-proj' }),
+			).rejects.toMatchObject({
+				code: 'FORBIDDEN',
+			});
+		});
+
+		it('wraps Trello API failure in BAD_REQUEST', async () => {
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('stored-api-key')
+				.mockResolvedValueOnce('stored-token');
+			mockTrelloGetBoards.mockRejectedValue(new Error('API error'));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.trelloBoardsByProject({ projectId: 'proj-1' })).rejects.toMatchObject({
+				code: 'BAD_REQUEST',
+			});
+		});
+	});
+
+	// ── trelloBoardDetailsByProject ──────────────────────────────────────
+
+	describe('trelloBoardDetailsByProject', () => {
+		it('returns board details using stored project credentials', async () => {
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('stored-api-key')
+				.mockResolvedValueOnce('stored-token');
+			const lists = [{ id: 'list-1', name: 'Backlog' }];
+			const labels = [{ id: 'label-1', name: 'Bug', color: 'red' }];
+			const customFields = [{ id: 'cf-1', name: 'Priority', type: 'list' }];
+			mockTrelloGetBoardLists.mockResolvedValue(lists);
+			mockTrelloGetBoardLabels.mockResolvedValue(labels);
+			mockTrelloGetBoardCustomFields.mockResolvedValue(customFields);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.trelloBoardDetailsByProject({
+				projectId: 'proj-1',
+				boardId: 'abc123',
+			});
+
+			expect(mockVerifyProjectOrgAccess).toHaveBeenCalledWith('proj-1', mockUser.orgId);
+			expect(result).toEqual({ lists, labels, customFields });
+		});
+
+		it('throws NOT_FOUND when credentials are missing', async () => {
+			mockGetIntegrationCredentialOrNull.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.trelloBoardDetailsByProject({ projectId: 'proj-1', boardId: 'abc123' }),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+
+		it('propagates org access denial', async () => {
+			const { TRPCError } = await import('@trpc/server');
+			mockVerifyProjectOrgAccess.mockRejectedValue(
+				new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' }),
+			);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.trelloBoardDetailsByProject({ projectId: 'other-org-proj', boardId: 'abc123' }),
+			).rejects.toMatchObject({ code: 'FORBIDDEN' });
+		});
+
+		it('rejects boardId with hyphens', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.trelloBoardDetailsByProject({ projectId: 'proj-1', boardId: 'abc-def' }),
+			).rejects.toThrow();
+		});
+	});
+
+	// ── jiraProjectsByProject ────────────────────────────────────────────
+
+	describe('jiraProjectsByProject', () => {
+		it('returns projects using stored credentials and config baseUrl', async () => {
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('stored@example.com')
+				.mockResolvedValueOnce('stored-token');
+			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				config: { baseUrl: 'https://myorg.atlassian.net' },
+			});
+			const projects = [{ key: 'PROJ', name: 'My Project' }];
+			mockJiraSearchProjects.mockResolvedValue(projects);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.jiraProjectsByProject({ projectId: 'proj-1' });
+
+			expect(mockVerifyProjectOrgAccess).toHaveBeenCalledWith('proj-1', mockUser.orgId);
+			expect(result).toEqual(projects);
+		});
+
+		it('throws NOT_FOUND when email credential is missing', async () => {
+			mockGetIntegrationCredentialOrNull.mockResolvedValue(null);
+			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				config: { baseUrl: 'https://myorg.atlassian.net' },
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.jiraProjectsByProject({ projectId: 'proj-1' })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws NOT_FOUND when integration has no baseUrl', async () => {
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('stored@example.com')
+				.mockResolvedValueOnce('stored-token');
+			mockGetIntegrationByProjectAndCategory.mockResolvedValue({ config: {} });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.jiraProjectsByProject({ projectId: 'proj-1' })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws NOT_FOUND when integration is null', async () => {
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('stored@example.com')
+				.mockResolvedValueOnce('stored-token');
+			mockGetIntegrationByProjectAndCategory.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.jiraProjectsByProject({ projectId: 'proj-1' })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('propagates org access denial', async () => {
+			const { TRPCError } = await import('@trpc/server');
+			mockVerifyProjectOrgAccess.mockRejectedValue(
+				new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' }),
+			);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.jiraProjectsByProject({ projectId: 'other-org-proj' }),
+			).rejects.toMatchObject({ code: 'FORBIDDEN' });
+		});
+
+		it('wraps JIRA API failure in BAD_REQUEST', async () => {
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('stored@example.com')
+				.mockResolvedValueOnce('stored-token');
+			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				config: { baseUrl: 'https://myorg.atlassian.net' },
+			});
+			mockJiraSearchProjects.mockRejectedValue(new Error('Connection refused'));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.jiraProjectsByProject({ projectId: 'proj-1' })).rejects.toMatchObject({
+				code: 'BAD_REQUEST',
+			});
+		});
+	});
+
+	// ── jiraProjectDetailsByProject ──────────────────────────────────────
+
+	describe('jiraProjectDetailsByProject', () => {
+		it('returns project details using stored credentials', async () => {
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('stored@example.com')
+				.mockResolvedValueOnce('stored-token');
+			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				config: { baseUrl: 'https://myorg.atlassian.net' },
+			});
+			const statuses = [{ name: 'To Do', id: 'status-1' }];
+			const issueTypes = [{ name: 'Story', subtask: false }];
+			const fields = [
+				{ id: 'summary', name: 'Summary', custom: false },
+				{ id: 'customfield_10001', name: 'Story Points', custom: true },
+			];
+			mockJiraGetProjectStatuses.mockResolvedValue(statuses);
+			mockJiraGetIssueTypesForProject.mockResolvedValue(issueTypes);
+			mockJiraGetFields.mockResolvedValue(fields);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.jiraProjectDetailsByProject({
+				projectId: 'proj-1',
+				projectKey: 'PROJ',
+			});
+
+			expect(mockVerifyProjectOrgAccess).toHaveBeenCalledWith('proj-1', mockUser.orgId);
+			expect(result.statuses).toEqual(statuses);
+			expect(result.issueTypes).toEqual(issueTypes);
+			// Only custom fields returned
+			expect(result.fields).toEqual([
+				{ id: 'customfield_10001', name: 'Story Points', custom: true },
+			]);
+		});
+
+		it('throws NOT_FOUND when credentials are missing', async () => {
+			mockGetIntegrationCredentialOrNull.mockResolvedValue(null);
+			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				config: { baseUrl: 'https://myorg.atlassian.net' },
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.jiraProjectDetailsByProject({ projectId: 'proj-1', projectKey: 'PROJ' }),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+
+		it('propagates org access denial', async () => {
+			const { TRPCError } = await import('@trpc/server');
+			mockVerifyProjectOrgAccess.mockRejectedValue(
+				new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' }),
+			);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.jiraProjectDetailsByProject({ projectId: 'other-org', projectKey: 'PROJ' }),
+			).rejects.toMatchObject({ code: 'FORBIDDEN' });
+		});
+
+		it('rejects lowercase projectKey', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.jiraProjectDetailsByProject({ projectId: 'proj-1', projectKey: 'proj' }),
+			).rejects.toThrow();
+		});
+
+		it('rejects projectKey longer than 10 characters', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.jiraProjectDetailsByProject({ projectId: 'proj-1', projectKey: 'ABCDEFGHIJK' }),
+			).rejects.toThrow();
+		});
+
+		it('wraps JIRA API failure in BAD_REQUEST', async () => {
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('stored@example.com')
+				.mockResolvedValueOnce('stored-token');
+			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				config: { baseUrl: 'https://myorg.atlassian.net' },
+			});
+			mockJiraGetProjectStatuses.mockRejectedValue(new Error('Project not found'));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.jiraProjectDetailsByProject({ projectId: 'proj-1', projectKey: 'PROJ' }),
 			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 		});
 	});

@@ -9,15 +9,13 @@ import { Outlet, createRootRoute, redirect, useRouterState } from '@tanstack/rea
 import { Menu } from 'lucide-react';
 import { useState } from 'react';
 
-const BARE_PATHS = ['/login', '/oauth/trello/callback'];
-
 function RootLayout() {
 	const routerState = useRouterState();
-	const isBarePage = BARE_PATHS.includes(routerState.location.pathname);
-	const meQuery = useQuery({ ...trpc.auth.me.queryOptions(), retry: false, enabled: !isBarePage });
+	const isLoginPage = routerState.location.pathname === '/login';
+	const meQuery = useQuery({ ...trpc.auth.me.queryOptions(), retry: false, enabled: !isLoginPage });
 	const [mobileOpen, setMobileOpen] = useState(false);
 
-	if (isBarePage) {
+	if (isLoginPage) {
 		return <Outlet />;
 	}
 
@@ -70,7 +68,7 @@ export const rootRoute = createRootRoute({
 	component: RootLayout,
 	pendingComponent: PendingComponent,
 	beforeLoad: async ({ location }) => {
-		if (BARE_PATHS.includes(location.pathname)) return;
+		if (location.pathname === '/login') return;
 		try {
 			await queryClient.ensureQueryData({
 				...trpc.auth.me.queryOptions(),

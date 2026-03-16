@@ -54,10 +54,10 @@ export function TrelloCredentialsStep({
 	const [manualOpen, setManualOpen] = useState(!!state.trelloToken);
 
 	function openAuthPopup() {
-		const returnUrl = `${window.location.origin}/oauth/trello/callback`;
-		const url = `https://trello.com/1/authorize?key=${encodeURIComponent(state.trelloApiKey)}&name=CASCADE&expiration=never&scope=read,write&response_type=token&return_url=${encodeURIComponent(returnUrl)}`;
-		// No "noopener" in the features string — its presence (even as "noopener=0") nullifies
-		// window.opener in the callback page, breaking the postMessage return channel.
+		// Omitting return_url: Trello enforces an origin allowlist that users haven't configured,
+		// so redirecting back is not reliable. Without it, Trello displays the token on-screen
+		// after "Allow" and the user pastes it in below.
+		const url = `https://trello.com/1/authorize?key=${encodeURIComponent(state.trelloApiKey)}&name=CASCADE&expiration=never&scope=read,write&response_type=token`;
 		const popup = window.open(url, 'trello_oauth', 'width=600,height=700');
 		if (!popup) {
 			toast.error('Popup blocked', {
@@ -67,22 +67,8 @@ export function TrelloCredentialsStep({
 		}
 		popupRef.current = popup;
 		setIsWaitingForAuth(true);
+		setManualOpen(true);
 	}
-
-	// Receive the token posted back from the callback page.
-	useEffect(() => {
-		function handleMessage(event: MessageEvent) {
-			if (event.origin !== window.location.origin) return;
-			if (event.data?.type !== 'trello_oauth_callback') return;
-			const token = event.data.token as string;
-			dispatch({ type: 'SET_TRELLO_TOKEN', value: token });
-			popupRef.current?.close();
-			popupRef.current = null;
-			setIsWaitingForAuth(false);
-		}
-		window.addEventListener('message', handleMessage);
-		return () => window.removeEventListener('message', handleMessage);
-	}, [dispatch]);
 
 	// Detect the user closing the popup without completing authorization.
 	useEffect(() => {
@@ -123,6 +109,12 @@ export function TrelloCredentialsStep({
 					</a>
 				</p>
 			</div>
+			{state.isEditing && state.hasStoredCredentials && !state.trelloApiKey && (
+				<div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400">
+					<CheckCircle2 className="h-4 w-4 shrink-0" />
+					Credentials stored — enter new values above to replace them.
+				</div>
+			)}
 			<div className="space-y-2">
 				<Label>Authorization</Label>
 				{state.trelloToken ? (
@@ -185,7 +177,9 @@ export function TrelloCredentialsStep({
 						autoComplete="off"
 					/>
 					<p className="text-xs text-muted-foreground">
-						Generate a token from the API key page linked above.
+						{isWaitingForAuth
+							? 'After clicking "Allow" in the Trello popup, copy the token shown and paste it above.'
+							: 'Generate a token from the API key page linked above.'}
 					</p>
 				</div>
 			</details>
