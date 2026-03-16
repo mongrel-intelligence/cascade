@@ -28,9 +28,14 @@ import { logoutHandler } from './api/auth/logout.js';
 import { resolveUserFromSession } from './api/auth/session.js';
 import { computeEffectiveOrgId } from './api/context.js';
 import { appRouter } from './api/router.js';
+import { registerBuiltInEngines } from './backends/bootstrap.js';
 import { captureException, flush, setTag } from './sentry.js';
 
 setTag('role', 'dashboard');
+
+// Register engine settings schemas so EngineSettingsSchema validation works for all tRPC
+// procedures (e.g. webhooks.list/create) that load project config via configRepository.
+registerBuiltInEngines();
 
 const app = new Hono();
 
