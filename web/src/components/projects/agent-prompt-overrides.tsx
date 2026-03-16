@@ -22,6 +22,16 @@ interface AgentPromptOverridesProps {
 	/** External task prompt state (controlled by parent for save) */
 	taskPrompt: string;
 	onTaskPromptChange: (v: string) => void;
+	/**
+	 * Called when the user explicitly clears the system prompt override.
+	 * The parent should persist null (not the fallback text) on next save.
+	 */
+	onSystemPromptClear: () => void;
+	/**
+	 * Called when the user explicitly clears the task prompt override.
+	 * The parent should persist null (not the fallback text) on next save.
+	 */
+	onTaskPromptClear: () => void;
 }
 
 export function AgentPromptOverrides({
@@ -31,6 +41,8 @@ export function AgentPromptOverrides({
 	onSystemPromptChange,
 	taskPrompt,
 	onTaskPromptChange,
+	onSystemPromptClear,
+	onTaskPromptClear,
 }: AgentPromptOverridesProps) {
 	const [activeSection, setActiveSection] = useState<'system' | 'task'>('system');
 	const [validationStatus, setValidationStatus] = useState<string | null>(null);
@@ -133,16 +145,18 @@ export function AgentPromptOverrides({
 
 	const handleClearOverride = () => {
 		if (isSystemSection) {
-			// Clear to fallback (global definition or default)
+			// Display the inherited/default fallback text, but signal the parent
+			// to send null on save so the override is truly removed (not duplicated).
 			const fallback = data?.globalSystemPrompt ?? data?.defaultSystemPrompt ?? '';
 			onSystemPromptChange(fallback);
+			onSystemPromptClear();
 		} else {
-			// Clear to global definition or empty
+			// Display the global definition or empty, and signal parent to send null.
 			const fallback = data?.globalTaskPrompt ?? '';
 			onTaskPromptChange(fallback);
+			onTaskPromptClear();
 		}
 		setValidationStatus(null);
-		// Invalidate so parent knows to send null on save
 	};
 
 	const hasProjectSystemOverride = !!data?.projectSystemPrompt;

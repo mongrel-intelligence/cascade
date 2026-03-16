@@ -103,6 +103,10 @@ interface SaveConfigValues {
 	engineSettings: Record<string, Record<string, unknown>> | undefined;
 	systemPrompt: string;
 	taskPrompt: string;
+	/** True when the user explicitly cleared the system prompt override (send null, not the fallback text). */
+	systemPromptCleared: boolean;
+	/** True when the user explicitly cleared the task prompt override (send null, not the fallback text). */
+	taskPromptCleared: boolean;
 }
 
 interface SystemDefaults {
@@ -178,6 +182,10 @@ function DefinitionAgentSection({
 	// Local form state — prompt fields (initialized by AgentPromptOverrides component)
 	const [systemPrompt, setSystemPrompt] = useState(config?.systemPrompt ?? '');
 	const [taskPrompt, setTaskPrompt] = useState(config?.taskPrompt ?? '');
+	// Track whether the user explicitly cleared a prompt override so we can send null on save
+	// instead of the fallback display text (which would create a duplicate "custom" override).
+	const [systemPromptCleared, setSystemPromptCleared] = useState(false);
+	const [taskPromptCleared, setTaskPromptCleared] = useState(false);
 
 	const effectiveEngineId = agentEngine || '';
 	const effectiveEngine = engines.find((engine) => engine.id === effectiveEngineId);
@@ -202,6 +210,10 @@ function DefinitionAgentSection({
 		setAgentEngine(config?.agentEngine ?? '');
 		setMaxConcurrency(config?.maxConcurrency?.toString() ?? '');
 		setEngineSettings(config?.agentEngineSettings ?? undefined);
+		setSystemPrompt(config?.systemPrompt ?? '');
+		setTaskPrompt(config?.taskPrompt ?? '');
+		setSystemPromptCleared(false);
+		setTaskPromptCleared(false);
 		if (justSavedRef.current) {
 			justSavedRef.current = false;
 		} else {
@@ -269,6 +281,8 @@ function DefinitionAgentSection({
 			engineSettings,
 			systemPrompt,
 			taskPrompt,
+			systemPromptCleared,
+			taskPromptCleared,
 		});
 	};
 
@@ -280,6 +294,8 @@ function DefinitionAgentSection({
 		setEngineSettings(config?.agentEngineSettings ?? undefined);
 		setSystemPrompt(config?.systemPrompt ?? '');
 		setTaskPrompt(config?.taskPrompt ?? '');
+		setSystemPromptCleared(false);
+		setTaskPromptCleared(false);
 	};
 
 	const handleDelete = () => {
@@ -376,9 +392,19 @@ function DefinitionAgentSection({
 						projectId={projectId}
 						agentType={agentType}
 						systemPrompt={systemPrompt}
-						onSystemPromptChange={setSystemPrompt}
+						onSystemPromptChange={(v) => {
+							setSystemPrompt(v);
+							// User is editing manually — cancel any pending clear
+							setSystemPromptCleared(false);
+						}}
 						taskPrompt={taskPrompt}
-						onTaskPromptChange={setTaskPrompt}
+						onTaskPromptChange={(v) => {
+							setTaskPrompt(v);
+							// User is editing manually — cancel any pending clear
+							setTaskPromptCleared(false);
+						}}
+						onSystemPromptClear={() => setSystemPromptCleared(true)}
+						onTaskPromptClear={() => setTaskPromptCleared(true)}
 					/>
 				</TabsContent>
 
@@ -942,8 +968,10 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			agentEngine: activeEngine,
 			engineSettings: activeEngineSettings,
 			maxConcurrency: values.maxConcurrency ? Number(values.maxConcurrency) : null,
-			systemPrompt: values.systemPrompt || null,
-			taskPrompt: values.taskPrompt || null,
+			// When the user explicitly cleared an override, send null to remove it server-side.
+			// Otherwise fall back to empty-string → null conversion for unpopulated fields.
+			systemPrompt: values.systemPromptCleared ? null : values.systemPrompt || null,
+			taskPrompt: values.taskPromptCleared ? null : values.taskPrompt || null,
 		};
 
 		if (configId !== null) {
