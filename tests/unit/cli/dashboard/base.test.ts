@@ -30,6 +30,7 @@ vi.mock('chalk', () => ({
 	},
 }));
 
+import { TRPCClientError } from '@trpc/client';
 import { DashboardCommand, extractBaseFlags } from '../../../../src/cli/dashboard/_shared/base.js';
 
 // Concrete subclass for testing
@@ -221,18 +222,47 @@ describe('DashboardCommand', () => {
 	describe('handleError', () => {
 		it('shows login message for UNAUTHORIZED tRPC errors', async () => {
 			mockLoadConfig.mockReturnValue({ serverUrl: 'x', sessionToken: 'y' });
-			// Simulate TRPCClientError shape
-			const err = Object.assign(new Error('UNAUTHORIZED'), {
-				data: { code: 'UNAUTHORIZED' },
-			});
-			// Manually set constructor name to match instanceof check
-			Object.defineProperty(err.constructor, 'name', { value: 'TRPCClientError' });
+			const err = new TRPCClientError('Unauthorized');
+			Object.assign(err, { data: { code: 'UNAUTHORIZED' } });
 
 			const cmd = new TestErrorCommand([], {} as never);
 			cmd.errorToThrow = err;
 
 			// handleError calls this.error() which throws oclif CLIError
 			await expect(cmd.run()).rejects.toThrow();
+		});
+
+		it('shows actionable message for NOT_FOUND tRPC errors', async () => {
+			mockLoadConfig.mockReturnValue({ serverUrl: 'x', sessionToken: 'y' });
+			const err = new TRPCClientError('Not found');
+			Object.assign(err, { data: { code: 'NOT_FOUND' } });
+
+			const cmd = new TestErrorCommand([], {} as never);
+			cmd.errorToThrow = err;
+
+			await expect(cmd.run()).rejects.toThrow(/cascade <resource> list/);
+		});
+
+		it('shows actionable message for FORBIDDEN tRPC errors', async () => {
+			mockLoadConfig.mockReturnValue({ serverUrl: 'x', sessionToken: 'y' });
+			const err = new TRPCClientError('Forbidden');
+			Object.assign(err, { data: { code: 'FORBIDDEN' } });
+
+			const cmd = new TestErrorCommand([], {} as never);
+			cmd.errorToThrow = err;
+
+			await expect(cmd.run()).rejects.toThrow(/Access denied/);
+		});
+
+		it('shows actionable message for BAD_REQUEST tRPC errors', async () => {
+			mockLoadConfig.mockReturnValue({ serverUrl: 'x', sessionToken: 'y' });
+			const err = new TRPCClientError('email is required');
+			Object.assign(err, { data: { code: 'BAD_REQUEST' } });
+
+			const cmd = new TestErrorCommand([], {} as never);
+			cmd.errorToThrow = err;
+
+			await expect(cmd.run()).rejects.toThrow(/Invalid request/);
 		});
 
 		it('rethrows non-TRPCClientError errors', async () => {
@@ -243,6 +273,38 @@ describe('DashboardCommand', () => {
 			cmd.errorToThrow = err;
 
 			await expect(cmd.run()).rejects.toThrow('something else');
+		});
+
+		it('prints stack trace to stderr when --verbose flag is present', async () => {
+			mockLoadConfig.mockReturnValue({ serverUrl: 'x', sessionToken: 'y' });
+			const err = new TRPCClientError('Some error');
+			Object.assign(err, { data: { code: 'NOT_FOUND' } });
+
+			const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+			const cmd = new TestErrorCommand(['--verbose'], {} as never);
+			cmd.errorToThrow = err;
+
+			await expect(cmd.run()).rejects.toThrow();
+
+			expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('TRPCClientError'));
+			stderrSpy.mockRestore();
+		});
+
+		it('does NOT print stack trace without --verbose flag', async () => {
+			mockLoadConfig.mockReturnValue({ serverUrl: 'x', sessionToken: 'y' });
+			const err = new TRPCClientError('Some error');
+			Object.assign(err, { data: { code: 'NOT_FOUND' } });
+
+			const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+			const cmd = new TestErrorCommand([], {} as never);
+			cmd.errorToThrow = err;
+
+			await expect(cmd.run()).rejects.toThrow();
+
+			expect(stderrSpy).not.toHaveBeenCalled();
+			stderrSpy.mockRestore();
 		});
 	});
 

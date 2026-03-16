@@ -3,6 +3,7 @@ import { TRPCClientError } from '@trpc/client';
 import chalk from 'chalk';
 import { type DashboardClient, createDashboardClient } from './client.js';
 import { type CliConfig, loadConfig } from './config.js';
+import { formatActionableError, mapError } from './errors.js';
 import { printCompact, printCsv, printDetail, printTable } from './format.js';
 import { withSpinner } from './spinner.js';
 
@@ -44,6 +45,10 @@ export abstract class DashboardCommand extends Command {
 		}),
 		server: Flags.string({ description: 'Override server URL' }),
 		org: Flags.string({ description: 'Override organization context (admin/superadmin only)' }),
+		verbose: Flags.boolean({
+			description: 'Show full stack trace on error',
+			default: false,
+		}),
 	};
 
 	private _client: DashboardClient | undefined;
@@ -181,13 +186,21 @@ export abstract class DashboardCommand extends Command {
 	}
 
 	protected handleError(err: unknown): never {
-		if (err instanceof TRPCClientError) {
-			const code = (err.data as { code?: string } | undefined)?.code;
-			if (code === 'UNAUTHORIZED') {
-				this.error('Session expired. Run `cascade login`.');
-			}
-			this.error(err.message);
+		// Show full stack trace when --verbose flag is present
+		const isVerbose = this.argv.includes('--verbose');
+		if (isVerbose && err instanceof Error && err.stack) {
+			process.stderr.write(`${err.stack}\n`);
 		}
-		throw err;
+
+		const serverUrl = this._config?.serverUrl;
+		const actionable = mapError(err, serverUrl);
+		const message = formatActionableError(actionable);
+
+		// For non-TRPC errors (e.g. plain TypeError), re-throw with the actionable message
+		if (!(err instanceof TRPCClientError)) {
+			throw new Error(message, { cause: err });
+		}
+
+		this.error(message);
 	}
 }
