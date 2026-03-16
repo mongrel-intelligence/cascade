@@ -623,7 +623,7 @@ src/cli/dashboard/
 ├── login.ts          # Auth (HTTP, not tRPC)
 ├── logout.ts
 ├── whoami.ts
-├── runs/             # 8 commands (list, show, logs, llm-calls, llm-call, debug, trigger, retry, cancel)
+├── runs/             # 9 commands (list, show, logs, llm-calls, llm-call, debug, trigger, retry, cancel)
 ├── projects/         # 13 commands
 ├── users/            # 4 commands
 ├── org/              # 2 commands
