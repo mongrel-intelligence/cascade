@@ -5,7 +5,6 @@ import { globalRunsRoute } from './global/runs.js';
 import { globalWebhookLogsRoute } from './global/webhook-logs.js';
 import { indexRoute } from './index.js';
 import { loginRoute } from './login.js';
-import { trelloCallbackRoute } from './oauth/trello.callback.js';
 import { projectAgentConfigsRoute } from './projects/$projectId.agent-configs.js';
 import { projectGeneralRoute } from './projects/$projectId.general.js';
 import { projectHarnessRoute } from './projects/$projectId.harness.js';
@@ -23,7 +22,6 @@ import { workItemRunsRoute } from './work-items/$projectId.$workItemId.js';
 
 export const routeTree = rootRoute.addChildren([
 	loginRoute,
-	trelloCallbackRoute,
 	indexRoute,
 	runDetailRoute,
 	projectsIndexRoute,

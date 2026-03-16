@@ -499,7 +499,6 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 					projectId={projectId}
 					initialProvider={pmProvider}
 					initialConfig={pmIntegration?.config as Record<string, unknown>}
-					initialCredentials={new Map()}
 				/>
 			)}
 

@@ -2,7 +2,7 @@ import { Label } from '@/components/ui/label.js';
 import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { CheckCircle, Globe, Loader2, XCircle } from 'lucide-react';
-import { useEffect, useReducer, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { SaveStep, WebhookStep } from './pm-wizard-common-steps.js';
 import {
 	useJiraCustomFieldCreation,
@@ -58,14 +58,13 @@ export function PMWizard({
 	projectId,
 	initialProvider,
 	initialConfig,
-	initialCredentials,
 }: {
 	projectId: string;
 	initialProvider: string;
 	initialConfig?: Record<string, unknown>;
-	initialCredentials: Map<string, number>;
 }) {
 	const webhooksQuery = useQuery(trpc.webhooks.list.queryOptions({ projectId }));
+	const credentialsQuery = useQuery(trpc.projects.credentials.list.queryOptions({ projectId }));
 
 	const [state, dispatch] = useReducer(wizardReducer, undefined, createInitialState);
 	const [openSteps, setOpenSteps] = useState<Set<number>>(new Set([1]));
@@ -97,12 +96,16 @@ export function PMWizard({
 
 	// ---- Initialize from existing integration ----
 
+	const initializedRef = useRef(false);
 	useEffect(() => {
-		if (!initialConfig || !initialProvider) return;
-		const editState = buildEditState(initialProvider, initialConfig, initialCredentials);
+		if (!initialConfig || !initialProvider || !credentialsQuery.data) return;
+		if (initializedRef.current) return;
+		initializedRef.current = true;
+		const configuredKeys = new Set(credentialsQuery.data.map((c) => c.envVarKey));
+		const editState = buildEditState(initialProvider, initialConfig, configuredKeys);
 		dispatch({ type: 'INIT_EDIT', state: editState });
 		setOpenSteps(new Set([1, 2, 3, 4, 5, 6]));
-	}, [initialConfig, initialProvider, initialCredentials]);
+	}, [initialConfig, initialProvider, credentialsQuery.data]);
 
 	// ---- Custom hooks ----
 
@@ -111,11 +114,13 @@ export function PMWizard({
 		state,
 		dispatch,
 		advanceToStep,
+		projectId,
 	);
 	const { jiraProjectsMutation, jiraDetailsMutation, handleProjectSelect } = useJiraDiscovery(
 		state,
 		dispatch,
 		advanceToStep,
+		projectId,
 	);
 	const { createLabelMutation, createMissingLabelsMutation } = useTrelloLabelCreation(
 		state,
@@ -251,19 +256,21 @@ export function PMWizard({
 				)}
 
 				<div className="flex items-center gap-3 pt-2">
-					<button
-						type="button"
-						onClick={() => verifyMutation.mutate()}
-						disabled={!credsReady || verifyMutation.isPending}
-						className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-					>
-						{verifyMutation.isPending ? (
-							<Loader2 className="h-4 w-4 animate-spin" />
-						) : (
-							<Globe className="h-4 w-4" />
-						)}
-						Verify Connection
-					</button>
+					{(!state.isEditing || !state.hasStoredCredentials || credsReady) && (
+						<button
+							type="button"
+							onClick={() => verifyMutation.mutate()}
+							disabled={!credsReady || verifyMutation.isPending}
+							className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+						>
+							{verifyMutation.isPending ? (
+								<Loader2 className="h-4 w-4 animate-spin" />
+							) : (
+								<Globe className="h-4 w-4" />
+							)}
+							Verify Connection
+						</button>
+					)}
 					{state.verificationResult && (
 						<div className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
 							<CheckCircle className="h-4 w-4" />

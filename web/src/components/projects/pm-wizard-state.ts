@@ -62,6 +62,7 @@ export interface WizardState {
 	jiraCostFieldId: string;
 	// Editing mode
 	isEditing: boolean;
+	hasStoredCredentials: boolean; // true in edit mode when provider credentials exist in project_credentials
 }
 
 export type WizardAction =
@@ -133,6 +134,7 @@ export function createInitialState(): WizardState {
 		jiraLabels: { ...INITIAL_JIRA_LABELS },
 		jiraCostFieldId: '',
 		isEditing: false,
+		hasStoredCredentials: false,
 	};
 }
 
@@ -275,13 +277,15 @@ export const wizardReducer: Reducer<WizardState, WizardAction> = (state, action)
 /**
  * Build a partial WizardState from an existing integration's config.
  * Called when editing an existing PM integration.
- * Note: Credential values are NOT pre-populated for security — user must re-enter.
+ * Note: Raw credential values are NOT pre-populated for security. When stored credentials
+ * exist in project_credentials, `hasStoredCredentials` is set true so the wizard can
+ * operate without re-entry.
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: restoring state from two provider config shapes
 export function buildEditState(
 	provider: string,
 	initialConfig: Record<string, unknown>,
-	_initialCredentials: Map<string, number>,
+	configuredKeys: Set<string>,
 ): Partial<WizardState> {
 	const editState: Partial<WizardState> = {
 		provider: provider as Provider,
@@ -298,6 +302,9 @@ export function buildEditState(
 
 		const cf = initialConfig.customFields as Record<string, string> | undefined;
 		editState.trelloCostFieldId = cf?.cost ?? '';
+
+		editState.hasStoredCredentials =
+			configuredKeys.has('TRELLO_API_KEY') && configuredKeys.has('TRELLO_TOKEN');
 	} else if (provider === 'jira') {
 		editState.jiraBaseUrl = (initialConfig.baseUrl as string) ?? '';
 		editState.jiraProjectKey = (initialConfig.projectKey as string) ?? '';
@@ -313,6 +320,9 @@ export function buildEditState(
 
 		const cf = initialConfig.customFields as Record<string, string> | undefined;
 		editState.jiraCostFieldId = cf?.cost ?? '';
+
+		editState.hasStoredCredentials =
+			configuredKeys.has('JIRA_EMAIL') && configuredKeys.has('JIRA_API_TOKEN');
 	}
 
 	return editState;
@@ -327,6 +337,7 @@ export function isStep1Complete(state: WizardState): boolean {
 }
 
 export function isStep2Complete(state: WizardState): boolean {
+	if (state.isEditing && state.hasStoredCredentials) return true;
 	const credsReady =
 		state.provider === 'trello'
 			? !!(state.trelloApiKey && state.trelloToken)

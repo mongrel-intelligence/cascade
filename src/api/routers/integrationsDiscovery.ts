@@ -1,11 +1,14 @@
 import { Octokit } from '@octokit/rest';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { getIntegrationCredentialOrNull } from '../../config/provider.js';
+import { getIntegrationByProjectAndCategory } from '../../db/repositories/integrationsRepository.js';
 import { jiraClient, withJiraCredentials } from '../../jira/client.js';
 import { trelloClient, withTrelloCredentials } from '../../trello/client.js';
 import { logger } from '../../utils/logging.js';
 import { protectedProcedure, router } from '../trpc.js';
 import { wrapIntegrationCall } from './_shared/integrationErrors.js';
+import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
 /**
  * Raw-value credential schemas.
@@ -97,6 +100,120 @@ export const integrationsDiscoveryRouter = router({
 						trelloClient.getBoardLabels(input.boardId),
 						trelloClient.getBoardCustomFields(input.boardId),
 					]).then(([lists, labels, customFields]) => ({ lists, labels, customFields })),
+				),
+			);
+		}),
+
+	trelloBoardsByProject: protectedProcedure
+		.input(z.object({ projectId: z.string() }))
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.trelloBoardsByProject called', {
+				orgId: ctx.effectiveOrgId,
+				projectId: input.projectId,
+			});
+			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+			const apiKey = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'api_key');
+			const token = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'token');
+			if (!apiKey || !token) {
+				throw new TRPCError({ code: 'NOT_FOUND', message: 'Trello credentials not configured' });
+			}
+			return wrapIntegrationCall('Failed to fetch Trello boards', () =>
+				withTrelloCredentials({ apiKey, token }, () => trelloClient.getBoards()),
+			);
+		}),
+
+	trelloBoardDetailsByProject: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string(),
+				boardId: z
+					.string()
+					.regex(/^[a-zA-Z0-9]+$/)
+					.max(32),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.trelloBoardDetailsByProject called', {
+				orgId: ctx.effectiveOrgId,
+				projectId: input.projectId,
+				boardId: input.boardId,
+			});
+			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+			const apiKey = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'api_key');
+			const token = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'token');
+			if (!apiKey || !token) {
+				throw new TRPCError({ code: 'NOT_FOUND', message: 'Trello credentials not configured' });
+			}
+			return wrapIntegrationCall('Failed to fetch Trello board details', () =>
+				withTrelloCredentials({ apiKey, token }, () =>
+					Promise.all([
+						trelloClient.getBoardLists(input.boardId),
+						trelloClient.getBoardLabels(input.boardId),
+						trelloClient.getBoardCustomFields(input.boardId),
+					]).then(([lists, labels, customFields]) => ({ lists, labels, customFields })),
+				),
+			);
+		}),
+
+	jiraProjectsByProject: protectedProcedure
+		.input(z.object({ projectId: z.string() }))
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.jiraProjectsByProject called', {
+				orgId: ctx.effectiveOrgId,
+				projectId: input.projectId,
+			});
+			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+			const email = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'email');
+			const apiToken = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'api_token');
+			const integration = await getIntegrationByProjectAndCategory(input.projectId, 'pm');
+			const baseUrl = (integration?.config as Record<string, unknown> | null)?.baseUrl as
+				| string
+				| undefined;
+			if (!email || !apiToken || !baseUrl) {
+				throw new TRPCError({ code: 'NOT_FOUND', message: 'JIRA credentials not configured' });
+			}
+			return wrapIntegrationCall('Failed to fetch JIRA projects', () =>
+				withJiraCredentials({ email, apiToken, baseUrl }, () => jiraClient.searchProjects()),
+			);
+		}),
+
+	jiraProjectDetailsByProject: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string(),
+				projectKey: z
+					.string()
+					.regex(/^[A-Z][A-Z0-9_]+$/)
+					.max(10),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.jiraProjectDetailsByProject called', {
+				orgId: ctx.effectiveOrgId,
+				projectId: input.projectId,
+				projectKey: input.projectKey,
+			});
+			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+			const email = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'email');
+			const apiToken = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'api_token');
+			const integration = await getIntegrationByProjectAndCategory(input.projectId, 'pm');
+			const baseUrl = (integration?.config as Record<string, unknown> | null)?.baseUrl as
+				| string
+				| undefined;
+			if (!email || !apiToken || !baseUrl) {
+				throw new TRPCError({ code: 'NOT_FOUND', message: 'JIRA credentials not configured' });
+			}
+			return wrapIntegrationCall('Failed to fetch JIRA project details', () =>
+				withJiraCredentials({ email, apiToken, baseUrl }, () =>
+					Promise.all([
+						jiraClient.getProjectStatuses(input.projectKey),
+						jiraClient.getIssueTypesForProject(input.projectKey),
+						jiraClient.getFields(),
+					]).then(([statuses, issueTypes, fields]) => ({
+						statuses,
+						issueTypes,
+						fields: fields.filter((f) => f.custom),
+					})),
 				),
 			);
 		}),

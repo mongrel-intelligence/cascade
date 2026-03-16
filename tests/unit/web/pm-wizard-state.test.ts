@@ -397,6 +397,16 @@ describe('isStep1Complete', () => {
 });
 
 describe('isStep2Complete', () => {
+	it('returns true in edit mode when hasStoredCredentials is true (no raw creds needed)', () => {
+		const state = {
+			...createInitialState(),
+			provider: 'trello' as const,
+			isEditing: true,
+			hasStoredCredentials: true,
+		};
+		expect(isStep2Complete(state)).toBe(true);
+	});
+
 	it('returns false when trello credentials missing', () => {
 		const state = {
 			...createInitialState(),
@@ -559,16 +569,31 @@ describe('buildEditState', () => {
 			labels: { processing: 'label-x' },
 			customFields: { cost: 'cf-cost-1' },
 		};
-		const credentials = new Map<string, number>();
-		const result = buildEditState('trello', config, credentials);
+		const result = buildEditState('trello', config, new Set<string>());
 		expect(result.provider).toBe('trello');
-		// Credentials are NOT pre-populated (write-only semantics) — user must re-enter
+		// Raw credential values are NOT pre-populated for security
 		expect(result.trelloApiKey).toBeUndefined();
 		expect(result.trelloToken).toBeUndefined();
 		expect(result.trelloBoardId).toBe('board-abc');
 		expect(result.trelloListMappings).toEqual({ todo: 'list-1', done: 'list-2' });
 		expect(result.trelloLabelMappings).toEqual({ processing: 'label-x' });
 		expect(result.trelloCostFieldId).toBe('cf-cost-1');
+	});
+
+	it('sets hasStoredCredentials true for trello when both keys present', () => {
+		const config = { boardId: 'board-abc' };
+		const result = buildEditState('trello', config, new Set(['TRELLO_API_KEY', 'TRELLO_TOKEN']));
+		expect(result.hasStoredCredentials).toBe(true);
+	});
+
+	it('sets hasStoredCredentials false for trello when only one key present', () => {
+		const result = buildEditState('trello', {}, new Set(['TRELLO_API_KEY']));
+		expect(result.hasStoredCredentials).toBe(false);
+	});
+
+	it('sets hasStoredCredentials false for trello when no keys present', () => {
+		const result = buildEditState('trello', {}, new Set<string>());
+		expect(result.hasStoredCredentials).toBe(false);
 	});
 
 	it('builds jira edit state from config', () => {
@@ -580,10 +605,9 @@ describe('buildEditState', () => {
 			labels: { processing: 'cascade-processing' },
 			customFields: { cost: 'customfield_10042' },
 		};
-		const credentials = new Map<string, number>();
-		const result = buildEditState('jira', config, credentials);
+		const result = buildEditState('jira', config, new Set<string>());
 		expect(result.provider).toBe('jira');
-		// Credentials are NOT pre-populated (write-only semantics) — user must re-enter
+		// Raw credential values are NOT pre-populated for security
 		expect(result.jiraEmail).toBeUndefined();
 		expect(result.jiraApiToken).toBeUndefined();
 		expect(result.jiraBaseUrl).toBe('https://example.atlassian.net');
@@ -594,17 +618,30 @@ describe('buildEditState', () => {
 		expect(result.jiraCostFieldId).toBe('customfield_10042');
 	});
 
+	it('sets hasStoredCredentials true for jira when both keys present', () => {
+		const result = buildEditState(
+			'jira',
+			{ baseUrl: 'https://example.atlassian.net', projectKey: 'PROJ' },
+			new Set(['JIRA_EMAIL', 'JIRA_API_TOKEN']),
+		);
+		expect(result.hasStoredCredentials).toBe(true);
+	});
+
+	it('sets hasStoredCredentials false for jira when only one key present', () => {
+		const result = buildEditState('jira', {}, new Set(['JIRA_EMAIL']));
+		expect(result.hasStoredCredentials).toBe(false);
+	});
+
 	it('handles missing optional config fields gracefully', () => {
 		const config = { boardId: 'board-1' };
-		const credentials = new Map<string, number>();
-		const result = buildEditState('trello', config, credentials);
+		const result = buildEditState('trello', config, new Set<string>());
 		expect(result.trelloBoardId).toBe('board-1');
 		expect(result.trelloListMappings).toBeUndefined();
 		expect(result.trelloCostFieldId).toBe('');
 	});
 
 	it('returns only provider for unknown provider', () => {
-		const result = buildEditState('unknown', {}, new Map());
+		const result = buildEditState('unknown', {}, new Set<string>());
 		expect(result.provider).toBe('unknown');
 		expect(Object.keys(result).length).toBe(1);
 	});
