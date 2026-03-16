@@ -196,9 +196,9 @@ export abstract class DashboardCommand extends Command {
 		const actionable = mapError(err, serverUrl);
 		const message = formatActionableError(actionable);
 
-		// For non-TRPC errors (e.g. plain TypeError), re-throw to preserve oclif's error handling
+		// For non-TRPC errors (e.g. plain TypeError), re-throw with the actionable message
 		if (!(err instanceof TRPCClientError)) {
-			throw err;
+			throw new Error(message, { cause: err });
 		}
 
 		this.error(message);

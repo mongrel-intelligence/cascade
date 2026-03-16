@@ -240,7 +240,7 @@ describe('DashboardCommand', () => {
 			const cmd = new TestErrorCommand([], {} as never);
 			cmd.errorToThrow = err;
 
-			await expect(cmd.run()).rejects.toThrow();
+			await expect(cmd.run()).rejects.toThrow(/cascade <resource> list/);
 		});
 
 		it('shows actionable message for FORBIDDEN tRPC errors', async () => {
@@ -251,7 +251,7 @@ describe('DashboardCommand', () => {
 			const cmd = new TestErrorCommand([], {} as never);
 			cmd.errorToThrow = err;
 
-			await expect(cmd.run()).rejects.toThrow();
+			await expect(cmd.run()).rejects.toThrow(/Access denied/);
 		});
 
 		it('shows actionable message for BAD_REQUEST tRPC errors', async () => {
@@ -262,7 +262,7 @@ describe('DashboardCommand', () => {
 			const cmd = new TestErrorCommand([], {} as never);
 			cmd.errorToThrow = err;
 
-			await expect(cmd.run()).rejects.toThrow();
+			await expect(cmd.run()).rejects.toThrow(/Invalid request/);
 		});
 
 		it('rethrows non-TRPCClientError errors', async () => {

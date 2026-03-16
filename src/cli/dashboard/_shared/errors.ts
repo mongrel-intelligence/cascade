@@ -14,10 +14,9 @@ export interface ActionableError {
  * Maps a TRPCClientError to an actionable error with a helpful suggestion.
  *
  * @param err - The error to map
- * @param serverUrl - The server URL (used in connection error messages)
  * @returns An ActionableError with message and optional suggestion
  */
-export function mapTRPCError(err: TRPCClientError<never>, _serverUrl?: string): ActionableError {
+export function mapTRPCError(err: TRPCClientError<never>): ActionableError {
 	const code = (err.data as { code?: string } | undefined)?.code;
 
 	switch (code) {
@@ -99,7 +98,7 @@ export function mapError(err: unknown, serverUrl?: string): ActionableError {
 				suggestion: 'Is the dashboard running? Check your server URL with `cascade whoami`.',
 			};
 		}
-		return mapTRPCError(err as TRPCClientError<never>, serverUrl);
+		return mapTRPCError(err as TRPCClientError<never>);
 	}
 
 	if (isNetworkError(err)) {
