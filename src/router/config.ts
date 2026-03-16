@@ -51,11 +51,16 @@ const PROJECT_CONFIG_TTL_MS = 5_000;
 let _projectConfigCache: { projects: RouterProjectConfig[]; fullProjects: ProjectConfig[] } | null =
 	null;
 let _projectConfigExpiresAt = 0;
+let _pendingConfigFetch: Promise<{
+	projects: RouterProjectConfig[];
+	fullProjects: ProjectConfig[];
+}> | null = null;
 
 /** @internal Visible for testing only */
 export function _resetProjectConfigCache(): void {
 	_projectConfigCache = null;
 	_projectConfigExpiresAt = 0;
+	_pendingConfigFetch = null;
 }
 
 export async function loadProjectConfig(): Promise<{
@@ -66,37 +71,43 @@ export async function loadProjectConfig(): Promise<{
 		return _projectConfigCache;
 	}
 
-	const config: CascadeConfig = await loadConfig();
-	const result = {
-		projects: config.projects.map((p) => {
-			const trelloConfig = getTrelloConfig(p);
-			const jiraConfig = getJiraConfig(p);
-			return {
-				id: p.id,
-				repo: p.repo,
-				pmType: p.pm?.type ?? 'trello',
-				...(trelloConfig && {
-					trello: {
-						boardId: trelloConfig.boardId,
-						lists: trelloConfig.lists,
-						labels: trelloConfig.labels,
-					},
+	if (!_pendingConfigFetch) {
+		_pendingConfigFetch = (async () => {
+			const config: CascadeConfig = await loadConfig();
+			const result = {
+				projects: config.projects.map((p) => {
+					const trelloConfig = getTrelloConfig(p);
+					const jiraConfig = getJiraConfig(p);
+					return {
+						id: p.id,
+						repo: p.repo,
+						pmType: p.pm?.type ?? 'trello',
+						...(trelloConfig && {
+							trello: {
+								boardId: trelloConfig.boardId,
+								lists: trelloConfig.lists,
+								labels: trelloConfig.labels,
+							},
+						}),
+						...(jiraConfig && {
+							jira: {
+								projectKey: jiraConfig.projectKey,
+								baseUrl: jiraConfig.baseUrl,
+							},
+						}),
+					};
 				}),
-				...(jiraConfig && {
-					jira: {
-						projectKey: jiraConfig.projectKey,
-						baseUrl: jiraConfig.baseUrl,
-					},
-				}),
+				fullProjects: config.projects,
 			};
-		}),
-		fullProjects: config.projects,
-	};
+			_projectConfigCache = result;
+			_projectConfigExpiresAt = Date.now() + PROJECT_CONFIG_TTL_MS;
+			return result;
+		})().finally(() => {
+			_pendingConfigFetch = null;
+		});
+	}
 
-	_projectConfigCache = result;
-	_projectConfigExpiresAt = Date.now() + PROJECT_CONFIG_TTL_MS;
-
-	return result;
+	return _pendingConfigFetch;
 }
 
 // Router runtime config from environment
