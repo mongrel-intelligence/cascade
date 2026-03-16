@@ -1,5 +1,6 @@
 import { ProjectSecretField } from '@/components/projects/project-secret-field.js';
 import { useProjectUpdate } from '@/components/projects/use-project-update.js';
+import { OpenRouterModelCombobox } from '@/components/settings/openrouter-model-combobox.js';
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -290,10 +291,11 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 							<div className="grid grid-cols-2 gap-4">
 								<div className="space-y-2">
 									<Label htmlFor="progressModel">Progress Model</Label>
-									<Input
+									<OpenRouterModelCombobox
 										id="progressModel"
+										projectId={project.id}
 										value={progressModel}
-										onChange={(e) => setProgressModel(e.target.value)}
+										onChange={setProgressModel}
 										placeholder={progressModelPlaceholder}
 									/>
 									<p className="text-xs text-muted-foreground">LLM model for progress summaries.</p>

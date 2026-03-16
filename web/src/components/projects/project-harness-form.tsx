@@ -205,6 +205,7 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 									onChange={setModel}
 									engine={effectiveEngineId}
 									defaultLabel={defaults ? defaults.model : undefined}
+									projectId={project.id}
 								/>
 								<p className="text-xs text-muted-foreground">
 									Project default model. Per-agent overrides in the Agents tab.

@@ -122,6 +122,7 @@ export default defineConfig({
 						'tests/unit/queue/**/*.test.ts',
 						'tests/unit/integration-helpers/**/*.test.ts',
 						'tests/unit/tools/**/*.test.ts',
+						'tests/unit/openrouter/**/*.test.ts',
 						'tests/unit/*.test.ts',
 					],
 					...sharedTest,

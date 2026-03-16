@@ -343,6 +343,7 @@ function DefinitionAgentSection({
 							onChange={setModel}
 							engine={agentEngine}
 							defaultLabel={inheritedModel ? `Inherit from project (${inheritedModel})` : undefined}
+							projectId={projectId}
 						/>
 					</div>
 					{effectiveEngine && (
