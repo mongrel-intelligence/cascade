@@ -2,7 +2,11 @@ import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveAgentDefinition } from '../../agents/definitions/index.js';
-import { getRawTemplate, validateTemplate } from '../../agents/prompts/index.js';
+import {
+	getDefaultTaskPrompt,
+	getRawTemplate,
+	validateTemplate,
+} from '../../agents/prompts/index.js';
 import { getEngineCatalog, registerBuiltInEngines } from '../../backends/index.js';
 import { EngineSettingsSchema } from '../../config/engineSettings.js';
 import { getDb } from '../../db/client.js';
@@ -178,12 +182,16 @@ export const agentConfigsRouter = router({
 				// No .eta template on disk — skip gracefully
 			}
 
+			// 4. YAML-defined task prompt (factory default)
+			const defaultTaskPrompt = getDefaultTaskPrompt(input.agentType);
+
 			return {
 				projectSystemPrompt,
 				projectTaskPrompt,
 				globalSystemPrompt,
 				globalTaskPrompt,
 				defaultSystemPrompt,
+				defaultTaskPrompt,
 			};
 		}),
 });

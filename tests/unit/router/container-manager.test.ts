@@ -4,13 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Hoisted mock state — vi.hoisted creates variables before vi.mock factories run
 // ---------------------------------------------------------------------------
 
-const { mockDockerCreateContainer, mockDockerGetContainer, mockDockerListContainers } = vi.hoisted(
-	() => ({
-		mockDockerCreateContainer: vi.fn(),
-		mockDockerGetContainer: vi.fn(),
-		mockDockerListContainers: vi.fn(),
-	}),
-);
+const {
+	mockDockerCreateContainer,
+	mockDockerGetContainer,
+	mockDockerListContainers,
+	mockLoadProjectConfig,
+} = vi.hoisted(() => ({
+	mockDockerCreateContainer: vi.fn(),
+	mockDockerGetContainer: vi.fn(),
+	mockDockerListContainers: vi.fn(),
+	mockLoadProjectConfig: vi.fn().mockResolvedValue({ projects: [], fullProjects: [] }),
+}));
 
 // ---------------------------------------------------------------------------
 // Module-level mocks
@@ -34,8 +38,10 @@ vi.mock('../../../src/config/provider.js', () => ({
 }));
 
 const mockFailOrphanedRun = vi.fn().mockResolvedValue(null);
+const mockFailOrphanedRunFallback = vi.fn().mockResolvedValue(null);
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	failOrphanedRun: (...args: unknown[]) => mockFailOrphanedRun(...args),
+	failOrphanedRunFallback: (...args: unknown[]) => mockFailOrphanedRunFallback(...args),
 }));
 
 vi.mock('../../../src/config/configCache.js', () => ({
@@ -70,6 +76,7 @@ vi.mock('../../../src/router/config.js', () => ({
 		workerTimeoutMs: 5000,
 		dockerNetwork: 'test-network',
 	},
+	loadProjectConfig: (...args: unknown[]) => mockLoadProjectConfig(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -238,6 +245,7 @@ describe('spawnWorker', () => {
 		vi.spyOn(console, 'warn').mockImplementation(() => {});
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 		mockGetAllProjectCredentials.mockResolvedValue({});
+		mockLoadProjectConfig.mockResolvedValue({ projects: [], fullProjects: [] });
 		detachAll();
 	});
 
@@ -296,6 +304,52 @@ describe('spawnWorker', () => {
 
 		expect(getActiveWorkerCount()).toBe(countBefore);
 	});
+
+	it('includes cascade.project.id label in container config', async () => {
+		const { resolveWait } = setupMockContainer();
+
+		await spawnWorker(
+			makeJob({
+				id: 'job-label',
+				data: { type: 'trello', projectId: 'proj-42' } as CascadeJob,
+			}) as never,
+		);
+
+		expect(mockDockerCreateContainer).toHaveBeenCalledWith(
+			expect.objectContaining({
+				Labels: expect.objectContaining({
+					'cascade.project.id': 'proj-42',
+					'cascade.managed': 'true',
+					'cascade.agent.type': '',
+				}),
+			}),
+		);
+
+		resolveWait();
+	});
+
+	it('uses project watchdogTimeoutMs + 2min buffer when available', async () => {
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [{ id: 'proj-1', watchdogTimeoutMs: 10000 }],
+		});
+		vi.useFakeTimers();
+		const { container, resolveWait } = setupMockContainer();
+
+		await spawnWorker(makeJob() as never);
+
+		// At watchdogTimeoutMs + 2min - 1ms: should NOT yet have triggered kill
+		vi.advanceTimersByTime(10000 + 2 * 60 * 1000 - 1);
+		expect(container.stop).not.toHaveBeenCalled();
+
+		// One more ms: should trigger killWorker → container.stop
+		await vi.advanceTimersByTimeAsync(1);
+		expect(container.stop).toHaveBeenCalled();
+
+		resolveWait();
+		vi.useRealTimers();
+		mockLoadProjectConfig.mockResolvedValue({ projects: [], fullProjects: [] });
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -307,6 +361,9 @@ describe('killWorker', () => {
 		vi.spyOn(console, 'log').mockImplementation(() => {});
 		vi.spyOn(console, 'warn').mockImplementation(() => {});
 		mockGetAllProjectCredentials.mockResolvedValue({});
+		mockLoadProjectConfig.mockResolvedValue({ projects: [], fullProjects: [] });
+		mockFailOrphanedRun.mockResolvedValue(null);
+		mockFailOrphanedRunFallback.mockResolvedValue(null);
 		mockNotifyTimeout.mockResolvedValue(undefined);
 		detachAll();
 	});
@@ -356,6 +413,61 @@ describe('killWorker', () => {
 
 		resolveWait();
 	});
+
+	it('calls failOrphanedRunFallback on kill when worker has no workItemId', async () => {
+		mockFailOrphanedRunFallback.mockResolvedValue('run-kill-fallback');
+		const { resolveWait } = setupMockContainer();
+
+		// Default job: projectId='proj-1', no workItemId
+		await spawnWorker(makeJob({ id: 'job-kill-fallback' }) as never);
+		await killWorker('job-kill-fallback');
+
+		// Fire-and-forget — flush microtasks
+		await new Promise((r) => setTimeout(r, 10));
+		expect(mockFailOrphanedRunFallback).toHaveBeenCalledWith(
+			'proj-1',
+			undefined, // no agentType on default job
+			expect.any(Date),
+			'timed_out',
+			'Router timeout',
+			expect.any(Number),
+		);
+		// Verify no double-call (cleanupWorker must NOT also trigger a DB update)
+		expect(mockFailOrphanedRunFallback).toHaveBeenCalledTimes(1);
+
+		resolveWait();
+	});
+
+	it('calls failOrphanedRun with timed_out on kill when worker has workItemId', async () => {
+		mockFailOrphanedRun.mockResolvedValue('run-kill-wi');
+		const { resolveWait } = setupMockContainer();
+
+		await spawnWorker(
+			makeJob({
+				id: 'job-kill-wi',
+				data: {
+					type: 'trello',
+					projectId: 'proj-1',
+					workItemId: 'card-1',
+				} as CascadeJob,
+			}) as never,
+		);
+		await killWorker('job-kill-wi');
+
+		// Fire-and-forget — flush microtasks
+		await new Promise((r) => setTimeout(r, 10));
+		expect(mockFailOrphanedRun).toHaveBeenCalledWith(
+			'proj-1',
+			'card-1',
+			'Router timeout',
+			'timed_out',
+			expect.any(Number),
+		);
+		// Verify no double-call (cleanupWorker must NOT also trigger a DB update)
+		expect(mockFailOrphanedRun).toHaveBeenCalledTimes(1);
+
+		resolveWait();
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -365,7 +477,10 @@ describe('killWorker', () => {
 describe('cleanupWorker', () => {
 	beforeEach(() => {
 		vi.spyOn(console, 'log').mockImplementation(() => {});
-		mockFailOrphanedRun.mockClear();
+		mockGetAllProjectCredentials.mockResolvedValue({});
+		mockLoadProjectConfig.mockResolvedValue({ projects: [], fullProjects: [] });
+		mockFailOrphanedRun.mockResolvedValue(null);
+		mockFailOrphanedRunFallback.mockResolvedValue(null);
 		detachAll();
 	});
 
@@ -420,6 +535,8 @@ describe('cleanupWorker', () => {
 			'proj-1',
 			'card-1',
 			'Worker crashed with exit code 1',
+			'failed',
+			expect.any(Number),
 		);
 
 		resolveWait();
@@ -467,6 +584,8 @@ describe('cleanupWorker', () => {
 			'proj-1',
 			'card-1',
 			'Worker crashed with exit code 1',
+			'failed',
+			expect.any(Number),
 		);
 
 		resolveWait();
@@ -497,6 +616,7 @@ describe('detachAll', () => {
 	beforeEach(() => {
 		vi.spyOn(console, 'log').mockImplementation(() => {});
 		mockGetAllProjectCredentials.mockResolvedValue({});
+		mockLoadProjectConfig.mockResolvedValue({ projects: [], fullProjects: [] });
 		detachAll();
 	});
 
@@ -545,6 +665,7 @@ describe('orphan cleanup', () => {
 		vi.spyOn(console, 'info').mockImplementation(() => {});
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 		mockGetAllProjectCredentials.mockResolvedValue({});
+		mockLoadProjectConfig.mockResolvedValue({ projects: [], fullProjects: [] });
 		mockDockerListContainers.mockResolvedValue([]);
 		detachAll();
 	});

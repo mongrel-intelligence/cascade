@@ -28,6 +28,11 @@ export { getActiveWorkerCount, getActiveWorkers, startOrphanCleanup, stopOrphanC
 let bullWorker: Worker<CascadeJob> | null = null;
 let dashboardWorker: Worker | null = null;
 
+// Fixed lock duration that outlasts any realistic run. guardedSpawn resolves
+// immediately after container start, so BullMQ holds the lock for mere seconds.
+// Using a fixed 8-hour value prevents lock expiry for long-running containers.
+const BULLMQ_LOCK_DURATION_MS = 8 * 60 * 60 * 1000;
+
 /** Guard that enforces the per-router concurrency cap before spawning. */
 async function guardedSpawn(job: Job<CascadeJob>): Promise<void> {
 	// Check if we have capacity.
@@ -55,7 +60,7 @@ export function startWorkerProcessor(): void {
 		label: 'Job',
 		connection,
 		concurrency: routerConfig.maxWorkers,
-		lockDuration: routerConfig.workerTimeoutMs + 60000,
+		lockDuration: BULLMQ_LOCK_DURATION_MS,
 		processFn: guardedSpawn,
 	});
 
@@ -66,7 +71,7 @@ export function startWorkerProcessor(): void {
 		label: 'Dashboard job',
 		connection,
 		concurrency: routerConfig.maxWorkers,
-		lockDuration: routerConfig.workerTimeoutMs + 60000,
+		lockDuration: BULLMQ_LOCK_DURATION_MS,
 		processFn: (job) => guardedSpawn(job as Job<CascadeJob>),
 	});
 
