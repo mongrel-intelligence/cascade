@@ -135,7 +135,31 @@ node bin/cascade.js projects credentials-set my-project \
 
 Which credentials you need depends on which agent engine you plan to use. You can always add more later.
 
-#### Claude Code engine (default)
+#### LLMist engine (default)
+
+LLMist supports OpenRouter, Anthropic, and OpenAI. Store the key for whichever provider you prefer:
+
+```bash
+# OpenRouter (recommended — access to many models via one key)
+node bin/cascade.js projects credentials-set my-project \
+  --key OPENROUTER_API_KEY \
+  --value sk-or-... \
+  --name "OpenRouter"
+
+# Or: Anthropic API key directly
+node bin/cascade.js projects credentials-set my-project \
+  --key ANTHROPIC_API_KEY \
+  --value sk-ant-... \
+  --name "Anthropic"
+
+# Or: OpenAI API key directly
+node bin/cascade.js projects credentials-set my-project \
+  --key OPENAI_API_KEY \
+  --value sk-... \
+  --name "OpenAI"
+```
+
+#### Claude Code engine
 
 Requires either an Anthropic API key or a Claude Max subscription token:
 
@@ -177,29 +201,20 @@ node bin/cascade.js projects credentials-set my-project \
 
 When using subscription auth, CASCADE automatically writes `~/.codex/auth.json` in the worker before each run and captures any token refreshes the Codex CLI performs back into the database — so the credential stays current across ephemeral worker environments.
 
-#### OpenRouter (works with any engine)
-
-```bash
-node bin/cascade.js projects credentials-set my-project \
-  --key OPENROUTER_API_KEY \
-  --value sk-or-... \
-  --name "OpenRouter"
-```
-
 You can also manage all of this through the dashboard UI: **Projects** > select project > **Credentials**.
 
 ---
 
 ## 7. Choose Agent Engine
 
-CASCADE supports multiple agent engines. The default is **Claude Code** — change it if you want to use a different backend.
+CASCADE supports multiple agent engines. The default is **LLMist** — change it if you want to use a different engine.
 
 | Engine | Description |
 |--------|-------------|
-| `claude-code` | Anthropic Claude Code SDK (default) |
+| `llmist` | LLMist SDK with CASCADE gadgets (default) |
+| `claude-code` | Anthropic Claude Code SDK |
 | `codex` | OpenAI Codex CLI |
 | `opencode` | OpenCode headless agent |
-| `llmist` | LLMist SDK with CASCADE gadgets |
 
 Via the dashboard: **Projects** > select project > **Settings** — choose the engine from the dropdown.
 
@@ -246,7 +261,7 @@ node bin/cascade.js projects credentials-set my-project --key JIRA_API_TOKEN --v
 # Configure the integration
 node bin/cascade.js projects integration-set my-project \
   --category pm --provider jira \
-  --config '{"baseUrl":"https://yourorg.atlassian.net","projectKey":"PROJ","statusMap":{"todo":"To Do","inProgress":"In Progress","inReview":"In Review"}}'
+  --config '{"baseUrl":"https://yourorg.atlassian.net","projectKey":"PROJ","statuses":{"todo":"To Do","inProgress":"In Progress","inReview":"In Review"}}'
 ```
 
 ---

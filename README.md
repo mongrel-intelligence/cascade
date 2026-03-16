@@ -34,7 +34,7 @@ For the full setup walkthrough — projects, credentials, webhooks, and triggers
 - **Dual-persona GitHub model** — Separate implementer and reviewer bot accounts to prevent feedback loops
 - **Web dashboard + CLI** — Monitor runs, manage projects, configure triggers
 - **Extensible trigger system** — Add new events without touching core logic
-- **Pluggable agent engines** — `claude-code`, `codex`, `opencode`, and `llmist` built-in; easy to extend
+- **Pluggable agent engines** — `llmist` (default), `claude-code`, `codex`, and `opencode` built-in; easy to extend
 - **Credential encryption** — AES-256-GCM encryption for all stored secrets
 - **Agent resilience** — Built-in rate limiting, exponential-backoff retry, and context compaction
 
