@@ -77,7 +77,6 @@ const mockUnifiedItem = {
 
 describe('prsRouter', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockVerifyProjectOrgAccess.mockResolvedValue(undefined);
 	});
 

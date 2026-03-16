@@ -83,7 +83,6 @@ describe('TrelloIntegration', () => {
 	let integration: TrelloIntegration;
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		integration = new TrelloIntegration();
 	});
 

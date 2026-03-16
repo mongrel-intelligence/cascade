@@ -226,10 +226,6 @@ function setupSplittingDefaults(providerOverrides: Record<string, unknown> = {})
 // ---------------------------------------------------------------------------
 
 describe('propagateAutoLabelAfterSplitting (via runAgentExecutionPipeline)', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('chains to backlog-manager when splitting succeeds with auto label and trigger enabled', async () => {
 		const provider = setupSplittingDefaults();
 
@@ -375,7 +371,6 @@ describe('postAgentSummaryToPM (via runAgentExecutionPipeline)', () => {
 	}
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		setupReviewDefaults();
 	});
 
@@ -647,7 +642,6 @@ describe('postAgentSummaryToPM (via runAgentExecutionPipeline)', () => {
 
 describe('linkPRPostExecution PR title backfill (via runAgentExecutionPipeline)', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockCreatePMProvider.mockReturnValue({});
 		mockResolveProjectPMConfig.mockReturnValue(PM_CONFIG);
 		mockValidateIntegrations.mockResolvedValue({ valid: true, errors: [] });
@@ -718,7 +712,6 @@ describe('linkPRPostExecution PR title backfill (via runAgentExecutionPipeline)'
 
 describe('pre-execution PR linking (via runAgentExecutionPipeline)', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockCreatePMProvider.mockReturnValue({});
 		mockResolveProjectPMConfig.mockReturnValue(PM_CONFIG);
 		mockValidateIntegrations.mockResolvedValue({ valid: true, errors: [] });

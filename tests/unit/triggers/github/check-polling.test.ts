@@ -49,7 +49,6 @@ function makeResult(
 
 describe('pollWaitForChecks', () => {
 	beforeEach(async () => {
-		vi.clearAllMocks();
 		mockParseRepoFullName.mockReturnValue({ owner: 'acme', repo: 'myapp' });
 		mockWithGitHubToken.mockImplementation(
 			(_token: string, fn: () => Promise<unknown>) => fn() as Promise<never>,

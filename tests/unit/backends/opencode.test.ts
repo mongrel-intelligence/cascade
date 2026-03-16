@@ -189,7 +189,6 @@ describe('resolveOpenCodeSettings', () => {
 
 describe('OpenCodeEngine', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockCreateServer.mockReturnValue(createMockPortServer());
 	});
 

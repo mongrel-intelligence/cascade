@@ -46,7 +46,6 @@ import { startCancelListener, stopCancelListener } from '../../../src/router/can
 
 describe('cancel-listener', () => {
 	beforeEach(async () => {
-		vi.clearAllMocks();
 		// Reset module-level cancelSubscriberActive flag by stopping the listener
 		// (no-op if not active, safe to call always)
 		mockUnsubscribeFromCancelCommands.mockResolvedValue(undefined);

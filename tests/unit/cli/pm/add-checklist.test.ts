@@ -90,10 +90,6 @@ describe('parseItem', () => {
 // ---------------------------------------------------------------------------
 
 describe('addChecklist with JSON --item strings (CLI integration)', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('passes parsed JSON items with name+description to addChecklistItem', async () => {
 		mockProvider.createChecklist.mockResolvedValue({
 			id: 'cl1',

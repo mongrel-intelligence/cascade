@@ -124,10 +124,6 @@ function setupProjectContext(opts?: {
 }
 
 describe('webhooksRouter', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('list', () => {
 		it('returns trello and github webhooks', async () => {
 			setupProjectContext();

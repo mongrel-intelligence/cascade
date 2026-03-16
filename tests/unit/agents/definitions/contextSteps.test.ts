@@ -191,7 +191,6 @@ describe('prepopulateTodosStep', () => {
 
 describe('fetchWorkItemStep', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockTrelloDownload.mockReset();
 		mockJiraDownload.mockReset();
 	});

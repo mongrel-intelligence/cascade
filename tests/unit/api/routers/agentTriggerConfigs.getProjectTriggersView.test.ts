@@ -80,7 +80,6 @@ function makeAgentDefinition(overrides: Record<string, unknown> = {}) {
 
 describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockVerifyProjectOrgAccess.mockResolvedValue(undefined);
 		mockGetTriggerConfigsByProject.mockResolvedValue([]);
 		mockListProjectIntegrations.mockResolvedValue([]);

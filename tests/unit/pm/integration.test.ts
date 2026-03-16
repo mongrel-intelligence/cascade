@@ -22,10 +22,6 @@ import { hasPmIntegration } from '../../../src/pm/integration.js';
 // ---------------------------------------------------------------------------
 
 describe('hasPmIntegration', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('returns false when no PM integration provider configured', async () => {
 		mockGetIntegrationProvider.mockResolvedValue(null);
 

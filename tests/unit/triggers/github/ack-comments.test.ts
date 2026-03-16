@@ -79,10 +79,6 @@ function makeAgentResult(overrides: Partial<AgentResult> = {}): AgentResult {
 }
 
 describe('deleteProgressCommentOnSuccess', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('skips deletion for implementation agent', async () => {
 		const result = makeResult({ agentType: 'implementation' });
 		await deleteProgressCommentOnSuccess(result, makeAgentResult());
@@ -176,7 +172,6 @@ describe('deleteProgressCommentOnSuccess', () => {
 
 describe('updateInitialCommentWithError', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockParseRepoFullName.mockReturnValue({ owner: 'acme', repo: 'myapp' });
 	});
 
@@ -260,7 +255,6 @@ describe('postAcknowledgmentComment', () => {
 	const fakeProject = { id: 'proj-1' } as import('../../../../src/types/index.js').ProjectConfig;
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockParseRepoFullName.mockReturnValue({ owner: 'acme', repo: 'myapp' });
 		mockExtractGitHubContext.mockReturnValue('PR: Fix the bug');
 		mockGenerateAckMessage.mockResolvedValue('🔧 On it — fixing that bug');

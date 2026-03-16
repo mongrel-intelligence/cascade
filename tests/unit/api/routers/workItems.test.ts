@@ -42,7 +42,6 @@ const mockUser = createMockUser();
 
 describe('workItemsRouter', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockVerifyProjectOrgAccess.mockResolvedValue(undefined);
 	});
 

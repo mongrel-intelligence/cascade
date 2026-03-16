@@ -211,7 +211,6 @@ describe('buildTrelloCallbackUrl', () => {
 
 describe('verifyGitHubWebhookSignature — direct function tests', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [GITHUB_PROJECT] });
 		vi.mocked(resolveWebhookSecret).mockResolvedValue(GITHUB_SECRET);
 	});
@@ -306,7 +305,6 @@ describe('verifyGitHubWebhookSignature — direct function tests', () => {
 
 describe('verifyTrelloWebhookSignature — direct function tests', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [TRELLO_PROJECT] });
 		vi.mocked(resolveWebhookSecret).mockResolvedValue(TRELLO_SECRET);
 	});
@@ -384,8 +382,6 @@ describe('router — GitHub webhook signature verification (end-to-end)', () => 
 	let app: Hono;
 
 	beforeEach(async () => {
-		vi.clearAllMocks();
-
 		vi.mocked(loadProjectConfig).mockResolvedValue({
 			projects: [GITHUB_PROJECT],
 		});
@@ -507,8 +503,6 @@ describe('router — Trello webhook signature verification (end-to-end)', () => 
 	let app: Hono;
 
 	beforeEach(async () => {
-		vi.clearAllMocks();
-
 		vi.mocked(loadProjectConfig).mockResolvedValue({
 			projects: [TRELLO_PROJECT],
 		});

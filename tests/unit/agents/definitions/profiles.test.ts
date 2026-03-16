@@ -63,7 +63,6 @@ function makeDefinition(overrides: Record<string, unknown> = {}) {
 
 describe('getAgentProfile', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockBuildGadgetsForAgent.mockReturnValue([]);
 	});
 

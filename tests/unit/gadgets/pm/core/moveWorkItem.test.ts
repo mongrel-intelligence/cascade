@@ -11,10 +11,6 @@ vi.mock('../../../../../src/pm/index.js', () => ({
 import { moveWorkItem } from '../../../../../src/gadgets/pm/core/moveWorkItem.js';
 
 describe('moveWorkItem', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('calls provider.moveWorkItem with correct args and returns success message', async () => {
 		mockProvider.moveWorkItem.mockResolvedValue(undefined);
 

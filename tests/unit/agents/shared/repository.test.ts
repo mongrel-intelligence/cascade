@@ -50,7 +50,6 @@ function makeLog() {
 }
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	mockCreateTempDir.mockReturnValue('/tmp/cascade-test-project-12345');
 	mockCloneRepo.mockResolvedValue(undefined);
 	mockRunCommand.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });

@@ -33,10 +33,6 @@ import { getPersonaForAgentType } from '../../../../src/github/personas.js';
 import { hasPmIntegration } from '../../../../src/pm/integration.js';
 
 describe('integration-validation', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('getIntegrationRequirements', () => {
 		it('returns integration requirements for implementation agent', async () => {
 			const reqs = await getIntegrationRequirements('implementation');
