@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockLoadConfig = vi.fn();
 const mockCreateDashboardClient = vi.fn();
+const mockWithSpinner = vi
+	.fn()
+	.mockImplementation((_msg: string, fn: () => Promise<unknown>) => fn());
 
 vi.mock('../../../../src/cli/dashboard/_shared/config.js', () => ({
 	loadConfig: (...args: unknown[]) => mockLoadConfig(...args),
@@ -9,6 +12,11 @@ vi.mock('../../../../src/cli/dashboard/_shared/config.js', () => ({
 
 vi.mock('../../../../src/cli/dashboard/_shared/client.js', () => ({
 	createDashboardClient: (...args: unknown[]) => mockCreateDashboardClient(...args),
+}));
+
+vi.mock('../../../../src/cli/dashboard/_shared/spinner.js', () => ({
+	withSpinner: (...args: unknown[]) => mockWithSpinner(...args),
+	isSilentMode: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock('chalk', () => ({
@@ -43,6 +51,27 @@ class TestErrorCommand extends DashboardCommand {
 
 	async run(): Promise<void> {
 		this.handleError(this.errorToThrow as Error);
+	}
+}
+
+class TestOutputCommand extends DashboardCommand {
+	static override id = 'test-output';
+	static override description = 'Test output command';
+
+	lastResult: unknown;
+
+	async run(): Promise<void> {}
+
+	callSuccess(msg: string): void {
+		this.success(msg);
+	}
+
+	callInfo(msg: string): void {
+		this.info(msg);
+	}
+
+	async callWithSpinner<T>(message: string, fn: () => Promise<T>): Promise<T> {
+		return this.withSpinner(message, fn);
 	}
 }
 
@@ -196,6 +225,63 @@ describe('DashboardCommand', () => {
 			cmd.errorToThrow = err;
 
 			await expect(cmd.run()).rejects.toThrow('something else');
+		});
+	});
+
+	describe('success helper', () => {
+		it('prints a green ✓ prefixed message', () => {
+			mockLoadConfig.mockReturnValue({ serverUrl: 'x', sessionToken: 'y' });
+			const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+			const cmd = new TestOutputCommand([], {} as never);
+			cmd.callSuccess('Operation completed');
+
+			expect(consoleSpy).toHaveBeenCalledWith('✓ Operation completed');
+			consoleSpy.mockRestore();
+		});
+	});
+
+	describe('info helper', () => {
+		it('prints a blue ℹ prefixed message', () => {
+			mockLoadConfig.mockReturnValue({ serverUrl: 'x', sessionToken: 'y' });
+			const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+			const cmd = new TestOutputCommand([], {} as never);
+			cmd.callInfo('Some information');
+
+			expect(consoleSpy).toHaveBeenCalledWith('ℹ Some information');
+			consoleSpy.mockRestore();
+		});
+	});
+
+	describe('withSpinner helper', () => {
+		it('calls withSpinner from spinner module with the message and fn', async () => {
+			mockLoadConfig.mockReturnValue({ serverUrl: 'x', sessionToken: 'y' });
+			mockWithSpinner.mockImplementation((_msg: string, fn: () => Promise<unknown>) => fn());
+
+			const cmd = new TestOutputCommand([], {} as never);
+			const result = await cmd.callWithSpinner('Loading...', async () => 'done');
+
+			expect(result).toBe('done');
+			expect(mockWithSpinner).toHaveBeenCalledWith(
+				'Loading...',
+				expect.any(Function),
+				expect.objectContaining({ silent: false }),
+			);
+		});
+
+		it('passes silent=true when --json flag is present', async () => {
+			mockLoadConfig.mockReturnValue({ serverUrl: 'x', sessionToken: 'y' });
+			mockWithSpinner.mockImplementation((_msg: string, fn: () => Promise<unknown>) => fn());
+
+			const cmd = new TestOutputCommand(['--json'], {} as never);
+			await cmd.callWithSpinner('Loading...', async () => null);
+
+			expect(mockWithSpinner).toHaveBeenCalledWith(
+				'Loading...',
+				expect.any(Function),
+				expect.objectContaining({ silent: true }),
+			);
 		});
 	});
 });

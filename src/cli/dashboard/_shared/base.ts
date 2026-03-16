@@ -1,8 +1,10 @@
 import { Command, Flags } from '@oclif/core';
 import { TRPCClientError } from '@trpc/client';
+import chalk from 'chalk';
 import { type DashboardClient, createDashboardClient } from './client.js';
 import { type CliConfig, loadConfig } from './config.js';
 import { printDetail, printTable } from './format.js';
+import { withSpinner } from './spinner.js';
 
 export function extractBaseFlags(argv: string[]): { server?: string; org?: string } | undefined {
 	let server: string | undefined;
@@ -81,6 +83,30 @@ export abstract class DashboardCommand extends Command {
 		fields: Record<string, { label: string; format?: (v: unknown) => string }>,
 	): void {
 		printDetail(obj, fields);
+	}
+
+	/**
+	 * Print a success message with a green ✓ prefix.
+	 */
+	protected success(message: string): void {
+		console.log(chalk.green(`✓ ${message}`));
+	}
+
+	/**
+	 * Print an informational message with a blue ℹ prefix.
+	 */
+	protected info(message: string): void {
+		console.log(chalk.blue(`ℹ ${message}`));
+	}
+
+	/**
+	 * Wrap an async function with an animated spinner.
+	 * Automatically suppressed when --json flag is active, NO_COLOR=1, or CI=1.
+	 */
+	protected withSpinner<T>(message: string, fn: () => Promise<T>): Promise<T> {
+		// Suppress spinner when --json flag is present
+		const isJson = this.argv.includes('--json');
+		return withSpinner(message, fn, { silent: isJson });
 	}
 
 	protected handleError(err: unknown): never {
