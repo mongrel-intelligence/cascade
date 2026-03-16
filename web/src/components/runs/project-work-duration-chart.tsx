@@ -34,8 +34,8 @@ interface ChartEntry {
 	color: string;
 }
 
-export function ProjectWorkDurationChart({ byAgentType }: ProjectWorkDurationChartProps) {
-	const data: ChartEntry[] = byAgentType
+export function buildDurationChartData(byAgentType: AgentTypeBreakdown[]): ChartEntry[] {
+	return byAgentType
 		.filter((breakdown) => breakdown.totalDurationMs > 0)
 		.map((breakdown) => ({
 			name: agentTypeLabel(breakdown.agentType),
@@ -44,7 +44,12 @@ export function ProjectWorkDurationChart({ byAgentType }: ProjectWorkDurationCha
 			runCount: breakdown.runCount,
 			avgDurationMs: breakdown.avgDurationMs ?? 0,
 			color: getAgentColor(breakdown.agentType),
-		}));
+		}))
+		.sort((a, b) => b.totalDurationMs - a.totalDurationMs);
+}
+
+export function ProjectWorkDurationChart({ byAgentType }: ProjectWorkDurationChartProps) {
+	const data: ChartEntry[] = buildDurationChartData(byAgentType);
 
 	if (data.length === 0) {
 		return (
