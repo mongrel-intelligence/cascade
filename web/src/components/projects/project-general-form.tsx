@@ -1,5 +1,15 @@
 import { ProjectSecretField } from '@/components/projects/project-secret-field.js';
 import { useProjectUpdate } from '@/components/projects/use-project-update.js';
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from '@/components/ui/alert-dialog.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
@@ -9,8 +19,9 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from '@/components/ui/tooltip.js';
-import { trpc } from '@/lib/trpc.js';
-import { useQuery } from '@tanstack/react-query';
+import { trpc, trpcClient } from '@/lib/trpc.js';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { HelpCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -48,8 +59,30 @@ function minutesToMs(minutes: string): number | null {
 	return Number.isNaN(parsed) ? null : parsed * 60000;
 }
 
+/** Convert a DB interval value (may be "5.0") to integer string for display */
+function intervalToInteger(value: string | null | undefined): string {
+	if (!value) return '';
+	const n = Math.round(Number(value));
+	return Number.isNaN(n) ? '' : String(n);
+}
+
 export function ProjectGeneralForm({ project }: { project: Project }) {
+	const navigate = useNavigate();
+	const queryClient = useQueryClient();
 	const updateMutation = useProjectUpdate(project.id);
+	const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+	const deleteMutation = useMutation({
+		mutationFn: () => trpcClient.projects.delete.mutate({ id: project.id }),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: trpc.projects.listFull.queryOptions().queryKey });
+			queryClient.invalidateQueries({ queryKey: trpc.projects.list.queryOptions().queryKey });
+			navigate({ to: '/' });
+		},
+		onError: (err) => {
+			toast.error('Failed to delete project', { description: err.message });
+		},
+	});
+
 	const credentialsQuery = useQuery(
 		trpc.projects.credentials.list.queryOptions({ projectId: project.id }),
 	);
@@ -63,7 +96,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const [watchdogMinutes, setWatchdogMinutes] = useState(msToMinutes(project.watchdogTimeoutMs));
 	const [progressModel, setProgressModel] = useState(project.progressModel ?? '');
 	const [progressIntervalMinutes, setProgressIntervalMinutes] = useState(
-		project.progressIntervalMinutes ?? '',
+		intervalToInteger(project.progressIntervalMinutes),
 	);
 	const [workItemBudgetUsd, setWorkItemBudgetUsd] = useState(project.workItemBudgetUsd ?? '');
 	const [maxInFlightItems, setMaxInFlightItems] = useState(
@@ -77,7 +110,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 			name !== project.name ||
 			watchdogMinutes !== msToMinutes(project.watchdogTimeoutMs) ||
 			progressModel !== (project.progressModel ?? '') ||
-			progressIntervalMinutes !== (project.progressIntervalMinutes ?? '') ||
+			progressIntervalMinutes !== intervalToInteger(project.progressIntervalMinutes) ||
 			workItemBudgetUsd !== (project.workItemBudgetUsd ?? '') ||
 			maxInFlightItems !== numericFieldDefault(project.maxInFlightItems) ||
 			runLinksEnabled !== (project.runLinksEnabled ?? false)
@@ -97,7 +130,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 		setName(project.name);
 		setWatchdogMinutes(msToMinutes(project.watchdogTimeoutMs));
 		setProgressModel(project.progressModel ?? '');
-		setProgressIntervalMinutes(project.progressIntervalMinutes ?? '');
+		setProgressIntervalMinutes(intervalToInteger(project.progressIntervalMinutes));
 		setWorkItemBudgetUsd(project.workItemBudgetUsd ?? '');
 		setMaxInFlightItems(numericFieldDefault(project.maxInFlightItems));
 		setRunLinksEnabled(project.runLinksEnabled ?? false);
@@ -142,11 +175,6 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const progressIntervalPlaceholder = defaults
 		? `${defaults.progressIntervalMinutes} (default)`
 		: 'e.g. 5';
-	const progressModelDescription = defaults ? (
-		<code className="text-xs">{defaults.progressModel}</code>
-	) : (
-		'…'
-	);
 
 	return (
 		<TooltipProvider>
@@ -268,9 +296,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 										onChange={(e) => setProgressModel(e.target.value)}
 										placeholder={progressModelPlaceholder}
 									/>
-									<p className="text-xs text-muted-foreground">
-										LLM model for progress summaries. Default: {progressModelDescription}.
-									</p>
+									<p className="text-xs text-muted-foreground">LLM model for progress summaries.</p>
 								</div>
 								<div className="space-y-2">
 									<Label htmlFor="progressIntervalMinutes">Progress Interval (min)</Label>
@@ -328,6 +354,52 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 						</button>
 					</div>
 				</form>
+
+				{/* Danger Zone */}
+				<Card className="border-destructive/50">
+					<CardHeader>
+						<CardTitle className="text-destructive">Danger Zone</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<div className="flex items-center justify-between">
+							<div>
+								<p className="text-sm font-medium">Delete this project</p>
+								<p className="text-xs text-muted-foreground">
+									Permanently delete this project and all its integrations, credentials, and agent
+									configs. This action cannot be undone.
+								</p>
+							</div>
+							<button
+								type="button"
+								onClick={() => setDeleteDialogOpen(true)}
+								className="ml-4 inline-flex h-9 shrink-0 items-center rounded-md border border-destructive px-4 text-sm font-medium text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors"
+							>
+								Delete Project
+							</button>
+						</div>
+					</CardContent>
+				</Card>
+
+				<AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+					<AlertDialogContent>
+						<AlertDialogHeader>
+							<AlertDialogTitle>Delete Project</AlertDialogTitle>
+							<AlertDialogDescription>
+								This will permanently delete <strong>{project.name}</strong> and all its
+								integrations, credential overrides, and agent configs. This action cannot be undone.
+							</AlertDialogDescription>
+						</AlertDialogHeader>
+						<AlertDialogFooter>
+							<AlertDialogCancel>Cancel</AlertDialogCancel>
+							<AlertDialogAction
+								onClick={() => deleteMutation.mutate()}
+								className="bg-destructive text-white hover:bg-destructive/90"
+							>
+								{deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+							</AlertDialogAction>
+						</AlertDialogFooter>
+					</AlertDialogContent>
+				</AlertDialog>
 
 				{/* API Keys */}
 				<Card>

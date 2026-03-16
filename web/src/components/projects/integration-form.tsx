@@ -6,10 +6,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
 	AlertCircle,
 	AlertTriangle,
-	ChevronDown,
-	ChevronRight,
+	Check,
+	Clipboard,
 	ExternalLink,
-	KeyRound,
+	Info,
 	Loader2,
 	RefreshCw,
 	Trash2,
@@ -97,20 +97,32 @@ function GitHubCredentialSlots({ projectId }: { projectId: string }) {
 // GitHub Webhook Management
 // ============================================================================
 
+function CopyButton({ text }: { text: string }) {
+	const [copied, setCopied] = useState(false);
+	const handleCopy = async () => {
+		await navigator.clipboard.writeText(text);
+		setCopied(true);
+		setTimeout(() => setCopied(false), 2000);
+	};
+	return (
+		<button
+			type="button"
+			onClick={handleCopy}
+			className="inline-flex items-center gap-1 shrink-0 rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+			title="Copy to clipboard"
+		>
+			{copied ? <Check className="h-3 w-3 text-green-600" /> : <Clipboard className="h-3 w-3" />}
+			{copied ? 'Copied' : 'Copy'}
+		</button>
+	);
+}
+
 function GitHubWebhookSection({ projectId }: { projectId: string }) {
 	const queryClient = useQueryClient();
 
 	const callbackBaseUrl =
 		API_URL ||
 		(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
-
-	const [adminTokensOpen, setAdminTokensOpen] = useState(false);
-	const [oneTimeGithubToken, setOneTimeGithubToken] = useState('');
-
-	const buildOneTimeTokens = () => {
-		if (oneTimeGithubToken) return { github: oneTimeGithubToken };
-		return undefined;
-	};
 
 	const webhooksQuery = useQuery(trpc.webhooks.list.queryOptions({ projectId }));
 
@@ -120,10 +132,8 @@ function GitHubWebhookSection({ projectId }: { projectId: string }) {
 				projectId,
 				callbackBaseUrl,
 				githubOnly: true,
-				oneTimeTokens: buildOneTimeTokens(),
 			}),
 		onSuccess: () => {
-			setOneTimeGithubToken('');
 			queryClient.invalidateQueries({
 				queryKey: trpc.webhooks.list.queryOptions({ projectId }).queryKey,
 			});
@@ -136,7 +146,6 @@ function GitHubWebhookSection({ projectId }: { projectId: string }) {
 				projectId,
 				callbackBaseUrl: deleteCallbackBaseUrl,
 				githubOnly: true,
-				oneTimeTokens: buildOneTimeTokens(),
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({
@@ -150,6 +159,24 @@ function GitHubWebhookSection({ projectId }: { projectId: string }) {
 		url: w.config.url ?? '',
 		active: w.active,
 	}));
+
+	const webhookCallbackUrl = callbackBaseUrl
+		? `${callbackBaseUrl}/github/webhook`
+		: '<YOUR_CALLBACK_URL>/github/webhook';
+	const githubCurlCommand = [
+		'curl -X POST "https://api.github.com/repos/<OWNER>/<REPO>/hooks" \\',
+		'  -H "Authorization: Bearer <YOUR_GITHUB_TOKEN>" \\',
+		'  -H "Content-Type: application/json" \\',
+		"  -d '{",
+		'    "name": "web",',
+		'    "active": true,',
+		'    "events": ["push", "pull_request", "check_suite", "pull_request_review"],',
+		'    "config": {',
+		`      "url": "${webhookCallbackUrl}",`,
+		'      "content_type": "json"',
+		'    }',
+		"  }'",
+	].join('\n');
 
 	return (
 		<div className="space-y-4">
@@ -244,42 +271,26 @@ function GitHubWebhookSection({ projectId }: { projectId: string }) {
 				)}
 			</div>
 
-			{/* One-time admin credentials */}
-			<div className="border rounded-md">
-				<button
-					type="button"
-					onClick={() => setAdminTokensOpen((prev) => !prev)}
-					className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:text-foreground transition-colors"
-				>
-					<KeyRound className="h-4 w-4" />
-					<span className="flex-1">Use admin credentials (one-time)</span>
-					{adminTokensOpen ? (
-						<ChevronDown className="h-4 w-4" />
-					) : (
-						<ChevronRight className="h-4 w-4" />
-					)}
-				</button>
-				{adminTokensOpen && (
-					<div className="border-t px-3 py-3 space-y-3">
-						<p className="text-xs text-muted-foreground">
-							Provide a token with elevated permissions for webhook management. This is used once
-							and never saved.
-						</p>
-						<div className="space-y-1">
-							<Label className="text-xs">
-								GitHub PAT{' '}
-								<span className="text-muted-foreground font-normal">(admin:repo_hook scope)</span>
-							</Label>
-							<Input
-								value={oneTimeGithubToken}
-								onChange={(e) => setOneTimeGithubToken(e.target.value)}
-								placeholder="ghp_... — used once, not saved"
-								type="password"
-								className="h-8 text-sm"
-							/>
-						</div>
+			{/* curl instructions for manual GitHub webhook creation */}
+			<div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-3 space-y-2 dark:border-blue-900/50 dark:bg-blue-900/20">
+				<div className="flex items-start gap-2">
+					<Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+					<p className="text-xs text-blue-700 dark:text-blue-300 font-medium">
+						Manual webhook creation (if the button above doesn't work)
+					</p>
+				</div>
+				<p className="text-xs text-blue-600 dark:text-blue-400 pl-6">
+					Use the following curl command to create the GitHub webhook manually. Requires a token
+					with <code>admin:repo_hook</code> scope.
+				</p>
+				<div className="relative rounded-md bg-muted border pl-6">
+					<div className="absolute top-2 right-2">
+						<CopyButton text={githubCurlCommand} />
 					</div>
-				)}
+					<pre className="text-xs font-mono whitespace-pre-wrap break-all py-2 pr-16 overflow-x-auto">
+						{githubCurlCommand}
+					</pre>
+				</div>
 			</div>
 		</div>
 	);

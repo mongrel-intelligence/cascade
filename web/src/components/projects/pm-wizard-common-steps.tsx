@@ -2,20 +2,20 @@
  * Provider-agnostic step renderer components for PMWizard:
  * WebhookStep and SaveStep.
  */
-import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import type { UseMutationResult } from '@tanstack/react-query';
 import {
 	AlertCircle,
 	AlertTriangle,
-	ChevronDown,
-	ChevronRight,
+	Check,
+	Clipboard,
 	ExternalLink,
-	KeyRound,
+	Info,
 	Loader2,
 	RefreshCw,
 	Trash2,
 } from 'lucide-react';
+import { useState } from 'react';
 import type { WizardState } from './pm-wizard-state.js';
 
 // ============================================================================
@@ -36,22 +36,31 @@ interface WebhooksQueryProps {
 	refetch: () => void;
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: webhook step UI with provider-specific admin credential fields
+function CopyButton({ text }: { text: string }) {
+	const [copied, setCopied] = useState(false);
+	const handleCopy = async () => {
+		await navigator.clipboard.writeText(text);
+		setCopied(true);
+		setTimeout(() => setCopied(false), 2000);
+	};
+	return (
+		<button
+			type="button"
+			onClick={handleCopy}
+			className="inline-flex items-center gap-1 shrink-0 rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+			title="Copy to clipboard"
+		>
+			{copied ? <Check className="h-3 w-3 text-green-600" /> : <Clipboard className="h-3 w-3" />}
+			{copied ? 'Copied' : 'Copy'}
+		</button>
+	);
+}
+
 export function WebhookStep({
 	state,
 	webhooksQuery,
 	activeWebhooks,
 	callbackBaseUrl,
-	adminTokensOpen,
-	setAdminTokensOpen,
-	oneTimeTrelloApiKey,
-	setOneTimeTrelloApiKey,
-	oneTimeTrelloToken,
-	setOneTimeTrelloToken,
-	oneTimeJiraEmail,
-	setOneTimeJiraEmail,
-	oneTimeJiraApiToken,
-	setOneTimeJiraApiToken,
 	createWebhookMutation,
 	deleteWebhookMutation,
 }: {
@@ -59,19 +68,48 @@ export function WebhookStep({
 	webhooksQuery: WebhooksQueryProps;
 	activeWebhooks: ActiveWebhook[];
 	callbackBaseUrl: string;
-	adminTokensOpen: boolean;
-	setAdminTokensOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
-	oneTimeTrelloApiKey: string;
-	setOneTimeTrelloApiKey: (v: string) => void;
-	oneTimeTrelloToken: string;
-	setOneTimeTrelloToken: (v: string) => void;
-	oneTimeJiraEmail: string;
-	setOneTimeJiraEmail: (v: string) => void;
-	oneTimeJiraApiToken: string;
-	setOneTimeJiraApiToken: (v: string) => void;
 	createWebhookMutation: UseMutationResult<unknown, Error, void, unknown>;
 	deleteWebhookMutation: UseMutationResult<unknown, Error, string, unknown>;
 }) {
+	const isTrello = state.provider === 'trello';
+	const providerName = isTrello ? 'Trello' : 'JIRA';
+
+	// Build curl commands for manual webhook creation
+	const buildTrelloCurl = () => {
+		const boardId = state.trelloBoardId || '<YOUR_BOARD_ID>';
+		const callbackUrl = callbackBaseUrl
+			? `${callbackBaseUrl}/trello/webhook`
+			: '<YOUR_CALLBACK_URL>/trello/webhook';
+		return `curl -X POST "https://api.trello.com/1/webhooks" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "key": "<YOUR_TRELLO_API_KEY>",
+    "token": "<YOUR_TRELLO_TOKEN>",
+    "callbackURL": "${callbackUrl}",
+    "idModel": "${boardId}",
+    "description": "CASCADE webhook"
+  }'`;
+	};
+
+	const buildJiraCurl = () => {
+		const baseUrl = state.jiraBaseUrl || '<YOUR_JIRA_BASE_URL>';
+		const callbackUrl = callbackBaseUrl
+			? `${callbackBaseUrl}/jira/webhook`
+			: '<YOUR_CALLBACK_URL>/jira/webhook';
+		return `curl -X POST "${baseUrl}/rest/webhooks/1.0/webhook" \\
+  -H "Content-Type: application/json" \\
+  -u "<YOUR_JIRA_EMAIL>:<YOUR_JIRA_API_TOKEN>" \\
+  -d '{
+    "name": "CASCADE webhook",
+    "url": "${callbackUrl}",
+    "events": ["jira:issue_updated", "jira:issue_created"],
+    "filters": {},
+    "excludeBody": false
+  }'`;
+	};
+
+	const curlCommand = isTrello ? buildTrelloCurl() : buildJiraCurl();
+
 	return (
 		<div className="space-y-4">
 			{/* Per-provider errors */}
@@ -136,7 +174,7 @@ export function WebhookStep({
 			) : (
 				<div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
 					<AlertCircle className="h-4 w-4" />
-					No {state.provider === 'trello' ? 'Trello' : 'JIRA'} webhooks configured for this project.
+					No {providerName} webhooks configured for this project.
 				</div>
 			)}
 
@@ -173,76 +211,26 @@ export function WebhookStep({
 				)}
 			</div>
 
-			{/* One-time admin credentials */}
-			<div className="border rounded-md">
-				<button
-					type="button"
-					onClick={() => setAdminTokensOpen((prev) => !prev)}
-					className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:text-foreground transition-colors"
-				>
-					<KeyRound className="h-4 w-4" />
-					<span className="flex-1">Use admin credentials (one-time)</span>
-					{adminTokensOpen ? (
-						<ChevronDown className="h-4 w-4" />
-					) : (
-						<ChevronRight className="h-4 w-4" />
-					)}
-				</button>
-				{adminTokensOpen && (
-					<div className="border-t px-3 py-3 space-y-3">
-						<p className="text-xs text-muted-foreground">
-							Provide tokens with elevated permissions for webhook management. These are used once
-							and never saved.
-						</p>
-						{/* PM-provider-specific fields */}
-						{state.provider === 'trello' ? (
-							<>
-								<div className="space-y-1">
-									<Label className="text-xs">Trello API Key</Label>
-									<Input
-										value={oneTimeTrelloApiKey}
-										onChange={(e) => setOneTimeTrelloApiKey(e.target.value)}
-										placeholder="One-time API key"
-										type="password"
-										className="h-8 text-sm"
-									/>
-								</div>
-								<div className="space-y-1">
-									<Label className="text-xs">Trello Token</Label>
-									<Input
-										value={oneTimeTrelloToken}
-										onChange={(e) => setOneTimeTrelloToken(e.target.value)}
-										placeholder="One-time token"
-										type="password"
-										className="h-8 text-sm"
-									/>
-								</div>
-							</>
-						) : (
-							<>
-								<div className="space-y-1">
-									<Label className="text-xs">JIRA Email</Label>
-									<Input
-										value={oneTimeJiraEmail}
-										onChange={(e) => setOneTimeJiraEmail(e.target.value)}
-										placeholder="user@example.com"
-										className="h-8 text-sm"
-									/>
-								</div>
-								<div className="space-y-1">
-									<Label className="text-xs">JIRA API Token</Label>
-									<Input
-										value={oneTimeJiraApiToken}
-										onChange={(e) => setOneTimeJiraApiToken(e.target.value)}
-										placeholder="One-time API token"
-										type="password"
-										className="h-8 text-sm"
-									/>
-								</div>
-							</>
-						)}
+			{/* curl instructions for manual webhook creation */}
+			<div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-3 space-y-2 dark:border-blue-900/50 dark:bg-blue-900/20">
+				<div className="flex items-start gap-2">
+					<Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+					<p className="text-xs text-blue-700 dark:text-blue-300 font-medium">
+						Manual webhook creation (if the button above doesn't work)
+					</p>
+				</div>
+				<p className="text-xs text-blue-600 dark:text-blue-400 pl-6">
+					Use the following curl command to create the {providerName} webhook manually with your own
+					credentials:
+				</p>
+				<div className="relative rounded-md bg-muted border pl-6">
+					<div className="absolute top-2 right-2">
+						<CopyButton text={curlCommand} />
 					</div>
-				)}
+					<pre className="text-xs font-mono whitespace-pre-wrap break-all py-2 pr-16 overflow-x-auto">
+						{curlCommand}
+					</pre>
+				</div>
 			</div>
 		</div>
 	);
@@ -261,48 +249,6 @@ export function SaveStep({
 }) {
 	return (
 		<div className="space-y-4">
-			{/* Summary */}
-			<div className="rounded-md bg-muted/50 p-4 space-y-2 text-sm">
-				<div className="flex justify-between">
-					<span className="text-muted-foreground">Provider</span>
-					<span className="font-medium">{state.provider === 'trello' ? 'Trello' : 'JIRA'}</span>
-				</div>
-				{state.verificationResult && (
-					<div className="flex justify-between">
-						<span className="text-muted-foreground">Identity</span>
-						<span className="font-medium">{state.verificationResult.display}</span>
-					</div>
-				)}
-				<div className="flex justify-between">
-					<span className="text-muted-foreground">
-						{state.provider === 'trello' ? 'Board' : 'Project'}
-					</span>
-					<span className="font-medium">
-						{state.provider === 'trello'
-							? state.trelloBoards.find((b) => b.id === state.trelloBoardId)?.name ||
-								state.trelloBoardId
-							: state.jiraProjects.find((p) => p.key === state.jiraProjectKey)?.name ||
-								state.jiraProjectKey}
-					</span>
-				</div>
-				<div className="flex justify-between">
-					<span className="text-muted-foreground">
-						{state.provider === 'trello' ? 'Lists mapped' : 'Statuses mapped'}
-					</span>
-					<span className="font-medium">
-						{state.provider === 'trello'
-							? Object.keys(state.trelloListMappings).filter((k) => state.trelloListMappings[k])
-									.length
-							: Object.keys(state.jiraStatusMappings).filter((k) => state.jiraStatusMappings[k])
-									.length}
-					</span>
-				</div>
-			</div>
-
-			<p className="text-xs text-muted-foreground">
-				Trigger configuration is managed separately in the <strong>Agents</strong> tab.
-			</p>
-
 			<div className="flex items-center gap-2">
 				<button
 					type="button"

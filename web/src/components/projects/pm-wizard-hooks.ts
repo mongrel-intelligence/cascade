@@ -5,7 +5,7 @@
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import type { WizardAction, WizardState } from './pm-wizard-state.js';
 
 // ============================================================================
@@ -258,28 +258,6 @@ export function useWebhookManagement(projectId: string, state: WizardState) {
 		API_URL ||
 		(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
 
-	const [adminTokensOpen, setAdminTokensOpen] = useState(false);
-	const [oneTimeTrelloApiKey, setOneTimeTrelloApiKey] = useState('');
-	const [oneTimeTrelloToken, setOneTimeTrelloToken] = useState('');
-	const [oneTimeJiraEmail, setOneTimeJiraEmail] = useState('');
-	const [oneTimeJiraApiToken, setOneTimeJiraApiToken] = useState('');
-
-	const buildOneTimeTokens = () => {
-		const tokens: Record<string, string> = {};
-		if (oneTimeTrelloApiKey) tokens.trelloApiKey = oneTimeTrelloApiKey;
-		if (oneTimeTrelloToken) tokens.trelloToken = oneTimeTrelloToken;
-		if (oneTimeJiraEmail) tokens.jiraEmail = oneTimeJiraEmail;
-		if (oneTimeJiraApiToken) tokens.jiraApiToken = oneTimeJiraApiToken;
-		return Object.keys(tokens).length > 0 ? tokens : undefined;
-	};
-
-	const clearOneTimeTokens = () => {
-		setOneTimeTrelloApiKey('');
-		setOneTimeTrelloToken('');
-		setOneTimeJiraEmail('');
-		setOneTimeJiraApiToken('');
-	};
-
 	const createWebhookMutation = useMutation({
 		mutationFn: () =>
 			trpcClient.webhooks.create.mutate({
@@ -287,10 +265,8 @@ export function useWebhookManagement(projectId: string, state: WizardState) {
 				callbackBaseUrl,
 				trelloOnly: state.provider === 'trello' ? true : undefined,
 				jiraOnly: state.provider === 'jira' ? true : undefined,
-				oneTimeTokens: buildOneTimeTokens(),
 			}),
 		onSuccess: () => {
-			clearOneTimeTokens();
 			queryClient.invalidateQueries({
 				queryKey: trpc.webhooks.list.queryOptions({ projectId }).queryKey,
 			});
@@ -304,7 +280,6 @@ export function useWebhookManagement(projectId: string, state: WizardState) {
 				callbackBaseUrl: deleteCallbackBaseUrl,
 				trelloOnly: state.provider === 'trello' ? true : undefined,
 				jiraOnly: state.provider === 'jira' ? true : undefined,
-				oneTimeTokens: buildOneTimeTokens(),
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({
@@ -315,16 +290,6 @@ export function useWebhookManagement(projectId: string, state: WizardState) {
 
 	return {
 		callbackBaseUrl,
-		adminTokensOpen,
-		setAdminTokensOpen,
-		oneTimeTrelloApiKey,
-		setOneTimeTrelloApiKey,
-		oneTimeTrelloToken,
-		setOneTimeTrelloToken,
-		oneTimeJiraEmail,
-		setOneTimeJiraEmail,
-		oneTimeJiraApiToken,
-		setOneTimeJiraApiToken,
 		createWebhookMutation,
 		deleteWebhookMutation,
 	};

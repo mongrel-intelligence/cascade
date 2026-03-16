@@ -1,3 +1,4 @@
+import { ProjectFormDialog } from '@/components/projects/project-form-dialog.js';
 import {
 	Select,
 	SelectContent,
@@ -20,6 +21,7 @@ import {
 	ChevronDown,
 	ChevronRight,
 	FolderGit2,
+	Plus,
 	Settings,
 	Users,
 	Zap,
@@ -174,6 +176,7 @@ export function Sidebar({ user }: SidebarProps) {
 	const currentPath = routerState.location.pathname;
 
 	const { data: projects } = useQuery(trpc.projects.list.queryOptions());
+	const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
 	return (
 		<div className="flex w-56 flex-col border-r border-sidebar-border bg-sidebar">
@@ -186,8 +189,18 @@ export function Sidebar({ user }: SidebarProps) {
 
 				<Separator className="my-3" />
 
-				<div className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-					Projects
+				<div className="flex items-center justify-between px-3 py-1">
+					<span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+						Projects
+					</span>
+					<button
+						type="button"
+						onClick={() => setCreateDialogOpen(true)}
+						className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground transition-colors"
+						title="New Project"
+					>
+						<Plus className="h-3.5 w-3.5" />
+					</button>
 				</div>
 				<div className="flex flex-col gap-0.5">
 					{projects && projects.length > 0 ? (
@@ -195,21 +208,17 @@ export function Sidebar({ user }: SidebarProps) {
 							<ProjectNavItem key={project.id} project={project} currentPath={currentPath} />
 						))
 					) : (
-						<Link
-							to="/projects"
-							className="block px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+						<button
+							type="button"
+							onClick={() => setCreateDialogOpen(true)}
+							className="block px-3 py-2 text-sm text-muted-foreground hover:text-foreground text-left"
 						>
 							+ Create a project
-						</Link>
+						</button>
 					)}
 				</div>
-				<NavLink
-					to="/projects"
-					label="All Projects"
-					icon={FolderGit2}
-					currentPath={currentPath}
-					exact
-				/>
+
+				<ProjectFormDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} />
 
 				<Separator className="my-3" />
 
