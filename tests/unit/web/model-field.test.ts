@@ -1,37 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import {
+	addPrefix,
+	formatContext,
+	formatPrice,
+	modelGroup,
+	stripPrefix,
+} from '../../../web/src/lib/openrouter-utils.js';
 
-// Test the utility functions from openrouter-model-combobox logic
-// These are tested as standalone pure functions
-
-const OPENROUTER_PREFIX = 'openrouter:';
-
-function stripPrefix(value: string): string {
-	return value.startsWith(OPENROUTER_PREFIX) ? value.slice(OPENROUTER_PREFIX.length) : value;
-}
-
-function addPrefix(id: string): string {
-	return id.startsWith(OPENROUTER_PREFIX) ? id : `${OPENROUTER_PREFIX}${id}`;
-}
-
-function formatPrice(n: number): string {
-	if (n === 0) return 'free';
-	if (n < 0.01) return `$${n.toFixed(4)}/M`;
-	return `$${n.toFixed(2)}/M`;
-}
-
-function formatContext(n: number | null): string {
-	if (n == null) return '';
-	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}M ctx`;
-	if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K ctx`;
-	return `${n} ctx`;
-}
-
-function modelGroup(modelId: string): string {
-	const slash = modelId.indexOf('/');
-	if (slash === -1) return 'Other';
-	const provider = modelId.slice(0, slash);
-	return provider.charAt(0).toUpperCase() + provider.slice(1);
-}
+// Tests import directly from the shared utility module used by the production
+// component, so implementation drift between tests and production is impossible.
 
 // ────────────────────────────────────────────────────────────────────────────
 // stripPrefix / addPrefix

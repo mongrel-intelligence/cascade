@@ -9,7 +9,15 @@ interface CacheEntry {
 	timestamp: number;
 }
 
-let cache: CacheEntry | null = null;
+/**
+ * Per-API-key cache. Keyed by the API key string (or '__public__' for
+ * unauthenticated requests) so that projects with different keys never share
+ * a stale result. In practice the OpenRouter /api/v1/models endpoint returns
+ * the same public catalog regardless of key, but keying by identity is
+ * correct if OpenRouter ever returns key-specific model lists (e.g. fine-tuned
+ * or private models).
+ */
+const cacheByKey = new Map<string, CacheEntry>();
 
 /**
  * Convert a per-token price string from OpenRouter to per-million-token USD.
@@ -61,9 +69,12 @@ function mapModel(raw: OpenRouterRawModel): OpenRouterModel {
  * @returns Sorted list of text-capable models, or an empty array on failure.
  */
 export async function fetchOpenRouterModels(apiKey?: string | null): Promise<OpenRouterModel[]> {
+	const cacheKey = apiKey ?? '__public__';
+
 	// Return cached result if still valid
-	if (cache && Date.now() - cache.timestamp < CACHE_TTL_MS) {
-		return cache.data;
+	const cached = cacheByKey.get(cacheKey);
+	if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+		return cached.data;
 	}
 
 	try {
@@ -91,7 +102,7 @@ export async function fetchOpenRouterModels(apiKey?: string | null): Promise<Ope
 			.map(mapModel)
 			.sort((a, b) => a.name.localeCompare(b.name));
 
-		cache = { data: filtered, timestamp: Date.now() };
+		cacheByKey.set(cacheKey, { data: filtered, timestamp: Date.now() });
 		return filtered;
 	} catch {
 		// Return empty array on any failure (network error, timeout, parse error, etc.)
@@ -103,5 +114,5 @@ export async function fetchOpenRouterModels(apiKey?: string | null): Promise<Ope
  * Clear the in-memory model cache (useful for testing).
  */
 export function clearOpenRouterCache(): void {
-	cache = null;
+	cacheByKey.clear();
 }
