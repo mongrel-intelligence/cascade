@@ -7,7 +7,6 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-	deleteProjectCredential,
 	listProjectCredentials,
 	writeProjectCredential,
 } from '../../../src/db/repositories/credentialsRepository.js';
