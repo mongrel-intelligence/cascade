@@ -13,6 +13,7 @@
  * - DATABASE_URL: PostgreSQL connection string for config
  */
 
+import { registerBuiltInEngines } from './backends/bootstrap.js';
 import { loadEnvConfigSafe } from './config/env.js';
 import { loadConfig } from './config/provider.js';
 import { getDb } from './db/client.js';
@@ -248,6 +249,10 @@ async function main(): Promise<void> {
 
 	// Initialize database pool (caches connection string before we scrub DATABASE_URL)
 	getDb();
+
+	// Register engine settings schemas before loadConfig() runs EngineSettingsSchema.
+	// Same fix as dashboard (#896) and router (#899).
+	registerBuiltInEngines();
 
 	// Load projects config from database
 	const config = await loadConfig();
