@@ -187,62 +187,60 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 									Determines which AI SDK processes agent runs.
 								</p>
 							</div>
+							<div className="space-y-2">
+								<div className="flex items-center gap-1.5">
+									<Label htmlFor="model">Model</Label>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+										</TooltipTrigger>
+										<TooltipContent>
+											Individual agents can override this in the Agents tab.
+										</TooltipContent>
+									</Tooltip>
+								</div>
+								<ModelField
+									id="model"
+									value={model}
+									onChange={setModel}
+									engine={effectiveEngineId}
+									defaultLabel={defaults ? defaults.model : undefined}
+								/>
+								<p className="text-xs text-muted-foreground">
+									Project default model. Per-agent overrides in the Agents tab.
+								</p>
+							</div>
 							<EngineSettingsFields
 								engine={effectiveEngine}
 								value={engineSettings}
 								onChange={(next) => setEngineSettings(next ?? {})}
 								engineDefaults={engineDefaults}
 							/>
-							<div className="grid grid-cols-2 gap-4">
-								<div className="space-y-2">
-									<div className="flex items-center gap-1.5">
-										<Label htmlFor="model">Model</Label>
-										<Tooltip>
-											<TooltipTrigger asChild>
-												<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-											</TooltipTrigger>
-											<TooltipContent>
-												Individual agents can override this in the Agents tab.
-											</TooltipContent>
-										</Tooltip>
-									</div>
-									<ModelField
-										id="model"
-										value={model}
-										onChange={setModel}
-										engine={effectiveEngineId}
-										defaultLabel={defaults ? defaults.model : undefined}
-									/>
-									<p className="text-xs text-muted-foreground">
-										Project default model. Per-agent overrides in the Agents tab.
-									</p>
+							<div className="space-y-2">
+								<div className="flex items-center gap-1.5">
+									<Label htmlFor="maxIterations">Max Iterations</Label>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+										</TooltipTrigger>
+										<TooltipContent>
+											Individual agents can override this in the Agents tab.
+										</TooltipContent>
+									</Tooltip>
 								</div>
-								<div className="space-y-2">
-									<div className="flex items-center gap-1.5">
-										<Label htmlFor="maxIterations">Max Iterations</Label>
-										<Tooltip>
-											<TooltipTrigger asChild>
-												<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-											</TooltipTrigger>
-											<TooltipContent>
-												Individual agents can override this in the Agents tab.
-											</TooltipContent>
-										</Tooltip>
-									</div>
-									<Input
-										id="maxIterations"
-										type="number"
-										min="1"
-										step="1"
-										className="w-32"
-										value={maxIterations}
-										onChange={(e) => setMaxIterations(e.target.value)}
-										placeholder={defaults ? `${defaults.maxIterations} (default)` : 'e.g. 50'}
-									/>
-									<p className="text-xs text-muted-foreground">
-										Safety limit on tool-call iterations per run.
-									</p>
-								</div>
+								<Input
+									id="maxIterations"
+									type="number"
+									min="1"
+									step="1"
+									className="w-32"
+									value={maxIterations}
+									onChange={(e) => setMaxIterations(e.target.value)}
+									placeholder={defaults ? `${defaults.maxIterations} (default)` : 'e.g. 50'}
+								/>
+								<p className="text-xs text-muted-foreground">
+									Safety limit on tool-call iterations per run.
+								</p>
 							</div>
 						</form>
 					</CardContent>

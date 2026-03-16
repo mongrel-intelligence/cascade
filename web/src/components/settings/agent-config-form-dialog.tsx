@@ -114,33 +114,6 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 							required
 						/>
 					</div>
-					<div className="grid grid-cols-2 gap-4">
-						<div className="space-y-2">
-							<Label htmlFor="gac-model">Model</Label>
-							<ModelField id="gac-model" value={model} onChange={setModel} engine={agentEngine} />
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="gac-iterations">Max Iterations</Label>
-							<Input
-								id="gac-iterations"
-								type="number"
-								value={maxIterations}
-								onChange={(e) => setMaxIterations(e.target.value)}
-								placeholder="Optional"
-							/>
-						</div>
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="gac-concurrency">Max Concurrency</Label>
-						<Input
-							id="gac-concurrency"
-							type="number"
-							min={1}
-							value={maxConcurrency}
-							onChange={(e) => setMaxConcurrency(e.target.value)}
-							placeholder="Optional — limits concurrent runs per project"
-						/>
-					</div>
 					<div className="space-y-2">
 						<Label>Engine</Label>
 						<Select
@@ -160,6 +133,10 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 							</SelectContent>
 						</Select>
 					</div>
+					<div className="space-y-2">
+						<Label htmlFor="gac-model">Model</Label>
+						<ModelField id="gac-model" value={model} onChange={setModel} engine={agentEngine} />
+					</div>
 					{effectiveEngine && (
 						<EngineSettingsFields
 							engine={effectiveEngine}
@@ -168,6 +145,29 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 							inheritLabel="Inherit from project"
 						/>
 					)}
+					<div className="grid grid-cols-2 gap-4">
+						<div className="space-y-2">
+							<Label htmlFor="gac-iterations">Max Iterations</Label>
+							<Input
+								id="gac-iterations"
+								type="number"
+								value={maxIterations}
+								onChange={(e) => setMaxIterations(e.target.value)}
+								placeholder="Optional"
+							/>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="gac-concurrency">Max Concurrency</Label>
+							<Input
+								id="gac-concurrency"
+								type="number"
+								min={1}
+								value={maxConcurrency}
+								onChange={(e) => setMaxConcurrency(e.target.value)}
+								placeholder="Optional — limits concurrent runs per project"
+							/>
+						</div>
+					</div>
 					<div className="space-y-2">
 						<Label>Prompt</Label>
 						<p className="text-sm text-muted-foreground">
