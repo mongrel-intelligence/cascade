@@ -37,6 +37,7 @@ function numericFieldDefault(value: number | null | undefined): string {
 	return value != null ? String(value) : '';
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: five independent form sections (identity, budget, progress, watchdog, run links) with shared dirty-state tracking and reset logic
 export function ProjectGeneralForm({ project }: { project: Project }) {
 	const updateMutation = useProjectUpdate(project.id);
 	const credentialsQuery = useQuery(
