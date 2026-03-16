@@ -63,7 +63,6 @@ function createMockConfig(overrides?: Record<string, unknown>) {
 
 describe('agentTriggerConfigsRouter', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockVerifyProjectOrgAccess.mockResolvedValue(undefined);
 	});
 

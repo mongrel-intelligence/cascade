@@ -56,10 +56,6 @@ async function postJson(
 // ---------------------------------------------------------------------------
 
 describe('createWebhookHandler', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('returns 400 when parsePayload fails', async () => {
 		const handler = createWebhookHandler({
 			source: 'jira',
@@ -281,10 +277,6 @@ describe('createWebhookHandler', () => {
 // ---------------------------------------------------------------------------
 
 describe('createWebhookHandler — verifySignature', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('returns 401 when verifySignature returns { valid: false }', async () => {
 		const handler = createWebhookHandler({
 			source: 'trello',

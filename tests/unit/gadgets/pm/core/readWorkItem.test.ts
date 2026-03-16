@@ -218,10 +218,6 @@ describe('readWorkItemWithMedia', () => {
 		labels: [],
 	};
 
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('returns text and empty media when no inlineMedia on work item', async () => {
 		mockProvider.getWorkItem.mockResolvedValue(baseItem);
 		mockProvider.getChecklists.mockResolvedValue([]);

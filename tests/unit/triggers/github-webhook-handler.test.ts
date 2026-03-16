@@ -143,7 +143,6 @@ const validPayload = {
 };
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	mockRunAgentWithCredentials.mockResolvedValue(undefined);
 });
 

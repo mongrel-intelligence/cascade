@@ -89,7 +89,6 @@ describe('PRMergedTrigger', () => {
 	});
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
 		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
 	});

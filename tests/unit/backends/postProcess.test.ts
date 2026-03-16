@@ -58,10 +58,6 @@ function makeInput(overrides?: Partial<ProjectConfig>): AgentInput & { project: 
 }
 
 describe('postProcessResult', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('PR validation for agents with requiresPR', () => {
 		it('marks as failed when requiresPR agent succeeds without authoritative PR evidence', () => {
 			const result = makeResult({ success: true, prUrl: undefined, prEvidence: undefined });

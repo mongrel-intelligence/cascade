@@ -98,7 +98,6 @@ const jiraCredsInput = {
 
 describe('integrationsDiscoveryRouter', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		// Default: org access check passes
 		mockVerifyProjectOrgAccess.mockResolvedValue(undefined);
 	});

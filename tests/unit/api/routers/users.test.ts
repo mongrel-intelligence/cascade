@@ -37,7 +37,6 @@ const mockMember = createMockUser({ id: 'member-1', role: 'member' });
 
 describe('usersRouter', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockBcryptHash.mockResolvedValue('hashed-password');
 	});
 

@@ -95,7 +95,6 @@ describe('JiraIntegration', () => {
 	let integration: JiraIntegration;
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		integration = new JiraIntegration();
 		mockGetJiraConfig.mockReturnValue(makeJiraConfig());
 	});

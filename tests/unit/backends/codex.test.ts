@@ -429,7 +429,6 @@ describe('CodexEngine', () => {
 
 	beforeEach(() => {
 		workspaceDir = mkdtempSync(join(tmpdir(), 'cascade-codex-test-'));
-		vi.clearAllMocks();
 		// Default fs/promises stubs — auth tests override as needed
 		mockMkdir.mockResolvedValue(undefined);
 		mockWriteFile.mockResolvedValue(undefined);
@@ -1080,7 +1079,6 @@ describe('Codex subscription auth', () => {
 
 	beforeEach(() => {
 		workspaceDir = mkdtempSync(join(tmpdir(), 'cascade-codex-auth-test-'));
-		vi.clearAllMocks();
 		mockMkdir.mockResolvedValue(undefined);
 		mockWriteFile.mockResolvedValue(undefined);
 		mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
@@ -1187,7 +1185,6 @@ describe('CodexEngine lifecycle hooks', () => {
 
 	beforeEach(() => {
 		workspaceDir = mkdtempSync(join(tmpdir(), 'cascade-codex-lifecycle-test-'));
-		vi.clearAllMocks();
 		mockMkdir.mockResolvedValue(undefined);
 		mockWriteFile.mockResolvedValue(undefined);
 		mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));

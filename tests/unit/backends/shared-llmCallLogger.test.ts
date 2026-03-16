@@ -21,10 +21,6 @@ describe('logLlmCall (shared helper)', () => {
 	const mockStoreLlmCall = vi.mocked(storeLlmCall);
 	const mockLoggerWarn = vi.mocked(logger.warn);
 
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	afterEach(() => {
 		vi.restoreAllMocks();
 	});

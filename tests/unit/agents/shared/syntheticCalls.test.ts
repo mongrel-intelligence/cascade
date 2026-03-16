@@ -53,10 +53,6 @@ function createTrackingContext() {
 	};
 }
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 describe('injectSyntheticCall', () => {
 	it('records the invocation ID for tracking', () => {
 		const builder = createMockBuilder();

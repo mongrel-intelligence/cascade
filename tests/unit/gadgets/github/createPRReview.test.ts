@@ -37,7 +37,6 @@ describe('CreatePRReview', () => {
 	let gadget: InstanceType<typeof CreatePRReview>;
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		gadget = new CreatePRReview();
 	});
 

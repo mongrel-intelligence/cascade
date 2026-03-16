@@ -22,10 +22,6 @@ import { hasScmIntegration, hasScmPersonaToken } from '../../../src/github/integ
 // ---------------------------------------------------------------------------
 
 describe('hasScmIntegration', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('returns false when no SCM integration provider configured', async () => {
 		mockGetIntegrationProvider.mockResolvedValue(null);
 
@@ -94,10 +90,6 @@ describe('hasScmIntegration', () => {
 });
 
 describe('hasScmPersonaToken', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('returns true when implementer token is present', async () => {
 		mockGetIntegrationCredentialOrNull.mockResolvedValue('ghp_implementer');
 

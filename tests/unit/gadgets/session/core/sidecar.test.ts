@@ -36,7 +36,6 @@ describe('writePushedChangesSidecar', () => {
 
 	beforeEach(() => {
 		sidecarPath = join(tmpdir(), `cascade-test-pushed-sidecar-${Date.now()}.json`);
-		vi.clearAllMocks();
 	});
 
 	afterEach(() => {
@@ -95,7 +94,6 @@ describe('writeReviewSidecar', () => {
 
 	beforeEach(() => {
 		sidecarPath = join(tmpdir(), `cascade-test-review-sidecar-${Date.now()}.json`);
-		vi.clearAllMocks();
 	});
 
 	afterEach(() => {
@@ -157,7 +155,6 @@ describe('writePRSidecar', () => {
 
 	beforeEach(() => {
 		sidecarPath = join(tmpdir(), `cascade-test-pr-sidecar-${Date.now()}.json`);
-		vi.clearAllMocks();
 	});
 
 	afterEach(() => {
