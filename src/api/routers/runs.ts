@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { loadProjectConfigById } from '../../config/provider.js';
+import { isAgentEnabledForProject } from '../../db/repositories/agentConfigsRepository.js';
 import {
 	DEFAULT_STALE_RUN_THRESHOLD_MS,
 	cancelRunById,
@@ -271,6 +272,15 @@ export const runsRouter = router({
 				throw new TRPCError({
 					code: 'NOT_FOUND',
 					message: 'Project configuration not found',
+				});
+			}
+
+			// Check agent is explicitly enabled for this project
+			const agentEnabled = await isAgentEnabledForProject(input.projectId, input.agentType);
+			if (!agentEnabled) {
+				throw new TRPCError({
+					code: 'BAD_REQUEST',
+					message: `Agent '${input.agentType}' is not enabled for this project. Add an agent config in Project Settings > Agent Configs to enable it.`,
 				});
 			}
 

@@ -2,7 +2,8 @@ import { Flags } from '@oclif/core';
 import { DashboardCommand } from '../_shared/base.js';
 
 export default class AgentsList extends DashboardCommand {
-	static override description = 'List agent configurations for a project.';
+	static override description =
+		'List enabled agent configurations for a project. Only agents with an explicit config row are shown (opt-in required).';
 
 	static override flags = {
 		...DashboardCommand.baseFlags,
@@ -19,6 +20,11 @@ export default class AgentsList extends DashboardCommand {
 
 			if (flags.json) {
 				this.outputJson(configs);
+				return;
+			}
+
+			if (configs.length === 0) {
+				this.log('No agents enabled for this project. Use `cascade agents create` to enable one.');
 				return;
 			}
 

@@ -26,7 +26,7 @@ triggers:
   - event: pm:comment-mention
     label: Comment @mention
     description: Trigger when bot is @mentioned in a card/issue comment
-    defaultEnabled: true
+    defaultEnabled: false
     contextPipeline: [directoryListing, contextFiles, squint, workItem]
 
 strategies: {}

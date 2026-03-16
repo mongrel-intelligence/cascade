@@ -11,6 +11,7 @@ const mockGetTriggerConfigsByProject = vi.fn();
 const mockListProjectIntegrations = vi.fn();
 const mockGetKnownAgentTypes = vi.fn();
 const mockLoadAgentDefinition = vi.fn();
+const mockListAgentConfigs = vi.fn();
 
 vi.mock('../../../../src/db/repositories/agentDefinitionsRepository.js', () => ({
 	listAgentDefinitions: (...args: unknown[]) => mockListAgentDefinitions(...args),
@@ -28,6 +29,11 @@ vi.mock('../../../../src/db/repositories/agentTriggerConfigsRepository.js', () =
 
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
 	listProjectIntegrations: (...args: unknown[]) => mockListProjectIntegrations(...args),
+}));
+
+vi.mock('../../../../src/db/repositories/agentConfigsRepository.js', () => ({
+	listAgentConfigs: (...args: unknown[]) => mockListAgentConfigs(...args),
+	isAgentEnabledForProject: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('../../../../src/agents/definitions/loader.js', () => ({
@@ -86,6 +92,8 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 		mockListAgentDefinitions.mockResolvedValue([]);
 		mockGetKnownAgentTypes.mockReturnValue([]);
 		mockLoadAgentDefinition.mockReturnValue(makeAgentDefinition());
+		// Default: no agent configs (all agents are unconfigured / available)
+		mockListAgentConfigs.mockResolvedValue([]);
 	});
 
 	it('throws UNAUTHORIZED when not authenticated', async () => {
@@ -95,17 +103,32 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 		).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 	});
 
-	it('returns empty agents and null integrations when nothing is configured', async () => {
+	it('returns empty enabledAgents and null integrations when nothing is configured', async () => {
 		const caller = createCaller(mockCtx);
 		const result = await caller.getProjectTriggersView({ projectId: 'test-project' });
 
-		expect(result.agents).toEqual([]);
+		expect(result.enabledAgents).toEqual([]);
+		expect(result.agents).toEqual([]); // backwards compat alias
 		expect(result.integrations).toEqual({ pm: null, scm: null });
+	});
+
+	it('returns availableAgents for unconfigured agent types', async () => {
+		const definition = makeAgentDefinition();
+		mockListAgentDefinitions.mockResolvedValue([{ agentType: 'implementation', definition }]);
+		// No agent_configs row → implementation should be in availableAgents, not enabledAgents
+
+		const caller = createCaller(mockCtx);
+		const result = await caller.getProjectTriggersView({ projectId: 'test-project' });
+
+		expect(result.enabledAgents).toHaveLength(0);
+		expect(result.availableAgents).toContain('implementation');
 	});
 
 	it('merges DB definitions with project trigger configs', async () => {
 		const definition = makeAgentDefinition();
 		mockListAgentDefinitions.mockResolvedValue([{ agentType: 'implementation', definition }]);
+		// Agent has an agent_configs row → it is enabled
+		mockListAgentConfigs.mockResolvedValue([{ agentType: 'implementation', id: 1 }]);
 		mockGetTriggerConfigsByProject.mockResolvedValue([
 			{
 				agentType: 'implementation',
@@ -118,16 +141,18 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 		const caller = createCaller(mockCtx);
 		const result = await caller.getProjectTriggersView({ projectId: 'test-project' });
 
-		expect(result.agents).toHaveLength(1);
+		expect(result.enabledAgents).toHaveLength(1);
+		expect(result.agents).toHaveLength(1); // backwards compat
 		expect(result.agents[0].agentType).toBe('implementation');
 		expect(result.agents[0].triggers[0].event).toBe('pm:status-changed');
 		expect(result.agents[0].triggers[0].enabled).toBe(true);
 		expect(result.agents[0].triggers[0].isCustomized).toBe(true);
 	});
 
-	it('uses defaultEnabled when no config exists (isCustomized=false)', async () => {
+	it('uses defaultEnabled when no trigger config exists (isCustomized=false)', async () => {
 		const definition = makeAgentDefinition();
 		mockListAgentDefinitions.mockResolvedValue([{ agentType: 'implementation', definition }]);
+		mockListAgentConfigs.mockResolvedValue([{ agentType: 'implementation', id: 1 }]);
 		// No trigger configs
 
 		const caller = createCaller(mockCtx);
@@ -164,6 +189,7 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 		mockListAgentDefinitions.mockResolvedValue([
 			{ agentType: 'review', definition: definitionWithParams },
 		]);
+		mockListAgentConfigs.mockResolvedValue([{ agentType: 'review', id: 2 }]);
 		mockGetTriggerConfigsByProject.mockResolvedValue([
 			{
 				agentType: 'review',
@@ -209,6 +235,7 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 		mockListAgentDefinitions.mockResolvedValue([
 			{ agentType: 'review', definition: definitionWithParams },
 		]);
+		mockListAgentConfigs.mockResolvedValue([{ agentType: 'review', id: 2 }]);
 		mockGetTriggerConfigsByProject.mockResolvedValue([
 			{
 				agentType: 'review',
@@ -253,12 +280,13 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 		// Falls back to YAML — need some types for that
 		mockGetKnownAgentTypes.mockReturnValue(['implementation']);
 		mockLoadAgentDefinition.mockReturnValue(makeAgentDefinition());
+		mockListAgentConfigs.mockResolvedValue([{ agentType: 'implementation', id: 1 }]);
 
 		const caller = createCaller(mockCtx);
 		const result = await caller.getProjectTriggersView({ projectId: 'test-project' });
 
-		// Should not throw; falls back to YAML
-		expect(result.agents).toHaveLength(1);
+		// Should not throw; falls back to YAML, and shows as enabled since it has a config
+		expect(result.enabledAgents).toHaveLength(1);
 		expect(result.agents[0].agentType).toBe('implementation');
 	});
 
@@ -267,6 +295,7 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 		mockListAgentDefinitions.mockResolvedValue([{ agentType: 'implementation', definition }]);
 		// YAML also has 'implementation'
 		mockGetKnownAgentTypes.mockReturnValue(['implementation']);
+		mockListAgentConfigs.mockResolvedValue([{ agentType: 'implementation', id: 1 }]);
 
 		const caller = createCaller(mockCtx);
 		const result = await caller.getProjectTriggersView({ projectId: 'test-project' });
@@ -275,17 +304,20 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 		expect(result.agents).toHaveLength(1);
 	});
 
-	it('includes YAML-only agents not in DB', async () => {
+	it('enabled agents appear in enabledAgents; unconfigured appear in availableAgents', async () => {
 		mockListAgentDefinitions.mockResolvedValue([]); // no DB definitions
 		mockGetKnownAgentTypes.mockReturnValue(['splitting', 'planning']);
 		mockLoadAgentDefinition.mockReturnValue(makeAgentDefinition());
+		// Only 'splitting' is enabled
+		mockListAgentConfigs.mockResolvedValue([{ agentType: 'splitting', id: 1 }]);
 
 		const caller = createCaller(mockCtx);
 		const result = await caller.getProjectTriggersView({ projectId: 'test-project' });
 
-		expect(result.agents).toHaveLength(2);
-		expect(result.agents.map((a) => a.agentType)).toContain('splitting');
-		expect(result.agents.map((a) => a.agentType)).toContain('planning');
+		expect(result.enabledAgents).toHaveLength(1);
+		expect(result.enabledAgents[0].agentType).toBe('splitting');
+		expect(result.availableAgents).toContain('planning');
+		expect(result.availableAgents).not.toContain('splitting');
 	});
 
 	it('handles YAML load failure gracefully (skips that agent)', async () => {
@@ -295,11 +327,12 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 			.mockImplementationOnce(() => {
 				throw new Error('YAML parse error');
 			});
+		mockListAgentConfigs.mockResolvedValue([{ agentType: 'implementation', id: 1 }]);
 
 		const caller = createCaller(mockCtx);
 		const result = await caller.getProjectTriggersView({ projectId: 'test-project' });
 
-		// 'failing-agent' should be skipped; 'implementation' included
+		// 'failing-agent' should be skipped; 'implementation' included in enabled
 		expect(result.agents).toHaveLength(1);
 		expect(result.agents[0].agentType).toBe('implementation');
 	});
@@ -312,7 +345,7 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 					label: 'Status Changed',
 					description: 'When status changes',
 					providers: null,
-					defaultEnabled: true,
+					defaultEnabled: false,
 					parameters: [
 						{
 							name: 'myParam',
@@ -328,6 +361,7 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 			],
 		};
 		mockListAgentDefinitions.mockResolvedValue([{ agentType: 'implementation', definition }]);
+		mockListAgentConfigs.mockResolvedValue([{ agentType: 'implementation', id: 1 }]);
 
 		const caller = createCaller(mockCtx);
 		const result = await caller.getProjectTriggersView({ projectId: 'test-project' });
@@ -345,6 +379,7 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 	it('handles trigger with no parameters (empty parameterDefs and parameters)', async () => {
 		const definition = makeAgentDefinition();
 		mockListAgentDefinitions.mockResolvedValue([{ agentType: 'implementation', definition }]);
+		mockListAgentConfigs.mockResolvedValue([{ agentType: 'implementation', id: 1 }]);
 
 		const caller = createCaller(mockCtx);
 		const result = await caller.getProjectTriggersView({ projectId: 'test-project' });

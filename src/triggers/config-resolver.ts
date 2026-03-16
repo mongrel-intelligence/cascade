@@ -38,6 +38,7 @@
 
 import { resolveAgentDefinition } from '../agents/definitions/index.js';
 import type { SupportedTrigger } from '../agents/definitions/schema.js';
+import { isAgentEnabledForProject } from '../db/repositories/agentConfigsRepository.js';
 import {
 	type AgentTriggerConfig,
 	getTriggerConfig,
@@ -77,6 +78,12 @@ export async function resolveTriggerConfigs(
 	projectId: string,
 	agentType: string,
 ): Promise<ResolvedTriggerConfig[]> {
+	// Gate on agent config existence — agent must be explicitly enabled
+	const enabled = await isAgentEnabledForProject(projectId, agentType);
+	if (!enabled) {
+		return [];
+	}
+
 	// Get definition triggers
 	const definition = await resolveAgentDefinition(agentType);
 	if (!definition) {
@@ -111,6 +118,12 @@ export async function isTriggerEnabled(
 	agentType: string,
 	triggerEvent: string,
 ): Promise<boolean> {
+	// Gate on agent config existence — agent must be explicitly enabled
+	const agentEnabled = await isAgentEnabledForProject(projectId, agentType);
+	if (!agentEnabled) {
+		return false;
+	}
+
 	// First check DB override
 	const dbConfig = await getTriggerConfig(projectId, agentType, triggerEvent);
 	if (dbConfig) {
@@ -140,6 +153,12 @@ export async function getTriggerParameters(
 	agentType: string,
 	triggerEvent: string,
 ): Promise<Record<string, unknown>> {
+	// Gate on agent config existence — agent must be explicitly enabled
+	const agentEnabled = await isAgentEnabledForProject(projectId, agentType);
+	if (!agentEnabled) {
+		return {};
+	}
+
 	const definition = await resolveAgentDefinition(agentType);
 	if (!definition) {
 		return {};
@@ -176,6 +195,12 @@ export async function getResolvedTriggerConfig(
 	agentType: string,
 	triggerEvent: string,
 ): Promise<ResolvedTriggerConfig | null> {
+	// Gate on agent config existence — agent must be explicitly enabled
+	const agentEnabled = await isAgentEnabledForProject(projectId, agentType);
+	if (!agentEnabled) {
+		return null;
+	}
+
 	const definition = await resolveAgentDefinition(agentType);
 	if (!definition) {
 		return null;

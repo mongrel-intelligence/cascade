@@ -279,10 +279,10 @@ describe('YAML agent definitions loader', () => {
 			}
 		});
 
-		it('backlog-manager internal:auto-chain trigger is defaultEnabled: true', () => {
+		it('backlog-manager internal:auto-chain trigger is defaultEnabled: false (all triggers off by default)', () => {
 			const def = loadAgentDefinition('backlog-manager');
 			const autoChainTrigger = def.triggers.find((t) => t.event === 'internal:auto-chain');
-			expect(autoChainTrigger?.defaultEnabled).toBe(true);
+			expect(autoChainTrigger?.defaultEnabled).toBe(false);
 		});
 
 		it('backlog-manager requires only pm integration', () => {

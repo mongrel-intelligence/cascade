@@ -107,7 +107,7 @@ export const SupportedTriggerSchema = z.object({
 	/** Optional description for help text */
 	description: z.string().optional(),
 	/** Whether the trigger is enabled by default */
-	defaultEnabled: z.boolean().default(true),
+	defaultEnabled: z.boolean().default(false),
 	/** Configurable parameters for this trigger */
 	parameters: z.array(TriggerParameterSchema).default([]),
 	/** Provider filter - only applies to these providers (e.g., ['trello']) */

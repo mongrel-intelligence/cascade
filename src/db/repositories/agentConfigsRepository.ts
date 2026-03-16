@@ -117,6 +117,48 @@ export async function getAgentConfigPrompts(
 }
 
 /**
+ * Check whether an agent is explicitly enabled for a project.
+ * An agent is enabled if and only if it has a row in `agent_configs` for that project.
+ * The `debug` agent is always considered enabled (internal infrastructure).
+ *
+ * Results are cached for 5 seconds to avoid repeated DB queries on
+ * sequential webhook batches.
+ */
+const AGENT_ENABLED_TTL_MS = 5_000;
+const agentEnabledCache = new Map<string, { value: boolean; expiresAt: number }>();
+
+export async function isAgentEnabledForProject(
+	projectId: string,
+	agentType: string,
+): Promise<boolean> {
+	// Debug agent is always enabled — internal infrastructure agent
+	if (agentType === 'debug') {
+		return true;
+	}
+
+	const cacheKey = `${projectId}:${agentType}`;
+	const cached = agentEnabledCache.get(cacheKey);
+	if (cached && Date.now() < cached.expiresAt) {
+		return cached.value;
+	}
+
+	const db = getDb();
+
+	const [row] = await db
+		.select({ id: agentConfigs.id })
+		.from(agentConfigs)
+		.where(and(eq(agentConfigs.projectId, projectId), eq(agentConfigs.agentType, agentType)))
+		.limit(1);
+
+	const result = row !== undefined;
+	agentEnabledCache.set(cacheKey, {
+		value: result,
+		expiresAt: Date.now() + AGENT_ENABLED_TTL_MS,
+	});
+	return result;
+}
+
+/**
  * Resolve max_concurrency for a (projectId, agentType) pair.
  * Returns null if no project-scoped config with max_concurrency is found (= no limit).
  *
