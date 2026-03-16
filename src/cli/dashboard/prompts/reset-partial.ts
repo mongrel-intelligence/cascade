@@ -20,7 +20,7 @@ export default class PromptsResetPartial extends DashboardCommand {
 			const partial = await this.client.prompts.getPartial.query({ name: flags.name });
 
 			if (partial.source === 'disk') {
-				this.log(`Partial "${flags.name}" is already using disk default.`);
+				this.log(`Partial '${flags.name}' is already using disk default.`);
 				return;
 			}
 
@@ -28,14 +28,16 @@ export default class PromptsResetPartial extends DashboardCommand {
 				this.error(`Cannot determine partial ID for "${flags.name}".`);
 			}
 
-			await this.client.prompts.deletePartial.mutate({ id: partial.id });
+			await this.withSpinner('Resetting partial...', () =>
+				this.client.prompts.deletePartial.mutate({ id: partial.id as number }),
+			);
 
 			if (flags.json) {
 				this.outputJson({ ok: true });
 				return;
 			}
 
-			this.log(`Partial "${flags.name}" reset to disk default.`);
+			this.success(`Reset partial '${flags.name}' to disk default`);
 		} catch (err) {
 			this.handleError(err);
 		}

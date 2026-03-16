@@ -24,17 +24,19 @@ export default class ProjectsCredentialsDelete extends DashboardCommand {
 		await confirm(`Delete credential ${flags.key} from project ${args.id}?`, flags.yes);
 
 		try {
-			await this.client.projects.credentials.delete.mutate({
-				projectId: args.id,
-				envVarKey: flags.key,
-			});
+			await this.withSpinner('Deleting credential...', () =>
+				this.client.projects.credentials.delete.mutate({
+					projectId: args.id,
+					envVarKey: flags.key,
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson({ ok: true });
 				return;
 			}
 
-			this.log(`Deleted credential ${flags.key} from project ${args.id}`);
+			this.success(`Deleted credential ${flags.key} from project '${args.id}'`);
 		} catch (err) {
 			this.handleError(err);
 		}

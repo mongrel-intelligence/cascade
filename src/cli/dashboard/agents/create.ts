@@ -24,21 +24,25 @@ export default class AgentsCreate extends DashboardCommand {
 		const { flags } = await this.parse(AgentsCreate);
 
 		try {
-			const result = await this.client.agentConfigs.create.mutate({
-				agentType: flags['agent-type'],
-				projectId: flags['project-id'],
-				model: flags.model,
-				maxIterations: flags['max-iterations'],
-				agentEngine: flags.engine,
-				maxConcurrency: flags['max-concurrency'],
-			});
+			const result = await this.withSpinner('Creating agent config...', () =>
+				this.client.agentConfigs.create.mutate({
+					agentType: flags['agent-type'],
+					projectId: flags['project-id'],
+					model: flags.model,
+					maxIterations: flags['max-iterations'],
+					agentEngine: flags.engine,
+					maxConcurrency: flags['max-concurrency'],
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson(result);
 				return;
 			}
 
-			this.log(`Created agent config for ${flags['agent-type']}`);
+			this.success(
+				`Created agent config for '${flags['agent-type']}' on project '${flags['project-id']}'`,
+			);
 		} catch (err) {
 			this.handleError(err);
 		}

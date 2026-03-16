@@ -13,14 +13,16 @@ export default class OrgUpdate extends DashboardCommand {
 		const { flags } = await this.parse(OrgUpdate);
 
 		try {
-			await this.client.organization.update.mutate({ name: flags.name });
+			await this.withSpinner('Updating organization...', () =>
+				this.client.organization.update.mutate({ name: flags.name }),
+			);
 
 			if (flags.json) {
 				this.outputJson({ ok: true });
 				return;
 			}
 
-			this.log(`Organization updated: ${flags.name}`);
+			this.success(`Updated organization name to '${flags.name}'`);
 		} catch (err) {
 			this.handleError(err);
 		}

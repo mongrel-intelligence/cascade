@@ -37,13 +37,15 @@ export default class WebhooksDelete extends DashboardCommand {
 			if (flags['jira-email']) oneTimeTokens.jiraEmail = flags['jira-email'];
 			if (flags['jira-api-token']) oneTimeTokens.jiraApiToken = flags['jira-api-token'];
 
-			const result = await this.client.webhooks.delete.mutate({
-				projectId: args.projectId,
-				callbackBaseUrl,
-				trelloOnly: flags['trello-only'],
-				githubOnly: flags['github-only'],
-				oneTimeTokens: Object.keys(oneTimeTokens).length > 0 ? oneTimeTokens : undefined,
-			});
+			const result = await this.withSpinner('Deleting webhooks...', () =>
+				this.client.webhooks.delete.mutate({
+					projectId: args.projectId,
+					callbackBaseUrl,
+					trelloOnly: flags['trello-only'],
+					githubOnly: flags['github-only'],
+					oneTimeTokens: Object.keys(oneTimeTokens).length > 0 ? oneTimeTokens : undefined,
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson(result);
@@ -51,19 +53,23 @@ export default class WebhooksDelete extends DashboardCommand {
 			}
 
 			if (result.trello.length > 0) {
-				this.log(`Deleted ${result.trello.length} Trello webhook(s): ${result.trello.join(', ')}`);
+				this.success(
+					`Deleted ${result.trello.length} Trello webhook(s): ${result.trello.join(', ')}`,
+				);
 			} else {
 				this.log('No matching Trello webhooks found.');
 			}
 
 			if (result.github.length > 0) {
-				this.log(`Deleted ${result.github.length} GitHub webhook(s): ${result.github.join(', ')}`);
+				this.success(
+					`Deleted ${result.github.length} GitHub webhook(s): ${result.github.join(', ')}`,
+				);
 			} else {
 				this.log('No matching GitHub webhooks found.');
 			}
 
 			if (result.jira.length > 0) {
-				this.log(`Deleted ${result.jira.length} JIRA webhook(s): ${result.jira.join(', ')}`);
+				this.success(`Deleted ${result.jira.length} JIRA webhook(s): ${result.jira.join(', ')}`);
 			} else {
 				this.log('No matching JIRA webhooks found.');
 			}

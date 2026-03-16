@@ -93,19 +93,23 @@ export default class DefinitionsImport extends DashboardCommand {
 			const definition = (obj.definition ?? obj) as AgentDefinitionInput;
 
 			if (flags.update) {
-				const result = await this.upsertDefinition(agentType, definition);
+				const result = await this.withSpinner('Importing agent definition...', () =>
+					this.upsertDefinition(agentType, definition),
+				);
 				if (flags.json) {
 					this.outputJson(result);
 					return;
 				}
-				this.log(`Imported (${result.action}) agent definition: ${result.agentType}`);
+				this.success(`Imported (${result.action}) agent definition '${result.agentType}'`);
 			} else {
-				const result = await this.createDefinition(agentType, definition);
+				const result = await this.withSpinner('Importing agent definition...', () =>
+					this.createDefinition(agentType, definition),
+				);
 				if (flags.json) {
 					this.outputJson({ action: 'created', ...result });
 					return;
 				}
-				this.log(`Imported agent definition: ${result.agentType}`);
+				this.success(`Imported agent definition '${result.agentType}'`);
 			}
 		} catch (err) {
 			this.handleError(err);

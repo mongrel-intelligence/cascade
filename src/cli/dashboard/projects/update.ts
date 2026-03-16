@@ -34,33 +34,35 @@ export default class ProjectsUpdate extends DashboardCommand {
 		const { args, flags } = await this.parse(ProjectsUpdate);
 
 		try {
-			await this.client.projects.update.mutate({
-				id: args.id,
-				name: flags.name,
-				repo: flags.repo,
-				baseBranch: flags['base-branch'],
-				branchPrefix: flags['branch-prefix'],
-				model: flags.model,
-				maxIterations: flags['max-iterations'],
-				watchdogTimeoutMs: flags['watchdog-timeout'],
-				workItemBudgetUsd: flags['work-item-budget'],
-				agentEngine: flags['agent-engine'],
-				progressModel: flags['progress-model'],
-				progressIntervalMinutes: flags['progress-interval'],
-				...(flags['run-links-enabled'] !== undefined
-					? { runLinksEnabled: flags['run-links-enabled'] }
-					: {}),
-				...(flags['max-in-flight-items'] !== undefined
-					? { maxInFlightItems: flags['max-in-flight-items'] }
-					: {}),
-			});
+			await this.withSpinner('Updating project...', () =>
+				this.client.projects.update.mutate({
+					id: args.id,
+					name: flags.name,
+					repo: flags.repo,
+					baseBranch: flags['base-branch'],
+					branchPrefix: flags['branch-prefix'],
+					model: flags.model,
+					maxIterations: flags['max-iterations'],
+					watchdogTimeoutMs: flags['watchdog-timeout'],
+					workItemBudgetUsd: flags['work-item-budget'],
+					agentEngine: flags['agent-engine'],
+					progressModel: flags['progress-model'],
+					progressIntervalMinutes: flags['progress-interval'],
+					...(flags['run-links-enabled'] !== undefined
+						? { runLinksEnabled: flags['run-links-enabled'] }
+						: {}),
+					...(flags['max-in-flight-items'] !== undefined
+						? { maxInFlightItems: flags['max-in-flight-items'] }
+						: {}),
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson({ ok: true });
 				return;
 			}
 
-			this.log(`Updated project: ${args.id}`);
+			this.success(`Updated project '${args.id}'`);
 		} catch (err) {
 			this.handleError(err);
 		}

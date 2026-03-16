@@ -20,14 +20,16 @@ export default class ProjectsDelete extends DashboardCommand {
 		await confirm(`Delete project ${args.id}?`, flags.yes);
 
 		try {
-			await this.client.projects.delete.mutate({ id: args.id });
+			await this.withSpinner('Deleting project...', () =>
+				this.client.projects.delete.mutate({ id: args.id }),
+			);
 
 			if (flags.json) {
 				this.outputJson({ ok: true });
 				return;
 			}
 
-			this.log(`Deleted project: ${args.id}`);
+			this.success(`Deleted project '${args.id}'`);
 		} catch (err) {
 			this.handleError(err);
 		}

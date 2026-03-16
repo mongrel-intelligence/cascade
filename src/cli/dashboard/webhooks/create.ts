@@ -38,13 +38,15 @@ export default class WebhooksCreate extends DashboardCommand {
 			if (flags['jira-email']) oneTimeTokens.jiraEmail = flags['jira-email'];
 			if (flags['jira-api-token']) oneTimeTokens.jiraApiToken = flags['jira-api-token'];
 
-			const result = await this.client.webhooks.create.mutate({
-				projectId: args.projectId,
-				callbackBaseUrl,
-				trelloOnly: flags['trello-only'],
-				githubOnly: flags['github-only'],
-				oneTimeTokens: Object.keys(oneTimeTokens).length > 0 ? oneTimeTokens : undefined,
-			});
+			const result = await this.withSpinner('Creating webhooks...', () =>
+				this.client.webhooks.create.mutate({
+					projectId: args.projectId,
+					callbackBaseUrl,
+					trelloOnly: flags['trello-only'],
+					githubOnly: flags['github-only'],
+					oneTimeTokens: Object.keys(oneTimeTokens).length > 0 ? oneTimeTokens : undefined,
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson(result);
@@ -55,7 +57,9 @@ export default class WebhooksCreate extends DashboardCommand {
 				if (typeof result.trello === 'string') {
 					this.log(`Trello: ${result.trello}`);
 				} else {
-					this.log(`Created Trello webhook: [${result.trello.id}] ${result.trello.callbackURL}`);
+					this.success(
+						`Created Trello webhook: [${result.trello.id}] ${result.trello.callbackURL}`,
+					);
 				}
 			}
 
@@ -63,7 +67,7 @@ export default class WebhooksCreate extends DashboardCommand {
 				if (typeof result.github === 'string') {
 					this.log(`GitHub: ${result.github}`);
 				} else {
-					this.log(`Created GitHub webhook: [${result.github.id}] ${result.github.config.url}`);
+					this.success(`Created GitHub webhook: [${result.github.id}] ${result.github.config.url}`);
 				}
 			}
 
@@ -71,7 +75,7 @@ export default class WebhooksCreate extends DashboardCommand {
 				if (typeof result.jira === 'string') {
 					this.log(`JIRA: ${result.jira}`);
 				} else {
-					this.log(`Created JIRA webhook: [${result.jira.id}] ${result.jira.url}`);
+					this.success(`Created JIRA webhook: [${result.jira.id}] ${result.jira.url}`);
 				}
 			}
 		} catch (err) {

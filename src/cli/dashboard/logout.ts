@@ -1,4 +1,5 @@
 import { Command } from '@oclif/core';
+import chalk from 'chalk';
 import { clearConfig, loadConfig } from './_shared/config.js';
 
 export default class Logout extends Command {
@@ -21,6 +22,6 @@ export default class Logout extends Command {
 		}
 
 		clearConfig();
-		this.log('Logged out.');
+		this.log(chalk.green('✓ Logged out.'));
 	}
 }

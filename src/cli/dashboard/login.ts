@@ -1,4 +1,5 @@
 import { Command, Flags } from '@oclif/core';
+import chalk from 'chalk';
 import { saveConfig } from './_shared/config.js';
 
 export default class Login extends Command {
@@ -43,7 +44,9 @@ export default class Login extends Command {
 
 		const user = (await response.json()) as { email: string; name: string };
 		const orgSuffix = flags.org ? ` [org: ${flags.org}]` : '';
-		this.log(`Logged in as ${user.name} (${user.email})${orgSuffix}`);
+		this.log(
+			chalk.green(`✓ Logged in as ${user.name} (${user.email}) at ${serverUrl}${orgSuffix}`),
+		);
 
 		// Show if overrides are active
 		if (

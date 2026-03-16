@@ -22,19 +22,21 @@ export default class ProjectsCredentialsSet extends DashboardCommand {
 		const { args, flags } = await this.parse(ProjectsCredentialsSet);
 
 		try {
-			await this.client.projects.credentials.set.mutate({
-				projectId: args.id,
-				envVarKey: flags.key,
-				value: flags.value,
-				name: flags.name,
-			});
+			await this.withSpinner('Setting credential...', () =>
+				this.client.projects.credentials.set.mutate({
+					projectId: args.id,
+					envVarKey: flags.key,
+					value: flags.value,
+					name: flags.name,
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson({ ok: true });
 				return;
 			}
 
-			this.log(`Set credential ${flags.key} for project ${args.id}`);
+			this.success(`Set credential ${flags.key} for project '${args.id}'`);
 		} catch (err) {
 			this.handleError(err);
 		}

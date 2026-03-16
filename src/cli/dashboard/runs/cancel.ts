@@ -20,15 +20,17 @@ export default class RunsCancel extends DashboardCommand {
 		const { args, flags } = await this.parse(RunsCancel);
 
 		try {
-			const result = await this.client.runs.cancel.mutate({
-				runId: args.id,
-				reason: flags.reason,
-			});
+			const result = await this.withSpinner('Cancelling run...', () =>
+				this.client.runs.cancel.mutate({
+					runId: args.id,
+					reason: flags.reason,
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson(result);
 			} else {
-				this.log('Run cancelled successfully.');
+				this.success(`Cancelled run ${args.id}`);
 			}
 		} catch (err) {
 			this.handleError(err);

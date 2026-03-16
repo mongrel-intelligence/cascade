@@ -27,28 +27,30 @@ export default class ProjectsCreate extends DashboardCommand {
 		const { flags } = await this.parse(ProjectsCreate);
 
 		try {
-			const result = await this.client.projects.create.mutate({
-				id: flags.id,
-				name: flags.name,
-				repo: flags.repo,
-				baseBranch: flags['base-branch'],
-				branchPrefix: flags['branch-prefix'],
-				model: flags.model,
-				maxIterations: flags['max-iterations'],
-				watchdogTimeoutMs: flags['watchdog-timeout'],
-				workItemBudgetUsd: flags['work-item-budget'],
-				agentEngine: flags['agent-engine'],
-				progressModel: flags['progress-model'],
-				progressIntervalMinutes: flags['progress-interval'],
-				maxInFlightItems: flags['max-in-flight-items'],
-			});
+			const result = await this.withSpinner('Creating project...', () =>
+				this.client.projects.create.mutate({
+					id: flags.id,
+					name: flags.name,
+					repo: flags.repo,
+					baseBranch: flags['base-branch'],
+					branchPrefix: flags['branch-prefix'],
+					model: flags.model,
+					maxIterations: flags['max-iterations'],
+					watchdogTimeoutMs: flags['watchdog-timeout'],
+					workItemBudgetUsd: flags['work-item-budget'],
+					agentEngine: flags['agent-engine'],
+					progressModel: flags['progress-model'],
+					progressIntervalMinutes: flags['progress-interval'],
+					maxInFlightItems: flags['max-in-flight-items'],
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson(result);
 				return;
 			}
 
-			this.log(`Created project: ${flags.id}`);
+			this.success(`Created project '${flags.id}' (repo: ${flags.repo})`);
 		} catch (err) {
 			this.handleError(err);
 		}
