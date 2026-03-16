@@ -39,6 +39,7 @@
 		"credentials:encrypt": "node --env-file=.env --import tsx tools/migrate-credentials-encrypt.ts",
 		"credentials:decrypt": "node --env-file=.env --import tsx tools/migrate-credentials-decrypt.ts",
 		"credentials:rotate-key": "node --env-file=.env --import tsx tools/rotate-credential-key.ts",
+		"credentials:reencrypt-project-scoped": "node --env-file=.env --import tsx tools/migrate-project-credentials-reencrypt.ts",
 		"tool:migrate-triggers": "node --env-file=.env --import tsx tools/migrate-triggers.ts"
 	},
 	"keywords": [

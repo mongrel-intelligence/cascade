@@ -92,6 +92,14 @@ jobs:
             cascade-migrator:latest \
             npx tsx tools/migrate-hooks.ts --apply
 
+      - name: Re-encrypt project credentials with project-scoped AAD
+        run: |
+          docker run --rm \
+            --env-file /opt/services/cascade.env \
+            -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            cascade-migrator:latest \
+            npx tsx tools/migrate-project-credentials-reencrypt.ts
+
       - name: Pull latest worker image
         run: docker pull ${{ env.WORKER_IMAGE }}:latest
 
