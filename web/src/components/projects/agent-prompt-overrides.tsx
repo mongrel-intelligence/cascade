@@ -66,7 +66,8 @@ export function AgentPromptOverrides({
 		// Initialize with project override, then fall back to global, then default
 		const initialSystem =
 			data.projectSystemPrompt ?? data.globalSystemPrompt ?? data.defaultSystemPrompt ?? '';
-		const initialTask = data.projectTaskPrompt ?? data.globalTaskPrompt ?? '';
+		const initialTask =
+			data.projectTaskPrompt ?? data.globalTaskPrompt ?? data.defaultTaskPrompt ?? '';
 		onSystemPromptChange(initialSystem);
 		onTaskPromptChange(initialTask);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -123,7 +124,7 @@ export function AgentPromptOverrides({
 	const taskBadge = getInheritanceBadge({
 		projectOverride: data?.projectTaskPrompt ?? null,
 		globalPrompt: data?.globalTaskPrompt ?? null,
-		defaultPrompt: null,
+		defaultPrompt: data?.defaultTaskPrompt ?? null,
 	});
 
 	const currentBadge = isSystemSection ? systemBadge : taskBadge;
@@ -138,8 +139,8 @@ export function AgentPromptOverrides({
 		if (isSystemSection && data?.defaultSystemPrompt) {
 			onSystemPromptChange(data.defaultSystemPrompt);
 			setValidationStatus(null);
-		} else if (!isSystemSection && data?.globalTaskPrompt) {
-			onTaskPromptChange(data.globalTaskPrompt);
+		} else if (!isSystemSection && data?.defaultTaskPrompt) {
+			onTaskPromptChange(data.defaultTaskPrompt);
 			setValidationStatus(null);
 		}
 	};
@@ -163,7 +164,7 @@ export function AgentPromptOverrides({
 	const hasProjectSystemOverride = !!data?.projectSystemPrompt;
 	const hasProjectTaskOverride = !!data?.projectTaskPrompt;
 
-	const canLoadDefault = isSystemSection ? !!data?.defaultSystemPrompt : !!data?.globalTaskPrompt;
+	const canLoadDefault = isSystemSection ? !!data?.defaultSystemPrompt : !!data?.defaultTaskPrompt;
 
 	return (
 		<div className="space-y-4">
