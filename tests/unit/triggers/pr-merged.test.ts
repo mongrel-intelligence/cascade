@@ -9,6 +9,10 @@ vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
 	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
 }));
 
+vi.mock('../../../src/triggers/shared/lifecycle-check.js', () => ({
+	isLifecycleTriggerEnabled: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock('../../../src/triggers/shared/backlog-check.js', () => ({
 	isPipelineAtCapacity: vi.fn().mockResolvedValue({ atCapacity: false, reason: 'below-capacity' }),
 }));
@@ -70,6 +74,7 @@ import { createMockProject } from '../../helpers/factories.js';
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { githubClient } from '../../../src/github/client.js';
 import { isPipelineAtCapacity } from '../../../src/triggers/shared/backlog-check.js';
+import { isLifecycleTriggerEnabled } from '../../../src/triggers/shared/lifecycle-check.js';
 import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 
 describe('PRMergedTrigger', () => {
@@ -147,7 +152,7 @@ describe('PRMergedTrigger', () => {
 
 	describe('handle', () => {
 		it('should return null when trigger is disabled', async () => {
-			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+			vi.mocked(isLifecycleTriggerEnabled).mockResolvedValueOnce(false);
 
 			const ctx: TriggerContext = {
 				project: mockProject,
@@ -162,17 +167,13 @@ describe('PRMergedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 			expect(result).toBeNull();
-			expect(checkTriggerEnabled).toHaveBeenCalledWith(
-				'test',
-				'review',
-				'scm:pr-merged',
-				'pr-merged',
-			);
+			expect(isLifecycleTriggerEnabled).toHaveBeenCalledWith('test', 'prMerged', 'pr-merged');
 		});
 
 		it('moves card to merged list when PR is merged', async () => {
-			// First call: scm:pr-merged = true; second call: backlog-manager = false
-			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+			// isLifecycleTriggerEnabled: prMerged = true; then checkTriggerEnabled: backlog-manager = false
+			vi.mocked(isLifecycleTriggerEnabled).mockResolvedValueOnce(true);
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
 
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 123,
@@ -357,9 +358,9 @@ describe('PRMergedTrigger', () => {
 		});
 
 		it('skips move/comment and returns null when card already merged and backlog-manager disabled', async () => {
-			vi.mocked(checkTriggerEnabled)
-				.mockResolvedValueOnce(true) // scm:pr-merged enabled
-				.mockResolvedValueOnce(false); // backlog-manager disabled
+			// isLifecycleTriggerEnabled: prMerged = true; then checkTriggerEnabled: backlog-manager = false
+			vi.mocked(isLifecycleTriggerEnabled).mockResolvedValueOnce(true);
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false); // backlog-manager disabled
 
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 123,
@@ -460,8 +461,9 @@ describe('PRMergedTrigger', () => {
 		});
 
 		it('returns agentType null when backlog-manager trigger is disabled', async () => {
-			// First call: scm:pr-merged = true; second call: backlog-manager = false
-			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+			// isLifecycleTriggerEnabled: prMerged = true; then checkTriggerEnabled: backlog-manager = false
+			vi.mocked(isLifecycleTriggerEnabled).mockResolvedValueOnce(true);
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
 
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 123,

@@ -5,6 +5,7 @@ import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { isPipelineAtCapacity } from '../shared/backlog-check.js';
+import { isLifecycleTriggerEnabled } from '../shared/lifecycle-check.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
@@ -21,8 +22,8 @@ export class PRMergedTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
-		// Check trigger config via new DB-driven system
-		if (!(await checkTriggerEnabled(ctx.project.id, 'review', 'scm:pr-merged', this.name))) {
+		// Check lifecycle trigger config (stored in project_integrations.triggers)
+		if (!(await isLifecycleTriggerEnabled(ctx.project.id, 'prMerged', this.name))) {
 			return null;
 		}
 
