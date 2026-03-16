@@ -1,21 +1,21 @@
 import { ProjectSecretField } from '@/components/projects/project-secret-field.js';
 import { useProjectUpdate } from '@/components/projects/use-project-update.js';
 import { Badge } from '@/components/ui/badge.js';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.js';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from '@/components/ui/tooltip.js';
 import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
+import { HelpCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
-
-function formatMs(ms: number): string {
-	const minutes = ms / 1000 / 60;
-	if (minutes % 60 === 0)
-		return `${ms.toLocaleString()} (${minutes / 60} hour${minutes / 60 !== 1 ? 's' : ''})`;
-	return `${ms.toLocaleString()} (${minutes} min)`;
-}
 
 interface Project {
 	id: string;
@@ -37,6 +37,19 @@ function numericFieldDefault(value: number | null | undefined): string {
 	return value != null ? String(value) : '';
 }
 
+/** Convert watchdog ms → whole minutes for display */
+function msToMinutes(ms: number | null | undefined): string {
+	if (ms == null) return '';
+	return String(Math.round(ms / 60000));
+}
+
+/** Convert minutes string → ms for storage */
+function minutesToMs(minutes: string): number | null {
+	if (!minutes) return null;
+	const parsed = Number.parseInt(minutes, 10);
+	return Number.isNaN(parsed) ? null : parsed * 60000;
+}
+
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: five independent form sections (identity, budget, progress, watchdog, run links) with shared dirty-state tracking and reset logic
 export function ProjectGeneralForm({ project }: { project: Project }) {
 	const updateMutation = useProjectUpdate(project.id);
@@ -50,9 +63,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const defaults = defaultsQuery.data;
 
 	const [name, setName] = useState(project.name);
-	const [watchdogTimeoutMs, setWatchdogTimeoutMs] = useState(
-		numericFieldDefault(project.watchdogTimeoutMs),
-	);
+	const [watchdogMinutes, setWatchdogMinutes] = useState(msToMinutes(project.watchdogTimeoutMs));
 	const [progressModel, setProgressModel] = useState(project.progressModel ?? '');
 	const [progressIntervalMinutes, setProgressIntervalMinutes] = useState(
 		project.progressIntervalMinutes ?? '',
@@ -67,7 +78,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const isDirty = useMemo(() => {
 		return (
 			name !== project.name ||
-			watchdogTimeoutMs !== numericFieldDefault(project.watchdogTimeoutMs) ||
+			watchdogMinutes !== msToMinutes(project.watchdogTimeoutMs) ||
 			progressModel !== (project.progressModel ?? '') ||
 			progressIntervalMinutes !== (project.progressIntervalMinutes ?? '') ||
 			workItemBudgetUsd !== (project.workItemBudgetUsd ?? '') ||
@@ -76,7 +87,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 		);
 	}, [
 		name,
-		watchdogTimeoutMs,
+		watchdogMinutes,
 		progressModel,
 		progressIntervalMinutes,
 		workItemBudgetUsd,
@@ -87,7 +98,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 
 	function handleReset() {
 		setName(project.name);
-		setWatchdogTimeoutMs(numericFieldDefault(project.watchdogTimeoutMs));
+		setWatchdogMinutes(msToMinutes(project.watchdogTimeoutMs));
 		setProgressModel(project.progressModel ?? '');
 		setProgressIntervalMinutes(project.progressIntervalMinutes ?? '');
 		setWorkItemBudgetUsd(project.workItemBudgetUsd ?? '');
@@ -100,7 +111,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 		updateMutation.mutate(
 			{
 				name,
-				watchdogTimeoutMs: watchdogTimeoutMs ? Number.parseInt(watchdogTimeoutMs, 10) : null,
+				watchdogTimeoutMs: minutesToMs(watchdogMinutes),
 				progressModel: progressModel || null,
 				progressIntervalMinutes: progressIntervalMinutes || null,
 				workItemBudgetUsd: workItemBudgetUsd || null,
@@ -125,14 +136,15 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const budgetPlaceholder = defaults
 		? `${defaults.workItemBudgetUsd.toFixed(2)} (default)`
 		: 'e.g. 5.00';
-	const budgetDescription = defaults ? `$${defaults.workItemBudgetUsd.toFixed(2)} USD` : '…';
-	const watchdogPlaceholder = defaults ? formatMs(defaults.watchdogTimeoutMs) : 'e.g. 1800000';
-	const watchdogDescription = defaults ? formatMs(defaults.watchdogTimeoutMs) : '…';
+	const watchdogDefaultMinutes = defaults ? Math.round(defaults.watchdogTimeoutMs / 60000) : null;
+	const watchdogPlaceholder =
+		watchdogDefaultMinutes != null ? `${watchdogDefaultMinutes} (default)` : 'e.g. 30';
+	const watchdogDescription =
+		watchdogDefaultMinutes != null ? `Default: ${watchdogDefaultMinutes} min` : '…';
 	const progressModelPlaceholder = defaults ? defaults.progressModel : 'e.g. gemini-flash';
 	const progressIntervalPlaceholder = defaults
 		? `${defaults.progressIntervalMinutes} (default)`
 		: 'e.g. 5';
-	const progressIntervalDescription = defaults ? `${defaults.progressIntervalMinutes} min` : '…';
 	const progressModelDescription = defaults ? (
 		<code className="text-xs">{defaults.progressModel}</code>
 	) : (
@@ -140,219 +152,245 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	);
 
 	return (
-		<div className="max-w-2xl space-y-6">
-			<form onSubmit={handleSubmit} className="space-y-6">
-				{/* Project Identity */}
-				<Card>
-					<CardHeader>
-						<CardTitle>Project Identity</CardTitle>
-						<CardDescription>Basic identification and naming for this project.</CardDescription>
-					</CardHeader>
-					<CardContent className="space-y-4">
-						<div className="flex items-center gap-2">
-							<span className="text-sm text-muted-foreground">ID:</span>
-							<Badge variant="secondary" className="font-mono text-xs">
-								{project.id}
-							</Badge>
-						</div>
-						<div className="flex items-center gap-2">
-							<span className="text-sm text-muted-foreground">Repository:</span>
-							{project.repo ? (
-								<a
-									href={`https://github.com/${project.repo}`}
-									target="_blank"
-									rel="noopener noreferrer"
-									className="text-sm text-primary hover:underline font-mono"
-								>
-									{project.repo}
-								</a>
-							) : (
-								<span className="text-sm text-muted-foreground">
-									Not configured —{' '}
-									<Link
-										to="/projects/$projectId/integrations"
-										params={{ projectId: project.id }}
-										className="text-primary hover:underline"
+		<TooltipProvider>
+			<div className="max-w-2xl space-y-6">
+				<form onSubmit={handleSubmit} className="space-y-6">
+					{/* Project Identity */}
+					<Card>
+						<CardHeader>
+							<CardTitle>Project Identity</CardTitle>
+						</CardHeader>
+						<CardContent className="space-y-4">
+							<div className="flex items-center gap-2">
+								<span className="text-sm text-muted-foreground">ID:</span>
+								<Badge variant="secondary" className="font-mono text-xs">
+									{project.id}
+								</Badge>
+							</div>
+							<div className="flex items-center gap-2">
+								<span className="text-sm text-muted-foreground">Repository:</span>
+								{project.repo ? (
+									<a
+										href={`https://github.com/${project.repo}`}
+										target="_blank"
+										rel="noopener noreferrer"
+										className="text-sm text-primary hover:underline font-mono"
 									>
-										set on Integrations tab →
-									</Link>
-								</span>
-							)}
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="name">Name</Label>
-							<Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
-							<p className="text-xs text-muted-foreground">
-								Display name for this project shown in the dashboard.
-							</p>
-						</div>
-					</CardContent>
-				</Card>
-
-				{/* Budget & Limits */}
-				<Card>
-					<CardHeader>
-						<CardTitle>Budget & Limits</CardTitle>
-						<CardDescription>
-							Control spending and concurrency limits for agent runs.
-						</CardDescription>
-					</CardHeader>
-					<CardContent className="space-y-4">
-						<div className="grid grid-cols-2 gap-4">
-							<div className="space-y-2">
-								<Label htmlFor="workItemBudgetUsd">Work Item Budget (USD)</Label>
-								<Input
-									id="workItemBudgetUsd"
-									value={workItemBudgetUsd}
-									onChange={(e) => setWorkItemBudgetUsd(e.target.value)}
-									placeholder={budgetPlaceholder}
-								/>
-								<p className="text-xs text-muted-foreground">
-									Maximum spend per work item before the agent stops. Leave empty to use default:{' '}
-									{budgetDescription}.
-								</p>
+										{project.repo}
+									</a>
+								) : (
+									<span className="text-sm text-muted-foreground">
+										Not configured —{' '}
+										<Link
+											to="/projects/$projectId/integrations"
+											params={{ projectId: project.id }}
+											className="text-primary hover:underline"
+										>
+											set on Integrations tab →
+										</Link>
+									</span>
+								)}
 							</div>
 							<div className="space-y-2">
-								<Label htmlFor="maxInFlightItems">Max In-Flight Items</Label>
+								<Label htmlFor="name">Name</Label>
+								<Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
+								<p className="text-xs text-muted-foreground">
+									Display name for this project shown in the dashboard.
+								</p>
+							</div>
+						</CardContent>
+					</Card>
+
+					{/* Budget & Limits */}
+					<Card>
+						<CardHeader>
+							<div className="flex items-center gap-1.5">
+								<CardTitle>Budget &amp; Limits</CardTitle>
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+									</TooltipTrigger>
+									<TooltipContent>
+										Control spending and concurrency limits for agent runs.
+									</TooltipContent>
+								</Tooltip>
+							</div>
+						</CardHeader>
+						<CardContent className="space-y-4">
+							<div className="grid grid-cols-2 gap-4">
+								<div className="space-y-2">
+									<Label htmlFor="workItemBudgetUsd">Work Item Budget (USD)</Label>
+									<Input
+										id="workItemBudgetUsd"
+										className="w-32"
+										value={workItemBudgetUsd}
+										onChange={(e) => setWorkItemBudgetUsd(e.target.value)}
+										placeholder={budgetPlaceholder}
+									/>
+									<p className="text-xs text-muted-foreground">
+										Max spend per work item. Default: $
+										{defaults ? defaults.workItemBudgetUsd.toFixed(2) : '…'}.
+									</p>
+								</div>
+								<div className="space-y-2">
+									<Label htmlFor="maxInFlightItems">Max In-Flight Items</Label>
+									<Input
+										id="maxInFlightItems"
+										type="number"
+										min="1"
+										step="1"
+										className="w-32"
+										value={maxInFlightItems}
+										onChange={(e) => setMaxInFlightItems(e.target.value)}
+										placeholder="1 (default)"
+									/>
+									<p className="text-xs text-muted-foreground">
+										Max items in TODO + In Progress + In Review. Default: 1.
+									</p>
+								</div>
+							</div>
+							<div className="space-y-2">
+								<div className="flex items-center gap-1.5">
+									<Label htmlFor="watchdogMinutes">Max Session Time (min)</Label>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+										</TooltipTrigger>
+										<TooltipContent>
+											Maximum duration before a stalled agent run is forcibly terminated.
+										</TooltipContent>
+									</Tooltip>
+								</div>
 								<Input
-									id="maxInFlightItems"
+									id="watchdogMinutes"
 									type="number"
 									min="1"
-									value={maxInFlightItems}
-									onChange={(e) => setMaxInFlightItems(e.target.value)}
-									placeholder="1 (default)"
+									step="1"
+									className="w-32"
+									value={watchdogMinutes}
+									onChange={(e) => setWatchdogMinutes(e.target.value)}
+									placeholder={watchdogPlaceholder}
 								/>
-								<p className="text-xs text-muted-foreground">
-									Maximum items in TODO + In Progress + In Review simultaneously. Defaults to 1.
-								</p>
+								<p className="text-xs text-muted-foreground">{watchdogDescription}</p>
 							</div>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="watchdogTimeoutMs">Watchdog Timeout (ms)</Label>
-							<Input
-								id="watchdogTimeoutMs"
-								type="number"
-								min="1"
-								value={watchdogTimeoutMs}
-								onChange={(e) => setWatchdogTimeoutMs(e.target.value)}
-								placeholder={watchdogPlaceholder}
-							/>
-							<p className="text-xs text-muted-foreground">
-								Maximum duration before a stalled agent run is forcibly terminated. Leave empty to
-								use default: {watchdogDescription}.
-							</p>
-						</div>
-					</CardContent>
-				</Card>
+						</CardContent>
+					</Card>
 
-				{/* Progress Monitoring */}
-				<Card>
-					<CardHeader>
-						<CardTitle>Progress Monitoring</CardTitle>
-						<CardDescription>
-							Configure how agent progress is reported during long-running tasks.
-						</CardDescription>
-					</CardHeader>
-					<CardContent className="space-y-4">
-						<div className="grid grid-cols-2 gap-4">
-							<div className="space-y-2">
-								<Label htmlFor="progressModel">Progress Model</Label>
-								<Input
-									id="progressModel"
-									value={progressModel}
-									onChange={(e) => setProgressModel(e.target.value)}
-									placeholder={progressModelPlaceholder}
+					{/* Progress Monitoring */}
+					<Card>
+						<CardHeader>
+							<div className="flex items-center gap-1.5">
+								<CardTitle>Progress Monitoring</CardTitle>
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+									</TooltipTrigger>
+									<TooltipContent>
+										Configure how agent progress is reported during long-running tasks.
+									</TooltipContent>
+								</Tooltip>
+							</div>
+						</CardHeader>
+						<CardContent className="space-y-4">
+							<div className="grid grid-cols-2 gap-4">
+								<div className="space-y-2">
+									<Label htmlFor="progressModel">Progress Model</Label>
+									<Input
+										id="progressModel"
+										value={progressModel}
+										onChange={(e) => setProgressModel(e.target.value)}
+										placeholder={progressModelPlaceholder}
+									/>
+									<p className="text-xs text-muted-foreground">
+										LLM model for progress summaries. Default: {progressModelDescription}.
+									</p>
+								</div>
+								<div className="space-y-2">
+									<Label htmlFor="progressIntervalMinutes">Progress Interval (min)</Label>
+									<Input
+										id="progressIntervalMinutes"
+										type="number"
+										min="1"
+										step="1"
+										className="w-32"
+										value={progressIntervalMinutes}
+										onChange={(e) => setProgressIntervalMinutes(e.target.value)}
+										placeholder={progressIntervalPlaceholder}
+									/>
+									<p className="text-xs text-muted-foreground">
+										How often the agent posts a progress update.
+									</p>
+								</div>
+							</div>
+							<div className="flex items-center gap-3">
+								<input
+									type="checkbox"
+									id="runLinksEnabled"
+									checked={runLinksEnabled}
+									onChange={(e) => setRunLinksEnabled(e.target.checked)}
+									className="h-4 w-4 rounded border-border"
 								/>
-								<p className="text-xs text-muted-foreground">
-									LLM model used for progress summaries. Leave empty to use default:{' '}
-									{progressModelDescription}.
-								</p>
+								<div>
+									<Label htmlFor="runLinksEnabled" className="cursor-pointer">
+										Enable run links in comments
+									</Label>
+									<p className="text-xs text-muted-foreground mt-0.5">
+										Adds a dashboard link to agent comments. Requires{' '}
+										<code className="text-xs">CASCADE_DASHBOARD_URL</code> env var.
+									</p>
+								</div>
 							</div>
-							<div className="space-y-2">
-								<Label htmlFor="progressIntervalMinutes">Progress Interval (minutes)</Label>
-								<Input
-									id="progressIntervalMinutes"
-									type="number"
-									min="1"
-									value={progressIntervalMinutes}
-									onChange={(e) => setProgressIntervalMinutes(e.target.value)}
-									placeholder={progressIntervalPlaceholder}
-								/>
-								<p className="text-xs text-muted-foreground">
-									How often the agent posts a progress update. Leave empty to use default:{' '}
-									{progressIntervalDescription}.
-								</p>
-							</div>
-						</div>
-						<div className="flex items-center gap-3">
-							<input
-								type="checkbox"
-								id="runLinksEnabled"
-								checked={runLinksEnabled}
-								onChange={(e) => setRunLinksEnabled(e.target.checked)}
-								className="h-4 w-4 rounded border-border"
-							/>
-							<div>
-								<Label htmlFor="runLinksEnabled" className="cursor-pointer">
-									Enable run links in comments
-								</Label>
-								<p className="text-xs text-muted-foreground mt-0.5">
-									Adds a dashboard link to agent comments. Requires{' '}
-									<code className="text-xs">CASCADE_DASHBOARD_URL</code> env var.
-								</p>
-							</div>
-						</div>
-					</CardContent>
-				</Card>
+						</CardContent>
+					</Card>
 
-				{/* Save / Reset */}
-				<div className="flex items-center gap-2">
-					<button
-						type="submit"
-						disabled={updateMutation.isPending || !isDirty}
-						className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-					>
-						{updateMutation.isPending ? 'Saving...' : 'Save Changes'}
-					</button>
-					<button
-						type="button"
-						onClick={handleReset}
-						disabled={!isDirty}
-						className="inline-flex h-9 items-center rounded-md border border-input px-4 text-sm hover:bg-accent disabled:opacity-50"
-					>
-						Reset
-					</button>
-				</div>
-			</form>
-
-			{/* API Keys */}
-			<Card>
-				<CardHeader>
-					<CardTitle>API Keys</CardTitle>
-					<CardDescription>
-						Project-scoped API keys for LLM providers. Values are stored encrypted and never
-						returned to the browser. Engine-specific keys are on the{' '}
-						<Link
-							to="/projects/$projectId/harness"
-							params={{ projectId: project.id }}
-							className="text-primary hover:underline"
+					{/* Save / Reset */}
+					<div className="flex items-center gap-2">
+						<button
+							type="submit"
+							disabled={updateMutation.isPending || !isDirty}
+							className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
 						>
-							Engine tab
-						</Link>
-						.
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<ProjectSecretField
-						projectId={project.id}
-						envVarKey="OPENROUTER_API_KEY"
-						label="OpenRouter API Key"
-						description="API key for OpenRouter LLM routing (progress model). Also used as the engine API key when the OpenCode engine is selected — configure it here or on the Engine tab."
-						placeholder="sk-or-..."
-						credential={openrouterCred}
-					/>
-				</CardContent>
-			</Card>
-		</div>
+							{updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+						</button>
+						<button
+							type="button"
+							onClick={handleReset}
+							disabled={!isDirty}
+							className="inline-flex h-9 items-center rounded-md border border-input px-4 text-sm hover:bg-accent disabled:opacity-50"
+						>
+							Reset
+						</button>
+					</div>
+				</form>
+
+				{/* API Keys */}
+				<Card>
+					<CardHeader>
+						<div className="flex items-center gap-1.5">
+							<CardTitle>API Keys</CardTitle>
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+								</TooltipTrigger>
+								<TooltipContent>
+									Project-scoped API keys for LLM providers. Values are stored encrypted and never
+									returned to the browser. Engine-specific keys are on the Engine tab.
+								</TooltipContent>
+							</Tooltip>
+						</div>
+					</CardHeader>
+					<CardContent>
+						<ProjectSecretField
+							projectId={project.id}
+							envVarKey="OPENROUTER_API_KEY"
+							label="OpenRouter API Key"
+							description="API key for OpenRouter LLM routing (progress model). Also used as the engine API key when the OpenCode engine is selected — configure it here or on the Engine tab."
+							placeholder="sk-or-..."
+							credential={openrouterCred}
+						/>
+					</CardContent>
+				</Card>
+			</div>
+		</TooltipProvider>
 	);
 }

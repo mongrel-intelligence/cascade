@@ -233,6 +233,8 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 										id="maxIterations"
 										type="number"
 										min="1"
+										step="1"
+										className="w-32"
 										value={maxIterations}
 										onChange={(e) => setMaxIterations(e.target.value)}
 										placeholder={defaults ? `${defaults.maxIterations} (default)` : 'e.g. 50'}

@@ -23,11 +23,6 @@ function WorkItemRunsPage() {
 	const workItemTitle = firstRun?.workItemTitle ?? workItemId;
 	const workItemUrl = firstRun?.workItemUrl;
 
-	const runningCount = runs?.filter((r) => r.status === 'running').length ?? 0;
-	const totalCount = runs?.length ?? 0;
-	const completedCount = runs?.filter((r) => r.status === 'completed').length ?? 0;
-	const failedCount = runs?.filter((r) => r.status === 'failed').length ?? 0;
-
 	return (
 		<div className="space-y-6">
 			<h1 className="text-xl font-bold">Work Item Runs</h1>
@@ -48,33 +43,7 @@ function WorkItemRunsPage() {
 						<span className="text-lg font-semibold">{workItemTitle}</span>
 					)}
 				</div>
-				<p className="text-sm text-muted-foreground">Work Item ID: {workItemId}</p>
 			</div>
-
-			{runs && (
-				<div className="flex gap-6 text-sm">
-					<div>
-						<span className="font-medium">{totalCount}</span>
-						<span className="ml-1 text-muted-foreground">total</span>
-					</div>
-					{runningCount > 0 && (
-						<div>
-							<span className="font-medium text-blue-600">{runningCount}</span>
-							<span className="ml-1 text-muted-foreground">running</span>
-						</div>
-					)}
-					<div>
-						<span className="font-medium">{completedCount}</span>
-						<span className="ml-1 text-muted-foreground">completed</span>
-					</div>
-					{failedCount > 0 && (
-						<div>
-							<span className="font-medium text-destructive">{failedCount}</span>
-							<span className="ml-1 text-muted-foreground">failed</span>
-						</div>
-					)}
-				</div>
-			)}
 
 			{runs && runs.length > 0 && (
 				<div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

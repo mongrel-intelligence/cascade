@@ -12,11 +12,11 @@ describe('PROJECT_SECTIONS', () => {
 		expect(PROJECT_SECTIONS.map((s) => s.id)).toEqual([
 			'general',
 			'harness',
-			'work',
-			'stats',
 			'integrations',
 			'agent-configs',
 			'lifecycle',
+			'work',
+			'stats',
 		]);
 	});
 
