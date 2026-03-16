@@ -120,6 +120,7 @@ export async function truncateAll() {
 			project_integrations,
 			agent_trigger_configs,
 			agent_configs,
+			agent_definitions,
 			prompt_partials,
 			sessions,
 			users,
