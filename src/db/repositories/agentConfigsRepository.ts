@@ -167,6 +167,22 @@ export function clearAgentEnabledCache(): void {
 }
 
 /**
+ * Clear the agent config prompts cache (for testing only).
+ * This allows integration tests to seed agent configs and see them without waiting for TTL expiry.
+ */
+export function clearAgentConfigPromptsCache(): void {
+	agentConfigPromptsCache.clear();
+}
+
+/**
+ * Clear the max concurrency cache (for testing only).
+ * This allows integration tests to seed agent configs and see them without waiting for TTL expiry.
+ */
+export function clearMaxConcurrencyCache(): void {
+	maxConcurrencyCache.clear();
+}
+
+/**
  * Resolve max_concurrency for a (projectId, agentType) pair.
  * Returns null if no project-scoped config with max_concurrency is found (= no limit).
  *

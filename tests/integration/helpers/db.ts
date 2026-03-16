@@ -4,7 +4,11 @@ import net from 'node:net';
 import path from 'node:path';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { _setTestDb, closeDb, getDb } from '../../../src/db/client.js';
-import { clearAgentEnabledCache } from '../../../src/db/repositories/agentConfigsRepository.js';
+import {
+	clearAgentConfigPromptsCache,
+	clearAgentEnabledCache,
+	clearMaxConcurrencyCache,
+} from '../../../src/db/repositories/agentConfigsRepository.js';
 
 function checkPortReachable(host: string, port: number, timeoutMs = 500): Promise<boolean> {
 	return new Promise((resolve) => {
@@ -125,6 +129,8 @@ export async function truncateAll() {
 	`);
 	// Clear in-memory caches so subsequent tests see fresh DB state
 	clearAgentEnabledCache();
+	clearAgentConfigPromptsCache();
+	clearMaxConcurrencyCache();
 }
 
 /**
