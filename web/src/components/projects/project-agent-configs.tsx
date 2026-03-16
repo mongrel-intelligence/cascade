@@ -316,19 +316,45 @@ function DefinitionAgentSection({
 
 				{/* Engine Tab */}
 				<TabsContent value="engine" className="space-y-4 pt-4">
+					<div className="space-y-2">
+						<Label>Engine</Label>
+						<Select
+							value={agentEngine || '_none'}
+							onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
+						>
+							<SelectTrigger className="w-full">
+								<SelectValue placeholder="Optional" />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="_none">Inherit from project ({inheritedEngine})</SelectItem>
+								{engines.map((engine) => (
+									<SelectItem key={engine.id} value={engine.id}>
+										{engine.label}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</div>
+					<div className="space-y-2">
+						<Label htmlFor={`${agentType}-model`}>Model</Label>
+						<ModelField
+							id={`${agentType}-model`}
+							value={model}
+							onChange={setModel}
+							engine={agentEngine}
+							defaultLabel={inheritedModel ? `Inherit from project (${inheritedModel})` : undefined}
+						/>
+					</div>
+					{effectiveEngine && (
+						<EngineSettingsFields
+							engine={effectiveEngine}
+							value={engineSettings}
+							onChange={setEngineSettings}
+							inheritLabel="Inherit from project"
+							engineDefaults={engineDefaults}
+						/>
+					)}
 					<div className="grid grid-cols-2 gap-4">
-						<div className="space-y-2">
-							<Label htmlFor={`${agentType}-model`}>Model</Label>
-							<ModelField
-								id={`${agentType}-model`}
-								value={model}
-								onChange={setModel}
-								engine={agentEngine}
-								defaultLabel={
-									inheritedModel ? `Inherit from project (${inheritedModel})` : undefined
-								}
-							/>
-						</div>
 						<div className="space-y-2">
 							<Label htmlFor={`${agentType}-iterations`}>Max Iterations</Label>
 							<Input
@@ -343,8 +369,6 @@ function DefinitionAgentSection({
 								}
 							/>
 						</div>
-					</div>
-					<div className="grid grid-cols-2 gap-4">
 						<div className="space-y-2">
 							<Label htmlFor={`${agentType}-concurrency`}>Max Concurrency</Label>
 							<Input
@@ -356,35 +380,7 @@ function DefinitionAgentSection({
 								placeholder="Optional"
 							/>
 						</div>
-						<div className="space-y-2">
-							<Label>Engine</Label>
-							<Select
-								value={agentEngine || '_none'}
-								onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
-							>
-								<SelectTrigger className="w-full">
-									<SelectValue placeholder="Optional" />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="_none">Inherit from project ({inheritedEngine})</SelectItem>
-									{engines.map((engine) => (
-										<SelectItem key={engine.id} value={engine.id}>
-											{engine.label}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						</div>
 					</div>
-					{effectiveEngine && (
-						<EngineSettingsFields
-							engine={effectiveEngine}
-							value={engineSettings}
-							onChange={setEngineSettings}
-							inheritLabel="Inherit from project"
-							engineDefaults={engineDefaults}
-						/>
-					)}
 				</TabsContent>
 
 				{/* Prompts Tab */}
@@ -552,9 +548,9 @@ function AgentRow({
 			<TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
 				{displayModel || displayEngine ? (
 					<span>
-						{displayModel && <span>{displayModel}</span>}
-						{displayModel && displayEngine && <span> · </span>}
 						{displayEngine && <span>{displayEngine}</span>}
+						{displayEngine && displayModel && <span> · </span>}
+						{displayModel && <span>{displayModel}</span>}
 						{hasCustomEngineSettings && (
 							<span className="ml-1.5 inline-flex items-center rounded-sm bg-muted px-1.5 py-0.5 text-xs">
 								Custom settings
@@ -636,7 +632,7 @@ function AgentListView({
 							<TableRow>
 								<TableHead>Agent</TableHead>
 								<TableHead>Status</TableHead>
-								<TableHead className="hidden sm:table-cell">Model / Engine</TableHead>
+								<TableHead className="hidden sm:table-cell">Engine / Model</TableHead>
 								<TableHead className="hidden sm:table-cell">Active Triggers</TableHead>
 								<TableHead className="w-20" />
 							</TableRow>
