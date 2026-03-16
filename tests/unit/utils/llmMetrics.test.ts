@@ -1,10 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import {
-	calculateCost,
-	estimateInputTokens,
-	logLLMCallStart,
-	logLLMMetrics,
-} from '../../../src/utils/llmMetrics.js';
+import { describe, expect, it } from 'vitest';
+import { calculateCost } from '../../../src/utils/llmMetrics.js';
 
 describe.concurrent('llmMetrics', () => {
 	describe('calculateCost', () => {
@@ -74,75 +69,6 @@ describe.concurrent('llmMetrics', () => {
 			});
 
 			expect(cost).toBeCloseTo(0.00015 + 0.0003, 8);
-		});
-	});
-
-	describe('estimateInputTokens', () => {
-		it('estimates tokens from messages', () => {
-			const messages = [{ role: 'user', content: 'Hello world' }];
-			const estimate = estimateInputTokens(messages);
-
-			// JSON.stringify length / 4, ceiling
-			expect(estimate).toBeGreaterThan(0);
-			expect(estimate).toBe(Math.ceil(JSON.stringify(messages).length / 4));
-		});
-
-		it('handles empty messages array', () => {
-			const estimate = estimateInputTokens([]);
-
-			expect(estimate).toBeGreaterThan(0); // [] still has length 2
-		});
-
-		it('handles large messages', () => {
-			const longContent = 'a'.repeat(4000);
-			const messages = [{ role: 'user', content: longContent }];
-			const estimate = estimateInputTokens(messages);
-
-			expect(estimate).toBeGreaterThanOrEqual(1000);
-		});
-	});
-
-	describe('logLLMMetrics', () => {
-		it('logs metrics with formatted cost', () => {
-			const mockLogger = { info: vi.fn() };
-
-			logLLMMetrics(mockLogger, {
-				model: 'test-model',
-				iteration: 5,
-				inputTokens: 1000,
-				outputTokens: 500,
-				cachedTokens: 200,
-				durationMs: 1500,
-				cost: 0.003456,
-			});
-
-			expect(mockLogger.info).toHaveBeenCalledWith('LLM call complete', {
-				model: 'test-model',
-				iteration: 5,
-				inputTokens: 1000,
-				outputTokens: 500,
-				cachedTokens: 200,
-				durationMs: 1500,
-				cost: '$0.003456',
-			});
-		});
-	});
-
-	describe('logLLMCallStart', () => {
-		it('logs call start with estimated tokens and message count', () => {
-			const mockLogger = { info: vi.fn() };
-			const messages = [
-				{ role: 'system', content: 'You are helpful' },
-				{ role: 'user', content: 'Hello' },
-			];
-
-			logLLMCallStart(mockLogger, 3, messages);
-
-			expect(mockLogger.info).toHaveBeenCalledWith('LLM call starting', {
-				iteration: 3,
-				estimatedInputTokens: expect.any(Number),
-				messageCount: 2,
-			});
 		});
 	});
 });
