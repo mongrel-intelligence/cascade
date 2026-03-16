@@ -4,6 +4,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { _setTestDb, closeDb, getDb } from '../../../src/db/client.js';
+import { clearAgentEnabledCache } from '../../../src/db/repositories/agentConfigsRepository.js';
 
 function checkPortReachable(host: string, port: number, timeoutMs = 500): Promise<boolean> {
 	return new Promise((resolve) => {
@@ -98,6 +99,7 @@ export async function runMigrations() {
 /**
  * Truncates all application tables in dependency order.
  * Call in `beforeEach` to isolate tests.
+ * Also clears in-memory repository caches so tests see fresh DB state.
  */
 export async function truncateAll() {
 	const db = getDb();
@@ -121,6 +123,8 @@ export async function truncateAll() {
 			organizations
 		CASCADE
 	`);
+	// Clear in-memory caches so subsequent tests see fresh DB state
+	clearAgentEnabledCache();
 }
 
 /**

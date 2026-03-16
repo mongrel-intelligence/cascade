@@ -159,6 +159,14 @@ export async function isAgentEnabledForProject(
 }
 
 /**
+ * Clear the agent-enabled cache (for testing only).
+ * This allows integration tests to seed agent configs and see them without waiting for TTL expiry.
+ */
+export function clearAgentEnabledCache(): void {
+	agentEnabledCache.clear();
+}
+
+/**
  * Resolve max_concurrency for a (projectId, agentType) pair.
  * Returns null if no project-scoped config with max_concurrency is found (= no limit).
  *

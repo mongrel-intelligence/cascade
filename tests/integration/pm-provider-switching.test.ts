@@ -21,7 +21,13 @@ import { TrelloStatusChangedTodoTrigger } from '../../src/triggers/trello/status
 import type { TriggerContext } from '../../src/types/index.js';
 import { assertFound } from './helpers/assert.js';
 import { truncateAll } from './helpers/db.js';
-import { seedIntegration, seedOrg, seedProject } from './helpers/seed.js';
+import {
+	seedAgentConfig,
+	seedIntegration,
+	seedOrg,
+	seedProject,
+	seedTriggerConfig,
+} from './helpers/seed.js';
 
 // ============================================================================
 // Helpers
@@ -226,6 +232,13 @@ describe('PM Provider Switching (integration)', () => {
 					labels: {},
 				},
 			});
+			// Agent must be explicitly enabled for the trigger to fire
+			await seedAgentConfig({ agentType: 'implementation' });
+			await seedTriggerConfig({
+				agentType: 'implementation',
+				triggerEvent: 'pm:status-changed',
+				enabled: true,
+			});
 
 			const project = await findProjectByBoardIdFromDb('board-123');
 			expect(project).toBeDefined();
@@ -251,6 +264,13 @@ describe('PM Provider Switching (integration)', () => {
 					baseUrl: 'https://example.atlassian.net',
 					statuses: { todo: 'To Do', planning: 'In Planning', splitting: 'Splitting' },
 				},
+			});
+			// Agent must be explicitly enabled for the trigger to fire
+			await seedAgentConfig({ agentType: 'implementation' });
+			await seedTriggerConfig({
+				agentType: 'implementation',
+				triggerEvent: 'pm:status-changed',
+				enabled: true,
 			});
 
 			const project = await findProjectByJiraProjectKeyFromDb('IMPL');
@@ -278,6 +298,13 @@ describe('PM Provider Switching (integration)', () => {
 					baseUrl: 'https://example.atlassian.net',
 					statuses: { todo: 'To Do', planning: 'In Planning', splitting: 'Splitting' },
 				},
+			});
+			// Agent must be explicitly enabled for the trigger to fire
+			await seedAgentConfig({ agentType: 'planning' });
+			await seedTriggerConfig({
+				agentType: 'planning',
+				triggerEvent: 'pm:status-changed',
+				enabled: true,
 			});
 
 			const project = await findProjectByJiraProjectKeyFromDb('PLAN');
