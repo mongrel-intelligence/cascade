@@ -157,14 +157,20 @@ describe('ProjectsCredentialsDelete (credentials-delete)', () => {
 		});
 	});
 
-	it('rejects without --yes flag', async () => {
-		mockCreateDashboardClient.mockReturnValue(makeClient());
+	it('auto-accepts without --yes flag in non-TTY environments', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
 
 		const cmd = new ProjectsCredentialsDelete(
 			['my-project', '--key', 'GITHUB_TOKEN_IMPLEMENTER'],
 			oclifConfig as never,
 		);
-		await expect(cmd.run()).rejects.toThrow();
+		// In non-TTY environments (CI, piped), confirm() auto-accepts without prompting
+		await expect(cmd.run()).resolves.toBeUndefined();
+		expect(client.projects.credentials.delete.mutate).toHaveBeenCalledWith({
+			projectId: 'my-project',
+			envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
+		});
 	});
 
 	it('requires --key flag', async () => {

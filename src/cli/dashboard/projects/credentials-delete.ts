@@ -1,5 +1,6 @@
 import { Args, Flags } from '@oclif/core';
 import { DashboardCommand } from '../_shared/base.js';
+import { confirm } from '../_shared/confirm.js';
 
 export default class ProjectsCredentialsDelete extends DashboardCommand {
 	static override description = 'Delete a project-scoped credential.';
@@ -20,9 +21,7 @@ export default class ProjectsCredentialsDelete extends DashboardCommand {
 	async run(): Promise<void> {
 		const { args, flags } = await this.parse(ProjectsCredentialsDelete);
 
-		if (!flags.yes) {
-			this.error('Pass --yes to confirm deletion.');
-		}
+		await confirm(`Delete credential ${flags.key} from project ${args.id}?`, flags.yes);
 
 		try {
 			await this.client.projects.credentials.delete.mutate({
