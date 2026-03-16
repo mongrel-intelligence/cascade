@@ -44,6 +44,10 @@ vi.mock('../../../src/triggers/shared/integration-validation.js', () => ({
 	formatValidationErrors: vi.fn().mockReturnValue(''),
 }));
 
+vi.mock('../../../src/utils/lifecycle.js', () => ({
+	startWatchdog: vi.fn(),
+}));
+
 import { runAgent } from '../../../src/agents/registry.js';
 import { isAgentEnabledForProject } from '../../../src/db/repositories/agentConfigsRepository.js';
 import { getRunById } from '../../../src/db/repositories/runsRepository.js';

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { Eta } from 'eta';
 
 import { resolveKnownAgentTypes } from '../definitions/index.js';
+import { loadAgentDefinition } from '../definitions/loader.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const templatesDir = join(__dirname, 'templates');
@@ -229,6 +230,20 @@ export function renderInlineTaskPrompt(
 	// Always resolve includes - resolveIncludes handles empty maps gracefully
 	const expanded = resolveIncludes(template, dbPartials ?? new Map());
 	return taskEta.renderString(expanded, context);
+}
+
+/**
+ * Returns the YAML-defined taskPrompt for an agent type (the factory default).
+ * Does not require initPrompts() — reads directly from YAML.
+ * Returns null if the agent type is unknown or has no taskPrompt defined.
+ */
+export function getDefaultTaskPrompt(agentType: string): string | null {
+	try {
+		const definition = loadAgentDefinition(agentType);
+		return definition.prompts.taskPrompt ?? null;
+	} catch {
+		return null;
+	}
 }
 
 /** Returns the raw .eta template source from disk (before rendering). */

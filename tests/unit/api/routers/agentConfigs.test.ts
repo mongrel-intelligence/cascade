@@ -15,6 +15,7 @@ const {
 	mockLoadPartials,
 	mockResolveAgentDefinition,
 	mockGetRawTemplate,
+	mockGetDefaultTaskPrompt,
 } = vi.hoisted(() => ({
 	mockListAgentConfigs: vi.fn(),
 	mockCreateAgentConfig: vi.fn(),
@@ -27,6 +28,7 @@ const {
 	mockLoadPartials: vi.fn(),
 	mockResolveAgentDefinition: vi.fn(),
 	mockGetRawTemplate: vi.fn(),
+	mockGetDefaultTaskPrompt: vi.fn().mockReturnValue(null),
 }));
 
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
@@ -45,6 +47,7 @@ vi.mock('../../../../src/backends/index.js', () => ({
 vi.mock('../../../../src/agents/prompts/index.js', () => ({
 	validateTemplate: (...args: unknown[]) => mockValidateTemplate(...args),
 	getRawTemplate: (...args: unknown[]) => mockGetRawTemplate(...args),
+	getDefaultTaskPrompt: (...args: unknown[]) => mockGetDefaultTaskPrompt(...args),
 }));
 
 vi.mock('../../../../src/db/repositories/partialsRepository.js', () => ({
@@ -566,6 +569,7 @@ describe('agentConfigsRouter', () => {
 				},
 			});
 			mockGetRawTemplate.mockReturnValue('raw disk template content');
+			mockGetDefaultTaskPrompt.mockReturnValue('yaml default task prompt');
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.getPrompts({ projectId: 'proj-1', agentType: 'implementation' });
@@ -576,6 +580,7 @@ describe('agentConfigsRouter', () => {
 				globalSystemPrompt: 'global system prompt',
 				globalTaskPrompt: 'global task prompt',
 				defaultSystemPrompt: 'raw disk template content',
+				defaultTaskPrompt: 'yaml default task prompt',
 			});
 		});
 

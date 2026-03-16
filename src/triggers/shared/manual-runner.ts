@@ -4,6 +4,7 @@ import { getRunById } from '../../db/repositories/runsRepository.js';
 import { withPMCredentials } from '../../pm/context.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../types/index.js';
+import { startWatchdog } from '../../utils/lifecycle.js';
 import { logger } from '../../utils/logging.js';
 import { formatValidationErrors, validateIntegrations } from './integration-validation.js';
 
@@ -103,6 +104,8 @@ export async function triggerManualRun(
 	});
 
 	markTriggerRunning(triggerKey);
+
+	startWatchdog(project.watchdogTimeoutMs);
 
 	const agentInput: AgentInput & { project: ProjectConfig; config: CascadeConfig } = {
 		workItemId: input.workItemId,
