@@ -269,18 +269,6 @@ export async function downloadMedia(
 	}
 }
 
-/**
- * Converts a downloaded media buffer to a base64 data URI string suitable
- * for embedding in HTML or LLM context.
- *
- * @param buffer   - The raw bytes of the media.
- * @param mimeType - The MIME type of the media (e.g. `'image/png'`).
- * @returns A base64 data URI string, e.g. `'data:image/png;base64,iVBORw...'`.
- */
-export function mediaToBase64DataUri(buffer: Buffer, mimeType: string): string {
-	return `data:${mimeType};base64,${buffer.toString('base64')}`;
-}
-
 // ---------------------------------------------------------------------------
 // JIRA media URL resolution
 // ---------------------------------------------------------------------------

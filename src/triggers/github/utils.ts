@@ -65,39 +65,6 @@ export function extractTrelloCardId(text: string | null): string | null {
 }
 
 /**
- * Check if text contains a Trello card URL.
- */
-export function hasTrelloCardUrl(text: string | null): boolean {
-	return extractTrelloCardId(text) !== null;
-}
-
-/**
- * Extract full Trello card URL from text.
- */
-export function extractTrelloCardUrl(text: string | null): string | null {
-	if (!text) return null;
-	const match = text.match(TRELLO_CARD_URL_REGEX);
-	return match ? match[0] : null;
-}
-
-/**
- * Validate PR body has Trello card URL and extract card ID.
- * Returns card ID or null (with logging) if not found.
- */
-export function requireTrelloCardId(
-	prBody: string | null,
-	context: { prNumber: number; triggerName: string },
-): string | null {
-	if (!hasTrelloCardUrl(prBody)) {
-		logger.info(`PR does not have Trello card URL, skipping ${context.triggerName}`, {
-			prNumber: context.prNumber,
-		});
-		return null;
-	}
-	return extractTrelloCardId(prBody);
-}
-
-/**
  * Extract a JIRA issue key (e.g., "PROJ-123") from text.
  */
 export function extractJiraIssueKey(text: string | null): string | null {
@@ -117,25 +84,6 @@ export function extractWorkItemId(text: string | null, project: ProjectConfig): 
 		return extractJiraIssueKey(text);
 	}
 	return extractTrelloCardId(text);
-}
-
-/**
- * Validate PR body has a work item reference and extract the ID.
- * Works for both Trello (card URL) and JIRA (issue key) projects.
- */
-export function requireWorkItemId(
-	prBody: string | null,
-	project: ProjectConfig,
-	context: { prNumber: number; triggerName: string },
-): string | null {
-	const id = extractWorkItemId(prBody, project);
-	if (!id) {
-		logger.info(`PR does not have work item reference, skipping ${context.triggerName}`, {
-			prNumber: context.prNumber,
-			pmType: project.pm?.type ?? 'trello',
-		});
-	}
-	return id;
 }
 
 /**

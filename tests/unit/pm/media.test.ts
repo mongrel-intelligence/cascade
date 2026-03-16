@@ -6,7 +6,6 @@ import {
 	extractMarkdownImages,
 	filterImageMedia,
 	isImageMimeType,
-	mediaToBase64DataUri,
 	resolveJiraMediaUrls,
 } from '../../../src/pm/media.js';
 import type { MediaReference } from '../../../src/pm/types.js';
@@ -412,30 +411,6 @@ describe('downloadMedia', () => {
 		expect(result).not.toBeNull();
 		// biome-ignore lint/style/noNonNullAssertion: guarded by expect above
 		expect(result!.buffer.byteLength).toBe(MAX_IMAGE_SIZE_BYTES);
-	});
-});
-
-// ---------------------------------------------------------------------------
-// mediaToBase64DataUri
-// ---------------------------------------------------------------------------
-
-describe('mediaToBase64DataUri', () => {
-	it('returns a correctly formatted data URI', () => {
-		const buffer = Buffer.from('hello');
-		const result = mediaToBase64DataUri(buffer, 'image/png');
-		expect(result).toBe(`data:image/png;base64,${Buffer.from('hello').toString('base64')}`);
-	});
-
-	it('works for different MIME types', () => {
-		const buffer = Buffer.from([0xff, 0xd8, 0xff]);
-		const result = mediaToBase64DataUri(buffer, 'image/jpeg');
-		expect(result).toMatch(/^data:image\/jpeg;base64,/);
-	});
-
-	it('empty buffer produces valid (empty content) data URI', () => {
-		const buffer = Buffer.alloc(0);
-		const result = mediaToBase64DataUri(buffer, 'image/gif');
-		expect(result).toBe('data:image/gif;base64,');
 	});
 });
 
