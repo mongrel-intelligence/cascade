@@ -121,6 +121,7 @@ export default defineConfig({
 						'tests/unit/webhook/**/*.test.ts',
 						'tests/unit/queue/**/*.test.ts',
 						'tests/unit/integration-helpers/**/*.test.ts',
+						'tests/unit/tools/**/*.test.ts',
 						'tests/unit/*.test.ts',
 					],
 					...sharedTest,
