@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('clsx', () => ({ clsx: (...args: unknown[]) => args.join(' ') }));
 vi.mock('tailwind-merge', () => ({ twMerge: (s: string) => s }));
 
-import { formatCost, formatDuration, formatRelativeTime } from '../../../web/src/lib/utils.js';
+import {
+	formatCost,
+	formatCostSummary,
+	formatDuration,
+	formatRelativeTime,
+} from '../../../web/src/lib/utils.js';
 
 describe('formatDuration', () => {
 	it('returns "-" for null', () => {
@@ -57,6 +62,32 @@ describe('formatCost', () => {
 
 	it('returns "-" for NaN string input', () => {
 		expect(formatCost('not-a-number')).toBe('-');
+	});
+});
+
+describe('formatCostSummary', () => {
+	it('returns "-" for null', () => {
+		expect(formatCostSummary(null)).toBe('-');
+	});
+
+	it('returns "-" for undefined', () => {
+		expect(formatCostSummary(undefined)).toBe('-');
+	});
+
+	it('formats number with 2 decimal places', () => {
+		expect(formatCostSummary(0.001)).toBe('$0.00');
+		expect(formatCostSummary(1.23456)).toBe('$1.23');
+		expect(formatCostSummary(0)).toBe('$0.00');
+		expect(formatCostSummary(5.5)).toBe('$5.50');
+	});
+
+	it('handles string input', () => {
+		expect(formatCostSummary('0.5')).toBe('$0.50');
+		expect(formatCostSummary('1.23456')).toBe('$1.23');
+	});
+
+	it('returns "-" for NaN string input', () => {
+		expect(formatCostSummary('not-a-number')).toBe('-');
 	});
 });
 

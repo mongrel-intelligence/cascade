@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.js';
 import { agentTypeLabel, getAgentColor } from '@/lib/chart-colors.js';
+import { formatCostSummary } from '@/lib/utils.js';
 import { Cell, Label, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 
 interface WorkItemRun {
@@ -81,7 +82,7 @@ export function WorkItemCostChart({ runs, byAgentType }: WorkItemCostChartProps)
 		);
 	}
 
-	const totalLabel = `$${totalCost.toFixed(4)}`;
+	const totalLabel = formatCostSummary(totalCost);
 
 	return (
 		<Card>

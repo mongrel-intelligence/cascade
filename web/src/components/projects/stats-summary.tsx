@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.js';
-import { formatCost, formatDuration } from '@/lib/utils.js';
+import { formatCostSummary, formatDuration } from '@/lib/utils.js';
 
 interface StatsSummaryProps {
 	totalRuns: number;
@@ -21,7 +21,7 @@ export function StatsSummary({
 		},
 		{
 			label: 'Total Cost',
-			value: formatCost(totalCostUsd),
+			value: formatCostSummary(totalCostUsd),
 		},
 		{
 			label: 'Avg Duration',
