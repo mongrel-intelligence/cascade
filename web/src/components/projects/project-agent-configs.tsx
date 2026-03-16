@@ -147,6 +147,7 @@ interface DefinitionAgentSectionProps {
 	systemDefaults: SystemDefaults | undefined;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: tabbed detail panel managing Engine/Prompts/Triggers tabs with per-tab state, mutations, and trigger category grouping
 function DefinitionAgentSection({
 	agentType,
 	projectId,
@@ -509,6 +510,7 @@ interface AgentRowProps {
 	systemDefaults: SystemDefaults | undefined;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: table row with multiple computed display values (model, engine, trigger count) and layered inheritance fallbacks
 function AgentRow({
 	type,
 	config,
@@ -779,6 +781,7 @@ function AgentDetailView({
 // Main Component
 // ============================================================================
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: orchestrates multiple queries, mutations, and list/detail navigation with agent config and trigger data transformation
 export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const queryClient = useQueryClient();
 
@@ -954,6 +957,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		}
 	}
 
+	// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: save handler dispatches create vs update, builds payload from many optional fields, and chains trigger upsert
 	const handleSaveConfig = (type: string, configId: number | null, values: SaveConfigValues) => {
 		setSavingAgentType(type);
 		const activeEngine = values.agentEngine || null;

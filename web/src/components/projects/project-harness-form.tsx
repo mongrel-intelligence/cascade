@@ -91,6 +91,7 @@ const ENGINE_SECRETS: Array<{
 	},
 ];
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multiple query dependencies and credential sections for engine-specific settings rendering
 export function ProjectHarnessForm({ project }: { project: Project }) {
 	const updateMutation = useProjectUpdate(project.id);
 	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());

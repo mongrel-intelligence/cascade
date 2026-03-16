@@ -23,6 +23,7 @@ interface AgentConfigFormDialogProps {
 	config?: AgentConfig;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: form dialog with dual create/update mutation paths and engine-specific settings rendering
 export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfigFormDialogProps) {
 	const queryClient = useQueryClient();
 	const isEdit = !!config && config.id !== 0;

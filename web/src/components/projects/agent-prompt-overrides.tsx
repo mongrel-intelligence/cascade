@@ -34,6 +34,7 @@ interface AgentPromptOverridesProps {
 	onTaskPromptClear: () => void;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: dual-section prompt editor (system/task) with section-aware state, validation, inheritance badges, and shared query dependencies
 export function AgentPromptOverrides({
 	projectId,
 	agentType,
