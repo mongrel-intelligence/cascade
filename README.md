@@ -1,5 +1,8 @@
 # Cascade
 
+[![CI](https://github.com/mongrel-intelligence/cascade/actions/workflows/ci.yml/badge.svg)](https://github.com/mongrel-intelligence/cascade/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/mongrel-intelligence/cascade/branch/main/graph/badge.svg)](https://codecov.io/gh/mongrel-intelligence/cascade)
+
 > **Cascade orchestrates AI agents (Claude Code, Codex, opencode, LLMist) across your workflows in GitHub, Trello, and Jira.**
 
 Cascade is an open-source platform that automates the full software development lifecycle. Connect your PM tool and GitHub repository, and Cascade drives work items from plan to merge:
