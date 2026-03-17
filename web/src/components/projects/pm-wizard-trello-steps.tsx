@@ -84,6 +84,12 @@ export function TrelloCredentialsStep({
 
 	return (
 		<div className="space-y-4">
+			{state.isEditing && state.hasStoredCredentials && !state.trelloApiKey && (
+				<div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400">
+					<CheckCircle2 className="h-4 w-4 shrink-0" />
+					Credentials stored — enter new values below to replace them.
+				</div>
+			)}
 			<p className="text-xs text-muted-foreground">
 				Enter your Trello API credentials. These will be saved securely to the project.
 			</p>
@@ -109,12 +115,6 @@ export function TrelloCredentialsStep({
 					</a>
 				</p>
 			</div>
-			{state.isEditing && state.hasStoredCredentials && !state.trelloApiKey && (
-				<div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400">
-					<CheckCircle2 className="h-4 w-4 shrink-0" />
-					Credentials stored — enter new values above to replace them.
-				</div>
-			)}
 			<div className="space-y-2">
 				<Label>Authorization</Label>
 				{state.trelloToken ? (
