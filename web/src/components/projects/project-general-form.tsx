@@ -357,6 +357,34 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 					</div>
 				</form>
 
+				{/* API Keys */}
+				<Card>
+					<CardHeader>
+						<div className="flex items-center gap-1.5">
+							<CardTitle>API Keys</CardTitle>
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+								</TooltipTrigger>
+								<TooltipContent>
+									Project-scoped API keys for LLM providers. Values are stored encrypted and never
+									returned to the browser. Engine-specific keys are on the Engine tab.
+								</TooltipContent>
+							</Tooltip>
+						</div>
+					</CardHeader>
+					<CardContent>
+						<ProjectSecretField
+							projectId={project.id}
+							envVarKey="OPENROUTER_API_KEY"
+							label="OpenRouter API Key"
+							description="API key for OpenRouter LLM routing (progress model). Also used as the engine API key when the OpenCode engine is selected — configure it here or on the Engine tab."
+							placeholder="sk-or-..."
+							credential={openrouterCred}
+						/>
+					</CardContent>
+				</Card>
+
 				{/* Danger Zone */}
 				<Card className="border-destructive/50">
 					<CardHeader>
@@ -402,34 +430,6 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 						</AlertDialogFooter>
 					</AlertDialogContent>
 				</AlertDialog>
-
-				{/* API Keys */}
-				<Card>
-					<CardHeader>
-						<div className="flex items-center gap-1.5">
-							<CardTitle>API Keys</CardTitle>
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-								</TooltipTrigger>
-								<TooltipContent>
-									Project-scoped API keys for LLM providers. Values are stored encrypted and never
-									returned to the browser. Engine-specific keys are on the Engine tab.
-								</TooltipContent>
-							</Tooltip>
-						</div>
-					</CardHeader>
-					<CardContent>
-						<ProjectSecretField
-							projectId={project.id}
-							envVarKey="OPENROUTER_API_KEY"
-							label="OpenRouter API Key"
-							description="API key for OpenRouter LLM routing (progress model). Also used as the engine API key when the OpenCode engine is selected — configure it here or on the Engine tab."
-							placeholder="sk-or-..."
-							credential={openrouterCred}
-						/>
-					</CardContent>
-				</Card>
 			</div>
 		</TooltipProvider>
 	);
