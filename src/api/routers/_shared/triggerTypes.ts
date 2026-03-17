@@ -82,9 +82,19 @@ export interface ProjectIntegrationsMap {
 /**
  * Complete triggers view for a project.
  * Response type for getProjectTriggersView.
+ *
+ * `enabledAgents` — agents that have an explicit agent_configs row (opt-in enabled).
+ * `availableAgents` — agents that exist in definitions but are NOT yet configured.
+ *
+ * The legacy `agents` field equals `enabledAgents` for backwards compatibility.
  */
 export interface ProjectTriggersView {
+	/** @deprecated Use enabledAgents instead */
 	agents: AgentTriggersView[];
+	/** Agents with an explicit agent_configs row — actively configured for this project */
+	enabledAgents: AgentTriggersView[];
+	/** Agent types defined in YAML/DB but not yet configured for this project */
+	availableAgents: string[];
 	integrations: ProjectIntegrationsMap;
 }
 

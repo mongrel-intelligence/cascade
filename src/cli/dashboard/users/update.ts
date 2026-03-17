@@ -23,20 +23,22 @@ export default class UsersUpdate extends DashboardCommand {
 		const { args, flags } = await this.parse(UsersUpdate);
 
 		try {
-			await this.client.users.update.mutate({
-				id: args.id,
-				name: flags.name,
-				email: flags.email,
-				role: flags.role as 'member' | 'admin' | 'superadmin' | undefined,
-				password: flags.password,
-			});
+			await this.withSpinner('Updating user...', () =>
+				this.client.users.update.mutate({
+					id: args.id,
+					name: flags.name,
+					email: flags.email,
+					role: flags.role as 'member' | 'admin' | 'superadmin' | undefined,
+					password: flags.password,
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson({ ok: true });
 				return;
 			}
 
-			this.log(`Updated user ${args.id}`);
+			this.success(`Updated user ${args.id}`);
 		} catch (err) {
 			this.handleError(err);
 		}

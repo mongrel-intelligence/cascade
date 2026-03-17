@@ -211,7 +211,6 @@ describe('buildTrelloCallbackUrl', () => {
 
 describe('verifyGitHubWebhookSignature — direct function tests', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [GITHUB_PROJECT] });
 		vi.mocked(resolveWebhookSecret).mockResolvedValue(GITHUB_SECRET);
 	});
@@ -269,6 +268,35 @@ describe('verifyGitHubWebhookSignature — direct function tests', () => {
 		const result = await verifyGitHubWebhookSignature(makeContext({}), body);
 		expect(result).toBeNull();
 	});
+
+	it('verifies signature correctly for form-urlencoded delivery (valid signature)', async () => {
+		const payloadObj = { repository: { full_name: 'owner/repo' }, action: 'opened' };
+		const rawBody = `payload=${encodeURIComponent(JSON.stringify(payloadObj))}`;
+		const sig = githubSignature(rawBody, GITHUB_SECRET);
+		const result = await verifyGitHubWebhookSignature(
+			makeContext({ 'X-Hub-Signature-256': sig }),
+			rawBody,
+		);
+		expect(result).toEqual({ valid: true, reason: 'Signature valid' });
+	});
+
+	it('returns { valid: false } for form-urlencoded delivery with wrong signature', async () => {
+		const payloadObj = { repository: { full_name: 'owner/repo' }, action: 'opened' };
+		const rawBody = `payload=${encodeURIComponent(JSON.stringify(payloadObj))}`;
+		const badSig = githubSignature(rawBody, 'wrong-secret');
+		const result = await verifyGitHubWebhookSignature(
+			makeContext({ 'X-Hub-Signature-256': badSig }),
+			rawBody,
+		);
+		expect(result).toEqual({ valid: false, reason: 'GitHub signature mismatch' });
+	});
+
+	it('returns { valid: false, reason: "Missing signature header" } for form-urlencoded when header absent but secret configured', async () => {
+		const payloadObj = { repository: { full_name: 'owner/repo' }, action: 'opened' };
+		const rawBody = `payload=${encodeURIComponent(JSON.stringify(payloadObj))}`;
+		const result = await verifyGitHubWebhookSignature(makeContext({}), rawBody);
+		expect(result).toEqual({ valid: false, reason: 'Missing signature header' });
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -277,7 +305,6 @@ describe('verifyGitHubWebhookSignature — direct function tests', () => {
 
 describe('verifyTrelloWebhookSignature — direct function tests', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [TRELLO_PROJECT] });
 		vi.mocked(resolveWebhookSecret).mockResolvedValue(TRELLO_SECRET);
 	});
@@ -355,8 +382,6 @@ describe('router — GitHub webhook signature verification (end-to-end)', () => 
 	let app: Hono;
 
 	beforeEach(async () => {
-		vi.clearAllMocks();
-
 		vi.mocked(loadProjectConfig).mockResolvedValue({
 			projects: [GITHUB_PROJECT],
 		});
@@ -478,8 +503,6 @@ describe('router — Trello webhook signature verification (end-to-end)', () => 
 	let app: Hono;
 
 	beforeEach(async () => {
-		vi.clearAllMocks();
-
 		vi.mocked(loadProjectConfig).mockResolvedValue({
 			projects: [TRELLO_PROJECT],
 		});

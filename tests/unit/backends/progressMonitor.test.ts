@@ -138,10 +138,6 @@ function makeConfig(overrides: Partial<ProgressMonitorConfig> = {}): ProgressMon
 }
 
 describe('ProgressMonitor - constructor', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('creates PMProgressPoster when trello config is provided', () => {
 		new ProgressMonitor(makeConfig({ trello: { workItemId: 'card-1' } }));
 
@@ -188,10 +184,6 @@ describe('ProgressMonitor - constructor', () => {
 });
 
 describe('ProgressMonitor - start()', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('starts the scheduler', () => {
 		const monitor = new ProgressMonitor(makeConfig());
 		monitor.start();
@@ -247,10 +239,6 @@ describe('ProgressMonitor - start()', () => {
 });
 
 describe('ProgressMonitor - stop()', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('stops the scheduler', () => {
 		const monitor = new ProgressMonitor(makeConfig());
 		monitor.stop();
@@ -277,7 +265,6 @@ describe('ProgressMonitor - stop()', () => {
 
 describe('ProgressMonitor - tick (via scheduler callback)', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockCallProgressModel.mockResolvedValue('AI-generated summary');
 	});
 

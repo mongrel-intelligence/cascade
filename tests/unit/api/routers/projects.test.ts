@@ -1,6 +1,11 @@
 import { TRPCError } from '@trpc/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TRPCContext } from '../../../../src/api/trpc.js';
+import { registerBuiltInEngines } from '../../../../src/backends/bootstrap.js';
+import { CLAUDE_CODE_SETTING_DEFAULTS } from '../../../../src/backends/claude-code/settings.js';
+import { CODEX_SETTING_DEFAULTS } from '../../../../src/backends/codex/settings.js';
+import { OPENCODE_SETTING_DEFAULTS } from '../../../../src/backends/opencode/settings.js';
+import { PROJECT_DEFAULTS } from '../../../../src/config/schema.js';
 import { createMockUser } from '../../../helpers/factories.js';
 
 const mockListProjectsForOrg = vi.fn();
@@ -17,10 +22,6 @@ const mockDeleteProject = vi.fn();
 const mockListProjectIntegrations = vi.fn();
 const mockUpsertProjectIntegration = vi.fn();
 const mockDeleteProjectIntegration = vi.fn();
-const mockGetIntegrationByProjectAndCategory = vi.fn();
-const mockListIntegrationCredentials = vi.fn();
-const mockSetIntegrationCredential = vi.fn();
-const mockRemoveIntegrationCredential = vi.fn();
 
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
 	listProjectsFull: (...args: unknown[]) => mockListProjectsFull(...args),
@@ -31,14 +32,24 @@ vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
 	listProjectIntegrations: (...args: unknown[]) => mockListProjectIntegrations(...args),
 	upsertProjectIntegration: (...args: unknown[]) => mockUpsertProjectIntegration(...args),
 	deleteProjectIntegration: (...args: unknown[]) => mockDeleteProjectIntegration(...args),
-	getIntegrationByProjectAndCategory: (...args: unknown[]) =>
-		mockGetIntegrationByProjectAndCategory(...args),
-	listIntegrationCredentials: (...args: unknown[]) => mockListIntegrationCredentials(...args),
-	setIntegrationCredential: (...args: unknown[]) => mockSetIntegrationCredential(...args),
-	removeIntegrationCredential: (...args: unknown[]) => mockRemoveIntegrationCredential(...args),
 }));
 
-vi.mock('../../../../src/db/repositories/credentialsRepository.js', () => ({}));
+const mockListProjectCredentials = vi.fn();
+const mockListProjectCredentialsMeta = vi.fn();
+const mockWriteProjectCredential = vi.fn();
+const mockDeleteProjectCredential = vi.fn();
+
+vi.mock('../../../../src/db/repositories/credentialsRepository.js', () => ({
+	listProjectCredentials: (...args: unknown[]) => mockListProjectCredentials(...args),
+	listProjectCredentialsMeta: (...args: unknown[]) => mockListProjectCredentialsMeta(...args),
+	writeProjectCredential: (...args: unknown[]) => mockWriteProjectCredential(...args),
+	deleteProjectCredential: (...args: unknown[]) => mockDeleteProjectCredential(...args),
+}));
+
+const mockCaptureException = vi.fn();
+vi.mock('../../../../src/sentry.js', () => ({
+	captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
 
 // Mock getDb for ownership checks
 const mockDbSelect = vi.fn();
@@ -52,7 +63,6 @@ vi.mock('../../../../src/db/client.js', () => ({
 }));
 
 vi.mock('../../../../src/db/schema/index.js', () => ({
-	credentials: { id: 'id', orgId: 'org_id' },
 	projects: { id: 'id', orgId: 'org_id' },
 }));
 
@@ -63,6 +73,10 @@ function createCaller(ctx: TRPCContext) {
 }
 
 const mockUser = createMockUser();
+
+beforeAll(() => {
+	registerBuiltInEngines();
+});
 
 describe('projectsRouter', () => {
 	beforeEach(() => {
@@ -379,127 +393,244 @@ describe('projectsRouter', () => {
 	});
 
 	// ============================================================================
-	// Integration Credentials sub-router
+	// projects.credentials.* sub-router
 	// ============================================================================
 
-	describe('integrationCredentials', () => {
+	describe('credentials', () => {
 		describe('list', () => {
-			it('lists credentials after verifying ownership', async () => {
-				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-				mockGetIntegrationByProjectAndCategory.mockResolvedValue({ id: 10 });
-				const creds = [{ role: 'api_key', credentialId: 42, credentialName: 'Key' }];
-				mockListIntegrationCredentials.mockResolvedValue(creds);
-				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-				const result = await caller.integrationCredentials.list({
-					projectId: 'p1',
-					category: 'pm',
+			it('throws UNAUTHORIZED when not authenticated', async () => {
+				const caller = createCaller({ user: null, effectiveOrgId: null });
+				await expect(caller.credentials.list({ projectId: 'p1' })).rejects.toMatchObject({
+					code: 'UNAUTHORIZED',
 				});
-
-				expect(result).toEqual(creds);
 			});
 
-			it('returns empty when integration not found', async () => {
+			it('returns masked metadata — never plaintext', async () => {
 				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-				mockGetIntegrationByProjectAndCategory.mockResolvedValue(null);
+				mockListProjectCredentials.mockResolvedValue([
+					{ envVarKey: 'OPENROUTER_API_KEY', name: 'OpenRouter Key', value: 'sk-or-12345678' },
+					{ envVarKey: 'SHORT', name: null, value: '123' },
+				]);
 				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
-				const result = await caller.integrationCredentials.list({
-					projectId: 'p1',
-					category: 'scm',
-				});
+				const result = await caller.credentials.list({ projectId: 'p1' });
 
-				expect(result).toEqual([]);
+				expect(result).toEqual([
+					{
+						envVarKey: 'OPENROUTER_API_KEY',
+						name: 'OpenRouter Key',
+						isConfigured: true,
+						maskedValue: '****5678',
+					},
+					{
+						envVarKey: 'SHORT',
+						name: null,
+						isConfigured: true,
+						maskedValue: '****',
+					},
+				]);
+			});
+
+			it('calls listProjectCredentials with projectId', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				mockListProjectCredentials.mockResolvedValue([]);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await caller.credentials.list({ projectId: 'p1' });
+
+				expect(mockListProjectCredentials).toHaveBeenCalledWith('p1');
+			});
+
+			it('returns project NOT_FOUND when project does not belong to org', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await expect(caller.credentials.list({ projectId: 'p1' })).rejects.toMatchObject({
+					code: 'NOT_FOUND',
+				});
+			});
+
+			it('falls back to meta-only query when decryption fails', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				mockListProjectCredentials.mockRejectedValueOnce(
+					new Error('Decryption failed: CREDENTIAL_MASTER_KEY not set'),
+				);
+				mockListProjectCredentialsMeta.mockResolvedValueOnce([
+					{ envVarKey: 'GITHUB_TOKEN_IMPLEMENTER', name: 'GH Implementer' },
+					{ envVarKey: 'OPENROUTER_API_KEY', name: null },
+				]);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				const result = await caller.credentials.list({ projectId: 'p1' });
+
+				expect(result).toEqual([
+					{
+						envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
+						name: 'GH Implementer',
+						isConfigured: true,
+						maskedValue: '****',
+					},
+					{
+						envVarKey: 'OPENROUTER_API_KEY',
+						name: null,
+						isConfigured: true,
+						maskedValue: '****',
+					},
+				]);
+				expect(mockListProjectCredentialsMeta).toHaveBeenCalledWith('p1');
+			});
+
+			it('reports decryption failure to Sentry', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				const decryptionError = new Error('bad key');
+				mockListProjectCredentials.mockRejectedValueOnce(decryptionError);
+				mockListProjectCredentialsMeta.mockResolvedValueOnce([]);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await caller.credentials.list({ projectId: 'p1' });
+
+				expect(mockCaptureException).toHaveBeenCalledWith(decryptionError, {
+					tags: { source: 'credentials_list' },
+					extra: { projectId: 'p1' },
+					level: 'warning',
+				});
 			});
 		});
 
 		describe('set', () => {
-			it('sets credential after verifying project and credential ownership', async () => {
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // credential
-				mockGetIntegrationByProjectAndCategory.mockResolvedValue({ id: 10 });
-				mockSetIntegrationCredential.mockResolvedValue(undefined);
+			it('throws UNAUTHORIZED when not authenticated', async () => {
+				const caller = createCaller({ user: null, effectiveOrgId: null });
+				await expect(
+					caller.credentials.set({
+						projectId: 'p1',
+						envVarKey: 'OPENROUTER_API_KEY',
+						value: 'sk-or-abc',
+					}),
+				).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+			});
+
+			it('calls writeProjectCredential with correct args', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				mockWriteProjectCredential.mockResolvedValue(undefined);
 				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
-				await caller.integrationCredentials.set({
+				await caller.credentials.set({
 					projectId: 'p1',
-					category: 'pm',
-					role: 'api_key',
-					credentialId: 42,
+					envVarKey: 'OPENROUTER_API_KEY',
+					value: 'sk-or-abc123',
+					name: 'OpenRouter',
 				});
 
-				expect(mockSetIntegrationCredential).toHaveBeenCalledWith(10, 'api_key', 42);
+				expect(mockWriteProjectCredential).toHaveBeenCalledWith(
+					'p1',
+					'OPENROUTER_API_KEY',
+					'sk-or-abc123',
+					'OpenRouter',
+				);
 			});
 
-			it('auto-creates SCM integration when none exists', async () => {
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // credential
-				// First call: no integration; second call (after auto-create): integration exists
-				mockGetIntegrationByProjectAndCategory
-					.mockResolvedValueOnce(null)
-					.mockResolvedValueOnce({ id: 20 });
-				mockUpsertProjectIntegration.mockResolvedValue(undefined);
-				mockSetIntegrationCredential.mockResolvedValue(undefined);
+			it('rejects envVarKey with invalid format', async () => {
 				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
-				await caller.integrationCredentials.set({
-					projectId: 'p1',
-					category: 'scm',
-					role: 'implementer_token',
-					credentialId: 42,
-				});
-
-				expect(mockUpsertProjectIntegration).toHaveBeenCalledWith('p1', 'scm', 'github', {});
-				expect(mockSetIntegrationCredential).toHaveBeenCalledWith(20, 'implementer_token', 42);
-			});
-
-			it('throws NOT_FOUND for non-SCM category when integration missing', async () => {
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // credential
-				mockGetIntegrationByProjectAndCategory.mockResolvedValue(null);
-				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
 				await expect(
-					caller.integrationCredentials.set({
+					caller.credentials.set({
 						projectId: 'p1',
-						category: 'pm',
-						role: 'api_key',
-						credentialId: 42,
+						envVarKey: 'lower-case-key',
+						value: 'value',
 					}),
-				).rejects.toMatchObject({ code: 'NOT_FOUND' });
+				).rejects.toThrow();
 			});
 
-			it('throws NOT_FOUND when credential belongs to different org', async () => {
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]); // project OK
-				mockDbWhere.mockResolvedValueOnce([{ orgId: 'different-org' }]); // credential not owned
+			it('rejects empty value', async () => {
 				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-
 				await expect(
-					caller.integrationCredentials.set({
+					caller.credentials.set({
 						projectId: 'p1',
-						category: 'pm',
-						role: 'api_key',
-						credentialId: 99,
+						envVarKey: 'OPENROUTER_API_KEY',
+						value: '',
 					}),
-				).rejects.toMatchObject({ code: 'NOT_FOUND' });
+				).rejects.toThrow();
 			});
 		});
 
-		describe('remove', () => {
-			it('removes credential after verifying ownership', async () => {
+		describe('delete', () => {
+			it('throws UNAUTHORIZED when not authenticated', async () => {
+				const caller = createCaller({ user: null, effectiveOrgId: null });
+				await expect(
+					caller.credentials.delete({ projectId: 'p1', envVarKey: 'OPENROUTER_API_KEY' }),
+				).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+			});
+
+			it('calls deleteProjectCredential with correct args', async () => {
 				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-				mockGetIntegrationByProjectAndCategory.mockResolvedValue({ id: 10 });
-				mockRemoveIntegrationCredential.mockResolvedValue(undefined);
+				mockDeleteProjectCredential.mockResolvedValue(undefined);
 				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
-				await caller.integrationCredentials.remove({
-					projectId: 'p1',
-					category: 'pm',
-					role: 'api_key',
-				});
+				await caller.credentials.delete({ projectId: 'p1', envVarKey: 'OPENROUTER_API_KEY' });
 
-				expect(mockRemoveIntegrationCredential).toHaveBeenCalledWith(10, 'api_key');
+				expect(mockDeleteProjectCredential).toHaveBeenCalledWith('p1', 'OPENROUTER_API_KEY');
 			});
+		});
+	});
+
+	// ============================================================================
+	// defaults procedure
+	// ============================================================================
+
+	describe('defaults', () => {
+		it('returns project defaults sourced from PROJECT_DEFAULTS constants', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+
+			const result = await caller.defaults();
+
+			expect(result.model).toBe(PROJECT_DEFAULTS.model);
+			expect(result.maxIterations).toBe(PROJECT_DEFAULTS.maxIterations);
+			expect(result.watchdogTimeoutMs).toBe(PROJECT_DEFAULTS.watchdogTimeoutMs);
+			expect(result.progressModel).toBe(PROJECT_DEFAULTS.progressModel);
+			expect(result.progressIntervalMinutes).toBe(PROJECT_DEFAULTS.progressIntervalMinutes);
+			expect(result.workItemBudgetUsd).toBe(PROJECT_DEFAULTS.workItemBudgetUsd);
+			expect(result.agentEngine).toBe(PROJECT_DEFAULTS.agentEngine);
+		});
+
+		it('returns per-engine setting defaults', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+
+			const result = await caller.defaults();
+
+			expect(result.engineSettings['claude-code']).toEqual(CLAUDE_CODE_SETTING_DEFAULTS);
+			expect(result.engineSettings.codex).toEqual(CODEX_SETTING_DEFAULTS);
+			expect(result.engineSettings.opencode).toEqual(OPENCODE_SETTING_DEFAULTS);
+		});
+
+		it('is accessible without authentication (publicProcedure)', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+
+			// Should not throw UNAUTHORIZED
+			await expect(caller.defaults()).resolves.toBeDefined();
+		});
+
+		it('PROJECT_DEFAULTS values match the Zod schema defaults', () => {
+			expect(PROJECT_DEFAULTS.model).toBe('openrouter:google/gemini-3-flash-preview');
+			expect(PROJECT_DEFAULTS.maxIterations).toBe(50);
+			expect(PROJECT_DEFAULTS.watchdogTimeoutMs).toBe(30 * 60 * 1000);
+			expect(PROJECT_DEFAULTS.progressModel).toBe('openrouter:google/gemini-2.5-flash-lite');
+			expect(PROJECT_DEFAULTS.progressIntervalMinutes).toBe(5);
+			expect(PROJECT_DEFAULTS.workItemBudgetUsd).toBe(5);
+			expect(PROJECT_DEFAULTS.agentEngine).toBe('llmist');
+		});
+
+		it('CLAUDE_CODE_SETTING_DEFAULTS match the resolver fallback values', () => {
+			expect(CLAUDE_CODE_SETTING_DEFAULTS.effort).toBe('high');
+			expect(CLAUDE_CODE_SETTING_DEFAULTS.thinking).toBe('adaptive');
+		});
+
+		it('CODEX_SETTING_DEFAULTS match the resolver fallback values', () => {
+			expect(CODEX_SETTING_DEFAULTS.approvalPolicy).toBe('never');
+			expect(CODEX_SETTING_DEFAULTS.sandboxMode).toBe('danger-full-access');
+			expect(CODEX_SETTING_DEFAULTS.webSearch).toBe(false);
+		});
+
+		it('OPENCODE_SETTING_DEFAULTS match the resolver fallback values', () => {
+			expect(OPENCODE_SETTING_DEFAULTS.webSearch).toBe(false);
 		});
 	});
 });

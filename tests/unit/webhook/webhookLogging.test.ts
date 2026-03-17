@@ -37,10 +37,6 @@ function makeContext(method = 'POST', path = '/webhook') {
 	} as unknown as import('hono').Context;
 }
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
-
 // ---------------------------------------------------------------------------
 // logSuccessfulWebhook
 // ---------------------------------------------------------------------------

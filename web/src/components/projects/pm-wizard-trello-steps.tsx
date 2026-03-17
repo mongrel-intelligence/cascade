@@ -5,10 +5,11 @@ import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import type { UseMutationResult } from '@tanstack/react-query';
-import { Loader2, Plus } from 'lucide-react';
+import { CheckCircle2, Loader2, Plus } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import type { WizardAction, WizardState } from './pm-wizard-state.js';
-import { FieldMappingRow, InlineCredentialCreator, SearchableSelect } from './wizard-shared.js';
-import type { CredentialOption } from './wizard-shared.js';
+import { FieldMappingRow, SearchableSelect } from './wizard-shared.js';
 
 // ============================================================================
 // Slot definitions
@@ -43,64 +44,145 @@ export const TRELLO_LABEL_DEFAULTS: Record<string, { name: string; color: string
 export function TrelloCredentialsStep({
 	state,
 	dispatch,
-	orgCredentials,
 }: {
 	state: WizardState;
 	dispatch: React.Dispatch<WizardAction>;
-	orgCredentials: CredentialOption[];
 }) {
+	const popupRef = useRef<Window | null>(null);
+	const [isWaitingForAuth, setIsWaitingForAuth] = useState(false);
+	// Start open if a token is already present (e.g. edit mode) so the user can see and change it.
+	const [manualOpen, setManualOpen] = useState(!!state.trelloToken);
+
+	function openAuthPopup() {
+		// Omitting return_url: Trello enforces an origin allowlist that users haven't configured,
+		// so redirecting back is not reliable. Without it, Trello displays the token on-screen
+		// after "Allow" and the user pastes it in below.
+		const url = `https://trello.com/1/authorize?key=${encodeURIComponent(state.trelloApiKey)}&name=CASCADE&expiration=never&scope=read,write&response_type=token`;
+		const popup = window.open(url, 'trello_oauth', 'width=600,height=700');
+		if (!popup) {
+			toast.error('Popup blocked', {
+				description: 'Allow popups for this site, then try again.',
+			});
+			return;
+		}
+		popupRef.current = popup;
+		setIsWaitingForAuth(true);
+		setManualOpen(true);
+	}
+
+	// Detect the user closing the popup without completing authorization.
+	useEffect(() => {
+		if (!isWaitingForAuth) return;
+		const interval = setInterval(() => {
+			if (popupRef.current?.closed) {
+				popupRef.current = null;
+				setIsWaitingForAuth(false);
+			}
+		}, 500);
+		return () => clearInterval(interval);
+	}, [isWaitingForAuth]);
+
 	return (
 		<div className="space-y-4">
+			<p className="text-xs text-muted-foreground">
+				Enter your Trello API credentials. These will be saved securely to the project.
+			</p>
 			<div className="space-y-2">
-				<Label>API Key</Label>
-				<div className="flex gap-2">
-					<select
-						value={state.trelloApiKeyCredentialId ?? ''}
-						onChange={(e) =>
-							dispatch({
-								type: 'SET_TRELLO_API_KEY_CRED',
-								id: e.target.value ? Number(e.target.value) : null,
-							})
-						}
-						className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
-					>
-						<option value="">Select credential...</option>
-						{orgCredentials.map((c) => (
-							<option key={c.id} value={c.id}>
-								{c.name} ({c.envVarKey}) — {c.value}
-							</option>
-						))}
-					</select>
-				</div>
-				<InlineCredentialCreator
-					onCreated={(id) => dispatch({ type: 'SET_TRELLO_API_KEY_CRED', id })}
+				<Label htmlFor="trello-api-key">API Key</Label>
+				<Input
+					id="trello-api-key"
+					type="password"
+					value={state.trelloApiKey}
+					onChange={(e) => dispatch({ type: 'SET_TRELLO_API_KEY', value: e.target.value })}
+					placeholder="Trello API key"
+					autoComplete="off"
 				/>
+				<p className="text-xs text-muted-foreground">
+					Find your API key at{' '}
+					<a
+						href="https://trello.com/app-key"
+						target="_blank"
+						rel="noopener noreferrer"
+						className="underline"
+					>
+						trello.com/app-key
+					</a>
+				</p>
 			</div>
+			{state.isEditing && state.hasStoredCredentials && !state.trelloApiKey && (
+				<div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400">
+					<CheckCircle2 className="h-4 w-4 shrink-0" />
+					Credentials stored — enter new values above to replace them.
+				</div>
+			)}
 			<div className="space-y-2">
-				<Label>Token</Label>
-				<div className="flex gap-2">
-					<select
-						value={state.trelloTokenCredentialId ?? ''}
-						onChange={(e) =>
-							dispatch({
-								type: 'SET_TRELLO_TOKEN_CRED',
-								id: e.target.value ? Number(e.target.value) : null,
-							})
-						}
-						className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
+				<Label>Authorization</Label>
+				{state.trelloToken ? (
+					<div className="flex items-center gap-2">
+						<CheckCircle2 className="h-4 w-4 text-green-500" />
+						<span className="text-sm text-green-600">Token set</span>
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							className="h-7 text-xs"
+							onClick={openAuthPopup}
+							disabled={!state.trelloApiKey || isWaitingForAuth}
+						>
+							{isWaitingForAuth ? (
+								<>
+									<Loader2 className="mr-1 h-3 w-3 animate-spin" />
+									Waiting...
+								</>
+							) : (
+								'Re-authorize'
+							)}
+						</Button>
+					</div>
+				) : (
+					<Button
+						type="button"
+						variant="outline"
+						onClick={openAuthPopup}
+						disabled={!state.trelloApiKey || isWaitingForAuth}
 					>
-						<option value="">Select credential...</option>
-						{orgCredentials.map((c) => (
-							<option key={c.id} value={c.id}>
-								{c.name} ({c.envVarKey}) — {c.value}
-							</option>
-						))}
-					</select>
-				</div>
-				<InlineCredentialCreator
-					onCreated={(id) => dispatch({ type: 'SET_TRELLO_TOKEN_CRED', id })}
-				/>
+						{isWaitingForAuth ? (
+							<>
+								<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+								Waiting for authorization...
+							</>
+						) : (
+							'Authorize with Trello'
+						)}
+					</Button>
+				)}
+				<p className="text-xs text-muted-foreground">
+					{state.trelloApiKey
+						? 'Click to open Trello authorization in a popup.'
+						: 'Enter your API key above to enable authorization.'}
+				</p>
 			</div>
+			<details open={manualOpen} onToggle={(e) => setManualOpen(e.currentTarget.open)}>
+				<summary className="cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground">
+					Enter token manually
+				</summary>
+				<div className="mt-2 space-y-2">
+					<Label htmlFor="trello-token-manual">Token</Label>
+					<Input
+						id="trello-token-manual"
+						type="password"
+						value={state.trelloToken}
+						onChange={(e) => dispatch({ type: 'SET_TRELLO_TOKEN', value: e.target.value })}
+						placeholder="Trello token"
+						autoComplete="off"
+					/>
+					<p className="text-xs text-muted-foreground">
+						{isWaitingForAuth
+							? 'After clicking "Allow" in the Trello popup, copy the token shown and paste it above.'
+							: 'Generate a token from the API key page linked above.'}
+					</p>
+				</div>
+			</details>
 		</div>
 	);
 }

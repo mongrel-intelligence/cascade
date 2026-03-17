@@ -1,6 +1,14 @@
 import { and, eq } from 'drizzle-orm';
+import type { IntegrationProvider } from '../../config/integrationRoles.js';
+import { PROVIDER_CREDENTIAL_ROLES } from '../../config/integrationRoles.js';
 import { getDb } from '../client.js';
-import { credentials, integrationCredentials, projectIntegrations } from '../schema/index.js';
+import { projectIntegrations } from '../schema/index.js';
+import { deleteProjectCredential } from './credentialsRepository.js';
+
+function roleToEnvVarKey(provider: string, role: string): string | undefined {
+	const roles = PROVIDER_CREDENTIAL_ROLES[provider as IntegrationProvider];
+	return roles?.find((r) => r.role === role)?.envVarKey;
+}
 
 // ============================================================================
 // Project Integrations
@@ -97,46 +105,27 @@ export async function deleteProjectIntegration(projectId: string, category: stri
 // Integration Credentials
 // ============================================================================
 
-export async function listIntegrationCredentials(integrationId: number) {
-	const db = getDb();
-	return db
-		.select({
-			id: integrationCredentials.id,
-			role: integrationCredentials.role,
-			credentialId: integrationCredentials.credentialId,
-			credentialName: credentials.name,
-		})
-		.from(integrationCredentials)
-		.innerJoin(credentials, eq(integrationCredentials.credentialId, credentials.id))
-		.where(eq(integrationCredentials.integrationId, integrationId));
-}
+// Note: The legacy integration_credentials and credentials tables have been removed.
+// Integration credentials are now managed directly via project_credentials.
+// Use writeProjectCredential / deleteProjectCredential / listProjectCredentials instead.
 
-export async function setIntegrationCredential(
-	integrationId: number,
-	role: string,
-	credentialId: number,
-) {
-	const db = getDb();
-	// Upsert: delete + insert to handle unique constraint
-	await db
-		.delete(integrationCredentials)
-		.where(
-			and(
-				eq(integrationCredentials.integrationId, integrationId),
-				eq(integrationCredentials.role, role),
-			),
-		);
-	await db.insert(integrationCredentials).values({ integrationId, role, credentialId });
-}
-
+/**
+ * Remove a project credential by integration role.
+ * Maps the role to its env var key for the provider and deletes from project_credentials.
+ */
 export async function removeIntegrationCredential(integrationId: number, role: string) {
 	const db = getDb();
-	await db
-		.delete(integrationCredentials)
-		.where(
-			and(
-				eq(integrationCredentials.integrationId, integrationId),
-				eq(integrationCredentials.role, role),
-			),
-		);
+
+	// Look up project info
+	const [integration] = await db
+		.select({ projectId: projectIntegrations.projectId, provider: projectIntegrations.provider })
+		.from(projectIntegrations)
+		.where(eq(projectIntegrations.id, integrationId));
+
+	if (integration) {
+		const envVarKey = roleToEnvVarKey(integration.provider, role);
+		if (envVarKey) {
+			await deleteProjectCredential(integration.projectId, envVarKey);
+		}
+	}
 }

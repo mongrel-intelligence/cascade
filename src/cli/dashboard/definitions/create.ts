@@ -35,19 +35,21 @@ export default class DefinitionsCreate extends DashboardCommand {
 				definition = yaml.load(raw);
 			}
 
-			const result = await this.client.agentDefinitions.create.mutate({
-				agentType: flags['agent-type'],
-				definition: definition as Parameters<
-					typeof this.client.agentDefinitions.create.mutate
-				>[0]['definition'],
-			});
+			const result = await this.withSpinner('Creating agent definition...', () =>
+				this.client.agentDefinitions.create.mutate({
+					agentType: flags['agent-type'],
+					definition: definition as Parameters<
+						typeof this.client.agentDefinitions.create.mutate
+					>[0]['definition'],
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson(result);
 				return;
 			}
 
-			this.log(`Created agent definition: ${result.agentType}`);
+			this.success(`Created agent definition '${result.agentType}'`);
 		} catch (err) {
 			this.handleError(err);
 		}

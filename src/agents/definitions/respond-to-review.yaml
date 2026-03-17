@@ -28,7 +28,7 @@ triggers:
   - event: scm:pr-review-submitted
     label: PR Review Submitted
     description: Trigger when a review with changes requested or comments is submitted
-    defaultEnabled: true
+    defaultEnabled: false
     providers: [github]
     contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
 

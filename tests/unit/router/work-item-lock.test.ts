@@ -23,7 +23,6 @@ import {
 describe('work-item-lock', () => {
 	beforeEach(() => {
 		clearAllWorkItemLocks();
-		vi.clearAllMocks();
 	});
 
 	afterEach(() => {

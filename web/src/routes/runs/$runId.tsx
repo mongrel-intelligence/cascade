@@ -9,7 +9,7 @@ import { trpc } from '@/lib/trpc.js';
 import { cn } from '@/lib/utils.js';
 import { useQuery } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft } from 'lucide-react';
+import { FileText, GitPullRequest } from 'lucide-react';
 import { useState } from 'react';
 import { rootRoute } from '../__root.js';
 
@@ -41,19 +41,38 @@ function RunDetailPage() {
 	return (
 		<div className="space-y-6">
 			<div className="flex flex-wrap items-center gap-2">
-				<Link
-					to="/"
-					className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-				>
-					<ArrowLeft className="h-4 w-4" />
-					Back
-				</Link>
-				<span className="text-muted-foreground">/</span>
 				<h1 className="text-xl font-bold">{run.agentType}</h1>
 				<RunStatusBadge status={run.status} />
 				<CancelRunButton runId={run.id} status={run.status} />
 				<RetryRunButton runId={run.id} status={run.status} />
 			</div>
+
+			{run.projectId && (run.workItemId || run.prNumber != null) && (
+				<div className="flex flex-wrap items-center gap-4 text-sm">
+					{run.projectId && run.workItemId && (
+						<Link
+							to="/work-items/$projectId/$workItemId"
+							params={{ projectId: run.projectId, workItemId: run.workItemId }}
+							className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-primary"
+						>
+							<FileText className="h-3.5 w-3.5" />
+							{run.workItemTitle || run.workItemId}
+							<span className="text-xs">· all runs</span>
+						</Link>
+					)}
+					{run.projectId && run.prNumber != null && (
+						<Link
+							to="/prs/$projectId/$prNumber"
+							params={{ projectId: run.projectId, prNumber: String(run.prNumber) }}
+							className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-primary"
+						>
+							<GitPullRequest className="h-3.5 w-3.5" />
+							PR #{run.prNumber}
+							<span className="text-xs">· all runs</span>
+						</Link>
+					)}
+				</div>
+			)}
 
 			<div className="border-b border-border overflow-x-auto">
 				<nav className="flex gap-4">

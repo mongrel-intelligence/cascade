@@ -98,6 +98,14 @@ jobs:
             cascade-migrator:dev \
             npx tsx tools/migrate-hooks.ts --apply
 
+      - name: Re-encrypt project credentials with project-scoped AAD (dev)
+        run: |
+          docker run --rm \
+            --env-file /opt/services/cascade-dev.env \
+            -e DATABASE_URL="${{ secrets.DEV_DATABASE_URL }}" \
+            cascade-migrator:dev \
+            npx tsx tools/migrate-project-credentials-reencrypt.ts
+
       - name: Pull and restart cascade-router-dev
         run: |
           cd /opt/services

@@ -41,6 +41,7 @@ export interface AgentConfigRow {
 	model: string | null;
 	maxIterations: number | null;
 	agentEngine: string | null;
+	agentEngineSettings?: EngineSettings | null;
 }
 
 export interface IntegrationRow {
@@ -83,7 +84,10 @@ export interface ProjectConfigRaw {
 	workItemBudgetUsd?: number;
 	squintDbUrl?: string;
 	engineSettings?: EngineSettings;
+	/** Per-agent engine settings overrides keyed by agent type. */
+	agentEngineSettings?: Record<string, EngineSettings>;
 	runLinksEnabled?: boolean;
+	maxInFlightItems?: number;
 	trello?: {
 		boardId: string;
 		lists: Record<string, string>;
@@ -125,22 +129,26 @@ type ProjectRow = {
 	agentEngine: string | null;
 	agentEngineSettings: EngineSettings | null;
 	runLinksEnabled: boolean;
+	maxInFlightItems: number | null;
 };
 
 export function buildAgentMaps(configs: AgentConfigRow[]): {
 	models: Record<string, string>;
 	iterations: Record<string, number>;
 	engines: Record<string, string>;
+	engineSettings: Record<string, EngineSettings>;
 } {
 	const models: Record<string, string> = {};
 	const iterations: Record<string, number> = {};
 	const engines: Record<string, string> = {};
+	const engineSettings: Record<string, EngineSettings> = {};
 	for (const ac of configs) {
 		if (ac.model) models[ac.agentType] = ac.model;
 		if (ac.maxIterations != null) iterations[ac.agentType] = ac.maxIterations;
 		if (ac.agentEngine) engines[ac.agentType] = ac.agentEngine;
+		if (ac.agentEngineSettings != null) engineSettings[ac.agentType] = ac.agentEngineSettings;
 	}
-	return { models, iterations, engines };
+	return { models, iterations, engines, engineSettings };
 }
 
 export function orUndefined<T extends Record<string, unknown>>(obj: T): T | undefined {
@@ -208,7 +216,11 @@ export function mapProjectRow({
 	trelloConfig,
 	jiraConfig,
 }: MapProjectInput): ProjectConfigRaw {
-	const { models, engines } = buildAgentMaps(projectAgentConfigs);
+	const {
+		models,
+		engines,
+		engineSettings: agentEngineSettingsMap,
+	} = buildAgentMaps(projectAgentConfigs);
 
 	// Derive PM type from integration config
 	const pmType = jiraConfig ? 'jira' : 'trello';
@@ -229,8 +241,12 @@ export function mapProjectRow({
 		progressIntervalMinutes: numericOrUndefined(row.progressIntervalMinutes),
 		workItemBudgetUsd: numericOrUndefined(row.workItemBudgetUsd),
 		engineSettings: row.agentEngineSettings ?? undefined,
+		agentEngineSettings: orUndefined(agentEngineSettingsMap) as
+			| Record<string, EngineSettings>
+			| undefined,
 		squintDbUrl: row.squintDbUrl ?? undefined,
 		runLinksEnabled: row.runLinksEnabled ?? false,
+		maxInFlightItems: row.maxInFlightItems ?? undefined,
 	};
 
 	if (trelloConfig) {

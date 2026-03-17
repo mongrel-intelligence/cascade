@@ -1,20 +1,38 @@
 import { z } from 'zod';
 
-export const CodexSettingsSchema = z.object({
-	approvalPolicy: z.enum(['never', 'on-request', 'untrusted']).optional(),
-	sandboxMode: z.enum(['read-only', 'workspace-write', 'danger-full-access']).optional(),
-	reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']).optional(),
-	webSearch: z.boolean().optional(),
-});
+// Re-export schemas from engine directories for backward compatibility.
+export { ClaudeCodeSettingsSchema } from '../backends/claude-code/settings.js';
+export type { ClaudeCodeSettings } from '../backends/claude-code/settings.js';
+export { CodexSettingsSchema } from '../backends/codex/settings.js';
+export type { CodexSettings } from '../backends/codex/settings.js';
+export { OpenCodeSettingsSchema } from '../backends/opencode/settings.js';
+export type { OpenCodeSettings } from '../backends/opencode/settings.js';
 
-export const OpenCodeSettingsSchema = z.object({
-	webSearch: z.boolean().optional(),
-});
+/**
+ * Dynamic registry of engine settings schemas.
+ * Engines register their schema during bootstrap via registerEngineSettingsSchema().
+ */
+const ENGINE_SETTINGS_SCHEMAS: Map<string, z.ZodType<Record<string, unknown>>> = new Map();
 
-const ENGINE_SETTINGS_SCHEMAS: Record<string, z.ZodType<Record<string, unknown>>> = {
-	codex: CodexSettingsSchema,
-	opencode: OpenCodeSettingsSchema,
-};
+/**
+ * Register a settings schema for an engine. Called during bootstrap when an engine
+ * implementing getSettingsSchema() is registered.
+ */
+export function registerEngineSettingsSchema(
+	engineId: string,
+	schema: z.ZodType<Record<string, unknown>>,
+): void {
+	ENGINE_SETTINGS_SCHEMAS.set(engineId, schema);
+}
+
+/**
+ * Retrieve the registered settings schema for an engine, if any.
+ */
+export function getEngineSettingsSchema(
+	engineId: string,
+): z.ZodType<Record<string, unknown>> | undefined {
+	return ENGINE_SETTINGS_SCHEMAS.get(engineId);
+}
 
 const EngineSettingsValueSchema = z.record(z.string(), z.unknown());
 
@@ -22,7 +40,7 @@ export const EngineSettingsSchema = z
 	.record(z.string(), EngineSettingsValueSchema)
 	.superRefine((settings, ctx) => {
 		for (const [engineId, rawSettings] of Object.entries(settings)) {
-			const schema = ENGINE_SETTINGS_SCHEMAS[engineId];
+			const schema = ENGINE_SETTINGS_SCHEMAS.get(engineId);
 			if (!schema) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
@@ -45,8 +63,6 @@ export const EngineSettingsSchema = z
 	})
 	.transform((settings) => normalizeEngineSettings(settings) ?? {});
 
-export type CodexSettings = z.infer<typeof CodexSettingsSchema>;
-export type OpenCodeSettings = z.infer<typeof OpenCodeSettingsSchema>;
 export type EngineSettings = Record<string, Record<string, unknown>>;
 type EngineSettingsInput = Record<string, Record<string, unknown> | undefined>;
 

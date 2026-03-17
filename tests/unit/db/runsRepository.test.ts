@@ -95,6 +95,7 @@ import {
 	getDebugAnalysisByRunId,
 	getLlmCallByNumber,
 	getLlmCallsByRunId,
+	getProjectWorkStatsAggregated,
 	getRunById,
 	getRunLogs,
 	getRunsByProjectId,
@@ -995,6 +996,208 @@ describe('runsRepository', () => {
 
 			const result = await getRunsForPR('proj-1', 9999);
 			expect(result).toEqual([]);
+		});
+	});
+
+	describe('getProjectWorkStatsAggregated', () => {
+		// The function builds a subquery via:
+		//   db.select().from(agentRuns).where().orderBy().limit(500).as('recent_runs')
+		// then aggregates via:
+		//   db.select().from(subquery).groupBy()
+		// We mock both select chains separately.
+
+		const mockAs = vi.fn();
+		const mockGroupBy = vi.fn();
+		const mockSubqueryLimit = vi.fn();
+		const mockSubqueryOrderBy = vi.fn();
+		const mockSubqueryWhere = vi.fn();
+		const mockSubqueryFrom = vi.fn();
+		const mockAggregateFrom = vi.fn();
+
+		beforeEach(() => {
+			// Subquery chain: select → from → where → orderBy → limit → as → subquery
+			const subqueryRef = {
+				agentType: 'agent_type',
+				status: 'status',
+				durationMs: 'duration_ms',
+				costUsd: 'cost_usd',
+			};
+			mockAs.mockReturnValue(subqueryRef);
+			mockSubqueryLimit.mockReturnValue({ as: mockAs });
+			mockSubqueryOrderBy.mockReturnValue({ limit: mockSubqueryLimit });
+			mockSubqueryWhere.mockReturnValue({ orderBy: mockSubqueryOrderBy });
+			mockSubqueryFrom.mockReturnValue({ where: mockSubqueryWhere });
+
+			// Aggregate chain: select → from(subquery) → groupBy → resolves to rows
+			mockGroupBy.mockResolvedValue([]);
+			mockAggregateFrom.mockReturnValue({ groupBy: mockGroupBy });
+
+			// Wire mockSelect to return subquery chain on first call, aggregate chain on second
+			mockSelect
+				.mockReturnValueOnce({ from: mockSubqueryFrom })
+				.mockReturnValueOnce({ from: mockAggregateFrom });
+		});
+
+		it('returns empty summary and byAgentType when no rows', async () => {
+			mockGroupBy.mockResolvedValue([]);
+
+			const result = await getProjectWorkStatsAggregated('proj-1');
+
+			expect(result.summary.totalRuns).toBe(0);
+			expect(result.summary.completedRuns).toBe(0);
+			expect(result.summary.failedRuns).toBe(0);
+			expect(result.summary.timedOutRuns).toBe(0);
+			expect(result.summary.successRate).toBe(0);
+			expect(result.summary.avgDurationMs).toBeNull();
+			expect(result.byAgentType).toEqual([]);
+		});
+
+		it('returns correct summary totals from per-agent rows', async () => {
+			const agentRows = [
+				{
+					agentType: 'implementation',
+					runCount: 10,
+					completedCount: 8,
+					failedCount: 2,
+					timedOutCount: 0,
+					totalCostUsd: '1.2000',
+					totalDurationMs: 600000,
+					avgDurationMs: 60000,
+				},
+				{
+					agentType: 'review',
+					runCount: 5,
+					completedCount: 5,
+					failedCount: 0,
+					timedOutCount: 0,
+					totalCostUsd: '0.5000',
+					totalDurationMs: 150000,
+					avgDurationMs: 30000,
+				},
+			];
+			mockGroupBy.mockResolvedValue(agentRows);
+
+			const result = await getProjectWorkStatsAggregated('proj-1');
+
+			expect(result.summary.totalRuns).toBe(15);
+			expect(result.summary.completedRuns).toBe(13);
+			expect(result.summary.failedRuns).toBe(2);
+			expect(result.summary.timedOutRuns).toBe(0);
+			expect(result.summary.successRate).toBeCloseTo((13 / 15) * 100, 1);
+			expect(result.byAgentType).toHaveLength(2);
+		});
+
+		it('returns correct per-agent breakdowns', async () => {
+			const agentRows = [
+				{
+					agentType: 'implementation',
+					runCount: 3,
+					completedCount: 2,
+					failedCount: 1,
+					timedOutCount: 0,
+					totalCostUsd: '0.3000',
+					totalDurationMs: 90000,
+					avgDurationMs: 30000,
+				},
+			];
+			mockGroupBy.mockResolvedValue(agentRows);
+
+			const result = await getProjectWorkStatsAggregated('proj-1');
+
+			expect(result.byAgentType).toHaveLength(1);
+			expect(result.byAgentType[0]).toMatchObject({
+				agentType: 'implementation',
+				runCount: 3,
+				totalCostUsd: '0.3000',
+				totalDurationMs: 90000,
+				avgDurationMs: 30000,
+			});
+		});
+
+		it('handles null avgDurationMs gracefully', async () => {
+			const agentRows = [
+				{
+					agentType: 'implementation',
+					runCount: 2,
+					completedCount: 1,
+					failedCount: 1,
+					timedOutCount: 0,
+					totalCostUsd: '0.0000',
+					totalDurationMs: 0,
+					avgDurationMs: null,
+				},
+			];
+			mockGroupBy.mockResolvedValue(agentRows);
+
+			const result = await getProjectWorkStatsAggregated('proj-1');
+
+			expect(result.summary.avgDurationMs).toBeNull();
+			expect(result.byAgentType[0].avgDurationMs).toBeNull();
+		});
+
+		it('passes filters through to repository query', async () => {
+			mockGroupBy.mockResolvedValue([]);
+
+			await getProjectWorkStatsAggregated('proj-1', {
+				dateFrom: new Date('2024-01-01'),
+				agentType: 'review',
+				status: 'completed',
+			});
+
+			// Both select calls should have been made (subquery + aggregate)
+			expect(mockSelect).toHaveBeenCalledTimes(2);
+			expect(mockSubqueryWhere).toHaveBeenCalled();
+		});
+
+		it('computes correct totalCostUsd in summary', async () => {
+			const agentRows = [
+				{
+					agentType: 'implementation',
+					runCount: 2,
+					completedCount: 2,
+					failedCount: 0,
+					timedOutCount: 0,
+					totalCostUsd: '0.5000',
+					totalDurationMs: 60000,
+					avgDurationMs: 30000,
+				},
+				{
+					agentType: 'review',
+					runCount: 1,
+					completedCount: 1,
+					failedCount: 0,
+					timedOutCount: 0,
+					totalCostUsd: '0.2500',
+					totalDurationMs: 30000,
+					avgDurationMs: 30000,
+				},
+			];
+			mockGroupBy.mockResolvedValue(agentRows);
+
+			const result = await getProjectWorkStatsAggregated('proj-1');
+
+			// 0.5 + 0.25 = 0.75
+			expect(result.summary.totalCostUsd).toBe('0.7500');
+		});
+
+		it('computes 100% success rate when all runs completed', async () => {
+			const agentRows = [
+				{
+					agentType: 'implementation',
+					runCount: 5,
+					completedCount: 5,
+					failedCount: 0,
+					timedOutCount: 0,
+					totalCostUsd: '1.0000',
+					totalDurationMs: 300000,
+					avgDurationMs: 60000,
+				},
+			];
+			mockGroupBy.mockResolvedValue(agentRows);
+
+			const result = await getProjectWorkStatsAggregated('proj-1');
+
+			expect(result.summary.successRate).toBe(100);
 		});
 	});
 });

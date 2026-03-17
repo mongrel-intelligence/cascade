@@ -189,7 +189,6 @@ describe('resolveOpenCodeSettings', () => {
 
 describe('OpenCodeEngine', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockCreateServer.mockReturnValue(createMockPortServer());
 	});
 
@@ -923,5 +922,18 @@ describe('OpenCodeEngine', () => {
 		expect(result.success).toBe(false);
 		expect(result.output).toContain('Partial progress...');
 		expect(result.error).toContain('OpenCode transport failed after retries');
+	});
+});
+
+describe('OpenCodeEngine lifecycle hooks', () => {
+	it('afterExecute is defined on OpenCodeEngine', () => {
+		const engine = new OpenCodeEngine();
+		expect(typeof engine.afterExecute).toBe('function');
+	});
+
+	it('afterExecute does not throw when called with a valid plan', async () => {
+		const engine = new OpenCodeEngine();
+		const plan = { repoDir: '/tmp/nonexistent-repo' } as AgentExecutionPlan;
+		await expect(engine.afterExecute(plan, { success: true, output: '' })).resolves.not.toThrow();
 	});
 });

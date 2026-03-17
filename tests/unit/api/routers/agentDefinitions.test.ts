@@ -99,7 +99,6 @@ function createMockDefinition(overrides?: Partial<AgentDefinition>): AgentDefini
 
 describe('agentDefinitionsRouter', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockGetKnownAgentTypes.mockReturnValue(['implementation', 'review']);
 		mockIsBuiltinAgentType.mockImplementation((agentType: string) =>
 			['implementation', 'review'].includes(agentType),

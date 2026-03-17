@@ -26,6 +26,11 @@ vi.mock('../../../src/utils/repo.js', () => ({
 	runCommand: vi.fn(),
 }));
 
+// Mock run link to prevent env var leakage from CASCADE agent environment
+vi.mock('../../../src/utils/runLink.js', () => ({
+	buildRunLinkFooterFromEnv: vi.fn(() => ''),
+}));
+
 const REMOTE_URL = 'https://x-access-token@github.com/test-owner/test-repo.git';
 
 /** Mock runCommand to handle git remote detection + other commands via a delegate */

@@ -1,15 +1,12 @@
 #!/usr/bin/env tsx
 /**
- * Manage org-scoped credentials.
+ * Manage project-scoped credentials.
  *
  * Usage:
- *   npx tsx tools/manage-secrets.ts create <org-id> <env-var-key> <value> [--name "..."] [--default]
- *   npx tsx tools/manage-secrets.ts list <org-id>
- *   npx tsx tools/manage-secrets.ts delete <credential-id>
+ *   npx tsx tools/manage-secrets.ts set <project-id> <env-var-key> <value> [--name "..."]
+ *   npx tsx tools/manage-secrets.ts list <project-id>
+ *   npx tsx tools/manage-secrets.ts delete <project-id> <env-var-key>
  *   npx tsx tools/manage-secrets.ts resolve <project-id>
- *
- * Note: Per-project credential overrides have been replaced by integration credentials.
- * Use `cascade projects integration-credential-set` to link credentials to integrations.
  *
  * Requires DATABASE_URL to be set.
  */
@@ -17,20 +14,18 @@
 import { closeDb } from '../src/db/client.js';
 import { findProjectByIdFromDb } from '../src/db/repositories/configRepository.js';
 import {
-	createCredential,
-	deleteCredential,
-	listOrgCredentials,
-	resolveAllIntegrationCredentials,
-	resolveAllOrgCredentials,
+	deleteProjectCredential,
+	listProjectCredentials,
+	writeProjectCredential,
 } from '../src/db/repositories/credentialsRepository.js';
 
 function printUsage(): void {
 	console.log('Usage:');
 	console.log(
-		'  npx tsx tools/manage-secrets.ts create <org-id> <env-var-key> <value> [--name "..."] [--default]',
+		'  npx tsx tools/manage-secrets.ts set <project-id> <env-var-key> <value> [--name "..."]',
 	);
-	console.log('  npx tsx tools/manage-secrets.ts list <org-id>');
-	console.log('  npx tsx tools/manage-secrets.ts delete <credential-id>');
+	console.log('  npx tsx tools/manage-secrets.ts list <project-id>');
+	console.log('  npx tsx tools/manage-secrets.ts delete <project-id> <env-var-key>');
 	console.log('  npx tsx tools/manage-secrets.ts resolve <project-id>');
 }
 
@@ -40,64 +35,72 @@ function parseFlag(args: string[], flag: string): string | undefined {
 	return args[idx + 1];
 }
 
-function hasFlag(args: string[], flag: string): boolean {
-	return args.includes(flag);
-}
-
 function maskValue(value: string): string {
 	if (value.length <= 8) return '****';
 	return `${value.slice(0, 4)}...${value.slice(-4)}`;
 }
 
-async function handleCreate(args: string[]): Promise<void> {
-	const [, orgId, envVarKey, value] = args;
-	if (!orgId || !envVarKey || !value) {
-		console.error('Error: create requires <org-id> <env-var-key> <value>');
+async function handleSet(args: string[]): Promise<void> {
+	const [, projectId, envVarKey, value] = args;
+	if (!projectId || !envVarKey || !value) {
+		console.error('Error: set requires <project-id> <env-var-key> <value>');
 		printUsage();
 		process.exit(1);
 	}
-	const name = parseFlag(args, '--name') ?? envVarKey;
-	const isDefault = hasFlag(args, '--default');
+	const name = parseFlag(args, '--name') ?? undefined;
 
-	const { id } = await createCredential({ orgId, name, envVarKey, value, isDefault });
-	console.log(
-		`Created credential #${id}: ${name} (${envVarKey}) for org ${orgId}${isDefault ? ' [DEFAULT]' : ''}`,
-	);
+	const project = await findProjectByIdFromDb(projectId);
+	if (!project) {
+		console.error(`Project '${projectId}' not found`);
+		process.exit(1);
+	}
+
+	await writeProjectCredential(projectId, envVarKey, value, name ?? null);
+	console.log(`Set credential ${envVarKey} for project ${projectId}${name ? ` (${name})` : ''}`);
 }
 
 async function handleList(args: string[]): Promise<void> {
-	const orgId = args[1];
-	if (!orgId) {
-		console.error('Error: list requires <org-id>');
+	const projectId = args[1];
+	if (!projectId) {
+		console.error('Error: list requires <project-id>');
 		printUsage();
 		process.exit(1);
 	}
-	const creds = await listOrgCredentials(orgId);
+	const project = await findProjectByIdFromDb(projectId);
+	if (!project) {
+		console.error(`Project '${projectId}' not found`);
+		process.exit(1);
+	}
+
+	const creds = await listProjectCredentials(projectId);
 	if (creds.length === 0) {
-		console.log(`No credentials found for org ${orgId}`);
+		console.log(`No credentials found for project ${projectId}`);
 		return;
 	}
-	console.log(`Credentials for org ${orgId}:`);
+	console.log(`Credentials for project ${projectId}:`);
 	for (const c of creds) {
-		const defaultTag = c.isDefault ? ' [DEFAULT]' : '';
-		console.log(`  #${c.id}: ${c.name} (${c.envVarKey}) = ${maskValue(c.value)}${defaultTag}`);
+		const nameTag = c.name ? ` (${c.name})` : '';
+		console.log(`  ${c.envVarKey}${nameTag} = ${maskValue(c.value)}`);
 	}
 }
 
 async function handleDelete(args: string[]): Promise<void> {
-	const credIdStr = args[1];
-	if (!credIdStr) {
-		console.error('Error: delete requires <credential-id>');
+	const projectId = args[1];
+	const envVarKey = args[2];
+	if (!projectId || !envVarKey) {
+		console.error('Error: delete requires <project-id> <env-var-key>');
 		printUsage();
 		process.exit(1);
 	}
-	const credId = Number.parseInt(credIdStr, 10);
-	if (Number.isNaN(credId)) {
-		console.error('Error: credential-id must be a number');
+
+	const project = await findProjectByIdFromDb(projectId);
+	if (!project) {
+		console.error(`Project '${projectId}' not found`);
 		process.exit(1);
 	}
-	await deleteCredential(credId);
-	console.log(`Deleted credential #${credId}`);
+
+	await deleteProjectCredential(projectId, envVarKey);
+	console.log(`Deleted credential ${envVarKey} from project ${projectId}`);
 }
 
 async function handleResolve(args: string[]): Promise<void> {
@@ -113,35 +116,24 @@ async function handleResolve(args: string[]): Promise<void> {
 		process.exit(1);
 	}
 
-	// Resolve org-level credentials
-	const orgCreds = await resolveAllOrgCredentials(project.orgId);
-	// Resolve integration credentials
-	const integrationCreds = await resolveAllIntegrationCredentials(projectId);
+	// Resolve project-scoped credentials
+	const projectCreds = await listProjectCredentials(projectId);
 
-	if (Object.keys(orgCreds).length === 0 && integrationCreds.length === 0) {
+	if (projectCreds.length === 0) {
 		console.log(`No credentials resolved for project ${projectId}`);
 		return;
 	}
 
-	console.log(`Resolved credentials for project ${projectId} (org: ${project.orgId}):`);
+	console.log(`Resolved credentials for project ${projectId}:`);
 
-	if (Object.keys(orgCreds).length > 0) {
-		console.log('  Org defaults:');
-		for (const [key, value] of Object.entries(orgCreds)) {
-			console.log(`    ${key}: ${maskValue(value)}`);
-		}
-	}
-
-	if (integrationCreds.length > 0) {
-		console.log('  Integration credentials:');
-		for (const c of integrationCreds) {
-			console.log(`    ${c.category}/${c.provider} [${c.role}]: ${maskValue(c.value)}`);
-		}
+	for (const c of projectCreds) {
+		const nameTag = c.name ? ` (${c.name})` : '';
+		console.log(`  ${c.envVarKey}${nameTag}: ${maskValue(c.value)}`);
 	}
 }
 
 const commandHandlers: Record<string, (args: string[]) => Promise<void>> = {
-	create: handleCreate,
+	set: handleSet,
 	list: handleList,
 	delete: handleDelete,
 	resolve: handleResolve,

@@ -18,33 +18,39 @@ export default class ProjectsCreate extends DashboardCommand {
 		'agent-engine': Flags.string({ description: 'Agent engine (e.g. claude-code)' }),
 		'progress-model': Flags.string({ description: 'Model for progress updates' }),
 		'progress-interval': Flags.string({ description: 'Progress update interval (minutes)' }),
+		'max-in-flight-items': Flags.integer({
+			description: 'Max in-flight items (pipeline throughput)',
+		}),
 	};
 
 	async run(): Promise<void> {
 		const { flags } = await this.parse(ProjectsCreate);
 
 		try {
-			const result = await this.client.projects.create.mutate({
-				id: flags.id,
-				name: flags.name,
-				repo: flags.repo,
-				baseBranch: flags['base-branch'],
-				branchPrefix: flags['branch-prefix'],
-				model: flags.model,
-				maxIterations: flags['max-iterations'],
-				watchdogTimeoutMs: flags['watchdog-timeout'],
-				workItemBudgetUsd: flags['work-item-budget'],
-				agentEngine: flags['agent-engine'],
-				progressModel: flags['progress-model'],
-				progressIntervalMinutes: flags['progress-interval'],
-			});
+			const result = await this.withSpinner('Creating project...', () =>
+				this.client.projects.create.mutate({
+					id: flags.id,
+					name: flags.name,
+					repo: flags.repo,
+					baseBranch: flags['base-branch'],
+					branchPrefix: flags['branch-prefix'],
+					model: flags.model,
+					maxIterations: flags['max-iterations'],
+					watchdogTimeoutMs: flags['watchdog-timeout'],
+					workItemBudgetUsd: flags['work-item-budget'],
+					agentEngine: flags['agent-engine'],
+					progressModel: flags['progress-model'],
+					progressIntervalMinutes: flags['progress-interval'],
+					maxInFlightItems: flags['max-in-flight-items'],
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson(result);
 				return;
 			}
 
-			this.log(`Created project: ${flags.id}`);
+			this.success(`Created project '${flags.id}' (repo: ${flags.repo})`);
 		} catch (err) {
 			this.handleError(err);
 		}

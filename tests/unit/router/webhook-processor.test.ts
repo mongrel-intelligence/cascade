@@ -75,10 +75,6 @@ function makeMockAdapter(overrides: Partial<RouterPlatformAdapter> = {}): Router
 }
 
 describe('processRouterWebhook', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('returns shouldProcess false when parseWebhook returns null', async () => {
 		const adapter = makeMockAdapter({
 			parseWebhook: vi.fn().mockResolvedValue(null),

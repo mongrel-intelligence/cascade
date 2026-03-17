@@ -8,7 +8,7 @@
  * Environment variables:
  * - PORT (default: 3001)
  * - DATABASE_URL — PostgreSQL connection string
- * - CORS_ORIGIN — Frontend origin (e.g. https://ca.sca.de.com)
+ * - CORS_ORIGIN — Frontend origin(s), comma-separated (e.g. https://ca.sca.de.com,https://dev.ca.sca.de.com)
  * - COOKIE_DOMAIN — Cookie domain for cross-origin auth
  * - REDIS_URL — Redis for job dispatch to the router's worker-manager
  */
@@ -28,15 +28,24 @@ import { logoutHandler } from './api/auth/logout.js';
 import { resolveUserFromSession } from './api/auth/session.js';
 import { computeEffectiveOrgId } from './api/context.js';
 import { appRouter } from './api/router.js';
+import { registerBuiltInEngines } from './backends/bootstrap.js';
 import { captureException, flush, setTag } from './sentry.js';
 
 setTag('role', 'dashboard');
+
+// Register engine settings schemas so EngineSettingsSchema validation works for all tRPC
+// procedures (e.g. webhooks.list/create) that load project config via configRepository.
+registerBuiltInEngines();
 
 const app = new Hono();
 
 // Middleware
 const corsOrigin = process.env.CORS_ORIGIN;
-app.use('*', corsOrigin ? cors({ origin: corsOrigin, credentials: true }) : cors());
+const corsOrigins = corsOrigin
+	?.split(',')
+	.map((o) => o.trim())
+	.filter(Boolean);
+app.use('*', corsOrigins?.length ? cors({ origin: corsOrigins, credentials: true }) : cors());
 app.use('*', honoLogger());
 
 // Health check

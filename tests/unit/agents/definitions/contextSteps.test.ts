@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../../src/pm/index.js', () => ({
 	getPMProviderOrNull: vi.fn(),
+	MAX_IMAGES_PER_WORK_ITEM: 10,
 }));
 
 vi.mock('../../../../src/gadgets/todo/storage.js', () => ({
@@ -11,13 +12,38 @@ vi.mock('../../../../src/gadgets/todo/storage.js', () => ({
 	formatTodoList: vi.fn(() => '📋 Todo List\n   Progress: 0/2 done, 0 in progress, 2 pending'),
 }));
 
-import { prepopulateTodosStep } from '../../../../src/agents/definitions/contextSteps.js';
+const mockTrelloDownload = vi.fn();
+const mockJiraDownload = vi.fn();
+
+vi.mock('../../../../src/trello/client.js', () => ({
+	trelloClient: {
+		downloadAttachment: mockTrelloDownload,
+	},
+}));
+
+vi.mock('../../../../src/jira/client.js', () => ({
+	jiraClient: {
+		downloadAttachment: mockJiraDownload,
+	},
+}));
+
+vi.mock('../../../../src/gadgets/pm/core/readWorkItem.js', () => ({
+	readWorkItem: vi.fn(),
+	readWorkItemWithMedia: vi.fn(),
+}));
+
+import {
+	fetchWorkItemStep,
+	prepopulateTodosStep,
+} from '../../../../src/agents/definitions/contextSteps.js';
 import type { FetchContextParams } from '../../../../src/agents/definitions/contextSteps.js';
+import { readWorkItemWithMedia } from '../../../../src/gadgets/pm/core/readWorkItem.js';
 import { initTodoSession, saveTodos } from '../../../../src/gadgets/todo/storage.js';
 import { getPMProviderOrNull } from '../../../../src/pm/index.js';
 import type { AgentInput } from '../../../../src/types/index.js';
 
 const mockGetPMProviderOrNull = vi.mocked(getPMProviderOrNull);
+const mockReadWorkItemWithMedia = vi.mocked(readWorkItemWithMedia);
 const mockInitTodoSession = vi.mocked(initTodoSession);
 const mockSaveTodos = vi.mocked(saveTodos);
 
@@ -160,5 +186,149 @@ describe('prepopulateTodosStep', () => {
 
 		const result = await prepopulateTodosStep(makeParams({ workItemId: 'card-1' }));
 		expect(result).toEqual([]);
+	});
+});
+
+describe('fetchWorkItemStep', () => {
+	beforeEach(() => {
+		mockTrelloDownload.mockReset();
+		mockJiraDownload.mockReset();
+	});
+
+	it('returns empty array when no workItemId', async () => {
+		const result = await fetchWorkItemStep(makeParams({}));
+		expect(result).toEqual([]);
+	});
+
+	it('returns empty array when readWorkItemWithMedia throws', async () => {
+		mockReadWorkItemWithMedia.mockRejectedValue(new Error('fetch failed'));
+		const result = await fetchWorkItemStep(makeParams({ workItemId: 'card-1' }));
+		expect(result).toEqual([]);
+	});
+
+	it('returns ContextInjection without images when no media found', async () => {
+		mockReadWorkItemWithMedia.mockResolvedValue({
+			text: '# Card Title\n\nDescription',
+			media: [],
+		});
+		mockGetPMProviderOrNull.mockReturnValue({ type: 'trello' } as never);
+
+		const result = await fetchWorkItemStep(makeParams({ workItemId: 'card-1' }));
+
+		expect(result).toHaveLength(1);
+		expect(result[0].toolName).toBe('ReadWorkItem');
+		expect(result[0].result).toBe('# Card Title\n\nDescription');
+		expect(result[0].images).toBeUndefined();
+	});
+
+	it('downloads images and populates ContextInjection.images for trello provider', async () => {
+		mockReadWorkItemWithMedia.mockResolvedValue({
+			text: '# Card with image',
+			media: [
+				{
+					url: 'https://trello.com/img.png',
+					mimeType: 'image/png',
+					altText: 'diagram',
+					source: 'description',
+				},
+			],
+		});
+		mockGetPMProviderOrNull.mockReturnValue({ type: 'trello' } as never);
+		mockTrelloDownload.mockResolvedValue({
+			buffer: Buffer.from('fake-image-data'),
+			mimeType: 'image/png',
+		});
+
+		const result = await fetchWorkItemStep(makeParams({ workItemId: 'card-1' }));
+
+		expect(result).toHaveLength(1);
+		expect(result[0].images).toHaveLength(1);
+		expect(result[0].images?.[0]).toEqual({
+			base64Data: Buffer.from('fake-image-data').toString('base64'),
+			mimeType: 'image/png',
+			altText: 'diagram',
+		});
+		expect(mockTrelloDownload).toHaveBeenCalledWith('https://trello.com/img.png');
+	});
+
+	it('uses jiraClient.downloadAttachment for jira provider', async () => {
+		mockReadWorkItemWithMedia.mockResolvedValue({
+			text: '# Jira issue',
+			media: [
+				{
+					url: 'https://jira.example.com/img.jpeg',
+					mimeType: 'image/jpeg',
+					source: 'description',
+				},
+			],
+		});
+		mockGetPMProviderOrNull.mockReturnValue({ type: 'jira' } as never);
+		mockJiraDownload.mockResolvedValue({
+			buffer: Buffer.from('jira-image'),
+			mimeType: 'image/jpeg',
+		});
+
+		const result = await fetchWorkItemStep(makeParams({ workItemId: 'jira-1' }));
+
+		expect(result[0].images).toHaveLength(1);
+		expect(mockJiraDownload).toHaveBeenCalledWith('https://jira.example.com/img.jpeg');
+		expect(mockTrelloDownload).not.toHaveBeenCalled();
+	});
+
+	it('skips failed downloads gracefully and logs warning', async () => {
+		mockReadWorkItemWithMedia.mockResolvedValue({
+			text: '# Card',
+			media: [
+				{ url: 'https://trello.com/ok.png', mimeType: 'image/png', source: 'description' },
+				{ url: 'https://trello.com/fail.png', mimeType: 'image/png', source: 'description' },
+			],
+		});
+		mockGetPMProviderOrNull.mockReturnValue({ type: 'trello' } as never);
+		mockTrelloDownload
+			.mockResolvedValueOnce({ buffer: Buffer.from('ok'), mimeType: 'image/png' })
+			.mockResolvedValueOnce(null);
+
+		const params = makeParams({ workItemId: 'card-1' });
+		const result = await fetchWorkItemStep(params);
+
+		// Only 1 successful image
+		expect(result[0].images).toHaveLength(1);
+		expect(result[0].images?.[0].base64Data).toBe(Buffer.from('ok').toString('base64'));
+	});
+
+	it('logs warning when download throws an exception', async () => {
+		mockReadWorkItemWithMedia.mockResolvedValue({
+			text: '# Card',
+			media: [{ url: 'https://trello.com/err.png', mimeType: 'image/png', source: 'description' }],
+		});
+		mockGetPMProviderOrNull.mockReturnValue({ type: 'trello' } as never);
+		mockTrelloDownload.mockRejectedValue(new Error('network failure'));
+
+		const params = makeParams({ workItemId: 'card-1' });
+		const result = await fetchWorkItemStep(params);
+
+		expect(result[0].images).toBeUndefined();
+		expect(params.logWriter).toHaveBeenCalledWith(
+			'WARN',
+			'fetchWorkItemStep: failed to download image',
+			expect.objectContaining({ error: 'network failure' }),
+		);
+	});
+
+	it('respects MAX_IMAGES_PER_WORK_ITEM limit', async () => {
+		const manyMedia = Array.from({ length: 15 }, (_, i) => ({
+			url: `https://trello.com/img${i}.png`,
+			mimeType: 'image/png',
+			source: 'description' as const,
+		}));
+		mockReadWorkItemWithMedia.mockResolvedValue({ text: '# Card', media: manyMedia });
+		mockGetPMProviderOrNull.mockReturnValue({ type: 'trello' } as never);
+		mockTrelloDownload.mockResolvedValue({ buffer: Buffer.from('data'), mimeType: 'image/png' });
+
+		const result = await fetchWorkItemStep(makeParams({ workItemId: 'card-1' }));
+
+		// MAX_IMAGES_PER_WORK_ITEM is mocked as 10
+		expect(result[0].images).toHaveLength(10);
+		expect(mockTrelloDownload).toHaveBeenCalledTimes(10);
 	});
 });

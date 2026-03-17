@@ -281,6 +281,48 @@
 			"when": 1774000000000,
 			"tag": "0039_webhook_credential_roles",
 			"breakpoints": false
+		},
+		{
+			"idx": 40,
+			"version": "7",
+			"when": 1775000000000,
+			"tag": "0040_project_scoped_credentials",
+			"breakpoints": false
+		},
+		{
+			"idx": 41,
+			"version": "7",
+			"when": 1776000000000,
+			"tag": "0041_drop_legacy_org_credentials",
+			"breakpoints": false
+		},
+		{
+			"idx": 42,
+			"version": "7",
+			"when": 1777000000000,
+			"tag": "0042_add_max_in_flight_items",
+			"breakpoints": false
+		},
+		{
+			"idx": 43,
+			"version": "7",
+			"when": 1778000000000,
+			"tag": "0043_stats_composite_index",
+			"breakpoints": false
+		},
+		{
+			"idx": 44,
+			"version": "7",
+			"when": 1779000000000,
+			"tag": "0044_agent_config_engine_settings",
+			"breakpoints": false
+		},
+		{
+			"idx": 45,
+			"version": "7",
+			"when": 1780000000000,
+			"tag": "0045_agent_config_prompts",
+			"breakpoints": false
 		}
 	]
 }

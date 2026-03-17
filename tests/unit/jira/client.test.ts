@@ -940,4 +940,66 @@ describe('jiraClient', () => {
 			).rejects.toThrow('No JIRA credentials in scope');
 		});
 	});
+
+	// ===== downloadAttachment =====
+
+	describe('downloadAttachment', () => {
+		afterEach(() => {
+			vi.restoreAllMocks();
+		});
+
+		it('fetches with Basic auth header and returns buffer + mimeType', async () => {
+			const imageBytes = Buffer.from('image-bytes');
+			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response(imageBytes, {
+					status: 200,
+					headers: { 'Content-Type': 'image/png' },
+				}),
+			);
+
+			const result = await withJiraCredentials(creds, () =>
+				jiraClient.downloadAttachment('https://jira.example.com/secure/attachment/10001/image.png'),
+			);
+
+			expect(result).not.toBeNull();
+			// biome-ignore lint/style/noNonNullAssertion: guarded by expect above
+			expect(result!.mimeType).toBe('image/png');
+			// biome-ignore lint/style/noNonNullAssertion: guarded by expect above
+			expect(result!.buffer).toBeInstanceOf(Buffer);
+
+			const [url, options] = fetchSpy.mock.calls[0];
+			expect(url).toBe('https://jira.example.com/secure/attachment/10001/image.png');
+			expect((options as RequestInit).headers).toEqual({
+				Authorization: expectedAuth,
+			});
+		});
+
+		it('returns null when download fails (non-OK response)', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response('Unauthorized', { status: 401 }),
+			);
+
+			const result = await withJiraCredentials(creds, () =>
+				jiraClient.downloadAttachment('https://jira.example.com/secure/attachment/10001/image.png'),
+			);
+
+			expect(result).toBeNull();
+		});
+
+		it('returns null when fetch throws a network error', async () => {
+			vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
+
+			const result = await withJiraCredentials(creds, () =>
+				jiraClient.downloadAttachment('https://jira.example.com/secure/attachment/10001/image.png'),
+			);
+
+			expect(result).toBeNull();
+		});
+
+		it('throws when called outside withJiraCredentials scope', async () => {
+			await expect(
+				jiraClient.downloadAttachment('https://jira.example.com/secure/attachment/10001/image.png'),
+			).rejects.toThrow('No JIRA credentials in scope');
+		});
+	});
 });

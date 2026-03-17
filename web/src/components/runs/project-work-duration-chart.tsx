@@ -13,17 +13,16 @@ import {
 	YAxis,
 } from 'recharts';
 
-interface ProjectWorkStat {
+interface AgentTypeBreakdown {
 	agentType: string;
-	status: string;
-	durationMs: number | null;
-	costUsd: string | null;
-	model: string | null;
-	startedAt: string | null;
+	runCount: number;
+	totalCostUsd: string;
+	totalDurationMs: number;
+	avgDurationMs: number | null;
 }
 
 interface ProjectWorkDurationChartProps {
-	runs: ProjectWorkStat[];
+	byAgentType: AgentTypeBreakdown[];
 }
 
 interface ChartEntry {
@@ -35,29 +34,22 @@ interface ChartEntry {
 	color: string;
 }
 
-export function ProjectWorkDurationChart({ runs }: ProjectWorkDurationChartProps) {
-	// Aggregate total duration and run count by agent type
-	const durationByAgent: Record<string, { total: number; count: number }> = {};
-	for (const run of runs) {
-		if (run.durationMs != null && run.durationMs > 0) {
-			if (!durationByAgent[run.agentType]) {
-				durationByAgent[run.agentType] = { total: 0, count: 0 };
-			}
-			durationByAgent[run.agentType].total += run.durationMs;
-			durationByAgent[run.agentType].count += 1;
-		}
-	}
+export function buildDurationChartData(byAgentType: AgentTypeBreakdown[]): ChartEntry[] {
+	return byAgentType
+		.filter((breakdown) => breakdown.totalDurationMs > 0)
+		.map((breakdown) => ({
+			name: agentTypeLabel(breakdown.agentType),
+			agentType: breakdown.agentType,
+			totalDurationMs: breakdown.totalDurationMs,
+			runCount: breakdown.runCount,
+			avgDurationMs: breakdown.avgDurationMs ?? 0,
+			color: getAgentColor(breakdown.agentType),
+		}))
+		.sort((a, b) => b.totalDurationMs - a.totalDurationMs);
+}
 
-	const data: ChartEntry[] = Object.entries(durationByAgent).map(
-		([agentType, { total, count }]) => ({
-			name: agentTypeLabel(agentType),
-			agentType,
-			totalDurationMs: total,
-			runCount: count,
-			avgDurationMs: Math.round(total / count),
-			color: getAgentColor(agentType),
-		}),
-	);
+export function ProjectWorkDurationChart({ byAgentType }: ProjectWorkDurationChartProps) {
+	const data: ChartEntry[] = buildDurationChartData(byAgentType);
 
 	if (data.length === 0) {
 		return (

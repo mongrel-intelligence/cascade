@@ -196,4 +196,34 @@ describe('loadProjectConfig', () => {
 		await freshLoad();
 		expect(innerMock).toHaveBeenCalledTimes(2);
 	});
+
+	it('deduplicates concurrent in-flight fetches (prevents cache stampede)', async () => {
+		let resolveDb!: (value: unknown) => void;
+		const dbPromise = new Promise((res) => {
+			resolveDb = res;
+		});
+		const innerMock = vi.fn().mockReturnValue(dbPromise);
+
+		vi.resetModules();
+		vi.doMock('../../../src/config/provider.js', () => ({ loadConfig: innerMock }));
+		vi.doMock('../../../src/config/configCache.js', () => ({
+			configCache: { getConfig: vi.fn().mockReturnValue(null), setConfig: vi.fn() },
+		}));
+
+		const { loadProjectConfig: freshLoad } = await import('../../../src/router/config.js');
+
+		// Fire two concurrent calls before the DB responds
+		const p1 = freshLoad();
+		const p2 = freshLoad();
+
+		// Only one DB call should have been made
+		expect(innerMock).toHaveBeenCalledTimes(1);
+
+		resolveDb({ projects: [] });
+		const [r1, r2] = await Promise.all([p1, p2]);
+
+		// Both resolve to the same object (deduplicated)
+		expect(r1).toBe(r2);
+		expect(innerMock).toHaveBeenCalledTimes(1);
+	});
 });

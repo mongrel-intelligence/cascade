@@ -29,6 +29,10 @@ vi.mock('../../../../src/router/ackMessageGenerator.js', () => ({
 vi.mock('../../../../src/router/platformClients/index.js', () => ({
 	resolveTrelloCredentials: vi.fn().mockResolvedValue({ apiKey: 'key', token: 'tok' }),
 }));
+vi.mock('../../../../src/utils/runLink.js', () => ({
+	buildWorkItemRunsLink: vi.fn().mockReturnValue(null),
+	getDashboardUrl: vi.fn().mockReturnValue(null),
+}));
 vi.mock('../../../../src/trello/client.js', () => ({
 	withTrelloCredentials: vi.fn().mockImplementation((_creds: unknown, fn: () => unknown) => fn()),
 }));
@@ -44,9 +48,11 @@ import { postTrelloAck } from '../../../../src/router/acknowledgments.js';
 import { TrelloRouterAdapter } from '../../../../src/router/adapters/trello.js';
 import { loadProjectConfig } from '../../../../src/router/config.js';
 import type { RouterProjectConfig } from '../../../../src/router/config.js';
+import { resolveTrelloCredentials } from '../../../../src/router/platformClients/index.js';
 import { sendAcknowledgeReaction } from '../../../../src/router/reactions.js';
 import { isCardInTriggerList, isSelfAuthoredTrelloComment } from '../../../../src/router/trello.js';
 import type { TriggerRegistry } from '../../../../src/triggers/registry.js';
+import { buildWorkItemRunsLink, getDashboardUrl } from '../../../../src/utils/runLink.js';
 
 const mockProject: RouterProjectConfig = {
 	id: 'p1',
@@ -273,6 +279,95 @@ describe('TrelloRouterAdapter', () => {
 			expect(job.source).toBe('trello');
 			expect((job as { workItemId: string }).workItemId).toBe('card1');
 			expect((job as { ackCommentId?: string }).ackCommentId).toBeUndefined();
+		});
+
+		it('includes ackCommentId in job when ackResult is provided', () => {
+			const result = { agentType: 'implementation', agentInput: {} };
+			const job = adapter.buildJob(
+				{
+					projectIdentifier: 'board1',
+					eventType: 'commentCard',
+					workItemId: 'card1',
+					isCommentEvent: true,
+				},
+				{},
+				mockProject,
+				result as never,
+				{ commentId: 'trello-comment-abc', message: 'Starting...' },
+			);
+			expect((job as { ackCommentId?: string }).ackCommentId).toBe('trello-comment-abc');
+		});
+	});
+
+	describe('dispatchWithCredentials - additional paths', () => {
+		it('returns null when Trello credentials are missing', async () => {
+			vi.mocked(resolveTrelloCredentials).mockResolvedValueOnce(null);
+
+			const result = await adapter.dispatchWithCredentials(
+				{ projectIdentifier: 'board1', eventType: 'commentCard', isCommentEvent: true },
+				{},
+				mockProject,
+				mockTriggerRegistry,
+			);
+			expect(result).toBeNull();
+			expect(mockTriggerRegistry.dispatch).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('postAck - additional paths', () => {
+		it('appends run link footer when runLinksEnabled and dashboardUrl available', async () => {
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [mockProject],
+				fullProjects: [{ id: 'p1', runLinksEnabled: true } as never],
+			});
+			vi.mocked(getDashboardUrl).mockReturnValue('https://dashboard.example.com');
+			vi.mocked(buildWorkItemRunsLink).mockReturnValue(
+				'\n[View runs](https://dashboard.example.com/runs)',
+			);
+			vi.mocked(postTrelloAck).mockResolvedValue('comment-with-link');
+
+			const ackResult = await adapter.postAck(
+				{
+					projectIdentifier: 'board1',
+					eventType: 'commentCard',
+					workItemId: 'card1',
+					isCommentEvent: true,
+				},
+				{},
+				mockProject,
+				'implementation',
+			);
+			expect(buildWorkItemRunsLink).toHaveBeenCalled();
+			expect(ackResult?.message).toContain('[View runs]');
+		});
+
+		it('handles postTrelloAck error gracefully (returns undefined)', async () => {
+			vi.mocked(postTrelloAck).mockRejectedValue(new Error('Trello API error'));
+			const ackResult = await adapter.postAck(
+				{
+					projectIdentifier: 'board1',
+					eventType: 'commentCard',
+					workItemId: 'card1',
+					isCommentEvent: true,
+				},
+				{},
+				mockProject,
+				'implementation',
+			);
+			expect(ackResult).toBeUndefined();
+		});
+	});
+
+	describe('sendReaction - additional paths', () => {
+		it('does nothing when no project found for boardId', async () => {
+			vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [], fullProjects: [] });
+			adapter.sendReaction(
+				{ projectIdentifier: 'unknown-board', eventType: 'commentCard', isCommentEvent: true },
+				{},
+			);
+			await vi.waitFor(() => {
+				expect(sendAcknowledgeReaction).not.toHaveBeenCalled();
+			});
 		});
 	});
 });

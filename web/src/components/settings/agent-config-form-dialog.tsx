@@ -1,3 +1,4 @@
+import { EngineSettingsFields } from '@/components/settings/engine-settings-fields.js';
 import { ModelField } from '@/components/settings/model-field.js';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
@@ -22,6 +23,7 @@ interface AgentConfigFormDialogProps {
 	config?: AgentConfig;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: form dialog with dual create/update mutation paths and engine-specific settings rendering
 export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfigFormDialogProps) {
 	const queryClient = useQueryClient();
 	const isEdit = !!config && config.id !== 0;
@@ -32,21 +34,33 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 	const [maxIterations, setMaxIterations] = useState(config?.maxIterations?.toString() ?? '');
 	const [agentEngine, setAgentEngine] = useState(config?.agentEngine ?? '');
 	const [maxConcurrency, setMaxConcurrency] = useState(config?.maxConcurrency?.toString() ?? '');
+	const [engineSettings, setEngineSettings] = useState<
+		Record<string, Record<string, unknown>> | undefined
+	>(config?.agentEngineSettings ?? undefined);
+
+	const effectiveEngineId = agentEngine || '';
+	const effectiveEngine = enginesQuery.data?.find((engine) => engine.id === effectiveEngineId);
 
 	const queryKey = trpc.agentConfigs.list.queryOptions({
 		projectId: config?.projectId ?? '',
 	}).queryKey;
 
 	const createMutation = useMutation({
-		mutationFn: () =>
-			trpcClient.agentConfigs.create.mutate({
+		mutationFn: () => {
+			const activeEngineSettings =
+				agentEngine && engineSettings?.[agentEngine]
+					? { [agentEngine]: engineSettings[agentEngine] }
+					: null;
+			return trpcClient.agentConfigs.create.mutate({
 				projectId: config?.projectId as string,
 				agentType,
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentEngine: agentEngine || null,
+				engineSettings: activeEngineSettings,
 				maxConcurrency: maxConcurrency ? Number(maxConcurrency) : null,
-			}),
+			});
+		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey });
 			onOpenChange(false);
@@ -54,15 +68,21 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 	});
 
 	const updateMutation = useMutation({
-		mutationFn: () =>
-			trpcClient.agentConfigs.update.mutate({
+		mutationFn: () => {
+			const activeEngineSettings =
+				agentEngine && engineSettings?.[agentEngine]
+					? { [agentEngine]: engineSettings[agentEngine] }
+					: null;
+			return trpcClient.agentConfigs.update.mutate({
 				id: config?.id as number,
 				agentType,
 				model: model || null,
 				maxIterations: maxIterations ? Number(maxIterations) : null,
 				agentEngine: agentEngine || null,
+				engineSettings: activeEngineSettings,
 				maxConcurrency: maxConcurrency ? Number(maxConcurrency) : null,
-			}),
+			});
+		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey });
 			onOpenChange(false);
@@ -94,33 +114,6 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 							required
 						/>
 					</div>
-					<div className="grid grid-cols-2 gap-4">
-						<div className="space-y-2">
-							<Label htmlFor="gac-model">Model</Label>
-							<ModelField id="gac-model" value={model} onChange={setModel} engine={agentEngine} />
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="gac-iterations">Max Iterations</Label>
-							<Input
-								id="gac-iterations"
-								type="number"
-								value={maxIterations}
-								onChange={(e) => setMaxIterations(e.target.value)}
-								placeholder="Optional"
-							/>
-						</div>
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="gac-concurrency">Max Concurrency</Label>
-						<Input
-							id="gac-concurrency"
-							type="number"
-							min={1}
-							value={maxConcurrency}
-							onChange={(e) => setMaxConcurrency(e.target.value)}
-							placeholder="Optional — limits concurrent runs per project"
-						/>
-					</div>
 					<div className="space-y-2">
 						<Label>Engine</Label>
 						<Select
@@ -139,6 +132,41 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 								))}
 							</SelectContent>
 						</Select>
+					</div>
+					<div className="space-y-2">
+						<Label htmlFor="gac-model">Model</Label>
+						<ModelField id="gac-model" value={model} onChange={setModel} engine={agentEngine} />
+					</div>
+					{effectiveEngine && (
+						<EngineSettingsFields
+							engine={effectiveEngine}
+							value={engineSettings}
+							onChange={setEngineSettings}
+							inheritLabel="Inherit from project"
+						/>
+					)}
+					<div className="grid grid-cols-2 gap-4">
+						<div className="space-y-2">
+							<Label htmlFor="gac-iterations">Max Iterations</Label>
+							<Input
+								id="gac-iterations"
+								type="number"
+								value={maxIterations}
+								onChange={(e) => setMaxIterations(e.target.value)}
+								placeholder="Optional"
+							/>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="gac-concurrency">Max Concurrency</Label>
+							<Input
+								id="gac-concurrency"
+								type="number"
+								min={1}
+								value={maxConcurrency}
+								onChange={(e) => setMaxConcurrency(e.target.value)}
+								placeholder="Optional — limits concurrent runs per project"
+							/>
+						</div>
 					</div>
 					<div className="space-y-2">
 						<Label>Prompt</Label>

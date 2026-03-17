@@ -1,4 +1,4 @@
-import { formatCost } from '@/lib/utils.js';
+import { formatCostSummary } from '@/lib/utils.js';
 import { useNavigate } from '@tanstack/react-router';
 import { Link } from '@tanstack/react-router';
 import { ClipboardList, ExternalLink, GitPullRequest } from 'lucide-react';
@@ -198,7 +198,7 @@ function WorkItemRow({ item, projectId }: WorkItemRowProps) {
 
 			{/* Cost */}
 			<td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
-				{formatCost(item.totalCostUsd)}
+				{formatCostSummary(item.totalCostUsd)}
 			</td>
 		</tr>
 	);

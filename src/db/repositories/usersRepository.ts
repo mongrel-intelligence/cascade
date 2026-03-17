@@ -1,4 +1,4 @@
-import { and, eq, gt, lt } from 'drizzle-orm';
+import { and, eq, gt, lt, ne } from 'drizzle-orm';
 import { getDb } from '../client.js';
 import { sessions, users } from '../schema/index.js';
 
@@ -90,9 +90,17 @@ export async function deleteExpiredSessions(): Promise<void> {
 
 /**
  * List all users in an org. Never returns passwordHash.
+ * Pass `opts.excludeRole` to filter out users with that role (e.g. 'superadmin').
  */
-export async function listOrgUsers(orgId: string): Promise<OrgUser[]> {
+export async function listOrgUsers(
+	orgId: string,
+	opts?: { excludeRole?: string },
+): Promise<OrgUser[]> {
 	const db = getDb();
+	const conditions = [eq(users.orgId, orgId)];
+	if (opts?.excludeRole !== undefined) {
+		conditions.push(ne(users.role, opts.excludeRole));
+	}
 	return db
 		.select({
 			id: users.id,
@@ -104,7 +112,7 @@ export async function listOrgUsers(orgId: string): Promise<OrgUser[]> {
 			updatedAt: users.updatedAt,
 		})
 		.from(users)
-		.where(eq(users.orgId, orgId));
+		.where(and(...conditions));
 }
 
 /**

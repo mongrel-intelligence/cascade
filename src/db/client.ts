@@ -4,6 +4,12 @@ import * as schema from './schema/index.js';
 
 let db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 let pool: pg.Pool | null = null;
+let _testDbOverride: ReturnType<typeof drizzle<typeof schema>> | null = null;
+
+/** Test-only: override the DB instance returned by getDb(). */
+export function _setTestDb(db: ReturnType<typeof drizzle<typeof schema>> | null): void {
+	_testDbOverride = db;
+}
 
 function getDatabaseUrl(): string {
 	if (process.env.DATABASE_URL) {
@@ -23,6 +29,7 @@ function getDatabaseUrl(): string {
 }
 
 export function getDb(): ReturnType<typeof drizzle<typeof schema>> {
+	if (_testDbOverride) return _testDbOverride;
 	if (!db) {
 		pool = new pg.Pool({
 			connectionString: getDatabaseUrl(),

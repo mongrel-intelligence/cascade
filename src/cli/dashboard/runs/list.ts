@@ -34,24 +34,28 @@ export default class RunsList extends DashboardCommand {
 				order: flags.order as 'asc' | 'desc',
 			});
 
-			if (flags.json) {
-				this.outputJson(runs);
-				return;
-			}
-
 			const { data, total } = runs as { data: Record<string, unknown>[]; total: number };
 
-			this.outputTable(data, [
-				{ key: 'id', header: 'ID', format: (v) => String(v ?? '').slice(0, 8) },
+			const columns = [
+				{ key: 'id', header: 'ID', format: (v: unknown) => String(v ?? '').slice(0, 8) },
 				{ key: 'projectId', header: 'Project' },
 				{ key: 'agentType', header: 'Agent' },
 				{ key: 'status', header: 'Status', format: formatStatus },
 				{ key: 'startedAt', header: 'Started', format: formatDate },
 				{ key: 'durationMs', header: 'Duration', format: formatDuration },
 				{ key: 'costUsd', header: 'Cost', format: formatCost },
-			]);
+			];
 
-			if (total > data.length) {
+			this.outputFormatted(
+				data,
+				columns,
+				flags,
+				runs,
+				'No runs found. Try `cascade runs trigger --project <id> --agent-type <type>`',
+			);
+
+			const fmt = this.resolveFormat(flags);
+			if (fmt === 'table' && total > data.length) {
 				this.log(`\nShowing ${data.length} of ${total} runs.`);
 			}
 		} catch (err) {

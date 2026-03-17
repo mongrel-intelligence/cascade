@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock the SDK before importing the engine
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
@@ -33,6 +33,7 @@ import {
 	CLAUDE_CODE_MODEL_IDS,
 	DEFAULT_CLAUDE_CODE_MODEL,
 } from '../../../src/backends/claude-code/models.js';
+import { resolveClaudeCodeSettings } from '../../../src/backends/claude-code/settings.js';
 import type { AgentExecutionPlan, ToolManifest } from '../../../src/backends/types.js';
 
 const mockQuery = vi.mocked(query);
@@ -1142,6 +1143,180 @@ describe('continuation loop', () => {
 		expect(result.success).toBe(true);
 		expect(mockQuery).toHaveBeenCalledTimes(1);
 	});
+
+	it('does not pass effort or thinking to query() when no engine settings are configured', async () => {
+		queueStream([
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.01,
+				num_turns: 1,
+			},
+		]);
+
+		const engine = new ClaudeCodeEngine();
+		// No engineSettings in project — should preserve SDK defaults
+		await engine.execute(makeInput());
+
+		const callOptions = mockQuery.mock.calls[0][0].options as Record<string, unknown>;
+		expect(callOptions).not.toHaveProperty('effort');
+		expect(callOptions).not.toHaveProperty('thinking');
+		expect(callOptions).not.toHaveProperty('maxThinkingTokens');
+	});
+
+	it('passes effort to query() when explicitly set in engine settings', async () => {
+		queueStream([
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.01,
+				num_turns: 1,
+			},
+		]);
+
+		const engine = new ClaudeCodeEngine();
+		const input = makeInput({
+			project: {
+				...makeInput().project,
+				engineSettings: { 'claude-code': { effort: 'max' } },
+			} as AgentExecutionPlan['project'],
+		});
+		await engine.execute(input);
+
+		const callOptions = mockQuery.mock.calls[0][0].options as Record<string, unknown>;
+		expect(callOptions.effort).toBe('max');
+	});
+
+	it('passes thinking object to query() when thinking mode is set to disabled', async () => {
+		queueStream([
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.01,
+				num_turns: 1,
+			},
+		]);
+
+		const engine = new ClaudeCodeEngine();
+		const input = makeInput({
+			project: {
+				...makeInput().project,
+				engineSettings: { 'claude-code': { thinking: 'disabled' } },
+			} as AgentExecutionPlan['project'],
+		});
+		await engine.execute(input);
+
+		const callOptions = mockQuery.mock.calls[0][0].options as Record<string, unknown>;
+		expect(callOptions.thinking).toEqual({ type: 'disabled' });
+	});
+
+	it('passes thinking: { type: "adaptive" } when thinking is set to adaptive', async () => {
+		queueStream([
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.01,
+				num_turns: 1,
+			},
+		]);
+
+		const engine = new ClaudeCodeEngine();
+		const input = makeInput({
+			project: {
+				...makeInput().project,
+				engineSettings: { 'claude-code': { thinking: 'adaptive' } },
+			} as AgentExecutionPlan['project'],
+		});
+		await engine.execute(input);
+
+		const callOptions = mockQuery.mock.calls[0][0].options as Record<string, unknown>;
+		expect(callOptions.thinking).toEqual({ type: 'adaptive' });
+	});
+
+	it('passes thinking: { type: "enabled", budgetTokens } when thinking is "enabled"', async () => {
+		queueStream([
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.01,
+				num_turns: 1,
+			},
+		]);
+
+		const engine = new ClaudeCodeEngine();
+		const input = makeInput({
+			project: {
+				...makeInput().project,
+				engineSettings: { 'claude-code': { thinking: 'enabled', thinkingBudgetTokens: 8000 } },
+			} as AgentExecutionPlan['project'],
+		});
+		await engine.execute(input);
+
+		const callOptions = mockQuery.mock.calls[0][0].options as Record<string, unknown>;
+		expect(callOptions.thinking).toEqual({ type: 'enabled', budgetTokens: 8000 });
+		// thinkingBudgetTokens is consumed by the thinking object, not passed separately
+		expect(callOptions).not.toHaveProperty('maxThinkingTokens');
+	});
+
+	it('passes maxThinkingTokens when thinkingBudgetTokens is set without explicit thinking mode', async () => {
+		queueStream([
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.01,
+				num_turns: 1,
+			},
+		]);
+
+		const engine = new ClaudeCodeEngine();
+		const input = makeInput({
+			project: {
+				...makeInput().project,
+				engineSettings: { 'claude-code': { thinkingBudgetTokens: 5000 } },
+			} as AgentExecutionPlan['project'],
+		});
+		await engine.execute(input);
+
+		const callOptions = mockQuery.mock.calls[0][0].options as Record<string, unknown>;
+		expect(callOptions.maxThinkingTokens).toBe(5000);
+		expect(callOptions).not.toHaveProperty('thinking');
+	});
+
+	it('logs resolved settings in the launch info', async () => {
+		queueStream([
+			{
+				type: 'result',
+				subtype: 'success',
+				result: 'Done',
+				total_cost_usd: 0.01,
+				num_turns: 1,
+			},
+		]);
+
+		const engine = new ClaudeCodeEngine();
+		const input = makeInput({
+			project: {
+				...makeInput().project,
+				engineSettings: { 'claude-code': { effort: 'low', thinking: 'disabled' } },
+			} as AgentExecutionPlan['project'],
+		});
+		await engine.execute(input);
+
+		const logWriterMock = input.logWriter as ReturnType<typeof vi.fn>;
+		const launchCall = logWriterMock.mock.calls.find(
+			(c: unknown[]) => c[1] === 'Starting Claude Code SDK execution',
+		);
+		expect(launchCall).toBeDefined();
+		const logData = launchCall[2] as Record<string, unknown>;
+		expect(logData.effort).toBe('low');
+		expect(logData.thinking).toBe('disabled');
+	});
 });
 
 describe('ensureOnboardingFlag', () => {
@@ -1330,5 +1505,140 @@ describe('buildEnv', () => {
 		expect(env.GITHUB_TOKEN).toBe('proj-gh');
 		expect(env.TRELLO_API_KEY).toBe('proj-trello');
 		expect(env.CUSTOM_VAR).toBe('custom-val');
+	});
+});
+
+describe('ClaudeCodeEngine lifecycle hooks', () => {
+	let fakeHome: string;
+	let fakeRepoDir: string;
+	let originalHome: string | undefined;
+
+	beforeEach(() => {
+		fakeHome = mkdtempSync(join(tmpdir(), 'cascade-test-home-'));
+		fakeRepoDir = mkdtempSync(join(tmpdir(), 'cascade-test-repo-'));
+		originalHome = process.env.HOME;
+		process.env.HOME = fakeHome;
+	});
+
+	afterEach(async () => {
+		process.env.HOME = originalHome;
+		await rm(fakeHome, { recursive: true, force: true });
+		await rm(fakeRepoDir, { recursive: true, force: true });
+	});
+
+	it('beforeExecute creates .claude.json onboarding flag', async () => {
+		const engine = new ClaudeCodeEngine();
+		const plan = makeInput({ repoDir: fakeRepoDir });
+		await engine.beforeExecute(plan);
+
+		const claudeJsonPath = join(fakeHome, '.claude.json');
+		expect(existsSync(claudeJsonPath)).toBe(true);
+		const content = JSON.parse(readFileSync(claudeJsonPath, 'utf8'));
+		expect(content).toEqual({ hasCompletedOnboarding: true });
+	});
+
+	it('afterExecute cleans up context directory', async () => {
+		const contextDir = join(fakeRepoDir, '.cascade', 'context');
+		await import('node:fs/promises').then((fs) => fs.mkdir(contextDir, { recursive: true }));
+		await import('node:fs/promises').then((fs) =>
+			fs.writeFile(join(contextDir, 'test.txt'), 'test content'),
+		);
+
+		const engine = new ClaudeCodeEngine();
+		const plan = makeInput({ repoDir: fakeRepoDir });
+		await engine.afterExecute(plan, { success: true, output: '' });
+
+		expect(existsSync(contextDir)).toBe(false);
+	});
+
+	it('afterExecute cleans up persisted Claude session directory', async () => {
+		const { homedir } = await import('node:os');
+		const path = await import('node:path');
+		const encodedDir = fakeRepoDir.replaceAll(path.default.sep, '-');
+		const sessionDir = path.default.join(homedir(), '.claude', 'projects', encodedDir);
+		await import('node:fs/promises').then((fs) => fs.mkdir(sessionDir, { recursive: true }));
+
+		const engine = new ClaudeCodeEngine();
+		const plan = makeInput({ repoDir: fakeRepoDir });
+		await engine.afterExecute(plan, { success: true, output: '' });
+
+		expect(existsSync(sessionDir)).toBe(false);
+	});
+});
+
+describe('resolveClaudeCodeSettings', () => {
+	it('returns defaults when no engine settings are configured', () => {
+		const project = makeInput().project;
+		expect(resolveClaudeCodeSettings(project)).toEqual({
+			effort: 'high',
+			thinking: 'adaptive',
+			thinkingBudgetTokens: undefined,
+		});
+	});
+
+	it('applies explicit effort modes from project engine settings', () => {
+		const project = {
+			...makeInput().project,
+			engineSettings: { 'claude-code': { effort: 'max' } },
+		} as AgentExecutionPlan['project'];
+		expect(resolveClaudeCodeSettings(project)).toEqual({
+			effort: 'max',
+			thinking: 'adaptive',
+			thinkingBudgetTokens: undefined,
+		});
+
+		const projectLow = {
+			...makeInput().project,
+			engineSettings: { 'claude-code': { effort: 'low' } },
+		} as AgentExecutionPlan['project'];
+		expect(resolveClaudeCodeSettings(projectLow).effort).toBe('low');
+
+		const projectMedium = {
+			...makeInput().project,
+			engineSettings: { 'claude-code': { effort: 'medium' } },
+		} as AgentExecutionPlan['project'];
+		expect(resolveClaudeCodeSettings(projectMedium).effort).toBe('medium');
+	});
+
+	it('applies explicit thinking modes from project engine settings', () => {
+		const projectEnabled = {
+			...makeInput().project,
+			engineSettings: { 'claude-code': { thinking: 'enabled' } },
+		} as AgentExecutionPlan['project'];
+		expect(resolveClaudeCodeSettings(projectEnabled)).toEqual({
+			effort: 'high',
+			thinking: 'enabled',
+			thinkingBudgetTokens: undefined,
+		});
+
+		const projectDisabled = {
+			...makeInput().project,
+			engineSettings: { 'claude-code': { thinking: 'disabled' } },
+		} as AgentExecutionPlan['project'];
+		expect(resolveClaudeCodeSettings(projectDisabled).thinking).toBe('disabled');
+	});
+
+	it('applies thinkingBudgetTokens when provided', () => {
+		const project = {
+			...makeInput().project,
+			engineSettings: { 'claude-code': { thinkingBudgetTokens: 10000 } },
+		} as AgentExecutionPlan['project'];
+		expect(resolveClaudeCodeSettings(project)).toEqual({
+			effort: 'high',
+			thinking: 'adaptive',
+			thinkingBudgetTokens: 10000,
+		});
+	});
+
+	it('ClaudeCodeEngine.getSettingsSchema() returns ClaudeCodeSettingsSchema', () => {
+		const engine = new ClaudeCodeEngine();
+		const schema = engine.getSettingsSchema();
+		expect(schema).toBeDefined();
+		// Verify it parses valid settings
+		const result = schema.safeParse({ effort: 'high', thinking: 'adaptive' });
+		expect(result.success).toBe(true);
+		// Verify it rejects invalid settings
+		const bad = schema.safeParse({ effort: 'ultra' });
+		expect(bad.success).toBe(false);
 	});
 });

@@ -1,9 +1,20 @@
+import { EngineSettingsFields } from '@/components/settings/engine-settings-fields.js';
 import { ModelField } from '@/components/settings/model-field.js';
 import {
 	DefinitionTriggerToggles,
 	type ResolvedTrigger,
 } from '@/components/shared/definition-trigger-toggles.js';
-import { TriggerToggles } from '@/components/shared/trigger-toggles.js';
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from '@/components/ui/alert-dialog.js';
+import { Badge } from '@/components/ui/badge.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import {
@@ -14,17 +25,25 @@ import {
 	SelectValue,
 } from '@/components/ui/select.js';
 import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from '@/components/ui/table.js';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.js';
+import {
 	AGENT_LABELS,
 	CATEGORY_LABELS,
-	LIFECYCLE_TRIGGERS,
 	type TriggerParameterValue,
 } from '@/lib/trigger-agent-mapping.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { AgentPromptOverrides } from './agent-prompt-overrides.js';
 
 interface AgentConfig {
 	id: number;
@@ -32,25 +51,44 @@ interface AgentConfig {
 	model: string | null;
 	maxIterations: number | null;
 	agentEngine: string | null;
+	agentEngineSettings: Record<string, Record<string, unknown>> | null;
 	maxConcurrency: number | null;
+	systemPrompt: string | null;
+	taskPrompt: string | null;
 }
+
+interface EngineSettingFieldOption {
+	value: string;
+	label: string;
+}
+
+type EngineSettingField =
+	| {
+			key: string;
+			label: string;
+			type: 'select';
+			description?: string;
+			options: EngineSettingFieldOption[];
+	  }
+	| { key: string; label: string; type: 'boolean'; description?: string }
+	| {
+			key: string;
+			label: string;
+			type: 'number';
+			description?: string;
+			min?: number;
+			max?: number;
+			step?: number;
+	  };
 
 interface Engine {
 	id: string;
 	label: string;
-}
-
-function AgentConfigBadge({ config }: { config: AgentConfig | null }) {
-	if (!config) {
-		return <span className="text-xs text-muted-foreground">Using defaults</span>;
-	}
-	const parts: string[] = [];
-	if (config.model) parts.push(config.model);
-	if (config.maxIterations) parts.push(`${config.maxIterations} iterations`);
-	if (config.maxConcurrency) parts.push(`max ${config.maxConcurrency} concurrent`);
-	if (config.agentEngine) parts.push(config.agentEngine);
-	if (parts.length === 0) return <span className="text-xs text-muted-foreground">Configured</span>;
-	return <span className="text-xs text-muted-foreground">{parts.join(' · ')}</span>;
+	settings?: {
+		title?: string;
+		description?: string;
+		fields: EngineSettingField[];
+	};
 }
 
 // ============================================================================
@@ -62,10 +100,25 @@ interface SaveConfigValues {
 	maxIterations: string;
 	agentEngine: string;
 	maxConcurrency: string;
+	engineSettings: Record<string, Record<string, unknown>> | undefined;
+	systemPrompt: string;
+	taskPrompt: string;
+	/** True when the user explicitly cleared the system prompt override (send null, not the fallback text). */
+	systemPromptCleared: boolean;
+	/** True when the user explicitly cleared the task prompt override (send null, not the fallback text). */
+	taskPromptCleared: boolean;
+}
+
+interface SystemDefaults {
+	model: string;
+	maxIterations: number;
+	agentEngine: string;
+	engineSettings: Record<string, Record<string, unknown>>;
 }
 
 interface DefinitionAgentSectionProps {
 	agentType: string;
+	projectId: string;
 	config: AgentConfig | null;
 	triggers: ResolvedTrigger[];
 	integrations: {
@@ -84,10 +137,20 @@ interface DefinitionAgentSectionProps {
 		parameters: Record<string, TriggerParameterValue>,
 		currentEnabled: boolean,
 	) => void;
+	/** Project-level model (null = use system default). */
+	projectModel: string | null;
+	/** Project-level engine (null = use system default). */
+	projectEngine: string | null;
+	/** Project-level maxIterations (null = use system default). */
+	projectMaxIterations: number | null;
+	/** System-level defaults from the backend. */
+	systemDefaults: SystemDefaults | undefined;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: tabbed detail panel managing Engine/Prompts/Triggers tabs with per-tab state, mutations, and trigger category grouping
 function DefinitionAgentSection({
 	agentType,
+	projectId,
 	config,
 	triggers,
 	integrations,
@@ -98,18 +161,47 @@ function DefinitionAgentSection({
 	onDeleteConfig,
 	onTriggerToggle,
 	onTriggerParamChange,
+	projectModel,
+	projectEngine,
+	projectMaxIterations,
+	systemDefaults,
 }: DefinitionAgentSectionProps) {
-	const [expanded, setExpanded] = useState(false);
 	const [saved, setSaved] = useState(false);
 	const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	// Tracks whether a successful save is in flight (prevents config sync from clearing "Saved")
 	const justSavedRef = useRef(false);
 
-	// Local form state
+	// Local form state — engine fields
 	const [model, setModel] = useState(config?.model ?? '');
 	const [maxIterations, setMaxIterations] = useState(config?.maxIterations?.toString() ?? '');
 	const [agentEngine, setAgentEngine] = useState(config?.agentEngine ?? '');
 	const [maxConcurrency, setMaxConcurrency] = useState(config?.maxConcurrency?.toString() ?? '');
+	const [engineSettings, setEngineSettings] = useState<
+		Record<string, Record<string, unknown>> | undefined
+	>(config?.agentEngineSettings ?? undefined);
+
+	// Local form state — prompt fields (initialized by AgentPromptOverrides component)
+	const [systemPrompt, setSystemPrompt] = useState(config?.systemPrompt ?? '');
+	const [taskPrompt, setTaskPrompt] = useState(config?.taskPrompt ?? '');
+	// Track whether the user explicitly cleared a prompt override so we can send null on save
+	// instead of the fallback display text (which would create a duplicate "custom" override).
+	const [systemPromptCleared, setSystemPromptCleared] = useState(false);
+	const [taskPromptCleared, setTaskPromptCleared] = useState(false);
+
+	const effectiveEngineId = agentEngine || '';
+	const effectiveEngine = engines.find((engine) => engine.id === effectiveEngineId);
+
+	// Resolved inherited engine — project override or system default
+	const inheritedEngine = projectEngine ?? systemDefaults?.agentEngine ?? 'llmist';
+	// Per-field engine defaults for the EngineSettingsFields component
+	const engineDefaults =
+		systemDefaults && effectiveEngineId
+			? systemDefaults.engineSettings[effectiveEngineId]
+			: undefined;
+
+	// Resolved inherited model and iterations (walk the chain: project → system)
+	const inheritedModel = projectModel ?? systemDefaults?.model;
+	const inheritedMaxIterations = projectMaxIterations ?? systemDefaults?.maxIterations;
 
 	// Sync form state when config changes (e.g. after invalidateQueries refetch)
 	// Skip clearing "Saved" if we just saved — the nonce effect will handle the timer
@@ -118,6 +210,11 @@ function DefinitionAgentSection({
 		setMaxIterations(config?.maxIterations?.toString() ?? '');
 		setAgentEngine(config?.agentEngine ?? '');
 		setMaxConcurrency(config?.maxConcurrency?.toString() ?? '');
+		setEngineSettings(config?.agentEngineSettings ?? undefined);
+		setSystemPrompt(config?.systemPrompt ?? '');
+		setTaskPrompt(config?.taskPrompt ?? '');
+		setSystemPromptCleared(false);
+		setTaskPromptCleared(false);
 		if (justSavedRef.current) {
 			justSavedRef.current = false;
 		} else {
@@ -182,6 +279,11 @@ function DefinitionAgentSection({
 			maxIterations,
 			agentEngine,
 			maxConcurrency,
+			engineSettings,
+			systemPrompt,
+			taskPrompt,
+			systemPromptCleared,
+			taskPromptCleared,
 		});
 	};
 
@@ -190,6 +292,11 @@ function DefinitionAgentSection({
 		setMaxIterations(config?.maxIterations?.toString() ?? '');
 		setAgentEngine(config?.agentEngine ?? '');
 		setMaxConcurrency(config?.maxConcurrency?.toString() ?? '');
+		setEngineSettings(config?.agentEngineSettings ?? undefined);
+		setSystemPrompt(config?.systemPrompt ?? '');
+		setTaskPrompt(config?.taskPrompt ?? '');
+		setSystemPromptCleared(false);
+		setTaskPromptCleared(false);
 	};
 
 	const handleDelete = () => {
@@ -199,99 +306,108 @@ function DefinitionAgentSection({
 	};
 
 	return (
-		<div className="rounded-lg border border-border overflow-hidden">
-			{/* Header */}
-			<button
-				type="button"
-				onClick={() => setExpanded((v) => !v)}
-				className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors"
-			>
-				<div className="flex items-center gap-3">
-					{expanded ? (
-						<ChevronDown className="h-4 w-4 text-muted-foreground" />
-					) : (
-						<ChevronRight className="h-4 w-4 text-muted-foreground" />
-					)}
-					<span className="font-medium text-sm">
-						{(AGENT_LABELS as Record<string, string | undefined>)[agentType] ?? agentType}
-					</span>
-					<AgentConfigBadge config={config} />
-				</div>
-			</button>
+		<div className="space-y-4">
+			<Tabs defaultValue="engine">
+				<TabsList>
+					<TabsTrigger value="engine">Engine</TabsTrigger>
+					<TabsTrigger value="prompts">Prompts</TabsTrigger>
+					<TabsTrigger value="triggers">Triggers</TabsTrigger>
+				</TabsList>
 
-			{/* Expanded content */}
-			{expanded && (
-				<div className="border-t border-border px-4 py-4 space-y-6 bg-muted/20">
-					{/* Config fields */}
-					<div className="space-y-4">
-						<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-							Configuration
-						</p>
-						<div className="grid grid-cols-2 gap-4">
-							<div className="space-y-2">
-								<Label htmlFor={`${agentType}-model`}>Model</Label>
-								<ModelField
-									id={`${agentType}-model`}
-									value={model}
-									onChange={setModel}
-									engine={agentEngine}
-								/>
-							</div>
-							<div className="space-y-2">
-								<Label htmlFor={`${agentType}-iterations`}>Max Iterations</Label>
-								<Input
-									id={`${agentType}-iterations`}
-									type="number"
-									value={maxIterations}
-									onChange={(e) => setMaxIterations(e.target.value)}
-									placeholder="Optional"
-								/>
-							</div>
-						</div>
-						<div className="grid grid-cols-2 gap-4">
-							<div className="space-y-2">
-								<Label htmlFor={`${agentType}-concurrency`}>Max Concurrency</Label>
-								<Input
-									id={`${agentType}-concurrency`}
-									type="number"
-									min={1}
-									value={maxConcurrency}
-									onChange={(e) => setMaxConcurrency(e.target.value)}
-									placeholder="Optional"
-								/>
-							</div>
-							<div className="space-y-2">
-								<Label>Engine</Label>
-								<Select
-									value={agentEngine || '_none'}
-									onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
-								>
-									<SelectTrigger className="w-full">
-										<SelectValue placeholder="Optional" />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="_none">None</SelectItem>
-										{engines.map((engine) => (
-											<SelectItem key={engine.id} value={engine.id}>
-												{engine.label}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							</div>
+				{/* Engine Tab */}
+				<TabsContent value="engine" className="space-y-4 pt-4">
+					<div className="space-y-2">
+						<Label>Engine</Label>
+						<Select
+							value={agentEngine || '_none'}
+							onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
+						>
+							<SelectTrigger className="w-full">
+								<SelectValue placeholder="Optional" />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="_none">Inherit from project ({inheritedEngine})</SelectItem>
+								{engines.map((engine) => (
+									<SelectItem key={engine.id} value={engine.id}>
+										{engine.label}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</div>
+					<div className="space-y-2">
+						<Label htmlFor={`${agentType}-model`}>Model</Label>
+						<ModelField
+							id={`${agentType}-model`}
+							value={model}
+							onChange={setModel}
+							engine={agentEngine}
+							defaultLabel={inheritedModel ? `Inherit from project (${inheritedModel})` : undefined}
+							projectId={projectId}
+						/>
+					</div>
+					{effectiveEngine && (
+						<EngineSettingsFields
+							engine={effectiveEngine}
+							value={engineSettings}
+							onChange={setEngineSettings}
+							inheritLabel="Inherit from project"
+							engineDefaults={engineDefaults}
+						/>
+					)}
+					<div className="grid grid-cols-2 gap-4">
+						<div className="space-y-2">
+							<Label htmlFor={`${agentType}-iterations`}>Max Iterations</Label>
+							<Input
+								id={`${agentType}-iterations`}
+								type="number"
+								value={maxIterations}
+								onChange={(e) => setMaxIterations(e.target.value)}
+								placeholder={
+									inheritedMaxIterations !== undefined
+										? `${inheritedMaxIterations} (inherited)`
+										: 'Optional'
+								}
+							/>
 						</div>
 						<div className="space-y-2">
-							<Label>Prompt</Label>
-							<p className="text-sm text-muted-foreground">
-								Prompts are managed in{' '}
-								<Link to="/global/definitions" className="text-primary hover:underline">
-									Agent Definitions
-								</Link>
-							</p>
+							<Label htmlFor={`${agentType}-concurrency`}>Max Concurrency</Label>
+							<Input
+								id={`${agentType}-concurrency`}
+								type="number"
+								min={1}
+								value={maxConcurrency}
+								onChange={(e) => setMaxConcurrency(e.target.value)}
+								placeholder="Optional"
+							/>
 						</div>
 					</div>
+				</TabsContent>
 
-					{/* Render triggers by category */}
+				{/* Prompts Tab */}
+				<TabsContent value="prompts" className="pt-4">
+					<AgentPromptOverrides
+						projectId={projectId}
+						agentType={agentType}
+						systemPrompt={systemPrompt}
+						onSystemPromptChange={(v) => {
+							setSystemPrompt(v);
+							// User is editing manually — cancel any pending clear
+							setSystemPromptCleared(false);
+						}}
+						taskPrompt={taskPrompt}
+						onTaskPromptChange={(v) => {
+							setTaskPrompt(v);
+							// User is editing manually — cancel any pending clear
+							setTaskPromptCleared(false);
+						}}
+						onSystemPromptClear={() => setSystemPromptCleared(true)}
+						onTaskPromptClear={() => setTaskPromptCleared(true)}
+					/>
+				</TabsContent>
+
+				{/* Triggers Tab */}
+				<TabsContent value="triggers" className="space-y-6 pt-4">
 					{(['pm', 'scm', 'internal'] as const).map((category) => {
 						const categoryTriggers = triggersByCategory[category];
 						if (categoryTriggers.length === 0) return null;
@@ -320,39 +436,371 @@ function DefinitionAgentSection({
 							No trigger configuration for this agent.
 						</p>
 					)}
+				</TabsContent>
+			</Tabs>
 
-					{/* Footer actions */}
-					<div className="flex items-center justify-between border-t border-border pt-4">
-						<div className="flex items-center gap-2">
-							<button
-								type="button"
-								onClick={handleSave}
-								disabled={isSaving}
-								className="inline-flex h-7 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-							>
-								{isSaving ? 'Saving...' : config ? 'Save' : 'Create Config'}
-							</button>
-							<button
-								type="button"
-								onClick={handleCancel}
-								className="inline-flex h-7 items-center rounded-md border border-input px-3 text-xs hover:bg-accent"
-							>
-								Reset
-							</button>
-							{saved && <span className="text-xs text-muted-foreground">Saved</span>}
-						</div>
-						{config && (
-							<button
-								type="button"
-								onClick={handleDelete}
-								className="inline-flex h-7 items-center rounded-md border border-destructive px-3 text-xs text-destructive hover:bg-destructive/10"
-							>
-								Delete Config
-							</button>
+			{/* Footer actions — outside tabs, applies globally */}
+			<div className="flex items-center justify-between border-t border-border pt-4">
+				<div className="flex items-center gap-2">
+					<button
+						type="button"
+						onClick={handleSave}
+						disabled={isSaving}
+						className="inline-flex h-7 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+					>
+						{isSaving ? 'Saving...' : config ? 'Save' : 'Create Config'}
+					</button>
+					<button
+						type="button"
+						onClick={handleCancel}
+						className="inline-flex h-7 items-center rounded-md border border-input px-3 text-xs hover:bg-accent"
+					>
+						Reset
+					</button>
+					{saved && <span className="text-xs text-muted-foreground">Saved</span>}
+				</div>
+				{config && (
+					<button
+						type="button"
+						onClick={handleDelete}
+						className="inline-flex h-7 items-center rounded-md border border-destructive px-3 text-xs text-destructive hover:bg-destructive/10"
+					>
+						Delete Config
+					</button>
+				)}
+			</div>
+		</div>
+	);
+}
+
+// ============================================================================
+// Agent List View
+// ============================================================================
+
+function countActiveTriggers(
+	triggers: ResolvedTrigger[],
+	integrations: { pm: string | null; scm: string | null },
+): number {
+	return triggers.filter((t) => {
+		if (!t.enabled) return false;
+		const [category] = t.event.split(':');
+		if (t.providers && t.providers.length > 0) {
+			const activeProvider = integrations[category as keyof typeof integrations];
+			return t.providers.some((p) => p === activeProvider);
+		}
+		return true;
+	}).length;
+}
+
+interface AgentRowProps {
+	type: string;
+	config: AgentConfig | null;
+	triggers: ResolvedTrigger[];
+	integrations: { pm: string | null; scm: string | null };
+	onSelect: (agentType: string) => void;
+	onDeleteRequest: (id: number, label: string) => void;
+	/** Project-level model to show as "inherited" when agent has no override. */
+	projectModel: string | null;
+	/** Project-level engine to show as "inherited" when agent has no override. */
+	projectEngine: string | null;
+	/** System-level defaults. */
+	systemDefaults: SystemDefaults | undefined;
+}
+
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: table row with multiple computed display values (model, engine, trigger count) and layered inheritance fallbacks
+function AgentRow({
+	type,
+	config,
+	triggers,
+	integrations,
+	onSelect,
+	onDeleteRequest,
+	projectModel,
+	projectEngine,
+	systemDefaults,
+}: AgentRowProps) {
+	const label = (AGENT_LABELS as Record<string, string | undefined>)[type] ?? type;
+	const activeTriggerCount = countActiveTriggers(triggers, integrations);
+	const modelInfo = config?.model ?? null;
+	const engineInfo = config?.agentEngine ?? null;
+	const hasCustomEngineSettings =
+		config?.agentEngineSettings != null && Object.keys(config.agentEngineSettings).length > 0;
+
+	// Fallback display: show inherited model/engine when agent has no specific override
+	const inheritedModel = projectModel ?? systemDefaults?.model ?? null;
+	const inheritedEngine = projectEngine ?? systemDefaults?.agentEngine ?? null;
+	const displayModel = modelInfo ?? (inheritedModel ? `${inheritedModel} (inherited)` : null);
+	const displayEngine = engineInfo ?? (inheritedEngine ? `${inheritedEngine} (inherited)` : null);
+
+	return (
+		<TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => onSelect(type)}>
+			<TableCell className="font-medium">{label}</TableCell>
+			<TableCell>
+				{config ? (
+					<Badge variant="default" className="text-xs">
+						Configured
+					</Badge>
+				) : (
+					<Badge variant="outline" className="text-xs">
+						Default
+					</Badge>
+				)}
+			</TableCell>
+			<TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+				{displayModel || displayEngine ? (
+					<span>
+						{displayEngine && <span>{displayEngine}</span>}
+						{displayEngine && displayModel && <span> · </span>}
+						{displayModel && <span>{displayModel}</span>}
+						{hasCustomEngineSettings && (
+							<span className="ml-1.5 inline-flex items-center rounded-sm bg-muted px-1.5 py-0.5 text-xs">
+								Custom settings
+							</span>
 						)}
+					</span>
+				) : (
+					<span>—</span>
+				)}
+			</TableCell>
+			<TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+				{activeTriggerCount > 0 ? <span>{activeTriggerCount} active</span> : <span>None</span>}
+			</TableCell>
+			<TableCell>
+				<div className="flex items-center justify-end gap-1">
+					{config && (
+						<button
+							type="button"
+							onClick={(e) => {
+								e.stopPropagation();
+								onDeleteRequest(config.id, label);
+							}}
+							className="p-1 text-muted-foreground hover:text-destructive"
+							title="Delete config"
+						>
+							<Trash2 className="h-4 w-4" />
+						</button>
+					)}
+					<ChevronRight className="h-4 w-4 text-muted-foreground" />
+				</div>
+			</TableCell>
+		</TableRow>
+	);
+}
+
+interface AgentListViewProps {
+	enabledAgentTypes: string[];
+	availableAgentTypes: string[];
+	configByAgent: Map<string, AgentConfig>;
+	triggersByAgent: Map<string, ResolvedTrigger[]>;
+	integrations: { pm: string | null; scm: string | null };
+	onSelect: (agentType: string) => void;
+	onDelete: (id: number) => void;
+	onEnable: (agentType: string) => void;
+	isDeleting: boolean;
+	isEnabling: boolean;
+	projectModel: string | null;
+	projectEngine: string | null;
+	systemDefaults: SystemDefaults | undefined;
+}
+
+function AgentListView({
+	enabledAgentTypes,
+	availableAgentTypes,
+	configByAgent,
+	triggersByAgent,
+	integrations,
+	onSelect,
+	onDelete,
+	onEnable,
+	isDeleting,
+	isEnabling,
+	projectModel,
+	projectEngine,
+	systemDefaults,
+}: AgentListViewProps) {
+	const [deleteTarget, setDeleteTarget] = useState<{ id: number; label: string } | null>(null);
+
+	return (
+		<>
+			{enabledAgentTypes.length === 0 ? (
+				<div className="rounded-lg border border-border py-8 text-center text-muted-foreground">
+					No agents enabled. Enable agents below to start processing.
+				</div>
+			) : (
+				<div className="overflow-x-auto rounded-lg border border-border">
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>Agent</TableHead>
+								<TableHead>Status</TableHead>
+								<TableHead className="hidden sm:table-cell">Engine / Model</TableHead>
+								<TableHead className="hidden sm:table-cell">Active Triggers</TableHead>
+								<TableHead className="w-20" />
+							</TableRow>
+						</TableHeader>
+						<TableBody>
+							{enabledAgentTypes.map((type) => (
+								<AgentRow
+									key={type}
+									type={type}
+									config={configByAgent.get(type) ?? null}
+									triggers={triggersByAgent.get(type) ?? []}
+									integrations={integrations}
+									onSelect={onSelect}
+									onDeleteRequest={(id, label) => setDeleteTarget({ id, label })}
+									projectModel={projectModel}
+									projectEngine={projectEngine}
+									systemDefaults={systemDefaults}
+								/>
+							))}
+						</TableBody>
+					</Table>
+				</div>
+			)}
+
+			{availableAgentTypes.length > 0 && (
+				<div className="space-y-3">
+					<p className="text-sm font-medium text-muted-foreground">Available Agents</p>
+					<div className="rounded-lg border border-border divide-y divide-border">
+						{availableAgentTypes.map((agentType) => {
+							const label =
+								(AGENT_LABELS as Record<string, string | undefined>)[agentType] ?? agentType;
+							return (
+								<div key={agentType} className="flex items-center justify-between px-4 py-3">
+									<span className="text-sm font-medium">{label}</span>
+									<button
+										type="button"
+										onClick={() => onEnable(agentType)}
+										disabled={isEnabling}
+										className="inline-flex h-7 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+									>
+										{isEnabling ? 'Enabling...' : 'Enable Agent'}
+									</button>
+								</div>
+							);
+						})}
 					</div>
 				</div>
 			)}
+
+			<AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Delete Agent Config</AlertDialogTitle>
+						<AlertDialogDescription>
+							Are you sure you want to delete the config for <strong>{deleteTarget?.label}</strong>?
+							The agent will be disabled and no longer process any events. This action cannot be
+							undone.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={() => {
+								if (deleteTarget) {
+									onDelete(deleteTarget.id);
+									setDeleteTarget(null);
+								}
+							}}
+							className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+						>
+							{isDeleting ? 'Deleting...' : 'Delete'}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+		</>
+	);
+}
+
+// ============================================================================
+// Agent Detail View
+// ============================================================================
+
+interface AgentDetailViewProps {
+	agentType: string;
+	projectId: string;
+	config: AgentConfig | null;
+	triggers: ResolvedTrigger[];
+	integrations: { pm: string | null; scm: string | null };
+	engines: Engine[];
+	isSaving: boolean;
+	onSaveConfig: (agentType: string, configId: number | null, values: SaveConfigValues) => void;
+	saveSuccessNonce: number;
+	onDeleteConfig: (id: number) => void;
+	onTriggerToggle: (agentType: string, event: string, enabled: boolean) => void;
+	onTriggerParamChange: (
+		agentType: string,
+		event: string,
+		parameters: Record<string, TriggerParameterValue>,
+		currentEnabled: boolean,
+	) => void;
+	onBack: () => void;
+	projectModel: string | null;
+	projectEngine: string | null;
+	projectMaxIterations: number | null;
+	systemDefaults: SystemDefaults | undefined;
+}
+
+function AgentDetailView({
+	agentType,
+	projectId,
+	config,
+	triggers,
+	integrations,
+	engines,
+	isSaving,
+	onSaveConfig,
+	saveSuccessNonce,
+	onDeleteConfig,
+	onTriggerToggle,
+	onTriggerParamChange,
+	onBack,
+	projectModel,
+	projectEngine,
+	projectMaxIterations,
+	systemDefaults,
+}: AgentDetailViewProps) {
+	const label = (AGENT_LABELS as Record<string, string | undefined>)[agentType] ?? agentType;
+
+	return (
+		<div className="space-y-4">
+			<div className="flex items-center gap-3">
+				<button
+					type="button"
+					onClick={onBack}
+					className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+				>
+					<ArrowLeft className="h-4 w-4" /> Back to agents
+				</button>
+			</div>
+			<div>
+				<h2 className="text-lg font-semibold">{label}</h2>
+				<p className="text-sm text-muted-foreground">
+					Configure model, engine, and trigger settings for the {label} agent.
+				</p>
+			</div>
+			<DefinitionAgentSection
+				agentType={agentType}
+				projectId={projectId}
+				config={config}
+				triggers={triggers}
+				integrations={integrations}
+				engines={engines}
+				isSaving={isSaving}
+				onSaveConfig={onSaveConfig}
+				saveSuccessNonce={saveSuccessNonce}
+				onDeleteConfig={(id) => {
+					onDeleteConfig(id);
+					onBack();
+				}}
+				onTriggerToggle={onTriggerToggle}
+				onTriggerParamChange={onTriggerParamChange}
+				projectModel={projectModel}
+				projectEngine={projectEngine}
+				projectMaxIterations={projectMaxIterations}
+				systemDefaults={systemDefaults}
+			/>
 		</div>
 	);
 }
@@ -361,6 +809,7 @@ function DefinitionAgentSection({
 // Main Component
 // ============================================================================
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: orchestrates multiple queries, mutations, and list/detail navigation with agent config and trigger data transformation
 export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const queryClient = useQueryClient();
 
@@ -368,26 +817,26 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const configsQuery = useQuery(trpc.agentConfigs.list.queryOptions({ projectId }));
 	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
 
+	// Project-level defaults (for inheritance chain display)
+	const projectQuery = useQuery(trpc.projects.getById.queryOptions({ id: projectId }));
+	const defaultsQuery = useQuery({
+		...trpc.projects.defaults.queryOptions(),
+		staleTime: Number.POSITIVE_INFINITY,
+	});
+
 	// Definition-based triggers query
 	const triggersViewQuery = useQuery(
 		trpc.agentTriggerConfigs.getProjectTriggersView.queryOptions({ projectId }),
 	);
 
-	// Integrations query (for lifecycle triggers)
-	const integrationsQuery = useQuery(trpc.projects.integrations.list.queryOptions({ projectId }));
-
-	const [localLifecycleTriggers, setLocalLifecycleTriggers] = useState<Record<string, unknown>>({});
-	const [lifecycleSaving, setLifecycleSaving] = useState(false);
-	const [lifecycleSaved, setLifecycleSaved] = useState(false);
-	const lifecycleSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [savingAgentType, setSavingAgentType] = useState<string | null>(null);
 	const [saveSuccessNonces, setSaveSuccessNonces] = useState<Record<string, number>>({});
+	const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
 	const configsQueryKey = trpc.agentConfigs.list.queryOptions({ projectId }).queryKey;
 	const triggersViewQueryKey = trpc.agentTriggerConfigs.getProjectTriggersView.queryOptions({
 		projectId,
 	}).queryKey;
-	const integrationsQueryKey = trpc.projects.integrations.list.queryOptions({ projectId }).queryKey;
 
 	// Agent config mutations (shared)
 	const createMutation = useMutation({
@@ -396,7 +845,10 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			model: string | null;
 			maxIterations: number | null;
 			agentEngine: string | null;
+			engineSettings: Record<string, Record<string, unknown>> | null;
 			maxConcurrency: number | null;
+			systemPrompt: string | null;
+			taskPrompt: string | null;
 		}) =>
 			trpcClient.agentConfigs.create.mutate({
 				projectId,
@@ -404,7 +856,10 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				model: input.model,
 				maxIterations: input.maxIterations,
 				agentEngine: input.agentEngine,
+				engineSettings: input.engineSettings,
 				maxConcurrency: input.maxConcurrency,
+				systemPrompt: input.systemPrompt,
+				taskPrompt: input.taskPrompt,
 			}),
 		onSuccess: (_data, variables) => {
 			queryClient.invalidateQueries({ queryKey: configsQueryKey });
@@ -427,7 +882,10 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			model: string | null;
 			maxIterations: number | null;
 			agentEngine: string | null;
+			engineSettings: Record<string, Record<string, unknown>> | null;
 			maxConcurrency: number | null;
+			systemPrompt: string | null;
+			taskPrompt: string | null;
 		}) =>
 			trpcClient.agentConfigs.update.mutate({
 				id: input.id,
@@ -435,7 +893,10 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				model: input.model,
 				maxIterations: input.maxIterations,
 				agentEngine: input.agentEngine,
+				engineSettings: input.engineSettings,
 				maxConcurrency: input.maxConcurrency,
+				systemPrompt: input.systemPrompt,
+				taskPrompt: input.taskPrompt,
 			}),
 		onSuccess: (_data, variables) => {
 			queryClient.invalidateQueries({ queryKey: configsQueryKey });
@@ -453,9 +914,36 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 
 	const deleteMutation = useMutation({
 		mutationFn: (id: number) => trpcClient.agentConfigs.delete.mutate({ id }),
-		onSuccess: () => queryClient.invalidateQueries({ queryKey: configsQueryKey }),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: configsQueryKey });
+			queryClient.invalidateQueries({ queryKey: triggersViewQueryKey });
+		},
 		onError: (err) => {
 			toast.error('Failed to delete agent config', { description: err.message });
+		},
+	});
+
+	// Enable an agent by creating a bare agent_configs row (no overrides = project defaults)
+	const enableAgentMutation = useMutation({
+		mutationFn: (agentType: string) =>
+			trpcClient.agentConfigs.create.mutate({
+				projectId,
+				agentType,
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				engineSettings: null,
+				maxConcurrency: null,
+				systemPrompt: null,
+				taskPrompt: null,
+			}),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: configsQueryKey });
+			queryClient.invalidateQueries({ queryKey: triggersViewQueryKey });
+			toast.success('Agent enabled');
+		},
+		onError: (err) => {
+			toast.error('Failed to enable agent', { description: err.message });
 		},
 	});
 
@@ -479,42 +967,6 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		},
 	});
 
-	// Lifecycle trigger mutation (uses legacy save mechanism)
-	const updateTriggersMutation = useMutation({
-		mutationFn: ({
-			category,
-			triggers,
-		}: { category: 'pm' | 'scm'; triggers: Record<string, unknown> }) =>
-			trpcClient.projects.integrations.updateTriggers.mutate({
-				projectId,
-				category,
-				triggers: triggers as Record<string, boolean | Record<string, boolean>>,
-			}),
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: integrationsQueryKey });
-		},
-	});
-
-	// Derive trigger values for lifecycle triggers
-	const integrations = (integrationsQuery.data ?? []) as Array<Record<string, unknown>>;
-	const scmIntegration = integrations.find((i) => i.category === 'scm');
-	const emptyTriggers = useMemo<Record<string, unknown>>(() => ({}), []);
-	const scmTriggers = (scmIntegration?.triggers as Record<string, unknown>) ?? emptyTriggers;
-
-	// Sync lifecycle trigger state
-	useEffect(() => {
-		setLocalLifecycleTriggers(scmTriggers);
-	}, [scmTriggers]);
-
-	// Clean up the lifecycle "Saved" timer on unmount
-	useEffect(() => {
-		return () => {
-			if (lifecycleSavedTimerRef.current !== null) {
-				clearTimeout(lifecycleSavedTimerRef.current);
-			}
-		};
-	}, []);
-
 	// Loading state
 	const isLoading = configsQuery.isLoading || triggersViewQuery.isLoading;
 
@@ -525,36 +977,64 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	const configs = (configsQuery.data ?? []) as AgentConfig[];
 	const engines = (enginesQuery.data ?? []) as Engine[];
 
+	// Project-level and system-level defaults for inheritance display
+	const projectData = projectQuery.data;
+	const systemDefaults = defaultsQuery.data
+		? {
+				model: defaultsQuery.data.model,
+				maxIterations: defaultsQuery.data.maxIterations,
+				agentEngine: defaultsQuery.data.agentEngine,
+				engineSettings: defaultsQuery.data.engineSettings as Record<
+					string,
+					Record<string, unknown>
+				>,
+			}
+		: undefined;
+	const projectModel = projectData?.model ?? null;
+	const projectEngine = projectData?.agentEngine ?? null;
+	const projectMaxIterations = projectData?.maxIterations ?? null;
+
 	// Build agent config map
 	const configByAgent = new Map<string, AgentConfig>();
 	for (const c of configs) {
 		configByAgent.set(c.agentType, c);
 	}
 
-	// Build triggers map from API
+	// Build triggers map from API — use enabledAgents (configured agents only)
 	const triggersByAgent = new Map<string, ResolvedTrigger[]>();
 	const triggersViewIntegrations = triggersViewQuery.data?.integrations ?? {
 		pm: null,
 		scm: null,
 	};
 	if (triggersViewQuery.data) {
-		for (const agent of triggersViewQuery.data.agents) {
+		const agentsList = triggersViewQuery.data.enabledAgents ?? triggersViewQuery.data.agents ?? [];
+		for (const agent of agentsList) {
 			triggersByAgent.set(agent.agentType, agent.triggers as ResolvedTrigger[]);
 		}
 	}
 
-	const handleSaveConfig = (
-		type: string,
-		configId: number | null,
-		values: { model: string; maxIterations: string; agentEngine: string; maxConcurrency: string },
-	) => {
+	// Available (unconfigured) agent types
+	const availableAgentTypes = triggersViewQuery.data?.availableAgents ?? [];
+
+	// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: save handler dispatches create vs update, builds payload from many optional fields, and chains trigger upsert
+	const handleSaveConfig = (type: string, configId: number | null, values: SaveConfigValues) => {
 		setSavingAgentType(type);
+		const activeEngine = values.agentEngine || null;
+		const activeEngineSettings =
+			activeEngine && values.engineSettings?.[activeEngine]
+				? { [activeEngine]: values.engineSettings[activeEngine] }
+				: null;
 		const payload = {
 			agentType: type,
 			model: values.model || null,
 			maxIterations: values.maxIterations ? Number(values.maxIterations) : null,
-			agentEngine: values.agentEngine || null,
+			agentEngine: activeEngine,
+			engineSettings: activeEngineSettings,
 			maxConcurrency: values.maxConcurrency ? Number(values.maxConcurrency) : null,
+			// When the user explicitly cleared an override, send null to remove it server-side.
+			// Otherwise fall back to empty-string → null conversion for unpopulated fields.
+			systemPrompt: values.systemPromptCleared ? null : values.systemPrompt || null,
+			taskPrompt: values.taskPromptCleared ? null : values.taskPrompt || null,
 		};
 
 		if (configId !== null) {
@@ -596,85 +1076,60 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 		);
 	};
 
-	const handleSaveLifecycle = async () => {
-		setLifecycleSaving(true);
-		try {
-			const changed: Record<string, unknown> = {};
-			for (const t of LIFECYCLE_TRIGGERS) {
-				if (t.key in localLifecycleTriggers) {
-					changed[t.key] = localLifecycleTriggers[t.key];
+	// Get list of enabled agent types to display
+	const enabledAgentTypes = Array.from(triggersByAgent.keys());
+
+	// Render detail view when an agent is selected
+	if (selectedAgent !== null) {
+		return (
+			<AgentDetailView
+				agentType={selectedAgent}
+				projectId={projectId}
+				config={configByAgent.get(selectedAgent) ?? null}
+				triggers={triggersByAgent.get(selectedAgent) ?? []}
+				integrations={triggersViewIntegrations}
+				engines={engines}
+				isSaving={
+					savingAgentType === selectedAgent &&
+					(createMutation.isPending || updateMutation.isPending)
 				}
-			}
-			await updateTriggersMutation.mutateAsync({ category: 'scm', triggers: changed });
-			if (lifecycleSavedTimerRef.current !== null) {
-				clearTimeout(lifecycleSavedTimerRef.current);
-			}
-			setLifecycleSaved(true);
-			lifecycleSavedTimerRef.current = setTimeout(() => setLifecycleSaved(false), 2000);
-		} finally {
-			setLifecycleSaving(false);
-		}
-	};
+				onSaveConfig={handleSaveConfig}
+				saveSuccessNonce={saveSuccessNonces[selectedAgent] ?? 0}
+				onDeleteConfig={(id) => deleteMutation.mutate(id)}
+				onTriggerToggle={handleTriggerToggle}
+				onTriggerParamChange={handleTriggerParamChange}
+				onBack={() => setSelectedAgent(null)}
+				projectModel={projectModel}
+				projectEngine={projectEngine}
+				projectMaxIterations={projectMaxIterations}
+				systemDefaults={systemDefaults}
+			/>
+		);
+	}
 
-	// Get list of agent types to display
-	const agentTypes = Array.from(triggersByAgent.keys());
-
+	// Render list view
 	return (
 		<div className="space-y-4">
 			<p className="text-sm text-muted-foreground">
-				Per-agent configuration and trigger settings scoped to this project.
+				Per-agent configuration and trigger settings scoped to this project. Click an agent to
+				configure its model, engine, and triggers.
 			</p>
 
-			{/* Agent sections */}
-			<div className="space-y-2">
-				{agentTypes.map((type) => (
-					<DefinitionAgentSection
-						key={type}
-						agentType={type}
-						config={configByAgent.get(type) ?? null}
-						triggers={triggersByAgent.get(type) ?? []}
-						integrations={triggersViewIntegrations}
-						engines={engines}
-						isSaving={
-							savingAgentType === type && (createMutation.isPending || updateMutation.isPending)
-						}
-						onSaveConfig={handleSaveConfig}
-						saveSuccessNonce={saveSuccessNonces[type] ?? 0}
-						onDeleteConfig={(id) => deleteMutation.mutate(id)}
-						onTriggerToggle={handleTriggerToggle}
-						onTriggerParamChange={handleTriggerParamChange}
-					/>
-				))}
-			</div>
-
-			{/* Lifecycle triggers section */}
-			{LIFECYCLE_TRIGGERS.length > 0 && (
-				<div className="rounded-lg border border-border p-4 space-y-3">
-					<div>
-						<h3 className="text-sm font-medium">Lifecycle Automations</h3>
-						<p className="text-xs text-muted-foreground mt-0.5">
-							These automations update card status but do not run an agent.
-						</p>
-					</div>
-					<TriggerToggles
-						items={LIFECYCLE_TRIGGERS}
-						values={localLifecycleTriggers}
-						onChange={setLocalLifecycleTriggers}
-						idPrefix="lifecycle"
-					/>
-					<div className="flex items-center gap-2">
-						<button
-							type="button"
-							onClick={handleSaveLifecycle}
-							disabled={lifecycleSaving}
-							className="inline-flex h-7 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-						>
-							{lifecycleSaving ? 'Saving...' : 'Save'}
-						</button>
-						{lifecycleSaved && <span className="text-xs text-muted-foreground">Saved</span>}
-					</div>
-				</div>
-			)}
+			<AgentListView
+				enabledAgentTypes={enabledAgentTypes}
+				availableAgentTypes={availableAgentTypes}
+				configByAgent={configByAgent}
+				triggersByAgent={triggersByAgent}
+				integrations={triggersViewIntegrations}
+				onSelect={setSelectedAgent}
+				onDelete={(id) => deleteMutation.mutate(id)}
+				onEnable={(agentType) => enableAgentMutation.mutate(agentType)}
+				isDeleting={deleteMutation.isPending}
+				isEnabling={enableAgentMutation.isPending}
+				projectModel={projectModel}
+				projectEngine={projectEngine}
+				systemDefaults={systemDefaults}
+			/>
 		</div>
 	);
 }

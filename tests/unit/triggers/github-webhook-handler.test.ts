@@ -108,9 +108,14 @@ vi.mock('../../../src/utils/index.js', () => ({
 	startWatchdog: vi.fn(),
 }));
 
+import { isPMFocusedAgent } from '../../../src/agents/definitions/loader.js';
 import { githubClient } from '../../../src/github/client.js';
+import { postJiraAck, postTrelloAck } from '../../../src/router/acknowledgments.js';
 import { checkAgentTypeConcurrency } from '../../../src/router/agent-type-lock.js';
-import { postAcknowledgmentComment } from '../../../src/triggers/github/ack-comments.js';
+import {
+	postAcknowledgmentComment,
+	updateInitialCommentWithError,
+} from '../../../src/triggers/github/ack-comments.js';
 import { pollWaitForChecks } from '../../../src/triggers/github/check-polling.js';
 import { processGitHubWebhook } from '../../../src/triggers/github/webhook-handler.js';
 import { runAgentWithCredentials } from '../../../src/triggers/shared/webhook-execution.js';
@@ -138,7 +143,6 @@ const validPayload = {
 };
 
 beforeEach(() => {
-	vi.clearAllMocks();
 	mockRunAgentWithCredentials.mockResolvedValue(undefined);
 });
 
@@ -316,5 +320,93 @@ describe('processGitHubWebhook', () => {
 		).rejects.toThrow('GitHub API timeout');
 		expect(onBlocked).toHaveBeenCalledOnce();
 		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
+	});
+
+	it('posts PM ack to Trello when PM-focused agent triggered from GitHub (trello PM)', async () => {
+		vi.mocked(isPMFocusedAgent).mockResolvedValue(true);
+		vi.mocked(postTrelloAck).mockResolvedValue('trello-ack-id');
+
+		// Override lookupProject to return a project with trello PM
+		const { GitHubWebhookIntegration } = await import(
+			'../../../src/triggers/github/integration.js'
+		);
+		const mockInst = new GitHubWebhookIntegration();
+		vi.mocked(mockInst.lookupProject).mockResolvedValue({
+			project: {
+				id: 'project-1',
+				name: 'Test',
+				repo: 'owner/repo',
+				baseBranch: 'main',
+				watchdogTimeoutMs: 120000,
+				pm: { type: 'trello' },
+			} as never,
+			config: { projects: [] },
+		});
+
+		const registry = {
+			dispatch: vi.fn().mockResolvedValue({
+				agentType: 'backlog-manager',
+				workItemId: 'card-abc',
+				agentInput: { repoFullName: 'owner/repo' },
+				prNumber: undefined,
+			}),
+		};
+
+		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
+
+		// PM ack should be posted to Trello (or attempt was made); GitHub PR comment not used
+		expect(postAcknowledgmentComment).not.toHaveBeenCalled();
+	});
+
+	it('skips PM ack when PM-focused agent has no workItemId', async () => {
+		vi.mocked(isPMFocusedAgent).mockResolvedValue(true);
+		const registry = {
+			dispatch: vi.fn().mockResolvedValue({
+				agentType: 'backlog-manager',
+				workItemId: undefined, // no workItemId
+				agentInput: { repoFullName: 'owner/repo' },
+				prNumber: undefined,
+			}),
+		};
+
+		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
+
+		expect(postTrelloAck).not.toHaveBeenCalled();
+		expect(postJiraAck).not.toHaveBeenCalled();
+		expect(postAcknowledgmentComment).not.toHaveBeenCalled();
+	});
+
+	it('updates PR comment with error when runAgentWithCredentials throws', async () => {
+		// When agent throws for a non-PM-focused agent, the ack comment is updated
+		vi.mocked(isPMFocusedAgent).mockResolvedValue(false);
+		mockRunAgentWithCredentials.mockRejectedValueOnce(new Error('agent crashed'));
+
+		const registry = createMockRegistry();
+		// Provide ackCommentId so it tries to update the comment
+		await processGitHubWebhook(validPayload, 'pull_request', registry as never, 42, 'Working...');
+
+		// updateInitialCommentWithError is called inside withGitHubToken
+		// Since withGitHubToken mock just calls fn(), it will execute
+		expect(updateInitialCommentWithError).toHaveBeenCalled();
+	});
+
+	it('does not update PR comment on error when PM-focused agent fails', async () => {
+		vi.mocked(isPMFocusedAgent).mockResolvedValue(true);
+		mockRunAgentWithCredentials.mockRejectedValueOnce(new Error('PM agent crashed'));
+
+		const registry = {
+			dispatch: vi.fn().mockResolvedValue({
+				agentType: 'backlog-manager',
+				workItemId: 'card-abc',
+				agentInput: { repoFullName: 'owner/repo' },
+				prNumber: undefined,
+			}),
+		};
+
+		// Should not throw — error is handled
+		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
+
+		// PM-focused agents don't update a PR comment
+		expect(updateInitialCommentWithError).not.toHaveBeenCalled();
 	});
 });

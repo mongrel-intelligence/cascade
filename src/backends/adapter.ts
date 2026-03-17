@@ -19,6 +19,7 @@ import { setupRepository } from '../agents/shared/repository.js';
 import { finalizeEngineRun, tryCreateRun } from '../agents/shared/runTracking.js';
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { CUSTOM_MODELS } from '../config/customModels.js';
+import { mergeEngineSettings } from '../config/engineSettings.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import {
 	PM_WRITE_SIDECAR_ENV_VAR,
@@ -133,6 +134,7 @@ async function buildExecutionPlan(
 	gitHubToken: string | undefined,
 	isGitHubAck: boolean,
 	engineId: string,
+	engine: AgentEngine,
 ): Promise<
 	Omit<AgentExecutionPlan, 'progressReporter'> & {
 		reviewSidecarPath?: string;
@@ -173,7 +175,7 @@ async function buildExecutionPlan(
 	const {
 		systemPrompt,
 		taskPrompt: taskPromptOverride,
-		model,
+		model: rawModel,
 		maxIterations,
 		contextFiles,
 	} = await resolveModelConfig({
@@ -185,6 +187,9 @@ async function buildExecutionPlan(
 		dbPartials,
 		agentInput: input,
 	});
+
+	// Allow the engine to resolve/validate the model string (e.g. strip provider prefix)
+	const model = engine.resolveModel ? engine.resolveModel(rawModel) : rawModel;
 
 	const profile = await getAgentProfile(agentType);
 
@@ -238,6 +243,14 @@ async function buildExecutionPlan(
 		projectSecrets.GITHUB_TOKEN = gitHubToken;
 	}
 
+	// Merge engine settings: agent-config settings override project-level settings.
+	// When no per-agent settings exist for this agent type, project-level settings are used unchanged.
+	const agentLevelEngineSettings = project.agentEngineSettings?.[agentType];
+	const mergedEngineSettings = mergeEngineSettings(
+		project.engineSettings,
+		agentLevelEngineSettings,
+	);
+
 	return {
 		agentType,
 		project,
@@ -258,6 +271,7 @@ async function buildExecutionPlan(
 		completionRequirements,
 		enableStopHooks: needsGitStateStopHooks(profile.finishHooks),
 		blockGitPush: profile.finishHooks.blockGitPush,
+		engineSettings: mergedEngineSettings,
 		...(Object.keys(projectSecrets).length > 0 && { projectSecrets }),
 		reviewSidecarPath,
 		prSidecarPath,
@@ -412,6 +426,7 @@ async function resolvePartialExecutionPlan(
 			gitHubToken,
 			isGitHubAck,
 			engine.definition.id,
+			engine,
 		);
 
 	const partialInput = gitHubToken
@@ -553,10 +568,21 @@ export async function executeWithEngine(
 			};
 
 			monitor?.start();
-			let result: Awaited<ReturnType<typeof engine.execute>>;
+			let result: Awaited<ReturnType<typeof engine.execute>> | undefined;
 			try {
-				result = await engine.execute(executionPlan);
-				await hydrateNativeToolSidecars(result, prSidecarPath, reviewSidecarPath);
+				if (engine.beforeExecute) {
+					await engine.beforeExecute(executionPlan);
+				}
+				try {
+					result = await engine.execute(executionPlan);
+				} finally {
+					if (engine.afterExecute) {
+						// afterExecute always runs; pass result if available (execute() may have thrown).
+						await engine.afterExecute(executionPlan, result ?? { success: false, output: '' });
+					}
+				}
+				// biome-ignore lint/style/noNonNullAssertion: result is always defined when execute() did not throw
+				await hydrateNativeToolSidecars(result!, prSidecarPath, reviewSidecarPath);
 				const completionEvidence = readCompletionEvidence(executionPlan.completionRequirements);
 
 				postProcessResult(result, agentType, engine, input, identifier, {

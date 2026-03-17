@@ -6,9 +6,13 @@ const mockProvider = createMockPMProvider();
 
 vi.mock('../../../../../src/pm/index.js', () => ({
 	getPMProvider: vi.fn(() => mockProvider),
+	filterImageMedia: vi.fn((refs) => refs.filter((r) => r.mimeType.startsWith('image/'))),
 }));
 
-import { readWorkItem } from '../../../../../src/gadgets/pm/core/readWorkItem.js';
+import {
+	readWorkItem,
+	readWorkItemWithMedia,
+} from '../../../../../src/gadgets/pm/core/readWorkItem.js';
 
 describe('readWorkItem', () => {
 	const baseItem = {
@@ -202,5 +206,168 @@ describe('readWorkItem', () => {
 		const secondPos = result.indexOf('Second');
 		// Second comment appears first (reversed order)
 		expect(secondPos).toBeLessThan(firstPos);
+	});
+});
+
+describe('readWorkItemWithMedia', () => {
+	const baseItem = {
+		id: 'item1',
+		title: 'Media Work Item',
+		url: 'https://trello.com/c/item1',
+		description: 'A description',
+		labels: [],
+	};
+
+	it('returns text and empty media when no inlineMedia on work item', async () => {
+		mockProvider.getWorkItem.mockResolvedValue(baseItem);
+		mockProvider.getChecklists.mockResolvedValue([]);
+		mockProvider.getAttachments.mockResolvedValue([]);
+		mockProvider.getWorkItemComments.mockResolvedValue([]);
+
+		const result = await readWorkItemWithMedia('item1', true);
+
+		expect(result.text).toContain('# Media Work Item');
+		expect(result.media).toEqual([]);
+		expect(result.text).not.toContain('## Inline Media');
+	});
+
+	it('collects image media from work item inlineMedia', async () => {
+		mockProvider.getWorkItem.mockResolvedValue({
+			...baseItem,
+			inlineMedia: [
+				{ url: 'https://example.com/img.png', mimeType: 'image/png', source: 'description' },
+			],
+		});
+		mockProvider.getChecklists.mockResolvedValue([]);
+		mockProvider.getAttachments.mockResolvedValue([]);
+		mockProvider.getWorkItemComments.mockResolvedValue([]);
+
+		const result = await readWorkItemWithMedia('item1', true);
+
+		expect(result.media).toHaveLength(1);
+		expect(result.media[0].url).toBe('https://example.com/img.png');
+		expect(result.media[0].mimeType).toBe('image/png');
+		expect(result.text).toContain('## Inline Media');
+		expect(result.text).toContain('[Image: img.png]');
+	});
+
+	it('collects image media from comments inlineMedia', async () => {
+		mockProvider.getWorkItem.mockResolvedValue(baseItem);
+		mockProvider.getChecklists.mockResolvedValue([]);
+		mockProvider.getAttachments.mockResolvedValue([]);
+		mockProvider.getWorkItemComments.mockResolvedValue([
+			{
+				id: 'c1',
+				author: { name: 'Alice', id: 'u1', username: 'alice' },
+				date: '2024-01-01T00:00:00Z',
+				text: 'See this image',
+				inlineMedia: [
+					{
+						url: 'https://example.com/screenshot.jpg',
+						mimeType: 'image/jpeg',
+						altText: 'screenshot',
+						source: 'comment' as const,
+					},
+				],
+			},
+		]);
+
+		const result = await readWorkItemWithMedia('item1', true);
+
+		expect(result.media).toHaveLength(1);
+		expect(result.media[0].url).toBe('https://example.com/screenshot.jpg');
+		expect(result.media[0].source).toBe('comment');
+		expect(result.text).toContain('## Inline Media');
+		expect(result.text).toContain('[Image: screenshot]');
+	});
+
+	it('collects media from both work item and comments', async () => {
+		mockProvider.getWorkItem.mockResolvedValue({
+			...baseItem,
+			inlineMedia: [
+				{
+					url: 'https://example.com/desc.png',
+					mimeType: 'image/png',
+					altText: 'diagram',
+					source: 'description' as const,
+				},
+			],
+		});
+		mockProvider.getChecklists.mockResolvedValue([]);
+		mockProvider.getAttachments.mockResolvedValue([]);
+		mockProvider.getWorkItemComments.mockResolvedValue([
+			{
+				id: 'c1',
+				author: { name: 'Alice', id: 'u1', username: 'alice' },
+				date: '2024-01-01T00:00:00Z',
+				text: 'Comment with image',
+				inlineMedia: [
+					{
+						url: 'https://example.com/comment.gif',
+						mimeType: 'image/gif',
+						source: 'comment' as const,
+					},
+				],
+			},
+		]);
+
+		const result = await readWorkItemWithMedia('item1', true);
+
+		expect(result.media).toHaveLength(2);
+		expect(result.media[0].url).toBe('https://example.com/desc.png');
+		expect(result.media[1].url).toBe('https://example.com/comment.gif');
+	});
+
+	it('does not collect non-image media references', async () => {
+		mockProvider.getWorkItem.mockResolvedValue({
+			...baseItem,
+			inlineMedia: [
+				{
+					url: 'https://example.com/doc.pdf',
+					mimeType: 'application/pdf',
+					source: 'description' as const,
+				},
+			],
+		});
+		mockProvider.getChecklists.mockResolvedValue([]);
+		mockProvider.getAttachments.mockResolvedValue([]);
+		mockProvider.getWorkItemComments.mockResolvedValue([]);
+
+		const result = await readWorkItemWithMedia('item1', true);
+
+		expect(result.media).toEqual([]);
+		expect(result.text).not.toContain('## Inline Media');
+	});
+
+	it('does not collect comment media when includeComments=false', async () => {
+		mockProvider.getWorkItem.mockResolvedValue(baseItem);
+		mockProvider.getChecklists.mockResolvedValue([]);
+		mockProvider.getAttachments.mockResolvedValue([]);
+
+		const result = await readWorkItemWithMedia('item1', false);
+
+		expect(result.media).toEqual([]);
+		expect(mockProvider.getWorkItemComments).not.toHaveBeenCalled();
+	});
+
+	it('shows alt text in inline media section when provided', async () => {
+		mockProvider.getWorkItem.mockResolvedValue({
+			...baseItem,
+			inlineMedia: [
+				{
+					url: 'https://example.com/flow-diagram.png',
+					mimeType: 'image/png',
+					altText: 'Architecture Diagram',
+					source: 'description' as const,
+				},
+			],
+		});
+		mockProvider.getChecklists.mockResolvedValue([]);
+		mockProvider.getAttachments.mockResolvedValue([]);
+		mockProvider.getWorkItemComments.mockResolvedValue([]);
+
+		const result = await readWorkItemWithMedia('item1', true);
+
+		expect(result.text).toContain('[Image: Architecture Diagram]');
 	});
 });

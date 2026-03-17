@@ -1,7 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { registerBuiltInEngines } from '../../../src/backends/bootstrap.js';
 import { ProjectConfigSchema, validateConfig } from '../../../src/config/schema.js';
 
-describe('ProjectConfigSchema', () => {
+beforeAll(() => {
+	registerBuiltInEngines();
+});
+
+describe.concurrent('ProjectConfigSchema', () => {
 	it('validates a valid project config', () => {
 		const config = {
 			id: 'test-project',
@@ -227,7 +232,7 @@ describe('ProjectConfigSchema', () => {
 	});
 });
 
-describe('validateConfig', () => {
+describe.concurrent('validateConfig', () => {
 	it('validates a complete cascade config', () => {
 		const config = {
 			projects: [
@@ -346,7 +351,7 @@ describe('validateConfig', () => {
 					repo: 'owner/repo',
 					trello: { boardId: 'b1', lists: {}, labels: {} },
 					engineSettings: {
-						'claude-code': {
+						'unknown-engine': {
 							foo: 'bar',
 						},
 					},

@@ -9,15 +9,10 @@ vi.mock('../../../../src/db/client.js', () => ({
 
 import { getDb } from '../../../../src/db/client.js';
 import {
-	createCredential,
-	deleteCredential,
 	getIntegrationProvider,
-	listOrgCredentials,
-	resolveAllIntegrationCredentials,
-	resolveAllOrgCredentials,
-	resolveIntegrationCredential,
-	resolveOrgCredential,
-	updateCredential,
+	listProjectCredentialsMeta,
+	resolveAllProjectCredentials,
+	resolveProjectCredential,
 } from '../../../../src/db/repositories/credentialsRepository.js';
 
 describe('credentialsRepository', () => {
@@ -28,251 +23,104 @@ describe('credentialsRepository', () => {
 		vi.mocked(getDb).mockReturnValue(mockDb.db as never);
 	});
 
-	describe('resolveIntegrationCredential', () => {
+	describe('resolveProjectCredential', () => {
 		it('returns decrypted value when found', async () => {
-			mockDb.chain.where.mockResolvedValueOnce([{ value: 'trello-api-key', orgId: 'org1' }]);
+			mockDb.chain.where.mockResolvedValueOnce([{ value: 'ghp_impl_token' }]);
 
-			const result = await resolveIntegrationCredential('proj1', 'pm', 'api_key');
-			expect(result).toBe('trello-api-key');
+			const result = await resolveProjectCredential('proj1', 'GITHUB_TOKEN_IMPLEMENTER');
+			expect(result).toBe('ghp_impl_token');
 		});
 
 		it('returns null when not found', async () => {
 			mockDb.chain.where.mockResolvedValueOnce([]);
 
-			const result = await resolveIntegrationCredential('proj1', 'pm', 'api_key');
+			const result = await resolveProjectCredential('proj1', 'MISSING_KEY');
 			expect(result).toBeNull();
 		});
+
+		it('uses projectId as AAD for decryption when CREDENTIAL_MASTER_KEY is set', async () => {
+			const key = randomBytes(32).toString('hex');
+			vi.stubEnv('CREDENTIAL_MASTER_KEY', key);
+
+			// Import encryptCredential to produce a valid encrypted value
+			const { encryptCredential } = await import('../../../../src/db/crypto.js');
+			const encryptedValue = encryptCredential('my-secret', 'proj1');
+			mockDb.chain.where.mockResolvedValueOnce([{ value: encryptedValue }]);
+
+			const result = await resolveProjectCredential('proj1', 'SOME_KEY');
+			expect(result).toBe('my-secret');
+		});
 	});
 
-	describe('resolveAllIntegrationCredentials', () => {
-		it('returns all integration credentials for a project', async () => {
+	describe('resolveAllProjectCredentials', () => {
+		it('returns all project credentials as key-value map', async () => {
+			// First select: project existence check
+			mockDb.chain.where.mockResolvedValueOnce([{ id: 'proj1' }]);
+			// Second select: project_credentials rows
 			mockDb.chain.where.mockResolvedValueOnce([
-				{ category: 'pm', provider: 'trello', role: 'api_key', value: 'tkey', orgId: 'org1' },
-				{ category: 'pm', provider: 'trello', role: 'token', value: 'ttoken', orgId: 'org1' },
-				{
-					category: 'scm',
-					provider: 'github',
-					role: 'implementer_token',
-					value: 'ghp_impl',
-					orgId: 'org1',
-				},
-			]);
-
-			const result = await resolveAllIntegrationCredentials('proj1');
-			expect(result).toHaveLength(3);
-			expect(result[0]).toEqual({
-				category: 'pm',
-				provider: 'trello',
-				role: 'api_key',
-				value: 'tkey',
-			});
-			expect(result[2]).toEqual({
-				category: 'scm',
-				provider: 'github',
-				role: 'implementer_token',
-				value: 'ghp_impl',
-			});
-		});
-
-		it('returns empty array when no integration credentials exist', async () => {
-			mockDb.chain.where.mockResolvedValueOnce([]);
-
-			const result = await resolveAllIntegrationCredentials('proj1');
-			expect(result).toEqual([]);
-		});
-	});
-
-	describe('resolveOrgCredential', () => {
-		it('returns value when org default exists', async () => {
-			mockDb.chain.where.mockResolvedValueOnce([{ value: 'or-api-key' }]);
-
-			const result = await resolveOrgCredential('org1', 'OPENROUTER_API_KEY');
-			expect(result).toBe('or-api-key');
-		});
-
-		it('returns null when no org default', async () => {
-			mockDb.chain.where.mockResolvedValueOnce([]);
-
-			const result = await resolveOrgCredential('org1', 'MISSING_KEY');
-			expect(result).toBeNull();
-		});
-	});
-
-	describe('resolveAllOrgCredentials', () => {
-		it('returns all org default credentials as key-value map', async () => {
-			mockDb.chain.where.mockResolvedValueOnce([
+				{ envVarKey: 'GITHUB_TOKEN_IMPLEMENTER', value: 'ghp_impl' },
+				{ envVarKey: 'TRELLO_API_KEY', value: 'trello-key' },
 				{ envVarKey: 'OPENROUTER_API_KEY', value: 'or-key' },
-				{ envVarKey: 'ANTHROPIC_API_KEY', value: 'ant-key' },
 			]);
 
-			const result = await resolveAllOrgCredentials('org1');
+			const result = await resolveAllProjectCredentials('proj1');
 			expect(result).toEqual({
+				GITHUB_TOKEN_IMPLEMENTER: 'ghp_impl',
+				TRELLO_API_KEY: 'trello-key',
 				OPENROUTER_API_KEY: 'or-key',
-				ANTHROPIC_API_KEY: 'ant-key',
 			});
 		});
 
 		it('returns empty object when no credentials', async () => {
+			// Project exists
+			mockDb.chain.where.mockResolvedValueOnce([{ id: 'proj1' }]);
+			// No credentials
 			mockDb.chain.where.mockResolvedValueOnce([]);
 
-			const result = await resolveAllOrgCredentials('org1');
+			const result = await resolveAllProjectCredentials('proj1');
 			expect(result).toEqual({});
 		});
-	});
 
-	describe('createCredential', () => {
-		it('inserts credential and returns id (no encryption key)', async () => {
-			mockDb.chain.returning.mockResolvedValueOnce([{ id: 42 }]);
-
-			const result = await createCredential({
-				orgId: 'org1',
-				name: 'GitHub Bot',
-				envVarKey: 'GITHUB_TOKEN',
-				value: 'ghp_abc123',
-				isDefault: true,
-			});
-
-			expect(result).toEqual({ id: 42 });
-			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
-			// Without CREDENTIAL_MASTER_KEY, value passes through as plaintext
-			expect(mockDb.chain.values).toHaveBeenCalledWith({
-				orgId: 'org1',
-				name: 'GitHub Bot',
-				envVarKey: 'GITHUB_TOKEN',
-				value: 'ghp_abc123',
-				isDefault: true,
-			});
-		});
-
-		it('encrypts value when CREDENTIAL_MASTER_KEY is set', async () => {
-			vi.stubEnv('CREDENTIAL_MASTER_KEY', randomBytes(32).toString('hex'));
-			mockDb.chain.returning.mockResolvedValueOnce([{ id: 42 }]);
-
-			await createCredential({
-				orgId: 'org1',
-				name: 'GitHub Bot',
-				envVarKey: 'GITHUB_TOKEN',
-				value: 'ghp_abc123',
-				isDefault: true,
-			});
-
-			const insertedValues = mockDb.chain.values.mock.calls[0][0];
-			expect(insertedValues.value).toMatch(/^enc:v1:/);
-			expect(insertedValues.value).not.toContain('ghp_abc123');
-		});
-
-		it('defaults isDefault to false', async () => {
-			mockDb.chain.returning.mockResolvedValueOnce([{ id: 1 }]);
-
-			await createCredential({
-				orgId: 'org1',
-				name: 'Key',
-				envVarKey: 'KEY',
-				value: 'val',
-			});
-
-			expect(mockDb.chain.values).toHaveBeenCalledWith(
-				expect.objectContaining({ isDefault: false }),
-			);
-		});
-	});
-
-	describe('updateCredential', () => {
-		it('updates specified fields (no encryption key)', async () => {
-			// First call: orgId lookup for encryption
-			mockDb.chain.where.mockResolvedValueOnce([{ orgId: 'org1' }]);
-			// Second call: the actual update
-			mockDb.chain.where.mockResolvedValueOnce(undefined);
-
-			await updateCredential(42, { name: 'New Name', value: 'new-secret' });
-
-			expect(mockDb.db.update).toHaveBeenCalledTimes(1);
-			expect(mockDb.chain.set).toHaveBeenCalledWith(
-				expect.objectContaining({
-					name: 'New Name',
-					value: 'new-secret',
-				}),
-			);
-		});
-
-		it('encrypts value on update when CREDENTIAL_MASTER_KEY is set', async () => {
-			vi.stubEnv('CREDENTIAL_MASTER_KEY', randomBytes(32).toString('hex'));
-			// First call: orgId lookup
-			mockDb.chain.where.mockResolvedValueOnce([{ orgId: 'org1' }]);
-			// Second call: the actual update
-			mockDb.chain.where.mockResolvedValueOnce(undefined);
-
-			await updateCredential(42, { value: 'new-secret' });
-
-			const setArg = mockDb.chain.set.mock.calls[0][0];
-			expect(setArg.value).toMatch(/^enc:v1:/);
-			expect(setArg.value).not.toContain('new-secret');
-		});
-
-		it('looks up orgId before encrypting value', async () => {
-			// First call: orgId lookup
-			mockDb.chain.where.mockResolvedValueOnce([{ orgId: 'org1' }]);
-			// Second call: the actual update
-			mockDb.chain.where.mockResolvedValueOnce(undefined);
-
-			await updateCredential(42, { value: 'new-secret' });
-
-			// Should have done a select (orgId lookup) + update
-			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
-			expect(mockDb.db.update).toHaveBeenCalledTimes(1);
-		});
-
-		it('includes updatedAt timestamp', async () => {
-			mockDb.chain.where.mockResolvedValueOnce(undefined);
-
-			await updateCredential(1, { name: 'updated name' });
-
-			const setArg = mockDb.chain.set.mock.calls[0][0];
-			expect(setArg.updatedAt).toBeInstanceOf(Date);
-			expect(setArg.name).toBe('updated name');
-		});
-
-		it('only updates provided fields', async () => {
-			mockDb.chain.where.mockResolvedValueOnce(undefined);
-
-			await updateCredential(1, { isDefault: true });
-
-			const setArg = mockDb.chain.set.mock.calls[0][0];
-			expect(setArg.isDefault).toBe(true);
-			expect(setArg.name).toBeUndefined();
-			expect(setArg.value).toBeUndefined();
-		});
-	});
-
-	describe('deleteCredential', () => {
-		it('deletes by id', async () => {
-			mockDb.chain.where.mockResolvedValueOnce(undefined);
-
-			await deleteCredential(42);
-
-			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
-		});
-	});
-
-	describe('listOrgCredentials', () => {
-		it('returns credentials for org (decrypted)', async () => {
-			const mockCreds = [
-				{ id: 1, orgId: 'org1', name: 'Key 1', envVarKey: 'KEY1', value: 'v1', isDefault: true },
-				{ id: 2, orgId: 'org1', name: 'Key 2', envVarKey: 'KEY2', value: 'v2', isDefault: false },
-			];
-			mockDb.chain.where.mockResolvedValueOnce(mockCreds);
-
-			const result = await listOrgCredentials('org1');
-			expect(result).toHaveLength(2);
-			expect(result[0].name).toBe('Key 1');
-			// Plaintext values pass through decryptCredential unchanged
-			expect(result[0].value).toBe('v1');
-		});
-
-		it('returns empty array when no credentials', async () => {
+		it('throws when project not found', async () => {
+			// Project does not exist
 			mockDb.chain.where.mockResolvedValueOnce([]);
 
-			const result = await listOrgCredentials('empty-org');
+			await expect(resolveAllProjectCredentials('nonexistent')).rejects.toThrow(
+				'Project not found: nonexistent',
+			);
+		});
+
+		it('issues two queries: project existence check then project_credentials', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([{ id: 'proj1' }]);
+			mockDb.chain.where.mockResolvedValueOnce([{ envVarKey: 'KEY1', value: 'val1' }]);
+
+			await resolveAllProjectCredentials('proj1');
+
+			// One select for project existence, one for project_credentials
+			expect(mockDb.db.select).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	describe('listProjectCredentialsMeta', () => {
+		it('returns envVarKey and name without value column', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([
+				{ envVarKey: 'GITHUB_TOKEN_IMPLEMENTER', name: 'GH Token' },
+				{ envVarKey: 'OPENROUTER_API_KEY', name: null },
+			]);
+
+			const result = await listProjectCredentialsMeta('proj1');
+
+			expect(result).toEqual([
+				{ envVarKey: 'GITHUB_TOKEN_IMPLEMENTER', name: 'GH Token' },
+				{ envVarKey: 'OPENROUTER_API_KEY', name: null },
+			]);
+		});
+
+		it('returns empty array when no credentials exist', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			const result = await listProjectCredentialsMeta('proj1');
+
 			expect(result).toEqual([]);
 		});
 	});

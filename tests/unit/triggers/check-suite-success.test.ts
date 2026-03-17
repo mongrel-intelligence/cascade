@@ -1,30 +1,24 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-	CheckSuiteSuccessTrigger,
-	recentlyDispatched,
-} from '../../../src/triggers/github/check-suite-success.js';
-import { ReviewRequestedTrigger } from '../../../src/triggers/github/review-requested.js';
-import type { TriggerContext } from '../../../src/triggers/types.js';
-import { createMockProject } from '../../helpers/factories.js';
-import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mockGitHubClientModule, mockTriggerCheckModule } from '../../helpers/sharedMocks.js';
 
 vi.mock('../../../src/triggers/config-resolver.js', () => ({
 	isTriggerEnabled: vi.fn().mockResolvedValue(true),
 	getTriggerParameters: vi.fn().mockResolvedValue({}),
 }));
 
-vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
-	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
-	checkTriggerEnabledWithParams: vi.fn().mockResolvedValue({ enabled: true, parameters: {} }),
-}));
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
 
-vi.mock('../../../src/github/client.js', () => ({
-	githubClient: {
-		getPR: vi.fn(),
-		getPRReviews: vi.fn(),
-		getCheckSuiteStatus: vi.fn(),
-	},
-}));
+vi.mock('../../../src/github/client.js', () => mockGitHubClientModule);
+
+import {
+	CheckSuiteSuccessTrigger,
+	recentlyDispatched,
+	waitForChecks,
+} from '../../../src/triggers/github/check-suite-success.js';
+import { ReviewRequestedTrigger } from '../../../src/triggers/github/review-requested.js';
+import type { TriggerContext } from '../../../src/triggers/types.js';
+import { createMockProject } from '../../helpers/factories.js';
+import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
 
 import { githubClient } from '../../../src/github/client.js';
 
@@ -884,5 +878,86 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('review');
 		});
+	});
+});
+
+// ==========================================================================
+// waitForChecks() — exported standalone function
+// ==========================================================================
+
+describe('waitForChecks', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('returns immediately when all checks are passing', async () => {
+		vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+			allPassing: true,
+			checkRuns: [],
+		});
+
+		const result = await waitForChecks('owner', 'repo', 'sha123', 42);
+
+		expect(result.allPassing).toBe(true);
+		expect(githubClient.getCheckSuiteStatus).toHaveBeenCalledTimes(1);
+	});
+
+	it('returns immediately when all checks completed (some failed) — no point retrying', async () => {
+		vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+			allPassing: false,
+			checkRuns: [{ name: 'ci', status: 'completed', conclusion: 'failure' }],
+		});
+
+		const resultPromise = waitForChecks('owner', 'repo', 'sha123', 42);
+		// No timer needed since all completed
+		const result = await resultPromise;
+
+		expect(result.allPassing).toBe(false);
+		// Only called once (no in-progress checks → no retry)
+		expect(githubClient.getCheckSuiteStatus).toHaveBeenCalledTimes(1);
+	});
+
+	it('retries when some checks are still in-progress, returns when all pass', async () => {
+		vi.mocked(githubClient.getCheckSuiteStatus)
+			.mockResolvedValueOnce({
+				allPassing: false,
+				checkRuns: [{ name: 'ci', status: 'in_progress', conclusion: null }],
+			})
+			.mockResolvedValue({
+				allPassing: true,
+				checkRuns: [{ name: 'ci', status: 'completed', conclusion: 'success' }],
+			});
+
+		const resultPromise = waitForChecks('owner', 'repo', 'sha123', 42);
+		// Advance past the RETRY_DELAY_MS (10000ms)
+		await vi.runAllTimersAsync();
+		const result = await resultPromise;
+
+		expect(result.allPassing).toBe(true);
+		expect(githubClient.getCheckSuiteStatus).toHaveBeenCalledTimes(2);
+	});
+
+	it('stops retrying when all checks complete (even if failed)', async () => {
+		vi.mocked(githubClient.getCheckSuiteStatus)
+			.mockResolvedValueOnce({
+				allPassing: false,
+				checkRuns: [{ name: 'ci', status: 'in_progress', conclusion: null }],
+			})
+			.mockResolvedValue({
+				allPassing: false,
+				checkRuns: [{ name: 'ci', status: 'completed', conclusion: 'failure' }],
+			});
+
+		const resultPromise = waitForChecks('owner', 'repo', 'sha123', 42);
+		await vi.runAllTimersAsync();
+		const result = await resultPromise;
+
+		expect(result.allPassing).toBe(false);
+		// Called once initially + once after retry (then stops since all completed)
+		expect(githubClient.getCheckSuiteStatus).toHaveBeenCalledTimes(2);
 	});
 });

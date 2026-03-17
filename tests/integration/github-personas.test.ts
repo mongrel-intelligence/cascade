@@ -5,9 +5,12 @@
  * modes with real DB-backed project configurations.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { findProjectByRepoFromDb } from '../../src/db/repositories/configRepository.js';
-import { resolveIntegrationCredential } from '../../src/db/repositories/credentialsRepository.js';
+import {
+	resolveProjectCredential,
+	writeProjectCredential,
+} from '../../src/db/repositories/credentialsRepository.js';
 import {
 	type PersonaIdentities,
 	getPersonaForAgentType,
@@ -20,9 +23,8 @@ import type { TriggerContext } from '../../src/types/index.js';
 import { assertFound } from './helpers/assert.js';
 import { truncateAll } from './helpers/db.js';
 import {
-	seedCredential,
+	seedAgentConfig,
 	seedIntegration,
-	seedIntegrationCredential,
 	seedOrg,
 	seedProject,
 	seedTriggerConfig,
@@ -91,6 +93,10 @@ function makeReviewRequestedPayload(requestedReviewer: string, prAuthor: string)
 // Tests
 // ============================================================================
 
+beforeAll(async () => {
+	await truncateAll();
+});
+
 describe('GitHub Dual-Persona System (integration)', () => {
 	beforeEach(async () => {
 		await truncateAll();
@@ -103,59 +109,40 @@ describe('GitHub Dual-Persona System (integration)', () => {
 	// =========================================================================
 
 	describe('persona token resolution from DB', () => {
-		it('resolves implementer token via SCM integration', async () => {
-			const implCred = await seedCredential({
-				name: 'Implementer Token',
-				envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
-				value: 'ghp-impl-secret',
-			});
-			const scmInteg = await seedIntegration({ category: 'scm', provider: 'github' });
-			await seedIntegrationCredential({
-				integrationId: scmInteg.id,
-				role: 'implementer_token',
-				credentialId: implCred.id,
-			});
+		it('resolves implementer token from project_credentials', async () => {
+			await writeProjectCredential(
+				'test-project',
+				'GITHUB_TOKEN_IMPLEMENTER',
+				'ghp-impl-secret',
+				'Implementer Token',
+			);
 
-			const token = await resolveIntegrationCredential('test-project', 'scm', 'implementer_token');
+			const token = await resolveProjectCredential('test-project', 'GITHUB_TOKEN_IMPLEMENTER');
 			expect(token).toBe('ghp-impl-secret');
 		});
 
-		it('resolves reviewer token via SCM integration', async () => {
-			const reviewerCred = await seedCredential({
-				name: 'Reviewer Token',
-				envVarKey: 'GITHUB_TOKEN_REVIEWER',
-				value: 'ghp-reviewer-secret',
-			});
-			const scmInteg = await seedIntegration({ category: 'scm', provider: 'github' });
-			await seedIntegrationCredential({
-				integrationId: scmInteg.id,
-				role: 'reviewer_token',
-				credentialId: reviewerCred.id,
-			});
+		it('resolves reviewer token from project_credentials', async () => {
+			await writeProjectCredential(
+				'test-project',
+				'GITHUB_TOKEN_REVIEWER',
+				'ghp-reviewer-secret',
+				'Reviewer Token',
+			);
 
-			const token = await resolveIntegrationCredential('test-project', 'scm', 'reviewer_token');
+			const token = await resolveProjectCredential('test-project', 'GITHUB_TOKEN_REVIEWER');
 			expect(token).toBe('ghp-reviewer-secret');
 		});
 
 		it('returns null when reviewer token not configured', async () => {
 			// Only implementer token set up
-			const implCred = await seedCredential({
-				name: 'Implementer Token',
-				envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
-				value: 'ghp-impl-secret',
-			});
-			const scmInteg = await seedIntegration({ category: 'scm', provider: 'github' });
-			await seedIntegrationCredential({
-				integrationId: scmInteg.id,
-				role: 'implementer_token',
-				credentialId: implCred.id,
-			});
-
-			const reviewerToken = await resolveIntegrationCredential(
+			await writeProjectCredential(
 				'test-project',
-				'scm',
-				'reviewer_token',
+				'GITHUB_TOKEN_IMPLEMENTER',
+				'ghp-impl-secret',
+				'Implementer Token',
 			);
+
+			const reviewerToken = await resolveProjectCredential('test-project', 'GITHUB_TOKEN_REVIEWER');
 			expect(reviewerToken).toBeNull();
 		});
 	});
@@ -247,6 +234,13 @@ describe('GitHub Dual-Persona System (integration)', () => {
 				provider: 'github',
 				config: {},
 				triggers: { prReviewSubmitted: true },
+			});
+			// Agent must be explicitly enabled for the trigger to fire
+			await seedAgentConfig({ agentType: 'respond-to-review' });
+			await seedTriggerConfig({
+				agentType: 'respond-to-review',
+				triggerEvent: 'scm:pr-review-submitted',
+				enabled: true,
 			});
 
 			const project = await findProjectByRepoFromDb('owner/repo');
@@ -369,6 +363,8 @@ describe('GitHub Dual-Persona System (integration)', () => {
 				provider: 'github',
 				config: {},
 			});
+			// Agent must be explicitly enabled for the trigger to fire
+			await seedAgentConfig({ agentType: 'review' });
 			await seedTriggerConfig({
 				agentType: 'review',
 				triggerEvent: 'scm:review-requested',

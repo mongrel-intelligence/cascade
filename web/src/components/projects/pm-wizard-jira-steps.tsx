@@ -7,8 +7,7 @@ import { Label } from '@/components/ui/label.js';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { Loader2, Plus } from 'lucide-react';
 import type { WizardAction, WizardState } from './pm-wizard-state.js';
-import { FieldMappingRow, InlineCredentialCreator, SearchableSelect } from './wizard-shared.js';
-import type { CredentialOption } from './wizard-shared.js';
+import { FieldMappingRow, SearchableSelect } from './wizard-shared.js';
 
 // ============================================================================
 // Slot definitions
@@ -34,67 +33,56 @@ const JIRA_LABEL_SLOTS = ['processing', 'processed', 'error', 'readyToProcess', 
 export function JiraCredentialsStep({
 	state,
 	dispatch,
-	orgCredentials,
 }: {
 	state: WizardState;
 	dispatch: React.Dispatch<WizardAction>;
-	orgCredentials: CredentialOption[];
 }) {
 	return (
 		<div className="space-y-4">
+			<p className="text-xs text-muted-foreground">
+				Enter your JIRA credentials. These will be saved securely to the project.
+			</p>
 			<div className="space-y-2">
-				<Label>Base URL</Label>
+				<Label htmlFor="jira-base-url">Base URL</Label>
 				<Input
+					id="jira-base-url"
 					value={state.jiraBaseUrl}
 					onChange={(e) => dispatch({ type: 'SET_JIRA_BASE_URL', url: e.target.value })}
 					placeholder="https://your-instance.atlassian.net"
 				/>
 			</div>
 			<div className="space-y-2">
-				<Label>Email</Label>
-				<select
-					value={state.jiraEmailCredentialId ?? ''}
-					onChange={(e) =>
-						dispatch({
-							type: 'SET_JIRA_EMAIL_CRED',
-							id: e.target.value ? Number(e.target.value) : null,
-						})
-					}
-					className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-				>
-					<option value="">Select credential...</option>
-					{orgCredentials.map((c) => (
-						<option key={c.id} value={c.id}>
-							{c.name} ({c.envVarKey}) — {c.value}
-						</option>
-					))}
-				</select>
-				<InlineCredentialCreator
-					onCreated={(id) => dispatch({ type: 'SET_JIRA_EMAIL_CRED', id })}
+				<Label htmlFor="jira-email">Email</Label>
+				<Input
+					id="jira-email"
+					type="email"
+					value={state.jiraEmail}
+					onChange={(e) => dispatch({ type: 'SET_JIRA_EMAIL', value: e.target.value })}
+					placeholder="your@email.com"
+					autoComplete="off"
 				/>
 			</div>
 			<div className="space-y-2">
-				<Label>API Token</Label>
-				<select
-					value={state.jiraApiTokenCredentialId ?? ''}
-					onChange={(e) =>
-						dispatch({
-							type: 'SET_JIRA_API_TOKEN_CRED',
-							id: e.target.value ? Number(e.target.value) : null,
-						})
-					}
-					className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-				>
-					<option value="">Select credential...</option>
-					{orgCredentials.map((c) => (
-						<option key={c.id} value={c.id}>
-							{c.name} ({c.envVarKey}) — {c.value}
-						</option>
-					))}
-				</select>
-				<InlineCredentialCreator
-					onCreated={(id) => dispatch({ type: 'SET_JIRA_API_TOKEN_CRED', id })}
+				<Label htmlFor="jira-api-token">API Token</Label>
+				<Input
+					id="jira-api-token"
+					type="password"
+					value={state.jiraApiToken}
+					onChange={(e) => dispatch({ type: 'SET_JIRA_API_TOKEN', value: e.target.value })}
+					placeholder="JIRA API token"
+					autoComplete="off"
 				/>
+				<p className="text-xs text-muted-foreground">
+					Generate a token at{' '}
+					<a
+						href="https://id.atlassian.com/manage-profile/security/api-tokens"
+						target="_blank"
+						rel="noopener noreferrer"
+						className="underline"
+					>
+						Atlassian account settings
+					</a>
+				</p>
 			</div>
 		</div>
 	);

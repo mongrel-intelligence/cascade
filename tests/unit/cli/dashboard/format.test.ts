@@ -17,6 +17,8 @@ import {
 	formatDate,
 	formatDuration,
 	formatStatus,
+	printCompact,
+	printCsv,
 	printDetail,
 	printTable,
 } from '../../../../src/cli/dashboard/_shared/format.js';
@@ -138,10 +140,16 @@ describe('printTable', () => {
 		consoleSpy.mockRestore();
 	});
 
-	it('prints "(no results)" for empty rows', () => {
+	it('prints "(no results)" for empty rows when no emptyMessage provided', () => {
 		printTable([], [{ key: 'id', header: 'ID' }]);
 
 		expect(consoleSpy).toHaveBeenCalledWith('  (no results)');
+	});
+
+	it('prints custom emptyMessage for empty rows', () => {
+		printTable([], [{ key: 'id', header: 'ID' }], 'No items found. Create one first.');
+
+		expect(consoleSpy).toHaveBeenCalledWith('  No items found. Create one first.');
 	});
 
 	it('prints header and rows', () => {
@@ -186,6 +194,151 @@ describe('printTable', () => {
 		);
 
 		expect(consoleSpy).toHaveBeenCalledTimes(3);
+	});
+});
+
+describe('printCsv', () => {
+	let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+	beforeEach(() => {
+		consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		consoleSpy.mockRestore();
+	});
+
+	it('prints header row for empty data', () => {
+		printCsv(
+			[],
+			[
+				{ key: 'id', header: 'ID' },
+				{ key: 'name', header: 'Name' },
+			],
+		);
+
+		expect(consoleSpy).toHaveBeenCalledTimes(1);
+		expect(consoleSpy.mock.calls[0][0]).toBe('ID,Name');
+	});
+
+	it('prints header + data rows', () => {
+		printCsv(
+			[
+				{ id: '1', name: 'Alice' },
+				{ id: '2', name: 'Bob' },
+			],
+			[
+				{ key: 'id', header: 'ID' },
+				{ key: 'name', header: 'Name' },
+			],
+		);
+
+		expect(consoleSpy).toHaveBeenCalledTimes(3);
+		expect(consoleSpy.mock.calls[0][0]).toBe('ID,Name');
+		expect(consoleSpy.mock.calls[1][0]).toBe('1,Alice');
+		expect(consoleSpy.mock.calls[2][0]).toBe('2,Bob');
+	});
+
+	it('quotes values containing commas', () => {
+		printCsv([{ name: 'Smith, John' }], [{ key: 'name', header: 'Name' }]);
+
+		expect(consoleSpy.mock.calls[1][0]).toBe('"Smith, John"');
+	});
+
+	it('quotes values containing double quotes and escapes them', () => {
+		printCsv([{ name: 'Say "hello"' }], [{ key: 'name', header: 'Name' }]);
+
+		expect(consoleSpy.mock.calls[1][0]).toBe('"Say ""hello"""');
+	});
+
+	it('quotes header containing comma', () => {
+		printCsv([{ val: 'x' }], [{ key: 'val', header: 'Key, Value' }]);
+
+		expect(consoleSpy.mock.calls[0][0]).toBe('"Key, Value"');
+	});
+
+	it('applies format function and strips ANSI codes', () => {
+		printCsv(
+			[{ cost: 1.5 }],
+			[{ key: 'cost', header: 'Cost', format: (v) => `$${Number(v).toFixed(2)}` }],
+		);
+
+		expect(consoleSpy.mock.calls[0][0]).toBe('Cost');
+		expect(consoleSpy.mock.calls[1][0]).toBe('$1.50');
+	});
+
+	it('handles undefined values as empty string', () => {
+		printCsv(
+			[{ id: 1 }],
+			[
+				{ key: 'id', header: 'ID' },
+				{ key: 'missing', header: 'Missing' },
+			],
+		);
+
+		expect(consoleSpy.mock.calls[1][0]).toBe('1,');
+	});
+});
+
+describe('printCompact', () => {
+	let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+	beforeEach(() => {
+		consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		consoleSpy.mockRestore();
+	});
+
+	it('prints nothing for empty rows', () => {
+		printCompact([], [{ key: 'id', header: 'ID' }]);
+
+		expect(consoleSpy).not.toHaveBeenCalled();
+	});
+
+	it('prints one line per row in key=value format', () => {
+		printCompact(
+			[
+				{ id: '1', name: 'Alice' },
+				{ id: '2', name: 'Bob' },
+			],
+			[
+				{ key: 'id', header: 'ID' },
+				{ key: 'name', header: 'Name' },
+			],
+		);
+
+		expect(consoleSpy).toHaveBeenCalledTimes(2);
+		expect(consoleSpy.mock.calls[0][0]).toBe('id=1 name=Alice');
+		expect(consoleSpy.mock.calls[1][0]).toBe('id=2 name=Bob');
+	});
+
+	it('applies format function and strips ANSI codes', () => {
+		printCompact(
+			[{ cost: 1.5 }],
+			[{ key: 'cost', header: 'Cost', format: (v) => `$${Number(v).toFixed(2)}` }],
+		);
+
+		expect(consoleSpy.mock.calls[0][0]).toBe('cost=$1.50');
+	});
+
+	it('handles undefined values as empty string', () => {
+		printCompact(
+			[{ id: '1' }],
+			[
+				{ key: 'id', header: 'ID' },
+				{ key: 'missing', header: 'Missing' },
+			],
+		);
+
+		expect(consoleSpy.mock.calls[0][0]).toBe('id=1 missing=');
+	});
+
+	it('uses column key (not header) in output', () => {
+		printCompact([{ agentType: 'implementation' }], [{ key: 'agentType', header: 'Agent Type' }]);
+
+		expect(consoleSpy.mock.calls[0][0]).toBe('agentType=implementation');
 	});
 });
 

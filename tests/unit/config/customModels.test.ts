@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CUSTOM_MODELS } from '../../../src/config/customModels.js';
 
-describe('config/customModels', () => {
+describe.concurrent('config/customModels', () => {
 	describe('CUSTOM_MODELS array', () => {
 		it('is defined and is an array', () => {
 			expect(Array.isArray(CUSTOM_MODELS)).toBe(true);

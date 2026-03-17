@@ -15,7 +15,7 @@ import { createCipheriv, randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { closeDb, getDb } from '../src/db/client.js';
 import { decryptCredential, isEncryptedValue, isEncryptionEnabled } from '../src/db/crypto.js';
-import { credentials } from '../src/db/schema/index.js';
+import { projectCredentials } from '../src/db/schema/index.js';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
@@ -55,8 +55,12 @@ async function main() {
 
 	const db = getDb();
 	const allCreds = await db
-		.select({ id: credentials.id, orgId: credentials.orgId, value: credentials.value })
-		.from(credentials);
+		.select({
+			id: projectCredentials.id,
+			projectId: projectCredentials.projectId,
+			value: projectCredentials.value,
+		})
+		.from(projectCredentials);
 
 	let rotated = 0;
 	const skipped = 0;
@@ -64,19 +68,19 @@ async function main() {
 	for (const cred of allCreds) {
 		// Decrypt with current key (handles both encrypted and plaintext)
 		const plaintext = isEncryptedValue(cred.value)
-			? decryptCredential(cred.value, cred.orgId)
+			? decryptCredential(cred.value, cred.projectId)
 			: cred.value;
 
 		// Re-encrypt with new key
-		const reEncrypted = encryptWithKey(plaintext, cred.orgId, newKeyHex);
+		const reEncrypted = encryptWithKey(plaintext, cred.projectId, newKeyHex);
 
 		if (dryRun) {
 			console.log(`  #${cred.id}: would re-encrypt`);
 		} else {
 			await db
-				.update(credentials)
+				.update(projectCredentials)
 				.set({ value: reEncrypted, updatedAt: new Date() })
-				.where(eq(credentials.id, cred.id));
+				.where(eq(projectCredentials.id, cred.id));
 			console.log(`  #${cred.id}: re-encrypted`);
 		}
 		rotated++;

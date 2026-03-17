@@ -25,8 +25,8 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
 	const [name, setName] = useState(user?.name ?? '');
 	const [email, setEmail] = useState(user?.email ?? '');
 	const [password, setPassword] = useState('');
-	const [role, setRole] = useState<'member' | 'admin' | 'superadmin'>(
-		(user?.role as 'member' | 'admin' | 'superadmin') ?? 'member',
+	const [role, setRole] = useState<'member' | 'admin'>(
+		(user?.role as 'member' | 'admin') ?? 'member',
 	);
 
 	const invalidate = () => {
@@ -114,12 +114,11 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
 						<select
 							id="user-role"
 							value={role}
-							onChange={(e) => setRole(e.target.value as 'member' | 'admin' | 'superadmin')}
+							onChange={(e) => setRole(e.target.value as 'member' | 'admin')}
 							className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 						>
 							<option value="member">Member</option>
 							<option value="admin">Admin</option>
-							<option value="superadmin">Superadmin</option>
 						</select>
 					</div>
 					<div className="flex justify-end gap-2">

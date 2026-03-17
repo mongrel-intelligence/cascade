@@ -21,21 +21,23 @@ export default class AgentsUpdate extends DashboardCommand {
 		const { args, flags } = await this.parse(AgentsUpdate);
 
 		try {
-			await this.client.agentConfigs.update.mutate({
-				id: args.id,
-				agentType: flags['agent-type'],
-				model: flags.model,
-				maxIterations: flags['max-iterations'],
-				agentEngine: flags.engine,
-				maxConcurrency: flags['max-concurrency'],
-			});
+			await this.withSpinner('Updating agent config...', () =>
+				this.client.agentConfigs.update.mutate({
+					id: args.id,
+					agentType: flags['agent-type'],
+					model: flags.model,
+					maxIterations: flags['max-iterations'],
+					agentEngine: flags.engine,
+					maxConcurrency: flags['max-concurrency'],
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson({ ok: true });
 				return;
 			}
 
-			this.log(`Updated agent config #${args.id}`);
+			this.success(`Updated agent config #${args.id}`);
 		} catch (err) {
 			this.handleError(err);
 		}

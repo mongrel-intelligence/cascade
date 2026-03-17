@@ -22,9 +22,9 @@ vi.mock('chalk', () => ({
 	},
 }));
 
-import ProjectsIntegrationCredentialRm from '../../../../../src/cli/dashboard/projects/override-rm.js';
-import ProjectsIntegrationCredentialSet from '../../../../../src/cli/dashboard/projects/override-set.js';
-import ProjectsIntegrationCredentials from '../../../../../src/cli/dashboard/projects/overrides.js';
+import ProjectsCredentialsDelete from '../../../../../src/cli/dashboard/projects/credentials-delete.js';
+import ProjectsCredentialsList from '../../../../../src/cli/dashboard/projects/credentials-list.js';
+import ProjectsCredentialsSet from '../../../../../src/cli/dashboard/projects/credentials-set.js';
 
 // oclif's Command.parse() calls this.config.runHook internally
 const oclifConfig = {
@@ -34,10 +34,10 @@ const oclifConfig = {
 function makeClient(overrides: Record<string, unknown> = {}) {
 	return {
 		projects: {
-			integrationCredentials: {
+			credentials: {
 				list: { query: vi.fn().mockResolvedValue([]) },
 				set: { mutate: vi.fn().mockResolvedValue(undefined) },
-				remove: { mutate: vi.fn().mockResolvedValue(undefined) },
+				delete: { mutate: vi.fn().mockResolvedValue(undefined) },
 			},
 		},
 		...overrides,
@@ -46,172 +46,137 @@ function makeClient(overrides: Record<string, unknown> = {}) {
 
 const baseConfig = { serverUrl: 'http://localhost:3000', sessionToken: 'tok' };
 
-describe('ProjectsIntegrationCredentials (overrides)', () => {
+describe('ProjectsCredentialsList (credentials-list)', () => {
 	beforeEach(() => {
 		mockLoadConfig.mockReturnValue(baseConfig);
 	});
 
-	it('queries pm and scm categories by default', async () => {
+	it('lists project credentials', async () => {
 		const client = makeClient();
 		mockCreateDashboardClient.mockReturnValue(client);
 
-		const cmd = new ProjectsIntegrationCredentials(['my-project'], oclifConfig as never);
+		const cmd = new ProjectsCredentialsList(['my-project'], oclifConfig as never);
 		await cmd.run();
 
-		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledTimes(2);
-		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledWith({
+		expect(client.projects.credentials.list.query).toHaveBeenCalledWith({
 			projectId: 'my-project',
-			category: 'pm',
-		});
-		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledWith({
-			projectId: 'my-project',
-			category: 'scm',
 		});
 	});
 
-	it('queries only pm when --category pm is passed', async () => {
+	it('outputs json when --json flag is set', async () => {
+		const client = makeClient();
+		(client.projects.credentials.list.query as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ envVarKey: 'GITHUB_TOKEN_IMPLEMENTER', name: 'Implementer', maskedValue: '****abc' },
+		]);
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsCredentialsList(['my-project', '--json'], oclifConfig as never);
+		await cmd.run();
+
+		expect(client.projects.credentials.list.query).toHaveBeenCalledWith({
+			projectId: 'my-project',
+		});
+	});
+});
+
+describe('ProjectsCredentialsSet (credentials-set)', () => {
+	beforeEach(() => {
+		mockLoadConfig.mockReturnValue(baseConfig);
+	});
+
+	it('sets a project credential', async () => {
 		const client = makeClient();
 		mockCreateDashboardClient.mockReturnValue(client);
 
-		const cmd = new ProjectsIntegrationCredentials(
-			['my-project', '--category', 'pm'],
+		const cmd = new ProjectsCredentialsSet(
+			['my-project', '--key', 'GITHUB_TOKEN_IMPLEMENTER', '--value', 'ghp_abc123'],
 			oclifConfig as never,
 		);
 		await cmd.run();
 
-		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledTimes(1);
-		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledWith({
+		expect(client.projects.credentials.set.mutate).toHaveBeenCalledWith({
 			projectId: 'my-project',
-			category: 'pm',
+			envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
+			value: 'ghp_abc123',
+			name: undefined,
 		});
 	});
 
-	it('queries only scm when --category scm is passed', async () => {
+	it('sets a project credential with a name', async () => {
 		const client = makeClient();
 		mockCreateDashboardClient.mockReturnValue(client);
 
-		const cmd = new ProjectsIntegrationCredentials(
-			['my-project', '--category', 'scm'],
+		const cmd = new ProjectsCredentialsSet(
+			[
+				'my-project',
+				'--key',
+				'GITHUB_TOKEN_REVIEWER',
+				'--value',
+				'ghp_def456',
+				'--name',
+				'Reviewer Bot',
+			],
 			oclifConfig as never,
 		);
 		await cmd.run();
 
-		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledTimes(1);
-		expect(client.projects.integrationCredentials.list.query).toHaveBeenCalledWith({
+		expect(client.projects.credentials.set.mutate).toHaveBeenCalledWith({
 			projectId: 'my-project',
-			category: 'scm',
+			envVarKey: 'GITHUB_TOKEN_REVIEWER',
+			value: 'ghp_def456',
+			name: 'Reviewer Bot',
 		});
 	});
 
-	it('rejects unknown category values', async () => {
+	it('requires --key and --value flags', async () => {
 		mockCreateDashboardClient.mockReturnValue(makeClient());
 
-		const cmd = new ProjectsIntegrationCredentials(
-			['my-project', '--category', 'billing'],
-			oclifConfig as never,
-		);
+		const cmd = new ProjectsCredentialsSet(['my-project'], oclifConfig as never);
 		await expect(cmd.run()).rejects.toThrow();
 	});
 });
 
-describe('ProjectsIntegrationCredentialSet (override-set)', () => {
+describe('ProjectsCredentialsDelete (credentials-delete)', () => {
 	beforeEach(() => {
 		mockLoadConfig.mockReturnValue(baseConfig);
 	});
 
-	it('links a pm credential role', async () => {
+	it('deletes a project credential with --yes', async () => {
 		const client = makeClient();
 		mockCreateDashboardClient.mockReturnValue(client);
 
-		const cmd = new ProjectsIntegrationCredentialSet(
-			['my-project', '--category', 'pm', '--role', 'api_key', '--credential-id', '3'],
+		const cmd = new ProjectsCredentialsDelete(
+			['my-project', '--key', 'GITHUB_TOKEN_IMPLEMENTER', '--yes'],
 			oclifConfig as never,
 		);
 		await cmd.run();
 
-		expect(client.projects.integrationCredentials.set.mutate).toHaveBeenCalledWith({
+		expect(client.projects.credentials.delete.mutate).toHaveBeenCalledWith({
 			projectId: 'my-project',
-			category: 'pm',
-			role: 'api_key',
-			credentialId: 3,
+			envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
 		});
 	});
 
-	it('links a scm credential role', async () => {
+	it('auto-accepts without --yes flag in non-TTY environments', async () => {
 		const client = makeClient();
 		mockCreateDashboardClient.mockReturnValue(client);
 
-		const cmd = new ProjectsIntegrationCredentialSet(
-			['my-project', '--category', 'scm', '--role', 'implementer_token', '--credential-id', '1'],
+		const cmd = new ProjectsCredentialsDelete(
+			['my-project', '--key', 'GITHUB_TOKEN_IMPLEMENTER'],
 			oclifConfig as never,
 		);
-		await cmd.run();
-
-		expect(client.projects.integrationCredentials.set.mutate).toHaveBeenCalledWith({
+		// In non-TTY environments (CI, piped), confirm() auto-accepts without prompting
+		await expect(cmd.run()).resolves.toBeUndefined();
+		expect(client.projects.credentials.delete.mutate).toHaveBeenCalledWith({
 			projectId: 'my-project',
-			category: 'scm',
-			role: 'implementer_token',
-			credentialId: 1,
+			envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
 		});
 	});
 
-	it('rejects unknown category values', async () => {
+	it('requires --key flag', async () => {
 		mockCreateDashboardClient.mockReturnValue(makeClient());
 
-		const cmd = new ProjectsIntegrationCredentialSet(
-			['my-project', '--category', 'billing', '--role', 'key', '--credential-id', '1'],
-			oclifConfig as never,
-		);
-		await expect(cmd.run()).rejects.toThrow();
-	});
-});
-
-describe('ProjectsIntegrationCredentialRm (override-rm)', () => {
-	beforeEach(() => {
-		mockLoadConfig.mockReturnValue(baseConfig);
-	});
-
-	it('unlinks a pm credential role', async () => {
-		const client = makeClient();
-		mockCreateDashboardClient.mockReturnValue(client);
-
-		const cmd = new ProjectsIntegrationCredentialRm(
-			['my-project', '--category', 'pm', '--role', 'api_key'],
-			oclifConfig as never,
-		);
-		await cmd.run();
-
-		expect(client.projects.integrationCredentials.remove.mutate).toHaveBeenCalledWith({
-			projectId: 'my-project',
-			category: 'pm',
-			role: 'api_key',
-		});
-	});
-
-	it('unlinks a scm credential role', async () => {
-		const client = makeClient();
-		mockCreateDashboardClient.mockReturnValue(client);
-
-		const cmd = new ProjectsIntegrationCredentialRm(
-			['my-project', '--category', 'scm', '--role', 'reviewer_token'],
-			oclifConfig as never,
-		);
-		await cmd.run();
-
-		expect(client.projects.integrationCredentials.remove.mutate).toHaveBeenCalledWith({
-			projectId: 'my-project',
-			category: 'scm',
-			role: 'reviewer_token',
-		});
-	});
-
-	it('rejects unknown category values', async () => {
-		mockCreateDashboardClient.mockReturnValue(makeClient());
-
-		const cmd = new ProjectsIntegrationCredentialRm(
-			['my-project', '--category', 'billing', '--role', 'key'],
-			oclifConfig as never,
-		);
+		const cmd = new ProjectsCredentialsDelete(['my-project', '--yes'], oclifConfig as never);
 		await expect(cmd.run()).rejects.toThrow();
 	});
 });

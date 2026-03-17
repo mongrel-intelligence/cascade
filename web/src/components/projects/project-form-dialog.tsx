@@ -20,14 +20,9 @@ interface ProjectFormDialogProps {
 export function ProjectFormDialog({ open, onOpenChange }: ProjectFormDialogProps) {
 	const queryClient = useQueryClient();
 	const [name, setName] = useState('');
-	const [id, setId] = useState('');
-	const [idManual, setIdManual] = useState(false);
-	const [repo, setRepo] = useState('');
-	const [baseBranch, setBaseBranch] = useState('main');
 
 	const createMutation = useMutation({
-		mutationFn: (data: { id: string; name: string; repo?: string; baseBranch: string }) =>
-			trpcClient.projects.create.mutate(data),
+		mutationFn: (data: { id: string; name: string }) => trpcClient.projects.create.mutate(data),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: trpc.projects.listFull.queryOptions().queryKey });
 			queryClient.invalidateQueries({ queryKey: trpc.projects.list.queryOptions().queryKey });
@@ -38,22 +33,11 @@ export function ProjectFormDialog({ open, onOpenChange }: ProjectFormDialogProps
 
 	function resetForm() {
 		setName('');
-		setId('');
-		setIdManual(false);
-		setRepo('');
-		setBaseBranch('main');
-	}
-
-	function handleNameChange(value: string) {
-		setName(value);
-		if (!idManual) {
-			setId(slugify(value));
-		}
 	}
 
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
-		createMutation.mutate({ id, name, repo: repo || undefined, baseBranch });
+		createMutation.mutate({ id: slugify(name), name });
 	}
 
 	return (
@@ -74,45 +58,9 @@ export function ProjectFormDialog({ open, onOpenChange }: ProjectFormDialogProps
 						<Input
 							id="project-name"
 							value={name}
-							onChange={(e) => handleNameChange(e.target.value)}
+							onChange={(e) => setName(e.target.value)}
 							placeholder="My Project"
 							required
-						/>
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="project-id">ID (slug)</Label>
-						<Input
-							id="project-id"
-							value={id}
-							onChange={(e) => {
-								setId(e.target.value);
-								setIdManual(true);
-							}}
-							placeholder="my-project"
-							pattern="^[a-z0-9-]+$"
-							required
-						/>
-						<p className="text-xs text-muted-foreground">
-							Lowercase letters, numbers, and hyphens only.
-						</p>
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="project-repo">Repository (optional)</Label>
-						<Input
-							id="project-repo"
-							value={repo}
-							onChange={(e) => setRepo(e.target.value)}
-							placeholder="owner/repo"
-						/>
-						<p className="text-xs text-muted-foreground">Leave empty for email-only projects.</p>
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="project-branch">Base Branch</Label>
-						<Input
-							id="project-branch"
-							value={baseBranch}
-							onChange={(e) => setBaseBranch(e.target.value)}
-							placeholder="main"
 						/>
 					</div>
 					<div className="flex justify-end gap-2">

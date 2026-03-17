@@ -12,7 +12,7 @@ import { useState } from 'react';
 function RootLayout() {
 	const routerState = useRouterState();
 	const isLoginPage = routerState.location.pathname === '/login';
-	const meQuery = useQuery({ ...trpc.auth.me.queryOptions(), retry: false });
+	const meQuery = useQuery({ ...trpc.auth.me.queryOptions(), retry: false, enabled: !isLoginPage });
 	const [mobileOpen, setMobileOpen] = useState(false);
 
 	if (isLoginPage) {

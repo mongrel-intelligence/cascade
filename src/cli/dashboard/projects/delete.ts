@@ -1,5 +1,6 @@
 import { Args, Flags } from '@oclif/core';
 import { DashboardCommand } from '../_shared/base.js';
+import { confirm } from '../_shared/confirm.js';
 
 export default class ProjectsDelete extends DashboardCommand {
 	static override description = 'Delete a project.';
@@ -16,19 +17,19 @@ export default class ProjectsDelete extends DashboardCommand {
 	async run(): Promise<void> {
 		const { args, flags } = await this.parse(ProjectsDelete);
 
-		if (!flags.yes) {
-			this.error('Pass --yes to confirm deletion.');
-		}
+		await confirm(`Delete project ${args.id}?`, flags.yes);
 
 		try {
-			await this.client.projects.delete.mutate({ id: args.id });
+			await this.withSpinner('Deleting project...', () =>
+				this.client.projects.delete.mutate({ id: args.id }),
+			);
 
 			if (flags.json) {
 				this.outputJson({ ok: true });
 				return;
 			}
 
-			this.log(`Deleted project: ${args.id}`);
+			this.success(`Deleted project '${args.id}'`);
 		} catch (err) {
 			this.handleError(err);
 		}

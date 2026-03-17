@@ -7,8 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockSpawn = vi.fn();
 const mockStoreLlmCall = vi.fn().mockResolvedValue(undefined);
-const mockFindCredentialIdByEnvVarKey = vi.fn<() => Promise<number | null>>();
-const mockUpdateCredential = vi.fn<() => Promise<void>>();
+const mockWriteProjectCredential = vi.fn<() => Promise<void>>();
 const mockWriteFile = vi.fn<() => Promise<void>>();
 const mockMkdir = vi.fn<() => Promise<void>>();
 const mockReadFile = vi.fn<() => Promise<string>>();
@@ -24,8 +23,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
-	findCredentialIdByEnvVarKey: (...args: unknown[]) => mockFindCredentialIdByEnvVarKey(...args),
-	updateCredential: (...args: unknown[]) => mockUpdateCredential(...args),
+	writeProjectCredential: (...args: unknown[]) => mockWriteProjectCredential(...args),
 }));
 
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
@@ -431,13 +429,11 @@ describe('CodexEngine', () => {
 
 	beforeEach(() => {
 		workspaceDir = mkdtempSync(join(tmpdir(), 'cascade-codex-test-'));
-		vi.clearAllMocks();
 		// Default fs/promises stubs — auth tests override as needed
 		mockMkdir.mockResolvedValue(undefined);
 		mockWriteFile.mockResolvedValue(undefined);
 		mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
-		mockFindCredentialIdByEnvVarKey.mockResolvedValue(null);
-		mockUpdateCredential.mockResolvedValue(undefined);
+		mockWriteProjectCredential.mockResolvedValue(undefined);
 	});
 
 	afterEach(() => {
@@ -450,12 +446,20 @@ describe('CodexEngine', () => {
 			const outputPath = args[args.indexOf('-o') + 1];
 			return createMockChild({
 				stdoutLines: [
+					JSON.stringify({ type: 'turn.started' }),
 					JSON.stringify({ text: 'Thinking...' }),
 					JSON.stringify({
 						tool_name: 'Bash',
 						tool_input: { command: 'cascade-tools session finish --comment done' },
 					}),
+					// Intermediate usage event — accumulates into turn, does NOT persist a row
 					JSON.stringify({
+						usage: { input_tokens: 11, output_tokens: 7 },
+						total_cost_usd: 0.42,
+					}),
+					// turn.completed finalizes and persists the accumulated turn data
+					JSON.stringify({
+						type: 'turn.completed',
 						usage: { input_tokens: 11, output_tokens: 7 },
 						total_cost_usd: 0.42,
 					}),
@@ -839,6 +843,7 @@ describe('CodexEngine', () => {
 			const outputPath = args[args.indexOf('-o') + 1];
 			return createMockChild({
 				stdoutLines: [
+					JSON.stringify({ type: 'turn.started' }),
 					JSON.stringify({
 						type: 'item.completed',
 						item: { type: 'message', content: [{ type: 'text', text: 'Planning...' }] },
@@ -851,9 +856,15 @@ describe('CodexEngine', () => {
 							arguments: '{"command":"cascade-tools session finish --comment done"}',
 						},
 					}),
+					// response.completed carries usage — accumulates into turn, does NOT persist a row yet
 					JSON.stringify({
 						type: 'response.completed',
 						response: { usage: { input_tokens: 100, output_tokens: 50 } },
+					}),
+					// turn.completed is the persistence boundary — one row per completed turn
+					JSON.stringify({
+						type: 'turn.completed',
+						usage: { input_tokens: 100, output_tokens: 50 },
 					}),
 				],
 				onBeforeClose: () => {
@@ -868,11 +879,14 @@ describe('CodexEngine', () => {
 		const result = await engine.execute(input);
 
 		expect(result.success).toBe(true);
-		expect(input.progressReporter.onIteration).toHaveBeenCalledTimes(2);
+		// 2 item.completed events increment iteration + 1 turn.completed = 3 total
+		expect(input.progressReporter.onIteration).toHaveBeenCalledTimes(3);
 		expect(input.progressReporter.onText).toHaveBeenCalledWith('Planning...');
 		expect(input.progressReporter.onToolCall).toHaveBeenCalledWith('bash', {
 			command: 'cascade-tools session finish --comment done',
 		});
+		// Exactly ONE storeLlmCall row per completed turn
+		expect(mockStoreLlmCall).toHaveBeenCalledTimes(1);
 		expect(mockStoreLlmCall).toHaveBeenCalledWith(
 			expect.objectContaining({ inputTokens: 100, outputTokens: 50 }),
 		);
@@ -907,6 +921,155 @@ describe('CodexEngine', () => {
 		expect(input.progressReporter.onText).toHaveBeenCalledWith('Final answer.');
 		expect(input.progressReporter.onIteration).toHaveBeenCalledTimes(1);
 	});
+
+	// ─── Turn-scoped accumulator / multi-turn / dedup tests ───────────────────
+
+	it('emits exactly one storeLlmCall row per completed turn across a multi-turn stream', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [
+					// Turn 1
+					JSON.stringify({ type: 'turn.started' }),
+					JSON.stringify({
+						type: 'item.completed',
+						item: { type: 'agent_message', text: 'First.' },
+					}),
+					JSON.stringify({
+						type: 'response.completed',
+						response: { usage: { input_tokens: 50, output_tokens: 20 } },
+					}),
+					JSON.stringify({
+						type: 'turn.completed',
+						usage: { input_tokens: 50, output_tokens: 20 },
+					}),
+					// Turn 2
+					JSON.stringify({ type: 'turn.started' }),
+					JSON.stringify({
+						type: 'item.completed',
+						item: { type: 'agent_message', text: 'Second.' },
+					}),
+					JSON.stringify({
+						type: 'response.completed',
+						response: { usage: { input_tokens: 80, output_tokens: 30 } },
+					}),
+					JSON.stringify({
+						type: 'turn.completed',
+						usage: { input_tokens: 80, output_tokens: 30 },
+					}),
+				],
+				onBeforeClose: () => writeFileSync(outputPath, 'Multi-turn done.', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir, runId: 'run-multiturn' });
+		const result = await engine.execute(input);
+
+		expect(result.success).toBe(true);
+		// Exactly two rows — one per completed turn
+		expect(mockStoreLlmCall).toHaveBeenCalledTimes(2);
+		// Stable, sequential callNumber values
+		expect(mockStoreLlmCall).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({ callNumber: 1, inputTokens: 50, outputTokens: 20 }),
+		);
+		expect(mockStoreLlmCall).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ callNumber: 2, inputTokens: 80, outputTokens: 30 }),
+		);
+	});
+
+	it('stores only one row when both response.completed and turn.completed carry usage (duplicate-usage prevention)', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [
+					JSON.stringify({ type: 'turn.started' }),
+					// response.completed fires with usage first (intermediate event)
+					JSON.stringify({
+						type: 'response.completed',
+						response: { usage: { input_tokens: 100, output_tokens: 40 } },
+					}),
+					// turn.completed fires with aggregate usage (the definitive values)
+					JSON.stringify({
+						type: 'turn.completed',
+						usage: { input_tokens: 120, output_tokens: 45 },
+					}),
+				],
+				onBeforeClose: () => writeFileSync(outputPath, 'done', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir, runId: 'run-dedup' });
+		await engine.execute(input);
+
+		// Only ONE row, not two (no duplicate from response.completed)
+		expect(mockStoreLlmCall).toHaveBeenCalledTimes(1);
+		// turn.completed totals supersede response.completed values
+		expect(mockStoreLlmCall).toHaveBeenCalledWith(
+			expect.objectContaining({ inputTokens: 120, outputTokens: 45 }),
+		);
+	});
+
+	it('stores a compact turn-scoped payload with text summary and tool names', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [
+					JSON.stringify({ type: 'turn.started' }),
+					JSON.stringify({
+						type: 'item.completed',
+						item: { type: 'agent_message', text: 'I will run a command.' },
+					}),
+					JSON.stringify({
+						type: 'item.completed',
+						item: { type: 'function_call', name: 'bash', arguments: '{"command":"ls"}' },
+					}),
+					JSON.stringify({
+						type: 'turn.completed',
+						usage: { input_tokens: 30, output_tokens: 10 },
+					}),
+				],
+				onBeforeClose: () => writeFileSync(outputPath, 'done', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir, runId: 'run-payload-shape' });
+		await engine.execute(input);
+
+		expect(mockStoreLlmCall).toHaveBeenCalledTimes(1);
+		const [{ response }] = mockStoreLlmCall.mock.calls[0] as [{ response: string }][];
+		const payload = JSON.parse(response) as Record<string, unknown>;
+		// Payload must be a compact object, NOT a raw JSONL line dump
+		expect(payload).toMatchObject({
+			turn: 1,
+			tools: ['bash'],
+			usage: { inputTokens: 30, outputTokens: 10 },
+		});
+		expect(typeof payload.text).toBe('string');
+		// Payload must be reasonably sized (< 2 KB) — not a multi-KB raw event dump
+		expect(response.length).toBeLessThan(2000);
+	});
+
+	it('does not call storeLlmCall when no turn.completed event fires (no response events only)', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [JSON.stringify({ text: 'Bare text without turn lifecycle events' })],
+				onBeforeClose: () => writeFileSync(outputPath, 'bare output', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir, runId: 'run-no-turn-completed' });
+		await engine.execute(input);
+
+		// Without turn.completed, nothing should be persisted — avoids phantom rows
+		expect(mockStoreLlmCall).not.toHaveBeenCalled();
+	});
 });
 
 describe('Codex subscription auth', () => {
@@ -916,12 +1079,10 @@ describe('Codex subscription auth', () => {
 
 	beforeEach(() => {
 		workspaceDir = mkdtempSync(join(tmpdir(), 'cascade-codex-auth-test-'));
-		vi.clearAllMocks();
 		mockMkdir.mockResolvedValue(undefined);
 		mockWriteFile.mockResolvedValue(undefined);
 		mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
-		mockFindCredentialIdByEnvVarKey.mockResolvedValue(null);
-		mockUpdateCredential.mockResolvedValue(undefined);
+		mockWriteProjectCredential.mockResolvedValue(undefined);
 		mockSpawn.mockImplementation(() => createMockChild({ exitCode: 0 }));
 	});
 
@@ -964,10 +1125,9 @@ describe('Codex subscription auth', () => {
 		expect(capturedEnv?.OPENAI_API_KEY).toBe('sk-test');
 	});
 
-	it('updates the DB credential when auth.json is refreshed by Codex CLI', async () => {
+	it('writes refreshed token to project_credentials when auth.json is updated by Codex CLI', async () => {
 		const refreshedJson = JSON.stringify({ accessToken: 'tok_NEW', refreshToken: 'ref_xyz' });
 		mockReadFile.mockResolvedValue(refreshedJson);
-		mockFindCredentialIdByEnvVarKey.mockResolvedValue(42);
 
 		const engine = new CodexEngine();
 		const input = makeInput({
@@ -977,11 +1137,14 @@ describe('Codex subscription auth', () => {
 
 		await engine.execute(input);
 
-		expect(mockFindCredentialIdByEnvVarKey).toHaveBeenCalledWith('org-1', 'CODEX_AUTH_JSON');
-		expect(mockUpdateCredential).toHaveBeenCalledWith(42, { value: refreshedJson });
+		expect(mockWriteProjectCredential).toHaveBeenCalledWith(
+			'test-project',
+			'CODEX_AUTH_JSON',
+			refreshedJson,
+		);
 	});
 
-	it('skips DB update when auth.json is unchanged after run', async () => {
+	it('skips project credential update when auth.json is unchanged after run', async () => {
 		mockReadFile.mockResolvedValue(AUTH_JSON);
 
 		const engine = new CodexEngine();
@@ -992,13 +1155,13 @@ describe('Codex subscription auth', () => {
 
 		await engine.execute(input);
 
-		expect(mockUpdateCredential).not.toHaveBeenCalled();
+		expect(mockWriteProjectCredential).not.toHaveBeenCalled();
 	});
 
-	it('logs WARN and does not throw when credential row is not found for refresh', async () => {
+	it('logs WARN and does not throw when writeProjectCredential fails during token refresh', async () => {
 		const refreshedJson = JSON.stringify({ accessToken: 'tok_NEW', refreshToken: 'ref_xyz' });
 		mockReadFile.mockResolvedValue(refreshedJson);
-		mockFindCredentialIdByEnvVarKey.mockResolvedValue(null);
+		mockWriteProjectCredential.mockRejectedValue(new Error('DB write failed'));
 
 		const engine = new CodexEngine();
 		const input = makeInput({
@@ -1009,9 +1172,88 @@ describe('Codex subscription auth', () => {
 		await expect(engine.execute(input)).resolves.not.toThrow();
 		expect(input.logWriter).toHaveBeenCalledWith(
 			'WARN',
-			'Could not find CODEX_AUTH_JSON credential to update after token refresh',
-			{},
+			'Failed to capture refreshed Codex auth token',
+			{ error: 'Error: DB write failed' },
 		);
-		expect(mockUpdateCredential).not.toHaveBeenCalled();
+	});
+});
+
+describe('CodexEngine lifecycle hooks', () => {
+	const AUTH_JSON = JSON.stringify({ accessToken: 'tok_abc', refreshToken: 'ref_xyz' });
+
+	let workspaceDir: string;
+
+	beforeEach(() => {
+		workspaceDir = mkdtempSync(join(tmpdir(), 'cascade-codex-lifecycle-test-'));
+		mockMkdir.mockResolvedValue(undefined);
+		mockWriteFile.mockResolvedValue(undefined);
+		mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+		mockWriteProjectCredential.mockResolvedValue(undefined);
+		mockSpawn.mockImplementation(() => createMockChild({ exitCode: 0 }));
+	});
+
+	afterEach(() => {
+		rmSync(workspaceDir, { recursive: true, force: true });
+	});
+
+	it('beforeExecute writes auth.json when CODEX_AUTH_JSON is in projectSecrets', async () => {
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { CODEX_AUTH_JSON: AUTH_JSON },
+		});
+
+		await engine.beforeExecute(input);
+
+		expect(mockWriteFile).toHaveBeenCalledWith(expect.stringContaining('auth.json'), AUTH_JSON, {
+			mode: 0o600,
+		});
+	});
+
+	it('afterExecute writes refreshed token to project_credentials', async () => {
+		const refreshedJson = JSON.stringify({ accessToken: 'tok_NEW', refreshToken: 'ref_xyz' });
+		mockReadFile.mockResolvedValue(refreshedJson);
+
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { CODEX_AUTH_JSON: AUTH_JSON },
+		});
+
+		// Simulate adapter lifecycle: beforeExecute stores originalAuthJson, afterExecute compares
+		await engine.beforeExecute(input);
+		await engine.afterExecute(input, { success: true, output: '' });
+
+		expect(mockWriteProjectCredential).toHaveBeenCalledWith(
+			'test-project',
+			'CODEX_AUTH_JSON',
+			refreshedJson,
+		);
+	});
+
+	it('afterExecute completes without throwing', async () => {
+		const engine = new CodexEngine();
+		const plan = makeInput({ repoDir: workspaceDir });
+
+		await expect(engine.afterExecute(plan, { success: true, output: '' })).resolves.not.toThrow();
+	});
+
+	it('adapter lifecycle: execute does not double-capture token when adapter calls afterExecute', async () => {
+		const refreshedJson = JSON.stringify({ accessToken: 'tok_NEW', refreshToken: 'ref_xyz' });
+		mockReadFile.mockResolvedValue(refreshedJson);
+
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { CODEX_AUTH_JSON: AUTH_JSON },
+		});
+
+		// Simulate adapter: beforeExecute → execute → afterExecute
+		await engine.beforeExecute(input);
+		await engine.execute(input);
+		await engine.afterExecute(input, { success: true, output: '' });
+
+		// writeProjectCredential should be called exactly once (from afterExecute, not from execute's finally)
+		expect(mockWriteProjectCredential).toHaveBeenCalledTimes(1);
 	});
 });

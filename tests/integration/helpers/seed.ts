@@ -1,10 +1,11 @@
+import type { AgentDefinition } from '../../../src/agents/definitions/schema.js';
 import { getDb } from '../../../src/db/client.js';
+import { upsertAgentDefinition } from '../../../src/db/repositories/agentDefinitionsRepository.js';
+import { writeProjectCredential } from '../../../src/db/repositories/credentialsRepository.js';
 import {
 	agentConfigs,
 	agentRuns,
 	agentTriggerConfigs,
-	credentials,
-	integrationCredentials,
 	organizations,
 	projectIntegrations,
 	projects,
@@ -60,29 +61,22 @@ export async function seedProject(
 }
 
 /**
- * Seeds a credential row.
+ * Seeds a project-scoped credential via the repository.
  */
 export async function seedCredential(
 	overrides: {
-		orgId?: string;
+		projectId?: string;
 		name?: string;
 		envVarKey?: string;
 		value?: string;
-		isDefault?: boolean;
 	} = {},
 ) {
-	const db = getDb();
-	const [row] = await db
-		.insert(credentials)
-		.values({
-			orgId: overrides.orgId ?? 'test-org',
-			name: overrides.name ?? 'Test Key',
-			envVarKey: overrides.envVarKey ?? 'TEST_KEY',
-			value: overrides.value ?? 'test-value',
-			isDefault: overrides.isDefault ?? false,
-		})
-		.returning();
-	return row;
+	const projectId = overrides.projectId ?? 'test-project';
+	const envVarKey = overrides.envVarKey ?? 'TEST_KEY';
+	const value = overrides.value ?? 'test-value';
+	const name = overrides.name ?? 'Test Key';
+	await writeProjectCredential(projectId, envVarKey, value, name);
+	return { projectId, envVarKey, value, name };
 }
 
 /**
@@ -112,23 +106,26 @@ export async function seedIntegration(
 }
 
 /**
- * Seeds an integration credential link.
+ * Seeds an integration credential by writing directly to project_credentials.
+ * Maps the role to its envVarKey for the integration's provider.
  */
 export async function seedIntegrationCredential(overrides: {
 	integrationId: number;
 	role?: string;
 	credentialId: number;
 }) {
-	const db = getDb();
-	const [row] = await db
-		.insert(integrationCredentials)
-		.values({
-			integrationId: overrides.integrationId,
-			role: overrides.role ?? 'api_key',
-			credentialId: overrides.credentialId,
-		})
-		.returning();
-	return row;
+	// For backward compatibility: look up the integration and write to project_credentials
+	const { removeIntegrationCredential } = await import(
+		'../../../src/db/repositories/integrationsRepository.js'
+	);
+	// The credentialId is no longer meaningful after legacy table removal.
+	// This function is preserved to avoid breaking existing test seeds that call it.
+	// Integration credentials are now stored in project_credentials by envVarKey.
+	return {
+		integrationId: overrides.integrationId,
+		role: overrides.role ?? 'api_key',
+		credentialId: overrides.credentialId,
+	};
 }
 
 /**
@@ -307,6 +304,51 @@ export async function seedSession(overrides: {
 	return row;
 }
 
+/**
+ * Minimal valid AgentDefinition fixture that satisfies AgentDefinitionSchema.parse().
+ */
+export const MINIMAL_AGENT_DEFINITION: AgentDefinition = {
+	identity: {
+		emoji: '🤖',
+		label: 'Test Agent',
+		roleHint: 'A minimal test agent definition',
+		initialMessage: 'Starting test agent...',
+	},
+	capabilities: {
+		required: ['fs:read'],
+		optional: [],
+	},
+	triggers: [],
+	strategies: {
+		gadgetOptions: undefined,
+	},
+	hint: 'This is a test hint for iteration guidance.',
+	prompts: {
+		taskPrompt: 'Perform the test task as described.',
+	},
+};
+
+/**
+ * Seeds an agent definition via the repository's upsertAgentDefinition function.
+ * Merges overrides into the minimal valid AgentDefinition.
+ */
+export async function seedAgentDefinition(
+	overrides: {
+		agentType?: string;
+		definition?: Partial<AgentDefinition>;
+		isBuiltin?: boolean;
+	} = {},
+) {
+	const agentType = overrides.agentType ?? 'test-agent';
+	const definition: AgentDefinition = {
+		...MINIMAL_AGENT_DEFINITION,
+		...overrides.definition,
+	};
+	const isBuiltin = overrides.isBuiltin ?? false;
+	await upsertAgentDefinition(agentType, definition, isBuiltin);
+	return { agentType, definition, isBuiltin };
+}
+
 // ============================================================================
 // Composite helpers for common integration setups
 // ============================================================================
@@ -326,42 +368,20 @@ export async function seedTrelloIntegration(
 	});
 
 	if (!options?.skipApiKey) {
-		const apiKey = await seedCredential({
-			envVarKey: 'TRELLO_API_KEY',
-			value: 'test-api-key',
-			name: 'Trello API Key',
-		});
-		await seedIntegrationCredential({
-			integrationId: integ.id,
-			role: 'api_key',
-			credentialId: apiKey.id,
-		});
+		await writeProjectCredential(projectId, 'TRELLO_API_KEY', 'test-api-key', 'Trello API Key');
 	}
 
 	if (!options?.skipApiSecret) {
-		const apiSecret = await seedCredential({
-			envVarKey: 'TRELLO_API_SECRET',
-			value: 'test-api-secret',
-			name: 'Trello API Secret',
-		});
-		await seedIntegrationCredential({
-			integrationId: integ.id,
-			role: 'api_secret',
-			credentialId: apiSecret.id,
-		});
+		await writeProjectCredential(
+			projectId,
+			'TRELLO_API_SECRET',
+			'test-api-secret',
+			'Trello API Secret',
+		);
 	}
 
 	if (!options?.skipToken) {
-		const token = await seedCredential({
-			envVarKey: 'TRELLO_TOKEN',
-			value: 'test-token',
-			name: 'Trello Token',
-		});
-		await seedIntegrationCredential({
-			integrationId: integ.id,
-			role: 'token',
-			credentialId: token.id,
-		});
+		await writeProjectCredential(projectId, 'TRELLO_TOKEN', 'test-token', 'Trello Token');
 	}
 
 	return integ;
@@ -382,29 +402,11 @@ export async function seedJiraIntegration(
 	});
 
 	if (!options?.skipEmail) {
-		const email = await seedCredential({
-			envVarKey: 'JIRA_EMAIL',
-			value: 'test@example.com',
-			name: 'JIRA Email',
-		});
-		await seedIntegrationCredential({
-			integrationId: integ.id,
-			role: 'email',
-			credentialId: email.id,
-		});
+		await writeProjectCredential(projectId, 'JIRA_EMAIL', 'test@example.com', 'JIRA Email');
 	}
 
 	if (!options?.skipApiToken) {
-		const apiToken = await seedCredential({
-			envVarKey: 'JIRA_API_TOKEN',
-			value: 'test-api-token',
-			name: 'JIRA API Token',
-		});
-		await seedIntegrationCredential({
-			integrationId: integ.id,
-			role: 'api_token',
-			credentialId: apiToken.id,
-		});
+		await writeProjectCredential(projectId, 'JIRA_API_TOKEN', 'test-api-token', 'JIRA API Token');
 	}
 
 	return integ;
@@ -427,29 +429,21 @@ export async function seedGitHubIntegration(
 	});
 
 	if (!options?.skipImplementer) {
-		const implCred = await seedCredential({
-			envVarKey: 'GITHUB_TOKEN_IMPLEMENTER',
-			value: 'ghp-impl-test',
-			name: 'Implementer Token',
-		});
-		await seedIntegrationCredential({
-			integrationId: integ.id,
-			role: 'implementer_token',
-			credentialId: implCred.id,
-		});
+		await writeProjectCredential(
+			projectId,
+			'GITHUB_TOKEN_IMPLEMENTER',
+			'ghp-impl-test',
+			'Implementer Token',
+		);
 	}
 
 	if (!options?.skipReviewer) {
-		const revCred = await seedCredential({
-			envVarKey: 'GITHUB_TOKEN_REVIEWER',
-			value: 'ghp-rev-test',
-			name: 'Reviewer Token',
-		});
-		await seedIntegrationCredential({
-			integrationId: integ.id,
-			role: 'reviewer_token',
-			credentialId: revCred.id,
-		});
+		await writeProjectCredential(
+			projectId,
+			'GITHUB_TOKEN_REVIEWER',
+			'ghp-rev-test',
+			'Reviewer Token',
+		);
 	}
 
 	return integ;

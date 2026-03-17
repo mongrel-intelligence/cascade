@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { loadProjectConfigById } from '../../config/provider.js';
+import { isAgentEnabledForProject } from '../../db/repositories/agentConfigsRepository.js';
 import {
 	DEFAULT_STALE_RUN_THRESHOLD_MS,
 	cancelRunById,
@@ -96,19 +97,37 @@ export const runsRouter = router({
 
 	getLogs: protectedProcedure
 		.input(z.object({ runId: z.string().uuid() }))
-		.query(async ({ input }) => {
+		.query(async ({ ctx, input }) => {
+			const run = await getRunById(input.runId);
+			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
+			}
 			return getRunLogs(input.runId);
 		}),
 
 	listLlmCalls: protectedProcedure
 		.input(z.object({ runId: z.string().uuid() }))
-		.query(async ({ input }) => {
+		.query(async ({ ctx, input }) => {
+			const run = await getRunById(input.runId);
+			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
+			}
 			return listLlmCallsMeta(input.runId);
 		}),
 
 	getLlmCall: protectedProcedure
 		.input(z.object({ runId: z.string().uuid(), callNumber: z.number() }))
-		.query(async ({ input }) => {
+		.query(async ({ ctx, input }) => {
+			const run = await getRunById(input.runId);
+			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
+			}
 			const call = await getLlmCallByNumber(input.runId, input.callNumber);
 			if (!call) throw new TRPCError({ code: 'NOT_FOUND' });
 			return call;
@@ -116,14 +135,26 @@ export const runsRouter = router({
 
 	getDebugAnalysis: protectedProcedure
 		.input(z.object({ runId: z.string().uuid() }))
-		.query(async ({ input }) => {
+		.query(async ({ ctx, input }) => {
+			const run = await getRunById(input.runId);
+			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
+			}
 			const analysis = await getDebugAnalysisByRunId(input.runId);
 			return analysis;
 		}),
 
 	getDebugAnalysisStatus: protectedProcedure
 		.input(z.object({ runId: z.string().uuid() }))
-		.query(async ({ input }) => {
+		.query(async ({ ctx, input }) => {
+			const run = await getRunById(input.runId);
+			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
+			if (run.projectId && ctx.user?.role !== 'superadmin') {
+				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
+			}
 			if (isAnalysisRunning(input.runId)) {
 				return { status: 'running' as const };
 			}
@@ -241,6 +272,15 @@ export const runsRouter = router({
 				throw new TRPCError({
 					code: 'NOT_FOUND',
 					message: 'Project configuration not found',
+				});
+			}
+
+			// Check agent is explicitly enabled for this project
+			const agentEnabled = await isAgentEnabledForProject(input.projectId, input.agentType);
+			if (!agentEnabled) {
+				throw new TRPCError({
+					code: 'BAD_REQUEST',
+					message: `Agent '${input.agentType}' is not enabled for this project. Add an agent config in Project Settings > Agent Configs to enable it.`,
 				});
 			}
 

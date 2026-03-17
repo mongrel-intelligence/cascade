@@ -1,8 +1,9 @@
-import { listAllOrganizations } from '../../db/repositories/settingsRepository.js';
+import { getOrganization, listAllOrganizations } from '../../db/repositories/settingsRepository.js';
 import { protectedProcedure, router } from '../trpc.js';
 
 export const authRouter = router({
 	me: protectedProcedure.query(async ({ ctx }) => {
+		const org = await getOrganization(ctx.effectiveOrgId);
 		const base = {
 			id: ctx.user.id,
 			email: ctx.user.email,
@@ -10,8 +11,9 @@ export const authRouter = router({
 			role: ctx.user.role,
 			orgId: ctx.user.orgId,
 			effectiveOrgId: ctx.effectiveOrgId,
+			orgName: org?.name ?? null,
 		};
-		if (ctx.user.role === 'admin' || ctx.user.role === 'superadmin') {
+		if (ctx.user.role === 'superadmin') {
 			const orgs = await listAllOrganizations();
 			return { ...base, availableOrgs: orgs };
 		}

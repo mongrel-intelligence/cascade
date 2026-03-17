@@ -47,16 +47,10 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	listRuns: (...args: unknown[]) => mockListRuns(...args),
 }));
 
-const mockListOrgCredentials = vi.fn();
-const mockCreateCredential = vi.fn();
-const mockUpdateCredential = vi.fn();
-const mockDeleteCredential = vi.fn();
-
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
-	listOrgCredentials: (...args: unknown[]) => mockListOrgCredentials(...args),
-	createCredential: (...args: unknown[]) => mockCreateCredential(...args),
-	updateCredential: (...args: unknown[]) => mockUpdateCredential(...args),
-	deleteCredential: (...args: unknown[]) => mockDeleteCredential(...args),
+	listProjectCredentials: vi.fn().mockResolvedValue([]),
+	writeProjectCredential: vi.fn(),
+	deleteProjectCredential: vi.fn(),
 }));
 
 const mockDbSelect = vi.fn();
@@ -100,7 +94,6 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 import { computeEffectiveOrgId } from '../../../src/api/context.js';
 import { authRouter } from '../../../src/api/routers/auth.js';
-import { credentialsRouter } from '../../../src/api/routers/credentials.js';
 import { organizationRouter } from '../../../src/api/routers/organization.js';
 import { projectsRouter } from '../../../src/api/routers/projects.js';
 import {
@@ -152,16 +145,24 @@ describe('computeEffectiveOrgId', () => {
 		expect(mockGetOrganization).not.toHaveBeenCalled();
 	});
 
-	it('returns requested org when admin requests valid different org', async () => {
-		mockGetOrganization.mockResolvedValue({ id: 'org-2', name: 'Org Two' });
+	it('ignores header for admin user requesting different org (admin cannot cross-org switch)', async () => {
 		const result = await computeEffectiveOrgId(adminUser, 'org-2');
+		expect(result).toBe('org-1');
+		expect(mockGetOrganization).not.toHaveBeenCalled();
+	});
+
+	it('returns requested org when superadmin requests valid different org', async () => {
+		const superAdmin = createMockUser({ role: 'superadmin' });
+		mockGetOrganization.mockResolvedValue({ id: 'org-2', name: 'Org Two' });
+		const result = await computeEffectiveOrgId(superAdmin, 'org-2');
 		expect(result).toBe('org-2');
 		expect(mockGetOrganization).toHaveBeenCalledWith('org-2');
 	});
 
-	it('falls back to user.orgId when admin requests nonexistent org', async () => {
+	it('falls back to user.orgId when superadmin requests nonexistent org', async () => {
+		const superAdmin = createMockUser({ role: 'superadmin' });
 		mockGetOrganization.mockResolvedValue(null);
-		const result = await computeEffectiveOrgId(adminUser, 'nonexistent');
+		const result = await computeEffectiveOrgId(superAdmin, 'nonexistent');
 		expect(result).toBe('org-1');
 		expect(mockGetOrganization).toHaveBeenCalledWith('nonexistent');
 	});
@@ -244,13 +245,22 @@ describe('Auth router — role-based data exposure', () => {
 		expect(result.role).toBe('member');
 	});
 
-	it('admin with switched org returns correct effectiveOrgId', async () => {
+	it('admin gets no availableOrgs (only superadmin sees org list)', async () => {
+		const caller = authRouter.createCaller({ user: adminUser, effectiveOrgId: 'org-1' });
+		const result = await caller.me();
+
+		expect(result.availableOrgs).toBeUndefined();
+		expect(mockListAllOrganizations).not.toHaveBeenCalled();
+	});
+
+	it('superadmin with switched org returns correct effectiveOrgId and availableOrgs', async () => {
 		mockListAllOrganizations.mockResolvedValue([
 			{ id: 'org-1', name: 'Org One' },
 			{ id: 'org-2', name: 'Org Two' },
 		]);
 
-		const caller = authRouter.createCaller({ user: adminUser, effectiveOrgId: 'org-2' });
+		const superAdmin = createMockUser({ role: 'superadmin' });
+		const caller = authRouter.createCaller({ user: superAdmin, effectiveOrgId: 'org-2' });
 		const result = await caller.me();
 
 		expect(result.effectiveOrgId).toBe('org-2');
@@ -287,18 +297,6 @@ describe('Router org-isolation with admin org-switching', () => {
 		await caller.list();
 
 		expect(mockListProjectsForOrg).toHaveBeenCalledWith('org-2');
-	});
-
-	it('credentials.list uses effectiveOrgId (not user.orgId)', async () => {
-		mockListOrgCredentials.mockResolvedValue([]);
-		const caller = credentialsRouter.createCaller({
-			user: adminUser,
-			effectiveOrgId: 'org-2',
-		});
-
-		await caller.list();
-
-		expect(mockListOrgCredentials).toHaveBeenCalledWith('org-2');
 	});
 
 	it('organization.get uses effectiveOrgId (not user.orgId)', async () => {
@@ -389,32 +387,5 @@ describe('Cross-org ownership checks', () => {
 			code: 'NOT_FOUND',
 		});
 		expect(mockUpdateProject).not.toHaveBeenCalled();
-	});
-
-	it('admin switched to org-2 can delete org-2 credential', async () => {
-		mockDbWhere.mockResolvedValue([{ orgId: 'org-2' }]);
-		mockDeleteCredential.mockResolvedValue(undefined);
-
-		const caller = credentialsRouter.createCaller({
-			user: adminUser,
-			effectiveOrgId: 'org-2',
-		});
-
-		await caller.delete({ id: 42 });
-
-		expect(mockDeleteCredential).toHaveBeenCalledWith(42);
-	});
-
-	it('admin switched to org-2 cannot access org-1 credential', async () => {
-		mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-
-		const caller = credentialsRouter.createCaller({
-			user: adminUser,
-			effectiveOrgId: 'org-2',
-		});
-
-		await expect(caller.delete({ id: 42 })).rejects.toMatchObject({
-			code: 'NOT_FOUND',
-		});
 	});
 });

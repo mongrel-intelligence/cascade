@@ -1,3 +1,4 @@
+import { getAgentConfigPrompts } from '../../db/repositories/agentConfigsRepository.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { resolveAgentDefinition } from '../definitions/loader.js';
@@ -38,7 +39,19 @@ export async function resolveModelConfig(options: ResolveModelConfigOptions): Pr
 	const { agentType, project, repoDir, modelOverride, promptContext, dbPartials } = options;
 	const configKey = options.configKey ?? agentType;
 
-	// Resolve prompts from agent definition (cache → DB → YAML)
+	// Step 1: Resolve prompts from project-level agent config (highest priority)
+	let projectSystemPrompt: string | null = null;
+	let projectTaskPrompt: string | null = null;
+	try {
+		const projectPrompts = await getAgentConfigPrompts(project.id, agentType);
+		projectSystemPrompt = projectPrompts.systemPrompt;
+		projectTaskPrompt = projectPrompts.taskPrompt;
+	} catch (err) {
+		// Project config unavailable — fall through to definition/defaults
+		logger.warn(`Failed to resolve project agent config prompts for ${agentType}:`, err);
+	}
+
+	// Step 2: Resolve prompts from agent definition (cache → DB → YAML)
 	let definitionSystemPrompt: string | undefined;
 	let definitionTaskPrompt: string | undefined;
 	try {
@@ -50,9 +63,11 @@ export async function resolveModelConfig(options: ResolveModelConfigOptions): Pr
 		logger.warn(`Failed to resolve agent definition for ${agentType}:`, err);
 	}
 
-	// Resolution chain: definition prompt → .eta file
+	// Resolution chain: project prompt → definition prompt → .eta file
 	let systemPrompt: string;
-	if (definitionSystemPrompt) {
+	if (projectSystemPrompt) {
+		systemPrompt = renderCustomPrompt(projectSystemPrompt, promptContext ?? {}, dbPartials);
+	} else if (definitionSystemPrompt) {
 		systemPrompt = renderCustomPrompt(definitionSystemPrompt, promptContext ?? {}, dbPartials);
 	} else {
 		systemPrompt = getSystemPrompt(agentType, promptContext ?? {}, dbPartials);
@@ -62,25 +77,28 @@ export async function resolveModelConfig(options: ResolveModelConfigOptions): Pr
 
 	const maxIterations = project.maxIterations;
 
-	// Resolve task prompt override from definition → undefined (use .eta default)
+	// Build task context (shared between project and definition task prompt rendering)
+	const taskContext = {
+		// Forward all prompt context (PM list IDs, vocabulary, etc.) so task
+		// prompts can reference any system-level variable via Eta.
+		...promptContext,
+		// Task-specific fields from agentInput override prompt context
+		...buildTaskPromptContext({
+			workItemId: options.agentInput?.workItemId ?? promptContext?.workItemId,
+			prNumber: options.agentInput?.prNumber ?? (promptContext?.prNumber as number | undefined),
+			prBranch: options.agentInput?.prBranch ?? (promptContext?.prBranch as string | undefined),
+			triggerCommentText: options.agentInput?.triggerCommentText,
+			triggerCommentAuthor: options.agentInput?.triggerCommentAuthor,
+			triggerCommentBody: options.agentInput?.triggerCommentBody,
+			triggerCommentPath: options.agentInput?.triggerCommentPath,
+		}),
+	};
+
+	// Resolve task prompt: project override → definition override → undefined (use .eta default)
 	let taskPrompt: string | undefined;
-	if (definitionTaskPrompt) {
-		// Build task context from agentInput, falling back to promptContext for common fields
-		const taskContext = {
-			// Forward all prompt context (PM list IDs, vocabulary, etc.) so task
-			// prompts can reference any system-level variable via Eta.
-			...promptContext,
-			// Task-specific fields from agentInput override prompt context
-			...buildTaskPromptContext({
-				workItemId: options.agentInput?.workItemId ?? promptContext?.workItemId,
-				prNumber: options.agentInput?.prNumber ?? (promptContext?.prNumber as number | undefined),
-				prBranch: options.agentInput?.prBranch ?? (promptContext?.prBranch as string | undefined),
-				triggerCommentText: options.agentInput?.triggerCommentText,
-				triggerCommentAuthor: options.agentInput?.triggerCommentAuthor,
-				triggerCommentBody: options.agentInput?.triggerCommentBody,
-				triggerCommentPath: options.agentInput?.triggerCommentPath,
-			}),
-		};
+	if (projectTaskPrompt) {
+		taskPrompt = renderInlineTaskPrompt(projectTaskPrompt, taskContext, dbPartials);
+	} else if (definitionTaskPrompt) {
 		taskPrompt = renderInlineTaskPrompt(definitionTaskPrompt, taskContext, dbPartials);
 	}
 

@@ -22,6 +22,13 @@ export function formatCost(usd: string | number | null | undefined): string {
 	return `$${n.toFixed(4)}`;
 }
 
+export function formatCostSummary(usd: string | number | null | undefined): string {
+	if (usd == null) return '-';
+	const n = typeof usd === 'string' ? Number.parseFloat(usd) : usd;
+	if (Number.isNaN(n)) return '-';
+	return `$${n.toFixed(2)}`;
+}
+
 export function formatRelativeTime(date: Date | string | null | undefined): string {
 	if (!date) return '-';
 	const d = typeof date === 'string' ? new Date(date) : date;

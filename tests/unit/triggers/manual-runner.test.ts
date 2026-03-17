@@ -8,6 +8,11 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	getRunById: vi.fn(),
 }));
 
+// Default: agent is enabled (has a config row)
+vi.mock('../../../src/db/repositories/agentConfigsRepository.js', () => ({
+	isAgentEnabledForProject: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock('../../../src/utils/logging.js', () => ({
 	logger: {
 		info: vi.fn(),
@@ -39,7 +44,12 @@ vi.mock('../../../src/triggers/shared/integration-validation.js', () => ({
 	formatValidationErrors: vi.fn().mockReturnValue(''),
 }));
 
+vi.mock('../../../src/utils/lifecycle.js', () => ({
+	startWatchdog: vi.fn(),
+}));
+
 import { runAgent } from '../../../src/agents/registry.js';
+import { isAgentEnabledForProject } from '../../../src/db/repositories/agentConfigsRepository.js';
 import { getRunById } from '../../../src/db/repositories/runsRepository.js';
 import { withPMCredentials } from '../../../src/pm/context.js';
 import { createPMProvider, withPMProvider } from '../../../src/pm/index.js';
@@ -69,6 +79,22 @@ const mockConfig = {} as CascadeConfig;
 describe('triggerManualRun', () => {
 	beforeEach(() => {
 		clearTriggerTracking();
+	});
+
+	it('throws when agent is not enabled for the project', async () => {
+		vi.mocked(isAgentEnabledForProject).mockResolvedValueOnce(false);
+
+		await expect(
+			triggerManualRun(
+				{
+					projectId: 'test-project',
+					agentType: 'implementation',
+					workItemId: 'card-1',
+				},
+				mockProject,
+				mockConfig,
+			),
+		).rejects.toThrow('not enabled for project');
 	});
 
 	it('throws when trigger is already running for same project+agent+card', async () => {

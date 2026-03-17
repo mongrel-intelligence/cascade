@@ -28,7 +28,6 @@ import {
 describe('agent-type-lock', () => {
 	beforeEach(() => {
 		clearAllAgentTypeLocks();
-		vi.clearAllMocks();
 	});
 
 	afterEach(() => {

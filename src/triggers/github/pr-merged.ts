@@ -4,7 +4,8 @@ import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
-import { isBacklogEmpty } from '../shared/backlog-check.js';
+import { isPipelineAtCapacity } from '../shared/backlog-check.js';
+import { isLifecycleTriggerEnabled } from '../shared/lifecycle-check.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
@@ -21,8 +22,8 @@ export class PRMergedTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
-		// Check trigger config via new DB-driven system
-		if (!(await checkTriggerEnabled(ctx.project.id, 'review', 'scm:pr-merged', this.name))) {
+		// Check lifecycle trigger config (stored in project_integrations.triggers)
+		if (!(await isLifecycleTriggerEnabled(ctx.project.id, 'prMerged', this.name))) {
 			return null;
 		}
 
@@ -78,12 +79,15 @@ export class PRMergedTrigger implements TriggerHandler {
 
 		// Chain to backlog-manager if enabled (regardless of whether card was already merged)
 		if (await checkTriggerEnabled(ctx.project.id, 'backlog-manager', 'scm:pr-merged', this.name)) {
-			// Skip if the backlog is already empty — no point running the agent
-			const backlogEmpty = await isBacklogEmpty(ctx.project, provider);
-			if (backlogEmpty) {
-				logger.info('Skipping backlog-manager: backlog is empty after PR merge', {
+			// Skip if the pipeline is at capacity or backlog is empty — no point running the agent
+			const capacityResult = await isPipelineAtCapacity(ctx.project, provider);
+			if (capacityResult.atCapacity) {
+				logger.info('Skipping backlog-manager: pipeline at capacity after PR merge', {
 					workItemId,
 					prNumber,
+					reason: capacityResult.reason,
+					inFlightCount: capacityResult.inFlightCount,
+					limit: capacityResult.limit,
 				});
 			} else {
 				logger.info('Chaining to backlog-manager after PR merge', { workItemId, prNumber });

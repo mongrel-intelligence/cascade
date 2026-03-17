@@ -24,24 +24,27 @@ export default class WebhookLogsList extends DashboardCommand {
 				offset: flags.offset,
 			});
 
-			if (flags.json) {
-				this.outputJson(result);
-				return;
-			}
-
-			this.outputTable(result.data as unknown as Record<string, unknown>[], [
-				{ key: 'id', header: 'ID', format: (v) => String(v ?? '').slice(0, 8) },
+			const columns = [
+				{ key: 'id', header: 'ID', format: (v: unknown) => String(v ?? '').slice(0, 8) },
 				{ key: 'source', header: 'Source' },
 				{ key: 'eventType', header: 'Event' },
 				{ key: 'statusCode', header: 'Status' },
-				{ key: 'processed', header: 'Processed', format: (v) => (v ? 'yes' : 'no') },
+				{ key: 'processed', header: 'Processed', format: (v: unknown) => (v ? 'yes' : 'no') },
 				{
 					key: 'decisionReason',
 					header: 'Reason',
-					format: (v) => (v ? String(v).slice(0, 50) : '-'),
+					format: (v: unknown) => (v ? String(v).slice(0, 50) : '-'),
 				},
 				{ key: 'receivedAt', header: 'Time', format: formatDate },
-			]);
+			];
+
+			this.outputFormatted(
+				result.data as unknown as Record<string, unknown>[],
+				columns,
+				flags,
+				result,
+				'No webhook logs found. Webhook logs appear when CASCADE receives events from Trello, GitHub, or JIRA.',
+			);
 		} catch (err) {
 			this.handleError(err);
 		}

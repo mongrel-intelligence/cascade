@@ -10,7 +10,7 @@ import type {
 	SDKStatusMessage,
 	SDKSystemMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import { storeLlmCall } from '../../db/repositories/runsRepository.js';
+import { getEngineSettings } from '../../config/engineSettings.js';
 import { logger } from '../../utils/logging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { getWorkspaceDir } from '../../utils/repo.js';
@@ -23,10 +23,12 @@ import {
 } from '../completion.js';
 import { cleanupContextFiles } from '../contextFiles.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
+import { logLlmCall } from '../shared/llmCallLogger.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
 import { buildClaudeEnv } from './env.js';
 import { buildHooks } from './hooks.js';
 import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
+import { ClaudeCodeSettingsSchema, resolveClaudeCodeSettings } from './settings.js';
 
 export { buildToolGuidance, buildTaskPrompt, buildSystemPrompt } from '../nativeTools.js';
 export { buildClaudeEnv as buildEnv } from './env.js';
@@ -306,13 +308,55 @@ function resolveNativeTools(nativeToolCapabilities?: string[]): string[] {
 	return tools.size > 0 ? [...tools] : ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
 }
 
-function logLlmCall(
+/**
+ * Map raw Claude Code engine settings to SDK query options.
+ * Only settings that are explicitly configured are returned; undefined fields
+ * are omitted to preserve SDK defaults.
+ */
+function buildSettingsOptions(rawSettings: {
+	effort?: 'low' | 'medium' | 'high' | 'max';
+	thinking?: 'adaptive' | 'enabled' | 'disabled';
+	thinkingBudgetTokens?: number;
+}): {
+	effort?: 'low' | 'medium' | 'high' | 'max';
+	thinking?:
+		| { type: 'adaptive' }
+		| { type: 'enabled'; budgetTokens: number }
+		| { type: 'disabled' };
+	maxThinkingTokens?: number;
+} {
+	const result: ReturnType<typeof buildSettingsOptions> = {};
+
+	if (rawSettings.effort !== undefined) {
+		result.effort = rawSettings.effort;
+	}
+
+	if (rawSettings.thinking !== undefined) {
+		if (rawSettings.thinking === 'enabled') {
+			result.thinking = {
+				type: 'enabled',
+				budgetTokens: rawSettings.thinkingBudgetTokens ?? 10_000,
+			};
+		} else if (rawSettings.thinking === 'disabled') {
+			result.thinking = { type: 'disabled' };
+		} else {
+			result.thinking = { type: 'adaptive' };
+		}
+	} else if (rawSettings.thinkingBudgetTokens !== undefined) {
+		// No explicit thinking mode — pass budget via deprecated maxThinkingTokens
+		result.maxThinkingTokens = rawSettings.thinkingBudgetTokens;
+	}
+
+	return result;
+}
+
+function logClaudeCodeLlmCall(
 	input: AgentExecutionPlan,
 	assistantMsg: SDKAssistantMessage,
 	turnCount: number,
 	model: string,
 ): void {
-	if (!input.runId || !assistantMsg.message?.usage) return;
+	if (!assistantMsg.message?.usage) return;
 
 	const usage = assistantMsg.message.usage;
 	let response: string | undefined;
@@ -322,23 +366,16 @@ function logLlmCall(
 		// Ignore serialization errors
 	}
 
-	storeLlmCall({
+	logLlmCall({
 		runId: input.runId,
 		callNumber: turnCount,
-		request: undefined,
-		response,
+		model,
 		inputTokens: usage.input_tokens,
 		outputTokens: usage.output_tokens,
 		cachedTokens: undefined,
 		costUsd: undefined,
-		durationMs: undefined,
-		model,
-	}).catch((err) => {
-		logger.warn('Failed to store Claude Code LLM call in real-time', {
-			runId: input.runId,
-			turn: turnCount,
-			error: String(err),
-		});
+		response,
+		engineLabel: 'Claude Code',
 	});
 }
 
@@ -374,7 +411,7 @@ async function consumeStream(
 			await input.progressReporter.onIteration(turnCount, input.maxIterations);
 			processAssistantMessage(assistantMsg, turnCount, input);
 			toolCallCount += countToolCalls(assistantMsg);
-			logLlmCall(input, assistantMsg, turnCount, model);
+			logClaudeCodeLlmCall(input, assistantMsg, turnCount, model);
 		} else if (message.type === 'system') {
 			const sysMsg = message as { subtype: string; [key: string]: unknown };
 			if (sysMsg.subtype === 'task_notification') {
@@ -463,6 +500,28 @@ export class ClaudeCodeEngine implements AgentEngine {
 		return true;
 	}
 
+	resolveModel(cascadeModel: string): string {
+		return resolveClaudeModel(cascadeModel);
+	}
+
+	getSettingsSchema() {
+		return ClaudeCodeSettingsSchema;
+	}
+
+	async beforeExecute(plan: AgentExecutionPlan): Promise<void> {
+		// Ensure onboarding flag exists (required for both API key and subscription auth)
+		ensureOnboardingFlag();
+		// Log repo directory state for debugging
+		debugRepoDirectory(plan.repoDir);
+	}
+
+	async afterExecute(plan: AgentExecutionPlan, _result: AgentEngineResult): Promise<void> {
+		// Clean up offloaded context files after execution
+		await cleanupContextFiles(plan.repoDir);
+		// Clean up persisted session directory — workers are ephemeral
+		await cleanupPersistedSession(plan.repoDir);
+	}
+
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const startTime = Date.now();
 		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools);
@@ -471,7 +530,19 @@ export class ClaudeCodeEngine implements AgentEngine {
 			input.contextInjections,
 			input.repoDir,
 		);
+		// Resolve model again here for backward compatibility: execute() may be called
+		// directly (e.g. in tests) without going through the adapter, so we cannot rely
+		// solely on the adapter's engine.resolveModel() pre-resolution. Since
+		// resolveClaudeModel() is idempotent, calling it twice via the normal adapter path
+		// is safe.
 		const model = resolveClaudeModel(input.model);
+		const resolvedSettings = resolveClaudeCodeSettings(input.project, input.engineSettings);
+		// Only the explicitly-configured fields (raw, pre-default) are passed to the SDK.
+		// This preserves SDK defaults when no project-level settings are configured.
+		// Use the merged engineSettings from the execution plan (falls back to project-level).
+		const effectiveEngineSettings = input.engineSettings ?? input.project.engineSettings;
+		const rawEngineSettings =
+			getEngineSettings(effectiveEngineSettings, 'claude-code', ClaudeCodeSettingsSchema) ?? {};
 
 		input.logWriter('INFO', 'Starting Claude Code SDK execution', {
 			agentType: input.agentType,
@@ -479,6 +550,9 @@ export class ClaudeCodeEngine implements AgentEngine {
 			repoDir: input.repoDir,
 			maxIterations: input.maxIterations,
 			hasOffloadedContext,
+			effort: resolvedSettings.effort,
+			thinking: resolvedSettings.thinking,
+			thinkingBudgetTokens: resolvedSettings.thinkingBudgetTokens,
 		});
 
 		const { env } = buildClaudeEnv(
@@ -486,15 +560,12 @@ export class ClaudeCodeEngine implements AgentEngine {
 			input.cliToolsDir,
 			input.nativeToolShimDir,
 		);
-		// Always ensure onboarding flag exists (required for both API key and subscription auth)
-		ensureOnboardingFlag();
 		const hooks = buildHooks(input.logWriter, input.repoDir, input.enableStopHooks ?? true, {
 			blockGitPush: input.blockGitPush,
 		});
 
 		const sdkTools = resolveNativeTools(input.nativeToolCapabilities);
-
-		debugRepoDirectory(input.repoDir);
+		const sdkSettingsOptions = buildSettingsOptions(rawEngineSettings);
 
 		const maxContinuationTurns = input.completionRequirements?.maxContinuationTurns ?? 0;
 		let continuationTurns = 0;
@@ -503,83 +574,75 @@ export class ClaudeCodeEngine implements AgentEngine {
 		let turnCount = 0;
 		let totalCost: number | undefined;
 
-		try {
-			for (;;) {
-				const stderrChunks: string[] = [];
-				const stream = query({
-					prompt: promptText,
-					options: {
-						model,
-						systemPrompt,
-						cwd: input.repoDir,
-						additionalDirectories: [getWorkspaceDir()],
-						maxBudgetUsd: input.budgetUsd,
-						permissionMode: 'bypassPermissions',
-						allowDangerouslySkipPermissions: true,
-						tools: sdkTools,
-						allowedTools: sdkTools,
-						persistSession: true,
-						hooks,
-						env,
-						debug: true,
-						stderr: (data: string) => {
-							stderrChunks.push(data);
-							input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
-						},
-						...(isContinuation ? { continue: true } : {}),
+		for (;;) {
+			const stderrChunks: string[] = [];
+			const stream = query({
+				prompt: promptText,
+				options: {
+					model,
+					systemPrompt,
+					cwd: input.repoDir,
+					additionalDirectories: [getWorkspaceDir()],
+					maxBudgetUsd: input.budgetUsd,
+					permissionMode: 'bypassPermissions',
+					allowDangerouslySkipPermissions: true,
+					tools: sdkTools,
+					allowedTools: sdkTools,
+					persistSession: true,
+					hooks,
+					env,
+					debug: true,
+					stderr: (data: string) => {
+						stderrChunks.push(data);
+						input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
 					},
-				});
+					...(isContinuation ? { continue: true } : {}),
+					...sdkSettingsOptions,
+				},
+			});
 
-				const {
-					assistantMessages,
-					resultMessage,
-					turnCount: newTurnCount,
-					toolCallCount,
-				} = await consumeStream(stream, input, model, turnCount);
-				turnCount = newTurnCount;
+			const {
+				assistantMessages,
+				resultMessage,
+				turnCount: newTurnCount,
+				toolCallCount,
+			} = await consumeStream(stream, input, model, turnCount);
+			turnCount = newTurnCount;
 
-				const turnResult = buildResult(
-					assistantMessages,
-					resultMessage,
-					stderrChunks,
-					input,
-					startTime,
-				);
+			const turnResult = buildResult(
+				assistantMessages,
+				resultMessage,
+				stderrChunks,
+				input,
+				startTime,
+			);
 
-				// Accumulate cost across continuation turns
-				if (turnResult.cost !== undefined) {
-					totalCost = (totalCost ?? 0) + turnResult.cost;
-				}
-
-				const result = applyCompletionEvidence(turnResult, input.completionRequirements);
-
-				// Don't continue on non-success results
-				if (!result.success) {
-					return { ...result, cost: totalCost };
-				}
-
-				const decision = decideContinuation(
-					result,
-					input.completionRequirements,
-					continuationTurns,
-					maxContinuationTurns,
-					totalCost,
-					input.logWriter,
-					toolCallCount,
-				);
-				if (decision.done) return decision.result;
-
-				continuationTurns++;
-				promptText = decision.promptText;
-				isContinuation = true;
+			// Accumulate cost across continuation turns
+			if (turnResult.cost !== undefined) {
+				totalCost = (totalCost ?? 0) + turnResult.cost;
 			}
-		} finally {
-			// Clean up offloaded context files after execution
-			if (hasOffloadedContext) {
-				await cleanupContextFiles(input.repoDir);
+
+			const result = applyCompletionEvidence(turnResult, input.completionRequirements);
+
+			// Don't continue on non-success results
+			if (!result.success) {
+				return { ...result, cost: totalCost };
 			}
-			// Clean up persisted session directory — workers are ephemeral
-			await cleanupPersistedSession(input.repoDir);
+
+			const decision = decideContinuation(
+				result,
+				input.completionRequirements,
+				continuationTurns,
+				maxContinuationTurns,
+				totalCost,
+				input.logWriter,
+				toolCallCount,
+			);
+			if (decision.done) return decision.result;
+
+			continuationTurns++;
+			promptText = decision.promptText;
+			isContinuation = true;
 		}
 	}
 }

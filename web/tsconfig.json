@@ -17,5 +17,5 @@
 			"@/*": ["./src/*"]
 		}
 	},
-	"include": ["src", "../src/api/**/*", "../src/db/**/*"]
+	"include": ["src", "../src/api/**/*", "../src/db/**/*", "../src/openrouter/**/*"]
 }

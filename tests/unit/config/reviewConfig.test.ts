@@ -5,7 +5,7 @@ import {
 	estimateTokens,
 } from '../../../src/config/reviewConfig.js';
 
-describe('config/reviewConfig', () => {
+describe.concurrent('config/reviewConfig', () => {
 	describe('REVIEW_FILE_CONTENT_TOKEN_LIMIT', () => {
 		it('is defined as a number', () => {
 			expect(typeof REVIEW_FILE_CONTENT_TOKEN_LIMIT).toBe('number');

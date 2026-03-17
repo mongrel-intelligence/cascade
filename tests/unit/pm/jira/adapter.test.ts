@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoist mocks before imports
-const { mockJiraClient, mockAdfToPlainText, mockMarkdownToAdf } = vi.hoisted(() => ({
+const {
+	mockJiraClient,
+	mockAdfToPlainText,
+	mockMarkdownToAdf,
+	mockExtractAdfMediaNodes,
+	mockResolveJiraMediaUrls,
+} = vi.hoisted(() => ({
 	mockJiraClient: {
 		getIssue: vi.fn(),
 		getIssueComments: vi.fn(),
@@ -24,6 +30,8 @@ const { mockJiraClient, mockAdfToPlainText, mockMarkdownToAdf } = vi.hoisted(() 
 	},
 	mockAdfToPlainText: vi.fn(),
 	mockMarkdownToAdf: vi.fn(),
+	mockExtractAdfMediaNodes: vi.fn(),
+	mockResolveJiraMediaUrls: vi.fn(),
 }));
 
 vi.mock('../../../../src/jira/client.js', () => ({
@@ -33,6 +41,7 @@ vi.mock('../../../../src/jira/client.js', () => ({
 vi.mock('../../../../src/pm/jira/adf.js', () => ({
 	adfToPlainText: mockAdfToPlainText,
 	markdownToAdf: mockMarkdownToAdf,
+	extractAdfMediaNodes: mockExtractAdfMediaNodes,
 }));
 
 vi.mock('../../../../src/utils/logging.js', () => ({
@@ -42,6 +51,10 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 		info: vi.fn(),
 		error: vi.fn(),
 	},
+}));
+
+vi.mock('../../../../src/pm/media.js', () => ({
+	resolveJiraMediaUrls: mockResolveJiraMediaUrls,
 }));
 
 import { JiraPMProvider } from '../../../../src/pm/jira/adapter.js';
@@ -69,6 +82,9 @@ describe('JiraPMProvider', () => {
 		provider = new JiraPMProvider(mockConfig);
 		mockAdfToPlainText.mockReturnValue('plain text description');
 		mockMarkdownToAdf.mockReturnValue({ type: 'doc', version: 1, content: [] });
+		// Default: no media nodes found (most tests don't need media extraction)
+		mockExtractAdfMediaNodes.mockReturnValue([]);
+		mockResolveJiraMediaUrls.mockReturnValue([]);
 	});
 
 	it('has type "jira"', () => {
@@ -111,6 +127,65 @@ describe('JiraPMProvider', () => {
 			const result = await provider.getWorkItem('fallback-id');
 
 			expect(result.id).toBe('fallback-id');
+		});
+
+		it('does not include inlineMedia when no media nodes found', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({
+				key: 'PROJ-123',
+				fields: {
+					summary: 'No media',
+					description: { type: 'doc' },
+					status: { name: 'To Do' },
+					labels: [],
+					attachment: [],
+				},
+			});
+			mockExtractAdfMediaNodes.mockReturnValue([]);
+
+			const result = await provider.getWorkItem('PROJ-123');
+
+			expect(result.inlineMedia).toBeUndefined();
+		});
+
+		it('populates inlineMedia when media nodes are found', async () => {
+			const mediaRef = { mediaId: 'att-id-1', mediaType: 'file', altText: 'screenshot' };
+			const resolvedMedia = [
+				{
+					url: 'https://jira.example.com/attachment/att-id-1',
+					mimeType: 'image/png',
+					altText: 'screenshot',
+					source: 'description' as const,
+				},
+			];
+			mockJiraClient.getIssue.mockResolvedValue({
+				key: 'PROJ-200',
+				fields: {
+					summary: 'Issue with image',
+					description: { type: 'doc' },
+					status: { name: 'In Progress' },
+					labels: [],
+					attachment: [
+						{
+							id: 'att-id-1',
+							filename: 'screenshot.png',
+							content: 'https://jira.example.com/attachment/att-id-1',
+							mimeType: 'image/png',
+						},
+					],
+				},
+			});
+			mockExtractAdfMediaNodes.mockReturnValue([mediaRef]);
+			mockResolveJiraMediaUrls.mockReturnValue(resolvedMedia);
+
+			const result = await provider.getWorkItem('PROJ-200');
+
+			expect(mockExtractAdfMediaNodes).toHaveBeenCalledWith({ type: 'doc' });
+			expect(mockResolveJiraMediaUrls).toHaveBeenCalledWith(
+				[mediaRef],
+				expect.arrayContaining([expect.objectContaining({ id: 'att-id-1' })]),
+				'description',
+			);
+			expect(result.inlineMedia).toEqual(resolvedMedia);
 		});
 	});
 
@@ -160,6 +235,24 @@ describe('JiraPMProvider', () => {
 					author: { id: '', name: '', username: '' },
 				},
 			]);
+		});
+
+		it('does not include inlineMedia on comments (comment media resolution is not supported)', async () => {
+			mockJiraClient.getIssueComments.mockResolvedValue([
+				{
+					id: 'c-1',
+					created: '2024-01-01T00:00:00.000Z',
+					body: { type: 'doc' },
+					author: { accountId: 'u-1', displayName: 'Bob', emailAddress: 'bob@example.com' },
+				},
+			]);
+
+			const result = await provider.getWorkItemComments('PROJ-123');
+
+			expect(result[0].inlineMedia).toBeUndefined();
+			// Comments don't perform media extraction — these should never be called
+			expect(mockExtractAdfMediaNodes).not.toHaveBeenCalled();
+			expect(mockResolveJiraMediaUrls).not.toHaveBeenCalled();
 		});
 	});
 

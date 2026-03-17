@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { Eta } from 'eta';
 
 import { resolveKnownAgentTypes } from '../definitions/index.js';
+import { loadAgentDefinition } from '../definitions/loader.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const templatesDir = join(__dirname, 'templates');
@@ -65,6 +66,9 @@ export interface PromptContext {
 	originalWorkItemUrl?: string;
 	detectedAgentType?: string;
 	debugListId?: string;
+
+	// Capacity / pipeline management
+	maxInFlightItems?: number;
 
 	// Future extensibility
 	[key: string]: unknown;
@@ -228,6 +232,20 @@ export function renderInlineTaskPrompt(
 	return taskEta.renderString(expanded, context);
 }
 
+/**
+ * Returns the YAML-defined taskPrompt for an agent type (the factory default).
+ * Does not require initPrompts() — reads directly from YAML.
+ * Returns null if the agent type is unknown or has no taskPrompt defined.
+ */
+export function getDefaultTaskPrompt(agentType: string): string | null {
+	try {
+		const definition = loadAgentDefinition(agentType);
+		return definition.prompts.taskPrompt ?? null;
+	} catch {
+		return null;
+	}
+}
+
 /** Returns the raw .eta template source from disk (before rendering). */
 export function getRawTemplate(agentType: string): string {
 	requireInitialized('getRawTemplate');
@@ -317,6 +335,11 @@ export function getTemplateVariables(): Array<{
 		{ name: 'originalWorkItemUrl', group: 'Debug', description: 'Original work item URL' },
 		{ name: 'detectedAgentType', group: 'Debug', description: 'Agent type from session log' },
 		{ name: 'debugListId', group: 'Debug', description: 'Debug list ID for output cards' },
+		{
+			name: 'maxInFlightItems',
+			group: 'Capacity',
+			description: 'Maximum number of items allowed in the active pipeline at once (default: 1)',
+		},
 	];
 }
 

@@ -1,3 +1,5 @@
+import type { z } from 'zod';
+import type { EngineSettings } from '../config/engineSettings.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../types/index.js';
 import type { CompletionRequirements } from './completion.js';
 
@@ -58,6 +60,13 @@ export interface AgentEnginePolicy {
 	blockGitPush?: boolean;
 	/** Path where the llmist SDK should write its structured log (workspace dir, not temp) */
 	engineLogPath?: string;
+	/**
+	 * Merged engine settings for this execution plan.
+	 * Produced by merging agent-config engine settings over project-level engine settings.
+	 * Engine resolve functions (resolveClaudeCodeSettings, etc.) read from this field
+	 * instead of project.engineSettings so per-agent overrides take precedence.
+	 */
+	engineSettings?: EngineSettings;
 }
 
 /**
@@ -112,6 +121,15 @@ export type AgentEngineSettingField =
 			label: string;
 			type: 'boolean';
 			description?: string;
+	  }
+	| {
+			key: string;
+			label: string;
+			type: 'number';
+			description?: string;
+			min?: number;
+			max?: number;
+			step?: number;
 	  };
 
 export interface AgentEngineSettingsDefinition {
@@ -147,4 +165,28 @@ export interface AgentEngine {
 
 	execute(input: AgentExecutionPlan): Promise<AgentEngineResult>;
 	supportsAgentType(agentType: string): boolean;
+	/**
+	 * Optionally resolve a CASCADE model string to the engine-specific model identifier.
+	 * Engines that need model validation (e.g., Claude Code, Codex) implement this method.
+	 * Engines that pass the model through unchanged (e.g., LLMist) do not need to implement it.
+	 */
+	resolveModel?(cascadeModel: string): string;
+	/**
+	 * Optional method that returns the Zod schema for this engine's settings.
+	 * Engines that have configurable settings implement this method so the schema
+	 * can be registered dynamically during bootstrap.
+	 */
+	getSettingsSchema?(): z.ZodType<Record<string, unknown>>;
+	/**
+	 * Optional hook called by the adapter before engine.execute().
+	 * Use for engine-specific environment setup (e.g., writing auth files, checking directories).
+	 * LLMist does not implement this hook.
+	 */
+	beforeExecute?(plan: AgentExecutionPlan): Promise<void>;
+	/**
+	 * Optional hook called by the adapter after engine.execute(), in a finally block.
+	 * Use for engine-specific cleanup (e.g., removing temp files, killing subprocesses).
+	 * LLMist does not implement this hook.
+	 */
+	afterExecute?(plan: AgentExecutionPlan, result: AgentEngineResult): Promise<void>;
 }

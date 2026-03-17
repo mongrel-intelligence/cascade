@@ -29,6 +29,7 @@ export interface AgentConfig {
 	model: string | null;
 	maxIterations: number | null;
 	agentEngine: string | null;
+	agentEngineSettings: Record<string, Record<string, unknown>> | null;
 	maxConcurrency: number | null;
 }
 
@@ -80,7 +81,15 @@ export function AgentConfigsTable({ configs }: { configs: AgentConfig[] }) {
 								<TableCell className="hidden md:table-cell">
 									{config.maxConcurrency ?? '-'}
 								</TableCell>
-								<TableCell className="hidden md:table-cell">{config.agentEngine ?? '-'}</TableCell>
+								<TableCell className="hidden md:table-cell">
+									<span>{config.agentEngine ?? '-'}</span>
+									{config.agentEngineSettings &&
+										Object.keys(config.agentEngineSettings).length > 0 && (
+											<span className="ml-2 inline-flex items-center rounded-sm bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+												Custom
+											</span>
+										)}
+								</TableCell>
 								<TableCell>
 									<div className="flex gap-1">
 										<button

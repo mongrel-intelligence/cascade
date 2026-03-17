@@ -1,4 +1,4 @@
-import { type SQL, and, asc, count, desc, eq, gte, inArray, isNull, lte } from 'drizzle-orm';
+import { type SQL, and, asc, count, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { getDb } from '../client.js';
 import {
 	agentRunLlmCalls,
@@ -358,6 +358,8 @@ export async function failOrphanedRun(
 	projectId: string,
 	workItemId: string,
 	reason: string,
+	status: 'failed' | 'timed_out' = 'failed',
+	durationMs?: number,
 ): Promise<string | null> {
 	const db = getDb();
 	const [row] = await db
@@ -377,9 +379,53 @@ export async function failOrphanedRun(
 	const [updated] = await db
 		.update(agentRuns)
 		.set({
-			status: 'failed',
+			status,
 			completedAt: new Date(),
 			error: reason,
+			durationMs,
+		})
+		.where(and(eq(agentRuns.id, row.id), eq(agentRuns.status, 'running')))
+		.returning({ id: agentRuns.id });
+	return updated?.id ?? null;
+}
+
+/**
+ * Fail the most recent running run for a project without a workItemId (e.g. GitHub PR runs).
+ * Uses projectId + optional agentType + startedAfter to identify the run.
+ * Guards on status='running' so it's safe to call even if the run already completed.
+ */
+export async function failOrphanedRunFallback(
+	projectId: string,
+	agentType: string | undefined,
+	startedAfter: Date,
+	status: 'failed' | 'timed_out',
+	reason: string,
+	durationMs?: number,
+): Promise<string | null> {
+	const db = getDb();
+	const conditions: SQL[] = [
+		eq(agentRuns.projectId, projectId),
+		eq(agentRuns.status, 'running'),
+		gte(agentRuns.startedAt, startedAfter),
+	];
+	if (agentType) {
+		conditions.push(eq(agentRuns.agentType, agentType));
+	}
+	const [row] = await db
+		.select({ id: agentRuns.id })
+		.from(agentRuns)
+		.where(and(...conditions))
+		.orderBy(desc(agentRuns.startedAt))
+		.limit(1);
+	if (!row) return null;
+
+	const [updated] = await db
+		.update(agentRuns)
+		.set({
+			status,
+			completedAt: new Date(),
+			error: reason,
+			durationMs,
 		})
 		.where(and(eq(agentRuns.id, row.id), eq(agentRuns.status, 'running')))
 		.returning({ id: agentRuns.id });
@@ -578,14 +624,37 @@ export interface ProjectWorkStat {
 	startedAt: Date | null;
 }
 
+export interface GetProjectWorkStatsOptions {
+	dateFrom?: Date;
+	agentType?: string;
+	status?: string;
+}
+
 /**
  * Returns lightweight per-run stats for a project's completed/failed/timed_out runs,
- * ordered by startedAt DESC. Used for client-side chart aggregation on the Work tab.
+ * ordered by startedAt DESC. Used for client-side chart aggregation on the Stats tab.
  *
  * Limits to the 500 most-recent runs to avoid performance issues on large projects.
+ * Optional filters: dateFrom (startedAt >= dateFrom), agentType, status.
  */
-export async function getProjectWorkStats(projectId: string): Promise<ProjectWorkStat[]> {
+export async function getProjectWorkStats(
+	projectId: string,
+	opts?: GetProjectWorkStatsOptions,
+): Promise<ProjectWorkStat[]> {
 	const db = getDb();
+	const conditions: SQL[] = [
+		eq(agentRuns.projectId, projectId),
+		inArray(agentRuns.status, ['completed', 'failed', 'timed_out']),
+	];
+	if (opts?.dateFrom) {
+		conditions.push(gte(agentRuns.startedAt, opts.dateFrom));
+	}
+	if (opts?.agentType) {
+		conditions.push(eq(agentRuns.agentType, opts.agentType));
+	}
+	if (opts?.status) {
+		conditions.push(eq(agentRuns.status, opts.status));
+	}
 	return db
 		.select({
 			agentType: agentRuns.agentType,
@@ -596,12 +665,141 @@ export async function getProjectWorkStats(projectId: string): Promise<ProjectWor
 			startedAt: agentRuns.startedAt,
 		})
 		.from(agentRuns)
-		.where(
-			and(
-				eq(agentRuns.projectId, projectId),
-				inArray(agentRuns.status, ['completed', 'failed', 'timed_out']),
-			),
-		)
+		.where(and(...conditions))
 		.orderBy(desc(agentRuns.startedAt))
 		.limit(500);
+}
+
+// ============================================================================
+// Aggregated project stats (for Stats tab — server-side aggregation)
+// ============================================================================
+
+export interface AggregatedStatsSummary {
+	totalRuns: number;
+	completedRuns: number;
+	failedRuns: number;
+	timedOutRuns: number;
+	totalCostUsd: string;
+	avgDurationMs: number | null;
+	successRate: number;
+}
+
+export interface AgentTypeBreakdown {
+	agentType: string;
+	runCount: number;
+	totalCostUsd: string;
+	totalDurationMs: number;
+	avgDurationMs: number | null;
+}
+
+export interface AggregatedProjectStats {
+	summary: AggregatedStatsSummary;
+	byAgentType: AgentTypeBreakdown[];
+}
+
+/**
+ * Returns pre-aggregated stats for a project's completed/failed/timed_out runs.
+ * Performs a single SQL query with GROUP BY agent_type to return both the
+ * per-agent breakdown and an overall summary, eliminating client-side aggregation.
+ *
+ * Limits to the 500 most-recent rows (via subquery) to match the scope of the
+ * existing getProjectWorkStats function.
+ * Optional filters: dateFrom (startedAt >= dateFrom), agentType, status.
+ */
+export async function getProjectWorkStatsAggregated(
+	projectId: string,
+	opts?: GetProjectWorkStatsOptions,
+): Promise<AggregatedProjectStats> {
+	const db = getDb();
+
+	// Build the same filter conditions as getProjectWorkStats
+	const conditions: SQL[] = [
+		eq(agentRuns.projectId, projectId),
+		inArray(agentRuns.status, ['completed', 'failed', 'timed_out']),
+	];
+	if (opts?.dateFrom) {
+		conditions.push(gte(agentRuns.startedAt, opts.dateFrom));
+	}
+	if (opts?.agentType) {
+		conditions.push(eq(agentRuns.agentType, opts.agentType));
+	}
+	if (opts?.status) {
+		conditions.push(eq(agentRuns.status, opts.status));
+	}
+
+	// Subquery limiting to 500 most recent rows, then aggregate by agent_type
+	const subquery = db
+		.select({
+			agentType: agentRuns.agentType,
+			status: agentRuns.status,
+			durationMs: agentRuns.durationMs,
+			costUsd: agentRuns.costUsd,
+		})
+		.from(agentRuns)
+		.where(and(...conditions))
+		.orderBy(desc(agentRuns.startedAt))
+		.limit(500)
+		.as('recent_runs');
+
+	const rows = await db
+		.select({
+			agentType: subquery.agentType,
+			runCount: sql<number>`count(*)::int`,
+			completedCount: sql<number>`count(*) filter (where ${subquery.status} = 'completed')::int`,
+			failedCount: sql<number>`count(*) filter (where ${subquery.status} = 'failed')::int`,
+			timedOutCount: sql<number>`count(*) filter (where ${subquery.status} = 'timed_out')::int`,
+			totalCostUsd: sql<string>`coalesce(sum(${subquery.costUsd}::numeric), 0)::text`,
+			totalDurationMs: sql<number>`coalesce(sum(${subquery.durationMs}), 0)::int`,
+			durationRunCount: sql<number>`count(*) filter (where ${subquery.durationMs} is not null and ${subquery.durationMs} > 0)::int`,
+			avgDurationMs: sql<
+				number | null
+			>`case when count(*) filter (where ${subquery.durationMs} is not null and ${subquery.durationMs} > 0) > 0 then (sum(${subquery.durationMs}) filter (where ${subquery.durationMs} is not null and ${subquery.durationMs} > 0) / count(*) filter (where ${subquery.durationMs} is not null and ${subquery.durationMs} > 0))::int else null end`,
+		})
+		.from(subquery)
+		.groupBy(subquery.agentType);
+
+	// Build per-agent breakdown
+	const byAgentType: AgentTypeBreakdown[] = rows.map((row) => ({
+		agentType: row.agentType,
+		runCount: row.runCount,
+		totalCostUsd: row.totalCostUsd,
+		totalDurationMs: row.totalDurationMs,
+		avgDurationMs: row.avgDurationMs,
+	}));
+
+	// Compute overall summary from per-agent rows
+	let totalRuns = 0;
+	let completedRuns = 0;
+	let failedRuns = 0;
+	let timedOutRuns = 0;
+	let totalCostNum = 0;
+	let weightedDurationSum = 0;
+	let durationCount = 0;
+
+	for (const row of rows) {
+		totalRuns += row.runCount;
+		completedRuns += row.completedCount;
+		failedRuns += row.failedCount;
+		timedOutRuns += row.timedOutCount;
+		totalCostNum += Number.parseFloat(row.totalCostUsd);
+		if (row.durationRunCount > 0) {
+			weightedDurationSum += row.totalDurationMs;
+			durationCount += row.durationRunCount;
+		}
+	}
+
+	const avgDurationMs = durationCount > 0 ? Math.round(weightedDurationSum / durationCount) : null;
+	const successRate = totalRuns > 0 ? (completedRuns / totalRuns) * 100 : 0;
+
+	const summary: AggregatedStatsSummary = {
+		totalRuns,
+		completedRuns,
+		failedRuns,
+		timedOutRuns,
+		totalCostUsd: totalCostNum.toFixed(4),
+		avgDurationMs,
+		successRate,
+	};
+
+	return { summary, byAgentType };
 }

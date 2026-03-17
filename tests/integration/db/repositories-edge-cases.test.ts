@@ -8,9 +8,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { loadConfigFromDb } from '../../../src/db/repositories/configRepository.js';
 import {
-	deleteCredential,
-	listOrgCredentials,
-	updateCredential,
+	deleteProjectCredential,
+	listProjectCredentials,
+	writeProjectCredential,
 } from '../../../src/db/repositories/credentialsRepository.js';
 import {
 	createProject,
@@ -20,20 +20,12 @@ import {
 	listAgentConfigs,
 	listProjectIntegrations,
 	listProjectsFull,
-	setIntegrationCredential,
 	updateOrganization,
 	updateProjectIntegrationTriggers,
 	upsertProjectIntegration,
 } from '../../../src/db/repositories/settingsRepository.js';
 import { truncateAll } from '../helpers/db.js';
-import {
-	seedAgentConfig,
-	seedCredential,
-	seedIntegration,
-	seedIntegrationCredential,
-	seedOrg,
-	seedProject,
-} from '../helpers/seed.js';
+import { seedAgentConfig, seedIntegration, seedOrg, seedProject } from '../helpers/seed.js';
 
 describe('Database Repository Edge Cases (integration)', () => {
 	beforeEach(async () => {
@@ -77,41 +69,43 @@ describe('Database Repository Edge Cases (integration)', () => {
 	});
 
 	// =========================================================================
-	// Credential CRUD
+	// Credential CRUD (project-scoped)
 	// =========================================================================
 
 	describe('credential CRUD', () => {
-		it('updates credential name and value', async () => {
-			const cred = await seedCredential({
-				name: 'Old Name',
-				envVarKey: 'SOME_KEY',
-				value: 'old-value',
-			});
+		it('writes and reads a project credential', async () => {
+			await writeProjectCredential('test-project', 'SOME_KEY', 'old-value', 'Old Name');
 
-			await updateCredential(cred.id, { name: 'New Name', value: 'new-value' });
+			const all = await listProjectCredentials('test-project');
+			const cred = all.find((c) => c.envVarKey === 'SOME_KEY');
+			expect(cred?.name).toBe('Old Name');
+			expect(cred?.value).toBe('old-value');
+		});
 
-			const all = await listOrgCredentials('test-org');
-			const updated = all.find((c) => c.id === cred.id);
+		it('upserts (overwrites) when writing same key again', async () => {
+			await writeProjectCredential('test-project', 'SOME_KEY', 'old-value', 'Old Name');
+			await writeProjectCredential('test-project', 'SOME_KEY', 'new-value', 'New Name');
+
+			const all = await listProjectCredentials('test-project');
+			const updated = all.find((c) => c.envVarKey === 'SOME_KEY');
 			expect(updated?.name).toBe('New Name');
-			// Value should be decrypted (or plaintext since no master key)
 			expect(updated?.value).toBe('new-value');
 		});
 
-		it('deletes a credential', async () => {
-			const cred = await seedCredential({ name: 'To Delete', envVarKey: 'DEL_KEY', value: 'val' });
+		it('deletes a project credential', async () => {
+			await writeProjectCredential('test-project', 'DEL_KEY', 'val');
+			await deleteProjectCredential('test-project', 'DEL_KEY');
 
-			await deleteCredential(cred.id);
-
-			const all = await listOrgCredentials('test-org');
-			expect(all.find((c) => c.id === cred.id)).toBeUndefined();
+			const all = await listProjectCredentials('test-project');
+			expect(all.find((c) => c.envVarKey === 'DEL_KEY')).toBeUndefined();
 		});
 
-		it('lists all credentials for an org', async () => {
-			await seedCredential({ name: 'Cred 1', envVarKey: 'KEY_1', value: 'val1' });
-			await seedCredential({ name: 'Cred 2', envVarKey: 'KEY_2', value: 'val2' });
-			await seedCredential({ name: 'Cred 3', envVarKey: 'KEY_3', value: 'val3' });
+		it('lists all credentials for a project', async () => {
+			await writeProjectCredential('test-project', 'KEY_1', 'val1', 'Cred 1');
+			await writeProjectCredential('test-project', 'KEY_2', 'val2', 'Cred 2');
+			await writeProjectCredential('test-project', 'KEY_3', 'val3', 'Cred 3');
 
-			const all = await listOrgCredentials('test-org');
+			const all = await listProjectCredentials('test-project');
 			expect(all).toHaveLength(3);
 			expect(all.map((c) => c.name).sort()).toEqual(['Cred 1', 'Cred 2', 'Cred 3']);
 		});
@@ -293,26 +287,13 @@ describe('Database Repository Edge Cases (integration)', () => {
 			expect((pmIntegrations[0].config as Record<string, unknown>)?.boardId).toBe('board-2');
 		});
 
-		it('setIntegrationCredential upserts (delete + insert) correctly', async () => {
-			const cred1 = await seedCredential({ name: 'Cred 1', envVarKey: 'KEY', value: 'val1' });
-			const cred2 = await seedCredential({ name: 'Cred 2', envVarKey: 'KEY', value: 'val2' });
-			const integ = await seedIntegration({ category: 'pm', provider: 'trello' });
+		it('writing same key twice upserts (overwrites) project credential', async () => {
+			await writeProjectCredential('test-project', 'TRELLO_API_KEY', 'val1', 'First Key');
+			await writeProjectCredential('test-project', 'TRELLO_API_KEY', 'val2', 'Second Key');
 
-			await seedIntegrationCredential({
-				integrationId: integ.id,
-				role: 'api_key',
-				credentialId: cred1.id,
-			});
-
-			// Re-set the same role to a different credential
-			await setIntegrationCredential(integ.id, 'api_key', cred2.id);
-
-			// Should now point to cred2
-			const { resolveIntegrationCredential } = await import(
-				'../../../src/db/repositories/credentialsRepository.js'
-			);
-			const value = await resolveIntegrationCredential('test-project', 'pm', 'api_key');
-			expect(value).toBe('val2');
+			const all = await listProjectCredentials('test-project');
+			const cred = all.find((c) => c.envVarKey === 'TRELLO_API_KEY');
+			expect(cred?.value).toBe('val2');
 		});
 	});
 

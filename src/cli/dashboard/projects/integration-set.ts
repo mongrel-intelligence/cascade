@@ -43,20 +43,22 @@ export default class ProjectsIntegrationSet extends DashboardCommand {
 		}
 
 		try {
-			await this.client.projects.integrations.upsert.mutate({
-				projectId: args.id,
-				category: flags.category as 'pm' | 'scm',
-				provider: flags.provider,
-				config,
-				triggers,
-			});
+			await this.withSpinner('Setting integration...', () =>
+				this.client.projects.integrations.upsert.mutate({
+					projectId: args.id,
+					category: flags.category as 'pm' | 'scm',
+					provider: flags.provider,
+					config,
+					triggers,
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson({ ok: true });
 				return;
 			}
 
-			this.log(`Set ${flags.category}/${flags.provider} integration for project: ${args.id}`);
+			this.success(`Set ${flags.category}/${flags.provider} integration for project '${args.id}'`);
 		} catch (err) {
 			this.handleError(err);
 		}

@@ -11,7 +11,7 @@ const createMockLogger = () => ({
 	trace: vi.fn(),
 });
 
-describe('config/retryConfig', () => {
+describe.concurrent('config/retryConfig', () => {
 	describe('getRetryConfig', () => {
 		it('returns retry configuration with correct structure', () => {
 			const logger = createMockLogger();

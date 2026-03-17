@@ -1,4 +1,4 @@
-import { Button } from '@/components/ui/button.js';
+import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import {
 	Select,
@@ -26,6 +26,15 @@ type EngineSettingField =
 			label: string;
 			type: 'boolean';
 			description?: string;
+	  }
+	| {
+			key: string;
+			label: string;
+			type: 'number';
+			description?: string;
+			min?: number;
+			max?: number;
+			step?: number;
 	  };
 
 interface EngineDefinition {
@@ -40,10 +49,14 @@ interface EngineDefinition {
 
 interface EngineSettingsFieldsProps {
 	engine?: EngineDefinition;
-	engines?: EngineDefinition[];
 	value?: Record<string, Record<string, unknown>>;
 	onChange: (value: Record<string, Record<string, unknown>> | undefined) => void;
+	/** @deprecated Use engineDefaults instead. */
 	inheritLabel?: string;
+	/** Per-field default values for the active engine. When provided, labels
+	 *  like "Default (High)" are derived from these values instead of using
+	 *  the generic "Inherits from defaults" text. */
+	engineDefaults?: Record<string, unknown>;
 }
 
 function normalizeValue(
@@ -53,25 +66,114 @@ function normalizeValue(
 	return Object.keys(value).length > 0 ? value : undefined;
 }
 
-function formatSettingValue(value: unknown): string {
-	if (typeof value === 'boolean') return value ? 'Enabled' : 'Disabled';
-	return typeof value === 'string' ? value : JSON.stringify(value);
+/**
+ * Derive a human-readable label for a field's default value.
+ * Falls back to the generic inheritLabel when no default is found.
+ */
+function resolveInheritLabel(
+	field: EngineSettingField,
+	engineDefaults: Record<string, unknown> | undefined,
+	fallback: string,
+): string {
+	if (!engineDefaults) return fallback;
+	const defaultVal = engineDefaults[field.key];
+	if (defaultVal === undefined || defaultVal === null) return fallback;
+
+	if (field.type === 'select') {
+		const option = field.options.find((o) => o.value === String(defaultVal));
+		return option ? `Default (${option.label})` : fallback;
+	}
+
+	if (field.type === 'boolean') {
+		return defaultVal ? 'Default (Enabled)' : 'Default (Disabled)';
+	}
+
+	// number
+	return `Default (${defaultVal})`;
+}
+
+interface FieldControlProps {
+	field: EngineSettingField;
+	rawValue: unknown;
+	inheritLabel: string;
+	onUpdate: (key: string, value: unknown) => void;
+}
+
+function FieldControl({ field, rawValue, inheritLabel, onUpdate }: FieldControlProps) {
+	if (field.type === 'select') {
+		return (
+			<Select
+				value={typeof rawValue === 'string' ? rawValue : '_default'}
+				onValueChange={(next) => onUpdate(field.key, next === '_default' ? undefined : next)}
+			>
+				<SelectTrigger className="w-full">
+					<SelectValue placeholder={inheritLabel} />
+				</SelectTrigger>
+				<SelectContent>
+					<SelectItem value="_default">{inheritLabel}</SelectItem>
+					{field.options.map((option) => (
+						<SelectItem key={option.value} value={option.value}>
+							{option.label}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+		);
+	}
+
+	if (field.type === 'number') {
+		return (
+			<Input
+				type="number"
+				min={field.min}
+				max={field.max}
+				step={field.step}
+				placeholder={inheritLabel}
+				value={typeof rawValue === 'number' ? rawValue : ''}
+				onChange={(e) => {
+					const trimmed = e.target.value.trim();
+					if (trimmed === '') {
+						onUpdate(field.key, undefined);
+					} else {
+						const parsed = Number(trimmed);
+						if (!Number.isNaN(parsed)) {
+							onUpdate(field.key, parsed);
+						}
+					}
+				}}
+			/>
+		);
+	}
+
+	// boolean
+	return (
+		<Select
+			value={typeof rawValue === 'boolean' ? (rawValue ? 'true' : 'false') : '_default'}
+			onValueChange={(next) =>
+				onUpdate(field.key, next === '_default' ? undefined : next === 'true')
+			}
+		>
+			<SelectTrigger className="w-full">
+				<SelectValue placeholder={inheritLabel} />
+			</SelectTrigger>
+			<SelectContent>
+				<SelectItem value="_default">{inheritLabel}</SelectItem>
+				<SelectItem value="true">Enabled</SelectItem>
+				<SelectItem value="false">Disabled</SelectItem>
+			</SelectContent>
+		</Select>
+	);
 }
 
 export function EngineSettingsFields({
 	engine,
-	engines,
 	value,
 	onChange,
 	inheritLabel = 'Inherits from defaults',
+	engineDefaults,
 }: EngineSettingsFieldsProps) {
 	const activeEngineValues =
 		(engine && (value?.[engine.id] as Record<string, unknown> | undefined)) ?? {};
-	const engineMap = new Map((engines ?? []).map((candidate) => [candidate.id, candidate] as const));
-	const inactiveEngineEntries = Object.entries(value ?? {}).filter(
-		([engineId, engineValues]) =>
-			engineId !== engine?.id && engineValues && Object.keys(engineValues).length > 0,
-	);
 
 	function updateField(key: string, nextValue: unknown) {
 		if (!engine) return;
@@ -93,13 +195,7 @@ export function EngineSettingsFields({
 		onChange(normalizeValue(nextSettings));
 	}
 
-	function clearEngine(engineId: string) {
-		const nextSettings = { ...(value ?? {}) };
-		delete nextSettings[engineId];
-		onChange(normalizeValue(nextSettings));
-	}
-
-	if (!engine?.settings && inactiveEngineEntries.length === 0) return null;
+	if (!engine?.settings) return null;
 
 	return (
 		<div className="space-y-4">
@@ -116,103 +212,19 @@ export function EngineSettingsFields({
 
 					<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 						{engine.settings.fields.map((field) => {
-							const rawValue = activeEngineValues[field.key];
-
+							const fieldInheritLabel = resolveInheritLabel(field, engineDefaults, inheritLabel);
 							return (
 								<div key={field.key} className="space-y-2">
 									<Label>{field.label}</Label>
-									{field.type === 'select' ? (
-										<Select
-											value={typeof rawValue === 'string' ? rawValue : '_default'}
-											onValueChange={(next) =>
-												updateField(field.key, next === '_default' ? undefined : next)
-											}
-										>
-											<SelectTrigger className="w-full">
-												<SelectValue placeholder={inheritLabel} />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value="_default">{inheritLabel}</SelectItem>
-												{field.options.map((option) => (
-													<SelectItem key={option.value} value={option.value}>
-														{option.label}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
-									) : (
-										<Select
-											value={
-												typeof rawValue === 'boolean' ? (rawValue ? 'true' : 'false') : '_default'
-											}
-											onValueChange={(next) =>
-												updateField(field.key, next === '_default' ? undefined : next === 'true')
-											}
-										>
-											<SelectTrigger className="w-full">
-												<SelectValue placeholder={inheritLabel} />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value="_default">{inheritLabel}</SelectItem>
-												<SelectItem value="true">Enabled</SelectItem>
-												<SelectItem value="false">Disabled</SelectItem>
-											</SelectContent>
-										</Select>
-									)}
+									<FieldControl
+										field={field}
+										rawValue={activeEngineValues[field.key]}
+										inheritLabel={fieldInheritLabel}
+										onUpdate={updateField}
+									/>
 									{field.description && (
 										<p className="text-xs text-muted-foreground">{field.description}</p>
 									)}
-								</div>
-							);
-						})}
-					</div>
-				</div>
-			)}
-
-			{inactiveEngineEntries.length > 0 && (
-				<div className="rounded-lg border border-border p-4 space-y-3">
-					<div>
-						<h3 className="text-sm font-medium">Retained Engine Settings</h3>
-						<p className="text-xs text-muted-foreground mt-1">
-							These settings are stored for other engines and will apply again if you switch back.
-						</p>
-					</div>
-
-					<div className="space-y-3">
-						{inactiveEngineEntries.map(([engineId, engineValues]) => {
-							const retainedEngine = engineMap.get(engineId);
-							const fields = retainedEngine?.settings?.fields ?? [];
-
-							return (
-								<div
-									key={engineId}
-									className="rounded-md border border-border/70 bg-muted/20 px-3 py-3 space-y-2"
-								>
-									<div className="flex items-center justify-between gap-3">
-										<div>
-											<p className="text-sm font-medium">{retainedEngine?.label ?? engineId}</p>
-											<p className="text-xs text-muted-foreground">{engineId}</p>
-										</div>
-										<Button
-											type="button"
-											variant="outline"
-											size="sm"
-											onClick={() => clearEngine(engineId)}
-										>
-											Clear
-										</Button>
-									</div>
-									<div className="space-y-1">
-										{Object.entries(engineValues).map(([key, rawValue]) => {
-											const field = fields.find((candidate) => candidate.key === key);
-											return (
-												<p key={key} className="text-xs text-muted-foreground">
-													<span className="font-medium text-foreground">{field?.label ?? key}</span>{' '}
-													{formatSettingValue(rawValue)}
-												</p>
-											);
-										})}
-									</div>
 								</div>
 							);
 						})}

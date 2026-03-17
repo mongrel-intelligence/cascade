@@ -3,8 +3,8 @@ import { WorkItemDurationChart } from '@/components/runs/work-item-duration-char
 import { WorkItemRunsTable } from '@/components/runs/work-item-runs-table.js';
 import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
-import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, ExternalLink } from 'lucide-react';
+import { createRoute } from '@tanstack/react-router';
+import { ExternalLink } from 'lucide-react';
 import { rootRoute } from '../__root.js';
 
 function PRRunsPage() {
@@ -31,18 +31,7 @@ function PRRunsPage() {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex flex-wrap items-center gap-2">
-				<Link
-					to="/projects/$projectId"
-					params={{ projectId }}
-					className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-				>
-					<ArrowLeft className="h-4 w-4" />
-					Project
-				</Link>
-				<span className="text-muted-foreground">/</span>
-				<h1 className="text-xl font-bold">PR Runs</h1>
-			</div>
+			<h1 className="text-xl font-bold">PR Runs</h1>
 
 			<div className="space-y-1">
 				<div className="flex items-center gap-2">

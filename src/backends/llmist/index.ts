@@ -120,6 +120,7 @@ export class LlmistEngine implements AgentEngine {
 		// Convert ContextInjection[] from the unified adapter into synthetic gadget calls.
 		// This is the llmist-native way to inject pre-fetched context: each injection
 		// appears in the conversation as if the agent called the gadget itself.
+		// If the injection has images, they are added as follow-up multimodal user messages.
 		for (let idx = 0; idx < contextInjections.length; idx++) {
 			const injection = contextInjections[idx];
 			const invocationId = `gc_${injection.toolName.toLowerCase()}_${idx}`;
@@ -130,6 +131,7 @@ export class LlmistEngine implements AgentEngine {
 				injection.params,
 				injection.result,
 				invocationId,
+				injection.images,
 			);
 		}
 

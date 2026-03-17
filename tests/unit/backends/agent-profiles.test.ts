@@ -95,6 +95,19 @@ vi.mock('../../../src/gadgets/github/core/getPRChecks.js', () => ({
 
 vi.mock('../../../src/gadgets/pm/core/readWorkItem.js', () => ({
 	readWorkItem: vi.fn(),
+	readWorkItemWithMedia: vi.fn(),
+}));
+
+vi.mock('../../../src/trello/client.js', () => ({
+	trelloClient: {
+		downloadAttachment: vi.fn().mockResolvedValue(null),
+	},
+}));
+
+vi.mock('../../../src/jira/client.js', () => ({
+	jiraClient: {
+		downloadAttachment: vi.fn().mockResolvedValue(null),
+	},
 }));
 
 vi.mock('../../../src/github/client.js', () => ({
@@ -162,13 +175,14 @@ import {
 	formatPRReviews,
 	readPRFileContents,
 } from '../../../src/agents/shared/prFormatting.js';
-import { readWorkItem } from '../../../src/gadgets/pm/core/readWorkItem.js';
+import { readWorkItem, readWorkItemWithMedia } from '../../../src/gadgets/pm/core/readWorkItem.js';
 import { githubClient } from '../../../src/github/client.js';
 import { resolveSquintDbPath } from '../../../src/utils/squintDb.js';
 
 const mockExecFileSync = vi.mocked(execFileSync);
 const mockResolveSquintDbPath = vi.mocked(resolveSquintDbPath);
 const mockReadWorkItem = vi.mocked(readWorkItem);
+const mockReadWorkItemWithMedia = vi.mocked(readWorkItemWithMedia);
 
 const mockGithub = vi.mocked(githubClient);
 
@@ -685,9 +699,9 @@ describe('fetchSquintOverview', () => {
 });
 
 describe('fetchWorkItemInjection', () => {
-	it('returns ReadWorkItem injection when readWorkItem resolves', async () => {
+	it('returns ReadWorkItem injection when readWorkItemWithMedia resolves', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		mockReadWorkItem.mockResolvedValue('# card title\n\ncard body');
+		mockReadWorkItemWithMedia.mockResolvedValue({ text: '# card title\n\ncard body', media: [] });
 		const profile = await getAgentProfile('splitting');
 		const params = makeContextParams({ triggerEvent: 'pm:status-changed', workItemId: 'card-123' });
 
@@ -702,12 +716,12 @@ describe('fetchWorkItemInjection', () => {
 			workItemId: 'card-123',
 			includeComments: true,
 		});
-		expect(mockReadWorkItem).toHaveBeenCalledWith('card-123', true);
+		expect(mockReadWorkItemWithMedia).toHaveBeenCalledWith('card-123', true);
 	});
 
-	it('skips injection when readWorkItem throws', async () => {
+	it('skips injection when readWorkItemWithMedia throws', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		mockReadWorkItem.mockRejectedValue(new Error('card not found'));
+		mockReadWorkItemWithMedia.mockRejectedValue(new Error('card not found'));
 		const profile = await getAgentProfile('splitting');
 		const params = makeContextParams({
 			triggerEvent: 'pm:status-changed',
@@ -729,7 +743,7 @@ describe('fetchWorkItemInjection', () => {
 
 		await profile.fetchContext(params as Parameters<typeof profile.fetchContext>[0]);
 
-		expect(mockReadWorkItem).not.toHaveBeenCalled();
+		expect(mockReadWorkItemWithMedia).not.toHaveBeenCalled();
 	});
 });
 
@@ -737,7 +751,7 @@ describe('fetchWorkItemContext orchestration', () => {
 	it('includes dirListing, contextFiles, squint, and workItem in order', async () => {
 		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
 		mockExecFileSync.mockReturnValue('squint output\n');
-		mockReadWorkItem.mockResolvedValue('card content');
+		mockReadWorkItemWithMedia.mockResolvedValue({ text: 'card content', media: [] });
 		const profile = await getAgentProfile('splitting');
 		const params = makeContextParams({
 			triggerEvent: 'pm:status-changed',
@@ -767,7 +781,7 @@ describe('fetchWorkItemContext orchestration', () => {
 
 	it('gracefully omits squint and workItem when unavailable', async () => {
 		mockResolveSquintDbPath.mockReturnValue(null);
-		mockReadWorkItem.mockRejectedValue(new Error('unavailable'));
+		mockReadWorkItemWithMedia.mockRejectedValue(new Error('unavailable'));
 		const profile = await getAgentProfile('splitting');
 		const params = makeContextParams({ triggerEvent: 'pm:status-changed', workItemId: 'card-xyz' });
 
@@ -858,7 +872,7 @@ describe('fetchReviewContext', () => {
 		);
 
 		expect(injections.some((i) => i.toolName === 'ReadWorkItem')).toBe(false);
-		expect(mockReadWorkItem).not.toHaveBeenCalled();
+		expect(mockReadWorkItemWithMedia).not.toHaveBeenCalled();
 	});
 
 	it('includes file content injections for included PR files', async () => {
@@ -914,7 +928,7 @@ describe('fetchCIContext', () => {
 	it('includes PR injections, dirListing, contextFiles, squint, and workItem', async () => {
 		mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
 		mockExecFileSync.mockReturnValue('squint ci output\n');
-		mockReadWorkItem.mockResolvedValue('ci card content');
+		mockReadWorkItemWithMedia.mockResolvedValue({ text: 'ci card content', media: [] });
 		const profile = await getAgentProfile('respond-to-ci');
 		const params = makeContextParams({
 			triggerEvent: 'scm:check-suite-failure',
@@ -953,7 +967,7 @@ describe('fetchCIContext', () => {
 		);
 
 		expect(injections.some((i) => i.toolName === 'ReadWorkItem')).toBe(false);
-		expect(mockReadWorkItem).not.toHaveBeenCalled();
+		expect(mockReadWorkItemWithMedia).not.toHaveBeenCalled();
 	});
 });
 

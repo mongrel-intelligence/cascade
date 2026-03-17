@@ -37,12 +37,11 @@ const mockMember = createMockUser({ id: 'member-1', role: 'member' });
 
 describe('usersRouter', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
 		mockBcryptHash.mockResolvedValue('hashed-password');
 	});
 
 	describe('list', () => {
-		it('returns org-scoped user list without passwordHash', async () => {
+		it('returns org-scoped user list without passwordHash (admin caller excludes superadmins)', async () => {
 			const orgUsers = [
 				{
 					id: 'user-1',
@@ -68,11 +67,41 @@ describe('usersRouter', () => {
 
 			const result = await caller.list();
 
-			expect(mockListOrgUsers).toHaveBeenCalledWith('org-1');
+			expect(mockListOrgUsers).toHaveBeenCalledWith('org-1', { excludeRole: 'superadmin' });
 			expect(result).toEqual(orgUsers);
 			// Note: passwordHash exclusion is enforced at the repository layer (listOrgUsers selects
 			// specific columns). The mock already returns data without passwordHash, reflecting
 			// the contract that the repository never returns this field.
+		});
+
+		it('superadmin caller receives full user list including superadmins', async () => {
+			const orgUsers = [
+				{
+					id: 'user-1',
+					orgId: 'org-1',
+					email: 'alice@example.com',
+					name: 'Alice',
+					role: 'admin',
+					createdAt: null,
+					updatedAt: null,
+				},
+				{
+					id: 'superadmin-2',
+					orgId: 'org-1',
+					email: 'super@example.com',
+					name: 'Super',
+					role: 'superadmin',
+					createdAt: null,
+					updatedAt: null,
+				},
+			];
+			mockListOrgUsers.mockResolvedValue(orgUsers);
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
+
+			const result = await caller.list();
+
+			expect(mockListOrgUsers).toHaveBeenCalledWith('org-1');
+			expect(result).toEqual(orgUsers);
 		});
 
 		it('returns empty array when no users', async () => {
@@ -264,6 +293,27 @@ describe('usersRouter', () => {
 			await caller.update({ id: 'user-2', role: 'superadmin' });
 
 			expect(mockUpdateUser).toHaveBeenCalledWith('user-2', { role: 'superadmin' });
+		});
+
+		it('prevents non-superadmin from editing ANY field on a superadmin user (name)', async () => {
+			mockGetUserById.mockResolvedValue({ id: 'user-super', orgId: 'org-1', role: 'superadmin' });
+			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
+
+			await expect(caller.update({ id: 'user-super', name: 'Hacked Name' })).rejects.toMatchObject({
+				code: 'FORBIDDEN',
+			});
+
+			expect(mockUpdateUser).not.toHaveBeenCalled();
+		});
+
+		it('allows superadmin to edit another superadmin name', async () => {
+			mockGetUserById.mockResolvedValue({ id: 'user-super2', orgId: 'org-1', role: 'superadmin' });
+			mockUpdateUser.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
+
+			await caller.update({ id: 'user-super2', name: 'New Super Name' });
+
+			expect(mockUpdateUser).toHaveBeenCalledWith('user-super2', { name: 'New Super Name' });
 		});
 
 		it('prevents non-superadmin from revoking superadmin role', async () => {

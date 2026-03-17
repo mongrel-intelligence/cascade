@@ -1,13 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+	mockConfigProvider,
+	mockLogger,
+	mockWithGitHubToken,
+} from '../../../helpers/sharedMocks.js';
 
-vi.mock('../../../../src/utils/logging.js', () => ({
-	logger: {
-		info: vi.fn(),
-		warn: vi.fn(),
-		error: vi.fn(),
-		debug: vi.fn(),
-	},
-}));
+vi.mock('../../../../src/utils/logging.js', () => ({ logger: mockLogger }));
 
 vi.mock('../../../../src/router/config.js', () => ({
 	loadProjectConfig: vi.fn(),
@@ -42,15 +40,13 @@ vi.mock('../../../../src/config/projects.js', () => ({
 	getProjectGitHubToken: vi.fn().mockResolvedValue('ghp_mock'),
 }));
 vi.mock('../../../../src/config/provider.js', () => ({
-	findProjectByRepo: vi.fn(),
+	findProjectByRepo: mockConfigProvider.findProjectByRepo,
 }));
 vi.mock('../../../../src/github/personas.js', () => ({
 	resolvePersonaIdentities: vi.fn().mockResolvedValue({}),
 	isCascadeBot: vi.fn().mockReturnValue(false),
 }));
-vi.mock('../../../../src/github/client.js', () => ({
-	withGitHubToken: vi.fn().mockImplementation((_t: unknown, fn: () => unknown) => fn()),
-}));
+vi.mock('../../../../src/github/client.js', () => ({ withGitHubToken: mockWithGitHubToken }));
 vi.mock('../../../../src/pm/context.js', () => ({
 	withPMProvider: vi.fn().mockImplementation((_p: unknown, fn: () => unknown) => fn()),
 	withPMCredentials: vi

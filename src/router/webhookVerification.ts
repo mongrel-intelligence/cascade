@@ -109,10 +109,23 @@ export async function verifyGitHubWebhookSignature(
 
 	let repoFullName: string | undefined;
 	try {
+		// Try JSON first (application/json delivery).
 		const parsed = JSON.parse(rawBody) as Record<string, unknown>;
 		repoFullName = (parsed?.repository as Record<string, unknown>)?.full_name as string | undefined;
 	} catch {
-		// If we can't parse the repo, skip verification
+		// Not JSON — try application/x-www-form-urlencoded delivery.
+		// GitHub sends the payload as `payload=<url-encoded JSON>` in that case.
+		try {
+			const payloadStr = new URLSearchParams(rawBody).get('payload');
+			if (payloadStr) {
+				const parsed = JSON.parse(payloadStr) as Record<string, unknown>;
+				repoFullName = (parsed?.repository as Record<string, unknown>)?.full_name as
+					| string
+					| undefined;
+			}
+		} catch {
+			// Unparseable body — fall through to the null return below
+		}
 	}
 
 	if (!repoFullName) return null;

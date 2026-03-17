@@ -48,7 +48,7 @@ export function hasAutoLabel(
  * Extract a human-readable PR title from a GitHub PR URL.
  * E.g. "https://github.com/owner/repo/pull/123" → "Pull Request #123"
  */
-export function extractPRTitle(prUrl: string): string {
+function extractPRTitle(prUrl: string): string {
 	const match = prUrl.match(/\/pull\/(\d+)/);
 	return match ? `Pull Request #${match[1]}` : 'Pull Request';
 }

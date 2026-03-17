@@ -5,6 +5,7 @@ import {
 	encryptCredential,
 	isEncryptedValue,
 	isEncryptionEnabled,
+	reEncryptCredential,
 } from '../../../src/db/crypto.js';
 
 // Generate a valid 32-byte hex key for tests
@@ -129,6 +130,39 @@ describe('crypto', () => {
 		it('decryptCredential passes through plaintext values', () => {
 			const result = decryptCredential('ghp_abc123', 'org-1');
 			expect(result).toBe('ghp_abc123');
+		});
+	});
+
+	describe('reEncryptCredential', () => {
+		it('decrypts with oldAad and re-encrypts with newAad', () => {
+			const plaintext = 'ghp_abc123def456';
+			const oldAad = 'org-1';
+			const newAad = 'project-xyz';
+
+			const originalEncrypted = encryptCredential(plaintext, oldAad);
+			const reEncrypted = reEncryptCredential(originalEncrypted, oldAad, newAad);
+
+			// Should still be encrypted
+			expect(isEncryptedValue(reEncrypted)).toBe(true);
+			// Should not equal the original (different AAD / random IV)
+			expect(reEncrypted).not.toBe(originalEncrypted);
+			// Should decrypt correctly with newAad
+			expect(decryptCredential(reEncrypted, newAad)).toBe(plaintext);
+			// Should NOT decrypt with oldAad
+			expect(() => decryptCredential(reEncrypted, oldAad)).toThrow();
+		});
+
+		it('returns plaintext value unchanged when not encrypted', () => {
+			const plaintext = 'ghp_plaintext';
+			const result = reEncryptCredential(plaintext, 'org-1', 'project-xyz');
+			expect(result).toBe(plaintext);
+		});
+
+		it('returns plaintext value unchanged when encryption is disabled', () => {
+			vi.stubEnv('CREDENTIAL_MASTER_KEY', '');
+			const plaintext = 'ghp_plaintext';
+			const result = reEncryptCredential(plaintext, 'org-1', 'project-xyz');
+			expect(result).toBe(plaintext);
 		});
 	});
 

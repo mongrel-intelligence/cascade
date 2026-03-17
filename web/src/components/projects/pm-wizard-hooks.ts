@@ -5,7 +5,7 @@
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import type { WizardAction, WizardState } from './pm-wizard-state.js';
 
 // ============================================================================
@@ -16,15 +16,19 @@ export function useTrelloDiscovery(
 	state: WizardState,
 	dispatch: React.Dispatch<WizardAction>,
 	advanceToStep: (step: number) => void,
+	projectId: string,
 ) {
 	const boardsMutation = useMutation({
 		mutationFn: () => {
-			if (!state.trelloApiKeyCredentialId || !state.trelloTokenCredentialId) {
-				throw new Error('Select both credentials before fetching boards');
+			if (state.isEditing && state.hasStoredCredentials && !state.trelloApiKey) {
+				return trpcClient.integrationsDiscovery.trelloBoardsByProject.mutate({ projectId });
+			}
+			if (!state.trelloApiKey || !state.trelloToken) {
+				throw new Error('Enter both credentials before fetching boards');
 			}
 			return trpcClient.integrationsDiscovery.trelloBoards.mutate({
-				apiKeyCredentialId: state.trelloApiKeyCredentialId,
-				tokenCredentialId: state.trelloTokenCredentialId,
+				apiKey: state.trelloApiKey,
+				token: state.trelloToken,
 			});
 		},
 		onSuccess: (boards) => dispatch({ type: 'SET_TRELLO_BOARDS', boards }),
@@ -32,12 +36,18 @@ export function useTrelloDiscovery(
 
 	const boardDetailsMutation = useMutation({
 		mutationFn: (boardId: string) => {
-			if (!state.trelloApiKeyCredentialId || !state.trelloTokenCredentialId) {
-				throw new Error('Select both credentials before fetching board details');
+			if (state.isEditing && state.hasStoredCredentials && !state.trelloApiKey) {
+				return trpcClient.integrationsDiscovery.trelloBoardDetailsByProject.mutate({
+					projectId,
+					boardId,
+				});
+			}
+			if (!state.trelloApiKey || !state.trelloToken) {
+				throw new Error('Enter both credentials before fetching board details');
 			}
 			return trpcClient.integrationsDiscovery.trelloBoardDetails.mutate({
-				apiKeyCredentialId: state.trelloApiKeyCredentialId,
-				tokenCredentialId: state.trelloTokenCredentialId,
+				apiKey: state.trelloApiKey,
+				token: state.trelloToken,
 				boardId,
 			});
 		},
@@ -65,29 +75,23 @@ export function useTrelloDiscovery(
 	}, [state.verificationResult]);
 
 	// In edit mode, auto-fetch board list and details
-	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger only on edit mode state changes
+	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger on edit mode and stored creds
 	useEffect(() => {
 		if (!state.isEditing || state.provider !== 'trello') return;
-
-		if (
-			state.trelloApiKeyCredentialId &&
-			state.trelloTokenCredentialId &&
-			state.trelloBoards.length === 0 &&
-			!boardsMutation.isPending
-		) {
+		const canFetch = state.trelloApiKey ? !!state.trelloToken : state.hasStoredCredentials;
+		if (canFetch && state.trelloBoards.length === 0 && !boardsMutation.isPending) {
 			boardsMutation.mutate();
 		}
 		if (
 			state.trelloBoardId &&
 			!state.trelloBoardDetails &&
-			state.trelloApiKeyCredentialId &&
-			state.trelloTokenCredentialId &&
+			canFetch &&
 			!boardDetailsMutation.isPending
 		) {
 			boardDetailsMutation.mutate(state.trelloBoardId);
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [state.isEditing, state.trelloBoardId]);
+	}, [state.isEditing, state.trelloBoardId, state.hasStoredCredentials]);
 
 	return { boardsMutation, boardDetailsMutation, handleBoardSelect };
 }
@@ -100,15 +104,19 @@ export function useJiraDiscovery(
 	state: WizardState,
 	dispatch: React.Dispatch<WizardAction>,
 	advanceToStep: (step: number) => void,
+	projectId: string,
 ) {
 	const jiraProjectsMutation = useMutation({
 		mutationFn: () => {
-			if (!state.jiraEmailCredentialId || !state.jiraApiTokenCredentialId) {
-				throw new Error('Select both credentials before fetching projects');
+			if (state.isEditing && state.hasStoredCredentials && !state.jiraEmail) {
+				return trpcClient.integrationsDiscovery.jiraProjectsByProject.mutate({ projectId });
+			}
+			if (!state.jiraEmail || !state.jiraApiToken) {
+				throw new Error('Enter both credentials before fetching projects');
 			}
 			return trpcClient.integrationsDiscovery.jiraProjects.mutate({
-				emailCredentialId: state.jiraEmailCredentialId,
-				apiTokenCredentialId: state.jiraApiTokenCredentialId,
+				email: state.jiraEmail,
+				apiToken: state.jiraApiToken,
 				baseUrl: state.jiraBaseUrl,
 			});
 		},
@@ -117,12 +125,18 @@ export function useJiraDiscovery(
 
 	const jiraDetailsMutation = useMutation({
 		mutationFn: (projectKey: string) => {
-			if (!state.jiraEmailCredentialId || !state.jiraApiTokenCredentialId) {
-				throw new Error('Select both credentials before fetching project details');
+			if (state.isEditing && state.hasStoredCredentials && !state.jiraEmail) {
+				return trpcClient.integrationsDiscovery.jiraProjectDetailsByProject.mutate({
+					projectId,
+					projectKey,
+				});
+			}
+			if (!state.jiraEmail || !state.jiraApiToken) {
+				throw new Error('Enter both credentials before fetching project details');
 			}
 			return trpcClient.integrationsDiscovery.jiraProjectDetails.mutate({
-				emailCredentialId: state.jiraEmailCredentialId,
-				apiTokenCredentialId: state.jiraApiTokenCredentialId,
+				email: state.jiraEmail,
+				apiToken: state.jiraApiToken,
 				baseUrl: state.jiraBaseUrl,
 				projectKey,
 			});
@@ -151,29 +165,23 @@ export function useJiraDiscovery(
 	}, [state.verificationResult]);
 
 	// In edit mode, auto-fetch project list and details
-	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger only on edit mode state changes
+	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger on edit mode and stored creds
 	useEffect(() => {
 		if (!state.isEditing || state.provider !== 'jira') return;
-
-		if (
-			state.jiraEmailCredentialId &&
-			state.jiraApiTokenCredentialId &&
-			state.jiraProjects.length === 0 &&
-			!jiraProjectsMutation.isPending
-		) {
+		const canFetch = state.jiraEmail ? !!state.jiraApiToken : state.hasStoredCredentials;
+		if (canFetch && state.jiraProjects.length === 0 && !jiraProjectsMutation.isPending) {
 			jiraProjectsMutation.mutate();
 		}
 		if (
 			state.jiraProjectKey &&
 			!state.jiraProjectDetails &&
-			state.jiraEmailCredentialId &&
-			state.jiraApiTokenCredentialId &&
+			canFetch &&
 			!jiraDetailsMutation.isPending
 		) {
 			jiraDetailsMutation.mutate(state.jiraProjectKey);
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [state.isEditing, state.jiraProjectKey]);
+	}, [state.isEditing, state.jiraProjectKey, state.hasStoredCredentials]);
 
 	return { jiraProjectsMutation, jiraDetailsMutation, handleProjectSelect };
 }
@@ -191,21 +199,21 @@ export function useVerification(
 		mutationFn: async () => {
 			const provider = state.provider;
 			if (provider === 'trello') {
-				if (!state.trelloApiKeyCredentialId || !state.trelloTokenCredentialId) {
-					throw new Error('Select both credentials before verifying');
+				if (!state.trelloApiKey || !state.trelloToken) {
+					throw new Error('Enter both credentials before verifying');
 				}
 				const result = await trpcClient.integrationsDiscovery.verifyTrello.mutate({
-					apiKeyCredentialId: state.trelloApiKeyCredentialId,
-					tokenCredentialId: state.trelloTokenCredentialId,
+					apiKey: state.trelloApiKey,
+					token: state.trelloToken,
 				});
 				return { provider: 'trello' as const, result };
 			}
-			if (!state.jiraEmailCredentialId || !state.jiraApiTokenCredentialId) {
-				throw new Error('Select both credentials before verifying');
+			if (!state.jiraEmail || !state.jiraApiToken) {
+				throw new Error('Enter both credentials before verifying');
 			}
 			const result = await trpcClient.integrationsDiscovery.verifyJira.mutate({
-				emailCredentialId: state.jiraEmailCredentialId,
-				apiTokenCredentialId: state.jiraApiTokenCredentialId,
+				email: state.jiraEmail,
+				apiToken: state.jiraApiToken,
 				baseUrl: state.jiraBaseUrl,
 			});
 			return { provider: 'jira' as const, result };
@@ -250,28 +258,6 @@ export function useWebhookManagement(projectId: string, state: WizardState) {
 		API_URL ||
 		(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
 
-	const [adminTokensOpen, setAdminTokensOpen] = useState(false);
-	const [oneTimeTrelloApiKey, setOneTimeTrelloApiKey] = useState('');
-	const [oneTimeTrelloToken, setOneTimeTrelloToken] = useState('');
-	const [oneTimeJiraEmail, setOneTimeJiraEmail] = useState('');
-	const [oneTimeJiraApiToken, setOneTimeJiraApiToken] = useState('');
-
-	const buildOneTimeTokens = () => {
-		const tokens: Record<string, string> = {};
-		if (oneTimeTrelloApiKey) tokens.trelloApiKey = oneTimeTrelloApiKey;
-		if (oneTimeTrelloToken) tokens.trelloToken = oneTimeTrelloToken;
-		if (oneTimeJiraEmail) tokens.jiraEmail = oneTimeJiraEmail;
-		if (oneTimeJiraApiToken) tokens.jiraApiToken = oneTimeJiraApiToken;
-		return Object.keys(tokens).length > 0 ? tokens : undefined;
-	};
-
-	const clearOneTimeTokens = () => {
-		setOneTimeTrelloApiKey('');
-		setOneTimeTrelloToken('');
-		setOneTimeJiraEmail('');
-		setOneTimeJiraApiToken('');
-	};
-
 	const createWebhookMutation = useMutation({
 		mutationFn: () =>
 			trpcClient.webhooks.create.mutate({
@@ -279,10 +265,8 @@ export function useWebhookManagement(projectId: string, state: WizardState) {
 				callbackBaseUrl,
 				trelloOnly: state.provider === 'trello' ? true : undefined,
 				jiraOnly: state.provider === 'jira' ? true : undefined,
-				oneTimeTokens: buildOneTimeTokens(),
 			}),
 		onSuccess: () => {
-			clearOneTimeTokens();
 			queryClient.invalidateQueries({
 				queryKey: trpc.webhooks.list.queryOptions({ projectId }).queryKey,
 			});
@@ -296,7 +280,6 @@ export function useWebhookManagement(projectId: string, state: WizardState) {
 				callbackBaseUrl: deleteCallbackBaseUrl,
 				trelloOnly: state.provider === 'trello' ? true : undefined,
 				jiraOnly: state.provider === 'jira' ? true : undefined,
-				oneTimeTokens: buildOneTimeTokens(),
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({
@@ -307,16 +290,6 @@ export function useWebhookManagement(projectId: string, state: WizardState) {
 
 	return {
 		callbackBaseUrl,
-		adminTokensOpen,
-		setAdminTokensOpen,
-		oneTimeTrelloApiKey,
-		setOneTimeTrelloApiKey,
-		oneTimeTrelloToken,
-		setOneTimeTrelloToken,
-		oneTimeJiraEmail,
-		setOneTimeJiraEmail,
-		oneTimeJiraApiToken,
-		setOneTimeJiraApiToken,
 		createWebhookMutation,
 		deleteWebhookMutation,
 	};
@@ -329,16 +302,12 @@ export function useWebhookManagement(projectId: string, state: WizardState) {
 export function useTrelloLabelCreation(state: WizardState, dispatch: React.Dispatch<WizardAction>) {
 	const createLabelMutation = useMutation({
 		mutationFn: (vars: { name: string; color?: string; slot: string }) => {
-			if (
-				!state.trelloApiKeyCredentialId ||
-				!state.trelloTokenCredentialId ||
-				!state.trelloBoardId
-			) {
+			if (!state.trelloApiKey || !state.trelloToken || !state.trelloBoardId) {
 				throw new Error('Missing credentials or board selection');
 			}
 			return trpcClient.integrationsDiscovery.createTrelloLabel.mutate({
-				apiKeyCredentialId: state.trelloApiKeyCredentialId,
-				tokenCredentialId: state.trelloTokenCredentialId,
+				apiKey: state.trelloApiKey,
+				token: state.trelloToken,
 				boardId: state.trelloBoardId,
 				name: vars.name,
 				color: vars.color,
@@ -356,16 +325,12 @@ export function useTrelloLabelCreation(state: WizardState, dispatch: React.Dispa
 
 	const createMissingLabelsMutation = useMutation({
 		mutationFn: (labelsToCreate: Array<{ slot: string; name: string; color?: string }>) => {
-			if (
-				!state.trelloApiKeyCredentialId ||
-				!state.trelloTokenCredentialId ||
-				!state.trelloBoardId
-			) {
+			if (!state.trelloApiKey || !state.trelloToken || !state.trelloBoardId) {
 				throw new Error('Missing credentials or board selection');
 			}
 			return trpcClient.integrationsDiscovery.createTrelloLabels.mutate({
-				apiKeyCredentialId: state.trelloApiKeyCredentialId,
-				tokenCredentialId: state.trelloTokenCredentialId,
+				apiKey: state.trelloApiKey,
+				token: state.trelloToken,
 				boardId: state.trelloBoardId,
 				labels: labelsToCreate.map(({ name, color }) => ({ name, color })),
 			});
@@ -409,16 +374,12 @@ export function useTrelloCustomFieldCreation(
 ) {
 	const createCustomFieldMutation = useMutation({
 		mutationFn: () => {
-			if (
-				!state.trelloApiKeyCredentialId ||
-				!state.trelloTokenCredentialId ||
-				!state.trelloBoardId
-			) {
+			if (!state.trelloApiKey || !state.trelloToken || !state.trelloBoardId) {
 				throw new Error('Missing credentials or board selection');
 			}
 			return trpcClient.integrationsDiscovery.createTrelloCustomField.mutate({
-				apiKeyCredentialId: state.trelloApiKeyCredentialId,
-				tokenCredentialId: state.trelloTokenCredentialId,
+				apiKey: state.trelloApiKey,
+				token: state.trelloToken,
 				boardId: state.trelloBoardId,
 				name: 'Cost',
 				type: 'number',
@@ -454,12 +415,12 @@ export function useJiraCustomFieldCreation(
 ) {
 	const createJiraCustomFieldMutation = useMutation({
 		mutationFn: () => {
-			if (!state.jiraEmailCredentialId || !state.jiraApiTokenCredentialId || !state.jiraBaseUrl) {
+			if (!state.jiraEmail || !state.jiraApiToken || !state.jiraBaseUrl) {
 				throw new Error('Missing JIRA credentials or base URL');
 			}
 			return trpcClient.integrationsDiscovery.createJiraCustomField.mutate({
-				emailCredentialId: state.jiraEmailCredentialId,
-				apiTokenCredentialId: state.jiraApiTokenCredentialId,
+				email: state.jiraEmail,
+				apiToken: state.jiraApiToken,
 				baseUrl: state.jiraBaseUrl,
 				name: 'Cost',
 			});
@@ -492,7 +453,7 @@ export function useSaveMutation(projectId: string, state: WizardState) {
 	const queryClient = useQueryClient();
 
 	const saveMutation = useMutation({
-		// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: handles two provider types + credential linking
+		// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: handles two provider types + credential persisting
 		mutationFn: async () => {
 			let config: Record<string, unknown>;
 			if (state.provider === 'trello') {
@@ -522,32 +483,52 @@ export function useSaveMutation(projectId: string, state: WizardState) {
 				config,
 			});
 
-			// Set credentials
-			const credPairs: Array<{ role: string; credentialId: number }> =
-				state.provider === 'trello'
-					? [
-							...(state.trelloApiKeyCredentialId
-								? [{ role: 'api_key', credentialId: state.trelloApiKeyCredentialId }]
-								: []),
-							...(state.trelloTokenCredentialId
-								? [{ role: 'token', credentialId: state.trelloTokenCredentialId }]
-								: []),
-						]
-					: [
-							...(state.jiraEmailCredentialId
-								? [{ role: 'email', credentialId: state.jiraEmailCredentialId }]
-								: []),
-							...(state.jiraApiTokenCredentialId
-								? [{ role: 'api_token', credentialId: state.jiraApiTokenCredentialId }]
-								: []),
-						];
+			// Persist credentials to project_credentials table
+			if (state.provider === 'trello') {
+				if (state.trelloApiKey) {
+					await trpcClient.projects.credentials.set.mutate({
+						projectId,
+						envVarKey: 'TRELLO_API_KEY',
+						value: state.trelloApiKey,
+						name: 'Trello API Key',
+					});
+				}
+				if (state.trelloToken) {
+					await trpcClient.projects.credentials.set.mutate({
+						projectId,
+						envVarKey: 'TRELLO_TOKEN',
+						value: state.trelloToken,
+						name: 'Trello Token',
+					});
+				}
+			} else {
+				if (state.jiraEmail) {
+					await trpcClient.projects.credentials.set.mutate({
+						projectId,
+						envVarKey: 'JIRA_EMAIL',
+						value: state.jiraEmail,
+						name: 'JIRA Email',
+					});
+				}
+				if (state.jiraApiToken) {
+					await trpcClient.projects.credentials.set.mutate({
+						projectId,
+						envVarKey: 'JIRA_API_TOKEN',
+						value: state.jiraApiToken,
+						name: 'JIRA API Token',
+					});
+				}
+			}
 
-			for (const { role, credentialId } of credPairs) {
-				await trpcClient.projects.integrationCredentials.set.mutate({
+			// On first-time setup, auto-enable default PM triggers for the three main agents
+			if (!state.isEditing) {
+				await trpcClient.agentTriggerConfigs.bulkUpsert.mutate({
 					projectId,
-					category: 'pm',
-					role,
-					credentialId,
+					configs: [
+						{ agentType: 'implementation', triggerEvent: 'pm:status-changed', enabled: true },
+						{ agentType: 'splitting', triggerEvent: 'pm:status-changed', enabled: true },
+						{ agentType: 'planning', triggerEvent: 'pm:status-changed', enabled: true },
+					],
 				});
 			}
 
@@ -558,10 +539,10 @@ export function useSaveMutation(projectId: string, state: WizardState) {
 				queryKey: trpc.projects.integrations.list.queryOptions({ projectId }).queryKey,
 			});
 			queryClient.invalidateQueries({
-				queryKey: trpc.projects.integrationCredentials.list.queryOptions({
-					projectId,
-					category: 'pm',
-				}).queryKey,
+				queryKey: trpc.projects.credentials.list.queryOptions({ projectId }).queryKey,
+			});
+			queryClient.invalidateQueries({
+				queryKey: trpc.agentTriggerConfigs.listByProject.queryOptions({ projectId }).queryKey,
 			});
 		},
 	});

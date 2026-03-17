@@ -13,28 +13,30 @@ export default class DefinitionsList extends DashboardCommand {
 		try {
 			const definitions = await this.client.agentDefinitions.list.query();
 
-			if (flags.json) {
-				this.outputJson(definitions);
-				return;
-			}
+			const rows = definitions.map((d) => ({
+				agentType: d.agentType,
+				label: d.definition.identity.label,
+				emoji: d.definition.identity.emoji,
+				isBuiltin: d.isBuiltin,
+			}));
 
-			this.outputTable(
-				definitions.map((d) => ({
-					agentType: d.agentType,
-					label: d.definition.identity.label,
-					emoji: d.definition.identity.emoji,
-					isBuiltin: d.isBuiltin,
-				})),
-				[
-					{ key: 'agentType', header: 'Agent Type' },
-					{ key: 'label', header: 'Label' },
-					{ key: 'emoji', header: 'Emoji' },
-					{
-						key: 'isBuiltin',
-						header: 'Built-in',
-						format: (v) => (v ? 'yes' : 'no'),
-					},
-				],
+			const columns = [
+				{ key: 'agentType', header: 'Agent Type' },
+				{ key: 'label', header: 'Label' },
+				{ key: 'emoji', header: 'Emoji' },
+				{
+					key: 'isBuiltin',
+					header: 'Built-in',
+					format: (v: unknown) => (v ? 'yes' : 'no'),
+				},
+			];
+
+			this.outputFormatted(
+				rows,
+				columns,
+				flags,
+				definitions,
+				'No agent definitions found. Import one with: cascade definitions import --file <definition.yaml>',
 			);
 		} catch (err) {
 			this.handleError(err);

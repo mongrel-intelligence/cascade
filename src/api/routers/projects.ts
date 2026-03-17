@@ -1,26 +1,35 @@
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { CLAUDE_CODE_SETTING_DEFAULTS } from '../../backends/claude-code/settings.js';
+import { CODEX_SETTING_DEFAULTS } from '../../backends/codex/settings.js';
+import { OPENCODE_SETTING_DEFAULTS } from '../../backends/opencode/settings.js';
 import { EngineSettingsSchema } from '../../config/engineSettings.js';
+import { getOrgCredential } from '../../config/provider.js';
+import { PROJECT_DEFAULTS } from '../../config/schema.js';
 import { getDb } from '../../db/client.js';
+import {
+	deleteProjectCredential,
+	listProjectCredentials,
+	listProjectCredentialsMeta,
+	writeProjectCredential,
+} from '../../db/repositories/credentialsRepository.js';
 import { listProjectsForOrg } from '../../db/repositories/runsRepository.js';
 import {
 	createProject,
 	deleteProject,
 	deleteProjectIntegration,
-	getIntegrationByProjectAndCategory,
 	getProjectFull,
-	listIntegrationCredentials,
 	listProjectIntegrations,
 	listProjectsFull,
-	removeIntegrationCredential,
-	setIntegrationCredential,
 	updateProject,
 	updateProjectIntegrationTriggers,
 	upsertProjectIntegration,
 } from '../../db/repositories/settingsRepository.js';
-import { credentials, projects } from '../../db/schema/index.js';
-import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
+import { projects } from '../../db/schema/index.js';
+import { fetchOpenRouterModels } from '../../openrouter/client.js';
+import { captureException } from '../../sentry.js';
+import { protectedProcedure, publicProcedure, router, superAdminProcedure } from '../trpc.js';
 
 async function verifyProjectOwnership(projectId: string, orgId: string) {
 	const db = getDb();
@@ -29,17 +38,6 @@ async function verifyProjectOwnership(projectId: string, orgId: string) {
 		.from(projects)
 		.where(eq(projects.id, projectId));
 	if (!project || project.orgId !== orgId) {
-		throw new TRPCError({ code: 'NOT_FOUND' });
-	}
-}
-
-async function verifyCredentialOwnership(credentialId: number, orgId: string) {
-	const db = getDb();
-	const [cred] = await db
-		.select({ orgId: credentials.orgId })
-		.from(credentials)
-		.where(eq(credentials.id, credentialId));
-	if (!cred || cred.orgId !== orgId) {
 		throw new TRPCError({ code: 'NOT_FOUND' });
 	}
 }
@@ -55,6 +53,27 @@ function serializeProject<T extends { agentEngineSettings?: unknown }>(
 }
 
 export const projectsRouter = router({
+	/**
+	 * Returns all system-level default values, sourced from code constants.
+	 * Use staleTime: Infinity on the client — these never change at runtime.
+	 */
+	defaults: publicProcedure.query(() => {
+		return {
+			model: PROJECT_DEFAULTS.model,
+			maxIterations: PROJECT_DEFAULTS.maxIterations,
+			watchdogTimeoutMs: PROJECT_DEFAULTS.watchdogTimeoutMs,
+			progressModel: PROJECT_DEFAULTS.progressModel,
+			progressIntervalMinutes: PROJECT_DEFAULTS.progressIntervalMinutes,
+			workItemBudgetUsd: PROJECT_DEFAULTS.workItemBudgetUsd,
+			agentEngine: PROJECT_DEFAULTS.agentEngine,
+			engineSettings: {
+				'claude-code': CLAUDE_CODE_SETTING_DEFAULTS,
+				codex: CODEX_SETTING_DEFAULTS,
+				opencode: OPENCODE_SETTING_DEFAULTS,
+			},
+		};
+	}),
+
 	// Existing - returns id+name for dropdowns
 	list: protectedProcedure.query(async ({ ctx }) => {
 		return listProjectsForOrg(ctx.effectiveOrgId);
@@ -96,6 +115,7 @@ export const projectsRouter = router({
 				progressModel: z.string().nullish(),
 				progressIntervalMinutes: z.string().nullish(),
 				runLinksEnabled: z.boolean().optional(),
+				maxInFlightItems: z.number().int().positive().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -123,6 +143,7 @@ export const projectsRouter = router({
 				progressModel: z.string().nullish(),
 				progressIntervalMinutes: z.string().nullish(),
 				runLinksEnabled: z.boolean().optional(),
+				maxInFlightItems: z.number().int().positive().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -193,71 +214,92 @@ export const projectsRouter = router({
 			}),
 	}),
 
-	// Integration Credentials
-	integrationCredentials: router({
+	// Project-scoped credentials (project_credentials table)
+	credentials: router({
+		/**
+		 * List masked metadata for all project-scoped credentials.
+		 * Never returns plaintext values — only masked last-4-chars preview.
+		 */
 		list: protectedProcedure
-			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm']) }))
+			.input(z.object({ projectId: z.string() }))
 			.query(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
-				const integration = await getIntegrationByProjectAndCategory(
-					input.projectId,
-					input.category,
-				);
-				if (!integration) return [];
-				return listIntegrationCredentials(integration.id);
+				try {
+					const rows = await listProjectCredentials(input.projectId);
+					return rows.map((row) => ({
+						envVarKey: row.envVarKey,
+						name: row.name,
+						isConfigured: true,
+						maskedValue: row.value.length <= 4 ? '****' : `****${row.value.slice(-4)}`,
+					}));
+				} catch (err) {
+					// Decryption key missing/wrong — return metadata without value preview
+					captureException(err, {
+						tags: { source: 'credentials_list' },
+						extra: { projectId: input.projectId },
+						level: 'warning',
+					});
+					const meta = await listProjectCredentialsMeta(input.projectId);
+					return meta.map((row) => ({
+						envVarKey: row.envVarKey,
+						name: row.name,
+						isConfigured: true,
+						maskedValue: '****',
+					}));
+				}
 			}),
 
+		/**
+		 * Upsert a project-scoped credential (write-only — never exposes plaintext).
+		 */
 		set: protectedProcedure
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm']),
-					role: z.string().min(1),
-					credentialId: z.number(),
+					envVarKey: z.string().regex(/^[A-Z_][A-Z0-9_]*$/),
+					value: z.string().min(1),
+					name: z.string().optional(),
 				}),
 			)
 			.mutation(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
-				await verifyCredentialOwnership(input.credentialId, ctx.effectiveOrgId);
-				let integration = await getIntegrationByProjectAndCategory(input.projectId, input.category);
-				if (!integration) {
-					// Auto-create SCM integration with GitHub as the default provider
-					const defaultProvider = input.category === 'scm' ? 'github' : undefined;
-					if (defaultProvider) {
-						await upsertProjectIntegration(input.projectId, input.category, defaultProvider, {});
-						integration = await getIntegrationByProjectAndCategory(input.projectId, input.category);
-					}
-				}
-				if (!integration) {
-					throw new TRPCError({
-						code: 'NOT_FOUND',
-						message: `No ${input.category} integration found for project`,
-					});
-				}
-				await setIntegrationCredential(integration.id, input.role, input.credentialId);
+				await writeProjectCredential(
+					input.projectId,
+					input.envVarKey,
+					input.value,
+					input.name ?? null,
+				);
 			}),
 
-		remove: protectedProcedure
+		/**
+		 * Delete a project-scoped credential.
+		 */
+		delete: protectedProcedure
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm']),
-					role: z.string().min(1),
+					envVarKey: z.string().min(1),
 				}),
 			)
 			.mutation(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
-				const integration = await getIntegrationByProjectAndCategory(
-					input.projectId,
-					input.category,
-				);
-				if (!integration) {
-					throw new TRPCError({
-						code: 'NOT_FOUND',
-						message: `No ${input.category} integration found for project`,
-					});
-				}
-				await removeIntegrationCredential(integration.id, input.role);
+				await deleteProjectCredential(input.projectId, input.envVarKey);
 			}),
 	}),
+
+	/**
+	 * Returns available OpenRouter models for the model autocomplete combobox.
+	 * Resolves the project's OPENROUTER_API_KEY credential (if any) and proxies
+	 * the OpenRouter /api/v1/models endpoint with server-side 1-hour caching.
+	 * Falls back to an empty array if the API is unreachable or no key is configured.
+	 */
+	openRouterModels: protectedProcedure
+		.input(z.object({ projectId: z.string() }))
+		.query(async ({ ctx, input }) => {
+			await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
+			const apiKey = await getOrgCredential(input.projectId, 'OPENROUTER_API_KEY').catch(
+				() => null,
+			);
+			return fetchOpenRouterModels(apiKey);
+		}),
 });

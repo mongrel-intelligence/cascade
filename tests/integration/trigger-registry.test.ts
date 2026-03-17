@@ -5,7 +5,7 @@
  * project configurations (loaded via configRepository).
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
 	findProjectByBoardIdFromDb,
 	findProjectByRepoFromDb,
@@ -20,7 +20,13 @@ import {
 import type { TriggerContext } from '../../src/types/index.js';
 import { assertFound } from './helpers/assert.js';
 import { truncateAll } from './helpers/db.js';
-import { seedIntegration, seedOrg, seedProject, seedTriggerConfig } from './helpers/seed.js';
+import {
+	seedAgentConfig,
+	seedIntegration,
+	seedOrg,
+	seedProject,
+	seedTriggerConfig,
+} from './helpers/seed.js';
 
 // ============================================================================
 // Helpers
@@ -80,6 +86,10 @@ function makeTrelloLabelPayload(cardId: string, labelId: string, labelName = 'Re
 // ============================================================================
 // Tests
 // ============================================================================
+
+beforeAll(async () => {
+	await truncateAll();
+});
 
 describe('Trigger Registry (integration)', () => {
 	beforeEach(async () => {
@@ -287,6 +297,14 @@ describe('Trigger Registry (integration)', () => {
 					labels: {},
 				},
 			});
+			// Agent must be explicitly enabled for the trigger to fire
+			await seedAgentConfig({ agentType: 'implementation' });
+			// Seed trigger config to enable the trigger
+			await seedTriggerConfig({
+				agentType: 'implementation',
+				triggerEvent: 'pm:status-changed',
+				enabled: true,
+			});
 
 			const project = await findProjectByBoardIdFromDb('board-123');
 
@@ -319,6 +337,14 @@ describe('Trigger Registry (integration)', () => {
 					labels: {},
 				},
 			});
+			// Agent must be explicitly enabled for the trigger to fire
+			await seedAgentConfig({ agentType: 'splitting' });
+			// Seed trigger config to enable the trigger
+			await seedTriggerConfig({
+				agentType: 'splitting',
+				triggerEvent: 'pm:status-changed',
+				enabled: true,
+			});
 
 			const project = await findProjectByBoardIdFromDb('board-123');
 
@@ -348,6 +374,14 @@ describe('Trigger Registry (integration)', () => {
 					lists: { planning: 'list-plan-456' },
 					labels: {},
 				},
+			});
+			// Agent must be explicitly enabled for the trigger to fire
+			await seedAgentConfig({ agentType: 'planning' });
+			// Seed trigger config to enable the trigger
+			await seedTriggerConfig({
+				agentType: 'planning',
+				triggerEvent: 'pm:status-changed',
+				enabled: true,
 			});
 
 			const project = await findProjectByBoardIdFromDb('board-123');
@@ -520,6 +554,20 @@ describe('Trigger Registry (integration)', () => {
 					lists: { todo: 'list-todo-123', planning: 'list-plan-456', splitting: 'list-split-789' },
 					labels: { readyToProcess: 'Ready to Process' },
 				},
+			});
+			// Agents must be explicitly enabled for triggers to fire
+			await seedAgentConfig({ agentType: 'implementation' });
+			await seedAgentConfig({ agentType: 'splitting' });
+			// Seed trigger configs to enable the triggers
+			await seedTriggerConfig({
+				agentType: 'implementation',
+				triggerEvent: 'pm:status-changed',
+				enabled: true,
+			});
+			await seedTriggerConfig({
+				agentType: 'splitting',
+				triggerEvent: 'pm:status-changed',
+				enabled: true,
 			});
 
 			const registry = createTriggerRegistry();

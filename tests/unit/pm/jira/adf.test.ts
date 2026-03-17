@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { adfToPlainText, markdownToAdf } from '../../../../src/pm/jira/adf.js';
+import {
+	adfToPlainText,
+	extractAdfMediaNodes,
+	markdownToAdf,
+} from '../../../../src/pm/jira/adf.js';
 
 describe('markdownToAdf', () => {
 	it('converts a simple paragraph', () => {
@@ -471,5 +475,262 @@ describe('roundtrip: markdownToAdf -> adfToPlainText', () => {
 		expect(result).toContain('Normal');
 		expect(result).toContain('code');
 		expect(result).toContain('plain');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// ADF media node conversion (adfToPlainText)
+// ---------------------------------------------------------------------------
+
+describe('adfToPlainText: media node rendering', () => {
+	it('renders mediaSingle node as [Image: alt] placeholder', () => {
+		const adf = {
+			type: 'doc',
+			version: 1,
+			content: [
+				{
+					type: 'mediaSingle',
+					content: [
+						{
+							type: 'media',
+							attrs: { id: 'abc-123', type: 'file', alt: 'screenshot' },
+						},
+					],
+				},
+			],
+		};
+		const result = adfToPlainText(adf);
+		expect(result).toContain('[Image: screenshot]');
+	});
+
+	it('renders mediaSingle with no alt text as [Image: ]', () => {
+		const adf = {
+			type: 'doc',
+			version: 1,
+			content: [
+				{
+					type: 'mediaSingle',
+					content: [{ type: 'media', attrs: { id: 'xyz', type: 'file' } }],
+				},
+			],
+		};
+		const result = adfToPlainText(adf);
+		expect(result).toContain('[Image: ]');
+	});
+
+	it('renders mediaGroup with multiple media nodes', () => {
+		const adf = {
+			type: 'doc',
+			version: 1,
+			content: [
+				{
+					type: 'mediaGroup',
+					content: [
+						{ type: 'media', attrs: { id: 'id-1', type: 'file', alt: 'first' } },
+						{ type: 'media', attrs: { id: 'id-2', type: 'file', alt: 'second' } },
+					],
+				},
+			],
+		};
+		const result = adfToPlainText(adf);
+		expect(result).toContain('[Image: first]');
+		expect(result).toContain('[Image: second]');
+	});
+
+	it('renders standalone media node as [Image: alt] placeholder', () => {
+		const adf = {
+			type: 'doc',
+			version: 1,
+			content: [{ type: 'media', attrs: { id: 'abc', type: 'file', alt: 'logo' } }],
+		};
+		const result = adfToPlainText(adf);
+		expect(result).toContain('[Image: logo]');
+	});
+
+	it('handles mixed content with text and media', () => {
+		const adf = {
+			type: 'doc',
+			version: 1,
+			content: [
+				{ type: 'paragraph', content: [{ type: 'text', text: 'See below:' }] },
+				{
+					type: 'mediaSingle',
+					content: [{ type: 'media', attrs: { id: 'img-1', type: 'file', alt: 'diagram' } }],
+				},
+			],
+		};
+		const result = adfToPlainText(adf);
+		expect(result).toContain('See below:');
+		expect(result).toContain('[Image: diagram]');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// extractAdfMediaNodes
+// ---------------------------------------------------------------------------
+
+describe('extractAdfMediaNodes', () => {
+	it('returns empty array for null/undefined', () => {
+		expect(extractAdfMediaNodes(null)).toEqual([]);
+		expect(extractAdfMediaNodes(undefined)).toEqual([]);
+	});
+
+	it('returns empty array for non-object values', () => {
+		expect(extractAdfMediaNodes('string')).toEqual([]);
+		expect(extractAdfMediaNodes(42)).toEqual([]);
+	});
+
+	it('returns empty array for ADF with no media nodes', () => {
+		const adf = {
+			type: 'doc',
+			version: 1,
+			content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hello' }] }],
+		};
+		expect(extractAdfMediaNodes(adf)).toEqual([]);
+	});
+
+	it('extracts a single media node inside mediaSingle', () => {
+		const adf = {
+			type: 'doc',
+			version: 1,
+			content: [
+				{
+					type: 'mediaSingle',
+					content: [{ type: 'media', attrs: { id: 'media-abc', type: 'file' } }],
+				},
+			],
+		};
+		const refs = extractAdfMediaNodes(adf);
+		expect(refs).toHaveLength(1);
+		expect(refs[0]).toMatchObject({ mediaId: 'media-abc', mediaType: 'file' });
+	});
+
+	it('extracts multiple media nodes inside mediaGroup', () => {
+		const adf = {
+			type: 'doc',
+			version: 1,
+			content: [
+				{
+					type: 'mediaGroup',
+					content: [
+						{ type: 'media', attrs: { id: 'id-1', type: 'file' } },
+						{ type: 'media', attrs: { id: 'id-2', type: 'file' } },
+					],
+				},
+			],
+		};
+		const refs = extractAdfMediaNodes(adf);
+		expect(refs).toHaveLength(2);
+		expect(refs[0].mediaId).toBe('id-1');
+		expect(refs[1].mediaId).toBe('id-2');
+	});
+
+	it('extracts altText from media node attrs.alt', () => {
+		const adf = {
+			type: 'doc',
+			version: 1,
+			content: [
+				{
+					type: 'mediaSingle',
+					content: [{ type: 'media', attrs: { id: 'img-1', type: 'file', alt: 'my screenshot' } }],
+				},
+			],
+		};
+		const refs = extractAdfMediaNodes(adf);
+		expect(refs[0].altText).toBe('my screenshot');
+	});
+
+	it('sets altText to undefined when no alt attr present', () => {
+		const adf = {
+			type: 'doc',
+			version: 1,
+			content: [
+				{
+					type: 'mediaSingle',
+					content: [{ type: 'media', attrs: { id: 'img-2', type: 'file' } }],
+				},
+			],
+		};
+		const refs = extractAdfMediaNodes(adf);
+		expect(refs[0].altText).toBeUndefined();
+	});
+
+	it('skips media nodes with no id', () => {
+		const adf = {
+			type: 'doc',
+			version: 1,
+			content: [
+				{
+					type: 'mediaSingle',
+					// media node has no id — should be skipped
+					content: [{ type: 'media', attrs: { type: 'file' } }],
+				},
+			],
+		};
+		const refs = extractAdfMediaNodes(adf);
+		expect(refs).toHaveLength(0);
+	});
+
+	it('traverses nested nodes to find media', () => {
+		const adf = {
+			type: 'doc',
+			version: 1,
+			content: [
+				{
+					type: 'paragraph',
+					content: [{ type: 'text', text: 'Some text' }],
+				},
+				{
+					type: 'mediaSingle',
+					content: [{ type: 'media', attrs: { id: 'nested-id', type: 'file' } }],
+				},
+				{
+					type: 'paragraph',
+					content: [{ type: 'text', text: 'More text' }],
+				},
+				{
+					type: 'mediaGroup',
+					content: [
+						{ type: 'media', attrs: { id: 'group-id-1', type: 'file' } },
+						{ type: 'media', attrs: { id: 'group-id-2', type: 'file' } },
+					],
+				},
+			],
+		};
+		const refs = extractAdfMediaNodes(adf);
+		expect(refs).toHaveLength(3);
+		expect(refs[0].mediaId).toBe('nested-id');
+		expect(refs[1].mediaId).toBe('group-id-1');
+		expect(refs[2].mediaId).toBe('group-id-2');
+	});
+
+	it('returns mediaType from attrs.type', () => {
+		const adf = {
+			type: 'doc',
+			version: 1,
+			content: [
+				{
+					type: 'mediaSingle',
+					content: [{ type: 'media', attrs: { id: 'ext-1', type: 'external' } }],
+				},
+			],
+		};
+		const refs = extractAdfMediaNodes(adf);
+		expect(refs[0].mediaType).toBe('external');
+	});
+
+	it('defaults mediaType to "file" when type attr is missing', () => {
+		const adf = {
+			type: 'doc',
+			version: 1,
+			content: [
+				{
+					type: 'mediaSingle',
+					content: [{ type: 'media', attrs: { id: 'file-1' } }],
+				},
+			],
+		};
+		const refs = extractAdfMediaNodes(adf);
+		expect(refs[0].mediaType).toBe('file');
 	});
 });

@@ -1,17 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.js';
 import { agentTypeLabel, getAgentColor } from '@/lib/chart-colors.js';
 import { formatDuration } from '@/lib/utils.js';
-import {
-	Bar,
-	BarChart,
-	CartesianGrid,
-	Cell,
-	Legend,
-	ResponsiveContainer,
-	Tooltip,
-	XAxis,
-	YAxis,
-} from 'recharts';
 
 interface WorkItemRun {
 	id: string;
@@ -27,7 +16,8 @@ interface WorkItemDurationChartProps {
 	runs: WorkItemRun[];
 }
 
-interface ChartEntry {
+interface SegmentEntry {
+	id: string;
 	label: string;
 	durationMs: number;
 	agentType: string;
@@ -35,6 +25,7 @@ interface ChartEntry {
 	model: string | null;
 	costUsd: string | null;
 	color: string;
+	pct: number;
 }
 
 export function WorkItemDurationChart({ runs }: WorkItemDurationChartProps) {
@@ -55,103 +46,98 @@ export function WorkItemDurationChart({ runs }: WorkItemDurationChartProps) {
 		);
 	}
 
-	// Build chart data: one entry per run with a duration
+	const totalMs = runsWithDuration.reduce((sum, r) => sum + (r.durationMs as number), 0);
+
+	// Build segments: one per run
 	const agentRunCounts: Record<string, number> = {};
-	const data: ChartEntry[] = runsWithDuration.map((run) => {
+	const segments: SegmentEntry[] = runsWithDuration.map((run) => {
 		agentRunCounts[run.agentType] = (agentRunCounts[run.agentType] ?? 0) + 1;
 		const count = agentRunCounts[run.agentType];
+		const durationMs = run.durationMs as number;
 		return {
+			id: run.id,
 			label: `${agentTypeLabel(run.agentType)} #${count}`,
-			durationMs: run.durationMs as number,
+			durationMs,
 			agentType: run.agentType,
 			status: run.status,
 			model: run.model,
 			costUsd: run.costUsd,
 			color: getAgentColor(run.agentType),
+			pct: totalMs > 0 ? (durationMs / totalMs) * 100 : 0,
 		};
 	});
 
-	const chartHeight = Math.max(200, data.length * 48);
-
 	// Unique agent types for legend
 	const uniqueAgentTypes = Array.from(new Set(runsWithDuration.map((r) => r.agentType)));
-
-	// Legend items: we render a custom content to show agent type → color
 	const legendItems = uniqueAgentTypes.map((at) => ({
+		agentType: at,
 		label: agentTypeLabel(at),
 		color: getAgentColor(at),
 	}));
-
-	const formatTick = (value: number) => formatDuration(value);
 
 	return (
 		<Card>
 			<CardHeader>
 				<CardTitle className="text-base">Run Durations</CardTitle>
 			</CardHeader>
-			<CardContent>
-				<ResponsiveContainer width="100%" height={chartHeight}>
-					<BarChart
-						data={data}
-						layout="vertical"
-						margin={{ top: 4, right: 24, left: 8, bottom: 4 }}
-					>
-						<CartesianGrid strokeDasharray="3 3" horizontal={false} />
-						<XAxis
-							type="number"
-							tickFormatter={formatTick}
-							tick={{ fontSize: 11 }}
-							domain={[0, 'auto']}
+			<CardContent className="space-y-3">
+				{/* Horizontal stacked bar */}
+				<div className="flex h-8 w-full overflow-hidden rounded-md">
+					{segments.map((seg) => (
+						<div
+							key={seg.id}
+							style={{ width: `${seg.pct}%`, backgroundColor: seg.color }}
+							title={`${seg.label}: ${formatDuration(seg.durationMs)}${seg.model ? ` · ${seg.model}` : ''}${seg.costUsd != null ? ` · $${Number.parseFloat(seg.costUsd).toFixed(4)}` : ''} · ${seg.status}`}
+							className="cursor-default transition-opacity hover:opacity-80"
 						/>
-						<YAxis type="category" dataKey="label" tick={{ fontSize: 11 }} width={140} />
-						<Tooltip
-							content={({ active, payload }) => {
-								if (!active || !payload?.length) return null;
-								const entry = payload[0]?.payload as ChartEntry;
-								return (
-									<div className="rounded-lg border border-border bg-card p-3 text-sm shadow-md">
-										<p className="font-semibold">{agentTypeLabel(entry.agentType)}</p>
-										<p className="text-muted-foreground">
-											Duration: {formatDuration(entry.durationMs)}
-										</p>
-										<p className="text-muted-foreground">Status: {entry.status}</p>
-										{entry.model && <p className="text-muted-foreground">Model: {entry.model}</p>}
-										{entry.costUsd != null && (
-											<p className="text-muted-foreground">
-												Cost: ${Number.parseFloat(entry.costUsd).toFixed(4)}
-											</p>
-										)}
-									</div>
-								);
-							}}
-						/>
-						<Legend
-							content={() => (
-								<div className="flex flex-wrap justify-center gap-3 pt-2" style={{ fontSize: 12 }}>
-									{legendItems.map((item) => (
-										<div key={item.label} className="flex items-center gap-1">
-											<span
-												style={{
-													display: 'inline-block',
-													width: 12,
-													height: 12,
-													borderRadius: 2,
-													background: item.color,
-												}}
-											/>
-											<span>{item.label}</span>
-										</div>
-									))}
-								</div>
+					))}
+				</div>
+
+				{/* Legend */}
+				<div className="flex flex-wrap gap-3" style={{ fontSize: 12 }}>
+					{legendItems.map((item) => (
+						<div key={item.agentType} className="flex items-center gap-1">
+							<span
+								style={{
+									display: 'inline-block',
+									width: 12,
+									height: 12,
+									borderRadius: 2,
+									background: item.color,
+								}}
+							/>
+							<span>{item.label}</span>
+						</div>
+					))}
+				</div>
+
+				{/* Segment detail list */}
+				<div className="space-y-1">
+					{segments.map((seg) => (
+						<div key={seg.id} className="flex items-center gap-2 text-xs text-muted-foreground">
+							<span
+								style={{
+									display: 'inline-block',
+									width: 8,
+									height: 8,
+									borderRadius: 2,
+									background: seg.color,
+									flexShrink: 0,
+								}}
+							/>
+							<span className="font-medium text-foreground">{seg.label}</span>
+							<span>{formatDuration(seg.durationMs)}</span>
+							<span>·</span>
+							<span>{seg.status}</span>
+							{seg.model && (
+								<>
+									<span>·</span>
+									<span>{seg.model}</span>
+								</>
 							)}
-						/>
-						<Bar dataKey="durationMs" radius={[0, 4, 4, 0]}>
-							{data.map((entry) => (
-								<Cell key={entry.label} fill={entry.color} />
-							))}
-						</Bar>
-					</BarChart>
-				</ResponsiveContainer>
+						</div>
+					))}
+				</div>
 			</CardContent>
 		</Card>
 	);

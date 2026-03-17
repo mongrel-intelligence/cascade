@@ -24,10 +24,10 @@ describe('createInitialState', () => {
 	it('returns a valid initial state with trello as default provider', () => {
 		const state = createInitialState();
 		expect(state.provider).toBe('trello');
-		expect(state.trelloApiKeyCredentialId).toBeNull();
-		expect(state.trelloTokenCredentialId).toBeNull();
-		expect(state.jiraEmailCredentialId).toBeNull();
-		expect(state.jiraApiTokenCredentialId).toBeNull();
+		expect(state.trelloApiKey).toBe('');
+		expect(state.trelloToken).toBe('');
+		expect(state.jiraEmail).toBe('');
+		expect(state.jiraApiToken).toBe('');
 		expect(state.jiraBaseUrl).toBe('');
 		expect(state.verificationResult).toBeNull();
 		expect(state.verifyError).toBeNull();
@@ -64,52 +64,52 @@ describe('wizardReducer', () => {
 	it('SET_PROVIDER resets to initial state with new provider', () => {
 		const state = {
 			...initialState(),
-			trelloApiKeyCredentialId: 5,
+			trelloApiKey: 'my-api-key',
 			trelloBoardId: 'board-1',
 		};
 		const next = dispatch(state, { type: 'SET_PROVIDER', provider: 'jira' });
 		expect(next.provider).toBe('jira');
 		// Should have been reset
-		expect(next.trelloApiKeyCredentialId).toBeNull();
+		expect(next.trelloApiKey).toBe('');
 		expect(next.trelloBoardId).toBe('');
 	});
 
-	it('SET_TRELLO_API_KEY_CRED clears verification', () => {
+	it('SET_TRELLO_API_KEY clears verification', () => {
 		const state = {
 			...initialState(),
 			verificationResult: { provider: 'trello' as const, display: 'Test User' },
 			verifyError: 'previous error',
 		};
-		const next = dispatch(state, { type: 'SET_TRELLO_API_KEY_CRED', id: 42 });
-		expect(next.trelloApiKeyCredentialId).toBe(42);
+		const next = dispatch(state, { type: 'SET_TRELLO_API_KEY', value: 'new-api-key' });
+		expect(next.trelloApiKey).toBe('new-api-key');
 		expect(next.verificationResult).toBeNull();
 		expect(next.verifyError).toBeNull();
 	});
 
-	it('SET_TRELLO_TOKEN_CRED clears verification', () => {
+	it('SET_TRELLO_TOKEN clears verification', () => {
 		const state = {
 			...initialState(),
 			verificationResult: { provider: 'trello' as const, display: 'Test User' },
 		};
-		const next = dispatch(state, { type: 'SET_TRELLO_TOKEN_CRED', id: 7 });
-		expect(next.trelloTokenCredentialId).toBe(7);
+		const next = dispatch(state, { type: 'SET_TRELLO_TOKEN', value: 'new-token' });
+		expect(next.trelloToken).toBe('new-token');
 		expect(next.verificationResult).toBeNull();
 	});
 
-	it('SET_JIRA_EMAIL_CRED clears verification', () => {
+	it('SET_JIRA_EMAIL clears verification', () => {
 		const state = {
 			...initialState(),
 			verificationResult: { provider: 'jira' as const, display: 'JIRA User' },
 		};
-		const next = dispatch(state, { type: 'SET_JIRA_EMAIL_CRED', id: 3 });
-		expect(next.jiraEmailCredentialId).toBe(3);
+		const next = dispatch(state, { type: 'SET_JIRA_EMAIL', value: 'user@example.com' });
+		expect(next.jiraEmail).toBe('user@example.com');
 		expect(next.verificationResult).toBeNull();
 	});
 
-	it('SET_JIRA_API_TOKEN_CRED clears verification', () => {
+	it('SET_JIRA_API_TOKEN clears verification', () => {
 		const state = { ...initialState() };
-		const next = dispatch(state, { type: 'SET_JIRA_API_TOKEN_CRED', id: 9 });
-		expect(next.jiraApiTokenCredentialId).toBe(9);
+		const next = dispatch(state, { type: 'SET_JIRA_API_TOKEN', value: 'my-jira-token' });
+		expect(next.jiraApiToken).toBe('my-jira-token');
 	});
 
 	it('SET_JIRA_BASE_URL clears verification', () => {
@@ -397,6 +397,16 @@ describe('isStep1Complete', () => {
 });
 
 describe('isStep2Complete', () => {
+	it('returns true in edit mode when hasStoredCredentials is true (no raw creds needed)', () => {
+		const state = {
+			...createInitialState(),
+			provider: 'trello' as const,
+			isEditing: true,
+			hasStoredCredentials: true,
+		};
+		expect(isStep2Complete(state)).toBe(true);
+	});
+
 	it('returns false when trello credentials missing', () => {
 		const state = {
 			...createInitialState(),
@@ -410,8 +420,8 @@ describe('isStep2Complete', () => {
 		const state = {
 			...createInitialState(),
 			provider: 'trello' as const,
-			trelloApiKeyCredentialId: 1,
-			trelloTokenCredentialId: 2,
+			trelloApiKey: 'my-api-key',
+			trelloToken: 'my-token',
 		};
 		expect(isStep2Complete(state)).toBe(false);
 	});
@@ -420,8 +430,8 @@ describe('isStep2Complete', () => {
 		const state = {
 			...createInitialState(),
 			provider: 'trello' as const,
-			trelloApiKeyCredentialId: 1,
-			trelloTokenCredentialId: 2,
+			trelloApiKey: 'my-api-key',
+			trelloToken: 'my-token',
 			verificationResult: { provider: 'trello' as const, display: '@user (User)' },
 		};
 		expect(isStep2Complete(state)).toBe(true);
@@ -431,8 +441,8 @@ describe('isStep2Complete', () => {
 		const state = {
 			...createInitialState(),
 			provider: 'jira' as const,
-			jiraEmailCredentialId: 1,
-			jiraApiTokenCredentialId: 2,
+			jiraEmail: 'user@example.com',
+			jiraApiToken: 'my-token',
 			jiraBaseUrl: '',
 			verificationResult: { provider: 'jira' as const, display: 'User' },
 		};
@@ -443,8 +453,8 @@ describe('isStep2Complete', () => {
 		const state = {
 			...createInitialState(),
 			provider: 'jira' as const,
-			jiraEmailCredentialId: 1,
-			jiraApiTokenCredentialId: 2,
+			jiraEmail: 'user@example.com',
+			jiraApiToken: 'my-token',
 			jiraBaseUrl: 'https://myorg.atlassian.net',
 			verificationResult: { provider: 'jira' as const, display: 'User (user@example.com)' },
 		};
@@ -509,8 +519,8 @@ describe('areCredentialsReady', () => {
 		const state = {
 			...createInitialState(),
 			provider: 'trello' as const,
-			trelloApiKeyCredentialId: 1,
-			trelloTokenCredentialId: 2,
+			trelloApiKey: 'my-api-key',
+			trelloToken: 'my-token',
 		};
 		expect(areCredentialsReady(state)).toBe(true);
 	});
@@ -519,7 +529,7 @@ describe('areCredentialsReady', () => {
 		const state = {
 			...createInitialState(),
 			provider: 'trello' as const,
-			trelloApiKeyCredentialId: 1,
+			trelloApiKey: 'my-api-key',
 		};
 		expect(areCredentialsReady(state)).toBe(false);
 	});
@@ -528,8 +538,8 @@ describe('areCredentialsReady', () => {
 		const state = {
 			...createInitialState(),
 			provider: 'jira' as const,
-			jiraEmailCredentialId: 1,
-			jiraApiTokenCredentialId: 2,
+			jiraEmail: 'user@example.com',
+			jiraApiToken: 'my-token',
 			jiraBaseUrl: 'https://myorg.atlassian.net',
 		};
 		expect(areCredentialsReady(state)).toBe(true);
@@ -539,8 +549,8 @@ describe('areCredentialsReady', () => {
 		const state = {
 			...createInitialState(),
 			provider: 'jira' as const,
-			jiraEmailCredentialId: 1,
-			jiraApiTokenCredentialId: 2,
+			jiraEmail: 'user@example.com',
+			jiraApiToken: 'my-token',
 			jiraBaseUrl: '',
 		};
 		expect(areCredentialsReady(state)).toBe(false);
@@ -552,28 +562,41 @@ describe('areCredentialsReady', () => {
 // ============================================================================
 
 describe('buildEditState', () => {
-	it('builds trello edit state from config and credentials', () => {
+	it('builds trello edit state from config', () => {
 		const config = {
 			boardId: 'board-abc',
 			lists: { todo: 'list-1', done: 'list-2' },
 			labels: { processing: 'label-x' },
 			customFields: { cost: 'cf-cost-1' },
 		};
-		const credentials = new Map([
-			['api_key', 10],
-			['token', 20],
-		]);
-		const result = buildEditState('trello', config, credentials);
+		const result = buildEditState('trello', config, new Set<string>());
 		expect(result.provider).toBe('trello');
-		expect(result.trelloApiKeyCredentialId).toBe(10);
-		expect(result.trelloTokenCredentialId).toBe(20);
+		// Raw credential values are NOT pre-populated for security
+		expect(result.trelloApiKey).toBeUndefined();
+		expect(result.trelloToken).toBeUndefined();
 		expect(result.trelloBoardId).toBe('board-abc');
 		expect(result.trelloListMappings).toEqual({ todo: 'list-1', done: 'list-2' });
 		expect(result.trelloLabelMappings).toEqual({ processing: 'label-x' });
 		expect(result.trelloCostFieldId).toBe('cf-cost-1');
 	});
 
-	it('builds jira edit state from config and credentials', () => {
+	it('sets hasStoredCredentials true for trello when both keys present', () => {
+		const config = { boardId: 'board-abc' };
+		const result = buildEditState('trello', config, new Set(['TRELLO_API_KEY', 'TRELLO_TOKEN']));
+		expect(result.hasStoredCredentials).toBe(true);
+	});
+
+	it('sets hasStoredCredentials false for trello when only one key present', () => {
+		const result = buildEditState('trello', {}, new Set(['TRELLO_API_KEY']));
+		expect(result.hasStoredCredentials).toBe(false);
+	});
+
+	it('sets hasStoredCredentials false for trello when no keys present', () => {
+		const result = buildEditState('trello', {}, new Set<string>());
+		expect(result.hasStoredCredentials).toBe(false);
+	});
+
+	it('builds jira edit state from config', () => {
 		const config = {
 			baseUrl: 'https://example.atlassian.net',
 			projectKey: 'PROJ',
@@ -582,14 +605,11 @@ describe('buildEditState', () => {
 			labels: { processing: 'cascade-processing' },
 			customFields: { cost: 'customfield_10042' },
 		};
-		const credentials = new Map([
-			['email', 5],
-			['api_token', 6],
-		]);
-		const result = buildEditState('jira', config, credentials);
+		const result = buildEditState('jira', config, new Set<string>());
 		expect(result.provider).toBe('jira');
-		expect(result.jiraEmailCredentialId).toBe(5);
-		expect(result.jiraApiTokenCredentialId).toBe(6);
+		// Raw credential values are NOT pre-populated for security
+		expect(result.jiraEmail).toBeUndefined();
+		expect(result.jiraApiToken).toBeUndefined();
 		expect(result.jiraBaseUrl).toBe('https://example.atlassian.net');
 		expect(result.jiraProjectKey).toBe('PROJ');
 		expect(result.jiraStatusMappings).toEqual({ todo: 'To Do', done: 'Done' });
@@ -598,18 +618,30 @@ describe('buildEditState', () => {
 		expect(result.jiraCostFieldId).toBe('customfield_10042');
 	});
 
+	it('sets hasStoredCredentials true for jira when both keys present', () => {
+		const result = buildEditState(
+			'jira',
+			{ baseUrl: 'https://example.atlassian.net', projectKey: 'PROJ' },
+			new Set(['JIRA_EMAIL', 'JIRA_API_TOKEN']),
+		);
+		expect(result.hasStoredCredentials).toBe(true);
+	});
+
+	it('sets hasStoredCredentials false for jira when only one key present', () => {
+		const result = buildEditState('jira', {}, new Set(['JIRA_EMAIL']));
+		expect(result.hasStoredCredentials).toBe(false);
+	});
+
 	it('handles missing optional config fields gracefully', () => {
 		const config = { boardId: 'board-1' };
-		const credentials = new Map<string, number>();
-		const result = buildEditState('trello', config, credentials);
+		const result = buildEditState('trello', config, new Set<string>());
 		expect(result.trelloBoardId).toBe('board-1');
 		expect(result.trelloListMappings).toBeUndefined();
 		expect(result.trelloCostFieldId).toBe('');
-		expect(result.trelloApiKeyCredentialId).toBeNull();
 	});
 
 	it('returns only provider for unknown provider', () => {
-		const result = buildEditState('unknown', {}, new Map());
+		const result = buildEditState('unknown', {}, new Set<string>());
 		expect(result.provider).toBe('unknown');
 		expect(Object.keys(result).length).toBe(1);
 	});

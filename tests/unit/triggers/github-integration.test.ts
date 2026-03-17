@@ -34,10 +34,6 @@ function makePayload(repoFullName?: string): unknown {
 describe('GitHubWebhookIntegration', () => {
 	const integration = new GitHubWebhookIntegration();
 
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
 	describe('parseWebhookPayload', () => {
 		it('returns null when payload has no repository', () => {
 			expect(integration.parseWebhookPayload({})).toBeNull();

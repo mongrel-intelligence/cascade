@@ -21,7 +21,7 @@ import {
 	buildInlineContextSection,
 	cleanupContextFiles,
 	offloadLargeContext,
-} from '../../../src/backends/claude-code/contextFiles.js';
+} from '../../../src/backends/shared/contextFiles.js';
 import type { ContextInjection } from '../../../src/backends/types.js';
 import { CONTEXT_OFFLOAD_CONFIG } from '../../../src/config/claudeCodeConfig.js';
 
@@ -330,5 +330,203 @@ describe('offloadLargeContext with disabled config', () => {
 			configModule.CONTEXT_OFFLOAD_CONFIG.enabled = originalEnabled;
 			await rm(tempDir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('offloadLargeContext image offloading', () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), 'cascade-test-images-'));
+	});
+
+	afterEach(async () => {
+		await rm(tempDir, { recursive: true, force: true });
+	});
+
+	it('writes images to .cascade/context/images/ for small inline injection', async () => {
+		// Create a small PNG (1x1 transparent pixel)
+		const base64Png =
+			'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+		const injection: ContextInjection = {
+			toolName: 'ReadWorkItem',
+			params: { workItemId: 'c1' },
+			result: 'Small work item content',
+			description: 'Work Item',
+			images: [{ base64Data: base64Png, mimeType: 'image/png', altText: 'Diagram' }],
+		};
+
+		const result = await offloadLargeContext(tempDir, [injection]);
+
+		// Text should be inline (small)
+		expect(result.inlineInjections).toHaveLength(1);
+		expect(result.offloadedFiles).toHaveLength(0);
+
+		// Image should be offloaded
+		expect(result.offloadedImages).toHaveLength(1);
+		expect(result.offloadedImages[0].relativePath).toContain('.cascade/context/images/');
+		expect(result.offloadedImages[0].relativePath).toContain('.png');
+		expect(result.offloadedImages[0].altText).toBe('Diagram');
+
+		// Verify file exists
+		const imageFilePath = join(tempDir, result.offloadedImages[0].relativePath);
+		expect(existsSync(imageFilePath)).toBe(true);
+	});
+
+	it('writes multiple images for a single injection', async () => {
+		const base64Data = 'abc123'; // minimal base64 for testing
+
+		const injection: ContextInjection = {
+			toolName: 'ReadWorkItem',
+			params: {},
+			result: 'content',
+			description: 'Work Item',
+			images: [
+				{ base64Data, mimeType: 'image/png' },
+				{ base64Data, mimeType: 'image/jpeg' },
+			],
+		};
+
+		const result = await offloadLargeContext(tempDir, [injection]);
+
+		expect(result.offloadedImages).toHaveLength(2);
+		expect(result.offloadedImages[0].relativePath).toContain('-img-0.png');
+		expect(result.offloadedImages[1].relativePath).toContain('-img-1.jpg');
+	});
+
+	it('normalises image/jpeg to .jpg extension', async () => {
+		const injection: ContextInjection = {
+			toolName: 'ReadWorkItem',
+			params: {},
+			result: 'content',
+			description: 'Work Item',
+			images: [{ base64Data: 'abc', mimeType: 'image/jpeg' }],
+		};
+
+		const result = await offloadLargeContext(tempDir, [injection]);
+
+		expect(result.offloadedImages[0].relativePath).toMatch(/\.jpg$/);
+	});
+
+	it('includes image paths in read instructions', async () => {
+		const injection: ContextInjection = {
+			toolName: 'ReadWorkItem',
+			params: {},
+			result: 'content',
+			description: 'Work Item',
+			images: [{ base64Data: 'abc', mimeType: 'image/png', altText: 'Screenshot' }],
+		};
+
+		const result = await offloadLargeContext(tempDir, [injection]);
+
+		expect(result.instructions).toContain('Context Files');
+		expect(result.instructions).toContain('.cascade/context/images/');
+		expect(result.instructions).toContain('Screenshot');
+	});
+
+	it('generates instructions with both offloaded files and images', async () => {
+		const largeContent = 'A'.repeat(40_000);
+		const base64Data = 'abc';
+
+		const injection: ContextInjection = {
+			toolName: 'ReadWorkItem',
+			params: {},
+			result: largeContent,
+			description: 'Work Item with Image',
+			images: [{ base64Data, mimeType: 'image/png' }],
+		};
+
+		const result = await offloadLargeContext(tempDir, [injection]);
+
+		// Both text offloading AND image offloading should happen
+		expect(result.offloadedFiles).toHaveLength(1);
+		expect(result.offloadedImages).toHaveLength(1);
+		// instructions contain the offloaded text file path
+		expect(result.instructions).toContain('work-item-with-image-0.txt');
+		// instructions contain image path
+		expect(result.instructions).toContain('.cascade/context/images/');
+	});
+
+	it('returns empty offloadedImages when no injections have images', async () => {
+		const injection: ContextInjection = {
+			toolName: 'ReadWorkItem',
+			params: {},
+			result: 'content',
+			description: 'Work Item',
+		};
+
+		const result = await offloadLargeContext(tempDir, [injection]);
+
+		expect(result.offloadedImages).toHaveLength(0);
+	});
+
+	it('does not include image section in instructions when no images', async () => {
+		const largeContent = 'A'.repeat(40_000);
+		const injection: ContextInjection = {
+			toolName: 'GetDiff',
+			params: {},
+			result: largeContent,
+			description: 'PR Diff',
+		};
+
+		const result = await offloadLargeContext(tempDir, [injection]);
+
+		expect(result.offloadedImages).toHaveLength(0);
+		expect(result.instructions).not.toContain('images');
+	});
+});
+
+describe('buildInlineContextSection with images', () => {
+	it('notes image count for injection with images', () => {
+		const injections: ContextInjection[] = [
+			{
+				toolName: 'ReadWorkItem',
+				params: { workItemId: 'c1' },
+				result: 'Work item content',
+				description: 'Work Item',
+				images: [
+					{ base64Data: 'abc', mimeType: 'image/png', altText: 'Screenshot' },
+					{ base64Data: 'def', mimeType: 'image/jpeg' },
+				],
+			},
+		];
+
+		const section = buildInlineContextSection(injections);
+
+		expect(section).toContain('Contains 2 inline images');
+		expect(section).toContain('.cascade/context/images/');
+	});
+
+	it('notes singular "image" when only 1 image', () => {
+		const injections: ContextInjection[] = [
+			{
+				toolName: 'ReadWorkItem',
+				params: {},
+				result: 'content',
+				description: 'Work Item',
+				images: [{ base64Data: 'abc', mimeType: 'image/png' }],
+			},
+		];
+
+		const section = buildInlineContextSection(injections);
+
+		expect(section).toContain('Contains 1 inline image');
+		expect(section).not.toContain('inline images'); // singular
+	});
+
+	it('does not add image note when injection has no images', () => {
+		const injections: ContextInjection[] = [
+			{
+				toolName: 'ReadWorkItem',
+				params: {},
+				result: 'content',
+				description: 'Work Item',
+			},
+		];
+
+		const section = buildInlineContextSection(injections);
+
+		expect(section).not.toContain('inline image');
 	});
 });

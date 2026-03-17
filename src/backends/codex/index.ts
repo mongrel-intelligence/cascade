@@ -5,20 +5,20 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
-import {
-	findCredentialIdByEnvVarKey,
-	updateCredential,
-} from '../../db/repositories/credentialsRepository.js';
-import { storeLlmCall } from '../../db/repositories/runsRepository.js';
-import { logger } from '../../utils/logging.js';
+import { writeProjectCredential } from '../../db/repositories/credentialsRepository.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { CODEX_ENGINE_DEFINITION } from '../catalog.js';
 import { cleanupContextFiles } from '../contextFiles.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
+import { logLlmCall } from '../shared/llmCallLogger.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan, LogWriter } from '../types.js';
 import { buildEnv } from './env.js';
 import { CODEX_MODEL_IDS, DEFAULT_CODEX_MODEL } from './models.js';
-import { assertHeadlessCodexSettings, resolveCodexSettings } from './settings.js';
+import {
+	CodexSettingsSchema,
+	assertHeadlessCodexSettings,
+	resolveCodexSettings,
+} from './settings.js';
 
 const CODEX_AUTH_DIR = join(homedir(), '.codex');
 const CODEX_AUTH_FILE = join(CODEX_AUTH_DIR, 'auth.json');
@@ -37,6 +37,18 @@ type UsageSummary = {
 	cachedTokens?: number;
 	costUsd?: number;
 };
+/**
+ * Accumulator for a single Codex turn (bounded by turn.started → turn.completed).
+ * Collects text, tool summaries, and usage across multiple JSONL events so that
+ * exactly one storeLlmCall row is persisted per completed turn — not one row per
+ * intermediate usage-bearing event.
+ */
+type CodexTurnAccumulator = {
+	textSummary: string[];
+	toolNames: string[];
+	usage: UsageSummary | null;
+};
+
 type CodexLineContext = {
 	input: AgentExecutionPlan;
 	model: string;
@@ -46,6 +58,8 @@ type CodexLineContext = {
 	llmCallCount: number;
 	cost?: number;
 	finalError?: string;
+	/** Accumulator for the turn currently in progress. Reset on turn.started/thread.started. */
+	currentTurn: CodexTurnAccumulator;
 };
 
 function appendEngineLog(path: string | undefined, chunk: string): void {
@@ -247,48 +261,87 @@ function logText(context: CodexLineContext, text: string): void {
 	context.input.progressReporter.onText(text);
 }
 
-function trackUsage(context: CodexLineContext, responseLine: string, usage: UsageSummary): void {
-	context.cost = usage.costUsd ?? context.cost;
-	if (!context.input.runId) return;
+/**
+ * Merge new usage data into the current turn accumulator.
+ * Intermediate events (e.g. response.completed) may carry usage before turn.completed
+ * fires. We accumulate here rather than persisting immediately to avoid duplicate rows.
+ * The last non-null value wins for each field, matching the pattern where response.completed
+ * carries per-response totals and turn.completed carries aggregate turn totals.
+ */
+function accumulateTurnUsage(context: CodexLineContext, usage: UsageSummary): void {
+	const acc = context.currentTurn;
+	if (!acc.usage) {
+		acc.usage = { ...usage };
+	} else {
+		// Override with new values where present — turn.completed totals supersede response.completed
+		if (usage.inputTokens !== undefined) acc.usage.inputTokens = usage.inputTokens;
+		if (usage.outputTokens !== undefined) acc.usage.outputTokens = usage.outputTokens;
+		if (usage.cachedTokens !== undefined) acc.usage.cachedTokens = usage.cachedTokens;
+		if (usage.costUsd !== undefined) acc.usage.costUsd = usage.costUsd;
+	}
+}
 
+/**
+ * Persist exactly one storeLlmCall row for the completed turn, then reset the accumulator.
+ * Called only from turn.completed to guarantee one row per turn, never from intermediate events.
+ */
+function persistTurnLlmCall(context: CodexLineContext): void {
+	const acc = context.currentTurn;
+	const usage = acc.usage;
+	if (usage) {
+		context.cost = usage.costUsd ?? context.cost;
+	}
 	context.llmCallCount += 1;
-	void storeLlmCall({
+
+	// Build a compact turn-scoped payload: text summary + tool names + usage.
+	// Storing this instead of the raw event JSONL keeps the payload small and readable.
+	const turnPayload = JSON.stringify({
+		turn: context.llmCallCount,
+		text: acc.textSummary.join(' ').slice(0, 500) || undefined,
+		tools: acc.toolNames.length > 0 ? acc.toolNames : undefined,
+		usage: usage ?? undefined,
+	});
+
+	logLlmCall({
 		runId: context.input.runId,
 		callNumber: context.llmCallCount,
-		request: undefined,
-		response: responseLine,
-		inputTokens: usage.inputTokens,
-		outputTokens: usage.outputTokens,
-		cachedTokens: usage.cachedTokens,
-		costUsd: usage.costUsd,
-		durationMs: undefined,
 		model: context.model,
-	}).catch((error) => {
-		logger.warn('Failed to store Codex LLM call in real-time', {
-			runId: context.input.runId,
-			call: context.llmCallCount,
-			error: String(error),
-		});
+		inputTokens: usage?.inputTokens,
+		outputTokens: usage?.outputTokens,
+		cachedTokens: usage?.cachedTokens,
+		costUsd: usage?.costUsd,
+		response: turnPayload,
+		engineLabel: 'Codex',
 	});
+
+	// Reset the accumulator for the next turn
+	context.currentTurn = { textSummary: [], toolNames: [], usage: null };
 }
 
 /**
  * Handles structural turn/thread/item lifecycle events.
  * Returns true if the event was fully handled and no further processing is needed.
+ *
+ * Persistence boundary: ONE storeLlmCall row is written exactly when turn.completed fires,
+ * using data accumulated across all events in the turn. Intermediate usage-bearing events
+ * (e.g. response.completed) update the accumulator only; they do NOT persist a row.
  */
 async function handleStructuralEvent(
 	context: CodexLineContext,
-	responseLine: string,
 	parsed: JsonRecord,
 	eventType: string,
 ): Promise<boolean> {
 	if (eventType === 'turn.completed') {
 		await trackIteration(context);
+		// Merge any usage attached to turn.completed into the accumulator, then persist.
 		const usage = extractUsage(parsed);
-		if (usage) trackUsage(context, responseLine, usage);
+		if (usage) accumulateTurnUsage(context, usage);
+		persistTurnLlmCall(context);
 		return true;
 	}
 	if (eventType === 'turn.started' || eventType === 'thread.started') {
+		// Reset turn accumulator at the start of each new turn
+		context.currentTurn = { textSummary: [], toolNames: [], usage: null };
 		return true;
 	}
 	if (eventType === 'item.started') {
@@ -300,14 +353,10 @@ async function handleStructuralEvent(
 	return false;
 }
 
-async function handleParsedLine(
-	context: CodexLineContext,
-	responseLine: string,
-	parsed: JsonRecord,
-): Promise<void> {
+async function handleParsedLine(context: CodexLineContext, parsed: JsonRecord): Promise<void> {
 	const eventType = typeof parsed.type === 'string' ? parsed.type : '';
 
-	if (await handleStructuralEvent(context, responseLine, parsed, eventType)) return;
+	if (await handleStructuralEvent(context, parsed, eventType)) return;
 
 	const { textParts, toolCall, usage, error } = parseCodexEvent(parsed);
 
@@ -317,6 +366,8 @@ async function handleParsedLine(
 
 	for (const text of textParts) {
 		logText(context, text);
+		// Accumulate text into the turn buffer for compact per-call payload
+		context.currentTurn.textSummary.push(text.slice(0, 200));
 	}
 
 	if (toolCall) {
@@ -325,11 +376,15 @@ async function handleParsedLine(
 			input: toolCall.input,
 		});
 		context.input.progressReporter.onToolCall(toolCall.name, toolCall.input);
+		// Track tool name in turn buffer for the compact payload
+		context.currentTurn.toolNames.push(toolCall.name);
 	}
 
 	if (usage) {
 		context.input.logWriter('DEBUG', 'Codex usage', { usage });
-		trackUsage(context, responseLine, usage);
+		// Accumulate usage into the turn buffer; do NOT persist here.
+		// Persistence happens exactly once on turn.completed to avoid duplicate rows.
+		accumulateTurnUsage(context, usage);
 	}
 
 	if (error) {
@@ -360,7 +415,7 @@ async function processStdoutLine(context: CodexLineContext, line: string): Promi
 		return;
 	}
 
-	await handleParsedLine(context, line, parsed);
+	await handleParsedLine(context, parsed);
 }
 
 function resolveCodexModel(cascadeModel: string): string {
@@ -440,11 +495,11 @@ async function writeCodexAuthFile(
 }
 
 /**
- * After a Codex run, read ~/.codex/auth.json and update the DB credential if
+ * After a Codex run, read ~/.codex/auth.json and update the project credential if
  * the Codex CLI refreshed the access token during the run.
  */
 async function captureRefreshedToken(
-	orgId: string,
+	projectId: string,
 	originalJson: string | undefined,
 	logWriter: LogWriter,
 ): Promise<void> {
@@ -460,17 +515,8 @@ async function captureRefreshedToken(
 	if (newJson === originalJson) return;
 
 	try {
-		const credId = await findCredentialIdByEnvVarKey(orgId, 'CODEX_AUTH_JSON');
-		if (!credId) {
-			logWriter(
-				'WARN',
-				'Could not find CODEX_AUTH_JSON credential to update after token refresh',
-				{},
-			);
-			return;
-		}
-		await updateCredential(credId, { value: newJson });
-		logWriter('INFO', 'Captured refreshed Codex auth token and updated DB credential', {});
+		await writeProjectCredential(projectId, 'CODEX_AUTH_JSON', newJson);
+		logWriter('INFO', 'Captured refreshed Codex auth token and updated project credential', {});
 	} catch (error) {
 		logWriter('WARN', 'Failed to capture refreshed Codex auth token', { error: String(error) });
 	}
@@ -486,8 +532,60 @@ async function captureRefreshedToken(
 export class CodexEngine implements AgentEngine {
 	readonly definition = CODEX_ENGINE_DEFINITION;
 
+	/** Stores the original auth JSON so afterExecute can detect token refreshes. */
+	private _originalAuthJson: string | undefined;
+	/** True when beforeExecute has been called (adapter lifecycle is active). */
+	private _adapterLifecycleActive = false;
+
 	supportsAgentType(_agentType: string): boolean {
 		return true;
+	}
+
+	resolveModel(cascadeModel: string): string {
+		return resolveCodexModel(cascadeModel);
+	}
+
+	getSettingsSchema() {
+		return CodexSettingsSchema;
+	}
+
+	async beforeExecute(plan: AgentExecutionPlan): Promise<void> {
+		this._adapterLifecycleActive = true;
+		this._originalAuthJson = await writeCodexAuthFile(plan.projectSecrets, plan.logWriter);
+	}
+
+	async afterExecute(plan: AgentExecutionPlan, _result: AgentEngineResult): Promise<void> {
+		await captureRefreshedToken(plan.project.id, this._originalAuthJson, plan.logWriter);
+		await cleanupContextFiles(plan.repoDir);
+		this._originalAuthJson = undefined;
+		this._adapterLifecycleActive = false;
+	}
+
+	/** Remove temp file created by execute() — best-effort, ignores errors. */
+	private static _cleanupLastMessagePath(path: string): void {
+		if (existsSync(path)) {
+			try {
+				unlinkSync(path);
+			} catch {
+				// Best-effort cleanup
+			}
+		}
+	}
+
+	/** Cleanup called from execute() finally block when adapter lifecycle is not active. */
+	private async _directCallCleanup(
+		repoDir: string,
+		projectId: string | undefined,
+		originalAuthJson: string | undefined,
+		logWriter: AgentExecutionPlan['logWriter'],
+		hasOffloadedContext: boolean,
+	): Promise<void> {
+		if (hasOffloadedContext) {
+			await cleanupContextFiles(repoDir);
+		}
+		if (projectId) {
+			await captureRefreshedToken(projectId, originalAuthJson, logWriter);
+		}
 	}
 
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
@@ -498,11 +596,24 @@ export class CodexEngine implements AgentEngine {
 			input.contextInjections,
 			input.repoDir,
 		);
+		// Resolve model again here for backward compatibility: execute() may be called
+		// directly (e.g. in tests) without going through the adapter, so we cannot rely
+		// solely on the adapter's engine.resolveModel() pre-resolution. Since
+		// resolveCodexModel() is idempotent, calling it twice via the normal adapter path
+		// is safe.
 		const model = resolveCodexModel(input.model);
-		const settings = resolveCodexSettings(input.project, input.nativeToolCapabilities);
+		const settings = resolveCodexSettings(
+			input.project,
+			input.nativeToolCapabilities,
+			input.engineSettings,
+		);
 		assertHeadlessCodexSettings(settings);
 
-		const originalAuthJson = await writeCodexAuthFile(input.projectSecrets, input.logWriter);
+		// When called via adapter, beforeExecute already wrote the auth file.
+		// When called directly (e.g. tests), write it here for backward compatibility.
+		const originalAuthJson = this._adapterLifecycleActive
+			? this._originalAuthJson
+			: await writeCodexAuthFile(input.projectSecrets, input.logWriter);
 
 		// Strip CODEX_AUTH_JSON from env — it's written to disk, not passed to the subprocess
 		const strippedSecrets: Record<string, string> | undefined = input.projectSecrets
@@ -559,6 +670,7 @@ export class CodexEngine implements AgentEngine {
 					llmCallCount,
 					cost,
 					finalError,
+					currentTurn: { textSummary: [], toolNames: [], usage: null },
 				};
 
 				child.once('error', (error) => {
@@ -657,17 +769,18 @@ export class CodexEngine implements AgentEngine {
 				prEvidence,
 			};
 		} finally {
-			if (existsSync(lastMessagePath)) {
-				try {
-					unlinkSync(lastMessagePath);
-				} catch {
-					// Best-effort cleanup
-				}
+			CodexEngine._cleanupLastMessagePath(lastMessagePath);
+			// When called directly (not via adapter), afterExecute won't be invoked.
+			// Perform cleanup here so direct callers (e.g. tests) still behave correctly.
+			if (!this._adapterLifecycleActive) {
+				await this._directCallCleanup(
+					input.repoDir,
+					input.project.id,
+					originalAuthJson,
+					input.logWriter,
+					hasOffloadedContext,
+				);
 			}
-			if (hasOffloadedContext) {
-				await cleanupContextFiles(input.repoDir);
-			}
-			await captureRefreshedToken(input.project.orgId, originalAuthJson, input.logWriter);
 		}
 	}
 }

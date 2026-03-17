@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mockConfigProvider, mockLogger, mockWithGitHubToken } from '../../helpers/sharedMocks.js';
 
 // Mock all external dependencies
 vi.mock('../../../src/agents/shared/repository.js', () => ({
@@ -58,21 +59,13 @@ vi.mock('../../../src/config/customModels.js', () => ({
 	CUSTOM_MODELS: [],
 }));
 
-vi.mock('../../../src/utils/logging.js', () => ({
-	logger: {
-		info: vi.fn(),
-		warn: vi.fn(),
-		error: vi.fn(),
-	},
-}));
+vi.mock('../../../src/utils/logging.js', () => ({ logger: mockLogger }));
 
 vi.mock('../../../src/config/provider.js', () => ({
-	getAllProjectCredentials: vi.fn(),
+	getAllProjectCredentials: mockConfigProvider.getAllProjectCredentials,
 }));
 
-vi.mock('../../../src/github/client.js', () => ({
-	withGitHubToken: vi.fn((_token: string, fn: () => Promise<unknown>) => fn()),
-}));
+vi.mock('../../../src/github/client.js', () => ({ withGitHubToken: mockWithGitHubToken }));
 
 vi.mock('../../../src/agents/definitions/profiles.js', () => ({
 	getAgentProfile: vi.fn(),
@@ -1106,6 +1099,110 @@ describe('executeWithEngine', () => {
 			expect(backendInput.projectSecrets?.CASCADE_PR_SIDECAR_PATH).toMatch(
 				/cascade-pr-sidecar-\d+-\d+\.json$/,
 			);
+		});
+	});
+
+	describe('lifecycle hooks (beforeExecute / afterExecute)', () => {
+		it('calls beforeExecute before engine.execute when hook is defined', async () => {
+			setupMocks();
+			const callOrder: string[] = [];
+			const engine = makeMockBackend();
+			(engine as AgentEngine).beforeExecute = vi.fn().mockImplementation(async () => {
+				callOrder.push('before');
+			});
+			vi.mocked(engine.execute).mockImplementation(async () => {
+				callOrder.push('execute');
+				return { success: true, output: 'Done' };
+			});
+			const input = makeInput();
+
+			await executeWithEngine(engine, 'implementation', input);
+
+			expect(callOrder[0]).toBe('before');
+			expect(callOrder[1]).toBe('execute');
+		});
+
+		it('calls afterExecute after engine.execute when hook is defined', async () => {
+			setupMocks();
+			const callOrder: string[] = [];
+			const engine = makeMockBackend();
+			(engine as AgentEngine).afterExecute = vi.fn().mockImplementation(async () => {
+				callOrder.push('after');
+			});
+			vi.mocked(engine.execute).mockImplementation(async () => {
+				callOrder.push('execute');
+				return { success: true, output: 'Done' };
+			});
+			const input = makeInput();
+
+			await executeWithEngine(engine, 'implementation', input);
+
+			expect(callOrder[0]).toBe('execute');
+			expect(callOrder[1]).toBe('after');
+		});
+
+		it('calls afterExecute even when engine.execute throws', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			const mockAfterExecute = vi.fn().mockResolvedValue(undefined);
+			(engine as AgentEngine).afterExecute = mockAfterExecute;
+			vi.mocked(engine.execute).mockRejectedValue(new Error('Execute crashed'));
+			const input = makeInput();
+
+			const result = await executeWithEngine(engine, 'implementation', input);
+
+			expect(result.success).toBe(false);
+			expect(mockAfterExecute).toHaveBeenCalledTimes(1);
+		});
+
+		it('passes executionPlan and result to afterExecute', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			const mockAfterExecute = vi.fn().mockResolvedValue(undefined);
+			(engine as AgentEngine).afterExecute = mockAfterExecute;
+			vi.mocked(engine.execute).mockResolvedValue({
+				success: true,
+				output: 'Done',
+				cost: 1.5,
+			});
+			const input = makeInput();
+
+			await executeWithEngine(engine, 'implementation', input);
+
+			expect(mockAfterExecute).toHaveBeenCalledWith(
+				expect.objectContaining({ agentType: 'implementation' }),
+				expect.objectContaining({ success: true, output: 'Done', cost: 1.5 }),
+			);
+		});
+
+		it('passes fallback result to afterExecute when execute() threw', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			const mockAfterExecute = vi.fn().mockResolvedValue(undefined);
+			(engine as AgentEngine).afterExecute = mockAfterExecute;
+			vi.mocked(engine.execute).mockRejectedValue(new Error('Crashed'));
+			const input = makeInput();
+
+			await executeWithEngine(engine, 'implementation', input);
+
+			expect(mockAfterExecute).toHaveBeenCalledWith(
+				expect.any(Object),
+				expect.objectContaining({ success: false, output: '' }),
+			);
+		});
+
+		it('does not call beforeExecute or afterExecute when hooks are absent', async () => {
+			setupMocks();
+			const engine = makeMockBackend();
+			// Engine has no beforeExecute or afterExecute
+			expect((engine as AgentEngine).beforeExecute).toBeUndefined();
+			expect((engine as AgentEngine).afterExecute).toBeUndefined();
+			const input = makeInput();
+
+			const result = await executeWithEngine(engine, 'implementation', input);
+
+			expect(result.success).toBe(true);
+			expect(engine.execute).toHaveBeenCalledTimes(1);
 		});
 	});
 });

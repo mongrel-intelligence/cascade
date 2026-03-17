@@ -11,7 +11,7 @@
  * Unit tests (mocked) are in tests/unit/triggers/shared/integration-validation.test.ts
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hasScmIntegration, hasScmPersonaToken } from '../../src/github/integration.js';
 import { hasPmIntegration } from '../../src/pm/integration.js';
 import {
@@ -40,6 +40,10 @@ vi.mock('../../src/utils/logging.js', () => ({
 		debug: vi.fn(),
 	},
 }));
+
+beforeAll(async () => {
+	await truncateAll();
+});
 
 describe('Integration Validation (integration)', () => {
 	beforeEach(async () => {
@@ -293,20 +297,21 @@ describe('Integration Validation (integration)', () => {
 			expect(hasPM).toBe(false);
 		});
 
-		it('credential row exists but not linked to integration', async () => {
-			// Create integration without linking credentials
+		it('all required credentials present in project_credentials means integration is complete', async () => {
+			// Create integration with credentials stored in project_credentials
+			// (no legacy linking required — project_credentials is the sole source)
 			await seedIntegration({
 				category: 'pm',
 				provider: 'trello',
 				config: { boardId: 'board-1', lists: {}, labels: {} },
 			});
 
-			// Create credential rows but don't link them
-			await seedCredential({ envVarKey: 'TRELLO_API_KEY', value: 'orphan-key' });
-			await seedCredential({ envVarKey: 'TRELLO_TOKEN', value: 'orphan-token' });
+			// Add all required credentials to project_credentials
+			await seedCredential({ envVarKey: 'TRELLO_API_KEY', value: 'key' });
+			await seedCredential({ envVarKey: 'TRELLO_TOKEN', value: 'token' });
 
 			const hasPM = await hasPmIntegration('test-project');
-			expect(hasPM).toBe(false);
+			expect(hasPM).toBe(true);
 		});
 
 		it('only one of two required credentials is linked', async () => {

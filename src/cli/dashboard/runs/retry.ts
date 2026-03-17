@@ -17,15 +17,17 @@ export default class RunsRetry extends DashboardCommand {
 		const { args, flags } = await this.parse(RunsRetry);
 
 		try {
-			const result = await this.client.runs.retry.mutate({
-				runId: args.id,
-				model: flags.model,
-			});
+			const result = await this.withSpinner('Retrying run...', () =>
+				this.client.runs.retry.mutate({
+					runId: args.id,
+					model: flags.model,
+				}),
+			);
 
 			if (flags.json) {
 				this.outputJson(result);
 			} else {
-				this.log('Run retry triggered successfully.');
+				this.success(`Retry triggered — run ID: ${args.id}`);
 			}
 		} catch (err) {
 			this.handleError(err);

@@ -79,6 +79,12 @@ vi.mock('../../../../src/queue/cancel.js', () => ({
 	publishCancelCommand: (...args: unknown[]) => mockPublishCancelCommand(...args),
 }));
 
+// Mock isAgentEnabledForProject — default: agent is enabled
+const mockIsAgentEnabledForProject = vi.fn().mockResolvedValue(true);
+vi.mock('../../../../src/db/repositories/agentConfigsRepository.js', () => ({
+	isAgentEnabledForProject: (...args: unknown[]) => mockIsAgentEnabledForProject(...args),
+}));
+
 import { runsRouter } from '../../../../src/api/routers/runs.js';
 
 function createCaller(ctx: TRPCContext) {
@@ -297,6 +303,8 @@ describe('runsRouter', () => {
 	describe('getLogs', () => {
 		it('returns logs for given runId', async () => {
 			const mockLogs = { cascadeLog: 'log text', llmistLog: null };
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockGetRunLogs.mockResolvedValue(mockLogs);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -307,11 +315,44 @@ describe('runsRouter', () => {
 		});
 
 		it('returns null when no logs found', async () => {
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockGetRunLogs.mockResolvedValue(null);
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.getLogs({ runId: RUN_UUID });
 			expect(result).toBeNull();
+		});
+
+		it('throws NOT_FOUND when run does not exist', async () => {
+			mockGetRunById.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.getLogs({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws NOT_FOUND when org does not match', async () => {
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.getLogs({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('allows superadmin to access logs from any org', async () => {
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockGetRunLogs.mockResolvedValue({ cascadeLog: 'log text', llmistLog: null });
+
+			const superAdmin = createMockSuperAdmin();
+			const caller = createCaller({ user: superAdmin, effectiveOrgId: 'other-org' });
+			const result = await caller.getLogs({ runId: RUN_UUID });
+
+			expect(result).toEqual({ cascadeLog: 'log text', llmistLog: null });
+			expect(mockDbSelect).not.toHaveBeenCalled();
 		});
 	});
 
@@ -321,6 +362,8 @@ describe('runsRouter', () => {
 				{ callNumber: 1, inputTokens: 100 },
 				{ callNumber: 2, inputTokens: 200 },
 			];
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockListLlmCallsMeta.mockResolvedValue(mockMeta);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -340,6 +383,8 @@ describe('runsRouter', () => {
 					createdAt,
 				},
 			];
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockListLlmCallsMeta.mockResolvedValue(mockMeta);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -350,11 +395,44 @@ describe('runsRouter', () => {
 				createdAt,
 			});
 		});
+
+		it('throws NOT_FOUND when run does not exist', async () => {
+			mockGetRunById.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.listLlmCalls({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws NOT_FOUND when org does not match', async () => {
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.listLlmCalls({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('allows superadmin to list LLM calls from any org', async () => {
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockListLlmCallsMeta.mockResolvedValue([{ callNumber: 1 }]);
+
+			const superAdmin = createMockSuperAdmin();
+			const caller = createCaller({ user: superAdmin, effectiveOrgId: 'other-org' });
+			const result = await caller.listLlmCalls({ runId: RUN_UUID });
+
+			expect(result).toEqual([{ callNumber: 1 }]);
+			expect(mockDbSelect).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('getLlmCall', () => {
 		it('returns specific LLM call by runId + callNumber', async () => {
 			const mockCall = { callNumber: 3, request: '{}', response: '{}' };
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockGetLlmCallByNumber.mockResolvedValue(mockCall);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -368,6 +446,8 @@ describe('runsRouter', () => {
 		});
 
 		it('throws NOT_FOUND when call does not exist', async () => {
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockGetLlmCallByNumber.mockResolvedValue(null);
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
@@ -378,11 +458,45 @@ describe('runsRouter', () => {
 				}),
 			).rejects.toMatchObject({ code: 'NOT_FOUND' });
 		});
+
+		it('throws NOT_FOUND when run does not exist', async () => {
+			mockGetRunById.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.getLlmCall({ runId: RUN_UUID, callNumber: 1 })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws NOT_FOUND when org does not match', async () => {
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.getLlmCall({ runId: RUN_UUID, callNumber: 1 })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('allows superadmin to get LLM call from any org', async () => {
+			const mockCall = { callNumber: 1, request: '{}', response: '{}' };
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockGetLlmCallByNumber.mockResolvedValue(mockCall);
+
+			const superAdmin = createMockSuperAdmin();
+			const caller = createCaller({ user: superAdmin, effectiveOrgId: 'other-org' });
+			const result = await caller.getLlmCall({ runId: RUN_UUID, callNumber: 1 });
+
+			expect(result).toEqual(mockCall);
+			expect(mockDbSelect).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('getDebugAnalysis', () => {
 		it('returns debug analysis for runId', async () => {
 			const mockAnalysis = { summary: 'Agent failed', issues: 'Issue 1' };
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockGetDebugAnalysisByRunId.mockResolvedValue(mockAnalysis);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -394,6 +508,8 @@ describe('runsRouter', () => {
 		});
 
 		it('returns null when no analysis exists', async () => {
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockGetDebugAnalysisByRunId.mockResolvedValue(null);
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
@@ -402,21 +518,57 @@ describe('runsRouter', () => {
 			});
 			expect(result).toBeNull();
 		});
+
+		it('throws NOT_FOUND when run does not exist', async () => {
+			mockGetRunById.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.getDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws NOT_FOUND when org does not match', async () => {
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.getDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('allows superadmin to get debug analysis from any org', async () => {
+			const mockAnalysis = { summary: 'Agent failed' };
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockGetDebugAnalysisByRunId.mockResolvedValue(mockAnalysis);
+
+			const superAdmin = createMockSuperAdmin();
+			const caller = createCaller({ user: superAdmin, effectiveOrgId: 'other-org' });
+			const result = await caller.getDebugAnalysis({ runId: RUN_UUID });
+
+			expect(result).toEqual(mockAnalysis);
+			expect(mockDbSelect).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('getDebugAnalysisStatus', () => {
 		it('returns running when analysis is in progress', async () => {
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockIsAnalysisRunning.mockReturnValue(true);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
 
 			expect(result).toEqual({ status: 'running' });
-			// Should not query DB when running
+			// Should not query DB for analysis when running
 			expect(mockGetDebugAnalysisByRunId).not.toHaveBeenCalled();
 		});
 
 		it('returns completed when analysis exists in DB', async () => {
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockIsAnalysisRunning.mockReturnValue(false);
 			mockGetDebugAnalysisByRunId.mockResolvedValue({ summary: 'done' });
 
@@ -427,6 +579,8 @@ describe('runsRouter', () => {
 		});
 
 		it('returns idle when not running and no analysis exists', async () => {
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockIsAnalysisRunning.mockReturnValue(false);
 			mockGetDebugAnalysisByRunId.mockResolvedValue(null);
 
@@ -441,6 +595,38 @@ describe('runsRouter', () => {
 			await expect(caller.getDebugAnalysisStatus({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
+		});
+
+		it('throws NOT_FOUND when run does not exist', async () => {
+			mockGetRunById.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.getDebugAnalysisStatus({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws NOT_FOUND when org does not match', async () => {
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.getDebugAnalysisStatus({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('allows superadmin to get debug analysis status from any org', async () => {
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockIsAnalysisRunning.mockReturnValue(false);
+			mockGetDebugAnalysisByRunId.mockResolvedValue({ summary: 'done' });
+
+			const superAdmin = createMockSuperAdmin();
+			const caller = createCaller({ user: superAdmin, effectiveOrgId: 'other-org' });
+			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
+
+			expect(result).toEqual({ status: 'completed' });
+			expect(mockDbSelect).not.toHaveBeenCalled();
 		});
 	});
 
@@ -669,6 +855,20 @@ describe('runsRouter', () => {
 			await expect(
 				caller.trigger({ projectId: 'p1', agentType: 'implementation' }),
 			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+
+		it('throws BAD_REQUEST when agent is not enabled for the project', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test Project' },
+				config: {},
+			});
+			mockIsAgentEnabledForProject.mockResolvedValueOnce(false);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.trigger({ projectId: 'p1', agentType: 'implementation' }),
+			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 		});
 
 		it('throws UNAUTHORIZED when unauthenticated', async () => {

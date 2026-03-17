@@ -15,15 +15,8 @@
  */
 
 import { eq } from 'drizzle-orm';
-import {
-	type IntegrationProvider,
-	PROVIDER_CREDENTIAL_ROLES,
-} from '../src/config/integrationRoles.js';
 import { closeDb, getDb } from '../src/db/client.js';
-import {
-	resolveAllIntegrationCredentials,
-	resolveAllOrgCredentials,
-} from '../src/db/repositories/credentialsRepository.js';
+import { resolveAllProjectCredentials } from '../src/db/repositories/credentialsRepository.js';
 import { agentConfigs, projectIntegrations, projects } from '../src/db/schema/index.js';
 
 function maskValue(value: string): string {
@@ -57,7 +50,6 @@ interface EffectiveConfig {
 	projectAgentConfig: AgentConfigInfo | null;
 	trello: TrelloIntegrationConfig | null;
 	credentials: Record<string, string>;
-	integrationCredentials: { category: string; provider: string; role: string; value: string }[];
 }
 
 function toInfo(ac: typeof agentConfigs.$inferSelect | null | undefined): AgentConfigInfo | null {
@@ -67,22 +59,6 @@ function toInfo(ac: typeof agentConfigs.$inferSelect | null | undefined): AgentC
 		maxIterations: ac.maxIterations,
 		agentEngine: ac.agentEngine,
 	};
-}
-
-function buildCredentialMap(
-	integrationCreds: { provider: string; role: string; value: string }[],
-	orgCreds: Record<string, string>,
-): Record<string, string> {
-	const credentials: Record<string, string> = { ...orgCreds };
-	for (const cred of integrationCreds) {
-		const roles = PROVIDER_CREDENTIAL_ROLES[cred.provider as IntegrationProvider];
-		if (!roles) continue;
-		const roleDef = roles.find((r) => r.role === cred.role);
-		if (roleDef) {
-			credentials[roleDef.envVarKey] = cred.value;
-		}
-	}
-	return credentials;
 }
 
 async function resolveEffectiveConfig(
@@ -96,14 +72,11 @@ async function resolveEffectiveConfig(
 
 	const orgId = projectRow.orgId;
 
-	const [projectAcs, integrations, integrationCreds, orgCreds] = await Promise.all([
+	const [projectAcs, integrations, credentials] = await Promise.all([
 		db.select().from(agentConfigs).where(eq(agentConfigs.projectId, projectId)),
 		db.select().from(projectIntegrations).where(eq(projectIntegrations.projectId, projectId)),
-		resolveAllIntegrationCredentials(projectId),
-		resolveAllOrgCredentials(orgId),
+		resolveAllProjectCredentials(projectId),
 	]);
-
-	const credentials = buildCredentialMap(integrationCreds, orgCreds);
 
 	const trelloConfig = integrations.find((i) => i.provider === 'trello')?.config as
 		| TrelloIntegrationConfig
@@ -138,7 +111,6 @@ async function resolveEffectiveConfig(
 		projectAgentConfig: projectAc,
 		trello: trelloConfig ?? null,
 		credentials,
-		integrationCredentials: integrationCreds,
 	};
 }
 
@@ -192,32 +164,12 @@ function printTrello(trello: TrelloIntegrationConfig | null): void {
 }
 
 function printCredentials(config: EffectiveConfig): void {
-	console.log('\n--- Integration Credentials ---');
-	if (config.integrationCredentials.length === 0) {
-		console.log('  (no integration credentials configured)');
+	console.log('\n--- Project Credentials ---');
+	const entries = Object.entries(config.credentials);
+	if (entries.length === 0) {
+		console.log('  (no credentials configured)');
 	} else {
-		for (const ic of config.integrationCredentials) {
-			console.log(`  ${ic.category}/${ic.role} → ${maskValue(ic.value)} [${ic.provider}]`);
-		}
-	}
-
-	// Org-default credentials (non-integration secrets like LLM API keys)
-	const integrationEnvKeys = new Set(
-		config.integrationCredentials.flatMap((ic) => {
-			const roles = PROVIDER_CREDENTIAL_ROLES[ic.provider as IntegrationProvider];
-			if (!roles) return [];
-			const roleDef = roles.find((r) => r.role === ic.role);
-			return roleDef ? [roleDef.envVarKey] : [];
-		}),
-	);
-	const orgOnlyEntries = Object.entries(config.credentials).filter(
-		([key]) => !integrationEnvKeys.has(key),
-	);
-	console.log('\n--- Org-Default Credentials ---');
-	if (orgOnlyEntries.length === 0) {
-		console.log('  (no org-default credentials)');
-	} else {
-		for (const [key, value] of orgOnlyEntries) {
+		for (const [key, value] of entries) {
 			console.log(`  ${key}: ${maskValue(value)}`);
 		}
 	}

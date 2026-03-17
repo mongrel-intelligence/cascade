@@ -11,7 +11,7 @@ import {
 // PROVIDER_CATEGORY
 // ---------------------------------------------------------------------------
 
-describe('PROVIDER_CATEGORY', () => {
+describe.concurrent('PROVIDER_CATEGORY', () => {
 	it('maps trello to pm category', () => {
 		expect(PROVIDER_CATEGORY.trello).toBe('pm');
 	});
@@ -43,7 +43,7 @@ describe('PROVIDER_CATEGORY', () => {
 // PROVIDER_CREDENTIAL_ROLES
 // ---------------------------------------------------------------------------
 
-describe('PROVIDER_CREDENTIAL_ROLES', () => {
+describe.concurrent('PROVIDER_CREDENTIAL_ROLES', () => {
 	it('every provider has at least one credential role', () => {
 		for (const [provider, roles] of Object.entries(PROVIDER_CREDENTIAL_ROLES)) {
 			expect(roles.length, `${provider} should have at least one role`).toBeGreaterThan(0);

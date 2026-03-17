@@ -1,12 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoist mocks before any imports
-const { mockResolveAgentDefinition, mockGetTriggerConfig, mockGetTriggerConfigsByProjectAndAgent } =
-	vi.hoisted(() => ({
-		mockResolveAgentDefinition: vi.fn(),
-		mockGetTriggerConfig: vi.fn(),
-		mockGetTriggerConfigsByProjectAndAgent: vi.fn(),
-	}));
+const {
+	mockResolveAgentDefinition,
+	mockGetTriggerConfig,
+	mockGetTriggerConfigsByProjectAndAgent,
+	mockIsAgentEnabledForProject,
+} = vi.hoisted(() => ({
+	mockResolveAgentDefinition: vi.fn(),
+	mockGetTriggerConfig: vi.fn(),
+	mockGetTriggerConfigsByProjectAndAgent: vi.fn(),
+	// Default: agent is enabled (has a config row)
+	mockIsAgentEnabledForProject: vi.fn().mockResolvedValue(true),
+}));
 
 vi.mock('../../../src/agents/definitions/index.js', () => ({
 	resolveAgentDefinition: mockResolveAgentDefinition,
@@ -15,6 +21,10 @@ vi.mock('../../../src/agents/definitions/index.js', () => ({
 vi.mock('../../../src/db/repositories/agentTriggerConfigsRepository.js', () => ({
 	getTriggerConfig: mockGetTriggerConfig,
 	getTriggerConfigsByProjectAndAgent: mockGetTriggerConfigsByProjectAndAgent,
+}));
+
+vi.mock('../../../src/db/repositories/agentConfigsRepository.js', () => ({
+	isAgentEnabledForProject: mockIsAgentEnabledForProject,
 }));
 
 import {
@@ -68,6 +78,15 @@ function makeDbConfig(overrides: Record<string, unknown> = {}) {
 describe('resolveTriggerConfigs', () => {
 	beforeEach(() => {
 		vi.resetAllMocks();
+		// Default: agent is enabled (has a config row)
+		mockIsAgentEnabledForProject.mockResolvedValue(true);
+	});
+
+	it('returns empty array when agent is not enabled for project (no config row)', async () => {
+		mockIsAgentEnabledForProject.mockResolvedValue(false);
+		const result = await resolveTriggerConfigs(PROJECT_ID, AGENT_TYPE);
+		expect(result).toEqual([]);
+		expect(mockResolveAgentDefinition).not.toHaveBeenCalled();
 	});
 
 	it('returns empty array when agent definition is not found', async () => {
@@ -143,6 +162,19 @@ describe('resolveTriggerConfigs', () => {
 describe('isTriggerEnabled', () => {
 	beforeEach(() => {
 		vi.resetAllMocks();
+		// Default: agent is enabled (has a config row)
+		mockIsAgentEnabledForProject.mockResolvedValue(true);
+	});
+
+	it('returns false when agent has no config row (not enabled for project)', async () => {
+		mockIsAgentEnabledForProject.mockResolvedValue(false);
+
+		const result = await isTriggerEnabled(PROJECT_ID, AGENT_TYPE, TRIGGER_EVENT);
+
+		expect(result).toBe(false);
+		// Should not check DB trigger config or definition
+		expect(mockGetTriggerConfig).not.toHaveBeenCalled();
+		expect(mockResolveAgentDefinition).not.toHaveBeenCalled();
 	});
 
 	it('returns DB override enabled value when config exists', async () => {
@@ -195,6 +227,17 @@ describe('isTriggerEnabled', () => {
 describe('getTriggerParameters', () => {
 	beforeEach(() => {
 		vi.resetAllMocks();
+		// Default: agent is enabled (has a config row)
+		mockIsAgentEnabledForProject.mockResolvedValue(true);
+	});
+
+	it('returns empty object when agent is not enabled for project (no config row)', async () => {
+		mockIsAgentEnabledForProject.mockResolvedValue(false);
+
+		const result = await getTriggerParameters(PROJECT_ID, AGENT_TYPE, TRIGGER_EVENT);
+
+		expect(result).toEqual({});
+		expect(mockResolveAgentDefinition).not.toHaveBeenCalled();
 	});
 
 	it('returns empty object when agent definition not found', async () => {
@@ -261,6 +304,17 @@ describe('getTriggerParameters', () => {
 describe('getResolvedTriggerConfig', () => {
 	beforeEach(() => {
 		vi.resetAllMocks();
+		// Default: agent is enabled (has a config row)
+		mockIsAgentEnabledForProject.mockResolvedValue(true);
+	});
+
+	it('returns null when agent is not enabled for project (no config row)', async () => {
+		mockIsAgentEnabledForProject.mockResolvedValue(false);
+
+		const result = await getResolvedTriggerConfig(PROJECT_ID, AGENT_TYPE, TRIGGER_EVENT);
+
+		expect(result).toBeNull();
+		expect(mockResolveAgentDefinition).not.toHaveBeenCalled();
 	});
 
 	it('returns null when agent definition not found', async () => {

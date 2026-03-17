@@ -135,6 +135,53 @@ describe('buildAgentMaps', () => {
 		expect(Object.keys(result.iterations)).toHaveLength(0);
 		expect(Object.keys(result.engines)).toHaveLength(0);
 	});
+
+	it('returns empty engineSettings map for empty input', () => {
+		const result = buildAgentMaps([]);
+		expect(result.engineSettings).toEqual({});
+	});
+
+	it('maps engineSettings per agent type', () => {
+		const configs: AgentConfigRow[] = [
+			{
+				projectId: 'proj1',
+				agentType: 'implementation',
+				model: null,
+				maxIterations: null,
+				agentEngine: 'claude-code',
+				agentEngineSettings: { 'claude-code': { maxThinkingTokens: 8000 } },
+			},
+			{
+				projectId: 'proj1',
+				agentType: 'review',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				agentEngineSettings: null,
+			},
+		];
+
+		const result = buildAgentMaps(configs);
+		expect(result.engineSettings).toEqual({
+			implementation: { 'claude-code': { maxThinkingTokens: 8000 } },
+		});
+	});
+
+	it('skips null agentEngineSettings', () => {
+		const configs: AgentConfigRow[] = [
+			{
+				projectId: 'proj1',
+				agentType: 'review',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				agentEngineSettings: null,
+			},
+		];
+
+		const result = buildAgentMaps(configs);
+		expect(Object.keys(result.engineSettings)).toHaveLength(0);
+	});
 });
 
 // ---------------------------------------------------------------------------
