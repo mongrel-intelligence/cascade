@@ -1,11 +1,11 @@
-# CASCADE
+# Cascade
 
-> **CASCADE turns PM cards into pull requests using AI agents.**
+> **Cascade orchestrates AI agents (Claude Code, Codex, opencode, LLMist) across your workflows in GitHub, Trello, and Jira.**
 
-CASCADE is an open-source automation platform that bridges your project management tool (Trello or JIRA) with your GitHub repository. Move a card to the right list — or add a label — and CASCADE picks it up, runs an AI agent, and delivers a pull request.
+Cascade is an open-source platform that automates the full software development lifecycle. Connect your PM tool and GitHub repository, and Cascade drives work items from plan to merge:
 
 ```
-PM Card → Webhook → Router → Redis/BullMQ → Worker → Agent → PR
+PM Card → Split → Plan → Implement → PR → Review → Iterate → Merge
 ```
 
 ---
@@ -13,7 +13,7 @@ PM Card → Webhook → Router → Redis/BullMQ → Worker → Agent → PR
 ## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/zbigniewsobiecki/cascade.git
+git clone https://github.com/mongrel-intelligence/cascade.git
 cd cascade
 cp .env.docker.example .env    # Edit if needed
 bash setup.sh                  # Build, migrate, and start all services
@@ -42,7 +42,7 @@ For the full setup walkthrough — projects, credentials, webhooks, and triggers
 
 ## 🏗️ Architecture
 
-CASCADE runs as three independent services:
+Cascade runs as three independent services:
 
 | Service | Entry Point | Role |
 |---------|-------------|------|
@@ -127,7 +127,7 @@ All project-level credentials (GitHub tokens, PM keys, LLM API keys) are stored 
 
 ## 🔑 Key Concepts
 
-**Dual-persona GitHub model** — CASCADE uses two separate GitHub bot accounts per project (implementer and reviewer) to prevent feedback loops. The implementer writes code and creates PRs; the reviewer reviews and approves them.
+**Dual-persona GitHub model** — Cascade uses two separate GitHub bot accounts per project (implementer and reviewer) to prevent feedback loops. The implementer writes code and creates PRs; the reviewer reviews and approves them.
 
 **Trigger system** — Events from Trello, JIRA, and GitHub webhooks are matched against registered `TriggerHandler` instances. Triggers are configured per-project in the database.
 
@@ -146,7 +146,7 @@ For deeper documentation on all of these topics, see [CLAUDE.md](./CLAUDE.md).
 1. Fork the repository and create a feature branch from `dev`
 2. Make your changes with tests (`npm test`)
 3. Ensure lint and typecheck pass (`npm run lint && npm run typecheck`)
-4. Open a pull request — CASCADE will review its own PRs if configured to do so
+4. Open a pull request — Cascade will review its own PRs if configured to do so
 
 Please follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide.
 
