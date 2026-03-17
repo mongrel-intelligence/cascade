@@ -135,7 +135,13 @@ export function AgentConfigFormDialog({ open, onOpenChange, config }: AgentConfi
 					</div>
 					<div className="space-y-2">
 						<Label htmlFor="gac-model">Model</Label>
-						<ModelField id="gac-model" value={model} onChange={setModel} engine={agentEngine} />
+						<ModelField
+							id="gac-model"
+							value={model}
+							onChange={setModel}
+							engine={agentEngine}
+							projectId={config?.projectId}
+						/>
 					</div>
 					{effectiveEngine && (
 						<EngineSettingsFields
