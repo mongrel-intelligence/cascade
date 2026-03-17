@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 # Use the latest available worker image
-WORKER_IMAGE="${WORKER_IMAGE:-ghcr.io/zbigniewsobiecki/cascade-worker:923f7c6215608865ac55e4d89f83663f055ab87a}"
+WORKER_IMAGE="${WORKER_IMAGE:-ghcr.io/mongrel-intelligence/cascade-worker:923f7c6215608865ac55e4d89f83663f055ab87a}"
 
 echo "=== Worker Setup Test ==="
 echo "Project root : $PROJECT_ROOT"

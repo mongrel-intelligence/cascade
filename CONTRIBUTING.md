@@ -1,6 +1,6 @@
-# Contributing to CASCADE
+# Contributing to Cascade
 
-Thank you for your interest in contributing to CASCADE! This guide will help you get started.
+Thank you for your interest in contributing to Cascade! This guide will help you get started.
 
 ## Prerequisites
 
@@ -127,11 +127,11 @@ See [CLAUDE.md](./CLAUDE.md) for a detailed architecture overview. Key directori
 
 ## The `.cascade/` Directory
 
-When CASCADE works on a repository, it looks for a `.cascade/` directory at the root of that repo. This directory lets you customize agent behavior — setup scripts, post-edit hooks, test runners, and environment variables.
+When Cascade works on a repository, it looks for a `.cascade/` directory at the root of that repo. This directory lets you customize agent behavior — setup scripts, post-edit hooks, test runners, and environment variables.
 
 See **[`.cascade/` Directory Guide](./docs/cascade-directory.md)** for the full reference.
 
 ## Getting Help
 
-- Open an [issue](https://github.com/zbigniewsobiecki/cascade/issues) for bugs or feature requests
+- Open an [issue](https://github.com/mongrel-intelligence/cascade/issues) for bugs or feature requests
 - Check existing issues and discussions before creating new ones

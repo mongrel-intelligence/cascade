@@ -141,7 +141,7 @@ describe('open-source readiness', () => {
 
 		it('uses placeholder repo names', () => {
 			for (const project of config.projects) {
-				expect(project.repo).not.toMatch(/zbigniewsobiecki/);
+				expect(project.repo).not.toMatch(/mongrel-intelligence/);
 			}
 		});
 	});

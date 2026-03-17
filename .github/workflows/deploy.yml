@@ -8,9 +8,9 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  ROUTER_IMAGE: ghcr.io/zbigniewsobiecki/cascade-router
-  WORKER_IMAGE: ghcr.io/zbigniewsobiecki/cascade-worker
-  DASHBOARD_IMAGE: ghcr.io/zbigniewsobiecki/cascade-dashboard
+  ROUTER_IMAGE: ghcr.io/mongrel-intelligence/cascade-router
+  WORKER_IMAGE: ghcr.io/mongrel-intelligence/cascade-worker
+  DASHBOARD_IMAGE: ghcr.io/mongrel-intelligence/cascade-dashboard
 
 jobs:
   build-and-deploy:

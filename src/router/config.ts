@@ -114,7 +114,7 @@ export async function loadProjectConfig(): Promise<{
 export const routerConfig: RouterConfig = {
 	redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
 	maxWorkers: Number(process.env.MAX_WORKERS) || 3,
-	workerImage: process.env.WORKER_IMAGE || 'ghcr.io/zbigniewsobiecki/cascade-worker:latest',
+	workerImage: process.env.WORKER_IMAGE || 'ghcr.io/mongrel-intelligence/cascade-worker:latest',
 	workerMemoryMb: Number(process.env.WORKER_MEMORY_MB) || 4096,
 	workerTimeoutMs: Number(process.env.WORKER_TIMEOUT_MS) || 30 * 60 * 1000, // 30 minutes
 	dockerNetwork: process.env.DOCKER_NETWORK || 'services_default',
