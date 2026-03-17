@@ -178,6 +178,30 @@ export function WebhookStep({
 				</div>
 			)}
 
+			{/* curl instructions for manual webhook creation (collapsible) */}
+			<details className="rounded-md border border-blue-200 bg-blue-50 px-3 py-3 dark:border-blue-900/50 dark:bg-blue-900/20">
+				<summary className="flex items-start gap-2 cursor-pointer list-none">
+					<Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+					<p className="text-xs text-blue-700 dark:text-blue-300 font-medium">
+						Manual webhook creation (alternative: if the button below doesn't work)
+					</p>
+				</summary>
+				<div className="space-y-2 mt-2">
+					<p className="text-xs text-blue-600 dark:text-blue-400 pl-6">
+						Use the following curl command to create the {providerName} webhook manually with your
+						own credentials:
+					</p>
+					<div className="relative rounded-md bg-muted border pl-6">
+						<div className="absolute top-2 right-2">
+							<CopyButton text={curlCommand} />
+						</div>
+						<pre className="text-xs font-mono whitespace-pre-wrap break-all py-2 pr-16 overflow-x-auto">
+							{curlCommand}
+						</pre>
+					</div>
+				</div>
+			</details>
+
 			<div className="space-y-2">
 				<div className="flex items-center gap-2">
 					<button
@@ -209,28 +233,6 @@ export function WebhookStep({
 							: 'Webhook created successfully.'}
 					</p>
 				)}
-			</div>
-
-			{/* curl instructions for manual webhook creation */}
-			<div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-3 space-y-2 dark:border-blue-900/50 dark:bg-blue-900/20">
-				<div className="flex items-start gap-2">
-					<Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-					<p className="text-xs text-blue-700 dark:text-blue-300 font-medium">
-						Manual webhook creation (if the button above doesn't work)
-					</p>
-				</div>
-				<p className="text-xs text-blue-600 dark:text-blue-400 pl-6">
-					Use the following curl command to create the {providerName} webhook manually with your own
-					credentials:
-				</p>
-				<div className="relative rounded-md bg-muted border pl-6">
-					<div className="absolute top-2 right-2">
-						<CopyButton text={curlCommand} />
-					</div>
-					<pre className="text-xs font-mono whitespace-pre-wrap break-all py-2 pr-16 overflow-x-auto">
-						{curlCommand}
-					</pre>
-				</div>
 			</div>
 		</div>
 	);

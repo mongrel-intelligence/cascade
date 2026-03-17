@@ -246,6 +246,30 @@ function GitHubWebhookSection({ projectId }: { projectId: string }) {
 				</div>
 			)}
 
+			{/* curl instructions for manual GitHub webhook creation (collapsible) */}
+			<details className="rounded-md border border-blue-200 bg-blue-50 px-3 py-3 dark:border-blue-900/50 dark:bg-blue-900/20">
+				<summary className="flex items-start gap-2 cursor-pointer list-none">
+					<Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+					<p className="text-xs text-blue-700 dark:text-blue-300 font-medium">
+						Manual webhook creation (alternative: if the button below doesn't work)
+					</p>
+				</summary>
+				<div className="space-y-2 mt-2">
+					<p className="text-xs text-blue-600 dark:text-blue-400 pl-6">
+						Use the following curl command to create the GitHub webhook manually. Requires a token
+						with <code>admin:repo_hook</code> scope.
+					</p>
+					<div className="relative rounded-md bg-muted border pl-6">
+						<div className="absolute top-2 right-2">
+							<CopyButton text={githubCurlCommand} />
+						</div>
+						<pre className="text-xs font-mono whitespace-pre-wrap break-all py-2 pr-16 overflow-x-auto">
+							{githubCurlCommand}
+						</pre>
+					</div>
+				</div>
+			</details>
+
 			{/* Create webhook button */}
 			<div className="space-y-2">
 				<button
@@ -269,28 +293,6 @@ function GitHubWebhookSection({ projectId }: { projectId: string }) {
 						GitHub webhook created successfully.
 					</p>
 				)}
-			</div>
-
-			{/* curl instructions for manual GitHub webhook creation */}
-			<div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-3 space-y-2 dark:border-blue-900/50 dark:bg-blue-900/20">
-				<div className="flex items-start gap-2">
-					<Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-					<p className="text-xs text-blue-700 dark:text-blue-300 font-medium">
-						Manual webhook creation (if the button above doesn't work)
-					</p>
-				</div>
-				<p className="text-xs text-blue-600 dark:text-blue-400 pl-6">
-					Use the following curl command to create the GitHub webhook manually. Requires a token
-					with <code>admin:repo_hook</code> scope.
-				</p>
-				<div className="relative rounded-md bg-muted border pl-6">
-					<div className="absolute top-2 right-2">
-						<CopyButton text={githubCurlCommand} />
-					</div>
-					<pre className="text-xs font-mono whitespace-pre-wrap break-all py-2 pr-16 overflow-x-auto">
-						{githubCurlCommand}
-					</pre>
-				</div>
 			</div>
 		</div>
 	);
