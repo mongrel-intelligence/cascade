@@ -59,9 +59,10 @@ export async function trelloCreateWebhook(
 		},
 	);
 	if (!response.ok) {
+		const body = await response.text().catch(() => '');
 		throw new TRPCError({
 			code: 'INTERNAL_SERVER_ERROR',
-			message: `Failed to create Trello webhook: ${response.status}`,
+			message: `Failed to create Trello webhook: ${response.status} — ${body}`,
 		});
 	}
 	return (await response.json()) as TrelloWebhook;
