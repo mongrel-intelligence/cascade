@@ -6,8 +6,10 @@
  * to read them on-demand using its built-in Read tool.
  *
  * When context injections contain images, each image is written as a binary
- * file to `.cascade/context/images/` so native-tool engines (Claude Code,
- * OpenCode, Codex) can read them with their built-in Read tool.
+ * file to `.cascade/context/images/` so native-tool engines (Codex, OpenCode)
+ * can read them with their built-in Read tool. The Claude Code engine receives
+ * images natively as SDK ImageBlockParam content blocks instead (see
+ * src/backends/claude-code/index.ts buildPromptWithImages).
  */
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -104,7 +106,7 @@ function generateReadInstructions(files: OffloadedFile[], images: OffloadedImage
 	if (images.length > 0) {
 		if (files.length > 0) lines.push('');
 		lines.push(
-			`The following context images have been saved to \`${CONTEXT_OFFLOAD_CONFIG.contextDir}/${IMAGES_SUBDIR}/\`:`,
+			'The following work item images were pre-downloaded using authenticated credentials. Use the Read tool on the file paths below — do NOT curl or HTTP-fetch the original attachment URLs:',
 		);
 		lines.push('');
 		for (const img of images) {

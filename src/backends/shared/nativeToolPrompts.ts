@@ -6,12 +6,13 @@ const NATIVE_TOOL_EXECUTION_RULES = `## Native Tool Execution Rules
 You are operating in a native-tool environment, not a gadget/function-call environment.
 
 - Never write pseudo tool calls such as \`[tool_call: ...]\`, \`ReadFile(...)\`, \`RipGrep(...)\`, \`Tmux(...)\`, \`CreatePR(...)\`, or similar function-call text in your assistant response.
-- Use actual OpenCode/Codex tool invocations instead:
+- Use your built-in tools instead:
   - use built-in file/search tools or the shell tool for repository exploration
   - use the edit tool for file modifications
   - use the shell tool for all \`cascade-tools ...\`, \`git ...\`, \`rg ...\`, \`fd ...\`, test, lint, and build commands
 - When the task instructions mention gadget names like \`CreatePR\`, \`PostComment\`, \`UpdateChecklistItem\`, \`Finish\`, \`ReadWorkItem\`, \`TodoUpsert\`, or \`TodoUpdateStatus\`, treat that as a request to run the equivalent real command or tool action, not to print the gadget name.
-- If you catch yourself composing a pseudo tool call in plain text, stop and use the real tool instead.`;
+- If you catch yourself composing a pseudo tool call in plain text, stop and use the real tool instead.
+- Trello, JIRA, and GitHub attachment URLs require backend authentication. NEVER curl, wget, or HTTP-fetch them — they return an authorization error. Work item images are pre-fetched and available either as images in your conversation context or as files under \`.cascade/context/images/\` — use whichever is present; never fetch the original URLs.`;
 
 /**
  * Format a single CLI parameter for tool guidance documentation.
