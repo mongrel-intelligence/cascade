@@ -124,6 +124,11 @@ export async function fetchWorkItemStep(params: FetchContextParams): Promise<Con
 			const provider = getPMProviderOrNull();
 			const limited = media.slice(0, MAX_IMAGES_PER_WORK_ITEM);
 
+			params.logWriter('INFO', 'fetchWorkItemStep: downloading work item images', {
+				workItemId: params.input.workItemId,
+				count: limited.length,
+			});
+
 			const { jiraClient } = await import('../../jira/client.js');
 			const { trelloClient } = await import('../../trello/client.js');
 
@@ -136,7 +141,12 @@ export async function fetchWorkItemStep(params: FetchContextParams): Promise<Con
 						} else {
 							downloaded = await trelloClient.downloadAttachment(ref.url);
 						}
-						if (!downloaded) return null;
+						if (!downloaded) {
+							params.logWriter('WARN', 'fetchWorkItemStep: image download returned null', {
+								url: ref.url.split('?')[0],
+							});
+							return null;
+						}
 						return {
 							base64Data: downloaded.buffer.toString('base64'),
 							mimeType: downloaded.mimeType,
@@ -144,7 +154,7 @@ export async function fetchWorkItemStep(params: FetchContextParams): Promise<Con
 						};
 					} catch (err) {
 						params.logWriter('WARN', 'fetchWorkItemStep: failed to download image', {
-							url: ref.url,
+							url: ref.url.split('?')[0],
 							error: err instanceof Error ? err.message : String(err),
 						});
 						return null;
@@ -153,6 +163,12 @@ export async function fetchWorkItemStep(params: FetchContextParams): Promise<Con
 			);
 
 			const images = results.filter((r) => r !== null);
+			params.logWriter('INFO', 'fetchWorkItemStep: image download complete', {
+				workItemId: params.input.workItemId,
+				attempted: limited.length,
+				downloaded: images.length,
+				skipped: limited.length - images.length,
+			});
 			if (images.length > 0) {
 				injection.images = images;
 			}
