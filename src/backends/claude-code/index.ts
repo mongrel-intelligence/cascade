@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { constants, accessSync, existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -9,6 +10,7 @@ import type {
 	SDKResultSuccess,
 	SDKStatusMessage,
 	SDKSystemMessage,
+	SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { getEngineSettings } from '../../config/engineSettings.js';
 import { logger } from '../../utils/logging.js';
@@ -24,7 +26,7 @@ import {
 import { cleanupContextFiles } from '../contextFiles.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
-import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
+import type { AgentEngine, AgentEngineResult, AgentExecutionPlan, ContextImage } from '../types.js';
 import { buildClaudeEnv } from './env.js';
 import { buildHooks } from './hooks.js';
 import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
@@ -62,6 +64,74 @@ export function ensureOnboardingFlag(): void {
 			mode: 0o600,
 		});
 	}
+}
+
+const CLAUDE_SUPPORTED_IMAGE_TYPES = new Set([
+	'image/jpeg',
+	'image/png',
+	'image/gif',
+	'image/webp',
+]);
+
+/**
+ * Build an AsyncIterable of SDKUserMessages that delivers the task prompt text along
+ * with any work-item images as native SDK image content blocks.
+ *
+ * Used by the Claude Code engine to inject images directly into the first conversation
+ * turn rather than writing them to disk and hoping the agent reads the files.
+ */
+export async function* buildPromptWithImages(
+	text: string,
+	images: ContextImage[],
+): AsyncIterable<SDKUserMessage> {
+	const imageBlocks = images
+		.filter((img) => CLAUDE_SUPPORTED_IMAGE_TYPES.has(img.mimeType))
+		.map((img) => ({
+			type: 'image' as const,
+			source: {
+				type: 'base64' as const,
+				media_type: img.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+				data: img.base64Data,
+			},
+		}));
+
+	yield {
+		type: 'user',
+		message: { role: 'user', content: [{ type: 'text', text }, ...imageBlocks] },
+		parent_tool_use_id: null,
+		session_id: randomUUID(),
+	};
+}
+
+/**
+ * Filter context images to those supported by the Claude SDK.
+ * Logs an INFO message when images will be injected, and a WARN for any skipped MIME types.
+ */
+function filterContextImages(
+	contextInjections: AgentExecutionPlan['contextInjections'],
+	logWriter: AgentExecutionPlan['logWriter'],
+): ContextImage[] {
+	const allImages = contextInjections.flatMap((inj) => inj.images ?? []);
+	const supported = allImages.filter((img) => CLAUDE_SUPPORTED_IMAGE_TYPES.has(img.mimeType));
+	const skipped = allImages.length - supported.length;
+	if (supported.length > 0) {
+		logWriter('INFO', 'Injecting work item images as SDK content blocks', {
+			count: supported.length,
+		});
+	}
+	if (skipped > 0) {
+		logWriter('WARN', 'Skipped unsupported image MIME types', {
+			skipped,
+			types: [
+				...new Set(
+					allImages
+						.filter((img) => !CLAUDE_SUPPORTED_IMAGE_TYPES.has(img.mimeType))
+						.map((img) => img.mimeType),
+				),
+			],
+		});
+	}
+	return supported;
 }
 
 /**
@@ -525,9 +595,15 @@ export class ClaudeCodeEngine implements AgentEngine {
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const startTime = Date.now();
 		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools);
+
+		// Collect supported images for native SDK delivery; strip from injections so
+		// offloadLargeContext does not also write them to disk (redundant for this engine).
+		const supportedImages = filterContextImages(input.contextInjections, input.logWriter);
+		const injectionsForPrompt = input.contextInjections.map(({ images: _images, ...rest }) => rest);
+
 		const { prompt: taskPrompt, hasOffloadedContext } = await buildTaskPrompt(
 			input.taskPrompt,
-			input.contextInjections,
+			injectionsForPrompt,
 			input.repoDir,
 		);
 		// Resolve model again here for backward compatibility: execute() may be called
@@ -569,7 +645,10 @@ export class ClaudeCodeEngine implements AgentEngine {
 
 		const maxContinuationTurns = input.completionRequirements?.maxContinuationTurns ?? 0;
 		let continuationTurns = 0;
-		let promptText = taskPrompt;
+		// Use AsyncIterable prompt for the first turn when images are present; string otherwise.
+		// Continuation turns always use a plain string prompt.
+		let promptInput: string | AsyncIterable<SDKUserMessage> =
+			supportedImages.length > 0 ? buildPromptWithImages(taskPrompt, supportedImages) : taskPrompt;
 		let isContinuation = false;
 		let turnCount = 0;
 		let totalCost: number | undefined;
@@ -577,7 +656,7 @@ export class ClaudeCodeEngine implements AgentEngine {
 		for (;;) {
 			const stderrChunks: string[] = [];
 			const stream = query({
-				prompt: promptText,
+				prompt: promptInput,
 				options: {
 					model,
 					systemPrompt,
@@ -641,7 +720,7 @@ export class ClaudeCodeEngine implements AgentEngine {
 			if (decision.done) return decision.result;
 
 			continuationTurns++;
-			promptText = decision.promptText;
+			promptInput = decision.promptText;
 			isContinuation = true;
 		}
 	}
