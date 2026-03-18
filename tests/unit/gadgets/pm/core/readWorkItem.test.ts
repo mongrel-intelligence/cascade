@@ -228,7 +228,7 @@ describe('readWorkItemWithMedia', () => {
 
 		expect(result.text).toContain('# Media Work Item');
 		expect(result.media).toEqual([]);
-		expect(result.text).not.toContain('## Inline Media');
+		expect(result.text).not.toContain('## Pre-fetched Images');
 	});
 
 	it('collects image media from work item inlineMedia', async () => {
@@ -247,7 +247,7 @@ describe('readWorkItemWithMedia', () => {
 		expect(result.media).toHaveLength(1);
 		expect(result.media[0].url).toBe('https://example.com/img.png');
 		expect(result.media[0].mimeType).toBe('image/png');
-		expect(result.text).toContain('## Inline Media');
+		expect(result.text).toContain('## Pre-fetched Images');
 		expect(result.text).toContain('[Image: img.png]');
 	});
 
@@ -277,7 +277,7 @@ describe('readWorkItemWithMedia', () => {
 		expect(result.media).toHaveLength(1);
 		expect(result.media[0].url).toBe('https://example.com/screenshot.jpg');
 		expect(result.media[0].source).toBe('comment');
-		expect(result.text).toContain('## Inline Media');
+		expect(result.text).toContain('## Pre-fetched Images');
 		expect(result.text).toContain('[Image: screenshot]');
 	});
 
@@ -336,7 +336,7 @@ describe('readWorkItemWithMedia', () => {
 		const result = await readWorkItemWithMedia('item1', true);
 
 		expect(result.media).toEqual([]);
-		expect(result.text).not.toContain('## Inline Media');
+		expect(result.text).not.toContain('## Pre-fetched Images');
 	});
 
 	it('does not collect comment media when includeComments=false', async () => {
@@ -348,6 +348,58 @@ describe('readWorkItemWithMedia', () => {
 
 		expect(result.media).toEqual([]);
 		expect(mockProvider.getWorkItemComments).not.toHaveBeenCalled();
+	});
+
+	it('collects image-type card attachments as media references', async () => {
+		mockProvider.getWorkItem.mockResolvedValue(baseItem);
+		mockProvider.getChecklists.mockResolvedValue([]);
+		mockProvider.getAttachments.mockResolvedValue([
+			{
+				id: 'a1',
+				name: 'screenshot.png',
+				url: 'https://trello.com/attachments/screenshot.png',
+				mimeType: 'image/png',
+				bytes: 50000,
+			},
+			{
+				id: 'a2',
+				name: 'document.pdf',
+				url: 'https://trello.com/attachments/document.pdf',
+				mimeType: 'application/pdf',
+				bytes: 10000,
+			},
+		]);
+		mockProvider.getWorkItemComments.mockResolvedValue([]);
+
+		const result = await readWorkItemWithMedia('item1', true);
+
+		expect(result.media).toHaveLength(1);
+		expect(result.media[0].url).toBe('https://trello.com/attachments/screenshot.png');
+		expect(result.media[0].mimeType).toBe('image/png');
+		expect(result.media[0].altText).toBe('screenshot.png');
+		expect(result.media[0].source).toBe('attachment');
+		expect(result.text).toContain('## Pre-fetched Images');
+		expect(result.text).toContain('[Image: screenshot.png]');
+	});
+
+	it('excludes non-image mimeType attachments from media', async () => {
+		mockProvider.getWorkItem.mockResolvedValue(baseItem);
+		mockProvider.getChecklists.mockResolvedValue([]);
+		mockProvider.getAttachments.mockResolvedValue([
+			{
+				id: 'a1',
+				name: 'document.pdf',
+				url: 'https://trello.com/attachments/document.pdf',
+				mimeType: 'application/pdf',
+				bytes: 10000,
+				date: '2024-01-01T00:00:00Z',
+			},
+		]);
+		mockProvider.getWorkItemComments.mockResolvedValue([]);
+
+		const result = await readWorkItemWithMedia('item1', true);
+
+		expect(result.media).toEqual([]);
 	});
 
 	it('shows alt text in inline media section when provided', async () => {
@@ -369,5 +421,41 @@ describe('readWorkItemWithMedia', () => {
 		const result = await readWorkItemWithMedia('item1', true);
 
 		expect(result.text).toContain('[Image: Architecture Diagram]');
+	});
+
+	it('deduplicates media when same URL appears in both inlineMedia and attachments', async () => {
+		const sharedUrl = 'https://jira.example.com/secure/attachment/10001/diagram.png';
+		mockProvider.getWorkItem.mockResolvedValue({
+			...baseItem,
+			inlineMedia: [
+				{
+					url: sharedUrl,
+					mimeType: 'image/png',
+					altText: 'diagram',
+					source: 'description' as const,
+				},
+			],
+		});
+		mockProvider.getChecklists.mockResolvedValue([]);
+		mockProvider.getAttachments.mockResolvedValue([
+			{
+				id: 'a1',
+				name: 'diagram.png',
+				url: sharedUrl,
+				mimeType: 'image/png',
+				bytes: 5000,
+				date: '2024-01-01T00:00:00Z',
+			},
+		]);
+		mockProvider.getWorkItemComments.mockResolvedValue([]);
+
+		const result = await readWorkItemWithMedia('item1', true);
+
+		// Same URL from description and attachment — must appear only once
+		expect(result.media).toHaveLength(1);
+		// description source wins (first occurrence)
+		expect(result.media[0].source).toBe('description');
+		// Should appear once in the Pre-fetched Images section
+		expect(result.text.match(/\[Image: diagram\]/g)).toHaveLength(1);
 	});
 });
