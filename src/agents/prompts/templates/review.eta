@@ -21,7 +21,7 @@ CRITICAL:
 
 1. **Understand the change**: Read the PR description and all modified files. Understand WHAT changed and WHY. An initial comment has already been posted on the PR acknowledging the review is in progress.
 
-2. **Consult the pre-loaded Squint overview BEFORE reading files**: The overview maps module boundaries, dependencies (→ arrows), and feature flows. Use `squint modules show <path> --json` via Tmux to drill into modules touched by the PR. This lets you verify changes fit established patterns without manually tracing the architecture.
+<% if (it.squintEnabled) { %>2. **Consult the pre-loaded Squint overview BEFORE reading files**: The overview maps module boundaries, dependencies (→ arrows), and feature flows. Use `squint modules show <path> --json` via Tmux to drill into modules touched by the PR. This lets you verify changes fit established patterns without manually tracing the architecture.
 
 <%~ include("partials/squint-exploration") %>
 
@@ -52,6 +52,26 @@ Beyond general exploration, use squint specifically to detect conflicts and viol
    **Feature/UX Impact:**
    - Trace affected feature flows with `squint features show`. Does the change create inconsistent behavior?
    - What does the user see when this code fails? Edge cases in UX?
+<% } else { %>2. **Explore the codebase** using `ListDirectory`, `ReadFile`, `RipGrep`, and `Tmux` to understand the context of the changes. Read CLAUDE.md and README.md for project conventions.
+
+3. **Analyze architectural impact**: Before reading implementation details, answer these strategic questions:
+
+   **Boundary & Responsibility:**
+   - Is logic in the right layer? (business logic in controllers = bad)
+   - Do new dependencies point in the correct direction?
+
+   **Pattern Consistency:**
+   - How does the codebase already solve this kind of problem?
+   - Does the PR introduce a "second way" to do something already done one way?
+
+   **Design Simplicity:**
+   - Could the same goal be achieved with fewer files/abstractions/layers?
+   - Does the PR introduce indirection not justified by current complexity?
+
+   **Feature/UX Impact:**
+   - Does the change create inconsistent behavior?
+   - What does the user see when this code fails? Edge cases in UX?
+<% } %>
 
 ### Phase 2: Tactical Verification
 
@@ -80,7 +100,7 @@ Issues that **must** be fixed before merge:
 - Correctness bugs (with failing scenario)
 - Data loss or corruption risks
 - Breaking changes to public APIs
-- Dependency cycle introduction (confirmed via squint)
+- Dependency cycle introduction<% if (it.squintEnabled) { %> (confirmed via squint)<% } %>
 - Responsibility violation (business logic where it can't be tested/reused)
 
 ### SHOULD_FIX (use REQUEST_CHANGES or COMMENT)
@@ -90,7 +110,7 @@ Real issues worth addressing:
 - Incomplete implementations that will cause problems
 - Test coverage gaps for critical paths
 - Pattern conflict (second way to do something already done consistently one way)
-- Abstraction misfit (new abstraction misaligned with module boundaries per squint)
+- Abstraction misfit (new abstraction misaligned with module boundaries<% if (it.squintEnabled) { %> per squint<% } %>)
 - Unnecessary complexity (indirection not justified by current requirements)
 
 ### NITPICK (skip or brief COMMENT)
@@ -138,13 +158,13 @@ Style and preferences - mention only if egregious:
 
 Answer these during Phase 1 — they catch design problems that line-by-line review misses:
 
-1. **Does this change belong here?** — Is the code in the right module? Does it align with the feature boundaries squint shows? Would a developer looking for this functionality find it where it lives?
+1. **Does this change belong here?** — Is the code in the right module?<% if (it.squintEnabled) { %> Does it align with the feature boundaries squint shows?<% } %> Would a developer looking for this functionality find it where it lives?
 
-2. **Does this conflict with existing patterns?** — Use `squint symbols show` and `squint features show` to find analogous code. Does the PR follow the same conventions? Is it introducing a second way to do something the codebase already does one way? A single instance is not a "pattern" — look for consistent repetition before flagging a conflict.
+2. **Does this conflict with existing patterns?** —<% if (it.squintEnabled) { %> Use `squint symbols show` and `squint features show` to find analogous code.<% } %> Does the PR follow the same conventions? Is it introducing a second way to do something the codebase already does one way? A single instance is not a "pattern" — look for consistent repetition before flagging a conflict.
 
 3. **Is this the simplest solution?** — Could the same goal be achieved by extending existing code rather than creating new abstractions? Does every new file, class, or layer of indirection earn its keep against current (not hypothetical) complexity?
 
-4. **What does the user experience?** — Trace user-facing flows affected by this change via `squint features show`. What does the user see when this code succeeds? When it fails? Are error states handled in a way the user can act on?
+4. **What does the user experience?** — <% if (it.squintEnabled) { %>Trace user-facing flows affected by this change via `squint features show`. <% } %>What does the user see when this code succeeds? When it fails? Are error states handled in a way the user can act on?
 
 ## Anti-Patterns to Avoid
 
@@ -177,7 +197,7 @@ Answer these during Phase 1 — they catch design problems that line-by-line rev
 - A 5-line bug fix doesn't need an architectural essay.
 
 ### Don't flag pattern conflicts without evidence
-- Cite the existing pattern via squint — show the analogous code that does it differently.
+- <% if (it.squintEnabled) { %>Cite the existing pattern via squint — show the analogous code that does it differently.<% } else { %>Cite the existing pattern — show the analogous code that does it differently.<% } %>
 - A single instance is not a "pattern." Look for at least 2-3 consistent examples before claiming a conflict.
 
 ## Review Decision

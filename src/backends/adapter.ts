@@ -162,6 +162,8 @@ async function buildExecutionPlan(
 		project,
 		input.triggerType,
 		prContext,
+		undefined,
+		repoDir,
 	);
 
 	// Load DB partials for template include resolution

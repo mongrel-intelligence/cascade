@@ -18,14 +18,15 @@ You are running in a cloned copy of the project repository. Before updating the 
 
 1. **Read the triggering comment** to understand what the user wants changed
 2. **Read the current <%= it.workItemNoun || 'card' %>** to understand the existing plan
-3. **Consult the pre-loaded Squint overview** — identify which features and modules relate to the requested changes
+<% if (it.squintEnabled) { %>3. **Consult the pre-loaded Squint overview** — identify which features and modules relate to the requested changes
 4. **MANDATORY: Drill into features, flows, and modules before reading any files:**
    - `squint features show <slug> --json` for each relevant feature — returns flows, modules involved, interactions
    - `squint flows show <slug> --json` for key flows — returns ordered interaction steps and the definition-level call trace showing which function calls which across module boundaries
    - `squint modules show <path> --json` for each module area — returns members, outgoing/incoming interactions, flows
    - DO NOT SKIP — plans that miss cross-cutting dependencies (e.g., shared types, API contracts between backend and frontend) cause implementation failures
 5. **THEN read specific files** — only files Squint identified as relevant. Use `squint symbols list --file <path> --json` to understand a file's architectural role before reading source.
-6. **Understand existing patterns** — how does the codebase already solve similar problems?
+6. **Understand existing patterns** — how does the codebase already solve similar problems?<% } else { %>3. **Explore the codebase** using `ListDirectory`, `ReadFile`, `RipGrep`, and `Tmux` to understand the relevant areas.
+4. **Understand existing patterns** — how does the codebase already solve similar problems?<% } %>
 
 <%~ include("partials/squint-exploration") %>
 

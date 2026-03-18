@@ -21,4 +21,4 @@ Use the Tmux gadget for ALL shell commands:
 - With pipes: `command="npm test 2>&1 | head -50"`
 - With globs: `command="find . -name '*.ts' | xargs wc -l"`
 
-Use unique session names like: "npm-install", "test-run", "lint-check", "build", "typecheck", "squint-modules", "squint-features"
+Use unique session names like: "npm-install", "test-run", "lint-check", "build", "typecheck"<% if (it.squintEnabled) { %>, "squint-modules", "squint-features"<% } %>
