@@ -774,7 +774,7 @@ describe('trelloClient', () => {
 			vi.restoreAllMocks();
 		});
 
-		it('appends key and token as query params and returns buffer + mimeType', async () => {
+		it('uses OAuth Authorization header (not query params) for auth', async () => {
 			const imageBytes = Buffer.from('image-data');
 			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
 				new Response(imageBytes, {
@@ -785,7 +785,7 @@ describe('trelloClient', () => {
 
 			const result = await withTrelloCredentials(creds, () =>
 				trelloClient.downloadAttachment(
-					'https://trello-attachments.s3.amazonaws.com/card/image.png',
+					'https://trello.com/1/cards/card123/attachments/att456/download/image.png',
 				),
 			);
 
@@ -795,12 +795,15 @@ describe('trelloClient', () => {
 			// biome-ignore lint/style/noNonNullAssertion: guarded by expect above
 			expect(result!.buffer).toBeInstanceOf(Buffer);
 
-			const [url] = fetchSpy.mock.calls[0];
-			expect(url).toContain('key=test-key');
-			expect(url).toContain('token=test-token');
+			const [url, options] = fetchSpy.mock.calls[0];
+			expect(url).not.toContain('key=');
+			expect(url).not.toContain('token=');
+			expect(options?.headers).toEqual({
+				Authorization: 'OAuth oauth_consumer_key="test-key", oauth_token="test-token"',
+			});
 		});
 
-		it('appends credentials with & when URL already has query params', async () => {
+		it('passes the URL to fetch unchanged (no query params added)', async () => {
 			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
 				new Response(Buffer.from('data'), {
 					status: 200,
@@ -808,16 +811,16 @@ describe('trelloClient', () => {
 				}),
 			);
 
-			await withTrelloCredentials(creds, () =>
-				trelloClient.downloadAttachment(
-					'https://trello-attachments.s3.amazonaws.com/card/image.jpg?version=2',
-				),
-			);
+			const inputUrl =
+				'https://trello.com/1/cards/card123/attachments/att456/download/image.jpg?version=2';
 
-			const [url] = fetchSpy.mock.calls[0];
-			expect(url).toContain('version=2');
-			expect(url).toContain('&key=test-key');
-			expect(url).toContain('&token=test-token');
+			await withTrelloCredentials(creds, () => trelloClient.downloadAttachment(inputUrl));
+
+			const [url, options] = fetchSpy.mock.calls[0];
+			expect(url).toBe(inputUrl);
+			expect(options?.headers).toEqual({
+				Authorization: 'OAuth oauth_consumer_key="test-key", oauth_token="test-token"',
+			});
 		});
 
 		it('returns null when download fails (non-OK response)', async () => {
@@ -826,7 +829,9 @@ describe('trelloClient', () => {
 			);
 
 			const result = await withTrelloCredentials(creds, () =>
-				trelloClient.downloadAttachment('https://trello-attachments.s3.amazonaws.com/image.png'),
+				trelloClient.downloadAttachment(
+					'https://trello.com/1/cards/card123/attachments/att456/download/image.png',
+				),
 			);
 
 			expect(result).toBeNull();
@@ -834,7 +839,9 @@ describe('trelloClient', () => {
 
 		it('throws when called outside withTrelloCredentials scope', async () => {
 			await expect(
-				trelloClient.downloadAttachment('https://trello-attachments.s3.amazonaws.com/image.png'),
+				trelloClient.downloadAttachment(
+					'https://trello.com/1/cards/card123/attachments/att456/download/image.png',
+				),
 			).rejects.toThrow('No Trello credentials in scope');
 		});
 	});

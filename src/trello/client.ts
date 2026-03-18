@@ -283,22 +283,22 @@ export const trelloClient = {
 	},
 
 	/**
-	 * Downloads an attachment from Trello CDN with API key/token authentication.
+	 * Downloads an attachment from Trello with OAuth Authorization header auth.
 	 *
-	 * Trello CDN attachment URLs require the same `key`/`token` query-param
-	 * authentication as the REST API.  Returns `null` on any failure so the
-	 * caller pipeline never crashes.
+	 * Trello's attachment download endpoint (/1/cards/{id}/attachments/{id}/download/...)
+	 * requires an `Authorization: OAuth` header — it does NOT accept query-param
+	 * key/token authentication. Returns `null` on any failure so the caller
+	 * pipeline never crashes.
 	 *
-	 * @param url - The Trello attachment URL to download.
+	 * @param url - The Trello attachment URL to download (returned by getCardAttachments).
 	 * @returns `{ buffer, mimeType }` on success, `null` on failure.
 	 */
 	async downloadAttachment(url: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
 		const { apiKey, token } = getTrelloCredentials();
-		// Append credentials as query parameters (same pattern as trelloFetch)
-		const separator = url.includes('?') ? '&' : '?';
-		const authedUrl = `${url}${separator}key=${apiKey}&token=${token}`;
 		const { downloadMedia } = await import('../pm/media.js');
-		return downloadMedia(authedUrl);
+		return downloadMedia(url, {
+			Authorization: `OAuth oauth_consumer_key="${apiKey}", oauth_token="${token}"`,
+		});
 	},
 
 	async getCardAttachments(cardId: string): Promise<TrelloAttachment[]> {
