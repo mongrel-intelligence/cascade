@@ -19,15 +19,15 @@ import {
 	getCompletionFailure,
 	readCompletionEvidence,
 } from '../completion.js';
-import { cleanupContextFiles } from '../contextFiles.js';
 import {
 	formatNativeToolTransportError,
 	isRetryableNativeToolError,
 	retryNativeToolOperation,
 } from '../nativeToolRetry.js';
-import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
+import { cleanupContextFiles } from '../shared/contextFiles.js';
 import { appendEngineLog } from '../shared/engineLog.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
+import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
 import { buildEnv } from './env.js';
 import { DEFAULT_OPENCODE_MODEL } from './models.js';
