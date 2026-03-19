@@ -874,7 +874,6 @@ describe('OpenCodeEngine', () => {
 			expect.objectContaining({
 				reason: 'Agent completed but no authoritative PR creation was recorded',
 				continuationTurn: 1,
-				usedStreamedStateFallback: true,
 			}),
 		);
 	});
@@ -922,6 +921,140 @@ describe('OpenCodeEngine', () => {
 		expect(result.success).toBe(false);
 		expect(result.output).toContain('Partial progress...');
 		expect(result.error).toContain('OpenCode transport failed after retries');
+	});
+
+	it('does not double-count cost when state.totalCost accumulates across continuation turns', async () => {
+		// Regression test for the OpenCode cost double-counting bug.
+		//
+		// state.totalCost is a cumulative running total accumulated via step-finish
+		// stream events — it is never reset between continuation turns. The shared
+		// loop must receive per-turn cost deltas (not the cumulative total) so that
+		// it can accumulate correctly.
+		//
+		// Without the fix: Turn 1 cost = $0.30, Turn 2 state.totalCost = $0.50,
+		// shared loop total = $0.30 + $0.50 = $0.80 (wrong).
+		// With the fix: Turn 2 delta = $0.50 - $0.30 = $0.20,
+		// shared loop total = $0.30 + $0.20 = $0.50 (correct).
+		mockSpawn.mockReturnValue(createMockChild());
+
+		const tempDir = mkdtempSync(join(tmpdir(), 'opencode-cost-accumulation-'));
+		const prSidecarPath = join(tempDir, 'pr.json');
+
+		// Turn 1: streams $0.30 total cost, no sidecar yet
+		// Turn 2: streams another $0.20 (cumulative $0.50), writes sidecar
+		const sessionPrompt = vi
+			.fn()
+			.mockResolvedValueOnce({
+				data: {
+					info: { id: 'assistant-cost-1', cost: 0.3 },
+					parts: [
+						{
+							id: 'text-cost-1',
+							sessionID: 'session-cost',
+							messageID: 'assistant-cost-1',
+							type: 'text',
+							text: 'Working on it.',
+						},
+					],
+				},
+			})
+			.mockImplementationOnce(async () => {
+				writeFileSync(
+					prSidecarPath,
+					JSON.stringify({
+						prUrl: 'https://github.com/owner/repo/pull/77',
+						source: 'cascade-tools scm create-pr',
+					}),
+				);
+				return {
+					data: {
+						info: { id: 'assistant-cost-2', cost: 0.5 },
+						parts: [
+							{
+								id: 'text-cost-2',
+								sessionID: 'session-cost',
+								messageID: 'assistant-cost-2',
+								type: 'text',
+								text: 'PR created.',
+							},
+						],
+					},
+				};
+			});
+
+		mockCreateOpencodeClient.mockImplementation(() => ({
+			session: {
+				create: vi.fn().mockResolvedValue({ data: { id: 'session-cost' } }),
+				prompt: sessionPrompt,
+				delete: vi.fn().mockResolvedValue(true),
+			},
+			event: {
+				subscribe: vi
+					.fn()
+					.mockImplementationOnce(() =>
+						Promise.resolve(
+							createEventStream([
+								{
+									type: 'message.part.updated',
+									properties: {
+										part: {
+											id: 'finish-cost-1',
+											sessionID: 'session-cost',
+											messageID: 'assistant-cost-1',
+											type: 'step-finish',
+											reason: 'done',
+											cost: 0.3,
+											tokens: { input: 10, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
+										},
+									},
+								},
+								{ type: 'session.idle', properties: { sessionID: 'session-cost' } },
+							]),
+						),
+					)
+					.mockImplementationOnce(() =>
+						Promise.resolve(
+							createEventStream([
+								{
+									type: 'message.part.updated',
+									properties: {
+										part: {
+											id: 'finish-cost-2',
+											sessionID: 'session-cost',
+											messageID: 'assistant-cost-2',
+											type: 'step-finish',
+											reason: 'done',
+											// This adds $0.20 more, making state.totalCost = $0.50 cumulatively
+											cost: 0.2,
+											tokens: { input: 8, output: 4, reasoning: 0, cache: { read: 0, write: 0 } },
+										},
+									},
+								},
+								{ type: 'session.idle', properties: { sessionID: 'session-cost' } },
+							]),
+						),
+					),
+			},
+			postSessionIdPermissionsPermissionId: vi.fn(),
+		}));
+
+		const engine = new OpenCodeEngine();
+		const result = await engine.execute(
+			makeInput({
+				completionRequirements: {
+					requiresPR: true,
+					prSidecarPath,
+					maxContinuationTurns: 1,
+				},
+			}),
+		);
+		rmSync(tempDir, { recursive: true, force: true });
+
+		expect(result.success).toBe(true);
+		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/77');
+		expect(sessionPrompt).toHaveBeenCalledTimes(2);
+		// The total cost should be $0.50 (cumulative), not $0.80 (double-counted)
+		expect(result.cost).toBeCloseTo(0.5);
 	});
 });
 

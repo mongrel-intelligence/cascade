@@ -14,16 +14,12 @@ import type {
 import { logger } from '../../utils/logging.js';
 import { OPENCODE_ENGINE_DEFINITION } from '../catalog.js';
 import {
-	applyCompletionEvidence,
-	getCompletionFailure,
-	readCompletionEvidence,
-} from '../completion.js';
-import {
 	formatNativeToolTransportError,
 	isRetryableNativeToolError,
 	retryNativeToolOperation,
 } from '../nativeToolRetry.js';
 import { cleanupContextFiles } from '../shared/contextFiles.js';
+import { runContinuationLoop } from '../shared/continuationLoop.js';
 import { appendEngineLog } from '../shared/engineLog.js';
 import { buildEngineResult, extractAndBuildPrEvidence } from '../shared/engineResult.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
@@ -682,81 +678,77 @@ async function runOpenCodeTurnLoop(
 	initialPrompt: string,
 	state: OpenCodeStreamState,
 ): Promise<AgentEngineResult> {
-	const maxContinuationTurns = input.completionRequirements?.maxContinuationTurns ?? 0;
-	let continuationTurns = 0;
-	let promptText = initialPrompt;
-	for (;;) {
-		const eventAbort = new AbortController();
-		const eventStream = await retryNativeToolOperation(
-			() =>
-				client.event.subscribe({
-					signal: eventAbort.signal,
-				}),
-			{
-				logWriter: input.logWriter,
-				operation: 'opencode.event.subscribe',
-			},
-		);
+	return runContinuationLoop({
+		initialPrompt,
+		completionRequirements: input.completionRequirements,
+		logWriter: input.logWriter,
+		engineLabel: 'OpenCode',
+		executeTurn: async ({ promptText }) => {
+			// Snapshot cost before this turn so we can compute a per-turn delta.
+			// state.totalCost is a cumulative running total across all turns (it
+			// is never reset between continuation turns), so we must subtract the
+			// pre-turn value to avoid double-counting when the shared loop
+			// accumulates cost on its own side.
+			const costBeforeTurn = state.totalCost;
 
-		const streamTask = (async () => {
-			try {
-				for await (const event of eventStream.stream) {
-					await processStreamEvent(client, event, state);
+			const eventAbort = new AbortController();
+			const eventStream = await retryNativeToolOperation(
+				() =>
+					client.event.subscribe({
+						signal: eventAbort.signal,
+					}),
+				{
+					logWriter: input.logWriter,
+					operation: 'opencode.event.subscribe',
+				},
+			);
+
+			const streamTask = (async () => {
+				try {
+					for await (const event of eventStream.stream) {
+						await processStreamEvent(client, event, state);
+					}
+				} catch (error) {
+					if (eventAbort.signal.aborted) return;
+					state.idleRejecter?.(error instanceof Error ? error : new Error(String(error)));
 				}
-			} catch (error) {
-				if (eventAbort.signal.aborted) return;
-				state.idleRejecter?.(error instanceof Error ? error : new Error(String(error)));
-			}
-		})();
+			})();
 
-		try {
-			const idlePromise = createIdlePromise(state);
-			const promptResponse = await promptOpenCodeSession(
-				client,
-				sessionId,
-				agent,
-				input,
-				promptText,
-				state,
-			);
+			try {
+				const idlePromise = createIdlePromise(state);
+				const promptResponse = await promptOpenCodeSession(
+					client,
+					sessionId,
+					agent,
+					input,
+					promptText,
+					state,
+				);
 
-			await idlePromise;
+				await idlePromise;
 
-			const { result: rawTurnResult, usedStreamedStateFallback } = buildOpenCodeTurnResult(
-				input,
-				state,
-				promptResponse,
-			);
-			const turnResult = applyCompletionEvidence(rawTurnResult, input.completionRequirements);
-			if (!turnResult.success) return turnResult;
-
-			const completionFailure = getCompletionFailure(
-				input.completionRequirements,
-				readCompletionEvidence(input.completionRequirements),
-			);
-			if (!completionFailure) return turnResult;
-			if (continuationTurns >= maxContinuationTurns) {
+				const { result: turnResult } = buildOpenCodeTurnResult(input, state, promptResponse);
+				// Compute per-turn cost delta so the shared loop accumulates correctly.
+				// state.totalCost is a cumulative running total across ALL continuation
+				// turns (accumulated via step-finish stream events and never reset between
+				// turns). If we returned the cumulative value directly, the shared loop
+				// would add it on top of what it already accumulated and double-count.
+				//
+				// Example: Turn 1 streams $0.30 → state.totalCost = 0.30, loop total = 0.30.
+				//          Turn 2 streams $0.20 more → state.totalCost = 0.50.
+				//          Without the delta, loop total = 0.30 + 0.50 = $0.80 (wrong).
+				//          With the delta (0.50 - 0.30 = 0.20), loop total = 0.30 + 0.20 = $0.50 (correct).
+				const perTurnCostDelta = state.totalCost - costBeforeTurn;
 				return {
-					...turnResult,
-					success: false,
-					error: completionFailure.error,
+					result: { ...turnResult, cost: perTurnCostDelta },
+					toolCallCount: state.toolCallCount,
 				};
+			} finally {
+				eventAbort.abort();
+				await streamTask;
 			}
-
-			continuationTurns += 1;
-			input.logWriter('WARN', 'OpenCode completion check failed; continuing session', {
-				reason: completionFailure.error,
-				continuationTurn: continuationTurns,
-				maxContinuationTurns,
-				toolCallCount: state.toolCallCount,
-				usedStreamedStateFallback,
-			});
-			promptText = completionFailure.continuationPrompt;
-		} finally {
-			eventAbort.abort();
-			await streamTask;
-		}
-	}
+		},
+	});
 }
 
 /**
