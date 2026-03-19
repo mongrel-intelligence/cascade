@@ -14,7 +14,7 @@
 
 import { createHmac } from 'node:crypto';
 import { Hono } from 'hono';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Mock all heavy side-effecting dependencies BEFORE module import
@@ -121,7 +121,7 @@ vi.mock('../../../src/router/platformClients/credentials.js', () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import { loadProjectConfig } from '../../../src/router/config.js';
+import { loadProjectConfig, routerConfig } from '../../../src/router/config.js';
 import { resolveWebhookSecret } from '../../../src/router/platformClients/credentials.js';
 import {
 	buildTrelloCallbackUrl,
@@ -129,6 +129,7 @@ import {
 	verifyGitHubWebhookSignature,
 	verifyTrelloWebhookSignature,
 } from '../../../src/router/webhookVerification.js';
+import { logger } from '../../../src/utils/logging.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -202,6 +203,45 @@ describe('buildTrelloCallbackUrl', () => {
 		// routerConfig is mocked with webhookCallbackBaseUrl: 'https://example.com'
 		const url = buildTrelloCallbackUrl('other-host.com', 'http');
 		expect(url).toBe('https://example.com/trello/webhook');
+	});
+
+	describe('when webhookCallbackBaseUrl is not set', () => {
+		beforeEach(() => {
+			// Temporarily clear the base URL to test fallback behaviour
+			(routerConfig as { webhookCallbackBaseUrl: string | undefined }).webhookCallbackBaseUrl =
+				undefined;
+		});
+
+		afterEach(() => {
+			// Restore the mocked base URL so other tests are unaffected
+			(routerConfig as { webhookCallbackBaseUrl: string | undefined }).webhookCallbackBaseUrl =
+				'https://example.com';
+		});
+
+		it('falls back to proto and host headers to construct the URL', () => {
+			const url = buildTrelloCallbackUrl('myhost.example.com', 'https');
+			expect(url).toBe('https://myhost.example.com/trello/webhook');
+		});
+
+		it('uses http proto from header when provided', () => {
+			const url = buildTrelloCallbackUrl('myhost.example.com', 'http');
+			expect(url).toBe('http://myhost.example.com/trello/webhook');
+		});
+
+		it('defaults proto to https when proto header is missing', () => {
+			const url = buildTrelloCallbackUrl('myhost.example.com', undefined);
+			expect(url).toBe('https://myhost.example.com/trello/webhook');
+		});
+
+		it('warns when host header is missing and no base URL is configured', () => {
+			buildTrelloCallbackUrl(undefined, undefined);
+			expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Host header is missing'));
+		});
+
+		it('still returns a URL (with undefined host) even when host is missing', () => {
+			const url = buildTrelloCallbackUrl(undefined, 'https');
+			expect(url).toBe('https://undefined/trello/webhook');
+		});
 	});
 });
 
