@@ -12,6 +12,7 @@ import { cleanupContextFiles } from '../shared/contextFiles.js';
 import { appendEngineLog } from '../shared/engineLog.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
+import { buildTextPrEvidence } from '../shared/resultBuilder.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan, LogWriter } from '../types.js';
 import { buildEnv } from './env.js';
 import { CODEX_MODEL_IDS, DEFAULT_CODEX_MODEL } from './models.js';
@@ -721,12 +722,7 @@ export class CodexEngine implements AgentEngine {
 					: rawTextParts.join('\n').trim();
 			const stderrOutput = stderrChunks.join('').trim();
 			const prUrl = extractPRUrl(finalOutput) ?? extractPRUrl(rawTextParts.join('\n'));
-			const prEvidence = prUrl
-				? {
-						source: 'text' as const,
-						authoritative: false,
-					}
-				: undefined;
+			const prEvidence = buildTextPrEvidence(prUrl);
 
 			input.logWriter('DEBUG', 'Codex process exited', {
 				exitCode,
