@@ -5,7 +5,7 @@
  * explicitly safe host variables, then layer project-scoped secrets on top.
  */
 
-import { buildNativeToolPath } from '../nativeToolRuntime.js';
+import { buildEngineEnv } from '../shared/envBuilder.js';
 import {
 	SHARED_ALLOWED_ENV_EXACT,
 	SHARED_ALLOWED_ENV_PREFIXES,
@@ -45,15 +45,11 @@ export function buildEnv(
 	cliToolsDir?: string,
 	nativeToolShimDir?: string,
 ): Record<string, string | undefined> {
-	const env: Record<string, string | undefined> = {
-		...filterProcessEnv(process.env),
-		...projectSecrets,
-		CI: 'true',
-	};
-
-	if (cliToolsDir) {
-		env.PATH = buildNativeToolPath(env.PATH, cliToolsDir, nativeToolShimDir);
-	}
-
-	return env;
+	return buildEngineEnv({
+		allowedEnvExact: ALLOWED_ENV_EXACT,
+		extraVars: { CI: 'true' },
+		projectSecrets,
+		cliToolsDir,
+		nativeToolShimDir,
+	});
 }
